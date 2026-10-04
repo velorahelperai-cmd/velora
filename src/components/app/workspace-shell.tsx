@@ -143,14 +143,14 @@ export function WorkspaceShell({ title, children, actions }: { title: string; ch
   const effectiveRole = role === "owner" ? state.viewAs : role;
 
   if (!profile) {
-    return <main className="min-h-svh bg-[#07110d]" aria-busy="true" />;
+    return <main className="app-shell" aria-busy="true" />;
   }
 
   return (
-    <div className="min-h-svh overflow-x-hidden bg-[#07110d] text-[#f7fbf8] lg:grid lg:grid-cols-[240px_1fr]">
-      <aside className="sticky top-0 z-20 border-b border-white/10 bg-[#0a1611]/95 backdrop-blur lg:h-svh lg:border-b-0 lg:border-e lg:bg-[#0a1611] lg:backdrop-blur-none">
+    <div className="app-shell overflow-x-hidden lg:grid lg:grid-cols-[240px_1fr]">
+      <aside className="app-shell-aside sticky top-0 z-20 border-b backdrop-blur lg:h-svh lg:border-b-0 lg:border-e lg:backdrop-blur-none">
         <div className="flex items-center justify-between gap-2 px-4 py-3 lg:flex-col lg:items-stretch lg:gap-4 lg:py-5">
-          <Link href="/" className="inline-flex min-h-11 items-center gap-2 text-xl font-bold">
+          <Link href="/" className="inline-flex min-h-11 items-center gap-2 text-xl font-bold tracking-tight">
             <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#38dc89] text-sm text-[#072317]">V</span>
             {copy.brand}
           </Link>
@@ -160,7 +160,7 @@ export function WorkspaceShell({ title, children, actions }: { title: string; ch
           </div>
         </div>
         <div className="flex items-center justify-between gap-2 px-3 pb-2 lg:hidden">
-          <p className="truncate text-xs text-[#adbeaf]">{profile.name} · {effectiveRole === "owner" ? copy.app.owner : copy.app.staff}</p>
+          <p className="app-muted truncate text-xs">{profile.name} · {effectiveRole === "owner" ? copy.app.owner : copy.app.staff}</p>
           <Button variant="ghost" className="min-h-9 px-2 text-xs" onClick={() => void logout()}>{copy.logout}</Button>
         </div>
         <nav aria-label={copy.app.nav.dashboard} className="flex gap-1 overflow-x-auto px-3 pb-3 [scrollbar-width:none] lg:flex-col lg:overflow-visible lg:px-3 [&::-webkit-scrollbar]:hidden">
@@ -171,25 +171,25 @@ export function WorkspaceShell({ title, children, actions }: { title: string; ch
                 key={item.href}
                 href={item.href}
                 aria-current={active ? "page" : undefined}
-                className={`inline-flex min-h-11 shrink-0 items-center rounded-xl px-3 text-sm transition ${active ? "bg-[#38dc89]/15 text-[#9af0c3]" : "text-[#dfe9e2] hover:bg-white/5"}`}
+                className={`inline-flex min-h-11 shrink-0 items-center rounded-xl px-3 text-sm font-medium transition ${active ? "bg-[#38dc89]/15 text-[#9af0c3]" : "text-[#dfe9e2] hover:bg-white/5"}`}
               >
                 {item.label}
               </Link>
             );
           })}
         </nav>
-        <div className="hidden border-t border-white/10 px-4 py-4 text-sm lg:block">
-          <p className="font-medium">{profile.name}</p>
-          <p className="text-xs text-[#8da195]" dir="ltr">{profile.email}</p>
-          <p className="mt-1 text-xs text-[#adbeaf]">{profile.companyName}</p>
-          <p className="mt-1 text-xs text-[#adbeaf]">{copy.app.roleLabel}: {role === "owner" ? copy.app.owner : copy.app.staff}</p>
+        <div className="hidden border-t border-[color:var(--color-line)] px-4 py-4 text-sm lg:block">
+          <p className="font-semibold tracking-tight">{profile.name}</p>
+          <p className="app-muted-soft text-xs" dir="ltr">{profile.email}</p>
+          <p className="app-muted mt-1 text-xs">{profile.companyName}</p>
+          <p className="app-muted mt-1 text-xs">{copy.app.roleLabel}: {role === "owner" ? copy.app.owner : copy.app.staff}</p>
           {role === "owner" ? (
-            <label className="mt-3 grid gap-1 text-xs text-[#8da195]">
+            <label className="app-muted-soft mt-3 grid gap-1 text-xs">
               {copy.app.viewAs}
               <select
                 value={state.viewAs}
                 onChange={(e) => update({ viewAs: e.target.value as "owner" | "staff" })}
-                className="min-h-10 rounded-lg border border-white/15 bg-[#0d1a14] px-2 text-sm text-[#f7fbf8]"
+                className="min-h-10 rounded-lg border border-white/15 bg-[#14221b] px-2 text-sm text-[#f7fbf8]"
               >
                 <option value="owner">{copy.app.owner}</option>
                 <option value="staff">{copy.app.staff}</option>
@@ -198,13 +198,13 @@ export function WorkspaceShell({ title, children, actions }: { title: string; ch
           ) : null}
           <div className="mt-4 grid gap-1">
             <Button variant="ghost" className="justify-start px-2" onClick={() => void logout()}>{copy.logout}</Button>
-            <Button variant="ghost" className="justify-start px-2 text-[#adbeaf]" onClick={() => { reset(); }}>{copy.resetPreview}</Button>
+            <Button variant="ghost" className="app-muted justify-start px-2" onClick={() => { reset(); }}>{copy.resetPreview}</Button>
           </div>
         </div>
       </aside>
       <main className="min-w-0 overflow-x-hidden px-4 py-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] lg:px-8">
-        <div className="mb-5 flex min-w-0 flex-wrap items-center justify-between gap-3">
-          <h1 className="min-w-0 break-words text-2xl font-bold lg:text-3xl">{title}</h1>
+        <div className="mb-6 flex min-w-0 flex-wrap items-end justify-between gap-3 border-b border-[color:var(--color-line)] pb-4">
+          <h1 className="app-title min-w-0 break-words text-2xl lg:text-[2rem]">{title}</h1>
           <div className="flex min-w-0 flex-wrap items-center gap-2">{actions}</div>
         </div>
         <div className="min-w-0">{children}</div>

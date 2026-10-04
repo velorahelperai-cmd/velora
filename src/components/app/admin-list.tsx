@@ -42,7 +42,7 @@ export function AdminList() {
   );
 
   return (
-    <main className="min-h-svh bg-[#07110d] px-4 py-6 text-[#f7fbf8]">
+    <main className="app-shell px-4 py-6">
       <div className="mx-auto flex max-w-[1100px] flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-sm text-[#38dc89]">{copy.brand}</p>
@@ -77,7 +77,7 @@ export function AdminList() {
         </div>
       </div>
 
-      <section className="mx-auto mt-6 max-w-[1100px] rounded-3xl border border-white/10 bg-[#0d1a14] p-4 sm:p-6">
+      <section className="app-panel mx-auto mt-6 max-w-[1100px] rounded-3xl p-4 sm:p-6">
         <form
           className="grid gap-3 sm:grid-cols-[1fr_auto_auto]"
           onSubmit={(e) => {

@@ -24,8 +24,8 @@ export function DemoScene({
 
   return (
     <section id="demo" data-scene="9" className="scene scene-dark px-6 py-20 lg:px-12">
-      <div data-seq="stage" className="relative z-10 mx-auto grid max-w-[1380px] items-center gap-12 lg:grid-cols-2">
-        <div className="order-2 stage-row" data-seq="sample">
+      <div data-seq="stage" data-phone="start" className="story-stage relative z-10 mx-auto max-w-[1380px]">
+        <div className="story-visual stage-row" data-seq="sample">
           <SourceCard title={scene.example.cardTitle} body={scene.example.card} />
           <PhoneMock
             question={sample.q}
@@ -34,7 +34,7 @@ export function DemoScene({
             scale={0.93}
           />
         </div>
-        <div className="order-1" data-seq="invite">
+        <div className="story-copy" data-seq="invite">
           <h2 className="scene-title text-[#f7fbf8]">{scene.title}</h2>
           <p className="scene-body mt-5 text-[#adbeaf]">{scene.body}</p>
           <p className="mt-3 text-sm text-[#adbeaf]">{copy.exampleNote}</p>

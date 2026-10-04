@@ -212,7 +212,7 @@ export function AdminCompanyDetail({
   }
 
   return (
-    <main className="min-h-svh bg-[#07110d] px-4 py-6 text-[#f7fbf8]">
+    <main className="app-shell px-4 py-6">
       <div className="mx-auto max-w-[860px]">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <Link href="/admin" className="text-sm text-[#38dc89] underline">{copy.admin.backToList}</Link>
@@ -231,7 +231,7 @@ export function AdminCompanyDetail({
         {error ? <div className="mt-4"><Notice tone="error">{error}</Notice></div> : null}
         {success ? <div className="mt-4"><Notice tone="success">{success}</Notice></div> : null}
 
-        <section className="mt-6 rounded-3xl border border-white/10 bg-[#0d1a14] p-4 sm:p-6">
+        <section className="mt-6 app-panel rounded-3xl p-4 sm:p-6">
           <h2 className="text-lg font-bold">{copy.admin.editTitle}</h2>
           <form
             className="mt-4 grid gap-3 lg:grid-cols-2"
@@ -309,7 +309,7 @@ export function AdminCompanyDetail({
           <p className="mt-3 text-xs text-[#8da195]">{copy.admin.whatsappNote} · {copy.admin.whatsappLink}: {empty}</p>
         </section>
 
-        <section className="mt-4 rounded-3xl border border-white/10 bg-[#0d1a14] p-4 sm:p-6">
+        <section className="mt-4 app-panel rounded-3xl p-4 sm:p-6">
           <h2 className="text-lg font-bold">{copy.admin.ownerSection}</h2>
           <dl className="mt-3 grid gap-2 text-sm">
             <div className="flex justify-between gap-3"><dt className="text-[#adbeaf]">{copy.admin.ownerName}</dt><dd>{dash(owner?.member_name, empty)}</dd></div>
@@ -317,7 +317,7 @@ export function AdminCompanyDetail({
           </dl>
         </section>
 
-        <section className="mt-4 rounded-3xl border border-white/10 bg-[#0d1a14] p-4 sm:p-6">
+        <section className="mt-4 app-panel rounded-3xl p-4 sm:p-6">
           <h2 className="text-lg font-bold">{copy.admin.members}</h2>
           <ul className="mt-3 grid gap-2">
             {members.map((m) => (
@@ -368,7 +368,7 @@ export function AdminCompanyDetail({
           </ul>
         </section>
 
-        <section className="mt-4 rounded-3xl border border-white/10 bg-[#0d1a14] p-4 sm:p-6">
+        <section className="mt-4 app-panel rounded-3xl p-4 sm:p-6">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <h2 className="text-lg font-bold">{copy.admin.knowledgeSection}</h2>
             {!knowledgeFailed ? (
@@ -470,7 +470,7 @@ export function AdminCompanyDetail({
           )}
         </section>
 
-        <section className="mt-4 rounded-3xl border border-white/10 bg-[#0d1a14] p-4 sm:p-6">
+        <section className="mt-4 app-panel rounded-3xl p-4 sm:p-6">
           <h2 className="text-lg font-bold">{copy.admin.auditTitle}</h2>
           <ul className="mt-3 grid gap-2">
             {audits.map((a) => (

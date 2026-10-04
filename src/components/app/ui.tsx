@@ -19,7 +19,7 @@ export function useErrorText(key?: FieldErrorKey | null): string | undefined {
 }
 
 const inputBase =
-  "min-h-11 w-full min-w-0 rounded-xl border bg-[#0d1a14] px-3 text-[15px] text-[#f7fbf8] outline-none transition focus-visible:ring-2 focus-visible:ring-[#38dc89] placeholder:text-[#6f8277]";
+  "min-h-11 w-full min-w-0 rounded-xl border bg-[#14221b] px-3 text-[15px] text-[#f7fbf8] outline-none transition focus-visible:ring-2 focus-visible:ring-[#38dc89] placeholder:text-[#7d9185]";
 
 export function Field({
   label,
@@ -50,7 +50,7 @@ export function Field({
     >
       <label htmlFor={id} className="flex items-center justify-between text-sm text-[#dfe9e2]">
         <span>{label}</span>
-        <span className={`text-xs ${required ? "text-[#38dc89]" : "text-[#8da195]"}`}>{required ? copy.required : copy.optional}</span>
+        <span className={`text-xs ${required ? "text-[#38dc89]" : "text-[#9aada0]"}`}>{required ? copy.required : copy.optional}</span>
       </label>
       {children({
         id,
@@ -63,7 +63,7 @@ export function Field({
           {error}
         </p>
       ) : hint ? (
-        <p id={`${id}-hint`} className="text-xs leading-5 text-[#8da195]">
+        <p id={`${id}-hint`} className="text-xs leading-5 text-[#9aada0]">
           {hint}
         </p>
       ) : null}
@@ -223,9 +223,9 @@ export function LangSwitch() {
 
 export function EmptyState({ title, body, action }: { title: string; body?: string; action?: ReactNode }) {
   return (
-    <div className="rounded-2xl border border-dashed border-white/15 p-6 text-center">
-      <p className="font-medium text-[#f7fbf8]">{title}</p>
-      {body ? <p className="mt-2 text-sm leading-6 text-[#adbeaf]">{body}</p> : null}
+    <div className="rounded-2xl border border-dashed border-[color:var(--color-line)] bg-white/[0.02] p-6 text-center">
+      <p className="font-semibold text-[#f7fbf8]">{title}</p>
+      {body ? <p className="mt-2 text-sm leading-6 text-[#b7c6b9]">{body}</p> : null}
       {action ? <div className="mt-4 flex justify-center">{action}</div> : null}
     </div>
   );
@@ -233,10 +233,10 @@ export function EmptyState({ title, body, action }: { title: string; body?: stri
 
 export function Card({ title, children, className = "", aside }: { title?: string; children: ReactNode; className?: string; aside?: ReactNode }) {
   return (
-    <section className={`rounded-2xl border border-white/10 bg-[#0d1a14] p-5 ${className}`}>
+    <section className={`rounded-2xl border border-[color:var(--color-line)] bg-[#14221b] p-5 ${className}`}>
       {title ? (
         <div className="mb-4 flex items-center justify-between gap-3">
-          <h2 className="text-lg font-bold text-[#f7fbf8]">{title}</h2>
+          <h2 className="text-lg font-bold tracking-tight text-[#f7fbf8]">{title}</h2>
           {aside}
         </div>
       ) : null}

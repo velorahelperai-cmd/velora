@@ -105,13 +105,13 @@ export function SetupWizard({
     persist((d) => ({ ...d, setupDone: d.setupDone.map((done, i) => (i === n ? true : done)) }));
 
   if (!ready) {
-    return <main className="min-h-svh bg-[#07110d]" aria-busy="true" />;
+    return <main className="app-shell" aria-busy="true" />;
   }
 
   return (
-    <main className="min-h-svh overflow-x-hidden bg-[#07110d] px-4 py-6 pb-28 text-[#f7fbf8]">
+    <main className="app-shell overflow-x-hidden px-4 py-6 pb-28">
       <div className="mx-auto flex max-w-[1100px] flex-wrap items-center justify-between gap-3">
-        <Link href="/" className="inline-flex min-h-11 items-center gap-2 text-2xl font-bold">
+        <Link href="/" className="inline-flex min-h-11 items-center gap-2 text-2xl font-bold tracking-tight">
           <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#38dc89] text-base text-[#072317]">V</span>
           {copy.brand}
         </Link>
@@ -123,8 +123,8 @@ export function SetupWizard({
       </div>
 
       <div className="mx-auto mt-8 max-w-[1100px]">
-        <h1 className="text-3xl font-bold break-words lg:text-4xl">{copy.setup.title}</h1>
-        <p className="mt-2 text-sm leading-6 text-[#adbeaf]">{fill(copy.setup.progress, { n: step + 1 })} · {copy.setup.resume}</p>
+        <h1 className="app-title text-3xl break-words lg:text-4xl">{copy.setup.title}</h1>
+        <p className="app-muted mt-2 text-sm leading-6">{fill(copy.setup.progress, { n: step + 1 })} · {copy.setup.resume}</p>
         <ol className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4" aria-label={copy.setup.title}>
           {copy.setup.steps.map((label, i) => {
             const active = i === step;
@@ -150,9 +150,9 @@ export function SetupWizard({
           <div className="h-full bg-[#38dc89] transition-all duration-500" style={{ width: `${(draft.setupDone.filter(Boolean).length / 4) * 100}%` }} />
         </div>
 
-        <section className="mt-6 min-w-0 rounded-3xl border border-white/10 bg-[#0d1a14] p-4 sm:p-5 lg:p-8">
-          <h2 className="text-2xl font-bold break-words">{copy.setup.steps[step]}</h2>
-          <p className="mt-2 text-sm leading-6 text-[#adbeaf]">{copy.setup.stepBodies[step]}</p>
+        <section className="app-panel mt-6 min-w-0 rounded-3xl p-4 sm:p-5 lg:p-8">
+          <h2 className="app-title text-2xl break-words">{copy.setup.steps[step]}</h2>
+          <p className="app-muted mt-2 text-sm leading-6">{copy.setup.stepBodies[step]}</p>
           <div className="mt-6 min-w-0">
             {step === 0 ? (
               <BusinessStep
@@ -302,7 +302,7 @@ function BusinessStep({
     });
   }
 
-  const select = "min-h-11 w-full min-w-0 rounded-xl border border-white/15 bg-[#0d1a14] px-3 text-[15px] text-[#f7fbf8] outline-none focus-visible:ring-2 focus-visible:ring-[#38dc89]";
+  const select = "min-h-11 w-full min-w-0 rounded-xl border border-white/15 bg-[#14221b] px-3 text-[15px] text-[#f7fbf8] outline-none focus-visible:ring-2 focus-visible:ring-[#38dc89]";
   const nameError = useErrorText(errors.name);
   const hoursError = useErrorText(errors.hours);
   const phoneError = useErrorText(errors.contactPhone);

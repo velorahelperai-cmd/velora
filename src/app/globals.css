@@ -51,16 +51,19 @@
 @theme {
   --color-night: #07110d;
   --color-panel: #14221b;
+  --color-panel-deep: #0d1a14;
   --color-paper: #f5f8f5;
   --color-on-dark: #f7fbf8;
   --color-ink: #101b16;
-  --color-muted-on-dark: #adbeaf;
+  --color-muted-on-dark: #b7c6b9;
+  --color-muted-soft: #9aada0;
   --color-action-on-dark: #38dc89;
   --color-on-bright-action: #072317;
   --color-action-on-light: #087443;
   --color-warm-highlight: #d9a467;
+  --color-danger: #e07a5f;
   --color-mint: #def5e7;
-  --color-line: rgba(173, 190, 175, 0.28);
+  --color-line: rgba(183, 198, 185, 0.32);
   --font-ar: "IBM Plex Sans Arabic", "Segoe UI", Tahoma, sans-serif;
   --font-en: "IBM Plex Sans", "Segoe UI", sans-serif;
 }
@@ -101,6 +104,40 @@ button {
 :focus-visible {
   outline: 2px solid var(--color-action-on-dark);
   outline-offset: 3px;
+}
+
+/* App workspace atmosphere — keeps Velora night brand without flat single fill. */
+.app-shell {
+  min-height: 100svh;
+  color: var(--color-on-dark);
+  background:
+    radial-gradient(ellipse 80% 50% at 10% -10%, rgba(56, 220, 137, 0.08), transparent 55%),
+    radial-gradient(ellipse 60% 40% at 100% 0%, rgba(217, 164, 103, 0.07), transparent 50%),
+    linear-gradient(180deg, #08140f 0%, var(--color-night) 42%, #060e0a 100%);
+}
+
+.app-shell-aside {
+  background: rgba(10, 22, 17, 0.92);
+  border-color: var(--color-line);
+}
+
+.app-panel {
+  background: var(--color-panel);
+  border: 1px solid var(--color-line);
+}
+
+.app-title {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+}
+
+.app-muted {
+  color: var(--color-muted-on-dark);
+}
+
+.app-muted-soft {
+  color: var(--color-muted-soft);
 }
 
 .hero-shell {
@@ -368,6 +405,61 @@ footer[id],
   flex-direction: column-reverse;
   align-items: center;
   gap: 16px;
+}
+
+/* Story stages: alternate phone left/right on desktop; text-first on mobile. */
+.story-stage {
+  display: grid;
+  gap: 2.5rem;
+  align-items: center;
+}
+
+.story-visual,
+.story-copy {
+  min-width: 0;
+}
+
+.story-visual {
+  order: 2;
+}
+
+.story-copy {
+  order: 1;
+}
+
+@media (min-width: 1024px) {
+  .story-stage {
+    grid-template-columns: 1fr 1fr;
+    gap: 3.25rem;
+  }
+
+  /* LTR: start = phone on visual left */
+  html[dir="ltr"] .story-stage[data-phone="start"] .story-visual {
+    order: 1;
+  }
+  html[dir="ltr"] .story-stage[data-phone="start"] .story-copy {
+    order: 2;
+  }
+  html[dir="ltr"] .story-stage[data-phone="end"] .story-visual {
+    order: 2;
+  }
+  html[dir="ltr"] .story-stage[data-phone="end"] .story-copy {
+    order: 1;
+  }
+
+  /* RTL: first order sits on the right; order 2 is visual left */
+  html[dir="rtl"] .story-stage[data-phone="start"] .story-visual {
+    order: 2;
+  }
+  html[dir="rtl"] .story-stage[data-phone="start"] .story-copy {
+    order: 1;
+  }
+  html[dir="rtl"] .story-stage[data-phone="end"] .story-visual {
+    order: 1;
+  }
+  html[dir="rtl"] .story-stage[data-phone="end"] .story-copy {
+    order: 2;
+  }
 }
 
 @media (min-width: 1024px) {

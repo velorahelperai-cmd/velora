@@ -29,7 +29,7 @@ export function AuthShell({ title, body, children, footer }: { title: string; bo
   const { locale } = useDemo();
   const tagline = landingCopy(locale).tagline;
   return (
-    <main className="relative min-h-svh overflow-x-hidden bg-[#07110d] px-4 py-6 pb-[max(6rem,env(safe-area-inset-bottom))] text-[#f7fbf8]">
+    <main className="app-shell relative overflow-x-hidden px-4 py-6 pb-[max(6rem,env(safe-area-inset-bottom))]">
       <Image src="/assets/velora/hero-environment-v2.png" alt="" fill sizes="100vw" className="object-cover object-left opacity-40" priority />
       <div className="hero-veil" />
       <div className="relative z-10 mx-auto flex max-w-[1100px] items-center justify-between gap-3">
@@ -48,7 +48,7 @@ export function AuthShell({ title, body, children, footer }: { title: string; bo
           <h1 className="scene-title mt-4 text-[#f7fbf8]">{title}</h1>
           {body ? <p className="scene-body mt-4 text-[#adbeaf]">{body}</p> : null}
         </div>
-        <div className="rounded-3xl border border-white/10 bg-[#0d1a14]/95 p-5 shadow-[0_30px_80px_rgba(0,0,0,0.45)] backdrop-blur sm:p-6">
+        <div className="app-panel rounded-3xl bg-[#14221b]/95 p-5 shadow-[0_30px_80px_rgba(0,0,0,0.45)] backdrop-blur sm:p-6">
           <div className="lg:hidden">
             <h1 className="text-2xl font-bold leading-snug">{title}</h1>
             {body ? <p className="mt-2 text-sm leading-6 text-[#adbeaf]">{body}</p> : null}

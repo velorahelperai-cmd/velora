@@ -72,8 +72,8 @@ export function StoryScenes({
         <div className="scroll-hint hidden lg:flex" data-seq="scroll-hint" aria-hidden="true">
           <span>{copy.scrollHint}</span>
         </div>
-        <div data-seq="stage" className="relative z-10 mx-auto grid min-h-[78svh] max-w-[1380px] items-center gap-10 lg:grid-cols-2">
-          <div className="relative order-2">
+        <div data-seq="stage" data-phone="start" className="story-stage relative z-10 mx-auto min-h-[78svh] max-w-[1380px]">
+          <div className="story-visual relative">
             <div className="pressure-card pointer-events-none absolute start-0 top-2 z-10 max-w-[230px] rounded-3xl rounded-es-md border border-white/15 bg-[#14221b]/92 px-5 py-3 text-lg font-medium text-[#f7fbf8] shadow-[0_18px_40px_rgba(0,0,0,0.4)] lg:-top-6" data-seq="chip">
               {pressure.chips[0]}
             </div>
@@ -92,7 +92,7 @@ export function StoryScenes({
               />
             </div>
           </div>
-          <div className="order-1">
+          <div className="story-copy">
             <p data-seq="tagline" className="text-sm font-medium text-[#38dc89]">{copy.tagline}</p>
             <h1 className="scene-title mt-3 text-[#f7fbf8]">{pressure.title}</h1>
             <p className="scene-body mt-5 text-[#adbeaf]">{pressure.body}</p>
@@ -116,8 +116,8 @@ export function StoryScenes({
 
       <section id={knowledge.anchor} data-scene="2" data-bridge className="scene scene-light px-6 py-20 lg:px-12">
         <Veil to="dark" />
-        <div data-seq="stage" className="relative z-10 mx-auto grid max-w-[1380px] items-center gap-12 lg:grid-cols-2">
-          <div className="order-2 stage-row">
+        <div data-seq="stage" data-phone="end" className="story-stage relative z-10 mx-auto max-w-[1380px]">
+          <div className="story-visual stage-row">
             <div>
               <SourceCard tone="light" title={knowledge.example.cardTitle} body={knowledge.example.card} />
               <span data-seq="highlight" className="mt-3 block h-0.5 w-16 bg-[#087443]" />
@@ -127,7 +127,7 @@ export function StoryScenes({
               answer={knowledge.example.answer}
             />
           </div>
-          <div className="order-1">
+          <div className="story-copy">
             <h2 className="scene-title text-[#101b16]">{knowledge.title}</h2>
             <p className="scene-body mt-5 text-[#4f6258]">{knowledge.body}</p>
           </div>
@@ -136,8 +136,8 @@ export function StoryScenes({
 
       <section id={reply.anchor} data-scene="3" className="scene scene-dark px-6 py-20 lg:px-12">
         <Veil to="light" />
-        <div data-seq="stage" className="relative z-10 mx-auto grid max-w-[1380px] items-center gap-12 lg:grid-cols-2">
-          <div className="order-2 stage-row">
+        <div data-seq="stage" data-phone="start" className="story-stage relative z-10 mx-auto max-w-[1380px]">
+          <div className="story-visual stage-row">
             <SourceCard title={reply.example.cardTitle} body={reply.example.card} />
             <Trace />
             <PhoneMock
@@ -148,7 +148,7 @@ export function StoryScenes({
               onMenu={onMenu}
             />
           </div>
-          <div className="order-1">
+          <div className="story-copy">
             <h2 className="scene-title text-[#f7fbf8]">{reply.title}</h2>
             <p className="scene-body mt-5 text-[#adbeaf]">{reply.body}</p>
           </div>
@@ -157,8 +157,8 @@ export function StoryScenes({
 
       <section id={enquiry.anchor} data-scene="4" className="scene scene-light px-6 py-20 lg:px-12">
         <Veil to="dark" />
-        <div data-seq="stage" className="relative z-10 mx-auto grid max-w-[1380px] items-center gap-12 lg:grid-cols-2">
-          <div className="order-2 stage-row lg:scale-[0.87]">
+        <div data-seq="stage" data-phone="end" className="story-stage relative z-10 mx-auto max-w-[1380px]">
+          <div className="story-visual stage-row lg:scale-[0.87]">
             <div>
               <SourceCard tone="light" seq="record" title={enquiry.example.cardTitle} body={enquiry.example.card} />
               <p data-seq="confirmed" className="mt-3 text-sm font-medium text-[#087443]">✓ {copy.confirmed}</p>
@@ -168,7 +168,7 @@ export function StoryScenes({
               answer={enquiry.example.answer}
             />
           </div>
-          <div className="order-1">
+          <div className="story-copy">
             <h2 className="scene-title text-[#101b16]">{enquiry.title}</h2>
             <p className="scene-body mt-5 text-[#4f6258]">{enquiry.body}</p>
           </div>
@@ -177,8 +177,8 @@ export function StoryScenes({
 
       <section id={handoff.anchor} data-scene="5" className="scene scene-dark px-6 py-20 lg:px-12">
         <Veil to="light" />
-        <div data-seq="stage" className="relative z-10 mx-auto grid max-w-[1380px] items-center gap-12 lg:grid-cols-2">
-          <div className="order-2 stage-row lg:scale-[0.86]">
+        <div data-seq="stage" data-phone="start" className="story-stage relative z-10 mx-auto max-w-[1380px]">
+          <div className="story-visual stage-row lg:scale-[0.86]">
             <div>
               <SourceCard seq="staff" avatar={copy.staffInitial} title={handoff.example.cardTitle} body={handoff.example.card} />
               <p data-seq="paused" data-indicator="paused" className="mt-4 inline-flex rounded-full bg-[#38dc89]/15 px-4 py-2 text-sm text-[#38dc89]">
@@ -191,7 +191,7 @@ export function StoryScenes({
               answer={handoff.example.answer}
             />
           </div>
-          <div className="order-1">
+          <div className="story-copy">
             <h2 className="scene-title text-[#f7fbf8]">{handoff.title}</h2>
             <p className="scene-body mt-5 text-[#adbeaf]">{handoff.body}</p>
           </div>

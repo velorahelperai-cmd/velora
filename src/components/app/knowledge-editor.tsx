@@ -268,11 +268,11 @@ export function KnowledgeEditor({
   }
 
   const statusStyle: Record<string, string> = {
-    draft: "bg-white/10 text-[#dfe9e2]",
-    processing: "bg-[#d9a467]/15 text-[#f0cf9d]",
-    stored: "bg-[#38dc89]/10 text-[#9af0c3]",
-    ready: "bg-[#38dc89]/15 text-[#9af0c3]",
-    failed: "bg-[#e07a5f]/15 text-[#f3a08a]",
+    draft: "bg-white/10 text-[#dfe9e2] ring-1 ring-white/15",
+    processing: "bg-[#d9a467]/20 text-[#f0cf9d] ring-1 ring-[#d9a467]/35",
+    stored: "bg-[#d9a467]/18 text-[#f0cf9d] ring-1 ring-[#d9a467]/40",
+    ready: "bg-[#38dc89]/18 text-[#9af0c3] ring-1 ring-[#38dc89]/35",
+    failed: "bg-[#e07a5f]/18 text-[#f3a08a] ring-1 ring-[#e07a5f]/40",
   };
 
   if (loadFailed) {
@@ -287,16 +287,16 @@ export function KnowledgeEditor({
   }
 
   return (
-    <div className="grid gap-4">
-      {!compact ? <p className="text-sm leading-6 text-[#adbeaf]">{copy.knowledge.body}</p> : null}
-      <p className="text-xs leading-5 text-[#8da195]">{copy.knowledge.examples}</p>
+    <div className="grid gap-5">
+      {!compact ? <p className="app-muted max-w-2xl text-base leading-7">{copy.knowledge.body}</p> : null}
+      <p className="app-muted-soft text-xs leading-5">{copy.knowledge.examples}</p>
       {!canWrite ? <Notice tone="info">{copy.knowledge.readOnly}</Notice> : null}
       {notice ? <Notice tone="success">{notice}</Notice> : null}
       {error ? <Notice tone="error">{error}</Notice> : null}
       {uploadResults.length ? (
-        <ul className="grid gap-1 rounded-2xl border border-white/10 bg-white/5 p-3 text-xs">
+        <ul className="grid gap-1 rounded-xl border border-[color:var(--color-line)] bg-[#14221b]/80 p-3 text-xs">
           {uploadResults.map((r) => (
-            <li key={r.fileName} className={r.ok ? "text-[#9af0c3]" : "text-[#f3a08a]"}>
+            <li key={r.fileName} className={r.ok ? "text-[#f0cf9d]" : "text-[#f3a08a]"}>
               <span dir="ltr">{r.fileName}</span>
               {" — "}
               {r.ok ? copy.knowledge.statuses.stored : r.message}
@@ -326,7 +326,7 @@ export function KnowledgeEditor({
 
       {mode && canWrite ? (
         <form
-          className="grid gap-3 rounded-2xl border border-white/10 bg-white/5 p-4"
+          className="grid gap-3 rounded-2xl border border-[color:var(--color-line)] bg-[#14221b] p-4"
           noValidate
           onSubmit={(e) => { e.preventDefault(); save(); }}
         >
@@ -373,17 +373,17 @@ export function KnowledgeEditor({
       {sources.length === 0 ? (
         <EmptyState title={copy.knowledge.empty} />
       ) : (
-        <ul className="grid gap-2">
+        <ul className="grid gap-1">
           {sources.map((src) => (
-            <li key={src.id} className="grid gap-2 rounded-2xl border border-white/10 bg-[#0d1a14] p-4 sm:grid-cols-[1fr_auto] sm:items-start">
+            <li key={src.id} className="grid gap-2 border-b border-[color:var(--color-line)] py-4 last:border-b-0 sm:grid-cols-[1fr_auto] sm:items-start">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <p className="font-medium text-[#f7fbf8]">{src.title}</p>
-                  <span className={`rounded-full px-2 py-0.5 text-xs ${statusStyle[src.status]}`}>
+                  <p className="font-semibold tracking-tight text-[#f7fbf8]">{src.title}</p>
+                  <span className={`rounded-md px-2 py-0.5 text-[11px] font-medium ${statusStyle[src.status]}`}>
                     {statusLabel(src.status, copy)}
                   </span>
                 </div>
-                <p className="mt-1 line-clamp-2 text-sm leading-6 text-[#adbeaf]">
+                <p className="app-muted mt-1.5 line-clamp-2 text-sm leading-6">
                   {src.kind === "file" ? <span dir="ltr">{src.file_name}</span> : src.content}
                 </p>
               </div>
@@ -441,7 +441,7 @@ export function KnowledgeEditor({
           ))}
         </ul>
       )}
-      <p className="text-xs leading-5 text-[#8da195]">{copy.knowledge.statusNote}</p>
+      <p className="app-muted-soft text-xs leading-5">{copy.knowledge.statusNote}</p>
 
       <ConfirmDialog
         open={Boolean(pendingDelete)}

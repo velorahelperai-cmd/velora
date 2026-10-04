@@ -47,10 +47,10 @@ const scenes = [
     key: "knowledge",
     theme: "light" as const,
     anchor: "how",
-    title: { ar: "معلومات نشاطك هي أساس الرد.", en: "Your business information is the basis of every reply." },
+    title: { ar: "معلومات نشاطك… هي أساس كل رد.", en: "Your business details power every reply." },
     body: {
-      ar: "أضف معلومات نشاطك وملفاتك، وراجع المعرفة واختبر الردود قبل التفعيل.",
-      en: "Add your business information and files, review the knowledge and test replies before activation.",
+      ar: "أضف تفاصيل نشاطك وملفاتك، راجعها، واختبر الردود قبل التفعيل.",
+      en: "Add your business details and files, review them, and test replies before activation.",
     },
     example: {
       ar: {
