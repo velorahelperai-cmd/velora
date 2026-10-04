@@ -11,6 +11,19 @@ export type AccessResult =
   | { ok: true; context: CompanyContext }
   | { ok: false; code: AccessCode };
 
+function emptyContext(
+  partial: Partial<CompanyContext> & Pick<CompanyContext, "userId" | "email" | "phone" | "identityVerified" | "isPlatformAdmin">,
+): CompanyContext {
+  return {
+    fullName: "",
+    needsProfileName: true,
+    emailConfirmed: partial.identityVerified,
+    company: null,
+    membership: null,
+    ...partial,
+  };
+}
+
 async function loadAuth() {
   const supabase = await createClient();
   const { data: claimsData, error: claimsError } = await supabase.auth.getClaims();
@@ -22,6 +35,8 @@ async function loadAuth() {
       phone: "",
       identityVerified: false,
       isPlatformAdmin: false,
+      fullName: "",
+      needsProfileName: true,
     };
   }
   const userId = String(claimsData.claims.sub);
@@ -35,11 +50,31 @@ async function loadAuth() {
       phone: "",
       identityVerified: false,
       isPlatformAdmin: false,
+      fullName: "",
+      needsProfileName: true,
     };
   }
 
   const identityVerified = Boolean(user.email_confirmed_at || user.phone_confirmed_at);
   const { data: adminFlag } = await supabase.rpc("is_platform_admin");
+
+  // Ensure a profile row exists (covers users created before the trigger).
+  const metaName = String(
+    user.user_metadata?.full_name || user.user_metadata?.name || "",
+  ).trim();
+  await supabase.from("profiles").upsert(
+    { user_id: userId, full_name: metaName.slice(0, 120) },
+    { onConflict: "user_id", ignoreDuplicates: true },
+  );
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("full_name")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  const fullName = (profile?.full_name || metaName || "").trim();
+  const needsProfileName = fullName.length < 2;
 
   return {
     supabase,
@@ -48,6 +83,8 @@ async function loadAuth() {
     phone: user.phone ?? "",
     identityVerified,
     isPlatformAdmin: Boolean(adminFlag),
+    fullName,
+    needsProfileName,
   };
 }
 
@@ -55,7 +92,16 @@ export async function getCompanyAccess(
   requiredRole?: CompanyRole,
 ): Promise<AccessResult> {
   try {
-    const { supabase, userId, email, phone, identityVerified, isPlatformAdmin } = await loadAuth();
+    const {
+      supabase,
+      userId,
+      email,
+      phone,
+      identityVerified,
+      isPlatformAdmin,
+      fullName,
+      needsProfileName,
+    } = await loadAuth();
     if (!userId) return { ok: false, code: "UNAUTHENTICATED" };
     if (!identityVerified) return { ok: false, code: "UNVERIFIED" };
 
@@ -73,16 +119,15 @@ export async function getCompanyAccess(
     if (!membership) {
       return {
         ok: true,
-        context: {
+        context: emptyContext({
           userId,
           email,
           phone,
-          emailConfirmed: identityVerified,
+          fullName,
+          needsProfileName,
           identityVerified,
           isPlatformAdmin,
-          company: null,
-          membership: null,
-        },
+        }),
       };
     }
 
@@ -108,6 +153,8 @@ export async function getCompanyAccess(
         userId,
         email,
         phone,
+        fullName: fullName || member.member_name || "",
+        needsProfileName: (fullName || member.member_name || "").trim().length < 2,
         emailConfirmed: identityVerified,
         identityVerified,
         isPlatformAdmin,
@@ -129,21 +176,28 @@ export async function requirePlatformAdmin(): Promise<AccessResult> {
 
 export async function requireVerifiedUser(): Promise<AccessResult> {
   try {
-    const { userId, email, phone, identityVerified, isPlatformAdmin } = await loadAuth();
+    const {
+      userId,
+      email,
+      phone,
+      identityVerified,
+      isPlatformAdmin,
+      fullName,
+      needsProfileName,
+    } = await loadAuth();
     if (!userId) return { ok: false, code: "UNAUTHENTICATED" };
     if (!identityVerified) return { ok: false, code: "UNVERIFIED" };
     return {
       ok: true,
-      context: {
+      context: emptyContext({
         userId,
         email,
         phone,
-        emailConfirmed: identityVerified,
+        fullName,
+        needsProfileName,
         identityVerified,
         isPlatformAdmin,
-        company: null,
-        membership: null,
-      },
+      }),
     };
   } catch {
     return { ok: false, code: "UNAVAILABLE" };
@@ -155,6 +209,7 @@ export function pathForAccess(result: AccessResult): string {
     if (result.code === "UNVERIFIED") return "/verify-email";
     return "/login";
   }
+  if (result.context.needsProfileName) return "/complete-profile";
   if (result.context.isPlatformAdmin) return "/admin";
   if (!result.context.company) return "/setup";
   if (result.context.membership?.role === "staff") return "/app/conversations";

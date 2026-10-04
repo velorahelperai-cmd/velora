@@ -150,22 +150,34 @@ export function LandingPage({
       </header>
 
       <main>
-        <StoryScenes copy={copy} onMenu={() => setCatalogueOpen(true)} startHref={startHref} startLabel={startLabel} />
-        <Packages copy={copy} selectedPlan={plan} onSelect={selectPlan} />
-        <DemoScene
+        <StoryScenes
           copy={copy}
-          sector={sector}
-          onSector={setSector}
-          onReplay={() => {
-            const root = rootRef.current;
-            if (root) replaySample(root);
-          }}
-          onPrepare={() => {
-            document.getElementById("contact")?.scrollIntoView({ behavior: "smooth" });
-          }}
+          onMenu={() => setCatalogueOpen(true)}
           startHref={startHref}
           startLabel={startLabel}
+          trial={{
+            question: copy.sampleFor(sector).q,
+            answer: copy.sampleFor(sector).a,
+            note: copy.illustrative,
+          }}
+          afterPhone={
+            <DemoScene
+              copy={copy}
+              sector={sector}
+              onSector={setSector}
+              onReplay={() => {
+                const root = rootRef.current;
+                if (root) replaySample(root);
+              }}
+              onPrepare={() => {
+                document.getElementById("contact")?.scrollIntoView({ behavior: "smooth" });
+              }}
+              startHref={startHref}
+              startLabel={startLabel}
+            />
+          }
         />
+        <Packages copy={copy} selectedPlan={plan} onSelect={selectPlan} />
         <Faq copy={copy} />
         <AboutContact
           copy={copy}

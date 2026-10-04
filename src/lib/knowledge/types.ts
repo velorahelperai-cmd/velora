@@ -1,5 +1,6 @@
 export type KnowledgeKind = "text" | "file";
-export type KnowledgeStatus = "draft" | "stored" | "ready" | "failed";
+export type KnowledgeStatus = "draft" | "stored" | "processing" | "ready" | "failed";
+export type KnowledgeFailureCode = "no_text" | "corrupt" | "unsupported" | "extract_failed";
 
 export type KnowledgeSourceRecord = {
   id: string;
@@ -12,6 +13,7 @@ export type KnowledgeSourceRecord = {
   byte_size: number | null;
   storage_path: string | null;
   status: KnowledgeStatus;
+  failure_code: KnowledgeFailureCode | null;
   created_by: string;
   created_at: string;
   updated_at: string;

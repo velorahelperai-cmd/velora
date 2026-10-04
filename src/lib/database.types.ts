@@ -3,6 +3,25 @@ export type Json = string | number | boolean | null | { [key: string]: Json | un
 export type Database = {
   public: {
     Tables: {
+      profiles: {
+        Row: {
+          user_id: string;
+          full_name: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          full_name?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          full_name?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       companies: {
         Row: {
           id: string;
@@ -123,7 +142,8 @@ export type Database = {
           content_type: string | null;
           byte_size: number | null;
           storage_path: string | null;
-          status: "draft" | "stored" | "ready" | "failed";
+          status: "draft" | "stored" | "processing" | "ready" | "failed";
+          failure_code: "no_text" | "corrupt" | "unsupported" | "extract_failed" | null;
           created_by: string;
           created_at: string;
           updated_at: string;
@@ -138,7 +158,8 @@ export type Database = {
           content_type?: string | null;
           byte_size?: number | null;
           storage_path?: string | null;
-          status?: "draft" | "stored" | "ready" | "failed";
+          status?: "draft" | "stored" | "processing" | "ready" | "failed";
+          failure_code?: "no_text" | "corrupt" | "unsupported" | "extract_failed" | null;
           created_by: string;
           created_at?: string;
           updated_at?: string;
@@ -151,8 +172,86 @@ export type Database = {
           content_type?: string | null;
           byte_size?: number | null;
           storage_path?: string | null;
-          status?: "draft" | "stored" | "ready" | "failed";
+          status?: "draft" | "stored" | "processing" | "ready" | "failed";
+          failure_code?: "no_text" | "corrupt" | "unsupported" | "extract_failed" | null;
           updated_at?: string;
+        };
+        Relationships: [];
+      };
+      whatsapp_conversations: {
+        Row: {
+          id: string;
+          company_id: string;
+          phone_number_id: string;
+          customer_wa_id: string;
+          customer_name: string;
+          last_message_at: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          company_id: string;
+          phone_number_id: string;
+          customer_wa_id: string;
+          customer_name?: string;
+          last_message_at?: string;
+          created_at?: string;
+        };
+        Update: {
+          customer_name?: string;
+          last_message_at?: string;
+        };
+        Relationships: [];
+      };
+      whatsapp_messages: {
+        Row: {
+          id: string;
+          company_id: string;
+          conversation_id: string;
+          wa_message_id: string;
+          body: string;
+          message_type: string;
+          received_at: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          company_id: string;
+          conversation_id: string;
+          wa_message_id: string;
+          body: string;
+          message_type?: string;
+          received_at: string;
+          created_at?: string;
+        };
+        Update: {
+          body?: string;
+        };
+        Relationships: [];
+      };
+      whatsapp_delivery_statuses: {
+        Row: {
+          id: string;
+          company_id: string;
+          phone_number_id: string;
+          wa_message_id: string;
+          status: string;
+          recipient_wa_id: string;
+          occurred_at: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          company_id: string;
+          phone_number_id: string;
+          wa_message_id: string;
+          status: string;
+          recipient_wa_id?: string;
+          occurred_at: string;
+          created_at?: string;
+        };
+        Update: {
+          status?: string;
         };
         Relationships: [];
       };

@@ -11,6 +11,8 @@ export const KNOWLEDGE_MAX_BATCH_BYTES = 25 * 1024 * 1024; // 25MB
 
 export const KNOWLEDGE_ALLOWED_EXTENSIONS = [
   "pdf",
+  "txt",
+  "docx",
   "png",
   "jpg",
   "jpeg",
@@ -21,6 +23,8 @@ export const KNOWLEDGE_ALLOWED_EXTENSIONS = [
 /** Canonical MIME types used for validation, upload Content-Type, and the Storage bucket. */
 export const KNOWLEDGE_ALLOWED_MIME_TYPES = [
   "application/pdf",
+  "text/plain",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "image/png",
   "image/jpeg",
   "text/csv",
@@ -29,6 +33,8 @@ export const KNOWLEDGE_ALLOWED_MIME_TYPES = [
 
 const EXT_TO_MIME: Record<string, (typeof KNOWLEDGE_ALLOWED_MIME_TYPES)[number]> = {
   pdf: "application/pdf",
+  txt: "text/plain",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   png: "image/png",
   jpg: "image/jpeg",
   jpeg: "image/jpeg",
@@ -36,7 +42,16 @@ const EXT_TO_MIME: Record<string, (typeof KNOWLEDGE_ALLOWED_MIME_TYPES)[number]>
   xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 };
 
-export const KNOWLEDGE_ACCEPT = ".pdf,.png,.jpg,.jpeg,.csv,.xlsx";
+export const KNOWLEDGE_ACCEPT = ".pdf,.txt,.docx,.png,.jpg,.jpeg,.csv,.xlsx";
+
+const PREPARABLE = new Set(["pdf", "txt", "docx"]);
+
+export function isPreparableKnowledgeFile(fileName: string | null | undefined): boolean {
+  const name = fileName ?? "";
+  const i = name.lastIndexOf(".");
+  if (i < 0) return false;
+  return PREPARABLE.has(name.slice(i + 1).toLowerCase());
+}
 
 export type KnowledgeFileErrorCode =
   | "EMPTY"

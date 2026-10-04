@@ -1,9 +1,8 @@
 "use client";
 
 import { createClient } from "@/lib/supabase/client";
-import { toE164Phone } from "@/lib/auth/site-url";
 
-export type OAuthProvider = "google" | "apple";
+export type OAuthProvider = "google";
 
 function clientCallbackUrl(next = "/setup") {
   const safe = next.startsWith("/") ? next : "/setup";
@@ -13,36 +12,18 @@ function clientCallbackUrl(next = "/setup") {
   return `${origin}/auth/callback?next=${encodeURIComponent(safe)}`;
 }
 
-export async function startOAuth(provider: OAuthProvider, next = "/setup") {
+/** Google OAuth only — Apple/phone are not offered in the UI. */
+export async function startOAuth(provider: OAuthProvider = "google", next = "/setup") {
   const supabase = createClient();
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider,
     options: {
       redirectTo: clientCallbackUrl(next),
-      queryParams: provider === "google" ? { prompt: "select_account" } : undefined,
+      queryParams: { prompt: "select_account" },
     },
   });
   if (error) throw error;
   if (data.url) {
     window.location.assign(data.url);
   }
-}
-
-export async function sendPhoneOtp(phoneInput: string) {
-  const phone = toE164Phone(phoneInput);
-  if (!phone) throw new Error("invalid_phone");
-  const supabase = createClient();
-  const { error } = await supabase.auth.signInWithOtp({ phone });
-  if (error) throw error;
-  return phone;
-}
-
-export async function verifyPhoneOtp(phone: string, token: string) {
-  const supabase = createClient();
-  const { error } = await supabase.auth.verifyOtp({
-    phone,
-    token: token.trim(),
-    type: "sms",
-  });
-  if (error) throw error;
 }

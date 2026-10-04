@@ -5,7 +5,10 @@ export async function proxy(request: NextRequest) {
   const response = await updateSession(request);
   const path = request.nextUrl.pathname;
   const protectedPath =
-    path.startsWith("/app") || path.startsWith("/setup") || path.startsWith("/admin");
+    path.startsWith("/app")
+    || path.startsWith("/setup")
+    || path.startsWith("/admin")
+    || path.startsWith("/complete-profile");
   if (!protectedPath) return response;
 
   const hasAuthCookie = request.cookies

@@ -436,8 +436,16 @@ export function AdminCompanyDetail({
                             date: new Date(k.created_at).toLocaleString(locale === "ar" ? "ar-OM" : "en-GB"),
                           })}
                         </p>
+                        {k.status === "ready" && k.content ? (
+                          <p className="mt-1 line-clamp-2 text-xs text-[#adbeaf]">{k.content}</p>
+                        ) : null}
+                        {k.failure_code ? (
+                          <p className="mt-1 text-xs text-[#f3a08a]">
+                            {(copy.knowledge.reasons as Record<string, string>)[k.failure_code] ?? k.failure_code}
+                          </p>
+                        ) : null}
                       </div>
-                      {k.storage_path && k.status === "stored" ? (
+                      {k.storage_path && k.status !== "draft" ? (
                         <Button
                           variant="secondary"
                           busy={busy}

@@ -26,10 +26,19 @@ export type MembershipRecord = {
   created_at: string;
 };
 
+export type ProfileRecord = {
+  user_id: string;
+  full_name: string;
+  created_at: string;
+  updated_at: string;
+};
+
 export type CompanyContext = {
   userId: string;
   email: string;
   phone: string;
+  fullName: string;
+  needsProfileName: boolean;
   emailConfirmed: boolean;
   identityVerified: boolean;
   isPlatformAdmin: boolean;

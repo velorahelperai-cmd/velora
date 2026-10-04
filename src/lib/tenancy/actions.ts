@@ -14,12 +14,16 @@ export async function signUpWithEmail(input: {
   name: string;
   email: string;
   password: string;
+  confirmPassword: string;
 }): Promise<ActionResult<{ needsVerification: boolean; email: string }>> {
   const name = input.name.trim();
   const email = input.email.trim().toLowerCase();
   const password = input.password;
-  if (!name || !email || password.length < 8) {
+  if (!name || name.length < 2 || !email || password.length < 8) {
     return { ok: false, code: "INVALID_INPUT" };
+  }
+  if (password !== input.confirmPassword) {
+    return { ok: false, code: "INVALID_INPUT", message: "password_mismatch" };
   }
 
   try {
@@ -35,6 +39,12 @@ export async function signUpWithEmail(input: {
     });
     if (error) {
       return { ok: false, code: "AUTH_ERROR", message: error.message };
+    }
+    if (data.user?.id) {
+      await supabase.from("profiles").upsert(
+        { user_id: data.user.id, full_name: name.slice(0, 120) },
+        { onConflict: "user_id" },
+      );
     }
     const needsVerification = !data.user?.email_confirmed_at && !data.session;
     return { ok: true, data: { needsVerification, email } };
@@ -106,13 +116,13 @@ export async function requestPasswordReset(email: string): Promise<ActionResult>
   if (!cleaned) return { ok: false, code: "INVALID_INPUT" };
   try {
     const supabase = await createClient();
-    const { error } = await supabase.auth.resetPasswordForEmail(cleaned, {
+    // Always return a generic success to avoid revealing whether the email exists.
+    await supabase.auth.resetPasswordForEmail(cleaned, {
       redirectTo: authCallbackUrl("/reset-password"),
     });
-    if (error) return { ok: false, code: "AUTH_ERROR", message: error.message };
     return { ok: true, data: undefined };
   } catch {
-    return { ok: false, code: "UNAVAILABLE" };
+    return { ok: true, data: undefined };
   }
 }
 
@@ -122,9 +132,44 @@ export async function updatePassword(password: string): Promise<ActionResult> {
     const supabase = await createClient();
     const { data: userData } = await supabase.auth.getUser();
     if (!userData.user) return { ok: false, code: "UNAUTHENTICATED" };
+    // Do not invent passwords for Google-only accounts from the app; only recovery sessions update password.
     const { error } = await supabase.auth.updateUser({ password });
     if (error) return { ok: false, code: "AUTH_ERROR", message: error.message };
     return { ok: true, data: undefined };
+  } catch {
+    return { ok: false, code: "UNAVAILABLE" };
+  }
+}
+
+export async function completeProfileName(name: string): Promise<ActionResult<{ next: string }>> {
+  const fullName = name.trim();
+  if (fullName.length < 2 || fullName.length > 120) {
+    return { ok: false, code: "INVALID_INPUT" };
+  }
+  try {
+    const supabase = await createClient();
+    const { data: userData } = await supabase.auth.getUser();
+    const user = userData.user;
+    if (!user) return { ok: false, code: "UNAUTHENTICATED" };
+    if (!user.email_confirmed_at && !user.phone_confirmed_at) {
+      return { ok: false, code: "UNVERIFIED" };
+    }
+
+    const { error } = await supabase.from("profiles").upsert(
+      { user_id: user.id, full_name: fullName },
+      { onConflict: "user_id" },
+    );
+    if (error) return { ok: false, code: "AUTH_ERROR", message: error.message };
+
+    // Keep member_name in sync when membership already exists (no new company).
+    await supabase
+      .from("company_members")
+      .update({ member_name: fullName })
+      .eq("user_id", user.id)
+      .eq("status", "active");
+
+    const access = await getCompanyAccess();
+    return { ok: true, data: { next: pathForAccess(access) } };
   } catch {
     return { ok: false, code: "UNAVAILABLE" };
   }
@@ -163,7 +208,11 @@ export async function saveOwnerBusiness(input: {
       p_hours: input.hours,
       p_contact_phone: input.contactPhone,
       p_contact_email: input.contactEmail,
-      p_member_name: input.memberName ?? access.context.membership?.member_name ?? "",
+      p_member_name:
+        input.memberName
+        ?? access.context.membership?.member_name
+        ?? access.context.fullName
+        ?? "",
     });
     if (error || !data) {
       return { ok: false, code: "AUTH_ERROR", message: error?.message };

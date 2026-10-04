@@ -13,10 +13,10 @@ export function Packages({
     <section id="packages" data-scene="8" className="scene scene-dark px-6 py-20 lg:px-12 lg:py-24">
       <div data-seq="veil" aria-hidden="true" className="scene-veil" style={{ background: "#07110d" }} />
       <div data-seq="stage" className="relative z-10 mx-auto max-w-[1380px]">
-        <h2 className="scene-title mx-auto max-w-none text-center text-[#f7fbf8] lg:whitespace-nowrap">
+        <h2 data-seq="packages-title" className="mx-auto max-w-[22ch] text-center text-[clamp(2rem,4vw,3.25rem)] font-bold leading-snug text-[#f7fbf8] sm:max-w-none">
           {copy.packagesTitle}
         </h2>
-        <p className="scene-body mx-auto mt-4 max-w-[46ch] text-center text-[#b7c6b9]">
+        <p data-seq="packages-lead" className="mx-auto mt-4 max-w-[46ch] text-center text-lg leading-8 text-[#d5e4da]">
           {copy.packagesBody}
         </p>
         <div
@@ -24,7 +24,7 @@ export function Packages({
           data-seq="trace"
           aria-hidden="true"
         />
-        <div className="mt-10 grid items-stretch gap-5 lg:grid-cols-3 lg:gap-6 lg:items-end">
+        <div className="mt-10 grid items-stretch gap-5 lg:grid-cols-3 lg:gap-6">
           {copy.plans.map((plan) => {
             const selected = selectedPlan === plan.id;
             const featured = plan.id === "expanded";
@@ -32,23 +32,25 @@ export function Packages({
               <article
                 key={plan.id}
                 data-seq="plan"
-                className={`flex flex-col rounded-[1.75rem] p-6 text-[#101b16] transition duration-200 ${
-                  featured
-                    ? "bg-[#f5f8f5] shadow-[0_24px_60px_rgba(0,0,0,0.35)] lg:-translate-y-3 lg:p-7"
-                    : "bg-[#eef5f0]"
+                className={`flex h-full flex-col rounded-[1.75rem] p-6 text-[#101b16] ${
+                  featured ? "bg-[#f5f8f5] shadow-[0_24px_60px_rgba(0,0,0,0.28)]" : "bg-[#eef5f0]"
                 } ${
                   selected
-                    ? "ring-2 ring-[#38dc89] ring-offset-4 ring-offset-[#07110d]"
+                    ? "ring-2 ring-[#38dc89] ring-offset-4 ring-offset-[#0d1b14]"
                     : featured
                       ? "border-t-[5px] border-[#087443]"
                       : "border border-[#c5d6cb]"
                 }`}
               >
-                <h3 className="text-2xl font-bold tracking-tight">{plan.name}</h3>
-                <p className="mt-2 text-sm leading-6 text-[#4f6258]">{plan.purpose}</p>
-                <p className="mt-5 text-lg font-bold text-[#101b16]">{copy.price}</p>
-                <p className="mt-1 text-sm text-[#4f6258]">{copy.allowance}</p>
-                <ul className="mt-5 flex flex-1 flex-col gap-2.5 text-sm leading-6">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="text-2xl font-bold tracking-tight">{plan.name}</h3>
+                  {featured ? (
+                    <span className="rounded-full bg-[#def5e7] px-3 py-1 text-sm font-medium text-[#087443]">{copy.suggested}</span>
+                  ) : null}
+                </div>
+                <p className="mt-2 min-h-[3.5rem] text-base leading-7 text-[#4f6258]">{plan.purpose}</p>
+                <p className="mt-4 text-base font-bold text-[#101b16]">{copy.price}</p>
+                <ul className="mt-5 flex flex-1 flex-col gap-2.5 text-base leading-7">
                   {plan.features.map((feature) => (
                     <li key={feature.text} className="flex gap-2">
                       <span className="mt-0.5 text-[#087443]" aria-hidden="true">✓</span>

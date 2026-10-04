@@ -60,14 +60,21 @@ export function WorkspaceShell({ title, children, actions }: { title: string; ch
         const { data: userData } = await supabase.auth.getUser();
         const user = userData.user;
         if (!user) return;
-        const { data: membership } = await supabase
-          .from("company_members")
-          .select("role, member_name, company_id, status")
-          .eq("user_id", user.id)
-          .eq("status", "active")
-          .order("created_at", { ascending: true })
-          .limit(1)
-          .maybeSingle();
+        const [{ data: membership }, { data: profileRow }] = await Promise.all([
+          supabase
+            .from("company_members")
+            .select("role, member_name, company_id, status")
+            .eq("user_id", user.id)
+            .eq("status", "active")
+            .order("created_at", { ascending: true })
+            .limit(1)
+            .maybeSingle(),
+          supabase
+            .from("profiles")
+            .select("full_name")
+            .eq("user_id", user.id)
+            .maybeSingle(),
+        ]);
         if (!membership || cancelled) return;
         const { data: company } = await supabase
           .from("companies")
@@ -75,15 +82,21 @@ export function WorkspaceShell({ title, children, actions }: { title: string; ch
           .eq("id", membership.company_id)
           .maybeSingle();
         if (cancelled) return;
+        const displayName =
+          profileRow?.full_name?.trim()
+          || membership.member_name
+          || (user.user_metadata?.full_name as string)
+          || user.email
+          || "User";
         setProfile({
-          name: membership.member_name || (user.user_metadata?.full_name as string) || user.email || "User",
+          name: displayName,
           email: user.email ?? "",
           role: membership.role,
           companyName: company?.display_name ?? "",
         });
         update({
           account: {
-            name: membership.member_name || (user.user_metadata?.full_name as string) || "User",
+            name: displayName,
             email: user.email ?? "",
             role: membership.role,
           },

@@ -6,13 +6,14 @@ import {
   getDirection,
   resolveLocale,
 } from "@/lib/i18n";
+import { CacheBootstrap } from "@/components/cache-bootstrap";
 import { DemoProvider } from "@/lib/demo-state";
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Velora",
   description:
-    "Velora — WhatsApp customer-service assistant for your business.",
+    "Velora prepares business information and enquiries. Automatic replies and customer WhatsApp are not active yet.",
 };
 
 export default async function RootLayout({
@@ -30,6 +31,7 @@ export default async function RootLayout({
     <html lang={locale} dir={dir} className="no-js">
       <body>
         <DemoProvider initialLocale={locale}>{children}</DemoProvider>
+        <CacheBootstrap />
       </body>
     </html>
   );

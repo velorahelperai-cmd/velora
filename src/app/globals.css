@@ -173,9 +173,9 @@ html[dir="ltr"] .hero-environment img {
   background:
     linear-gradient(
       90deg,
-      rgba(7, 17, 13, 0.28) 0%,
-      rgba(7, 17, 13, 0.55) 46%,
-      rgba(7, 17, 13, 0.92) 72%,
+      rgba(7, 17, 13, 0.45) 0%,
+      rgba(7, 17, 13, 0.72) 42%,
+      rgba(7, 17, 13, 0.94) 68%,
       #07110d 100%
     ),
     radial-gradient(circle at 18% 70%, rgba(217, 164, 103, 0.12), transparent 36%);
@@ -185,9 +185,9 @@ html[dir="ltr"] .hero-veil {
   background:
     linear-gradient(
       270deg,
-      rgba(7, 17, 13, 0.28) 0%,
-      rgba(7, 17, 13, 0.55) 46%,
-      rgba(7, 17, 13, 0.92) 72%,
+      rgba(7, 17, 13, 0.45) 0%,
+      rgba(7, 17, 13, 0.72) 42%,
+      rgba(7, 17, 13, 0.94) 68%,
       #07110d 100%
     ),
     radial-gradient(circle at 72% 70%, rgba(217, 164, 103, 0.1), transparent 36%);
@@ -211,16 +211,17 @@ html[dir="ltr"] .hero-veil {
 }
 
 .scene-title {
-  font-size: clamp(2rem, 4vw, 56px);
+  font-size: clamp(1.85rem, 3.2vw, 3.15rem);
   font-weight: 700;
-  line-height: 1.45;
-  max-width: 16ch;
+  line-height: 1.35;
+  max-width: 22ch;
+  text-wrap: balance;
 }
 
 .scene-body {
-  font-size: clamp(1.05rem, 1.55vw, 22px);
-  line-height: 1.8;
-  max-width: 38ch;
+  font-size: clamp(1.05rem, 1.35vw, 1.25rem);
+  line-height: 1.75;
+  max-width: 42ch;
 }
 
 .scene {
@@ -229,16 +230,25 @@ html[dir="ltr"] .hero-veil {
 }
 
 /* Typing indicator: only exists while desktop motion is active; fades out as the reply lands. */
+.chat-turn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
 .typing {
   display: none;
-  position: absolute;
-  inset-inline-start: 0;
-  top: 0;
+  position: relative;
+  box-sizing: border-box;
+  width: fit-content;
+  height: 0;
+  overflow: hidden;
   gap: 4px;
   align-items: center;
-  padding: 10px 12px;
+  margin: 0;
+  padding: 0 10px;
   border-radius: 16px;
-  border: 1px solid #d7e4db;
+  border: 1px solid transparent;
   background: #fff;
   opacity: 0;
 }
@@ -307,7 +317,8 @@ html[dir="ltr"] .hero-veil {
 
 @media (prefers-reduced-motion: reduce) {
   .typing, .scroll-hint { display: none !important; }
-  .landing-chat-float { animation: none !important; }
+  .landing-chat-float,
+  .phone-orbit li { animation: none !important; }
 }
 
 .scene-veil {
@@ -346,10 +357,63 @@ footer[id],
 }
 
 .phone-shell {
-  width: min(100%, 260px);
+  width: min(100%, 280px);
   aspect-ratio: 1024 / 1536;
   position: relative;
-  filter: drop-shadow(0 28px 48px rgba(0, 0, 0, 0.55));
+  transform-style: preserve-3d;
+}
+
+/* Thickness sits on the drawn handset, not the transparent canvas around it. */
+.phone-shell::before {
+  content: "";
+  position: absolute;
+  left: 16.4%;
+  top: 5.1%;
+  width: 67.2%;
+  height: 89.8%;
+  border-radius: 11% / 6.5%;
+  background: linear-gradient(100deg, #2c3034 0%, #121416 18%, #3a3e42 46%, #0e1012 100%);
+  transform: translate3d(7px, 10px, -18px);
+  box-shadow: 0 18px 28px rgba(0, 0, 0, 0.34);
+  z-index: 0;
+  pointer-events: none;
+}
+
+.phone-orbit {
+  position: absolute;
+  inset: -12% -34%;
+  z-index: 4;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  pointer-events: none;
+}
+
+.phone-orbit li {
+  --drift: 7px;
+  position: absolute;
+  max-width: 9.5rem;
+  border: 1px solid #3d9a6a;
+  background: rgba(10, 28, 22, 0.94);
+  color: #f7fbf8;
+  border-radius: 999px;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.82rem;
+  line-height: 1.3;
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.28);
+  animation: phone-note-float 4.8s ease-in-out infinite;
+}
+
+.phone-orbit li:nth-child(odd) { --drift: -8px; }
+.phone-orbit li:nth-child(1) { top: 2%; inset-inline-start: 0; animation-duration: 4.4s; }
+.phone-orbit li:nth-child(2) { top: 16%; inset-inline-end: 0; animation-duration: 5.3s; animation-delay: -1.1s; }
+.phone-orbit li:nth-child(3) { top: 46%; inset-inline-start: -4%; animation-duration: 4.9s; animation-delay: -2.2s; }
+.phone-orbit li:nth-child(4) { bottom: 20%; inset-inline-end: -2%; animation-duration: 5.6s; animation-delay: -0.7s; }
+.phone-orbit li:nth-child(5) { bottom: 4%; inset-inline-start: 14%; animation-duration: 4.2s; animation-delay: -2.8s; }
+
+@keyframes phone-note-float {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50% { transform: translate3d(var(--drift), -11px, 0); }
 }
 
 .phone-frame {
@@ -363,28 +427,40 @@ footer[id],
 
 /* Bubble type scales with the phone so long English lines never clip on narrow screens. */
 .chat-bubble {
-  font-size: clamp(10px, 3.1cqw + 1px, 14px);
-  line-height: 1.4;
+  font-size: clamp(14px, 4.6cqw, 17px);
+  line-height: 1.45;
   overflow-wrap: anywhere;
-  hyphens: auto;
 }
 
 .phone-shell {
   container-type: inline-size;
 }
 
+/* Hole measured from phone-frame-v1.png (1024×1536): the glass, not the canvas. */
 .phone-screen {
   position: absolute;
-  left: 18%;
-  top: 8%;
-  width: 64%;
-  height: 83%;
-  border-radius: 22px;
+  left: 20.02%;
+  top: 6.97%;
+  width: 59.96%;
+  height: 85.94%;
+  border-radius: 9.3% / 4.3%;
   overflow: hidden;
   background: #f4f7f5;
   z-index: 3;
   display: flex;
   flex-direction: column;
+}
+
+.phone-screen::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    linear-gradient(118deg, rgba(255, 255, 255, 0.34), rgba(255, 255, 255, 0) 34%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 18%);
+  pointer-events: none;
+  z-index: 5;
 }
 
 .pressure-card,
@@ -407,7 +483,7 @@ footer[id],
   gap: 16px;
 }
 
-/* Story stages: alternate phone left/right on desktop; text-first on mobile. */
+/* Story stages: alternate phone slot left/right on desktop; text-first on mobile. */
 .story-stage {
   display: grid;
   gap: 2.5rem;
@@ -427,13 +503,75 @@ footer[id],
   order: 1;
 }
 
+.phone-slot {
+  display: none;
+  width: min(100%, 280px);
+  aspect-ratio: 1024 / 1536;
+  flex-shrink: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.story-theater-phone {
+  display: none;
+}
+
+.story-theater-screen {
+  /* Must stay absolute like .phone-screen — relative here pulled the chat out of the frame. */
+  overflow: hidden;
+}
+
+.phone-screen-layer {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: #f4f7f5;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.phone-screen-layer:first-child {
+  visibility: visible;
+  pointer-events: auto;
+}
+
+/* Desktop layout: two columns; local phones remain until motion initializes. */
 @media (min-width: 1024px) {
-  .story-stage {
-    grid-template-columns: 1fr 1fr;
-    gap: 3.25rem;
+  .story-phone-range {
+    position: relative;
+    overflow: visible;
   }
 
-  /* LTR: start = phone on visual left */
+  .story-phone-local {
+    display: block;
+    width: 300px;
+  }
+
+  .story-stage {
+    grid-template-columns: minmax(0, 1.05fr) minmax(320px, 0.95fr);
+    gap: 3.5rem 4.5rem;
+    align-items: center;
+  }
+
+  .story-copy {
+    position: relative;
+    z-index: 3;
+    max-width: 34rem;
+    justify-self: start;
+  }
+
+  .story-visual {
+    position: relative;
+    z-index: 1;
+    min-height: calc(300px * 1536 / 1024);
+  }
+
+  .story-visual .stage-row {
+    gap: 1.25rem;
+    min-height: calc(300px * 1536 / 1024);
+  }
+
   html[dir="ltr"] .story-stage[data-phone="start"] .story-visual {
     order: 1;
   }
@@ -447,7 +585,6 @@ footer[id],
     order: 1;
   }
 
-  /* RTL: first order sits on the right; order 2 is visual left */
   html[dir="rtl"] .story-stage[data-phone="start"] .story-visual {
     order: 2;
   }
@@ -460,19 +597,205 @@ footer[id],
   html[dir="rtl"] .story-stage[data-phone="end"] .story-copy {
     order: 2;
   }
+
+  /* Theater only after JS motion boots and first phone box is placed. */
+  .motion-desktop .phone-slot {
+    display: block;
+    width: 300px;
+    height: calc(300px * 1536 / 1024);
+    flex: 0 0 300px;
+    align-self: center;
+    visibility: hidden;
+  }
+
+  .motion-desktop .story-phone-local {
+    display: none;
+  }
+
+  .motion-desktop .story-phone-range {
+    position: relative;
+    height: calc(100svh - 68px);
+    min-height: 640px;
+    perspective: 1100px;
+    perspective-origin: 50% 46%;
+  }
+
+  .motion-desktop .story-phone-range > [data-scene] {
+    position: absolute;
+    inset: 0;
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
+    padding-top: 1.25rem;
+    padding-bottom: 1.25rem;
+  }
+
+  .motion-desktop .story-phone-range > [data-scene]:not([data-scene="1"]) {
+    visibility: hidden;
+  }
+
+  .motion-desktop .story-phone-range .story-stage {
+    height: 100%;
+    min-height: 0;
+    align-items: center;
+  }
+
+  .motion-desktop .story-visual {
+    display: flex;
+    align-items: center;
+    height: 100%;
+    min-height: 0;
+  }
+
+  .motion-desktop .story-theater-phone {
+    display: block;
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 6;
+    margin: 0;
+    width: 354px;
+    opacity: 0;
+    transform-origin: center center;
+    will-change: transform;
+    pointer-events: none;
+  }
+
+  .motion-desktop .story-theater-phone::before {
+    transform: translate3d(12px, 16px, -26px);
+    box-shadow: 16px 28px 36px rgba(0, 0, 0, 0.3);
+  }
+
+  .motion-desktop .story-theater-phone .chat-bubble {
+    font-size: clamp(16px, 5.4cqw, 20px);
+    line-height: 1.4;
+  }
+
+  .motion-desktop.motion-theater-ready .story-theater-phone {
+    opacity: 1;
+  }
+
+  .motion-desktop .phone-screen-layer,
+  .motion-desktop .phone-screen-layer:first-child {
+    position: absolute !important;
+    inset: 0;
+    height: auto;
+  }
+
+  .motion-desktop .story-theater-phone [data-seq="menu"] {
+    pointer-events: auto;
+  }
+
+  .motion-desktop [data-scene="9"] .demo-phone {
+    display: none;
+  }
+
+  .motion-desktop [data-scene="9"] .story-copy {
+    z-index: 8;
+    pointer-events: auto;
+  }
+
+  .motion-desktop [data-scene="9"] .scene-title {
+    font-size: clamp(1.7rem, 2.4vw, 2.4rem);
+  }
+
+  .motion-desktop [data-scene="9"] .story-copy .mt-8,
+  .motion-desktop [data-scene="9"] .story-copy .mt-6,
+  .motion-desktop [data-scene="9"] .story-copy .mt-5,
+  .motion-desktop [data-scene="9"] .story-copy .mt-4,
+  .motion-desktop [data-scene="9"] .story-copy .mt-3 {
+    margin-top: 0.55rem;
+  }
+}
+
+/* Demo: phone + floating chat card (after scene 5). */
+.demo-stage {
+  min-height: 420px;
+}
+
+.demo-phone {
+  transform-origin: center bottom;
+}
+
+.demo-chat-card {
+  transform-origin: center bottom;
+}
+
+@media (max-width: 639px) {
+  .demo-chat-card {
+    position: relative;
+    inset: auto;
+    top: auto;
+    margin-top: -4.5rem;
+    margin-inline-start: auto;
+    width: min(100%, 260px);
+  }
+
+  .demo-stage {
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+}
+
+@media (max-width: 1023px) {
+  .story-phone-range {
+    overflow-x: clip;
+  }
+
+  .phone-slot {
+    display: none;
+  }
+
+  .story-theater-phone {
+    display: none !important;
+  }
+
+  .story-phone-local,
+  .demo-phone {
+    display: block;
+    width: min(100%, 260px);
+    max-width: 100%;
+    transform: rotateX(2deg) rotateY(-3deg);
+  }
+
+  .story-copy {
+    max-width: 100%;
+  }
+
+  .story-visual .stage-row {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .source-card {
+    max-width: min(300px, 100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .story-theater-phone {
+    display: none !important;
+  }
+
+  .phone-slot {
+    display: none !important;
+  }
+
+  .story-phone-local {
+    display: block !important;
+  }
 }
 
 @media (min-width: 1024px) {
   .phone-shell {
-    width: 367px;
+    width: 300px;
   }
 
-  .phone-screen {
-    left: 22%;
-    top: 9%;
-    width: 56%;
-    height: 81%;
-    border-radius: 28px;
+  .story-phone-local,
+  .demo-phone {
+    transform: rotateX(4deg) rotateY(-6deg);
   }
 
   .scene {
@@ -491,7 +814,7 @@ footer[id],
   }
 
   .source-card {
-    width: 210px;
+    width: min(100%, 300px);
   }
 
   [data-scene="2"],
@@ -504,12 +827,19 @@ footer[id],
     min-height: 734px;
   }
 
-  [data-scene="6"] article {
-    min-height: 505px;
+  [data-scene="7"].scene-dark,
+  [data-scene="8"].scene-dark {
+    background: #0d1b14;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .story-phone-local,
+  .demo-phone,
+  .phone-shell::before {
+    transform: none !important;
+  }
+
   .pressure-card,
   .source-card,
   .chat-bubble,

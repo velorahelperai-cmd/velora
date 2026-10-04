@@ -1,12 +1,68 @@
 import Image from "next/image";
 
-type PhoneMockProps = {
+type PhoneScreenBodyProps = {
   question: string;
   answer: string;
-  rotation?: number;
-  scale?: number;
   menuLabel?: string;
   onMenu?: () => void;
+  note?: string;
+};
+
+export function PhoneScreenBody({ question, answer, menuLabel, onMenu, note }: PhoneScreenBodyProps) {
+  return (
+    <>
+      <div className="flex items-center justify-between gap-2 border-b border-[#d7e4db] bg-[#f5f8f5] px-2.5 py-2">
+        <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#38dc89] text-[10px] font-bold text-[#072317]">
+          V
+        </span>
+        <span className="min-w-0 truncate text-sm font-semibold text-[#101b16]">Velora</span>
+        {note ? (
+          <span className="shrink-0 rounded-full bg-[#def5e7] px-1.5 py-0.5 text-[10px] font-medium text-[#087443]">{note}</span>
+        ) : null}
+      </div>
+      <div className="flex min-h-0 flex-1 flex-col justify-center gap-2 overflow-hidden px-2.5 py-2">
+        <p data-seq="question" className="chat-bubble ms-auto max-w-[96%] rounded-2xl rounded-es-md bg-[#def5e7] px-2.5 py-1.5 text-[#101b16]">
+          {question}
+        </p>
+        <div className="chat-turn">
+          <span data-seq="typing" aria-hidden="true" className="typing">
+            <i /><i /><i />
+          </span>
+          <p data-seq="answer" className="chat-bubble me-auto max-w-[98%] rounded-2xl rounded-ss-md border border-[#d7e4db] bg-white px-2.5 py-1.5 text-[#101b16]">
+            {answer}
+          </p>
+        </div>
+        {menuLabel && onMenu ? (
+          <button
+            type="button"
+            data-seq="menu"
+            onClick={onMenu}
+            className="me-auto min-h-11 rounded-full px-2 text-sm font-medium text-[#087443] underline"
+          >
+            {menuLabel}
+          </button>
+        ) : null}
+      </div>
+    </>
+  );
+}
+
+export function PhoneFrame() {
+  return (
+    <Image
+      src="/assets/velora/phone-frame-v1.png"
+      alt=""
+      width={1024}
+      height={1536}
+      className="phone-frame"
+    />
+  );
+}
+
+type PhoneMockProps = PhoneScreenBodyProps & {
+  rotation?: number;
+  scale?: number;
+  className?: string;
 };
 
 export function PhoneMock({
@@ -16,53 +72,78 @@ export function PhoneMock({
   scale = 1,
   menuLabel,
   onMenu,
-}: PhoneMockProps) {
+  orbit,
+  className = "",
+}: PhoneMockProps & { orbit?: readonly string[] }) {
   return (
     <div
-      className="phone-shell"
+      className={`phone-shell ${className}`.trim()}
       data-motion
-      style={{ transform: `rotate(${rotation}deg) scale(${scale})` }}
+      style={{ transform: `rotateX(2deg) rotateY(-3deg) rotate(${rotation}deg) scale(${scale})` }}
     >
+      <PhoneOrbit notes={orbit ?? []} />
       <div className="phone-screen">
-        <div className="flex items-center justify-between border-b border-[#d7e4db] bg-[#f5f8f5] px-3 py-2">
-          <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#38dc89] text-xs font-bold text-[#072317]">
-            V
-          </span>
-          <span className="text-xs font-medium text-[#101b16]">Velora</span>
-        </div>
-        <div className="flex min-h-0 flex-1 flex-col justify-center gap-1.5 overflow-y-auto px-2 py-2">
-          <p data-seq="question" className="chat-bubble ms-auto max-w-[96%] rounded-2xl rounded-es-md bg-[#def5e7] px-2.5 py-1.5 text-[#101b16]">
-            {question}
-          </p>
-          <div className="relative">
-            <span data-seq="typing" aria-hidden="true" className="typing me-auto">
-              <i /><i /><i />
-            </span>
-            <p data-seq="answer" className="chat-bubble me-auto max-w-[98%] rounded-2xl rounded-ss-md border border-[#d7e4db] bg-white px-2.5 py-1.5 text-[#101b16]">
-              {answer}
-            </p>
-          </div>
-          {menuLabel && onMenu ? (
-            <button
-              type="button"
-              data-seq="menu"
-              onClick={onMenu}
-              className="me-auto min-h-11 rounded-full px-2 text-sm font-medium text-[#087443] underline"
-            >
-              {menuLabel}
-            </button>
-          ) : null}
-        </div>
+        <PhoneScreenBody question={question} answer={answer} menuLabel={menuLabel} onMenu={onMenu} />
       </div>
-      <Image
-        src="/assets/velora/phone-frame-v1.png"
-        alt=""
-        width={1024}
-        height={1536}
-        className="phone-frame"
-      />
+      <PhoneFrame />
     </div>
   );
+}
+
+export function PhoneOrbit({ notes }: { notes: readonly string[] }) {
+  if (!notes.length) return null;
+  return (
+    <ul className="phone-orbit" data-seq="orbit">
+      {notes.map((note) => (
+        <li key={note}>{note}</li>
+      ))}
+    </ul>
+  );
+}
+
+/** Shared desktop theater phone: one frame, layered screens per story scene. */
+export function StoryTheaterPhone({
+  screens,
+  orbit,
+}: {
+  screens: Array<{
+    id: string;
+    question: string;
+    answer: string;
+    menuLabel?: string;
+    onMenu?: () => void;
+    note?: string;
+  }>;
+  orbit?: readonly string[];
+}) {
+  return (
+    <div data-story-phone className="phone-shell story-theater-phone" aria-hidden="false">
+      <PhoneOrbit notes={orbit ?? []} />
+      <div className="phone-screen story-theater-screen">
+        {screens.map((screen, index) => (
+          <div
+            key={screen.id}
+            data-phone-screen={screen.id}
+            className="phone-screen-layer"
+            style={{ opacity: index === 0 ? 1 : 0 }}
+          >
+            <PhoneScreenBody
+              question={screen.question}
+              answer={screen.answer}
+              menuLabel={screen.menuLabel}
+              onMenu={screen.onMenu}
+              note={screen.note}
+            />
+          </div>
+        ))}
+      </div>
+      <PhoneFrame />
+    </div>
+  );
+}
+
+export function PhoneSlot() {
+  return <div data-phone-slot className="phone-slot" aria-hidden="true" />;
 }
 
 export function SourceCard({
@@ -82,20 +163,20 @@ export function SourceCard({
   return (
     <aside
       data-seq={seq}
-      className={`source-card w-full max-w-[210px] rounded-2xl border bg-white p-4 text-[#101b16] shadow-[0_16px_36px_rgba(0,0,0,0.18)] ${
+      className={`source-card w-full max-w-[300px] rounded-2xl border bg-white p-5 text-[#101b16] shadow-[0_16px_36px_rgba(0,0,0,0.18)] ${
         dark ? "border-[#38dc89]/70" : "border-[#cbddd2]"
       }`}
     >
       {avatar ? (
         <span
           aria-hidden="true"
-          className="mb-2 inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#087443] text-sm font-bold text-white"
+          className="mb-2 inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#087443] text-sm font-bold text-white"
         >
           {avatar}
         </span>
       ) : null}
-      <p className="text-sm font-bold text-[#087443]">{title}</p>
-      <p className="mt-2 text-sm leading-6 text-[#4f6258]">{body}</p>
+      <p className="text-base font-bold text-[#087443]">{title}</p>
+      <p className="mt-2 whitespace-pre-line text-base leading-7 text-[#24382e]">{body}</p>
     </aside>
   );
 }

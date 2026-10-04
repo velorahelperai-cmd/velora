@@ -6,11 +6,13 @@ import {
   listKnowledgeSources,
   repairStoredKnowledgeFile,
   retryFailedKnowledgeFile,
+  retryKnowledgePrepare,
   saveTextKnowledgeSource,
   uploadKnowledgeFiles,
 } from "@/lib/knowledge/actions";
 import {
   KNOWLEDGE_ACCEPT,
+  isPreparableKnowledgeFile,
   validateKnowledgeBatch,
   validateKnowledgeFile,
 } from "@/lib/knowledge/constants";
@@ -48,6 +50,12 @@ function statusLabel(status: string, copy: ReturnType<typeof useAppCopy>) {
   return map[status] ?? status;
 }
 
+function reasonText(code: string | null | undefined, copy: ReturnType<typeof useAppCopy>) {
+  if (!code) return null;
+  const map = copy.knowledge.reasons as Record<string, string>;
+  return map[code] ?? map.extract_failed ?? null;
+}
+
 /** Company knowledge editor (setup + /app/knowledge). Always persists to DB when rendered. */
 export function KnowledgeEditor({
   compact,
@@ -67,7 +75,7 @@ export function KnowledgeEditor({
   const [errors, setErrors] = useState<Partial<Record<"title" | "content" | "files", FieldErrorKey>>>({});
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [uploadResults, setUploadResults] = useState<{ fileName: string; ok: boolean; message?: string }[]>([]);
+  const [uploadResults, setUploadResults] = useState<{ fileName: string; ok: boolean; status?: string; message?: string }[]>([]);
   const [pendingDelete, setPendingDelete] = useState<{ id: string; title: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [retryId, setRetryId] = useState<string | null>(null);
@@ -172,7 +180,8 @@ export function KnowledgeEditor({
         rows.map((r) => ({
           fileName: r.fileName,
           ok: r.ok,
-          message: r.ok ? undefined : fileErrorMessage(r.code, copy),
+          status: r.source?.status,
+          message: r.ok ? undefined : (reasonText(r.source?.failure_code ?? r.code, copy) ?? fileErrorMessage(r.code, copy)),
         })),
       );
       const touched = rows.filter((r) => r.source).map((r) => r.source!);
@@ -250,6 +259,27 @@ export function KnowledgeEditor({
     }
   }
 
+  async function prepareAgain(src: KnowledgeSourceRecord) {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await retryKnowledgePrepare(src.id);
+      if (!result.ok) {
+        setError(reasonText(result.message, copy) ?? result.message ?? copy.knowledge.reasons.extract_failed);
+        return;
+      }
+      setSources((prev) => prev.map((s) => (s.id === src.id ? result.data : s)));
+      if (result.data.status === "failed") {
+        setError(reasonText(result.data.failure_code, copy));
+        return;
+      }
+      setNotice(statusLabel(result.data.status, copy));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function repairDb(src: KnowledgeSourceRecord) {
     setBusy(true);
     setError(null);
@@ -299,7 +329,7 @@ export function KnowledgeEditor({
             <li key={r.fileName} className={r.ok ? "text-[#f0cf9d]" : "text-[#f3a08a]"}>
               <span dir="ltr">{r.fileName}</span>
               {" — "}
-              {r.ok ? copy.knowledge.statuses.stored : r.message}
+              {r.ok ? statusLabel(r.status ?? "stored", copy) : r.message}
             </li>
           ))}
         </ul>
@@ -386,15 +416,26 @@ export function KnowledgeEditor({
                 <p className="app-muted mt-1.5 line-clamp-2 text-sm leading-6">
                   {src.kind === "file" ? <span dir="ltr">{src.file_name}</span> : src.content}
                 </p>
+                {src.kind === "file" && src.status === "ready" && src.content ? (
+                  <p className="app-muted mt-1 line-clamp-2 text-sm leading-6">{src.content}</p>
+                ) : null}
+                {src.failure_code ? (
+                  <p className="mt-1 text-sm leading-6 text-[#f3a08a]">{reasonText(src.failure_code, copy)}</p>
+                ) : null}
               </div>
               {canWrite ? (
                 <div className="flex flex-wrap gap-1">
-                  {src.kind === "file" && src.storage_path && (src.status === "failed" || src.status === "draft") ? (
+                  {src.kind === "file" && src.storage_path && isPreparableKnowledgeFile(src.file_name) ? (
+                    <Button variant="ghost" busy={busy} onClick={() => void prepareAgain(src)}>
+                      {copy.knowledge.retry}
+                    </Button>
+                  ) : null}
+                  {src.kind === "file" && src.storage_path && !isPreparableKnowledgeFile(src.file_name) && (src.status === "failed" || src.status === "draft") ? (
                     <Button variant="ghost" busy={busy} onClick={() => void repairDb(src)}>
                       {copy.knowledge.repair}
                     </Button>
                   ) : null}
-                  {src.kind === "file" && (src.status === "failed" || src.status === "draft") ? (
+                  {src.kind === "file" && !src.storage_path && (src.status === "failed" || src.status === "draft") ? (
                     <>
                       <input
                         id={`retry-${src.id}`}

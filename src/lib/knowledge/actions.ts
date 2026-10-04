@@ -3,12 +3,14 @@
 import { revalidatePath } from "next/cache";
 import {
   KNOWLEDGE_BUCKET,
+  isPreparableKnowledgeFile,
   knowledgeStoragePath,
   resolveKnowledgeContentType,
   validateKnowledgeBatch,
   validateKnowledgeFile,
 } from "@/lib/knowledge/constants";
-import type { KnowledgeSourceRecord, KnowledgeUploadItemResult } from "@/lib/knowledge/types";
+import { extractKnowledgeText } from "@/lib/knowledge/extract";
+import type { KnowledgeFailureCode, KnowledgeSourceRecord, KnowledgeUploadItemResult } from "@/lib/knowledge/types";
 import { createClient } from "@/lib/supabase/server";
 import { getCompanyAccess, requirePlatformAdmin } from "@/lib/tenancy/access";
 import type { AccessCode } from "@/lib/tenancy/types";
@@ -18,7 +20,7 @@ export type KnowledgeActionResult<T = undefined> =
   | { ok: false; code: AccessCode | "AUTH_ERROR" | "STORAGE_ERROR" | "INVALID_INPUT"; message?: string };
 
 const SOURCE_SELECT =
-  "id, company_id, kind, title, content, file_name, content_type, byte_size, storage_path, status, created_by, created_at, updated_at";
+  "id, company_id, kind, title, content, file_name, content_type, byte_size, storage_path, status, failure_code, created_by, created_at, updated_at";
 
 function asSource(row: unknown): KnowledgeSourceRecord {
   return row as KnowledgeSourceRecord;
@@ -67,15 +69,65 @@ async function markFileFailed(
   sourceId: string,
   companyId: string,
   storagePath: string | null,
+  failureCode: KnowledgeFailureCode | null = null,
 ) {
   const { data } = await supabase
     .from("knowledge_sources")
-    .update({ status: "failed", storage_path: storagePath })
+    .update({
+      status: "failed",
+      storage_path: storagePath,
+      failure_code: failureCode,
+      content: "",
+    })
     .eq("id", sourceId)
     .eq("company_id", companyId)
     .select(SOURCE_SELECT)
     .maybeSingle();
   return data ? asSource(data) : null;
+}
+
+/** Replaces extracted text on the same source row. A second run does not insert another copy. */
+async function prepareStoredFile(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  source: KnowledgeSourceRecord,
+  companyId: string,
+  bytes: Uint8Array,
+) {
+  await supabase
+    .from("knowledge_sources")
+    .update({ status: "processing", failure_code: null })
+    .eq("id", source.id)
+    .eq("company_id", companyId);
+
+  const extracted = await extractKnowledgeText({
+    fileName: source.file_name,
+    contentType: source.content_type,
+    bytes,
+  });
+
+  if (!extracted.ok) {
+    const failed = await markFileFailed(
+      supabase,
+      source.id,
+      companyId,
+      source.storage_path,
+      extracted.code,
+    );
+    return failed ?? asSource({ ...source, status: "failed", failure_code: extracted.code, content: "" });
+  }
+
+  const { data, error } = await supabase
+    .from("knowledge_sources")
+    .update({ status: "ready", failure_code: null, content: extracted.text })
+    .eq("id", source.id)
+    .eq("company_id", companyId)
+    .select(SOURCE_SELECT)
+    .maybeSingle();
+  if (error || !data) {
+    const failed = await markFileFailed(supabase, source.id, companyId, source.storage_path, "extract_failed");
+    return failed ?? asSource({ ...source, status: "failed", failure_code: "extract_failed", content: "" });
+  }
+  return asSource(data);
 }
 
 export async function listKnowledgeSources(): Promise<KnowledgeActionResult<KnowledgeSourceRecord[]>> {
@@ -247,10 +299,13 @@ export async function uploadKnowledgeFiles(
         continue;
       }
 
+      const preparable = isPreparableKnowledgeFile(fileName);
       const { data: stored, error: updateError } = await ctx.supabase
         .from("knowledge_sources")
         .update({
-          status: "stored",
+          status: preparable ? "processing" : "stored",
+          failure_code: null,
+          content: "",
           content_type: contentType,
           byte_size: file.size,
         })
@@ -284,7 +339,15 @@ export async function uploadKnowledgeFiles(
         continue;
       }
 
-      results.push({ fileName, ok: true, source: asSource(stored) });
+      const prepared = preparable
+        ? await prepareStoredFile(ctx.supabase, asSource(stored), ctx.companyId, bytes)
+        : asSource(stored);
+      results.push({
+        fileName,
+        ok: prepared.status !== "failed",
+        code: prepared.failure_code ?? undefined,
+        source: prepared,
+      });
     }
 
     revalidateKnowledge(ctx.companyId);
@@ -329,17 +392,38 @@ export async function repairStoredKnowledgeFile(
       return { ok: false, code: "STORAGE_ERROR", message: "object_missing" };
     }
 
-    const { data, error } = await ctx.supabase
-      .from("knowledge_sources")
-      .update({ status: "stored" })
-      .eq("id", existing.id)
-      .eq("company_id", ctx.companyId)
-      .select(SOURCE_SELECT)
-      .single();
-    if (error || !data) return { ok: false, code: "AUTH_ERROR", message: error?.message };
+    if (!isPreparableKnowledgeFile(existing.file_name)) {
+      const { data, error } = await ctx.supabase
+        .from("knowledge_sources")
+        .update({ status: "stored", failure_code: null, content: "" })
+        .eq("id", existing.id)
+        .eq("company_id", ctx.companyId)
+        .select(SOURCE_SELECT)
+        .single();
+      if (error || !data) return { ok: false, code: "AUTH_ERROR", message: error?.message };
+      revalidateKnowledge(ctx.companyId);
+      return { ok: true, data: asSource(data) };
+    }
 
+    const { data: fileBlob, error: downloadError } = await ctx.supabase.storage
+      .from(KNOWLEDGE_BUCKET)
+      .download(existing.storage_path);
+    if (downloadError || !fileBlob) {
+      await markFileFailed(ctx.supabase, existing.id, ctx.companyId, existing.storage_path, "extract_failed");
+      revalidateKnowledge(ctx.companyId);
+      return { ok: false, code: "STORAGE_ERROR", message: downloadError?.message ?? "download_failed", };
+    }
+    const prepared = await prepareStoredFile(
+      ctx.supabase,
+      asSource(existing),
+      ctx.companyId,
+      new Uint8Array(await fileBlob.arrayBuffer()),
+    );
     revalidateKnowledge(ctx.companyId);
-    return { ok: true, data: asSource(data) };
+    if (prepared.status === "failed") {
+      return { ok: false, code: "INVALID_INPUT", message: prepared.failure_code ?? "extract_failed" };
+    }
+    return { ok: true, data: prepared };
   } catch {
     return { ok: false, code: "UNAVAILABLE" };
   }
@@ -415,9 +499,10 @@ export async function retryFailedKnowledgeFile(
       return { ok: false, code: "STORAGE_ERROR", message: uploadError.message };
     }
 
+    const preparable = isPreparableKnowledgeFile(fileName);
     const { data, error } = await ctx.supabase
       .from("knowledge_sources")
-      .update({ status: "stored" })
+      .update({ status: preparable ? "processing" : "stored", failure_code: null, content: "" })
       .eq("id", existing.id)
       .eq("company_id", ctx.companyId)
       .select(SOURCE_SELECT)
@@ -433,8 +518,60 @@ export async function retryFailedKnowledgeFile(
       return { ok: false, code: "AUTH_ERROR", message: error?.message };
     }
 
+    const finished = preparable
+      ? await prepareStoredFile(ctx.supabase, asSource(data), ctx.companyId, bytes)
+      : asSource(data);
     revalidateKnowledge(ctx.companyId);
-    return { ok: true, data: asSource(data) };
+    return { ok: true, data: finished };
+  } catch {
+    return { ok: false, code: "UNAVAILABLE" };
+  }
+}
+
+/** Re-reads the stored file and replaces its prepared text. Does not create another source. */
+export async function retryKnowledgePrepare(
+  sourceId: string,
+): Promise<KnowledgeActionResult<KnowledgeSourceRecord>> {
+  try {
+    const ctx = await requireOwnerCompany();
+    if (!ctx.ok) return { ok: false, code: ctx.code };
+
+    const { data: existing, error: loadError } = await ctx.supabase
+      .from("knowledge_sources")
+      .select(SOURCE_SELECT)
+      .eq("id", sourceId)
+      .eq("company_id", ctx.companyId)
+      .eq("kind", "file")
+      .maybeSingle();
+    if (loadError) return { ok: false, code: "AUTH_ERROR", message: loadError.message };
+    if (!existing?.storage_path || !isPreparableKnowledgeFile(existing.file_name)) {
+      return { ok: false, code: "INVALID_INPUT", message: "not_preparable" };
+    }
+
+    const { data: fileBlob, error: downloadError } = await ctx.supabase.storage
+      .from(KNOWLEDGE_BUCKET)
+      .download(existing.storage_path);
+    if (downloadError || !fileBlob) {
+      const failed = await markFileFailed(
+        ctx.supabase,
+        existing.id,
+        ctx.companyId,
+        existing.storage_path,
+        "extract_failed",
+      );
+      revalidateKnowledge(ctx.companyId);
+      if (failed) return { ok: true, data: failed };
+      return { ok: false, code: "STORAGE_ERROR", message: downloadError?.message };
+    }
+
+    const prepared = await prepareStoredFile(
+      ctx.supabase,
+      asSource(existing),
+      ctx.companyId,
+      new Uint8Array(await fileBlob.arrayBuffer()),
+    );
+    revalidateKnowledge(ctx.companyId);
+    return { ok: true, data: prepared };
   } catch {
     return { ok: false, code: "UNAVAILABLE" };
   }

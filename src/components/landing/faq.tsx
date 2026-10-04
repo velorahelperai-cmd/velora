@@ -7,7 +7,7 @@ export function Faq({ copy }: { copy: LandingCopy }) {
         <h2 className="text-3xl font-bold">{copy.faqTitle}</h2>
         <div className="mt-6 divide-y divide-[#cbddd2] border-y border-[#cbddd2]">
           {copy.faq.map((item) => (
-            <details key={item.q} className="group py-2">
+            <details key={item.q} data-seq="faq-item" className="group py-2">
               <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 py-2 text-lg font-medium">
                 {item.q}
               </summary>

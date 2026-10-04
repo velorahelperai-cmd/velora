@@ -7,12 +7,11 @@ import { useEffect, useState, type ReactNode } from "react";
 import { sampleStaff, useDemo } from "@/lib/demo-state";
 import { fill } from "@/lib/app-copy";
 import { landingCopy } from "@/lib/landing-copy";
-import { sendPhoneOtp, startOAuth, verifyPhoneOtp } from "@/lib/auth/browser";
-import { toE164Phone } from "@/lib/auth/site-url";
+import { startOAuth } from "@/lib/auth/browser";
 import {
+  completeProfileName,
   requestPasswordReset,
   resendVerificationEmail,
-  resolvePostAuthPath,
   signInWithEmail,
   signUpWithEmail,
   updatePassword,
@@ -61,40 +60,6 @@ export function AuthShell({ title, body, children, footer }: { title: string; bo
   );
 }
 
-type AuthMethod = "email" | "phone";
-
-function AuthIconButton({
-  label,
-  active,
-  busy,
-  onClick,
-  children,
-}: {
-  label: string;
-  active?: boolean;
-  busy?: boolean;
-  onClick: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      disabled={busy}
-      aria-pressed={active}
-      onClick={onClick}
-      className={`inline-flex h-14 w-14 items-center justify-center rounded-2xl border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38dc89] disabled:cursor-not-allowed disabled:opacity-60 ${
-        active
-          ? "border-[#38dc89] bg-[#38dc89]/15 text-[#9af0c3]"
-          : "border-white/15 bg-white/5 text-[#f7fbf8] hover:bg-white/10"
-      }`}
-    >
-      {children}
-    </button>
-  );
-}
-
 function providerErrorMessage(err: unknown, fallback: string) {
   const message = err instanceof Error ? err.message : String(err ?? "");
   if (/provider is not enabled|unsupported provider|validation_failed/i.test(message)) {
@@ -103,19 +68,13 @@ function providerErrorMessage(err: unknown, fallback: string) {
   return message || fallback;
 }
 
-function AuthAltIcons({
+function GoogleAuthButton({
   busy,
-  phoneActive,
-  onPhone,
   onGoogle,
-  onApple,
   notice,
 }: {
   busy?: boolean;
-  phoneActive?: boolean;
-  onPhone: () => void;
   onGoogle: () => void;
-  onApple: () => void;
   notice?: string | null;
 }) {
   const copy = useAppCopy();
@@ -126,140 +85,26 @@ function AuthAltIcons({
         {copy.auth.orContinue}
         <span className="h-px flex-1 bg-white/10" />
       </div>
-      <div className="flex items-center justify-center gap-3">
-        <AuthIconButton label={copy.auth.withPhone} active={phoneActive} busy={busy} onClick={onPhone}>
-          <svg aria-hidden="true" viewBox="0 0 24 24" className="h-6 w-6 fill-none stroke-current stroke-[1.8]">
-            <rect x="7" y="2.5" width="10" height="19" rx="2.5" />
-            <path d="M10 18.5h4" strokeLinecap="round" />
-          </svg>
-        </AuthIconButton>
-        <AuthIconButton label={copy.auth.withGoogle} busy={busy} onClick={onGoogle}>
-          <span aria-hidden="true" className="text-lg font-bold text-[#8ab4f8]">G</span>
-        </AuthIconButton>
-        <AuthIconButton label={copy.auth.withApple} busy={busy} onClick={onApple}>
-          <svg aria-hidden="true" viewBox="0 0 24 24" className="h-6 w-6 fill-current">
-            <path d="M16.4 12.7c0-2 1.6-3 1.7-3.1-1-1.4-2.5-1.6-3-1.6-1.3-.1-2.5.8-3.1.8-.7 0-1.7-.7-2.8-.7-1.4 0-2.8.9-3.5 2.2-1.5 2.6-.4 6.5 1.1 8.6.7 1 1.6 2.2 2.8 2.1 1.1 0 1.5-.7 2.9-.7s1.7.7 2.9.7c1.2 0 1.9-1 2.6-2 .8-1.2 1.1-2.3 1.1-2.4-.1 0-2.2-.9-2.2-3.4zM14.3 6.5c.6-.8 1-1.8.9-2.9-1 .1-2.1.7-2.8 1.5-.6.7-1.1 1.8-1 2.8 1.1.1 2.2-.5 2.9-1.4z" />
-          </svg>
-        </AuthIconButton>
-      </div>
+      <Button
+        type="button"
+        variant="secondary"
+        busy={busy}
+        busyLabel={copy.loading}
+        className="w-full"
+        onClick={onGoogle}
+      >
+        <span className="inline-flex items-center gap-2">
+          <span aria-hidden="true" className="text-base font-bold text-[#8ab4f8]">G</span>
+          {copy.auth.withGoogle}
+        </span>
+      </Button>
       <p className="text-center text-xs leading-5 text-[#8da195]">{copy.auth.socialNote}</p>
       {notice ? <Notice tone="warn">{notice}</Notice> : null}
     </div>
   );
 }
 
-function PhoneAuthForm({ onBack }: { onBack: () => void }) {
-  const copy = useAppCopy();
-  const router = useRouter();
-  const { busy, run } = useAction();
-  const [phone, setPhone] = useState("+968");
-  const [code, setCode] = useState("");
-  const [sentTo, setSentTo] = useState<string | null>(null);
-  const [cooldown, setCooldown] = useState(0);
-  const [error, setError] = useState<string | null>(null);
-  const [phoneError, setPhoneError] = useState<FieldErrorKey>();
-  const [codeError, setCodeError] = useState<FieldErrorKey>();
-  const phoneErrText = useErrorText(phoneError);
-  const codeErrText = useErrorText(codeError);
-
-  useEffect(() => {
-    if (cooldown <= 0) return;
-    const t = window.setTimeout(() => setCooldown((c) => c - 1), 1000);
-    return () => window.clearTimeout(t);
-  }, [cooldown]);
-
-  return (
-    <div className="grid gap-4">
-      {error ? <Notice tone="error">{error}</Notice> : null}
-      <Field label={copy.auth.phone} required error={phoneErrText} hint={copy.auth.phoneHint}>
-        {(p) => (
-          <input
-            {...p}
-            dir="ltr"
-            inputMode="tel"
-            autoComplete="tel"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-          />
-        )}
-      </Field>
-      {sentTo ? (
-        <Field label={copy.auth.code} required error={codeErrText} hint={copy.auth.codeHint}>
-          {(p) => (
-            <input
-              {...p}
-              dir="ltr"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-            />
-          )}
-        </Field>
-      ) : null}
-      <div className="flex flex-wrap gap-2">
-        <Button
-          type="button"
-          busy={busy}
-          busyLabel={copy.loading}
-          disabled={busy || cooldown > 0}
-          onClick={() => {
-            setError(null);
-            setPhoneError(undefined);
-            const e164 = toE164Phone(phone);
-            if (!e164) {
-              setPhoneError("phone");
-              return;
-            }
-            void run(async () => {
-              try {
-                const normalized = await sendPhoneOtp(phone);
-                setSentTo(normalized);
-                setPhone(normalized);
-                setCooldown(RESEND_COOLDOWN_SEC);
-              } catch (err) {
-                setError(providerErrorMessage(err, copy.auth.phoneUnavailable));
-              }
-            });
-          }}
-        >
-          {sentTo
-            ? (cooldown > 0 ? fill(copy.auth.resendIn, { n: cooldown }) : copy.auth.resendCode)
-            : copy.auth.sendCode}
-        </Button>
-        {sentTo ? (
-          <Button
-            type="button"
-            busy={busy}
-            busyLabel={copy.loading}
-            onClick={() => {
-              setError(null);
-              setCodeError(undefined);
-              if (!code.trim()) {
-                setCodeError("required");
-                return;
-              }
-              void run(async () => {
-                try {
-                  await verifyPhoneOtp(sentTo, code);
-                  const next = await resolvePostAuthPath();
-                  router.replace(next.ok ? next.data.next : "/setup");
-                } catch (err) {
-                  setError(providerErrorMessage(err, copy.errors.authFailed));
-                }
-              });
-            }}
-          >
-            {copy.auth.verifyPhone}
-          </Button>
-        ) : null}
-        <Button type="button" variant="secondary" onClick={onBack}>{copy.auth.withEmail}</Button>
-      </div>
-    </div>
-  );
-}
-
-function useOAuthHandlers(setNotice: (v: string | null) => void) {
+function useGoogleAuth(setNotice: (v: string | null) => void) {
   const copy = useAppCopy();
   const { busy, run } = useAction();
   return {
@@ -274,16 +119,6 @@ function useOAuthHandlers(setNotice: (v: string | null) => void) {
         }
       });
     },
-    onApple: () => {
-      setNotice(null);
-      void run(async () => {
-        try {
-          await startOAuth("apple");
-        } catch (err) {
-          setNotice(providerErrorMessage(err, copy.auth.appleUnavailable));
-        }
-      });
-    },
   };
 }
 
@@ -294,26 +129,27 @@ export function SignupPage() {
   const params = useSearchParams();
   const prefillEmail = (params.get("email") || "").trim().toLowerCase();
   const { busy, run } = useAction();
-  const [method, setMethod] = useState<AuthMethod>("email");
-  const [form, setForm] = useState({ name: "", email: prefillEmail, password: "" });
-  const [errors, setErrors] = useState<Partial<Record<"name" | "email" | "password", FieldErrorKey>>>({});
+  const [form, setForm] = useState({ name: "", email: prefillEmail, password: "", confirm: "" });
+  const [errors, setErrors] = useState<Partial<Record<"name" | "email" | "password" | "confirm", FieldErrorKey>>>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [altNotice, setAltNotice] = useState<string | null>(null);
-  const oauth = useOAuthHandlers(setAltNotice);
-  const dirty = Boolean(form.name || form.email || form.password);
+  const google = useGoogleAuth(setAltNotice);
+  const dirty = Boolean(form.name || form.email || form.password || form.confirm);
   useUnsavedWarning(dirty && !busy);
   const planName = landingCopy(locale).plans.find((p) => p.id === state.planInterest)?.name;
   const nameError = useErrorText(errors.name);
   const emailError = useErrorText(errors.email);
   const passwordError = useErrorText(errors.password);
+  const confirmError = useErrorText(errors.confirm);
 
   function submitEmail(e: React.FormEvent) {
     e.preventDefault();
     if (busy) return;
     const next: typeof errors = {};
-    if (!form.name.trim()) next.name = "required";
+    if (form.name.trim().length < 2) next.name = "required";
     if (!isEmail(form.email)) next.email = "email";
     if (form.password.length < 8) next.password = "password";
+    if (form.confirm !== form.password) next.confirm = "match";
     setErrors(next);
     setFormError(null);
     if (Object.keys(next).length) return;
@@ -322,6 +158,7 @@ export function SignupPage() {
         name: form.name.trim(),
         email: form.email.trim(),
         password: form.password,
+        confirmPassword: form.confirm,
       });
       if (!result.ok) {
         setFormError(result.message ?? copy.errors.authFailed);
@@ -347,30 +184,20 @@ export function SignupPage() {
         </div>
       ) : null}
 
-      {method === "email" ? (
-        <form className="grid gap-4" onSubmit={submitEmail} noValidate>
-          {formError ? <Notice tone="error">{formError}</Notice> : null}
-          <Field label={copy.auth.name} required error={nameError}>
-            {(p) => <input {...p} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} autoComplete="name" />}
-          </Field>
-          <Field label={copy.auth.email} required error={emailError}>
-            {(p) => <input {...p} type="email" dir="ltr" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} autoComplete="email" inputMode="email" />}
-          </Field>
-          <PasswordField label={copy.auth.password} value={form.password} onChange={(v) => setForm({ ...form, password: v })} error={passwordError} hint={copy.auth.passwordHintReal} autoComplete="new-password" />
-          <Button type="submit" busy={busy} busyLabel={copy.loading} className="mt-2 w-full">{copy.auth.createAccount}</Button>
-        </form>
-      ) : (
-        <PhoneAuthForm onBack={() => setMethod("email")} />
-      )}
+      <form className="grid gap-4" onSubmit={submitEmail} noValidate>
+        {formError ? <Notice tone="error">{formError}</Notice> : null}
+        <Field label={copy.auth.name} required error={nameError}>
+          {(p) => <input {...p} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} autoComplete="name" />}
+        </Field>
+        <Field label={copy.auth.email} required error={emailError}>
+          {(p) => <input {...p} type="email" dir="ltr" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} autoComplete="email" inputMode="email" />}
+        </Field>
+        <PasswordField label={copy.auth.password} value={form.password} onChange={(v) => setForm({ ...form, password: v })} error={passwordError} hint={copy.auth.passwordHintReal} autoComplete="new-password" />
+        <PasswordField label={copy.auth.confirmPasswordSignup} value={form.confirm} onChange={(v) => setForm({ ...form, confirm: v })} error={confirmError} autoComplete="new-password" />
+        <Button type="submit" busy={busy} busyLabel={copy.loading} className="mt-2 w-full">{copy.auth.createAccount}</Button>
+      </form>
 
-      <AuthAltIcons
-        busy={busy || oauth.busy}
-        phoneActive={method === "phone"}
-        onPhone={() => { setMethod(method === "phone" ? "email" : "phone"); setAltNotice(null); }}
-        onGoogle={oauth.onGoogle}
-        onApple={oauth.onApple}
-        notice={altNotice}
-      />
+      <GoogleAuthButton busy={busy || google.busy} onGoogle={google.onGoogle} notice={altNotice} />
     </AuthShell>
   );
 }
@@ -380,7 +207,6 @@ export function LoginPage() {
   const router = useRouter();
   const params = useSearchParams();
   const { busy, run } = useAction();
-  const [method, setMethod] = useState<AuthMethod>("email");
   const [form, setForm] = useState({ email: "", password: "" });
   const [errors, setErrors] = useState<Partial<Record<"email" | "password", FieldErrorKey>>>({});
   const [formError, setFormError] = useState<string | null>(() => {
@@ -390,7 +216,7 @@ export function LoginPage() {
     return null;
   });
   const [altNotice, setAltNotice] = useState<string | null>(null);
-  const oauth = useOAuthHandlers(setAltNotice);
+  const google = useGoogleAuth(setAltNotice);
   const emailError = useErrorText(errors.email);
   const passwordError = useErrorText(errors.password);
 
@@ -422,30 +248,19 @@ export function LoginPage() {
       body={copy.auth.loginBody}
       footer={<>{copy.auth.noAccount} <Link href="/signup" className="text-[#38dc89] underline">{copy.auth.signup}</Link></>}
     >
-      {method === "email" ? (
-        <form className="grid gap-4" onSubmit={submitEmail} noValidate>
-          {formError ? <Notice tone="error">{formError}</Notice> : null}
-          <Field label={copy.auth.email} required error={emailError}>
-            {(p) => <input {...p} type="email" dir="ltr" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} autoComplete="email" inputMode="email" />}
-          </Field>
-          <PasswordField label={copy.auth.password} value={form.password} onChange={(v) => setForm({ ...form, password: v })} error={passwordError} autoComplete="current-password" />
-          <div className="flex items-center justify-between gap-3">
-            <Link href="/forgot-password" className="text-sm text-[#38dc89] underline">{copy.auth.forgot}</Link>
-          </div>
-          <Button type="submit" busy={busy} busyLabel={copy.loading} className="w-full">{copy.auth.login}</Button>
-        </form>
-      ) : (
-        <PhoneAuthForm onBack={() => setMethod("email")} />
-      )}
+      <form className="grid gap-4" onSubmit={submitEmail} noValidate>
+        {formError ? <Notice tone="error">{formError}</Notice> : null}
+        <Field label={copy.auth.email} required error={emailError}>
+          {(p) => <input {...p} type="email" dir="ltr" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} autoComplete="email" inputMode="email" />}
+        </Field>
+        <PasswordField label={copy.auth.password} value={form.password} onChange={(v) => setForm({ ...form, password: v })} error={passwordError} autoComplete="current-password" />
+        <div className="flex items-center justify-between gap-3">
+          <Link href="/forgot-password" className="text-sm text-[#38dc89] underline">{copy.auth.forgot}</Link>
+        </div>
+        <Button type="submit" busy={busy} busyLabel={copy.loading} className="w-full">{copy.auth.login}</Button>
+      </form>
 
-      <AuthAltIcons
-        busy={busy || oauth.busy}
-        phoneActive={method === "phone"}
-        onPhone={() => { setMethod(method === "phone" ? "email" : "phone"); setAltNotice(null); }}
-        onGoogle={oauth.onGoogle}
-        onApple={oauth.onApple}
-        notice={altNotice}
-      />
+      <GoogleAuthButton busy={busy || google.busy} onGoogle={google.onGoogle} notice={altNotice} />
     </AuthShell>
   );
 }
@@ -583,15 +398,42 @@ export function ForgotPasswordPage() {
   const copy = useAppCopy();
   const [email, setEmail] = useState("");
   const [error, setError] = useState<FieldErrorKey>();
-  const [formError, setFormError] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
   const { busy, run } = useAction();
   const emailError = useErrorText(error);
+
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const t = window.setTimeout(() => setCooldown((c) => c - 1), 1000);
+    return () => window.clearTimeout(t);
+  }, [cooldown]);
+
   return (
     <AuthShell title={copy.auth.forgotTitle} body={copy.auth.forgotBody} footer={<Link href="/login" className="text-[#38dc89] underline">{copy.auth.login}</Link>}>
+      <div className="mb-4">
+        <Notice tone="info">{copy.auth.googleOnlyNote}</Notice>
+      </div>
       {sent ? (
         <div className="grid gap-4">
           <Notice tone="success">{copy.auth.resetPrepared}</Notice>
+          <p className="text-xs leading-5 text-[#8da195]">{copy.auth.resetResendHint}</p>
+          <Button
+            type="button"
+            variant="secondary"
+            busy={busy}
+            busyLabel={copy.loading}
+            disabled={busy || cooldown > 0}
+            onClick={() => {
+              if (!isEmail(email) || cooldown > 0) return;
+              void run(async () => {
+                await requestPasswordReset(email);
+                setCooldown(RESEND_COOLDOWN_SEC);
+              });
+            }}
+          >
+            {cooldown > 0 ? fill(copy.auth.resendIn, { n: cooldown }) : copy.auth.sendReset}
+          </Button>
           <LinkButton href="/login" variant="secondary">{copy.auth.login}</LinkButton>
         </div>
       ) : (
@@ -600,26 +442,80 @@ export function ForgotPasswordPage() {
           noValidate
           onSubmit={(e) => {
             e.preventDefault();
-            setFormError(null);
             if (!isEmail(email)) { setError("email"); return; }
             setError(undefined);
             void run(async () => {
-              const result = await requestPasswordReset(email);
-              if (!result.ok) {
-                setFormError(result.message ?? copy.errors.authFailed);
-                return;
-              }
+              await requestPasswordReset(email);
               setSent(true);
+              setCooldown(RESEND_COOLDOWN_SEC);
             });
           }}
         >
-          {formError ? <Notice tone="error">{formError}</Notice> : null}
           <Field label={copy.auth.email} required error={emailError}>
             {(p) => <input {...p} type="email" dir="ltr" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" inputMode="email" />}
           </Field>
           <Button type="submit" busy={busy} busyLabel={copy.loading} className="w-full">{copy.auth.sendReset}</Button>
         </form>
       )}
+    </AuthShell>
+  );
+}
+
+export function CompleteProfilePage() {
+  const copy = useAppCopy();
+  const router = useRouter();
+  const { busy, run } = useAction();
+  const [name, setName] = useState("");
+  const [error, setError] = useState<FieldErrorKey>();
+  const [formError, setFormError] = useState<string | null>(null);
+  const nameError = useErrorText(error);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      void (async () => {
+        try {
+          const { createClient } = await import("@/lib/supabase/client");
+          const supabase = createClient();
+          const { data } = await supabase.auth.getUser();
+          const meta = String(data.user?.user_metadata?.full_name || data.user?.user_metadata?.name || "").trim();
+          if (meta) setName(meta);
+        } catch {
+          /* ignore */
+        }
+      })();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
+
+  return (
+    <AuthShell title={copy.auth.completeProfileTitle} body={copy.auth.completeProfileBody}>
+      <form
+        className="grid gap-4"
+        noValidate
+        onSubmit={(e) => {
+          e.preventDefault();
+          setFormError(null);
+          if (name.trim().length < 2) {
+            setError("required");
+            return;
+          }
+          setError(undefined);
+          void run(async () => {
+            const result = await completeProfileName(name);
+            if (!result.ok) {
+              setFormError(result.message ?? copy.errors.authFailed);
+              return;
+            }
+            router.replace(result.data.next);
+          });
+        }}
+      >
+        {formError ? <Notice tone="error">{formError}</Notice> : null}
+        <Field label={copy.auth.name} required error={nameError}>
+          {(p) => <input {...p} value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" />}
+        </Field>
+        <Button type="submit" busy={busy} busyLabel={copy.loading} className="w-full">{copy.auth.completeProfileSave}</Button>
+      </form>
     </AuthShell>
   );
 }

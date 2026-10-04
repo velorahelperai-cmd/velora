@@ -56,13 +56,14 @@ export function AboutContact({
   return (
     <div className="bg-[#07110d] px-6 py-16 text-[#f7fbf8] lg:px-12">
       <div className="mx-auto grid max-w-[1100px] gap-12 lg:grid-cols-2">
-        <section id="about">
+        <section id="about" data-seq="about-block">
           <h2 className="text-3xl font-bold">{copy.aboutTitle}</h2>
           <p className="mt-4 text-lg leading-8 text-[#adbeaf]">{copy.about}</p>
         </section>
-        <section id="contact">
+        <section id="contact" data-seq="contact-block">
           <h2 className="text-3xl font-bold">{copy.contactTitle}</h2>
-          <p className="mt-3 text-sm leading-6 text-[#adbeaf]">{copy.noDestination}</p>
+          <p className="mt-3 text-sm leading-6 text-[#adbeaf]">{copy.companyLine}</p>
+          <p className="mt-3 text-base leading-7 text-[#d5e4da]">{copy.noDestination}</p>
           <a
             href={`mailto:${copy.contactEmail}`}
             dir="ltr"
@@ -85,7 +86,7 @@ export function AboutContact({
               void prepare();
             }}
           >
-            <label className="grid gap-1 text-sm">
+            <label className="grid gap-1.5 text-base">
               {copy.businessName}
               <input
                 value={name}
@@ -93,7 +94,7 @@ export function AboutContact({
                 className="min-h-11 rounded-xl border border-white/15 bg-[#14221b] px-3"
               />
             </label>
-            <label className="grid gap-1 text-sm">
+            <label className="grid gap-1.5 text-base">
               {copy.sectorField}
               <select
                 value={sector}
@@ -107,10 +108,10 @@ export function AboutContact({
                 ))}
               </select>
             </label>
-            <p className="text-sm text-[#adbeaf]">
+            <p className="text-base text-[#d5e4da]">
               {copy.planField}: {planName}
             </p>
-            <label className="grid gap-1 text-sm">
+            <label className="grid gap-1.5 text-base">
               {copy.questionField}
               <textarea
                 value={question}
@@ -147,7 +148,9 @@ export function AboutContact({
       </div>
       <section id="privacy" className="mx-auto mt-12 max-w-[1100px] border-t border-white/10 pt-8">
         <h2 className="text-2xl font-bold">{copy.privacyTitle}</h2>
-        <p className="mt-3 max-w-[70ch] text-base leading-7 text-[#adbeaf]">{copy.privacy}</p>
+        <p className="mt-3 max-w-[70ch] text-sm leading-6 text-[#adbeaf]">{copy.companyLine}</p>
+        <p className="mt-3 max-w-[70ch] text-lg leading-8 text-[#d5e4da]">{copy.privacy}</p>
+        <a href="/data-deletion" className="mt-3 inline-flex min-h-11 items-center text-base underline underline-offset-4">{copy.deletionLink}</a>
       </section>
     </div>
   );

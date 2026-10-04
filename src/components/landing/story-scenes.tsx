@@ -2,9 +2,14 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import type { LandingCopy } from "@/lib/landing-copy";
-import { PhoneMock, SourceCard } from "@/components/landing/conversation-stage";
+import {
+  PhoneMock,
+  PhoneSlot,
+  SourceCard,
+  StoryTheaterPhone,
+} from "@/components/landing/conversation-stage";
 
 /** Theme veil that fades in at the end of a chapter to hand off to the next scene's surface. */
 function Veil({ to }: { to: "light" | "dark" }) {
@@ -39,11 +44,16 @@ export function StoryScenes({
   onMenu,
   startHref,
   startLabel,
+  afterPhone,
+  trial,
 }: {
   copy: LandingCopy;
   onMenu: () => void;
   startHref: string;
   startLabel: string;
+  /** Inserted after scene 5, still inside the phone theater. */
+  afterPhone?: ReactNode;
+  trial?: { question: string; answer: string; note?: string };
 }) {
   const byId = (id: number) => copy.scenes.find((scene) => scene.id === id)!;
 
@@ -57,171 +67,198 @@ export function StoryScenes({
 
   return (
     <>
-      <section id={pressure.anchor} data-scene="1" className="scene scene-dark relative min-h-[100svh] overflow-hidden px-6 py-8 lg:px-12">
-        <Image
-          src="/assets/velora/hero-environment-v2.png"
-          alt=""
-          fill
-          priority
-          sizes="100vw"
-          data-seq="environment"
-          className="object-cover object-left"
+      <div data-story-phone-range className="story-phone-range">
+        <StoryTheaterPhone
+          orbit={pressure.chips}
+          screens={[
+            { id: "1", question: pressure.example.question, answer: pressure.example.answer },
+            { id: "2", question: knowledge.example.question, answer: knowledge.example.answer },
+            {
+              id: "3",
+              question: reply.example.question,
+              answer: reply.example.answer,
+              menuLabel: copy.menu,
+              onMenu,
+            },
+            { id: "4", question: enquiry.example.question, answer: enquiry.example.answer },
+            { id: "5", question: handoff.example.question, answer: handoff.example.answer },
+            {
+              id: "9",
+              question: trial?.question ?? "",
+              answer: trial?.answer ?? "",
+              note: trial?.note,
+            },
+          ]}
         />
-        <div className="hero-veil" />
-        <Veil to="light" />
-        <div className="scroll-hint hidden lg:flex" data-seq="scroll-hint" aria-hidden="true">
-          <span>{copy.scrollHint}</span>
-        </div>
-        <div data-seq="stage" data-phone="start" className="story-stage relative z-10 mx-auto min-h-[78svh] max-w-[1380px]">
-          <div className="story-visual relative">
-            <div className="pressure-card pointer-events-none absolute start-0 top-2 z-10 max-w-[230px] rounded-3xl rounded-es-md border border-white/15 bg-[#14221b]/92 px-5 py-3 text-lg font-medium text-[#f7fbf8] shadow-[0_18px_40px_rgba(0,0,0,0.4)] lg:-top-6" data-seq="chip">
-              {pressure.chips[0]}
+
+        <section id={pressure.anchor} data-scene="1" className="scene scene-dark relative min-h-[100svh] overflow-hidden px-6 py-8 lg:px-12">
+          <Image
+            src="/assets/velora/hero-environment-v2.png"
+            alt=""
+            fill
+            priority
+            sizes="100vw"
+            data-seq="environment"
+            className="object-cover object-left"
+          />
+          <div className="hero-veil" />
+          <Veil to="light" />
+          <div className="scroll-hint hidden lg:flex" data-seq="scroll-hint" aria-hidden="true">
+            <span>{copy.scrollHint}</span>
+          </div>
+          <div data-seq="stage" data-phone="start" className="story-stage relative z-10 mx-auto min-h-[78svh] max-w-[1380px]">
+            <div className="story-visual relative">
+              <div className="stage-row">
+                <PhoneSlot />
+                <PhoneMock
+                  className="story-phone-local"
+                  question={pressure.example.question}
+                  answer={pressure.example.answer}
+                  orbit={pressure.chips}
+                />
+              </div>
             </div>
-            <div className="pressure-card pointer-events-none absolute end-6 -top-10 z-10 max-w-[230px] rounded-3xl rounded-ee-md border border-white/15 bg-[#14221b]/85 px-5 py-3 text-lg font-medium text-[#f7fbf8] shadow-[0_18px_40px_rgba(0,0,0,0.4)] lg:-top-16 lg:end-2" data-seq="chip">
-              {pressure.chips[1]}
+            <div className="story-copy">
+              <p data-seq="tagline" className="max-w-[36ch] text-base font-medium leading-7 text-[#9ef0c4]">{copy.tagline}</p>
+              <h1 className="scene-title mt-3 text-[#f7fbf8]">{pressure.title}</h1>
+              <p className="scene-body mt-4 text-[#d5e4da]">{pressure.body}</p>
+              <div data-seq="hero-actions" className="mt-8 flex flex-wrap gap-3">
+                <Link
+                  href={startHref}
+                  className="inline-flex min-h-12 items-center justify-center rounded-full bg-[#38dc89] px-6 text-base font-medium text-[#072317]"
+                >
+                  {startLabel}
+                </Link>
+                <a
+                  href="#how"
+                  className="inline-flex min-h-12 items-center justify-center rounded-full border border-white/25 px-6 text-base font-medium text-[#f7fbf8]"
+                >
+                  {copy.try}
+                </a>
+              </div>
             </div>
-            <div className="pressure-card pointer-events-none absolute -bottom-6 start-8 z-10 max-w-[230px] rounded-3xl rounded-ss-md border border-white/15 bg-[#14221b]/80 px-5 py-3 text-lg font-medium text-[#dfe9e2] shadow-[0_18px_40px_rgba(0,0,0,0.4)] lg:-bottom-12 lg:start-16" data-seq="chip">
-              {pressure.chips[2]}
-            </div>
-            <div className="stage-row">
-              <SourceCard title={pressure.example.cardTitle} body={pressure.example.card} />
+          </div>
+        </section>
+
+        <section id={knowledge.anchor} data-scene="2" data-bridge className="scene scene-light px-6 py-20 lg:px-12">
+          <Veil to="dark" />
+          <div data-seq="stage" data-phone="end" className="story-stage relative z-10 mx-auto max-w-[1380px]">
+            <div className="story-visual stage-row">
+              <div className="grid gap-3">
+                <SourceCard tone="light" title={knowledge.example.cardTitle} body={knowledge.example.card} />
+                <p data-seq="highlight" className="source-link text-base font-medium text-[#087443]">{copy.fromSource}</p>
+              </div>
+              <PhoneSlot />
               <PhoneMock
-                question={pressure.example.question}
-                answer={pressure.example.answer}
-                rotation={-5}
+                className="story-phone-local"
+                question={knowledge.example.question}
+                answer={knowledge.example.answer}
               />
             </div>
-          </div>
-          <div className="story-copy">
-            <p data-seq="tagline" className="text-sm font-medium text-[#38dc89]">{copy.tagline}</p>
-            <h1 className="scene-title mt-3 text-[#f7fbf8]">{pressure.title}</h1>
-            <p className="scene-body mt-5 text-[#adbeaf]">{pressure.body}</p>
-            <div data-seq="hero-actions" className="mt-8 flex flex-wrap gap-3">
-              <Link
-                href={startHref}
-                className="inline-flex min-h-12 items-center justify-center rounded-full bg-[#38dc89] px-6 text-base font-medium text-[#072317]"
-              >
-                {startLabel}
-              </Link>
-              <a
-                href="#demo"
-                className="inline-flex min-h-12 items-center justify-center rounded-full border border-white/25 px-6 text-base font-medium text-[#f7fbf8]"
-              >
-                {copy.try}
-              </a>
+            <div className="story-copy">
+              <h2 className="scene-title text-[#101b16]">{knowledge.title}</h2>
+              <p className="scene-body mt-5 text-[#4f6258]">{knowledge.body}</p>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <section id={knowledge.anchor} data-scene="2" data-bridge className="scene scene-light px-6 py-20 lg:px-12">
-        <Veil to="dark" />
-        <div data-seq="stage" data-phone="end" className="story-stage relative z-10 mx-auto max-w-[1380px]">
-          <div className="story-visual stage-row">
-            <div>
-              <SourceCard tone="light" title={knowledge.example.cardTitle} body={knowledge.example.card} />
-              <span data-seq="highlight" className="mt-3 block h-0.5 w-16 bg-[#087443]" />
+        <section id={reply.anchor} data-scene="3" className="scene scene-dark px-6 py-20 lg:px-12">
+          <Veil to="light" />
+          <div data-seq="stage" data-phone="start" className="story-stage relative z-10 mx-auto max-w-[1380px]">
+            <div className="story-visual stage-row">
+              <SourceCard title={reply.example.cardTitle} body={reply.example.card} />
+              <Trace />
+              <PhoneSlot />
+              <PhoneMock
+                className="story-phone-local"
+                question={reply.example.question}
+                answer={reply.example.answer}
+                rotation={2}
+                menuLabel={copy.menu}
+                onMenu={onMenu}
+              />
             </div>
-            <PhoneMock
-              question={knowledge.example.question}
-              answer={knowledge.example.answer}
-            />
+            <div className="story-copy">
+              <h2 className="scene-title text-[#f7fbf8]">{reply.title}</h2>
+              <p className="scene-body mt-5 text-[#adbeaf]">{reply.body}</p>
+            </div>
           </div>
-          <div className="story-copy">
-            <h2 className="scene-title text-[#101b16]">{knowledge.title}</h2>
-            <p className="scene-body mt-5 text-[#4f6258]">{knowledge.body}</p>
-          </div>
-        </div>
-      </section>
+        </section>
 
-      <section id={reply.anchor} data-scene="3" className="scene scene-dark px-6 py-20 lg:px-12">
-        <Veil to="light" />
-        <div data-seq="stage" data-phone="start" className="story-stage relative z-10 mx-auto max-w-[1380px]">
+        <section id={enquiry.anchor} data-scene="4" className="scene scene-light px-6 py-20 lg:px-12">
+          <Veil to="dark" />
+          <div data-seq="stage" data-phone="end" className="story-stage relative z-10 mx-auto max-w-[1380px]">
           <div className="story-visual stage-row">
-            <SourceCard title={reply.example.cardTitle} body={reply.example.card} />
-            <Trace />
-            <PhoneMock
-              question={reply.example.question}
-              answer={reply.example.answer}
-              rotation={2}
-              menuLabel={copy.menu}
-              onMenu={onMenu}
-            />
-          </div>
-          <div className="story-copy">
-            <h2 className="scene-title text-[#f7fbf8]">{reply.title}</h2>
-            <p className="scene-body mt-5 text-[#adbeaf]">{reply.body}</p>
-          </div>
-        </div>
-      </section>
-
-      <section id={enquiry.anchor} data-scene="4" className="scene scene-light px-6 py-20 lg:px-12">
-        <Veil to="dark" />
-        <div data-seq="stage" data-phone="end" className="story-stage relative z-10 mx-auto max-w-[1380px]">
-          <div className="story-visual stage-row lg:scale-[0.87]">
-            <div>
+            <div className="grid gap-3">
               <SourceCard tone="light" seq="record" title={enquiry.example.cardTitle} body={enquiry.example.card} />
-              <p data-seq="confirmed" className="mt-3 text-sm font-medium text-[#087443]">✓ {copy.confirmed}</p>
+              <p data-seq="confirmed" className="text-base font-medium text-[#087443]">{copy.confirmed}</p>
+              <p className="text-sm font-medium text-[#4f6258]">{copy.illustrative}</p>
             </div>
+            <PhoneSlot />
             <PhoneMock
+              className="story-phone-local"
               question={enquiry.example.question}
               answer={enquiry.example.answer}
             />
           </div>
-          <div className="story-copy">
-            <h2 className="scene-title text-[#101b16]">{enquiry.title}</h2>
-            <p className="scene-body mt-5 text-[#4f6258]">{enquiry.body}</p>
+            <div className="story-copy">
+              <h2 className="scene-title text-[#101b16]">{enquiry.title}</h2>
+              <p className="scene-body mt-5 text-[#4f6258]">{enquiry.body}</p>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <section id={handoff.anchor} data-scene="5" className="scene scene-dark px-6 py-20 lg:px-12">
-        <Veil to="light" />
-        <div data-seq="stage" data-phone="start" className="story-stage relative z-10 mx-auto max-w-[1380px]">
-          <div className="story-visual stage-row lg:scale-[0.86]">
+        <section id={handoff.anchor} data-scene="5" className="scene scene-dark px-6 py-20 lg:px-12">
+          <Veil to="dark" />
+          <div data-seq="stage" data-phone="start" className="story-stage relative z-10 mx-auto max-w-[1380px]">
+          <div className="story-visual stage-row">
             <div>
               <SourceCard seq="staff" avatar={copy.staffInitial} title={handoff.example.cardTitle} body={handoff.example.card} />
-              <p data-seq="paused" data-indicator="paused" className="mt-4 inline-flex rounded-full bg-[#38dc89]/15 px-4 py-2 text-sm text-[#38dc89]">
+              <p data-seq="paused" data-indicator="paused" className="mt-4 inline-flex rounded-full bg-[#38dc89]/15 px-4 py-2 text-base font-medium text-[#b6f5d4]">
                 {copy.paused}
               </p>
               <p data-seq="no-repeat" className="mt-3 text-sm text-[#adbeaf]">{copy.noRepeat}</p>
             </div>
+            <PhoneSlot />
             <PhoneMock
+              className="story-phone-local"
               question={handoff.example.question}
               answer={handoff.example.answer}
             />
           </div>
-          <div className="story-copy">
-            <h2 className="scene-title text-[#f7fbf8]">{handoff.title}</h2>
-            <p className="scene-body mt-5 text-[#adbeaf]">{handoff.body}</p>
+            <div className="story-copy">
+              <h2 className="scene-title text-[#f7fbf8]">{handoff.title}</h2>
+              <p className="scene-body mt-5 text-[#adbeaf]">{handoff.body}</p>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+
+        {afterPhone}
+      </div>
 
       <section id={overview.anchor} data-scene="6" className="scene scene-light px-6 py-20 lg:px-12">
         <Veil to="dark" />
         <div data-seq="stage" className="relative z-10 mx-auto grid max-w-[1380px] items-center gap-12 lg:grid-cols-2">
-          <article data-seq="panel" className="order-2 rounded-3xl border border-[#cbddd2] bg-white p-6 text-[#101b16] shadow-sm lg:p-8">
-            <h3 className="text-xl font-bold">{copy.panelTitle}</h3>
+          <article data-seq="panel" className="order-2 rounded-3xl border border-[#cbddd2] bg-white p-5 text-[#101b16] shadow-sm lg:p-6">
+            <h3 className="text-2xl font-bold">{copy.panelTitle}</h3>
             <div className="mt-4 flex flex-wrap gap-2">
               {copy.tabs.map((tab) => (
-                <span key={tab} data-seq="tab" className="rounded-full bg-[#f5f8f5] px-3 py-2 text-sm">
+                <span key={tab} data-seq="tab" className="rounded-full bg-[#e7f3eb] px-4 py-2 text-base font-medium">
                   {tab}
                 </span>
               ))}
             </div>
-            <ul className="mt-4 divide-y divide-[#e4eee8]">
+            <ul className="mt-3 divide-y divide-[#e4eee8]">
               {copy.rows.map((row, index) => (
                 <li
                   key={row[0]}
                   data-seq={index === 0 ? "row-active" : "row"}
-                  className={`grid gap-1 py-3 text-sm sm:grid-cols-[1fr_auto] ${
-                    index === 0 ? "rounded-2xl bg-[#def5e7] px-3" : ""
-                  }`}
+                  className={`grid gap-1 py-4 text-base ${index === 0 ? "rounded-2xl bg-[#def5e7] px-4" : ""}`}
                 >
-                  <span className="font-medium">{row[0]}</span>
-                  <span>{row[1]}</span>
-                  {row[2] ? <span className="text-[#4f6258] sm:col-span-2">{row[2]}</span> : null}
+                  <span className="text-lg font-bold">{row[0]}</span>
+                  <span className="font-medium text-[#087443]">{row[1]}</span>
+                  {row[2] ? <span>{row[2]}</span> : null}
+                  {row[3] ? <span className="text-[#4f6258]">{row[3]}</span> : null}
                 </li>
               ))}
             </ul>
@@ -239,21 +276,19 @@ export function StoryScenes({
           <ol className="order-2 grid gap-3">
             {copy.steps.map((step, index) => (
               <li
-                key={step}
+                key={step.title}
                 data-seq="step"
-                className="flex min-h-16 items-center gap-4 rounded-2xl border border-white/10 bg-[#14221b]/80 px-4 text-lg text-[#f7fbf8]"
+                className="flex items-start gap-4 rounded-2xl border border-white/15 bg-[#163026] px-4 py-4 text-[#f7fbf8]"
               >
-                <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#38dc89] text-sm font-bold text-[#072317]">
+                <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#38dc89] text-sm font-bold text-[#072317]">
                   {index + 1}
                 </span>
-                {step}
+                <span>
+                  <span className="block text-lg font-bold">{step.title}</span>
+                  <span className="mt-1 block text-base leading-7 text-[#d5e4da]">{step.body}</span>
+                </span>
               </li>
             ))}
-            <li data-seq="notes" className="mt-2 grid gap-2 text-sm text-[#adbeaf]">
-              {copy.sectors.map((sector) => (
-                <p key={sector.id}>{sector.note}</p>
-              ))}
-            </li>
           </ol>
           <div className="order-1">
             <h2 className="scene-title text-[#f7fbf8]">{setup.title}</h2>

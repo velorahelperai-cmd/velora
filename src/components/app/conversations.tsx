@@ -14,7 +14,7 @@ const statusStyle: Record<ConversationStatus, string> = {
   resolved: "bg-white/5 text-[#8da195]",
 };
 
-export function ConversationsPage() {
+export function ConversationsPage({ inbox = [] }: { inbox?: Conversation[] }) {
   const copy = useAppCopy();
   const { state, update, locale } = useDemo();
   const params = useSearchParams();
@@ -24,15 +24,31 @@ export function ConversationsPage() {
   const [filter, setFilter] = useState<ConversationStatus | "all">("all");
   const [draft, setDraft] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
+  const [localInbox, setLocalInbox] = useState<Record<string, Conversation>>({});
+
+  const conversations = useMemo(() => {
+    const live = inbox.map((item) => localInbox[item.id] ?? item);
+    const liveIds = new Set(live.map((item) => item.id));
+    return [...live, ...state.conversations.filter((item) => !liveIds.has(item.id))];
+  }, [inbox, localInbox, state.conversations]);
 
   const list = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return state.conversations.filter((c) => (filter === "all" || c.status === filter) && (!q || `${c.customer} ${c.topic} ${c.summary}`.toLowerCase().includes(q)));
-  }, [state.conversations, query, filter]);
-  const selected = state.conversations.find((c) => c.id === selectedId) ?? null;
+    return conversations.filter((c) => (filter === "all" || c.status === filter) && (!q || `${c.customer} ${c.topic} ${c.summary}`.toLowerCase().includes(q)));
+  }, [conversations, query, filter]);
+  const selected = conversations.find((c) => c.id === selectedId) ?? null;
   const select = (id: string | null) => router.replace(id ? `/app/conversations?c=${id}` : "/app/conversations");
-  const patch = (id: string, fn: (c: Conversation) => Partial<Conversation>) =>
+  const patch = (id: string, fn: (c: Conversation) => Partial<Conversation>) => {
+    if (inbox.some((item) => item.id === id)) {
+      setLocalInbox((current) => {
+        const base = current[id] ?? inbox.find((item) => item.id === id);
+        if (!base) return current;
+        return { ...current, [id]: { ...base, ...fn(base) } };
+      });
+      return;
+    }
     update((s) => ({ conversations: s.conversations.map((c) => (c.id === id ? { ...c, ...fn(c) } : c)) }));
+  };
   const me = state.account?.name ?? copy.app.you;
   const time = (at: number) => new Date(at).toLocaleTimeString(locale === "ar" ? "ar-OM" : "en-GB", { hour: "2-digit", minute: "2-digit" });
 
