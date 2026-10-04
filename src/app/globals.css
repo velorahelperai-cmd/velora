@@ -806,7 +806,7 @@ footer[id],
   .motion-theater.motion-compact .phone-slot {
     display: block;
     /* Cap by viewport height so the phone stays large but fully on-screen. */
-    width: min(78vw, 310px, calc((100svh - 10.5rem) * 1024 / 1536));
+    width: min(82vw, 330px, calc((100svh - 9.5rem) * 1024 / 1536));
     height: auto;
     aspect-ratio: 1024 / 1536;
     flex: 0 0 auto;
@@ -816,7 +816,7 @@ footer[id],
 
   .motion-theater.motion-compact .story-theater-phone {
     display: block !important;
-    width: min(80vw, 320px, calc((100svh - 10rem) * 1024 / 1536));
+    width: min(84vw, 340px, calc((100svh - 9rem) * 1024 / 1536));
   }
 
   .motion-theater.motion-compact .story-theater-phone::before {

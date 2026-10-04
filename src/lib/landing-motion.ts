@@ -18,7 +18,7 @@ function bindTheater(root: HTMLElement, compact: boolean) {
   const header = compact ? 56 : 68;
   const yawMax = compact ? 6 : 12;
   const travelYaw = compact ? 8 : 18;
-  const grow = compact ? 1.02 : 1.18;
+  const grow = compact ? 1.1 : 1.18;
   const sideAmount = compact ? 18 : 96;
   const pinScreens = compact ? 6.4 : 5.7;
   const scrub = compact ? 0.55 : true;
@@ -124,12 +124,12 @@ function bindTheater(root: HTMLElement, compact: boolean) {
           if (!still) x = next;
         }
       } else {
-        // Optical center of the pinned stage; bias slightly up so it reads as mid-screen.
+        // Aim the phone at ~52% of the stage so it reads as mid-screen, not bottom-heavy.
         x = gsap.utils.clamp(minX, Math.max(minX, maxX), (rangeBox.width - w) / 2);
-        const centerY = (rangeBox.height - h) / 2 - Math.min(28, rangeBox.height * 0.03);
-        // Keep a small gap under copy/CTAs so controls stay tappable above the phone.
-        const minClear = copyBottom != null ? Math.max(8, copyBottom + 6) : 8;
-        y = gsap.utils.clamp(minClear, Math.max(minClear, rangeBox.height - h - 8), Math.max(centerY, minClear));
+        const targetMid = rangeBox.height * 0.52;
+        const idealY = targetMid - h / 2;
+        const minClear = copyBottom != null ? Math.max(8, copyBottom - Math.round(h * 0.12)) : 8;
+        y = gsap.utils.clamp(minClear, Math.max(minClear, rangeBox.height - h - 8), idealY);
       }
       return { x, y, w, h, shift: item.shift, yaw: yawFor(x) };
     });
