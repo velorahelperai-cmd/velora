@@ -1,31 +1,21 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
-import { AdminCompanyDetail } from "@/components/app/admin-company-detail";
+import {
+  AdminCompanyDetail,
+  type AdminAudit,
+  type AdminCompany,
+  type AdminMember,
+} from "@/components/app/admin-company-detail";
+import { adminListCompanyKnowledge } from "@/lib/knowledge/actions";
 import { createClient } from "@/lib/supabase/server";
 import { getCompanyAccess, pathForAccess, requirePlatformAdmin } from "@/lib/tenancy/access";
-import type { CompanyStatus } from "@/lib/tenancy/types";
 
 export const metadata: Metadata = { title: "Company · Velora Admin" };
 
 type DetailPayload = {
-  company: {
-    id: string;
-    display_name: string;
-    status: CompanyStatus;
-    business_type: string;
-    country: string;
-    city: string;
-    hours: string;
-    contact_phone: string;
-    contact_email: string;
-    created_at: string;
-  };
-  members: Array<{
-    role: string;
-    status: string;
-    member_name: string;
-    email?: string | null;
-  }>;
+  company: AdminCompany;
+  members: AdminMember[];
+  audits?: AdminAudit[];
 };
 
 export default async function Page({ params }: { params: Promise<{ id: string }> }) {
@@ -45,15 +35,15 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
   if (error || !data) notFound();
 
   const payload = data as DetailPayload;
-  const owner =
-    payload.members.find((m) => m.role === "owner" && m.status === "active") ??
-    payload.members.find((m) => m.role === "owner") ??
-    null;
+  const knowledge = await adminListCompanyKnowledge(id);
 
   return (
     <AdminCompanyDetail
-      company={payload.company}
-      owner={owner ? { member_name: owner.member_name, email: owner.email ?? null } : null}
+      initialCompany={payload.company}
+      initialMembers={payload.members ?? []}
+      initialAudits={payload.audits ?? []}
+      initialKnowledge={knowledge.ok ? knowledge.data : []}
+      knowledgeLoadFailed={!knowledge.ok}
     />
   );
 }

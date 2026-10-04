@@ -10,7 +10,7 @@ import type { PlanId, SectorId } from "@/lib/landing-copy";
 
 export type Role = "owner" | "staff";
 export type SessionStage = "guest" | "unverified" | "active";
-export type SourceStatus = "draft" | "processing" | "ready" | "failed";
+export type SourceStatus = "draft" | "processing" | "stored" | "ready" | "failed";
 export type ConversationStatus = "open" | "follow_up" | "handed_over" | "resolved";
 
 export type Account = { name: string; email: string; role: Role };

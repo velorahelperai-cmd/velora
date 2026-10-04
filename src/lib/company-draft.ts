@@ -57,20 +57,11 @@ export function writeCompanyDraft(draft: CompanyDraft): void {
   }
 }
 
-/** Remove one user's company draft, or every company draft when userId is omitted. */
-export function clearCompanyDrafts(userId?: string): void {
-  if (typeof window === "undefined") return;
+/** Remove one user's company draft. No-op when userId is missing (never wipe all drafts). */
+export function clearCompanyDrafts(userId: string | null | undefined): void {
+  if (typeof window === "undefined" || !userId) return;
   try {
-    if (userId) {
-      window.localStorage.removeItem(keyFor(userId));
-      return;
-    }
-    const keys: string[] = [];
-    for (let i = 0; i < window.localStorage.length; i += 1) {
-      const key = window.localStorage.key(i);
-      if (key?.startsWith(COMPANY_DRAFT_PREFIX)) keys.push(key);
-    }
-    keys.forEach((key) => window.localStorage.removeItem(key));
+    window.localStorage.removeItem(keyFor(userId));
   } catch {
     /* ignore */
   }

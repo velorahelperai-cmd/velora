@@ -2,18 +2,32 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import type { KnowledgeSourceRecord } from "@/lib/knowledge/types";
 import { useDemo } from "@/lib/demo-state";
 import { AssistantTester } from "@/components/app/assistant-tester";
 import { KnowledgeEditor } from "@/components/app/knowledge-editor";
 import { WorkspaceShell } from "@/components/app/workspace-shell";
 import { LangSwitch, LinkButton, useAppCopy } from "@/components/app/ui";
 
-export function KnowledgePage() {
+export function KnowledgePage({
+  canWrite,
+  initialSources,
+  initialLoadFailed,
+}: {
+  canWrite: boolean;
+  initialSources: KnowledgeSourceRecord[];
+  initialLoadFailed: boolean;
+}) {
   const copy = useAppCopy();
   const topic = useSearchParams().get("topic") ?? undefined;
   return (
     <WorkspaceShell title={copy.knowledge.title}>
-      <KnowledgeEditor focusTitle={topic} />
+      <KnowledgeEditor
+        focusTitle={topic}
+        canWrite={canWrite}
+        initialSources={initialSources}
+        initialLoadFailed={initialLoadFailed}
+      />
     </WorkspaceShell>
   );
 }

@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { type Activation, type Business, nowMs, useDemo } from "@/lib/demo-state";
 import {
   type CompanyDraft,
@@ -11,6 +12,7 @@ import {
   writeCompanyDraft,
 } from "@/lib/company-draft";
 import { fill } from "@/lib/app-copy";
+import type { KnowledgeSourceRecord } from "@/lib/knowledge/types";
 import { landingCopy } from "@/lib/landing-copy";
 import { saveOwnerBusiness } from "@/lib/tenancy/actions";
 import type { CompanyRecord } from "@/lib/tenancy/types";
@@ -37,16 +39,30 @@ function companyToBusiness(company: CompanyRecord): Business {
 export function SetupWizard({
   userId,
   initialCompany,
+  initialKnowledge = [],
+  knowledgeLoadFailed = false,
 }: {
   userId: string;
   initialCompany?: CompanyRecord | null;
+  initialKnowledge?: KnowledgeSourceRecord[];
+  knowledgeLoadFailed?: boolean;
 }) {
   const copy = useAppCopy();
-  const { state, locale } = useDemo();
+  const { locale } = useDemo();
   const leaveGuardRef = useRef<(() => boolean) | null>(null);
   const companyId = initialCompany?.id ?? null;
   const [draft, setDraft] = useState<CompanyDraft>(() => emptyCompanyDraft(userId));
   const [ready, setReady] = useState(false);
+  const [knowledgeCount, setKnowledgeCount] = useState(
+    knowledgeLoadFailed ? 0 : initialKnowledge.length,
+  );
+  const [knowledgeFailed, setKnowledgeFailed] = useState(knowledgeLoadFailed);
+  const onKnowledgeSourcesChange = useCallback((sources: KnowledgeSourceRecord[]) => {
+    setKnowledgeCount(sources.length);
+  }, []);
+  const onKnowledgeLoadStateChange = useCallback((failed: boolean) => {
+    setKnowledgeFailed(failed);
+  }, []);
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -147,8 +163,32 @@ export function SetupWizard({
               />
             ) : null}
             {step === 1 ? (
-              <StepFrame onBack={() => go(0)} onNext={() => { markDone(1); go(2); }} nextDisabled={state.sources.length === 0} nextHint={state.sources.length === 0 ? copy.knowledge.empty : undefined}>
-                <KnowledgeEditor compact />
+              <StepFrame
+                onBack={() => go(0)}
+                onNext={() => { markDone(1); go(2); }}
+                nextDisabled={!draft.companyId || knowledgeFailed || knowledgeCount === 0}
+                nextHint={
+                  !draft.companyId
+                    ? copy.knowledge.needCompanyFirst
+                    : knowledgeFailed
+                      ? copy.knowledge.loadFailed
+                      : knowledgeCount === 0
+                        ? copy.knowledge.empty
+                        : undefined
+                }
+              >
+                {draft.companyId ? (
+                  <KnowledgeEditor
+                    compact
+                    canWrite
+                    initialSources={initialKnowledge}
+                    initialLoadFailed={knowledgeLoadFailed}
+                    onSourcesChange={onKnowledgeSourcesChange}
+                    onLoadStateChange={onKnowledgeLoadStateChange}
+                  />
+                ) : (
+                  <Notice tone="warn">{copy.knowledge.needCompanyFirst}</Notice>
+                )}
               </StepFrame>
             ) : null}
             {step === 2 ? (
@@ -165,6 +205,7 @@ export function SetupWizard({
                 setupDone={draft.setupDone}
                 businessName={draft.business.name}
                 sectorLabel={landingCopy(locale).sectors.find((s) => s.id === draft.business.type)?.label ?? copy.setup.typeOther}
+                knowledgeCount={knowledgeCount}
               />
             ) : null}
           </div>
@@ -202,6 +243,7 @@ function BusinessStep({
   leaveGuardRef: React.MutableRefObject<(() => boolean) | null>;
 }) {
   const copy = useAppCopy();
+  const router = useRouter();
   const { locale } = useDemo();
   const landing = landingCopy(locale);
   const form = draft.business;
@@ -255,6 +297,7 @@ function BusinessStep({
       });
       setBaseline(JSON.stringify(saved));
       leaveGuardRef.current = () => true;
+      router.refresh();
       onDone();
     });
   }
@@ -320,6 +363,7 @@ function ActivationStep({
   sectorLabel,
   setupDone,
   businessName,
+  knowledgeCount,
   leaveGuardRef,
 }: {
   onBack: () => void;
@@ -327,6 +371,7 @@ function ActivationStep({
   sectorLabel: string;
   setupDone: boolean[];
   businessName: string;
+  knowledgeCount: number;
   leaveGuardRef: React.MutableRefObject<(() => boolean) | null>;
 }) {
   const copy = useAppCopy();
@@ -367,7 +412,7 @@ function ActivationStep({
 
   const rows: [string, string][] = [
     [copy.setup.reviewRows[0], businessName ? `${businessName} · ${sectorLabel}` : copy.setup.noneYet],
-    [copy.setup.reviewRows[1], state.sources.length ? fill(copy.setup.sourcesCount, { n: state.sources.length }) : copy.setup.noneYet],
+    [copy.setup.reviewRows[1], knowledgeCount > 0 ? fill(copy.setup.sourcesCount, { n: knowledgeCount }) : copy.setup.noneYet],
     [copy.setup.reviewRows[2], tests ? fill(copy.setup.testsCount, { n: tests }) : copy.setup.noneYet],
     [copy.setup.reviewRows[3], state.activation.whatsappNumber || copy.setup.noneYet],
   ];

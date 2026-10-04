@@ -105,7 +105,20 @@ export function WorkspaceShell({ title, children, actions }: { title: string; ch
   }, [update]);
 
   async function logout() {
-    clearCompanyDrafts();
+    let userId: string | undefined;
+    try {
+      const supabase = createClient();
+      const { data } = await supabase.auth.getUser();
+      userId = data.user?.id;
+    } catch {
+      /* continue — signOut still authoritative */
+    }
+    const result = await signOut();
+    if (!result.ok) {
+      window.alert(result.message ?? copy.auth.logoutFailed);
+      return;
+    }
+    if (userId) clearCompanyDrafts(userId);
     update({
       account: null,
       signedIn: false,
@@ -115,7 +128,6 @@ export function WorkspaceShell({ title, children, actions }: { title: string; ch
       setupStep: 0,
       setupDone: [false, false, false, false],
     });
-    await signOut();
     router.replace("/login");
     router.refresh();
   }

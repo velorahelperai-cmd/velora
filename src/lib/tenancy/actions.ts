@@ -14,7 +14,7 @@ export async function signUpWithEmail(input: {
   name: string;
   email: string;
   password: string;
-}): Promise<ActionResult<{ needsVerification: boolean }>> {
+}): Promise<ActionResult<{ needsVerification: boolean; email: string }>> {
   const name = input.name.trim();
   const email = input.email.trim().toLowerCase();
   const password = input.password;
@@ -29,6 +29,7 @@ export async function signUpWithEmail(input: {
       password,
       options: {
         data: { full_name: name },
+        // Callback resolves /setup vs /app (or /admin) from real membership state.
         emailRedirectTo: authCallbackUrl("/setup"),
       },
     });
@@ -36,7 +37,7 @@ export async function signUpWithEmail(input: {
       return { ok: false, code: "AUTH_ERROR", message: error.message };
     }
     const needsVerification = !data.user?.email_confirmed_at && !data.session;
-    return { ok: true, data: { needsVerification } };
+    return { ok: true, data: { needsVerification, email } };
   } catch {
     return { ok: false, code: "UNAVAILABLE" };
   }
@@ -75,7 +76,8 @@ export async function resolvePostAuthPath(): Promise<ActionResult<{ next: string
 export async function signOut(): Promise<ActionResult> {
   try {
     const supabase = await createClient();
-    await supabase.auth.signOut();
+    const { error } = await supabase.auth.signOut();
+    if (error) return { ok: false, code: "AUTH_ERROR", message: error.message };
     return { ok: true, data: undefined };
   } catch {
     return { ok: false, code: "UNAVAILABLE" };
@@ -229,6 +231,7 @@ export async function adminUpdateCompany(input: {
     });
     if (error || !data) return { ok: false, code: "AUTH_ERROR", message: error?.message };
     revalidatePath("/admin");
+    revalidatePath(`/admin/companies/${input.companyId}`);
     return { ok: true, data: data as CompanyRecord };
   } catch {
     return { ok: false, code: "UNAVAILABLE" };
@@ -249,6 +252,7 @@ export async function adminSetCompanyStatus(
     });
     if (error || !data) return { ok: false, code: "AUTH_ERROR", message: error?.message };
     revalidatePath("/admin");
+    revalidatePath(`/admin/companies/${companyId}`);
     return { ok: true, data: data as CompanyRecord };
   } catch {
     return { ok: false, code: "UNAVAILABLE" };
@@ -266,6 +270,16 @@ export async function adminSetMemberStatus(input: {
   if (!access.ok) return { ok: false, code: access.code };
   try {
     const supabase = await createClient();
+    // Protect owner membership from disable/role changes via admin UI path.
+    const { data: member } = await supabase
+      .from("company_members")
+      .select("role")
+      .eq("company_id", input.companyId)
+      .eq("user_id", input.userId)
+      .maybeSingle();
+    if (member?.role === "owner" && (input.status === "disabled" || (input.role && input.role !== "owner"))) {
+      return { ok: false, code: "FORBIDDEN" };
+    }
     const { error } = await supabase.rpc("admin_set_member_status", {
       p_company_id: input.companyId,
       p_user_id: input.userId,
@@ -275,6 +289,7 @@ export async function adminSetMemberStatus(input: {
     });
     if (error) return { ok: false, code: "AUTH_ERROR", message: error.message };
     revalidatePath("/admin");
+    revalidatePath(`/admin/companies/${input.companyId}`);
     return { ok: true, data: undefined };
   } catch {
     return { ok: false, code: "UNAVAILABLE" };

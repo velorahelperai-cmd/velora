@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { clearCompanyDrafts } from "@/lib/company-draft";
+import { createClient } from "@/lib/supabase/client";
 import { adminListCompanies, signOut } from "@/lib/tenancy/actions";
 import type { AdminCompanyListItem, CompanyStatus } from "@/lib/tenancy/types";
 import { Button, LangSwitch, Notice, useAction, useAppCopy } from "@/components/app/ui";
@@ -52,7 +54,20 @@ export function AdminList() {
           <Button
             variant="secondary"
             onClick={() => void run(async () => {
-              await signOut();
+              let userId: string | undefined;
+              try {
+                const supabase = createClient();
+                const { data } = await supabase.auth.getUser();
+                userId = data.user?.id;
+              } catch {
+                /* signOut remains authoritative */
+              }
+              const result = await signOut();
+              if (!result.ok) {
+                setError(result.message ?? copy.auth.logoutFailed);
+                return;
+              }
+              if (userId) clearCompanyDrafts(userId);
               router.replace("/login");
               router.refresh();
             })}
@@ -76,16 +91,16 @@ export function AdminList() {
             placeholder={copy.admin.search}
             className="min-h-11 w-full rounded-xl border border-white/15 bg-transparent px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[#38dc89]"
           />
-          <select
+            <select
             value={status}
             onChange={(e) => setStatus(e.target.value as "all" | CompanyStatus)}
             aria-label={copy.admin.statusFilter}
             className="min-h-11 rounded-xl border border-white/15 bg-[#0d1a14] px-3 text-sm"
           >
             <option value="all">{copy.admin.statusAll}</option>
-            <option value="setup">setup</option>
-            <option value="active">active</option>
-            <option value="suspended">suspended</option>
+            <option value="setup">{copy.admin.statusSetup}</option>
+            <option value="active">{copy.admin.statusActive}</option>
+            <option value="suspended">{copy.admin.statusSuspended}</option>
           </select>
           <Button type="submit" busy={busy} busyLabel={copy.loading}>{copy.admin.searchAction}</Button>
         </form>
@@ -105,7 +120,15 @@ export function AdminList() {
                     <p className="mt-1 text-xs text-[#8da195]">{row.business_type} · {row.city || row.country}</p>
                     <p className="mt-1 text-xs text-[#adbeaf]" dir="ltr">{row.owner_email || "—"}</p>
                   </div>
-                  <span className="rounded-full bg-white/10 px-2 py-0.5 text-[11px]">{row.status}</span>
+                  <span className="rounded-full bg-white/10 px-2 py-0.5 text-[11px]">
+                    {row.status === "setup"
+                      ? copy.admin.statusSetup
+                      : row.status === "active"
+                        ? copy.admin.statusActive
+                        : row.status === "suspended"
+                          ? copy.admin.statusSuspended
+                          : row.status}
+                  </span>
                 </div>
               </Link>
             </li>

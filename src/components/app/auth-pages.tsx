@@ -291,9 +291,11 @@ export function SignupPage() {
   const copy = useAppCopy();
   const { state, locale } = useDemo();
   const router = useRouter();
+  const params = useSearchParams();
+  const prefillEmail = (params.get("email") || "").trim().toLowerCase();
   const { busy, run } = useAction();
   const [method, setMethod] = useState<AuthMethod>("email");
-  const [form, setForm] = useState({ name: "", email: "", password: "" });
+  const [form, setForm] = useState({ name: "", email: prefillEmail, password: "" });
   const [errors, setErrors] = useState<Partial<Record<"name" | "email" | "password", FieldErrorKey>>>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [altNotice, setAltNotice] = useState<string | null>(null);
@@ -325,7 +327,11 @@ export function SignupPage() {
         setFormError(result.message ?? copy.errors.authFailed);
         return;
       }
-      router.push(result.data.needsVerification ? "/verify-email" : "/setup");
+      if (result.data.needsVerification) {
+        router.push(`/verify-email?email=${encodeURIComponent(result.data.email)}`);
+        return;
+      }
+      router.push("/setup");
     });
   }
 
@@ -446,26 +452,41 @@ export function LoginPage() {
 
 export function VerifyEmailPage() {
   const copy = useAppCopy();
-  const [email, setEmail] = useState("");
+  const router = useRouter();
+  const params = useSearchParams();
+  const emailFromQuery = (params.get("email") || "").trim().toLowerCase();
+  const [registeredEmail, setRegisteredEmail] = useState(emailFromQuery);
+  const [correctEmail, setCorrectEmail] = useState("");
+  const [emailError, setEmailError] = useState<FieldErrorKey>();
   const [resent, setResent] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cooldown, setCooldown] = useState(0);
+  const [hydrated, setHydrated] = useState(Boolean(emailFromQuery));
   const { busy, run } = useAction();
+  const emailErrText = useErrorText(emailError);
 
   useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      const { createClient } = await import("@/lib/supabase/client");
-      try {
-        const supabase = createClient();
-        const { data } = await supabase.auth.getUser();
-        if (!cancelled) setEmail(data.user?.email ?? "");
-      } catch {
-        if (!cancelled) setEmail("");
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
+    const frame = window.requestAnimationFrame(() => {
+      void (async () => {
+        if (emailFromQuery) {
+          setRegisteredEmail(emailFromQuery);
+          setHydrated(true);
+          return;
+        }
+        try {
+          const { createClient } = await import("@/lib/supabase/client");
+          const supabase = createClient();
+          const { data } = await supabase.auth.getUser();
+          setRegisteredEmail((data.user?.email ?? "").toLowerCase());
+        } catch {
+          setRegisteredEmail("");
+        } finally {
+          setHydrated(true);
+        }
+      })();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [emailFromQuery]);
 
   useEffect(() => {
     if (cooldown <= 0) return;
@@ -474,23 +495,33 @@ export function VerifyEmailPage() {
   }, [cooldown]);
 
   return (
-    <AuthShell title={copy.auth.verifyTitle} body={fill(copy.auth.verifyBody, { email: email || "…" })}>
+    <AuthShell title={copy.auth.verifyTitle} body={fill(copy.auth.verifyBody, { email: registeredEmail || "…" })}>
       <div className="grid gap-4">
-        <Notice tone="info">
-          <span dir="ltr" className="font-medium">{email || "—"}</span>
-          <br />
-          {copy.auth.verifyRealBody}
-        </Notice>
+        <Notice tone="info">{copy.auth.verifyRealBody}</Notice>
         {error ? <Notice tone="error">{error}</Notice> : null}
         {resent ? <Notice tone="success">{copy.auth.resent}</Notice> : null}
+        <Field label={copy.auth.verifyEmailLabel} hint={copy.auth.verifyEmailHint}>
+          {(p) => (
+            <input
+              {...p}
+              type="email"
+              dir="ltr"
+              value={registeredEmail}
+              readOnly
+              className={`${p.className} opacity-80`}
+            />
+          )}
+        </Field>
         <Button
           busy={busy}
           busyLabel={copy.loading}
-          disabled={!email || busy || cooldown > 0}
+          disabled={!hydrated || !registeredEmail || busy || cooldown > 0}
           onClick={() => {
+            if (busy || cooldown > 0 || !registeredEmail) return;
             setError(null);
+            setResent(false);
             void run(async () => {
-              const result = await resendVerificationEmail(email);
+              const result = await resendVerificationEmail(registeredEmail);
               if (!result.ok) {
                 setError(result.message ?? copy.errors.authFailed);
                 return;
@@ -502,6 +533,46 @@ export function VerifyEmailPage() {
         >
           {cooldown > 0 ? fill(copy.auth.resendIn, { n: cooldown }) : copy.auth.resend}
         </Button>
+
+        <div className="grid gap-3 border-t border-white/10 pt-4">
+          <p className="text-xs leading-5 text-[#8da195]">{copy.auth.correctEmailHint}</p>
+          <Field label={copy.auth.correctEmail} error={emailErrText}>
+            {(p) => (
+              <input
+                {...p}
+                type="email"
+                dir="ltr"
+                inputMode="email"
+                autoComplete="email"
+                value={correctEmail}
+                disabled={busy}
+                onChange={(e) => {
+                  setCorrectEmail(e.target.value);
+                  setEmailError(undefined);
+                  setError(null);
+                  setResent(false);
+                }}
+              />
+            )}
+          </Field>
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={busy}
+            onClick={() => {
+              const cleaned = correctEmail.trim().toLowerCase();
+              if (!isEmail(cleaned)) {
+                setEmailError("email");
+                return;
+              }
+              // Real new signup path — email only in query; never password.
+              router.push(`/signup?email=${encodeURIComponent(cleaned)}`);
+            }}
+          >
+            {copy.auth.correctEmail}
+          </Button>
+        </div>
+
         <LinkButton href="/login" variant="secondary">{copy.auth.login}</LinkButton>
       </div>
     </AuthShell>

@@ -1,6 +1,6 @@
 /**
- * Local isolation check: company draft storage must be keyed by user and cleared on logout/switch.
- * Does not touch velora_preview_v1 (language/preview remain independent).
+ * Local isolation check: company draft storage must be keyed by user.
+ * clearCompanyDrafts requires userId; missing id clears nothing.
  */
 import assert from "node:assert/strict";
 
@@ -24,9 +24,6 @@ function createMemoryStorage() {
     },
     removeItem(k) {
       map.delete(k);
-    },
-    clear() {
-      map.clear();
     },
   };
 }
@@ -59,23 +56,10 @@ function readDraft(storage, userId) {
   return parsed;
 }
 
-function clearDrafts(storage, userId) {
-  if (userId) {
-    storage.removeItem(keyFor(userId));
-    return;
-  }
-  const keys = [];
-  for (let i = 0; i < storage.length; i += 1) {
-    const k = storage.key(i);
-    if (k?.startsWith(COMPANY_DRAFT_PREFIX)) keys.push(k);
-  }
-  keys.forEach((k) => storage.removeItem(k));
-}
-
-function draftAllowedFor(draft, userId, companyId) {
-  if (!draft || draft.userId !== userId) return false;
-  if (companyId && draft.companyId && draft.companyId !== companyId) return false;
-  return true;
+/** Mirrors src/lib/company-draft.ts — no wipe-all when userId missing. */
+function clearCompanyDrafts(storage, userId) {
+  if (!userId) return;
+  storage.removeItem(keyFor(userId));
 }
 
 const storage = createMemoryStorage();
@@ -85,33 +69,29 @@ const userA = "user-a";
 const userB = "user-b";
 const draftA = emptyDraft(userA);
 draftA.business.name = "Activity A";
-draftA.business.hours = "9-5";
-draftA.companyId = "company-a";
-draftA.businessSaved = true;
 writeDraft(storage, draftA);
+const draftB = emptyDraft(userB);
+draftB.business.name = "Activity B";
+writeDraft(storage, draftB);
 
 assert.equal(readDraft(storage, userA)?.business.name, "Activity A");
-assert.equal(readDraft(storage, userB), null);
+assert.equal(readDraft(storage, userB)?.business.name, "Activity B");
 
-// Logout / account switch clears company drafts, keeps preview + language store
-clearDrafts(storage);
+// Missing identity clears nothing
+clearCompanyDrafts(storage, undefined);
+clearCompanyDrafts(storage, null);
+clearCompanyDrafts(storage, "");
+assert.equal(readDraft(storage, userA)?.business.name, "Activity A");
+assert.equal(readDraft(storage, userB)?.business.name, "Activity B");
+
+// Logout A clears only A
+clearCompanyDrafts(storage, userA);
 assert.equal(readDraft(storage, userA), null);
+assert.equal(readDraft(storage, userB)?.business.name, "Activity B");
 assert.ok(storage.getItem(PREVIEW_KEY), "preview store must remain");
-
-// Account B starts empty; must not inherit A
-const loadedB = readDraft(storage, userB);
-assert.equal(loadedB, null);
-const draftB = emptyDraft(userB);
-assert.equal(draftB.business.name, "");
-assert.equal(draftAllowedFor(draftA, userB, null), false);
-assert.equal(draftAllowedFor(draftA, userA, "company-a"), true);
-assert.equal(draftAllowedFor(draftA, userA, "company-other"), false);
-
-writeDraft(storage, draftB);
-assert.notEqual(readDraft(storage, userB)?.business.name, "Activity A");
 
 console.log("PASS");
 console.log("- draft keyed by user");
-console.log("- logout clears company drafts only");
-console.log("- account B does not inherit A");
+console.log("- logout A keeps B");
+console.log("- missing userId clears nothing");
 console.log("- preview storage stays independent");

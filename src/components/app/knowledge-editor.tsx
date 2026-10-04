@@ -1,160 +1,442 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { type KnowledgeSource, nowMs, uid, useDemo } from "@/lib/demo-state";
+import { useEffect, useState } from "react";
+import {
+  deleteKnowledgeSource,
+  listKnowledgeSources,
+  repairStoredKnowledgeFile,
+  retryFailedKnowledgeFile,
+  saveTextKnowledgeSource,
+  uploadKnowledgeFiles,
+} from "@/lib/knowledge/actions";
+import {
+  KNOWLEDGE_ACCEPT,
+  validateKnowledgeBatch,
+  validateKnowledgeFile,
+} from "@/lib/knowledge/constants";
+import type { KnowledgeSourceRecord } from "@/lib/knowledge/types";
 import { fill } from "@/lib/app-copy";
 import {
-  Button, ConfirmDialog, EmptyState, Field, FieldErrorKey, Notice, SimTag,
+  Button, ConfirmDialog, EmptyState, Field, FieldErrorKey, Notice,
   useAppCopy, useErrorText, useUnsavedWarning,
 } from "@/components/app/ui";
 
-/** Shared between the setup wizard and the workspace knowledge page. */
-export function KnowledgeEditor({ compact, focusTitle }: { compact?: boolean; focusTitle?: string }) {
+type Props = {
+  compact?: boolean;
+  focusTitle?: string;
+  canWrite: boolean;
+  initialSources: KnowledgeSourceRecord[];
+  /** True when the server failed to load sources (do not show empty state). */
+  initialLoadFailed?: boolean;
+  onSourcesChange?: (sources: KnowledgeSourceRecord[]) => void;
+  /** Notify parent when load failure clears/sets (e.g. setup Next button). */
+  onLoadStateChange?: (failed: boolean) => void;
+};
+
+function fileErrorMessage(code: string | undefined, copy: ReturnType<typeof useAppCopy>) {
+  if (code === "TOO_LARGE") return copy.knowledge.fileTooLarge;
+  if (code === "INVALID_TYPE") return copy.knowledge.fileInvalidType;
+  if (code === "EMPTY") return copy.knowledge.fileEmpty;
+  if (code === "BATCH_TOO_MANY") return copy.knowledge.batchTooMany;
+  if (code === "BATCH_TOO_LARGE") return copy.knowledge.batchTooLarge;
+  if (code === "CLEANUP_FAILED") return copy.knowledge.cleanupFailed;
+  return copy.knowledge.fileUploadFailed;
+}
+
+function statusLabel(status: string, copy: ReturnType<typeof useAppCopy>) {
+  const map = copy.knowledge.statuses as Record<string, string>;
+  return map[status] ?? status;
+}
+
+/** Company knowledge editor (setup + /app/knowledge). Always persists to DB when rendered. */
+export function KnowledgeEditor({
+  compact,
+  focusTitle,
+  canWrite,
+  initialSources,
+  initialLoadFailed = false,
+  onSourcesChange,
+  onLoadStateChange,
+}: Props) {
   const copy = useAppCopy();
-  const { state, update } = useDemo();
-  const [mode, setMode] = useState<"text" | "file" | null>(focusTitle ? "text" : null);
+  const [sources, setSources] = useState<KnowledgeSourceRecord[]>(initialSources);
+  const [loadFailed, setLoadFailed] = useState(initialLoadFailed);
+  const [mode, setMode] = useState<"text" | "file" | null>(focusTitle && !initialLoadFailed ? "text" : null);
   const [editing, setEditing] = useState<string | null>(null);
-  const [form, setForm] = useState({ title: focusTitle ?? "", content: "", fileName: "" });
-  const [errors, setErrors] = useState<Partial<Record<"title" | "content" | "fileName", FieldErrorKey>>>({});
+  const [form, setForm] = useState({ title: focusTitle ?? "", content: "", files: null as FileList | null });
+  const [errors, setErrors] = useState<Partial<Record<"title" | "content" | "files", FieldErrorKey>>>({});
   const [notice, setNotice] = useState<string | null>(null);
-  const [pendingDelete, setPendingDelete] = useState<KnowledgeSource | null>(null);
-  const timers = useRef<number[]>([]);
-  const dirty = mode !== null && Boolean(form.title || form.content || form.fileName);
+  const [error, setError] = useState<string | null>(null);
+  const [uploadResults, setUploadResults] = useState<{ fileName: string; ok: boolean; message?: string }[]>([]);
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; title: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [retryId, setRetryId] = useState<string | null>(null);
+
+  const dirty = mode !== null && Boolean(form.title || form.content || (form.files && form.files.length));
   useUnsavedWarning(dirty);
   const titleError = useErrorText(errors.title);
   const contentError = useErrorText(errors.content);
-  const fileError = useErrorText(errors.fileName);
+  const fileError = useErrorText(errors.files);
 
   useEffect(() => {
-    const list = timers.current;
-    return () => list.forEach((t) => window.clearTimeout(t));
-  }, []);
+    onSourcesChange?.(sources);
+  }, [sources, onSourcesChange]);
 
-  /** Display-only lifecycle: processing → ready (or failed for a name containing "fail"). Nothing is actually processed. */
-  function simulateProcessing(id: string, fileName: string) {
-    const t = window.setTimeout(() => {
-      update((s) => ({
-        sources: s.sources.map((src) =>
-          src.id === id ? { ...src, status: /fail/i.test(fileName) ? "failed" : "ready", updatedAt: nowMs() } : src,
-        ),
-      }));
-    }, 1800);
-    timers.current.push(t);
+  function setLoadFailedState(failed: boolean) {
+    setLoadFailed(failed);
+    onLoadStateChange?.(failed);
   }
 
   function reset() {
-    setMode(null); setEditing(null); setForm({ title: "", content: "", fileName: "" }); setErrors({});
+    setMode(null);
+    setEditing(null);
+    setForm({ title: "", content: "", files: null });
+    setErrors({});
+  }
+
+  async function reload() {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await listKnowledgeSources();
+      if (!result.ok) {
+        setLoadFailedState(true);
+        return;
+      }
+      setLoadFailedState(false);
+      setSources(result.data);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveTextDb() {
+    const next: typeof errors = {};
+    if (!form.title.trim()) next.title = "required";
+    if (!form.content.trim()) next.content = "required";
+    setErrors(next);
+    if (Object.keys(next).length) return;
+
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await saveTextKnowledgeSource({
+        id: editing ?? undefined,
+        title: form.title,
+        content: form.content,
+      });
+      if (!result.ok) {
+        setError(result.message ?? copy.knowledge.saveFailed);
+        return;
+      }
+      setSources((prev) => {
+        const others = prev.filter((s) => s.id !== result.data.id);
+        return [result.data, ...others];
+      });
+      setNotice(copy.saved);
+      reset();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveFilesDb() {
+    if (!form.files?.length) {
+      setErrors({ files: "required" });
+      return;
+    }
+    const batchErr = validateKnowledgeBatch(
+      Array.from(form.files).map((f) => ({ name: f.name, size: f.size, type: f.type })),
+    );
+    if (batchErr) {
+      setError(fileErrorMessage(batchErr, copy));
+      return;
+    }
+
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    setUploadResults([]);
+    try {
+      const fd = new FormData();
+      Array.from(form.files).forEach((f) => fd.append("files", f));
+      const result = await uploadKnowledgeFiles(fd);
+      if (!result.ok) {
+        setError(fileErrorMessage(result.message, copy) || result.message || copy.knowledge.saveFailed);
+        return;
+      }
+      const rows = result.data;
+      setUploadResults(
+        rows.map((r) => ({
+          fileName: r.fileName,
+          ok: r.ok,
+          message: r.ok ? undefined : fileErrorMessage(r.code, copy),
+        })),
+      );
+      const touched = rows.filter((r) => r.source).map((r) => r.source!);
+      if (touched.length) {
+        setSources((prev) => {
+          const merged = [...touched, ...prev];
+          const seen = new Set<string>();
+          return merged.filter((s) => {
+            if (seen.has(s.id)) return false;
+            seen.add(s.id);
+            return true;
+          });
+        });
+      }
+      const allOk = rows.every((r) => r.ok);
+      if (allOk) setNotice(copy.knowledge.uploadDone);
+      else setError(copy.knowledge.uploadPartial);
+      reset();
+    } finally {
+      setBusy(false);
+    }
   }
 
   function save() {
-    const next: typeof errors = {};
-    if (!form.title.trim()) next.title = "required";
-    if (mode === "text" && !form.content.trim()) next.content = "required";
-    if (mode === "file" && !form.fileName) next.fileName = "required";
-    setErrors(next);
-    if (Object.keys(next).length) return;
-    const id = editing ?? uid();
-    const source: KnowledgeSource = {
-      id,
-      kind: mode === "file" ? "file" : "text",
-      title: form.title.trim(),
-      content: form.content.trim(),
-      fileName: mode === "file" ? form.fileName : undefined,
-      status: mode === "file" ? "processing" : "ready",
-      updatedAt: nowMs(),
-    };
-    update((s) => ({ sources: editing ? s.sources.map((x) => (x.id === id ? source : x)) : [...s.sources, source] }));
-    if (mode === "file") simulateProcessing(id, form.fileName);
-    setNotice(copy.saved);
-    reset();
+    if (!canWrite || loadFailed) return;
+    if (mode === "text") void saveTextDb();
+    else void saveFilesDb();
   }
 
-  function remove(src: KnowledgeSource) {
-    update((s) => ({ sources: s.sources.filter((x) => x.id !== src.id) }));
-    setPendingDelete(null);
-    setNotice(copy.knowledge.deleted);
+  async function removeDb(id: string) {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await deleteKnowledgeSource(id);
+      setPendingDelete(null);
+      if (!result.ok) {
+        const msg = result.message ?? "";
+        setError(
+          msg.startsWith("DELETE_PARTIAL:")
+            ? copy.knowledge.deletePartial
+            : (result.message ?? copy.knowledge.deleteFailed),
+        );
+        return;
+      }
+      setSources((prev) => prev.filter((s) => s.id !== id));
+      setNotice(copy.knowledge.deleted);
+    } finally {
+      setBusy(false);
+    }
   }
 
-  function retry(src: KnowledgeSource) {
-    update((s) => ({ sources: s.sources.map((x) => (x.id === src.id ? { ...x, status: "processing" } : x)) }));
-    simulateProcessing(src.id, "retry");
+  async function retryDb(src: KnowledgeSourceRecord, file: File) {
+    const validation = validateKnowledgeFile({ name: file.name, size: file.size, type: file.type });
+    if (validation) {
+      setError(fileErrorMessage(validation, copy));
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const result = await retryFailedKnowledgeFile(src.id, fd);
+      if (!result.ok) {
+        setError(result.message ?? copy.knowledge.fileUploadFailed);
+        return;
+      }
+      setSources((prev) => prev.map((s) => (s.id === src.id ? result.data : s)));
+      setNotice(copy.knowledge.uploadDone);
+    } finally {
+      setBusy(false);
+      setRetryId(null);
+    }
   }
 
-  const statusStyle: Record<KnowledgeSource["status"], string> = {
+  async function repairDb(src: KnowledgeSourceRecord) {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await repairStoredKnowledgeFile(src.id);
+      if (!result.ok) {
+        setError(result.message ?? copy.knowledge.cleanupFailed);
+        return;
+      }
+      setSources((prev) => prev.map((s) => (s.id === src.id ? result.data : s)));
+      setNotice(copy.knowledge.uploadDone);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const statusStyle: Record<string, string> = {
     draft: "bg-white/10 text-[#dfe9e2]",
     processing: "bg-[#d9a467]/15 text-[#f0cf9d]",
+    stored: "bg-[#38dc89]/10 text-[#9af0c3]",
     ready: "bg-[#38dc89]/15 text-[#9af0c3]",
     failed: "bg-[#e07a5f]/15 text-[#f3a08a]",
   };
+
+  if (loadFailed) {
+    return (
+      <div className="grid gap-3">
+        <Notice tone="error">{copy.knowledge.loadFailed}</Notice>
+        <Button variant="secondary" busy={busy} onClick={() => void reload()}>
+          {copy.knowledge.retryLoad}
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="grid gap-4">
       {!compact ? <p className="text-sm leading-6 text-[#adbeaf]">{copy.knowledge.body}</p> : null}
       <p className="text-xs leading-5 text-[#8da195]">{copy.knowledge.examples}</p>
+      {!canWrite ? <Notice tone="info">{copy.knowledge.readOnly}</Notice> : null}
       {notice ? <Notice tone="success">{notice}</Notice> : null}
+      {error ? <Notice tone="error">{error}</Notice> : null}
+      {uploadResults.length ? (
+        <ul className="grid gap-1 rounded-2xl border border-white/10 bg-white/5 p-3 text-xs">
+          {uploadResults.map((r) => (
+            <li key={r.fileName} className={r.ok ? "text-[#9af0c3]" : "text-[#f3a08a]"}>
+              <span dir="ltr">{r.fileName}</span>
+              {" — "}
+              {r.ok ? copy.knowledge.statuses.stored : r.message}
+            </li>
+          ))}
+        </ul>
+      ) : null}
 
-      <div className="flex flex-wrap gap-2">
-        <Button variant={mode === "text" ? "primary" : "secondary"} onClick={() => { setMode("text"); setEditing(null); }}>{copy.knowledge.addText}</Button>
-        <Button variant={mode === "file" ? "primary" : "secondary"} onClick={() => { setMode("file"); setEditing(null); }}>{copy.knowledge.addFile}</Button>
-        {state.sources.length === 0 ? (
-          <Button variant="ghost" onClick={() => {
-            const samples = copy.knowledge.quickSamples.map((q) => ({ id: uid(), kind: "text" as const, title: q.title, content: q.content, status: "ready" as const, updatedAt: nowMs() }));
-            update((s) => ({ sources: [...s.sources, ...samples] }));
-            setNotice(copy.saved);
-          }}>{copy.knowledge.quickAdd}</Button>
-        ) : null}
-      </div>
+      {canWrite ? (
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant={mode === "text" ? "primary" : "secondary"}
+            busy={busy}
+            onClick={() => { setMode("text"); setEditing(null); setForm({ title: "", content: "", files: null }); }}
+          >
+            {copy.knowledge.addText}
+          </Button>
+          <Button
+            variant={mode === "file" ? "primary" : "secondary"}
+            busy={busy}
+            onClick={() => { setMode("file"); setEditing(null); setForm({ title: "", content: "", files: null }); }}
+          >
+            {copy.knowledge.addFile}
+          </Button>
+        </div>
+      ) : null}
 
-      {mode ? (
-        <form className="grid gap-3 rounded-2xl border border-white/10 bg-white/5 p-4" noValidate onSubmit={(e) => { e.preventDefault(); save(); }}>
-          <Field label={copy.knowledge.sourceTitle} required error={titleError}>
-            {(p) => <input {...p} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />}
-          </Field>
+      {mode && canWrite ? (
+        <form
+          className="grid gap-3 rounded-2xl border border-white/10 bg-white/5 p-4"
+          noValidate
+          onSubmit={(e) => { e.preventDefault(); save(); }}
+        >
           {mode === "text" ? (
-            <Field label={copy.knowledge.sourceContent} required error={contentError}>
-              {(p) => <textarea {...p} rows={4} value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} className={`${p.className} min-h-28 py-2`} />}
-            </Field>
+            <>
+              <Field label={copy.knowledge.sourceTitle} required error={titleError}>
+                {(p) => <input {...p} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />}
+              </Field>
+              <Field label={copy.knowledge.sourceContent} required error={contentError}>
+                {(p) => (
+                  <textarea
+                    {...p}
+                    rows={4}
+                    value={form.content}
+                    onChange={(e) => setForm({ ...form, content: e.target.value })}
+                    className={`${p.className} min-h-28 py-2`}
+                  />
+                )}
+              </Field>
+            </>
           ) : (
             <Field label={copy.knowledge.addFile} required hint={copy.knowledge.fileHint} error={fileError}>
               {(p) => (
                 <input
                   {...p}
                   type="file"
-                  accept=".pdf,.png,.jpg,.jpeg,.csv,.xlsx"
-                  onChange={(e) => setForm({ ...form, fileName: e.target.files?.[0]?.name ?? "" })}
+                  multiple
+                  accept={KNOWLEDGE_ACCEPT}
+                  onChange={(e) => setForm({ ...form, files: e.target.files, title: e.target.files?.[0]?.name ?? form.title })}
                   className={`${p.className} py-2 file:me-3 file:rounded-lg file:border-0 file:bg-[#38dc89] file:px-3 file:py-1.5 file:text-[#072317]`}
                 />
               )}
             </Field>
           )}
           <div className="flex flex-wrap gap-2">
-            <Button type="submit">{copy.save}</Button>
-            <Button type="button" variant="secondary" onClick={reset}>{copy.cancel}</Button>
+            <Button type="submit" busy={busy} busyLabel={mode === "file" ? copy.knowledge.uploading : copy.saving}>
+              {copy.save}
+            </Button>
+            <Button type="button" variant="secondary" disabled={busy} onClick={reset}>{copy.cancel}</Button>
           </div>
         </form>
       ) : null}
 
-      {state.sources.length === 0 ? (
+      {sources.length === 0 ? (
         <EmptyState title={copy.knowledge.empty} />
       ) : (
         <ul className="grid gap-2">
-          {state.sources.map((src) => (
+          {sources.map((src) => (
             <li key={src.id} className="grid gap-2 rounded-2xl border border-white/10 bg-[#0d1a14] p-4 sm:grid-cols-[1fr_auto] sm:items-start">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="font-medium text-[#f7fbf8]">{src.title}</p>
-                  <span className={`rounded-full px-2 py-0.5 text-xs ${statusStyle[src.status]}`}>{copy.knowledge.statuses[src.status]}</span>
-                  {src.kind === "file" ? <SimTag /> : null}
+                  <span className={`rounded-full px-2 py-0.5 text-xs ${statusStyle[src.status]}`}>
+                    {statusLabel(src.status, copy)}
+                  </span>
                 </div>
-                <p className="mt-1 line-clamp-2 text-sm leading-6 text-[#adbeaf]">{src.kind === "file" ? <span dir="ltr">{src.fileName}</span> : src.content}</p>
+                <p className="mt-1 line-clamp-2 text-sm leading-6 text-[#adbeaf]">
+                  {src.kind === "file" ? <span dir="ltr">{src.file_name}</span> : src.content}
+                </p>
               </div>
-              <div className="flex flex-wrap gap-1">
-                {src.status === "failed" ? <Button variant="ghost" onClick={() => retry(src)}>{copy.knowledge.retry}</Button> : null}
-                {src.kind === "text" ? (
-                  <Button variant="ghost" onClick={() => { setMode("text"); setEditing(src.id); setForm({ title: src.title, content: src.content, fileName: "" }); }}>{copy.edit}</Button>
-                ) : null}
-                <Button variant="ghost" onClick={() => setPendingDelete(src)}>{copy.delete}</Button>
-              </div>
+              {canWrite ? (
+                <div className="flex flex-wrap gap-1">
+                  {src.kind === "file" && src.storage_path && (src.status === "failed" || src.status === "draft") ? (
+                    <Button variant="ghost" busy={busy} onClick={() => void repairDb(src)}>
+                      {copy.knowledge.repair}
+                    </Button>
+                  ) : null}
+                  {src.kind === "file" && (src.status === "failed" || src.status === "draft") ? (
+                    <>
+                      <input
+                        id={`retry-${src.id}`}
+                        type="file"
+                        accept={KNOWLEDGE_ACCEPT}
+                        className="sr-only"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) void retryDb(src, f);
+                          e.target.value = "";
+                        }}
+                      />
+                      <Button
+                        variant="ghost"
+                        busy={busy && retryId === src.id}
+                        onClick={() => {
+                          setRetryId(src.id);
+                          document.getElementById(`retry-${src.id}`)?.click();
+                        }}
+                      >
+                        {copy.knowledge.retry}
+                      </Button>
+                    </>
+                  ) : null}
+                  {src.kind === "text" ? (
+                    <Button
+                      variant="ghost"
+                      disabled={busy}
+                      onClick={() => {
+                        setMode("text");
+                        setEditing(src.id);
+                        setForm({ title: src.title, content: src.content, files: null });
+                      }}
+                    >
+                      {copy.edit}
+                    </Button>
+                  ) : null}
+                  <Button variant="ghost" disabled={busy} onClick={() => setPendingDelete({ id: src.id, title: src.title })}>
+                    {copy.delete}
+                  </Button>
+                </div>
+              ) : null}
             </li>
           ))}
         </ul>
@@ -167,7 +449,9 @@ export function KnowledgeEditor({ compact, focusTitle }: { compact?: boolean; fo
         body={pendingDelete ? fill(copy.knowledge.confirmDelete, { title: pendingDelete.title }) : undefined}
         confirmLabel={copy.delete}
         danger
-        onConfirm={() => pendingDelete && remove(pendingDelete)}
+        onConfirm={() => {
+          if (pendingDelete) void removeDb(pendingDelete.id);
+        }}
         onCancel={() => setPendingDelete(null)}
       />
     </div>

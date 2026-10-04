@@ -25,16 +25,14 @@ export async function GET(request: Request) {
       return NextResponse.redirect(login);
     }
 
-    // Recovery / invite flows may request a specific page after session exchange.
+    // Recovery session must land on password form.
     if (next === "/reset-password") {
       return NextResponse.redirect(`${origin}/reset-password`);
     }
 
+    // Email confirmation / OAuth: route by verified membership state (setup vs workspace).
     const access = await getCompanyAccess();
-    const destination = next && !access.ok && access.code === "UNVERIFIED"
-      ? next
-      : pathForAccess(access);
-    return NextResponse.redirect(`${origin}${destination}`);
+    return NextResponse.redirect(`${origin}${pathForAccess(access)}`);
   }
 
   return NextResponse.redirect(`${origin}/login?error=auth_callback`);

@@ -112,6 +112,50 @@ export type Database = {
         Update: never;
         Relationships: [];
       };
+      knowledge_sources: {
+        Row: {
+          id: string;
+          company_id: string;
+          kind: "text" | "file";
+          title: string;
+          content: string;
+          file_name: string | null;
+          content_type: string | null;
+          byte_size: number | null;
+          storage_path: string | null;
+          status: "draft" | "stored" | "ready" | "failed";
+          created_by: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          company_id: string;
+          kind: "text" | "file";
+          title: string;
+          content?: string;
+          file_name?: string | null;
+          content_type?: string | null;
+          byte_size?: number | null;
+          storage_path?: string | null;
+          status?: "draft" | "stored" | "ready" | "failed";
+          created_by: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          kind?: "text" | "file";
+          title?: string;
+          content?: string;
+          file_name?: string | null;
+          content_type?: string | null;
+          byte_size?: number | null;
+          storage_path?: string | null;
+          status?: "draft" | "stored" | "ready" | "failed";
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
