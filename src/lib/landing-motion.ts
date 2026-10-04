@@ -16,12 +16,12 @@ const STORY_IDS: StoryId[] = ["1", "2", "3", "4", "5", "9"];
 
 function bindTheater(root: HTMLElement, compact: boolean) {
   const header = compact ? 56 : 68;
-  const yawMax = compact ? 8 : 12;
-  const travelYaw = compact ? 10 : 18;
-  const grow = compact ? 1.06 : 1.18;
+  const yawMax = compact ? 6 : 12;
+  const travelYaw = compact ? 8 : 18;
+  const grow = compact ? 1.02 : 1.18;
   const sideAmount = compact ? 18 : 96;
   const pinScreens = compact ? 6.4 : 5.7;
-  const scrub = compact ? 0.65 : true;
+  const scrub = compact ? 0.55 : true;
 
   root.classList.add("motion-theater");
   root.classList.add(compact ? "motion-compact" : "motion-desktop");
@@ -124,8 +124,11 @@ function bindTheater(root: HTMLElement, compact: boolean) {
           if (!still) x = next;
         }
       } else {
-        // Stacked layout: keep the phone centered in the available band under the copy.
+        // Optical center of the pinned stage; bias slightly up so it reads as mid-screen.
         x = gsap.utils.clamp(minX, Math.max(minX, maxX), (rangeBox.width - w) / 2);
+        const centerY = (rangeBox.height - h) / 2 - Math.min(28, rangeBox.height * 0.03);
+        const minClear = copyBottom != null ? Math.max(8, copyBottom - h * 0.35) : 8;
+        y = gsap.utils.clamp(minClear, Math.max(minClear, rangeBox.height - h - 8), centerY);
       }
       return { x, y, w, h, shift: item.shift, yaw: yawFor(x) };
     });

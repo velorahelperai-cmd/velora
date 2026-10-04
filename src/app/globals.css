@@ -713,36 +713,36 @@ footer[id],
   margin-top: 0.55rem;
 }
 
-/* Compact theater: stacked copy + phone inside the live viewport. */
+/* Compact theater: readable copy band + larger phone centered in the free space. */
 @media (max-width: 1023px) {
   .motion-theater.motion-compact .story-phone-range {
     height: calc(100svh - 56px);
-    min-height: min(100svh - 56px, 720px);
+    min-height: 0;
     perspective: 900px;
     overflow-x: clip;
   }
 
   .motion-theater.motion-compact .story-phone-range > [data-scene] {
     padding-inline: 1rem;
-    padding-block: 0.75rem;
+    padding-block: 0.55rem 0.65rem;
   }
 
   .motion-theater.motion-compact .story-stage {
-    grid-template-columns: 1fr;
-    gap: 0.65rem;
-    align-content: space-between;
-    align-items: stretch;
+    display: block;
+    position: relative;
+    height: 100%;
   }
 
   .motion-theater.motion-compact .story-copy {
-    order: 1;
-    z-index: 3;
+    position: absolute;
+    top: 0;
+    inset-inline: 0;
+    z-index: 4;
     max-width: 100%;
     width: 100%;
-    max-height: min(34svh, 38%);
+    max-height: min(36svh, 300px);
     overflow: hidden;
-    align-self: start;
-    padding-bottom: 0.25rem;
+    padding-bottom: 0.35rem;
   }
 
   .motion-theater.motion-compact .story-copy .mt-8,
@@ -750,30 +750,53 @@ footer[id],
   .motion-theater.motion-compact .story-copy .mt-5,
   .motion-theater.motion-compact .story-copy .mt-4,
   .motion-theater.motion-compact .story-copy .mt-3 {
-    margin-top: 0.4rem;
+    margin-top: 0.35rem;
+  }
+
+  /* Free vertical room for a larger centered phone. */
+  .motion-theater.motion-compact [data-scene="1"] [data-seq="tagline"] {
+    display: none;
+  }
+
+  .motion-theater.motion-compact [data-scene="1"] .story-copy {
+    max-height: min(42svh, 360px);
+  }
+
+  .motion-theater.motion-compact [data-seq="hero-actions"] {
+    margin-top: 0.55rem;
+    gap: 0.45rem;
+  }
+
+  .motion-theater.motion-compact [data-seq="hero-actions"] a {
+    min-height: 2.65rem;
+    padding-inline: 1.1rem;
+    font-size: 0.9rem;
   }
 
   .motion-theater.motion-compact .story-visual {
-    order: 2;
+    position: absolute;
+    inset: 0;
     z-index: 1;
     min-height: 0;
     height: auto;
-    flex: 1 1 auto;
-    align-items: flex-start;
+    display: flex;
+    align-items: center;
     justify-content: center;
-    padding-top: 0.35rem;
+    padding-top: 0;
   }
 
   .motion-theater.motion-compact .story-visual .stage-row {
     min-height: 0;
     width: 100%;
+    height: 100%;
     justify-content: center;
-    align-items: flex-start;
+    align-items: center;
   }
 
   .motion-theater.motion-compact .phone-slot {
     display: block;
-    width: min(46vw, 200px);
+    /* Cap by viewport height so the phone stays large but fully on-screen. */
+    width: min(78vw, 310px, calc((100svh - 10.5rem) * 1024 / 1536));
     height: auto;
     aspect-ratio: 1024 / 1536;
     flex: 0 0 auto;
@@ -783,7 +806,7 @@ footer[id],
 
   .motion-theater.motion-compact .story-theater-phone {
     display: block !important;
-    width: min(48vw, 210px);
+    width: min(80vw, 320px, calc((100svh - 10rem) * 1024 / 1536));
   }
 
   .motion-theater.motion-compact .story-theater-phone::before {
@@ -792,7 +815,16 @@ footer[id],
   }
 
   .motion-theater.motion-compact .story-theater-phone .chat-bubble {
-    font-size: clamp(13px, 4.6cqw, 16px);
+    font-size: clamp(12.5px, 4.2cqw, 15.5px);
+    line-height: 1.35;
+    padding: 0.4rem 0.65rem !important;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .motion-theater.motion-compact .story-theater-phone [data-seq="question"],
+  .motion-theater.motion-compact .story-theater-phone [data-seq="answer"] {
+    max-width: 90% !important;
   }
 
   /* Orbit chips overflow narrow viewports; keep scene readable. */
@@ -807,16 +839,19 @@ footer[id],
   }
 
   .motion-theater.motion-compact .scene-title {
-    font-size: clamp(1.2rem, 5.4vw, 1.55rem);
+    font-size: clamp(1.25rem, 5.6vw, 1.65rem);
+    line-height: 1.28;
     max-width: 100%;
+    overflow-wrap: anywhere;
+    text-wrap: balance;
   }
 
   .motion-theater.motion-compact .scene-body {
-    font-size: 0.95rem;
-    line-height: 1.55;
+    font-size: 0.92rem;
+    line-height: 1.5;
     display: -webkit-box;
     -webkit-box-orient: vertical;
-    -webkit-line-clamp: 3;
+    -webkit-line-clamp: 2;
     overflow: hidden;
   }
 
@@ -829,7 +864,22 @@ footer[id],
   .motion-theater.motion-compact [data-scene="9"] .story-copy .mt-5,
   .motion-theater.motion-compact [data-scene="9"] .story-copy .mt-4,
   .motion-theater.motion-compact [data-scene="9"] .story-copy .mt-3 {
-    margin-top: 0.4rem;
+    margin-top: 0.35rem;
+  }
+
+  /* Short phones: keep title fully visible, shrink body harder. */
+  @media (max-height: 700px) {
+    .motion-theater.motion-compact .scene-body {
+      -webkit-line-clamp: 1;
+    }
+
+    .motion-theater.motion-compact .phone-slot {
+      width: min(64vw, 250px, calc((100svh - 10.5rem) * 1024 / 1536));
+    }
+
+    .motion-theater.motion-compact .story-theater-phone {
+      width: min(66vw, 260px, calc((100svh - 10rem) * 1024 / 1536));
+    }
   }
 }
 
@@ -839,17 +889,39 @@ footer[id],
     min-height: 0;
   }
 
+  .motion-theater.motion-compact .story-stage {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 0.95fr);
+    grid-template-rows: 1fr;
+    gap: 0.75rem;
+    align-items: center;
+  }
+
   .motion-theater.motion-compact .story-copy {
-    max-height: min(30svh, 34%);
+    position: relative;
+    top: auto;
+    inset-inline: auto;
+    max-height: calc(100svh - 72px);
+    overflow: auto;
+  }
+
+  .motion-theater.motion-compact .story-visual {
+    position: relative;
+    inset: auto;
   }
 
   .motion-theater.motion-compact .phone-slot,
   .motion-theater.motion-compact .story-theater-phone {
-    width: min(28vw, 160px);
+    width: min(34vw, 190px);
+    max-height: calc(100svh - 72px);
   }
 
   .motion-theater.motion-compact .scene-body {
-    -webkit-line-clamp: 2;
+    -webkit-line-clamp: 3;
+  }
+
+  .motion-theater.motion-compact [data-scene="1"] [data-seq="tagline"] {
+    display: none;
   }
 }
 
