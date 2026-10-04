@@ -759,18 +759,28 @@ footer[id],
   }
 
   .motion-theater.motion-compact [data-scene="1"] .story-copy {
-    max-height: min(42svh, 360px);
+    max-height: min(38svh, 300px);
+  }
+
+  /* Title + CTAs only — body competed with the centered phone. */
+  .motion-theater.motion-compact [data-scene="1"] .scene-body {
+    display: none;
   }
 
   .motion-theater.motion-compact [data-seq="hero-actions"] {
     margin-top: 0.55rem;
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
     gap: 0.45rem;
   }
 
   .motion-theater.motion-compact [data-seq="hero-actions"] a {
-    min-height: 2.65rem;
-    padding-inline: 1.1rem;
-    font-size: 0.9rem;
+    min-height: 2.5rem;
+    width: auto;
+    flex: 1 1 auto;
+    padding-inline: 0.9rem;
+    font-size: 0.85rem;
   }
 
   .motion-theater.motion-compact .story-visual {
