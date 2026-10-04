@@ -211,6 +211,8 @@ export type Database = {
           wa_message_id: string;
           body: string;
           message_type: string;
+          direction: "inbound" | "outbound";
+          sender: "customer" | "staff" | "assistant";
           received_at: string;
           created_at: string;
         };
@@ -221,11 +223,15 @@ export type Database = {
           wa_message_id: string;
           body: string;
           message_type?: string;
+          direction?: "inbound" | "outbound";
+          sender?: "customer" | "staff" | "assistant";
           received_at: string;
           created_at?: string;
         };
         Update: {
           body?: string;
+          direction?: "inbound" | "outbound";
+          sender?: "customer" | "staff" | "assistant";
         };
         Relationships: [];
       };

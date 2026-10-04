@@ -1,17 +1,18 @@
-import { sendReady, whatsappConfig } from "@/lib/whatsapp/config";
+import { externalSendAllowed, sendReady, whatsappConfig } from "./config";
 
 export type SendTextResult =
   | { ok: true; waMessageId: string }
-  | { ok: false; code: "NOT_CONFIGURED" | "GRAPH_ERROR"; detail?: string };
+  | { ok: false; code: "NOT_CONFIGURED" | "SEND_DISABLED" | "GRAPH_ERROR"; detail?: string };
 
 /**
  * Sends a text message through WhatsApp Cloud API.
- * Call only after an explicit user-approved test. Do not invoke from automatic AI paths.
+ * Requires WHATSAPP_ALLOW_EXTERNAL_SEND=true. Do not invoke from automatic AI paths.
  */
 export async function sendWhatsappText(input: {
   toWaId: string;
   body: string;
 }): Promise<SendTextResult> {
+  if (!externalSendAllowed()) return { ok: false, code: "SEND_DISABLED" };
   const config = whatsappConfig();
   if (!sendReady(config)) return { ok: false, code: "NOT_CONFIGURED" };
 

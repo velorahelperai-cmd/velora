@@ -44,6 +44,8 @@ export async function saveInbound(admin: Admin, companyId: string, message: Inbo
       wa_message_id: message.waMessageId,
       body: message.body,
       message_type: message.messageType,
+      direction: "inbound",
+      sender: "customer",
       received_at: message.receivedAt,
     })
     .select("id")
@@ -77,4 +79,42 @@ export async function saveStatus(admin: Admin, companyId: string, status: Delive
   if (inserted.error?.code === "23505") return { inserted: false as const };
   if (inserted.error) throw inserted.error;
   return { inserted: true as const };
+}
+
+export async function saveOutbound(
+  admin: Admin,
+  input: {
+    companyId: string;
+    conversationId: string;
+    waMessageId: string;
+    body: string;
+    sentAt?: string;
+  },
+) {
+  const sentAt = input.sentAt ?? new Date().toISOString();
+  const inserted = await admin
+    .from("whatsapp_messages")
+    .insert({
+      company_id: input.companyId,
+      conversation_id: input.conversationId,
+      wa_message_id: input.waMessageId,
+      body: input.body,
+      message_type: "text",
+      direction: "outbound",
+      sender: "staff",
+      received_at: sentAt,
+    })
+    .select("id, body, received_at, sender")
+    .maybeSingle();
+  if (inserted.error?.code === "23505") return { inserted: false as const, row: null };
+  if (inserted.error) throw inserted.error;
+
+  const updated = await admin
+    .from("whatsapp_conversations")
+    .update({ last_message_at: sentAt })
+    .eq("id", input.conversationId)
+    .eq("company_id", input.companyId);
+  if (updated.error) throw updated.error;
+
+  return { inserted: true as const, row: inserted.data };
 }

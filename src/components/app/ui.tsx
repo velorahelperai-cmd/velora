@@ -282,8 +282,19 @@ export function ConfirmDialog({
   }, [open, onCancel]);
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4" role="presentation">
-      <div ref={ref} role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" className="w-full max-w-sm rounded-2xl border border-white/10 bg-[#14221b] p-5 text-[#f7fbf8]">
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))]"
+      role="presentation"
+      onClick={onCancel}
+    >
+      <div
+        ref={ref}
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="confirm-title"
+        className="w-full max-w-sm rounded-2xl border border-white/10 bg-[#14221b] p-5 text-[#f7fbf8]"
+        onClick={(e) => e.stopPropagation()}
+      >
         <h2 id="confirm-title" className="text-lg font-bold">{title}</h2>
         {body ? <p className="mt-2 text-sm leading-6 text-[#adbeaf]">{body}</p> : null}
         <div className="mt-5 flex flex-wrap justify-end gap-2">

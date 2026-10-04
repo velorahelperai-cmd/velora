@@ -601,114 +601,255 @@ footer[id],
   html[dir="rtl"] .story-stage[data-phone="end"] .story-copy {
     order: 2;
   }
+}
 
-  /* Theater only after JS motion boots and first phone box is placed. */
-  .motion-desktop .phone-slot {
-    display: block;
-    width: 300px;
-    height: calc(300px * 1536 / 1024);
-    flex: 0 0 300px;
-    align-self: center;
-    visibility: hidden;
+/* Theater story: pin + traveling phone (desktop + compact). */
+.motion-theater .phone-slot {
+  display: block;
+  width: 300px;
+  height: calc(300px * 1536 / 1024);
+  flex: 0 0 300px;
+  align-self: center;
+  visibility: hidden;
+}
+
+.motion-theater .story-phone-local {
+  display: none;
+}
+
+.motion-theater .story-phone-range {
+  position: relative;
+  height: calc(100svh - 68px);
+  min-height: 640px;
+  perspective: 1100px;
+  perspective-origin: 50% 46%;
+  overflow: hidden;
+}
+
+.motion-theater .story-phone-range > [data-scene] {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  padding-top: 1.25rem;
+  padding-bottom: 1.25rem;
+}
+
+.motion-theater .story-phone-range > [data-scene]:not([data-scene="1"]) {
+  visibility: hidden;
+}
+
+.motion-theater .story-phone-range .story-stage {
+  height: 100%;
+  min-height: 0;
+  align-items: center;
+}
+
+.motion-theater .story-visual {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  min-height: 0;
+}
+
+.motion-theater .story-theater-phone {
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 6;
+  margin: 0;
+  width: 354px;
+  opacity: 0;
+  transform-origin: center center;
+  will-change: transform;
+  pointer-events: none;
+}
+
+.motion-theater .story-theater-phone::before {
+  transform: translate3d(12px, 16px, -26px);
+  box-shadow: 16px 28px 36px rgba(0, 0, 0, 0.3);
+}
+
+.motion-theater .story-theater-phone .chat-bubble {
+  font-size: clamp(16px, 5.4cqw, 20px);
+  line-height: 1.4;
+}
+
+.motion-theater.motion-theater-ready .story-theater-phone {
+  opacity: 1;
+}
+
+.motion-theater .phone-screen-layer,
+.motion-theater .phone-screen-layer:first-child {
+  position: absolute !important;
+  inset: 0;
+  height: auto;
+}
+
+.motion-theater .story-theater-phone [data-seq="menu"] {
+  pointer-events: auto;
+}
+
+.motion-theater [data-scene="9"] .demo-phone {
+  display: none;
+}
+
+.motion-theater [data-scene="9"] .story-copy {
+  z-index: 8;
+  pointer-events: auto;
+}
+
+.motion-theater [data-scene="9"] .scene-title {
+  font-size: clamp(1.7rem, 2.4vw, 2.4rem);
+}
+
+.motion-theater [data-scene="9"] .story-copy .mt-8,
+.motion-theater [data-scene="9"] .story-copy .mt-6,
+.motion-theater [data-scene="9"] .story-copy .mt-5,
+.motion-theater [data-scene="9"] .story-copy .mt-4,
+.motion-theater [data-scene="9"] .story-copy .mt-3 {
+  margin-top: 0.55rem;
+}
+
+/* Compact theater: stacked copy + phone inside the live viewport. */
+@media (max-width: 1023px) {
+  .motion-theater.motion-compact .story-phone-range {
+    height: calc(100svh - 56px);
+    min-height: min(100svh - 56px, 720px);
+    perspective: 900px;
+    overflow-x: clip;
   }
 
-  .motion-desktop .story-phone-local {
-    display: none;
+  .motion-theater.motion-compact .story-phone-range > [data-scene] {
+    padding-inline: 1rem;
+    padding-block: 0.75rem;
   }
 
-  .motion-desktop .story-phone-range {
-    position: relative;
-    height: calc(100svh - 68px);
-    min-height: 640px;
-    perspective: 1100px;
-    perspective-origin: 50% 46%;
+  .motion-theater.motion-compact .story-stage {
+    grid-template-columns: 1fr;
+    gap: 0.65rem;
+    align-content: space-between;
+    align-items: stretch;
   }
 
-  .motion-desktop .story-phone-range > [data-scene] {
-    position: absolute;
-    inset: 0;
-    height: 100%;
+  .motion-theater.motion-compact .story-copy {
+    order: 1;
+    z-index: 3;
+    max-width: 100%;
     width: 100%;
+    max-height: min(34svh, 38%);
     overflow: hidden;
-    padding-top: 1.25rem;
-    padding-bottom: 1.25rem;
+    align-self: start;
+    padding-bottom: 0.25rem;
   }
 
-  .motion-desktop .story-phone-range > [data-scene]:not([data-scene="1"]) {
+  .motion-theater.motion-compact .story-copy .mt-8,
+  .motion-theater.motion-compact .story-copy .mt-6,
+  .motion-theater.motion-compact .story-copy .mt-5,
+  .motion-theater.motion-compact .story-copy .mt-4,
+  .motion-theater.motion-compact .story-copy .mt-3 {
+    margin-top: 0.4rem;
+  }
+
+  .motion-theater.motion-compact .story-visual {
+    order: 2;
+    z-index: 1;
+    min-height: 0;
+    height: auto;
+    flex: 1 1 auto;
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: 0.35rem;
+  }
+
+  .motion-theater.motion-compact .story-visual .stage-row {
+    min-height: 0;
+    width: 100%;
+    justify-content: center;
+    align-items: flex-start;
+  }
+
+  .motion-theater.motion-compact .phone-slot {
+    display: block;
+    width: min(46vw, 200px);
+    height: auto;
+    aspect-ratio: 1024 / 1536;
+    flex: 0 0 auto;
+    margin-inline: auto;
     visibility: hidden;
   }
 
-  .motion-desktop .story-phone-range .story-stage {
-    height: 100%;
-    min-height: 0;
-    align-items: center;
+  .motion-theater.motion-compact .story-theater-phone {
+    display: block !important;
+    width: min(48vw, 210px);
   }
 
-  .motion-desktop .story-visual {
-    display: flex;
-    align-items: center;
-    height: 100%;
-    min-height: 0;
+  .motion-theater.motion-compact .story-theater-phone::before {
+    transform: translate3d(6px, 10px, -16px);
+    box-shadow: 8px 16px 24px rgba(0, 0, 0, 0.28);
   }
 
-  .motion-desktop .story-theater-phone {
-    display: block;
-    position: absolute;
-    top: 0;
-    left: 0;
-    z-index: 6;
-    margin: 0;
-    width: 354px;
-    opacity: 0;
-    transform-origin: center center;
-    will-change: transform;
-    pointer-events: none;
+  .motion-theater.motion-compact .story-theater-phone .chat-bubble {
+    font-size: clamp(13px, 4.6cqw, 16px);
   }
 
-  .motion-desktop .story-theater-phone::before {
-    transform: translate3d(12px, 16px, -26px);
-    box-shadow: 16px 28px 36px rgba(0, 0, 0, 0.3);
-  }
-
-  .motion-desktop .story-theater-phone .chat-bubble {
-    font-size: clamp(16px, 5.4cqw, 20px);
-    line-height: 1.4;
-  }
-
-  .motion-desktop.motion-theater-ready .story-theater-phone {
-    opacity: 1;
-  }
-
-  .motion-desktop .phone-screen-layer,
-  .motion-desktop .phone-screen-layer:first-child {
-    position: absolute !important;
-    inset: 0;
-    height: auto;
-  }
-
-  .motion-desktop .story-theater-phone [data-seq="menu"] {
-    pointer-events: auto;
-  }
-
-  .motion-desktop [data-scene="9"] .demo-phone {
+  /* Orbit chips overflow narrow viewports; keep scene readable. */
+  .motion-theater.motion-compact .phone-orbit {
     display: none;
   }
 
-  .motion-desktop [data-scene="9"] .story-copy {
-    z-index: 8;
-    pointer-events: auto;
+  .motion-theater.motion-compact .source-card,
+  .motion-theater.motion-compact .story-visual [data-seq="paused"],
+  .motion-theater.motion-compact .story-visual [data-seq="no-repeat"] {
+    display: none;
   }
 
-  .motion-desktop [data-scene="9"] .scene-title {
-    font-size: clamp(1.7rem, 2.4vw, 2.4rem);
+  .motion-theater.motion-compact .scene-title {
+    font-size: clamp(1.2rem, 5.4vw, 1.55rem);
+    max-width: 100%;
   }
 
-  .motion-desktop [data-scene="9"] .story-copy .mt-8,
-  .motion-desktop [data-scene="9"] .story-copy .mt-6,
-  .motion-desktop [data-scene="9"] .story-copy .mt-5,
-  .motion-desktop [data-scene="9"] .story-copy .mt-4,
-  .motion-desktop [data-scene="9"] .story-copy .mt-3 {
-    margin-top: 0.55rem;
+  .motion-theater.motion-compact .scene-body {
+    font-size: 0.95rem;
+    line-height: 1.55;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    overflow: hidden;
+  }
+
+  .motion-theater.motion-compact [data-scene="9"] .scene-title {
+    font-size: clamp(1.2rem, 5.2vw, 1.5rem);
+  }
+
+  .motion-theater.motion-compact [data-scene="9"] .story-copy .mt-8,
+  .motion-theater.motion-compact [data-scene="9"] .story-copy .mt-6,
+  .motion-theater.motion-compact [data-scene="9"] .story-copy .mt-5,
+  .motion-theater.motion-compact [data-scene="9"] .story-copy .mt-4,
+  .motion-theater.motion-compact [data-scene="9"] .story-copy .mt-3 {
+    margin-top: 0.4rem;
+  }
+}
+
+@media (max-width: 1023px) and (orientation: landscape) {
+  .motion-theater.motion-compact .story-phone-range {
+    height: calc(100svh - 48px);
+    min-height: 0;
+  }
+
+  .motion-theater.motion-compact .story-copy {
+    max-height: min(30svh, 34%);
+  }
+
+  .motion-theater.motion-compact .phone-slot,
+  .motion-theater.motion-compact .story-theater-phone {
+    width: min(28vw, 160px);
+  }
+
+  .motion-theater.motion-compact .scene-body {
+    -webkit-line-clamp: 2;
   }
 }
 
@@ -748,15 +889,15 @@ footer[id],
     overflow-x: clip;
   }
 
+  /* Fallback when theater JS is off / reduced-motion. */
   .phone-slot {
     display: none;
   }
 
   .story-theater-phone {
-    display: none !important;
+    display: none;
   }
 
-  /* Desktop-only floating notes; on phones they overflow the viewport. */
   .phone-orbit {
     display: none;
   }
@@ -821,6 +962,18 @@ footer[id],
 
   .demo-stage {
     min-height: 0;
+  }
+
+  /* Safe areas + keyboard-friendly app shells */
+  .app-shell {
+    padding-left: max(0px, env(safe-area-inset-left));
+    padding-right: max(0px, env(safe-area-inset-right));
+  }
+
+  .app-table-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
   }
 }
 

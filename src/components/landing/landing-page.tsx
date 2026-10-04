@@ -123,7 +123,7 @@ export function LandingPage({
             <Link href="/login" className="hidden min-h-11 items-center px-2 text-sm md:inline-flex">
               {copy.signIn}
             </Link>
-            <Link href={startHref} className="inline-flex min-h-11 max-w-[9.5rem] items-center truncate rounded-full bg-[#38dc89] px-3 text-xs font-medium text-[#072317] sm:max-w-none sm:px-4 sm:text-sm">
+            <Link href={startHref} className="inline-flex min-h-11 max-w-[8.5rem] items-center truncate rounded-full bg-[#38dc89] px-2.5 text-[11px] font-medium text-[#072317] sm:max-w-none sm:px-4 sm:text-sm">
               {startLabel}
             </Link>
           </div>

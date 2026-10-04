@@ -20,3 +20,8 @@ export function webhookReady(config: ReturnType<typeof whatsappConfig>) {
 export function sendReady(config: ReturnType<typeof whatsappConfig>) {
   return Boolean(config.accessToken && config.phoneNumberId);
 }
+
+/** Explicit host flag. Keep unset during local development so Graph is never called. */
+export function externalSendAllowed() {
+  return env("WHATSAPP_ALLOW_EXTERNAL_SEND") === "true";
+}

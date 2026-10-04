@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { type Conversation, type ConversationStatus, nowMs, uid, useDemo } from "@/lib/demo-state";
+import { replyWhatsappConversation } from "@/lib/whatsapp/actions";
 import { WorkspaceShell } from "@/components/app/workspace-shell";
 import { Button, EmptyState, Notice, SimTag, useAppCopy } from "@/components/app/ui";
 
@@ -24,7 +25,10 @@ export function ConversationsPage({ inbox = [] }: { inbox?: Conversation[] }) {
   const [filter, setFilter] = useState<ConversationStatus | "all">("all");
   const [draft, setDraft] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [localInbox, setLocalInbox] = useState<Record<string, Conversation>>({});
+  const [pending, startTransition] = useTransition();
+  const liveIds = useMemo(() => new Set(inbox.map((item) => item.id)), [inbox]);
 
   const conversations = useMemo(() => {
     const live = inbox.map((item) => localInbox[item.id] ?? item);
@@ -54,14 +58,42 @@ export function ConversationsPage({ inbox = [] }: { inbox?: Conversation[] }) {
 
   function send(c: Conversation) {
     const text = draft.trim();
-    if (!text) return;
-    patch(c.id, (cur) => ({ messages: [...cur.messages, { id: uid(), from: "staff", text, at: nowMs() }], owner: me, assistantPaused: true, status: cur.status === "resolved" ? "handed_over" : cur.status }));
-    setDraft("");
-    setNotice(copy.app.sentNote);
+    if (!text || pending) return;
+    setError(null);
+    setNotice(null);
+
+    if (!liveIds.has(c.id)) {
+      patch(c.id, (cur) => ({ messages: [...cur.messages, { id: uid(), from: "staff", text, at: nowMs() }], owner: me, assistantPaused: true, status: cur.status === "resolved" ? "handed_over" : cur.status }));
+      setDraft("");
+      setNotice(copy.app.sentDemoNote);
+      return;
+    }
+
+    startTransition(async () => {
+      const result = await replyWhatsappConversation({ conversationId: c.id, body: text });
+      if (!result.ok) {
+        const message =
+          result.code === "SEND_DISABLED" ? copy.app.sendDisabled
+            : result.code === "NOT_CONFIGURED" ? copy.app.sendNotConfigured
+              : result.code === "FORBIDDEN" || result.code === "UNAUTHENTICATED" ? copy.app.sendForbidden
+                : copy.app.sendFailed;
+        setError(message);
+        return;
+      }
+      patch(c.id, (cur) => ({
+        messages: [...cur.messages, { id: result.message.id, from: "staff", text: result.message.text, at: result.message.at }],
+        owner: me,
+        assistantPaused: true,
+        status: cur.status === "resolved" ? "handed_over" : cur.status,
+        summary: result.message.text,
+      }));
+      setDraft("");
+      setNotice(copy.app.sentNote);
+    });
   }
 
   const detail = selected ? (
-    <section className="flex min-h-[70svh] flex-col rounded-2xl border border-white/10 bg-[#0d1a14] lg:min-h-[60svh]" aria-label={selected.customer}>
+    <section className="flex min-h-[min(70svh,100dvh-10rem)] flex-col rounded-2xl border border-white/10 bg-[#0d1a14] lg:min-h-[60svh]" aria-label={selected.customer}>
       <header className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-2 border-b border-white/10 bg-[#0d1a14]/95 p-4 backdrop-blur">
         <div className="flex min-w-0 items-center gap-3">
           <button type="button" onClick={() => select(null)} className="inline-flex min-h-10 shrink-0 items-center rounded-full border border-white/20 px-3 text-xs lg:hidden">{copy.app.backToList}</button>
@@ -93,13 +125,14 @@ export function ConversationsPage({ inbox = [] }: { inbox?: Conversation[] }) {
               </div>
             ))}
             {notice ? <Notice tone="info">{notice}</Notice> : null}
+            {error ? <Notice tone="warn">{error}</Notice> : null}
           </div>
           <form className="sticky bottom-0 -mx-1 mt-auto flex gap-2 border-t border-white/10 bg-[#0d1a14] px-1 pt-3 pb-[max(0.25rem,env(safe-area-inset-bottom))]" onSubmit={(e) => { e.preventDefault(); send(selected); }}>
-            <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={copy.app.reply} aria-label={copy.app.reply} className="min-h-11 flex-1 rounded-xl border border-white/15 bg-[#07110d] px-3 text-[15px] outline-none focus-visible:ring-2 focus-visible:ring-[#38dc89]" />
-            <Button type="submit" disabled={!draft.trim()} className="shrink-0">{copy.app.sendReply}</Button>
+            <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={copy.app.reply} aria-label={copy.app.reply} disabled={pending} className="min-h-11 flex-1 rounded-xl border border-white/15 bg-[#07110d] px-3 text-[15px] outline-none focus-visible:ring-2 focus-visible:ring-[#38dc89] disabled:opacity-60" />
+            <Button type="submit" disabled={!draft.trim() || pending} className="shrink-0">{liveIds.has(selected.id) ? copy.app.sendReply : copy.app.sendReplyDemo}</Button>
           </form>
         </div>
-        <aside className="grid content-start gap-3 rounded-xl border border-white/10 bg-white/5 p-3 text-sm">
+        <aside className="grid content-start gap-3 rounded-xl border border-white/10 bg-white/5 p-3 text-sm lg:sticky lg:top-4">
           <h3 className="font-bold">{copy.app.customerDetails}</h3>
           <p>{selected.customer}</p>
           <p dir="ltr" className="text-[#adbeaf]">{selected.phone}</p>

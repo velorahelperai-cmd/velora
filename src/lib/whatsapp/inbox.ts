@@ -17,7 +17,7 @@ export async function loadWhatsappInbox(): Promise<Conversation[]> {
 
   const { data: messages } = await supabase
     .from("whatsapp_messages")
-    .select("id, conversation_id, body, received_at")
+    .select("id, conversation_id, body, received_at, sender, direction")
     .eq("company_id", companyId)
     .in("conversation_id", conversations.map((row) => row.id))
     .order("received_at", { ascending: true });
@@ -25,9 +25,15 @@ export async function loadWhatsappInbox(): Promise<Conversation[]> {
   const byConversation = new Map<string, Conversation["messages"]>();
   for (const message of messages ?? []) {
     const list = byConversation.get(message.conversation_id) ?? [];
+    const from =
+      message.sender === "staff" || message.direction === "outbound"
+        ? "staff"
+        : message.sender === "assistant"
+          ? "assistant"
+          : "customer";
     list.push({
       id: message.id,
-      from: "customer",
+      from,
       text: message.body,
       at: Date.parse(message.received_at),
     });
