@@ -1,0 +1,74 @@
+{
+  "status": "design review candidate",
+  "colors": {
+    "paper": "#FAFCFB",
+    "ink": "#101B16",
+    "muted": "#4F6258",
+    "action": "#087443",
+    "mint": "#DEF5E7",
+    "line": "#CBDDD2",
+    "error": "#B42318"
+  },
+  "fonts": {
+    "ar": "IBM Plex Sans Arabic",
+    "en": "IBM Plex Sans",
+    "weights": [
+      400,
+      500,
+      700
+    ],
+    "license": "OFL-1.1"
+  },
+  "type": {
+    "heroDesktop": {
+      "min": 56,
+      "max": 76
+    },
+    "heroMobile": {
+      "min": 36,
+      "max": 44
+    },
+    "body": [
+      18,
+      20
+    ],
+    "chatMin": 16
+  },
+  "layout": {
+    "maxWidth": 1280,
+    "gutterMobile": 24,
+    "gutterDesktop": 48,
+    "spacingUnit": 8,
+    "minTouchTarget": 44,
+    "motionDesktopMin": 1024
+  },
+  "locale": {
+    "default": "ar",
+    "directions": {
+      "ar": "rtl",
+      "en": "ltr"
+    },
+    "cookie": "velora_locale"
+  },
+  "motion": {
+    "principle": "explain state and responsibility changes",
+    "reducedMotion": "static/no pin/no parallax",
+    "mobile": "normal scrolling/no long pin",
+    "extraPinnedViewportLimit": 3,
+    "preloader": false,
+    "autoplayVideo": false
+  },
+  "phoneSafeOverlay": {
+    "leftPercent": 22,
+    "topPercent": 9,
+    "widthPercent": 56,
+    "heightPercent": 81,
+    "note": "initial conservative alignment, verify at both sizes"
+  },
+  "assetUse": {
+    "hero": "background illustration only",
+    "mockup": "layout reference only",
+    "phone": "independent frame; overlay real HTML",
+    "noRuntimeBackend": true
+  }
+}

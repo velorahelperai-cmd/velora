@@ -1,0 +1,435 @@
+@import "tailwindcss";
+
+@font-face {
+  font-family: "IBM Plex Sans Arabic";
+  src: url("/fonts/velora/IBMPlexSansArabic-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans Arabic";
+  src: url("/fonts/velora/IBMPlexSansArabic-Medium.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans Arabic";
+  src: url("/fonts/velora/IBMPlexSansArabic-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("/fonts/velora/IBMPlexSans-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("/fonts/velora/IBMPlexSans-Medium.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("/fonts/velora/IBMPlexSans-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@theme {
+  --color-night: #07110d;
+  --color-panel: #14221b;
+  --color-paper: #f5f8f5;
+  --color-on-dark: #f7fbf8;
+  --color-ink: #101b16;
+  --color-muted-on-dark: #adbeaf;
+  --color-action-on-dark: #38dc89;
+  --color-on-bright-action: #072317;
+  --color-action-on-light: #087443;
+  --color-warm-highlight: #d9a467;
+  --color-mint: #def5e7;
+  --color-line: rgba(173, 190, 175, 0.28);
+  --font-ar: "IBM Plex Sans Arabic", "Segoe UI", Tahoma, sans-serif;
+  --font-en: "IBM Plex Sans", "Segoe UI", sans-serif;
+}
+
+:root {
+  color: var(--color-on-dark);
+  background: var(--color-night);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--color-night);
+  scroll-padding-bottom: 8rem;
+  overflow-x: hidden;
+}
+
+body {
+  font-family: var(--font-en);
+  text-rendering: optimizeLegibility;
+}
+
+html[lang="ar"] body,
+html[dir="rtl"] body {
+  font-family: var(--font-ar);
+}
+
+a,
+button {
+  -webkit-tap-highlight-color: transparent;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-action-on-dark);
+  outline-offset: 3px;
+}
+
+.hero-shell {
+  position: relative;
+  min-height: 100vh;
+  overflow: clip;
+  color: var(--color-on-dark);
+  background: var(--color-night);
+}
+
+.hero-environment {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+.hero-environment img {
+  object-fit: cover;
+  object-position: left center;
+  width: 100%;
+  height: 100%;
+}
+
+html[dir="ltr"] .hero-environment img {
+  object-position: 28% center;
+}
+
+.hero-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    linear-gradient(
+      90deg,
+      rgba(7, 17, 13, 0.28) 0%,
+      rgba(7, 17, 13, 0.55) 46%,
+      rgba(7, 17, 13, 0.92) 72%,
+      #07110d 100%
+    ),
+    radial-gradient(circle at 18% 70%, rgba(217, 164, 103, 0.12), transparent 36%);
+}
+
+html[dir="ltr"] .hero-veil {
+  background:
+    linear-gradient(
+      270deg,
+      rgba(7, 17, 13, 0.28) 0%,
+      rgba(7, 17, 13, 0.55) 46%,
+      rgba(7, 17, 13, 0.92) 72%,
+      #07110d 100%
+    ),
+    radial-gradient(circle at 72% 70%, rgba(217, 164, 103, 0.1), transparent 36%);
+}
+
+@media (max-width: 1023px) {
+  .hero-veil {
+    background:
+      linear-gradient(180deg, rgba(7, 17, 13, 0.78) 0%, rgba(7, 17, 13, 0.62) 42%, rgba(7, 17, 13, 0.88) 100%),
+      radial-gradient(circle at 50% 78%, rgba(217, 164, 103, 0.14), transparent 42%);
+  }
+}
+
+.hero-content {
+  position: relative;
+  z-index: 2;
+}
+
+.scene-stage {
+  --phone-w: min(100%, 280px);
+}
+
+.scene-title {
+  font-size: clamp(2rem, 4vw, 56px);
+  font-weight: 700;
+  line-height: 1.45;
+  max-width: 16ch;
+}
+
+.scene-body {
+  font-size: clamp(1.05rem, 1.55vw, 22px);
+  line-height: 1.8;
+  max-width: 38ch;
+}
+
+.scene {
+  position: relative;
+  overflow: hidden;
+}
+
+/* Typing indicator: only exists while desktop motion is active; fades out as the reply lands. */
+.typing {
+  display: none;
+  position: absolute;
+  inset-inline-start: 0;
+  top: 0;
+  gap: 4px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 16px;
+  border: 1px solid #d7e4db;
+  background: #fff;
+  opacity: 0;
+}
+
+.motion-desktop .typing {
+  display: inline-flex;
+}
+
+.typing i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #087443;
+  animation: typing-dot 1s infinite ease-in-out;
+}
+
+.typing i:nth-child(2) { animation-delay: 0.15s; }
+.typing i:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes typing-dot {
+  0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
+  40% { transform: translateY(-3px); opacity: 1; }
+}
+
+.scroll-hint {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 18px;
+  z-index: 10;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  color: #adbeaf;
+}
+
+.scroll-hint span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.scroll-hint span::after {
+  content: "";
+  width: 1px;
+  height: 28px;
+  background: linear-gradient(#38dc89, transparent);
+  animation: hint-drop 1.6s infinite ease-in-out;
+}
+
+@keyframes hint-drop {
+  0% { transform: translateY(-6px); opacity: 0; }
+  40% { opacity: 1; }
+  100% { transform: translateY(10px); opacity: 0; }
+}
+
+@keyframes landing-chat-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+.landing-chat-float {
+  animation: landing-chat-float 3.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .typing, .scroll-hint { display: none !important; }
+  .landing-chat-float { animation: none !important; }
+}
+
+.scene-veil {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.scene-dark {
+  position: relative;
+  background: #07110d;
+  color: #f7fbf8;
+}
+
+.scene-light {
+  background: #f5f8f5;
+  color: #101b16;
+}
+
+.scene-dark:not([data-scene="1"]) {
+  background:
+    linear-gradient(90deg, rgba(7, 17, 13, 0.78), rgba(7, 17, 13, 0.88)),
+    url("/assets/velora/hero-environment-v2.png") center / cover;
+}
+
+header {
+  position: sticky;
+}
+
+section[id],
+footer[id],
+[data-scene] {
+  scroll-margin-top: 84px;
+}
+
+.phone-shell {
+  width: min(100%, 260px);
+  aspect-ratio: 1024 / 1536;
+  position: relative;
+  filter: drop-shadow(0 28px 48px rgba(0, 0, 0, 0.55));
+}
+
+.phone-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* Bubble type scales with the phone so long English lines never clip on narrow screens. */
+.chat-bubble {
+  font-size: clamp(10px, 3.1cqw + 1px, 14px);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  hyphens: auto;
+}
+
+.phone-shell {
+  container-type: inline-size;
+}
+
+.phone-screen {
+  position: absolute;
+  left: 18%;
+  top: 8%;
+  width: 64%;
+  height: 83%;
+  border-radius: 22px;
+  overflow: hidden;
+  background: #f4f7f5;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+}
+
+.pressure-card,
+.source-card,
+.chat-bubble,
+.trace-path,
+[data-seq] {
+  opacity: 1;
+  transform: none;
+}
+
+.source-card {
+  opacity: 1;
+}
+
+.stage-row {
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: center;
+  gap: 16px;
+}
+
+@media (min-width: 1024px) {
+  .phone-shell {
+    width: 367px;
+  }
+
+  .phone-screen {
+    left: 22%;
+    top: 9%;
+    width: 56%;
+    height: 81%;
+    border-radius: 28px;
+  }
+
+  .scene {
+    padding-inline: 50px;
+  }
+
+  .scene .mx-auto.grid,
+  .scene .mx-auto.max-w-\[1380px\] {
+    gap: 65px;
+  }
+
+  .stage-row {
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .source-card {
+    width: 210px;
+  }
+
+  [data-scene="2"],
+  [data-scene="3"],
+  [data-scene="4"],
+  [data-scene="5"],
+  [data-scene="6"],
+  [data-scene="7"],
+  [data-scene="9"] {
+    min-height: 734px;
+  }
+
+  [data-scene="6"] article {
+    min-height: 505px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pressure-card,
+  .source-card,
+  .chat-bubble,
+  .trace-path,
+  [data-seq] {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+
+  [data-trace] {
+    stroke-dasharray: none !important;
+    stroke-dashoffset: 0 !important;
+  }
+}

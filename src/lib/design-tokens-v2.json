@@ -1,0 +1,21 @@
+{
+  "status": "owner selected the dark/warm poster direction; cinematic scene concept preview",
+  "supersedes": "v1 colors and white hero composition; retain v1 fonts, phone, copy and accessibility constraints",
+  "colors": {
+    "night": "#07110D",
+    "panel": "#14221B",
+    "paper": "#F5F8F5",
+    "onDark": "#F7FBF8",
+    "ink": "#101B16",
+    "mutedOnDark": "#ADBEAF",
+    "actionOnDark": "#38DC89",
+    "onBrightAction": "#072317",
+    "actionOnLight": "#087443",
+    "warmHighlight": "#D9A467"
+  },
+  "scenes": ["dark warm", "light knowledge", "dark reply", "light enquiry", "dark handoff", "light overview", "dark assisted setup", "dark demo"],
+  "locale": {"default": "ar", "directions": {"ar": "rtl", "en": "ltr"}, "cookie": "velora_locale"},
+  "fonts": {"ar": "IBM Plex Sans Arabic", "en": "IBM Plex Sans", "weights": [400,500,700], "source": "../velora-design-pack-v1/fonts"},
+  "motion": {"principle": "one conversation continues between scenes", "heroSeconds": [4,6], "mobile": "normal scroll, no long pin", "reducedMotion": "complete static content"},
+  "referenceNotRequirements": ["poster prices 15/25/40", "Instagram/Facebook now", "confirmed sales or bookings", "working POS", "dashboard performance figures", "unconditional 24/7 completion"]
+}

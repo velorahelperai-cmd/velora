@@ -1,0 +1,81 @@
+{
+  "brand": "Velora",
+  "preview": "Service preview — illustrative examples",
+  "nav": {
+    "how": "How it works",
+    "sectors": "Business examples",
+    "faq": "Questions"
+  },
+  "cta": {
+    "try": "Try an example",
+    "how": "See how it works",
+    "sample": "Try a sample conversation",
+    "demo": "Request a demo for your business"
+  },
+  "scenes": {
+    "busy": {
+      "title": "Knows your business. Answers your customers. Keeps follow-ups organised.",
+      "body": "Velora is a WhatsApp customer-service assistant grounded in your business information, with your team ready to step in."
+    },
+    "knowledge": {
+      "title": "The answer starts with your information.",
+      "body": "Add your information and files, review the content, then test replies before activation."
+    },
+    "reply": {
+      "title": "A clear reply, grounded in your business."
+    },
+    "enquiry": {
+      "title": "Every enquiry has a follow-up."
+    },
+    "human": {
+      "title": "Your team gets the full context."
+    },
+    "overview": {
+      "title": "Keep track of service in one place."
+    },
+    "setup": {
+      "title": "We help you get started."
+    },
+    "demo": {
+      "title": "See how it fits your business."
+    }
+  },
+  "labels": {
+    "example": "Illustrative example",
+    "source": "Answer source",
+    "delivery": "Menu and prices",
+    "enquiry": "New enquiry",
+    "takeover": "Take over",
+    "paused": "Automatic replies paused",
+    "illustration": "Illustrative screens and data",
+    "plans": "Plan structure — being defined",
+    "future": "Future expansion",
+    "noSend": "This is a sample form; it does not send data."
+  },
+  "setupSteps": [
+    "Account and team",
+    "Business knowledge",
+    "Number and testing",
+    "Activation review"
+  ],
+  "sectors": {
+    "restaurants": "Restaurants",
+    "retail": "Retail",
+    "services": "Services"
+  },
+  "sample": {
+    "question": "I want to order 2 burgers",
+    "answer": "Got it — two burgers. Which size and extras would you like?",
+    "enquiry": "Your order has been recorded for the team to follow up.",
+    "pressure": [
+      "When is the next slot?",
+      "Can I order now?",
+      "How long is the wait?"
+    ],
+    "sourceTitle": "Menu and prices",
+    "sourceLine": "Classic burger · Double burger · Extras",
+    "langSwitch": "عر",
+    "langSwitchAria": "Switch to Arabic",
+    "replayAria": "Replay the illustrative example"
+  }
+}
