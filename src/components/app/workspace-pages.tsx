@@ -48,21 +48,21 @@ export function LegalPage({ kind }: { kind: "privacy" | "terms" | "deletion" }) 
   const title = kind === "privacy" ? copy.legal.privacyTitle : kind === "terms" ? copy.legal.termsTitle : copy.legal.deletionTitle;
   const items = kind === "privacy" ? copy.legal.privacy : kind === "terms" ? copy.legal.terms : copy.legal.deletion;
   return (
-    <main className="min-h-svh bg-[#07110d] px-4 py-6 text-[#f7fbf8]" lang={locale}>
-      <div className="mx-auto flex max-w-[800px] items-center justify-between gap-3">
-        <Link href="/" className="inline-flex min-h-11 items-center gap-2 text-2xl font-bold">
-          <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#38dc89] text-base text-[#072317]">V</span>
-          {copy.brand}
+    <main className="min-h-svh overflow-x-hidden bg-[#07110d] px-4 py-5 text-[#f7fbf8] sm:py-6" lang={locale}>
+      <div className="mx-auto flex max-w-[800px] items-center justify-between gap-2">
+        <Link href="/" className="inline-flex min-h-11 min-w-0 items-center gap-2 text-xl font-bold sm:text-2xl">
+          <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#38dc89] text-sm text-[#072317] sm:h-9 sm:w-9 sm:text-base">V</span>
+          <span className="truncate">{copy.brand}</span>
         </Link>
         <LangSwitch />
       </div>
-      <article className="mx-auto mt-10 max-w-[800px]">
-        <h1 className="text-3xl font-bold lg:text-4xl">{title}</h1>
-        <p className="mt-4 text-base leading-7 text-[#adbeaf]">{copy.legal.operator}</p>
-        <a href={`mailto:${copy.legal.contactEmail}`} dir="ltr" className="mt-2 inline-flex min-h-11 items-center text-base text-[#38dc89] underline underline-offset-4">{copy.legal.contactEmail}</a>
-        <ol className="mt-6 grid gap-4 text-lg leading-8 text-[#dfe9e2]">
+      <article className="mx-auto mt-8 max-w-[800px] sm:mt-10">
+        <h1 className="text-2xl font-bold leading-snug sm:text-3xl lg:text-4xl">{title}</h1>
+        <p className="mt-4 text-sm leading-7 text-[#adbeaf] sm:text-base">{copy.legal.operator}</p>
+        <a href={`mailto:${copy.legal.contactEmail}`} dir="ltr" className="mt-2 inline-flex min-h-11 max-w-full items-center break-all text-sm text-[#38dc89] underline underline-offset-4 sm:text-base">{copy.legal.contactEmail}</a>
+        <ol className="mt-6 grid gap-3 text-base leading-7 text-[#dfe9e2] sm:gap-4 sm:text-lg sm:leading-8">
           {items.map((item, index) => (
-            <li key={item} className="rounded-2xl border border-white/10 bg-[#0d1a14] p-5">
+            <li key={item} className="rounded-2xl border border-white/10 bg-[#0d1a14] p-4 sm:p-5">
               <span className="me-2 text-sm text-[#8da195]">{index + 1}.</span>
               {item}
             </li>

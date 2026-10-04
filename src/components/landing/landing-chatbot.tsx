@@ -56,13 +56,13 @@ export function LandingChatbot({ copy }: { copy: LandingCopy }) {
   }
 
   return (
-    <div className="pointer-events-none fixed bottom-4 left-4 z-50 flex flex-col items-start gap-3">
+    <div className="pointer-events-none fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-50 flex flex-col items-start gap-3 sm:inset-x-auto sm:bottom-4 sm:start-4">
       {open ? (
         <section
           id={panelId}
           role="dialog"
           aria-label={copy.chat.title}
-          className="pointer-events-auto flex w-[min(22rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-3xl border border-white/12 bg-[#0d1a14]/96 text-[#f7fbf8] shadow-[0_18px_50px_rgba(0,0,0,0.45)] backdrop-blur"
+          className="pointer-events-auto flex w-full max-w-[22rem] flex-col overflow-hidden rounded-3xl border border-white/12 bg-[#0d1a14]/96 text-[#f7fbf8] shadow-[0_18px_50px_rgba(0,0,0,0.45)] backdrop-blur sm:w-[min(22rem,calc(100vw-2rem))]"
         >
           <header className="flex items-center gap-3 border-b border-white/10 px-3 py-3">
             <Image
@@ -153,11 +153,11 @@ export function LandingChatbot({ copy }: { copy: LandingCopy }) {
         className="landing-chat-float pointer-events-auto group relative inline-flex items-end gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38dc89]"
       >
         {!open ? (
-          <span className="mb-2 max-w-[9.5rem] rounded-2xl rounded-es-md border border-white/10 bg-[#0d1a14]/95 px-3 py-2 text-xs leading-5 text-[#f7fbf8] shadow-lg">
+          <span className="mb-1 hidden max-w-[9.5rem] rounded-2xl rounded-es-md border border-white/10 bg-[#0d1a14]/95 px-3 py-2 text-xs leading-5 text-[#f7fbf8] shadow-lg sm:mb-2 sm:inline-block">
             {copy.chat.bubble}
           </span>
         ) : null}
-        <span className="relative inline-flex h-[4.5rem] w-[4.5rem] items-center justify-center overflow-hidden rounded-full border-2 border-[#38dc89]/70 bg-[#14221b] shadow-[0_12px_28px_rgba(0,0,0,0.4)] transition group-hover:-translate-y-0.5">
+        <span className="relative inline-flex h-14 w-14 items-center justify-center overflow-hidden rounded-full border-2 border-[#38dc89]/70 bg-[#14221b] shadow-[0_12px_28px_rgba(0,0,0,0.4)] transition group-hover:-translate-y-0.5 sm:h-[4.5rem] sm:w-[4.5rem]">
           <Image
             src="/assets/velora/chat-girl.jpg"
             alt={copy.chat.openLabel}

@@ -96,56 +96,59 @@ export function LandingPage({
 
   return (
     <div ref={rootRef}>
-      <header className="sticky top-0 z-40 flex flex-wrap items-center justify-between gap-2 bg-[#07110d]/90 px-4 py-3 text-[#f7fbf8] backdrop-blur lg:px-10">
-        <a href="#story" className="inline-flex min-h-11 items-center gap-2 text-2xl font-bold leading-none lg:text-[34px]">
-          <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#38dc89] text-base text-[#072317]">V</span>
-          Velora
-        </a>
-        <nav className="hidden items-center gap-4 text-sm lg:flex" aria-label="Primary">
-          <a className="inline-flex min-h-11 items-center" href="#how">{copy.nav.how}</a>
-          <a className="inline-flex min-h-11 items-center" href="#activities">{copy.nav.activities}</a>
-          <a className="inline-flex min-h-11 items-center" href="#packages">{copy.nav.packages}</a>
-          <a className="inline-flex min-h-11 items-center" href="#faq">{copy.nav.faq}</a>
-        </nav>
-        <button
-          type="button"
-          className="inline-flex min-h-11 items-center px-2 text-sm lg:hidden"
-          aria-expanded={menuOpen}
-          onClick={() => setMenuOpen((open) => !open)}
-        >
-          {locale === "ar" ? "القائمة" : "Menu"}
-        </button>
-        {menuOpen ? (
-          <div className="absolute inset-x-4 top-16 z-50 grid rounded-2xl bg-[#14221b] p-3 text-sm lg:hidden">
-            {[
-              ["#how", copy.nav.how],
-              ["#activities", copy.nav.activities],
-              ["#packages", copy.nav.packages],
-              ["#faq", copy.nav.faq],
-              ["#demo", copy.try],
-              ["/login", copy.signIn],
-            ].map(([href, label]) => (
-              <a
-                key={href}
-                className="inline-flex min-h-11 items-center"
-                href={href}
-                onClick={() => setMenuOpen(false)}
-              >
-                {label}
-              </a>
-            ))}
+      <header className="sticky top-0 z-40 bg-[#07110d]/90 px-3 py-2.5 text-[#f7fbf8] backdrop-blur sm:px-4 lg:px-10 lg:py-3">
+        <div className="relative flex flex-nowrap items-center justify-between gap-2">
+          <a href="#story" className="inline-flex min-h-11 min-w-0 shrink items-center gap-2 text-xl font-bold leading-none sm:text-2xl lg:text-[34px]">
+            <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#38dc89] text-sm text-[#072317] lg:h-9 lg:w-9 lg:text-base">V</span>
+            <span className="truncate">Velora</span>
+          </a>
+          <nav className="hidden items-center gap-4 text-sm lg:flex" aria-label="Primary">
+            <a className="inline-flex min-h-11 items-center" href="#how">{copy.nav.how}</a>
+            <a className="inline-flex min-h-11 items-center" href="#activities">{copy.nav.activities}</a>
+            <a className="inline-flex min-h-11 items-center" href="#packages">{copy.nav.packages}</a>
+            <a className="inline-flex min-h-11 items-center" href="#faq">{copy.nav.faq}</a>
+          </nav>
+          <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+            <button
+              type="button"
+              className="inline-flex min-h-11 items-center rounded-full border border-white/15 px-3 text-sm lg:hidden"
+              aria-expanded={menuOpen}
+              onClick={() => setMenuOpen((open) => !open)}
+            >
+              {locale === "ar" ? "القائمة" : "Menu"}
+            </button>
+            <button type="button" onClick={switchLocale} aria-label={copy.langAria} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full border border-white/20 px-3 text-sm">
+              {copy.lang}
+            </button>
+            <Link href="/login" className="hidden min-h-11 items-center px-2 text-sm md:inline-flex">
+              {copy.signIn}
+            </Link>
+            <Link href={startHref} className="inline-flex min-h-11 max-w-[9.5rem] items-center truncate rounded-full bg-[#38dc89] px-3 text-xs font-medium text-[#072317] sm:max-w-none sm:px-4 sm:text-sm">
+              {startLabel}
+            </Link>
           </div>
-        ) : null}
-        <div className="flex items-center gap-2">
-          <button type="button" onClick={switchLocale} aria-label={copy.langAria} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full border border-white/20 px-3 text-sm">
-            {copy.lang}
-          </button>
-          <Link href="/login" className="hidden min-h-11 items-center px-2 text-sm sm:inline-flex">
-            {copy.signIn}
-          </Link>
-          <Link href={startHref} className="inline-flex min-h-11 items-center rounded-full bg-[#38dc89] px-4 text-sm font-medium text-[#072317]">
-            {startLabel}
-          </Link>
+          {menuOpen ? (
+            <div className="absolute inset-x-0 top-[calc(100%+0.35rem)] z-50 grid rounded-2xl border border-white/10 bg-[#14221b] p-2 text-sm shadow-[0_18px_40px_rgba(0,0,0,0.45)] lg:hidden">
+              {[
+                ["#how", copy.nav.how],
+                ["#activities", copy.nav.activities],
+                ["#packages", copy.nav.packages],
+                ["#faq", copy.nav.faq],
+                ["#demo", copy.try],
+                ["/login", copy.signIn],
+                ["#contact", copy.footer.contact],
+              ].map(([href, label]) => (
+                <a
+                  key={href}
+                  className="inline-flex min-h-11 items-center rounded-xl px-3 hover:bg-white/5"
+                  href={href}
+                  onClick={() => setMenuOpen(false)}
+                >
+                  {label}
+                </a>
+              ))}
+            </div>
+          ) : null}
         </div>
       </header>
 

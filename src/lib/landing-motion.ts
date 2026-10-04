@@ -435,12 +435,14 @@ export function playLandingMotion(root: HTMLElement) {
         );
       }
       const copy = section.querySelector(".story-copy");
-      if (copy) {
+      // Scene 1 must stay readable on first paint. Later scenes rise vertically only —
+      // a sideways tween caused horizontal overflow on narrow phones.
+      if (copy && section.getAttribute("data-scene") !== "1") {
         gsap.fromTo(
           copy,
-          { x: 42, autoAlpha: 0 },
+          { y: 22, autoAlpha: 0 },
           {
-            x: 0,
+            y: 0,
             autoAlpha: 1,
             ease: "power2.out",
             scrollTrigger: { trigger: section, start: "top 90%", end: "top 58%", scrub: 0.35 },

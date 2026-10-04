@@ -756,25 +756,82 @@ footer[id],
     display: none !important;
   }
 
+  /* Desktop-only floating notes; on phones they overflow the viewport. */
+  .phone-orbit {
+    display: none;
+  }
+
   .story-phone-local,
   .demo-phone {
     display: block;
-    width: min(100%, 260px);
+    width: min(100%, 240px);
     max-width: 100%;
-    transform: rotateX(2deg) rotateY(-3deg);
+    margin-inline: auto;
+    transform: none;
+  }
+
+  .story-phone-local.phone-shell,
+  .demo-phone.phone-shell {
+    transform: none !important;
   }
 
   .story-copy {
     max-width: 100%;
+    width: 100%;
   }
 
+  .story-visual,
   .story-visual .stage-row {
     width: 100%;
     max-width: 100%;
+    justify-content: center;
   }
 
   .source-card {
-    max-width: min(300px, 100%);
+    max-width: min(280px, 100%);
+    margin-inline: auto;
+  }
+
+  .scene {
+    padding-inline: 1rem;
+    padding-block: 2.5rem;
+  }
+
+  .scene[data-scene="1"] {
+    min-height: auto;
+    padding-top: 1rem;
+    padding-bottom: 2rem;
+  }
+
+  .scene[data-scene="1"] .story-stage {
+    min-height: 0;
+    gap: 1.25rem;
+  }
+
+  .scene-title {
+    font-size: clamp(1.55rem, 7.2vw, 2rem);
+    max-width: 100%;
+  }
+
+  .scene-body {
+    font-size: 1rem;
+    line-height: 1.7;
+    max-width: 100%;
+  }
+
+  .demo-stage {
+    min-height: 0;
+  }
+}
+
+@media (max-width: 1023px) and (orientation: landscape) {
+  .scene[data-scene="1"] .story-stage {
+    gap: 1rem;
+  }
+
+  .story-phone-local,
+  .demo-phone {
+    width: min(100%, 200px);
   }
 }
 

@@ -31,13 +31,13 @@ export function AuthShell({ title, body, children, footer }: { title: string; bo
     <main className="app-shell relative overflow-x-hidden px-4 py-6 pb-[max(6rem,env(safe-area-inset-bottom))]">
       <Image src="/assets/velora/hero-environment-v2.png" alt="" fill sizes="100vw" className="object-cover object-left opacity-40" priority />
       <div className="hero-veil" />
-      <div className="relative z-10 mx-auto flex max-w-[1100px] items-center justify-between gap-3">
-        <Link href="/" className="inline-flex min-h-11 items-center gap-2 text-2xl font-bold">
-          <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#38dc89] text-base text-[#072317]">V</span>
-          {copy.brand}
+      <div className="relative z-10 mx-auto flex max-w-[1100px] items-center justify-between gap-2">
+        <Link href="/" className="inline-flex min-h-11 min-w-0 items-center gap-2 text-xl font-bold sm:text-2xl">
+          <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#38dc89] text-sm text-[#072317] sm:h-9 sm:w-9 sm:text-base">V</span>
+          <span className="truncate">{copy.brand}</span>
         </Link>
-        <div className="flex items-center gap-2">
-          <PreviewBadge note />
+        <div className="flex shrink-0 items-center gap-2">
+          <span className="hidden sm:inline-flex"><PreviewBadge note /></span>
           <LangSwitch />
         </div>
       </div>

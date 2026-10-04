@@ -122,16 +122,16 @@ export function StoryScenes({
               <p data-seq="tagline" className="max-w-[36ch] text-base font-medium leading-7 text-[#9ef0c4]">{copy.tagline}</p>
               <h1 className="scene-title mt-3 text-[#f7fbf8]">{pressure.title}</h1>
               <p className="scene-body mt-4 text-[#d5e4da]">{pressure.body}</p>
-              <div data-seq="hero-actions" className="mt-8 flex flex-wrap gap-3">
+              <div data-seq="hero-actions" className="mt-6 flex flex-col gap-3 sm:mt-8 sm:flex-row sm:flex-wrap">
                 <Link
                   href={startHref}
-                  className="inline-flex min-h-12 items-center justify-center rounded-full bg-[#38dc89] px-6 text-base font-medium text-[#072317]"
+                  className="inline-flex min-h-12 w-full items-center justify-center rounded-full bg-[#38dc89] px-6 text-base font-medium text-[#072317] sm:w-auto"
                 >
                   {startLabel}
                 </Link>
                 <a
                   href="#how"
-                  className="inline-flex min-h-12 items-center justify-center rounded-full border border-white/25 px-6 text-base font-medium text-[#f7fbf8]"
+                  className="inline-flex min-h-12 w-full items-center justify-center rounded-full border border-white/25 px-6 text-base font-medium text-[#f7fbf8] sm:w-auto"
                 >
                   {copy.try}
                 </a>
