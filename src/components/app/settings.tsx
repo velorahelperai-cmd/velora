@@ -7,6 +7,7 @@ import { emptyCompanyDraft, readCompanyDraft, writeCompanyDraft } from "@/lib/co
 import { type Member, uid, useDemo } from "@/lib/demo-state";
 import { fill } from "@/lib/app-copy";
 import { landingCopy, type PlanId } from "@/lib/landing-copy";
+import { AccountSettingsLinkCard } from "@/components/app/account-page";
 import { WorkspaceShell } from "@/components/app/workspace-shell";
 import { createClient } from "@/lib/supabase/client";
 import { saveOwnerBusiness } from "@/lib/tenancy/actions";
@@ -74,26 +75,7 @@ export function SettingsPage() {
 }
 
 function AccountTab() {
-  const copy = useAppCopy();
-  const { state, update } = useDemo();
-  const [name, setName] = useState(state.account?.name ?? "");
-  const [error, setError] = useState<FieldErrorKey>();
-  const [saved, setSaved] = useState(false);
-  const { busy, run } = useAction();
-  const dirty = name !== state.account?.name;
-  useUnsavedWarning(dirty && !busy);
-  const nameError = useErrorText(error);
-  return (
-    <Card title={copy.app.tabs.account}>
-      <form className="grid max-w-md gap-4" noValidate onSubmit={(e) => { e.preventDefault(); if (!name.trim()) { setError("required"); return; } setError(undefined); void run(() => { update((s) => ({ account: s.account ? { ...s.account, name: name.trim() } : s.account })); setSaved(true); }); }}>
-        {saved && !dirty ? <Notice tone="success">{copy.app.accountSaved}</Notice> : null}
-        <Field label={copy.auth.name} required error={nameError}>{(p) => <input {...p} value={name} onChange={(e) => { setName(e.target.value); setSaved(false); }} />}</Field>
-        <Field label={copy.auth.email} required>{(p) => <input {...p} dir="ltr" value={state.account?.email ?? ""} readOnly className={`${p.className} opacity-70`} />}</Field>
-        <p className="text-xs text-[#8da195]">{copy.app.noPasswordChange} <Link href="/forgot-password" className="text-[#38dc89] underline">{copy.auth.forgotTitle}</Link></p>
-        <div><Button type="submit" busy={busy} busyLabel={copy.saving} disabled={!dirty}>{copy.save}</Button></div>
-      </form>
-    </Card>
-  );
+  return <AccountSettingsLinkCard />;
 }
 
 function BusinessTab() {

@@ -11,6 +11,7 @@ import { type PlanId, type SectorId, landingCopy } from "@/lib/landing-copy";
 import { playLandingMotion, registerLandingMotion, replaySample } from "@/lib/landing-motion";
 import { useDemo } from "@/lib/demo-state";
 import Link from "next/link";
+import { AccountMenu } from "@/components/app/account-chrome";
 import { AboutContact } from "@/components/landing/about-contact";
 import { Catalogue, StoryScenes } from "@/components/landing/story-scenes";
 import { DemoScene } from "@/components/landing/demo";
@@ -120,10 +121,10 @@ export function LandingPage({
             <button type="button" onClick={switchLocale} aria-label={copy.langAria} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full border border-white/20 px-3 text-sm">
               {copy.lang}
             </button>
-            <Link href="/login" className="hidden min-h-11 items-center px-2 text-sm md:inline-flex">
-              {copy.signIn}
-            </Link>
-            <Link href={startHref} className="inline-flex min-h-11 max-w-[8.5rem] items-center truncate rounded-full bg-[#38dc89] px-2.5 text-[11px] font-medium text-[#072317] sm:max-w-none sm:px-4 sm:text-sm">
+            <div className="hidden md:block">
+              <AccountMenu />
+            </div>
+            <Link href={startHref} className="inline-flex min-h-11 max-w-[8.5rem] items-center truncate rounded-full bg-[#38dc89] px-2.5 text-[11px] font-medium text-[#072317] sm:max-w-none sm:px-4 sm:text-sm md:hidden">
               {startLabel}
             </Link>
           </div>
@@ -135,7 +136,6 @@ export function LandingPage({
                 ["#packages", copy.nav.packages],
                 ["#faq", copy.nav.faq],
                 ["#demo", copy.try],
-                ["/login", copy.signIn],
                 ["#contact", copy.footer.contact],
               ].map(([href, label]) => (
                 <a
@@ -147,6 +147,9 @@ export function LandingPage({
                   {label}
                 </a>
               ))}
+              <div className="border-t border-white/10 px-1 pt-2">
+                <AccountMenu />
+              </div>
             </div>
           ) : null}
         </div>

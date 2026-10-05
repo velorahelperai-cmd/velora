@@ -17,13 +17,26 @@ import type { AccessCode } from "@/lib/tenancy/types";
 
 export type KnowledgeActionResult<T = undefined> =
   | { ok: true; data: T }
-  | { ok: false; code: AccessCode | "AUTH_ERROR" | "STORAGE_ERROR" | "INVALID_INPUT"; message?: string };
+  | {
+    ok: false;
+    code: AccessCode | "AUTH_ERROR" | "STORAGE_ERROR" | "INVALID_INPUT";
+    message?: string;
+    data?: T;
+  };
 
 const SOURCE_SELECT =
-  "id, company_id, kind, title, content, file_name, content_type, byte_size, storage_path, status, failure_code, created_by, created_at, updated_at";
+  "id, company_id, kind, title, content, file_name, content_type, byte_size, storage_path, status, failure_code, content_version, approved_for_answers, approved_version, approved_at, approved_by, created_by, created_at, updated_at";
 
 function asSource(row: unknown): KnowledgeSourceRecord {
-  return row as KnowledgeSourceRecord;
+  const r = row as Partial<KnowledgeSourceRecord> & { id: string };
+  return {
+    ...(row as KnowledgeSourceRecord),
+    content_version: typeof r.content_version === "number" ? r.content_version : 1,
+    approved_for_answers: Boolean(r.approved_for_answers),
+    approved_version: r.approved_version ?? null,
+    approved_at: r.approved_at ?? null,
+    approved_by: r.approved_by ?? null,
+  };
 }
 
 async function requireOwnerCompany() {
@@ -86,6 +99,36 @@ async function markFileFailed(
   return data ? asSource(data) : null;
 }
 
+function isStorageObjectMissingError(message?: string | null) {
+  const m = (message ?? "").toLowerCase();
+  return (
+    m.includes("object not found")
+    || m.includes("not found")
+    || m.includes("no such file")
+    || m.includes("404")
+  );
+}
+
+/** Reserved DB path does not prove the Storage object exists. */
+async function storageObjectPresence(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  companyId: string,
+  sourceId: string,
+  storagePath: string,
+): Promise<"present" | "missing" | "error"> {
+  const folder = `${companyId}/${sourceId}`;
+  const filePart = storagePath.split("/").pop();
+  if (!filePart) return "missing";
+  const { data: listed, error: listError } = await supabase.storage
+    .from(KNOWLEDGE_BUCKET)
+    .list(folder, { limit: 50 });
+  if (listError) {
+    if (isStorageObjectMissingError(listError.message)) return "missing";
+    return "error";
+  }
+  return (listed ?? []).some((o) => o.name === filePart) ? "present" : "missing";
+}
+
 /** Replaces extracted text on the same source row. A second run does not insert another copy. */
 async function prepareStoredFile(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -93,9 +136,10 @@ async function prepareStoredFile(
   companyId: string,
   bytes: Uint8Array,
 ) {
+  // Clear prior text so reprocess cannot keep an approved stale body; version bumps on ready.
   await supabase
     .from("knowledge_sources")
-    .update({ status: "processing", failure_code: null })
+    .update({ status: "processing", failure_code: null, content: "" })
     .eq("id", source.id)
     .eq("company_id", companyId);
 
@@ -342,10 +386,21 @@ export async function uploadKnowledgeFiles(
       const prepared = preparable
         ? await prepareStoredFile(ctx.supabase, asSource(stored), ctx.companyId, bytes)
         : asSource(stored);
+      if (prepared.status === "failed") {
+        results.push({
+          fileName,
+          ok: false,
+          uploaded: true,
+          code: "UPLOAD_OK_EXTRACT_FAILED",
+          message: prepared.failure_code ?? "extract_failed",
+          source: prepared,
+        });
+        continue;
+      }
       results.push({
         fileName,
-        ok: prepared.status !== "failed",
-        code: prepared.failure_code ?? undefined,
+        ok: true,
+        uploaded: true,
         source: prepared,
       });
     }
@@ -388,8 +443,14 @@ export async function repairStoredKnowledgeFile(
     const filePart = existing.storage_path.split("/").pop();
     const present = (listed ?? []).some((o) => o.name === filePart);
     if (!present) {
-      await markFileFailed(ctx.supabase, existing.id, ctx.companyId, null);
-      return { ok: false, code: "STORAGE_ERROR", message: "object_missing" };
+      const failed = await markFileFailed(ctx.supabase, existing.id, ctx.companyId, null);
+      revalidateKnowledge(ctx.companyId);
+      return {
+        ok: false,
+        code: "STORAGE_ERROR",
+        message: "OBJECT_MISSING",
+        data: failed ?? undefined,
+      };
     }
 
     if (!isPreparableKnowledgeFile(existing.file_name)) {
@@ -522,6 +583,14 @@ export async function retryFailedKnowledgeFile(
       ? await prepareStoredFile(ctx.supabase, asSource(data), ctx.companyId, bytes)
       : asSource(data);
     revalidateKnowledge(ctx.companyId);
+    if (finished.status === "failed") {
+      return {
+        ok: false,
+        code: "INVALID_INPUT",
+        message: `UPLOAD_OK_EXTRACT_FAILED:${finished.failure_code ?? "extract_failed"}`,
+        data: finished,
+      };
+    }
     return { ok: true, data: finished };
   } catch {
     return { ok: false, code: "UNAVAILABLE" };
@@ -548,10 +617,41 @@ export async function retryKnowledgePrepare(
       return { ok: false, code: "INVALID_INPUT", message: "not_preparable" };
     }
 
+    const presence = await storageObjectPresence(
+      ctx.supabase,
+      ctx.companyId,
+      existing.id,
+      existing.storage_path,
+    );
+    if (presence === "error") {
+      return { ok: false, code: "STORAGE_ERROR", message: "storage_unavailable" };
+    }
+    if (presence === "missing") {
+      // Reserved path is not proof of an object — clear path so the same row can be re-uploaded.
+      const failed = await markFileFailed(ctx.supabase, existing.id, ctx.companyId, null);
+      revalidateKnowledge(ctx.companyId);
+      return {
+        ok: false,
+        code: "STORAGE_ERROR",
+        message: "OBJECT_MISSING",
+        data: failed ?? undefined,
+      };
+    }
+
     const { data: fileBlob, error: downloadError } = await ctx.supabase.storage
       .from(KNOWLEDGE_BUCKET)
       .download(existing.storage_path);
     if (downloadError || !fileBlob) {
+      if (isStorageObjectMissingError(downloadError?.message)) {
+        const failed = await markFileFailed(ctx.supabase, existing.id, ctx.companyId, null);
+        revalidateKnowledge(ctx.companyId);
+        return {
+          ok: false,
+          code: "STORAGE_ERROR",
+          message: "OBJECT_MISSING",
+          data: failed ?? undefined,
+        };
+      }
       const failed = await markFileFailed(
         ctx.supabase,
         existing.id,
@@ -560,8 +660,12 @@ export async function retryKnowledgePrepare(
         "extract_failed",
       );
       revalidateKnowledge(ctx.companyId);
-      if (failed) return { ok: true, data: failed };
-      return { ok: false, code: "STORAGE_ERROR", message: downloadError?.message };
+      return {
+        ok: false,
+        code: "STORAGE_ERROR",
+        message: downloadError?.message ?? "download_failed",
+        data: failed ?? undefined,
+      };
     }
 
     const prepared = await prepareStoredFile(
@@ -571,7 +675,54 @@ export async function retryKnowledgePrepare(
       new Uint8Array(await fileBlob.arrayBuffer()),
     );
     revalidateKnowledge(ctx.companyId);
+    if (prepared.status === "failed") {
+      return {
+        ok: false,
+        code: "INVALID_INPUT",
+        message: prepared.failure_code ?? "extract_failed",
+        data: prepared,
+      };
+    }
     return { ok: true, data: prepared };
+  } catch {
+    return { ok: false, code: "UNAVAILABLE" };
+  }
+}
+
+/**
+ * Owner-only: approve the current ready version for customer-answer context.
+ * Version/time/actor are stamped server-side via RPC — not client UPDATE fields.
+ */
+export async function setKnowledgeSourceApproval(
+  sourceId: string,
+  approved: boolean,
+): Promise<KnowledgeActionResult<KnowledgeSourceRecord>> {
+  try {
+    const ctx = await requireOwnerCompany();
+    if (!ctx.ok) return { ok: false, code: ctx.code };
+    if (!sourceId) return { ok: false, code: "INVALID_INPUT" };
+
+    const { data, error } = await ctx.supabase.rpc("set_knowledge_source_approval", {
+      p_source_id: sourceId,
+      p_approved: approved,
+    });
+
+    if (error) {
+      const msg = error.message ?? "";
+      if (msg.includes("not_ready")) return { ok: false, code: "INVALID_INPUT", message: "not_ready" };
+      if (msg.includes("not_found")) return { ok: false, code: "FORBIDDEN", message: "not_found" };
+      if (msg.includes("forbidden") || msg.includes("not_authenticated")) {
+        return { ok: false, code: "FORBIDDEN" };
+      }
+      if (msg.includes("version_changed")) {
+        return { ok: false, code: "FORBIDDEN", message: "version_changed" };
+      }
+      return { ok: false, code: "AUTH_ERROR", message: error.message };
+    }
+    if (!data) return { ok: false, code: "FORBIDDEN", message: "not_found" };
+
+    revalidateKnowledge(ctx.companyId);
+    return { ok: true, data: asSource(data) };
   } catch {
     return { ok: false, code: "UNAVAILABLE" };
   }

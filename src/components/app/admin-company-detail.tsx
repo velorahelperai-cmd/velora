@@ -5,17 +5,20 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { adminGetKnowledgeFileUrl, adminListCompanyKnowledge } from "@/lib/knowledge/actions";
 import type { KnowledgeSourceRecord } from "@/lib/knowledge/types";
+import { AppTopBar } from "@/components/app/account-chrome";
 import {
+  adminApproveSetupReview,
   adminGetCompany,
+  adminRequestReviewChanges,
   adminSetCompanyStatus,
   adminSetMemberStatus,
   adminUpdateCompany,
 } from "@/lib/tenancy/actions";
-import type { CompanyStatus } from "@/lib/tenancy/types";
+import type { CompanyReviewRequest, CompanyStatus } from "@/lib/tenancy/types";
 import { useDemo } from "@/lib/demo-state";
 import { fill } from "@/lib/app-copy";
 import {
-  Button, ConfirmDialog, Field, LangSwitch, Notice, isEmail, isPhone,
+  Button, ConfirmDialog, Field, Notice, isEmail, isPhone,
   useAction, useAppCopy,
 } from "@/components/app/ui";
 
@@ -88,6 +91,7 @@ type Props = {
   initialMembers: AdminMember[];
   initialAudits: AdminAudit[];
   initialKnowledge: KnowledgeSourceRecord[];
+  initialReview?: CompanyReviewRequest | null;
   knowledgeLoadFailed?: boolean;
 };
 
@@ -101,6 +105,7 @@ export function AdminCompanyDetail({
   initialMembers,
   initialAudits,
   initialKnowledge,
+  initialReview = null,
   knowledgeLoadFailed = false,
 }: Props) {
   const copy = useAppCopy();
@@ -111,6 +116,8 @@ export function AdminCompanyDetail({
   const [members, setMembers] = useState(initialMembers);
   const [audits, setAudits] = useState(initialAudits);
   const [knowledge, setKnowledge] = useState(initialKnowledge);
+  const [review, setReview] = useState<CompanyReviewRequest | null>(initialReview);
+  const [adminNote, setAdminNote] = useState(initialReview?.owner_note ?? "");
   const [knowledgeFailed, setKnowledgeFailed] = useState(knowledgeLoadFailed);
   const [form, setForm] = useState({
     displayName: initialCompany.display_name,
@@ -125,6 +132,8 @@ export function AdminCompanyDetail({
   });
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [reviewInfo, setReviewInfo] = useState<string | null>(null);
+  const [reviewViewRefreshFailed, setReviewViewRefreshFailed] = useState(false);
   const [pendingDisable, setPendingDisable] = useState<AdminMember | null>(null);
   const [pendingSuspendSave, setPendingSuspendSave] = useState(false);
 
@@ -137,7 +146,7 @@ export function AdminCompanyDetail({
     Boolean(company.contact_email?.trim()) &&
     owner!.email!.trim().toLowerCase() !== company.contact_email.trim().toLowerCase();
 
-  async function refresh() {
+  async function refresh(opts?: { preserveCompanyForm?: boolean }) {
     const result = await adminGetCompany(company.id);
     if (!result.ok) {
       setError(result.message ?? copy.errors.authFailed);
@@ -147,10 +156,16 @@ export function AdminCompanyDetail({
       company: AdminCompany;
       members: AdminMember[];
       audits?: AdminAudit[];
+      review_request?: CompanyReviewRequest | null;
     };
     setCompany(payload.company);
     setMembers(payload.members ?? []);
     setAudits(payload.audits ?? []);
+    const nextReview = payload.review_request ?? null;
+    setReview(nextReview);
+    if (nextReview) {
+      setAdminNote((prev) => (prev.trim() ? prev : (nextReview.owner_note ?? "")));
+    }
     const knowledgeResult = await adminListCompanyKnowledge(company.id);
     if (knowledgeResult.ok) {
       setKnowledge(knowledgeResult.data);
@@ -158,17 +173,20 @@ export function AdminCompanyDetail({
     } else {
       setKnowledgeFailed(true);
     }
-    setForm({
-      displayName: payload.company.display_name,
-      businessType: payload.company.business_type,
-      replyLanguage: payload.company.reply_language,
-      country: payload.company.country,
-      city: payload.company.city,
-      hours: payload.company.hours,
-      contactPhone: payload.company.contact_phone,
-      contactEmail: payload.company.contact_email,
-      status: payload.company.status,
-    });
+    // Review-status refresh must not wipe an unsaved company edit form.
+    if (!opts?.preserveCompanyForm) {
+      setForm({
+        displayName: payload.company.display_name,
+        businessType: payload.company.business_type,
+        replyLanguage: payload.company.reply_language,
+        country: payload.company.country,
+        city: payload.company.city,
+        hours: payload.company.hours,
+        contactPhone: payload.company.contact_phone,
+        contactEmail: payload.company.contact_email,
+        status: payload.company.status,
+      });
+    }
     router.refresh();
     return true;
   }
@@ -214,9 +232,18 @@ export function AdminCompanyDetail({
   return (
     <main className="app-shell px-4 py-6">
       <div className="mx-auto max-w-[860px]">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <AppTopBar
+          trailing={(
+            <Link
+              href={`/admin/companies/${company.id}/conversations`}
+              className="text-sm text-[#38dc89] underline"
+            >
+              {copy.admin.viewConversations}
+            </Link>
+          )}
+        />
+        <div className="mt-4">
           <Link href="/admin" className="text-sm text-[#38dc89] underline">{copy.admin.backToList}</Link>
-          <LangSwitch />
         </div>
         <h1 className="mt-4 text-3xl font-bold break-words">{company.display_name}</h1>
         <p className="mt-2 text-sm text-[#adbeaf]">{copy.admin.detailBody}</p>
@@ -307,6 +334,183 @@ export function AdminCompanyDetail({
             </div>
           </form>
           <p className="mt-3 text-xs text-[#8da195]">{copy.admin.whatsappNote} · {copy.admin.whatsappLink}: {empty}</p>
+        </section>
+
+        <section className="mt-4 app-panel rounded-3xl p-4 sm:p-6">
+          <h2 className="text-lg font-bold">{copy.admin.reviewRequest}</h2>
+          {reviewInfo ? <div className="mt-3"><Notice tone="warn">{reviewInfo}</Notice></div> : null}
+          {reviewViewRefreshFailed ? (
+            <div className="mt-3">
+              <Button
+                variant="secondary"
+                busy={busy}
+                onClick={() => {
+                  void run(async () => {
+                    try {
+                      const ok = await refresh({ preserveCompanyForm: true });
+                      if (ok) {
+                        setReviewViewRefreshFailed(false);
+                        setReviewInfo(null);
+                      } else {
+                        setReviewInfo(copy.admin.reviewRefreshFailed);
+                      }
+                    } catch {
+                      setReviewInfo(copy.admin.reviewRefreshFailed);
+                    }
+                  });
+                }}
+              >
+                {copy.admin.reviewRetryView}
+              </Button>
+            </div>
+          ) : null}
+          {review ? (
+            <div className="mt-3 grid gap-3">
+              <dl className="grid gap-2 text-sm">
+                <div className="flex justify-between gap-3">
+                  <dt className="text-[#adbeaf]">{copy.admin.reviewStatus}</dt>
+                  <dd>{review.status}</dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-[#adbeaf]">{copy.admin.reviewRevision}</dt>
+                  <dd>{review.revision}</dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-[#adbeaf]">{copy.admin.reviewRequestedAt}</dt>
+                  <dd>{new Date(review.requested_at).toLocaleString(locale === "ar" ? "ar-OM" : "en-GB")}</dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-[#adbeaf]">{copy.admin.reviewRequester}</dt>
+                  <dd dir="ltr">{dash(review.requested_by_email, review.requested_by)}</dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-[#adbeaf]">{copy.admin.reviewOwnership}</dt>
+                  <dd>{review.number_ownership === "own" ? copy.setup.ownNumber : copy.setup.newNumber}</dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-[#adbeaf]">{copy.setup.whatsappNumber}</dt>
+                  <dd dir="ltr">{dash(review.whatsapp_number, empty)}</dd>
+                </div>
+                {review.owner_note ? (
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-[#adbeaf]">{copy.admin.reviewOwnerNote}</dt>
+                    <dd className="min-w-0 break-words text-end">{review.owner_note}</dd>
+                  </div>
+                ) : null}
+                <p className="text-xs text-[#8da195]">{copy.admin.reviewNote}</p>
+              </dl>
+              {review.status === "pending_review" ? (
+                <div className="grid gap-3 border-t border-white/10 pt-3">
+                  <Field label={copy.admin.reviewOwnerNote} required>
+                    {(p) => (
+                      <textarea
+                        {...p}
+                        value={adminNote}
+                        maxLength={2000}
+                        rows={3}
+                        onChange={(e) => setAdminNote(e.target.value)}
+                        className="min-h-[5rem] w-full rounded-xl border border-white/15 bg-[#0d1a14] px-3 py-2 text-sm"
+                      />
+                    )}
+                  </Field>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      busy={busy}
+                      onClick={() => {
+                        setError(null);
+                        setSuccess(null);
+                        setReviewInfo(null);
+                        setReviewViewRefreshFailed(false);
+                        const note = adminNote.trim();
+                        void run(async () => {
+                          try {
+                            const result = await adminRequestReviewChanges({
+                              companyId: company.id,
+                              expectedRevision: review.revision,
+                              ownerNote: note,
+                            });
+                            if (!result.ok) {
+                              if (result.code === "CONFLICT" && result.data) {
+                                setReview(result.data);
+                                setReviewInfo(copy.admin.reviewConflict);
+                                setError(result.message ?? copy.admin.reviewDecideFailed);
+                                return;
+                              }
+                              setError(result.message ?? copy.admin.reviewDecideFailed);
+                              return;
+                            }
+                            setReview(result.data);
+                            setSuccess(copy.saved);
+                            try {
+                              const ok = await refresh({ preserveCompanyForm: true });
+                              if (!ok) {
+                                setReviewInfo(copy.admin.reviewRefreshFailed);
+                                setReviewViewRefreshFailed(true);
+                              }
+                            } catch {
+                              setReviewInfo(copy.admin.reviewRefreshFailed);
+                              setReviewViewRefreshFailed(true);
+                            }
+                          } catch {
+                            setError(copy.admin.reviewDecideFailed);
+                          }
+                        });
+                      }}
+                    >
+                      {copy.admin.reviewRequestChanges}
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      busy={busy}
+                      onClick={() => {
+                        setError(null);
+                        setSuccess(null);
+                        setReviewInfo(null);
+                        setReviewViewRefreshFailed(false);
+                        void run(async () => {
+                          try {
+                            const result = await adminApproveSetupReview({
+                              companyId: company.id,
+                              expectedRevision: review.revision,
+                              ownerNote: adminNote.trim(),
+                            });
+                            if (!result.ok) {
+                              if (result.code === "CONFLICT" && result.data) {
+                                setReview(result.data);
+                                setReviewInfo(copy.admin.reviewConflict);
+                                setError(result.message ?? copy.admin.reviewDecideFailed);
+                                return;
+                              }
+                              setError(result.message ?? copy.admin.reviewDecideFailed);
+                              return;
+                            }
+                            setReview(result.data);
+                            setSuccess(copy.saved);
+                            try {
+                              const ok = await refresh({ preserveCompanyForm: true });
+                              if (!ok) {
+                                setReviewInfo(copy.admin.reviewRefreshFailed);
+                                setReviewViewRefreshFailed(true);
+                              }
+                            } catch {
+                              setReviewInfo(copy.admin.reviewRefreshFailed);
+                              setReviewViewRefreshFailed(true);
+                            }
+                          } catch {
+                            setError(copy.admin.reviewDecideFailed);
+                          }
+                        });
+                      }}
+                    >
+                      {copy.admin.reviewApprove}
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <p className="mt-3 text-sm text-[#8da195]">{copy.admin.reviewNone}</p>
+          )}
         </section>
 
         <section className="mt-4 app-panel rounded-3xl p-4 sm:p-6">

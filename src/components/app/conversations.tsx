@@ -4,7 +4,13 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 import { type Conversation, type ConversationStatus, nowMs, uid, useDemo } from "@/lib/demo-state";
-import { replyWhatsappConversation } from "@/lib/whatsapp/actions";
+import {
+  controlWhatsappConversation,
+  refreshWhatsappConversation,
+  replyWhatsappConversation,
+  type ControlAction,
+  type ControlState,
+} from "@/lib/whatsapp/actions";
 import { WorkspaceShell } from "@/components/app/workspace-shell";
 import { Button, EmptyState, Notice, SimTag, useAppCopy } from "@/components/app/ui";
 
@@ -14,6 +20,18 @@ const statusStyle: Record<ConversationStatus, string> = {
   handed_over: "bg-[#38dc89]/15 text-[#9af0c3]",
   resolved: "bg-white/5 text-[#8da195]",
 };
+
+function applyControlState(base: Conversation, state: ControlState): Conversation {
+  return {
+    ...base,
+    status: state.status,
+    assistantPaused: state.assistantPaused,
+    automationAllowed: state.automationAllowed,
+    automationGeneration: state.automationGeneration,
+    revision: state.revision,
+    owner: state.owner,
+  };
+}
 
 export function ConversationsPage({ inbox = [] }: { inbox?: Conversation[] }) {
   const copy = useAppCopy();
@@ -26,14 +44,16 @@ export function ConversationsPage({ inbox = [] }: { inbox?: Conversation[] }) {
   const [draft, setDraft] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [warn, setWarn] = useState<string | null>(null);
   const [localInbox, setLocalInbox] = useState<Record<string, Conversation>>({});
   const [pending, startTransition] = useTransition();
+  const [controlBusy, setControlBusy] = useState(false);
   const liveIds = useMemo(() => new Set(inbox.map((item) => item.id)), [inbox]);
 
   const conversations = useMemo(() => {
     const live = inbox.map((item) => localInbox[item.id] ?? item);
-    const liveIds = new Set(live.map((item) => item.id));
-    return [...live, ...state.conversations.filter((item) => !liveIds.has(item.id))];
+    const liveIdSet = new Set(live.map((item) => item.id));
+    return [...live, ...state.conversations.filter((item) => !liveIdSet.has(item.id))];
   }, [inbox, localInbox, state.conversations]);
 
   const list = useMemo(() => {
@@ -53,14 +73,18 @@ export function ConversationsPage({ inbox = [] }: { inbox?: Conversation[] }) {
     }
     update((s) => ({ conversations: s.conversations.map((c) => (c.id === id ? { ...c, ...fn(c) } : c)) }));
   };
+  const replaceLive = (conversation: Conversation) => {
+    setLocalInbox((current) => ({ ...current, [conversation.id]: conversation }));
+  };
   const me = state.account?.name ?? copy.app.you;
   const time = (at: number) => new Date(at).toLocaleTimeString(locale === "ar" ? "ar-OM" : "en-GB", { hour: "2-digit", minute: "2-digit" });
 
   function send(c: Conversation) {
     const text = draft.trim();
-    if (!text || pending) return;
+    if (!text || pending || controlBusy) return;
     setError(null);
     setNotice(null);
+    setWarn(null);
 
     if (!liveIds.has(c.id)) {
       patch(c.id, (cur) => ({ messages: [...cur.messages, { id: uid(), from: "staff", text, at: nowMs() }], owner: me, assistantPaused: true, status: cur.status === "resolved" ? "handed_over" : cur.status }));
@@ -84,12 +108,77 @@ export function ConversationsPage({ inbox = [] }: { inbox?: Conversation[] }) {
         messages: [...cur.messages, { id: result.message.id, from: "staff", text: result.message.text, at: result.message.at }],
         owner: me,
         assistantPaused: true,
+        automationAllowed: false,
         status: cur.status === "resolved" ? "handed_over" : cur.status,
         summary: result.message.text,
       }));
       setDraft("");
       setNotice(copy.app.sentNote);
     });
+  }
+
+  async function retryRefresh(conversationId: string) {
+    setWarn(null);
+    setError(null);
+    const refreshed = await refreshWhatsappConversation(conversationId);
+    if (!refreshed.ok) {
+      setWarn(copy.app.controlRefreshFailed);
+      return;
+    }
+    replaceLive(refreshed.conversation);
+    setNotice(copy.app.controlRefreshed);
+  }
+
+  function runControl(c: Conversation, action: ControlAction) {
+    if (!liveIds.has(c.id) || controlBusy || pending) return;
+    const expectedRevision = c.revision ?? 1;
+    setControlBusy(true);
+    setError(null);
+    setNotice(null);
+    setWarn(null);
+
+    void (async () => {
+      try {
+        const result = await controlWhatsappConversation({
+          conversationId: c.id,
+          action,
+          expectedRevision,
+        });
+
+        if (!result.ok) {
+          if (result.code === "CONFLICT" && result.state) {
+            patch(c.id, (cur) => applyControlState(cur, result.state!));
+            setError(copy.app.controlConflict);
+            return;
+          }
+          if (result.code === "FORBIDDEN" || result.code === "UNAUTHENTICATED") {
+            setError(copy.app.controlForbidden);
+            return;
+          }
+          setError(copy.app.controlFailed);
+          return;
+        }
+
+        // Persist succeeded — update from returned state; refresh failure must not re-run action.
+        patch(c.id, (cur) => applyControlState(cur, result.state));
+        if (action === "take_over") setNotice(copy.app.controlTaken);
+        else if (action === "resume") setNotice(copy.app.resumed);
+        else setNotice(copy.app.controlClosed);
+
+        try {
+          const refreshed = await refreshWhatsappConversation(c.id);
+          if (!refreshed.ok) {
+            setWarn(copy.app.controlRefreshFailed);
+            return;
+          }
+          replaceLive(refreshed.conversation);
+        } catch {
+          setWarn(copy.app.controlRefreshFailed);
+        }
+      } finally {
+        setControlBusy(false);
+      }
+    })();
   }
 
   const detail = selected ? (
@@ -103,15 +192,54 @@ export function ConversationsPage({ inbox = [] }: { inbox?: Conversation[] }) {
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          {selected.assistantPaused ? (
-            <Button variant="secondary" onClick={() => { patch(selected.id, () => ({ assistantPaused: false, owner: "assistant", status: selected.status === "handed_over" ? "open" : selected.status })); setNotice(copy.app.resumed); }}>{copy.app.resume}</Button>
+          {liveIds.has(selected.id) ? (
+            <>
+              {selected.assistantPaused ? (
+                <Button
+                  variant="secondary"
+                  busy={controlBusy}
+                  disabled={controlBusy || pending}
+                  onClick={() => runControl(selected, "resume")}
+                >
+                  {copy.app.resume}
+                </Button>
+              ) : (
+                <Button
+                  variant="secondary"
+                  busy={controlBusy}
+                  disabled={controlBusy || pending}
+                  onClick={() => runControl(selected, "take_over")}
+                >
+                  {copy.app.takeOver}
+                </Button>
+              )}
+              {selected.status !== "resolved" ? (
+                <Button
+                  variant="ghost"
+                  busy={controlBusy}
+                  disabled={controlBusy || pending}
+                  onClick={() => runControl(selected, "close")}
+                >
+                  {copy.app.markResolved}
+                </Button>
+              ) : null}
+            </>
           ) : (
-            <Button variant="secondary" onClick={() => patch(selected.id, () => ({ assistantPaused: true, owner: me, status: "handed_over" }))}>{copy.app.takeOver}</Button>
+            <>
+              {selected.assistantPaused ? (
+                <Button variant="secondary" onClick={() => { patch(selected.id, () => ({ assistantPaused: false, owner: "assistant", status: selected.status === "handed_over" ? "open" : selected.status })); setNotice(copy.app.resumed); }}>{copy.app.resume}</Button>
+              ) : (
+                <Button variant="secondary" onClick={() => patch(selected.id, () => ({ assistantPaused: true, owner: me, status: "handed_over" }))}>{copy.app.takeOver}</Button>
+              )}
+              {selected.status !== "resolved" ? <Button variant="ghost" onClick={() => patch(selected.id, () => ({ status: "resolved", assistantPaused: true }))}>{copy.app.markResolved}</Button> : null}
+            </>
           )}
-          {selected.status !== "resolved" ? <Button variant="ghost" onClick={() => patch(selected.id, () => ({ status: "resolved", assistantPaused: false }))}>{copy.app.markResolved}</Button> : null}
         </div>
       </header>
       {selected.assistantPaused ? <div className="border-b border-[#d9a467]/30 bg-[#d9a467]/10 px-4 py-2 text-sm text-[#f0cf9d]">{copy.app.pausedBanner}</div> : null}
+      {!selected.assistantPaused && liveIds.has(selected.id) ? (
+        <div className="border-b border-white/10 bg-white/5 px-4 py-2 text-sm text-[#adbeaf]">{copy.app.resumeNotLive}</div>
+      ) : null}
       <div className="grid min-h-0 flex-1 gap-4 p-4 lg:grid-cols-[1fr_260px]">
         <div className="flex min-h-0 flex-col" dir={locale === "ar" ? "rtl" : "ltr"}>
           <p className="mb-2 text-xs text-[#8da195]">{copy.app.history}</p>
@@ -125,11 +253,23 @@ export function ConversationsPage({ inbox = [] }: { inbox?: Conversation[] }) {
               </div>
             ))}
             {notice ? <Notice tone="info">{notice}</Notice> : null}
-            {error ? <Notice tone="warn">{error}</Notice> : null}
+            {warn ? (
+              <Notice tone="warn">
+                <span className="flex flex-wrap items-center gap-2">
+                  <span>{warn}</span>
+                  {liveIds.has(selected.id) ? (
+                    <button type="button" className="min-h-8 text-[#38dc89] underline" disabled={controlBusy} onClick={() => void retryRefresh(selected.id)}>
+                      {copy.app.controlRetryRefresh}
+                    </button>
+                  ) : null}
+                </span>
+              </Notice>
+            ) : null}
+            {error ? <Notice tone="error">{error}</Notice> : null}
           </div>
           <form className="sticky bottom-0 -mx-1 mt-auto flex gap-2 border-t border-white/10 bg-[#0d1a14] px-1 pt-3 pb-[max(0.25rem,env(safe-area-inset-bottom))]" onSubmit={(e) => { e.preventDefault(); send(selected); }}>
-            <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={copy.app.reply} aria-label={copy.app.reply} disabled={pending} className="min-h-11 flex-1 rounded-xl border border-white/15 bg-[#07110d] px-3 text-[15px] outline-none focus-visible:ring-2 focus-visible:ring-[#38dc89] disabled:opacity-60" />
-            <Button type="submit" disabled={!draft.trim() || pending} className="shrink-0">{liveIds.has(selected.id) ? copy.app.sendReply : copy.app.sendReplyDemo}</Button>
+            <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={copy.app.reply} aria-label={copy.app.reply} disabled={pending || controlBusy} className="min-h-11 flex-1 rounded-xl border border-white/15 bg-[#07110d] px-3 text-[15px] outline-none focus-visible:ring-2 focus-visible:ring-[#38dc89] disabled:opacity-60" />
+            <Button type="submit" disabled={!draft.trim() || pending || controlBusy} className="shrink-0">{liveIds.has(selected.id) ? copy.app.sendReply : copy.app.sendReplyDemo}</Button>
           </form>
         </div>
         <aside className="grid content-start gap-3 rounded-xl border border-white/10 bg-white/5 p-3 text-sm lg:sticky lg:top-4">

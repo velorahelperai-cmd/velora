@@ -1,11 +1,15 @@
 import { redirect } from "next/navigation";
-import { getCompanyAccess } from "@/lib/tenancy/access";
+import { AccessGate } from "@/components/app/access-gate";
+import { getCompanyAccess, loginPathForReturn } from "@/lib/tenancy/access";
 
 export default async function SetupLayout({ children }: { children: React.ReactNode }) {
   const access = await getCompanyAccess();
   if (!access.ok) {
     if (access.code === "UNVERIFIED") redirect("/verify-email");
-    redirect("/login");
+    if (access.code === "FORBIDDEN" || access.code === "UNAVAILABLE") {
+      return <AccessGate code={access.code} />;
+    }
+    redirect(loginPathForReturn("/setup"));
   }
   if (access.context.needsProfileName) redirect("/complete-profile");
   if (access.context.isPlatformAdmin) redirect("/admin");

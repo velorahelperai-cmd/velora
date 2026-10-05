@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { safeInternalPath } from "@/lib/auth/safe-next";
 import { createClient } from "@/lib/supabase/server";
 import { getCompanyAccess, pathForAccess } from "@/lib/tenancy/access";
 
@@ -6,7 +7,7 @@ export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
   const nextParam = searchParams.get("next");
-  const next = nextParam?.startsWith("/") ? nextParam : null;
+  const preferred = safeInternalPath(nextParam, "");
   const errorDescription = searchParams.get("error_description") || searchParams.get("error");
 
   if (errorDescription) {
@@ -25,14 +26,13 @@ export async function GET(request: Request) {
       return NextResponse.redirect(login);
     }
 
-    // Recovery session must land on password form.
-    if (next === "/reset-password") {
+    if (preferred === "/reset-password" || nextParam === "/reset-password") {
       return NextResponse.redirect(`${origin}/reset-password`);
     }
 
-    // Email confirmation / OAuth: route by verified membership state (setup vs workspace).
     const access = await getCompanyAccess();
-    return NextResponse.redirect(`${origin}${pathForAccess(access)}`);
+    const destination = pathForAccess(access, preferred || null);
+    return NextResponse.redirect(`${origin}${destination}`);
   }
 
   return NextResponse.redirect(`${origin}/login?error=auth_callback`);

@@ -8,6 +8,8 @@ import { sampleStaff, useDemo } from "@/lib/demo-state";
 import { fill } from "@/lib/app-copy";
 import { landingCopy } from "@/lib/landing-copy";
 import { startOAuth } from "@/lib/auth/browser";
+import { safeInternalPath } from "@/lib/auth/safe-next";
+import { AccountMenu, useOptionalAccountSession } from "@/components/app/account-chrome";
 import {
   completeProfileName,
   requestPasswordReset,
@@ -39,6 +41,7 @@ export function AuthShell({ title, body, children, footer }: { title: string; bo
         <div className="flex shrink-0 items-center gap-2">
           <span className="hidden sm:inline-flex"><PreviewBadge note /></span>
           <LangSwitch />
+          <AccountMenu compact />
         </div>
       </div>
       <div className="relative z-10 mx-auto mt-8 grid max-w-[1100px] items-start gap-8 lg:mt-14 lg:grid-cols-[1fr_min(440px,100%)]">
@@ -104,7 +107,7 @@ function GoogleAuthButton({
   );
 }
 
-function useGoogleAuth(setNotice: (v: string | null) => void) {
+function useGoogleAuth(setNotice: (v: string | null) => void, next?: string | null) {
   const copy = useAppCopy();
   const { busy, run } = useAction();
   return {
@@ -113,7 +116,8 @@ function useGoogleAuth(setNotice: (v: string | null) => void) {
       setNotice(null);
       void run(async () => {
         try {
-          await startOAuth("google");
+          const destination = next != null ? safeInternalPath(next, "/setup") : "/setup";
+          await startOAuth("google", destination);
         } catch (err) {
           setNotice(providerErrorMessage(err, copy.auth.googleUnavailable));
         }
@@ -206,6 +210,8 @@ export function LoginPage() {
   const copy = useAppCopy();
   const router = useRouter();
   const params = useSearchParams();
+  const returnTo = params.get("next");
+  const session = useOptionalAccountSession();
   const { busy, run } = useAction();
   const [form, setForm] = useState({ email: "", password: "" });
   const [errors, setErrors] = useState<Partial<Record<"email" | "password", FieldErrorKey>>>({});
@@ -216,7 +222,7 @@ export function LoginPage() {
     return null;
   });
   const [altNotice, setAltNotice] = useState<string | null>(null);
-  const google = useGoogleAuth(setAltNotice);
+  const google = useGoogleAuth(setAltNotice, returnTo);
   const emailError = useErrorText(errors.email);
   const passwordError = useErrorText(errors.password);
 
@@ -233,11 +239,13 @@ export function LoginPage() {
       const result = await signInWithEmail({
         email: form.email.trim(),
         password: form.password,
+        next: returnTo,
       });
       if (!result.ok) {
         setFormError(result.message ?? copy.errors.authFailed);
         return;
       }
+      await session?.refresh();
       router.replace(result.data.next);
     });
   }

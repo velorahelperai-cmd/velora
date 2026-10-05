@@ -38,14 +38,24 @@ export async function POST(request: Request) {
   const admin = createAdminClient();
   if (!admin) return new Response("not configured", { status: 503 });
 
+  // Single-company binding from server config only — not from the browser or payload company fields.
+  const companyId = config.companyId;
+  const phoneNumberId = config.phoneNumberId;
+
   const { messages, statuses } = splitWebhook(payload);
-  for (const message of messages) {
-    if (message.phoneNumberId !== config.phoneNumberId) continue;
-    await saveInbound(admin, config.companyId, message);
-  }
-  for (const status of statuses) {
-    if (status.phoneNumberId !== config.phoneNumberId) continue;
-    await saveStatus(admin, config.companyId, status);
+
+  try {
+    for (const message of messages) {
+      if (message.phoneNumberId !== phoneNumberId) continue;
+      await saveInbound(admin, companyId, message);
+    }
+    for (const status of statuses) {
+      if (status.phoneNumberId !== phoneNumberId) continue;
+      await saveStatus(admin, companyId, status);
+    }
+  } catch {
+    // Durable persist failed — do not ack success (allows provider redelivery).
+    return new Response("store failed", { status: 500 });
   }
 
   return new Response("ok", { status: 200 });

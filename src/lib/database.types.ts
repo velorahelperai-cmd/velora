@@ -7,12 +7,14 @@ export type Database = {
         Row: {
           user_id: string;
           full_name: string;
+          support_code: string;
           created_at: string;
           updated_at: string;
         };
         Insert: {
           user_id: string;
           full_name?: string;
+          support_code?: string;
           created_at?: string;
           updated_at?: string;
         };
@@ -90,6 +92,44 @@ export type Database = {
         };
         Relationships: [];
       };
+      company_review_requests: {
+        Row: {
+          company_id: string;
+          requested_by: string;
+          number_ownership: "own" | "new";
+          whatsapp_number: string;
+          readiness_confirmed: boolean;
+          requested_at: string;
+          status: "pending_review" | "changes_requested" | "approved";
+          revision: number;
+          decided_by: string | null;
+          decided_at: string | null;
+          owner_note: string;
+        };
+        Insert: {
+          company_id: string;
+          requested_by: string;
+          number_ownership: "own" | "new";
+          whatsapp_number?: string;
+          readiness_confirmed?: boolean;
+          status?: "pending_review" | "changes_requested" | "approved";
+          revision?: number;
+          decided_by?: string | null;
+          decided_at?: string | null;
+          owner_note?: string;
+        };
+        Update: {
+          number_ownership?: "own" | "new";
+          whatsapp_number?: string;
+          readiness_confirmed?: boolean;
+          status?: "pending_review" | "changes_requested" | "approved";
+          revision?: number;
+          decided_by?: string | null;
+          decided_at?: string | null;
+          owner_note?: string;
+        };
+        Relationships: [];
+      };
       platform_admins: {
         Row: {
           user_id: string;
@@ -144,6 +184,11 @@ export type Database = {
           storage_path: string | null;
           status: "draft" | "stored" | "processing" | "ready" | "failed";
           failure_code: "no_text" | "corrupt" | "unsupported" | "extract_failed" | null;
+          content_version: number;
+          approved_for_answers: boolean;
+          approved_version: number | null;
+          approved_at: string | null;
+          approved_by: string | null;
           created_by: string;
           created_at: string;
           updated_at: string;
@@ -160,6 +205,11 @@ export type Database = {
           storage_path?: string | null;
           status?: "draft" | "stored" | "processing" | "ready" | "failed";
           failure_code?: "no_text" | "corrupt" | "unsupported" | "extract_failed" | null;
+          content_version?: number;
+          approved_for_answers?: boolean;
+          approved_version?: number | null;
+          approved_at?: string | null;
+          approved_by?: string | null;
           created_by: string;
           created_at?: string;
           updated_at?: string;
@@ -174,6 +224,11 @@ export type Database = {
           storage_path?: string | null;
           status?: "draft" | "stored" | "processing" | "ready" | "failed";
           failure_code?: "no_text" | "corrupt" | "unsupported" | "extract_failed" | null;
+          content_version?: number;
+          approved_for_answers?: boolean;
+          approved_version?: number | null;
+          approved_at?: string | null;
+          approved_by?: string | null;
           updated_at?: string;
         };
         Relationships: [];
@@ -187,6 +242,13 @@ export type Database = {
           customer_name: string;
           last_message_at: string;
           created_at: string;
+          status: "open" | "handed_over" | "resolved";
+          automation_allowed: boolean;
+          automation_generation: number;
+          control_revision: number;
+          control_actor_id: string | null;
+          control_acted_at: string | null;
+          assigned_to: string | null;
         };
         Insert: {
           id?: string;
@@ -196,10 +258,52 @@ export type Database = {
           customer_name?: string;
           last_message_at?: string;
           created_at?: string;
+          status?: "open" | "handed_over" | "resolved";
+          automation_allowed?: boolean;
+          automation_generation?: number;
+          control_revision?: number;
+          control_actor_id?: string | null;
+          control_acted_at?: string | null;
+          assigned_to?: string | null;
         };
         Update: {
           customer_name?: string;
           last_message_at?: string;
+          status?: "open" | "handed_over" | "resolved";
+          automation_allowed?: boolean;
+          automation_generation?: number;
+          control_revision?: number;
+          control_actor_id?: string | null;
+          control_acted_at?: string | null;
+          assigned_to?: string | null;
+        };
+        Relationships: [];
+      };
+      whatsapp_conversation_events: {
+        Row: {
+          id: string;
+          company_id: string;
+          conversation_id: string;
+          actor_user_id: string | null;
+          action: "take_over" | "resume" | "close" | "reopen_inbound";
+          revision: number;
+          automation_generation: number;
+          detail: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          company_id: string;
+          conversation_id: string;
+          actor_user_id?: string | null;
+          action: "take_over" | "resume" | "close" | "reopen_inbound";
+          revision: number;
+          automation_generation: number;
+          detail?: Json;
+          created_at?: string;
+        };
+        Update: {
+          detail?: Json;
         };
         Relationships: [];
       };
@@ -261,9 +365,94 @@ export type Database = {
         };
         Relationships: [];
       };
+      whatsapp_inbound_jobs: {
+        Row: {
+          id: string;
+          company_id: string;
+          message_id: string;
+          wa_message_id: string;
+          status: "pending" | "claimed" | "completed" | "failed";
+          claim_token: string | null;
+          claimed_at: string | null;
+          claim_expires_at: string | null;
+          completed_at: string | null;
+          result_code: string | null;
+          attempt_count: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          company_id: string;
+          message_id: string;
+          wa_message_id: string;
+          status?: "pending" | "claimed" | "completed" | "failed";
+          claim_token?: string | null;
+          claimed_at?: string | null;
+          claim_expires_at?: string | null;
+          completed_at?: string | null;
+          result_code?: string | null;
+          attempt_count?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          status?: "pending" | "claimed" | "completed" | "failed";
+          claim_token?: string | null;
+          claimed_at?: string | null;
+          claim_expires_at?: string | null;
+          completed_at?: string | null;
+          result_code?: string | null;
+          attempt_count?: number;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
+      save_whatsapp_inbound: {
+        Args: {
+          p_company_id: string;
+          p_phone_number_id: string;
+          p_customer_wa_id: string;
+          p_customer_name: string;
+          p_wa_message_id: string;
+          p_body: string;
+          p_message_type: string;
+          p_received_at: string;
+        };
+        Returns: Json;
+      };
+      claim_whatsapp_inbound_job: {
+        Args: { p_job_id: string; p_lease_seconds?: number };
+        Returns: Json;
+      };
+      complete_whatsapp_inbound_job: {
+        Args: {
+          p_job_id: string;
+          p_claim_token: string;
+          p_ok: boolean;
+          p_result_code?: string | null;
+        };
+        Returns: Json;
+      };
+      control_whatsapp_conversation: {
+        Args: {
+          p_conversation_id: string;
+          p_action: string;
+          p_expected_revision: number;
+        };
+        Returns: Json;
+      };
+      whatsapp_automation_gate: {
+        Args: { p_conversation_id: string };
+        Returns: Json;
+      };
+      set_knowledge_source_approval: {
+        Args: { p_source_id: string; p_approved: boolean };
+        Returns: Database["public"]["Tables"]["knowledge_sources"]["Row"];
+      };
       upsert_owner_company: {
         Args: {
           p_display_name: string;
@@ -299,6 +488,8 @@ export type Database = {
           owner_email: string | null;
           owner_name: string | null;
           member_count: number;
+          review_requested_at: string | null;
+          review_requested_by: string | null;
         }[];
       };
       admin_get_company: {
@@ -332,6 +523,48 @@ export type Database = {
           p_member_name?: string | null;
         };
         Returns: Database["public"]["Tables"]["company_members"]["Row"];
+      };
+      transition_company_review: {
+        Args: {
+          p_action: string;
+          p_company_id: string;
+          p_expected_revision?: number | null;
+          p_number_ownership?: string | null;
+          p_whatsapp_number?: string | null;
+          p_readiness_confirmed?: boolean | null;
+          p_owner_note?: string | null;
+        };
+        Returns: Json;
+      };
+      list_owner_company_review_events: {
+        Args: Record<string, never>;
+        Returns: Json;
+      };
+      admin_search_accounts: {
+        Args: {
+          p_query?: string;
+          p_limit?: number;
+          p_offset?: number;
+        };
+        Returns: {
+          user_id: string;
+          support_code: string;
+          full_name: string;
+          email: string | null;
+          account_phone: string | null;
+          companies: Json;
+        }[];
+      };
+      admin_list_company_conversations: {
+        Args: {
+          p_company_id: string;
+          p_phone_number_id?: string | null;
+          p_limit?: number;
+          p_offset?: number;
+          p_message_limit?: number;
+          p_message_offset?: number;
+        };
+        Returns: Json;
       };
     };
     Enums: Record<string, never>;

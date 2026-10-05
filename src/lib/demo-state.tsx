@@ -47,6 +47,10 @@ export type Conversation = {
   status: ConversationStatus;
   owner: "assistant" | string;
   assistantPaused: boolean;
+  /** Server control revision (live inbox). Demo rows may omit / use 1. */
+  revision?: number;
+  automationAllowed?: boolean;
+  automationGeneration?: number;
   summary: string;
   topic: string;
   messages: Message[];

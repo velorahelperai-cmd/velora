@@ -14,8 +14,15 @@ import {
 import { fill } from "@/lib/app-copy";
 import type { KnowledgeSourceRecord } from "@/lib/knowledge/types";
 import { landingCopy } from "@/lib/landing-copy";
-import { saveOwnerBusiness } from "@/lib/tenancy/actions";
-import type { CompanyRecord } from "@/lib/tenancy/types";
+import {
+  getCompanyReviewRequest,
+  listCompanyReviewEvents,
+  resubmitCompanyReviewRequest,
+  saveOwnerBusiness,
+  submitCompanyReviewRequest,
+} from "@/lib/tenancy/actions";
+import type { CompanyRecord, CompanyReviewEvent, CompanyReviewRequest } from "@/lib/tenancy/types";
+import { AccountMenu } from "@/components/app/account-chrome";
 import { AssistantTester } from "@/components/app/assistant-tester";
 import { KnowledgeEditor } from "@/components/app/knowledge-editor";
 import {
@@ -41,11 +48,15 @@ export function SetupWizard({
   initialCompany,
   initialKnowledge = [],
   knowledgeLoadFailed = false,
+  initialReview = null,
+  reviewLoadFailed = false,
 }: {
   userId: string;
   initialCompany?: CompanyRecord | null;
   initialKnowledge?: KnowledgeSourceRecord[];
   knowledgeLoadFailed?: boolean;
+  initialReview?: CompanyReviewRequest | null;
+  reviewLoadFailed?: boolean;
 }) {
   const copy = useAppCopy();
   const { locale } = useDemo();
@@ -119,6 +130,7 @@ export function SetupWizard({
           <PreviewBadge note />
           <LangSwitch />
           <LinkButton href="/app" variant="secondary">{copy.app.nav.dashboard}</LinkButton>
+          <AccountMenu compact />
         </div>
       </div>
 
@@ -206,6 +218,9 @@ export function SetupWizard({
                 businessName={draft.business.name}
                 sectorLabel={landingCopy(locale).sectors.find((s) => s.id === draft.business.type)?.label ?? copy.setup.typeOther}
                 knowledgeCount={knowledgeCount}
+                companyId={draft.companyId}
+                initialReview={initialReview}
+                reviewLoadFailed={reviewLoadFailed}
               />
             ) : null}
           </div>
@@ -357,6 +372,27 @@ function BusinessStep({
   );
 }
 
+function reviewStatusLabel(
+  status: CompanyReviewRequest["status"],
+  copy: ReturnType<typeof useAppCopy>,
+) {
+  if (status === "pending_review") return copy.setup.pending;
+  if (status === "changes_requested") return copy.setup.changesRequested;
+  if (status === "approved") return copy.setup.approved;
+  return status;
+}
+
+function activationFromReview(review: CompanyReviewRequest): Activation {
+  return {
+    whatsappNumber: review.whatsapp_number,
+    numberOwnership: review.number_ownership,
+    ready: true,
+    // Demo Activation only knows not_requested | pending_review — never collapse other statuses into pending.
+    status: review.status === "pending_review" ? "pending_review" : "not_requested",
+    requestedAt: Date.parse(review.requested_at) || nowMs(),
+  };
+}
+
 function ActivationStep({
   onBack,
   onDone,
@@ -365,6 +401,9 @@ function ActivationStep({
   businessName,
   knowledgeCount,
   leaveGuardRef,
+  companyId,
+  initialReview,
+  reviewLoadFailed: initialReviewLoadFailed,
 }: {
   onBack: () => void;
   onDone: () => void;
@@ -373,17 +412,35 @@ function ActivationStep({
   businessName: string;
   knowledgeCount: number;
   leaveGuardRef: React.MutableRefObject<(() => boolean) | null>;
+  companyId: string | null;
+  initialReview: CompanyReviewRequest | null;
+  reviewLoadFailed: boolean;
 }) {
   const copy = useAppCopy();
   const { state, update } = useDemo();
-  const form = state.activation;
-  const [baseline, setBaseline] = useState(() => JSON.stringify(state.activation));
+  const [loadFailed, setLoadFailed] = useState(initialReviewLoadFailed);
+  const [historyFailed, setHistoryFailed] = useState(false);
+  const [review, setReview] = useState<CompanyReviewRequest | null>(
+    initialReviewLoadFailed ? null : initialReview,
+  );
+  const [events, setEvents] = useState<CompanyReviewEvent[]>([]);
+  const [form, setForm] = useState<Activation>(() => {
+    if (!initialReviewLoadFailed && initialReview) return activationFromReview(initialReview);
+    return state.activation;
+  });
+  const [baseline, setBaseline] = useState(() => JSON.stringify(form));
   const [error, setError] = useState<FieldErrorKey>();
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [infoNotice, setInfoNotice] = useState<string | null>(null);
+  const [viewRefreshFailed, setViewRefreshFailed] = useState(false);
   const { busy, run } = useAction();
-  const pending = state.activation.status === "pending_review";
+  const status = review?.status ?? null;
+  const canEdit = !loadFailed && (!review || status === "changes_requested");
+  const waiting = status === "pending_review";
+  const approved = status === "approved";
   const tests = state.testHistory.filter((m) => m.from === "customer").length;
-  const readyToRequest = Boolean(setupDone[0] && setupDone[1] && setupDone[2]);
-  const dirty = !pending && JSON.stringify(form) !== baseline;
+  const readyToRequest = Boolean(companyId && setupDone[0] && setupDone[1] && setupDone[2]);
+  const dirty = canEdit && JSON.stringify(form) !== baseline;
   useUnsavedWarning(dirty && !busy);
 
   useEffect(() => {
@@ -394,70 +451,289 @@ function ActivationStep({
     return () => { leaveGuardRef.current = null; };
   }, [dirty, copy.unsaved, leaveGuardRef]);
 
-  const patch = (next: Partial<Activation>) => update({ activation: { ...form, ...next } });
+  useEffect(() => {
+    if (loadFailed || !companyId) return;
+    const frame = window.requestAnimationFrame(() => {
+      void (async () => {
+        try {
+          const result = await listCompanyReviewEvents();
+          if (!result.ok) {
+            setHistoryFailed(true);
+            return;
+          }
+          setHistoryFailed(false);
+          setEvents(result.data);
+        } catch {
+          setHistoryFailed(true);
+        }
+      })();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [companyId, loadFailed, review?.revision, review?.status]);
+
+  const patch = (next: Partial<Activation>) => setForm((prev) => ({ ...prev, ...next }));
   const phoneError = useErrorText(error);
 
-  function request(e: React.FormEvent) {
-    e.preventDefault();
-    if (form.numberOwnership === "own" && !isPhone(form.whatsappNumber)) { setError("phone"); return; }
-    setError(undefined);
-    void run(() => {
-      const next = { ...form, ready: true, status: "pending_review" as const, requestedAt: nowMs() };
-      update({ activation: next });
+  function applyServerReview(nextReview: CompanyReviewRequest, opts?: { preserveDraft?: boolean }) {
+    setReview(nextReview);
+    const next = activationFromReview(nextReview);
+    const keepDraft = Boolean(opts?.preserveDraft) && JSON.stringify(form) !== baseline;
+    if (!keepDraft) {
+      setForm(next);
       setBaseline(JSON.stringify(next));
-      leaveGuardRef.current = () => true;
-      onDone();
-    }, 900);
+    }
+    update({ activation: next });
+  }
+
+  async function refreshViewOnly() {
+    try {
+      const refreshed = await getCompanyReviewRequest();
+      if (!refreshed.ok) {
+        setInfoNotice(copy.setup.reviewRefreshFailed);
+        setViewRefreshFailed(true);
+        return;
+      }
+      setViewRefreshFailed(false);
+      setInfoNotice(null);
+      setLoadFailed(false);
+      if (refreshed.data) applyServerReview(refreshed.data, { preserveDraft: true });
+      const hist = await listCompanyReviewEvents();
+      if (hist.ok) {
+        setHistoryFailed(false);
+        setEvents(hist.data);
+      } else {
+        setHistoryFailed(true);
+      }
+    } catch {
+      setInfoNotice(copy.setup.reviewRefreshFailed);
+      setViewRefreshFailed(true);
+    }
+  }
+
+  function reloadReview() {
+    void run(async () => {
+      try {
+        const result = await getCompanyReviewRequest();
+        if (!result.ok) {
+          setLoadFailed(true);
+          return;
+        }
+        setLoadFailed(false);
+        if (result.data) applyServerReview(result.data);
+        else setReview(null);
+      } catch {
+        setLoadFailed(true);
+      }
+    });
+  }
+
+  function submitOrResubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!companyId) {
+      setSaveError(copy.setup.reviewNeedCompany);
+      return;
+    }
+    const ownership = form.numberOwnership;
+    if (ownership !== "own" && ownership !== "new") return;
+    if (ownership === "own" && !isPhone(form.whatsappNumber)) { setError("phone"); return; }
+    setError(undefined);
+    setSaveError(null);
+    setInfoNotice(null);
+    setViewRefreshFailed(false);
+    void run(async () => {
+      try {
+        const result = status === "changes_requested" && review
+          ? await resubmitCompanyReviewRequest({
+            numberOwnership: ownership,
+            whatsappNumber: form.whatsappNumber,
+            ready: form.ready === true,
+            expectedRevision: review.revision,
+          })
+          : await submitCompanyReviewRequest({
+            numberOwnership: ownership,
+            whatsappNumber: form.whatsappNumber,
+            ready: form.ready === true,
+          });
+        if (!result.ok) {
+          if (result.code === "CONFLICT" && result.data) {
+            applyServerReview(result.data, { preserveDraft: true });
+            setInfoNotice(copy.setup.reviewConflict);
+            setSaveError(result.message ?? copy.setup.reviewSaveFailed);
+            return;
+          }
+          setSaveError(result.message ?? copy.setup.reviewSaveFailed);
+          return;
+        }
+        applyServerReview(result.data);
+        leaveGuardRef.current = () => true;
+        onDone();
+        try {
+          await refreshViewOnly();
+        } catch {
+          setInfoNotice(copy.setup.reviewRefreshFailed);
+          setViewRefreshFailed(true);
+        }
+      } catch {
+        setSaveError(copy.setup.reviewSaveFailed);
+      }
+    });
   }
 
   const rows: [string, string][] = [
     [copy.setup.reviewRows[0], businessName ? `${businessName} · ${sectorLabel}` : copy.setup.noneYet],
     [copy.setup.reviewRows[1], knowledgeCount > 0 ? fill(copy.setup.sourcesCount, { n: knowledgeCount }) : copy.setup.noneYet],
     [copy.setup.reviewRows[2], tests ? fill(copy.setup.testsCount, { n: tests }) : copy.setup.noneYet],
-    [copy.setup.reviewRows[3], state.activation.whatsappNumber || copy.setup.noneYet],
+    [copy.setup.reviewRows[3], form.whatsappNumber || copy.setup.noneYet],
   ];
+
+  const reviewForm = (
+    <form className="grid min-w-0 gap-4" noValidate onSubmit={submitOrResubmit}>
+      {status === "changes_requested" && review?.owner_note ? (
+        <Notice tone="warn">
+          <strong>{copy.setup.changesRequested}</strong><br />
+          {review.owner_note}
+        </Notice>
+      ) : null}
+      <Field label={copy.setup.numberOwnership} required>
+        {(p) => (
+          <div className="grid gap-2 sm:grid-cols-2">
+            {(["own", "new"] as const).map((v) => (
+              <label key={v} className={`flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border px-3 text-sm leading-5 ${form.numberOwnership === v ? "border-[#38dc89] bg-[#38dc89]/10" : "border-white/15"}`}>
+                <input type="radio" name={p.id} checked={form.numberOwnership === v} onChange={() => patch({ numberOwnership: v })} className="accent-[#38dc89]" />
+                <span className="min-w-0 break-words">{v === "own" ? copy.setup.ownNumber : copy.setup.newNumber}</span>
+              </label>
+            ))}
+          </div>
+        )}
+      </Field>
+      {form.numberOwnership === "own" ? (
+        <Field label={copy.setup.whatsappNumber} required error={phoneError} hint="+968 …">
+          {(p) => <input {...p} dir="ltr" inputMode="tel" value={form.whatsappNumber} onChange={(e) => patch({ whatsappNumber: e.target.value })} />}
+        </Field>
+      ) : null}
+      <label className="flex min-h-11 items-start gap-2 text-sm leading-5">
+        <input type="checkbox" checked={form.ready} onChange={(e) => patch({ ready: e.target.checked })} className="mt-1 h-4 w-4 shrink-0 accent-[#38dc89]" />
+        <span className="min-w-0 break-words">{copy.setup.readiness}</span>
+      </label>
+      {saveError ? <Notice tone="error">{saveError}</Notice> : null}
+      <div className="flex flex-wrap items-center gap-3 border-t border-white/10 pt-4">
+        <Button variant="secondary" type="button" onClick={onBack}>{copy.back}</Button>
+        <Button type="submit" busy={busy} busyLabel={copy.loading} disabled={!readyToRequest || !form.numberOwnership || !form.ready}>
+          {status === "changes_requested" ? copy.setup.resubmit : copy.setup.requestHelp}
+        </Button>
+        {!readyToRequest ? <span className="text-xs text-[#f0cf9d]">{copy.setup.notReady}</span> : null}
+      </div>
+    </form>
+  );
 
   return (
     <div className="grid min-w-0 gap-5 lg:grid-cols-[1fr_360px]">
       <div className="grid min-w-0 gap-4">
-        {pending ? (
+        {saveError && !canEdit ? <Notice tone="error">{saveError}</Notice> : null}
+        {infoNotice ? <Notice tone="warn">{infoNotice}</Notice> : null}
+        {viewRefreshFailed ? (
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="secondary"
+              busy={busy}
+              busyLabel={copy.loading}
+              onClick={() => { void run(() => refreshViewOnly()); }}
+            >
+              {copy.setup.reviewRetryView}
+            </Button>
+          </div>
+        ) : null}
+        {loadFailed ? (
           <>
-            <Notice tone="warn"><strong>{copy.setup.pending}</strong><br />{copy.setup.pendingBody}</Notice>
+            <Notice tone="error">{copy.setup.reviewLoadFailed}</Notice>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="secondary" busy={busy} busyLabel={copy.loading} onClick={reloadReview}>
+                {copy.setup.reviewRetryLoad}
+              </Button>
+              <Button variant="secondary" onClick={onBack}>{copy.back}</Button>
+            </div>
+          </>
+        ) : waiting && review ? (
+          <>
+            <Notice tone="warn">
+              <strong>{copy.setup.pending}</strong><br />
+              {copy.setup.pendingBody}
+              <br />
+              <span className="text-xs text-[#adbeaf]">
+                {copy.setup.reviewStatus}: {reviewStatusLabel(review.status, copy)}
+                {" · "}
+                {copy.setup.reviewRevision}: {review.revision}
+                {" · "}
+                {copy.setup.reviewRequestedAt}: {new Date(review.requested_at).toLocaleString()}
+              </span>
+            </Notice>
+            <div className="flex flex-wrap gap-2">
+              <LinkButton href="/app">{copy.setup.goToApp}</LinkButton>
+              <Button variant="secondary" onClick={onBack}>{copy.back}</Button>
+            </div>
+          </>
+        ) : approved && review ? (
+          <>
+            <Notice tone="success">
+              <strong>{copy.setup.approved}</strong><br />
+              {copy.setup.approvedBody}
+              {review.owner_note ? <><br />{review.owner_note}</> : null}
+              <br />
+              <span className="text-xs text-[#adbeaf]">
+                {copy.setup.reviewRevision}: {review.revision}
+              </span>
+            </Notice>
             <div className="flex flex-wrap gap-2">
               <LinkButton href="/app">{copy.setup.goToApp}</LinkButton>
               <Button variant="secondary" onClick={onBack}>{copy.back}</Button>
             </div>
           </>
         ) : (
-          <form className="grid min-w-0 gap-4" noValidate onSubmit={request}>
-            <Field label={copy.setup.numberOwnership} required>
-              {(p) => (
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {(["own", "new"] as const).map((v) => (
-                    <label key={v} className={`flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border px-3 text-sm leading-5 ${form.numberOwnership === v ? "border-[#38dc89] bg-[#38dc89]/10" : "border-white/15"}`}>
-                      <input type="radio" name={p.id} checked={form.numberOwnership === v} onChange={() => patch({ numberOwnership: v })} className="accent-[#38dc89]" />
-                      <span className="min-w-0 break-words">{v === "own" ? copy.setup.ownNumber : copy.setup.newNumber}</span>
-                    </label>
-                  ))}
-                </div>
-              )}
-            </Field>
-            {form.numberOwnership === "own" ? (
-              <Field label={copy.setup.whatsappNumber} required error={phoneError} hint="+968 …">
-                {(p) => <input {...p} dir="ltr" inputMode="tel" value={form.whatsappNumber} onChange={(e) => patch({ whatsappNumber: e.target.value })} />}
-              </Field>
-            ) : null}
-            <label className="flex min-h-11 items-start gap-2 text-sm leading-5">
-              <input type="checkbox" checked={form.ready} onChange={(e) => patch({ ready: e.target.checked })} className="mt-1 h-4 w-4 shrink-0 accent-[#38dc89]" />
-              <span className="min-w-0 break-words">{copy.setup.readiness}</span>
-            </label>
-            <div className="flex flex-wrap items-center gap-3 border-t border-white/10 pt-4">
-              <Button variant="secondary" type="button" onClick={onBack}>{copy.back}</Button>
-              <Button type="submit" busy={busy} busyLabel={copy.loading} disabled={!readyToRequest || !form.numberOwnership || !form.ready}>{copy.setup.requestHelp}</Button>
-              {!readyToRequest ? <span className="text-xs text-[#f0cf9d]">{copy.setup.notReady}</span> : null}
-            </div>
-          </form>
+          reviewForm
         )}
+        <section className="rounded-2xl border border-white/10 p-4">
+          <h3 className="text-sm font-bold">{copy.setup.reviewHistory}</h3>
+          {historyFailed ? (
+            <div className="mt-2 grid gap-2">
+              <Notice tone="error">{copy.setup.reviewHistoryFailed}</Notice>
+              <Button
+                variant="secondary"
+                busy={busy}
+                onClick={() => {
+                  void run(async () => {
+                    try {
+                      const hist = await listCompanyReviewEvents();
+                      if (!hist.ok) {
+                        setHistoryFailed(true);
+                        return;
+                      }
+                      setHistoryFailed(false);
+                      setEvents(hist.data);
+                    } catch {
+                      setHistoryFailed(true);
+                    }
+                  });
+                }}
+              >
+                {copy.setup.reviewRetryLoad}
+              </Button>
+            </div>
+          ) : events.length ? (
+            <ul className="mt-2 grid gap-2 text-xs text-[#adbeaf]">
+              {events.map((ev, i) => (
+                <li key={`${ev.action}-${ev.created_at}-${i}`} className="border-b border-white/10 pb-2">
+                  <strong className="text-[#dfe9e2]">{ev.action}</strong>
+                  {" · "}r{ev.revision}
+                  {" · "}
+                  {new Date(ev.created_at).toLocaleString()}
+                  {ev.owner_note ? <p className="mt-1">{ev.owner_note}</p> : null}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-2 text-xs text-[#8da195]">{copy.setup.reviewHistoryEmpty}</p>
+          )}
+        </section>
       </div>
       <aside className="min-w-0 rounded-2xl border border-white/10 bg-white/5 p-4">
         <h3 className="font-bold">{copy.setup.review}</h3>
@@ -469,9 +745,17 @@ function ActivationStep({
             </div>
           ))}
           <div className="flex justify-between gap-3">
-            <dt className="text-[#adbeaf]">{copy.app.whatsappStatus}</dt>
-            <dd className="rounded-full bg-white/10 px-2 py-0.5 text-xs">{pending ? copy.setup.pending : copy.setup.notConnected}</dd>
+            <dt className="text-[#adbeaf]">{copy.setup.reviewStatus}</dt>
+            <dd className="rounded-full bg-white/10 px-2 py-0.5 text-xs">
+              {review ? reviewStatusLabel(review.status, copy) : copy.setup.notConnected}
+            </dd>
           </div>
+          {review ? (
+            <div className="flex justify-between gap-3">
+              <dt className="text-[#adbeaf]">{copy.setup.reviewRevision}</dt>
+              <dd>{review.revision}</dd>
+            </div>
+          ) : null}
         </dl>
       </aside>
     </div>

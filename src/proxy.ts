@@ -1,26 +1,44 @@
 import { type NextRequest, NextResponse } from "next/server";
+import { pathAtOrUnder, safeInternalPath } from "@/lib/auth/safe-next";
 import { updateSession } from "@/lib/supabase/middleware";
 
-export async function proxy(request: NextRequest) {
-  const response = await updateSession(request);
-  const path = request.nextUrl.pathname;
-  const protectedPath =
-    path.startsWith("/app")
-    || path.startsWith("/setup")
-    || path.startsWith("/admin")
-    || path.startsWith("/complete-profile");
-  if (!protectedPath) return response;
+function isProtectedPath(path: string): boolean {
+  return (
+    pathAtOrUnder(path, "/app")
+    || pathAtOrUnder(path, "/setup")
+    || pathAtOrUnder(path, "/admin")
+    || pathAtOrUnder(path, "/complete-profile")
+    || pathAtOrUnder(path, "/account")
+  );
+}
 
-  const hasAuthCookie = request.cookies
-    .getAll()
-    .some((c) => c.name.includes("-auth-token"));
-  if (!hasAuthCookie) {
+export async function proxy(request: NextRequest) {
+  const { response, session } = await updateSession(request);
+  const path = request.nextUrl.pathname;
+  const search = request.nextUrl.search;
+  if (!isProtectedPath(path)) return response;
+
+  // Confirmed missing session only → login with safe return. Settings/auth outages → AccessGate.
+  if (session === "unavailable") {
+    const access = new URL("/access", request.url);
+    access.searchParams.set("code", "UNAVAILABLE");
+    const redirect = NextResponse.redirect(access);
+    response.cookies.getAll().forEach((c) => redirect.cookies.set(c));
+    return redirect;
+  }
+
+  if (session === "unauthenticated") {
+    const returnTo = safeInternalPath(
+      `${path}${search}`,
+      pathAtOrUnder(path, "/admin") ? "/admin" : `${path}${search}` || path,
+    );
     const login = new URL("/login", request.url);
-    login.searchParams.set("next", path);
+    login.searchParams.set("next", returnTo);
     const redirect = NextResponse.redirect(login);
     response.cookies.getAll().forEach((c) => redirect.cookies.set(c));
     return redirect;
   }
+
   return response;
 }
 

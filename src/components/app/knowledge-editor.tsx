@@ -8,6 +8,7 @@ import {
   retryFailedKnowledgeFile,
   retryKnowledgePrepare,
   saveTextKnowledgeSource,
+  setKnowledgeSourceApproval,
   uploadKnowledgeFiles,
 } from "@/lib/knowledge/actions";
 import {
@@ -16,7 +17,7 @@ import {
   validateKnowledgeBatch,
   validateKnowledgeFile,
 } from "@/lib/knowledge/constants";
-import type { KnowledgeSourceRecord } from "@/lib/knowledge/types";
+import { isApprovedForAnswers, type KnowledgeSourceRecord } from "@/lib/knowledge/types";
 import { fill } from "@/lib/app-copy";
 import {
   Button, ConfirmDialog, EmptyState, Field, FieldErrorKey, Notice,
@@ -177,12 +178,15 @@ export function KnowledgeEditor({
       }
       const rows = result.data;
       setUploadResults(
-        rows.map((r) => ({
-          fileName: r.fileName,
-          ok: r.ok,
-          status: r.source?.status,
-          message: r.ok ? undefined : (reasonText(r.source?.failure_code ?? r.code, copy) ?? fileErrorMessage(r.code, copy)),
-        })),
+        rows.map((r) => {
+          if (r.ok) return { fileName: r.fileName, ok: true, status: r.source?.status };
+          const extractReason = reasonText(r.source?.failure_code ?? r.message, copy);
+          const message =
+            r.code === "UPLOAD_OK_EXTRACT_FAILED" || r.uploaded
+              ? `${copy.knowledge.uploadOkExtractFailed}${extractReason ? ` (${extractReason})` : ""}`
+              : (extractReason ?? fileErrorMessage(r.code, copy));
+          return { fileName: r.fileName, ok: false, status: r.source?.status, message };
+        }),
       );
       const touched = rows.filter((r) => r.source).map((r) => r.source!);
       if (touched.length) {
@@ -196,8 +200,12 @@ export function KnowledgeEditor({
           });
         });
       }
-      const allOk = rows.every((r) => r.ok);
-      if (allOk) setNotice(copy.knowledge.uploadDone);
+      const allReady = rows.every((r) => r.ok && r.source?.status !== "failed");
+      const anyUploadOkExtractFail = rows.some(
+        (r) => !r.ok && (r.code === "UPLOAD_OK_EXTRACT_FAILED" || r.uploaded),
+      );
+      if (allReady) setNotice(copy.knowledge.uploadDone);
+      else if (anyUploadOkExtractFail) setError(copy.knowledge.uploadOkExtractFailed);
       else setError(copy.knowledge.uploadPartial);
       reset();
     } finally {
@@ -247,11 +255,32 @@ export function KnowledgeEditor({
       const fd = new FormData();
       fd.append("file", file);
       const result = await retryFailedKnowledgeFile(src.id, fd);
+      if (result.data) {
+        setSources((prev) => prev.map((s) => (s.id === src.id ? result.data! : s)));
+      }
       if (!result.ok) {
+        if (result.message?.startsWith("UPLOAD_OK_EXTRACT_FAILED:")) {
+          const code = result.message.slice("UPLOAD_OK_EXTRACT_FAILED:".length);
+          setError(
+            `${copy.knowledge.uploadOkExtractFailed}${reasonText(code, copy) ? ` (${reasonText(code, copy)})` : ""}`,
+          );
+          return;
+        }
+        if (result.message === "OBJECT_MISSING") {
+          setError(copy.knowledge.objectMissing);
+          return;
+        }
         setError(result.message ?? copy.knowledge.fileUploadFailed);
         return;
       }
-      setSources((prev) => prev.map((s) => (s.id === src.id ? result.data : s)));
+      if (result.data.status === "failed") {
+        setError(
+          `${copy.knowledge.uploadOkExtractFailed}${
+            reasonText(result.data.failure_code, copy) ? ` (${reasonText(result.data.failure_code, copy)})` : ""
+          }`,
+        );
+        return;
+      }
       setNotice(copy.knowledge.uploadDone);
     } finally {
       setBusy(false);
@@ -265,11 +294,21 @@ export function KnowledgeEditor({
     setNotice(null);
     try {
       const result = await retryKnowledgePrepare(src.id);
+      if (result.data) {
+        setSources((prev) => prev.map((s) => (s.id === src.id ? result.data! : s)));
+      }
       if (!result.ok) {
+        if (result.message === "OBJECT_MISSING") {
+          setError(copy.knowledge.objectMissing);
+          return;
+        }
+        if (result.message === "storage_unavailable") {
+          setError(copy.knowledge.storageUnavailable);
+          return;
+        }
         setError(reasonText(result.message, copy) ?? result.message ?? copy.knowledge.reasons.extract_failed);
         return;
       }
-      setSources((prev) => prev.map((s) => (s.id === src.id ? result.data : s)));
       if (result.data.status === "failed") {
         setError(reasonText(result.data.failure_code, copy));
         return;
@@ -286,12 +325,41 @@ export function KnowledgeEditor({
     setNotice(null);
     try {
       const result = await repairStoredKnowledgeFile(src.id);
+      if (result.data) {
+        setSources((prev) => prev.map((s) => (s.id === src.id ? result.data! : s)));
+      }
       if (!result.ok) {
-        setError(result.message ?? copy.knowledge.cleanupFailed);
+        if (result.message === "OBJECT_MISSING") {
+          setError(copy.knowledge.objectMissing);
+          return;
+        }
+        setError(result.message === "storage_unavailable"
+          ? copy.knowledge.storageUnavailable
+          : (result.message ?? copy.knowledge.cleanupFailed));
+        return;
+      }
+      if (result.data.status === "failed") {
+        setError(reasonText(result.data.failure_code, copy) ?? copy.knowledge.cleanupFailed);
+        return;
+      }
+      setNotice(copy.knowledge.uploadDone);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function setApproval(src: KnowledgeSourceRecord, approved: boolean) {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await setKnowledgeSourceApproval(src.id, approved);
+      if (!result.ok) {
+        setError(result.message ?? copy.knowledge.approveFailed);
         return;
       }
       setSources((prev) => prev.map((s) => (s.id === src.id ? result.data : s)));
-      setNotice(copy.knowledge.uploadDone);
+      setNotice(approved ? copy.knowledge.approveDone : copy.knowledge.revokeDone);
     } finally {
       setBusy(false);
     }
@@ -300,7 +368,7 @@ export function KnowledgeEditor({
   const statusStyle: Record<string, string> = {
     draft: "bg-white/10 text-[#dfe9e2] ring-1 ring-white/15",
     processing: "bg-[#d9a467]/20 text-[#f0cf9d] ring-1 ring-[#d9a467]/35",
-    stored: "bg-[#d9a467]/18 text-[#f0cf9d] ring-1 ring-[#d9a467]/40",
+    stored: "bg-white/10 text-[#dfe9e2] ring-1 ring-white/15",
     ready: "bg-[#38dc89]/18 text-[#9af0c3] ring-1 ring-[#38dc89]/35",
     failed: "bg-[#e07a5f]/18 text-[#f3a08a] ring-1 ring-[#e07a5f]/40",
   };
@@ -412,6 +480,17 @@ export function KnowledgeEditor({
                   <span className={`rounded-md px-2 py-0.5 text-[11px] font-medium ${statusStyle[src.status]}`}>
                     {statusLabel(src.status, copy)}
                   </span>
+                  {src.status === "ready" ? (
+                    <span
+                      className={`rounded-md px-2 py-0.5 text-[11px] font-medium ${
+                        isApprovedForAnswers(src)
+                          ? "bg-[#38dc89]/22 text-[#9af0c3] ring-1 ring-[#38dc89]/40"
+                          : "bg-white/8 text-[#adbeaf] ring-1 ring-white/12"
+                      }`}
+                    >
+                      {isApprovedForAnswers(src) ? copy.knowledge.approved : copy.knowledge.notApproved}
+                    </span>
+                  ) : null}
                 </div>
                 <p className="app-muted mt-1.5 line-clamp-2 text-sm leading-6">
                   {src.kind === "file" ? <span dir="ltr">{src.file_name}</span> : src.content}
@@ -422,20 +501,38 @@ export function KnowledgeEditor({
                 {src.failure_code ? (
                   <p className="mt-1 text-sm leading-6 text-[#f3a08a]">{reasonText(src.failure_code, copy)}</p>
                 ) : null}
+                {src.status === "ready" && canWrite ? (
+                  <p className="app-muted-soft mt-1 text-xs leading-5">{copy.knowledge.approveHint}</p>
+                ) : null}
               </div>
               {canWrite ? (
                 <div className="flex flex-wrap gap-1">
-                  {src.kind === "file" && src.storage_path && isPreparableKnowledgeFile(src.file_name) ? (
+                  {src.status === "ready" && src.content.trim() ? (
+                    <Button
+                      variant="ghost"
+                      busy={busy}
+                      onClick={() => void setApproval(src, !isApprovedForAnswers(src))}
+                    >
+                      {isApprovedForAnswers(src) ? copy.knowledge.revokeApproval : copy.knowledge.approve}
+                    </Button>
+                  ) : null}
+                  {src.kind === "file"
+                    && src.storage_path
+                    && isPreparableKnowledgeFile(src.file_name)
+                    && src.status !== "draft" ? (
                     <Button variant="ghost" busy={busy} onClick={() => void prepareAgain(src)}>
                       {copy.knowledge.retry}
                     </Button>
                   ) : null}
-                  {src.kind === "file" && src.storage_path && !isPreparableKnowledgeFile(src.file_name) && (src.status === "failed" || src.status === "draft") ? (
+                  {src.kind === "file"
+                    && src.storage_path
+                    && !isPreparableKnowledgeFile(src.file_name)
+                    && (src.status === "failed" || src.status === "draft") ? (
                     <Button variant="ghost" busy={busy} onClick={() => void repairDb(src)}>
                       {copy.knowledge.repair}
                     </Button>
                   ) : null}
-                  {src.kind === "file" && !src.storage_path && (src.status === "failed" || src.status === "draft") ? (
+                  {src.kind === "file" && (src.status === "failed" || src.status === "draft") ? (
                     <>
                       <input
                         id={`retry-${src.id}`}
@@ -456,7 +553,7 @@ export function KnowledgeEditor({
                           document.getElementById(`retry-${src.id}`)?.click();
                         }}
                       >
-                        {copy.knowledge.retry}
+                        {src.storage_path ? copy.knowledge.replaceFile : copy.knowledge.retry}
                       </Button>
                     </>
                   ) : null}

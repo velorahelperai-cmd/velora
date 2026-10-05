@@ -24,9 +24,12 @@ loadEnvLocal();
 
 const sqlPath = resolve(process.cwd(), "supabase/migrations/20261004070000_vel005a_companies.sql");
 const sql = readFileSync(sqlPath, "utf8");
-const ref = "rgxyiohhcniuudjihsjh";
+const ref = (process.env.SUPABASE_PROJECT_REF || "").trim();
 
 async function viaManagementApi(token) {
+  if (!ref) {
+    throw new Error("Missing SUPABASE_PROJECT_REF in .env.local for Management API apply");
+  }
   const res = await fetch(`https://api.supabase.com/v1/projects/${ref}/database/query`, {
     method: "POST",
     headers: {

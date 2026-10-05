@@ -8,6 +8,7 @@ import { type Business, emptyBusiness, useDemo } from "@/lib/demo-state";
 import { createClient } from "@/lib/supabase/client";
 import { signOut } from "@/lib/tenancy/actions";
 import type { CompanyRole } from "@/lib/tenancy/types";
+import { AccountMenu, useOptionalAccountSession } from "@/components/app/account-chrome";
 import { Button, LangSwitch, PreviewBadge, useAppCopy } from "@/components/app/ui";
 
 function toBusiness(company: {
@@ -43,6 +44,7 @@ function toBusiness(company: {
 export function WorkspaceShell({ title, children, actions }: { title: string; children: ReactNode; actions?: ReactNode }) {
   const copy = useAppCopy();
   const { state, update, reset } = useDemo();
+  const accountSession = useOptionalAccountSession();
   const router = useRouter();
   const pathname = usePathname();
   const [profile, setProfile] = useState<{
@@ -132,6 +134,7 @@ export function WorkspaceShell({ title, children, actions }: { title: string; ch
       return;
     }
     if (userId) clearCompanyDrafts(userId);
+    accountSession?.clear();
     update({
       account: null,
       signedIn: false,
@@ -174,7 +177,7 @@ export function WorkspaceShell({ title, children, actions }: { title: string; ch
         </div>
         <div className="flex items-center justify-between gap-2 px-3 pb-2 lg:hidden">
           <p className="app-muted truncate text-xs">{profile.name} · {effectiveRole === "owner" ? copy.app.owner : copy.app.staff}</p>
-          <Button variant="ghost" className="min-h-9 px-2 text-xs" onClick={() => void logout()}>{copy.logout}</Button>
+          <AccountMenu compact />
         </div>
         <nav aria-label={copy.app.nav.dashboard} className="flex gap-1 overflow-x-auto px-3 pb-3 [scrollbar-width:none] lg:flex-col lg:overflow-visible lg:px-3 [&::-webkit-scrollbar]:hidden">
           {nav.map((item) => {
@@ -192,8 +195,7 @@ export function WorkspaceShell({ title, children, actions }: { title: string; ch
           })}
         </nav>
         <div className="hidden border-t border-[color:var(--color-line)] px-4 py-4 text-sm lg:block">
-          <p className="font-semibold tracking-tight">{profile.name}</p>
-          <p className="app-muted-soft text-xs" dir="ltr">{profile.email}</p>
+          <div className="mb-3"><AccountMenu /></div>
           <p className="app-muted mt-1 text-xs">{profile.companyName}</p>
           <p className="app-muted mt-1 text-xs">{copy.app.roleLabel}: {role === "owner" ? copy.app.owner : copy.app.staff}</p>
           {role === "owner" ? (

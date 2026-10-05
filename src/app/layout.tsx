@@ -6,6 +6,7 @@ import {
   getDirection,
   resolveLocale,
 } from "@/lib/i18n";
+import { AccountSessionProvider } from "@/components/app/account-chrome";
 import { CacheBootstrap } from "@/components/cache-bootstrap";
 import { DemoProvider } from "@/lib/demo-state";
 import "./globals.css";
@@ -30,7 +31,9 @@ export default async function RootLayout({
   return (
     <html lang={locale} dir={dir} className="no-js">
       <body>
-        <DemoProvider initialLocale={locale}>{children}</DemoProvider>
+        <DemoProvider initialLocale={locale}>
+          <AccountSessionProvider>{children}</AccountSessionProvider>
+        </DemoProvider>
         <CacheBootstrap />
       </body>
     </html>

@@ -14,6 +14,11 @@ export type KnowledgeSourceRecord = {
   storage_path: string | null;
   status: KnowledgeStatus;
   failure_code: KnowledgeFailureCode | null;
+  content_version: number;
+  approved_for_answers: boolean;
+  approved_version: number | null;
+  approved_at: string | null;
+  approved_by: string | null;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -25,4 +30,20 @@ export type KnowledgeUploadItemResult = {
   source?: KnowledgeSourceRecord;
   code?: string;
   message?: string;
+  /** True when Storage accepted the bytes even if extract failed. */
+  uploaded?: boolean;
 };
+
+/** True when this version is eligible for customer-answer context. */
+export function isApprovedForAnswers(src: Pick<
+  KnowledgeSourceRecord,
+  "status" | "approved_for_answers" | "approved_version" | "content_version" | "content"
+>) {
+  return (
+    src.status === "ready"
+    && src.approved_for_answers
+    && src.approved_version != null
+    && src.approved_version === src.content_version
+    && src.content.trim().length > 0
+  );
+}

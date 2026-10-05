@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
+import { AccessGate } from "@/components/app/access-gate";
 import {
   AdminCompanyDetail,
   type AdminAudit,
@@ -9,6 +10,7 @@ import {
 import { adminListCompanyKnowledge } from "@/lib/knowledge/actions";
 import { createClient } from "@/lib/supabase/server";
 import { getCompanyAccess, pathForAccess, requirePlatformAdmin } from "@/lib/tenancy/access";
+import type { CompanyReviewRequest } from "@/lib/tenancy/types";
 
 export const metadata: Metadata = { title: "Company · Velora Admin" };
 
@@ -16,6 +18,7 @@ type DetailPayload = {
   company: AdminCompany;
   members: AdminMember[];
   audits?: AdminAudit[];
+  review_request?: CompanyReviewRequest | null;
 };
 
 export default async function Page({ params }: { params: Promise<{ id: string }> }) {
@@ -23,11 +26,17 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
   const admin = await requirePlatformAdmin();
   if (!admin.ok) {
     if (admin.code === "UNVERIFIED") redirect("/verify-email");
+    if (admin.code === "UNAVAILABLE") return <AccessGate code="UNAVAILABLE" />;
     if (admin.code === "FORBIDDEN") {
       const access = await getCompanyAccess();
+      if (!access.ok) {
+        if (access.code === "UNAVAILABLE") return <AccessGate code="UNAVAILABLE" />;
+        if (access.code === "FORBIDDEN") return <AccessGate code="FORBIDDEN" />;
+        redirect("/login");
+      }
       redirect(pathForAccess(access));
     }
-    redirect("/login");
+    redirect(`/login?next=${encodeURIComponent(`/admin/companies/${id}`)}`);
   }
 
   const supabase = await createClient();
@@ -39,9 +48,11 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
 
   return (
     <AdminCompanyDetail
+      key={`company-${payload.company.id}`}
       initialCompany={payload.company}
       initialMembers={payload.members ?? []}
       initialAudits={payload.audits ?? []}
+      initialReview={payload.review_request ?? null}
       initialKnowledge={knowledge.ok ? knowledge.data : []}
       knowledgeLoadFailed={!knowledge.ok}
     />
