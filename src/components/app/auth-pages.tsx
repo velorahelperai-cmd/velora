@@ -217,7 +217,10 @@ export function LoginPage() {
   const [errors, setErrors] = useState<Partial<Record<"email" | "password", FieldErrorKey>>>({});
   const [formError, setFormError] = useState<string | null>(() => {
     const err = params.get("error");
-    if (err === "auth_callback") return copy.errors.authFailed;
+    if (err === "auth_callback") {
+      const detail = params.get("detail");
+      return detail ? `${copy.errors.authFailed} (${detail})` : copy.errors.authFailed;
+    }
     if (err === "oauth_cancelled") return params.get("detail") || copy.auth.oauthCancelled;
     return null;
   });
