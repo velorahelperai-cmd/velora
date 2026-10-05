@@ -4,11 +4,20 @@ import { revalidatePath } from "next/cache";
 import { safeInternalPath } from "@/lib/auth/safe-next";
 import { authCallbackUrl, siteUrl } from "@/lib/auth/site-url";
 import { createClient } from "@/lib/supabase/server";
+import { listKnowledgeSources } from "@/lib/knowledge/actions";
 import { getCompanyAccess, pathForAccess, requirePlatformAdmin } from "@/lib/tenancy/access";
+import { ADMIN_ACCOUNT_JOURNEY_DEPENDENCY } from "@/lib/tenancy/admin-account-deps";
+import { ADMIN_CONVERSATIONS_RPC_DEPENDENCY } from "@/lib/tenancy/admin-deps";
+import {
+  buildCustomerReadiness,
+  type CustomerReadinessSnapshot,
+} from "@/lib/tenancy/customer-readiness";
 import type {
   AccessCode,
   AdminAccountSearchItem,
+  AdminAccountSearchPage,
   AdminCompanyListItem,
+  AdminOverviewStats,
   CompanyRecord,
   CompanyReviewEvent,
   CompanyReviewRequest,
@@ -16,6 +25,8 @@ import type {
   CompanyStatus,
   ReviewStatus,
 } from "@/lib/tenancy/types";
+import { ADMIN_ACCOUNT_SEARCH_MAX_OFFSET, normalizeAdminAccountQuery } from "@/lib/tenancy/types";
+import { getWhatsappCompanyLink } from "@/lib/whatsapp/connection-actions";
 
 const REVIEW_SELECT =
   "company_id, requested_by, number_ownership, whatsapp_number, readiness_confirmed, requested_at, status, revision, decided_by, decided_at, owner_note";
@@ -305,6 +316,87 @@ export async function getAccountProfile(): Promise<ActionResult<AccountProfileVi
         companyId: ctx.company?.id ?? null,
         workHref: pathForAccess(access),
       },
+    };
+  } catch {
+    return { ok: false, code: "UNAVAILABLE" };
+  }
+}
+
+/**
+ * Customer readiness checklist from real server sources (same semantics as admin views).
+ * Subscription/AI has no implementation → always not_configured (never fake active/zero).
+ */
+export async function getCustomerReadiness(): Promise<ActionResult<CustomerReadinessSnapshot>> {
+  try {
+    const access = await getCompanyAccess();
+    if (!access.ok) return { ok: false, code: access.code };
+    const ctx = access.context;
+    const role: CompanyRole | null = ctx.isPlatformAdmin
+      ? null
+      : ctx.membership?.role ?? null;
+    const company = ctx.company;
+    const hasCompany = Boolean(company);
+
+    let knowledge: {
+      loadFailed: boolean;
+      sources: import("@/lib/knowledge/types").KnowledgeSourceRecord[];
+      approvalFoundation: "ready" | "unavailable";
+    } | null = null;
+    let whatsapp: {
+      loadFailed: boolean;
+      status: import("@/lib/whatsapp/connection").WhatsappLinkStatus | null;
+      suspended: boolean;
+    } | null = null;
+    let review: {
+      loadFailed: boolean;
+      status: ReviewStatus | null;
+    } | null = null;
+
+    if (hasCompany) {
+      const listed = await listKnowledgeSources();
+      knowledge = listed.ok
+        ? {
+          loadFailed: false,
+          sources: listed.data.sources,
+          approvalFoundation: listed.data.approvalFoundation,
+        }
+        : { loadFailed: true, sources: [], approvalFoundation: "unavailable" };
+
+      const wa = await getWhatsappCompanyLink();
+      if (wa.ok) {
+        whatsapp = { loadFailed: false, status: wa.data.status, suspended: false };
+      } else if (wa.code === "COMPANY_SUSPENDED") {
+        whatsapp = { loadFailed: false, status: null, suspended: true };
+      } else if (wa.code === "FORBIDDEN" || wa.code === "UNAUTHENTICATED") {
+        whatsapp = { loadFailed: true, status: null, suspended: false };
+      } else {
+        whatsapp = { loadFailed: true, status: null, suspended: false };
+      }
+
+      if (role === "owner") {
+        const rev = await getCompanyReviewRequest();
+        review = rev.ok
+          ? { loadFailed: false, status: rev.data?.status ?? null }
+          : { loadFailed: true, status: null };
+      } else {
+        review = { loadFailed: false, status: null };
+      }
+    }
+
+    return {
+      ok: true,
+      data: buildCustomerReadiness({
+        fullName: ctx.fullName,
+        email: ctx.email,
+        needsProfileName: ctx.needsProfileName,
+        role,
+        companyId: company?.id ?? null,
+        companyName: company?.display_name ?? null,
+        companyStatus: company?.status ?? null,
+        knowledge,
+        whatsapp,
+        review,
+      }),
     };
   } catch {
     return { ok: false, code: "UNAVAILABLE" };
@@ -622,7 +714,7 @@ export async function adminListCompanies(search = ""): Promise<ActionResult<Admi
   try {
     const supabase = await createClient();
     const { data, error } = await supabase.rpc("admin_list_companies", { p_search: search });
-    if (error) return { ok: false, code: "AUTH_ERROR", message: error.message };
+    if (error) return { ok: false, code: "UNAVAILABLE", message: error.message };
     return { ok: true, data: (data ?? []) as AdminCompanyListItem[] };
   } catch {
     return { ok: false, code: "UNAVAILABLE" };
@@ -635,8 +727,64 @@ export async function adminGetCompany(companyId: string): Promise<ActionResult<u
   try {
     const supabase = await createClient();
     const { data, error } = await supabase.rpc("admin_get_company", { p_company_id: companyId });
-    if (error) return { ok: false, code: "AUTH_ERROR", message: error.message };
+    if (error) return { ok: false, code: "UNAVAILABLE", message: error.message };
+    if (!data) return { ok: false, code: "INVALID_INPUT", message: "NOT_FOUND" };
     return { ok: true, data };
+  } catch {
+    return { ok: false, code: "UNAVAILABLE" };
+  }
+}
+
+function isMissingAdminAccountJourneyError(message?: string | null): boolean {
+  const m = (message ?? "").toLowerCase();
+  return (
+    (m.includes("admin_overview_stats") && (m.includes("could not find") || m.includes("does not exist")))
+    || (m.includes("email_confirmed") && m.includes("admin_search_accounts"))
+    || m.includes("pgrst202")
+  );
+}
+
+export async function adminGetOverviewStats(): Promise<ActionResult<AdminOverviewStats>> {
+  const access = await requirePlatformAdmin();
+  if (!access.ok) return { ok: false, code: access.code };
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase.rpc("admin_overview_stats");
+    if (error) {
+      if (isMissingAdminAccountJourneyError(error.message)) {
+        return { ok: false, code: "UNAVAILABLE", message: ADMIN_ACCOUNT_JOURNEY_DEPENDENCY };
+      }
+      return { ok: false, code: "UNAVAILABLE", message: error.message };
+    }
+    if (!isPlainObject(data) || data.ok !== true) {
+      return { ok: false, code: "UNAVAILABLE", message: "bad_rpc_payload" };
+    }
+    const required = [
+      "accounts_total",
+      "accounts_without_company",
+      "accounts_without_active_company",
+      "companies_total",
+      "companies_setup",
+      "companies_active",
+      "companies_suspended",
+    ] as const;
+    for (const key of required) {
+      if (typeof data[key] !== "number" || !Number.isFinite(data[key])) {
+        return { ok: false, code: "UNAVAILABLE", message: `bad_stats_field:${key}` };
+      }
+    }
+    return {
+      ok: true,
+      data: {
+        accountsTotal: data.accounts_total as number,
+        accountsWithoutCompany: data.accounts_without_company as number,
+        accountsWithoutActiveCompany: data.accounts_without_active_company as number,
+        companiesTotal: data.companies_total as number,
+        companiesSetup: data.companies_setup as number,
+        companiesActive: data.companies_active as number,
+        companiesSuspended: data.companies_suspended as number,
+      },
+    };
   } catch {
     return { ok: false, code: "UNAVAILABLE" };
   }
@@ -646,12 +794,13 @@ export async function adminSearchAccounts(input: {
   query?: string;
   limit?: number;
   offset?: number;
-}): Promise<ActionResult<AdminAccountSearchItem[]>> {
+}): Promise<ActionResult<AdminAccountSearchPage>> {
   const access = await requirePlatformAdmin();
   if (!access.ok) return { ok: false, code: access.code };
-  const query = (input.query ?? "").trim().slice(0, 120);
+  const query = normalizeAdminAccountQuery(input.query);
   const limit = Math.max(1, Math.min(Number(input.limit) || 20, 50));
-  const offset = Math.max(0, Math.min(Number(input.offset) || 0, 5000));
+  const requestedOffset = Math.max(0, Number(input.offset) || 0);
+  const offset = Math.min(requestedOffset, ADMIN_ACCOUNT_SEARCH_MAX_OFFSET);
   try {
     const supabase = await createClient();
     const { data, error } = await supabase.rpc("admin_search_accounts", {
@@ -663,7 +812,10 @@ export async function adminSearchAccounts(input: {
       if (/rate_limited/i.test(error.message || "")) {
         return { ok: false, code: "INVALID_INPUT", message: "rate_limited" };
       }
-      return { ok: false, code: "AUTH_ERROR", message: error.message };
+      if (isMissingAdminAccountJourneyError(error.message)) {
+        return { ok: false, code: "UNAVAILABLE", message: ADMIN_ACCOUNT_JOURNEY_DEPENDENCY };
+      }
+      return { ok: false, code: "UNAVAILABLE", message: error.message };
     }
     const rows = (data ?? []).map((row) => {
       const companiesRaw = row.companies;
@@ -673,25 +825,54 @@ export async function adminSearchAccounts(input: {
           if (typeof item.company_id !== "string" || typeof item.display_name !== "string") return [];
           if (item.role !== "owner" && item.role !== "staff") return [];
           if (item.status !== "active" && item.status !== "disabled") return [];
+          const rawStatus = item.company_status;
+          const companyStatus: CompanyStatus | null =
+            rawStatus === "setup" || rawStatus === "active" || rawStatus === "suspended"
+              ? rawStatus
+              : null;
           return [{
             company_id: item.company_id,
             display_name: item.display_name,
             role: item.role as CompanyRole,
             status: item.status as "active" | "disabled",
+            company_status: companyStatus,
             business_phone: typeof item.business_phone === "string" ? item.business_phone : null,
           }];
         })
         : [];
+      const rowRec = row as Record<string, unknown>;
+      const emailConfirmed: boolean | null = Object.prototype.hasOwnProperty.call(rowRec, "email_confirmed")
+        ? rowRec.email_confirmed === true
+        : null;
       return {
         user_id: row.user_id,
-        support_code: row.support_code,
-        full_name: row.full_name,
+        support_code: typeof row.support_code === "string" && row.support_code.trim()
+          ? row.support_code
+          : null,
+        full_name: typeof row.full_name === "string" && row.full_name.trim()
+          ? row.full_name
+          : null,
         email: row.email,
         account_phone: row.account_phone,
+        email_confirmed: emailConfirmed,
         companies,
       } satisfies AdminAccountSearchItem;
     });
-    return { ok: true, data: rows };
+    const nextOffset = offset + limit;
+    const hasMore = rows.length >= limit && nextOffset <= ADMIN_ACCOUNT_SEARCH_MAX_OFFSET;
+    const atBrowseWindowEnd = rows.length >= limit && nextOffset > ADMIN_ACCOUNT_SEARCH_MAX_OFFSET;
+    return {
+      ok: true,
+      data: {
+        query,
+        offset,
+        limit,
+        rows,
+        hasMore,
+        atBrowseWindowEnd,
+        maxOffset: ADMIN_ACCOUNT_SEARCH_MAX_OFFSET,
+      },
+    };
   } catch {
     return { ok: false, code: "UNAVAILABLE" };
   }
@@ -727,6 +908,42 @@ export type AdminCompanyConversationsView = {
   }>;
 };
 
+function isMissingAdminConversationsRpcError(message?: string | null): boolean {
+  const m = (message ?? "").toLowerCase();
+  return (
+    (m.includes("admin_list_company_conversations")
+      && (m.includes("could not find") || m.includes("does not exist") || m.includes("schema cache")))
+    || m.includes("pgrst202")
+  );
+}
+
+function mapConversationRows(
+  convs: unknown[],
+): AdminCompanyConversationsView["conversations"] {
+  return convs.flatMap((c) => {
+    if (!isPlainObject(c) || typeof c.id !== "string") return [];
+    const messages = Array.isArray(c.messages) ? c.messages : [];
+    return [{
+      id: c.id,
+      customerName: typeof c.customer_name === "string" ? c.customer_name : "",
+      customerWaId: typeof c.customer_wa_id === "string" ? c.customer_wa_id : "",
+      phoneNumberId: typeof c.phone_number_id === "string" ? c.phone_number_id : "",
+      lastMessageAt: typeof c.last_message_at === "string" ? c.last_message_at : "",
+      messageTotal: typeof c.message_total === "number" ? c.message_total : messages.length,
+      messages: messages.flatMap((m) => {
+        if (!isPlainObject(m) || typeof m.id !== "string") return [];
+        return [{
+          id: m.id,
+          body: typeof m.body === "string" ? m.body : "",
+          sender: typeof m.sender === "string" ? m.sender : "",
+          direction: typeof m.direction === "string" ? m.direction : "",
+          receivedAt: typeof m.received_at === "string" ? m.received_at : "",
+        }];
+      }),
+    }];
+  });
+}
+
 export async function adminListCompanyConversations(input: {
   companyId: string;
   phoneNumberId?: string | null;
@@ -757,10 +974,31 @@ export async function adminListCompanyConversations(input: {
       p_message_limit: messageLimit,
       p_message_offset: messageOffset,
     });
-    if (error) return { ok: false, code: "AUTH_ERROR", message: error.message };
+    if (error) {
+      if (isMissingAdminConversationsRpcError(error.message)) {
+        return {
+          ok: false,
+          code: "UNAVAILABLE",
+          message: ADMIN_CONVERSATIONS_RPC_DEPENDENCY,
+        };
+      }
+      return { ok: false, code: "UNAVAILABLE", message: error.message };
+    }
     if (!isPlainObject(data) || data.ok !== true) {
-      const code = isPlainObject(data) && data.code === "INVALID_PHONE" ? "INVALID_INPUT" : "FORBIDDEN";
-      return { ok: false, code, message: isPlainObject(data) ? String(data.code ?? "not_found") : "not_found" };
+      if (isPlainObject(data) && data.code === "NOT_FOUND") {
+        return { ok: false, code: "INVALID_INPUT", message: "NOT_FOUND" };
+      }
+      if (isPlainObject(data) && data.code === "INVALID_PHONE") {
+        return { ok: false, code: "INVALID_INPUT", message: "INVALID_PHONE" };
+      }
+      if (isPlainObject(data) && (data.code === "FORBIDDEN" || data.code === "forbidden")) {
+        return { ok: false, code: "FORBIDDEN", message: String(data.code) };
+      }
+      return {
+        ok: false,
+        code: "UNAVAILABLE",
+        message: isPlainObject(data) ? String(data.code ?? "bad_rpc_payload") : "bad_rpc_payload",
+      };
     }
     const convs = Array.isArray(data.conversations) ? data.conversations : [];
     const identitiesRaw = Array.isArray(data.phone_identities) ? data.phone_identities : [];
@@ -785,28 +1023,7 @@ export async function adminListCompanyConversations(input: {
         offset: typeof data.offset === "number" ? data.offset : offset,
         messageLimit: typeof data.message_limit === "number" ? data.message_limit : messageLimit,
         messageOffset: typeof data.message_offset === "number" ? data.message_offset : messageOffset,
-        conversations: convs.flatMap((c) => {
-          if (!isPlainObject(c) || typeof c.id !== "string") return [];
-          const messages = Array.isArray(c.messages) ? c.messages : [];
-          return [{
-            id: c.id,
-            customerName: typeof c.customer_name === "string" ? c.customer_name : "",
-            customerWaId: typeof c.customer_wa_id === "string" ? c.customer_wa_id : "",
-            phoneNumberId: typeof c.phone_number_id === "string" ? c.phone_number_id : "",
-            lastMessageAt: typeof c.last_message_at === "string" ? c.last_message_at : "",
-            messageTotal: typeof c.message_total === "number" ? c.message_total : messages.length,
-            messages: messages.flatMap((m) => {
-              if (!isPlainObject(m) || typeof m.id !== "string") return [];
-              return [{
-                id: m.id,
-                body: typeof m.body === "string" ? m.body : "",
-                sender: typeof m.sender === "string" ? m.sender : "",
-                direction: typeof m.direction === "string" ? m.direction : "",
-                receivedAt: typeof m.received_at === "string" ? m.received_at : "",
-              }];
-            }),
-          }];
-        }),
+        conversations: mapConversationRows(convs),
       },
     };
   } catch {

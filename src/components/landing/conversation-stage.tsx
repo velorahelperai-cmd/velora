@@ -1,4 +1,5 @@
 import Image from "next/image";
+import { Fragment } from "react";
 
 type PhoneScreenBodyProps = {
   question: string;
@@ -94,8 +95,8 @@ export function PhoneOrbit({ notes }: { notes: readonly string[] }) {
   if (!notes.length) return null;
   return (
     <ul className="phone-orbit" data-seq="orbit">
-      {notes.map((note) => (
-        <li key={note}>{note}</li>
+      {notes.map((note, index) => (
+        <li key={`orbit-${index}`}>{note}</li>
       ))}
     </ul>
   );
@@ -117,7 +118,7 @@ export function StoryTheaterPhone({
   orbit?: readonly string[];
 }) {
   return (
-    <div data-story-phone className="phone-shell story-theater-phone" aria-hidden="false">
+    <div data-story-phone className="phone-shell story-theater-phone">
       <PhoneOrbit notes={orbit ?? []} />
       <div className="phone-screen story-theater-screen">
         {screens.map((screen, index) => (
@@ -125,7 +126,7 @@ export function StoryTheaterPhone({
             key={screen.id}
             data-phone-screen={screen.id}
             className="phone-screen-layer"
-            style={{ opacity: index === 0 ? 1 : 0 }}
+            style={index === 0 ? undefined : { opacity: 0 }}
           >
             <PhoneScreenBody
               question={screen.question}
@@ -176,7 +177,15 @@ export function SourceCard({
         </span>
       ) : null}
       <p className="text-base font-bold text-[#087443]">{title}</p>
-      <p className="mt-2 whitespace-pre-line text-base leading-7 text-[#24382e]">{body}</p>
+      {/* Explicit <br /> avoids SSR/client text-node newline normalization mismatches. */}
+      <p className="mt-2 text-base leading-7 text-[#24382e]">
+        {body.split("\n").map((line, index) => (
+          <Fragment key={`line-${index}`}>
+            {index > 0 ? <br /> : null}
+            {line}
+          </Fragment>
+        ))}
+      </p>
     </aside>
   );
 }

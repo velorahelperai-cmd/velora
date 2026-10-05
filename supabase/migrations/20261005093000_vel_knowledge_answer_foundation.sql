@@ -1,14 +1,14 @@
--- VEL-KNOWLEDGE-ANSWER-01 foundation (unapplied)
+-- VEL-KNOWLEDGE-ANSWER-01 foundation
 -- Owner approval for answer context + server-owned content versioning.
 -- Approval is per current version only; not a public-file flag.
 --
 -- Privileges (PostgreSQL): table-level INSERT/UPDATE from prior migration
 -- supersede column-only REVOKE. Revoke broad grants, then GRANT app columns only.
 --
--- APPLY BLOCKER (Supabase): triggers on storage.objects touch a managed schema.
--- Supabase docs recommend not modifying the managed Storage schema. Before apply,
--- verify role/compat for CREATE TRIGGER on storage.objects. Do not treat this
--- design as publish-approved until that check passes. App code stays as-is.
+-- Storage invalidation: app paths clear content on replace/reprocess/delete.
+-- Triggers on storage.objects are intentionally NOT created here (Supabase managed
+-- Storage schema). Optional helpers below remain for a later dedicated migration
+-- after project confirms CREATE TRIGGER on storage.objects is allowed.
 
 alter table public.knowledge_sources
   add column if not exists content_version integer not null default 1,
@@ -328,29 +328,9 @@ begin
 end;
 $$;
 
-drop trigger if exists knowledge_invalidate_on_storage_insert on storage.objects;
-drop trigger if exists knowledge_invalidate_on_storage_update on storage.objects;
-drop trigger if exists knowledge_invalidate_on_storage_delete on storage.objects;
-
--- APPLY BLOCKER: confirm CREATE TRIGGER on storage.objects is allowed in this project
--- (Supabase managed Storage schema). Not publish-approved until verified.
-create trigger knowledge_invalidate_on_storage_insert
-  after insert on storage.objects
-  for each row
-  when (new.bucket_id = 'company-knowledge')
-  execute function private.knowledge_invalidate_for_storage_object();
-
-create trigger knowledge_invalidate_on_storage_update
-  after update on storage.objects
-  for each row
-  when (new.bucket_id = 'company-knowledge' or old.bucket_id = 'company-knowledge')
-  execute function private.knowledge_invalidate_for_storage_object();
-
-create trigger knowledge_invalidate_on_storage_delete
-  after delete on storage.objects
-  for each row
-  when (old.bucket_id = 'company-knowledge')
-  execute function private.knowledge_invalidate_for_storage_object();
+-- Deferred: do not CREATE TRIGGER on storage.objects in this package.
+-- Helpers private.knowledge_invalidate_* are defined above for a future optional
+-- migration only after Storage-trigger permission is confirmed for this project.
 
 create index if not exists knowledge_sources_company_approved_ready_idx
   on public.knowledge_sources (company_id, updated_at desc)

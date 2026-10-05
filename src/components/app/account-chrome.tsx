@@ -12,6 +12,11 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import {
+  classifyGetUserFailure,
+  classifyProfileFailure,
+  type IdentityFailureStage,
+} from "@/lib/auth/session-presence";
 import { clearCompanyDrafts } from "@/lib/company-draft";
 import { emptyBusiness, useDemo } from "@/lib/demo-state";
 import { createClient } from "@/lib/supabase/client";
@@ -52,11 +57,14 @@ export function AccountSessionProvider({
   const [identity, setIdentity] = useState<AccountProfileView | null>(initial ?? null);
   const userIdRef = useRef<string | null>(initial?.userId ?? null);
   const requestGen = useRef(0);
+  /** Internal only — never rendered to visitors, never logs secrets. */
+  const failureStageRef = useRef<IdentityFailureStage | null>(null);
 
   const clear = useCallback(() => {
     // Invalidate any in-flight refresh so a stale response cannot restore prior identity.
     requestGen.current += 1;
     userIdRef.current = null;
+    failureStageRef.current = null;
     setIdentity(null);
     setStatus("guest");
   }, []);
@@ -67,16 +75,27 @@ export function AccountSessionProvider({
       const supabase = createClient();
       const { data, error: userError } = await supabase.auth.getUser();
       if (gen !== requestGen.current) return;
+
       if (userError) {
-        // getUser failure is not a confirmed guest session.
+        const classified = classifyGetUserFailure(userError);
+        failureStageRef.current = classified.stage;
+        if (classified.kind === "guest") {
+          // Confirmed AuthSessionMissingError — normal visitor, not an outage.
+          clear();
+          return;
+        }
+        // Network/server/unknown auth errors stay as error — never guest.
         setStatus("error");
         return;
       }
+
       if (!data.user) {
+        failureStageRef.current = null;
         clear();
         return;
       }
-      // Account switch: drop prior identity and invalidate older in-flight work.
+
+      // Account switch: drop prior identity before applying the next profile.
       if (userIdRef.current && userIdRef.current !== data.user.id) {
         setIdentity(null);
         if (gen !== requestGen.current) return;
@@ -86,20 +105,34 @@ export function AccountSessionProvider({
       if (gen !== requestGen.current) return;
       if (!result.ok) {
         if (result.code === "UNAUTHENTICATED") {
+          failureStageRef.current = "server_auth";
           clear();
           return;
         }
-        // Fetch failure is not logout — keep prior identity if same user, else error.
+        failureStageRef.current = classifyProfileFailure(result.code);
+        // Real outage/forbidden — not logout. Keep prior identity if same user.
         setStatus((prev) => (
           userIdRef.current === data.user.id && prev === "ready" ? "ready" : "error"
         ));
         return;
       }
+
+      // Reject a successful profile that does not match this request's getUser subject.
+      if (result.data.userId !== data.user.id) {
+        failureStageRef.current = "profile";
+        userIdRef.current = null;
+        setIdentity(null);
+        setStatus("error");
+        return;
+      }
+
+      failureStageRef.current = null;
       userIdRef.current = result.data.userId;
       setIdentity(result.data);
       setStatus("ready");
     } catch {
       if (gen !== requestGen.current) return;
+      failureStageRef.current = "browser_auth";
       setStatus("error");
     }
   }, [clear]);

@@ -78,21 +78,65 @@ export type AdminCompanyListItem = {
   review_revision?: number | null;
 };
 
-/** Admin account search row — emails from auth.users inside RPC only. */
+/** Admin account row — Auth user id is the key; profile fields may be null. */
 export type AdminAccountSearchItem = {
   user_id: string;
-  support_code: string;
-  full_name: string;
+  /** null when profile missing or support_code not assigned yet. */
+  support_code: string | null;
+  /** null when profile/name unavailable. */
+  full_name: string | null;
   email: string | null;
   account_phone: string | null;
+  /**
+   * true/false when RPC returns email_confirmed (email_confirmed_at only).
+   * null = field absent on payload (legacy RPC) → treat as unknown, not unconfirmed.
+   */
+  email_confirmed: boolean | null;
   companies: Array<{
     company_id: string;
     display_name: string;
     role: CompanyRole;
     status: "active" | "disabled";
+    company_status?: CompanyStatus | null;
     business_phone: string | null;
   }>;
 };
+
+export type AdminAccountSearchPage = {
+  query: string;
+  offset: number;
+  limit: number;
+  rows: AdminAccountSearchItem[];
+  hasMore: boolean;
+  /**
+   * True when this page is full but the next offset would exceed the browse window.
+   * Not used for “requested above max” — the client must not ask past maxOffset.
+   */
+  atBrowseWindowEnd: boolean;
+  maxOffset: number;
+};
+
+export type AdminOverviewStats = {
+  accountsTotal: number;
+  /** Auth users with zero company_members rows. */
+  accountsWithoutCompany: number;
+  /** Auth users with no active membership (may still have disabled memberships). */
+  accountsWithoutActiveCompany: number;
+  companiesTotal: number;
+  companiesSetup: number;
+  companiesActive: number;
+  companiesSuspended: number;
+};
+
+/** Hard cap aligned with admin_search_accounts offset clamp in 160000. */
+export const ADMIN_ACCOUNT_SEARCH_MAX_OFFSET = 100000;
+
+/** Same trim + length contract as adminSearchAccounts / RPC (120). */
+export const ADMIN_ACCOUNT_QUERY_MAX_LEN = 120;
+
+export function normalizeAdminAccountQuery(raw: string | null | undefined): string {
+  return (raw ?? "").trim().slice(0, ADMIN_ACCOUNT_QUERY_MAX_LEN);
+}
 
 /** Setup review only — not company/payment/WhatsApp/AI status. */
 export type ReviewStatus = "pending_review" | "changes_requested" | "approved";

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 import {
   deleteKnowledgeSource,
   listKnowledgeSources,
@@ -17,7 +18,7 @@ import {
   validateKnowledgeBatch,
   validateKnowledgeFile,
 } from "@/lib/knowledge/constants";
-import { isApprovedForAnswers, type KnowledgeSourceRecord } from "@/lib/knowledge/types";
+import { isApprovedForAnswers, type KnowledgeApprovalFoundation, type KnowledgeSourceRecord } from "@/lib/knowledge/types";
 import { fill } from "@/lib/app-copy";
 import {
   Button, ConfirmDialog, EmptyState, Field, FieldErrorKey, Notice,
@@ -31,6 +32,7 @@ type Props = {
   initialSources: KnowledgeSourceRecord[];
   /** True when the server failed to load sources (do not show empty state). */
   initialLoadFailed?: boolean;
+  approvalFoundation?: KnowledgeApprovalFoundation;
   onSourcesChange?: (sources: KnowledgeSourceRecord[]) => void;
   /** Notify parent when load failure clears/sets (e.g. setup Next button). */
   onLoadStateChange?: (failed: boolean) => void;
@@ -64,28 +66,59 @@ export function KnowledgeEditor({
   canWrite,
   initialSources,
   initialLoadFailed = false,
+  approvalFoundation: initialApprovalFoundation = "ready",
   onSourcesChange,
   onLoadStateChange,
 }: Props) {
   const copy = useAppCopy();
+  const router = useRouter();
   const [sources, setSources] = useState<KnowledgeSourceRecord[]>(initialSources);
   const [loadFailed, setLoadFailed] = useState(initialLoadFailed);
+  const [approvalFoundation, setApprovalFoundation] = useState<KnowledgeApprovalFoundation>(initialApprovalFoundation);
   const [mode, setMode] = useState<"text" | "file" | null>(focusTitle && !initialLoadFailed ? "text" : null);
   const [editing, setEditing] = useState<string | null>(null);
   const [form, setForm] = useState({ title: focusTitle ?? "", content: "", files: null as FileList | null });
   const [errors, setErrors] = useState<Partial<Record<"title" | "content" | "files", FieldErrorKey>>>({});
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [viewRefreshFailed, setViewRefreshFailed] = useState(false);
   const [uploadResults, setUploadResults] = useState<{ fileName: string; ok: boolean; status?: string; message?: string }[]>([]);
   const [pendingDelete, setPendingDelete] = useState<{ id: string; title: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [retryId, setRetryId] = useState<string | null>(null);
+  const listGen = useRef(0);
+  const [trackedProps, setTrackedProps] = useState(() => ({
+    sources: initialSources,
+    failed: initialLoadFailed,
+    foundation: initialApprovalFoundation,
+  }));
+
+  // Adopt newer SSR props after router.refresh — do not keep a stale client list.
+  if (
+    trackedProps.sources !== initialSources
+    || trackedProps.failed !== initialLoadFailed
+    || trackedProps.foundation !== initialApprovalFoundation
+  ) {
+    setTrackedProps({
+      sources: initialSources,
+      failed: initialLoadFailed,
+      foundation: initialApprovalFoundation,
+    });
+    setSources(initialSources);
+    setLoadFailed(initialLoadFailed);
+    setApprovalFoundation(initialApprovalFoundation);
+    setViewRefreshFailed(false);
+  }
 
   const dirty = mode !== null && Boolean(form.title || form.content || (form.files && form.files.length));
   useUnsavedWarning(dirty);
   const titleError = useErrorText(errors.title);
   const contentError = useErrorText(errors.content);
   const fileError = useErrorText(errors.files);
+
+  useEffect(() => {
+    listGen.current += 1;
+  }, [initialSources, initialLoadFailed, initialApprovalFoundation]);
 
   useEffect(() => {
     onSourcesChange?.(sources);
@@ -103,20 +136,46 @@ export function KnowledgeEditor({
     setErrors({});
   }
 
-  async function reload() {
+  /** Refresh dashboard readiness cache without rewriting knowledge. */
+  function refreshAppViews() {
+    try {
+      router.refresh();
+    } catch {
+      /* refresh optional */
+    }
+  }
+
+  async function reload(opts?: { keepNotice?: string | null; keepError?: boolean }) {
+    const gen = ++listGen.current;
     setBusy(true);
-    setError(null);
-    setNotice(null);
+    if (!opts?.keepError) setError(null);
+    if (!opts?.keepNotice) setNotice(null);
+    if (!opts?.keepError) setViewRefreshFailed(false);
     try {
       const result = await listKnowledgeSources();
+      if (gen !== listGen.current) return;
       if (!result.ok) {
         setLoadFailedState(true);
+        if (opts?.keepNotice) {
+          setViewRefreshFailed(true);
+          setNotice(opts.keepNotice);
+        }
         return;
       }
       setLoadFailedState(false);
-      setSources(result.data);
+      setApprovalFoundation(result.data.approvalFoundation);
+      setSources(result.data.sources);
+      if (opts?.keepNotice) setNotice(opts.keepNotice);
+    } catch {
+      if (gen !== listGen.current) return;
+      if (opts?.keepNotice) {
+        setViewRefreshFailed(true);
+        setNotice(opts.keepNotice);
+      } else {
+        setLoadFailedState(true);
+      }
     } finally {
-      setBusy(false);
+      if (gen === listGen.current) setBusy(false);
     }
   }
 
@@ -130,6 +189,7 @@ export function KnowledgeEditor({
     setBusy(true);
     setError(null);
     setNotice(null);
+    setViewRefreshFailed(false);
     try {
       const result = await saveTextKnowledgeSource({
         id: editing ?? undefined,
@@ -137,6 +197,7 @@ export function KnowledgeEditor({
         content: form.content,
       });
       if (!result.ok) {
+        // Keep form inputs on failure — do not clear the draft.
         setError(result.message ?? copy.knowledge.saveFailed);
         return;
       }
@@ -146,6 +207,8 @@ export function KnowledgeEditor({
       });
       setNotice(copy.saved);
       reset();
+      refreshAppViews();
+      await reload({ keepNotice: copy.saved });
     } finally {
       setBusy(false);
     }
@@ -208,13 +271,20 @@ export function KnowledgeEditor({
       else if (anyUploadOkExtractFail) setError(copy.knowledge.uploadOkExtractFailed);
       else setError(copy.knowledge.uploadPartial);
       reset();
+      refreshAppViews();
+      if (touched.length) {
+        await reload({
+          keepNotice: allReady ? copy.knowledge.uploadDone : null,
+        });
+      }
     } finally {
       setBusy(false);
     }
   }
 
   function save() {
-    if (!canWrite || loadFailed) return;
+    if (!canWrite) return;
+    if (loadFailed && !viewRefreshFailed && sources.length === 0) return;
     if (mode === "text") void saveTextDb();
     else void saveFilesDb();
   }
@@ -237,6 +307,8 @@ export function KnowledgeEditor({
       }
       setSources((prev) => prev.filter((s) => s.id !== id));
       setNotice(copy.knowledge.deleted);
+      refreshAppViews();
+      await reload({ keepNotice: copy.knowledge.deleted });
     } finally {
       setBusy(false);
     }
@@ -282,6 +354,8 @@ export function KnowledgeEditor({
         return;
       }
       setNotice(copy.knowledge.uploadDone);
+      refreshAppViews();
+      await reload({ keepNotice: copy.knowledge.uploadDone });
     } finally {
       setBusy(false);
       setRetryId(null);
@@ -314,6 +388,8 @@ export function KnowledgeEditor({
         return;
       }
       setNotice(statusLabel(result.data.status, copy));
+      refreshAppViews();
+      await reload({ keepNotice: statusLabel(result.data.status, copy) });
     } finally {
       setBusy(false);
     }
@@ -343,23 +419,44 @@ export function KnowledgeEditor({
         return;
       }
       setNotice(copy.knowledge.uploadDone);
+      refreshAppViews();
+      await reload({ keepNotice: copy.knowledge.uploadDone });
     } finally {
       setBusy(false);
     }
   }
 
   async function setApproval(src: KnowledgeSourceRecord, approved: boolean) {
+    if (approvalFoundation !== "ready") {
+      setError(copy.knowledge.approvalFoundationUnavailable);
+      return;
+    }
     setBusy(true);
     setError(null);
     setNotice(null);
+    setViewRefreshFailed(false);
     try {
       const result = await setKnowledgeSourceApproval(src.id, approved);
       if (!result.ok) {
+        if (result.message === "APPROVAL_FOUNDATION_UNAVAILABLE") {
+          setApprovalFoundation("unavailable");
+          setError(copy.knowledge.approvalFoundationUnavailable);
+          return;
+        }
+        if (result.message === "version_changed") {
+          setError(copy.knowledge.approveVersionChanged);
+          refreshAppViews();
+          await reload({ keepError: true });
+          return;
+        }
         setError(result.message ?? copy.knowledge.approveFailed);
         return;
       }
       setSources((prev) => prev.map((s) => (s.id === src.id ? result.data : s)));
-      setNotice(approved ? copy.knowledge.approveDone : copy.knowledge.revokeDone);
+      const okNotice = approved ? copy.knowledge.approveDone : copy.knowledge.revokeDone;
+      setNotice(okNotice);
+      refreshAppViews();
+      await reload({ keepNotice: okNotice });
     } finally {
       setBusy(false);
     }
@@ -373,24 +470,32 @@ export function KnowledgeEditor({
     failed: "bg-[#e07a5f]/18 text-[#f3a08a] ring-1 ring-[#e07a5f]/40",
   };
 
-  if (loadFailed) {
-    return (
-      <div className="grid gap-3">
-        <Notice tone="error">{copy.knowledge.loadFailed}</Notice>
-        <Button variant="secondary" busy={busy} onClick={() => void reload()}>
-          {copy.knowledge.retryLoad}
-        </Button>
-      </div>
-    );
-  }
-
   return (
     <div className="grid gap-5">
       {!compact ? <p className="app-muted max-w-2xl text-base leading-7">{copy.knowledge.body}</p> : null}
       <p className="app-muted-soft text-xs leading-5">{copy.knowledge.examples}</p>
       {!canWrite ? <Notice tone="info">{copy.knowledge.readOnly}</Notice> : null}
+      {approvalFoundation === "unavailable" ? (
+        <Notice tone="warn">{copy.knowledge.approvalFoundationUnavailable}</Notice>
+      ) : null}
       {notice ? <Notice tone="success">{notice}</Notice> : null}
+      {viewRefreshFailed ? (
+        <div className="grid gap-2">
+          <Notice tone="warn">{copy.knowledge.viewRefreshWarn}</Notice>
+          <Button type="button" variant="secondary" busy={busy} onClick={() => void reload()}>
+            {copy.knowledge.retryViewOnly}
+          </Button>
+        </div>
+      ) : null}
       {error ? <Notice tone="error">{error}</Notice> : null}
+      {loadFailed && !viewRefreshFailed ? (
+        <div className="grid gap-2">
+          <Notice tone="error">{copy.knowledge.loadFailed}</Notice>
+          <Button type="button" variant="secondary" busy={busy} onClick={() => void reload()}>
+            {copy.knowledge.retryViewOnly}
+          </Button>
+        </div>
+      ) : null}
       {uploadResults.length ? (
         <ul className="grid gap-1 rounded-xl border border-[color:var(--color-line)] bg-[#14221b]/80 p-3 text-xs">
           {uploadResults.map((r) => (
@@ -488,7 +593,11 @@ export function KnowledgeEditor({
                           : "bg-white/8 text-[#adbeaf] ring-1 ring-white/12"
                       }`}
                     >
-                      {isApprovedForAnswers(src) ? copy.knowledge.approved : copy.knowledge.notApproved}
+                      {approvalFoundation === "unavailable"
+                        ? copy.knowledge.approvalUnknown
+                        : isApprovedForAnswers(src)
+                          ? copy.knowledge.approved
+                          : copy.knowledge.notApproved}
                     </span>
                   ) : null}
                 </div>
@@ -501,13 +610,13 @@ export function KnowledgeEditor({
                 {src.failure_code ? (
                   <p className="mt-1 text-sm leading-6 text-[#f3a08a]">{reasonText(src.failure_code, copy)}</p>
                 ) : null}
-                {src.status === "ready" && canWrite ? (
+                {src.status === "ready" && canWrite && approvalFoundation === "ready" ? (
                   <p className="app-muted-soft mt-1 text-xs leading-5">{copy.knowledge.approveHint}</p>
                 ) : null}
               </div>
               {canWrite ? (
                 <div className="flex flex-wrap gap-1">
-                  {src.status === "ready" && src.content.trim() ? (
+                  {src.status === "ready" && src.content.trim() && approvalFoundation === "ready" ? (
                     <Button
                       variant="ghost"
                       busy={busy}
@@ -532,7 +641,7 @@ export function KnowledgeEditor({
                       {copy.knowledge.repair}
                     </Button>
                   ) : null}
-                  {src.kind === "file" && (src.status === "failed" || src.status === "draft") ? (
+                  {src.kind === "file" && src.status !== "processing" ? (
                     <>
                       <input
                         id={`retry-${src.id}`}
@@ -553,7 +662,9 @@ export function KnowledgeEditor({
                           document.getElementById(`retry-${src.id}`)?.click();
                         }}
                       >
-                        {src.storage_path ? copy.knowledge.replaceFile : copy.knowledge.retry}
+                        {src.storage_path || src.status === "ready" || src.status === "stored"
+                          ? copy.knowledge.replaceFile
+                          : copy.knowledge.retry}
                       </Button>
                     </>
                   ) : null}

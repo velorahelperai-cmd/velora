@@ -10,7 +10,24 @@ import {
   validateKnowledgeFile,
 } from "@/lib/knowledge/constants";
 import { extractKnowledgeText } from "@/lib/knowledge/extract";
-import type { KnowledgeFailureCode, KnowledgeSourceRecord, KnowledgeUploadItemResult } from "@/lib/knowledge/types";
+import { isExactMissingApprovalColumnError } from "@/lib/knowledge/foundation";
+import {
+  beginKnowledgeProcessing,
+  clearAnswerEligibility,
+  generationFromListedObject,
+  objectGenerationMatches,
+  publishExtractedText,
+  bindDownloadedBytesToObject,
+  type KnowledgeUpdateClient,
+  type StorageObjectGeneration,
+} from "@/lib/knowledge/invalidate";
+import type {
+  KnowledgeApprovalFoundation,
+  KnowledgeFailureCode,
+  KnowledgeListPayload,
+  KnowledgeSourceRecord,
+  KnowledgeUploadItemResult,
+} from "@/lib/knowledge/types";
 import { createClient } from "@/lib/supabase/server";
 import { getCompanyAccess, requirePlatformAdmin } from "@/lib/tenancy/access";
 import type { AccessCode } from "@/lib/tenancy/types";
@@ -19,24 +36,98 @@ export type KnowledgeActionResult<T = undefined> =
   | { ok: true; data: T }
   | {
     ok: false;
-    code: AccessCode | "AUTH_ERROR" | "STORAGE_ERROR" | "INVALID_INPUT";
+    code: AccessCode | "AUTH_ERROR" | "STORAGE_ERROR" | "INVALID_INPUT" | "CONFLICT";
     message?: string;
     data?: T;
   };
 
-const SOURCE_SELECT =
-  "id, company_id, kind, title, content, file_name, content_type, byte_size, storage_path, status, failure_code, content_version, approved_for_answers, approved_version, approved_at, approved_by, created_by, created_at, updated_at";
+const SOURCE_SELECT_BASE =
+  "id, company_id, kind, title, content, file_name, content_type, byte_size, storage_path, status, failure_code, created_by, created_at, updated_at";
 
-function asSource(row: unknown): KnowledgeSourceRecord {
+/** Includes answer-approval columns from 20261005093000 — may be absent until that migration is applied. */
+const SOURCE_SELECT =
+  "id, company_id, kind, title, content, file_name, content_type, byte_size, storage_path, status, failure_code, content_version, approved_for_answers, approved_version, approved_at, approved_by, created_by, created_at, updated_at" as const;
+
+function asSource(
+  row: unknown,
+  approvalFoundation: KnowledgeApprovalFoundation = "ready",
+): KnowledgeSourceRecord {
   const r = row as Partial<KnowledgeSourceRecord> & { id: string };
+  const versionKnown = approvalFoundation === "ready" && typeof r.content_version === "number";
   return {
     ...(row as KnowledgeSourceRecord),
-    content_version: typeof r.content_version === "number" ? r.content_version : 1,
-    approved_for_answers: Boolean(r.approved_for_answers),
-    approved_version: r.approved_version ?? null,
-    approved_at: r.approved_at ?? null,
-    approved_by: r.approved_by ?? null,
+    content_version: versionKnown ? r.content_version! : null,
+    approved_for_answers: approvalFoundation === "ready" ? Boolean(r.approved_for_answers) : false,
+    approved_version: approvalFoundation === "ready" ? (r.approved_version ?? null) : null,
+    approved_at: approvalFoundation === "ready" ? (r.approved_at ?? null) : null,
+    approved_by: approvalFoundation === "ready" ? (r.approved_by ?? null) : null,
   };
+}
+
+/** List/read path only: try extended columns, then one base retry on exact missing-column errors. */
+async function listKnowledgeRowsForCompany(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  companyId: string,
+): Promise<
+  | { ok: true; payload: KnowledgeListPayload }
+  | { ok: false; message: string }
+> {
+  const extended = await supabase
+    .from("knowledge_sources")
+    .select(SOURCE_SELECT)
+    .eq("company_id", companyId)
+    .order("updated_at", { ascending: false });
+
+  if (!extended.error) {
+    return {
+      ok: true,
+      payload: {
+        sources: (extended.data ?? []).map((row) => asSource(row, "ready")),
+        approvalFoundation: "ready",
+      },
+    };
+  }
+
+  if (!isExactMissingApprovalColumnError(extended.error)) {
+    return { ok: false, message: extended.error.message };
+  }
+
+  const base = await supabase
+    .from("knowledge_sources")
+    .select(SOURCE_SELECT_BASE)
+    .eq("company_id", companyId)
+    .order("updated_at", { ascending: false });
+
+  if (base.error) return { ok: false, message: base.error.message };
+  return {
+    ok: true,
+    payload: {
+      sources: (base.data ?? []).map((row) => asSource(row, "unavailable")),
+      approvalFoundation: "unavailable",
+    },
+  };
+}
+
+/**
+ * Probe whether approval columns exist so writes can use a compatible RETURNING select.
+ * Save must keep working when 093000 is not applied (approval stays unavailable).
+ */
+async function probeApprovalFoundation(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+): Promise<KnowledgeApprovalFoundation> {
+  const { error } = await supabase
+    .from("knowledge_sources")
+    .select("content_version")
+    .limit(1);
+  if (!error) return "ready";
+  if (isExactMissingApprovalColumnError(error)) return "unavailable";
+  // Non-schema errors: prefer base select so save is not blocked by probe noise.
+  return "unavailable";
+}
+
+function sourceSelectFor(foundation: KnowledgeApprovalFoundation): typeof SOURCE_SELECT {
+  // Dynamic column list — cast keeps Supabase client typing stable when foundation is unavailable.
+  return (foundation === "ready" ? SOURCE_SELECT : SOURCE_SELECT_BASE) as typeof SOURCE_SELECT;
 }
 
 async function requireOwnerCompany() {
@@ -48,11 +139,15 @@ async function requireOwnerCompany() {
   if (access.context.company.status === "suspended") {
     return { ok: false as const, code: "FORBIDDEN" as const };
   }
+  const supabase = await createClient();
+  const approvalFoundation = await probeApprovalFoundation(supabase);
   return {
     ok: true as const,
-    supabase: await createClient(),
+    supabase,
     userId: access.context.userId,
     companyId: access.context.company.id,
+    approvalFoundation,
+    sourceSelect: sourceSelectFor(approvalFoundation),
   };
 }
 
@@ -83,6 +178,7 @@ async function markFileFailed(
   companyId: string,
   storagePath: string | null,
   failureCode: KnowledgeFailureCode | null = null,
+  foundation: KnowledgeApprovalFoundation = "unavailable",
 ) {
   const { data } = await supabase
     .from("knowledge_sources")
@@ -94,9 +190,9 @@ async function markFileFailed(
     })
     .eq("id", sourceId)
     .eq("company_id", companyId)
-    .select(SOURCE_SELECT)
+    .select(sourceSelectFor(foundation))
     .maybeSingle();
-  return data ? asSource(data) : null;
+  return data ? asSource(data, foundation) : null;
 }
 
 function isStorageObjectMissingError(message?: string | null) {
@@ -109,43 +205,156 @@ function isStorageObjectMissingError(message?: string | null) {
   );
 }
 
-/** Reserved DB path does not prove the Storage object exists. */
-async function storageObjectPresence(
+type ListedStorageObject = {
+  id?: string | null;
+  name: string;
+  updated_at?: string | null;
+};
+
+type ObjectGenerationRead =
+  | { status: "ok"; generation: StorageObjectGeneration }
+  | { status: "missing" }
+  | { status: "unreadable" }
+  | { status: "error"; message: string };
+
+/** Object id + updated_at at this path. Presence/size alone is not a generation. */
+async function readStorageObjectGeneration(
   supabase: Awaited<ReturnType<typeof createClient>>,
   companyId: string,
   sourceId: string,
   storagePath: string,
-): Promise<"present" | "missing" | "error"> {
+): Promise<ObjectGenerationRead> {
   const folder = `${companyId}/${sourceId}`;
   const filePart = storagePath.split("/").pop();
-  if (!filePart) return "missing";
+  if (!filePart) return { status: "missing" };
   const { data: listed, error: listError } = await supabase.storage
     .from(KNOWLEDGE_BUCKET)
     .list(folder, { limit: 50 });
   if (listError) {
-    if (isStorageObjectMissingError(listError.message)) return "missing";
-    return "error";
+    if (isStorageObjectMissingError(listError.message)) return { status: "missing" };
+    return { status: "error", message: listError.message };
   }
-  return (listed ?? []).some((o) => o.name === filePart) ? "present" : "missing";
+  const object = ((listed ?? []) as ListedStorageObject[]).find((o) => o.name === filePart) ?? null;
+  if (!object) return { status: "missing" };
+  const generation = generationFromListedObject(object);
+  if (!generation) return { status: "unreadable" };
+  return { status: "ok", generation };
 }
 
-/** Replaces extracted text on the same source row. A second run does not insert another copy. */
+/**
+ * Existing prepare path: capture object identity, download those bytes, re-check
+ * identity, then return only the bound pair. Never uses a caller-held upload buffer.
+ */
+async function loadStoredBytesBoundToObject(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  companyId: string,
+  sourceId: string,
+  storagePath: string,
+): Promise<
+  | { ok: true; bytes: Uint8Array; generation: StorageObjectGeneration }
+  | {
+    ok: false;
+    reason: "conflict" | "missing" | "unreadable" | "error" | "download_failed";
+    message?: string;
+  }
+> {
+  const captured = await readStorageObjectGeneration(supabase, companyId, sourceId, storagePath);
+  if (captured.status === "missing") return { ok: false, reason: "missing" };
+  if (captured.status === "unreadable") return { ok: false, reason: "unreadable" };
+  if (captured.status === "error") return { ok: false, reason: "error", message: captured.message };
+
+  const { data: fileBlob, error: downloadError } = await supabase.storage
+    .from(KNOWLEDGE_BUCKET)
+    .download(storagePath);
+  if (downloadError || !fileBlob) {
+    if (isStorageObjectMissingError(downloadError?.message)) return { ok: false, reason: "missing" };
+    return { ok: false, reason: "download_failed", message: downloadError?.message };
+  }
+
+  const verified = await readStorageObjectGeneration(supabase, companyId, sourceId, storagePath);
+  return bindDownloadedBytesToObject({
+    captured: captured.generation,
+    downloadedBytes: new Uint8Array(await fileBlob.arrayBuffer()),
+    verified: verified.status === "ok" ? verified.generation : null,
+  });
+}
+
+async function loadSourceRow(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  source: KnowledgeSourceRecord,
+  companyId: string,
+  select: string,
+  foundation: KnowledgeApprovalFoundation,
+) {
+  const { data: current } = await supabase
+    .from("knowledge_sources")
+    .select(select)
+    .eq("id", source.id)
+    .eq("company_id", companyId)
+    .maybeSingle();
+  return current
+    ? asSource(current, foundation)
+    : asSource({ ...source, status: "failed", failure_code: "extract_failed", content: "" }, foundation);
+}
+
+/**
+ * Replaces extracted text on the same source row. Bytes are bound to the Storage
+ * object generation captured when they were uploaded or downloaded — not to a
+ * row fetched later, and not to an assumed content_version bump.
+ */
 async function prepareStoredFile(
   supabase: Awaited<ReturnType<typeof createClient>>,
   source: KnowledgeSourceRecord,
   companyId: string,
   bytes: Uint8Array,
+  capturedGeneration: StorageObjectGeneration,
+  foundation: KnowledgeApprovalFoundation = "unavailable",
 ) {
-  // Clear prior text so reprocess cannot keep an approved stale body; version bumps on ready.
-  await supabase
-    .from("knowledge_sources")
-    .update({ status: "processing", failure_code: null, content: "" })
-    .eq("id", source.id)
-    .eq("company_id", companyId);
+  const select = sourceSelectFor(foundation);
+  const storagePath = source.storage_path;
+  if (!storagePath) {
+    return asSource({ ...source, status: "failed", failure_code: "extract_failed", content: "" }, foundation);
+  }
 
+  const stillCapturedObject = async () => {
+    const read = await readStorageObjectGeneration(supabase, companyId, source.id, storagePath);
+    return read.status === "ok" && objectGenerationMatches(capturedGeneration, read.generation);
+  };
+
+  if (!(await stillCapturedObject())) {
+    return loadSourceRow(supabase, source, companyId, select, foundation);
+  }
+
+  const begun = await beginKnowledgeProcessing(
+    supabase as unknown as KnowledgeUpdateClient,
+    {
+      sourceId: source.id,
+      companyId,
+      contentVersion: source.content_version,
+      storagePath,
+      select,
+    },
+  );
+
+  if (!begun.ok) {
+    if (begun.reason === "superseded") {
+      return loadSourceRow(supabase, source, companyId, select, foundation);
+    }
+    const failed = await markFileFailed(
+      supabase,
+      source.id,
+      companyId,
+      storagePath,
+      "extract_failed",
+      foundation,
+    );
+    return failed ?? asSource({ ...source, status: "failed", failure_code: "extract_failed", content: "" }, foundation);
+  }
+
+  const started = asSource(begun.row, foundation);
   const extracted = await extractKnowledgeText({
-    fileName: source.file_name,
-    contentType: source.content_type,
+    fileName: started.file_name,
+    contentType: started.content_type,
     bytes,
   });
 
@@ -154,37 +363,62 @@ async function prepareStoredFile(
       supabase,
       source.id,
       companyId,
-      source.storage_path,
+      storagePath,
       extracted.code,
+      foundation,
     );
-    return failed ?? asSource({ ...source, status: "failed", failure_code: extracted.code, content: "" });
+    return failed ?? asSource({ ...started, status: "failed", failure_code: extracted.code, content: "" }, foundation);
   }
 
-  const { data, error } = await supabase
-    .from("knowledge_sources")
-    .update({ status: "ready", failure_code: null, content: extracted.text })
-    .eq("id", source.id)
-    .eq("company_id", companyId)
-    .select(SOURCE_SELECT)
-    .maybeSingle();
-  if (error || !data) {
-    const failed = await markFileFailed(supabase, source.id, companyId, source.storage_path, "extract_failed");
-    return failed ?? asSource({ ...source, status: "failed", failure_code: "extract_failed", content: "" });
+  if (!(await stillCapturedObject())) {
+    return loadSourceRow(supabase, source, companyId, select, foundation);
   }
-  return asSource(data);
+
+  const published = await publishExtractedText(
+    supabase as unknown as KnowledgeUpdateClient,
+    {
+      sourceId: source.id,
+      companyId,
+      text: extracted.text,
+      expectedVersion: started.content_version,
+      expectedStoragePath: storagePath,
+      select,
+    },
+  );
+
+  if (published.ok) return asSource(published.row, foundation);
+
+  if (published.reason === "superseded") {
+    // A newer upload/version owns this source now — never publish the older text.
+    const { data: current } = await supabase
+      .from("knowledge_sources")
+      .select(select)
+      .eq("id", source.id)
+      .eq("company_id", companyId)
+      .maybeSingle();
+    return current
+      ? asSource(current, foundation)
+      : asSource({ ...started, status: "failed", failure_code: "extract_failed", content: "" }, foundation);
+  }
+
+  const failed = await markFileFailed(
+    supabase,
+    source.id,
+    companyId,
+    started.storage_path,
+    "extract_failed",
+    foundation,
+  );
+  return failed ?? asSource({ ...started, status: "failed", failure_code: "extract_failed", content: "" }, foundation);
 }
 
-export async function listKnowledgeSources(): Promise<KnowledgeActionResult<KnowledgeSourceRecord[]>> {
+export async function listKnowledgeSources(): Promise<KnowledgeActionResult<KnowledgeListPayload>> {
   try {
     const ctx = await requireMemberCompany();
     if (!ctx.ok) return { ok: false, code: ctx.code };
-    const { data, error } = await ctx.supabase
-      .from("knowledge_sources")
-      .select(SOURCE_SELECT)
-      .eq("company_id", ctx.companyId)
-      .order("updated_at", { ascending: false });
-    if (error) return { ok: false, code: "AUTH_ERROR", message: error.message };
-    return { ok: true, data: (data ?? []).map(asSource) };
+    const listed = await listKnowledgeRowsForCompany(ctx.supabase, ctx.companyId);
+    if (!listed.ok) return { ok: false, code: "AUTH_ERROR", message: listed.message };
+    return { ok: true, data: listed.payload };
   } catch {
     return { ok: false, code: "UNAVAILABLE" };
   }
@@ -212,12 +446,12 @@ export async function saveTextKnowledgeSource(input: {
         .eq("id", input.id)
         .eq("company_id", ctx.companyId)
         .eq("kind", "text")
-        .select(SOURCE_SELECT)
+        .select(ctx.sourceSelect)
         .maybeSingle();
       if (error) return { ok: false, code: "AUTH_ERROR", message: error.message };
       if (!data) return { ok: false, code: "FORBIDDEN", message: "not_found" };
       revalidateKnowledge(ctx.companyId);
-      return { ok: true, data: asSource(data) };
+      return { ok: true, data: asSource(data, ctx.approvalFoundation) };
     }
 
     const { data, error } = await ctx.supabase
@@ -230,11 +464,11 @@ export async function saveTextKnowledgeSource(input: {
         status: "ready",
         created_by: ctx.userId,
       })
-      .select(SOURCE_SELECT)
+      .select(ctx.sourceSelect)
       .single();
     if (error || !data) return { ok: false, code: "AUTH_ERROR", message: error?.message };
     revalidateKnowledge(ctx.companyId);
-    return { ok: true, data: asSource(data) };
+    return { ok: true, data: asSource(data, ctx.approvalFoundation) };
   } catch {
     return { ok: false, code: "UNAVAILABLE" };
   }
@@ -280,7 +514,7 @@ export async function uploadKnowledgeFiles(
           status: "draft",
           created_by: ctx.userId,
         })
-        .select(SOURCE_SELECT)
+        .select(ctx.sourceSelect)
         .single();
 
       if (insertError || !row) {
@@ -303,7 +537,7 @@ export async function uploadKnowledgeFiles(
         })
         .eq("id", row.id)
         .eq("company_id", ctx.companyId)
-        .select(SOURCE_SELECT)
+        .select(ctx.sourceSelect)
         .single();
 
       if (reserveError || !reserved) {
@@ -321,29 +555,81 @@ export async function uploadKnowledgeFiles(
         continue;
       }
 
-      // 3) Upload only after path is durable in DB.
-      const bytes = new Uint8Array(await file.arrayBuffer());
+      // 3) Upload only after path is durable in DB. Path reserve alone is not upload success.
       const { error: uploadError } = await ctx.supabase.storage
         .from(KNOWLEDGE_BUCKET)
-        .upload(path, bytes, {
+        .upload(path, new Uint8Array(await file.arrayBuffer()), {
           contentType,
           upsert: false,
         });
 
       if (uploadError) {
         // Keep reserved path for a later retry at the same location.
-        const failed = await markFileFailed(ctx.supabase, row.id, ctx.companyId, path);
+        const failed = await markFileFailed(
+          ctx.supabase,
+          row.id,
+          ctx.companyId,
+          path,
+          null,
+          ctx.approvalFoundation,
+        );
         results.push({
           fileName,
           ok: false,
           code: "UPLOAD_FAILED",
           message: uploadError.message,
-          source: failed ?? asSource({ ...reserved, status: "failed", storage_path: path }),
+          source: failed ?? asSource({ ...reserved, status: "failed", storage_path: path }, ctx.approvalFoundation),
         });
         continue;
       }
 
       const preparable = isPreparableKnowledgeFile(fileName);
+      let boundBytes: Uint8Array | null = null;
+      let boundGeneration: StorageObjectGeneration | null = null;
+      if (preparable) {
+        const loaded = await loadStoredBytesBoundToObject(
+          ctx.supabase,
+          ctx.companyId,
+          row.id,
+          path,
+        );
+        if (!loaded.ok) {
+          if (loaded.reason === "conflict") {
+            results.push({
+              fileName,
+              ok: false,
+              code: "CONFLICT",
+              message: "OBJECT_IDENTITY_CONFLICT",
+            });
+            continue;
+          }
+          const failed = await markFileFailed(
+            ctx.supabase,
+            row.id,
+            ctx.companyId,
+            path,
+            null,
+            ctx.approvalFoundation,
+          );
+          results.push({
+            fileName,
+            ok: false,
+            uploaded: true,
+            code: loaded.reason === "missing" ? "UPLOAD_FAILED" : "STORAGE_ERROR",
+            message:
+              loaded.reason === "error" || loaded.reason === "download_failed"
+                ? loaded.message
+                : loaded.reason === "missing"
+                  ? "OBJECT_MISSING"
+                  : "OBJECT_IDENTITY_UNREADABLE",
+            source: failed ?? asSource({ ...reserved, status: "failed", storage_path: path }, ctx.approvalFoundation),
+          });
+          continue;
+        }
+        boundBytes = loaded.bytes;
+        boundGeneration = loaded.generation;
+      }
+
       const { data: stored, error: updateError } = await ctx.supabase
         .from("knowledge_sources")
         .update({
@@ -355,24 +641,38 @@ export async function uploadKnowledgeFiles(
         })
         .eq("id", row.id)
         .eq("company_id", ctx.companyId)
-        .select(SOURCE_SELECT)
+        .select(ctx.sourceSelect)
         .single();
 
       if (updateError || !stored) {
         const { error: removeError } = await ctx.supabase.storage.from(KNOWLEDGE_BUCKET).remove([path]);
         if (removeError) {
           // Path was reserved before upload — durable even if this status write fails.
-          const failed = await markFileFailed(ctx.supabase, row.id, ctx.companyId, path);
+          const failed = await markFileFailed(
+            ctx.supabase,
+            row.id,
+            ctx.companyId,
+            path,
+            null,
+            ctx.approvalFoundation,
+          );
           results.push({
             fileName,
             ok: false,
             code: "CLEANUP_FAILED",
             message: removeError.message,
-            source: failed ?? asSource({ ...reserved, status: "failed", storage_path: path }),
+            source: failed ?? asSource({ ...reserved, status: "failed", storage_path: path }, ctx.approvalFoundation),
           });
           continue;
         }
-        const failed = await markFileFailed(ctx.supabase, row.id, ctx.companyId, null);
+        const failed = await markFileFailed(
+          ctx.supabase,
+          row.id,
+          ctx.companyId,
+          null,
+          null,
+          ctx.approvalFoundation,
+        );
         results.push({
           fileName,
           ok: false,
@@ -383,9 +683,16 @@ export async function uploadKnowledgeFiles(
         continue;
       }
 
-      const prepared = preparable
-        ? await prepareStoredFile(ctx.supabase, asSource(stored), ctx.companyId, bytes)
-        : asSource(stored);
+      const prepared = preparable && boundBytes && boundGeneration
+        ? await prepareStoredFile(
+          ctx.supabase,
+          asSource(reserved, ctx.approvalFoundation),
+          ctx.companyId,
+          boundBytes,
+          boundGeneration,
+          ctx.approvalFoundation,
+        )
+        : asSource(stored, ctx.approvalFoundation);
       if (prepared.status === "failed") {
         results.push({
           fileName,
@@ -422,7 +729,7 @@ export async function repairStoredKnowledgeFile(
 
     const { data: existing, error: loadError } = await ctx.supabase
       .from("knowledge_sources")
-      .select(SOURCE_SELECT)
+      .select(ctx.sourceSelect)
       .eq("id", sourceId)
       .eq("company_id", ctx.companyId)
       .eq("kind", "file")
@@ -441,14 +748,22 @@ export async function repairStoredKnowledgeFile(
       .list(`${ctx.companyId}/${existing.id}`, { limit: 20 });
     if (listError) return { ok: false, code: "STORAGE_ERROR", message: listError.message };
     const filePart = existing.storage_path.split("/").pop();
-    const present = (listed ?? []).some((o) => o.name === filePart);
-    if (!present) {
-      const failed = await markFileFailed(ctx.supabase, existing.id, ctx.companyId, null);
+    const object = ((listed ?? []) as ListedStorageObject[]).find((o) => o.name === filePart) ?? null;
+    const captured = generationFromListedObject(object);
+    if (!captured) {
+      const failed = await markFileFailed(
+        ctx.supabase,
+        existing.id,
+        ctx.companyId,
+        existing.storage_path,
+        null,
+        ctx.approvalFoundation,
+      );
       revalidateKnowledge(ctx.companyId);
       return {
         ok: false,
         code: "STORAGE_ERROR",
-        message: "OBJECT_MISSING",
+        message: object ? "OBJECT_IDENTITY_UNREADABLE" : "OBJECT_MISSING",
         data: failed ?? undefined,
       };
     }
@@ -459,26 +774,35 @@ export async function repairStoredKnowledgeFile(
         .update({ status: "stored", failure_code: null, content: "" })
         .eq("id", existing.id)
         .eq("company_id", ctx.companyId)
-        .select(SOURCE_SELECT)
+        .select(ctx.sourceSelect)
         .single();
       if (error || !data) return { ok: false, code: "AUTH_ERROR", message: error?.message };
       revalidateKnowledge(ctx.companyId);
-      return { ok: true, data: asSource(data) };
+      return { ok: true, data: asSource(data, ctx.approvalFoundation) };
     }
 
     const { data: fileBlob, error: downloadError } = await ctx.supabase.storage
       .from(KNOWLEDGE_BUCKET)
       .download(existing.storage_path);
     if (downloadError || !fileBlob) {
-      await markFileFailed(ctx.supabase, existing.id, ctx.companyId, existing.storage_path, "extract_failed");
+      await markFileFailed(
+        ctx.supabase,
+        existing.id,
+        ctx.companyId,
+        existing.storage_path,
+        "extract_failed",
+        ctx.approvalFoundation,
+      );
       revalidateKnowledge(ctx.companyId);
       return { ok: false, code: "STORAGE_ERROR", message: downloadError?.message ?? "download_failed", };
     }
     const prepared = await prepareStoredFile(
       ctx.supabase,
-      asSource(existing),
+      asSource(existing, ctx.approvalFoundation),
       ctx.companyId,
       new Uint8Array(await fileBlob.arrayBuffer()),
+      captured,
+      ctx.approvalFoundation,
     );
     revalidateKnowledge(ctx.companyId);
     if (prepared.status === "failed") {
@@ -503,7 +827,7 @@ export async function retryFailedKnowledgeFile(
 
     const { data: existing, error: loadError } = await ctx.supabase
       .from("knowledge_sources")
-      .select(SOURCE_SELECT)
+      .select(ctx.sourceSelect)
       .eq("id", sourceId)
       .eq("company_id", ctx.companyId)
       .eq("kind", "file")
@@ -511,6 +835,9 @@ export async function retryFailedKnowledgeFile(
 
     if (loadError) return { ok: false, code: "AUTH_ERROR", message: loadError.message };
     if (!existing) return { ok: false, code: "FORBIDDEN", message: "not_found" };
+    if (existing.status === "processing") {
+      return { ok: false, code: "INVALID_INPUT", message: "busy" };
+    }
 
     const fileName = file.name.trim() || existing.file_name || "file";
     const contentType = resolveKnowledgeContentType(fileName, file.type);
@@ -521,7 +848,20 @@ export async function retryFailedKnowledgeFile(
 
     const path = knowledgeStoragePath(ctx.companyId, existing.id, fileName);
 
-    // If retrying to a new path, clear the old object first (path reserved next).
+    // Stop answering from the old text BEFORE the old object can disappear.
+    const cleared = await clearAnswerEligibility(
+      ctx.supabase as unknown as KnowledgeUpdateClient,
+      { sourceId: existing.id, companyId: ctx.companyId, select: ctx.sourceSelect },
+    );
+    if (!cleared.ok) {
+      return {
+        ok: false,
+        code: cleared.reason === "not_found" ? "FORBIDDEN" : "AUTH_ERROR",
+        message: cleared.reason === "not_found" ? "not_found" : "INVALIDATE_FAILED",
+      };
+    }
+
+    // If retrying to a new path, clear the old object (path reserved next).
     if (existing.storage_path && existing.storage_path !== path) {
       const { error: removeError } = await ctx.supabase.storage
         .from(KNOWLEDGE_BUCKET)
@@ -531,7 +871,7 @@ export async function retryFailedKnowledgeFile(
       }
     }
 
-    // Persist expected path BEFORE upload.
+    // Persist expected path BEFORE upload. Clears prior extracted text so approval cannot stick.
     const { data: reserved, error: reserveError } = await ctx.supabase
       .from("knowledge_sources")
       .update({
@@ -541,47 +881,88 @@ export async function retryFailedKnowledgeFile(
         byte_size: file.size,
         storage_path: path,
         status: "draft",
+        content: "",
+        failure_code: null,
       })
       .eq("id", existing.id)
       .eq("company_id", ctx.companyId)
-      .select(SOURCE_SELECT)
+      .select(ctx.sourceSelect)
       .single();
     if (reserveError || !reserved) {
       return { ok: false, code: "AUTH_ERROR", message: reserveError?.message ?? "path_reserve_failed" };
     }
 
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    const { error: uploadError } = await ctx.supabase.storage.from(KNOWLEDGE_BUCKET).upload(path, bytes, {
-      contentType,
-      upsert: true,
-    });
+    const { error: uploadError } = await ctx.supabase.storage.from(KNOWLEDGE_BUCKET).upload(
+      path,
+      new Uint8Array(await file.arrayBuffer()),
+      {
+        contentType,
+        upsert: true,
+      },
+    );
     if (uploadError) {
-      await markFileFailed(ctx.supabase, existing.id, ctx.companyId, path);
+      await markFileFailed(ctx.supabase, existing.id, ctx.companyId, path, null, ctx.approvalFoundation);
       return { ok: false, code: "STORAGE_ERROR", message: uploadError.message };
     }
 
     const preparable = isPreparableKnowledgeFile(fileName);
+    let boundBytes: Uint8Array | null = null;
+    let boundGeneration: StorageObjectGeneration | null = null;
+    if (preparable) {
+      const loaded = await loadStoredBytesBoundToObject(
+        ctx.supabase,
+        ctx.companyId,
+        existing.id,
+        path,
+      );
+      if (!loaded.ok) {
+        if (loaded.reason === "conflict") {
+          return { ok: false, code: "CONFLICT", message: "OBJECT_IDENTITY_CONFLICT" };
+        }
+        await markFileFailed(ctx.supabase, existing.id, ctx.companyId, path, null, ctx.approvalFoundation);
+        return {
+          ok: false,
+          code: "STORAGE_ERROR",
+          message:
+            loaded.reason === "error" || loaded.reason === "download_failed"
+              ? loaded.message
+              : loaded.reason === "missing"
+                ? "OBJECT_MISSING"
+                : "OBJECT_IDENTITY_UNREADABLE",
+        };
+      }
+      boundBytes = loaded.bytes;
+      boundGeneration = loaded.generation;
+    }
+
     const { data, error } = await ctx.supabase
       .from("knowledge_sources")
       .update({ status: preparable ? "processing" : "stored", failure_code: null, content: "" })
       .eq("id", existing.id)
       .eq("company_id", ctx.companyId)
-      .select(SOURCE_SELECT)
+      .select(ctx.sourceSelect)
       .single();
 
     if (error || !data) {
       const { error: removeError } = await ctx.supabase.storage.from(KNOWLEDGE_BUCKET).remove([path]);
       if (removeError) {
-        await markFileFailed(ctx.supabase, existing.id, ctx.companyId, path);
+        await markFileFailed(ctx.supabase, existing.id, ctx.companyId, path, null, ctx.approvalFoundation);
         return { ok: false, code: "STORAGE_ERROR", message: removeError.message };
       }
-      await markFileFailed(ctx.supabase, existing.id, ctx.companyId, null);
+      await markFileFailed(ctx.supabase, existing.id, ctx.companyId, null, null, ctx.approvalFoundation);
       return { ok: false, code: "AUTH_ERROR", message: error?.message };
     }
 
-    const finished = preparable
-      ? await prepareStoredFile(ctx.supabase, asSource(data), ctx.companyId, bytes)
-      : asSource(data);
+    const finished = preparable && boundBytes && boundGeneration
+      ? await prepareStoredFile(
+        ctx.supabase,
+        asSource(reserved, ctx.approvalFoundation),
+        ctx.companyId,
+        boundBytes,
+        boundGeneration,
+        ctx.approvalFoundation,
+      )
+      : asSource(data, ctx.approvalFoundation);
     revalidateKnowledge(ctx.companyId);
     if (finished.status === "failed") {
       return {
@@ -607,7 +988,7 @@ export async function retryKnowledgePrepare(
 
     const { data: existing, error: loadError } = await ctx.supabase
       .from("knowledge_sources")
-      .select(SOURCE_SELECT)
+      .select(ctx.sourceSelect)
       .eq("id", sourceId)
       .eq("company_id", ctx.companyId)
       .eq("kind", "file")
@@ -617,33 +998,28 @@ export async function retryKnowledgePrepare(
       return { ok: false, code: "INVALID_INPUT", message: "not_preparable" };
     }
 
-    const presence = await storageObjectPresence(
+    const loaded = await loadStoredBytesBoundToObject(
       ctx.supabase,
       ctx.companyId,
       existing.id,
       existing.storage_path,
     );
-    if (presence === "error") {
-      return { ok: false, code: "STORAGE_ERROR", message: "storage_unavailable" };
-    }
-    if (presence === "missing") {
-      // Reserved path is not proof of an object — clear path so the same row can be re-uploaded.
-      const failed = await markFileFailed(ctx.supabase, existing.id, ctx.companyId, null);
-      revalidateKnowledge(ctx.companyId);
-      return {
-        ok: false,
-        code: "STORAGE_ERROR",
-        message: "OBJECT_MISSING",
-        data: failed ?? undefined,
-      };
-    }
-
-    const { data: fileBlob, error: downloadError } = await ctx.supabase.storage
-      .from(KNOWLEDGE_BUCKET)
-      .download(existing.storage_path);
-    if (downloadError || !fileBlob) {
-      if (isStorageObjectMissingError(downloadError?.message)) {
-        const failed = await markFileFailed(ctx.supabase, existing.id, ctx.companyId, null);
+    if (!loaded.ok) {
+      if (loaded.reason === "conflict") {
+        return { ok: false, code: "CONFLICT", message: "OBJECT_IDENTITY_CONFLICT" };
+      }
+      if (loaded.reason === "error") {
+        return { ok: false, code: "STORAGE_ERROR", message: loaded.message };
+      }
+      if (loaded.reason === "missing") {
+        const failed = await markFileFailed(
+          ctx.supabase,
+          existing.id,
+          ctx.companyId,
+          null,
+          null,
+          ctx.approvalFoundation,
+        );
         revalidateKnowledge(ctx.companyId);
         return {
           ok: false,
@@ -652,27 +1028,33 @@ export async function retryKnowledgePrepare(
           data: failed ?? undefined,
         };
       }
+      if (loaded.reason === "unreadable") {
+        return { ok: false, code: "STORAGE_ERROR", message: "OBJECT_IDENTITY_UNREADABLE" };
+      }
       const failed = await markFileFailed(
         ctx.supabase,
         existing.id,
         ctx.companyId,
         existing.storage_path,
         "extract_failed",
+        ctx.approvalFoundation,
       );
       revalidateKnowledge(ctx.companyId);
       return {
         ok: false,
         code: "STORAGE_ERROR",
-        message: downloadError?.message ?? "download_failed",
+        message: loaded.message ?? "download_failed",
         data: failed ?? undefined,
       };
     }
 
     const prepared = await prepareStoredFile(
       ctx.supabase,
-      asSource(existing),
+      asSource(existing, ctx.approvalFoundation),
       ctx.companyId,
-      new Uint8Array(await fileBlob.arrayBuffer()),
+      loaded.bytes,
+      loaded.generation,
+      ctx.approvalFoundation,
     );
     revalidateKnowledge(ctx.companyId);
     if (prepared.status === "failed") {
@@ -702,6 +1084,17 @@ export async function setKnowledgeSourceApproval(
     if (!ctx.ok) return { ok: false, code: ctx.code };
     if (!sourceId) return { ok: false, code: "INVALID_INPUT" };
 
+    // Probe foundation before calling the approval RPC — do not hide missing migration as auth noise.
+    const probe = await listKnowledgeRowsForCompany(ctx.supabase, ctx.companyId);
+    if (!probe.ok) return { ok: false, code: "AUTH_ERROR", message: probe.message };
+    if (probe.payload.approvalFoundation === "unavailable") {
+      return {
+        ok: false,
+        code: "INVALID_INPUT",
+        message: "APPROVAL_FOUNDATION_UNAVAILABLE",
+      };
+    }
+
     const { data, error } = await ctx.supabase.rpc("set_knowledge_source_approval", {
       p_source_id: sourceId,
       p_approved: approved,
@@ -709,6 +1102,15 @@ export async function setKnowledgeSourceApproval(
 
     if (error) {
       const msg = error.message ?? "";
+      const lower = msg.toLowerCase();
+      if (
+        (lower.includes("set_knowledge_source_approval")
+          && (lower.includes("could not find") || lower.includes("does not exist") || lower.includes("schema cache")))
+        || lower.includes("pgrst202")
+        || isExactMissingApprovalColumnError(error)
+      ) {
+        return { ok: false, code: "INVALID_INPUT", message: "APPROVAL_FOUNDATION_UNAVAILABLE" };
+      }
       if (msg.includes("not_ready")) return { ok: false, code: "INVALID_INPUT", message: "not_ready" };
       if (msg.includes("not_found")) return { ok: false, code: "FORBIDDEN", message: "not_found" };
       if (msg.includes("forbidden") || msg.includes("not_authenticated")) {
@@ -722,7 +1124,7 @@ export async function setKnowledgeSourceApproval(
     if (!data) return { ok: false, code: "FORBIDDEN", message: "not_found" };
 
     revalidateKnowledge(ctx.companyId);
-    return { ok: true, data: asSource(data) };
+    return { ok: true, data: asSource(data, "ready") };
   } catch {
     return { ok: false, code: "UNAVAILABLE" };
   }
@@ -745,7 +1147,20 @@ export async function deleteKnowledgeSource(
     if (loadError) return { ok: false, code: "AUTH_ERROR", message: loadError.message };
     if (!existing) return { ok: false, code: "FORBIDDEN", message: "not_found" };
 
-    const storageDeleted = true;
+    // Invalidate first: if the row delete later fails, no approved text remains.
+    const cleared = await clearAnswerEligibility(
+      ctx.supabase as unknown as KnowledgeUpdateClient,
+      { sourceId, companyId: ctx.companyId, select: ctx.sourceSelect },
+    );
+    if (!cleared.ok) {
+      return {
+        ok: false,
+        code: cleared.reason === "not_found" ? "FORBIDDEN" : "AUTH_ERROR",
+        message: cleared.reason === "not_found" ? "not_found" : "INVALIDATE_FAILED",
+      };
+    }
+
+    let storageDeleted = !existing.storage_path;
     if (existing.storage_path) {
       const { error: storageError } = await ctx.supabase.storage
         .from(KNOWLEDGE_BUCKET)
@@ -753,6 +1168,7 @@ export async function deleteKnowledgeSource(
       if (storageError) {
         return { ok: false, code: "STORAGE_ERROR", message: storageError.message };
       }
+      storageDeleted = true;
     }
 
     const { error: deleteError } = await ctx.supabase
@@ -780,20 +1196,16 @@ export async function deleteKnowledgeSource(
 
 export async function adminListCompanyKnowledge(
   companyId: string,
-): Promise<KnowledgeActionResult<KnowledgeSourceRecord[]>> {
+): Promise<KnowledgeActionResult<KnowledgeListPayload>> {
   const access = await requirePlatformAdmin();
   if (!access.ok) return { ok: false, code: access.code };
   if (!companyId) return { ok: false, code: "INVALID_INPUT" };
 
   try {
     const supabase = await createClient();
-    const { data, error } = await supabase
-      .from("knowledge_sources")
-      .select(SOURCE_SELECT)
-      .eq("company_id", companyId)
-      .order("updated_at", { ascending: false });
-    if (error) return { ok: false, code: "AUTH_ERROR", message: error.message };
-    return { ok: true, data: (data ?? []).map(asSource) };
+    const listed = await listKnowledgeRowsForCompany(supabase, companyId);
+    if (!listed.ok) return { ok: false, code: "AUTH_ERROR", message: listed.message };
+    return { ok: true, data: listed.payload };
   } catch {
     return { ok: false, code: "UNAVAILABLE" };
   }

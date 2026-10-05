@@ -20,10 +20,24 @@ function mapStatus(status: string): ConversationStatus {
   return "open";
 }
 
+/** Honest owner label: assistant, real assignee name when readable, else generic staff. */
+function ownerLabelFor(
+  automationAllowed: boolean,
+  assignedTo: string | null,
+  assigneeNames: Map<string, string>,
+): string {
+  if (automationAllowed) return "assistant";
+  if (assignedTo) {
+    const name = assigneeNames.get(assignedTo)?.trim();
+    if (name) return name;
+  }
+  return "staff";
+}
+
 export function mapWhatsappConversation(
   row: ConversationRow,
   messages: Conversation["messages"],
-  ownerLabel: string,
+  assigneeNames: Map<string, string>,
 ): Conversation {
   const automationAllowed = Boolean(row.automation_allowed);
   const status = mapStatus(row.status);
@@ -35,7 +49,7 @@ export function mapWhatsappConversation(
     topic: "واتساب",
     summary: latest,
     status,
-    owner: automationAllowed ? "assistant" : (row.assigned_to ? ownerLabel : "staff"),
+    owner: ownerLabelFor(automationAllowed, row.assigned_to, assigneeNames),
     assistantPaused: !automationAllowed,
     automationAllowed,
     automationGeneration: row.automation_generation ?? 0,
@@ -44,13 +58,36 @@ export function mapWhatsappConversation(
   };
 }
 
+async function loadAssigneeNames(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  companyId: string,
+  assignedIds: string[],
+): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  const unique = [...new Set(assignedIds.filter(Boolean))];
+  if (!unique.length) return map;
+
+  // Members can read teammate names via existing company_members select policies.
+  const { data, error } = await supabase
+    .from("company_members")
+    .select("user_id, member_name")
+    .eq("company_id", companyId)
+    .in("user_id", unique);
+  if (error || !data) return map;
+
+  for (const row of data) {
+    const name = (row.member_name ?? "").trim();
+    if (name) map.set(row.user_id, name);
+  }
+  return map;
+}
+
 export async function loadWhatsappInbox(): Promise<Conversation[]> {
   const access = await getCompanyAccess();
   if (!access.ok || !access.context.company) return [];
 
   const supabase = await createClient();
   const companyId = access.context.company.id;
-  const ownerLabel = access.context.fullName || access.context.membership?.member_name || "staff";
 
   const { data: conversations, error } = await supabase
     .from("whatsapp_conversations")
@@ -63,7 +100,7 @@ export async function loadWhatsappInbox(): Promise<Conversation[]> {
 
   const { data: messages } = await supabase
     .from("whatsapp_messages")
-    .select("id, conversation_id, body, received_at, sender, direction")
+    .select("id, conversation_id, body, received_at, sender, direction, delivery_state")
     .eq("company_id", companyId)
     .in("conversation_id", conversations.map((row) => row.id))
     .order("received_at", { ascending: true });
@@ -82,12 +119,22 @@ export async function loadWhatsappInbox(): Promise<Conversation[]> {
       from,
       text: message.body,
       at: Date.parse(message.received_at),
+      deliveryState:
+        message.direction === "outbound" && message.delivery_state
+          ? (message.delivery_state as Conversation["messages"][number]["deliveryState"])
+          : undefined,
     });
     byConversation.set(message.conversation_id, list);
   }
 
+  const assigneeNames = await loadAssigneeNames(
+    supabase,
+    companyId,
+    conversations.map((row) => row.assigned_to).filter((id): id is string => Boolean(id)),
+  );
+
   return (conversations as ConversationRow[]).map((row) =>
-    mapWhatsappConversation(row, byConversation.get(row.id) ?? [], ownerLabel),
+    mapWhatsappConversation(row, byConversation.get(row.id) ?? [], assigneeNames),
   );
 }
 
@@ -97,7 +144,6 @@ export async function loadWhatsappConversation(conversationId: string): Promise<
 
   const supabase = await createClient();
   const companyId = access.context.company.id;
-  const ownerLabel = access.context.fullName || access.context.membership?.member_name || "staff";
 
   const { data: row, error } = await supabase
     .from("whatsapp_conversations")
@@ -111,7 +157,7 @@ export async function loadWhatsappConversation(conversationId: string): Promise<
 
   const { data: messages } = await supabase
     .from("whatsapp_messages")
-    .select("id, conversation_id, body, received_at, sender, direction")
+    .select("id, conversation_id, body, received_at, sender, direction, delivery_state")
     .eq("company_id", companyId)
     .eq("conversation_id", conversationId)
     .order("received_at", { ascending: true });
@@ -126,7 +172,17 @@ export async function loadWhatsappConversation(conversationId: string): Promise<
           : "customer",
     text: message.body,
     at: Date.parse(message.received_at),
+    deliveryState:
+      message.direction === "outbound" && message.delivery_state
+        ? (message.delivery_state as Conversation["messages"][number]["deliveryState"])
+        : undefined,
   }));
 
-  return mapWhatsappConversation(row as ConversationRow, thread, ownerLabel);
+  const assigneeNames = await loadAssigneeNames(
+    supabase,
+    companyId,
+    row.assigned_to ? [row.assigned_to] : [],
+  );
+
+  return mapWhatsappConversation(row as ConversationRow, thread, assigneeNames);
 }

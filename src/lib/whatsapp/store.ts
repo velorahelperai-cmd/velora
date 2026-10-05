@@ -62,18 +62,47 @@ export async function saveInbound(
   };
 }
 
+/**
+ * Persist a delivery/read status event with dedupe.
+ * Links to a message only when company + phone + wa_message_id match — no guessing.
+ * Unmatched events are kept for later safe rebind. Stale ranks do not overwrite newer state.
+ * accepted is never stored as delivered.
+ */
 export async function saveStatus(admin: Admin, companyId: string, status: DeliveryStatus) {
-  const inserted = await admin.from("whatsapp_delivery_statuses").insert({
-    company_id: companyId,
-    phone_number_id: status.phoneNumberId,
-    wa_message_id: status.waMessageId,
-    status: status.status,
-    recipient_wa_id: status.recipientWaId,
-    occurred_at: status.occurredAt,
+  const { data, error } = await admin.rpc("apply_whatsapp_delivery_status", {
+    p_company_id: companyId,
+    p_phone_number_id: status.phoneNumberId,
+    p_wa_message_id: status.waMessageId,
+    p_status: status.status,
+    p_recipient_wa_id: status.recipientWaId,
+    p_occurred_at: status.occurredAt,
   });
-  if (inserted.error?.code === "23505") return { inserted: false as const };
-  if (inserted.error) throw inserted.error;
-  return { inserted: true as const };
+  if (error) throw error;
+  const row = asRecord(data);
+  if (!row || row.ok !== true) throw new Error("save_status_failed");
+  return {
+    inserted: Boolean(row.inserted),
+    duplicate: Boolean(row.duplicate),
+  };
+}
+
+/** Re-apply unmatched delivery events after an outbound message row exists. */
+export async function rebindDeliveryStatuses(
+  admin: Admin,
+  input: { companyId: string; phoneNumberId: string; waMessageId: string },
+) {
+  const { data, error } = await admin.rpc("rebind_whatsapp_delivery_statuses", {
+    p_company_id: input.companyId,
+    p_phone_number_id: input.phoneNumberId,
+    p_wa_message_id: input.waMessageId,
+  });
+  if (error) throw error;
+  const row = asRecord(data);
+  if (!row || row.ok !== true) throw new Error("rebind_status_failed");
+  return {
+    applied: Number(row.applied ?? 0),
+    kept: Number(row.kept ?? 0),
+  };
 }
 
 export async function saveOutbound(
@@ -98,8 +127,11 @@ export async function saveOutbound(
       direction: "outbound",
       sender: "staff",
       received_at: sentAt,
+      delivery_state: "accepted",
+      delivery_rank: 1,
+      delivery_updated_at: sentAt,
     })
-    .select("id, body, received_at, sender")
+    .select("id, body, received_at, sender, delivery_state")
     .maybeSingle();
   if (inserted.error?.code === "23505") return { inserted: false as const, row: null };
   if (inserted.error) throw inserted.error;

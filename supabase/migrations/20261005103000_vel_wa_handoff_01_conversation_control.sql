@@ -129,9 +129,10 @@ set search_path = ''
 as $$
 declare
   r public.whatsapp_conversations%rowtype;
+  v_company_status text;
 begin
   if p_conversation_id is null then
-    return jsonb_build_object('ok', false, 'code', 'invalid_input');
+    return jsonb_build_object('ok', false, 'code', 'invalid_input', 'eligible', false);
   end if;
 
   select * into r
@@ -139,9 +140,39 @@ begin
   where id = p_conversation_id;
 
   if not found then
-    return jsonb_build_object('ok', false, 'code', 'not_found');
+    return jsonb_build_object('ok', false, 'code', 'not_found', 'eligible', false);
   end if;
 
+  select c.status into v_company_status
+  from public.companies as c
+  where c.id = r.company_id;
+
+  -- Missing/suspended company (or failed lookup) never allows automation.
+  if v_company_status is null then
+    return jsonb_build_object(
+      'ok', false,
+      'code', 'company_missing',
+      'conversation_id', r.id,
+      'company_id', r.company_id,
+      'eligible', false
+    );
+  end if;
+
+  if v_company_status = 'suspended' then
+    return jsonb_build_object(
+      'ok', false,
+      'code', 'company_suspended',
+      'conversation_id', r.id,
+      'company_id', r.company_id,
+      'status', r.status,
+      'automation_allowed', r.automation_allowed,
+      'automation_generation', r.automation_generation,
+      'control_revision', r.control_revision,
+      'eligible', false
+    );
+  end if;
+
+  -- Permission snapshot only — not an atomic send lease or live provider enablement.
   return jsonb_build_object(
     'ok', true,
     'conversation_id', r.id,
@@ -150,9 +181,11 @@ begin
     'automation_allowed', r.automation_allowed,
     'automation_generation', r.automation_generation,
     'control_revision', r.control_revision,
+    'company_status', v_company_status,
     'eligible', (
       r.automation_allowed = true
       and r.status is distinct from 'resolved'
+      and v_company_status is distinct from 'suspended'
     )
   );
 end;

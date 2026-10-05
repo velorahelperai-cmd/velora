@@ -8,7 +8,7 @@ import {
   setLocaleCookie,
 } from "@/lib/i18n";
 import { type PlanId, type SectorId, landingCopy } from "@/lib/landing-copy";
-import { playLandingMotion, registerLandingMotion, replaySample } from "@/lib/landing-motion";
+import { playLandingMotion, registerLandingMotion, replaySample, scrollLandingHash } from "@/lib/landing-motion";
 import { useDemo } from "@/lib/demo-state";
 import Link from "next/link";
 import { AccountMenu } from "@/components/app/account-chrome";
@@ -57,6 +57,66 @@ export function LandingPage({
     document.documentElement.lang = locale;
     document.documentElement.dir = getDirection(locale);
   }, [locale]);
+
+  // Hash links must scrub the pinned theater — native #how alone leaves the intro visible.
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const el = root;
+    let applyingHash = false;
+
+    function onClick(event: MouseEvent) {
+      if (event.defaultPrevented || event.button !== 0) return;
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const anchor = (event.target as Element | null)?.closest?.("a[href^='#']");
+      if (!(anchor instanceof HTMLAnchorElement) || !el.contains(anchor)) return;
+      const href = anchor.getAttribute("href");
+      if (!href || href === "#") return;
+      const id = href.slice(1);
+      if (!id) return;
+      event.preventDefault();
+      applyingHash = true;
+      scrollLandingHash(el, id, { history: "push" });
+      applyingHash = false;
+      setMenuOpen(false);
+    }
+
+    function onHashNav() {
+      if (applyingHash) return;
+      const hash = window.location.hash.replace(/^#/, "");
+      if (!hash) return;
+      scrollLandingHash(el, hash, { history: "none" });
+    }
+
+    el.addEventListener("click", onClick);
+    window.addEventListener("hashchange", onHashNav);
+    window.addEventListener("popstate", onHashNav);
+    return () => {
+      el.removeEventListener("click", onClick);
+      window.removeEventListener("hashchange", onHashNav);
+      window.removeEventListener("popstate", onHashNav);
+    };
+  }, [locale]);
+
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root || typeof window === "undefined") return;
+    const el = root;
+    const hash = window.location.hash.replace(/^#/, "");
+    if (!hash) return;
+    let cancelled = false;
+    const run = () => {
+      if (!cancelled) scrollLandingHash(el, hash, { history: "none" });
+    };
+    const frame = window.requestAnimationFrame(run);
+    const timer = window.setTimeout(run, 280);
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+    };
+  }, [locale]);
+
   const activeQuestion = customQuestion ?? copy.sampleFor(sector).q;
 
   const restoreScrollRef = useRef<number | null>(null);
@@ -105,7 +165,7 @@ export function LandingPage({
           </a>
           <nav className="hidden items-center gap-4 text-sm lg:flex" aria-label="Primary">
             <a className="inline-flex min-h-11 items-center" href="#how">{copy.nav.how}</a>
-            <a className="inline-flex min-h-11 items-center" href="#activities">{copy.nav.activities}</a>
+            <a className="inline-flex min-h-11 items-center" href="#demo">{copy.nav.activities}</a>
             <a className="inline-flex min-h-11 items-center" href="#packages">{copy.nav.packages}</a>
             <a className="inline-flex min-h-11 items-center" href="#faq">{copy.nav.faq}</a>
           </nav>
@@ -130,16 +190,18 @@ export function LandingPage({
           </div>
           {menuOpen ? (
             <div className="absolute inset-x-0 top-[calc(100%+0.35rem)] z-50 grid rounded-2xl border border-white/10 bg-[#14221b] p-2 text-sm shadow-[0_18px_40px_rgba(0,0,0,0.45)] lg:hidden">
-              {[
-                ["#how", copy.nav.how],
-                ["#activities", copy.nav.activities],
-                ["#packages", copy.nav.packages],
-                ["#faq", copy.nav.faq],
-                ["#demo", copy.try],
-                ["#contact", copy.footer.contact],
-              ].map(([href, label]) => (
+              {(
+                [
+                  ["how", "#how", copy.nav.how],
+                  ["activities", "#demo", copy.nav.activities],
+                  ["packages", "#packages", copy.nav.packages],
+                  ["faq", "#faq", copy.nav.faq],
+                  ["try", "#demo", copy.try],
+                  ["contact", "#contact", copy.footer.contact],
+                ] as const
+              ).map(([key, href, label]) => (
                 <a
-                  key={href}
+                  key={key}
                   className="inline-flex min-h-11 items-center rounded-xl px-3 hover:bg-white/5"
                   href={href}
                   onClick={() => setMenuOpen(false)}

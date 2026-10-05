@@ -23,8 +23,9 @@ async function KnowledgeLoader() {
   return (
     <KnowledgePage
       canWrite={canWrite}
-      initialSources={listed.ok ? listed.data : []}
+      initialSources={listed.ok ? listed.data.sources : []}
       initialLoadFailed={!listed.ok}
+      approvalFoundation={listed.ok ? listed.data.approvalFoundation : "unavailable"}
     />
   );
 }

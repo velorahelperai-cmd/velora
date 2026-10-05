@@ -2,10 +2,15 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { AccessGate } from "@/components/app/access-gate";
 import { AdminConversationsView } from "@/components/app/admin-conversations";
+import { createClient } from "@/lib/supabase/server";
 import { adminListCompanyConversations } from "@/lib/tenancy/actions";
 import { getCompanyAccess, pathForAccess, requirePlatformAdmin } from "@/lib/tenancy/access";
 
 export const metadata: Metadata = { title: "Conversations · Velora Admin" };
+
+function serviceGate(reason?: string | null) {
+  return <AccessGate code="UNAVAILABLE" reason={reason} />;
+}
 
 export default async function Page({
   params,
@@ -19,11 +24,11 @@ export default async function Page({
   const admin = await requirePlatformAdmin();
   if (!admin.ok) {
     if (admin.code === "UNVERIFIED") redirect("/verify-email");
-    if (admin.code === "UNAVAILABLE") return <AccessGate code="UNAVAILABLE" />;
+    if (admin.code === "UNAVAILABLE") return serviceGate();
     if (admin.code === "FORBIDDEN") {
       const access = await getCompanyAccess();
       if (!access.ok) {
-        if (access.code === "UNAVAILABLE") return <AccessGate code="UNAVAILABLE" />;
+        if (access.code === "UNAVAILABLE") return serviceGate();
         if (access.code === "FORBIDDEN") return <AccessGate code="FORBIDDEN" />;
         redirect("/login");
       }
@@ -31,6 +36,14 @@ export default async function Page({
     }
     redirect(`/login?next=${encodeURIComponent(`/admin/companies/${id}/conversations`)}`);
   }
+
+  // Company existence is separate from conversation RPC / query health.
+  const supabase = await createClient();
+  const { data: companyPayload, error: companyError } = await supabase.rpc("admin_get_company", {
+    p_company_id: id,
+  });
+  if (companyError) return serviceGate(companyError.message);
+  if (!companyPayload) notFound();
 
   // Do not auto-pick the first phone identity — require an explicit selection.
   const phoneNumberId = typeof phone === "string" && phone.trim() ? phone.trim() : null;
@@ -41,21 +54,32 @@ export default async function Page({
     offset: 0,
   });
   if (!result.ok) {
-    if (result.code === "UNAVAILABLE") return <AccessGate code="UNAVAILABLE" />;
+    if (result.code === "UNAVAILABLE" || result.code === "AUTH_ERROR") {
+      return serviceGate(result.message);
+    }
     if (result.code === "FORBIDDEN") return <AccessGate code="FORBIDDEN" />;
     if (result.code === "INVALID_INPUT") {
-      const bare = await adminListCompanyConversations({
-        companyId: id,
-        phoneNumberId: null,
-        limit: 20,
-        offset: 0,
-      });
-      if (bare.ok) {
-        return <AdminConversationsView key={`${id}:`} initial={bare.data} />;
+      if (result.message === "NOT_FOUND") notFound();
+      // Bad/stale phone query param — recover with the phone-picker shell.
+      if (phoneNumberId) {
+        const bare = await adminListCompanyConversations({
+          companyId: id,
+          phoneNumberId: null,
+          limit: 20,
+          offset: 0,
+        });
+        if (bare.ok) {
+          return <AdminConversationsView key={`${id}:`} initial={bare.data} />;
+        }
+        if (bare.code === "UNAVAILABLE" || bare.code === "AUTH_ERROR") {
+          return serviceGate(bare.message);
+        }
+        if (bare.code === "FORBIDDEN") return <AccessGate code="FORBIDDEN" />;
+        if (bare.message === "NOT_FOUND") notFound();
       }
-      notFound();
+      return serviceGate(result.message);
     }
-    notFound();
+    return serviceGate(result.message);
   }
 
   return (

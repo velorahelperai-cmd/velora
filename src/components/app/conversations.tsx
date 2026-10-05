@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useMemo, useState, useTransition } from "react";
-import { type Conversation, type ConversationStatus, nowMs, uid, useDemo } from "@/lib/demo-state";
+import { useLayoutEffect, useMemo, useRef, useState, useTransition } from "react";
+import { type Conversation, type ConversationStatus, useDemo } from "@/lib/demo-state";
 import {
   controlWhatsappConversation,
   refreshWhatsappConversation,
@@ -11,8 +11,9 @@ import {
   type ControlAction,
   type ControlState,
 } from "@/lib/whatsapp/actions";
+import { mergeConversationOverride, selectLiveConversations } from "@/lib/whatsapp/live-inbox";
 import { WorkspaceShell } from "@/components/app/workspace-shell";
-import { Button, EmptyState, Notice, SimTag, useAppCopy } from "@/components/app/ui";
+import { Button, EmptyState, Notice, useAppCopy } from "@/components/app/ui";
 
 const statusStyle: Record<ConversationStatus, string> = {
   open: "bg-white/10 text-[#dfe9e2]",
@@ -35,10 +36,16 @@ function applyControlState(base: Conversation, state: ControlState): Conversatio
 
 export function ConversationsPage({ inbox = [] }: { inbox?: Conversation[] }) {
   const copy = useAppCopy();
-  const { state, update, locale } = useDemo();
+  const { locale } = useDemo();
   const params = useSearchParams();
   const router = useRouter();
   const selectedId = params.get("c");
+  /** Latest selected conversation — async handlers must not use closure `selectedId`. */
+  const selectedIdRef = useRef<string | null>(selectedId);
+  useLayoutEffect(() => {
+    selectedIdRef.current = selectedId;
+  }, [selectedId]);
+  const isSelected = (conversationId: string) => selectedIdRef.current === conversationId;
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<ConversationStatus | "all">("all");
   const [draft, setDraft] = useState("");
@@ -46,15 +53,25 @@ export function ConversationsPage({ inbox = [] }: { inbox?: Conversation[] }) {
   const [error, setError] = useState<string | null>(null);
   const [warn, setWarn] = useState<string | null>(null);
   const [localInbox, setLocalInbox] = useState<Record<string, Conversation>>({});
+  /** Per-conversation: prior control attempt outcome unknown and server state not re-read yet. */
+  const [unresolvedOutcomes, setUnresolvedOutcomes] = useState<Record<string, true>>({});
+  /** Per-conversation: prior send outcome unknown — no normal resend until reviewed. */
+  const [unresolvedSends, setUnresolvedSends] = useState<Record<string, true>>({});
+  /** Pending durable op: keep original clientOpId + body until settled — draft edits must not replace it. */
+  const sendOpByConversation = useRef<Record<string, { clientOpId: string; body: string }>>({});
   const [pending, startTransition] = useTransition();
   const [controlBusy, setControlBusy] = useState(false);
+  const [controlBusyId, setControlBusyId] = useState<string | null>(null);
+  const readGenById = useRef<Record<string, number>>({});
   const liveIds = useMemo(() => new Set(inbox.map((item) => item.id)), [inbox]);
+  const selectedUnresolved = Boolean(selectedId && unresolvedOutcomes[selectedId]);
+  const selectedSendLocked = Boolean(selectedId && unresolvedSends[selectedId]);
 
-  const conversations = useMemo(() => {
-    const live = inbox.map((item) => localInbox[item.id] ?? item);
-    const liveIdSet = new Set(live.map((item) => item.id));
-    return [...live, ...state.conversations.filter((item) => !liveIdSet.has(item.id))];
-  }, [inbox, localInbox, state.conversations]);
+  // Live server inbox only — never merge local demo/sample conversations into customer work.
+  const conversations = useMemo(
+    () => selectLiveConversations(inbox, localInbox),
+    [inbox, localInbox],
+  );
 
   const list = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -63,81 +80,194 @@ export function ConversationsPage({ inbox = [] }: { inbox?: Conversation[] }) {
   const selected = conversations.find((c) => c.id === selectedId) ?? null;
   const select = (id: string | null) => router.replace(id ? `/app/conversations?c=${id}` : "/app/conversations");
   const patch = (id: string, fn: (c: Conversation) => Partial<Conversation>) => {
-    if (inbox.some((item) => item.id === id)) {
-      setLocalInbox((current) => {
-        const base = current[id] ?? inbox.find((item) => item.id === id);
-        if (!base) return current;
-        return { ...current, [id]: { ...base, ...fn(base) } };
-      });
-      return;
-    }
-    update((s) => ({ conversations: s.conversations.map((c) => (c.id === id ? { ...c, ...fn(c) } : c)) }));
+    setLocalInbox((current) => {
+      const base = current[id] ?? inbox.find((item) => item.id === id);
+      if (!base) return current;
+      return { ...current, [id]: { ...base, ...fn(base) } };
+    });
   };
   const replaceLive = (conversation: Conversation) => {
-    setLocalInbox((current) => ({ ...current, [conversation.id]: conversation }));
+    // A slower read must not erase a newer stored revision.
+    setLocalInbox((current) => ({
+      ...current,
+      [conversation.id]: mergeConversationOverride(current[conversation.id], conversation),
+    }));
   };
-  const me = state.account?.name ?? copy.app.you;
   const time = (at: number) => new Date(at).toLocaleTimeString(locale === "ar" ? "ar-OM" : "en-GB", { hour: "2-digit", minute: "2-digit" });
 
   function send(c: Conversation) {
-    const text = draft.trim();
-    if (!text || pending || controlBusy) return;
+    const draftText = draft.trim();
+    if (!draftText || pending || controlBusy || unresolvedSends[c.id]) return;
     setError(null);
     setNotice(null);
     setWarn(null);
 
     if (!liveIds.has(c.id)) {
-      patch(c.id, (cur) => ({ messages: [...cur.messages, { id: uid(), from: "staff", text, at: nowMs() }], owner: me, assistantPaused: true, status: cur.status === "resolved" ? "handed_over" : cur.status }));
-      setDraft("");
-      setNotice(copy.app.sentDemoNote);
+      setError(copy.app.inboxLiveOnly);
       return;
     }
 
+    // Pending op keeps original identity + body until settled; draft edits stay local and do not mint a new op.
+    const existing = sendOpByConversation.current[c.id];
+    const clientOpId = existing?.clientOpId ?? (typeof crypto !== "undefined" && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `op-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    const body = existing?.body ?? draftText;
+    sendOpByConversation.current[c.id] = { clientOpId, body };
+
     startTransition(async () => {
-      const result = await replyWhatsappConversation({ conversationId: c.id, body: text });
-      if (!result.ok) {
-        const message =
-          result.code === "SEND_DISABLED" ? copy.app.sendDisabled
-            : result.code === "NOT_CONFIGURED" ? copy.app.sendNotConfigured
-              : result.code === "FORBIDDEN" || result.code === "UNAUTHENTICATED" ? copy.app.sendForbidden
-                : copy.app.sendFailed;
-        setError(message);
-        return;
+      try {
+        const result = await replyWhatsappConversation({ conversationId: c.id, body, clientOpId });
+        if (!result.ok) {
+          // Keep client_op_id + original body for unresolved / in-progress / persist / save-fail paths.
+          if (
+            result.code === "UNKNOWN_OUTCOME"
+            || result.outcome === "unknown"
+            || result.code === "PERSIST_PENDING"
+            || result.code === "IN_PROGRESS"
+            || result.code === "SAVE_FAILED"
+            || result.code === "CONTENT_MISMATCH"
+          ) {
+            if (
+              result.code === "UNKNOWN_OUTCOME"
+              || result.outcome === "unknown"
+              || result.code === "IN_PROGRESS"
+              || result.code === "SAVE_FAILED"
+              || result.code === "CONTENT_MISMATCH"
+            ) {
+              setUnresolvedSends((prev) => ({ ...prev, [c.id]: true }));
+            }
+            if (isSelected(c.id)) {
+              if (result.code === "IN_PROGRESS") setError(copy.app.sendInProgress);
+              else if (result.code === "PERSIST_PENDING") setWarn(copy.app.sendPersistPending);
+              else if (result.code === "CONTENT_MISMATCH") setError(copy.app.sendPendingOpKept);
+              else if (result.code === "SAVE_FAILED") setError(copy.app.sendUnresolvedKeepOp);
+              else setError(copy.app.sendUnknownOutcome);
+            }
+            return;
+          }
+          // Confirmed pre-provider rejects may clear the op for a fresh attempt.
+          delete sendOpByConversation.current[c.id];
+          const message =
+            result.code === "SEND_DISABLED" ? copy.app.sendDisabled
+              : result.code === "NOT_CONFIGURED" ? copy.app.sendNotConfigured
+                : result.code === "PHONE_MISMATCH" ? copy.app.sendPhoneMismatch
+                  : result.code === "COMPANY_SUSPENDED" ? copy.app.sendCompanySuspended
+                    : result.code === "REJECTED" ? copy.app.sendRejected
+                      : result.code === "FORBIDDEN" || result.code === "UNAUTHENTICATED" ? copy.app.sendForbidden
+                        : copy.app.sendFailed;
+          if (isSelected(c.id)) setError(message);
+          return;
+        }
+        delete sendOpByConversation.current[c.id];
+        setUnresolvedSends((prev) => {
+          if (!prev[c.id]) return prev;
+          const next = { ...prev };
+          delete next[c.id];
+          return next;
+        });
+        if (result.message.id) {
+          patch(c.id, (cur) => ({
+            messages: cur.messages.some((m) => m.id === result.message.id)
+              ? cur.messages
+              : [...cur.messages, {
+                id: result.message.id,
+                from: "staff" as const,
+                text: result.message.text,
+                at: result.message.at,
+                deliveryState: result.message.deliveryState,
+              }],
+            summary: result.message.text,
+          }));
+        }
+        if (isSelected(c.id)) {
+          setDraft("");
+          setNotice(copy.app.sentNote);
+        }
+      } catch {
+        setUnresolvedSends((prev) => ({ ...prev, [c.id]: true }));
+        if (isSelected(c.id)) setError(copy.app.sendUnknownOutcome);
       }
-      patch(c.id, (cur) => ({
-        messages: [...cur.messages, { id: result.message.id, from: "staff", text: result.message.text, at: result.message.at }],
-        owner: me,
-        assistantPaused: true,
-        automationAllowed: false,
-        status: cur.status === "resolved" ? "handed_over" : cur.status,
-        summary: result.message.text,
-      }));
-      setDraft("");
-      setNotice(copy.app.sentNote);
     });
   }
 
+  function markUnresolved(conversationId: string) {
+    setUnresolvedOutcomes((prev) => (prev[conversationId] ? prev : { ...prev, [conversationId]: true }));
+  }
+
+  function clearUnresolved(conversationId: string) {
+    setUnresolvedOutcomes((prev) => {
+      if (!prev[conversationId]) return prev;
+      const next = { ...prev };
+      delete next[conversationId];
+      return next;
+    });
+  }
+
+  /** Drop in-flight reads for this conversation (e.g. before a new control action). */
+  function bumpReadGeneration(conversationId: string) {
+    readGenById.current[conversationId] = (readGenById.current[conversationId] ?? 0) + 1;
+  }
+
+  /** Server read only. Never re-sends a control action. Ignores superseded responses. */
+  async function syncControlView(conversationId: string): Promise<boolean> {
+    const gen = (readGenById.current[conversationId] ?? 0) + 1;
+    readGenById.current[conversationId] = gen;
+    try {
+      const refreshed = await refreshWhatsappConversation(conversationId);
+      if (readGenById.current[conversationId] !== gen) return false;
+      if (!refreshed.ok || refreshed.conversation.id !== conversationId) return false;
+      replaceLive(refreshed.conversation);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async function retryRefresh(conversationId: string) {
-    setWarn(null);
-    setError(null);
-    const refreshed = await refreshWhatsappConversation(conversationId);
-    if (!refreshed.ok) {
-      setWarn(copy.app.controlRefreshFailed);
+    // Recovery button: read only. Never re-sends control. Failed read keeps an existing lock.
+    const wasUnresolved = Boolean(unresolvedOutcomes[conversationId]);
+    if (isSelected(conversationId)) {
+      setWarn(null);
+      setError(null);
+    }
+    const synced = await syncControlView(conversationId);
+    if (!synced) {
+      if (wasUnresolved) {
+        markUnresolved(conversationId);
+        if (isSelected(conversationId)) setError(copy.app.controlOutcomeLocked);
+      } else if (isSelected(conversationId)) {
+        setWarn(copy.app.controlRefreshFailed);
+      }
       return;
     }
-    replaceLive(refreshed.conversation);
-    setNotice(copy.app.controlRefreshed);
+    clearUnresolved(conversationId);
+    if (isSelected(conversationId)) {
+      setError(null);
+      setWarn(null);
+      setNotice(copy.app.controlRefreshed);
+    }
   }
 
   function runControl(c: Conversation, action: ControlAction) {
     if (!liveIds.has(c.id) || controlBusy || pending) return;
+    // Hard stop inside the action path — not only disabled buttons.
+    if (unresolvedOutcomes[c.id]) return;
+
     const expectedRevision = c.revision ?? 1;
+    // Invalidate reads that started before this control — they must not overwrite CONFLICT/success state.
+    bumpReadGeneration(c.id);
     setControlBusy(true);
-    setError(null);
-    setNotice(null);
-    setWarn(null);
+    setControlBusyId(c.id);
+    if (isSelected(c.id)) {
+      setError(null);
+      setNotice(null);
+      setWarn(null);
+    }
 
     void (async () => {
+      /** True only after a confirmed mutation response (ok / conflict with state). View refresh fail ≠ unresolved. */
+      let mutationConfirmed = false;
       try {
         const result = await controlWhatsappConversation({
           conversationId: c.id,
@@ -147,36 +277,60 @@ export function ConversationsPage({ inbox = [] }: { inbox?: Conversation[] }) {
 
         if (!result.ok) {
           if (result.code === "CONFLICT" && result.state) {
+            mutationConfirmed = true;
+            clearUnresolved(c.id);
             patch(c.id, (cur) => applyControlState(cur, result.state!));
-            setError(copy.app.controlConflict);
+            if (isSelected(c.id)) setError(copy.app.controlConflict);
             return;
           }
           if (result.code === "FORBIDDEN" || result.code === "UNAUTHENTICATED") {
-            setError(copy.app.controlForbidden);
+            if (isSelected(c.id)) setError(copy.app.controlForbidden);
             return;
           }
-          setError(copy.app.controlFailed);
+          if (result.code === "UNAVAILABLE") {
+            const synced = await syncControlView(c.id);
+            if (synced) {
+              clearUnresolved(c.id);
+              if (isSelected(c.id)) setError(copy.app.controlUnavailable);
+            } else {
+              markUnresolved(c.id);
+              if (isSelected(c.id)) setError(copy.app.controlOutcomeLocked);
+            }
+            return;
+          }
+          if (isSelected(c.id)) setError(copy.app.controlFailed);
           return;
         }
 
-        // Persist succeeded — update from returned state; refresh failure must not re-run action.
+        // Confirmed save — apply returned state. Refresh failure is a view warning only (not unresolved).
+        mutationConfirmed = true;
+        clearUnresolved(c.id);
         patch(c.id, (cur) => applyControlState(cur, result.state));
-        if (action === "take_over") setNotice(copy.app.controlTaken);
-        else if (action === "resume") setNotice(copy.app.resumed);
-        else setNotice(copy.app.controlClosed);
+        if (isSelected(c.id)) {
+          if (action === "take_over") setNotice(copy.app.controlTaken);
+          else if (action === "resume") setNotice(copy.app.resumed);
+          else setNotice(copy.app.controlClosed);
+        }
 
-        try {
-          const refreshed = await refreshWhatsappConversation(c.id);
-          if (!refreshed.ok) {
-            setWarn(copy.app.controlRefreshFailed);
-            return;
-          }
-          replaceLive(refreshed.conversation);
-        } catch {
-          setWarn(copy.app.controlRefreshFailed);
+        const synced = await syncControlView(c.id);
+        if (!synced && isSelected(c.id)) setWarn(copy.app.controlRefreshFailed);
+      } catch {
+        if (mutationConfirmed) {
+          if (isSelected(c.id)) setWarn(copy.app.controlRefreshFailed);
+          return;
+        }
+        // Unknown mutation outcome — lock until a successful server read adopts revision.
+        const synced = await syncControlView(c.id);
+        if (synced) {
+          clearUnresolved(c.id);
+          if (isSelected(c.id)) setError(copy.app.controlUnknownOutcome);
+        } else {
+          markUnresolved(c.id);
+          if (isSelected(c.id)) setError(copy.app.controlOutcomeLocked);
         }
       } finally {
         setControlBusy(false);
+        setControlBusyId(null);
       }
     })();
   }
@@ -197,8 +351,8 @@ export function ConversationsPage({ inbox = [] }: { inbox?: Conversation[] }) {
               {selected.assistantPaused ? (
                 <Button
                   variant="secondary"
-                  busy={controlBusy}
-                  disabled={controlBusy || pending}
+                  busy={controlBusy && controlBusyId === selected.id}
+                  disabled={controlBusy || pending || selectedUnresolved}
                   onClick={() => runControl(selected, "resume")}
                 >
                   {copy.app.resume}
@@ -206,8 +360,8 @@ export function ConversationsPage({ inbox = [] }: { inbox?: Conversation[] }) {
               ) : (
                 <Button
                   variant="secondary"
-                  busy={controlBusy}
-                  disabled={controlBusy || pending}
+                  busy={controlBusy && controlBusyId === selected.id}
+                  disabled={controlBusy || pending || selectedUnresolved}
                   onClick={() => runControl(selected, "take_over")}
                 >
                   {copy.app.takeOver}
@@ -216,24 +370,15 @@ export function ConversationsPage({ inbox = [] }: { inbox?: Conversation[] }) {
               {selected.status !== "resolved" ? (
                 <Button
                   variant="ghost"
-                  busy={controlBusy}
-                  disabled={controlBusy || pending}
+                  busy={controlBusy && controlBusyId === selected.id}
+                  disabled={controlBusy || pending || selectedUnresolved}
                   onClick={() => runControl(selected, "close")}
                 >
                   {copy.app.markResolved}
                 </Button>
               ) : null}
             </>
-          ) : (
-            <>
-              {selected.assistantPaused ? (
-                <Button variant="secondary" onClick={() => { patch(selected.id, () => ({ assistantPaused: false, owner: "assistant", status: selected.status === "handed_over" ? "open" : selected.status })); setNotice(copy.app.resumed); }}>{copy.app.resume}</Button>
-              ) : (
-                <Button variant="secondary" onClick={() => patch(selected.id, () => ({ assistantPaused: true, owner: me, status: "handed_over" }))}>{copy.app.takeOver}</Button>
-              )}
-              {selected.status !== "resolved" ? <Button variant="ghost" onClick={() => patch(selected.id, () => ({ status: "resolved", assistantPaused: true }))}>{copy.app.markResolved}</Button> : null}
-            </>
-          )}
+          ) : null}
         </div>
       </header>
       {selected.assistantPaused ? <div className="border-b border-[#d9a467]/30 bg-[#d9a467]/10 px-4 py-2 text-sm text-[#f0cf9d]">{copy.app.pausedBanner}</div> : null}
@@ -249,11 +394,20 @@ export function ConversationsPage({ inbox = [] }: { inbox?: Conversation[] }) {
                 <div className={`rounded-2xl px-3 py-2 text-[15px] leading-6 ${m.from === "customer" ? "rounded-ss-md bg-white/10 text-[#f7fbf8]" : m.from === "staff" ? "rounded-es-md bg-[#38dc89] text-[#072317]" : "rounded-es-md bg-[#def5e7] text-[#101b16]"}`}>
                   {m.text}
                 </div>
-                <p className="mt-1 text-[11px] text-[#8da195]">{m.from === "customer" ? selected.customer : m.from === "staff" ? copy.app.staff : copy.app.assistant} · <span dir="ltr">{time(m.at)}</span>{m.source ? ` · ${copy.tester.source}: ${m.source}` : ""}</p>
+                <p className="mt-1 text-[11px] text-[#8da195]">
+                  {m.from === "customer" ? selected.customer : m.from === "staff" ? copy.app.staff : copy.app.assistant}
+                  {" · "}
+                  <span dir="ltr">{time(m.at)}</span>
+                  {m.source ? ` · ${copy.tester.source}: ${m.source}` : ""}
+                  {m.from !== "customer" && m.deliveryState ? ` · ${copy.app.deliveryStates[m.deliveryState]}` : ""}
+                </p>
               </div>
             ))}
-            {notice ? <Notice tone="info">{notice}</Notice> : null}
-            {warn ? (
+            {selectedSendLocked ? (
+              <Notice tone="error">{copy.app.sendUnknownOutcome}</Notice>
+            ) : null}
+            {notice && !selectedUnresolved ? <Notice tone="info">{notice}</Notice> : null}
+            {warn && !selectedUnresolved ? (
               <Notice tone="warn">
                 <span className="flex flex-wrap items-center gap-2">
                   <span>{warn}</span>
@@ -265,11 +419,32 @@ export function ConversationsPage({ inbox = [] }: { inbox?: Conversation[] }) {
                 </span>
               </Notice>
             ) : null}
-            {error ? <Notice tone="error">{error}</Notice> : null}
+            {selectedUnresolved ? (
+              <Notice tone="error">
+                <span className="flex flex-wrap items-center gap-2">
+                  <span>{copy.app.controlOutcomeLocked}</span>
+                  <button type="button" className="min-h-8 text-[#38dc89] underline" disabled={controlBusy} onClick={() => void retryRefresh(selected.id)}>
+                    {copy.app.controlRetryRefresh}
+                  </button>
+                </span>
+              </Notice>
+            ) : error ? (
+              <Notice tone="error">
+                <span className="flex flex-wrap items-center gap-2">
+                  <span>{error}</span>
+                  {liveIds.has(selected.id)
+                    && (error === copy.app.controlUnavailable || error === copy.app.controlUnknownOutcome) ? (
+                    <button type="button" className="min-h-8 text-[#38dc89] underline" disabled={controlBusy} onClick={() => void retryRefresh(selected.id)}>
+                      {copy.app.controlRetryRefresh}
+                    </button>
+                  ) : null}
+                </span>
+              </Notice>
+            ) : null}
           </div>
           <form className="sticky bottom-0 -mx-1 mt-auto flex gap-2 border-t border-white/10 bg-[#0d1a14] px-1 pt-3 pb-[max(0.25rem,env(safe-area-inset-bottom))]" onSubmit={(e) => { e.preventDefault(); send(selected); }}>
             <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={copy.app.reply} aria-label={copy.app.reply} disabled={pending || controlBusy} className="min-h-11 flex-1 rounded-xl border border-white/15 bg-[#07110d] px-3 text-[15px] outline-none focus-visible:ring-2 focus-visible:ring-[#38dc89] disabled:opacity-60" />
-            <Button type="submit" disabled={!draft.trim() || pending || controlBusy} className="shrink-0">{liveIds.has(selected.id) ? copy.app.sendReply : copy.app.sendReplyDemo}</Button>
+            <Button type="submit" disabled={!draft.trim() || pending || controlBusy || selectedSendLocked || !liveIds.has(selected.id)} className="shrink-0">{copy.app.sendReply}</Button>
           </form>
         </div>
         <aside className="grid content-start gap-3 rounded-xl border border-white/10 bg-white/5 p-3 text-sm lg:sticky lg:top-4">
@@ -284,7 +459,6 @@ export function ConversationsPage({ inbox = [] }: { inbox?: Conversation[] }) {
               <Link href={`/app/knowledge?topic=${encodeURIComponent(selected.needsInfo)}`} className="inline-flex min-h-10 items-center justify-center rounded-full bg-[#38dc89] px-3 text-xs font-medium text-[#072317]">{copy.app.addKnowledge}</Link>
             </div>
           ) : null}
-          <SimTag />
         </aside>
       </div>
     </section>
@@ -297,7 +471,8 @@ export function ConversationsPage({ inbox = [] }: { inbox?: Conversation[] }) {
 
   return (
     <WorkspaceShell title={copy.app.conversationsTitle}>
-      <div className="grid gap-4 lg:grid-cols-[340px_1fr]">
+      <Notice tone="info">{copy.app.inboxLiveOnly}</Notice>
+      <div className="mt-4 grid gap-4 lg:grid-cols-[340px_1fr]">
         <div className={`${selected ? "hidden lg:block" : ""}`}>
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={copy.app.search} aria-label={copy.app.search} className="min-h-11 w-full rounded-xl border border-white/15 bg-[#0d1a14] px-3 text-[15px] outline-none focus-visible:ring-2 focus-visible:ring-[#38dc89]" />
           <div className="mt-2 flex gap-1 overflow-x-auto pb-1">
@@ -308,7 +483,14 @@ export function ConversationsPage({ inbox = [] }: { inbox?: Conversation[] }) {
             ))}
           </div>
           <ul className="mt-3 grid gap-2">
-            {list.length === 0 ? <li><EmptyState title={copy.app.noResults} /></li> : null}
+            {list.length === 0 ? (
+              <li>
+                <EmptyState
+                  title={inbox.length === 0 ? copy.app.inboxNotLinked : copy.app.noResults}
+                  body={inbox.length === 0 ? copy.app.inboxLiveOnly : undefined}
+                />
+              </li>
+            ) : null}
             {list.map((c) => (
               <li key={c.id}>
                 <button type="button" onClick={() => select(c.id)} aria-current={c.id === selectedId ? "true" : undefined} className={`grid w-full gap-1 rounded-xl border p-3 text-start text-sm transition ${c.id === selectedId ? "border-[#38dc89] bg-[#38dc89]/10" : "border-white/10 hover:bg-white/5"}`}>

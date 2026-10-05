@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { adminGetKnowledgeFileUrl, adminListCompanyKnowledge } from "@/lib/knowledge/actions";
-import type { KnowledgeSourceRecord } from "@/lib/knowledge/types";
+import type { KnowledgeApprovalFoundation, KnowledgeSourceRecord } from "@/lib/knowledge/types";
 import { AppTopBar } from "@/components/app/account-chrome";
 import {
   adminApproveSetupReview,
@@ -14,6 +14,12 @@ import {
   adminSetMemberStatus,
   adminUpdateCompany,
 } from "@/lib/tenancy/actions";
+import {
+  adminGetWhatsappCompanyLink,
+  adminMarkWhatsappLinkNeedsExternal,
+  adminUpdateWhatsappLinkNote,
+} from "@/lib/whatsapp/connection-actions";
+import type { WhatsappCompanyLink } from "@/lib/whatsapp/connection";
 import type { CompanyReviewRequest, CompanyStatus } from "@/lib/tenancy/types";
 import { useDemo } from "@/lib/demo-state";
 import { fill } from "@/lib/app-copy";
@@ -92,12 +98,24 @@ type Props = {
   initialAudits: AdminAudit[];
   initialKnowledge: KnowledgeSourceRecord[];
   initialReview?: CompanyReviewRequest | null;
+  initialWhatsappLink?: WhatsappCompanyLink | null;
+  whatsappLinkLoadFailed?: boolean;
   knowledgeLoadFailed?: boolean;
+  approvalFoundation?: KnowledgeApprovalFoundation;
 };
 
 function dash(value: string | null | undefined, empty: string) {
   const v = (value ?? "").trim();
   return v || empty;
+}
+
+function formatStamp(value: string | null | undefined): string {
+  if (!value) return "—";
+  try {
+    return new Date(value).toLocaleString();
+  } catch {
+    return value;
+  }
 }
 
 export function AdminCompanyDetail({
@@ -106,7 +124,10 @@ export function AdminCompanyDetail({
   initialAudits,
   initialKnowledge,
   initialReview = null,
+  initialWhatsappLink = null,
+  whatsappLinkLoadFailed = false,
   knowledgeLoadFailed = false,
+  approvalFoundation: initialApprovalFoundation = "ready",
 }: Props) {
   const copy = useAppCopy();
   const { locale } = useDemo();
@@ -116,7 +137,11 @@ export function AdminCompanyDetail({
   const [members, setMembers] = useState(initialMembers);
   const [audits, setAudits] = useState(initialAudits);
   const [knowledge, setKnowledge] = useState(initialKnowledge);
+  const [approvalFoundation, setApprovalFoundation] = useState(initialApprovalFoundation);
   const [review, setReview] = useState<CompanyReviewRequest | null>(initialReview);
+  const [waLink, setWaLink] = useState<WhatsappCompanyLink | null>(initialWhatsappLink);
+  const [waLinkFailed, setWaLinkFailed] = useState(whatsappLinkLoadFailed);
+  const [waNote, setWaNote] = useState(initialWhatsappLink?.adminNote ?? "");
   const [adminNote, setAdminNote] = useState(initialReview?.owner_note ?? "");
   const [knowledgeFailed, setKnowledgeFailed] = useState(knowledgeLoadFailed);
   const [form, setForm] = useState({
@@ -166,9 +191,24 @@ export function AdminCompanyDetail({
     if (nextReview) {
       setAdminNote((prev) => (prev.trim() ? prev : (nextReview.owner_note ?? "")));
     }
+    // Thrown exceptions and explicit failures both mean load-failed — never «not linked».
+    // Keep prior waLink snapshot and waNote draft untouched on failure.
+    try {
+      const linkResult = await adminGetWhatsappCompanyLink(company.id);
+      if (linkResult.ok) {
+        setWaLink(linkResult.data);
+        setWaLinkFailed(false);
+        setWaNote((prev) => (prev.trim() ? prev : (linkResult.data.adminNote ?? "")));
+      } else {
+        setWaLinkFailed(true);
+      }
+    } catch {
+      setWaLinkFailed(true);
+    }
     const knowledgeResult = await adminListCompanyKnowledge(company.id);
     if (knowledgeResult.ok) {
-      setKnowledge(knowledgeResult.data);
+      setKnowledge(knowledgeResult.data.sources);
+      setApprovalFoundation(knowledgeResult.data.approvalFoundation);
       setKnowledgeFailed(false);
     } else {
       setKnowledgeFailed(true);
@@ -333,7 +373,170 @@ export function AdminCompanyDetail({
               <Button type="submit" busy={busy} busyLabel={copy.saving}>{copy.save}</Button>
             </div>
           </form>
-          <p className="mt-3 text-xs text-[#8da195]">{copy.admin.whatsappNote} · {copy.admin.whatsappLink}: {empty}</p>
+          <p className="mt-3 text-xs text-[#8da195]">{copy.admin.whatsappNote}</p>
+        </section>
+
+        <section className="mt-4 app-panel rounded-3xl p-4 sm:p-6">
+          <h2 className="text-lg font-bold">{copy.admin.whatsappLink}</h2>
+          <p className="mt-2 text-xs text-[#8da195]">{copy.admin.waLinkHonestNote}</p>
+          {waLinkFailed ? (
+            <div className="mt-3 grid gap-3">
+              <Notice tone="error">{copy.admin.waLinkLoadFailed}</Notice>
+              <Button
+                type="button"
+                variant="secondary"
+                busy={busy}
+                onClick={() => {
+                  void run(async () => {
+                    setError(null);
+                    // Retry is read-only: on fail/throw keep prior link + note draft.
+                    try {
+                      const linkResult = await adminGetWhatsappCompanyLink(company.id);
+                      if (!linkResult.ok) {
+                        setWaLinkFailed(true);
+                        setError(linkResult.message ?? copy.admin.waLinkLoadFailed);
+                        return;
+                      }
+                      setWaLink(linkResult.data);
+                      setWaLinkFailed(false);
+                      setWaNote((prev) => (prev.trim() ? prev : (linkResult.data.adminNote ?? "")));
+                    } catch {
+                      setWaLinkFailed(true);
+                      setError(copy.admin.waLinkLoadFailed);
+                    }
+                  });
+                }}
+              >
+                {copy.admin.waLinkRetryRead}
+              </Button>
+            </div>
+          ) : null}
+          {!waLinkFailed && waLink ? (
+            <dl className="mt-4 grid gap-3 text-sm">
+              <div className="flex flex-wrap justify-between gap-3">
+                <dt className="text-[#adbeaf]">{copy.app.whatsappStatus}</dt>
+                <dd>{copy.app.waLinkStatuses[waLink.status]}</dd>
+              </div>
+              <div className="flex flex-wrap justify-between gap-3">
+                <dt className="text-[#adbeaf]">{copy.admin.waLinkRequested}</dt>
+                <dd dir="ltr">{dash(waLink.requestedDisplayNumber, empty)}</dd>
+              </div>
+              <div className="flex flex-wrap justify-between gap-3">
+                <dt className="text-[#adbeaf]">{copy.admin.waLinkKeepOnPhone}</dt>
+                <dd>{waLink.keepOnPhone ? copy.admin.waLinkYes : copy.admin.waLinkNo}</dd>
+              </div>
+              {waLink.status === "verified" ? (
+                <>
+                  <div className="flex flex-wrap justify-between gap-3">
+                    <dt className="text-[#adbeaf]">{copy.admin.waLinkVerifiedCurrent}</dt>
+                    <dd dir="ltr">{dash(waLink.verifiedDisplayNumber, empty)}</dd>
+                  </div>
+                  <div className="flex flex-wrap justify-between gap-3">
+                    <dt className="text-[#adbeaf]">{copy.admin.waLinkProviderId}</dt>
+                    <dd dir="ltr" className="break-all">{dash(waLink.providerPhoneNumberId, empty)}</dd>
+                  </div>
+                  <div className="flex flex-wrap justify-between gap-3">
+                    <dt className="text-[#adbeaf]">{copy.app.waLinkTestedLabel}</dt>
+                    <dd>{waLink.receptionSendTested ? copy.app.waLinkTestedYes : copy.app.waLinkTestedNo}</dd>
+                  </div>
+                </>
+              ) : (
+                <div className="flex flex-wrap justify-between gap-3">
+                  <dt className="text-[#adbeaf]">{copy.app.waLinkTestedLabel}</dt>
+                  <dd>{copy.app.waLinkTestedNo}</dd>
+                </div>
+              )}
+            </dl>
+          ) : null}
+          {!waLinkFailed && !waLink ? (
+            <p className="mt-3 text-sm text-[#8da195]">{copy.admin.notLinked}</p>
+          ) : null}
+          {!waLinkFailed && waLink?.priorLinkEvidence ? (
+            <div className="mt-4 grid gap-2 rounded-2xl border border-white/10 bg-white/5 p-3 text-sm">
+              <p className="text-xs font-medium text-[#8da195]">{copy.admin.waLinkPriorEvidenceTitle}</p>
+              <p className="text-xs leading-5 text-[#8da195]">{copy.admin.waLinkPriorEvidenceNote}</p>
+              <dl className="grid gap-2">
+                <div className="flex flex-wrap justify-between gap-3">
+                  <dt className="text-[#adbeaf]">{copy.admin.waLinkPriorVerifiedNumber}</dt>
+                  <dd dir="ltr">{dash(waLink.verifiedDisplayNumber, empty)}</dd>
+                </div>
+                <div className="flex flex-wrap justify-between gap-3">
+                  <dt className="text-[#adbeaf]">{copy.admin.waLinkProviderId}</dt>
+                  <dd dir="ltr" className="break-all">{dash(waLink.providerPhoneNumberId, empty)}</dd>
+                </div>
+                <div className="flex flex-wrap justify-between gap-3">
+                  <dt className="text-[#adbeaf]">{copy.admin.waLinkPriorInboundTested}</dt>
+                  <dd dir="ltr" className="text-xs">{formatStamp(waLink.inboundTestedAt)}</dd>
+                </div>
+                <div className="flex flex-wrap justify-between gap-3">
+                  <dt className="text-[#adbeaf]">{copy.admin.waLinkPriorOutboundTested}</dt>
+                  <dd dir="ltr" className="text-xs">{formatStamp(waLink.outboundTestedAt)}</dd>
+                </div>
+              </dl>
+            </div>
+          ) : null}
+          <Field label={copy.admin.waLinkAdminNote}>
+            {(p) => (
+              <textarea
+                {...p}
+                value={waNote}
+                onChange={(e) => setWaNote(e.target.value)}
+                rows={3}
+                className="min-h-24 w-full rounded-xl border border-white/15 bg-[#0d1a14] px-3 py-2 text-sm"
+              />
+            )}
+          </Field>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              busy={busy}
+              onClick={() => {
+                void run(async () => {
+                  setError(null);
+                  setSuccess(null);
+                  const result = await adminUpdateWhatsappLinkNote({
+                    companyId: company.id,
+                    adminNote: waNote,
+                  });
+                  if (!result.ok) {
+                    setError(result.message ?? copy.admin.waLinkNoteFailed);
+                    return;
+                  }
+                  setWaLink(result.data);
+                  setWaLinkFailed(false);
+                  setWaNote(result.data.adminNote ?? "");
+                  setSuccess(copy.saved);
+                });
+              }}
+            >
+              {copy.admin.waLinkSaveNote}
+            </Button>
+            {waLink?.status === "request_saved" && !waLinkFailed ? (
+              <Button
+                type="button"
+                variant="ghost"
+                busy={busy}
+                onClick={() => {
+                  void run(async () => {
+                    setError(null);
+                    setSuccess(null);
+                    const result = await adminMarkWhatsappLinkNeedsExternal(company.id);
+                    if (!result.ok) {
+                      setError(result.message ?? copy.admin.waLinkFollowupFailed);
+                      return;
+                    }
+                    setWaLink(result.data);
+                    setWaLinkFailed(false);
+                    setSuccess(copy.admin.waLinkFollowupSaved);
+                  });
+                }}
+              >
+                {copy.admin.waLinkMarkNeedsExternal}
+              </Button>
+            ) : null}
+          </div>
+          <p className="mt-3 text-xs text-[#8da195]">{copy.admin.waLinkNoFakeVerify}</p>
         </section>
 
         <section className="mt-4 app-panel rounded-3xl p-4 sm:p-6">
@@ -593,7 +796,8 @@ export function AdminCompanyDetail({
                       setError(knowledgeResult.message ?? copy.knowledge.loadFailed);
                       return;
                     }
-                    setKnowledge(knowledgeResult.data);
+                    setKnowledge(knowledgeResult.data.sources);
+                    setApprovalFoundation(knowledgeResult.data.approvalFoundation);
                     setKnowledgeFailed(false);
                     setError(null);
                   });
@@ -602,7 +806,12 @@ export function AdminCompanyDetail({
                 {copy.knowledge.retryLoad}
               </Button>
             </div>
-          ) : !knowledge.length ? (
+          ) : (
+            <>
+              {approvalFoundation === "unavailable" ? (
+                <div className="mt-3"><Notice tone="warn">{copy.knowledge.approvalFoundationUnavailable}</Notice></div>
+              ) : null}
+              {!knowledge.length ? (
             <p className="mt-3 text-sm text-[#8da195]">{copy.admin.knowledgeEmpty}</p>
           ) : (
             <div className="mt-4 grid gap-4">
@@ -679,6 +888,8 @@ export function AdminCompanyDetail({
                 </ul>
               </div>
             </div>
+              )}
+            </>
           )}
         </section>
 

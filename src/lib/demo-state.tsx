@@ -39,6 +39,8 @@ export type Message = {
   text: string;
   at: number;
   source?: string;
+  /** Outbound delivery snapshot for live WhatsApp threads only. */
+  deliveryState?: "accepted" | "sent" | "delivered" | "read" | "failed" | "unknown";
 };
 export type Conversation = {
   id: string;

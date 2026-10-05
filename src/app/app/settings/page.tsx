@@ -1,13 +1,18 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import { SettingsPage } from "@/components/app/settings";
+import { getWhatsappCompanyLink } from "@/lib/whatsapp/connection-actions";
 
 export const metadata: Metadata = { title: "Settings · Velora" };
 
-export default function Page() {
+export default async function Page() {
+  const linkResult = await getWhatsappCompanyLink();
   return (
     <Suspense fallback={<main className="min-h-svh bg-[#07110d]" aria-busy="true" />}>
-      <SettingsPage />
+      <SettingsPage
+        initialWhatsappLink={linkResult.ok ? linkResult.data : null}
+        whatsappLinkLoadFailed={!linkResult.ok && linkResult.code !== "FORBIDDEN" && linkResult.code !== "UNAUTHENTICATED"}
+      />
     </Suspense>
   );
 }

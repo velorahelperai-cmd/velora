@@ -126,6 +126,12 @@ button {
   border: 1px solid var(--color-line);
 }
 
+/* Brief focus cue when admin in-page nav lands on a section. */
+.app-panel.admin-section-target {
+  border-color: rgba(56, 220, 137, 0.55);
+  box-shadow: 0 0 0 2px rgba(56, 220, 137, 0.28);
+}
+
 .app-title {
   font-weight: 700;
   letter-spacing: -0.01em;

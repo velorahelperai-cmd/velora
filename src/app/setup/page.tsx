@@ -25,13 +25,18 @@ export default async function Page() {
 
   let initialKnowledge: KnowledgeSourceRecord[] = [];
   let knowledgeLoadFailed = false;
+  let approvalFoundation: "ready" | "unavailable" = "ready";
   let initialReview: CompanyReviewRequest | null = null;
   let reviewLoadFailed = false;
 
   if (company) {
     const listed = await listKnowledgeSources();
-    if (listed.ok) initialKnowledge = listed.data;
-    else knowledgeLoadFailed = true;
+    if (listed.ok) {
+      initialKnowledge = listed.data.sources;
+      approvalFoundation = listed.data.approvalFoundation;
+    } else {
+      knowledgeLoadFailed = true;
+    }
 
     if (access.context.membership?.role === "owner") {
       const review = await getCompanyReviewRequest();
@@ -47,6 +52,7 @@ export default async function Page() {
         initialCompany={company}
         initialKnowledge={initialKnowledge}
         knowledgeLoadFailed={knowledgeLoadFailed}
+        approvalFoundation={approvalFoundation}
         initialReview={initialReview}
         reviewLoadFailed={reviewLoadFailed}
       />

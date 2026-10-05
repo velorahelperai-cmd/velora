@@ -2,16 +2,25 @@
 
 import { useState } from "react";
 import { askCompanyAnswer } from "@/lib/answers/ask";
-import type { AnswerFailureCode } from "@/lib/answers/types";
+import type { AnswerFailureCode, AnswerResult } from "@/lib/answers/types";
 import { type Message, nowMs, uid, useDemo } from "@/lib/demo-state";
 import { landingCopy } from "@/lib/landing-copy";
+import { runAssistantAskAttempt } from "@/components/app/assistant-tester-outcome";
 import { Button, Notice, useAppCopy } from "@/components/app/ui";
 
 /**
  * Internal test chat wired to the shared server answer path.
  * No keyword simulation, no fake AI when the provider is missing.
  */
-export function AssistantTester({ onImprove, compact }: { onImprove?: (topic: string) => void; compact?: boolean }) {
+export function AssistantTester({
+  onImprove,
+  compact,
+  onAnswerResult,
+}: {
+  onImprove?: (topic: string) => void;
+  compact?: boolean;
+  onAnswerResult?: (result: AnswerResult) => void;
+}) {
   const copy = useAppCopy();
   const { state, update, locale } = useDemo();
   const [draft, setDraft] = useState("");
@@ -27,6 +36,8 @@ export function AssistantTester({ onImprove, compact }: { onImprove?: (topic: st
   function errorText(code: AnswerFailureCode) {
     if (code === "NEEDS_SETUP") return copy.tester.needsSetup;
     if (code === "NO_KNOWLEDGE") return copy.tester.noKnowledge;
+    if (code === "APPROVAL_INCOMPLETE") return copy.tester.approvalIncomplete;
+    if (code === "APPROVAL_FOUNDATION_UNAVAILABLE") return copy.tester.approvalFoundationUnavailable;
     if (code === "CONTEXT_OVERFLOW") return copy.tester.contextOverflow;
     if (code === "FORBIDDEN" || code === "UNAUTHENTICATED" || code === "UNVERIFIED") {
       return copy.tester.forbidden;
@@ -45,7 +56,10 @@ export function AssistantTester({ onImprove, compact }: { onImprove?: (topic: st
     setDraft("");
 
     try {
-      const result = await askCompanyAnswer({ question: text, locale });
+      const { result } = await runAssistantAskAttempt({
+        ask: () => askCompanyAnswer({ question: text, locale }),
+        onAnswerResult,
+      });
       if (!result.ok) {
         setLastError({ code: result.code, question: text });
         const assistant: Message = {
@@ -70,14 +84,6 @@ export function AssistantTester({ onImprove, compact }: { onImprove?: (topic: st
         source: sourceLabel,
       };
       update((s) => ({ testHistory: [...s.testHistory, assistant] }));
-    } catch {
-      setLastError({ code: "UNAVAILABLE", question: text });
-      update((s) => ({
-        testHistory: [
-          ...s.testHistory,
-          { id: uid(), from: "assistant", text: copy.tester.unavailable, at: nowMs() },
-        ],
-      }));
     } finally {
       setBusy(false);
     }

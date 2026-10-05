@@ -2,17 +2,21 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type Activation, type Business, nowMs, useDemo } from "@/lib/demo-state";
 import {
   type CompanyDraft,
+  buildSetupTestKnowledgeKey,
+  clearSetupTestProgress,
   draftAllowedFor,
   emptyCompanyDraft,
+  isSetupTestStillValid,
+  markSetupTestPassed,
   readCompanyDraft,
   writeCompanyDraft,
 } from "@/lib/company-draft";
 import { fill } from "@/lib/app-copy";
-import type { KnowledgeSourceRecord } from "@/lib/knowledge/types";
+import type { KnowledgeApprovalFoundation, KnowledgeSourceRecord } from "@/lib/knowledge/types";
 import { landingCopy } from "@/lib/landing-copy";
 import {
   getCompanyReviewRequest,
@@ -21,6 +25,8 @@ import {
   saveOwnerBusiness,
   submitCompanyReviewRequest,
 } from "@/lib/tenancy/actions";
+import { evaluateSetupKnowledgeProgress } from "@/lib/tenancy/customer-readiness";
+import { resolveReviewRefresh } from "@/lib/tenancy/review-refresh";
 import type { CompanyRecord, CompanyReviewEvent, CompanyReviewRequest } from "@/lib/tenancy/types";
 import { AccountMenu } from "@/components/app/account-chrome";
 import { AssistantTester } from "@/components/app/assistant-tester";
@@ -29,6 +35,68 @@ import {
   Button, Field, FieldErrorKey, LangSwitch, LinkButton, Notice, PreviewBadge,
   isEmail, isPhone, useAction, useAppCopy, useErrorText, useUnsavedWarning,
 } from "@/components/app/ui";
+
+function SetupJourneyNotice({
+  company,
+  review,
+  reviewLoadFailed,
+}: {
+  company: CompanyRecord | null;
+  review: CompanyReviewRequest | null;
+  reviewLoadFailed: boolean;
+}) {
+  const copy = useAppCopy();
+  if (reviewLoadFailed) {
+    return (
+      <div className="mt-4">
+        <Notice tone="error">{copy.errors.unavailableBody}</Notice>
+      </div>
+    );
+  }
+  if (!company) {
+    return (
+      <div className="mt-4">
+        <Notice tone="warn">{copy.setup.journeyNoCompany}</Notice>
+      </div>
+    );
+  }
+  if (company.status === "suspended") {
+    return (
+      <div className="mt-4">
+        <Notice tone="warn">{copy.setup.journeySuspended}</Notice>
+      </div>
+    );
+  }
+  if (review?.status === "pending_review") {
+    return (
+      <div className="mt-4">
+        <Notice tone="warn">{copy.setup.journeyReviewPending}</Notice>
+      </div>
+    );
+  }
+  if (review?.status === "changes_requested") {
+    return (
+      <div className="mt-4">
+        <Notice tone="warn">{copy.setup.journeyReviewChanges}</Notice>
+      </div>
+    );
+  }
+  if (review?.status === "approved") {
+    return (
+      <div className="mt-4">
+        <Notice tone="success">{copy.setup.journeyReviewApproved}</Notice>
+      </div>
+    );
+  }
+  if (company.status === "setup") {
+    return (
+      <div className="mt-4">
+        <Notice tone="warn">{copy.setup.journeySetup}</Notice>
+      </div>
+    );
+  }
+  return null;
+}
 
 function companyToBusiness(company: CompanyRecord): Business {
   return {
@@ -48,6 +116,7 @@ export function SetupWizard({
   initialCompany,
   initialKnowledge = [],
   knowledgeLoadFailed = false,
+  approvalFoundation = "ready",
   initialReview = null,
   reviewLoadFailed = false,
 }: {
@@ -55,6 +124,7 @@ export function SetupWizard({
   initialCompany?: CompanyRecord | null;
   initialKnowledge?: KnowledgeSourceRecord[];
   knowledgeLoadFailed?: boolean;
+  approvalFoundation?: KnowledgeApprovalFoundation;
   initialReview?: CompanyReviewRequest | null;
   reviewLoadFailed?: boolean;
 }) {
@@ -64,37 +134,114 @@ export function SetupWizard({
   const companyId = initialCompany?.id ?? null;
   const [draft, setDraft] = useState<CompanyDraft>(() => emptyCompanyDraft(userId));
   const [ready, setReady] = useState(false);
-  const [knowledgeCount, setKnowledgeCount] = useState(
-    knowledgeLoadFailed ? 0 : initialKnowledge.length,
-  );
+  const [knowledgeSources, setKnowledgeSources] = useState(initialKnowledge);
   const [knowledgeFailed, setKnowledgeFailed] = useState(knowledgeLoadFailed);
+  const knowledgeProgress = useMemo(
+    () => evaluateSetupKnowledgeProgress({
+      loadFailed: knowledgeFailed,
+      sources: knowledgeSources,
+      approvalFoundation,
+    }),
+    [knowledgeFailed, knowledgeSources, approvalFoundation],
+  );
+  const setupTestKnowledgeKey = useMemo(
+    () => buildSetupTestKnowledgeKey(
+      companyId,
+      approvalFoundation,
+      knowledgeSources.map((s) => ({
+        id: s.id,
+        status: s.status,
+        content_version: s.content_version,
+        approved_version: s.approved_version,
+        approved_for_answers: s.approved_for_answers,
+      })),
+    ),
+    [companyId, approvalFoundation, knowledgeSources],
+  );
+  const setupTestValid = isSetupTestStillValid(draft, companyId, setupTestKnowledgeKey);
   const onKnowledgeSourcesChange = useCallback((sources: KnowledgeSourceRecord[]) => {
-    setKnowledgeCount(sources.length);
+    setKnowledgeSources(sources);
   }, []);
   const onKnowledgeLoadStateChange = useCallback((failed: boolean) => {
     setKnowledgeFailed(failed);
   }, []);
 
+  function serverSetupDone(
+    draftBase: CompanyDraft,
+    knowledgeStepComplete: boolean,
+    testValid: boolean,
+  ): boolean[] {
+    return [
+      Boolean(initialCompany),
+      knowledgeStepComplete,
+      // Local bound test marker only — never review request or “technically ready” files.
+      testValid,
+      !reviewLoadFailed && Boolean(initialReview),
+    ];
+  }
+
   useEffect(() => {
+    let cancelled = false;
     const frame = window.requestAnimationFrame(() => {
+      if (cancelled) return;
       const stored = readCompanyDraft(userId);
       const allowed = draftAllowedFor(stored, userId, companyId);
       const next = allowed ? stored : emptyCompanyDraft(userId);
       if (initialCompany) {
         next.companyId = initialCompany.id;
-        next.business = companyToBusiness(initialCompany);
-        next.businessSaved = true;
-        if (!next.setupDone[0]) next.setupDone = [true, ...next.setupDone.slice(1)];
+        if (!allowed || !next.businessSaved || next.companyId !== initialCompany.id) {
+          next.business = companyToBusiness(initialCompany);
+          next.businessSaved = true;
+        }
       } else {
         next.companyId = null;
       }
+      const kp = evaluateSetupKnowledgeProgress({
+        loadFailed: knowledgeLoadFailed,
+        sources: initialKnowledge,
+        approvalFoundation,
+      });
+      const resumeKey = buildSetupTestKnowledgeKey(
+        companyId,
+        approvalFoundation,
+        initialKnowledge.map((s) => ({
+          id: s.id,
+          status: s.status,
+          content_version: s.content_version,
+          approved_version: s.approved_version,
+          approved_for_answers: s.approved_for_answers,
+        })),
+      );
+      const testValid = isSetupTestStillValid(next, companyId, resumeKey);
+      if (next.setupTestPassed && !testValid) {
+        Object.assign(next, clearSetupTestProgress(next));
+      }
+      next.setupDone = serverSetupDone(next, kp.stepComplete, testValid);
+      const firstOpen = next.setupDone.findIndex((d) => !d);
+      next.setupStep = firstOpen === -1 ? 3 : firstOpen;
       next.userId = userId;
       writeCompanyDraft(next);
+      setKnowledgeSources(initialKnowledge);
       setDraft(next);
       setReady(true);
     });
-    return () => window.cancelAnimationFrame(frame);
-  }, [userId, companyId, initialCompany]);
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(frame);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- initial resume only
+  }, [
+    userId,
+    companyId,
+    initialCompany?.id,
+    initialCompany?.updated_at,
+    initialKnowledge.length,
+    knowledgeLoadFailed,
+    approvalFoundation,
+    initialReview?.status,
+    initialReview?.revision,
+    reviewLoadFailed,
+  ]);
 
   const persist = (patch: Partial<CompanyDraft> | ((d: CompanyDraft) => CompanyDraft)) => {
     setDraft((prev) => {
@@ -114,6 +261,29 @@ export function SetupWizard({
   };
   const markDone = (n: number) =>
     persist((d) => ({ ...d, setupDone: d.setupDone.map((done, i) => (i === n ? true : done)) }));
+
+  const effectiveSetupDone = useMemo(
+    () => serverSetupDone(draft, knowledgeProgress.stepComplete, setupTestValid),
+    [
+      setupTestValid,
+      knowledgeProgress.stepComplete,
+      initialCompany,
+      initialReview,
+      reviewLoadFailed,
+    ],
+  );
+
+  // Drop stale local test markers when company/knowledge binding drifts (keep business draft).
+  useEffect(() => {
+    if (!ready) return;
+    if (!draft.setupTestPassed) return;
+    if (setupTestValid) return;
+    const frame = window.requestAnimationFrame(() => {
+      persist((d) => clearSetupTestProgress(d));
+    });
+    return () => window.cancelAnimationFrame(frame);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- invalidate on binding drift only
+  }, [ready, setupTestValid, draft.setupTestPassed]);
 
   if (!ready) {
     return <main className="app-shell" aria-busy="true" />;
@@ -137,10 +307,15 @@ export function SetupWizard({
       <div className="mx-auto mt-8 max-w-[1100px]">
         <h1 className="app-title text-3xl break-words lg:text-4xl">{copy.setup.title}</h1>
         <p className="app-muted mt-2 text-sm leading-6">{fill(copy.setup.progress, { n: step + 1 })} · {copy.setup.resume}</p>
+        <SetupJourneyNotice
+          company={initialCompany ?? null}
+          review={initialReview}
+          reviewLoadFailed={reviewLoadFailed}
+        />
         <ol className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4" aria-label={copy.setup.title}>
           {copy.setup.steps.map((label, i) => {
             const active = i === step;
-            const done = draft.setupDone[i];
+            const done = effectiveSetupDone[i];
             return (
               <li key={label} className="min-w-0">
                 <button
@@ -159,7 +334,7 @@ export function SetupWizard({
           })}
         </ol>
         <div className="mt-3 h-1 overflow-hidden rounded-full bg-white/10" aria-hidden="true">
-          <div className="h-full bg-[#38dc89] transition-all duration-500" style={{ width: `${(draft.setupDone.filter(Boolean).length / 4) * 100}%` }} />
+          <div className="h-full bg-[#38dc89] transition-all duration-500" style={{ width: `${(effectiveSetupDone.filter(Boolean).length / 4) * 100}%` }} />
         </div>
 
         <section className="app-panel mt-6 min-w-0 rounded-3xl p-4 sm:p-5 lg:p-8">
@@ -177,16 +352,18 @@ export function SetupWizard({
             {step === 1 ? (
               <StepFrame
                 onBack={() => go(0)}
-                onNext={() => { markDone(1); go(2); }}
-                nextDisabled={!draft.companyId || knowledgeFailed || knowledgeCount === 0}
+                onNext={() => {
+                  if (!knowledgeProgress.canAdvance) return;
+                  markDone(1);
+                  go(2);
+                }}
+                nextDisabled={!draft.companyId || !knowledgeProgress.canAdvance}
                 nextHint={
                   !draft.companyId
                     ? copy.knowledge.needCompanyFirst
-                    : knowledgeFailed
-                      ? copy.knowledge.loadFailed
-                      : knowledgeCount === 0
-                        ? copy.knowledge.empty
-                        : undefined
+                    : !knowledgeProgress.canAdvance
+                      ? copy.app.readinessDetails[knowledgeProgress.detail]
+                      : undefined
                 }
               >
                 {draft.companyId ? (
@@ -195,6 +372,7 @@ export function SetupWizard({
                     canWrite
                     initialSources={initialKnowledge}
                     initialLoadFailed={knowledgeLoadFailed}
+                    approvalFoundation={approvalFoundation}
                     onSourcesChange={onKnowledgeSourcesChange}
                     onLoadStateChange={onKnowledgeLoadStateChange}
                   />
@@ -204,8 +382,32 @@ export function SetupWizard({
               </StepFrame>
             ) : null}
             {step === 2 ? (
-              <StepFrame onBack={() => go(1)} onNext={() => { markDone(2); go(3); }}>
-                <AssistantTester compact onImprove={() => go(1)} />
+              <StepFrame
+                onBack={() => go(1)}
+                onNext={() => {
+                  if (!setupTestValid || !companyId) return;
+                  markDone(2);
+                  go(3);
+                }}
+                nextDisabled={!setupTestValid}
+                nextHint={!setupTestValid ? copy.setup.testRequiredHint : undefined}
+              >
+                <AssistantTester
+                  compact
+                  onImprove={() => go(1)}
+                  onAnswerResult={(result) => {
+                    // NEEDS_SETUP / approval gaps stay failures — never local PASS.
+                    if (!result.ok) {
+                      persist((d) => clearSetupTestProgress(d));
+                      return;
+                    }
+                    if (!companyId) {
+                      persist((d) => clearSetupTestProgress(d));
+                      return;
+                    }
+                    persist((d) => markSetupTestPassed(d, companyId, setupTestKnowledgeKey));
+                  }}
+                />
                 <p className="mt-3 text-xs leading-5 text-[#8da195]">{copy.setup.missingInfo} <button type="button" onClick={() => go(1)} className="text-[#38dc89] underline">{copy.setup.addInfo}</button></p>
               </StepFrame>
             ) : null}
@@ -214,10 +416,10 @@ export function SetupWizard({
                 leaveGuardRef={leaveGuardRef}
                 onBack={() => go(2)}
                 onDone={() => markDone(3)}
-                setupDone={draft.setupDone}
+                setupDone={effectiveSetupDone}
                 businessName={draft.business.name}
                 sectorLabel={landingCopy(locale).sectors.find((s) => s.id === draft.business.type)?.label ?? copy.setup.typeOther}
-                knowledgeCount={knowledgeCount}
+                knowledgeCount={knowledgeSources.length}
                 companyId={draft.companyId}
                 initialReview={initialReview}
                 reviewLoadFailed={reviewLoadFailed}
@@ -426,7 +628,13 @@ function ActivationStep({
   const [events, setEvents] = useState<CompanyReviewEvent[]>([]);
   const [form, setForm] = useState<Activation>(() => {
     if (!initialReviewLoadFailed && initialReview) return activationFromReview(initialReview);
-    return state.activation;
+    // Local draft only — never treat demo activation as server authority.
+    return {
+      whatsappNumber: "",
+      numberOwnership: "",
+      ready: false,
+      status: "not_requested",
+    };
   });
   const [baseline, setBaseline] = useState(() => JSON.stringify(form));
   const [error, setError] = useState<FieldErrorKey>();
@@ -488,7 +696,8 @@ function ActivationStep({
   async function refreshViewOnly() {
     try {
       const refreshed = await getCompanyReviewRequest();
-      if (!refreshed.ok) {
+      const outcome = resolveReviewRefresh(refreshed);
+      if (outcome.kind === "keep_snapshot") {
         setInfoNotice(copy.setup.reviewRefreshFailed);
         setViewRefreshFailed(true);
         return;
@@ -496,7 +705,8 @@ function ActivationStep({
       setViewRefreshFailed(false);
       setInfoNotice(null);
       setLoadFailed(false);
-      if (refreshed.data) applyServerReview(refreshed.data, { preserveDraft: true });
+      if (outcome.kind === "adopt") applyServerReview(outcome.review, { preserveDraft: true });
+      else setReview(null);
       const hist = await listCompanyReviewEvents();
       if (hist.ok) {
         setHistoryFailed(false);
@@ -513,16 +723,22 @@ function ActivationStep({
   function reloadReview() {
     void run(async () => {
       try {
-        const result = await getCompanyReviewRequest();
-        if (!result.ok) {
+        const outcome = resolveReviewRefresh(await getCompanyReviewRequest());
+        if (outcome.kind === "keep_snapshot") {
+          // Keep the last server snapshot visible; a failed read is not "no request".
           setLoadFailed(true);
+          setViewRefreshFailed(true);
+          setInfoNotice(copy.setup.reviewRefreshFailed);
           return;
         }
         setLoadFailed(false);
-        if (result.data) applyServerReview(result.data);
+        setViewRefreshFailed(false);
+        if (outcome.kind === "adopt") applyServerReview(outcome.review);
         else setReview(null);
       } catch {
         setLoadFailed(true);
+        setViewRefreshFailed(true);
+        setInfoNotice(copy.setup.reviewRefreshFailed);
       }
     });
   }

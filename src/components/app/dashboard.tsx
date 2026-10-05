@@ -1,119 +1,211 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 import { useDemo } from "@/lib/demo-state";
 import { fill } from "@/lib/app-copy";
+import {
+  getCustomerReadiness,
+} from "@/lib/tenancy/actions";
+import type {
+  CustomerReadinessItem,
+  CustomerReadinessItemId,
+  CustomerReadinessSnapshot,
+  ReadinessDetail,
+  ReadinessTone,
+} from "@/lib/tenancy/customer-readiness";
 import { WorkspaceShell } from "@/components/app/workspace-shell";
-import { Card, EmptyState, LinkButton, SimTag, useAppCopy } from "@/components/app/ui";
+import { Button, Card, LinkButton, Notice, useAppCopy } from "@/components/app/ui";
 
-export function DashboardPage() {
+function toneClass(tone: ReadinessTone): string {
+  if (tone === "complete") return "bg-[#38dc89]/15 text-[#9af0c3]";
+  if (tone === "pending") return "bg-[#d9a467]/15 text-[#f0cf9d]";
+  if (tone === "blocked" || tone === "load_failed") return "bg-[#e07a7a]/15 text-[#f0b4b4]";
+  if (tone === "not_configured") return "bg-white/10 text-[#8da195]";
+  return "bg-white/10 text-[#dfe9e2]";
+}
+
+function itemLabel(
+  id: CustomerReadinessItemId,
+  copy: ReturnType<typeof useAppCopy>,
+): string {
+  return copy.app.readinessItems[id];
+}
+
+function detailLabel(
+  detail: ReadinessDetail,
+  copy: ReturnType<typeof useAppCopy>,
+): string {
+  return copy.app.readinessDetails[detail];
+}
+
+function actionLabel(
+  action: CustomerReadinessItem["action"],
+  copy: ReturnType<typeof useAppCopy>,
+): string | null {
+  if (action === "continue") return copy.app.readinessActions.continue;
+  if (action === "review") return copy.app.readinessActions.review;
+  if (action === "edit") return copy.app.readinessActions.edit;
+  return null;
+}
+
+export function DashboardPage({
+  initialReadiness = null,
+  readinessLoadFailed = false,
+}: {
+  initialReadiness?: CustomerReadinessSnapshot | null;
+  readinessLoadFailed?: boolean;
+}) {
   const copy = useAppCopy();
+  const router = useRouter();
   const { state, effectiveRole } = useDemo();
-  const done = state.setupDone.filter(Boolean).length;
-  const followUp = state.conversations.filter((c) => c.status === "follow_up" || c.status === "handed_over");
-  const needsInfo = state.conversations.filter((c) => c.needsInfo && c.status !== "resolved");
-  const pending = state.activation.status === "pending_review";
-  const setupComplete = done >= 4 || pending;
+  const [readiness, setReadiness] = useState<CustomerReadinessSnapshot | null>(initialReadiness);
+  const [loadFailed, setLoadFailed] = useState(readinessLoadFailed);
+  const [refreshFailed, setRefreshFailed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const genRef = useRef(0);
+  // Follow-up / needs-info must not be driven by local demo conversations.
+
+  // Adopt newer SSR props after router.refresh; invalidate in-flight client reloads.
+  const [trackedProps, setTrackedProps] = useState(() => ({
+    readiness: initialReadiness,
+    failed: readinessLoadFailed,
+  }));
+  if (
+    trackedProps.readiness !== initialReadiness
+    || trackedProps.failed !== readinessLoadFailed
+  ) {
+    setTrackedProps({ readiness: initialReadiness, failed: readinessLoadFailed });
+    setReadiness(initialReadiness);
+    setLoadFailed(readinessLoadFailed);
+    setRefreshFailed(false);
+  }
+
+  useEffect(() => {
+    genRef.current += 1;
+  }, [initialReadiness, readinessLoadFailed]);
+
+  async function reloadReadiness() {
+    const gen = ++genRef.current;
+    setBusy(true);
+    try {
+      const result = await getCustomerReadiness();
+      if (gen !== genRef.current) return;
+      if (!result.ok) {
+        setRefreshFailed(true);
+        return;
+      }
+      setLoadFailed(false);
+      setRefreshFailed(false);
+      setReadiness(result.data);
+      router.refresh();
+    } catch {
+      if (gen !== genRef.current) return;
+      setRefreshFailed(true);
+    } finally {
+      if (gen === genRef.current) setBusy(false);
+    }
+  }
+
+  const nextItem = readiness?.nextItemId
+    ? readiness.items.find((i) => i.id === readiness.nextItemId) ?? null
+    : null;
+  const helloName = readiness?.fullName || state.account?.name || "";
 
   return (
     <WorkspaceShell title={copy.app.dashboardTitle}>
-      <p className="mb-5 text-[#adbeaf]">{fill(copy.app.hello, { name: state.account?.name ?? "" })}</p>
+      <p className="mb-5 text-[#adbeaf]">{fill(copy.app.hello, { name: helloName })}</p>
 
-      {effectiveRole === "owner" && !setupComplete ? (
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#38dc89]/35 bg-[#38dc89]/10 px-4 py-3">
-          <div>
-            <p className="text-sm font-medium text-[#9af0c3]">{copy.app.nextAction}</p>
-            <p className="text-xs text-[#adbeaf]">{fill(copy.setup.progress, { n: Math.min(done + 1, 4) })}</p>
+      <section className="mb-4 rounded-3xl border border-white/10 bg-white/[0.03] p-4 sm:p-5" aria-label={copy.app.readinessTitle}>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="text-lg font-bold">{copy.app.readinessTitle}</h2>
+            <p className="mt-1 text-sm text-[#adbeaf]">{copy.app.readinessBody}</p>
           </div>
-          <LinkButton href="/setup">{copy.app.continueSetup}</LinkButton>
+          <Button type="button" variant="secondary" busy={busy} onClick={() => void reloadReadiness()}>
+            {copy.app.readinessRetry}
+          </Button>
         </div>
-      ) : null}
 
-      {effectiveRole === "owner" && pending ? (
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#d9a467]/40 bg-[#d9a467]/10 px-4 py-3">
-          <div>
-            <p className="text-sm font-medium text-[#f0cf9d]">{copy.app.activationPending}</p>
-            <p className="text-xs text-[#adbeaf]">{copy.app.nextAction}: {copy.app.nav.conversations}</p>
+        {loadFailed && !readiness ? (
+          <div className="mt-4">
+            <Notice tone="error">{copy.app.readinessLoadFailed}</Notice>
           </div>
-          <LinkButton href="/app/conversations" variant="secondary">{copy.app.openConversation}</LinkButton>
-        </div>
-      ) : null}
-
-      <div className="grid gap-4 lg:grid-cols-3">
-        {effectiveRole === "owner" ? (
-          <Card title={copy.app.setupCard}>
-            <div className="h-1.5 overflow-hidden rounded-full bg-white/10" aria-hidden="true">
-              <div className="h-full bg-[#38dc89] transition-all" style={{ width: `${(Math.min(done, 4) / 4) * 100}%` }} />
-            </div>
-            <p className="mt-2 text-sm text-[#adbeaf]">
-              {setupComplete ? copy.app.setupComplete : fill(copy.setup.progress, { n: Math.min(done + 1, 4) })}
-            </p>
-            {!setupComplete ? <LinkButton href="/setup" className="mt-4">{copy.app.continueSetup}</LinkButton> : null}
-            {setupComplete && !pending ? (
-              <LinkButton href="/setup" variant="secondary" className="mt-4">{copy.setup.title}</LinkButton>
-            ) : null}
-          </Card>
         ) : null}
-        <Card title={copy.app.numberCard}>
-          <p className="text-sm" dir="ltr">{state.activation.whatsappNumber || "—"}</p>
-          <p className={`mt-2 inline-flex rounded-full px-3 py-1 text-xs ${pending ? "bg-[#d9a467]/15 text-[#f0cf9d]" : "bg-white/10 text-[#dfe9e2]"}`}>
-            {pending ? copy.app.activationPending : copy.setup.notConnected}
-          </p>
-          {!pending && effectiveRole === "owner" ? (
-            <>
-              <p className="mt-2 text-xs text-[#8da195]">{copy.app.activationNone}</p>
-              <Link href="/setup" className="mt-3 inline-flex min-h-10 items-center text-sm text-[#38dc89] underline">{copy.app.continueSetup}</Link>
-            </>
-          ) : null}
-        </Card>
-        <Card title={copy.app.sampleStats} aside={<SimTag />}>
-          <dl className="grid grid-cols-3 gap-3 text-center">
-            {[[copy.app.stats.conversations, 12], [copy.app.stats.answered, 9], [copy.app.stats.handed, 2]].map(([k, v]) => (
-              <div key={String(k)}>
-                <dd className="text-2xl font-bold">{v}</dd>
-                <dt className="text-xs text-[#8da195]">{k}</dt>
-              </div>
-            ))}
-          </dl>
-        </Card>
-      </div>
+        {refreshFailed && readiness ? (
+          <div className="mt-4">
+            <Notice tone="warn">{copy.app.readinessStaleSnapshot}</Notice>
+          </div>
+        ) : null}
+
+        {nextItem && nextItem.href && nextItem.action !== "none" ? (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#38dc89]/35 bg-[#38dc89]/10 px-4 py-3">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-[#9af0c3]">{copy.app.nextAction}</p>
+              <p className="text-xs text-[#adbeaf]">
+                {itemLabel(nextItem.id, copy)} — {detailLabel(nextItem.detail, copy)}
+              </p>
+            </div>
+            <LinkButton href={nextItem.href}>
+              {actionLabel(nextItem.action, copy) ?? copy.app.continueSetup}
+            </LinkButton>
+          </div>
+        ) : null}
+
+        {readiness ? (
+          <ul className="mt-4 grid gap-2">
+            {readiness.items.map((item) => {
+              const label = actionLabel(item.action, copy);
+              return (
+                <li
+                  key={item.id}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 px-4 py-3"
+                >
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <strong className="text-sm">{itemLabel(item.id, copy)}</strong>
+                      <span className={`inline-flex rounded-full px-2 py-0.5 text-xs ${toneClass(item.tone)}`}>
+                        {copy.app.readinessTones[item.tone]}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs leading-5 text-[#8da195]">{detailLabel(item.detail, copy)}</p>
+                  </div>
+                  {item.href && label ? (
+                    <Link
+                      href={item.href}
+                      className="inline-flex min-h-10 shrink-0 items-center rounded-full border border-white/20 px-3 text-xs"
+                    >
+                      {label}
+                    </Link>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        ) : !loadFailed ? (
+          <p className="mt-4 text-sm text-[#8da195]">{copy.loading}</p>
+        ) : null}
+      </section>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <Card title={copy.app.followUp}>
-          {followUp.length === 0 ? (
-            <EmptyState title={copy.app.emptyFollowUp} action={<LinkButton href="/app/conversations" variant="secondary">{copy.app.nav.conversations}</LinkButton>} />
-          ) : (
-            <ul className="grid gap-2">
-              {followUp.map((c) => (
-                <li key={c.id} className="flex items-center justify-between gap-3 rounded-xl border border-white/10 p-3 text-sm">
-                  <div className="min-w-0">
-                    <p className="font-medium">{c.customer} · {c.topic}</p>
-                    <p className="truncate text-xs text-[#8da195]">{copy.app.statuses[c.status]} · {copy.app.ownerLabel}: {c.owner === "assistant" ? copy.app.assistant : c.owner === "staff" ? copy.app.staff : c.owner}</p>
-                  </div>
-                  <Link href={`/app/conversations?c=${c.id}`} className="inline-flex min-h-10 shrink-0 items-center rounded-full border border-white/20 px-3 text-xs">{copy.app.openConversation}</Link>
-                </li>
-              ))}
-            </ul>
-          )}
+          <Notice tone="warn">{copy.app.followUpUnavailable}</Notice>
+          <div className="mt-3">
+            <LinkButton href="/app/conversations" variant="secondary">{copy.app.nav.conversations}</LinkButton>
+          </div>
         </Card>
         <Card title={copy.app.needsInfo}>
-          {needsInfo.length === 0 ? (
-            <EmptyState title={copy.app.emptyNeedsInfo} />
-          ) : (
-            <ul className="grid gap-2">
-              {needsInfo.map((c) => (
-                <li key={c.id} className="flex items-center justify-between gap-3 rounded-xl border border-white/10 p-3 text-sm">
-                  <div className="min-w-0">
-                    <p className="font-medium">{c.needsInfo}</p>
-                    <p className="truncate text-xs text-[#8da195]">{c.customer}: {c.messages[0]?.text}</p>
-                  </div>
-                  <Link href={`/app/knowledge?topic=${encodeURIComponent(c.needsInfo ?? "")}`} className="inline-flex min-h-10 shrink-0 items-center rounded-full bg-[#38dc89] px-3 text-xs font-medium text-[#072317]">{copy.app.addKnowledge}</Link>
-                </li>
-              ))}
-            </ul>
-          )}
+          <Notice tone="warn">{copy.app.needsInfoUnavailable}</Notice>
+          <div className="mt-3">
+            <LinkButton href="/app/knowledge" variant="secondary">{copy.app.nav.knowledge}</LinkButton>
+          </div>
         </Card>
       </div>
+
+      {effectiveRole === "staff" ? (
+        <p className="mt-4 text-xs text-[#8da195]">{copy.app.readinessDetails.review_owner_only}</p>
+      ) : null}
     </WorkspaceShell>
   );
 }

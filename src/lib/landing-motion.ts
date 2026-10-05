@@ -14,6 +14,21 @@ export function registerLandingMotion() {
 type StoryId = "1" | "2" | "3" | "4" | "5" | "9";
 const STORY_IDS: StoryId[] = ["1", "2", "3", "4", "5", "9"];
 
+type TheaterBridge = {
+  scrollToScene: (sceneId: StoryId) => boolean;
+};
+
+function theaterBridgeOf(root: HTMLElement): TheaterBridge | null {
+  const value = (root as HTMLElement & { __veloraTheater?: TheaterBridge }).__veloraTheater;
+  return value ?? null;
+}
+
+function setTheaterBridge(root: HTMLElement, bridge: TheaterBridge | null) {
+  const host = root as HTMLElement & { __veloraTheater?: TheaterBridge };
+  if (bridge) host.__veloraTheater = bridge;
+  else delete host.__veloraTheater;
+}
+
 function bindTheater(root: HTMLElement, compact: boolean) {
   const header = compact ? 56 : 68;
   const yawMax = compact ? 6 : 12;
@@ -209,6 +224,7 @@ function bindTheater(root: HTMLElement, compact: boolean) {
 
     const tl = gsap.timeline({
       scrollTrigger: {
+        id: "velora-story-theater",
         trigger: range,
         start: `top ${header}px`,
         end: () => `+=${Math.round(window.innerHeight * pinScreens)}`,
@@ -221,6 +237,33 @@ function bindTheater(root: HTMLElement, compact: boolean) {
         onRefresh: (self) => {
           if (self.progress < 0.02) setScreenMix("1", "1", 0);
         },
+      },
+    });
+
+    const storySt = () => ScrollTrigger.getById("velora-story-theater");
+    setTheaterBridge(root, {
+      scrollToScene: (sceneId) => {
+        const st = storySt();
+        if (!st || tl.duration() <= 0) return false;
+        const label = `scene-${sceneId}`;
+        let labelTime = tl.labels[label];
+        if (typeof labelTime !== "number") {
+          const idx = STORY_IDS.indexOf(sceneId);
+          if (idx < 0) return false;
+          // Approximate arrival if labels were not registered yet.
+          labelTime = (idx / Math.max(1, STORY_IDS.length - 1)) * tl.duration() * 0.9;
+        }
+        const progress = Math.min(1, Math.max(0, labelTime / tl.duration()));
+        const y = st.start + (st.end - st.start) * progress;
+        if (lenis) {
+          lenis.scrollTo(y, { immediate: false });
+        } else if (typeof st.scroll === "function") {
+          st.scroll(y);
+        } else {
+          window.scrollTo({ top: y, behavior: "smooth" });
+        }
+        ScrollTrigger.update();
+        return true;
       },
     });
 
@@ -362,6 +405,7 @@ function bindTheater(root: HTMLElement, compact: boolean) {
         tl.to(toVisual, { x: 0, y: 0, autoAlpha: 1, duration: 0.45, ease: "power2.out", immediateRender: false }, arrive);
       }
       const readAt = arrive + 0.3;
+      tl.addLabel(`scene-${to}`, arrive);
       if (to === "2" || to === "4" || to === "5" || to === "9") typingThenAnswer(tl, to, readAt);
       if (to === "3") {
         const trace = q<SVGPathElement>(toScene, "[data-trace]");
@@ -389,6 +433,7 @@ function bindTheater(root: HTMLElement, compact: boolean) {
     handoff("3", "4");
     handoff("4", "5");
     handoff("5", "9");
+    tl.addLabel("scene-1", 0);
     setScreenMix("1", "1", 0);
     gsap.set(scene("1"), { autoAlpha: 1 });
     gsap.set(phone, {
@@ -494,6 +539,7 @@ function bindTheater(root: HTMLElement, compact: boolean) {
       lenis.destroy();
     }
     root.classList.remove("motion-desktop", "motion-compact", "motion-theater", "motion-theater-ready");
+    setTheaterBridge(root, null);
     ScrollTrigger.getAll().forEach((trigger) => {
       const el = trigger.trigger;
       if (!(el instanceof Node) || !root.contains(el)) return;
@@ -513,10 +559,90 @@ export function playLandingMotion(root: HTMLElement) {
 
   mm.add("(min-width: 1024px) and (prefers-reduced-motion: no-preference)", () => bindTheater(root, false));
 
-  // Compact theater: same story + pin + phone travel, adapted to the live viewport.
+  // Compact theater: same story + phone travel, adapted to the live viewport.
   mm.add("(max-width: 1023px) and (prefers-reduced-motion: no-preference)", () => bindTheater(root, true));
 
   return () => mm.revert();
+}
+
+/** Map nav/footer hashes to story scene ids used by the pinned theater. */
+const HASH_TO_SCENE: Record<string, StoryId> = {
+  story: "1",
+  how: "2",
+  reply: "3",
+  enquiry: "4",
+  handoff: "5",
+  demo: "9",
+  // Legacy nav target pointed at activation; business-type picker lives in demo.
+  activities: "9",
+};
+
+/**
+ * Scroll to a landing hash so pinned story chapters actually reveal their copy.
+ * Native #hash alone leaves the theater on the intro while only updating the URL.
+ */
+export function scrollLandingHash(
+  root: HTMLElement,
+  rawHash: string,
+  options?: { history?: "push" | "replace" | "none" },
+) {
+  const hash = rawHash.replace(/^#/, "");
+  if (!hash) return;
+
+  // Business types / sectors live in #demo; keep #activities as an alias.
+  const resolvedHash = hash === "activities" ? "demo" : hash;
+  const target = root.querySelector<HTMLElement>(`#${CSS.escape(resolvedHash)}`);
+  const sceneId = HASH_TO_SCENE[hash] ?? HASH_TO_SCENE[resolvedHash];
+  const historyMode = options?.history ?? "push";
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const scrollBehavior: ScrollBehavior = reduceMotion ? "instant" : "smooth";
+
+  function writeHash() {
+    if (historyMode === "none") return;
+    const next = `#${resolvedHash}`;
+    if (window.location.hash === next) return;
+    try {
+      if (historyMode === "push") history.pushState(null, "", next);
+      else history.replaceState(null, "", next);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  if (sceneId && root.classList.contains("motion-theater")) {
+    const bridge = theaterBridgeOf(root);
+    if (bridge?.scrollToScene(sceneId)) {
+      writeHash();
+      // Compact rebuilds can miss the first scrub tick — nudge once more.
+      window.requestAnimationFrame(() => {
+        bridge.scrollToScene(sceneId);
+      });
+      return;
+    }
+  }
+
+  if (target) {
+    target.scrollIntoView({ behavior: scrollBehavior, block: "start" });
+    writeHash();
+    return;
+  }
+
+  // Non-story anchors (packages, faq, contact, setup, …)
+  const fallback = root.querySelector<HTMLElement>(`#${CSS.escape(hash)}`);
+  if (fallback) {
+    fallback.scrollIntoView({ behavior: scrollBehavior, block: "start" });
+    if (historyMode !== "none") {
+      const next = `#${hash}`;
+      if (window.location.hash !== next) {
+        try {
+          if (historyMode === "push") history.pushState(null, "", next);
+          else history.replaceState(null, "", next);
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+  }
 }
 
 /** Replays the sample inside the theater phone when motion is active. */

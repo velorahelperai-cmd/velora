@@ -34,12 +34,12 @@ const scenes = [
         question: "Is the classic burger available today?",
         answer: "Waiting for a reply",
         cardTitle: "Waiting for a reply",
-        card: "The customer’s question is visible, and no detail has been collected yet.",
+        card: "The customer's question is visible, and no detail has been collected yet.",
       },
     },
     chips: {
       ar: ["متوفر اليوم؟", "كم السعر؟", "متى يوصل؟", "التوصيل فين؟", "أقدر أطلب؟"],
-      en: ["Available today?", "What’s the price?", "When does it arrive?", "Where do you deliver?", "Can I order?"],
+      en: ["Available today?", "What's the price?", "When does it arrive?", "Where do you deliver?", "Can I order?"],
     },
   },
   {
@@ -55,13 +55,13 @@ const scenes = [
     example: {
       ar: {
         question: "البرجر الكلاسيك متوفر اليوم؟",
-        answer: "نراجع بطاقة المصدر…",
+        answer: "نراجع بطاقة المصدر...",
         cardTitle: "مصدر: قائمة الطعام",
         card: "المنتج: برجر كلاسيك\nالسعر: 1.8 ر.ع\nمتوفر اليوم\nالتوصيل داخل مسقط",
       },
       en: {
         question: "Is the classic burger available today?",
-        answer: "Checking the source card…",
+        answer: "Checking the source card...",
         cardTitle: "Source: menu",
         card: "Item: Classic burger\nPrice: 1.8 OMR\nAvailable today\nDelivery inside Muscat",
       },
@@ -171,7 +171,7 @@ const scenes = [
     id: 7,
     key: "setup",
     theme: "dark" as const,
-    anchor: "activities",
+    anchor: "setup",
     title: { ar: "أربع خطوات حتى التفعيل.", en: "Four steps to activation." },
     body: {
       ar: "الحساب والنشاط، ثم المعلومات، ثم الرقم والقناة، ثم المراجعة والتفعيل بمساعدتنا.",

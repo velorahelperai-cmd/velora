@@ -319,6 +319,9 @@ export type Database = {
           sender: "customer" | "staff" | "assistant";
           received_at: string;
           created_at: string;
+          delivery_state: "accepted" | "sent" | "delivered" | "read" | "failed" | null;
+          delivery_rank: number;
+          delivery_updated_at: string | null;
         };
         Insert: {
           id?: string;
@@ -331,11 +334,17 @@ export type Database = {
           sender?: "customer" | "staff" | "assistant";
           received_at: string;
           created_at?: string;
+          delivery_state?: "accepted" | "sent" | "delivered" | "read" | "failed" | null;
+          delivery_rank?: number;
+          delivery_updated_at?: string | null;
         };
         Update: {
           body?: string;
           direction?: "inbound" | "outbound";
           sender?: "customer" | "staff" | "assistant";
+          delivery_state?: "accepted" | "sent" | "delivered" | "read" | "failed" | null;
+          delivery_rank?: number;
+          delivery_updated_at?: string | null;
         };
         Relationships: [];
       };
@@ -349,6 +358,8 @@ export type Database = {
           recipient_wa_id: string;
           occurred_at: string;
           created_at: string;
+          message_id: string | null;
+          link_state: "applied" | "unmatched" | "ignored_stale";
         };
         Insert: {
           id?: string;
@@ -359,9 +370,131 @@ export type Database = {
           recipient_wa_id?: string;
           occurred_at: string;
           created_at?: string;
+          message_id?: string | null;
+          link_state?: "applied" | "unmatched" | "ignored_stale";
         };
         Update: {
           status?: string;
+          message_id?: string | null;
+          link_state?: "applied" | "unmatched" | "ignored_stale";
+        };
+        Relationships: [];
+      };
+      whatsapp_send_intents: {
+        Row: {
+          id: string;
+          client_op_id: string;
+          company_id: string;
+          conversation_id: string;
+          phone_number_id: string;
+          recipient_wa_id: string;
+          body: string;
+          sender_kind: "staff" | "assistant";
+          actor_user_id: string | null;
+          outcome: "ready" | "attempting" | "accepted" | "rejected" | "unknown";
+          wa_message_id: string | null;
+          message_id: string | null;
+          attempt_token: string | null;
+          attempt_started_at: string | null;
+          attempt_expires_at: string | null;
+          provider_error_code: string | null;
+          expected_automation_generation: number | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          client_op_id: string;
+          company_id: string;
+          conversation_id: string;
+          phone_number_id: string;
+          recipient_wa_id: string;
+          body: string;
+          sender_kind: "staff" | "assistant";
+          actor_user_id?: string | null;
+          outcome?: "ready" | "attempting" | "accepted" | "rejected" | "unknown";
+          wa_message_id?: string | null;
+          message_id?: string | null;
+          attempt_token?: string | null;
+          attempt_started_at?: string | null;
+          attempt_expires_at?: string | null;
+          provider_error_code?: string | null;
+          expected_automation_generation?: number | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          outcome?: "ready" | "attempting" | "accepted" | "rejected" | "unknown";
+          wa_message_id?: string | null;
+          message_id?: string | null;
+          attempt_token?: string | null;
+          attempt_started_at?: string | null;
+          attempt_expires_at?: string | null;
+          provider_error_code?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      whatsapp_company_links: {
+        Row: {
+          id: string;
+          company_id: string;
+          requested_display_number: string;
+          keep_on_phone: boolean;
+          status:
+            | "not_connected"
+            | "request_saved"
+            | "needs_external_action"
+            | "verified"
+            | "error"
+            | "disconnected";
+          provider_phone_number_id: string | null;
+          verified_display_number: string | null;
+          inbound_tested_at: string | null;
+          outbound_tested_at: string | null;
+          last_error_code: string | null;
+          admin_note: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          company_id: string;
+          requested_display_number?: string;
+          keep_on_phone?: boolean;
+          status?:
+            | "not_connected"
+            | "request_saved"
+            | "needs_external_action"
+            | "verified"
+            | "error"
+            | "disconnected";
+          provider_phone_number_id?: string | null;
+          verified_display_number?: string | null;
+          inbound_tested_at?: string | null;
+          outbound_tested_at?: string | null;
+          last_error_code?: string | null;
+          admin_note?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          requested_display_number?: string;
+          keep_on_phone?: boolean;
+          status?:
+            | "not_connected"
+            | "request_saved"
+            | "needs_external_action"
+            | "verified"
+            | "error"
+            | "disconnected";
+          provider_phone_number_id?: string | null;
+          verified_display_number?: string | null;
+          inbound_tested_at?: string | null;
+          outbound_tested_at?: string | null;
+          last_error_code?: string | null;
+          admin_note?: string | null;
+          updated_at?: string;
         };
         Relationships: [];
       };
@@ -447,6 +580,83 @@ export type Database = {
       };
       whatsapp_automation_gate: {
         Args: { p_conversation_id: string };
+        Returns: Json;
+      };
+      create_whatsapp_send_intent: {
+        Args: {
+          p_client_op_id: string;
+          p_conversation_id: string;
+          p_body: string;
+          p_phone_number_id: string;
+          p_sender_kind?: string;
+          p_expected_automation_generation?: number | null;
+        };
+        Returns: Json;
+      };
+      claim_whatsapp_send_attempt: {
+        Args: {
+          p_intent_id: string;
+          p_actor_user_id: string;
+          p_lease_seconds?: number;
+        };
+        Returns: Json;
+      };
+      finalize_whatsapp_send_attempt: {
+        Args: {
+          p_intent_id: string;
+          p_attempt_token: string;
+          p_result: string;
+          p_wa_message_id?: string | null;
+          p_error_code?: string | null;
+          p_actor_user_id?: string | null;
+        };
+        Returns: Json;
+      };
+      retry_whatsapp_send_persist: {
+        Args: { p_intent_id: string; p_actor_user_id?: string | null };
+        Returns: Json;
+      };
+      apply_whatsapp_delivery_status: {
+        Args: {
+          p_company_id: string;
+          p_phone_number_id: string;
+          p_wa_message_id: string;
+          p_status: string;
+          p_recipient_wa_id: string;
+          p_occurred_at: string;
+        };
+        Returns: Json;
+      };
+      rebind_whatsapp_delivery_statuses: {
+        Args: {
+          p_company_id: string;
+          p_phone_number_id: string;
+          p_wa_message_id: string;
+        };
+        Returns: Json;
+      };
+      get_whatsapp_company_link: {
+        Args: Record<string, never>;
+        Returns: Json;
+      };
+      upsert_whatsapp_link_request: {
+        Args: { p_requested_display_number: string; p_keep_on_phone?: boolean };
+        Returns: Json;
+      };
+      admin_get_whatsapp_company_link: {
+        Args: { p_company_id: string };
+        Returns: Json;
+      };
+      admin_update_whatsapp_link_note: {
+        Args: { p_company_id: string; p_admin_note: string };
+        Returns: Json;
+      };
+      admin_mark_whatsapp_link_needs_external: {
+        Args: { p_company_id: string };
+        Returns: Json;
+      };
+      resolve_whatsapp_company_by_provider_phone: {
+        Args: { p_provider_phone_number_id: string };
         Returns: Json;
       };
       set_knowledge_source_approval: {
@@ -548,12 +758,17 @@ export type Database = {
         };
         Returns: {
           user_id: string;
-          support_code: string;
-          full_name: string;
+          support_code: string | null;
+          full_name: string | null;
           email: string | null;
           account_phone: string | null;
+          email_confirmed: boolean | null;
           companies: Json;
         }[];
+      };
+      admin_overview_stats: {
+        Args: Record<string, never>;
+        Returns: Json;
       };
       admin_list_company_conversations: {
         Args: {

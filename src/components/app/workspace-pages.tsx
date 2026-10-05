@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import type { KnowledgeSourceRecord } from "@/lib/knowledge/types";
+import type { KnowledgeApprovalFoundation, KnowledgeSourceRecord } from "@/lib/knowledge/types";
 import { useDemo } from "@/lib/demo-state";
 import { AssistantTester } from "@/components/app/assistant-tester";
 import { KnowledgeEditor } from "@/components/app/knowledge-editor";
@@ -13,10 +13,12 @@ export function KnowledgePage({
   canWrite,
   initialSources,
   initialLoadFailed,
+  approvalFoundation = "ready",
 }: {
   canWrite: boolean;
   initialSources: KnowledgeSourceRecord[];
   initialLoadFailed: boolean;
+  approvalFoundation?: KnowledgeApprovalFoundation;
 }) {
   const copy = useAppCopy();
   const topic = useSearchParams().get("topic") ?? undefined;
@@ -27,6 +29,7 @@ export function KnowledgePage({
         canWrite={canWrite}
         initialSources={initialSources}
         initialLoadFailed={initialLoadFailed}
+        approvalFoundation={approvalFoundation}
       />
     </WorkspaceShell>
   );
