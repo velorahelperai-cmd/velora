@@ -28,7 +28,7 @@ export const OUTBOUND_ACCEPTANCE_CASES: OutboundAcceptanceCase[] = [
   {
     id: "phone-mismatch",
     title: "Conversation phone ≠ server send phone",
-    expect: "create / claim / sendWhatsappText return phone/binding mismatch; no default number fallback; no Graph call.",
+    expect: "create / claim / sendWhatsappText return phone/binding mismatch; no default number fallback; tenant_registry never uses another company's env token.",
   },
   {
     id: "claim-recheck-suspended-or-automation",

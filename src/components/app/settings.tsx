@@ -20,9 +20,11 @@ type Tab = "account" | "business" | "team" | "whatsapp" | "plan";
 export function SettingsPage({
   initialWhatsappLink = null,
   whatsappLinkLoadFailed = false,
+  whatsappLiveOpsReady = false,
 }: {
   initialWhatsappLink?: import("@/lib/whatsapp/connection").WhatsappCompanyLink | null;
   whatsappLinkLoadFailed?: boolean;
+  whatsappLiveOpsReady?: boolean;
 }) {
   const copy = useAppCopy();
   const { state, update, effectiveRole, locale } = useDemo();
@@ -51,6 +53,7 @@ export function SettingsPage({
               <WhatsappSettingsPanel
                 initialLink={initialWhatsappLink}
                 initialLoadFailed={whatsappLinkLoadFailed}
+                liveOpsReady={whatsappLiveOpsReady}
               />
             ) : null}
             {tab === "plan" ? (

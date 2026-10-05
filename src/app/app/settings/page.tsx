@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import type { Metadata } from "next";
 import { SettingsPage } from "@/components/app/settings";
 import { getWhatsappCompanyLink } from "@/lib/whatsapp/connection-actions";
+import { whatsappLiveOpsReady } from "@/lib/whatsapp/config";
 
 export const metadata: Metadata = { title: "Settings · Velora" };
 
@@ -12,6 +13,7 @@ export default async function Page() {
       <SettingsPage
         initialWhatsappLink={linkResult.ok ? linkResult.data : null}
         whatsappLinkLoadFailed={!linkResult.ok && linkResult.code !== "FORBIDDEN" && linkResult.code !== "UNAUTHENTICATED"}
+        whatsappLiveOpsReady={whatsappLiveOpsReady()}
       />
     </Suspense>
   );

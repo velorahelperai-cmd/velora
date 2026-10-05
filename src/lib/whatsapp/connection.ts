@@ -39,6 +39,11 @@ export type WhatsappCompanyLink = {
   providerPhoneNumberId?: string | null;
 };
 
+/** Only verified rows may route inbound/outbound. request_saved/error/disconnected do not. */
+export function whatsappLinkAllowsRouting(status: WhatsappLinkStatus): boolean {
+  return status === "verified";
+}
+
 export function isWhatsappLinkStatus(value: string): value is WhatsappLinkStatus {
   return (
     value === "not_connected"

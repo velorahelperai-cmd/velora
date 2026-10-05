@@ -4,42 +4,12 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { clearCompanyDrafts } from "@/lib/company-draft";
-import { type Business, emptyBusiness, useDemo } from "@/lib/demo-state";
+import { emptyBusiness, useDemo } from "@/lib/demo-state";
 import { createClient } from "@/lib/supabase/client";
-import { signOut } from "@/lib/tenancy/actions";
+import { getWorkspaceSwitcher, selectWorkspaceCompany, signOut } from "@/lib/tenancy/actions";
 import type { CompanyRole } from "@/lib/tenancy/types";
 import { AccountMenu, useOptionalAccountSession } from "@/components/app/account-chrome";
 import { Button, LangSwitch, PreviewBadge, useAppCopy } from "@/components/app/ui";
-
-function toBusiness(company: {
-  display_name: string;
-  business_type: string;
-  reply_language: string;
-  country: string;
-  city: string;
-  hours: string;
-  contact_phone: string;
-  contact_email: string;
-}): Business {
-  const allowed: Business["type"][] = ["restaurant", "retail", "services", "other"];
-  const type = allowed.includes(company.business_type as Business["type"])
-    ? (company.business_type as Business["type"])
-    : "other";
-  const langs: Business["replyLanguage"][] = ["ar", "en", "both"];
-  const replyLanguage = langs.includes(company.reply_language as Business["replyLanguage"])
-    ? (company.reply_language as Business["replyLanguage"])
-    : "both";
-  return {
-    name: company.display_name,
-    type,
-    replyLanguage,
-    country: company.country,
-    city: company.city,
-    hours: company.hours,
-    contactPhone: company.contact_phone,
-    contactEmail: company.contact_email,
-  };
-}
 
 export function WorkspaceShell({ title, children, actions }: { title: string; children: ReactNode; actions?: ReactNode }) {
   const copy = useAppCopy();
@@ -54,63 +24,54 @@ export function WorkspaceShell({ title, children, actions }: { title: string; ch
     companyName: string;
   } | null>(null);
 
+  const [workspace, setWorkspace] = useState<{
+    needsContext: boolean;
+    selectedCompanyId: string | null;
+    isPlatformAdmin: boolean;
+    choices: Array<{ companyId: string; displayName: string; role: CompanyRole }>;
+  } | null>(null);
+
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       try {
+        const switcher = await getWorkspaceSwitcher();
+        if (cancelled || !switcher.ok) return;
+        setWorkspace(switcher.data);
         const supabase = createClient();
         const { data: userData } = await supabase.auth.getUser();
         const user = userData.user;
         if (!user) return;
-        const [{ data: membership }, { data: profileRow }] = await Promise.all([
-          supabase
-            .from("company_members")
-            .select("role, member_name, company_id, status")
-            .eq("user_id", user.id)
-            .eq("status", "active")
-            .order("created_at", { ascending: true })
-            .limit(1)
-            .maybeSingle(),
-          supabase
-            .from("profiles")
-            .select("full_name")
-            .eq("user_id", user.id)
-            .maybeSingle(),
-        ]);
-        if (!membership || cancelled) return;
-        const { data: company } = await supabase
-          .from("companies")
-          .select("id, display_name, business_type, reply_language, country, city, hours, contact_phone, contact_email")
-          .eq("id", membership.company_id)
+        const { data: profileRow } = await supabase
+          .from("profiles")
+          .select("full_name")
+          .eq("user_id", user.id)
           .maybeSingle();
+        const selected = switcher.data.selectedCompanyId
+          ? switcher.data.choices.find((row) => row.companyId === switcher.data.selectedCompanyId)
+          : null;
         if (cancelled) return;
         const displayName =
           profileRow?.full_name?.trim()
-          || membership.member_name
           || (user.user_metadata?.full_name as string)
           || user.email
           || "User";
+        const role = selected?.role ?? (switcher.data.needsContext ? "staff" : "owner");
         setProfile({
           name: displayName,
           email: user.email ?? "",
-          role: membership.role,
-          companyName: company?.display_name ?? "",
+          role,
+          companyName: selected?.displayName ?? "",
         });
         update({
           account: {
             name: displayName,
             email: user.email ?? "",
-            role: membership.role,
+            role,
           },
           signedIn: true,
           stage: "active",
-          viewAs: membership.role,
-          ...(company
-            ? {
-                business: toBusiness(company),
-                businessSaved: true,
-              }
-            : {}),
+          viewAs: role,
         });
       } catch {
         /* layout already enforces auth */
@@ -197,6 +158,30 @@ export function WorkspaceShell({ title, children, actions }: { title: string; ch
         <div className="hidden border-t border-[color:var(--color-line)] px-4 py-4 text-sm lg:block">
           <div className="mb-3"><AccountMenu /></div>
           <p className="app-muted mt-1 text-xs">{profile.companyName}</p>
+          {workspace && (workspace.needsContext || workspace.choices.length > 1) ? (
+            <label className="app-muted-soft mt-3 grid gap-1 text-xs">
+              {copy.app.workspacePick}
+              <select
+                value={workspace.selectedCompanyId ?? ""}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  if (!id) return;
+                  void selectWorkspaceCompany(id).then((result) => {
+                    if (result.ok) router.refresh();
+                  });
+                }}
+                className="min-h-10 rounded-lg border border-white/15 bg-[#14221b] px-2 text-sm text-[#f7fbf8]"
+              >
+                {workspace.needsContext ? <option value="">{copy.app.workspacePick}</option> : null}
+                {workspace.choices.map((row) => (
+                  <option key={row.companyId} value={row.companyId}>{row.displayName}</option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+          {workspace?.isPlatformAdmin ? (
+            <Link href="/admin" className="mt-2 inline-flex min-h-10 items-center text-xs underline">{copy.app.nav.dashboard}</Link>
+          ) : null}
           <p className="app-muted mt-1 text-xs">{copy.app.roleLabel}: {role === "owner" ? copy.app.owner : copy.app.staff}</p>
           {role === "owner" ? (
             <label className="app-muted-soft mt-3 grid gap-1 text-xs">

@@ -48,7 +48,7 @@ export const INBOUND_ACCEPTANCE_CASES: InboundAcceptanceCase[] = [
   {
     id: "phone-or-company-reject",
     title: "Mismatched phone_number_id or untrusted company",
-    expect: "No DB write when phone does not match server config; company_id only from server env mapping.",
+    expect: "No DB write when the phone is unknown, inactive, or (single_tenant) mismatches env; company_id never from the browser or payload.",
   },
   {
     id: "stale-claim-complete",

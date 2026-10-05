@@ -5,7 +5,7 @@ import { safeInternalPath } from "@/lib/auth/safe-next";
 import { authCallbackUrl, siteUrl } from "@/lib/auth/site-url";
 import { createClient } from "@/lib/supabase/server";
 import { listKnowledgeSources } from "@/lib/knowledge/actions";
-import { getCompanyAccess, pathForAccess, requirePlatformAdmin } from "@/lib/tenancy/access";
+import { getCompanyAccess, pathForAccess, requirePlatformAdmin, WORKSPACE_COMPANY_COOKIE } from "@/lib/tenancy/access";
 import { ADMIN_ACCOUNT_JOURNEY_DEPENDENCY } from "@/lib/tenancy/admin-account-deps";
 import { ADMIN_CONVERSATIONS_RPC_DEPENDENCY } from "@/lib/tenancy/admin-deps";
 import {
@@ -27,6 +27,7 @@ import type {
 } from "@/lib/tenancy/types";
 import { ADMIN_ACCOUNT_SEARCH_MAX_OFFSET, normalizeAdminAccountQuery } from "@/lib/tenancy/types";
 import { getWhatsappCompanyLink } from "@/lib/whatsapp/connection-actions";
+import { whatsappLiveOpsReady } from "@/lib/whatsapp/config";
 
 const REVIEW_SELECT =
   "company_id, requested_by, number_ownership, whatsapp_number, readiness_confirmed, requested_at, status, revision, decided_by, decided_at, owner_note";
@@ -322,6 +323,50 @@ export async function getAccountProfile(): Promise<ActionResult<AccountProfileVi
   }
 }
 
+export async function selectWorkspaceCompany(companyId: string): Promise<ActionResult<{ companyId: string }>> {
+  const access = await getCompanyAccess();
+  if (!access.ok) return { ok: false, code: access.code };
+  const id = companyId.trim();
+  const allowed = access.context.workspaceChoices.some((row) => row.companyId === id)
+    || access.context.membership?.company_id === id;
+  if (!id || !allowed) return { ok: false, code: "FORBIDDEN" };
+  try {
+    const { cookies } = await import("next/headers");
+    (await cookies()).set(WORKSPACE_COMPANY_COOKIE, id, {
+      httpOnly: true,
+      sameSite: "lax",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 30,
+    });
+    revalidatePath("/app");
+    revalidatePath("/admin");
+    return { ok: true, data: { companyId: id } };
+  } catch {
+    return { ok: false, code: "UNAVAILABLE" };
+  }
+}
+
+export async function getWorkspaceSwitcher(): Promise<
+  ActionResult<{
+    needsContext: boolean;
+    selectedCompanyId: string | null;
+    isPlatformAdmin: boolean;
+    choices: Array<{ companyId: string; displayName: string; role: CompanyRole }>;
+  }>
+> {
+  const access = await getCompanyAccess();
+  if (!access.ok) return { ok: false, code: access.code };
+  return {
+    ok: true,
+    data: {
+      needsContext: access.context.needsCompanyContext,
+      selectedCompanyId: access.context.company?.id ?? null,
+      isPlatformAdmin: access.context.isPlatformAdmin,
+      choices: access.context.workspaceChoices,
+    },
+  };
+}
+
 /**
  * Customer readiness checklist from real server sources (same semantics as admin views).
  * Subscription/AI has no implementation → always not_configured (never fake active/zero).
@@ -331,9 +376,7 @@ export async function getCustomerReadiness(): Promise<ActionResult<CustomerReadi
     const access = await getCompanyAccess();
     if (!access.ok) return { ok: false, code: access.code };
     const ctx = access.context;
-    const role: CompanyRole | null = ctx.isPlatformAdmin
-      ? null
-      : ctx.membership?.role ?? null;
+    const role: CompanyRole | null = ctx.membership?.role ?? null;
     const company = ctx.company;
     const hasCompany = Boolean(company);
 
@@ -346,6 +389,7 @@ export async function getCustomerReadiness(): Promise<ActionResult<CustomerReadi
       loadFailed: boolean;
       status: import("@/lib/whatsapp/connection").WhatsappLinkStatus | null;
       suspended: boolean;
+      liveOpsReady: boolean;
     } | null = null;
     let review: {
       loadFailed: boolean;
@@ -363,14 +407,15 @@ export async function getCustomerReadiness(): Promise<ActionResult<CustomerReadi
         : { loadFailed: true, sources: [], approvalFoundation: "unavailable" };
 
       const wa = await getWhatsappCompanyLink();
+      const liveOpsReady = whatsappLiveOpsReady();
       if (wa.ok) {
-        whatsapp = { loadFailed: false, status: wa.data.status, suspended: false };
+        whatsapp = { loadFailed: false, status: wa.data.status, suspended: false, liveOpsReady };
       } else if (wa.code === "COMPANY_SUSPENDED") {
-        whatsapp = { loadFailed: false, status: null, suspended: true };
+        whatsapp = { loadFailed: false, status: null, suspended: true, liveOpsReady: false };
       } else if (wa.code === "FORBIDDEN" || wa.code === "UNAUTHENTICATED") {
-        whatsapp = { loadFailed: true, status: null, suspended: false };
+        whatsapp = { loadFailed: true, status: null, suspended: false, liveOpsReady: false };
       } else {
-        whatsapp = { loadFailed: true, status: null, suspended: false };
+        whatsapp = { loadFailed: true, status: null, suspended: false, liveOpsReady: false };
       }
 
       if (role === "owner") {

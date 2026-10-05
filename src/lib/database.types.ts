@@ -399,6 +399,8 @@ export type Database = {
           attempt_expires_at: string | null;
           provider_error_code: string | null;
           expected_automation_generation: number | null;
+          link_id: string | null;
+          link_generation: number | null;
           created_at: string;
           updated_at: string;
         };
@@ -420,6 +422,8 @@ export type Database = {
           attempt_expires_at?: string | null;
           provider_error_code?: string | null;
           expected_automation_generation?: number | null;
+          link_id?: string | null;
+          link_generation?: number | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -454,6 +458,7 @@ export type Database = {
           outbound_tested_at: string | null;
           last_error_code: string | null;
           admin_note: string | null;
+          generation: number;
           created_at: string;
           updated_at: string;
         };
@@ -475,6 +480,7 @@ export type Database = {
           outbound_tested_at?: string | null;
           last_error_code?: string | null;
           admin_note?: string | null;
+          generation?: number;
           created_at?: string;
           updated_at?: string;
         };
@@ -590,6 +596,8 @@ export type Database = {
           p_phone_number_id: string;
           p_sender_kind?: string;
           p_expected_automation_generation?: number | null;
+          p_link_id?: string | null;
+          p_link_generation?: number | null;
         };
         Returns: Json;
       };

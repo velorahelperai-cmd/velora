@@ -15,7 +15,7 @@ export function assertEligibleAnswerChunks(chunks: AnswerContextChunk[]) {
   }
 }
 
-/** Live channel remains off until provider + budget + usage controls are adopted. */
+/** Integration-ready, not live: stays off until provider + budget + usage are adopted. */
 export function isLiveAnsweringEnabled() {
   return false;
 }

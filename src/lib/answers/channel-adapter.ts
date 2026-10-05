@@ -14,6 +14,7 @@ import {
 } from "@/lib/answers/context";
 import { ANSWER_MAX_QUESTION_CHARS } from "@/lib/answers/constants";
 import { assertEligibleAnswerChunks, isLiveAnsweringEnabled } from "@/lib/answers/guards";
+import { answerIsolationKey } from "@/lib/answers/isolation";
 import { getAnswerProvider } from "@/lib/answers/provider";
 import type { AnswerCitation, AnswerContextChunk, AnswerUsage } from "@/lib/answers/types";
 import type { Database } from "@/lib/database.types";
@@ -286,10 +287,16 @@ export async function processInboundJobAnswer(input: {
     if (!provider) return fail("NEEDS_SETUP");
 
     const locale = input.locale === "en" ? "en" : "ar";
+    const isolationKey = answerIsolationKey({
+      companyId: stagedCompanyId,
+      phoneNumberId: stagedPhoneNumberId,
+      conversationId: stagedConversationId,
+    });
     const result = await provider.complete({
       question,
       locale,
       chunks: packed.chunks,
+      isolationKey,
     });
     if (!result.ok) {
       if (result.code === "NEEDS_SETUP") return fail("NEEDS_SETUP");

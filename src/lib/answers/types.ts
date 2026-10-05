@@ -49,6 +49,8 @@ export type AnswerProviderRequest = {
   question: string;
   locale: "ar" | "en";
   chunks: AnswerContextChunk[];
+  isolationKey?: string | null;
+  signal?: AbortSignal;
 };
 
 export type AnswerProvider = {

@@ -30,9 +30,11 @@ function formatStamp(value: string | null): string {
 export function WhatsappSettingsPanel({
   initialLink = null,
   initialLoadFailed = false,
+  liveOpsReady = false,
 }: {
   initialLink?: WhatsappCompanyLink | null;
   initialLoadFailed?: boolean;
+  liveOpsReady?: boolean;
 }) {
   const copy = useAppCopy();
   const { busy, run } = useAction();
@@ -148,6 +150,9 @@ export function WhatsappSettingsPanel({
 
           <p className="text-sm leading-6 text-[#adbeaf]">{nextStep}</p>
           <p className="text-xs leading-5 text-[#8da195]">{copy.app.waLinkHonestNote}</p>
+          {!liveOpsReady ? (
+            <p className="text-xs leading-5 text-[#8da195]">{copy.app.waLinkLiveOpsOff}</p>
+          ) : null}
 
           {!verified ? (
             <form
@@ -212,6 +217,9 @@ export function WhatsappSettingsPanel({
           ) : null}
 
           <p className="text-xs leading-5 text-[#8da195]">{copy.app.waLinkOauthDeferred}</p>
+          <Button type="button" variant="secondary" disabled>
+            {copy.app.waLinkSignupDisabled}
+          </Button>
           <Link href="/setup" className="inline-flex min-h-11 items-center rounded-full border border-white/20 px-4 text-sm">
             {copy.setup.title}
           </Link>

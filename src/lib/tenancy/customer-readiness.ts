@@ -41,6 +41,7 @@ export type ReadinessDetail =
   | "wa_verified"
   | "wa_error"
   | "wa_disconnected"
+  | "wa_verified_not_live"
   | "review_none"
   | "review_pending"
   | "review_changes"
@@ -163,6 +164,7 @@ export function buildCustomerReadiness(input: {
     loadFailed: boolean;
     status: WhatsappLinkStatus | null;
     suspended: boolean;
+    liveOpsReady: boolean;
   } | null;
   review: {
     loadFailed: boolean;
@@ -304,13 +306,23 @@ export function buildCustomerReadiness(input: {
     };
   } else {
     const status = input.whatsapp.status;
-    whatsapp = {
-      id: "whatsapp",
-      tone: waTone(status),
-      detail: waDetail(status),
-      href: "/app/settings?tab=whatsapp",
-      action: status === "verified" ? "review" : isOwner ? "continue" : "review",
-    };
+    if (status === "verified" && !input.whatsapp.liveOpsReady) {
+      whatsapp = {
+        id: "whatsapp",
+        tone: "not_configured",
+        detail: "wa_verified_not_live",
+        href: "/app/settings?tab=whatsapp",
+        action: "review",
+      };
+    } else {
+      whatsapp = {
+        id: "whatsapp",
+        tone: waTone(status),
+        detail: waDetail(status),
+        href: "/app/settings?tab=whatsapp",
+        action: status === "verified" ? "review" : isOwner ? "continue" : "review",
+      };
+    }
   }
 
   let review: CustomerReadinessItem;

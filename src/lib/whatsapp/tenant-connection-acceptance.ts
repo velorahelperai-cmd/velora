@@ -48,7 +48,7 @@ export const TENANT_CONNECTION_ACCEPTANCE_CASES: TenantConnectionAcceptanceCase[
   {
     id: "resolver-rejects-unknown",
     title: "Resolver rejects unknown / inactive / suspended",
-    expect: "resolve_whatsapp_company_by_provider_phone returns unknown_or_inactive or company_suspended; never picks first company; not wired to webhook yet.",
+    expect: "resolve_whatsapp_company_by_provider_phone returns unknown_or_inactive or company_suspended; never picks first company; webhook uses it only when WHATSAPP_ROUTING_MODE=tenant_registry.",
   },
 ];
 
@@ -56,10 +56,10 @@ export const TENANT_CONNECTION_ACCEPTANCE_STATUS = "deferred" as const;
 
 /** What remains before live Meta multi-tenant cutover (not implemented here). */
 export const TENANT_CONNECTION_CUTOVER_NOTES = [
-  "Wire webhook POST to resolveWhatsappCompanyByProviderPhone instead of env companyId (keep env fallback until all companies have verified links).",
-  "Unknown external provider phone numbers must not auto-route to the env default company — reject / quarantine instead of silently attributing traffic.",
-  "Wire outbound send to verified provider_phone_number_id per company; store tokens server-side only (never in this table).",
-  "OAuth / Embedded Signup to set provider_phone_number_id + verified status with evidence.",
+  "WHATSAPP_ROUTING_MODE=tenant_registry wires webhook/send to resolveWhatsappCompanyByProviderPhone. Default remains explicit single_tenant env mapping — not a fallback after resolver failure.",
+  "Unknown / request_saved / error / disconnected provider phones are rejected; they must not route to the env default company.",
+  "Per-number Graph tokens: resolveWhatsappOutboundSecret is NEEDS_SETUP (no vault). Do not reuse WHATSAPP_ACCESS_TOKEN across companies. Do not put tokens in the browser, profiles, or displayed JSON.",
+  "OAuth / Embedded Signup still required to set provider_phone_number_id + verified with evidence. This package does not create, request, or transfer keys.",
+  "Apply 20261005140000 (link registry + resolver) before enabling tenant_registry. 103000/120000 WhatsApp control/outbound SQL remain separate live-schema dependencies. Do not apply 160000 here.",
   "Explicit ownership-transfer path before moving a verified provider id between companies.",
-  "Optional multi-number management beyond one primary row per company.",
 ] as const;

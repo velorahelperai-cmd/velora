@@ -2,6 +2,19 @@ function env(name: string) {
   return process.env[name]?.trim() ?? "";
 }
 
+/**
+ * Routing modes are explicit and never mixed.
+ * - tenant_registry: company from resolveWhatsappCompanyByProviderPhone only.
+ *   Resolver failure does not fall back to env company/phone.
+ * - single_tenant (default): env WHATSAPP_COMPANY_ID + PHONE_NUMBER_ID only.
+ * New live multi-tenant receive/send stays off until WHATSAPP_ROUTING_MODE=tenant_registry.
+ */
+export type WhatsappRoutingMode = "single_tenant" | "tenant_registry";
+
+export function whatsappRoutingMode(): WhatsappRoutingMode {
+  return env("WHATSAPP_ROUTING_MODE") === "tenant_registry" ? "tenant_registry" : "single_tenant";
+}
+
 /** Prefer the real-number names; keep TEST_* as fallback for the current local file. */
 export function whatsappConfig() {
   return {
@@ -14,7 +27,17 @@ export function whatsappConfig() {
 }
 
 export function webhookReady(config: ReturnType<typeof whatsappConfig>) {
+  if (whatsappRoutingMode() === "tenant_registry") {
+    return Boolean(config.appSecret);
+  }
   return Boolean(config.appSecret && config.phoneNumberId && config.companyId);
+}
+
+/**
+ * Integration-ready, not live: Graph receive/send stays off until mode + secrets + apply.
+ */
+export function whatsappLiveOpsReady(): boolean {
+  return false;
 }
 
 export function sendReady(config: ReturnType<typeof whatsappConfig>) {

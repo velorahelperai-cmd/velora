@@ -8,7 +8,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     redirect("/login");
   }
   if (access.context.needsProfileName) redirect("/complete-profile");
-  if (access.context.isPlatformAdmin) redirect("/admin");
+  if (access.context.isPlatformAdmin && !access.context.company && !access.context.needsCompanyContext) {
+    redirect("/admin");
+  }
+  if (access.context.needsCompanyContext) {
+    return children;
+  }
   if (!access.context.company) redirect("/setup");
   return children;
 }

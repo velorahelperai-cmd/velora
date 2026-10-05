@@ -1,4 +1,4 @@
-import { externalSendAllowed, sendReady, whatsappConfig } from "./config";
+import { externalSendAllowed, sendReady, whatsappConfig, whatsappRoutingMode } from "./config";
 
 export type SendTextResult =
   | { ok: true; waMessageId: string }
@@ -6,6 +6,7 @@ export type SendTextResult =
       ok: false;
       code:
         | "NOT_CONFIGURED"
+        | "NEEDS_SETUP"
         | "SEND_DISABLED"
         | "PHONE_MISMATCH"
         | "GRAPH_REJECTED"
@@ -60,22 +61,35 @@ function classifyHttpFailure(
 /**
  * Sends a text message through WhatsApp Cloud API.
  * Requires WHATSAPP_ALLOW_EXTERNAL_SEND=true. Do not invoke from automatic AI paths.
- * phoneNumberId must match server config — never silently fall back to another number.
+ * single_tenant: phoneNumberId must match env — never silently fall back to another number.
+ * tenant_registry: caller must pass the per-number token; env token is never used.
  */
 export async function sendWhatsappText(input: {
   toWaId: string;
   body: string;
-  /** Bound conversation / intent phone number id — must equal server config. */
+  /** Bound conversation / intent phone number id. */
   phoneNumberId: string;
+  /** Required in tenant_registry. Ignored in single_tenant (env token only). */
+  accessToken?: string;
   signal?: AbortSignal;
 }): Promise<SendTextResult> {
   if (!externalSendAllowed()) return { ok: false, code: "SEND_DISABLED" };
-  const config = whatsappConfig();
-  if (!sendReady(config)) return { ok: false, code: "NOT_CONFIGURED" };
 
   const boundPhone = input.phoneNumberId.trim();
-  if (!boundPhone || boundPhone !== config.phoneNumberId) {
-    return { ok: false, code: "PHONE_MISMATCH" };
+  if (!boundPhone) return { ok: false, code: "PHONE_MISMATCH" };
+
+  const mode = whatsappRoutingMode();
+  const config = whatsappConfig();
+  let accessToken = "";
+  if (mode === "tenant_registry") {
+    accessToken = input.accessToken?.trim() ?? "";
+    if (!accessToken) return { ok: false, code: "NEEDS_SETUP" };
+  } else {
+    if (!sendReady(config)) return { ok: false, code: "NOT_CONFIGURED" };
+    if (boundPhone !== config.phoneNumberId) {
+      return { ok: false, code: "PHONE_MISMATCH" };
+    }
+    accessToken = config.accessToken;
   }
 
   const to = input.toWaId.replace(/\D/g, "");
@@ -95,7 +109,7 @@ export async function sendWhatsappText(input: {
       {
         method: "POST",
         headers: {
-          authorization: `Bearer ${config.accessToken}`,
+          authorization: `Bearer ${accessToken}`,
           "content-type": "application/json",
         },
         body: JSON.stringify({

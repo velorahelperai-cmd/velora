@@ -46,6 +46,8 @@ export type CompanyContext = {
   isPlatformAdmin: boolean;
   company: CompanyRecord | null;
   membership: MembershipRecord | null;
+  needsCompanyContext: boolean;
+  workspaceChoices: Array<{ companyId: string; displayName: string; role: CompanyRole }>;
 };
 
 export type AccessCode =

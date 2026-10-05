@@ -8,6 +8,20 @@ import type {
   MembershipRecord,
 } from "@/lib/tenancy/types";
 
+export const WORKSPACE_COMPANY_COOKIE = "velora_workspace_company";
+
+export function pickWorkspaceMembership<T extends { company_id: string }>(
+  memberships: T[],
+  selectedCompanyId: string | null,
+): { ok: true; membership: T } | { ok: false; needsContext: boolean } {
+  if (memberships.length === 0) return { ok: false, needsContext: false };
+  if (memberships.length === 1) return { ok: true, membership: memberships[0]! };
+  const selected = selectedCompanyId?.trim() ?? "";
+  const match = memberships.find((row) => row.company_id === selected);
+  if (!match) return { ok: false, needsContext: true };
+  return { ok: true, membership: match };
+}
+
 export type AccessResult =
   | { ok: true; context: CompanyContext }
   | { ok: false; code: AccessCode };
@@ -22,6 +36,8 @@ function emptyContext(
     emailConfirmed: partial.identityVerified,
     company: null,
     membership: null,
+    needsCompanyContext: false,
+    workspaceChoices: [],
     ...partial,
   };
 }
@@ -121,6 +137,23 @@ async function loadAuth(): Promise<LoadAuthOk | LoadAuthFail> {
   }
 }
 
+async function loadWorkspaceChoices(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  rows: MembershipRecord[],
+): Promise<CompanyContext["workspaceChoices"]> {
+  if (!rows.length) return [];
+  const { data } = await supabase
+    .from("companies")
+    .select("id, display_name")
+    .in("id", rows.map((row) => row.company_id));
+  const names = new Map((data ?? []).map((row) => [row.id, row.display_name]));
+  return rows.map((row) => ({
+    companyId: row.company_id,
+    displayName: names.get(row.company_id) || row.company_id,
+    role: row.role,
+  }));
+}
+
 export async function getCompanyAccess(
   requiredRole?: CompanyRole,
 ): Promise<AccessResult> {
@@ -140,18 +173,27 @@ export async function getCompanyAccess(
     } = auth;
     if (!identityVerified) return { ok: false, code: "UNVERIFIED" };
 
-    const { data: membership, error: memberError } = await supabase
+    const { data: memberships, error: memberError } = await supabase
       .from("company_members")
       .select("company_id, user_id, role, status, member_name, created_at")
       .eq("user_id", userId)
       .eq("status", "active")
-      .order("created_at", { ascending: true })
-      .limit(1)
-      .maybeSingle();
+      .order("created_at", { ascending: true });
 
     if (memberError) return { ok: false, code: "UNAVAILABLE" };
 
-    if (!membership) {
+    const rows = (memberships ?? []) as MembershipRecord[];
+    let selectedCookie: string | null = null;
+    try {
+      const { cookies } = await import("next/headers");
+      selectedCookie = (await cookies()).get(WORKSPACE_COMPANY_COOKIE)?.value ?? null;
+    } catch {
+      selectedCookie = null;
+    }
+
+    const picked = pickWorkspaceMembership(rows, selectedCookie);
+    if (!picked.ok) {
+      const choices = await loadWorkspaceChoices(supabase, rows);
       return {
         ok: true,
         context: emptyContext({
@@ -163,11 +205,13 @@ export async function getCompanyAccess(
           needsProfileName,
           identityVerified,
           isPlatformAdmin,
+          needsCompanyContext: picked.needsContext,
+          workspaceChoices: choices,
         }),
       };
     }
 
-    const member = membership as MembershipRecord;
+    const member = picked.membership;
     if (requiredRole === "owner" && member.role !== "owner") {
       return { ok: false, code: "FORBIDDEN" };
     }
@@ -197,6 +241,8 @@ export async function getCompanyAccess(
         isPlatformAdmin,
         company: company as CompanyRecord,
         membership: member,
+        needsCompanyContext: false,
+        workspaceChoices: await loadWorkspaceChoices(supabase, rows),
       },
     };
   } catch {
