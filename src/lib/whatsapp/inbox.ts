@@ -82,60 +82,85 @@ async function loadAssigneeNames(
   return map;
 }
 
-export async function loadWhatsappInbox(): Promise<Conversation[]> {
+export type WhatsappInboxLoad =
+  | { ok: true; conversations: Conversation[] }
+  | { ok: false; code: "NO_COMPANY" | "UNAVAILABLE" };
+
+/**
+ * Load live inbox for the active company membership only.
+ * Platform admin without operational membership gets NO_COMPANY (not all tenants).
+ * Empty list ≠ load failure.
+ */
+export async function loadWhatsappInbox(): Promise<WhatsappInboxLoad> {
   const access = await getCompanyAccess();
-  if (!access.ok || !access.context.company) return [];
-
-  const supabase = await createClient();
-  const companyId = access.context.company.id;
-
-  const { data: conversations, error } = await supabase
-    .from("whatsapp_conversations")
-    .select(
-      "id, customer_name, customer_wa_id, last_message_at, status, automation_allowed, automation_generation, control_revision, assigned_to",
-    )
-    .eq("company_id", companyId)
-    .order("last_message_at", { ascending: false });
-  if (error || !conversations?.length) return [];
-
-  const { data: messages } = await supabase
-    .from("whatsapp_messages")
-    .select("id, conversation_id, body, received_at, sender, direction, delivery_state")
-    .eq("company_id", companyId)
-    .in("conversation_id", conversations.map((row) => row.id))
-    .order("received_at", { ascending: true });
-
-  const byConversation = new Map<string, Conversation["messages"]>();
-  for (const message of messages ?? []) {
-    const list = byConversation.get(message.conversation_id) ?? [];
-    const from =
-      message.sender === "staff" || message.direction === "outbound"
-        ? "staff"
-        : message.sender === "assistant"
-          ? "assistant"
-          : "customer";
-    list.push({
-      id: message.id,
-      from,
-      text: message.body,
-      at: Date.parse(message.received_at),
-      deliveryState:
-        message.direction === "outbound" && message.delivery_state
-          ? (message.delivery_state as Conversation["messages"][number]["deliveryState"])
-          : undefined,
-    });
-    byConversation.set(message.conversation_id, list);
+  if (!access.ok) {
+    if (access.code === "UNAVAILABLE") return { ok: false, code: "UNAVAILABLE" };
+    return { ok: false, code: "NO_COMPANY" };
+  }
+  // Admin-only sessions without company membership must not browse every tenant inbox here.
+  if (!access.context.company || !access.context.membership) {
+    return { ok: false, code: "NO_COMPANY" };
   }
 
-  const assigneeNames = await loadAssigneeNames(
-    supabase,
-    companyId,
-    conversations.map((row) => row.assigned_to).filter((id): id is string => Boolean(id)),
-  );
+  try {
+    const supabase = await createClient();
+    const companyId = access.context.company.id;
 
-  return (conversations as ConversationRow[]).map((row) =>
-    mapWhatsappConversation(row, byConversation.get(row.id) ?? [], assigneeNames),
-  );
+    const { data: conversations, error } = await supabase
+      .from("whatsapp_conversations")
+      .select(
+        "id, customer_name, customer_wa_id, last_message_at, status, automation_allowed, automation_generation, control_revision, assigned_to",
+      )
+      .eq("company_id", companyId)
+      .order("last_message_at", { ascending: false });
+    if (error) return { ok: false, code: "UNAVAILABLE" };
+    if (!conversations?.length) return { ok: true, conversations: [] };
+
+    const { data: messages, error: messagesError } = await supabase
+      .from("whatsapp_messages")
+      .select("id, conversation_id, body, received_at, sender, direction, delivery_state")
+      .eq("company_id", companyId)
+      .in("conversation_id", conversations.map((row) => row.id))
+      .order("received_at", { ascending: true });
+    if (messagesError) return { ok: false, code: "UNAVAILABLE" };
+
+    const byConversation = new Map<string, Conversation["messages"]>();
+    for (const message of messages ?? []) {
+      const list = byConversation.get(message.conversation_id) ?? [];
+      const from =
+        message.sender === "staff" || message.direction === "outbound"
+          ? "staff"
+          : message.sender === "assistant"
+            ? "assistant"
+            : "customer";
+      list.push({
+        id: message.id,
+        from,
+        text: message.body,
+        at: Date.parse(message.received_at),
+        deliveryState:
+          message.direction === "outbound" && message.delivery_state
+            ? (message.delivery_state as Conversation["messages"][number]["deliveryState"])
+            : undefined,
+      });
+      byConversation.set(message.conversation_id, list);
+    }
+
+    const assigneeNames = await loadAssigneeNames(
+      supabase,
+      companyId,
+      conversations.map((row) => row.assigned_to).filter((id): id is string => Boolean(id)),
+    );
+
+    return {
+      ok: true,
+      conversations: (conversations as ConversationRow[]).map((row) =>
+        mapWhatsappConversation(row, byConversation.get(row.id) ?? [], assigneeNames),
+      ),
+    };
+  } catch {
+    return { ok: false, code: "UNAVAILABLE" };
+  }
 }
 
 export async function loadWhatsappConversation(conversationId: string): Promise<Conversation | null> {

@@ -81,3 +81,5 @@ exports/
 *.dump
 *.sql.gz
 .obsidian/
+.vercel
+.env*

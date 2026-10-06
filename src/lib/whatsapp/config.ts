@@ -34,6 +34,34 @@ export function webhookReady(config: ReturnType<typeof whatsappConfig>) {
 }
 
 /**
+ * Honest single-tenant test reception status from server env only.
+ * Presence flags — never values. Not Meta verification proof.
+ */
+export type SingleTenantReceptionStatus = {
+  mode: WhatsappRoutingMode;
+  receiveConfigured: boolean;
+  hasAppSecret: boolean;
+  hasVerifyToken: boolean;
+  hasPhoneNumberId: boolean;
+  hasCompanyId: boolean;
+  externalSendAllowed: boolean;
+};
+
+export function singleTenantReceptionStatus(): SingleTenantReceptionStatus {
+  const config = whatsappConfig();
+  const mode = whatsappRoutingMode();
+  return {
+    mode,
+    receiveConfigured: webhookReady(config),
+    hasAppSecret: Boolean(config.appSecret),
+    hasVerifyToken: Boolean(config.verifyToken),
+    hasPhoneNumberId: Boolean(config.phoneNumberId),
+    hasCompanyId: Boolean(config.companyId),
+    externalSendAllowed: env("WHATSAPP_ALLOW_EXTERNAL_SEND") === "true",
+  };
+}
+
+/**
  * Integration-ready, not live: Graph receive/send stays off until mode + secrets + apply.
  */
 export function whatsappLiveOpsReady(): boolean {

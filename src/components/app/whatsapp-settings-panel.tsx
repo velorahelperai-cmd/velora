@@ -7,6 +7,7 @@ import {
   saveWhatsappLinkRequest,
 } from "@/lib/whatsapp/connection-actions";
 import type { WhatsappCompanyLink, WhatsappLinkStatus } from "@/lib/whatsapp/connection";
+import type { SingleTenantReceptionStatus } from "@/lib/whatsapp/config";
 import {
   Button, Card, Field, Notice, useAction, useAppCopy, isPhone,
 } from "@/components/app/ui";
@@ -31,15 +32,19 @@ export function WhatsappSettingsPanel({
   initialLink = null,
   initialLoadFailed = false,
   liveOpsReady = false,
+  singleTenant = null,
 }: {
   initialLink?: WhatsappCompanyLink | null;
   initialLoadFailed?: boolean;
   liveOpsReady?: boolean;
+  /** Server env presence for single_tenant test receive — not Meta verification. */
+  singleTenant?: SingleTenantReceptionStatus | null;
 }) {
   const copy = useAppCopy();
   const { busy, run } = useAction();
   const [link, setLink] = useState<WhatsappCompanyLink | null>(initialLink);
   const [loadError, setLoadError] = useState(initialLoadFailed);
+  const showSingleTenant = singleTenant?.mode === "single_tenant";
   const [number, setNumber] = useState(initialLink?.requestedDisplayNumber ?? "");
   const [keepOnPhone, setKeepOnPhone] = useState(initialLink?.keepOnPhone ?? false);
   const [error, setError] = useState<string | null>(null);
@@ -78,12 +83,34 @@ export function WhatsappSettingsPanel({
 
   return (
     <Card title={copy.app.tabs.whatsapp}>
+      {showSingleTenant && singleTenant ? (
+        <div className="mb-4 grid gap-2 rounded-2xl border border-white/10 bg-white/5 p-3 text-sm">
+          <p className="font-medium text-[#dfe9e2]">{copy.app.waSingleTenantTitle}</p>
+          <p className="text-xs leading-5 text-[#8da195]">{copy.app.waSingleTenantBody}</p>
+          <Notice tone={singleTenant.receiveConfigured ? "info" : "warn"}>
+            {singleTenant.receiveConfigured
+              ? copy.app.waSingleTenantConfigured
+              : copy.app.waSingleTenantIncomplete}
+          </Notice>
+          <p className="text-xs leading-5 text-[#8da195]" dir="ltr">
+            app_secret={singleTenant.hasAppSecret ? "yes" : "no"}
+            {" · "}verify_token={singleTenant.hasVerifyToken ? "yes" : "no"}
+            {" · "}phone_number_id={singleTenant.hasPhoneNumberId ? "yes" : "no"}
+            {" · "}company_id={singleTenant.hasCompanyId ? "yes" : "no"}
+          </p>
+          <p className="text-xs leading-5 text-[#8da195]">{copy.app.waSingleTenantSendOff}</p>
+        </div>
+      ) : null}
       {loadError && !link ? (
         <div className="grid gap-3">
           <Notice tone="error">{error ?? copy.app.waLinkLoadFailed}</Notice>
-          <Button type="button" variant="secondary" busy={busy} onClick={() => void run(load)}>
-            {copy.app.waLinkRetry}
-          </Button>
+          {!showSingleTenant ? (
+            <Button type="button" variant="secondary" busy={busy} onClick={() => void run(load)}>
+              {copy.app.waLinkRetry}
+            </Button>
+          ) : (
+            <p className="text-xs text-[#8da195]">{copy.app.waSingleTenantBody}</p>
+          )}
         </div>
       ) : !link ? (
         <div className="grid gap-3">

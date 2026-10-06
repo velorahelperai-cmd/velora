@@ -34,7 +34,15 @@ function applyControlState(base: Conversation, state: ControlState): Conversatio
   };
 }
 
-export function ConversationsPage({ inbox = [] }: { inbox?: Conversation[] }) {
+export function ConversationsPage({
+  inbox = [],
+  loadFailed = false,
+  noCompany = false,
+}: {
+  inbox?: Conversation[];
+  loadFailed?: boolean;
+  noCompany?: boolean;
+}) {
   const copy = useAppCopy();
   const { locale } = useDemo();
   const params = useSearchParams();
@@ -469,9 +477,25 @@ export function ConversationsPage({ inbox = [] }: { inbox?: Conversation[] }) {
     />
   );
 
+  const emptyTitle = loadFailed
+    ? copy.app.inboxLoadFailed
+    : noCompany
+      ? copy.app.inboxNoCompany
+      : inbox.length === 0
+        ? copy.app.inboxEmpty
+        : copy.app.noResults;
+  const emptyBody = loadFailed
+    ? copy.app.inboxLoadFailedBody
+    : noCompany
+      ? copy.app.inboxNoCompanyBody
+      : inbox.length === 0
+        ? copy.app.inboxLiveOnly
+        : undefined;
+
   return (
     <WorkspaceShell title={copy.app.conversationsTitle}>
       <Notice tone="info">{copy.app.inboxLiveOnly}</Notice>
+      {loadFailed ? <Notice tone="error">{copy.app.inboxLoadFailedBody}</Notice> : null}
       <div className="mt-4 grid gap-4 lg:grid-cols-[340px_1fr]">
         <div className={`${selected ? "hidden lg:block" : ""}`}>
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={copy.app.search} aria-label={copy.app.search} className="min-h-11 w-full rounded-xl border border-white/15 bg-[#0d1a14] px-3 text-[15px] outline-none focus-visible:ring-2 focus-visible:ring-[#38dc89]" />
@@ -485,10 +509,7 @@ export function ConversationsPage({ inbox = [] }: { inbox?: Conversation[] }) {
           <ul className="mt-3 grid gap-2">
             {list.length === 0 ? (
               <li>
-                <EmptyState
-                  title={inbox.length === 0 ? copy.app.inboxNotLinked : copy.app.noResults}
-                  body={inbox.length === 0 ? copy.app.inboxLiveOnly : undefined}
-                />
+                <EmptyState title={emptyTitle} body={emptyBody} />
               </li>
             ) : null}
             {list.map((c) => (

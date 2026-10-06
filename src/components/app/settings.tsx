@@ -21,10 +21,12 @@ export function SettingsPage({
   initialWhatsappLink = null,
   whatsappLinkLoadFailed = false,
   whatsappLiveOpsReady = false,
+  singleTenantReception = null,
 }: {
   initialWhatsappLink?: import("@/lib/whatsapp/connection").WhatsappCompanyLink | null;
   whatsappLinkLoadFailed?: boolean;
   whatsappLiveOpsReady?: boolean;
+  singleTenantReception?: import("@/lib/whatsapp/config").SingleTenantReceptionStatus | null;
 }) {
   const copy = useAppCopy();
   const { state, update, effectiveRole, locale } = useDemo();
@@ -54,6 +56,7 @@ export function SettingsPage({
                 initialLink={initialWhatsappLink}
                 initialLoadFailed={whatsappLinkLoadFailed}
                 liveOpsReady={whatsappLiveOpsReady}
+                singleTenant={singleTenantReception}
               />
             ) : null}
             {tab === "plan" ? (
