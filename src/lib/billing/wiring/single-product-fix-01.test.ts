@@ -167,8 +167,8 @@ describe("active subscription blocks new purchase; upgrade not configured", () =
         companyStatus: "active",
         openOrdersForPurpose: [],
         clock,
-      }).code,
-    ).toBe("EARLY_RENEW_REQUIRED_EXPLICIT");
+      }),
+    ).toMatchObject({ ok: false, code: "EARLY_RENEW_REQUIRED_EXPLICIT" });
 
     const ok = decidePurchaseGate({
       companyId: COMPANY_A,

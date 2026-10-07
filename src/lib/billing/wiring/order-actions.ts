@@ -129,9 +129,7 @@ export async function createBillingOrderAction(input: {
   const companyStatus =
     access.context.company.status === "setup"
       ? ("setup" as const)
-      : access.context.company.status === "suspended"
-        ? ("suspended" as const)
-        : ("active" as const);
+      : ("active" as const);
   const membership = {
     companyId,
     role: access.context.membership.role,
