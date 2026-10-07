@@ -71,7 +71,7 @@ const ar = {
     pending: "معلّق دفع",
     setup: "تجهيز",
   },
-} as const;
+};
 
 const en: typeof ar = {
   designPreview: "Design preview",
