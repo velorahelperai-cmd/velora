@@ -35,7 +35,7 @@ export function SubscriptionOfferCards({ locale, term, offers, catalogStatus, se
       const selectedHere = selectedPersona === persona.id && (!selectedPackage || selectedPackage === packageLevel);
       const price = catalogPriceNote(locale, term, offer, catalogStatus);
       const profile = c.personas[persona.id];
-      return <article key={persona.id} data-persona={persona.id} data-seq="plan" className={styles.card} data-selected={selectedHere}>
+      return <article key={persona.id} aria-label={persona[locale]} data-persona={persona.id} data-seq="plan" className={styles.card} data-selected={selectedHere}>
         <div className={styles.portrait}>
           <SubscriptionCharacter name={persona.id === "level_1" ? "noor" : persona.id === "level_2" ? "lina" : "dana"} label={persona[locale]} locale={locale} selected={selectedHere} size="staff"/>
         </div>
@@ -50,7 +50,7 @@ export function SubscriptionOfferCards({ locale, term, offers, catalogStatus, se
             onClick={() => { if (value !== packageLevel && selectedPersona === persona.id) onSelectionInvalidated?.(); setPackages((previous) => ({ ...previous, [persona.id]: value })); }}>{c[value]}</button>)}
         </div>
         <p className={styles.editionNote}>{c.basicPremiumNote}</p>
-        <div className={styles.priceBlock}><p className={styles.price} data-unavailable={!offer} data-catalog-version={offer?.versionId}>{price}</p>
+        <div className={styles.priceBlock}><p className={styles.price} data-unavailable={!offer} data-catalog-version={offer?.versionId}><bdi>{price}</bdi></p>
         <p className={styles.cycleLabel}>{c[term]}</p></div>
         {offer?.automatedOutboundPerMonth != null ? <p className={styles.quota}>{c.quotaLabel.replace("{n}", new Intl.NumberFormat(locale).format(offer.automatedOutboundPerMonth))}
           {offer.quotaEnforcement !== "ready" ? <small>{c.quotaNotVerified}</small> : null}</p> : null}
@@ -63,7 +63,7 @@ export function SubscriptionOfferCards({ locale, term, offers, catalogStatus, se
           <dd>{c.basic}: {catalogPriceNote(locale, term, packageLevel === "basic" ? offer : counterpart, catalogStatus)} · {c.premium}: {catalogPriceNote(locale, term, packageLevel === "premium" ? offer : counterpart, catalogStatus)}</dd>
         </dl> : null}
         <p className={styles.featureScope}>{c.featureScope}</p>
-        <button type="button" className={styles.select} aria-pressed={selectedHere} disabled={cardsDisabled || !offer}
+        <button type="button" className={styles.select} aria-label={(selectedHere ? c.selected : c.select) + " " + persona[locale] + " / " + c[packageLevel]} aria-pressed={selectedHere} disabled={cardsDisabled || !offer}
           onClick={() => { if (offer && !cardsDisabled) onSelect(choiceFromOffer(offer)); }}>
           {selectedHere ? c.selected : c.select}
         </button>

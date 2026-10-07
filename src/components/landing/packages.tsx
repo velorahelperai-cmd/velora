@@ -26,7 +26,7 @@ export function Packages({ copy, locale, destination, offersView, selectedPlan, 
    <h2 data-seq="packages-title" className="mx-auto max-w-[26ch] text-center text-[clamp(2rem,4vw,3.25rem)] font-bold leading-snug text-[#f4f7f5] sm:max-w-none">{c.packagesTitle}</h2>
    <p data-seq="packages-lead" className="mx-auto mt-4 max-w-[52ch] text-center text-lg leading-8 text-[#c5d4cc]">{c.intro}</p>
    <div className="mx-auto mt-8 h-0.5 w-44 rounded-full bg-[#3ee0a0]" data-seq="trace" aria-hidden />
-   <div className={styles.root} lang={locale} dir={locale === "ar" ? "rtl" : "ltr"} style={{marginTop:32}}>
+   <div className={styles.root} data-surface="public" lang={locale} dir={locale === "ar" ? "rtl" : "ltr"} style={{marginTop:32}}>
     <SubscriptionBrandGuide locale={locale} selectedPersona={validChoice?.persona} />
     <div className={styles.planHeading}><p>{c.chooseNote}</p><div className={styles.cycles} role="group" aria-label={c.cycle}>
      <button type="button" aria-pressed={activeTerm==="monthly"} onClick={()=>{setTerm("monthly");setChoice(null);}}>{c.monthly}</button>

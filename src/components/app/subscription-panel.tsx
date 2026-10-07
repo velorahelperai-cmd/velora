@@ -32,11 +32,12 @@ export function SubscriptionPanel({ locale, view, offersView, preview = false, o
     : view.state === "pending" ? c.pendingBlocked : changingTier ? c.upgradeBlocked : c.blocked;
 
   return (
-    <div className={styles.root} data-design-only={preview ? "true" : undefined} lang={locale} dir={locale === "ar" ? "rtl" : "ltr"}>
+    <div className={styles.root} data-surface="account" data-design-only={preview ? "true" : undefined} lang={locale} dir={locale === "ar" ? "rtl" : "ltr"}>
       <header className={styles.heading}>
         <div><h1>{c.title}</h1><p>{c.intro}</p></div>
         <span className={styles.concept}>{c.concept}</span>
       </header>
+      <SubscriptionBrandGuide locale={locale} selectedPersona={selected} />
       <section className={styles.summary} aria-labelledby="subscription-current">
         <div className={styles.summaryTitle}>
           <h2 id="subscription-current">{c.current}</h2>
@@ -53,7 +54,6 @@ export function SubscriptionPanel({ locale, view, offersView, preview = false, o
         {view.state === "error" && onRetry ? <button className={styles.secondary} type="button" onClick={onRetry}>{c.retry}</button> : null}
       </section>
 
-      <SubscriptionBrandGuide locale={locale} selectedPersona={selected} />
       <section aria-labelledby="subscription-plans">
         <div className={styles.planHeading}>
           <div><h2 id="subscription-plans">{c.choose}</h2><p>{c.chooseNote}</p></div>
