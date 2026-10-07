@@ -49,9 +49,22 @@ export function SubscriptionOfferCards({ locale, term, offers, catalogStatus, se
           {(["basic", "premium"] as const).map((value) => <button key={value} type="button" aria-pressed={packageLevel === value} disabled={cardsDisabled}
             onClick={() => { if (value !== packageLevel && selectedPersona === persona.id) onSelectionInvalidated?.(); setPackages((previous) => ({ ...previous, [persona.id]: value })); }}>{c[value]}</button>)}
         </div>
+        {"tierHighlights" in c && (c as any).tierHighlights?.[persona.id]?.[packageLevel] ? (
+          <div className={styles.tierHighlightBox}>
+            <div className={styles.tierQuotaPill}>
+              <span>⚡</span> <strong>{(c as any).tierHighlights[persona.id][packageLevel].quota}</strong> {locale === "ar" ? "رسالة آلية شهريًا" : "auto messages / mo"}
+            </div>
+            <p className={styles.tierSummary}>{(c as any).tierHighlights[persona.id][packageLevel].summary}</p>
+          </div>
+        ) : null}
         <p className={styles.editionNote}>{c.basicPremiumNote}</p>
         <div className={styles.priceBlock}><p className={styles.price} data-unavailable={!offer} data-catalog-version={offer?.versionId}><bdi>{price}</bdi></p>
         <p className={styles.cycleLabel}>{c[term]}</p></div>
+        {persona.id === "level_2" && "setupFeeNote" in c ? (
+          <p className={styles.setupNote}>ℹ️ {(c as any).setupFeeNote.website}</p>
+        ) : persona.id === "level_3" && "setupFeeNote" in c ? (
+          <p className={styles.setupNote}>ℹ️ {(c as any).setupFeeNote.cashier}</p>
+        ) : null}
         {offer?.automatedOutboundPerMonth != null ? <p className={styles.quota}>{c.quotaLabel.replace("{n}", new Intl.NumberFormat(locale).format(offer.automatedOutboundPerMonth))}
           {offer.quotaEnforcement !== "ready" ? <small>{c.quotaNotVerified}</small> : null}</p> : null}
         {offer?.features.length ? <p className={styles.featureHeading}>{c.featuresHeading}</p> : null}

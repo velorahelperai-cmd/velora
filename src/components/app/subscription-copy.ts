@@ -22,11 +22,38 @@ export const subscriptionCopy = {
     editionContrast: "الفرق بين Basic وPremium لهذه الموظفة وفق الإصدار المنشور",
     roleLabel: "ماذا تفعل", fitsLabel: "لمن تناسب",
     personas: {
-      level_1: { role: "ترد على استفسارات واتساب من معرفة الشركة والأسئلة الشائعة، وتحوّل ما يحتاج مراجعة الفريق.", fits: "الأنشطة التي تحتاج موظف استقبال يجيب أولًا ثم يسلّم الاستفسار." },
-      level_2: { role: "تتوسع بعد الاستقبال إلى متابعة الاهتمام والتقارير، بحسب ما يدرجه الكتالوج لهذه النسخة.", fits: "الفِرق التي تحتاج متابعة بعد أول رد، دون افتراض تكامل تشغيلي غير مدرج." },
-      level_3: { role: "طبقة تشغيل أوسع: موقع وكاشير وطلبات ومحاسبة تظهر فقط إن وردت في الكتالوج وبحالة جاهزيتها.", fits: "الأنشطة التي تراجع هذه المهام في الكتالوج قبل الالتزام، ولا تُعامل كتكامل جاهز ما لم تُنشر كذلك." },
+      level_1: {
+        role: "الرد من معرفة الشركة، شرح الخدمات والمنتجات، جمع بيانات العميل واهتمامه، تحويل المحادثات لفريق العمل، مع تأهيل وتوزيع متقدم في Premium.",
+        fits: "الأنشطة التي تحتاج موظفة استقبال وخدمة عملاء ذكية على واتساب دون انقطاع.",
+      },
+      level_2: {
+        role: "قدرات خدمة العملاء والمبيعات، مع موقع تعريفي متكامل (3-5 صفحات) ونماذج استفسار وكتالوج حتى 100 منتج ومتابعة مسار العملاء.",
+        fits: "الشركات التي تبني حضورها الرقمي وتوليد المبيعات والمتابعة التلقائية.",
+      },
+      level_3: {
+        role: "ربط تشغيلي لنقاط البيع واستقبال ومتابعة الطلبات، روابط دفع، ومزامنة الفواتير والمحاسبة والمخزون حتى فرعين.",
+        fits: "الأنشطة التجارية والمتاجر التي تحتاج أتمتة الطلبات والكاشير والعمليات المحاسبية.",
+      },
     },
-    featureScope: "الموقع والكاشير والمحاسبة والتقارير تُعرض بحالة الكتالوج (مخطط أو غير متحقق). لا يعني ظهور الاسم أن التكامل منفّذ.",
+    tierHighlights: {
+      level_1: {
+        basic: { quota: "1,000", summary: "معرفة الشركة، شرح المنتجات، جمع بيانات العميل وسجل المحادثات والتحويل لموظف." },
+        premium: { quota: "2,500", summary: "تأهيل وتوزيع المحادثات، المواعيد والتذكيرات والمتابعات الذكية والتقارير." },
+      },
+      level_2: {
+        basic: { quota: "5,000", summary: "قدرات المبيعات، موقع تعريفي (حتى 3 صفحات)، نماذج استفسار، وتتبع مصدر العميل." },
+        premium: { quota: "10,000", summary: "موقع حتى 5 صفحات (عربي/إنجليزي)، كتالوج حتى 100 منتج، مراحل العملاء وتقارير متقدمة." },
+      },
+      level_3: {
+        basic: { quota: "15,000", summary: "ربط كاشير متوافق (فرع واحد)، استقبال ومتابعة الطلبات، روابط دفع، وتقارير مبيعات." },
+        premium: { quota: "25,000", summary: "ربط محاسبي ومزامنة فواتير ومدفوعات، متابعة التسوية، تقارير تشغيل ودعم فرعين." },
+      },
+    },
+    setupFeeNote: {
+      website: "استضافة ودعم الموقع مشمول بالاشتراك · تصميم وبرمجة القالب رسوم تأسيس لمرة واحدة (140 ر.ع مقترحة).",
+      cashier: "الربط ومزامنة العمليات بالاشتراك · إعداد ومطابقة أنظمة الكاشير رسوم ربط لمرة واحدة (250 ر.ع مقترحة).",
+    },
+    featureScope: "الموقع والكاشير والمحاسبة والتقارير تُعرض بحالة الكتالوج (مخطط أو غير متحقق). حدود الصفحات والفروع مقترحة حتى تفعيل الربط التقني رسميًا.",
     title: "الاشتراكات", intro: "اشتراك واحد لشركتك. اختر مستوى واحدًا من نور أو لينا أو دانة.",
     catalogReady: "الباقات المنشورة متاحة. اختيار الباقة لا ينشئ طلب دفع.",
     catalogEmpty: "لا توجد نسخ باقات منشورة متاحة.",
@@ -85,11 +112,38 @@ export const subscriptionCopy = {
     editionContrast: "Basic vs Premium for this staff member, from the published version",
     roleLabel: "What she does", fitsLabel: "Who it fits",
     personas: {
-      level_1: { role: "Answers WhatsApp enquiries from company knowledge and FAQs, then hands off what needs the team.", fits: "Businesses that need a first-line receptionist who answers, then passes the enquiry on." },
-      level_2: { role: "Goes beyond first-line answers into follow-up and reports, as listed on this catalog version.", fits: "Teams that need follow-up after the first reply, without assuming operational integrations that are not listed." },
-      level_3: { role: "A broader operations layer: website, cashier, orders, and accounting appear only as the catalog lists them and with their readiness state.", fits: "Businesses reviewing those tasks in the catalog before committing. A listed name is not a live integration unless published as such." },
+      level_1: {
+        role: "Answers WhatsApp inquiries from company knowledge, introduces products/services, captures leads, and hands off to team members, with advanced routing in Premium.",
+        fits: "Businesses needing a smart, always-on AI receptionist and customer care agent on WhatsApp.",
+      },
+      level_2: {
+        role: "Full customer support and sales capabilities, bundled with a responsive website (3-5 pages), inquiry forms, up to 100 catalog products, and lead tracking.",
+        fits: "Companies expanding their digital presence, automated sales follow-up, and conversion pipeline.",
+      },
+      level_3: {
+        role: "Operational integrations for POS, order intake & tracking, payment links, and invoice/accounting syncing for up to 2 branches.",
+        fits: "Retail, services, and commercial establishments requiring automated orders, cashier syncing, and accounting.",
+      },
     },
-    featureScope: "Website, cashier, accounting, and reports are shown with the catalog state (planned or not verified). The name does not mean the integration is implemented.",
+    tierHighlights: {
+      level_1: {
+        basic: { quota: "1,000", summary: "Company knowledge, product info, customer data capture, conversation history & staff handoff." },
+        premium: { quota: "2,500", summary: "Lead qualification, conversation routing, appointments & reminders, smart follow-ups, and reports." },
+      },
+      level_2: {
+        basic: { quota: "5,000", summary: "Sales capabilities, showcase website (up to 3 pages), inquiry forms, and lead origin tracking." },
+        premium: { quota: "10,000", summary: "Bilingual website (up to 5 pages), catalog inquiries up to 100 products, lead stages, and advanced analytics." },
+      },
+      level_3: {
+        basic: { quota: "15,000", summary: "Compatible cashier connection (1 branch), order tracking, business payment links, and sales export." },
+        premium: { quota: "25,000", summary: "Accounting sync & payments audit, settlement reconciliation, operational reports, and 2 branches." },
+      },
+    },
+    setupFeeNote: {
+      website: "Website hosting & maintenance included in subscription · Template build & design is a one-time setup fee (140 OMR proposed).",
+      cashier: "Live sync & reporting included in subscription · POS hardware setup & calibration is a one-time onboarding fee (250 OMR proposed).",
+    },
+    featureScope: "Website, cashier, accounting, and reports reflect catalog state. Limits and branch allowances are proposed pending live integration verification.",
     title: "Subscriptions", intro: "One subscription for your company. Choose one level: Noor, Lina, or Dana.",
     catalogReady: "Published plans are available. Selecting a plan does not create a payment order.",
     catalogEmpty: "No published plan versions are available.",
