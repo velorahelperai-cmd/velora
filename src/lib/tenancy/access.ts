@@ -13,13 +13,67 @@ export const WORKSPACE_COMPANY_COOKIE = "velora_workspace_company";
 export function pickWorkspaceMembership<T extends { company_id: string }>(
   memberships: T[],
   selectedCompanyId: string | null,
+  opts?: { requireExplicit?: boolean },
 ): { ok: true; membership: T } | { ok: false; needsContext: boolean } {
   if (memberships.length === 0) return { ok: false, needsContext: false };
-  if (memberships.length === 1) return { ok: true, membership: memberships[0]! };
+  // Platform admins must pick explicitly — never auto-select the only/first company.
+  if (!opts?.requireExplicit && memberships.length === 1) {
+    return { ok: true, membership: memberships[0]! };
+  }
   const selected = selectedCompanyId?.trim() ?? "";
   const match = memberships.find((row) => row.company_id === selected);
   if (!match) return { ok: false, needsContext: true };
   return { ok: true, membership: match };
+}
+
+/** Operational workspace home from membership only — never /admin. */
+export function workspaceHomeHref(ctx: CompanyContext): string | null {
+  if (ctx.workspaceChoices.length === 0) return null;
+  if (ctx.needsCompanyContext) return "/app";
+  if (!ctx.company || !ctx.membership) return null;
+  if (ctx.membership.role === "staff") return "/app/conversations";
+  if (ctx.company.status === "setup") return "/setup";
+  return "/app";
+}
+
+export type AccountProfileView = {
+  userId: string;
+  fullName: string;
+  email: string;
+  supportCode: string;
+  /** Platform-admin flag — independent of business membership. */
+  isPlatformAdmin: boolean;
+  /** Active membership role only — never "admin". */
+  role: CompanyRole | null;
+  companyName: string | null;
+  companyId: string | null;
+  needsCompanyContext: boolean;
+  /** /admin when platform admin; otherwise null. */
+  adminHref: string | null;
+  /** Membership workspace home; null when the user has no company memberships. */
+  workspaceHref: string | null;
+  /** Default post-auth landing (admin → /admin unless preferred operational next). */
+  workHref: string;
+};
+
+export function buildAccountProfileView(
+  access: { ok: true; context: CompanyContext },
+): AccountProfileView {
+  const ctx = access.context;
+  return {
+    userId: ctx.userId,
+    fullName: ctx.fullName,
+    email: ctx.email,
+    supportCode: ctx.supportCode,
+    isPlatformAdmin: ctx.isPlatformAdmin,
+    role: ctx.membership?.role ?? null,
+    companyName: ctx.company?.display_name ?? null,
+    companyId: ctx.company?.id ?? null,
+    needsCompanyContext: ctx.needsCompanyContext,
+    adminHref: ctx.isPlatformAdmin ? "/admin" : null,
+    workspaceHref: workspaceHomeHref(ctx),
+    workHref: pathForAccess(access),
+  };
 }
 
 export type AccessResult =
@@ -191,7 +245,9 @@ export async function getCompanyAccess(
       selectedCookie = null;
     }
 
-    const picked = pickWorkspaceMembership(rows, selectedCookie);
+    const picked = pickWorkspaceMembership(rows, selectedCookie, {
+      requireExplicit: isPlatformAdmin,
+    });
     if (!picked.ok) {
       const choices = await loadWorkspaceChoices(supabase, rows);
       return {

@@ -1,5 +1,6 @@
 import Image from "next/image";
 import { Fragment } from "react";
+import styles from "./phone-messages.module.css";
 
 type PhoneScreenBodyProps = {
   question: string;
@@ -9,42 +10,41 @@ type PhoneScreenBodyProps = {
   note?: string;
 };
 
+export function PhoneStatusBar() {
+  return <div className={styles.statusBar} dir="ltr" aria-hidden="true"><span>9:41</span><span className={styles.statusIcons}><svg width="12" height="10" viewBox="0 0 14 10" fill="currentColor"><rect x="1" y="7" width="2" height="3" rx="0.5" /><rect x="4" y="5" width="2" height="5" rx="0.5" /><rect x="7" y="3" width="2" height="7" rx="0.5" /><rect x="10" y="1" width="2" height="9" rx="0.5" /></svg><svg width="12" height="10" viewBox="0 0 16 12" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><path d="M2 3a9 9 0 0 1 12 0M4.5 6a5.5 5.5 0 0 1 7 0M7 9a2 2 0 0 1 2 0" /></svg><svg width="17" height="10" viewBox="0 0 20 12" fill="none" stroke="currentColor"><rect x="1" y="1" width="15" height="10" rx="2" /><rect x="3" y="3" width="11" height="6" rx="1" fill="currentColor" stroke="none" /><path d="M18 4v4" strokeWidth="2" /></svg></span></div>;
+}
+
 export function PhoneScreenBody({ question, answer, menuLabel, onMenu, note }: PhoneScreenBodyProps) {
+  const questions = question.split("\n\n" );
+  const answers = answer.split("\n\n" );
+  const arabic = /[\u0600-\u06ff]/.test(question);
   return (
-    <>
-      <div className="flex items-center justify-between gap-2 border-b border-[#d7e4db] bg-[#f5f8f5] px-2.5 py-2">
-        <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#38dc89] text-[10px] font-bold text-[#072317]">
-          V
-        </span>
-        <span className="min-w-0 truncate text-sm font-semibold text-[#101b16]">Velora</span>
-        {note ? (
-          <span className="shrink-0 rounded-full bg-[#def5e7] px-1.5 py-0.5 text-[10px] font-medium text-[#087443]">{note}</span>
-        ) : null}
+    <div className={styles.surface}>
+      <PhoneStatusBar />
+      <div className={styles.header}>
+        <span aria-hidden="true" className={styles.back}>‹</span>
+        <span className={styles.avatar} aria-hidden="true">V</span>
+        <span className={styles.contact}>Velora{note ? <small>{note}</small> : null}</span>
+        <span className={styles.headerIcons} aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 3h4l2 5-3 2c2 4 3 5 7 7l2-3 5 2v4c-9 3-20-8-17-17Z" /></svg><span>⋮</span></span>
       </div>
-      <div className="flex min-h-0 flex-1 flex-col justify-center gap-2 overflow-hidden px-2.5 py-2">
-        <p data-seq="question" className="chat-bubble ms-auto max-w-[96%] rounded-2xl rounded-es-md bg-[#def5e7] px-2.5 py-1.5 text-[#101b16]">
-          {question}
-        </p>
-        <div className="chat-turn">
-          <span data-seq="typing" aria-hidden="true" className="typing">
-            <i /><i /><i />
-          </span>
-          <p data-seq="answer" className="chat-bubble me-auto max-w-[98%] rounded-2xl rounded-ss-md border border-[#d7e4db] bg-white px-2.5 py-1.5 text-[#101b16]">
-            {answer}
-          </p>
-        </div>
-        {menuLabel && onMenu ? (
-          <button
-            type="button"
-            data-seq="menu"
-            onClick={onMenu}
-            className="me-auto min-h-11 rounded-full px-2 text-sm font-medium text-[#087443] underline"
-          >
-            {menuLabel}
-          </button>
-        ) : null}
+      <div className={`${styles.messages} ${questions.length > 1 ? styles.dense : ""} flex min-h-0 flex-1 flex-col justify-center overflow-hidden px-2 py-2`}>
+        {questions.map((message, index) => (
+          <Fragment key={index}>
+            <p data-seq={index === questions.length - 1 ? "question" : undefined} className={`chat-bubble ${styles.bubble} ${styles.outgoing}`}>
+              {message}<span className={styles.meta} aria-hidden="true">09:4{index + 1} <span className={styles.checks}>✓✓</span></span>
+            </p>
+            <div className="chat-turn">
+              {index === questions.length - 1 ? <span data-seq="typing" aria-hidden="true" className="typing"><i /><i /><i /></span> : null}
+              <p data-seq={index === questions.length - 1 ? "answer" : undefined} className={`chat-bubble ${styles.bubble} ${styles.incoming}`}>
+                {answers[index] ?? ""}<span className={styles.meta} aria-hidden="true">09:4{index + 1}</span>
+              </p>
+            </div>
+          </Fragment>
+        ))}
+        {menuLabel && onMenu ? <button type="button" data-seq="menu" onClick={onMenu} className="me-auto min-h-11 rounded-full px-2 text-xs font-medium text-[#087443] underline">{menuLabel}</button> : null}
       </div>
-    </>
+      <div className={styles.composer} aria-hidden="true"><span>☺</span><span className={styles.composerField}>{arabic ? "اكتب رسالة" : "Message"}</span><span>＋</span><span className={styles.mic}><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="6" y="2" width="4" height="7" rx="2" /><path d="M4 7v1a4 4 0 0 0 8 0V7M8 12v2M5 14h6" /></svg></span></div>
+    </div>
   );
 }
 
@@ -94,7 +94,7 @@ export function PhoneMock({
 export function PhoneOrbit({ notes }: { notes: readonly string[] }) {
   if (!notes.length) return null;
   return (
-    <ul className="phone-orbit" data-seq="orbit">
+    <ul className={`phone-orbit ${styles.orbit}`} data-seq="orbit">
       {notes.map((note, index) => (
         <li key={`orbit-${index}`}>{note}</li>
       ))}

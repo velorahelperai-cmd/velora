@@ -1,6 +1,5 @@
-"use client";
+﻿"use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
@@ -31,8 +30,6 @@ export function AuthShell({ title, body, children, footer }: { title: string; bo
   const tagline = landingCopy(locale).tagline;
   return (
     <main className="app-shell relative overflow-x-hidden px-4 py-6 pb-[max(6rem,env(safe-area-inset-bottom))]">
-      <Image src="/assets/velora/hero-environment-v2.png" alt="" fill sizes="100vw" className="object-cover object-left opacity-40" priority />
-      <div className="hero-veil" />
       <div className="relative z-10 mx-auto flex max-w-[1100px] items-center justify-between gap-2">
         <Link href="/" className="inline-flex min-h-11 min-w-0 items-center gap-2 text-xl font-bold sm:text-2xl">
           <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#38dc89] text-sm text-[#072317] sm:h-9 sm:w-9 sm:text-base">V</span>
@@ -46,17 +43,17 @@ export function AuthShell({ title, body, children, footer }: { title: string; bo
       </div>
       <div className="relative z-10 mx-auto mt-8 grid max-w-[1100px] items-start gap-8 lg:mt-14 lg:grid-cols-[1fr_min(440px,100%)]">
         <div className="hidden lg:block">
-          <p className="text-sm text-[#38dc89]">{tagline}</p>
-          <h1 className="scene-title mt-4 text-[#f7fbf8]">{title}</h1>
-          {body ? <p className="scene-body mt-4 text-[#adbeaf]">{body}</p> : null}
+          <p className="text-sm text-[var(--color-action-on-dark)]">{tagline}</p>
+          <h1 className="scene-title mt-4 text-[var(--color-on-dark)]">{title}</h1>
+          {body ? <p className="scene-body mt-4 text-[var(--color-muted-on-dark)]">{body}</p> : null}
         </div>
-        <div className="app-panel rounded-3xl bg-[#14221b]/95 p-5 shadow-[0_30px_80px_rgba(0,0,0,0.45)] backdrop-blur sm:p-6">
+        <div className="app-panel rounded-3xl p-5 sm:p-6">
           <div className="lg:hidden">
             <h1 className="text-2xl font-bold leading-snug">{title}</h1>
-            {body ? <p className="mt-2 text-sm leading-6 text-[#adbeaf]">{body}</p> : null}
+            {body ? <p className="mt-2 text-sm leading-6 text-[var(--color-muted-on-dark)]">{body}</p> : null}
           </div>
           <div className="mt-5 lg:mt-0">{children}</div>
-          {footer ? <div className="mt-5 border-t border-white/10 pt-4 text-sm text-[#adbeaf]">{footer}</div> : null}
+          {footer ? <div className="mt-5 border-t border-[color:var(--color-border-soft)] pt-4 text-sm text-[var(--color-muted-on-dark)]">{footer}</div> : null}
         </div>
       </div>
     </main>
@@ -83,10 +80,10 @@ function GoogleAuthButton({
   const copy = useAppCopy();
   return (
     <div className="mt-6 grid gap-3">
-      <div className="flex items-center gap-3 text-xs text-[#8da195]" role="separator">
-        <span className="h-px flex-1 bg-white/10" />
+      <div className="flex items-center gap-3 text-xs text-[var(--color-muted-soft)]" role="separator">
+        <span className="h-px flex-1 bg-[var(--color-hover-wash)]" />
         {copy.auth.orContinue}
-        <span className="h-px flex-1 bg-white/10" />
+        <span className="h-px flex-1 bg-[var(--color-hover-wash)]" />
       </div>
       <Button
         type="button"
@@ -101,7 +98,7 @@ function GoogleAuthButton({
           {copy.auth.withGoogle}
         </span>
       </Button>
-      <p className="text-center text-xs leading-5 text-[#8da195]">{copy.auth.socialNote}</p>
+      <p className="text-center text-xs leading-5 text-[var(--color-muted-soft)]">{copy.auth.socialNote}</p>
       {notice ? <Notice tone="warn">{notice}</Notice> : null}
     </div>
   );
@@ -137,7 +134,8 @@ export function SignupPage() {
   const [errors, setErrors] = useState<Partial<Record<"name" | "email" | "password" | "confirm", FieldErrorKey>>>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [altNotice, setAltNotice] = useState<string | null>(null);
-  const google = useGoogleAuth(setAltNotice);
+  const returnTo = safeInternalPath(params.get("next"), "");
+  const google = useGoogleAuth(setAltNotice, returnTo || null);
   const dirty = Boolean(form.name || form.email || form.password || form.confirm);
   useUnsavedWarning(dirty && !busy);
   const planName = landingCopy(locale).plans.find((p) => p.id === state.planInterest)?.name;
@@ -180,11 +178,11 @@ export function SignupPage() {
     <AuthShell
       title={copy.auth.signupTitle}
       body={copy.auth.signupBody}
-      footer={<>{copy.auth.haveAccount} <Link href="/login" className="text-[#38dc89] underline">{copy.auth.login}</Link></>}
+      footer={<>{copy.auth.haveAccount} <Link href={returnTo ? `/login?next=${encodeURIComponent(returnTo)}` : "/login"} className="text-[#38dc89] underline">{copy.auth.login}</Link></>}
     >
       {planName ? (
         <div className="mb-4">
-          <Notice tone="info">{copy.auth.planInterest} <strong>{planName}</strong><br /><span className="text-[#8da195]">{copy.auth.planNote}</span></Notice>
+          <Notice tone="info">{copy.auth.planInterest} <strong>{planName}</strong><br /><span className="text-[var(--color-muted-soft)]">{copy.auth.planNote}</span></Notice>
         </div>
       ) : null}
 
@@ -257,7 +255,7 @@ export function LoginPage() {
     <AuthShell
       title={copy.auth.loginTitle}
       body={copy.auth.loginBody}
-      footer={<>{copy.auth.noAccount} <Link href="/signup" className="text-[#38dc89] underline">{copy.auth.signup}</Link></>}
+      footer={<>{copy.auth.noAccount} <Link href={safeInternalPath(returnTo, "") ? `/signup?next=${encodeURIComponent(safeInternalPath(returnTo, ""))}` : "/signup"} className="text-[#38dc89] underline">{copy.auth.signup}</Link></>}
     >
       <form className="grid gap-4" onSubmit={submitEmail} noValidate>
         {formError ? <Notice tone="error">{formError}</Notice> : null}
@@ -360,8 +358,8 @@ export function VerifyEmailPage() {
           {cooldown > 0 ? fill(copy.auth.resendIn, { n: cooldown }) : copy.auth.resend}
         </Button>
 
-        <div className="grid gap-3 border-t border-white/10 pt-4">
-          <p className="text-xs leading-5 text-[#8da195]">{copy.auth.correctEmailHint}</p>
+        <div className="grid gap-3 border-t border-[color:var(--color-border-soft)] pt-4">
+          <p className="text-xs leading-5 text-[var(--color-muted-soft)]">{copy.auth.correctEmailHint}</p>
           <Field label={copy.auth.correctEmail} error={emailErrText}>
             {(p) => (
               <input
@@ -428,7 +426,7 @@ export function ForgotPasswordPage() {
       {sent ? (
         <div className="grid gap-4">
           <Notice tone="success">{copy.auth.resetPrepared}</Notice>
-          <p className="text-xs leading-5 text-[#8da195]">{copy.auth.resetResendHint}</p>
+          <p className="text-xs leading-5 text-[var(--color-muted-soft)]">{copy.auth.resetResendHint}</p>
           <Button
             type="button"
             variant="secondary"
@@ -561,7 +559,7 @@ export function ResetPasswordPage() {
 
   return (
     <AuthShell title={copy.auth.resetTitle} footer={<Link href="/login" className="text-[#38dc89] underline">{copy.auth.login}</Link>}>
-      {ready === "loading" ? <p className="text-sm text-[#adbeaf]">{copy.loading}</p> : null}
+      {ready === "loading" ? <p className="text-sm text-[var(--color-muted-on-dark)]">{copy.loading}</p> : null}
       {ready === "missing" ? (
         <div className="grid gap-4">
           <Notice tone="error"><strong>{copy.auth.expiredTitle}</strong><br />{copy.auth.expiredBody}</Notice>
@@ -621,10 +619,10 @@ export function AcceptInvitePage() {
     <AuthShell title={copy.auth.inviteTitle} body={fill(copy.auth.inviteBody, { business, role: copy.auth.roleStaff })}>
       <div className="grid gap-4">
         <Notice tone="warn">{copy.auth.invitePreviewOnly}</Notice>
-        <div className="grid gap-2 rounded-xl border border-white/10 bg-white/5 p-4 text-sm">
-          <div className="flex justify-between gap-3"><span className="text-[#adbeaf]">{copy.setup.businessName}</span><strong>{business}</strong></div>
-          <div className="flex justify-between gap-3"><span className="text-[#adbeaf]">{copy.app.roleLabel}</span><strong>{copy.auth.roleStaff}</strong></div>
-          <div className="flex justify-between gap-3"><span className="text-[#adbeaf]">{copy.auth.email}</span><span dir="ltr">{invited.email}</span></div>
+        <div className="grid gap-2 rounded-xl border border-[color:var(--color-border-soft)] bg-[var(--color-hover-wash)] p-4 text-sm">
+          <div className="flex justify-between gap-3"><span className="text-[var(--color-muted-on-dark)]">{copy.setup.businessName}</span><strong>{business}</strong></div>
+          <div className="flex justify-between gap-3"><span className="text-[var(--color-muted-on-dark)]">{copy.app.roleLabel}</span><strong>{copy.auth.roleStaff}</strong></div>
+          <div className="flex justify-between gap-3"><span className="text-[var(--color-muted-on-dark)]">{copy.auth.email}</span><span dir="ltr">{invited.email}</span></div>
         </div>
         <Button
           busy={busy}

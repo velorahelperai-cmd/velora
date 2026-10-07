@@ -1,4 +1,5 @@
 "use client";
+import type { SubscriptionDestination } from "@/components/app/subscription-navigation";
 
 import { useGSAP } from "@gsap/react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -18,15 +19,20 @@ import { DemoScene } from "@/components/landing/demo";
 import { Faq } from "@/components/landing/faq";
 import { SiteFooter } from "@/components/landing/footer";
 import { LandingChatbot } from "@/components/landing/landing-chatbot";
+import type { SubscriptionOffersView } from "@/components/app/subscription-offers-view";
 import { Packages } from "@/components/landing/packages";
 
 registerLandingMotion();
 
 export function LandingPage({
   initialLocale,
+  offersView,
+  subscriptionDestination,
   authHref = "/signup",
 }: {
   initialLocale: Locale;
+  offersView?: SubscriptionOffersView;
+  subscriptionDestination?: SubscriptionDestination;
   authHref?: string;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -245,7 +251,7 @@ export function LandingPage({
             />
           }
         />
-        <Packages copy={copy} selectedPlan={plan} onSelect={selectPlan} />
+        <Packages copy={copy} destination={subscriptionDestination} locale={locale} offersView={offersView} selectedPlan={plan} onSelect={selectPlan} />
         <Faq copy={copy} />
         <AboutContact
           copy={copy}

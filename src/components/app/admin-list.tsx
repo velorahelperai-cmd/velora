@@ -1,5 +1,6 @@
-"use client";
+﻿"use client";
 
+import { useDemo } from "@/lib/demo-state";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AppTopBar } from "@/components/app/account-chrome";
@@ -90,6 +91,7 @@ export function AdminList({
   overviewUnavailable?: { code: AccessCode | "AUTH_ERROR"; message: string | null } | null;
 }) {
   const copy = useAppCopy();
+  const {locale}=useDemo();
   const { busy, run } = useAction();
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<"all" | CompanyStatus>("all");
@@ -411,13 +413,15 @@ export function AdminList({
         <div className="mt-6">
           <p className="text-sm text-[#38dc89]">{copy.brand}</p>
           <h1 className="text-3xl font-bold">{copy.admin.title}</h1>
-          <p className="mt-1 text-sm text-[#adbeaf]">{copy.admin.body}</p>
+          <p className="mt-1 text-sm text-[var(--color-muted-on-dark)]">{copy.admin.body}</p>
         </div>
 
         <nav className="mt-4 flex flex-wrap gap-2 text-sm" aria-label={copy.admin.title}>
-          <a href="#accounts" className="inline-flex min-h-11 items-center rounded-full border border-white/15 px-3 hover:bg-white/5">{copy.admin.navAccounts}</a>
-          <a href="#companies" className="inline-flex min-h-11 items-center rounded-full border border-white/15 px-3 hover:bg-white/5">{copy.admin.navCompanies}</a>
-          <a href="#reviews" className="inline-flex min-h-11 items-center rounded-full border border-white/15 px-3 hover:bg-white/5">{copy.admin.navReviews}</a>
+          <a href="#accounts" className="inline-flex min-h-11 items-center rounded-full border border-[color:var(--color-border-soft)] px-3 hover:bg-[var(--color-hover-wash)]">{copy.admin.navAccounts}</a>
+          <a href="#companies" className="inline-flex min-h-11 items-center rounded-full border border-[color:var(--color-border-soft)] px-3 hover:bg-[var(--color-hover-wash)]">{copy.admin.navCompanies}</a>
+          <a href="#reviews" className="inline-flex min-h-11 items-center rounded-full border border-[color:var(--color-border-soft)] px-3 hover:bg-[var(--color-hover-wash)]">{copy.admin.navReviews}</a>
+          <Link href="/admin/catalog" className="inline-flex min-h-11 items-center rounded-full border border-[color:var(--color-border-soft)] px-3 hover:bg-[var(--color-hover-wash)]">{locale === "ar" ? "كتالوج الاشتراكات" : "Subscription catalog"}</Link>
+          <Link href="/admin/access" className="inline-flex min-h-11 items-center rounded-full border border-[color:var(--color-border-soft)] px-3 hover:bg-[var(--color-hover-wash)]">{copy.admin.navAccess}</Link>
         </nav>
 
         <section className="app-panel mt-6 rounded-3xl p-4 sm:p-6" aria-label={copy.admin.statsTitle}>
@@ -439,7 +443,7 @@ export function AdminList({
             </div>
           ) : null}
           {overviewState === "loading" ? (
-            <p className="mt-3 text-sm text-[#8da195]">{copy.loading}</p>
+            <p className="mt-3 text-sm text-[var(--color-muted-soft)]">{copy.loading}</p>
           ) : null}
           {overviewState === "error" ? (
             <div className="mt-3">
@@ -448,14 +452,14 @@ export function AdminList({
           ) : null}
           {overviewState === "ready" && overview ? (
             <dl className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
-              <div className="flex justify-between gap-3"><dt className="text-[#adbeaf]">{copy.admin.statsAccountsTotal}</dt><dd>{overview.accountsTotal}</dd></div>
-              <div className="flex justify-between gap-3"><dt className="text-[#adbeaf]">{copy.admin.statsAccountsNoCompany}</dt><dd>{overview.accountsWithoutCompany}</dd></div>
-              <div className="flex justify-between gap-3"><dt className="text-[#adbeaf]">{copy.admin.statsAccountsNoActiveCompany}</dt><dd>{overview.accountsWithoutActiveCompany}</dd></div>
-              <div className="flex justify-between gap-3"><dt className="text-[#adbeaf]">{copy.admin.statsCompaniesTotal}</dt><dd>{overview.companiesTotal}</dd></div>
-              <div className="flex justify-between gap-3"><dt className="text-[#adbeaf]">{copy.admin.statsCompaniesSetup}</dt><dd>{overview.companiesSetup}</dd></div>
-              <div className="flex justify-between gap-3"><dt className="text-[#adbeaf]">{copy.admin.statsCompaniesActive}</dt><dd>{overview.companiesActive}</dd></div>
-              <div className="flex justify-between gap-3"><dt className="text-[#adbeaf]">{copy.admin.statsCompaniesSuspended}</dt><dd>{overview.companiesSuspended}</dd></div>
-              <div className="flex justify-between gap-3 sm:col-span-2"><dt className="text-[#adbeaf]">{copy.admin.statsSubscriptions}</dt><dd className="text-[#8da195]">{copy.admin.statsNotConfigured}</dd></div>
+              <div className="flex justify-between gap-3"><dt className="text-[var(--color-muted-on-dark)]">{copy.admin.statsAccountsTotal}</dt><dd>{overview.accountsTotal}</dd></div>
+              <div className="flex justify-between gap-3"><dt className="text-[var(--color-muted-on-dark)]">{copy.admin.statsAccountsNoCompany}</dt><dd>{overview.accountsWithoutCompany}</dd></div>
+              <div className="flex justify-between gap-3"><dt className="text-[var(--color-muted-on-dark)]">{copy.admin.statsAccountsNoActiveCompany}</dt><dd>{overview.accountsWithoutActiveCompany}</dd></div>
+              <div className="flex justify-between gap-3"><dt className="text-[var(--color-muted-on-dark)]">{copy.admin.statsCompaniesTotal}</dt><dd>{overview.companiesTotal}</dd></div>
+              <div className="flex justify-between gap-3"><dt className="text-[var(--color-muted-on-dark)]">{copy.admin.statsCompaniesSetup}</dt><dd>{overview.companiesSetup}</dd></div>
+              <div className="flex justify-between gap-3"><dt className="text-[var(--color-muted-on-dark)]">{copy.admin.statsCompaniesActive}</dt><dd>{overview.companiesActive}</dd></div>
+              <div className="flex justify-between gap-3"><dt className="text-[var(--color-muted-on-dark)]">{copy.admin.statsCompaniesSuspended}</dt><dd>{overview.companiesSuspended}</dd></div>
+              <div className="flex justify-between gap-3 sm:col-span-2"><dt className="text-[var(--color-muted-on-dark)]">{copy.admin.statsSubscriptions}</dt><dd className="text-[var(--color-muted-soft)]">{copy.admin.statsNotConfigured}</dd></div>
             </dl>
           ) : null}
         </section>
@@ -466,15 +470,15 @@ export function AdminList({
           className="app-panel mt-6 scroll-mt-28 rounded-3xl p-4 outline-none transition-[box-shadow,border-color] duration-300 sm:p-6"
         >
           <h2 className="text-lg font-bold">{copy.admin.accountsTitle}</h2>
-          <p className="mt-1 text-sm text-[#adbeaf]">{copy.admin.accountsBody}</p>
+          <p className="mt-1 text-sm text-[var(--color-muted-on-dark)]">{copy.admin.accountsBody}</p>
           <input
             value={accountQuery}
             onChange={(e) => onAccountQueryChange(e.target.value)}
             placeholder={copy.admin.accountSearch}
-            className="mt-4 min-h-11 w-full rounded-xl border border-white/15 bg-transparent px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[#38dc89]"
+            className="mt-4 min-h-11 w-full rounded-xl border border-[color:var(--color-border-soft)] bg-transparent px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[#38dc89]"
           />
           {accountsState === "loading" || accountBusy ? (
-            <p className="mt-3 text-xs text-[#8da195]">{copy.loading}</p>
+            <p className="mt-3 text-xs text-[var(--color-muted-soft)]">{copy.loading}</p>
           ) : null}
           {accountError && requestMatchesInput ? (
             <div className="mt-3 grid gap-2">
@@ -492,28 +496,28 @@ export function AdminList({
             </div>
           ) : null}
           {legacyBrowseLikely ? (
-            <p className="mt-3 text-xs text-[#8da195]">{copy.admin.accountsBrowseHint}</p>
+            <p className="mt-3 text-xs text-[var(--color-muted-soft)]">{copy.admin.accountsBrowseHint}</p>
           ) : null}
           {resultsMatchInput && accountOffsetCapped ? (
-            <p className="mt-3 text-xs text-[#8da195]">
+            <p className="mt-3 text-xs text-[var(--color-muted-soft)]">
               {fill(copy.admin.accountsOffsetCap, { n: ADMIN_ACCOUNT_SEARCH_MAX_OFFSET })}
             </p>
           ) : null}
           <ul className="mt-4 grid gap-2">
             {resultsMatchInput ? accountRows.map((row) => (
-              <li key={row.user_id} className="rounded-2xl border border-white/10 px-4 py-3">
+              <li key={row.user_id} className="rounded-2xl border border-[color:var(--color-border-soft)] px-4 py-3">
                 <strong className="block break-words">
                   {row.full_name || copy.admin.accountFieldUnavailable}
                 </strong>
-                <p className="mt-1 font-mono text-xs text-[#9af0c3]" dir="ltr">
+                <p className="mt-1 font-mono text-xs text-[var(--color-success-fg)]" dir="ltr">
                   {row.support_code || copy.admin.accountFieldUnavailable}
                 </p>
-                <p className="mt-1 text-xs text-[#adbeaf]" dir="ltr">{row.email || "—"}</p>
-                <p className="mt-1 text-xs text-[#8da195]">{emailConfirmLabel(row.email_confirmed, copy)}</p>
-                <p className="mt-1 text-xs text-[#8da195]" dir="ltr">
+                <p className="mt-1 text-xs text-[var(--color-muted-on-dark)]" dir="ltr">{row.email || "—"}</p>
+                <p className="mt-1 text-xs text-[var(--color-muted-soft)]">{emailConfirmLabel(row.email_confirmed, copy)}</p>
+                <p className="mt-1 text-xs text-[var(--color-muted-soft)]" dir="ltr">
                   {copy.admin.accountPhone}: {row.account_phone || "—"}
                 </p>
-                <ul className="mt-2 grid gap-1 text-xs text-[#adbeaf]">
+                <ul className="mt-2 grid gap-1 text-xs text-[var(--color-muted-on-dark)]">
                   {row.companies.length ? row.companies.map((c) => (
                     <li key={`${row.user_id}-${c.company_id}`}>
                       <Link href={`/admin/companies/${c.company_id}`} className="text-[#38dc89] underline">{c.display_name}</Link>
@@ -527,7 +531,7 @@ export function AdminList({
               </li>
             )) : null}
             {resultsMatchInput && !accountBusy && !accountRows.length && !accountError && !legacyBrowseLikely ? (
-              <li className="text-sm text-[#8da195]">{copy.admin.accountSearchEmpty}</li>
+              <li className="text-sm text-[var(--color-muted-soft)]">{copy.admin.accountSearchEmpty}</li>
             ) : null}
           </ul>
           {resultsMatchInput && (accountOffset > 0 || accountHasMore) ? (
@@ -539,7 +543,7 @@ export function AdminList({
               >
                 {copy.admin.accountPrev}
               </Button>
-              <span className="text-xs text-[#8da195]">{fill(copy.admin.accountPage, { n: pageNumber })}</span>
+              <span className="text-xs text-[var(--color-muted-soft)]">{fill(copy.admin.accountPage, { n: pageNumber })}</span>
               <Button
                 variant="secondary"
                 disabled={accountBusy || !accountHasMore}
@@ -557,7 +561,7 @@ export function AdminList({
           className="app-panel mt-6 scroll-mt-28 rounded-3xl p-4 outline-none transition-[box-shadow,border-color] duration-300 sm:p-6"
         >
           <h2 className="text-lg font-bold">{copy.admin.companiesTitle}</h2>
-          <p className="mt-1 text-sm text-[#adbeaf]">{copy.admin.companiesBody}</p>
+          <p className="mt-1 text-sm text-[var(--color-muted-on-dark)]">{copy.admin.companiesBody}</p>
           <form
             className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto_auto]"
             onSubmit={(e) => {
@@ -569,13 +573,13 @@ export function AdminList({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder={copy.admin.search}
-              className="min-h-11 w-full rounded-xl border border-white/15 bg-transparent px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[#38dc89]"
+              className="min-h-11 w-full rounded-xl border border-[color:var(--color-border-soft)] bg-transparent px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[#38dc89]"
             />
             <select
               value={status}
               onChange={(e) => setStatus(e.target.value as "all" | CompanyStatus)}
               aria-label={copy.admin.statusFilter}
-              className="min-h-11 rounded-xl border border-white/15 bg-[#0d1a14] px-3 text-sm"
+              className="min-h-11 rounded-xl border border-[color:var(--color-border-soft)] bg-[#0d1a14] px-3 text-sm"
             >
               <option value="all">{copy.admin.statusAll}</option>
               <option value="setup">{copy.admin.statusSetup}</option>
@@ -586,7 +590,7 @@ export function AdminList({
           </form>
 
           {companiesState === "loading" ? (
-            <p className="mt-4 text-sm text-[#8da195]">{copy.loading}</p>
+            <p className="mt-4 text-sm text-[var(--color-muted-soft)]">{copy.loading}</p>
           ) : null}
 
           {companiesState === "error" ? (
@@ -607,14 +611,14 @@ export function AdminList({
             <ul className="mt-5 grid gap-2">
               {filtered.map((row) => (
                 <li key={row.id}>
-                  <Link href={`/admin/companies/${row.id}`} className="block rounded-2xl border border-white/10 px-4 py-3 transition hover:border-[#38dc89]/50 hover:bg-white/5">
+                  <Link href={`/admin/companies/${row.id}`} className="block rounded-2xl border border-[color:var(--color-border-soft)] px-4 py-3 transition hover:border-[#38dc89]/50 hover:bg-[var(--color-hover-wash)]">
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div className="min-w-0">
                         <strong className="block break-words text-base">{row.display_name}</strong>
-                        <p className="mt-1 text-xs text-[#8da195]">{row.business_type} · {row.city || row.country}</p>
-                        <p className="mt-1 text-xs text-[#adbeaf]" dir="ltr">{row.owner_email || "—"}</p>
+                        <p className="mt-1 text-xs text-[var(--color-muted-soft)]">{row.business_type} · {row.city || row.country}</p>
+                        <p className="mt-1 text-xs text-[var(--color-muted-on-dark)]" dir="ltr">{row.owner_email || "—"}</p>
                       </div>
-                      <span className="rounded-full bg-white/10 px-2 py-0.5 text-[11px]">
+                      <span className="rounded-full bg-[var(--color-hover-wash)] px-2 py-0.5 text-[11px]">
                         {row.status === "setup" ? copy.admin.statusSetup
                           : row.status === "active" ? copy.admin.statusActive
                             : row.status === "suspended" ? copy.admin.statusSuspended
@@ -625,7 +629,7 @@ export function AdminList({
                 </li>
               ))}
               {!filtered.length ? (
-                <li className="text-sm text-[#8da195]">{copy.admin.companiesEmpty}</li>
+                <li className="text-sm text-[var(--color-muted-soft)]">{copy.admin.companiesEmpty}</li>
               ) : null}
             </ul>
           ) : null}
@@ -638,7 +642,7 @@ export function AdminList({
         >
           <h2 className="text-lg font-bold">{copy.admin.navReviews}</h2>
           {companiesState === "loading" ? (
-            <p className="mt-4 text-sm text-[#8da195]">{copy.loading}</p>
+            <p className="mt-4 text-sm text-[var(--color-muted-soft)]">{copy.loading}</p>
           ) : null}
           {companiesState === "error" ? (
             <div className="mt-4 grid gap-3">
@@ -659,12 +663,12 @@ export function AdminList({
                 <li key={`review-${row.id}`}>
                   <Link href={`/admin/companies/${row.id}`} className="text-sm text-[#38dc89] underline">{row.display_name}</Link>
                   {row.review_revision != null ? (
-                    <span className="ms-2 text-xs text-[#8da195]">r{row.review_revision}</span>
+                    <span className="ms-2 text-xs text-[var(--color-muted-soft)]">r{row.review_revision}</span>
                   ) : null}
                 </li>
               ))}
               {!reviewPending.length ? (
-                <li className="text-sm text-[#8da195]">{copy.admin.reviewsEmpty}</li>
+                <li className="text-sm text-[var(--color-muted-soft)]">{copy.admin.reviewsEmpty}</li>
               ) : null}
             </ul>
           ) : null}

@@ -1,3 +1,6 @@
+import { subscriptionDestination } from "@/components/app/subscription-navigation";
+import { readPublicCatalogBackend } from "@/lib/billing/catalog-backend/rpc";
+import { offersViewFromCatalog } from "@/components/app/subscription-offers-view";
 import { cookies } from "next/headers";
 import { AccessGate } from "@/components/app/access-gate";
 import { LandingPage } from "@/components/landing/landing-page";
@@ -21,5 +24,6 @@ export default async function HomePage() {
       : "/signup"
     : pathForAccess(access);
 
-  return <LandingPage initialLocale={locale} authHref={authHref} />;
+  const offersView = offersViewFromCatalog(await readPublicCatalogBackend());
+  return <LandingPage initialLocale={locale} authHref={authHref} offersView={offersView} subscriptionDestination={subscriptionDestination(access)} />;
 }

@@ -1,11 +1,14 @@
+import { headers } from "next/headers";
+import { safeInternalPath } from "@/lib/auth/safe-next";
 import { redirect } from "next/navigation";
-import { getCompanyAccess } from "@/lib/tenancy/access";
+import { getCompanyAccess, loginPathForReturn } from "@/lib/tenancy/access";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
+  const returnTo = safeInternalPath((await headers()).get("x-velora-return-path"), "/app");
   const access = await getCompanyAccess();
   if (!access.ok) {
     if (access.code === "UNVERIFIED") redirect("/verify-email");
-    redirect("/login");
+    redirect(loginPathForReturn(returnTo));
   }
   if (access.context.needsProfileName) redirect("/complete-profile");
   if (access.context.isPlatformAdmin && !access.context.company && !access.context.needsCompanyContext) {

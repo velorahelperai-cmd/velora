@@ -14,6 +14,7 @@ export default async function Page() {
         inbox={loaded.ok ? loaded.conversations : []}
         loadFailed={!loaded.ok && loaded.code === "UNAVAILABLE"}
         noCompany={!loaded.ok && loaded.code === "NO_COMPANY"}
+        meta={loaded.ok ? loaded.meta : undefined}
       />
     </Suspense>
   );

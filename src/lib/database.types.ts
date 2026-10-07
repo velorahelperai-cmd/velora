@@ -39,6 +39,7 @@ export type Database = {
           created_by: string;
           created_at: string;
           updated_at: string;
+          timezone: string | null;
         };
         Insert: {
           id?: string;
@@ -54,6 +55,7 @@ export type Database = {
           created_by: string;
           created_at?: string;
           updated_at?: string;
+          timezone?: string | null;
         };
         Update: {
           display_name?: string;
@@ -65,6 +67,7 @@ export type Database = {
           contact_phone?: string;
           contact_email?: string;
           updated_at?: string;
+          timezone?: string | null;
         };
         Relationships: [];
       };
@@ -249,6 +252,13 @@ export type Database = {
           control_actor_id: string | null;
           control_acted_at: string | null;
           assigned_to: string | null;
+          lead_stage: string;
+          lead_stage_reason: string;
+          internal_note: string;
+          follow_up_status: string;
+          follow_up_at: string | null;
+          last_touch_at: string | null;
+          lead_revision: number;
         };
         Insert: {
           id?: string;
@@ -265,6 +275,13 @@ export type Database = {
           control_actor_id?: string | null;
           control_acted_at?: string | null;
           assigned_to?: string | null;
+          lead_stage?: string;
+          lead_stage_reason?: string;
+          internal_note?: string;
+          follow_up_status?: string;
+          follow_up_at?: string | null;
+          last_touch_at?: string | null;
+          lead_revision?: number;
         };
         Update: {
           customer_name?: string;
@@ -276,6 +293,13 @@ export type Database = {
           control_actor_id?: string | null;
           control_acted_at?: string | null;
           assigned_to?: string | null;
+          lead_stage?: string;
+          lead_stage_reason?: string;
+          internal_note?: string;
+          follow_up_status?: string;
+          follow_up_at?: string | null;
+          last_touch_at?: string | null;
+          lead_revision?: number;
         };
         Relationships: [];
       };
@@ -581,6 +605,19 @@ export type Database = {
           p_conversation_id: string;
           p_action: string;
           p_expected_revision: number;
+          p_assignee_user_id?: string | null;
+        };
+        Returns: Json;
+      };
+      upsert_conversation_lead_state: {
+        Args: {
+          p_conversation_id: string;
+          p_expected_revision: number;
+          p_lead_stage: string;
+          p_lead_stage_reason: string;
+          p_internal_note: string;
+          p_follow_up_status: string;
+          p_follow_up_at: string | null;
         };
         Returns: Json;
       };
@@ -688,6 +725,71 @@ export type Database = {
       is_platform_admin: {
         Args: Record<string, never>;
         Returns: boolean;
+      };
+      is_platform_owner: {
+        Args: Record<string, never>;
+        Returns: boolean;
+      };
+      has_company_capability: {
+        Args: { p_company_id: string; p_capability: string };
+        Returns: boolean;
+      };
+      company_conversation_scope: {
+        Args: { p_company_id: string };
+        Returns: string;
+      };
+      access_get_user_snapshot: {
+        Args: { p_user_id: string };
+        Returns: Json;
+      };
+      access_set_member_grants: {
+        Args: {
+          p_company_id: string;
+          p_user_id: string;
+          p_capabilities: string[];
+          p_conversation_scope: string;
+          p_manager_user_id: string | null;
+          p_expected_revision: number;
+          p_reason?: string;
+        };
+        Returns: Json;
+      };
+      access_add_company_staff: {
+        Args: {
+          p_company_id: string;
+          p_user_id: string;
+          p_capabilities: string[];
+          p_conversation_scope: string;
+          p_expected_grant_revision: number;
+          p_reason?: string;
+        };
+        Returns: Json;
+      };
+      access_apply_staff_capability_conversion: {
+        Args: { p_company_id?: string | null };
+        Returns: Json;
+      };
+      access_set_admin_scope: {
+        Args: {
+          p_admin_user_id: string;
+          p_company_id: string;
+          p_usable: string[];
+          p_delegable: string[];
+          p_expected_revision: number;
+          p_reason?: string;
+        };
+        Returns: Json;
+      };
+      access_set_platform_role: {
+        Args: {
+          p_user_id: string;
+          p_role: string;
+          p_status: string;
+          p_expected_revision: number;
+          p_note?: string;
+          p_reason?: string;
+        };
+        Returns: Json;
       };
       admin_list_companies: {
         Args: { p_search?: string };

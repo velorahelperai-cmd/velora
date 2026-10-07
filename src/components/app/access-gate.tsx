@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -37,7 +37,7 @@ export function AccessGate({
           {dependencyMissing && reason ? (
             <>
               <br />
-              <span className="mt-2 block font-mono text-xs text-[#8da195]" dir="ltr">{reason}</span>
+              <span className="mt-2 block font-mono text-xs text-[var(--color-muted-soft)]" dir="ltr">{reason}</span>
             </>
           ) : null}
         </Notice>
@@ -45,10 +45,10 @@ export function AccessGate({
           <Button type="button" onClick={() => router.refresh()}>
             {copy.errors.accessRetry}
           </Button>
-          <Link href="/admin" className="inline-flex min-h-11 items-center rounded-xl border border-white/15 px-4 text-sm text-[#38dc89]">
+          <Link href="/admin" className="inline-flex min-h-11 items-center rounded-xl border border-[color:var(--color-border-soft)] px-4 text-sm text-[#38dc89]">
             {copy.admin.title}
           </Link>
-          <Link href="/" className="inline-flex min-h-11 items-center rounded-xl border border-white/15 px-4 text-sm text-[#38dc89]">
+          <Link href="/" className="inline-flex min-h-11 items-center rounded-xl border border-[color:var(--color-border-soft)] px-4 text-sm text-[#38dc89]">
             {copy.home}
           </Link>
         </div>

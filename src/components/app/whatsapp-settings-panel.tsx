@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
 import Link from "next/link";
@@ -84,21 +84,21 @@ export function WhatsappSettingsPanel({
   return (
     <Card title={copy.app.tabs.whatsapp}>
       {showSingleTenant && singleTenant ? (
-        <div className="mb-4 grid gap-2 rounded-2xl border border-white/10 bg-white/5 p-3 text-sm">
-          <p className="font-medium text-[#dfe9e2]">{copy.app.waSingleTenantTitle}</p>
-          <p className="text-xs leading-5 text-[#8da195]">{copy.app.waSingleTenantBody}</p>
+        <div className="mb-4 grid gap-2 rounded-2xl border border-[color:var(--color-border-soft)] bg-[var(--color-hover-wash)] p-3 text-sm">
+          <p className="font-medium text-[var(--color-on-dark)]">{copy.app.waSingleTenantTitle}</p>
+          <p className="text-xs leading-5 text-[var(--color-muted-soft)]">{copy.app.waSingleTenantBody}</p>
           <Notice tone={singleTenant.receiveConfigured ? "info" : "warn"}>
             {singleTenant.receiveConfigured
               ? copy.app.waSingleTenantConfigured
               : copy.app.waSingleTenantIncomplete}
           </Notice>
-          <p className="text-xs leading-5 text-[#8da195]" dir="ltr">
+          <p className="text-xs leading-5 text-[var(--color-muted-soft)]" dir="ltr">
             app_secret={singleTenant.hasAppSecret ? "yes" : "no"}
             {" · "}verify_token={singleTenant.hasVerifyToken ? "yes" : "no"}
             {" · "}phone_number_id={singleTenant.hasPhoneNumberId ? "yes" : "no"}
             {" · "}company_id={singleTenant.hasCompanyId ? "yes" : "no"}
           </p>
-          <p className="text-xs leading-5 text-[#8da195]">{copy.app.waSingleTenantSendOff}</p>
+          <p className="text-xs leading-5 text-[var(--color-muted-soft)]">{copy.app.waSingleTenantSendOff}</p>
         </div>
       ) : null}
       {loadError && !link ? (
@@ -109,12 +109,12 @@ export function WhatsappSettingsPanel({
               {copy.app.waLinkRetry}
             </Button>
           ) : (
-            <p className="text-xs text-[#8da195]">{copy.app.waSingleTenantBody}</p>
+            <p className="text-xs text-[var(--color-muted-soft)]">{copy.app.waSingleTenantBody}</p>
           )}
         </div>
       ) : !link ? (
         <div className="grid gap-3">
-          <p className="text-sm text-[#adbeaf]">{copy.app.waLinkLoading}</p>
+          <p className="text-sm text-[var(--color-muted-on-dark)]">{copy.app.waLinkLoading}</p>
           <Button type="button" variant="secondary" busy={busy} onClick={() => void run(load)}>
             {copy.app.waLinkRetry}
           </Button>
@@ -126,21 +126,21 @@ export function WhatsappSettingsPanel({
 
           <dl className="grid gap-3 text-sm">
             <div className="flex flex-wrap justify-between gap-3">
-              <dt className="text-[#adbeaf]">{copy.app.whatsappStatus}</dt>
-              <dd className="rounded-full bg-white/10 px-2 py-0.5 text-xs">{statusLabel(link.status, copy)}</dd>
+              <dt className="text-[var(--color-muted-on-dark)]">{copy.app.whatsappStatus}</dt>
+              <dd className="rounded-full bg-[var(--color-hover-wash)] px-2 py-0.5 text-xs">{statusLabel(link.status, copy)}</dd>
             </div>
             <div className="flex flex-wrap justify-between gap-3">
-              <dt className="text-[#adbeaf]">{copy.app.waLinkCurrentRequest}</dt>
+              <dt className="text-[var(--color-muted-on-dark)]">{copy.app.waLinkCurrentRequest}</dt>
               <dd dir="ltr">{link.requestedDisplayNumber.trim() || "—"}</dd>
             </div>
             {verified ? (
               <>
                 <div className="flex flex-wrap justify-between gap-3">
-                  <dt className="text-[#adbeaf]">{copy.app.waLinkVerifiedCurrent}</dt>
+                  <dt className="text-[var(--color-muted-on-dark)]">{copy.app.waLinkVerifiedCurrent}</dt>
                   <dd dir="ltr">{link.verifiedDisplayNumber || "—"}</dd>
                 </div>
                 <div className="flex flex-wrap justify-between gap-3">
-                  <dt className="text-[#adbeaf]">{copy.app.waLinkTestedLabel}</dt>
+                  <dt className="text-[var(--color-muted-on-dark)]">{copy.app.waLinkTestedLabel}</dt>
                   <dd className="text-xs">
                     {link.receptionSendTested ? copy.app.waLinkTestedYes : copy.app.waLinkTestedNo}
                   </dd>
@@ -148,37 +148,37 @@ export function WhatsappSettingsPanel({
               </>
             ) : (
               <div className="flex flex-wrap justify-between gap-3">
-                <dt className="text-[#adbeaf]">{copy.app.waLinkTestedLabel}</dt>
+                <dt className="text-[var(--color-muted-on-dark)]">{copy.app.waLinkTestedLabel}</dt>
                 <dd className="text-xs">{copy.app.waLinkTestedNo}</dd>
               </div>
             )}
           </dl>
 
           {link.priorLinkEvidence ? (
-            <div className="grid gap-2 rounded-2xl border border-white/10 bg-white/5 p-3 text-sm">
-              <p className="text-xs font-medium text-[#8da195]">{copy.app.waLinkPriorEvidenceTitle}</p>
-              <p className="text-xs leading-5 text-[#8da195]">{copy.app.waLinkPriorEvidenceNote}</p>
+            <div className="grid gap-2 rounded-2xl border border-[color:var(--color-border-soft)] bg-[var(--color-hover-wash)] p-3 text-sm">
+              <p className="text-xs font-medium text-[var(--color-muted-soft)]">{copy.app.waLinkPriorEvidenceTitle}</p>
+              <p className="text-xs leading-5 text-[var(--color-muted-soft)]">{copy.app.waLinkPriorEvidenceNote}</p>
               <dl className="grid gap-2">
                 <div className="flex flex-wrap justify-between gap-3">
-                  <dt className="text-[#adbeaf]">{copy.app.waLinkPriorVerifiedNumber}</dt>
+                  <dt className="text-[var(--color-muted-on-dark)]">{copy.app.waLinkPriorVerifiedNumber}</dt>
                   <dd dir="ltr">{link.verifiedDisplayNumber || "—"}</dd>
                 </div>
                 <div className="flex flex-wrap justify-between gap-3">
-                  <dt className="text-[#adbeaf]">{copy.app.waLinkPriorInboundTested}</dt>
+                  <dt className="text-[var(--color-muted-on-dark)]">{copy.app.waLinkPriorInboundTested}</dt>
                   <dd dir="ltr" className="text-xs">{formatStamp(link.inboundTestedAt)}</dd>
                 </div>
                 <div className="flex flex-wrap justify-between gap-3">
-                  <dt className="text-[#adbeaf]">{copy.app.waLinkPriorOutboundTested}</dt>
+                  <dt className="text-[var(--color-muted-on-dark)]">{copy.app.waLinkPriorOutboundTested}</dt>
                   <dd dir="ltr" className="text-xs">{formatStamp(link.outboundTestedAt)}</dd>
                 </div>
               </dl>
             </div>
           ) : null}
 
-          <p className="text-sm leading-6 text-[#adbeaf]">{nextStep}</p>
-          <p className="text-xs leading-5 text-[#8da195]">{copy.app.waLinkHonestNote}</p>
+          <p className="text-sm leading-6 text-[var(--color-muted-on-dark)]">{nextStep}</p>
+          <p className="text-xs leading-5 text-[var(--color-muted-soft)]">{copy.app.waLinkHonestNote}</p>
           {!liveOpsReady ? (
-            <p className="text-xs leading-5 text-[#8da195]">{copy.app.waLinkLiveOpsOff}</p>
+            <p className="text-xs leading-5 text-[var(--color-muted-soft)]">{copy.app.waLinkLiveOpsOff}</p>
           ) : null}
 
           {!verified ? (
@@ -228,7 +228,7 @@ export function WhatsappSettingsPanel({
                   />
                 )}
               </Field>
-              <label className="flex min-h-11 items-start gap-3 text-sm text-[#adbeaf]">
+              <label className="flex min-h-11 items-start gap-3 text-sm text-[var(--color-muted-on-dark)]">
                 <input
                   type="checkbox"
                   className="mt-1 size-4 accent-[#38dc89]"
@@ -238,16 +238,16 @@ export function WhatsappSettingsPanel({
                 />
                 <span>{copy.app.waLinkKeepOnPhone}</span>
               </label>
-              <p className="text-xs leading-5 text-[#8da195]">{copy.app.waLinkCoexistenceNote}</p>
+              <p className="text-xs leading-5 text-[var(--color-muted-soft)]">{copy.app.waLinkCoexistenceNote}</p>
               <Button type="submit" busy={busy}>{copy.app.waLinkSaveRequest}</Button>
             </form>
           ) : null}
 
-          <p className="text-xs leading-5 text-[#8da195]">{copy.app.waLinkOauthDeferred}</p>
+          <p className="text-xs leading-5 text-[var(--color-muted-soft)]">{copy.app.waLinkOauthDeferred}</p>
           <Button type="button" variant="secondary" disabled>
             {copy.app.waLinkSignupDisabled}
           </Button>
-          <Link href="/setup" className="inline-flex min-h-11 items-center rounded-full border border-white/20 px-4 text-sm">
+          <Link href="/setup" className="inline-flex min-h-11 items-center rounded-full border border-[color:var(--color-border-soft)] px-4 text-sm">
             {copy.setup.title}
           </Link>
         </div>

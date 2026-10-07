@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { AccessGate } from "@/components/app/access-gate";
 import { AccountPage } from "@/components/app/account-page";
-import { getCompanyAccess, pathForAccess } from "@/lib/tenancy/access";
+import { buildAccountProfileView, getCompanyAccess } from "@/lib/tenancy/access";
 
 export const metadata: Metadata = { title: "Account · Velora" };
 
@@ -18,20 +18,10 @@ export default async function Page() {
   }
   if (access.context.needsProfileName) redirect("/complete-profile");
 
-  const ctx = access.context;
   return (
     <AccountPage
-      key={ctx.userId}
-      initial={{
-        userId: ctx.userId,
-        fullName: ctx.fullName,
-        email: ctx.email,
-        supportCode: ctx.supportCode,
-        role: ctx.isPlatformAdmin ? "admin" : ctx.membership?.role ?? null,
-        companyName: ctx.company?.display_name ?? null,
-        companyId: ctx.company?.id ?? null,
-        workHref: pathForAccess(access),
-      }}
+      key={access.context.userId}
+      initial={buildAccountProfileView(access)}
     />
   );
 }

@@ -71,6 +71,11 @@
 :root {
   color: var(--color-on-dark);
   background: var(--color-night);
+  --color-success-fg: #9af0c3;
+  --color-warn-fg: #f0cf9d;
+  --color-danger-fg: #f3a08a;
+  --color-hover-wash: rgba(255, 255, 255, 0.05);
+  --color-border-soft: rgba(255, 255, 255, 0.15);
 }
 
 * {
@@ -106,29 +111,48 @@ button {
   outline-offset: 3px;
 }
 
-/* App workspace atmosphere — keeps Velora night brand without flat single fill. */
+/*
+ * App / admin / auth workspace — light Velora mint (same direction as dashboard preview).
+ * Landing keeps :root night tokens + .hero-shell; homepage must not use .app-shell.
+ */
 .app-shell {
+  --color-night: #e8f1ea;
+  --color-panel: #ffffff;
+  --color-panel-deep: #f3f8f4;
+  --color-on-dark: #101b16;
+  --color-muted-on-dark: #4d6256;
+  --color-muted-soft: #6a8072;
+  --color-line: rgba(16, 27, 22, 0.12);
+  --color-action-on-dark: #087443;
+  --color-success-fg: #066338;
+  --color-warn-fg: #8a6230;
+  --color-danger-fg: #9a3f2e;
+  --color-hover-wash: rgba(16, 27, 22, 0.05);
+  --color-border-soft: rgba(16, 27, 22, 0.14);
+
   min-height: 100svh;
   color: var(--color-on-dark);
   background:
-    radial-gradient(ellipse 80% 50% at 10% -10%, rgba(56, 220, 137, 0.08), transparent 55%),
-    radial-gradient(ellipse 60% 40% at 100% 0%, rgba(217, 164, 103, 0.07), transparent 50%),
-    linear-gradient(180deg, #08140f 0%, var(--color-night) 42%, #060e0a 100%);
+    radial-gradient(ellipse 75% 55% at 12% 8%, rgba(56, 220, 137, 0.22), transparent 58%),
+    radial-gradient(ellipse 60% 50% at 92% 18%, rgba(217, 164, 103, 0.16), transparent 52%),
+    radial-gradient(ellipse 70% 55% at 48% 100%, rgba(8, 116, 67, 0.1), transparent 55%),
+    linear-gradient(165deg, #f3f8f4 0%, #e8f1ea 45%, #dce9e1 100%);
 }
 
 .app-shell-aside {
-  background: rgba(10, 22, 17, 0.92);
+  background: rgba(247, 251, 248, 0.92);
   border-color: var(--color-line);
 }
 
 .app-panel {
   background: var(--color-panel);
   border: 1px solid var(--color-line);
+  box-shadow: 0 8px 28px rgba(16, 27, 22, 0.06);
 }
 
 /* Brief focus cue when admin in-page nav lands on a section. */
 .app-panel.admin-section-target {
-  border-color: rgba(56, 220, 137, 0.55);
+  border-color: rgba(8, 116, 67, 0.45);
   box-shadow: 0 0 0 2px rgba(56, 220, 137, 0.28);
 }
 
@@ -144,6 +168,10 @@ button {
 
 .app-muted-soft {
   color: var(--color-muted-soft);
+}
+
+.app-shell :focus-visible {
+  outline-color: var(--color-action-on-dark);
 }
 
 .hero-shell {

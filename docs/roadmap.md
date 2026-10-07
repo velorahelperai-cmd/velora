@@ -28,3 +28,7 @@ Blocked: vault backend choice; Embedded Signup persist table; payment provider; 
 ## Launch: Meta/AI integration-ready (live off)
 
 Meta and AI server paths are ready to plug (`pathReady`); live Graph/OAuth/paid answers stay off (`liveReady=false`). Product surface: account, company, knowledge, review, `/app`, `/admin`. Snapshot: `readIntegrationReadiness()`. Report: `docs/handoff-report-2026-10-06.md`. Do not apply 101500→06020000 or 160000 without separate approval.
+
+## VEL-SECURITY-LAUNCH-PLAN-01 (final gate before customers + live pay)
+
+Planning/read-only (FIX-01 2026-10-06). Execute **after** feature-complete staging, **before** customer launch and real Paymob. Canonical: [`docs/security-launch-plan-01.md`](security-launch-plan-01.md). Env state by dated evidence (WA migrations applied per 2026-10-06 schema read; ACCESS new not on prod; billing local; Meta send settings must be verified — not assumed off). Exit: no open Critical/High; mandatory tests evidenced; abuse controls actually tested; restore drill before launch.

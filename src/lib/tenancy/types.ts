@@ -15,6 +15,8 @@ export type CompanyRecord = {
   created_by: string;
   created_at: string;
   updated_at: string;
+  /** Optional IANA timezone; null/absent → UTC announced in product. */
+  timezone?: string | null;
 };
 
 export type MembershipRecord = {

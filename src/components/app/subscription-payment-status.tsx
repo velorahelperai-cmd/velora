@@ -1,0 +1,12 @@
+"use client";
+import Link from "next/link";
+import {useRouter} from "next/navigation";
+import {useDemo} from "@/lib/demo-state";
+import type {BillingReturnDisplay} from "@/lib/billing/wiring/return-status";
+import {WorkspaceShell} from "./workspace-shell";
+import styles from "./operational-ui.module.css";
+const copy={ar:{title:"حالة طلب الاشتراك",refresh:"تحديث الحالة",back:"العودة إلى اشتراك الشركة",paidThrough:"نهاية الفترة المسددة",messages:{verifying:"الدفع قيد التحقق من الخادم. لا تنشئ طلب دفع آخر حتى تتضح الحالة.",awaiting_processing:"سُجّل حدث الدفع وتنتظر المعالجة النهائية. لم يُؤكد تفعيل الاشتراك بعد.",success:"أكد الخادم تسوية هذا الطلب. حالة خدمة الشركة وصلاحياتها تُراجع في صفحة الاشتراك.",failed:"سجّل الخادم فشل الدفع لهذا الطلب.",unresolved:"لم تُحسم حالة هذا الطلب بعد. حدّث الحالة أو تواصل مع الدعم.",forbidden:"تعذّر التحقق من هذا الطلب ضمن الشركة الحالية. قد لا يكون متاحًا للحساب أو قد تكون قراءة المدفوعات غير مجهّزة."}},en:{title:"Subscription order status",refresh:"Refresh status",back:"Back to company subscription",paidThrough:"Paid period ends",messages:{verifying:"The server is verifying payment. Do not create another payment request until the status is resolved.",awaiting_processing:"A payment event was stored and awaits final processing. Subscription activation is not confirmed yet.",success:"The server confirmed settlement of this order. Check the subscription page for current company service and access status.",failed:"The server recorded a failed payment for this order.",unresolved:"This order remains unresolved. Refresh its status or contact support.",forbidden:"This order could not be verified in the current company. It may be inaccessible to this account, or payment reads may not be configured."}}} as const;
+export function SubscriptionPaymentStatus({display}:{display:BillingReturnDisplay}){
+ const {locale}=useDemo(),c=copy[locale],router=useRouter();const paid=display.kind==="success"&&display.paidThrough?new Date(display.paidThrough):null;
+ return <WorkspaceShell title={c.title}><section className={styles.panel} data-payment-state={display.kind}><p role="status">{c.messages[display.kind]}</p>{paid&&!Number.isNaN(paid.getTime())?<p>{c.paidThrough}: <bdi>{new Intl.DateTimeFormat(locale,{dateStyle:"medium"}).format(paid)}</bdi></p>:null}<div className={styles.actions}><button type="button" onClick={()=>router.refresh()}>{c.refresh}</button><Link href="/app/settings?tab=plan">{c.back}</Link></div></section></WorkspaceShell>;
+}

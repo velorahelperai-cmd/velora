@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -267,7 +267,7 @@ export function AccountMenu({
 
   if (!session || session.status === "loading") {
     return (
-      <div className="inline-flex min-h-11 min-w-[7rem] items-center justify-center rounded-full border border-white/10 px-3 text-xs text-[#8da195]" aria-busy="true">
+      <div className="inline-flex min-h-11 min-w-[7rem] items-center justify-center rounded-full border border-[color:var(--color-border-soft)] px-3 text-xs text-[var(--color-muted-soft)]" aria-busy="true">
         {copy.loading}
       </div>
     );
@@ -279,7 +279,7 @@ export function AccountMenu({
         <span className="text-xs text-[#f0a0a0]">{copy.account.identityError}</span>
         <button
           type="button"
-          className="inline-flex min-h-11 items-center rounded-full border border-white/15 px-3 text-sm"
+          className="inline-flex min-h-11 items-center rounded-full border border-[color:var(--color-border-soft)] px-3 text-sm"
           onClick={() => void session.refresh()}
         >
           {copy.errors.accessRetry}
@@ -307,25 +307,19 @@ export function AccountMenu({
 
   const identity = session.identity;
   const displayName = identity.fullName.trim() || identity.email || copy.brand;
-  const workHref = identity.workHref;
-  const workLabel = identity.role === "admin"
-    ? copy.account.menuAdmin
-    : workHref.startsWith("/setup")
-      ? copy.account.menuSetup
-      : copy.account.menuWorkspace;
 
   return (
     <div ref={rootRef} className="relative">
       <button
         type="button"
-        className={`inline-flex min-h-11 max-w-[14rem] items-center gap-2 rounded-full border border-white/15 px-2 text-sm transition hover:bg-white/5 ${compact ? "px-2" : "sm:px-3"}`}
+        className={`inline-flex min-h-11 max-w-[14rem] items-center gap-2 rounded-full border border-[color:var(--color-border-soft)] px-2 text-sm transition hover:bg-[var(--color-hover-wash)] ${compact ? "px-2" : "sm:px-3"}`}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={menuId}
         onClick={() => setOpen((v) => !v)}
       >
         <span
-          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#38dc89]/20 text-xs font-bold text-[#9af0c3]"
+          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#38dc89]/20 text-xs font-bold text-[var(--color-success-fg)]"
           aria-hidden
         >
           {initialsOf(identity.fullName, identity.email)}
@@ -336,30 +330,49 @@ export function AccountMenu({
         <div
           id={menuId}
           role="menu"
-          className="absolute end-0 z-50 mt-2 w-[min(18rem,calc(100vw-2rem))] rounded-2xl border border-white/10 bg-[#14221b] p-2 shadow-[0_18px_40px_rgba(0,0,0,0.45)]"
+          className="absolute end-0 z-50 mt-2 w-[min(18rem,calc(100vw-2rem))] rounded-2xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel)] p-2 shadow-[0_18px_40px_rgba(0,0,0,0.45)]"
         >
-          <p className="truncate px-3 py-2 text-xs text-[#8da195]" dir="ltr">{identity.email}</p>
+          <p className="truncate px-3 py-2 text-xs text-[var(--color-muted-soft)]" dir="ltr">{identity.email}</p>
+          {identity.companyName ? (
+            <p className="truncate px-3 pb-2 text-xs text-[var(--color-muted-on-dark)]" key={identity.companyId ?? identity.companyName}>
+              {identity.companyName}
+            </p>
+          ) : null}
           <Link
             role="menuitem"
             href="/account"
-            className="flex min-h-11 items-center rounded-xl px-3 text-sm hover:bg-white/5"
+            className="flex min-h-11 items-center rounded-xl px-3 text-sm hover:bg-[var(--color-hover-wash)]"
             onClick={() => setOpen(false)}
           >
             {copy.account.menuAccount}
           </Link>
-          <Link
-            role="menuitem"
-            href={workHref}
-            className="flex min-h-11 items-center rounded-xl px-3 text-sm hover:bg-white/5"
-            onClick={() => setOpen(false)}
-          >
-            {workLabel}
-          </Link>
-          {identity.role !== "admin" && identity.companyId ? (
+          {identity.adminHref ? (
+            <Link
+              role="menuitem"
+              href={identity.adminHref}
+              className="flex min-h-11 items-center rounded-xl px-3 text-sm hover:bg-[var(--color-hover-wash)]"
+              onClick={() => setOpen(false)}
+            >
+              {copy.account.menuPlatformAdmin}
+            </Link>
+          ) : null}
+          {identity.workspaceHref ? (
+            <Link
+              role="menuitem"
+              href={identity.workspaceHref}
+              className="flex min-h-11 items-center rounded-xl px-3 text-sm hover:bg-[var(--color-hover-wash)]"
+              onClick={() => setOpen(false)}
+            >
+              {identity.workspaceHref.startsWith("/setup")
+                ? copy.account.menuSetup
+                : copy.account.menuMyWorkspace}
+            </Link>
+          ) : null}
+          {identity.companyId && identity.role ? (
             <Link
               role="menuitem"
               href="/app/settings"
-              className="flex min-h-11 items-center rounded-xl px-3 text-sm hover:bg-white/5"
+              className="flex min-h-11 items-center rounded-xl px-3 text-sm hover:bg-[var(--color-hover-wash)]"
               onClick={() => setOpen(false)}
             >
               {copy.account.menuSettings}
@@ -368,7 +381,7 @@ export function AccountMenu({
           <button
             type="button"
             role="menuitem"
-            className="flex min-h-11 w-full items-center rounded-xl px-3 text-start text-sm hover:bg-white/5"
+            className="flex min-h-11 w-full items-center rounded-xl px-3 text-start text-sm hover:bg-[var(--color-hover-wash)]"
             onClick={() => {
               setOpen(false);
               void performLogout(session.clear, update, copy, router, setError);

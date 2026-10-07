@@ -5,8 +5,12 @@ import type { Json } from "@/lib/database.types";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { getCompanyAccess } from "@/lib/tenancy/access";
+import {
+  sessionHasCompanyCapability,
+} from "@/lib/access/actions";
+import { controlActionCapability } from "@/lib/access/capabilities";
 import { externalSendAllowed, sendReady, whatsappConfig, whatsappRoutingMode } from "@/lib/whatsapp/config";
-import { loadWhatsappConversation } from "@/lib/whatsapp/inbox";
+import { loadWhatsappConversation, loadWhatsappInbox, type WhatsappInboxMeta } from "@/lib/whatsapp/inbox";
 import { sendWhatsappText } from "@/lib/whatsapp/send";
 import { decideClaimedTenantSend, applyClaimedPreGraphOutcome } from "@/lib/whatsapp/send-attempt";
 import { classifyPreGraphSettlement, replyFromPreGraphSettlement } from "@/lib/whatsapp/send-failure";
@@ -15,7 +19,7 @@ import {
   resolveWhatsappCompanyByProviderPhone,
 } from "@/lib/whatsapp/tenant-resolve";
 
-export type ControlAction = "take_over" | "resume" | "close";
+export type ControlAction = "take_over" | "resume" | "close" | "assign";
 
 export type ControlState = {
   id: string;
@@ -203,6 +207,16 @@ export async function replyWhatsappConversation(input: {
 
   const companyId = access.context.company.id;
   const actorUserId = access.context.userId;
+  const canReply = await sessionHasCompanyCapability(companyId, "wa.conversations.reply");
+  // null only when explicit pre-migration compat; otherwise fail closed (no membership bypass).
+  if (canReply === false) {
+    return { ok: false, code: "FORBIDDEN", message: "capability_denied", clientOpId };
+  }
+  const canRead = await sessionHasCompanyCapability(companyId, "wa.conversations.read");
+  if (canRead === false) {
+    return { ok: false, code: "FORBIDDEN", message: "capability_denied", clientOpId };
+  }
+
   const mode = whatsappRoutingMode();
   const config = whatsappConfig();
 
@@ -636,6 +650,7 @@ export async function controlWhatsappConversation(input: {
   conversationId: string;
   action: ControlAction;
   expectedRevision: number;
+  assigneeUserId?: string | null;
 }): Promise<ControlActionResult> {
   const access = await getCompanyAccess();
   if (!access.ok) {
@@ -656,7 +671,18 @@ export async function controlWhatsappConversation(input: {
   if (!["owner", "staff"].includes(access.context.membership.role)) {
     return { ok: false, code: "FORBIDDEN" };
   }
+
+  const companyId = access.context.company.id;
+  const needed = controlActionCapability(input.action);
+  const canRead = await sessionHasCompanyCapability(companyId, "wa.conversations.read");
+  if (canRead === false) return { ok: false, code: "FORBIDDEN" };
+  const canAct = await sessionHasCompanyCapability(companyId, needed);
+  if (canAct === false) return { ok: false, code: "FORBIDDEN" };
+
   if (!input.conversationId || !Number.isFinite(input.expectedRevision)) {
+    return { ok: false, code: "INVALID_INPUT" };
+  }
+  if (input.action === "assign" && input.assigneeUserId === undefined) {
     return { ok: false, code: "INVALID_INPUT" };
   }
 
@@ -666,6 +692,7 @@ export async function controlWhatsappConversation(input: {
       p_conversation_id: input.conversationId,
       p_action: input.action,
       p_expected_revision: input.expectedRevision,
+      p_assignee_user_id: input.action === "assign" ? (input.assigneeUserId ?? null) : null,
     });
     if (error) return { ok: false, code: "UNAVAILABLE" };
 
@@ -699,6 +726,158 @@ export async function refreshWhatsappConversation(
     const conversation = await loadWhatsappConversation(conversationId);
     if (!conversation) return { ok: false, code: "NOT_FOUND" };
     return { ok: true, conversation };
+  } catch {
+    return { ok: false, code: "UNAVAILABLE" };
+  }
+}
+
+/** Re-read inbox + lead counts from the same product load path (no save). Full scope snapshot. */
+export async function refreshWhatsappInboxSnapshot(): Promise<
+  | {
+      ok: true;
+      kind: "full";
+      conversations: Conversation[];
+      meta: WhatsappInboxMeta;
+    }
+  | { ok: false; code: "NO_COMPANY" | "UNAVAILABLE" }
+> {
+  try {
+    const loaded = await loadWhatsappInbox();
+    if (!loaded.ok) return { ok: false, code: loaded.code };
+    return {
+      ok: true,
+      kind: "full",
+      conversations: loaded.conversations,
+      meta: loaded.meta,
+    };
+  } catch {
+    return { ok: false, code: "UNAVAILABLE" };
+  }
+}
+
+export type LeadState = {
+  id: string;
+  leadStage: string;
+  leadStageReason: string;
+  internalNote: string;
+  followUpStatus: string;
+  followUpAt: string | null;
+  lastTouchAt: string | null;
+  leadRevision: number;
+  assignedTo: string | null;
+  controlRevision: number;
+};
+
+export type LeadSaveResult =
+  | { ok: true; state: LeadState }
+  | {
+      ok: false;
+      code:
+        | "UNAUTHENTICATED"
+        | "FORBIDDEN"
+        | "NOT_FOUND"
+        | "CONFLICT"
+        | "INVALID_INPUT"
+        | "REASON_REQUIRED"
+        | "FOLLOW_UP_AT_REQUIRED"
+        | "SUBSCRIBED_FORBIDDEN"
+        | "UNAVAILABLE";
+      state?: LeadState;
+    };
+
+function mapLeadState(raw: Record<string, unknown> | null | undefined): LeadState | null {
+  if (!raw || typeof raw.id !== "string") return null;
+  return {
+    id: raw.id,
+    leadStage: String(raw.lead_stage ?? "new"),
+    leadStageReason: String(raw.lead_stage_reason ?? ""),
+    internalNote: String(raw.internal_note ?? ""),
+    followUpStatus: String(raw.follow_up_status ?? "none"),
+    followUpAt: typeof raw.follow_up_at === "string" ? raw.follow_up_at : null,
+    lastTouchAt: typeof raw.last_touch_at === "string" ? raw.last_touch_at : null,
+    leadRevision: Number(raw.lead_revision ?? 1),
+    assignedTo: typeof raw.assigned_to === "string" ? raw.assigned_to : null,
+    controlRevision: Number(raw.control_revision ?? 1),
+  };
+}
+
+/**
+ * Save lead stage / note / follow-up. Requires read+reply.
+ * Never writes assigned_to (use control assign + control_revision).
+ */
+export async function upsertConversationLeadState(input: {
+  conversationId: string;
+  expectedLeadRevision: number;
+  leadStage: string;
+  leadStageReason: string;
+  internalNote: string;
+  followUpStatus: string;
+  followUpAt: string | null;
+}): Promise<LeadSaveResult> {
+  const access = await getCompanyAccess();
+  if (!access.ok) {
+    if (access.code === "UNAUTHENTICATED" || access.code === "UNVERIFIED") {
+      return { ok: false, code: "UNAUTHENTICATED" };
+    }
+    if (access.code === "UNAVAILABLE") return { ok: false, code: "UNAVAILABLE" };
+    return { ok: false, code: "FORBIDDEN" };
+  }
+  if (!access.context.company || !access.context.membership) {
+    return { ok: false, code: "FORBIDDEN" };
+  }
+  if (access.context.company.status === "suspended") {
+    return { ok: false, code: "FORBIDDEN" };
+  }
+
+  const companyId = access.context.company.id;
+  const canRead = await sessionHasCompanyCapability(companyId, "wa.conversations.read");
+  if (canRead === false) return { ok: false, code: "FORBIDDEN" };
+  const canReply = await sessionHasCompanyCapability(companyId, "wa.conversations.reply");
+  if (canReply === false) return { ok: false, code: "FORBIDDEN" };
+
+  if (!input.conversationId || !Number.isFinite(input.expectedLeadRevision)) {
+    return { ok: false, code: "INVALID_INPUT" };
+  }
+  if (input.leadStage.trim().toLowerCase() === "subscribed") {
+    return { ok: false, code: "SUBSCRIBED_FORBIDDEN" };
+  }
+
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase.rpc("upsert_conversation_lead_state", {
+      p_conversation_id: input.conversationId,
+      p_expected_revision: input.expectedLeadRevision,
+      p_lead_stage: input.leadStage,
+      p_lead_stage_reason: input.leadStageReason,
+      p_internal_note: input.internalNote,
+      p_follow_up_status: input.followUpStatus,
+      p_follow_up_at: input.followUpAt,
+    });
+    if (error) {
+      // Missing RPC / ACCESS helpers → fail closed, no capability bypass.
+      return { ok: false, code: "UNAVAILABLE" };
+    }
+
+    const row = asRecord(data);
+    if (!row) return { ok: false, code: "UNAVAILABLE" };
+
+    if (row.ok === true) {
+      const state = mapLeadState(asRecord(row.conversation as Json));
+      if (!state) return { ok: false, code: "UNAVAILABLE" };
+      return { ok: true, state };
+    }
+
+    const code = String(row.code ?? "unavailable");
+    const state = mapLeadState(asRecord(row.conversation as Json)) ?? undefined;
+    if (code === "conflict") return { ok: false, code: "CONFLICT", state };
+    if (code === "forbidden") return { ok: false, code: "FORBIDDEN", state };
+    if (code === "not_found") return { ok: false, code: "NOT_FOUND" };
+    if (code === "unauthenticated") return { ok: false, code: "UNAUTHENTICATED" };
+    if (code === "subscribed_forbidden") return { ok: false, code: "SUBSCRIBED_FORBIDDEN" };
+    if (code === "reason_required") return { ok: false, code: "REASON_REQUIRED" };
+    if (code === "follow_up_at_required") return { ok: false, code: "FOLLOW_UP_AT_REQUIRED" };
+    if (code === "invalid_input") return { ok: false, code: "INVALID_INPUT" };
+    return { ok: false, code: "UNAVAILABLE", state };
   } catch {
     return { ok: false, code: "UNAVAILABLE" };
   }

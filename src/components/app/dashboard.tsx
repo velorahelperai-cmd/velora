@@ -1,9 +1,10 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { useDemo } from "@/lib/demo-state";
+import { DashboardLeads } from "./dashboard-leads";
+import type { WhatsappInboxLoad } from "@/lib/whatsapp/inbox";
 import { fill } from "@/lib/app-copy";
 import {
   getCustomerReadiness,
@@ -19,11 +20,11 @@ import { WorkspaceShell } from "@/components/app/workspace-shell";
 import { Button, Card, LinkButton, Notice, useAppCopy } from "@/components/app/ui";
 
 function toneClass(tone: ReadinessTone): string {
-  if (tone === "complete") return "bg-[#38dc89]/15 text-[#9af0c3]";
-  if (tone === "pending") return "bg-[#d9a467]/15 text-[#f0cf9d]";
-  if (tone === "blocked" || tone === "load_failed") return "bg-[#e07a7a]/15 text-[#f0b4b4]";
-  if (tone === "not_configured") return "bg-white/10 text-[#8da195]";
-  return "bg-white/10 text-[#dfe9e2]";
+  if (tone === "complete") return "bg-[#38dc89]/15 text-[var(--color-success-fg)]";
+  if (tone === "pending") return "bg-[#d9a467]/15 text-[var(--color-warn-fg)]";
+  if (tone === "blocked" || tone === "load_failed") return "bg-[#e07a7a]/15 text-[var(--color-danger-fg)]";
+  if (tone === "not_configured") return "bg-[var(--color-hover-wash)] text-[var(--color-muted-soft)]";
+  return "bg-[var(--color-hover-wash)] text-[var(--color-on-dark)]";
 }
 
 function itemLabel(
@@ -51,15 +52,17 @@ function actionLabel(
 }
 
 export function DashboardPage({
+  initialLeads,
   initialReadiness = null,
   readinessLoadFailed = false,
 }: {
+  initialLeads: WhatsappInboxLoad;
   initialReadiness?: CustomerReadinessSnapshot | null;
   readinessLoadFailed?: boolean;
 }) {
   const copy = useAppCopy();
   const router = useRouter();
-  const { state, effectiveRole } = useDemo();
+
   const [readiness, setReadiness] = useState<CustomerReadinessSnapshot | null>(initialReadiness);
   const [loadFailed, setLoadFailed] = useState(readinessLoadFailed);
   const [refreshFailed, setRefreshFailed] = useState(false);
@@ -111,17 +114,17 @@ export function DashboardPage({
   const nextItem = readiness?.nextItemId
     ? readiness.items.find((i) => i.id === readiness.nextItemId) ?? null
     : null;
-  const helloName = readiness?.fullName || state.account?.name || "";
+  const helloName = readiness?.fullName || "";
 
   return (
     <WorkspaceShell title={copy.app.dashboardTitle}>
-      <p className="mb-5 text-[#adbeaf]">{fill(copy.app.hello, { name: helloName })}</p>
+      <p className="mb-5 text-[var(--color-muted-on-dark)]">{fill(copy.app.hello, { name: helloName })}</p>
 
-      <section className="mb-4 rounded-3xl border border-white/10 bg-white/[0.03] p-4 sm:p-5" aria-label={copy.app.readinessTitle}>
+      <section className="mb-4 rounded-3xl border border-[color:var(--color-border-soft)] bg-[var(--color-hover-wash)] p-4 sm:p-5" aria-label={copy.app.readinessTitle}>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <h2 className="text-lg font-bold">{copy.app.readinessTitle}</h2>
-            <p className="mt-1 text-sm text-[#adbeaf]">{copy.app.readinessBody}</p>
+            <p className="mt-1 text-sm text-[var(--color-muted-on-dark)]">{copy.app.readinessBody}</p>
           </div>
           <Button type="button" variant="secondary" busy={busy} onClick={() => void reloadReadiness()}>
             {copy.app.readinessRetry}
@@ -142,8 +145,8 @@ export function DashboardPage({
         {nextItem && nextItem.href && nextItem.action !== "none" ? (
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#38dc89]/35 bg-[#38dc89]/10 px-4 py-3">
             <div className="min-w-0">
-              <p className="text-sm font-medium text-[#9af0c3]">{copy.app.nextAction}</p>
-              <p className="text-xs text-[#adbeaf]">
+              <p className="text-sm font-medium text-[var(--color-success-fg)]">{copy.app.nextAction}</p>
+              <p className="text-xs text-[var(--color-muted-on-dark)]">
                 {itemLabel(nextItem.id, copy)} — {detailLabel(nextItem.detail, copy)}
               </p>
             </div>
@@ -160,7 +163,7 @@ export function DashboardPage({
               return (
                 <li
                   key={item.id}
-                  className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 px-4 py-3"
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[color:var(--color-border-soft)] px-4 py-3"
                 >
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
@@ -169,12 +172,12 @@ export function DashboardPage({
                         {copy.app.readinessTones[item.tone]}
                       </span>
                     </div>
-                    <p className="mt-1 text-xs leading-5 text-[#8da195]">{detailLabel(item.detail, copy)}</p>
+                    <p className="mt-1 text-xs leading-5 text-[var(--color-muted-soft)]">{detailLabel(item.detail, copy)}</p>
                   </div>
                   {item.href && label ? (
                     <Link
                       href={item.href}
-                      className="inline-flex min-h-10 shrink-0 items-center rounded-full border border-white/20 px-3 text-xs"
+                      className="inline-flex min-h-10 shrink-0 items-center rounded-full border border-[color:var(--color-border-soft)] px-3 text-xs"
                     >
                       {label}
                     </Link>
@@ -184,17 +187,12 @@ export function DashboardPage({
             })}
           </ul>
         ) : !loadFailed ? (
-          <p className="mt-4 text-sm text-[#8da195]">{copy.loading}</p>
+          <p className="mt-4 text-sm text-[var(--color-muted-soft)]">{copy.loading}</p>
         ) : null}
       </section>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
-        <Card title={copy.app.followUp}>
-          <Notice tone="warn">{copy.app.followUpUnavailable}</Notice>
-          <div className="mt-3">
-            <LinkButton href="/app/conversations" variant="secondary">{copy.app.nav.conversations}</LinkButton>
-          </div>
-        </Card>
+        <DashboardLeads snapshot={initialLeads}/>
         <Card title={copy.app.needsInfo}>
           <Notice tone="warn">{copy.app.needsInfoUnavailable}</Notice>
           <div className="mt-3">
@@ -203,8 +201,8 @@ export function DashboardPage({
         </Card>
       </div>
 
-      {effectiveRole === "staff" ? (
-        <p className="mt-4 text-xs text-[#8da195]">{copy.app.readinessDetails.review_owner_only}</p>
+      {readiness?.role === "staff" ? (
+        <p className="mt-4 text-xs text-[var(--color-muted-soft)]">{copy.app.readinessDetails.review_owner_only}</p>
       ) : null}
     </WorkspaceShell>
   );

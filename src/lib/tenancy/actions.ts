@@ -5,7 +5,14 @@ import { safeInternalPath } from "@/lib/auth/safe-next";
 import { authCallbackUrl, siteUrl } from "@/lib/auth/site-url";
 import { createClient } from "@/lib/supabase/server";
 import { listKnowledgeSources } from "@/lib/knowledge/actions";
-import { getCompanyAccess, pathForAccess, requirePlatformAdmin, WORKSPACE_COMPANY_COOKIE } from "@/lib/tenancy/access";
+import {
+  buildAccountProfileView,
+  getCompanyAccess,
+  pathForAccess,
+  requirePlatformAdmin,
+  type AccountProfileView,
+  WORKSPACE_COMPANY_COOKIE,
+} from "@/lib/tenancy/access";
 import { ADMIN_ACCOUNT_JOURNEY_DEPENDENCY } from "@/lib/tenancy/admin-account-deps";
 import { ADMIN_CONVERSATIONS_RPC_DEPENDENCY } from "@/lib/tenancy/admin-deps";
 import {
@@ -28,6 +35,8 @@ import type {
 import { ADMIN_ACCOUNT_SEARCH_MAX_OFFSET, normalizeAdminAccountQuery } from "@/lib/tenancy/types";
 import { getWhatsappCompanyLink } from "@/lib/whatsapp/connection-actions";
 import { whatsappLiveOpsReady } from "@/lib/whatsapp/config";
+
+export type { AccountProfileView };
 
 const REVIEW_SELECT =
   "company_id, requested_by, number_ownership, whatsapp_number, readiness_confirmed, requested_at, status, revision, decided_by, decided_at, owner_note";
@@ -286,38 +295,11 @@ export async function completeProfileName(name: string): Promise<ActionResult<{ 
   }
 }
 
-export type AccountProfileView = {
-  userId: string;
-  fullName: string;
-  email: string;
-  supportCode: string;
-  role: CompanyRole | "admin" | null;
-  companyName: string | null;
-  companyId: string | null;
-  workHref: string;
-};
-
 export async function getAccountProfile(): Promise<ActionResult<AccountProfileView>> {
   try {
     const access = await getCompanyAccess();
     if (!access.ok) return { ok: false, code: access.code };
-    const ctx = access.context;
-    const role: AccountProfileView["role"] = ctx.isPlatformAdmin
-      ? "admin"
-      : ctx.membership?.role ?? null;
-    return {
-      ok: true,
-      data: {
-        userId: ctx.userId,
-        fullName: ctx.fullName,
-        email: ctx.email,
-        supportCode: ctx.supportCode,
-        role,
-        companyName: ctx.company?.display_name ?? null,
-        companyId: ctx.company?.id ?? null,
-        workHref: pathForAccess(access),
-      },
-    };
+    return { ok: true, data: buildAccountProfileView(access) };
   } catch {
     return { ok: false, code: "UNAVAILABLE" };
   }
@@ -498,35 +480,47 @@ export async function updateAccountName(name: string): Promise<ActionResult<Acco
       /* revalidate optional */
     }
 
-    let role: AccountProfileView["role"] = priorView?.role ?? null;
-    let companyName: string | null = priorView?.companyName ?? null;
-    let companyId: string | null = priorView?.companyId ?? null;
-    let workHref = priorView?.workHref ?? "/account";
+    let profile = priorView ?? {
+      userId: saved.user_id,
+      fullName: saved.full_name,
+      email: user.email ?? "",
+      supportCode: saved.support_code ?? "",
+      isPlatformAdmin: false,
+      role: null as AccountProfileView["role"],
+      companyName: null as string | null,
+      companyId: null as string | null,
+      needsCompanyContext: false,
+      adminHref: null as string | null,
+      workspaceHref: null as string | null,
+      workHref: "/account",
+    };
     try {
       const access = await getCompanyAccess();
       if (access.ok) {
-        const ctx = access.context;
-        role = ctx.isPlatformAdmin ? "admin" : ctx.membership?.role ?? null;
-        companyName = ctx.company?.display_name ?? null;
-        companyId = ctx.company?.id ?? null;
-        workHref = pathForAccess(access);
+        profile = buildAccountProfileView(access);
+        profile = { ...profile, fullName: saved.full_name, supportCode: saved.support_code ?? profile.supportCode };
+      } else {
+        profile = {
+          ...profile,
+          userId: saved.user_id,
+          fullName: saved.full_name,
+          supportCode: saved.support_code ?? profile.supportCode,
+          email: user.email ?? profile.email,
+        };
       }
     } catch {
-      /* keep write success + prior role/company */
+      profile = {
+        ...profile,
+        userId: saved.user_id,
+        fullName: saved.full_name,
+        supportCode: saved.support_code ?? profile.supportCode,
+        email: user.email ?? profile.email,
+      };
     }
 
     return {
       ok: true,
-      data: {
-        userId: saved.user_id,
-        fullName: saved.full_name,
-        email: user.email ?? priorView?.email ?? "",
-        supportCode: saved.support_code ?? priorView?.supportCode ?? "",
-        role,
-        companyName,
-        companyId,
-        workHref,
-      },
+      data: profile,
     };
   } catch {
     return { ok: false, code: "UNAVAILABLE" };

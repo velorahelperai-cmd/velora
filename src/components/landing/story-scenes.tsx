@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useRef, type ReactNode } from "react";
+import styles from "./hero-layout.module.css";
 import type { LandingCopy } from "@/lib/landing-copy";
 import {
   PhoneMock,
@@ -91,7 +92,7 @@ export function StoryScenes({
           ]}
         />
 
-        <section id={pressure.anchor} data-scene="1" className="scene scene-dark relative min-h-[100svh] overflow-hidden px-6 py-8 lg:px-12">
+        <section id={pressure.anchor} data-scene="1" className={`${styles.hero} scene scene-dark relative min-h-[100svh] overflow-hidden px-6 py-8 lg:px-12`}>
           <Image
             src="/assets/velora/hero-environment-v2.png"
             alt=""
@@ -266,6 +267,17 @@ export function StoryScenes({
           <div className="order-1">
             <h2 className="scene-title text-[#101b16]">{overview.title}</h2>
             <p className="scene-body mt-5 text-[#4f6258]">{overview.body}</p>
+            <ul className="mt-6 grid gap-2.5" data-seq="value-points">
+              {copy.valuePoints.map((point) => (
+                <li
+                  key={point}
+                  className="flex items-start gap-2.5 text-base font-medium leading-7 text-[#101b16]"
+                >
+                  <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#087443]" aria-hidden="true" />
+                  <span>{point}</span>
+                </li>
+              ))}
+            </ul>
           </div>
         </div>
       </section>

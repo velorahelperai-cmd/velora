@@ -42,6 +42,16 @@ export type Message = {
   /** Outbound delivery snapshot for live WhatsApp threads only. */
   deliveryState?: "accepted" | "sent" | "delivered" | "read" | "failed" | "unknown";
 };
+export type LeadStage =
+  | "new"
+  | "exploring"
+  | "interested"
+  | "trial_or_quote_requested"
+  | "follow_up"
+  | "closed_no_subscribe";
+
+export type FollowUpStatus = "none" | "scheduled" | "completed" | "cancelled";
+
 export type Conversation = {
   id: string;
   customer: string;
@@ -57,6 +67,16 @@ export type Conversation = {
   topic: string;
   messages: Message[];
   needsInfo?: string;
+  /** Manual lead stage — independent of operational status. */
+  leadStage?: LeadStage;
+  leadStageReason?: string;
+  internalNote?: string;
+  followUpStatus?: FollowUpStatus;
+  followUpAt?: string | null;
+  lastTouchAt?: string | null;
+  /** Optimistic concurrency for lead fields only (≠ control revision). */
+  leadRevision?: number;
+  assignedTo?: string | null;
 };
 export type Member = { id: string; name: string; email: string; role: Role; status: "active" | "invited" };
 export type Activation = {

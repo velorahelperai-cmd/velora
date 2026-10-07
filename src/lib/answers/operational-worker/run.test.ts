@@ -1,0 +1,12 @@
+import {describe,it,expect} from "vitest";
+import {runOperationalAnswer, memoryScopeKey, type WorkerFrame, type WorkerPorts} from "./run";
+const frame:WorkerFrame={companyId:"A",phoneNumberId:"P",conversationId:"C",jobId:"J",operationKey:"operation-001",automationGeneration:1,linkGeneration:1,question:"fixture",chunks:[{sourceId:"S",title:"Fixture",contentVersion:1,text:"fixture"}]};
+function ports(overrides:Partial<WorkerPorts>={}):WorkerPorts{return {enabled:true,loadFrame:async()=>frame,checkFeature:async()=>true,reserveCost:async()=>({ok:true,canDispatch:true}),complete:async()=>({ok:true,text:"answer",inputTokens:10,outputTokens:3,costAtoms:8}),recordCost:async()=>{},handoff:async()=>{},stage:async()=>true,...overrides};}
+describe("operational answer worker",()=>{
+ it("stages only after actual usage accounting and fresh scope check",async()=>{const calls:string[]=[];const result=await runOperationalAnswer("J","claim",ports({recordCost:async()=>{calls.push("cost");},stage:async()=>{calls.push("stage");return true;}}));expect(result.code).toBe("staged");expect(calls).toEqual(["cost","stage"]);});
+ it("records billed usage but does not stage across routing invalidation",async()=>{let reads=0;const result=await runOperationalAnswer("J","claim",ports({loadFrame:async()=>++reads===1?frame:{...frame,linkGeneration:2}}));expect(result.code).toBe("routing_changed");});
+ it("disabled provider never invokes completion",async()=>{const result=await runOperationalAnswer("J","claim",ports({enabled:false,complete:async()=>{throw Error("must not run");}}));expect(result.code).toBe("provider_not_configured");});
+ it("times out once, retains unknown cost, and hands off without retry",async()=>{let state="";const result=await runOperationalAnswer("J","claim",ports({complete:async()=>new Promise(()=>{}),recordCost:async outcome=>{state=outcome.status;}}),5);expect(result.code).toBe("provider_unknown");expect(state).toBe("unknown");});
+ it("does not reuse a dispatched cost reservation",async()=>expect((await runOperationalAnswer("J","claim",ports({reserveCost:async()=>({ok:true,canDispatch:false})}))).code).toBe("operation_already_reserved"));
+ it("scope includes company, phone, conversation, generations and knowledge version",()=>{expect(memoryScopeKey(frame)).not.toBe(memoryScopeKey({...frame,companyId:"B"}));expect(memoryScopeKey(frame)).not.toBe(memoryScopeKey({...frame,chunks:[{...frame.chunks[0],contentVersion:2}]}));});
+});

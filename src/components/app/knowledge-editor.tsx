@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -463,11 +463,11 @@ export function KnowledgeEditor({
   }
 
   const statusStyle: Record<string, string> = {
-    draft: "bg-white/10 text-[#dfe9e2] ring-1 ring-white/15",
-    processing: "bg-[#d9a467]/20 text-[#f0cf9d] ring-1 ring-[#d9a467]/35",
-    stored: "bg-white/10 text-[#dfe9e2] ring-1 ring-white/15",
-    ready: "bg-[#38dc89]/18 text-[#9af0c3] ring-1 ring-[#38dc89]/35",
-    failed: "bg-[#e07a5f]/18 text-[#f3a08a] ring-1 ring-[#e07a5f]/40",
+    draft: "bg-[var(--color-hover-wash)] text-[var(--color-on-dark)] ring-1 ring-white/15",
+    processing: "bg-[#d9a467]/20 text-[var(--color-warn-fg)] ring-1 ring-[#d9a467]/35",
+    stored: "bg-[var(--color-hover-wash)] text-[var(--color-on-dark)] ring-1 ring-white/15",
+    ready: "bg-[#38dc89]/18 text-[var(--color-success-fg)] ring-1 ring-[#38dc89]/35",
+    failed: "bg-[#e07a5f]/18 text-[var(--color-danger-fg)] ring-1 ring-[#e07a5f]/40",
   };
 
   return (
@@ -497,9 +497,9 @@ export function KnowledgeEditor({
         </div>
       ) : null}
       {uploadResults.length ? (
-        <ul className="grid gap-1 rounded-xl border border-[color:var(--color-line)] bg-[#14221b]/80 p-3 text-xs">
+        <ul className="grid gap-1 rounded-xl border border-[color:var(--color-line)] bg-[var(--color-panel)]/80 p-3 text-xs">
           {uploadResults.map((r) => (
-            <li key={r.fileName} className={r.ok ? "text-[#f0cf9d]" : "text-[#f3a08a]"}>
+            <li key={r.fileName} className={r.ok ? "text-[var(--color-warn-fg)]" : "text-[var(--color-danger-fg)]"}>
               <span dir="ltr">{r.fileName}</span>
               {" — "}
               {r.ok ? statusLabel(r.status ?? "stored", copy) : r.message}
@@ -529,7 +529,7 @@ export function KnowledgeEditor({
 
       {mode && canWrite ? (
         <form
-          className="grid gap-3 rounded-2xl border border-[color:var(--color-line)] bg-[#14221b] p-4"
+          className="grid gap-3 rounded-2xl border border-[color:var(--color-line)] bg-[var(--color-panel)] p-4"
           noValidate
           onSubmit={(e) => { e.preventDefault(); save(); }}
         >
@@ -581,7 +581,7 @@ export function KnowledgeEditor({
             <li key={src.id} className="grid gap-2 border-b border-[color:var(--color-line)] py-4 last:border-b-0 sm:grid-cols-[1fr_auto] sm:items-start">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <p className="font-semibold tracking-tight text-[#f7fbf8]">{src.title}</p>
+                  <p className="font-semibold tracking-tight text-[var(--color-on-dark)]">{src.title}</p>
                   <span className={`rounded-md px-2 py-0.5 text-[11px] font-medium ${statusStyle[src.status]}`}>
                     {statusLabel(src.status, copy)}
                   </span>
@@ -589,8 +589,8 @@ export function KnowledgeEditor({
                     <span
                       className={`rounded-md px-2 py-0.5 text-[11px] font-medium ${
                         isApprovedForAnswers(src)
-                          ? "bg-[#38dc89]/22 text-[#9af0c3] ring-1 ring-[#38dc89]/40"
-                          : "bg-white/8 text-[#adbeaf] ring-1 ring-white/12"
+                          ? "bg-[#38dc89]/22 text-[var(--color-success-fg)] ring-1 ring-[#38dc89]/40"
+                          : "bg-white/8 text-[var(--color-muted-on-dark)] ring-1 ring-white/12"
                       }`}
                     >
                       {approvalFoundation === "unavailable"
@@ -608,7 +608,7 @@ export function KnowledgeEditor({
                   <p className="app-muted mt-1 line-clamp-2 text-sm leading-6">{src.content}</p>
                 ) : null}
                 {src.failure_code ? (
-                  <p className="mt-1 text-sm leading-6 text-[#f3a08a]">{reasonText(src.failure_code, copy)}</p>
+                  <p className="mt-1 text-sm leading-6 text-[var(--color-danger-fg)]">{reasonText(src.failure_code, copy)}</p>
                 ) : null}
                 {src.status === "ready" && canWrite && approvalFoundation === "ready" ? (
                   <p className="app-muted-soft mt-1 text-xs leading-5">{copy.knowledge.approveHint}</p>

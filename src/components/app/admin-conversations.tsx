@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useRef, useState } from "react";
@@ -91,29 +91,29 @@ export function AdminConversationsView({
         </div>
 
         <header className="mt-4 rounded-2xl border border-[#38dc89]/30 bg-[#38dc89]/10 px-4 py-3">
-          <p className="text-xs text-[#8da195]">{copy.admin.conversationsReadonly}</p>
+          <p className="text-xs text-[var(--color-muted-soft)]">{copy.admin.conversationsReadonly}</p>
           <p className="mt-1 text-sm">
-            <span className="text-[#adbeaf]">{copy.admin.conversationsCompany}: </span>
+            <span className="text-[var(--color-muted-on-dark)]">{copy.admin.conversationsCompany}: </span>
             <strong className="break-words">{view.companyName}</strong>
           </p>
           <p className="mt-1 text-sm" dir="ltr">
-            <span className="text-[#adbeaf]">{copy.admin.conversationsNumber}: </span>
+            <span className="text-[var(--color-muted-on-dark)]">{copy.admin.conversationsNumber}: </span>
             {loadedPhone || "—"}
           </p>
           {view.reviewWhatsappNumber ? (
-            <p className="mt-1 text-xs text-[#8da195]" dir="ltr">
+            <p className="mt-1 text-xs text-[var(--color-muted-soft)]" dir="ltr">
               {copy.admin.conversationsReviewNumber}: {view.reviewWhatsappNumber}
             </p>
           ) : null}
         </header>
 
         <h1 className="mt-6 text-3xl font-bold">{copy.admin.conversationsTitle}</h1>
-        <p className="mt-2 text-sm text-[#adbeaf]">{copy.admin.conversationsBody}</p>
-        <p className="mt-1 text-xs text-[#8da195]">{copy.admin.conversationsPhoneHint}</p>
+        <p className="mt-2 text-sm text-[var(--color-muted-on-dark)]">{copy.admin.conversationsBody}</p>
+        <p className="mt-1 text-xs text-[var(--color-muted-soft)]">{copy.admin.conversationsPhoneHint}</p>
 
         <div className="mt-4 flex flex-wrap items-end gap-3">
           <label className="grid min-w-[16rem] flex-1 gap-1 text-sm">
-            <span className="text-[#adbeaf]">{copy.admin.conversationsPickPhone}</span>
+            <span className="text-[var(--color-muted-on-dark)]">{copy.admin.conversationsPickPhone}</span>
             <select
               value={selectPhone}
               onChange={(e) => {
@@ -126,7 +126,7 @@ export function AdminConversationsView({
                 }
                 void load(next, 0, 0);
               }}
-              className="min-h-11 rounded-xl border border-white/15 bg-[#0d1a14] px-3"
+              className="min-h-11 rounded-xl border border-[color:var(--color-border-soft)] bg-[#0d1a14] px-3"
             >
               <option value="">{copy.admin.conversationsNeedPhone}</option>
               {view.phoneIdentities.map((id) => (
@@ -159,20 +159,20 @@ export function AdminConversationsView({
                     className={`w-full rounded-xl border px-3 py-2 text-start text-sm transition ${
                       selectedId === c.id
                         ? "border-[#38dc89]/50 bg-[#38dc89]/10"
-                        : "border-white/10 hover:bg-white/5"
+                        : "border-[color:var(--color-border-soft)] hover:bg-[var(--color-hover-wash)]"
                     }`}
                   >
                     <strong className="block truncate">{c.customerName || c.customerWaId}</strong>
-                    <span className="text-xs text-[#8da195]" dir="ltr">{c.customerWaId}</span>
+                    <span className="text-xs text-[var(--color-muted-soft)]" dir="ltr">{c.customerWaId}</span>
                   </button>
                 </li>
               ))}
             </ul>
-            <section className="min-h-[20rem] rounded-2xl border border-white/10 bg-[#0d1a14] p-4">
+            <section className="min-h-[20rem] rounded-2xl border border-[color:var(--color-border-soft)] bg-[#0d1a14] p-4">
               {selected ? (
                 <>
                   <h2 className="font-bold">{selected.customerName || selected.customerWaId}</h2>
-                  <p className="text-xs text-[#8da195]" dir="ltr">{selected.customerWaId}</p>
+                  <p className="text-xs text-[var(--color-muted-soft)]" dir="ltr">{selected.customerWaId}</p>
                   <ul className="mt-4 grid gap-2">
                     {selected.messages.map((m) => (
                       <li
@@ -180,11 +180,11 @@ export function AdminConversationsView({
                         className={`max-w-[85%] rounded-xl px-3 py-2 text-sm ${
                           m.direction === "outbound" || m.sender === "staff" || m.sender === "assistant"
                             ? "ms-auto bg-[#38dc89]/15"
-                            : "bg-white/5"
+                            : "bg-[var(--color-hover-wash)]"
                         }`}
                       >
                         <p className="whitespace-pre-wrap break-words">{m.body}</p>
-                        <p className="mt-1 text-[10px] text-[#8da195]">
+                        <p className="mt-1 text-[10px] text-[var(--color-muted-soft)]">
                           {m.sender}
                           {m.receivedAt
                             ? ` · ${new Date(m.receivedAt).toLocaleString(locale === "ar" ? "ar-OM" : "en-GB")}`
@@ -193,7 +193,7 @@ export function AdminConversationsView({
                       </li>
                     ))}
                     {!selected.messages.length ? (
-                      <li className="text-sm text-[#8da195]">{copy.admin.conversationsNoMessages}</li>
+                      <li className="text-sm text-[var(--color-muted-soft)]">{copy.admin.conversationsNoMessages}</li>
                     ) : null}
                   </ul>
                   {selected.messageTotal > MSG_PAGE_SIZE ? (
@@ -205,7 +205,7 @@ export function AdminConversationsView({
                       >
                         {copy.admin.accountPrev}
                       </Button>
-                      <span className="text-xs text-[#8da195]">
+                      <span className="text-xs text-[var(--color-muted-soft)]">
                         {fill(copy.admin.accountPage, { n: msgPageNumber })} · {selected.messageTotal}
                       </span>
                       <Button
@@ -219,7 +219,7 @@ export function AdminConversationsView({
                   ) : null}
                 </>
               ) : (
-                <p className="text-sm text-[#8da195]">{copy.app.selectConversation}</p>
+                <p className="text-sm text-[var(--color-muted-soft)]">{copy.app.selectConversation}</p>
               )}
             </section>
           </div>
@@ -234,7 +234,7 @@ export function AdminConversationsView({
             >
               {copy.admin.accountPrev}
             </Button>
-            <span className="text-xs text-[#8da195]">{fill(copy.admin.accountPage, { n: pageNumber })}</span>
+            <span className="text-xs text-[var(--color-muted-soft)]">{fill(copy.admin.accountPage, { n: pageNumber })}</span>
             <Button
               variant="secondary"
               disabled={busy || !hasMore}

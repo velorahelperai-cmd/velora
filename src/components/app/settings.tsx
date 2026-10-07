@@ -1,35 +1,54 @@
-"use client";
+﻿"use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { useState } from "react";
-import { emptyCompanyDraft, readCompanyDraft, writeCompanyDraft } from "@/lib/company-draft";
+import type { CompanyRecord } from "@/lib/tenancy/types";
 import { useDemo } from "@/lib/demo-state";
-import { landingCopy, type PlanId } from "@/lib/landing-copy";
+import { SubscriptionPanel } from "@/components/app/subscription-panel";
+import type { SubscriptionOffersView } from "./subscription-offers-view";
+import type { SubscriptionView } from "@/components/app/subscription-model";
 import { AccountSettingsLinkCard } from "@/components/app/account-page";
 import { WhatsappSettingsPanel } from "@/components/app/whatsapp-settings-panel";
 import { WorkspaceShell } from "@/components/app/workspace-shell";
-import { createClient } from "@/lib/supabase/client";
-import { saveOwnerBusiness } from "@/lib/tenancy/actions";
+import { useOptionalAccountSession } from "./account-chrome";
+import { subscriptionCopy } from "./subscription-copy";
+import { saveOwnerBusiness, selectWorkspaceCompany } from "@/lib/tenancy/actions";
 import {
   Button, Card, Field, Notice, Tabs,
   useAction, useAppCopy, useUnsavedWarning,
 } from "@/components/app/ui";
 
+type SettingsAccess = {email:string|null;companyId:string|null;companyName:string|null;role:"owner"|"staff"|null;needsCompanyContext:boolean;isPlatformAdmin:boolean;choices:Array<{companyId:string;displayName:string;role:"owner"|"staff"}>};
+
 type Tab = "account" | "business" | "team" | "whatsapp" | "plan";
 
 export function SettingsPage({
+  initialAccess,
+  initialCompany,
+  initialSubscription,
+  initialOffersView,
   initialWhatsappLink = null,
   whatsappLinkLoadFailed = false,
   whatsappLiveOpsReady = false,
   singleTenantReception = null,
 }: {
+  initialAccess: SettingsAccess;
+  initialCompany:CompanyRecord|null;
+  initialSubscription: SubscriptionView;
+  initialOffersView: SubscriptionOffersView;
   initialWhatsappLink?: import("@/lib/whatsapp/connection").WhatsappCompanyLink | null;
   whatsappLinkLoadFailed?: boolean;
   whatsappLiveOpsReady?: boolean;
   singleTenantReception?: import("@/lib/whatsapp/config").SingleTenantReceptionStatus | null;
 }) {
   const copy = useAppCopy();
-  const { state, update, effectiveRole, locale } = useDemo();
+  const { locale } = useDemo();
+  const effectiveRole = initialAccess.needsCompanyContext || !initialAccess.companyId ? null : initialAccess.role;
+  const c=subscriptionCopy[locale];
+  const accountSession=useOptionalAccountSession();
+  const [switchBusy,setSwitchBusy]=useState(false);
+  const [switchError,setSwitchError]=useState(false);
   const params = useSearchParams();
   const router = useRouter();
   const requested = (params.get("tab") as Tab) || "account";
@@ -40,16 +59,31 @@ export function SettingsPage({
   const tab = tabs.some((t) => t.id === requested) ? requested : "account";
   const locked = effectiveRole !== "owner" && ownerTabs.includes(requested);
 
+  async function switchCompany(id:string) {
+    if(!id||switchBusy)return;
+    setSwitchBusy(true);setSwitchError(false);
+    try { const result=await selectWorkspaceCompany(id); if(!result.ok){setSwitchError(true);return;} await accountSession?.refresh();router.refresh(); } catch {setSwitchError(true);} finally {setSwitchBusy(false);}
+  }
+  const accessNote=initialAccess.needsCompanyContext?c.permissionNotes.select_company:!initialAccess.companyId?c.permissionNotes.no_company:c.permissionNotes.staff;
+
   return (
     <WorkspaceShell title={copy.app.settingsTitle}>
+      <Card title={c.signedAccount}>
+        <dl className="grid gap-3 break-words text-sm sm:grid-cols-3"><div><dt>{c.signedAccount}</dt><dd dir="ltr">{initialAccess.email??c.unknown}</dd></div><div><dt>{c.companyContext}</dt><dd>{initialAccess.companyName??c.noCompany}</dd></div><div><dt>{c.membershipRole}</dt><dd>{effectiveRole==="owner"?c.ownerRole:effectiveRole==="staff"?c.staffRole:c.unknown}</dd></div></dl>
+        {initialAccess.isPlatformAdmin?<p className="mt-3 text-sm">{c.platformRole}. {c.permissionNotes.platform} <Link className="underline" href="/admin">{c.navigationLabels.platform}</Link></p>:null}
+        {initialAccess.choices.length>0&&(initialAccess.needsCompanyContext||initialAccess.choices.length>1||initialAccess.isPlatformAdmin)?<label className="mt-4 grid max-w-md gap-2 text-sm">{c.chooseCompany}<select aria-label={c.chooseCompany} className="min-h-11 rounded-xl border px-3" value={initialAccess.companyId??""} disabled={switchBusy} onChange={event=>void switchCompany(event.target.value)}><option value="">{c.chooseCompany}</option>{initialAccess.choices.map(choice=><option key={choice.companyId} value={choice.companyId}>{choice.displayName} / {choice.role==="owner"?c.ownerRole:c.staffRole}</option>)}</select></label>:null}
+        {switchError?<p role="alert">{c.switchFailed}</p>:null}
+        <Button variant="ghost" busy={switchBusy} onClick={()=>{void accountSession?.refresh();router.refresh();}}>{c.refreshAccess}</Button>
+      </Card>
+      <div className="mt-5" />
       <Tabs tabs={tabs} value={tab} onChange={(t) => router.replace(`/app/settings?tab=${t}`)} />
       <div className="mt-5">
         {locked ? (
-          <Notice tone="warn">{copy.app.ownerOnly}</Notice>
+          <Notice tone="warn">{accessNote} <Link className="underline" href="/#packages">{c.viewPlans}</Link></Notice>
         ) : (
           <>
             {tab === "account" ? <AccountTab /> : null}
-            {tab === "business" ? <BusinessTab /> : null}
+            {tab === "business" && initialCompany ? <BusinessTab key={initialCompany.id + initialCompany.updated_at} company={initialCompany} /> : null}
             {tab === "team" ? <TeamTab /> : null}
             {tab === "whatsapp" ? (
               <WhatsappSettingsPanel
@@ -60,19 +94,7 @@ export function SettingsPage({
               />
             ) : null}
             {tab === "plan" ? (
-              <Card title={copy.app.tabs.plan}>
-                <Notice tone="warn">{copy.app.planNotConfigured}</Notice>
-                <p className="mt-3 text-sm text-[#adbeaf]">{copy.app.planLabel}</p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {landingCopy(locale).plans.map((p) => (
-                    <button key={p.id} type="button" aria-pressed={state.planInterest === p.id} onClick={() => update({ planInterest: p.id as PlanId })} className={`min-h-11 rounded-full px-4 text-sm ${state.planInterest === p.id ? "bg-[#38dc89] text-[#072317]" : "border border-white/15"}`}>{p.name}</button>
-                  ))}
-                  <button type="button" aria-pressed={state.planInterest === null} onClick={() => update({ planInterest: null })} className={`min-h-11 rounded-full px-4 text-sm ${state.planInterest === null ? "bg-[#38dc89] text-[#072317]" : "border border-white/15"}`}>{copy.app.none}</button>
-                </div>
-                <p className="mt-3 text-xs text-[#8da195]">{copy.app.planNote}</p>
-                <h3 className="mt-6 font-bold">{copy.app.usage}</h3>
-                <p className="mt-2 text-xs text-[#8da195]">{copy.app.usageNote}</p>
-              </Card>
+              <SubscriptionPanel locale={locale} view={initialSubscription} offersView={initialOffersView} onRetry={() => router.refresh()} />
             ) : null}
           </>
         )}
@@ -85,18 +107,22 @@ function AccountTab() {
   return <AccountSettingsLinkCard />;
 }
 
-function BusinessTab() {
+function BusinessTab({company}:{company:CompanyRecord}) {
   const copy = useAppCopy();
-  const { state, update } = useDemo();
-  const [form, setForm] = useState(state.business);
+  const router=useRouter();
+  const fromCompany=(row:CompanyRecord)=>({name:row.display_name,type:row.business_type,replyLanguage:row.reply_language,country:row.country,city:row.city,hours:row.hours,contactPhone:row.contact_phone,contactEmail:row.contact_email});
+  const [form,setForm]=useState(()=>fromCompany(company));
+  const [baseline,setBaseline]=useState(()=>fromCompany(company));
+  const [error,setError]=useState<string|null>(null);
   const [saved, setSaved] = useState(false);
   const { busy, run } = useAction();
-  const dirty = JSON.stringify(form) !== JSON.stringify(state.business);
+  const dirty = JSON.stringify(form) !== JSON.stringify(baseline);
   useUnsavedWarning(dirty && !busy);
   return (
     <Card title={copy.app.tabs.business}>
       <form className="grid gap-4 lg:grid-cols-2" noValidate onSubmit={(e) => {
         e.preventDefault();
+        setSaved(false);setError(null);
         void run(async () => {
           const result = await saveOwnerBusiness({
             displayName: form.name,
@@ -109,37 +135,16 @@ function BusinessTab() {
             contactEmail: form.contactEmail,
           });
           if (!result.ok) {
-            window.alert(result.message ?? copy.errors.authFailed);
+            setError(copy.errors.authFailed);
             return;
           }
-          const business = {
-            name: result.data.display_name,
-            type: form.type,
-            replyLanguage: result.data.reply_language,
-            country: result.data.country,
-            city: result.data.city,
-            hours: result.data.hours,
-            contactPhone: result.data.contact_phone,
-            contactEmail: result.data.contact_email,
-          };
-          update({ business, businessSaved: true });
-          setForm(business);
-          const supabase = createClient();
-          const { data: userData } = await supabase.auth.getUser();
-          const userId = userData.user?.id;
-          if (userId) {
-            const existing = readCompanyDraft(userId) ?? emptyCompanyDraft(userId);
-            writeCompanyDraft({
-              ...existing,
-              userId,
-              companyId: result.data.id,
-              business,
-              businessSaved: true,
-            });
-          }
+          const business=fromCompany(result.data);
+          setForm(business);setBaseline(business);
+          router.refresh();
           setSaved(true);
         });
       }}>
+        {error?<div className="lg:col-span-2"><Notice tone="error">{error}</Notice></div>:null}
         {saved && !dirty ? <div className="lg:col-span-2"><Notice tone="success">{copy.saved}</Notice></div> : null}
         <Field label={copy.setup.businessName} required>{(p) => <input {...p} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />}</Field>
         <Field label={copy.setup.city}>{(p) => <input {...p} value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} />}</Field>

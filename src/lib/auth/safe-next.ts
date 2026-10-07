@@ -118,18 +118,17 @@ export function allowedReturnPath(
     return gate.isPlatformAdmin ? candidate : fallback;
   }
 
-  if (gate.isPlatformAdmin) {
-    // Documented platform admins land on admin surfaces, not client boards.
-    return fallback;
-  }
-
   if (pathAtOrUnder(pathOnly, "/setup")) {
     if (gate.role === "staff") return fallback;
+    // Platform admin may open setup only for an owned/selected company — not as a blank admin bypass.
+    if (gate.isPlatformAdmin && (!gate.hasCompany || !gate.role)) return fallback;
     return candidate;
   }
 
   if (pathAtOrUnder(pathOnly, "/app")) {
-    if (!gate.hasCompany) return fallback;
+    // Platform admin may return to their own operating company when membership is selected.
+    // Without membership, /app is rejected (default landing stays /admin via pathForAccess).
+    if (!gate.hasCompany || !gate.role) return fallback;
     if (gate.role === "staff") {
       if (
         pathAtOrUnder(pathOnly, "/app/conversations")
@@ -142,5 +141,6 @@ export function allowedReturnPath(
     return candidate;
   }
 
+  // Platform admins without an allowed operational target keep the admin fallback.
   return fallback;
 }

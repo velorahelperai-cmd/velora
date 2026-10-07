@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { LandingCopy, SectorId } from "@/lib/landing-copy";
-import { PhoneFrame, PhoneSlot } from "@/components/landing/conversation-stage";
+import { PhoneFrame, PhoneSlot, PhoneScreenBody } from "@/components/landing/conversation-stage";
 
 export function DemoScene({
   copy,
@@ -30,18 +30,7 @@ export function DemoScene({
             <PhoneSlot />
             <div className="demo-phone phone-shell mx-auto" data-seq="demo-phone">
               <div className="phone-screen bg-[#f7fbf8]">
-                <div className="flex items-center justify-between gap-2 border-b border-[#d7e4db] bg-[#f5f8f5] px-2.5 py-2">
-                  <span className="text-sm font-bold text-[#101b16]">Velora</span>
-                  <span className="rounded-full bg-[#def5e7] px-1.5 py-0.5 text-[10px] font-medium text-[#087443]">{copy.illustrative}</span>
-                </div>
-                <div className="flex min-h-0 flex-1 flex-col justify-center gap-2 overflow-hidden px-2.5 py-2">
-                  <p data-seq="question" className="chat-bubble ms-auto max-w-[96%] rounded-2xl rounded-es-md bg-[#def5e7] px-2.5 py-1.5 text-[#101b16]">
-                    {sample.q}
-                  </p>
-                  <p data-seq="answer" className="chat-bubble me-auto max-w-[98%] rounded-2xl rounded-ss-md border border-[#d7e4db] bg-white px-2.5 py-1.5 text-[#101b16]">
-                    {sample.a}
-                  </p>
-                </div>
+                <PhoneScreenBody question={sample.q} answer={sample.a} note={copy.illustrative} />
               </div>
               <PhoneFrame />
             </div>
@@ -84,7 +73,7 @@ export function DemoScene({
               onClick={onPrepare}
               className="inline-flex min-h-11 items-center justify-center rounded-full border border-white/25 px-5 text-sm text-[#f7fbf8]"
             >
-              {copy.prepare}
+              {copy.demoContact}
             </button>
             <button
               type="button"

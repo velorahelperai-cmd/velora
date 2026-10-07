@@ -2,6 +2,8 @@
 
 import Image from "next/image";
 import { useEffect, useId, useRef, useState } from "react";
+import styles from "./phone-messages.module.css";
+import { PhoneStatusBar } from "./conversation-stage";
 import type { LandingCopy } from "@/lib/landing-copy";
 
 type Msg = { id: string; from: "bot" | "user"; text: string };
@@ -64,7 +66,8 @@ export function LandingChatbot({ copy }: { copy: LandingCopy }) {
           aria-label={copy.chat.title}
           className="pointer-events-auto flex w-full max-w-[22rem] flex-col overflow-hidden rounded-3xl border border-white/12 bg-[#0d1a14]/96 text-[#f7fbf8] shadow-[0_18px_50px_rgba(0,0,0,0.45)] backdrop-blur sm:w-[min(22rem,calc(100vw-2rem))]"
         >
-          <header className="flex items-center gap-3 border-b border-white/10 px-3 py-3">
+          <PhoneStatusBar />
+          <header className={`${styles.guideHeader} flex items-center gap-3 border-b border-white/10 px-3 py-3`}>
             <Image
               src="/assets/velora/chat-girl.jpg"
               alt=""
@@ -86,14 +89,14 @@ export function LandingChatbot({ copy }: { copy: LandingCopy }) {
             </button>
           </header>
 
-          <div ref={listRef} className="flex max-h-72 flex-col gap-2 overflow-y-auto px-3 py-3" aria-live="polite">
+          <div ref={listRef} className={`${styles.guideMessages} flex max-h-72 flex-col gap-2 overflow-y-auto px-3 py-3`} aria-live="polite">
             {messages.map((m) => (
               <div
                 key={m.id}
-                className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm leading-6 ${
+                className={`${styles.guideBubble} max-w-[85%] rounded-2xl px-3 py-2 text-sm leading-6 ${
                   m.from === "user"
-                    ? "ms-auto rounded-es-md bg-[#38dc89] text-[#072317]"
-                    : "me-auto rounded-ss-md border border-white/10 bg-white/5"
+                    ? `${styles.outgoing}`
+                    : `${styles.incoming}`
                 }`}
               >
                 {m.text}
@@ -119,7 +122,7 @@ export function LandingChatbot({ copy }: { copy: LandingCopy }) {
           </div>
 
           <form
-            className="flex gap-2 border-t border-white/10 p-3"
+            className={`${styles.guideComposer} flex gap-2 border-t border-white/10 p-3`}
             onSubmit={(e) => {
               e.preventDefault();
               send(draft);
@@ -131,7 +134,7 @@ export function LandingChatbot({ copy }: { copy: LandingCopy }) {
               onChange={(e) => setDraft(e.target.value)}
               placeholder={copy.chat.placeholder}
               aria-label={copy.chat.placeholder}
-              className="min-h-11 min-w-0 flex-1 rounded-xl border border-white/15 bg-[#07110d] px-3 text-sm text-[#f7fbf8] outline-none focus-visible:ring-2 focus-visible:ring-[#38dc89]"
+              className={`${styles.guideInput} min-h-11 min-w-0 flex-1 rounded-full px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[#38dc89]`}
             />
             <button
               type="submit"

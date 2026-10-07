@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -322,9 +322,9 @@ export function SetupWizard({
                   type="button"
                   onClick={() => go(i)}
                   aria-current={active ? "step" : undefined}
-                  className={`flex min-h-12 w-full items-center gap-3 rounded-xl border px-3 text-start text-sm transition ${active ? "border-[#38dc89] bg-[#38dc89]/10" : "border-white/10 hover:bg-white/5"}`}
+                  className={`flex min-h-12 w-full items-center gap-3 rounded-xl border px-3 text-start text-sm transition ${active ? "border-[#38dc89] bg-[#38dc89]/10" : "border-[color:var(--color-border-soft)] hover:bg-[var(--color-hover-wash)]"}`}
                 >
-                  <span className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${done ? "bg-[#38dc89] text-[#072317]" : "border border-white/30 text-[#dfe9e2]"}`}>
+                  <span className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${done ? "bg-[#38dc89] text-[#072317]" : "border border-white/30 text-[var(--color-on-dark)]"}`}>
                     {done ? "✓" : i + 1}
                   </span>
                   <span className="min-w-0 leading-5 break-words">{label}</span>
@@ -333,7 +333,7 @@ export function SetupWizard({
             );
           })}
         </ol>
-        <div className="mt-3 h-1 overflow-hidden rounded-full bg-white/10" aria-hidden="true">
+        <div className="mt-3 h-1 overflow-hidden rounded-full bg-[var(--color-hover-wash)]" aria-hidden="true">
           <div className="h-full bg-[#38dc89] transition-all duration-500" style={{ width: `${(effectiveSetupDone.filter(Boolean).length / 4) * 100}%` }} />
         </div>
 
@@ -408,7 +408,7 @@ export function SetupWizard({
                     persist((d) => markSetupTestPassed(d, companyId, setupTestKnowledgeKey));
                   }}
                 />
-                <p className="mt-3 text-xs leading-5 text-[#8da195]">{copy.setup.missingInfo} <button type="button" onClick={() => go(1)} className="text-[#38dc89] underline">{copy.setup.addInfo}</button></p>
+                <p className="mt-3 text-xs leading-5 text-[var(--color-muted-soft)]">{copy.setup.missingInfo} <button type="button" onClick={() => go(1)} className="text-[#38dc89] underline">{copy.setup.addInfo}</button></p>
               </StepFrame>
             ) : null}
             {step === 3 ? (
@@ -437,10 +437,10 @@ function StepFrame({ children, onBack, onNext, nextDisabled, nextHint }: { child
   return (
     <div className="grid min-w-0 gap-5">
       <div className="min-w-0">{children}</div>
-      <div className="sticky bottom-0 z-10 -mx-4 mt-2 flex flex-wrap items-center justify-between gap-3 border-t border-white/10 bg-[#0d1a14]/95 px-4 py-4 backdrop-blur sm:-mx-5 sm:px-5 lg:static lg:mx-0 lg:bg-transparent lg:px-0 lg:backdrop-blur-none">
+      <div className="sticky bottom-0 z-10 -mx-4 mt-2 flex flex-wrap items-center justify-between gap-3 border-t border-[color:var(--color-border-soft)] bg-[#0d1a14]/95 px-4 py-4 backdrop-blur sm:-mx-5 sm:px-5 lg:static lg:mx-0 lg:bg-transparent lg:px-0 lg:backdrop-blur-none">
         <Button variant="secondary" onClick={onBack}>{copy.back}</Button>
         <div className="flex min-w-0 flex-wrap items-center justify-end gap-3">
-          {nextHint ? <span className="max-w-full text-xs leading-5 text-[#8da195] sm:max-w-[28ch]">{nextHint}</span> : null}
+          {nextHint ? <span className="max-w-full text-xs leading-5 text-[var(--color-muted-soft)] sm:max-w-[28ch]">{nextHint}</span> : null}
           <Button onClick={onNext} disabled={nextDisabled}>{copy.next}</Button>
         </div>
       </div>
@@ -519,7 +519,7 @@ function BusinessStep({
     });
   }
 
-  const select = "min-h-11 w-full min-w-0 rounded-xl border border-white/15 bg-[#14221b] px-3 text-[15px] text-[#f7fbf8] outline-none focus-visible:ring-2 focus-visible:ring-[#38dc89]";
+  const select = "min-h-11 w-full min-w-0 rounded-xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel)] px-3 text-[15px] text-[var(--color-on-dark)] outline-none focus-visible:ring-2 focus-visible:ring-[#38dc89]";
   const nameError = useErrorText(errors.name);
   const hoursError = useErrorText(errors.hours);
   const phoneError = useErrorText(errors.contactPhone);
@@ -566,9 +566,9 @@ function BusinessStep({
       <Field label={copy.setup.contactEmail} error={emailError}>
         {(p) => <input {...p} dir="ltr" type="email" inputMode="email" autoComplete="email" value={form.contactEmail} onChange={(e) => set("contactEmail", e.target.value)} />}
       </Field>
-      <div className="flex flex-wrap items-center gap-3 border-t border-white/10 pt-4 lg:col-span-2">
+      <div className="flex flex-wrap items-center gap-3 border-t border-[color:var(--color-border-soft)] pt-4 lg:col-span-2">
         <Button type="submit" busy={busy} busyLabel={copy.saving}>{copy.setup.continue}</Button>
-        {draft.businessSaved && !dirty ? <span className="text-sm text-[#9af0c3]">{copy.saved}</span> : null}
+        {draft.businessSaved && !dirty ? <span className="text-sm text-[var(--color-success-fg)]">{copy.saved}</span> : null}
       </div>
     </form>
   );
@@ -814,7 +814,7 @@ function ActivationStep({
         {(p) => (
           <div className="grid gap-2 sm:grid-cols-2">
             {(["own", "new"] as const).map((v) => (
-              <label key={v} className={`flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border px-3 text-sm leading-5 ${form.numberOwnership === v ? "border-[#38dc89] bg-[#38dc89]/10" : "border-white/15"}`}>
+              <label key={v} className={`flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border px-3 text-sm leading-5 ${form.numberOwnership === v ? "border-[#38dc89] bg-[#38dc89]/10" : "border-[color:var(--color-border-soft)]"}`}>
                 <input type="radio" name={p.id} checked={form.numberOwnership === v} onChange={() => patch({ numberOwnership: v })} className="accent-[#38dc89]" />
                 <span className="min-w-0 break-words">{v === "own" ? copy.setup.ownNumber : copy.setup.newNumber}</span>
               </label>
@@ -832,12 +832,12 @@ function ActivationStep({
         <span className="min-w-0 break-words">{copy.setup.readiness}</span>
       </label>
       {saveError ? <Notice tone="error">{saveError}</Notice> : null}
-      <div className="flex flex-wrap items-center gap-3 border-t border-white/10 pt-4">
+      <div className="flex flex-wrap items-center gap-3 border-t border-[color:var(--color-border-soft)] pt-4">
         <Button variant="secondary" type="button" onClick={onBack}>{copy.back}</Button>
         <Button type="submit" busy={busy} busyLabel={copy.loading} disabled={!readyToRequest || !form.numberOwnership || !form.ready}>
           {status === "changes_requested" ? copy.setup.resubmit : copy.setup.requestHelp}
         </Button>
-        {!readyToRequest ? <span className="text-xs text-[#f0cf9d]">{copy.setup.notReady}</span> : null}
+        {!readyToRequest ? <span className="text-xs text-[var(--color-warn-fg)]">{copy.setup.notReady}</span> : null}
       </div>
     </form>
   );
@@ -875,7 +875,7 @@ function ActivationStep({
               <strong>{copy.setup.pending}</strong><br />
               {copy.setup.pendingBody}
               <br />
-              <span className="text-xs text-[#adbeaf]">
+              <span className="text-xs text-[var(--color-muted-on-dark)]">
                 {copy.setup.reviewStatus}: {reviewStatusLabel(review.status, copy)}
                 {" · "}
                 {copy.setup.reviewRevision}: {review.revision}
@@ -895,7 +895,7 @@ function ActivationStep({
               {copy.setup.approvedBody}
               {review.owner_note ? <><br />{review.owner_note}</> : null}
               <br />
-              <span className="text-xs text-[#adbeaf]">
+              <span className="text-xs text-[var(--color-muted-on-dark)]">
                 {copy.setup.reviewRevision}: {review.revision}
               </span>
             </Notice>
@@ -907,7 +907,7 @@ function ActivationStep({
         ) : (
           reviewForm
         )}
-        <section className="rounded-2xl border border-white/10 p-4">
+        <section className="rounded-2xl border border-[color:var(--color-border-soft)] p-4">
           <h3 className="text-sm font-bold">{copy.setup.reviewHistory}</h3>
           {historyFailed ? (
             <div className="mt-2 grid gap-2">
@@ -935,10 +935,10 @@ function ActivationStep({
               </Button>
             </div>
           ) : events.length ? (
-            <ul className="mt-2 grid gap-2 text-xs text-[#adbeaf]">
+            <ul className="mt-2 grid gap-2 text-xs text-[var(--color-muted-on-dark)]">
               {events.map((ev, i) => (
-                <li key={`${ev.action}-${ev.created_at}-${i}`} className="border-b border-white/10 pb-2">
-                  <strong className="text-[#dfe9e2]">{ev.action}</strong>
+                <li key={`${ev.action}-${ev.created_at}-${i}`} className="border-b border-[color:var(--color-border-soft)] pb-2">
+                  <strong className="text-[var(--color-on-dark)]">{ev.action}</strong>
                   {" · "}r{ev.revision}
                   {" · "}
                   {new Date(ev.created_at).toLocaleString()}
@@ -947,28 +947,28 @@ function ActivationStep({
               ))}
             </ul>
           ) : (
-            <p className="mt-2 text-xs text-[#8da195]">{copy.setup.reviewHistoryEmpty}</p>
+            <p className="mt-2 text-xs text-[var(--color-muted-soft)]">{copy.setup.reviewHistoryEmpty}</p>
           )}
         </section>
       </div>
-      <aside className="min-w-0 rounded-2xl border border-white/10 bg-white/5 p-4">
+      <aside className="min-w-0 rounded-2xl border border-[color:var(--color-border-soft)] bg-[var(--color-hover-wash)] p-4">
         <h3 className="font-bold">{copy.setup.review}</h3>
         <dl className="mt-3 grid gap-3 text-sm">
           {rows.map(([k, v]) => (
-            <div key={k} className="flex justify-between gap-3 border-b border-white/10 pb-2">
-              <dt className="shrink-0 text-[#adbeaf]">{k}</dt>
+            <div key={k} className="flex justify-between gap-3 border-b border-[color:var(--color-border-soft)] pb-2">
+              <dt className="shrink-0 text-[var(--color-muted-on-dark)]">{k}</dt>
               <dd className="min-w-0 text-end break-words" dir={k === copy.setup.reviewRows[3] ? "ltr" : undefined}>{v}</dd>
             </div>
           ))}
           <div className="flex justify-between gap-3">
-            <dt className="text-[#adbeaf]">{copy.setup.reviewStatus}</dt>
-            <dd className="rounded-full bg-white/10 px-2 py-0.5 text-xs">
+            <dt className="text-[var(--color-muted-on-dark)]">{copy.setup.reviewStatus}</dt>
+            <dd className="rounded-full bg-[var(--color-hover-wash)] px-2 py-0.5 text-xs">
               {review ? reviewStatusLabel(review.status, copy) : copy.setup.notConnected}
             </dd>
           </div>
           {review ? (
             <div className="flex justify-between gap-3">
-              <dt className="text-[#adbeaf]">{copy.setup.reviewRevision}</dt>
+              <dt className="text-[var(--color-muted-on-dark)]">{copy.setup.reviewRevision}</dt>
               <dd>{review.revision}</dd>
             </div>
           ) : null}

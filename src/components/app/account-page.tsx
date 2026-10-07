@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useState } from "react";
@@ -27,31 +27,30 @@ export function AccountPage({ initial }: { initial: AccountProfileView }) {
   useUnsavedWarning(dirty && !busy);
   const nameError = useErrorText(error);
 
-  const roleLabel =
-    profile.role === "admin" ? copy.account.roleAdmin
-      : profile.role === "owner" ? copy.app.owner
-        : profile.role === "staff" ? copy.app.staff
-          : copy.account.roleNone;
+  const membershipLabel =
+    profile.role === "owner" ? copy.app.owner
+      : profile.role === "staff" ? copy.app.staff
+        : copy.account.roleNone;
 
   return (
     <main className="app-shell px-4 py-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
       <div className="mx-auto max-w-[720px]">
         <AppTopBar />
         <h1 className="mt-8 text-3xl font-bold">{copy.account.title}</h1>
-        <p className="mt-2 text-sm text-[#adbeaf]">{copy.account.body}</p>
+        <p className="mt-2 text-sm text-[var(--color-muted-on-dark)]">{copy.account.body}</p>
 
         <section className="app-panel mt-6 rounded-3xl p-5 sm:p-6">
           <div className="flex flex-wrap items-center gap-4">
             <span
-              className="inline-flex h-16 w-16 items-center justify-center rounded-full bg-[#38dc89]/20 text-xl font-bold text-[#9af0c3]"
+              className="inline-flex h-16 w-16 items-center justify-center rounded-full bg-[#38dc89]/20 text-xl font-bold text-[var(--color-success-fg)]"
               aria-hidden
             >
               {accountInitials(profile.fullName, profile.email)}
             </span>
             <div className="min-w-0">
               <p className="truncate text-lg font-semibold">{profile.fullName || copy.account.unnamed}</p>
-              <p className="truncate text-sm text-[#8da195]" dir="ltr">{profile.email}</p>
-              <p className="mt-1 font-mono text-xs tracking-wide text-[#9af0c3]" dir="ltr">
+              <p className="truncate text-sm text-[var(--color-muted-soft)]" dir="ltr">{profile.email}</p>
+              <p className="mt-1 font-mono text-xs tracking-wide text-[var(--color-success-fg)]" dir="ltr">
                 {copy.account.supportCode}: {profile.supportCode || "—"}
               </p>
             </div>
@@ -59,13 +58,18 @@ export function AccountPage({ initial }: { initial: AccountProfileView }) {
 
           <dl className="mt-5 grid gap-2 text-sm">
             <div className="flex justify-between gap-3">
-              <dt className="text-[#adbeaf]">{copy.app.roleLabel}</dt>
-              <dd>{roleLabel}</dd>
+              <dt className="text-[var(--color-muted-on-dark)]">{copy.account.platformRole}</dt>
+              <dd>{profile.isPlatformAdmin ? copy.account.roleAdmin : copy.account.roleNone}</dd>
             </div>
             <div className="flex justify-between gap-3">
-              <dt className="text-[#adbeaf]">{copy.account.company}</dt>
+              <dt className="text-[var(--color-muted-on-dark)]">{copy.app.roleLabel}</dt>
+              <dd>{membershipLabel}</dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt className="text-[var(--color-muted-on-dark)]">{copy.account.company}</dt>
               <dd className="min-w-0 break-words text-end">
-                {profile.companyName || copy.account.noCompany}
+                {profile.companyName
+                  || (profile.needsCompanyContext ? copy.account.pickCompany : copy.account.noCompany)}
               </dd>
             </div>
           </dl>
@@ -129,8 +133,8 @@ export function AccountPage({ initial }: { initial: AccountProfileView }) {
                 />
               )}
             </Field>
-            <p className="text-xs text-[#8da195]">{copy.account.supportCodeHint}</p>
-            <p className="text-xs text-[#8da195]">
+            <p className="text-xs text-[var(--color-muted-soft)]">{copy.account.supportCodeHint}</p>
+            <p className="text-xs text-[var(--color-muted-soft)]">
               {copy.app.noPasswordChange}{" "}
               <Link href="/forgot-password" className="text-[#38dc89] underline">
                 {copy.auth.forgotTitle}
@@ -140,12 +144,24 @@ export function AccountPage({ initial }: { initial: AccountProfileView }) {
               <Button type="submit" busy={busy} busyLabel={copy.saving} disabled={!dirty}>
                 {copy.save}
               </Button>
-              <Link
-                href={profile.workHref}
-                className="inline-flex min-h-11 items-center rounded-full border border-white/20 px-4 text-sm"
-              >
-                {profile.role === "admin" ? copy.account.menuAdmin : copy.account.menuWorkspace}
-              </Link>
+              {profile.adminHref ? (
+                <Link
+                  href={profile.adminHref}
+                  className="inline-flex min-h-11 items-center rounded-full border border-[color:var(--color-border-soft)] px-4 text-sm"
+                >
+                  {copy.account.menuPlatformAdmin}
+                </Link>
+              ) : null}
+              {profile.workspaceHref ? (
+                <Link
+                  href={profile.workspaceHref}
+                  className="inline-flex min-h-11 items-center rounded-full border border-[color:var(--color-border-soft)] px-4 text-sm"
+                >
+                  {profile.workspaceHref.startsWith("/setup")
+                    ? copy.account.menuSetup
+                    : copy.account.menuMyWorkspace}
+                </Link>
+              ) : null}
             </div>
           </form>
         </section>
@@ -160,7 +176,7 @@ export function AccountSettingsLinkCard() {
   return (
     <div className="app-panel rounded-3xl p-5">
       <h2 className="text-lg font-bold">{copy.app.tabs.account}</h2>
-      <p className="mt-2 text-sm text-[#adbeaf]">{copy.account.settingsLinkBody}</p>
+      <p className="mt-2 text-sm text-[var(--color-muted-on-dark)]">{copy.account.settingsLinkBody}</p>
       <div className="mt-4 flex flex-wrap items-center gap-3">
         <Link
           href="/account"

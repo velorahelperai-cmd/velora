@@ -113,6 +113,22 @@ describe("workspace picker", () => {
       membership: { company_id: "co-a" },
     });
   });
+
+  it("requires explicit selection for platform-admin workspace entry", () => {
+    const rows = [{ company_id: "co-a" }];
+    expect(pickWorkspaceMembership(rows, null, { requireExplicit: true })).toEqual({
+      ok: false,
+      needsContext: true,
+    });
+    expect(pickWorkspaceMembership(rows, "co-foreign", { requireExplicit: true })).toEqual({
+      ok: false,
+      needsContext: true,
+    });
+    expect(pickWorkspaceMembership(rows, "co-a", { requireExplicit: true })).toEqual({
+      ok: true,
+      membership: { company_id: "co-a" },
+    });
+  });
 });
 
 describe("embedded signup contract", () => {

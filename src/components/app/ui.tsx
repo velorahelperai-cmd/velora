@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
@@ -19,7 +19,7 @@ export function useErrorText(key?: FieldErrorKey | null): string | undefined {
 }
 
 const inputBase =
-  "min-h-11 w-full min-w-0 rounded-xl border bg-[#14221b] px-3 text-[15px] text-[#f7fbf8] outline-none transition focus-visible:ring-2 focus-visible:ring-[#38dc89] placeholder:text-[#7d9185]";
+  "min-h-11 w-full min-w-0 rounded-xl border bg-[var(--color-panel-deep)] px-3 text-[15px] text-[var(--color-on-dark)] outline-none transition focus-visible:ring-2 focus-visible:ring-[#38dc89] placeholder:text-[var(--color-muted-soft)]";
 
 export function Field({
   label,
@@ -48,22 +48,22 @@ export function Field({
         if (target.matches("input, textarea, select")) target.scrollIntoView({ block: "center", behavior: "smooth" });
       }}
     >
-      <label htmlFor={id} className="flex items-center justify-between text-sm text-[#dfe9e2]">
+      <label htmlFor={id} className="flex items-center justify-between text-sm text-[var(--color-on-dark)]">
         <span>{label}</span>
-        <span className={`text-xs ${required ? "text-[#38dc89]" : "text-[#9aada0]"}`}>{required ? copy.required : copy.optional}</span>
+        <span className={`text-xs ${required ? "text-[var(--color-action-on-dark)]" : "text-[var(--color-muted-soft)]"}`}>{required ? copy.required : copy.optional}</span>
       </label>
       {children({
         id,
         "aria-invalid": Boolean(error),
         "aria-describedby": describedBy,
-        className: `${inputBase} scroll-mb-28 ${error ? "border-[#e07a5f]" : "border-white/15"}`,
+        className: `${inputBase} scroll-mb-28 ${error ? "border-[var(--color-danger)]" : "border-[color:var(--color-border-soft)]"}`,
       })}
       {error ? (
-        <p id={`${id}-err`} role="alert" className="text-sm text-[#f3a08a]">
+        <p id={`${id}-err`} role="alert" className="text-sm text-[var(--color-danger-fg)]">
           {error}
         </p>
       ) : hint ? (
-        <p id={`${id}-hint`} className="text-xs leading-5 text-[#9aada0]">
+        <p id={`${id}-hint`} className="text-xs leading-5 text-[var(--color-muted-soft)]">
           {hint}
         </p>
       ) : null}
@@ -104,7 +104,7 @@ export function PasswordField({
           <button
             type="button"
             onClick={() => setShow((s) => !s)}
-            className="absolute inset-y-1 end-1 inline-flex min-h-9 items-center rounded-lg px-3 text-xs text-[#38dc89] hover:bg-white/5"
+            className="absolute inset-y-1 end-1 inline-flex min-h-9 items-center rounded-lg px-3 text-xs text-[var(--color-action-on-dark)] hover:bg-[var(--color-hover-wash)]"
           >
             {show ? copy.hidePassword : copy.showPassword}
           </button>
@@ -128,9 +128,9 @@ export function Button({
 }) {
   const styles = {
     primary: "bg-[#38dc89] text-[#072317] hover:bg-[#4fe79a]",
-    secondary: "border border-white/20 text-[#f7fbf8] hover:bg-white/5",
-    ghost: "text-[#38dc89] hover:bg-white/5",
-    danger: "border border-[#e07a5f]/60 text-[#f3a08a] hover:bg-[#e07a5f]/10",
+    secondary: "border border-[color:var(--color-border-soft)] text-[var(--color-on-dark)] hover:bg-[var(--color-hover-wash)]",
+    ghost: "text-[var(--color-action-on-dark)] hover:bg-[var(--color-hover-wash)]",
+    danger: "border border-[color:var(--color-danger)]/60 text-[var(--color-danger-fg)] hover:bg-[color:var(--color-danger)]/10",
   }[variant];
   return (
     <button
@@ -164,8 +164,8 @@ export function LinkButton({
 }) {
   const styles = {
     primary: "bg-[#38dc89] text-[#072317] hover:bg-[#4fe79a]",
-    secondary: "border border-white/20 text-[#f7fbf8] hover:bg-white/5",
-    ghost: "text-[#38dc89] hover:bg-white/5",
+    secondary: "border border-[color:var(--color-border-soft)] text-[var(--color-on-dark)] hover:bg-[var(--color-hover-wash)]",
+    ghost: "text-[var(--color-action-on-dark)] hover:bg-[var(--color-hover-wash)]",
   }[variant];
   return (
     <Link
@@ -179,10 +179,10 @@ export function LinkButton({
 
 export function Notice({ tone = "info", children }: { tone?: "info" | "success" | "error" | "warn"; children: ReactNode }) {
   const styles = {
-    info: "border-white/15 bg-white/5 text-[#dfe9e2]",
-    success: "border-[#38dc89]/40 bg-[#38dc89]/10 text-[#9af0c3]",
-    error: "border-[#e07a5f]/50 bg-[#e07a5f]/10 text-[#f3a08a]",
-    warn: "border-[#d9a467]/50 bg-[#d9a467]/10 text-[#f0cf9d]",
+    info: "border-[color:var(--color-border-soft)] bg-[var(--color-hover-wash)] text-[var(--color-on-dark)]",
+    success: "border-[#38dc89]/40 bg-[#38dc89]/10 text-[var(--color-success-fg)]",
+    error: "border-[color:var(--color-danger)]/50 bg-[color:var(--color-danger)]/10 text-[var(--color-danger-fg)]",
+    warn: "border-[#d9a467]/50 bg-[#d9a467]/10 text-[var(--color-warn-fg)]",
   }[tone];
   return (
     <div role={tone === "error" ? "alert" : "status"} className={`rounded-xl border px-4 py-3 text-sm leading-6 ${styles}`}>
@@ -191,19 +191,14 @@ export function Notice({ tone = "info", children }: { tone?: "info" | "success" 
   );
 }
 
-export function PreviewBadge({ note }: { note?: boolean }) {
-  const copy = useAppCopy();
-  return (
-    <span title={note ? copy.previewNote : undefined} className="inline-flex items-center gap-1.5 rounded-full border border-[#d9a467]/50 bg-[#d9a467]/10 px-3 py-1 text-xs font-medium text-[#f0cf9d]">
-      <span className="h-1.5 w-1.5 rounded-full bg-[#d9a467]" aria-hidden="true" />
-      {copy.preview}
-    </span>
-  );
+export function PreviewBadge(props: { note?: boolean }) {
+  void props;
+  return null;
 }
 
 export function SimTag() {
   const copy = useAppCopy();
-  return <span className="rounded-md bg-white/10 px-2 py-0.5 text-[11px] text-[#adbeaf]">{copy.simulated}</span>;
+  return <span className="rounded-md bg-[var(--color-hover-wash)] px-2 py-0.5 text-[11px] text-[var(--color-muted-on-dark)]">{copy.simulated}</span>;
 }
 
 export function LangSwitch() {
@@ -214,7 +209,7 @@ export function LangSwitch() {
       type="button"
       onClick={() => setLocale(locale === "ar" ? "en" : "ar")}
       aria-label={copy.langAria}
-      className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full border border-white/20 px-3 text-sm text-[#f7fbf8]"
+      className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full border border-[color:var(--color-border-soft)] px-3 text-sm text-[var(--color-on-dark)]"
     >
       {copy.lang}
     </button>
@@ -223,9 +218,9 @@ export function LangSwitch() {
 
 export function EmptyState({ title, body, action }: { title: string; body?: string; action?: ReactNode }) {
   return (
-    <div className="rounded-2xl border border-dashed border-[color:var(--color-line)] bg-white/[0.02] p-6 text-center">
-      <p className="font-semibold text-[#f7fbf8]">{title}</p>
-      {body ? <p className="mt-2 text-sm leading-6 text-[#b7c6b9]">{body}</p> : null}
+    <div className="rounded-2xl border border-dashed border-[color:var(--color-line)] bg-[var(--color-hover-wash)] p-6 text-center">
+      <p className="font-semibold text-[var(--color-on-dark)]">{title}</p>
+      {body ? <p className="mt-2 text-sm leading-6 text-[var(--color-muted-on-dark)]">{body}</p> : null}
       {action ? <div className="mt-4 flex justify-center">{action}</div> : null}
     </div>
   );
@@ -233,10 +228,10 @@ export function EmptyState({ title, body, action }: { title: string; body?: stri
 
 export function Card({ title, children, className = "", aside }: { title?: string; children: ReactNode; className?: string; aside?: ReactNode }) {
   return (
-    <section className={`rounded-2xl border border-[color:var(--color-line)] bg-[#14221b] p-5 ${className}`}>
+    <section className={`rounded-2xl border border-[color:var(--color-line)] bg-[var(--color-panel)] p-5 shadow-[0_8px_28px_rgba(16,27,22,0.06)] ${className}`}>
       {title ? (
         <div className="mb-4 flex items-center justify-between gap-3">
-          <h2 className="text-lg font-bold tracking-tight text-[#f7fbf8]">{title}</h2>
+          <h2 className="text-lg font-bold tracking-tight text-[var(--color-on-dark)]">{title}</h2>
           {aside}
         </div>
       ) : null}
@@ -292,11 +287,11 @@ export function ConfirmDialog({
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="confirm-title"
-        className="w-full max-w-sm rounded-2xl border border-white/10 bg-[#14221b] p-5 text-[#f7fbf8]"
+        className="w-full max-w-sm rounded-2xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel)] p-5 text-[var(--color-on-dark)]"
         onClick={(e) => e.stopPropagation()}
       >
         <h2 id="confirm-title" className="text-lg font-bold">{title}</h2>
-        {body ? <p className="mt-2 text-sm leading-6 text-[#adbeaf]">{body}</p> : null}
+        {body ? <p className="mt-2 text-sm leading-6 text-[var(--color-muted-on-dark)]">{body}</p> : null}
         <div className="mt-5 flex flex-wrap justify-end gap-2">
           <Button variant="secondary" onClick={onCancel}>{copy.cancel}</Button>
           <Button variant={danger ? "danger" : "primary"} onClick={onConfirm}>{confirmLabel}</Button>
@@ -337,7 +332,7 @@ export const isPhone = (v: string) => /^\+\d{7,15}$/.test(v.replace(/[\s-]/g, ""
 
 export function Tabs<T extends string>({ tabs, value, onChange }: { tabs: { id: T; label: string }[]; value: T; onChange: (t: T) => void }) {
   return (
-    <div role="tablist" className="flex gap-1 overflow-x-auto rounded-full border border-white/10 bg-[#0d1a14] p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div role="tablist" className="flex gap-1 overflow-x-auto rounded-full border border-[color:var(--color-border-soft)] bg-[#0d1a14] p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {tabs.map((t) => (
         <button
           key={t.id}
@@ -345,7 +340,7 @@ export function Tabs<T extends string>({ tabs, value, onChange }: { tabs: { id: 
           type="button"
           aria-selected={value === t.id}
           onClick={() => onChange(t.id)}
-          className={`min-h-11 shrink-0 snap-start rounded-full px-4 text-sm transition ${value === t.id ? "bg-[#38dc89] text-[#072317]" : "text-[#dfe9e2] hover:bg-white/5"}`}
+          className={`min-h-11 shrink-0 snap-start rounded-full px-4 text-sm transition ${value === t.id ? "bg-[#38dc89] text-[#072317]" : "text-[var(--color-on-dark)] hover:bg-[var(--color-hover-wash)]"}`}
         >
           {t.label}
         </button>

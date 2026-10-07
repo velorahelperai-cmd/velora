@@ -16,54 +16,73 @@ const scenes = [
     theme: "dark" as const,
     anchor: "story",
     title: {
-      ar: "كل تأخر في الرد قد يخسّرك العميل.",
-      en: "A late reply can cost you the customer.",
+      ar: "كل محادثة فرصة. خلّي متابعتها أوضح.",
+      en: "Every conversation is an opportunity. Make the next step clear.",
     },
     body: {
-      ar: "الأسئلة تتكرر والفريق مشغول. من هنا تبدأ الحكاية بسؤال واحد بلا جواب.",
-      en: "Questions repeat and the team is busy. The story starts with one question and no answer.",
+      ar: "الأسئلة تتكرر، والفريق ينشغل، وبعض المتابعات تتأخر. نطوّر فيلورا لتساعد نشاطك على تنظيم معلوماته ومحادثاته، وتحديد من يحتاج ردًا وما الخطوة التالية. القصة توضح المسار المستهدف؛ الردود الآلية المعروضة أمثلة.",
+      en: "Questions repeat, teams get busy, and some follow-ups are delayed. We’re building Velora to help organise your business information and conversations, identify who needs a reply, and make the next step clear. The story illustrates the intended workflow; automated replies shown are examples.",
     },
     example: {
       ar: {
         question: "البرجر الكلاسيك متوفر اليوم؟",
         answer: "بانتظار الرد",
-        cardTitle: "بانتظار الرد",
-        card: "سؤال العميل ظاهر، ولم يُجمع بعد أي تفصيل.",
+        cardTitle: "أسئلة صاحب النشاط",
+        card: "مين مستني رد؟\nأي استفسار محتاج متابعة؟\nإيه الخطوة اللي تقرّب العميل؟",
       },
       en: {
         question: "Is the classic burger available today?",
         answer: "Waiting for a reply",
-        cardTitle: "Waiting for a reply",
-        card: "The customer's question is visible, and no detail has been collected yet.",
+        cardTitle: "Owner questions",
+        card: "Who is still waiting for a reply?\nWhich enquiry needs follow-up?\nWhat’s the next step?",
       },
     },
     chips: {
-      ar: ["متوفر اليوم؟", "كم السعر؟", "متى يوصل؟", "التوصيل فين؟", "أقدر أطلب؟"],
-      en: ["Available today?", "What's the price?", "When does it arrive?", "Where do you deliver?", "Can I order?"],
-    },
+  "ar": [
+    "مين مستني رد؟",
+    "أي استفسار محتاج متابعة؟",
+    "إيه الخطوة الجاية؟",
+    "متاح النهارده؟",
+    "التوصيل للخوير؟",
+    "ممكن أعرف التفاصيل؟",
+    "حد يتابع طلبي؟"
+  ],
+  "en": [
+    "Who is still waiting for a reply?",
+    "Which enquiry needs follow-up?",
+    "What’s the next step?",
+    "Available today?",
+    "Delivery to Al Khuwair?",
+    "Can I get the details?",
+    "Can someone follow up?"
+  ]
+},
   },
   {
     id: 2,
     key: "knowledge",
     theme: "light" as const,
     anchor: "how",
-    title: { ar: "معلومة نشاطك تجيب نفس السؤال.", en: "Your business information answers the same question." },
+    title: {
+      ar: "الرد الجيد يبدأ بمعلومات واضحة.",
+      en: "Good replies start with clear information.",
+    },
     body: {
-      ar: "مثال توضيحي: معلومات الشركة تُحفظ وتُراجع قبل أي تفعيل. لا يُرسل رد آلي للعميل الآن.",
-      en: "Illustrative example: company information can be saved and reviewed before any activation. No automatic reply is sent to a customer now.",
+      ar: "جهّز منتجاتك وخدماتك وسياساتك في مكان واحد. هذه نقطة البداية لرد يستند إلى نشاطك وخطوة تالية مفهومة.",
+      en: "Bring your products, services, and policies together. They provide the foundation for a relevant reply and a clear next step.",
     },
     example: {
       ar: {
         question: "البرجر الكلاسيك متوفر اليوم؟",
         answer: "نراجع بطاقة المصدر...",
-        cardTitle: "مصدر: قائمة الطعام",
-        card: "المنتج: برجر كلاسيك\nالسعر: 1.8 ر.ع\nمتوفر اليوم\nالتوصيل داخل مسقط",
+        cardTitle: "مصدر: قائمة الطعام — مثال",
+        card: "المنتج: برجر كلاسيك\nمتوفر في هذا المثال\nالتوصيل داخل مسقط",
       },
       en: {
         question: "Is the classic burger available today?",
         answer: "Checking the source card...",
-        cardTitle: "Source: menu",
-        card: "Item: Classic burger\nPrice: 1.8 OMR\nAvailable today\nDelivery inside Muscat",
+        cardTitle: "Source: menu — example",
+        card: "Item: Classic burger\nAvailable in this example\nDelivery within Muscat",
       },
     },
   },
@@ -72,23 +91,26 @@ const scenes = [
     key: "reply",
     theme: "dark" as const,
     anchor: "reply",
-    title: { ar: "الرد من نفس المعلومة.", en: "The reply uses that same information." },
+    title: {
+      ar: "جواب يفيد العميل ويقرّب الخطوة التالية.",
+      en: "An answer that helps the customer move forward.",
+    },
     body: {
-      ar: "الجواب داخل الهاتف مثال من البطاقة، وليس رد ذكاء اصطناعي يُرسل للعميل.",
-      en: "The answer inside the phone is an example from the card, not an AI reply sent to a customer.",
+      ar: "في المثال، يحصل العميل على معلومة التوفر والتوصيل، ثم يعرف كيف يكمل استفساره.",
+      en: "In this example, the customer learns about availability and delivery, then knows how to continue.",
     },
     example: {
       ar: {
         question: "البرجر الكلاسيك متوفر اليوم؟",
-        answer: "نعم، متوفر اليوم بـ 1.8 ر.ع. التوصيل داخل مسقط.",
-        cardTitle: "من المصدر إلى الرد",
-        card: "برجر كلاسيك · 1.8 ر.ع · متوفر اليوم · توصيل مسقط",
+        answer: "نعم، متوفر. تحب كام برجر؟ والتوصيل لفين؟",
+        cardTitle: "من المعلومة إلى الرد",
+        card: "برجر كلاسيك · متوفر في المثال · توصيل مسقط",
       },
       en: {
         question: "Is the classic burger available today?",
-        answer: "Yes — available today at 1.8 OMR. Delivery inside Muscat.",
-        cardTitle: "From source to reply",
-        card: "Classic burger · 1.8 OMR · Available today · Muscat delivery",
+        answer: "Available. How many burgers? Delivery area?",
+        cardTitle: "From information to reply",
+        card: "Classic burger · Available in this example · Muscat delivery",
       },
     },
   },
@@ -97,23 +119,26 @@ const scenes = [
     key: "enquiry",
     theme: "light" as const,
     anchor: "enquiry",
-    title: { ar: "نفس العميل يكمل الطلب.", en: "The same customer continues the order." },
+    title: {
+      ar: "اهتمام العميل يستحق متابعة.",
+      en: "Customer interest deserves follow-up.",
+    },
     body: {
-      ar: "تُجمع تفاصيل أوضح، وتُسجَّل بحالة انتظار. هذا مثال توضيحي، وليس تنفيذ طلب أو ربط كاشير.",
-      en: "Clearer details are collected and saved as waiting. This is an illustrative example, not a live order or a POS connection.",
+      ar: "تفاصيل ما يريده العميل، وما ينتظر التأكيد، تجعل المتابعة أوضح. المثال يعرض استفسارًا يحتاج مراجعة الفريق قبل اعتماد الطلب.",
+      en: "Capture what the customer wants and what still needs confirmation. This example shows an enquiry awaiting the team’s review.",
     },
     example: {
       ar: {
-        question: "أبغى 2 برجر كلاسيك، توصيل الخوير.",
-        answer: "سجّلت: 2 برجر كلاسيك إلى الخوير. بانتظار تأكيد الموظف.",
+        question: "البرجر الكلاسيك متوفر اليوم؟\n\nعايز ٢ برجر، والتوصيل للخوير.",
+        answer: "نعم، متوفر. تحب كام برجر؟ والتوصيل لفين؟\n\n٢ برجر للخوير. أي ملاحظات على الطلب؟",
         cardTitle: "سجل الاستفسار",
-        card: "الصنف: برجر كلاسيك\nالكمية: 2\nالمنطقة: الخوير\nالحالة: بانتظار تأكيد الموظف",
+        card: "الصنف: برجر كلاسيك\nالكمية: 2\nالمنطقة: الخوير\nالحالة: بانتظار تأكيد الفريق",
       },
       en: {
-        question: "I want 2 classic burgers, delivery to Al Khuwair.",
-        answer: "Noted: 2 classic burgers to Al Khuwair. Waiting for staff confirmation.",
+        question: "Is the classic burger available today?\n\nTwo classic burgers to Al Khuwair.",
+        answer: "Available. How many burgers? Delivery area?\n\nTwo burgers to Al Khuwair. Any notes?",
         cardTitle: "Enquiry record",
-        card: "Item: Classic burger\nQuantity: 2\nArea: Al Khuwair\nStatus: waiting for staff confirmation",
+        card: "Item: Classic burger\nQuantity: 2\nArea: Al Khuwair\nStatus: Awaiting team confirmation",
       },
     },
   },
@@ -122,23 +147,26 @@ const scenes = [
     key: "handoff",
     theme: "dark" as const,
     anchor: "handoff",
-    title: { ar: "الموظف يستلم الملخص ويكمل.", en: "Staff receive the summary and continue." },
+    title: {
+      ar: "فريقك يكمل من حيث وصلت المحادثة.",
+      en: "Your team picks up where the conversation left off.",
+    },
     body: {
-      ar: "نفس الحوار يصل للفريق: من العميل، ماذا طلب، وما الذي جُمع، ولماذا حُوّل.",
-      en: "The same conversation reaches the team: who the customer is, what they asked, what was collected, and why it was handed over.",
+      ar: "يعرض المثال سؤال العميل والتفاصيل والخطوة المطلوبة، حتى يبدأ الموظف المتابعة بسياق واضح.",
+      en: "The example brings together the question, details, and next action so staff can follow up with context.",
     },
     example: {
       ar: {
-        question: "أبغى 2 برجر كلاسيك، توصيل الخوير.",
-        answer: "حوّلت الطلب للموظف مع الملخص. تكمل معه من هنا.",
-        cardTitle: "ملخص للموظف",
-        card: "العميل: طلب واتساب\nالطلب: 2 برجر كلاسيك · الخوير\nجُمع: 1.8 ر.ع · متوفر اليوم\nسبب التحويل: تأكيد الطلب",
+        question: "البرجر الكلاسيك متوفر اليوم؟\n\nعايز ٢ برجر، والتوصيل للخوير.\n\nلا، شكرًا. هذا كل شيء.",
+        answer: "نعم، متوفر. تحب كام برجر؟ والتوصيل لفين؟\n\n٢ برجر للخوير. أي ملاحظات على الطلب؟\n\n٢ برجر كلاسيك للخوير. بانتظار تأكيد الفريق.",
+        cardTitle: "ملخص للفريق",
+        card: "الاهتمام: ٢ برجر كلاسيك للخوير\nالمطلوب: مراجعة التفاصيل وتأكيد الطلب",
       },
       en: {
-        question: "I want 2 classic burgers, delivery to Al Khuwair.",
-        answer: "Handed to staff with the summary. You continue with them from here.",
-        cardTitle: "Summary for staff",
-        card: "Customer: WhatsApp enquiry\nOrder: 2 classic burgers · Al Khuwair\nCollected: 1.8 OMR · available today\nHandoff reason: confirm the order",
+        question: "Is the classic burger available today?\n\nTwo classic burgers to Al Khuwair.\n\nNo notes, thank you.",
+        answer: "Available. How many burgers? Delivery area?\n\nTwo burgers to Al Khuwair. Any notes?\n\nTwo classic burgers to Al Khuwair. Pending team confirmation.",
+        cardTitle: "Summary for the team",
+        card: "Interest: two classic burgers to Al Khuwair\nAction: review details and confirm the order",
       },
     },
   },
@@ -147,22 +175,25 @@ const scenes = [
     key: "overview",
     theme: "light" as const,
     anchor: "overview",
-    title: { ar: "لوحة صاحب النشاط لنفس القصة.", en: "The owner view of the same story." },
+    title: {
+      ar: "اعرف ما يحتاج إجراءً، ثم تابع.",
+      en: "See what needs action. Then follow up.",
+    },
     body: {
-      ar: "استفسار ينتظر تأكيدًا، ومسؤول محادثة، وسؤال يحتاج معلومة أوضح.",
-      en: "An enquiry waiting for confirmation, a conversation owner, and a question that needs clearer information.",
+      ar: "يعرض المثال استفسارًا ينتظر التأكيد، وعميلًا يحتاج متابعة، وسؤالًا يحتاج معلومة أوضح؛ لتكون الخطوة التالية مفهومة للفريق.",
+      en: "The example shows an enquiry awaiting confirmation, a customer needing follow-up, and a question needing clearer information.",
     },
     example: {
       ar: {
         question: "استفسار تجهيز مناسبة",
-        answer: "بانتظار متابعة الموظف.",
-          cardTitle: "متابعة خدمة العملاء",
+        answer: "بانتظار متابعة الفريق.",
+        cardTitle: "متابعة خدمة العملاء",
         card: "الحالات · المسؤولون · الأسئلة التي تحتاج مراجعة",
       },
       en: {
         question: "Catering enquiry",
-        answer: "Waiting for staff follow-up.",
-          cardTitle: "Customer-service follow-up",
+        answer: "Waiting for team follow-up.",
+        cardTitle: "Customer-service follow-up",
         card: "Statuses · Owners · Questions needing review",
       },
     },
@@ -172,23 +203,26 @@ const scenes = [
     key: "setup",
     theme: "dark" as const,
     anchor: "setup",
-    title: { ar: "أربع خطوات حتى التفعيل.", en: "Four steps to activation." },
+    title: {
+      ar: "ابدأ بمعلومات نشاطك.",
+      en: "Start with your business information.",
+    },
     body: {
-      ar: "الحساب والنشاط، ثم المعلومات، ثم الرقم والقناة، ثم المراجعة والتفعيل بمساعدتنا.",
-      en: "Account and business, then information, then number and channel, then review and activation with our help.",
+      ar: "أنشئ الحساب وجهّز المعلومات، ثم راجع معنا نطاق التجربة وما يلزم للربط والتفعيل.",
+      en: "Create your account and prepare your information, then review the trial scope and activation requirements with us.",
     },
     example: {
       ar: {
         question: "إزاي أبدأ على نشاطي؟",
-        answer: "المتوفر الآن الحساب ومعلومات النشاط. الرقم والرد الآلي غير مفعّلين.",
+        answer: "ابدأ بالحساب ومعلومات النشاط. الربط والرد الآلي يُراجعان لاحقًا.",
         cardTitle: "التجهيز الحالي",
-        card: "الحساب ← معلومات النشاط والملفات ← الرقم لاحقًا",
+        card: "الحساب ← معلومات النشاط والملفات ← مراجعة الربط والتجربة",
       },
       en: {
         question: "How do I get started for my business?",
-        answer: "Available now: the account and business information. The number and automatic replies are not active.",
+        answer: "Start with the account and business information. Connection and automatic replies are reviewed later.",
         cardTitle: "What you can prepare",
-        card: "Account → Business information and files → Number later",
+        card: "Account → Business information and files → Review connection and trial",
       },
     },
   },
@@ -197,23 +231,26 @@ const scenes = [
     key: "demo",
     theme: "dark" as const,
     anchor: "demo",
-    title: { ar: "جرّب مثالًا قبل العملاء.", en: "Try an example before customers arrive." },
+    title: {
+      ar: "شاهد الخطوة التالية في نشاطك.",
+      en: "See the next step for your business.",
+    },
     body: {
-      ar: "اختر نشاطًا وسؤالًا. الرد مثال توضيحي داخل المحادثة، وليس استجابة ذكاء اصطناعي حقيقية.",
-      en: "Pick a business type and a question. The reply is an illustrative example inside the chat, not a live AI response.",
+      ar: "اختر نشاطًا وتابع قصة واحدة: سؤال → معلومة → تفاصيل اهتمام → مراجعة الفريق. الردود هنا تمثّل المسار المستهدف.",
+      en: "Pick a business type and follow one story: question → information → interest details → team review. The replies here represent the intended path.",
     },
     example: {
       ar: {
         question: "عايز أجرب فيلورا.",
-        answer: "اختر مثالًا مناسبًا لنشاطك، أو اطلب جلسة لتجربة معلوماتك.",
+        answer: "اختر مثالًا مناسبًا لنشاطك، أو راسلنا لنناقش متابعتك.",
         cardTitle: "البداية: تجهيز الحساب",
-        card: "القدرات والباقات تتحدد حسب احتياج نشاطك. تكامل الكاشير توسع لاحق.",
+        card: "مستويات الدعم تُناقش حسب احتياج نشاطك. التكاملات توسع لاحق.",
       },
       en: {
         question: "I want to try Velora.",
-        answer: "Choose an example for your business, or request a session to try your information.",
+        answer: "Choose an example for your business, or contact us to discuss follow-up.",
         cardTitle: "Starting with your account",
-        card: "Capabilities and plans are shaped around your needs. POS integration is a later extension.",
+        card: "Support levels are discussed around your needs. Integrations come later.",
       },
     },
   },
@@ -223,53 +260,90 @@ const plans = [
   {
     id: "support" as const,
     name: { ar: "دعم", en: "Support" },
-    purpose: { ar: "اتجاه مخطط لمتابعة الاستفسارات. غير مفعّل على واتساب", en: "A planned direction for enquiries. Not active on WhatsApp" },
+    purpose: { ar: "نقطة البداية ضمن مستويات فيلورا المقترحة.", en: "The starting point in Velora’s proposed tier structure." },
     features: [
-      { ar: "رد من معلومات النشاط — مخطط، وغير مفعّل", en: "Replies from business information — planned, not active", status: "concept" as const },
-      { ar: "استفسار واضح للفريق بدل محادثة ضائعة", en: "A clear enquiry for your team instead of a lost chat", status: "concept" as const },
-      { ar: "تدخل الموظف عند الحاجة بدون ما يعيد العميل كلامه", en: "Staff can step in without the customer repeating themselves", status: "concept" as const },
-      { ar: "تجهيز واختبار معاك قبل استقبال العملاء", en: "Setup and testing with you before customers arrive", status: "concept" as const },
-    ],
+  {
+    "ar": "مستوى واحد لكل شركة",
+    "en": "One tier per company",
+    "status": "concept"
+  },
+  {
+    "ar": "تفاصيل القدرات والحدود قيد الاعتماد",
+    "en": "Capabilities and limits being finalised",
+    "status": "concept"
+  },
+  {
+    "ar": "الأسعار والمدة تُوضح قبل الاشتراك",
+    "en": "Price and term clarified before subscribing",
+    "status": "concept"
+  }
+],
   },
   {
     id: "expanded" as const,
     name: { ar: "المتقدم", en: "Advanced" },
-    purpose: { ar: "معرفة أوسع وردود أدق لنشاط يكبر", en: "Broader knowledge and sharper replies as you grow" },
+    purpose: { ar: "خيار أعلى ضمن المنتج نفسه.", en: "A higher tier of the same product." },
     features: [
-      { ar: "كل ما في باقة الدعم", en: "Everything in Support", status: "concept" as const },
-      { ar: "معرفة وملفات أوسع لأسئلة أكثر تنوعًا", en: "Wider knowledge and files for more varied questions", status: "concept" as const },
-      { ar: "متابعة أوضح للاستفسارات اللي تحتاج قرار", en: "Clearer follow-up for enquiries that need a decision", status: "concept" as const },
-      { ar: "بيانات المنتجات والمخزون — لاحقًا", en: "Product and stock data — later", status: "future" as const },
-    ],
+  {
+    "ar": "مستوى واحد لكل شركة",
+    "en": "One tier per company",
+    "status": "concept"
+  },
+  {
+    "ar": "تفاصيل القدرات والحدود قيد الاعتماد",
+    "en": "Capabilities and limits being finalised",
+    "status": "concept"
+  },
+  {
+    "ar": "الأسعار والمدة تُوضح قبل الاشتراك",
+    "en": "Price and term clarified before subscribing",
+    "status": "concept"
+  }
+],
   },
   {
     id: "integrated" as const,
     name: { ar: "المتكامل", en: "Integrated" },
-    purpose: { ar: "خدمة العملاء مربوطة بأنظمة نشاطك", en: "Customer service linked to your business systems" },
+    purpose: { ar: "أعلى مستوى ضمن التصور الحالي.", en: "The highest tier in the current proposed structure." },
     features: [
-      { ar: "كل فوائد الباقة المتقدمة", en: "Everything in the Advanced plan", status: "concept" as const },
-      { ar: "ردود أقرب للواقع التشغيلي لنشاطك", en: "Replies closer to your real operations", status: "concept" as const },
-      { ar: "ربط برنامج الكاشير — لاحقًا", en: "POS integration — later", status: "future" as const },
-      { ar: "مزامنة البيانات وفق التكامل — لاحقًا", en: "Data sync through the integration — later", status: "future" as const },
-    ],
+  {
+    "ar": "مستوى واحد لكل شركة",
+    "en": "One tier per company",
+    "status": "concept"
+  },
+  {
+    "ar": "تفاصيل القدرات والحدود قيد الاعتماد",
+    "en": "Capabilities and limits being finalised",
+    "status": "concept"
+  },
+  {
+    "ar": "الأسعار والمدة تُوضح قبل الاشتراك",
+    "en": "Price and term clarified before subscribing",
+    "status": "concept"
+  }
+],
   },
 ];
 
 const ui = {
-  try: { ar: "شاهد كيف يعمل", en: "See how it works" },
-  start: { ar: "ابدأ تجهيز حسابك", en: "Start preparing your account" },
+  try: { ar: "شاهد مسار المحادثة", en: "See the conversation journey" },
+  start: { ar: "ابدأ تجهيز حسابك", en: "Prepare your account" },
   tagline: {
-    ar: "مساحة لتجهيز معلومات نشاطك ومتابعة الاستفسارات. الرد الآلي وربط واتساب للعملاء غير مفعّلين بعد.",
-    en: "A place to prepare your business information and enquiries. Automatic replies and a customer WhatsApp connection are not active yet.",
+    ar: "تنظيم الرد والمتابعة — والخطوة التالية أوضح.",
+    en: "Organised replies and follow-up — with a clearer next step.",
   },
   signIn: { ar: "تسجيل الدخول", en: "Sign in" },
-  openWorkspace: { ar: "افتح لوحة العمل", en: "Open your workspace" },
+  openWorkspace: { ar: "افتح مساحة العمل", en: "Open your workspace" },
   continueSetup: { ar: "أكمل تجهيز نشاطك", en: "Continue your setup" },
   verifyFirst: { ar: "أكّد بريدك للمتابعة", en: "Confirm your email to continue" },
   replay: { ar: "إعادة المثال", en: "Replay example" },
   exampleNote: {
-    ar: "مثال توضيحي. ليس ردًا حقيقيًا من نموذج ذكاء اصطناعي.",
-    en: "Illustrative example. Not a live AI reply.",
+    ar: "عرض توضيحي ببيانات افتراضية؛ لا يرسل رسائل أو ينفّذ طلبات.",
+    en: "Illustrative demo with fictional data. No messages or orders are sent.",
+  },
+  demoContact: {
+    ar: "ناقش احتياج نشاطك",
+    en: "Discuss your business needs",
   },
   staffInitial: { ar: "ف", en: "S" },
   scrollHint: { ar: "مرّر لتتابع القصة", en: "Scroll to follow the story" },
@@ -278,44 +352,48 @@ const ui = {
   menu: { ar: "عرض قائمة الطعام", en: "See the menu" },
   catalogueTitle: { ar: "قائمة الطعام", en: "Menu" },
   close: { ar: "إغلاق", en: "Close" },
-  confirmed: { ar: "بانتظار تأكيد الموظف", en: "Waiting for staff confirmation" },
-  illustrative: { ar: "مثال توضيحي", en: "Illustrative example" },
+  confirmed: { ar: "بانتظار تأكيد الفريق", en: "Awaiting team confirmation" },
+  illustrative: { ar: "عرض توضيحي", en: "Illustrative" },
   fromSource: { ar: "الرد يُبنى من هذه البطاقة", en: "The reply is built from this card" },
-  suggested: { ar: "مقترح", en: "Suggested" },
-  paused: { ar: "الموظف يتابع — الرد الآلي متوقف", en: "Staff are following up — automatic replies are paused" },
+  suggested: { ar: "قيد الاعتماد", en: "Being finalised" },
+  paused: { ar: "في المثال: المتابعة لدى الفريق", en: "In this example: team follow-up" },
   noRepeat: {
-    ar: "العميل يكمل من غير ما يعيد المحادثة.",
-    en: "The customer continues without repeating the conversation.",
+    ar: "السياق واضح للفريق عند المتابعة.",
+    en: "Clear context for the team’s follow-up.",
   },
-  panelTitle: { ar: "متابعة خدمة العملاء", en: "Customer-service follow-up" },
+  panelTitle: { ar: "الخطوة التالية لكل استفسار", en: "The next step for each enquiry" },
+  valuePoints: {
+    ar: ["معلومات أوضح للرد", "متابعة منظمة للمهتمين", "خطوة تالية يعرفها الفريق"],
+    en: ["Clearer information for replies", "Organised follow-up for interested customers", "A next step the team can see"],
+  },
   tabs: {
     ar: ["المحادثات", "الاستفسارات", "المعرفة"],
     en: ["Chats", "Enquiries", "Knowledge"],
   },
   rows: {
     ar: [
-      ["برجر كلاسيك ×2 · الخوير", "بانتظار تأكيد الموظف", "مسؤول المحادثة: الموظف", "جُمع: 1.8 ر.ع · متوفر اليوم"],
-      ["متوفر اليوم؟", "رد من معرفة النشاط", "مسؤول المحادثة: فيلورا", "نفس سؤال بداية القصة"],
-      ["متى يوصل خارج مسقط؟", "تحتاج تحسين المعرفة", "مسؤول المحادثة: الفريق", "التوصيل المعرّف داخل مسقط فقط"],
+      ["استفسار عن ٢ برجر", "بانتظار التأكيد", "الخطوة التالية: مراجعة التفاصيل", "مثال توضيحي"],
+      ["سؤال عن منتج", "يحتاج متابعة", "الخطوة التالية: التحقق من التوفر", "مثال توضيحي"],
+      ["توصيل خارج مسقط", "يحتاج معلومة", "الخطوة التالية: توضيح نطاق التوصيل", "مثال توضيحي"],
     ],
     en: [
-      ["Classic burger ×2 · Al Khuwair", "Waiting for staff confirmation", "Conversation owner: staff", "Collected: 1.8 OMR · available today"],
-      ["Available today?", "Reply from business knowledge", "Conversation owner: Velora", "The question that opened the story"],
-      ["Delivery outside Muscat?", "Needs better knowledge", "Conversation owner: team", "Delivery is defined for Muscat only"],
+      ["Enquiry for two burgers", "Awaiting confirmation", "Next: review details", "Illustrative example"],
+      ["Product question", "Follow-up needed", "Next: check availability", "Illustrative example"],
+      ["Delivery outside Muscat", "Information needed", "Next: clarify coverage", "Illustrative example"],
     ],
   },
   steps: {
     ar: [
-      { title: "الحساب والنشاط", body: "تنشئ الحساب وتعرّف نوع النشاط." },
-      { title: "معلومات الشركة", body: "تضيف النص والملفات ليُحفظ نصها مع الحساب." },
-      { title: "الرقم والقناة", body: "ربط واتساب لاستقبال العملاء غير مفعّل بعد." },
-      { title: "المراجعة والتفعيل", body: "التفعيل لاحق وبعد المراجعة، وليس تلقائيًا من الموقع." },
+      { title: "إنشاء الحساب", body: "تنشئ حسابك وتعرّف نشاطك باختصار." },
+      { title: "معلومات النشاط", body: "تضيف النص والملفات التي يعتمد عليها الرد لاحقًا." },
+      { title: "متطلبات الربط", body: "نراجع متطلبات ربط واتساب وإتاحته لشركتك." },
+      { title: "نطاق التجربة", body: "نتفق على حدود التجربة قبل أي تشغيل فعلي." },
     ],
     en: [
-      { title: "Account and business", body: "You create the account and describe the business." },
-      { title: "Company information", body: "You add text and files so their text is saved with the account." },
-      { title: "Number and channel", body: "A customer WhatsApp connection is not active yet." },
-      { title: "Review and activation", body: "Activation comes later, after review. The site does not turn it on by itself." },
+      { title: "Create the account", body: "You create your account and briefly describe the business." },
+      { title: "Business information", body: "You add the text and files that later replies can rely on." },
+      { title: "Connection requirements", body: "Review WhatsApp requirements and availability for your company." },
+      { title: "Trial scope", body: "We agree the trial boundaries before any live operation." },
     ],
   },
   sectors: {
@@ -325,73 +403,82 @@ const ui = {
   },
   sectorNote: {
     restaurant: {
-      ar: "مطاعم: طلب من واتساب ثم متابعة من الفريق.",
-      en: "Restaurants: a WhatsApp order, then follow-up from the team.",
+      ar: "مطاعم: سؤال عن الصنف → معلومة → تفاصيل الاهتمام → مراجعة الفريق.",
+      en: "Restaurants: item question → information → interest details → team review.",
     },
     retail: {
-      ar: "متاجر: سؤال عن منتج ثم متابعة من الفريق.",
-      en: "Retail: a product question, then follow-up from the team.",
+      ar: "متاجر: سؤال عن المنتج → معلومة → تفاصيل الاهتمام → مراجعة الفريق.",
+      en: "Retail: product question → information → interest details → team review.",
     },
     services: {
-      ar: "خدمات: طلب موعد يراجعه الفريق قبل التأكيد.",
-      en: "Services: a slot request the team reviews before confirmation.",
+      ar: "خدمات: طلب موعد → معلومة → تفاصيل الاهتمام → مراجعة الفريق.",
+      en: "Services: slot request → information → interest details → team review.",
     },
   },
-  price: { ar: "السعر والحصة يُحددان في العرض", en: "Price and allowance are set in the offer" },
+  price: { ar: "السعر يُوضح في العرض", en: "Pricing is provided in the offer" },
   allowance: { ar: "السعر والحصة يُحددان في العرض", en: "Price and allowance are set in the offer" },
-  choose: { ar: "مهتم بهذه الباقة", en: "Interested in this plan" },
-  selected: { ar: "هذه الباقة محددة", en: "This plan is selected" },
-  packagesTitle: { ar: "اختر عمق الدعم. السعر في العرض.", en: "Choose the depth of support. Price comes in the offer." },
+  choose: { ar: "ناقش هذا المستوى", en: "Discuss this level" },
+  selected: { ar: "هذا المستوى محدد للنقاش", en: "This level is selected for discussion" },
+  packagesTitle: {
+    ar: "فيلورا واحدة. اختر المستوى المناسب لنشاطك.",
+    en: "One Velora. Choose the right level for your business.",
+  },
   packagesBody: {
-    ar: "ثلاث باقات للمقارنة والاهتمام فقط، وليست اشتراكًا. الرد الآلي وربط واتساب غير مفعّلين، بلا أسعار مختلقة.",
-    en: "Three plans to compare and register interest, not a subscription. Automatic replies and WhatsApp are not active, and no prices are invented here.",
+    ar: "تصور الاشتراك: منتج واحد وثلاثة مستويات بديلة، بمستوى واحد للشركة وإمكانية الترقية، شهريًا أو سنويًا. التفاصيل والأسعار قيد الاعتماد؛ اختيار المستوى هنا يسجّل اهتمامًا للنقاش.",
+    en: "The subscription model: one product and three alternative tiers, with one tier per company, higher-tier upgrades, and monthly or annual terms. Details and prices are being finalised; selection here registers interest.",
   },
   chat: {
-    name: { ar: "لارا · مساعدة فيلورا", en: "Lara · Velora guide" },
-    title: { ar: "محادثة مع مساعدة فيلورا", en: "Chat with Velora’s guide" },
-    online: { ar: "متاحة الآن للمعاينة", en: "Available now in this preview" },
-    openLabel: { ar: "افتح محادثة المساعدة", en: "Open help chat" },
-    bubble: { ar: "محتاج مساعدة؟ اسألني بسرعة.", en: "Need a hand? Ask me quickly." },
+    name: { ar: "فيلورا · دليل الصفحة", en: "Velora · Page guide" },
+    title: { ar: "دليل الصفحة — ردود محلية", en: "Page guide — local replies" },
+    online: { ar: "دليل الصفحة (نصوص جاهزة)", en: "Page guide (scripted replies)" },
+    openLabel: { ar: "افتح دليل الصفحة", en: "Open the page guide" },
+    bubble: { ar: "محتاج توضيح؟ اسألني بسرعة.", en: "Need a quick clarification? Ask me." },
     welcome: {
-      ar: "مرحبًا! أنا لارا. اسألني عن فيلورا، واتساب، أو كيف تبدأ — والرد هنا للمعاينة فقط.",
-      en: "Hi! I’m Lara. Ask about Velora, WhatsApp, or how to start — replies here are preview-only.",
+      ar: "مرحبًا، أنا فيلورا. أساعدك على فهم الأمثلة والمستويات وكيف تبدأ. هذه محادثة توضيحية بردود معدّة مسبقًا.",
+      en: "Hi, I’m Velora. I can help explain the examples, tiers, and how to start. This is an illustrative chat with preset replies.",
     },
     placeholder: { ar: "اكتب سؤالك…", en: "Type your question…" },
     send: { ar: "إرسال", en: "Send" },
-    typing: { ar: "لارا تكتب…", en: "Lara is typing…" },
-    note: { ar: "معاينة واجهة فقط. لا رسالة حقيقية تُرسل.", en: "UI preview only. No real message is sent." },
+    typing: { ar: "فيلورا تكتب…", en: "Velora is typing…" },
+    note: {
+      ar: "ردود معدّة مسبقًا داخل الصفحة.",
+      en: "Preset replies within this page.",
+    },
     suggestions: {
-      ar: ["كيف تشتغل؟", "الباقات؟", "أبدأ من وين؟"],
-      en: ["How does it work?", "Plans?", "Where do I start?"],
+      ar: ["كيف تشتغل؟", "المستويات؟", "أبدأ من وين؟"],
+      en: ["How does it work?", "Levels?", "Where do I start?"],
     },
     replyHow: {
-      ar: "المتوفر الآن: إنشاء حساب وتجهيز معلومات النشاط والملفات. الرد الآلي وربط واتساب للعملاء غير مفعّلين، وأمثلة الصفحة للتوضيح.",
-      en: "Available now: create an account and prepare business information and files. Automatic replies and a customer WhatsApp connection are not active. Page examples are illustrative.",
+      ar: "نطوّر فيلورا لتنظيم معلومات النشاط وسياق الاستفسار والخطوة التالية. يمكنك تجهيز الحساب والمعلومات؛ القصة تعرض المسار المستهدف.",
+      en: "We’re building Velora around business information, enquiry context, and next actions. You can prepare your account and information; the story shows the intended workflow.",
     },
     replyPlans: {
-      ar: "ثلاث باقات: دعم، متقدم، ومتكامل. السعر والحصة يُحددان في العرض. التكاملات مثل الكاشير لاحقة.",
-      en: "Three plans: Support, Advanced and Integrated. Price and allowance are set in the offer. Integrations such as POS come later.",
+      ar: "منتج واحد بثلاثة مستويات بديلة، ومستوًى واحد للشركة مع إمكانية الترقية. التفاصيل والأسعار قيد الاعتماد؛ اختيار المستوى هنا يسجّل اهتمامًا للنقاش.",
+      en: "One product with three alternative tiers, one tier per company, and higher-tier upgrades. Details and prices are being finalised; selection here registers interest.",
     },
     replyWhatsapp: {
-      ar: "واتساب هو الاتجاه المقصود، لكنه غير مربوط لاستقبال عملائك. ابدأ بتجهيز الحساب والمعلومات.",
-      en: "WhatsApp is the intended channel, but it is not connected for your customers. Start by preparing the account and information.",
+      ar: "تم التحقق من استقبال واتساب لشركة اختبار. الرد بالذكاء الاصطناعي غير مفعّل حاليًا، وإتاحة الربط والتفعيل تُراجع لكل شركة.",
+      en: "WhatsApp inbound has been verified for a test company. AI replies are not active, and connection availability is reviewed per company.",
     },
     replyStart: {
-      ar: "اضغط «ابدأ تجهيز حسابك»، أنشئ الحساب، ثم أكمل خطوات النشاط والمعلومات والرقم.",
-      en: "Tap “Start preparing your account”, create the account, then finish business, information and number.",
+      ar: "اضغط «ابدأ تجهيز حسابك» وأكمل معلومات نشاطك، أو تواصل لمناقشة التجربة. التسجيل لا يعني تفعيل الرد الآلي أو شراء اشتراك.",
+      en: "Prepare your account and business information, or contact us to discuss a trial. Registration does not activate AI replies or purchase a subscription.",
     },
     fallback: {
-      ar: "فهمتك. جرّب سؤال عن كيف تشتغل، الباقات، أو من وين تبدأ — أو مرّر لقصة الصفحة عشان تشوف المثال.",
-      en: "Got it. Try asking how it works, about plans, or where to start — or scroll the page story to see the example.",
+      ar: "فهمتك. جرّب سؤال عن المسار، المستويات، أو من وين تبدأ — أو مرّر لقصة الصفحة.",
+      en: "Got it. Try asking about the journey, levels, or where to start — or scroll the page story.",
     },
   },
-  faqTitle: { ar: "أسئلة قبل ما تجرب", en: "Questions before you try it" },
+  faqTitle: { ar: "أسئلة قبل ما تبدأ", en: "Questions before you start" },
   aboutTitle: { ar: "من نحن", en: "About us" },
   about: {
-    ar: "فيلورا خدمة تابعة لشركة TAG CITY TRAD LLC — تاج المدينة للتجارة ش م م. تجهّز فيها معلومات نشاطك وملفاته. الأمثلة توضيحية، وليست رد ذكاء اصطناعي أو ربط واتساب فعّالًا.",
-    en: "Velora is a service of TAG CITY TRAD LLC — تاج المدينة للتجارة ش م م. You prepare your business information and files here. The examples are illustrative, not a live AI reply or an active WhatsApp connection.",
+    ar: "فيلورا خدمة تابعة لشركة TAG CITY TRAD LLC — تاج المدينة للتجارة ش م م. نطوّر أداة تساعد النشاط على تنظيم معلوماته ومحادثاته ومتابعته. أمثلة الصفحة توضيحية.",
+    en: "Velora is a service of TAG CITY TRAD LLC — تاج المدينة للتجارة ش م م. We are building a tool to help businesses organise information, conversations and follow-up. Page examples are illustrative.",
   },
-  contactTitle: { ar: "تواصل معنا", en: "Contact us" },
+  contactTitle: {
+    ar: "لنناقش متابعة العملاء في نشاطك.",
+    en: "Let’s discuss your customer follow-up.",
+  },
   privacyTitle: { ar: "معلومات الخصوصية", en: "Privacy information" },
   privacy: {
     ar: "نحفظ لغة الصفحة على جهازك. نص التواصل يُجهَّز عندك ويُفتح في بريدك إلى velorahelperai@gmail.com، ولا يُرسل من خادمنا. بعد التسجيل نحتفظ بالاسم وبيانات النشاط والملفات المرتبطة بحسابك إلى أن تطلب حذفها.",
@@ -399,9 +486,15 @@ const ui = {
   },
   businessName: { ar: "اسم النشاط (اختياري)", en: "Business name (optional)" },
   sectorField: { ar: "نوع النشاط", en: "Business type" },
-  planField: { ar: "الباقة", en: "Plan" },
-  questionField: { ar: "سؤالك", en: "Your question" },
-  prepare: { ar: "انسخ النص وافتح بريدك", en: "Copy the note and open your mail" },
+  planField: { ar: "المستوى", en: "Level" },
+  questionField: {
+    ar: "ما الذي تريد تحسينه في المتابعة؟",
+    en: "What would you like to improve in follow-up?",
+  },
+  prepare: {
+    ar: "انسخ رسالتك وافتح البريد",
+    en: "Copy your note and open email",
+  },
   copy: { ar: "انسخ الطلب", en: "Copy request" },
   copied: {
     ar: "نُسخ النص. إن فُتح بريدك فهو لم يُرسل بعد — أرسله بنفسك إلى velorahelperai@gmail.com.",
@@ -417,7 +510,7 @@ const ui = {
     ar: "البريد أدناه. الزر ينسخ نصًا ويفتح تطبيق بريدك، ولا يرسل الرسالة عنك.",
     en: "Use the email below. The button copies a note and opens your mail app. It does not send the message for you.",
   },
-  mailSubject: { ar: "طلب عرض فيلورا", en: "Velora demo request" },
+  mailSubject: { ar: "نقاش متابعة العملاء — فيلورا", en: "Customer follow-up discussion — Velora" },
   nonePlan: { ar: "بدون تحديد", en: "Not selected" },
   copyright: "© 2026 Velora",
   companyLine: {
@@ -428,14 +521,14 @@ const ui = {
   nav: {
     how: { ar: "كيف تعمل", en: "How it works" },
     activities: { ar: "الأنشطة", en: "Business types" },
-    packages: { ar: "الباقات", en: "Plans" },
+    packages: { ar: "المستويات", en: "Levels" },
     faq: { ar: "الأسئلة الشائعة", en: "FAQ" },
   },
   footer: {
     about: { ar: "من نحن", en: "About us" },
     how: { ar: "كيف تعمل", en: "How it works" },
     activities: { ar: "الأنشطة", en: "Business types" },
-    packages: { ar: "الباقات", en: "Plans" },
+    packages: { ar: "المستويات", en: "Levels" },
     faq: { ar: "الأسئلة الشائعة", en: "FAQ" },
     contact: { ar: "تواصل معنا", en: "Contact us" },
     privacy: { ar: "الخصوصية", en: "Privacy" },
@@ -443,49 +536,84 @@ const ui = {
     deletion: { ar: "حذف الحساب والبيانات", en: "Delete account and data" },
   },
   faq: [
-    {
-      q: { ar: "هل الخدمة على واتساب أولًا؟", en: "Does it start on WhatsApp?" },
-      a: {
-        ar: "واتساب هو الاتجاه المقصود، لكنه غير مربوط لاستقبال عملائك بعد. المتاح الآن إنشاء حساب وتجهيز معلومات النشاط والملفات.",
-        en: "WhatsApp is the intended channel, but it is not connected for your customers yet. Available now: create an account and prepare business information and files.",
-      },
+  {
+    "q": {
+      "ar": "هل الرد الآلي وواتساب مفعّلان الآن؟",
+      "en": "Are automated replies and WhatsApp active?"
     },
-    {
-      q: { ar: "كيف تُجهَّز معرفة النشاط؟", en: "How is business knowledge prepared?" },
-      a: {
-        ar: "يمكنك إضافة نص وملفات مثل PDF وTXT وDOCX ليُستخرج نصها ويُحفظ لحسابك. هذا تجهيز للمعرفة، وليس ردًا آليًا للعملاء.",
-        en: "You can add text and files such as PDF, TXT and DOCX so their text is extracted and saved to your account. That prepares knowledge. It does not send an automatic reply to customers.",
-      },
+    "a": {
+      "ar": "تم التحقق من استقبال واتساب لشركة اختبار. الرد بالذكاء الاصطناعي غير مفعّل حاليًا، وإتاحة الربط والتفعيل تُراجع لكل شركة.",
+      "en": "WhatsApp inbound has been verified for a test company. AI replies are not active, and connection availability is reviewed per company."
+    }
+  },
+  {
+    "q": {
+      "ar": "كيف تُجهَّز معرفة النشاط؟",
+      "en": "How is business knowledge prepared?"
     },
-    {
-      q: { ar: "متى يتدخل الموظف؟", en: "When does a person step in?" },
-      a: {
-        ar: "تسليم المحادثة للموظف ظاهر كمثال في الصفحة. لا يوجد تسليم حي لمحادثة عميل على واتساب بعد.",
-        en: "Handing a conversation to staff is shown as an example on this page. There is no live handoff of a customer WhatsApp chat yet.",
-      },
+    "a": {
+      "ar": "يمكنك إضافة نص وملفات مثل PDF وTXT وDOCX ليُستخرج نصها ويُحفظ لحسابك. هذا تجهيز للمعلومات، وليس ردًا آليًا للعملاء.",
+      "en": "You can add text and files such as PDF, TXT and DOCX so their text is extracted and saved to your account. That prepares information. It does not send an automatic reply to customers."
+    }
+  },
+  {
+    "q": {
+      "ar": "هل تؤكد فيلورا الطلبات والمواعيد؟",
+      "en": "Does Velora confirm orders and bookings?"
     },
-    {
-      q: { ar: "كيف نبدأ؟", en: "How do we start?" },
-      a: {
-        ar: "ابدأ بالحساب ومعلومات النشاط والملفات. ربط الرقم والتفعيل غير متاحين من الموقع الآن، والسعر يُحدد لاحقًا في العرض.",
-        en: "Start with the account, business information and files. Connecting a number and activation are not available from the site now, and the price is set later in an offer.",
-      },
+    "a": {
+      "ar": "الأمثلة تعرض استفسارًا ينتظر مراجعة الفريق. لا تمثل تنفيذ طلب مبيعات أو تأكيد حجز أو ربطًا حيًا بالمخزون.",
+      "en": "The examples show enquiries awaiting team review. They do not represent completed orders, confirmed bookings, or live stock access."
+    }
+  },
+  {
+    "q": {
+      "ar": "هل أقدر أعرف أين تتوقف المتابعة؟",
+      "en": "Can I see where follow-up stalls?"
     },
-    {
-      q: { ar: "ماذا عن النطاق والتكلفة؟", en: "What about scope and cost?" },
-      a: {
-        ar: "لا نعرض سعرًا أو حصة محادثات هنا. كلاهما يُحدَّد في العرض المتفق عليه قبل التفعيل.",
-        en: "We do not show a price or a conversation allowance here. Both are set in the agreed offer before activation.",
-      },
+    "a": {
+      "ar": "هذا اتجاه لخدمة مستقبلية: قياس تأخر الرد والمتابعات المعلقة بناءً على بيانات متفق عليها، وبعد موافقتك وتحديد نطاق استخدامها. لا توجد في هذه الصفحة أداة لرفع محادثات العملاء وتحليلها.",
+      "en": "This is a future service direction: measuring reply delays and pending follow-ups using agreed data, with consent and a defined scope. This page does not upload or analyse customer conversations."
+    }
+  },
+  {
+    "q": {
+      "ar": "كيف نبدأ؟",
+      "en": "How do we start?"
     },
-  ],
+    "a": {
+      "ar": "اضغط «ابدأ تجهيز حسابك» وأكمل معلومات نشاطك، أو تواصل لمناقشة التجربة. التسجيل لا يعني تفعيل الرد الآلي أو شراء اشتراك.",
+      "en": "Prepare your account and business information, or contact us to discuss a trial. Registration does not activate AI replies or purchase a subscription."
+    }
+  },
+  {
+    "q": {
+      "ar": "ماذا عن النطاق والتكلفة؟",
+      "en": "What about scope and cost?"
+    },
+    "a": {
+      "ar": "لا نعرض سعرًا أو حصة محادثات هنا. كلاهما يُحدَّد في العرض المتفق عليه قبل التفعيل.",
+      "en": "We do not show a price or a conversation allowance here. Both are set in the agreed offer before activation."
+    }
+  },
+  {
+    "q": {
+      "ar": "هل أحتاج ثلاثة اشتراكات؟",
+      "en": "Do I need three subscriptions?"
+    },
+    "a": {
+      "ar": "التصور منتج واحد بمستوى واحد للشركة، ويمكن الترقية إلى مستوى أعلى. الشهري والسنوي خيارا مدة الاشتراك؛ تفاصيل المستويات قيد الاعتماد.",
+      "en": "The model is one product and one tier per company, with higher-tier upgrades. Monthly and annual terms are planned; tier details are being finalised."
+    }
+  }
+],
   samples: {
     restaurant: [
       {
         q: { ar: "البرجر الكلاسيك متوفر اليوم؟", en: "Is the classic burger available today?" },
         a: {
-          ar: "مثال توضيحي: نعم، متوفر اليوم بـ 1.8 ر.ع، والتوصيل داخل مسقط.",
-          en: "Illustrative example: yes, available today at 1.8 OMR, with delivery inside Muscat.",
+          ar: "نعم، متوفر. تحب كام برجر؟ والتوصيل لفين؟",
+          en: "Available. How many burgers? Delivery area?",
         },
       },
     ],
@@ -493,8 +621,8 @@ const ui = {
       {
         q: { ar: "هذا المنتج متوفر بالفرع؟", en: "Is this product available in store?" },
         a: {
-          ar: "المعلومة تُراجع من معرفة المتجر، ثم يسجل الاستفسار للمتابعة. لا توفر حي هنا.",
-          en: "The answer is checked against store knowledge, then the enquiry is recorded for follow-up. There is no live stock here.",
+          ar: "ما المنتج والفرع المطلوبان؟ في هذا المثال، الخطوة التالية أن يتحقق الفريق من التوفر.",
+          en: "Which product and branch? In this example, the team checks availability.",
         },
       },
     ],
@@ -502,8 +630,8 @@ const ui = {
       {
         q: { ar: "فيه موعد بكرة الصبح؟", en: "Is there a morning slot tomorrow?" },
         a: {
-          ar: "نسجل طلب الموعد كاستفسار مبدئي ليراجعه الفريق. هذا ليس تأكيد حجز.",
-          en: "We record the slot request as a preliminary enquiry for the team. This is not a confirmed booking.",
+          ar: "ما الخدمة والوقت الذي تفضله؟ في هذا المثال، يراجع الفريق الطلب قبل تأكيد الموعد.",
+          en: "Which service and time would you prefer? In this example, the team reviews the request before confirming.",
         },
       },
     ],
@@ -526,6 +654,7 @@ export function landingCopy(locale: Locale) {
     verifyFirst: t(locale, ui.verifyFirst),
     replay: t(locale, ui.replay),
     exampleNote: t(locale, ui.exampleNote),
+    demoContact: t(locale, ui.demoContact),
     staffInitial: t(locale, ui.staffInitial),
     scrollHint: t(locale, ui.scrollHint),
     lang: t(locale, ui.lang),
@@ -540,6 +669,7 @@ export function landingCopy(locale: Locale) {
     paused: t(locale, ui.paused),
     noRepeat: t(locale, ui.noRepeat),
     panelTitle: t(locale, ui.panelTitle),
+    valuePoints: ui.valuePoints[locale],
     tabs: ui.tabs[locale],
     rows: ui.rows[locale],
     steps: ui.steps[locale],

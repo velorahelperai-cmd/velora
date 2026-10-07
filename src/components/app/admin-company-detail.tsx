@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -286,12 +286,12 @@ export function AdminCompanyDetail({
           <Link href="/admin" className="text-sm text-[#38dc89] underline">{copy.admin.backToList}</Link>
         </div>
         <h1 className="mt-4 text-3xl font-bold break-words">{company.display_name}</h1>
-        <p className="mt-2 text-sm text-[#adbeaf]">{copy.admin.detailBody}</p>
-        <p className="mt-1 text-xs text-[#8da195]">
+        <p className="mt-2 text-sm text-[var(--color-muted-on-dark)]">{copy.admin.detailBody}</p>
+        <p className="mt-1 text-xs text-[var(--color-muted-soft)]">
           {copy.admin.registeredAt}: {new Date(company.created_at).toLocaleString(locale === "ar" ? "ar-OM" : "en-GB")}
         </p>
         {emailsDiffer ? (
-          <p className="mt-3 rounded-xl border border-[#38dc89]/30 bg-[#38dc89]/10 px-3 py-2 text-xs text-[#9af0c3]">
+          <p className="mt-3 rounded-xl border border-[#38dc89]/30 bg-[#38dc89]/10 px-3 py-2 text-xs text-[var(--color-success-fg)]">
             {copy.admin.emailDiffer}
           </p>
         ) : null}
@@ -332,7 +332,7 @@ export function AdminCompanyDetail({
                   {...p}
                   value={form.replyLanguage}
                   onChange={(e) => setForm({ ...form, replyLanguage: e.target.value as "ar" | "en" | "both" })}
-                  className="min-h-11 w-full rounded-xl border border-white/15 bg-[#0d1a14] px-3"
+                  className="min-h-11 w-full rounded-xl border border-[color:var(--color-border-soft)] bg-[#0d1a14] px-3"
                 >
                   <option value="both">{copy.setup.langBoth}</option>
                   <option value="ar">{copy.setup.langAr}</option>
@@ -361,7 +361,7 @@ export function AdminCompanyDetail({
                   {...p}
                   value={form.status}
                   onChange={(e) => setForm({ ...form, status: e.target.value as CompanyStatus })}
-                  className="min-h-11 w-full rounded-xl border border-white/15 bg-[#0d1a14] px-3"
+                  className="min-h-11 w-full rounded-xl border border-[color:var(--color-border-soft)] bg-[#0d1a14] px-3"
                 >
                   <option value="setup">{copy.admin.statusSetup}</option>
                   <option value="active">{copy.admin.statusActive}</option>
@@ -373,12 +373,12 @@ export function AdminCompanyDetail({
               <Button type="submit" busy={busy} busyLabel={copy.saving}>{copy.save}</Button>
             </div>
           </form>
-          <p className="mt-3 text-xs text-[#8da195]">{copy.admin.whatsappNote}</p>
+          <p className="mt-3 text-xs text-[var(--color-muted-soft)]">{copy.admin.whatsappNote}</p>
         </section>
 
         <section className="mt-4 app-panel rounded-3xl p-4 sm:p-6">
           <h2 className="text-lg font-bold">{copy.admin.whatsappLink}</h2>
-          <p className="mt-2 text-xs text-[#8da195]">{copy.admin.waLinkHonestNote}</p>
+          <p className="mt-2 text-xs text-[var(--color-muted-soft)]">{copy.admin.waLinkHonestNote}</p>
           {waLinkFailed ? (
             <div className="mt-3 grid gap-3">
               <Notice tone="error">{copy.admin.waLinkLoadFailed}</Notice>
@@ -414,62 +414,62 @@ export function AdminCompanyDetail({
           {!waLinkFailed && waLink ? (
             <dl className="mt-4 grid gap-3 text-sm">
               <div className="flex flex-wrap justify-between gap-3">
-                <dt className="text-[#adbeaf]">{copy.app.whatsappStatus}</dt>
+                <dt className="text-[var(--color-muted-on-dark)]">{copy.app.whatsappStatus}</dt>
                 <dd>{copy.app.waLinkStatuses[waLink.status]}</dd>
               </div>
               <div className="flex flex-wrap justify-between gap-3">
-                <dt className="text-[#adbeaf]">{copy.admin.waLinkRequested}</dt>
+                <dt className="text-[var(--color-muted-on-dark)]">{copy.admin.waLinkRequested}</dt>
                 <dd dir="ltr">{dash(waLink.requestedDisplayNumber, empty)}</dd>
               </div>
               <div className="flex flex-wrap justify-between gap-3">
-                <dt className="text-[#adbeaf]">{copy.admin.waLinkKeepOnPhone}</dt>
+                <dt className="text-[var(--color-muted-on-dark)]">{copy.admin.waLinkKeepOnPhone}</dt>
                 <dd>{waLink.keepOnPhone ? copy.admin.waLinkYes : copy.admin.waLinkNo}</dd>
               </div>
               {waLink.status === "verified" ? (
                 <>
                   <div className="flex flex-wrap justify-between gap-3">
-                    <dt className="text-[#adbeaf]">{copy.admin.waLinkVerifiedCurrent}</dt>
+                    <dt className="text-[var(--color-muted-on-dark)]">{copy.admin.waLinkVerifiedCurrent}</dt>
                     <dd dir="ltr">{dash(waLink.verifiedDisplayNumber, empty)}</dd>
                   </div>
                   <div className="flex flex-wrap justify-between gap-3">
-                    <dt className="text-[#adbeaf]">{copy.admin.waLinkProviderId}</dt>
+                    <dt className="text-[var(--color-muted-on-dark)]">{copy.admin.waLinkProviderId}</dt>
                     <dd dir="ltr" className="break-all">{dash(waLink.providerPhoneNumberId, empty)}</dd>
                   </div>
                   <div className="flex flex-wrap justify-between gap-3">
-                    <dt className="text-[#adbeaf]">{copy.app.waLinkTestedLabel}</dt>
+                    <dt className="text-[var(--color-muted-on-dark)]">{copy.app.waLinkTestedLabel}</dt>
                     <dd>{waLink.receptionSendTested ? copy.app.waLinkTestedYes : copy.app.waLinkTestedNo}</dd>
                   </div>
                 </>
               ) : (
                 <div className="flex flex-wrap justify-between gap-3">
-                  <dt className="text-[#adbeaf]">{copy.app.waLinkTestedLabel}</dt>
+                  <dt className="text-[var(--color-muted-on-dark)]">{copy.app.waLinkTestedLabel}</dt>
                   <dd>{copy.app.waLinkTestedNo}</dd>
                 </div>
               )}
             </dl>
           ) : null}
           {!waLinkFailed && !waLink ? (
-            <p className="mt-3 text-sm text-[#8da195]">{copy.admin.notLinked}</p>
+            <p className="mt-3 text-sm text-[var(--color-muted-soft)]">{copy.admin.notLinked}</p>
           ) : null}
           {!waLinkFailed && waLink?.priorLinkEvidence ? (
-            <div className="mt-4 grid gap-2 rounded-2xl border border-white/10 bg-white/5 p-3 text-sm">
-              <p className="text-xs font-medium text-[#8da195]">{copy.admin.waLinkPriorEvidenceTitle}</p>
-              <p className="text-xs leading-5 text-[#8da195]">{copy.admin.waLinkPriorEvidenceNote}</p>
+            <div className="mt-4 grid gap-2 rounded-2xl border border-[color:var(--color-border-soft)] bg-[var(--color-hover-wash)] p-3 text-sm">
+              <p className="text-xs font-medium text-[var(--color-muted-soft)]">{copy.admin.waLinkPriorEvidenceTitle}</p>
+              <p className="text-xs leading-5 text-[var(--color-muted-soft)]">{copy.admin.waLinkPriorEvidenceNote}</p>
               <dl className="grid gap-2">
                 <div className="flex flex-wrap justify-between gap-3">
-                  <dt className="text-[#adbeaf]">{copy.admin.waLinkPriorVerifiedNumber}</dt>
+                  <dt className="text-[var(--color-muted-on-dark)]">{copy.admin.waLinkPriorVerifiedNumber}</dt>
                   <dd dir="ltr">{dash(waLink.verifiedDisplayNumber, empty)}</dd>
                 </div>
                 <div className="flex flex-wrap justify-between gap-3">
-                  <dt className="text-[#adbeaf]">{copy.admin.waLinkProviderId}</dt>
+                  <dt className="text-[var(--color-muted-on-dark)]">{copy.admin.waLinkProviderId}</dt>
                   <dd dir="ltr" className="break-all">{dash(waLink.providerPhoneNumberId, empty)}</dd>
                 </div>
                 <div className="flex flex-wrap justify-between gap-3">
-                  <dt className="text-[#adbeaf]">{copy.admin.waLinkPriorInboundTested}</dt>
+                  <dt className="text-[var(--color-muted-on-dark)]">{copy.admin.waLinkPriorInboundTested}</dt>
                   <dd dir="ltr" className="text-xs">{formatStamp(waLink.inboundTestedAt)}</dd>
                 </div>
                 <div className="flex flex-wrap justify-between gap-3">
-                  <dt className="text-[#adbeaf]">{copy.admin.waLinkPriorOutboundTested}</dt>
+                  <dt className="text-[var(--color-muted-on-dark)]">{copy.admin.waLinkPriorOutboundTested}</dt>
                   <dd dir="ltr" className="text-xs">{formatStamp(waLink.outboundTestedAt)}</dd>
                 </div>
               </dl>
@@ -482,7 +482,7 @@ export function AdminCompanyDetail({
                 value={waNote}
                 onChange={(e) => setWaNote(e.target.value)}
                 rows={3}
-                className="min-h-24 w-full rounded-xl border border-white/15 bg-[#0d1a14] px-3 py-2 text-sm"
+                className="min-h-24 w-full rounded-xl border border-[color:var(--color-border-soft)] bg-[#0d1a14] px-3 py-2 text-sm"
               />
             )}
           </Field>
@@ -536,7 +536,7 @@ export function AdminCompanyDetail({
               </Button>
             ) : null}
           </div>
-          <p className="mt-3 text-xs text-[#8da195]">{copy.admin.waLinkNoFakeVerify}</p>
+          <p className="mt-3 text-xs text-[var(--color-muted-soft)]">{copy.admin.waLinkNoFakeVerify}</p>
         </section>
 
         <section className="mt-4 app-panel rounded-3xl p-4 sm:p-6">
@@ -571,39 +571,39 @@ export function AdminCompanyDetail({
             <div className="mt-3 grid gap-3">
               <dl className="grid gap-2 text-sm">
                 <div className="flex justify-between gap-3">
-                  <dt className="text-[#adbeaf]">{copy.admin.reviewStatus}</dt>
+                  <dt className="text-[var(--color-muted-on-dark)]">{copy.admin.reviewStatus}</dt>
                   <dd>{review.status}</dd>
                 </div>
                 <div className="flex justify-between gap-3">
-                  <dt className="text-[#adbeaf]">{copy.admin.reviewRevision}</dt>
+                  <dt className="text-[var(--color-muted-on-dark)]">{copy.admin.reviewRevision}</dt>
                   <dd>{review.revision}</dd>
                 </div>
                 <div className="flex justify-between gap-3">
-                  <dt className="text-[#adbeaf]">{copy.admin.reviewRequestedAt}</dt>
+                  <dt className="text-[var(--color-muted-on-dark)]">{copy.admin.reviewRequestedAt}</dt>
                   <dd>{new Date(review.requested_at).toLocaleString(locale === "ar" ? "ar-OM" : "en-GB")}</dd>
                 </div>
                 <div className="flex justify-between gap-3">
-                  <dt className="text-[#adbeaf]">{copy.admin.reviewRequester}</dt>
+                  <dt className="text-[var(--color-muted-on-dark)]">{copy.admin.reviewRequester}</dt>
                   <dd dir="ltr">{dash(review.requested_by_email, review.requested_by)}</dd>
                 </div>
                 <div className="flex justify-between gap-3">
-                  <dt className="text-[#adbeaf]">{copy.admin.reviewOwnership}</dt>
+                  <dt className="text-[var(--color-muted-on-dark)]">{copy.admin.reviewOwnership}</dt>
                   <dd>{review.number_ownership === "own" ? copy.setup.ownNumber : copy.setup.newNumber}</dd>
                 </div>
                 <div className="flex justify-between gap-3">
-                  <dt className="text-[#adbeaf]">{copy.setup.whatsappNumber}</dt>
+                  <dt className="text-[var(--color-muted-on-dark)]">{copy.setup.whatsappNumber}</dt>
                   <dd dir="ltr">{dash(review.whatsapp_number, empty)}</dd>
                 </div>
                 {review.owner_note ? (
                   <div className="flex justify-between gap-3">
-                    <dt className="text-[#adbeaf]">{copy.admin.reviewOwnerNote}</dt>
+                    <dt className="text-[var(--color-muted-on-dark)]">{copy.admin.reviewOwnerNote}</dt>
                     <dd className="min-w-0 break-words text-end">{review.owner_note}</dd>
                   </div>
                 ) : null}
-                <p className="text-xs text-[#8da195]">{copy.admin.reviewNote}</p>
+                <p className="text-xs text-[var(--color-muted-soft)]">{copy.admin.reviewNote}</p>
               </dl>
               {review.status === "pending_review" ? (
-                <div className="grid gap-3 border-t border-white/10 pt-3">
+                <div className="grid gap-3 border-t border-[color:var(--color-border-soft)] pt-3">
                   <Field label={copy.admin.reviewOwnerNote} required>
                     {(p) => (
                       <textarea
@@ -612,7 +612,7 @@ export function AdminCompanyDetail({
                         maxLength={2000}
                         rows={3}
                         onChange={(e) => setAdminNote(e.target.value)}
-                        className="min-h-[5rem] w-full rounded-xl border border-white/15 bg-[#0d1a14] px-3 py-2 text-sm"
+                        className="min-h-[5rem] w-full rounded-xl border border-[color:var(--color-border-soft)] bg-[#0d1a14] px-3 py-2 text-sm"
                       />
                     )}
                   </Field>
@@ -712,15 +712,15 @@ export function AdminCompanyDetail({
               ) : null}
             </div>
           ) : (
-            <p className="mt-3 text-sm text-[#8da195]">{copy.admin.reviewNone}</p>
+            <p className="mt-3 text-sm text-[var(--color-muted-soft)]">{copy.admin.reviewNone}</p>
           )}
         </section>
 
         <section className="mt-4 app-panel rounded-3xl p-4 sm:p-6">
           <h2 className="text-lg font-bold">{copy.admin.ownerSection}</h2>
           <dl className="mt-3 grid gap-2 text-sm">
-            <div className="flex justify-between gap-3"><dt className="text-[#adbeaf]">{copy.admin.ownerName}</dt><dd>{dash(owner?.member_name, empty)}</dd></div>
-            <div className="flex justify-between gap-3"><dt className="text-[#adbeaf]">{copy.admin.ownerAccountEmail}</dt><dd dir="ltr">{dash(owner?.email, empty)}</dd></div>
+            <div className="flex justify-between gap-3"><dt className="text-[var(--color-muted-on-dark)]">{copy.admin.ownerName}</dt><dd>{dash(owner?.member_name, empty)}</dd></div>
+            <div className="flex justify-between gap-3"><dt className="text-[var(--color-muted-on-dark)]">{copy.admin.ownerAccountEmail}</dt><dd dir="ltr">{dash(owner?.email, empty)}</dd></div>
           </dl>
         </section>
 
@@ -728,11 +728,11 @@ export function AdminCompanyDetail({
           <h2 className="text-lg font-bold">{copy.admin.members}</h2>
           <ul className="mt-3 grid gap-2">
             {members.map((m) => (
-              <li key={m.user_id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 px-3 py-2 text-sm">
+              <li key={m.user_id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[color:var(--color-border-soft)] px-3 py-2 text-sm">
                 <div className="min-w-0">
                   <strong className="break-words">{m.member_name || m.email || m.user_id}</strong>
-                  <div className="text-xs text-[#8da195]" dir="ltr">{m.email || m.phone || m.user_id}</div>
-                  <div className="text-xs text-[#8da195]">
+                  <div className="text-xs text-[var(--color-muted-soft)]" dir="ltr">{m.email || m.phone || m.user_id}</div>
+                  <div className="text-xs text-[var(--color-muted-soft)]">
                     {roleLabel(m.role, copy)} · {memberStatusLabel(m.status, copy)}
                   </div>
                 </div>
@@ -767,11 +767,11 @@ export function AdminCompanyDetail({
                     </Button>
                   )
                 ) : (
-                  <span className="text-xs text-[#8da195]">{copy.admin.ownerProtected}</span>
+                  <span className="text-xs text-[var(--color-muted-soft)]">{copy.admin.ownerProtected}</span>
                 )}
               </li>
             ))}
-            {!members.length ? <li className="text-sm text-[#8da195]">{copy.admin.emptyMembers}</li> : null}
+            {!members.length ? <li className="text-sm text-[var(--color-muted-soft)]">{copy.admin.emptyMembers}</li> : null}
           </ul>
         </section>
 
@@ -779,7 +779,7 @@ export function AdminCompanyDetail({
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <h2 className="text-lg font-bold">{copy.admin.knowledgeSection}</h2>
             {!knowledgeFailed ? (
-              <p className="text-xs text-[#8da195]">{fill(copy.admin.knowledgeCount, { n: String(knowledge.length) })}</p>
+              <p className="text-xs text-[var(--color-muted-soft)]">{fill(copy.admin.knowledgeCount, { n: String(knowledge.length) })}</p>
             ) : null}
           </div>
           {knowledgeFailed ? (
@@ -812,36 +812,36 @@ export function AdminCompanyDetail({
                 <div className="mt-3"><Notice tone="warn">{copy.knowledge.approvalFoundationUnavailable}</Notice></div>
               ) : null}
               {!knowledge.length ? (
-            <p className="mt-3 text-sm text-[#8da195]">{copy.admin.knowledgeEmpty}</p>
+            <p className="mt-3 text-sm text-[var(--color-muted-soft)]">{copy.admin.knowledgeEmpty}</p>
           ) : (
             <div className="mt-4 grid gap-4">
               <div>
-                <h3 className="text-sm font-semibold text-[#adbeaf]">{copy.admin.knowledgeTexts}</h3>
+                <h3 className="text-sm font-semibold text-[var(--color-muted-on-dark)]">{copy.admin.knowledgeTexts}</h3>
                 <ul className="mt-2 grid gap-2">
                   {knowledge.filter((k) => k.kind === "text").map((k) => (
-                    <li key={k.id} className="rounded-xl border border-white/10 px-3 py-2 text-sm">
+                    <li key={k.id} className="rounded-xl border border-[color:var(--color-border-soft)] px-3 py-2 text-sm">
                       <strong>{k.title}</strong>
-                      <p className="mt-1 line-clamp-3 text-xs text-[#adbeaf]">{k.content}</p>
-                      <p className="mt-1 text-[11px] text-[#8da195]">
+                      <p className="mt-1 line-clamp-3 text-xs text-[var(--color-muted-on-dark)]">{k.content}</p>
+                      <p className="mt-1 text-[11px] text-[var(--color-muted-soft)]">
                         {knowledgeStatusLabel(k.status, copy)} ·{" "}
                         {new Date(k.updated_at).toLocaleString(locale === "ar" ? "ar-OM" : "en-GB")}
                       </p>
                     </li>
                   ))}
                   {!knowledge.some((k) => k.kind === "text") ? (
-                    <li className="text-xs text-[#8da195]">{copy.admin.knowledgeEmpty}</li>
+                    <li className="text-xs text-[var(--color-muted-soft)]">{copy.admin.knowledgeEmpty}</li>
                   ) : null}
                 </ul>
               </div>
               <div>
-                <h3 className="text-sm font-semibold text-[#adbeaf]">{copy.admin.knowledgeFiles}</h3>
+                <h3 className="text-sm font-semibold text-[var(--color-muted-on-dark)]">{copy.admin.knowledgeFiles}</h3>
                 <ul className="mt-2 grid gap-2">
                   {knowledge.filter((k) => k.kind === "file").map((k) => (
-                    <li key={k.id} className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-white/10 px-3 py-2 text-sm">
+                    <li key={k.id} className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-[color:var(--color-border-soft)] px-3 py-2 text-sm">
                       <div className="min-w-0">
                         <strong className="break-words">{k.title}</strong>
-                        <p className="mt-1 text-xs text-[#adbeaf]" dir="ltr">{k.file_name}</p>
-                        <p className="mt-1 text-[11px] text-[#8da195]">
+                        <p className="mt-1 text-xs text-[var(--color-muted-on-dark)]" dir="ltr">{k.file_name}</p>
+                        <p className="mt-1 text-[11px] text-[var(--color-muted-soft)]">
                           {fill(copy.admin.knowledgeFileMeta, {
                             type: k.content_type || "—",
                             size: formatBytes(k.byte_size, copy),
@@ -850,10 +850,10 @@ export function AdminCompanyDetail({
                           })}
                         </p>
                         {k.status === "ready" && k.content ? (
-                          <p className="mt-1 line-clamp-2 text-xs text-[#adbeaf]">{k.content}</p>
+                          <p className="mt-1 line-clamp-2 text-xs text-[var(--color-muted-on-dark)]">{k.content}</p>
                         ) : null}
                         {k.failure_code ? (
-                          <p className="mt-1 text-xs text-[#f3a08a]">
+                          <p className="mt-1 text-xs text-[var(--color-danger-fg)]">
                             {(copy.knowledge.reasons as Record<string, string>)[k.failure_code] ?? k.failure_code}
                           </p>
                         ) : null}
@@ -883,7 +883,7 @@ export function AdminCompanyDetail({
                     </li>
                   ))}
                   {!knowledge.some((k) => k.kind === "file") ? (
-                    <li className="text-xs text-[#8da195]">{copy.admin.knowledgeEmpty}</li>
+                    <li className="text-xs text-[var(--color-muted-soft)]">{copy.admin.knowledgeEmpty}</li>
                   ) : null}
                 </ul>
               </div>
@@ -897,17 +897,17 @@ export function AdminCompanyDetail({
           <h2 className="text-lg font-bold">{copy.admin.auditTitle}</h2>
           <ul className="mt-3 grid gap-2">
             {audits.map((a) => (
-              <li key={a.id} className="rounded-xl border border-white/10 px-3 py-2 text-sm">
+              <li key={a.id} className="rounded-xl border border-[color:var(--color-border-soft)] px-3 py-2 text-sm">
                 <div className="flex flex-wrap justify-between gap-2">
                   <strong>{auditActionLabel(a.action, copy)}</strong>
-                  <span className="text-xs text-[#8da195]">
+                  <span className="text-xs text-[var(--color-muted-soft)]">
                     {new Date(a.created_at).toLocaleString(locale === "ar" ? "ar-OM" : "en-GB")}
                   </span>
                 </div>
-                <p className="mt-1 text-xs text-[#adbeaf]" dir="ltr">{a.actor_email || a.actor_user_id}</p>
+                <p className="mt-1 text-xs text-[var(--color-muted-on-dark)]" dir="ltr">{a.actor_email || a.actor_user_id}</p>
               </li>
             ))}
-            {!audits.length ? <li className="text-sm text-[#8da195]">{copy.admin.auditEmpty}</li> : null}
+            {!audits.length ? <li className="text-sm text-[var(--color-muted-soft)]">{copy.admin.auditEmpty}</li> : null}
           </ul>
         </section>
       </div>
