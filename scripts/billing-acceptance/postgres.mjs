@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { promisify } from "node:util";
 
 // Deliberately no remote URL, TCP port, cloud credential or persistent volume.
-export const CONTAINER = "velora-c1-security-a5b8d14";
+export const CONTAINER = "velora-c2-runtime-13861eb";
 export const DB = "billing_acceptance";
 export const exec = promisify(execFile);
 export const lit = (value) => `'${String(value).replaceAll("'", "''")}'`;
@@ -13,7 +13,7 @@ const psql = ["exec", "-i", "-u", "postgres", CONTAINER, "psql", "-X", "-U", "su
 export async function verifyLocalContainer() {
   const { stdout } = await exec("docker", ["inspect", CONTAINER]);
   const info = JSON.parse(stdout)[0];
-  if (info.Config.Labels?.["velora.task"] !== "c1-security-foundation" ||
+  if (info.Config.Labels?.["velora.task"] !== "c2-runtime-integration" ||
       info.HostConfig.NetworkMode !== "none" || !info.HostConfig.Tmpfs?.["/var/lib/postgresql/data"] ||
       Object.keys(info.HostConfig.PortBindings ?? {}).length || info.Mounts.some(m => m.Type !== "tmpfs")) {
     throw new Error("Refusing SQL outside this task's isolated ephemeral PostgreSQL container");

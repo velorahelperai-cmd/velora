@@ -52,6 +52,9 @@ export type WhatsappInboxMeta = {
   timezoneAnnouncedUtc: boolean;
   canReply: boolean;
   canAssign: boolean;
+  canTakeOver?: boolean;
+  canResume?: boolean;
+  canClose?: boolean;
   assignees: InboxAssigneeOption[];
   counts: Record<LeadWorklist, number>;
 };
@@ -141,6 +144,41 @@ async function loadAssigneeOptions(
 export type WhatsappInboxLoad =
   | { ok: true; conversations: Conversation[]; meta: WhatsappInboxMeta }
   | { ok: false; code: "NO_COMPANY" | "UNAVAILABLE" };
+
+/** A bounded initial UI page. Worklist counts describe only the loaded page. */
+export async function loadWhatsappInboxInitialPage(): Promise<
+  | { ok: true; conversations: import("./inbox-contracts").WhatsappInboxItem[]; meta: WhatsappInboxMeta; page: import("./inbox-contracts").WhatsappInboxPage }
+  | { ok: false; code: "NO_COMPANY" | "UNAVAILABLE" }
+> {
+  try {
+    const access = await getCompanyAccess();
+    if (!access.ok || !access.context.company || !access.context.membership) return { ok: false, code: access.ok || access.code !== "UNAVAILABLE" ? "NO_COMPANY" : "UNAVAILABLE" };
+    const companyId = access.context.company.id;
+    const scope = await sessionConversationScope(companyId);
+    if ((scope !== "all_company" && scope !== "assigned_only") || await sessionHasCompanyCapability(companyId, "wa.conversations.read") !== true) return { ok: false, code: "UNAVAILABLE" };
+    const { loadWhatsappInboxPage } = await import("./inbox-contracts");
+    const page = await loadWhatsappInboxPage({ companyId, limit: 40 });
+    if (!page.ok || page.data.companyId !== companyId || page.data.conversationScope !== scope) return { ok: false, code: "UNAVAILABLE" };
+    const client = await createClient();
+    const [timezoneRow, permissions] = await Promise.all([
+      client.from("companies").select("timezone").eq("id", companyId).maybeSingle(),
+      Promise.all((["wa.conversations.reply", "wa.conversations.assign", "wa.conversations.take_over", "wa.conversations.resume", "wa.conversations.close"] as const).map(capability => sessionHasCompanyCapability(companyId, capability))),
+    ]);
+    if (timezoneRow.error) return { ok: false, code: "UNAVAILABLE" };
+    const { zone, announcedUtc } = resolveCompanyTimezone((timezoneRow.data as { timezone?: string | null } | null)?.timezone ?? null);
+    const timezone = announcedUtc ? null : zone;
+    const [canReply, canAssign, canTakeOver, canResume, canClose] = permissions.map(value => value === true);
+    const assignees = canAssign ? await loadAssigneeOptions(client, companyId) : [];
+    const current = await getCompanyAccess();
+    if (!current.ok || current.context.company?.id !== companyId || await sessionConversationScope(companyId) !== scope || await sessionHasCompanyCapability(companyId, "wa.conversations.read") !== true) return { ok: false, code: "UNAVAILABLE" };
+    const lists: LeadWorklist[] = ["all", "awaiting_staff", "follow_up_today", "overdue", "trial_or_quote"];
+    const counts = Object.fromEntries(lists.map(list => [list, countLeadWorklist(page.data.conversations, list, Date.now(), timezone)])) as Record<LeadWorklist, number>;
+    return { ok: true, conversations: page.data.conversations, page: page.data, meta: {
+      companyId, conversationScope: scope, timezone, timezoneAnnouncedUtc: announcedUtc, canReply, canAssign,
+      canTakeOver, canResume, canClose, assignees, counts,
+    } };
+  } catch { return { ok: false, code: "UNAVAILABLE" }; }
+}
 
 /**
  * Load live inbox for the active company membership only.

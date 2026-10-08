@@ -1,4 +1,7 @@
 "use server";
+import { loadWhatsappInboxInitialPage } from "./inbox";
+
+export async function refreshWhatsappInboxInitialPage() { return loadWhatsappInboxInitialPage(); }
 
 import { loadWhatsappInboxPage, loadWhatsappThreadPage, loadWhatsappControlAuditPage, loadWhatsappConnectionStatus, markWhatsappThreadRead } from "./inbox-contracts";
 

@@ -2,12 +2,12 @@ import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
-export const CONTAINER="velora-c1-security-a5b8d14", DB="whatsapp_integration";
+export const CONTAINER="velora-c2-runtime-13861eb", DB="whatsapp_integration";
 const exec=promisify(execFile);
 export const lit=v=>`'${String(v).replaceAll("'","''")}'`;
 export async function verify(){
  const {stdout}=await exec("docker",["inspect",CONTAINER]); const c=JSON.parse(stdout)[0];
- if(c.Config.Labels?.["velora.task"]!=="c1-security-foundation"||c.HostConfig.NetworkMode!=="none"||!c.HostConfig.Tmpfs?.["/var/lib/postgresql/data"]||c.HostConfig.PortBindings&&Object.keys(c.HostConfig.PortBindings).length||c.Mounts.some(m=>m.Type!=="tmpfs"))throw Error("UNSAFE_DATABASE_TARGET");
+ if(c.Config.Labels?.["velora.task"]!=="c2-runtime-integration"||c.HostConfig.NetworkMode!=="none"||!c.HostConfig.Tmpfs?.["/var/lib/postgresql/data"]||c.HostConfig.PortBindings&&Object.keys(c.HostConfig.PortBindings).length||c.Mounts.some(m=>m.Type!=="tmpfs"))throw Error("UNSAFE_DATABASE_TARGET");
  return c.Config.Image;
 }
 export function session(query,name="wa_integration_test",{keepOpen=false}={}){
