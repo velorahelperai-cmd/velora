@@ -176,24 +176,24 @@ const scenes = [
     theme: "light" as const,
     anchor: "overview",
     title: {
-      ar: "اعرف ما يحتاج إجراءً، ثم تابع.",
-      en: "See what needs action. Then follow up.",
+      ar: "كل محادثة واضحة، وكل متابعة في مكانها.",
+      en: "Every conversation is clear, and every follow-up is in place.",
     },
     body: {
-      ar: "يعرض المثال استفسارًا ينتظر التأكيد، وعميلًا يحتاج متابعة، وسؤالًا يحتاج معلومة أوضح؛ لتكون الخطوة التالية مفهومة للفريق.",
-      en: "The example shows an enquiry awaiting confirmation, a customer needing follow-up, and a question needing clearer information.",
+      ar: "فيلورا تساعد فريقك يفهم طلب العميل، ويميز المعلومات المؤكدة عن التفاصيل التي تحتاج مراجعة، ويعرف الخطوة التالية دون فقدان سياق المحادثة.",
+      en: "Velora helps your team understand customer requests, distinguish confirmed details from those needing review, and know the next step without losing conversation context.",
     },
     example: {
       ar: {
         question: "استفسار تجهيز مناسبة",
         answer: "بانتظار متابعة الفريق.",
-        cardTitle: "متابعة خدمة العملاء",
+        cardTitle: "متابعة استفسارات العملاء",
         card: "الحالات · المسؤولون · الأسئلة التي تحتاج مراجعة",
       },
       en: {
         question: "Catering enquiry",
         answer: "Waiting for team follow-up.",
-        cardTitle: "Customer-service follow-up",
+        cardTitle: "Customer Enquiry Follow-up",
         card: "Statuses · Owners · Questions needing review",
       },
     },
@@ -361,10 +361,19 @@ const ui = {
     ar: "السياق واضح للفريق عند المتابعة.",
     en: "Clear context for the team’s follow-up.",
   },
-  panelTitle: { ar: "الخطوة التالية لكل استفسار", en: "The next step for each enquiry" },
+  illustrativeBadge: { ar: "أمثلة توضيحية", en: "Illustrative examples" },
+  panelTitle: { ar: "متابعة استفسارات العملاء", en: "Customer Enquiry Follow-up" },
   valuePoints: {
-    ar: ["معلومات أوضح للرد", "متابعة منظمة للمهتمين", "خطوة تالية يعرفها الفريق"],
-    en: ["Clearer information for replies", "Organised follow-up for interested customers", "A next step the team can see"],
+    ar: [
+      "ملخص واضح لكل محادثة",
+      "تحديد الاستفسارات التي تحتاج متابعة",
+      "الخطوة التالية واضحة للفريق",
+    ],
+    en: [
+      "Clear summary for each conversation",
+      "Identify enquiries requiring follow-up",
+      "The next step is clear for the team",
+    ],
   },
   tabs: {
     ar: ["المحادثات", "الاستفسارات", "المعرفة"],
@@ -372,14 +381,14 @@ const ui = {
   },
   rows: {
     ar: [
-      ["استفسار عن ٢ برجر", "بانتظار التأكيد", "الخطوة التالية: مراجعة التفاصيل", "مثال توضيحي"],
-      ["سؤال عن منتج", "يحتاج متابعة", "الخطوة التالية: التحقق من التوفر", "مثال توضيحي"],
-      ["توصيل خارج مسقط", "يحتاج معلومة", "الخطوة التالية: توضيح نطاق التوصيل", "مثال توضيحي"],
+      ["طلب ٢ برجر", "بانتظار التأكيد", "الخطوة التالية: مراجعة تفاصيل الطلب قبل اعتماده."],
+      ["استفسار عن توفر وجبة", "يحتاج تحققًا", "الخطوة التالية: التأكد من توفر الصنف."],
+      ["توصيل خارج مسقط", "يحتاج معلومات", "الخطوة التالية: تحديد المنطقة والتأكد من نطاق التوصيل."],
     ],
     en: [
-      ["Enquiry for two burgers", "Awaiting confirmation", "Next: review details", "Illustrative example"],
-      ["Product question", "Follow-up needed", "Next: check availability", "Illustrative example"],
-      ["Delivery outside Muscat", "Information needed", "Next: clarify coverage", "Illustrative example"],
+      ["Order for 2 burgers", "Awaiting confirmation", "Next step: Review order details before confirming."],
+      ["Meal availability enquiry", "Needs verification", "Next step: Check item availability."],
+      ["Delivery outside Muscat", "Needs information", "Next step: Identify area and confirm delivery coverage."],
     ],
   },
   steps: {
@@ -677,6 +686,7 @@ export function landingCopy(locale: Locale) {
     suggested: t(locale, ui.suggested),
     paused: t(locale, ui.paused),
     noRepeat: t(locale, ui.noRepeat),
+    illustrativeBadge: t(locale, ui.illustrativeBadge),
     panelTitle: t(locale, ui.panelTitle),
     valuePoints: ui.valuePoints[locale],
     tabs: ui.tabs[locale],
