@@ -1,0 +1,4 @@
+-- Superseded before application by 20261008040000_vel_ai_runtime_foundation.sql.
+-- The original draft used an in-memory runtime and overly broad admin policies.
+-- Real ledger/budget schema, service-only accounting and active-session RLS are
+-- installed together by the replacement. Keep this migration as an ordering marker.

@@ -574,6 +574,13 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      check_app_session: { Args:{p_touch?:boolean}; Returns:Json };
+      get_selected_whatsapp_company_link: { Args:{p_company_id:string}; Returns:Json };
+      upsert_selected_whatsapp_link_request: { Args:{p_company_id:string;p_requested_display_number:string;p_keep_on_phone?:boolean}; Returns:Json };
+      upsert_selected_owner_company: {
+        Args:{p_company_id:string;p_display_name:string;p_business_type?:string;p_reply_language?:string;p_country?:string;p_city?:string;p_hours?:string;p_contact_phone?:string;p_contact_email?:string;p_member_name?:string};
+        Returns:Database["public"]["Tables"]["companies"]["Row"];
+      };
       save_whatsapp_inbound: {
         Args: {
           p_company_id: string;
