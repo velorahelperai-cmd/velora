@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Shared preview state for the Velora UI journey (owner + staff) before any backend exists.
+ * Shared presentation preferences and local drafts. Operational pages read server snapshots.
  * Persists non-sensitive progress in localStorage. Never stores passwords or sends anything.
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
@@ -137,59 +137,6 @@ export const emptyBusiness: Business = {
   contactEmail: "",
 };
 
-const now = Date.now();
-const minutes = (m: number) => now - m * 60_000;
-
-export const sampleConversations: Conversation[] = [
-  {
-    id: "c1",
-    customer: "أحمد",
-    phone: "+968 9xxx xx12",
-    status: "follow_up",
-    owner: "assistant",
-    assistantPaused: false,
-    topic: "تجهيز مناسبة",
-    summary: "عميل يسأل عن تجهيز مناسبة لـ 40 شخصًا يوم الخميس. التفاصيل مؤكدة، بانتظار مسؤول متابعة.",
-    messages: [
-      { id: "m1", from: "customer", text: "أحتاج أتواصل بخصوص تجهيز مناسبة.", at: minutes(42) },
-      { id: "m2", from: "assistant", text: "بكل سرور. كم عدد الضيوف، وما التاريخ المناسب؟", at: minutes(41), source: "سياسة الطلبات الكبيرة" },
-      { id: "m3", from: "customer", text: "40 شخصًا، الخميس القادم.", at: minutes(39) },
-      { id: "m4", from: "assistant", text: "سجّلت التفاصيل، وسيتواصل معك أحد الفريق لتأكيد التجهيز.", at: minutes(38) },
-    ],
-  },
-  {
-    id: "c2",
-    customer: "Sara",
-    phone: "+968 9xxx xx77",
-    status: "open",
-    owner: "assistant",
-    assistantPaused: false,
-    topic: "طلب جديد",
-    summary: "عميل يطلب برجرين. تم فهم الطلب من معلومات النشاط وبانتظار إكمال التفاصيل.",
-    messages: [
-      { id: "m5", from: "customer", text: "عايز أطلب 2 برجر", at: minutes(20) },
-      { id: "m6", from: "assistant", text: "تمام. برجرين. تفضّل الحجم والإضافات؟", at: minutes(20), source: "المنيو والأسعار" },
-    ],
-  },
-  {
-    id: "c3",
-    customer: "خالد",
-    phone: "+968 9xxx xx05",
-    status: "handed_over",
-    owner: "staff",
-    assistantPaused: true,
-    topic: "سؤال يحتاج معلومة",
-    summary: "عميل يسأل عن توفر خيار نباتي في القائمة. لا توجد معلومة في المعرفة؛ تم التحويل للفريق.",
-    needsInfo: "الخيارات النباتية في القائمة",
-    messages: [
-      { id: "m7", from: "customer", text: "هل عندكم خيارات نباتية؟", at: minutes(9) },
-      { id: "m8", from: "assistant", text: "لا تتوفر لدي هذه المعلومة الآن. حوّلت سؤالك لأحد الفريق.", at: minutes(9) },
-    ],
-  },
-];
-
-export const sampleStaff: Member = { id: "u2", name: "مريم", email: "maryam@example.com", role: "staff", status: "invited" };
-
 const initialState: DemoState = {
   version: 1,
   stage: "guest",
@@ -201,7 +148,7 @@ const initialState: DemoState = {
   setupStep: 0,
   setupDone: [false, false, false, false],
   activation: { whatsappNumber: "", numberOwnership: "", ready: false, status: "not_requested" },
-  conversations: sampleConversations,
+  conversations: [],
   team: [],
   planInterest: null,
   testHistory: [],
@@ -307,7 +254,7 @@ export function DemoProvider({ children, initialLocale }: { children: React.Reac
       update,
       reset,
       nextPath,
-      effectiveRole: state.account?.role === "staff" ? "staff" : state.viewAs,
+      effectiveRole: state.account?.role ?? "staff",
     }),
     [state, hydrated, locale, setLocale, update, reset, nextPath],
   );

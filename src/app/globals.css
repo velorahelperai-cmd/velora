@@ -1,5 +1,14 @@
 @import "tailwindcss";
 
+/* Available globally; applied only by the administration theme boundary. */
+@font-face {
+  font-family: "Cairo";
+  src: url("/fonts/velora/Cairo-admin-v1.woff2") format("woff2");
+  font-weight: 200 1000;
+  font-style: normal;
+  font-display: swap;
+}
+
 @font-face {
   font-family: "IBM Plex Sans Arabic";
   src: url("/fonts/velora/IBMPlexSansArabic-Regular.woff2") format("woff2");

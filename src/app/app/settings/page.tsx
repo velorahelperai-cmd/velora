@@ -1,3 +1,4 @@
+import { loadOwnerBillingSubscription } from "@/lib/billing/wiring/subscription-read";
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import { getCompanyAccess } from "@/lib/tenancy/access";
@@ -15,7 +16,7 @@ export default async function Page() {
   const linkResult = await getWhatsappCompanyLink();
   const access = await getCompanyAccess();
   const company = access.ok ? access.context.company : null;
-  const initialSubscription = subscriptionViewFromEntitlement(readCompanyEntitlement(company?.id ?? null), company?.status ?? null);
+  const initialSubscription = await loadOwnerBillingSubscription(subscriptionViewFromEntitlement(readCompanyEntitlement(company?.id ?? null), company?.status ?? null));
   const initialOffersView = offersViewFromCatalog(await readPublicCatalogBackend());
   const singleTenant = singleTenantReceptionStatus();
   return (

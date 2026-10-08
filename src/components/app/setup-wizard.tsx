@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -333,13 +333,21 @@ export function SetupWizard({
             );
           })}
         </ol>
-        <div className="mt-3 h-1 overflow-hidden rounded-full bg-[var(--color-hover-wash)]" aria-hidden="true">
-          <div className="h-full bg-[#38dc89] transition-all duration-500" style={{ width: `${(effectiveSetupDone.filter(Boolean).length / 4) * 100}%` }} />
+        <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10 p-0.5" aria-hidden="true">
+          <div
+            className="h-full rounded-full bg-gradient-to-r from-[#2ebd73] to-[#38dc89] shadow-[0_0_12px_rgba(56,220,137,0.6)] transition-all duration-700 ease-out"
+            style={{ width: `${Math.max(10, (effectiveSetupDone.filter(Boolean).length / 4) * 100)}%` }}
+          />
         </div>
 
-        <section className="app-panel mt-6 min-w-0 rounded-3xl p-4 sm:p-5 lg:p-8">
-          <h2 className="app-title text-2xl break-words">{copy.setup.steps[step]}</h2>
-          <p className="app-muted mt-2 text-sm leading-6">{copy.setup.stepBodies[step]}</p>
+        <section className="app-panel mt-6 min-w-0 rounded-3xl p-5 sm:p-6 lg:p-8 border border-[color:var(--color-border-soft)] shadow-[0_16px_40px_rgba(0,0,0,0.4)] backdrop-blur-md">
+          <div className="flex items-center gap-3">
+            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#38dc89]/15 border border-[#38dc89]/30 text-sm font-bold text-[#9af0c3]">
+              {step + 1}
+            </span>
+            <h2 className="app-title text-2xl font-bold break-words text-[#f7fbf8]">{copy.setup.steps[step]}</h2>
+          </div>
+          <p className="app-muted mt-2 text-sm leading-6 text-[#b7c6b9]">{copy.setup.stepBodies[step]}</p>
           <div className="mt-6 min-w-0">
             {step === 0 ? (
               <BusinessStep

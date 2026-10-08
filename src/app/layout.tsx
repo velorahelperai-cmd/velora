@@ -1,3 +1,4 @@
+import { SessionActivityTracker } from "@/lib/auth/session-activity-tracker";
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import {
@@ -32,7 +33,7 @@ export default async function RootLayout({
     <html lang={locale} dir={dir} className="no-js">
       <body>
         <DemoProvider initialLocale={locale}>
-          <AccountSessionProvider>{children}</AccountSessionProvider>
+          <AccountSessionProvider><SessionActivityTracker />{children}</AccountSessionProvider>
         </DemoProvider>
         <CacheBootstrap />
       </body>

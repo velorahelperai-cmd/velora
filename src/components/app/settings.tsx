@@ -2,7 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { useState } from "react";
+import { startTransition, useEffect, useRef, useState } from "react";
 import type { CompanyRecord } from "@/lib/tenancy/types";
 import { useDemo } from "@/lib/demo-state";
 import { SubscriptionPanel } from "@/components/app/subscription-panel";
@@ -14,6 +14,7 @@ import { WorkspaceShell } from "@/components/app/workspace-shell";
 import { useOptionalAccountSession } from "./account-chrome";
 import { subscriptionCopy } from "./subscription-copy";
 import { saveOwnerBusiness, selectWorkspaceCompany } from "@/lib/tenancy/actions";
+import { createStaffInvitation, listCompanyTeam } from "@/lib/tenancy/staff-invitations";
 import {
   Button, Card, Field, Notice, Tabs,
   useAction, useAppCopy, useUnsavedWarning,
@@ -84,7 +85,7 @@ export function SettingsPage({
           <>
             {tab === "account" ? <AccountTab /> : null}
             {tab === "business" && initialCompany ? <BusinessTab key={initialCompany.id + initialCompany.updated_at} company={initialCompany} /> : null}
-            {tab === "team" ? <TeamTab /> : null}
+            {tab === "team" && initialAccess.companyId ? <TeamTab key={initialAccess.companyId} companyId={initialAccess.companyId} /> : null}
             {tab === "whatsapp" ? (
               <WhatsappSettingsPanel
                 initialLink={initialWhatsappLink}
@@ -156,11 +157,101 @@ function BusinessTab({company}:{company:CompanyRecord}) {
   );
 }
 
-function TeamTab() {
+function TeamTab({ companyId }: { companyId: string }) {
   const copy = useAppCopy();
+  const { locale } = useDemo();
+  const ar = locale === "ar";
+  const [team, setTeam] = useState<Awaited<ReturnType<typeof listCompanyTeam>> | null>(null);
+  const [form, setForm] = useState({ email: "", name: "" });
+  const [invite, setInvite] = useState<{ inviteUrl: string; expiresAt: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const { busy, run } = useAction();
+  const request = useRef(0);
+  const text = ar ? {
+    members: "عضويات النشاط", invitations: "الدعوات المحفوظة", emptyInvites: "لا توجد دعوات معلّقة.",
+    failed: "تعذّر تحميل الفريق من الخادم. حاول مرة أخرى.", createFailed: "تعذّر إنشاء الدعوة. تحقق من البيانات والصلاحيات ثم أعد المحاولة.",
+    saved: "تم حفظ الدعوة. انسخ الرابط وشاركه مع الموظف المقصود.", expires: "تنتهي الدعوة", copy: "نسخ الرابط", copied: "تم النسخ", disabled: "معطّل", expired: "منتهية", refresh: "تحديث الفريق",
+  } : {
+    members: "Company memberships", invitations: "Saved invitations", emptyInvites: "No pending invitations.",
+    failed: "The team could not be loaded from the server. Try again.", createFailed: "Could not create the invitation. Check the details and permissions, then try again.",
+    saved: "Invitation saved. Copy the link and share it with the intended staff member.", expires: "Expires", copy: "Copy link", copied: "Copied", disabled: "Disabled", expired: "Expired", refresh: "Refresh team",
+  };
+  const formatDate = (date: string) => new Intl.DateTimeFormat(ar ? "ar-OM" : "en-GB", { dateStyle: "medium", timeStyle: "short" }).format(new Date(date));
+
+  useEffect(() => {
+    const generation = ++request.current;
+    startTransition(async () => {
+      try {
+        const result = await listCompanyTeam();
+        if (generation === request.current) setTeam(result);
+      } catch {
+        if (generation === request.current) setTeam({ ok: false, code: "UNAVAILABLE" });
+      }
+    });
+    return () => { request.current += 1; };
+  }, []);
+
+  async function reload() {
+    const generation = ++request.current;
+    try {
+      const result = await listCompanyTeam();
+      if (generation === request.current) setTeam(result);
+    } catch {
+      if (generation === request.current) setTeam({ ok: false, code: "UNAVAILABLE" });
+    }
+  }
+
+  const snapshot = team?.ok && team.data.companyId === companyId ? team.data : null;
   return (
     <Card title={copy.app.tabs.team}>
-      <Notice tone="warn">{copy.app.teamInviteUnavailable}</Notice>
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <h3 className="font-semibold">{text.members}</h3>
+        <Button variant="secondary" busy={busy || team === null} onClick={() => void run(reload)}>{text.refresh}</Button>
+      </div>
+      {snapshot ? (
+        <div className="grid gap-3">
+          {snapshot.members.length ? snapshot.members.map((member) => (
+            <div key={member.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[color:var(--color-border-soft)] bg-[var(--color-hover-wash)] p-4 text-sm">
+              <div className="min-w-0"><strong>{member.name || member.email || member.id}</strong>{member.email ? <p className="break-all text-xs text-[var(--color-muted-on-dark)]" dir="ltr">{member.email}</p> : null}</div>
+              <div className="flex gap-2"><span>{member.role === "owner" ? copy.app.owner : copy.app.staff}</span><span className="text-[var(--color-muted-on-dark)]">{member.status === "active" ? copy.app.active : text.disabled}</span></div>
+            </div>
+          )) : <p className="text-sm text-[var(--color-muted-on-dark)]">{copy.app.teamEmpty}</p>}
+          <h3 className="mt-3 font-semibold">{text.invitations}</h3>
+          {snapshot.invitations.length ? snapshot.invitations.map((invitation) => (
+            <div key={invitation.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[color:var(--color-border-soft)] p-4 text-sm">
+              <div className="min-w-0"><strong>{invitation.name}</strong><p className="break-all text-xs text-[var(--color-muted-on-dark)]" dir="ltr">{invitation.email}</p></div>
+              <div className="text-xs text-[var(--color-muted-on-dark)]">{invitation.status === "invited" ? copy.app.invited : text.expired} · {text.expires}: {formatDate(invitation.expiresAt)}</div>
+            </div>
+          )) : <p className="text-sm text-[var(--color-muted-on-dark)]">{text.emptyInvites}</p>}
+        </div>
+      ) : team === null ? <p role="status">{copy.loading}</p> : <Notice tone="error">{text.failed}</Notice>}
+
+      <form className="mt-6 grid gap-4 border-t border-[color:var(--color-line)] pt-5 sm:grid-cols-2" onSubmit={(event) => {
+        event.preventDefault();
+        setError(null); setInvite(null); setCopied(false);
+        void run(async () => {
+          try {
+            const result = await createStaffInvitation(form);
+            if (!result.ok) { setError(text.createFailed); return; }
+            setInvite(result.data);
+            setForm({ email: "", name: "" });
+            await reload();
+          } catch { setError(text.createFailed); }
+        });
+      }}>
+        <Field label={copy.app.inviteName} required>{(props) => <input {...props} value={form.name} maxLength={120} onChange={(event) => setForm({ ...form, name: event.target.value })} />}</Field>
+        <Field label={copy.app.inviteEmail} required>{(props) => <input {...props} type="email" dir="ltr" value={form.email} maxLength={254} onChange={(event) => setForm({ ...form, email: event.target.value })} />}</Field>
+        {error ? <div className="sm:col-span-2"><Notice tone="error">{error}</Notice></div> : null}
+        <div className="sm:col-span-2"><Button type="submit" busy={busy} disabled={!form.name.trim() || !form.email.trim()}>{copy.app.invite}</Button></div>
+      </form>
+      {invite ? (
+        <div className="mt-4 grid gap-3 rounded-xl border border-[#38dc89]/30 bg-[#38dc89]/10 p-4">
+          <Notice tone="success">{text.saved}</Notice>
+          <input aria-label={copy.app.openInvite} dir="ltr" readOnly value={invite.inviteUrl} className="min-h-11 w-full min-w-0 rounded-xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel)] px-3 text-sm" onFocus={(event) => event.target.select()} />
+          <div className="flex flex-wrap items-center justify-between gap-2"><span className="text-xs text-[var(--color-muted-on-dark)]">{text.expires}: {formatDate(invite.expiresAt)}</span><Button variant="secondary" onClick={() => { void navigator.clipboard.writeText(invite.inviteUrl).then(() => setCopied(true)).catch(() => setCopied(false)); }}>{copied ? text.copied : text.copy}</Button></div>
+        </div>
+      ) : null}
     </Card>
   );
 }
