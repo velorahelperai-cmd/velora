@@ -577,6 +577,12 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      whatsapp_inbox_page: { Args: {p_company_id:string;p_limit?:number;p_before?:string|null}; Returns:Json };
+      whatsapp_thread_page: { Args: {p_company_id:string;p_conversation_id:string;p_limit?:number;p_before?:string|null}; Returns:Json };
+      whatsapp_mark_thread_read: { Args: {p_company_id:string;p_conversation_id:string;p_displayed_inbound_message_id:string}; Returns:Json };
+      whatsapp_control_audit_page: { Args: {p_company_id:string;p_conversation_id:string;p_limit?:number;p_before?:string|null}; Returns:Json };
+      whatsapp_inbox_connection_status: { Args: {p_company_id:string}; Returns:Json };
+      ai_reserve_whatsapp_capacity_cost_attempt: { Args: { p_id:string; p_job_id:string; p_claim_token:string; p_attempt:number; p_model_id:string; p_provider:string; p_reserved_baisa:number; p_pricing_version:string; p_pricing_snapshot:Json; p_source_citations:Json; p_expected_persona?:string|null; p_expected_plan_version_id?:string|null }; Returns:Json };
       whatsapp_revoke_failed_credential: {Args:{p_company_id:string;p_link_id:string;p_phone_number_id:string;p_link_generation:number;p_provider_code:number};Returns:boolean};
       whatsapp_revoke_meta_waba_authorization: { Args: { p_waba_id:string; p_reason:string; p_occurred_at:string }; Returns:Json };
       ai_reserve_whatsapp_profile_attempt: { Args: { p_id:string; p_job_id:string; p_claim_token:string; p_attempt:number; p_model_id:string; p_provider:string; p_reserved_baisa:number; p_pricing_version:string; p_pricing_snapshot:Json; p_source_citations:Json; p_expected_persona:string; p_expected_plan_version_id:string }; Returns:Json };

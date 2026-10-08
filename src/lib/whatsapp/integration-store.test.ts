@@ -17,6 +17,17 @@ function client(proof: unknown = window) {
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date("2026-10-08T12:00:00Z")); vi.clearAllMocks(); });
 afterEach(() => vi.useRealTimers());
 describe("production integration context and send gates", () => {
+  it("leaves fresh message capacity to the atomic cost reservation before the paid call", async () => {
+    const db = client(), ports = createIntegrationPorts(binding, db as never);
+    await ports.frame(); expect(await ports.reserve()).toBe(true);
+    expect(db.rpc.mock.calls.filter(([name]) => name === "whatsapp_reserve_job_usage")).toHaveLength(0);
+  });
+  it("revalidates existing message capacity when recovering an already paid draft", async () => {
+    const db = client();
+    db.rpc.mockImplementation(async name => ({ data: name === "billing_load_worker_frame" ? { ok: true, data: { ...frame, ai_status: "success", ai_attempt_id: "attempt", reply_text: "Saved reply" } } : window, error: null }));
+    const ports = createIntegrationPorts(binding, db as never); await ports.frame(); expect(await ports.reserve()).toBe(true);
+    expect(db.rpc).toHaveBeenCalledWith("whatsapp_reserve_job_usage", { p_job_id: "job", p_claim_token: "claim" });
+  });
   it.each(["rpc-error", "transport-throw"])("keeps confirmed OAuth rejection independent of a separate cleanup failure: %s", async failure => {
     const db = client();
     db.rpc.mockImplementation(async name => {

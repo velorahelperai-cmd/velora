@@ -40,7 +40,12 @@ export function createIntegrationPorts(binding:{jobId:string;claimToken:string;c
  return await verifyAnswerCitationsStillValid(f.company_id,citations.map(c=>({...c,text:"citation snapshot"})),admin);},
  secret:async f=>{const r=object(await rpc("whatsapp_read_link_access_secret",{p_company_id:f.company_id,p_link_id:f.link_id,p_phone_number_id:f.phone_number_id,p_link_generation:f.link_generation}));
  return r?.ok===true&&r.company_id===f.company_id&&r.link_id===f.link_id&&r.phone_number_id===f.phone_number_id&&r.link_generation===f.link_generation&&typeof r.access_token==="string"&&r.access_token.trim()?r.access_token:null;},
- reserve:async()=>object(await rpc("whatsapp_reserve_job_usage",args))?.ok===true,
+ reserve:async()=>{
+ // Fresh generation reserves message capacity and model cost together in the
+ // runtime store. Recovery revalidates the original already-paid draft's quota.
+ if(!cachedFrame)return false;
+ return cachedFrame.ai_status!=="success"||object(await rpc("whatsapp_reserve_job_usage",args))?.ok===true;
+ },
  answer:async(f,chunks)=>executor({jobId:f.job_id,claimToken:binding.claimToken,question:f.question,chunks,locale:binding.locale??"ar",maxOutputTokens:512}),
  stage:async(attempt,citations)=>{const r=object(await rpc("whatsapp_stage_job_reply",{...args,p_ai_attempt_id:attempt,p_citations:citations}));return r?.ok===true&&typeof r.intent_id==="string"?r.intent_id:null;},
  claimSend:async()=>{const r=object(await rpc("whatsapp_claim_assistant_job_send",args));if(!r||r.ok!==true)return {ok:false};const i=object(r.intent);

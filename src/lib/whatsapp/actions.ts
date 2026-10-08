@@ -191,10 +191,14 @@ export async function replyWhatsappConversation(input: {
   /** Stable per user send operation — retries with the same id return existing state. */
   clientOpId: string;
 }): Promise<ReplyActionResult> {
-  const text = input.body.trim().slice(0, 4096);
-  const clientOpId = input.clientOpId.trim().slice(0, 128);
-  if (!text || clientOpId.length < 8) {
-    return { ok: false, code: "INVALID_INPUT", message: "invalid_input", clientOpId: input.clientOpId?.trim() || undefined };
+  if (!input || typeof input.conversationId !== "string" || !input.conversationId.trim()
+    || typeof input.body !== "string" || typeof input.clientOpId !== "string") {
+    return { ok: false, code: "INVALID_INPUT", message: "invalid_input" };
+  }
+  const text = input.body.trim();
+  const clientOpId = input.clientOpId.trim();
+  if (!text || text.length > 4096 || clientOpId.length < 8 || clientOpId.length > 128) {
+    return { ok: false, code: "INVALID_INPUT", message: "invalid_input" };
   }
 
   const access = await getCompanyAccess();
@@ -217,12 +221,12 @@ export async function replyWhatsappConversation(input: {
   const companyId = access.context.company.id;
   const actorUserId = access.context.userId;
   const canReply = await sessionHasCompanyCapability(companyId, "wa.conversations.reply");
-  // null only when explicit pre-migration compat; otherwise fail closed (no membership bypass).
-  if (canReply === false) {
+  // Production mutations require an authoritative capability decision.
+  if (canReply !== true) {
     return { ok: false, code: "FORBIDDEN", message: "capability_denied", clientOpId };
   }
   const canRead = await sessionHasCompanyCapability(companyId, "wa.conversations.read");
-  if (canRead === false) {
+  if (canRead !== true) {
     return { ok: false, code: "FORBIDDEN", message: "capability_denied", clientOpId };
   }
 
@@ -687,6 +691,11 @@ export async function controlWhatsappConversation(input: {
   expectedRevision: number;
   assigneeUserId?: string | null;
 }): Promise<ControlActionResult> {
+  if (!input || typeof input.conversationId !== "string" || !input.conversationId.trim()
+    || !["take_over", "resume", "close", "assign"].includes(input.action)
+    || !Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 1) {
+    return { ok: false, code: "INVALID_INPUT" };
+  }
   const access = await getCompanyAccess();
   if (!access.ok) {
     if (access.code === "UNAUTHENTICATED" || access.code === "UNVERIFIED") {
@@ -710,9 +719,9 @@ export async function controlWhatsappConversation(input: {
   const companyId = access.context.company.id;
   const needed = controlActionCapability(input.action);
   const canRead = await sessionHasCompanyCapability(companyId, "wa.conversations.read");
-  if (canRead === false) return { ok: false, code: "FORBIDDEN" };
+  if (canRead !== true) return { ok: false, code: "FORBIDDEN" };
   const canAct = await sessionHasCompanyCapability(companyId, needed);
-  if (canAct === false) return { ok: false, code: "FORBIDDEN" };
+  if (canAct !== true) return { ok: false, code: "FORBIDDEN" };
 
   if (!input.conversationId || !Number.isFinite(input.expectedRevision)) {
     return { ok: false, code: "INVALID_INPUT" };
@@ -723,6 +732,12 @@ export async function controlWhatsappConversation(input: {
 
   try {
     const supabase = await createClient();
+    // A user may belong to several companies. A stale tab must not control a
+    // different company's conversation through the currently selected workspace.
+    const binding = await supabase.from("whatsapp_conversations").select("id")
+      .eq("id", input.conversationId).eq("company_id", companyId).maybeSingle();
+    if (binding.error) return { ok: false, code: "UNAVAILABLE" };
+    if (!binding.data) return { ok: false, code: "NOT_FOUND" };
     const { data, error } = await supabase.rpc("control_whatsapp_conversation", {
       p_conversation_id: input.conversationId,
       p_action: input.action,
@@ -866,9 +881,9 @@ export async function upsertConversationLeadState(input: {
 
   const companyId = access.context.company.id;
   const canRead = await sessionHasCompanyCapability(companyId, "wa.conversations.read");
-  if (canRead === false) return { ok: false, code: "FORBIDDEN" };
+  if (canRead !== true) return { ok: false, code: "FORBIDDEN" };
   const canReply = await sessionHasCompanyCapability(companyId, "wa.conversations.reply");
-  if (canReply === false) return { ok: false, code: "FORBIDDEN" };
+  if (canReply !== true) return { ok: false, code: "FORBIDDEN" };
 
   if (!input.conversationId || !Number.isFinite(input.expectedLeadRevision)) {
     return { ok: false, code: "INVALID_INPUT" };
@@ -879,6 +894,10 @@ export async function upsertConversationLeadState(input: {
 
   try {
     const supabase = await createClient();
+    const binding = await supabase.from("whatsapp_conversations").select("id")
+      .eq("id", input.conversationId).eq("company_id", companyId).maybeSingle();
+    if (binding.error) return { ok: false, code: "UNAVAILABLE" };
+    if (!binding.data) return { ok: false, code: "NOT_FOUND" };
     const { data, error } = await supabase.rpc("upsert_conversation_lead_state", {
       p_conversation_id: input.conversationId,
       p_expected_revision: input.expectedLeadRevision,

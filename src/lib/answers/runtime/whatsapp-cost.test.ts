@@ -75,7 +75,7 @@ describe("claimed worker RPC store", () => {
     admin.create.mockReturnValue({ rpc });
     const db = createClaimedWhatsappRuntimeStore({ jobId: "job", claimToken: "claim" }, { persona: "lina", planVersionId: "plan-version", companyId: "company" });
     expect(await db.reserve({ id: "attempt", attempt: 1, model: "gpt-6-luna", provider: "openai", reservedBaisa: 1, pricingVersion: "fixture", pricingSnapshot: {}, sourceCitations: [] })).toEqual({ ok: true });
-    expect(rpc).toHaveBeenCalledWith("ai_reserve_whatsapp_profile_attempt", expect.objectContaining({ p_expected_persona: "lina", p_expected_plan_version_id: "plan-version", p_job_id: "job", p_claim_token: "claim" }));
+    expect(rpc).toHaveBeenCalledWith("ai_reserve_whatsapp_capacity_cost_attempt", expect.objectContaining({ p_expected_persona: "lina", p_expected_plan_version_id: "plan-version", p_job_id: "job", p_claim_token: "claim" }));
   });
   it.each([{ company_id: "other" }, { answer_persona: "dana" }, { answer_plan_version_id: "other-plan" }])("rejects a reservation acknowledgement outside its verified profile %#", async patch => {
     admin.create.mockReturnValue({ rpc: vi.fn().mockResolvedValue({ data: { ok: true, id: "attempt", job_id: "job", company_id: "company", automation_generation: 2, remaining_baisa: 7, answer_persona: "lina", answer_plan_version_id: "plan-version", ...patch }, error: null }) });
@@ -90,7 +90,7 @@ describe("claimed worker RPC store", () => {
     await db.reserve({ id: "attempt", attempt: 1, model: "gpt-6-luna", provider: "openai", reservedBaisa: 1, pricingVersion: "fixture", pricingSnapshot: {}, sourceCitations });
     await db.start("attempt");
     await db.settle({ id: "attempt", status: "success", costBaisa: 1, costUsd: .0026008, usage, responseText: "Synthetic draft", actualModelId: "gpt-6-luna", responseId: "response", latencyMs: 1 });
-    expect(rpc.mock.calls[0]).toEqual(["ai_reserve_whatsapp_attempt", expect.objectContaining({ p_job_id: "job", p_claim_token: "claim", p_source_citations: sourceCitations })]);
+    expect(rpc.mock.calls[0]).toEqual(["ai_reserve_whatsapp_capacity_cost_attempt", expect.objectContaining({ p_job_id: "job", p_claim_token: "claim", p_source_citations: sourceCitations })]);
     expect(rpc.mock.calls[0][1]).not.toHaveProperty("p_actor_id");
     expect(rpc.mock.calls[1]).toEqual(["ai_start_whatsapp_attempt", { p_id: "attempt", p_claim_token: "claim" }]);
     expect(rpc.mock.calls[2]).toEqual(["ai_settle_whatsapp_attempt", expect.objectContaining({ p_claim_token: "claim", p_response_text: "Synthetic draft", p_usage: usage, p_actual_model_id: "gpt-6-luna", p_response_id: "response" })]);

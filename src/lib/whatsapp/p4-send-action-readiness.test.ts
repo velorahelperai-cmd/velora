@@ -5,7 +5,7 @@ const fixture = vi.hoisted(() => ({
   claimed: {} as Record<string, unknown>,
   finalized: { error: null, data: {} } as { error: unknown; data: unknown },
   calls: [] as Array<{ name: string; args: Record<string, unknown> }>,
-  capability: true,
+  capability: true as boolean | null,
   throwFinalizeOnce: false,
   windowOpen: true,
   vaultCompany: "company-offline-a",
@@ -86,6 +86,18 @@ describe("real staff reply action at persistence and Graph boundaries", () => {
     vi.unstubAllEnvs();
   });
   const input = { conversationId: "conversation-offline-a", body: "Offline reply", clientOpId: "offline-op-0001" };
+  it("denies reply and human control when capability lookup is unknown", async () => {
+    fixture.capability = null;
+    const { replyWhatsappConversation, controlWhatsappConversation } = await import("./actions");
+    expect(await replyWhatsappConversation(input)).toMatchObject({ ok: false, code: "FORBIDDEN" });
+    expect(await controlWhatsappConversation({ conversationId: input.conversationId, action: "resume", expectedRevision: 1 })).toMatchObject({ ok: false, code: "FORBIDDEN" });
+    expect(fixture.calls).toHaveLength(0); expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+  it.each([{label:"null",body:null},{label:"number",body:123},{label:"oversized",body:"x".repeat(4097)}])("rejects malformed or oversized human reply bodies before database or Graph: $label", async ({body}) => {
+    const { replyWhatsappConversation } = await import("./actions");
+    await expect(replyWhatsappConversation({ ...input, body: body as never })).resolves.toMatchObject({ ok: false, code: "INVALID_INPUT" });
+    expect(fixture.calls).toHaveLength(0); expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
 
   function tenantReply() {
     vi.stubEnv("WHATSAPP_ROUTING_MODE", "tenant_registry");

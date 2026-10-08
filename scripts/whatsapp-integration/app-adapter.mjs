@@ -3,7 +3,7 @@ const ident=v=>{if(!/^[a-z_][a-z0-9_]*$/.test(v))throw Error("INVALID_IDENTIFIER
 const rpcs=new Set(["billing_load_worker_frame","whatsapp_reserve_job_usage","ai_reserve_whatsapp_attempt","ai_start_whatsapp_attempt","ai_settle_whatsapp_attempt",
  "whatsapp_stage_job_reply","whatsapp_claim_assistant_job_send","finalize_whatsapp_send_attempt","billing_finalize_automated_usage","retry_whatsapp_send_persist",
  "whatsapp_retry_inbound_job","whatsapp_heartbeat_inbound_job","whatsapp_check_service_window",
- "whatsapp_read_answer_profile","whatsapp_retrieve_approved_knowledge","ai_reserve_whatsapp_profile_attempt","whatsapp_read_link_access_secret",
+ "whatsapp_read_answer_profile","whatsapp_retrieve_approved_knowledge","ai_reserve_whatsapp_profile_attempt","ai_reserve_whatsapp_capacity_cost_attempt","whatsapp_read_link_access_secret",
  "resolve_whatsapp_company_by_meta_asset","whatsapp_store_meta_inbound","whatsapp_apply_meta_delivery_status"]);
 const val=x=>x===null?"NULL":typeof x==="object"?`${lit(JSON.stringify(x))}::jsonb`:typeof x==="number"||typeof x==="boolean"?String(x):lit(x);
 export function databaseAdapter(){return {

@@ -17,7 +17,8 @@ export function createClaimedWhatsappRuntimeStore(binding: { jobId: string; clai
   }
   return {
     async reserve(i) {
-      const data = await call(expectedProfile ? "ai_reserve_whatsapp_profile_attempt" : "ai_reserve_whatsapp_attempt", {
+      // Fresh paid work allocates the message slot and AI hold in one transaction.
+      const data = await call("ai_reserve_whatsapp_capacity_cost_attempt", {
         p_id: i.id, p_job_id: binding.jobId, p_claim_token: binding.claimToken, p_attempt: i.attempt,
         p_model_id: i.model, p_provider: i.provider, p_reserved_baisa: i.reservedBaisa,
         p_pricing_version: i.pricingVersion, p_pricing_snapshot: i.pricingSnapshot,

@@ -9,10 +9,14 @@ export async function POST(request:Request){
  if(!expected||expected.length<32)return Response.json({code:"WORKER_NOT_CONFIGURED"},{status:503});
  const a=Buffer.from(actual),b=Buffer.from(expected);if(a.length!==b.length||!timingSafeEqual(a,b))return Response.json({code:"UNAUTHORIZED"},{status:401});
  if(process.env.WHATSAPP_WORKER_ENABLED!=="true")return Response.json({code:"WORKER_DISABLED"},{status:503});
+ try{
  const client=createAdminClient();if(!client)return Response.json({code:"STORE_NOT_CONFIGURED"},{status:503});
  const rpc=client.rpc as unknown as (name:string,args:Record<string,unknown>)=>PromiseLike<{data:unknown;error:unknown}>;
  const repaired=await rpc.call(client,"whatsapp_repair_accepted_jobs",{p_limit:10});
- if(repaired.error)return Response.json({code:"REPAIR_UNAVAILABLE"},{status:503});
+ const repair=repaired.data as {ok?:boolean;repaired?:number;pending?:number}|null;
+ if(repaired.error||repair?.ok!==true||!Number.isSafeInteger(repair.repaired)||!Number.isSafeInteger(repair.pending)
+ ||Number(repair.repaired)<0||Number(repair.pending)<0||Number(repair.repaired)+Number(repair.pending)>10)
+ return Response.json({code:"REPAIR_UNAVAILABLE"},{status:503});
  if(!workerRolloutEnabled())return Response.json({code:"CUSTOMER_ANSWERING_DISABLED",repairOnly:true},{status:200});
  const claimed=await rpc.call(client,"whatsapp_claim_inbound_batch",{p_limit:1});
  const row=claimed.data as {ok?:boolean;jobs?:{job_id:string;claim_token:string;company_id:string}[]}|null;
@@ -20,4 +24,8 @@ export async function POST(request:Request){
  let accepted=0;for(const job of row.jobs){const input={jobId:job.job_id,claimToken:job.claim_token,companyId:job.company_id};const r=await runInboundWorkerAnswer(input,createIntegrationPorts(input));if(r.ok)accepted++;}
  // No capabilities, secrets, customer bodies or provider text are returned.
  return Response.json({processed:row.jobs.length,accepted,delivered:0});
+ }catch{
+ // Transport errors must not expose provider/database details or masquerade as a drained queue.
+ return Response.json({code:"WORKER_UNAVAILABLE"},{status:503});
+ }
 }
