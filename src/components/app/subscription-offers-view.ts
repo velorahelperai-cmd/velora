@@ -56,6 +56,20 @@ export const featureLabels: Record<string, { ar: string; en: string }> = {
  faq:{ar:"الأسئلة الشائعة",en:"Frequently asked questions"}, knowledge:{ar:"معرفة الشركة",en:"Company knowledge"}, enquiry_handoff:{ar:"تحويل الاستفسارات",en:"Enquiry handoff"},
  website:{ar:"الموقع الإلكتروني",en:"Website"}, lead_followup:{ar:"متابعة العملاء المحتملين",en:"Lead follow-up"}, reports:{ar:"التقارير",en:"Reports"}, pos:{ar:"نقاط البيع",en:"Point of sale"}, orders:{ar:"الطلبات",en:"Orders"}, endcustomer_payment:{ar:"دفع العملاء",en:"Customer payments"}, accounting:{ar:"المحاسبة",en:"Accounting"}
 };
+
+/** Only Noor Basic Monthly is commercially approved for production checkout. */
+export function isApprovedOffer(persona: SubscriptionPersona, pack: SubscriptionPackage, term: SubscriptionTerm): boolean {
+  return persona === "level_1" && pack === "basic" && term === "monthly";
+}
+
+/** Formats integer baisa into strict 3-decimal OMR string (e.g. 45.000 OMR / 45.000 ر.ع.). */
+export function formatOmrBaisa(amountBaisa: number, locale: "ar" | "en"): string {
+  const whole = Math.floor(amountBaisa / 1000);
+  const frac = (amountBaisa % 1000).toString().padStart(3, "0");
+  const wholeStr = whole.toLocaleString("en-US");
+  return locale === "ar" ? `${wholeStr}.${frac} ر.ع.` : `${wholeStr}.${frac} OMR`;
+}
+
 /** Display the validated public RPC projection; never invent prices or ready capabilities. */
 export function offersViewFromCatalog(result: CatalogResult<PublicCatalogVersion[]>): SubscriptionOffersView {
  if (!result.ok) return {status:"unconfigured",offers:[]};
