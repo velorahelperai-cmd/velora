@@ -40,11 +40,12 @@ export async function POST(request: Request) {
     deps: {
       webhookEnabled: flags.webhookEnabled,
       hmacSecret: process.env.PAYMOB_HMAC_SECRET?.trim() ?? "",
-      findOrderByProviderOrderId: async id => { const order=await findOrderByProviderOrderId(id);trusted.order=order;return order; },
+      providerEnvironment:flags.liveEnabled?"live":"test",
+      findOrderByProviderOrderId: async (id,scope) => { const order=await findOrderByProviderOrderId(id,scope);trusted.order=order;return order; },
       insertProviderEvent: async row => {
         const saved=await insertProviderEvent(row);
-        if(saved.ok && trusted.order && row.providerEnvironment === "test" && row.eventStatus === "success") {
-          trusted.event={id:saved.eventId,companyId:row.companyId,orderId:trusted.order.orderId,paymentAttemptId:row.paymentAttemptId,providerTransactionId:row.providerTransactionId,eventStatus:"success",providerAccountRef:row.providerAccountRef,specialReference:trusted.order.specialReference,amountBaisa:trusted.order.amountBaisa,observationKey:row.observationKey};
+        if(saved.ok && trusted.order && ["success","refunded","voided"].includes(row.eventStatus)) {
+          trusted.event={id:saved.eventId,companyId:row.companyId,orderId:trusted.order.orderId,paymentAttemptId:row.paymentAttemptId,providerTransactionId:row.providerTransactionId,eventStatus:row.eventStatus,providerEnvironment:row.providerEnvironment,providerAccountRef:row.providerAccountRef,specialReference:trusted.order.specialReference,amountBaisa:trusted.order.amountBaisa,observationKey:row.observationKey};
         }
         return saved;
       },

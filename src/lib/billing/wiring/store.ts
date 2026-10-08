@@ -18,14 +18,17 @@ function billingAdmin(): AnyClient | null {
 
 export async function findOrderByProviderOrderId(
   providerOrderId: string,
+  scope?:{providerAccountRef:string;providerEnvironment:"test"|"live"},
 ): Promise<SavedOrderForWebhook | null> {
   const admin = billingAdmin();
   if (!admin) return null;
 
-  const { data: attempt } = await admin
+  let query = admin
     .from("billing_payment_attempts")
     .select("id, order_id, company_id, provider_order_id, status")
-    .eq("provider_order_id", providerOrderId)
+    .eq("provider_order_id", providerOrderId);
+  if(scope)query=query.eq("provider","paymob").eq("provider_account_ref",scope.providerAccountRef).eq("provider_environment",scope.providerEnvironment);
+  const {data:attempt}=await query
     .order("created_at", { ascending: false })
     // Never choose one company's binding when the bare provider id is ambiguous.
     .limit(2)
@@ -47,9 +50,13 @@ export async function findOrderByProviderOrderId(
       !Number.isSafeInteger(Number(order.provider_amount)) || Number(order.provider_amount) <= 0) return null;
 
   const merchantOwnerId = process.env.PAYMOB_MERCHANT_OWNER_ID?.trim() || null;
-  const integrationIdRaw = process.env.PAYMOB_INTEGRATION_ID_TEST?.trim();
+  const integrationIdRaw = process.env[order.provider_environment==="live"?"PAYMOB_INTEGRATION_ID_LIVE":"PAYMOB_INTEGRATION_ID_TEST"]?.trim();
   const accountRef = String(order.provider_account_ref);
-  const integrationId = integrationIdRaw ? Number(integrationIdRaw) : Number(accountRef);
+  const integrationId = integrationIdRaw ? Number(integrationIdRaw) : order.provider_environment==="live"?0:Number(accountRef);
+  if(scope&&(accountRef!==scope.providerAccountRef||order.provider_environment!==scope.providerEnvironment))return null;
+  // Shared HMAC credentials cannot authenticate unsigned is_live. Distinct
+  // server-pinned integrations are required before accepting a Live receipt.
+  if(order.provider_environment==="live"&&(!integrationIdRaw||integrationIdRaw===process.env.PAYMOB_INTEGRATION_ID_TEST?.trim()))return null;
 
   return {
     companyId: String(order.company_id),
@@ -135,6 +142,10 @@ export async function settleHmacVerifiedViaRpc(
 
   if (error) {
     return { ok: false, code: error.code ?? "settle_rpc_failed" };
+  }
+
+  if(data&&typeof data==="object"&&!Array.isArray(data)&&data.ok===false&&typeof data.code==="string"&&data.code.trim()) {
+    return {ok:false,code:data.code};
   }
 
   if (!data || typeof data !== "object" || Array.isArray(data) || typeof data.outcome !== "string") {

@@ -23,6 +23,10 @@ describe("settlement RPC evidence boundary", () => {
     state.rpc.mockResolvedValue({ data: null, error: { code: "XX000", message: "connection already closed" } });
     expect(await settleHmacVerifiedViaRpc({})).toEqual({ ok: false, code: "XX000" });
   });
+  it("preserves the P1 RPC's explicit evidence rejection", async () => {
+    state.rpc.mockResolvedValue({ data: { ok: false, code: "INVALID_STORED_EVIDENCE" }, error: null });
+    expect(await settleHmacVerifiedViaRpc({})).toEqual({ ok: false, code: "INVALID_STORED_EVIDENCE" });
+  });
 
   it.each(["granted", "idempotent_replay", "duplicate_collection_review"])(
     "preserves explicit settlement outcome %s", async outcome => {

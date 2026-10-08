@@ -23,12 +23,13 @@ export type PaymobHmacSettlementEvidenceJson = {
   payment_attempt_id: string;
   provider: "paymob";
   provider_account_ref: string;
-  provider_environment: "test";
+  provider_environment: "test" | "live";
   provider_transaction_id: string;
   special_reference: string;
   amount_baisa: number;
   currency: "OMR";
-  event_status: "success";
+  currency_expected: "OMR";
+  event_status: "success" | "refunded" | "voided";
   observation_key?: string;
 };
 
@@ -41,6 +42,8 @@ export function buildPaymobHmacSettlementEvidence(input: {
   specialReference: string;
   amountBaisa: number;
   observationKey?: string;
+  providerEnvironment?:"test"|"live";
+  eventStatus?:"success"|"refunded"|"voided";
 }): PaymobHmacSettlementEvidenceJson {
   return {
     evidence_marker: PAYMOB_HMAC_SETTLEMENT_EVIDENCE_MARKER,
@@ -54,12 +57,13 @@ export function buildPaymobHmacSettlementEvidence(input: {
     payment_attempt_id: input.paymentAttemptId,
     provider: "paymob",
     provider_account_ref: input.providerAccountRef,
-    provider_environment: "test",
+    provider_environment: input.providerEnvironment??"test",
     provider_transaction_id: input.providerTransactionId,
     special_reference: input.specialReference,
     amount_baisa: input.amountBaisa,
     currency: "OMR",
-    event_status: "success",
+    currency_expected: "OMR",
+    event_status: input.eventStatus??"success",
     ...(input.observationKey ? { observation_key: input.observationKey } : {}),
   };
 }
@@ -75,7 +79,6 @@ export const PAYMOB_HMAC_SETTLEMENT_RPC_CONTRACT = {
     "VEL_BILLING_SYNTHETIC_TEST_EVIDENCE",
     "synthetic_test_only",
     "signature_verified browser field",
-    "provider_environment=live",
     "billing_settle_verified_payment (disabled stub)",
   ],
   calls: "private.billing_settle_payment_core",

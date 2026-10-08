@@ -10,7 +10,7 @@ vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({
   rpc: state.rpc,
   from(table: string) {
     const row = table === "billing_orders"
-      ? { id: "order", special_reference: "reference", amount_baisa: 5000, provider_account_ref: "71610" }
+      ? { id: "order", special_reference: "reference", amount_baisa: 5000, provider_account_ref: "71610", provider_environment: "test", currency: "OMR" }
       : table === "billing_payment_attempts" ? { id: "attempt", order_id: "order" }
       : { id: "event", company_id: "company", payment_attempt_id: "attempt", provider_transaction_id: "800001",
         event_status: "success", provider_account_ref: "71610", amount_baisa_expected: 5000,
@@ -18,6 +18,7 @@ vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({
     const query = {
       select(columns: string) { state.selects.push({ table, columns }); return query; },
       eq() { return query; },
+      in() { return query; },
       limit() { return query; },
       maybeSingle: async () => ({ data: row, error: null }),
       then(resolve: (result: { data: typeof row[]; error: null }) => unknown) {
