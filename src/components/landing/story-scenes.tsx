@@ -11,6 +11,7 @@ import {
   SourceCard,
   StoryTheaterPhone,
 } from "@/components/landing/conversation-stage";
+import { CinematicOnboarding } from "@/components/landing/cinematic-onboarding";
 
 /** Theme veil that fades in at the end of a chapter to hand off to the next scene's surface. */
 function Veil({ to }: { to: "light" | "dark" }) {
@@ -64,7 +65,6 @@ export function StoryScenes({
   const enquiry = byId(4);
   const handoff = byId(5);
   const overview = byId(6);
-  const setup = byId(7);
 
   return (
     <>
@@ -329,32 +329,7 @@ export function StoryScenes({
         </div>
       </section>
 
-      <section id={setup.anchor} data-scene="7" className="scene scene-dark px-6 py-20 lg:px-12">
-        <Veil to="dark" />
-        <div data-seq="stage" className="relative z-10 mx-auto grid max-w-[1380px] items-center gap-12 lg:grid-cols-2">
-          <ol className="order-2 grid gap-3">
-            {copy.steps.map((step, index) => (
-              <li
-                key={step.title}
-                data-seq="step"
-                className="flex items-start gap-4 rounded-2xl border border-white/15 bg-[#163026] px-4 py-4 text-[#f7fbf8]"
-              >
-                <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#38dc89] text-sm font-bold text-[#072317]">
-                  {index + 1}
-                </span>
-                <span>
-                  <span className="block text-lg font-bold">{step.title}</span>
-                  <span className="mt-1 block text-base leading-7 text-[#d5e4da]">{step.body}</span>
-                </span>
-              </li>
-            ))}
-          </ol>
-          <div className="order-1">
-            <h2 className="scene-title text-[#f7fbf8]">{setup.title}</h2>
-            <p className="scene-body mt-5 text-[#adbeaf]">{setup.body}</p>
-          </div>
-        </div>
-      </section>
+      <CinematicOnboarding copy={copy} />
     </>
   );
 }

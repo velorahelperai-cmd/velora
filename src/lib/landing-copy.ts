@@ -204,25 +204,25 @@ const scenes = [
     theme: "dark" as const,
     anchor: "setup",
     title: {
-      ar: "ابدأ بمعلومات نشاطك.",
-      en: "Start with your business information.",
+      ar: "شغلك يكبر، مش ضغطك.",
+      en: "Your business grows, not your pressure.",
     },
     body: {
-      ar: "أنشئ الحساب وجهّز المعلومات، ثم راجع معنا نطاق التجربة وما يلزم للربط والتفعيل.",
-      en: "Create your account and prepare your information, then review the trial scope and activation requirements with us.",
+      ar: "لا تفوّت فرصة بسبب رسالة اتأخرت. جهّز مساعدتك الذكية في خطوات بسيطة، وخلي فيلورا تساعدك في متابعة عملائك.",
+      en: "Never miss an opportunity from a delayed reply. Set up your AI assistant in simple steps, and let Velora help you follow up with your customers.",
     },
     example: {
       ar: {
-        question: "إزاي أبدأ على نشاطي؟",
-        answer: "ابدأ بالحساب ومعلومات النشاط. الربط والرد الآلي يُراجعان لاحقًا.",
-        cardTitle: "التجهيز الحالي",
-        card: "الحساب ← معلومات النشاط والملفات ← مراجعة الربط والتجربة",
+        question: "من اختيار الباقة إلى أول تجربة",
+        answer: "شغلك يكبر، مش ضغطك.",
+        cardTitle: "خطوات التجهيز السلسة",
+        card: "اختيار الشخصية ← قاعدة المعرفة ← ربط واتساب ← تجربة الردود",
       },
       en: {
-        question: "How do I get started for my business?",
-        answer: "Start with the account and business information. Connection and automatic replies are reviewed later.",
-        cardTitle: "What you can prepare",
-        card: "Account → Business information and files → Review connection and trial",
+        question: "From plan selection to first experience",
+        answer: "Your business grows, not your pressure.",
+        cardTitle: "Seamless Setup Steps",
+        card: "Assistant Persona → Knowledge Base → WhatsApp Link → Live Test",
       },
     },
   },
@@ -393,17 +393,278 @@ const ui = {
   },
   steps: {
     ar: [
-      { title: "إنشاء الحساب", body: "تنشئ حسابك وتعرّف نشاطك باختصار." },
-      { title: "معلومات النشاط", body: "تضيف النص والملفات التي يعتمد عليها الرد لاحقًا." },
-      { title: "متطلبات الربط", body: "نراجع متطلبات ربط واتساب وإتاحته لشركتك." },
-      { title: "نطاق التجربة", body: "نتفق على حدود التجربة قبل أي تشغيل فعلي." },
+      { title: "مساعدتك على ذوقك", body: "اختر شخصية المساعد الذكي التي تمثل هويتك ونبرة الحديث المناسبة لعملائك (نورا، لينا، دانة)، وحدد باقتك." },
+      { title: "عرّفها على شغلك", body: "أضف قائمة منتجاتك، أسعارك، ساعات العمل، وسياسات التوصيل أو الحجز. نورا تعتمد فقط على ما تعتمده لها." },
+      { title: "وصّل واتساب شغلك", body: "اربط رقم واتساب نشاطك عبر Meta Cloud API الرسمي بخطوات سريعة وآمنة دون تعقيدات تقنية." },
+      { title: "جرّبها… وشوف الفارق", body: "اختبر ردود المساعد الذكي في بيئة تجريبية آمنة فورًا، وتأكد من دقة المعلومات وذكاء التفاعل قبل أي تشغيل حقيقي." },
     ],
     en: [
-      { title: "Create the account", body: "You create your account and briefly describe the business." },
-      { title: "Business information", body: "You add the text and files that later replies can rely on." },
-      { title: "Connection requirements", body: "Review WhatsApp requirements and availability for your company." },
-      { title: "Trial scope", body: "We agree the trial boundaries before any live operation." },
+      { title: "Your assistant, tailored to you", body: "Choose the AI persona that represents your brand and voice (Noura, Lina, Dana), and select your plan." },
+      { title: "Teach her your business", body: "Add your product catalogue, pricing, business hours, and delivery or booking policies. Noura relies strictly on your approved data." },
+      { title: "Connect your business WhatsApp", body: "Connect your business WhatsApp number through the official Meta Cloud API with fast, secure steps." },
+      { title: "Test her out… see the difference", body: "Test AI assistant replies in a safe sandbox instantly, verifying accuracy and tone before going live." },
     ],
+  },
+  onboardingStory: {
+    eyebrow: {
+      ar: "من اختيار الباقة إلى أول تجربة",
+      en: "From Plan Selection to First Experience",
+    },
+    headline: {
+      ar: "شغلك يكبر، مش ضغطك.",
+      en: "Your business grows, not your pressure.",
+    },
+    supporting: {
+      ar: "لا تفوّت فرصة بسبب رسالة اتأخرت. جهّز مساعدتك الذكية في خطوات بسيطة، وخلي فيلورا تساعدك في متابعة عملائك.",
+      en: "Never miss an opportunity from a delayed reply. Set up your AI assistant in simple steps, and let Velora help you follow up with your customers.",
+    },
+    stages: [
+      {
+        id: "assistant",
+        number: "01",
+        tag: { ar: "الشخصية والباقة", en: "Persona & Plan" },
+        title: { ar: "مساعدتك على ذوقك.", en: "Your assistant, tailored to you." },
+        body: {
+          ar: "اختر شخصية المساعد الذكي التي تمثل هويتك ونبرة الحديث المناسبة لعملائك (نورا، لينا، دانة)، وحدد باقتك.",
+          en: "Choose the AI persona that represents your brand and voice (Noura, Lina, Dana), and select your plan.",
+        },
+      },
+      {
+        id: "knowledge",
+        number: "02",
+        tag: { ar: "قاعدة المعرفة", en: "Knowledge Base" },
+        title: { ar: "عرّفها على شغلك.", en: "Teach her your business." },
+        body: {
+          ar: "أضف قائمة منتجاتك، أسعارك، ساعات العمل، وسياسات التوصيل أو الحجز. نورا تعتمد فقط على ما تعتمده لها.",
+          en: "Add your product catalogue, pricing, business hours, and delivery or booking policies. Noura relies strictly on your approved data.",
+        },
+      },
+      {
+        id: "whatsapp",
+        number: "03",
+        tag: { ar: "ربط واتساب", en: "WhatsApp Integration" },
+        title: { ar: "وصّل واتساب شغلك.", en: "Connect your business WhatsApp." },
+        body: {
+          ar: "اربط رقم واتساب نشاطك عبر Meta Cloud API الرسمي بخطوات سريعة وآمنة دون تعقيدات تقنية.",
+          en: "Connect your business WhatsApp number through the official Meta Cloud API with fast, secure steps.",
+        },
+      },
+      {
+        id: "test",
+        number: "04",
+        tag: { ar: "بيئة التجربة والجاهزية", en: "Interactive Test Sandbox" },
+        title: { ar: "جرّبها… وشوف الفارق.", en: "Test her out… see the difference." },
+        body: {
+          ar: "اختبر ردود المساعد الذكي في بيئة تجريبية آمنة فورًا، وتأكد من دقة المعلومات وذكاء التفاعل قبل أي تشغيل حقيقي.",
+          en: "Test AI assistant replies in a safe sandbox instantly, verifying accuracy and tone before going live.",
+        },
+      },
+    ],
+    previewUI: {
+      appTitle: {
+        ar: "لوحة تحكم فيلورا — إعداد المساعد",
+        en: "Velora Dashboard — Assistant Setup",
+      },
+      previewBadge: {
+        ar: "معاينة حية",
+        en: "Live Preview",
+      },
+      characters: {
+        noura: {
+          name: { ar: "نورا", en: "Noura" },
+          role: { ar: "خدمة عملاء دافئة", en: "Warm Customer Care" },
+          dialect: { ar: "خليجية وعربية بيضاء", en: "Gulf & Clear Arabic" },
+          badge: { ar: "المختارة — موصى بها", en: "Selected — Recommended" },
+        },
+        lina: {
+          name: { ar: "لينا", en: "Lina" },
+          role: { ar: "أسلوب عصري ومرن", en: "Modern & Agile Voice" },
+          dialect: { ar: "عربية فصحى مبسطة", en: "Modern Standard Arabic" },
+        },
+        dana: {
+          name: { ar: "دانة", en: "Dana" },
+          role: { ar: "طابع هادئ واحترافي", en: "Calm & Professional" },
+          dialect: { ar: "نبرة تنفيذية دقيقة", en: "Corporate Executive Tone" },
+        },
+      },
+      plans: {
+        basic: {
+          ar: "باقة نورا الأساسية (45 ر.ع / شهر)",
+          en: "Noura Basic Plan (45 OMR / mo)",
+        },
+        premium: {
+          ar: "المتقدمة (80 ر.ع / شهر)",
+          en: "Premium Plan (80 OMR / mo)",
+        },
+        note: {
+          ar: "تشمل 1,000 محادثة ذكية شهريًا",
+          en: "Includes 1,000 AI conversations / mo",
+        },
+      },
+      knowledge: {
+        header: {
+          ar: "قاعدة المعرفة المعتمدة لنشاطك",
+          en: "Approved Business Knowledge Base",
+        },
+        businessNameLabel: {
+          ar: "اسم النشاط التجاري",
+          en: "Business Name",
+        },
+        businessNameValue: {
+          ar: "مقهى ومحمص الأصول",
+          en: "Al Osool Café & Roastery",
+        },
+        servicesLabel: {
+          ar: "المنتجات وقائمة الخدمات",
+          en: "Products & Menu Services",
+        },
+        servicesValue: {
+          ar: "قهوة مختصة (V60، فلات وايت، كولد برو)، حلويات طازجة، بوكسات الجمعات والفعاليات.",
+          en: "Specialty coffee (V60, Flat White, Cold Brew), fresh desserts, gathering & event boxes.",
+        },
+        hoursLabel: {
+          ar: "أوقات العمل والأسعار",
+          en: "Operating Hours & Pricing",
+        },
+        hoursValue: {
+          ar: "يوميًا: 7:00 ص – 11:30 م (الجمعة من 1:00 م) · الأسعار: تبدأ من 1.500 ر.ع حتى 14.000 ر.ع.",
+          en: "Daily: 7:00 AM – 11:30 PM (Friday from 1:00 PM) · Prices: from 1.500 OMR to 14.000 OMR.",
+        },
+        policyLabel: {
+          ar: "سياسة التوصيل ومناطق التغطية",
+          en: "Delivery Policy & Coverage",
+        },
+        policyValue: {
+          ar: "توصيل فوري خلال 35 دقيقة لمسقط والمناطق المجاورة عبر المندوب الخاص.",
+          en: "Express 35-min delivery across Muscat and surrounding areas via dedicated courier.",
+        },
+        statusApproved: {
+          ar: "تم اعتماد ومراجعة قاعدة البيانات بنجاح",
+          en: "Knowledge Base Verified & Approved",
+        },
+        statusSubtext: {
+          ar: "جاهزة للاستخدام في بيئة التجربة",
+          en: "Ready for sandbox testing",
+        },
+      },
+      whatsapp: {
+        header: {
+          ar: "ربط رقم واتساب التجاري الرسمي",
+          en: "Connect Official WhatsApp Business",
+        },
+        phoneNumber: "+968 91•• ••42",
+        wabaTitle: {
+          ar: "رقم النشاط التجاري",
+          en: "Business Number",
+        },
+        accountStatus: {
+          ar: "قناة اتصال مشفرة ومباشرة",
+          en: "Encrypted direct channel",
+        },
+        steps: [
+          {
+            label: {
+              ar: "التحقق من ملكية الرقم عبر Meta OTP",
+              en: "Verify number ownership via Meta OTP",
+            },
+          },
+          {
+            label: {
+              ar: "ربط حساب WhatsApp Business (WABA)",
+              en: "Connect WhatsApp Business Account (WABA)",
+            },
+          },
+          {
+            label: {
+              ar: "مزامنة قناة استقبال المحادثات",
+              en: "Sync inbound conversation channel",
+            },
+          },
+        ],
+        syncNotice: {
+          ar: "يتم الربط رسميًا دون حاجة لمسح QR متكرر أو إبقاء الهاتف متصلًا بالإنترنت",
+          en: "Official cloud connection without repeated QR scans or phone battery dependencies",
+        },
+      },
+      chatTest: {
+        header: {
+          ar: "تجربة ردود نورا الحية",
+          en: "Live Noura Reply Sandbox",
+        },
+        onlineStatus: {
+          ar: "متصلة الآن · جاهزة للرد الفوري",
+          en: "Online now · Instant responses",
+        },
+        sandboxBadge: {
+          ar: "بيئة تجريبية آمنة",
+          en: "Safe Sandbox Environment",
+        },
+        messages: [
+          {
+            role: "customer" as const,
+            text: {
+              ar: "مرحبًا، متوفر بوكس قهوة الجمعات مع الحلى اليوم؟",
+              en: "Hi, is the gatherings coffee box with sweets available today?",
+            },
+          },
+          {
+            role: "assistant" as const,
+            text: {
+              ar: "أهلًا بك! نعم متوفر بوكس الجمعات (يكفي 8 أشخاص) مع خيار الحلى المفضل. تحب استلام من الفرع أو توصيل؟",
+              en: "Hello! Yes, the gatherings box (serves 8) is available with your choice of sweets. Pick up or delivery?",
+            },
+          },
+          {
+            role: "customer" as const,
+            text: {
+              ar: "توصيل إلى العذيبة لو سمحت، خلال كم يوصل؟",
+              en: "Delivery to Azaiba please, how long will it take?",
+            },
+          },
+          {
+            role: "assistant" as const,
+            text: {
+              ar: "التوصيل إلى العذيبة يستغرق حوالي 30 إلى 35 دقيقة. جهّزت بيانات طلبك للفريق لتأكيده مباشرة!",
+              en: "Delivery to Azaiba takes around 30 to 35 minutes. Order details prepared for our team to confirm right away!",
+            },
+          },
+        ],
+        readinessHeader: {
+          ar: "مؤشرات الجاهزية للإطلاق:",
+          en: "Launch Readiness Checklist:",
+        },
+        readinessList: [
+          {
+            text: {
+              ar: "التحقق من نبرة ولهجة نورا",
+              en: "Tone & dialect verified",
+            },
+            done: true,
+          },
+          {
+            text: {
+              ar: "الالتزام ببيانات النشاط المعتمدة",
+              en: "Strict knowledge base compliance",
+            },
+            done: true,
+          },
+          {
+            text: {
+              ar: "جاهزية تحويل الطلب للفريق",
+              en: "Order handoff ready for team",
+            },
+            done: true,
+          },
+          {
+            text: {
+              ar: "رقم واتساب نشاطك معتمد",
+              en: "Business WhatsApp verified",
+            },
+            done: true,
+          },
+        ],
+      },
+    },
   },
   sectors: {
     restaurant: { ar: "مطاعم", en: "Restaurants" },
@@ -692,6 +953,82 @@ export function landingCopy(locale: Locale) {
     tabs: ui.tabs[locale],
     rows: ui.rows[locale],
     steps: ui.steps[locale],
+    onboardingStory: {
+      eyebrow: t(locale, ui.onboardingStory.eyebrow),
+      headline: t(locale, ui.onboardingStory.headline),
+      supporting: t(locale, ui.onboardingStory.supporting),
+      stages: ui.onboardingStory.stages.map((stage) => ({
+        id: stage.id,
+        number: stage.number,
+        tag: t(locale, stage.tag),
+        title: t(locale, stage.title),
+        body: t(locale, stage.body),
+      })),
+      previewUI: {
+        appTitle: t(locale, ui.onboardingStory.previewUI.appTitle),
+        previewBadge: t(locale, ui.onboardingStory.previewUI.previewBadge),
+        characters: {
+          noura: {
+            name: t(locale, ui.onboardingStory.previewUI.characters.noura.name),
+            role: t(locale, ui.onboardingStory.previewUI.characters.noura.role),
+            dialect: t(locale, ui.onboardingStory.previewUI.characters.noura.dialect),
+            badge: t(locale, ui.onboardingStory.previewUI.characters.noura.badge),
+          },
+          lina: {
+            name: t(locale, ui.onboardingStory.previewUI.characters.lina.name),
+            role: t(locale, ui.onboardingStory.previewUI.characters.lina.role),
+            dialect: t(locale, ui.onboardingStory.previewUI.characters.lina.dialect),
+          },
+          dana: {
+            name: t(locale, ui.onboardingStory.previewUI.characters.dana.name),
+            role: t(locale, ui.onboardingStory.previewUI.characters.dana.role),
+            dialect: t(locale, ui.onboardingStory.previewUI.characters.dana.dialect),
+          },
+        },
+        plans: {
+          basic: t(locale, ui.onboardingStory.previewUI.plans.basic),
+          premium: t(locale, ui.onboardingStory.previewUI.plans.premium),
+          note: t(locale, ui.onboardingStory.previewUI.plans.note),
+        },
+        knowledge: {
+          header: t(locale, ui.onboardingStory.previewUI.knowledge.header),
+          businessNameLabel: t(locale, ui.onboardingStory.previewUI.knowledge.businessNameLabel),
+          businessNameValue: t(locale, ui.onboardingStory.previewUI.knowledge.businessNameValue),
+          servicesLabel: t(locale, ui.onboardingStory.previewUI.knowledge.servicesLabel),
+          servicesValue: t(locale, ui.onboardingStory.previewUI.knowledge.servicesValue),
+          hoursLabel: t(locale, ui.onboardingStory.previewUI.knowledge.hoursLabel),
+          hoursValue: t(locale, ui.onboardingStory.previewUI.knowledge.hoursValue),
+          policyLabel: t(locale, ui.onboardingStory.previewUI.knowledge.policyLabel),
+          policyValue: t(locale, ui.onboardingStory.previewUI.knowledge.policyValue),
+          statusApproved: t(locale, ui.onboardingStory.previewUI.knowledge.statusApproved),
+          statusSubtext: t(locale, ui.onboardingStory.previewUI.knowledge.statusSubtext),
+        },
+        whatsapp: {
+          header: t(locale, ui.onboardingStory.previewUI.whatsapp.header),
+          phoneNumber: ui.onboardingStory.previewUI.whatsapp.phoneNumber,
+          wabaTitle: t(locale, ui.onboardingStory.previewUI.whatsapp.wabaTitle),
+          accountStatus: t(locale, ui.onboardingStory.previewUI.whatsapp.accountStatus),
+          steps: ui.onboardingStory.previewUI.whatsapp.steps.map((st) => ({
+            label: t(locale, st.label),
+          })),
+          syncNotice: t(locale, ui.onboardingStory.previewUI.whatsapp.syncNotice),
+        },
+        chatTest: {
+          header: t(locale, ui.onboardingStory.previewUI.chatTest.header),
+          onlineStatus: t(locale, ui.onboardingStory.previewUI.chatTest.onlineStatus),
+          sandboxBadge: t(locale, ui.onboardingStory.previewUI.chatTest.sandboxBadge),
+          messages: ui.onboardingStory.previewUI.chatTest.messages.map((m) => ({
+            role: m.role,
+            text: t(locale, m.text),
+          })),
+          readinessHeader: t(locale, ui.onboardingStory.previewUI.chatTest.readinessHeader),
+          readinessList: ui.onboardingStory.previewUI.chatTest.readinessList.map((r) => ({
+            text: t(locale, r.text),
+            done: r.done,
+          })),
+        },
+      },
+    },
     sectors: (Object.keys(ui.sectors) as SectorId[]).map((id) => ({
       id,
       label: t(locale, ui.sectors[id]),
