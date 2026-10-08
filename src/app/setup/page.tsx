@@ -1,6 +1,9 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
+import { authFlowHref } from "@/lib/auth/auth-journey";
+import { setupReturnContext } from "@/lib/auth/setup-return";
 import { AccessGate } from "@/components/app/access-gate";
 import { SetupWizard } from "@/components/app/setup-wizard";
 import { listKnowledgeSources } from "@/lib/knowledge/actions";
@@ -12,13 +15,14 @@ import type { CompanyReviewRequest } from "@/lib/tenancy/types";
 export const metadata: Metadata = { title: "Prepare your business · Velora" };
 
 export default async function Page() {
+  const { returnTo, preferredNext } = setupReturnContext((await headers()).get("x-velora-return-path"));
   const access = await getCompanyAccess();
   if (!access.ok) {
-    if (access.code === "UNVERIFIED") redirect("/verify-email");
+    if (access.code === "UNVERIFIED") redirect(authFlowHref("/verify-email", returnTo));
     if (access.code === "FORBIDDEN" || access.code === "UNAVAILABLE") {
       return <AccessGate code={access.code} />;
     }
-    redirect(loginPathForReturn("/setup"));
+    redirect(loginPathForReturn(returnTo));
   }
   const company = access.context.company;
   const userId = access.context.userId;
@@ -49,6 +53,7 @@ export default async function Page() {
     <Suspense fallback={<main className="min-h-svh bg-[#07110d]" aria-busy="true" />}>
       <SetupWizard
         userId={userId}
+        preferredNext={preferredNext}
         initialCompany={company}
         initialKnowledge={initialKnowledge}
         knowledgeLoadFailed={knowledgeLoadFailed}

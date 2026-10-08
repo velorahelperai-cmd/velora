@@ -1,5 +1,5 @@
 "use client";
-import type { SubscriptionDestination } from "@/components/app/subscription-navigation";
+import { subscriptionIntentFromChoice, subscriptionIntentHref, type SubscriptionDestination, type SubscriptionIntent } from "@/components/app/subscription-navigation";
 import Link from "next/link";
 import { useState } from "react";
 import type { LandingCopy, PlanId } from "@/lib/landing-copy";
@@ -14,6 +14,8 @@ export function Packages({ copy, locale, destination, offersView, selectedPlan, 
  void copy; void selectedPlan;const c=subscriptionCopy[locale];
  const [term,setTerm]=useState<SubscriptionTerm>("monthly");
  const [choice,setChoice]=useState<SubscriptionChoice|null>(null);
+ const [intent,setIntent]=useState<SubscriptionIntent>({term:"monthly"});
+ function changeTerm(value:SubscriptionTerm){setTerm(value);setChoice(null);setIntent({term:value,...(intent.persona&&intent.package?{persona:intent.persona,package:intent.package}:{})});}
  const validChoice=currentSubscriptionChoice(choice,term,offersView);
  const isApproved=validChoice?isApprovedOffer(validChoice.persona,validChoice.package,validChoice.term):false;
  const selectedOffer=validChoice&&offersView?.status==="ready"?offersView.offers.find(offer=>offer.versionId===validChoice.versionId&&offer.term===validChoice.term):null;
@@ -29,8 +31,8 @@ export function Packages({ copy, locale, destination, offersView, selectedPlan, 
    <div className={styles.root} data-surface="public" lang={locale} dir={locale === "ar" ? "rtl" : "ltr"} style={{marginTop:32}}>
     <SubscriptionBrandGuide locale={locale} selectedPersona={validChoice?.persona} />
     <div className={styles.planHeading}><p>{c.chooseNote}</p><div className={styles.cycles} role="group" aria-label={c.cycle}>
-     <button type="button" aria-pressed={term==="monthly"} onClick={()=>{setTerm("monthly");setChoice(null);}}>{c.monthly}</button>
-     <button type="button" aria-pressed={term==="yearly"} onClick={()=>{setTerm("yearly");setChoice(null);}}>{c.yearly}</button>
+     <button type="button" aria-pressed={term==="monthly"} onClick={()=>changeTerm("monthly")}>{c.monthly}</button>
+     <button type="button" aria-pressed={term==="yearly"} onClick={()=>changeTerm("yearly")}>{c.yearly}</button>
     </div></div>
     {term==="yearly"?(
      <div className={styles.annualDraftBanner} role="status">
@@ -38,19 +40,19 @@ export function Packages({ copy, locale, destination, offersView, selectedPlan, 
       <p>{c.annualBannerNote}</p>
      </div>
     ):null}
-    <SubscriptionOfferCards locale={locale} term={term} offers={offersView?.status==="ready"?offersView.offers:[]} catalogStatus={offersView?.status} selectedPersona={validChoice?.persona??null} selectedPackage={validChoice?.package} onSelectionInvalidated={()=>setChoice(null)} onSelect={choice=>{setChoice(choice);onSelect(planByPersona[choice.persona]);}} />
+    <SubscriptionOfferCards locale={locale} term={term} offers={offersView?.status==="ready"?offersView.offers:[]} catalogStatus={offersView?.status} selectedPersona={validChoice?.persona??null} selectedPackage={validChoice?.package} onSelectionInvalidated={()=>{setChoice(null);setIntent({term});}} onSelect={choice=>{setChoice(choice);setIntent(subscriptionIntentFromChoice(choice,offersView)??{term});onSelect(planByPersona[choice.persona]);}} />
     <p className={styles.catalogNote} role={offersView?.status==="error"?"alert":"status"}>{catalogNote}</p>
     <SubscriptionCompareTable locale={locale} term={term} offers={offersView?.status==="ready"?offersView.offers:[]} catalogStatus={offersView?.status} selectedPersona={validChoice?.persona??null} />
     <section className={styles.next} aria-labelledby="packages-next">
      <div>
       <h2 id="packages-next">{c.next}</h2>
-      <p className={styles.selectionTitle}>{validChoice ? <>{subscriptionTiers.find(tier => tier.id === validChoice.persona)?.[locale]} · {c[validChoice.package]} / {c[term]}</> : c.selectionEmpty}</p>
+      <p className={styles.selectionTitle}>{validChoice ? <>{subscriptionTiers.find(tier => tier.id === validChoice.persona)?.[locale]} · {c[validChoice.package]} / {c[term]}</> : intent.persona&&intent.package?`${subscriptionTiers.find(tier=>tier.id===intent.persona)?.[locale]} · ${c[intent.package]} / ${c[term]}`:c.selectionEmpty}</p>
       {selectedOffer?<dl className={styles.facts}><div><dt>{c.orderAmount}</dt><dd><bdi>{formatOmrBaisa(selectedOffer.amountBaisa,locale)}</bdi></dd></div><div><dt>{c.cycle}</dt><dd>{c[term]}</dd></div></dl>:null}
       {target.note ? <p role="status">{c.permissionNotes[target.note]}</p> : null}
       {validChoice && !isPurchasable ? <p className={styles.draftPlanNotice}>{term === "yearly" ? c.annualBannerNote : isApproved ? c.draftAwaitingPublicationNote : c.draftPlanDisabledNote}</p> : null}
      </div>
      {isPurchasable || !validChoice ? (
-      <Link href={target.href} className={styles.payLink}>{c.navigationLabels[target.kind]}</Link>
+      <Link href={subscriptionIntentHref(target,subscriptionIntentFromChoice(validChoice,offersView)??intent)} className={styles.payLink}>{c.navigationLabels[target.kind]}</Link>
      ) : (
       <button type="button" className={styles.payLink} disabled style={{ opacity: 0.5, cursor: "not-allowed" }}>
        {term === "yearly" ? c.annualNotPurchasable : isApproved ? c.notPublishedNotPurchasable : c.notPurchasable}

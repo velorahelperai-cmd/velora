@@ -1,5 +1,6 @@
 import { checkAppSession } from "@/lib/auth/session-guard";
 import { authFlowHref } from "@/lib/auth/auth-journey";
+import { setupPathForReturn } from "@/lib/auth/setup-return";
 import { allowedReturnPath, pathAtOrUnder, safeInternalPath, staffInvitationReturnPath } from "@/lib/auth/safe-next";
 import { createClient } from "@/lib/supabase/server";
 import type {
@@ -368,7 +369,7 @@ export function pathForAccess(
       role: result.context.membership?.role ?? null,
     }, "/admin");
   }
-  if (!result.context.company) return authFlowHref("/setup",preferredNext);
+  if (!result.context.company) return setupPathForReturn(preferredNext);
   if (result.context.membership?.role === "staff") {
     return allowedReturnPath(preferredNext, {
       isPlatformAdmin: false,
@@ -387,7 +388,7 @@ export function pathForAccess(
     if (preferred && pathAtOrUnder(pathOnly, "/account")) {
       return preferred;
     }
-    return "/setup";
+    return setupPathForReturn(preferred);
   }
   return allowedReturnPath(preferredNext, {
     isPlatformAdmin: false,

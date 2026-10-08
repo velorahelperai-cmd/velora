@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useDemo } from "@/lib/demo-state";
 import { readCatalogAdminAction, saveCatalogDraftAction, publishCatalogVersionAction } from "@/lib/billing/catalog-backend/actions";
 import { FEATURE_KEYS, type CatalogDraft, type CatalogAdminSnapshot, type CatalogResult, type VariantCode } from "@/lib/billing/catalog-backend/contract";
-import { catalogEditorVersions, editorDraft, VARIANT_CODES, type CatalogEditorVersion } from "./admin-catalog-model";
+import { catalogEditorVersions, catalogVariantLabel, editorDraft, VARIANT_CODES, type CatalogEditorVersion } from "./admin-catalog-model";
 import { featureLabels, formatOmrBaisa } from "./subscription-offers-view";
 import styles from "./admin-catalog.module.css";
 
@@ -55,10 +55,8 @@ const copy = {
     statRevision: "رقم المراجعة الحالية",
     statPublished: "الباقات المنشورة",
     statDrafts: "المسودات النشطة",
-    statProductionTier: "الباقة المعتمدة إنتاجيًا",
-    policyTitle: "سياسة الإطلاق والإنتاج المعتمدة",
-    policyText: "المرجع التجاري المعتمد هو نورا الأساسية الشهرية (45.000 ر.ع). النشر يعرض بيانات الكتالوج فقط، ولا يفعّل الدفع الفعلي أو الردود الحية. الدفع التجريبي يتطلب إعدادات خادم مستقلة.",
-    approvedOnlyBadge: "معتمد للشراء",
+    policyTitle: "نشر الكتالوج والدفع التجريبي",
+    policyText: "مرجع الاختيار التجريبي الموروث هو نورا الأساسية الشهرية (45.000 ر.ع)، ويحتاج الاختيار إصدارًا منشورًا مطابقًا. هذا المرجع لا يثبت اعتمادًا تجاريًا أو موافقة مزوّد الدفع للإطلاق الفعلي. النشر يعرض بيانات الكتالوج فقط؛ الدفع التجريبي يتطلب إعدادات خادم مستقلة، والردود الحية تتطلب تفعيلًا منفصلًا.",
   },
   en: {
     kicker: "Billing & Subscription Operations",
@@ -106,10 +104,8 @@ const copy = {
     statRevision: "Active Revision",
     statPublished: "Published Plans",
     statDrafts: "Active Drafts",
-    statProductionTier: "Production Live Tier",
-    policyTitle: "Production & Commercial Policy",
-    policyText: "The approved commercial reference is Noura Basic Monthly (45.000 OMR). Publication displays catalog data only; it does not enable production checkout or live replies. Test checkout requires separate server configuration.",
-    approvedOnlyBadge: "Live Approved",
+    policyTitle: "Catalog Publication & Test Checkout",
+    policyText: "The inherited Test-selection reference is Noura Basic Monthly (45.000 OMR); selection requires a matching published version. This reference does not establish commercial or processor Live approval. Publication displays catalog data only. Test checkout requires separate server configuration; live replies require separate activation.",
   },
 } as const;
 
@@ -262,7 +258,7 @@ export function AdminCatalog({ initial }: { initial: CatalogResult<CatalogAdminS
             </div>
             <div className={styles.statCard} style={{ borderInlineStart: "4px solid var(--catalog-emerald)" }}>
               <span className={styles.statLabel}>{locale === "ar" ? "نورا الأساسية المنشورة" : "Published Noura Basic"}</span>
-              <span className={styles.statValue} style={{ fontSize: 20 }}>Noura Basic</span>
+              <span className={styles.statValue} style={{ fontSize: 20 }}>{catalogVariantLabel("noor_basic", locale)}</span>
               <span className={styles.statSub} style={{ color: "var(--catalog-emerald)" }}>{publishedNoura ? formatOmrBaisa(publishedNoura.amount_baisa, locale) : (locale === "ar" ? "لا يوجد إصدار منشور" : "No published version")}</span>
             </div>
           </div>
@@ -296,7 +292,7 @@ export function AdminCatalog({ initial }: { initial: CatalogResult<CatalogAdminS
                   >
                     {VARIANT_CODES.map((item) => (
                       <option key={item} value={item}>
-                        {item.replace("_", " / ")} {item === "noor_basic" ? `(${locale === "ar" ? "معتمد 45 ر.ع" : "Approved 45 OMR"})` : ""}
+                        {catalogVariantLabel(item, locale)}
                       </option>
                     ))}
                   </select>
@@ -397,7 +393,7 @@ export function AdminCatalog({ initial }: { initial: CatalogResult<CatalogAdminS
                   {filteredRows.map((row) => (
                     <article key={row.versionId} className={styles.versionCard}>
                       <div className={styles.versionCardTop}>
-                        <h3>{row.code.replace("_", " / ")}</h3>
+                        <h3>{catalogVariantLabel(row.code, locale)}</h3>
                         <div className={styles.versionMeta}>
                           <span className={styles.versionRevisionBadge}>{c.version} v{row.version}</span>
                           <span className={styles.statusBadge} data-status={row.status}>
@@ -463,7 +459,7 @@ export function AdminCatalog({ initial }: { initial: CatalogResult<CatalogAdminS
               <div className={styles.modalWarning}>
                 <strong>⚠️ {c.publishWarning}</strong>
               </div>
-              <p><strong>{c.variant}:</strong> {review.code.replace("_", " / ")} ({c.version} v{review.version})</p>
+              <p><strong>{c.variant}:</strong> {catalogVariantLabel(review.code, locale)} ({c.version} v{review.version})</p>
               <p><strong>{c.price}:</strong> <bdi>{priceText(review.amount_baisa)}</bdi> {locale === "ar" ? "ر.ع." : "OMR"}</p>
               <p><strong>{c.cap}:</strong> {new Intl.NumberFormat(locale).format(review.automated_outbound_per_month)}</p>
 

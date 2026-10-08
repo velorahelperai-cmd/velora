@@ -1,5 +1,12 @@
 import {validateDraft,VARIANT_CODES,type CatalogDraft,type CatalogAdminSnapshot,type VariantCode} from '@/lib/billing/catalog-backend/contract';
+import { subscriptionCopy, subscriptionTiers } from './subscription-copy';
 export type CatalogEditorVersion = CatalogDraft & {versionId:string;version:number;status:'draft'|'published'|'retired'};
+/** Display identities are independent of immutable catalog and asset codes. */
+export function catalogVariantLabel(code:VariantCode,locale:'ar'|'en'):string {
+ const [persona,variant]=code.split('_') as ['noor'|'lina'|'dana','basic'|'premium'];
+ const tier={noor:subscriptionTiers[0],lina:subscriptionTiers[1],dana:subscriptionTiers[2]}[persona];
+ return `${tier[locale]} / ${subscriptionCopy[locale][variant]}`;
+}
 const record=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==='object'&&!Array.isArray(v);
 export function catalogEditorVersions(snapshot:CatalogAdminSnapshot):CatalogEditorVersion[]|null {
  if(!Number.isSafeInteger(snapshot.revision)||snapshot.revision<1||!Array.isArray(snapshot.versions))return null;

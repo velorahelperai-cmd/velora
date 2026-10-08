@@ -59,7 +59,7 @@ export const featureLabels: Record<string, { ar: string; en: string }> = {
  website:{ar:"الموقع الإلكتروني",en:"Website"}, lead_followup:{ar:"متابعة العملاء المحتملين",en:"Lead follow-up"}, reports:{ar:"التقارير",en:"Reports"}, pos:{ar:"نقاط البيع",en:"Point of sale"}, orders:{ar:"الطلبات",en:"Orders"}, endcustomer_payment:{ar:"دفع العملاء",en:"Customer payments"}, accounting:{ar:"المحاسبة",en:"Accounting"}
 };
 
-/** Only Noura Basic Monthly is commercially approved for production checkout. */
+/** Inherited Test-selection variant gate; it does not authorize production checkout. */
 export function isApprovedOffer(persona: SubscriptionPersona, pack: SubscriptionPackage, term: SubscriptionTerm): boolean {
   return persona === "level_1" && pack === "basic" && term === "monthly";
 }

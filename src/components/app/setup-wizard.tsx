@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { setupSubscriptionReturn } from "@/lib/auth/setup-return";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type Activation, type Business, nowMs, useDemo } from "@/lib/demo-state";
 import {
@@ -181,6 +182,7 @@ const companyToBusiness = companyBusiness;
 
 export function SetupWizard({
   userId,
+  preferredNext,
   initialCompany,
   initialKnowledge = [],
   knowledgeLoadFailed = false,
@@ -189,6 +191,7 @@ export function SetupWizard({
   reviewLoadFailed = false,
 }: {
   userId: string;
+  preferredNext?: string;
   initialCompany?: CompanyRecord | null;
   initialKnowledge?: KnowledgeSourceRecord[];
   knowledgeLoadFailed?: boolean;
@@ -497,6 +500,7 @@ export function SetupWizard({
             {/* Milestone 1: Subscription Plan */}
             {step === 1 ? (
               <PlanStep
+                planHref={setupSubscriptionReturn(preferredNext)}
                 onBack={() => go(0)}
                 onNext={() => {
                   markDone(1);
@@ -903,7 +907,7 @@ function BusinessStep({
 /* Milestone 1: Plan & Subscription Step                                     */
 /* ========================================================================= */
 
-function PlanStep({ onBack, onNext }: { onBack: () => void; onNext: () => void }) {
+function PlanStep({ onBack, onNext, planHref }: { onBack: () => void; onNext: () => void; planHref: string }) {
   const copy = useAppCopy();
   const { locale } = useDemo();
   const ar = locale === "ar";
@@ -953,7 +957,7 @@ function PlanStep({ onBack, onNext }: { onBack: () => void; onNext: () => void }
         </Button>
         <div className="flex flex-wrap items-center gap-2">
           <Link
-            href="/app/settings?tab=plan"
+            href={planHref}
             className="inline-flex min-h-11 items-center rounded-full border border-[color:var(--color-border-soft)] px-4 text-xs font-medium text-[#b7c6b9] hover:text-[#f7fbf8]"
           >
             {mCopy.planExplore} ↗

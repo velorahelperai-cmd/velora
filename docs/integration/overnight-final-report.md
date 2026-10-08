@@ -2,6 +2,8 @@
 
 **Ready for Local Testing: YES (offline fixtures and public preview). Ready for Staging: NO.** Production payment, AI and WhatsApp readiness are not certified. No real customer, provider or cloud activation occurred.
 
+Acceptance follow-up: [final acceptance update](final-acceptance-update.md) records the latest A1/A2 inclusion proofs, plan-selection/return fixes, Admin Noura labels and fresh unified verification. The figures below are the saved `200100b` base evidence; they are not the later acceptance-run totals.
+
 Final branch `integration/overnight-velora`. Fixed P1/P2 base `485d21e44eb0c676a3aec9cfe47c5f5f40f86ade`. The exact final commit SHA is supplied in the delivery message; the independent final commit containing this report follows the local integration merge. Original worktrees/branches are preserved.
 
 ## Included source commits

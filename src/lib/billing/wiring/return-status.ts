@@ -15,6 +15,8 @@ export type BillingReturnDbRow = {
   successEventStored: boolean;
   /** Event saved; settlement/processing not finished (no grant yet). */
   awaitingProcessing: boolean;
+  /** Navigation only; persisted locked-order details do not grant entitlement. */
+  selection?: { planVersionId: string; amountBaisa: number; currency: "OMR" };
 };
 
 export type BillingReturnDisplay =

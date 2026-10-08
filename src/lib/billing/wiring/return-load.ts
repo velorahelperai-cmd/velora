@@ -9,7 +9,7 @@
 import type { BillingReturnDbRow } from "@/lib/billing/wiring/return-status";
 
 export type BillingReturnDbParts = {
-  order: { id: string; company_id: string; status: string } | null;
+  order: { id: string; company_id: string; status: string; plan_version_id?: string; amount_baisa?: number; currency?: string } | null;
   attempt: { id: string; status: string } | null;
   latestEvent: { event_status: string; observation_key: string } | null;
   grant: { id: string; applied_paid_through: string } | null;
@@ -33,6 +33,10 @@ export function mapBillingReturnDbParts(
   const hasGrant = Boolean(parts.grant);
   const successEventStored = latestEventStatus === "success";
   const awaitingProcessing = successEventStored && !hasGrant;
+  const order = parts.order;
+  const selection = typeof order.plan_version_id === "string" && /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(order.plan_version_id)
+    && Number.isSafeInteger(order.amount_baisa) && order.amount_baisa! > 0 && order.currency === "OMR"
+    ? { planVersionId: order.plan_version_id, amountBaisa: order.amount_baisa!, currency: "OMR" as const } : null;
 
   return {
     companyId: parts.order.company_id,
@@ -45,6 +49,7 @@ export function mapBillingReturnDbParts(
     paidThrough: parts.grant ? parts.grant.applied_paid_through : null,
     successEventStored,
     awaitingProcessing,
+    ...(selection ? { selection } : {}),
   };
 }
 
@@ -61,7 +66,7 @@ export async function loadBillingReturnRow(input: {
 
   const { data: order } = await db
     .from("billing_orders")
-    .select("id, company_id, status")
+    .select("id, company_id, status, plan_version_id, amount_baisa, currency")
     .eq("id", input.orderId)
     .eq("company_id", input.requestCompanyId)
     .maybeSingle();
@@ -107,6 +112,9 @@ export async function loadBillingReturnRow(input: {
       id: String(order.id),
       company_id: String(order.company_id),
       status: String(order.status),
+      plan_version_id: typeof order.plan_version_id === "string" ? order.plan_version_id : undefined,
+      amount_baisa: Number(order.amount_baisa),
+      currency: typeof order.currency === "string" ? order.currency : undefined,
     },
     attempt: attempt
       ? { id: String(attempt.id), status: String(attempt.status) }
