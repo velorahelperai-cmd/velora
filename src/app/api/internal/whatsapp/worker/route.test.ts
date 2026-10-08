@@ -1,0 +1,20 @@
+import {afterEach,describe,it,expect,vi} from "vitest";
+vi.mock("server-only",()=>({}));
+const state=vi.hoisted(()=>({rpc:vi.fn()}));
+vi.mock("@/lib/supabase/admin",()=>({createAdminClient:()=>({rpc:state.rpc})}));
+vi.mock("@/lib/whatsapp/integration-store",()=>({workerRolloutEnabled:()=>false,createIntegrationPorts:vi.fn()}));
+import {POST} from "./route";
+afterEach(()=>{vi.unstubAllEnvs();state.rpc.mockReset();});
+const secret="synthetic-worker-secret-for-offline-tests-only";
+describe("protected bounded WhatsApp consumer",()=>{
+ it("rejects unauthorized invocation before database/provider work",async()=>{vi.stubEnv("WHATSAPP_WORKER_SECRET",secret);
+ const r=await POST(new Request("http://localhost.invalid/api/internal/whatsapp/worker",{method:"POST",headers:{authorization:"Bearer wrong"}}));
+ expect(r.status).toBe(401);expect(state.rpc).not.toHaveBeenCalled();});
+ it("stays disabled without explicit host activation",async()=>{vi.stubEnv("WHATSAPP_WORKER_SECRET",secret);vi.stubEnv("WHATSAPP_WORKER_ENABLED","");
+ const r=await POST(new Request("http://localhost.invalid/worker",{method:"POST",headers:{authorization:`Bearer ${secret}`}}));expect(r.status).toBe(503);expect(state.rpc).not.toHaveBeenCalled();});
+ it("allows only receipt repair when customer AI/send rollout remains disabled",async()=>{vi.stubEnv("WHATSAPP_WORKER_SECRET",secret);vi.stubEnv("WHATSAPP_WORKER_ENABLED","true");
+ state.rpc.mockResolvedValue({data:{ok:true,repaired:1,pending:0},error:null});
+ const r=await POST(new Request("http://localhost.invalid/worker",{method:"POST",headers:{authorization:`Bearer ${secret}`}}));
+ expect(await r.json()).toEqual({code:"CUSTOMER_ANSWERING_DISABLED",repairOnly:true});expect(state.rpc).toHaveBeenCalledTimes(1);
+ expect(state.rpc).toHaveBeenCalledWith("whatsapp_repair_accepted_jobs",{p_limit:10});});
+});

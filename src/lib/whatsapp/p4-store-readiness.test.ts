@@ -9,6 +9,9 @@ const claimed = { ok: true, job_id: "job-fixture", message_id: "message-fixture"
 function admin(data: unknown) { return { rpc: async () => ({ data, error: null }) } as unknown as SupabaseClient<Database>; }
 
 describe("P4 durable WhatsApp RPC boundaries", () => {
+  it.each(["retry_wait","dead_letter","review_required"])("acknowledges duplicate inbound in durable state %s",async job_status=>{
+    expect(await saveInbound(admin({...saved,inserted:false,job_status}),"company-fixture",message)).toMatchObject({inserted:false,jobStatus:job_status,jobId:saved.job_id});
+  });
   it("preserves a real duplicate response without inventing a new job", async () => {
     expect(await saveInbound(admin({ ...saved, inserted: false }), "company-fixture", message)).toEqual({ inserted: false, messageId: "message-fixture", conversationId: "conversation-fixture", jobId: "job-fixture", jobStatus: "pending" });
   });

@@ -6,6 +6,7 @@
 import { readCompanyEntitlement, entitlementAllowsAutomation } from "@/lib/billing/entitlement";
 import { evaluateInboundClaim, processInboundJobAnswer, type ClaimedJobRow } from "@/lib/answers/channel-adapter";
 import { createAdminClient } from "@/lib/supabase/admin";
+import {runPersistedInboundJob,type IntegrationPorts,type IntegrationOutcome} from "./integration-worker";
 
 export type WorkerStep =
   | "claim"
@@ -28,7 +29,7 @@ export function inboundWorkerPlan(): WorkerPlan {
 }
 
 export type WorkerRunResult =
-  | { ok: false; code: string; jobCompleted: false; sendAccepted: false; delivered: false };
+  IntegrationOutcome;
 
 function blocked(code: string): WorkerRunResult {
   return { ok: false, code, jobCompleted: false, sendAccepted: false, delivered: false };
@@ -43,8 +44,9 @@ export async function runInboundWorkerAnswer(input: {
   claimToken: string;
   companyId: string;
   locale?: "ar" | "en";
-}): Promise<WorkerRunResult> {
+},ports?:IntegrationPorts): Promise<WorkerRunResult> {
   if (!input.jobId?.trim() || !input.claimToken?.trim() || !input.companyId?.trim()) return blocked("INVALID_INPUT");
+  if(ports)return runPersistedInboundJob(input,ports);
   const entitlement = readCompanyEntitlement(input.companyId);
   if (!entitlementAllowsAutomation(entitlement)) {
     return {

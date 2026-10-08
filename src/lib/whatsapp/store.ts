@@ -57,7 +57,7 @@ export async function saveInbound(
 
   const row = asRecord(data);
   if (!row || row.ok !== true) throw new Error("save_inbound_failed");
-  if (typeof row.job_status !== "string" || !["pending", "claimed", "completed", "failed"].includes(row.job_status)) {
+  if (typeof row.job_status !== "string" || !["pending", "claimed", "completed", "failed", "retry_wait", "dead_letter", "review_required"].includes(row.job_status)) {
     throw new Error("save_inbound_job_status");
   }
 

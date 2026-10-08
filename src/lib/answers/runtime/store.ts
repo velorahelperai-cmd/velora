@@ -1,10 +1,18 @@
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
-export type RuntimeReserveInput = {id:string;executionId:string;attempt:number;companyId:string;actorId:string;sessionId:string;model:string;provider:string;reservedBaisa:number;pricingVersion:string;pricingSnapshot:unknown;usageMode:"admin_test"|"company_live"};
+import type { AnswerCitation } from "../types";
+export type RuntimeAttemptReserveInput = {id:string;attempt:number;model:string;provider:string;reservedBaisa:number;pricingVersion:string;pricingSnapshot:unknown;sourceCitations?:AnswerCitation[]};
+export type RuntimeReserveInput = RuntimeAttemptReserveInput & {executionId:string;companyId:string;actorId:string;sessionId:string;usageMode:"admin_test"|"company_live"};
+export type RuntimeSettleInput = {id:string;status:string;costUsd:number|null;costBaisa:number|null;usage:unknown;requestId?:string;responseId?:string;actualModelId?:string;responseText?:string;errorCode?:string;latencyMs:number};
+export interface ReservedRuntimeStore {
+ reserve(input:RuntimeAttemptReserveInput):Promise<{ok:boolean;code?:string}>;
+ start(id:string):Promise<boolean>;
+ settle(input:RuntimeSettleInput):Promise<boolean>;
+}
 export interface RealRuntimeStore {
  reserve(input:RuntimeReserveInput):Promise<{ok:boolean;code?:string}>;
  start(id:string):Promise<boolean>;
- settle(input:{id:string;status:string;costUsd:number|null;costBaisa:number|null;usage:unknown;requestId?:string;errorCode?:string;latencyMs:number}):Promise<boolean>;
+ settle(input:RuntimeSettleInput):Promise<boolean>;
 }
 export function createRealRuntimeStore():RealRuntimeStore {
  const client=createAdminClient();if(!client)throw Error("PERSISTENCE_UNAVAILABLE");
