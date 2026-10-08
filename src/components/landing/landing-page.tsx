@@ -37,7 +37,7 @@ export function LandingPage({
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [locale, setLocale] = useState<Locale>(initialLocale);
-  const [sector, setSector] = useState<SectorId>("restaurant");
+  const [sector, setSector] = useState<SectorId>("services");
   const [plan, setPlan] = useState<PlanId | null>(null);
   const [customQuestion, setCustomQuestion] = useState<string | null>(null);
   const [catalogueOpen, setCatalogueOpen] = useState(false);

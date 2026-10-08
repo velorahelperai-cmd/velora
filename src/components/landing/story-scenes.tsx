@@ -11,6 +11,7 @@ import {
   SourceCard,
   StoryTheaterPhone,
 } from "@/components/landing/conversation-stage";
+import { CinematicOnboarding } from "@/components/landing/cinematic-onboarding";
 
 /** Theme veil that fades in at the end of a chapter to hand off to the next scene's surface. */
 function Veil({ to }: { to: "light" | "dark" }) {
@@ -64,7 +65,6 @@ export function StoryScenes({
   const enquiry = byId(4);
   const handoff = byId(5);
   const overview = byId(6);
-  const setup = byId(7);
 
   return (
     <>
@@ -85,8 +85,8 @@ export function StoryScenes({
             { id: "5", question: handoff.example.question, answer: handoff.example.answer },
             {
               id: "9",
-              question: trial?.question ?? "",
-              answer: trial?.answer ?? "",
+              question: trial?.question || copy.scenes.find((s) => s.id === 9)!.example.question,
+              answer: trial?.answer || copy.scenes.find((s) => s.id === 9)!.example.answer,
               note: trial?.note,
             },
           ]}
@@ -239,41 +239,88 @@ export function StoryScenes({
 
       <section id={overview.anchor} data-scene="6" className="scene scene-light px-6 py-20 lg:px-12">
         <Veil to="dark" />
-        <div data-seq="stage" className="relative z-10 mx-auto grid max-w-[1380px] items-center gap-12 lg:grid-cols-2">
-          <article data-seq="panel" className="order-2 rounded-3xl border border-[#cbddd2] bg-white p-5 text-[#101b16] shadow-sm lg:p-6">
-            <h3 className="text-2xl font-bold">{copy.panelTitle}</h3>
-            <div className="mt-4 flex flex-wrap gap-2">
-              {copy.tabs.map((tab) => (
-                <span key={tab} data-seq="tab" className="rounded-full bg-[#e7f3eb] px-4 py-2 text-base font-medium">
-                  {tab}
-                </span>
-              ))}
+        <div data-seq="stage" className="relative z-10 mx-auto grid max-w-[1380px] items-center gap-10 lg:gap-14 lg:grid-cols-2">
+          <article data-seq="panel" className="order-2 rounded-3xl border border-[#cbddd2] bg-white p-5 sm:p-6 lg:p-7 text-[#101b16] shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h3 className="text-xl sm:text-2xl font-bold tracking-tight text-[#101b16]">
+                {copy.panelTitle}
+              </h3>
+              <span className="inline-flex items-center rounded-full border border-[#b6e2c9] bg-[#def5e7] px-3 py-1 text-xs font-semibold text-[#087443] shadow-xs">
+                {copy.illustrativeBadge}
+              </span>
             </div>
-            <ul className="mt-3 divide-y divide-[#e4eee8]">
-              {copy.rows.map((row, index) => (
-                <li
-                  key={row[0]}
-                  data-seq={index === 0 ? "row-active" : "row"}
-                  className={`grid gap-1 py-4 text-base ${index === 0 ? "rounded-2xl bg-[#def5e7] px-4" : ""}`}
-                >
-                  <span className="text-lg font-bold">{row[0]}</span>
-                  <span className="font-medium text-[#087443]">{row[1]}</span>
-                  {row[2] ? <span>{row[2]}</span> : null}
-                  {row[3] ? <span className="text-[#4f6258]">{row[3]}</span> : null}
-                </li>
-              ))}
+            <div className="mt-4 flex flex-wrap items-center gap-2" role="note" aria-label={copy.tabs[1]}>
+              {copy.tabs.map((tab, idx) => {
+                const isActive = idx === 1;
+                return (
+                  <span
+                    key={tab}
+                    data-seq="tab"
+                    className={`inline-flex items-center rounded-full px-3 py-1 text-xs sm:text-sm font-medium transition-colors ${
+                      isActive
+                        ? "bg-[#087443] text-white shadow-xs"
+                        : "bg-[#edf4ef] text-[#4f6258] border border-[#d6e4db]/60"
+                    }`}
+                  >
+                    {tab}
+                  </span>
+                );
+              })}
+            </div>
+            <ul className="mt-4 flex flex-col gap-2.5 sm:gap-3">
+              {copy.rows.map((row, index) => {
+                const isFirst = index === 0;
+                return (
+                  <li
+                    key={row[0]}
+                    data-seq={isFirst ? "row-active" : "row"}
+                    className={`group relative rounded-2xl border p-4 sm:p-4.5 transition-all duration-200 ${
+                      isFirst
+                        ? "border-[#a5dab9] bg-[#eefaf2] shadow-xs"
+                        : "border-[#e2ede5] bg-[#fafcfa] hover:border-[#cbddd2] hover:bg-white"
+                    }`}
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-base sm:text-lg font-bold text-[#101b16] tracking-tight">
+                        {row[0]}
+                      </span>
+                      <span
+                        className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold shrink-0 tracking-wide ${
+                          isFirst
+                            ? "bg-[#087443] text-white shadow-2xs"
+                            : "border border-[#cddcd2] bg-[#eaf1ec] text-[#2c4737]"
+                        }`}
+                      >
+                        {row[1]}
+                      </span>
+                    </div>
+                    {row[2] ? (
+                      <p
+                        className={`mt-2 text-sm leading-relaxed ${
+                          isFirst ? "font-medium text-[#1d4a34]" : "text-[#4f6258]"
+                        }`}
+                      >
+                        {row[2]}
+                      </p>
+                    ) : null}
+                  </li>
+                );
+              })}
             </ul>
           </article>
           <div className="order-1">
             <h2 className="scene-title text-[#101b16]">{overview.title}</h2>
-            <p className="scene-body mt-5 text-[#4f6258]">{overview.body}</p>
-            <ul className="mt-6 grid gap-2.5" data-seq="value-points">
+            <p className="scene-body mt-5 text-[#4f6258] text-base sm:text-lg leading-relaxed">{overview.body}</p>
+            <ul className="mt-8 grid gap-4" data-seq="value-points">
               {copy.valuePoints.map((point) => (
                 <li
                   key={point}
-                  className="flex items-start gap-2.5 text-base font-medium leading-7 text-[#101b16]"
+                  className="flex items-center gap-3.5 text-base sm:text-lg font-medium leading-relaxed text-[#101b16]"
                 >
-                  <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#087443]" aria-hidden="true" />
+                  <span
+                    className="h-2.5 w-2.5 shrink-0 rounded-full bg-[#087443] ring-4 ring-[#087443]/15"
+                    aria-hidden="true"
+                  />
                   <span>{point}</span>
                 </li>
               ))}
@@ -282,32 +329,7 @@ export function StoryScenes({
         </div>
       </section>
 
-      <section id={setup.anchor} data-scene="7" className="scene scene-dark px-6 py-20 lg:px-12">
-        <Veil to="dark" />
-        <div data-seq="stage" className="relative z-10 mx-auto grid max-w-[1380px] items-center gap-12 lg:grid-cols-2">
-          <ol className="order-2 grid gap-3">
-            {copy.steps.map((step, index) => (
-              <li
-                key={step.title}
-                data-seq="step"
-                className="flex items-start gap-4 rounded-2xl border border-white/15 bg-[#163026] px-4 py-4 text-[#f7fbf8]"
-              >
-                <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#38dc89] text-sm font-bold text-[#072317]">
-                  {index + 1}
-                </span>
-                <span>
-                  <span className="block text-lg font-bold">{step.title}</span>
-                  <span className="mt-1 block text-base leading-7 text-[#d5e4da]">{step.body}</span>
-                </span>
-              </li>
-            ))}
-          </ol>
-          <div className="order-1">
-            <h2 className="scene-title text-[#f7fbf8]">{setup.title}</h2>
-            <p className="scene-body mt-5 text-[#adbeaf]">{setup.body}</p>
-          </div>
-        </div>
-      </section>
+      <CinematicOnboarding copy={copy} />
     </>
   );
 }
