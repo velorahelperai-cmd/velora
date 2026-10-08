@@ -28,6 +28,6 @@ export function createRealRuntimeStore():RealRuntimeStore {
    return {ok:true};
   },
   async start(id){return await call("ai_start_attempt",{p_id:id})===true;},
-  async settle(i){return await call("ai_settle_attempt",{p_id:i.id,p_status:i.status,p_cost_usd:i.costUsd,p_cost_baisa:i.costBaisa,p_usage:i.usage,p_request_id:i.requestId??null,p_error_code:i.errorCode??null,p_latency_ms:i.latencyMs})===true;},
+  async settle(i){return await call("ai_settle_admin_attempt",{p_id:i.id,p_status:i.status,p_cost_usd:i.costUsd,p_cost_baisa:i.costBaisa,p_usage:i.usage,p_request_id:i.requestId??null,p_error_code:i.errorCode??null,p_latency_ms:i.latencyMs,p_response_id:i.responseId??null,p_actual_model_id:i.actualModelId??null})===true;},
  };
 }

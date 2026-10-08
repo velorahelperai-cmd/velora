@@ -23,7 +23,7 @@ create function pg_temp.knowledge_reserve(f jsonb,k uuid,a uuid,p_expected text 
 declare r jsonb;citations jsonb;begin
  r:=public.whatsapp_reserve_job_usage((f->>'job')::uuid,(f->>'claim')::uuid);
  if r->>'ok' is distinct from 'true' then raise exception 'Synthetic job capacity rejected: %',r;end if;
- insert into public.ai_budget_accounts(scope,company_id,limit_baisa,enabled) values('company_live',(f->>'company')::uuid,10,true) on conflict do nothing;
+ perform test_fixture.ai_budget((f->>'company')::uuid,10);
  select jsonb_build_array(jsonb_build_object('sourceId',id,'title',title,'contentVersion',content_version)) into citations from public.knowledge_sources where id=k;
  return public.ai_reserve_whatsapp_profile_attempt(a,(f->>'job')::uuid,(f->>'claim')::uuid,1,'gpt-6-luna','openai',1,
  'synthetic-v1','{"modelId":"gpt-6-luna","version":"synthetic-v1"}',citations,p_expected,coalesce(p_version,(f->>'plan_version')::uuid));
@@ -133,7 +133,7 @@ do $$ declare f jsonb:=pg_temp.knowledge_fixture();k uuid;a uuid:=gen_random_uui
  and answer_persona='noura' and answer_plan_version_id=(f->>'plan_version')::uuid)
  then raise exception 'Reservation did not bind exact canonical profile: %',r;end if;
  begin update public.ai_usage_ledger set answer_persona='dana' where id=a;raise exception 'Persona evidence was mutable';
- exception when check_violation then null;end;
+ exception when check_violation or insufficient_privilege then null;end;
  update public.knowledge_sources set usage_role='business_instructions' where id=k;
  if public.ai_start_whatsapp_attempt(a,(f->>'claim')::uuid) then raise exception 'Changed source purpose started paid model';end if;
 end; $$;

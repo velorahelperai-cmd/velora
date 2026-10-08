@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { lit, sql } from "./postgres.mjs";
 
-export async function fixture({ environment = "test", account = "74001", providerOrderId = "99001", expiresAt, companyId, deadlinePolicyApproved = false } = {}) {
+export async function fixture({ environment = "test", account = "74001", providerOrderId = "99001", expiresAt, companyId, deadlinePolicyApproved = false, purchasePurpose = "initial" } = {}) {
   const f = { userId: randomUUID(), companyId: companyId ?? randomUUID(), planId: randomUUID(), versionId: randomUUID(), orderId: randomUUID(), attemptId: randomUUID(), specialReference: `ACCEPTANCE_${randomUUID()}`, environment, account, providerOrderId };
   await sql(`
     INSERT INTO auth.users(id,email) VALUES (${lit(f.userId)},'synthetic@acceptance.invalid');
@@ -11,7 +11,7 @@ export async function fixture({ environment = "test", account = "74001", provide
     INSERT INTO public.billing_plan_versions(id,plan_id,version,amount_baisa,currency,period_days,period_unit,period_count,status)
       VALUES(${lit(f.versionId)},${lit(f.planId)},1,5000,'OMR',30,'day',30,'published');
     INSERT INTO public.billing_orders(id,company_id,plan_version_id,amount_baisa,currency,period_days,period_unit,period_count,provider,provider_account_ref,provider_environment,provider_amount,provider_amount_unit,special_reference,client_op_id,input_fingerprint,status,product_code,purchase_purpose,created_by${expiresAt ? ",expires_at" : ""}${deadlinePolicyApproved ? ",deadline_policy_approved" : ""})
-      VALUES(${lit(f.orderId)},${lit(f.companyId)},${lit(f.versionId)},5000,'OMR',30,'day',30,'paymob',${lit(account)},${lit(environment)},5000,'paymob_amount',${lit(f.specialReference)},${lit(randomUUID())},${lit(randomUUID())},'locked','velora_ai_staff','initial',${lit(f.userId)}${expiresAt ? `,${lit(expiresAt)}` : ""}${deadlinePolicyApproved ? ",true" : ""});
+      VALUES(${lit(f.orderId)},${lit(f.companyId)},${lit(f.versionId)},5000,'OMR',30,'day',30,'paymob',${lit(account)},${lit(environment)},5000,'paymob_amount',${lit(f.specialReference)},${lit(randomUUID())},${lit(randomUUID())},'locked','velora_ai_staff',${lit(purchasePurpose)},${lit(f.userId)}${expiresAt ? `,${lit(expiresAt)}` : ""}${deadlinePolicyApproved ? ",true" : ""});
     INSERT INTO public.billing_payment_attempts(id,order_id,company_id,status,provider_order_id)
       VALUES(${lit(f.attemptId)},${lit(f.orderId)},${lit(f.companyId)},'provider_submitted',${lit(providerOrderId)});
   `);

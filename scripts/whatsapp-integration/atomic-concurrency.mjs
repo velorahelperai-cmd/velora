@@ -8,7 +8,7 @@ async function contenders(cap, budget) {
   const f = json(await sql(`SET ROLE service_role;SELECT test_fixture.company(true,${cap});`));
   const conversation = crypto.randomUUID();
   await sql(`SET ROLE service_role;
-    INSERT INTO ai_budget_accounts(scope,company_id,limit_baisa,enabled) VALUES('company_live',${lit(f.company)}::uuid,${budget},true);
+    SELECT test_fixture.ai_budget(${lit(f.company)}::uuid,${budget});
     INSERT INTO whatsapp_conversations(id,company_id,phone_number_id,customer_wa_id,automation_allowed)
     SELECT ${lit(conversation)}::uuid,company_id,phone_number_id,${lit(`synthetic-atomic-${conversation}`)},true
     FROM whatsapp_conversations WHERE id=${lit(f.conversation)}::uuid;`);

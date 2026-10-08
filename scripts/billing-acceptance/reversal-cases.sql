@@ -23,13 +23,14 @@ begin
  'provider_order_id',n,'provider_amount',12345);
 end; $$;
 
-create function pg_temp.lifecycle_event(f jsonb, kind text default 'success') returns jsonb language plpgsql as $$
+create function pg_temp.lifecycle_event(f jsonb, kind text default 'success',patch jsonb default '{}') returns jsonb language plpgsql as $$
 declare eid uuid:=gen_random_uuid(); st text:=case when kind='success' then 'success' else 'other' end; summary jsonb;
 begin
  summary:=jsonb_build_object('provider_transaction_id',f->>'provider_transaction_id','provider_order_id',f->>'provider_order_id',
  'event_status',st,'hmac_verified',true,'amount_cents',(f->>'provider_amount')::bigint,'currency','OMR','integration_id',901,'signed_owner','900',
  'pending',false,'success',true,'error_occured',false,'is_auth',false,'is_capture',false,'is_voided',kind='voided',
  'is_refunded',kind='refunded','has_parent_transaction',false,'is_standalone_payment',true);
+ summary:=summary||patch;
  insert into public.billing_provider_events(id,payment_attempt_id,provider,provider_account_ref,provider_environment,
  provider_transaction_id,event_status,observation_key,company_id,amount_baisa_expected,currency_expected,raw_summary)
  values(eid,(f->>'payment_attempt_id')::uuid,'paymob','901',f->>'provider_environment',f->>'provider_transaction_id',st,kind,
@@ -52,8 +53,7 @@ do $$ declare f jsonb:=pg_temp.lifecycle_event(pg_temp.lifecycle_payment()); r j
 end; $$;
 select 'PASS|missing HMAC attestation rejected';
 
-do $$ declare f jsonb:=pg_temp.lifecycle_event(pg_temp.lifecycle_payment()); r jsonb; begin
- update public.billing_provider_events set raw_summary=raw_summary-'is_standalone_payment' where id=(f->>'provider_event_id')::uuid;
+do $$ declare f jsonb:=pg_temp.lifecycle_event(pg_temp.lifecycle_payment(),'success','{"is_standalone_payment":null}'); r jsonb; begin
  r:=public.billing_settle_paymob_hmac_verified(f);
  if coalesce((r->>'ok')::boolean,false) then raise exception 'incomplete lifecycle evidence accepted'; end if;
 end; $$;
@@ -109,8 +109,8 @@ do $$ declare f jsonb:=pg_temp.lifecycle_event(pg_temp.lifecycle_payment(),'void
 end; $$;
 select 'PASS|void has distinct review evidence';
 
-do $$ declare f jsonb:=pg_temp.lifecycle_event(pg_temp.lifecycle_payment(),'refunded'); r jsonb; begin
- update public.billing_provider_events set raw_summary=raw_summary||jsonb_build_object('has_parent_transaction',true,'is_standalone_payment',false,'amount_cents',100) where id=(f->>'provider_event_id')::uuid;
+do $$ declare f jsonb:=pg_temp.lifecycle_event(pg_temp.lifecycle_payment(),'refunded',
+ jsonb_build_object('has_parent_transaction',true,'is_standalone_payment',false,'amount_cents',100)); r jsonb; begin
  r:=public.billing_settle_paymob_hmac_verified(f);
  if r->>'outcome'<>'lifecycle_review' then raise exception 'partial/parent refund lost evidence'; end if;
  if not exists(select 1 from private.billing_lifecycle_reviews where provider_event_id=(f->>'provider_event_id')::uuid and reason='refund_extent_or_parent_unconfirmed') then raise exception 'unverified parent/extent treated as full refund'; end if;

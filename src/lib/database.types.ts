@@ -577,6 +577,7 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      ai_settle_admin_attempt: { Args: {p_id:string;p_status:string;p_cost_usd:number|null;p_cost_baisa:number|null;p_usage:Json;p_request_id:string|null;p_error_code:string|null;p_latency_ms:number;p_response_id:string|null;p_actual_model_id:string|null}; Returns:boolean };
       whatsapp_inbox_page: { Args: {p_company_id:string;p_limit?:number;p_before?:string|null}; Returns:Json };
       whatsapp_thread_page: { Args: {p_company_id:string;p_conversation_id:string;p_limit?:number;p_before?:string|null}; Returns:Json };
       whatsapp_mark_thread_read: { Args: {p_company_id:string;p_conversation_id:string;p_displayed_inbound_message_id:string}; Returns:Json };

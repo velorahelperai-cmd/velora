@@ -4,23 +4,24 @@ import { resolve } from "node:path";
 import { promisify } from "node:util";
 
 // Deliberately no remote URL, TCP port, cloud credential or persistent volume.
-export const CONTAINER = "velora-p1p2-acceptance-485d21e";
+export const CONTAINER = "velora-c1-security-a5b8d14";
 export const DB = "billing_acceptance";
 export const exec = promisify(execFile);
 export const lit = (value) => `'${String(value).replaceAll("'", "''")}'`;
-const psql = ["exec", "-i", "-u", "postgres", CONTAINER, "psql", "-X", "-U", "postgres", "-d", DB, "-Atq", "-v", "ON_ERROR_STOP=1"];
+const psql = ["exec", "-i", "-u", "postgres", CONTAINER, "psql", "-X", "-U", "supabase_admin", "-d", DB, "-Atq", "-v", "ON_ERROR_STOP=1"];
 
 export async function verifyLocalContainer() {
   const { stdout } = await exec("docker", ["inspect", CONTAINER]);
   const info = JSON.parse(stdout)[0];
-  if (info.Config.Labels?.["velora.task"] !== "p1-p2-security-acceptance" ||
-      info.HostConfig.NetworkMode !== "none" || !info.HostConfig.Tmpfs?.["/var/lib/postgresql/data"]) {
+  if (info.Config.Labels?.["velora.task"] !== "c1-security-foundation" ||
+      info.HostConfig.NetworkMode !== "none" || !info.HostConfig.Tmpfs?.["/var/lib/postgresql/data"] ||
+      Object.keys(info.HostConfig.PortBindings ?? {}).length || info.Mounts.some(m => m.Type !== "tmpfs")) {
     throw new Error("Refusing SQL outside this task's isolated ephemeral PostgreSQL container");
   }
   return info.Config.Image;
 }
 
-export function session(query, applicationName = "acceptance_query") {
+export function session(query, applicationName = "acceptance_query", { keepOpen = false } = {}) {
   // Each invocation is a separate real PostgreSQL backend. Concurrency tests
   // additionally assert distinct PIDs and observed pg_stat_activity lock waits.
   const child = spawn("docker", psql, { windowsHide: true, stdio: ["pipe", "pipe", "pipe"] });
@@ -31,7 +32,8 @@ export function session(query, applicationName = "acceptance_query") {
     child.on("error", fail);
     child.on("close", (code) => code === 0 ? ok(stdout.trim()) : fail(new Error(stderr || `psql exited ${code}`)));
   });
-  child.stdin.end(`SET application_name=${lit(applicationName)};\n${query}\n`);
+  const input = `SET application_name=${lit(applicationName)};\n${query}\n`;
+  if (keepOpen) child.stdin.write(input); else child.stdin.end(input);
   return { child, done };
 }
 
@@ -52,8 +54,8 @@ export function billingMigrations() {
 }
 export async function bootstrap({ preP1Fixture, postP1Fixture, includeForward = true } = {}) {
   await verifyLocalContainer();
-  await exec("docker", ["exec", "-u", "postgres", CONTAINER, "psql", "-X", "-U", "postgres", "-d", "postgres", "-v", "ON_ERROR_STOP=1", "-c", `DROP DATABASE IF EXISTS ${DB} WITH (FORCE);`]);
-  await exec("docker", ["exec", "-u", "postgres", CONTAINER, "psql", "-X", "-U", "postgres", "-d", "postgres", "-v", "ON_ERROR_STOP=1", "-c", `CREATE DATABASE ${DB};`]);
+  await exec("docker", ["exec", "-u", "postgres", CONTAINER, "psql", "-X", "-U", "supabase_admin", "-d", "postgres", "-v", "ON_ERROR_STOP=1", "-c", `DROP DATABASE IF EXISTS ${DB} WITH (FORCE);`]);
+  await exec("docker", ["exec", "-u", "postgres", CONTAINER, "psql", "-X", "-U", "supabase_admin", "-d", "postgres", "-v", "ON_ERROR_STOP=1", "-c", `CREATE DATABASE ${DB};`]);
   await file("scripts/billing-acceptance/supabase-dependency-stubs.sql");
   const applied = [];
   for (const name of billingMigrations()) {

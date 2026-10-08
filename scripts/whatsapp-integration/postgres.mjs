@@ -2,19 +2,20 @@ import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
-export const CONTAINER="velora-unified-inbox-7c7c17d", DB="whatsapp_integration";
+export const CONTAINER="velora-c1-security-a5b8d14", DB="whatsapp_integration";
 const exec=promisify(execFile);
 export const lit=v=>`'${String(v).replaceAll("'","''")}'`;
 export async function verify(){
  const {stdout}=await exec("docker",["inspect",CONTAINER]); const c=JSON.parse(stdout)[0];
- if(c.Config.Labels?.["velora.task"]!=="unified-inbox-backend"||c.HostConfig.NetworkMode!=="none"||!c.HostConfig.Tmpfs?.["/var/lib/postgresql/data"]||c.HostConfig.PortBindings&&Object.keys(c.HostConfig.PortBindings).length||c.Mounts.some(m=>m.Type!=="tmpfs"))throw Error("UNSAFE_DATABASE_TARGET");
+ if(c.Config.Labels?.["velora.task"]!=="c1-security-foundation"||c.HostConfig.NetworkMode!=="none"||!c.HostConfig.Tmpfs?.["/var/lib/postgresql/data"]||c.HostConfig.PortBindings&&Object.keys(c.HostConfig.PortBindings).length||c.Mounts.some(m=>m.Type!=="tmpfs"))throw Error("UNSAFE_DATABASE_TARGET");
  return c.Config.Image;
 }
-export function session(query,name="wa_integration_test"){
+export function session(query,name="wa_integration_test",{keepOpen=false}={}){
  const child=spawn("docker",["exec","-i","-u","postgres",CONTAINER,"psql","-X","-U","supabase_admin","-d",DB,"-Atq","-v","ON_ERROR_STOP=1"],{windowsHide:true,stdio:["pipe","pipe","pipe"]});
  let stdout="",stderr="";child.stdout.on("data",x=>stdout+=x);child.stderr.on("data",x=>stderr+=x);
  const done=new Promise((ok,fail)=>{child.on("error",fail);child.on("close",code=>code===0?ok(stdout.trim()):fail(Error(stderr||`psql ${code}`)));});
- child.stdin.end(`SET application_name=${lit(name)};\n${query}\n`);return {child,done};
+ const input=`SET application_name=${lit(name)};\n${query}\n`;
+ if(keepOpen)child.stdin.write(input);else child.stdin.end(input);return {child,done};
 }
 export async function sql(query,name){await verify();return session(query,name).done;}
 export async function file(path){return sql(readFileSync(resolve(path),"utf8").replace(/^\uFEFF/,""));}

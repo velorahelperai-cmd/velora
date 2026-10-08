@@ -1,5 +1,32 @@
 -- TEST ONLY. Synthetic tenants, provider IDs, prices and collections; never cloud seeds.
 create schema if not exists test_fixture;
+-- Privileged fixture provisioning only: these helpers are never production SQL.
+-- Actual accounting calls below still run with SET ROLE service_role.
+create or replace function test_fixture.ai_budget(p_company uuid,p_limit numeric,p_id uuid default gen_random_uuid())
+returns uuid language plpgsql security definer set search_path='' as $$
+declare result uuid;begin
+ insert into public.ai_budget_accounts(id,scope,company_id,limit_baisa,enabled)
+ values(p_id,'company_live',p_company,p_limit,true) on conflict do nothing;
+ select id into result from public.ai_budget_accounts where company_id=p_company and period_start=date_trunc('month',clock_timestamp())::date;
+ return result;end;$$;
+create or replace function test_fixture.ai_budget_change(p_id uuid,p_company uuid,p_enabled boolean,p_held numeric default null)
+returns void language sql security definer set search_path='' as $$
+ update public.ai_budget_accounts set enabled=p_enabled,held_baisa=coalesce(p_held,held_baisa)
+ where (p_id is not null and id=p_id) or (p_company is not null and company_id=p_company);
+$$;
+revoke all on function test_fixture.ai_budget(uuid,numeric,uuid),test_fixture.ai_budget_change(uuid,uuid,boolean,numeric) from public,anon,authenticated;
+grant execute on function test_fixture.ai_budget(uuid,numeric,uuid),test_fixture.ai_budget_change(uuid,uuid,boolean,numeric) to service_role;
+create or replace function test_fixture.ai_admin(p_active boolean default true) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare actor uuid;cid uuid:=gen_random_uuid();sid uuid:=gen_random_uuid();begin
+ select user_id into actor from public.platform_admins where role='owner' and status='active' order by user_id limit 1;
+ if actor is null then raise exception 'Synthetic bootstrap owner missing';end if;
+ insert into public.companies(id,display_name,status,created_by) values(cid,'Synthetic C1 administrative tenant','active',actor);
+ insert into auth.sessions(id,user_id) values(sid,actor);
+ if p_active then insert into private.app_session_activity(session_id,user_id,last_activity_at) values(sid,actor,clock_timestamp());end if;
+ return jsonb_build_object('company',cid,'actor',actor,'session',sid);end;$$;
+revoke all on function test_fixture.ai_admin(boolean) from public,anon,authenticated;
+grant execute on function test_fixture.ai_admin(boolean) to service_role;
 create or replace function test_fixture.company(p_paid boolean default true,p_cap integer default 2)
 returns jsonb language plpgsql as $$
 declare u uuid:=gen_random_uuid();c uuid:=gen_random_uuid();v uuid:=gen_random_uuid();p uuid:=gen_random_uuid();
@@ -70,7 +97,7 @@ end;$$;
 grant usage on schema test_fixture to service_role;grant execute on all functions in schema test_fixture to service_role;
 create or replace function test_fixture.draft(f jsonb,j uuid,token uuid) returns uuid language plpgsql as $$
 declare a uuid:=gen_random_uuid();r jsonb;citations jsonb:=jsonb_build_array(jsonb_build_object('sourceId',f->>'knowledge','title','Synthetic knowledge','contentVersion',1));begin
- insert into ai_budget_accounts(scope,company_id,limit_baisa,enabled) values('company_live',(f->>'company')::uuid,10,true) on conflict do nothing;
+ perform test_fixture.ai_budget((f->>'company')::uuid,10);
  r:=ai_reserve_whatsapp_attempt(a,j,token,1,'gpt-6-luna','openai',1,'synthetic-v1','{"modelId":"gpt-6-luna","version":"synthetic-v1"}',citations);
  if r->>'ok'<>'true' or not ai_start_whatsapp_attempt(a,token) then raise exception 'Synthetic AI reservation/start rejected: %',r;end if;
  if not ai_settle_whatsapp_attempt(a,token,'success',0.0026008,1,

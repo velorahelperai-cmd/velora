@@ -64,7 +64,7 @@ begin
  end if;
  update public.whatsapp_inbound_jobs set expected_automation_generation=0,usage_status='reserved',usage_subscription_id=sub,
   usage_period_start=date_trunc('month',clock_timestamp() at time zone 'Asia/Muscat') at time zone 'Asia/Muscat' where id=job;
- insert into public.ai_budget_accounts(id,scope,company_id,limit_baisa,enabled) values(bid,'company_live',cid,10,true);
+ perform test_fixture.ai_budget(cid,10,bid);
  return jsonb_build_object('job',job,'claim',token,'company',cid,'conversation',conv,'subscription',sub,'budget',bid,'knowledge',knowledge_id);
 end; $$;
 create function pg_temp.ai_reserve(f jsonb, p_id uuid, p_attempt integer default 1) returns jsonb language sql as $$
@@ -113,10 +113,10 @@ end; $$;
 select 'PASS|D4 missing or stale message quota cannot reserve AI cost';
 
 do $$ declare f jsonb:=pg_temp.ai_fixture(); r jsonb; begin
- update public.ai_budget_accounts set enabled=false where id=(f->>'budget')::uuid;
+ perform test_fixture.ai_budget_change((f->>'budget')::uuid,null,false);
  r:=pg_temp.ai_reserve(f,gen_random_uuid());
  if r->>'code'<>'BUDGET_DISABLED' then raise exception 'disabled budget authorized: %',r; end if;
- update public.ai_budget_accounts set enabled=true,held_baisa=6 where id=(f->>'budget')::uuid;
+ perform test_fixture.ai_budget_change((f->>'budget')::uuid,null,true,6);
  r:=pg_temp.ai_reserve(f,gen_random_uuid());
  if r->>'code'<>'BUDGET_EXCEEDED' then raise exception 'cap oversubscribed: %',r; end if;
 end; $$;
@@ -136,7 +136,7 @@ do $$ declare f jsonb:=pg_temp.ai_fixture(); attempt_id uuid:=gen_random_uuid();
  begin
   update public.ai_usage_ledger set worker_claim_token=gen_random_uuid() where id=attempt_id;
   raise exception 'original reservation capability changed';
- exception when check_violation then null; end;
+ exception when check_violation or insufficient_privilege then null; end;
  if (select held_baisa from public.ai_budget_accounts where id=(f->>'budget')::uuid)<>5 then raise exception 'duplicate charged hold'; end if;
 end; $$;
 select 'PASS|D4 original job binding prevents duplicate and concurrent paid attempts';
@@ -239,23 +239,21 @@ end; $$;
 select 'PASS|D4 recovered successful draft cannot borrow newly approved citation versions';
 reset role;
 
-do $$ declare cid uuid:=gen_random_uuid(); owner_id uuid; session_id uuid:=gen_random_uuid();
+set local role service_role;
+do $$ declare f jsonb:=test_fixture.ai_admin(false);cid uuid; owner_id uuid; session_id uuid;
  attempt_id uuid:=gen_random_uuid(); r jsonb; begin
- select user_id into owner_id from public.platform_admins where role='owner' and status='active';
- if owner_id is null then raise exception 'synthetic bootstrap owner missing'; end if;
- insert into public.companies(id,display_name,status,created_by) values(cid,'Synthetic administrative trial tenant','active',owner_id);
- insert into auth.sessions(id,user_id) values(session_id,owner_id);
+ cid:=(f->>'company')::uuid;owner_id:=(f->>'actor')::uuid;session_id:=(f->>'session')::uuid;
  begin
   perform public.ai_reserve_attempt(attempt_id,gen_random_uuid(),1,cid,owner_id,session_id,
-   'gpt-6-luna','openai',1000,'fixture','{}','admin_test');
+   'gpt-6-luna','openai',1000,'fixture','{"modelId":"gpt-6-luna","version":"fixture"}','admin_test');
   raise exception 'owner with no active session reserved';
  exception when others then if sqlerrm<>'APP_SESSION_EXPIRED' then raise; end if; end;
- insert into private.app_session_activity(session_id,user_id,last_activity_at) values(session_id,owner_id,clock_timestamp());
+ f:=test_fixture.ai_admin();cid:=(f->>'company')::uuid;owner_id:=(f->>'actor')::uuid;session_id:=(f->>'session')::uuid;
  r:=public.ai_reserve_attempt(attempt_id,gen_random_uuid(),1,cid,owner_id,session_id,
-   'gpt-6-luna','openai',1000,'fixture','{}','admin_test');
+   'gpt-6-luna','openai',1000,'fixture','{"modelId":"gpt-6-luna","version":"fixture"}','admin_test');
  if r->>'ok'<>'true' then raise exception 'authorized administrative path regressed: %',r; end if;
  r:=public.ai_reserve_attempt(gen_random_uuid(),gen_random_uuid(),1,cid,owner_id,session_id,
-   'gpt-6.1-sol','openai',1,'fixture','{}','admin_test');
+   'gpt-6.1-sol','openai',1,'fixture','{"modelId":"gpt-6.1-sol","version":"fixture"}','admin_test');
  if r->>'code'<>'BUDGET_EXCEEDED' then raise exception 'global administrative budget exceeded: %',r; end if;
  if not public.ai_settle_attempt(attempt_id,'rejected',0,0,'{}',null,'SYNTHETIC_NO_DISPATCH',0)
  then raise exception 'administrative zero cost settlement regressed'; end if;
@@ -273,7 +271,7 @@ do $$ begin
  begin
   update public.ai_budget_accounts set limit_baisa=1001 where scope='admin_test';
   raise exception 'administrative lifetime cap raised';
- exception when check_violation then null; end;
+ exception when check_violation or insufficient_privilege then null; end;
 end; $$;
 select 'PASS|D4 browser roles cannot access worker capabilities and lifetime admin cap remains 1 OMR';
 rollback;

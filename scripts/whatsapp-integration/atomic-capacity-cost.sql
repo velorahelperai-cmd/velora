@@ -13,7 +13,7 @@ declare f jsonb:=test_fixture.company(true,p_cap);j uuid;r jsonb;c public.whatsa
  end if;
  r:=public.claim_whatsapp_inbound_job(j,120);
  if r->>'ok' is distinct from 'true' then raise exception 'Synthetic atomic claim rejected: %',r;end if;
- insert into public.ai_budget_accounts(scope,company_id,limit_baisa,enabled) values('company_live',(f->>'company')::uuid,p_budget,true);
+ perform test_fixture.ai_budget((f->>'company')::uuid,p_budget);
  return f||jsonb_build_object('job',j,'claim',r->>'claim_token');
 end; $$;
 create function pg_temp.atomic_reserve(f jsonb,a uuid,p_attempt integer default 1,p_cost numeric default 1,
@@ -49,7 +49,7 @@ end; $$;
 select 'PASS|Atomic profile denial leaves no new message capacity or AI reservation';
 
 do $$ declare f jsonb:=pg_temp.atomic_fixture();r jsonb;begin
- update public.ai_budget_accounts set enabled=false where company_id=(f->>'company')::uuid;
+ perform test_fixture.ai_budget_change(null,(f->>'company')::uuid,false);
  r:=pg_temp.atomic_reserve(f,gen_random_uuid());
  if r->>'code' is distinct from 'BUDGET_DISABLED' then raise exception 'Disabled budget denial missing: %',r;end if;
  perform pg_temp.assert_no_atomic_reservation(f);

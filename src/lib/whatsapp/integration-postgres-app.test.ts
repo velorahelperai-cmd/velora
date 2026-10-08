@@ -13,7 +13,7 @@ describe.skipIf(!enabled)("real SQL-backed P3/P4 application integration",()=>{
  async function prepare(options:{paid?:boolean;cap?:number}={}){await verify();vi.stubEnv("WHATSAPP_WORKER_ENABLED","true");vi.stubEnv("WHATSAPP_ALLOW_EXTERNAL_SEND","true");vi.stubEnv("WHATSAPP_ROUTING_MODE","tenant_registry");
  const f=JSON.parse(await sql(`SET ROLE service_role;SELECT test_fixture.company(${options.paid??true},${options.cap??2});`));const j=await sql(`SET ROLE service_role;SELECT test_fixture.job(${lit(JSON.stringify(f))}::jsonb);`);
  const c=JSON.parse(await sql(`SET ROLE service_role;SELECT claim_whatsapp_inbound_job(${lit(j)}::uuid,120);`));
- await sql(`SET ROLE service_role;INSERT INTO ai_budget_accounts(scope,company_id,limit_baisa,enabled)VALUES('company_live',${lit(f.company)}::uuid,10,true);`);
+ await sql(`SET ROLE service_role;SELECT test_fixture.ai_budget(${lit(f.company)}::uuid,10);`);
  state.client=databaseAdapter();const input={jobId:j,claimToken:c.claim_token,companyId:f.company};const ports=createIntegrationPorts(input);
  // Actual local Vault/RPC supplies the synthetic tenant credential. Only providers are mocked.
  state.send.mockImplementation(async()=>({ok:true,waMessageId:`synthetic-app-${crypto.randomUUID()}`}));

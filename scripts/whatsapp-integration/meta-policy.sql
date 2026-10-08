@@ -130,7 +130,7 @@ select 'PASS|Durable delivery wrapper rejects caller company mismatch';
 do $$ declare f jsonb:=test_fixture.meta_company();r jsonb;j uuid;token uuid;a uuid:=gen_random_uuid();cit jsonb;begin
  j:=test_fixture.job(f);r:=public.claim_whatsapp_inbound_job(j,120);token:=(r->>'claim_token')::uuid;
  perform public.whatsapp_reserve_job_usage(j,token);
- insert into public.ai_budget_accounts(scope,company_id,limit_baisa,enabled) values('company_live',(f->>'company')::uuid,10,true) on conflict do nothing;
+ perform test_fixture.ai_budget((f->>'company')::uuid,10);
  cit:=jsonb_build_array(jsonb_build_object('sourceId',f->>'knowledge','title','Synthetic knowledge','contentVersion',1));
  r:=public.ai_reserve_whatsapp_attempt(a,j,token,1,'gpt-6-luna','openai',1,'synthetic-v1',
    '{"modelId":"gpt-6-luna","version":"synthetic-v1"}',cit);
@@ -144,7 +144,7 @@ select 'PASS|AI start rechecks current window and cannot run a previously reserv
 do $$ declare f jsonb:=test_fixture.meta_company();r jsonb;j uuid;token uuid;a uuid:=gen_random_uuid();cit jsonb;begin
  j:=test_fixture.job(f);r:=public.claim_whatsapp_inbound_job(j,120);token:=(r->>'claim_token')::uuid;
  perform public.whatsapp_reserve_job_usage(j,token);
- insert into public.ai_budget_accounts(scope,company_id,limit_baisa,enabled) values('company_live',(f->>'company')::uuid,10,true) on conflict do nothing;
+ perform test_fixture.ai_budget((f->>'company')::uuid,10);
  cit:=jsonb_build_array(jsonb_build_object('sourceId',f->>'knowledge','title','Synthetic knowledge','contentVersion',1));
  r:=public.ai_reserve_whatsapp_attempt(a,j,token,1,'gpt-6-luna','openai',1,'synthetic-v1',
    '{"modelId":"gpt-6-luna","version":"synthetic-v1"}',cit);

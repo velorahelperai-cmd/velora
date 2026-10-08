@@ -1,14 +1,23 @@
 import {sql,rows,session,lit} from "./postgres.mjs";
 const assert=(ok,message)=>{if(!ok)throw Error(message);};
 const json=output=>JSON.parse(output.split("\n").find(x=>x.startsWith("{")));
-async function wait(name,predicate){for(let n=0;n<100;n++){const r=await rows(`SELECT pid,wait_event_type,wait_event FROM pg_stat_activity WHERE application_name=${lit(name)}`);if(r[0]&&predicate(r[0]))return r[0];await new Promise(r=>setTimeout(r,40));}throw Error("LOCK_EVIDENCE_TIMEOUT");}
+async function wait(name,predicate){for(let n=0;n<100;n++){const r=await rows(`SELECT pid,state,wait_event_type,wait_event FROM pg_stat_activity WHERE application_name=${lit(name)}`);if(r[0]&&predicate(r[0]))return r[0];await new Promise(r=>setTimeout(r,40));}throw Error("LOCK_EVIDENCE_TIMEOUT");}
 export async function overlap(first,second){
  const id=crypto.randomUUID().slice(0,8),an=`wa_a_${id}`,bn=`wa_b_${id}`;
- const a=session(`BEGIN;SET LOCAL ROLE service_role;${first};SELECT pg_sleep(3);COMMIT;`,an);
- const pa=await wait(an,x=>x.wait_event==="PgSleep");const b=session(`SET ROLE service_role;${second};`,bn);
- const pb=await wait(bn,x=>x.wait_event_type==="Lock");assert(pa.pid!==pb.pid,"not independent PostgreSQL sessions");
- console.log("REAL_PG_LOCK",JSON.stringify({first:pa.pid,second:pb.pid,wait:pb.wait_event_type}));
- return Promise.all([a.done,b.done]);
+ // Keep the first transaction open until the second backend's real lock wait
+ // has been observed. A fixed PgSleep window can disappear under build load.
+ const a=session(`BEGIN;SET LOCAL ROLE service_role;${first};`,an,{keepOpen:true});a.done.catch(()=>{});
+ let b;
+ try{
+  const pa=await wait(an,x=>x.state==="idle in transaction"&&x.wait_event==="ClientRead");
+  b=session(`SET ROLE service_role;${second};`,bn);b.done.catch(()=>{});
+  const pb=await wait(bn,x=>x.wait_event_type==="Lock");assert(pa.pid!==pb.pid,"not independent PostgreSQL sessions");
+  console.log("REAL_PG_LOCK",JSON.stringify({first:pa.pid,second:pb.pid,wait:pb.wait_event_type}));
+  a.child.stdin.end("COMMIT;\n");return await Promise.all([a.done,b.done]);
+ }catch(error){
+  if(!a.child.stdin.destroyed)a.child.stdin.end("ROLLBACK;\n");
+  await Promise.allSettled([a.done,...(b?[b.done]:[])]);throw error;
+ }
 }
 async function tenant(cap=2){return json(await sql(`SET ROLE service_role;SELECT test_fixture.company(true,${cap});`));}
 async function job(f){return (await sql(`SET ROLE service_role;SELECT test_fixture.job(${lit(JSON.stringify(f))}::jsonb);`)).trim();}
@@ -37,7 +46,7 @@ export async function runConcurrency(){
  const f=await tenant(2),f2=await secondConversation(f),a=await job(f),b=await job(f2);
  const ca=json(await sql(`SET ROLE service_role;${claim(a)};`)),cb=json(await sql(`SET ROLE service_role;${claim(b)};`));
  for(const [j,c] of [[a,ca],[b,cb]])await sql(`SET ROLE service_role;SELECT whatsapp_reserve_job_usage(${lit(j)}::uuid,${lit(c.claim_token)}::uuid);`);
- await sql(`SET ROLE service_role;INSERT INTO ai_budget_accounts(scope,company_id,limit_baisa,enabled) VALUES('company_live',${lit(f.company)}::uuid,10,true);`);
+ await sql(`SET ROLE service_role;SELECT test_fixture.ai_budget(${lit(f.company)}::uuid,10);`);
  const citations=lit(JSON.stringify([{sourceId:f.knowledge,title:"Synthetic knowledge",contentVersion:1}]));
  const reserve=(j,c)=>`SELECT ai_reserve_whatsapp_attempt(${lit(crypto.randomUUID())}::uuid,${lit(j)}::uuid,${lit(c.claim_token)}::uuid,1,'gpt-6-luna','openai',6,'synthetic-v1','{"modelId":"gpt-6-luna","version":"synthetic-v1"}',${citations}::jsonb)`;
  const [x,y]=await overlap(reserve(a,ca),reserve(b,cb));assert(json(x).ok===true&&json(y).code==="BUDGET_EXCEEDED","AI budget overspent");
