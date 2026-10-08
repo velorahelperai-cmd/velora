@@ -2,9 +2,25 @@
 
 /* Available globally; applied only by the administration theme boundary. */
 @font-face {
-  font-family: "Cairo";
-  src: url("/fonts/velora/Cairo-admin-v1.woff2") format("woff2");
-  font-weight: 200 1000;
+  font-family: "Tajawal";
+  src: url("/fonts/velora/Tajawal-admin-Regular-v1.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Tajawal";
+  src: url("/fonts/velora/Tajawal-admin-Medium-v1.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Tajawal";
+  src: url("/fonts/velora/Tajawal-admin-Bold-v1.woff2") format("woff2");
+  font-weight: 700;
   font-style: normal;
   font-display: swap;
 }

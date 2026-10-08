@@ -113,7 +113,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
           icon: IconRocket,
           active: false,
           pill: isRtl ? "قريباً" : "Soon",
-          pillColor: "bg-amber-500/15 text-amber-300 border-amber-500/30",
+          pillColor: "bg-[#EFE2CF] text-[#6B4932] border-[#D7C1A5]",
         },
       ],
     },
@@ -158,7 +158,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
       {/* 📱 Mobile Drawer Backdrop */}
       {mobileOpen && (
         <div
-          className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm lg:hidden transition-opacity"
+          className="fixed inset-0 z-40 bg-[#6B4932]/25 backdrop-blur-sm lg:hidden transition-opacity"
           onClick={() => setMobileOpen(false)}
         />
       )}
@@ -182,7 +182,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
               href="/admin"
               className="flex items-center gap-3 group focus:outline-none focus-visible:ring-2 focus-visible:ring-[#6B4932] rounded-xl p-1"
             >
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-[#6B4932] to-[#765238] font-bold text-white shadow-md shadow-[#6B4932]/20">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-[#D1AE7C] to-[#E4D3B8] font-bold text-[#18130F] shadow-md shadow-[#6B4932]/20">
                 V
               </span>
               {!collapsed && (
@@ -237,14 +237,14 @@ export function AdminShell({ children }: { children: ReactNode }) {
                         title={collapsed ? item.label : undefined}
                         className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all group ${
                           item.active
-                            ? "bg-[#6B4932] text-white font-bold shadow-sm shadow-[#6B4932]/20"
+                            ? "bg-[#D1AE7C] text-[#18130F] font-bold shadow-sm shadow-[#6B4932]/20"
                             : "text-[#18130F] hover:text-[#18130F] hover:bg-[#D7C1A5] font-medium"
                         } ${collapsed ? "justify-center px-0" : ""}`}
                       >
                         <Icon
                           className={`shrink-0 transition-colors ${
                             item.active
-                              ? "text-white"
+                              ? "text-[#18130F]"
                               : "text-[#6B4932] group-hover:text-[#18130F]"
                           }`}
                         />
@@ -276,12 +276,11 @@ export function AdminShell({ children }: { children: ReactNode }) {
                 <div className="flex items-center justify-between text-xs">
                   <span className="flex items-center gap-1.5 text-[#6B4932] font-bold">
                     <span className="h-2 w-2 rounded-full bg-[#6B4932] animate-pulse" />
-                    {isRtl ? "نظام فيلورا مستقر" : "System Operational"}
+                    {isRtl ? "إدارة منصة فيلورا" : "Velora administration"}
                   </span>
-                  <span className="text-[10px] text-[#615244] font-semibold">99.9%</span>
                 </div>
                 <p className="mt-1 text-[11px] text-[#615244]">
-                  {isRtl ? "3 نماذج AI متصلة بالراوتر" : "3 Models in Multi-Router"}
+                  {isRtl ? "عرض البيانات وسجل الاستهلاك" : "Data and usage ledger"}
                 </p>
               </div>
             )}
