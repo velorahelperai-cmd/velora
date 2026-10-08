@@ -1,8 +1,11 @@
-import { GoogleGenAI } from "@google/genai";
+import "server-only";
+import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import { isLiveAnsweringEnabled } from "@/lib/answers/guards";
 import { getSecureProviderKey } from "@/lib/answers/config/env";
 import { calculateTokensCostDetailed } from "@/lib/answers/config/pricing";
 import { buildAnswerSystemPrompt, formatAnswerUserPrompt } from "@/lib/answers/adapters/prompt";
+import { providerRequestLimits, validTokenCount } from "./request-limits";
+import { matchesRequestedModel } from "./response-identity";
 import type {
   AnswerProvider,
   AnswerProviderRequest,
@@ -13,12 +16,6 @@ import type {
 export interface GeminiAdapterOptions {
   client?: GoogleGenAI;
   apiKey?: string;
-}
-
-function sanitizeErrorMessage(msg: string): string {
-  // Redact any accidental Google API key leaks (AIza... or similar patterns)
-  return msg.replace(/AIza[a-zA-Z0-9_-]{35}/g, "[REDACTED_API_KEY]")
-    .replace(/AQ\.[a-zA-Z0-9_-]{30,}/g, "[REDACTED_API_KEY]");
 }
 
 export class GeminiAnswerAdapter implements AnswerProvider {
@@ -34,7 +31,7 @@ export class GeminiAnswerAdapter implements AnswerProvider {
     } else {
       const apiKey = options.apiKey || getSecureProviderKey("google");
       if (apiKey) {
-        this.client = new GoogleGenAI({ apiKey });
+        this.client = new GoogleGenAI({ apiKey, httpOptions: { timeout: 30_000, retryOptions: { attempts: 1 } } });
       }
     }
   }
@@ -44,7 +41,13 @@ export class GeminiAnswerAdapter implements AnswerProvider {
   }
 
   public async complete(input: AnswerProviderRequest): Promise<AnswerResult> {
+    if (input.forceModelId && input.forceModelId !== this.modelId) {
+      return { ok: false, code: "INVALID_INPUT", message: "Requested model is not supported by the Gemini adapter.", providerAttempted: false, retrySafe: false };
+    }
     const contextChars = input.chunks.reduce((sum, c) => sum + c.text.length, 0);
+    const limits = providerRequestLimits(input);
+    if (!limits) return { ok: false, code: "INVALID_INPUT", message: "Invalid provider output or timeout limit.", modelId: this.modelId, provider: "google", providerAttempted: false, retrySafe: false };
+    if (input.signal?.aborted) return { ok: false, code: "UNAVAILABLE", message: "Request was aborted before dispatch.", modelId: this.modelId, provider: "google", providerAttempted: false, retrySafe: false };
 
     // Dry-run mode for safe testing without making live API calls or incurring costs
     if (input.dryRun) {
@@ -88,6 +91,7 @@ export class GeminiAnswerAdapter implements AnswerProvider {
         ok: false,
         code: "NEEDS_SETUP",
         message: "Live network provider calls are disabled during Phase 1.",
+        modelId: this.modelId, provider: "google", providerAttempted: false, retrySafe: false,
       };
     }
 
@@ -96,9 +100,11 @@ export class GeminiAnswerAdapter implements AnswerProvider {
         ok: false,
         code: "NEEDS_SETUP",
         message: "Gemini client is not configured with an API key",
+        modelId: this.modelId, provider: "google", providerAttempted: false, retrySafe: false,
       };
     }
 
+    const startedAt = Date.now();
     try {
       const systemPrompt = buildAnswerSystemPrompt(input.locale);
       const userContent = formatAnswerUserPrompt(input.question, input.chunks, input.locale);
@@ -108,31 +114,49 @@ export class GeminiAnswerAdapter implements AnswerProvider {
         contents: userContent,
         config: {
           systemInstruction: systemPrompt,
-          temperature: 0.4,
+          // Gemini 3.8 supports low/medium/high; sampling overrides are deprecated.
+          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+          maxOutputTokens: limits.maxOutputTokens,
+          abortSignal: input.signal,
+          httpOptions: { timeout: limits.timeoutMs, retryOptions: { attempts: 1 } },
         },
       });
 
       const text = response.text?.trim() || "";
-      if (!text) {
-        return {
-          ok: false,
-          code: "UNAVAILABLE",
-          message: "Empty response received from Gemini model",
-        };
-      }
-
-      const promptTokens = response.usageMetadata?.promptTokenCount ?? 0;
-      const completionTokens = response.usageMetadata?.candidatesTokenCount ?? 0;
+      const promptTokens = response.usageMetadata?.promptTokenCount;
+      const candidateTokens = response.usageMetadata?.candidatesTokenCount;
+      const reasoningTokens = response.usageMetadata?.thoughtsTokenCount ?? 0;
       const cachedTokens = response.usageMetadata?.cachedContentTokenCount ?? 0;
-      const totalTokens =
-        response.usageMetadata?.totalTokenCount ?? (promptTokens + completionTokens);
+      const requestId = response.responseId;
+      if (!validTokenCount(promptTokens) || !validTokenCount(candidateTokens) || !validTokenCount(reasoningTokens) || !validTokenCount(cachedTokens) || cachedTokens > promptTokens || (response.usageMetadata?.toolUsePromptTokenCount ?? 0) !== 0) {
+        return { ok: false, code: "UNAVAILABLE", message: "Gemini usage could not be verified.", modelId: this.modelId, provider: "google", requestId, latencyMs: Date.now() - startedAt, providerAttempted: true, retrySafe: false };
+      }
+      // Gemini thoughts are separate from candidates; normalize to total billed output.
+      const completionTokens = candidateTokens + reasoningTokens;
+      const totalTokens = promptTokens + completionTokens;
 
       const detailedCost = calculateTokensCostDetailed(this.modelId, {
         promptTokens,
         completionTokens,
         cachedTokens,
+        reasoningTokens,
       });
-
+      const usage = {
+        promptChars: input.question.length, contextChars, sourceCount: input.chunks.length,
+        promptTokens, completionTokens, cachedTokens, reasoningTokens, totalTokens,
+        modelId: this.modelId, provider: "google" as const,
+        estimatedCostBaisa: detailedCost.costBaisa, estimatedCostUsd: detailedCost.costUsd,
+        requestId, responseId: response.responseId, actualModelId: response.modelVersion,
+        latencyMs: Date.now() - startedAt,
+        pricingVersion: detailedCost.pricingVersion, pricingEffectiveDate: detailedCost.effectiveDate,
+      };
+      if (!matchesRequestedModel(response.modelVersion, this.modelId)) {
+        const unpricedUsage = { ...usage, estimatedCostUsd: undefined, estimatedCostBaisa: undefined, pricingVersion: undefined, pricingEffectiveDate: undefined };
+        return { ok: false, code: "UNAVAILABLE", message: "Unexpected Gemini model returned; usage requires reconciliation.", modelId: this.modelId, provider: "google", usage: unpricedUsage, requestId, latencyMs: usage.latencyMs, providerAttempted: true, retrySafe: false };
+      }
+      if (!text || response.candidates?.some(candidate => candidate.finishReason && candidate.finishReason !== "STOP")) {
+        return { ok: false, code: "UNAVAILABLE", message: "Gemini returned no complete answer.", modelId: this.modelId, provider: "google", usage, requestId, latencyMs: usage.latencyMs, providerAttempted: true, retrySafe: false };
+      }
       return {
         ok: true,
         text,
@@ -141,45 +165,35 @@ export class GeminiAnswerAdapter implements AnswerProvider {
           title: c.title,
           contentVersion: c.contentVersion,
         })),
-        usage: {
-          promptChars: input.question.length,
-          contextChars,
-          sourceCount: input.chunks.length,
-          promptTokens,
-          completionTokens,
-          cachedTokens,
-          reasoningTokens: 0,
-          totalTokens,
-          modelId: this.modelId,
-          provider: "google",
-          estimatedCostBaisa: detailedCost.costBaisa,
-          estimatedCostUsd: detailedCost.costUsd,
-          requestId: `gemini-req-${Date.now()}`,
-        },
+        usage,
         modelId: this.modelId,
         attemptsCount: 1,
       };
     } catch (err: unknown) {
       const errorObj = err as { status?: number; message?: string; name?: string };
-      const safeMessage = sanitizeErrorMessage(errorObj?.message || "Unknown Gemini execution error");
+      const evidence = { modelId: this.modelId, provider: "google" as const, latencyMs: Date.now() - startedAt, providerAttempted: true, retrySafe: false };
 
       if (errorObj?.name === "AbortError") {
-        return { ok: false, code: "UNAVAILABLE", message: "Request timed out or was aborted" };
+        return { ok: false, code: "UNAVAILABLE", message: "Request timed out or was aborted; provider outcome is unknown.", ...evidence };
       }
-      if (errorObj?.status === 401 || errorObj?.status === 403) {
-        return { ok: false, code: "UNAUTHENTICATED", message: "Invalid or unauthorized Gemini API Key" };
+      if (errorObj?.status === 401) {
+        return { ok: false, code: "UNAUTHENTICATED", message: "Invalid Gemini API Key", ...evidence };
+      }
+      if (errorObj?.status === 403) {
+        return { ok: false, code: "FORBIDDEN", message: "Gemini rejected model access.", ...evidence, retrySafe: true };
       }
       if (errorObj?.status === 404) {
-        return { ok: false, code: "UNAVAILABLE", message: `Gemini model unavailable or not found: ${safeMessage}` };
+        return { ok: false, code: "UNAVAILABLE", message: "Requested Gemini model is unavailable.", ...evidence, retrySafe: true };
       }
       if (errorObj?.status === 429) {
-        return { ok: false, code: "UNAVAILABLE", message: "Gemini rate limit or quota exceeded" };
+        return { ok: false, code: "UNAVAILABLE", message: "Gemini rate limit or quota exceeded", ...evidence };
       }
 
       return {
         ok: false,
         code: "UNAVAILABLE",
-        message: safeMessage,
+        message: "Gemini request failed; provider outcome could not be verified.",
+        ...evidence,
       };
     }
   }

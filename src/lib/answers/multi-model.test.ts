@@ -17,7 +17,7 @@ import {
 import { isLiveAnsweringEnabled } from "./guards";
 import { simulateAdminAIAnswer } from "./admin-test";
 import { getSecureProviderKey } from "./config/env";
-import type { AnswerContextChunk, AnswerProviderRequest } from "./types";
+import type { AnswerContextChunk } from "./types";
 
 const SAMPLE_CHUNKS: AnswerContextChunk[] = [
   {
@@ -31,19 +31,18 @@ const SAMPLE_CHUNKS: AnswerContextChunk[] = [
 describe("1. Multi-Model Adapters Unified Interface", () => {
   it("executes gpt-6-luna via OpenAI adapter with correct token mapping and cost", async () => {
     const mockOpenAIClient = {
-      chat: {
-        completions: {
+      responses: {
           create: vi.fn().mockResolvedValue({
-            id: "chatcmpl-luna-123",
-            choices: [{ message: { content: "أوقات العمل من 9 صباحاً حتى 10 مساءً." } }],
+            id: "resp-luna-123",
+            status: "completed",
+            output_text: "أوقات العمل من 9 صباحاً حتى 10 مساءً.",
             usage: {
-              prompt_tokens: 150,
-              completion_tokens: 40,
+              input_tokens: 150,
+              output_tokens: 40,
               total_tokens: 190,
-              prompt_tokens_details: { cached_tokens: 20 },
+              input_tokens_details: { cached_tokens: 20 },
             },
           }),
-        },
       },
     };
 
@@ -69,25 +68,24 @@ describe("1. Multi-Model Adapters Unified Interface", () => {
     expect(result.usage.cachedTokens).toBe(20);
     expect(result.usage.provider).toBe("openai");
 
-    // Cost: (130 * 100 / 1M) + (20 * 50 / 1M) + (40 * 400 / 1M) = 0.013 + 0.001 + 0.016 = 0.030 Baisa
-    expect(result.usage.estimatedCostBaisa).toBeCloseTo(0.03, 4);
+    // Standard: (130*.10 + 20*.01 + 40*.50)/1M USD, converted at 2.6008 USD/OMR.
+    expect(result.usage.estimatedCostBaisa).toBe(0.012766);
   });
 
   it("executes gpt-6.1-sol via OpenAI adapter with reasoning tokens mapping", async () => {
     const mockOpenAIClient = {
-      chat: {
-        completions: {
+      responses: {
           create: vi.fn().mockResolvedValue({
-            id: "chatcmpl-sol-999",
-            choices: [{ message: { content: "نعتذر منك، سنقوم بإحالة الشكوى للإدارة فوراً." } }],
+            id: "resp-sol-999",
+            status: "completed",
+            output_text: "نعتذر منك، سنقوم بإحالة الشكوى للإدارة فوراً.",
             usage: {
-              prompt_tokens: 300,
-              completion_tokens: 100,
+              input_tokens: 300,
+              output_tokens: 100,
               total_tokens: 400,
-              completion_tokens_details: { reasoning_tokens: 50 },
+              output_tokens_details: { reasoning_tokens: 50 },
             },
           }),
-        },
       },
     };
 
@@ -153,40 +151,31 @@ describe("2. Pricing and Economics Verification", () => {
     expect(MODEL_PRICING_CATALOG["gpt-6-luna"]).toBeDefined();
     expect(MODEL_PRICING_CATALOG["gemini-3.8-flash"]).toBeDefined();
     expect(MODEL_PRICING_CATALOG["gpt-6.1-sol"]).toBeDefined();
-    expect(PRICING_VERSION).toBe("2026.10.01");
-    expect(PRICING_EFFECTIVE_DATE).toBe("2026-10-01");
+    expect(PRICING_VERSION).toBe("verified-2026-10-08");
+    expect(PRICING_EFFECTIVE_DATE).toBe("2026-10-08");
   });
 
   it("calculates accurate Baisa costs according to rate tiers", () => {
-    // 10,000 prompt, 2,000 completion on Luna:
-    // Prompt: 10,000 * 100 / 1M = 1 Baisa
-    // Completion: 2,000 * 400 / 1M = 0.8 Baisa
-    // Total = 1.8 Baisa
+    // Luna: 0.002 USD at the published Standard rates.
     const lunaCost = calculateTokensCostBaisa("gpt-6-luna", {
       promptTokens: 10_000,
       completionTokens: 2_000,
     });
-    expect(lunaCost).toBe(1.8);
+    expect(lunaCost).toBe(0.768995);
 
-    // 10,000 prompt, 2,000 completion on Gemini Flash:
-    // Prompt: 10,000 * 60 / 1M = 0.6 Baisa
-    // Completion: 2,000 * 240 / 1M = 0.48 Baisa
-    // Total = 1.08 Baisa
+    // Gemini: 0.015 USD at the introductory Standard rates.
     const geminiCost = calculateTokensCostBaisa("gemini-3.8-flash", {
       promptTokens: 10_000,
       completionTokens: 2_000,
     });
-    expect(geminiCost).toBe(1.08);
+    expect(geminiCost).toBe(5.767457);
 
-    // 10,000 prompt, 2,000 completion on Sol:
-    // Prompt: 10,000 * 800 / 1M = 8 Baisa
-    // Completion: 2,000 * 3200 / 1M = 6.4 Baisa
-    // Total = 14.4 Baisa
+    // Sol: 0.040 USD at the published Standard rates.
     const solCost = calculateTokensCostBaisa("gpt-6.1-sol", {
       promptTokens: 10_000,
       completionTokens: 2_000,
     });
-    expect(solCost).toBe(14.4);
+    expect(solCost).toBe(15.379884);
   });
 });
 
@@ -259,12 +248,10 @@ describe("3. Multi-Model AI Router Dynamic Routing", () => {
 
 describe("4. Router Fallback & Retry Handling", () => {
   it("fails over to backup model when primary model returns an error", async () => {
-    // Failing OpenAI client (e.g. rate limit / network error)
+    // An explicit model rejection permits controlled fallback; quota/timeouts do not.
     const failingOpenAI = {
-      chat: {
-        completions: {
-          create: vi.fn().mockRejectedValue({ status: 429, message: "Rate limit exceeded" }),
-        },
+      responses: {
+          create: vi.fn().mockRejectedValue({ status: 404, message: "Model unavailable" }),
       },
     };
 
@@ -311,20 +298,6 @@ describe("5. Tenant Isolation & AI Usage Ledger", () => {
   });
 
   it("strictly isolates usage and spend records between companies", async () => {
-    const reqCompanyA: AnswerProviderRequest = {
-      question: "استفسار شركة A",
-      locale: "ar",
-      chunks: SAMPLE_CHUNKS,
-      companyId: "company-alpha",
-    };
-
-    const reqCompanyB: AnswerProviderRequest = {
-      question: "استفسار شركة B",
-      locale: "ar",
-      chunks: SAMPLE_CHUNKS,
-      companyId: "company-beta",
-    };
-
     // Record usage for Company Alpha
     await recordExecutionInLedger(
       "company-alpha",
@@ -417,6 +390,8 @@ describe("6. Token Caps & Company Budget Guards", () => {
           contextChars: 10,
           sourceCount: 1,
           estimatedCostBaisa: 60,
+          modelId: "gpt-6-luna",
+          provider: "openai",
         },
       },
       { store: ledger },

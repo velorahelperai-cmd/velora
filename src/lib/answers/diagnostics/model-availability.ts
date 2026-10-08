@@ -1,3 +1,4 @@
+import "server-only";
 import OpenAI from "openai";
 import { GoogleGenAI } from "@google/genai";
 import { getSecureProviderKey } from "@/lib/answers/config/env";
@@ -19,18 +20,14 @@ export interface ModelAvailabilityCheckResult {
   httpStatus?: number;
   message: string;
   checkedAt: string;
+  /** Metadata access does not verify generation access, quota, or billing. */
+  generationVerified?: false;
 }
 
 export interface DiagnosticsSummary {
   allConfigured: boolean;
   results: Record<AIModelId, ModelAvailabilityCheckResult>;
   checkedAt: string;
-}
-
-function maskKey(key: string | null): string {
-  if (!key) return "NOT_SET";
-  if (key.length <= 8) return "****";
-  return `${key.slice(0, 4)}...${key.slice(-4)}`;
 }
 
 /**
@@ -56,9 +53,12 @@ export async function checkOpenAIModelAvailability(
   }
 
   try {
-    const client = injectedClient || new OpenAI({ apiKey: apiKey! });
+    const client = injectedClient || new OpenAI({ apiKey: apiKey!, maxRetries: 0, timeout: 10_000 });
     // Use models.retrieve to check metadata without consuming tokens
-    await client.models.retrieve(modelId);
+    const model = await client.models.retrieve(modelId, { maxRetries: 0, timeout: 10_000 });
+    if (model?.id !== modelId) {
+      return { modelId, provider: "openai", keyConfigured: true, status: "NOT_FOUND_ON_ENDPOINT", message: "The endpoint returned a different model descriptor.", checkedAt: new Date().toISOString(), generationVerified: false };
+    }
 
     return {
       modelId,
@@ -66,13 +66,13 @@ export async function checkOpenAIModelAvailability(
       keyConfigured: true,
       status: "AVAILABLE_AND_AUTHORIZED",
       httpStatus: 200,
-      message: `Model '${modelId}' is registered and fully authorized for this account.`,
+      message: `Metadata for '${modelId}' is accessible. Generation access, billing, and quota remain unverified.`,
       checkedAt: new Date().toISOString(),
+      generationVerified: false,
     };
   } catch (err: unknown) {
     const errorObj = err as { status?: number; message?: string };
     const status = errorObj?.status;
-    const msg = errorObj?.message || "";
 
     if (status === 401) {
       return {
@@ -93,7 +93,7 @@ export async function checkOpenAIModelAvailability(
         keyConfigured: true,
         status: "RESTRICTED_FOR_ACCOUNT",
         httpStatus: 403,
-        message: `Model '${modelId}' exists officially, but access is restricted for this account tier/organization (403 Forbidden).`,
+        message: `Metadata access for '${modelId}' was denied (403 Forbidden).`,
         checkedAt: new Date().toISOString(),
       };
     }
@@ -116,7 +116,7 @@ export async function checkOpenAIModelAvailability(
       keyConfigured: true,
       status: "NETWORK_ERROR",
       httpStatus: status,
-      message: `Failed to verify model '${modelId}': ${msg.slice(0, 100)}`,
+      message: `Metadata access for '${modelId}' could not be verified.`,
       checkedAt: new Date().toISOString(),
     };
   }
@@ -144,9 +144,12 @@ export async function checkGeminiModelAvailability(
   }
 
   try {
-    const client = injectedClient || new GoogleGenAI({ apiKey: apiKey! });
+    const client = injectedClient || new GoogleGenAI({ apiKey: apiKey!, httpOptions: { timeout: 10_000, retryOptions: { attempts: 1 } } });
     // Use models.get to inspect model descriptor without generating text or spending tokens
-    await client.models.get({ model: `models/${modelId}` });
+    const model = await client.models.get({ model: `models/${modelId}`, config: { httpOptions: { timeout: 10_000, retryOptions: { attempts: 1 } } } });
+    if (model?.name !== `models/${modelId}` && model?.name !== modelId) {
+      return { modelId, provider: "google", keyConfigured: true, status: "NOT_FOUND_ON_ENDPOINT", message: "The endpoint returned a different model descriptor.", checkedAt: new Date().toISOString(), generationVerified: false };
+    }
 
     return {
       modelId,
@@ -154,16 +157,17 @@ export async function checkGeminiModelAvailability(
       keyConfigured: true,
       status: "AVAILABLE_AND_AUTHORIZED",
       httpStatus: 200,
-      message: `Model '${modelId}' is registered and fully authorized for this Google account.`,
+      message: `Metadata for '${modelId}' is accessible. Generation access, billing, and quota remain unverified.`,
       checkedAt: new Date().toISOString(),
+      generationVerified: false,
     };
   } catch (err: unknown) {
     const errorObj = err as { status?: number; message?: string };
     const status = errorObj?.status;
     const msg = errorObj?.message || "";
 
-    if (status === 401 || status === 403) {
-      const isKeyProblem = msg.includes("API_KEY_INVALID") || msg.includes("UNAUTHENTICATED");
+    if (status === 401 || status === 403 || (status === 400 && msg.includes("API_KEY_INVALID"))) {
+      const isKeyProblem = status === 401 || msg.includes("API_KEY_INVALID") || msg.includes("UNAUTHENTICATED");
       return {
         modelId,
         provider: "google",
@@ -172,7 +176,7 @@ export async function checkGeminiModelAvailability(
         httpStatus: status,
         message: isKeyProblem
           ? "API Key rejected by Google."
-          : `Model '${modelId}' exists, but this account/project lacks access permissions (403 Forbidden).`,
+          : `Metadata access for '${modelId}' was denied (403 Forbidden).`,
         checkedAt: new Date().toISOString(),
       };
     }
@@ -195,7 +199,7 @@ export async function checkGeminiModelAvailability(
       keyConfigured: true,
       status: "NETWORK_ERROR",
       httpStatus: status,
-      message: `Failed to verify model '${modelId}': ${msg.slice(0, 100)}`,
+      message: `Metadata access for '${modelId}' could not be verified.`,
       checkedAt: new Date().toISOString(),
     };
   }
