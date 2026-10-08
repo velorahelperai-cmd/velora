@@ -85,8 +85,8 @@ export function StoryScenes({
             { id: "5", question: handoff.example.question, answer: handoff.example.answer },
             {
               id: "9",
-              question: trial?.question ?? "",
-              answer: trial?.answer ?? "",
+              question: trial?.question || copy.scenes.find((s) => s.id === 9)!.example.question,
+              answer: trial?.answer || copy.scenes.find((s) => s.id === 9)!.example.answer,
               note: trial?.note,
             },
           ]}

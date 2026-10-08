@@ -46,4 +46,5 @@
 @media(min-width:1024px) { .orbit:dir(ltr) li:nth-child(-n+3) { left:-16px !important; } }
 
 .surface [data-seq='menu'] { font-size:11px; }
+.dense [data-seq='menu'] { min-height:24px !important; line-height:1.2; padding:2px 8px !important; margin-top:1px; }
 .guideBubble { font-size:13px !important; line-height:1.5; }.guideHeader p:first-child { font-size:13px; }.guideHeader p:last-child { font-size:11px; }.guideInput { font-size:13px; }
