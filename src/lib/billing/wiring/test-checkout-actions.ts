@@ -5,10 +5,14 @@ import { getCompanyAccess } from "@/lib/tenancy/access";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { siteUrl } from "@/lib/auth/site-url";
 import { commercialBaisaToVerifiedPaymobAmount } from "../money";
-export type StartTestCheckoutResult = CheckoutResult & { orderId?:string };
-export async function startTestCheckoutAction(input:{planVersionId:string;clientOpId:string}):Promise<StartTestCheckoutResult>{
+export type StartTestCheckoutResult = CheckoutResult & { orderId?:string;message?:string };
+export async function startTestCheckoutAction(input:{planVersionId:string;clientOpId:string;expectedCompanyId?:string}):Promise<StartTestCheckoutResult>{
  const access=await getCompanyAccess("owner");
  if(!access.ok||!access.context.company||access.context.membership?.role!=="owner"||access.context.company.status==="suspended")return {ok:false,code:"not_owner"};
+ if("expectedCompanyId" in input){
+  if(typeof input.expectedCompanyId!=="string"||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(input.expectedCompanyId))return {ok:false,code:"INVALID_INPUT",message:"invalid_company"};
+  if(input.expectedCompanyId!==access.context.company.id)return {ok:false,code:"FORBIDDEN",message:"workspace_changed"};
+ }
  const settings=readTestCheckoutConfig(process.env);
  if(!settings.ok)return settings;
  let origin:URL;try{origin=new URL(siteUrl());}catch{return {ok:false,code:"callback_not_configured"};}

@@ -22,12 +22,13 @@ async function KnowledgeLoader() {
 
   const owner=access.context.membership.role==="owner";
   if(!owner&&await sessionHasCompanyCapability(access.context.company.id,"knowledge.read")!==true)return <AccessGate code="FORBIDDEN"/>;
-  const listed = await listKnowledgeSources();
+  const listed = await listKnowledgeSources({ expectedCompanyId: access.context.company.id });
   const canWrite=owner||await sessionHasCompanyCapability(access.context.company.id,"knowledge.write")===true;
   const canDelete=owner||await sessionHasCompanyCapability(access.context.company.id,"knowledge.delete")===true;
 
   return (
     <KnowledgePage
+      companyId={access.context.company.id}
       canWrite={canWrite}
       canDelete={canDelete}
       initialSources={listed.ok ? listed.data.sources : []}

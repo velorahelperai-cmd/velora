@@ -19,7 +19,7 @@ import {
 } from "@/lib/auth/session-presence";
 import { clearCompanyDrafts } from "@/lib/company-draft";
 import { emptyBusiness, useDemo } from "@/lib/demo-state";
-import { createClient } from "@/lib/supabase/client";
+import { createClient, tryCreateClient } from "@/lib/supabase/client";
 import {
   getAccountProfile,
   signOut,
@@ -100,7 +100,8 @@ export function AccountSessionProvider({
   },[refresh]);
 
   useEffect(()=>{
-    const supabase=createClient();let timer:ReturnType<typeof setTimeout>|undefined;
+    const supabase=tryCreateClient();if(!supabase)return;
+    let timer:ReturnType<typeof setTimeout>|undefined;
     const {data:sub}=supabase.auth.onAuthStateChange((event,session)=>{
       if(timer)clearTimeout(timer);
       if(event==="SIGNED_OUT"){clear();providerRouter.refresh();return;}

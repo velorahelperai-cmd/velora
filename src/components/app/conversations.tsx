@@ -20,14 +20,19 @@ import {
 } from "@/lib/demo-state";
 import {
   controlWhatsappConversation,
-  refreshWhatsappConversation,
-  refreshWhatsappInboxSnapshot,
   replyWhatsappConversation,
   upsertConversationLeadState,
   type ControlAction,
   type ControlState,
   type LeadState,
 } from "@/lib/whatsapp/actions";
+import {
+  refreshWhatsappInboxInitialPage, refreshWhatsappInboxPage, refreshWhatsappThreadPage,
+  refreshWhatsappControlAuditPage, refreshWhatsappConnectionStatus, markWhatsappThreadSeen,
+} from "@/lib/whatsapp/inbox-actions";
+import type { WhatsappInboxItem, WhatsappInboxPage, WhatsappControlAuditPage, WhatsappConnectionStatus } from "@/lib/whatsapp/inbox-contracts";
+import { canUseInboxControl, currentThreadRequest, mergeInboxPageRows, mergeThreadPage, inboxSendLocked, updateInboxPageCache,
+  matchesUnifiedInboxFilter, threadReadBoundary, type ThreadView, type UnifiedInboxFilter } from "./conversations-inbox";
 import type { WhatsappInboxMeta } from "@/lib/whatsapp/inbox";
 import {
   countLeadWorklist,
@@ -36,31 +41,27 @@ import {
   type LeadWorklist,
 } from "@/lib/whatsapp/leads";
 import {
-  applyInboxSnapshot,
   inboxScopeKey,
   isStaleInboxRefresh,
   selectLiveConversations,
 } from "@/lib/whatsapp/live-inbox";
 import {
   captureInboxEpoch,
-  commitFullSnapshotEpoch,
   createInboxAsyncEpoch,
   invalidateInboxOpsOnScopeChange,
   isInboxEpochCurrent,
   runControlActionPath,
   runLeadSavePath,
   runSendReplyPath,
-  runSyncControlViewPath,
   type InboxAsyncEpochStore,
 } from "@/components/app/conversations-async";
 import { WorkspaceShell } from "@/components/app/workspace-shell";
 import { Button, Notice, useAppCopy } from "@/components/app/ui";
 
-export type UnifiedInboxFilter = "all" | "unread" | "noura" | "staff" | "resolved";
+export type { UnifiedInboxFilter } from "./conversations-inbox";
 
 const WORKLISTS: LeadWorklist[] = [
   "all",
-  "awaiting_staff",
   "follow_up_today",
   "overdue",
   "trial_or_quote",
@@ -146,6 +147,7 @@ type LeadPanelCopy = ReturnType<typeof useAppCopy>["app"];
 
 function DeliveryStateTick({ state, locale }: { state?: Message["deliveryState"]; locale: string }) {
   if (!state) return null;
+  if (state === "accepted") return <span className="text-[10px] text-[var(--color-muted-soft)]">{locale === "ar" ? "قُبلت للإرسال" : "Accepted"}</span>;
   if (state === "read") {
     return (
       <span className="inline-flex items-center gap-0.5 text-[#38dc89]" title={locale === "ar" ? "تمت القراءة" : "Read"}>
@@ -533,15 +535,16 @@ function LeadFollowUpPanel({
 }
 
 export function ConversationsPage({
-  inbox,
   loadFailed,
   noCompany,
   meta,
+  page,
 }: {
   inbox: Conversation[];
   loadFailed?: boolean;
   noCompany?: boolean;
   meta?: WhatsappInboxMeta;
+  page?: WhatsappInboxPage;
 }) {
   const copy = useAppCopy();
   const { locale } = useDemo();
@@ -549,11 +552,31 @@ export function ConversationsPage({
   const searchParams = useSearchParams();
   const selectedParam = searchParams.get("c");
 
-  const [serverInbox, setServerInbox] = useState<Conversation[]>(inbox);
-  const [localInbox, setLocalInbox] = useState<Record<string, Conversation>>({});
+  const [serverInbox, setServerInbox] = useState<WhatsappInboxItem[]>(page?.conversations ?? []);
+  const [localInbox, setLocalInbox] = useState<Record<string, WhatsappInboxItem>>({});
   const [inboxMeta, setInboxMeta] = useState<WhatsappInboxMeta | undefined>(meta);
+  const [inboxPage, setInboxPage] = useState(page);
+  const inboxPageRef = useRef(page);
+  const [readCacheGeneration, setReadCacheGeneration] = useState(0);
+  const [inboxBusy, setInboxBusy] = useState(false);
+  const [inboxReadError, setInboxReadError] = useState<string | null>(null);
+  const [threads, setThreads] = useState<Record<string, ThreadView>>({});
+  const threadsRef = useRef<Record<string, ThreadView>>({});
+  const [threadBusyId, setThreadBusyId] = useState<string | null>(null);
+  const [readyThreadId, setReadyThreadId] = useState<string | null>(null);
+  const [threadErrors, setThreadErrors] = useState<Record<string, string>>({});
+  const [connection, setConnection] = useState<WhatsappConnectionStatus | null>(null);
+  const [audits, setAudits] = useState<Record<string, WhatsappControlAuditPage>>({});
+  const auditGenRef = useRef(0);
+  const [auditBusy, setAuditBusy] = useState(false);
+  const [auditError, setAuditError] = useState<string | null>(null);
+  const [visible, setVisible] = useState(true);
+  const seenRequestsRef = useRef(new Set<string>());
   const [query, setQuery] = useState("");
-  const [activeFilter, setActiveFilter] = useState<UnifiedInboxFilter>("all");
+  const [activeFilter, setActiveFilter] = useState<UnifiedInboxFilter>(() => {
+    const requested = searchParams.get("filter");
+    return requested === "unread" || requested === "noura" || requested === "staff" || requested === "resolved" ? requested : "all";
+  });
   const [worklist, setWorklist] = useState<LeadWorklist>("all");
   const [draft, setDraft] = useState("");
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -577,13 +600,13 @@ export function ConversationsPage({
     current: createInboxAsyncEpoch(meta?.companyId ? inboxScopeKey(meta.companyId, meta.conversationScope) : null),
   });
 
-  const inboxScope = meta?.companyId ? inboxScopeKey(meta.companyId, meta.conversationScope) : null;
+  const inboxScope = inboxMeta?.companyId ? inboxScopeKey(inboxMeta.companyId, inboxMeta.conversationScope) : null;
   const snapshotRef = useRef<{
-    base: Conversation[];
-    overrides: Record<string, Conversation>;
+    base: WhatsappInboxItem[];
+    overrides: Record<string, WhatsappInboxItem>;
     scopeKey: string | null;
   }>({
-    base: inbox,
+    base: page?.conversations ?? [],
     overrides: {},
     scopeKey: inboxScope,
   });
@@ -592,28 +615,35 @@ export function ConversationsPage({
   const sendOpByConversation = useRef<Record<string, { clientOpId: string; body: string }>>({});
   const inboxRefreshGen = useRef(0);
 
-  const canReply = meta?.canReply ?? inboxMeta?.canReply ?? false;
-  const canAssign = meta?.canAssign ?? inboxMeta?.canAssign ?? false;
-  const assignees = meta?.assignees ?? inboxMeta?.assignees ?? [];
-  const timezone = meta?.timezone ?? inboxMeta?.timezone ?? null;
+  const canReply = inboxMeta?.canReply === true;
+  const canAssign = inboxMeta?.canAssign === true;
+  const assignees = inboxMeta?.assignees ?? [];
+  const timezone = inboxMeta?.timezone ?? null;
 
-  const liveIds = useMemo(() => new Set(inbox.map((c) => c.id)), [inbox]);
+  const liveIds = useMemo(() => new Set(serverInbox.map((c) => c.id)), [serverInbox]);
   const selectedId = selectedParam ?? null;
+  const selectedIdRef = useRef(selectedId);
+  useLayoutEffect(() => { selectedIdRef.current = selectedId; }, [selectedId]);
+  const selectionKey = `${inboxScope ?? ""}:${selectedId ?? ""}:${readCacheGeneration}`;
+  const [renderedSelection, setRenderedSelection] = useState(selectionKey);
+  if (renderedSelection !== selectionKey) {
+    setRenderedSelection(selectionKey);
+    setReadyThreadId(null);
+    setDraft("");
+    setNotice(null); setError(null); setWarn(null);
+    setAuditBusy(false); setAuditError(null);
+  }
 
   function isSelected(id: string) {
-    return id === selectedId;
+    return id === selectedIdRef.current;
   }
 
   function commitSnapshot(
-    next: { base: Conversation[]; overrides: Record<string, Conversation>; scopeKey: string | null },
-    opts?: { full?: boolean },
+    next: { base: WhatsappInboxItem[]; overrides: Record<string, WhatsappInboxItem>; scopeKey: string | null },
   ) {
     snapshotRef.current = next;
     setServerInbox(next.base);
     setLocalInbox(next.overrides);
-    if (opts?.full && next.scopeKey) {
-      commitFullSnapshotEpoch(epochStoreRef.current, next.scopeKey);
-    }
   }
 
   function bumpReadGeneration(id: string): number {
@@ -648,6 +678,20 @@ export function ConversationsPage({
     setError(null);
     setWarn(null);
     setDraft("");
+    threadsRef.current = {};
+    setThreads({});
+    setThreadErrors({});
+    setThreadBusyId(null);
+    setReadyThreadId(null);
+    setInboxBusy(false);
+    setInboxReadError(null);
+    setConnection(null);
+    setAudits({});
+    auditGenRef.current += 1;
+    setAuditBusy(false);
+    setAuditError(null);
+    seenRequestsRef.current.clear();
+    inboxPageRef.current = undefined;
   }
 
   function invalidateAllInboxOps(nextScopeKey: string | null) {
@@ -658,16 +702,14 @@ export function ConversationsPage({
     }
   }
 
-  useLayoutEffect(() => {
-    snapshotRef.current = { base: serverInbox, overrides: localInbox, scopeKey: inboxScope };
-  }, [serverInbox, localInbox, inboxScope]);
-
   useEffect(() => {
     const tick = () => setNowMs(Date.now());
     const intervalId = window.setInterval(tick, 30_000);
     const onVisibility = () => {
+      setVisible(document.visibilityState === "visible");
       if (document.visibilityState === "visible") tick();
     };
+    onVisibility();
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
       window.clearInterval(intervalId);
@@ -683,27 +725,26 @@ export function ConversationsPage({
       }
       invalidateAllInboxOps(null);
       clearCompanyEphemeralState();
-      commitSnapshot({ base: inbox, overrides: {}, scopeKey: null }, { full: true });
+      commitSnapshot({ base: [], overrides: {}, scopeKey: null });
+      setInboxPage(undefined);
       setInboxMeta(meta);
       return;
     }
     const key = inboxScopeKey(meta.companyId, meta.conversationScope);
     if (snapshotRef.current.scopeKey === key) {
-      setInboxMeta((current) => current ?? meta);
+      setInboxMeta(meta);
+      if (page) applyPage(page);
       return;
     }
     invalidateAllInboxOps(key);
     clearCompanyEphemeralState();
-    commitSnapshot(
-      applyInboxSnapshot(snapshotRef.current, {
-        kind: "full",
-        scopeKey: key,
-        conversations: inbox,
-      }),
-      { full: true },
-    );
+    commitSnapshot({ base: page?.conversations ?? [], overrides: {}, scopeKey: key });
+    inboxPageRef.current = page;
+    setInboxPage(page);
     setInboxMeta(meta);
-  }, [inbox, meta]);
+    // New route props own hydration; applyPage reads the current snapshot ref.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, meta]);
 
   const conversations = useMemo(
     () => selectLiveConversations(serverInbox, localInbox),
@@ -725,53 +766,12 @@ export function ConversationsPage({
     return next;
   }, [conversations, nowMs, timezone]);
 
-  const filterCounts = useMemo(() => {
-    let unreadCount = 0;
-    let nouraCount = 0;
-    let staffCount = 0;
-    let resolvedCount = 0;
-
-    for (const c of conversations) {
-      if (c.status === "resolved") {
-        resolvedCount++;
-        continue;
-      }
-      if (c.assistantPaused) {
-        staffCount++;
-      } else if (c.automationAllowed) {
-        nouraCount++;
-      }
-      const lastMsg = c.messages[c.messages.length - 1];
-      if (lastMsg?.from === "customer" || c.status === "handed_over") {
-        unreadCount++;
-      }
-    }
-
-    return {
-      all: conversations.length,
-      unread: unreadCount,
-      noura: nouraCount,
-      staff: staffCount,
-      resolved: resolvedCount,
-    };
-  }, [conversations]);
+  const filterCounts = { all: inboxPage?.total, unread: inboxPage?.unreadTotal, staff: inboxPage?.interventionTotal };
 
   const list = useMemo(() => {
     const q = query.trim().toLowerCase();
     return conversations.filter((c) => {
-      // Unified Filter check
-      if (activeFilter === "resolved" && c.status !== "resolved") return false;
-      if (activeFilter === "noura") {
-        if (c.status === "resolved" || c.assistantPaused || !c.automationAllowed) return false;
-      }
-      if (activeFilter === "staff") {
-        if (c.status === "resolved" || !c.assistantPaused) return false;
-      }
-      if (activeFilter === "unread") {
-        const lastMsg = c.messages[c.messages.length - 1];
-        const isAwaiting = lastMsg?.from === "customer" || c.status === "handed_over";
-        if (c.status === "resolved" || !isAwaiting) return false;
-      }
+      if (!matchesUnifiedInboxFilter(c, activeFilter)) return false;
 
       // Secondary worklist check
       if (
@@ -799,41 +799,92 @@ export function ConversationsPage({
     });
   }, [conversations, activeFilter, worklist, query, nowMs, timezone]);
 
-  const selected = conversations.find((c) => c.id === selectedId) ?? null;
+  const selectedRow = conversations.find((c) => c.id === selectedId) ?? null;
+  const selectedThread = selectedId ? threads[selectedId] : undefined;
+  const selected = selectedRow ? { ...selectedRow, messages: selectedThread?.messages ?? [] } : null;
+  const selectedReady = Boolean(selectedThread && readyThreadId === selectedId && threadBusyId !== selectedId && selectedId && !threadErrors[selectedId]);
 
   const select = (id: string | null) =>
     router.replace(id ? `/app/conversations?c=${id}` : "/app/conversations");
 
   const patch = (id: string, fn: (c: Conversation) => Partial<Conversation>) => {
-    setLocalInbox((current) => {
-      const base = current[id] ?? snapshotRef.current.base.find((item) => item.id === id);
-      if (!base) return current;
-      return { ...current, [id]: { ...base, ...fn(base) } };
-    });
+    const current = snapshotRef.current;
+    const base = current.overrides[id] ?? current.base.find((item) => item.id === id);
+    if (base) commitSnapshot({ ...current, overrides: { ...current.overrides, [id]: { ...base, ...fn(base) } } });
   };
 
-  function retainConversationIds(): Set<string> {
-    const ids = new Set<string>();
-    for (const id of Object.keys(unresolvedOutcomes)) ids.add(id);
-    for (const id of Object.keys(unresolvedSends)) ids.add(id);
-    for (const id of Object.keys(sendOpByConversation.current)) ids.add(id);
-    if (controlBusyId) ids.add(controlBusyId);
-    return ids;
+  function applyPage(nextPage: WhatsappInboxPage, older = false) {
+    const current = snapshotRef.current;
+    const key = inboxScopeKey(nextPage.companyId, nextPage.conversationScope);
+    if (current.scopeKey !== key) return;
+    const cache = updateInboxPageCache({ page: inboxPageRef.current,
+      rows: selectLiveConversations(current.base, current.overrides), threads: threadsRef.current, audits,
+      sendOperations: sendOpByConversation.current, unknownSends: unresolvedSends }, nextPage, older);
+    if (cache.membershipChanged) {
+      invalidateAllInboxOps(key);
+      threadsRef.current = cache.threads;
+      setThreads(cache.threads);
+      setAudits(cache.audits);
+      auditGenRef.current += 1;
+      setAuditBusy(false); setAuditError(null);
+      setInboxBusy(false);
+      setThreadErrors({}); setThreadBusyId(null); setReadyThreadId(null);
+      setUnresolvedSends(currentLocks => ({ ...currentLocks, ...cache.unknownSends }));
+      if (controlBusyIdRef.current) markUnresolved(controlBusyIdRef.current);
+      controlBusyIdRef.current = null;
+      setControlBusy(false); setControlBusyId(null);
+      seenRequestsRef.current.clear();
+      setReadCacheGeneration(generation => generation + 1);
+    }
+    commitSnapshot({ base: cache.rows, overrides: {}, scopeKey: key });
+    inboxPageRef.current = cache.page;
+    setInboxPage(cache.page);
   }
 
-  async function refreshInboxView(): Promise<boolean> {
+  async function refreshInboxView(before?: string | null): Promise<boolean> {
+    const companyId = inboxMeta?.companyId;
+    if (!companyId) return false;
     const requestGen = inboxRefreshGen.current + 1;
     inboxRefreshGen.current = requestGen;
     const requestEpoch = captureInboxEpoch(epochStoreRef.current);
     const requestScopeKey = requestEpoch.scopeKey;
+    setInboxBusy(true);
+    setInboxReadError(null);
     try {
-      const loaded = await refreshWhatsappInboxSnapshot();
-      if (!loaded.ok) return false;
+      const loaded = before
+        ? await refreshWhatsappInboxPage({ companyId, before })
+        : await refreshWhatsappInboxInitialPage();
       if (!isInboxEpochCurrent(requestEpoch, epochStoreRef.current.current)) return false;
+      if (requestGen !== inboxRefreshGen.current) return false;
+      if (!loaded.ok) {
+        setReadyThreadId(null);
+        if (loaded.code === "NO_COMPANY" || loaded.code === "SCOPE_CHANGED" || loaded.code === "FORBIDDEN") {
+          invalidateAllInboxOps(null);
+          clearCompanyEphemeralState();
+          commitSnapshot({ base: [], overrides: {}, scopeKey: null });
+          setInboxPage(undefined);
+          setInboxMeta(undefined);
+          router.refresh();
+        }
+        setInboxReadError(copy.app.inboxLoadFailedBody);
+        return false;
+      }
+      const nextPage = "page" in loaded ? loaded.page : loaded.data;
       const responseScopeKey = inboxScopeKey(
-        loaded.meta.companyId,
-        loaded.meta.conversationScope,
+        nextPage.companyId,
+        nextPage.conversationScope,
       );
+      if (responseScopeKey !== requestScopeKey) {
+        invalidateAllInboxOps(null);
+        clearCompanyEphemeralState();
+        commitSnapshot({ base: [], overrides: {}, scopeKey: null });
+        setInboxPage(undefined);
+        setInboxMeta(undefined);
+        setInboxReadError(copy.app.inboxLoadFailedBody);
+        router.refresh();
+        return false;
+      }
+      if (before && inboxPageRef.current?.membershipFingerprint !== nextPage.membershipFingerprint) return refreshInboxView();
       if (
         isStaleInboxRefresh({
           requestGen,
@@ -845,29 +896,156 @@ export function ConversationsPage({
       ) {
         return false;
       }
-      const kind = loaded.kind === "full" ? "full" : "partial";
-      commitSnapshot(
-        applyInboxSnapshot(
-          snapshotRef.current,
-          {
-            kind,
-            scopeKey: responseScopeKey,
-            conversations: loaded.conversations,
-          },
-          { retainIds: retainConversationIds() },
-        ),
-        { full: kind === "full" },
-      );
-      setInboxMeta(loaded.meta);
+      applyPage(nextPage, Boolean(before));
+      if ("meta" in loaded) setInboxMeta(loaded.meta);
       return true;
     } catch {
+      if (isInboxEpochCurrent(requestEpoch, epochStoreRef.current.current) && requestGen === inboxRefreshGen.current)
+        setInboxReadError(copy.app.inboxLoadFailedBody);
       return false;
+    } finally {
+      if (isInboxEpochCurrent(requestEpoch, epochStoreRef.current.current) && requestGen === inboxRefreshGen.current) setInboxBusy(false);
     }
   }
 
+  function removeInaccessibleThread(id: string) {
+    const current = snapshotRef.current;
+    const overrides = { ...current.overrides };
+    delete overrides[id];
+    commitSnapshot({ ...current, base: current.base.filter(row => row.id !== id), overrides });
+    delete threadsRef.current[id];
+    setThreads({ ...threadsRef.current });
+    // Saved send IDs/unknown-outcome locks survive lost access; a read is never a resend authorization.
+  }
+
+  async function loadThread(conversationId: string, before?: string | null, selectedOnly = true): Promise<boolean> {
+    const companyId = inboxMeta?.companyId;
+    if (!companyId || !snapshotRef.current.scopeKey) return false;
+    const request = captureInboxEpoch(epochStoreRef.current);
+    const generation = bumpReadGeneration(conversationId);
+    const stillCurrent = () => currentThreadRequest({ request, current: epochStoreRef.current.current,
+      generation, currentGeneration: readGenById.current[conversationId], conversationId,
+      ...(selectedOnly ? { selectedId: selectedIdRef.current } : {}) });
+    setThreadBusyId(conversationId);
+    if (selectedIdRef.current === conversationId) setReadyThreadId(null);
+    setThreadErrors(current => { const next = { ...current }; delete next[conversationId]; return next; });
+    try {
+      const result = await refreshWhatsappThreadPage({ companyId, conversationId, before });
+      if (!stillCurrent()) return false;
+      if (!result.ok) {
+        if (result.code === "NOT_FOUND" || result.code === "FORBIDDEN" || result.code === "SCOPE_CHANGED") removeInaccessibleThread(conversationId);
+        setThreadErrors(current => ({ ...current, [conversationId]: copy.app.controlRefreshFailed }));
+        return false;
+      }
+      const view = mergeThreadPage(threadsRef.current[conversationId], result.data, before);
+      threadsRef.current = { ...threadsRef.current, [conversationId]: view };
+      setThreads(threadsRef.current);
+      if (selectedIdRef.current === conversationId) setReadyThreadId(conversationId);
+      if (!before) {
+        const current = snapshotRef.current;
+        commitSnapshot({ base: mergeInboxPageRows(selectLiveConversations(current.base, current.overrides), [result.data.conversation]),
+          overrides: {}, scopeKey: current.scopeKey });
+      }
+      return true;
+    } catch {
+      if (stillCurrent()) setThreadErrors(current => ({ ...current, [conversationId]: copy.app.controlRefreshFailed }));
+      return false;
+    } finally {
+      if (stillCurrent()) setThreadBusyId(current => current === conversationId ? null : current);
+    }
+  }
+
+  async function loadAudit(conversationId: string, before?: string | null) {
+    const companyId = inboxMeta?.companyId;
+    if (!companyId) return;
+    const request = captureInboxEpoch(epochStoreRef.current);
+    const generation = ++auditGenRef.current;
+    const stillCurrent = () => isInboxEpochCurrent(request, epochStoreRef.current.current)
+      && generation === auditGenRef.current && selectedIdRef.current === conversationId;
+    setAuditBusy(true);
+    setAuditError(null);
+    try {
+      const result = await refreshWhatsappControlAuditPage({ companyId, conversationId, limit: 10, before });
+      if (!stillCurrent()) return;
+      if (!result.ok) { setAuditError(locale === "ar" ? "تعذر تحديث سجل التحكم." : "Control history could not be refreshed."); return; }
+      setAudits(current => {
+        const events = new Map((before ? current[conversationId]?.events ?? [] : []).map(event => [event.id, event]));
+        for (const event of result.data.events) events.set(event.id, event);
+        return { ...current, [conversationId]: { ...result.data, events: [...events.values()].sort((a, b) =>
+          BigInt(a.eventSequence) > BigInt(b.eventSequence) ? -1 : BigInt(a.eventSequence) < BigInt(b.eventSequence) ? 1 : 0) } };
+      });
+    } catch { if (stillCurrent()) setAuditError(locale === "ar" ? "تعذر تحديث سجل التحكم." : "Control history could not be refreshed."); }
+    finally { if (stillCurrent()) setAuditBusy(false); }
+  }
+
+  useEffect(() => {
+    if (!selectedId || !inboxMeta?.companyId) return;
+    startTransition(async () => {
+      const loaded = await loadThread(selectedId);
+      if (loaded && selectedIdRef.current === selectedId) await loadAudit(selectedId);
+    });
+    return () => { bumpReadGeneration(selectedId); auditGenRef.current += 1; };
+    // Identity changes own the request; render-only page updates must not refetch the same thread.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId, inboxScope, readCacheGeneration]);
+
+  async function refreshConnection() {
+    const companyId = inboxMeta?.companyId;
+    if (!companyId) return;
+    const request = captureInboxEpoch(epochStoreRef.current);
+    try {
+      const result = await refreshWhatsappConnectionStatus({ companyId });
+      if (isInboxEpochCurrent(request, epochStoreRef.current.current)) setConnection(result.ok ? result.data : null);
+    } catch { if (isInboxEpochCurrent(request, epochStoreRef.current.current)) setConnection(null); }
+  }
+  useEffect(() => {
+    startTransition(async () => { await refreshConnection(); });
+    // Workspace identity owns this read; status is also refreshed deliberately from the header.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inboxMeta?.companyId, inboxScope]);
+
+  useEffect(() => {
+    const boundary = threadReadBoundary(selectedThread, selectedId, visible);
+    if (!boundary || !selectedThread || !selectedReady) return;
+    const request = captureInboxEpoch(epochStoreRef.current);
+    const generation = readGenById.current[selectedThread.conversationId];
+    const acknowledgementKey = `${request.opGen}:${selectedThread.conversationId}:${selectedThread.readVersion}:${boundary}`;
+    if (seenRequestsRef.current.has(acknowledgementKey)) return;
+    // Two animation frames ensure the committed latest page can be painted before acknowledgement.
+    let secondFrame = 0;
+    const firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => {
+        if (document.visibilityState !== "visible" || !currentThreadRequest({ request, current: epochStoreRef.current.current,
+          generation, currentGeneration: readGenById.current[selectedThread.conversationId], conversationId: selectedThread.conversationId,
+          selectedId: selectedIdRef.current })) return;
+        seenRequestsRef.current.add(acknowledgementKey);
+        startTransition(async () => {
+          let result;
+          try { result = await markWhatsappThreadSeen({ companyId: selectedThread.companyId,
+            conversationId: selectedThread.conversationId, displayedInboundMessageId: boundary }); }
+          catch { result = { ok: false as const, code: "UNAVAILABLE" as const }; }
+          if (!currentThreadRequest({ request, current: epochStoreRef.current.current, generation,
+            currentGeneration: readGenById.current[selectedThread.conversationId], conversationId: selectedThread.conversationId,
+            selectedId: selectedIdRef.current })) return;
+          if (!result.ok) {
+            if (result.code === "CONFLICT") await loadThread(selectedThread.conversationId);
+            else setWarn(locale === "ar" ? "تعذر حفظ حالة القراءة. حدّث المحادثة للمحاولة مجدداً." : "Read status could not be saved. Refresh the thread to retry.");
+            return;
+          }
+          patch(selectedThread.conversationId, () => ({ unreadCount: result.data.unreadCount } as Partial<WhatsappInboxItem>));
+          await refreshInboxView();
+        });
+      });
+    });
+    return () => { window.cancelAnimationFrame(firstFrame); window.cancelAnimationFrame(secondFrame); };
+    // A new latest page owns a new acknowledgement; loading history never creates one.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId, selectedThread?.readVersion, selectedReady, visible, inboxScope]);
+
   function send(c: Conversation) {
     const draftText = draft.trim();
-    if (!draftText || pending || controlBusy || unresolvedSends[c.id]) return;
+    const locked = inboxSendLocked(snapshotRef.current.base.find(row => row.id === c.id), Boolean(unresolvedSends[c.id]));
+    if (!draftText || !canReply || !selectedReady || pending || controlBusy || locked) return;
     setError(null);
     setNotice(null);
     setWarn(null);
@@ -895,7 +1073,7 @@ export function ConversationsPage({
           setUnresolvedSends((prev) => ({ ...prev, [c.id]: true }));
           if (isSelected(c.id)) setError(copy.app.sendUnknownOutcome);
         },
-        onResult: (result) => {
+        onResult: async (result) => {
           if (!result.ok) {
             if (
               result.code === "UNKNOWN_OUTCOME" ||
@@ -961,23 +1139,17 @@ export function ConversationsPage({
             status: "handed_over",
             assistantPaused: true,
           }));
-          setDraft("");
-          if (isSelected(c.id)) setNotice(copy.app.sentNote);
+          if (isSelected(c.id)) { setDraft(""); setNotice(copy.app.sentNote); }
+          await syncControlView(c.id);
         },
       });
     });
   }
 
   async function syncControlView(conversationId: string): Promise<boolean> {
-    return runSyncControlViewPath({
-      conversationId,
-      store: epochStoreRef.current,
-      readGenById: readGenById.current,
-      getSnapshot: () => snapshotRef.current,
-      retainIds: retainConversationIds(),
-      refresh: refreshWhatsappConversation,
-      commit: (snapshot) => commitSnapshot(snapshot),
-    });
+    const loaded = await loadThread(conversationId, null, false);
+    if (loaded && selectedIdRef.current === conversationId) await loadAudit(conversationId);
+    return loaded;
   }
 
   async function retryRefresh(conversationId: string) {
@@ -1007,7 +1179,7 @@ export function ConversationsPage({
   }
 
   function runControl(c: Conversation, action: ControlAction) {
-    if (!liveIds.has(c.id) || controlBusy || pending) return;
+    if (!canUseInboxControl(inboxMeta, action) || !selectedReady || !liveIds.has(c.id) || controlBusy || pending) return;
     if (unresolvedOutcomes[c.id]) return;
 
     const expectedRevision = c.revision ?? 1;
@@ -1066,7 +1238,7 @@ export function ConversationsPage({
         patch(c.id, (cur) => applyControlState(cur, result.state));
         if (isSelected(c.id)) {
           if (action === "take_over") setNotice(locale === "ar" ? "تم استلام المحادثة وإيقاف نورا مؤقتاً." : "Taken over. Noura auto-reply paused.");
-          else if (action === "resume") setNotice(locale === "ar" ? "تم تفعيل نورا للرد التلقائي." : "Noura auto-reply enabled.");
+          else if (action === "resume") setNotice(locale === "ar" ? "تم السماح بالأتمتة لهذه المحادثة. يخضع الإرسال لجاهزية التشغيل." : "Automation enabled for this conversation. Sending remains subject to runtime readiness.");
           else setNotice(copy.app.controlClosed);
         }
 
@@ -1089,7 +1261,15 @@ export function ConversationsPage({
   }
 
   const selectedUnresolved = Boolean(selected && unresolvedOutcomes[selected.id]);
-  const selectedSendLocked = Boolean(selected && unresolvedSends[selected.id]);
+  const selectedSendLocked = selected ? inboxSendLocked(selected, Boolean(unresolvedSends[selected.id])) : false;
+  const controlDisabled = (action: ControlAction) => !selectedReady || !canUseInboxControl(inboxMeta, action) || controlBusy || pending || selectedUnresolved;
+  const interventionLabels = locale === "ar" ? {
+    human_control: "تحكم بشري", worker_review: "مراجعة الأتمتة", worker_failed: "تعذر عمل الأتمتة",
+    send_unknown: "نتيجة إرسال غير معروفة — تحتاج مراجعة", send_rejected: "إرسال مرفوض", delivery_failed: "فشل التسليم",
+  } : {
+    human_control: "Human control", worker_review: "Automation review", worker_failed: "Automation failed",
+    send_unknown: "Unknown send outcome — review required", send_rejected: "Send rejected", delivery_failed: "Delivery failed",
+  };
 
   const copyCustomerPhone = useCallback((phone: string) => {
     if (typeof navigator !== "undefined" && navigator.clipboard) {
@@ -1105,7 +1285,7 @@ export function ConversationsPage({
     ? copy.app.inboxLoadFailed
     : noCompany
       ? copy.app.inboxNoCompany
-      : inbox.length === 0
+      : conversations.length === 0
         ? (locale === "ar" ? "لا توجد محادثات واتساب بعد" : "No WhatsApp conversations yet")
         : copy.app.noResults;
 
@@ -1113,10 +1293,10 @@ export function ConversationsPage({
     ? copy.app.inboxLoadFailedBody
     : noCompany
       ? copy.app.inboxNoCompanyBody
-      : inbox.length === 0
+      : conversations.length === 0
         ? (locale === "ar"
-            ? "عندما يراسل العملاء رقم WhatsApp Business المربوط بشركتك، ستظهر محادثاتهم هنا وستقوم نورا بالرد الفوري وفق المعرفة المعتمدة."
-            : "When customers contact your linked WhatsApp Business number, conversations will appear here and Noura will respond using your approved knowledge.")
+            ? "تظهر المحادثات هنا عند استقبال رسائل العملاء على رقم WhatsApp Business المرتبط بشركتك."
+            : "Conversations appear here when your linked WhatsApp Business number receives customer messages.")
         : undefined;
 
   return (
@@ -1125,14 +1305,18 @@ export function ConversationsPage({
       actions={
         <div className="flex items-center gap-2 font-[family-name:Tajawal,var(--font-ar),sans-serif]">
           <div className="hidden sm:inline-flex items-center gap-2 rounded-full border border-[color:var(--color-border-soft)] bg-[var(--color-panel)] px-3 py-1 text-xs text-[var(--color-on-dark)] shadow-sm">
-            <span className="h-2 w-2 rounded-full bg-[#38dc89] animate-pulse" />
+            <span className={`h-2 w-2 rounded-full ${connection?.receiveReady && connection.sendReady ? "bg-[#38dc89]" : "bg-[var(--color-muted-soft)]"}`} />
             <span className="font-medium text-[#38dc89]">Meta WhatsApp</span>
             <span className="text-[var(--color-muted-soft)]">·</span>
-            <span>{locale === "ar" ? "المساعد: نورا (Noura)" : "Assistant: Noura"}</span>
+            <span>{connection ? (connection.receiveReady && connection.sendReady
+              ? (locale === "ar" ? "الرقم مرتبط" : "Number linked")
+              : (locale === "ar" ? "الإعداد يحتاج مراجعة" : "Setup needs review"))
+              : (locale === "ar" ? "حالة الربط غير متاحة" : "Connection status unavailable")}</span>
           </div>
           <Button
             variant="ghost"
-            onClick={() => void refreshInboxView()}
+            onClick={() => startTransition(async () => { await refreshInboxView(); if (selectedId) { await loadThread(selectedId); await loadAudit(selectedId); } await refreshConnection(); })}
+            disabled={inboxBusy || pending || !inboxMeta?.companyId}
             className="text-xs min-h-9 px-3 gap-1.5"
             title={locale === "ar" ? "تحديث المحادثات" : "Refresh inbox"}
           >
@@ -1142,23 +1326,28 @@ export function ConversationsPage({
         </div>
       }
     >
+      {inboxReadError ? <Notice tone="error">{inboxReadError}</Notice> : null}
+      {selectedId && threadErrors[selectedId] ? <Notice tone="error">
+        {threadErrors[selectedId]} <button type="button" className="underline" disabled={pending}
+          onClick={() => startTransition(async () => { await loadThread(selectedId); })}>{locale === "ar" ? "إعادة المحاولة" : "Retry"}</button>
+      </Notice> : null}
       {/* Top Banner Notice for Unconnected or Setup States */}
       {noCompany ? (
         <Notice tone="warn">{copy.app.inboxNoCompanyBody}</Notice>
       ) : loadFailed ? (
         <Notice tone="error">{copy.app.inboxLoadFailedBody}</Notice>
-      ) : inbox.length === 0 ? (
+      ) : conversations.length === 0 ? (
         <div className="mb-4 rounded-2xl border border-[#38dc89]/30 bg-gradient-to-r from-[#38dc89]/10 via-[#0d1a14]/60 to-[#d9a467]/10 p-4 text-xs font-[family-name:Tajawal,var(--font-ar),sans-serif] text-[var(--color-on-dark)] flex flex-wrap items-center justify-between gap-3 shadow-sm">
           <div className="flex items-center gap-3">
             <span className="text-2xl">📱</span>
             <div>
               <p className="font-bold text-sm text-[var(--color-success-fg)]">
-                {locale === "ar" ? "ربط واتساب بيزنس وتشغيل نورا" : "Connect WhatsApp Business & Activate Noura"}
+                {locale === "ar" ? "مراجعة إعداد WhatsApp Business" : "Review WhatsApp Business setup"}
               </p>
               <p className="text-[var(--color-muted-on-dark)] mt-0.5">
                 {locale === "ar"
-                  ? "تأكد من إكمال ربط رقم واتساب في الإعدادات وإضافة معرفة شركتك لتبدأ نورا بالرد الفوري."
-                  : "Ensure WhatsApp number is linked in settings and approved knowledge is added so Noura can reply."}
+                  ? "راجع حالة الربط والمعرفة المعتمدة في الإعدادات. تشغيل ردود العملاء يخضع لجاهزية التشغيل."
+                  : "Review connection status and approved knowledge in settings. Customer replies depend on runtime readiness."}
               </p>
             </div>
           </div>
@@ -1210,11 +1399,11 @@ export function ConversationsPage({
             <div className="flex gap-1 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden text-[11px] font-medium font-[family-name:Tajawal,var(--font-ar),sans-serif]">
               {(
                 [
-                  { id: "all", labelAr: "الكل", labelEn: "All", count: filterCounts.all },
-                  { id: "unread", labelAr: "بانتظار رد", labelEn: "Awaiting", count: filterCounts.unread },
-                  { id: "noura", labelAr: "نورا ترد", labelEn: "Noura", count: filterCounts.noura, badge: "✨" },
-                  { id: "staff", labelAr: "تدخل بشري", labelEn: "Staff", count: filterCounts.staff, badge: "👤" },
-                  { id: "resolved", labelAr: "مغلقة", labelEn: "Closed", count: filterCounts.resolved },
+                  { id: "all", labelAr: "الكل", labelEn: "All", count: filterCounts.all, title: locale === "ar" ? "كل المحادثات المتاحة" : "All authorized conversations" },
+                  { id: "unread", labelAr: "غير مقروءة", labelEn: "Unread", count: filterCounts.unread, title: locale === "ar" ? "الرسائل غير المقروءة في مساحة العمل" : "Unread messages across the workspace" },
+                  { id: "noura", labelAr: "نورا", labelEn: "Noura", count: undefined, badge: "✨", title: locale === "ar" ? "الأتمتة المسموحة في المحادثات المحملة" : "Automation enabled in loaded conversations" },
+                  { id: "staff", labelAr: "تدخل بشري", labelEn: "Staff", count: filterCounts.staff, badge: "👤", title: locale === "ar" ? "محادثات تحتاج تدخلاً في مساحة العمل" : "Conversations requiring intervention across the workspace" },
+                  { id: "resolved", labelAr: "مغلقة", labelEn: "Closed", count: undefined, title: locale === "ar" ? "المحادثات المغلقة المحملة" : "Closed loaded conversations" },
                 ] as const
               ).map((tab) => {
                 const active = activeFilter === tab.id;
@@ -1224,6 +1413,7 @@ export function ConversationsPage({
                     type="button"
                     onClick={() => setActiveFilter(tab.id)}
                     aria-pressed={active}
+                    title={tab.title}
                     className={`inline-flex items-center gap-1 shrink-0 rounded-xl px-2.5 py-1.5 transition ${
                       active
                         ? "bg-[#38dc89] text-[#072317] font-bold shadow-sm"
@@ -1232,20 +1422,23 @@ export function ConversationsPage({
                   >
                     {"badge" in tab ? <span>{tab.badge}</span> : null}
                     <span>{locale === "ar" ? tab.labelAr : tab.labelEn}</span>
-                    <span
+                    {tab.count !== undefined ? <span
                       className={`rounded-full px-1.5 py-0.2 text-[10px] ${
                         active ? "bg-[#072317]/20 text-[#072317]" : "bg-[var(--color-panel)] text-[var(--color-muted-soft)]"
                       }`}
                     >
                       {tab.count}
-                    </span>
+                    </span> : null}
                   </button>
                 );
               })}
             </div>
+            <p className="text-[10px] text-[var(--color-muted-soft)] mt-1">
+              {locale === "ar" ? "البحث والفلاتر للمحادثات المحملة، مرتبة من الأحدث إنشاءً. عداد القراءة للرسائل في مساحة العمل." : "Search and filters cover loaded conversations, newest created first. Unread counts workspace messages."}
+            </p>
 
             {/* Secondary Worklist Chips */}
-            {worklist !== "all" || counts.awaiting_staff > 0 || counts.follow_up_today > 0 ? (
+            {worklist !== "all" || WORKLISTS.some(key => key !== "all" && counts[key] > 0) ? (
               <div className="flex gap-1 overflow-x-auto pt-1 text-[10px] [scrollbar-width:none]">
                 {WORKLISTS.map((f) => (
                   <button
@@ -1253,6 +1446,7 @@ export function ConversationsPage({
                     type="button"
                     onClick={() => setWorklist(f)}
                     aria-pressed={worklist === f}
+                    title={locale === "ar" ? "عدد المحادثات المحملة" : "Count in loaded conversations"}
                     className={`shrink-0 rounded-lg px-2 py-0.5 border ${
                       worklist === f
                         ? "border-[#d9a467] bg-[#d9a467]/15 text-[#f0cf9d]"
@@ -1284,7 +1478,7 @@ export function ConversationsPage({
               const lastMsgTime = lastMessage?.at ? formatConversationTime(lastMessage.at, locale) : "";
               const isNouraActive = !c.assistantPaused && Boolean(c.automationAllowed) && c.status !== "resolved";
               const isAwaitingStaff = c.assistantPaused && c.status !== "resolved";
-              const isCustomerWaiting = lastMessage?.from === "customer" && c.status !== "resolved";
+              const isCustomerWaiting = c.unreadCount > 0;
 
               return (
                 <button
@@ -1344,7 +1538,7 @@ export function ConversationsPage({
                     {isNouraActive ? (
                       <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium bg-[#38dc89]/15 text-[#38dc89] border border-[#38dc89]/30">
                         <span className="h-1.5 w-1.5 rounded-full bg-[#38dc89] animate-pulse" />
-                        ✨ {locale === "ar" ? "نورا ترد" : "Noura Active"}
+                        ✨ {locale === "ar" ? "الأتمتة مسموحة" : "Automation enabled"}
                       </span>
                     ) : isAwaitingStaff ? (
                       <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium bg-[#d9a467]/15 text-[#f0cf9d] border border-[#d9a467]/30">
@@ -1363,15 +1557,20 @@ export function ConversationsPage({
                     ) : null}
 
                     {isCustomerWaiting ? (
-                      <span
-                        className="ms-auto h-2 w-2 rounded-full bg-[#38dc89] shadow-[0_0_8px_#38dc89]"
-                        title={locale === "ar" ? "رسالة جديدة بانتظار الرد" : "New message"}
-                      />
+                      <span className="ms-auto rounded-full px-1.5 bg-[#38dc89]/20 text-[#38dc89]"
+                        title={locale === "ar" ? "رسائل غير مقروءة" : "Unread messages"}>{c.unreadCount}</span>
                     ) : null}
                   </div>
                 </button>
               );
             })}
+            <div className="px-2 py-3 space-y-2 text-[11px] text-[var(--color-muted-soft)]">
+              <p>{locale === "ar" ? `تم تحميل ${conversations.length} من ${inboxPage?.total ?? "—"} محادثة` : `${conversations.length} of ${inboxPage?.total ?? "—"} conversations loaded`}</p>
+              {inboxPage?.hasMore ? <Button variant="ghost" className="w-full min-h-8 text-xs" disabled={inboxBusy || pending}
+                onClick={() => startTransition(async () => { await refreshInboxView(inboxPage.nextCursor); })}>
+                {locale === "ar" ? "تحميل المزيد من المحادثات" : "Load more conversations"}
+              </Button> : null}
+            </div>
           </div>
         </section>
 
@@ -1426,7 +1625,7 @@ export function ConversationsPage({
                       ) : (
                         <span className="inline-flex items-center gap-1 font-medium text-[#38dc89] text-[11px]">
                           <span className="h-1.5 w-1.5 rounded-full bg-[#38dc89] animate-pulse" />
-                          {locale === "ar" ? "نورا تجيب تلقائياً ✨" : "Noura Auto-Replying ✨"}
+                          {selected.status === "resolved" ? copy.app.statuses.resolved : (locale === "ar" ? "الأتمتة مسموحة ✨" : "Automation enabled ✨")}
                         </span>
                       )}
                     </div>
@@ -1440,7 +1639,7 @@ export function ConversationsPage({
                       {selected.assistantPaused ? (
                         <button
                           type="button"
-                          disabled={controlBusy || pending || selectedUnresolved}
+                          disabled={controlDisabled("resume")}
                           onClick={() => runControl(selected, "resume")}
                           className="inline-flex min-h-8 items-center gap-1.5 rounded-xl border border-[#38dc89]/40 bg-[#38dc89]/15 px-3 text-xs font-bold text-[#38dc89] transition hover:bg-[#38dc89]/25 disabled:opacity-50"
                           title={locale === "ar" ? "السماح لنورا بالرد التلقائي مجدداً" : "Resume Noura"}
@@ -1451,7 +1650,7 @@ export function ConversationsPage({
                       ) : (
                         <button
                           type="button"
-                          disabled={controlBusy || pending || selectedUnresolved}
+                          disabled={controlDisabled("take_over")}
                           onClick={() => runControl(selected, "take_over")}
                           className="inline-flex min-h-8 items-center gap-1.5 rounded-xl border border-[#d9a467]/40 bg-[#d9a467]/15 px-3 text-xs font-bold text-[#f0cf9d] transition hover:bg-[#d9a467]/25 disabled:opacity-50"
                           title={locale === "ar" ? "إيقاف نورا وتولي المحادثة كبشري" : "Take over from Noura"}
@@ -1465,7 +1664,7 @@ export function ConversationsPage({
                         <Button
                           variant="ghost"
                           busy={controlBusy && controlBusyId === selected.id}
-                          disabled={controlBusy || pending || selectedUnresolved}
+                          disabled={controlDisabled("close")}
                           onClick={() => runControl(selected, "close")}
                           className="text-xs min-h-8 py-1 px-2.5"
                         >
@@ -1493,11 +1692,11 @@ export function ConversationsPage({
                 <div className="border-b border-[#d9a467]/30 bg-[#d9a467]/10 px-4 py-2 text-xs text-[#f0cf9d] flex items-center justify-between font-[family-name:Tajawal,var(--font-ar),sans-serif]">
                   <div className="flex items-center gap-2">
                     <span>⚠️</span>
-                    <span>{locale === "ar" ? "الرد التلقائي لنورا متوقف حالياً. أنت الآن تتولى الرد على العميل." : "Noura auto-reply is paused. You are chatting directly with customer."}</span>
+                    <span>{locale === "ar" ? "الأتمتة متوقفة لهذه المحادثة. الرد اليدوي متاح للمخولين." : "Automation is paused for this conversation. Authorized staff can reply manually."}</span>
                   </div>
                   <button
                     type="button"
-                    disabled={controlBusy}
+                    disabled={controlDisabled("resume")}
                     onClick={() => runControl(selected, "resume")}
                     className="text-xs font-bold underline hover:opacity-80"
                   >
@@ -1507,7 +1706,7 @@ export function ConversationsPage({
               ) : (
                 <div className="border-b border-[#38dc89]/20 bg-[#38dc89]/5 px-4 py-2 text-xs text-[#38dc89] flex items-center gap-2 font-[family-name:Tajawal,var(--font-ar),sans-serif]">
                   <span>✨</span>
-                  <span>{locale === "ar" ? "نورا ترد على استفسارات هذا العميل بالاعتماد الكامل على قاعدة المعرفة المعتمدة لشركتك." : "Noura auto-replies using approved company knowledge."}</span>
+                  <span>{selected.status === "resolved" ? copy.app.statuses.resolved : (locale === "ar" ? "الأتمتة مسموحة. الإرسال يعتمد على جاهزية التشغيل والمعرفة المعتمدة." : "Automation is enabled. Sending depends on runtime readiness and approved knowledge.")}</span>
                 </div>
               )}
 
@@ -1516,6 +1715,12 @@ export function ConversationsPage({
                 className="flex-1 overflow-y-auto p-4 space-y-4"
                 dir={locale === "ar" ? "rtl" : "ltr"}
               >
+                {!selectedReady ? <p className="text-xs text-[var(--color-muted-soft)]">{locale === "ar" ? "جارٍ تحديث المحادثة…" : "Refreshing thread…"}</p> : null}
+                {selectedThread?.hasMore ? <Button variant="ghost" className="w-full min-h-8 text-xs" disabled={pending || threadBusyId === selected.id}
+                  onClick={() => startTransition(async () => { await loadThread(selected.id, selectedThread.nextCursor); })}>
+                  {locale === "ar" ? "تحميل الرسائل الأقدم" : "Load older messages"}
+                </Button> : null}
+                {selectedThread ? <p className="text-[10px] text-[var(--color-muted-soft)]">{locale === "ar" ? `${selected.messages.length} رسالة محملة` : `${selected.messages.length} messages loaded`}</p> : null}
                 {selected.messages.length === 0 ? (
                   <div className="py-16 text-center text-xs text-[var(--color-muted-soft)]">
                     {locale === "ar" ? "لا توجد رسائل سابقة في هذه المحادثة." : "No messages in this conversation yet."}
@@ -1666,7 +1871,7 @@ export function ConversationsPage({
                         onKeyDown={(e) => {
                           if (e.key === "Enter" && !e.shiftKey) {
                             e.preventDefault();
-                            if (draft.trim() && !pending && !controlBusy && !selectedSendLocked) {
+                            if (selectedReady && canReply && draft.trim() && !pending && !controlBusy && !selectedSendLocked) {
                               send(selected);
                             }
                           }
@@ -1677,12 +1882,12 @@ export function ConversationsPage({
                             : (locale === "ar" ? "اكتب ردك للتدخل يدويًا ومراسلة العميل..." : "Type reply to take over and message customer...")
                         }
                         aria-label={copy.app.reply}
-                        disabled={pending || controlBusy}
+                        disabled={!selectedReady || pending || controlBusy || selectedSendLocked}
                         className="flex-1 rounded-xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel-deep)] p-2.5 text-xs text-[var(--color-on-dark)] placeholder:text-[var(--color-muted-soft)] focus:ring-2 focus:ring-[#38dc89] outline-none disabled:opacity-60 resize-none transition"
                       />
                       <Button
                         type="submit"
-                        disabled={!draft.trim() || pending || controlBusy || selectedSendLocked || !liveIds.has(selected.id)}
+                        disabled={!selectedReady || !canReply || !draft.trim() || pending || controlBusy || selectedSendLocked || !liveIds.has(selected.id)}
                         className="shrink-0 min-h-10 px-4 text-xs font-bold gap-1.5"
                       >
                         <span>📨</span>
@@ -1786,6 +1991,18 @@ export function ConversationsPage({
                   <span className="text-[var(--color-muted-soft)]">{locale === "ar" ? "حالة المحادثة:" : "Status:"}</span>
                   <span className="font-medium text-[var(--color-on-dark)]">{copy.app.statuses[selected.status]}</span>
                 </div>
+                {selected.intervention.reasons.length ? <div className="text-[11px] text-[#f0cf9d] space-y-1">
+                  {selected.intervention.reasons.map(reason => <p key={reason}>{interventionLabels[reason]}</p>)}
+                </div> : null}
+                {connection ? <div className="pt-2 text-[10px] text-[var(--color-muted-soft)] space-y-1">
+                  {connection.displayNumber ? <p dir="ltr">{connection.displayNumber}</p> : null}
+                  <p>{locale === "ar" ? "حالة الربط:" : "Connection:"} {connection.status.replaceAll("_", " ")}</p>
+                  <p>{locale === "ar" ? "التفويض:" : "Authorization:"} {connection.authorizationStatus.replaceAll("_", " ")}</p>
+                  <p>{locale === "ar" ? "جاهزية الربط للاستقبال:" : "Receive binding:"} {connection.receiveReady ? (locale === "ar" ? "جاهز" : "Ready") : (locale === "ar" ? "غير جاهز" : "Not ready")}</p>
+                  <p>{locale === "ar" ? "جاهزية الربط للإرسال:" : "Send binding:"} {connection.sendReady ? (locale === "ar" ? "جاهز" : "Ready") : (locale === "ar" ? "غير جاهز" : "Not ready")}</p>
+                  <p>{locale === "ar" ? "آخر اختبار استقبال:" : "Last inbound test:"} {connection.inboundTestedAt ? new Date(connection.inboundTestedAt).toLocaleString(locale === "ar" ? "ar-OM" : "en-GB") : (locale === "ar" ? "لم يتم التحقق" : "Not verified")}</p>
+                  <p>{locale === "ar" ? "آخر اختبار إرسال:" : "Last outbound test:"} {connection.outboundTestedAt ? new Date(connection.outboundTestedAt).toLocaleString(locale === "ar" ? "ar-OM" : "en-GB") : (locale === "ar" ? "لم يتم التحقق" : "Not verified")}</p>
+                </div> : null}
               </div>
             </div>
 
@@ -1809,12 +2026,12 @@ export function ConversationsPage({
                   {selected.assistantPaused ? (
                     <span className="font-bold text-[#f0cf9d]">{locale === "ar" ? "متوقفة مؤقتاً" : "Paused"}</span>
                   ) : (
-                    <span className="font-bold text-[#38dc89]">{locale === "ar" ? "نشطة وترد فوراً" : "Active & Replying"}</span>
+                    <span className="font-bold text-[#38dc89]">{selected.status === "resolved" ? copy.app.statuses.resolved : (locale === "ar" ? "مسموحة" : "Enabled")}</span>
                   )}
                 </div>
                 <div className="flex items-center justify-between text-[10px] text-[var(--color-muted-soft)]">
                   <span>{locale === "ar" ? "المعرفة المعتمدة:" : "Knowledge base:"}</span>
-                  <span className="text-[#38dc89] font-medium">{locale === "ar" ? "متزامنة 🧠" : "Synced 🧠"}</span>
+                  <Link href="/app/knowledge" className="text-[#38dc89] font-medium hover:underline">{locale === "ar" ? "إدارة المعرفة" : "Manage knowledge"}</Link>
                 </div>
               </div>
 
@@ -1823,7 +2040,7 @@ export function ConversationsPage({
                   {selected.assistantPaused ? (
                     <button
                       type="button"
-                      disabled={controlBusy || pending || selectedUnresolved}
+                      disabled={controlDisabled("resume")}
                       onClick={() => runControl(selected, "resume")}
                       className="w-full inline-flex min-h-8 items-center justify-center gap-1.5 rounded-lg border border-[#38dc89]/50 bg-[#38dc89]/20 text-xs font-bold text-[#38dc89] hover:bg-[#38dc89]/30 transition disabled:opacity-50"
                     >
@@ -1833,7 +2050,7 @@ export function ConversationsPage({
                   ) : (
                     <button
                       type="button"
-                      disabled={controlBusy || pending || selectedUnresolved}
+                      disabled={controlDisabled("take_over")}
                       onClick={() => runControl(selected, "take_over")}
                       className="w-full inline-flex min-h-8 items-center justify-center gap-1.5 rounded-lg border border-[#d9a467]/50 bg-[#d9a467]/20 text-xs font-bold text-[#f0cf9d] hover:bg-[#d9a467]/30 transition disabled:opacity-50"
                     >
@@ -1843,6 +2060,21 @@ export function ConversationsPage({
                   )}
                 </div>
               ) : null}
+            </div>
+
+            <div className="rounded-xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel)] p-3 space-y-2">
+              <p className="font-bold text-xs">{locale === "ar" ? "سجل التحكم والتدخل" : "Control & handoff history"}</p>
+              {auditError ? <p className="text-[11px] text-[var(--color-danger-fg)]">{auditError}</p> : null}
+              {audits[selected.id]?.events.map(event => <div key={event.id} className="text-[10px] border-t border-[color:var(--color-border-soft)] pt-1 text-[var(--color-muted-soft)]">
+                <p className="font-medium text-[var(--color-on-dark)]">{event.action}</p>
+                <p>{event.actorUserId ? (assignees.find(person => person.userId === event.actorUserId)?.name ?? event.actorUserId) : (locale === "ar" ? "الفاعل غير متاح" : "Actor unavailable")}</p>
+                <p>{new Date(event.at).toLocaleString(locale === "ar" ? "ar-OM" : "en-GB")}</p>
+              </div>)}
+              {!auditBusy && audits[selected.id]?.events.length === 0 ? <p className="text-[10px] text-[var(--color-muted-soft)]">{locale === "ar" ? "لا توجد أحداث تحكم محفوظة." : "No saved control events."}</p> : null}
+              {!audits[selected.id] || auditError ? <Button variant="ghost" className="min-h-8 text-xs" disabled={auditBusy || pending}
+                onClick={() => startTransition(async () => { await loadAudit(selected.id); })}>{locale === "ar" ? "تحديث السجل" : "Refresh history"}</Button> : null}
+              {audits[selected.id]?.hasMore ? <Button variant="ghost" className="min-h-8 text-xs" disabled={auditBusy || pending}
+                onClick={() => startTransition(async () => { await loadAudit(selected.id, audits[selected.id].nextCursor); })}>{locale === "ar" ? "أحداث أقدم" : "Older events"}</Button> : null}
             </div>
 
             {/* Card 3: Lead & CRM Follow-up Panel */}
@@ -1855,8 +2087,8 @@ export function ConversationsPage({
                 canReply={canReply}
                 canAssign={canAssign}
                 assignees={assignees}
-                timezoneAnnouncedUtc={meta?.timezoneAnnouncedUtc}
-                live={liveIds.has(selected.id)}
+                timezoneAnnouncedUtc={inboxMeta?.timezoneAnnouncedUtc}
+                live={selectedReady && liveIds.has(selected.id)}
                 busyControl={controlBusy && controlBusyId === selected.id}
                 pending={pending}
                 selectedUnresolved={selectedUnresolved}
@@ -1864,15 +2096,17 @@ export function ConversationsPage({
                 onPatchControl={(state) => patch(selected.id, (cur) => applyControlState(cur, state))}
                 onSync={() => syncControlView(selected.id)}
                 onNotice={(message) => {
+                  if (!isSelected(selected.id)) return;
                   setError(null);
                   setWarn(null);
                   setNotice(message);
                 }}
                 onError={(message) => {
+                  if (!isSelected(selected.id)) return;
                   setNotice(null);
                   setError(message);
                 }}
-                onWarn={(message) => setWarn(message)}
+                onWarn={(message) => { if (isSelected(selected.id)) setWarn(message); }}
                 onBusyControl={(busy, busyId) => {
                   controlBusyIdRef.current = busy ? busyId : null;
                   setControlBusy(busy);

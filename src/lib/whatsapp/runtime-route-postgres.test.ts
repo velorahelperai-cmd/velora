@@ -26,7 +26,11 @@ function packet(f:Tenant,ids:string[],statuses?:{id:string;status:string;recipie
 const request=(body:string,valid=true)=>new Request("http://localhost.invalid/api/whatsapp/webhook",{method:"POST",body,headers:{"x-hub-signature-256":valid?`sha256=${createHmac("sha256",appSecret).update(body).digest("hex")}`:"sha256=invalid"}});
 afterEach(()=>{vi.unstubAllEnvs();state.model.mockReset();state.send.mockReset();state.rollout=true;});
 describe.skipIf(!enabled)("actual webhook to durable HTTP worker",()=>{
- beforeAll(async()=>{await verify();await sql("CREATE EXTENSION IF NOT EXISTS supabase_vault CASCADE;");},30_000);
+ beforeAll(async()=>{await verify();await sql("CREATE EXTENSION IF NOT EXISTS supabase_vault CASCADE;");
+  // Test-only consumer isolation: earlier transaction suites leave runnable
+  // synthetic jobs. Retain their evidence and prevent this suite claiming them.
+  await sql("UPDATE public.whatsapp_inbound_jobs j SET status='dead_letter' FROM public.companies c WHERE c.id=j.company_id AND c.display_name LIKE 'Synthetic%' AND j.status IN ('pending','retry_wait','claimed');");
+ },30_000);
  it("rejects invalid signature and unauthorized consumer before persistence or paid work",async()=>{const f=await prepare(),id=`synthetic-invalid-${crypto.randomUUID()}`;expect((await receive(request(packet(f,[id]),false))).status).toBe(401);expect(await rows(`SELECT id FROM whatsapp_messages WHERE wa_message_id=${lit(id)}`)).toHaveLength(0);expect((await consume(new Request("http://localhost.invalid/worker",{method:"POST",headers:{authorization:"Bearer wrong"}}))).status).toBe(401);expect(state.model).not.toHaveBeenCalled();},30_000);
  it("runs duplicate/FIFO ingestion through actual routes, accepts twice and applies only bound delivery",async()=>{const f=await prepare(),ids=[`synthetic-route-${crypto.randomUUID()}`,`synthetic-route-${crypto.randomUUID()}`],body=packet(f,ids);
   expect((await receive(request(body))).status).toBe(200);expect((await receive(request(body))).status).toBe(200);

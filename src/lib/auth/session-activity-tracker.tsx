@@ -2,7 +2,7 @@
 import { useEffect, useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useOptionalAccountSession } from "@/components/app/account-chrome";
-import { createClient } from "@/lib/supabase/client";
+import { tryCreateClient } from "@/lib/supabase/client";
 import { checkSessionActivity } from "./session-actions";
 import { emptyBusiness,useDemo } from "@/lib/demo-state";
 import { clearPendingSignup } from "./auth-journey";
@@ -18,7 +18,8 @@ export function SessionActivityTracker(){
     expiryHandled.current=true;
     clearPendingSignup();update({account:null,signedIn:false,stage:"guest",business:emptyBusiness,businessSaved:false,setupStep:0,setupDone:[false,false,false,false]});
     const path=pathRef.current;
-    void createClient().auth.signOut({scope:"local"}).catch(()=>{}).finally(()=>{session.clear();if(/^\/(app|admin|account|setup|complete-profile)(\/|$)/.test(path))router.replace(`/login?reason=session_expired&next=${encodeURIComponent(path+window.location.search)}`);router.refresh();});
+    const signedOut=tryCreateClient()?.auth.signOut({scope:"local"})??Promise.resolve();
+    void signedOut.catch(()=>{}).finally(()=>{session.clear();if(/^\/(app|admin|account|setup|complete-profile)(\/|$)/.test(path))router.replace(`/login?reason=session_expired&next=${encodeURIComponent(path+window.location.search)}`);router.refresh();});
     return;
   }
   if(session?.status!=="ready"||!session.identity)return;

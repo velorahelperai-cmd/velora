@@ -55,6 +55,16 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value != null && typeof value === "object" && !Array.isArray(value);
 }
 
+/** A rendered company is an expectation; authorization still comes from current access. */
+function renderedCompanyError(expected: unknown, companyId: string | null, allowNoCompany = false):
+  { ok: false; code: "INVALID_INPUT" | "FORBIDDEN"; message: string } | null {
+  if (!(expected === null && allowNoCompany)
+    && (typeof expected !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(expected))) {
+    return { ok: false, code: "INVALID_INPUT", message: "invalid_company" };
+  }
+  return expected === companyId ? null : { ok: false, code: "FORBIDDEN", message: "workspace_changed" };
+}
+
 function asReviewRequest(value: unknown): CompanyReviewRequest | null {
   if (!isPlainObject(value)) return null;
   const status = value.status;
@@ -382,7 +392,7 @@ export async function getCustomerReadiness(): Promise<ActionResult<CustomerReadi
     let subscription:{loadFailed:boolean;status:string|null;paidThrough:string|null}|null=null;
 
     if (hasCompany) {
-      const listed = await listKnowledgeSources();
+      const listed = await listKnowledgeSources({ expectedCompanyId: company!.id });
       knowledge = listed.ok
         ? {
           loadFailed: false,
@@ -406,7 +416,7 @@ export async function getCustomerReadiness(): Promise<ActionResult<CustomerReadi
       if (role === "owner") {
         const journey=await readSubscriptionJourneyAction();
         subscription=journey.status==="ready"?{loadFailed:false,status:journey.data.subscription?.status??null,paidThrough:journey.data.subscription?.paid_through??null}:{loadFailed:true,status:null,paidThrough:null};
-        const rev = await getCompanyReviewRequest();
+        const rev = await getCompanyReviewRequest({ expectedCompanyId: company!.id });
         review = rev.ok
           ? { loadFailed: false, status: rev.data?.status ?? null }
           : { loadFailed: true, status: null };
@@ -554,9 +564,13 @@ async function requireActiveOwnerCompany() {
   };
 }
 
-export async function getCompanyReviewRequest(): Promise<ActionResult<CompanyReviewRequest | null>> {
+export async function getCompanyReviewRequest(input?: { expectedCompanyId?: string }): Promise<ActionResult<CompanyReviewRequest | null>> {
   const gate = await requireActiveOwnerCompany();
   if (!gate.ok) return { ok: false, code: gate.code };
+  if (input && "expectedCompanyId" in input) {
+    const error = renderedCompanyError(input.expectedCompanyId, gate.companyId);
+    if (error) return error;
+  }
   try {
     const { data, error } = await gate.supabase
       .from("company_review_requests")
@@ -573,11 +587,15 @@ export async function getCompanyReviewRequest(): Promise<ActionResult<CompanyRev
   }
 }
 
-export async function listCompanyReviewEvents(): Promise<ActionResult<CompanyReviewEvent[]>> {
+export async function listCompanyReviewEvents(input?: { expectedCompanyId?: string }): Promise<ActionResult<CompanyReviewEvent[]>> {
   const gate = await requireActiveOwnerCompany();
   if (!gate.ok) return { ok: false, code: gate.code };
+  if (input && "expectedCompanyId" in input) {
+    const error = renderedCompanyError(input.expectedCompanyId, gate.companyId);
+    if (error) return error;
+  }
   try {
-    const { data, error } = await gate.supabase.rpc("list_owner_company_review_events");
+    const { data, error } = await gate.supabase.rpc("list_owner_company_review_events_for_company", { p_company_id: gate.companyId });
     if (error) return { ok: false, code: "AUTH_ERROR", message: error.message };
     const rows = Array.isArray(data) ? data : [];
     const events: CompanyReviewEvent[] = rows.flatMap((row) => {
@@ -601,9 +619,14 @@ export async function submitCompanyReviewRequest(input: {
   whatsappNumber: string;
   ready: boolean;
   expectedRevision?: number;
+  expectedCompanyId?: string;
 }): Promise<ActionResult<CompanyReviewRequest>> {
   const gate = await requireActiveOwnerCompany();
   if (!gate.ok) return { ok: false, code: gate.code };
+  if ("expectedCompanyId" in input) {
+    const error = renderedCompanyError(input.expectedCompanyId, gate.companyId);
+    if (error) return error;
+  }
   if (typeof input.whatsappNumber !== "string") return { ok: false, code: "INVALID_INPUT" };
   if (input.ready !== true) return { ok: false, code: "INVALID_INPUT" };
   if (input.numberOwnership !== "own" && input.numberOwnership !== "new") {
@@ -629,9 +652,14 @@ export async function resubmitCompanyReviewRequest(input: {
   whatsappNumber: string;
   ready: boolean;
   expectedRevision?: number;
+  expectedCompanyId?: string;
 }): Promise<ActionResult<CompanyReviewRequest>> {
   const gate = await requireActiveOwnerCompany();
   if (!gate.ok) return { ok: false, code: gate.code };
+  if ("expectedCompanyId" in input) {
+    const error = renderedCompanyError(input.expectedCompanyId, gate.companyId);
+    if (error) return error;
+  }
   if (typeof input.expectedRevision !== "number") return { ok: false, code: "INVALID_INPUT" };
   if (input.ready !== true) return { ok: false, code: "INVALID_INPUT" };
   if (input.numberOwnership !== "own" && input.numberOwnership !== "new") {
@@ -713,6 +741,7 @@ export async function saveOwnerBusiness(input: {
   contactPhone: string;
   contactEmail: string;
   memberName?: string;
+  expectedCompanyId?: string | null;
 }): Promise<ActionResult<CompanyRecord>> {
   const access = await getCompanyAccess();
   if (!access.ok) return { ok: false, code: access.code };
@@ -721,6 +750,10 @@ export async function saveOwnerBusiness(input: {
   }
 
   if(access.context.needsCompanyContext||access.context.isPlatformAdmin&&!access.context.company)return {ok:false,code:"FORBIDDEN"};
+  if ("expectedCompanyId" in input) {
+    const error = renderedCompanyError(input.expectedCompanyId, access.context.company?.id ?? null, true);
+    if (error) return error;
+  }
   const displayName = input.displayName.trim();
   if (!displayName || displayName.length > 120 || !input.hours.trim()) {
     return { ok: false, code: "INVALID_INPUT" };

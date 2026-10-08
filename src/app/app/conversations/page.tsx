@@ -1,13 +1,13 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import { ConversationsPage } from "@/components/app/conversations";
-import { loadWhatsappInbox } from "@/lib/whatsapp/inbox";
+import { loadWhatsappInboxInitialPage } from "@/lib/whatsapp/inbox";
 
 export const metadata: Metadata = { title: "Conversations · Velora" };
 export const dynamic = "force-dynamic";
 
 export default async function Page() {
-  const loaded = await loadWhatsappInbox();
+  const loaded = await loadWhatsappInboxInitialPage();
   return (
     <Suspense fallback={<main className="min-h-svh bg-[#07110d]" aria-busy="true" />}>
       <ConversationsPage
@@ -15,6 +15,7 @@ export default async function Page() {
         loadFailed={!loaded.ok && loaded.code === "UNAVAILABLE"}
         noCompany={!loaded.ok && loaded.code === "NO_COMPANY"}
         meta={loaded.ok ? loaded.meta : undefined}
+        page={loaded.ok ? loaded.page : undefined}
       />
     </Suspense>
   );

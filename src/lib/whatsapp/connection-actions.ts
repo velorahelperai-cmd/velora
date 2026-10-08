@@ -84,6 +84,7 @@ export async function getWhatsappCompanyLink(): Promise<ActionOk<WhatsappCompany
 export async function saveWhatsappLinkRequest(input: {
   requestedDisplayNumber: string;
   keepOnPhone: boolean;
+  expectedCompanyId?: string;
 }): Promise<ActionOk<WhatsappCompanyLink> | ActionFail> {
   const access = await getCompanyAccess();
   if (!access.ok) {
@@ -100,6 +101,15 @@ export async function saveWhatsappLinkRequest(input: {
   }
   if (access.context.company.status === "suspended") {
     return { ok: false, code: "COMPANY_SUSPENDED" };
+  }
+  if ("expectedCompanyId" in input) {
+    if (typeof input.expectedCompanyId !== "string"
+      || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(input.expectedCompanyId)) {
+      return { ok: false, code: "INVALID_INPUT", message: "invalid_company" };
+    }
+    if (input.expectedCompanyId !== access.context.company.id) {
+      return { ok: false, code: "FORBIDDEN", message: "workspace_changed" };
+    }
   }
   const number = input.requestedDisplayNumber.trim().slice(0, 40);
   if (number.length < 5) return { ok: false, code: "INVALID_INPUT" };

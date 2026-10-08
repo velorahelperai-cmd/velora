@@ -10,12 +10,14 @@ import { WorkspaceShell } from "@/components/app/workspace-shell";
 import { LangSwitch, LinkButton, useAppCopy } from "@/components/app/ui";
 
 export function KnowledgePage({
+  companyId,
   canWrite,
   canDelete,
   initialSources,
   initialLoadFailed,
   approvalFoundation = "ready",
 }: {
+  companyId: string;
   canWrite: boolean;
   canDelete?: boolean;
   initialSources: KnowledgeSourceRecord[];
@@ -27,6 +29,8 @@ export function KnowledgePage({
   return (
     <WorkspaceShell title={copy.knowledge.title}>
       <KnowledgeEditor
+        key={companyId}
+        companyId={companyId}
         focusTitle={topic}
         canWrite={canWrite}
         canDelete={canDelete}

@@ -11,3 +11,8 @@ export function createClient() {
   }
   return createBrowserClient<Database>(env.url, env.publishableKey);
 }
+
+/** Optional observers must not crash public pages when local setup is absent. */
+export function tryCreateClient(): ReturnType<typeof createClient> | null {
+  try { return createClient(); } catch { return null; }
+}

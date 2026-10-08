@@ -50,6 +50,14 @@ const SOURCE_SELECT_BASE =
 const SOURCE_SELECT =
   "id, company_id, kind, title, content, file_name, content_type, byte_size, storage_path, status, failure_code, content_version, approved_for_answers, approved_version, approved_at, approved_by, created_by, created_at, updated_at, usage_role" as const;
 
+function renderedCompanyError(expected: unknown, companyId: string):
+  { ok: false; code: "INVALID_INPUT" | "FORBIDDEN"; message: string } | null {
+  if (typeof expected !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(expected)) {
+    return { ok: false, code: "INVALID_INPUT", message: "invalid_company" };
+  }
+  return expected === companyId ? null : { ok: false, code: "FORBIDDEN", message: "workspace_changed" };
+}
+
 function asSource(
   row: unknown,
   approvalFoundation: KnowledgeApprovalFoundation = "ready",
@@ -394,10 +402,14 @@ async function prepareStoredFile(
   return failed ?? asSource({ ...started, status: "failed", failure_code: "extract_failed", content: "" }, foundation);
 }
 
-export async function listKnowledgeSources(): Promise<KnowledgeActionResult<KnowledgeListPayload>> {
+export async function listKnowledgeSources(input?: { expectedCompanyId?: string }): Promise<KnowledgeActionResult<KnowledgeListPayload>> {
   try {
     const ctx = await requireMemberCompany();
     if (!ctx.ok) return { ok: false, code: ctx.code };
+    if (input && "expectedCompanyId" in input) {
+      const error = renderedCompanyError(input.expectedCompanyId, ctx.companyId);
+      if (error) return error;
+    }
     const listed = await listKnowledgeRowsForCompany(ctx.supabase, ctx.companyId);
     if (!listed.ok) return { ok: false, code: "AUTH_ERROR", message: listed.message };
     return { ok: true, data: listed.payload };
@@ -411,6 +423,7 @@ export async function saveTextKnowledgeSource(input: {
   title: string;
   content: string;
   usageRole?: "knowledge" | "business_instructions";
+  expectedCompanyId?: string;
 }): Promise<KnowledgeActionResult<KnowledgeSourceRecord>> {
   const title = input.title.trim();
   const content = input.content.trim();
@@ -425,6 +438,11 @@ export async function saveTextKnowledgeSource(input: {
   try {
     const ctx = await requireOwnerCompany();
     if (!ctx.ok) return { ok: false, code: ctx.code };
+
+    if ("expectedCompanyId" in input) {
+      const error = renderedCompanyError(input.expectedCompanyId, ctx.companyId);
+      if (error) return error;
+    }
 
     if (input.id) {
       const { data, error } = await ctx.supabase
@@ -468,6 +486,13 @@ export async function uploadKnowledgeFiles(
   try {
     const ctx = await requireOwnerCompany();
     if (!ctx.ok) return { ok: false, code: ctx.code };
+
+    const expectedCompanies = formData.getAll("expectedCompanyId");
+    if (expectedCompanies.length > 1) return { ok: false, code: "INVALID_INPUT", message: "invalid_company" };
+    if (expectedCompanies.length === 1) {
+      const error = renderedCompanyError(expectedCompanies[0], ctx.companyId);
+      if (error) return error;
+    }
 
     const files = formData.getAll("files").filter((f): f is File => f instanceof File);
     const batchError = validateKnowledgeBatch(
