@@ -30,6 +30,14 @@ export function decideClaimedTenantSend(input: {
   intentLinkId: string | null;
   intentLinkGeneration: number | null;
 }): ClaimedSendDecision {
+  if (
+    !input.intentLinkId?.trim()
+    || input.intentLinkGeneration == null
+    || !Number.isSafeInteger(input.intentLinkGeneration)
+    || input.intentLinkGeneration < 1
+  ) {
+    return { action: "rejected", code: "link_changed" };
+  }
   const binding = evaluateOutboundBinding({
     companyId: input.companyId,
     phoneNumberId: input.phoneNumberId,
@@ -70,10 +78,12 @@ export async function applyClaimedPreGraphOutcome(input: {
   }) => Promise<{ error: unknown; data: unknown }>;
 }): Promise<PreGraphActionResult> {
   const result = sendFinalizeKind(input.decision.code);
-  const rpc = await input.finalize({
-    result,
-    errorCode: input.decision.code,
-  });
+  let rpc: { error: unknown; data: unknown };
+  try {
+    rpc = await input.finalize({ result, errorCode: input.decision.code });
+  } catch {
+    rpc = { error: true, data: null };
+  }
   return replyFromPreGraphSettlement(
     classifyPreGraphSettlement(rpc),
     input.clientOpId,

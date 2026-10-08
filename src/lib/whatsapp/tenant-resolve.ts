@@ -139,7 +139,10 @@ export async function resolveWhatsappCompanyByProviderPhone(
     if (!row) return { ok: false, eligible: false, code: "unavailable" };
 
     if (row.ok !== true) {
-      const code = String(row.code ?? "unknown_or_inactive");
+      if (row.ok !== false || typeof row.code !== "string") {
+        return { ok: false, eligible: false, code: "unavailable" };
+      }
+      const code = row.code;
       if (code === "company_suspended") {
         return {
           ok: false,
@@ -149,23 +152,36 @@ export async function resolveWhatsappCompanyByProviderPhone(
         };
       }
       if (code === "invalid_input") return { ok: false, eligible: false, code: "invalid_input" };
-      return { ok: false, eligible: false, code: "unknown_or_inactive" };
+      if (code === "unknown_or_inactive" || code === "conflict") return { ok: false, eligible: false, code };
+      return { ok: false, eligible: false, code: "unavailable" };
     }
 
-    const companyId = typeof row.company_id === "string" ? row.company_id : "";
-    const linkId = typeof row.link_id === "string" ? row.link_id : "";
-    const providerId = typeof row.provider_phone_number_id === "string" ? row.provider_phone_number_id : phone;
-    const linkGeneration = Number(row.generation ?? row.link_generation ?? 1);
-    if (!companyId || !linkId) return { ok: false, eligible: false, code: "unavailable" };
+    const companyId = typeof row.company_id === "string" ? row.company_id.trim() : "";
+    const linkId = typeof row.link_id === "string" ? row.link_id.trim() : "";
+    const providerId = typeof row.provider_phone_number_id === "string" ? row.provider_phone_number_id : "";
+    const rawGeneration = row.generation ?? row.link_generation;
+    const linkGeneration = Number(rawGeneration);
+    const generations = [row.generation, row.link_generation].filter((value) => value != null);
+    if (
+      !companyId || !linkId || !providerId || typeof row.status !== "string"
+      || !generations.length
+      || generations.some((value) => typeof value !== "number" && (typeof value !== "string" || !/^\d+$/.test(value)))
+      || !Number.isSafeInteger(linkGeneration) || linkGeneration < 1
+      || (row.generation != null && row.link_generation != null && Number(row.generation) !== Number(row.link_generation))
+    ) return { ok: false, eligible: false, code: "unavailable" };
+    if (providerId !== phone) return { ok: false, eligible: false, code: "conflict" };
+    if (row.eligible !== true || row.status !== "verified") {
+      return { ok: false, eligible: false, code: "unknown_or_inactive" };
+    }
 
     return {
       ok: true,
       eligible: true,
       companyId,
       linkId,
-      linkGeneration: Number.isFinite(linkGeneration) && linkGeneration >= 1 ? linkGeneration : 1,
+      linkGeneration,
       providerPhoneNumberId: providerId,
-      status: String(row.status ?? "verified"),
+      status: row.status,
     };
   } catch {
     return { ok: false, eligible: false, code: "unavailable" };

@@ -62,7 +62,13 @@ export async function POST(request: Request) {
     return new Response("not configured", { status: WEBHOOK_HTTP.notConfigured });
   }
 
-  const raw = await request.text();
+  let raw: Uint8Array;
+  try {
+    raw = new Uint8Array(await request.arrayBuffer());
+  } catch {
+    logWebhookDiag("post_body_unavailable", { mode, retry: true });
+    return new Response("body unavailable", { status: WEBHOOK_HTTP.retryable });
+  }
   if (!signatureMatches(raw, request.headers.get("x-hub-signature-256"), config.appSecret)) {
     logWebhookDiag("post_bad_signature", { mode, bytes: raw.length });
     return new Response("invalid signature", { status: WEBHOOK_HTTP.invalidSignature });
@@ -70,7 +76,7 @@ export async function POST(request: Request) {
 
   let payload: unknown;
   try {
-    payload = JSON.parse(raw);
+    payload = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(raw));
   } catch {
     logWebhookDiag("post_bad_json", { mode, bytes: raw.length });
     return new Response("bad json", { status: WEBHOOK_HTTP.badJson });

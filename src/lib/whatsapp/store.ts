@@ -22,7 +22,12 @@ function asRecord(value: Json | null | undefined): Record<string, unknown> | nul
 }
 
 function requireString(value: unknown, label: string) {
-  if (typeof value !== "string" || !value) throw new Error(`save_inbound_${label}`);
+  if (typeof value !== "string" || !value.trim()) throw new Error(`save_inbound_${label}`);
+  return value;
+}
+
+function requireBoolean(value: unknown, label: string): boolean {
+  if (typeof value !== "boolean") throw new Error(`whatsapp_rpc_${label}`);
   return value;
 }
 
@@ -52,13 +57,16 @@ export async function saveInbound(
 
   const row = asRecord(data);
   if (!row || row.ok !== true) throw new Error("save_inbound_failed");
+  if (typeof row.job_status !== "string" || !["pending", "claimed", "completed", "failed"].includes(row.job_status)) {
+    throw new Error("save_inbound_job_status");
+  }
 
   return {
-    inserted: Boolean(row.inserted),
+    inserted: requireBoolean(row.inserted, "inserted"),
     messageId: requireString(row.message_id, "message_id"),
     conversationId: requireString(row.conversation_id, "conversation_id"),
     jobId: requireString(row.job_id, "job_id"),
-    jobStatus: typeof row.job_status === "string" ? row.job_status : "pending",
+    jobStatus: row.job_status,
   };
 }
 
@@ -80,10 +88,12 @@ export async function saveStatus(admin: Admin, companyId: string, status: Delive
   if (error) throw error;
   const row = asRecord(data);
   if (!row || row.ok !== true) throw new Error("save_status_failed");
-  return {
-    inserted: Boolean(row.inserted),
-    duplicate: Boolean(row.duplicate),
-  };
+  const inserted = requireBoolean(row.inserted, "inserted");
+  // New-event SQL omits duplicate; replay SQL explicitly reports duplicate=true.
+  if (inserted ? row.duplicate !== undefined && row.duplicate !== false : row.duplicate !== true) {
+    throw new Error("save_status_result_invalid");
+  }
+  return { inserted, duplicate: !inserted };
 }
 
 /** Re-apply unmatched delivery events after an outbound message row exists. */
@@ -162,6 +172,10 @@ export async function claimInboundJob(
   if (row.ok !== true) {
     return { ok: false as const, code: String(row.code ?? "not_claimable") };
   }
+  if (row.job_id !== jobId || typeof row.claim_expires_at !== "string" || !Number.isFinite(Date.parse(row.claim_expires_at)) ||
+      typeof row.attempt_count !== "number" || !Number.isSafeInteger(row.attempt_count) || row.attempt_count < 1) {
+    throw new Error("claim_inbound_result_invalid");
+  }
   return {
     ok: true as const,
     jobId: requireString(row.job_id, "job_id"),
@@ -170,7 +184,7 @@ export async function claimInboundJob(
     waMessageId: requireString(row.wa_message_id, "wa_message_id"),
     claimToken: requireString(row.claim_token, "claim_token"),
     claimExpiresAt: requireString(row.claim_expires_at, "claim_expires_at"),
-    attemptCount: Number(row.attempt_count ?? 0),
+    attemptCount: row.attempt_count,
   };
 }
 
@@ -195,6 +209,9 @@ export async function completeInboundJob(
   if (!row) throw new Error("complete_inbound_failed");
   if (row.ok !== true) {
     return { ok: false as const, code: String(row.code ?? "claim_rejected") };
+  }
+  if (row.job_id !== input.jobId || row.status !== (input.ok ? "completed" : "failed")) {
+    throw new Error("complete_inbound_result_invalid");
   }
   return {
     ok: true as const,
