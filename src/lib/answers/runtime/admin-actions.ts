@@ -35,9 +35,15 @@ export async function runAdminAITrial(input:AdminAIActionInput){
  if(input.contextMode==="company"){
   const packed=await loadApprovedAnswerContext(input.companyId,admin);if(!packed.ok)return {ok:false as const,error:packed.code};chunks=packed.chunks;
  }
- const result=await executeRealAnswer({actorId:gate.actorId,sessionId:gate.sessionId,companyId:company.id,executionId:input.executionId,question:input.question.trim(),locale:input.locale==="en"?"en":"ar",chunks,model:input.model==="auto"?undefined:input.model,usageMode:"admin_test"});
+ const result=await executeRealAnswer({actorId:gate.actorId,sessionId:gate.sessionId,companyId:company.id,executionId:input.executionId,question:input.question.trim(),locale:input.locale==="en"?"en":"ar",chunks,model:input.model==="auto"?undefined:input.model,usageMode:"admin_test",maxOutputTokens:input.maxOutputTokens,maxCostBaisa:input.maxCostBaisa});
  const again=await ownerGate();
  if(!again.ok||again.actorId!==gate.actorId||again.sessionId!==gate.sessionId)return {ok:false as const,error:"ACCESS_CHANGED_AFTER_EXECUTION"};
  if(chunks.length&&!await verifyAnswerCitationsStillValid(company.id,chunks,admin))return {ok:false as const,error:"KNOWLEDGE_CHANGED_AFTER_EXECUTION"};
  return result;
+}
+
+/** Separate synthetic owner test action. Confirmation remains off unless supplied explicitly. */
+export async function runAdminAIConnectivityTest(input:{modelId:"gpt-6-luna"|"gpt-6.1-sol"|"gemini-3.8-flash";companyId?:string;executionId?:string;executeConfirmed?:boolean}){
+ const {executeLiveModelPing}=await import("../diagnostics/ping-test");
+ return executeLiveModelPing({...input,executeConfirmed:input?.executeConfirmed===true});
 }

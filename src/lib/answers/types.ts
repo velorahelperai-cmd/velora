@@ -34,6 +34,7 @@ export type AnswerUsage = {
   promptTokens?: number;
   completionTokens?: number;
   cachedTokens?: number;
+  cacheWriteTokens?: number;
   reasoningTokens?: number;
   totalTokens?: number;
   modelId?: AIModelId;
@@ -41,6 +42,22 @@ export type AnswerUsage = {
   estimatedCostBaisa?: number;
   estimatedCostUsd?: number;
   requestId?: string;
+  responseId?: string;
+  actualModelId?: string;
+  latencyMs?: number;
+  pricingVersion?: string;
+  pricingEffectiveDate?: string;
+};
+
+/** Optional attempt evidence; legacy callers remain compatible without these fields. */
+export type AnswerAttempt = {
+  modelId: AIModelId;
+  provider: AIProviderName;
+  status: "success" | "failed" | "uncertain" | "not_dispatched";
+  usage?: AnswerUsage;
+  code?: AnswerFailureCode;
+  requestId?: string;
+  latencyMs: number;
 };
 
 export type AnswerSuccess = {
@@ -51,12 +68,22 @@ export type AnswerSuccess = {
   modelId?: AIModelId;
   routingReason?: string;
   attemptsCount?: number;
+  attempts?: AnswerAttempt[];
 };
 
 export type AnswerFailure = {
   ok: false;
   code: AnswerFailureCode;
   message?: string;
+  modelId?: AIModelId;
+  provider?: AIProviderName;
+  usage?: AnswerUsage;
+  requestId?: string;
+  latencyMs?: number;
+  /** Omitted/false cannot authorize another paid attempt after an uncertain result. */
+  retrySafe?: boolean;
+  providerAttempted?: boolean;
+  attempts?: AnswerAttempt[];
 };
 
 export type AnswerResult = AnswerSuccess | AnswerFailure;
@@ -71,6 +98,8 @@ export type AnswerProviderRequest = {
   forceModelId?: AIModelId;
   dryRun?: boolean;
   signal?: AbortSignal;
+  maxOutputTokens?: number;
+  timeoutMs?: number;
 };
 
 export type AnswerProvider = {

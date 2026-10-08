@@ -2,7 +2,7 @@ import { MultiModelAIRouter } from "@/lib/answers/routing/router";
 import {
   checkCompanyAIBudget,
   recordExecutionInLedger,
-  getActiveLedgerStore,
+  InMemoryAIUsageLedger,
   type AIUsageLedgerEntry,
 } from "@/lib/answers/ledger/ledger";
 import type {
@@ -23,6 +23,7 @@ export interface AdminAISimulationInput {
 
 export interface AdminAISimulationResult {
   ok: boolean;
+  usageMode?: "offline_simulation";
   modelId?: AIModelId;
   taskType?: string;
   routingReason?: string;
@@ -77,6 +78,8 @@ export async function simulateAdminAIAnswer(
   const locale = input.locale || "ar";
   const chunks = input.chunks && input.chunks.length > 0 ? input.chunks : DEFAULT_SAMPLE_CHUNKS;
   const isDryRun = input.dryRun ?? true;
+  // Synthetic estimates must never enter the real usage ledger or query a customer's budget.
+  const store = new InMemoryAIUsageLedger();
 
   // 1. Estimate prompt tokens for safety check
   const estimatedPromptTokens = Math.ceil(
@@ -84,10 +87,11 @@ export async function simulateAdminAIAnswer(
   );
 
   // 2. Budget and quota validation
-  const budgetCheck = await checkCompanyAIBudget(companyId, estimatedPromptTokens);
+  const budgetCheck = await checkCompanyAIBudget(companyId, estimatedPromptTokens, store);
   if (!budgetCheck.allowed) {
     return {
       ok: false,
+      usageMode: "offline_simulation",
       error: budgetCheck.message,
       economics: {
         costBaisa: 0,
@@ -113,21 +117,26 @@ export async function simulateAdminAIAnswer(
     chunks,
     forceModelId: input.forceModelId,
     dryRun: isDryRun,
+    companyId,
+    conversationId: input.conversationId,
   });
 
   // 4. Record to ledger
   const ledgerEntry = await recordExecutionInLedger(companyId, executionResult, {
     conversationId: input.conversationId || "sim-admin-conv",
     routingReason: classification.reason,
+    modelId: classification.modelId,
+    metadata: { usageMode: "offline_simulation" },
+    store,
   });
 
-  const store = getActiveLedgerStore();
   const currentTotalSpendBaisa = await store.getCompanySpendBaisa(companyId);
 
   if (executionResult.ok) {
     const usage = executionResult.usage;
     return {
       ok: true,
+      usageMode: "offline_simulation",
       modelId: executionResult.modelId || classification.modelId,
       taskType: classification.taskType,
       routingReason: executionResult.routingReason || classification.reason,
@@ -151,6 +160,7 @@ export async function simulateAdminAIAnswer(
 
   return {
     ok: false,
+    usageMode: "offline_simulation",
     modelId: classification.modelId,
     taskType: classification.taskType,
     routingReason: classification.reason,

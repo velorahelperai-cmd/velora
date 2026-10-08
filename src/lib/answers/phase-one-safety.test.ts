@@ -4,7 +4,7 @@ vi.mock("./config/env",()=>({getSecureProviderKey:()=>null,isProviderKeyConfigur
 import {OpenAIAnswerAdapter} from "./adapters/openai";
 import {GeminiAnswerAdapter} from "./adapters/gemini";
 import {simulateAdminAIAnswer} from "./admin-test";
-import {calculateTokensCostBaisa,MODEL_PRICING_CATALOG} from "./config/pricing";
+import {calculateTokensCostBaisa} from "./config/pricing";
 const input={question:"Working hours?",locale:"en" as const,chunks:[]};
 afterEach(()=>vi.unstubAllEnvs());
 describe("Phase 1 cannot make paid provider calls",()=>{
@@ -22,8 +22,8 @@ describe("Phase 1 cannot make paid provider calls",()=>{
  it("keeps explicit dry runs available with live answering off",async()=>{vi.stubEnv("NODE_ENV","production");expect(await new OpenAIAnswerAdapter().complete({...input,dryRun:true})).toMatchObject({ok:true});});
 });
 describe("simulation economics",()=>{
- it("charges Luna reasoning at its standard output rate",()=>{expect(calculateTokensCostBaisa("gpt-6-luna",{promptTokens:0,completionTokens:100,reasoningTokens:50})).toBe(0.04);});
- it("does not charge the OpenAI reasoning subset twice",()=>{const cost=calculateTokensCostBaisa("gpt-6.1-sol",{promptTokens:0,completionTokens:100,reasoningTokens:50});expect(cost).toBe(MODEL_PRICING_CATALOG["gpt-6.1-sol"].completionBaisaPerMillion*100/1000000);});
+ it("charges Luna reasoning at its standard output rate",()=>{expect(calculateTokensCostBaisa("gpt-6-luna",{promptTokens:0,completionTokens:100,reasoningTokens:50})).toBe(0.019225);});
+ it("does not charge the OpenAI reasoning subset twice",()=>{const cost=calculateTokensCostBaisa("gpt-6.1-sol",{promptTokens:0,completionTokens:100,reasoningTokens:50});expect(cost).toBe(0.384498);});
 });
 
 
