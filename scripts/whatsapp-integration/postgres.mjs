@@ -2,12 +2,12 @@ import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
-export const CONTAINER="velora-p3p4-integration-da0bcc8", DB="whatsapp_integration";
+export const CONTAINER="velora-p4-meta-7cff51c", DB="whatsapp_integration";
 const exec=promisify(execFile);
 export const lit=v=>`'${String(v).replaceAll("'","''")}'`;
 export async function verify(){
  const {stdout}=await exec("docker",["inspect",CONTAINER]); const c=JSON.parse(stdout)[0];
- if(c.Config.Labels?.["velora.task"]!=="p3-p4-safe-integration"||c.HostConfig.NetworkMode!=="none"||!c.HostConfig.Tmpfs?.["/var/lib/postgresql/data"])throw Error("UNSAFE_DATABASE_TARGET");
+ if(c.Config.Labels?.["velora.task"]!=="p4-meta-multitenant"||c.HostConfig.NetworkMode!=="none"||!c.HostConfig.Tmpfs?.["/var/lib/postgresql/data"])throw Error("UNSAFE_DATABASE_TARGET");
  return c.Config.Image;
 }
 export function session(query,name="wa_integration_test"){

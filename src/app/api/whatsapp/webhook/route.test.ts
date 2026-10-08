@@ -8,7 +8,7 @@ const state = vi.hoisted(() => ({
   config: { appSecret: "synthetic-hmac-secret", verifyToken: "synthetic-verify-token", companyId: "env-company", phoneNumberId: "env-phone", accessToken: "" },
 }));
 const mocks = vi.hoisted(() => ({
-  saveInbound: vi.fn(), saveStatus: vi.fn(), resolve: vi.fn(), createAdminClient: vi.fn(),
+  saveInbound: vi.fn(), saveStatus: vi.fn(), resolve: vi.fn(), createAdminClient: vi.fn(), rpc: vi.fn(),
 }));
 
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: mocks.createAdminClient }));
@@ -18,7 +18,7 @@ vi.mock("@/lib/whatsapp/config", () => ({
   webhookReady: () => state.ready,
 }));
 vi.mock("@/lib/whatsapp/store", () => ({ saveInbound: mocks.saveInbound, saveStatus: mocks.saveStatus }));
-vi.mock("@/lib/whatsapp/tenant-resolve", () => ({ resolveWhatsappCompanyByProviderPhone: mocks.resolve }));
+vi.mock("@/lib/whatsapp/tenant-resolve", () => ({ resolveWhatsappCompanyByMetaAsset: mocks.resolve }));
 
 import { GET, POST } from "./route";
 
@@ -47,11 +47,12 @@ beforeEach(() => {
   vi.clearAllMocks();
   state.mode = "tenant_registry";
   state.ready = true;
-  state.admin = {};
+  state.admin = { rpc: mocks.rpc };
   mocks.createAdminClient.mockImplementation(() => state.admin);
   mocks.resolve.mockResolvedValue({ ok: true, companyId: "synthetic-company" });
   mocks.saveInbound.mockResolvedValue({ inserted: true });
   mocks.saveStatus.mockResolvedValue({ inserted: true });
+  mocks.rpc.mockResolvedValue({ data: { ok: true, revoked: 1 }, error: null });
   vi.spyOn(console, "info").mockImplementation(() => undefined);
   vi.spyOn(globalThis, "fetch").mockImplementation(async () => { throw new Error("Network forbidden in reception tests"); });
 });
@@ -62,6 +63,25 @@ afterEach(() => {
 });
 
 describe("P4 WhatsApp reception route", () => {
+  it("passes signed exact WABA partner removal to the scoped revocation RPC", async () => {
+    const payload = { object: "whatsapp_business_account", entry: [{ id: "10000001", time: 1710000000, changes: [{
+      field: "account_update", value: { event: "PARTNER_REMOVED", waba_info: { waba_id: "10000001" } },
+    }] }] };
+    expect((await POST(signedRequest(JSON.stringify(payload)))).status).toBe(200);
+    expect(mocks.rpc).toHaveBeenCalledWith("whatsapp_revoke_meta_waba_authorization", { p_waba_id: "10000001", p_reason: "PARTNER_REMOVED", p_occurred_at: "2024-03-09T16:00:00.000Z" });
+    expect(mocks.saveInbound).not.toHaveBeenCalled();
+    mocks.rpc.mockResolvedValue({ data: null, error: { message: "private provider detail" } });
+    expect((await POST(signedRequest(JSON.stringify(payload)))).status).toBe(500);
+  });
+
+  it("acknowledges unsupported or contradictory account updates without revoking a tenant", async () => {
+    const payload = { object: "whatsapp_business_account", entry: [{ id: "10000001", changes: [{
+      field: "account_update", value: { event: "PARTNER_REMOVED", waba_info: { waba_id: "10000002" } },
+    }] }] };
+    expect((await POST(signedRequest(JSON.stringify(payload)))).status).toBe(200);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+    expect(mocks.resolve).not.toHaveBeenCalled();
+  });
   it("returns the Meta challenge only for the configured verification token", async () => {
     const verified = await GET(new Request("http://localhost/api/whatsapp/webhook?hub.mode=subscribe&hub.verify_token=synthetic-verify-token&hub.challenge=synthetic-challenge"));
     expect(verified.status).toBe(200);
@@ -126,7 +146,7 @@ describe("P4 WhatsApp reception route", () => {
   });
 
   it("isolates resolver exceptions while saving other tenants and returns retryable HTTP", async () => {
-    mocks.resolve.mockImplementation(async (_admin, phone: string) => {
+    mocks.resolve.mockImplementation(async (_admin, _waba: string, phone: string) => {
       if (phone === "synthetic-phone") throw new Error("unavailable");
       return { ok: true, companyId: "second-synthetic-company" };
     });

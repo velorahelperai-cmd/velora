@@ -80,6 +80,7 @@ export function KnowledgeEditor({
   const [mode, setMode] = useState<"text" | "file" | null>(focusTitle && !initialLoadFailed ? "text" : null);
   const [editing, setEditing] = useState<string | null>(null);
   const [form, setForm] = useState({ title: focusTitle ?? "", content: "", files: null as FileList | null });
+  const [usageRole, setUsageRole] = useState<"knowledge" | "business_instructions">("knowledge");
   const [errors, setErrors] = useState<Partial<Record<"title" | "content" | "files", FieldErrorKey>>>({});
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -132,6 +133,7 @@ export function KnowledgeEditor({
   }
 
   function reset() {
+    setUsageRole("knowledge");
     setMode(null);
     setEditing(null);
     setForm({ title: "", content: "", files: null });
@@ -197,6 +199,7 @@ export function KnowledgeEditor({
         id: editing ?? undefined,
         title: form.title,
         content: form.content,
+        usageRole,
       });
       if (!result.ok) {
         // Keep form inputs on failure — do not clear the draft.
@@ -556,14 +559,14 @@ export function KnowledgeEditor({
           <Button
             variant={mode === "text" ? "primary" : "secondary"}
             busy={busy}
-            onClick={() => { setMode("text"); setEditing(null); setForm({ title: "", content: "", files: null }); }}
+            onClick={() => { setMode("text"); setEditing(null); setUsageRole("knowledge"); setForm({ title: "", content: "", files: null }); }}
           >
             {copy.knowledge.addText}
           </Button>
           <Button
             variant={mode === "file" ? "primary" : "secondary"}
             busy={busy}
-            onClick={() => { setMode("file"); setEditing(null); setForm({ title: "", content: "", files: null }); }}
+            onClick={() => { setMode("file"); setEditing(null); setUsageRole("knowledge"); setForm({ title: "", content: "", files: null }); }}
           >
             {copy.knowledge.addFile}
           </Button>
@@ -580,6 +583,12 @@ export function KnowledgeEditor({
             <>
               <Field label={copy.knowledge.sourceTitle} required error={titleError}>
                 {(p) => <input {...p} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />}
+              </Field>
+              <Field label="نوع المعرفة / Knowledge purpose">
+                {(p) => <select {...p} value={usageRole} onChange={(e) => setUsageRole(e.target.value as "knowledge" | "business_instructions")}>
+                  <option value="knowledge">المنتجات والخدمات والأسعار والسياسات / Business facts</option>
+                  <option value="business_instructions">أسلوب الشركة وتعليمات الرد المعتمدة / Approved business instructions</option>
+                </select>}
               </Field>
               <Field label={copy.knowledge.sourceContent} required error={contentError}>
                 {(p) => (
@@ -719,6 +728,7 @@ export function KnowledgeEditor({
                         setMode("text");
                         setEditing(src.id);
                         setForm({ title: src.title, content: src.content, files: null });
+                        setUsageRole(src.usage_role ?? "knowledge");
                       }}
                     >
                       {copy.edit}

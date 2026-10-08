@@ -8,6 +8,7 @@ export type WhatsappTenantResolveOk = {
   linkId: string;
   linkGeneration: number;
   providerPhoneNumberId: string;
+  providerWabaId?: string;
   status: string;
 };
 
@@ -124,13 +125,31 @@ export async function resolveWhatsappCompanyByProviderPhone(
   admin: SupabaseClient<Database>,
   providerPhoneNumberId: string,
 ): Promise<WhatsappTenantResolveOk | WhatsappTenantResolveFail> {
+  return resolveCompany(admin, providerPhoneNumberId);
+}
+
+/** Exact signed WABA + metadata phone binding; no phone-only fallback. */
+export async function resolveWhatsappCompanyByMetaAsset(
+  admin: SupabaseClient<Database>,
+  wabaId: string,
+  providerPhoneNumberId: string,
+): Promise<WhatsappTenantResolveOk | WhatsappTenantResolveFail> {
+  if (!wabaId || wabaId !== wabaId.trim()) return { ok: false, eligible: false, code: "invalid_input" };
+  return resolveCompany(admin, providerPhoneNumberId, wabaId);
+}
+
+async function resolveCompany(
+  admin: SupabaseClient<Database>,
+  providerPhoneNumberId: string,
+  wabaId?: string,
+): Promise<WhatsappTenantResolveOk | WhatsappTenantResolveFail> {
   const phone = providerPhoneNumberId.trim();
   if (!phone) return { ok: false, eligible: false, code: "invalid_input" };
 
   try {
-    const { data, error } = await admin.rpc("resolve_whatsapp_company_by_provider_phone", {
-      p_provider_phone_number_id: phone,
-    });
+    const { data, error } = wabaId
+      ? await admin.rpc("resolve_whatsapp_company_by_meta_asset", { p_waba_id: wabaId, p_provider_phone_number_id: phone })
+      : await admin.rpc("resolve_whatsapp_company_by_provider_phone", { p_provider_phone_number_id: phone });
     if (error) return { ok: false, eligible: false, code: "unavailable" };
 
     const row = data && typeof data === "object" && !Array.isArray(data)
@@ -170,6 +189,7 @@ export async function resolveWhatsappCompanyByProviderPhone(
       || (row.generation != null && row.link_generation != null && Number(row.generation) !== Number(row.link_generation))
     ) return { ok: false, eligible: false, code: "unavailable" };
     if (providerId !== phone) return { ok: false, eligible: false, code: "conflict" };
+    if (wabaId && row.provider_waba_id !== wabaId) return { ok: false, eligible: false, code: "conflict" };
     if (row.eligible !== true || row.status !== "verified") {
       return { ok: false, eligible: false, code: "unknown_or_inactive" };
     }
@@ -181,6 +201,7 @@ export async function resolveWhatsappCompanyByProviderPhone(
       linkId,
       linkGeneration,
       providerPhoneNumberId: providerId,
+      ...(wabaId ? { providerWabaId: wabaId } : {}),
       status: row.status,
     };
   } catch {

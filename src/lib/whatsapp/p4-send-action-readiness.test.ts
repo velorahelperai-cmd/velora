@@ -7,6 +7,8 @@ const fixture = vi.hoisted(() => ({
   calls: [] as Array<{ name: string; args: Record<string, unknown> }>,
   capability: true,
   throwFinalizeOnce: false,
+  windowOpen: true,
+  vaultCompany: "company-offline-a",
 }));
 
 function intent(overrides: Record<string, unknown> = {}) {
@@ -43,6 +45,10 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({
   rpc: async (name: string, args: Record<string, unknown>) => {
     fixture.calls.push({ name, args });
+    if (name === "resolve_whatsapp_company_by_provider_phone") return { error: null, data: { ok: true, eligible: true, company_id: "company-offline-a", link_id: "link-offline-a", generation: 1, provider_phone_number_id: "100000000000001", status: "verified" } };
+    if (name === "whatsapp_check_service_window") { const at = new Date(Date.now() - 3600_000), until = new Date(at.getTime() + 86_400_000); return { error: null, data: { ok: fixture.windowOpen, company_id: "company-offline-a", conversation_id: "conversation-offline-a", phone_number_id: "100000000000001", recipient_wa_id: "10000000001", last_inbound_at: at.toISOString(), valid_until: until.toISOString() } }; }
+    if (name === "whatsapp_read_link_access_secret") return { error: null, data: { ok: true, company_id: fixture.vaultCompany, link_id: "link-offline-a", link_generation: 1, phone_number_id: "100000000000001", access_token: "synthetic-company-vault-token" } };
+    if (name === "whatsapp_revoke_failed_credential") return { error: null, data: true };
     if (name === "claim_whatsapp_send_attempt") return { error: null, data: fixture.claimed };
     if (name === "finalize_whatsapp_send_attempt") {
       if (fixture.throwFinalizeOnce) {
@@ -60,6 +66,8 @@ describe("real staff reply action at persistence and Graph boundaries", () => {
   beforeEach(() => {
     fixture.capability = true;
     fixture.throwFinalizeOnce = false;
+    fixture.windowOpen = true;
+    fixture.vaultCompany = "company-offline-a";
     fixture.calls = [];
     fixture.created = { ok: true, intent: intent() };
     fixture.claimed = { ok: true, claimed: true, attempt_token: "offline-claim-token", intent: intent({ outcome: "attempting" }) };
@@ -78,6 +86,43 @@ describe("real staff reply action at persistence and Graph boundaries", () => {
     vi.unstubAllEnvs();
   });
   const input = { conversationId: "conversation-offline-a", body: "Offline reply", clientOpId: "offline-op-0001" };
+
+  function tenantReply() {
+    vi.stubEnv("WHATSAPP_ROUTING_MODE", "tenant_registry");
+    vi.stubEnv("WHATSAPP_EMBEDDED_SIGNUP_GRAPH_VERSION", "v25.0");
+    fixture.created = { ok: true, intent: intent({ link_id: "link-offline-a", link_generation: 1 }) };
+    fixture.claimed = { ok: true, claimed: true, attempt_token: "offline-claim-token", intent: intent({ outcome: "attempting", link_id: "link-offline-a", link_generation: 1 }) };
+  }
+  it("staff uses the exact company Vault token inside a persisted service window", async () => {
+    tenantReply();
+    const { replyWhatsappConversation } = await import("./actions");
+    expect(await replyWhatsappConversation(input)).toMatchObject({ ok: true, outcome: "accepted" });
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(globalThis.fetch).toHaveBeenCalledWith("https://graph.facebook.com/v25.0/100000000000001/messages", expect.objectContaining({ headers: expect.objectContaining({ authorization: "Bearer synthetic-company-vault-token" }) }));
+  });
+  it("staff cannot send outside the persisted customer window", async () => {
+    tenantReply(); fixture.windowOpen = false;
+    const { replyWhatsappConversation } = await import("./actions");
+    expect(await replyWhatsappConversation(input)).toMatchObject({ ok: false });
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(fixture.calls.some(c => c.name === "whatsapp_read_link_access_secret")).toBe(false);
+  });
+  it("staff rejects a token returned for another company before Graph", async () => {
+    tenantReply(); fixture.vaultCompany = "company-offline-b";
+    const { replyWhatsappConversation } = await import("./actions");
+    expect(await replyWhatsappConversation(input)).toMatchObject({ ok: false });
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+  it("a confirmed expired Meta token invalidates only the credential that was dispatched", async () => {
+    tenantReply();
+    vi.mocked(globalThis.fetch).mockResolvedValue(new Response(JSON.stringify({ error: { code: 190, message: "synthetic provider error" } }), { status: 401 }));
+    fixture.finalized = { error: null, data: { ok: true, intent: intent({ outcome: "rejected" }) } };
+    const { replyWhatsappConversation } = await import("./actions");
+    expect(await replyWhatsappConversation(input)).toMatchObject({ ok: false, code: "REJECTED", outcome: "rejected" });
+    expect(fixture.calls).toContainEqual({ name: "finalize_whatsapp_send_attempt", args: { p_intent_id: "intent-offline-a", p_attempt_token: "offline-claim-token", p_result: "rejected", p_wa_message_id: null, p_error_code: "graph_190", p_actor_user_id: "user-offline-a" } });
+    expect(fixture.calls.some(c => c.name === "whatsapp_revoke_failed_credential")).toBe(false);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
 
   it.each([
     { claimed: false },

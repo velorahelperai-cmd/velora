@@ -8,8 +8,6 @@ import {
   applyEmbeddedSignupWindowEvent,
   createEmbeddedSignupAttempt,
   embeddedSignupEnabled,
-  embeddedSignupPersistReady,
-  persistEmbeddedSignupAttempt,
 } from "@/lib/whatsapp/embedded-signup";
 import { inboundWorkerPlan, runInboundWorkerAnswer } from "@/lib/whatsapp/inbound-worker";
 import { decideClaimedTenantSend } from "@/lib/whatsapp/send-attempt";
@@ -139,8 +137,6 @@ describe("embedded signup contract", () => {
       ok: false,
       code: "NEEDS_SETUP",
     });
-    expect(persistEmbeddedSignupAttempt()).toEqual({ ok: false, code: "NEEDS_SETUP" });
-    expect(embeddedSignupPersistReady()).toBe(false);
     const applied = applyEmbeddedSignupWindowEvent({
       attempt: {
         id: "es_1",

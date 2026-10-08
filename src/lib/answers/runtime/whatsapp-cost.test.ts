@@ -70,6 +70,18 @@ describe("claimed WhatsApp cost execution", () => {
 });
 
 describe("claimed worker RPC store", () => {
+  it("binds the paid reservation to the verified company persona and plan version", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: { ok: true, id: "attempt", job_id: "job", company_id: "company", automation_generation: 2, remaining_baisa: 7, answer_persona: "lina", answer_plan_version_id: "plan-version" }, error: null });
+    admin.create.mockReturnValue({ rpc });
+    const db = createClaimedWhatsappRuntimeStore({ jobId: "job", claimToken: "claim" }, { persona: "lina", planVersionId: "plan-version", companyId: "company" });
+    expect(await db.reserve({ id: "attempt", attempt: 1, model: "gpt-6-luna", provider: "openai", reservedBaisa: 1, pricingVersion: "fixture", pricingSnapshot: {}, sourceCitations: [] })).toEqual({ ok: true });
+    expect(rpc).toHaveBeenCalledWith("ai_reserve_whatsapp_profile_attempt", expect.objectContaining({ p_expected_persona: "lina", p_expected_plan_version_id: "plan-version", p_job_id: "job", p_claim_token: "claim" }));
+  });
+  it.each([{ company_id: "other" }, { answer_persona: "dana" }, { answer_plan_version_id: "other-plan" }])("rejects a reservation acknowledgement outside its verified profile %#", async patch => {
+    admin.create.mockReturnValue({ rpc: vi.fn().mockResolvedValue({ data: { ok: true, id: "attempt", job_id: "job", company_id: "company", automation_generation: 2, remaining_baisa: 7, answer_persona: "lina", answer_plan_version_id: "plan-version", ...patch }, error: null }) });
+    const db = createClaimedWhatsappRuntimeStore({ jobId: "job", claimToken: "claim" }, { persona: "lina", planVersionId: "plan-version", companyId: "company" });
+    await expect(db.reserve({ id: "attempt", attempt: 1, model: "gpt-6-luna", provider: "openai", reservedBaisa: 1, pricingVersion: "fixture", pricingSnapshot: {} })).rejects.toThrow("ANSWER_PROFILE_MISMATCH");
+  });
   it("binds reserve/start/settle to the job claim without a fabricated owner session", async () => {
     const rpc = vi.fn().mockResolvedValueOnce({ data: { ok: true, id: "attempt", job_id: "job", company_id: "company", automation_generation: 2, remaining_baisa: 7 }, error: null }).mockResolvedValue({ data: true, error: null });
     admin.create.mockReturnValue({ rpc });

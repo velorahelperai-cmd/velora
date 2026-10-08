@@ -119,7 +119,7 @@ export class OpenAIAnswerAdapter implements AnswerProvider {
     }
     const startedAt = Date.now();
     try {
-      const systemPrompt = buildAnswerSystemPrompt(input.locale);
+    const systemPrompt = buildAnswerSystemPrompt(input.locale, input.persona);
       const userContent = formatAnswerUserPrompt(input.question, input.chunks, input.locale);
 
       const response = await this.client.responses.create({ model: modelId, instructions: systemPrompt, input: userContent, max_output_tokens: limits.maxOutputTokens, store: false }, { signal: input.signal, timeout: limits.timeoutMs, maxRetries: 0 });

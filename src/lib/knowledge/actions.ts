@@ -48,7 +48,7 @@ const SOURCE_SELECT_BASE =
 
 /** Includes answer-approval columns from 20261005093000 — may be absent until that migration is applied. */
 const SOURCE_SELECT =
-  "id, company_id, kind, title, content, file_name, content_type, byte_size, storage_path, status, failure_code, content_version, approved_for_answers, approved_version, approved_at, approved_by, created_by, created_at, updated_at" as const;
+  "id, company_id, kind, title, content, file_name, content_type, byte_size, storage_path, status, failure_code, content_version, approved_for_answers, approved_version, approved_at, approved_by, created_by, created_at, updated_at, usage_role" as const;
 
 function asSource(
   row: unknown,
@@ -410,12 +410,17 @@ export async function saveTextKnowledgeSource(input: {
   id?: string;
   title: string;
   content: string;
+  usageRole?: "knowledge" | "business_instructions";
 }): Promise<KnowledgeActionResult<KnowledgeSourceRecord>> {
   const title = input.title.trim();
   const content = input.content.trim();
   if (!title || title.length > 200 || !content) {
     return { ok: false, code: "INVALID_INPUT" };
   }
+  if (input.usageRole !== undefined && !["knowledge", "business_instructions"].includes(input.usageRole)) {
+    return { ok: false, code: "INVALID_INPUT" };
+  }
+  const roleChange = input.usageRole === undefined ? {} : { usage_role: input.usageRole };
 
   try {
     const ctx = await requireOwnerCompany();
@@ -424,7 +429,7 @@ export async function saveTextKnowledgeSource(input: {
     if (input.id) {
       const { data, error } = await ctx.supabase
         .from("knowledge_sources")
-        .update({ title, content, status: "ready", kind: "text" })
+        .update({ title, content, status: "ready", kind: "text", ...roleChange })
         .eq("id", input.id)
         .eq("company_id", ctx.companyId)
         .eq("kind", "text")
@@ -445,6 +450,7 @@ export async function saveTextKnowledgeSource(input: {
         content,
         status: "ready",
         created_by: ctx.userId,
+        ...roleChange,
       })
       .select(ctx.sourceSelect)
       .single();

@@ -8,6 +8,7 @@ import {
 } from "@/lib/whatsapp/connection-actions";
 import type { WhatsappCompanyLink, WhatsappLinkStatus } from "@/lib/whatsapp/connection";
 import type { SingleTenantReceptionStatus } from "@/lib/whatsapp/config";
+import { WhatsappEmbeddedSignup } from "@/components/app/whatsapp-embedded-signup";
 import {
   Button, Card, Field, Notice, useAction, useAppCopy, isPhone,
 } from "@/components/app/ui";
@@ -83,6 +84,7 @@ export function WhatsappSettingsPanel({
 
   return (
     <Card title={copy.app.tabs.whatsapp}>
+      <WhatsappEmbeddedSignup keepOnPhone={keepOnPhone} onConnected={() => void load()} onDisconnected={() => void load()} />
       {showSingleTenant && singleTenant ? (
         <div className="mb-4 grid gap-2 rounded-2xl border border-[color:var(--color-border-soft)] bg-[var(--color-hover-wash)] p-3 text-sm">
           <p className="font-medium text-[var(--color-on-dark)]">{copy.app.waSingleTenantTitle}</p>
@@ -143,6 +145,10 @@ export function WhatsappSettingsPanel({
           </div>
 
           <dl className="grid gap-3 text-sm">
+            {link.authorizationExpiresAt ? <div className="flex flex-wrap justify-between gap-3">
+              <dt>انتهاء تفويض ميتا / Meta authorization expiry</dt>
+              <dd dir="ltr">{formatStamp(link.authorizationExpiresAt)}</dd>
+            </div> : null}
             <div className="flex flex-wrap justify-between gap-3">
               <dt className="text-[var(--color-muted-on-dark)]">{copy.app.whatsappStatus}</dt>
               <dd className="rounded-full bg-[var(--color-hover-wash)] px-2 py-0.5 text-xs">{statusLabel(link.status, copy)}</dd>

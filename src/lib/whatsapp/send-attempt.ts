@@ -29,6 +29,8 @@ export function decideClaimedTenantSend(input: {
   resolved: WhatsappTenantResolveOk | WhatsappTenantResolveFail;
   intentLinkId: string | null;
   intentLinkGeneration: number | null;
+  /** Production actions supply the current Vault lookup; pure legacy callers remain compatible. */
+  secret?: ReturnType<typeof lookupWhatsappAccessSecret>;
 }): ClaimedSendDecision {
   if (
     !input.intentLinkId?.trim()
@@ -47,14 +49,14 @@ export function decideClaimedTenantSend(input: {
     intentLinkId: input.intentLinkId,
     intentLinkGeneration: input.intentLinkGeneration,
   });
-  const secret = binding.ok
+  const secret = input.secret ?? (binding.ok
     ? lookupWhatsappAccessSecret({
       companyId: binding.companyId,
       providerPhoneNumberId: binding.providerPhoneNumberId,
       linkId: binding.linkId,
       linkGeneration: binding.linkGeneration,
     })
-    : { ok: false as const, code: "NEEDS_SETUP" as const };
+    : { ok: false as const, code: "NEEDS_SETUP" as const });
   const attempt = decideOutboundGraphAttempt({
     binding,
     secret: secret.ok ? { ok: true, accessToken: secret.accessToken } : { ok: false, code: "NEEDS_SETUP" },

@@ -12,6 +12,7 @@ import { controlActionCapability } from "@/lib/access/capabilities";
 import { externalSendAllowed, sendReady, whatsappConfig, whatsappRoutingMode } from "@/lib/whatsapp/config";
 import { loadWhatsappConversation, loadWhatsappInbox, type WhatsappInboxMeta } from "@/lib/whatsapp/inbox";
 import { sendWhatsappText } from "@/lib/whatsapp/send";
+import { readServiceWindow } from "@/lib/whatsapp/service-window";
 import { decideClaimedTenantSend, applyClaimedPreGraphOutcome } from "@/lib/whatsapp/send-attempt";
 import { classifyPreGraphSettlement, replyFromPreGraphSettlement } from "@/lib/whatsapp/send-failure";
 import {
@@ -507,8 +508,21 @@ export async function replyWhatsappConversation(input: {
 
   try {
     let graphToken: string | undefined;
+    let serviceWindowExpiresAt: string | undefined;
     if (mode === "tenant_registry") {
+      serviceWindowExpiresAt = await readServiceWindow(admin, { companyId, conversationId: intent.conversation_id,
+        phoneNumberId: intent.phone_number_id, recipientWaId: intent.recipient_wa_id }) ?? undefined;
+      if (!serviceWindowExpiresAt) return settlePreGraphRejected("service_window_closed");
       const resolved = await resolveWhatsappCompanyByProviderPhone(admin, intent.phone_number_id);
+      const secretRpc = resolved.ok && intent.link_id && intent.link_generation != null
+        ? await admin.rpc("whatsapp_read_link_access_secret", { p_company_id: companyId, p_link_id: intent.link_id,
+          p_phone_number_id: intent.phone_number_id, p_link_generation: intent.link_generation }) : null;
+      const tokenProof = secretRpc && !secretRpc.error ? asRecord(secretRpc.data) : null;
+      const secret = tokenProof?.ok === true && tokenProof.company_id === companyId && tokenProof.link_id === intent.link_id
+        && tokenProof.phone_number_id === intent.phone_number_id && tokenProof.link_generation === intent.link_generation
+        && typeof tokenProof.access_token === "string" && tokenProof.access_token.trim()
+        ? { ok: true as const, accessToken: tokenProof.access_token }
+        : { ok: false as const, code: "NEEDS_SETUP" as const };
       const decision = decideClaimedTenantSend({
         companyId,
         phoneNumberId: intent.phone_number_id,
@@ -517,6 +531,7 @@ export async function replyWhatsappConversation(input: {
         resolved,
         intentLinkId: intent.link_id,
         intentLinkGeneration: intent.link_generation,
+        secret,
       });
       if (decision.action !== "graph") {
         return applyClaimedPreGraphOutcome({
@@ -535,6 +550,7 @@ export async function replyWhatsappConversation(input: {
       body: intent.body,
       phoneNumberId: intent.phone_number_id,
       accessToken: graphToken,
+      serviceWindowExpiresAt,
     });
 
     if (!sent.ok) {
@@ -543,6 +559,7 @@ export async function replyWhatsappConversation(input: {
         || sent.code === "NOT_CONFIGURED"
         || sent.code === "NEEDS_SETUP"
         || sent.code === "PHONE_MISMATCH"
+        || sent.code === "SERVICE_WINDOW_CLOSED"
       ) {
         return settlePreGraphRejected(sent.code.toLowerCase());
       }

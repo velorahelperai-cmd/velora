@@ -1,6 +1,8 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 export type InboundMessage = {
+  /** Signed entry.id; optional only for the explicit legacy single-tenant contract. */
+  wabaId?: string;
   phoneNumberId: string;
   customerWaId: string;
   customerName: string;
@@ -11,6 +13,7 @@ export type InboundMessage = {
 };
 
 export type DeliveryStatus = {
+  wabaId?: string;
   phoneNumberId: string;
   waMessageId: string;
   status: string;
@@ -81,6 +84,7 @@ export function splitWebhook(payload: unknown) {
   const entries = Array.isArray(root?.entry) ? root.entry : [];
 
   for (const entry of entries) {
+    const wabaId = identifier(asRecord(entry)?.id) ?? undefined;
     const changes = Array.isArray(asRecord(entry)?.changes) ? asRecord(entry)!.changes as unknown[] : [];
     for (const change of changes) {
       const changed = asRecord(change);
@@ -100,7 +104,7 @@ export function splitWebhook(payload: unknown) {
         const receivedAt = unixToIso(message.timestamp);
         const text = messageText(message);
         if (!waMessageId || !customerWaId || !receivedAt || !text) continue;
-        const key = JSON.stringify([phoneNumberId, waMessageId]);
+        const key = JSON.stringify([wabaId, phoneNumberId, waMessageId]);
         if (seenMessages.has(key)) continue;
         seenMessages.add(key);
         const contact = contacts
@@ -108,6 +112,7 @@ export function splitWebhook(payload: unknown) {
           .find((item) => item?.wa_id === customerWaId);
         const profile = asRecord(contact?.profile);
         messages.push({
+          wabaId,
           phoneNumberId,
           customerWaId,
           customerName: typeof profile?.name === "string" ? profile.name.trim().slice(0, 120) : "",
@@ -127,6 +132,7 @@ export function splitWebhook(payload: unknown) {
         const recipientWaId = identifier(status.recipient_id);
         if (!waMessageId || !name || name.length > 32 || !occurredAt || !recipientWaId) continue;
         statuses.push({
+          wabaId,
           phoneNumberId,
           waMessageId,
           status: name,
@@ -138,6 +144,29 @@ export function splitWebhook(payload: unknown) {
   }
 
   return { messages, statuses };
+}
+
+/** Only signed, WABA-scoped partner removal is supported; other account changes are acknowledged. */
+export function splitMetaAuthorizationRevocations(payload: unknown): Array<{ wabaId: string; reason: "PARTNER_REMOVED"; occurredAt: string }> {
+  const root = asRecord(payload);
+  if (root?.object !== "whatsapp_business_account") return [];
+  const seen = new Map<string, string>();
+  for (const raw of Array.isArray(root.entry) ? root.entry : []) {
+    const entry = asRecord(raw);
+    const wabaId = identifier(entry?.id);
+    const occurredAt = unixToIso(entry?.time);
+    if (!wabaId || !occurredAt || Date.parse(occurredAt) > Date.now()) continue;
+    for (const change of Array.isArray(entry?.changes) ? entry.changes : []) {
+      const changed = asRecord(change);
+      if (changed?.field !== "account_update") continue;
+      const value = asRecord(changed.value);
+      if (value?.event === "PARTNER_REMOVED" && identifier(asRecord(value.waba_info)?.waba_id) === wabaId) {
+        // Retain the newest signed removal time for this WABA in the batch.
+        if (!seen.has(wabaId) || occurredAt > seen.get(wabaId)!) seen.set(wabaId, occurredAt);
+      }
+    }
+  }
+  return [...seen].map(([wabaId, occurredAt]) => ({ wabaId, reason: "PARTNER_REMOVED", occurredAt }));
 }
 
 /**
@@ -188,7 +217,7 @@ export async function routeWebhookEvents(input: {
   mode: "single_tenant" | "tenant_registry";
   envCompanyId: string;
   envPhoneNumberId: string;
-  resolve: (phoneNumberId: string) => Promise<
+  resolve: (phoneNumberId: string, wabaId?: string) => Promise<
     | { ok: true; companyId: string }
     | { ok: false; code: string }
   >;
@@ -199,8 +228,9 @@ export async function routeWebhookEvents(input: {
   let retry = false;
   const cache = new Map<string, Promise<PhoneMap>>();
 
-  function mapPhone(phoneNumberId: string): Promise<PhoneMap> {
-    const existing = cache.get(phoneNumberId);
+  function mapPhone(phoneNumberId: string, wabaId?: string): Promise<PhoneMap> {
+    const key = JSON.stringify([wabaId, phoneNumberId]);
+    const existing = cache.get(key);
     if (existing) return existing;
     const pending = (async (): Promise<PhoneMap> => {
       if (input.mode === "single_tenant") {
@@ -212,9 +242,10 @@ export async function routeWebhookEvents(input: {
         }
         return { ok: true, companyId: input.envCompanyId };
       }
+      if (!identifier(wabaId)) return { ok: false, retry: false, code: "invalid_input" };
       let resolved: Awaited<ReturnType<typeof input.resolve>>;
       try {
-        resolved = await input.resolve(phoneNumberId);
+        resolved = await input.resolve(phoneNumberId, wabaId);
       } catch {
         return { ok: false, retry: true, code: "unavailable" };
       }
@@ -227,12 +258,12 @@ export async function routeWebhookEvents(input: {
       if (!resolved.companyId?.trim()) return { ok: false, retry: true, code: "unavailable" };
       return { ok: true, companyId: resolved.companyId };
     })();
-    cache.set(phoneNumberId, pending);
+    cache.set(key, pending);
     return pending;
   }
 
   for (const message of input.messages) {
-    const mapped = await mapPhone(message.phoneNumberId);
+    const mapped = await mapPhone(message.phoneNumberId, message.wabaId);
     if (!mapped.ok) {
       if (mapped.retry) retry = true;
       dispositions.push({
@@ -267,7 +298,7 @@ export async function routeWebhookEvents(input: {
   }
 
   for (const status of input.statuses) {
-    const mapped = await mapPhone(status.phoneNumberId);
+    const mapped = await mapPhone(status.phoneNumberId, status.wabaId);
     if (!mapped.ok) {
       if (mapped.retry) retry = true;
       dispositions.push({

@@ -3,6 +3,8 @@ export type KnowledgeStatus = "draft" | "stored" | "processing" | "ready" | "fai
 export type KnowledgeFailureCode = "no_text" | "corrupt" | "unsupported" | "extract_failed";
 
 export type KnowledgeSourceRecord = {
+  /** Business instructions require the same explicit version approval as facts. */
+  usage_role?: "knowledge" | "business_instructions";
   id: string;
   company_id: string;
   kind: KnowledgeKind;

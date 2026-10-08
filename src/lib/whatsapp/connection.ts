@@ -34,6 +34,8 @@ export type WhatsappCompanyLink = {
   lastErrorCode: string | null;
   createdAt: string | null;
   updatedAt: string | null;
+  authorizationExpiresAt?: string | null;
+  authorizationReady?: boolean;
   /** Admin-only fields when loaded via admin RPC. */
   adminNote?: string | null;
   providerPhoneNumberId?: string | null;
@@ -104,6 +106,10 @@ export function mapWhatsappCompanyLink(
   if (opts?.includeAdmin) {
     link.adminNote = typeof raw.admin_note === "string" ? raw.admin_note : null;
     link.providerPhoneNumberId = providerPhoneNumberId;
+  }
+  if (typeof raw.authorization_ready === "boolean") {
+    link.authorizationReady = raw.authorization_ready;
+    link.authorizationExpiresAt = typeof raw.authorization_expires_at === "string" ? raw.authorization_expires_at : null;
   }
   return link;
 }

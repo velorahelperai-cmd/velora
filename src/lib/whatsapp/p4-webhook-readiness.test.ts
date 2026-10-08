@@ -28,6 +28,7 @@ function payload(changes: unknown[] = [change()]) {
 describe("P4 webhook envelope and message validation", () => {
   it("accepts a complete Cloud API message envelope", () => {
     expect(splitWebhook(payload()).messages).toEqual([{
+      wabaId: "synthetic-waba",
       phoneNumberId: "synthetic-phone-a",
       customerWaId: inbound.from,
       customerName: "Synthetic customer",
@@ -98,6 +99,7 @@ describe("P4 webhook envelope and message validation", () => {
     }]));
     expect(split.messages).toEqual([]);
     expect(split.statuses).toEqual([{
+      wabaId: "synthetic-waba",
       phoneNumberId: "synthetic-phone-a", waMessageId: status.id, status: "delivered",
       recipientWaId: status.recipient_id, occurredAt: "2024-03-09T16:00:02.000Z",
     }]);
@@ -106,7 +108,7 @@ describe("P4 webhook envelope and message validation", () => {
 
 function message(phone: string, id: string): InboundMessage {
   return {
-    phoneNumberId: phone, waMessageId: id, customerWaId: "synthetic-customer",
+    wabaId: "synthetic-waba", phoneNumberId: phone, waMessageId: id, customerWaId: "synthetic-customer",
     customerName: "Synthetic customer", body: "hello", messageType: "text", receivedAt: "2026-10-08T00:00:00.000Z",
   };
 }

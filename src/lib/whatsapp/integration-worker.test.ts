@@ -34,6 +34,12 @@ describe("persisted WhatsApp integration worker",()=>{
  it("retains ambiguous send outcome without a retry or false completion",async()=>{const {ports}=setup();ports.send.mockResolvedValue({ok:false,code:"AMBIGUOUS"} as never);ports.finish.mockResolvedValue("unknown");
  expect(await runInboundWorkerAnswer(input,ports)).toMatchObject({ok:false,jobCompleted:false,sendAccepted:false});expect(ports.send).toHaveBeenCalledTimes(1);
  expect(ports.finalize).toHaveBeenCalledWith("intent","send-claim","unknown",null);});
+ it("preserves confirmed OAuth rejection for atomic credential cleanup in the original finalizer",async()=>{
+ const {ports}=setup();ports.send.mockResolvedValue({ok:false,code:"GRAPH_REJECTED",detail:"graph_190"} as never);ports.finish.mockResolvedValue("released");
+ expect(await runInboundWorkerAnswer(input,ports)).toMatchObject({ok:false,code:"SEND_REJECTED"});
+ expect(ports.finalize).toHaveBeenCalledWith("intent","send-claim","rejected",null,"graph_190");
+ expect(ports.send).toHaveBeenCalledTimes(1);
+ });
  it("stops when human takeover occurs while generating",async()=>{const {ports}=setup();ports.verify.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
  expect(await runInboundWorkerAnswer(input,ports)).toMatchObject({ok:false});expect(ports.send).not.toHaveBeenCalled();});
  it("acknowledges stored acceptance after repair without another Graph send",async()=>{const {ports,frame,intent}=setup();frame.intent_id="intent";

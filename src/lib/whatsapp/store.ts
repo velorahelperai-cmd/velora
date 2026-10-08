@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Json } from "@/lib/database.types";
 import type { DeliveryStatus, InboundMessage } from "@/lib/whatsapp/webhook";
+import { whatsappRoutingMode } from "@/lib/whatsapp/config";
 
 type Admin = SupabaseClient<Database>;
 
@@ -42,7 +43,9 @@ export async function saveInbound(
 ): Promise<SaveInboundResult> {
   if (!companyId) throw new Error("company_required");
 
-  const { data, error } = await admin.rpc("save_whatsapp_inbound", {
+  const tenantRegistry = whatsappRoutingMode() === "tenant_registry";
+  if (tenantRegistry && !message.wabaId) throw new Error("meta_waba_required");
+  const args = {
     p_company_id: companyId,
     p_phone_number_id: message.phoneNumberId,
     p_customer_wa_id: message.customerWaId,
@@ -51,7 +54,10 @@ export async function saveInbound(
     p_body: message.body,
     p_message_type: message.messageType,
     p_received_at: message.receivedAt,
-  });
+  };
+  const { data, error } = tenantRegistry
+    ? await admin.rpc("whatsapp_store_meta_inbound", { ...args, p_waba_id: message.wabaId! })
+    : await admin.rpc("save_whatsapp_inbound", args);
 
   if (error) throw error;
 
@@ -77,14 +83,19 @@ export async function saveInbound(
  * accepted is never stored as delivered.
  */
 export async function saveStatus(admin: Admin, companyId: string, status: DeliveryStatus) {
-  const { data, error } = await admin.rpc("apply_whatsapp_delivery_status", {
+  const tenantRegistry = whatsappRoutingMode() === "tenant_registry";
+  if (tenantRegistry && !status.wabaId) throw new Error("meta_waba_required");
+  const args = {
     p_company_id: companyId,
     p_phone_number_id: status.phoneNumberId,
     p_wa_message_id: status.waMessageId,
     p_status: status.status,
     p_recipient_wa_id: status.recipientWaId,
     p_occurred_at: status.occurredAt,
-  });
+  };
+  const { data, error } = tenantRegistry
+    ? await admin.rpc("whatsapp_apply_meta_delivery_status", { ...args, p_waba_id: status.wabaId! })
+    : await admin.rpc("apply_whatsapp_delivery_status", args);
   if (error) throw error;
   const row = asRecord(data);
   if (!row || row.ok !== true) throw new Error("save_status_failed");

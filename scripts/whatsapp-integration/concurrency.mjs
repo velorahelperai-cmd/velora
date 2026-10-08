@@ -2,7 +2,7 @@ import {sql,rows,session,lit} from "./postgres.mjs";
 const assert=(ok,message)=>{if(!ok)throw Error(message);};
 const json=output=>JSON.parse(output.split("\n").find(x=>x.startsWith("{")));
 async function wait(name,predicate){for(let n=0;n<100;n++){const r=await rows(`SELECT pid,wait_event_type,wait_event FROM pg_stat_activity WHERE application_name=${lit(name)}`);if(r[0]&&predicate(r[0]))return r[0];await new Promise(r=>setTimeout(r,40));}throw Error("LOCK_EVIDENCE_TIMEOUT");}
-async function overlap(first,second){
+export async function overlap(first,second){
  const id=crypto.randomUUID().slice(0,8),an=`wa_a_${id}`,bn=`wa_b_${id}`;
  const a=session(`BEGIN;SET LOCAL ROLE service_role;${first};SELECT pg_sleep(3);COMMIT;`,an);
  const pa=await wait(an,x=>x.wait_event==="PgSleep");const b=session(`SET ROLE service_role;${second};`,bn);

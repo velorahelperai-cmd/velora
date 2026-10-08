@@ -1,7 +1,7 @@
 import "server-only";
 import type {AnswerContextChunk,AnswerCitation} from "@/lib/answers/types";
 export type IntegrationFrame={job_id:string;company_id:string;message_id:string;conversation_id:string;phone_number_id:string;recipient_wa_id:string;
- automation_generation:number;link_id:string;link_generation:number;question:string;ai_status:string|null;reply_text:string|null;
+ automation_generation:number;link_id:string;link_generation:number;question:string;service_window_expires_at?:string;ai_status:string|null;reply_text:string|null;
  ai_attempt_id:string|null;intent_id:string|null;staged_citations:AnswerCitation[]|null};
 export type SendIntent={id:string;outcome:string;company_id:string;conversation_id:string;phone_number_id:string;recipient_wa_id:string;body:string};
 export type IntegrationPorts={enabled:boolean;frame:()=>Promise<IntegrationFrame|null>;context:(f:IntegrationFrame)=>Promise<AnswerContextChunk[]|null>;
@@ -9,8 +9,8 @@ export type IntegrationPorts={enabled:boolean;frame:()=>Promise<IntegrationFrame
  answer:(f:IntegrationFrame,chunks:AnswerContextChunk[])=>Promise<{ok:boolean;complete?:boolean;text?:string;attempts:{id:string;status?:string}[];error?:string}>;
  stage:(attempt:string,citations:AnswerCitation[])=>Promise<string|null>;
  claimSend:()=>Promise<{ok:boolean;claimed?:boolean;attempt_token?:string|null;intent?:SendIntent}>;
- send:(i:SendIntent,secret:string)=>Promise<{ok:boolean;waMessageId?:string;code?:string}>;
- finalize:(id:string,token:string,result:"accepted"|"rejected"|"unknown",wamid:string|null)=>Promise<boolean>;
+ send:(i:SendIntent,secret:string)=>Promise<{ok:boolean;waMessageId?:string;code?:string;detail?:string}>;
+ finalize:(id:string,token:string,result:"accepted"|"rejected"|"unknown",wamid:string|null,errorCode?:"graph_190")=>Promise<boolean>;
  finish:(id:string)=>Promise<string>;repair:(id:string)=>Promise<boolean>;
  retry:(code:string,uncertain:boolean,permanent?:boolean)=>Promise<void>;heartbeat:()=>Promise<boolean>};
 export type IntegrationOutcome={ok:false;code:string;jobCompleted:false;sendAccepted:false;delivered:false}|{ok:true;code:"ACCEPTED";jobCompleted:true;sendAccepted:true;delivered:false};
@@ -58,8 +58,11 @@ export async function runPersistedInboundJob(input:{jobId:string;claimToken:stri
  externalAttempt=true;
  let sent;
  try{sent=await ports.send(intent,secret);}catch{sent={ok:false,code:"AMBIGUOUS"};}
- const outcome=sent.ok&&sent.waMessageId?"accepted":sent.code==="GRAPH_REJECTED"||sent.code==="SEND_DISABLED"||sent.code==="NEEDS_SETUP"?"rejected":"unknown";
- if(!await ports.finalize(intent.id,claimed.attempt_token,outcome,sent.waMessageId??null))return blocked("SEND_PERSIST_REQUIRES_RECONCILIATION");
+ const outcome=sent.ok&&sent.waMessageId?"accepted":sent.code==="GRAPH_REJECTED"||sent.code==="SEND_DISABLED"||sent.code==="NEEDS_SETUP"||sent.code==="SERVICE_WINDOW_CLOSED"?"rejected":"unknown";
+ const finalized=!sent.ok&&sent.code==="GRAPH_REJECTED"&&sent.detail==="graph_190"
+ ?await ports.finalize(intent.id,claimed.attempt_token,"rejected",null,"graph_190")
+ :await ports.finalize(intent.id,claimed.attempt_token,outcome,sent.waMessageId??null);
+ if(!finalized)return blocked("SEND_PERSIST_REQUIRES_RECONCILIATION");
  if(outcome==="accepted"&&!await ports.repair(intent.id))return blocked("ACCEPTANCE_PERSIST_PENDING");
  const usage=await ports.finish(intent.id);
  if(outcome==="accepted"&&usage==="accepted")return {ok:true,code:"ACCEPTED",jobCompleted:true,sendAccepted:true,delivered:false};

@@ -36,6 +36,7 @@ function fail(code: WhatsappTenantResolveFail["code"], companyId?: string): What
 
 function msg(phone: string, waMessageId: string, from = customer): InboundMessage {
   return {
+    wabaId: "waba-a",
     phoneNumberId: phone,
     customerWaId: from,
     customerName: "Sara",
@@ -48,6 +49,7 @@ function msg(phone: string, waMessageId: string, from = customer): InboundMessag
 
 function st(phone: string, waMessageId: string): DeliveryStatus {
   return {
+    wabaId: "waba-a",
     phoneNumberId: phone,
     waMessageId,
     status: "delivered",

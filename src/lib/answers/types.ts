@@ -22,7 +22,11 @@ export type AnswerContextChunk = {
   contentVersion: number;
   /** Full excerpt — never silently truncated mid-source. */
   text: string;
+  /** Approved source purpose. Business instructions remain lower-trust context. */
+  usageRole?: "knowledge" | "business_instructions";
 };
+
+export type AnswerPersona = "noura" | "lina" | "dana";
 
 export type AIModelId = "gpt-6-luna" | "gpt-6.1-sol" | "gemini-3.8-flash";
 export type AIProviderName = "openai" | "google";
@@ -100,6 +104,8 @@ export type AnswerProviderRequest = {
   signal?: AbortSignal;
   maxOutputTokens?: number;
   timeoutMs?: number;
+  /** Fixed display identity, supplied only after server plan verification. */
+  persona?: AnswerPersona;
 };
 
 export type AnswerProvider = {

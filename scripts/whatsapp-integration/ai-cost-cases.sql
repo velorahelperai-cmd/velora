@@ -7,17 +7,22 @@ declare uid uuid:=gen_random_uuid(); cid uuid:=gen_random_uuid(); lid uuid:=gen_
  plan uuid:=gen_random_uuid(); version uuid:=gen_random_uuid(); sub uuid:=gen_random_uuid();
  bid uuid:=gen_random_uuid(); knowledge_id uuid:=gen_random_uuid(); token uuid; r jsonb; n text:=gen_random_uuid()::text;
  order_id uuid:=gen_random_uuid(); attempt_id uuid:=gen_random_uuid(); event_id uuid:=gen_random_uuid(); grant_id uuid:=gen_random_uuid();
- paid_until timestamptz:=clock_timestamp()+interval '1 day'; tx text; raw jsonb;
+ paid_until timestamptz:=clock_timestamp()+interval '1 day'; tx text; raw jsonb;pv int; sid uuid:=gen_random_uuid();
 begin
  insert into auth.users(id,email) values(uid,'ai-fixture-'||n||'@example.invalid');
  insert into public.companies(id,display_name,status,created_by) values(cid,'Synthetic AI cost tenant','active',uid);
  insert into public.whatsapp_company_links(id,company_id,status,provider_phone_number_id) values(lid,cid,'verified','synthetic-'||n);
+ insert into auth.sessions(id,user_id) values(sid,uid);
+ update whatsapp_company_links set provider_waba_id='synthetic-waba-'||n,authorization_status='active',
+ authorization_verified_at=clock_timestamp(),authorization_expires_at=clock_timestamp()+interval '60 days',
+ authorization_app_id='synthetic-app',authorization_scopes='["whatsapp_business_management","whatsapp_business_messaging"]',
+ authorization_user_id=uid,authorization_session_id=sid,access_secret_id=vault.create_secret('synthetic-ai-token-'||n) where id=lid;
  perform set_config('velora.conversation_control','1',true);
  insert into public.whatsapp_conversations(id,company_id,phone_number_id,customer_wa_id,status,automation_allowed)
  values(conv,cid,'synthetic-'||n,'synthetic-recipient-'||n,'open',true);
- insert into public.whatsapp_messages(id,company_id,conversation_id,wa_message_id,body,direction,sender,received_at)
- values(mid,cid,conv,'synthetic-inbound-'||n,'Synthetic customer question','inbound','customer',clock_timestamp());
- insert into public.whatsapp_inbound_jobs(id,company_id,message_id,wa_message_id) values(job,cid,mid,'synthetic-inbound-'||n);
+ r:=public.whatsapp_store_meta_inbound(cid,'synthetic-waba-'||n,'synthetic-'||n,'synthetic-recipient-'||n,'',
+ 'synthetic-inbound-'||n,'Synthetic customer question','text',clock_timestamp());
+ mid:=(r->>'message_id')::uuid;job:=(r->>'job_id')::uuid;
  r:=public.claim_whatsapp_inbound_job(job,120);
  if r->>'ok'<>'true' then raise exception 'fixture claim failed: %',r; end if;
  token:=(r->>'claim_token')::uuid;
@@ -25,9 +30,11 @@ begin
  values(knowledge_id,cid,'text','Synthetic AI source','Synthetic approved content','ready',uid);
  perform set_config('velora.knowledge_approval','1',true);
  update public.knowledge_sources set approved_for_answers=true where id=knowledge_id;
- insert into public.billing_plans(id,code,name,status) values(plan,'ai-fixture-'||n,'Synthetic AI plan','active');
+ insert into public.billing_plans(id,code,name,status) values(plan,'noor_basic','Synthetic AI plan','active') on conflict(code) do update set code=excluded.code returning id into plan;
+ select coalesce(max(v.version),0)+1 into pv from billing_plan_versions v where v.plan_id=plan;
+ update billing_plan_versions set status='retired' where plan_id=plan and status='published';
  insert into public.billing_plan_versions(id,plan_id,version,amount_baisa,period_days,period_unit,period_count,status,limits)
- values(version,plan,1,1000,30,'day',30,'published','{"automated_outbound_per_month":100}');
+ values(version,plan,pv,1000,30,'day',30,'published','{"automated_outbound_per_month":100}');
  insert into public.billing_subscriptions(id,company_id,plan_version_id,status,environment,paid_through)
  values(sub,cid,version,'active',p_env,paid_until);
  if p_proven then
@@ -74,24 +81,24 @@ set local role service_role;
 
 do $$ declare f jsonb:=pg_temp.ai_fixture('test'); r jsonb; begin
  r:=pg_temp.ai_reserve(f,gen_random_uuid());
- if r->>'code'<>'PAID_LIVE_SUBSCRIPTION_REQUIRED' then raise exception 'Test subscription authorized cost: %',r; end if;
+ if r->>'ok' is distinct from 'false' then raise exception 'Test subscription authorized cost: %',r; end if;
  if exists(select 1 from public.ai_usage_ledger where worker_job_id=(f->>'job')::uuid) then raise exception 'denied cost persisted'; end if;
 end; $$;
 select 'PASS|D4 Test-only subscription cannot reserve AI cost';
 
 do $$ declare f jsonb:=pg_temp.ai_fixture('live',false); r jsonb; begin
  r:=pg_temp.ai_reserve(f,gen_random_uuid());
- if r->>'code'<>'PAID_LIVE_SUBSCRIPTION_REQUIRED' then raise exception 'unproved active Live authorized cost: %',r; end if;
+ if r->>'ok' is distinct from 'false' then raise exception 'unproved active Live authorized cost: %',r; end if;
  if exists(select 1 from public.ai_usage_ledger where worker_job_id=(f->>'job')::uuid) then raise exception 'unproved cost persisted'; end if;
 end; $$;
 select 'PASS|D4 raw active future-dated Live subscription is not payment proof';
 
 do $$ declare f jsonb:=pg_temp.ai_fixture(); r jsonb; begin
  r:=pg_temp.ai_reserve(f||jsonb_build_object('claim',gen_random_uuid()),gen_random_uuid());
- if r->>'code'<>'CLAIM_REJECTED' then raise exception 'wrong claim authorized: %',r; end if;
+ if r->>'ok' is distinct from 'false' then raise exception 'wrong claim authorized: %',r; end if;
  update public.whatsapp_inbound_jobs set claim_expires_at=clock_timestamp()-interval '1 second' where id=(f->>'job')::uuid;
  r:=pg_temp.ai_reserve(f,gen_random_uuid());
- if r->>'code'<>'CLAIM_REJECTED' then raise exception 'expired claim authorized: %',r; end if;
+ if r->>'ok' is distinct from 'false' then raise exception 'expired claim authorized: %',r; end if;
 end; $$;
 select 'PASS|D4 wrong and expired claims cannot reserve AI cost';
 

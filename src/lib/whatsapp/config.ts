@@ -4,7 +4,7 @@ function env(name: string) {
 
 /**
  * Routing modes are explicit and never mixed.
- * - tenant_registry: company from resolveWhatsappCompanyByProviderPhone only.
+ * - tenant_registry: company from the exact signed WABA + phone registry only.
  *   Resolver failure does not fall back to env company/phone.
  * - single_tenant (default): env WHATSAPP_COMPANY_ID + PHONE_NUMBER_ID only.
  * New live multi-tenant receive/send stays off until WHATSAPP_ROUTING_MODE=tenant_registry.
@@ -13,6 +13,12 @@ export type WhatsappRoutingMode = "single_tenant" | "tenant_registry";
 
 export function whatsappRoutingMode(): WhatsappRoutingMode {
   return env("WHATSAPP_ROUTING_MODE") === "tenant_registry" ? "tenant_registry" : "single_tenant";
+}
+
+/** Explicit server version shared with Embedded Signup. No automatic upgrades. */
+export function metaGraphVersion(): string | null {
+  const version = env("WHATSAPP_EMBEDDED_SIGNUP_GRAPH_VERSION");
+  return /^v[1-9]\d{0,2}\.0$/.test(version) ? version : null;
 }
 
 /** Prefer the real-number names; keep TEST_* as fallback for the current local file. */

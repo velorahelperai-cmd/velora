@@ -15,8 +15,8 @@ describe.skipIf(!enabled)("real SQL-backed P3/P4 application integration",()=>{
  const c=JSON.parse(await sql(`SET ROLE service_role;SELECT claim_whatsapp_inbound_job(${lit(j)}::uuid,120);`));
  await sql(`SET ROLE service_role;INSERT INTO ai_budget_accounts(scope,company_id,limit_baisa,enabled)VALUES('company_live',${lit(f.company)}::uuid,10,true);`);
  state.client=databaseAdapter();const input={jobId:j,claimToken:c.claim_token,companyId:f.company};const ports=createIntegrationPorts(input);
- // Vault's local encryption key is absent; transport credential is an explicit synthetic seam.
- ports.secret=async()=>"synthetic-token";state.send.mockResolvedValue({ok:true,waMessageId:`synthetic-app-${crypto.randomUUID()}`});
+ // Actual local Vault/RPC supplies the synthetic tenant credential. Only providers are mocked.
+ state.send.mockResolvedValue({ok:true,waMessageId:`synthetic-app-${crypto.randomUUID()}`});
  if(process.env.WHATSAPP_INTEGRATION_VERBOSE==="1")for(const key of ["frame","context","verify","reserve","answer"] as const){
  const port=ports[key] as (...args:unknown[])=>Promise<unknown>;
  (ports as unknown as Record<string,unknown>)[key]=async(...args:unknown[])=>{try{return await port(...args);}catch(e){console.error("LOCAL_PORT_ERROR",key,e instanceof Error?e.message:"unknown");throw e;}};
