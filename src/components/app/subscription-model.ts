@@ -8,6 +8,7 @@ export type SubscriptionView = {
   currentTier: SubscriptionTier | null;
   cycle: SubscriptionCycle | null;
   paidThrough: string | null;
+  pendingOrderId?: string;
 };
 
 /** Display-only adapter. Boolean entitlement cannot supply a catalog, tier, or period. */

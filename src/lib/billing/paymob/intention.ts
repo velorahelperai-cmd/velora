@@ -1,6 +1,6 @@
 /**
  * Create Intention client (Oman API host) with mockable HTTP.
- * OMR conversion stays NOT_CONFIGURED — manual provider amounts cannot bypass it.
+ * OMR conversion defaults to NOT_CONFIGURED; trusted Test configuration must verify it.
  * Non-positive amounts refused before any HTTP. Malformed responses → invalid_response (no throw).
  * Timeout / opaque failure after send → unknown (reconcile; no new collection).
  */
@@ -200,7 +200,7 @@ export async function createPaymobIntention(input: {
   }
 
   // Manual locked amount must not bypass the conversion contract while unconfigured.
-  const conversion = getPaymobOmrConversionState();
+  const conversion = getPaymobOmrConversionState(input.config);
   if (conversion.status === "NOT_CONFIGURED") {
     return { ok: false, code: "conversion_not_configured" };
   }

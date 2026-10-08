@@ -1,3 +1,4 @@
+import { processOwnerOrderEvents } from "@/lib/billing/wiring/order-event-processing";
 import { getCompanyAccess } from "@/lib/tenancy/access";
 import {loadBillingReturnRow} from "@/lib/billing/wiring/return-load";
 import {mapBillingReturnDisplay} from "@/lib/billing/wiring/return-status";
@@ -9,7 +10,7 @@ export default async function Page({params}:{params:Promise<{orderId:string}>}) 
  const {orderId}=await params;const companyId=access.context.company.id;
  if(!/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(orderId))return <SubscriptionPaymentStatus display={{kind:"forbidden",messageKey:"order_not_found"}}/>;
  let row = null;
- try { row=await loadBillingReturnRow({requestCompanyId:companyId,orderId}); }
+ try { await processOwnerOrderEvents(companyId,orderId); row=await loadBillingReturnRow({requestCompanyId:companyId,orderId}); }
  catch { /* The generic unavailable/inaccessible display below does not disclose an order. */ }
- return <SubscriptionPaymentStatus display={mapBillingReturnDisplay({requestCompanyId:companyId,row})}/>;
+ return <SubscriptionPaymentStatus orderId={orderId} display={mapBillingReturnDisplay({requestCompanyId:companyId,row})}/>;
 }

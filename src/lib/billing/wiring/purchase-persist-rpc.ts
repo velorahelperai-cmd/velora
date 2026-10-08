@@ -1,3 +1,4 @@
+import { getPaymobOmrConversionState } from "../paymob/config";
 /**
  * Map billing_create_or_reuse_subscription_order RPC JSONB.
  */
@@ -71,7 +72,7 @@ export function createAtomicPurchasePersistRpc(admin: {
     providerEnvironment: string;
     createdBy: string | null;
   }): Promise<AtomicPurchasePersistResult> => {
-    const { data, error } = await admin.rpc("billing_create_or_reuse_subscription_order", {
+    const payload = {
       p_company_id: args.companyId,
       p_product_code: args.productCode,
       p_purchase_purpose: args.purchasePurpose,
@@ -88,7 +89,11 @@ export function createAtomicPurchasePersistRpc(admin: {
       p_provider_account_ref: args.providerAccountRef,
       p_provider_environment: args.providerEnvironment,
       p_created_by: args.createdBy,
-    });
+    };
+    const conversion = getPaymobOmrConversionState();
+    const { data, error } = conversion.status === "CONFIGURED"
+      ? await admin.rpc("billing_create_test_checkout_order", { p_input: payload, p_units_per_omr: conversion.unitsPerOmr })
+      : await admin.rpc("billing_create_or_reuse_subscription_order", payload);
     if (error) {
       return { ok: false, code: String(error.code ?? error.message ?? "purchase_persist_rpc_failed") };
     }

@@ -1,3 +1,6 @@
+import { processStoredPaymobEvent, type StoredProviderEvent } from "@/lib/billing/wiring/event-process";
+import { settleHmacVerifiedViaRpc } from "@/lib/billing/wiring/store";
+import type { SavedOrderForWebhook } from "@/lib/billing/wiring/webhook-receive";
 import { receivePaymobWebhook } from "@/lib/billing/wiring/webhook-receive";
 import {
   blocksWebhookReceive,
@@ -30,19 +33,34 @@ export async function POST(request: Request) {
   const hmacQuery = url.searchParams.get("hmac");
   const rawBody = await request.text();
 
+  const trusted: {order:SavedOrderForWebhook|null;event:StoredProviderEvent|null} = {order:null,event:null};
   const result = await receivePaymobWebhook({
     rawBody,
     hmacQueryParam: hmacQuery,
     deps: {
       webhookEnabled: flags.webhookEnabled,
       hmacSecret: process.env.PAYMOB_HMAC_SECRET?.trim() ?? "",
-      findOrderByProviderOrderId,
-      insertProviderEvent,
+      findOrderByProviderOrderId: async id => { const order=await findOrderByProviderOrderId(id);trusted.order=order;return order; },
+      insertProviderEvent: async row => {
+        const saved=await insertProviderEvent(row);
+        if(saved.ok && trusted.order && row.providerEnvironment === "test" && row.eventStatus === "success") {
+          trusted.event={id:saved.eventId,companyId:row.companyId,orderId:trusted.order.orderId,paymentAttemptId:row.paymentAttemptId,providerTransactionId:row.providerTransactionId,eventStatus:"success",providerAccountRef:row.providerAccountRef,specialReference:trusted.order.specialReference,amountBaisa:trusted.order.amountBaisa,observationKey:row.observationKey};
+        }
+        return saved;
+      },
     },
   });
 
-  logWebhookDiag("done", { status: result.status, body: result.body });
-  return new Response(result.body, {
+  let responseBody=result.body;
+  if(result.status===200 && trusted.event && flags.settleEnabled) {
+    try {
+      const processed=await processStoredPaymobEvent({event:trusted.event,deps:{settleEnabled:true,settleHmacVerified:settleHmacVerifiedViaRpc}});
+      if(processed.ok && ["granted","idempotent_replay"].includes(processed.outcome))responseBody=result.body==="duplicate"?"duplicate":"stored";
+      else logWebhookDiag("settlement_pending", {code:processed.ok?processed.outcome:processed.code});
+    } catch { logWebhookDiag("settlement_pending", {code:"processing_unavailable"}); }
+  }
+  logWebhookDiag("done", { status: result.status, body: responseBody });
+  return new Response(responseBody, {
     status: result.status,
     headers: { "content-type": "text/plain; charset=utf-8" },
   });

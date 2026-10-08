@@ -1,3 +1,4 @@
+import { getPaymobOmrConversionState } from "../paymob/config";
 /**
  * VEL-PAYMOB-TEST-WIRING-01 — operational switches (default OFF).
  * Separate keys for create / webhook / settle. Live always refused in this package.
@@ -73,8 +74,8 @@ export type WiringSecretsPresence = {
   integrationId: boolean;
   secretKey: boolean;
   publicKey: boolean;
-  /** Always false in this package — OMR↔Paymob factor unconfirmed. */
-  omrConversionConfigured: false;
+  /** True only after the server-side OMR conversion setting is explicitly verified. */
+  omrConversionConfigured: boolean;
 };
 
 export function readWiringSecretsPresence(
@@ -88,7 +89,7 @@ export function readWiringSecretsPresence(
       overrides?.integrationId ?? env(BILLING_WIRING_SETTING_NAMES.integrationIdTest).length > 0,
     secretKey: overrides?.secretKey ?? env(BILLING_WIRING_SETTING_NAMES.secretKeyTest).length > 0,
     publicKey: overrides?.publicKey ?? env(BILLING_WIRING_SETTING_NAMES.publicKeyTest).length > 0,
-    omrConversionConfigured: false,
+    omrConversionConfigured: getPaymobOmrConversionState().status === "CONFIGURED",
   };
 }
 

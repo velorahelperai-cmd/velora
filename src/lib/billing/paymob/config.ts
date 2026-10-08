@@ -1,7 +1,7 @@
 /**
  * VEL-PAYMOB-ADAPTER-FIX-01 — Oman Paymob configuration with strict URL allowlist.
  * Live locked by default. Secrets must never be sent before URL validation.
- * Conversion OMR↔provider units stays NOT_CONFIGURED.
+ * OMR conversion requires an explicitly verified server setting; default NOT_CONFIGURED.
  */
 
 export const PAYMOB_OMAN_API_BASE_URL = "https://oman.paymob.com" as const;
@@ -59,6 +59,8 @@ export type PaymobEnvironment = "test" | "live";
 
 export type PaymobAdapterConfig = {
   environment: PaymobEnvironment;
+  /** Server-approved provider units per OMR; never supplied by a browser. */
+  verifiedOmrUnitsPerOmr?: number;
   liveEnabled: boolean;
   apiBaseUrl: string;
   checkoutBaseUrl: string;
@@ -75,15 +77,14 @@ export type PaymobAdapterConfig = {
   merchantOwnerId?: string;
 };
 
-export type PaymobAmountConversionState = {
-  status: "NOT_CONFIGURED";
-  reason: "paymob_omr_factor_unconfirmed";
-};
-
-export function getPaymobOmrConversionState(): PaymobAmountConversionState {
-  return { status: "NOT_CONFIGURED", reason: "paymob_omr_factor_unconfirmed" };
+export type PaymobAmountConversionState =
+ | { status:"NOT_CONFIGURED"; reason:"paymob_omr_factor_unconfirmed" }
+ | { status:"CONFIGURED"; unitsPerOmr:number };
+export function getPaymobOmrConversionState(config?:Pick<PaymobAdapterConfig,"verifiedOmrUnitsPerOmr">):PaymobAmountConversionState {
+ const verified=["true","1","yes","on"].includes(process.env.PAYMOB_OMR_CONVERSION_VERIFIED?.trim().toLowerCase()??"");
+ const factor=config?.verifiedOmrUnitsPerOmr??(verified?Number(process.env.PAYMOB_OMR_UNITS_PER_OMR):NaN);
+ return Number.isSafeInteger(factor)&&factor>0&&factor<=1000000?{status:"CONFIGURED",unitsPerOmr:factor}:{status:"NOT_CONFIGURED",reason:"paymob_omr_factor_unconfirmed"};
 }
-
 export type PaymobUrlKind = "api" | "checkout";
 
 /**
