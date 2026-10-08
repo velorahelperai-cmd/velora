@@ -1,7 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   deleteKnowledgeSource,
   listKnowledgeSources,
@@ -39,6 +40,8 @@ type Props = {
   onLoadStateChange?: (failed: boolean) => void;
 };
 
+type KnowledgeCategory = "all" | "profile" | "products" | "pricing" | "policies" | "faq";
+
 function fileErrorMessage(code: string | undefined, copy: ReturnType<typeof useAppCopy>) {
   if (code === "TOO_LARGE") return copy.knowledge.fileTooLarge;
   if (code === "INVALID_TYPE") return copy.knowledge.fileInvalidType;
@@ -60,6 +63,55 @@ function reasonText(code: string | null | undefined, copy: ReturnType<typeof use
   return map[code] ?? map.extract_failed ?? null;
 }
 
+const TEMPLATES = {
+  products: {
+    title: "قائمة المنتجات والخدمات الرئيسية",
+    content: `1. المنتج/الخدمة الأولى:
+- الوصف والمواصفات: ...
+- السعر: ... ر.ع
+- التوفر: متوفر حالياً
+
+2. المنتج/الخدمة الثانية:
+- الوصف: ...
+- السعر: ... ر.ع
+
+طريقة الطلب: عبر رسائل واتساب أو المعرض مباشرة.`,
+  },
+  policies: {
+    title: "سياسة الاسترجاع والتوصيل والشحن",
+    content: `سياسة الاسترجاع والاستبدال:
+- الاسترجاع متاح خلال 3 أيام من تاريخ الاستلام في حال وجود عيب مصنعي أو مطابقة غير سليمة.
+- الاستبدال متاح خلال 7 أيام بشرط سلامة التغليف الأصلي.
+
+الشحن والتوصيل:
+- التوصيل داخل محافظة مسقط: 2 ر.ع (خلال 24-48 ساعة عمل).
+- باقي محافظات سلطنة عُمان: 3 ر.ع (خلال 2-3 أيام عمل).
+- الاستلام من الفرع: متاح مجاناً خلال ساعات العمل.`,
+  },
+  pricing: {
+    title: "باقات الأسعار والعروض وطرق الدفع",
+    content: `الباقات والعروض:
+- الباقة الأساسية: ... ر.ع
+- باقة الأعمال: ... ر.ع
+
+طرق الدفع المعتمدة:
+- الدفع الإلكتروني عبر بطاقات الخصم المباشر / بطاقات الائتمان.
+- التحويل البنكي المباشر.
+- الدفع عند الاستلام (حسب التوفر).`,
+  },
+  faq: {
+    title: "الأسئلة الشائعة وإجابات العملاء",
+    content: `س: ما هي أوقات العمل الرسمية؟
+ج: نستقبلكم يومياً من 9:00 صباحاً إلى 10:00 مساءً، والجمعة من 1:00 ظهراً.
+
+س: أين يقع موقعكم؟
+ج: موقعنا في ... ويسعدنا زيارتكم أو خدمتكم عبر التوصيل المباشر.
+
+س: كيف يمكنني تأكيد الطلب أو الحجز؟
+ج: أرسل لنا تفاصيل طلبك واسمك ورقم هاتفك وسنقوم بتأكيده فوراً.`,
+  },
+};
+
 /** Company knowledge editor (setup + /app/knowledge). Always persists to DB when rendered. */
 export function KnowledgeEditor({
   compact,
@@ -79,6 +131,7 @@ export function KnowledgeEditor({
   const [approvalFoundation, setApprovalFoundation] = useState<KnowledgeApprovalFoundation>(initialApprovalFoundation);
   const [mode, setMode] = useState<"text" | "file" | null>(focusTitle && !initialLoadFailed ? "text" : null);
   const [editing, setEditing] = useState<string | null>(null);
+  const [activeCategory, setActiveCategory] = useState<KnowledgeCategory>("all");
   const [form, setForm] = useState({ title: focusTitle ?? "", content: "", files: null as FileList | null });
   const [errors, setErrors] = useState<Partial<Record<"title" | "content" | "files", FieldErrorKey>>>({});
   const [notice, setNotice] = useState<string | null>(null);
@@ -95,11 +148,11 @@ export function KnowledgeEditor({
     foundation: initialApprovalFoundation,
   }));
 
-  // Adopt newer SSR props after router.refresh — do not keep a stale client list.
+  // Adopt newer SSR props after router.refresh
   if (
-    trackedProps.sources !== initialSources
-    || trackedProps.failed !== initialLoadFailed
-    || trackedProps.foundation !== initialApprovalFoundation
+    trackedProps.sources !== initialSources ||
+    trackedProps.failed !== initialLoadFailed ||
+    trackedProps.foundation !== initialApprovalFoundation
   ) {
     setTrackedProps({
       sources: initialSources,
@@ -138,7 +191,15 @@ export function KnowledgeEditor({
     setErrors({});
   }
 
-  /** Refresh dashboard readiness cache without rewriting knowledge. */
+  function applyTemplate(key: keyof typeof TEMPLATES) {
+    const tpl = TEMPLATES[key];
+    setMode("text");
+    setEditing(null);
+    setForm({ title: tpl.title, content: tpl.content, files: null });
+    setErrors({});
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   function refreshAppViews() {
     try {
       router.refresh();
@@ -199,7 +260,6 @@ export function KnowledgeEditor({
         content: form.content,
       });
       if (!result.ok) {
-        // Keep form inputs on failure — do not clear the draft.
         setError(result.message ?? copy.knowledge.saveFailed);
         return;
       }
@@ -340,19 +400,7 @@ export function KnowledgeEditor({
           );
           return;
         }
-        if (result.message === "OBJECT_MISSING") {
-          setError(copy.knowledge.objectMissing);
-          return;
-        }
-        setError(result.message ?? copy.knowledge.fileUploadFailed);
-        return;
-      }
-      if (result.data.status === "failed") {
-        setError(
-          `${copy.knowledge.uploadOkExtractFailed}${
-            reasonText(result.data.failure_code, copy) ? ` (${reasonText(result.data.failure_code, copy)})` : ""
-          }`,
-        );
+        setError(fileErrorMessage(result.message, copy) || result.message || copy.knowledge.saveFailed);
         return;
       }
       setNotice(copy.knowledge.uploadDone);
@@ -411,9 +459,11 @@ export function KnowledgeEditor({
           setError(copy.knowledge.objectMissing);
           return;
         }
-        setError(result.message === "storage_unavailable"
-          ? copy.knowledge.storageUnavailable
-          : (result.message ?? copy.knowledge.cleanupFailed));
+        setError(
+          result.message === "storage_unavailable"
+            ? copy.knowledge.storageUnavailable
+            : (result.message ?? copy.knowledge.cleanupFailed),
+        );
         return;
       }
       if (result.data.status === "failed") {
@@ -475,29 +525,58 @@ export function KnowledgeEditor({
   const readyCount = sources.filter((s) => s.status === "ready" && isApprovedForAnswers(s)).length;
   const healthPercent = sources.length === 0 ? 0 : Math.min(100, Math.round((readyCount / Math.max(1, sources.length)) * 100));
 
+  // Intelligent detection of missing critical knowledge areas
+  const allTextCorpus = useMemo(
+    () => sources.map((s) => `${s.title} ${s.content}`).join(" ").toLowerCase(),
+    [sources],
+  );
+
+  const missingPolicies = !/استرجاع|استبدال|توصيل|شحن|return|refund|shipping|delivery/.test(allTextCorpus);
+  const missingProducts = !/منتج|خدم|منيو|قائمة|product|service|menu/.test(allTextCorpus);
+  const missingPricing = !/سعر|أسعار|باق|ر\.ع|price|pricing|omr|rate/.test(allTextCorpus);
+
+  // Filter sources by category
+  const filteredSources = useMemo(() => {
+    if (activeCategory === "all") return sources;
+    return sources.filter((s) => {
+      const text = `${s.title} ${s.content}`.toLowerCase();
+      if (activeCategory === "policies") return /استرجاع|استبدال|توصيل|شحن|سياسة|policy|return|delivery/.test(text);
+      if (activeCategory === "products") return /منتج|خدم|منيو|product|service|menu/.test(text);
+      if (activeCategory === "pricing") return /سعر|أسعار|باق|ر\.ع|price|omr/.test(text);
+      if (activeCategory === "faq") return /سؤال|أسئلة|شائع|استفسار|faq|question/.test(text);
+      return true;
+    });
+  }, [sources, activeCategory]);
+
   return (
     <div className="grid gap-5">
-      {/* 🧠 بطاقة جاهزية ومستوى ذكاء قاعدة المعرفة */}
-      <section className="rounded-3xl border border-[#38dc89]/30 bg-gradient-to-r from-[#11241a] via-[#0d1c15] to-[#07110d] p-5 shadow-[0_12px_32px_rgba(0,0,0,0.35)] relative overflow-hidden">
+      {/* Knowledge Score & Readiness Hero Banner */}
+      <section className="relative overflow-hidden rounded-3xl border border-[#38dc89]/30 bg-gradient-to-r from-[#11241a] via-[#0d1c15] to-[#07110d] p-5 shadow-[0_12px_32px_rgba(0,0,0,0.35)]">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3.5">
-            <div className="relative flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-[#38dc89] to-[#124b30] text-[#072317] text-2xl font-bold shadow-md">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#38dc89]/20 border border-[#38dc89]/40 text-2xl font-bold">
               🧠
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-lg font-bold text-[#f7fbf8]">مستوى جاهزية المعرفة (Knowledge Score)</h2>
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-lg font-bold text-[#f7fbf8]">جاهزية معلومات نورا (Knowledge Health)</h2>
                 <span className="inline-flex rounded-full border border-[#38dc89]/40 bg-[#38dc89]/15 px-2.5 py-0.5 text-xs font-semibold text-[#9af0c3]">
-                  {healthPercent >= 70 ? "ممتازة للردود 🟢" : "تحتاج مزيداً من الملفات 🟡"}
+                  {healthPercent >= 60 ? "جاهزة للردود الذكية 🟢" : "تحتاج مزيداً من المصادر 🟡"}
                 </span>
               </div>
               <p className="mt-1 text-xs text-[#b7c6b9]">
-                كلما رفعت ملفات أكثر، زادت قدرة الموظفة على الإجابة الدقيقة على استفسارات واتساب بدون أخطاء.
+                المعلومات المعتمدة فقط هي التي تستخدمها نورا للرد على العملاء عبر واتساب.
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <span className="text-2xl font-extrabold text-[#9af0c3]">{healthPercent}%</span>
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-3xl font-extrabold text-[#9af0c3]">{healthPercent}%</span>
+            <Link
+              href="/app/test"
+              className="inline-flex min-h-10 items-center gap-1.5 rounded-full border border-[#38dc89]/40 bg-[#38dc89]/15 px-4 text-xs font-semibold text-[#9af0c3] transition hover:bg-[#38dc89]/25 hover:shadow-[0_0_12px_rgba(56,220,137,0.3)]"
+            >
+              🧪 اختبر الردود في المحاكاة ↗
+            </Link>
           </div>
         </div>
 
@@ -509,14 +588,52 @@ export function KnowledgeEditor({
             />
           </div>
           <div className="mt-2 flex items-center justify-between text-[11px] text-[#8aa394]">
-            <span>{readyCount} مصادر معتمدة وجاهزة للإجابات</span>
-            <span>الهدف: 3 مصادر على الأقل لإطلاق الموظفة بكفاءة</span>
+            <span>{readyCount} مصادر معتمدة من أصل {sources.length}</span>
+            <span>كل معلومة إضافية ترفع دقة نورا وتقلل تحويل العملاء للموظفين</span>
           </div>
         </div>
       </section>
 
+      {/* Missing Information Alerts Card */}
+      {(missingPolicies || missingProducts || missingPricing) && canWrite ? (
+        <section className="rounded-2xl border border-[#d9a467]/40 bg-gradient-to-r from-[#1c170d] to-[#121c16] p-4 text-xs">
+          <div className="flex items-center gap-2 font-bold text-[#f0cf9d] mb-1.5">
+            <span>⚠️</span>
+            <span>تنبيه: نورا تحتاج هذه المعلومات لتجنب تحويل العملاء إلى الموظف البشري دون داعٍ:</span>
+          </div>
+          <div className="flex flex-wrap gap-2 mt-2.5">
+            {missingPolicies ? (
+              <button
+                type="button"
+                onClick={() => applyTemplate("policies")}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-[#d9a467]/50 bg-[#d9a467]/15 px-3 py-1.5 text-xs font-medium text-[#f0cf9d] transition hover:bg-[#d9a467]/25"
+              >
+                + أضف سياسة الاسترجاع والتوصيل
+              </button>
+            ) : null}
+            {missingProducts ? (
+              <button
+                type="button"
+                onClick={() => applyTemplate("products")}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-[#d9a467]/50 bg-[#d9a467]/15 px-3 py-1.5 text-xs font-medium text-[#f0cf9d] transition hover:bg-[#d9a467]/25"
+              >
+                + أضف قائمة المنتجات والخدمات
+              </button>
+            ) : null}
+            {missingPricing ? (
+              <button
+                type="button"
+                onClick={() => applyTemplate("pricing")}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-[#d9a467]/50 bg-[#d9a467]/15 px-3 py-1.5 text-xs font-medium text-[#f0cf9d] transition hover:bg-[#d9a467]/25"
+              >
+                + أضف الأسعار وطرق الدفع
+              </button>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
+
       {!compact ? <p className="app-muted max-w-2xl text-base leading-7">{copy.knowledge.body}</p> : null}
-      <p className="app-muted-soft text-xs leading-5">{copy.knowledge.examples}</p>
       {!canWrite ? <Notice tone="info">{copy.knowledge.readOnly}</Notice> : null}
       {approvalFoundation === "unavailable" ? (
         <Notice tone="warn">{copy.knowledge.approvalFoundationUnavailable}</Notice>
@@ -539,6 +656,7 @@ export function KnowledgeEditor({
           </Button>
         </div>
       ) : null}
+
       {uploadResults.length ? (
         <ul className="grid gap-1 rounded-xl border border-[color:var(--color-line)] bg-[var(--color-panel)]/80 p-3 text-xs">
           {uploadResults.map((r) => (
@@ -551,44 +669,109 @@ export function KnowledgeEditor({
         </ul>
       ) : null}
 
+      {/* Action Bar: Quick-Add Templates and Buttons */}
       {canWrite ? (
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant={mode === "text" ? "primary" : "secondary"}
-            busy={busy}
-            onClick={() => { setMode("text"); setEditing(null); setForm({ title: "", content: "", files: null }); }}
-          >
-            {copy.knowledge.addText}
-          </Button>
-          <Button
-            variant={mode === "file" ? "primary" : "secondary"}
-            busy={busy}
-            onClick={() => { setMode("file"); setEditing(null); setForm({ title: "", content: "", files: null }); }}
-          >
-            {copy.knowledge.addFile}
-          </Button>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[color:var(--color-border-soft)] pb-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant={mode === "text" ? "primary" : "secondary"}
+              busy={busy}
+              onClick={() => {
+                setMode("text");
+                setEditing(null);
+                setForm({ title: "", content: "", files: null });
+              }}
+            >
+              ✍️ {copy.knowledge.addText}
+            </Button>
+            <Button
+              variant={mode === "file" ? "primary" : "secondary"}
+              busy={busy}
+              onClick={() => {
+                setMode("file");
+                setEditing(null);
+                setForm({ title: "", content: "", files: null });
+              }}
+            >
+              📁 {copy.knowledge.addFile}
+            </Button>
+          </div>
+
+          {/* Quick-add templates shortcuts */}
+          <div className="flex flex-wrap items-center gap-1.5 text-xs">
+            <span className="text-[#8aa394] me-1">قوالب جاهزة:</span>
+            <button
+              type="button"
+              onClick={() => applyTemplate("products")}
+              className="rounded-lg border border-[color:var(--color-border-soft)] bg-[var(--color-hover-wash)] px-2.5 py-1 text-[#b7c6b9] transition hover:text-[#f7fbf8]"
+            >
+              🛍️ المنتجات
+            </button>
+            <button
+              type="button"
+              onClick={() => applyTemplate("policies")}
+              className="rounded-lg border border-[color:var(--color-border-soft)] bg-[var(--color-hover-wash)] px-2.5 py-1 text-[#b7c6b9] transition hover:text-[#f7fbf8]"
+            >
+              🔄 السياسات
+            </button>
+            <button
+              type="button"
+              onClick={() => applyTemplate("pricing")}
+              className="rounded-lg border border-[color:var(--color-border-soft)] bg-[var(--color-hover-wash)] px-2.5 py-1 text-[#b7c6b9] transition hover:text-[#f7fbf8]"
+            >
+              🏷️ الأسعار
+            </button>
+            <button
+              type="button"
+              onClick={() => applyTemplate("faq")}
+              className="rounded-lg border border-[color:var(--color-border-soft)] bg-[var(--color-hover-wash)] px-2.5 py-1 text-[#b7c6b9] transition hover:text-[#f7fbf8]"
+            >
+              ❓ أسئلة شائعة
+            </button>
+          </div>
         </div>
       ) : null}
 
+      {/* Editor Modal / Form */}
       {mode && canWrite ? (
         <form
-          className="grid gap-3 rounded-2xl border border-[color:var(--color-line)] bg-[var(--color-panel)] p-4"
+          className="grid gap-3 rounded-2xl border border-[#38dc89]/30 bg-[var(--color-panel)] p-5 shadow-[0_8px_24px_rgba(0,0,0,0.3)]"
           noValidate
-          onSubmit={(e) => { e.preventDefault(); save(); }}
+          onSubmit={(e) => {
+            e.preventDefault();
+            save();
+          }}
         >
+          <div className="flex items-center justify-between border-b border-[color:var(--color-border-soft)] pb-2.5">
+            <h3 className="font-bold text-[#f7fbf8] text-sm">
+              {editing ? "تعديل معلومة" : mode === "text" ? "إضافة معلومة جديدة" : "رفع ملفات معتمدة"}
+            </h3>
+            <span className="text-xs text-[#8aa394]">
+              {mode === "text" ? "نص مباشر" : "ملفات PDF, DOCX, TXT"}
+            </span>
+          </div>
+
           {mode === "text" ? (
             <>
               <Field label={copy.knowledge.sourceTitle} required error={titleError}>
-                {(p) => <input {...p} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />}
+                {(p) => (
+                  <input
+                    {...p}
+                    value={form.title}
+                    onChange={(e) => setForm({ ...form, title: e.target.value })}
+                    placeholder="مثال: قائمة الأسعار · سياسة التوصيل · أوقات العمل"
+                  />
+                )}
               </Field>
               <Field label={copy.knowledge.sourceContent} required error={contentError}>
                 {(p) => (
                   <textarea
                     {...p}
-                    rows={4}
+                    rows={6}
                     value={form.content}
                     onChange={(e) => setForm({ ...form, content: e.target.value })}
-                    className={`${p.className} min-h-28 py-2`}
+                    placeholder="اكتب المعلومات بالتفصيل كما تريد أن تفهمها نورا وتجيب بها العملاء..."
+                    className={`${p.className} min-h-36 py-2.5 leading-6`}
                   />
                 )}
               </Field>
@@ -601,138 +784,214 @@ export function KnowledgeEditor({
                   type="file"
                   multiple
                   accept={KNOWLEDGE_ACCEPT}
-                  onChange={(e) => setForm({ ...form, files: e.target.files, title: e.target.files?.[0]?.name ?? form.title })}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      files: e.target.files,
+                      title: e.target.files?.[0]?.name ?? form.title,
+                    })
+                  }
                   className={`${p.className} py-2 file:me-3 file:rounded-lg file:border-0 file:bg-[#38dc89] file:px-3 file:py-1.5 file:text-[#072317]`}
                 />
               )}
             </Field>
           )}
-          <div className="flex flex-wrap gap-2">
-            <Button type="submit" busy={busy} busyLabel={mode === "file" ? copy.knowledge.uploading : copy.saving}>
+
+          <div className="flex flex-wrap items-center gap-2 pt-2">
+            <Button
+              type="submit"
+              busy={busy}
+              busyLabel={mode === "file" ? copy.knowledge.uploading : copy.saving}
+            >
               {copy.save}
             </Button>
-            <Button type="button" variant="secondary" disabled={busy} onClick={reset}>{copy.cancel}</Button>
+            <Button type="button" variant="secondary" disabled={busy} onClick={reset}>
+              {copy.cancel}
+            </Button>
           </div>
         </form>
       ) : null}
 
-      {sources.length === 0 ? (
-        <EmptyState title={copy.knowledge.empty} />
+      {/* Category Filter Tabs */}
+      {sources.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-1.5 border-b border-[color:var(--color-border-soft)] pb-3 text-xs">
+          {(
+            [
+              ["all", "جميع المصادر"],
+              ["products", "المنتجات والخدمات"],
+              ["policies", "السياسات والشحن"],
+              ["pricing", "الأسعار والعروض"],
+              ["faq", "الأسئلة الشائعة"],
+            ] as const
+          ).map(([cat, label]) => (
+            <button
+              key={cat}
+              type="button"
+              onClick={() => setActiveCategory(cat)}
+              className={`rounded-full px-3 py-1 font-medium transition ${
+                activeCategory === cat
+                  ? "bg-[#38dc89]/20 text-[#9af0c3] border border-[#38dc89]/40"
+                  : "text-[#b7c6b9] hover:bg-[var(--color-hover-wash)] border border-transparent"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      {/* Sources List */}
+      {filteredSources.length === 0 ? (
+        <EmptyState
+          title={sources.length === 0 ? copy.knowledge.empty : "لا توجد مصادر في هذا التصنيف"}
+          body="أضف معلومات جديدة أو اختر قالباً جاهزاً من الأعلى لتبدأ نورا بفهم نشاطك."
+        />
       ) : (
-        <ul className="grid gap-1">
-          {sources.map((src) => (
-            <li key={src.id} className="grid gap-2 border-b border-[color:var(--color-line)] py-4 last:border-b-0 sm:grid-cols-[1fr_auto] sm:items-start">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="font-semibold tracking-tight text-[var(--color-on-dark)]">{src.title}</p>
-                  <span className={`rounded-md px-2 py-0.5 text-[11px] font-medium ${statusStyle[src.status]}`}>
-                    {statusLabel(src.status, copy)}
-                  </span>
-                  {src.status === "ready" ? (
-                    <span
-                      className={`rounded-md px-2 py-0.5 text-[11px] font-medium ${
-                        isApprovedForAnswers(src)
-                          ? "bg-[#38dc89]/22 text-[var(--color-success-fg)] ring-1 ring-[#38dc89]/40"
-                          : "bg-white/8 text-[var(--color-muted-on-dark)] ring-1 ring-white/12"
-                      }`}
-                    >
-                      {approvalFoundation === "unavailable"
-                        ? copy.knowledge.approvalUnknown
-                        : isApprovedForAnswers(src)
-                          ? copy.knowledge.approved
-                          : copy.knowledge.notApproved}
-                    </span>
-                  ) : null}
-                </div>
-                <p className="app-muted mt-1.5 line-clamp-2 text-sm leading-6">
-                  {src.kind === "file" ? <span dir="ltr">{src.file_name}</span> : src.content}
-                </p>
-                {src.kind === "file" && src.status === "ready" && src.content ? (
-                  <p className="app-muted mt-1 line-clamp-2 text-sm leading-6">{src.content}</p>
-                ) : null}
-                {src.failure_code ? (
-                  <p className="mt-1 text-sm leading-6 text-[var(--color-danger-fg)]">{reasonText(src.failure_code, copy)}</p>
-                ) : null}
-                {src.status === "ready" && canWrite && approvalFoundation === "ready" ? (
-                  <p className="app-muted-soft mt-1 text-xs leading-5">{copy.knowledge.approveHint}</p>
-                ) : null}
-              </div>
-              {canWrite || canDelete ? (
-                <div className="flex flex-wrap gap-1">
-                  {canWrite && src.status === "ready" && src.content.trim() && approvalFoundation === "ready" ? (
-                    <Button
-                      variant="ghost"
-                      busy={busy}
-                      onClick={() => void setApproval(src, !isApprovedForAnswers(src))}
-                    >
-                      {isApprovedForAnswers(src) ? copy.knowledge.revokeApproval : copy.knowledge.approve}
-                    </Button>
-                  ) : null}
-                  {src.kind === "file"
-                    && src.storage_path
-                    && isPreparableKnowledgeFile(src.file_name)
-                    && src.status !== "draft" ? (
-                    <Button variant="ghost" busy={busy} onClick={() => void prepareAgain(src)}>
-                      {copy.knowledge.retry}
-                    </Button>
-                  ) : null}
-                  {src.kind === "file"
-                    && src.storage_path
-                    && !isPreparableKnowledgeFile(src.file_name)
-                    && (src.status === "failed" || src.status === "draft") ? (
-                    <Button variant="ghost" busy={busy} onClick={() => void repairDb(src)}>
-                      {copy.knowledge.repair}
-                    </Button>
-                  ) : null}
-                  {src.kind === "file" && src.status !== "processing" ? (
-                    <>
-                      <input
-                        id={`retry-${src.id}`}
-                        type="file"
-                        accept={KNOWLEDGE_ACCEPT}
-                        className="sr-only"
-                        onChange={(e) => {
-                          const f = e.target.files?.[0];
-                          if (f) void retryDb(src, f);
-                          e.target.value = "";
-                        }}
-                      />
+        <ul className="grid gap-3">
+          {filteredSources.map((src) => {
+            const approved = isApprovedForAnswers(src);
+            return (
+              <li
+                key={src.id}
+                className={`rounded-2xl border p-4 transition ${
+                  approved
+                    ? "border-[#38dc89]/30 bg-[#0d1a14]/60 hover:border-[#38dc89]/60"
+                    : "border-[color:var(--color-border-soft)] bg-[var(--color-panel)] hover:border-white/20"
+                }`}
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0 max-w-2xl">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-bold tracking-tight text-[#f7fbf8] text-base">{src.title}</p>
+                      <span className={`rounded-md px-2 py-0.5 text-[11px] font-medium ${statusStyle[src.status]}`}>
+                        {statusLabel(src.status, copy)}
+                      </span>
+                      {src.status === "ready" ? (
+                        <span
+                          className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                            approved
+                              ? "bg-[#38dc89]/20 text-[#9af0c3] border border-[#38dc89]/40"
+                              : "bg-[#d9a467]/15 text-[#f0cf9d] border border-[#d9a467]/30"
+                          }`}
+                        >
+                          <span className={`h-1.5 w-1.5 rounded-full ${approved ? "bg-[#38dc89]" : "bg-[#d9a467]"}`} />
+                          {approvalFoundation === "unavailable"
+                            ? copy.knowledge.approvalUnknown
+                            : approved
+                              ? "✓ معتمد لإجابات نورا"
+                              : "⏳ مسودة بانتظار الاعتماد"}
+                        </span>
+                      ) : null}
+                    </div>
+
+                    <p className="mt-2 text-xs leading-5 text-[#b7c6b9] line-clamp-3">
+                      {src.kind === "file" ? <span dir="ltr" className="font-mono">{src.file_name}</span> : src.content}
+                    </p>
+                    {src.kind === "file" && src.status === "ready" && src.content ? (
+                      <p className="mt-1 text-xs leading-5 text-[#8aa394] line-clamp-2">
+                        {src.content}
+                      </p>
+                    ) : null}
+                    {src.failure_code ? (
+                      <p className="mt-1 text-xs text-[var(--color-danger-fg)]">
+                        {reasonText(src.failure_code, copy)}
+                      </p>
+                    ) : null}
+                  </div>
+
+                  {canWrite || canDelete ? (
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {canWrite && src.status === "ready" && src.content.trim() && approvalFoundation === "ready" ? (
+                        <Button
+                          variant={approved ? "ghost" : "primary"}
+                          className="text-xs min-h-9 px-3"
+                          busy={busy}
+                          onClick={() => void setApproval(src, !approved)}
+                        >
+                          {approved ? "إلغاء الاعتماد" : "✓ اعتماد للإجابات"}
+                        </Button>
+                      ) : null}
+
+                      {src.kind === "file" &&
+                      src.storage_path &&
+                      isPreparableKnowledgeFile(src.file_name) &&
+                      src.status !== "draft" ? (
+                        <Button variant="ghost" className="text-xs min-h-9 px-3" busy={busy} onClick={() => void prepareAgain(src)}>
+                          {copy.knowledge.retry}
+                        </Button>
+                      ) : null}
+
+                      {src.kind === "file" &&
+                      src.storage_path &&
+                      !isPreparableKnowledgeFile(src.file_name) &&
+                      (src.status === "failed" || src.status === "draft") ? (
+                        <Button variant="ghost" className="text-xs min-h-9 px-3" busy={busy} onClick={() => void repairDb(src)}>
+                          {copy.knowledge.repair}
+                        </Button>
+                      ) : null}
+
+                      {src.kind === "file" && src.status !== "processing" ? (
+                        <>
+                          <input
+                            id={`retry-${src.id}`}
+                            type="file"
+                            accept={KNOWLEDGE_ACCEPT}
+                            className="sr-only"
+                            onChange={(e) => {
+                              const f = e.target.files?.[0];
+                              if (f) void retryDb(src, f);
+                              e.target.value = "";
+                            }}
+                          />
+                          <Button
+                            variant="ghost"
+                            className="text-xs min-h-9 px-3"
+                            busy={busy && retryId === src.id}
+                            onClick={() => {
+                              setRetryId(src.id);
+                              document.getElementById(`retry-${src.id}`)?.click();
+                            }}
+                          >
+                            {src.storage_path || src.status === "ready" || src.status === "stored"
+                              ? copy.knowledge.replaceFile
+                              : copy.knowledge.retry}
+                          </Button>
+                        </>
+                      ) : null}
+
+                      {src.kind === "text" ? (
+                        <Button
+                          variant="ghost"
+                          className="text-xs min-h-9 px-3"
+                          disabled={busy}
+                          onClick={() => {
+                            setMode("text");
+                            setEditing(src.id);
+                            setForm({ title: src.title, content: src.content, files: null });
+                            window.scrollTo({ top: 0, behavior: "smooth" });
+                          }}
+                        >
+                          {copy.edit}
+                        </Button>
+                      ) : null}
+
                       <Button
                         variant="ghost"
-                        busy={busy && retryId === src.id}
-                        onClick={() => {
-                          setRetryId(src.id);
-                          document.getElementById(`retry-${src.id}`)?.click();
-                        }}
+                        className="text-xs min-h-9 px-3 text-[#e07a5f] hover:bg-[#e07a5f]/10"
+                        disabled={busy}
+                        onClick={() => setPendingDelete({ id: src.id, title: src.title })}
                       >
-                        {src.storage_path || src.status === "ready" || src.status === "stored"
-                          ? copy.knowledge.replaceFile
-                          : copy.knowledge.retry}
+                        {copy.delete}
                       </Button>
-                    </>
+                    </div>
                   ) : null}
-                  {src.kind === "text" ? (
-                    <Button
-                      variant="ghost"
-                      disabled={busy}
-                      onClick={() => {
-                        setMode("text");
-                        setEditing(src.id);
-                        setForm({ title: src.title, content: src.content, files: null });
-                      }}
-                    >
-                      {copy.edit}
-                    </Button>
-                  ) : null}
-                  <Button variant="ghost" disabled={busy} onClick={() => setPendingDelete({ id: src.id, title: src.title })}>
-                    {copy.delete}
-                  </Button>
                 </div>
-              ) : null}
-            </li>
-          ))}
+              </li>
+            );
+          })}
         </ul>
       )}
+
       <p className="app-muted-soft text-xs leading-5">{copy.knowledge.statusNote}</p>
 
       <ConfirmDialog

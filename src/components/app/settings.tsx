@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -12,7 +12,7 @@ import { AccountSettingsLinkCard } from "@/components/app/account-page";
 import { WhatsappSettingsPanel } from "@/components/app/whatsapp-settings-panel";
 import { WorkspaceShell } from "@/components/app/workspace-shell";
 import { useOptionalAccountSession } from "./account-chrome";
-import { subscriptionCopy } from "./subscription-copy";
+import { subscriptionCopy, subscriptionTiers } from "./subscription-copy";
 import { saveOwnerBusiness, selectWorkspaceCompany } from "@/lib/tenancy/actions";
 import { createStaffInvitation, listCompanyTeam } from "@/lib/tenancy/staff-invitations";
 import {
@@ -95,12 +95,98 @@ export function SettingsPage({
               />
             ) : null}
             {tab === "plan" ? (
-              <SubscriptionPanel locale={locale} view={initialSubscription} offersView={initialOffersView} onRetry={() => router.refresh()} />
+              <div className="grid gap-6">
+                <PlanHeroSummary view={initialSubscription} locale={locale} />
+                <SubscriptionPanel locale={locale} view={initialSubscription} offersView={initialOffersView} onRetry={() => router.refresh()} />
+              </div>
             ) : null}
           </>
         )}
       </div>
     </WorkspaceShell>
+  );
+}
+
+function PlanHeroSummary({
+  view,
+  locale,
+}: {
+  view: SubscriptionView;
+  locale: "ar" | "en";
+}) {
+  const ar = locale === "ar";
+  const c = subscriptionCopy[locale];
+  const tier = subscriptionTiers.find((t) => t.id === view.currentTier);
+  const tierName = tier ? tier[locale] : (ar ? "باقة نورا الذكية (خدمة العملاء)" : "Noura AI (Customer Service)");
+  const isActive = view.state === "active";
+  const isPending = view.state === "pending";
+
+  const formatDate = (dateStr: string) => {
+    try {
+      return new Intl.DateTimeFormat(ar ? "ar-OM" : "en-GB", { dateStyle: "medium" }).format(new Date(dateStr));
+    } catch {
+      return dateStr;
+    }
+  };
+
+  return (
+    <div className="overflow-hidden rounded-3xl border border-[#38dc89]/30 bg-gradient-to-r from-[#12281e] via-[#0d1c15] to-[#07110d] p-5 shadow-[0_12px_32px_rgba(0,0,0,0.35)] sm:p-6">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-center gap-3.5">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#38dc89]/20 border border-[#38dc89]/40 text-2xl font-bold">
+            ⚡
+          </div>
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-lg font-bold text-[#f7fbf8]">{tierName}</h3>
+              <span
+                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                  isActive
+                    ? "bg-[#38dc89]/20 text-[#9af0c3] border border-[#38dc89]/40"
+                    : isPending
+                      ? "bg-[#d9a467]/20 text-[#f0cf9d] border border-[#d9a467]/40"
+                      : "bg-white/10 text-[#b7c6b9] border border-white/15"
+                }`}
+              >
+                <span className={`h-1.5 w-1.5 rounded-full ${isActive ? "bg-[#38dc89] animate-pulse" : "bg-[#d9a467]"}`} />
+                {c.states[view.state] ?? view.state}
+              </span>
+            </div>
+            <p className="mt-1 text-xs text-[#b7c6b9]">
+              {ar
+                ? "تتضمن رداً آلياً معتمداً عبر واتساب، تصنيف استفسارات العملاء، والتحويل اللحظي للموظف البشري."
+                : "Includes approved automated WhatsApp replies, lead classification, and real-time staff handover."}
+            </p>
+          </div>
+        </div>
+
+        <a
+          href="#subscription-plans"
+          className="inline-flex min-h-10 items-center rounded-full border border-[#38dc89]/40 bg-[#38dc89]/15 px-4 text-xs font-semibold text-[#9af0c3] transition hover:bg-[#38dc89]/25 hover:shadow-[0_0_12px_rgba(56,220,137,0.3)]"
+        >
+          {ar ? "ترقية الباقة أو تغيير الدورة ↗" : "Upgrade or Change Cycle ↗"}
+        </a>
+      </div>
+
+      <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4 border-t border-white/10 pt-4 text-xs">
+        <div>
+          <span className="text-[#8aa394] block">{ar ? "دورة الفاتورة" : "Billing Cycle"}</span>
+          <strong className="text-[#f7fbf8] mt-0.5 block">{view.cycle ? c[view.cycle] : (ar ? "شهري" : "Monthly")}</strong>
+        </div>
+        <div>
+          <span className="text-[#8aa394] block">{ar ? "تاريخ التجديد" : "Renewal Date"}</span>
+          <strong className="text-[#f7fbf8] mt-0.5 block">{view.paidThrough ? formatDate(view.paidThrough) : (ar ? "سارٍ حالياً" : "Active")}</strong>
+        </div>
+        <div>
+          <span className="text-[#8aa394] block">{ar ? "بوابة الدفع" : "Payment Gateway"}</span>
+          <strong className="text-[#9af0c3] mt-0.5 block">Paymob Oman (سلطنة عُمان)</strong>
+        </div>
+        <div>
+          <span className="text-[#8aa394] block">{ar ? "القناة المعتمدة" : "Active Channel"}</span>
+          <strong className="text-[#f7fbf8] mt-0.5 block">WhatsApp Business API</strong>
+        </div>
+      </div>
+    </div>
   );
 }
 
