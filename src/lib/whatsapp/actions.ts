@@ -65,6 +65,7 @@ export type ReplyActionResult =
         | "PHONE_MISMATCH"
         | "CONTENT_MISMATCH"
         | "COMPANY_SUSPENDED"
+        | "SUBSCRIPTION_INACTIVE"
         | "IN_PROGRESS"
         | "REJECTED"
         | "UNKNOWN_OUTCOME"
@@ -470,6 +471,9 @@ export async function replyWhatsappConversation(input: {
     if (code === "company_suspended") {
       return { ok: false, code: "COMPANY_SUSPENDED", message: code, clientOpId };
     }
+    if (code === "subscription_inactive") {
+      return { ok: false, code: "SUBSCRIPTION_INACTIVE", message: code, clientOpId, outcome: "ready", notAttempted: true };
+    }
     if (code === "forbidden") return { ok: false, code: "FORBIDDEN", message: code, clientOpId };
     if (code === "binding_mismatch" || code === "phone_mismatch") {
       return { ok: false, code: "PHONE_MISMATCH", message: code, clientOpId };
@@ -509,8 +513,15 @@ export async function replyWhatsappConversation(input: {
     const rpc = await callFinalize("rejected", errorCode);
     return replyFromPreGraphSettlement(classifyPreGraphSettlement(rpc), clientOpId, errorCode);
   };
+  const paidProof = asRecord(claimRow.manual_paid_entitlement);
+  const paidEntitlementStillCurrent = () => paidProof?.company_id === companyId && paidProof.environment === "live"
+    && typeof paidProof.plan_version_id === "string" && paidProof.plan_version_id.trim().length > 0
+    && typeof paidProof.paid_through === "string" && Number.isFinite(Date.parse(paidProof.paid_through))
+    && Date.parse(paidProof.paid_through) > Date.now();
 
   try {
+    // An older database cannot authorize dispatch by omitting the paid claim attestation.
+    if (!paidEntitlementStillCurrent()) return settlePreGraphRejected("paid_entitlement_unconfirmed");
     let graphToken: string | undefined;
     let serviceWindowExpiresAt: string | undefined;
     if (mode === "tenant_registry") {
@@ -549,6 +560,8 @@ export async function replyWhatsappConversation(input: {
       return settlePreGraphRejected("not_configured");
     }
 
+    // Window/vault reads can take time: payment must still be current at provider contact.
+    if (!paidEntitlementStillCurrent()) return settlePreGraphRejected("paid_entitlement_unconfirmed");
     const sent = await sendWhatsappText({
       toWaId: intent.recipient_wa_id,
       body: intent.body,
@@ -662,7 +675,7 @@ export async function replyWhatsappConversation(input: {
   }
 }
 
-function asRecord(value: Json | null | undefined): Record<string, unknown> | null {
+function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null;

@@ -1,6 +1,7 @@
 // TEST ONLY. Synthetic authenticated transport, actual session/RLS/RPC SQL.
 import {sql,lit} from "../whatsapp-integration/postgres.mjs";
-const allowed=new Set(["has_company_capability","company_conversation_scope","whatsapp_inbox_page","whatsapp_thread_page","whatsapp_mark_thread_read","whatsapp_inbox_connection_status","control_whatsapp_conversation","billing_read_company_operational_entitlement"]);
+const allowed=new Set(["has_company_capability","company_conversation_scope","whatsapp_inbox_page","whatsapp_thread_page","whatsapp_mark_thread_read","whatsapp_inbox_connection_status","control_whatsapp_conversation","billing_read_company_operational_entitlement",
+ "whatsapp_start_embedded_signup","whatsapp_claim_embedded_signup"]);
 const tables=new Set(["companies","company_members","whatsapp_conversations","knowledge_sources"]);
 const ident=x=>{if(!/^[a-z_][a-z0-9_]*$/.test(x))throw Error("INVALID_FIXTURE_IDENTIFIER");return `"${x}"`;};
 const value=x=>x===null?"NULL":typeof x==="object"?`${lit(JSON.stringify(x))}::jsonb`:typeof x==="number"||typeof x==="boolean"?String(x):lit(x);

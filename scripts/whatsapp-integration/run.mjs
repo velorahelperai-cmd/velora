@@ -4,6 +4,7 @@ import {runMetaConcurrency} from "./meta-concurrency.mjs";
 import {runAtomicConcurrency} from "./atomic-concurrency.mjs";
 import {runInboxConcurrency} from "./inbox-concurrency.mjs";
 import {runRecoveryConcurrency} from "./recovery-concurrency.mjs";
+import {runStaffPaidConcurrency} from "./staff-paid-concurrency.mjs";
 console.log("ISOLATED_POSTGRES",await verify());let legacyPass=0;
 if(process.argv.includes("--legacy-preflight")){
  console.log("LEGACY_BASE_FILES",await bootstrap("20261008120000_vel_billing_lifecycle_evidence_acceptance.sql"));await file("scripts/whatsapp-integration/fixtures.sql");
@@ -19,7 +20,7 @@ console.log("MIGRATIONS_APPLIED",await bootstrap());
 await sql("CREATE EXTENSION IF NOT EXISTS supabase_vault CASCADE;");
 await file("scripts/whatsapp-integration/fixtures.sql");
 let passed=legacyPass,failed=0,notRun=0;
-for(const path of ["identity-delivery-cases.sql","ai-cost-cases.sql","workflow-cases.sql","fair-batch-cases.sql","repair-cases.sql","meta-onboarding.sql","meta-policy.sql","meta-knowledge.sql","meta-token-error.sql","inbox-contracts.sql","atomic-capacity-cost.sql"]){
+for(const path of ["identity-delivery-cases.sql","ai-cost-cases.sql","workflow-cases.sql","fair-batch-cases.sql","repair-cases.sql","meta-onboarding.sql","meta-policy.sql","meta-knowledge.sql","meta-token-error.sql","inbox-contracts.sql","atomic-capacity-cost.sql","staff-paid-entitlement.sql"]){
  try{const output=await file(`scripts/whatsapp-integration/${path}`);console.log(output);passed+=output.split("\n").filter(x=>x.startsWith("PASS|")).length;}
  catch(e){failed++;console.log(`FAIL|${path}|${e.message}`);}
 }
@@ -31,4 +32,5 @@ const metaConcurrency=await runMetaConcurrency();passed+=metaConcurrency.filter(
 const atomicConcurrency=await runAtomicConcurrency();passed+=atomicConcurrency.filter(x=>x.status==="PASS").length;failed+=atomicConcurrency.filter(x=>x.status==="FAIL").length;
 const inboxConcurrency=await runInboxConcurrency();passed+=inboxConcurrency.filter(x=>x.status==="PASS").length;failed+=inboxConcurrency.filter(x=>x.status==="FAIL").length;
 const recoveryConcurrency=await runRecoveryConcurrency();passed+=recoveryConcurrency.filter(x=>x.status==="PASS").length;failed+=recoveryConcurrency.filter(x=>x.status==="FAIL").length;
+const staffPaidConcurrency=await runStaffPaidConcurrency();passed+=staffPaidConcurrency.filter(x=>x.status==="PASS").length;failed+=staffPaidConcurrency.filter(x=>x.status==="FAIL").length;
 console.log("POSTGRES_INTEGRATION_RESULTS",JSON.stringify({passed,failed,notRun}));if(failed)process.exitCode=1;

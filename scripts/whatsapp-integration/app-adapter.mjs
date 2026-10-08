@@ -5,7 +5,8 @@ const rpcs=new Set(["billing_load_worker_frame","whatsapp_reserve_job_usage","ai
  "whatsapp_retry_inbound_job","whatsapp_heartbeat_inbound_job","whatsapp_check_service_window",
  "whatsapp_read_answer_profile","whatsapp_retrieve_approved_knowledge","ai_reserve_whatsapp_profile_attempt","ai_reserve_whatsapp_capacity_cost_attempt","whatsapp_read_link_access_secret",
  "resolve_whatsapp_company_by_meta_asset","whatsapp_store_meta_inbound","whatsapp_apply_meta_delivery_status",
- "whatsapp_repair_accepted_jobs","whatsapp_claim_inbound_batch"]);
+ "whatsapp_repair_accepted_jobs","whatsapp_claim_inbound_batch",
+ "whatsapp_finalize_embedded_signup","whatsapp_fail_embedded_signup"]);
 const val=x=>x===null?"NULL":typeof x==="object"?`${lit(JSON.stringify(x))}::jsonb`:typeof x==="number"||typeof x==="boolean"?String(x):lit(x);
 export function databaseAdapter(){return {
  rpc:async(name,args)=>{if(!rpcs.has(name))throw Error("RPC_OUTSIDE_TEST_SCOPE");try{const q=Object.entries(args).map(([key,value])=>`${ident(key)}=>${val(value)}`).join(",");

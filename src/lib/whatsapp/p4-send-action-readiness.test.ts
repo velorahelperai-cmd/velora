@@ -9,6 +9,7 @@ const fixture = vi.hoisted(() => ({
   throwFinalizeOnce: false,
   windowOpen: true,
   vaultCompany: "company-offline-a",
+  beforeVault: () => {},
 }));
 
 function intent(overrides: Record<string, unknown> = {}) {
@@ -18,6 +19,10 @@ function intent(overrides: Record<string, unknown> = {}) {
     body: "Offline reply", sender_kind: "staff", outcome: "ready", wa_message_id: null, message_id: null,
     link_id: null, link_generation: null, expected_automation_generation: null, ...overrides,
   };
+}
+function paidAttestation() {
+  return { company_id: "company-offline-a", environment: "live", plan_version_id: "plan-offline-a",
+    paid_through: new Date(Date.now() + 3600_000).toISOString() };
 }
 
 vi.mock("@/lib/tenancy/access", () => ({
@@ -47,7 +52,7 @@ vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({
     fixture.calls.push({ name, args });
     if (name === "resolve_whatsapp_company_by_provider_phone") return { error: null, data: { ok: true, eligible: true, company_id: "company-offline-a", link_id: "link-offline-a", generation: 1, provider_phone_number_id: "100000000000001", status: "verified" } };
     if (name === "whatsapp_check_service_window") { const at = new Date(Date.now() - 3600_000), until = new Date(at.getTime() + 86_400_000); return { error: null, data: { ok: fixture.windowOpen, company_id: "company-offline-a", conversation_id: "conversation-offline-a", phone_number_id: "100000000000001", recipient_wa_id: "10000000001", last_inbound_at: at.toISOString(), valid_until: until.toISOString() } }; }
-    if (name === "whatsapp_read_link_access_secret") return { error: null, data: { ok: true, company_id: fixture.vaultCompany, link_id: "link-offline-a", link_generation: 1, phone_number_id: "100000000000001", access_token: "synthetic-company-vault-token" } };
+    if (name === "whatsapp_read_link_access_secret") { fixture.beforeVault(); return { error: null, data: { ok: true, company_id: fixture.vaultCompany, link_id: "link-offline-a", link_generation: 1, phone_number_id: "100000000000001", access_token: "synthetic-company-vault-token" } }; }
     if (name === "whatsapp_revoke_failed_credential") return { error: null, data: true };
     if (name === "claim_whatsapp_send_attempt") return { error: null, data: fixture.claimed };
     if (name === "finalize_whatsapp_send_attempt") {
@@ -68,9 +73,10 @@ describe("real staff reply action at persistence and Graph boundaries", () => {
     fixture.throwFinalizeOnce = false;
     fixture.windowOpen = true;
     fixture.vaultCompany = "company-offline-a";
+    fixture.beforeVault = () => {};
     fixture.calls = [];
     fixture.created = { ok: true, intent: intent() };
-    fixture.claimed = { ok: true, claimed: true, attempt_token: "offline-claim-token", intent: intent({ outcome: "attempting" }) };
+    fixture.claimed = { ok: true, claimed: true, attempt_token: "offline-claim-token", intent: intent({ outcome: "attempting" }), manual_paid_entitlement: paidAttestation() };
     fixture.finalized = { error: null, data: { ok: true, intent: intent({ outcome: "accepted", wa_message_id: "wamid.offline" }), message: {
       id: "message-offline-a", body: "Offline reply", received_at: "2026-10-08T00:00:00Z", delivery_state: "accepted",
     } } };
@@ -103,14 +109,62 @@ describe("real staff reply action at persistence and Graph boundaries", () => {
     vi.stubEnv("WHATSAPP_ROUTING_MODE", "tenant_registry");
     vi.stubEnv("WHATSAPP_EMBEDDED_SIGNUP_GRAPH_VERSION", "v25.0");
     fixture.created = { ok: true, intent: intent({ link_id: "link-offline-a", link_generation: 1 }) };
-    fixture.claimed = { ok: true, claimed: true, attempt_token: "offline-claim-token", intent: intent({ outcome: "attempting", link_id: "link-offline-a", link_generation: 1 }) };
+    fixture.claimed = { ok: true, claimed: true, attempt_token: "offline-claim-token", intent: intent({ outcome: "attempting", link_id: "link-offline-a", link_generation: 1 }), manual_paid_entitlement: paidAttestation() };
   }
+  it.each([
+    undefined,
+    null,
+    { company_id: "company-offline-b", environment: "live", plan_version_id: "plan-offline-a", paid_through: "2099-01-01T00:00:00Z" },
+    { company_id: "company-offline-a", environment: "test", plan_version_id: "plan-offline-a", paid_through: "2099-01-01T00:00:00Z" },
+    { company_id: "company-offline-a", environment: "live", plan_version_id: "plan-offline-a", paid_through: "2020-01-01T00:00:00Z" },
+    { company_id: "company-offline-a", environment: "live", plan_version_id: null, paid_through: "2099-01-01T00:00:00Z" },
+    { company_id: "company-offline-a", environment: "live", plan_version_id: "plan-offline-a", paid_through: "invalid" },
+  ])("rejects a newly claimed staff dispatch without a current company-bound Live paid attestation: %j", async (proof) => {
+    tenantReply(); fixture.claimed.manual_paid_entitlement = proof;
+    fixture.finalized = { error: null, data: { ok: true, intent: intent({ outcome: "rejected" }) } };
+    const { replyWhatsappConversation } = await import("./actions");
+    expect(await replyWhatsappConversation(input)).toMatchObject({ ok: false, code: "REJECTED", outcome: "rejected", notAttempted: true });
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(fixture.calls).toContainEqual({ name: "finalize_whatsapp_send_attempt", args: {
+      p_intent_id: "intent-offline-a", p_attempt_token: "offline-claim-token", p_result: "rejected",
+      p_wa_message_id: null, p_error_code: "paid_entitlement_unconfirmed", p_actor_user_id: "user-offline-a",
+    } });
+  });
   it("staff uses the exact company Vault token inside a persisted service window", async () => {
     tenantReply();
     const { replyWhatsappConversation } = await import("./actions");
     expect(await replyWhatsappConversation(input)).toMatchObject({ ok: true, outcome: "accepted" });
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
     expect(globalThis.fetch).toHaveBeenCalledWith("https://graph.facebook.com/v25.0/100000000000001/messages", expect.objectContaining({ headers: expect.objectContaining({ authorization: "Bearer synthetic-company-vault-token" }) }));
+  });
+  it("reports a paid claim denial without provider contact or allocating another operation", async () => {
+    fixture.claimed = { ok: false, code: "subscription_inactive", intent: intent() };
+    const { replyWhatsappConversation } = await import("./actions");
+    expect(await replyWhatsappConversation(input)).toMatchObject({ ok: false, code: "SUBSCRIPTION_INACTIVE",
+      clientOpId: input.clientOpId, outcome: "ready", notAttempted: true });
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(fixture.calls.filter(c => c.name === "finalize_whatsapp_send_attempt")).toHaveLength(0);
+  });
+  it("rechecks paid expiry after the window and Vault lookups immediately before Graph", async () => {
+    tenantReply();
+    const now = Date.now();
+    const clock = vi.spyOn(Date, "now").mockReturnValue(now);
+    fixture.claimed.manual_paid_entitlement = { ...paidAttestation(), paid_through: new Date(now + 1000).toISOString() };
+    fixture.beforeVault = () => { clock.mockReturnValue(now + 1000); };
+    fixture.finalized = { error: null, data: { ok: true, intent: intent({ outcome: "rejected" }) } };
+    const { replyWhatsappConversation } = await import("./actions");
+    expect(await replyWhatsappConversation(input)).toMatchObject({ ok: false, code: "REJECTED", outcome: "rejected", notAttempted: true });
+    expect(fixture.calls.some(c => c.name === "whatsapp_read_link_access_secret")).toBe(true);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+  it("keeps the original operation unresolved if an old-schema paid-proof rejection cannot be persisted", async () => {
+    delete fixture.claimed.manual_paid_entitlement;
+    fixture.finalized = { error: { code: "OFFLINE_RPC_UNAVAILABLE" }, data: null };
+    const { replyWhatsappConversation } = await import("./actions");
+    const result = await replyWhatsappConversation(input);
+    expect(result).toMatchObject({ ok: false, code: "SAVE_FAILED", outcome: "attempting", clientOpId: input.clientOpId });
+    expect(result).not.toHaveProperty("notAttempted");
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
   it("staff cannot send outside the persisted customer window", async () => {
     tenantReply(); fixture.windowOpen = false;

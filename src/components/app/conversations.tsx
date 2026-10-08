@@ -1103,7 +1103,11 @@ export function ConversationsPage({
             }
             delete sendOpByConversation.current[c.id];
             const message =
-              result.code === "SEND_DISABLED"
+              result.code === "SUBSCRIPTION_INACTIVE" || (result.code === "REJECTED" && result.notAttempted && result.message === "paid_entitlement_unconfirmed")
+                ? locale === "ar"
+                  ? "يتطلب الإرسال اشتراكًا مدفوعًا ساريًا ومؤكدًا. تحقق من حالة الاشتراك في الإعدادات."
+                  : "Sending requires a current verified paid subscription. Check the subscription state in Settings."
+                : result.code === "SEND_DISABLED"
                 ? copy.app.sendDisabled
                 : result.code === "NOT_CONFIGURED"
                   ? copy.app.sendNotConfigured

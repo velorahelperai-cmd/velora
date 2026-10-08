@@ -4,6 +4,8 @@
 
 Acceptance follow-up: [final acceptance update](final-acceptance-update.md) records the latest A1/A2 inclusion proofs, plan-selection/return fixes, Admin Noura labels and fresh unified verification. The figures below are the saved `200100b` base evidence; they are not the later acceptance-run totals.
 
+Latest Meta follow-up: [C2 Meta final update](c2-meta-final-update.md) confirms Meta was already included, records the manual paid-send correction and expanded synthetic signup-to-Inbox journey, and gives the latest verification and Cloud gates.
+
 Final branch `integration/overnight-velora`. Fixed P1/P2 base `485d21e44eb0c676a3aec9cfe47c5f5f40f86ade`. The exact final commit SHA is supplied in the delivery message; the independent final commit containing this report follows the local integration merge. Original worktrees/branches are preserved.
 
 ## Included source commits
