@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -11,11 +11,13 @@ import { LangSwitch, LinkButton, useAppCopy } from "@/components/app/ui";
 
 export function KnowledgePage({
   canWrite,
+  canDelete,
   initialSources,
   initialLoadFailed,
   approvalFoundation = "ready",
 }: {
   canWrite: boolean;
+  canDelete?: boolean;
   initialSources: KnowledgeSourceRecord[];
   initialLoadFailed: boolean;
   approvalFoundation?: KnowledgeApprovalFoundation;
@@ -27,6 +29,7 @@ export function KnowledgePage({
       <KnowledgeEditor
         focusTitle={topic}
         canWrite={canWrite}
+        canDelete={canDelete}
         initialSources={initialSources}
         initialLoadFailed={initialLoadFailed}
         approvalFoundation={approvalFoundation}

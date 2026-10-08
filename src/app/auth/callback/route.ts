@@ -1,3 +1,4 @@
+import {AUTH_RETURN_COOKIE} from "@/lib/auth/auth-journey";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
@@ -25,7 +26,7 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const code = searchParams.get("code");
   const nextParam = searchParams.get("next");
-  const preferred = safeInternalPath(nextParam, "");
+  let preferred = safeInternalPath(nextParam, "");
   const oauthError = searchParams.get("error_description") || searchParams.get("error");
 
   if (oauthError && !code) {
@@ -41,6 +42,7 @@ export async function GET(request: Request) {
   }
 
   const cookieStore = await cookies();
+  preferred=preferred||safeInternalPath(cookieStore.get(AUTH_RETURN_COOKIE)?.value,"");
   const pendingCookies: Array<{ name: string; value: string; options?: Parameters<NextResponse["cookies"]["set"]>[2] }> = [];
 
   const supabase = createServerClient<Database>(env.url, env.publishableKey, {

@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import type { Metadata } from "next";
 import { AcceptInvitePage } from "@/components/app/auth-pages";
 
-export const metadata: Metadata = { title: "Accept invitation · Velora" };
+export const metadata: Metadata = { title: "Accept invitation · Velora", referrer: "no-referrer", robots: { index: false, follow: false } };
 
 export default function Page() {
   return (

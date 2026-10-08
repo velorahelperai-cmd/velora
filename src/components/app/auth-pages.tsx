@@ -1,19 +1,21 @@
-﻿"use client";
+"use client";
+import { authFlowHref, savePendingSignup, readPendingSignup, clearPendingSignup } from "@/lib/auth/auth-journey";
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
-import { sampleStaff, useDemo } from "@/lib/demo-state";
+import { useDemo } from "@/lib/demo-state";
 import { fill } from "@/lib/app-copy";
 import { landingCopy } from "@/lib/landing-copy";
 import { startOAuth } from "@/lib/auth/browser";
 import { safeInternalPath } from "@/lib/auth/safe-next";
+import { acceptStaffInvitation, readStaffInvitation, type StaffInvitationView } from "@/lib/tenancy/staff-invitations";
 import { AccountMenu, useOptionalAccountSession } from "@/components/app/account-chrome";
 import {
   completeProfileName,
   requestPasswordReset,
   resendVerificationEmail,
-  signInWithEmail,
+  resolvePostAuthPath,
   signUpWithEmail,
   updatePassword,
 } from "@/lib/tenancy/actions";
@@ -123,11 +125,21 @@ function useGoogleAuth(setNotice: (v: string | null) => void, next?: string | nu
   };
 }
 
+function useAuthenticatedAuthRedirect(next:string|null){
+ const session=useOptionalAccountSession(),router=useRouter();
+ useEffect(()=>{
+  if(session?.status!=="ready"||!session.identity)return;
+  let cancelled=false;
+  void resolvePostAuthPath(next).then(result=>{if(!cancelled&&result.ok&&!result.data.next.startsWith("/login"))router.replace(result.data.next);}).catch(()=>{});
+  return ()=>{cancelled=true;};
+ },[session?.status,session?.identity,next,router]);
+}
 export function SignupPage() {
   const copy = useAppCopy();
   const { state, locale } = useDemo();
   const router = useRouter();
   const params = useSearchParams();
+  const accountSession=useOptionalAccountSession();
   const prefillEmail = (params.get("email") || "").trim().toLowerCase();
   const { busy, run } = useAction();
   const [form, setForm] = useState({ name: "", email: prefillEmail, password: "", confirm: "" });
@@ -135,6 +147,7 @@ export function SignupPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [altNotice, setAltNotice] = useState<string | null>(null);
   const returnTo = safeInternalPath(params.get("next"), "");
+  useAuthenticatedAuthRedirect(returnTo);
   const google = useGoogleAuth(setAltNotice, returnTo || null);
   const dirty = Boolean(form.name || form.email || form.password || form.confirm);
   useUnsavedWarning(dirty && !busy);
@@ -161,16 +174,21 @@ export function SignupPage() {
         email: form.email.trim(),
         password: form.password,
         confirmPassword: form.confirm,
+        next: returnTo,
       });
       if (!result.ok) {
         setFormError(result.message ?? copy.errors.authFailed);
         return;
       }
       if (result.data.needsVerification) {
-        router.push(`/verify-email?email=${encodeURIComponent(result.data.email)}`);
+        savePendingSignup(result.data.email,returnTo);
+        router.replace(authFlowHref("/verify-email",returnTo,result.data.email));
         return;
       }
-      router.push("/setup");
+      clearPendingSignup();await accountSession?.refresh();
+      const destination = await resolvePostAuthPath(returnTo);
+      if (!destination.ok) { setFormError(destination.message ?? copy.errors.authFailed); return; }
+      router.replace(destination.data.next);router.refresh();
     });
   }
 
@@ -209,6 +227,7 @@ export function LoginPage() {
   const router = useRouter();
   const params = useSearchParams();
   const returnTo = params.get("next");
+  useAuthenticatedAuthRedirect(returnTo);
   const session = useOptionalAccountSession();
   const { busy, run } = useAction();
   const [form, setForm] = useState({ email: "", password: "" });
@@ -237,17 +256,17 @@ export function LoginPage() {
     setErrors(next);
     if (Object.keys(next).length) return;
     void run(async () => {
-      const result = await signInWithEmail({
-        email: form.email.trim(),
-        password: form.password,
-        next: returnTo,
-      });
+      // Browser Auth coordinates cookies and broadcasts account changes to other tabs.
+      const {createClient}=await import("@/lib/supabase/client");
+      const {error:authError}=await createClient().auth.signInWithPassword({email:form.email.trim().toLowerCase(),password:form.password});
+      if(authError){setFormError(authError.message||copy.errors.authFailed);return;}
+      const result=await resolvePostAuthPath(returnTo);
       if (!result.ok) {
         setFormError(result.message ?? copy.errors.authFailed);
         return;
       }
       await session?.refresh();
-      router.replace(result.data.next);
+      clearPendingSignup();router.replace(result.data.next);router.refresh();
     });
   }
 
@@ -258,6 +277,7 @@ export function LoginPage() {
       footer={<>{copy.auth.noAccount} <Link href={safeInternalPath(returnTo, "") ? `/signup?next=${encodeURIComponent(safeInternalPath(returnTo, ""))}` : "/signup"} className="text-[#38dc89] underline">{copy.auth.signup}</Link></>}
     >
       <form className="grid gap-4" onSubmit={submitEmail} noValidate>
+        {params.get("reason") === "session_expired" ? <Notice tone="warn">{copy.errors.sessionExpiredBody}</Notice> : null}
         {formError ? <Notice tone="error">{formError}</Notice> : null}
         <Field label={copy.auth.email} required error={emailError}>
           {(p) => <input {...p} type="email" dir="ltr" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} autoComplete="email" inputMode="email" />}
@@ -276,8 +296,11 @@ export function LoginPage() {
 
 export function VerifyEmailPage() {
   const copy = useAppCopy();
+
   const router = useRouter();
   const params = useSearchParams();
+  const [storedReturn,setStoredReturn]=useState("");
+  const pendingReturn=safeInternalPath(params.get("next"),"")||storedReturn;
   const emailFromQuery = (params.get("email") || "").trim().toLowerCase();
   const [registeredEmail, setRegisteredEmail] = useState(emailFromQuery);
   const [correctEmail, setCorrectEmail] = useState("");
@@ -292,6 +315,7 @@ export function VerifyEmailPage() {
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
       void (async () => {
+        setStoredReturn(readPendingSignup()?.next??"");
         if (emailFromQuery) {
           setRegisteredEmail(emailFromQuery);
           setHydrated(true);
@@ -301,9 +325,9 @@ export function VerifyEmailPage() {
           const { createClient } = await import("@/lib/supabase/client");
           const supabase = createClient();
           const { data } = await supabase.auth.getUser();
-          setRegisteredEmail((data.user?.email ?? "").toLowerCase());
+          setRegisteredEmail((data.user?.email ?? readPendingSignup()?.email ?? "").toLowerCase());
         } catch {
-          setRegisteredEmail("");
+          setRegisteredEmail(readPendingSignup()?.email??"");
         } finally {
           setHydrated(true);
         }
@@ -345,7 +369,7 @@ export function VerifyEmailPage() {
             setError(null);
             setResent(false);
             void run(async () => {
-              const result = await resendVerificationEmail(registeredEmail);
+              const result = await resendVerificationEmail(registeredEmail,pendingReturn);
               if (!result.ok) {
                 setError(result.message ?? copy.errors.authFailed);
                 return;
@@ -390,14 +414,14 @@ export function VerifyEmailPage() {
                 return;
               }
               // Real new signup path — email only in query; never password.
-              router.push(`/signup?email=${encodeURIComponent(cleaned)}`);
+              router.push(authFlowHref("/signup",pendingReturn,cleaned));
             }}
           >
             {copy.auth.correctEmail}
           </Button>
         </div>
 
-        <LinkButton href="/login" variant="secondary">{copy.auth.login}</LinkButton>
+        <LinkButton href={authFlowHref("/login",pendingReturn)} variant="secondary">{copy.auth.login}</LinkButton>
       </div>
     </AuthShell>
   );
@@ -473,6 +497,7 @@ export function ForgotPasswordPage() {
 export function CompleteProfilePage() {
   const copy = useAppCopy();
   const router = useRouter();
+  const params=useSearchParams();
   const { busy, run } = useAction();
   const [name, setName] = useState("");
   const [error, setError] = useState<FieldErrorKey>();
@@ -510,12 +535,12 @@ export function CompleteProfilePage() {
           }
           setError(undefined);
           void run(async () => {
-            const result = await completeProfileName(name);
+            const result = await completeProfileName(name,params.get("next"));
             if (!result.ok) {
               setFormError(result.message ?? copy.errors.authFailed);
               return;
             }
-            router.replace(result.data.next);
+            clearPendingSignup();router.replace(result.data.next);router.refresh();
           });
         }}
       >
@@ -607,44 +632,79 @@ export function ResetPasswordPage() {
 
 export function AcceptInvitePage() {
   const copy = useAppCopy();
-  const { state, update } = useDemo();
-  const router = useRouter();
-  const { busy, run } = useAction();
-  const business = state.business.name || copy.auth.inviteNoBusiness;
+  const { locale } = useDemo();
   const params = useSearchParams();
-  const inviteId = params.get("invite");
-  const invited = state.team.find((m) => m.id === inviteId) ?? state.team.find((m) => m.status === "invited") ?? sampleStaff;
+  const router = useRouter();
+  const session = useOptionalAccountSession();
+  const token = params.get("token") ?? "";
+  const returnTo = `/accept-invite?token=${encodeURIComponent(token)}`;
+  const { busy, run } = useAction();
+  const [loaded, setLoaded] = useState<{ token: string; invitation?: StaffInvitationView; code?: string } | null>(null);
+  const [acceptError, setAcceptError] = useState<string | null>(null);
+  const invitation = loaded?.token === token ? loaded.invitation : undefined;
+  const loading = loaded?.token !== token;
+  const signedIn = session?.status === "ready" && Boolean(session.identity);
+  const emailConfirmed = signedIn && session?.identity?.emailConfirmed === true;
+
+  function errorText(code: string) {
+    if (code === "EMAIL_MISMATCH") return locale === "ar" ? "سجّل الدخول بالبريد الذي وُجّهت إليه الدعوة." : "Sign in with the email address this invitation was sent to.";
+    if (code === "UNVERIFIED") return locale === "ar" ? "أكّد بريدك الإلكتروني أولًا، ثم عُد لقبول الدعوة." : "Confirm your email address, then return to accept this invitation.";
+    if (code === "UNAUTHENTICATED") return copy.errors.sessionExpiredBody;
+    if (code === "MEMBER_EXISTS") return locale === "ar" ? "هذه العضوية موجودة مسبقًا. اطلب من مالك النشاط مراجعة صلاحياتها." : "This membership already exists. Ask the business owner to review its access.";
+    if (code === "UNAVAILABLE") return locale === "ar" ? "تعذّر تحميل الدعوة أو قبولها. أعد المحاولة." : "Could not load or accept this invitation. Try again.";
+    return locale === "ar" ? "الدعوة غير صالحة أو انتهت صلاحيتها أو استُخدمت. اطلب رابطًا جديدًا من مالك النشاط." : "This invitation is invalid, expired, or already used. Ask the business owner for a new link.";
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    const frame = window.requestAnimationFrame(() => {
+      setAcceptError(null);
+      void readStaffInvitation(token).then((result) => {
+        if (!cancelled) setLoaded(result.ok ? { token, invitation: result.data } : { token, code: result.code });
+      }).catch(() => { if (!cancelled) setLoaded({ token, code: "UNAVAILABLE" }); });
+    });
+    return () => { cancelled = true; window.cancelAnimationFrame(frame); };
+  }, [token]);
 
   return (
-    <AuthShell title={copy.auth.inviteTitle} body={fill(copy.auth.inviteBody, { business, role: copy.auth.roleStaff })}>
+    <AuthShell title={copy.auth.inviteTitle} body={invitation ? fill(copy.auth.inviteBody, { business: invitation.business, role: copy.auth.roleStaff }) : undefined}>
       <div className="grid gap-4">
-        <Notice tone="warn">{copy.auth.invitePreviewOnly}</Notice>
-        <div className="grid gap-2 rounded-xl border border-[color:var(--color-border-soft)] bg-[var(--color-hover-wash)] p-4 text-sm">
-          <div className="flex justify-between gap-3"><span className="text-[var(--color-muted-on-dark)]">{copy.setup.businessName}</span><strong>{business}</strong></div>
-          <div className="flex justify-between gap-3"><span className="text-[var(--color-muted-on-dark)]">{copy.app.roleLabel}</span><strong>{copy.auth.roleStaff}</strong></div>
-          <div className="flex justify-between gap-3"><span className="text-[var(--color-muted-on-dark)]">{copy.auth.email}</span><span dir="ltr">{invited.email}</span></div>
-        </div>
-        <Button
-          busy={busy}
-          busyLabel={copy.loading}
-          className="w-full"
-          onClick={() => {
-            void run(() => {
-              update((s) => ({
-                account: { name: invited.name, email: invited.email, role: "staff" },
-                stage: "active",
-                signedIn: true,
-                viewAs: "staff",
-                team: s.team.some((m) => m.id === invited.id)
-                  ? s.team.map((m) => (m.id === invited.id ? { ...m, status: "active" } : m))
-                  : [...s.team, { ...invited, status: "active" }],
-              }));
-              router.push("/login");
-            });
-          }}
-        >
-          {copy.auth.login}
-        </Button>
+        {loading ? <p className="text-sm text-[var(--color-muted-on-dark)]" aria-busy="true">{copy.loading}</p> : null}
+        {!loading && !invitation ? <Notice tone="error">{errorText(loaded?.code ?? "INVITE_INVALID")}</Notice> : null}
+        {acceptError ? <Notice tone="error">{acceptError}</Notice> : null}
+        {invitation ? (
+          <>
+            <div className="grid gap-2 rounded-xl border border-[color:var(--color-border-soft)] bg-[var(--color-hover-wash)] p-4 text-sm">
+              <div className="flex justify-between gap-3"><span className="text-[var(--color-muted-on-dark)]">{copy.setup.businessName}</span><strong>{invitation.business}</strong></div>
+              <div className="flex justify-between gap-3"><span className="text-[var(--color-muted-on-dark)]">{copy.app.roleLabel}</span><strong>{copy.auth.roleStaff}</strong></div>
+              <div className="flex justify-between gap-3"><span className="text-[var(--color-muted-on-dark)]">{copy.auth.email}</span><span dir="ltr">{invitation.maskedEmail}</span></div>
+              <p className="text-xs text-[var(--color-muted-soft)]">{locale === "ar" ? "صالحة حتى" : "Valid until"}: {new Date(invitation.expiresAt).toLocaleString(locale === "ar" ? "ar-OM" : "en-OM")}</p>
+            </div>
+            {emailConfirmed ? (
+              <Button busy={busy} busyLabel={copy.loading} className="w-full" onClick={() => {
+                if (busy) return;
+                setAcceptError(null);
+                void run(async () => {
+                  const result = await acceptStaffInvitation(token);
+                  if (!result.ok) { setAcceptError(errorText(result.code)); return; }
+                  await session?.refresh();
+                  router.replace("/app/conversations");
+                  router.refresh();
+                });
+              }}>{copy.auth.acceptInvite}</Button>
+            ) : signedIn ? (
+              <>
+                <Notice tone="warn">{errorText("UNVERIFIED")}</Notice>
+                <LinkButton href={authFlowHref("/verify-email", returnTo, session?.identity?.email)}>{copy.auth.verifyTitle}</LinkButton>
+              </>
+            ) : (
+              <>
+                <LinkButton href={authFlowHref("/login", returnTo)} className="w-full">{copy.auth.login}</LinkButton>
+                <LinkButton href={authFlowHref("/signup", returnTo)} variant="secondary" className="w-full">{copy.auth.signup}</LinkButton>
+              </>
+            )}
+          </>
+        ) : !loading ? <LinkButton href="/login" className="w-full">{copy.auth.login}</LinkButton> : null}
       </div>
     </AuthShell>
   );

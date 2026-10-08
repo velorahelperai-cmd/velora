@@ -100,6 +100,16 @@ export type ReturnRoleGate = {
   role: "owner" | "staff" | null;
 };
 
+/** Acceptance is public; the membership grant itself checks the verified recipient in SQL. */
+export function staffInvitationReturnPath(raw: string | null | undefined): string {
+  const candidate = safeInternalPath(raw, "");
+  if (!candidate || candidate.split(/[?#]/)[0] !== "/accept-invite" || candidate.includes("#")) return "";
+  const query = new URLSearchParams(candidate.split("?")[1] ?? "");
+  const tokens = query.getAll("token");
+  return tokens.length === 1 && /^[A-Za-z0-9_-]{43}$/.test(tokens[0]!)
+    ? `/accept-invite?token=${encodeURIComponent(tokens[0]!)}` : "";
+}
+
 /** Role-appropriate internal destinations after gates (profile/provision) pass. */
 export function allowedReturnPath(
   raw: string | null | undefined,
@@ -109,6 +119,9 @@ export function allowedReturnPath(
   const candidate = safeInternalPath(raw, "");
   if (!candidate) return fallback;
   const pathOnly = stripQuery(candidate);
+
+  const invitationReturn = staffInvitationReturnPath(candidate);
+  if (invitationReturn) return invitationReturn;
 
   if (pathAtOrUnder(pathOnly, "/account")) {
     return candidate;
