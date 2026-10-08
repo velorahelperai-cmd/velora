@@ -24,10 +24,23 @@ export type AnswerContextChunk = {
   text: string;
 };
 
+export type AIModelId = "gpt-6-luna" | "gpt-6.1-sol" | "gemini-3.8-flash";
+export type AIProviderName = "openai" | "google";
+
 export type AnswerUsage = {
   promptChars: number;
   contextChars: number;
   sourceCount: number;
+  promptTokens?: number;
+  completionTokens?: number;
+  cachedTokens?: number;
+  reasoningTokens?: number;
+  totalTokens?: number;
+  modelId?: AIModelId;
+  provider?: AIProviderName;
+  estimatedCostBaisa?: number;
+  estimatedCostUsd?: number;
+  requestId?: string;
 };
 
 export type AnswerSuccess = {
@@ -35,6 +48,9 @@ export type AnswerSuccess = {
   text: string;
   citations: AnswerCitation[];
   usage: AnswerUsage;
+  modelId?: AIModelId;
+  routingReason?: string;
+  attemptsCount?: number;
 };
 
 export type AnswerFailure = {
@@ -50,6 +66,10 @@ export type AnswerProviderRequest = {
   locale: "ar" | "en";
   chunks: AnswerContextChunk[];
   isolationKey?: string | null;
+  companyId?: string;
+  conversationId?: string;
+  forceModelId?: AIModelId;
+  dryRun?: boolean;
   signal?: AbortSignal;
 };
 
