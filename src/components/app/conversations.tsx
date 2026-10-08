@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -928,30 +928,39 @@ export function ConversationsPage({
           <button type="button" onClick={() => select(null)} className="inline-flex min-h-10 shrink-0 items-center rounded-full border border-[color:var(--color-border-soft)] px-3 text-xs lg:hidden">{copy.app.backToList}</button>
           <div className="min-w-0">
             <h2 className="truncate font-bold">{selected.customer} · {selected.topic}</h2>
-            <p className="text-xs text-[var(--color-muted-soft)]">{copy.app.ownerLabel}: {selected.owner === "assistant" ? copy.app.assistant : selected.owner === "staff" ? copy.app.staff : selected.owner} · <span className={`rounded-full px-2 py-0.5 ${statusStyle[selected.status]}`}>{copy.app.statuses[selected.status]}</span></p>
+            <div className="flex flex-wrap items-center gap-2 mt-0.5 text-xs">
+              <span className="text-[var(--color-muted-soft)]">{copy.app.ownerLabel}:</span>
+              <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 font-medium ${selected.assistantPaused ? "bg-[#d9a467]/15 text-[#f0cf9d] border border-[#d9a467]/30" : "bg-[#38dc89]/15 text-[#9af0c3] border border-[#38dc89]/30"}`}>
+                <span className={`h-1.5 w-1.5 rounded-full ${selected.assistantPaused ? "bg-[#d9a467]" : "bg-[#38dc89] animate-pulse"}`} />
+                {selected.assistantPaused ? (locale === "ar" ? "تحكم الموظف البشري 👤" : "Staff Active 👤") : (locale === "ar" ? "الرد الآلي نشط 🤖" : "AI Assistant Active 🤖")}
+              </span>
+              <span className={`rounded-full px-2 py-0.5 ${statusStyle[selected.status]}`}>{copy.app.statuses[selected.status]}</span>
+            </div>
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {liveIds.has(selected.id) ? (
             <>
               {selected.assistantPaused ? (
-                <Button
-                  variant="secondary"
-                  busy={controlBusy && controlBusyId === selected.id}
+                <button
+                  type="button"
                   disabled={controlBusy || pending || selectedUnresolved}
                   onClick={() => runControl(selected, "resume")}
+                  className="inline-flex min-h-9 items-center gap-1.5 rounded-xl border border-[#38dc89]/40 bg-[#38dc89]/15 px-3.5 text-xs font-semibold text-[#9af0c3] transition hover:bg-[#38dc89]/25 disabled:opacity-50"
                 >
+                  <span>🤖</span>
                   {copy.app.resume}
-                </Button>
+                </button>
               ) : (
-                <Button
-                  variant="secondary"
-                  busy={controlBusy && controlBusyId === selected.id}
+                <button
+                  type="button"
                   disabled={controlBusy || pending || selectedUnresolved}
                   onClick={() => runControl(selected, "take_over")}
+                  className="inline-flex min-h-9 items-center gap-1.5 rounded-xl border border-[#d9a467]/40 bg-[#d9a467]/15 px-3.5 text-xs font-semibold text-[#f0cf9d] transition hover:bg-[#d9a467]/25 disabled:opacity-50"
                 >
+                  <span>👤</span>
                   {copy.app.takeOver}
-                </Button>
+                </button>
               )}
               {selected.status !== "resolved" ? (
                 <Button

@@ -1,4 +1,6 @@
 "use server";
+import { sessionHasCompanyCapability } from "@/lib/access/actions";
+import type {CompanyCapability} from "@/lib/access/capabilities";
 
 import { revalidatePath } from "next/cache";
 import {
@@ -130,41 +132,21 @@ function sourceSelectFor(foundation: KnowledgeApprovalFoundation): typeof SOURCE
   return (foundation === "ready" ? SOURCE_SELECT : SOURCE_SELECT_BASE) as typeof SOURCE_SELECT;
 }
 
-async function requireOwnerCompany() {
-  const access = await getCompanyAccess("owner");
-  if (!access.ok) return { ok: false as const, code: access.code };
-  if (!access.context.company || !access.context.membership) {
-    return { ok: false as const, code: "FORBIDDEN" as const };
-  }
-  if (access.context.company.status === "suspended") {
-    return { ok: false as const, code: "FORBIDDEN" as const };
-  }
-  const supabase = await createClient();
-  const approvalFoundation = await probeApprovalFoundation(supabase);
-  return {
-    ok: true as const,
-    supabase,
-    userId: access.context.userId,
-    companyId: access.context.company.id,
-    approvalFoundation,
-    sourceSelect: sourceSelectFor(approvalFoundation),
-  };
+async function requireOwnerCompany(capability:CompanyCapability="knowledge.write") {
+ const access=await getCompanyAccess();if(!access.ok)return {ok:false as const,code:access.code};
+ const {company,membership}=access.context;
+ if(!company||!membership||company.status==="suspended")return {ok:false as const,code:"FORBIDDEN" as const};
+ if(membership.role!=="owner"&&await sessionHasCompanyCapability(company.id,capability)!==true)return {ok:false as const,code:"FORBIDDEN" as const};
+ const supabase=await createClient(),approvalFoundation=await probeApprovalFoundation(supabase);
+ return {ok:true as const,supabase,userId:access.context.userId,companyId:company.id,approvalFoundation,sourceSelect:sourceSelectFor(approvalFoundation)};
 }
-
 async function requireMemberCompany() {
-  const access = await getCompanyAccess();
-  if (!access.ok) return { ok: false as const, code: access.code };
-  if (!access.context.company || !access.context.membership) {
-    return { ok: false as const, code: "FORBIDDEN" as const };
-  }
-  return {
-    ok: true as const,
-    supabase: await createClient(),
-    companyId: access.context.company.id,
-    role: access.context.membership.role,
-  };
+ const access=await getCompanyAccess();if(!access.ok)return {ok:false as const,code:access.code};
+ const {company,membership}=access.context;
+ if(!company||!membership||company.status==="suspended")return {ok:false as const,code:"FORBIDDEN" as const};
+ if(membership.role!=="owner"&&await sessionHasCompanyCapability(company.id,"knowledge.read")!==true)return {ok:false as const,code:"FORBIDDEN" as const};
+ return {ok:true as const,supabase:await createClient(),companyId:company.id,role:membership.role};
 }
-
 function revalidateKnowledge(companyId: string) {
   revalidatePath("/app/knowledge");
   revalidatePath("/app");
@@ -1134,7 +1116,7 @@ export async function deleteKnowledgeSource(
   sourceId: string,
 ): Promise<KnowledgeActionResult<{ storageDeleted: boolean }>> {
   try {
-    const ctx = await requireOwnerCompany();
+    const ctx = await requireOwnerCompany("knowledge.delete");
     if (!ctx.ok) return { ok: false, code: ctx.code };
 
     const { data: existing, error: loadError } = await ctx.supabase

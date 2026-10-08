@@ -1,3 +1,5 @@
+import {sessionHasCompanyCapability} from "@/lib/access/actions";
+import {AccessGate} from "@/components/app/access-gate";
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
@@ -10,6 +12,7 @@ export const metadata: Metadata = { title: "Knowledge · Velora" };
 async function KnowledgeLoader() {
   const access = await getCompanyAccess();
   if (!access.ok) {
+    if(access.code==="UNAVAILABLE"||access.code==="FORBIDDEN")return <AccessGate code={access.code}/>;
     if (access.code === "UNVERIFIED") redirect("/verify-email");
     redirect("/login");
   }
@@ -17,12 +20,16 @@ async function KnowledgeLoader() {
     redirect(pathForAccess(access));
   }
 
+  const owner=access.context.membership.role==="owner";
+  if(!owner&&await sessionHasCompanyCapability(access.context.company.id,"knowledge.read")!==true)return <AccessGate code="FORBIDDEN"/>;
   const listed = await listKnowledgeSources();
-  const canWrite = access.context.membership.role === "owner";
+  const canWrite=owner||await sessionHasCompanyCapability(access.context.company.id,"knowledge.write")===true;
+  const canDelete=owner||await sessionHasCompanyCapability(access.context.company.id,"knowledge.delete")===true;
 
   return (
     <KnowledgePage
       canWrite={canWrite}
+      canDelete={canDelete}
       initialSources={listed.ok ? listed.data.sources : []}
       initialLoadFailed={!listed.ok}
       approvalFoundation={listed.ok ? listed.data.approvalFoundation : "unavailable"}

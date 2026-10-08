@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState } from "react";
 import Link from "next/link";
@@ -124,6 +124,24 @@ export function WhatsappSettingsPanel({
           {error ? <Notice tone="error">{error}</Notice> : null}
           {notice ? <Notice tone="info">{notice}</Notice> : null}
 
+          <div className="rounded-2xl border border-[#38dc89]/30 bg-gradient-to-r from-[#12281e] via-[#0d1a14] to-[#07110d] p-4 shadow-[0_8px_24px_rgba(0,0,0,0.3)]">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#25d366]/20 border border-[#25d366]/40 text-2xl">
+                  📱
+                </div>
+                <div>
+                  <h3 className="font-bold text-[#f7fbf8] text-base">ربط واتساب التجاري (WhatsApp Cloud API)</h3>
+                  <p className="text-xs text-[#b7c6b9]">تفعيل الردود الآلية المباشرة واستقبال محادثات العملاء</p>
+                </div>
+              </div>
+              <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${verified ? "bg-[#38dc89]/20 text-[#9af0c3] border border-[#38dc89]/40" : "bg-[#d9a467]/20 text-[#f0cf9d] border border-[#d9a467]/40"}`}>
+                <span className={`h-2 w-2 rounded-full ${verified ? "bg-[#38dc89] animate-pulse" : "bg-[#d9a467]"}`} />
+                {statusLabel(link.status, copy)}
+              </span>
+            </div>
+          </div>
+
           <dl className="grid gap-3 text-sm">
             <div className="flex flex-wrap justify-between gap-3">
               <dt className="text-[var(--color-muted-on-dark)]">{copy.app.whatsappStatus}</dt>
@@ -131,7 +149,7 @@ export function WhatsappSettingsPanel({
             </div>
             <div className="flex flex-wrap justify-between gap-3">
               <dt className="text-[var(--color-muted-on-dark)]">{copy.app.waLinkCurrentRequest}</dt>
-              <dd dir="ltr">{link.requestedDisplayNumber.trim() || "—"}</dd>
+              <dd dir="ltr" className="font-semibold text-[#f7fbf8]">{link.requestedDisplayNumber.trim() || "—"}</dd>
             </div>
             {verified ? (
               <>

@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -29,6 +29,7 @@ type Props = {
   compact?: boolean;
   focusTitle?: string;
   canWrite: boolean;
+  canDelete?: boolean;
   initialSources: KnowledgeSourceRecord[];
   /** True when the server failed to load sources (do not show empty state). */
   initialLoadFailed?: boolean;
@@ -64,6 +65,7 @@ export function KnowledgeEditor({
   compact,
   focusTitle,
   canWrite,
+  canDelete = canWrite,
   initialSources,
   initialLoadFailed = false,
   approvalFoundation: initialApprovalFoundation = "ready",
@@ -470,8 +472,49 @@ export function KnowledgeEditor({
     failed: "bg-[#e07a5f]/18 text-[var(--color-danger-fg)] ring-1 ring-[#e07a5f]/40",
   };
 
+  const readyCount = sources.filter((s) => s.status === "ready" && isApprovedForAnswers(s)).length;
+  const healthPercent = sources.length === 0 ? 0 : Math.min(100, Math.round((readyCount / Math.max(1, sources.length)) * 100));
+
   return (
     <div className="grid gap-5">
+      {/* 🧠 بطاقة جاهزية ومستوى ذكاء قاعدة المعرفة */}
+      <section className="rounded-3xl border border-[#38dc89]/30 bg-gradient-to-r from-[#11241a] via-[#0d1c15] to-[#07110d] p-5 shadow-[0_12px_32px_rgba(0,0,0,0.35)] relative overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <div className="relative flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-[#38dc89] to-[#124b30] text-[#072317] text-2xl font-bold shadow-md">
+              🧠
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-lg font-bold text-[#f7fbf8]">مستوى جاهزية المعرفة (Knowledge Score)</h2>
+                <span className="inline-flex rounded-full border border-[#38dc89]/40 bg-[#38dc89]/15 px-2.5 py-0.5 text-xs font-semibold text-[#9af0c3]">
+                  {healthPercent >= 70 ? "ممتازة للردود 🟢" : "تحتاج مزيداً من الملفات 🟡"}
+                </span>
+              </div>
+              <p className="mt-1 text-xs text-[#b7c6b9]">
+                كلما رفعت ملفات أكثر، زادت قدرة الموظفة على الإجابة الدقيقة على استفسارات واتساب بدون أخطاء.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-2xl font-extrabold text-[#9af0c3]">{healthPercent}%</span>
+          </div>
+        </div>
+
+        <div className="mt-4">
+          <div className="h-2 w-full overflow-hidden rounded-full bg-white/10 p-0.5">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-[#2ebd73] to-[#38dc89] shadow-[0_0_12px_rgba(56,220,137,0.5)] transition-all duration-700"
+              style={{ width: `${Math.max(8, healthPercent)}%` }}
+            />
+          </div>
+          <div className="mt-2 flex items-center justify-between text-[11px] text-[#8aa394]">
+            <span>{readyCount} مصادر معتمدة وجاهزة للإجابات</span>
+            <span>الهدف: 3 مصادر على الأقل لإطلاق الموظفة بكفاءة</span>
+          </div>
+        </div>
+      </section>
+
       {!compact ? <p className="app-muted max-w-2xl text-base leading-7">{copy.knowledge.body}</p> : null}
       <p className="app-muted-soft text-xs leading-5">{copy.knowledge.examples}</p>
       {!canWrite ? <Notice tone="info">{copy.knowledge.readOnly}</Notice> : null}
@@ -614,9 +657,9 @@ export function KnowledgeEditor({
                   <p className="app-muted-soft mt-1 text-xs leading-5">{copy.knowledge.approveHint}</p>
                 ) : null}
               </div>
-              {canWrite ? (
+              {canWrite || canDelete ? (
                 <div className="flex flex-wrap gap-1">
-                  {src.status === "ready" && src.content.trim() && approvalFoundation === "ready" ? (
+                  {canWrite && src.status === "ready" && src.content.trim() && approvalFoundation === "ready" ? (
                     <Button
                       variant="ghost"
                       busy={busy}

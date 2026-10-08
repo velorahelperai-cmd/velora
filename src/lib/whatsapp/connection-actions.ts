@@ -69,7 +69,7 @@ export async function getWhatsappCompanyLink(): Promise<ActionOk<WhatsappCompany
   }
   try {
     const supabase = await createClient();
-    const { data, error } = await supabase.rpc("get_whatsapp_company_link");
+    const { data, error } = await supabase.rpc("get_selected_whatsapp_company_link",{p_company_id:access.context.company.id});
     if (error) return { ok: false, code: "UNAVAILABLE", message: error.message };
     return mapLinkResult(data, false);
   } catch {
@@ -106,7 +106,8 @@ export async function saveWhatsappLinkRequest(input: {
 
   try {
     const supabase = await createClient();
-    const { data, error } = await supabase.rpc("upsert_whatsapp_link_request", {
+    const { data, error } = await supabase.rpc("upsert_selected_whatsapp_link_request", {
+      p_company_id:access.context.company.id,
       p_requested_display_number: number,
       p_keep_on_phone: Boolean(input.keepOnPhone),
     });
