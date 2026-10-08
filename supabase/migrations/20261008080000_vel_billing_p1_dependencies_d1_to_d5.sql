@@ -125,12 +125,55 @@ alter table public.billing_settlement_outcomes
   add constraint billing_settlement_outcomes_outcome_check
   check (outcome in ('granted', 'idempotent_replay', 'duplicate_collection_review', 'rejected', 'refunded', 'voided', 'late_failure_ignored'));
 
--- D5: Scoped unique provider order index on attempts
+-- D5: Account and environment scoped provider order uniqueness on attempts
+alter table public.billing_payment_attempts
+  add column if not exists provider text not null default 'paymob' check (provider = 'paymob'),
+  add column if not exists provider_account_ref text,
+  add column if not exists provider_environment text check (provider_environment in ('test', 'live'));
+
+create or replace function private.billing_payment_attempts_sync_order_scope()
+returns trigger language plpgsql as $$
+declare
+  ord record;
+begin
+  if new.provider_account_ref is null or new.provider_environment is null or new.provider is null then
+    select o.provider, o.provider_account_ref, o.provider_environment
+    into ord
+    from public.billing_orders o
+    where o.id = new.order_id and o.company_id = new.company_id;
+
+    if found then
+      new.provider := coalesce(new.provider, ord.provider, 'paymob');
+      new.provider_account_ref := coalesce(new.provider_account_ref, ord.provider_account_ref);
+      new.provider_environment := coalesce(new.provider_environment, ord.provider_environment);
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists billing_payment_attempts_sync_scope_trg on public.billing_payment_attempts;
+create trigger billing_payment_attempts_sync_scope_trg
+  before insert or update on public.billing_payment_attempts
+  for each row execute function private.billing_payment_attempts_sync_order_scope();
+
+-- Backfill any existing attempts from their parent order
+update public.billing_payment_attempts a
+set
+  provider = coalesce(a.provider, o.provider, 'paymob'),
+  provider_account_ref = coalesce(a.provider_account_ref, o.provider_account_ref),
+  provider_environment = coalesce(a.provider_environment, o.provider_environment)
+from public.billing_orders o
+where a.order_id = o.id
+  and (a.provider_account_ref is null or a.provider_environment is null);
+
+-- Unique index scoped by provider + merchant account + environment + provider_order_id
+drop index if exists public.billing_payment_attempts_provider_order_uidx;
 create unique index if not exists billing_payment_attempts_provider_order_uidx
-  on public.billing_payment_attempts (provider_order_id)
+  on public.billing_payment_attempts (provider, provider_account_ref, provider_environment, provider_order_id)
   where provider_order_id is not null;
 
--- D5: Immutability guard for payment attempt tenant and provider bindings
+-- D5: Immutability guard for payment attempt tenant, provider, and account/env bindings
 create or replace function private.billing_payment_attempts_binding_guard()
 returns trigger language plpgsql as $$
 begin
@@ -142,6 +185,12 @@ begin
   end if;
   if old.provider_order_id is not null and new.provider_order_id is distinct from old.provider_order_id then
     raise exception 'billing_payment_attempts: provider_order_id is immutable once bound' using errcode = '22023';
+  end if;
+  if old.provider_account_ref is not null and new.provider_account_ref is distinct from old.provider_account_ref then
+    raise exception 'billing_payment_attempts: provider_account_ref is immutable once bound' using errcode = '22023';
+  end if;
+  if old.provider_environment is not null and new.provider_environment is distinct from old.provider_environment then
+    raise exception 'billing_payment_attempts: provider_environment is immutable once bound' using errcode = '22023';
   end if;
   return new;
 end;
