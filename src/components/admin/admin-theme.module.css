@@ -34,3 +34,5 @@
 .theme :global([class~="border-[#d9a467]/50"]){border-color:#C9AA85;}
 .theme :global([class~="focus-visible:ring-[#38dc89]"]):focus-visible{--tw-ring-color:#9F744B;}
 .theme :global([class~="bg-black/60"]){background:rgba(107,73,50,.4);}
+.theme :global([class~="text-[#f0a0a0]"]){color:#8B3D29;}
+.theme :is(button,input,select,textarea):disabled{opacity:1;background:#EFE2CF;color:#615244;cursor:not-allowed;border-color:#D7C1A5;}

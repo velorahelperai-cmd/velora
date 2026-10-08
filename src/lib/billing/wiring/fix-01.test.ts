@@ -274,7 +274,7 @@ describe("FIX-01 stored → process → settle → return (schema store mock)", 
       },
     };
 
-    let rowBefore = mapBillingReturnDbParts(COMPANY_A, {
+    const rowBefore = mapBillingReturnDbParts(COMPANY_A, {
       order: { id: ORDER_ID, company_id: COMPANY_A, status: "submitted" },
       attempt: { id: ATTEMPT_ID, status: "provider_submitted" },
       latestEvent: { event_status: "success", observation_key: obsKey },

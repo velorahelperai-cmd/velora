@@ -32,7 +32,7 @@
 .page button:focus-visible,.page a:focus-visible { outline: 2px solid var(--catalog-link); outline-offset: 3px; }
 .page a { color: var(--catalog-link); background: transparent; border-color: transparent; }
 .page a:hover { background: var(--catalog-muted); text-decoration: underline; }
-.page button:disabled { opacity: .5; cursor: not-allowed; }
+.page button:disabled { opacity: 1; background: var(--catalog-muted); color: var(--catalog-secondary); cursor: not-allowed; }
 .page fieldset { border-top: 1px solid var(--catalog-border); margin-top: 24px; padding-top: 16px; }
 .page legend { color: var(--catalog-link); font-weight: 700; }
 .version { padding: 20px 0; border-top: 1px solid var(--catalog-border); }
