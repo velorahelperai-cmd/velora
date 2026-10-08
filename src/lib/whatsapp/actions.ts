@@ -79,6 +79,9 @@ export type ReplyActionResult =
 
 type IntentPublic = {
   id: string;
+  company_id: string;
+  conversation_id: string;
+  sender_kind: string;
   client_op_id: string;
   outcome: string;
   wa_message_id: string | null;
@@ -92,12 +95,17 @@ type IntentPublic = {
 
 function intentFrom(raw: unknown): IntentPublic | null {
   const row = asRecord(raw as Json);
-  if (!row || typeof row.id !== "string") return null;
+  if (!row || ["id", "company_id", "conversation_id", "sender_kind", "client_op_id", "body", "phone_number_id", "recipient_wa_id"]
+    .some((key) => typeof row[key] !== "string" || !(row[key] as string).trim())) return null;
+  if (!["ready", "attempting", "accepted", "rejected", "unknown"].includes(String(row.outcome))) return null;
   const genRaw = row.link_generation;
   const linkGeneration = typeof genRaw === "number" ? genRaw
     : typeof genRaw === "string" && genRaw.trim() ? Number(genRaw) : null;
   return {
-    id: row.id,
+    id: row.id as string,
+    company_id: row.company_id as string,
+    conversation_id: row.conversation_id as string,
+    sender_kind: row.sender_kind as string,
     client_op_id: String(row.client_op_id ?? ""),
     outcome: String(row.outcome ?? "ready"),
     wa_message_id: typeof row.wa_message_id === "string" ? row.wa_message_id : null,
@@ -106,7 +114,7 @@ function intentFrom(raw: unknown): IntentPublic | null {
     phone_number_id: String(row.phone_number_id ?? ""),
     recipient_wa_id: String(row.recipient_wa_id ?? ""),
     link_id: typeof row.link_id === "string" ? row.link_id : null,
-    link_generation: linkGeneration != null && Number.isFinite(linkGeneration) ? linkGeneration : null,
+    link_generation: linkGeneration != null && Number.isSafeInteger(linkGeneration) && linkGeneration >= 1 ? linkGeneration : null,
   };
 }
 
@@ -327,9 +335,16 @@ export async function replyWhatsappConversation(input: {
   if (!intent) {
     return { ok: false, code: "SAVE_FAILED", message: "intent_missing", clientOpId };
   }
-  if (intent.link_id) {
-    intentLinkId = intent.link_id;
-    intentLinkGeneration = intent.link_generation;
+  const replyBindingMatches = (stored: IntentPublic) =>
+    stored.company_id === companyId
+    && stored.conversation_id === input.conversationId
+    && stored.client_op_id === clientOpId
+    && stored.sender_kind === "staff"
+    && stored.phone_number_id === phoneNumberId
+    && stored.recipient_wa_id === recipientWaId
+    && stored.body === text;
+  if (!replyBindingMatches(intent)) {
+    return { ok: false, code: "CONTENT_MISMATCH", message: "intent_binding_mismatch", clientOpId };
   }
 
   // Idempotent settled paths — never start a new provider send.
@@ -396,8 +411,15 @@ export async function replyWhatsappConversation(input: {
   if (!claimRow) {
     return { ok: false, code: "SAVE_FAILED", message: "claim_unavailable", clientOpId };
   }
+  const claimedIntent = intentFrom(claimRow.intent);
+  if (claimRow.ok === true && (
+    !claimedIntent || claimedIntent.id !== intent.id || !replyBindingMatches(claimedIntent)
+  )) {
+    // No retained binding proof: preserve the operation, never contact Graph.
+    return { ok: false, code: "UNKNOWN_OUTCOME", message: "claim_binding_unconfirmed", clientOpId, outcome: "unknown" };
+  }
   if (claimRow.ok === true && claimRow.claimed === false) {
-    intent = intentFrom(claimRow.intent) ?? intent;
+    intent = claimedIntent!;
     if (intent.outcome === "accepted" && intent.message_id) {
       const { data: msg } = await supabase
         .from("whatsapp_messages")
@@ -449,24 +471,34 @@ export async function replyWhatsappConversation(input: {
     }
     return { ok: false, code: "SAVE_FAILED", message: code || "claim_failed", clientOpId };
   }
+  if (claimRow.claimed !== true || claimedIntent?.outcome !== "attempting") {
+    return { ok: false, code: "IN_PROGRESS", message: "claim_not_confirmed", clientOpId, outcome: "attempting" };
+  }
 
-  const attemptToken = typeof claimRow.attempt_token === "string" ? claimRow.attempt_token : null;
-  intent = intentFrom(claimRow.intent) ?? intent;
+  const attemptToken = typeof claimRow.attempt_token === "string"
+    && claimRow.attempt_token.trim() === claimRow.attempt_token
+    && claimRow.attempt_token.length > 0 ? claimRow.attempt_token : null;
+  intent = claimedIntent;
   if (!attemptToken) {
     // Claim succeeded without token — treat as unresolved; keep client_op_id.
     return { ok: false, code: "UNKNOWN_OUTCOME", message: "claim_token_missing", clientOpId, outcome: "unknown" };
   }
 
   // From here: provider contact may have started — never drop clientOpId; never invent a new op.
-  const callFinalize = (result: "rejected" | "unknown" | "accepted", errorCode: string | null, waMessageId: string | null = null) =>
-    admin.rpc("finalize_whatsapp_send_attempt", {
-      p_intent_id: intent!.id,
-      p_attempt_token: attemptToken,
-      p_result: result,
-      p_wa_message_id: waMessageId,
-      p_error_code: errorCode,
-      p_actor_user_id: actorUserId,
-    });
+  const callFinalize = async (result: "rejected" | "unknown" | "accepted", errorCode: string | null, waMessageId: string | null = null) => {
+    try {
+      return await admin.rpc("finalize_whatsapp_send_attempt", {
+        p_intent_id: intent!.id,
+        p_attempt_token: attemptToken,
+        p_result: result,
+        p_wa_message_id: waMessageId,
+        p_error_code: errorCode,
+        p_actor_user_id: actorUserId,
+      });
+    } catch {
+      return { error: { message: "finalize_unavailable" }, data: null };
+    }
+  };
 
   const settlePreGraphRejected = async (errorCode: string) => {
     const rpc = await callFinalize("rejected", errorCode);
@@ -483,8 +515,8 @@ export async function replyWhatsappConversation(input: {
         recipientWaId: intent.recipient_wa_id,
         conversation: conversationBind,
         resolved,
-        intentLinkId: intent.link_id ?? intentLinkId,
-        intentLinkGeneration: intent.link_generation ?? intentLinkGeneration,
+        intentLinkId: intent.link_id,
+        intentLinkGeneration: intent.link_generation,
       });
       if (decision.action !== "graph") {
         return applyClaimedPreGraphOutcome({
@@ -526,25 +558,11 @@ export async function replyWhatsappConversation(input: {
       return { ok: false, code: "UNKNOWN_OUTCOME", message: sent.detail || "ambiguous", clientOpId, outcome: "unknown" };
     }
 
-    const finalized = await admin.rpc("finalize_whatsapp_send_attempt", {
-      p_intent_id: intent.id,
-      p_attempt_token: attemptToken,
-      p_result: "accepted",
-      p_wa_message_id: sent.waMessageId,
-      p_error_code: null,
-      p_actor_user_id: actorUserId,
-    });
+    const finalized = await callFinalize("accepted", null, sent.waMessageId);
 
     if (finalized.error) {
       // Provider accepted; retry finalize/persist only — never Graph. Keep client_op_id.
-      const again = await admin.rpc("finalize_whatsapp_send_attempt", {
-        p_intent_id: intent.id,
-        p_attempt_token: attemptToken,
-        p_result: "accepted",
-        p_wa_message_id: sent.waMessageId,
-        p_error_code: null,
-        p_actor_user_id: actorUserId,
-      });
+      const again = await callFinalize("accepted", null, sent.waMessageId);
       const againRow = asRecord(again.data);
       if (!again.error && againRow?.ok === true) {
         if (againRow.persist_pending === true) {

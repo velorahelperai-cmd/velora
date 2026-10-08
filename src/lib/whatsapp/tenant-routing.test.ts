@@ -164,10 +164,13 @@ describe("tenant registry routing", () => {
 
   it("does not use payload company_id — splitWebhook only exposes provider phones", () => {
     const split = splitWebhook({
+      object: "whatsapp_business_account",
       company_id: "forged-company",
       entry: [{
         changes: [{
+          field: "messages",
           value: {
+            messaging_product: "whatsapp",
             metadata: { phone_number_id: "phone-a" },
             messages: [{ id: "wamid.1", from: customer, timestamp: "1710000000", type: "text", text: { body: "hi" } }],
           },

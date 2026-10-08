@@ -92,7 +92,9 @@ export async function sendWhatsappText(input: {
     accessToken = config.accessToken;
   }
 
-  const to = input.toWaId.replace(/\D/g, "");
+  // Preserve the recipient identity retained by the intent; never reinterpret it.
+  const to = input.toWaId;
+  if (!/^\d+$/.test(to)) return { ok: false, code: "GRAPH_REJECTED", detail: "invalid_recipient" };
   const text = input.body.trim().slice(0, 4096);
   if (!to || !text) return { ok: false, code: "GRAPH_REJECTED", detail: "empty" };
 
@@ -131,7 +133,15 @@ export async function sendWhatsappText(input: {
     };
   }
 
-  const waMessageId = payload?.messages?.[0]?.id;
+  const providerId = Array.isArray(payload?.messages) && payload.messages.length === 1
+    ? payload.messages[0]?.id
+    : null;
+  const waMessageId = typeof providerId === "string" && providerId.trim() === providerId && providerId.length > 0
+    ? providerId
+    : null;
+  if (response.ok && payload?.error != null) {
+    return { ok: false, code: "AMBIGUOUS", detail: "contradictory_provider_response" };
+  }
   if (response.ok && waMessageId) {
     return { ok: true, waMessageId };
   }
