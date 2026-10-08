@@ -202,6 +202,192 @@ function DashboardBillingCard({ companyId }: { companyId: string | null }) {
   );
 }
 
+function DashboardDecoupledPillars({
+  readiness,
+  initialLeads,
+  locale,
+}: {
+  readiness: CustomerReadinessSnapshot | null;
+  initialLeads: WhatsappInboxLoad;
+  locale: "ar" | "en";
+}) {
+  const ar = locale === "ar";
+
+  // State 1: Subscription Active (billing_settled / active)
+  const subItem = readiness?.items.find((i) => i.id === "subscription");
+  const isSubSettled = subItem?.tone === "complete";
+
+  // State 2: Company Setup Completed (Profile & Knowledge saved)
+  const compItem = readiness?.items.find((i) => i.id === "company");
+  const knowItem = readiness?.items.find((i) => i.id === "knowledge");
+  const isSetupComplete =
+    compItem?.tone === "complete" &&
+    (knowItem?.tone === "complete" || knowItem?.detail === "knowledge_ready");
+
+  // State 3: Meta WhatsApp Verified (wa_verified via Meta Cloud API — distinct from request_saved)
+  const waItem = readiness?.items.find((i) => i.id === "whatsapp");
+  const isWaVerified = waItem?.detail === "wa_verified";
+
+  // State 4: Review Submitted / Pending / Approved
+  const reviewItem = readiness?.items.find((i) => i.id === "review");
+  const isReviewApproved = reviewItem?.detail === "review_approved";
+  const isReviewPending = reviewItem?.detail === "review_pending";
+
+  // State 5: Live Outbound AI Active (Never inferred!)
+  // Strictly requires all technical and security criteria met AND not paused
+  const hasAutomatedConvs =
+    initialLeads.ok &&
+    initialLeads.conversations.some((c) => !c.assistantPaused && c.automationAllowed);
+  const isLiveAiActive =
+    isSubSettled &&
+    isWaVerified &&
+    isReviewApproved &&
+    readiness?.companyStatus === "active" &&
+    hasAutomatedConvs;
+
+  const pillars = [
+    {
+      num: 1,
+      title: ar ? "1. باقة الاشتراك المالي" : "1. Subscription Billing",
+      badge: isSubSettled
+        ? (ar ? "مفعّل (مسوى)" : "Active (Settled)")
+        : (ar ? "غير مفعّل / مسودة" : "Inactive / Draft"),
+      tone: isSubSettled ? "complete" : "pending",
+      detail: ar
+        ? "تسوية التحصيل عبر Paymob وتفعيل الحصة"
+        : "Paymob billing settlement & quota",
+      href: "/app/settings?tab=plan",
+      cta: ar ? "إدارة الباقة ↗" : "Manage ↗",
+    },
+    {
+      num: 2,
+      title: ar ? "2. إعداد النشاط والمعرفة" : "2. Company Setup & Knowledge",
+      badge: isSetupComplete
+        ? (ar ? "مكتمل ومعتمد" : "Complete & Ready")
+        : (ar ? "قيد التجهيز" : "In Progress"),
+      tone: isSetupComplete ? "complete" : "pending",
+      detail: ar
+        ? "الملف، ساعات العمل والمعلومات المعتمدة"
+        : "Profile, hours, and approved knowledge",
+      href: "/setup",
+      cta: ar ? "استكمال الإعداد ↗" : "Configure ↗",
+    },
+    {
+      num: 3,
+      title: ar ? "3. توثيق واتساب ميتا" : "3. Meta WhatsApp Verification",
+      badge: isWaVerified
+        ? (ar ? "موثق رسميًا عبر Meta" : "Verified via Meta")
+        : waItem?.detail === "wa_request_saved"
+          ? (ar ? "طلب ربط مسجل (غير موثق)" : "Request Saved (Not Verified)")
+          : (ar ? "غير متصل" : "Not Connected"),
+      tone: isWaVerified ? "complete" : "blocked",
+      detail: ar
+        ? "كتابة الرقم طلب ربط فقط؛ التوثيق عبر Meta"
+        : "Phone entry is a request, not verification",
+      href: "/app/settings?tab=whatsapp",
+      cta: ar ? "إعدادات الربط ↗" : "Settings ↗",
+    },
+    {
+      num: 4,
+      title: ar ? "4. طلب المراجعة الإدارية" : "4. Admin Review Request",
+      badge: isReviewApproved
+        ? (ar ? "معتمد إداريًا" : "Approved")
+        : isReviewPending
+          ? (ar ? "قيد التدقيق" : "Pending Review")
+          : reviewItem?.detail === "review_changes"
+            ? (ar ? "طُلبت تعديلات" : "Changes Requested")
+            : (ar ? "لم يُرسل بعد" : "Not Submitted"),
+      tone: isReviewApproved ? "complete" : isReviewPending ? "pending" : "incomplete",
+      detail: ar
+        ? "اعتماد المراجعة لا يشغّل واتساب تلقائيًا"
+        : "Approval does not auto-activate live replies",
+      href: "/setup",
+      cta: ar ? "عرض الطلب ↗" : "View ↗",
+    },
+    {
+      num: 5,
+      title: ar ? "5. الرد الآلي الحي لنورا" : "5. Live Outbound AI Active",
+      badge: isLiveAiActive
+        ? (ar ? "مفعّل على واتساب" : "Live on WhatsApp")
+        : (ar ? "معطل — بانتظار المتطلبات" : "Disabled — Pending Prerequisites"),
+      tone: isLiveAiActive ? "complete" : "blocked",
+      detail: ar
+        ? "لا يُستنتج من الإعداد؛ يتطلب استيفاء كافة الشروط"
+        : "Never inferred; requires all conditions met",
+      href: "/app/conversations",
+      cta: ar ? "الصندوق الموحد ↗" : "Inbox ↗",
+    },
+  ];
+
+  return (
+    <section
+      className="mb-6 rounded-3xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel)] p-5 shadow-[0_12px_32px_rgba(0,0,0,0.25)] sm:p-6"
+      aria-label={ar ? "حالات المنظومة الخمس المستقلة" : "5 Decoupled System Pillars"}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[color:var(--color-border-soft)] pb-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#38dc89]/20 text-sm">
+              🛡️
+            </span>
+            <h2 className="text-base font-bold text-[#f7fbf8] sm:text-lg">
+              {ar
+                ? "حالات المنظومة الخمس المستقلة (5 Decoupled System Pillars)"
+                : "5 Decoupled System Pillars"}
+            </h2>
+          </div>
+          <p className="mt-1 text-xs text-[#b7c6b9]">
+            {ar
+              ? "فصل صريح بين الاشتراك، الإعداد، توثيق ميتا، المراجعة، والتفعيل الحي لمنع أي ادعاء مسبق للتشغيل."
+              : "Strict decoupling of subscription, setup, Meta verification, review, and live AI activation."}
+          </p>
+        </div>
+        <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-[#b7c6b9]">
+          {ar ? "تحقق أمني مستقل" : "Independent Verification"}
+        </span>
+      </div>
+
+      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        {pillars.map((p) => {
+          const isComplete = p.tone === "complete";
+          const isPending = p.tone === "pending";
+          return (
+            <div
+              key={p.num}
+              className="flex flex-col justify-between rounded-2xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel-deep)] p-4 transition hover:border-white/20"
+            >
+              <div>
+                <span className="text-[11px] font-bold text-[#9af0c3]">#{p.num}</span>
+                <h3 className="mt-1 text-sm font-semibold text-[#f7fbf8] leading-snug">{p.title}</h3>
+                <span
+                  className={`mt-2 inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${
+                    isComplete
+                      ? "bg-[#38dc89]/15 text-[#38dc89] border border-[#38dc89]/30"
+                      : isPending
+                        ? "bg-[#d9a467]/15 text-[#f0cf9d] border border-[#d9a467]/30"
+                        : "bg-[#e07a7a]/15 text-[#e07a7a] border border-[#e07a7a]/30"
+                  }`}
+                >
+                  {p.badge}
+                </span>
+                <p className="mt-2.5 text-xs text-[#9aada0] leading-relaxed">{p.detail}</p>
+              </div>
+              <div className="mt-3 pt-2.5 border-t border-[color:var(--color-border-soft)]">
+                <Link
+                  href={p.href}
+                  className="text-xs font-medium text-[#38dc89] hover:underline"
+                >
+                  {p.cta}
+                </Link>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function toneClass(tone: ReadinessTone): string {
   if (tone === "complete") return "bg-[#38dc89]/15 text-[var(--color-success-fg)] border border-[#38dc89]/30";
   if (tone === "pending") return "bg-[#d9a467]/15 text-[var(--color-warn-fg)] border border-[#d9a467]/30";
@@ -418,7 +604,11 @@ export function DashboardPage({
             {nouraAutomatedCount !== null ? nouraAutomatedCount.toLocaleString(locale) : "—"}
           </p>
           <p className="mt-1 text-xs text-[#9aada0]">
-            {ar ? "تعمل بالرد الذكي المعتمد" : "Active AI automated replies"}
+            {waTone !== "complete"
+              ? (ar ? "بانتظار توثيق واتساب للرد الحي" : "Awaiting WhatsApp verification")
+              : nouraAutomatedCount && nouraAutomatedCount > 0
+                ? (ar ? "محادثات مفعّلة بالرد الآلي" : "Active automated replies")
+                : (ar ? "جاهزة للرد الذكي عند المراسلة" : "Ready for incoming chats")}
           </p>
         </Link>
 
@@ -478,13 +668,18 @@ export function DashboardPage({
             </span>
           </div>
           <p className="mt-2 text-xs text-[#9aada0]">
-            {ar ? "Meta WhatsApp Cloud API" : "Meta WhatsApp Cloud API"}
+            {waItem?.detail === "wa_verified"
+              ? (ar ? "موثق رسميًا عبر Meta Cloud API" : "Meta Cloud API Verified")
+              : (ar ? "تسجيل الرقم طلب ربط وليس توثيقًا" : "Number entry is not verification")}
           </p>
         </Link>
       </section>
 
       {/* Subscription & Quota Hero Card */}
       <DashboardBillingCard key={readiness?.companyId ?? "none"} companyId={readiness?.companyId ?? null} />
+
+      {/* 5 Decoupled System Pillars */}
+      <DashboardDecoupledPillars readiness={readiness} initialLeads={initialLeads} locale={locale} />
 
       {/* Interactive 8-Milestone Onboarding Stepper / Checklist */}
       <section

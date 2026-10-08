@@ -57,7 +57,7 @@ const copy = {
     statDrafts: "المسودات النشطة",
     statProductionTier: "الباقة المعتمدة إنتاجيًا",
     policyTitle: "سياسة الإطلاق والإنتاج المعتمدة",
-    policyText: "الباقة الوحيدة المعتمدة للشراء الفعلي وبوابة الدفع هي باقة نور الأساسية الشهرية (45.000 ر.ع). نشر أي باقة أخرى يعرضها للعميل كمرجع ولكن الشراء يظل معطّلًا حتى الاعتماد المنصي والمالي الرسمي.",
+    policyText: "الباقة الوحيدة المعتمدة للشراء الفعلي وبوابة الدفع هي باقة نورا الأساسية الشهرية (45.000 ر.ع). نشر أي باقة أخرى يعرضها للعميل كمرجع ولكن الشراء يظل معطّلًا حتى الاعتماد المنصي والمالي الرسمي.",
     approvedOnlyBadge: "معتمد للشراء",
   },
   en: {
@@ -108,7 +108,7 @@ const copy = {
     statDrafts: "Active Drafts",
     statProductionTier: "Production Live Tier",
     policyTitle: "Production & Commercial Policy",
-    policyText: "The only commercially approved tier for checkout and payment collection is Noor Basic Monthly (45.000 OMR). Publishing other versions displays them for reference, but checkout remains disabled until formal commercial authorization.",
+    policyText: "The only commercially approved tier for checkout and payment collection is Noura Basic Monthly (45.000 OMR). Publishing other versions displays them for reference, but checkout remains disabled until formal commercial authorization.",
     approvedOnlyBadge: "Live Approved",
   },
 } as const;
@@ -261,7 +261,7 @@ export function AdminCatalog({ initial }: { initial: CatalogResult<CatalogAdminS
             </div>
             <div className={styles.statCard} style={{ borderInlineStart: "4px solid var(--catalog-emerald)" }}>
               <span className={styles.statLabel}>{c.statProductionTier}</span>
-              <span className={styles.statValue} style={{ fontSize: 20 }}>Noor Basic</span>
+              <span className={styles.statValue} style={{ fontSize: 20 }}>Noura Basic</span>
               <span className={styles.statSub} style={{ color: "var(--catalog-emerald)" }}>{formatOmrBaisa(45000, locale)} · {c.approvedOnlyBadge}</span>
             </div>
           </div>

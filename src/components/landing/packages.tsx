@@ -7,7 +7,7 @@ import { SubscriptionBrandGuide } from "@/components/app/subscription-brand-guid
 import { SubscriptionCompareTable, SubscriptionOfferCards } from "@/components/app/subscription-offer-cards";
 import { subscriptionCopy, subscriptionTiers } from "@/components/app/subscription-copy";
 import type { SubscriptionOffersView, SubscriptionPersona, SubscriptionTerm, SubscriptionChoice } from "@/components/app/subscription-offers-view";
-import { currentSubscriptionChoice, isApprovedOffer, formatOmrBaisa } from "@/components/app/subscription-offers-view";
+import { currentSubscriptionChoice, isApprovedOffer, isPurchasableOffer, formatOmrBaisa } from "@/components/app/subscription-offers-view";
 import styles from "@/components/app/subscription-panel.module.css";
 const planByPersona: Record<SubscriptionPersona, PlanId> = { level_1:"support", level_2:"expanded", level_3:"integrated" };
 export function Packages({ copy, locale, destination, offersView, selectedPlan, onSelect }: { copy:LandingCopy; destination?:SubscriptionDestination; locale:"ar"|"en"; offersView?:SubscriptionOffersView; selectedPlan:PlanId|null; onSelect:(plan:PlanId)=>void }) {
@@ -17,6 +17,7 @@ export function Packages({ copy, locale, destination, offersView, selectedPlan, 
  const validChoice=currentSubscriptionChoice(choice,term,offersView);
  const isApproved=validChoice?isApprovedOffer(validChoice.persona,validChoice.package,validChoice.term):false;
  const selectedOffer=validChoice&&offersView?.status==="ready"?offersView.offers.find(offer=>offer.versionId===validChoice.versionId&&offer.term===validChoice.term):null;
+ const isPurchasable=validChoice?isPurchasableOffer(validChoice.persona,validChoice.package,validChoice.term,selectedOffer??undefined,offersView?.status):false;
  const target=destination??{href:"/login?next=%2Fapp%2Fsettings%3Ftab%3Dplan",kind:"login" as const,note:null};
  const catalogNote=offersView?.status==="ready"?c.catalogReady:offersView?.status==="error"?c.catalogError:offersView?.status==="empty"?c.catalogEmpty:c.catalogReasons.schema_unavailable;
  return <section id="packages" data-scene="8" className="scene scene-dark px-6 py-20 lg:px-12 lg:py-24">
@@ -46,13 +47,13 @@ export function Packages({ copy, locale, destination, offersView, selectedPlan, 
       <p className={styles.selectionTitle}>{validChoice ? <>{subscriptionTiers.find(tier => tier.id === validChoice.persona)?.[locale]} · {c[validChoice.package]} / {c[term]}</> : c.selectionEmpty}</p>
       {selectedOffer?<dl className={styles.facts}><div><dt>{c.orderAmount}</dt><dd><bdi>{formatOmrBaisa(selectedOffer.amountBaisa,locale)}</bdi></dd></div><div><dt>{c.cycle}</dt><dd>{c[term]}</dd></div></dl>:null}
       {target.note ? <p role="status">{c.permissionNotes[target.note]}</p> : null}
-      {!isApproved && validChoice ? <p className={styles.draftPlanNotice}>{term === "yearly" ? c.annualBannerNote : c.draftPlanDisabledNote}</p> : null}
+      {validChoice && !isPurchasable ? <p className={styles.draftPlanNotice}>{term === "yearly" ? c.annualBannerNote : isApproved ? c.draftAwaitingPublicationNote : c.draftPlanDisabledNote}</p> : null}
      </div>
-     {isApproved || !validChoice ? (
+     {isPurchasable || !validChoice ? (
       <Link href={target.href} className={styles.payLink}>{c.navigationLabels[target.kind]}</Link>
      ) : (
       <button type="button" className={styles.payLink} disabled style={{ opacity: 0.5, cursor: "not-allowed" }}>
-       {term === "yearly" ? c.annualNotPurchasable : c.notPurchasable}
+       {term === "yearly" ? c.annualNotPurchasable : isApproved ? c.notPublishedNotPurchasable : c.notPurchasable}
       </button>
      )}
     </section>

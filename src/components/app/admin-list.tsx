@@ -1105,8 +1105,8 @@ export function AdminList({
               </h3>
               <p className="text-xs text-[#615244] leading-relaxed">
                 {isRtl
-                  ? "تمكين الشخصيات الثلاث (دانة، لينا، نور) لتوزيع مهام خدمة العملاء والتسويق والدعم الفني بشكل متكامل."
-                  : "Collaborative multi-agent workflows featuring Dana, Lina, and Noor for business operations."}
+                  ? "تمكين الشخصيات الثلاث (دانة، لينا، نورا) لتوزيع مهام خدمة العملاء والتسويق والدعم الفني بشكل متكامل."
+                  : "Collaborative multi-agent workflows featuring Dana, Lina, and Noura for business operations."}
               </p>
               <div className="pt-2 text-[11px] font-medium text-[#615244]">
                 {isRtl ? "الواجهة جاهزة · التكامل البرمجي في المرحلة 2" : "UI Ready · Phase 2 Integration"}

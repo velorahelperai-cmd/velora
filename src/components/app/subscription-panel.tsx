@@ -6,7 +6,7 @@ import type { SubscriptionCycle, SubscriptionView } from "./subscription-model";
 import { SubscriptionBrandGuide } from "./subscription-brand-guide";
 import { SubscriptionCompareTable, SubscriptionOfferCards } from "./subscription-offer-cards";
 import type { SubscriptionOffersView, SubscriptionChoice } from "./subscription-offers-view";
-import { currentSubscriptionChoice, isApprovedOffer, formatOmrBaisa } from "./subscription-offers-view";
+import { currentSubscriptionChoice, isApprovedOffer, isPurchasableOffer, formatOmrBaisa } from "./subscription-offers-view";
 import { startTestCheckoutAction } from "@/lib/billing/wiring/test-checkout-actions";
 import styles from "./subscription-panel.module.css";
 const errors={
@@ -21,9 +21,10 @@ export function SubscriptionPanel({locale,view,offersView,preview=false,onRetry}
  const validChoice=currentSubscriptionChoice(choice,cycle,offersView),selected=validChoice?.persona??null;
  const isApproved=validChoice?isApprovedOffer(validChoice.persona,validChoice.package,validChoice.term):false;
  const selectedOffer=validChoice?offersView?.offers.find(offer=>offer.versionId===validChoice.versionId):null,chosen=subscriptionTiers.find(tier=>tier.id===selected),current=subscriptionTiers.find(tier=>tier.id===view.currentTier);
+ const isPurchasable=validChoice?isPurchasableOffer(validChoice.persona,validChoice.package,validChoice.term,selectedOffer??undefined,offersView?.status):false;
  const visibleOrderId=orderId??view.pendingOrderId;
  const blockedState=["loading","error","suspended","pending","active"].includes(view.state);
- const canPay=!!validChoice&&isApproved&&!preview&&!busy&&!blockedState;
+ const canPay=!!validChoice&&isPurchasable&&!preview&&!busy&&!blockedState;
  function select(value:SubscriptionChoice|null){setChoice(value);setError(null);setOrderId(null);}
  async function checkout(){
   if(!canPay||!validChoice||inFlight.current)return;
@@ -54,11 +55,11 @@ export function SubscriptionPanel({locale,view,offersView,preview=false,onRetry}
     <h2 id="subscription-next">{ar?"ملخص اختيارك":"Your selection"}</h2>
     <p className={styles.selectionTitle}>{chosen&&validChoice?`${chosen[locale]} · ${c[validChoice.package]}`:c.selectionEmpty}</p>
     {selectedOffer?<div className={styles.checkoutAmount}><bdi>{formatOmrBaisa(selectedOffer.amountBaisa,locale)}</bdi><span>/ {c[cycle]}</span></div>:null}
-    <p id="subscription-payment-note" className={styles.paymentNote}>{view.state==="suspended"?c.suspendedBlocked:view.state==="pending"?c.pendingBlocked:view.state==="active"?errors[locale].active:preview?(ar?"معاينة التصميم؛ الدفع غير متاح هنا.":"Design preview; checkout is unavailable here."):!isApproved&&validChoice?(cycle==="yearly"?c.annualBannerNote:c.draftPlanDisabledNote):(ar?"Paymob Test — تجربة دفع فقط. لا يتم خصم أموال حقيقية. رسوم التأسيس تُراجع منفصلة.":"Paymob Test — no real money is charged. Setup fees are reviewed separately.")}</p>
+    <p id="subscription-payment-note" className={styles.paymentNote}>{view.state==="suspended"?c.suspendedBlocked:view.state==="pending"?c.pendingBlocked:view.state==="active"?errors[locale].active:preview?(ar?"معاينة التصميم؛ الدفع غير متاح هنا.":"Design preview; checkout is unavailable here."):validChoice&&!isPurchasable?(cycle==="yearly"?c.annualBannerNote:isApproved?c.draftAwaitingPublicationNote:c.draftPlanDisabledNote):(ar?"Paymob Test — تجربة دفع فقط. لا يتم خصم أموال حقيقية. رسوم التأسيس تُراجع منفصلة.":"Paymob Test — no real money is charged. Setup fees are reviewed separately.")}</p>
     {error?<p className={styles.paymentError} role="alert">{error}</p>:null}
     {visibleOrderId?<Link className={styles.heroLink} href={`/app/subscription/orders/${visibleOrderId}`}>{ar?"عرض حالة الطلب":"View order status"}</Link>:null}
    </div>
-   <button type="button" className={styles.pay} disabled={!canPay} aria-describedby="subscription-payment-note" onClick={()=>void checkout()}>{busy?(ar?"جارٍ تجهيز الدفع…":"Preparing checkout…"):!isApproved&&validChoice?(cycle==="yearly"?c.annualNotPurchasable:c.notPurchasable):(ar?"متابعة للدفع التجريبي":"Continue to test checkout")}<span aria-hidden="true">↗</span></button>
+   <button type="button" className={styles.pay} disabled={!canPay} aria-describedby="subscription-payment-note" onClick={()=>void checkout()}>{busy?(ar?"جارٍ تجهيز الدفع…":"Preparing checkout…"):validChoice&&!isPurchasable?(cycle==="yearly"?c.annualNotPurchasable:isApproved?c.notPublishedNotPurchasable:c.notPurchasable):(ar?"متابعة للدفع التجريبي":"Continue to test checkout")}<span aria-hidden="true">↗</span></button>
   </section>
  </div>;
 }

@@ -4,7 +4,7 @@ import { FEATURE_KEYS } from "@/lib/billing/catalog-backend/contract";
 import { SubscriptionCharacter } from "./subscription-character";
 import { subscriptionCopy, subscriptionTiers } from "./subscription-copy";
 import type { SubscriptionChoice, SubscriptionOfferView, SubscriptionOffersView, SubscriptionTerm } from "./subscription-offers-view";
-import { choiceFromOffer, featureLabels, findOffer, formatOmrBaisa, isApprovedOffer } from "./subscription-offers-view";
+import { choiceFromOffer, featureLabels, findOffer, formatOmrBaisa, isApprovedOffer, isPurchasableOffer } from "./subscription-offers-view";
 import styles from "./subscription-panel.module.css";
 
 const DEFAULT_FEATURE_MATRIX: Record<string, Record<string, "ready" | "planned" | "configuration_required" | "not_verified" | "omit">> = {
@@ -39,18 +39,19 @@ function catalogPriceNote(
   const c = subscriptionCopy[locale];
   if (status === "error") return c.catalogError;
 
-  // The sole commercially approved production tier is Noor Basic Monthly (45.000 OMR)
-  if (persona === "level_1" && packageLevel === "basic" && term === "monthly") {
-    if (offer) return formatOmrBaisa(offer.amountBaisa, locale);
-    return formatOmrBaisa(45000, locale);
-  }
-
   // Annual tiers are unapproved drafts pending commercial publishing
   if (term === "yearly") {
     return c.yearlyUnavailable;
   }
 
-  // Other monthly tiers (Noor Premium, Lina Basic/Premium, Dana Basic/Premium)
+  // Commercially approved tier: Noura Basic Monthly (45.000 OMR)
+  // Checkout requires that it is actually published in the live backend catalog
+  if (persona === "level_1" && packageLevel === "basic" && term === "monthly") {
+    if (status === "ready" && offer) return formatOmrBaisa(offer.amountBaisa, locale);
+    return c.draftAwaitingPublicationPrice;
+  }
+
+  // Other monthly tiers (Noura Premium, Lina Basic/Premium, Dana Basic/Premium)
   if (offer) {
     return `${formatOmrBaisa(offer.amountBaisa, locale)} (${locale === "ar" ? "مسودة" : "Draft"})`;
   }
@@ -74,6 +75,7 @@ export function SubscriptionOfferCards({ locale, term, offers, catalogStatus, se
       const packageLevel = packages[persona.id];
       const isApproved = isApprovedOffer(persona.id, packageLevel, term);
       const offer = findOffer(offers, persona.id, packageLevel, term);
+      const isPurchasable = isPurchasableOffer(persona.id, packageLevel, term, offer, catalogStatus);
       const counterpart = findOffer(offers, persona.id, packageLevel === "basic" ? "premium" : "basic", term);
       const selectedHere = selectedPersona === persona.id && (!selectedPackage || selectedPackage === packageLevel);
       const price = catalogPriceNote(locale, persona.id, packageLevel, term, offer, catalogStatus);
@@ -108,8 +110,10 @@ export function SubscriptionOfferCards({ locale, term, offers, catalogStatus, se
         <div className={styles.cardTop}>
           <h3>{persona[locale]}<span lang={locale === "ar" ? "en" : "ar"}>{persona[locale === "ar" ? "en" : "ar"]}</span></h3>
           <div style={{ display: "flex", flexDirection: "column", gap: "6px", alignItems: "flex-end" }}>
-            {isApproved ? (
+            {isPurchasable ? (
               <span className={styles.approvedBadge}>✓ {c.approvedBadge}</span>
+            ) : isApproved ? (
+              <span className={styles.draftBadge}>⏳ {c.draftAwaitingPublicationBadge}</span>
             ) : term === "yearly" ? (
               <span className={styles.draftBadge}>⚠️ {c.annualDraftBadge}</span>
             ) : (
@@ -133,7 +137,7 @@ export function SubscriptionOfferCards({ locale, term, offers, catalogStatus, se
           </div>
         ) : null}
         <p className={styles.editionNote}>{c.basicPremiumNote}</p>
-        <div className={styles.priceBlock}><p className={styles.price} data-unavailable={!offer && !isApproved} data-catalog-version={offer?.versionId}><bdi>{price}</bdi></p>
+        <div className={styles.priceBlock}><p className={styles.price} data-unavailable={!isPurchasable} data-catalog-version={offer?.versionId}><bdi>{price}</bdi></p>
         <p className={styles.cycleLabel}>{c[term]}</p></div>
         {persona.id === "level_2" && c.setupFeeNote ? (
           <p className={styles.setupNote}>ℹ️ {c.setupFeeNote.website}</p>
@@ -152,11 +156,18 @@ export function SubscriptionOfferCards({ locale, term, offers, catalogStatus, se
         </dl> : null}
         <p className={styles.featureScope}>{c.featureScope}</p>
 
-        {isApproved ? (
-          <button type="button" className={styles.select} aria-label={(selectedHere ? c.selected : c.select) + " " + persona[locale] + " / " + c[packageLevel]} aria-pressed={selectedHere} disabled={cardsDisabled || !offer}
-            onClick={() => { if (offer && !cardsDisabled) onSelect(choiceFromOffer(offer)); }}>
+        {isPurchasable && offer ? (
+          <button type="button" className={styles.select} aria-label={(selectedHere ? c.selected : c.select) + " " + persona[locale] + " / " + c[packageLevel]} aria-pressed={selectedHere} disabled={cardsDisabled}
+            onClick={() => { if (!cardsDisabled) onSelect(choiceFromOffer(offer)); }}>
             {selectedHere ? c.selected : c.select}
           </button>
+        ) : isApproved && (!offer || catalogStatus !== "ready") ? (
+          <div>
+            <button type="button" className={styles.select} style={{ width: "100%" }} aria-label={c.notPublishedNotPurchasable + " " + persona[locale]} disabled={true} aria-disabled="true">
+              {c.notPublishedNotPurchasable}
+            </button>
+            <p className={styles.draftPlanNotice}>{c.draftAwaitingPublicationNote}</p>
+          </div>
         ) : (
           <div>
             <button type="button" className={styles.select} style={{ width: "100%" }} aria-label={(term === "yearly" ? c.annualNotPurchasable : c.notPurchasable) + " " + persona[locale]} disabled={true} aria-disabled="true">
@@ -194,12 +205,12 @@ export function SubscriptionCompareTable({ locale, term, offers, catalogStatus, 
         <tbody>{subscriptionTiers.map(tier => {
           const basic = findOffer(offers, tier.id, "basic", term);
           const premium = findOffer(offers, tier.id, "premium", term);
-          const isBasicApproved = isApprovedOffer(tier.id, "basic", term);
+          const isBasicPurchasable = isPurchasableOffer(tier.id, "basic", term, basic, catalogStatus);
 
           return <tr key={tier.id} data-selected={selectedPersona === tier.id}>
             <th scope="row">
               {tier[locale]}
-              {isBasicApproved ? <span className={styles.approvedBadge} style={{ marginInlineStart: 8, fontSize: 10 }}>{c.approvedBadge}</span> : null}
+              {isBasicPurchasable ? <span className={styles.approvedBadge} style={{ marginInlineStart: 8, fontSize: 10 }}>{c.approvedBadge}</span> : null}
             </th>
             <td>
               <bdi>{catalogPriceNote(locale, tier.id, "basic", term, basic, catalogStatus)}</bdi>

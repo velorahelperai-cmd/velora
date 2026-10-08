@@ -47,7 +47,7 @@ const MILESTONES_COPY = {
       "شخصية نورا ونبرة الرد",
       "ربط واتساب التجاري",
       "تجربة نورا في بيئة الاختبار",
-      "مراجعة الجاهزية وتفعيل الإطلاق",
+      "مراجعة الجاهزية وطلب الاعتماد",
     ],
     stepBodies: [
       "معلومات أساسية عن نشاطك، العنوان، وجهات الاتصال الرسمية.",
@@ -57,7 +57,7 @@ const MILESTONES_COPY = {
       "حدد أسلوب ونبرة ردود نورا (ودودة/رسمية/مختصرة) ورسالة الترحيب المعتمدة.",
       "تجهيز رقم واتساب التجاري عبر Meta Cloud API لاستقبال محادثات العملاء.",
       "اختبر كيف تجيب نورا على أسئلة عملائك في بيئة محاكاة آمنة قبل الانطلاق.",
-      "مراجعة شاملة لجميع بنود التجهيز وتقديم طلب اعتماد وتفعيل الردود الحية.",
+      "مراجعة شاملة لجميع بنود التجهيز وتقديم طلب الاعتماد الإداري. اعتماد المراجعة لا يشغّل واتساب تلقائيًا.",
     ],
     milestoneProgress: "المحطة {n} من 8",
     afterHoursTitle: "سلوك نورا خارج أوقات العمل",
@@ -83,7 +83,7 @@ const MILESTONES_COPY = {
       "Noura Persona & Tone",
       "WhatsApp Business Connection",
       "Sandbox Testing",
-      "Go-Live Readiness & Launch",
+      "Go-Live Readiness & Approval Request",
     ],
     stepBodies: [
       "Basic company profile, address, and official contact details.",
@@ -93,7 +93,7 @@ const MILESTONES_COPY = {
       "Choose Noura's tone of voice, greeting message, and reply style.",
       "Connect your WhatsApp Business number via Meta Cloud API.",
       "Test simulated questions to verify Noura's answers before go-live.",
-      "Review all onboarding items and request go-live activation.",
+      "Review all onboarding items and request administrative approval. Approval does not automatically enable live WhatsApp replies.",
     ],
     milestoneProgress: "Milestone {n} of 8",
     afterHoursTitle: "Noura Outside Hours Policy",
@@ -607,6 +607,23 @@ export function SetupWizard({
                 nextDisabled={!setupTestValid}
                 nextHint={!setupTestValid ? copy.setup.testRequiredHint : undefined}
               >
+                <div className="mb-4 rounded-xl border border-[#38dc89]/30 bg-[#38dc89]/10 p-3.5 text-xs leading-relaxed text-[#c5d4cc]">
+                  <div className="flex items-start gap-2.5">
+                    <span className="text-base shrink-0">🧪</span>
+                    <div>
+                      <strong className="font-semibold text-[#f7fbf8]">
+                        {locale === "ar"
+                          ? "بيئة محاكاة واختبار داخلية (Sandbox Simulation)"
+                          : "Internal Sandbox Simulation Environment"}
+                      </strong>
+                      <p className="mt-1">
+                        {locale === "ar"
+                          ? "هذه بيئة محاكاة تجريبية مخصصة لفحص دقة إجابات نورا وتدريبها على معرفة الشركة. الإجابات هنا لا تُرسل لعملاء حقيقيين ولا تعني تفعيل الردود الحية على واتساب."
+                          : "This is a dedicated test simulation to verify Noura's response accuracy. Answers here are never sent to real customers and do not mean live WhatsApp automation is active."}
+                      </p>
+                    </div>
+                  </div>
+                </div>
                 <AssistantTester
                   compact
                   onImprove={() => go(3)}
@@ -1265,6 +1282,22 @@ function WhatsAppStep({
         </div>
       </div>
 
+      <div className="rounded-xl border border-[#d9a467]/40 bg-[#d9a467]/10 p-3.5 text-xs leading-relaxed text-[#f0cf9d]">
+        <div className="flex items-start gap-2.5">
+          <span className="shrink-0 text-base">⚠️</span>
+          <div>
+            <strong className="font-semibold">
+              {ar ? "تنبيه هام حول توثيق واتساب:" : "Important WhatsApp Verification Notice:"}
+            </strong>
+            <p className="mt-1">
+              {ar
+                ? "تسجيل رقم الهاتف هنا هو حفظ لطلب ربط مبدئي فقط (Request Saved). توثيق الرقم يتم رسميًا عبر ربط Meta Cloud API وتأكيد ملكية النشاط التجاري. كتابة الرقم لا تعني أبدًا توثيق واتساب أو بدء الردود الحية."
+                : "Entering your phone number here only saves an initial link request. Formal verification is executed through Meta Cloud API authentication and business verification. Entering a phone number is not verification and does not activate live AI replies."}
+            </p>
+          </div>
+        </div>
+      </div>
+
       <Field label={copy.setup.numberOwnership} required>
         {(p) => (
           <div className="grid gap-2 sm:grid-cols-2">
@@ -1355,6 +1388,109 @@ function activationFromReview(review: CompanyReviewRequest): Activation {
   };
 }
 
+function DecoupledPillarsNotice({
+  locale,
+  setupDone,
+  reviewStatus,
+}: {
+  locale: "ar" | "en";
+  setupDone: boolean[];
+  reviewStatus: CompanyReviewRequest["status"] | null;
+}) {
+  const ar = locale === "ar";
+  const isProfileDone = Boolean(setupDone[0] && setupDone[2]);
+  const isKnowledgeDone = Boolean(setupDone[3]);
+  const isSetupDone = isProfileDone && isKnowledgeDone;
+
+  const pillars = [
+    {
+      id: "state_1_subscription",
+      title: ar ? "1. باقة الاشتراك" : "1. Subscription",
+      statusText: ar ? "مطلوب لتشغيل الحصة" : "Required for Quota",
+      detail: ar ? "التسوية المالية عبر Paymob" : "Paymob Billing Settlement",
+      state: "pending" as const,
+    },
+    {
+      id: "state_2_setup",
+      title: ar ? "2. إعداد النشاط والمعرفة" : "2. Company Setup & Knowledge",
+      statusText: isSetupDone ? (ar ? "مكتمل" : "Completed") : (ar ? "قيد الإعداد" : "In Progress"),
+      detail: ar ? "الملف، ساعات العمل، ومصادر المعرفة" : "Profile, hours, and knowledge",
+      state: isSetupDone ? ("complete" as const) : ("pending" as const),
+    },
+    {
+      id: "state_3_whatsapp",
+      title: ar ? "3. توثيق واتساب ميتا" : "3. Meta WhatsApp Verification",
+      statusText: ar ? "بانتظار توثيق Meta Cloud API" : "Awaiting Meta Cloud API",
+      detail: ar ? "كتابة الرقم طلب ربط فقط وليست توثيقًا" : "Number entry is not verification",
+      state: "pending" as const,
+    },
+    {
+      id: "state_4_review",
+      title: ar ? "4. طلب المراجعة الإدارية" : "4. Admin Review Request",
+      statusText:
+        reviewStatus === "approved"
+          ? ar ? "معتمد إداريًا" : "Approved"
+          : reviewStatus === "pending_review"
+            ? ar ? "قيد التدقيق" : "Pending Review"
+            : ar ? "بانتظار التقديم" : "Awaiting Submission",
+      detail: ar ? "فحص الجاهزية والسياسات من الإدارة" : "Readiness audit by platform admins",
+      state: reviewStatus === "approved" ? ("complete" as const) : ("pending" as const),
+    },
+    {
+      id: "state_5_live_ai",
+      title: ar ? "5. تفعيل الردود الحية" : "5. Live AI Automation",
+      statusText: ar ? "معطل — بانتظار استيفاء الشروط" : "Disabled — Pending Conditions",
+      detail: ar ? "لا يُستنتج من الإعداد أو المراجعة" : "Never inferred from setup or review",
+      state: "blocked" as const,
+    },
+  ];
+
+  return (
+    <div className="rounded-2xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel-deep)] p-4">
+      <div className="flex items-center justify-between gap-2 border-b border-[color:var(--color-border-soft)] pb-3">
+        <h4 className="text-xs font-bold text-[#f7fbf8] sm:text-sm">
+          {ar ? "حالات التفعيل الخمس المستقلة (5 Decoupled Pillars)" : "5 Independent Activation States"}
+        </h4>
+        <span className="rounded-full bg-white/10 px-2 py-0.5 text-[11px] text-[#b7c6b9]">
+          {ar ? "فصل صارم لمنع الإطلاق المبكر" : "Strict Pre-Launch Decoupling"}
+        </span>
+      </div>
+
+      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-5">
+        {pillars.map((p) => (
+          <div
+            key={p.id}
+            className="flex flex-col justify-between rounded-xl border border-white/10 bg-black/20 p-2.5 text-xs"
+          >
+            <div>
+              <span className="font-semibold text-[#f7fbf8] block leading-tight">{p.title}</span>
+              <span
+                className={`mt-1.5 inline-block rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                  p.state === "complete"
+                    ? "bg-[#38dc89]/20 text-[#38dc89]"
+                    : p.state === "pending"
+                      ? "bg-[#d9a467]/20 text-[#f0cf9d]"
+                      : "bg-[#e07a7a]/20 text-[#e07a7a]"
+                }`}
+              >
+                {p.statusText}
+              </span>
+            </div>
+            <p className="mt-2 text-[11px] text-[#9aada0] leading-normal">{p.detail}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-3 rounded-xl border border-[#d9a467]/30 bg-[#d9a467]/10 p-2.5 text-xs leading-relaxed text-[#f0cf9d]">
+        <span className="font-semibold">⚠️ {ar ? "تنبيه حاسم:" : "Crucial Rule:"}</span>{" "}
+        {ar
+          ? "تقديم المراجعة أو اعتمادها خطوة إدارية بحتة، ولا يعني أبدًا أن نورا بدأت بالرد على رسائل الزبائن. الرد الحي على واتساب يتطلب ربط Meta Cloud API الفعلي، اشتراكًا ماليًا ساريًا، وتفعيلًا تقنيًا صريحًا دون إيقاف."
+          : "Submitting or approving a review is purely administrative and never means Noura is answering customers. Live WhatsApp replies strictly require official Meta Cloud API verification, an active settled subscription, and unpaused live automation."}
+      </div>
+    </div>
+  );
+}
+
 function ActivationStep({
   onBack,
   onDone,
@@ -1379,7 +1515,7 @@ function ActivationStep({
   reviewLoadFailed: boolean;
 }) {
   const copy = useAppCopy();
-  const { state, update } = useDemo();
+  const { state, update, locale } = useDemo();
   const [loadFailed, setLoadFailed] = useState(initialReviewLoadFailed);
   const [historyFailed, setHistoryFailed] = useState(false);
   const [review, setReview] = useState<CompanyReviewRequest | null>(
@@ -1656,6 +1792,7 @@ function ActivationStep({
   return (
     <div className="grid min-w-0 gap-5 lg:grid-cols-[1fr_360px]">
       <div className="grid min-w-0 gap-4">
+        <DecoupledPillarsNotice locale={locale} setupDone={setupDone} reviewStatus={status} />
         {saveError && !canEdit ? <Notice tone="error">{saveError}</Notice> : null}
         {infoNotice ? <Notice tone="warn">{infoNotice}</Notice> : null}
         {viewRefreshFailed ? (

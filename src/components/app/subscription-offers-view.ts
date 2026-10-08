@@ -57,9 +57,25 @@ export const featureLabels: Record<string, { ar: string; en: string }> = {
  website:{ar:"الموقع الإلكتروني",en:"Website"}, lead_followup:{ar:"متابعة العملاء المحتملين",en:"Lead follow-up"}, reports:{ar:"التقارير",en:"Reports"}, pos:{ar:"نقاط البيع",en:"Point of sale"}, orders:{ar:"الطلبات",en:"Orders"}, endcustomer_payment:{ar:"دفع العملاء",en:"Customer payments"}, accounting:{ar:"المحاسبة",en:"Accounting"}
 };
 
-/** Only Noor Basic Monthly is commercially approved for production checkout. */
+/** Only Noura Basic Monthly is commercially approved for production checkout. */
 export function isApprovedOffer(persona: SubscriptionPersona, pack: SubscriptionPackage, term: SubscriptionTerm): boolean {
   return persona === "level_1" && pack === "basic" && term === "monthly";
+}
+
+/**
+ * An offer is strictly purchasable ONLY IF:
+ * 1. It is commercially approved (Noura Basic Monthly at 45.000 OMR)
+ * 2. Real backend public catalog projection status is 'ready'
+ * 3. The matching offer is actually published and returned by the catalog
+ */
+export function isPurchasableOffer(
+  persona: SubscriptionPersona,
+  pack: SubscriptionPackage,
+  term: SubscriptionTerm,
+  offer: SubscriptionOfferView | undefined,
+  catalogStatus?: SubscriptionOffersView["status"]
+): boolean {
+  return isApprovedOffer(persona, pack, term) && catalogStatus === "ready" && Boolean(offer);
 }
 
 /** Formats integer baisa into strict 3-decimal OMR string (e.g. 45.000 OMR / 45.000 ر.ع.). */
