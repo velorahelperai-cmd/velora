@@ -93,7 +93,3 @@ end; $$;
 revoke all on function public.billing_complete_test_checkout(uuid,uuid,uuid,text,text,text) from public,anon,authenticated;
 grant execute on function public.billing_complete_test_checkout(uuid,uuid,uuid,text,text,text) to service_role;
 
--- Native idle-session enforcement also covers this server-only backing table.
-drop policy if exists velora_active_session on public.billing_test_checkouts;
-create policy velora_active_session on public.billing_test_checkouts as restrictive for all to authenticated
- using ((select public.app_session_is_valid())) with check ((select public.app_session_is_valid()));

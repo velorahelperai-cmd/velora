@@ -24,6 +24,7 @@ begin
   'billing_payment_attempts','billing_provider_events','billing_subscriptions',
   'billing_entitlement_applications','billing_settlement_outcomes','billing_catalog_revision'] loop
   execute format('alter table public.%I enable row level security',target);
+  execute format('drop policy if exists velora_active_session on public.%I',target);
   execute format('create policy velora_active_session on public.%I as restrictive for all to authenticated using ((select public.app_session_is_valid())) with check ((select public.app_session_is_valid()))',target);
   execute format('grant all on table public.%I to service_role',target);
  end loop;
