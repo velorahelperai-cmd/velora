@@ -128,6 +128,7 @@ export function CinematicOnboarding({ copy }: CinematicOnboardingProps) {
           <p className="mt-4 text-base sm:text-lg leading-relaxed text-[#c3d5cb]">
             {data.supporting}
           </p>
+          <p className="mt-3 text-xs leading-relaxed text-[#93a79c]">{copy.exampleNote}</p>
         </header>
 
         {/* 2-Column Desktop Grid with Sticky Living Window */}
@@ -217,7 +218,7 @@ export function CinematicOnboarding({ copy }: CinematicOnboardingProps) {
                   </span>
                 </div>
 
-                {/* Live Preview Pill */}
+                {/* Illustrative Preview Pill */}
                 <div className="inline-flex items-center gap-1.5 rounded-full bg-[#38dc89]/15 px-2.5 py-0.5 text-[11px] font-semibold text-[#9ef0c4]">
                   <span className="h-1.5 w-1.5 rounded-full bg-[#38dc89]" />
                   <span>{data.previewUI.previewBadge}</span>
@@ -272,6 +273,7 @@ export function CinematicOnboarding({ copy }: CinematicOnboardingProps) {
           <p className="mt-3 text-sm leading-relaxed text-[#c3d5cb]">
             {data.supporting}
           </p>
+          <p className="mt-3 text-xs leading-relaxed text-[#93a79c]">{copy.exampleNote}</p>
         </header>
 
         {/* Sequential 4 Stages Stacked Naturally */}
@@ -419,7 +421,7 @@ function StageChooseAssistant({
       <div className="mt-1 flex items-center justify-between rounded-xl border border-white/10 bg-[#08120e] p-2.5 text-xs">
         <div className="flex items-center gap-2">
           <span className="text-[11px] text-[#93a79c]">
-            {locale === "ar" ? "الباقة المختارة للتجربة:" : "Selected Plan:"}
+            {locale === "ar" ? "الباقة في المثال:" : "Example Plan:"}
           </span>
           <span className="rounded-md bg-[#38dc89]/15 px-2 py-0.5 text-[11px] font-bold text-[#38dc89]">
             {plans.basic}
@@ -454,13 +456,13 @@ function StageTeachBusiness({
           <h4 className="text-sm font-bold text-[#f7fbf8]">{k.header}</h4>
           <p className="text-[11px] text-[#93a79c]">
             {locale === "ar"
-              ? "المعلومات المعتمدة التي تستند إليها نورا في ردودها"
-              : "Verified information that Noura relies on"}
+              ? "معلومات افتراضية مستخدمة في هذا المثال"
+              : "Fictional information used in this example"}
           </p>
         </div>
         <span className="inline-flex items-center gap-1 rounded-full border border-[#38dc89]/40 bg-[#38dc89]/15 px-2.5 py-0.5 text-[10px] font-semibold text-[#9ef0c4]">
           <span>✓</span>
-          <span>{locale === "ar" ? "قاعدة معتمدة" : "Verified Base"}</span>
+          <span>{locale === "ar" ? "بيانات مثال" : "Example Data"}</span>
         </span>
       </div>
 
@@ -502,7 +504,7 @@ function StageTeachBusiness({
         </div>
       </div>
 
-      {/* Verified Status Banner */}
+      {/* Example Status Banner */}
       <div className="flex items-center justify-between rounded-xl border border-[#38dc89]/40 bg-[#12281e] p-2.5 text-xs text-[#9ef0c4]">
         <div className="flex items-center gap-2">
           <span className="text-sm font-bold text-[#38dc89]">✓</span>
@@ -596,12 +598,12 @@ function StageConnectWhatsApp({
           >
             <div className="flex items-center gap-2">
               <span className="flex h-4 w-4 items-center justify-center rounded-full bg-[#38dc89] text-[9px] font-bold text-[#072317]">
-                ✓
+                {i + 1}
               </span>
               <span className="text-[#d5e4da]">{st.label}</span>
             </div>
             <span className="text-[10px] text-[#38dc89] font-medium">
-              {locale === "ar" ? "مكتمل" : "Ready"}
+              {locale === "ar" ? "خطوة توضيحية" : "Example step"}
             </span>
           </div>
         ))}

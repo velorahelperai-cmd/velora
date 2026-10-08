@@ -25,6 +25,8 @@ Scope: local integration of onboarding commit `16d7cca` onto Security → Runtim
 
 ## Verification limits and rollout dependencies
 
+Latest clean source UI head `6fa67e9` added five landing files and was integrated by root. The extra source review found no new provider calls, secrets, persistence or production flags. Minimal corrections in `landing-copy.ts` and `cinematic-onboarding.tsx` remove static Premium pricing/quotas, live/online/verified/ready claims and booking/dispatch confirmations. Desktop and mobile previews visibly identify fictional data; request examples await staff confirmation. Layout and motion behavior are unchanged. Eight new Arabic/English focused assertions reproduced the source failures and pass after correction; owned-file ESLint and whitespace checks passed. Root owns final integration validation, screenshots and commit.
+
 This is local application/contract evidence. No cloud SQL, migrations, provider execution, paid AI verification, live sends, real data changes, deployment, push, backup or commit was performed by C2. It does not prove staged database RLS/transactions, browser OAuth, delivery, settlement or model quality. Root must complete the full integration checks and report Local Testing and Staging gates separately.
 
 Customer WhatsApp/AI and production payment remain separate rollouts. The current readiness/inbox contracts do not attest deployed worker activity; the UI therefore cannot claim live AI activity from subscription, approval, tests or `automation_allowed`. Future live activity requires an authoritative deployment/activity contract. Full company-wide automation/worklist totals likewise require their own server aggregate contract rather than counting a bounded page.

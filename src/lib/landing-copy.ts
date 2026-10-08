@@ -102,13 +102,13 @@ const scenes = [
     example: {
       ar: {
         question: "مرحبًا، هل سماعات بلوتوث برو متوفرة بلون أسود؟\n\nهل عليها ضمان؟ وهل يتوفر توصيل لنزوى؟\n\nممتاز، احجز لي حبة لون أسود.",
-        answer: "أهلًا بك! نعم متوفرة باللون الأسود مع عزل الضوضاء.\n\nنعم، ضمان سنتين وتوصيل خلال 24-48 ساعة لجميع المناطق.\n\nتم حجز السماعة! جهّزت بيانات الطلب والعنوان للمبيعات.",
+        answer: "أهلًا بك! نعم متوفرة باللون الأسود مع عزل الضوضاء.\n\nنعم، ضمان سنتين وتوصيل خلال 24-48 ساعة لجميع المناطق.\n\nجهّزت طلب حجز السماعة والعنوان لمراجعة فريق المبيعات؛ الحجز لم يُؤكد بعد.",
         cardTitle: "ملخص للفريق",
         card: "الصنف: سماعات بلوتوث برو (أسود)\nالضمان: سنتان شامل · توصيل لنزوى\nالمطلوب: حجز القطعة وتأكيد الشحن",
       },
       en: {
         question: "Hi, are Pro Bluetooth earbuds in stock in black?\n\nIs there warranty? And delivery to Nizwa?\n\nGreat, please reserve one in black for me.",
-        answer: "Hello! In stock in matte black with noise cancelling.\n\nYes, 2-year warranty and 24-48h delivery to all areas.\n\nEarbuds reserved! Order & address sent to sales team.",
+        answer: "Hello! In stock in matte black with noise cancelling.\n\nYes, 2-year warranty and 24-48h delivery to all areas.\n\nReservation request and address prepared for sales review; reservation is not confirmed.",
         cardTitle: "Summary for the team",
         card: "Item: Pro Earbuds (Matte Black)\nWarranty: 2-year · Delivery to Nizwa\nAction: Reserve item & confirm dispatch",
       },
@@ -120,8 +120,8 @@ const scenes = [
     theme: "light" as const,
     anchor: "enquiry",
     title: {
-      ar: "تنظيم مواعيد المرضى بدقة وخصوصية تامة.",
-      en: "Seamless appointment scheduling with total privacy.",
+      ar: "تنظيم استفسارات المواعيد لمراجعة فريق الاستقبال.",
+      en: "Appointment enquiry intake for reception review.",
     },
     body: {
       ar: "استفسارات المواعيد، التخصصات، والتغطيات التأمينية تتطلب تنظيمًا فوريًا. نورا تساعد المراجعين إداريًا في اختيار الموعد المناسب وتجهيز الملف للاستقبال، دون تقديم أي استشارات طبية.",
@@ -130,13 +130,13 @@ const scenes = [
     example: {
       ar: {
         question: "مرحبًا، أحتاج حجز موعد في عيادة الأسنان بكرة؟\n\nموعد 5:30 مناسب، هل تقبلون تأمين شركة ظفار؟\n\nممتاز، اعتمدي الموعد باسم أحمد.",
-        answer: "أهلًا بك. متوفر موعد غدًا الساعة 5:30 مساءً أو 7:00 مساءً.\n\nنعم، معتمدون للتغطية المباشرة مع تأمين ظفار.\n\nسجّلت موعد 5:30 غدًا، وأرسلت التفاصيل للاستقبال لتأكيده!",
+        answer: "أهلًا بك. متوفر موعد غدًا الساعة 5:30 مساءً أو 7:00 مساءً.\n\nنعم، معتمدون للتغطية المباشرة مع تأمين ظفار.\n\nجهّزت طلب موعد 5:30 غدًا لمراجعة الاستقبال؛ الموعد لم يُؤكد بعد.",
         cardTitle: "ملخص للاستقبال",
         card: "القسم: طب وجراحة الأسنان\nالموعد: غدًا 5:30 مساءً (المريض: أحمد)\nالتأمين: شركة ظفار (مشمول الشبكة)\nالمطلوب: تأكيد الحجز وتجهيز الملف",
       },
       en: {
         question: "Hi, I need a dental clinic appointment tomorrow?\n\n5:30 PM works. Do you accept Dhofar Insurance?\n\nGreat, please book the slot under Ahmed.",
-        answer: "Hello. Slots available tomorrow at 5:30 PM or 7:00 PM.\n\nYes, we are an approved network provider for Dhofar.\n\nBooked for 5:30 PM tomorrow; details sent to reception!",
+        answer: "Hello. Slots available tomorrow at 5:30 PM or 7:00 PM.\n\nYes, we are an approved network provider for Dhofar.\n\nRequested 5:30 PM tomorrow; reception must confirm the appointment.",
         cardTitle: "Reception summary",
         card: "Dept: Dental Care\nSlot: Tomorrow 5:30 PM (Patient: Ahmed)\nInsurance: Dhofar Insurance (In-network)\nAction: Confirm booking & prep patient file",
       },
@@ -148,8 +148,8 @@ const scenes = [
     theme: "dark" as const,
     anchor: "handoff",
     title: {
-      ar: "إدارة حجوزات الصالون بانسيابية وتنسيق دقيق.",
-      en: "Flawless salon bookings with smooth coordination.",
+      ar: "تنظيم طلبات حجز الصالون لمراجعة الفريق.",
+      en: "Salon booking requests for team review.",
     },
     body: {
       ar: "باقات العناية، الجلسات، وتفضيلات الأخصائية. نورا ترتب تفاصيل الموعد وتسلّم السياق كاملًا لفريق الصالون لتأكيد الحجز واستقبال العميلات بأفضل تجربة.",
@@ -158,13 +158,13 @@ const scenes = [
     example: {
       ar: {
         question: "مرحبًا، أريد حجز جلسة عناية بالشعر يوم السبت.\n\nالعصر حوالي 4، وهل الأخصائية ريم متواجدة؟\n\nرائع، احجزي لي هذا الموعد لو سمحتِ.",
-        answer: "أهلاً بكِ! متاح يوم السبت. تفضلين فترة الصباح أم المساء؟\n\nنعم، الأخصائية ريم متواجدة الساعة 4:00 عصرًا.\n\nجهّزت موعدك للسبت 4:00 عصرًا مع ريم، وأحيل للاستقبال!",
+        answer: "أهلاً بكِ! متاح يوم السبت. تفضلين فترة الصباح أم المساء؟\n\nنعم، الأخصائية ريم متواجدة الساعة 4:00 عصرًا.\n\nجهّزت طلب السبت 4:00 عصرًا مع ريم لمراجعة الاستقبال؛ الحجز لم يُؤكد بعد.",
         cardTitle: "ملخص للفريق",
         card: "الخدمة: جلسة عناية بالشعر\nالموعد: السبت 4:00 عصرًا\nالأخصائية: ريم\nالمطلوب: مراجعة الجدول وتأكيد الحجز",
       },
       en: {
         question: "Hi, I'd like to book a hair care session this Saturday.\n\nAfternoon around 4 PM. Is specialist Reem available?\n\nWonderful, please reserve this slot for me.",
-        answer: "Welcome! Open this Saturday. Morning or afternoon?\n\nYes, specialist Reem is available at 4:00 PM.\n\nSession booked for Saturday 4:00 PM with Reem; sent to desk!",
+        answer: "Welcome! Open this Saturday. Morning or afternoon?\n\nYes, specialist Reem is available at 4:00 PM.\n\nRequested Saturday 4:00 PM with Reem; the salon team must confirm the slot.",
         cardTitle: "Summary for the team",
         card: "Service: Hair care treatment\nSlot: Saturday 4:00 PM\nSpecialist: Reem\nAction: Review schedule & confirm booking",
       },
@@ -222,7 +222,7 @@ const scenes = [
         question: "From plan selection to first experience",
         answer: "Your business grows, not your pressure.",
         cardTitle: "Seamless Setup Steps",
-        card: "Assistant Persona → Knowledge Base → WhatsApp Link → Live Test",
+        card: "Assistant Persona → Knowledge Base → WhatsApp Link → Example Reply Review",
       },
     },
   },
@@ -232,25 +232,25 @@ const scenes = [
     theme: "dark" as const,
     anchor: "demo",
     title: {
-      ar: "استقبال بلاغات الصيانة وتوجيه الفنيين بسرعة.",
-      en: "Fast maintenance intake and technician dispatch.",
+      ar: "استقبال بلاغات الصيانة لمراجعة الفريق.",
+      en: "Maintenance enquiry intake for team review.",
     },
     body: {
-      ar: "أعطال التكييف والسباكة والكهرباء تحتاج استجابة فورية. نورا تفهم نوع العطل وموقع العميل، تحدد الأولوية، وتجهّز البلاغ كاملًا لجدولة الفنيين على الفور.",
+      ar: "أعطال التكييف والسباكة والكهرباء تحتاج استجابة فورية. نورا تفهم نوع العطل وموقع العميل، تجهّز البلاغ كاملًا لمراجعة الفريق وتأكيد أي موعد.",
       en: "AC faults, plumbing, and electrical issues require immediate response. Noura identifies the issue and location, sets priority, and preps the ticket for dispatch.",
     },
     example: {
       ar: {
         question: "مرحبًا، التكييف يقطر ماء وموقّف تبريد، محتاج صيانة عاجلة.\n\nمكيف سبليت وبدأ اليوم، وموقعي في الموالح الجنوبية.\n\nمناسب جدًا الساعة 6، أرسلوا الفني لو سمحتم.",
-        answer: "أهلًا بك. هل المكيف سبليت ولا مركزي؟ وبدأ العطل اليوم؟\n\nحالة عاجلة. يتوفر فني صيانة في الموالح اليوم الساعة 6 مساءً.\n\nتم تسجيل البلاغ والعنوان، والفريق يجدول الزيارة فورًا!",
+        answer: "أهلًا بك. هل المكيف سبليت ولا مركزي؟ وبدأ العطل اليوم؟\n\nحالة عاجلة. يتوفر فني صيانة في الموالح اليوم الساعة 6 مساءً.\n\nجهّزت البلاغ والعنوان وطلب زيارة الساعة 6 لمراجعة الفريق؛ الموعد وإرسال الفني يحتاجان تأكيده.",
         cardTitle: "بلاغ الصيانة",
-        card: "العطل: تسريب مياه مكيف سبليت · الموالح\nالأولوية: عاجلة (موعد: اليوم 6:00 م)\nالمطلوب: إرسال فني التكييف المتاح",
+        card: "العطل: تسريب مياه مكيف سبليت · الموالح\nالأولوية: عاجلة (موعد: اليوم 6:00 م)\nالمطلوب: مراجعة توفر الفني وتأكيد الزيارة",
       },
       en: {
         question: "Hi, AC is leaking water and stopped cooling, need urgent repair.\n\nSplit unit, started today. Location is South Al Mawaleh.\n\n6:00 PM works great, please send the technician.",
-        answer: "Hello. Is it split or central? Did it start today?\n\nUrgent priority. A technician is available today at 6:00 PM.\n\nTicket & address recorded; dispatch scheduling visit now!",
+        answer: "Hello. Is it split or central? Did it start today?\n\nUrgent priority. A technician is available today at 6:00 PM.\n\nIssue, address and requested 6:00 PM visit prepared for team review; scheduling and dispatch require confirmation.",
         cardTitle: "Maintenance Ticket",
-        card: "Issue: AC leak & cooling failure · Mawaleh\nPriority: Urgent (Slot: Today 6:00 PM)\nAction: Dispatch available AC technician",
+        card: "Issue: AC leak & cooling failure · Mawaleh\nPriority: Urgent (Slot: Today 6:00 PM)\nAction: Team to confirm technician availability and visit",
       },
     },
   },
@@ -396,13 +396,13 @@ const ui = {
       { title: "مساعدتك على ذوقك", body: "اختر شخصية المساعد الذكي التي تمثل هويتك ونبرة الحديث المناسبة لعملائك (نورا، لينا، دانة)، وحدد باقتك." },
       { title: "عرّفها على شغلك", body: "أضف قائمة منتجاتك، أسعارك، ساعات العمل، وسياسات التوصيل أو الحجز. نورا تعتمد فقط على ما تعتمده لها." },
       { title: "وصّل واتساب شغلك", body: "اربط رقم واتساب نشاطك عبر Meta Cloud API الرسمي بخطوات سريعة وآمنة دون تعقيدات تقنية." },
-      { title: "جرّبها… وشوف الفارق", body: "اختبر ردود المساعد الذكي في بيئة تجريبية آمنة فورًا، وتأكد من دقة المعلومات وذكاء التفاعل قبل أي تشغيل حقيقي." },
+      { title: "جرّبها… وشوف الفارق", body: "استعرض ردودًا معدّة مسبقًا ببيانات افتراضية. الاختبار الفعلي المصرّح به منفصل ولا يفعّل واتساب." },
     ],
     en: [
       { title: "Your assistant, tailored to you", body: "Choose the AI persona that represents your brand and voice (Noura, Lina, Dana), and select your plan." },
       { title: "Teach her your business", body: "Add your product catalogue, pricing, business hours, and delivery or booking policies. Noura relies strictly on your approved data." },
       { title: "Connect your business WhatsApp", body: "Connect your business WhatsApp number through the official Meta Cloud API with fast, secure steps." },
-      { title: "Test her out… see the difference", body: "Test AI assistant replies in a safe sandbox instantly, verifying accuracy and tone before going live." },
+      { title: "Test her out… see the difference", body: "Review preset replies using fictional data. Authorized real trials are separate and do not activate WhatsApp." },
     ],
   },
   onboardingStory: {
@@ -455,8 +455,8 @@ const ui = {
         tag: { ar: "بيئة التجربة والجاهزية", en: "Interactive Test Sandbox" },
         title: { ar: "جرّبها… وشوف الفارق.", en: "Test her out… see the difference." },
         body: {
-          ar: "اختبر ردود المساعد الذكي في بيئة تجريبية آمنة فورًا، وتأكد من دقة المعلومات وذكاء التفاعل قبل أي تشغيل حقيقي.",
-          en: "Test AI assistant replies in a safe sandbox instantly, verifying accuracy and tone before going live.",
+          ar: "استعرض ردودًا معدّة مسبقًا ببيانات افتراضية. الاختبار الفعلي المصرّح به منفصل ولا يفعّل واتساب.",
+          en: "Review preset replies using fictional data. Authorized real trials are separate and do not activate WhatsApp.",
         },
       },
     ],
@@ -466,15 +466,15 @@ const ui = {
         en: "Velora Dashboard — Assistant Setup",
       },
       previewBadge: {
-        ar: "معاينة حية",
-        en: "Live Preview",
+        ar: "معاينة توضيحية",
+        en: "Illustrative Preview",
       },
       characters: {
         noura: {
           name: { ar: "نورا", en: "Noura" },
           role: { ar: "خدمة عملاء دافئة", en: "Warm Customer Care" },
           dialect: { ar: "خليجية وعربية بيضاء", en: "Gulf & Clear Arabic" },
-          badge: { ar: "المختارة — موصى بها", en: "Selected — Recommended" },
+          badge: { ar: "المختارة في المثال", en: "Selected in example" },
         },
         lina: {
           name: { ar: "لينا", en: "Lina" },
@@ -489,22 +489,22 @@ const ui = {
       },
       plans: {
         basic: {
-          ar: "باقة نورا الأساسية (45 ر.ع / شهر)",
-          en: "Noura Basic Plan (45 OMR / mo)",
+          ar: "نورا الأساسية — السعر من الكتالوج المنشور",
+          en: "Noura Basic — pricing from published catalog",
         },
         premium: {
-          ar: "المتقدمة (80 ر.ع / شهر)",
-          en: "Premium Plan (80 OMR / mo)",
+          ar: "Premium — مسودة غير متاحة",
+          en: "Premium — draft, unavailable",
         },
         note: {
-          ar: "تشمل 1,000 محادثة ذكية شهريًا",
-          en: "Includes 1,000 AI conversations / mo",
+          ar: "الأسعار والحدود من الكتالوج المنشور؛ المعاينة لا تنشئ اشتراكًا",
+          en: "Prices and limits come from the published catalog; this preview creates no subscription",
         },
       },
       knowledge: {
         header: {
-          ar: "قاعدة المعرفة المعتمدة لنشاطك",
-          en: "Approved Business Knowledge Base",
+          ar: "مثال لبيانات نشاط افتراضي",
+          en: "Example Fictional Business Knowledge",
         },
         businessNameLabel: {
           ar: "اسم النشاط التجاري",
@@ -539,12 +539,12 @@ const ui = {
           en: "Express 35-min delivery across Muscat and surrounding areas via dedicated courier.",
         },
         statusApproved: {
-          ar: "تم اعتماد ومراجعة قاعدة البيانات بنجاح",
-          en: "Knowledge Base Verified & Approved",
+          ar: "بيانات مثال؛ لا تمثل اعتمادًا فعليًا",
+          en: "Example data; no actual approval is shown",
         },
         statusSubtext: {
-          ar: "جاهزة للاستخدام في بيئة التجربة",
-          en: "Ready for sandbox testing",
+          ar: "الاعتماد الفعلي منفصل ويخضع للمراجعة",
+          en: "Actual knowledge approval requires separate review",
         },
       },
       whatsapp: {
@@ -558,8 +558,8 @@ const ui = {
           en: "Business Number",
         },
         accountStatus: {
-          ar: "قناة اتصال مشفرة ومباشرة",
-          en: "Encrypted direct channel",
+          ar: "مثال لقناة اتصال؛ الربط غير منفّذ هنا",
+          en: "Example connection; no link is established here",
         },
         steps: [
           {
@@ -582,22 +582,22 @@ const ui = {
           },
         ],
         syncNotice: {
-          ar: "يتم الربط رسميًا دون حاجة لمسح QR متكرر أو إبقاء الهاتف متصلًا بالإنترنت",
-          en: "Official cloud connection without repeated QR scans or phone battery dependencies",
+          ar: "الربط الفعلي يتطلب إعداد ميتا والتفويض والمراجعة؛ هذا المثال لا يربط رقمًا أو يفعّل رسائل.",
+          en: "Actual linking requires Meta setup, authorization and review; this example connects no number or messaging.",
         },
       },
       chatTest: {
         header: {
-          ar: "تجربة ردود نورا الحية",
-          en: "Live Noura Reply Sandbox",
+          ar: "مثال لردود نورا المعدّة مسبقًا",
+          en: "Preset Noura Reply Example",
         },
         onlineStatus: {
-          ar: "متصلة الآن · جاهزة للرد الفوري",
-          en: "Online now · Instant responses",
+          ar: "ردود معدّة مسبقًا · لا يتم إرسال رسائل",
+          en: "Preset replies · No messages are sent",
         },
         sandboxBadge: {
-          ar: "بيئة تجريبية آمنة",
-          en: "Safe Sandbox Environment",
+          ar: "محادثة توضيحية ببيانات افتراضية",
+          en: "Illustrative conversation with fictional data",
         },
         messages: [
           {
@@ -630,37 +630,37 @@ const ui = {
           },
         ],
         readinessHeader: {
-          ar: "مؤشرات الجاهزية للإطلاق:",
-          en: "Launch Readiness Checklist:",
+          ar: "عناصر مراجعة توضيحية؛ ليست حالة إطلاق:",
+          en: "Illustrative review items; not launch status:",
         },
         readinessList: [
           {
             text: {
-              ar: "التحقق من نبرة ولهجة نورا",
-              en: "Tone & dialect verified",
+              ar: "مراجعة النبرة واللهجة",
+              en: "Review tone and dialect",
             },
-            done: true,
+            done: false,
           },
           {
             text: {
-              ar: "الالتزام ببيانات النشاط المعتمدة",
-              en: "Strict knowledge base compliance",
+              ar: "مراجعة الالتزام بمعرفة النشاط",
+              en: "Review use of approved business knowledge",
             },
-            done: true,
+            done: false,
           },
           {
             text: {
-              ar: "جاهزية تحويل الطلب للفريق",
-              en: "Order handoff ready for team",
+              ar: "مراجعة مسار طلب متابعة الفريق",
+              en: "Review staff follow-up request",
             },
-            done: true,
+            done: false,
           },
           {
             text: {
-              ar: "رقم واتساب نشاطك معتمد",
-              en: "Business WhatsApp verified",
+              ar: "مراجعة توثيق رقم واتساب",
+              en: "Review WhatsApp number verification",
             },
-            done: true,
+            done: false,
           },
         ],
       },
@@ -674,15 +674,15 @@ const ui = {
   sectorNote: {
     restaurant: {
       ar: "مطاعم وكافيهات: استفسار القائمة ← تفاصيل الوجبة والإضافات ← العنوان والوقت ← إحالة للتجهيز.",
-      en: "Restaurants & cafés: menu enquiry → order customisation → delivery address → prep dispatch.",
+      en: "Restaurants & cafés: menu enquiry → order customisation → delivery address → team review.",
     },
     retail: {
-      ar: "متاجر وتجارة إلكترونية: توفر الصنف ← المواصفات والضمان ← حجز القطعة ← إحالة للمبيعات والشحن.",
-      en: "Retail & e-commerce: item availability → specs & warranty → reservation → sales dispatch.",
+      ar: "متاجر وتجارة إلكترونية: توفر الصنف ← المواصفات والضمان ← طلب حجز القطعة ← مراجعة فريق المبيعات والشحن.",
+      en: "Retail & e-commerce: item availability → specs & warranty → reservation request → team review.",
     },
     services: {
-      ar: "صيانة وخدمات منزلية: وصف العطل ← تحديد الاستعجال والعنوان ← اختيار الموعد ← جدولة الفني.",
-      en: "Home services & maintenance: issue description → urgency & location → time slot → technician dispatch.",
+      ar: "صيانة وخدمات منزلية: وصف العطل ← تحديد الاستعجال والعنوان ← طلب الموعد ← مراجعة توفر الفني.",
+      en: "Home services & maintenance: issue description → urgency & location → requested time slot → team review before dispatch.",
     },
   },
   price: { ar: "السعر يُوضح في العرض", en: "Pricing is provided in the offer" },
@@ -897,8 +897,8 @@ const ui = {
           en: "Hi, are Pro Bluetooth earbuds in stock in black?\n\nIs there warranty? And delivery to Nizwa?\n\nGreat, please reserve one in black for me.",
         },
         a: {
-          ar: "أهلًا بك! نعم متوفرة باللون الأسود مع عزل الضوضاء.\n\nنعم، ضمان سنتين وتوصيل خلال 24-48 ساعة لجميع المناطق.\n\nتم حجز السماعة! جهّزت بيانات الطلب والعنوان للمبيعات.",
-          en: "Hello! In stock in matte black with noise cancelling.\n\nYes, 2-year warranty and 24-48h delivery to all areas.\n\nEarbuds reserved! Order & address sent to sales team.",
+          ar: "أهلًا بك! نعم متوفرة باللون الأسود مع عزل الضوضاء.\n\nنعم، ضمان سنتين وتوصيل خلال 24-48 ساعة لجميع المناطق.\n\nجهّزت طلب حجز السماعة والعنوان لمراجعة فريق المبيعات؛ الحجز لم يُؤكد بعد.",
+          en: "Hello! In stock in matte black with noise cancelling.\n\nYes, 2-year warranty and 24-48h delivery to all areas.\n\nReservation request and address prepared for sales review; reservation is not confirmed.",
         },
       },
     ],
@@ -909,8 +909,8 @@ const ui = {
           en: "Hi, AC is leaking water and stopped cooling, need urgent repair.\n\nSplit unit, started today. Location is South Al Mawaleh.\n\n6:00 PM works great, please send the technician.",
         },
         a: {
-          ar: "أهلًا بك. هل المكيف سبليت ولا مركزي؟ وبدأ العطل اليوم؟\n\nحالة عاجلة. يتوفر فني صيانة في الموالح اليوم الساعة 6 مساءً.\n\nتم تسجيل البلاغ والعنوان، والفريق يجدول الزيارة فورًا!",
-          en: "Hello. Is it split or central? Did it start today?\n\nUrgent priority. A technician is available today at 6:00 PM.\n\nTicket & address recorded; dispatch scheduling visit now!",
+          ar: "أهلًا بك. هل المكيف سبليت ولا مركزي؟ وبدأ العطل اليوم؟\n\nحالة عاجلة. يتوفر فني صيانة في الموالح اليوم الساعة 6 مساءً.\n\nجهّزت البلاغ والعنوان وطلب زيارة الساعة 6 لمراجعة الفريق؛ الموعد وإرسال الفني يحتاجان تأكيده.",
+          en: "Hello. Is it split or central? Did it start today?\n\nUrgent priority. A technician is available today at 6:00 PM.\n\nIssue, address and requested 6:00 PM visit prepared for team review; scheduling and dispatch require confirmation.",
         },
       },
     ],
