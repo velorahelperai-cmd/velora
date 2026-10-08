@@ -1,10 +1,13 @@
 import { redirect } from "next/navigation";
 import { AccessGate } from "@/components/app/access-gate";
 import { getCompanyAccess, pathForAccess, requirePlatformAdmin } from "@/lib/tenancy/access";
+import { AdminShell } from "@/components/admin/admin-shell";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const admin = await requirePlatformAdmin();
-  if (admin.ok) return children;
+  if (admin.ok) {
+    return <AdminShell>{children}</AdminShell>;
+  }
   if (admin.code === "UNVERIFIED") redirect("/verify-email");
   if (admin.code === "UNAVAILABLE") return <AccessGate code="UNAVAILABLE" />;
   if (admin.code === "FORBIDDEN") {
@@ -16,5 +19,5 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     }
     redirect(pathForAccess(access));
   }
-  redirect("/login?next=%2Fadmin");
+  redirect(admin.sessionExpired ? "/login?reason=session_expired&next=%2Fadmin" : "/login?next=%2Fadmin");
 }
