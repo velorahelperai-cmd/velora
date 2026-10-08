@@ -52,16 +52,27 @@ export async function POST(request: Request) {
   });
 
   let responseBody=result.body;
+  let responseStatus=result.status;
   if(result.status===200 && trusted.event && flags.settleEnabled) {
     try {
       const processed=await processStoredPaymobEvent({event:trusted.event,deps:{settleEnabled:true,settleHmacVerified:settleHmacVerifiedViaRpc}});
       if(processed.ok && ["granted","idempotent_replay"].includes(processed.outcome))responseBody=result.body==="duplicate"?"duplicate":"stored";
-      else logWebhookDiag("settlement_pending", {code:processed.ok?processed.outcome:processed.code});
-    } catch { logWebhookDiag("settlement_pending", {code:"processing_unavailable"}); }
+      else {
+        if(!processed.ok) {
+          responseStatus=503;
+          responseBody="stored_awaiting_processing";
+        }
+        logWebhookDiag("settlement_pending", {code:processed.ok?processed.outcome:processed.code});
+      }
+    } catch {
+      responseStatus=503;
+      responseBody="stored_awaiting_processing";
+      logWebhookDiag("settlement_pending", {code:"processing_unavailable"});
+    }
   }
-  logWebhookDiag("done", { status: result.status, body: responseBody });
+  logWebhookDiag("done", { status: responseStatus, body: responseBody });
   return new Response(responseBody, {
-    status: result.status,
+    status: responseStatus,
     headers: { "content-type": "text/plain; charset=utf-8" },
   });
 }

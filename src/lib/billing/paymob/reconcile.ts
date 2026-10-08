@@ -12,7 +12,8 @@ import {
   PAYMOB_ORDER_TRANSACTION_INQUIRY_PATH,
   type PaymobAdapterConfig,
 } from "@/lib/billing/paymob/config";
-import type { PaymobHttpClient, PaymobHttpResult } from "@/lib/billing/paymob/http";
+import type { PaymobHttpClient, PaymobHttpRequest, PaymobHttpResult } from "@/lib/billing/paymob/http";
+import { classifyPaymobTransactionStatus, type CanonicalProviderEventStatus } from "@/lib/billing/paymob/callback";
 
 export type ReconcileLookup =
   | { by: "transaction_id"; transactionId: string }
@@ -29,6 +30,17 @@ export type ReconcileTransaction = {
   integrationId: number | null;
   isLive: boolean | null;
   isLatestForOrder: boolean;
+  /** Authenticated inquiry metadata; raw `success` alone is never settlement evidence. */
+  ownerId?: string | null;
+  merchantOrderId?: string | null;
+  eventStatus?: CanonicalProviderEventStatus;
+  errorOccured?: boolean | null;
+  isAuth?: boolean | null;
+  isCapture?: boolean | null;
+  isVoided?: boolean | null;
+  isRefunded?: boolean | null;
+  hasParentTransaction?: boolean | null;
+  isStandalonePayment?: boolean | null;
 };
 
 export type ReconcileResult =
@@ -71,6 +83,15 @@ function asNonNegBool(v: unknown): boolean | null {
   return null;
 }
 
+async function requestOnce(http: PaymobHttpClient, request: PaymobHttpRequest): Promise<PaymobHttpResult> {
+  try {
+    return await http.request(request);
+  } catch {
+    // An exception cannot prove absence; never retry here or expose request/credential details.
+    return { kind: "network_error", message: "request_failed" };
+  }
+}
+
 async function fetchAuthToken(
   config: PaymobAdapterConfig,
   http: PaymobHttpClient,
@@ -84,7 +105,7 @@ async function fetchAuthToken(
   }
 
   const url = `${config.apiBaseUrl.replace(/\/$/, "")}${PAYMOB_AUTH_TOKEN_PATH}`;
-  const result = await http.request({
+  const result = await requestOnce(http, {
     method: "POST",
     url,
     headers: { "Content-Type": "application/json", Accept: "application/json" },
@@ -139,11 +160,8 @@ export function parseReconcileTransactionBody(
   let row: Record<string, unknown>;
   if (Array.isArray(parsed)) {
     if (parsed.length === 0) return fail("not_found");
-    const last = parsed[parsed.length - 1];
-    if (last == null || typeof last !== "object" || Array.isArray(last)) {
-      return fail("invalid_response", "array_element_not_object");
-    }
-    row = last as Record<string, unknown>;
+    // Both documented inquiry endpoints return one object. Array order is untrusted.
+    return fail("invalid_response", "unexpected_array_response");
   } else if (typeof parsed === "object") {
     row = parsed as Record<string, unknown>;
   } else {
@@ -192,6 +210,30 @@ export function parseReconcileTransactionBody(
     return fail("invalid_response", "integration_id_invalid");
   }
 
+  const owner = asPositiveSafeInt(row.owner);
+  const order = row.order != null && typeof row.order === "object" && !Array.isArray(row.order)
+    ? row.order as Record<string, unknown> : null;
+  const merchantOrderId = typeof order?.merchant_order_id === "string" ? order.merchant_order_id : null;
+  const lifecycle = {
+    errorOccured: asNonNegBool(row.error_occured),
+    isAuth: asNonNegBool(row.is_auth),
+    isCapture: asNonNegBool(row.is_capture),
+    isVoided: asNonNegBool(row.is_voided),
+    isRefunded: asNonNegBool(row.is_refunded),
+    hasParentTransaction: asNonNegBool(row.has_parent_transaction),
+    isStandalonePayment: asNonNegBool(row.is_standalone_payment),
+  };
+  const actionFlags = [row.is_refund, row.is_void, order?.is_cancel, order?.is_canceled];
+  if (actionFlags.some((flag) => flag != null && typeof flag !== "boolean")) {
+    return fail("invalid_response", "action_or_cancellation_flag_invalid");
+  }
+  // These fields are unsigned in callbacks, but trustworthy in authenticated inquiry.
+  const isActionOrCancelled = row.is_refund === true || row.is_void === true ||
+    order?.is_cancel === true || order?.is_canceled === true;
+  const eventStatus = isActionOrCancelled ? "other" : classifyPaymobTransactionStatus({
+    pending, success, ...lifecycle,
+  });
+
   return {
     ok: true,
     transaction: {
@@ -204,6 +246,10 @@ export function parseReconcileTransactionBody(
       integrationId,
       isLive: typeof row.is_live === "boolean" ? row.is_live : null,
       isLatestForOrder,
+      ownerId: owner == null ? null : String(owner),
+      merchantOrderId,
+      eventStatus,
+      ...lifecycle,
     },
   };
 }
@@ -232,7 +278,7 @@ export async function reconcilePaymobTransaction(input: {
 
   if (input.lookup.by === "transaction_id") {
     const url = `${base}${PAYMOB_INQUIRY_TRANSACTION_PATH}/${encodeURIComponent(input.lookup.transactionId)}`;
-    result = await input.http.request({
+    result = await requestOnce(input.http, {
       method: "GET",
       url,
       headers: {
@@ -248,7 +294,7 @@ export async function reconcilePaymobTransaction(input: {
       input.lookup.by === "order_id"
         ? { order_id: input.lookup.orderId }
         : { merchant_order_id: input.lookup.merchantOrderId };
-    result = await input.http.request({
+    result = await requestOnce(input.http, {
       method: "POST",
       url,
       headers: {
@@ -267,7 +313,31 @@ export async function reconcilePaymobTransaction(input: {
   if (result.response.status < 200 || result.response.status >= 300) {
     return fail("inquiry_failed", `status=${result.response.status}`);
   }
-  return parseReconcileTransactionBody(result.response.bodyText, latestForOrder);
+  const parsed = parseReconcileTransactionBody(result.response.bodyText, latestForOrder);
+  if (!parsed.ok) return parsed;
+  const transaction = parsed.transaction;
+  // The API key is shared by test/live: response identity and environment must agree.
+  if (transaction.isLive !== false) return fail("invalid_response", "test_environment_not_proven");
+  if (transaction.integrationId !== input.config.integrationId) return fail("invalid_response", "integration_mismatch");
+  if (!input.config.merchantOwnerId || transaction.ownerId !== input.config.merchantOwnerId.trim()) {
+    return fail("invalid_response", "owner_mismatch_or_unconfigured");
+  }
+  if (transaction.currency !== input.config.currency) return fail("invalid_response", "currency_mismatch");
+  if (transaction.orderId == null) return fail("invalid_response", "order_id_missing");
+  const lifecycle = [transaction.errorOccured, transaction.isAuth, transaction.isCapture,
+    transaction.isVoided, transaction.isRefunded, transaction.hasParentTransaction, transaction.isStandalonePayment];
+  if (lifecycle.some((flag) => typeof flag !== "boolean")) return fail("invalid_response", "lifecycle_incomplete");
+  if (input.lookup.by === "transaction_id" && transaction.id !== input.lookup.transactionId) {
+    return fail("invalid_response", "transaction_id_mismatch");
+  }
+  if (input.lookup.by === "order_id" && transaction.orderId !== input.lookup.orderId) {
+    return fail("invalid_response", "order_id_mismatch");
+  }
+  if (input.lookup.by === "merchant_order_id" && transaction.merchantOrderId !== input.lookup.merchantOrderId) {
+    return fail("invalid_response", "merchant_order_id_mismatch");
+  }
+  // Any future settlement caller must additionally match the locked server order amount/account.
+  return parsed;
 }
 
 export function reconcileMissAllowsNewCollection(

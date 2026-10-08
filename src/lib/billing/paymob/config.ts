@@ -145,6 +145,16 @@ export function assertPaymobConfigForCalls(config: PaymobAdapterConfig): void {
   if (config.currency !== "OMR") {
     throw new Error("paymob_currency_must_be_OMR");
   }
+  if (!Number.isSafeInteger(config.integrationId) || config.integrationId <= 0) {
+    throw new Error("paymob_integration_id_invalid");
+  }
+  // Keys may carry a country prefix (e.g. om_sk_test_), but must be Test keys.
+  if (!/^(?:[a-z]{2,3}_)?sk_test_[A-Za-z0-9_-]+$/.test(config.secretKey)) {
+    throw new Error("paymob_test_secret_key_required");
+  }
+  if (!/^(?:[a-z]{2,3}_)?pk_test_[A-Za-z0-9_-]+$/.test(config.publicKey)) {
+    throw new Error("paymob_test_public_key_required");
+  }
 }
 
 export function defaultPaymobTestConfigSkeleton(): Omit<

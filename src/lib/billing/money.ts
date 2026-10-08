@@ -96,6 +96,32 @@ export function commercialBaisaToPaymobAmount(amountBaisa: number | bigint | str
   return { ok: false, code: "paymob_amount_conversion_unconfigured" };
 }
 
+/**
+ * Exact conversion using a factor already verified by trusted server settings.
+ * Paymob's Create Intention contract calls the units "cents" but does not state
+ * the OMR factor: https://developers.paymob.com/paymob-docs/intention-apis/create-intention
+ * Keep that factor explicit; neither 100 nor 1000 is enabled by this helper.
+ */
+export function commercialBaisaToVerifiedPaymobAmount(
+  amountBaisa: number | bigint | string,
+  unitsPerOmr: number,
+):
+  | { ok: true; amount: number }
+  | { ok: false; code: MoneyParseError | "paymob_amount_conversion_unconfigured" | "provider_amount_invalid" } {
+  const parsed = parseCommercialBaisa(amountBaisa);
+  if (!parsed.ok) return parsed;
+  if (!Number.isSafeInteger(unitsPerOmr) || unitsPerOmr <= 0 || unitsPerOmr > 1_000_000) {
+    return { ok: false, code: "paymob_amount_conversion_unconfigured" };
+  }
+  const numerator = parsed.amountBaisa * BigInt(unitsPerOmr);
+  const denominator = BigInt(OMR_BAISA_PER_OMR);
+  if (numerator % denominator !== BigInt(0)) return { ok: false, code: "precision_loss" };
+  const providerAmount = numerator / denominator;
+  if (providerAmount <= BigInt(0)) return { ok: false, code: "provider_amount_invalid" };
+  if (providerAmount > BigInt(Number.MAX_SAFE_INTEGER)) return { ok: false, code: "not_safe_integer" };
+  return { ok: true, amount: Number(providerAmount) };
+}
+
 /** File-size / single-upload caps are not company storage quotas. */
 export function singleFileLimitIsCompanyStorageQuota(): false {
   return false;

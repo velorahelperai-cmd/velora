@@ -230,7 +230,8 @@ describe("FIX-01 observation_key + webhook bodies", () => {
       deps,
     });
     expect(r1.body).toBe("stored_awaiting_processing");
-    expect(r2.body).toBe("stored_awaiting_processing");
+    expect(r2.body).toBe("stored");
+    expect(rows[1]!.eventStatus).toBe("other");
     expect(rows).toHaveLength(2);
     expect(rows[0]!.observationKey).not.toBe(rows[1]!.observationKey);
 

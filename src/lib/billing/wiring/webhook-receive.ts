@@ -60,6 +60,11 @@ function redactObservation(obs: VerifiedTransactionObservation): Record<string, 
     success: obs.success,
     is_auth: obs.isAuth,
     is_capture: obs.isCapture,
+    error_occured: obs.errorOccured,
+    is_voided: obs.isVoided,
+    is_refunded: obs.isRefunded,
+    has_parent_transaction: obs.hasParentTransaction,
+    is_standalone_payment: obs.isStandalonePayment,
   };
 }
 

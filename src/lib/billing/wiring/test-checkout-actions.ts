@@ -4,6 +4,7 @@ import { readTestCheckoutConfig, openTestCheckout, fetchPaymobHttp, type Checkou
 import { getCompanyAccess } from "@/lib/tenancy/access";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { siteUrl } from "@/lib/auth/site-url";
+import { commercialBaisaToVerifiedPaymobAmount } from "../money";
 export type StartTestCheckoutResult = CheckoutResult & { orderId?:string };
 export async function startTestCheckoutAction(input:{planVersionId:string;clientOpId:string}):Promise<StartTestCheckoutResult>{
  const access=await getCompanyAccess("owner");
@@ -23,8 +24,8 @@ export async function startTestCheckoutAction(input:{planVersionId:string;client
  const admin=client as any;
  const {data:order,error}=await admin.from("billing_orders").select("id,amount_baisa,currency,provider_amount,provider_amount_unit,provider_account_ref,provider_environment,plan_version_id").eq("id",result.orderId).eq("company_id",companyId).maybeSingle();
  if(error||!order||order.provider_environment!=="test"||order.currency!=="OMR"||order.provider_amount_unit!=="paymob_amount"||String(order.provider_account_ref)!==String(settings.config.integrationId))return {ok:false,code:"order_not_ready",orderId:result.orderId};
- const amount=Number(order.provider_amount),expected=Number(order.amount_baisa)*settings.unitsPerOmr/1000;
- if(!Number.isSafeInteger(amount)||amount<=0||amount!==expected)return {ok:false,code:"order_amount_invalid",orderId:result.orderId};
+ const amount=Number(order.provider_amount),expected=commercialBaisaToVerifiedPaymobAmount(order.amount_baisa,settings.unitsPerOmr);
+ if(!expected.ok||!Number.isSafeInteger(amount)||amount<=0||amount!==expected.amount)return {ok:false,code:"order_amount_invalid",orderId:result.orderId};
  try{
  const checkout=await openTestCheckout({config:settings.config,locked:{companyId,orderId:result.orderId,paymentAttemptId:result.paymentAttemptId,specialReference:result.specialReference,currency:"OMR",providerAmount:amount,providerAmountUnit:"paymob_amount",providerAccountRef:String(order.provider_account_ref),providerEnvironment:"test",integrationId:settings.config.integrationId,billingPhone:phone,itemName:"Velora subscription",notificationUrl:`${origin.origin}/api/billing/paymob/webhook`,redirectionUrl:`${origin.origin}/app/subscription/orders/${result.orderId}`},deps:{http:fetchPaymobHttp,claim:async()=>{const {data,error}=await admin.rpc("billing_claim_test_checkout",{p_company_id:companyId,p_order_id:result.orderId,p_attempt_id:result.paymentAttemptId});if(error||!data)return {kind:"rejected",code:"checkout_schema_unavailable"};return data as CheckoutClaim;},persist:async saved=>{const {data,error}=await admin.rpc("billing_complete_test_checkout",{p_company_id:companyId,p_order_id:result.orderId,p_attempt_id:result.paymentAttemptId,p_provider_order_id:saved.providerOrderId,p_checkout_url:saved.url,p_intention_id:saved.providerIntentionId});return !error&&data===true;}}});
  return {...checkout,orderId:result.orderId};
