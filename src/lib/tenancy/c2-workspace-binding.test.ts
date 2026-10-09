@@ -63,6 +63,14 @@ function offlineClient() {
     rpc: async (name: string, input: Record<string, unknown> = {}) => {
       const companyId = typeof input.p_company_id === "string" ? input.p_company_id : null;
       state.rpcRequests.push({ name, input });
+      if (name === "g03_read_review_request") {
+        state.reads.push({ kind: "review", companyId });
+        return { error: null, data: state.reviewRow };
+      }
+      if (name === "g03_begin_review_check") {
+        state.reads.push({ kind: "review_snapshot", companyId });
+        return { error: null, data: { ok: true, check_id: `check-${companyId}`, files: [] } };
+      }
       if (name === "list_owner_company_review_events" || name === "list_owner_company_review_events_for_company") {
         state.reads.push({ kind: name, companyId });
         return { error: null, data: state.events };
@@ -138,6 +146,15 @@ beforeEach(() => {
   state.reviewRow = null; state.events = []; state.rpcRequests.length = 0;
   state.access.mockResolvedValue({ ok: true, context: context() });
   state.client.mockResolvedValue(offlineClient()); state.cap.mockResolvedValue(false);
+  // New external boundary only: do not mock/skip the server proof orchestrator.
+  state.admin.mockReturnValue({
+    storage: { from: () => ({}) },
+    rpc: async (name: string, input: Record<string, unknown>) => {
+      state.rpcRequests.push({ name, input });
+      if (name !== "g03_complete_review_check" || !String(input.p_check_id).startsWith("check-")) throw Error("unexpected server RPC");
+      return { data: { ok: true }, error: null };
+    },
+  });
   state.settings.mockReturnValue({ ok: true, unitsPerOmr: 1000, config: { integrationId: 123 } });
   state.journey.mockResolvedValue({ status: "unavailable" });
   state.order.mockImplementation(async () => {
@@ -258,6 +275,11 @@ describe("rendered-company binding on owner onboarding actions", () => {
       expect(result).toMatchObject(action.name === "Test checkout" ? { ok: false, code: "plan_not_published" } : { ok: true });
       expect(state.writes.length).toBeGreaterThan(0);
       expect(state.writes.every(write => write.companyId === COMPANY_B)).toBe(true);
+      if (action.name.startsWith("review ")) {
+        expect(state.rpcRequests.map(request => request.name)).toEqual([
+          "g03_begin_review_check", "g03_complete_review_check", "transition_company_review",
+        ]);
+      }
     });
     it(`${action.name} preserves callers that omit the rendered company`, async () => {
       const result = await action.run({});

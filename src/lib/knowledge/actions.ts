@@ -12,13 +12,14 @@ import {
   validateKnowledgeFile,
 } from "@/lib/knowledge/constants";
 import { extractKnowledgeText } from "@/lib/knowledge/extract";
+import { publishPreparedFile } from "@/lib/knowledge/prepared-publication";
+import { readBoundedKnowledgeStream } from "@/lib/knowledge/bounded-read";
 import { isExactMissingApprovalColumnError } from "@/lib/knowledge/foundation";
 import {
   beginKnowledgeProcessing,
   clearAnswerEligibility,
   generationFromListedObject,
   objectGenerationMatches,
-  publishExtractedText,
   bindDownloadedBytesToObject,
   type KnowledgeUpdateClient,
   type StorageObjectGeneration,
@@ -48,7 +49,7 @@ const SOURCE_SELECT_BASE =
 
 /** Includes answer-approval columns from 20261005093000 — may be absent until that migration is applied. */
 const SOURCE_SELECT =
-  "id, company_id, kind, title, content, file_name, content_type, byte_size, storage_path, status, failure_code, content_version, approved_for_answers, approved_version, approved_at, approved_by, created_by, created_at, updated_at, usage_role" as const;
+  "id, company_id, kind, title, content, file_name, content_type, byte_size, storage_path, status, failure_code, content_version, approved_for_answers, approved_version, approved_at, approved_by, created_by, created_at, updated_at, usage_role, prepared_file_sha256, prepared_text_sha256, prepared_content_version" as const;
 
 function renderedCompanyError(expected: unknown, companyId: string):
   { ok: false; code: "INVALID_INPUT" | "FORBIDDEN"; message: string } | null {
@@ -219,7 +220,7 @@ async function readStorageObjectGeneration(
   if (!filePart) return { status: "missing" };
   const { data: listed, error: listError } = await supabase.storage
     .from(KNOWLEDGE_BUCKET)
-    .list(folder, { limit: 50 });
+    .list(folder, { limit: 50 }, { signal: AbortSignal.timeout(10_000) });
   if (listError) {
     if (isStorageObjectMissingError(listError.message)) return { status: "missing" };
     return { status: "error", message: listError.message };
@@ -253,18 +254,20 @@ async function loadStoredBytesBoundToObject(
   if (captured.status === "unreadable") return { ok: false, reason: "unreadable" };
   if (captured.status === "error") return { ok: false, reason: "error", message: captured.message };
 
-  const { data: fileBlob, error: downloadError } = await supabase.storage
+  const signal = AbortSignal.timeout(10_000);
+  const { data: fileStream, error: downloadError } = await supabase.storage
     .from(KNOWLEDGE_BUCKET)
-    .download(storagePath);
-  if (downloadError || !fileBlob) {
+    .download(storagePath, {}, { signal, cache: "no-store" }).asStream();
+  if (downloadError || !fileStream) {
     if (isStorageObjectMissingError(downloadError?.message)) return { ok: false, reason: "missing" };
     return { ok: false, reason: "download_failed", message: downloadError?.message };
   }
 
+  const bytes = await readBoundedKnowledgeStream(fileStream, signal);
   const verified = await readStorageObjectGeneration(supabase, companyId, sourceId, storagePath);
   return bindDownloadedBytesToObject({
     captured: captured.generation,
-    downloadedBytes: new Uint8Array(await fileBlob.arrayBuffer()),
+    downloadedBytes: bytes,
     verified: verified.status === "ok" ? verified.generation : null,
   });
 }
@@ -364,15 +367,16 @@ async function prepareStoredFile(
     return loadSourceRow(supabase, source, companyId, select, foundation);
   }
 
-  const published = await publishExtractedText(
-    supabase as unknown as KnowledgeUpdateClient,
+  const published = await publishPreparedFile(
+    supabase,
     {
       sourceId: source.id,
       companyId,
       text: extracted.text,
       expectedVersion: started.content_version,
-      expectedStoragePath: storagePath,
-      select,
+      storagePath,
+      bytes,
+      generation: capturedGeneration,
     },
   );
 

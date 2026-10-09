@@ -28,6 +28,13 @@ const offer: SubscriptionOfferView = {
 };
 
 describe("authoritative onboarding state", () => {
+  it("does not count legacy or stale approval as a current review milestone", () => {
+    const review = { company_id: company.id, status: "approved" } as CompanyReviewRequest;
+    const input = { company, knowledgeComplete: true, readiness: null, link: null, review, reviewLoadFailed: false };
+    expect(setupMilestones(input)[7]).toBe(false);
+    expect(setupMilestones({ ...input, review: { ...review, proof_current: false } })[7]).toBe(false);
+    expect(setupMilestones({ ...input, review: { ...review, proof_current: true } })[7]).toBe(true);
+  });
   it("replaces stale saved local company facts with the current server company", () => {
     const draft = emptyCompanyDraft("owner");
     draft.companyId = company.id; draft.businessSaved = true; draft.business.name = "Old name";

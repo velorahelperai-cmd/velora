@@ -32,6 +32,7 @@ import type { WhatsappCompanyLink } from "@/lib/whatsapp/connection";
 import { companyBusiness, finishCompanySave, hydrateOnboardingDraft, setupMilestones, whatsappUiState } from "./onboarding-contracts";
 import { evaluateSetupKnowledgeProgress } from "@/lib/tenancy/customer-readiness";
 import { resolveReviewRefresh } from "@/lib/tenancy/review-refresh";
+import { canResubmitReview, reviewFailureMessage } from "@/lib/tenancy/review-ui";
 import type { CompanyRecord, CompanyReviewEvent, CompanyReviewRequest } from "@/lib/tenancy/types";
 import { AccountMenu } from "@/components/app/account-chrome";
 import { AssistantTester } from "@/components/app/assistant-tester";
@@ -146,6 +147,9 @@ function SetupJourneyNotice({
         <Notice tone="warn">{copy.setup.journeySuspended}</Notice>
       </div>
     );
+  }
+  if (review && review.proof_current !== true) {
+    return <div className="mt-4"><Notice tone="warn">{copy.app.readinessDetails.review_evidence_stale}</Notice></div>;
   }
   if (review?.status === "pending_review") {
     return (
@@ -673,7 +677,6 @@ export function SetupWizard({
                 }
                 knowledgeCount={knowledgeSources.length}
                 companyId={companyId}
-                localTrialPassed={setupTestValid}
                 readiness={readiness}
                 whatsappLink={whatsappLink}
                 initialReview={initialReview}
@@ -1442,7 +1445,6 @@ function DecoupledPillarsNotice({
 }
 
 function ActivationStep({
-  localTrialPassed,
   readiness,
   whatsappLink,
   onBack,
@@ -1456,7 +1458,6 @@ function ActivationStep({
   initialReview,
   reviewLoadFailed: initialReviewLoadFailed,
 }: {
-  localTrialPassed: boolean;
   readiness: CustomerReadinessSnapshot | null;
   whatsappLink: WhatsappCompanyLink | null;
   onBack: () => void;
@@ -1494,17 +1495,17 @@ function ActivationStep({
   const [viewRefreshFailed, setViewRefreshFailed] = useState(false);
   const { busy, run } = useAction();
   const status = review?.status ?? null;
-  const canEdit = !loadFailed && (!review || status === "changes_requested");
-  const waiting = status === "pending_review";
-  const approved = status === "approved";
+  const needsResubmit = canResubmitReview(review);
+  const canEdit = !loadFailed && (!review || needsResubmit);
+  const waiting = status === "pending_review" && review?.proof_current === true;
+  const approved = status === "approved" && review?.proof_current === true;
   const tests = state.testHistory.filter((m) => m.from === "customer").length;
 
   const readyToRequest = Boolean(
     companyId &&
       setupDone[0] &&
       setupDone[2] &&
-      setupDone[3] &&
-      localTrialPassed,
+      setupDone[3],
   );
 
   const dirty = canEdit && JSON.stringify(form) !== baseline;
@@ -1631,7 +1632,7 @@ function ActivationStep({
     void run(async () => {
       try {
         const result =
-          status === "changes_requested" && review
+          needsResubmit && review
             ? await resubmitCompanyReviewRequest({
                 expectedCompanyId: companyId,
                 numberOwnership: ownership,
@@ -1649,10 +1650,14 @@ function ActivationStep({
           if (result.code === "CONFLICT" && result.data) {
             applyServerReview(result.data, { preserveDraft: true });
             setInfoNotice(copy.setup.reviewConflict);
-            setSaveError(result.message ?? copy.setup.reviewSaveFailed);
+            setSaveError(reviewFailureMessage(result.message ?? result.code, locale));
             return;
           }
-          setSaveError(result.message ?? copy.setup.reviewSaveFailed);
+          if (result.code === "CONFLICT") {
+            setInfoNotice(copy.setup.reviewConflict);
+            setViewRefreshFailed(true);
+          }
+          setSaveError(reviewFailureMessage(result.message ?? result.code, locale));
           return;
         }
         applyServerReview(result.data);
@@ -1746,7 +1751,7 @@ function ActivationStep({
           busyLabel={copy.loading}
           disabled={!readyToRequest || !form.numberOwnership || !form.ready}
         >
-          {status === "changes_requested" ? copy.setup.resubmit : copy.setup.requestHelp}
+          {needsResubmit ? copy.setup.resubmit : copy.setup.requestHelp}
         </Button>
         {!readyToRequest ? (
           <span className="text-xs text-[var(--color-warn-fg)]">{copy.setup.notReady}</span>
@@ -1759,6 +1764,13 @@ function ActivationStep({
     <div className="grid min-w-0 gap-5 lg:grid-cols-[1fr_360px]">
       <div className="grid min-w-0 gap-4">
         <DecoupledPillarsNotice locale={locale} setupDone={setupDone} reviewStatus={status} readiness={readiness} whatsappLink={whatsappLink} />
+        <Notice tone="warn">
+          {locale === "ar"
+            ? "طلب المراجعة يفحص بيانات الشركة والمعرفة المعتمدة من السيرفر؛ تجربة المحاكاة ليست دليل جاهزية ولا شرطًا لهذا الطلب. فحص محتوى ملفات Storage إثبات وقت القراءة فقط، ولا يضمن بقاء الملفات كما هي لاحقًا أو جاهزية AI وواتساب."
+            : "Review verifies saved company data and approved knowledge on the server. A simulation is neither readiness evidence nor a prerequisite. Storage bytes are proven only at read time; AI and WhatsApp readiness remain separate."}
+          {review && review.proof_current !== true ? <p>{locale === "ar" ? "إثبات الطلب قديم أو تغيرت مدخلاته؛ أعد تقديمه بعد تجهيز واعتماد المصادر المطلوبة." : "This request has legacy or stale evidence. Explicitly re-submit after preparing and approving the required sources."}</p> : null}
+          {review?.proof_checked_at ? <p>{locale === "ar" ? "آخر فحص محتوى: " : "Last content observation: "}{new Date(review.proof_checked_at).toLocaleString(locale === "ar" ? "ar-OM" : "en-GB")}</p> : null}
+        </Notice>
         {saveError && !canEdit ? <Notice tone="error">{saveError}</Notice> : null}
         {infoNotice ? <Notice tone="warn">{infoNotice}</Notice> : null}
         {viewRefreshFailed ? (

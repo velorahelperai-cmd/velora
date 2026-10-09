@@ -21,6 +21,7 @@ import {
 } from "@/lib/knowledge/constants";
 import { isApprovedForAnswers, type KnowledgeApprovalFoundation, type KnowledgeSourceRecord } from "@/lib/knowledge/types";
 import { fill } from "@/lib/app-copy";
+import { useDemo } from "@/lib/demo-state";
 import {
   Button, ConfirmDialog, EmptyState, Field, FieldErrorKey, Notice,
   useAppCopy, useErrorText, useUnsavedWarning,
@@ -85,6 +86,7 @@ export function KnowledgeEditor({
   onLoadStateChange,
 }: Props) {
   const copy = useAppCopy();
+  const { locale } = useDemo();
   const router = useRouter();
   const [sources, setSources] = useState<KnowledgeSourceRecord[]>(initialSources);
   const [loadFailed, setLoadFailed] = useState(initialLoadFailed);
@@ -865,6 +867,11 @@ export function KnowledgeEditor({
                     {src.kind === "file" && src.status === "ready" && src.content ? (
                       <p className="mt-1 text-xs leading-5 text-[#8aa394] line-clamp-2">
                         {src.content}
+                      </p>
+                    ) : null}
+                    {src.kind === "file" && src.status === "ready" && (!src.prepared_file_sha256 || src.prepared_content_version !== src.content_version) ? (
+                      <p className="mt-1 text-xs text-[var(--color-warn-fg)]">
+                        {locale === "ar" ? "إثبات نسخة الاستخراج غير متاح. أعد تجهيز هذا الملف ثم اعتمده لتقديم مراجعة موثقة؛ سيُحفظ المصدر القديم." : "Extraction-version evidence is missing. Explicitly re-prepare and approve this file for verified review; its source is retained."}
                       </p>
                     ) : null}
                     {src.failure_code ? (

@@ -18,6 +18,9 @@ export type KnowledgeSourceRecord = {
   failure_code: KnowledgeFailureCode | null;
   /** Null when the approval-foundation columns are not available (migration not applied). */
   content_version: number | null;
+  prepared_file_sha256?: string | null;
+  prepared_text_sha256?: string | null;
+  prepared_content_version?: number | null;
   approved_for_answers: boolean;
   approved_version: number | null;
   approved_at: string | null;

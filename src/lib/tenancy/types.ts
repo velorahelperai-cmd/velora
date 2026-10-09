@@ -159,6 +159,10 @@ export type CompanyReviewRequest = {
   decided_by?: string | null;
   decided_at?: string | null;
   owner_note: string;
+  /** SQL snapshot is current; Storage integrity was observed only at proof_checked_at. */
+  proof_current?: boolean;
+  proof_checked_at?: string | null;
+  submitted_manifest_sha256?: string | null;
 };
 
 /** Owner-visible review audit events (RPC): no actor IDs or raw admin payloads. */

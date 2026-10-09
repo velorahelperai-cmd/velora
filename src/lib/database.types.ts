@@ -176,6 +176,9 @@ export type Database = {
       };
       knowledge_sources: {
         Row: {
+          prepared_file_sha256: string | null;
+          prepared_text_sha256: string | null;
+          prepared_content_version: number | null;
           usage_role: "knowledge" | "business_instructions";
           id: string;
           company_id: string;
@@ -888,6 +891,26 @@ export type Database = {
           p_whatsapp_number?: string | null;
           p_readiness_confirmed?: boolean | null;
           p_owner_note?: string | null;
+        };
+        Returns: Json;
+      };
+      g03_begin_review_check: {
+        Args: Database["public"]["Functions"]["transition_company_review"]["Args"];
+        Returns: Json;
+      };
+      g03_complete_review_check: {
+        Args: { p_check_id: string; p_observations: Json };
+        Returns: Json;
+      };
+      g03_read_review_request: {
+        Args: { p_company_id: string };
+        Returns: Json;
+      };
+      g03_publish_prepared_file: {
+        Args: {
+          p_actor_id: string; p_session_id: string; p_source_id: string; p_company_id: string;
+          p_expected_version: number; p_storage_path: string; p_text: string;
+          p_file_sha256: string; p_byte_size: number; p_object_id: string; p_object_updated_at: string;
         };
         Returns: Json;
       };

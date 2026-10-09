@@ -46,6 +46,7 @@ export type ReadinessDetail =
   | "review_pending"
   | "review_changes"
   | "review_approved"
+  | "review_evidence_stale"
   | "review_owner_only"
   | "subscription_unimplemented"
   | "subscription_active"
@@ -172,6 +173,7 @@ export function buildCustomerReadiness(input: {
   review: {
     loadFailed: boolean;
     status: ReviewStatus | null;
+    proofCurrent?: boolean;
   } | null;
   subscription?: {loadFailed:boolean;status:string|null;paidThrough:string|null}|null;
 }): CustomerReadinessSnapshot {
@@ -358,8 +360,8 @@ export function buildCustomerReadiness(input: {
     const status = input.review.status;
     review = {
       id: "review",
-      tone: reviewTone(status),
-      detail: reviewDetail(status),
+      tone: input.review.proofCurrent === false && status ? "incomplete" : reviewTone(status),
+      detail: input.review.proofCurrent === false && status ? "review_evidence_stale" : reviewDetail(status),
       href: "/setup",
       action: status === "approved" || status === "pending_review" ? "review" : "continue",
     };
