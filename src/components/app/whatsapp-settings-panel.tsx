@@ -95,7 +95,7 @@ export function WhatsappSettingsPanel({
 
   return (
     <Card title={copy.app.tabs.whatsapp}>
-      <WhatsappEmbeddedSignup keepOnPhone={keepOnPhone} onConnected={() => void load()} onDisconnected={() => void load()} />
+      <WhatsappEmbeddedSignup key={companyId} companyId={companyId} keepOnPhone={keepOnPhone} onConnected={() => void load()} onDisconnected={() => void load()} />
       {/* Meta Cloud API Architecture Header Banner */}
       <div className="mb-5 rounded-2xl border border-[#38dc89]/30 bg-gradient-to-r from-[#12281e] via-[#0d1a14] to-[#07110d] p-5 shadow-[0_8px_24px_rgba(0,0,0,0.3)]">
         <div className="flex flex-wrap items-center justify-between gap-4">

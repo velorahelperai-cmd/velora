@@ -321,7 +321,7 @@ function TeamTab({ companyId }: { companyId: string }) {
         setError(null); setInvite(null); setCopied(false);
         void run(async () => {
           try {
-            const result = await createStaffInvitation(form);
+            const result = await createStaffInvitation({ ...form, companyId });
             if (!result.ok) { setError(text.createFailed); return; }
             setInvite(result.data);
             setForm({ email: "", name: "" });

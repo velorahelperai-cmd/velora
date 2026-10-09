@@ -18,12 +18,23 @@ describe("persistent staff invitations", () => {
   });
   it("never calls the database for a denied owner", async () => {
     mocks.access.mockResolvedValue({ ok: false, code: "FORBIDDEN" });
-    expect(await createStaffInvitation({ email: "member@example.com", name: "Member" })).toEqual({ ok: false, code: "FORBIDDEN" });
+    expect(await createStaffInvitation({ companyId: "company", email: "member@example.com", name: "Member" })).toEqual({ ok: false, code: "FORBIDDEN" });
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+  it("does not create a B invitation from a stale A form", async () => {
+    mocks.access.mockResolvedValue({ ok: true, context: { company: { id: "company-b", status: "active" }, membership: { role: "owner" } } });
+    mocks.rpc.mockResolvedValue({ data: { ok: true, expiresAt: "2099-01-01T00:00:00Z" }, error: null });
+    expect(await createStaffInvitation({ companyId: "company-a", email: "member@example.com", name: "Member" })).toEqual({ ok: false, code: "FORBIDDEN" });
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+  it("rejects an unbound legacy invitation request", async () => {
+    mocks.rpc.mockResolvedValue({ data: { ok: true, expiresAt: "2099-01-01T00:00:00Z" }, error: null });
+    expect((await createStaffInvitation({ companyId: undefined as unknown as string, email: "member@example.com", name: "Member" })).ok).toBe(false);
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
   it("returns a 256-bit share link while sending only its SHA256 hash to persistence", async () => {
     mocks.rpc.mockResolvedValue({ data: { ok: true, expiresAt: "2026-10-15T00:00:00Z" }, error: null });
-    const result = await createStaffInvitation({ email: " MEMBER@example.com ", name: " Member " });
+    const result = await createStaffInvitation({ companyId: "company", email: " MEMBER@example.com ", name: " Member " });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const token = new URL(result.data.inviteUrl).searchParams.get("token")!;
@@ -35,11 +46,11 @@ describe("persistent staff invitations", () => {
   });
   it("does not fabricate a link when persistence fails", async () => {
     mocks.rpc.mockResolvedValue({ data: null, error: { message: "missing rpc" } });
-    expect(await createStaffInvitation({ email: "member@example.com", name: "Member" })).toEqual({ ok: false, code: "UNAVAILABLE" });
+    expect(await createStaffInvitation({ companyId: "company", email: "member@example.com", name: "Member" })).toEqual({ ok: false, code: "UNAVAILABLE" });
   });
   it("rejects invalid database dates before exposing an invitation", async () => {
     mocks.rpc.mockResolvedValue({ data: { ok: true, expiresAt: "not a date" }, error: null });
-    expect(await createStaffInvitation({ email: "member@example.com", name: "Member" })).toEqual({ ok: false, code: "UNAVAILABLE" });
+    expect(await createStaffInvitation({ companyId: "company", email: "member@example.com", name: "Member" })).toEqual({ ok: false, code: "UNAVAILABLE" });
     mocks.rpc.mockResolvedValue({ data: { ok: true, business: "Business", maskedEmail: "m***@example.com", expiresAt: "not a date" }, error: null });
     expect(await readStaffInvitation("a".repeat(43))).toEqual({ ok: false, code: "UNAVAILABLE" });
   });

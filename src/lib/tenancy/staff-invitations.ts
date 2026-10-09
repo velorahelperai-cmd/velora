@@ -30,14 +30,15 @@ async function callInvitationRpc(name: string, args: Record<string, string>) {
   return result.data as Record<string, unknown>;
 }
 
-export async function createStaffInvitation(input: { email: string; name: string }): Promise<InvitationResult<{ inviteUrl: string; expiresAt: string }>> {
-  if (!input || typeof input.email !== "string" || typeof input.name !== "string") return { ok: false, code: "INVALID_INPUT" };
+export async function createStaffInvitation(input: { companyId: string; email: string; name: string }): Promise<InvitationResult<{ inviteUrl: string; expiresAt: string }>> {
+  if (!input || typeof input.companyId !== "string" || !input.companyId.trim() || typeof input.email !== "string" || typeof input.name !== "string") return { ok: false, code: "INVALID_INPUT" };
   const email = input.email.trim().toLowerCase(), name = input.name.trim();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254 || name.length < 2 || name.length > 120) return { ok: false, code: "INVALID_INPUT" };
   try {
     const gate = await getCompanyAccess("owner");
     if (!gate.ok) return { ok: false, code: gate.code };
     if (!gate.context.company || gate.context.company.status === "suspended" || gate.context.membership?.role !== "owner") return { ok: false, code: "FORBIDDEN" };
+    if (gate.context.company.id !== input.companyId.trim()) return { ok: false, code: "FORBIDDEN" };
     const token = randomBytes(32).toString("base64url");
     const result = await callInvitationRpc("create_staff_invitation", { p_company_id: gate.context.company.id, p_email: email, p_name: name, p_token_hash: tokenHash(token)! });
     if (!result) return { ok: false, code: "UNAVAILABLE" };

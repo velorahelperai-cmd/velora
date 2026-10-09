@@ -9,10 +9,11 @@ import {createSignupPorts,signupRpc,type SignupRpcClient} from "./embedded-signu
 import {finishEmbeddedSignup,type SignupCompletionInput} from "./embedded-signup-flow";
 
 const uuid=(s:unknown)=>typeof s==="string"&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
-async function owner(){
+async function owner(expectedCompanyId?:string){
  const access=await getCompanyAccess("owner");
  if(!access.ok)return {ok:false as const,code:access.code==="UNAVAILABLE"?"UNAVAILABLE":"FORBIDDEN"};
  if(!access.context.identityVerified||!access.context.company||access.context.membership?.role!=="owner")return {ok:false as const,code:"FORBIDDEN"};
+ if(expectedCompanyId!==undefined&&access.context.company.id!==expectedCompanyId)return {ok:false as const,code:"FORBIDDEN"};
  if(access.context.company.status==="suspended")return {ok:false as const,code:"COMPANY_SUSPENDED"};
  try{
   const client=await createClient();const claims=await client.auth.getClaims();const sessionId=claims.data?.claims?.session_id;
@@ -20,18 +21,22 @@ async function owner(){
   return {ok:true as const,identity:{companyId:access.context.company.id,userId:access.context.userId,sessionId:String(sessionId)},client:client as unknown as SignupRpcClient};
  }catch{return {ok:false as const,code:"UNAVAILABLE"};}
 }
+async function scopedOwner(companyId:unknown){
+ if(typeof companyId!=="string"||!companyId.trim())return {ok:false as const,code:"INVALID_INPUT"};
+ return owner(companyId.trim());
+}
 function serverConfig(){
  const publicConfig=embeddedSignupClientConfig();if(!publicConfig.ok)return null;
  return {...publicConfig,enabled:true,appSecret:process.env.WHATSAPP_APP_SECRET?.trim()??"",systemUserToken:process.env.WHATSAPP_EMBEDDED_SIGNUP_SYSTEM_USER_TOKEN?.trim()??""};
 }
-export async function getEmbeddedSignupSetup(){
- const auth=await owner();if(!auth.ok)return auth;
+export async function getEmbeddedSignupSetup(companyId:string){
+ const auth=await scopedOwner(companyId);if(!auth.ok)return auth;
  const config=embeddedSignupClientConfig();if(!config.ok||!createAdminClient())return {ok:false as const,code:"NEEDS_SETUP"};
  const ready=await signupRpc(auth.client,"whatsapp_embedded_signup_readiness",{p_company_id:auth.identity.companyId});
  if(ready.ok!==true)return {ok:false as const,code:String(ready.code)};return config;
 }
-export async function startEmbeddedSignup(input:{keepOnPhone:boolean}){
- const auth=await owner();if(!auth.ok)return auth;
+export async function startEmbeddedSignup(input:{companyId:string;keepOnPhone:boolean}){
+ const auth=await scopedOwner(input?.companyId);if(!auth.ok)return auth;
  const config=embeddedSignupClientConfig();if(!config.ok||!createAdminClient()||input?.keepOnPhone!==false)return {ok:false as const,code:"NEEDS_SETUP"};
  const fresh=createEmbeddedSignupAttempt({...auth.identity,keepOnPhone:false});if(!fresh.ok)return fresh;
  const r=await signupRpc(auth.client,"whatsapp_start_embedded_signup",{p_company_id:auth.identity.companyId,p_attempt_id:fresh.attempt.id,p_nonce:fresh.attempt.nonce,p_keep_on_phone:false,p_app_id:config.appId,p_config_id:config.configId,p_graph_version:config.graphVersion});
@@ -51,7 +56,7 @@ export async function cancelEmbeddedSignup(input:{attemptId:string;nonce:string}
  if(!input||!uuid(input.attemptId)||typeof input.nonce!=="string"||!/^[0-9a-f]{64}$/.test(input.nonce))return {ok:false as const,code:"INVALID_INPUT"};
  const r=await signupRpc(auth.client,"whatsapp_cancel_embedded_signup",{p_company_id:auth.identity.companyId,p_attempt_id:input.attemptId,p_nonce:input.nonce});return r.ok===true?{ok:true as const}:{ok:false as const,code:String(r.code)};
 }
-export async function disconnectEmbeddedSignup(){
- const auth=await owner();if(!auth.ok)return auth;
+export async function disconnectEmbeddedSignup(companyId:string){
+ const auth=await scopedOwner(companyId);if(!auth.ok)return auth;
  const r=await signupRpc(auth.client,"whatsapp_disconnect_embedded_signup",{p_company_id:auth.identity.companyId});if(r.ok===true)revalidatePath("/app/settings");return r.ok===true?{ok:true as const}:{ok:false as const,code:String(r.code)};
 }
