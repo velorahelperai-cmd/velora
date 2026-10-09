@@ -1,6 +1,8 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 export type InboundMessage = {
+  /** Signed entry.id; optional only for the explicit legacy single-tenant contract. */
+  wabaId?: string;
   phoneNumberId: string;
   customerWaId: string;
   customerName: string;
@@ -11,6 +13,7 @@ export type InboundMessage = {
 };
 
 export type DeliveryStatus = {
+  wabaId?: string;
   phoneNumberId: string;
   waMessageId: string;
   status: string;
@@ -34,27 +37,36 @@ export function verifyChallenge(
   return params.challenge;
 }
 
-export function signatureMatches(rawBody: string, header: string | null, appSecret: string) {
+export function signatureMatches(rawBody: string | Uint8Array, header: string | null, appSecret: string) {
   if (!header || !appSecret) return false;
-  const expected = `sha256=${createHmac("sha256", appSecret).update(rawBody, "utf8").digest("hex")}`;
+  const expected = `sha256=${createHmac("sha256", appSecret).update(rawBody).digest("hex")}`;
   return safeEqual(header, expected);
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }
 
-function unixToIso(value: unknown) {
+function identifier(value: unknown) {
+  return typeof value === "string" && value.trim() && value === value.trim() ? value : null;
+}
+
+function unixToIso(value: unknown): string | null {
+  if (typeof value !== "number" && (typeof value !== "string" || !/^\d+$/.test(value))) return null;
   const seconds = Number(value);
-  if (!Number.isFinite(seconds) || seconds <= 0) return new Date().toISOString();
+  // Date's representable range is bounded. Never invent a timestamp for invalid evidence.
+  if (!Number.isSafeInteger(seconds) || seconds <= 0 || seconds > 8_640_000_000_000) return null;
   return new Date(seconds * 1000).toISOString();
 }
 
 function messageText(message: Record<string, unknown>) {
-  const type = String(message.type ?? "unknown").slice(0, 32);
+  const type = identifier(message.type);
+  if (!type || type.length > 32) return null;
   const text = asRecord(message.text);
-  if (type === "text" && typeof text?.body === "string" && text.body.trim()) {
-    return { type, body: text.body.trim().slice(0, 4096) };
+  if (type === "text") {
+    return typeof text?.body === "string" && text.body.trim()
+      ? { type, body: text.body.trim().slice(0, 4096) }
+      : null;
   }
   const typed = asRecord(message[type]);
   if (typeof typed?.caption === "string" && typed.caption.trim()) {
@@ -68,59 +80,93 @@ export function splitWebhook(payload: unknown) {
   const statuses: DeliveryStatus[] = [];
   const seenMessages = new Set<string>();
   const root = asRecord(payload);
+  if (root?.object !== "whatsapp_business_account") return { messages, statuses };
   const entries = Array.isArray(root?.entry) ? root.entry : [];
 
   for (const entry of entries) {
+    const wabaId = identifier(asRecord(entry)?.id) ?? undefined;
     const changes = Array.isArray(asRecord(entry)?.changes) ? asRecord(entry)!.changes as unknown[] : [];
     for (const change of changes) {
-      const value = asRecord(asRecord(change)?.value);
-      if (!value) continue;
+      const changed = asRecord(change);
+      if (changed?.field !== "messages") continue;
+      const value = asRecord(changed.value);
+      if (value?.messaging_product !== "whatsapp") continue;
       const metadata = asRecord(value.metadata);
-      const phoneNumberId = String(metadata?.phone_number_id ?? "");
+      const phoneNumberId = identifier(metadata?.phone_number_id);
       if (!phoneNumberId) continue;
       const contacts = Array.isArray(value.contacts) ? value.contacts : [];
 
       for (const raw of Array.isArray(value.messages) ? value.messages : []) {
         const message = asRecord(raw);
         if (!message) continue;
-        const waMessageId = String(message.id ?? "");
-        const customerWaId = String(message.from ?? "");
-        if (!waMessageId || !customerWaId || seenMessages.has(waMessageId)) continue;
-        seenMessages.add(waMessageId);
+        const waMessageId = identifier(message.id);
+        const customerWaId = identifier(message.from);
+        const receivedAt = unixToIso(message.timestamp);
+        const text = messageText(message);
+        if (!waMessageId || !customerWaId || !receivedAt || !text) continue;
+        const key = JSON.stringify([wabaId, phoneNumberId, waMessageId]);
+        if (seenMessages.has(key)) continue;
+        seenMessages.add(key);
         const contact = contacts
           .map(asRecord)
-          .find((item) => item && String(item.wa_id ?? "") === customerWaId);
+          .find((item) => item?.wa_id === customerWaId);
         const profile = asRecord(contact?.profile);
-        const text = messageText(message);
         messages.push({
+          wabaId,
           phoneNumberId,
           customerWaId,
-          customerName: String(profile?.name ?? "").trim().slice(0, 120),
+          customerName: typeof profile?.name === "string" ? profile.name.trim().slice(0, 120) : "",
           waMessageId,
           body: text.body,
           messageType: text.type,
-          receivedAt: unixToIso(message.timestamp),
+          receivedAt,
         });
       }
 
       for (const raw of Array.isArray(value.statuses) ? value.statuses : []) {
         const status = asRecord(raw);
         if (!status) continue;
-        const waMessageId = String(status.id ?? "");
-        const name = String(status.status ?? "");
-        if (!waMessageId || !name) continue;
+        const waMessageId = identifier(status.id);
+        const name = identifier(status.status);
+        const occurredAt = unixToIso(status.timestamp);
+        const recipientWaId = identifier(status.recipient_id);
+        if (!waMessageId || !name || name.length > 32 || !occurredAt || !recipientWaId) continue;
         statuses.push({
+          wabaId,
           phoneNumberId,
           waMessageId,
-          status: name.slice(0, 32),
-          recipientWaId: String(status.recipient_id ?? ""),
-          occurredAt: unixToIso(status.timestamp),
+          status: name,
+          recipientWaId,
+          occurredAt,
         });
       }
     }
   }
 
   return { messages, statuses };
+}
+
+/** Only signed, WABA-scoped partner removal is supported; other account changes are acknowledged. */
+export function splitMetaAuthorizationRevocations(payload: unknown): Array<{ wabaId: string; reason: "PARTNER_REMOVED"; occurredAt: string }> {
+  const root = asRecord(payload);
+  if (root?.object !== "whatsapp_business_account") return [];
+  const seen = new Map<string, string>();
+  for (const raw of Array.isArray(root.entry) ? root.entry : []) {
+    const entry = asRecord(raw);
+    const wabaId = identifier(entry?.id);
+    const occurredAt = unixToIso(entry?.time);
+    if (!wabaId || !occurredAt || Date.parse(occurredAt) > Date.now()) continue;
+    for (const change of Array.isArray(entry?.changes) ? entry.changes : []) {
+      const changed = asRecord(change);
+      if (changed?.field !== "account_update") continue;
+      const value = asRecord(changed.value);
+      if (value?.event === "PARTNER_REMOVED" && identifier(asRecord(value.waba_info)?.waba_id) === wabaId) {
+        // Retain the newest signed removal time for this WABA in the batch.
+        if (!seen.has(wabaId) || occurredAt > seen.get(wabaId)!) seen.set(wabaId, occurredAt);
+      }
+    }
+  }
+  return [...seen].map(([wabaId, occurredAt]) => ({ wabaId, reason: "PARTNER_REMOVED", occurredAt }));
 }
 
 /**
@@ -171,7 +217,7 @@ export async function routeWebhookEvents(input: {
   mode: "single_tenant" | "tenant_registry";
   envCompanyId: string;
   envPhoneNumberId: string;
-  resolve: (phoneNumberId: string) => Promise<
+  resolve: (phoneNumberId: string, wabaId?: string) => Promise<
     | { ok: true; companyId: string }
     | { ok: false; code: string }
   >;
@@ -182,8 +228,9 @@ export async function routeWebhookEvents(input: {
   let retry = false;
   const cache = new Map<string, Promise<PhoneMap>>();
 
-  function mapPhone(phoneNumberId: string): Promise<PhoneMap> {
-    const existing = cache.get(phoneNumberId);
+  function mapPhone(phoneNumberId: string, wabaId?: string): Promise<PhoneMap> {
+    const key = JSON.stringify([wabaId, phoneNumberId]);
+    const existing = cache.get(key);
     if (existing) return existing;
     const pending = (async (): Promise<PhoneMap> => {
       if (input.mode === "single_tenant") {
@@ -195,21 +242,28 @@ export async function routeWebhookEvents(input: {
         }
         return { ok: true, companyId: input.envCompanyId };
       }
-      const resolved = await input.resolve(phoneNumberId);
+      if (!identifier(wabaId)) return { ok: false, retry: false, code: "invalid_input" };
+      let resolved: Awaited<ReturnType<typeof input.resolve>>;
+      try {
+        resolved = await input.resolve(phoneNumberId, wabaId);
+      } catch {
+        return { ok: false, retry: true, code: "unavailable" };
+      }
       if (!resolved.ok) {
         if (resolved.code === "unavailable") {
           return { ok: false, retry: true, code: "unavailable" };
         }
         return { ok: false, retry: false, code: resolved.code || "unknown_or_inactive" };
       }
+      if (!resolved.companyId?.trim()) return { ok: false, retry: true, code: "unavailable" };
       return { ok: true, companyId: resolved.companyId };
     })();
-    cache.set(phoneNumberId, pending);
+    cache.set(key, pending);
     return pending;
   }
 
   for (const message of input.messages) {
-    const mapped = await mapPhone(message.phoneNumberId);
+    const mapped = await mapPhone(message.phoneNumberId, message.wabaId);
     if (!mapped.ok) {
       if (mapped.retry) retry = true;
       dispositions.push({
@@ -244,7 +298,7 @@ export async function routeWebhookEvents(input: {
   }
 
   for (const status of input.statuses) {
-    const mapped = await mapPhone(status.phoneNumberId);
+    const mapped = await mapPhone(status.phoneNumberId, status.wabaId);
     if (!mapped.ok) {
       if (mapped.retry) retry = true;
       dispositions.push({

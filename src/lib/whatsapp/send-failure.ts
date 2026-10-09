@@ -4,6 +4,8 @@
  */
 
 const PRE_GRAPH = new Set([
+  "SERVICE_WINDOW_CLOSED",
+  "service_window_closed",
   "NEEDS_SETUP",
   "NOT_CONFIGURED",
   "SEND_DISABLED",

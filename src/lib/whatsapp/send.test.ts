@@ -88,7 +88,7 @@ describe("sendWhatsappText guards", () => {
     expect(result).toEqual({
       ok: false,
       code: "GRAPH_REJECTED",
-      detail: "Invalid parameter",
+      detail: "graph_100",
     });
   });
 

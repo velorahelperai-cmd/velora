@@ -4,6 +4,7 @@ import type {
   LeadStage,
   ConversationStatus,
 } from "@/lib/demo-state";
+import { createHash } from "node:crypto";
 import { createClient } from "@/lib/supabase/server";
 import { getCompanyAccess } from "@/lib/tenancy/access";
 import {
@@ -51,12 +52,12 @@ export type WhatsappInboxMeta = {
   timezoneAnnouncedUtc: boolean;
   canReply: boolean;
   canAssign: boolean;
+  canTakeOver?: boolean;
+  canResume?: boolean;
+  canClose?: boolean;
   assignees: InboxAssigneeOption[];
   counts: Record<LeadWorklist, number>;
 };
-
-const LEAD_SELECT =
-  "id, customer_name, customer_wa_id, last_message_at, status, automation_allowed, automation_generation, control_revision, assigned_to, lead_stage, lead_stage_reason, internal_note, follow_up_status, follow_up_at, last_touch_at, lead_revision";
 
 function mapStatus(status: string): ConversationStatus {
   if (status === "resolved") return "resolved";
@@ -88,12 +89,6 @@ function ownerLabelFor(
     if (name) return name;
   }
   return "staff";
-}
-
-function mapMessageFrom(sender: string | null | undefined): Conversation["messages"][number]["from"] {
-  if (sender === "staff") return "staff";
-  if (sender === "assistant") return "assistant";
-  return "customer";
 }
 
 export function mapWhatsappConversation(
@@ -128,29 +123,6 @@ export function mapWhatsappConversation(
   };
 }
 
-async function loadAssigneeNames(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  companyId: string,
-  assignedIds: string[],
-): Promise<Map<string, string>> {
-  const map = new Map<string, string>();
-  const unique = [...new Set(assignedIds.filter(Boolean))];
-  if (!unique.length) return map;
-
-  const { data, error } = await supabase
-    .from("company_members")
-    .select("user_id, member_name")
-    .eq("company_id", companyId)
-    .in("user_id", unique);
-  if (error || !data) return map;
-
-  for (const row of data) {
-    const name = (row.member_name ?? "").trim();
-    if (name) map.set(row.user_id, name);
-  }
-  return map;
-}
-
 async function loadAssigneeOptions(
   supabase: Awaited<ReturnType<typeof createClient>>,
   companyId: string,
@@ -173,204 +145,128 @@ export type WhatsappInboxLoad =
   | { ok: true; conversations: Conversation[]; meta: WhatsappInboxMeta }
   | { ok: false; code: "NO_COMPANY" | "UNAVAILABLE" };
 
+/** A bounded initial UI page. Worklist counts describe only the loaded page. */
+export async function loadWhatsappInboxInitialPage(): Promise<
+  | { ok: true; conversations: import("./inbox-contracts").WhatsappInboxItem[]; meta: WhatsappInboxMeta; page: import("./inbox-contracts").WhatsappInboxPage }
+  | { ok: false; code: "NO_COMPANY" | "UNAVAILABLE" }
+> {
+  try {
+    const access = await getCompanyAccess();
+    if (!access.ok || !access.context.company || !access.context.membership) return { ok: false, code: access.ok || access.code !== "UNAVAILABLE" ? "NO_COMPANY" : "UNAVAILABLE" };
+    const companyId = access.context.company.id;
+    const scope = await sessionConversationScope(companyId);
+    if ((scope !== "all_company" && scope !== "assigned_only") || await sessionHasCompanyCapability(companyId, "wa.conversations.read") !== true) return { ok: false, code: "UNAVAILABLE" };
+    const { loadWhatsappInboxPage } = await import("./inbox-contracts");
+    const page = await loadWhatsappInboxPage({ companyId, limit: 40 });
+    if (!page.ok || page.data.companyId !== companyId || page.data.conversationScope !== scope) return { ok: false, code: "UNAVAILABLE" };
+    const client = await createClient();
+    const [timezoneRow, permissions] = await Promise.all([
+      client.from("companies").select("timezone").eq("id", companyId).maybeSingle(),
+      Promise.all((["wa.conversations.reply", "wa.conversations.assign", "wa.conversations.take_over", "wa.conversations.resume", "wa.conversations.close"] as const).map(capability => sessionHasCompanyCapability(companyId, capability))),
+    ]);
+    if (timezoneRow.error) return { ok: false, code: "UNAVAILABLE" };
+    const { zone, announcedUtc } = resolveCompanyTimezone((timezoneRow.data as { timezone?: string | null } | null)?.timezone ?? null);
+    const timezone = announcedUtc ? null : zone;
+    const [canReply, canAssign, canTakeOver, canResume, canClose] = permissions.map(value => value === true);
+    const assignees = canAssign ? await loadAssigneeOptions(client, companyId) : [];
+    const current = await getCompanyAccess();
+    if (!current.ok || current.context.company?.id !== companyId || await sessionConversationScope(companyId) !== scope || await sessionHasCompanyCapability(companyId, "wa.conversations.read") !== true) return { ok: false, code: "UNAVAILABLE" };
+    const lists: LeadWorklist[] = ["all", "awaiting_staff", "follow_up_today", "overdue", "trial_or_quote"];
+    const counts = Object.fromEntries(lists.map(list => [list, countLeadWorklist(page.data.conversations, list, Date.now(), timezone)])) as Record<LeadWorklist, number>;
+    return { ok: true, conversations: page.data.conversations, page: page.data, meta: {
+      companyId, conversationScope: scope, timezone, timezoneAnnouncedUtc: announcedUtc, canReply, canAssign,
+      canTakeOver, canResume, canClose, assignees, counts,
+    } };
+  } catch { return { ok: false, code: "UNAVAILABLE" }; }
+}
+
 /**
  * Load live inbox for the active company membership only.
  * Platform admin without operational membership gets NO_COMPANY (not all tenants).
  * Empty list ≠ load failure.
  */
 export async function loadWhatsappInbox(): Promise<WhatsappInboxLoad> {
-  const access = await getCompanyAccess();
-  if (!access.ok) {
-    if (access.code === "UNAVAILABLE") return { ok: false, code: "UNAVAILABLE" };
-    return { ok: false, code: "NO_COMPANY" };
-  }
-  if (!access.context.company || !access.context.membership) {
-    return { ok: false, code: "NO_COMPANY" };
-  }
-
   try {
-    const supabase = await createClient();
+    const access = await getCompanyAccess();
+    if (!access.ok) return { ok: false, code: access.code === "UNAVAILABLE" ? "UNAVAILABLE" : "NO_COMPANY" };
+    if (!access.context.company || !access.context.membership) return { ok: false, code: "NO_COMPANY" };
     const companyId = access.context.company.id;
-    const userId = access.context.userId;
-
-    const canRead = await sessionHasCompanyCapability(companyId, "wa.conversations.read");
-    if (canRead === false) return { ok: false, code: "UNAVAILABLE" };
-
+    if (await sessionHasCompanyCapability(companyId, "wa.conversations.read") !== true) return { ok: false, code: "UNAVAILABLE" };
     const scope = await sessionConversationScope(companyId);
-    if (canRead === true && scope === null) {
-      return { ok: false, code: "UNAVAILABLE" };
+    if (scope !== "all_company" && scope !== "assigned_only") return { ok: false, code: "UNAVAILABLE" };
+    const { loadWhatsappInboxPage } = await import("./inbox-contracts");
+    const conversations: Conversation[] = [];
+    let membershipFingerprint: string | null = null;
+    let before: string | null = null;
+    // Compatibility ceiling is explicit: failure is never returned as a truncated full snapshot.
+    for (let pageNumber = 0; pageNumber < 20; pageNumber++) {
+      const page = await loadWhatsappInboxPage({ companyId, limit: 100, before });
+      if (!page.ok || page.data.conversationScope !== scope) return { ok: false, code: "UNAVAILABLE" };
+      membershipFingerprint ??= page.data.membershipFingerprint;
+      if (page.data.membershipFingerprint !== membershipFingerprint) return { ok: false, code: "UNAVAILABLE" };
+      for (const row of page.data.conversations) {
+        const complete = await loadCompleteThread(companyId, row.id);
+        if (!complete) return { ok: false, code: "UNAVAILABLE" };
+        conversations.push(complete);
+      }
+      if (!page.data.hasMore) break;
+      if (pageNumber === 19 || page.data.nextCursor === before) return { ok: false, code: "UNAVAILABLE" };
+      before = page.data.nextCursor;
     }
-
-    const canReply = (await sessionHasCompanyCapability(companyId, "wa.conversations.reply")) === true;
-    const canAssign = (await sessionHasCompanyCapability(companyId, "wa.conversations.assign")) === true;
-
-    let timezoneRaw: string | null = null;
-    const { data: companyTz } = await supabase
-      .from("companies")
-      .select("timezone")
-      .eq("id", companyId)
-      .maybeSingle();
-    if (companyTz && typeof (companyTz as { timezone?: string | null }).timezone === "string") {
-      timezoneRaw = (companyTz as { timezone: string }).timezone;
-    } else if (companyTz && (companyTz as { timezone?: string | null }).timezone === null) {
-      timezoneRaw = null;
-    }
-
-    let query = supabase
-      .from("whatsapp_conversations")
-      .select(LEAD_SELECT)
-      .eq("company_id", companyId)
-      .order("last_message_at", { ascending: false });
-    if (scope === "assigned_only") {
-      query = query.eq("assigned_to", userId);
-    }
-
-    const { data: conversations, error } = await query;
-    if (error) return { ok: false, code: "UNAVAILABLE" };
-
-    const { zone, announcedUtc } = resolveCompanyTimezone(timezoneRaw);
+    const supabase = await createClient();
+    const { data: companyTz, error: timezoneError } = await supabase.from("companies").select("timezone").eq("id", companyId).maybeSingle();
+    if (timezoneError) return { ok: false, code: "UNAVAILABLE" };
+    const { zone, announcedUtc } = resolveCompanyTimezone((companyTz as { timezone?: string | null } | null)?.timezone ?? null);
     const timezone = announcedUtc ? null : zone;
-    const conversationScope = scope === "assigned_only" ? "assigned_only" : "all_company";
+    const canReply = await sessionHasCompanyCapability(companyId, "wa.conversations.reply") === true;
+    const canAssign = await sessionHasCompanyCapability(companyId, "wa.conversations.assign") === true;
+    const lists: LeadWorklist[] = ["all", "awaiting_staff", "follow_up_today", "overdue", "trial_or_quote"];
+    const now = Date.now();
+    const counts = Object.fromEntries(lists.map(list => [list, countLeadWorklist(conversations, list, now, timezone)])) as Record<LeadWorklist, number>;
+    // Recheck selection after the complete traversal; a workspace switch cannot publish a stale full snapshot.
+    const current = await getCompanyAccess();
+    if (!current.ok || current.context.company?.id !== companyId || await sessionConversationScope(companyId) !== scope
+      || await sessionHasCompanyCapability(companyId, "wa.conversations.read") !== true) return { ok: false, code: "UNAVAILABLE" };
+    const finalMembership = await loadWhatsappInboxPage({ companyId, limit: 1 });
+    const collectedIds = conversations.map(row => row.id.toLowerCase());
+    const collectedFingerprint = createHash("md5").update(collectedIds.sort().join(",")).digest("hex");
+    if (!finalMembership.ok || finalMembership.data.membershipFingerprint !== membershipFingerprint
+      || finalMembership.data.conversationScope !== scope || new Set(collectedIds).size !== collectedIds.length
+      || collectedIds.length !== finalMembership.data.total || collectedFingerprint !== finalMembership.data.membershipFingerprint) return { ok: false, code: "UNAVAILABLE" };
+    return { ok: true, conversations, meta: { companyId, conversationScope: scope, timezone,
+      timezoneAnnouncedUtc: announcedUtc, canReply, canAssign,
+      assignees: canAssign ? await loadAssigneeOptions(supabase, companyId) : [], counts } };
+  } catch { return { ok: false, code: "UNAVAILABLE" }; }
+}
 
-    if (!conversations?.length) {
-      const emptyCounts = {
-        all: 0,
-        awaiting_staff: 0,
-        follow_up_today: 0,
-        overdue: 0,
-        trial_or_quote: 0,
-      } satisfies Record<LeadWorklist, number>;
-      return {
-        ok: true,
-        conversations: [],
-        meta: {
-          companyId,
-          conversationScope,
-          timezone,
-          timezoneAnnouncedUtc: announcedUtc,
-          canReply,
-          canAssign,
-          assignees: canAssign ? await loadAssigneeOptions(supabase, companyId) : [],
-          counts: emptyCounts,
-        },
-      };
+async function loadCompleteThread(companyId: string, conversationId: string): Promise<Conversation | null> {
+  const { loadWhatsappThreadPage } = await import("./inbox-contracts");
+  let before: string | null = null;
+  let conversation: Conversation | null = null;
+  const byId = new Map<string, Conversation["messages"][number] & { arrivalSequence: string }>();
+  for (let pageNumber = 0; pageNumber < 100; pageNumber++) {
+    const page = await loadWhatsappThreadPage({ companyId, conversationId, limit: 100, before });
+    if (!page.ok) return null;
+    if (!conversation) conversation = page.data.conversation;
+    for (const message of page.data.messages) byId.set(message.id, message);
+    if (!page.data.hasMore) {
+      const messages = [...byId.values()].sort((a, b) => BigInt(a.arrivalSequence) < BigInt(b.arrivalSequence) ? -1 : 1);
+      return { ...conversation, messages, summary: messages[messages.length - 1]?.text ?? "" };
     }
-
-    const { data: messages, error: messagesError } = await supabase
-      .from("whatsapp_messages")
-      .select("id, conversation_id, body, received_at, sender, direction, delivery_state")
-      .eq("company_id", companyId)
-      .in("conversation_id", conversations.map((row) => row.id))
-      .order("received_at", { ascending: true });
-    if (messagesError) return { ok: false, code: "UNAVAILABLE" };
-
-    const byConversation = new Map<string, Conversation["messages"]>();
-    for (const message of messages ?? []) {
-      const list = byConversation.get(message.conversation_id) ?? [];
-      list.push({
-        id: message.id,
-        from: mapMessageFrom(message.sender),
-        text: message.body,
-        at: Date.parse(message.received_at),
-        deliveryState:
-          message.direction === "outbound" && message.delivery_state
-            ? (message.delivery_state as Conversation["messages"][number]["deliveryState"])
-            : undefined,
-      });
-      byConversation.set(message.conversation_id, list);
-    }
-
-    const assigneeNames = await loadAssigneeNames(
-      supabase,
-      companyId,
-      conversations.map((row) => row.assigned_to).filter((id): id is string => Boolean(id)),
-    );
-
-    const mapped = (conversations as ConversationRow[]).map((row) =>
-      mapWhatsappConversation(row, byConversation.get(row.id) ?? [], assigneeNames),
-    );
-
-    const nowMs = Date.now();
-    const lists: LeadWorklist[] = [
-      "all",
-      "awaiting_staff",
-      "follow_up_today",
-      "overdue",
-      "trial_or_quote",
-    ];
-    const counts = {} as Record<LeadWorklist, number>;
-    for (const list of lists) {
-      counts[list] = countLeadWorklist(mapped, list, nowMs, timezone);
-    }
-
-    return {
-      ok: true,
-      conversations: mapped,
-      meta: {
-        companyId,
-        conversationScope,
-        timezone,
-        timezoneAnnouncedUtc: announcedUtc,
-        canReply,
-        canAssign,
-        assignees: canAssign ? await loadAssigneeOptions(supabase, companyId) : [],
-        counts,
-      },
-    };
-  } catch {
-    return { ok: false, code: "UNAVAILABLE" };
+    if (pageNumber === 99 || page.data.nextCursor === before) return null;
+    before = page.data.nextCursor;
   }
+  return null;
 }
 
 export async function loadWhatsappConversation(conversationId: string): Promise<Conversation | null> {
-  const access = await getCompanyAccess();
-  if (!access.ok || !access.context.company || !conversationId) return null;
-
-  const supabase = await createClient();
-  const companyId = access.context.company.id;
-
-  const canRead = await sessionHasCompanyCapability(companyId, "wa.conversations.read");
-  if (canRead === false) return null;
-  const scope = await sessionConversationScope(companyId);
-  if (canRead === true && scope === null) return null;
-
-  let query = supabase
-    .from("whatsapp_conversations")
-    .select(LEAD_SELECT)
-    .eq("company_id", companyId)
-    .eq("id", conversationId);
-  if (scope === "assigned_only") {
-    query = query.eq("assigned_to", access.context.userId);
-  }
-
-  const { data: row, error } = await query.maybeSingle();
-  if (error || !row) return null;
-
-  const { data: messages } = await supabase
-    .from("whatsapp_messages")
-    .select("id, conversation_id, body, received_at, sender, direction, delivery_state")
-    .eq("company_id", companyId)
-    .eq("conversation_id", conversationId)
-    .order("received_at", { ascending: true });
-
-  const thread: Conversation["messages"] = (messages ?? []).map((message) => ({
-    id: message.id,
-    from: mapMessageFrom(message.sender),
-    text: message.body,
-    at: Date.parse(message.received_at),
-    deliveryState:
-      message.direction === "outbound" && message.delivery_state
-        ? (message.delivery_state as Conversation["messages"][number]["deliveryState"])
-        : undefined,
-  }));
-
-  const assigneeNames = await loadAssigneeNames(
-    supabase,
-    companyId,
-    row.assigned_to ? [row.assigned_to] : [],
-  );
-
-  return mapWhatsappConversation(row as ConversationRow, thread, assigneeNames);
+  try {
+    const access = await getCompanyAccess();
+    if (!access.ok || !access.context.company || !access.context.membership || !conversationId) return null;
+    const companyId = access.context.company.id;
+    if (await sessionHasCompanyCapability(companyId, "wa.conversations.read") !== true || await sessionConversationScope(companyId) === null) return null;
+    return await loadCompleteThread(companyId, conversationId);
+  } catch { return null; }
 }
 
 export type { LeadWorklist, ManualLeadStage };

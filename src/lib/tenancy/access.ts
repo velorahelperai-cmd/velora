@@ -1,4 +1,7 @@
-import { allowedReturnPath, pathAtOrUnder, safeInternalPath } from "@/lib/auth/safe-next";
+import { checkAppSession } from "@/lib/auth/session-guard";
+import { authFlowHref } from "@/lib/auth/auth-journey";
+import { setupPathForReturn } from "@/lib/auth/setup-return";
+import { allowedReturnPath, pathAtOrUnder, safeInternalPath, staffInvitationReturnPath } from "@/lib/auth/safe-next";
 import { createClient } from "@/lib/supabase/server";
 import type {
   AccessCode,
@@ -37,6 +40,9 @@ export function workspaceHomeHref(ctx: CompanyContext): string | null {
 }
 
 export type AccountProfileView = {
+  emailConfirmed?: boolean;
+  sessionExpiresAt?: string;
+  accessUnavailable?: boolean;
   userId: string;
   fullName: string;
   email: string;
@@ -78,7 +84,7 @@ export function buildAccountProfileView(
 
 export type AccessResult =
   | { ok: true; context: CompanyContext }
-  | { ok: false; code: AccessCode };
+  | { ok: false; code: AccessCode; sessionExpired?: true };
 
 function emptyContext(
   partial: Partial<CompanyContext> & Pick<CompanyContext, "userId" | "email" | "phone" | "identityVerified" | "isPlatformAdmin">,
@@ -112,6 +118,7 @@ type LoadAuthOk = {
 type LoadAuthFail = {
   ok: false;
   code: "UNAUTHENTICATED" | "UNAVAILABLE";
+  sessionExpired?: true;
   supabase?: Awaited<ReturnType<typeof createClient>>;
 };
 
@@ -136,6 +143,8 @@ async function loadAuth(): Promise<LoadAuthOk | LoadAuthFail> {
       return { ok: false, code: "UNAUTHENTICATED", supabase };
     }
 
+    const sessionGuard=await checkAppSession(supabase);
+    if(!sessionGuard.ok)return {ok:false,code:sessionGuard.code,...(sessionGuard.expired?{sessionExpired:true as const}:{}),supabase};
     const identityVerified = Boolean(user.email_confirmed_at || user.phone_confirmed_at);
     const { data: adminFlag, error: adminError } = await supabase.rpc("is_platform_admin");
     if (adminError) return { ok: false, code: "UNAVAILABLE", supabase };
@@ -213,7 +222,7 @@ export async function getCompanyAccess(
 ): Promise<AccessResult> {
   try {
     const auth = await loadAuth();
-    if (!auth.ok) return { ok: false, code: auth.code };
+    if (!auth.ok) return { ok: false, code: auth.code, ...(auth.sessionExpired ? { sessionExpired: true as const } : {}) };
     const {
       supabase,
       userId,
@@ -307,7 +316,7 @@ export async function getCompanyAccess(
 }
 
 export async function requirePlatformAdmin(): Promise<AccessResult> {
-  const access = await getCompanyAccess();
+  const access = await requireVerifiedUser();
   if (!access.ok) return access;
   if (!access.context.isPlatformAdmin) return { ok: false, code: "FORBIDDEN" };
   return access;
@@ -316,7 +325,7 @@ export async function requirePlatformAdmin(): Promise<AccessResult> {
 export async function requireVerifiedUser(): Promise<AccessResult> {
   try {
     const auth = await loadAuth();
-    if (!auth.ok) return { ok: false, code: auth.code };
+    if (!auth.ok) return { ok: false, code: auth.code, ...(auth.sessionExpired ? { sessionExpired: true as const } : {}) };
     if (!auth.identityVerified) return { ok: false, code: "UNVERIFIED" };
     return {
       ok: true,
@@ -345,12 +354,14 @@ export function pathForAccess(
   preferredNext?: string | null,
 ): string {
   if (!result.ok) {
-    if (result.code === "UNVERIFIED") return "/verify-email";
+    if (result.code === "UNVERIFIED") return authFlowHref("/verify-email",preferredNext);
     if (result.code === "FORBIDDEN") return "/access?code=FORBIDDEN";
     if (result.code === "UNAVAILABLE") return "/access?code=UNAVAILABLE";
-    return "/login";
+    return result.sessionExpired ? "/login?reason=session_expired" : "/login";
   }
-  if (result.context.needsProfileName) return "/complete-profile";
+  if (result.context.needsProfileName) return authFlowHref("/complete-profile",preferredNext);
+  const invitationReturn = staffInvitationReturnPath(preferredNext);
+  if (invitationReturn) return invitationReturn;
   if (result.context.isPlatformAdmin) {
     return allowedReturnPath(preferredNext, {
       isPlatformAdmin: true,
@@ -358,7 +369,7 @@ export function pathForAccess(
       role: result.context.membership?.role ?? null,
     }, "/admin");
   }
-  if (!result.context.company) return "/setup";
+  if (!result.context.company) return setupPathForReturn(preferredNext);
   if (result.context.membership?.role === "staff") {
     return allowedReturnPath(preferredNext, {
       isPlatformAdmin: false,
@@ -377,7 +388,7 @@ export function pathForAccess(
     if (preferred && pathAtOrUnder(pathOnly, "/account")) {
       return preferred;
     }
-    return "/setup";
+    return setupPathForReturn(preferred);
   }
   return allowedReturnPath(preferredNext, {
     isPlatformAdmin: false,

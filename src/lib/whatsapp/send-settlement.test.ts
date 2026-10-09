@@ -18,6 +18,17 @@ function rejectedDecision() {
 }
 
 describe("claimed send settlement via finalizer", () => {
+  it("keeps the original operation locked if rejected finalization throws", async () => {
+    const decision = rejectedDecision();
+    if (decision.action === "graph") throw new Error("must not Graph");
+    const result = await applyClaimedPreGraphOutcome({
+      decision, clientOpId,
+      finalize: async () => { throw new Error("Offline RPC network failure"); },
+    });
+    expect(result).toMatchObject({ ok: false, code: "SAVE_FAILED", clientOpId, outcome: "attempting" });
+    expect(result.notAttempted).toBeUndefined();
+  });
+
   it("resolver unavailable before Graph: zero Graph calls and confirmed rejected", async () => {
     const graph = vi.fn();
     const decision = rejectedDecision();

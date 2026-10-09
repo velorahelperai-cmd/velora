@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -8,18 +8,18 @@ import {
   useContext,
   useEffect,
   useId,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
 } from "react";
 import {
-  classifyGetUserFailure,
   classifyProfileFailure,
   type IdentityFailureStage,
 } from "@/lib/auth/session-presence";
 import { clearCompanyDrafts } from "@/lib/company-draft";
 import { emptyBusiness, useDemo } from "@/lib/demo-state";
-import { createClient } from "@/lib/supabase/client";
+import { createClient, tryCreateClient } from "@/lib/supabase/client";
 import {
   getAccountProfile,
   signOut,
@@ -27,13 +27,14 @@ import {
 } from "@/lib/tenancy/actions";
 import { LangSwitch, useAppCopy } from "@/components/app/ui";
 
-type SessionStatus = "loading" | "guest" | "ready" | "error";
+type SessionStatus = "loading" | "guest" | "ready" | "error" | "expired";
 
 type AccountSessionValue = {
   status: SessionStatus;
   identity: AccountProfileView | null;
   refresh: () => Promise<void>;
   clear: () => void;
+  expire: () => void;
   setIdentityName: (name: string) => void;
 };
 
@@ -53,8 +54,10 @@ export function AccountSessionProvider({
   children: ReactNode;
   initial?: AccountProfileView | null;
 }) {
+  const providerRouter=useRouter();
   const [status, setStatus] = useState<SessionStatus>(initial ? "ready" : "loading");
   const [identity, setIdentity] = useState<AccountProfileView | null>(initial ?? null);
+  const identityRef=useRef<AccountProfileView|null>(initial??null);
   const userIdRef = useRef<string | null>(initial?.userId ?? null);
   const requestGen = useRef(0);
   /** Internal only — never rendered to visitors, never logs secrets. */
@@ -64,124 +67,66 @@ export function AccountSessionProvider({
     // Invalidate any in-flight refresh so a stale response cannot restore prior identity.
     requestGen.current += 1;
     userIdRef.current = null;
+    identityRef.current = null;
     failureStageRef.current = null;
     setIdentity(null);
     setStatus("guest");
   }, []);
 
+  const expire=useCallback(()=>{requestGen.current+=1;userIdRef.current=null;identityRef.current=null;setIdentity(null);setStatus("expired");},[]);
+
   const refresh = useCallback(async () => {
-    const gen = ++requestGen.current;
+    const gen=++requestGen.current;
     try {
-      const supabase = createClient();
-      const { data, error: userError } = await supabase.auth.getUser();
-      if (gen !== requestGen.current) return;
-
-      if (userError) {
-        const classified = classifyGetUserFailure(userError);
-        failureStageRef.current = classified.stage;
-        if (classified.kind === "guest") {
-          // Confirmed AuthSessionMissingError — normal visitor, not an outage.
-          clear();
-          return;
-        }
-        // Network/server/unknown auth errors stay as error — never guest.
-        setStatus("error");
-        return;
+      const result=await getAccountProfile();
+      if(gen!==requestGen.current)return;
+      if(!result.ok){
+        if(result.code==="UNAUTHENTICATED"){if(result.sessionExpired)expire();else clear();return;}
+        failureStageRef.current=classifyProfileFailure(result.code);
+        setStatus(prev=>identityRef.current&&prev==="ready"?"ready":"error");return;
       }
-
-      if (!data.user) {
-        failureStageRef.current = null;
-        clear();
-        return;
-      }
-
-      // Account switch: drop prior identity before applying the next profile.
-      if (userIdRef.current && userIdRef.current !== data.user.id) {
-        setIdentity(null);
-        if (gen !== requestGen.current) return;
-      }
-
-      const result = await getAccountProfile();
-      if (gen !== requestGen.current) return;
-      if (!result.ok) {
-        if (result.code === "UNAUTHENTICATED") {
-          failureStageRef.current = "server_auth";
-          clear();
-          return;
-        }
-        failureStageRef.current = classifyProfileFailure(result.code);
-        // Real outage/forbidden — not logout. Keep prior identity if same user.
-        setStatus((prev) => (
-          userIdRef.current === data.user.id && prev === "ready" ? "ready" : "error"
-        ));
-        return;
-      }
-
-      // Reject a successful profile that does not match this request's getUser subject.
-      if (result.data.userId !== data.user.id) {
-        failureStageRef.current = "profile";
-        userIdRef.current = null;
-        setIdentity(null);
-        setStatus("error");
-        return;
-      }
-
-      failureStageRef.current = null;
-      userIdRef.current = result.data.userId;
-      setIdentity(result.data);
-      setStatus("ready");
-    } catch {
-      if (gen !== requestGen.current) return;
-      failureStageRef.current = "browser_auth";
-      setStatus("error");
+      if(userIdRef.current && userIdRef.current!==result.data.userId){setIdentity(null);providerRouter.refresh();}
+      userIdRef.current=result.data.userId;identityRef.current=result.data;
+      failureStageRef.current=null;setIdentity(result.data);setStatus("ready");
+    }catch{
+      if(gen!==requestGen.current)return;
+      failureStageRef.current="server_auth";setStatus(prev=>identityRef.current&&prev==="ready"?"ready":"error");
     }
-  }, [clear]);
+  },[clear,expire,providerRouter]);
 
-  useEffect(() => {
-    const frame = window.requestAnimationFrame(() => {
-      if (initial) {
-        userIdRef.current = initial.userId;
-        setIdentity(initial);
-        setStatus("ready");
-        return;
+  useEffect(()=>{
+    const frame=window.requestAnimationFrame(()=>{void refresh();});
+    return ()=>window.cancelAnimationFrame(frame);
+  },[refresh]);
+
+  useEffect(()=>{
+    const supabase=tryCreateClient();if(!supabase)return;
+    let timer:ReturnType<typeof setTimeout>|undefined;
+    const {data:sub}=supabase.auth.onAuthStateChange((event,session)=>{
+      if(timer)clearTimeout(timer);
+      if(event==="SIGNED_OUT"){clear();providerRouter.refresh();return;}
+      if(session?.user && userIdRef.current && userIdRef.current!==session.user.id){
+        requestGen.current+=1;userIdRef.current=null;identityRef.current=null;setIdentity(null);setStatus("loading");providerRouter.refresh();
       }
-      void refresh();
+      // Server Actions update cookies without guaranteeing a browser SIGNED_IN event.
+      // INITIAL_SESSION=null therefore checks the server instead of inventing a logout.
+      timer=setTimeout(()=>{void refresh();},0);
     });
-    return () => window.cancelAnimationFrame(frame);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- bootstrap once / when initial identity prop changes
-  }, [initial?.userId]);
-
-  useEffect(() => {
-    const supabase = createClient();
-    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === "SIGNED_OUT" || !session?.user) {
-        clear();
-        return;
-      }
-      if (
-        event === "SIGNED_IN"
-        || event === "TOKEN_REFRESHED"
-        || event === "USER_UPDATED"
-        || event === "INITIAL_SESSION"
-      ) {
-        if (userIdRef.current && userIdRef.current !== session.user.id) {
-          setIdentity(null);
-        }
-        setStatus((prev) => (prev === "ready" && userIdRef.current === session.user.id ? prev : "loading"));
-        void refresh();
-      }
-    });
-    return () => {
-      sub.subscription.unsubscribe();
-    };
-  }, [clear, refresh]);
-
+    return ()=>{if(timer)clearTimeout(timer);sub.subscription.unsubscribe();requestGen.current+=1;};
+  },[clear,refresh,providerRouter]);
+  useEffect(()=>{
+    let timer:ReturnType<typeof setTimeout>|undefined;
+    const recheck=()=>{if(document.visibilityState!=="visible")return;if(timer)clearTimeout(timer);timer=setTimeout(()=>{void refresh();},0);};
+    window.addEventListener("focus",recheck);document.addEventListener("visibilitychange",recheck);
+    return ()=>{if(timer)clearTimeout(timer);window.removeEventListener("focus",recheck);document.removeEventListener("visibilitychange",recheck);};
+  },[refresh]);
   const setIdentityName = useCallback((name: string) => {
-    setIdentity((prev) => (prev ? { ...prev, fullName: name } : prev));
+    setIdentity((prev) => {const updated=prev?{...prev,fullName:name}:prev;identityRef.current=updated;return updated;});
   }, []);
 
+  const sessionValue=useMemo(()=>({status,identity,refresh,clear,expire,setIdentityName}),[status,identity,refresh,clear,expire,setIdentityName]);
   return (
-    <AccountSessionContext.Provider value={{ status, identity, refresh, clear, setIdentityName }}>
+    <AccountSessionContext.Provider value={sessionValue}>
       {children}
     </AccountSessionContext.Provider>
   );

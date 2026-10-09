@@ -58,6 +58,9 @@ export function matchVerifiedObservationToOrder(input: {
    * because providerOrderId was missing — always rejected.
    */
   unsignedOnlyBindingAttempt?: boolean;
+  allowLiveEnvironment?: boolean;
+  /** Review only: signed reversal amount may be partial; this never authorizes collection. */
+  lifecycleReviewOnly?: boolean;
 }): MatchResult {
   if (input.companyFromUnsignedField) {
     return { ok: false, reason: "company_not_from_unsigned_field" };
@@ -74,7 +77,7 @@ export function matchVerifiedObservationToOrder(input: {
     return { ok: false, reason: "provider_order_mismatch" };
   }
 
-  if (input.order.providerEnvironment === "live") {
+  if (input.order.providerEnvironment === "live" && input.allowLiveEnvironment!==true) {
     return { ok: false, reason: "environment_live_forbidden" };
   }
 
@@ -108,7 +111,7 @@ export function matchVerifiedObservationToOrder(input: {
   if (
     !Number.isSafeInteger(input.order.providerAmount) ||
     input.order.providerAmount <= 0 ||
-    input.observation.amountCents !== input.order.providerAmount
+    (input.lifecycleReviewOnly?input.observation.amountCents>input.order.providerAmount:input.observation.amountCents !== input.order.providerAmount)
   ) {
     return { ok: false, reason: "amount_mismatch" };
   }

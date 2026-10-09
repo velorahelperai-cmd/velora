@@ -16,47 +16,47 @@ const scenes = [
     theme: "dark" as const,
     anchor: "story",
     title: {
-      ar: "كل محادثة فرصة. خلّي متابعتها أوضح.",
-      en: "Every conversation is an opportunity. Make the next step clear.",
+      ar: "كل محادثة طلب محتمل. استقبلها بدقة ووضوح.",
+      en: "Every conversation is a potential order. Handle it with speed and precision.",
     },
     body: {
-      ar: "الأسئلة تتكرر، والفريق ينشغل، وبعض المتابعات تتأخر. نطوّر فيلورا لتساعد نشاطك على تنظيم معلوماته ومحادثاته، وتحديد من يحتاج ردًا وما الخطوة التالية. القصة توضح المسار المستهدف؛ الردود الآلية المعروضة أمثلة.",
-      en: "Questions repeat, teams get busy, and some follow-ups are delayed. We’re building Velora to help organise your business information and conversations, identify who needs a reply, and make the next step clear. The story illustrates the intended workflow; automated replies shown are examples.",
+      ar: "في أوقات الذروة تنهال طلبات الوجبات واستفسارات التوصيل. نورا تفهم تفاصيل الطلب وتوضح خيارات القائمة، وتجهّز التفاصيل لفريقك للتحضير والتسليم دون تأخير.",
+      en: "Rush hours bring high message volume and meal requests. Noura captures customisations and delivery details, preparing the order so your kitchen prepares without delay.",
     },
     example: {
       ar: {
-        question: "البرجر الكلاسيك متوفر اليوم؟",
-        answer: "بانتظار الرد",
+        question: "مرحبًا، عندكم برجر لحم كلاسيك الحين؟\n\nوجبة لو سمحت، وبدون بصل، ومع بطاطس حار.\n\nتوصيل إلى القرم، كم الوقت تقريبًا؟",
+        answer: "أهلًا بك! نعم متوفر طازج. تحب وجبة مع بطاطس ومشروب؟\n\nممتاز! وجبة برجر بدون بصل وبطاطس حار. توصيل ولا استلام؟\n\nيستغرق 30-40 دقيقة. جهّزت بيانات طلبك للفريق لتأكيده!",
         cardTitle: "أسئلة صاحب النشاط",
         card: "مين مستني رد؟\nأي استفسار محتاج متابعة؟\nإيه الخطوة اللي تقرّب العميل؟",
       },
       en: {
-        question: "Is the classic burger available today?",
-        answer: "Waiting for a reply",
+        question: "Hi, is the classic beef burger available now?\n\nA meal please, no onions, with spicy fries.\n\nDelivery to Qurum, how long will it take?",
+        answer: "Hello! Freshly made today. Meal with fries & drink?\n\nPerfect! Burger meal without onions & spicy fries. Delivery?\n\nTakes 30-40 mins. Order details prepared for our team!",
         cardTitle: "Owner questions",
-        card: "Who is still waiting for a reply?\nWhich enquiry needs follow-up?\nWhat’s the next step?",
+        card: "Who is waiting for a reply?\nWhich enquiry needs follow-up?\nWhat’s the next step?",
       },
     },
     chips: {
-  "ar": [
-    "مين مستني رد؟",
-    "أي استفسار محتاج متابعة؟",
-    "إيه الخطوة الجاية؟",
-    "متاح النهارده؟",
-    "التوصيل للخوير؟",
-    "ممكن أعرف التفاصيل؟",
-    "حد يتابع طلبي؟"
-  ],
-  "en": [
-    "Who is still waiting for a reply?",
-    "Which enquiry needs follow-up?",
-    "What’s the next step?",
-    "Available today?",
-    "Delivery to Al Khuwair?",
-    "Can I get the details?",
-    "Can someone follow up?"
-  ]
-},
+      ar: [
+        "البرجر متوفر؟",
+        "التوصيل للقرم؟",
+        "بدون بصل؟",
+        "كم وقت التوصيل؟",
+        "مين يتابع الطلب؟",
+        "بطاطس حار؟",
+        "جاهز للاستلام؟",
+      ],
+      en: [
+        "Available now?",
+        "Delivery to Qurum?",
+        "No onions?",
+        "How long for delivery?",
+        "Who preps the order?",
+        "Spicy fries?",
+        "Ready for pickup?",
+      ],
+    },
   },
   {
     id: 2,
@@ -64,25 +64,25 @@ const scenes = [
     theme: "light" as const,
     anchor: "how",
     title: {
-      ar: "الرد الجيد يبدأ بمعلومات واضحة.",
-      en: "Good replies start with clear information.",
+      ar: "الرد الموثوق يبدأ بمعلومات فندقية معتمدة.",
+      en: "Reliable hospitality replies start with verified info.",
     },
     body: {
-      ar: "جهّز منتجاتك وخدماتك وسياساتك في مكان واحد. هذه نقطة البداية لرد يستند إلى نشاطك وخطوة تالية مفهومة.",
-      en: "Bring your products, services, and policies together. They provide the foundation for a relevant reply and a clear next step.",
+      ar: "مواعيد الدخول، أنواع الغرف، والمرافق؛ تستند نورا إلى بيانات الفندق المعتمدة لتقديم إجابات موثوقة للضيوف وتجهيز بيانات الحجز لفريق الاستقبال بسلاسة.",
+      en: "Check-in times, room categories, and amenities; Noura relies on verified hotel information to assist guests and prep reservation details for your front desk.",
     },
     example: {
       ar: {
-        question: "البرجر الكلاسيك متوفر اليوم؟",
-        answer: "نراجع بطاقة المصدر...",
-        cardTitle: "مصدر: قائمة الطعام — مثال",
-        card: "المنتج: برجر كلاسيك\nمتوفر في هذا المثال\nالتوصيل داخل مسقط",
+        question: "مرحبًا، هل متوفر جناح مطل على البحر لنهاية الأسبوع؟\n\nنعم، وهل بوفيه الإفطار مشمول بالحجز؟\n\nممتاز، موعد تسجيل الدخول الساعة كم؟",
+        answer: "أهلًا بك! نعم متوفر. هل الإقامة ليلتان لشخصين؟\n\nنعم، يشمل الإفطار ودخول المسبح والنادي الصحي مجانًا.\n\nتسجيل الدخول من 2:00 ظهرًا. جهّزت تفاصيل حجزك للاستقبال!",
+        cardTitle: "ملخص للاستقبال",
+        card: "الجناح: إطلالة بحرية · ليلتان لشخصين\nالمزايا: إفطار مفتوح ومرافق مجانية\nالمطلوب: مراجعة التوفر وتأكيد الحجز",
       },
       en: {
-        question: "Is the classic burger available today?",
-        answer: "Checking the source card...",
-        cardTitle: "Source: menu — example",
-        card: "Item: Classic burger\nAvailable in this example\nDelivery within Muscat",
+        question: "Hi, sea view suite available this weekend?\n\nYes, and is breakfast buffet included?\n\nGreat, what time is check-in?",
+        answer: "Welcome! Yes available. 2 nights for 2 guests?\n\nYes, breakfast plus pool and health club access included.\n\nCheck-in from 2:00 PM. Booking details prepared for reception!",
+        cardTitle: "Reception summary",
+        card: "Suite: Sea view · 2 nights for 2 guests\nIncludes: Daily breakfast & pool access\nAction: Verify availability & confirm",
       },
     },
   },
@@ -92,25 +92,25 @@ const scenes = [
     theme: "dark" as const,
     anchor: "reply",
     title: {
-      ar: "جواب يفيد العميل ويقرّب الخطوة التالية.",
-      en: "An answer that helps the customer move forward.",
+      ar: "مساعدة فورية تقود العميل إلى إتمام الشراء.",
+      en: "Instant guidance that turns shoppers into buyers.",
     },
     body: {
-      ar: "في المثال، يحصل العميل على معلومة التوفر والتوصيل، ثم يعرف كيف يكمل استفساره.",
-      en: "In this example, the customer learns about availability and delivery, then knows how to continue.",
+      ar: "العملاء يسألون عن المواصفات، التوفر، والضمان. نورا ترشدهم للمنتج المناسب وتوضح خيارات الشحن، حتى تكتمل تفاصيل الطلب لفريق المبيعات.",
+      en: "Shoppers ask about specifications, availability, and warranty. Noura guides them to the right product and clarifies delivery, completing details for your sales team.",
     },
     example: {
       ar: {
-        question: "البرجر الكلاسيك متوفر اليوم؟",
-        answer: "نعم، متوفر. تحب كام برجر؟ والتوصيل لفين؟",
-        cardTitle: "من المعلومة إلى الرد",
-        card: "برجر كلاسيك · متوفر في المثال · توصيل مسقط",
+        question: "مرحبًا، هل سماعات بلوتوث برو متوفرة بلون أسود؟\n\nهل عليها ضمان؟ وهل يتوفر توصيل لنزوى؟\n\nممتاز، احجز لي حبة لون أسود.",
+        answer: "أهلًا بك! نعم متوفرة باللون الأسود مع عزل الضوضاء.\n\nنعم، ضمان سنتين وتوصيل خلال 24-48 ساعة لجميع المناطق.\n\nجهّزت طلب حجز السماعة والعنوان لمراجعة فريق المبيعات؛ الحجز لم يُؤكد بعد.",
+        cardTitle: "ملخص للفريق",
+        card: "الصنف: سماعات بلوتوث برو (أسود)\nالضمان: سنتان شامل · توصيل لنزوى\nالمطلوب: حجز القطعة وتأكيد الشحن",
       },
       en: {
-        question: "Is the classic burger available today?",
-        answer: "Available. How many burgers? Delivery area?",
-        cardTitle: "From information to reply",
-        card: "Classic burger · Available in this example · Muscat delivery",
+        question: "Hi, are Pro Bluetooth earbuds in stock in black?\n\nIs there warranty? And delivery to Nizwa?\n\nGreat, please reserve one in black for me.",
+        answer: "Hello! In stock in matte black with noise cancelling.\n\nYes, 2-year warranty and 24-48h delivery to all areas.\n\nReservation request and address prepared for sales review; reservation is not confirmed.",
+        cardTitle: "Summary for the team",
+        card: "Item: Pro Earbuds (Matte Black)\nWarranty: 2-year · Delivery to Nizwa\nAction: Reserve item & confirm dispatch",
       },
     },
   },
@@ -120,25 +120,25 @@ const scenes = [
     theme: "light" as const,
     anchor: "enquiry",
     title: {
-      ar: "اهتمام العميل يستحق متابعة.",
-      en: "Customer interest deserves follow-up.",
+      ar: "تنظيم استفسارات المواعيد لمراجعة فريق الاستقبال.",
+      en: "Appointment enquiry intake for reception review.",
     },
     body: {
-      ar: "تفاصيل ما يريده العميل، وما ينتظر التأكيد، تجعل المتابعة أوضح. المثال يعرض استفسارًا يحتاج مراجعة الفريق قبل اعتماد الطلب.",
-      en: "Capture what the customer wants and what still needs confirmation. This example shows an enquiry awaiting the team’s review.",
+      ar: "استفسارات المواعيد، التخصصات، والتغطيات التأمينية تتطلب تنظيمًا فوريًا. نورا تساعد المراجعين إداريًا في اختيار الموعد المناسب وتجهيز الملف للاستقبال، دون تقديم أي استشارات طبية.",
+      en: "Appointments, specialties, and insurance coverage need clear administrative intake. Noura helps patients find suitable slots and prepares the file for reception, strictly without medical advice.",
     },
     example: {
       ar: {
-        question: "البرجر الكلاسيك متوفر اليوم؟\n\nعايز ٢ برجر، والتوصيل للخوير.",
-        answer: "نعم، متوفر. تحب كام برجر؟ والتوصيل لفين؟\n\n٢ برجر للخوير. أي ملاحظات على الطلب؟",
-        cardTitle: "سجل الاستفسار",
-        card: "الصنف: برجر كلاسيك\nالكمية: 2\nالمنطقة: الخوير\nالحالة: بانتظار تأكيد الفريق",
+        question: "مرحبًا، أحتاج حجز موعد في عيادة الأسنان بكرة؟\n\nموعد 5:30 مناسب، هل تقبلون تأمين شركة ظفار؟\n\nممتاز، اعتمدي الموعد باسم أحمد.",
+        answer: "أهلًا بك. متوفر موعد غدًا الساعة 5:30 مساءً أو 7:00 مساءً.\n\nنعم، معتمدون للتغطية المباشرة مع تأمين ظفار.\n\nجهّزت طلب موعد 5:30 غدًا لمراجعة الاستقبال؛ الموعد لم يُؤكد بعد.",
+        cardTitle: "ملخص للاستقبال",
+        card: "القسم: طب وجراحة الأسنان\nالموعد: غدًا 5:30 مساءً (المريض: أحمد)\nالتأمين: شركة ظفار (مشمول الشبكة)\nالمطلوب: تأكيد الحجز وتجهيز الملف",
       },
       en: {
-        question: "Is the classic burger available today?\n\nTwo classic burgers to Al Khuwair.",
-        answer: "Available. How many burgers? Delivery area?\n\nTwo burgers to Al Khuwair. Any notes?",
-        cardTitle: "Enquiry record",
-        card: "Item: Classic burger\nQuantity: 2\nArea: Al Khuwair\nStatus: Awaiting team confirmation",
+        question: "Hi, I need a dental clinic appointment tomorrow?\n\n5:30 PM works. Do you accept Dhofar Insurance?\n\nGreat, please book the slot under Ahmed.",
+        answer: "Hello. Slots available tomorrow at 5:30 PM or 7:00 PM.\n\nYes, we are an approved network provider for Dhofar.\n\nRequested 5:30 PM tomorrow; reception must confirm the appointment.",
+        cardTitle: "Reception summary",
+        card: "Dept: Dental Care\nSlot: Tomorrow 5:30 PM (Patient: Ahmed)\nInsurance: Dhofar Insurance (In-network)\nAction: Confirm booking & prep patient file",
       },
     },
   },
@@ -148,25 +148,25 @@ const scenes = [
     theme: "dark" as const,
     anchor: "handoff",
     title: {
-      ar: "فريقك يكمل من حيث وصلت المحادثة.",
-      en: "Your team picks up where the conversation left off.",
+      ar: "تنظيم طلبات حجز الصالون لمراجعة الفريق.",
+      en: "Salon booking requests for team review.",
     },
     body: {
-      ar: "يعرض المثال سؤال العميل والتفاصيل والخطوة المطلوبة، حتى يبدأ الموظف المتابعة بسياق واضح.",
-      en: "The example brings together the question, details, and next action so staff can follow up with context.",
+      ar: "باقات العناية، الجلسات، وتفضيلات الأخصائية. نورا ترتب تفاصيل الموعد وتسلّم السياق كاملًا لفريق الصالون لتأكيد الحجز واستقبال العميلات بأفضل تجربة.",
+      en: "Treatment packages, sessions, and specialist preferences. Noura organizes appointment details and hands off full context to your salon team to confirm and welcome clients.",
     },
     example: {
       ar: {
-        question: "البرجر الكلاسيك متوفر اليوم؟\n\nعايز ٢ برجر، والتوصيل للخوير.\n\nلا، شكرًا. هذا كل شيء.",
-        answer: "نعم، متوفر. تحب كام برجر؟ والتوصيل لفين؟\n\n٢ برجر للخوير. أي ملاحظات على الطلب؟\n\n٢ برجر كلاسيك للخوير. بانتظار تأكيد الفريق.",
+        question: "مرحبًا، أريد حجز جلسة عناية بالشعر يوم السبت.\n\nالعصر حوالي 4، وهل الأخصائية ريم متواجدة؟\n\nرائع، احجزي لي هذا الموعد لو سمحتِ.",
+        answer: "أهلاً بكِ! متاح يوم السبت. تفضلين فترة الصباح أم المساء؟\n\nنعم، الأخصائية ريم متواجدة الساعة 4:00 عصرًا.\n\nجهّزت طلب السبت 4:00 عصرًا مع ريم لمراجعة الاستقبال؛ الحجز لم يُؤكد بعد.",
         cardTitle: "ملخص للفريق",
-        card: "الاهتمام: ٢ برجر كلاسيك للخوير\nالمطلوب: مراجعة التفاصيل وتأكيد الطلب",
+        card: "الخدمة: جلسة عناية بالشعر\nالموعد: السبت 4:00 عصرًا\nالأخصائية: ريم\nالمطلوب: مراجعة الجدول وتأكيد الحجز",
       },
       en: {
-        question: "Is the classic burger available today?\n\nTwo classic burgers to Al Khuwair.\n\nNo notes, thank you.",
-        answer: "Available. How many burgers? Delivery area?\n\nTwo burgers to Al Khuwair. Any notes?\n\nTwo classic burgers to Al Khuwair. Pending team confirmation.",
+        question: "Hi, I'd like to book a hair care session this Saturday.\n\nAfternoon around 4 PM. Is specialist Reem available?\n\nWonderful, please reserve this slot for me.",
+        answer: "Welcome! Open this Saturday. Morning or afternoon?\n\nYes, specialist Reem is available at 4:00 PM.\n\nRequested Saturday 4:00 PM with Reem; the salon team must confirm the slot.",
         cardTitle: "Summary for the team",
-        card: "Interest: two classic burgers to Al Khuwair\nAction: review details and confirm the order",
+        card: "Service: Hair care treatment\nSlot: Saturday 4:00 PM\nSpecialist: Reem\nAction: Review schedule & confirm booking",
       },
     },
   },
@@ -176,24 +176,24 @@ const scenes = [
     theme: "light" as const,
     anchor: "overview",
     title: {
-      ar: "اعرف ما يحتاج إجراءً، ثم تابع.",
-      en: "See what needs action. Then follow up.",
+      ar: "كل محادثة واضحة، وكل متابعة في مكانها.",
+      en: "Every conversation is clear, and every follow-up is in place.",
     },
     body: {
-      ar: "يعرض المثال استفسارًا ينتظر التأكيد، وعميلًا يحتاج متابعة، وسؤالًا يحتاج معلومة أوضح؛ لتكون الخطوة التالية مفهومة للفريق.",
-      en: "The example shows an enquiry awaiting confirmation, a customer needing follow-up, and a question needing clearer information.",
+      ar: "فيلورا تساعد فريقك يفهم طلب العميل، ويميز المعلومات المؤكدة عن التفاصيل التي تحتاج مراجعة، ويعرف الخطوة التالية دون فقدان سياق المحادثة.",
+      en: "Velora helps your team understand customer requests, distinguish confirmed details from those needing review, and know the next step without losing conversation context.",
     },
     example: {
       ar: {
         question: "استفسار تجهيز مناسبة",
         answer: "بانتظار متابعة الفريق.",
-        cardTitle: "متابعة خدمة العملاء",
+        cardTitle: "متابعة استفسارات العملاء",
         card: "الحالات · المسؤولون · الأسئلة التي تحتاج مراجعة",
       },
       en: {
         question: "Catering enquiry",
         answer: "Waiting for team follow-up.",
-        cardTitle: "Customer-service follow-up",
+        cardTitle: "Customer Enquiry Follow-up",
         card: "Statuses · Owners · Questions needing review",
       },
     },
@@ -204,25 +204,25 @@ const scenes = [
     theme: "dark" as const,
     anchor: "setup",
     title: {
-      ar: "ابدأ بمعلومات نشاطك.",
-      en: "Start with your business information.",
+      ar: "شغلك يكبر، مش ضغطك.",
+      en: "Your business grows, not your pressure.",
     },
     body: {
-      ar: "أنشئ الحساب وجهّز المعلومات، ثم راجع معنا نطاق التجربة وما يلزم للربط والتفعيل.",
-      en: "Create your account and prepare your information, then review the trial scope and activation requirements with us.",
+      ar: "لا تفوّت فرصة بسبب رسالة اتأخرت. جهّز مساعدتك الذكية في خطوات بسيطة، وخلي فيلورا تساعدك في متابعة عملائك.",
+      en: "Never miss an opportunity from a delayed reply. Set up your AI assistant in simple steps, and let Velora help you follow up with your customers.",
     },
     example: {
       ar: {
-        question: "إزاي أبدأ على نشاطي؟",
-        answer: "ابدأ بالحساب ومعلومات النشاط. الربط والرد الآلي يُراجعان لاحقًا.",
-        cardTitle: "التجهيز الحالي",
-        card: "الحساب ← معلومات النشاط والملفات ← مراجعة الربط والتجربة",
+        question: "من اختيار الباقة إلى أول تجربة",
+        answer: "شغلك يكبر، مش ضغطك.",
+        cardTitle: "خطوات التجهيز السلسة",
+        card: "اختيار الشخصية ← قاعدة المعرفة ← ربط واتساب ← تجربة الردود",
       },
       en: {
-        question: "How do I get started for my business?",
-        answer: "Start with the account and business information. Connection and automatic replies are reviewed later.",
-        cardTitle: "What you can prepare",
-        card: "Account → Business information and files → Review connection and trial",
+        question: "From plan selection to first experience",
+        answer: "Your business grows, not your pressure.",
+        cardTitle: "Seamless Setup Steps",
+        card: "Assistant Persona → Knowledge Base → WhatsApp Link → Example Reply Review",
       },
     },
   },
@@ -232,25 +232,25 @@ const scenes = [
     theme: "dark" as const,
     anchor: "demo",
     title: {
-      ar: "شاهد الخطوة التالية في نشاطك.",
-      en: "See the next step for your business.",
+      ar: "استقبال بلاغات الصيانة لمراجعة الفريق.",
+      en: "Maintenance enquiry intake for team review.",
     },
     body: {
-      ar: "اختر نشاطًا وتابع قصة واحدة: سؤال → معلومة → تفاصيل اهتمام → مراجعة الفريق. الردود هنا تمثّل المسار المستهدف.",
-      en: "Pick a business type and follow one story: question → information → interest details → team review. The replies here represent the intended path.",
+      ar: "أعطال التكييف والسباكة والكهرباء تحتاج استجابة فورية. نورا تفهم نوع العطل وموقع العميل، تجهّز البلاغ كاملًا لمراجعة الفريق وتأكيد أي موعد.",
+      en: "AC faults, plumbing, and electrical issues require immediate response. Noura identifies the issue and location, sets priority, and preps the ticket for dispatch.",
     },
     example: {
       ar: {
-        question: "عايز أجرب فيلورا.",
-        answer: "اختر مثالًا مناسبًا لنشاطك، أو راسلنا لنناقش متابعتك.",
-        cardTitle: "البداية: تجهيز الحساب",
-        card: "مستويات الدعم تُناقش حسب احتياج نشاطك. التكاملات توسع لاحق.",
+        question: "مرحبًا، التكييف يقطر ماء وموقّف تبريد، محتاج صيانة عاجلة.\n\nمكيف سبليت وبدأ اليوم، وموقعي في الموالح الجنوبية.\n\nمناسب جدًا الساعة 6، أرسلوا الفني لو سمحتم.",
+        answer: "أهلًا بك. هل المكيف سبليت ولا مركزي؟ وبدأ العطل اليوم؟\n\nحالة عاجلة. يتوفر فني صيانة في الموالح اليوم الساعة 6 مساءً.\n\nجهّزت البلاغ والعنوان وطلب زيارة الساعة 6 لمراجعة الفريق؛ الموعد وإرسال الفني يحتاجان تأكيده.",
+        cardTitle: "بلاغ الصيانة",
+        card: "العطل: تسريب مياه مكيف سبليت · الموالح\nالأولوية: عاجلة (موعد: اليوم 6:00 م)\nالمطلوب: مراجعة توفر الفني وتأكيد الزيارة",
       },
       en: {
-        question: "I want to try Velora.",
-        answer: "Choose an example for your business, or contact us to discuss follow-up.",
-        cardTitle: "Starting with your account",
-        card: "Support levels are discussed around your needs. Integrations come later.",
+        question: "Hi, AC is leaking water and stopped cooling, need urgent repair.\n\nSplit unit, started today. Location is South Al Mawaleh.\n\n6:00 PM works great, please send the technician.",
+        answer: "Hello. Is it split or central? Did it start today?\n\nUrgent priority. A technician is available today at 6:00 PM.\n\nIssue, address and requested 6:00 PM visit prepared for team review; scheduling and dispatch require confirmation.",
+        cardTitle: "Maintenance Ticket",
+        card: "Issue: AC leak & cooling failure · Mawaleh\nPriority: Urgent (Slot: Today 6:00 PM)\nAction: Team to confirm technician availability and visit",
       },
     },
   },
@@ -349,8 +349,8 @@ const ui = {
   scrollHint: { ar: "مرّر لتتابع القصة", en: "Scroll to follow the story" },
   lang: { ar: "EN", en: "عر" },
   langAria: { ar: "التبديل إلى الإنجليزية", en: "Switch to Arabic" },
-  menu: { ar: "عرض قائمة الطعام", en: "See the menu" },
-  catalogueTitle: { ar: "قائمة الطعام", en: "Menu" },
+  menu: { ar: "عرض المنتجات", en: "View products" },
+  catalogueTitle: { ar: "المنتجات المتوفرة", en: "Available Products" },
   close: { ar: "إغلاق", en: "Close" },
   confirmed: { ar: "بانتظار تأكيد الفريق", en: "Awaiting team confirmation" },
   illustrative: { ar: "عرض توضيحي", en: "Illustrative" },
@@ -361,10 +361,19 @@ const ui = {
     ar: "السياق واضح للفريق عند المتابعة.",
     en: "Clear context for the team’s follow-up.",
   },
-  panelTitle: { ar: "الخطوة التالية لكل استفسار", en: "The next step for each enquiry" },
+  illustrativeBadge: { ar: "أمثلة توضيحية", en: "Illustrative examples" },
+  panelTitle: { ar: "متابعة استفسارات العملاء", en: "Customer Enquiry Follow-up" },
   valuePoints: {
-    ar: ["معلومات أوضح للرد", "متابعة منظمة للمهتمين", "خطوة تالية يعرفها الفريق"],
-    en: ["Clearer information for replies", "Organised follow-up for interested customers", "A next step the team can see"],
+    ar: [
+      "ملخص واضح لكل محادثة",
+      "تحديد الاستفسارات التي تحتاج متابعة",
+      "الخطوة التالية واضحة للفريق",
+    ],
+    en: [
+      "Clear summary for each conversation",
+      "Identify enquiries requiring follow-up",
+      "The next step is clear for the team",
+    ],
   },
   tabs: {
     ar: ["المحادثات", "الاستفسارات", "المعرفة"],
@@ -372,29 +381,290 @@ const ui = {
   },
   rows: {
     ar: [
-      ["استفسار عن ٢ برجر", "بانتظار التأكيد", "الخطوة التالية: مراجعة التفاصيل", "مثال توضيحي"],
-      ["سؤال عن منتج", "يحتاج متابعة", "الخطوة التالية: التحقق من التوفر", "مثال توضيحي"],
-      ["توصيل خارج مسقط", "يحتاج معلومة", "الخطوة التالية: توضيح نطاق التوصيل", "مثال توضيحي"],
+      ["طلب ٢ برجر", "بانتظار التأكيد", "الخطوة التالية: مراجعة تفاصيل الطلب قبل اعتماده."],
+      ["استفسار عن توفر وجبة", "يحتاج تحققًا", "الخطوة التالية: التأكد من توفر الصنف."],
+      ["توصيل خارج مسقط", "يحتاج معلومات", "الخطوة التالية: تحديد المنطقة والتأكد من نطاق التوصيل."],
     ],
     en: [
-      ["Enquiry for two burgers", "Awaiting confirmation", "Next: review details", "Illustrative example"],
-      ["Product question", "Follow-up needed", "Next: check availability", "Illustrative example"],
-      ["Delivery outside Muscat", "Information needed", "Next: clarify coverage", "Illustrative example"],
+      ["Order for 2 burgers", "Awaiting confirmation", "Next step: Review order details before confirming."],
+      ["Meal availability enquiry", "Needs verification", "Next step: Check item availability."],
+      ["Delivery outside Muscat", "Needs information", "Next step: Identify area and confirm delivery coverage."],
     ],
   },
   steps: {
     ar: [
-      { title: "إنشاء الحساب", body: "تنشئ حسابك وتعرّف نشاطك باختصار." },
-      { title: "معلومات النشاط", body: "تضيف النص والملفات التي يعتمد عليها الرد لاحقًا." },
-      { title: "متطلبات الربط", body: "نراجع متطلبات ربط واتساب وإتاحته لشركتك." },
-      { title: "نطاق التجربة", body: "نتفق على حدود التجربة قبل أي تشغيل فعلي." },
+      { title: "مساعدتك على ذوقك", body: "اختر شخصية المساعد الذكي التي تمثل هويتك ونبرة الحديث المناسبة لعملائك (نورا، لينا، دانة)، وحدد باقتك." },
+      { title: "عرّفها على شغلك", body: "أضف قائمة منتجاتك، أسعارك، ساعات العمل، وسياسات التوصيل أو الحجز. نورا تعتمد فقط على ما تعتمده لها." },
+      { title: "وصّل واتساب شغلك", body: "اربط رقم واتساب نشاطك عبر Meta Cloud API الرسمي بخطوات سريعة وآمنة دون تعقيدات تقنية." },
+      { title: "جرّبها… وشوف الفارق", body: "استعرض ردودًا معدّة مسبقًا ببيانات افتراضية. الاختبار الفعلي المصرّح به منفصل ولا يفعّل واتساب." },
     ],
     en: [
-      { title: "Create the account", body: "You create your account and briefly describe the business." },
-      { title: "Business information", body: "You add the text and files that later replies can rely on." },
-      { title: "Connection requirements", body: "Review WhatsApp requirements and availability for your company." },
-      { title: "Trial scope", body: "We agree the trial boundaries before any live operation." },
+      { title: "Your assistant, tailored to you", body: "Choose the AI persona that represents your brand and voice (Noura, Lina, Dana), and select your plan." },
+      { title: "Teach her your business", body: "Add your product catalogue, pricing, business hours, and delivery or booking policies. Noura relies strictly on your approved data." },
+      { title: "Connect your business WhatsApp", body: "Connect your business WhatsApp number through the official Meta Cloud API with fast, secure steps." },
+      { title: "Test her out… see the difference", body: "Review preset replies using fictional data. Authorized real trials are separate and do not activate WhatsApp." },
     ],
+  },
+  onboardingStory: {
+    eyebrow: {
+      ar: "من اختيار الباقة إلى أول تجربة",
+      en: "From Plan Selection to First Experience",
+    },
+    headline: {
+      ar: "شغلك يكبر، مش ضغطك.",
+      en: "Your business grows, not your pressure.",
+    },
+    supporting: {
+      ar: "لا تفوّت فرصة بسبب رسالة اتأخرت. جهّز مساعدتك الذكية في خطوات بسيطة، وخلي فيلورا تساعدك في متابعة عملائك.",
+      en: "Never miss an opportunity from a delayed reply. Set up your AI assistant in simple steps, and let Velora help you follow up with your customers.",
+    },
+    stages: [
+      {
+        id: "assistant",
+        number: "01",
+        tag: { ar: "الشخصية والباقة", en: "Persona & Plan" },
+        title: { ar: "مساعدتك على ذوقك.", en: "Your assistant, tailored to you." },
+        body: {
+          ar: "اختر شخصية المساعد الذكي التي تمثل هويتك ونبرة الحديث المناسبة لعملائك (نورا، لينا، دانة)، وحدد باقتك.",
+          en: "Choose the AI persona that represents your brand and voice (Noura, Lina, Dana), and select your plan.",
+        },
+      },
+      {
+        id: "knowledge",
+        number: "02",
+        tag: { ar: "قاعدة المعرفة", en: "Knowledge Base" },
+        title: { ar: "عرّفها على شغلك.", en: "Teach her your business." },
+        body: {
+          ar: "أضف قائمة منتجاتك، أسعارك، ساعات العمل، وسياسات التوصيل أو الحجز. نورا تعتمد فقط على ما تعتمده لها.",
+          en: "Add your product catalogue, pricing, business hours, and delivery or booking policies. Noura relies strictly on your approved data.",
+        },
+      },
+      {
+        id: "whatsapp",
+        number: "03",
+        tag: { ar: "ربط واتساب", en: "WhatsApp Integration" },
+        title: { ar: "وصّل واتساب شغلك.", en: "Connect your business WhatsApp." },
+        body: {
+          ar: "اربط رقم واتساب نشاطك عبر Meta Cloud API الرسمي بخطوات سريعة وآمنة دون تعقيدات تقنية.",
+          en: "Connect your business WhatsApp number through the official Meta Cloud API with fast, secure steps.",
+        },
+      },
+      {
+        id: "test",
+        number: "04",
+        tag: { ar: "بيئة التجربة والجاهزية", en: "Interactive Test Sandbox" },
+        title: { ar: "جرّبها… وشوف الفارق.", en: "Test her out… see the difference." },
+        body: {
+          ar: "استعرض ردودًا معدّة مسبقًا ببيانات افتراضية. الاختبار الفعلي المصرّح به منفصل ولا يفعّل واتساب.",
+          en: "Review preset replies using fictional data. Authorized real trials are separate and do not activate WhatsApp.",
+        },
+      },
+    ],
+    previewUI: {
+      appTitle: {
+        ar: "لوحة تحكم فيلورا — إعداد المساعد",
+        en: "Velora Dashboard — Assistant Setup",
+      },
+      previewBadge: {
+        ar: "معاينة توضيحية",
+        en: "Illustrative Preview",
+      },
+      characters: {
+        noura: {
+          name: { ar: "نورا", en: "Noura" },
+          role: { ar: "خدمة عملاء دافئة", en: "Warm Customer Care" },
+          dialect: { ar: "خليجية وعربية بيضاء", en: "Gulf & Clear Arabic" },
+          badge: { ar: "المختارة في المثال", en: "Selected in example" },
+        },
+        lina: {
+          name: { ar: "لينا", en: "Lina" },
+          role: { ar: "أسلوب عصري ومرن", en: "Modern & Agile Voice" },
+          dialect: { ar: "عربية فصحى مبسطة", en: "Modern Standard Arabic" },
+        },
+        dana: {
+          name: { ar: "دانة", en: "Dana" },
+          role: { ar: "طابع هادئ واحترافي", en: "Calm & Professional" },
+          dialect: { ar: "نبرة تنفيذية دقيقة", en: "Corporate Executive Tone" },
+        },
+      },
+      plans: {
+        basic: {
+          ar: "نورا الأساسية — السعر من الكتالوج المنشور",
+          en: "Noura Basic — pricing from published catalog",
+        },
+        premium: {
+          ar: "Premium — مسودة غير متاحة",
+          en: "Premium — draft, unavailable",
+        },
+        note: {
+          ar: "الأسعار والحدود من الكتالوج المنشور؛ المعاينة لا تنشئ اشتراكًا",
+          en: "Prices and limits come from the published catalog; this preview creates no subscription",
+        },
+      },
+      knowledge: {
+        header: {
+          ar: "مثال لبيانات نشاط افتراضي",
+          en: "Example Fictional Business Knowledge",
+        },
+        businessNameLabel: {
+          ar: "اسم النشاط التجاري",
+          en: "Business Name",
+        },
+        businessNameValue: {
+          ar: "مقهى ومحمص الأصول",
+          en: "Al Osool Café & Roastery",
+        },
+        servicesLabel: {
+          ar: "المنتجات وقائمة الخدمات",
+          en: "Products & Menu Services",
+        },
+        servicesValue: {
+          ar: "قهوة مختصة (V60، فلات وايت، كولد برو)، حلويات طازجة، بوكسات الجمعات والفعاليات.",
+          en: "Specialty coffee (V60, Flat White, Cold Brew), fresh desserts, gathering & event boxes.",
+        },
+        hoursLabel: {
+          ar: "أوقات العمل والأسعار",
+          en: "Operating Hours & Pricing",
+        },
+        hoursValue: {
+          ar: "يوميًا: 7:00 ص – 11:30 م (الجمعة من 1:00 م) · الأسعار: تبدأ من 1.500 ر.ع حتى 14.000 ر.ع.",
+          en: "Daily: 7:00 AM – 11:30 PM (Friday from 1:00 PM) · Prices: from 1.500 OMR to 14.000 OMR.",
+        },
+        policyLabel: {
+          ar: "سياسة التوصيل ومناطق التغطية",
+          en: "Delivery Policy & Coverage",
+        },
+        policyValue: {
+          ar: "توصيل فوري خلال 35 دقيقة لمسقط والمناطق المجاورة عبر المندوب الخاص.",
+          en: "Express 35-min delivery across Muscat and surrounding areas via dedicated courier.",
+        },
+        statusApproved: {
+          ar: "بيانات مثال؛ لا تمثل اعتمادًا فعليًا",
+          en: "Example data; no actual approval is shown",
+        },
+        statusSubtext: {
+          ar: "الاعتماد الفعلي منفصل ويخضع للمراجعة",
+          en: "Actual knowledge approval requires separate review",
+        },
+      },
+      whatsapp: {
+        header: {
+          ar: "ربط رقم واتساب التجاري الرسمي",
+          en: "Connect Official WhatsApp Business",
+        },
+        phoneNumber: "+968 91•• ••42",
+        wabaTitle: {
+          ar: "رقم النشاط التجاري",
+          en: "Business Number",
+        },
+        accountStatus: {
+          ar: "مثال لقناة اتصال؛ الربط غير منفّذ هنا",
+          en: "Example connection; no link is established here",
+        },
+        steps: [
+          {
+            label: {
+              ar: "التحقق من ملكية الرقم عبر Meta OTP",
+              en: "Verify number ownership via Meta OTP",
+            },
+          },
+          {
+            label: {
+              ar: "ربط حساب WhatsApp Business (WABA)",
+              en: "Connect WhatsApp Business Account (WABA)",
+            },
+          },
+          {
+            label: {
+              ar: "مزامنة قناة استقبال المحادثات",
+              en: "Sync inbound conversation channel",
+            },
+          },
+        ],
+        syncNotice: {
+          ar: "الربط الفعلي يتطلب إعداد ميتا والتفويض والمراجعة؛ هذا المثال لا يربط رقمًا أو يفعّل رسائل.",
+          en: "Actual linking requires Meta setup, authorization and review; this example connects no number or messaging.",
+        },
+      },
+      chatTest: {
+        header: {
+          ar: "مثال لردود نورا المعدّة مسبقًا",
+          en: "Preset Noura Reply Example",
+        },
+        onlineStatus: {
+          ar: "ردود معدّة مسبقًا · لا يتم إرسال رسائل",
+          en: "Preset replies · No messages are sent",
+        },
+        sandboxBadge: {
+          ar: "محادثة توضيحية ببيانات افتراضية",
+          en: "Illustrative conversation with fictional data",
+        },
+        messages: [
+          {
+            role: "customer" as const,
+            text: {
+              ar: "مرحبًا، متوفر بوكس قهوة الجمعات مع الحلى اليوم؟",
+              en: "Hi, is the gatherings coffee box with sweets available today?",
+            },
+          },
+          {
+            role: "assistant" as const,
+            text: {
+              ar: "أهلًا بك! نعم متوفر بوكس الجمعات (يكفي 8 أشخاص) مع خيار الحلى المفضل. تحب استلام من الفرع أو توصيل؟",
+              en: "Hello! Yes, the gatherings box (serves 8) is available with your choice of sweets. Pick up or delivery?",
+            },
+          },
+          {
+            role: "customer" as const,
+            text: {
+              ar: "توصيل إلى العذيبة لو سمحت، خلال كم يوصل؟",
+              en: "Delivery to Azaiba please, how long will it take?",
+            },
+          },
+          {
+            role: "assistant" as const,
+            text: {
+              ar: "التوصيل إلى العذيبة يستغرق حوالي 30 إلى 35 دقيقة. جهّزت بيانات طلبك للفريق لتأكيده مباشرة!",
+              en: "Delivery to Azaiba takes around 30 to 35 minutes. Order details prepared for our team to confirm right away!",
+            },
+          },
+        ],
+        readinessHeader: {
+          ar: "عناصر مراجعة توضيحية؛ ليست حالة إطلاق:",
+          en: "Illustrative review items; not launch status:",
+        },
+        readinessList: [
+          {
+            text: {
+              ar: "مراجعة النبرة واللهجة",
+              en: "Review tone and dialect",
+            },
+            done: false,
+          },
+          {
+            text: {
+              ar: "مراجعة الالتزام بمعرفة النشاط",
+              en: "Review use of approved business knowledge",
+            },
+            done: false,
+          },
+          {
+            text: {
+              ar: "مراجعة مسار طلب متابعة الفريق",
+              en: "Review staff follow-up request",
+            },
+            done: false,
+          },
+          {
+            text: {
+              ar: "مراجعة توثيق رقم واتساب",
+              en: "Review WhatsApp number verification",
+            },
+            done: false,
+          },
+        ],
+      },
+    },
   },
   sectors: {
     restaurant: { ar: "مطاعم", en: "Restaurants" },
@@ -403,16 +673,16 @@ const ui = {
   },
   sectorNote: {
     restaurant: {
-      ar: "مطاعم: سؤال عن الصنف → معلومة → تفاصيل الاهتمام → مراجعة الفريق.",
-      en: "Restaurants: item question → information → interest details → team review.",
+      ar: "مطاعم وكافيهات: استفسار القائمة ← تفاصيل الوجبة والإضافات ← العنوان والوقت ← إحالة للتجهيز.",
+      en: "Restaurants & cafés: menu enquiry → order customisation → delivery address → team review.",
     },
     retail: {
-      ar: "متاجر: سؤال عن المنتج → معلومة → تفاصيل الاهتمام → مراجعة الفريق.",
-      en: "Retail: product question → information → interest details → team review.",
+      ar: "متاجر وتجارة إلكترونية: توفر الصنف ← المواصفات والضمان ← طلب حجز القطعة ← مراجعة فريق المبيعات والشحن.",
+      en: "Retail & e-commerce: item availability → specs & warranty → reservation request → team review.",
     },
     services: {
-      ar: "خدمات: طلب موعد → معلومة → تفاصيل الاهتمام → مراجعة الفريق.",
-      en: "Services: slot request → information → interest details → team review.",
+      ar: "صيانة وخدمات منزلية: وصف العطل ← تحديد الاستعجال والعنوان ← طلب الموعد ← مراجعة توفر الفني.",
+      en: "Home services & maintenance: issue description → urgency & location → requested time slot → team review before dispatch.",
     },
   },
   price: { ar: "السعر يُوضح في العرض", en: "Pricing is provided in the offer" },
@@ -610,35 +880,44 @@ const ui = {
   samples: {
     restaurant: [
       {
-        q: { ar: "البرجر الكلاسيك متوفر اليوم؟", en: "Is the classic burger available today?" },
+        q: {
+          ar: "مرحبًا، عندكم برجر لحم كلاسيك الحين؟\n\nوجبة لو سمحت، وبدون بصل، ومع بطاطس حار.\n\nتوصيل إلى القرم، كم الوقت تقريبًا؟",
+          en: "Hi, is the classic beef burger available now?\n\nA meal please, no onions, with spicy fries.\n\nDelivery to Qurum, how long will it take?",
+        },
         a: {
-          ar: "نعم، متوفر. تحب كام برجر؟ والتوصيل لفين؟",
-          en: "Available. How many burgers? Delivery area?",
+          ar: "أهلًا بك! نعم متوفر طازج. تحب وجبة مع بطاطس ومشروب؟\n\nممتاز! وجبة برجر بدون بصل وبطاطس حار. توصيل ولا استلام؟\n\nيستغرق 30-40 دقيقة. جهّزت بيانات طلبك للفريق لتأكيده!",
+          en: "Hello! Freshly made today. Meal with fries & drink?\n\nPerfect! Burger meal without onions & spicy fries. Delivery?\n\nTakes 30-40 mins. Order details prepared for our team!",
         },
       },
     ],
     retail: [
       {
-        q: { ar: "هذا المنتج متوفر بالفرع؟", en: "Is this product available in store?" },
+        q: {
+          ar: "مرحبًا، هل سماعات بلوتوث برو متوفرة بلون أسود؟\n\nهل عليها ضمان؟ وهل يتوفر توصيل لنزوى؟\n\nممتاز، احجز لي حبة لون أسود.",
+          en: "Hi, are Pro Bluetooth earbuds in stock in black?\n\nIs there warranty? And delivery to Nizwa?\n\nGreat, please reserve one in black for me.",
+        },
         a: {
-          ar: "ما المنتج والفرع المطلوبان؟ في هذا المثال، الخطوة التالية أن يتحقق الفريق من التوفر.",
-          en: "Which product and branch? In this example, the team checks availability.",
+          ar: "أهلًا بك! نعم متوفرة باللون الأسود مع عزل الضوضاء.\n\nنعم، ضمان سنتين وتوصيل خلال 24-48 ساعة لجميع المناطق.\n\nجهّزت طلب حجز السماعة والعنوان لمراجعة فريق المبيعات؛ الحجز لم يُؤكد بعد.",
+          en: "Hello! In stock in matte black with noise cancelling.\n\nYes, 2-year warranty and 24-48h delivery to all areas.\n\nReservation request and address prepared for sales review; reservation is not confirmed.",
         },
       },
     ],
     services: [
       {
-        q: { ar: "فيه موعد بكرة الصبح؟", en: "Is there a morning slot tomorrow?" },
+        q: {
+          ar: "مرحبًا، التكييف يقطر ماء وموقّف تبريد، محتاج صيانة عاجلة.\n\nمكيف سبليت وبدأ اليوم، وموقعي في الموالح الجنوبية.\n\nمناسب جدًا الساعة 6، أرسلوا الفني لو سمحتم.",
+          en: "Hi, AC is leaking water and stopped cooling, need urgent repair.\n\nSplit unit, started today. Location is South Al Mawaleh.\n\n6:00 PM works great, please send the technician.",
+        },
         a: {
-          ar: "ما الخدمة والوقت الذي تفضله؟ في هذا المثال، يراجع الفريق الطلب قبل تأكيد الموعد.",
-          en: "Which service and time would you prefer? In this example, the team reviews the request before confirming.",
+          ar: "أهلًا بك. هل المكيف سبليت ولا مركزي؟ وبدأ العطل اليوم؟\n\nحالة عاجلة. يتوفر فني صيانة في الموالح اليوم الساعة 6 مساءً.\n\nجهّزت البلاغ والعنوان وطلب زيارة الساعة 6 لمراجعة الفريق؛ الموعد وإرسال الفني يحتاجان تأكيده.",
+          en: "Hello. Is it split or central? Did it start today?\n\nUrgent priority. A technician is available today at 6:00 PM.\n\nIssue, address and requested 6:00 PM visit prepared for team review; scheduling and dispatch require confirmation.",
         },
       },
     ],
   },
   catalogue: {
-    ar: ["سلطة", "ساندويتش", "مشروب"],
-    en: ["Salad", "Sandwich", "Drink"],
+    ar: ["سماعات بلوتوث برو", "ساعة رياضية ذكية", "شاحن سريع 65W"],
+    en: ["Pro Wireless Earbuds", "Smart Fitness Watch", "65W Fast Charger"],
   },
 };
 
@@ -668,11 +947,88 @@ export function landingCopy(locale: Locale) {
     suggested: t(locale, ui.suggested),
     paused: t(locale, ui.paused),
     noRepeat: t(locale, ui.noRepeat),
+    illustrativeBadge: t(locale, ui.illustrativeBadge),
     panelTitle: t(locale, ui.panelTitle),
     valuePoints: ui.valuePoints[locale],
     tabs: ui.tabs[locale],
     rows: ui.rows[locale],
     steps: ui.steps[locale],
+    onboardingStory: {
+      eyebrow: t(locale, ui.onboardingStory.eyebrow),
+      headline: t(locale, ui.onboardingStory.headline),
+      supporting: t(locale, ui.onboardingStory.supporting),
+      stages: ui.onboardingStory.stages.map((stage) => ({
+        id: stage.id,
+        number: stage.number,
+        tag: t(locale, stage.tag),
+        title: t(locale, stage.title),
+        body: t(locale, stage.body),
+      })),
+      previewUI: {
+        appTitle: t(locale, ui.onboardingStory.previewUI.appTitle),
+        previewBadge: t(locale, ui.onboardingStory.previewUI.previewBadge),
+        characters: {
+          noura: {
+            name: t(locale, ui.onboardingStory.previewUI.characters.noura.name),
+            role: t(locale, ui.onboardingStory.previewUI.characters.noura.role),
+            dialect: t(locale, ui.onboardingStory.previewUI.characters.noura.dialect),
+            badge: t(locale, ui.onboardingStory.previewUI.characters.noura.badge),
+          },
+          lina: {
+            name: t(locale, ui.onboardingStory.previewUI.characters.lina.name),
+            role: t(locale, ui.onboardingStory.previewUI.characters.lina.role),
+            dialect: t(locale, ui.onboardingStory.previewUI.characters.lina.dialect),
+          },
+          dana: {
+            name: t(locale, ui.onboardingStory.previewUI.characters.dana.name),
+            role: t(locale, ui.onboardingStory.previewUI.characters.dana.role),
+            dialect: t(locale, ui.onboardingStory.previewUI.characters.dana.dialect),
+          },
+        },
+        plans: {
+          basic: t(locale, ui.onboardingStory.previewUI.plans.basic),
+          premium: t(locale, ui.onboardingStory.previewUI.plans.premium),
+          note: t(locale, ui.onboardingStory.previewUI.plans.note),
+        },
+        knowledge: {
+          header: t(locale, ui.onboardingStory.previewUI.knowledge.header),
+          businessNameLabel: t(locale, ui.onboardingStory.previewUI.knowledge.businessNameLabel),
+          businessNameValue: t(locale, ui.onboardingStory.previewUI.knowledge.businessNameValue),
+          servicesLabel: t(locale, ui.onboardingStory.previewUI.knowledge.servicesLabel),
+          servicesValue: t(locale, ui.onboardingStory.previewUI.knowledge.servicesValue),
+          hoursLabel: t(locale, ui.onboardingStory.previewUI.knowledge.hoursLabel),
+          hoursValue: t(locale, ui.onboardingStory.previewUI.knowledge.hoursValue),
+          policyLabel: t(locale, ui.onboardingStory.previewUI.knowledge.policyLabel),
+          policyValue: t(locale, ui.onboardingStory.previewUI.knowledge.policyValue),
+          statusApproved: t(locale, ui.onboardingStory.previewUI.knowledge.statusApproved),
+          statusSubtext: t(locale, ui.onboardingStory.previewUI.knowledge.statusSubtext),
+        },
+        whatsapp: {
+          header: t(locale, ui.onboardingStory.previewUI.whatsapp.header),
+          phoneNumber: ui.onboardingStory.previewUI.whatsapp.phoneNumber,
+          wabaTitle: t(locale, ui.onboardingStory.previewUI.whatsapp.wabaTitle),
+          accountStatus: t(locale, ui.onboardingStory.previewUI.whatsapp.accountStatus),
+          steps: ui.onboardingStory.previewUI.whatsapp.steps.map((st) => ({
+            label: t(locale, st.label),
+          })),
+          syncNotice: t(locale, ui.onboardingStory.previewUI.whatsapp.syncNotice),
+        },
+        chatTest: {
+          header: t(locale, ui.onboardingStory.previewUI.chatTest.header),
+          onlineStatus: t(locale, ui.onboardingStory.previewUI.chatTest.onlineStatus),
+          sandboxBadge: t(locale, ui.onboardingStory.previewUI.chatTest.sandboxBadge),
+          messages: ui.onboardingStory.previewUI.chatTest.messages.map((m) => ({
+            role: m.role,
+            text: t(locale, m.text),
+          })),
+          readinessHeader: t(locale, ui.onboardingStory.previewUI.chatTest.readinessHeader),
+          readinessList: ui.onboardingStory.previewUI.chatTest.readinessList.map((r) => ({
+            text: t(locale, r.text),
+            done: r.done,
+          })),
+        },
+      },
+    },
     sectors: (Object.keys(ui.sectors) as SectorId[]).map((id) => ({
       id,
       label: t(locale, ui.sectors[id]),

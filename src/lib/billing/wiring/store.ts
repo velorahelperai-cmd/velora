@@ -18,16 +18,20 @@ function billingAdmin(): AnyClient | null {
 
 export async function findOrderByProviderOrderId(
   providerOrderId: string,
+  scope?:{providerAccountRef:string;providerEnvironment:"test"|"live"},
 ): Promise<SavedOrderForWebhook | null> {
   const admin = billingAdmin();
   if (!admin) return null;
 
-  const { data: attempt } = await admin
+  let query = admin
     .from("billing_payment_attempts")
     .select("id, order_id, company_id, provider_order_id, status")
-    .eq("provider_order_id", providerOrderId)
+    .eq("provider_order_id", providerOrderId);
+  if(scope)query=query.eq("provider","paymob").eq("provider_account_ref",scope.providerAccountRef).eq("provider_environment",scope.providerEnvironment);
+  const {data:attempt}=await query
     .order("created_at", { ascending: false })
-    .limit(1)
+    // Never choose one company's binding when the bare provider id is ambiguous.
+    .limit(2)
     .maybeSingle();
 
   if (!attempt) return null;
@@ -41,12 +45,18 @@ export async function findOrderByProviderOrderId(
     .eq("company_id", attempt.company_id)
     .maybeSingle();
 
-  if (!order) return null;
+  if (!order || order.currency !== "OMR" || !["test", "live"].includes(order.provider_environment) ||
+      !Number.isSafeInteger(Number(order.amount_baisa)) || Number(order.amount_baisa) <= 0 ||
+      !Number.isSafeInteger(Number(order.provider_amount)) || Number(order.provider_amount) <= 0) return null;
 
   const merchantOwnerId = process.env.PAYMOB_MERCHANT_OWNER_ID?.trim() || null;
-  const integrationIdRaw = process.env.PAYMOB_INTEGRATION_ID_TEST?.trim();
+  const integrationIdRaw = process.env[order.provider_environment==="live"?"PAYMOB_INTEGRATION_ID_LIVE":"PAYMOB_INTEGRATION_ID_TEST"]?.trim();
   const accountRef = String(order.provider_account_ref);
-  const integrationId = integrationIdRaw ? Number(integrationIdRaw) : Number(accountRef);
+  const integrationId = integrationIdRaw ? Number(integrationIdRaw) : order.provider_environment==="live"?0:Number(accountRef);
+  if(scope&&(accountRef!==scope.providerAccountRef||order.provider_environment!==scope.providerEnvironment))return null;
+  // Shared HMAC credentials cannot authenticate unsigned is_live. Distinct
+  // server-pinned integrations are required before accepting a Live receipt.
+  if(order.provider_environment==="live"&&(!integrationIdRaw||integrationIdRaw===process.env.PAYMOB_INTEGRATION_ID_TEST?.trim()))return null;
 
   return {
     companyId: String(order.company_id),
@@ -96,7 +106,7 @@ export async function insertProviderEvent(
   if (error?.code === "23505") {
     const { data: existing } = await admin
       .from("billing_provider_events")
-      .select("id")
+      .select("id,company_id,payment_attempt_id,amount_baisa_expected,currency_expected")
       .eq("provider", "paymob")
       .eq("provider_account_ref", row.providerAccountRef)
       .eq("provider_environment", row.providerEnvironment)
@@ -105,6 +115,10 @@ export async function insertProviderEvent(
       .eq("observation_key", row.observationKey)
       .maybeSingle();
     if (existing) {
+      if (existing.company_id !== row.companyId || existing.payment_attempt_id !== row.paymentAttemptId ||
+          Number(existing.amount_baisa_expected) !== row.amountBaisaExpected || existing.currency_expected !== row.currencyExpected) {
+        return { ok: false, code: "duplicate_binding_mismatch" };
+      }
       return { ok: true, inserted: false, eventId: String(existing.id) };
     }
   }
@@ -127,16 +141,16 @@ export async function settleHmacVerifiedViaRpc(
   });
 
   if (error) {
-    const msg = error.message ?? "";
-    if (msg.includes("idempotent") || msg.includes("already")) {
-      return { ok: false, code: "already_settled" };
-    }
     return { ok: false, code: error.code ?? "settle_rpc_failed" };
   }
 
-  const outcome =
-    data && typeof data === "object" && "outcome" in data
-      ? String((data as { outcome: unknown }).outcome)
-      : "granted";
+  if(data&&typeof data==="object"&&!Array.isArray(data)&&data.ok===false&&typeof data.code==="string"&&data.code.trim()) {
+    return {ok:false,code:data.code};
+  }
+
+  if (!data || typeof data !== "object" || Array.isArray(data) || typeof data.outcome !== "string") {
+    return { ok: false, code: "settle_result_invalid" };
+  }
+  const outcome = data.outcome;
   return { ok: true, outcome };
 }

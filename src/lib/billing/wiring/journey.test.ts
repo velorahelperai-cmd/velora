@@ -474,6 +474,7 @@ describe("WIRING-01 return display + mock HTTP (no live Paymob)", () => {
           latestEventStatus: "success",
           hasGrant: true,
           paidThrough: "2027-01-01T00:00:00.000Z",
+          financial: provenReturnQualification(COMPANY_A, "x", "2027-01-01T00:00:00.000Z"),
         },
       }).kind,
     ).toBe("success");
@@ -509,3 +510,4 @@ describe("WIRING-01 return display + mock HTTP (no live Paymob)", () => {
     expect(WIRING_JOURNEY_TEST_MARKER).toContain("WIRING_JOURNEY_TEST");
   });
 });
+import { provenReturnQualification } from "./financial-truth.fixtures";

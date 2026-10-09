@@ -1,4 +1,4 @@
-﻿-- VEL-BILLING-LOCK-ORDER-AND-UNKNOWN-FIX-03
+-- VEL-BILLING-LOCK-ORDER-AND-UNKNOWN-FIX-03
 -- Canonical lock family (all intersecting purchase / renew / settle / attempt paths):
 --   1) company
 --   2) subscription

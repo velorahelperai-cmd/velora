@@ -1,8 +1,9 @@
+import { checkAppSession } from "@/lib/auth/session-guard";
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { getSupabaseEnv } from "@/lib/supabase/env";
 
-export type SessionKind = "authenticated" | "unauthenticated" | "unavailable";
+export type SessionKind = "authenticated" | "unauthenticated" | "unavailable" | "expired";
 
 export type SessionUpdate = {
   response: NextResponse;
@@ -45,6 +46,9 @@ export async function updateSession(request: NextRequest): Promise<SessionUpdate
       return { response: supabaseResponse, session: "unavailable", hasUser: false };
     }
     if (data?.claims?.sub) {
+      const documentNavigation=request.headers.get("sec-fetch-mode")==="navigate";
+      const guard=await checkAppSession(supabase,documentNavigation);
+      if(!guard.ok)return {response:supabaseResponse,session:guard.code==="UNAUTHENTICATED"?"expired":"unavailable",hasUser:false};
       return { response: supabaseResponse, session: "authenticated", hasUser: true };
     }
     return { response: supabaseResponse, session: "unauthenticated", hasUser: false };

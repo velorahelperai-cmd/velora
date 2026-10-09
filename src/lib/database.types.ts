@@ -176,6 +176,7 @@ export type Database = {
       };
       knowledge_sources: {
         Row: {
+          usage_role: "knowledge" | "business_instructions";
           id: string;
           company_id: string;
           kind: "text" | "file";
@@ -197,6 +198,7 @@ export type Database = {
           updated_at: string;
         };
         Insert: {
+          usage_role?: "knowledge" | "business_instructions";
           id?: string;
           company_id: string;
           kind: "text" | "file";
@@ -218,6 +220,7 @@ export type Database = {
           updated_at?: string;
         };
         Update: {
+          usage_role?: "knowledge" | "business_instructions";
           kind?: "text" | "file";
           title?: string;
           content?: string;
@@ -574,6 +577,38 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      list_owner_company_review_events_for_company: { Args: {p_company_id:string}; Returns:Json };
+      ai_settle_admin_attempt: { Args: {p_id:string;p_status:string;p_cost_usd:number|null;p_cost_baisa:number|null;p_usage:Json;p_request_id:string|null;p_error_code:string|null;p_latency_ms:number;p_response_id:string|null;p_actual_model_id:string|null}; Returns:boolean };
+      whatsapp_inbox_page: { Args: {p_company_id:string;p_limit?:number;p_before?:string|null}; Returns:Json };
+      whatsapp_thread_page: { Args: {p_company_id:string;p_conversation_id:string;p_limit?:number;p_before?:string|null}; Returns:Json };
+      whatsapp_mark_thread_read: { Args: {p_company_id:string;p_conversation_id:string;p_displayed_inbound_message_id:string}; Returns:Json };
+      whatsapp_control_audit_page: { Args: {p_company_id:string;p_conversation_id:string;p_limit?:number;p_before?:string|null}; Returns:Json };
+      whatsapp_inbox_connection_status: { Args: {p_company_id:string}; Returns:Json };
+      ai_reserve_whatsapp_capacity_cost_attempt: { Args: { p_id:string; p_job_id:string; p_claim_token:string; p_attempt:number; p_model_id:string; p_provider:string; p_reserved_baisa:number; p_pricing_version:string; p_pricing_snapshot:Json; p_source_citations:Json; p_expected_persona?:string|null; p_expected_plan_version_id?:string|null }; Returns:Json };
+      whatsapp_revoke_failed_credential: {Args:{p_company_id:string;p_link_id:string;p_phone_number_id:string;p_link_generation:number;p_provider_code:number};Returns:boolean};
+      whatsapp_revoke_meta_waba_authorization: { Args: { p_waba_id:string; p_reason:string; p_occurred_at:string }; Returns:Json };
+      ai_reserve_whatsapp_profile_attempt: { Args: { p_id:string; p_job_id:string; p_claim_token:string; p_attempt:number; p_model_id:string; p_provider:string; p_reserved_baisa:number; p_pricing_version:string; p_pricing_snapshot:Json; p_source_citations:Json; p_expected_persona:string; p_expected_plan_version_id:string }; Returns:Json };
+      whatsapp_embedded_signup_readiness: { Args: {p_company_id:string}; Returns:Json };
+      whatsapp_start_embedded_signup: { Args: {p_company_id:string;p_attempt_id:string;p_nonce:string;p_keep_on_phone:boolean;p_app_id:string;p_config_id:string;p_graph_version:string}; Returns:Json };
+      whatsapp_claim_embedded_signup: { Args: {p_company_id:string;p_attempt_id:string;p_nonce:string}; Returns:Json };
+      whatsapp_cancel_embedded_signup: { Args: {p_company_id:string;p_attempt_id:string;p_nonce:string}; Returns:Json };
+      whatsapp_finalize_embedded_signup: { Args: {p_attempt_id:string;p_user_id:string;p_session_id:string;p_access_token:string;p_proof:Json}; Returns:Json };
+      whatsapp_fail_embedded_signup: { Args: {p_attempt_id:string;p_user_id:string;p_session_id:string;p_code:string}; Returns:Json };
+      whatsapp_disconnect_embedded_signup: { Args: {p_company_id:string}; Returns:Json };
+      whatsapp_read_link_access_secret: { Args: { p_company_id:string; p_link_id:string; p_phone_number_id:string; p_link_generation:number }; Returns:Json };
+      resolve_whatsapp_company_by_meta_asset: { Args: { p_waba_id:string; p_provider_phone_number_id:string }; Returns:Json };
+      whatsapp_check_service_window: { Args: { p_company_id:string; p_conversation_id:string; p_phone_number_id:string; p_recipient_wa_id:string }; Returns:Json };
+      whatsapp_store_meta_inbound: { Args: { p_waba_id:string; p_company_id:string; p_phone_number_id:string; p_customer_wa_id:string; p_customer_name:string; p_wa_message_id:string; p_body:string; p_message_type:string; p_received_at:string }; Returns:Json };
+      whatsapp_apply_meta_delivery_status: { Args: { p_waba_id:string; p_company_id:string; p_phone_number_id:string; p_wa_message_id:string; p_status:string; p_recipient_wa_id:string; p_occurred_at:string }; Returns:Json };
+      whatsapp_read_answer_profile: { Args: { p_company_id:string; p_job_id:string; p_claim_token:string }; Returns:Json };
+      whatsapp_retrieve_approved_knowledge: { Args: { p_company_id:string; p_job_id:string; p_claim_token:string; p_question:string }; Returns:Json };
+      check_app_session: { Args:{p_touch?:boolean}; Returns:Json };
+      get_selected_whatsapp_company_link: { Args:{p_company_id:string}; Returns:Json };
+      upsert_selected_whatsapp_link_request: { Args:{p_company_id:string;p_requested_display_number:string;p_keep_on_phone?:boolean}; Returns:Json };
+      upsert_selected_owner_company: {
+        Args:{p_company_id:string;p_display_name:string;p_business_type?:string;p_reply_language?:string;p_country?:string;p_city?:string;p_hours?:string;p_contact_phone?:string;p_contact_email?:string;p_member_name?:string};
+        Returns:Database["public"]["Tables"]["companies"]["Row"];
+      };
       save_whatsapp_inbound: {
         Args: {
           p_company_id: string;

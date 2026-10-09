@@ -29,13 +29,14 @@ export async function proxy(request: NextRequest) {
     return redirect;
   }
 
-  if (session === "unauthenticated") {
+  if (session === "unauthenticated" || session === "expired") {
     const returnTo = safeInternalPath(
       `${path}${search}`,
       pathAtOrUnder(path, "/admin") ? "/admin" : `${path}${search}` || path,
     );
     const login = new URL("/login", request.url);
     login.searchParams.set("next", returnTo);
+    if(session==="expired")login.searchParams.set("reason","session_expired");
     const redirect = NextResponse.redirect(login);
     response.cookies.getAll().forEach((c) => redirect.cookies.set(c));
     return redirect;

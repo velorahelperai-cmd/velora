@@ -26,9 +26,12 @@ describe("whatsapp webhook", () => {
 
   it("keeps customer messages separate from delivery statuses and drops duplicate ids", () => {
     const split = splitWebhook({
+      object: "whatsapp_business_account",
       entry: [{
         changes: [{
+          field: "messages",
           value: {
+            messaging_product: "whatsapp",
             metadata: { phone_number_id: "100" },
             contacts: [{ wa_id: "96890000000", profile: { name: "Sara" } }],
             messages: [

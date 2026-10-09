@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -10,12 +10,16 @@ import { WorkspaceShell } from "@/components/app/workspace-shell";
 import { LangSwitch, LinkButton, useAppCopy } from "@/components/app/ui";
 
 export function KnowledgePage({
+  companyId,
   canWrite,
+  canDelete,
   initialSources,
   initialLoadFailed,
   approvalFoundation = "ready",
 }: {
+  companyId: string;
   canWrite: boolean;
+  canDelete?: boolean;
   initialSources: KnowledgeSourceRecord[];
   initialLoadFailed: boolean;
   approvalFoundation?: KnowledgeApprovalFoundation;
@@ -25,8 +29,11 @@ export function KnowledgePage({
   return (
     <WorkspaceShell title={copy.knowledge.title}>
       <KnowledgeEditor
+        key={companyId}
+        companyId={companyId}
         focusTitle={topic}
         canWrite={canWrite}
+        canDelete={canDelete}
         initialSources={initialSources}
         initialLoadFailed={initialLoadFailed}
         approvalFoundation={approvalFoundation}

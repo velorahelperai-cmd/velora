@@ -11,7 +11,8 @@ export type StoredProviderEvent = {
   orderId: string;
   paymentAttemptId: string;
   providerTransactionId: string;
-  eventStatus: "pending" | "success" | "failed" | "other";
+  eventStatus: "pending" | "success" | "failed" | "other" | "refunded" | "voided";
+  providerEnvironment?:"test"|"live";
   providerAccountRef: string;
   specialReference: string;
   amountBaisa: number;
@@ -26,9 +27,11 @@ export type ProcessEventOutcome =
   | "granted"
   | "idempotent_replay"
   | "duplicate_collection_review";
+// Durable review is neither entitlement nor delivery failure.
+type ReviewOutcome="lifecycle_review"|"late_payment_review"|"deadline_policy_review";
 
 export type ProcessEventResult =
-  | { ok: true; outcome: ProcessEventOutcome }
+  | { ok: true; outcome: ProcessEventOutcome | ReviewOutcome }
   | { ok: false; code: string };
 
 export type ProcessEventDeps = {
@@ -39,7 +42,7 @@ export type ProcessEventDeps = {
   >;
 };
 
-function mapSuccessfulSettleOutcome(raw: string): ProcessEventOutcome | null {
+function mapSuccessfulSettleOutcome(raw: string): ProcessEventOutcome | ReviewOutcome | null {
   switch (raw) {
     case "granted":
       return "granted";
@@ -47,6 +50,7 @@ function mapSuccessfulSettleOutcome(raw: string): ProcessEventOutcome | null {
       return "idempotent_replay";
     case "duplicate_collection_review":
       return "duplicate_collection_review";
+    case "lifecycle_review":case "late_payment_review":case "deadline_policy_review":return raw;
     // Legacy aliases from older callers/tests — map explicitly, never treat review as grant.
     case "settled":
       return "granted";
@@ -64,7 +68,7 @@ export async function processStoredPaymobEvent(input: {
   if (input.event.eventStatus === "pending") {
     return { ok: true, outcome: "skipped_pending" };
   }
-  if (input.event.eventStatus !== "success") {
+  if (!["success","refunded","voided"].includes(input.event.eventStatus)) {
     return { ok: true, outcome: "skipped_failed" };
   }
   if (!input.deps.settleEnabled) {
@@ -80,6 +84,8 @@ export async function processStoredPaymobEvent(input: {
     specialReference: input.event.specialReference,
     amountBaisa: input.event.amountBaisa,
     observationKey: input.event.observationKey,
+    providerEnvironment:input.event.providerEnvironment,
+    eventStatus:input.event.eventStatus as "success"|"refunded"|"voided",
   });
 
   const settled = await input.deps.settleHmacVerified(evidence);

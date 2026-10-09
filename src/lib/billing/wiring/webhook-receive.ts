@@ -28,10 +28,10 @@ export type DurableEventInsert = {
   companyId: string;
   paymentAttemptId: string;
   providerTransactionId: string;
-  eventStatus: "pending" | "success" | "failed" | "other";
+  eventStatus: "pending" | "success" | "failed" | "other" | "refunded" | "voided";
   observationKey: string;
   providerAccountRef: string;
-  providerEnvironment: "test";
+  providerEnvironment: "test" | "live";
   amountBaisaExpected: number | null;
   currencyExpected: "OMR";
   /** Redacted summary — no PAN, no secrets. */
@@ -41,7 +41,9 @@ export type DurableEventInsert = {
 export type WebhookReceiveDeps = {
   webhookEnabled: boolean;
   hmacSecret: string;
-  findOrderByProviderOrderId: (providerOrderId: string) => Promise<SavedOrderForWebhook | null>;
+  /** Trusted receiver configuration, never callback is_live or a query parameter. */
+  providerEnvironment?: "test" | "live";
+  findOrderByProviderOrderId: (providerOrderId: string, scope?: {providerAccountRef:string;providerEnvironment:"test"|"live"}) => Promise<SavedOrderForWebhook | null>;
   insertProviderEvent: (
     row: DurableEventInsert,
   ) => Promise<{ ok: true; inserted: boolean; eventId: string } | { ok: false; code: string }>;
@@ -49,6 +51,7 @@ export type WebhookReceiveDeps = {
 
 function redactObservation(obs: VerifiedTransactionObservation): Record<string, unknown> {
   return {
+    hmac_verified: true,
     provider_transaction_id: obs.providerTransactionId,
     provider_order_id: obs.providerOrderId,
     event_status: obs.eventStatus,
@@ -60,6 +63,11 @@ function redactObservation(obs: VerifiedTransactionObservation): Record<string, 
     success: obs.success,
     is_auth: obs.isAuth,
     is_capture: obs.isCapture,
+    error_occured: obs.errorOccured,
+    is_voided: obs.isVoided,
+    is_refunded: obs.isRefunded,
+    has_parent_transaction: obs.hasParentTransaction,
+    is_standalone_payment: obs.isStandalonePayment,
   };
 }
 
@@ -114,34 +122,38 @@ export async function receivePaymobWebhook(input: {
   const obs = verified.observation;
   const observationKey = observationKeyFromVerified(obs);
 
-  const order = await input.deps.findOrderByProviderOrderId(obs.signedOrderId);
+  const environment=input.deps.providerEnvironment??"test";
+  const order = await input.deps.findOrderByProviderOrderId(obs.signedOrderId,{providerAccountRef:String(obs.integrationId),providerEnvironment:environment});
   if (!order) {
     return { status: 409, body: "order_not_bound" };
   }
 
-  const match = matchVerifiedObservationToOrder({ observation: obs, order });
+  if(order.providerEnvironment!==environment)return {status:409,body:"environment_mismatch"};
+  const lifecycle=obs.pending===false&&obs.success===true&&obs.errorOccured===false&&(obs.isRefunded===true||obs.isVoided===true);
+  const match = matchVerifiedObservationToOrder({ observation: obs, order, allowLiveEnvironment:environment==="live", lifecycleReviewOnly:lifecycle });
   if (!match.ok) {
     return { status: 409, body: match.reason };
   }
 
+  const eventStatus=lifecycle?(obs.isVoided?"voided":"refunded"):obs.eventStatus;
   const insert = await input.deps.insertProviderEvent({
     companyId: order.companyId,
     paymentAttemptId: order.paymentAttemptId,
     providerTransactionId: obs.providerTransactionId,
-    eventStatus: obs.eventStatus,
+    eventStatus,
     observationKey,
     providerAccountRef: order.providerAccountRef,
-    providerEnvironment: "test",
+    providerEnvironment: environment,
     amountBaisaExpected: order.amountBaisa,
     currencyExpected: "OMR",
-    rawSummary: redactObservation(obs),
+    rawSummary: {...redactObservation(obs),event_status:eventStatus},
   });
 
   if (!insert.ok) {
     return { status: 500, body: "persist_failed" };
   }
 
-  const awaitingProcessing = obs.eventStatus === "success";
+  const awaitingProcessing = eventStatus === "success" || lifecycle;
   return {
     status: 200,
     body: httpBody(true, !insert.inserted, awaitingProcessing),

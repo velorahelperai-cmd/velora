@@ -1,7 +1,11 @@
 "use server";
+import {readSubscriptionJourneyAction} from "@/lib/billing/operations/actions";
+import { readSessionIdentity } from "@/lib/auth/server-identity";
+import { AUTH_RETURN_COOKIE, authFlowHref } from "@/lib/auth/auth-journey";
+import { safeInternalPath } from "@/lib/auth/safe-next";
 
 import { revalidatePath } from "next/cache";
-import { safeInternalPath } from "@/lib/auth/safe-next";
+
 import { authCallbackUrl, siteUrl } from "@/lib/auth/site-url";
 import { createClient } from "@/lib/supabase/server";
 import { listKnowledgeSources } from "@/lib/knowledge/actions";
@@ -45,10 +49,20 @@ type ReviewAction = "submit" | "resubmit" | "request_changes" | "approve";
 
 export type ActionResult<T = undefined> =
   | { ok: true; data: T }
-  | { ok: false; code: AccessCode | "AUTH_ERROR"; message?: string; data?: T };
+  | { ok: false; sessionExpired?:boolean; code: AccessCode | "AUTH_ERROR"; message?: string; data?: T };
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value != null && typeof value === "object" && !Array.isArray(value);
+}
+
+/** A rendered company is an expectation; authorization still comes from current access. */
+function renderedCompanyError(expected: unknown, companyId: string | null, allowNoCompany = false):
+  { ok: false; code: "INVALID_INPUT" | "FORBIDDEN"; message: string } | null {
+  if (!(expected === null && allowNoCompany)
+    && (typeof expected !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(expected))) {
+    return { ok: false, code: "INVALID_INPUT", message: "invalid_company" };
+  }
+  return expected === companyId ? null : { ok: false, code: "FORBIDDEN", message: "workspace_changed" };
 }
 
 function asReviewRequest(value: unknown): CompanyReviewRequest | null {
@@ -137,6 +151,7 @@ export async function signUpWithEmail(input: {
   email: string;
   password: string;
   confirmPassword: string;
+  next?: string | null;
 }): Promise<ActionResult<{ needsVerification: boolean; email: string }>> {
   const name = input.name.trim();
   const email = input.email.trim().toLowerCase();
@@ -155,7 +170,7 @@ export async function signUpWithEmail(input: {
       password,
       options: {
         data: { full_name: name },
-        emailRedirectTo: authCallbackUrl("/setup"),
+        emailRedirectTo: authCallbackUrl(safeInternalPath(input.next,"/setup")),
       },
     });
     if (error) {
@@ -167,6 +182,8 @@ export async function signUpWithEmail(input: {
         { onConflict: "user_id" },
       );
     }
+    const returnTo=safeInternalPath(input.next,"");
+    if(returnTo){const {cookies}=await import("next/headers");(await cookies()).set(AUTH_RETURN_COOKIE,returnTo,{httpOnly:true,sameSite:"lax",path:"/",secure:process.env.NODE_ENV==="production",maxAge:7200});}
     const needsVerification = !data.user?.email_confirmed_at && !data.session;
     return { ok: true, data: { needsVerification, email } };
   } catch {
@@ -197,27 +214,21 @@ export async function signInWithEmail(input: {
   }
 }
 
-export async function resolvePostAuthPath(): Promise<ActionResult<{ next: string }>> {
-  try {
-    const access = await getCompanyAccess();
-    return { ok: true, data: { next: pathForAccess(access) } };
-  } catch {
-    return { ok: false, code: "UNAVAILABLE" };
-  }
+export async function resolvePostAuthPath(next?:string|null): Promise<ActionResult<{ next: string }>> {
+ try {const access=await getCompanyAccess();const {cookies}=await import("next/headers");const stored=(await cookies()).get(AUTH_RETURN_COOKIE)?.value;return {ok:true,data:{next:pathForAccess(access,safeInternalPath(next||stored,""))}};}catch{return {ok:false,code:"UNAVAILABLE"};}
 }
-
 export async function signOut(): Promise<ActionResult> {
   try {
     const supabase = await createClient();
-    const { error } = await supabase.auth.signOut();
+    const { error } = await supabase.auth.signOut({scope:"local"});
     if (error) return { ok: false, code: "AUTH_ERROR", message: error.message };
-    return { ok: true, data: undefined };
+    const {cookies}=await import("next/headers");const store=await cookies();store.delete(WORKSPACE_COMPANY_COOKIE);store.delete(AUTH_RETURN_COOKIE);return { ok: true, data: undefined };
   } catch {
     return { ok: false, code: "UNAVAILABLE" };
   }
 }
 
-export async function resendVerificationEmail(email: string): Promise<ActionResult> {
+export async function resendVerificationEmail(email: string, next?:string|null): Promise<ActionResult> {
   const cleaned = email.trim().toLowerCase();
   if (!cleaned) return { ok: false, code: "INVALID_INPUT" };
   try {
@@ -225,7 +236,7 @@ export async function resendVerificationEmail(email: string): Promise<ActionResu
     const { error } = await supabase.auth.resend({
       type: "signup",
       email: cleaned,
-      options: { emailRedirectTo: authCallbackUrl("/setup") },
+      options: { emailRedirectTo: authCallbackUrl(safeInternalPath(next,"/setup")) },
     });
     if (error) return { ok: false, code: "AUTH_ERROR", message: error.message };
     return { ok: true, data: undefined };
@@ -254,6 +265,7 @@ export async function updatePassword(password: string): Promise<ActionResult> {
     const supabase = await createClient();
     const { data: userData } = await supabase.auth.getUser();
     if (!userData.user) return { ok: false, code: "UNAUTHENTICATED" };
+    const identity=await readSessionIdentity();if(!identity.ok)return {ok:false,code:identity.code};
     const { error } = await supabase.auth.updateUser({ password });
     if (error) return { ok: false, code: "AUTH_ERROR", message: error.message };
     return { ok: true, data: undefined };
@@ -262,7 +274,8 @@ export async function updatePassword(password: string): Promise<ActionResult> {
   }
 }
 
-export async function completeProfileName(name: string): Promise<ActionResult<{ next: string }>> {
+export async function completeProfileName(name: string, next?:string|null): Promise<ActionResult<{ next: string }>> {
+  const identity=await readSessionIdentity();if(!identity.ok)return {ok:false,code:identity.code};
   const fullName = name.trim();
   if (fullName.length < 2 || fullName.length > 120) {
     return { ok: false, code: "INVALID_INPUT" };
@@ -289,22 +302,21 @@ export async function completeProfileName(name: string): Promise<ActionResult<{ 
       .eq("status", "active");
 
     const access = await getCompanyAccess();
-    return { ok: true, data: { next: pathForAccess(access) } };
+    return { ok: true, data: { next: pathForAccess(access,safeInternalPath(next,"")) } };
   } catch {
     return { ok: false, code: "UNAVAILABLE" };
   }
 }
 
 export async function getAccountProfile(): Promise<ActionResult<AccountProfileView>> {
-  try {
-    const access = await getCompanyAccess();
-    if (!access.ok) return { ok: false, code: access.code };
-    return { ok: true, data: buildAccountProfileView(access) };
-  } catch {
-    return { ok: false, code: "UNAVAILABLE" };
-  }
+ const identity=await readSessionIdentity();if(!identity.ok)return {ok:false,code:identity.code,...("expired" in identity&&identity.expired?{sessionExpired:true}:{})};
+ const access=await getCompanyAccess();
+ if(access.ok&&access.context.userId!==identity.userId)return {ok:false,code:"UNAVAILABLE"};
+ if(access.ok)return {ok:true,data:{...buildAccountProfileView(access),emailConfirmed:identity.emailConfirmed,sessionExpiresAt:identity.sessionExpiresAt}};
+ if(!access.ok&&access.code==="UNAUTHENTICATED")return {ok:false,code:"UNAUTHENTICATED"};
+ // Auth identity survives company/profile outages; no role or company privilege is invented.
+ return {ok:true,data:{userId:identity.userId,email:identity.email,fullName:identity.fullName,supportCode:"",isPlatformAdmin:false,role:null,companyName:null,companyId:null,needsCompanyContext:false,adminHref:null,workspaceHref:null,workHref:identity.emailConfirmed?"/account":authFlowHref("/verify-email",null,identity.email),emailConfirmed:identity.emailConfirmed,sessionExpiresAt:identity.sessionExpiresAt,accessUnavailable:access.code==="UNAVAILABLE"}};
 }
-
 export async function selectWorkspaceCompany(companyId: string): Promise<ActionResult<{ companyId: string }>> {
   const access = await getCompanyAccess();
   if (!access.ok) return { ok: false, code: access.code };
@@ -351,7 +363,7 @@ export async function getWorkspaceSwitcher(): Promise<
 
 /**
  * Customer readiness checklist from real server sources (same semantics as admin views).
- * Subscription/AI has no implementation → always not_configured (never fake active/zero).
+ * Subscription status comes from persisted, confirmed live entitlements.
  */
 export async function getCustomerReadiness(): Promise<ActionResult<CustomerReadinessSnapshot>> {
   try {
@@ -377,9 +389,10 @@ export async function getCustomerReadiness(): Promise<ActionResult<CustomerReadi
       loadFailed: boolean;
       status: ReviewStatus | null;
     } | null = null;
+    let subscription:{loadFailed:boolean;status:string|null;paidThrough:string|null}|null=null;
 
     if (hasCompany) {
-      const listed = await listKnowledgeSources();
+      const listed = await listKnowledgeSources({ expectedCompanyId: company!.id });
       knowledge = listed.ok
         ? {
           loadFailed: false,
@@ -401,7 +414,9 @@ export async function getCustomerReadiness(): Promise<ActionResult<CustomerReadi
       }
 
       if (role === "owner") {
-        const rev = await getCompanyReviewRequest();
+        const journey=await readSubscriptionJourneyAction();
+        subscription=journey.status==="ready"?{loadFailed:false,status:journey.data.subscription?.status??null,paidThrough:journey.data.subscription?.paid_through??null}:{loadFailed:true,status:null,paidThrough:null};
+        const rev = await getCompanyReviewRequest({ expectedCompanyId: company!.id });
         review = rev.ok
           ? { loadFailed: false, status: rev.data?.status ?? null }
           : { loadFailed: true, status: null };
@@ -423,6 +438,7 @@ export async function getCustomerReadiness(): Promise<ActionResult<CustomerReadi
         knowledge,
         whatsapp,
         review,
+        subscription,
       }),
     };
   } catch {
@@ -431,6 +447,7 @@ export async function getCustomerReadiness(): Promise<ActionResult<CustomerReadi
 }
 
 export async function updateAccountName(name: string): Promise<ActionResult<AccountProfileView>> {
+  const verifiedIdentity=await readSessionIdentity();if(!verifiedIdentity.ok)return {ok:false,code:verifiedIdentity.code};
   const fullName = name.trim();
   if (fullName.length < 2 || fullName.length > 120) {
     return { ok: false, code: "INVALID_INPUT" };
@@ -547,9 +564,13 @@ async function requireActiveOwnerCompany() {
   };
 }
 
-export async function getCompanyReviewRequest(): Promise<ActionResult<CompanyReviewRequest | null>> {
+export async function getCompanyReviewRequest(input?: { expectedCompanyId?: string }): Promise<ActionResult<CompanyReviewRequest | null>> {
   const gate = await requireActiveOwnerCompany();
   if (!gate.ok) return { ok: false, code: gate.code };
+  if (input && "expectedCompanyId" in input) {
+    const error = renderedCompanyError(input.expectedCompanyId, gate.companyId);
+    if (error) return error;
+  }
   try {
     const { data, error } = await gate.supabase
       .from("company_review_requests")
@@ -566,11 +587,15 @@ export async function getCompanyReviewRequest(): Promise<ActionResult<CompanyRev
   }
 }
 
-export async function listCompanyReviewEvents(): Promise<ActionResult<CompanyReviewEvent[]>> {
+export async function listCompanyReviewEvents(input?: { expectedCompanyId?: string }): Promise<ActionResult<CompanyReviewEvent[]>> {
   const gate = await requireActiveOwnerCompany();
   if (!gate.ok) return { ok: false, code: gate.code };
+  if (input && "expectedCompanyId" in input) {
+    const error = renderedCompanyError(input.expectedCompanyId, gate.companyId);
+    if (error) return error;
+  }
   try {
-    const { data, error } = await gate.supabase.rpc("list_owner_company_review_events");
+    const { data, error } = await gate.supabase.rpc("list_owner_company_review_events_for_company", { p_company_id: gate.companyId });
     if (error) return { ok: false, code: "AUTH_ERROR", message: error.message };
     const rows = Array.isArray(data) ? data : [];
     const events: CompanyReviewEvent[] = rows.flatMap((row) => {
@@ -594,9 +619,14 @@ export async function submitCompanyReviewRequest(input: {
   whatsappNumber: string;
   ready: boolean;
   expectedRevision?: number;
+  expectedCompanyId?: string;
 }): Promise<ActionResult<CompanyReviewRequest>> {
   const gate = await requireActiveOwnerCompany();
   if (!gate.ok) return { ok: false, code: gate.code };
+  if ("expectedCompanyId" in input) {
+    const error = renderedCompanyError(input.expectedCompanyId, gate.companyId);
+    if (error) return error;
+  }
   if (typeof input.whatsappNumber !== "string") return { ok: false, code: "INVALID_INPUT" };
   if (input.ready !== true) return { ok: false, code: "INVALID_INPUT" };
   if (input.numberOwnership !== "own" && input.numberOwnership !== "new") {
@@ -622,9 +652,14 @@ export async function resubmitCompanyReviewRequest(input: {
   whatsappNumber: string;
   ready: boolean;
   expectedRevision?: number;
+  expectedCompanyId?: string;
 }): Promise<ActionResult<CompanyReviewRequest>> {
   const gate = await requireActiveOwnerCompany();
   if (!gate.ok) return { ok: false, code: gate.code };
+  if ("expectedCompanyId" in input) {
+    const error = renderedCompanyError(input.expectedCompanyId, gate.companyId);
+    if (error) return error;
+  }
   if (typeof input.expectedRevision !== "number") return { ok: false, code: "INVALID_INPUT" };
   if (input.ready !== true) return { ok: false, code: "INVALID_INPUT" };
   if (input.numberOwnership !== "own" && input.numberOwnership !== "new") {
@@ -706,6 +741,7 @@ export async function saveOwnerBusiness(input: {
   contactPhone: string;
   contactEmail: string;
   memberName?: string;
+  expectedCompanyId?: string | null;
 }): Promise<ActionResult<CompanyRecord>> {
   const access = await getCompanyAccess();
   if (!access.ok) return { ok: false, code: access.code };
@@ -713,6 +749,11 @@ export async function saveOwnerBusiness(input: {
     return { ok: false, code: "FORBIDDEN" };
   }
 
+  if(access.context.needsCompanyContext||access.context.isPlatformAdmin&&!access.context.company)return {ok:false,code:"FORBIDDEN"};
+  if ("expectedCompanyId" in input) {
+    const error = renderedCompanyError(input.expectedCompanyId, access.context.company?.id ?? null, true);
+    if (error) return error;
+  }
   const displayName = input.displayName.trim();
   if (!displayName || displayName.length > 120 || !input.hours.trim()) {
     return { ok: false, code: "INVALID_INPUT" };
@@ -720,7 +761,8 @@ export async function saveOwnerBusiness(input: {
 
   try {
     const supabase = await createClient();
-    const { data, error } = await supabase.rpc("upsert_owner_company", {
+    const { data, error } = await supabase.rpc(access.context.company?"upsert_selected_owner_company":"upsert_owner_company", {
+      ...(access.context.company?{p_company_id:access.context.company.id}:{}),
       p_display_name: displayName,
       p_business_type: input.businessType,
       p_reply_language: input.replyLanguage,

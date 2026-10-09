@@ -1,0 +1,38 @@
+/* Scoped to administration: public/customer pages keep their existing theme. */
+.theme{
+ --color-night:#F7F0E5;--color-panel:#FFFBF5;--color-panel-deep:#EFE2CF;
+ --color-paper:#FFFBF5;--color-on-dark:#18130F;--color-ink:#18130F;--color-text:#18130F;
+ --color-muted-on-dark:#615244;--color-muted-soft:#615244;--color-action-on-dark:#6B4932;
+ --color-on-bright-action:#18130F;--color-action-on-light:#6B4932;
+ --color-success-fg:#6B4932;--color-warn-fg:#775326;--color-danger-fg:#8B3D29;--color-danger:#8B3D29;
+ --color-hover-wash:rgba(107,73,50,.06);--color-border-soft:#D7C1A5;--color-line:#D7C1A5;
+ --font-ar:"Tajawal","Segoe UI",Tahoma,sans-serif;--font-en:"Tajawal","Segoe UI",sans-serif;
+ min-height:100svh;background:#F7F0E5;color:#18130F;font-family:var(--font-ar);font-size:16px;line-height:1.8;
+}
+.theme :global(.app-shell){
+ --color-night:#F7F0E5;--color-panel:#FFFBF5;--color-panel-deep:#EFE2CF;--color-on-dark:#18130F;
+ --color-muted-on-dark:#615244;--color-muted-soft:#615244;--color-line:#D7C1A5;
+ --color-action-on-dark:#6B4932;--color-success-fg:#6B4932;--color-warn-fg:#775326;--color-danger-fg:#8B3D29;
+ --color-hover-wash:rgba(107,73,50,.06);--color-border-soft:#D7C1A5;background:#F7F0E5;color:#18130F;
+}
+.theme :is(input,select,textarea,button){font-family:inherit;}
+.theme :is(input,select,textarea){color:#18130F;caret-color:#18130F;}
+.theme :global(.text-xs){font-size:13px;line-height:1.7;}
+.theme :global(.text-sm){font-size:15px;line-height:1.75;}
+.theme :global(.font-mono){font-family:inherit;font-variant-numeric:tabular-nums;}
+.theme :global(.app-panel.admin-section-target){border-color:#9F744B;box-shadow:0 0 0 2px #D1AE7C66;}
+.theme :focus-visible{outline-color:#6B4932;--tw-ring-color:#9F744B;}
+/* Shared controls are restyled only when used inside the admin boundary. */
+.theme :global([class~="bg-[#38dc89]"]){background:#D1AE7C;color:#18130F;}
+.theme :global([class~="bg-[#38dc89]/20"]){background:#E4D3B8;}
+.theme :global([class~="hover:bg-[#4fe79a]"]):hover{background:#C59B66;}
+.theme :global([class~="bg-[#38dc89]/10"]){background:#EFE2CF;}
+.theme :global([class~="border-[#38dc89]/40"]){border-color:#D7C1A5;}
+.theme :global([class~="text-[#072317]"]),.theme :global([class~="text-[#38dc89]"]){color:#18130F;}
+.theme :global([class~="text-[#d1b583]"]){color:#6B4932;}
+.theme :global([class~="bg-[#d9a467]/10"]){background:#EFE2CF;}
+.theme :global([class~="border-[#d9a467]/50"]){border-color:#C9AA85;}
+.theme :global([class~="focus-visible:ring-[#38dc89]"]):focus-visible{--tw-ring-color:#9F744B;}
+.theme :global([class~="bg-black/60"]){background:rgba(107,73,50,.4);}
+.theme :global([class~="text-[#f0a0a0]"]){color:#8B3D29;}
+.theme :is(button,input,select,textarea):disabled{opacity:1;background:#EFE2CF;color:#615244;cursor:not-allowed;border-color:#D7C1A5;}

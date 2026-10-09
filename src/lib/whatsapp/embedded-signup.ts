@@ -1,7 +1,7 @@
 /**
  * Embedded Signup v4 contract (Meta JS SDK + config_id + response_type=code).
- * Live FB.login / token exchange is not executed in this package.
- * Window IDs are not proof of ownership — server must later verify assets.
+ * Browser IDs are selectors; embedded-signup-actions verifies them server-side.
+ * Actual readiness is checked by getEmbeddedSignupSetup against the durable RPC/Vault.
  * https://developers.facebook.com/documentation/business-messaging/whatsapp/embedded-signup/implementation
  */
 
@@ -22,6 +22,8 @@ export type EmbeddedSignupAttempt = {
   status: EmbeddedSignupStatus;
   createdAt: string;
   consumedAt: string | null;
+  sessionId?: string;
+  expiresAt?: string;
 };
 
 function env(name: string) {
@@ -32,7 +34,10 @@ function env(name: string) {
 export function embeddedSignupEnabled() {
   return env("WHATSAPP_EMBEDDED_SIGNUP") === "true"
     && Boolean(env("WHATSAPP_EMBEDDED_SIGNUP_APP_ID"))
-    && Boolean(env("WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID"));
+    && Boolean(env("WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID"))
+    && /^v\d+\.0$/.test(env("WHATSAPP_EMBEDDED_SIGNUP_GRAPH_VERSION"))
+    && Boolean(env("WHATSAPP_APP_SECRET"))
+    && Boolean(env("WHATSAPP_EMBEDDED_SIGNUP_SYSTEM_USER_TOKEN"));
 }
 
 export function embeddedSignupClientConfig() {
@@ -43,26 +48,28 @@ export function embeddedSignupClientConfig() {
     ok: true as const,
     appId: env("WHATSAPP_EMBEDDED_SIGNUP_APP_ID"),
     configId: env("WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID"),
-    graphVersion: env("WHATSAPP_EMBEDDED_SIGNUP_GRAPH_VERSION") || "v26.0",
+    graphVersion: env("WHATSAPP_EMBEDDED_SIGNUP_GRAPH_VERSION"),
   };
 }
 
 export function createEmbeddedSignupAttempt(input: {
   companyId: string;
   userId: string;
+  sessionId?: string;
   keepOnPhone: boolean;
   now?: string;
 }): { ok: true; attempt: EmbeddedSignupAttempt } | { ok: false; code: "NEEDS_SETUP" | "INVALID_INPUT" } {
   if (!embeddedSignupEnabled()) return { ok: false, code: "NEEDS_SETUP" };
   const companyId = input.companyId.trim();
   const userId = input.userId.trim();
-  if (!companyId || !userId) return { ok: false, code: "INVALID_INPUT" };
+  if (!companyId || !userId || !input.sessionId) return { ok: false, code: "INVALID_INPUT" };
   const createdAt = input.now ?? new Date().toISOString();
-  const nonce = `${companyId}:${userId}:${createdAt}`;
+  if (!Number.isFinite(Date.parse(createdAt))) return { ok: false, code: "INVALID_INPUT" };
+  const nonce = Array.from(crypto.getRandomValues(new Uint8Array(32)), n => n.toString(16).padStart(2,"0")).join("");
   return {
     ok: true,
     attempt: {
-      id: `es_${createdAt}`,
+      id: crypto.randomUUID(),
       companyId,
       userId,
       nonce,
@@ -70,6 +77,8 @@ export function createEmbeddedSignupAttempt(input: {
       status: "in_progress",
       createdAt,
       consumedAt: null,
+      sessionId: input.sessionId,
+      expiresAt: new Date(Date.parse(createdAt)+600_000).toISOString(),
     },
   };
 }
@@ -110,13 +119,4 @@ export function applyEmbeddedSignupWindowEvent(input: {
       consumedAt: input.event === "CODE" ? input.attempt.createdAt : null,
     },
   };
-}
-
-/** Durable store is SQL 20261006020000 — unapplied. Memory is not durable. */
-export function embeddedSignupPersistReady() {
-  return false;
-}
-
-export function persistEmbeddedSignupAttempt(): { ok: false; code: "NEEDS_SETUP" } {
-  return { ok: false, code: "NEEDS_SETUP" };
 }

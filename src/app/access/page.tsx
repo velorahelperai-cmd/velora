@@ -12,7 +12,7 @@ export default async function Page({
 }) {
   const params = await searchParams;
   const access = await getCompanyAccess();
-  if (!access.ok && access.code === "UNAUTHENTICATED") redirect("/login");
+  if (!access.ok && access.code === "UNAUTHENTICATED") redirect(access.sessionExpired ? "/login?reason=session_expired" : "/login");
   if (!access.ok && access.code === "UNVERIFIED") redirect("/verify-email");
 
   const code = params.code === "FORBIDDEN" || params.code === "UNAVAILABLE"

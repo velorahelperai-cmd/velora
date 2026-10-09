@@ -1,0 +1,26 @@
+import {describe,it,expect,vi} from "vitest";
+vi.mock("server-only",()=>({}));
+vi.mock("../config/env",()=>({getSecureProviderKey:()=>null}));
+import {executeRealAnswer} from "./execute";
+import {priceRealUsage,realModelPricing,reserveRealCost} from "./economics";
+import {safeProviderError} from "./errors";
+import type {RealRuntimeStore} from "./store";
+const input={actorId:"owner",sessionId:"session",companyId:"company",executionId:"execution",question:"Opening hours?",locale:"en" as const,chunks:[],usageMode:"admin_test" as const};
+function store():RealRuntimeStore{return {reserve:vi.fn().mockResolvedValue({ok:true}),start:vi.fn().mockResolvedValue(true),settle:vi.fn().mockResolvedValue(true)};}
+describe("durable real execution orchestration",()=>{
+ it("makes no provider request when budget reservation fails",async()=>{const db=store(),call=vi.fn();vi.mocked(db.reserve).mockResolvedValue({ok:false,code:"BUDGET_EXCEEDED"});expect(await executeRealAnswer(input,{store:db,call})).toMatchObject({ok:false,error:"BUDGET_EXCEEDED"});expect(call).not.toHaveBeenCalled();});
+ it("makes no provider request when persistence is unavailable",async()=>{const db=store(),call=vi.fn();vi.mocked(db.reserve).mockRejectedValue(Error("offline"));expect(await executeRealAnswer(input,{store:db,call})).toMatchObject({ok:false,error:"PERSISTENCE_OR_AUTHORIZATION_FAILED"});expect(call).not.toHaveBeenCalled();});
+ it("releases a definitely unstarted request when authorization changed",async()=>{const db=store(),call=vi.fn();vi.mocked(db.start).mockResolvedValue(false);expect(await executeRealAnswer(input,{store:db,call})).toMatchObject({ok:false,error:"AUTHORIZATION_CHANGED_BEFORE_EXECUTION"});expect(call).not.toHaveBeenCalled();expect(db.settle).toHaveBeenCalledWith(expect.objectContaining({status:"rejected",costBaisa:0}));});
+ it("reserves each fallback separately and records the rejected attempt",async()=>{const db=store();const call=vi.fn().mockResolvedValueOnce({status:"rejected",text:"",errorCode:"PROVIDER_HTTP_404",latencyMs:1}).mockResolvedValueOnce({status:"success",text:"actual mock response",latencyMs:1,usage:{promptTokens:10,completionTokens:20,cachedTokens:0,cacheWriteTokens:0,reasoningTokens:5}});const result=await executeRealAnswer(input,{store:db,call});expect(result.ok).toBe(true);expect(db.reserve).toHaveBeenCalledTimes(2);expect(db.settle).toHaveBeenCalledTimes(2);expect(vi.mocked(db.reserve).mock.calls[1][0].reservedBaisa).toBeGreaterThan(0);});
+ it("holds funds and stops fallback after an uncertain request",async()=>{const db=store(),call=vi.fn().mockResolvedValue({status:"uncertain",text:"",errorCode:"TIMEOUT",latencyMs:1});await executeRealAnswer(input,{store:db,call});expect(call).toHaveBeenCalledTimes(1);expect(db.settle).toHaveBeenCalledWith(expect.objectContaining({status:"uncertain",costBaisa:null,costUsd:null}));});
+ it("records billed usage on incomplete and empty responses without retry",async()=>{const db=store(),call=vi.fn().mockResolvedValue({status:"incomplete",text:"",latencyMs:1,usage:{promptTokens:10,completionTokens:20,cachedTokens:0,cacheWriteTokens:0,reasoningTokens:15}});await executeRealAnswer(input,{store:db,call});expect(call).toHaveBeenCalledTimes(1);expect(db.settle).toHaveBeenCalledWith(expect.objectContaining({status:"incomplete",costBaisa:expect.any(Number)}));});
+ it("does not deliver a provider response until settlement is confirmed",async()=>{const db=store(),call=vi.fn().mockResolvedValue({status:"success",text:"answer",latencyMs:1,usage:{promptTokens:1,completionTokens:1,cachedTokens:0,cacheWriteTokens:0,reasoningTokens:0}});vi.mocked(db.settle).mockRejectedValue(Error("offline"));expect(await executeRealAnswer(input,{store:db,call})).toMatchObject({ok:false,error:"SETTLEMENT_PENDING_RECONCILIATION"});});
+});
+describe("sourced real text pricing",()=>{
+ it("counts reasoning within OpenAI output and bills cache writes separately",()=>{const cost=priceRealUsage({promptTokens:1000,completionTokens:500,cachedTokens:200,cacheWriteTokens:100,reasoningTokens:400},realModelPricing("gpt-6.1-sol"));expect(cost.costUsd).toBeCloseTo((700*2+200*.1+100*2.5+500*10)/1e6,10);});
+ it("never rounds a charged micro-request to zero",()=>expect(priceRealUsage({promptTokens:1,completionTokens:0,cachedTokens:0,cacheWriteTokens:0,reasoningTokens:0},realModelPricing("gpt-6-luna")).costBaisa).toBeGreaterThan(0));
+ it("uses Google's published 2027 price change",()=>{expect(realModelPricing("gemini-3.8-flash",new Date("2026-12-31T12:00:00Z")).output).toBe(3.75);expect(realModelPricing("gemini-3.8-flash",new Date("2027-01-01T00:00:00Z")).output).toBe(7.5);});
+ it("reserves the full Gemini output ceiling including thoughts",()=>expect(reserveRealCost("gemini-3.8-flash","s","p",realModelPricing("gemini-3.8-flash"))).toBeGreaterThan(90));
+ it("rejects impossible cache usage",()=>expect(()=>priceRealUsage({promptTokens:1,completionTokens:1,cachedTokens:2,cacheWriteTokens:0,reasoningTokens:0},realModelPricing("gpt-6-luna"))).toThrow("INVALID_PROVIDER_USAGE"));
+ it("redacts provider credentials before returning error text",()=>{expect(safeProviderError({message:"key sk-proj-dummysecretvalue123456789 and AQ.dummysecretvalue12345678900000"}).message).not.toContain("dummysecretvalue");});
+});

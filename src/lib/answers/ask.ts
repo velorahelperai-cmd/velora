@@ -85,7 +85,7 @@ async function assertAnswerCallerAccess(): Promise<
   | { ok: true; companyId: string }
   | { ok: false; code: AnswerFailureCode }
 > {
-  const access = await getCompanyAccess();
+  const access = await getCompanyAccess("owner");
   if (!access.ok) {
     if (access.code === "UNAUTHENTICATED") return { ok: false, code: "UNAUTHENTICATED" };
     if (access.code === "UNVERIFIED") return { ok: false, code: "UNVERIFIED" };

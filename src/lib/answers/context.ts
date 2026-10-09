@@ -14,6 +14,7 @@ import type { AnswerContextChunk, AnswerFailureCode } from "@/lib/answers/types"
 import type { Database } from "@/lib/database.types";
 import { KNOWLEDGE_BUCKET } from "@/lib/knowledge/constants";
 import { createClient } from "@/lib/supabase/server";
+import { retrieveApprovedRows, type ClaimedKnowledgeQuery } from "./approved-retrieval";
 
 type KnowledgeClient = SupabaseClient<Database>;
 
@@ -58,7 +59,7 @@ function isMissingApprovalColumnError(error: { message?: string; code?: string }
   return mentionsApprovalColumn && schemaAbsence;
 }
 
-type ApprovedRow = {
+export type ApprovedRow = {
   id: string;
   title: string;
   content: string;
@@ -70,10 +71,11 @@ type ApprovedRow = {
   storage_path: string | null;
   byte_size: number | null;
   updated_at: string;
+  usage_role?: "knowledge" | "business_instructions";
 };
 
 const APPROVED_SELECT =
-  "id, title, content, content_version, approved_version, approved_for_answers, status, kind, storage_path, byte_size, updated_at";
+  "id, title, content, content_version, approved_version, approved_for_answers, status, kind, storage_path, byte_size, updated_at, usage_role";
 
 /**
  * Re-check the Storage object behind every approved file row.
@@ -126,8 +128,18 @@ async function keepRowsWithIntactObjects(
 export async function loadApprovedAnswerContext(
   companyId: string,
   client?: KnowledgeClient,
+  query?: ClaimedKnowledgeQuery,
 ): Promise<PackedContext> {
   const supabase = client ?? await createClient();
+  if (query) {
+    const result = await retrieveApprovedRows(companyId, query, supabase as unknown as Parameters<typeof retrieveApprovedRows>[2]);
+    if (!result.ok) return result;
+    const intact = await keepRowsWithIntactObjects(companyId, result.rows, supabase);
+    if (!intact.ok) return { ok: false, code: "UNAVAILABLE" };
+    // Query retrieval cannot drop a selected source (especially prices/policies/instructions).
+    if (intact.rows.length !== result.rows.length) return { ok: false, code: "APPROVAL_INCOMPLETE" };
+    return packApprovedRows(intact.rows);
+  }
   const { data, error } = await supabase
     .from("knowledge_sources")
     .select(APPROVED_SELECT)
@@ -185,6 +197,11 @@ export async function loadApprovedAnswerContext(
     return { ok: false, code: "CONTEXT_OVERFLOW" };
   }
 
+  return packApprovedRows(rows);
+}
+
+function packApprovedRows(rows: ApprovedRow[]): PackedContext {
+  if (rows.length > ANSWER_MAX_SOURCES) return { ok: false, code: "CONTEXT_OVERFLOW" };
   const chunks: AnswerContextChunk[] = [];
   let used = 0;
 
@@ -198,6 +215,7 @@ export async function loadApprovedAnswerContext(
       title: row.title,
       contentVersion: row.content_version,
       text,
+      ...(row.usage_role ? { usageRole: row.usage_role } : {}),
     });
   }
 
@@ -234,6 +252,8 @@ export async function verifyAnswerCitationsStillValid(
     if (row.status !== "ready" || !row.approved_for_answers) return false;
     if (row.approved_version == null || row.approved_version !== row.content_version) return false;
     if (row.content_version !== chunk.contentVersion) return false;
+    if (row.title !== chunk.title) return false;
+    if (chunk.usageRole && row.usage_role !== chunk.usageRole) return false;
     if (!btrim(row.content).length) return false;
   }
 

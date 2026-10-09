@@ -14,6 +14,30 @@ export type PaymobCallbackKind =
 
 export type CanonicalProviderEventStatus = "pending" | "success" | "failed" | "other";
 
+/** `success` describes the provider operation, not necessarily a collected payment. */
+export function classifyPaymobTransactionStatus(input: {
+  pending: boolean | null;
+  success: boolean | null;
+  errorOccured: boolean | null;
+  isAuth: boolean | null;
+  isCapture: boolean | null;
+  isVoided: boolean | null;
+  isRefunded: boolean | null;
+  hasParentTransaction: boolean | null;
+  isStandalonePayment: boolean | null;
+}): CanonicalProviderEventStatus {
+  if (input.pending === true) return "pending";
+  if (input.success === false || input.errorOccured === true) return "failed";
+  if (
+    input.pending === false && input.success === true && input.errorOccured === false &&
+    input.isStandalonePayment === true && input.hasParentTransaction === false &&
+    input.isAuth === false && input.isCapture === false &&
+    input.isVoided === false && input.isRefunded === false
+  ) return "success";
+  // Auth/capture/refund/void and incomplete lifecycle evidence require separate handling.
+  return "other";
+}
+
 export type VerifiedTransactionObservation = {
   kind: "transaction_processed";
   providerTransactionId: string;
@@ -153,21 +177,19 @@ export function verifyAndMapProcessedCallback(input: {
   const is3dSecure = asBool(o.is_3d_secure);
   const hasParentTransaction = asBool(o.has_parent_transaction);
   const isStandalonePayment = asBool(o.is_standalone_payment);
-  const ownerRaw = o.owner;
-  const signedOwner =
-    typeof ownerRaw === "number" && Number.isSafeInteger(ownerRaw)
-      ? String(ownerRaw)
-      : typeof ownerRaw === "string" && ownerRaw.trim() !== ""
-        ? ownerRaw.trim()
-        : null;
+  const ownerId = asNumber(o.owner);
+  const signedOwner = ownerId != null && ownerId > 0 ? String(ownerId) : null;
 
   if (
     txnId == null ||
+    txnId <= 0 ||
     orderId == null ||
+    orderId <= 0 ||
     amountCents == null ||
     amountCents <= 0 ||
     currency == null ||
     integrationId == null ||
+    integrationId <= 0 ||
     pending == null ||
     success == null ||
     errorOccured == null ||
@@ -192,11 +214,10 @@ export function verifyAndMapProcessedCallback(input: {
           : String((order as Record<string, unknown>).merchant_order_id)
       : null;
 
-  let eventStatus: CanonicalProviderEventStatus;
-  if (pending) eventStatus = "pending";
-  else if (success && !errorOccured) eventStatus = "success";
-  else if (!success || errorOccured) eventStatus = "failed";
-  else eventStatus = "other";
+  const eventStatus = classifyPaymobTransactionStatus({
+    pending, success, errorOccured, isAuth, isCapture, isVoided, isRefunded,
+    hasParentTransaction, isStandalonePayment,
+  });
 
   return {
     ok: true,
@@ -240,8 +261,8 @@ export function mapRedirectionDisplay(input: {
     hmacSecret: input.hmacSecret,
   });
 
-  const success = asBool(input.query.success);
-  const pending = asBool(input.query.pending);
+  const success = hmac.ok ? asBool(input.query.success) : null;
+  const pending = hmac.ok ? asBool(input.query.pending) : null;
   let displayHint: DisplayOnlyRedirection["displayHint"] = "unknown";
   if (pending) displayHint = "pending";
   else if (success === true) displayHint = "success";

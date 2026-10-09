@@ -1,6 +1,8 @@
+import { getPaymobOmrConversionState } from "../paymob/config";
 /**
  * VEL-PAYMOB-TEST-WIRING-01 — operational switches (default OFF).
- * Separate keys for create / webhook / settle. Live always refused in this package.
+ * Separate keys for create / webhook / settle. New Live payment creation stays
+ * refused; explicitly configured Live receipt processing is independently scoped.
  */
 
 function env(name: string): string {
@@ -35,7 +37,7 @@ export type BillingPaymobWiringFlags = {
   createEnabled: boolean;
   webhookEnabled: boolean;
   settleEnabled: boolean;
-  /** Always treated as false for enforcement in this package. */
+  /** Server-pinned receipt environment only; default false. New Live creation remains refused. */
   liveEnabled: boolean;
 };
 
@@ -73,8 +75,8 @@ export type WiringSecretsPresence = {
   integrationId: boolean;
   secretKey: boolean;
   publicKey: boolean;
-  /** Always false in this package — OMR↔Paymob factor unconfirmed. */
-  omrConversionConfigured: false;
+  /** True only after the server-side OMR conversion setting is explicitly verified. */
+  omrConversionConfigured: boolean;
 };
 
 export function readWiringSecretsPresence(
@@ -88,7 +90,7 @@ export function readWiringSecretsPresence(
       overrides?.integrationId ?? env(BILLING_WIRING_SETTING_NAMES.integrationIdTest).length > 0,
     secretKey: overrides?.secretKey ?? env(BILLING_WIRING_SETTING_NAMES.secretKeyTest).length > 0,
     publicKey: overrides?.publicKey ?? env(BILLING_WIRING_SETTING_NAMES.publicKeyTest).length > 0,
-    omrConversionConfigured: false,
+    omrConversionConfigured: getPaymobOmrConversionState().status === "CONFIGURED",
   };
 }
 
@@ -116,8 +118,8 @@ export function blocksWebhookReceive(
   flags: BillingPaymobWiringFlags,
   secrets: WiringSecretsPresence,
 ): WiringReadinessBlock | null {
-  const live = assertLiveRejected(flags);
-  if (live) return live;
+  // Receiving an authenticated receipt is separate from opening a new Live
+  // payment. liveEnabled selects the server-pinned receipt environment only.
   if (!flags.webhookEnabled) return "webhook_disabled";
   if (!secrets.hmacSecret) return "hmac_secret_missing";
   if (!secrets.merchantOwnerId) return "merchant_owner_missing";
@@ -127,8 +129,6 @@ export function blocksWebhookReceive(
 export function blocksSettlement(
   flags: BillingPaymobWiringFlags,
 ): WiringReadinessBlock | null {
-  const live = assertLiveRejected(flags);
-  if (live) return live;
   if (!flags.settleEnabled) return "settle_disabled";
   return null;
 }

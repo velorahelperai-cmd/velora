@@ -11,3 +11,11 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 ## Permanent ban: Obsidian
 
 Do **not** open, read, search, or modify anything under Obsidian (including Handoffs and decision files). Rely only on the user request and this project codebase.
+
+## Delivery priority
+
+The user's goal is to make Velora ready for real business use as soon as possible. Build reusable production paths with real persistence, enforced authorization, and actual integrations. Do not deliver disposable mock implementations that must be rebuilt for launch. Keep tests focused on material failures and continue authorized work through deployment. Administrative AI trials use real model calls with a separately enforced total budget of 1 OMR; customer/WhatsApp activation remains a separate rollout.
+
+## Paid verification
+
+Do not run additional paid AI verification calls without a new explicit user request. Offline unit tests and read-only checks do not authorize provider execution. The real owner console remains available for the user's own deliberate trials within the approved lifetime cap.

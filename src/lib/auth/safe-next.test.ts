@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { allowedReturnPath, safeInternalPath } from "./safe-next";
+import { allowedReturnPath, safeInternalPath, staffInvitationReturnPath } from "./safe-next";
 
 describe("allowedReturnPath platform admin vs membership", () => {
   it("rejects /app for platform admin without membership", () => {
@@ -77,5 +77,17 @@ describe("safeInternalPath", () => {
   it("keeps /account and rejects auth loops", () => {
     expect(safeInternalPath("/account", "/setup")).toBe("/account");
     expect(safeInternalPath("/login", "/setup")).toBe("/setup");
+  });
+});
+
+describe("staff invitation returns", () => {
+  const invitation = `/accept-invite?token=${"a".repeat(43)}`;
+  it("allows account setup to return to acceptance without an existing business membership", () => {
+    expect(allowedReturnPath(invitation, { isPlatformAdmin: false, hasCompany: false, role: null }, "/setup")).toBe(invitation);
+  });
+  it("rejects malformed, external, traversed, and duplicate-token acceptance returns", () => {
+    for (const path of ["/accept-invite", "/accept-invite?token=u2", `https://attacker.example${invitation}`, `/accept-invite/child?token=${"a".repeat(43)}`, `/accept-invite?token=${"a".repeat(43)}&token=${"b".repeat(43)}`, `/app/../accept-invite?token=${"a".repeat(43)}`]) {
+      expect(staffInvitationReturnPath(path)).toBe("");
+    }
   });
 });

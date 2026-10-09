@@ -48,6 +48,9 @@ export type ReadinessDetail =
   | "review_approved"
   | "review_owner_only"
   | "subscription_unimplemented"
+  | "subscription_active"
+  | "subscription_inactive"
+  | "subscription_owner_only"
   | "load_failed";
 
 export type ReadinessAction = "continue" | "review" | "edit" | "none";
@@ -170,6 +173,7 @@ export function buildCustomerReadiness(input: {
     loadFailed: boolean;
     status: ReviewStatus | null;
   } | null;
+  subscription?: {loadFailed:boolean;status:string|null;paidThrough:string|null}|null;
 }): CustomerReadinessSnapshot {
   const isOwner = input.role === "owner";
   const hasCompany = Boolean(input.companyId);
@@ -363,8 +367,8 @@ export function buildCustomerReadiness(input: {
 
   const subscription: CustomerReadinessItem = {
     id: "subscription",
-    tone: "not_configured",
-    detail: "subscription_unimplemented",
+    tone: input.subscription?.loadFailed?"blocked":input.subscription&&["active","cancel_at_period_end"].includes(input.subscription.status??"")&&Date.parse(input.subscription.paidThrough??"")>Date.now()?"complete":"not_configured",
+    detail: !isOwner?"subscription_owner_only":input.subscription?.loadFailed?"load_failed":input.subscription&&["active","cancel_at_period_end"].includes(input.subscription.status??"")&&Date.parse(input.subscription.paidThrough??"")>Date.now()?"subscription_active":"subscription_inactive",
     href: isOwner ? "/app/settings?tab=plan" : null,
     action: isOwner ? "review" : "none",
   };

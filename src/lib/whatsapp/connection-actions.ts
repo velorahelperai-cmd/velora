@@ -69,7 +69,7 @@ export async function getWhatsappCompanyLink(): Promise<ActionOk<WhatsappCompany
   }
   try {
     const supabase = await createClient();
-    const { data, error } = await supabase.rpc("get_whatsapp_company_link");
+    const { data, error } = await supabase.rpc("get_selected_whatsapp_company_link",{p_company_id:access.context.company.id});
     if (error) return { ok: false, code: "UNAVAILABLE", message: error.message };
     return mapLinkResult(data, false);
   } catch {
@@ -84,6 +84,7 @@ export async function getWhatsappCompanyLink(): Promise<ActionOk<WhatsappCompany
 export async function saveWhatsappLinkRequest(input: {
   requestedDisplayNumber: string;
   keepOnPhone: boolean;
+  expectedCompanyId?: string;
 }): Promise<ActionOk<WhatsappCompanyLink> | ActionFail> {
   const access = await getCompanyAccess();
   if (!access.ok) {
@@ -101,12 +102,22 @@ export async function saveWhatsappLinkRequest(input: {
   if (access.context.company.status === "suspended") {
     return { ok: false, code: "COMPANY_SUSPENDED" };
   }
+  if ("expectedCompanyId" in input) {
+    if (typeof input.expectedCompanyId !== "string"
+      || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(input.expectedCompanyId)) {
+      return { ok: false, code: "INVALID_INPUT", message: "invalid_company" };
+    }
+    if (input.expectedCompanyId !== access.context.company.id) {
+      return { ok: false, code: "FORBIDDEN", message: "workspace_changed" };
+    }
+  }
   const number = input.requestedDisplayNumber.trim().slice(0, 40);
   if (number.length < 5) return { ok: false, code: "INVALID_INPUT" };
 
   try {
     const supabase = await createClient();
-    const { data, error } = await supabase.rpc("upsert_whatsapp_link_request", {
+    const { data, error } = await supabase.rpc("upsert_selected_whatsapp_link_request", {
+      p_company_id:access.context.company.id,
       p_requested_display_number: number,
       p_keep_on_phone: Boolean(input.keepOnPhone),
     });

@@ -15,6 +15,7 @@ import { processStoredPaymobEvent } from "@/lib/billing/wiring/event-process";
 import { runBillingEventProcessing } from "@/lib/billing/wiring/process-runner";
 import { mapBillingReturnDbParts } from "@/lib/billing/wiring/return-load";
 import { mapBillingReturnDisplay } from "@/lib/billing/wiring/return-status";
+import { provenReturnQualification } from "./financial-truth.fixtures";
 import type { SavedOrderForWebhook } from "@/lib/billing/wiring/webhook-receive";
 
 const COMPANY_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -42,12 +43,13 @@ function seededOrder(): SavedOrderForWebhook {
 }
 
 describe("FIX-01 return paid_through + isolation", () => {
-  it("settled order uses applied_paid_through from grant", () => {
+  it("settled order uses applied_paid_through from a qualified receipt", () => {
     const row = mapBillingReturnDbParts(COMPANY_A, {
       order: { id: ORDER_ID, company_id: COMPANY_A, status: "closed" },
       attempt: { id: ATTEMPT_ID, status: "paid" },
       latestEvent: { event_status: "success", observation_key: "v1_abc" },
       grant: { id: "grant-1", applied_paid_through: PAID_THROUGH },
+      financial: provenReturnQualification(COMPANY_A, ORDER_ID, PAID_THROUGH),
     });
     expect(row?.hasGrant).toBe(true);
     expect(row?.paidThrough).toBe(PAID_THROUGH);
@@ -230,7 +232,8 @@ describe("FIX-01 observation_key + webhook bodies", () => {
       deps,
     });
     expect(r1.body).toBe("stored_awaiting_processing");
-    expect(r2.body).toBe("stored_awaiting_processing");
+    expect(r2.body).toBe("stored");
+    expect(rows[1]!.eventStatus).toBe("other");
     expect(rows).toHaveLength(2);
     expect(rows[0]!.observationKey).not.toBe(rows[1]!.observationKey);
 
@@ -274,7 +277,7 @@ describe("FIX-01 stored → process → settle → return (schema store mock)", 
       },
     };
 
-    let rowBefore = mapBillingReturnDbParts(COMPANY_A, {
+    const rowBefore = mapBillingReturnDbParts(COMPANY_A, {
       order: { id: ORDER_ID, company_id: COMPANY_A, status: "submitted" },
       attempt: { id: ATTEMPT_ID, status: "provider_submitted" },
       latestEvent: { event_status: "success", observation_key: obsKey },
@@ -313,6 +316,7 @@ describe("FIX-01 stored → process → settle → return (schema store mock)", 
       attempt: { id: ATTEMPT_ID, status: "paid" },
       latestEvent: { event_status: "success", observation_key: obsKey },
       grant: { id: "g1", applied_paid_through: store.grant!.applied_paid_through },
+      financial: provenReturnQualification(COMPANY_A, ORDER_ID, store.grant!.applied_paid_through),
     });
     expect(mapBillingReturnDisplay({ requestCompanyId: COMPANY_A, row: rowAfter }).kind).toBe("success");
   });

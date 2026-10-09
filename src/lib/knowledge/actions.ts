@@ -1,4 +1,6 @@
 "use server";
+import { sessionHasCompanyCapability } from "@/lib/access/actions";
+import type {CompanyCapability} from "@/lib/access/capabilities";
 
 import { revalidatePath } from "next/cache";
 import {
@@ -46,7 +48,15 @@ const SOURCE_SELECT_BASE =
 
 /** Includes answer-approval columns from 20261005093000 — may be absent until that migration is applied. */
 const SOURCE_SELECT =
-  "id, company_id, kind, title, content, file_name, content_type, byte_size, storage_path, status, failure_code, content_version, approved_for_answers, approved_version, approved_at, approved_by, created_by, created_at, updated_at" as const;
+  "id, company_id, kind, title, content, file_name, content_type, byte_size, storage_path, status, failure_code, content_version, approved_for_answers, approved_version, approved_at, approved_by, created_by, created_at, updated_at, usage_role" as const;
+
+function renderedCompanyError(expected: unknown, companyId: string):
+  { ok: false; code: "INVALID_INPUT" | "FORBIDDEN"; message: string } | null {
+  if (typeof expected !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(expected)) {
+    return { ok: false, code: "INVALID_INPUT", message: "invalid_company" };
+  }
+  return expected === companyId ? null : { ok: false, code: "FORBIDDEN", message: "workspace_changed" };
+}
 
 function asSource(
   row: unknown,
@@ -130,41 +140,21 @@ function sourceSelectFor(foundation: KnowledgeApprovalFoundation): typeof SOURCE
   return (foundation === "ready" ? SOURCE_SELECT : SOURCE_SELECT_BASE) as typeof SOURCE_SELECT;
 }
 
-async function requireOwnerCompany() {
-  const access = await getCompanyAccess("owner");
-  if (!access.ok) return { ok: false as const, code: access.code };
-  if (!access.context.company || !access.context.membership) {
-    return { ok: false as const, code: "FORBIDDEN" as const };
-  }
-  if (access.context.company.status === "suspended") {
-    return { ok: false as const, code: "FORBIDDEN" as const };
-  }
-  const supabase = await createClient();
-  const approvalFoundation = await probeApprovalFoundation(supabase);
-  return {
-    ok: true as const,
-    supabase,
-    userId: access.context.userId,
-    companyId: access.context.company.id,
-    approvalFoundation,
-    sourceSelect: sourceSelectFor(approvalFoundation),
-  };
+async function requireOwnerCompany(capability:CompanyCapability="knowledge.write") {
+ const access=await getCompanyAccess();if(!access.ok)return {ok:false as const,code:access.code};
+ const {company,membership}=access.context;
+ if(!company||!membership||company.status==="suspended")return {ok:false as const,code:"FORBIDDEN" as const};
+ if(membership.role!=="owner"&&await sessionHasCompanyCapability(company.id,capability)!==true)return {ok:false as const,code:"FORBIDDEN" as const};
+ const supabase=await createClient(),approvalFoundation=await probeApprovalFoundation(supabase);
+ return {ok:true as const,supabase,userId:access.context.userId,companyId:company.id,approvalFoundation,sourceSelect:sourceSelectFor(approvalFoundation)};
 }
-
 async function requireMemberCompany() {
-  const access = await getCompanyAccess();
-  if (!access.ok) return { ok: false as const, code: access.code };
-  if (!access.context.company || !access.context.membership) {
-    return { ok: false as const, code: "FORBIDDEN" as const };
-  }
-  return {
-    ok: true as const,
-    supabase: await createClient(),
-    companyId: access.context.company.id,
-    role: access.context.membership.role,
-  };
+ const access=await getCompanyAccess();if(!access.ok)return {ok:false as const,code:access.code};
+ const {company,membership}=access.context;
+ if(!company||!membership||company.status==="suspended")return {ok:false as const,code:"FORBIDDEN" as const};
+ if(membership.role!=="owner"&&await sessionHasCompanyCapability(company.id,"knowledge.read")!==true)return {ok:false as const,code:"FORBIDDEN" as const};
+ return {ok:true as const,supabase:await createClient(),companyId:company.id,role:membership.role};
 }
-
 function revalidateKnowledge(companyId: string) {
   revalidatePath("/app/knowledge");
   revalidatePath("/app");
@@ -412,10 +402,14 @@ async function prepareStoredFile(
   return failed ?? asSource({ ...started, status: "failed", failure_code: "extract_failed", content: "" }, foundation);
 }
 
-export async function listKnowledgeSources(): Promise<KnowledgeActionResult<KnowledgeListPayload>> {
+export async function listKnowledgeSources(input?: { expectedCompanyId?: string }): Promise<KnowledgeActionResult<KnowledgeListPayload>> {
   try {
     const ctx = await requireMemberCompany();
     if (!ctx.ok) return { ok: false, code: ctx.code };
+    if (input && "expectedCompanyId" in input) {
+      const error = renderedCompanyError(input.expectedCompanyId, ctx.companyId);
+      if (error) return error;
+    }
     const listed = await listKnowledgeRowsForCompany(ctx.supabase, ctx.companyId);
     if (!listed.ok) return { ok: false, code: "AUTH_ERROR", message: listed.message };
     return { ok: true, data: listed.payload };
@@ -428,21 +422,32 @@ export async function saveTextKnowledgeSource(input: {
   id?: string;
   title: string;
   content: string;
+  usageRole?: "knowledge" | "business_instructions";
+  expectedCompanyId?: string;
 }): Promise<KnowledgeActionResult<KnowledgeSourceRecord>> {
   const title = input.title.trim();
   const content = input.content.trim();
   if (!title || title.length > 200 || !content) {
     return { ok: false, code: "INVALID_INPUT" };
   }
+  if (input.usageRole !== undefined && !["knowledge", "business_instructions"].includes(input.usageRole)) {
+    return { ok: false, code: "INVALID_INPUT" };
+  }
+  const roleChange = input.usageRole === undefined ? {} : { usage_role: input.usageRole };
 
   try {
     const ctx = await requireOwnerCompany();
     if (!ctx.ok) return { ok: false, code: ctx.code };
 
+    if ("expectedCompanyId" in input) {
+      const error = renderedCompanyError(input.expectedCompanyId, ctx.companyId);
+      if (error) return error;
+    }
+
     if (input.id) {
       const { data, error } = await ctx.supabase
         .from("knowledge_sources")
-        .update({ title, content, status: "ready", kind: "text" })
+        .update({ title, content, status: "ready", kind: "text", ...roleChange })
         .eq("id", input.id)
         .eq("company_id", ctx.companyId)
         .eq("kind", "text")
@@ -463,6 +468,7 @@ export async function saveTextKnowledgeSource(input: {
         content,
         status: "ready",
         created_by: ctx.userId,
+        ...roleChange,
       })
       .select(ctx.sourceSelect)
       .single();
@@ -480,6 +486,13 @@ export async function uploadKnowledgeFiles(
   try {
     const ctx = await requireOwnerCompany();
     if (!ctx.ok) return { ok: false, code: ctx.code };
+
+    const expectedCompanies = formData.getAll("expectedCompanyId");
+    if (expectedCompanies.length > 1) return { ok: false, code: "INVALID_INPUT", message: "invalid_company" };
+    if (expectedCompanies.length === 1) {
+      const error = renderedCompanyError(expectedCompanies[0], ctx.companyId);
+      if (error) return error;
+    }
 
     const files = formData.getAll("files").filter((f): f is File => f instanceof File);
     const batchError = validateKnowledgeBatch(
@@ -1134,7 +1147,7 @@ export async function deleteKnowledgeSource(
   sourceId: string,
 ): Promise<KnowledgeActionResult<{ storageDeleted: boolean }>> {
   try {
-    const ctx = await requireOwnerCompany();
+    const ctx = await requireOwnerCompany("knowledge.delete");
     if (!ctx.ok) return { ok: false, code: ctx.code };
 
     const { data: existing, error: loadError } = await ctx.supabase

@@ -12,6 +12,7 @@ import { controlActionCapability } from "@/lib/access/capabilities";
 import { externalSendAllowed, sendReady, whatsappConfig, whatsappRoutingMode } from "@/lib/whatsapp/config";
 import { loadWhatsappConversation, loadWhatsappInbox, type WhatsappInboxMeta } from "@/lib/whatsapp/inbox";
 import { sendWhatsappText } from "@/lib/whatsapp/send";
+import { readServiceWindow } from "@/lib/whatsapp/service-window";
 import { decideClaimedTenantSend, applyClaimedPreGraphOutcome } from "@/lib/whatsapp/send-attempt";
 import { classifyPreGraphSettlement, replyFromPreGraphSettlement } from "@/lib/whatsapp/send-failure";
 import {
@@ -64,6 +65,7 @@ export type ReplyActionResult =
         | "PHONE_MISMATCH"
         | "CONTENT_MISMATCH"
         | "COMPANY_SUSPENDED"
+        | "SUBSCRIPTION_INACTIVE"
         | "IN_PROGRESS"
         | "REJECTED"
         | "UNKNOWN_OUTCOME"
@@ -79,6 +81,9 @@ export type ReplyActionResult =
 
 type IntentPublic = {
   id: string;
+  company_id: string;
+  conversation_id: string;
+  sender_kind: string;
   client_op_id: string;
   outcome: string;
   wa_message_id: string | null;
@@ -92,12 +97,17 @@ type IntentPublic = {
 
 function intentFrom(raw: unknown): IntentPublic | null {
   const row = asRecord(raw as Json);
-  if (!row || typeof row.id !== "string") return null;
+  if (!row || ["id", "company_id", "conversation_id", "sender_kind", "client_op_id", "body", "phone_number_id", "recipient_wa_id"]
+    .some((key) => typeof row[key] !== "string" || !(row[key] as string).trim())) return null;
+  if (!["ready", "attempting", "accepted", "rejected", "unknown"].includes(String(row.outcome))) return null;
   const genRaw = row.link_generation;
   const linkGeneration = typeof genRaw === "number" ? genRaw
     : typeof genRaw === "string" && genRaw.trim() ? Number(genRaw) : null;
   return {
-    id: row.id,
+    id: row.id as string,
+    company_id: row.company_id as string,
+    conversation_id: row.conversation_id as string,
+    sender_kind: row.sender_kind as string,
     client_op_id: String(row.client_op_id ?? ""),
     outcome: String(row.outcome ?? "ready"),
     wa_message_id: typeof row.wa_message_id === "string" ? row.wa_message_id : null,
@@ -106,7 +116,7 @@ function intentFrom(raw: unknown): IntentPublic | null {
     phone_number_id: String(row.phone_number_id ?? ""),
     recipient_wa_id: String(row.recipient_wa_id ?? ""),
     link_id: typeof row.link_id === "string" ? row.link_id : null,
-    link_generation: linkGeneration != null && Number.isFinite(linkGeneration) ? linkGeneration : null,
+    link_generation: linkGeneration != null && Number.isSafeInteger(linkGeneration) && linkGeneration >= 1 ? linkGeneration : null,
   };
 }
 
@@ -182,10 +192,14 @@ export async function replyWhatsappConversation(input: {
   /** Stable per user send operation — retries with the same id return existing state. */
   clientOpId: string;
 }): Promise<ReplyActionResult> {
-  const text = input.body.trim().slice(0, 4096);
-  const clientOpId = input.clientOpId.trim().slice(0, 128);
-  if (!text || clientOpId.length < 8) {
-    return { ok: false, code: "INVALID_INPUT", message: "invalid_input", clientOpId: input.clientOpId?.trim() || undefined };
+  if (!input || typeof input.conversationId !== "string" || !input.conversationId.trim()
+    || typeof input.body !== "string" || typeof input.clientOpId !== "string") {
+    return { ok: false, code: "INVALID_INPUT", message: "invalid_input" };
+  }
+  const text = input.body.trim();
+  const clientOpId = input.clientOpId.trim();
+  if (!text || text.length > 4096 || clientOpId.length < 8 || clientOpId.length > 128) {
+    return { ok: false, code: "INVALID_INPUT", message: "invalid_input" };
   }
 
   const access = await getCompanyAccess();
@@ -208,12 +222,12 @@ export async function replyWhatsappConversation(input: {
   const companyId = access.context.company.id;
   const actorUserId = access.context.userId;
   const canReply = await sessionHasCompanyCapability(companyId, "wa.conversations.reply");
-  // null only when explicit pre-migration compat; otherwise fail closed (no membership bypass).
-  if (canReply === false) {
+  // Production mutations require an authoritative capability decision.
+  if (canReply !== true) {
     return { ok: false, code: "FORBIDDEN", message: "capability_denied", clientOpId };
   }
   const canRead = await sessionHasCompanyCapability(companyId, "wa.conversations.read");
-  if (canRead === false) {
+  if (canRead !== true) {
     return { ok: false, code: "FORBIDDEN", message: "capability_denied", clientOpId };
   }
 
@@ -327,9 +341,16 @@ export async function replyWhatsappConversation(input: {
   if (!intent) {
     return { ok: false, code: "SAVE_FAILED", message: "intent_missing", clientOpId };
   }
-  if (intent.link_id) {
-    intentLinkId = intent.link_id;
-    intentLinkGeneration = intent.link_generation;
+  const replyBindingMatches = (stored: IntentPublic) =>
+    stored.company_id === companyId
+    && stored.conversation_id === input.conversationId
+    && stored.client_op_id === clientOpId
+    && stored.sender_kind === "staff"
+    && stored.phone_number_id === phoneNumberId
+    && stored.recipient_wa_id === recipientWaId
+    && stored.body === text;
+  if (!replyBindingMatches(intent)) {
+    return { ok: false, code: "CONTENT_MISMATCH", message: "intent_binding_mismatch", clientOpId };
   }
 
   // Idempotent settled paths — never start a new provider send.
@@ -396,8 +417,15 @@ export async function replyWhatsappConversation(input: {
   if (!claimRow) {
     return { ok: false, code: "SAVE_FAILED", message: "claim_unavailable", clientOpId };
   }
+  const claimedIntent = intentFrom(claimRow.intent);
+  if (claimRow.ok === true && (
+    !claimedIntent || claimedIntent.id !== intent.id || !replyBindingMatches(claimedIntent)
+  )) {
+    // No retained binding proof: preserve the operation, never contact Graph.
+    return { ok: false, code: "UNKNOWN_OUTCOME", message: "claim_binding_unconfirmed", clientOpId, outcome: "unknown" };
+  }
   if (claimRow.ok === true && claimRow.claimed === false) {
-    intent = intentFrom(claimRow.intent) ?? intent;
+    intent = claimedIntent!;
     if (intent.outcome === "accepted" && intent.message_id) {
       const { data: msg } = await supabase
         .from("whatsapp_messages")
@@ -443,48 +471,82 @@ export async function replyWhatsappConversation(input: {
     if (code === "company_suspended") {
       return { ok: false, code: "COMPANY_SUSPENDED", message: code, clientOpId };
     }
+    if (code === "subscription_inactive") {
+      return { ok: false, code: "SUBSCRIPTION_INACTIVE", message: code, clientOpId, outcome: "ready", notAttempted: true };
+    }
     if (code === "forbidden") return { ok: false, code: "FORBIDDEN", message: code, clientOpId };
     if (code === "binding_mismatch" || code === "phone_mismatch") {
       return { ok: false, code: "PHONE_MISMATCH", message: code, clientOpId };
     }
     return { ok: false, code: "SAVE_FAILED", message: code || "claim_failed", clientOpId };
   }
+  if (claimRow.claimed !== true || claimedIntent?.outcome !== "attempting") {
+    return { ok: false, code: "IN_PROGRESS", message: "claim_not_confirmed", clientOpId, outcome: "attempting" };
+  }
 
-  const attemptToken = typeof claimRow.attempt_token === "string" ? claimRow.attempt_token : null;
-  intent = intentFrom(claimRow.intent) ?? intent;
+  const attemptToken = typeof claimRow.attempt_token === "string"
+    && claimRow.attempt_token.trim() === claimRow.attempt_token
+    && claimRow.attempt_token.length > 0 ? claimRow.attempt_token : null;
+  intent = claimedIntent;
   if (!attemptToken) {
     // Claim succeeded without token — treat as unresolved; keep client_op_id.
     return { ok: false, code: "UNKNOWN_OUTCOME", message: "claim_token_missing", clientOpId, outcome: "unknown" };
   }
 
   // From here: provider contact may have started — never drop clientOpId; never invent a new op.
-  const callFinalize = (result: "rejected" | "unknown" | "accepted", errorCode: string | null, waMessageId: string | null = null) =>
-    admin.rpc("finalize_whatsapp_send_attempt", {
-      p_intent_id: intent!.id,
-      p_attempt_token: attemptToken,
-      p_result: result,
-      p_wa_message_id: waMessageId,
-      p_error_code: errorCode,
-      p_actor_user_id: actorUserId,
-    });
+  const callFinalize = async (result: "rejected" | "unknown" | "accepted", errorCode: string | null, waMessageId: string | null = null) => {
+    try {
+      return await admin.rpc("finalize_whatsapp_send_attempt", {
+        p_intent_id: intent!.id,
+        p_attempt_token: attemptToken,
+        p_result: result,
+        p_wa_message_id: waMessageId,
+        p_error_code: errorCode,
+        p_actor_user_id: actorUserId,
+      });
+    } catch {
+      return { error: { message: "finalize_unavailable" }, data: null };
+    }
+  };
 
   const settlePreGraphRejected = async (errorCode: string) => {
     const rpc = await callFinalize("rejected", errorCode);
     return replyFromPreGraphSettlement(classifyPreGraphSettlement(rpc), clientOpId, errorCode);
   };
+  const paidProof = asRecord(claimRow.manual_paid_entitlement);
+  const paidEntitlementStillCurrent = () => paidProof?.company_id === companyId && paidProof.environment === "live"
+    && typeof paidProof.plan_version_id === "string" && paidProof.plan_version_id.trim().length > 0
+    && typeof paidProof.paid_through === "string" && Number.isFinite(Date.parse(paidProof.paid_through))
+    && Date.parse(paidProof.paid_through) > Date.now();
 
   try {
+    // An older database cannot authorize dispatch by omitting the paid claim attestation.
+    if (!paidEntitlementStillCurrent()) return settlePreGraphRejected("paid_entitlement_unconfirmed");
     let graphToken: string | undefined;
+    let serviceWindowExpiresAt: string | undefined;
     if (mode === "tenant_registry") {
+      serviceWindowExpiresAt = await readServiceWindow(admin, { companyId, conversationId: intent.conversation_id,
+        phoneNumberId: intent.phone_number_id, recipientWaId: intent.recipient_wa_id }) ?? undefined;
+      if (!serviceWindowExpiresAt) return settlePreGraphRejected("service_window_closed");
       const resolved = await resolveWhatsappCompanyByProviderPhone(admin, intent.phone_number_id);
+      const secretRpc = resolved.ok && intent.link_id && intent.link_generation != null
+        ? await admin.rpc("whatsapp_read_link_access_secret", { p_company_id: companyId, p_link_id: intent.link_id,
+          p_phone_number_id: intent.phone_number_id, p_link_generation: intent.link_generation }) : null;
+      const tokenProof = secretRpc && !secretRpc.error ? asRecord(secretRpc.data) : null;
+      const secret = tokenProof?.ok === true && tokenProof.company_id === companyId && tokenProof.link_id === intent.link_id
+        && tokenProof.phone_number_id === intent.phone_number_id && tokenProof.link_generation === intent.link_generation
+        && typeof tokenProof.access_token === "string" && tokenProof.access_token.trim()
+        ? { ok: true as const, accessToken: tokenProof.access_token }
+        : { ok: false as const, code: "NEEDS_SETUP" as const };
       const decision = decideClaimedTenantSend({
         companyId,
         phoneNumberId: intent.phone_number_id,
         recipientWaId: intent.recipient_wa_id,
         conversation: conversationBind,
         resolved,
-        intentLinkId: intent.link_id ?? intentLinkId,
-        intentLinkGeneration: intent.link_generation ?? intentLinkGeneration,
+        intentLinkId: intent.link_id,
+        intentLinkGeneration: intent.link_generation,
+        secret,
       });
       if (decision.action !== "graph") {
         return applyClaimedPreGraphOutcome({
@@ -498,11 +560,14 @@ export async function replyWhatsappConversation(input: {
       return settlePreGraphRejected("not_configured");
     }
 
+    // Window/vault reads can take time: payment must still be current at provider contact.
+    if (!paidEntitlementStillCurrent()) return settlePreGraphRejected("paid_entitlement_unconfirmed");
     const sent = await sendWhatsappText({
       toWaId: intent.recipient_wa_id,
       body: intent.body,
       phoneNumberId: intent.phone_number_id,
       accessToken: graphToken,
+      serviceWindowExpiresAt,
     });
 
     if (!sent.ok) {
@@ -511,6 +576,7 @@ export async function replyWhatsappConversation(input: {
         || sent.code === "NOT_CONFIGURED"
         || sent.code === "NEEDS_SETUP"
         || sent.code === "PHONE_MISMATCH"
+        || sent.code === "SERVICE_WINDOW_CLOSED"
       ) {
         return settlePreGraphRejected(sent.code.toLowerCase());
       }
@@ -526,25 +592,11 @@ export async function replyWhatsappConversation(input: {
       return { ok: false, code: "UNKNOWN_OUTCOME", message: sent.detail || "ambiguous", clientOpId, outcome: "unknown" };
     }
 
-    const finalized = await admin.rpc("finalize_whatsapp_send_attempt", {
-      p_intent_id: intent.id,
-      p_attempt_token: attemptToken,
-      p_result: "accepted",
-      p_wa_message_id: sent.waMessageId,
-      p_error_code: null,
-      p_actor_user_id: actorUserId,
-    });
+    const finalized = await callFinalize("accepted", null, sent.waMessageId);
 
     if (finalized.error) {
       // Provider accepted; retry finalize/persist only — never Graph. Keep client_op_id.
-      const again = await admin.rpc("finalize_whatsapp_send_attempt", {
-        p_intent_id: intent.id,
-        p_attempt_token: attemptToken,
-        p_result: "accepted",
-        p_wa_message_id: sent.waMessageId,
-        p_error_code: null,
-        p_actor_user_id: actorUserId,
-      });
+      const again = await callFinalize("accepted", null, sent.waMessageId);
       const againRow = asRecord(again.data);
       if (!again.error && againRow?.ok === true) {
         if (againRow.persist_pending === true) {
@@ -623,7 +675,7 @@ export async function replyWhatsappConversation(input: {
   }
 }
 
-function asRecord(value: Json | null | undefined): Record<string, unknown> | null {
+function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null;
@@ -652,6 +704,11 @@ export async function controlWhatsappConversation(input: {
   expectedRevision: number;
   assigneeUserId?: string | null;
 }): Promise<ControlActionResult> {
+  if (!input || typeof input.conversationId !== "string" || !input.conversationId.trim()
+    || !["take_over", "resume", "close", "assign"].includes(input.action)
+    || !Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 1) {
+    return { ok: false, code: "INVALID_INPUT" };
+  }
   const access = await getCompanyAccess();
   if (!access.ok) {
     if (access.code === "UNAUTHENTICATED" || access.code === "UNVERIFIED") {
@@ -675,9 +732,9 @@ export async function controlWhatsappConversation(input: {
   const companyId = access.context.company.id;
   const needed = controlActionCapability(input.action);
   const canRead = await sessionHasCompanyCapability(companyId, "wa.conversations.read");
-  if (canRead === false) return { ok: false, code: "FORBIDDEN" };
+  if (canRead !== true) return { ok: false, code: "FORBIDDEN" };
   const canAct = await sessionHasCompanyCapability(companyId, needed);
-  if (canAct === false) return { ok: false, code: "FORBIDDEN" };
+  if (canAct !== true) return { ok: false, code: "FORBIDDEN" };
 
   if (!input.conversationId || !Number.isFinite(input.expectedRevision)) {
     return { ok: false, code: "INVALID_INPUT" };
@@ -688,6 +745,12 @@ export async function controlWhatsappConversation(input: {
 
   try {
     const supabase = await createClient();
+    // A user may belong to several companies. A stale tab must not control a
+    // different company's conversation through the currently selected workspace.
+    const binding = await supabase.from("whatsapp_conversations").select("id")
+      .eq("id", input.conversationId).eq("company_id", companyId).maybeSingle();
+    if (binding.error) return { ok: false, code: "UNAVAILABLE" };
+    if (!binding.data) return { ok: false, code: "NOT_FOUND" };
     const { data, error } = await supabase.rpc("control_whatsapp_conversation", {
       p_conversation_id: input.conversationId,
       p_action: input.action,
@@ -831,9 +894,9 @@ export async function upsertConversationLeadState(input: {
 
   const companyId = access.context.company.id;
   const canRead = await sessionHasCompanyCapability(companyId, "wa.conversations.read");
-  if (canRead === false) return { ok: false, code: "FORBIDDEN" };
+  if (canRead !== true) return { ok: false, code: "FORBIDDEN" };
   const canReply = await sessionHasCompanyCapability(companyId, "wa.conversations.reply");
-  if (canReply === false) return { ok: false, code: "FORBIDDEN" };
+  if (canReply !== true) return { ok: false, code: "FORBIDDEN" };
 
   if (!input.conversationId || !Number.isFinite(input.expectedLeadRevision)) {
     return { ok: false, code: "INVALID_INPUT" };
@@ -844,6 +907,10 @@ export async function upsertConversationLeadState(input: {
 
   try {
     const supabase = await createClient();
+    const binding = await supabase.from("whatsapp_conversations").select("id")
+      .eq("id", input.conversationId).eq("company_id", companyId).maybeSingle();
+    if (binding.error) return { ok: false, code: "UNAVAILABLE" };
+    if (!binding.data) return { ok: false, code: "NOT_FOUND" };
     const { data, error } = await supabase.rpc("upsert_conversation_lead_state", {
       p_conversation_id: input.conversationId,
       p_expected_revision: input.expectedLeadRevision,

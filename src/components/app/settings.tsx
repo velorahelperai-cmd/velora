@@ -1,8 +1,8 @@
-﻿"use client";
+"use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { useState } from "react";
+import { startTransition, useEffect, useRef, useState } from "react";
 import type { CompanyRecord } from "@/lib/tenancy/types";
 import { useDemo } from "@/lib/demo-state";
 import { SubscriptionPanel } from "@/components/app/subscription-panel";
@@ -12,8 +12,9 @@ import { AccountSettingsLinkCard } from "@/components/app/account-page";
 import { WhatsappSettingsPanel } from "@/components/app/whatsapp-settings-panel";
 import { WorkspaceShell } from "@/components/app/workspace-shell";
 import { useOptionalAccountSession } from "./account-chrome";
-import { subscriptionCopy } from "./subscription-copy";
+import { subscriptionCopy, subscriptionTiers } from "./subscription-copy";
 import { saveOwnerBusiness, selectWorkspaceCompany } from "@/lib/tenancy/actions";
+import { createStaffInvitation, listCompanyTeam } from "@/lib/tenancy/staff-invitations";
 import {
   Button, Card, Field, Notice, Tabs,
   useAction, useAppCopy, useUnsavedWarning,
@@ -84,9 +85,11 @@ export function SettingsPage({
           <>
             {tab === "account" ? <AccountTab /> : null}
             {tab === "business" && initialCompany ? <BusinessTab key={initialCompany.id + initialCompany.updated_at} company={initialCompany} /> : null}
-            {tab === "team" ? <TeamTab /> : null}
+            {tab === "team" && initialAccess.companyId ? <TeamTab key={initialAccess.companyId} companyId={initialAccess.companyId} /> : null}
             {tab === "whatsapp" ? (
               <WhatsappSettingsPanel
+                key={`${initialAccess.companyId}:${initialWhatsappLink?.updatedAt ?? ""}:${whatsappLinkLoadFailed}`}
+                companyId={initialAccess.companyId!}
                 initialLink={initialWhatsappLink}
                 initialLoadFailed={whatsappLinkLoadFailed}
                 liveOpsReady={whatsappLiveOpsReady}
@@ -94,12 +97,98 @@ export function SettingsPage({
               />
             ) : null}
             {tab === "plan" ? (
-              <SubscriptionPanel locale={locale} view={initialSubscription} offersView={initialOffersView} onRetry={() => router.refresh()} />
+              <div className="grid gap-6">
+                <PlanHeroSummary view={initialSubscription} locale={locale} />
+                <SubscriptionPanel key={initialAccess.companyId} companyId={initialAccess.companyId!} locale={locale} view={initialSubscription} offersView={initialOffersView} onRetry={() => router.refresh()} />
+              </div>
             ) : null}
           </>
         )}
       </div>
     </WorkspaceShell>
+  );
+}
+
+function PlanHeroSummary({
+  view,
+  locale,
+}: {
+  view: SubscriptionView;
+  locale: "ar" | "en";
+}) {
+  const ar = locale === "ar";
+  const c = subscriptionCopy[locale];
+  const tier = subscriptionTiers.find((t) => t.id === view.currentTier);
+  const tierName = tier ? tier[locale] : c.noPlan;
+  const isActive = view.state === "active";
+  const isPending = view.state === "pending";
+
+  const formatDate = (dateStr: string) => {
+    try {
+      return new Intl.DateTimeFormat(ar ? "ar-OM" : "en-GB", { dateStyle: "medium" }).format(new Date(dateStr));
+    } catch {
+      return dateStr;
+    }
+  };
+
+  return (
+    <div className="overflow-hidden rounded-3xl border border-[#38dc89]/30 bg-gradient-to-r from-[#12281e] via-[#0d1c15] to-[#07110d] p-5 shadow-[0_12px_32px_rgba(0,0,0,0.35)] sm:p-6">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-center gap-3.5">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#38dc89]/20 border border-[#38dc89]/40 text-2xl font-bold">
+            ⚡
+          </div>
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-lg font-bold text-[#f7fbf8]">{tierName}</h3>
+              <span
+                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                  isActive
+                    ? "bg-[#38dc89]/20 text-[#9af0c3] border border-[#38dc89]/40"
+                    : isPending
+                      ? "bg-[#d9a467]/20 text-[#f0cf9d] border border-[#d9a467]/40"
+                      : "bg-white/10 text-[#b7c6b9] border border-white/15"
+                }`}
+              >
+                <span className={`h-1.5 w-1.5 rounded-full ${isActive ? "bg-[#38dc89] animate-pulse" : "bg-[#d9a467]"}`} />
+                {c.states[view.state] ?? view.state}
+              </span>
+            </div>
+            <p className="mt-1 text-xs text-[#b7c6b9]">
+              {ar
+                ? "حالة الاشتراك من سجلات النشاط. ربط ميتا وتفعيل الردود الحية لهما شروط مستقلة."
+                : "Subscription status comes from company records. Meta connection and live replies have separate requirements."}
+            </p>
+          </div>
+        </div>
+
+        <a
+          href="#subscription-plans"
+          className="inline-flex min-h-10 items-center rounded-full border border-[#38dc89]/40 bg-[#38dc89]/15 px-4 text-xs font-semibold text-[#9af0c3] transition hover:bg-[#38dc89]/25 hover:shadow-[0_0_12px_rgba(56,220,137,0.3)]"
+        >
+          {ar ? "ترقية الباقة أو تغيير الدورة ↗" : "Upgrade or Change Cycle ↗"}
+        </a>
+      </div>
+
+      <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4 border-t border-white/10 pt-4 text-xs">
+        <div>
+          <span className="text-[#8aa394] block">{ar ? "دورة الفاتورة" : "Billing Cycle"}</span>
+          <strong className="text-[#f7fbf8] mt-0.5 block">{view.cycle ? c[view.cycle] : c.unknown}</strong>
+        </div>
+        <div>
+          <span className="text-[#8aa394] block">{ar ? "تاريخ التجديد" : "Renewal Date"}</span>
+          <strong className="text-[#f7fbf8] mt-0.5 block">{view.paidThrough ? formatDate(view.paidThrough) : c.unknown}</strong>
+        </div>
+        <div>
+          <span className="text-[#8aa394] block">{ar ? "بوابة الدفع" : "Payment Gateway"}</span>
+          <strong className="text-[#9af0c3] mt-0.5 block">Paymob Oman (سلطنة عُمان)</strong>
+        </div>
+        <div>
+          <span className="text-[#8aa394] block">{ar ? "القناة" : "Channel"}</span>
+          <strong className="text-[#f7fbf8] mt-0.5 block">WhatsApp Business API</strong>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -125,6 +214,7 @@ function BusinessTab({company}:{company:CompanyRecord}) {
         setSaved(false);setError(null);
         void run(async () => {
           const result = await saveOwnerBusiness({
+            expectedCompanyId: company.id,
             displayName: form.name,
             businessType: form.type,
             replyLanguage: form.replyLanguage,
@@ -156,11 +246,101 @@ function BusinessTab({company}:{company:CompanyRecord}) {
   );
 }
 
-function TeamTab() {
+function TeamTab({ companyId }: { companyId: string }) {
   const copy = useAppCopy();
+  const { locale } = useDemo();
+  const ar = locale === "ar";
+  const [team, setTeam] = useState<Awaited<ReturnType<typeof listCompanyTeam>> | null>(null);
+  const [form, setForm] = useState({ email: "", name: "" });
+  const [invite, setInvite] = useState<{ inviteUrl: string; expiresAt: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const { busy, run } = useAction();
+  const request = useRef(0);
+  const text = ar ? {
+    members: "عضويات النشاط", invitations: "الدعوات المحفوظة", emptyInvites: "لا توجد دعوات معلّقة.",
+    failed: "تعذّر تحميل الفريق من الخادم. حاول مرة أخرى.", createFailed: "تعذّر إنشاء الدعوة. تحقق من البيانات والصلاحيات ثم أعد المحاولة.",
+    saved: "تم حفظ الدعوة. انسخ الرابط وشاركه مع الموظف المقصود.", expires: "تنتهي الدعوة", copy: "نسخ الرابط", copied: "تم النسخ", disabled: "معطّل", expired: "منتهية", refresh: "تحديث الفريق",
+  } : {
+    members: "Company memberships", invitations: "Saved invitations", emptyInvites: "No pending invitations.",
+    failed: "The team could not be loaded from the server. Try again.", createFailed: "Could not create the invitation. Check the details and permissions, then try again.",
+    saved: "Invitation saved. Copy the link and share it with the intended staff member.", expires: "Expires", copy: "Copy link", copied: "Copied", disabled: "Disabled", expired: "Expired", refresh: "Refresh team",
+  };
+  const formatDate = (date: string) => new Intl.DateTimeFormat(ar ? "ar-OM" : "en-GB", { dateStyle: "medium", timeStyle: "short" }).format(new Date(date));
+
+  useEffect(() => {
+    const generation = ++request.current;
+    startTransition(async () => {
+      try {
+        const result = await listCompanyTeam();
+        if (generation === request.current) setTeam(result);
+      } catch {
+        if (generation === request.current) setTeam({ ok: false, code: "UNAVAILABLE" });
+      }
+    });
+    return () => { request.current += 1; };
+  }, []);
+
+  async function reload() {
+    const generation = ++request.current;
+    try {
+      const result = await listCompanyTeam();
+      if (generation === request.current) setTeam(result);
+    } catch {
+      if (generation === request.current) setTeam({ ok: false, code: "UNAVAILABLE" });
+    }
+  }
+
+  const snapshot = team?.ok && team.data.companyId === companyId ? team.data : null;
   return (
     <Card title={copy.app.tabs.team}>
-      <Notice tone="warn">{copy.app.teamInviteUnavailable}</Notice>
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <h3 className="font-semibold">{text.members}</h3>
+        <Button variant="secondary" busy={busy || team === null} onClick={() => void run(reload)}>{text.refresh}</Button>
+      </div>
+      {snapshot ? (
+        <div className="grid gap-3">
+          {snapshot.members.length ? snapshot.members.map((member) => (
+            <div key={member.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[color:var(--color-border-soft)] bg-[var(--color-hover-wash)] p-4 text-sm">
+              <div className="min-w-0"><strong>{member.name || member.email || member.id}</strong>{member.email ? <p className="break-all text-xs text-[var(--color-muted-on-dark)]" dir="ltr">{member.email}</p> : null}</div>
+              <div className="flex gap-2"><span>{member.role === "owner" ? copy.app.owner : copy.app.staff}</span><span className="text-[var(--color-muted-on-dark)]">{member.status === "active" ? copy.app.active : text.disabled}</span></div>
+            </div>
+          )) : <p className="text-sm text-[var(--color-muted-on-dark)]">{copy.app.teamEmpty}</p>}
+          <h3 className="mt-3 font-semibold">{text.invitations}</h3>
+          {snapshot.invitations.length ? snapshot.invitations.map((invitation) => (
+            <div key={invitation.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[color:var(--color-border-soft)] p-4 text-sm">
+              <div className="min-w-0"><strong>{invitation.name}</strong><p className="break-all text-xs text-[var(--color-muted-on-dark)]" dir="ltr">{invitation.email}</p></div>
+              <div className="text-xs text-[var(--color-muted-on-dark)]">{invitation.status === "invited" ? copy.app.invited : text.expired} · {text.expires}: {formatDate(invitation.expiresAt)}</div>
+            </div>
+          )) : <p className="text-sm text-[var(--color-muted-on-dark)]">{text.emptyInvites}</p>}
+        </div>
+      ) : team === null ? <p role="status">{copy.loading}</p> : <Notice tone="error">{text.failed}</Notice>}
+
+      <form className="mt-6 grid gap-4 border-t border-[color:var(--color-line)] pt-5 sm:grid-cols-2" onSubmit={(event) => {
+        event.preventDefault();
+        setError(null); setInvite(null); setCopied(false);
+        void run(async () => {
+          try {
+            const result = await createStaffInvitation({ ...form, companyId });
+            if (!result.ok) { setError(text.createFailed); return; }
+            setInvite(result.data);
+            setForm({ email: "", name: "" });
+            await reload();
+          } catch { setError(text.createFailed); }
+        });
+      }}>
+        <Field label={copy.app.inviteName} required>{(props) => <input {...props} value={form.name} maxLength={120} onChange={(event) => setForm({ ...form, name: event.target.value })} />}</Field>
+        <Field label={copy.app.inviteEmail} required>{(props) => <input {...props} type="email" dir="ltr" value={form.email} maxLength={254} onChange={(event) => setForm({ ...form, email: event.target.value })} />}</Field>
+        {error ? <div className="sm:col-span-2"><Notice tone="error">{error}</Notice></div> : null}
+        <div className="sm:col-span-2"><Button type="submit" busy={busy} disabled={!form.name.trim() || !form.email.trim()}>{copy.app.invite}</Button></div>
+      </form>
+      {invite ? (
+        <div className="mt-4 grid gap-3 rounded-xl border border-[#38dc89]/30 bg-[#38dc89]/10 p-4">
+          <Notice tone="success">{text.saved}</Notice>
+          <input aria-label={copy.app.openInvite} dir="ltr" readOnly value={invite.inviteUrl} className="min-h-11 w-full min-w-0 rounded-xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel)] px-3 text-sm" onFocus={(event) => event.target.select()} />
+          <div className="flex flex-wrap items-center justify-between gap-2"><span className="text-xs text-[var(--color-muted-on-dark)]">{text.expires}: {formatDate(invite.expiresAt)}</span><Button variant="secondary" onClick={() => { void navigator.clipboard.writeText(invite.inviteUrl).then(() => setCopied(true)).catch(() => setCopied(false)); }}>{copied ? text.copied : text.copy}</Button></div>
+        </div>
+      ) : null}
     </Card>
   );
 }

@@ -50,6 +50,15 @@ export async function fetchWhatsappAutomationGate(
       };
     }
 
+    if (row.conversation_id !== conversationId || typeof row.company_id !== "string" || !row.company_id.trim() ||
+        typeof row.automation_allowed !== "boolean" || typeof row.eligible !== "boolean" ||
+        typeof row.automation_generation !== "number" || !Number.isSafeInteger(row.automation_generation) || row.automation_generation < 0 ||
+        typeof row.control_revision !== "number" || !Number.isSafeInteger(row.control_revision) || row.control_revision < 1 ||
+        typeof row.status !== "string" || !["open", "handed_over", "resolved"].includes(row.status) ||
+        typeof row.company_status !== "string" || !["setup", "active", "suspended"].includes(row.company_status)) {
+      return { ok: false, code: "unavailable", eligible: false };
+    }
+
     return {
       ok: true,
       conversationId: String(row.conversation_id ?? ""),
@@ -59,7 +68,7 @@ export async function fetchWhatsappAutomationGate(
       automationGeneration: Number(row.automation_generation ?? 0),
       controlRevision: Number(row.control_revision ?? 1),
       companyStatus: String(row.company_status ?? ""),
-      eligible: Boolean(row.eligible),
+      eligible: row.eligible && row.automation_allowed && row.status === "open" && row.company_status !== "suspended",
     };
   } catch {
     return { ok: false, code: "unavailable", eligible: false };
@@ -74,6 +83,6 @@ export function automationResultStillValid(
   gate: AutomationGate | AutomationGateFailure,
   stagedGeneration: number,
 ) {
-  if (!gate.ok || !gate.eligible) return false;
+  if (!gate.ok || !gate.eligible || !gate.automationAllowed || gate.status !== "open" || gate.companyStatus === "suspended") return false;
   return gate.automationGeneration === stagedGeneration;
 }

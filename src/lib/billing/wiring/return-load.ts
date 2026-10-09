@@ -7,12 +7,15 @@
  */
 
 import type { BillingReturnDbRow } from "@/lib/billing/wiring/return-status";
+import type { FinancialQualification, FinancialRecord } from "@/lib/billing/financial-truth";
+import { qualifyFinancialOrder } from "@/lib/billing/financial-truth";
 
 export type BillingReturnDbParts = {
-  order: { id: string; company_id: string; status: string } | null;
+  order: { id: string; company_id: string; status: string; plan_version_id?: string; amount_baisa?: number; currency?: string } | null;
   attempt: { id: string; status: string } | null;
   latestEvent: { event_status: string; observation_key: string } | null;
   grant: { id: string; applied_paid_through: string } | null;
+  financial?: FinancialQualification;
 };
 
 /** Pure mapper — unit-tested against schema field names. */
@@ -33,6 +36,10 @@ export function mapBillingReturnDbParts(
   const hasGrant = Boolean(parts.grant);
   const successEventStored = latestEventStatus === "success";
   const awaitingProcessing = successEventStored && !hasGrant;
+  const order = parts.order;
+  const selection = typeof order.plan_version_id === "string" && /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(order.plan_version_id)
+    && Number.isSafeInteger(order.amount_baisa) && order.amount_baisa! > 0 && order.currency === "OMR"
+    ? { planVersionId: order.plan_version_id, amountBaisa: order.amount_baisa!, currency: "OMR" as const } : null;
 
   return {
     companyId: parts.order.company_id,
@@ -41,10 +48,12 @@ export function mapBillingReturnDbParts(
     attemptStatus: parts.attempt ? parts.attempt.status : null,
     latestEventStatus,
     hasGrant,
-    /** Grant row is authoritative for this order's settlement period. */
-    paidThrough: parts.grant ? parts.grant.applied_paid_through : null,
+    /** A grant is history; only qualified proof can supply a confirmed period. */
+    paidThrough: parts.financial?.paidThrough ?? null,
+    financial: parts.financial,
     successEventStored,
     awaitingProcessing,
+    ...(selection ? { selection } : {}),
   };
 }
 
@@ -56,67 +65,45 @@ export async function loadBillingReturnRow(input: {
   const admin = createAdminClient();
   if (!admin) return null;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const db = admin as any;
-
-  const { data: order } = await db
+  const { data: order, error } = await admin
     .from("billing_orders")
-    .select("id, company_id, status")
+    .select("*")
     .eq("id", input.orderId)
     .eq("company_id", input.requestCompanyId)
+    .returns<FinancialRecord[]>()
     .maybeSingle();
 
-  if (!order) return null;
-
-  const { data: attempt } = await db
-    .from("billing_payment_attempts")
-    .select("id, status")
-    .eq("order_id", order.id)
-    .eq("company_id", order.company_id)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  let latestEvent: BillingReturnDbParts["latestEvent"] = null;
-  if (attempt) {
-    const { data: event } = await db
-      .from("billing_provider_events")
-      .select("event_status, observation_key")
-      .eq("payment_attempt_id", attempt.id)
-      .eq("company_id", order.company_id)
-      .order("received_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (event) {
-      latestEvent = {
-        event_status: String(event.event_status),
-        observation_key: String(event.observation_key),
-      };
-    }
+  if (error || !order || order.company_id !== input.requestCompanyId) return null;
+  const displayOrder: NonNullable<BillingReturnDbParts["order"]> = {
+    id: String(order.id), company_id: String(order.company_id), status: String(order.status),
+    plan_version_id: typeof order.plan_version_id === "string" ? order.plan_version_id : undefined,
+    amount_baisa: Number(order.amount_baisa), currency: typeof order.currency === "string" ? order.currency : undefined,
+  };
+  const { financialDb, readFinancialEvidence } = await import("@/lib/billing/financial-read");
+  let evidence;
+  try { evidence = await readFinancialEvidence(financialDb(admin), [order], input.requestCompanyId); }
+  catch {
+    // Missing evidence is unknown, never success, failed or a zero collection.
+    return mapBillingReturnDbParts(input.requestCompanyId, { order: displayOrder, attempt: null, latestEvent: null, grant: null,
+      financial: { companyId: input.requestCompanyId, orderId: input.orderId, state: "unknown", collectionProven: false, paidThrough: null, collectedAt: null, environment: null } });
   }
-
-  const { data: grant } = await db
-    .from("billing_entitlement_applications")
-    .select("id, applied_paid_through")
-    .eq("order_id", order.id)
-    .eq("company_id", order.company_id)
-    .maybeSingle();
+  const attempt = [...evidence.attempts].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)) || String(b.id).localeCompare(String(a.id)))[0];
+  const event = evidence.events.filter(e => e.payment_attempt_id === attempt?.id)
+    .sort((a, b) => String(b.received_at).localeCompare(String(a.received_at)) || String(b.id).localeCompare(String(a.id)))[0];
+  const grant = evidence.grants[0];
 
   return mapBillingReturnDbParts(input.requestCompanyId, {
-    order: {
-      id: String(order.id),
-      company_id: String(order.company_id),
-      status: String(order.status),
-    },
+    order: displayOrder,
     attempt: attempt
       ? { id: String(attempt.id), status: String(attempt.status) }
       : null,
-    latestEvent,
+    latestEvent: event ? { event_status: String(event.event_status), observation_key: String(event.observation_key) } : null,
     grant: grant
       ? {
           id: String(grant.id),
           applied_paid_through: String(grant.applied_paid_through),
         }
       : null,
+    financial: qualifyFinancialOrder(input.requestCompanyId, order, evidence),
   });
 }

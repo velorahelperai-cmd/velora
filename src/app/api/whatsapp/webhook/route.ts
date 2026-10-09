@@ -1,11 +1,12 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { webhookReady, whatsappConfig, whatsappRoutingMode } from "@/lib/whatsapp/config";
 import { saveInbound, saveStatus } from "@/lib/whatsapp/store";
-import { resolveWhatsappCompanyByProviderPhone } from "@/lib/whatsapp/tenant-resolve";
+import { resolveWhatsappCompanyByMetaAsset } from "@/lib/whatsapp/tenant-resolve";
 import {
   routeWebhookEvents,
   signatureMatches,
   splitWebhook,
+  splitMetaAuthorizationRevocations,
   verifyChallenge,
   WEBHOOK_HTTP,
   webhookHttpStatus,
@@ -62,7 +63,13 @@ export async function POST(request: Request) {
     return new Response("not configured", { status: WEBHOOK_HTTP.notConfigured });
   }
 
-  const raw = await request.text();
+  let raw: Uint8Array;
+  try {
+    raw = new Uint8Array(await request.arrayBuffer());
+  } catch {
+    logWebhookDiag("post_body_unavailable", { mode, retry: true });
+    return new Response("body unavailable", { status: WEBHOOK_HTTP.retryable });
+  }
   if (!signatureMatches(raw, request.headers.get("x-hub-signature-256"), config.appSecret)) {
     logWebhookDiag("post_bad_signature", { mode, bytes: raw.length });
     return new Response("invalid signature", { status: WEBHOOK_HTTP.invalidSignature });
@@ -70,19 +77,37 @@ export async function POST(request: Request) {
 
   let payload: unknown;
   try {
-    payload = JSON.parse(raw);
+    payload = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(raw));
   } catch {
     logWebhookDiag("post_bad_json", { mode, bytes: raw.length });
     return new Response("bad json", { status: WEBHOOK_HTTP.badJson });
   }
 
+  const { messages, statuses } = splitWebhook(payload);
+  const revocations = mode === "tenant_registry" ? splitMetaAuthorizationRevocations(payload) : [];
+  // Authentic unsupported event types have no storage dependency.
+  if (!messages.length && !statuses.length && !revocations.length) return new Response("ok", { status: WEBHOOK_HTTP.completed });
   const admin = createAdminClient();
   if (!admin) {
     logWebhookDiag("post_no_admin", { mode, retry: true });
     return new Response("not configured", { status: WEBHOOK_HTTP.notConfigured });
   }
 
-  const { messages, statuses } = splitWebhook(payload);
+  let revocationRetry = false;
+  for (const event of revocations) {
+    try {
+      const { data, error } = await admin.rpc("whatsapp_revoke_meta_waba_authorization", {
+        p_waba_id: event.wabaId, p_reason: event.reason, p_occurred_at: event.occurredAt,
+      });
+      if (error || !data || typeof data !== "object" || Array.isArray(data) || data.ok !== true) revocationRetry = true;
+    } catch {
+      revocationRetry = true;
+    }
+  }
+  if (revocationRetry) {
+    logWebhookDiag("post_revocation_retry", { mode, retry: true });
+    return new Response("store failed", { status: WEBHOOK_HTTP.retryable });
+  }
   logWebhookDiag("post_parsed", {
     mode,
     messages: messages.length,
@@ -96,8 +121,8 @@ export async function POST(request: Request) {
     mode,
     envCompanyId: config.companyId,
     envPhoneNumberId: config.phoneNumberId,
-    resolve: async (phoneNumberId) => {
-      const resolved = await resolveWhatsappCompanyByProviderPhone(admin, phoneNumberId);
+    resolve: async (phoneNumberId, wabaId) => {
+      const resolved = await resolveWhatsappCompanyByMetaAsset(admin, wabaId ?? "", phoneNumberId);
       if (!resolved.ok) return { ok: false, code: resolved.code };
       return { ok: true, companyId: resolved.companyId };
     },

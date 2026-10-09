@@ -1,86 +1,71 @@
 "use client";
-
-import { useState } from "react";
+import { useRef, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { subscriptionCopy, subscriptionTiers } from "./subscription-copy";
 import type { SubscriptionCycle, SubscriptionView } from "./subscription-model";
 import { SubscriptionBrandGuide } from "./subscription-brand-guide";
 import { SubscriptionCompareTable, SubscriptionOfferCards } from "./subscription-offer-cards";
 import type { SubscriptionOffersView, SubscriptionChoice } from "./subscription-offers-view";
-import { catalogHasTerm, currentSubscriptionChoice } from "./subscription-offers-view";
+import { currentSubscriptionChoice, isApprovedOffer, isPurchasableOffer, formatOmrBaisa } from "./subscription-offers-view";
+import { choiceFromSubscriptionIntent, subscriptionIntentFromChoice, subscriptionIntentFromParams, subscriptionIntentHref, type SubscriptionIntent } from "./subscription-navigation";
+import { startTestCheckoutAction } from "@/lib/billing/wiring/test-checkout-actions";
 import styles from "./subscription-panel.module.css";
-
-export function SubscriptionPanel({ locale, view, offersView, preview = false, onRetry }: {
-  locale: "ar" | "en"; view: SubscriptionView; offersView?: SubscriptionOffersView; preview?: boolean; onRetry?: () => void;
-}) {
-  const c = subscriptionCopy[locale];
-  const yearlyPublished = catalogHasTerm(offersView, "yearly");
-  const [cycle, setCycle] = useState<SubscriptionCycle>(view.cycle === "yearly" && yearlyPublished ? "yearly" : "monthly");
-  const [choice, setChoice] = useState<SubscriptionChoice | null>(null);
-  const activeCycle = cycle === "yearly" && !yearlyPublished ? "monthly" : cycle;
-  const validChoice = currentSubscriptionChoice(choice, activeCycle, offersView);
-  const selected = validChoice?.persona ?? null;
-  const current = subscriptionTiers.find((tier) => tier.id === view.currentTier);
-  const selectedOffer=validChoice ? offersView?.offers.find(offer=>offer.versionId===validChoice.versionId&&offer.term===validChoice.term) : null;
-  const chosen = subscriptionTiers.find((tier) => tier.id === selected);
-  const changingTier = selected !== null && view.currentTier !== null && selected !== view.currentTier;
-  const upgrading = changingTier && Number(selected?.slice(-1)) > Number(view.currentTier?.slice(-1));
-  const action = view.state === "expired" && !changingTier ? c.renew
-    : upgrading ? c.upgrade : view.state === "active" || changingTier ? c.manage : c.subscribe;
-  const catalogNote = offersView?.status === "ready" ? c.catalogReady : offersView?.status === "empty" ? c.catalogEmpty : offersView?.status === "error" ? c.catalogError : c.catalogReasons.schema_unavailable;
-  const note = c[`${view.state}Note`];
-  const blocked = view.state === "suspended" ? c.suspendedBlocked
-    : view.state === "pending" ? c.pendingBlocked : changingTier ? c.upgradeBlocked : c.blocked;
-
-  return (
-    <div className={styles.root} data-surface="account" data-design-only={preview ? "true" : undefined} lang={locale} dir={locale === "ar" ? "rtl" : "ltr"}>
-      <header className={styles.heading}>
-        <div><h1>{c.title}</h1><p>{c.intro}</p></div>
-        <span className={styles.concept}>{c.concept}</span>
-      </header>
-      <SubscriptionBrandGuide locale={locale} selectedPersona={selected} />
-      <section className={styles.summary} aria-labelledby="subscription-current">
-        <div className={styles.summaryTitle}>
-          <h2 id="subscription-current">{c.current}</h2>
-          <span className={styles.status} data-state={view.state}>{c.states[view.state]}</span>
-        </div>
-        <p role={view.state === "error" ? "alert" : "status"}>{note}</p>
-        {view.state === "loading" ? <div className={styles.skeleton} aria-busy="true" /> : (
-          <dl className={styles.facts}>
-            <div><dt>{c.currentPlan}</dt><dd>{current ? current[locale] : c.noPlan}</dd></div>
-            <div><dt>{c.cycle}</dt><dd>{view.cycle ? c[view.cycle] : c.unknown}</dd></div>
-            <div><dt>{c.renewal}</dt><dd>{view.paidThrough ? <bdi>{new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(new Date(view.paidThrough))}</bdi> : c.unknown}</dd></div>
-          </dl>
-        )}
-        {view.state === "error" && onRetry ? <button className={styles.secondary} type="button" onClick={onRetry}>{c.retry}</button> : null}
-      </section>
-
-      <section aria-labelledby="subscription-plans">
-        <div className={styles.planHeading}>
-          <div><h2 id="subscription-plans">{c.choose}</h2><p>{c.chooseNote}</p></div>
-          <div className={styles.cycles} role="group" aria-label={c.cycle}>
-            <button type="button" aria-pressed={activeCycle === "monthly"} onClick={() => { setCycle("monthly"); setChoice(null); }}>{c.monthly}</button>
-            {yearlyPublished ? <button type="button" aria-pressed={activeCycle === "yearly"} onClick={() => { setCycle("yearly"); setChoice(null); }}>{c.yearly}</button> : null}
-          </div>
-        </div>
-        <SubscriptionOfferCards locale={locale} term={activeCycle} offers={offersView?.status === "ready" ? offersView.offers : []} catalogStatus={offersView?.status} selectedPersona={selected} selectedPackage={validChoice?.package} currentPersona={view.currentTier}
-          disabled={view.state === "loading" || view.state === "error" || view.state === "suspended"}
-          onSelectionInvalidated={() => setChoice(null)} onSelect={setChoice} />
-        <p className={styles.catalogNote} role={offersView?.status === "error" ? "alert" : "status"}>{catalogNote}</p>
-      </section>
-
-      <SubscriptionCompareTable locale={locale} term={activeCycle} offers={offersView?.status === "ready" ? offersView.offers : []} catalogStatus={offersView?.status} selectedPersona={selected} />
-
-      <section className={styles.next} aria-labelledby="subscription-next">
-        <div><h2 id="subscription-next">{c.next}</h2>
-          <p className={styles.selectionTitle}>{chosen && validChoice ? <>{chosen[locale]} · {c[validChoice.package]} / {c[activeCycle]}</> : c.selectionEmpty}</p>
-          {selectedOffer?<dl className={styles.facts}><div><dt>{c.orderAmount}</dt><dd><bdi>{new Intl.NumberFormat(locale,{style:"currency",currency:selectedOffer.currency}).format(selectedOffer.amountBaisa/1000)}</bdi></dd></div><div><dt>{c.cycle}</dt><dd>{c[activeCycle]}</dd></div></dl>:null}
-          {selectedOffer?.features.length ? <ul className={styles.features}>{selectedOffer.features.map(feature => <li key={feature.id}><span>{feature.label[locale]}</span><span className={styles.featureState} data-availability={feature.availability}>{c.featureAvailability[feature.availability]}</span></li>)}</ul> : null}
-          <p id="subscription-payment-block">{blocked}</p>
-          {changingTier ? <p>{c.blocked}</p> : null}
-        </div>
-        <button type="button" className={styles.pay} disabled aria-describedby="subscription-payment-block">{action}</button>
-      </section>
-
+const errors={
+ ar:{settings:"الدفع التجريبي يحتاج استكمال إعدادات Paymob Test. تواصل مع إدارة المنصة لتجهيزه.",pending:"طلب الدفع قيد التحقق. افتح حالة الطلب قبل محاولة الدفع مرة أخرى.",phone:"أضف رقم هاتف الشركة في إعدادات النشاط قبل الدفع.",denied:"إدارة الاشتراك متاحة لمالك شركة غير معلّقة فقط.",active:"لشركتك اشتراك قائم بالفعل. التجديد المبكر وتغيير الباقة يحتاجان مراجعة منفصلة.",failed:"تعذّر بدء الدفع التجريبي. حدّث الصفحة وأعد المحاولة؛ إذا استمر الخطأ تواصل مع الدعم."},
+ en:{settings:"Paymob Test setup is incomplete. Contact your platform administrator to finish payment setup.",pending:"Payment is being verified. Check the order status before trying again.",phone:"Add your company phone number in business settings before paying.",denied:"Only the owner of an unsuspended company can manage billing.",active:"Your company already has a subscription. Early renewal and plan changes require a separate review.",failed:"Test checkout could not start. Refresh and try again; contact support if the issue continues."}
+};
+function paymentMessage(code:string,locale:"ar"|"en") {const c=errors[locale];if(code==="billing_phone_missing")return c.phone;if(code==="not_owner")return c.denied;if(code==="ALREADY_SUBSCRIBED"||code==="UPGRADE_NOT_CONFIGURED")return c.active;if(["payment_pending","checkout_persist_failed","PENDING_COLLECTION_RECONCILE","OPEN_COLLECTION_UNRESOLVED"].includes(code))return c.pending;if(["test_not_configured","test_keys_missing","test_config_invalid","omr_conversion_not_configured","checkout_schema_unavailable","callback_not_configured","create_disabled","admin_not_configured","plan_lookup_failed","order_not_ready"].includes(code))return c.settings;return c.failed;}
+export function SubscriptionPanel({locale,view,offersView,companyId,preview=false,onRetry}:{companyId?:string;locale:"ar"|"en";view:SubscriptionView;offersView?:SubscriptionOffersView;preview?:boolean;onRetry?:()=>void}){
+ const c=subscriptionCopy[locale],ar=locale==="ar";
+ const params=useSearchParams(),intent=subscriptionIntentFromParams(params),cycle:SubscriptionCycle=intent?.term??(view.cycle==="yearly"?"yearly":"monthly");
+ const [busy,setBusy]=useState(false),[error,setError]=useState<string|null>(null),[orderId,setOrderId]=useState<string|null>(null);
+ const inFlight=useRef(false),operations=useRef(new Map<string,string>());
+ const requestedChoice=choiceFromSubscriptionIntent(intent,offersView);
+ const validChoice=currentSubscriptionChoice(requestedChoice,cycle,offersView),selected=validChoice?.persona??null;
+ const isApproved=validChoice?isApprovedOffer(validChoice.persona,validChoice.package,validChoice.term):false;
+ const selectedOffer=validChoice?offersView?.offers.find(offer=>offer.versionId===validChoice.versionId):null,chosen=subscriptionTiers.find(tier=>tier.id===selected),current=subscriptionTiers.find(tier=>tier.id===view.currentTier);
+ const isPurchasable=validChoice?isPurchasableOffer(validChoice.persona,validChoice.package,validChoice.term,selectedOffer??undefined,offersView?.status):false;
+ const visibleOrderId=orderId??view.pendingOrderId;
+ const blockedState=["loading","error","suspended","pending","active"].includes(view.state);
+ const canPay=!!validChoice&&isPurchasable&&!!companyId&&!preview&&!busy&&!blockedState;
+ function replaceIntent(value:SubscriptionIntent){const href=subscriptionIntentHref({href:window.location.pathname+window.location.search+window.location.hash,kind:"manage",note:null},value);window.history.replaceState(null,"",href);}
+ function select(value:SubscriptionChoice|null){setError(null);setOrderId(null);replaceIntent(subscriptionIntentFromChoice(value,offersView)??{term:cycle});}
+ function changeCycle(term:SubscriptionCycle){setError(null);setOrderId(null);replaceIntent({term,...(intent?.persona&&intent.package?{persona:intent.persona,package:intent.package}:{})});}
+ async function checkout(){
+  if(!canPay||!validChoice||inFlight.current)return;
+  inFlight.current=true;setBusy(true);setError(null);
+  let op=operations.current.get(validChoice.versionId);if(!op){op=crypto.randomUUID();operations.current.set(validChoice.versionId,op);}
+  try{const result=await startTestCheckoutAction({expectedCompanyId:companyId!,planVersionId:validChoice.versionId,clientOpId:op});if(result.orderId)setOrderId(result.orderId);if(result.ok){window.location.assign(result.url);return;}setError(paymentMessage(result.code,locale));}catch{setError(errors[locale].pending);}finally{inFlight.current=false;setBusy(false);}
+ }
+ return <div className={styles.root} data-surface="account" data-design-only={preview?"true":undefined} lang={locale} dir={ar?"rtl":"ltr"}>
+  <header className={styles.heading}><div><h1>{c.title}</h1><p>{ar?"اختر شخصية فيلورا التي تناسب احتياج شركتك.":"Choose the Velora persona that fits your business."}</p></div><span className={styles.concept}>{c.concept}</span></header>
+  <SubscriptionBrandGuide locale={locale}/>
+  <section className={styles.summary} aria-labelledby="subscription-current"><div className={styles.summaryTitle}><h2 id="subscription-current">{c.current}</h2><span className={styles.status} data-state={view.state}>{c.states[view.state]}</span></div><p role={view.state==="error"?"alert":"status"}>{c[`${view.state}Note`]}</p>{view.state==="loading"?<div className={styles.skeleton} aria-busy="true"/>:<dl className={styles.facts}><div><dt>{c.currentPlan}</dt><dd>{current?current[locale]:c.noPlan}</dd></div><div><dt>{c.cycle}</dt><dd>{view.cycle?c[view.cycle]:c.unknown}</dd></div><div><dt>{c.renewal}</dt><dd>{view.paidThrough?<bdi>{new Intl.DateTimeFormat(locale,{dateStyle:"medium"}).format(new Date(view.paidThrough))}</bdi>:c.unknown}</dd></div></dl>}{view.state==="error"&&onRetry?<button className={styles.secondary} type="button" onClick={onRetry}>{c.retry}</button>:null}</section>
+  <section aria-labelledby="subscription-plans">
+   <div className={styles.planHeading}><div><h2 id="subscription-plans">{ar?"مين تناسب شغلك؟":"Who fits your business?"}</h2><p>{ar?"اختر الشخصية، ثم حدد Basic أو Premium.":"Choose your persona, then pick Basic or Premium."}</p></div>
+    <div className={styles.cycles} role="group" aria-label={c.cycle}>{(["monthly","yearly"] as const).map(term=><button type="button" key={term} disabled={busy} aria-pressed={cycle===term} onClick={()=>changeCycle(term)}>{c[term]}</button>)}</div>
+   </div>
+   {cycle==="yearly"?(
+    <div className={styles.annualDraftBanner} role="status">
+     <div className={styles.annualBannerHeader}><span aria-hidden="true">ℹ️</span><strong>{c.annualBannerTitle}</strong></div>
+     <p>{c.annualBannerNote}</p>
     </div>
-  );
+   ):null}
+   <SubscriptionOfferCards locale={locale} term={cycle} offers={offersView?.status==="ready"?offersView.offers:[]} catalogStatus={offersView?.status} selectedPersona={selected} selectedPackage={validChoice?.package} currentPersona={view.currentTier} disabled={busy||["loading","error","suspended"].includes(view.state)} onSelectionInvalidated={()=>select(null)} onSelect={select}/>
+   {offersView?.status!=="ready"?<p className={styles.catalogNote} role={offersView?.status==="error"?"alert":"status"}>{offersView?.status==="error"?c.catalogError:offersView?.status==="empty"?c.catalogEmpty:c.catalogReasons.schema_unavailable}</p>:null}
+  </section>
+  <SubscriptionCompareTable locale={locale} term={cycle} offers={offersView?.status==="ready"?offersView.offers:[]} catalogStatus={offersView?.status} selectedPersona={selected}/>
+  <section className={styles.next} aria-labelledby="subscription-next" aria-busy={busy}>
+   <div>
+    <h2 id="subscription-next">{ar?"ملخص اختيارك":"Your selection"}</h2>
+    <p className={styles.selectionTitle}>{chosen&&validChoice?`${chosen[locale]} · ${c[validChoice.package]}`:intent?.persona&&intent.package?`${subscriptionTiers.find(tier=>tier.id===intent.persona)?.[locale]} · ${c[intent.package]} / ${c[cycle]}`:c.selectionEmpty}</p>
+    {selectedOffer?<div className={styles.checkoutAmount}><bdi>{formatOmrBaisa(selectedOffer.amountBaisa,locale)}</bdi><span>/ {c[cycle]}</span></div>:null}
+    <p id="subscription-payment-note" className={styles.paymentNote}>{view.state==="suspended"?c.suspendedBlocked:view.state==="pending"?c.pendingBlocked:view.state==="active"?errors[locale].active:preview?(ar?"معاينة التصميم؛ الدفع غير متاح هنا.":"Design preview; checkout is unavailable here."):validChoice&&!isPurchasable?(cycle==="yearly"?c.annualBannerNote:isApproved?c.draftAwaitingPublicationNote:c.draftPlanDisabledNote):(ar?"Paymob Test — تجربة دفع فقط. لا يتم خصم أموال حقيقية. رسوم التأسيس تُراجع منفصلة.":"Paymob Test — no real money is charged. Setup fees are reviewed separately.")}</p>
+    {error?<p className={styles.paymentError} role="alert">{error}</p>:null}
+    {visibleOrderId?<Link className={styles.heroLink} href={`/app/subscription/orders/${visibleOrderId}`}>{ar?"عرض حالة الطلب":"View order status"}</Link>:null}
+   </div>
+   <button type="button" className={styles.pay} disabled={!canPay} aria-describedby="subscription-payment-note" onClick={()=>void checkout()}>{busy?(ar?"جارٍ تجهيز الدفع…":"Preparing checkout…"):validChoice&&!isPurchasable?(cycle==="yearly"?c.annualNotPurchasable:isApproved?c.notPublishedNotPurchasable:c.notPurchasable):(ar?"متابعة للدفع التجريبي":"Continue to test checkout")}<span aria-hidden="true">↗</span></button>
+  </section>
+ </div>;
 }

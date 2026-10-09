@@ -1,4 +1,4 @@
-import { externalSendAllowed, sendReady, whatsappConfig, whatsappRoutingMode } from "./config";
+import { externalSendAllowed, metaGraphVersion, sendReady, whatsappConfig, whatsappRoutingMode } from "./config";
 
 export type SendTextResult =
   | { ok: true; waMessageId: string }
@@ -9,6 +9,7 @@ export type SendTextResult =
         | "NEEDS_SETUP"
         | "SEND_DISABLED"
         | "PHONE_MISMATCH"
+        | "SERVICE_WINDOW_CLOSED"
         | "GRAPH_REJECTED"
         | "AMBIGUOUS";
       detail?: string;
@@ -41,9 +42,9 @@ function classifyHttpFailure(
     return {
       ok: false,
       code: "GRAPH_REJECTED",
-      detail: typeof graphError.message === "string"
-        ? graphError.message
-        : `graph_${String(graphError.code)}`,
+      // Graph messages can echo tokens, request bodies and recipient details.
+      detail: /^\d{1,8}$/.test(String(graphError.code ?? ""))
+        ? `graph_${String(graphError.code)}` : "graph_rejected",
     };
   }
 
@@ -71,6 +72,8 @@ export async function sendWhatsappText(input: {
   phoneNumberId: string;
   /** Required in tenant_registry. Ignored in single_tenant (env token only). */
   accessToken?: string;
+  /** Server evidence from whatsapp_check_service_window; required for tenant freeform sends. */
+  serviceWindowExpiresAt?: string;
   signal?: AbortSignal;
 }): Promise<SendTextResult> {
   if (!externalSendAllowed()) return { ok: false, code: "SEND_DISABLED" };
@@ -81,9 +84,19 @@ export async function sendWhatsappText(input: {
   const mode = whatsappRoutingMode();
   const config = whatsappConfig();
   let accessToken = "";
+  let graphVersion = "v22.0"; // Explicit legacy single-tenant compatibility.
   if (mode === "tenant_registry") {
     accessToken = input.accessToken?.trim() ?? "";
     if (!accessToken) return { ok: false, code: "NEEDS_SETUP" };
+    const configuredVersion = metaGraphVersion();
+    if (!configuredVersion) return { ok: false, code: "NEEDS_SETUP" };
+    graphVersion = configuredVersion;
+    const now = Date.now();
+    const expires = input.serviceWindowExpiresAt ? Date.parse(input.serviceWindowExpiresAt) : NaN;
+    // A future customer timestamp must never manufacture a window beyond 24 hours.
+    if (!Number.isFinite(expires) || expires <= now || expires > now + 24 * 60 * 60 * 1000) {
+      return { ok: false, code: "SERVICE_WINDOW_CLOSED" };
+    }
   } else {
     if (!sendReady(config)) return { ok: false, code: "NOT_CONFIGURED" };
     if (boundPhone !== config.phoneNumberId) {
@@ -92,7 +105,9 @@ export async function sendWhatsappText(input: {
     accessToken = config.accessToken;
   }
 
-  const to = input.toWaId.replace(/\D/g, "");
+  // Preserve the recipient identity retained by the intent; never reinterpret it.
+  const to = input.toWaId;
+  if (!/^\d+$/.test(to)) return { ok: false, code: "GRAPH_REJECTED", detail: "invalid_recipient" };
   const text = input.body.trim().slice(0, 4096);
   if (!to || !text) return { ok: false, code: "GRAPH_REJECTED", detail: "empty" };
 
@@ -105,7 +120,7 @@ export async function sendWhatsappText(input: {
   let payload: GraphErrorPayload | null;
   try {
     response = await fetch(
-      `https://graph.facebook.com/v22.0/${boundPhone}/messages`,
+      `https://graph.facebook.com/${graphVersion}/${boundPhone}/messages`,
       {
         method: "POST",
         headers: {
@@ -131,7 +146,15 @@ export async function sendWhatsappText(input: {
     };
   }
 
-  const waMessageId = payload?.messages?.[0]?.id;
+  const providerId = Array.isArray(payload?.messages) && payload.messages.length === 1
+    ? payload.messages[0]?.id
+    : null;
+  const waMessageId = typeof providerId === "string" && providerId.trim() === providerId && providerId.length > 0
+    ? providerId
+    : null;
+  if (response.ok && payload?.error != null) {
+    return { ok: false, code: "AMBIGUOUS", detail: "contradictory_provider_response" };
+  }
   if (response.ok && waMessageId) {
     return { ok: true, waMessageId };
   }
