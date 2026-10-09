@@ -45,6 +45,18 @@ describe("selection after returning from payment", () => {
     expect(markup).toContain(`href="${href.replaceAll("&", "&amp;")}"`);
     expect(markup).toContain("Back to company subscription");
   });
+  it.each([
+    { kind: "requires_review" as const, messageKey: "payment_requires_review" as const, text: "requires review" },
+    { kind: "reversed" as const, messageKey: "payment_reversed" as const, text: "refunded or reversed" },
+    { kind: "unresolved" as const, messageKey: "payment_unresolved" as const, text: "unknown or its evidence is incomplete" },
+  ])("renders the financial $kind state without a success claim", ({ text, ...display }) => {
+    const markup = renderToStaticMarkup(createElement(SubscriptionPaymentStatus, { display }));
+    expect(markup).toContain(text); expect(markup).not.toContain("confirmed settlement");
+  });
+  it("labels proven Test payment without claiming paid live service", () => {
+    const markup = renderToStaticMarkup(createElement(SubscriptionPaymentStatus, { display: { kind: "success", messageKey: "payment_confirmed", paidThrough: "2099-01-01", environment: "test" } }));
+    expect(markup).toContain("Proven test collection"); expect(markup).toContain("does not grant paid live service");
+  });
 });
 
 const routeState = vi.hoisted(() => ({ row: null as unknown, catalog: null as unknown }));

@@ -54,10 +54,12 @@ describe("application ordering and parallel RPC replay contract", () => {
     for (const [evidence] of settle.mock.calls) expect(evidence).toMatchObject({ company_id: f.companyId, order_id: f.orderId, provider_transaction_id: "800001", observation_key: "observation" });
     // This checks application evidence/outcome preservation, not Postgres atomicity.
   });
-  it("never displays an existing grant as failed because a late failure arrived", () => {
+  it("never displays a proven collection as failed because a late failure arrived", () => {
     expect(mapBillingReturnDisplay({ requestCompanyId: f.companyId, row: { companyId: f.companyId, orderId: f.orderId,
       orderStatus: "closed", attemptStatus: "paid", latestEventStatus: "failed", hasGrant: true,
+      financial: provenReturnQualification(f.companyId, f.orderId, "2026-11-08T00:00:00.000Z"),
       paidThrough: "2026-11-08T00:00:00.000Z", successEventStored: true, awaitingProcessing: false } }))
-      .toEqual({ kind: "success", messageKey: "payment_confirmed", paidThrough: "2026-11-08T00:00:00.000Z" });
+      .toEqual({ kind: "success", messageKey: "payment_confirmed", paidThrough: "2026-11-08T00:00:00.000Z", environment: "test" });
   });
 });
+import { provenReturnQualification } from "./financial-truth.fixtures";

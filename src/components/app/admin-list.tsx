@@ -511,7 +511,7 @@ export function AdminList({
         <div className="relative rounded-2xl border border-[#D7C1A5] bg-[#FFFBF5] p-4 transition-all hover:border-[#6B4932] hover:shadow-md">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-[#18130F]">
-              {isRtl ? "تحصيل اشتراكات مؤكد هذا الشهر" : "Confirmed subscription collections this month"}
+              {isRtl ? "إجمالي التحصيل الموثق هذا الشهر" : "Proven gross collections this month"}
             </span>
             <span className="p-1.5 rounded-lg bg-[#EFE2CF] text-[#6B4932]">
               <IconCreditCard />
@@ -521,7 +521,13 @@ export function AdminList({
             <bdi>{truth?money(Number(truth.collections.live_collected_baisa)):"—"} OMR</bdi>
           </p>
           <p className="mt-2 text-[11px] text-[#6B4932] font-semibold">
-            {isRtl ? "من تسويات الدفع الفعلية؛ المدفوعات التجريبية منفصلة" : "From actual live settlements; test payments are separate"}
+            {isRtl ? "تحصيل Live قبل الاسترداد والرسوم، وليس صافي الإيراد؛ التجريبي منفصل" : "Live gross before refunds and fees, not net revenue; test payments are separate"}
+          </p>
+          <p className="mt-2 text-[11px] text-[#615244]">
+            {truth ? (isRtl
+              ? `طلبات النشاط المالي هذا الشهر: مستردة/معكوسة ${truth.collections.reversed_orders}، للمراجعة ${truth.collections.review_orders}، معلقة ${truth.collections.pending_orders}، فاشلة ${truth.collections.failed_orders}، غير محسومة ${truth.collections.unknown_orders}. قيمة الاسترداد وصافي الإيراد غير متاحين دون دليل تفصيلي.`
+              : `Orders with financial activity this month: reversed ${truth.collections.reversed_orders}, review ${truth.collections.review_orders}, pending ${truth.collections.pending_orders}, failed ${truth.collections.failed_orders}, unknown ${truth.collections.unknown_orders}. Refund amount and net revenue are unavailable without detailed evidence.`)
+              : (isRtl ? "تعذّر التحقق من الأدلة المالية؛ لا يُعرض مبلغ تقديري." : "Financial evidence could not be verified; no estimated amount is displayed.")}
           </p>
         </div>
 

@@ -11,6 +11,7 @@ import { processStoredPaymobEvent } from "@/lib/billing/wiring/event-process";
 import { runBillingEventProcessing } from "@/lib/billing/wiring/process-runner";
 import { mapBillingReturnDbParts } from "@/lib/billing/wiring/return-load";
 import { mapBillingReturnDisplay } from "@/lib/billing/wiring/return-status";
+import { provenReturnQualification } from "./financial-truth.fixtures";
 import { decideCreateBillingOrder } from "@/lib/billing/wiring/order-create";
 
 const COMPANY = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -285,6 +286,7 @@ describe("FIX-02 settle semantic outcomes", () => {
       attempt: { id: "attempt-1", status: "paid" },
       latestEvent: { event_status: "success", observation_key: "v1_a" },
       grant: { id: "g1", applied_paid_through: PAID_THROUGH },
+      financial: provenReturnQualification(COMPANY, ORDER, PAID_THROUGH),
     });
     expect(mapBillingReturnDisplay({ requestCompanyId: COMPANY, row: done }).kind).toBe("success");
     expect(grants).toBe(1);
