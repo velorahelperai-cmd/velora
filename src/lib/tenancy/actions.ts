@@ -8,6 +8,8 @@ import { revalidatePath } from "next/cache";
 
 import { authCallbackUrl, siteUrl } from "@/lib/auth/site-url";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { prepareReviewProof, reviewStorageReader, KNOWLEDGE_BUCKET, type ReviewRpc } from "@/lib/tenancy/review-proof";
 import { listKnowledgeSources } from "@/lib/knowledge/actions";
 import {
   buildAccountProfileView,
@@ -41,9 +43,6 @@ import { getWhatsappCompanyLink } from "@/lib/whatsapp/connection-actions";
 import { whatsappLiveOpsReady } from "@/lib/whatsapp/config";
 
 export type { AccountProfileView };
-
-const REVIEW_SELECT =
-  "company_id, requested_by, number_ownership, whatsapp_number, readiness_confirmed, requested_at, status, revision, decided_by, decided_at, owner_note";
 
 type ReviewAction = "submit" | "resubmit" | "request_changes" | "approve";
 
@@ -94,6 +93,9 @@ function asReviewRequest(value: unknown): CompanyReviewRequest | null {
     decided_by: typeof value.decided_by === "string" ? value.decided_by : null,
     decided_at: typeof value.decided_at === "string" ? value.decided_at : null,
     owner_note: typeof value.owner_note === "string" ? value.owner_note : "",
+    proof_current: value.proof_current === true,
+    proof_checked_at: typeof value.proof_checked_at === "string" ? value.proof_checked_at : null,
+    submitted_manifest_sha256: typeof value.submitted_manifest_sha256 === "string" ? value.submitted_manifest_sha256 : null,
   };
 }
 
@@ -114,6 +116,15 @@ async function callTransitionCompanyReview(input: {
 }): Promise<ActionResult<CompanyReviewRequest>> {
   try {
     const supabase = await createClient();
+    if (input.action !== "request_changes") {
+      const admin = createAdminClient();
+      const proof = await prepareReviewProof(supabase as unknown as ReviewRpc, admin as unknown as ReviewRpc | null,
+        { ...input, action: input.action }, admin ? reviewStorageReader(admin.storage.from(KNOWLEDGE_BUCKET)) : undefined);
+      if (!proof.ok) return {
+        ok: false, code: proof.code === "CONFLICT" ? "CONFLICT" : "UNAVAILABLE", message: proof.code,
+        data: asReviewRequest(proof.request) ?? undefined,
+      };
+    }
     const { data, error } = await supabase.rpc("transition_company_review", {
       p_action: input.action,
       p_company_id: input.companyId,
@@ -123,13 +134,13 @@ async function callTransitionCompanyReview(input: {
       p_readiness_confirmed: input.ready ?? null,
       p_owner_note: input.ownerNote ?? null,
     });
-    if (error) return { ok: false, code: "AUTH_ERROR", message: error.message };
+    if (error) return { ok: false, code: "AUTH_ERROR", message: "review_authorization_failed" };
 
     const payload = (isPlainObject(data) ? data : null) as TransitionPayload | null;
     if (!payload) return { ok: false, code: "UNAVAILABLE" };
 
     const request = asReviewRequest(payload.request);
-    if (payload.ok === false || payload.code === "CONFLICT") {
+    if (payload.code === "CONFLICT") {
       return {
         ok: false,
         code: "CONFLICT",
@@ -137,6 +148,7 @@ async function callTransitionCompanyReview(input: {
         data: request ?? undefined,
       };
     }
+    if (payload.ok === false) return { ok: false, code: "UNAVAILABLE", message: "PROOF_REQUIRED" };
     if (payload.ok !== true || !request) {
       return { ok: false, code: "UNAVAILABLE" };
     }
@@ -388,6 +400,7 @@ export async function getCustomerReadiness(): Promise<ActionResult<CustomerReadi
     let review: {
       loadFailed: boolean;
       status: ReviewStatus | null;
+      proofCurrent?: boolean;
     } | null = null;
     let subscription:{loadFailed:boolean;status:string|null;paidThrough:string|null}|null=null;
 
@@ -418,7 +431,7 @@ export async function getCustomerReadiness(): Promise<ActionResult<CustomerReadi
         subscription=journey.status==="ready"?{loadFailed:false,status:journey.data.subscription?.status??null,paidThrough:journey.data.subscription?.paid_through??null}:{loadFailed:true,status:null,paidThrough:null};
         const rev = await getCompanyReviewRequest({ expectedCompanyId: company!.id });
         review = rev.ok
-          ? { loadFailed: false, status: rev.data?.status ?? null }
+          ? { loadFailed: false, status: rev.data?.status ?? null, proofCurrent: rev.data?.proof_current === true }
           : { loadFailed: true, status: null };
       } else {
         review = { loadFailed: false, status: null };
@@ -572,11 +585,7 @@ export async function getCompanyReviewRequest(input?: { expectedCompanyId?: stri
     if (error) return error;
   }
   try {
-    const { data, error } = await gate.supabase
-      .from("company_review_requests")
-      .select(REVIEW_SELECT)
-      .eq("company_id", gate.companyId)
-      .maybeSingle();
+    const { data, error } = await gate.supabase.rpc("g03_read_review_request", { p_company_id: gate.companyId });
     if (error) return { ok: false, code: "AUTH_ERROR", message: error.message };
     if (!data) return { ok: true, data: null };
     const parsed = asReviewRequest(data);

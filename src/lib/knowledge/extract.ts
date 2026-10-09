@@ -38,7 +38,9 @@ function usableText(value: string): string {
 }
 
 async function pdfText(bytes: Uint8Array): Promise<string> {
-  const result = await extractText(bytes, { mergePages: true });
+  // PDF.js may transfer/detach its input. Keep the original downloaded buffer
+  // intact so G03 hashes exactly the bytes used for this extraction.
+  const result = await extractText(bytes.slice(), { mergePages: true });
   return Array.isArray(result.text) ? result.text.join("\n") : result.text;
 }
 

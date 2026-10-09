@@ -20,6 +20,7 @@ import {
 } from "@/lib/whatsapp/connection-actions";
 import type { WhatsappCompanyLink } from "@/lib/whatsapp/connection";
 import type { CompanyReviewRequest, CompanyStatus } from "@/lib/tenancy/types";
+import { reviewFailureMessage } from "@/lib/tenancy/review-ui";
 import { useDemo } from "@/lib/demo-state";
 import { fill } from "@/lib/app-copy";
 import {
@@ -610,6 +611,11 @@ export function AdminCompanyDetail({
               </dl>
               {review.status === "pending_review" ? (
                 <div className="grid gap-3 border-t border-[#D7C1A5] pt-3">
+                  <Notice tone="warn">
+                    {review.proof_current === true
+                      ? (locale === "ar" ? "الموافقة ستعيد فحص المعرفة ومحتوى الملفات والصلاحيات؛ لا تُفعّل AI أو Meta. سلامة Storage مثبتة وقت القراءة فقط." : "Approval rechecks knowledge, file bytes and authorization; it does not activate AI or Meta. Storage integrity is observed at read time only.")
+                      : (locale === "ar" ? "الطلب يفتقد إثباتًا حاليًا؛ يحتاج إعادة تقديم من صاحب الشركة قبل الموافقة." : "This request needs current evidence and explicit owner re-submission before approval.")}
+                  </Notice>
                   <Field label={copy.admin.reviewOwnerNote} required>
                     {(p) => (
                       <textarea
@@ -671,6 +677,7 @@ export function AdminCompanyDetail({
                     <Button
                       variant="secondary"
                       busy={busy}
+                      disabled={review.proof_current !== true}
                       onClick={() => {
                         setError(null);
                         setSuccess(null);
@@ -687,10 +694,11 @@ export function AdminCompanyDetail({
                               if (result.code === "CONFLICT" && result.data) {
                                 setReview(result.data);
                                 setReviewInfo(copy.admin.reviewConflict);
-                                setError(result.message ?? copy.admin.reviewDecideFailed);
+                                setError(reviewFailureMessage(result.message ?? result.code, locale));
                                 return;
                               }
-                              setError(result.message ?? copy.admin.reviewDecideFailed);
+                              if (result.code === "CONFLICT") setReviewViewRefreshFailed(true);
+                              setError(reviewFailureMessage(result.message ?? result.code, locale));
                               return;
                             }
                             setReview(result.data);

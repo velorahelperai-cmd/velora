@@ -25,6 +25,13 @@ function pdfWithStream(stream: string, withFont = false) {
   return new Uint8Array(Buffer.from(body));
 }
 
+it("keeps the downloaded PDF buffer intact for a verified extraction digest", async () => {
+  const bytes = pdfWithStream("BT /F1 12 Tf 20 100 Td (Synthetic approved knowledge) Tj ET", true);
+  const original = bytes.slice();
+  expect((await extractKnowledgeText({ fileName: "synthetic.pdf", contentType: "application/pdf", bytes })).ok).toBe(true);
+  expect(bytes).toEqual(original);
+});
+
 async function docxWith(text: string) {
   const zip = new JSZip();
   zip.file(

@@ -77,6 +77,6 @@ export function setupMilestones(input: {
     Boolean(company?.reply_language),
     whatsappUiState(link, false).authorizationReady,
     false,
-    !input.reviewLoadFailed && review?.status === "approved",
+    !input.reviewLoadFailed && review?.status === "approved" && review.proof_current === true,
   ];
 }
