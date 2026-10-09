@@ -2,7 +2,8 @@
 
 Date: 2026-10-09. Branch: `integration/overnight-velora`.
 Base: `31f1fc04052e255f95f948a7c57f60588bd25c37`.
-The final implementation SHA is supplied with the delivery; this report is in that commit.
+Implementation and PostgreSQL verification HEAD: `e843ec375f1aaa6e640e1e2ff8391f38d7fdd7d4`.
+Final PostgreSQL verification: 2026-10-09. The delivery commit updates this report only.
 
 ## Root cause and correction
 
@@ -41,22 +42,27 @@ No historical SQL, financial mutation contract, ACL, RLS, price, renewal/refund 
 | TypeScript | PASS, exit 0 |
 | Lint | PASS, exit 0; one pre-existing unused `_result` warning in Paymob reconciliation |
 | Production build | PASS, exit 0; 33 pages generated |
-| Actual PostgreSQL G07 parity/integration | **2 NOT RUN** (counted among skipped tests, never passing) |
+| Actual PostgreSQL G07 parity/integration, final verification | **2 PASS / 0 FAIL / 0 NOT RUN**, PostgreSQL 17.6, exit 0 |
 | Cloud/payment/AI/Meta execution | NOT RUN, prohibited by task |
 
 G07 coverage includes documented payment, authorization without collection, unqualified legacy grant, recorded reversal after stale success, partial refund, duplicate event vs duplicate collection, review, forged return HTTP query, cross-tenant reads/evidence, read failures, Test/Live separation, existing C1 deadline/late-payment blockers, exact timestamps/account text and pagination beyond one page. All provider calls use synthetic fixtures/mocks.
 
-An independent read-only review found the first-collection classification and timestamp precision issues. Both were corrected with RED/GREEN. A final review found no remaining Critical/Important issues; the archival account-text edge was also corrected and re-reviewed.
+An independent read-only review found the first-collection classification and timestamp precision issues. Both were corrected with RED/GREEN. A final review found no remaining Critical/Important issues; the archival account-text edge was also corrected and re-reviewed. The application/typecheck/lint/build results above belong to the implementation verification; only the two previously skipped PostgreSQL cases were rerun for final closure. Their results are separate, not a fabricated combined suite count.
 
-## Unverified boundary and closure
+## Final PostgreSQL evidence and closure
 
-Docker's local Linux engine pipe was unavailable. There was no safe reachable PostgreSQL instance, so neither G07 PostgreSQL test ran. No PGlite result is substituted for PostgreSQL. The two prepared cases exercise Test/Live SQL-view parity and a real local SQL settlement → partial-refund review/replay → return/aggregate read, with retained history after the existing one-way revoked transition. They use only the task-labelled network-disabled ephemeral container checked by the existing harness.
+Docker initially was unavailable; after the owner opened it, Engine 29.8.2 was reachable. The existing `velora-c2-runtime-13861eb` container passed `verifyLocalContainer`: task label `c2-runtime-integration`, network `none`, no published ports or persistent mounts, PostgreSQL data on tmpfs. The stopped container was started. Its disposable test database was absent, so the existing Billing harness bootstrapped 21 repository migrations locally, with its explicitly synthetic Auth/company dependency stubs. No cloud schema or security setting was changed.
 
-The SQL/API projection still needs execution against that local PostgreSQL environment. The read-only application queries are bounded at 10,000 rows per read; exceeding the bound yields unavailable metrics rather than partial totals. Multi-query reads are observational and do not authorize any mutation or claim transaction-snapshot guarantees.
+`BILLING_ACCEPTANCE_POSTGRES_TESTS=1` was passed only to the test subprocess. `g07-postgres.test.ts` completed in 16.70 seconds, with both cases passing:
 
-**G07 closure: PARTIAL** — local implementation, regression checks, typecheck, lint and build are complete; canonical PostgreSQL runtime parity remains unverified. No staging/production readiness is claimed. No next task was started.
+- Test/Live collection and entitlement qualification matched the canonical SQL views; return display confirmed the appropriate environment and foreign-company orders were hidden.
+- SQL settlement, partial-refund review, repeated refund and old-success replay preserved original proven collection and review status. Gross matched the SQL aggregate, refund/net amounts remained unknown, and the existing one-way revoked transition preserved financial history while removing eligibility.
 
-The four prior untracked HTTP-test files were retained and excluded from this commit. C1/C2 ancestry and the manual-reply paid-entitlement checks were verified and left untouched. No push, deployment, cloud SQL, provider execution, secret change, backup or financial-data mutation was performed.
+No implementation bug was exposed and no code repair was necessary. This is actual PostgreSQL evidence, not PGlite or a mocked database. The application SELECT adapter uses real local SQL; this does not certify production Auth/RLS, Supabase Cloud or the HTTP PostgREST deployment. The read-only application queries remain bounded at 10,000 rows per read; exceeding the bound yields unavailable metrics rather than partial totals. Multi-query reads are observational, not transaction-snapshot guarantees.
+
+**G07 closure: CLOSED locally** — the previously missing PostgreSQL qualification, settlement and lifecycle verification now passes. No staging/production readiness is claimed. No G03 or other task was started.
+
+The four prior untracked HTTP-test files were retained and excluded from this commit. C1/C2 ancestry and the manual-reply paid-entitlement checks were verified and left untouched. Only synthetic rows in the isolated local test database were changed. No push, deployment, cloud SQL, real provider execution, secret change, backup or real financial-data mutation was performed.
 
 Local rerun (from this worktree):
 
