@@ -542,7 +542,7 @@ export function AdminList({
             </span>
           </div>
           <p className="mt-3 text-2xl font-black text-[#8B3D29] [font-family:inherit]" dir="ltr">
-            <bdi>{truth?money(Number(truth.ai.budget.spent_baisa)):"—"} OMR</bdi>
+            <bdi>{truth?.ai?money(Number(truth.ai.budget.spent_baisa)):"—"} OMR</bdi>
           </p>
           <p className="mt-2 text-[11px] text-[#8B3D29]">
             {isRtl ? "من سجل الاستهلاك الفعلي؛ لا يشمل المبالغ المحجوزة" : "From actual usage records; excludes held amounts"}
@@ -560,7 +560,7 @@ export function AdminList({
             </span>
           </div>
           <p className="mt-3 text-2xl font-black text-[#6B4932] [font-family:inherit]" dir="ltr">
-            <bdi>{truth?money(Number(truth.ai.budget.held_baisa)):"—"} OMR</bdi>
+            <bdi>{truth?.ai?money(Number(truth.ai.budget.held_baisa)):"—"} OMR</bdi>
           </p>
           <p className="mt-2 text-[11px] text-[#6B4932] font-bold">
             {isRtl ? "الحجز ليس مصروفًا مؤكدًا أو ربحًا" : "Held funds are not confirmed spend or profit"}

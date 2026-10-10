@@ -1,0 +1,598 @@
+{
+  "source_sha": "5788251f5d06e484b54791ac969757bc0cfe70df",
+  "local_only": true,
+  "auto_apply": false,
+  "sql_sha256": "98ac24e063666bcca72cf6a5bfc82473cdc67c1f94da26641535c4521cb26a91",
+  "new_functions": [
+    {
+      "signature": "public.billing_admin_authorized_session()",
+      "body_md5": "45ce36fe23c8ebf0bd64ae734a743bb8",
+      "owner": "postgres",
+      "security_definer": true,
+      "config": [
+        "search_path=\"\""
+      ],
+      "execute_roles": [
+        "authenticated",
+        "postgres"
+      ]
+    },
+    {
+      "signature": "public.billing_admin_read_order_page(jsonb)",
+      "body_md5": "a1b74eed93c0dd8861687a864f1ecce3",
+      "owner": "postgres",
+      "security_definer": true,
+      "config": [
+        "search_path=\"\""
+      ],
+      "execute_roles": [
+        "authenticated",
+        "postgres"
+      ]
+    },
+    {
+      "signature": "public.billing_admin_read_service_state(uuid)",
+      "body_md5": "20ba782b5e7c8fd9a05c5660b5223d37",
+      "owner": "postgres",
+      "security_definer": true,
+      "config": [
+        "search_path=\"\""
+      ],
+      "execute_roles": [
+        "authenticated",
+        "postgres"
+      ]
+    }
+  ],
+  "security_relations": {
+    "auth.sessions": {
+      "name": "auth.sessions",
+      "owner": "supabase_auth_admin",
+      "rls": true,
+      "force_rls": false,
+      "columns": {
+        "id": {
+          "type": "uuid",
+          "notnull": true,
+          "default": null
+        },
+        "user_id": {
+          "type": "uuid",
+          "notnull": true,
+          "default": null
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "notnull": false,
+          "default": null
+        }
+      },
+      "acl": [
+        {
+          "role": "dashboard_user",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "dashboard_user",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "dashboard_user",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "dashboard_user",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "dashboard_user",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "dashboard_user",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "dashboard_user",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "dashboard_user",
+          "grantable": false,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "grantable": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "supabase_auth_admin",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "supabase_auth_admin",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "supabase_auth_admin",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "supabase_auth_admin",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "supabase_auth_admin",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "supabase_auth_admin",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "supabase_auth_admin",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "supabase_auth_admin",
+          "grantable": false,
+          "privilege": "UPDATE"
+        }
+      ]
+    },
+    "auth.users": {
+      "name": "auth.users",
+      "owner": "supabase_auth_admin",
+      "rls": true,
+      "force_rls": false,
+      "columns": {
+        "id": {
+          "type": "uuid",
+          "notnull": true,
+          "default": null
+        },
+        "email": {
+          "type": "character varying(255)",
+          "notnull": false,
+          "default": null
+        },
+        "email_confirmed_at": {
+          "type": "timestamp with time zone",
+          "notnull": false,
+          "default": null
+        },
+        "phone_confirmed_at": {
+          "type": "timestamp with time zone",
+          "notnull": false,
+          "default": null
+        }
+      },
+      "acl": [
+        {
+          "role": "dashboard_user",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "dashboard_user",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "dashboard_user",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "dashboard_user",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "dashboard_user",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "dashboard_user",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "dashboard_user",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "dashboard_user",
+          "grantable": false,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "grantable": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "supabase_auth_admin",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "supabase_auth_admin",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "supabase_auth_admin",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "supabase_auth_admin",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "supabase_auth_admin",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "supabase_auth_admin",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "supabase_auth_admin",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "supabase_auth_admin",
+          "grantable": false,
+          "privilege": "UPDATE"
+        }
+      ]
+    },
+    "private.app_session_activity": {
+      "name": "private.app_session_activity",
+      "owner": "postgres",
+      "rls": false,
+      "force_rls": false,
+      "columns": {
+        "session_id": {
+          "type": "uuid",
+          "notnull": true,
+          "default": null
+        },
+        "user_id": {
+          "type": "uuid",
+          "notnull": true,
+          "default": null
+        },
+        "last_activity_at": {
+          "type": "timestamp with time zone",
+          "notnull": true,
+          "default": null
+        },
+        "expired_at": {
+          "type": "timestamp with time zone",
+          "notnull": false,
+          "default": null
+        }
+      },
+      "acl": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "SELECT"
+        }
+      ]
+    },
+    "public.platform_admins": {
+      "name": "public.platform_admins",
+      "owner": "postgres",
+      "rls": true,
+      "force_rls": false,
+      "columns": {
+        "user_id": {
+          "type": "uuid",
+          "notnull": true,
+          "default": null
+        },
+        "granted_at": {
+          "type": "timestamp with time zone",
+          "notnull": true,
+          "default": "now()"
+        },
+        "granted_by": {
+          "type": "uuid",
+          "notnull": false,
+          "default": null
+        },
+        "note": {
+          "type": "text",
+          "notnull": true,
+          "default": "''::text"
+        },
+        "role": {
+          "type": "text",
+          "notnull": true,
+          "default": "'delegated'::text"
+        },
+        "status": {
+          "type": "text",
+          "notnull": true,
+          "default": "'active'::text"
+        },
+        "revision": {
+          "type": "integer",
+          "notnull": true,
+          "default": "1"
+        },
+        "updated_at": {
+          "type": "timestamp with time zone",
+          "notnull": true,
+          "default": "now()"
+        }
+      },
+      "acl": [
+        {
+          "role": "authenticated",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "UPDATE"
+        }
+      ]
+    }
+  },
+  "verification": {
+    "isolated_postgresql": {
+      "passed": 12,
+      "failed": 0,
+      "skipped": 0,
+      "actual_server_actions": true,
+      "synthetic_data": true
+    },
+    "focused_offline": {
+      "passed": 107,
+      "failed": 0,
+      "skipped": 0
+    },
+    "full_offline_before_final_AI_transport_case": {
+      "passed": 1527,
+      "failed": 0,
+      "skipped": 42
+    },
+    "actual_component_browser": {
+      "passed": 104,
+      "failed": 0,
+      "provider_calls": false
+    },
+    "typecheck": "passed",
+    "scoped_lint": "passed",
+    "next_build": "passed",
+    "production_applied": false,
+    "live_acceptance": false
+  },
+  "capability_policy": "platform owner only; no delegated billing capability or broad manage_companies substitution",
+  "writes": "function installation only; no catalog/price/history/grant activation changes",
+  "cursor": "HMAC domain-derived from existing configured service credential; actor/session/filter bound, no session/key serialized; rotation invalidates browse links",
+  "preflight_sha256": "8551ae4cd6d49fb4823068e2aa43fb4e03cfd42d08c82286fdedc35b112f9d89",
+  "dependencies": [
+    "financial-proof-cloud",
+    "financial-proof-cloud-stage2a",
+    "financial-proof-cloud-stage2b",
+    "checkout-slice1"
+  ]
+}

@@ -1,0 +1,10 @@
+import {beforeEach,it,expect,vi} from "vitest";
+vi.mock("server-only",()=>({}));const state=vi.hoisted(()=>({verified:vi.fn(),client:vi.fn(),claims:vi.fn(),rpc:vi.fn()}));vi.mock("@/lib/tenancy/access",()=>({requireVerifiedUser:state.verified}));vi.mock("@/lib/supabase/server",()=>({createClient:state.client}));import {billingOwnerGate,recheckBillingOwner} from "./owner-gate";
+const sid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+beforeEach(()=>{vi.clearAllMocks();state.verified.mockResolvedValue({ok:true,context:{userId:"actor"}});state.claims.mockResolvedValue({data:{claims:{sub:"actor",session_id:sid}},error:null});state.rpc.mockResolvedValue({data:true,error:null});state.client.mockResolvedValue({auth:{getClaims:state.claims},rpc:state.rpc});});
+it("current owner and session read is independent of AI",async()=>expect(await billingOwnerGate()).toMatchObject({ok:true,binding:{actorId:"actor",sessionId:sid}}));
+it("failed verified identity denies before SDK owner reads",async()=>{state.verified.mockResolvedValue({ok:false});expect(await billingOwnerGate()).toMatchObject({ok:false,code:"forbidden"});expect(state.client).not.toHaveBeenCalled();});
+it.each(["subject","session"])("invalid trusted %s denies before role predicate",async kind=>{state.claims.mockResolvedValue({data:{claims:{sub:kind==="subject"?"other":"actor",session_id:kind==="session"?"bad":sid}},error:null});expect(await billingOwnerGate()).toMatchObject({ok:false,code:"forbidden"});expect(state.rpc).not.toHaveBeenCalled();});
+it("delegated admin role is not owner authority",async()=>{state.rpc.mockResolvedValue({data:false,error:null});expect(await billingOwnerGate()).toMatchObject({ok:false,code:"forbidden"});});
+it("missing owner-session RPC is unavailable, never a broad fallback",async()=>{state.rpc.mockResolvedValue({data:null,error:{code:"PGRST202"}});expect(await billingOwnerGate()).toMatchObject({ok:false,code:"unavailable"});});
+it("changed binding is rejected at recheck",async()=>{expect(await recheckBillingOwner({actorId:"other",sessionId:sid})).toBe(false);expect(await recheckBillingOwner({actorId:"actor",sessionId:"other"})).toBe(false);});

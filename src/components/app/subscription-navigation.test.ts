@@ -32,7 +32,8 @@ describe("selected subscription through authentication", () => {
   it("opens annual inspection in the actual account panel without selecting a monthly checkout offer", () => {
     request.query = "tab=plan&term=yearly&persona=level_1&package=basic";
     const markup = renderToStaticMarkup(createElement(SubscriptionPanel, { locale: "en", companyId: "company", view: { state: "empty", currentTier: null, cycle: "monthly", paidThrough: null }, offersView: { status: "ready", offers: [offer] } }));
-    expect(markup).toContain('aria-pressed="true">Yearly</button>');
+    expect(markup).not.toContain('aria-pressed="true">Yearly</button>');
+    expect(markup).toContain('annualDraftBanner');
     expect(markup).not.toContain('data-selected="true"');
     expect(markup).toMatch(/<button[^>]*disabled=""[^>]*aria-describedby="subscription-payment-note"/);
   });

@@ -1,0 +1,9 @@
+import {describe,it,expect} from "vitest";
+import {encodeBillingCursor,decodeBillingCursor,parseLedgerFilters} from "./cursor";
+const key="synthetic-offline-key",binding={actorId:"a",sessionId:"s"};const filters={companyId:null,environment:"all" as const,from:null,until:null,pageSize:25};const page={snapshot:"2026-10-10T00:00:00.123456Z",createdAt:"2026-10-09T00:00:00.123456Z",id:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"};
+describe("owner ledger cursor",()=>{
+ it("roundtrips exact microseconds without serializing actor/session/key",()=>{const token=encodeBillingCursor(page,filters,binding,key);expect(decodeBillingCursor(token,filters,binding,key)).toEqual(page);const raw=Buffer.from(token.split(".")[0],"base64url").toString();expect(raw).not.toContain("sessionId");expect(raw).not.toContain(key);});
+ it.each(["actor","session","filter","key","payload","signature"])("rejects changed %s",kind=>{let token=encodeBillingCursor(page,filters,binding,key);const b={...binding},f={...filters};let k=key;if(kind==="actor")b.actorId="b";if(kind==="session")b.sessionId="x";if(kind==="filter")f.pageSize=50;if(kind==="key")k="other";if(kind==="payload")token=Buffer.from(JSON.stringify({...page,id:"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"})).toString("base64url")+"."+token.split(".")[1];if(kind==="signature")token=token.slice(0,-1)+(token.endsWith("a")?"b":"a");expect(decodeBillingCursor(token,f,b,k)).toBeNull();});
+ it.each([{companyId:"bad"},{pageSize:0},{pageSize:101},{environment:"pretend"},{from:"2026-02-30"},{dateBasis:"qualified_collected_at"}])("refuses unsupported filter %j",v=>expect(parseLedgerFilters(v)).toBeNull());
+ it("defaults bounded order-created filters and exclusive UTC end date",()=>expect(parseLedgerFilters({from:"2026-10-01",until:"2026-10-10"})).toMatchObject({from:"2026-10-01T00:00:00.000Z",until:"2026-10-11T00:00:00.000Z",pageSize:25}));
+});

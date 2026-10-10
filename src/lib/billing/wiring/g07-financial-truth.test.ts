@@ -7,6 +7,7 @@ import { financialFixture } from "./financial-truth.fixtures";
 vi.mock("server-only", () => ({}));
 
 const state = vi.hoisted(() => ({ tables: {} as Record<string, Record<string, unknown>[]>, fail: "", owner: true, companyId: "company-a" }));
+vi.mock("@/lib/billing/admin/owner-gate", () => ({billingOwnerGate:async()=>state.owner?{ok:true,binding:{actorId:"synthetic-owner",sessionId:"synthetic-session"}}:{ok:false,code:"forbidden"},recheckBillingOwner:async()=>state.owner}));
 vi.mock("@/lib/tenancy/access", () => ({ getCompanyAccess: async () => ({ ok: true, context: { company: { id: state.companyId } } }) }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({
   rpc: async () => ({ data: { live_collected_baisa: 9000, test_collected_baisa: 0, settled_orders: 1 }, error: null }),
@@ -35,7 +36,7 @@ vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({
 }) }));
 vi.mock("@/lib/answers/runtime/admin-actions", () => ({ readAdminAIState: async () => state.owner
   ? { ok: true, data: { budget: { limit_baisa: 1000, spent_baisa: 0, held_baisa: 0, enabled: false }, companies: [], models: [], recent: [] } }
-  : { ok: false, error: "FORBIDDEN" } }));
+  : { ok: false, error: "forbidden" } }));
 
 function seed(f = financialFixture()) {
   state.tables = { billing_orders: [f.order], billing_payment_attempts: [f.attempt], billing_provider_events: [f.event], billing_entitlement_applications: [f.grant], billing_settlement_outcomes: [f.outcome], billing_plan_versions: [f.plan] };
@@ -124,7 +125,7 @@ describe("G07 financial truth regression", () => {
     const summary = await readAdminTruth(); if (!summary.ok) throw Error(summary.error);
     expect(summary.data.collections).toMatchObject({ live_collected_baisa: 0, test_collected_baisa: 9000, settled_orders: 0 });
   });
-  it("keeps owner authorization before financial reads", async () => { state.owner = false; expect(await readAdminTruth()).toEqual({ ok: false, error: "FORBIDDEN" }); });
+  it("keeps owner authorization before financial reads", async () => { state.owner = false; expect(await readAdminTruth()).toEqual({ ok: false, error: "forbidden" }); });
   it.each(["pending", "failed"])("keeps uncollected %s separate from proven payment", async status => {
     const f = seed(); state.tables.billing_entitlement_applications = []; state.tables.billing_settlement_outcomes = [];
     f.attempt.status = status === "failed" ? "failed" : "provider_submitted";

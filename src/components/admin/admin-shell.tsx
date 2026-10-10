@@ -90,6 +90,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
     {
       group: isRtl ? "الإعدادات والاشتراكات" : "Catalog & Operations",
       items: [
+        {label:isRtl?"\u0637\u0644\u0628\u0627\u062a \u0627\u0644\u0627\u0634\u062a\u0631\u0627\u0643":"Subscription orders",href:"/admin/billing",icon:IconCreditCard,active:pathname.startsWith("/admin/billing")},
         {
           label: isRtl ? "كتالوج الاشتراكات" : "Plans Catalog",
           href: "/admin/catalog",
