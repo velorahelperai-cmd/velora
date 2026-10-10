@@ -400,3 +400,52 @@ SQL write, environment change or deployment was performed.
 
 Official instructions: [database password](https://supabase.com/docs/guides/troubleshooting/how-do-i-reset-my-supabase-database-password-oTs5sB),
 [pooler cache after rotation](https://supabase.com/docs/guides/troubleshooting/supavisor-error-password-authentication-failed-after-password-rotation).
+
+## Cloud execution and acceptance checkpoint — 2026-10-10
+
+This checkpoint supersedes the earlier authentication/backup block above. Owner
+changed the database password personally and re-entered it in the masked local
+form. The new psql probe passed with the same official CA and verify-full:
+postgres database/operator, PostgreSQL 17.11. No assistant password reset, security
+weakening, new key, paid service, code deployment or live provider execution.
+
+- Scoped pre-change backup PASS; independent-process DPAPI decryption/hash PASS.
+  Five knowledge rows, zero review-request rows and zero scoped audit rows; 4337
+  plaintext bytes existed only in private process memory. Cipher SHA-256:
+  0eb80ecc17d2b8b9ccbddb509c9977674e3207528447335e2d2647fd678f3bbc.
+  Encrypted g03-data.dpapi and manifest.json are outside Git/NotebookLM under the
+  private recovery run e1dc757c-ea9c-4d90-90d7-b49fdebb55ba listed above.
+- Both raw SQL hashes re-matched the approved values. Fresh target identity and
+  scoped fingerprint matched; G03 was absent, legacy writer matched and other
+  client transactions were zero at the observation. Applied ONLY the two exact
+  authorized files, in order, through the Supabase migration runner. Containment
+  verified its pinned body and authenticated-only ACL before the upgrade.
+  History entries: 20261010024147 / g03_cloud_compatibility_containment_20261010;
+  20261010024205 / g03_cloud_compatibility_upgrade_20261010. Source migrations were
+  not falsely marked applied; both application calls returned success.
+- Postflight PASS: all 15 installed function bodies exactly match the approved
+  package, postgres ownership, expected definer/volatility/empty search_path and
+  the complete role EXECUTE matrix. Six public RPCs, nine columns and five enabled
+  triggers verified. Existing public RLS remains enabled, private proof access
+  and old helper execution denied; protected knowledge columns remain unwritable
+  by authenticated users. This is catalog evidence, not functional acceptance.
+- Data preservation PASS: a private read-only, TLS-verified comparison against
+  the encrypted backup matched ALL original columns/rows in the limited scope.
+  Old/current scoped-table digest:
+  7e4e1a990d6896cd8cca7354dbadf630832ac58a01d80748a937a323ed383d88.
+  No rows were exposed to tools/logs, restored into tests or copied into Git.
+  Does not certify tables outside the approved scope or Storage object bytes.
+- Private evidence: cloud-postflight.json and data-preservation-result.json in
+  that recovery run; official CA and backup proof remain there. No restoration,
+  third repair script, unsafe legacy reopening or application flag was used.
+- Eleven excluded RPC gaps were rechecked and remain absent. Whole-site readiness
+  is not established by this bounded upgrade.
+- Real QA journey NOT RUN: exact-email lookup found neither QA alias registered.
+  Owner authorized Velora QA A/B with distinct owners. Signup for account A was
+  opened with synthetic display name/email only; password, submission and email
+  confirmation are handed to the human. No Auth bypass or automatic privileges.
+  Existing official owner account is email-confirmed with active platform owner
+  record; actual session/authorization must be checked when reviewing QA tenants.
+  Different user/company IDs, actual Auth/Storage preparation, verified submit,
+  admin decision, replay/stale proof/revocation and isolation still await the two
+  accounts. Prior local PostgreSQL 24/24 is not relabeled as cloud acceptance.
