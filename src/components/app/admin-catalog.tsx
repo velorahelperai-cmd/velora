@@ -2,10 +2,11 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useDemo } from "@/lib/demo-state";
-import { readCatalogAdminAction, saveCatalogDraftAction, publishCatalogVersionAction } from "@/lib/billing/catalog-backend/actions";
+import { readCatalogAdminAction, saveCatalogDraftAction, publishCatalogVersionAction, bindNouraBasicDraftAction } from "@/lib/billing/catalog-backend/actions";
 import { FEATURE_KEYS, type CatalogDraft, type CatalogAdminSnapshot, type CatalogResult, type VariantCode } from "@/lib/billing/catalog-backend/contract";
 import { catalogEditorVersions, catalogVariantLabel, editorDraft, VARIANT_CODES, type CatalogEditorVersion } from "./admin-catalog-model";
 import { featureLabels, formatOmrBaisa } from "./subscription-offers-view";
+import { canBindNouraBasicTestDraft, publishReviewedDraft } from "@/lib/billing/catalog-backend/publication";
 import styles from "./admin-catalog.module.css";
 
 const copy = {
@@ -55,6 +56,8 @@ const copy = {
     statRevision: "رقم المراجعة الحالية",
     statPublished: "الباقات المنشورة",
     statDrafts: "المسودات النشطة",
+    bindTest: "ربط قدرة قراءة معرفة نورا Basic لهذا الإصدار في الدفع التجريبي فقط. لا يفعّل العملاء أو الردود الحية.",
+    partial: "تأكد حفظ ربط الخدمة، لكن نشر الإصدار لم يتأكد. حدّث الكتالوج وراجع الحالة قبل المحاولة مجدداً.",
     policyTitle: "نشر الكتالوج والدفع التجريبي",
     policyText: "مرجع الاختيار التجريبي الموروث هو نورا الأساسية الشهرية (45.000 ر.ع)، ويحتاج الاختيار إصدارًا منشورًا مطابقًا. هذا المرجع لا يثبت اعتمادًا تجاريًا أو موافقة مزوّد الدفع للإطلاق الفعلي. النشر يعرض بيانات الكتالوج فقط؛ الدفع التجريبي يتطلب إعدادات خادم مستقلة، والردود الحية تتطلب تفعيلًا منفصلًا.",
   },
@@ -104,6 +107,8 @@ const copy = {
     statRevision: "Active Revision",
     statPublished: "Published Plans",
     statDrafts: "Active Drafts",
+    bindTest: "Bind Noura Basic knowledge access to this version for Test checkout only. This does not activate customers or live replies.",
+    partial: "Service binding was confirmed, but publication was not confirmed. Refresh the catalog and review its state before trying again.",
     policyTitle: "Catalog Publication & Test Checkout",
     policyText: "The inherited Test-selection reference is Noura Basic Monthly (45.000 OMR); selection requires a matching published version. This reference does not establish commercial or processor Live approval. Publication displays catalog data only. Test checkout requires separate server configuration; live replies require separate activation.",
   },
@@ -128,6 +133,7 @@ export function AdminCatalog({ initial }: { initial: CatalogResult<CatalogAdminS
   const [cap, setCap] = useState("");
   const [features, setFeatures] = useState<CatalogDraft["feature_availability"]>({});
   const [editing, setEditing] = useState<string | null>(null);
+  const [bindBasic, setBindBasic] = useState(false);
   const [review, setReview] = useState<CatalogEditorVersion | null>(null);
 
   const rows = result.ok ? catalogEditorVersions(result.data) : null;
@@ -146,6 +152,7 @@ export function AdminCatalog({ initial }: { initial: CatalogResult<CatalogAdminS
     setBusy(true);
     setMessage(null);
     setReview(null);
+    setBindBasic(false);
     try {
       setResult(await readCatalogAdminAction());
     } catch {
@@ -162,6 +169,7 @@ export function AdminCatalog({ initial }: { initial: CatalogResult<CatalogAdminS
     setCap(row ? String(row.automated_outbound_per_month) : "");
     setFeatures(row ? { ...row.feature_availability } : {});
     setReview(null);
+    setBindBasic(false);
     setMessage(null);
   }
 
@@ -195,13 +203,16 @@ export function AdminCatalog({ initial }: { initial: CatalogResult<CatalogAdminS
     setBusy(true);
     setMessage(null);
     try {
-      const published = await publishCatalogVersionAction(review.versionId, revision);
+      const published = await publishReviewedDraft(review, revision, bindBasic, { bind: bindNouraBasicDraftAction, publish: publishCatalogVersionAction });
       if (!published.ok) {
-        setMessage(published.code === "conflict" ? c.conflict : c.error);
-        if (published.code === "conflict") setResult({ ok: false, code: "conflict" });
+        setMessage(published.bindingConfirmed ? c.partial : published.code === "conflict" ? c.conflict : c.error);
+        setReview(null);
+        setBindBasic(false);
+        setResult({ ok: false, code: published.code });
         return;
       }
       setReview(null);
+      setBindBasic(false);
       setResult(await readCatalogAdminAction());
       setMessage(c.published);
     } catch {
@@ -437,7 +448,7 @@ export function AdminCatalog({ initial }: { initial: CatalogResult<CatalogAdminS
                             disabled={busy}
                             type="button"
                             style={{ background: "#C8A673" }}
-                            onClick={() => setReview(row)}
+                            onClick={() => { setBindBasic(false); setReview(row); }}
                           >
                             {c.publish}
                           </button>
@@ -473,6 +484,13 @@ export function AdminCatalog({ initial }: { initial: CatalogResult<CatalogAdminS
                   ))}
                 </ul>
               </div>
+
+              {canBindNouraBasicTestDraft(review) ? (
+                <label style={{ display: "flex", gap: 10, alignItems: "flex-start", marginTop: 16 }}>
+                  <input type="checkbox" checked={bindBasic} disabled={busy} onChange={(event) => setBindBasic(event.target.checked)} />
+                  <span>{c.bindTest}</span>
+                </label>
+              ) : null}
 
               <div className={styles.actions} style={{ marginTop: 24, justifyContent: "flex-end" }}>
                 <button

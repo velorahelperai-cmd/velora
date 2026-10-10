@@ -2,12 +2,23 @@ import { beforeEach, describe, it, expect, vi } from "vitest";
 const {rpc,createClient}=vi.hoisted(()=>({rpc:vi.fn(),createClient:vi.fn()}));
 vi.mock("server-only",()=>({}));
 vi.mock("@/lib/supabase/server",()=>({createClient}));
-import {readCatalogAdminAction,saveCatalogDraftAction,publishCatalogVersionAction} from "./actions";
+import {readCatalogAdminAction,saveCatalogDraftAction,publishCatalogVersionAction,bindNouraBasicDraftAction} from "./actions";
 import {readPublicCatalogBackend} from "./rpc";
 const draft={code:"noor_basic",currency:"OMR",amount_baisa:45000,period_unit:"month",period_count:1,automated_outbound_per_month:1000,feature_availability:{faq:"target"}};
 const id="22222222-2222-4222-8222-222222222222";
 beforeEach(()=>{vi.clearAllMocks();createClient.mockResolvedValue({rpc});});
 describe("catalog session RPC wiring",()=>{
+ it("binds only through the current owner session RPC and preserves denial",async()=>{
+  rpc.mockResolvedValue({data:{ok:false,code:"forbidden"},error:null});
+  expect(await bindNouraBasicDraftAction(id,3)).toEqual({ok:false,code:"forbidden"});
+  expect(rpc).toHaveBeenCalledWith("billing_bind_noura_basic_draft",{p_plan_version_id:id,p_expected_revision:3});
+  expect(createClient).toHaveBeenCalledTimes(1);
+ });
+ it("rejects invalid binding identity and revision without a session call",async()=>{
+  expect(await bindNouraBasicDraftAction("not-a-version",3)).toEqual({ok:false,code:"invalid_input"});
+  expect(await bindNouraBasicDraftAction(id,0)).toEqual({ok:false,code:"invalid_input"});
+  expect(createClient).not.toHaveBeenCalled();expect(rpc).not.toHaveBeenCalled();
+ });
  it("forwards owner denial without replacing it with an admin/service client",async()=>{
   rpc.mockResolvedValue({data:{ok:false,code:"forbidden"},error:null}); expect(await readCatalogAdminAction()).toEqual({ok:false,code:"forbidden"});
  });
