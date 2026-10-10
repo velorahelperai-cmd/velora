@@ -1,0 +1,1 @@
+import {defineConfig} from 'vitest/config';import {resolve} from 'node:path';export default defineConfig({resolve:{alias:{'@':resolve('src')}},test:{include:['scripts/whatsapp-fixed-ack/postgres.optin.mjs'],testTimeout:60000,hookTimeout:300000,fileParallelism:false}});

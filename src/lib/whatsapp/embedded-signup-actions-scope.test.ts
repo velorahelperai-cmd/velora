@@ -9,7 +9,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ rpc: stat
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({}) }));
 vi.mock("@/lib/auth/session-guard", () => ({ checkAppSession: async () => ({ ok: true }) }));
 vi.mock("./embedded-signup", () => ({ embeddedSignupClientConfig: () => ({ ok: true, appId: "111", configId: "444", graphVersion: "v25.0" }), createEmbeddedSignupAttempt: state.attempt }));
-import { getEmbeddedSignupSetup, startEmbeddedSignup, disconnectEmbeddedSignup } from "./embedded-signup-actions";
+import { getEmbeddedSignupSetup, startEmbeddedSignup, disconnectEmbeddedSignup, getFixedAckSetup, configureFixedAck } from "./embedded-signup-actions";
 
 describe("Meta actions preserve the company rendered in the caller", () => {
   beforeEach(() => {
@@ -37,4 +37,11 @@ describe("Meta actions preserve the company rendered in the caller", () => {
       : action === "start" ? await startEmbeddedSignup({ companyId: "company-a", keepOnPhone: false }) : await disconnectEmbeddedSignup("company-a");
     expect(result.ok).toBe(true); expect(state.rpc.mock.calls[0][1].p_company_id).toBe("company-a");
   });
+});
+
+it("fixed opt-in cannot cross the company rendered in the caller",async()=>{
+ state.companyId="company-b";state.rpc.mockClear();expect(await configureFixedAck("company-a",true)).toEqual({ok:false,code:"FORBIDDEN"});expect(await getFixedAckSetup("company-a")).toEqual({ok:false,code:"FORBIDDEN"});expect(state.rpc).not.toHaveBeenCalled();
+});
+it("fixed opt-in stays unavailable without host scope and sends no privileged mutation",async()=>{
+ vi.unstubAllEnvs();state.companyId="company-a";state.rpc.mockClear();expect(await getFixedAckSetup("company-a")).toEqual({ok:true,available:false});expect(await configureFixedAck("company-a",true)).toEqual({ok:false,code:"NEEDS_SETUP"});expect(state.rpc).not.toHaveBeenCalled();
 });

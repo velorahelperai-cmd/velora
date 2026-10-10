@@ -1,6 +1,7 @@
 import {timingSafeEqual} from "node:crypto";
 import {createAdminClient} from "@/lib/supabase/admin";
 import {createIntegrationPorts,workerRolloutEnabled} from "@/lib/whatsapp/integration-store";
+import {fixedAckConfig,runFixedAcknowledgementBatch,type FixedAckRpc} from "@/lib/whatsapp/fixed-ack";
 import {runInboundWorkerAnswer} from "@/lib/whatsapp/inbound-worker";
 export const runtime="nodejs";
 export const maxDuration=300;
@@ -12,6 +13,11 @@ export async function POST(request:Request){
  try{
  const client=createAdminClient();if(!client)return Response.json({code:"STORE_NOT_CONFIGURED"},{status:503});
  const rpc=client.rpc as unknown as (name:string,args:Record<string,unknown>)=>PromiseLike<{data:unknown;error:unknown}>;
+ if(process.env.WHATSAPP_FIXED_ACK_ENABLED==="true"){
+  const scope=fixedAckConfig();if(!scope)return Response.json({code:"FIXED_ACK_NOT_CONFIGURED"},{status:503});
+  const fixed=await runFixedAcknowledgementBatch(scope,client as unknown as FixedAckRpc);
+  return Response.json(fixed,{status:fixed.code==="COMPLETE"?200:503});
+ }
  const repaired=await rpc.call(client,"whatsapp_repair_accepted_jobs",{p_limit:10});
  const repair=repaired.data as {ok?:boolean;repaired?:number;pending?:number}|null;
  if(repaired.error||repair?.ok!==true||!Number.isSafeInteger(repair.repaired)||!Number.isSafeInteger(repair.pending)

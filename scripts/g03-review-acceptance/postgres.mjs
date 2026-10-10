@@ -18,10 +18,10 @@ export async function isolatedPostgres() {
   const endpoint = context?.Endpoints?.docker?.Host ?? "";
   if (!/^(npipe:\/\/|unix:\/\/)/.test(endpoint)) throw Error("NON_LOCAL_DOCKER");
   await exec("docker", ["image", "inspect", IMAGE]);
-  await exec("docker", ["run", "--pull=never", "-d", "--name", container,
+  await rawExec("docker", ["run", "--pull=never", "-d", "--name", container,
     "--label", `velora.task=${TASK}`, "--label", `velora.run=${run}`,
     "--network", "none", "--tmpfs", "/var/lib/postgresql/data:rw,size=1073741824",
-    "-e", "POSTGRES_HOST_AUTH_METHOD=trust", IMAGE]);
+    "-e", "POSTGRES_HOST_AUTH_METHOD=trust", IMAGE],{timeout:30000,windowsHide:true,maxBuffer:4*1024*1024});
 
   async function verify() {
     const c = JSON.parse((await exec("docker", ["inspect", container])).stdout)[0];

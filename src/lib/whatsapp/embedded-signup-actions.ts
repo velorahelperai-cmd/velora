@@ -1,4 +1,5 @@
 "use server";
+import {fixedAckConfig} from "./fixed-ack";
 import {revalidatePath} from "next/cache";
 import {getCompanyAccess} from "@/lib/tenancy/access";
 import {createClient} from "@/lib/supabase/server";
@@ -59,4 +60,19 @@ export async function cancelEmbeddedSignup(input:{attemptId:string;nonce:string}
 export async function disconnectEmbeddedSignup(companyId:string){
  const auth=await scopedOwner(companyId);if(!auth.ok)return auth;
  const r=await signupRpc(auth.client,"whatsapp_disconnect_embedded_signup",{p_company_id:auth.identity.companyId});if(r.ok===true)revalidatePath("/app/settings");return r.ok===true?{ok:true as const}:{ok:false as const,code:String(r.code)};
+}
+
+export async function getFixedAckSetup(companyId:string){
+ const auth=await scopedOwner(companyId);if(!auth.ok)return auth;
+ const config=fixedAckConfig();if(!config||config.companyId!==auth.identity.companyId)return {ok:true as const,available:false as const};
+ const r=await signupRpc(auth.client,"whatsapp_read_fixed_ack",{p_company_id:config.companyId});
+ if(r.ok!==true||typeof r.enabled!=="boolean"||r.response_kind!=="fixed_ack_v1")return {ok:false as const,code:"UNAVAILABLE"};
+ return {ok:true as const,available:true as const,enabled:r.enabled};
+}
+export async function configureFixedAck(companyId:string,enabled:boolean){
+ const auth=await scopedOwner(companyId);if(!auth.ok)return auth;
+ const config=fixedAckConfig();if(!config||config.companyId!==auth.identity.companyId)return {ok:false as const,code:"NEEDS_SETUP"};
+ if(typeof enabled!=="boolean")return {ok:false as const,code:"INVALID_INPUT"};
+ const r=await signupRpc(auth.client,"whatsapp_configure_fixed_ack",{p_company_id:config.companyId,p_phone_number_id:config.phoneNumberId,p_recipient_wa_id:config.recipientWaId,p_enabled:enabled});
+ if(r.ok!==true||r.enabled!==enabled)return {ok:false as const,code:"UNAVAILABLE"};revalidatePath("/app/settings");return {ok:true as const,enabled};
 }

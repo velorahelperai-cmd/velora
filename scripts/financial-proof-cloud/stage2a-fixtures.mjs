@@ -17,10 +17,11 @@ export async function checkout(db,f,{purpose='initial',environment='test',op=ran
  return {...json(await db.sql(service(query))),input};
 }
 
-export async function manualOrder(db,f,{environment='live',expires=new Date(Date.now()+7200000).toISOString(),approval=null,periodCount=30}={}){
+export async function manualOrder(db,f,{environment='live',expires=new Date(Date.now()+7200000).toISOString(),approval=null,periodCount=30,beforeAttempt}={}){
  const id=randomUUID(),attempt=randomUUID(),op=randomUUID();
  await db.sql('BEGIN;SET LOCAL ROLE postgres;'+
  'INSERT INTO public.billing_orders(id,company_id,plan_version_id,amount_baisa,currency,period_days,period_unit,period_count,provider,provider_account_ref,provider_environment,provider_amount,provider_amount_unit,special_reference,client_op_id,input_fingerprint,status,product_code,purchase_purpose,created_by,expires_at,deadline_policy_approved) VALUES('+lit(id)+','+lit(f.company)+','+lit(f.version)+',5000,\'OMR\',30,\'day\','+periodCount+',\'paymob\','+lit(f.account)+','+lit(environment)+',5000,\'paymob_amount\','+lit('synthetic-'+op)+','+lit(op)+','+lit(op)+',\'locked\',\'velora_ai_staff\',\'initial\','+lit(f.user)+','+(expires===null?'NULL':lit(expires))+','+(approval===null?'NULL':approval?'true':'false')+');COMMIT;');
+ if(beforeAttempt)await beforeAttempt(id);
  const r={ok:true,order_id:id,payment_attempt_id:attempt};
  await db.sql('SET ROLE service_role;INSERT INTO public.billing_payment_attempts(id,order_id,company_id) VALUES('+lit(attempt)+','+lit(id)+','+lit(f.company)+');');return r;
 }

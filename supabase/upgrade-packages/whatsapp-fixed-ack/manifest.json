@@ -1,0 +1,754 @@
+{
+  "baseline_tables": [
+    {
+      "relname": "whatsapp_company_links",
+      "owner": "postgres",
+      "relrowsecurity": true,
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "not_null": true
+        },
+        {
+          "name": "company_id",
+          "type": "uuid",
+          "not_null": true
+        },
+        {
+          "name": "requested_display_number",
+          "type": "text",
+          "not_null": true
+        },
+        {
+          "name": "keep_on_phone",
+          "type": "boolean",
+          "not_null": true
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "not_null": true
+        },
+        {
+          "name": "provider_phone_number_id",
+          "type": "text",
+          "not_null": false
+        },
+        {
+          "name": "verified_display_number",
+          "type": "text",
+          "not_null": false
+        },
+        {
+          "name": "inbound_tested_at",
+          "type": "timestamp with time zone",
+          "not_null": false
+        },
+        {
+          "name": "outbound_tested_at",
+          "type": "timestamp with time zone",
+          "not_null": false
+        },
+        {
+          "name": "last_error_code",
+          "type": "text",
+          "not_null": false
+        },
+        {
+          "name": "admin_note",
+          "type": "text",
+          "not_null": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "not_null": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "not_null": true
+        },
+        {
+          "name": "generation",
+          "type": "bigint",
+          "not_null": true
+        }
+      ]
+    },
+    {
+      "relname": "whatsapp_conversations",
+      "owner": "postgres",
+      "relrowsecurity": true,
+      "acl": "{postgres=arwdDxtm/postgres,authenticated=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "not_null": true
+        },
+        {
+          "name": "company_id",
+          "type": "uuid",
+          "not_null": true
+        },
+        {
+          "name": "phone_number_id",
+          "type": "text",
+          "not_null": true
+        },
+        {
+          "name": "customer_wa_id",
+          "type": "text",
+          "not_null": true
+        },
+        {
+          "name": "customer_name",
+          "type": "text",
+          "not_null": true
+        },
+        {
+          "name": "last_message_at",
+          "type": "timestamp with time zone",
+          "not_null": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "not_null": true
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "not_null": true
+        },
+        {
+          "name": "automation_allowed",
+          "type": "boolean",
+          "not_null": true
+        },
+        {
+          "name": "automation_generation",
+          "type": "integer",
+          "not_null": true
+        },
+        {
+          "name": "control_revision",
+          "type": "integer",
+          "not_null": true
+        },
+        {
+          "name": "control_actor_id",
+          "type": "uuid",
+          "not_null": false
+        },
+        {
+          "name": "control_acted_at",
+          "type": "timestamp with time zone",
+          "not_null": false
+        },
+        {
+          "name": "assigned_to",
+          "type": "uuid",
+          "not_null": false
+        }
+      ]
+    },
+    {
+      "relname": "whatsapp_embedded_signup_attempts",
+      "owner": "postgres",
+      "relrowsecurity": true,
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "not_null": true
+        },
+        {
+          "name": "company_id",
+          "type": "uuid",
+          "not_null": true
+        },
+        {
+          "name": "user_id",
+          "type": "uuid",
+          "not_null": true
+        },
+        {
+          "name": "nonce",
+          "type": "text",
+          "not_null": true
+        },
+        {
+          "name": "keep_on_phone",
+          "type": "boolean",
+          "not_null": true
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "not_null": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "not_null": true
+        },
+        {
+          "name": "consumed_at",
+          "type": "timestamp with time zone",
+          "not_null": false
+        }
+      ]
+    },
+    {
+      "relname": "whatsapp_inbound_jobs",
+      "owner": "postgres",
+      "relrowsecurity": true,
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "not_null": true
+        },
+        {
+          "name": "company_id",
+          "type": "uuid",
+          "not_null": true
+        },
+        {
+          "name": "message_id",
+          "type": "uuid",
+          "not_null": true
+        },
+        {
+          "name": "wa_message_id",
+          "type": "text",
+          "not_null": true
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "not_null": true
+        },
+        {
+          "name": "claim_token",
+          "type": "uuid",
+          "not_null": false
+        },
+        {
+          "name": "claimed_at",
+          "type": "timestamp with time zone",
+          "not_null": false
+        },
+        {
+          "name": "claim_expires_at",
+          "type": "timestamp with time zone",
+          "not_null": false
+        },
+        {
+          "name": "completed_at",
+          "type": "timestamp with time zone",
+          "not_null": false
+        },
+        {
+          "name": "result_code",
+          "type": "text",
+          "not_null": false
+        },
+        {
+          "name": "attempt_count",
+          "type": "integer",
+          "not_null": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "not_null": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "not_null": true
+        }
+      ]
+    },
+    {
+      "relname": "whatsapp_messages",
+      "owner": "postgres",
+      "relrowsecurity": true,
+      "acl": "{postgres=arwdDxtm/postgres,authenticated=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "not_null": true
+        },
+        {
+          "name": "company_id",
+          "type": "uuid",
+          "not_null": true
+        },
+        {
+          "name": "conversation_id",
+          "type": "uuid",
+          "not_null": true
+        },
+        {
+          "name": "wa_message_id",
+          "type": "text",
+          "not_null": true
+        },
+        {
+          "name": "body",
+          "type": "text",
+          "not_null": true
+        },
+        {
+          "name": "message_type",
+          "type": "text",
+          "not_null": true
+        },
+        {
+          "name": "received_at",
+          "type": "timestamp with time zone",
+          "not_null": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "not_null": true
+        },
+        {
+          "name": "direction",
+          "type": "text",
+          "not_null": true
+        },
+        {
+          "name": "sender",
+          "type": "text",
+          "not_null": true
+        },
+        {
+          "name": "delivery_state",
+          "type": "text",
+          "not_null": false
+        },
+        {
+          "name": "delivery_rank",
+          "type": "integer",
+          "not_null": true
+        },
+        {
+          "name": "delivery_updated_at",
+          "type": "timestamp with time zone",
+          "not_null": false
+        }
+      ]
+    },
+    {
+      "relname": "whatsapp_send_intents",
+      "owner": "postgres",
+      "relrowsecurity": true,
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "not_null": true
+        },
+        {
+          "name": "client_op_id",
+          "type": "text",
+          "not_null": true
+        },
+        {
+          "name": "company_id",
+          "type": "uuid",
+          "not_null": true
+        },
+        {
+          "name": "conversation_id",
+          "type": "uuid",
+          "not_null": true
+        },
+        {
+          "name": "phone_number_id",
+          "type": "text",
+          "not_null": true
+        },
+        {
+          "name": "recipient_wa_id",
+          "type": "text",
+          "not_null": true
+        },
+        {
+          "name": "body",
+          "type": "text",
+          "not_null": true
+        },
+        {
+          "name": "sender_kind",
+          "type": "text",
+          "not_null": true
+        },
+        {
+          "name": "actor_user_id",
+          "type": "uuid",
+          "not_null": false
+        },
+        {
+          "name": "outcome",
+          "type": "text",
+          "not_null": true
+        },
+        {
+          "name": "wa_message_id",
+          "type": "text",
+          "not_null": false
+        },
+        {
+          "name": "message_id",
+          "type": "uuid",
+          "not_null": false
+        },
+        {
+          "name": "attempt_token",
+          "type": "uuid",
+          "not_null": false
+        },
+        {
+          "name": "attempt_started_at",
+          "type": "timestamp with time zone",
+          "not_null": false
+        },
+        {
+          "name": "attempt_expires_at",
+          "type": "timestamp with time zone",
+          "not_null": false
+        },
+        {
+          "name": "provider_error_code",
+          "type": "text",
+          "not_null": false
+        },
+        {
+          "name": "expected_automation_generation",
+          "type": "integer",
+          "not_null": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "not_null": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "not_null": true
+        },
+        {
+          "name": "link_id",
+          "type": "uuid",
+          "not_null": false
+        },
+        {
+          "name": "link_generation",
+          "type": "bigint",
+          "not_null": false
+        }
+      ]
+    }
+  ],
+  "security_functions": [
+    {
+      "nspname": "private",
+      "proname": "whatsapp_company_link_bump_generation",
+      "args": "",
+      "signature": "private.whatsapp_company_link_bump_generation()",
+      "owner": "postgres",
+      "security_definer": false,
+      "config": [
+        "search_path=\"\""
+      ],
+      "body_md5": "2fa60357d759ae2a7526db62d7c4ff22",
+      "anon_exec": true,
+      "authenticated_exec": true,
+      "service_exec": true
+    },
+    {
+      "nspname": "private",
+      "proname": "whatsapp_company_link_public",
+      "args": "p_row whatsapp_company_links, p_include_admin boolean",
+      "signature": "private.whatsapp_company_link_public(public.whatsapp_company_links,boolean)",
+      "owner": "postgres",
+      "security_definer": false,
+      "config": [
+        "search_path=\"\""
+      ],
+      "body_md5": "afe9b81e6628b75d3e3c0e94117c8e4f",
+      "anon_exec": true,
+      "authenticated_exec": true,
+      "service_exec": true
+    },
+    {
+      "nspname": "private",
+      "proname": "whatsapp_conversations_guard_control",
+      "args": "",
+      "signature": "private.whatsapp_conversations_guard_control()",
+      "owner": "postgres",
+      "security_definer": true,
+      "config": [
+        "search_path=\"\""
+      ],
+      "body_md5": "c6015c762194094f1e1ada92d18bb1d4",
+      "anon_exec": true,
+      "authenticated_exec": true,
+      "service_exec": true
+    },
+    {
+      "nspname": "private",
+      "proname": "whatsapp_delivery_rank",
+      "args": "p_status text",
+      "signature": "private.whatsapp_delivery_rank(text)",
+      "owner": "postgres",
+      "security_definer": false,
+      "config": [
+        "search_path=\"\""
+      ],
+      "body_md5": "37d80570ad8dde5a9e7a212e80832e48",
+      "anon_exec": true,
+      "authenticated_exec": true,
+      "service_exec": true
+    },
+    {
+      "nspname": "private",
+      "proname": "whatsapp_intent_link_current",
+      "args": "p_row whatsapp_send_intents",
+      "signature": "private.whatsapp_intent_link_current(public.whatsapp_send_intents)",
+      "owner": "postgres",
+      "security_definer": false,
+      "config": [
+        "search_path=\"\""
+      ],
+      "body_md5": "e557d989aab6179bd94187b6793f7c85",
+      "anon_exec": true,
+      "authenticated_exec": true,
+      "service_exec": true
+    },
+    {
+      "nspname": "private",
+      "proname": "whatsapp_send_intent_fields_match",
+      "args": "p_existing whatsapp_send_intents, p_company_id uuid, p_conversation_id uuid, p_phone_number_id text, p_recipient_wa_id text, p_body text, p_sender_kind text, p_expected_automation_generation integer, p_link_id uuid, p_link_generation bigint",
+      "signature": "private.whatsapp_send_intent_fields_match(public.whatsapp_send_intents,uuid,uuid,text,text,text,text,integer,uuid,bigint)",
+      "owner": "postgres",
+      "security_definer": false,
+      "config": [
+        "search_path=\"\""
+      ],
+      "body_md5": "4da41b381390e7a4ab492a5da81bf1ba",
+      "anon_exec": true,
+      "authenticated_exec": true,
+      "service_exec": true
+    },
+    {
+      "nspname": "private",
+      "proname": "whatsapp_send_intent_public",
+      "args": "p_row whatsapp_send_intents",
+      "signature": "private.whatsapp_send_intent_public(public.whatsapp_send_intents)",
+      "owner": "postgres",
+      "security_definer": false,
+      "config": [
+        "search_path=\"\""
+      ],
+      "body_md5": "3f21ca3fc4a12b2425fcf5b7b2dc4060",
+      "anon_exec": true,
+      "authenticated_exec": true,
+      "service_exec": true
+    },
+    {
+      "nspname": "public",
+      "proname": "app_session_is_valid",
+      "args": "",
+      "signature": "public.app_session_is_valid()",
+      "owner": "postgres",
+      "security_definer": true,
+      "config": [
+        "search_path=\"\""
+      ],
+      "body_md5": "b42c28f54d05778fcc994156c6ce4086",
+      "anon_exec": false,
+      "authenticated_exec": true,
+      "service_exec": true
+    },
+    {
+      "nspname": "public",
+      "proname": "apply_whatsapp_delivery_status",
+      "args": "p_company_id uuid, p_phone_number_id text, p_wa_message_id text, p_status text, p_recipient_wa_id text, p_occurred_at timestamp with time zone",
+      "signature": "public.apply_whatsapp_delivery_status(uuid,text,text,text,text,timestamp with time zone)",
+      "owner": "postgres",
+      "security_definer": true,
+      "config": [
+        "search_path=\"\""
+      ],
+      "body_md5": "98eb04456ac02cd8c45a64cbd242ebf7",
+      "anon_exec": false,
+      "authenticated_exec": false,
+      "service_exec": true
+    },
+    {
+      "nspname": "public",
+      "proname": "claim_whatsapp_send_attempt",
+      "args": "p_intent_id uuid, p_actor_user_id uuid, p_lease_seconds integer",
+      "signature": "public.claim_whatsapp_send_attempt(uuid,uuid,integer)",
+      "owner": "postgres",
+      "security_definer": true,
+      "config": [
+        "search_path=\"\""
+      ],
+      "body_md5": "853cf92ee5ab3e4fae74e0b4c5f4ef0e",
+      "anon_exec": false,
+      "authenticated_exec": false,
+      "service_exec": true
+    },
+    {
+      "nspname": "public",
+      "proname": "company_conversation_scope",
+      "args": "p_company_id uuid",
+      "signature": "public.company_conversation_scope(uuid)",
+      "owner": "postgres",
+      "security_definer": true,
+      "config": [
+        "search_path=\"\""
+      ],
+      "body_md5": "a9ddc030788d96e72cbee329464faa16",
+      "anon_exec": false,
+      "authenticated_exec": true,
+      "service_exec": true
+    },
+    {
+      "nspname": "public",
+      "proname": "control_whatsapp_conversation",
+      "args": "p_conversation_id uuid, p_action text, p_expected_revision integer, p_assignee_user_id uuid",
+      "signature": "public.control_whatsapp_conversation(uuid,text,integer,uuid)",
+      "owner": "postgres",
+      "security_definer": true,
+      "config": [
+        "search_path=\"\""
+      ],
+      "body_md5": "d4424038c1360fad28d31b9ebb43f11f",
+      "anon_exec": false,
+      "authenticated_exec": true,
+      "service_exec": true
+    },
+    {
+      "nspname": "public",
+      "proname": "create_whatsapp_assistant_send_intent",
+      "args": "p_client_op_id text, p_conversation_id uuid, p_body text, p_phone_number_id text, p_expected_automation_generation integer, p_link_id uuid, p_link_generation bigint",
+      "signature": "public.create_whatsapp_assistant_send_intent(text,uuid,text,text,integer,uuid,bigint)",
+      "owner": "postgres",
+      "security_definer": true,
+      "config": [
+        "search_path=\"\""
+      ],
+      "body_md5": "b8d5cf04fecc2de9bedcf8137de4f4b9",
+      "anon_exec": false,
+      "authenticated_exec": false,
+      "service_exec": true
+    },
+    {
+      "nspname": "public",
+      "proname": "create_whatsapp_send_intent",
+      "args": "p_client_op_id text, p_conversation_id uuid, p_body text, p_phone_number_id text, p_sender_kind text, p_expected_automation_generation integer, p_link_id uuid, p_link_generation bigint",
+      "signature": "public.create_whatsapp_send_intent(text,uuid,text,text,text,integer,uuid,bigint)",
+      "owner": "postgres",
+      "security_definer": true,
+      "config": [
+        "search_path=\"\""
+      ],
+      "body_md5": "98492951acc1aaa450edbed744f844d2",
+      "anon_exec": false,
+      "authenticated_exec": true,
+      "service_exec": true
+    },
+    {
+      "nspname": "public",
+      "proname": "finalize_whatsapp_send_attempt",
+      "args": "p_intent_id uuid, p_attempt_token uuid, p_result text, p_wa_message_id text, p_error_code text, p_actor_user_id uuid",
+      "signature": "public.finalize_whatsapp_send_attempt(uuid,uuid,text,text,text,uuid)",
+      "owner": "postgres",
+      "security_definer": true,
+      "config": [
+        "search_path=\"\""
+      ],
+      "body_md5": "d94ea1634ec4a72eaac7337e1461fbf4",
+      "anon_exec": false,
+      "authenticated_exec": false,
+      "service_exec": true
+    },
+    {
+      "nspname": "public",
+      "proname": "has_company_capability",
+      "args": "p_company_id uuid, p_capability text",
+      "signature": "public.has_company_capability(uuid,text)",
+      "owner": "postgres",
+      "security_definer": true,
+      "config": [
+        "search_path=\"\""
+      ],
+      "body_md5": "71b77d37cd0e9e4d59c26aec47897de5",
+      "anon_exec": false,
+      "authenticated_exec": true,
+      "service_exec": true
+    },
+    {
+      "nspname": "public",
+      "proname": "rebind_whatsapp_delivery_statuses",
+      "args": "p_company_id uuid, p_phone_number_id text, p_wa_message_id text",
+      "signature": "public.rebind_whatsapp_delivery_statuses(uuid,text,text)",
+      "owner": "postgres",
+      "security_definer": true,
+      "config": [
+        "search_path=\"\""
+      ],
+      "body_md5": "2e3141b4395bb0ac854cda947189429c",
+      "anon_exec": false,
+      "authenticated_exec": false,
+      "service_exec": true
+    },
+    {
+      "nspname": "public",
+      "proname": "retry_whatsapp_send_persist",
+      "args": "p_intent_id uuid, p_actor_user_id uuid",
+      "signature": "public.retry_whatsapp_send_persist(uuid,uuid)",
+      "owner": "postgres",
+      "security_definer": true,
+      "config": [
+        "search_path=\"\""
+      ],
+      "body_md5": "cf72e4078bb2a07f428cc02f61445c8d",
+      "anon_exec": false,
+      "authenticated_exec": false,
+      "service_exec": true
+    },
+    {
+      "nspname": "public",
+      "proname": "save_whatsapp_inbound",
+      "args": "p_company_id uuid, p_phone_number_id text, p_customer_wa_id text, p_customer_name text, p_wa_message_id text, p_body text, p_message_type text, p_received_at timestamp with time zone",
+      "signature": "public.save_whatsapp_inbound(uuid,text,text,text,text,text,text,timestamp with time zone)",
+      "owner": "postgres",
+      "security_definer": true,
+      "config": [
+        "search_path=\"\""
+      ],
+      "body_md5": "3c9cea207a30109a0c764ce9563046dd",
+      "anon_exec": false,
+      "authenticated_exec": false,
+      "service_exec": true
+    }
+  ]
+}
