@@ -1,0 +1,21 @@
+{
+  "status": "local-review-candidate-not-installed",
+  "source": "supabase/migrations/20261006140000_vel_leads_journey_01.sql",
+  "baseline": "captured production public.companies without timezone; exact schema/security metadata pinned",
+  "baseline_commit": "5005b7c9715501f4e50ae5b909e4c2726307c609",
+  "sql_sha256": "388a03b68ef4297133a50f8f711810e186dff2cfe16acd69224910f6071c3f7b",
+  "install_before": [
+    "financial-proof-cloud-stage2b/10-stage2b.review.sql",
+    "whatsapp-fixed-ack/30-required-inbox.review.sql"
+  ],
+  "semantics": {
+    "type": "text",
+    "nullable": true,
+    "default": null,
+    "existing_rows": "NULL",
+    "new_rows": "NULL until deliberately configured",
+    "unknown_or_invalid_runtime": "UTC with explicit product notice"
+  },
+  "source_roles_acl_rls_unchanged": true,
+  "production_mutation": false
+}
