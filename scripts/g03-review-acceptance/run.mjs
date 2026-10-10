@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { isolatedPostgres, lit } from "./postgres.mjs";
 
 const db = await isolatedPostgres();
+const option = name => { const i=process.argv.indexOf(name); if(i<0)return undefined; if(!process.argv[i+1]||process.argv[i+1].startsWith('--'))throw Error(`MISSING ${name}`);return process.argv[i+1]; };
 let passed = 0;
 let migrationLegacy;
 const uuid = label => {
@@ -87,7 +88,7 @@ async function conflictingDecisionWhilePaused(a,b,gate,waiterName) {
 }
 try {
   console.log(`G03 isolated PostgreSQL: ${db.container}`);
-  console.log(`Migrations applied: ${await db.bootstrap({ omitG03: process.argv.includes("--baseline"), beforeG03: async()=>{
+  console.log(`Migrations applied: ${await db.bootstrap({ baselineMetadataPath:option('--cloud-schema'), upgradePackagePath:option('--upgrade-package'), containmentPackagePath:option('--containment-package'), omitG03: process.argv.includes("--baseline"), beforeG03: async()=>{
     migrationLegacy=await fixture("before-migration");
     const file=uuid("before-migration-file");migrationLegacy.file=file;
     await db.sql(`INSERT INTO public.knowledge_sources(id,company_id,kind,title,content,status,file_name,content_type,byte_size,storage_path,created_by) VALUES(${lit(file)},${lit(migrationLegacy.company)},'file','Historical file','historical extraction','ready','menu.txt','text/plain',3,${lit(`${migrationLegacy.company}/${file}/menu.txt`)},${lit(migrationLegacy.user)});`);

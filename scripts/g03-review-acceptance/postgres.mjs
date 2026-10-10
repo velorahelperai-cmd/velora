@@ -5,7 +5,8 @@ import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 
-const exec = promisify(execFile);
+const rawExec = promisify(execFile);
+const exec = (file,args) => rawExec(file,args,{timeout:15_000,windowsHide:true,maxBuffer:4*1024*1024});
 export const lit = value => `'${String(value).replaceAll("'", "''")}'`;
 const IMAGE = "supabase/postgres:17.6.1.136";
 const TASK = "g03-verified-review";
@@ -38,8 +39,9 @@ export async function isolatedPostgres() {
     child.stdout.on("data", chunk => { stdout += chunk; });
     child.stderr.on("data", chunk => { stderr += chunk; });
     const done = new Promise((ok, fail) => {
+      const timer=setTimeout(()=>{ child.kill();fail(Error('LOCAL_PSQL_PROCESS_TIMEOUT')); },60_000);
       child.on("error", fail);
-      child.on("close", code => code === 0 ? ok(stdout.trim()) : fail(Error(stderr || `psql ${code}`)));
+      child.on("close", code => {clearTimeout(timer);if(code===0)ok(stdout.trim());else fail(Error(stderr || `psql ${code}`));});
     });
     const input = `SET application_name=${lit(name)};\nSET statement_timeout='15s';\nSET lock_timeout='10s';\n${query}\n`;
     if (keepOpen) child.stdin.write(input); else child.stdin.end(input);
@@ -47,7 +49,7 @@ export async function isolatedPostgres() {
   }
   async function sql(query, name) { await verify(); return session(query, name).done; }
   async function file(path) { return sql(readFileSync(resolve(path), "utf8").replace(/^\uFEFF/, "")); }
-  async function bootstrap({ omitG03 = false, beforeG03 } = {}) {
+  async function bootstrap({ omitG03 = false, beforeG03, baselineMetadataPath, upgradePackagePath, containmentPackagePath } = {}) {
     await verify();
     for (let attempt = 0; attempt < 60; attempt++) {
       try {
@@ -58,6 +60,25 @@ export async function isolatedPostgres() {
       catch { if (attempt === 59) throw Error("POSTGRES_NOT_READY"); await new Promise(r => setTimeout(r, 500)); }
     }
     await exec("docker", ["exec", "-u", "postgres", container, "createdb", "-U", "supabase_admin", "g03_review"]);
+    if (baselineMetadataPath) {
+      const { loadMetadata, renderSchema } = await import('../g03-cloud-upgrade/schema-replay.mjs');
+      // Verified read-only cloud pg_database owner; preserves implicit
+      // pg_database_owner membership instead of inventing a schema CREATE grant.
+      await sql('ALTER DATABASE g03_review OWNER TO postgres;');
+      await sql(renderSchema(loadMetadata(baselineMetadataPath)));
+      // Synthetic control rows, never cloud/customer row exports.
+      const ownerMigration=readFileSync(resolve('supabase/migrations/20261007230212_vel_platform_owner_identity.sql'),'utf8');
+      const address=ownerMigration.match(/lower\(u.email\)='([^']+)'/)?.[1];
+      if(!address)throw Error('OWNER_PRECONDITION_CHANGED');
+      await sql(`INSERT INTO auth.users(id,email,email_confirmed_at) VALUES(md5('g03-synthetic-platform-owner')::uuid,${lit(address)},now());
+        INSERT INTO public.platform_admins(user_id,role,status) VALUES(md5('g03-synthetic-platform-owner')::uuid,'owner','active');
+        INSERT INTO private.app_session_settings(singleton,enabled) VALUES(true,false);
+        INSERT INTO storage.buckets(id,name,public) VALUES('company-knowledge','company-knowledge',false);`);
+      if(beforeG03)await beforeG03();
+      if(containmentPackagePath)await file(containmentPackagePath);
+      if(upgradePackagePath)await file(upgradePackagePath);
+      return 'actual metadata baseline + bounded package';
+    }
     await file("scripts/whatsapp-integration/dependency-stubs.sql");
     let count = 0;
     for (const name of readdirSync(resolve("supabase/migrations")).filter(n => n.endsWith(".sql")).sort()) {

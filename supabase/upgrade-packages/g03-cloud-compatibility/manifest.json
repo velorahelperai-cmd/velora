@@ -1,0 +1,8 @@
+{
+  "target": "vmpifljyozsbtssxhoxd",
+  "base": "c36f2286b70ee870a1dc7df9f60e1d50d1b0d1b0",
+  "containment_sha256": "4e1f78e641eb97d3b03c38defb845a29c96aad43b641094d072bfa7d11ce58cd",
+  "upgrade_sha256": "823bc9053263103b2d50e6c47b0619a39019a20fe7e0da60a05249ae2d26bd6f",
+  "review_only": true,
+  "auto_apply": false
+}
