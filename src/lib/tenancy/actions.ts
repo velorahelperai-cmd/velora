@@ -1,5 +1,5 @@
 "use server";
-import {readSubscriptionJourneyAction} from "@/lib/billing/operations/actions";
+import {readCompanyBillingDisplay} from "@/lib/billing/wiring/display-read";
 import { readSessionIdentity } from "@/lib/auth/server-identity";
 import { AUTH_RETURN_COOKIE, authFlowHref } from "@/lib/auth/auth-journey";
 import { pathAtOrUnder, safeInternalPath } from "@/lib/auth/safe-next";
@@ -464,8 +464,9 @@ export async function getCustomerReadiness(): Promise<ActionResult<CustomerReadi
       }
 
       if (role === "owner") {
-        const journey=await readSubscriptionJourneyAction();
-        subscription=journey.status==="ready"?{loadFailed:false,status:journey.data.subscription?.status??null,paidThrough:journey.data.subscription?.paid_through??null}:{loadFailed:true,status:null,paidThrough:null};
+        const billing=await readCompanyBillingDisplay(company!.id);
+        subscription=billing.ok&&typeof billing.data.billing_paid==="boolean"&&typeof billing.data.operational_eligible==="boolean"?{loadFailed:false,status:billing.data.billing_paid===true&&billing.data.operational_eligible===true?"active":"inactive",
+          paidThrough:typeof billing.data.qualified_paid_through==="string"?billing.data.qualified_paid_through:null}:{loadFailed:true,status:null,paidThrough:null};
         const rev = await getCompanyReviewRequest({ expectedCompanyId: company!.id });
         review = rev.ok
           ? { loadFailed: false, status: rev.data?.status ?? null, proofCurrent: rev.data?.proof_current === true }

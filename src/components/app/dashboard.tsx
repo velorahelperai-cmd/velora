@@ -35,10 +35,10 @@ function DashboardBillingCard({ companyId }: { companyId: string | null }) {
         empty: "لا يوجد اشتراك مسجّل لهذا النشاط.",
         sent: "رسائل آلية مقبولة",
         held: "سعة محجوزة",
-        remaining: "رسائل متاحة",
-        capMissing: "حد الرسائل غير متوفر",
+        remaining: "من السعة المتبقية",
+        capMissing: "السعة القابلة للاستخدام غير متوفرة",
         period: "بداية شهر الاستخدام",
-        status: "حالة الاشتراك",
+        status: "أهلية الاشتراك الحالية",
         paidThrough: "مدفوع حتى",
         loading: "جارٍ تحميل البيانات…",
       }
@@ -52,10 +52,10 @@ function DashboardBillingCard({ companyId }: { companyId: string | null }) {
         empty: "No subscription is recorded for this company.",
         sent: "accepted automated messages",
         held: "reserved capacity",
-        remaining: "messages available",
-        capMissing: "Message limit unavailable",
+        remaining: "remaining allowance",
+        capMissing: "Usable allowance unavailable",
         period: "Usage month starts",
-        status: "Subscription status",
+        status: "Current subscription eligibility",
         paidThrough: "Paid through",
         loading: "Loading data…",
       };
@@ -64,7 +64,7 @@ function DashboardBillingCard({ companyId }: { companyId: string | null }) {
     const generation = ++request.current;
     startTransition(async () => {
       try {
-        const result = await readDashboardBilling();
+        const result = await readDashboardBilling({expectedCompanyId:companyId??undefined});
         if (generation === request.current) setBilling(result);
       } catch {
         if (generation === request.current) setBilling({ status: "unavailable" });
@@ -73,14 +73,14 @@ function DashboardBillingCard({ companyId }: { companyId: string | null }) {
     return () => {
       request.current += 1;
     };
-  }, []);
+  }, [companyId]);
 
   function refresh() {
     const generation = ++request.current;
     setBilling(null);
     startTransition(async () => {
       try {
-        const result = await readDashboardBilling();
+        const result = await readDashboardBilling({expectedCompanyId:companyId??undefined});
         if (generation === request.current) setBilling(result);
       } catch {
         if (generation === request.current) setBilling({ status: "unavailable" });
@@ -89,27 +89,7 @@ function DashboardBillingCard({ companyId }: { companyId: string | null }) {
   }
 
   const snapshot = billing?.status === "ready" && billing.companyId === companyId ? billing : null;
-  const statusLabels: Record<string, string> = ar
-    ? {
-        active: "سارٍ ونشط",
-        pending: "قيد الانتظار",
-        expired: "منتهي",
-        suspended: "موقوف",
-        cancelled: "ملغي",
-        canceled: "ملغي",
-        unpaid: "غير مدفوع",
-        inactive: "غير نشط",
-      }
-    : {
-        active: "Active",
-        pending: "Pending",
-        expired: "Expired",
-        suspended: "Suspended",
-        cancelled: "Cancelled",
-        canceled: "Cancelled",
-        unpaid: "Unpaid",
-        inactive: "Inactive",
-      };
+  const factLabel=(value:boolean|"unavailable")=>value==="unavailable"?(ar?"غير متوفر":"Unavailable"):value?(ar?"مؤكد":"Confirmed"):(ar?"غير مؤكد":"Not confirmed");
   const formatDate = (date: string) =>
     new Intl.DateTimeFormat(ar ? "ar-OM" : "en-GB", { timeZone: "UTC" }).format(new Date(date));
 
@@ -144,10 +124,12 @@ function DashboardBillingCard({ companyId }: { companyId: string | null }) {
       {snapshot ? (
         <div className="relative mt-5">
           <div className="mb-3 flex flex-wrap items-center gap-3 text-xs text-[var(--color-muted-on-dark)]">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-[#38dc89]/15 border border-[#38dc89]/30 px-2.5 py-0.5 font-medium text-[var(--color-success-fg)]">
-              <span className="h-1.5 w-1.5 rounded-full bg-[#38dc89] animate-pulse" />
-              {text.status}: {statusLabels[snapshot.subscriptionStatus] ?? snapshot.subscriptionStatus}
+            <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-medium ${snapshot.operationalEligible===true?"bg-[#38dc89]/15 border-[#38dc89]/30 text-[var(--color-success-fg)]":"border-white/20 text-[var(--color-muted-on-dark)]"}`}>
+              <span className="h-1.5 w-1.5 rounded-full bg-current" />
+              {text.status}: {factLabel(snapshot.operationalEligible)}
             </span>
+            <span>{ar?"سجل الدفع المؤهل":"Qualified payment history"}: {factLabel(snapshot.billingPaid)}</span>
+            <span>{ar?"جاهزية القناة":"Channel readiness"}: {factLabel(snapshot.channelReady)}</span>
             {snapshot.paidThrough ? (
               <span>
                 {text.paidThrough}: <strong>{formatDate(snapshot.paidThrough)}</strong>
@@ -156,13 +138,14 @@ function DashboardBillingCard({ companyId }: { companyId: string | null }) {
           </div>
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-sm font-medium">
             <span className="text-[var(--color-on-dark)]">
-              <strong>{snapshot.sent.toLocaleString(locale)}</strong>
+              <strong>{snapshot.sent===null?"—":snapshot.sent.toLocaleString(locale)}</strong>
               {snapshot.cap !== null ? ` / ${snapshot.cap.toLocaleString(locale)}` : ""} {text.sent}
             </span>
             <span className="text-[var(--color-success-fg)] font-semibold">
               {snapshot.remaining === null ? text.capMissing : `${snapshot.remaining.toLocaleString(locale)} ${text.remaining}`}
             </span>
           </div>
+          <p className="mb-3 text-xs text-[var(--color-muted-on-dark)]">{ar?"تأكيد الدفع لا يفعّل الذكاء الاصطناعي أو القناة؛ الإرسال يحتاج خدمة مفعّلة وتصريح قناة سارٍ.":"Payment confirmation does not activate AI or channels. Sending requires an active service and current channel authorization."}</p>
           {snapshot.usedPercent !== null ? (
             <div
               className="h-3 w-full overflow-hidden rounded-full bg-white/10 p-0.5"
@@ -180,10 +163,10 @@ function DashboardBillingCard({ companyId }: { companyId: string | null }) {
           ) : null}
           <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 text-xs text-[var(--color-muted-on-dark)]">
             <span>
-              {snapshot.held.toLocaleString(locale)} {text.held}
+              {snapshot.held===null?"—":snapshot.held.toLocaleString(locale)} {text.held}
             </span>
             <span>
-              {text.period}: {formatDate(snapshot.monthStart)} (UTC)
+              {text.period}: {snapshot.monthStart?formatDate(snapshot.monthStart):"—"}
             </span>
           </div>
         </div>
@@ -240,16 +223,16 @@ function DashboardDecoupledPillars({
   const pillars = [
     {
       num: 1,
-      title: ar ? "1. باقة الاشتراك المالي" : "1. Subscription Billing",
+      title: ar ? "1. أهلية الاشتراك الحالية" : "1. Current Subscription Eligibility",
       badge: !subscriptionKnown
         ? (ar ? "حالة الاشتراك غير متوفرة" : "Subscription status unavailable")
         : isSubSettled
-        ? (ar ? "مفعّل (مسوى)" : "Active (Settled)")
-        : (ar ? "غير مفعّل / مسودة" : "Inactive / Draft"),
+        ? (ar ? "أهلية مؤكدة" : "Eligibility Confirmed")
+        : (ar ? "غير مؤهل حاليًا" : "Not Currently Eligible"),
       tone: isSubSettled ? "complete" : "pending",
       detail: ar
-        ? "تسوية التحصيل عبر Paymob وتفعيل الحصة"
-        : "Paymob billing settlement & quota",
+        ? "أهلية حالية مؤهلة؛ تشغيل الخدمة والقناة منفصل"
+        : "Qualified current entitlement; service and channel activation are separate",
       href: "/app/settings?tab=plan",
       cta: ar ? "إدارة الباقة ↗" : "Manage ↗",
     },

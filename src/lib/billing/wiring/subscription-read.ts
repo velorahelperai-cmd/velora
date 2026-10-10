@@ -1,4 +1,5 @@
 import "server-only";
+import {readCompanyBillingDisplay} from "./display-read";
 import { getCompanyAccess } from "@/lib/tenancy/access";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { SubscriptionView } from "@/components/app/subscription-model";
@@ -15,11 +16,15 @@ export async function loadOwnerBillingSubscription(fallback: SubscriptionView): 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const admin = client as any;
   try {
-    const { data, error } = await admin.rpc("billing_read_company_operational_entitlement", { p_company_id: company.id });
-    if (error || !data || typeof data !== "object" || Array.isArray(data) || data.ok !== true
-      || data.environment !== "live" || typeof data.active !== "boolean" || typeof data.status !== "string"
-      || (data.paid_through !== null && typeof data.paid_through !== "string")
-      || (data.plan_version_id !== null && typeof data.plan_version_id !== "string")) return unavailable;
+    const result=await readCompanyBillingDisplay(company.id);
+    if(!result.ok)return unavailable;
+    const evidence=result.data,subscription=evidence.journey.subscription;
+    if(typeof evidence.billing_paid!=="boolean"||typeof evidence.operational_eligible!=="boolean")return unavailable;
+    const row=subscription&&typeof subscription==="object"&&!Array.isArray(subscription)?subscription as Record<string,unknown>:null;
+    const data={environment:evidence.environment,active:evidence.billing_paid===true&&evidence.operational_eligible===true,
+      status:row?row.status:"none",paid_through:evidence.qualified_paid_through,plan_version_id:row?.plan_version_id??null};
+    if(typeof data.status!=="string"||(data.paid_through!==null&&typeof data.paid_through!=="string")
+      ||(data.plan_version_id!==null&&typeof data.plan_version_id!=="string"))return unavailable;
 
     const paidThrough: string | null = data.paid_through;
     const paidTimestamp = paidThrough === null ? null : new Date(paidThrough).getTime();

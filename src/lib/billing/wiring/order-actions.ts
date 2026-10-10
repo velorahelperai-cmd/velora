@@ -10,7 +10,8 @@
 
 import { getPaymobOmrConversionState } from "@/lib/billing/paymob/config";
 import { canManageCompanyBilling } from "@/lib/billing/membership";
-import { createAtomicPurchasePersistRpc } from "@/lib/billing/wiring/purchase-persist-rpc";
+import {persistPublicTestPurchase,readBillingActorSession} from "./public-purchase-persist";
+import {billingUuid,evaluatePublicOffer} from "./public-offer-policy";
 import {
   decidePurchaseGate,
   normalizePurchasePurpose,
@@ -94,6 +95,7 @@ function mapPlanRow(row: {
 export async function createBillingOrderAction(input: {
   planVersionId: string;
   clientOpId: string;
+  expectedCompanyId?: string;
   /** Default initial. renew requires confirmation. upgrade returns UPGRADE_NOT_CONFIGURED. */
   purchaseKind?: PurchaseKind;
   purchasePurpose?: PurchasePurpose;
@@ -105,6 +107,9 @@ export async function createBillingOrderAction(input: {
     periodDays?: number;
   };
 }): Promise<CreateBillingOrderActionResult> {
+  if(!input || typeof input!=="object" || !billingUuid(input.planVersionId) || typeof input.clientOpId!=="string") return {ok:false,code:"INVALID_INPUT"};
+  if((input.purchasePurpose!==undefined&&!['initial','renew','upgrade'].includes(input.purchasePurpose))
+   ||(input.purchaseKind!==undefined&&!['initial','renew','upgrade','initial_subscribe','early_renew'].includes(input.purchaseKind))) return {ok:false,code:"INVALID_INPUT"};
   const purchasePurpose = normalizePurchasePurpose(
     input.purchasePurpose ?? input.purchaseKind ?? "initial",
   );
@@ -126,6 +131,7 @@ export async function createBillingOrderAction(input: {
   }
 
   const companyId = access.context.company.id;
+  if(input.expectedCompanyId!==undefined && input.expectedCompanyId!==companyId) return {ok:false,code:"FORBIDDEN"};
   const companyStatus =
     access.context.company.status === "setup"
       ? ("setup" as const)
@@ -147,32 +153,20 @@ export async function createBillingOrderAction(input: {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const admin = adminClient as any;
 
-  const { data: planRow, error: planErr } = await admin
-    .from("billing_plan_versions")
-    .select("id, plan_id, status, amount_baisa, currency, period_days, period_unit, period_count")
-    .eq("id", input.planVersionId)
-    .maybeSingle();
-
-  if (planErr) {
-    return { ok: false, code: "plan_lookup_failed" };
-  }
-  const planVersion = planRow
-    ? mapPlanRow({
-        id: String(planRow.id),
-        status: String(planRow.status),
-        amount_baisa: Number(planRow.amount_baisa),
-        currency: String(planRow.currency),
-        period_days: Number(planRow.period_days),
-        period_unit: String(planRow.period_unit),
-        period_count: Number(planRow.period_count),
-      })
-    : null;
-  const requestedPlanId = planRow?.plan_id ? String(planRow.plan_id) : null;
+  const {data:offerRead,error:offerError}=await admin.rpc("billing_read_public_test_offer",{p_plan_version_id:input.planVersionId});
+  if(offerError) return {ok:false,code:["PGRST202","42883","42P01"].includes(offerError.code)?"schema_unavailable":"plan_lookup_failed"};
+  const planRow=offerRead?.ok===true?evaluatePublicOffer(offerRead.data,input.planVersionId):null;
+  if(!planRow) return {ok:false,code:"PUBLIC_OFFER_UNSUPPORTED"};
+  const planVersion=mapPlanRow(planRow);
+  const requestedPlanId=planRow.plan_id;
+  const actorSessionId=await readBillingActorSession(access.context.userId);
+  if(!actorSessionId) return {ok:false,code:"not_owner"};
 
   const { data: subRow } = await admin
     .from("billing_subscriptions")
     .select("company_id, status, paid_through, cancel_at_period_end, plan_version_id")
     .eq("company_id", companyId)
+    .eq("environment", "test")
     .maybeSingle();
 
   const subscription: SubscriptionSnapshot | null = subRow
@@ -195,13 +189,14 @@ export async function createBillingOrderAction(input: {
     subscriptionPlanId = subPlan?.plan_id ? String(subPlan.plan_id) : null;
   }
 
-  // Open orders for company + product + purpose — any plan_version (tier/cycle).
+  // Open orders for company + product + purpose â€” any plan_version (tier/cycle).
   const { data: openOrderRows } = await admin
     .from("billing_orders")
     .select(
       "id, company_id, plan_version_id, client_op_id, input_fingerprint, amount_baisa, currency, special_reference, status, product_code, purchase_purpose",
     )
     .eq("company_id", companyId)
+    .eq("provider_environment", "test")
     .eq("product_code", productCode)
     .eq("purchase_purpose", purchasePurpose)
     .in("status", ["locked", "submitted"]);
@@ -314,8 +309,7 @@ export async function createBillingOrderAction(input: {
   const providerAccountRef =
     process.env.PAYMOB_INTEGRATION_ID_TEST?.trim() || "unconfigured-integration";
 
-  const persistAtomic = createAtomicPurchasePersistRpc(admin);
-  const persisted = await persistAtomic({
+  const persisted = await persistPublicTestPurchase(admin,{
     companyId,
     productCode,
     purchasePurpose,
@@ -332,7 +326,7 @@ export async function createBillingOrderAction(input: {
     providerAccountRef,
     providerEnvironment: "test",
     createdBy: access.context.userId,
-  });
+  },actorSessionId);
 
   if (!persisted.ok) {
     return {

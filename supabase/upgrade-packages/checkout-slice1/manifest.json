@@ -1,0 +1,518 @@
+{
+  "source_commit": "b427c927883279e54399bac4027b9f8650992a7f",
+  "local_only": true,
+  "auto_apply": false,
+  "production_writes": 0,
+  "scaffold": "20261010151513_checkout_public_offer_display_boundary.sql",
+  "stage2b_package_sha256": "4e9f03cae14dccac5d7ce280b842988b3a5d43a97372797d82e27d3dec6cd229",
+  "required_functions": [
+    {
+      "acl": [
+        {
+          "role": "PUBLIC",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "dashboard_user",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "supabase_auth_admin",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "supabase_auth_admin",
+      "body_md5": "2db09c3fc855ba90e71d3ae28cfadae3",
+      "proconfig": null,
+      "prosecdef": false,
+      "signature": "auth.jwt()",
+      "provolatile": "s",
+      "security_definer": false,
+      "config": null
+    },
+    {
+      "acl": [
+        {
+          "role": "PUBLIC",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "dashboard_user",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "supabase_auth_admin",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "supabase_auth_admin",
+      "body_md5": "cdef18c69c4f4cbbced2eaf81e628b49",
+      "proconfig": null,
+      "prosecdef": false,
+      "signature": "auth.uid()",
+      "provolatile": "s",
+      "security_definer": false,
+      "config": null
+    },
+    {
+      "acl": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "0493fd3f2840593306ebb9a7eeb1e8f1",
+      "proconfig": [
+        "search_path=\"\""
+      ],
+      "prosecdef": false,
+      "signature": "private.billing_order_deadline_identity_guard()",
+      "provolatile": "v",
+      "security_definer": false,
+      "config": [
+        "search_path=\"\""
+      ]
+    },
+    {
+      "acl": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "56d96321d7e2ed74fbf27e707aed1ded",
+      "proconfig": [
+        "search_path=\"\""
+      ],
+      "prosecdef": false,
+      "signature": "private.billing_payment_attempts_sync_order_scope()",
+      "provolatile": "v",
+      "security_definer": false,
+      "config": [
+        "search_path=\"\""
+      ]
+    },
+    {
+      "acl": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "6fc3c597275f78beb01242bec9da165a",
+      "proconfig": [
+        "search_path=\"\""
+      ],
+      "prosecdef": true,
+      "signature": "private.billing_ui_company_owner(uuid)",
+      "provolatile": "s",
+      "security_definer": true,
+      "config": [
+        "search_path=\"\""
+      ]
+    },
+    {
+      "acl": [
+        {
+          "role": "authenticated",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "b42c28f54d05778fcc994156c6ce4086",
+      "proconfig": [
+        "search_path=\"\""
+      ],
+      "prosecdef": true,
+      "signature": "public.app_session_is_valid()",
+      "provolatile": "s",
+      "security_definer": true,
+      "config": [
+        "search_path=\"\""
+      ]
+    },
+    {
+      "acl": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "0bb5e53842c1b8667300d0cd5a01b91b",
+      "proconfig": [
+        "search_path=public, private, pg_temp"
+      ],
+      "prosecdef": true,
+      "signature": "public.billing_create_test_checkout_order(jsonb,integer)",
+      "provolatile": "v",
+      "security_definer": true,
+      "config": [
+        "search_path=public, private, pg_temp"
+      ]
+    },
+    {
+      "signature": "private.billing_service_rbac(text,text)",
+      "body_md5": "438e4daba0e045fb7299d96990ebc9d4",
+      "owner": "postgres",
+      "security_definer": false,
+      "config": [
+        "search_path=\"\""
+      ],
+      "acl": [
+        {
+          "role": "postgres",
+          "privilege": "EXECUTE",
+          "grantable": false
+        }
+      ]
+    },
+    {
+      "signature": "private.billing_service_immutable()",
+      "body_md5": "17b4d16be72ea6e2e3e44401c7680fd2",
+      "owner": "postgres",
+      "security_definer": false,
+      "config": [
+        "search_path=\"\""
+      ],
+      "acl": [
+        {
+          "role": "postgres",
+          "privilege": "EXECUTE",
+          "grantable": false
+        }
+      ]
+    },
+    {
+      "signature": "public.billing_define_service_offer(uuid,text,text,text[])",
+      "body_md5": "8009b7d2b62709b23237bffbedba090c",
+      "owner": "postgres",
+      "security_definer": true,
+      "config": [
+        "search_path=\"\""
+      ],
+      "acl": [
+        {
+          "role": "postgres",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "service_role",
+          "privilege": "EXECUTE",
+          "grantable": false
+        }
+      ]
+    },
+    {
+      "signature": "public.billing_snapshot_service_order(uuid)",
+      "body_md5": "7cb64387308163d827cb271b481737c1",
+      "owner": "postgres",
+      "security_definer": true,
+      "config": [
+        "search_path=\"\""
+      ],
+      "acl": [
+        {
+          "role": "postgres",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "service_role",
+          "privilege": "EXECUTE",
+          "grantable": false
+        }
+      ]
+    },
+    {
+      "signature": "private.billing_service_receipt_eligible(uuid)",
+      "body_md5": "b7d82e7e8fefc05c22f876f1ac00b7c2",
+      "owner": "postgres",
+      "security_definer": false,
+      "config": [
+        "search_path=\"\""
+      ],
+      "acl": [
+        {
+          "role": "postgres",
+          "privilege": "EXECUTE",
+          "grantable": false
+        }
+      ]
+    },
+    {
+      "signature": "public.billing_apply_service_grant(uuid)",
+      "body_md5": "a24ab750931095099b473aeb73513fba",
+      "owner": "postgres",
+      "security_definer": true,
+      "config": [
+        "search_path=\"\""
+      ],
+      "acl": [
+        {
+          "role": "postgres",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "service_role",
+          "privilege": "EXECUTE",
+          "grantable": false
+        }
+      ]
+    },
+    {
+      "signature": "public.billing_activate_service_grant(uuid,boolean)",
+      "body_md5": "26d832bef910420e446b46bd7d0ca4a9",
+      "owner": "postgres",
+      "security_definer": true,
+      "config": [
+        "search_path=\"\""
+      ],
+      "acl": [
+        {
+          "role": "postgres",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "service_role",
+          "privilege": "EXECUTE",
+          "grantable": false
+        }
+      ]
+    },
+    {
+      "signature": "public.billing_read_service_access(uuid,text)",
+      "body_md5": "963b30b91e9f412fa10fc5cd50b15193",
+      "owner": "postgres",
+      "security_definer": true,
+      "config": [
+        "search_path=\"\""
+      ],
+      "acl": [
+        {
+          "role": "authenticated",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "postgres",
+          "privilege": "EXECUTE",
+          "grantable": false
+        }
+      ]
+    },
+    {
+      "signature": "private.billing_service_catalog_owner()",
+      "body_md5": "e329e3d1797da5f17bf505d7ee618599",
+      "owner": "postgres",
+      "security_definer": true,
+      "config": [
+        "search_path=\"\""
+      ],
+      "acl": [
+        {
+          "role": "postgres",
+          "privilege": "EXECUTE",
+          "grantable": false
+        }
+      ]
+    },
+    {
+      "signature": "public.billing_bind_noura_basic_draft(uuid,bigint)",
+      "body_md5": "46e180a2214ecbc9ca141b675e2b399d",
+      "owner": "postgres",
+      "security_definer": true,
+      "config": [
+        "search_path=\"\""
+      ],
+      "acl": [
+        {
+          "role": "authenticated",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "postgres",
+          "privilege": "EXECUTE",
+          "grantable": false
+        }
+      ]
+    },
+    {
+      "signature": "private.billing_snapshot_bound_service_order(uuid,uuid)",
+      "body_md5": "d44079c460ca89606a26dd30c47a4e62",
+      "owner": "postgres",
+      "security_definer": false,
+      "config": [
+        "search_path=\"\""
+      ],
+      "acl": [
+        {
+          "role": "postgres",
+          "privilege": "EXECUTE",
+          "grantable": false
+        }
+      ]
+    },
+    {
+      "signature": "public.billing_settle_paymob_hmac_verified(jsonb)",
+      "body_md5": "a7460653ef5328f319644d08fc3fff7f",
+      "owner": "postgres",
+      "security_definer": true,
+      "config": [
+        "search_path=\"\""
+      ],
+      "acl": [
+        {
+          "role": "postgres",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "service_role",
+          "privilege": "EXECUTE",
+          "grantable": false
+        }
+      ]
+    },
+    {
+      "signature": "public.billing_create_or_reuse_subscription_order(uuid,text,text,uuid,uuid,text,text,text,bigint,text,integer,text,integer,text,text,uuid)",
+      "body_md5": "4963a4ebcf0f9dbde12a0db77467ff04",
+      "owner": "postgres",
+      "security_definer": true,
+      "config": [
+        "search_path=public, private, pg_temp"
+      ],
+      "acl": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ]
+    }
+  ],
+  "new_functions": [
+    "public.billing_read_public_test_offer(uuid)",
+    "public.billing_create_public_test_subscription_order(jsonb,integer,uuid)",
+    "public.billing_read_company_display_evidence(uuid)"
+  ],
+  "price_policy": "Existing inherited Test reference 45000 baisa only, not Live approval; no catalog writes",
+  "verification": {
+    "offline": {
+      "passed": 1489,
+      "failed": 0,
+      "conditional_skips": 42
+    },
+    "focused_checkout": {
+      "passed": 82,
+      "failed": 0,
+      "skips": 0
+    },
+    "tenancy_readiness_email": {
+      "passed": 130,
+      "failed": 0,
+      "skips": 0
+    },
+    "isolated_postgresql": {
+      "passed": 36,
+      "failed": 0,
+      "skips": 0,
+      "duration_seconds": 220.91,
+      "observed_lock_waits": true
+    },
+    "typescript": "passed",
+    "changed_file_eslint": "passed",
+    "production_build": "passed",
+    "production_application": "not run",
+    "provider_calls": 0,
+    "live_authenticated_acceptance": "not run"
+  },
+  "usage_dependencies": "Exact accepted/held canonical accounting; absent worker tables/columns return unavailable counts without losing confirmed billing.",
+  "new_function_contracts": [
+    {
+      "signature": "public.billing_read_public_test_offer(uuid)",
+      "body_md5": "0521485235d77a8368d0488c28d4c353",
+      "owner": "postgres",
+      "security_definer": true,
+      "config": [
+        "search_path=\"\""
+      ],
+      "execute_roles": [
+        "postgres",
+        "service_role"
+      ]
+    },
+    {
+      "signature": "public.billing_create_public_test_subscription_order(jsonb,integer,uuid)",
+      "body_md5": "bed122796ba422af0178e85a6db8f45f",
+      "owner": "postgres",
+      "security_definer": true,
+      "config": [
+        "search_path=\"\""
+      ],
+      "execute_roles": [
+        "postgres",
+        "service_role"
+      ]
+    },
+    {
+      "signature": "public.billing_read_company_display_evidence(uuid)",
+      "body_md5": "10db3701219d724462a8fe48f408fa8d",
+      "owner": "postgres",
+      "security_definer": true,
+      "config": [
+        "search_path=\"\""
+      ],
+      "execute_roles": [
+        "authenticated",
+        "postgres"
+      ]
+    }
+  ],
+  "sql_sha256": "f0327bb53e6ba0bf10748cbb204f175e17d9eeca70e78dd70af73e35e650ea74",
+  "baseline_limitations": "Catalog metadata and selected managed Auth/worker fixture fields; not a full deployed database/Auth/WhatsApp clone.",
+  "new_function_acl": "service_role only public quote/purchase; authenticated only tenant-bound display; postgres installer owns all"
+}

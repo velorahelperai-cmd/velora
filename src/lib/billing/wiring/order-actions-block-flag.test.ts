@@ -10,9 +10,9 @@ vi.mock("@/lib/tenancy/access", () => ({
   getCompanyAccess: async () => ({
     ok: true,
     context: {
-      company: { id: "flag-company", status: "active" },
+      company: { id: "11111111-1111-4111-8111-111111111111", status: "active" },
       membership: { role: "owner", status: "active" },
-      userId: "flag-owner",
+      userId: "22222222-2222-4222-8222-222222222222",
     },
   }),
 }));
@@ -22,14 +22,14 @@ vi.mock("@/lib/supabase/admin", () => ({
     from: (table: string) => {
       const data = table === "billing_plan_versions"
         ? {
-            id: "flag-version", plan_id: "flag-tier", status: "published",
-            amount_baisa: 5000, currency: "OMR", period_days: 30,
+            id: "33333333-3333-4333-8333-333333333333", plan_id: "44444444-4444-4444-8444-444444444444", status: "published",
+            amount_baisa: 45000, currency: "OMR", period_days: 30,
             period_unit: "month", period_count: 1,
           }
         : {
-            company_id: "flag-company", status: "active",
+            company_id: "11111111-1111-4111-8111-111111111111", status: "active",
             paid_through: "2099-01-31T00:00:00.000Z",
-            cancel_at_period_end: false, plan_version_id: "flag-version",
+            cancel_at_period_end: false, plan_version_id: "33333333-3333-4333-8333-333333333333",
           };
       const query = {
         select: () => query,
@@ -39,7 +39,9 @@ vi.mock("@/lib/supabase/admin", () => ({
       };
       return query;
     },
-    rpc: async () => ({ data: state.rpcPayload, error: null }),
+    rpc: async (name:string) => ({ data: name==="billing_read_public_test_offer"?{ok:true,data:{
+      id:"33333333-3333-4333-8333-333333333333",plan_id:"44444444-4444-4444-8444-444444444444",status:"published",plan_status:"active",plan_code:"noor_basic",amount_baisa:45000,currency:"OMR",period_days:30,period_unit:"month",period_count:1,service_code:"noura",tier:"basic",capabilities:["noura.knowledge.read"],bound:true,
+    }}:state.rpcPayload, error: null }),
   }),
 }));
 
@@ -49,7 +51,7 @@ vi.mock("@/lib/billing/wiring/flags", () => ({
   blocksPaymobConnection: () => "test_provider_blocked",
 }));
 vi.mock("@/lib/billing/paymob/config", () => ({
-  getPaymobOmrConversionState: () => ({ status: "not_configured" }),
+  getPaymobOmrConversionState: () => ({ status: "CONFIGURED", unitsPerOmr: 1000 }),
 }));
 vi.mock("@/lib/billing/wiring/purchase-gate", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./purchase-gate")>();
@@ -60,16 +62,18 @@ vi.mock("@/lib/billing/wiring/purchase-gate", async (importOriginal) => {
   };
 });
 
+vi.mock("server-only",()=>({}));
+vi.mock("@/lib/supabase/server",()=>({createClient:async()=>({auth:{getClaims:async()=>({data:{claims:{sub:"22222222-2222-4222-8222-222222222222",session_id:"55555555-5555-4555-8555-555555555555"}},error:null})},rpc:async()=>({data:{ok:true,expires_at:"2099-11-01T00:00:00Z"},error:null})})}));
 import { createBillingOrderAction } from "./order-actions";
 import { buildEarlyRenewQuote, confirmationFromQuote } from "./renew-gate";
 
 function renew() {
   return createBillingOrderAction({
-    planVersionId: "flag-version",
+    planVersionId: "33333333-3333-4333-8333-333333333333",
     clientOpId: "flag-renew",
     purchasePurpose: "renew",
     earlyRenewConfirmation: confirmationFromQuote(buildEarlyRenewQuote({
-      amountBaisa: 5000,
+      amountBaisa: 45000,
       period: { unit: "month", count: 1 },
       currentPaidThrough: new Date("2099-01-31T00:00:00.000Z"),
     })),

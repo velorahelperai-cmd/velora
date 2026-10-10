@@ -1,8 +1,5 @@
 "use server";
 import {getCompanyAccess} from "@/lib/tenancy/access";
-import {createAdminClient} from "@/lib/supabase/admin";
-import type {SupabaseClient} from "@supabase/supabase-js";
-import {readBillingPaymobWiringFlags} from "@/lib/billing/wiring/flags";
 import {operationRpc} from "./db";
 import {technicalUpgrade,type JourneySnapshot,type OfferDraft,type Offer,type OperationResult} from "./contracts";
 export async function readSubscriptionJourneyAction():Promise<{status:"ready";data:JourneySnapshot}|{status:"forbidden"|"unavailable";reason:string}>{
@@ -22,14 +19,10 @@ export async function saveOfferDraftAction(draft:OfferDraft,expectedRevision:num
  return operationRpc("billing_offer_admin_save",{p_offer_id:id,p_expected_revision:expectedRevision,p_draft:draft});
 }
 export async function prepareDiscountedSubscriptionOrderAction(input:{planVersionId:string;purpose:"initial"|"renew";clientOpId:string;offerId:string|null}):Promise<OperationResult<Record<string,unknown>>>{
- const flags=readBillingPaymobWiringFlags();if(!flags.createEnabled||flags.liveEnabled)return {ok:false,code:flags.liveEnabled?"live_rejected":"create_disabled"};
- const access=await getCompanyAccess("owner");if(!access.ok||!access.context.company||!access.context.membership)return {ok:false,code:"forbidden"};
- const account=process.env.PAYMOB_INTEGRATION_ID_TEST?.trim();if(!account||!/^[1-9][0-9]*$/.test(account))return {ok:false,code:"integration_id_missing"};
- const client=createAdminClient() as unknown as SupabaseClient|null;if(!client)return {ok:false,code:"unavailable"};
- const {data,error}=await client.rpc("billing_create_offer_order",{p_company_id:access.context.company.id,p_plan_version_id:input.planVersionId,p_purpose:input.purpose,p_client_op_id:input.clientOpId,p_offer_id:input.offerId,p_created_by:access.context.userId,p_account_ref:account});
- if(error)return {ok:false,code:["PGRST202","42P01"].includes(error.code)?"schema_unavailable":"unavailable"};
- if(!data||data.ok!==true)return {ok:false,code:typeof data?.code==="string"?data.code:"unavailable"};
- return {ok:true,data:{...data,provider_connection:"blocked",provider_block:"omr_conversion_not_configured"}};
+ void input;
+ // A callable Server Action is a public boundary even without a UI button.
+ // No discount contract is installed; do not call or alias the absent RPC.
+ return {ok:false,code:"discount_not_configured"};
 }
 export async function previewTechnicalUpgradeAction(){return technicalUpgrade();}
 

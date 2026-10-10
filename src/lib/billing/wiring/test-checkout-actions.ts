@@ -19,7 +19,7 @@ export async function startTestCheckoutAction(input:{planVersionId:string;client
  if(origin.protocol!=="https:"||["localhost","127.0.0.1"].includes(origin.hostname))return {ok:false,code:"callback_not_configured"};
  const phone=access.context.company.contact_phone;
  if(!phone)return {ok:false,code:"billing_phone_missing"};
- const result=await createBillingOrderAction({planVersionId:input.planVersionId,clientOpId:input.clientOpId,purchasePurpose:"initial"});
+ const result=await createBillingOrderAction({planVersionId:input.planVersionId,clientOpId:input.clientOpId,purchasePurpose:"initial",expectedCompanyId:access.context.company.id});
  if(!result.ok)return result;
  const companyId=access.context.company.id,client=createAdminClient();
  if(!client)return {ok:false,code:"test_not_configured",orderId:result.orderId};

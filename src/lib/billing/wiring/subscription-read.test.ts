@@ -8,6 +8,7 @@ const state = vi.hoisted(() => ({
 }));
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/tenancy/access", () => ({ getCompanyAccess: state.access }));
+vi.mock("@/lib/supabase/server",()=>({createClient:async()=>({rpc:state.rpc})}));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({
   rpc: state.rpc,
   from(table: string) {
@@ -30,7 +31,9 @@ import { loadOwnerBillingSubscription } from "./subscription-read";
 
 const fallback: SubscriptionView = { state: "empty", currentTier: null, cycle: null, paidThrough: null };
 function entitlement(extra: Record<string, unknown> = {}) {
-  return { ok: true, environment: "live", active: true, status: "active", paid_through: "2099-01-01T00:00:00.000Z", plan_version_id: null, ...extra };
+ const v={environment:"live",active:true,status:"active",paid_through:"2099-01-01T00:00:00.000Z",plan_version_id:null,...extra};
+ return {ok:true,data:{company_id:"fixture-company",environment:v.environment,billing_paid:true,operational_eligible:v.active,qualified_paid_through:v.paid_through,
+  journey:{subscription:v.status==="none"?null:{company_id:"fixture-company",status:v.status,paid_through:v.paid_through,plan_version_id:v.plan_version_id}},usage:null}};
 }
 beforeEach(() => {
   state.access.mockReset().mockResolvedValue({ ok: true, context: { company: { id: "fixture-company", status: "active" }, membership: { role: "owner" } } });
@@ -42,7 +45,7 @@ describe("owner subscription uses authoritative Live entitlement", () => {
   it("does not show Test or unknown future paid-through as active when operational RPC denies entitlement", async () => {
     state.rpc.mockResolvedValue({ data: entitlement({ active: false, status: "none", paid_through: null }), error: null });
     expect(await loadOwnerBillingSubscription(fallback)).toEqual(fallback);
-    expect(state.rpc).toHaveBeenCalledWith("billing_read_company_operational_entitlement", { p_company_id: "fixture-company" });
+    expect(state.rpc).toHaveBeenCalledWith("billing_read_company_display_evidence", { p_company_id: "fixture-company" });
     expect(state.filters.some(row => row.table === "billing_subscriptions")).toBe(false);
   });
   it("shows a verified active Live entitlement", async () => {

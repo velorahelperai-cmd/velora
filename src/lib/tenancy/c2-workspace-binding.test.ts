@@ -1,3 +1,4 @@
+vi.mock('server-only',()=>({}));
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CompanyContext } from "./types";
 
@@ -18,7 +19,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: state.client }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: state.admin }));
 vi.mock("@/lib/access/actions", () => ({ sessionHasCompanyCapability: state.cap }));
 vi.mock("@/lib/auth/server-identity", () => ({ readSessionIdentity: vi.fn() }));
-vi.mock("@/lib/billing/operations/actions", () => ({ readSubscriptionJourneyAction: state.journey }));
+vi.mock("@/lib/billing/wiring/display-read", () => ({ readCompanyBillingDisplay: state.journey }));
 vi.mock("@/lib/billing/wiring/order-actions", () => ({ createBillingOrderAction: state.order }));
 vi.mock("@/lib/billing/wiring/test-checkout", () => ({
   readTestCheckoutConfig: state.settings, openTestCheckout: state.open,
@@ -156,7 +157,7 @@ beforeEach(() => {
     },
   });
   state.settings.mockReturnValue({ ok: true, unitsPerOmr: 1000, config: { integrationId: 123 } });
-  state.journey.mockResolvedValue({ status: "unavailable" });
+  state.journey.mockResolvedValue({ ok:false,code:"unavailable" });
   state.order.mockImplementation(async () => {
     state.writes.push({ kind: "billing_order", companyId: COMPANY_B });
     return { ok: false, code: "plan_not_published" };
@@ -325,5 +326,26 @@ describe("rendered-company binding on owner onboarding actions", () => {
     form.append("expectedCompanyId", COMPANY_B); form.append("expectedCompanyId", COMPANY_A);
     expect(await uploadKnowledgeFiles(form)).toMatchObject({ ok: false, code: "INVALID_INPUT" });
     expect(state.writes).toEqual([]); expect(state.uploads).toEqual([]);
+  });
+});
+
+describe("readiness pillar uses qualified current billing evidence",()=>{
+  it.each(["refunded","voided","cancelled"])("%s pending settlement cannot retain the active badge",async()=>{
+    state.access.mockResolvedValue({ok:true,context:context(COMPANY_B)});
+    state.journey.mockResolvedValue({ok:true,data:{company_id:COMPANY_B,environment:"live",billing_paid:false,operational_eligible:false,qualified_paid_through:null,
+      journey:{subscription:{company_id:COMPANY_B,status:"active",paid_through:"2099-01-01T00:00:00Z"}}}});
+    const result=await getCustomerReadiness();expect(result.ok).toBe(true);if(!result.ok)throw Error("readiness unavailable");
+    expect(result.data.items.find(x=>x.id==="subscription")).toMatchObject({tone:"not_configured",detail:"subscription_inactive"});
+    expect(state.journey).toHaveBeenCalledWith(COMPANY_B);
+  });
+  it("qualified scheduled cancellation retains current eligibility, separately from channel and AI activation",async()=>{
+    state.access.mockResolvedValue({ok:true,context:context(COMPANY_B)});
+    state.journey.mockResolvedValue({ok:true,data:{company_id:COMPANY_B,environment:"live",billing_paid:true,operational_eligible:true,qualified_paid_through:"2099-01-01T00:00:00Z",journey:{subscription:{company_id:COMPANY_B,status:"cancel_at_period_end"}}}});
+    const result=await getCustomerReadiness();if(!result.ok)throw Error("readiness unavailable");
+    expect(result.data.items.find(x=>x.id==="subscription")).toMatchObject({tone:"complete",detail:"subscription_active"});
+  });
+  it("malformed qualified facts display a failed load instead of known inactive",async()=>{
+    state.access.mockResolvedValue({ok:true,context:context(COMPANY_B)});state.journey.mockResolvedValue({ok:true,data:{billing_paid:null,operational_eligible:null}});
+    const result=await getCustomerReadiness();if(!result.ok)throw Error("readiness unavailable");expect(result.data.items.find(x=>x.id==="subscription")).toMatchObject({tone:"blocked",detail:"load_failed"});
   });
 });
