@@ -130,6 +130,17 @@ describe("real staff reply action at persistence and Graph boundaries", () => {
       p_wa_message_id: null, p_error_code: "paid_entitlement_unconfirmed", p_actor_user_id: "user-offline-a",
     } });
   });
+  // Separate reproduced blocker: expected failure until a reviewed dispatch-authority fix.
+  // The provider boundary is mocked; this never contacts Graph.
+  it.fails("KNOWN GAP: staff revocation during Vault lookup must block final Graph dispatch", async () => {
+    tenantReply();
+    fixture.beforeVault = () => { fixture.capability = false; };
+    const { replyWhatsappConversation } = await import("./actions");
+    await replyWhatsappConversation(input);
+    expect(fixture.calls.some(c => c.name === "whatsapp_read_link_access_secret")).toBe(true);
+    expect(fixture.capability).toBe(false);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
   it("staff uses the exact company Vault token inside a persisted service window", async () => {
     tenantReply();
     const { replyWhatsappConversation } = await import("./actions");
