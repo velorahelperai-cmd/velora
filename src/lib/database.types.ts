@@ -677,6 +677,10 @@ export type Database = {
         };
         Returns: Json;
       };
+      whatsapp_authorize_staff_dispatch: {
+        Args: { p_intent_id: string; p_attempt_token: string };
+        Returns: Json;
+      };
       claim_whatsapp_send_attempt: {
         Args: {
           p_intent_id: string;

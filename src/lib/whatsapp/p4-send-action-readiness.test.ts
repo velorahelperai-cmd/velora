@@ -6,6 +6,8 @@ const fixture = vi.hoisted(() => ({
   finalized: { error: null, data: {} } as { error: unknown; data: unknown },
   calls: [] as Array<{ name: string; args: Record<string, unknown> }>,
   capability: true as boolean | null,
+  dispatch: null as { data: unknown; error: unknown } | null,
+  throwDispatch: false,
   throwFinalizeOnce: false,
   windowOpen: true,
   vaultCompany: "company-offline-a",
@@ -44,6 +46,12 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   },
   rpc: async (name: string, args: Record<string, unknown>) => {
     fixture.calls.push({ name, args });
+    if (name === "whatsapp_authorize_staff_dispatch") {
+      if (fixture.throwDispatch) throw new Error("Synthetic dispatch transport uncertainty");
+      return fixture.dispatch ?? { error: null, data: fixture.capability === true
+        ? { ok: true, authorized: true, intent_id: "intent-offline-a" }
+        : { ok: false, code: "staff_authority_revoked" } };
+    }
     return { error: null, data: fixture.created };
   },
 }) }));
@@ -70,6 +78,8 @@ vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({
 describe("real staff reply action at persistence and Graph boundaries", () => {
   beforeEach(() => {
     fixture.capability = true;
+    fixture.dispatch = null;
+    fixture.throwDispatch = false;
     fixture.throwFinalizeOnce = false;
     fixture.windowOpen = true;
     fixture.vaultCompany = "company-offline-a";
@@ -130,9 +140,9 @@ describe("real staff reply action at persistence and Graph boundaries", () => {
       p_wa_message_id: null, p_error_code: "paid_entitlement_unconfirmed", p_actor_user_id: "user-offline-a",
     } });
   });
-  // Separate reproduced blocker: expected failure until a reviewed dispatch-authority fix.
+  // Revocation after preparation must be rechecked at the final dispatch boundary.
   // The provider boundary is mocked; this never contacts Graph.
-  it.fails("KNOWN GAP: staff revocation during Vault lookup must block final Graph dispatch", async () => {
+  it("staff revocation during Vault lookup blocks final Graph dispatch", async () => {
     tenantReply();
     fixture.beforeVault = () => { fixture.capability = false; };
     const { replyWhatsappConversation } = await import("./actions");
@@ -140,6 +150,27 @@ describe("real staff reply action at persistence and Graph boundaries", () => {
     expect(fixture.calls.some(c => c.name === "whatsapp_read_link_access_secret")).toBe(true);
     expect(fixture.capability).toBe(false);
     expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+  it.each([
+    { data: { ok: false, code: "dispatch_already_authorized" }, error: null },
+    { data: { ok: true, authorized: false, intent_id: "intent-offline-a" }, error: null },
+    { data: { ok: true, authorized: true, intent_id: "other-intent" }, error: null },
+    { data: null, error: { code: "OFFLINE_RPC_TIMEOUT" } },
+  ])("retains the existing attempt when final authorization is replayed or uncertain: %j", async (rpc) => {
+    fixture.dispatch = rpc;
+    const { replyWhatsappConversation } = await import("./actions");
+    expect(await replyWhatsappConversation(input)).toMatchObject({ ok: false, code: "UNKNOWN_OUTCOME", clientOpId: input.clientOpId });
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(fixture.calls.filter(c => c.name === "whatsapp_authorize_staff_dispatch")).toHaveLength(1);
+    expect(fixture.calls.some(c => c.name === "finalize_whatsapp_send_attempt")).toBe(false);
+  });
+  it("does not retry or settle a thrown final authorization", async () => {
+    fixture.throwDispatch = true;
+    const { replyWhatsappConversation } = await import("./actions");
+    expect(await replyWhatsappConversation(input)).toMatchObject({ ok: false, code: "UNKNOWN_OUTCOME" });
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(fixture.calls.filter(c => c.name === "whatsapp_authorize_staff_dispatch")).toHaveLength(1);
+    expect(fixture.calls.some(c => c.name === "finalize_whatsapp_send_attempt")).toBe(false);
   });
   it("staff uses the exact company Vault token inside a persisted service window", async () => {
     tenantReply();

@@ -560,8 +560,30 @@ export async function replyWhatsappConversation(input: {
       return settlePreGraphRejected("not_configured");
     }
 
-    // Window/vault reads can take time: payment must still be current at provider contact.
     if (!paidEntitlementStillCurrent()) return settlePreGraphRejected("paid_entitlement_unconfirmed");
+    // This session-bound, one-use database gate runs after all async preparation.
+    // A transport error may hide a committed authorization: retain the attempt,
+    // never retry the gate or call Graph, and never overwrite another send's evidence.
+    let dispatchRpc;
+    try {
+      dispatchRpc = await supabase.rpc("whatsapp_authorize_staff_dispatch", {
+        p_intent_id: intent.id,
+        p_attempt_token: attemptToken,
+      });
+    } catch {
+      return { ok: false, code: "UNKNOWN_OUTCOME", message: "dispatch_authority_unconfirmed", clientOpId, outcome: "unknown" };
+    }
+    const dispatch = asRecord(dispatchRpc.data);
+    if (dispatchRpc.error || !dispatch) {
+      return { ok: false, code: "UNKNOWN_OUTCOME", message: "dispatch_authority_unconfirmed", clientOpId, outcome: "unknown" };
+    }
+    if (dispatch.ok !== true || dispatch.authorized !== true || dispatch.intent_id !== intent.id) {
+      const denial = String(dispatch.code ?? "");
+      const definitiveDenials = ["dispatch_binding_mismatch", "staff_authority_revoked", "staff_authority_expired",
+        "paid_entitlement_unconfirmed", "link_changed", "service_window_closed", "dispatch_authority_busy", "forbidden"];
+      if (dispatch.ok === false && definitiveDenials.includes(denial)) return settlePreGraphRejected(denial);
+      return { ok: false, code: "UNKNOWN_OUTCOME", message: "dispatch_authority_unconfirmed", clientOpId, outcome: "unknown" };
+    }
     const sent = await sendWhatsappText({
       toWaId: intent.recipient_wa_id,
       body: intent.body,
