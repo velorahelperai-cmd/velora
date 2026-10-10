@@ -1,0 +1,659 @@
+{
+  "base_commit": "23b0871603f0763d18bb040b296bad74c261ece1",
+  "project": "vmpifljyozsbtssxhoxd",
+  "baseline_metadata_sha256": "7686a74ab5f7df451eb8916d322a2cdde7d96f00b4d10aa187f5c7ef91fb952d",
+  "tables": {
+    "public.billing_entitlement_applications": "1a476db28f46ca2e93d3765ae849f066",
+    "public.billing_orders": "70d3e4d84b3e7d8671c4c2f3a6b2bb78",
+    "public.billing_payment_attempts": "f1214f700eeb11d73aa859d942f79986",
+    "public.billing_plan_versions": "71ff6c5adb0f8c6eb8dc5284cca72889",
+    "public.billing_provider_events": "db57adee254d8829c2c1064ecf6a600e",
+    "public.billing_settlement_outcomes": "5ea35574ac79cbfeaeed1bc44110bbfe",
+    "public.billing_subscriptions": "85c678ec40d93b2202e9f96c72af5409"
+  },
+  "functions": {
+    "private.billing_add_calendar_period(timestamp with time zone,text,integer)": "66d4e4895663fee70695bf036bd7aee4",
+    "private.billing_compute_paid_through(timestamp with time zone,timestamp with time zone,text,integer)": "7ddefbcd6f20d0b1ad990694403d7c7d",
+    "private.billing_confirm_payment_attempt_failed(uuid,uuid,jsonb)": "eedbf0555c4f3a2154624c8802ffce47",
+    "private.billing_create_or_reuse_subscription_order(uuid,text,text,uuid,uuid,text,text,text,bigint,text,integer,text,integer,text,text,uuid)": "792d856752c258515c3df45398320a4b",
+    "private.billing_entitlement_applications_company_guard()": "ef18eae57dbf4b57f51af21bcd823fbb",
+    "private.billing_financial_receipt_immutability()": "3e33026363f68059e2d93fa75685ce6b",
+    "private.billing_open_payment_attempt_after_confirmed_failed(uuid,uuid,uuid,text)": "6e73ca11440ab7adba5d3333e3128a3f",
+    "private.billing_order_is_safe_uncirculated_draft(uuid)": "fdcaa9d2cc6c5b76613f99838f07551f",
+    "private.billing_orders_client_op_fingerprint_guard()": "23db6a8cc00b4688a056eaac3fa54699",
+    "private.billing_orders_immutability()": "cda6e1769a1d10e109684b470bc630aa",
+    "private.billing_pin_test_provider_amount()": "e1c780a635833481da02d7277c070ed7",
+    "private.billing_plan_versions_immutability()": "50fc18a8f4cdd041acdf86ef21a085a3",
+    "private.billing_reject_immutable_change(text)": "a94c504b971789e4ee4f1189d26edf08",
+    "private.billing_resolve_or_create_payment_attempt(uuid,uuid)": "5afabd6a44ad54a0556839920a38787a",
+    "private.billing_set_payment_attempt_lifecycle_status(uuid,uuid,text)": "034ca8e247dea83a43916cacfe187747",
+    "private.billing_settle_payment_core(jsonb)": "80c74f31f49d6cf79bd858ad1bdbca99",
+    "private.billing_subscription_within_paid_period(timestamp with time zone,timestamp with time zone)": "5a7fac2cadd4545a381620fe6a48799f",
+    "private.billing_ui_catalog_draft(text,public.billing_plan_versions)": "07da1ff7186cccd18b4710bd19c52b30",
+    "private.billing_ui_company_owner(uuid)": "dcbf653d652a5b765f6b554c38ab6136",
+    "private.billing_ui_owner()": "d9b4829f05cf0cde72cded6d220bd639",
+    "private.billing_ui_valid_draft(jsonb)": "c93cd0e1fbefa14a82a0e61e0073b2b0",
+    "public.billing_create_or_reuse_subscription_order(uuid,text,text,uuid,uuid,text,text,text,bigint,text,integer,text,integer,text,text,uuid)": "5d1a4aaa30f04ca37be9cfca79ccddef",
+    "public.billing_create_test_checkout_order(jsonb,integer)": "406e1af0ca0accd165f3e20003f06bdf",
+    "public.billing_settle_paymob_hmac_verified(jsonb)": "0916b755d435bd09245ef76f97e4d5bb"
+  },
+  "stage1_guard_body_md5": "7b28f06702c177c5b65e3d9b23a7e1d4",
+  "local_only": true,
+  "auto_apply": false,
+  "customer_rows": 0,
+  "baseline_live_functions": [
+    {
+      "acl": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "64f7b837c955dbb3e0bb7572bf3ae652",
+      "proconfig": null,
+      "prosecdef": false,
+      "signature": "private.billing_add_calendar_period(timestamp with time zone,text,integer)",
+      "provolatile": "i"
+    },
+    {
+      "acl": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "e8e380fb6a505c82e55848c259f6eac4",
+      "proconfig": null,
+      "prosecdef": false,
+      "signature": "private.billing_compute_paid_through(timestamp with time zone,timestamp with time zone,text,integer)",
+      "provolatile": "i"
+    },
+    {
+      "acl": [
+        {
+          "role": "PUBLIC",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "33bb42ce894227ba9274d7d834e671d3",
+      "proconfig": [
+        "search_path=public, private, pg_temp"
+      ],
+      "prosecdef": true,
+      "signature": "private.billing_confirm_payment_attempt_failed(uuid,uuid,jsonb)",
+      "provolatile": "v"
+    },
+    {
+      "acl": [
+        {
+          "role": "PUBLIC",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "be2c6fb2dba117aeb5d84dbc77449194",
+      "proconfig": [
+        "search_path=public, private, pg_temp"
+      ],
+      "prosecdef": true,
+      "signature": "private.billing_create_or_reuse_subscription_order(uuid,text,text,uuid,uuid,text,text,text,bigint,text,integer,text,integer,text,text,uuid)",
+      "provolatile": "v"
+    },
+    {
+      "acl": [
+        {
+          "role": "PUBLIC",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "8cbd5ea0b55eeb962f77a7e42229cd2f",
+      "proconfig": null,
+      "prosecdef": false,
+      "signature": "private.billing_entitlement_applications_company_guard()",
+      "provolatile": "v"
+    },
+    {
+      "acl": [
+        {
+          "role": "PUBLIC",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "2f9ddd573a19f972e8eb9081263f65d0",
+      "proconfig": [
+        "search_path=public, private, pg_temp"
+      ],
+      "prosecdef": true,
+      "signature": "private.billing_open_payment_attempt_after_confirmed_failed(uuid,uuid,uuid,text)",
+      "provolatile": "v"
+    },
+    {
+      "acl": [
+        {
+          "role": "PUBLIC",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "061d6ee68837a01fdbee368c8dabbad0",
+      "proconfig": null,
+      "prosecdef": false,
+      "signature": "private.billing_order_is_safe_uncirculated_draft(uuid)",
+      "provolatile": "s"
+    },
+    {
+      "acl": [
+        {
+          "role": "PUBLIC",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "00f0ac81c063e38f1690ad8374f4d7c8",
+      "proconfig": null,
+      "prosecdef": false,
+      "signature": "private.billing_orders_client_op_fingerprint_guard()",
+      "provolatile": "v"
+    },
+    {
+      "acl": [
+        {
+          "role": "PUBLIC",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "3b7ea3aca9480e68363dc705172d1d4f",
+      "proconfig": null,
+      "prosecdef": false,
+      "signature": "private.billing_orders_immutability()",
+      "provolatile": "v"
+    },
+    {
+      "acl": [
+        {
+          "role": "PUBLIC",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "6e38041f46033603b86f7e8c9e8dd1c0",
+      "proconfig": [
+        "search_path=public, private, pg_temp"
+      ],
+      "prosecdef": false,
+      "signature": "private.billing_pin_test_provider_amount()",
+      "provolatile": "v"
+    },
+    {
+      "acl": [
+        {
+          "role": "PUBLIC",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "a3d66d4da8199ec432c5ab1da6faf10b",
+      "proconfig": null,
+      "prosecdef": false,
+      "signature": "private.billing_plan_versions_immutability()",
+      "provolatile": "v"
+    },
+    {
+      "acl": [
+        {
+          "role": "PUBLIC",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "95fa5883a83c4d8469a67f83e0611b65",
+      "proconfig": null,
+      "prosecdef": false,
+      "signature": "private.billing_reject_immutable_change(text)",
+      "provolatile": "v"
+    },
+    {
+      "acl": [
+        {
+          "role": "PUBLIC",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "8b4170a4078b2a701326c3c1cd7ebb29",
+      "proconfig": [
+        "search_path=public, private, pg_temp"
+      ],
+      "prosecdef": true,
+      "signature": "private.billing_resolve_or_create_payment_attempt(uuid,uuid)",
+      "provolatile": "v"
+    },
+    {
+      "acl": [
+        {
+          "role": "PUBLIC",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "c7276749b1217bdcb8e0b5158cde3917",
+      "proconfig": [
+        "search_path=public, private, pg_temp"
+      ],
+      "prosecdef": true,
+      "signature": "private.billing_set_payment_attempt_lifecycle_status(uuid,uuid,text)",
+      "provolatile": "v"
+    },
+    {
+      "acl": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "ec64fe10d4f7f167142fd6733461bca1",
+      "proconfig": [
+        "search_path=public, private, pg_temp"
+      ],
+      "prosecdef": true,
+      "signature": "private.billing_settle_payment_core(jsonb)",
+      "provolatile": "v"
+    },
+    {
+      "acl": [
+        {
+          "role": "PUBLIC",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "fc0ceca9677e84e27d38dd3746c40b96",
+      "proconfig": null,
+      "prosecdef": false,
+      "signature": "private.billing_subscription_within_paid_period(timestamp with time zone,timestamp with time zone)",
+      "provolatile": "i"
+    },
+    {
+      "acl": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "a396dd5a1cd1cf37587d7e70e0b4e0fb",
+      "proconfig": [
+        "search_path=\"\""
+      ],
+      "prosecdef": false,
+      "signature": "private.billing_ui_catalog_draft(text,public.billing_plan_versions)",
+      "provolatile": "i"
+    },
+    {
+      "acl": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "6fc3c597275f78beb01242bec9da165a",
+      "proconfig": [
+        "search_path=\"\""
+      ],
+      "prosecdef": true,
+      "signature": "private.billing_ui_company_owner(uuid)",
+      "provolatile": "s"
+    },
+    {
+      "acl": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "73e9d20bcaa68da3488d536ba8720bed",
+      "proconfig": [
+        "search_path=\"\""
+      ],
+      "prosecdef": true,
+      "signature": "private.billing_ui_owner()",
+      "provolatile": "s"
+    },
+    {
+      "acl": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "978a7312df4977e4bbd81728a1a5c5a5",
+      "proconfig": [
+        "search_path=\"\""
+      ],
+      "prosecdef": false,
+      "signature": "private.billing_ui_valid_draft(jsonb)",
+      "provolatile": "i"
+    },
+    {
+      "acl": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "82c5eda3cc9257b4316d5442116e32c1",
+      "proconfig": [
+        "search_path=public, private, pg_temp"
+      ],
+      "prosecdef": true,
+      "signature": "public.billing_create_or_reuse_subscription_order(uuid,text,text,uuid,uuid,text,text,text,bigint,text,integer,text,integer,text,text,uuid)",
+      "provolatile": "v"
+    },
+    {
+      "acl": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "0bb5e53842c1b8667300d0cd5a01b91b",
+      "proconfig": [
+        "search_path=public, private, pg_temp"
+      ],
+      "prosecdef": true,
+      "signature": "public.billing_create_test_checkout_order(jsonb,integer)",
+      "provolatile": "v"
+    },
+    {
+      "acl": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "a41152d4f96faf44da2fc2786d8408c6",
+      "proconfig": [
+        "search_path=public, private, pg_temp"
+      ],
+      "prosecdef": true,
+      "signature": "public.billing_settle_paymob_hmac_verified(jsonb)",
+      "provolatile": "v"
+    }
+  ],
+  "stage1_views": [
+    {
+      "acl": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        }
+      ],
+      "name": "private.billing_proven_entitlement_grants",
+      "owner": "postgres",
+      "definition_md5": "aa061659aa08afb861a76c830b339b41"
+    },
+    {
+      "acl": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        }
+      ],
+      "name": "private.billing_verified_collection_history",
+      "owner": "postgres",
+      "definition_md5": "329b440feaaaf7f2602b96651e932622"
+    }
+  ],
+  "generated_from": "20261010121531_financial_proof_cloud_stage2a.sql",
+  "package_sha256": "da4cb775ff314791ba7c8adad9269d2d70fdd560609e861428d30389bcecaf5e",
+  "package_hash_normalization": "UTF-8 without BOM; CRLF normalized to LF",
+  "forward_body_hashes": {
+    "public.billing_create_or_reuse_subscription_order": "a70719d80e0058b08b820f7a1494798a",
+    "private.billing_settle_payment_core_pre_acceptance": "ae4dd1a4195db97e91fa0e662ccdfff7",
+    "private.billing_settle_payment_core": "c0e12aeb434b8cf7955872d5edd53ef0",
+    "private.billing_payment_attempts_sync_order_scope": "e2d866a3e4d05f0389f4829803a2c440",
+    "private.billing_order_deadline_identity_guard": "0493fd3f2840593306ebb9a7eeb1e8f1",
+    "private.billing_payment_attempts_binding_guard": "c5720cd3072c9c2ae1329c4f8dc3c4b7"
+  },
+  "installer_database_owner": "postgres",
+  "installer_public_schema_owner": "pg_database_owner",
+  "installer_namespace_metadata": {
+    "public_acl": [
+      {
+        "role": "PUBLIC",
+        "grantable": false,
+        "privilege": "USAGE"
+      },
+      {
+        "role": "anon",
+        "grantable": false,
+        "privilege": "USAGE"
+      },
+      {
+        "role": "authenticated",
+        "grantable": false,
+        "privilege": "USAGE"
+      },
+      {
+        "role": "pg_database_owner",
+        "grantable": false,
+        "privilege": "CREATE"
+      },
+      {
+        "role": "pg_database_owner",
+        "grantable": false,
+        "privilege": "USAGE"
+      },
+      {
+        "role": "postgres",
+        "grantable": false,
+        "privilege": "USAGE"
+      },
+      {
+        "role": "service_role",
+        "grantable": false,
+        "privilege": "USAGE"
+      }
+    ],
+    "public_owner": "pg_database_owner",
+    "database_owner": "postgres"
+  },
+  "acceptance": "local_passed_production_unauthorized",
+  "focused_verification": {
+    "passed": 22,
+    "failed": 0,
+    "skipped": 0,
+    "seconds": 193.25,
+    "baseline_live_function_contracts": 23,
+    "stage1_guard_body_md5": "7b28f06702c177c5b65e3d9b23a7e1d4",
+    "production_writes": 0
+  }
+}
