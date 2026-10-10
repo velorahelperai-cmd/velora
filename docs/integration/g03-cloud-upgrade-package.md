@@ -316,3 +316,49 @@ Requested authorization (NOT granted yet):
 Approve the combined **scoped export + conditional two-file application + stated
 synthetic acceptance** explicitly, or approve export only. Export-only permission
 never authorizes cloud SQL. Nothing has been exported or applied by this request.
+
+## Authorized execution checkpoint — 2026-10-10
+
+Owner explicitly approved the scoped encrypted export, conditional two-file cloud
+application and synthetic acceptance, preserving both approved SQL hashes. The
+backup gate has NOT passed; therefore neither SQL file has been applied.
+
+- Windows CurrentUser DPAPI passed synthetic UTF-8 encryption, disk roundtrip,
+  separate-process decryption, SHA-256 equality and tamper rejection. No new keys
+  were generated or directory/system security settings changed in these checks.
+  Local private stream capture also passed with Docker log-driver none and no
+  customer rows. Prior GPG transport attempt was abandoned; GPG is not required
+  for the selected DPAPI-at-rest / verified TLS transport path.
+- Existing connection inspection examined standard files in 18 registered
+  worktrees and PostgreSQL client defaults without printing values. No configured
+  usable connection was found. Owner supplied a password in a local masked form;
+  connection credentials are DPAPI-encrypted, never Git/chat/NotebookLM.
+- The direct host was IPv6-only; the local client bridge was IPv4. Project Connect
+  panel verified the existing FREE Session Pooler route:
+  aws-0-ap-southeast-2.pooler.supabase.com:5432, database postgres,
+  username postgres.vmpifljyozsbtssxhoxd. No add-on or project config change.
+- With PGSSLROOTCERT=system, redacted psql error was "SSL error: certificate verify
+  failed". Project Database Settings supplied the official Download certificate
+  link: https://supabase-downloads.s3-ap-southeast-1.amazonaws.com/prod/ssl/prod-ca-2021.crt.
+  Subject/issuer Supabase Root 2021 CA; CA=true; validity 2021-04-28..2031-04-26;
+  no private key. DER SHA-256:
+  807025ad50d4ed219d2c9c7d299c004f824eb00cf7f65afef607d07b72e6cafa.
+  File SHA-256:
+  700723581420dd1ac98fd7e9ac529f0ef210eadcaf87fc868a3ad7d114c2f3b7.
+- This official public CA is mounted READ ONLY into the owned temporary client and
+  supplied as PGSSLROOTCERT=/run/velora-ca.crt, keeping PGSSLMODE=verify-full. No
+  system trust-store import, unknown certificate or verification bypass. Official
+  [Supabase psql guidance](https://supabase.com/docs/guides/database/psql) uses this
+  project certificate with Session Pooler and verify-full.
+- Both subsequent probes progressed to server password authentication and were
+  rejected: FATAL: password authentication failed for user "postgres". This proves
+  the TLS certificate/hostname gate no longer failed; it does NOT prove database
+  credentials or a complete connection. Owner re-entered the password once after
+  the first rejection; no guessing, brute force, password reset or extra attempt.
+- BLOCKED: actual scoped backup absent, no manifest for customer data. Containment,
+  upgrade and real functional acceptance NOT RUN. No cloud schema/role/flag changes
+  or paid calls. Local source tree/SQL unchanged except this documentation.
+- Secret-redacted diagnostics, CA provenance and DPAPI synthetic proofs are saved
+  only under the already authorized private recovery folder, run
+  e1dc757c-ea9c-4d90-90d7-b49fdebb55ba. Next prerequisite is a validated existing DB
+  credential, supplied locally by the owner; no automatic reset is authorized.
