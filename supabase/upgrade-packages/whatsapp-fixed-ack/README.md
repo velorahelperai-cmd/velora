@@ -2,7 +2,15 @@
 
 This package is a forward compatibility candidate, not an installed production release. Apply no production SQL until the scoped recoverable backup and restore proof, fresh pinned preflight, dependency approval, and staged postflight gates are complete. Existing G03 00/10 must not be reapplied. No activation, grant, credential, provider call, or customer message is authorized by these files.
 
+Combined application order: financial-proof-cloud Stage1 → Stage2A → company-timezone prerequisite → Stage2B → checkout-slice1 → admin-billing-ledger → WhatsApp 10 → 20 → 30. Checkout/admin must precede WhatsApp 10: its additive `whatsapp_worker_subscription_company_uidx` changes their earlier exact financial-table preflight contract. Keep every frozen SQL file and pin unchanged.
+
 Required reviewed billing dependencies: financial-proof-cloud Stage1, Stage2A, Stage2B. Current checkout/admin application dependencies have their own reviewed packages and release gates. Apply these three WhatsApp files in order, each in its own transaction. A later stage failure does not roll back an earlier successful file. Stop on drift; preserve existing data, including new history written after a stage succeeds. No broad downgrade/drop or bulk customer re-preparation.
+
+## Resume and final verification
+
+Record the hash and committed postflight checkpoint after each successful transaction. On failure, inspect the failed transaction and fresh metadata; preserve all earlier committed stages and history. Resume only the next uncommitted stage after its exact prerequisite matches. Do not replay committed installers or their earlier preflight contracts against the final schema. An uncertain commit outcome requires read-only inspection before any retry.
+
+Final verification checks the combined schema, including the WhatsApp worker subscription index and foreign key plus the unchanged checkout/admin function bodies, owner, search path and ACL. New inbox sequences must continue forward after a failed transaction; gaps are valid and must not be rewound. A pre-release backup is recovery evidence, not permission to restore stale data over newer private history.
 
 ## Frozen SQL SHA-256
 
