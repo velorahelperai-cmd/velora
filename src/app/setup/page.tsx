@@ -6,6 +6,7 @@ import { authFlowHref } from "@/lib/auth/auth-journey";
 import { setupReturnContext } from "@/lib/auth/setup-return";
 import { AccessGate } from "@/components/app/access-gate";
 import { SetupWizard } from "@/components/app/setup-wizard";
+import { SetupLoading } from "@/components/app/setup-loading";
 import { listKnowledgeSources } from "@/lib/knowledge/actions";
 import type { KnowledgeSourceRecord } from "@/lib/knowledge/types";
 import { getCompanyAccess, loginPathForReturn } from "@/lib/tenancy/access";
@@ -50,7 +51,7 @@ export default async function Page() {
   }
 
   return (
-    <Suspense fallback={<main className="min-h-svh bg-[#07110d]" aria-busy="true" />}>
+    <Suspense fallback={<SetupLoading />}>
       <SetupWizard
         userId={userId}
         preferredNext={preferredNext}

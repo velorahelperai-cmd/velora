@@ -10,6 +10,7 @@ export type SubscriptionFeatureView = {
 };
 export type SubscriptionOfferView = {
   versionId: string;
+  catalogVersion?: number;
   planId: string;
   persona: SubscriptionPersona;
   package: SubscriptionPackage;
@@ -94,9 +95,9 @@ export function formatOmrBaisa(amountBaisa: number, locale: "ar" | "en"): string
 
 /** Display the validated public RPC projection; never invent prices or ready capabilities. */
 export function offersViewFromCatalog(result: CatalogResult<PublicCatalogVersion[]>): SubscriptionOffersView {
- if (!result.ok) return {status:"unconfigured",offers:[]};
+ if (!result.ok) return {status:"error",offers:[]};
  const offers: SubscriptionOfferView[] = result.data.map(row => ({
-  versionId:row.version_id,planId:row.plan_id,persona:personaByCode[row.persona],package:row.variant,term:"monthly",amountBaisa:row.amount_baisa,currency:row.currency,
+  versionId:row.version_id,catalogVersion:row.version,planId:row.plan_id,persona:personaByCode[row.persona],package:row.variant,term:"monthly",amountBaisa:row.amount_baisa,currency:row.currency,
   automatedOutboundPerMonth:row.automated_outbound_per_month,quotaEnforcement:"not_verified",checkoutEnabled:row.checkout_enabled,
   features:Object.entries(row.feature_availability).map(([id,state])=>({id,label:featureLabels[id],availability:state==="target"?"planned":"not_verified"}))
  }));

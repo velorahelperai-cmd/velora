@@ -700,3 +700,45 @@
 .root[data-surface="account"] .draftPlanNotice{background:#f4efe4;border-color:#dfd3b7;color:#635125;}
 .root[data-surface="account"] .price{color:var(--ink);}
 .root[data-surface="account"] :is(button,a,summary):focus-visible{outline-color:#176847;}
+
+/* Catalog surfaces only: homepage pricing + account subscription, not other scenes. */
+.root[data-surface]{
+ --ink:#000;--muted:#40554a;--line:#ceded5;--teal:#087443;--turf:#087443;--gold:#705a24;--lilac:#58496f;
+ background:#f2f7f4;color:#000;border-color:var(--line);box-shadow:none;
+}
+.root[data-surface] :is(.card,.summary,.next,.comparison,.comparisonScroll,.comparisonTable,.brandGuide,.guide){background:#fff;color:#000;border-color:var(--line);box-shadow:none;}
+.root[data-surface] .card{transform:none;transition:border-color .18s;}
+.root[data-surface] .card[data-selected="true"]{border-color:#087443;box-shadow:0 0 0 2px #087443;}
+.root[data-surface] :is(h1,h2,h3,strong,.price,.selectionTitle,.checkoutAmount,.featureHeading,.cardTop h3,.cardTop h3 span){color:#000;}
+.root[data-surface] :is(.role,.fits,.editionNote,.featureScope,.featureEmpty,.cycleLabel,.brandIntro,.brandHint p,.catalogNote,.paymentNote,.quota,.quota small,.features li,.contrast,.contrast dd,.comparisonTable small){color:#40554a!important;}
+.root[data-surface] .brandGuide{min-height:0;padding:24px;border-radius:18px;}
+.root[data-surface] .brandSignature{color:#087443;}
+.root[data-surface] .portrait{height:240px;}
+.root[data-surface] .price{font-variant-numeric:tabular-nums;overflow-wrap:anywhere;}
+.root[data-surface] .price[data-unavailable="true"]{font-size:24px;color:#40554a;}
+.root[data-surface] :is(.cycles,.packageOptions,.comparisonTabs){background:#edf4ef;border-color:var(--line);box-shadow:none;}
+.root[data-surface] :is(.cycles button,.packageOptions button,.comparisonTab){background:#fff;color:#000;border-color:var(--line);}
+.root[data-surface] :is(.cycles button,.packageOptions button)[aria-pressed="true"],.root[data-surface] .comparisonTab[aria-selected="true"]{background:#087443;color:#fff;border-color:#087443;box-shadow:none;}
+.root[data-surface] :is(.approvedBadge,.currentBadge){background:#e3f2e9;color:#075a34;border-color:#b3d5c2;}
+.root[data-surface] :is(.draftBadge,.draftPlanNotice,.annualDraftBanner){background:#f3f5f4;color:#40554a!important;border-color:var(--line);}
+.root[data-surface] .annualDraftBanner :is(strong,p){color:#40554a!important;}
+.root[data-surface] :is(.select,.pay,.payLink){background:#087443;color:#fff;border:1px solid #087443;box-shadow:none;min-height:48px;}
+.root[data-surface] :is(.select,.pay,.payLink):hover{background:#065b34;color:#fff;}
+.root[data-surface] :is(.select,.pay):disabled{background:#e2e8e4;color:#40554a;border-color:var(--line);opacity:1;}
+.root[data-surface] :is(.featureState,.status,.concept){background:#f3f5f4;color:#40554a;border-color:var(--line);}
+.root[data-surface] .comparisonTable :is(th,td){color:#000;background:transparent;border-color:var(--line);}
+.root[data-surface] a:not(.payLink){color:#087443;}
+.catalogStates{display:grid;gap:6px;margin:14px 0;padding:12px 0;border-block:1px solid var(--line);font-size:13px;}
+.catalogStates p{margin:0;color:#40554a;}
+.catalogStates [data-purchase-state="test_only"]{font-weight:600;color:#075a34;}
+.root[data-surface] :is(button,a,summary):focus-visible{outline:3px solid #087443;outline-offset:4px;}
+@media(max-width:760px){.root[data-surface] .cards{grid-template-columns:1fr;}.root[data-surface] .brandGuide{grid-template-columns:1fr;}.root[data-surface] .portrait{height:200px;}}
+@media(prefers-reduced-motion:reduce){.root[data-surface] *{animation:none!important;transition:none!important;scroll-behavior:auto!important;}.root[data-surface] .card{transform:none!important;}}
+
+.root[data-surface] .selectionTitle{color:#000!important;}
+.root[data-surface] .card .portrait{position:static;inset:auto;width:100%;opacity:1;}
+.root[data-surface] :is(.contrast dt,.facts dt){color:#40554a;}
+.root[data-surface] .card{min-width:0;}
+.root[data-surface] .featureState{max-width:none;}
+@container subscription (max-width:950px){.root[data-surface] .cards{grid-template-columns:repeat(2,minmax(0,1fr));}}
+@container subscription (max-width:680px){.root[data-surface] .cards{grid-template-columns:1fr;}}

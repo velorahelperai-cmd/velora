@@ -85,20 +85,20 @@ function GoogleAuthButton({
   return (
     <div className="mt-6 grid gap-3">
       <div className="flex items-center gap-3 text-xs text-[var(--color-muted-soft)]" role="separator">
-        <span className="h-px flex-1 bg-[var(--color-hover-wash)]" />
+        <span className="h-px flex-1 bg-[var(--color-line)]" />
         {copy.auth.orContinue}
-        <span className="h-px flex-1 bg-[var(--color-hover-wash)]" />
+        <span className="h-px flex-1 bg-[var(--color-line)]" />
       </div>
       <Button
         type="button"
         variant="secondary"
         busy={busy}
         busyLabel={copy.loading}
-        className="w-full"
+        className="w-full min-h-12 border-[color:var(--color-border-soft)] shadow-xs"
         onClick={onGoogle}
       >
         <span className="inline-flex items-center gap-2">
-          <span aria-hidden="true" className="text-base font-bold text-[#8ab4f8]">G</span>
+          <span aria-hidden="true" className="text-base font-bold text-[#4285F4]">G</span>
           {copy.auth.withGoogle}
         </span>
       </Button>
@@ -198,7 +198,7 @@ export function SignupPage() {
     <AuthShell
       title={copy.auth.signupTitle}
       body={copy.auth.signupBody}
-      footer={<>{copy.auth.haveAccount} <Link href={returnTo ? `/login?next=${encodeURIComponent(returnTo)}` : "/login"} className="text-[#38dc89] underline">{copy.auth.login}</Link></>}
+      footer={<>{copy.auth.haveAccount} <Link href={returnTo ? `/login?next=${encodeURIComponent(returnTo)}` : "/login"} className="font-semibold text-[var(--color-action-on-dark)] underline">{copy.auth.login}</Link></>}
     >
       {planName ? (
         <div className="mb-4">
@@ -216,7 +216,7 @@ export function SignupPage() {
         </Field>
         <PasswordField label={copy.auth.password} value={form.password} onChange={(v) => setForm({ ...form, password: v })} error={passwordError} hint={copy.auth.passwordHintReal} autoComplete="new-password" />
         <PasswordField label={copy.auth.confirmPasswordSignup} value={form.confirm} onChange={(v) => setForm({ ...form, confirm: v })} error={confirmError} autoComplete="new-password" />
-        <Button type="submit" busy={busy} busyLabel={copy.loading} className="mt-2 w-full">{copy.auth.createAccount}</Button>
+        <Button type="submit" busy={busy} busyLabel={copy.loading} className="mt-2 w-full min-h-12 text-base font-semibold shadow-sm">{copy.auth.createAccount}</Button>
       </form>
 
       <GoogleAuthButton busy={busy || google.busy} onGoogle={google.onGoogle} notice={altNotice} />
@@ -274,7 +274,7 @@ export function LoginPage() {
     <AuthShell
       title={copy.auth.loginTitle}
       body={copy.auth.loginBody}
-      footer={<>{copy.auth.noAccount} <Link href={safeInternalPath(returnTo, "") ? `/signup?next=${encodeURIComponent(safeInternalPath(returnTo, ""))}` : "/signup"} className="text-[#38dc89] underline">{copy.auth.signup}</Link></>}
+      footer={<>{copy.auth.noAccount} <Link href={safeInternalPath(returnTo, "") ? `/signup?next=${encodeURIComponent(safeInternalPath(returnTo, ""))}` : "/signup"} className="font-semibold text-[var(--color-action-on-dark)] underline">{copy.auth.signup}</Link></>}
     >
       <form className="grid gap-4" onSubmit={submitEmail} noValidate>
         {params.get("reason") === "session_expired" ? <Notice tone="warn">{copy.errors.sessionExpiredBody}</Notice> : null}
@@ -284,9 +284,9 @@ export function LoginPage() {
         </Field>
         <PasswordField label={copy.auth.password} value={form.password} onChange={(v) => setForm({ ...form, password: v })} error={passwordError} autoComplete="current-password" />
         <div className="flex items-center justify-between gap-3">
-          <Link href="/forgot-password" className="text-sm text-[#38dc89] underline">{copy.auth.forgot}</Link>
+          <Link href="/forgot-password" className="text-sm font-medium text-[var(--color-action-on-dark)] underline">{copy.auth.forgot}</Link>
         </div>
-        <Button type="submit" busy={busy} busyLabel={copy.loading} className="w-full">{copy.auth.login}</Button>
+        <Button type="submit" busy={busy} busyLabel={copy.loading} className="w-full min-h-12 text-base font-semibold shadow-sm">{copy.auth.login}</Button>
       </form>
 
       <GoogleAuthButton busy={busy || google.busy} onGoogle={google.onGoogle} notice={altNotice} />
@@ -506,7 +506,7 @@ export function ForgotPasswordPage() {
   }, [cooldown]);
 
   return (
-    <AuthShell title={copy.auth.forgotTitle} body={copy.auth.forgotBody} footer={<Link href="/login" className="text-[#38dc89] underline">{copy.auth.login}</Link>}>
+    <AuthShell title={copy.auth.forgotTitle} body={copy.auth.forgotBody} footer={<Link href="/login" className="font-semibold text-[var(--color-action-on-dark)] underline">{copy.auth.login}</Link>}>
       <div className="mb-4">
         <Notice tone="info">{copy.auth.googleOnlyNote}</Notice>
       </div>
@@ -652,7 +652,7 @@ export function ResetPasswordPage() {
   }, []);
 
   return (
-    <AuthShell title={copy.auth.resetTitle} footer={<Link href="/login" className="text-[#38dc89] underline">{copy.auth.login}</Link>}>
+    <AuthShell title={copy.auth.resetTitle} footer={<Link href="/login" className="font-semibold text-[var(--color-action-on-dark)] underline">{copy.auth.login}</Link>}>
       {ready === "loading" ? <p className="text-sm text-[var(--color-muted-on-dark)]">{copy.loading}</p> : null}
       {ready === "missing" ? (
         <div className="grid gap-4">
@@ -768,12 +768,12 @@ export function AcceptInvitePage() {
               </>
             ) : (
               <>
-                <LinkButton href={authFlowHref("/login", returnTo)} className="w-full">{copy.auth.login}</LinkButton>
+                <LinkButton href={authFlowHref("/login", returnTo)} className="w-full min-h-12 text-base font-semibold shadow-sm">{copy.auth.login}</LinkButton>
                 <LinkButton href={authFlowHref("/signup", returnTo)} variant="secondary" className="w-full">{copy.auth.signup}</LinkButton>
               </>
             )}
           </>
-        ) : !loading ? <LinkButton href="/login" className="w-full">{copy.auth.login}</LinkButton> : null}
+        ) : !loading ? <LinkButton href="/login" className="w-full min-h-12 text-base font-semibold shadow-sm">{copy.auth.login}</LinkButton> : null}
       </div>
     </AuthShell>
   );

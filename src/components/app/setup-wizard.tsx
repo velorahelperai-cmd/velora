@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { SetupLoading } from "./setup-loading";
+import setupStyles from "./setup-wizard.module.css";
 import { useRouter } from "next/navigation";
 import { setupSubscriptionReturn } from "@/lib/auth/setup-return";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -42,8 +44,22 @@ import {
   isEmail, isPhone, useAction, useAppCopy, useErrorText, useUnsavedWarning,
 } from "@/components/app/ui";
 
-import styles from "./internal-ui.module.css";
+import internalStyles from "./internal-ui.module.css";
 import { SetupNavigation } from "./setup-navigation";
+
+// Preserve main navigation and behavior with the published setup readability/layout.
+const styles: Record<string, string> = { ...internalStyles };
+for (const key of Object.keys(setupStyles)) {
+  styles[key] = [internalStyles[key], setupStyles[key]].filter(Boolean).join(" ");
+}
+for (const [key, publishedKey] of Object.entries({
+  setupHeader: "header", setupContent: "content", setupTitle: "titleRow",
+  confirmed: "recordCount", progress: "progressTrack", stepPanel: "panel",
+  stepHeading: "panelHeading", stepHeadingNumber: "panelNumber",
+  stepDescription: "panelBody", stepBody: "panelContent", stepActions: "actionBar",
+})) {
+  styles[key] = [internalStyles[key], setupStyles[publishedKey]].filter(Boolean).join(" ");
+}
 import { reconcileDraftFields, useServerDraftField } from "./draft-refresh";
 
 const MILESTONES_COPY = {
@@ -397,7 +413,7 @@ export function SetupWizard({
   }, [ready, setupTestValid, draft.setupTestPassed]);
 
   if (!ready) {
-    return <main className={`app-shell ${styles.theme} ${styles.setup}`} data-internal-ui="true" dir={ar ? "rtl" : "ltr"} aria-busy="true" />;
+    return <SetupLoading />;
   }
 
   const completedCount = effectiveSetupDone.filter(Boolean).length;
@@ -430,7 +446,7 @@ export function SetupWizard({
             {completedCount} / 8 {ar ? "محطات مؤكدة من السجلات" : "milestones confirmed from records"}
           </span>
         </div>
-        <p className="app-muted mt-2 text-sm leading-6">
+        <p className={`mt-2 ${styles.resume}`}>
           {fill(mCopy.milestoneProgress, { n: step + 1 })} · {copy.setup.resume}
         </p>
 
@@ -1410,7 +1426,7 @@ function DecoupledPillarsNotice({
         </span>
       </div>
 
-      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-5">
+      <div className={`mt-3 grid gap-2 ${styles.activationGrid}`}>
         {pillars.map((p) => (
           <div
             key={p.id}
@@ -1419,7 +1435,8 @@ function DecoupledPillarsNotice({
             <div>
               <span className="font-semibold text-[var(--color-on-dark)] block leading-tight">{p.title}</span>
               <span
-                className={`mt-1.5 inline-block rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                data-state={p.state}
+                className={`mt-1.5 inline-block px-2 py-0.5 font-medium ${styles.activationStatus} ${
                   p.state === "complete"
                     ? "bg-[#38dc89]/20 text-[#38dc89]"
                     : p.state === "pending"

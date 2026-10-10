@@ -150,10 +150,29 @@ export function AdminList({
   const companiesGen = useRef(0);
   const overviewGen = useRef(0);
   const rootRef = useRef<HTMLDivElement | null>(null);
-  const [truth,setTruth]=useState(initialTruth);
-  const [trackedTruth,setTrackedTruth]=useState(initialTruth);
-  if(trackedTruth!==initialTruth){setTrackedTruth(initialTruth);setTruth(initialTruth);}
-  async function loadTruth(){const result=await readAdminTruth();setTruth(result.ok?result.data:null);}
+  const [truthState,setTruthState]=useState<{
+    source:AdminTruth|null;
+    data:AdminTruth|null;
+    pending:object|null;
+  }>(()=>({source:initialTruth,data:initialTruth,pending:null}));
+  if(truthState.source!==initialTruth){
+    setTruthState({source:initialTruth,data:initialTruth,pending:null});
+  }
+  const truth=truthState.source===initialTruth?truthState.data:initialTruth;
+  const truthLoading=truthState.source===initialTruth&&truthState.pending!==null;
+  async function loadTruth(){
+    const token={};
+    setTruthState(current=>current.source===initialTruth
+      ? {...current,data:null,pending:token}:current);
+    try{
+      const result=await readAdminTruth();
+      setTruthState(current=>current.source===initialTruth&&current.pending===token
+        ? {...current,data:result.ok?result.data:null,pending:null}:current);
+    }catch{
+      setTruthState(current=>current.source===initialTruth&&current.pending===token
+        ? {...current,data:null,pending:null}:current);
+    }
+  }
   const money=(value:number)=>new Intl.NumberFormat(locale==="ar"?"ar-OM":"en-OM",{maximumFractionDigits:6,minimumFractionDigits:3}).format(value/1000);
 
   // Adopt newer SSR props on router.refresh
@@ -442,6 +461,7 @@ export function AdminList({
           <Button
             type="button"
             variant="secondary"
+            busy={truthLoading}
             onClick={() => {
               void loadOverview();
               void load(search);
@@ -449,7 +469,7 @@ export function AdminList({
             }}
             className="flex items-center gap-2 text-xs sm:text-sm border border-[#D7C1A5] bg-[#FFFBF5] text-[#18130F] hover:bg-[#F7F0E5]"
           >
-            <IconRefresh className={overviewState === "loading" ? "animate-spin" : ""} />
+            <IconRefresh className={(truthLoading || overviewState === "loading") ? "animate-spin" : ""} />
             <span>{isRtl ? "تحديث البيانات" : "Refresh"}</span>
           </Button>
         </div>
@@ -527,7 +547,7 @@ export function AdminList({
             {truth ? (isRtl
               ? `طلبات النشاط المالي هذا الشهر: مستردة/معكوسة ${truth.collections.reversed_orders}، للمراجعة ${truth.collections.review_orders}، معلقة ${truth.collections.pending_orders}، فاشلة ${truth.collections.failed_orders}، غير محسومة ${truth.collections.unknown_orders}. قيمة الاسترداد وصافي الإيراد غير متاحين دون دليل تفصيلي.`
               : `Orders with financial activity this month: reversed ${truth.collections.reversed_orders}, review ${truth.collections.review_orders}, pending ${truth.collections.pending_orders}, failed ${truth.collections.failed_orders}, unknown ${truth.collections.unknown_orders}. Refund amount and net revenue are unavailable without detailed evidence.`)
-              : (isRtl ? "تعذّر التحقق من الأدلة المالية؛ لا يُعرض مبلغ تقديري." : "Financial evidence could not be verified; no estimated amount is displayed.")}
+              : truthLoading ? (isRtl ? "جارٍ تحديث الأدلة المالية…" : "Refreshing financial evidence…") : (isRtl ? "تعذّر التحقق من الأدلة المالية؛ لا يُعرض مبلغ تقديري." : "Financial evidence could not be verified; no estimated amount is displayed.")}
           </p>
         </div>
 
@@ -663,7 +683,7 @@ export function AdminList({
       </div>
 
       {/* Actual AI usage, matching the existing overview layout */}
-      {activeTab === "overview" && <div id="overview"><AdminRealAISummary data={truth?.ai??null} ar={isRtl}/></div>}
+      {activeTab === "overview" && <div id="overview"><AdminRealAISummary data={truth?.ai??null} ar={isRtl} loading={truthLoading}/></div>}
 
       {/* 🏢 TAB 2: COMPANIES / TENANTS */}
       {(activeTab === "companies" || activeTab === "overview") && (
@@ -1067,7 +1087,7 @@ export function AdminList({
         </section>
       )}
 
-      {activeTab === "ai" && <section id="ai"><AdminRealAISummary data={truth?.ai??null} ar={isRtl}/></section>}
+      {activeTab === "ai" && <section id="ai"><AdminRealAISummary data={truth?.ai??null} ar={isRtl} loading={truthLoading}/></section>}
 
       {/* 🚀 TAB 6: FUTURE ENTERPRISE ROADMAP */}
       {(activeTab === "future" || activeTab === "overview") && (
