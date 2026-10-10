@@ -95,9 +95,13 @@ migrations to hide these gaps. Their own reviewed upgrade package is required.
    API, revokes service/anon execute, and rejects every review mutation with
    UPGRADE_PENDING. Reads/history remain. Containment is needed even for a prompt
    upgrade because old in-flight function bodies could outlive CREATE OR REPLACE.
-3. Wait for client transactions to finish; never kill them. The upgrade asserts
-   none remain, including invisible queries, and takes NOWAIT input-table locks.
-   The brief installation window may block setup/knowledge/permission writers.
+3. Wait for client transactions to finish; never kill them. The upgrade checks a
+   pg_stat_activity snapshot for OTHER client backends in the current database
+   with xact_start set or hidden query text. This is not a table-specific test or
+   a permanent ban on new transactions; non-client backends are excluded. It takes
+   SHARE ROW EXCLUSIVE NOWAIT locks on seven named tables. Ordinary reads may
+   continue at that lock level; subsequent ALTER TABLE can take ACCESS EXCLUSIVE
+   locks and briefly block reads as well. It may block setup/knowledge/permissions.
 4. Apply ONLY 10-upgrade.review.sql in one transaction, under postgres, with
    lock_timeout 2s/statement_timeout 30s. Hash-check helpers and absence of partial
    G03 and a scoped catalog SHA-256 fingerprint (RLS/policies/ACL/default grants,
@@ -105,7 +109,8 @@ migrations to hide these gaps. Their own reviewed upgrade package is required.
    add usage_role/version invalidation, reuse immutable approved G03 and
    scoped history SQL, revoke old inherited grants, run postflight, notify the
    Data API cache, commit. Reapply/unknown baseline aborts without resets.
-5. Verify all six public RPC signatures/ACL, eight new columns, five triggers,
+5. Verify all six public RPC signatures/ACL, nine new columns (usage_role + three
+   prepared columns + five review proof columns), five triggers,
    private-table/column denial and exact function definitions. Confirm cache
    reload, then separately authorized synthetic checks via actual Auth/Storage:
    save/read text, prepare a test file, approve, submit, edit/revoke, retry and
@@ -182,8 +187,9 @@ commands above and inspect: containment/in-flight-call window, dependency hashes
 ACL after CREATE OR REPLACE and rename, transaction rollback, legacy content,
 unchanged approved source SQL, actual-schema clone limitations and opt-in tests.
 Return your own PASS/FAIL counts and any blocking finding. This package has NOT
-received Antigravity approval yet; no authorized tool/session for contacting
-Antigravity was available here. Owner must provide the handoff to that reviewer.
+received Antigravity approval at preparation time; no tool/session for contacting
+Antigravity was available here. Owner subsequently supplied its review claims for
+verification below. That update does not authorize a cloud application.
 
 Local compatibility scope: knowledge/setup-review only. Whole-site staging and
 cloud application remain BLOCKED pending independent review, separate approval,
@@ -207,3 +213,106 @@ Final: minor (deferred): binary artifact/manifest verifier and CRLF transport
 normalization are not automated. Mandatory operator rebuild + raw SHA validation
 before any application; direct CRLF containment can fail later proof comparison,
 leaving the review path safely contained. No claim of byte-for-byte verification.
+
+## Review reconciliation and ONE approval request — 2026-10-10
+
+Reviewed SQL remains exactly at a3f4c93b4192d01b4e7b9261b4a0c06b6a1858ea.
+This addendum changes documentation only. Antigravity's supplied wording is
+treated as review claims, not an additional executed test record.
+
+| Claim in supplied review | Verified SQL and correction |
+|---|---|
+| company_knowledge_sources / company_reviews | Names are wrong in the report only. SQL uses public.knowledge_sources and public.company_review_requests (upgrade:21,77,81). Catalog-only cloud reads confirm both actual tables exist and both reported aliases are absent. No rename/code change. |
+| pg_stat_activity checks target-table transactions | upgrade:8 checks other client backends in current_database, xact_start IS NOT NULL OR hidden query text. It also catches idle-in-transaction clients, not just active queries. It does not inspect which tables they access, does not cover every backend type and does not prevent new sessions/transactions starting after the check. |
+| BUSY_SESSIONS | Actual error is REVIEW_WINDOW_NOT_DRAINED_OR_NOT_VISIBLE (upgrade:8). No pg_terminate_backend/pg_cancel_backend or forced disconnection in either file. |
+| LOCK TABLE ACCESS EXCLUSIVE NOWAIT | Explicit lock is SHARE ROW EXCLUSIVE NOWAIT on companies, knowledge_sources, company_review_requests, company_members, platform_admins, platform_admin_scopes, company_member_grants (upgrade:21-22). Not a database-wide lock. ALTER TABLE may separately require ACCESS EXCLUSIVE. Neither the precheck nor the explicit lock is a general halt of all transactions. |
+| timeout limits whole outage to 30s | lock_timeout=2s and statement_timeout=30s are present (upgrade:5-6). The latter is per statement under simple-query protocol, not a whole-script/outage deadline. No transaction_timeout is set. |
+| revoke PUBLIC/anon from every sensitive object | Explicit revokes cover the named G03/helper RPCs, prior JSON helper and two new private tables, including authenticated/service_role where specified (upgrade:110,432-440,466-471; containment:52-53). Existing table permissions aren't universally revoked. Authenticated retains approved column grants; service_role retains only the two trusted completion/publication RPCs. |
+| SECURITY DEFINER on all functions | Public proof/transition/read RPCs use SECURITY DEFINER and empty search_path, with actor/session/company validation and restricted EXECUTE. The usage_role invalidation trigger is explicitly SECURITY INVOKER (upgrade:64-72); hashing helpers are not universally definers. Qualified names plus empty path don't replace authorization. |
+| company_id RLS enabled on every new/modified table | False as stated. Existing public knowledge_sources/company_review_requests RLS is enabled and unchanged, verified in cloud catalog; FORCE RLS is false. No ENABLE/FORCE ROW LEVEL SECURITY or CREATE POLICY appears in the package. New private.g03_company_inputs/review_checks have ACL revocation, not new RLS policies. Definer RPC isolation is enforced in their actor/company logic, not inferred from RLS. |
+| any non-postgres grant rejected with BASELINE_SECURITY_DRIFT and exact diff | Actual guard is BASELINE_SECURITY_MISMATCH (upgrade:55) over the pinned catalog fingerprint; approved baseline grants to authenticated/service_role/etc are allowed. Drift of covered definitions stops, including unexpected covered triggers/policies/grants. This is a scoped fingerprint, not all database privileges. It doesn't return a detailed diff. Helper body mismatches may first raise BASELINE_FUNCTION_MISMATCH with a signature. Diagnose by separate metadata-only comparison. |
+
+Cloud metadata was re-read, without customer rows or application RPCs: the scoped
+fingerprint still matches cdb8ae52ae909fb63751029c782a2eabd967bf15f3cafd37e87cccfcad113952;
+G03 remains absent; both actual public tables have RLS enabled. This is a current
+catalog observation, not a permanent integrity or production-readiness claim.
+
+Backup/recovery actually available: Supabase organization API reports free /
+tier_free. Logged-in target project Scheduled Backups page states Free Plan does
+not include project backups. Target PITR page shows an unenabled Pro-only add-on.
+No accessible scheduled restore point or enabled PITR was found. No upgrade,
+backup download, paid subscription or Restore action was taken. Internal provider
+backups, if any, aren't an available customer restore guarantee. A paused-project
+unpause operation is not a pre-upgrade database recovery point.
+
+Sources: [target scheduled backups](https://supabase.com/dashboard/project/vmpifljyozsbtssxhoxd/database/backups/scheduled),
+[target PITR](https://supabase.com/dashboard/project/vmpifljyozsbtssxhoxd/database/backups/pitr),
+[Supabase backup limitations](https://supabase.com/docs/guides/platform/backups),
+[PostgreSQL lock compatibility](https://www.postgresql.org/docs/17/explicit-locking.html),
+[PostgreSQL statement timeout](https://www.postgresql.org/docs/17/runtime-config-client.html).
+Database backups do not include Storage object bytes; this package does not
+modify/delete Storage objects. No permanent DB/Storage atomicity is claimed.
+
+Requested authorization (NOT granted yet):
+
+1. Target only Supabase project vmpifljyozsbtssxhoxd, production main branch,
+   velorahelperai-cmd's Project, organization wwcihainyknysqjjojyq. No deployment,
+   paid API, billing change, plan upgrade or AI/Meta activation.
+2. FIRST permit a limited, consistent READ ONLY pre-change data export: all
+   existing columns/rows of public.knowledge_sources and company_review_requests,
+   plus admin_audit_logs rows only for review.submit/resubmit/request_changes/approve.
+   It contains customer knowledge/review history, so earlier metadata permission
+   does NOT authorize it. No Auth rows/passwords, provider tokens, Billing/AI/
+   WhatsApp data or Storage file bytes. Associated schema definitions are the
+   already authorized metadata. This is surgical recovery, NOT a whole-project
+   backup or disaster-recovery substitute.
+3. Proposed local destination only:
+   C:/Users/DELL/.codex/private-recovery/velora-vmpifljyozsbtssxhoxd-g03-20261010/<run-id>/.
+   User-restricted directory, encrypted Windows CurrentUser DPAPI payload, SHA-256
+   manifest; no plaintext dump on disk, console output, Git, NotebookLM or uploads.
+   This is recoverable under the same Windows user/machine, not a portable backup.
+   Verify decryptability/checksum/completeness locally without showing rows; use
+   synthetic fixtures for schema/restore-mechanism tests. No customer-data restore
+   into test databases is authorized by this request. If a secure existing DB
+   connection/export mechanism or recovery validation is unavailable, STOP before
+   containment. No password reset/new cloud role or weakened test target.
+4. After the backup gate passes, approve ONLY these unchanged UTF-8 LF SQL files:
+   - 00-containment.review.sql SHA-256
+     0cdf3681b2a4d0124eed2d6c4e874ed206137eb4a5a59894a52e0d333319237a
+   - 10-upgrade.review.sql SHA-256
+     f48e440bf2b6f6c760cd46dd7af44dc97621c31325de3ab1a9e68f17eff697f9
+   Rebuild locally and compare raw file hashes; any mismatch means STOP/new review.
+   Fresh metadata fingerprint must match; no concurrent DDL operator. Record only
+   new migration history, no repair or false marking of older source migrations.
+5. Estimated review-path pause: reserve 10-15 minutes AFTER backup is ready, for
+   containment -> natural client transaction drain -> one atomic upgrade -> cache
+   reload -> acceptance. Estimate, not measured cloud SLA; data size/traffic and
+   validation are unverified. Backup preparation is outside this pause and its
+   duration isn't known yet. No global maintenance lock/flags or session killing.
+   Setup/knowledge/permissions can briefly block during DDL, with possible reads
+   blocked by implicit ACCESS EXCLUSIVE. If upgrade fails after containment,
+   reviews remain paused beyond the window; notify owner instead of reopening
+   the unsafe legacy writer or applying a third unapproved script.
+6. Recovery: failure before COMMIT rolls back that file; after containment COMMIT
+   its review pause persists if the upgrade aborts. After upgrade COMMIT preserve
+   new proof/history and prefer a separately reviewed forward fix. Original
+   containment cannot be reapplied after G03 because its partial-state guard will
+   refuse. No automatic DROP, old-body restore, full database restore, snapshot/
+   PITR promise or overwrite of subsequent legitimate writes. Any data restore
+   is separately authorized, targeted, and reconciled with newer records first.
+7. Post-application tests are included only for owner-approved synthetic test
+   tenants/accounts: catalog definitions/ACL/private table+column denial; actual
+   authenticated text save/read, a tiny synthetic file prepare/approve, submission
+   and review, same-request replay, edit/revocation/stale-proof refusal and tenant
+   isolation; confirm own-number preference without paid subscription/Meta. No
+   customer rows/files or external provider calls. If suitable isolated accounts
+   aren't available, arrange them with owner first; don't silently alter Auth
+   roles or send invitations. No cleanup deleting histories. Cloud success is NOT
+   claimed from HTTP 200/function presence. Previously run G03 24 cases remain
+   local synthetic PostgreSQL evidence, not 24 new tests on customer production.
+8. The eleven Billing/AI/WhatsApp/lead RPC gaps above are excluded. This request
+   does not authorize their migrations or certify full-site staging/production.
+
+Approve the combined **scoped export + conditional two-file application + stated
+synthetic acceptance** explicitly, or approve export only. Export-only permission
+never authorizes cloud SQL. Nothing has been exported or applied by this request.
