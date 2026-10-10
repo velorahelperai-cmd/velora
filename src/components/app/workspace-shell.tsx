@@ -3,12 +3,14 @@ import {sessionHasCompanyCapability} from "@/lib/access/actions";
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { emptyBusiness, useDemo } from "@/lib/demo-state";
 import { getWorkspaceSwitcher, getAccountProfile, selectWorkspaceCompany, signOut } from "@/lib/tenancy/actions";
 import type { CompanyRole } from "@/lib/tenancy/types";
 import { AccountMenu, useOptionalAccountSession } from "@/components/app/account-chrome";
 import { Button, LangSwitch, Notice, useAppCopy } from "@/components/app/ui";
+
+import styles from "./internal-ui.module.css";
 
 type WorkspaceState = {
   needsContext: boolean;
@@ -26,10 +28,13 @@ type ProfileState = {
 
 export function WorkspaceShell({ title, children, actions }: { title: string; children: ReactNode; actions?: ReactNode }) {
   const copy = useAppCopy();
-  const { update } = useDemo();
+  const { update, locale } = useDemo();
   const accountSession = useOptionalAccountSession();
   const router = useRouter();
   const pathname = usePathname();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const ar = locale === "ar";
   const [profile, setProfile] = useState<ProfileState | null>(null);
   const [profileLoadFailed, setProfileLoadFailed] = useState(false);
   const [knowledgeAllowed,setKnowledgeAllowed]=useState(false);
@@ -146,59 +151,50 @@ export function WorkspaceShell({ title, children, actions }: { title: string; ch
   }
 
   const nav = [
-    { href: "/app", label: copy.app.nav.dashboard, icon: "📊" },
-    { href: "/app/conversations", label: copy.app.nav.conversations, icon: "💬" },
-    { href: "/app/knowledge", label: copy.app.nav.knowledge, icon: "🧠" },
-    { href: "/app/test", label: copy.app.nav.test, icon: "⚡" },
-    { href: "/app/settings", label: copy.app.nav.settings, icon: "⚙️" },
+    { href: "/app", label: copy.app.nav.dashboard, icon: "M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z" },
+    { href: "/app/conversations", label: copy.app.nav.conversations, icon: "M4 4h16v12H9l-5 4V4z M8 8h8 M8 12h5" },
+    { href: "/app/knowledge", label: copy.app.nav.knowledge, icon: "M4 3h12l4 4v14H4V3z M15 3v5h5 M8 12h8 M8 16h6" },
+    { href: "/app/test", label: copy.app.nav.test, icon: "M9 3h6 M10 3v6L4 19q-1 2 2 2h12q3 0 2-2L14 9V3 M8 14h8" },
+    { href: "/app/settings", label: copy.app.nav.settings, icon: "M4 6h16 M4 12h16 M4 18h16 M8 3v6 M16 9v6 M10 15v6" },
   ].filter(item=>profile?.role==="owner"||item.href==="/app/conversations"||item.href==="/app/settings"||item.href==="/app/knowledge"&&knowledgeAllowed);
   const role = profile?.role ?? null;
   const roleLabel = role === "owner" ? copy.app.owner : role === "staff" ? copy.app.staff : copy.app.workspacePick;
 
   if (!profile) {
-    return <main className="app-shell p-6" aria-busy={!profileLoadFailed}>{profileLoadFailed ? <><Notice tone="error">{copy.app.workspaceSwitchFailed}</Notice><Button className="mt-4" onClick={() => { void reloadWorkspaceState(); }}>{copy.app.readinessRetry}</Button></> : <p>{copy.loading}</p>}</main>;
+    return <main className={`app-shell ${styles.theme} p-6`} data-internal-ui="true" dir={ar ? "rtl" : "ltr"} aria-busy={!profileLoadFailed}>{profileLoadFailed ? <><Notice tone="error">{copy.app.workspaceSwitchFailed}</Notice><Button className="mt-4" onClick={() => { void reloadWorkspaceState(); }}>{copy.app.readinessRetry}</Button></> : <p>{copy.loading}</p>}</main>;
   }
 
   return (
-    <div className="app-shell overflow-x-hidden lg:grid lg:grid-cols-[240px_1fr]">
-      <aside className="app-shell-aside sticky top-0 z-20 border-b backdrop-blur lg:h-svh lg:border-b-0 lg:border-e lg:backdrop-blur-none bg-[#07110d]/90">
-        <div className="flex items-center justify-between gap-2 px-4 py-3 lg:flex-col lg:items-stretch lg:gap-4 lg:py-5">
-          <div className="flex items-center justify-between">
-            <Link href="/" className="inline-flex min-h-11 items-center gap-2 text-xl font-bold tracking-tight">
-              <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-[#38dc89] to-[#1d7d4c] text-sm font-bold text-[#072317] shadow-sm">V</span>
-              {copy.brand}
-            </Link>
-            <span className="hidden lg:inline-flex rounded-full px-2.5 py-0.5 text-[11px] font-medium border border-[color:var(--color-border-soft)] bg-[var(--color-hover-wash)] text-[#c5d4cc]">
-              {roleLabel}
-            </span>
+    <div className={`app-shell ${styles.theme} ${styles.workspace}`} data-internal-ui="true" dir={ar ? "rtl" : "ltr"}>
+      <aside className={styles.sidebar}>
+        <div className={styles.sidebarHeader}>
+          <div className={styles.sidebarBrand}>
+            <Link href="/" className={styles.brand}><span className={styles.brandMark}>V</span>{copy.brand}</Link>
           </div>
-          <div className="flex items-center gap-2 lg:justify-between">
+          <div className={styles.sidebarUtilities}>
             <LangSwitch />
+            <button ref={menuButtonRef} type="button" className={styles.menuButton}
+              aria-label={ar ? "قائمة مساحة العمل" : "Workspace menu"} aria-expanded={menuOpen}
+              aria-controls="workspace-navigation" onClick={() => setMenuOpen(v => !v)}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d={menuOpen ? "m6 6 12 12 M6 18 18 6" : "M4 6h16 M4 12h16 M4 18h16"} stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" /></svg>
+            </button>
           </div>
         </div>
-        <div className="flex items-center justify-between gap-2 px-3 pb-2 lg:hidden">
-          <p className="app-muted truncate text-xs">{profile.name} · {roleLabel}</p>
-          <AccountMenu compact />
-        </div>
-        <nav aria-label={copy.app.nav.dashboard} className="flex gap-1 overflow-x-auto px-3 pb-3 [scrollbar-width:none] lg:flex-col lg:overflow-visible lg:px-3 [&::-webkit-scrollbar]:hidden">
-          {nav.map((item) => {
-            const active = item.href === "/app" ? pathname === "/app" : pathname === item.href || pathname.startsWith(`${item.href}/`);
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                aria-current={active ? "page" : undefined}
-                className={`inline-flex min-h-11 shrink-0 items-center gap-2.5 rounded-xl px-3.5 text-sm font-medium transition duration-200 ${active ? "bg-[#38dc89]/15 text-[var(--color-success-fg)] border border-[#38dc89]/30 shadow-[0_2px_12px_rgba(56,220,137,0.1)]" : "text-[var(--color-on-dark)] hover:bg-[var(--color-hover-wash)] border border-transparent"}`}
-              >
-                <span className="text-base opacity-80">{item.icon}</span>
+        <div id="workspace-navigation" className={styles.workspaceMenu} data-open={menuOpen}
+          onKeyDown={e => { if (e.key === "Escape" && menuOpen && window.matchMedia("(max-width: 1023px)").matches) { setMenuOpen(false); menuButtonRef.current?.focus(); } }}>
+          <nav aria-label={copy.app.nav.dashboard} className={styles.workspaceNav}>
+            {nav.map(item => {
+              const active = item.href === "/app" ? pathname === "/app" : pathname === item.href || pathname.startsWith(`${item.href}/`);
+              return <Link key={item.href} href={item.href} aria-current={active ? "page" : undefined}
+                className={styles.navLink} onClick={() => setMenuOpen(false)}>
+                <svg className={styles.navIcon} viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d={item.icon} stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
                 <span>{item.label}</span>
-              </Link>
-            );
-          })}
-        </nav>
-        <div className="hidden border-t border-[color:var(--color-line)] px-4 py-4 text-sm lg:block">
-          <div className="mb-3"><AccountMenu /></div>
-          <p className="app-muted mt-1 text-xs">{profile.companyName}</p>
+              </Link>;
+            })}
+          </nav>
+          <div className={styles.workspaceAccount}>
+            <div className="mb-3"><AccountMenu /></div>
+            <p className="app-muted text-xs">{profile.companyName}</p>
           {workspace && (
             workspace.needsContext
             || workspace.choices.length > 1
@@ -235,12 +231,13 @@ export function WorkspaceShell({ title, children, actions }: { title: string; ch
           <div className="mt-4 grid gap-1">
             <Button variant="ghost" className="justify-start px-2" onClick={() => void logout()}>{copy.logout}</Button>
           </div>
+          </div>
         </div>
       </aside>
-      <main className="min-w-0 overflow-x-hidden px-4 py-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] lg:px-8">
-        <div className="mb-6 flex min-w-0 flex-wrap items-end justify-between gap-3 border-b border-[color:var(--color-line)] pb-4">
+      <main className={styles.workspaceMain}>
+        <div className={styles.workspacePageHeader}>
           <h1 className="app-title min-w-0 break-words text-2xl lg:text-[2rem]">{title}</h1>
-          <div className="flex min-w-0 flex-wrap items-center gap-2">{actions}</div>
+          <div className={styles.workspacePageActions}>{actions}</div>
         </div>
         <div className="min-w-0">{children}</div>
       </main>

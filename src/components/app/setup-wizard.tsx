@@ -29,7 +29,7 @@ import {
 import { getWhatsappCompanyLink, saveWhatsappLinkRequest } from "@/lib/whatsapp/connection-actions";
 import type { CustomerReadinessSnapshot } from "@/lib/tenancy/customer-readiness";
 import type { WhatsappCompanyLink } from "@/lib/whatsapp/connection";
-import { companyBusiness, finishCompanySave, hydrateOnboardingDraft, setupMilestones, whatsappUiState } from "./onboarding-contracts";
+import { companyBusiness, finishCompanySave, hydrateOnboardingDraft, resolveSetupResumeStep, setupMilestones, whatsappUiState } from "./onboarding-contracts";
 import { evaluateSetupKnowledgeProgress } from "@/lib/tenancy/customer-readiness";
 import { resolveReviewRefresh } from "@/lib/tenancy/review-refresh";
 import { canResubmitReview, reviewFailureMessage } from "@/lib/tenancy/review-ui";
@@ -41,6 +41,9 @@ import {
   Button, Field, FieldErrorKey, LangSwitch, LinkButton, Notice, PreviewBadge,
   isEmail, isPhone, useAction, useAppCopy, useErrorText, useUnsavedWarning,
 } from "@/components/app/ui";
+
+import styles from "./internal-ui.module.css";
+import { SetupNavigation } from "./setup-navigation";
 
 const MILESTONES_COPY = {
   ar: {
@@ -183,12 +186,13 @@ function SetupJourneyNotice({
 }
 
 const companyToBusiness = companyBusiness;
+const EMPTY_KNOWLEDGE: KnowledgeSourceRecord[] = [];
 
 export function SetupWizard({
   userId,
   preferredNext,
   initialCompany,
-  initialKnowledge = [],
+  initialKnowledge = EMPTY_KNOWLEDGE,
   knowledgeLoadFailed = false,
   approvalFoundation = "ready",
   initialReview = null,
@@ -203,12 +207,14 @@ export function SetupWizard({
   initialReview?: CompanyReviewRequest | null;
   reviewLoadFailed?: boolean;
 }) {
+  const router = useRouter();
   const copy = useAppCopy();
   const { locale } = useDemo();
   const ar = locale === "ar";
   const mCopy = MILESTONES_COPY[locale];
 
   const leaveGuardRef = useRef<(() => boolean) | null>(null);
+  const hydratedScope = useRef<string | null>(null);
   const [savedCompany, setSavedCompany] = useState<CompanyRecord | null>(initialCompany ?? null);
   const [trackedCompany, setTrackedCompany] = useState(initialCompany ?? null);
   if (trackedCompany !== (initialCompany ?? null)) {
@@ -235,6 +241,14 @@ export function SetupWizard({
   const [ready, setReady] = useState(false);
   const [knowledgeSources, setKnowledgeSources] = useState(initialKnowledge);
   const [knowledgeFailed, setKnowledgeFailed] = useState(knowledgeLoadFailed);
+  const [trackedKnowledge, setTrackedKnowledge] = useState({ sources: initialKnowledge, failed: knowledgeLoadFailed });
+  // Refresh authoritative knowledge independently of navigation restoration.
+  if (trackedKnowledge.sources !== initialKnowledge || trackedKnowledge.failed !== knowledgeLoadFailed) {
+    setTrackedKnowledge({ sources: initialKnowledge, failed: knowledgeLoadFailed });
+    setKnowledgeSources(initialKnowledge);
+    setKnowledgeFailed(knowledgeLoadFailed);
+  }
+
 
   const knowledgeProgress = useMemo(
     () =>
@@ -280,6 +294,9 @@ export function SetupWizard({
     let cancelled = false;
     const frame = window.requestAnimationFrame(() => {
       if (cancelled) return;
+      const scope = `${userId}:${companyId ?? "new"}`;
+      if (hydratedScope.current === scope) return;
+      hydratedScope.current = scope;
       const stored = readCompanyDraft(userId);
       const next = hydrateOnboardingDraft(stored, userId, savedCompany);
       const kp = evaluateSetupKnowledgeProgress({
@@ -304,8 +321,7 @@ export function SetupWizard({
       }
       const computedDone = serverSetupDone(kp.detail === "knowledge_ready");
       next.setupDone = computedDone;
-      const firstOpen = computedDone.findIndex((d) => !d);
-      next.setupStep = firstOpen === -1 ? 7 : Math.min(7, firstOpen);
+      next.setupStep = resolveSetupResumeStep(stored, userId, savedCompany, computedDone);
       next.userId = userId;
       writeCompanyDraft(next);
       setKnowledgeSources(initialKnowledge);
@@ -320,14 +336,6 @@ export function SetupWizard({
   }, [
     userId,
     companyId,
-    savedCompany?.id,
-    savedCompany?.updated_at,
-    initialKnowledge.length,
-    knowledgeLoadFailed,
-    approvalFoundation,
-    initialReview?.status,
-    initialReview?.revision,
-    reviewLoadFailed,
   ]);
 
   const persist = (patch: Partial<CompanyDraft> | ((d: CompanyDraft) => CompanyDraft)) => {
@@ -349,14 +357,6 @@ export function SetupWizard({
     if (!opts?.skipGuard && leaveGuardRef.current && !leaveGuardRef.current()) return;
     persist({ setupStep: next });
   };
-  const markDone = (n: number) =>
-    persist((d) => {
-      const arr = [...d.setupDone];
-      while (arr.length < 8) arr.push(false);
-      arr[n] = true;
-      return { ...d, setupDone: arr };
-    });
-
   const effectiveSetupDone = serverSetupDone(knowledgeProgress.detail === "knowledge_ready");
 
   useEffect(() => {
@@ -376,23 +376,23 @@ export function SetupWizard({
   }, [ready, setupTestValid, draft.setupTestPassed]);
 
   if (!ready) {
-    return <main className="app-shell" aria-busy="true" />;
+    return <main className={`app-shell ${styles.theme} ${styles.setup}`} data-internal-ui="true" dir={ar ? "rtl" : "ltr"} aria-busy="true" />;
   }
 
   const completedCount = effectiveSetupDone.filter(Boolean).length;
   const progressPercent = Math.round((completedCount / 8) * 100);
 
   return (
-    <main className="app-shell overflow-x-hidden px-4 py-6 pb-28">
+    <main className={`app-shell ${styles.theme} ${styles.setup}`} data-internal-ui="true" dir={ar ? "rtl" : "ltr"}>
       {/* Top Brand & Navigation Header */}
-      <div className="mx-auto flex max-w-[1100px] flex-wrap items-center justify-between gap-3">
+      <div className={styles.setupHeader}>
         <Link href="/" className="inline-flex min-h-11 items-center gap-2 text-2xl font-bold tracking-tight">
           <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#38dc89] text-base text-[#072317]">
             V
           </span>
           {copy.brand}
         </Link>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className={styles.setupHeaderActions}>
           <PreviewBadge note />
           <LangSwitch />
           <LinkButton href="/app" variant="secondary">
@@ -402,10 +402,10 @@ export function SetupWizard({
         </div>
       </div>
 
-      <div className="mx-auto mt-8 max-w-[1100px]">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
+      <div className={styles.setupContent}>
+        <div className={styles.setupTitle}>
           <h1 className="app-title text-3xl break-words lg:text-4xl">{copy.setup.title}</h1>
-          <span className="text-xs font-semibold text-[#9af0c3] bg-[#38dc89]/15 border border-[#38dc89]/30 rounded-full px-3 py-1">
+          <span className={styles.confirmed}>
             {completedCount} / 8 {ar ? "محطات مؤكدة من السجلات" : "milestones confirmed from records"}
           </span>
         </div>
@@ -419,73 +419,22 @@ export function SetupWizard({
           reviewLoadFailed={reviewLoadFailed}
         />
 
-        {/* 8-Milestone Stepper Grid */}
-        <ol
-          className="mt-6 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-8"
-          aria-label={copy.setup.title}
-        >
-          {mCopy.steps.map((label, i) => {
-            const active = i === step;
-            const done = effectiveSetupDone[i];
-            return (
-              <li key={label} className="min-w-0">
-                <button
-                  type="button"
-                  onClick={() => go(i)}
-                  aria-current={active ? "step" : undefined}
-                  className={`flex min-h-14 w-full flex-col justify-center items-start gap-1 rounded-xl border p-2.5 text-start text-xs transition ${
-                    active
-                      ? "border-[#38dc89] bg-[#38dc89]/15 shadow-[0_0_12px_rgba(56,220,137,0.2)]"
-                      : "border-[color:var(--color-border-soft)] hover:bg-[var(--color-hover-wash)]"
-                  }`}
-                >
-                  <div className="flex w-full items-center justify-between">
-                    <span
-                      className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${
-                        done
-                          ? "bg-[#38dc89] text-[#072317]"
-                          : active
-                            ? "border border-[#38dc89] text-[#9af0c3]"
-                            : "border border-white/30 text-[var(--color-on-dark)]"
-                      }`}
-                    >
-                      {done ? "✓" : i + 1}
-                    </span>
-                    {active ? (
-                      <span className="h-1.5 w-1.5 rounded-full bg-[#38dc89] animate-pulse" />
-                    ) : null}
-                  </div>
-                  <span className="line-clamp-2 leading-4 font-medium text-[#f7fbf8] mt-1">
-                    {label}
-                  </span>
-                </button>
-              </li>
-            );
-          })}
-        </ol>
-
-        {/* Smooth Gradient Progress Bar */}
-        <div className="mt-4 h-2.5 overflow-hidden rounded-full bg-white/10 p-0.5" aria-hidden="true">
-          <div
-            className="h-full rounded-full bg-gradient-to-r from-[#2ebd73] via-[#38dc89] to-[#9af0c3] shadow-[0_0_14px_rgba(56,220,137,0.6)] transition-all duration-700 ease-out"
-            style={{ width: `${progressPercent}%` }}
-          />
+        <SetupNavigation labels={mCopy.steps} shortLabels={ar
+          ? ["الشركة", "الاشتراك", "ساعات العمل", "المعرفة", "لغة الرد", "واتساب", "التجربة", "المراجعة"]
+          : ["Company", "Subscription", "Hours", "Knowledge", "Reply language", "WhatsApp", "Trial", "Review"]}
+          done={effectiveSetupDone} step={step} locale={locale} onSelect={go} />
+        <div className={styles.progress} aria-hidden="true">
+          <div className={styles.progressFill} style={{ width: `${progressPercent}%` }} />
         </div>
-
-        {/* Active Step Panel */}
-        <section className="app-panel mt-6 min-w-0 rounded-3xl p-5 sm:p-6 lg:p-8 border border-[color:var(--color-border-soft)] shadow-[0_16px_40px_rgba(0,0,0,0.4)] backdrop-blur-md">
-          <div className="flex items-center gap-3">
-            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#38dc89]/15 border border-[#38dc89]/30 text-sm font-bold text-[#9af0c3]">
-              {step + 1}
-            </span>
-            <h2 className="app-title text-2xl font-bold break-words text-[#f7fbf8]">
-              {mCopy.steps[step]}
-            </h2>
+        <section className={styles.stepPanel}>
+          <div className={styles.stepHeading}>
+            <span className={styles.stepHeadingNumber}>{step + 1}</span>
+            <h2 className="app-title">{mCopy.steps[step]}</h2>
           </div>
-          <p className="app-muted mt-2 text-sm leading-6 text-[#b7c6b9]">{mCopy.stepBodies[step]}</p>
+          <p className={styles.stepDescription}>{mCopy.stepBodies[step]}</p>
           {step === 6 ? <Notice tone="info">{ar ? "نجاح الاختبار علامة محلية مرتبطة بمعرفة النشاط، ولا يُحتسب كتفعيل محفوظ أو دليل جودة شامل." : "A successful trial is local progress bound to company knowledge. It is not persisted activation or comprehensive quality evidence."}</Notice> : null}
 
-          <div className="mt-6 min-w-0">
+          <div className={styles.stepBody}>
             {/* Milestone 0: Company Profile */}
             {step === 0 ? (
               <BusinessStep
@@ -495,7 +444,6 @@ export function SetupWizard({
                 onDraft={persist}
                 leaveGuardRef={leaveGuardRef}
                 onDone={() => {
-                  markDone(0);
                   go(1, { skipGuard: true });
                 }}
               />
@@ -507,7 +455,6 @@ export function SetupWizard({
                 planHref={setupSubscriptionReturn(preferredNext)}
                 onBack={() => go(0)}
                 onNext={() => {
-                  markDone(1);
                   go(2);
                 }}
               />
@@ -523,7 +470,6 @@ export function SetupWizard({
                 leaveGuardRef={leaveGuardRef}
                 onBack={() => go(1)}
                 onNext={() => {
-                  markDone(2);
                   go(3, { skipGuard: true });
                 }}
               />
@@ -535,7 +481,6 @@ export function SetupWizard({
                 onBack={() => go(2)}
                 onNext={() => {
                   if (!knowledgeProgress.canAdvance) return;
-                  markDone(3);
                   go(4);
                 }}
                 nextDisabled={!companyId || !knowledgeProgress.canAdvance}
@@ -572,10 +517,10 @@ export function SetupWizard({
                 onCompanySaved={setSavedCompany}
                 company={savedCompany}
                 onDraft={persist}
+                leaveGuardRef={leaveGuardRef}
                 onBack={() => go(3)}
                 onNext={() => {
-                  markDone(4);
-                  go(5);
+                  go(5, { skipGuard: true });
                 }}
               />
             ) : null}
@@ -588,7 +533,6 @@ export function SetupWizard({
                 draft={draft}
                 onBack={() => go(4)}
                 onNext={() => {
-                  markDone(5);
                   go(6);
                 }}
               />
@@ -600,17 +544,16 @@ export function SetupWizard({
                 onBack={() => go(5)}
                 onNext={() => {
                   if (!setupTestValid || !companyId) return;
-                  markDone(6);
                   go(7);
                 }}
                 nextDisabled={!setupTestValid}
                 nextHint={!setupTestValid ? copy.setup.testRequiredHint : undefined}
               >
-                <div className="mb-4 rounded-xl border border-[#38dc89]/30 bg-[#38dc89]/10 p-3.5 text-xs leading-relaxed text-[#c5d4cc]">
+                <div className="mb-4 rounded-xl border border-[#38dc89]/30 bg-[#38dc89]/10 p-3.5 text-xs leading-relaxed text-[var(--color-muted-on-dark)]">
                   <div className="flex items-start gap-2.5">
-                    <span className="text-base shrink-0">🧪</span>
+
                     <div>
-                      <strong className="font-semibold text-[#f7fbf8]">
+                      <strong className="font-semibold text-[var(--color-on-dark)]">
                         {locale === "ar"
                           ? "بيئة محاكاة واختبار داخلية (Sandbox Simulation)"
                           : "Internal trial; WhatsApp activation is separate"}
@@ -668,7 +611,7 @@ export function SetupWizard({
               <ActivationStep
                 leaveGuardRef={leaveGuardRef}
                 onBack={() => go(6)}
-                onDone={() => markDone(7)}
+                onDone={() => router.refresh()}
                 setupDone={effectiveSetupDone}
                 businessName={savedCompany?.display_name ?? ""}
                 sectorLabel={
@@ -707,7 +650,7 @@ function StepFrame({
   return (
     <div className="grid min-w-0 gap-5">
       <div className="min-w-0">{children}</div>
-      <div className="sticky bottom-0 z-10 -mx-4 mt-2 flex flex-wrap items-center justify-between gap-3 border-t border-[color:var(--color-border-soft)] bg-[#0d1a14]/95 px-4 py-4 backdrop-blur sm:-mx-5 sm:px-5 lg:static lg:mx-0 lg:bg-transparent lg:px-0 lg:backdrop-blur-none">
+      <div className={styles.stepActions}>
         <Button variant="secondary" onClick={onBack}>
           {copy.back}
         </Button>
@@ -918,37 +861,35 @@ function PlanStep({ onBack, onNext, planHref }: { onBack: () => void; onNext: ()
 
   return (
     <div className="grid gap-5">
-      <div className="rounded-2xl border border-[#38dc89]/30 bg-gradient-to-r from-[#12281e] via-[#0d1a14] to-[#07110d] p-5">
+      <div className="rounded-2xl border border-[#38dc89]/30 bg-[var(--color-panel-deep)] p-5">
         <div className="flex items-center gap-3">
-          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#38dc89]/20 text-xl">
-            ✨
-          </span>
+
           <div>
-            <h3 className="font-bold text-[#f7fbf8] text-base">{mCopy.planNoticeTitle}</h3>
-            <p className="text-xs text-[#b7c6b9] mt-1">{mCopy.planNoticeBody}</p>
+            <h3 className="font-bold text-[var(--color-on-dark)] text-base">{mCopy.planNoticeTitle}</h3>
+            <p className="text-xs text-[var(--color-muted-on-dark)] mt-1">{mCopy.planNoticeBody}</p>
           </div>
         </div>
       </div>
 
       <div className="rounded-2xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel-deep)] p-5 text-sm">
-        <h4 className="font-bold text-[#f7fbf8]">
+        <h4 className="font-bold text-[var(--color-on-dark)]">
           {ar ? "مسارات إعداد النشاط" : "Setup areas"}
         </h4>
-        <ul className="mt-3 grid gap-2.5 text-xs text-[#b7c6b9]">
+        <ul className="mt-3 grid gap-2.5 text-xs text-[var(--color-muted-on-dark)]">
           <li className="flex items-center gap-2">
-            <span className="text-[#38dc89]">✓</span>
+
             {ar ? "ربط واتساب التجاري عبر Meta Cloud API الرسمي" : "Official Meta WhatsApp Cloud API connection"}
           </li>
           <li className="flex items-center gap-2">
-            <span className="text-[#38dc89]">✓</span>
+
             {ar ? "قاعدة معرفة ذكية وتدريب نورا على سياسات النشاط" : "Smart knowledge base trained on your business policies"}
           </li>
           <li className="flex items-center gap-2">
-            <span className="text-[#38dc89]">✓</span>
+
             {ar ? "صندوق محادثات موحد وتدخل بشري لحظي عند الحاجة" : "Unified inbox with seamless human handover"}
           </li>
           <li className="flex items-center gap-2">
-            <span className="text-[#38dc89]">✓</span>
+
             {ar ? "بيئة محاكاة واختبار الردود قبل إطلاق الخدمة للعملاء" : "Full testing sandbox prior to customer rollout"}
           </li>
         </ul>
@@ -961,7 +902,7 @@ function PlanStep({ onBack, onNext, planHref }: { onBack: () => void; onNext: ()
         <div className="flex flex-wrap items-center gap-2">
           <Link
             href={planHref}
-            className="inline-flex min-h-11 items-center rounded-full border border-[color:var(--color-border-soft)] px-4 text-xs font-medium text-[#b7c6b9] hover:text-[#f7fbf8]"
+            className="inline-flex min-h-11 items-center rounded-full border border-[color:var(--color-border-soft)] px-4 text-xs font-medium text-[var(--color-muted-on-dark)] hover:text-[var(--color-on-dark)]"
           >
             {mCopy.planExplore} ↗
           </Link>
@@ -997,8 +938,16 @@ function HoursStep({
   const { locale } = useDemo();
   const form = company ? companyBusiness(company) : null;
   const [hours, setHours] = useState(form?.hours ?? "");
+  const [baseline, setBaseline] = useState(form?.hours ?? "");
   const [error, setError] = useState<string | null>(null);
   const { busy, run } = useAction();
+
+  const dirty = hours !== baseline;
+  useUnsavedWarning(dirty && !busy);
+  useEffect(() => {
+    leaveGuardRef.current = () => !dirty || window.confirm(copy.unsaved);
+    return () => { leaveGuardRef.current = null; };
+  }, [dirty, copy.unsaved, leaveGuardRef]);
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -1024,6 +973,7 @@ function HoursStep({
         return;
       }
       if (!finishCompanySave(result, companyId, (company) => {
+        setBaseline(company.hours);
         onCompanySaved(company);
         onDraft((d) => ({ ...d, business: companyBusiness(company) }));
         leaveGuardRef.current = () => true;
@@ -1069,6 +1019,7 @@ function PersonaStep({
   onDraft,
   onBack,
   onNext,
+  leaveGuardRef,
 }: {
   company: CompanyRecord | null;
   companyId: string | null;
@@ -1076,6 +1027,7 @@ function PersonaStep({
   onDraft: (patch: Partial<CompanyDraft> | ((d: CompanyDraft) => CompanyDraft)) => void;
   onBack: () => void;
   onNext: () => void;
+  leaveGuardRef: React.MutableRefObject<(() => boolean) | null>;
 }) {
   const copy = useAppCopy();
   const { locale } = useDemo();
@@ -1084,7 +1036,14 @@ function PersonaStep({
 
   const [saveError, setSaveError] = useState<string | null>(null);
   const [lang, setLang] = useState<Business["replyLanguage"]>(form?.replyLanguage ?? "both");
+  const [baseline, setBaseline] = useState(form?.replyLanguage ?? "both");
   const { busy, run } = useAction();
+  const dirty = lang !== baseline;
+  useUnsavedWarning(dirty && !busy);
+  useEffect(() => {
+    leaveGuardRef.current = () => !dirty || window.confirm(copy.unsaved);
+    return () => { leaveGuardRef.current = null; };
+  }, [dirty, copy.unsaved, leaveGuardRef]);
 
   const select =
     "min-h-11 w-full min-w-0 rounded-xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel)] px-3 text-[15px] text-[var(--color-on-dark)] outline-none focus-visible:ring-2 focus-visible:ring-[#38dc89]";
@@ -1107,6 +1066,8 @@ function PersonaStep({
       });
       if (!result.ok) { setSaveError(result.message ?? copy.errors.authFailed); return; }
       if (!finishCompanySave(result, companyId, (company) => {
+        setBaseline(company.reply_language);
+        leaveGuardRef.current = () => true;
         onCompanySaved(company);
         onDraft((d) => ({ ...d, business: companyBusiness(company) }));
       }, onNext)) setSaveError(copy.errors.authFailed);
@@ -1136,10 +1097,10 @@ function PersonaStep({
       </Field>
 
       <div className="rounded-2xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel-deep)] p-4">
-        <label className="text-xs font-semibold text-[#9af0c3] block mb-1">
+        <label className="text-xs font-semibold text-[var(--color-success-fg)] block mb-1">
           {mCopy.greetingTitle}
         </label>
-        <p className="text-sm text-[#f7fbf8] font-medium" dir="rtl">
+        <p className="text-sm text-[var(--color-on-dark)] font-medium" dir={locale === "ar" ? "rtl" : "ltr"}>
           «{sampleGreeting}»
         </p>
       </div>
@@ -1210,16 +1171,14 @@ function WhatsAppStep({
 
   return (
     <form className="grid gap-5" noValidate onSubmit={submit}>
-      <div className="rounded-2xl border border-[#38dc89]/30 bg-gradient-to-r from-[#12281e] via-[#0d1a14] to-[#07110d] p-4">
+      <div className="rounded-2xl border border-[#38dc89]/30 bg-[var(--color-panel-deep)] p-4">
         <div className="flex items-center gap-3">
-          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#25d366]/20 border border-[#25d366]/40 text-xl">
-            📱
-          </span>
+
           <div>
-            <h3 className="font-bold text-[#f7fbf8] text-sm">
+            <h3 className="font-bold text-[var(--color-on-dark)] text-sm">
               {ar ? "ربط واتساب التجاري (Meta Cloud API)" : "WhatsApp Cloud API Connection"}
             </h3>
-            <p className="text-xs text-[#b7c6b9] mt-0.5">
+            <p className="text-xs text-[var(--color-muted-on-dark)] mt-0.5">
               {ar
                 ? "يمكنك استخدام رقم هاتفك الحالي أو طلب رقم عُماني مخصص لنشاطك."
                 : "Connect your existing number or request a new dedicated WhatsApp number."}
@@ -1228,9 +1187,9 @@ function WhatsAppStep({
         </div>
       </div>
 
-      <div className="rounded-xl border border-[#d9a467]/40 bg-[#d9a467]/10 p-3.5 text-xs leading-relaxed text-[#f0cf9d]">
+      <div className="rounded-xl border border-[#d9a467]/40 bg-[#d9a467]/10 p-3.5 text-xs leading-relaxed text-[var(--color-warn-fg)]">
         <div className="flex items-start gap-2.5">
-          <span className="shrink-0 text-base">⚠️</span>
+
           <div>
             <strong className="font-semibold">
               {ar ? "تنبيه هام حول توثيق واتساب:" : "Important WhatsApp Verification Notice:"}
@@ -1287,7 +1246,7 @@ function WhatsAppStep({
               />
             )}
           </Field>
-          <label className="flex items-start gap-3 text-xs text-[#b7c6b9]">
+          <label className="flex items-start gap-3 text-xs text-[var(--color-muted-on-dark)]">
             <input
               type="checkbox"
               checked={keepOnPhone}
@@ -1353,6 +1312,7 @@ function DecoupledPillarsNotice({
   const isKnowledgeDone = Boolean(setupDone[3]);
   const isSetupDone = isProfileDone && isKnowledgeDone;
   const subscriptionActive = readiness?.items.some(i => i.id === "subscription" && i.detail === "subscription_active" && i.tone === "complete") ?? false;
+  const liveRolloutKnownDisabled = readiness?.items.some(item => item.id === "whatsapp" && item.detail === "wa_verified_not_live") ?? false;
   const meta = whatsappUiState(whatsappLink, false);
 
   const pillars = [
@@ -1392,19 +1352,19 @@ function DecoupledPillarsNotice({
     {
       id: "state_5_live_ai",
       title: ar ? "5. تفعيل الردود الحية" : "5. Live AI Automation",
-      statusText: ar ? "معطل — بانتظار استيفاء الشروط" : "Disabled — Pending Conditions",
+      statusText: liveRolloutKnownDisabled ? (ar ? "التشغيل المباشر معطل" : "Live rollout disabled") : (ar ? "حالة التشغيل المباشر غير متاحة" : "Live status unavailable"),
       detail: ar ? "لا يُستنتج من الإعداد أو المراجعة" : "Never inferred from setup or review",
-      state: "blocked" as const,
+      state: liveRolloutKnownDisabled ? ("blocked" as const) : ("pending" as const),
     },
   ];
 
   return (
     <div className="rounded-2xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel-deep)] p-4">
       <div className="flex items-center justify-between gap-2 border-b border-[color:var(--color-border-soft)] pb-3">
-        <h4 className="text-xs font-bold text-[#f7fbf8] sm:text-sm">
+        <h4 className="text-xs font-bold text-[var(--color-on-dark)] sm:text-sm">
           {ar ? "حالات التفعيل الخمس المستقلة (5 Decoupled Pillars)" : "5 Independent Activation States"}
         </h4>
-        <span className="rounded-full bg-white/10 px-2 py-0.5 text-[11px] text-[#b7c6b9]">
+        <span className="rounded-full bg-white/10 px-2 py-0.5 text-[11px] text-[var(--color-muted-on-dark)]">
           {ar ? "فصل صارم لمنع الإطلاق المبكر" : "Strict Pre-Launch Decoupling"}
         </span>
       </div>
@@ -1413,28 +1373,28 @@ function DecoupledPillarsNotice({
         {pillars.map((p) => (
           <div
             key={p.id}
-            className="flex flex-col justify-between rounded-xl border border-white/10 bg-black/20 p-2.5 text-xs"
+            className="flex flex-col justify-between rounded-xl border border-[color:var(--color-line)] bg-[var(--color-panel)] p-2.5 text-xs"
           >
             <div>
-              <span className="font-semibold text-[#f7fbf8] block leading-tight">{p.title}</span>
+              <span className="font-semibold text-[var(--color-on-dark)] block leading-tight">{p.title}</span>
               <span
                 className={`mt-1.5 inline-block rounded-full px-2 py-0.5 text-[10px] font-bold ${
                   p.state === "complete"
                     ? "bg-[#38dc89]/20 text-[#38dc89]"
                     : p.state === "pending"
-                      ? "bg-[#d9a467]/20 text-[#f0cf9d]"
-                      : "bg-[#e07a7a]/20 text-[#e07a7a]"
+                      ? "bg-[#d9a467]/20 text-[var(--color-warn-fg)]"
+                      : "bg-[#e07a7a]/20 text-[var(--color-danger-fg)]"
                 }`}
               >
                 {p.statusText}
               </span>
             </div>
-            <p className="mt-2 text-[11px] text-[#9aada0] leading-normal">{p.detail}</p>
+            <p className="mt-2 text-[11px] text-[var(--color-muted-soft)] leading-normal">{p.detail}</p>
           </div>
         ))}
       </div>
 
-      <div className="mt-3 rounded-xl border border-[#d9a467]/30 bg-[#d9a467]/10 p-2.5 text-xs leading-relaxed text-[#f0cf9d]">
+      <div className="mt-3 rounded-xl border border-[#d9a467]/30 bg-[#d9a467]/10 p-2.5 text-xs leading-relaxed text-[var(--color-warn-fg)]">
         <span className="font-semibold">⚠️ {ar ? "تنبيه حاسم:" : "Crucial Rule:"}</span>{" "}
         {ar
           ? "تقديم المراجعة أو اعتمادها خطوة إدارية بحتة، ولا يعني أبدًا أن نورا بدأت بالرد على رسائل الزبائن. الرد الحي على واتساب يتطلب ربط Meta Cloud API الفعلي، اشتراكًا ماليًا ساريًا، وتفعيلًا تقنيًا صريحًا دون إيقاف."

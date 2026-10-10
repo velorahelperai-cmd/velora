@@ -80,3 +80,11 @@ export function setupMilestones(input: {
     !input.reviewLoadFailed && review?.status === "approved" && review.proof_current === true,
   ];
 }
+
+/** Initial navigation resolver; completion remains entirely server-derived. */
+export function resolveSetupResumeStep(stored: CompanyDraft | null, userId: string, company: CompanyRecord | null, done: boolean[]): number {
+  if (!company) return 0;
+  if (stored?.userId === userId && stored.companyId === company.id && Number.isInteger(stored.setupStep) && stored.setupStep >= 0 && stored.setupStep <= 7) return stored.setupStep;
+  const firstOpen = done.findIndex(value => !value);
+  return firstOpen === -1 ? 7 : Math.min(7, firstOpen);
+}

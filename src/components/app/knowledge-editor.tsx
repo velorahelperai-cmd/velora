@@ -87,6 +87,7 @@ export function KnowledgeEditor({
 }: Props) {
   const copy = useAppCopy();
   const { locale } = useDemo();
+  const localize = (arabic: string, english: string) => locale === "ar" ? arabic : english;
   const router = useRouter();
   const [sources, setSources] = useState<KnowledgeSourceRecord[]>(initialSources);
   const [loadFailed, setLoadFailed] = useState(initialLoadFailed);
@@ -520,83 +521,71 @@ export function KnowledgeEditor({
   return (
     <div className="grid gap-5">
       {/* Knowledge Score & Readiness Hero Banner */}
-      <section className="relative overflow-hidden rounded-3xl border border-[#38dc89]/30 bg-gradient-to-r from-[#11241a] via-[#0d1c15] to-[#07110d] p-5 shadow-[0_12px_32px_rgba(0,0,0,0.35)]">
+      <section className="relative overflow-hidden rounded-3xl border border-[#38dc89]/30 bg-[var(--color-panel-deep)] p-5 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3.5">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#38dc89]/20 border border-[#38dc89]/40 text-2xl font-bold">
-              🧠
-            </div>
+
             <div>
               <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-lg font-bold text-[#f7fbf8]">اعتماد مصادر المعرفة (Approved Sources)</h2>
-                <span className="inline-flex rounded-full border border-[#38dc89]/40 bg-[#38dc89]/15 px-2.5 py-0.5 text-xs font-semibold text-[#9af0c3]">
-                  {approvalEvidenceUnavailable ? "تعذر تأكيد حالة الاعتماد" : "نسبة المصادر المعتمدة"}
+                <h2 className="text-lg font-bold text-[var(--color-on-dark)]">{localize("اعتماد مصادر المعرفة (Approved Sources)", "Approved sources")}</h2>
+                <span className="inline-flex rounded-full border border-[#38dc89]/40 bg-[#38dc89]/15 px-2.5 py-0.5 text-xs font-semibold text-[var(--color-success-fg)]">
+                  {approvalEvidenceUnavailable ? localize("تعذر تأكيد حالة الاعتماد", "Approval evidence unavailable") : localize("نسبة المصادر المعتمدة", "Approved source coverage")}
                 </span>
               </div>
-              <p className="mt-1 text-xs text-[#b7c6b9]">
-                المعلومات المعتمدة فقط هي التي تستخدمها نورا للرد على العملاء عبر واتساب.
-              </p>
+              <p className="mt-1 text-xs text-[var(--color-muted-on-dark)]">{localize("المعلومات المعتمدة فقط هي التي تستخدمها نورا للرد على العملاء عبر واتساب.", "Approved information is the only source used for customer answers.")}</p>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <span className="text-3xl font-extrabold text-[#9af0c3]">{approvalEvidenceUnavailable ? "—" : `${healthPercent}%`}</span>
+            <span className="text-3xl font-extrabold text-[var(--color-success-fg)]">{approvalEvidenceUnavailable ? "—" : `${healthPercent}%`}</span>
             <Link
               href="/app/test"
-              className="inline-flex min-h-10 items-center gap-1.5 rounded-full border border-[#38dc89]/40 bg-[#38dc89]/15 px-4 text-xs font-semibold text-[#9af0c3] transition hover:bg-[#38dc89]/25 hover:shadow-[0_0_12px_rgba(56,220,137,0.3)]"
-            >
-              🧪 اختبر الردود في المحاكاة ↗
-            </Link>
+              className="inline-flex min-h-10 items-center gap-1.5 rounded-full border border-[#38dc89]/40 bg-[#38dc89]/15 px-4 text-xs font-semibold text-[var(--color-success-fg)] transition hover:bg-[#38dc89]/25 hover:shadow-[0_0_12px_rgba(56,220,137,0.3)]"
+            >{localize("اختبر الردود في المحاكاة ↗", "Try Noura with this knowledge")}</Link>
           </div>
         </div>
 
         <div className="mt-4">
           <div className="h-2 w-full overflow-hidden rounded-full bg-white/10 p-0.5">
             <div
-              className="h-full rounded-full bg-gradient-to-r from-[#2ebd73] to-[#38dc89] shadow-[0_0_12px_rgba(56,220,137,0.5)] transition-all duration-700"
+              className="h-full rounded-full bg-gradient-to-r from-[#2ebd73] to-[#38dc89]  transition-all duration-200"
               style={{ width: `${approvalEvidenceUnavailable ? 0 : healthPercent}%` }}
             />
           </div>
-          <div className="mt-2 flex items-center justify-between text-[11px] text-[#8aa394]">
-            <span>{approvalEvidenceUnavailable ? "عدد المصادر المعتمدة غير متوفر" : `${readyCount} مصادر معتمدة من أصل ${sources.length}`}</span>
-            <span>اعتماد المصدر لا يفعّل الردود الحية أو يضمن جودة الإجابة</span>
+          <div className="mt-2 flex items-start justify-between gap-3 text-[11px] text-[var(--color-muted-soft)]">
+            <span className="shrink-0 whitespace-nowrap">{approvalEvidenceUnavailable ? localize("الدليل غير متاح", "Evidence unavailable") : `${readyCount} / ${sources.length}`}</span>
+            <span>{localize("اعتماد المصدر لا يفعّل الردود الحية أو يضمن جودة الإجابة", "Source approval does not activate live replies or guarantee answer quality.")}</span>
           </div>
         </div>
       </section>
 
       {/* Missing Information Alerts Card */}
       {(missingPolicies || missingProducts || missingPricing) && canWrite ? (
-        <section className="rounded-2xl border border-[#d9a467]/40 bg-gradient-to-r from-[#1c170d] to-[#121c16] p-4 text-xs">
-          <div className="flex items-center gap-2 font-bold text-[#f0cf9d] mb-1.5">
-            <span>⚠️</span>
-            <span>اقتراحات لتنظيم معرفة النشاط؛ أدخل معلومات شركتك الفعلية فقط:</span>
+        <section className="rounded-2xl border border-[#d9a467]/40 bg-[var(--color-panel-deep)] p-4 text-xs">
+          <div className="flex items-center gap-2 font-bold text-[var(--color-warn-fg)] mb-1.5">
+
+            <span>{localize("اقتراحات لتنظيم معرفة النشاط؛ أدخل معلومات شركتك الفعلية فقط:", "Suggested areas; enter actual company information only.")}</span>
           </div>
           <div className="flex flex-wrap gap-2 mt-2.5">
             {missingPolicies ? (
               <button
                 type="button"
                 onClick={() => applyTemplate("policies")}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-[#d9a467]/50 bg-[#d9a467]/15 px-3 py-1.5 text-xs font-medium text-[#f0cf9d] transition hover:bg-[#d9a467]/25"
-              >
-                + أضف سياسة الاسترجاع والتوصيل
-              </button>
+                className="inline-flex items-center gap-1.5 rounded-xl border border-[#d9a467]/50 bg-[#d9a467]/15 px-3 py-1.5 text-xs font-medium text-[var(--color-warn-fg)] transition hover:bg-[#d9a467]/25"
+              >{localize("+ أضف سياسة الاسترجاع والتوصيل", "Add return and delivery policy")}</button>
             ) : null}
             {missingProducts ? (
               <button
                 type="button"
                 onClick={() => applyTemplate("products")}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-[#d9a467]/50 bg-[#d9a467]/15 px-3 py-1.5 text-xs font-medium text-[#f0cf9d] transition hover:bg-[#d9a467]/25"
-              >
-                + أضف قائمة المنتجات والخدمات
-              </button>
+                className="inline-flex items-center gap-1.5 rounded-xl border border-[#d9a467]/50 bg-[#d9a467]/15 px-3 py-1.5 text-xs font-medium text-[var(--color-warn-fg)] transition hover:bg-[#d9a467]/25"
+              >{localize("+ أضف قائمة المنتجات والخدمات", "Add products and services")}</button>
             ) : null}
             {missingPricing ? (
               <button
                 type="button"
                 onClick={() => applyTemplate("pricing")}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-[#d9a467]/50 bg-[#d9a467]/15 px-3 py-1.5 text-xs font-medium text-[#f0cf9d] transition hover:bg-[#d9a467]/25"
-              >
-                + أضف الأسعار وطرق الدفع
-              </button>
+                className="inline-flex items-center gap-1.5 rounded-xl border border-[#d9a467]/50 bg-[#d9a467]/15 px-3 py-1.5 text-xs font-medium text-[var(--color-warn-fg)] transition hover:bg-[#d9a467]/25"
+              >{localize("+ أضف الأسعار وطرق الدفع", "Add prices and payment details")}</button>
             ) : null}
           </div>
         </section>
@@ -652,7 +641,7 @@ export function KnowledgeEditor({
                 setForm({ title: "", content: "", files: null });
               }}
             >
-              ✍️ {copy.knowledge.addText}
+               {copy.knowledge.addText}
             </Button>
             <Button
               variant={mode === "file" ? "primary" : "secondary"}
@@ -664,41 +653,33 @@ export function KnowledgeEditor({
                 setForm({ title: "", content: "", files: null });
               }}
             >
-              📁 {copy.knowledge.addFile}
+               {copy.knowledge.addFile}
             </Button>
           </div>
 
           {/* Quick-add templates shortcuts */}
           <div className="flex flex-wrap items-center gap-1.5 text-xs">
-            <span className="text-[#8aa394] me-1">عناوين لإضافة معلوماتك:</span>
+            <span className="text-[var(--color-muted-soft)] me-1">{localize("عناوين لإضافة معلوماتك:", "Start with a template:")}</span>
             <button
               type="button"
               onClick={() => applyTemplate("products")}
-              className="rounded-lg border border-[color:var(--color-border-soft)] bg-[var(--color-hover-wash)] px-2.5 py-1 text-[#b7c6b9] transition hover:text-[#f7fbf8]"
-            >
-              🛍️ المنتجات
-            </button>
+              className="rounded-lg border border-[color:var(--color-border-soft)] bg-[var(--color-hover-wash)] px-2.5 py-1 text-[var(--color-muted-on-dark)] transition hover:text-[var(--color-on-dark)]"
+            >{localize("المنتجات", "Products")}</button>
             <button
               type="button"
               onClick={() => applyTemplate("policies")}
-              className="rounded-lg border border-[color:var(--color-border-soft)] bg-[var(--color-hover-wash)] px-2.5 py-1 text-[#b7c6b9] transition hover:text-[#f7fbf8]"
-            >
-              🔄 السياسات
-            </button>
+              className="rounded-lg border border-[color:var(--color-border-soft)] bg-[var(--color-hover-wash)] px-2.5 py-1 text-[var(--color-muted-on-dark)] transition hover:text-[var(--color-on-dark)]"
+            >{localize("السياسات", "Policies")}</button>
             <button
               type="button"
               onClick={() => applyTemplate("pricing")}
-              className="rounded-lg border border-[color:var(--color-border-soft)] bg-[var(--color-hover-wash)] px-2.5 py-1 text-[#b7c6b9] transition hover:text-[#f7fbf8]"
-            >
-              🏷️ الأسعار
-            </button>
+              className="rounded-lg border border-[color:var(--color-border-soft)] bg-[var(--color-hover-wash)] px-2.5 py-1 text-[var(--color-muted-on-dark)] transition hover:text-[var(--color-on-dark)]"
+            >{localize("الأسعار", "Pricing")}</button>
             <button
               type="button"
               onClick={() => applyTemplate("faq")}
-              className="rounded-lg border border-[color:var(--color-border-soft)] bg-[var(--color-hover-wash)] px-2.5 py-1 text-[#b7c6b9] transition hover:text-[#f7fbf8]"
-            >
-              ❓ أسئلة شائعة
-            </button>
+              className="rounded-lg border border-[color:var(--color-border-soft)] bg-[var(--color-hover-wash)] px-2.5 py-1 text-[var(--color-muted-on-dark)] transition hover:text-[var(--color-on-dark)]"
+            >{localize("أسئلة شائعة", "FAQ")}</button>
           </div>
         </div>
       ) : null}
@@ -706,7 +687,7 @@ export function KnowledgeEditor({
       {/* Editor Modal / Form */}
       {mode && canWrite ? (
         <form
-          className="grid gap-3 rounded-2xl border border-[#38dc89]/30 bg-[var(--color-panel)] p-5 shadow-[0_8px_24px_rgba(0,0,0,0.3)]"
+          className="grid gap-3 rounded-2xl border border-[#38dc89]/30 bg-[var(--color-panel)] p-5 shadow-sm"
           noValidate
           onSubmit={(e) => {
             e.preventDefault();
@@ -714,11 +695,11 @@ export function KnowledgeEditor({
           }}
         >
           <div className="flex items-center justify-between border-b border-[color:var(--color-border-soft)] pb-2.5">
-            <h3 className="font-bold text-[#f7fbf8] text-sm">
-              {editing ? "تعديل معلومة" : mode === "text" ? "إضافة معلومة جديدة" : "رفع ملفات معتمدة"}
+            <h3 className="font-bold text-[var(--color-on-dark)] text-sm">
+              {editing ? copy.edit : mode === "text" ? copy.knowledge.addText : copy.knowledge.addFile}
             </h3>
-            <span className="text-xs text-[#8aa394]">
-              {mode === "text" ? "نص مباشر" : "ملفات PDF, DOCX, TXT"}
+            <span className="text-xs text-[var(--color-muted-soft)]">
+              {mode === "text" ? copy.knowledge.addText : "PDF, DOCX, TXT"}
             </span>
           </div>
 
@@ -794,11 +775,11 @@ export function KnowledgeEditor({
         <div className="flex flex-wrap items-center gap-1.5 border-b border-[color:var(--color-border-soft)] pb-3 text-xs">
           {(
             [
-              ["all", "جميع المصادر"],
-              ["products", "المنتجات والخدمات"],
-              ["policies", "السياسات والشحن"],
-              ["pricing", "الأسعار والعروض"],
-              ["faq", "الأسئلة الشائعة"],
+              ["all", localize("جميع المصادر", "All sources")],
+              ["products", localize("المنتجات والخدمات", "Products and services")],
+              ["policies", localize("السياسات والشحن", "Policies")],
+              ["pricing", localize("الأسعار والعروض", "Pricing")],
+              ["faq", localize("الأسئلة الشائعة", "FAQ")],
             ] as const
           ).map(([cat, label]) => (
             <button
@@ -807,8 +788,8 @@ export function KnowledgeEditor({
               onClick={() => setActiveCategory(cat)}
               className={`rounded-full px-3 py-1 font-medium transition ${
                 activeCategory === cat
-                  ? "bg-[#38dc89]/20 text-[#9af0c3] border border-[#38dc89]/40"
-                  : "text-[#b7c6b9] hover:bg-[var(--color-hover-wash)] border border-transparent"
+                  ? "bg-[#38dc89]/20 text-[var(--color-success-fg)] border border-[#38dc89]/40"
+                  : "text-[var(--color-muted-on-dark)] hover:bg-[var(--color-hover-wash)] border border-transparent"
               }`}
             >
               {label}
@@ -821,7 +802,7 @@ export function KnowledgeEditor({
       {loadFailed && sources.length === 0 ? <Notice tone="error">{copy.knowledge.loadFailed}</Notice> : filteredSources.length === 0 ? (
         <EmptyState
           title={sources.length === 0 ? copy.knowledge.empty : "لا توجد مصادر في هذا التصنيف"}
-          body="أضف معلومات جديدة أو اختر قالباً جاهزاً من الأعلى لتبدأ نورا بفهم نشاطك."
+          body={localize("أضف معلومات جديدة أو اختر قالباً جاهزاً من الأعلى لتبدأ نورا بفهم نشاطك.", "Add actual company information or choose a template to start a draft.")}
         />
       ) : (
         <ul className="grid gap-3">
@@ -832,14 +813,14 @@ export function KnowledgeEditor({
                 key={src.id}
                 className={`rounded-2xl border p-4 transition ${
                   approved
-                    ? "border-[#38dc89]/30 bg-[#0d1a14]/60 hover:border-[#38dc89]/60"
+                    ? "border-[#38dc89]/30 bg-[var(--color-panel-deep)] hover:border-[#38dc89]/60"
                     : "border-[color:var(--color-border-soft)] bg-[var(--color-panel)] hover:border-white/20"
                 }`}
               >
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0 max-w-2xl">
                     <div className="flex flex-wrap items-center gap-2">
-                      <p className="font-bold tracking-tight text-[#f7fbf8] text-base">{src.title}</p>
+                      <p className="font-bold tracking-tight text-[var(--color-on-dark)] text-base">{src.title}</p>
                       <span className={`rounded-md px-2 py-0.5 text-[11px] font-medium ${statusStyle[src.status]}`}>
                         {statusLabel(src.status, copy)}
                       </span>
@@ -847,25 +828,25 @@ export function KnowledgeEditor({
                         <span
                           className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ${
                             approved
-                              ? "bg-[#38dc89]/20 text-[#9af0c3] border border-[#38dc89]/40"
-                              : "bg-[#d9a467]/15 text-[#f0cf9d] border border-[#d9a467]/30"
+                              ? "bg-[#38dc89]/20 text-[var(--color-success-fg)] border border-[#38dc89]/40"
+                              : "bg-[#d9a467]/15 text-[var(--color-warn-fg)] border border-[#d9a467]/30"
                           }`}
                         >
                           <span className={`h-1.5 w-1.5 rounded-full ${approved ? "bg-[#38dc89]" : "bg-[#d9a467]"}`} />
                           {approvalFoundation === "unavailable"
                             ? copy.knowledge.approvalUnknown
                             : approved
-                              ? "✓ معتمد لإجابات نورا"
+                              ? " معتمد لإجابات نورا"
                               : "⏳ مسودة بانتظار الاعتماد"}
                         </span>
                       ) : null}
                     </div>
 
-                    <p className="mt-2 text-xs leading-5 text-[#b7c6b9] line-clamp-3">
+                    <p className="mt-2 text-xs leading-5 text-[var(--color-muted-on-dark)] line-clamp-3">
                       {src.kind === "file" ? <span dir="ltr" className="font-mono">{src.file_name}</span> : src.content}
                     </p>
                     {src.kind === "file" && src.status === "ready" && src.content ? (
-                      <p className="mt-1 text-xs leading-5 text-[#8aa394] line-clamp-2">
+                      <p className="mt-1 text-xs leading-5 text-[var(--color-muted-soft)] line-clamp-2">
                         {src.content}
                       </p>
                     ) : null}
@@ -890,7 +871,7 @@ export function KnowledgeEditor({
                           busy={busy}
                           onClick={() => void setApproval(src, !approved)}
                         >
-                          {approved ? "إلغاء الاعتماد" : "✓ اعتماد للإجابات"}
+                          {approved ? "إلغاء الاعتماد" : " اعتماد للإجابات"}
                         </Button>
                       ) : null}
 

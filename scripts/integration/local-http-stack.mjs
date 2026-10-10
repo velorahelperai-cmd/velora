@@ -76,7 +76,7 @@ grant all on storage.buckets,storage.objects to service_role;
 `;
 
 /** Start one isolated real local backend. All credentials are returned only in memory. */
-export async function startStack({ gatewayPort = 3130, authPort = 3140, restPort = 3141, appOrigin = "http://127.0.0.1:3120", progress = () => {} } = {}) {
+export async function startStack({ gatewayPort = 3130, authPort = 3140, restPort = 3141, appOrigin = "http://127.0.0.1:3120", progress = () => {}, throughMigration } = {}) {
   gatewayPort = port(gatewayPort); authPort = port(authPort); restPort = port(restPort);
   if (new Set([gatewayPort, authPort, restPort]).size !== 3) throw Error("STACK_PORTS_MUST_DIFFER");
   appOrigin = localOrigin(appOrigin);
@@ -342,6 +342,7 @@ export async function startStack({ gatewayPort = 3130, authPort = 3140, restPort
     progress("LOCAL_VAULT_CRYPTO_READY");
     let migrationCount = 0, owner;
     for (const name of (await readdir(join(ROOT, "supabase/migrations"))).filter(name => name.endsWith(".sql")).sort()) {
+      if (throughMigration && name > throughMigration) continue;
       const source = (await readFile(join(ROOT, "supabase/migrations", name), "utf8")).replace(/^\uFEFF/, "");
       if (name === OWNER_MIGRATION) {
         const email = source.match(/lower\(u.email\)='([^']+)'/)?.[1];

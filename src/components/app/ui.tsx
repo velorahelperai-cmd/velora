@@ -45,7 +45,11 @@ export function Field({
       dir={dir}
       onFocusCapture={(e) => {
         const target = e.target as HTMLElement;
-        if (target.matches("input, textarea, select")) target.scrollIntoView({ block: "center", behavior: "smooth" });
+        if (target.matches("input, textarea, select")) {
+          const reduce = target.closest('[data-internal-ui="true"]')
+            && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+          target.scrollIntoView({ block: "center", behavior: reduce ? "auto" : "smooth" });
+        }
       }}
     >
       <label htmlFor={id} className="flex items-center justify-between text-sm text-[var(--color-on-dark)]">

@@ -115,7 +115,7 @@ function DashboardBillingCard({ companyId }: { companyId: string | null }) {
 
   return (
     <section
-      className="mb-6 relative overflow-hidden rounded-3xl border border-[#38dc89]/30 bg-gradient-to-r from-[#12281e] via-[#0d1c15] to-[#08120e] p-5 shadow-[0_16px_40px_rgba(0,0,0,0.35)] sm:p-6"
+      className="mb-6 relative overflow-hidden rounded-3xl border border-[#38dc89]/30 bg-[var(--color-panel-deep)] p-5 shadow-sm sm:p-6"
       aria-label={text.title}
     >
       <div className="pointer-events-none absolute end-0 top-0 -me-8 -mt-8 h-48 w-48 rounded-full bg-[#38dc89]/10 blur-3xl" />
@@ -125,9 +125,9 @@ function DashboardBillingCard({ companyId }: { companyId: string | null }) {
             <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#38dc89]/20 border border-[#38dc89]/30 text-base">
               ⚡
             </span>
-            <h2 className="text-base font-bold text-[#f7fbf8] sm:text-lg">{text.title}</h2>
+            <h2 className="text-base font-bold text-[var(--color-on-dark)] sm:text-lg">{text.title}</h2>
           </div>
-          <p className="mt-1.5 text-xs text-[#b7c6b9] sm:text-sm">{text.body}</p>
+          <p className="mt-1.5 text-xs text-[var(--color-muted-on-dark)] sm:text-sm">{text.body}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button type="button" variant="secondary" busy={billing === null} onClick={refresh}>
@@ -135,7 +135,7 @@ function DashboardBillingCard({ companyId }: { companyId: string | null }) {
           </Button>
           <Link
             href="/app/settings?tab=plan"
-            className="inline-flex min-h-10 items-center rounded-full border border-[#38dc89]/50 bg-[#38dc89]/15 px-4 text-xs font-semibold text-[#9af0c3] transition hover:bg-[#38dc89]/25 hover:shadow-[0_0_16px_rgba(56,220,137,0.3)]"
+            className="inline-flex min-h-10 items-center rounded-full border border-[#38dc89]/50 bg-[#38dc89]/15 px-4 text-xs font-semibold text-[var(--color-success-fg)] transition hover:bg-[#38dc89]/25 hover:shadow-[0_0_16px_rgba(56,220,137,0.3)]"
           >
             {text.account}
           </Link>
@@ -143,8 +143,8 @@ function DashboardBillingCard({ companyId }: { companyId: string | null }) {
       </div>
       {snapshot ? (
         <div className="relative mt-5">
-          <div className="mb-3 flex flex-wrap items-center gap-3 text-xs text-[#b7c6b9]">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-[#38dc89]/15 border border-[#38dc89]/30 px-2.5 py-0.5 font-medium text-[#9af0c3]">
+          <div className="mb-3 flex flex-wrap items-center gap-3 text-xs text-[var(--color-muted-on-dark)]">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-[#38dc89]/15 border border-[#38dc89]/30 px-2.5 py-0.5 font-medium text-[var(--color-success-fg)]">
               <span className="h-1.5 w-1.5 rounded-full bg-[#38dc89] animate-pulse" />
               {text.status}: {statusLabels[snapshot.subscriptionStatus] ?? snapshot.subscriptionStatus}
             </span>
@@ -155,11 +155,11 @@ function DashboardBillingCard({ companyId }: { companyId: string | null }) {
             ) : null}
           </div>
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-sm font-medium">
-            <span className="text-[#f7fbf8]">
+            <span className="text-[var(--color-on-dark)]">
               <strong>{snapshot.sent.toLocaleString(locale)}</strong>
               {snapshot.cap !== null ? ` / ${snapshot.cap.toLocaleString(locale)}` : ""} {text.sent}
             </span>
-            <span className="text-[#9af0c3] font-semibold">
+            <span className="text-[var(--color-success-fg)] font-semibold">
               {snapshot.remaining === null ? text.capMissing : `${snapshot.remaining.toLocaleString(locale)} ${text.remaining}`}
             </span>
           </div>
@@ -178,7 +178,7 @@ function DashboardBillingCard({ companyId }: { companyId: string | null }) {
               />
             </div>
           ) : null}
-          <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 text-xs text-[#b7c6b9]">
+          <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 text-xs text-[var(--color-muted-on-dark)]">
             <span>
               {snapshot.held.toLocaleString(locale)} {text.held}
             </span>
@@ -188,7 +188,7 @@ function DashboardBillingCard({ companyId }: { companyId: string | null }) {
           </div>
         </div>
       ) : (
-        <p className="relative mt-4 text-sm text-[#b7c6b9]" role="status">
+        <p className="relative mt-4 text-sm text-[var(--color-muted-on-dark)]" role="status">
           {billing === null
             ? text.loading
             : billing.status === "forbidden"
@@ -235,7 +235,7 @@ function DashboardDecoupledPillars({
   // State 5: Live Outbound AI Active (Never inferred!)
   // Strictly requires all technical and security criteria met AND not paused
   // No authoritative deployment/activity snapshot is provided by readiness or inbox rows.
-  const isLiveAiActive = false;
+  const liveRolloutKnownDisabled = readiness?.items.some(item => item.id === "whatsapp" && item.detail === "wa_verified_not_live") ?? false;
 
   const pillars = [
     {
@@ -305,10 +305,10 @@ function DashboardDecoupledPillars({
     {
       num: 5,
       title: ar ? "5. الرد الآلي الحي لنورا" : "5. Live Outbound AI Active",
-      badge: isLiveAiActive
-        ? (ar ? "مفعّل على واتساب" : "Live on WhatsApp")
-        : (ar ? "معطل — بانتظار المتطلبات" : "Disabled — Pending Prerequisites"),
-      tone: isLiveAiActive ? "complete" : "blocked",
+      badge: liveRolloutKnownDisabled
+        ? (ar ? "التشغيل المباشر معطل" : "Live rollout disabled")
+        : (ar ? "حالة التشغيل المباشر غير متاحة" : "Live status unavailable"),
+      tone: liveRolloutKnownDisabled ? "blocked" : "not_configured",
       detail: ar
         ? "لا يُستنتج من الإعداد؛ يتطلب استيفاء كافة الشروط"
         : "Never inferred; requires all conditions met",
@@ -328,19 +328,19 @@ function DashboardDecoupledPillars({
             <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#38dc89]/20 text-sm">
               🛡️
             </span>
-            <h2 className="text-base font-bold text-[#f7fbf8] sm:text-lg">
+            <h2 className="text-base font-bold text-[var(--color-on-dark)] sm:text-lg">
               {ar
                 ? "حالات المنظومة الخمس المستقلة (5 Decoupled System Pillars)"
                 : "5 Decoupled System Pillars"}
             </h2>
           </div>
-          <p className="mt-1 text-xs text-[#b7c6b9]">
+          <p className="mt-1 text-xs text-[var(--color-muted-on-dark)]">
             {ar
               ? "فصل صريح بين الاشتراك، الإعداد، توثيق ميتا، المراجعة، والتفعيل الحي لمنع أي ادعاء مسبق للتشغيل."
               : "Strict decoupling of subscription, setup, Meta verification, review, and live AI activation."}
           </p>
         </div>
-        <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-[#b7c6b9]">
+        <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-[var(--color-muted-on-dark)]">
           {ar ? "تحقق أمني مستقل" : "Independent Verification"}
         </span>
       </div>
@@ -355,20 +355,20 @@ function DashboardDecoupledPillars({
               className="flex flex-col justify-between rounded-2xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel-deep)] p-4 transition hover:border-white/20"
             >
               <div>
-                <span className="text-[11px] font-bold text-[#9af0c3]">#{p.num}</span>
-                <h3 className="mt-1 text-sm font-semibold text-[#f7fbf8] leading-snug">{p.title}</h3>
+                <span className="text-[11px] font-bold text-[var(--color-success-fg)]">#{p.num}</span>
+                <h3 className="mt-1 text-sm font-semibold text-[var(--color-on-dark)] leading-snug">{p.title}</h3>
                 <span
                   className={`mt-2 inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${
                     isComplete
                       ? "bg-[#38dc89]/15 text-[#38dc89] border border-[#38dc89]/30"
                       : isPending
-                        ? "bg-[#d9a467]/15 text-[#f0cf9d] border border-[#d9a467]/30"
-                        : "bg-[#e07a7a]/15 text-[#e07a7a] border border-[#e07a7a]/30"
+                        ? "bg-[#d9a467]/15 text-[var(--color-warn-fg)] border border-[#d9a467]/30"
+                        : "bg-[#e07a7a]/15 text-[var(--color-danger-fg)] border border-[#e07a7a]/30"
                   }`}
                 >
                   {p.badge}
                 </span>
-                <p className="mt-2.5 text-xs text-[#9aada0] leading-relaxed">{p.detail}</p>
+                <p className="mt-2.5 text-xs text-[var(--color-muted-soft)] leading-relaxed">{p.detail}</p>
               </div>
               <div className="mt-3 pt-2.5 border-t border-[color:var(--color-border-soft)]">
                 <Link
@@ -524,16 +524,16 @@ export function DashboardPage({
       <header className="mb-6 flex flex-wrap items-center justify-between gap-4 border-b border-[color:var(--color-border-soft)] pb-5">
         <div>
           <div className="flex flex-wrap items-center gap-2.5">
-            <h1 className="text-2xl font-bold tracking-tight text-[#f7fbf8] lg:text-3xl">
+            <h1 className="text-2xl font-bold tracking-tight text-[var(--color-on-dark)] lg:text-3xl">
               {fill(copy.app.hello, { name: helloName || (ar ? "صاحب العمل" : "Business Owner") })}
             </h1>
             {companyName ? (
-              <span className="inline-flex items-center rounded-full bg-[#38dc89]/15 border border-[#38dc89]/30 px-3 py-1 text-xs font-semibold text-[#9af0c3]">
+              <span className="inline-flex items-center rounded-full bg-[#38dc89]/15 border border-[#38dc89]/30 px-3 py-1 text-xs font-semibold text-[var(--color-success-fg)]">
                 🏢 {companyName}
               </span>
             ) : null}
           </div>
-          <p className="mt-1 text-sm text-[#b7c6b9]">
+          <p className="mt-1 text-sm text-[var(--color-muted-on-dark)]">
             {ar
               ? "متابعة الأداء اللحظي لنورا، محادثات العملاء، وحالة ربط واتساب والاشتراك."
               : "Monitor real-time Noura AI performance, customer conversations, and WhatsApp status."}
@@ -568,17 +568,17 @@ export function DashboardPage({
           className="group relative overflow-hidden rounded-2xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel)] p-4 shadow-[0_8px_24px_rgba(0,0,0,0.2)] transition hover:border-[#38dc89]/50 hover:bg-[var(--color-hover-wash)]"
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-[#b7c6b9]">
+            <span className="text-xs font-medium text-[var(--color-muted-on-dark)]">
               {ar ? "إجمالي المحادثات المتاحة لك" : "Total visible conversations"}
             </span>
-            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#38dc89]/15 text-sm text-[#9af0c3]">
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#38dc89]/15 text-sm text-[var(--color-success-fg)]">
               💬
             </span>
           </div>
-          <p className="mt-3 text-2xl font-bold tracking-tight text-[#f7fbf8] lg:text-3xl">
+          <p className="mt-3 text-2xl font-bold tracking-tight text-[var(--color-on-dark)] lg:text-3xl">
             {totalConversations !== null ? totalConversations.toLocaleString(locale) : "—"}
           </p>
-          <p className="mt-1 text-xs text-[#9aada0]">
+          <p className="mt-1 text-xs text-[var(--color-muted-soft)]">
             {ar ? "من السجلات ضمن صلاحيات العرض" : "Authoritative total within your access scope"}
           </p>
         </Link>
@@ -589,17 +589,17 @@ export function DashboardPage({
           className="group relative overflow-hidden rounded-2xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel)] p-4 shadow-[0_8px_24px_rgba(0,0,0,0.2)] transition hover:border-[#38dc89]/50 hover:bg-[var(--color-hover-wash)]"
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-[#b7c6b9]">
+            <span className="text-xs font-medium text-[var(--color-muted-on-dark)]">
               {ar ? "محادثات تسمح بالأتمتة" : "Automation permitted chats"}
             </span>
             <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#38dc89]/25 text-sm text-[#38dc89]">
               ✨
             </span>
           </div>
-          <p className="mt-3 text-2xl font-bold tracking-tight text-[#9af0c3] lg:text-3xl">
+          <p className="mt-3 text-2xl font-bold tracking-tight text-[var(--color-success-fg)] lg:text-3xl">
             {nouraAutomatedCount !== null ? nouraAutomatedCount.toLocaleString(locale) : "—"}
           </p>
-          <p className="mt-1 text-xs text-[#9aada0]">
+          <p className="mt-1 text-xs text-[var(--color-muted-soft)]">
             {ar ? "ضمن المحادثات المحملة؛ الإذن لا يؤكد الرد الحي" : "Loaded chats; permission does not confirm live replies"}
           </p>
         </Link>
@@ -609,19 +609,19 @@ export function DashboardPage({
           href="/app/conversations?filter=staff"
           className={`group relative overflow-hidden rounded-2xl border p-4 shadow-[0_8px_24px_rgba(0,0,0,0.2)] transition ${
             awaitingStaffCount && awaitingStaffCount > 0
-              ? "border-[#d9a467]/50 bg-gradient-to-br from-[#1c1810] to-[#14221b] hover:border-[#d9a467]"
+              ? "border-[#d9a467]/50 bg-[var(--color-panel-deep)] hover:border-[#d9a467]"
               : "border-[color:var(--color-border-soft)] bg-[var(--color-panel)] hover:border-[#38dc89]/50 hover:bg-[var(--color-hover-wash)]"
           }`}
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-[#b7c6b9]">
+            <span className="text-xs font-medium text-[var(--color-muted-on-dark)]">
               {ar ? "محادثات تحتاج متابعة بشرية" : "Conversations needing human attention"}
             </span>
             <span
               className={`flex h-7 w-7 items-center justify-center rounded-lg text-sm ${
                 awaitingStaffCount && awaitingStaffCount > 0
-                  ? "bg-[#d9a467]/25 text-[#f0cf9d]"
-                  : "bg-white/10 text-[#b7c6b9]"
+                  ? "bg-[#d9a467]/25 text-[var(--color-warn-fg)]"
+                  : "bg-white/10 text-[var(--color-muted-on-dark)]"
               }`}
             >
               👤
@@ -629,12 +629,12 @@ export function DashboardPage({
           </div>
           <p
             className={`mt-3 text-2xl font-bold tracking-tight lg:text-3xl ${
-              awaitingStaffCount && awaitingStaffCount > 0 ? "text-[#f0cf9d]" : "text-[#f7fbf8]"
+              awaitingStaffCount && awaitingStaffCount > 0 ? "text-[var(--color-warn-fg)]" : "text-[var(--color-on-dark)]"
             }`}
           >
             {awaitingStaffCount !== null ? awaitingStaffCount.toLocaleString(locale) : "—"}
           </p>
-          <p className="mt-1 text-xs text-[#9aada0]">
+          <p className="mt-1 text-xs text-[var(--color-muted-soft)]">
             {ar ? "من سجل التدخل في مساحة العمل المتاحة" : "From durable intervention records in this workspace"}
           </p>
         </Link>
@@ -645,7 +645,7 @@ export function DashboardPage({
           className="group relative overflow-hidden rounded-2xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel)] p-4 shadow-[0_8px_24px_rgba(0,0,0,0.2)] transition hover:border-[#38dc89]/50 hover:bg-[var(--color-hover-wash)]"
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-[#b7c6b9]">
+            <span className="text-xs font-medium text-[var(--color-muted-on-dark)]">
               {ar ? "حالة ربط واتساب" : "WhatsApp Status"}
             </span>
             <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#25d366]/20 text-sm text-[#25d366]">
@@ -659,7 +659,7 @@ export function DashboardPage({
               {waStatusLabel}
             </span>
           </div>
-          <p className="mt-2 text-xs text-[#9aada0]">
+          <p className="mt-2 text-xs text-[var(--color-muted-soft)]">
             {waItem?.detail === "wa_verified_not_live"
               ? (ar ? "ربط موثق؛ الإطلاق الحي غير مفعّل" : "Verified connection; live rollout disabled")
               : waItem?.detail === "wa_verified"
@@ -686,9 +686,9 @@ export function DashboardPage({
               <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#38dc89]/20 text-sm">
                 🎯
               </span>
-              <h2 className="text-lg font-bold text-[#f7fbf8]">{copy.app.readinessTitle}</h2>
+              <h2 className="text-lg font-bold text-[var(--color-on-dark)]">{copy.app.readinessTitle}</h2>
             </div>
-            <p className="mt-1 text-xs text-[#b7c6b9] sm:text-sm">{copy.app.readinessBody}</p>
+            <p className="mt-1 text-xs text-[var(--color-muted-on-dark)] sm:text-sm">{copy.app.readinessBody}</p>
           </div>
           <Button type="button" variant="secondary" busy={busy} onClick={() => void reloadReadiness()}>
             {copy.app.readinessRetry}
@@ -708,15 +708,15 @@ export function DashboardPage({
 
         {/* Next Action Banner */}
         {nextItem && nextItem.href && nextItem.action !== "none" ? (
-          <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#38dc89]/40 bg-gradient-to-r from-[#163826] to-[#0e2419] p-4 shadow-[0_8px_20px_rgba(56,220,137,0.15)]">
+          <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#38dc89]/40 bg-[var(--color-hover-wash)] p-4 shadow-[0_8px_20px_rgba(56,220,137,0.15)]">
             <div className="min-w-0">
-              <span className="inline-block rounded-full bg-[#38dc89]/25 px-2.5 py-0.5 text-xs font-bold text-[#9af0c3]">
+              <span className="inline-block rounded-full bg-[#38dc89]/25 px-2.5 py-0.5 text-xs font-bold text-[var(--color-success-fg)]">
                 {copy.app.nextAction}
               </span>
-              <h3 className="mt-1 text-sm font-bold text-[#f7fbf8]">
+              <h3 className="mt-1 text-sm font-bold text-[var(--color-on-dark)]">
                 {itemLabel(nextItem.id, copy)}
               </h3>
-              <p className="text-xs text-[#b7c6b9]">{detailLabel(nextItem.detail, copy)}</p>
+              <p className="text-xs text-[var(--color-muted-on-dark)]">{detailLabel(nextItem.detail, copy)}</p>
             </div>
             <LinkButton href={nextItem.href} className="font-semibold">
               {actionLabel(nextItem.action, copy) ?? copy.app.continueSetup}
@@ -736,14 +736,14 @@ export function DashboardPage({
                 >
                   <div>
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <strong className="text-sm font-semibold text-[#f7fbf8]">
+                      <strong className="text-sm font-semibold text-[var(--color-on-dark)]">
                         {itemLabel(item.id, copy)}
                       </strong>
                       <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${toneClass(item.tone)}`}>
                         {copy.app.readinessTones[item.tone]}
                       </span>
                     </div>
-                    <p className="mt-2 text-xs leading-5 text-[#9aada0]">
+                    <p className="mt-2 text-xs leading-5 text-[var(--color-muted-soft)]">
                       {detailLabel(item.detail, copy)}
                     </p>
                   </div>
@@ -751,7 +751,7 @@ export function DashboardPage({
                     <div className="mt-4 pt-3 border-t border-[color:var(--color-border-soft)]">
                       <Link
                         href={item.href}
-                        className="inline-flex min-h-9 items-center justify-center rounded-full border border-[#38dc89]/30 bg-[#38dc89]/10 px-3 text-xs font-medium text-[#9af0c3] transition hover:bg-[#38dc89]/20"
+                        className="inline-flex min-h-9 items-center justify-center rounded-full border border-[#38dc89]/30 bg-[#38dc89]/10 px-3 text-xs font-medium text-[var(--color-success-fg)] transition hover:bg-[#38dc89]/20"
                       >
                         {label} ↗
                       </Link>
@@ -775,10 +775,10 @@ export function DashboardPage({
         >
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-[color:var(--color-border-soft)] pb-3">
             <div>
-              <h2 className="text-base font-bold text-[#f7fbf8] sm:text-lg">
+              <h2 className="text-base font-bold text-[var(--color-on-dark)] sm:text-lg">
                 💬 {ar ? "أحدث محادثات العملاء" : "Recent Customer Conversations"}
               </h2>
-              <p className="text-xs text-[#b7c6b9]">
+              <p className="text-xs text-[var(--color-muted-on-dark)]">
                 {ar
                   ? "محادثات واتساب الحية المرتبطة بشركتك"
                   : "Latest activity within the loaded page and your access scope"}
@@ -786,7 +786,7 @@ export function DashboardPage({
             </div>
             <Link
               href="/app/conversations"
-              className="inline-flex items-center text-xs font-semibold text-[#9af0c3] hover:underline"
+              className="inline-flex items-center text-xs font-semibold text-[var(--color-success-fg)] hover:underline"
             >
               {ar ? "عرض الكل في الصندوق ↗" : "View all in Inbox ↗"}
             </Link>
@@ -794,7 +794,7 @@ export function DashboardPage({
 
           {!initialLeads.ok ? (
             <div className="py-6 text-center">
-              <p className="text-sm text-[#b7c6b9]" role="status">
+              <p className="text-sm text-[var(--color-muted-on-dark)]" role="status">
                 {initialLeads.code === "NO_COMPANY"
                   ? (ar ? "اختر مساحة الشركة لعرض المحادثات المسموح لك بها." : "Select a company workspace to view conversations.")
                   : (ar ? "تعذّر تحميل بيانات المحادثات. لا توجد بيانات مؤكدة." : "Conversation data could not be loaded.")}
@@ -803,10 +803,10 @@ export function DashboardPage({
           ) : recentConversations.length === 0 ? (
             <div className="py-8 text-center">
               <span className="text-3xl">📭</span>
-              <p className="mt-2 text-sm font-medium text-[#f7fbf8]">
+              <p className="mt-2 text-sm font-medium text-[var(--color-on-dark)]">
                 {ar ? "لا توجد محادثات جارية حتى الآن" : "No active conversations yet"}
               </p>
-              <p className="mt-1 text-xs text-[#9aada0]">
+              <p className="mt-1 text-xs text-[var(--color-muted-soft)]">
                 {ar
                   ? "عندما يبدأ العملاء بالتواصل عبر رقم واتساب التجاري، ستظهر المحادثات هنا فوراً."
                   : "When customers reach out via your WhatsApp Business number, chats will appear here."}
@@ -835,43 +835,43 @@ export function DashboardPage({
                     className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel-deep)] p-3.5 transition hover:border-[#38dc89]/40 hover:bg-[var(--color-hover-wash)]"
                   >
                     <div className="flex min-w-0 items-center gap-3">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#38dc89]/15 border border-[#38dc89]/30 text-sm font-bold text-[#9af0c3]">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#38dc89]/15 border border-[#38dc89]/30 text-sm font-bold text-[var(--color-success-fg)]">
                         {conv.customer ? conv.customer.charAt(0).toUpperCase() : "👤"}
                       </div>
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                          <strong className="text-sm font-semibold text-[#f7fbf8] truncate">
+                          <strong className="text-sm font-semibold text-[var(--color-on-dark)] truncate">
                             {conv.customer || (ar ? "عميل واتساب" : "WhatsApp Customer")}
                           </strong>
-                          <span className="text-xs text-[#9aada0]" dir="ltr">
+                          <span className="text-xs text-[var(--color-muted-soft)]" dir="ltr">
                             {conv.phone}
                           </span>
                         </div>
-                        <p className="mt-1 text-xs text-[#b7c6b9] truncate max-w-[280px] sm:max-w-[420px]">
+                        <p className="mt-1 text-xs text-[var(--color-muted-on-dark)] truncate max-w-[280px] sm:max-w-[420px]">
                           {lastSnippet}
                         </p>
                       </div>
                     </div>
 
                     <div className="flex shrink-0 items-center gap-2">
-                      <span className="text-xs text-[#9aada0]">{dateStr}</span>
+                      <span className="text-xs text-[var(--color-muted-soft)]">{dateStr}</span>
                       <span
                         className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
                           isAutomated
-                            ? "bg-[#38dc89]/15 text-[#9af0c3] border border-[#38dc89]/30"
-                            : "bg-[#d9a467]/15 text-[#f0cf9d] border border-[#d9a467]/30"
+                            ? "bg-[#38dc89]/15 text-[var(--color-success-fg)] border border-[#38dc89]/30"
+                            : "bg-[#d9a467]/15 text-[var(--color-warn-fg)] border border-[#d9a467]/30"
                         }`}
                       >
                         {isAutomated ? (ar ? "أتمتة مسموحة" : "Automation permitted") : (ar ? "موظف" : "Staff")}
                       </span>
                       {conv.leadStage ? (
-                        <span className="hidden sm:inline-flex rounded-full bg-white/5 border border-white/10 px-2 py-0.5 text-xs text-[#b7c6b9]">
+                        <span className="hidden sm:inline-flex rounded-full bg-white/5 border border-white/10 px-2 py-0.5 text-xs text-[var(--color-muted-on-dark)]">
                           {stageLabels[conv.leadStage] ?? conv.leadStage}
                         </span>
                       ) : null}
                       <Link
                         href={`/app/conversations?c=${conv.id}`}
-                        className="inline-flex h-8 items-center rounded-lg border border-[color:var(--color-border-soft)] px-2.5 text-xs font-medium text-[#f7fbf8] hover:bg-white/10"
+                        className="inline-flex h-8 items-center rounded-lg border border-[color:var(--color-border-soft)] px-2.5 text-xs font-medium text-[var(--color-on-dark)] hover:bg-white/10"
                       >
                         {ar ? "فتح" : "Open"}
                       </Link>
@@ -892,21 +892,21 @@ export function DashboardPage({
             <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#38dc89]/20 text-sm">
               🧠
             </span>
-            <h2 className="text-base font-bold text-[#f7fbf8] sm:text-lg">
+            <h2 className="text-base font-bold text-[var(--color-on-dark)] sm:text-lg">
               {ar ? "معلومات ونبرة نورا" : "Noura Knowledge"}
             </h2>
           </div>
-          <p className="mt-1.5 text-xs text-[#b7c6b9]">
+          <p className="mt-1.5 text-xs text-[var(--color-muted-on-dark)]">
             {ar
               ? "المعلومات المعتمدة التي تستخدمها نورا للرد على استفسارات عملاء الشركة."
               : "Approved knowledge used by Noura to respond to customer inquiries."}
           </p>
 
           <div className="mt-4 rounded-2xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel-deep)] p-4 text-xs">
-            <p className="font-semibold text-[#f7fbf8]">
+            <p className="font-semibold text-[var(--color-on-dark)]">
               {ar ? "💡 نصيحة لتحسين دقة الردود:" : "💡 Tip for accuracy:"}
             </p>
-            <p className="mt-1 leading-5 text-[#b7c6b9]">
+            <p className="mt-1 leading-5 text-[var(--color-muted-on-dark)]">
               {ar
                 ? "تأكد من إضافة سياسة الاسترجاع، أوقات العمل، وقائمة الأسعار لتتمكن نورا من خدمة العملاء دون تحويل متكرر للموظف."
                 : "Ensure you add return policies, business hours, and pricing lists so Noura can resolve questions directly."}
