@@ -93,6 +93,7 @@ async function seedHistoricalBaseline(){
  expect(await rpc('apply_whatsapp_delivery_status',[f.company,f.phone,'synthetic-orphan-delivery-'+randomUUID(),'delivered',f.recipient].map(lit).join(',')+',clock_timestamp()')).toMatchObject({ok:true});
  const attempts=[];
  for(const status of ['cancelled','failed','in_progress','code_received']){const id=randomUUID();attempts.push({id,status});await db.sql('INSERT INTO public.whatsapp_embedded_signup_attempts(id,company_id,user_id,nonce,keep_on_phone,status,consumed_at) VALUES('+[id,f.company,f.user,'synthetic-history-nonce-'+id].map(lit).join(',')+',false,'+lit(status)+','+(['in_progress','code_received'].includes(status)?'NULL':'clock_timestamp()')+');');}
+ for(const attempt of attempts)attempt.original=JSON.parse(await db.sql('SELECT to_jsonb(a) FROM public.whatsapp_embedded_signup_attempts a WHERE id='+lit(attempt.id)));
  const snapshots=[];
  for(const table of ['whatsapp_company_links','whatsapp_conversations','whatsapp_messages','whatsapp_inbound_jobs','whatsapp_conversation_events','whatsapp_delivery_statuses']){
   const columns=JSON.parse(await db.sql("SELECT json_agg(column_name ORDER BY ordinal_position) FROM information_schema.columns WHERE table_schema='public' AND table_name="+lit(table)));
@@ -102,6 +103,63 @@ async function seedHistoricalBaseline(){
 }
 it('populated baseline preserves every original history field and cancelled/failed signup attempts',async()=>{
  for(const snapshot of historical.snapshots)expect(await historyDigest(snapshot.table,snapshot.columns,historical.f.company),snapshot.table).toBe(snapshot.digest);
- for(const attempt of historical.attempts){expect(await db.sql('SELECT status FROM whatsapp_embedded_signup_attempts WHERE id='+lit(attempt.id))).toBe(['in_progress','code_received'].includes(attempt.status)?'cancelled':attempt.status);}
+ for(const attempt of historical.attempts){const full=JSON.parse(await db.sql('SELECT to_jsonb(a) FROM public.whatsapp_embedded_signup_attempts a WHERE id='+lit(attempt.id)));const actual=Object.fromEntries(Object.keys(attempt.original).map(key=>[key,full[key]]));if(['in_progress','code_received'].includes(attempt.status)){expect(actual.status).toBe('cancelled');expect(actual.consumed_at).not.toBeNull();const {status,consumed_at,...unchanged}=actual;const {status:oldStatus,consumed_at:oldConsumed,...original}=attempt.original;expect(unchanged).toEqual(original);}else expect(actual).toEqual(attempt.original);}
  expect(await db.sql('SELECT count(*) FROM whatsapp_conversation_events WHERE company_id='+lit(historical.f.company)+' AND event_sequence IS NOT NULL')).toBe('1');
+});
+
+async function until(check,ms=8000){const end=Date.now()+ms;while(Date.now()<end){if(await check())return;await new Promise(r=>setTimeout(r,40));}throw Error('SYNTHETIC_WAIT_CONDITION_TIMEOUT');}
+it.each(['job','owner'])('authority expiry while final intent lock waits: %s',async kind=>{
+ const f=await fixture();const j=(await claim(f)).jobs[0];await stage(j);const c=await sendClaim(j);const name='synthetic-final-wait-'+randomUUID();
+ await db.verify();const blocker=db.session('BEGIN;SELECT id FROM public.whatsapp_send_intents WHERE id='+lit(c.intent.id)+" FOR UPDATE;SELECT 'SYNTHETIC_LOCK_READY';",'synthetic-intent-blocker',{keepOpen:true});blocker.done.catch(()=>{});
+ let result;
+ try{
+  await until(async()=>blocker.output().includes('SYNTHETIC_LOCK_READY'));
+  if(kind==='job')await db.sql("UPDATE public.whatsapp_inbound_jobs SET claim_expires_at=clock_timestamp()+interval '4 seconds' WHERE id="+lit(j.job_id));
+  else await db.sql("UPDATE private.app_session_activity SET last_activity_at=clock_timestamp()-interval '2 hours'+interval '4 seconds' WHERE session_id="+lit(f.session));
+  result=db.sql('BEGIN;SET LOCAL ROLE service_role;SELECT public.whatsapp_authorize_fixed_ack('+[j.job_id,j.claim_token,c.intent.id,c.attempt_token].map(lit).join(',')+');COMMIT;',name).then(parse);result.catch(()=>{});
+  await until(async()=>await db.sql("SELECT exists(SELECT 1 FROM pg_stat_activity WHERE application_name="+lit(name)+" AND wait_event_type='Lock');")==='t');
+  await until(async()=>await db.sql(kind==='job'?'SELECT claim_expires_at<=clock_timestamp() FROM public.whatsapp_inbound_jobs WHERE id='+lit(j.job_id):"SELECT last_activity_at+interval '2 hours'<=clock_timestamp() FROM private.app_session_activity WHERE session_id="+lit(f.session))==='t');
+ }finally{blocker.child.stdin.end('COMMIT;\n');await blocker.done;}
+ expect(await result).toMatchObject({ok:false,code:'authority_rejected'});
+ expect(await db.sql('SELECT fixed_ack_dispatch_token IS NULL FROM public.whatsapp_send_intents WHERE id='+lit(c.intent.id))).toBe('t');
+});
+
+it('prior-month staged reservation cannot mint dispatch authority',async()=>{
+ const f=await fixture();const j=(await claim(f)).jobs[0];await stage(j);const c=await sendClaim(j);expect(c).toMatchObject({ok:true});
+ // Synthetic persisted timestamp setup models a reservation crossing the Muscat month boundary; the database clock and production guards remain unchanged.
+ await db.sql("UPDATE public.whatsapp_inbound_jobs SET usage_period_start=private.wa_worker_month()-interval '1 month' WHERE id="+lit(j.job_id));
+ expect(await sendClaim(j)).toMatchObject({ok:false,code:'authority_rejected'});expect(await authorize(j,c)).toMatchObject({ok:false,code:'authority_rejected'});
+ expect(await db.sql('SELECT fixed_ack_dispatch_token IS NULL FROM public.whatsapp_send_intents WHERE original_job_id='+lit(j.job_id))).toBe('t');
+});
+it('accepted staged intent repair preserves its original prior-month accounting period',async()=>{
+ const f=await fixture();const j=(await claim(f)).jobs[0];await stage(j);const c=await sendClaim(j);expect(await authorize(j,c)).toMatchObject({ok:true});
+ const oldPeriod=await db.sql("SELECT private.wa_worker_month()-interval '1 month';");
+ await db.sql('UPDATE public.whatsapp_inbound_jobs SET usage_period_start='+lit(oldPeriod)+'::timestamptz WHERE id='+lit(j.job_id));
+ expect(await rpc('finalize_whatsapp_send_attempt',[c.intent.id,c.attempt_token,'accepted','synthetic-month-boundary-'+randomUUID()].map(lit).join(',')+',NULL,NULL')).toMatchObject({ok:true});
+ expect(await rpc('whatsapp_repair_fixed_ack',[f.company,f.phone,f.recipient].map(lit).join(','))).toMatchObject({ok:true,repaired:1,pending:0});
+ expect(await db.sql('SELECT usage_period_start='+lit(oldPeriod)+"::timestamptz AND usage_status='accepted' FROM public.whatsapp_inbound_jobs WHERE id="+lit(j.job_id))).toBe('t');
+ expect(await db.sql('SELECT count(*) FROM public.whatsapp_inbound_jobs WHERE company_id='+lit(f.company)+" AND usage_status IN('reserved','accepted','unknown') AND usage_period_start=private.wa_worker_month()")).toBe('0');
+});
+
+it('post-stage failed-forward recovery preserves new private history and three inbox sequences',async()=>{
+ const f=await fixture();expect(await auth(f,'SELECT public.whatsapp_thread_page('+lit(f.company)+','+lit(f.conversation)+',40,NULL);')).toMatchObject({ok:true});
+ const reviewActor=await actor(db);const r=await manualOrder(db,reviewActor,{environment:'live',approval:true});
+ const success=await storedEvent(db,reviewActor,r);expect(await settle(db,success.evidence)).toMatchObject({outcome:'granted'});
+ const reversal=await storedEvent(db,reviewActor,r,{raw:{is_refunded:true},eventStatus:'refunded',bind:false});expect(await settle(db,reversal.evidence)).toMatchObject({outcome:'lifecycle_review'});
+ expect(await rpc('whatsapp_revoke_meta_waba_authorization',"'740019999999','PARTNER_REMOVED',clock_timestamp()")).toMatchObject({ok:true});
+ const tables=['billing_lifecycle_reviews','billing_service_offers','billing_service_order_offers','billing_service_grants','whatsapp_meta_authorization_revocations','whatsapp_meta_inbound_evidence','whatsapp_fixed_ack_settings','whatsapp_inbox_read_markers'];
+ const digest=table=>db.sql("SELECT count(*)::text||'|'||md5(coalesce(string_agg(to_jsonb(t)::text,',' ORDER BY to_jsonb(t)::text),'')) FROM private."+table+' t;');
+ const before={};for(const table of tables){before[table]=await digest(table);expect(Number(before[table].split('|')[0]),table).toBeGreaterThan(0);}
+ const sequences=['whatsapp_inbox_conversation_sequence','whatsapp_inbox_message_sequence','whatsapp_inbox_event_sequence'];
+ const states={},continuation={};for(const name of sequences)states[name]=JSON.parse(await db.sql("SELECT json_build_object('last_value',last_value,'is_called',is_called) FROM public."+name));
+ const security=()=>db.sql("SELECT md5(coalesce(string_agg(p.oid::regprocedure::text||pg_get_functiondef(p.oid)||coalesce(p.proacl::text,''),'|' ORDER BY p.oid::regprocedure::text),'')) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname IN('public','private') AND (p.proname LIKE '%whatsapp%' OR p.proname LIKE 'billing_%');");
+ const originalSecurity=await security();
+ // Inject a later forward-transaction failure after committed stage/history creation. Roll back only that transaction; never restore a stale pre-change snapshot.
+ const transaction='BEGIN;SET LOCAL ROLE postgres;'+tables.map(table=>'ALTER TABLE private.'+table+' ADD COLUMN synthetic_failed_forward_marker boolean;').join('')+sequences.map(name=>"SELECT nextval('public."+name+"');").join('')+"DO $$BEGIN RAISE EXCEPTION 'SYNTHETIC_LATER_FORWARD_FAILURE';END;$$;COMMIT;";
+ await expect(db.sql(transaction)).rejects.toThrow(/SYNTHETIC_LATER_FORWARD_FAILURE/);
+ for(const table of tables){expect(await digest(table),table).toBe(before[table]);expect(await db.sql("SELECT count(*) FROM information_schema.columns WHERE table_schema='private' AND table_name="+lit(table)+" AND column_name='synthetic_failed_forward_marker';")).toBe('0');}
+ expect(await security()).toBe(originalSecurity);
+ for(const name of sequences){const current=JSON.parse(await db.sql("SELECT json_build_object('last_value',last_value,'is_called',is_called) FROM public."+name));expect(current.is_called).toBe(true);expect(current.last_value).toBeGreaterThan(states[name].last_value);continuation[name]=Number(await db.sql("SELECT nextval('public."+name+"');"));expect(continuation[name]).toBeGreaterThan(current.last_value);}
+ // Forward continuation still uses existing authorized RPCs and generates real message/event sequence values.
+ const next=await inbound(f);expect(next).toMatchObject({ok:true});expect(Number(await db.sql('SELECT arrival_sequence FROM public.whatsapp_messages WHERE id='+lit(next.message_id)))).toBeGreaterThan(continuation.whatsapp_inbox_message_sequence);expect(await control(f,'take_over')).toMatchObject({ok:true});expect(Number(await db.sql('SELECT max(event_sequence) FROM public.whatsapp_conversation_events WHERE company_id='+lit(f.company)))).toBeGreaterThan(continuation.whatsapp_inbox_event_sequence);
 });

@@ -166,6 +166,11 @@ declare j public.whatsapp_inbound_jobs%rowtype;i public.whatsapp_send_intents%ro
  select * into i from public.whatsapp_send_intents where id=p_intent_id and company_id=j.company_id and original_job_id=j.id and response_kind='fixed_ack_v1' for update;
  if not found or i.body<>private.whatsapp_fixed_ack_text() or i.outcome<>'attempting' or i.attempt_token is distinct from p_attempt_token or i.attempt_expires_at<=clock_timestamp()
  or i.fixed_ack_dispatch_token is not null or i.expected_automation_generation<>j.expected_automation_generation or not private.whatsapp_intent_link_current(i) then return jsonb_build_object('ok',false,'code','dispatch_rejected');end if;
+ -- Time-based authority can expire while the final intent lock waits. All earlier locks are already held.
+ j:=private.whatsapp_fixed_ack_lock(p_job_id,p_claim_token);if j.id is null or j.response_kind is distinct from 'fixed_ack_v1' or j.send_intent_id is distinct from p_intent_id
+ or j.usage_status is distinct from 'reserved' or j.usage_period_start is distinct from private.wa_worker_month() or j.claim_expires_at<=clock_timestamp()
+ then return jsonb_build_object('ok',false,'code','authority_rejected');end if;
+ if i.attempt_expires_at<=clock_timestamp() then return jsonb_build_object('ok',false,'code','dispatch_rejected');end if;
  service_window:=private.whatsapp_service_window(i.company_id,i.conversation_id,i.phone_number_id,i.recipient_wa_id);if service_window->>'ok' is distinct from 'true' then return service_window;end if;
  perform set_config('velora.fixed_ack_dispatch','1',true);update public.whatsapp_send_intents set fixed_ack_dispatch_token=p_attempt_token,fixed_ack_authorized_at=clock_timestamp() where id=i.id;
  return jsonb_build_object('ok',true,'intent_id',i.id,'company_id',i.company_id,'conversation_id',i.conversation_id,'phone_number_id',i.phone_number_id,'recipient_wa_id',i.recipient_wa_id,
