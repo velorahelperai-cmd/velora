@@ -9,7 +9,7 @@ export const metadata: Metadata = { title: "Dashboard · Velora" };
 export default async function Page() {
   const [readiness,leads] = await Promise.all([getCustomerReadiness(),loadWhatsappInboxInitialPage()]);
   return (
-    <Suspense fallback={<main className="min-h-svh bg-[#07110d]" aria-busy="true" />}>
+    <Suspense fallback={<main className="min-h-svh app-shell" aria-busy="true" />}>
       <DashboardPage
         initialLeads={leads}
         initialReadiness={readiness.ok ? readiness.data : null}

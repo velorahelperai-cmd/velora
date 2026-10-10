@@ -6,7 +6,7 @@ export const metadata: Metadata = { title: "Sign in · Velora" };
 
 export default function Page() {
   return (
-    <Suspense fallback={<main className="min-h-svh bg-[#07110d]" aria-busy="true" />}>
+    <Suspense fallback={<main className="min-h-svh app-shell" aria-busy="true" />}>
       <LoginPage />
     </Suspense>
   );

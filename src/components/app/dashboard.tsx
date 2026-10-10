@@ -165,7 +165,7 @@ function DashboardBillingCard({ companyId }: { companyId: string | null }) {
           </div>
           {snapshot.usedPercent !== null ? (
             <div
-              className="h-3 w-full overflow-hidden rounded-full bg-white/10 p-0.5"
+              className="h-3 w-full overflow-hidden rounded-full bg-[var(--color-hover-wash)] p-0.5"
               role="progressbar"
               aria-label={text.title}
               aria-valuemin={0}
@@ -319,7 +319,7 @@ function DashboardDecoupledPillars({
 
   return (
     <section
-      className="mb-6 rounded-3xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel)] p-5 shadow-[0_12px_32px_rgba(0,0,0,0.25)] sm:p-6"
+      className="mb-6 rounded-3xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel)] p-5 shadow-[0_8px_24px_rgba(16,27,22,0.06)] sm:p-6"
       aria-label={ar ? "حالات المنظومة الخمس المستقلة" : "5 Decoupled System Pillars"}
     >
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[color:var(--color-border-soft)] pb-4">
@@ -340,7 +340,7 @@ function DashboardDecoupledPillars({
               : "Strict decoupling of subscription, setup, Meta verification, review, and live AI activation."}
           </p>
         </div>
-        <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-[#b7c6b9]">
+        <span className="rounded-full bg-[var(--color-hover-wash)] px-3 py-1 text-xs font-medium text-[var(--color-muted-on-dark)]">
           {ar ? "تحقق أمني مستقل" : "Independent Verification"}
         </span>
       </div>
@@ -352,7 +352,7 @@ function DashboardDecoupledPillars({
           return (
             <div
               key={p.num}
-              className="flex flex-col justify-between rounded-2xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel-deep)] p-4 transition hover:border-white/20"
+              className="flex flex-col justify-between rounded-2xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel-deep)] p-4 transition hover:border-[color:var(--color-line)]"
             >
               <div>
                 <span className="text-[11px] font-bold text-[#9af0c3]">#{p.num}</span>
@@ -621,7 +621,7 @@ export function DashboardPage({
               className={`flex h-7 w-7 items-center justify-center rounded-lg text-sm ${
                 awaitingStaffCount && awaitingStaffCount > 0
                   ? "bg-[#d9a467]/25 text-[#f0cf9d]"
-                  : "bg-white/10 text-[#b7c6b9]"
+                  : "bg-[var(--color-hover-wash)] text-[var(--color-muted-on-dark)]"
               }`}
             >
               👤
@@ -677,7 +677,7 @@ export function DashboardPage({
 
       {/* Interactive 8-Milestone Onboarding Stepper / Checklist */}
       <section
-        className="mb-6 rounded-3xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel)] p-5 shadow-[0_12px_32px_rgba(0,0,0,0.25)] sm:p-6"
+        className="mb-6 rounded-3xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel)] p-5 shadow-[0_8px_24px_rgba(16,27,22,0.06)] sm:p-6"
         aria-label={copy.app.readinessTitle}
       >
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -732,7 +732,7 @@ export function DashboardPage({
               return (
                 <li
                   key={item.id}
-                  className="flex flex-col justify-between rounded-2xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel-deep)] p-4 transition hover:border-white/20"
+                  className="flex flex-col justify-between rounded-2xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel-deep)] p-4 transition hover:border-[color:var(--color-line)]"
                 >
                   <div>
                     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -770,7 +770,7 @@ export function DashboardPage({
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Recent Conversations (2 Columns) */}
         <section
-          className="lg:col-span-2 rounded-3xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel)] p-5 shadow-[0_12px_32px_rgba(0,0,0,0.25)] sm:p-6"
+          className="lg:col-span-2 rounded-3xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel)] p-5 shadow-[0_8px_24px_rgba(16,27,22,0.06)] sm:p-6"
           aria-label={ar ? "محادثات من الصفحة المحمّلة" : "Conversations from the loaded page"}
         >
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-[color:var(--color-border-soft)] pb-3">
@@ -865,13 +865,13 @@ export function DashboardPage({
                         {isAutomated ? (ar ? "أتمتة مسموحة" : "Automation permitted") : (ar ? "موظف" : "Staff")}
                       </span>
                       {conv.leadStage ? (
-                        <span className="hidden sm:inline-flex rounded-full bg-white/5 border border-white/10 px-2 py-0.5 text-xs text-[#b7c6b9]">
+                        <span className="hidden sm:inline-flex rounded-full bg-[var(--color-hover-wash)] border border-[color:var(--color-border-soft)] px-2 py-0.5 text-xs text-[var(--color-muted-on-dark)]">
                           {stageLabels[conv.leadStage] ?? conv.leadStage}
                         </span>
                       ) : null}
                       <Link
                         href={`/app/conversations?c=${conv.id}`}
-                        className="inline-flex h-8 items-center rounded-lg border border-[color:var(--color-border-soft)] px-2.5 text-xs font-medium text-[#f7fbf8] hover:bg-white/10"
+                        className="inline-flex h-8 items-center rounded-lg border border-[color:var(--color-border-soft)] px-2.5 text-xs font-medium text-[var(--color-on-dark)] hover:bg-[var(--color-hover-wash)]"
                       >
                         {ar ? "فتح" : "Open"}
                       </Link>
@@ -885,7 +885,7 @@ export function DashboardPage({
 
         {/* Knowledge & AI Readiness Card (1 Column) */}
         <section
-          className="rounded-3xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel)] p-5 shadow-[0_12px_32px_rgba(0,0,0,0.25)] sm:p-6"
+          className="rounded-3xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel)] p-5 shadow-[0_8px_24px_rgba(16,27,22,0.06)] sm:p-6"
           aria-label={ar ? "جاهزية معرفة نورا" : "Noura Knowledge Readiness"}
         >
           <div className="flex items-center gap-2.5">
