@@ -1,5 +1,5 @@
 import { KNOWLEDGE_BUCKET } from "@/lib/knowledge/constants";
-import { generationFromListedObject } from "@/lib/knowledge/invalidate";
+import { readExactStorageGeneration, type ExactGenerationRpc } from "@/lib/knowledge/exact-generation";
 import { readBoundedKnowledgeStream } from "@/lib/knowledge/bounded-read";
 import { checkReviewFiles, type ReviewFile, type ReviewStorageReader } from "./review-file-proof";
 
@@ -42,20 +42,20 @@ export async function prepareReviewProof(
   } catch { return { ok: false, code: "UNAVAILABLE" }; }
 }
 
-// Uses actual installed Storage SDK list/download APIs, not hypothetical metadata APIs.
+// Exact actor-scoped database generation around the actual bounded Storage download.
 export function reviewStorageReader(bucket: {
-  list(path: string, options: { search: string; limit: number }, parameters: { signal: AbortSignal }): PromiseLike<{ data: { name: string; id?: string | null; updated_at?: string | null }[] | null; error: unknown }>;
   download(path: string, options: Record<string, never>, parameters: { signal: AbortSignal; cache: "no-store" }): {
     asStream(): PromiseLike<{ data: ReadableStream<Uint8Array> | null; error: unknown }>;
   };
-}): ReviewStorageReader {
+}, scope: { client: ExactGenerationRpc; companyId: string; action: ReviewProofInput["action"] }): ReviewStorageReader {
   return {
     async generation(path, signal) {
-      const slash = path.lastIndexOf("/");
-      const name = path.slice(slash + 1);
-      const result = await bucket.list(path.slice(0, slash), { search: name, limit: 50 }, { signal });
-      if (result.error) throw Error("STORAGE_UNAVAILABLE");
-      return generationFromListedObject(result.data?.find(object => object.name === name));
+      const result = await readExactStorageGeneration(scope.client, {
+        companyId: scope.companyId, sourceId: path.split("/")[1] ?? "",
+        storagePath: path, action: scope.action,
+      }, signal);
+      if (result.status === "error" || result.status === "unreadable") throw Error("STORAGE_UNAVAILABLE");
+      return result.status === "ok" ? result.generation : null;
     },
     async download(path, signal) {
       const result = await bucket.download(path, {}, { signal, cache: "no-store" }).asStream();

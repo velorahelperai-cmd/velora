@@ -120,7 +120,7 @@ async function callTransitionCompanyReview(input: {
     if (input.action !== "request_changes") {
       const admin = createAdminClient();
       const proof = await prepareReviewProof(supabase as unknown as ReviewRpc, admin as unknown as ReviewRpc | null,
-        { ...input, action: input.action }, admin ? reviewStorageReader(admin.storage.from(KNOWLEDGE_BUCKET)) : undefined);
+        { ...input, action: input.action }, admin ? reviewStorageReader(admin.storage.from(KNOWLEDGE_BUCKET), { client: supabase, companyId: input.companyId, action: input.action }) : undefined);
       if (!proof.ok) return {
         ok: false, code: proof.code === "CONFLICT" ? "CONFLICT" : "UNAVAILABLE", message: proof.code,
         data: asReviewRequest(proof.request) ?? undefined,

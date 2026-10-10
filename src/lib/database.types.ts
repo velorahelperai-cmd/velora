@@ -580,6 +580,7 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      g03_read_file_generation: { Args: { p_source_id: string; p_company_id: string; p_storage_path: string; p_action?: string }; Returns: Json };
       list_owner_company_review_events_for_company: { Args: {p_company_id:string}; Returns:Json };
       ai_settle_admin_attempt: { Args: {p_id:string;p_status:string;p_cost_usd:number|null;p_cost_baisa:number|null;p_usage:Json;p_request_id:string|null;p_error_code:string|null;p_latency_ms:number;p_response_id:string|null;p_actual_model_id:string|null}; Returns:boolean };
       whatsapp_inbox_page: { Args: {p_company_id:string;p_limit?:number;p_before?:string|null}; Returns:Json };

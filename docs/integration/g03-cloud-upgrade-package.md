@@ -479,3 +479,57 @@ weakening, new key, paid service, code deployment or live provider execution.
   c5c26f7842a4871739a5c791643f72c1d6edae5a1178477e5dbfd6831be3d00f.
 - Nonblocking UI observation: successful knowledge writes refresh back to wizard
   step 2. No design/product changes made to address that in this validation task.
+
+## Exact file generation fix — local verification, production gate pending
+
+Execution verified on DESKTOP-MTS10SN, Windows 10.0.19045, intended
+main-consolidation worktree, initially clean main at
+41f15fd1133b73cdb202f6392f286aa211ec00c8. Default sandbox setup failed before
+process launch; normal approval-reviewed PowerShell execution succeeded.
+No other listed Velora task was active. No Obsidian files were accessed.
+
+Read-only cloud inspection confirmed reviewed publication/actor definitions and
+retained synthetic QA state: 214 bytes, processing/version 2, no preparation
+proof, unapproved; Storage object exists with microsecond updated_at. The exact
+original POST response is still unknown. HTTP 200 is not readiness evidence.
+
+The reproduced defect is precision loss at the Storage list boundary:
+readStorageObjectGeneration -> Storage.list -> generationFromListedObject ->
+publishPreparedFile -> SQL exact updated_at comparison. A first isolated
+expectation of successful publication with JavaScript Date serialization failed.
+The same bytes/source/version/object then published with the exact microsecond
+string. Prior SQL-direct application tests retained timestamp precision and
+missed this transport boundary. This is a confirmed deterministic defect, not
+proof that it was the sole cause of the original live POST failure.
+
+The local fix uses one additive authenticated metadata RPC,
+g03_read_file_generation, with the existing G03 confirmed-email/session/idle,
+tenant and owner/writer/reviewer checks. It returns canonical UTC microseconds as
+text, joined to the exact company/source/path. Source preparation, repair and
+review readers preserve that string around bounded real downloads. No Storage
+listing or reconstructed fractional digits are used as the identity source.
+Existing publication SQL, file/text hash guards, approval/version invalidation,
+review epochs and authorization are unchanged. Missing RPCs fail closed.
+
+Validation: default suite 1367 PASS / 42 SKIP; focused knowledge/review suite
+66 PASS / 1 SKIP; exact-read/upload/review isolated PostgreSQL 11 PASS; existing
+G03 PostgreSQL acceptance 24 PASS. TypeScript and production build PASS. Lint
+has zero errors and one existing unused _result warning in billing/paymob/
+reconcile.ts:344. The corrupt-PDF test emits its expected indexing warning.
+Test fixture failures were corrected: automatic Storage updated_at overwrote
+an explicit timestamp; membership revocation uses disabled, not revoked; TXT
+extraction requires at least eight characters. The same-ms fixture overrides
+only the automatic timestamp trigger inside its owned synthetic container;
+Storage invalidation/authorization/publication guards remain enabled.
+
+Synthetic transport shims invoke real actions/extraction and real PostgreSQL
+ACLs/RLS/triggers/RPCs; they are not cloud Auth/Storage acceptance. Browser
+inventory exposes no connected QA/admin session. Live acceptance, original QA
+file repair and QA B isolation remain BLOCKED/NOT RUN. No cloud write, SQL
+application, retry/reupload, provider call, push or deployment was performed.
+
+The separate approval package is [g03-exact-generation-release.md](g03-exact-generation-release.md).
+Do not reapply the already installed 00/10 packages. Their replay in tests is
+limited to fresh UUID-labeled network-none/tmpfs PostgreSQL containers; existing
+containers are untouched. The private metadata is data-free and outside Git;
+no private recovery log, credential, customer content or backup is printed.

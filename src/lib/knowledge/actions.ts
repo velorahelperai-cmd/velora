@@ -12,13 +12,13 @@ import {
   validateKnowledgeFile,
 } from "@/lib/knowledge/constants";
 import { extractKnowledgeText } from "@/lib/knowledge/extract";
+import { readExactStorageGeneration } from "@/lib/knowledge/exact-generation";
 import { publishPreparedFile } from "@/lib/knowledge/prepared-publication";
 import { readBoundedKnowledgeStream } from "@/lib/knowledge/bounded-read";
 import { isExactMissingApprovalColumnError } from "@/lib/knowledge/foundation";
 import {
   beginKnowledgeProcessing,
   clearAnswerEligibility,
-  generationFromListedObject,
   objectGenerationMatches,
   bindDownloadedBytesToObject,
   type KnowledgeUpdateClient,
@@ -196,40 +196,15 @@ function isStorageObjectMissingError(message?: string | null) {
   );
 }
 
-type ListedStorageObject = {
-  id?: string | null;
-  name: string;
-  updated_at?: string | null;
-};
-
-type ObjectGenerationRead =
-  | { status: "ok"; generation: StorageObjectGeneration }
-  | { status: "missing" }
-  | { status: "unreadable" }
-  | { status: "error"; message: string };
-
-/** Object id + updated_at at this path. Presence/size alone is not a generation. */
+/** Read exact database generation through the actor-scoped contract; no list fallback. */
 async function readStorageObjectGeneration(
   supabase: Awaited<ReturnType<typeof createClient>>,
   companyId: string,
   sourceId: string,
   storagePath: string,
-): Promise<ObjectGenerationRead> {
-  const folder = `${companyId}/${sourceId}`;
-  const filePart = storagePath.split("/").pop();
-  if (!filePart) return { status: "missing" };
-  const { data: listed, error: listError } = await supabase.storage
-    .from(KNOWLEDGE_BUCKET)
-    .list(folder, { limit: 50 }, { signal: AbortSignal.timeout(10_000) });
-  if (listError) {
-    if (isStorageObjectMissingError(listError.message)) return { status: "missing" };
-    return { status: "error", message: listError.message };
-  }
-  const object = ((listed ?? []) as ListedStorageObject[]).find((o) => o.name === filePart) ?? null;
-  if (!object) return { status: "missing" };
-  const generation = generationFromListedObject(object);
-  if (!generation) return { status: "unreadable" };
-  return { status: "ok", generation };
+) {
+  const read = await readExactStorageGeneration(supabase, { companyId, sourceId, storagePath });
+  return read.status === "error" ? { status: "error" as const, message: "STORAGE_UNAVAILABLE" } : read;
 }
 
 /**
@@ -760,13 +735,9 @@ export async function repairStoredKnowledgeFile(
       return { ok: false, code: "INVALID_INPUT", message: "not_repairable" };
     }
 
-    const { data: listed, error: listError } = await ctx.supabase.storage
-      .from(KNOWLEDGE_BUCKET)
-      .list(`${ctx.companyId}/${existing.id}`, { limit: 20 });
-    if (listError) return { ok: false, code: "STORAGE_ERROR", message: listError.message };
-    const filePart = existing.storage_path.split("/").pop();
-    const object = ((listed ?? []) as ListedStorageObject[]).find((o) => o.name === filePart) ?? null;
-    const captured = generationFromListedObject(object);
+    const read = await readStorageObjectGeneration(ctx.supabase, ctx.companyId, existing.id, existing.storage_path);
+    if (read.status === "error") return { ok: false, code: "STORAGE_ERROR", message: read.message };
+    const captured = read.status === "ok" ? read.generation : null;
     if (!captured) {
       const failed = await markFileFailed(
         ctx.supabase,
@@ -780,7 +751,7 @@ export async function repairStoredKnowledgeFile(
       return {
         ok: false,
         code: "STORAGE_ERROR",
-        message: object ? "OBJECT_IDENTITY_UNREADABLE" : "OBJECT_MISSING",
+        message: read.status === "unreadable" ? "OBJECT_IDENTITY_UNREADABLE" : "OBJECT_MISSING",
         data: failed ?? undefined,
       };
     }
@@ -798,10 +769,11 @@ export async function repairStoredKnowledgeFile(
       return { ok: true, data: asSource(data, ctx.approvalFoundation) };
     }
 
-    const { data: fileBlob, error: downloadError } = await ctx.supabase.storage
+    const signal = AbortSignal.timeout(10_000);
+    const { data: fileStream, error: downloadError } = await ctx.supabase.storage
       .from(KNOWLEDGE_BUCKET)
-      .download(existing.storage_path);
-    if (downloadError || !fileBlob) {
+      .download(existing.storage_path, {}, { signal, cache: "no-store" }).asStream();
+    if (downloadError || !fileStream) {
       await markFileFailed(
         ctx.supabase,
         existing.id,
@@ -817,7 +789,7 @@ export async function repairStoredKnowledgeFile(
       ctx.supabase,
       asSource(existing, ctx.approvalFoundation),
       ctx.companyId,
-      new Uint8Array(await fileBlob.arrayBuffer()),
+      await readBoundedKnowledgeStream(fileStream, signal),
       captured,
       ctx.approvalFoundation,
     );
