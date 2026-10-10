@@ -449,3 +449,33 @@ weakening, new key, paid service, code deployment or live provider execution.
   Different user/company IDs, actual Auth/Storage preparation, verified submit,
   admin decision, replay/stale proof/revocation and isolation still await the two
   accounts. Prior local PostgreSQL 24/24 is not relabeled as cloud acceptance.
+
+## Live QA checkpoint — 2026-10-10, file preparation blocked
+
+- SMTP deferred by the owner. Its pending masked credential helper was stopped
+  after checking the exact task process identity; no SMTP configuration or plan
+  change. Six-digit Auth code remains a local change, not a deployed flow.
+- QA A signup/email confirmation and authenticated session verified. QA B exact
+  email lookup still absent. Existing official admin remains an active platform
+  owner; no new platform grants. Two-owner isolation is NOT RUN.
+- Four bounded live checks PASS: QA A company persisted with its owner membership;
+  synthetic text source saved; version 1 explicitly approved by that same owner;
+  synthetic 214-byte TXT stored in the company/source-specific Storage path.
+- File preparation NOT READY: after the upload action returned, its row remains
+  `processing`, version 2, unapproved, with all three preparation-proof fields
+  NULL. UI agrees (processing / retry). It was not retried or force-approved.
+- One `g03_publish_prepared_file` POST appears in the relevant log window with
+  `service_role` and HTTP 200. That proves endpoint execution, not `ok:true` or
+  trusted preparation; response body was not observed. Exact root cause remains
+  UNVERIFIED. The uploaded source/object and previous text history are retained.
+- Review submit/admin decision, replay/stale-proof/revocation and cross-company
+  checks remain NOT RUN. Stopped further cloud writes at this failed acceptance
+  gate per owner instructions; no third SQL repair, provider execution, paid
+  service, push or deployment. Actual G03 functional readiness remains BLOCKED.
+- Private evidence: `g03-qa-functional-checkpoint.json`, fixture
+  `g03-qa-a-synthetic.txt` and `g03-qa-a-file-processing.jpg` in the existing private
+  recovery run listed above. QA IDs stay in private evidence, not this report.
+  Fixture SHA-256:
+  c5c26f7842a4871739a5c791643f72c1d6edae5a1178477e5dbfd6831be3d00f.
+- Nonblocking UI observation: successful knowledge writes refresh back to wizard
+  step 2. No design/product changes made to address that in this validation task.
