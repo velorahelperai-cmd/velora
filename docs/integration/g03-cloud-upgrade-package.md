@@ -362,3 +362,41 @@ backup gate has NOT passed; therefore neither SQL file has been applied.
   only under the already authorized private recovery folder, run
   e1dc757c-ea9c-4d90-90d7-b49fdebb55ba. Next prerequisite is a validated existing DB
   credential, supplied locally by the owner; no automatic reset is authorized.
+
+## Read-only PostgreSQL password-change impact check — 2026-10-10
+
+Owner requested manual instructions only. No Reset action, credential change,
+SQL write, environment change or deployment was performed.
+
+- Verified application code uses Supabase HTTPS URL + publishable/service-role API
+  keys, not PostgreSQL password: src/lib/supabase/env.ts:2-3, server.ts:13 and
+  admin.ts:5-8. Password rotation does not require rotating these API keys or
+  changing Velora user passwords; continuous platform availability isn't promised.
+- Read-only Vercel project Environment Variables UI showed 14 configured names,
+  including the three expected Supabase API settings, no DATABASE_URL/POSTGRES_URL/
+  SUPABASE_DB_URL/PGPASSWORD-style variable, and no shared variables linked. Values
+  were not revealed. This supports no deployed direct-PG password dependency in
+  the inspected project, not a guarantee about external services/devices.
+- Known affected connection: this task's DPAPI-protected postgres Session Pooler
+  credential, which must be replaced locally after the owner changes the password.
+  Optional scripts/apply-vel005a.mjs:61 supports SUPABASE_DB_URL, but no configured
+  DB URL was found in the 18 registered worktrees / four standard configuration
+  files inspected. That legacy script is not an approved route for this task and
+  its rejectUnauthorized:false path must not be used. Local isolated test database
+  credentials are synthetic and independent of the production postgres password.
+- Current read-only pg_stat_activity snapshot showed authenticator/PostgREST,
+  pgbouncer, supabase_admin and postgres_exporter clients. No separate external
+  postgres client was observed; dormant clients, scheduled jobs, outside machines,
+  unregistered repository copies and inaccessible services aren't excluded.
+- Manual path: open the target project Database > Settings > Database password >
+  Reset password. Owner chooses a fresh strong password, saves it privately and
+  personally submits the change. The assistant didn't click Reset. Update any
+  independently known postgres clients, then enter the new value only in the
+  task's local masked prompt. Keep host/user/port and verify-full + official CA.
+- The shared pooler may briefly cache the previous credential after rotation;
+  don't rotate repeatedly or retry in a loop. Verify the new credential and then
+  continue backup verification before either approved migration. No application
+  or backup success is inferred from completing the password change.
+
+Official instructions: [database password](https://supabase.com/docs/guides/troubleshooting/how-do-i-reset-my-supabase-database-password-oTs5sB),
+[pooler cache after rotation](https://supabase.com/docs/guides/troubleshooting/supavisor-error-password-authentication-failed-after-password-rotation).
