@@ -1,6 +1,7 @@
 // Opt-in synthetic PostgreSQL acceptance, no credentials/URL/.env or provider SDK.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { isolatedPostgres,lit } from '../g03-review-acceptance/postgres.mjs';
 import { assemble } from './build.mjs';
 const metadata=process.argv[2];if(!metadata)throw Error('PRIVATE_METADATA_PATH_REQUIRED');
@@ -46,6 +47,28 @@ INSERT INTO public.knowledge_sources(id,company_id,kind,title,content,status,fil
   await assert.rejects(db.sql(broken),/synthetic_postflight_failure/);
   assert.equal(await db.sql("SELECT to_regclass('private.g03_review_checks') IS NULL;"),'t');
   assert.equal(await snapshot(),before);assert.equal(JSON.parse(await direct(other)).code,'UPGRADE_PENDING');
+ });
+ await c('unsafe RLS baseline drift refuses upgrade',async()=>{
+  await db.sql('ALTER TABLE public.knowledge_sources DISABLE ROW LEVEL SECURITY;');
+  try{await assert.rejects(db.sql(bundle),/BASELINE_SECURITY_MISMATCH/);}
+  finally{await db.sql('ALTER TABLE public.knowledge_sources ENABLE ROW LEVEL SECURITY;');}
+ });
+ for(const [name,poison,restore] of [
+  ['broad column/table grant','GRANT UPDATE ON public.knowledge_sources TO authenticated;','REVOKE UPDATE ON public.knowledge_sources FROM authenticated; GRANT UPDATE(kind,title,content,file_name,content_type,byte_size,storage_path,status,updated_at,failure_code) ON public.knowledge_sources TO authenticated;'],
+  ['helper SECURITY DEFINER','ALTER FUNCTION private.require_active_owner(uuid) SECURITY INVOKER;','ALTER FUNCTION private.require_active_owner(uuid) SECURITY DEFINER;'],
+  ['disabled approval triggers','ALTER TABLE public.knowledge_sources DISABLE TRIGGER USER;','ALTER TABLE public.knowledge_sources ENABLE TRIGGER USER;'],
+  ['schema ownership','ALTER SCHEMA private OWNER TO supabase_admin;','ALTER SCHEMA private OWNER TO postgres;']
+ ])await c(`unsafe ${name} baseline drift refuses upgrade`,async()=>{
+  await db.sql(poison);try{await assert.rejects(db.sql(bundle),/BASELINE_SECURITY_MISMATCH/);}finally{await db.sql(restore);}
+  const hash=await db.sql("BEGIN;SET LOCAL search_path='';"+readFileSync('supabase/upgrade-packages/g03-cloud-compatibility/baseline-security-query.sql','utf8')+'COMMIT;');
+  assert.equal(hash,'cdb8ae52ae909fb63751029c782a2eabd967bf15f3cafd37e87cccfcad113952',`fixture restore changed baseline: ${name}`);
+ });
+ await c('unsafe tenant policy drift refuses upgrade',async()=>{
+  const policy=JSON.parse(await db.sql("SELECT jsonb_build_object('name',polname,'using',pg_get_expr(polqual,polrelid)) FROM pg_policy WHERE polrelid='public.knowledge_sources'::regclass AND polcmd='r' AND polpermissive ORDER BY polname LIMIT 1;"));
+  const name='"'+policy.name.replaceAll('"','""')+'"';
+  await db.sql(`ALTER POLICY ${name} ON public.knowledge_sources USING(true);`);
+  try{await assert.rejects(db.sql(bundle),/BASELINE_SECURITY_MISMATCH/);}
+  finally{await db.sql(`ALTER POLICY ${name} ON public.knowledge_sources USING(${policy.using});`);}
  });
  await c('atomic upgrade preserves all historical columns/content/audit rows',async()=>{await db.sql(bundle);assert.equal(await snapshot(),before);});
  await c('legacy files retain no fabricated extraction proof',async()=>{

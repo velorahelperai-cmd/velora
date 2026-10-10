@@ -50,7 +50,7 @@ application proposal, not cloud authorization.
 - [x] Test populated upgrade/rollback, legacy writer refusal, privilege matrix,
       knowledge/file application paths, and all 24 G03 cases on the cloned baseline.
 - [x] Verify application tests/typecheck/lint/build; record limitations and results.
-- [ ] Commit locally; prepare an Antigravity independent-review handoff, no push.
+- [x] Commit locally; prepare an Antigravity independent-review handoff, no push.
 
 ## Inventory and package boundary
 
@@ -100,7 +100,9 @@ migrations to hide these gaps. Their own reviewed upgrade package is required.
    The brief installation window may block setup/knowledge/permission writers.
 4. Apply ONLY 10-upgrade.review.sql in one transaction, under postgres, with
    lock_timeout 2s/statement_timeout 30s. Hash-check helpers and absence of partial
-   G03, add usage_role/version invalidation, reuse immutable approved G03 and
+   G03 and a scoped catalog SHA-256 fingerprint (RLS/policies/ACL/default grants,
+   schema/table owners, columns/constraints/triggers/helper security attributes),
+   add usage_role/version invalidation, reuse immutable approved G03 and
    scoped history SQL, revoke old inherited grants, run postflight, notify the
    Data API cache, commit. Reapply/unknown baseline aborts without resets.
 5. Verify all six public RPC signatures/ACL, eight new columns, five triggers,
@@ -142,9 +144,12 @@ node node_modules/vitest/vitest.mjs run --config scripts/g03-cloud-upgrade/vites
 
 - RED actual baseline: G03 direct-submit regression failed because old RPC returned
   true without proof; missing published columns/history reproduced separately.
-- GREEN native upgrade: **12 PASS / 0 FAIL**. Includes populated history/content
+- GREEN native upgrade: **18 PASS / 0 FAIL**. Includes populated history/content
   preservation, repeat containment, separate backend drain, injected postflight
-  rollback, role-only edit invalidation, replay refusal and service/anon/tenant ACL.
+  rollback, role-only edit invalidation, replay refusal and service/anon/tenant ACL;
+  refusal of RLS, broad UPDATE, SECURITY DEFINER, trigger, schema-owner and tenant
+  policy drift. Fixture restoration regrants captured column UPDATE permissions:
+  PostgreSQL table-level REVOKE also removes those; the guard caught that too.
 - G03 on cloned actual schema: **24 PASS / 0 FAIL**, including real multi-session
   locks, revocation, Storage-generation change and audit rollback.
 - Actual app functions with native PostgreSQL: **4 PASS / 0 FAIL**. Save text,
@@ -162,8 +167,10 @@ node node_modules/vitest/vitest.mjs run --config scripts/g03-cloud-upgrade/vites
 - Cloud writes / customer-data copies / paid calls: **0**. Cloud G03 still absent
   in a subsequent catalog-only check. Nothing pushed or deployed.
 
-SQL manifest hashes are SHA-256 of UTF-8 with LF line endings; rebuilding and the
-offline reproduction check detect differing content, including Git CRLF checkout.
+SQL manifest hashes are SHA-256 of UTF-8 with LF line endings. Rebuild before any
+approved application, then independently compare actual file hashes to manifest.
+The offline reproduction check compares canonical content, not arbitrary raw
+transport bytes or manifest consistency; Git CRLF checkout is not deployable as-is.
 Only project-authored SQL and hashes are committed; actual captured definitions
 and their rendered clone stay private, never Git or NotebookLM.
 
@@ -181,3 +188,22 @@ Antigravity was available here. Owner must provide the handoff to that reviewer.
 Local compatibility scope: knowledge/setup-review only. Whole-site staging and
 cloud application remain BLOCKED pending independent review, separate approval,
 the eleven out-of-scope contracts and real Auth/Storage acceptance.
+
+## Final internal review and fix pass
+
+Fresh Codex reviewer (not Antigravity) reviewed c36f2286..5c0f023. Important finding:
+disabled knowledge RLS was accepted by the original preflight. Regression watched
+RED (missing expected rejection), fixed by the scoped catalog SHA-256 guard;
+GREEN 18/18 native cases. Expected fingerprint from a separate authorized READ
+ONLY catalog query: cdb8ae52ae909fb63751029c782a2eabd967bf15f3cafd37e87cccfcad113952.
+The query is project-authored; no captured schema bodies were added to Git.
+Restoring captured schema ownership was necessary for matching this guard, rather
+than loosening it to accommodate the clone. Final fix reruns G03/app/quality checks.
+
+Final: Ruling: strict unknown-baseline refusal wins over permissive application;
+scope includes default/schema grants and dependency security attributes. Cost:
+legitimate schema drift requires a new reviewed capture/package, not an override.
+Final: minor (deferred): binary artifact/manifest verifier and CRLF transport
+normalization are not automated. Mandatory operator rebuild + raw SHA validation
+before any application; direct CRLF containment can fail later proof comparison,
+leaving the review path safely contained. No claim of byte-for-byte verification.

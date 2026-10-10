@@ -44,7 +44,12 @@ function approved(path,expected) {
  return s.replace(/\nbegin;\n/,'\n').replace(/commit;\s*$/,'');
 }
 export function assemble() {
- const containment=header+`do $$ begin ${noPartial}
+ const securityQuery=read(`${dir}/baseline-security-query.sql`).trim().replace(/;$/,'');
+ const guard=`do $$ declare fingerprint text; begin
+ ${securityQuery} into fingerprint;
+ if fingerprint is distinct from 'cdb8ae52ae909fb63751029c782a2eabd967bf15f3cafd37e87cccfcad113952' then raise exception 'BASELINE_SECURITY_MISMATCH';end if;
+ end $$;\n`;
+ const containment=header+guard+`do $$ begin ${noPartial}
  if coalesce((select md5(prosrc) from pg_proc where oid=to_regprocedure('${signature}')),'') not in ('59ad4b24f323db4a7233f4661de0c7bc','${containmentMD5}') then raise exception 'LEGACY_WRITER_MISMATCH';end if;
  end $$;
 create or replace function public.transition_company_review(p_action text,p_company_id uuid,p_expected_revision integer default null,p_number_ownership text default null,p_whatsapp_number text default null,p_readiness_confirmed boolean default null,p_owner_note text default null)
@@ -66,7 +71,7 @@ lock table public.companies,public.knowledge_sources,public.company_review_reque
 `;
  const source='supabase/migrations/20261009215520_g03_verified_review.sql';
  const history='supabase/migrations/20261008170000_vel_owner_review_scope_read.sql';
- const bundle=header+preflight+read(`${dir}/20261010003237_g03_cloud_knowledge_prerequisites.sql`)
+ const bundle=header+preflight+guard+read(`${dir}/20261010003237_g03_cloud_knowledge_prerequisites.sql`)
   +approved(source,'62196103d37cd39310f469ab44de4f215327258308e8c422be86ed025ddfc83a')
   +approved(history,'5618c7f9b098792959634c0fbc2804034329678aa3c8722ac7c8ed2f66119a63')
   +acl+'\n'+read(`${dir}/postflight.sql`)+"\nnotify pgrst,'reload schema';\ncommit;\n";

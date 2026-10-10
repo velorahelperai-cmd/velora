@@ -31,6 +31,7 @@ export function renderSchema(m) {
   for(const x of s.roles)sql.push(`DO $$ BEGIN IF NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname=${literal(x.name)}) THEN CREATE ROLE ${q(x.name)} ${x.inherit?'INHERIT':'NOINHERIT'} ${x.bypass_rls?'BYPASSRLS':'NOBYPASSRLS'}; END IF; END $$;`);
   for(const x of s.memberships)sql.push(`GRANT ${q(x.role)} TO ${q(x.member)}${x.admin?' WITH ADMIN OPTION':''};`);
   for(const schema of ['auth','storage','private','extensions','public'])sql.push(`CREATE SCHEMA IF NOT EXISTS ${q(schema)};`);
+  for(const [schema,owner] of new Map(s.schema_acl.map(a=>[a.schema,a.owner])))sql.push(`ALTER SCHEMA ${q(schema)} OWNER TO ${q(owner)};`);
   for(const x of t.extensions)sql.push(`CREATE EXTENSION IF NOT EXISTS ${q(x.name)} WITH SCHEMA ${q(x.schema)};`);
   for(const x of t.enums)sql.push(`CREATE TYPE ${name(x.schema,x.name)} AS ENUM (${x.values.map(literal).join(',')});`);
   for(const x of s.sequences)sql.push(`CREATE SEQUENCE ${name(x.schema,x.name)} AS ${x.type} START ${x.start} MINVALUE ${x.minimum} ${x.type==='bigint' && !Number.isSafeInteger(x.maximum)?'NO MAXVALUE':`MAXVALUE ${x.maximum}`} INCREMENT ${x.increment} ${x.cycle?'CYCLE':'NO CYCLE'};`);
