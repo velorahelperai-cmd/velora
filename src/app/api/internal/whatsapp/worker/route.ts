@@ -21,7 +21,7 @@ export async function POST(request:Request){
  const claimed=await rpc.call(client,"whatsapp_claim_inbound_batch",{p_limit:1});
  const row=claimed.data as {ok?:boolean;jobs?:{job_id:string;claim_token:string;company_id:string}[]}|null;
  if(claimed.error||row?.ok!==true||!Array.isArray(row.jobs)||row.jobs.length>1||row.jobs.some(j=>!j||typeof j.job_id!=="string"||typeof j.claim_token!=="string"||typeof j.company_id!=="string"))return Response.json({code:"CLAIM_FAILED"},{status:503});
- let accepted=0;for(const job of row.jobs){const input={jobId:job.job_id,claimToken:job.claim_token,companyId:job.company_id};const r=await runInboundWorkerAnswer(input,createIntegrationPorts(input));if(r.ok)accepted++;}
+ let accepted=0;for(const job of row.jobs){const input={jobId:job.job_id,claimToken:job.claim_token,companyId:job.company_id};const r=await runInboundWorkerAnswer(input,createIntegrationPorts(input));if(r.sendAccepted)accepted++;}
  // No capabilities, secrets, customer bodies or provider text are returned.
  return Response.json({processed:row.jobs.length,accepted,delivered:0});
  }catch{

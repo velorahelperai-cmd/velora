@@ -13,8 +13,9 @@ export type IntegrationPorts={enabled:boolean;frame:()=>Promise<IntegrationFrame
  finalize:(id:string,token:string,result:"accepted"|"rejected"|"unknown",wamid:string|null,errorCode?:"graph_190")=>Promise<boolean>;
  finish:(id:string)=>Promise<string>;repair:(id:string)=>Promise<boolean>;
  retry:(code:string,uncertain:boolean,permanent?:boolean)=>Promise<void>;heartbeat:()=>Promise<boolean>};
-export type IntegrationOutcome={ok:false;code:string;jobCompleted:false;sendAccepted:false;delivered:false}|{ok:true;code:"ACCEPTED";jobCompleted:true;sendAccepted:true;delivered:false};
+export type IntegrationOutcome={ok:false;code:string;jobCompleted:boolean;sendAccepted:boolean;delivered:false}|{ok:true;code:"ACCEPTED";jobCompleted:true;sendAccepted:true;delivered:false};
 const blocked=(code:string):IntegrationOutcome=>({ok:false,code,jobCompleted:false,sendAccepted:false,delivered:false});
+const acceptedPending=(code:string,settled=false):IntegrationOutcome=>({ok:false,code,jobCompleted:settled,sendAccepted:true,delivered:false});
 export class WorkerInputError extends Error{constructor(readonly code:string){super(code);}}
 export async function runPersistedInboundJob(input:{jobId:string;claimToken:string;companyId:string},ports:IntegrationPorts):Promise<IntegrationOutcome>{
  if(!ports.enabled)return blocked("WORKER_DISABLED");
@@ -46,7 +47,8 @@ export async function runPersistedInboundJob(input:{jobId:string;claimToken:stri
  ||intent.phone_number_id!==frame.phone_number_id||intent.recipient_wa_id!==frame.recipient_wa_id)return fail("SEND_BINDING_REJECTED");
  if(claimed.claimed!==true){
  if(intent.outcome==="accepted"){
- if(!await ports.repair(intent.id)||await ports.finish(intent.id)!=="accepted")return blocked("ACCEPTANCE_PERSIST_PENDING");
+ try{if(await ports.finish(intent.id)!=="accepted")return acceptedPending("ACCEPTANCE_ACCOUNTING_PENDING");}catch{return acceptedPending("ACCEPTANCE_ACCOUNTING_PENDING");}
+ try{if(!await ports.repair(intent.id))return acceptedPending("ACCEPTANCE_PERSIST_PENDING",true);}catch{return acceptedPending("ACCEPTANCE_PERSIST_PENDING",true);}
  return {ok:true,code:"ACCEPTED",jobCompleted:true,sendAccepted:true,delivered:false};}
  if(intent.outcome==="attempting")return blocked("SEND_IN_PROGRESS_REQUIRES_REVIEW");
  return fail("SEND_REQUIRES_RECONCILIATION",true);
@@ -63,9 +65,11 @@ export async function runPersistedInboundJob(input:{jobId:string;claimToken:stri
  ?await ports.finalize(intent.id,claimed.attempt_token,"rejected",null,"graph_190")
  :await ports.finalize(intent.id,claimed.attempt_token,outcome,sent.waMessageId??null);
  if(!finalized)return blocked("SEND_PERSIST_REQUIRES_RECONCILIATION");
- if(outcome==="accepted"&&!await ports.repair(intent.id))return blocked("ACCEPTANCE_PERSIST_PENDING");
- const usage=await ports.finish(intent.id);
- if(outcome==="accepted"&&usage==="accepted")return {ok:true,code:"ACCEPTED",jobCompleted:true,sendAccepted:true,delivered:false};
+ if(outcome==="accepted"){
+ try{if(await ports.finish(intent.id)!=="accepted")return acceptedPending("ACCEPTANCE_ACCOUNTING_PENDING");}catch{return acceptedPending("ACCEPTANCE_ACCOUNTING_PENDING");}
+ try{if(!await ports.repair(intent.id))return acceptedPending("ACCEPTANCE_PERSIST_PENDING",true);}catch{return acceptedPending("ACCEPTANCE_PERSIST_PENDING",true);}
+ return {ok:true,code:"ACCEPTED",jobCompleted:true,sendAccepted:true,delivered:false};}
+ await ports.finish(intent.id);
  return blocked(outcome==="unknown"?"SEND_REQUIRES_RECONCILIATION":"SEND_REJECTED");
  }catch(error){
  if(error instanceof WorkerInputError){try{return await fail(error.code,false,true);}catch{return blocked(error.code);}}

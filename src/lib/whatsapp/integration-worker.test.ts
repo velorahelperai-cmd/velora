@@ -22,6 +22,23 @@ describe("persisted WhatsApp integration worker",()=>{
  const {ports}=setup();const result=await runInboundWorkerAnswer(input,ports);
  expect(result).toMatchObject({ok:true,jobCompleted:true,sendAccepted:true,delivered:false});expect(ports.send).toHaveBeenCalledTimes(1);
  });
+ it("retains known acceptance without retry when accounting is unavailable",async()=>{
+ const {ports}=setup();ports.finish.mockRejectedValue(new Error("Synthetic accounting failure"));
+ expect(await runInboundWorkerAnswer(input,ports)).toMatchObject({ok:false,code:"ACCEPTANCE_ACCOUNTING_PENDING",sendAccepted:true,jobCompleted:false});
+ expect(ports.send).toHaveBeenCalledTimes(1);expect(ports.repair).not.toHaveBeenCalled();expect(ports.retry).not.toHaveBeenCalled();
+ });
+ it("settles a retained accepted receipt before failed repair without model or provider execution",async()=>{
+ const {ports,frame,intent}=setup();frame.ai_status="success";frame.reply_text="Answer";frame.ai_attempt_id="attempt";frame.intent_id="intent";
+ ports.claimSend.mockResolvedValue({ok:true,claimed:false,attempt_token:null,intent:{...intent,outcome:"accepted"}} as never);
+ const order:string[]=[];ports.finish.mockImplementation(async()=>{order.push("quota");return "accepted";});ports.repair.mockImplementation(async()=>{order.push("display");return false;});
+ expect(await runInboundWorkerAnswer(input,ports)).toMatchObject({ok:false,code:"ACCEPTANCE_PERSIST_PENDING",sendAccepted:true,jobCompleted:true});expect(order).toEqual(["quota","display"]);
+ expect(ports.answer).not.toHaveBeenCalled();expect(ports.send).not.toHaveBeenCalled();expect(ports.retry).not.toHaveBeenCalled();
+ });
+ it("retains settled acceptance when display repair throws without scheduling retry",async()=>{
+ const {ports}=setup();ports.repair.mockRejectedValue(Error("Synthetic repair transport outage"));
+ expect(await runInboundWorkerAnswer(input,ports)).toMatchObject({ok:false,code:"ACCEPTANCE_PERSIST_PENDING",sendAccepted:true,jobCompleted:true});
+ expect(ports.send).toHaveBeenCalledTimes(1);expect(ports.retry).not.toHaveBeenCalled();
+ });
  it("does no work when rollout is disabled",async()=>{const {ports}=setup();ports.enabled=false;
  expect(await runInboundWorkerAnswer(input,ports)).toMatchObject({ok:false,code:"WORKER_DISABLED"});expect(ports.frame).not.toHaveBeenCalled();});
  it("rejects a wrong tenant before reservation/provider work",async()=>{const {frame,ports}=setup();frame.company_id="other";
@@ -45,9 +62,11 @@ describe("persisted WhatsApp integration worker",()=>{
  it("acknowledges stored acceptance after repair without another Graph send",async()=>{const {ports,frame,intent}=setup();frame.intent_id="intent";
  ports.claimSend.mockResolvedValue({ok:true,claimed:false,attempt_token:null,intent:{...intent,outcome:"accepted"}} as never);
  expect(await runInboundWorkerAnswer(input,ports)).toMatchObject({ok:true});expect(ports.send).not.toHaveBeenCalled();expect(ports.repair).toHaveBeenCalledTimes(1);});
- it("repairs retained acceptance before settling quota when finalizer display persistence was pending",async()=>{
- const {ports}=setup();let repaired=false;ports.repair.mockImplementation(async()=>{repaired=true;return true;});
- ports.finish.mockImplementation(async()=>repaired?"accepted":"unknown");
- expect(await runInboundWorkerAnswer(input,ports)).toMatchObject({ok:true,sendAccepted:true});expect(ports.send).toHaveBeenCalledTimes(1);expect(ports.repair).toHaveBeenCalledTimes(1);
+ it("settles accepted quota before display repair and retains acceptance when repair is unavailable",async()=>{
+ const {ports}=setup();const order:string[]=[];
+ ports.finish.mockImplementation(async()=>{order.push("quota");return "accepted";});
+ ports.repair.mockImplementation(async()=>{order.push("display");return false;});
+ expect(await runInboundWorkerAnswer(input,ports)).toMatchObject({ok:false,code:"ACCEPTANCE_PERSIST_PENDING",sendAccepted:true,jobCompleted:true});
+ expect(order).toEqual(["quota","display"]);expect(ports.send).toHaveBeenCalledTimes(1);expect(ports.retry).not.toHaveBeenCalled();
  });
 });
