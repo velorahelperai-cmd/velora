@@ -1,8 +1,8 @@
 import "server-only";
 import { getCompanyAccess } from "@/lib/tenancy/access";
 import { sessionHasCompanyCapability } from "@/lib/access/actions";
-import { createAdminClient } from "@/lib/supabase/admin";
-import { decideLegacyServiceAccess, denyServiceAccess, isServiceCapability, type ServiceAccessDecision } from "./decision";
+import { createClient } from "@/lib/supabase/server";
+import { decideServiceAccess, denyServiceAccess, isServiceCapability, type ServiceAccessDecision } from "./decision";
 
 /** Session actor only. Caller-supplied companies, personas or billing flags are never accepted. */
 export async function readSessionServiceAccess(capability: unknown): Promise<ServiceAccessDecision> {
@@ -12,21 +12,21 @@ export async function readSessionServiceAccess(capability: unknown): Promise<Ser
   try {
     const access = await getCompanyAccess();
     if (!access.ok) return denyServiceAccess(access.code === "UNAUTHENTICATED" ? "UNAUTHENTICATED" : access.code === "UNAVAILABLE" ? "UNAVAILABLE" : "FORBIDDEN");
+    // Shared emailConfirmed field means verified email OR phone identity.
     const { company, membership, userId, emailConfirmed, needsCompanyContext } = access.context;
     if (!emailConfirmed || needsCompanyContext || !company || company.status !== "active" || !membership
       || membership.status !== "active" || membership.company_id !== company.id || membership.user_id !== userId
       || !["owner", "staff"].includes(membership.role)) return denyServiceAccess("FORBIDDEN");
-    // Existing RPC revalidates session lease, tenant membership and grants.
+    // Existing RBAC is an early deny; the service RPC independently checks the lease.
     // Compat null is unknown and cannot authorize service or privileged data access.
     if (await sessionHasCompanyCapability(company.id, "knowledge.read") !== true) return denyServiceAccess("FORBIDDEN");
-    const admin = createAdminClient();
-    if (!admin) return denyServiceAccess("UNAVAILABLE");
-    const billing = admin as unknown as { rpc(name: "billing_read_company_operational_entitlement", args: { p_company_id: string }): PromiseLike<{ data: unknown; error: unknown }> };
-    const { data, error } = await billing.rpc("billing_read_company_operational_entitlement", { p_company_id: company.id });
+    const session = await createClient();
+    const service = session as unknown as { rpc(name: "billing_read_service_access", args: { p_company_id: string; p_capability: string }): PromiseLike<{ data: unknown; error: unknown }> };
+    const { data, error } = await service.rpc("billing_read_service_access", { p_company_id: company.id, p_capability: capability });
     if (error) return denyServiceAccess("UNAVAILABLE");
-    // Paid evidence is scoped by the existing server RPC. No plan-code prefixes,
-    // financial history, feature targets or UI persona are interpreted as grants.
-    return decideLegacyServiceAccess(data, Date.now());
+    // This session-only RPC independently rechecks lease, actor and tenant/RBAC;
+    // it derives service evidence solely from immutable offers and verified receipts.
+    return decideServiceAccess(data, company.id, capability, Date.now());
   } catch {
     return denyServiceAccess("UNAVAILABLE");
   }

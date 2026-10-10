@@ -49,7 +49,7 @@ export async function isolatedPostgres() {
   }
   async function sql(query, name) { await verify(); return session(query, name).done; }
   async function file(path) { return sql(readFileSync(resolve(path), "utf8").replace(/^\uFEFF/, "")); }
-  async function bootstrap({ omitG03 = false, beforeG03, baselineMetadataPath, upgradePackagePath, containmentPackagePath } = {}) {
+  async function bootstrap({ omitG03 = false, beforeG03, baselineMetadataPath, upgradePackagePath, containmentPackagePath, throughMigration } = {}) {
     await verify();
     for (let attempt = 0; attempt < 60; attempt++) {
       try {
@@ -82,6 +82,7 @@ export async function isolatedPostgres() {
     await file("scripts/whatsapp-integration/dependency-stubs.sql");
     let count = 0;
     for (const name of readdirSync(resolve("supabase/migrations")).filter(n => n.endsWith(".sql")).sort()) {
+      if (throughMigration && name > throughMigration) continue;
       if (omitG03 && name.endsWith("_g03_verified_review.sql")) continue;
       if (name.endsWith("_g03_verified_review.sql") && beforeG03) await beforeG03();
       if (name === "20261007230212_vel_platform_owner_identity.sql") {

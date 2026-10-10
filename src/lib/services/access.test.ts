@@ -3,7 +3,7 @@ vi.mock("server-only", () => ({}));
 const s = vi.hoisted(() => ({ access: vi.fn(), capability: vi.fn(), rpc: vi.fn(), admin: vi.fn() }));
 vi.mock("@/lib/tenancy/access", () => ({ getCompanyAccess: s.access }));
 vi.mock("@/lib/access/actions", () => ({ sessionHasCompanyCapability: s.capability }));
-vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: s.admin }));
+vi.mock("@/lib/supabase/server", () => ({ createClient: async () => s.admin() }));
 import { readSessionServiceAccess } from "./access";
 import { GET } from "@/app/api/company/service-access/route";
 const id = "11111111-1111-4111-8111-111111111111";
@@ -12,8 +12,8 @@ const paid = () => ({ ok: true, active: true, environment: "live", status: "acti
 beforeEach(() => { vi.clearAllMocks(); s.access.mockResolvedValue(actor()); s.capability.mockResolvedValue(true); s.admin.mockReturnValue({ rpc: s.rpc }); s.rpc.mockResolvedValue({ data: paid(), error: null }); });
 describe("session service access readiness", () => {
   it("does not convert a proven generic paid subscription into a service grant", async () => {
-    expect(await readSessionServiceAccess("noura.knowledge.read")).toEqual({ allowed: false, code: "SERVICE_CONTRACT_MISSING" });
-    expect(s.rpc).toHaveBeenCalledWith("billing_read_company_operational_entitlement", { p_company_id: id });
+    expect(await readSessionServiceAccess("noura.knowledge.read")).toEqual({ allowed: false, code: "UNAVAILABLE" });
+    expect(s.rpc).toHaveBeenCalledWith("billing_read_service_access", { p_company_id: id, p_capability: "noura.knowledge.read" });
     expect(s.capability).toHaveBeenCalledWith(id, "knowledge.read");
   });
   it.each(["lina.website.read", "dana.reports.read", "dana.pos.read"])("does not expose unimplemented %s or read billing evidence", async capability => {
@@ -51,10 +51,11 @@ describe("session service access readiness", () => {
     expect(await readSessionServiceAccess("noura.knowledge.read")).toEqual({ allowed: false, code: "UNAVAILABLE" });
   });
   it("exercises the real HTTP boundary, ignores caller persona and prevents response caching", async () => {
+    s.rpc.mockResolvedValue({ data: { ok: false, code: "SERVICE_CONTRACT_MISSING" }, error: null });
     const response = await GET(new Request("https://local/api/company/service-access?capability=noura.knowledge.read&persona=dana&company_id=other"));
     expect(response.status).toBe(503); expect(response.headers.get("cache-control")).toBe("private, no-store");
     expect(await response.json()).toEqual({ allowed: false, code: "SERVICE_CONTRACT_MISSING" });
-    expect(s.rpc).toHaveBeenCalledWith("billing_read_company_operational_entitlement", { p_company_id: id });
+    expect(s.rpc).toHaveBeenCalledWith("billing_read_service_access", { p_company_id: id, p_capability: "noura.knowledge.read" });
   });
   it("rejects unknown requests without actor or billing access", async () => {
     const response = await GET(new Request("https://local/api/company/service-access?capability=all"));
