@@ -14,10 +14,12 @@ function publicOrigin(request: Request) {
   return host ? `${proto}://${host}` : url.origin;
 }
 
-function loginRedirect(origin: string, code: string, detail?: string) {
+function loginRedirect(origin: string, code: string, detail?: string, next?: string) {
   const login = new URL("/login", origin);
   login.searchParams.set("error", code);
   if (detail) login.searchParams.set("detail", detail.slice(0, 180));
+  const preferred = safeInternalPath(next, "");
+  if (preferred) login.searchParams.set("next", preferred);
   return NextResponse.redirect(login);
 }
 
@@ -65,6 +67,9 @@ export async function GET(request: Request) {
 
   const { error } = await supabase.auth.exchangeCodeForSession(code);
   if (error) {
+    if (error.code === "pkce_code_verifier_not_found") {
+      return loginRedirect(origin, "verification_browser", undefined, preferred);
+    }
     return loginRedirect(origin, "auth_callback", error.message || error.code || "exchange_failed");
   }
 

@@ -2,7 +2,8 @@
 import {readSubscriptionJourneyAction} from "@/lib/billing/operations/actions";
 import { readSessionIdentity } from "@/lib/auth/server-identity";
 import { AUTH_RETURN_COOKIE, authFlowHref } from "@/lib/auth/auth-journey";
-import { safeInternalPath } from "@/lib/auth/safe-next";
+import { pathAtOrUnder, safeInternalPath } from "@/lib/auth/safe-next";
+import { emailVerificationError, normalizeEmailCode } from "@/lib/auth/email-code";
 
 import { revalidatePath } from "next/cache";
 
@@ -250,10 +251,46 @@ export async function resendVerificationEmail(email: string, next?:string|null):
       email: cleaned,
       options: { emailRedirectTo: authCallbackUrl(safeInternalPath(next,"/setup")) },
     });
-    if (error) return { ok: false, code: "AUTH_ERROR", message: error.message };
+    if (error) return { ok: false, code: "AUTH_ERROR", message: emailVerificationError(error) };
     return { ok: true, data: undefined };
   } catch {
     return { ok: false, code: "UNAVAILABLE" };
+  }
+}
+
+export async function verifyEmailCode(input: {
+  email: string;
+  code: string;
+  next?: string | null;
+}): Promise<ActionResult<{ next: string }>> {
+  const email = typeof input?.email === "string" ? input.email.trim().toLowerCase() : "";
+  const token = typeof input?.code === "string" ? normalizeEmailCode(input.code) : "";
+  if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !/^[0-9]{6}$/.test(token)) {
+    return { ok: false, code: "INVALID_INPUT" };
+  }
+  try {
+    // Request-scoped SSR client saves the verified session in response cookies.
+    // Email OTP verification does not exchange a browser-bound PKCE code.
+    const supabase = await createClient();
+    const { data, error } = await supabase.auth.verifyOtp({ email, token, type: "email" });
+    if (error) return { ok: false, code: "AUTH_ERROR", message: emailVerificationError(error) };
+    const user = data.user;
+    if (!user?.email_confirmed_at || user.email?.toLowerCase() !== email
+      || !data.session || data.session.user.id !== user.id) {
+      return { ok: false, code: "AUTH_ERROR", message: "verification_incomplete" };
+    }
+    const access = await getCompanyAccess();
+    if (access.ok && access.context.userId !== user.id) {
+      return { ok: false, code: "AUTH_ERROR", message: "verification_incomplete" };
+    }
+    let preferred = safeInternalPath(input.next, "");
+    if (access.ok && !access.context.isPlatformAdmin && pathAtOrUnder(preferred.split(/[?#]/)[0], "/admin")) {
+      preferred = "";
+    }
+    return { ok: true, data: { next: pathForAccess(access, preferred || null) } };
+  } catch {
+    // A timeout may have consumed the OTP. Leave recovery to the user; never retry automatically.
+    return { ok: false, code: "AUTH_ERROR", message: "verification_unavailable" };
   }
 }
 

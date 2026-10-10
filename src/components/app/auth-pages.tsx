@@ -1,5 +1,6 @@
 "use client";
 import { authFlowHref, savePendingSignup, readPendingSignup, clearPendingSignup } from "@/lib/auth/auth-journey";
+import { normalizeEmailCode } from "@/lib/auth/email-code";
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -18,6 +19,7 @@ import {
   resolvePostAuthPath,
   signUpWithEmail,
   updatePassword,
+  verifyEmailCode,
 } from "@/lib/tenancy/actions";
 import {
   Button, Field, FieldErrorKey, LangSwitch, LinkButton, Notice, PasswordField, PreviewBadge,
@@ -234,10 +236,8 @@ export function LoginPage() {
   const [errors, setErrors] = useState<Partial<Record<"email" | "password", FieldErrorKey>>>({});
   const [formError, setFormError] = useState<string | null>(() => {
     const err = params.get("error");
-    if (err === "auth_callback") {
-      const detail = params.get("detail");
-      return detail ? `${copy.errors.authFailed} (${detail})` : copy.errors.authFailed;
-    }
+    if (err === "verification_browser") return copy.auth.verificationBrowser;
+    if (err === "auth_callback") return copy.errors.authFailed;
     if (err === "oauth_cancelled") return params.get("detail") || copy.auth.oauthCancelled;
     return null;
   });
@@ -298,12 +298,15 @@ export function VerifyEmailPage() {
   const copy = useAppCopy();
 
   const router = useRouter();
+  const session = useOptionalAccountSession();
   const params = useSearchParams();
   const [storedReturn,setStoredReturn]=useState("");
   const pendingReturn=safeInternalPath(params.get("next"),"")||storedReturn;
   const emailFromQuery = (params.get("email") || "").trim().toLowerCase();
   const [registeredEmail, setRegisteredEmail] = useState(emailFromQuery);
   const [correctEmail, setCorrectEmail] = useState("");
+  const [code, setCode] = useState("");
+  const [codeInvalid, setCodeInvalid] = useState(false);
   const [emailError, setEmailError] = useState<FieldErrorKey>();
   const [resent, setResent] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -342,6 +345,42 @@ export function VerifyEmailPage() {
     return () => window.clearTimeout(t);
   }, [cooldown]);
 
+  function verificationMessage(message?: string) {
+    if (message === "verification_code_invalid") return copy.auth.verificationCodeInvalid;
+    if (message === "verification_rate_limited") return copy.auth.verificationRateLimited;
+    if (message === "verification_incomplete") return copy.auth.verificationIncomplete;
+    return copy.auth.verificationUnavailable;
+  }
+
+  function submitCode(event: React.FormEvent) {
+    event.preventDefault();
+    if (busy || !hydrated || !registeredEmail) return;
+    setError(null);
+    setResent(false);
+    const normalized = normalizeEmailCode(code);
+    if (!/^[0-9]{6}$/.test(normalized)) {
+      setCodeInvalid(true);
+      return;
+    }
+    setCodeInvalid(false);
+    void run(async () => {
+      try {
+        const result = await verifyEmailCode({ email: registeredEmail, code: normalized, next: pendingReturn });
+        if (!result.ok) {
+          setError(result.code === "INVALID_INPUT" ? copy.auth.verificationCodeFormat : verificationMessage(result.message));
+          return;
+        }
+        setCode("");
+        clearPendingSignup();
+        await session?.refresh();
+        router.replace(result.data.next);
+        router.refresh();
+      } catch {
+        setError(copy.auth.verificationUnavailable);
+      }
+    });
+  }
+
   return (
     <AuthShell title={copy.auth.verifyTitle} body={fill(copy.auth.verifyBody, { email: registeredEmail || "…" })}>
       <div className="grid gap-4">
@@ -360,7 +399,24 @@ export function VerifyEmailPage() {
             />
           )}
         </Field>
+        <form className="grid gap-3" noValidate onSubmit={submitCode}>
+          <Field label={copy.auth.verificationCodeLabel} required hint={copy.auth.verificationCodeHint}
+            error={codeInvalid ? copy.auth.verificationCodeFormat : undefined}>
+            {(p) => <input {...p} type="text" dir="ltr" inputMode="numeric" autoComplete="one-time-code"
+              maxLength={6} pattern="[0-9]{6}" required value={code} disabled={busy}
+              onChange={(event) => {
+                setCode(normalizeEmailCode(event.target.value));
+                setCodeInvalid(false);
+                setError(null);
+              }} />}
+          </Field>
+          <Button type="submit" busy={busy} busyLabel={copy.loading} disabled={!hydrated || !registeredEmail || busy}>
+            {copy.auth.verifyCode}
+          </Button>
+        </form>
         <Button
+          type="button"
+          variant="secondary"
           busy={busy}
           busyLabel={copy.loading}
           disabled={!hydrated || !registeredEmail || busy || cooldown > 0}
@@ -369,13 +425,19 @@ export function VerifyEmailPage() {
             setError(null);
             setResent(false);
             void run(async () => {
-              const result = await resendVerificationEmail(registeredEmail,pendingReturn);
-              if (!result.ok) {
-                setError(result.message ?? copy.errors.authFailed);
-                return;
+              try {
+                const result = await resendVerificationEmail(registeredEmail,pendingReturn);
+                if (!result.ok) {
+                  setError(verificationMessage(result.message));
+                  if (result.message === "verification_rate_limited") setCooldown(RESEND_COOLDOWN_SEC);
+                  return;
+                }
+                setCode("");
+                setResent(true);
+                setCooldown(RESEND_COOLDOWN_SEC);
+              } catch {
+                setError(copy.auth.verificationUnavailable);
               }
-              setResent(true);
-              setCooldown(RESEND_COOLDOWN_SEC);
             });
           }}
         >
