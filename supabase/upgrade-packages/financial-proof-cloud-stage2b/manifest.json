@@ -1,0 +1,2402 @@
+{
+  "project": "vmpifljyozsbtssxhoxd",
+  "source_commit": "8126717ca13504fcaf7ce0857f99270b57547c93",
+  "local_only": true,
+  "auto_apply": false,
+  "customer_rows": 0,
+  "production_writes": 0,
+  "service_metadata_sha256": "e13e8f68799268d04822b4bc702d5f88adfeeacf1b3e8b46f6118a11a502d393",
+  "stage2a_package_sha256": "03ed8830c8da0684af0851ab4ef4ec16fd23bc64eef1cfbb3ee94d0793eeb267",
+  "package_sha256": "4e9f03cae14dccac5d7ce280b842988b3a5d43a97372797d82e27d3dec6cd229",
+  "normalization": "UTF-8 without BOM; CRLF normalized to LF",
+  "preconditions": {
+    "tables": {
+      "public.billing_entitlement_applications": "1a476db28f46ca2e93d3765ae849f066",
+      "public.billing_orders": "528b3c919ea2b5615f94676c41774251",
+      "public.billing_payment_attempts": "386d8c42494c6b808b862a78346e21da",
+      "public.billing_plan_versions": "71ff6c5adb0f8c6eb8dc5284cca72889",
+      "public.billing_provider_events": "17863938af09eaa6d3878d6b3b96222b",
+      "public.billing_settlement_outcomes": "5ea35574ac79cbfeaeed1bc44110bbfe",
+      "public.billing_subscriptions": "1adcb37f60e45160b62bae39a6257bc5"
+    },
+    "functions": {
+      "auth.jwt()": "e6cc14ec849a5d992bab6b31b5bb0a46",
+      "auth.uid()": "72d4da798a92978f422816f3198019f0",
+      "private.access_company_capabilities()": "5c5573f8200259ef2f33acf2ed9aaa8f",
+      "private.billing_acceptance_hmac_event(jsonb)": "82b039389a7993346bd79ea04e9229ba",
+      "private.billing_add_calendar_period(timestamp with time zone,text,integer)": "66d4e4895663fee70695bf036bd7aee4",
+      "private.billing_apply_reversal(uuid,uuid,uuid,text,jsonb)": "f5bd03dd8ada10435fff1f3db21ffd2c",
+      "private.billing_compute_paid_through(timestamp with time zone,timestamp with time zone,text,integer)": "7ddefbcd6f20d0b1ad990694403d7c7d",
+      "private.billing_confirm_payment_attempt_failed(uuid,uuid,jsonb)": "eedbf0555c4f3a2154624c8802ffce47",
+      "private.billing_create_or_reuse_subscription_order(uuid,text,text,uuid,uuid,text,text,text,bigint,text,integer,text,integer,text,text,uuid)": "792d856752c258515c3df45398320a4b",
+      "private.billing_entitlement_applications_company_guard()": "ef18eae57dbf4b57f51af21bcd823fbb",
+      "private.billing_open_payment_attempt_after_confirmed_failed(uuid,uuid,uuid,text)": "6e73ca11440ab7adba5d3333e3128a3f",
+      "private.billing_order_deadline_identity_guard()": "eb4f533775825a581e674f3f001a0e1b",
+      "private.billing_order_is_safe_uncirculated_draft(uuid)": "fdcaa9d2cc6c5b76613f99838f07551f",
+      "private.billing_orders_client_op_fingerprint_guard()": "23db6a8cc00b4688a056eaac3fa54699",
+      "private.billing_orders_immutability()": "cda6e1769a1d10e109684b470bc630aa",
+      "private.billing_payment_attempts_binding_guard()": "2f8b795998c65d7f2f2d405fd6b6d1da",
+      "private.billing_payment_attempts_sync_order_scope()": "13c32cfaa89614dc88e43f1957f59c90",
+      "private.billing_pin_test_provider_amount()": "e1c780a635833481da02d7277c070ed7",
+      "private.billing_plan_versions_immutability()": "50fc18a8f4cdd041acdf86ef21a085a3",
+      "private.billing_provider_event_binding_guard()": "8038460279672b0365326e46ad9e08d4",
+      "private.billing_record_lifecycle_review(public.billing_provider_events,uuid,text)": "218a7f985c9d5f40534e0fe20efa9a28",
+      "private.billing_reject_immutable_change(text)": "a94c504b971789e4ee4f1189d26edf08",
+      "private.billing_resolve_or_create_payment_attempt(uuid,uuid)": "5afabd6a44ad54a0556839920a38787a",
+      "private.billing_set_payment_attempt_lifecycle_status(uuid,uuid,text)": "034ca8e247dea83a43916cacfe187747",
+      "private.billing_settle_payment_core_pre_acceptance(jsonb)": "28fb54348043cb0134e2ea296f733c27",
+      "private.billing_settle_payment_core(jsonb)": "4326bf46079e72bb50fafbd5e5796ce8",
+      "private.billing_subscription_within_paid_period(timestamp with time zone,timestamp with time zone)": "5a7fac2cadd4545a381620fe6a48799f",
+      "private.billing_ui_catalog_draft(text,public.billing_plan_versions)": "07da1ff7186cccd18b4710bd19c52b30",
+      "private.billing_ui_company_owner(uuid)": "dcbf653d652a5b765f6b554c38ab6136",
+      "private.billing_ui_owner()": "d9b4829f05cf0cde72cded6d220bd639",
+      "private.billing_ui_valid_draft(jsonb)": "c93cd0e1fbefa14a82a0e61e0073b2b0",
+      "private.manager_delegation_covers(uuid,uuid,text)": "5521355aba02d36297c094173c76a11a",
+      "private.user_has_company_capability(uuid,uuid,text)": "8144fb80bbc5f90aa4723cc6ca85bd5c",
+      "public.app_session_is_valid()": "82af3ca35da352589b12a058e843daae",
+      "public.billing_cancel_at_period_end(uuid)": "9aa8d275ba19189c0b743b30950be301",
+      "public.billing_create_or_reuse_subscription_order(uuid,text,text,uuid,uuid,text,text,text,bigint,text,integer,text,integer,text,text,uuid)": "d0c35590fd1076e07d3950134e24c2bb",
+      "public.billing_create_test_checkout_order(jsonb,integer)": "406e1af0ca0accd165f3e20003f06bdf",
+      "public.billing_read_company_operational_entitlement(uuid)": "2cfa39b68d228609cb382be8d2007ebc",
+      "public.billing_settle_paymob_hmac_verified(jsonb)": "7876be5fb234a9ebeb28cab97680830e",
+      "public.check_app_session(boolean)": "e141e60dfad5ff946156568f5cbafb4a",
+      "public.has_company_capability(uuid,text)": "be537fd730b5e26de0a642938a32657d",
+      "public.is_platform_owner()": "35df3d4119add9c66bf7234a6473930f"
+    }
+  },
+  "baseline_functions": [
+    {
+      "acl": [
+        {
+          "role": "PUBLIC",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "dashboard_user",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "supabase_auth_admin",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "supabase_auth_admin",
+      "body_md5": "2db09c3fc855ba90e71d3ae28cfadae3",
+      "proconfig": null,
+      "prosecdef": false,
+      "signature": "auth.jwt()",
+      "provolatile": "s"
+    },
+    {
+      "acl": [
+        {
+          "role": "PUBLIC",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "dashboard_user",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "supabase_auth_admin",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "supabase_auth_admin",
+      "body_md5": "cdef18c69c4f4cbbced2eaf81e628b49",
+      "proconfig": null,
+      "prosecdef": false,
+      "signature": "auth.uid()",
+      "provolatile": "s"
+    },
+    {
+      "acl": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "ff51402f2a9b357a8dbde2f31957d6a8",
+      "proconfig": [
+        "search_path=\"\""
+      ],
+      "prosecdef": false,
+      "signature": "private.access_company_capabilities()",
+      "provolatile": "i"
+    },
+    {
+      "acl": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "8c51025169a2210a9ae4fafe945c81af",
+      "proconfig": [
+        "search_path=\"\""
+      ],
+      "prosecdef": true,
+      "signature": "private.billing_acceptance_hmac_event(jsonb)",
+      "provolatile": "v"
+    },
+    {
+      "acl": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "64f7b837c955dbb3e0bb7572bf3ae652",
+      "proconfig": null,
+      "prosecdef": false,
+      "signature": "private.billing_add_calendar_period(timestamp with time zone,text,integer)",
+      "provolatile": "i"
+    },
+    {
+      "acl": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "5941f7da83b7bbf016a2f2d110afbb21",
+      "proconfig": [
+        "search_path=\"\""
+      ],
+      "prosecdef": true,
+      "signature": "private.billing_apply_reversal(uuid,uuid,uuid,text,jsonb)",
+      "provolatile": "v"
+    },
+    {
+      "acl": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "e8e380fb6a505c82e55848c259f6eac4",
+      "proconfig": null,
+      "prosecdef": false,
+      "signature": "private.billing_compute_paid_through(timestamp with time zone,timestamp with time zone,text,integer)",
+      "provolatile": "i"
+    },
+    {
+      "acl": [
+        {
+          "role": "PUBLIC",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "33bb42ce894227ba9274d7d834e671d3",
+      "proconfig": [
+        "search_path=public, private, pg_temp"
+      ],
+      "prosecdef": true,
+      "signature": "private.billing_confirm_payment_attempt_failed(uuid,uuid,jsonb)",
+      "provolatile": "v"
+    },
+    {
+      "acl": [
+        {
+          "role": "PUBLIC",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "be2c6fb2dba117aeb5d84dbc77449194",
+      "proconfig": [
+        "search_path=public, private, pg_temp"
+      ],
+      "prosecdef": true,
+      "signature": "private.billing_create_or_reuse_subscription_order(uuid,text,text,uuid,uuid,text,text,text,bigint,text,integer,text,integer,text,text,uuid)",
+      "provolatile": "v"
+    },
+    {
+      "acl": [
+        {
+          "role": "PUBLIC",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "8cbd5ea0b55eeb962f77a7e42229cd2f",
+      "proconfig": null,
+      "prosecdef": false,
+      "signature": "private.billing_entitlement_applications_company_guard()",
+      "provolatile": "v"
+    },
+    {
+      "acl": [
+        {
+          "role": "PUBLIC",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "2f9ddd573a19f972e8eb9081263f65d0",
+      "proconfig": [
+        "search_path=public, private, pg_temp"
+      ],
+      "prosecdef": true,
+      "signature": "private.billing_open_payment_attempt_after_confirmed_failed(uuid,uuid,uuid,text)",
+      "provolatile": "v"
+    },
+    {
+      "acl": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "0493fd3f2840593306ebb9a7eeb1e8f1",
+      "proconfig": [
+        "search_path=\"\""
+      ],
+      "prosecdef": false,
+      "signature": "private.billing_order_deadline_identity_guard()",
+      "provolatile": "v"
+    },
+    {
+      "acl": [
+        {
+          "role": "PUBLIC",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "061d6ee68837a01fdbee368c8dabbad0",
+      "proconfig": null,
+      "prosecdef": false,
+      "signature": "private.billing_order_is_safe_uncirculated_draft(uuid)",
+      "provolatile": "s"
+    },
+    {
+      "acl": [
+        {
+          "role": "PUBLIC",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "00f0ac81c063e38f1690ad8374f4d7c8",
+      "proconfig": null,
+      "prosecdef": false,
+      "signature": "private.billing_orders_client_op_fingerprint_guard()",
+      "provolatile": "v"
+    },
+    {
+      "acl": [
+        {
+          "role": "PUBLIC",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "3b7ea3aca9480e68363dc705172d1d4f",
+      "proconfig": null,
+      "prosecdef": false,
+      "signature": "private.billing_orders_immutability()",
+      "provolatile": "v"
+    },
+    {
+      "acl": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "c5720cd3072c9c2ae1329c4f8dc3c4b7",
+      "proconfig": [
+        "search_path=\"\""
+      ],
+      "prosecdef": false,
+      "signature": "private.billing_payment_attempts_binding_guard()",
+      "provolatile": "v"
+    },
+    {
+      "acl": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "56d96321d7e2ed74fbf27e707aed1ded",
+      "proconfig": [
+        "search_path=\"\""
+      ],
+      "prosecdef": false,
+      "signature": "private.billing_payment_attempts_sync_order_scope()",
+      "provolatile": "v"
+    },
+    {
+      "acl": [
+        {
+          "role": "PUBLIC",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "6e38041f46033603b86f7e8c9e8dd1c0",
+      "proconfig": [
+        "search_path=public, private, pg_temp"
+      ],
+      "prosecdef": false,
+      "signature": "private.billing_pin_test_provider_amount()",
+      "provolatile": "v"
+    },
+    {
+      "acl": [
+        {
+          "role": "PUBLIC",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "a3d66d4da8199ec432c5ab1da6faf10b",
+      "proconfig": null,
+      "prosecdef": false,
+      "signature": "private.billing_plan_versions_immutability()",
+      "provolatile": "v"
+    },
+    {
+      "acl": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "5ed2914cba16e8f7b0d4f2e6474974ba",
+      "proconfig": [
+        "search_path=\"\""
+      ],
+      "prosecdef": true,
+      "signature": "private.billing_provider_event_binding_guard()",
+      "provolatile": "v"
+    },
+    {
+      "acl": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "db70efbc71467a3c3fbfe747157cf9a4",
+      "proconfig": [
+        "search_path=\"\""
+      ],
+      "prosecdef": true,
+      "signature": "private.billing_record_lifecycle_review(public.billing_provider_events,uuid,text)",
+      "provolatile": "v"
+    },
+    {
+      "acl": [
+        {
+          "role": "PUBLIC",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "95fa5883a83c4d8469a67f83e0611b65",
+      "proconfig": null,
+      "prosecdef": false,
+      "signature": "private.billing_reject_immutable_change(text)",
+      "provolatile": "v"
+    },
+    {
+      "acl": [
+        {
+          "role": "PUBLIC",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "8b4170a4078b2a701326c3c1cd7ebb29",
+      "proconfig": [
+        "search_path=public, private, pg_temp"
+      ],
+      "prosecdef": true,
+      "signature": "private.billing_resolve_or_create_payment_attempt(uuid,uuid)",
+      "provolatile": "v"
+    },
+    {
+      "acl": [
+        {
+          "role": "PUBLIC",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "c7276749b1217bdcb8e0b5158cde3917",
+      "proconfig": [
+        "search_path=public, private, pg_temp"
+      ],
+      "prosecdef": true,
+      "signature": "private.billing_set_payment_attempt_lifecycle_status(uuid,uuid,text)",
+      "provolatile": "v"
+    },
+    {
+      "acl": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "ae4dd1a4195db97e91fa0e662ccdfff7",
+      "proconfig": [
+        "search_path=public, private, pg_temp"
+      ],
+      "prosecdef": true,
+      "signature": "private.billing_settle_payment_core_pre_acceptance(jsonb)",
+      "provolatile": "v"
+    },
+    {
+      "acl": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "c0e12aeb434b8cf7955872d5edd53ef0",
+      "proconfig": [
+        "search_path=\"\""
+      ],
+      "prosecdef": true,
+      "signature": "private.billing_settle_payment_core(jsonb)",
+      "provolatile": "v"
+    },
+    {
+      "acl": [
+        {
+          "role": "PUBLIC",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "fc0ceca9677e84e27d38dd3746c40b96",
+      "proconfig": null,
+      "prosecdef": false,
+      "signature": "private.billing_subscription_within_paid_period(timestamp with time zone,timestamp with time zone)",
+      "provolatile": "i"
+    },
+    {
+      "acl": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "a396dd5a1cd1cf37587d7e70e0b4e0fb",
+      "proconfig": [
+        "search_path=\"\""
+      ],
+      "prosecdef": false,
+      "signature": "private.billing_ui_catalog_draft(text,public.billing_plan_versions)",
+      "provolatile": "i"
+    },
+    {
+      "acl": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "6fc3c597275f78beb01242bec9da165a",
+      "proconfig": [
+        "search_path=\"\""
+      ],
+      "prosecdef": true,
+      "signature": "private.billing_ui_company_owner(uuid)",
+      "provolatile": "s"
+    },
+    {
+      "acl": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "73e9d20bcaa68da3488d536ba8720bed",
+      "proconfig": [
+        "search_path=\"\""
+      ],
+      "prosecdef": true,
+      "signature": "private.billing_ui_owner()",
+      "provolatile": "s"
+    },
+    {
+      "acl": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "978a7312df4977e4bbd81728a1a5c5a5",
+      "proconfig": [
+        "search_path=\"\""
+      ],
+      "prosecdef": false,
+      "signature": "private.billing_ui_valid_draft(jsonb)",
+      "provolatile": "i"
+    },
+    {
+      "acl": [
+        {
+          "role": "PUBLIC",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "e40560405951958297adb06ff0b97bc3",
+      "proconfig": [
+        "search_path=\"\""
+      ],
+      "prosecdef": true,
+      "signature": "private.manager_delegation_covers(uuid,uuid,text)",
+      "provolatile": "s"
+    },
+    {
+      "acl": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "6c80dd4bc189be45e8f8d19a65618816",
+      "proconfig": [
+        "search_path=\"\""
+      ],
+      "prosecdef": true,
+      "signature": "private.user_has_company_capability(uuid,uuid,text)",
+      "provolatile": "s"
+    },
+    {
+      "acl": [
+        {
+          "role": "authenticated",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "b42c28f54d05778fcc994156c6ce4086",
+      "proconfig": [
+        "search_path=\"\""
+      ],
+      "prosecdef": true,
+      "signature": "public.app_session_is_valid()",
+      "provolatile": "s"
+    },
+    {
+      "acl": [
+        {
+          "role": "authenticated",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "93932821e812986394f555b26250da5b",
+      "proconfig": [
+        "search_path=\"\""
+      ],
+      "prosecdef": true,
+      "signature": "public.billing_cancel_at_period_end(uuid)",
+      "provolatile": "v"
+    },
+    {
+      "acl": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "a70719d80e0058b08b820f7a1494798a",
+      "proconfig": [
+        "search_path=public, private, pg_temp"
+      ],
+      "prosecdef": true,
+      "signature": "public.billing_create_or_reuse_subscription_order(uuid,text,text,uuid,uuid,text,text,text,bigint,text,integer,text,integer,text,text,uuid)",
+      "provolatile": "v"
+    },
+    {
+      "acl": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "0bb5e53842c1b8667300d0cd5a01b91b",
+      "proconfig": [
+        "search_path=public, private, pg_temp"
+      ],
+      "prosecdef": true,
+      "signature": "public.billing_create_test_checkout_order(jsonb,integer)",
+      "provolatile": "v"
+    },
+    {
+      "acl": [
+        {
+          "role": "authenticated",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "599cf78256b70e7fe69adb05b7398c0a",
+      "proconfig": [
+        "search_path=\"\""
+      ],
+      "prosecdef": true,
+      "signature": "public.billing_read_company_operational_entitlement(uuid)",
+      "provolatile": "s"
+    },
+    {
+      "acl": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "a1ce90ae693324f11db6d3026969bf47",
+      "proconfig": [
+        "search_path=\"\""
+      ],
+      "prosecdef": true,
+      "signature": "public.billing_settle_paymob_hmac_verified(jsonb)",
+      "provolatile": "v"
+    },
+    {
+      "acl": [
+        {
+          "role": "authenticated",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "f69c473d94466a93d1d793bbd447478e",
+      "proconfig": [
+        "search_path=\"\""
+      ],
+      "prosecdef": true,
+      "signature": "public.check_app_session(boolean)",
+      "provolatile": "v"
+    },
+    {
+      "acl": [
+        {
+          "role": "authenticated",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "71b77d37cd0e9e4d59c26aec47897de5",
+      "proconfig": [
+        "search_path=\"\""
+      ],
+      "prosecdef": true,
+      "signature": "public.has_company_capability(uuid,text)",
+      "provolatile": "s"
+    },
+    {
+      "acl": [
+        {
+          "role": "authenticated",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "owner": "postgres",
+      "body_md5": "d46584d9ac02072238753afd973d9de3",
+      "proconfig": [
+        "search_path=\"\""
+      ],
+      "prosecdef": true,
+      "signature": "public.is_platform_owner()",
+      "provolatile": "s"
+    }
+  ],
+  "service_relations": {
+    "auth.users": {
+      "acl": [
+        {
+          "role": "dashboard_user",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "dashboard_user",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "dashboard_user",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "dashboard_user",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "dashboard_user",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "dashboard_user",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "dashboard_user",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "dashboard_user",
+          "grantable": false,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "grantable": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "supabase_auth_admin",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "supabase_auth_admin",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "supabase_auth_admin",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "supabase_auth_admin",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "supabase_auth_admin",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "supabase_auth_admin",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "supabase_auth_admin",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "supabase_auth_admin",
+          "grantable": false,
+          "privilege": "UPDATE"
+        }
+      ],
+      "rls": true,
+      "name": "auth.users",
+      "owner": "supabase_auth_admin",
+      "columns": {
+        "id": {
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        "email": {
+          "type": "character varying(255)",
+          "default": null,
+          "notnull": false
+        },
+        "email_confirmed_at": {
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": false
+        },
+        "phone_confirmed_at": {
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": false
+        }
+      },
+      "force_rls": false
+    },
+    "auth.sessions": {
+      "acl": [
+        {
+          "role": "dashboard_user",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "dashboard_user",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "dashboard_user",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "dashboard_user",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "dashboard_user",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "dashboard_user",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "dashboard_user",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "dashboard_user",
+          "grantable": false,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "grantable": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "supabase_auth_admin",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "supabase_auth_admin",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "supabase_auth_admin",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "supabase_auth_admin",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "supabase_auth_admin",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "supabase_auth_admin",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "supabase_auth_admin",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "supabase_auth_admin",
+          "grantable": false,
+          "privilege": "UPDATE"
+        }
+      ],
+      "rls": true,
+      "name": "auth.sessions",
+      "owner": "supabase_auth_admin",
+      "columns": {
+        "id": {
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        "user_id": {
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": false
+        }
+      },
+      "force_rls": false
+    },
+    "public.companies": {
+      "acl": [
+        {
+          "role": "authenticated",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "UPDATE"
+        }
+      ],
+      "rls": true,
+      "name": "public.companies",
+      "owner": "postgres",
+      "columns": {
+        "id": {
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "notnull": true
+        },
+        "city": {
+          "type": "text",
+          "default": "''::text",
+          "notnull": true
+        },
+        "hours": {
+          "type": "text",
+          "default": "''::text",
+          "notnull": true
+        },
+        "status": {
+          "type": "text",
+          "default": "'setup'::text",
+          "notnull": true
+        },
+        "country": {
+          "type": "text",
+          "default": "'OM'::text",
+          "notnull": true
+        },
+        "timezone": {
+          "type": "text",
+          "default": null,
+          "notnull": false
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true
+        },
+        "created_by": {
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        "updated_at": {
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true
+        },
+        "display_name": {
+          "type": "text",
+          "default": null,
+          "notnull": true
+        },
+        "business_type": {
+          "type": "text",
+          "default": "'restaurant'::text",
+          "notnull": true
+        },
+        "contact_email": {
+          "type": "text",
+          "default": "''::text",
+          "notnull": true
+        },
+        "contact_phone": {
+          "type": "text",
+          "default": "''::text",
+          "notnull": true
+        },
+        "reply_language": {
+          "type": "text",
+          "default": "'both'::text",
+          "notnull": true
+        }
+      },
+      "force_rls": false
+    },
+    "public.billing_plans": {
+      "acl": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "UPDATE"
+        }
+      ],
+      "rls": true,
+      "name": "public.billing_plans",
+      "owner": "postgres",
+      "columns": {
+        "id": {
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "notnull": true
+        },
+        "code": {
+          "type": "text",
+          "default": null,
+          "notnull": true
+        },
+        "name": {
+          "type": "text",
+          "default": null,
+          "notnull": true
+        },
+        "status": {
+          "type": "text",
+          "default": "'draft'::text",
+          "notnull": true
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true
+        },
+        "updated_at": {
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true
+        }
+      },
+      "force_rls": false
+    },
+    "public.company_members": {
+      "acl": [
+        {
+          "role": "authenticated",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "UPDATE"
+        }
+      ],
+      "rls": true,
+      "name": "public.company_members",
+      "owner": "postgres",
+      "columns": {
+        "role": {
+          "type": "text",
+          "default": null,
+          "notnull": true
+        },
+        "status": {
+          "type": "text",
+          "default": "'active'::text",
+          "notnull": true
+        },
+        "user_id": {
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        "company_id": {
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true
+        },
+        "member_name": {
+          "type": "text",
+          "default": "''::text",
+          "notnull": true
+        }
+      },
+      "force_rls": false
+    },
+    "public.platform_admins": {
+      "acl": [
+        {
+          "role": "authenticated",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "UPDATE"
+        }
+      ],
+      "rls": true,
+      "name": "public.platform_admins",
+      "owner": "postgres",
+      "columns": {
+        "note": {
+          "type": "text",
+          "default": "''::text",
+          "notnull": true
+        },
+        "role": {
+          "type": "text",
+          "default": "'delegated'::text",
+          "notnull": true
+        },
+        "status": {
+          "type": "text",
+          "default": "'active'::text",
+          "notnull": true
+        },
+        "user_id": {
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        "revision": {
+          "type": "integer",
+          "default": "1",
+          "notnull": true
+        },
+        "granted_at": {
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true
+        },
+        "granted_by": {
+          "type": "uuid",
+          "default": null,
+          "notnull": false
+        },
+        "updated_at": {
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true
+        }
+      },
+      "force_rls": false
+    },
+    "private.app_session_activity": {
+      "acl": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "SELECT"
+        }
+      ],
+      "rls": false,
+      "name": "private.app_session_activity",
+      "owner": "postgres",
+      "columns": {
+        "user_id": {
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        "expired_at": {
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": false
+        },
+        "session_id": {
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        "last_activity_at": {
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": true
+        }
+      },
+      "force_rls": false
+    },
+    "private.app_session_settings": {
+      "acl": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        }
+      ],
+      "rls": false,
+      "name": "private.app_session_settings",
+      "owner": "postgres",
+      "columns": {
+        "enabled": {
+          "type": "boolean",
+          "default": "false",
+          "notnull": true
+        },
+        "singleton": {
+          "type": "boolean",
+          "default": "true",
+          "notnull": true
+        }
+      },
+      "force_rls": false
+    },
+    "public.company_member_grants": {
+      "acl": [
+        {
+          "role": "authenticated",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "UPDATE"
+        }
+      ],
+      "rls": true,
+      "name": "public.company_member_grants",
+      "owner": "postgres",
+      "columns": {
+        "status": {
+          "type": "text",
+          "default": "'active'::text",
+          "notnull": true
+        },
+        "user_id": {
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        "revision": {
+          "type": "integer",
+          "default": "1",
+          "notnull": true
+        },
+        "company_id": {
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        "updated_at": {
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true
+        },
+        "updated_by": {
+          "type": "uuid",
+          "default": null,
+          "notnull": false
+        },
+        "capabilities": {
+          "type": "text[]",
+          "default": "'{}'::text[]",
+          "notnull": true
+        },
+        "manager_user_id": {
+          "type": "uuid",
+          "default": null,
+          "notnull": false
+        },
+        "conversation_scope": {
+          "type": "text",
+          "default": "'all_company'::text",
+          "notnull": true
+        }
+      },
+      "force_rls": false
+    },
+    "public.platform_admin_scopes": {
+      "acl": [
+        {
+          "role": "authenticated",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "UPDATE"
+        }
+      ],
+      "rls": true,
+      "name": "public.platform_admin_scopes",
+      "owner": "postgres",
+      "columns": {
+        "revision": {
+          "type": "integer",
+          "default": "1",
+          "notnull": true
+        },
+        "company_id": {
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        "updated_at": {
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true
+        },
+        "updated_by": {
+          "type": "uuid",
+          "default": null,
+          "notnull": false
+        },
+        "admin_user_id": {
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        "usable_capabilities": {
+          "type": "text[]",
+          "default": "'{}'::text[]",
+          "notnull": true
+        },
+        "delegable_capabilities": {
+          "type": "text[]",
+          "default": "'{}'::text[]",
+          "notnull": true
+        }
+      },
+      "force_rls": false
+    },
+    "public.billing_catalog_revision": {
+      "acl": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "UPDATE"
+        }
+      ],
+      "rls": true,
+      "name": "public.billing_catalog_revision",
+      "owner": "postgres",
+      "columns": {
+        "revision": {
+          "type": "bigint",
+          "default": "1",
+          "notnull": true
+        },
+        "singleton": {
+          "type": "boolean",
+          "default": "true",
+          "notnull": true
+        }
+      },
+      "force_rls": false
+    }
+  },
+  "auth_namespace": {
+    "acl": [
+      {
+        "role": "anon",
+        "grantable": false,
+        "privilege": "USAGE"
+      },
+      {
+        "role": "authenticated",
+        "grantable": false,
+        "privilege": "USAGE"
+      },
+      {
+        "role": "dashboard_user",
+        "grantable": false,
+        "privilege": "CREATE"
+      },
+      {
+        "role": "dashboard_user",
+        "grantable": false,
+        "privilege": "USAGE"
+      },
+      {
+        "role": "postgres",
+        "grantable": false,
+        "privilege": "USAGE"
+      },
+      {
+        "role": "service_role",
+        "grantable": false,
+        "privilege": "USAGE"
+      },
+      {
+        "role": "supabase_admin",
+        "grantable": false,
+        "privilege": "CREATE"
+      },
+      {
+        "role": "supabase_admin",
+        "grantable": false,
+        "privilege": "USAGE"
+      },
+      {
+        "role": "supabase_auth_admin",
+        "grantable": false,
+        "privilege": "CREATE"
+      },
+      {
+        "role": "supabase_auth_admin",
+        "grantable": false,
+        "privilege": "USAGE"
+      }
+    ],
+    "name": "auth",
+    "owner": "supabase_admin"
+  },
+  "reviewed_new_function_bodies": {
+    "private.billing_service_rbac": "438e4daba0e045fb7299d96990ebc9d4",
+    "private.billing_service_immutable": "17b4d16be72ea6e2e3e44401c7680fd2",
+    "public.billing_define_service_offer": "8009b7d2b62709b23237bffbedba090c",
+    "public.billing_snapshot_service_order": "7cb64387308163d827cb271b481737c1",
+    "private.billing_service_receipt_eligible": "b7d82e7e8fefc05c22f876f1ac00b7c2",
+    "public.billing_apply_service_grant": "a24ab750931095099b473aeb73513fba",
+    "public.billing_activate_service_grant": "26d832bef910420e446b46bd7d0ca4a9",
+    "public.billing_read_service_access": "963b30b91e9f412fa10fc5cd50b15193",
+    "private.billing_service_catalog_owner": "e329e3d1797da5f17bf505d7ee618599",
+    "public.billing_bind_noura_basic_draft": "46e180a2214ecbc9ca141b675e2b399d",
+    "private.billing_snapshot_bound_service_order": "d44079c460ca89606a26dd30c47a4e62",
+    "public.billing_settle_paymob_hmac_verified": "a7460653ef5328f319644d08fc3fff7f"
+  },
+  "post_purchase_body_md5": "4963a4ebcf0f9dbde12a0db77467ff04",
+  "post_private_settlement_body_md5": "a1ce90ae693324f11db6d3026969bf47",
+  "stage1_guard_body_md5": "7b28f06702c177c5b65e3d9b23a7e1d4",
+  "stage2a_insert_guard_body_md5": "56d96321d7e2ed74fbf27e707aed1ded",
+  "status": "local_review_candidate_production_unauthorized",
+  "source_sql_sha256": {
+    "20261010053446_service_entitlement_read_contract.sql": "3fffaf686ae6be411ada8dcd476f39a6b8a3012bb226efbefe4f5becfbc33b06",
+    "20261010073549_service_purchase_settlement_orchestration.sql": "d3abfc75d937c81bff7bdd8666a25799af63a27922e2a8bba90bd22c55f8e303"
+  },
+  "source_test_sha256": {
+    "scripts/service-entitlement/postgres.optin.mjs": "b3cdc856dc91e47391cc64fbfcac099560ba7c8ba19041ab1a80397a3083ab37",
+    "scripts/service-entitlement/orchestration.optin.mjs": "4158bd631b290214932fa7607c2f5ec2aa9926db7d717576ce260bb2af5c6de8",
+    "scripts/financial-proof-cloud/stage2a.optin.mjs": "923a028d6cdf7654fbc933bfe60803953bdcba0c250f242b209da13129dcbae8"
+  },
+  "stage1_package_sha256": "303b1ffa8c736a1faf5ebc2a9dafc69c3b1c247e00604b1bbd34ffa6b9941168",
+  "fixture_limits": "Financial tables and 42 function contracts are pinned; peripheral Auth is a selected-field fixture. Supporting relation constraints/indexes/policies are bootstrap infrastructure, not claimed as a complete production clone.",
+  "verification": {
+    "case_total": 80,
+    "passing_case_evidence": 80,
+    "combined_attempt": {
+      "passed": 79,
+      "failed": 1,
+      "skipped": 0,
+      "seconds": 808.71,
+      "log": "artifacts/internal-ui/stage2b-final.log",
+      "failure": "Sleep-based concurrency test waiter reached local harness lock timeout"
+    },
+    "corrected_concurrency_rerun": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 79,
+      "seconds": 78.34,
+      "log": "artifacts/internal-ui/stage2b-concurrency.log",
+      "observed_holder": "ClientRead",
+      "observed_waiter": "transactionid",
+      "package_changed": false
+    },
+    "prior_component_orchestration_passed": 56,
+    "financial_targeted_passed": 24,
+    "offline_passed": 1437,
+    "offline_optin_skipped": 42,
+    "typecheck": "passed",
+    "lint_errors": 0,
+    "lint_existing_warnings": 1,
+    "syntax": "passed",
+    "production_writes": 0,
+    "paid_provider_calls": 0,
+    "live_customer_acceptance": "not_run"
+  }
+}
