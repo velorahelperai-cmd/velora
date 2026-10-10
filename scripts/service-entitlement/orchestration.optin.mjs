@@ -1,0 +1,202 @@
+import { beforeAll, afterAll, it, expect, vi } from 'vitest';
+import { randomUUID } from 'node:crypto';
+import { isolatedPostgres, lit } from '../g03-review-acceptance/postgres.mjs';
+import { evidence } from './evidence.mjs';
+const state=vi.hoisted(()=>({client:null,adminClient:null}));
+vi.mock('server-only',()=>({}));
+vi.mock('@/lib/supabase/server',()=>({createClient:async()=>state.client}));
+vi.mock('@/lib/supabase/admin',()=>({createAdminClient:()=>state.adminClient}));
+import * as catalogActions from '@/lib/billing/catalog-backend/actions';
+import { createAtomicPurchasePersistRpc } from '@/lib/billing/wiring/purchase-persist-rpc';
+import { settleHmacVerifiedViaRpc } from '@/lib/billing/wiring/store';
+let db;
+let owner, ownerSession;
+const migration='supabase/migrations/20261010073549_service_purchase_settlement_orchestration.sql';
+const parse=out=>JSON.parse(out.split('\n').find(line=>line.startsWith('{')));
+const srv=query=>db.sql(`BEGIN;SET LOCAL ROLE service_role;${query}COMMIT;`);
+const call=(name,args)=>`SELECT public.${name}(${args});`;
+async function fixture({environment='test',bound=true,code='noor_basic',tier='basic',publish=true}={}) {
+ const f={actor:randomUUID(),session:randomUUID(),company:randomUUID(),version:randomUUID(),environment,reference:`synthetic_${randomUUID()}`};
+ await db.sql(`INSERT INTO auth.users(id,email,email_confirmed_at) VALUES(${lit(f.actor)},'synthetic@example.invalid',now());INSERT INTO auth.sessions(id,user_id) VALUES(${lit(f.session)},${lit(f.actor)});INSERT INTO private.app_session_activity(session_id,user_id,last_activity_at) VALUES(${lit(f.session)},${lit(f.actor)},clock_timestamp());
+ INSERT INTO companies(id,display_name,status,created_by) VALUES(${lit(f.company)},'Synthetic purchase','active',${lit(f.actor)});INSERT INTO company_members(company_id,user_id,role,status) VALUES(${lit(f.company)},${lit(f.actor)},'owner','active');
+ INSERT INTO billing_plans(code,name,status) VALUES(${lit(code)},'Synthetic explicit offer','active') ON CONFLICT(code) DO NOTHING;
+ INSERT INTO billing_plan_versions(id,plan_id,version,amount_baisa,currency,period_days,period_unit,period_count,status,limits) SELECT ${lit(f.version)},p.id,(SELECT coalesce(max(version),0)+1 FROM billing_plan_versions WHERE plan_id=p.id),5000,'OMR',30,'month',1,'draft','{"automated_outbound_per_month":1000,"feature_availability":{"knowledge":"target"}}'::jsonb FROM billing_plans p WHERE code=${lit(code)};`);
+ if(bound) expect(parse(await srv(call('billing_define_service_offer',`${lit(f.version)},'noura',${lit(tier)},ARRAY['noura.knowledge.read']`)))).toMatchObject({ok:true});
+ if(publish) await db.sql(`UPDATE billing_plan_versions SET status='retired' WHERE plan_id=(SELECT plan_id FROM billing_plan_versions WHERE id=${lit(f.version)}) AND status='published';UPDATE billing_plan_versions SET status='published' WHERE id=${lit(f.version)};`);
+ f.input={p_company_id:f.company,p_product_code:'velora_ai_staff',p_purchase_purpose:'initial',p_plan_version_id:f.version,p_requested_plan_id:null,p_client_op_id:randomUUID(),p_input_fingerprint:randomUUID(),p_special_reference:f.reference,p_amount_baisa:5000,p_currency:'OMR',p_period_days:30,p_period_unit:'month',p_period_count:1,p_provider_account_ref:'74001',p_provider_environment:environment,p_created_by:f.actor};return f;
+}
+async function purchase(f,input=f.input){
+ const sql=input.p_provider_environment==='test'?call('billing_create_test_checkout_order',`${lit(JSON.stringify(input))}::jsonb,1000`):call('billing_create_or_reuse_subscription_order',Object.values(input).map(v=>v===null?'null':lit(v)).join(','));
+ const result=parse(await srv(sql));
+ if(result.ok){f.order=result.order_id;f.attempt=result.payment_attempt_id;}return result;
+}
+beforeAll(async()=>{
+ db=await isolatedPostgres();await db.bootstrap({throughMigration:'20261008170000_vel_owner_review_scope_read.sql'});
+ await db.file('supabase/migrations/20261010053446_service_entitlement_read_contract.sql');
+ console.log('ORCHESTRATION_PREREQUISITES',await db.sql("SELECT proname||'|'||md5(replace(prosrc,chr(13),'')) FROM pg_proc WHERE oid IN ('public.billing_create_or_reuse_subscription_order(uuid,text,text,uuid,uuid,text,text,text,bigint,text,integer,text,integer,text,text,uuid)'::regprocedure,'public.billing_settle_paymob_hmac_verified(jsonb)'::regprocedure,'public.billing_create_test_checkout_order(jsonb,integer)'::regprocedure,'public.billing_snapshot_service_order(uuid)'::regprocedure,'public.billing_apply_service_grant(uuid)'::regprocedure,'private.billing_ui_owner()'::regprocedure) ORDER BY proname;"));
+ const preflight=await db.file('supabase/upgrade-packages/service-purchase-orchestration/preflight.readonly.sql');expect(preflight).toContain('cdda398ed1d2f6bf1b0a4db89fcced9f');
+ const signature="public.billing_create_or_reuse_subscription_order(uuid,text,text,uuid,uuid,text,text,text,bigint,text,integer,text,integer,text,text,uuid)";
+ const original=await db.sql(`SELECT pg_get_functiondef(${lit(signature)}::regprocedure);`);
+ await db.sql(original.replace('v_now timestamptz','v_now  timestamptz'));
+ await expect(db.file(migration)).rejects.toThrow(/SERVICE_ORCHESTRATION_PREREQUISITE_MISMATCH/);
+ expect(await db.sql("SELECT to_regprocedure('public.billing_bind_noura_basic_draft(uuid,bigint)') IS NULL;")).toBe('t');
+ await db.sql(original);
+ await db.sql(`GRANT EXECUTE ON FUNCTION ${signature} TO authenticated;`);
+ await expect(db.file(migration)).rejects.toThrow(/SERVICE_ORCHESTRATION_RPC_ACL_MISMATCH/);
+ await db.sql(`REVOKE EXECUTE ON FUNCTION ${signature} FROM authenticated;`);
+ const receiptView=await db.sql("SELECT pg_get_viewdef('private.billing_proven_entitlement_grants'::regclass,true);");
+ const weakenedView=receiptView.replace(/h.status\s*=\s*'active'::text/,'true');expect(weakenedView).not.toBe(receiptView);
+ await db.sql(`CREATE OR REPLACE VIEW private.billing_proven_entitlement_grants AS ${weakenedView}`);
+ await expect(db.file(migration)).rejects.toThrow(/SERVICE_ORCHESTRATION_RECEIPT_VIEW_MISMATCH/);
+ await db.sql(`CREATE OR REPLACE VIEW private.billing_proven_entitlement_grants AS ${receiptView}`);
+ await db.sql('ALTER TABLE billing_provider_events DISABLE TRIGGER billing_provider_receipt_immutability;');
+ await expect(db.file(migration)).rejects.toThrow(/SERVICE_ORCHESTRATION_IMMUTABLE_GUARD_MISSING/);
+ await db.sql('ALTER TABLE billing_provider_events ENABLE TRIGGER billing_provider_receipt_immutability;');
+ await db.file(migration);
+ owner=await db.sql("SELECT md5('g03-synthetic-platform-owner')::uuid;");ownerSession=randomUUID();
+ await db.sql(`INSERT INTO auth.sessions(id,user_id) VALUES(${lit(ownerSession)},${lit(owner)});INSERT INTO private.app_session_activity(session_id,user_id,last_activity_at) VALUES(${lit(ownerSession)},${lit(owner)},clock_timestamp());`);
+
+});
+afterAll(async()=>{if(db)await db.close();});
+it('snapshots the explicit service offer before creating the actual checkout attempt',async()=>{
+ const f=await fixture();expect(await purchase(f)).toMatchObject({ok:true});
+ expect(await db.sql(`SELECT count(*) FROM private.billing_service_order_offers s JOIN billing_payment_attempts a ON a.order_id=s.order_id WHERE s.order_id=${lit(f.order)} AND s.service_code='noura' AND s.tier='basic' AND s.environment='test';`)).toBe('1');
+});
+
+const authenticated=(actor,session,query)=>db.sql(`BEGIN;SET LOCAL ROLE authenticated;SET LOCAL "request.jwt.claim.sub"=${lit(actor)};SET LOCAL "request.jwt.claims"=${lit(JSON.stringify({sub:actor,session_id:session,role:'authenticated'}))};${query}COMMIT;`);
+async function bind(f,revision){return parse(await authenticated(owner,ownerSession,call('billing_bind_noura_basic_draft',`${lit(f.version)},${revision}`)));}
+async function revision(){return Number(await db.sql('SELECT revision FROM billing_catalog_revision WHERE singleton;'));}
+async function stored(f,{tx=f.tx??randomUUID(),status='success',flags={}}={}){
+ f.providerOrder??=String(BigInt('0x'+randomUUID().replaceAll('-','').slice(0,12)));
+ await db.sql(`UPDATE billing_payment_attempts SET provider_order_id=${lit(f.providerOrder)},status='provider_submitted' WHERE id=${lit(f.attempt)} AND provider_order_id IS NULL;`);
+ const e=evidence(f,tx);e.event_status=status;e.raw={...e.raw,...flags};f.tx=tx;const payload={...e};delete payload.raw;
+ await db.sql(`INSERT INTO billing_provider_events(payment_attempt_id,company_id,provider,provider_account_ref,provider_environment,provider_transaction_id,event_status,observation_key,amount_baisa_expected,currency_expected,raw_summary) VALUES(${lit(f.attempt)},${lit(f.company)},'paymob','74001',${lit(f.environment)},${lit(tx)},${lit(status)},${lit(e.observation_key)},5000,'OMR',${lit(JSON.stringify(e.raw))}::jsonb);`);
+ return payload;
+}
+const settle=e=>srv(call('billing_settle_paymob_hmac_verified',`${lit(JSON.stringify(e))}::jsonb`)).then(parse);
+const counts=f=>db.sql(`SELECT (SELECT count(*) FROM billing_entitlement_applications WHERE order_id=${lit(f.order)})||'|'||(SELECT count(*) FROM private.billing_service_grants WHERE order_id=${lit(f.order)})||'|'||(SELECT count(*) FROM billing_settlement_outcomes WHERE order_id=${lit(f.order)})||'|'||(SELECT count(*) FROM billing_subscriptions WHERE company_id=${lit(f.company)} AND environment=${lit(f.environment)});`);
+it('binds only an explicit draft Basic version through actual owner session/revision and server action',async()=>{
+ const f=await fixture({bound:false,publish:false});const r=await revision();
+ state.client={rpc:async(name,args)=>{try{return {data:parse(await authenticated(owner,ownerSession,call(name,`${lit(args.p_plan_version_id)},${args.p_expected_revision}`))),error:null};}catch{return {data:null,error:{code:'SQL_FAILED'}};}}};
+ expect(await catalogActions.bindNouraBasicDraftAction(f.version,r)).toMatchObject({ok:true,data:{version_id:f.version,revision:r+1}});
+ expect(await db.sql(`SELECT service_code||'|'||tier||'|'||array_to_string(capabilities,',') FROM private.billing_service_offers WHERE plan_version_id=${lit(f.version)};`)).toBe('noura|basic|noura.knowledge.read');
+ expect(await bind(f,r)).toEqual({ok:false,code:'conflict'});
+ expect(await bind(f,r+1)).toMatchObject({ok:true,data:{version_id:f.version,revision:r+1}});
+ await db.sql(`UPDATE billing_plan_versions SET status='retired' WHERE status='published' AND plan_id=(SELECT plan_id FROM billing_plan_versions WHERE id=${lit(f.version)});UPDATE billing_plan_versions SET status='published' WHERE id=${lit(f.version)};`);
+ expect(await bind(f,r+1)).toEqual({ok:false,code:'immutable'});
+});
+it('denies client roles, outsiders, expired direct owner sessions and unsupported draft variants',async()=>{
+ const f=await fixture({bound:false,publish:false}),r=await revision();
+ for(const role of ['anon','service_role']) await expect(db.sql(`BEGIN;SET LOCAL ROLE ${role};${call('billing_bind_noura_basic_draft',`${lit(f.version)},${r}`)}COMMIT;`)).rejects.toThrow(/permission denied/);
+ expect(parse(await authenticated(f.actor,f.session,call('billing_bind_noura_basic_draft',`${lit(f.version)},${r}`)))).toEqual({ok:false,code:'forbidden'});
+ await db.sql(`UPDATE private.app_session_settings SET enabled=false;UPDATE private.app_session_activity SET last_activity_at=clock_timestamp()-interval '3 hours' WHERE session_id=${lit(ownerSession)};`);
+ expect(await bind(f,r)).toEqual({ok:false,code:'forbidden'});
+ await db.sql(`UPDATE private.app_session_activity SET last_activity_at=clock_timestamp(),expired_at=null WHERE session_id=${lit(ownerSession)};UPDATE private.app_session_settings SET enabled=true;`);
+ for(const code of ['noor_premium','lina_basic','dana_basic']){const x=await fixture({bound:false,publish:false,code});expect(await bind(x,r)).toEqual({ok:false,code:'invalid_input'});}
+});
+it('observes snapshot presence at the actual BEFORE-attempt INSERT boundary',async()=>{
+ await db.sql(`CREATE FUNCTION private.test_snapshot_ordering() RETURNS trigger LANGUAGE plpgsql SET search_path='' AS $t$ BEGIN IF EXISTS(SELECT 1 FROM private.billing_service_offers f JOIN public.billing_orders o ON o.plan_version_id=f.plan_version_id WHERE o.id=NEW.order_id) AND NOT EXISTS(SELECT 1 FROM private.billing_service_order_offers WHERE order_id=NEW.order_id) THEN RAISE EXCEPTION 'TEST_SNAPSHOT_NOT_BEFORE_ATTEMPT';END IF;RETURN NEW;END;$t$;CREATE TRIGGER test_snapshot_ordering BEFORE INSERT ON billing_payment_attempts FOR EACH ROW EXECUTE FUNCTION private.test_snapshot_ordering();`);
+ try{const f=await fixture();expect(await purchase(f)).toMatchObject({ok:true});}finally{await db.sql('DROP TRIGGER test_snapshot_ordering ON billing_payment_attempts;DROP FUNCTION private.test_snapshot_ordering();');}
+});
+it('does not let forged actor/tenant, wrong product or unsupported bound tier create durable orders',async()=>{
+ const f=await fixture(),outsider=await fixture({bound:false,code:'legacy_outsider_'+randomUUID()});
+ for(const input of [{...f.input,p_created_by:outsider.actor},{...f.input,p_company_id:outsider.company},{...f.input,p_product_code:'invented_product'}])await expect(purchase(f,input)).rejects.toThrow(/SERVICE_PURCHASE_/);
+ expect(await db.sql(`SELECT count(*) FROM billing_orders WHERE plan_version_id=${lit(f.version)};`)).toBe('0');
+ await purchase(f);await expect(purchase(f,{...f.input,p_created_by:outsider.actor})).rejects.toThrow(/SERVICE_PURCHASE_ACTOR_FORBIDDEN/);
+ const x=await fixture({code:'noor_premium',tier:'premium'});await expect(purchase(x)).rejects.toThrow(/SERVICE_PURCHASE_UNSUPPORTED/);
+});
+it('rolls back order, snapshot and attempt together when snapshot insertion fails',async()=>{
+ const f=await fixture();await db.sql(`CREATE FUNCTION private.test_snapshot_fail() RETURNS trigger LANGUAGE plpgsql AS $t$ BEGIN RAISE EXCEPTION 'TEST_SNAPSHOT_FAILURE';END;$t$;CREATE TRIGGER test_snapshot_fail BEFORE INSERT ON private.billing_service_order_offers FOR EACH ROW EXECUTE FUNCTION private.test_snapshot_fail();`);
+ try{await expect(purchase(f)).rejects.toThrow(/TEST_SNAPSHOT_FAILURE/);}finally{await db.sql('DROP TRIGGER test_snapshot_fail ON private.billing_service_order_offers;DROP FUNCTION private.test_snapshot_fail();');}
+ expect(await db.sql(`SELECT count(*) FROM billing_orders WHERE company_id=${lit(f.company)};`)).toBe('0');
+});
+it('atomically settles proven payment and grants the bound service inactive',async()=>{
+ const f=await fixture();await purchase(f);const e=await stored(f);const result=await settle(e);expect(result).toMatchObject({ok:true,outcome:'granted'});expect(await counts(f)).toBe('1|1|1|1');
+ expect(await db.sql(`SELECT activated FROM private.billing_service_grants WHERE order_id=${lit(f.order)};`)).toBe('f');
+ expect(await settle(e)).toMatchObject({ok:true,outcome:'idempotent_replay',entitlement_application_id:result.entitlement_application_id});expect(await counts(f)).toBe('1|1|1|1');
+ expect(await db.sql(`SELECT activated FROM private.billing_service_grants WHERE order_id=${lit(f.order)};`)).toBe('f');
+});
+it('rolls back payment receipt, subscription, attempt and order lifecycle when service grant fails',async()=>{
+ const f=await fixture();await purchase(f);const e=await stored(f);
+ await db.sql(`CREATE FUNCTION private.test_grant_fail() RETURNS trigger LANGUAGE plpgsql AS $t$ BEGIN RAISE EXCEPTION 'TEST_GRANT_FAILURE';END;$t$;CREATE TRIGGER test_grant_fail BEFORE INSERT ON private.billing_service_grants FOR EACH ROW EXECUTE FUNCTION private.test_grant_fail();`);
+ try{await expect(settle(e)).rejects.toThrow(/TEST_GRANT_FAILURE/);}finally{await db.sql('DROP TRIGGER test_grant_fail ON private.billing_service_grants;DROP FUNCTION private.test_grant_fail();');}
+ expect(await counts(f)).toBe('0|0|0|0');expect(await db.sql(`SELECT status FROM billing_orders WHERE id=${lit(f.order)};`)).toBe('locked');expect(await db.sql(`SELECT status FROM billing_payment_attempts WHERE id=${lit(f.attempt)};`)).toBe('provider_submitted');
+ expect(await db.sql(`SELECT count(*) FROM billing_provider_events WHERE payment_attempt_id=${lit(f.attempt)};`)).toBe('1');
+ expect(await settle(e)).toMatchObject({ok:true,outcome:'granted'});expect(await counts(f)).toBe('1|1|1|1');
+});
+it('denies forged stored evidence, tenant/environment and client settlement calls without partial grants',async()=>{
+ const f=await fixture();await purchase(f);const e=await stored(f);
+ for(const forged of [{...e,company_id:randomUUID()},{...e,provider_environment:'live'},{...e,amount_baisa:6000},{...e,evidence_marker:'VEL_BILLING_SYNTHETIC_TEST_EVIDENCE'},{...e,signature_verified:true}]) expect(await settle(forged)).toMatchObject({ok:false,code:'INVALID_STORED_EVIDENCE'});
+ for(const role of ['anon','authenticated'])await expect(db.sql(`BEGIN;SET LOCAL ROLE ${role};${call('billing_settle_paymob_hmac_verified',`${lit(JSON.stringify(e))}::jsonb`)}COMMIT;`)).rejects.toThrow(/permission denied/);
+ await expect(srv("SELECT private.billing_settle_paymob_hmac_verified_pre_service('{}'::jsonb);")).rejects.toThrow(/permission denied/);
+ expect(await counts(f)).toBe('0|0|0|0');
+});
+it('preserves unbound legacy outcomes and does not add service grants on replay or duplicate collection',async()=>{
+ const f=await fixture({bound:false,code:'legacy_'+randomUUID()});await purchase(f);const e=await stored(f);
+ expect(await settle(e)).toMatchObject({ok:true,outcome:'granted'});expect(await counts(f)).toBe('1|0|1|1');expect(await settle(e)).toMatchObject({ok:true,outcome:'idempotent_replay'});
+ const duplicate=await stored(f,{tx:randomUUID()});expect(await settle(duplicate)).toMatchObject({ok:true,outcome:'duplicate_collection_review'});expect(await db.sql(`SELECT count(*) FROM private.billing_service_grants WHERE order_id=${lit(f.order)};`)).toBe('0');
+});
+it('retains signed refund/void evidence, denies stale success and never reactivates or deletes the grant',async()=>{
+ for(const status of ['refunded','voided']){const f=await fixture();await purchase(f);const success=await stored(f);expect(await settle(success)).toMatchObject({outcome:'granted'});
+ const reversal=await stored(f,{status,flags:{[status==='refunded'?'is_refunded':'is_voided']:true}});expect(await settle(reversal)).toMatchObject({ok:true,outcome:'lifecycle_review',entitlement_changed:false});expect(await settle(success)).toMatchObject({ok:true,outcome:'lifecycle_review'});
+ expect(await db.sql(`SELECT activated FROM private.billing_service_grants WHERE order_id=${lit(f.order)};`)).toBe('f');expect(await db.sql(`SELECT count(*) FROM private.billing_lifecycle_reviews WHERE order_id=${lit(f.order)};`)).toBe('1');}
+});
+it('keeps Test separate from Live and preserves paid period cancellation without activation',async()=>{
+ const f=await fixture();await purchase(f);const e=await stored(f);await settle(e);
+ expect(await db.sql(`SELECT count(*) FROM billing_subscriptions WHERE company_id=${lit(f.company)} AND environment='live';`)).toBe('0');
+ expect(parse(await authenticated(f.actor,f.session,call('billing_cancel_at_period_end',lit(f.company))))).toMatchObject({ok:false});
+ await expect(srv(call('billing_create_test_checkout_order',`${lit(JSON.stringify({...f.input,p_provider_environment:'live'}))}::jsonb,1000`))).rejects.toThrow(/test only/);
+});
+async function activity(name,predicate){for(let n=0;n<60;n++){const r=JSON.parse(await db.sql(`SELECT coalesce(jsonb_agg(jsonb_build_object('pid',pid,'wait',wait_event,'type',wait_event_type)),'[]') FROM pg_stat_activity WHERE application_name=${lit(name)};`));if(r.some(predicate))return r[0];await new Promise(r=>setTimeout(r,50));}throw Error('PG_BARRIER_NOT_OBSERVED');}
+it('serializes concurrent verified settlement with one payment and inactive service grant',async()=>{
+ const f=await fixture();await purchase(f);const e=await stored(f),suffix=randomUUID().slice(0,8),aName=`purchase_a_${suffix}`,bName=`purchase_b_${suffix}`,sql=call('billing_settle_paymob_hmac_verified',`${lit(JSON.stringify(e))}::jsonb`);
+ const a=db.session(`BEGIN;SELECT 1 FROM companies WHERE id=${lit(f.company)} FOR UPDATE;SELECT pg_sleep(3);SET LOCAL ROLE service_role;${sql}COMMIT;`,aName);const blocker=await activity(aName,r=>r.wait==='PgSleep');
+ const b=db.session(`BEGIN;SET LOCAL ROLE service_role;${sql}COMMIT;`,bName);const waiter=await activity(bName,r=>r.type==='Lock');expect(blocker.pid).not.toBe(waiter.pid);console.log('PG_ORCHESTRATION_LOCK_EVIDENCE',JSON.stringify({blocker,waiter}));
+ const done=await Promise.all([a.done,b.done]);expect(parse(done[0])).toMatchObject({outcome:'granted'});expect(parse(done[1])).toMatchObject({outcome:'idempotent_replay'});expect(await counts(f)).toBe('1|1|1|1');
+});
+
+it('does not backfill an originally missing service grant on historical payment replay',async()=>{
+ const f=await fixture();await purchase(f);const e=await stored(f);
+ // Original financial settlement in a local-owner fixture represents historical
+ // missing orchestration. No receipts or service history are edited/deleted.
+ const result=parse(await db.sql(`SELECT private.billing_settle_paymob_hmac_verified_pre_service(${lit(JSON.stringify(e))}::jsonb);`));expect(result).toMatchObject({outcome:'granted'});expect(await counts(f)).toBe('1|0|1|1');
+ await expect(settle(e)).rejects.toThrow(/SERVICE_GRANT_REPLAY_REQUIRES_REVIEW/);expect(await counts(f)).toBe('1|0|1|1');
+});
+
+it('preserves actual paid Live cancellation and keeps both environments and grants inactive',async()=>{
+ const f=await fixture({environment:'live'});f.order=randomUUID();f.attempt=randomUUID();f.providerOrder=String(BigInt('0x'+randomUUID().replaceAll('-','').slice(0,12)));
+ // INSERT-only local financial fixture, not a Live checkout or provider call.
+ await db.sql(`INSERT INTO billing_orders(id,company_id,plan_version_id,amount_baisa,currency,period_days,period_unit,period_count,provider,provider_account_ref,provider_environment,provider_amount,provider_amount_unit,special_reference,client_op_id,input_fingerprint,status,product_code,purchase_purpose,created_by,deadline_policy_approved) VALUES(${lit(f.order)},${lit(f.company)},${lit(f.version)},5000,'OMR',30,'month',1,'paymob','74001','live',5000,'paymob_amount',${lit(f.reference)},${lit(randomUUID())},${lit(randomUUID())},'locked','velora_ai_staff','initial',${lit(f.actor)},true);`);
+ expect(parse(await srv(call('billing_snapshot_service_order',lit(f.order))))).toMatchObject({ok:true});
+ await db.sql(`INSERT INTO billing_payment_attempts(id,order_id,company_id,status,provider_order_id) VALUES(${lit(f.attempt)},${lit(f.order)},${lit(f.company)},'provider_submitted',${lit(f.providerOrder)});`);
+ const e=await stored(f);expect(await settle(e)).toMatchObject({outcome:'granted'});const paid=await db.sql(`SELECT paid_through FROM billing_subscriptions WHERE company_id=${lit(f.company)} AND environment='live';`);
+ expect(parse(await authenticated(f.actor,f.session,call('billing_cancel_at_period_end',lit(f.company))))).toMatchObject({ok:true,data:{cancel_at_period_end:true}});
+ expect(await db.sql(`SELECT paid_through FROM billing_subscriptions WHERE company_id=${lit(f.company)} AND environment='live';`)).toBe(paid);expect(await db.sql(`SELECT status FROM billing_subscriptions WHERE company_id=${lit(f.company)} AND environment='live';`)).toBe('cancel_at_period_end');
+ expect(await settle(e)).toMatchObject({outcome:'idempotent_replay'});expect(await db.sql(`SELECT activated FROM private.billing_service_grants WHERE order_id=${lit(f.order)};`)).toBe('f');
+ expect(await db.sql(`SELECT count(*) FROM billing_subscriptions WHERE company_id=${lit(f.company)} AND environment='test';`)).toBe('0');
+ expect(parse(await authenticated(f.actor,f.session,call('billing_read_service_access',`${lit(f.company)},'noura.knowledge.read'`)))).toEqual({ok:false,code:'SERVICE_NOT_ACTIVE'});
+});
+it('reuses the immutable service snapshot and serializes concurrent purchases before dispatch',async()=>{
+ const f=await fixture(),suffix=randomUUID().slice(0,8),aName=`order_a_${suffix}`,bName=`order_b_${suffix}`,sql=call('billing_create_test_checkout_order',`${lit(JSON.stringify(f.input))}::jsonb,1000`);
+ const a=db.session(`BEGIN;SELECT 1 FROM companies WHERE id=${lit(f.company)} FOR UPDATE;SELECT pg_sleep(3);SET LOCAL ROLE service_role;${sql}COMMIT;`,aName);const blocker=await activity(aName,r=>r.wait==='PgSleep');
+ const b=db.session(`BEGIN;SET LOCAL ROLE service_role;${sql}COMMIT;`,bName);const waiter=await activity(bName,r=>r.type==='Lock');expect(blocker.pid).not.toBe(waiter.pid);console.log('PG_PURCHASE_LOCK_EVIDENCE',JSON.stringify({blocker,waiter}));
+ const results=await Promise.all([a.done,b.done]),first=parse(results[0]),second=parse(results[1]);expect(first).toMatchObject({ok:true});expect(second).toMatchObject({ok:true,action:'reuse',order_id:first.order_id,payment_attempt_id:first.payment_attempt_id});
+ expect(await db.sql(`SELECT count(*) FROM private.billing_service_order_offers WHERE order_id=${lit(first.order_id)};`)).toBe('1');expect(await db.sql(`SELECT count(*) FROM billing_payment_attempts WHERE order_id=${lit(first.order_id)};`)).toBe('1');
+});
+
+it('runs the existing purchase and shared settlement adapters against the actual new transaction boundary',async()=>{
+ const f=await fixture();const admin={rpc:async(name,args)=>{
+  const query=name==='billing_create_test_checkout_order'?call(name,`${lit(JSON.stringify(args.p_input))}::jsonb,${args.p_units_per_omr}`):name==='billing_settle_paymob_hmac_verified'?call(name,`${lit(JSON.stringify(args.p_evidence))}::jsonb`):null;
+  if(!query)throw Error('UNEXPECTED_ADAPTER_RPC');
+  try{return {data:parse(await srv(query)),error:null};}catch{return {data:null,error:{code:'SQL_FAILED'}};}
+ }};
+ vi.stubEnv('PAYMOB_OMR_CONVERSION_VERIFIED','true');vi.stubEnv('PAYMOB_OMR_UNITS_PER_OMR','1000');state.adminClient=admin;
+ try{
+ const input=f.input;const result=await createAtomicPurchasePersistRpc(admin)({companyId:input.p_company_id,productCode:input.p_product_code,purchasePurpose:input.p_purchase_purpose,planVersionId:input.p_plan_version_id,requestedPlanId:null,clientOpId:input.p_client_op_id,inputFingerprint:input.p_input_fingerprint,specialReference:input.p_special_reference,amountBaisa:input.p_amount_baisa,currency:input.p_currency,periodDays:input.p_period_days,periodUnit:input.p_period_unit,periodCount:input.p_period_count,providerAccountRef:input.p_provider_account_ref,providerEnvironment:input.p_provider_environment,createdBy:input.p_created_by});
+ expect(result).toMatchObject({ok:true,action:'insert'});f.order=result.orderId;f.attempt=result.paymentAttemptId;
+ const e=await stored(f);expect(await settleHmacVerifiedViaRpc(e)).toEqual({ok:true,outcome:'granted'});expect(await counts(f)).toBe('1|1|1|1');
+ expect(await settleHmacVerifiedViaRpc(e)).toEqual({ok:true,outcome:'idempotent_replay'});
+ expect(await settleHmacVerifiedViaRpc({...e,amount_baisa:6000})).toEqual({ok:false,code:'INVALID_STORED_EVIDENCE'});
+ expect(await db.sql(`SELECT activated FROM private.billing_service_grants WHERE order_id=${lit(f.order)};`)).toBe('f');
+ }finally{vi.unstubAllEnvs();state.adminClient=null;}
+});
