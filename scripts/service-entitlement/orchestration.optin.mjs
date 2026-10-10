@@ -200,3 +200,80 @@ it('runs the existing purchase and shared settlement adapters against the actual
  expect(await db.sql(`SELECT activated FROM private.billing_service_grants WHERE order_id=${lit(f.order)};`)).toBe('f');
  }finally{vi.unstubAllEnvs();state.adminClient=null;}
 });
+
+it('rejects owner revocation committed while binding waits for the plan version',async()=>{
+ const f=await fixture({bound:false,publish:false}),r=await revision(),suffix=randomUUID().slice(0,8);
+ const blocker=db.session(`BEGIN;SELECT 1 FROM billing_plan_versions WHERE id=${lit(f.version)} FOR UPDATE;`, `bind_block_${suffix}`,{keepOpen:true});
+ await activity(`bind_block_${suffix}`,x=>x.wait==='ClientRead');
+ const waiter=db.session(`BEGIN;SET LOCAL ROLE authenticated;SET LOCAL "request.jwt.claim.sub"=${lit(owner)};SET LOCAL "request.jwt.claims"=${lit(JSON.stringify({sub:owner,session_id:ownerSession,role:'authenticated'}))};${call('billing_bind_noura_basic_draft',`${lit(f.version)},${r}`)}COMMIT;`,`bind_wait_${suffix}`);
+ try{
+  const waiting=await activity(`bind_wait_${suffix}`,x=>x.type==='Lock');console.log('PG_BIND_REVOCATION_WAIT',JSON.stringify(waiting));
+  await db.sql(`UPDATE platform_admins SET status='disabled' WHERE user_id=${lit(owner)};`);
+  blocker.child.stdin.end('COMMIT;\n');await blocker.done;
+  expect(parse(await waiter.done)).toEqual({ok:false,code:'forbidden'});
+  expect(await db.sql(`SELECT count(*) FROM private.billing_service_offers WHERE plan_version_id=${lit(f.version)};`)).toBe('0');
+  expect(await revision()).toBe(r);
+ }finally{if(!blocker.child.stdin.destroyed)blocker.child.stdin.end('ROLLBACK;\n');await Promise.allSettled([blocker.done,waiter.done]);await db.sql(`UPDATE platform_admins SET role='owner',status='active' WHERE user_id=${lit(owner)};`);}
+});
+
+const authSql=query=>`BEGIN;SET LOCAL ROLE authenticated;SET LOCAL "request.jwt.claim.sub"=${lit(owner)};SET LOCAL "request.jwt.claims"=${lit(JSON.stringify({sub:owner,session_id:ownerSession,role:'authenticated'}))};${query}COMMIT;`;
+async function restoreOwner(){await db.sql(`UPDATE auth.users SET email_confirmed_at=clock_timestamp() WHERE id=${lit(owner)};UPDATE platform_admins SET role='owner',status='active' WHERE user_id=${lit(owner)};INSERT INTO auth.sessions(id,user_id) VALUES(${lit(ownerSession)},${lit(owner)}) ON CONFLICT(id) DO NOTHING;INSERT INTO private.app_session_activity(session_id,user_id,last_activity_at,expired_at) VALUES(${lit(ownerSession)},${lit(owner)},clock_timestamp(),null) ON CONFLICT(session_id) DO UPDATE SET last_activity_at=excluded.last_activity_at,expired_at=null;UPDATE private.app_session_settings SET enabled=true;`);}
+const invalidations=[
+ ['owner status',()=>`UPDATE platform_admins SET status='disabled' WHERE user_id=${lit(owner)};`],
+ ['owner role',()=>`UPDATE platform_admins SET role='delegated' WHERE user_id=${lit(owner)};`],
+ ['session deletion',()=>`DELETE FROM auth.sessions WHERE id=${lit(ownerSession)};`],
+ ['activity revocation',()=>`UPDATE private.app_session_activity SET expired_at=clock_timestamp() WHERE session_id=${lit(ownerSession)};`],
+ ['identity verification',()=>`UPDATE auth.users SET email_confirmed_at=null,phone_confirmed_at=null WHERE id=${lit(owner)};`],
+ ['natural idle expiry',()=>`SELECT pg_sleep(greatest(0,extract(epoch FROM(last_activity_at+interval '2 hours'-clock_timestamp())))+0.1) FROM private.app_session_activity WHERE session_id=${lit(ownerSession)};`],
+];
+it.each(['catalog','version'].flatMap(target=>invalidations.map(([label,change])=>[target,label,change])))('rejects %s wait followed by %s without retaining an offer',async(target,label,change)=>{
+ const f=await fixture({bound:false,publish:false}),r=await revision(),suffix=randomUUID().slice(0,8);
+ await restoreOwner();
+ if(label==='natural idle expiry')await db.sql(`UPDATE private.app_session_activity SET last_activity_at=clock_timestamp()-interval '2 hours'+interval '8 seconds' WHERE session_id=${lit(ownerSession)};UPDATE private.app_session_settings SET enabled=false;`);
+ const row=target==='catalog'?'billing_catalog_revision WHERE singleton':`billing_plan_versions WHERE id=${lit(f.version)}`;
+ const blocker=db.session(`BEGIN;SELECT 1 FROM ${row} FOR UPDATE;`,`auth_block_${suffix}`,{keepOpen:true});
+ await activity(`auth_block_${suffix}`,x=>x.wait==='ClientRead');
+ const waiter=db.session(authSql(call('billing_bind_noura_basic_draft',`${lit(f.version)},${r}`)),`auth_wait_${suffix}`);
+ try{
+  const blocked=await activity(`auth_wait_${suffix}`,x=>x.type==='Lock');console.log('PG_BIND_AUTH_WAIT',JSON.stringify({target,label,blocked}));
+  if(label==='natural idle expiry')expect(await db.sql(`SELECT last_activity_at+interval '2 hours'>clock_timestamp() FROM private.app_session_activity WHERE session_id=${lit(ownerSession)};`)).toBe('t');
+  await db.sql(change());
+  blocker.child.stdin.end('COMMIT;\n');await blocker.done;
+  expect(parse(await waiter.done)).toEqual({ok:false,code:'forbidden'});
+  expect(await db.sql(`SELECT count(*) FROM private.billing_service_offers WHERE plan_version_id=${lit(f.version)};`)).toBe('0');expect(await revision()).toBe(r);
+ }finally{if(!blocker.child.stdin.destroyed)blocker.child.stdin.end('ROLLBACK;\n');await Promise.allSettled([blocker.done,waiter.done]);await restoreOwner();}
+});
+it.each(['auth.users','auth.sessions','private.app_session_activity','public.platform_admins'])('keeps the %s authorization row locked through binding commit',async(table)=>{
+ const f=await fixture({bound:false,publish:false}),r=await revision(),suffix=randomUUID().slice(0,8);await restoreOwner();
+ // Hold the binding AFTER its guard at the real mutation boundary, then prove
+ // each revoker waits for commit rather than changing the guard's read set.
+ await db.sql(`CREATE FUNCTION private.test_binding_pause() RETURNS trigger LANGUAGE plpgsql AS $t$ BEGIN PERFORM pg_sleep(3);RETURN NEW;END;$t$;CREATE TRIGGER test_binding_pause BEFORE INSERT ON private.billing_service_offers FOR EACH ROW EXECUTE FUNCTION private.test_binding_pause();`);
+ const binding=db.session(authSql(call('billing_bind_noura_basic_draft',`${lit(f.version)},${r}`)),`bind_commit_${suffix}`);
+ let revoker;
+ try{
+  const bound=await activity(`bind_commit_${suffix}`,x=>x.wait==='PgSleep');
+  const change=table==='auth.users'?`UPDATE auth.users SET email_confirmed_at=null WHERE id=${lit(owner)}`:table==='auth.sessions'?`DELETE FROM auth.sessions WHERE id=${lit(ownerSession)}`:table==='private.app_session_activity'?`UPDATE private.app_session_activity SET expired_at=clock_timestamp() WHERE session_id=${lit(ownerSession)}`:`UPDATE platform_admins SET status='disabled' WHERE user_id=${lit(owner)}`;
+  revoker=db.session(`${change};`,`bind_revoke_${suffix}`);const revoked=await activity(`bind_revoke_${suffix}`,x=>x.type==='Lock');expect(bound.pid).not.toBe(revoked.pid);console.log('PG_BIND_AUTH_SERIALIZATION',JSON.stringify({table,bound,revoked}));
+  const results=await Promise.all([binding.done,revoker.done]);expect(parse(results[0])).toMatchObject({ok:true});expect(await db.sql(`SELECT count(*) FROM private.billing_service_offers WHERE plan_version_id=${lit(f.version)};`)).toBe('1');expect(await revision()).toBe(r+1);
+ }finally{await Promise.allSettled([binding.done,...(revoker?[revoker.done]:[])]);await db.sql('DROP TRIGGER test_binding_pause ON private.billing_service_offers;DROP FUNCTION private.test_binding_pause();');await restoreOwner();}
+});
+it.each(['auth.users','auth.sessions','private.app_session_activity','public.platform_admins'])('fails closed on a contended %s lock without a catalog/auth lock inversion',async(table)=>{
+ const f=await fixture({bound:false,publish:false}),r=await revision(),suffix=randomUUID().slice(0,8);await restoreOwner();
+ const predicate=table==='auth.users'?`id=${lit(owner)}`:table==='auth.sessions'?`id=${lit(ownerSession)}`:table==='private.app_session_activity'?`session_id=${lit(ownerSession)}`:`user_id=${lit(owner)}`;
+ const revoker=db.session(`BEGIN;SELECT 1 FROM ${table} WHERE ${predicate} FOR UPDATE;`,`reverse_auth_${suffix}`,{keepOpen:true});
+ try{
+  await activity(`reverse_auth_${suffix}`,x=>x.wait==='ClientRead');
+  expect(await bind(f,r)).toEqual({ok:false,code:'forbidden'});
+  // Reverse-order actor can immediately acquire the business locks after the
+  // denied binding; NOWAIT guard cannot wait in a cycle or persist partial work.
+  revoker.child.stdin.end(`SELECT 1 FROM billing_catalog_revision WHERE singleton FOR UPDATE;SELECT 1 FROM billing_plan_versions WHERE id=${lit(f.version)} FOR UPDATE;COMMIT;\n`);await revoker.done;
+  expect(await db.sql(`SELECT count(*) FROM private.billing_service_offers WHERE plan_version_id=${lit(f.version)};`)).toBe('0');expect(await revision()).toBe(r);
+ }finally{if(!revoker.child.stdin.destroyed)revoker.child.stdin.end('ROLLBACK;\n');await Promise.allSettled([revoker.done]);await restoreOwner();}
+});
+
+it('does not substitute delegated company scopes for revoked platform ownership',async()=>{
+ const f=await fixture({bound:false,publish:false}),r=await revision();await restoreOwner();
+ await db.sql(`UPDATE platform_admins SET role='delegated' WHERE user_id=${lit(owner)};INSERT INTO platform_admin_scopes(admin_user_id,company_id,usable_capabilities,delegable_capabilities) VALUES(${lit(owner)},${lit(f.company)},ARRAY['knowledge.write','billing.read'],ARRAY['knowledge.write']);`);
+ try{expect(await bind(f,r)).toEqual({ok:false,code:'forbidden'});expect(await db.sql(`SELECT count(*) FROM private.billing_service_offers WHERE plan_version_id=${lit(f.version)};`)).toBe('0');expect(await revision()).toBe(r);}
+ finally{await restoreOwner();}
+});

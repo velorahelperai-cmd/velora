@@ -79,25 +79,56 @@ end; $$;
 -- The owner opt-in accepts version/revision only. Claims, labels, targets and
 -- browser-supplied service/tier/capabilities never define the contract.
 create function private.billing_service_catalog_owner() returns boolean
-language plpgsql security definer set search_path='' as $$ begin
- if current_setting('role',true)<>'authenticated' or auth.uid() is null
- or (public.check_app_session(false)->>'ok') is distinct from 'true'
+language plpgsql security definer set search_path='' as $$
+declare actor uuid:=auth.uid(); sid uuid;
+begin
+ if current_setting('role',true)<>'authenticated' or actor is null then return false;end if;
+ begin sid:=(auth.jwt()->>'session_id')::uuid;exception when invalid_text_representation then return false;end;
+ if sid is null then return false;end if;
+ -- Call only AFTER catalog/version locks. Keep the complete authorization read
+ -- set locked through commit; an unlocked repeat check leaves another TOCTOU.
+ -- Session deletion locks session then cascades activity. NOWAIT avoids cycles
+ -- with revocation/profile RPCs that may take these rows in another order.
+ perform 1 from auth.users where id=actor for share nowait;
+ if not found then return false;end if;
+ perform 1 from auth.sessions where id=sid and user_id=actor for share nowait;
+ if not found then return false;end if;
+ perform 1 from private.app_session_activity where session_id=sid and user_id=actor for update nowait;
+ if not found then return false;end if;
+ perform 1 from public.platform_admins where user_id=actor for share nowait;
+ if not found then return false;end if;
+ -- Read time and predicates after every lock; retain the legacy session/owner
+ -- checks even when rollout settings disable the pre-request hook.
+ if (public.check_app_session(false)->>'ok') is distinct from 'true'
  or not private.billing_ui_owner()
- or not exists(select 1 from auth.users where id=auth.uid() and (email_confirmed_at is not null or phone_confirmed_at is not null)) then return false;end if;
+ or not exists(select 1 from auth.users where id=actor and (email_confirmed_at is not null or phone_confirmed_at is not null))
+ or not exists(select 1 from public.platform_admins where user_id=actor and role='owner' and status='active') then return false;end if;
  return true;
+ exception when lock_not_available then return false;
 end; $$;
 revoke all on function private.billing_service_catalog_owner() from public,anon,authenticated,service_role;
 create function public.billing_bind_noura_basic_draft(p_plan_version_id uuid,p_expected_revision bigint)
 returns jsonb language plpgsql security definer set search_path='' as $$
 declare v_revision bigint; v public.billing_plan_versions%rowtype; offer private.billing_service_offers%rowtype; code text;
 begin
- if not private.billing_service_catalog_owner() then return jsonb_build_object('ok',false,'code','forbidden');end if;
+ -- Cheap nonlocking denial retains the original caller boundary without
+ -- holding session activity across business-row waits. It is never authority
+ -- to write: the locked guard below must pass again after both waits.
+ if current_setting('role',true)<>'authenticated' or auth.uid() is null
+ or not private.billing_ui_owner()
+ or not exists(select 1 from auth.users u join auth.sessions s on s.user_id=u.id
+ join private.app_session_activity a on a.session_id=s.id and a.user_id=u.id
+ where u.id=auth.uid() and s.id::text=auth.jwt()->>'session_id'
+ and (u.email_confirmed_at is not null or u.phone_confirmed_at is not null)
+ and a.expired_at is null and a.last_activity_at<=clock_timestamp()
+ and a.last_activity_at>clock_timestamp()-interval '2 hours')
+ then return jsonb_build_object('ok',false,'code','forbidden');end if;
  if p_plan_version_id is null or p_expected_revision is null or p_expected_revision<1 then return jsonb_build_object('ok',false,'code','invalid_input');end if;
  select r.revision into v_revision from public.billing_catalog_revision r where singleton for update;
  if v_revision is distinct from p_expected_revision then return jsonb_build_object('ok',false,'code','conflict');end if;
- if not private.billing_service_catalog_owner() then return jsonb_build_object('ok',false,'code','forbidden');end if;
  select * into v from public.billing_plan_versions where id=p_plan_version_id for update;
  if not found then return jsonb_build_object('ok',false,'code','not_found');end if;
+ if not private.billing_service_catalog_owner() then return jsonb_build_object('ok',false,'code','forbidden');end if;
  if v.status<>'draft' or exists(select 1 from public.billing_orders where plan_version_id=v.id) then return jsonb_build_object('ok',false,'code','immutable');end if;
  select p.code into code from public.billing_plans p where id=v.plan_id;
  if code is distinct from 'noor_basic' or v.currency is distinct from 'OMR' or v.amount_baisa<=0
