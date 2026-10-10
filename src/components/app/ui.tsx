@@ -103,12 +103,12 @@ export function PasswordField({
             onChange={(e) => onChange(e.target.value)}
             autoComplete={autoComplete}
             dir="ltr"
-            className={`${p.className} pe-24`}
+            className={`${p.className} pr-32`}
           />
           <button
             type="button"
             onClick={() => setShow((s) => !s)}
-            className="absolute inset-y-1 end-1 inline-flex min-h-9 items-center rounded-lg px-3 text-xs text-[var(--color-action-on-dark)] hover:bg-[var(--color-hover-wash)]"
+            className="absolute inset-y-1 right-1 inline-flex min-h-9 items-center rounded-lg px-3 text-xs text-[var(--color-action-on-dark)] hover:bg-[var(--color-hover-wash)]"
           >
             {show ? copy.hidePassword : copy.showPassword}
           </button>

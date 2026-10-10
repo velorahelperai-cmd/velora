@@ -294,16 +294,28 @@ export async function verifyEmailCode(input: {
   }
 }
 
+function recordPasswordResetFailure(stage: "provider" | "request") {
+  try {
+    // Never log the mailbox, provider error, tokens or account-existence details.
+    console.warn("auth.password_reset_request_failed", { stage, retry: "manual_only" });
+  } catch {
+    // Logging must not change the non-enumerating public recovery response.
+  }
+}
+
 export async function requestPasswordReset(email: string): Promise<ActionResult> {
   const cleaned = email.trim().toLowerCase();
   if (!cleaned) return { ok: false, code: "INVALID_INPUT" };
   try {
     const supabase = await createClient();
-    await supabase.auth.resetPasswordForEmail(cleaned, {
+    const { error } = await supabase.auth.resetPasswordForEmail(cleaned, {
       redirectTo: authCallbackUrl("/reset-password"),
     });
+    // Provider failures can depend on mailbox existence; keep the public result neutral.
+    if (error) recordPasswordResetFailure("provider");
     return { ok: true, data: undefined };
   } catch {
+    recordPasswordResetFailure("request");
     return { ok: true, data: undefined };
   }
 }

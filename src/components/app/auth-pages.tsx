@@ -191,7 +191,7 @@ export function SignupPage() {
       const destination = await resolvePostAuthPath(returnTo);
       if (!destination.ok) { setFormError(destination.message ?? copy.errors.authFailed); return; }
       router.replace(destination.data.next);router.refresh();
-    });
+    }).catch(() => setFormError(copy.errors.authFailed));
   }
 
   return (
@@ -267,7 +267,7 @@ export function LoginPage() {
       }
       await session?.refresh();
       clearPendingSignup();router.replace(result.data.next);router.refresh();
-    });
+    }).catch(() => setFormError(copy.errors.authFailed));
   }
 
   return (
@@ -494,6 +494,7 @@ export function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
   const [error, setError] = useState<FieldErrorKey>();
   const [sent, setSent] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
   const [cooldown, setCooldown] = useState(0);
   const { busy, run } = useAction();
   const emailError = useErrorText(error);
@@ -509,9 +510,10 @@ export function ForgotPasswordPage() {
       <div className="mb-4">
         <Notice tone="info">{copy.auth.googleOnlyNote}</Notice>
       </div>
+      {formError ? <Notice tone="error">{formError}</Notice> : null}
       {sent ? (
         <div className="grid gap-4">
-          <Notice tone="success">{copy.auth.resetPrepared}</Notice>
+          {!formError ? <Notice tone="success">{copy.auth.resetPrepared}</Notice> : null}
           <p className="text-xs leading-5 text-[var(--color-muted-soft)]">{copy.auth.resetResendHint}</p>
           <Button
             type="button"
@@ -520,11 +522,13 @@ export function ForgotPasswordPage() {
             busyLabel={copy.loading}
             disabled={busy || cooldown > 0}
             onClick={() => {
-              if (!isEmail(email) || cooldown > 0) return;
+              if (busy || !isEmail(email) || cooldown > 0) return;
+              setFormError(null);
               void run(async () => {
-                await requestPasswordReset(email);
+                const result = await requestPasswordReset(email);
+                if (!result.ok) { setFormError(copy.errors.authFailed); return; }
                 setCooldown(RESEND_COOLDOWN_SEC);
-              });
+              }).catch(() => setFormError(copy.errors.authFailed));
             }}
           >
             {cooldown > 0 ? fill(copy.auth.resendIn, { n: cooldown }) : copy.auth.sendReset}
@@ -537,13 +541,16 @@ export function ForgotPasswordPage() {
           noValidate
           onSubmit={(e) => {
             e.preventDefault();
+            if (busy) return;
             if (!isEmail(email)) { setError("email"); return; }
             setError(undefined);
+            setFormError(null);
             void run(async () => {
-              await requestPasswordReset(email);
+              const result = await requestPasswordReset(email);
+              if (!result.ok) { setFormError(copy.errors.authFailed); return; }
               setSent(true);
               setCooldown(RESEND_COOLDOWN_SEC);
-            });
+            }).catch(() => setFormError(copy.errors.authFailed));
           }}
         >
           <Field label={copy.auth.email} required error={emailError}>
@@ -673,7 +680,7 @@ export function ResetPasswordPage() {
               }
               setDone(true);
               router.refresh();
-            });
+            }).catch(() => setFormError(copy.errors.authFailed));
           }}
         >
           {formError ? <Notice tone="error">{formError}</Notice> : null}
@@ -752,7 +759,7 @@ export function AcceptInvitePage() {
                   await session?.refresh();
                   router.replace("/app/conversations");
                   router.refresh();
-                });
+                }).catch(() => setAcceptError(errorText("UNAVAILABLE")));
               }}>{copy.auth.acceptInvite}</Button>
             ) : signedIn ? (
               <>
