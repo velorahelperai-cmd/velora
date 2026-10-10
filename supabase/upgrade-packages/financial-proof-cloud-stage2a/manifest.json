@@ -593,13 +593,13 @@
     }
   ],
   "generated_from": "20261010121531_financial_proof_cloud_stage2a.sql",
-  "package_sha256": "da4cb775ff314791ba7c8adad9269d2d70fdd560609e861428d30389bcecaf5e",
+  "package_sha256": "03ed8830c8da0684af0851ab4ef4ec16fd23bc64eef1cfbb3ee94d0793eeb267",
   "package_hash_normalization": "UTF-8 without BOM; CRLF normalized to LF",
   "forward_body_hashes": {
     "public.billing_create_or_reuse_subscription_order": "a70719d80e0058b08b820f7a1494798a",
     "private.billing_settle_payment_core_pre_acceptance": "ae4dd1a4195db97e91fa0e662ccdfff7",
     "private.billing_settle_payment_core": "c0e12aeb434b8cf7955872d5edd53ef0",
-    "private.billing_payment_attempts_sync_order_scope": "e2d866a3e4d05f0389f4829803a2c440",
+    "private.billing_payment_attempts_sync_order_scope": "56d96321d7e2ed74fbf27e707aed1ded",
     "private.billing_order_deadline_identity_guard": "0493fd3f2840593306ebb9a7eeb1e8f1",
     "private.billing_payment_attempts_binding_guard": "c5720cd3072c9c2ae1329c4f8dc3c4b7"
   },
@@ -648,10 +648,10 @@
   },
   "acceptance": "local_passed_production_unauthorized",
   "focused_verification": {
-    "passed": 22,
+    "passed": 24,
     "failed": 0,
     "skipped": 0,
-    "seconds": 193.25,
+    "seconds": 157.44,
     "baseline_live_function_contracts": 23,
     "stage1_guard_body_md5": "7b28f06702c177c5b65e3d9b23a7e1d4",
     "production_writes": 0

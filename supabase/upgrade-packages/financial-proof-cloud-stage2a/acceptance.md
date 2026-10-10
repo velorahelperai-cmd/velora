@@ -46,7 +46,7 @@ git diff --cached --check
 
 The first environment path is the SHA-pinned metadata-only input outside Git. The second is a metadata-only OUTPUT from the cumulative disposable fixture; no production connection occurs in the tests. Containers are verified local, network-none, tmpfs-only and without published ports; cleanup affects only their own verified task/run IDs.
 
-Final cumulative isolated PostgreSQL suite: 22 passed, 0 failed, 0 skipped in 193.25 seconds (`artifacts/internal-ui/stage2a-final.log`). Offline suite: 1437 passed, 42 opt-in skips (`stage2a-unit.log`). Typecheck passed; lint has no errors and one pre-existing `_result` warning (`stage2a-typecheck.log`, `stage2a-lint.log`). Application source is unchanged from the passing Stage 1 build; no redundant app build was run for this SQL/test-only slice. Earlier fixture failures were diagnosed rather than weakening guards: correct installer role/ownership, identical catalog search path, existing awaiting-payment subscription, existing day-alignment constraint and schema-qualified FK comparison.
+Final cumulative isolated PostgreSQL suite: 24 passed, 0 failed, 0 skipped in 157.44 seconds (`artifacts/internal-ui/stage2a-insert-final.log`). Offline suite: 1437 passed, 42 opt-in skips (`stage2a-insert-unit.log`). Typecheck passed; lint has no errors and one pre-existing `_result` warning (`stage2a-insert-types.log`, `stage2a-insert-lint.log`). Application source is unchanged from the passing Stage 1 build; no redundant app build was run for this SQL/test-only slice. Earlier fixture failures were diagnosed rather than weakening guards: correct installer role/ownership, identical catalog search path, existing awaiting-payment subscription, existing day-alignment constraint and schema-qualified FK comparison.
 
 ## Remaining blockers
 
@@ -54,6 +54,14 @@ Stage 2A is a database compatibility slice, not deployment acceptance. Stage 2B 
 
 Validate the complete necessary ordered bundle cumulatively before one bounded production approval. Do not replay historical D1/D5 migrations or the historical evidence reclassification loop.
 
-Reviewed package SHA256: `da4cb775ff314791ba7c8adad9269d2d70fdd560609e861428d30389bcecaf5e`, with UTF-8/no-BOM/CRLF-to-LF normalization. All new JS modules pass Node syntax checks; staged diff/encoding checks pass. Disposable test containers were cleaned up, leaving the pre-existing runtime untouched.
+Reviewed package SHA256: `03ed8830c8da0684af0851ab4ef4ec16fd23bc64eef1cfbb3ee94d0793eeb267`, with UTF-8/no-BOM/CRLF-to-LF normalization. All new JS modules pass Node syntax checks; staged diff/encoding checks pass. Disposable test containers were cleaned up, leaving the pre-existing runtime untouched.
 
-Final formatting removed one trailing space from the anonymous preflight CTE only; all twelve function body hashes were checked unchanged, so no functional PostgreSQL rerun was needed.
+## INSERT-path review correction
+
+Independent review found that `billing_payment_attempts_sync_order_scope` derived complete scope on INSERT but omitted the legacy provider-order identifier check enforced on UPDATE. A valid second synthetic attempt (distinct attempt sequence) with the legacy identifier succeeded against the reviewed SQL. This is a confirmed bypass, not an HTTP/status inference. The selected red run had 2 prerequisite tests pass and the new assertion fail because INSERT resolved rather than rejected (`artifacts/internal-ui/stage2a-insert-red.log`).
+
+The minimum correction applies the identical legacy lookup after deriving trusted order scope and before returning NEW from the BEFORE INSERT trigger. It covers fully supplied, omitted and partial matching scope, including `ON CONFLICT DO NOTHING`; mismatched scope and unknown order deadlines remain rejected by existing guards. UPDATE continues to freeze historic NULL scope and bound identifiers. No historic financial row, checkout/settlement writer, ACL or canonical migration is changed.
+
+New cumulative regressions verify all six INSERT forms, unchanged legacy row JSON, concurrent INSERT/UPDATE refusal for unknown legacy identifiers, and one-winner unique arbitration for a fresh same-scope identifier. The unchanged suite also checks cross-account/environment reuse, scope/deadline immutability, pre-DDL ambiguity refusal, rollback and authorization. One contended cumulative attempt failed at Docker inspection before fixture cleanup, causing subsequent prerequisite refusals; the fresh uncontended cumulative rerun passed all 24 tests. No production calls occur.
+
+Corrected INSERT sync body MD5: `56d96321d7e2ed74fbf27e707aed1ded`. The UPDATE guard and other forward body hashes remain unchanged.

@@ -48,6 +48,12 @@ begin
   or (new.provider_environment is not null and new.provider_environment is distinct from ord.provider_environment)
  then raise exception 'ATTEMPT_PROVIDER_SCOPE_MISMATCH' using errcode='23514';end if;
  new.provider:=ord.provider;new.provider_account_ref:=ord.provider_account_ref;new.provider_environment:=ord.provider_environment;
+ -- INSERT (including ON CONFLICT) must refuse the same unknown legacy IDs as first binding by UPDATE.
+ if new.provider_order_id is not null and exists(
+  select 1 from public.billing_payment_attempts u join public.billing_orders o on o.id=u.order_id and o.company_id=u.company_id
+  where u.id<>new.id and u.provider_order_id=new.provider_order_id and num_nonnulls(u.provider,u.provider_account_ref,u.provider_environment)=0
+   and o.provider=new.provider and o.provider_account_ref=new.provider_account_ref and o.provider_environment=new.provider_environment
+ ) then raise exception 'LEGACY_PROVIDER_ORDER_SCOPE_AMBIGUOUS' using errcode='23514';end if;
  return new;
 end;$$;
 revoke all on function private.billing_payment_attempts_sync_order_scope() from public,anon,authenticated,service_role;

@@ -180,3 +180,24 @@ it('refuses a NEW binding that would claim an identifier held by unknown legacy 
  expect(await db.sql('SELECT provider_order_id IS NULL FROM public.billing_payment_attempts WHERE id='+lit(r.payment_attempt_id))).toBe('t');
  expect(await db.sql("SELECT count(*) FROM public.billing_payment_attempts WHERE provider_order_id='synthetic-duplicate' AND provider IS NULL")).toBe('2');
 });
+
+it('refuses INSERT legacy identifier claims with explicit, omitted and partial scope including conflict handling',async()=>{
+ const f=await actor(db),r=await checkout(db,f);
+ const before=await db.sql("SELECT jsonb_agg(to_jsonb(a) ORDER BY a.id) FROM public.billing_payment_attempts a WHERE provider_order_id='synthetic-duplicate'");
+ for(const [columns,values] of [['',''],[',provider,provider_account_ref,provider_environment',",'paymob','74001','test'"],[',provider_account_ref',",'74001'"]]){
+  for(const conflict of ['', ' ON CONFLICT DO NOTHING'])await expect(db.sql(service('INSERT INTO public.billing_payment_attempts(order_id,company_id,attempt_seq,provider_order_id'+columns+') VALUES('+lit(r.order_id)+','+lit(f.company)+",2,'synthetic-duplicate'"+values+')'+conflict+';'))).rejects.toThrow(/LEGACY_PROVIDER_ORDER_SCOPE_AMBIGUOUS/);
+ }
+ expect(await count('public.billing_payment_attempts',f)).toBe('1');
+ expect(await db.sql("SELECT jsonb_agg(to_jsonb(a) ORDER BY a.id) FROM public.billing_payment_attempts a WHERE provider_order_id='synthetic-duplicate'")).toBe(before);
+});
+it('concurrent INSERT and UPDATE both refuse unknown legacy claims and arbitrate fresh scope',async()=>{
+ const a=await actor(db),b=await actor(db),r1=await checkout(db,a),r2=await checkout(db,b);
+ const insert=id=>db.sql(service('INSERT INTO public.billing_payment_attempts(order_id,company_id,attempt_seq,provider_order_id) VALUES('+lit(r1.order_id)+','+lit(a.company)+',2,'+lit(id)+');'));
+ const update=id=>db.sql(service('UPDATE public.billing_payment_attempts SET provider_order_id='+lit(id)+' WHERE id='+lit(r2.payment_attempt_id)+';'));
+ const refused=await Promise.allSettled([insert('synthetic-duplicate'),update('synthetic-duplicate')]);
+ for(const result of refused){expect(result.status).toBe('rejected');expect(result.reason.message).toMatch(/LEGACY_PROVIDER_ORDER_SCOPE_AMBIGUOUS/);}
+ expect(await db.sql("SELECT count(*) FROM public.billing_payment_attempts WHERE provider_order_id='synthetic-duplicate' AND provider IS NULL")).toBe('2');
+ const fresh='synthetic-insert-update-'+Date.now(),results=await Promise.allSettled([insert(fresh),update(fresh)]);
+ expect(results.filter(x=>x.status==='fulfilled')).toHaveLength(1);expect(results.filter(x=>x.status==='rejected')[0].reason.message).toMatch(/billing_payment_attempts_provider_order_uidx/);
+ expect(await db.sql('SELECT count(*) FROM public.billing_payment_attempts WHERE provider_order_id='+lit(fresh))).toBe('1');
+});
