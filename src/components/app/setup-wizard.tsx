@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { SetupLoading } from "./setup-loading";
+import styles from "./setup-wizard.module.css";
 import { useRouter } from "next/navigation";
 import { setupSubscriptionReturn } from "@/lib/auth/setup-return";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -376,16 +378,16 @@ export function SetupWizard({
   }, [ready, setupTestValid, draft.setupTestPassed]);
 
   if (!ready) {
-    return <main className="app-shell" aria-busy="true" />;
+    return <SetupLoading />;
   }
 
   const completedCount = effectiveSetupDone.filter(Boolean).length;
   const progressPercent = Math.round((completedCount / 8) * 100);
 
   return (
-    <main className="app-shell overflow-x-hidden px-4 py-6 pb-28">
+    <main className={`app-shell ${styles.setup}`}>
       {/* Top Brand & Navigation Header */}
-      <div className="mx-auto flex max-w-[1100px] flex-wrap items-center justify-between gap-3">
+      <div className={`flex flex-wrap items-center justify-between gap-3 ${styles.header}`}>
         <Link href="/" className="inline-flex min-h-11 items-center gap-2 text-2xl font-bold tracking-tight">
           <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#38dc89] text-base text-[#072317]">
             V
@@ -402,14 +404,14 @@ export function SetupWizard({
         </div>
       </div>
 
-      <div className="mx-auto mt-8 max-w-[1100px]">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
+      <div className={styles.content}>
+        <div className={`flex flex-wrap justify-between gap-2 ${styles.titleRow}`}>
           <h1 className="app-title text-3xl break-words lg:text-4xl">{copy.setup.title}</h1>
-          <span className="text-xs font-semibold text-[#9af0c3] bg-[#38dc89]/15 border border-[#38dc89]/30 rounded-full px-3 py-1">
+          <span className={styles.recordCount}>
             {completedCount} / 8 {ar ? "محطات مؤكدة من السجلات" : "milestones confirmed from records"}
           </span>
         </div>
-        <p className="app-muted mt-2 text-sm leading-6">
+        <p className={`mt-2 ${styles.resume}`}>
           {fill(mCopy.milestoneProgress, { n: step + 1 })} · {copy.setup.resume}
         </p>
 
@@ -421,7 +423,7 @@ export function SetupWizard({
 
         {/* 8-Milestone Stepper Grid */}
         <ol
-          className="mt-6 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-8"
+          className={styles.stepper}
           aria-label={copy.setup.title}
         >
           {mCopy.steps.map((label, i) => {
@@ -433,7 +435,8 @@ export function SetupWizard({
                   type="button"
                   onClick={() => go(i)}
                   aria-current={active ? "step" : undefined}
-                  className={`flex min-h-14 w-full flex-col justify-center items-start gap-1 rounded-xl border p-2.5 text-start text-xs transition ${
+                  aria-label={label}
+                  className={`flex w-full flex-col justify-center gap-1 text-start ${styles.stepButton} ${
                     active
                       ? "border-[#38dc89] bg-[#38dc89]/15 shadow-[0_0_12px_rgba(56,220,137,0.2)]"
                       : "border-[color:var(--color-border-soft)] hover:bg-[var(--color-hover-wash)]"
@@ -441,7 +444,8 @@ export function SetupWizard({
                 >
                   <div className="flex w-full items-center justify-between">
                     <span
-                      className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${
+                      data-complete={done || undefined}
+                      className={`inline-flex shrink-0 items-center justify-center rounded-full font-bold ${styles.stepNumber} ${
                         done
                           ? "bg-[#38dc89] text-[#072317]"
                           : active
@@ -452,10 +456,10 @@ export function SetupWizard({
                       {done ? "✓" : i + 1}
                     </span>
                     {active ? (
-                      <span className="h-1.5 w-1.5 rounded-full bg-[#38dc89] animate-pulse" />
+                      <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${styles.activeDot}`} />
                     ) : null}
                   </div>
-                  <span className="line-clamp-2 leading-4 font-medium text-[#f7fbf8] mt-1">
+                  <span className={`line-clamp-2 ${styles.stepLabel}`}>
                     {label}
                   </span>
                 </button>
@@ -465,27 +469,27 @@ export function SetupWizard({
         </ol>
 
         {/* Smooth Gradient Progress Bar */}
-        <div className="mt-4 h-2.5 overflow-hidden rounded-full bg-white/10 p-0.5" aria-hidden="true">
+        <div className={`overflow-hidden rounded-full ${styles.progressTrack}`} aria-hidden="true">
           <div
-            className="h-full rounded-full bg-gradient-to-r from-[#2ebd73] via-[#38dc89] to-[#9af0c3] shadow-[0_0_14px_rgba(56,220,137,0.6)] transition-all duration-700 ease-out"
+            className={`h-full rounded-full ${styles.progressFill}`}
             style={{ width: `${progressPercent}%` }}
           />
         </div>
 
         {/* Active Step Panel */}
-        <section className="app-panel mt-6 min-w-0 rounded-3xl p-5 sm:p-6 lg:p-8 border border-[color:var(--color-border-soft)] shadow-[0_16px_40px_rgba(0,0,0,0.4)] backdrop-blur-md">
-          <div className="flex items-center gap-3">
-            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#38dc89]/15 border border-[#38dc89]/30 text-sm font-bold text-[#9af0c3]">
+        <section className={`min-w-0 ${styles.panel}`}>
+          <div className={`flex ${styles.panelHeading}`}>
+            <span className={`flex items-center justify-center text-sm font-bold ${styles.panelNumber}`}>
               {step + 1}
             </span>
-            <h2 className="app-title text-2xl font-bold break-words text-[#f7fbf8]">
+            <h2 className="font-bold break-words">
               {mCopy.steps[step]}
             </h2>
           </div>
-          <p className="app-muted mt-2 text-sm leading-6 text-[#b7c6b9]">{mCopy.stepBodies[step]}</p>
+          <p className={`mt-2 ${styles.panelBody}`}>{mCopy.stepBodies[step]}</p>
           {step === 6 ? <Notice tone="info">{ar ? "نجاح الاختبار علامة محلية مرتبطة بمعرفة النشاط، ولا يُحتسب كتفعيل محفوظ أو دليل جودة شامل." : "A successful trial is local progress bound to company knowledge. It is not persisted activation or comprehensive quality evidence."}</Notice> : null}
 
-          <div className="mt-6 min-w-0">
+          <div className={`min-w-0 ${styles.panelContent}`}>
             {/* Milestone 0: Company Profile */}
             {step === 0 ? (
               <BusinessStep
@@ -608,7 +612,7 @@ export function SetupWizard({
               >
                 <div className="mb-4 rounded-xl border border-[#38dc89]/30 bg-[#38dc89]/10 p-3.5 text-xs leading-relaxed text-[#c5d4cc]">
                   <div className="flex items-start gap-2.5">
-                    <span className="text-base shrink-0">🧪</span>
+                    <span aria-hidden="true" className="shrink-0 text-base font-bold">i</span>
                     <div>
                       <strong className="font-semibold text-[#f7fbf8]">
                         {locale === "ar"
@@ -707,7 +711,7 @@ function StepFrame({
   return (
     <div className="grid min-w-0 gap-5">
       <div className="min-w-0">{children}</div>
-      <div className="sticky bottom-0 z-10 -mx-4 mt-2 flex flex-wrap items-center justify-between gap-3 border-t border-[color:var(--color-border-soft)] bg-[#0d1a14]/95 px-4 py-4 backdrop-blur sm:-mx-5 sm:px-5 lg:static lg:mx-0 lg:bg-transparent lg:px-0 lg:backdrop-blur-none">
+      <div className={`sticky bottom-0 z-10 -mx-4 mt-2 flex flex-wrap items-center justify-between gap-3 border-t px-4 py-4 sm:mx-0 lg:static lg:px-0 ${styles.actionBar}`}>
         <Button variant="secondary" onClick={onBack}>
           {copy.back}
         </Button>
@@ -1210,11 +1214,8 @@ function WhatsAppStep({
 
   return (
     <form className="grid gap-5" noValidate onSubmit={submit}>
-      <div className="rounded-2xl border border-[#38dc89]/30 bg-gradient-to-r from-[#12281e] via-[#0d1a14] to-[#07110d] p-4">
+      <div className={`rounded-2xl border p-4 ${styles.connectionIntro}`}>
         <div className="flex items-center gap-3">
-          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#25d366]/20 border border-[#25d366]/40 text-xl">
-            📱
-          </span>
           <div>
             <h3 className="font-bold text-[#f7fbf8] text-sm">
               {ar ? "ربط واتساب التجاري (Meta Cloud API)" : "WhatsApp Cloud API Connection"}
@@ -1230,7 +1231,7 @@ function WhatsAppStep({
 
       <div className="rounded-xl border border-[#d9a467]/40 bg-[#d9a467]/10 p-3.5 text-xs leading-relaxed text-[#f0cf9d]">
         <div className="flex items-start gap-2.5">
-          <span className="shrink-0 text-base">⚠️</span>
+          <span className="shrink-0 text-base" aria-hidden="true">!</span>
           <div>
             <strong className="font-semibold">
               {ar ? "تنبيه هام حول توثيق واتساب:" : "Important WhatsApp Verification Notice:"}
@@ -1399,8 +1400,8 @@ function DecoupledPillarsNotice({
   ];
 
   return (
-    <div className="rounded-2xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel-deep)] p-4">
-      <div className="flex items-center justify-between gap-2 border-b border-[color:var(--color-border-soft)] pb-3">
+    <div className={`rounded-2xl border p-4 ${styles.activationStates}`}>
+      <div className={`flex items-center justify-between border-b border-[color:var(--color-border-soft)] pb-3 ${styles.activationHeader}`}>
         <h4 className="text-xs font-bold text-[#f7fbf8] sm:text-sm">
           {ar ? "حالات التفعيل الخمس المستقلة (5 Decoupled Pillars)" : "5 Independent Activation States"}
         </h4>
@@ -1409,16 +1410,17 @@ function DecoupledPillarsNotice({
         </span>
       </div>
 
-      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-5">
+      <div className={`mt-3 grid gap-2 ${styles.activationGrid}`}>
         {pillars.map((p) => (
           <div
             key={p.id}
-            className="flex flex-col justify-between rounded-xl border border-white/10 bg-black/20 p-2.5 text-xs"
+            className={`flex flex-col justify-between rounded-xl text-xs ${styles.activationCard}`}
           >
             <div>
-              <span className="font-semibold text-[#f7fbf8] block leading-tight">{p.title}</span>
+              <span className={`font-semibold block ${styles.activationTitle}`}>{p.title}</span>
               <span
-                className={`mt-1.5 inline-block rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                data-state={p.state}
+                className={`mt-1.5 inline-block px-2 py-0.5 font-medium ${styles.activationStatus} ${
                   p.state === "complete"
                     ? "bg-[#38dc89]/20 text-[#38dc89]"
                     : p.state === "pending"
