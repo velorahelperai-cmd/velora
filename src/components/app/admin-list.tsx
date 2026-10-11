@@ -617,7 +617,7 @@ export function AdminList({
           <IconBuilding />
           <span>{isRtl ? "الشركات والعملاء" : "Companies"}</span>
           <span className="rounded-full bg-[#6B4932]/10 px-1.5 py-0.2 text-[10px] font-bold">
-            {filtered.length}
+            {companiesState === "ready" ? filtered.length : "-"}
           </span>
         </button>
 
@@ -698,7 +698,7 @@ export function AdminList({
               <p className="mt-0.5 text-xs text-[#615244]">{copy.admin.companiesBody}</p>
             </div>
             <span className="rounded-full bg-[#F7F0E5] border border-[#D7C1A5] px-3 py-1 text-xs text-[#6B4932] font-semibold">
-              {fill(copy.admin.companiesTitle, { n: filtered.length })} ({filtered.length})
+              {companiesState === "ready" ? `${fill(copy.admin.companiesTitle, { n: filtered.length })} (${filtered.length})` : "-"}
             </span>
           </div>
 
