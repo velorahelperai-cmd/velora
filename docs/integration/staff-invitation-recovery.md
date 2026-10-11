@@ -1,0 +1,41 @@
+# Company staff invitation recovery — isolated candidate
+
+This package implements the bounded invitation recovery work authorized on 11 October 2026. Base: `e0a7295ada51c2a2b4c8a80e9317b5aeae6983e2`, verified against actual origin/main before editing. The supplied unpublished platform teams UI commit is excluded. No branch creation, push, merge, deployment, production SQL, real Auth user, provider call, or email delivery belongs to this package.
+
+Sources: the full latest Library plan `libfile_39c2d774a6488191b2440a7661411199` (116,113 bytes, both long lines, supported read with has_more=false, inspected in bounded character windows), especially §§7,24,27,37,45,47; canonical review `libfile_5e35343a1d948191bf6a78fd1d886408` (15,648 bytes). Company roles remain owner/staff. Customer manager, branch, seat policy, Auth and platform-team contracts are outside this package.
+
+## Mutation contract
+
+`createStaffInvitation({ companyId, email, name, operationId })`, `replaceStaffInvitation({ companyId, invitationId, expectedRevision, operationId })` and `cancelStaffInvitation(...)` use `public.mutate_staff_invitation`. Every intent supplies a stable operation UUID; committed replay binds the actor, tenant, normalized request and original target/revision. A UUID reused for another committed payload returns `OPERATION_CONFLICT`. Noncommitted failures can be retried without producing an additional invitation. UI retries of an unchanged intent reuse their UUID; after reload the authoritative recipient record is read from SQL, and an explicit replacement recovers a lost link.
+
+Only server-generated 256-bit token hashes are persisted. On initial creation/replacement the server returns its fresh link; replay and existing-recipient outcomes return metadata with `inviteUrl: null`. No hash is decrypted or treated as the fresh token. A committed operation returns its original outcome and the invitation's **current** lifecycle projection, so replay after acceptance or cancellation does not claim that the historical link is pending.
+
+A unique recipient row `(company_id,email)` orders create, replacement, cancellation and acceptance. A partial unique index prevents duplicate pending nonlegacy invitations, including expired links awaiting explicit replacement. Shared recipient revisions advance on create, replace, cancel and first accept; returning an existing invitation or replay does not advance them. Stale requests return `STALE_REVISION` before checking terminal state; an accepted/cancelled target at its current revision returns `INVITE_NOT_PENDING`.
+
+Replace and cancel invalidate **all pending links for that recipient in that company**, including expired legacy duplicates. The UI must confirm this effect before calling them. Replacement copies the selected invitation's recipient/name into a new seven-day invitation; cancellation leaves no pending invitation. Accepted rows, memberships, other company memberships and capability grants are preserved. An existing membership, including disabled or owner membership, blocks new creation/replacement; acceptance retains the earlier behavior for active staff membership and never reactivates/promotes another membership.
+
+Existing verified identity, native session, confirmed-email acceptance, active-company and active-owner checks remain on SQL and server actions. Every replay is freshly authorized. The existing audit writer records IDs, operation/revision and invalidated invitation IDs atomically with successful mutation/first acceptance. Audit failure rolls back invitation state, operation history, membership insertion and trigger effects. Tokens/hashes and recipient name/mailbox are absent from audits. No audit duplication occurs on replay.
+
+There was **no invitation seat-limit enforcement in the inspected baseline**. This package does not claim to add it. A later entitlement/seat policy package must define the authoritative limit and its concurrent acceptance behavior before making that product claim.
+
+## Forward migration and legacy handling
+
+Candidate migration: `supabase/migrations/20261011160000_vel_staff_invitation_recovery.sql`. It adds cancellation/history metadata, recipient revisions, committed operations and the guarded lifecycle RPC. The old four-argument create signature retains its exact execute ACL but returns `UPGRADE_REQUIRED`; this prevents a legacy client bypassing operation replay or uniqueness. Existing read/list/accept signatures retain their ACLs through `CREATE OR REPLACE`. No existing membership/table/capability or audit-reader grant is broadened; new private tables have RLS and no client table grants.
+
+Run only through a transactional installer, after later exact review and approval. The explicit invitation table lock orders backfill with old creators/acceptors. New code before migration fails unavailable; old creation after migration fails upgrade-required. Deploying both together requires a short controlled compatibility window. Do not restore the vulnerable old create/accept bodies after a committed upgrade.
+
+Legacy duplicates are retained, with only `legacy_duplicate` classification added. The migration does not choose a surviving link, delete data or cancel it silently. All ambiguous pending groups fail preview and acceptance until a currently authorized owner confirms group replacement/cancellation. Accepted legacy rows remain unchanged and their acceptance replay still requires current active membership/owner/company/session gates. Normal nonduplicate legacy links remain usable. Direct pending recipient uniqueness applies to new records; legacy exceptions remain isolated behind recipient locks and explicit repair.
+
+Before any later installation, review actual schema/dependency definitions and ACLs against this exact candidate: `private.staff_invitation_actor`, `public.check_app_session`, `public.app_session_is_valid`, `private.write_admin_audit`, existing invitation RPCs/tables, Auth tables, company/membership status/role/checks, membership triggers and company deletion relationships. Count duplicate unaccepted company/email groups without exporting mailboxes or hashes, check normalized recipient values and accepted-field pairs, and verify a backup/restore rehearsal. The local fixture is not production drift approval.
+
+## Recovery and containment
+
+The local test executes the complete migration inside `BEGIN ... ROLLBACK` and confirms original functions, links and records are restored before installation. After committed installation, forward repair is required: cancellation/replacement with a fresh operation UUID and current recipient revision. Keep historical rows/replay records when containing a defect; never roll back to the duplicate-generating creator.
+
+A later approved operational containment may temporarily revoke execute for the new mutation RPC and existing accept/preview RPCs while retaining the owner reader and all data. Save exact ACLs first, test access denial, and restore only those saved ACLs after correction. The isolated suite rehearses this in a rolled-back transaction; no production revocation or restoration occurred here.
+
+## Verification boundaries
+
+Run the native fixture using `scripts/staff-invitations/README.md`; it verifies its isolated Docker target before every fixture lifecycle, uses no remote credentials and removes disposable databases. The separate baseline script proves two concurrently valid pending links. Contract cases cover real PostgreSQL lock waits, retries, races, legacy recovery, tenant/session/email gates, uniqueness, accepted history/grants, audit rollback and installer recovery. Focused component/server-action tests cover interrupted UI outcomes and account switching; aggregate/typecheck/lint/build results and exact migration/patch hashes belong to the final handoff manifest.
+
+No complete historical migration replay, live Next→GoTrue→PostgREST transport, production/browser customer journey, seat policy, provider, email or invited-user acceptance is established by these local fixtures. Supabase function security guidance was checked at https://supabase.com/docs/guides/database/functions; the changelog markdown endpoint was unavailable (web content-type error, direct read 403). No new Supabase client API convention is introduced.

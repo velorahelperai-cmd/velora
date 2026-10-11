@@ -6,7 +6,7 @@ import {readAdminTruth} from "@/lib/answers/runtime/admin-truth";
 
 export const metadata: Metadata = { title: "Velora Admin" };
 
-export default async function Page({searchParams}: {searchParams?:Promise<Record<string,string|string[]|undefined>>} = {}) {
+export default async function Page({searchParams}: {searchParams?:Promise<Record<string,string|string[]|undefined>>}) {
   const filters=companyListFilters(await searchParams??{});
   const [overview,truth] = await Promise.all([adminGetOverviewStats(),readAdminTruth()]);
   return (
