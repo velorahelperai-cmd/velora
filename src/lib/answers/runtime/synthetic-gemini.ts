@@ -1,7 +1,7 @@
 import "server-only";
 import { createGeminiSyntheticTransport } from "../adapters/gemini";
 import { createRealRuntimeStore, type RealRuntimeStore } from "./store";
-import type { AIModelId } from "../types";
+import { readSyntheticGeminiConfig } from "./synthetic-gemini-config";
 
 type Identity = { actorId: string; sessionId: string; companyId: string; executionId: string };
 type SyntheticInput = Identity & { executeConfirmed: boolean };
@@ -11,21 +11,11 @@ const failure = (error: string) => ({ ok: false as const, error, retrySafe: fals
 
 /** Server-only opt-in. Client input cannot attest billing, authorize a model, or supply a prompt. */
 function approvedConfig(input: SyntheticInput, env: NodeJS.ProcessEnv) {
-  if (env.VELORA_GEMINI_FREE_ENABLED !== "true" || !env.AI_GEMINI_FREE_API_KEY?.trim()) return null;
-  try {
-    const a = JSON.parse(env.VELORA_GEMINI_FREE_ATTESTATION ?? "") as Record<string, unknown>;
-    const at = typeof a.verifiedAt === "string" ? Date.parse(a.verifiedAt) : NaN;
-    if (a.version !== 1 || !Number.isFinite(at) || Date.now() < at || Date.now() - at > 3_600_000 ||
-        a.billingDisabled !== true || a.freeModelVerified !== true || a.regionAllowed !== true ||
-        a.unpaidTermsAccepted !== true || a.ledgerVerified !== true ||
-        typeof a.projectRef !== "string" || !/^[a-z0-9][a-z0-9-]{5,62}$/.test(a.projectRef) ||
-        a.modelId !== "gemini-3.8-flash" ||
-        (["actorId", "sessionId", "companyId", "executionId"] as const).some(k => a[k] !== input[k])) return null;
-    // An allowlisted model is required explicitly; it is never a guessed/default model.
-    return { model: a.modelId as AIModelId, key: env.AI_GEMINI_FREE_API_KEY, verifiedAt: a.verifiedAt };
-  } catch { return null; }
+  const config = readSyntheticGeminiConfig(env);
+  if (!config || (["actorId", "companyId", "executionId"] as const).some(k => config.attestation[k] !== input[k]) ||
+      config.attestation.sessionId !== input.sessionId) return null;
+  return { model: config.model, key: config.key, verifiedAt: config.attestation.verifiedAt };
 }
-
 /** Internal runner. Only the owner-authenticated server action exposes it; dependencies are for offline tests. */
 export async function executeSyntheticGemini(input: SyntheticInput,
   dependencies?: { env?: NodeJS.ProcessEnv; store?: RealRuntimeStore }) {

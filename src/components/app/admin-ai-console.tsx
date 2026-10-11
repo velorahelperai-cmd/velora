@@ -6,11 +6,13 @@ import {readAdminAIState,runAdminAITrial} from "@/lib/answers/runtime/admin-acti
 import type {AdminAIActionInput,AdminAIState} from "@/lib/answers/runtime/admin-types";
 import {Button,Notice} from "./ui";
 import styles from "./admin-ai-console.module.css";
+import {SyntheticGeminiConsole} from "./synthetic-gemini-console";
+import type {SyntheticGeminiFreeState} from "@/lib/answers/runtime/synthetic-gemini-types";
 
 const models=["gpt-6-luna","gemini-3.8-flash","gpt-6.1-sol"] as const;
 const labels:Record<string,string>={success:"نجح",incomplete:"رد غير مكتمل",rejected:"رفض المزود",uncertain:"تكلفة تحتاج مراجعة",running:"قيد التنفيذ",reserved:"تم حجز الميزانية"};
 const messages:Record<string,string>={BUDGET_EXCEEDED:"المتبقي لا يغطي الحد الأقصى للطلب. لم يتم الاتصال بالنموذج.",BUDGET_DISABLED:"ميزانية التجارب متوقفة.",NO_KNOWLEDGE:"لا توجد معرفة معتمدة لهذه الشركة. جرّب فحص الاتصال أو اعتمد مصادر المعرفة أولًا.",APPROVAL_FOUNDATION_UNAVAILABLE:"تجهيز اعتماد المعرفة غير مكتمل في قاعدة البيانات. فحص الاتصال متاح.",KEY_MISSING:"مفتاح المزود غير موجود في إعدادات السيرفر.",PROVIDER_HTTP_401:"المزود رفض المفتاح. راجع صلاحية المفتاح وحسابه.",PROVIDER_HTTP_403:"الحساب لا يملك صلاحية تنفيذ هذا الطلب لدى المزود.",PROVIDER_HTTP_404:"النموذج غير متاح على نقطة الاتصال لهذا الحساب.",PROVIDER_HTTP_429:"المزود رفض الطلب بسبب الحصة أو الرصيد أو معدل الطلبات.",PROVIDER_NETWORK_ERROR:"الاتصال غير مؤكد؛ الميزانية المحجوزة محفوظة لحين مراجعة الاستهلاك.",SETTLEMENT_PENDING_RECONCILIATION:"وصل الطلب للمزود لكن تأكيد حفظ الاستهلاك تعذّر. الحجز محفوظ لتجنب تجاوز الميزانية.",DUPLICATE_REQUEST:"تم استخدام رقم الطلب بالفعل؛ لن نرسل طلبًا مكررًا."};
-export function AdminAIConsole({initial}:{initial:AdminAIState}){
+export function AdminAIConsole({initial,freeState}:{initial:AdminAIState;freeState?:SyntheticGeminiFreeState}){
  const {locale}=useDemo(),ar=locale==="ar";
  const [state,setState]=useState(initial),[companyId,setCompanyId]=useState(initial.companies.find(c=>c.status!=="suspended")?.id??""),[model,setModel]=useState<AdminAIActionInput["model"]>("gpt-6-luna"),[contextMode,setContextMode]=useState<AdminAIActionInput["contextMode"]>("connection"),[question,setQuestion]=useState("هذا فحص اتصال. أكّدي وصول الرسالة باختصار."),[busy,setBusy]=useState(false),[error,setError]=useState<string|null>(null),[result,setResult]=useState<Awaited<ReturnType<typeof runAdminAITrial>>|null>(null);
  const budget=state.budget,remaining=Math.max(0,Number(budget.limit_baisa)-Number(budget.spent_baisa)-Number(budget.held_baisa));
@@ -24,6 +26,7 @@ export function AdminAIConsole({initial}:{initial:AdminAIState}){
  return <section className={styles.console} dir={ar?"rtl":"ltr"}>
   <header className={styles.header}><div><p className={styles.kicker}>Velora AI</p><h1>{ar?"تجربة الذكاء الفعلية":"Real AI trials"}</h1><p>{ar?"ردود من النماذج الحقيقية، باستهلاك محفوظ وسقف مستقل لتجارب مالك المنصة.":"Actual model responses with durable usage and a separate owner trial budget."}</p></div><Link href="/admin">{ar?"لوحة الإدارة":"Administration"}</Link></header>
   <div className={styles.balance}><div><span>{ar?"متبقي للتجارب":"Trial balance"}</span><strong><bdi>{money(remaining)}</bdi> <small>{ar?"ر.ع":"OMR"}</small></strong></div><p>{ar?"السقف الإجمالي: 1 ر.ع. لا يتجدد تلقائيًا، ولا يُخصم من اشتراك الشركة.":"Total cap: 1 OMR. No automatic reset; company subscriptions are not charged."}<br/>{ar?"المستخدم":"Spent"}: <bdi>{money(Number(budget.spent_baisa))}</bdi> · {ar?"المحجوز":"Held"}: <bdi>{money(Number(budget.held_baisa))}</bdi></p><Button type="button" variant="secondary" disabled={busy} onClick={()=>void refresh()}>{ar?"تحديث الاستهلاك":"Refresh usage"}</Button></div>
+  <SyntheticGeminiConsole initial={freeState??{ready:false,code:"FREE_SYNTHETIC_NEEDS_SETUP"}} ar={ar}/>
   {error?<Notice tone="error">{error}</Notice>:null}
   <div className={styles.workspace}><form onSubmit={submit} className={styles.form}>
    <h2>{ar?"جرّب طلبًا":"Try a request"}</h2>
