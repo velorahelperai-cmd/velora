@@ -1,4 +1,4 @@
-import {beforeEach,describe,expect,it,vi} from "vitest";
+import {afterEach,beforeEach,describe,expect,it,vi} from "vitest";
 const state=vi.hoisted(()=>({access:vi.fn(),scope:vi.fn(),cap:vi.fn(),page:vi.fn(),thread:vi.fn(),from:vi.fn()}));
 vi.mock("@/lib/tenancy/access",()=>({getCompanyAccess:state.access}));
 vi.mock("@/lib/access/actions",()=>({sessionConversationScope:state.scope,sessionHasCompanyCapability:state.cap}));
@@ -36,4 +36,44 @@ describe("initial inbox failure classification", () => {
   expect(await loadWhatsappInboxInitialPage()).toEqual({ok:false,code:"UNAVAILABLE"});
   expect(state.page).not.toHaveBeenCalled();
  });
+});
+
+afterEach(() => vi.restoreAllMocks());
+
+describe("sanitized initial inbox diagnostics", () => {
+ it("identifies unknown scope without exposing workspace context", async () => {
+  const log=vi.spyOn(console,"warn").mockImplementation(()=>{});state.scope.mockResolvedValue(null);
+  expect(await loadWhatsappInboxInitialPage()).toEqual({ok:false,code:"UNAVAILABLE"});
+  expect(log).toHaveBeenCalledWith("whatsapp.inbox_read_failed",{stage:"initial_scope",code:"UNKNOWN_SCOPE"});
+  expect(JSON.stringify(log.mock.calls)).not.toContain(company);
+ });
+ it("identifies the timezone query and allows only its known machine error code", async () => {
+  const log=vi.spyOn(console,"warn").mockImplementation(()=>{});
+  state.from.mockReturnValue({select:()=>({eq:()=>({maybeSingle:async()=>({data:null,error:{code:"42703",message:"PRIVATE_TIMEZONE_DETAILS",details:company}})})})});
+  expect(await loadWhatsappInboxInitialPage()).toEqual({ok:false,code:"UNAVAILABLE"});
+  expect(log).toHaveBeenCalledWith("whatsapp.inbox_read_failed",{stage:"initial_timezone",code:"QUERY_ERROR",error_code:"42703"});
+  expect(JSON.stringify(log.mock.calls)).not.toContain("PRIVATE_TIMEZONE_DETAILS");
+  expect(JSON.stringify(log.mock.calls)).not.toContain(company);
+ });
+ it("identifies a caught exception stage without its contents", async () => {
+  const log=vi.spyOn(console,"warn").mockImplementation(()=>{});state.scope.mockRejectedValue(new Error("PRIVATE_EXCEPTION"));
+  expect(await loadWhatsappInboxInitialPage()).toEqual({ok:false,code:"UNAVAILABLE"});
+  expect(log).toHaveBeenCalledWith("whatsapp.inbox_read_failed",{stage:"initial_scope",code:"EXCEPTION",error_code:"OTHER"});
+  expect(JSON.stringify(log.mock.calls)).not.toContain("PRIVATE_EXCEPTION");
+ });
+});
+it("identifies an assignee exception separately from the completed timezone query", async () => {
+ const log=vi.spyOn(console,"warn").mockImplementation(()=>{});
+ state.cap.mockImplementation(async(_:string,c:string)=>c==="wa.conversations.read"||c==="wa.conversations.assign");
+ state.from.mockImplementation((table:string)=>table==="companies"
+  ? {select:()=>({eq:()=>({maybeSingle:async()=>({data:{timezone:"Asia/Muscat"},error:null})})})}
+  : {select:()=>({eq:()=>({eq:()=>({in:()=>({order:async()=>{throw new Error("PRIVATE_ASSIGNEE_ERROR");}})})})})});
+ expect(await loadWhatsappInboxInitialPage()).toEqual({ok:false,code:"UNAVAILABLE"});
+ expect(log).toHaveBeenCalledWith("whatsapp.inbox_read_failed",{stage:"initial_assignees",code:"EXCEPTION",error_code:"OTHER"});
+});
+it("does not label a final access outage as a scope change", async () => {
+ const log=vi.spyOn(console,"warn").mockImplementation(()=>{});
+ state.access.mockResolvedValueOnce({ok:true,context:{company:{id:company},membership:{role:"owner"}}}).mockResolvedValueOnce({ok:false,code:"UNAVAILABLE"});
+ expect(await loadWhatsappInboxInitialPage()).toEqual({ok:false,code:"UNAVAILABLE"});
+ expect(log).toHaveBeenCalledWith("whatsapp.inbox_read_failed",{stage:"final_access",code:"UNAVAILABLE"});
 });

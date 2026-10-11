@@ -1,3 +1,4 @@
+import { reportInboxReadFailure, type InboxReadStage } from "./inbox-diagnostics";
 import { createClient } from "@/lib/supabase/server";
 import { getCompanyAccess } from "@/lib/tenancy/access";
 import { sessionConversationScope, sessionHasCompanyCapability } from "@/lib/access/actions";
@@ -49,31 +50,41 @@ function pageValid(input: PageInput): boolean {
     && (input.before === undefined || input.before === null || sequence(input.before));
 }
 async function scopedRpc(companyId: string, name: string, args: RecordValue): Promise<InboxResult<{ row: RecordValue; scope: Scope }>> {
+  let stage: InboxReadStage = "page_access";
+  const fail = (code: InboxFailure["code"], reason: Parameters<typeof reportInboxReadFailure>[1] = code, error?: unknown): InboxFailure => {
+    if (name === "whatsapp_inbox_page") reportInboxReadFailure(stage, reason, error);
+    return { ok: false, code };
+  };
   try {
     const access = await getCompanyAccess();
-    if (!access.ok) return { ok: false, code: access.code === "UNAVAILABLE" ? "UNAVAILABLE" : "NO_COMPANY" };
-    if (!access.context.company || !access.context.membership) return { ok: false, code: "NO_COMPANY" };
-    if (access.context.company.id !== companyId) return { ok: false, code: "SCOPE_CHANGED" };
+    if (!access.ok) return fail(access.code === "UNAVAILABLE" ? "UNAVAILABLE" : "NO_COMPANY");
+    if (!access.context.company || !access.context.membership) return fail("NO_COMPANY");
+    if (access.context.company.id !== companyId) return fail("SCOPE_CHANGED");
+    stage = "page_capability";
     const read = await sessionHasCompanyCapability(companyId, "wa.conversations.read");
     // The capability helper also returns false for RPC errors, so this is not an explicit denial.
-    if (read !== true) return { ok: false, code: "UNAVAILABLE" };
+    if (read !== true) return fail("UNAVAILABLE", "READ_NOT_CONFIRMED");
+    stage = "page_scope";
     const scope = await sessionConversationScope(companyId);
-    if (scope !== "all_company" && scope !== "assigned_only") return { ok: false, code: "UNAVAILABLE" };
+    if (scope !== "all_company" && scope !== "assigned_only") return fail("UNAVAILABLE", "UNKNOWN_SCOPE");
     // Local RPC shape until the coordinated generated database types are refreshed.
+    stage = "page_rpc";
     const client = await createClient() as unknown as { rpc(name: string, args: RecordValue): Promise<{ data: unknown; error: unknown }> };
     const { data, error } = await client.rpc(name, { p_company_id: companyId, ...args });
-    if (error) return { ok: false, code: "UNAVAILABLE" };
+    if (error) return fail("UNAVAILABLE", "RPC_ERROR", error);
+    stage = "page_shape";
     const row = record(data);
-    if (!row) return { ok: false, code: "UNAVAILABLE" };
+    if (!row) return fail("UNAVAILABLE", "INVALID_RESPONSE");
     if (row.ok !== true) {
       const code = row.code === "forbidden" ? "FORBIDDEN" : row.code === "not_found" ? "NOT_FOUND"
         : row.code === "invalid_input" ? "INVALID_INPUT" : row.code === "display_changed" ? "CONFLICT" : "UNAVAILABLE";
-      return { ok: false, code };
+      return fail(code);
     }
-    if (row.company_id !== companyId || (row.conversation_scope !== undefined && row.conversation_scope !== scope)) return { ok: false, code: "UNAVAILABLE" };
-    if (args.p_conversation_id !== undefined && row.conversation_id !== args.p_conversation_id) return { ok: false, code: "UNAVAILABLE" };
+    stage = "page_binding";
+    if (row.company_id !== companyId || (row.conversation_scope !== undefined && row.conversation_scope !== scope)) return fail("UNAVAILABLE", "INVALID_RESPONSE");
+    if (args.p_conversation_id !== undefined && row.conversation_id !== args.p_conversation_id) return fail("UNAVAILABLE", "INVALID_RESPONSE");
     return { ok: true, data: { row, scope } };
-  } catch { return { ok: false, code: "UNAVAILABLE" }; }
+  } catch (error) { return fail("UNAVAILABLE", "EXCEPTION", error); }
 }
 function message(raw: unknown): WhatsappThreadMessage {
   const m = record(raw);
@@ -111,7 +122,10 @@ export async function loadWhatsappInboxPage(input: PageInput): Promise<InboxResu
     if (!Array.isArray(row.conversations) || typeof row.membership_fingerprint !== "string" || !/^[a-f0-9]{32}$/.test(row.membership_fingerprint)) throw Error("invalid_rows");
     return { ok: true, data: { ...pageMeta(row), companyId: input.companyId, conversationScope: scope, ordering: "newest_created",
       conversations: row.conversations.map(item), total: count(row.total), unreadTotal: count(row.unread_total), interventionTotal: count(row.intervention_total), membershipFingerprint: row.membership_fingerprint } };
-  } catch { return { ok: false, code: "UNAVAILABLE" }; }
+  } catch {
+    reportInboxReadFailure("page_decode", "INVALID_RESPONSE");
+    return { ok: false, code: "UNAVAILABLE" };
+  }
 }
 /** Only the latest page issues a read boundary; loading historical pages never advances it. */
 export async function loadWhatsappThreadPage(input: ThreadInput): Promise<InboxResult<WhatsappThreadPage>> {

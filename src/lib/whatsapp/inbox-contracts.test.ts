@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const seam = vi.hoisted(() => ({
   access: vi.fn(), capability: vi.fn(), scope: vi.fn(), rpc: vi.fn(), from: vi.fn(),
@@ -211,5 +211,24 @@ describe("inbox denial provenance", () => {
   seam.capability.mockResolvedValue(false);
   expect(await contracts.loadWhatsappInboxPage({companyId})).toEqual({ok:false,code:"UNAVAILABLE"});
   expect(seam.rpc).not.toHaveBeenCalled();
+ });
+});
+
+afterEach(() => vi.restoreAllMocks());
+
+describe("sanitized inbox RPC diagnostics", () => {
+ it("records known transport code without raw error or tenant data", async () => {
+  const log=vi.spyOn(console,"warn").mockImplementation(()=>{});
+  seam.rpc.mockResolvedValue({data:null,error:{code:"PGRST202",message:"PRIVATE_ERROR",details:companyId}});
+  expect(await contracts.loadWhatsappInboxPage({companyId})).toEqual({ok:false,code:"UNAVAILABLE"});
+  expect(log).toHaveBeenCalledWith("whatsapp.inbox_read_failed",{stage:"page_rpc",code:"RPC_ERROR",error_code:"PGRST202"});
+  expect(JSON.stringify(log.mock.calls)).not.toMatch(/PRIVATE_ERROR|10000000/);
+ });
+ it("records malformed response validation without response contents", async () => {
+  const log=vi.spyOn(console,"warn").mockImplementation(()=>{});
+  seam.rpc.mockResolvedValue({data:{ok:true,company_id:companyId,conversation_scope:"all_company",conversations:"PRIVATE_ROWS"},error:null});
+  expect(await contracts.loadWhatsappInboxPage({companyId})).toEqual({ok:false,code:"UNAVAILABLE"});
+  expect(log).toHaveBeenCalledWith("whatsapp.inbox_read_failed",{stage:"page_decode",code:"INVALID_RESPONSE"});
+  expect(JSON.stringify(log.mock.calls)).not.toContain("PRIVATE_ROWS");
  });
 });

@@ -1,5 +1,6 @@
 "use server";
 
+import { reportInboxReadFailure } from "@/lib/whatsapp/inbox-diagnostics";
 import { createClient } from "@/lib/supabase/server";
 import {
   COMPANY_CAPABILITIES,
@@ -358,13 +359,16 @@ export async function sessionHasCompanyCapability(
       p_capability: capability,
     });
     if (error) {
+      if (capability === "wa.conversations.read") reportInboxReadFailure("read_capability_rpc", "RPC_ERROR", error);
       if (isMissingRpc(error.message, "has_company_capability") && accessMigrationCompatEnabled()) {
         return null;
       }
       return false;
     }
+    if (capability === "wa.conversations.read" && data !== true) reportInboxReadFailure("read_capability_rpc", data === false ? "FALSE_RESULT" : "INVALID_RESPONSE");
     return data === true;
-  } catch {
+  } catch (error) {
+    if (capability === "wa.conversations.read") reportInboxReadFailure("read_capability_rpc", "EXCEPTION", error);
     return false;
   }
 }
@@ -383,6 +387,7 @@ export async function sessionConversationScope(
       p_company_id: companyId,
     });
     if (error) {
+      reportInboxReadFailure("scope_rpc", "RPC_ERROR", error);
       if (isMissingRpc(error.message, "company_conversation_scope") && accessMigrationCompatEnabled()) {
         return null;
       }
@@ -390,8 +395,10 @@ export async function sessionConversationScope(
     }
     if (data === "assigned_only") return "assigned_only";
     if (data === "all_company") return "all_company";
+    reportInboxReadFailure("scope_rpc", data === null ? "NULL_RESULT" : "INVALID_RESPONSE");
     return null;
-  } catch {
+  } catch (error) {
+    reportInboxReadFailure("scope_rpc", "EXCEPTION", error);
     return null;
   }
 }
