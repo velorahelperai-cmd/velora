@@ -29,7 +29,7 @@ import {
   saveOwnerBusiness,
   submitCompanyReviewRequest,
 } from "@/lib/tenancy/actions";
-import { getWhatsappCompanyLink, saveWhatsappLinkRequest } from "@/lib/whatsapp/connection-actions";
+import { saveWhatsappLinkRequest } from "@/lib/whatsapp/connection-actions";
 import type { CustomerReadinessSnapshot } from "@/lib/tenancy/customer-readiness";
 import type { WhatsappCompanyLink } from "@/lib/whatsapp/connection";
 import { companyBusiness, finishCompanySave, hydrateOnboardingDraft, resolveSetupResumeStep, setupMilestones, whatsappUiState } from "./onboarding-contracts";
@@ -62,6 +62,7 @@ for (const [key, publishedKey] of Object.entries({
   styles[key] = [internalStyles[key], setupStyles[publishedKey]].filter(Boolean).join(" ");
 }
 import { reconcileDraftFields, useServerDraftField } from "./draft-refresh";
+import {useWhatsappRequestReadback,type WhatsappRequestReadStatus} from "./whatsapp-request-readback";
 
 const MILESTONES_COPY = {
   ar: {
@@ -241,20 +242,20 @@ export function SetupWizard({
   }
   const companyId = savedCompany?.id ?? null;
   const [readiness, setReadiness] = useState<CustomerReadinessSnapshot | null>(null);
-  const [whatsappLink, setWhatsappLink] = useState<WhatsappCompanyLink | null>(null);
+  const whatsappRequest=useWhatsappRequestReadback(userId,companyId,savedCompany?.updated_at);
+  const whatsappLink=whatsappRequest.link;
   useEffect(() => {
     let cancelled = false;
     const frame = window.requestAnimationFrame(() => {
-      setReadiness(null); setWhatsappLink(null);
+      setReadiness(null);
       if (!companyId) return;
-      void Promise.all([getCustomerReadiness(), getWhatsappCompanyLink()]).then(([r, w]) => {
+      void getCustomerReadiness().then((r) => {
         if (cancelled) return;
         setReadiness(r.ok && r.data.companyId === companyId ? r.data : null);
-        setWhatsappLink(w.ok && w.data.companyId === companyId ? w.data : null);
-      }).catch(() => { if (!cancelled) { setReadiness(null); setWhatsappLink(null); } });
+      }).catch(() => { if (!cancelled) { setReadiness(null); } });
     });
     return () => { cancelled = true; window.cancelAnimationFrame(frame); };
-  }, [companyId, savedCompany?.updated_at]);
+  }, [userId, companyId, savedCompany?.updated_at]);
   const [draft, setDraft] = useState<CompanyDraft>(() => emptyCompanyDraft(userId));
   const [ready, setReady] = useState(false);
   const [businessBaseline, setBusinessBaseline] = useState<Business>(() => initialCompany ? companyBusiness(initialCompany) : { ...emptyBusiness });
@@ -569,8 +570,14 @@ export function SetupWizard({
             {/* Milestone 5: WhatsApp Business Meta Connection */}
             {step === 5 ? (
               <WhatsAppStep
+                key={userId+":"+(companyId??"none")}
+                userId={userId}
                 companyId={companyId}
-                onLinkSaved={setWhatsappLink}
+                link={whatsappLink}
+                linkStatus={whatsappRequest.status}
+                refreshLink={whatsappRequest.refresh}
+                leaveGuardRef={leaveGuardRef}
+                onLinkSaved={whatsappRequest.adopt}
                 draft={draft}
                 onBack={() => go(4)}
                 onNext={() => {
@@ -1181,13 +1188,23 @@ function PersonaStep({
 
 function WhatsAppStep({
   draft,
+  userId,
   companyId,
+  link,
+  linkStatus,
+  refreshLink,
+  leaveGuardRef,
   onLinkSaved,
   onBack,
   onNext,
 }: {
   draft: CompanyDraft;
+  userId: string;
   companyId: string | null;
+  link: WhatsappCompanyLink | null;
+  linkStatus: WhatsappRequestReadStatus;
+  refreshLink: () => void;
+  leaveGuardRef: React.MutableRefObject<(() => boolean) | null>;
   onLinkSaved: (link: WhatsappCompanyLink) => void;
   onBack: () => void;
   onNext: () => void;
@@ -1196,13 +1213,26 @@ function WhatsAppStep({
   const { locale } = useDemo();
   const ar = locale === "ar";
   const [ownership, setOwnership] = useState<"own" | "new">("own");
-  const [number, setNumber] = useState(draft.business.contactPhone || "");
-  const [keepOnPhone, setKeepOnPhone] = useState(false);
+  const boundLink=link?.companyId===companyId?link:null;
+  const numberField=useServerDraftField(boundLink?.id?boundLink.requestedDisplayNumber:draft.business.contactPhone||"");
+  const keepField=useServerDraftField(boundLink?.keepOnPhone?"true":"false");
+  const number=numberField.value,keepOnPhone=keepField.value==="true";
+  const dirty=numberField.dirty||keepField.dirty||ownership!=="own";
+  const lifecycle=useMemo(()=>({userId,companyId}),[userId,companyId]);
+  const active=useRef<{scope:typeof lifecycle;active:boolean}|null>(null);
+  useEffect(()=>{const current={scope:lifecycle,active:true};active.current=current;return()=>{current.active=false;};},[lifecycle]);
+  useUnsavedWarning(dirty);
+  useEffect(()=>{
+    leaveGuardRef.current=()=>!dirty||window.confirm(copy.unsaved);
+    return()=>{leaveGuardRef.current=null;};
+  },[dirty,copy.unsaved,leaveGuardRef]);
   const [error, setError] = useState<string | null>(null);
   const { busy, run } = useAction();
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
+    const current=active.current;
+    if(!current?.active||current.scope!==lifecycle||busy||linkStatus!=="ready"||!boundLink)return;
     if (ownership === "own" && !isPhone(number.trim())) {
       setError(copy.errors.phone);
       return;
@@ -1217,12 +1247,20 @@ function WhatsAppStep({
           requestedDisplayNumber: number.trim(),
           keepOnPhone,
         });
+        if(!current.active)return;
+        if(result.ok&&result.data.companyId!==companyId){setError(copy.app.waLinkSaveFailed);return;}
         if (!result.ok && result.code !== "ALREADY_VERIFIED") {
           setError(result.message ?? copy.app.waLinkSaveFailed);
           return;
         }
-        if (result.ok) onLinkSaved(result.data);
+        if (result.ok){
+          onLinkSaved(result.data);
+          numberField.adopt(result.data.requestedDisplayNumber);
+          keepField.adopt(result.data.keepOnPhone?"true":"false");
+        }
       }
+      if(!current.active)return;
+      leaveGuardRef.current=()=>true;
       onNext();
     });
   }
@@ -1261,6 +1299,10 @@ function WhatsAppStep({
         </div>
       </div>
 
+      {linkStatus==="loading"?<p role="status" aria-live="polite">{ar?"جارٍ تحميل طلب الربط المحفوظ.":"Loading the saved link request."}</p>:null}
+      {linkStatus==="failed"?<div role="alert"><Notice tone="error">{ar?"تعذر قراءة طلب الربط. لم تُحفظ التعديلات؛ أعد القراءة قبل المتابعة.":"Could not read the saved link request. Changes have not been saved; reload before continuing."}</Notice></div>:null}
+      <Button type="button" variant="secondary" disabled={busy||linkStatus==="loading"} onClick={refreshLink}>{ar?"تحديث الطلب المحفوظ":"Refresh saved request"}</Button>
+      {numberField.conflict||keepField.conflict?<Notice tone="warn">{ar?"تغير الطلب المحفوظ. احتُفظ بتعديلاتك غير المحفوظة.":"The saved request changed. Your unsaved edits were kept."} <Button type="button" variant="secondary" disabled={busy} onClick={()=>{numberField.resolve();keepField.resolve();}}>{ar?"استخدام القيم المحفوظة":"Use saved values"}</Button></Notice>:null}
       <Field label={copy.setup.numberOwnership} required>
         {(p) => (
           <div className="grid gap-2 sm:grid-cols-2">
@@ -1275,6 +1317,7 @@ function WhatsAppStep({
               >
                 <input
                   type="radio"
+                  disabled={busy}
                   name={p.id}
                   checked={ownership === v}
                   onChange={() => setOwnership(v)}
@@ -1298,8 +1341,9 @@ function WhatsAppStep({
                 {...p}
                 dir="ltr"
                 inputMode="tel"
+                disabled={busy}
                 value={number}
-                onChange={(e) => setNumber(e.target.value)}
+                onChange={(e) => numberField.setValue(e.target.value)}
                 placeholder="+968 91234567"
               />
             )}
@@ -1307,11 +1351,12 @@ function WhatsAppStep({
           <label className="flex items-start gap-3 text-xs text-[var(--color-muted-on-dark)]">
             <input
               type="checkbox"
+              disabled={busy}
               checked={keepOnPhone}
-              onChange={(e) => setKeepOnPhone(e.target.checked)}
+              onChange={(e) => keepField.setValue(e.target.checked?"true":"false")}
               className="mt-0.5 accent-[#38dc89]"
             />
-            <span>{copy.app.waLinkKeepOnPhone}</span>
+            <span>{copy.app.waLinkKeepOnPhone}<br/>{ar?"هذا تفضيل محفوظ للطلب فقط. الإبقاء على تطبيق الهاتف غير مدعوم في الربط الحالي، ولا يفعّله هذا الخيار.":"This is a saved request preference only. Phone-app retention is unsupported by the current signup path; this option does not enable it."}</span>
           </label>
         </>
       ) : null}
@@ -1320,7 +1365,7 @@ function WhatsAppStep({
         <Button variant="secondary" type="button" onClick={onBack}>
           {copy.back}
         </Button>
-        <Button type="submit" busy={busy}>
+        <Button type="submit" busy={busy} disabled={linkStatus!=="ready"||!boundLink||!companyId}>
           {copy.setup.continue}
         </Button>
       </div>
