@@ -809,6 +809,16 @@ export async function saveOwnerBusiness(input: {
   }
 
   if(access.context.needsCompanyContext||access.context.isPlatformAdmin&&!access.context.company)return {ok:false,code:"FORBIDDEN"};
+  // Server actions receive runtime input; TypeScript does not validate the transport payload.
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return { ok: false, code: "INVALID_INPUT" };
+  }
+  const stringFields = ["displayName", "businessType", "replyLanguage", "country", "city", "hours", "contactPhone", "contactEmail"] as const;
+  if (stringFields.some(field => typeof input[field] !== "string")
+    || !["ar", "en", "both"].includes(input.replyLanguage)
+    || (input.memberName !== undefined && typeof input.memberName !== "string")) {
+    return { ok: false, code: "INVALID_INPUT" };
+  }
   if ("expectedCompanyId" in input) {
     const error = renderedCompanyError(input.expectedCompanyId, access.context.company?.id ?? null, true);
     if (error) return error;

@@ -349,3 +349,27 @@ describe("readiness pillar uses qualified current billing evidence",()=>{
     const result=await getCustomerReadiness();if(!result.ok)throw Error("readiness unavailable");expect(result.data.items.find(x=>x.id==="subscription")).toMatchObject({tone:"blocked",detail:"load_failed"});
   });
 });
+
+describe("business save runtime shape validation", () => {
+  it.each([
+    ["null object", null], ["array", []],
+    ["numeric name", { ...business, displayName: 42 }],
+    ["null hours", { ...business, hours: null }],
+    ["missing business type", { ...business, businessType: undefined }],
+    ["invalid reply language", { ...business, replyLanguage: "xx" }],
+    ["boolean country", { ...business, country: false }],
+    ["object city", { ...business, city: {} }],
+    ["numeric phone", { ...business, contactPhone: 42 }],
+    ["array email", { ...business, contactEmail: [] }],
+    ["numeric member name", { ...business, memberName: 42 }],
+  ])("rejects %s without an RPC or uncaught error", async (_name, input) => {
+    await expect(saveOwnerBusiness(input as Parameters<typeof saveOwnerBusiness>[0])).resolves.toEqual({ ok: false, code: "INVALID_INPUT" });
+    expect(state.client).not.toHaveBeenCalled();
+    expect(state.rpcRequests).toEqual([]);
+  });
+  it("keeps authorization ahead of malformed-input handling", async () => {
+    state.access.mockResolvedValue({ ok: false, code: "FORBIDDEN" });
+    await expect(saveOwnerBusiness(null as unknown as Parameters<typeof saveOwnerBusiness>[0])).resolves.toEqual({ ok: false, code: "FORBIDDEN" });
+    expect(state.client).not.toHaveBeenCalled();
+  });
+});
