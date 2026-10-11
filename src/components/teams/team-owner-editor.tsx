@@ -1,5 +1,5 @@
 "use client";
-import {useEffect,useRef,useState,useSyncExternalStore} from "react";
+import {useEffect,useId,useLayoutEffect,useRef,useState,useSyncExternalStore} from "react";
 import {adminSearchAccounts} from "@/lib/tenancy/actions";
 import {accessGetUserSnapshot} from "@/lib/access/actions";
 import {readPlatformTeamDirectory} from "@/lib/platform-teams/actions";
@@ -109,15 +109,21 @@ function TransferForm({actorId,store,copy:c,team,member}:FormProps&{team:Team;me
 
 export function TeamOwnerEditor({actorId,directory,selection,store,copy:c,onSelection}:FormProps&{directory:TeamDirectory;selection:{member:TeamMember;transfer:boolean}|null;onSelection:()=>void}){
  const state=useSyncExternalStore(store.subscribe,store.getSnapshot,store.getSnapshot);
+ const reviewRef=useRef<HTMLElement>(null),returnFocusRef=useRef<HTMLElement|null>(null),reviewTitle=useId();
+ const reviewing=Boolean(state.review);
+ useLayoutEffect(()=>{
+  if(reviewing)reviewRef.current?.focus();
+  else {const origin=returnFocusRef.current;returnFocusRef.current=null;if(origin?.isConnected&&store.isCurrent())origin.focus();}
+ },[reviewing,store]);
  const team=directory.team,members=directory.kind==="members"?directory.rows as TeamMember[]:[];
  const selected=selection?members.find(m=>m.userId===selection.member.userId)??null:null;
- return <div className="grid gap-5">
+ return <div className="grid min-w-0 gap-5" onSubmitCapture={()=>{returnFocusRef.current=document.activeElement instanceof HTMLElement?document.activeElement:null;}}>
   {state.preparing?<Notice>{c.loading}</Notice>:null}
-  {state.review?<Card title={c.confirm}><div className="grid gap-3">
+  {state.review?<section ref={reviewRef} tabIndex={-1} aria-labelledby={reviewTitle} onKeyDown={event=>{if(event.key==="Escape"&&!state.writing){event.preventDefault();event.stopPropagation();store.invalidateReview();}}}><Card><h2 id={reviewTitle} className="mb-4 text-lg font-bold">{c.confirm}</h2><div className="grid gap-3">
    <p>{state.review.op==="transfer"?c.transferConsequence:c.changeConsequence}</p>
    {state.preview?<dl className="grid gap-2"><div><dt className="inline">{c.source}: </dt><dd className="inline">{state.preview.sourceTeam.name}</dd></div><div><dt className="inline">{c.destination}: </dt><dd className="inline">{state.preview.destinationTeam.name}</dd></div><div><dt className="inline">{c.before}: </dt><dd className="inline">{state.preview.managerBefore?members.find(m=>m.userId===state.preview!.managerBefore)?.fullName||c.unavailableName:c.none}</dd></div><div><dt className="inline">{c.destinationMembership}: </dt><dd className="inline">{state.preview.destinationMember?(state.preview.destinationMember.status==="active"?c.active:c.disabled):c.absent}</dd></div></dl>:<><p>{state.review.name?`${c.name}: ${state.review.name}`:selected?.fullName||c.enroll}</p>{state.review.status?<p>{c.status}: {state.review.status==="active"?c.active:c.disabled}</p>:null}{state.review.specialty?<p>{c.specialty}: {String(state.review.specialty)}</p>:null}</>}
    <p>{c.reason}: {state.review.reason}</p><div className="flex flex-wrap gap-2"><Button type="button" busy={state.writing} busyLabel={c.saving} onClick={()=>{void store.commit().then(()=>{if(store.isCurrent()&&store.getSnapshot().confirmed)onSelection();});}}>{c.confirm}</Button><Button type="button" variant="secondary" disabled={state.writing} onClick={()=>store.invalidateReview()}>{c.cancel}</Button></div>
-  </div></Card>:null}
+  </div></Card></section>:null}
   <fieldset disabled={Boolean(state.review)||state.preparing} className="grid min-w-0 gap-5">
    {selected&&team&&selection?.transfer?<TransferForm key={`transfer:${selected.userId}:${selected.revision}`} actorId={actorId} store={store} copy={c} team={team} member={selected}/>:selected&&team?<MemberForm key={`member:${selected.userId}:${selected.revision}`} actorId={actorId} store={store} copy={c} team={team} member={selected}/>:null}
    {selection?<Button type="button" variant="ghost" onClick={()=>{store.invalidateReview();onSelection();}}>{c.cancel}</Button>:null}

@@ -2,7 +2,7 @@ import {beforeEach,expect,it,vi} from "vitest";
 import {parseTeamMutation,type Team} from "@/lib/platform-teams/contracts";
 import {teamCopy} from "./copy";
 const state=vi.hoisted(()=>({slots:[] as unknown[],cursor:0,review:vi.fn(),snapshot:{} as Record<string,unknown>}));
-vi.mock("react",async()=>({...await vi.importActual<typeof import("react")>("react"),useState:()=>[state.slots[state.cursor++],vi.fn()],useSyncExternalStore:()=>state.snapshot}));
+vi.mock("react",async()=>({...await vi.importActual<typeof import("react")>("react"),useState:()=>[state.slots[state.cursor++],vi.fn()],useSyncExternalStore:()=>state.snapshot,useRef:()=>({current:null}),useId:()=>"review-title",useLayoutEffect:()=>{}}));
 vi.mock("@/lib/tenancy/actions",()=>({adminSearchAccounts:vi.fn()}));
 vi.mock("@/lib/access/actions",()=>({accessGetUserSnapshot:vi.fn()}));
 vi.mock("@/lib/platform-teams/actions",()=>({readPlatformTeamDirectory:vi.fn()}));

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useDemo } from "@/lib/demo-state";
 import { LangSwitch } from "@/components/app/ui";
 import { AccountMenu, useOptionalAccountSession } from "@/components/app/account-chrome";
@@ -43,6 +43,11 @@ export function AdminShell({ children }: { children: ReactNode }) {
   const teamEditor=session?.status==="ready"&&session.identity?.platformIdentity.role==="owner"&&session.identity.platformIdentity.status==="active"&&!session.identity.platformIdentity.unavailable;
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const closeMobileMenu = () => { setMobileOpen(false); menuButtonRef.current?.focus(); };
+
+  useEffect(() => { if (mobileOpen) closeButtonRef.current?.focus(); }, [mobileOpen]);
 
   // Close mobile drawer on route change
   useEffect(() => {
@@ -164,21 +169,22 @@ export function AdminShell({ children }: { children: ReactNode }) {
       {mobileOpen && (
         <div
           className="fixed inset-0 z-40 bg-[#6B4932]/25 backdrop-blur-sm lg:hidden transition-opacity"
-          onClick={() => setMobileOpen(false)}
+          onClick={closeMobileMenu}
         />
       )}
 
       <div className="flex flex-1 min-h-screen">
         {/* 🧭 Admin Sidebar */}
         <aside
-          className={`fixed inset-y-0 z-50 flex flex-col bg-[#EFE2CF] border-[#D7C1A5] transition-all duration-200 ease-in-out ${
+          onKeyDown={event => { if (event.key === "Escape" && mobileOpen) { event.preventDefault(); closeMobileMenu(); } }}
+          className={`fixed inset-y-0 z-50 flex-col bg-[#EFE2CF] border-[#D7C1A5] transition-all duration-200 ease-in-out ${
             isRtl ? "border-l right-0" : "border-r left-0"
           } ${
             mobileOpen
-              ? "translate-x-0 w-64 shadow-2xl"
+              ? "flex translate-x-0 w-64 shadow-2xl"
               : isRtl
-              ? "translate-x-full lg:translate-x-0"
-              : "-translate-x-full lg:translate-x-0"
+              ? "hidden lg:flex translate-x-full lg:translate-x-0"
+              : "hidden lg:flex -translate-x-full lg:translate-x-0"
           } ${collapsed ? "lg:w-20" : "lg:w-64"}`}
         >
           {/* Sidebar Brand Header */}
@@ -209,8 +215,9 @@ export function AdminShell({ children }: { children: ReactNode }) {
 
             {/* Mobile close button */}
             <button
+              ref={closeButtonRef}
               type="button"
-              onClick={() => setMobileOpen(false)}
+              onClick={closeMobileMenu}
               className="p-1.5 rounded-lg text-[#6B4932] hover:text-[#18130F] hover:bg-[#D7C1A5] lg:hidden"
               aria-label="Close menu"
             >
@@ -313,35 +320,37 @@ export function AdminShell({ children }: { children: ReactNode }) {
           }`}
         >
           {/* 🔝 Persistent Admin Topbar */}
-          <header className="sticky top-0 z-30 flex items-center justify-between h-16 px-4 sm:px-6 bg-[#EFE2CF]/95 backdrop-blur-md border-b border-[#D7C1A5]">
+          <header className="sticky top-0 z-30 flex min-h-16 flex-wrap items-center justify-between gap-2 px-4 py-2 sm:px-6 bg-[#EFE2CF]/95 backdrop-blur-md border-b border-[#D7C1A5]">
             {/* Left/Start side: Mobile trigger & Breadcrumbs */}
-            <div className="flex items-center gap-3">
+            <div className="flex w-full min-w-0 items-center gap-3 sm:w-auto sm:flex-1">
               <button
+                ref={menuButtonRef}
                 type="button"
                 onClick={() => setMobileOpen(true)}
-                className="p-2 rounded-xl text-[#6B4932] hover:text-[#18130F] hover:bg-[#D7C1A5] lg:hidden"
+                className="shrink-0 p-2 rounded-xl text-[#6B4932] hover:text-[#18130F] hover:bg-[#D7C1A5] lg:hidden"
                 aria-label="Open navigation"
+                aria-expanded={mobileOpen}
               >
                 <IconMenu />
               </button>
 
               {/* Breadcrumbs */}
-              <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-xs sm:text-sm">
+              <nav aria-label="Breadcrumb" className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs sm:text-sm [overflow-wrap:anywhere]">
                 <span className="text-[#6B4932] font-semibold hidden sm:inline">
                   {isRtl ? "لوحة الإدارة" : "Platform Admin"}
                 </span>
                 <span className="text-[#615244] hidden sm:inline">/</span>
                 {breadcrumbs.map((crumb, i) => (
-                  <span key={i} className="flex items-center gap-2">
+                  <span key={i} className="flex min-w-0 items-center gap-2">
                     {i > 0 && <span className="text-[#615244]">/</span>}
                     {i === breadcrumbs.length - 1 ? (
-                      <span className="font-bold text-[#18130F] truncate max-w-[150px] sm:max-w-none">
+                      <span className="min-w-0 font-bold text-[#18130F]">
                         {crumb.label}
                       </span>
                     ) : (
                       <Link
                         href={crumb.href}
-                        className="text-[#6B4932] hover:text-[#18130F] font-medium transition truncate max-w-[100px] sm:max-w-none"
+                        className="min-w-0 text-[#6B4932] hover:text-[#18130F] font-medium transition"
                       >
                         {crumb.label}
                       </Link>
@@ -352,7 +361,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
             </div>
 
             {/* Right/End side: Status pills, LangSwitch, AccountMenu */}
-            <div className="flex items-center gap-2 sm:gap-3">
+            <div className="flex w-full max-w-full shrink-0 flex-wrap items-center justify-end gap-2 sm:w-auto sm:gap-3">
               {/* AI Router Status Indicator */}
               <div className="hidden md:flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#EFE2CF] border border-[#D7C1A5] text-xs text-[#6B4932] font-bold">
                 <span className="h-2 w-2 rounded-full bg-[#6B4932]" />

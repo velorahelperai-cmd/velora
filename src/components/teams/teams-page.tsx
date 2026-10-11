@@ -13,9 +13,10 @@ import {teamCopy,type TeamCopy} from "./copy";
 import {TeamOwnerEditor} from "./team-owner-editor";
 
 const api={readDirectory:readPlatformTeamDirectory,preview:previewPlatformTeamTransfer,mutate:mutatePlatformTeam};
-export function TeamsFailure({code}:{code:TeamFailure["code"]}){
+export function TeamsFailure({code,embedded=false}:{code:TeamFailure["code"];embedded?:boolean}){
  const {locale}=useDemo(),c=teamCopy(locale),router=useRouter();
- return <main className="app-shell px-4 py-8"><div className="mx-auto grid max-w-xl gap-4"><Notice tone="error">{c.errors[code]}</Notice><div className="flex flex-wrap gap-2"><Button onClick={()=>router.refresh()}>{c.refresh}</Button><Link className="inline-flex min-h-11 items-center underline" href="/account">{c.account}</Link>{code==="UNAUTHENTICATED"?<Link href="/login">{c.verification}</Link>:null}{code==="UNVERIFIED"?<Link href="/verify-email">{c.emailVerification}</Link>:null}</div></div></main>;
+ const Container=embedded?"div":"main";
+ return <Container className="app-shell px-4 py-8"><div className="mx-auto grid max-w-xl gap-4"><Notice tone="error">{c.errors[code]}</Notice><div className="flex flex-wrap gap-2"><Button onClick={()=>router.refresh()}>{c.refresh}</Button><Link className="inline-flex min-h-11 items-center underline" href="/account">{c.account}</Link>{code==="UNAUTHENTICATED"?<Link href="/login">{c.verification}</Link>:null}{code==="UNVERIFIED"?<Link href="/verify-email">{c.emailVerification}</Link>:null}</div></div></Container>;
 }
 
 export function TeamDirectoryRows({directory,copy:c,editor,onTeam,onMember}:{directory:TeamDirectory;copy:TeamCopy;editor:boolean;onTeam:(id:string)=>void;onMember:(member:TeamMember,transfer:boolean)=>void}){
@@ -29,6 +30,7 @@ export function TeamsPage({actorId,editor}:{actorId:string;editor:boolean}){
 
  const state=useSyncExternalStore(store.subscribe,store.getSnapshot,store.getSnapshot);
  const path=editor?"/admin/teams":"/account/teams";
+ const Container=editor?"div":"main";
  const query=params.toString(),urlScope=teamQuery(actorId,new URLSearchParams(query));
  const appliedSearch=urlScope.ok?urlScope.data.search:"";
  const [search,setSearch]=useState(appliedSearch);
@@ -49,12 +51,12 @@ export function TeamsPage({actorId,editor}:{actorId:string;editor:boolean}){
  const [trackedSearch,setTrackedSearch]=useState(appliedSearch);
  if(trackedSearch!==appliedSearch){setTrackedSearch(appliedSearch);setSearch(appliedSearch);}
  function navigate(scope:TeamScope){store.invalidateReview();setSelection(null);setSearch(scope.search);void store.load(scope);router.push(teamHref(path,scope));}
- if(!ready||state.contextKey!==viewKey)return <main className="app-shell p-6"><Notice>{c.loading}</Notice></main>;
- if(editor&&!owner)return <TeamsFailure code={session?.identity?.platformIdentity.unavailable?"UNAVAILABLE":"FORBIDDEN"}/>;
- if(!urlScope.ok)return <TeamsFailure code={urlScope.code}/>;
+ if(!ready||state.contextKey!==viewKey)return <Container className="app-shell p-6"><Notice>{c.loading}</Notice></Container>;
+ if(editor&&!owner)return <TeamsFailure embedded={editor} code={session?.identity?.platformIdentity.unavailable?"UNAVAILABLE":"FORBIDDEN"}/>;
+ if(!urlScope.ok)return <TeamsFailure embedded={editor} code={urlScope.code}/>;
  const directory=state.directory?.ok?state.directory.data:null;
  const writeReady=owner&&directory!==null&&!state.loading&&!state.writing&&!state.uncertain;
- return <main data-internal-ui="true" className="app-shell px-4 py-6"><div className="mx-auto grid max-w-5xl gap-5">
+ return <Container data-internal-ui="true" className="app-shell px-4 py-6"><div className="mx-auto grid min-w-0 max-w-5xl gap-5 [overflow-wrap:anywhere]">
   {!editor?<AppTopBar/>:null}
   <div className="flex flex-wrap items-center justify-between gap-3"><h1 className="text-2xl font-bold">{editor?c.title:c.rosters}</h1><Link className="inline-flex min-h-11 items-center underline" href="/account">{c.account}</Link></div>
   <dl className="grid gap-2 text-sm"><div><dt className="inline">{c.platformRole}: </dt><dd className="inline">{session.identity?.platformIdentity.unavailable?c.unavailableName:session.identity?.platformIdentity.role==="owner"?c.platformOwner:session.identity?.platformIdentity.role==="delegated"?c.platformDelegated:c.platformAccount}</dd></div><div><dt className="inline">{c.scopeAccess}: </dt><dd className="inline">{directory?.team?.name??(directory?(editor?c.all:c.rosters):c.loading)}</dd></div></dl>
@@ -77,5 +79,5 @@ export function TeamsPage({actorId,editor}:{actorId:string;editor:boolean}){
    </>:<Notice tone="error">{state.directory&&!state.directory.ok?c.errors[state.directory.code]:c.errors.UNAVAILABLE}</Notice>}
   </Card>
   {writeReady&&directory?<TeamOwnerEditor key={`${state.scope.teamId??"new"}:${directory.team?.revision??"list"}`} actorId={actorId} directory={directory} selection={selection} store={store} copy={c} onSelection={()=>setSelection(null)}/>:null}
- </div></main>;
+ </div></Container>;
 }

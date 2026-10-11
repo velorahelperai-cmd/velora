@@ -156,3 +156,13 @@ Current UI verification is local source/tests only. Genuine candidate Next SSR-c
 3. Customer roles and teams.
 
 No work on these later packages begins in this stage. No email delivery, service activation, real payments, paid AI, production fixtures or database mutation are included.
+
+### Bounded teams presentation follow-up — 11 October 2026
+
+After the source candidate `f776ea29`, the parent reported genuine functional acceptance of owner team/membership controls, persistence, four-revision transfer with unrelated memberships retained, exact replay/no duplicate write, confirmed save after read failure, scoped manager/employee access, conflict and two-session revocation. This supersedes the earlier blanket candidate-runtime UNRUN statement only for those named parent-reported cases; deployment/live acceptance and the remaining detailed acceptance gaps are separate.
+
+Reproduced presentation findings are retained in Library `libfile_ad0f366b339c8191ad82c68532efe7d8`: two owner main landmarks, 549px review screenshot at 390px viewport, closed mobile sidebar receiving focus and review entry/Escape failure. Earlier Cancel timeout was inconclusive, and development-toolbar shadow-host flags were checker false positives.
+
+The bounded follow-up fixes mobile header/crumb layout without clipping content, closed-drawer focus exclusion, inline review entry/Escape/Cancel focus restoration and owner loading/failure/loaded main landmarks. It preserves R3 SQL/actions, authority, mutation/preview/replay semantics and all unrelated packages. Eighteen isolated browser groups pass (EN/AR at390/320px, delayed transfer focus, retained cancellation drafts, drawer and landmarks), with failing baseline replay preserved. Fresh focused105/aggregate2078 with42 existing skips, TypeScript/build and lint0 errors/7 existing warnings pass. Independent read-only source/harness review found no remaining material blocker. Details and genuine recheck scope are in `platform-teams-ui-acceptance.md`.
+
+The new presentation candidate is unpublished and requires targeted genuine recheck. No auth rewrite, SQL, production data, service activation, payments, paid calls or inbox changes were made. The separate invitation candidate and metadata-only production preflight remain separate work and approval gates; they are not merged into this teams delivery.
