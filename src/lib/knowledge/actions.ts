@@ -404,6 +404,11 @@ export async function saveTextKnowledgeSource(input: {
   usageRole?: "knowledge" | "business_instructions";
   expectedCompanyId?: string;
 }): Promise<KnowledgeActionResult<KnowledgeSourceRecord>> {
+  if (!input || typeof input !== "object" || Array.isArray(input)
+    || typeof input.title !== "string" || typeof input.content !== "string"
+    || (input.id !== undefined && typeof input.id !== "string")) {
+    return { ok: false, code: "INVALID_INPUT" };
+  }
   const title = input.title.trim();
   const content = input.content.trim();
   if (!title || title.length > 200 || !content) {

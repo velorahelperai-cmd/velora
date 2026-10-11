@@ -239,6 +239,8 @@ export function KnowledgeEditor({
       reset();
       refreshAppViews();
       await reload({ keepNotice: copy.saved });
+    } catch {
+      setError(copy.knowledge.saveFailed);
     } finally {
       setBusy(false);
     }

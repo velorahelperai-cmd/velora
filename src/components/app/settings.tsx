@@ -15,6 +15,7 @@ import { useOptionalAccountSession } from "./account-chrome";
 import { subscriptionCopy, subscriptionTiers } from "./subscription-copy";
 import { saveOwnerBusiness, selectWorkspaceCompany } from "@/lib/tenancy/actions";
 import { createStaffInvitation, listCompanyTeam } from "@/lib/tenancy/staff-invitations";
+import { reconcileDraftFields } from "./draft-refresh";
 import {
   Button, Card, Field, Notice, Tabs,
   useAction, useAppCopy, useUnsavedWarning,
@@ -50,6 +51,7 @@ export function SettingsPage({
   const accountSession=useOptionalAccountSession();
   const [switchBusy,setSwitchBusy]=useState(false);
   const [switchError,setSwitchError]=useState(false);
+  const businessLeaveGuard = useRef<() => boolean>(() => true);
   const params = useSearchParams();
   const router = useRouter();
   const requested = (params.get("tab") as Tab) || "account";
@@ -61,7 +63,7 @@ export function SettingsPage({
   const locked = effectiveRole !== "owner" && ownerTabs.includes(requested);
 
   async function switchCompany(id:string) {
-    if(!id||switchBusy)return;
+    if(!id||id===initialAccess.companyId||switchBusy||!businessLeaveGuard.current())return;
     setSwitchBusy(true);setSwitchError(false);
     try { const result=await selectWorkspaceCompany(id); if(!result.ok){setSwitchError(true);return;} await accountSession?.refresh();router.refresh(); } catch {setSwitchError(true);} finally {setSwitchBusy(false);}
   }
@@ -84,7 +86,7 @@ export function SettingsPage({
         ) : (
           <>
             {tab === "account" ? <AccountTab /> : null}
-            {tab === "business" && initialCompany ? <BusinessTab key={initialCompany.id + initialCompany.updated_at} company={initialCompany} /> : null}
+            {effectiveRole === "owner" && initialCompany ? <div hidden={tab !== "business"}><BusinessTab key={initialCompany.id} company={initialCompany} leaveGuardRef={businessLeaveGuard} /></div> : null}
             {tab === "team" && initialAccess.companyId ? <TeamTab key={initialAccess.companyId} companyId={initialAccess.companyId} /> : null}
             {tab === "whatsapp" ? (
               <WhatsappSettingsPanel
@@ -196,21 +198,33 @@ function AccountTab() {
   return <AccountSettingsLinkCard />;
 }
 
-function BusinessTab({company}:{company:CompanyRecord}) {
+function BusinessTab({company,leaveGuardRef}:{company:CompanyRecord;leaveGuardRef:{current:()=>boolean}}) {
   const copy = useAppCopy();
+  const { locale } = useDemo();
   const router=useRouter();
   const fromCompany=(row:CompanyRecord)=>({name:row.display_name,type:row.business_type,replyLanguage:row.reply_language,country:row.country,city:row.city,hours:row.hours,contactPhone:row.contact_phone,contactEmail:row.contact_email});
   const [form,setForm]=useState(()=>fromCompany(company));
   const [baseline,setBaseline]=useState(()=>fromCompany(company));
+  const [trackedCompany,setTrackedCompany]=useState(company);
+  const [conflicts,setConflicts]=useState<Array<keyof typeof form>>([]);
   const [error,setError]=useState<string|null>(null);
   const [saved, setSaved] = useState(false);
   const { busy, run } = useAction();
+  if(trackedCompany!==company){
+    const refreshed=reconcileDraftFields(form,baseline,fromCompany(company),conflicts);
+    setTrackedCompany(company);setForm(refreshed.values);setBaseline(refreshed.baseline);setConflicts(refreshed.conflicts);setSaved(false);
+  }
   const dirty = JSON.stringify(form) !== JSON.stringify(baseline);
   useUnsavedWarning(dirty && !busy);
+  useEffect(()=>{
+    leaveGuardRef.current=()=>!busy&&(!dirty||window.confirm(copy.unsaved));
+    return ()=>{leaveGuardRef.current=()=>true;};
+  },[busy,dirty,copy.unsaved,leaveGuardRef]);
   return (
     <Card title={copy.app.tabs.business}>
       <form className="grid gap-4 lg:grid-cols-2" noValidate onSubmit={(e) => {
         e.preventDefault();
+        if(conflicts.length)return;
         setSaved(false);setError(null);
         void run(async () => {
           const result = await saveOwnerBusiness({
@@ -229,18 +243,22 @@ function BusinessTab({company}:{company:CompanyRecord}) {
             return;
           }
           const business=fromCompany(result.data);
-          setForm(business);setBaseline(business);
+          setForm(business);setBaseline(business);setConflicts([]);
           router.refresh();
           setSaved(true);
         });
       }}>
         {error?<div className="lg:col-span-2"><Notice tone="error">{error}</Notice></div>:null}
+        {conflicts.length?<div className="lg:col-span-2"><Notice tone="warn">
+          <p>{locale==="ar"?"تم تحديث بعض الحقول التي تعدّلها. راجع القيم الأحدث قبل الحفظ.":"Some fields you are editing changed in the saved record. Review the latest values before saving."}</p>
+          <Button type="button" variant="secondary" disabled={busy} onClick={()=>{setForm(previous=>conflicts.reduce((next,key)=>({...next,[key]:baseline[key]}),previous));setConflicts([]);}}>{locale==="ar"?"استخدام أحدث القيم المتعارضة":"Use latest conflicting values"}</Button>
+        </Notice></div>:null}
         {saved && !dirty ? <div className="lg:col-span-2"><Notice tone="success">{copy.saved}</Notice></div> : null}
         <Field label={copy.setup.businessName} required>{(p) => <input {...p} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />}</Field>
         <Field label={copy.setup.city}>{(p) => <input {...p} value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} />}</Field>
         <Field label={copy.setup.hours} required>{(p) => <input {...p} value={form.hours} onChange={(e) => setForm({ ...form, hours: e.target.value })} />}</Field>
         <Field label={copy.setup.contactPhone}>{(p) => <input {...p} dir="ltr" inputMode="tel" value={form.contactPhone} onChange={(e) => setForm({ ...form, contactPhone: e.target.value })} />}</Field>
-        <div className="lg:col-span-2"><Button type="submit" busy={busy} busyLabel={copy.saving} disabled={!dirty || !form.name.trim()}>{copy.save}</Button></div>
+        <div className="lg:col-span-2"><Button type="submit" busy={busy} busyLabel={copy.saving} disabled={conflicts.length>0 || !dirty || !form.name.trim()}>{copy.save}</Button></div>
       </form>
     </Card>
   );

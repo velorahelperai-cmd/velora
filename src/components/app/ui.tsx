@@ -315,16 +315,19 @@ export function useUnsavedWarning(dirty: boolean) {
   }, [dirty]);
 }
 
-/** Simulates a short async action and blocks repeat clicks while running. */
+/** Blocks repeat calls synchronously while an async action is running. */
 export function useAction() {
   const [busy, setBusy] = useState(false);
+  const locked = useRef(false);
   const run = async (fn: () => void | Promise<void>, ms = 0) => {
-    if (busy) return;
+    if (locked.current) return;
+    locked.current = true;
     setBusy(true);
     try {
       if (ms > 0) await new Promise((r) => setTimeout(r, ms));
       await fn();
     } finally {
+      locked.current = false;
       setBusy(false);
     }
   };
