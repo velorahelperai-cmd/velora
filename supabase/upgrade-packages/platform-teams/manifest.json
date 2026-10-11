@@ -1,0 +1,111 @@
+{
+  "package": "platform-teams-local-foundation",
+  "base_commit": "78566163f1e24fa00600f638d99f7afc7796c570",
+  "branch": "main",
+  "publication": "local-only; no push/deployment or production schema installation",
+  "production_project": "vmpifljyozsbtssxhoxd",
+  "migration": {
+    "path": "supabase/upgrade-packages/platform-teams/10-teams.review.sql",
+    "sha256": "b88248d4b0f22357faa27360db3643db8334cbd97c03cabca195584d52864cc1",
+    "mode": "forward, atomic, installer postgres; absent new objects required; outside automated migrations"
+  },
+  "preflight": {
+    "path": "supabase/upgrade-packages/platform-teams/preflight.readonly.sql",
+    "sha256": "67624705d12874c80e6f56bc88134b74c8a6a699f381d2034926277d7784405d",
+    "transaction": "BEGIN READ ONLY; catalog SELECT; COMMIT",
+    "production_rows_or_tokens_returned": false,
+    "evidence": {
+      "functions": [
+        {
+          "body_md5": "d46584d9ac02072238753afd973d9de3",
+          "signature": "public.is_platform_owner()",
+          "compatible": true
+        },
+        {
+          "body_md5": "b42c28f54d05778fcc994156c6ce4086",
+          "signature": "public.app_session_is_valid()",
+          "compatible": true
+        },
+        {
+          "body_md5": "2f58d7407a5a169c0cb4d87a66661af4",
+          "signature": "private.write_admin_audit(uuid,uuid,text,jsonb,jsonb)",
+          "compatible": true
+        }
+      ],
+      "observed_at": "2026-10-11T08:50:21.141453+00:00",
+      "server_version": "17.11",
+      "new_rpcs_absent": true,
+      "columns_compatible": true,
+      "required_public_rls": true,
+      "functions_compatible": true,
+      "incompatible_columns": [],
+      "new_relations_absent": true,
+      "authenticated_private_usage": false,
+      "authenticated_owner_predicate_execute": true
+    }
+  },
+  "schema_additions": [
+    "public.platform_teams",
+    "public.platform_team_members",
+    "private.platform_team_operations"
+  ],
+  "rpcs": [
+    "public.platform_team_read_self()",
+    "public.platform_team_read_directory(uuid,uuid,integer,integer)",
+    "public.platform_team_preview_transfer(jsonb)",
+    "public.platform_team_mutate(jsonb)"
+  ],
+  "authority": "Verified existing Auth users/sessions, exp/not_after/current-clock activity lease, current persisted platform owner. Managers derive current same-team roster authority; employees see self/manager only. No company/admin/finance authority inheritance.",
+  "provisional_design_choices": {
+    "one_active_internal_team_per_user": true,
+    "team_manager_independent_of_platform_admin_role": true,
+    "parent_confirmation": "pending"
+  },
+  "verification": {
+    "postgres": {
+      "synthetic_only": true,
+      "version": "17.6",
+      "image": "postgres:17.6-alpine",
+      "image_digest": "sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94",
+      "network": "none",
+      "published_ports": 0,
+      "persistent_mounts": 0,
+      "log_driver": "none",
+      "cases": 16
+    },
+    "focused_vitest": 31,
+    "aggregate": {
+      "pass": 2033,
+      "existing_skips": 42
+    },
+    "typecheck": "pass",
+    "lint": {
+      "errors": 0,
+      "existing_warnings": 7
+    },
+    "build": "pass",
+    "regressions": "Observed RED then GREEN for missing SQL/TS contracts, committed projections, current-clock session expiry during lock waits and post-write optional identity failure.",
+    "independent_review": {
+      "model": "gpt-6.1-sol",
+      "effort": "high",
+      "result": "no remaining material findings after both fixes; source/SQL/read-only review; 28 focused tests independently run before 3 additional decoder tests",
+      "not_run_by_reviewer": [
+        "PostgreSQL harness",
+        "production PostgREST/browser"
+      ]
+    }
+  },
+  "recovery": "SQL installation is transactional; failure rolls back. If installed but code unpublished, keep UI unexposed. Authorized containment can revoke only four new RPC EXECUTE and two table SELECT, then repair forward. Lost responses replay exact actor/operation UUID/payload after session recovery without duplicate writes/audit. Authority lock contention returns UNAVAILABLE with no changes.",
+  "remaining_gates": [
+    "Confirm provisional team model choices",
+    "Approve exact migration hash and rerun catalog preflight",
+    "Authorized installer applies schema, verifies new ACLs/RLS and full-schema/PostgREST role integration",
+    "Authorize synchronized tested main push/deployment after schema verification",
+    "Verify exact deployment, desktop SHA synchronization and owner browser acceptance"
+  ],
+  "limitations": [
+    "Local synthetic PG17.6 is not a full production schema replay on PG17.11",
+    "PostgREST pre-request integration and authenticated live browser acceptance remain pending",
+    "No route imports the new server actions; no live team UI exposed"
+  ]
+}
