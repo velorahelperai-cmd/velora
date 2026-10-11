@@ -46,4 +46,3 @@ describe("read-only server Test readiness",()=>{
   mocks.catalog.mockResolvedValue({ok:false,code:"unavailable"});expect(await readSubscriptionOffersView()).toEqual({status:"error",offers:[]});
  });
 });
-

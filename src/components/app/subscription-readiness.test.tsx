@@ -48,4 +48,3 @@ describe("catalog checkout requires observed server readiness",()=>{
   expect(card(basic)).toContain("Prelaunch");
  });
 });
-

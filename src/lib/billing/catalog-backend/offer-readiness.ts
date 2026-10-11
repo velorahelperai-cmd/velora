@@ -31,4 +31,3 @@ export async function readSubscriptionOffersView(): Promise<SubscriptionOffersVi
  }));
  return {...view,offers};
 }
-

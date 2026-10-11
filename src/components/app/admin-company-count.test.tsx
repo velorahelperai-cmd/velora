@@ -33,4 +33,3 @@ describe("company count distinguishes unknown from verified zero",()=>{
   reject(new Error("Synthetic failure"));await flush();expect(count(render())).toBe("-");
  });
 });
-
