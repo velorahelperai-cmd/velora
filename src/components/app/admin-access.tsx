@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   accessGetUserSnapshot,
   accessSetMemberGrants,
@@ -16,10 +16,36 @@ import {
 import { adminSearchAccounts } from "@/lib/tenancy/actions";
 import { Button, Notice, useAppCopy } from "@/components/app/ui";
 
+type AccessRequest = { kind: "search" | "load" | "write"; userId?: string };
+
 export function AdminAccessPage() {
   const copy = useAppCopy();
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
+  const [writing, setWriting] = useState(false);
+  const activeRequest = useRef<AccessRequest | null>(null);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; activeRequest.current = null; };
+  }, []);
+
+  function beginRequest(kind: AccessRequest["kind"], userId?: string) {
+    const request = { kind, userId };
+    activeRequest.current = request;
+    setBusy(true);
+    setWriting(kind === "write");
+    return request;
+  }
+  function isCurrent(request: AccessRequest) {
+    return mounted.current && activeRequest.current === request;
+  }
+  function finishRequest(request: AccessRequest) {
+    if (!isCurrent(request)) return;
+    activeRequest.current = null;
+    setBusy(false);
+    setWriting(false);
+  }
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [hits, setHits] = useState<Array<{ userId: string; email: string; fullName: string; supportCode: string }>>([]);
@@ -35,12 +61,15 @@ export function AdminAccessPage() {
   );
 
   async function search() {
-    setBusy(true);
+    if (!mounted.current || activeRequest.current) return;
+    const request = beginRequest("search");
     setError(null);
     setNotice(null);
     setSnapshot(null);
+    setConfirm(null);
     try {
       const result = await adminSearchAccounts({ query, limit: 20, offset: 0 });
+      if (!isCurrent(request)) return;
       if (!result.ok) {
         setError(result.message ?? copy.admin.accessSearchFailed);
         setHits([]);
@@ -55,24 +84,28 @@ export function AdminAccessPage() {
       if (result.data.rows.length === 0 && query.trim()) {
         setNotice(copy.admin.accessAskRegister);
       }
+    } catch {
+      if (isCurrent(request)) { setError(copy.admin.accessSearchFailed); setHits([]); }
     } finally {
-      setBusy(false);
+      finishRequest(request);
     }
   }
 
-  async function loadUser(userId: string) {
-    setBusy(true);
-    setError(null);
-    setNotice(null);
-    setConfirm(null);
+  async function readSnapshot(userId: string, request: AccessRequest) {
     try {
       const result = await accessGetUserSnapshot(userId);
+      if (!isCurrent(request)) return;
       if (!result.ok) {
         setError(
           result.message?.startsWith("DEPENDENCY_MISSING:")
             ? copy.admin.accessDependencyBody
             : (result.message ?? copy.admin.accessLoadFailed),
         );
+        setSnapshot(null);
+        return;
+      }
+      if (result.data.userId !== userId) {
+        setError(copy.admin.accessLoadFailed);
         setSnapshot(null);
         return;
       }
@@ -83,8 +116,23 @@ export function AdminAccessPage() {
       const grant = result.data.grants.find((g) => g.companyId === companyId);
       setCaps(grant?.capabilities ?? [...COMPANY_CAPABILITIES]);
       setScope(grant?.conversationScope ?? "all_company");
+    } catch {
+      if (isCurrent(request)) { setError(copy.admin.accessLoadFailed); setSnapshot(null); }
+    }
+  }
+
+  async function loadUser(userId: string) {
+    if (!mounted.current || activeRequest.current?.kind === "write" ||
+        (activeRequest.current?.kind === "load" && activeRequest.current.userId === userId)) return;
+    const request = beginRequest("load", userId);
+    setError(null);
+    setNotice(null);
+    setConfirm(null);
+    setSnapshot(null);
+    try {
+      await readSnapshot(userId, request);
     } finally {
-      setBusy(false);
+      finishRequest(request);
     }
   }
 
@@ -94,7 +142,7 @@ export function AdminAccessPage() {
   }
 
   async function saveGrants() {
-    if (!snapshot || !selectedCompanyId) return;
+    if (!mounted.current || activeRequest.current || !snapshot || !selectedCompanyId) return;
     const grant = snapshot.grants.find((g) => g.companyId === selectedCompanyId);
     const summary = copy.admin.accessConfirmGrants
       .replace("{email}", snapshot.email)
@@ -104,8 +152,9 @@ export function AdminAccessPage() {
       setConfirm(summary);
       return;
     }
-    setBusy(true);
+    const request = beginRequest("write", snapshot.userId);
     setError(null);
+    setNotice(null);
     try {
       const result = await accessSetMemberGrants({
         companyId: selectedCompanyId,
@@ -115,27 +164,31 @@ export function AdminAccessPage() {
         expectedRevision: grant?.revision ?? 0,
         reason: "admin_access_ui",
       });
+      if (!isCurrent(request)) return;
       if (!result.ok) {
         setError(result.message ?? copy.admin.accessSaveFailed);
         return;
       }
       setNotice(copy.admin.accessSaved);
       setConfirm(null);
-      await loadUser(snapshot.userId);
+      await readSnapshot(snapshot.userId, request);
+    } catch {
+      if (isCurrent(request)) setError(copy.admin.accessSaveFailed);
     } finally {
-      setBusy(false);
+      finishRequest(request);
     }
   }
 
   async function setDelegated() {
-    if (!snapshot) return;
+    if (!mounted.current || activeRequest.current || !snapshot) return;
     const summary = copy.admin.accessConfirmDelegated.replace("{email}", snapshot.email);
     if (confirm !== summary) {
       setConfirm(summary);
       return;
     }
-    setBusy(true);
+    const request = beginRequest("write", snapshot.userId);
     setError(null);
+    setNotice(null);
     try {
       const result = await accessSetPlatformRole({
         userId: snapshot.userId,
@@ -144,15 +197,18 @@ export function AdminAccessPage() {
         expectedRevision: snapshot.platform?.revision ?? 0,
         reason: "admin_access_ui",
       });
+      if (!isCurrent(request)) return;
       if (!result.ok) {
         setError(result.message ?? copy.admin.accessSaveFailed);
         return;
       }
       setNotice(copy.admin.accessSaved);
       setConfirm(null);
-      await loadUser(snapshot.userId);
+      await readSnapshot(snapshot.userId, request);
+    } catch {
+      if (isCurrent(request)) setError(copy.admin.accessSaveFailed);
     } finally {
-      setBusy(false);
+      finishRequest(request);
     }
   }
 
@@ -204,6 +260,7 @@ export function AdminAccessPage() {
             <li key={hit.userId}>
               <button
                 type="button"
+                disabled={writing}
                 className="grid w-full gap-1 rounded-xl border border-[#D7C1A5] bg-[#F7F0E5] p-3 text-start hover:bg-[#FFFBF5] hover:border-[#6B4932]/40 transition shadow-2xs"
                 onClick={() => void loadUser(hit.userId)}
               >
@@ -239,6 +296,7 @@ export function AdminAccessPage() {
             <span className="font-bold text-[#6B4932]">{copy.admin.accessStaffCompany}</span>
             <select
               value={selectedCompanyId}
+              disabled={busy}
               onChange={(e) => {
                 const id = e.target.value;
                 setSelectedCompanyId(id);
@@ -264,6 +322,7 @@ export function AdminAccessPage() {
                 <span className="font-bold text-[#6B4932]">{copy.admin.accessConversationScope}</span>
                 <select
                   value={scope}
+                  disabled={busy}
                   onChange={(e) => {
                     setScope(e.target.value === "assigned_only" ? "assigned_only" : "all_company");
                     setConfirm(null);
