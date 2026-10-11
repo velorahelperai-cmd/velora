@@ -75,7 +75,7 @@ export function SubscriptionPanel({locale,view,offersView,companyId,preview=fals
     <h2 id="subscription-next">{ar?"ملخص اختيارك":"Your selection"}</h2>
     <p className={styles.selectionTitle}>{chosen&&validChoice?`${chosen[locale]} · ${c[validChoice.package]}`:intent?.persona&&intent.package?`${subscriptionTiers.find(tier=>tier.id===intent.persona)?.[locale]} · ${c[intent.package]} / ${c[cycle]}`:c.selectionEmpty}</p>
     {selectedOffer?<div className={styles.checkoutAmount}><bdi>{formatOmrBaisa(selectedOffer.amountBaisa,locale)}</bdi><span>/ {c[cycle]}</span></div>:null}
-    <p id="subscription-payment-note" className={styles.paymentNote}>{view.state==="suspended"?c.suspendedBlocked:view.state==="pending"?c.pendingBlocked:view.state==="active"?errors[locale].active:preview?(ar?"معاينة التصميم؛ الدفع غير متاح هنا.":"Design preview; checkout is unavailable here."):validChoice&&!isPurchasable?text.blockedNote:(ar?"Paymob Test — تجربة دفع فقط. لا يتم خصم أموال حقيقية. رسوم التأسيس تُراجع منفصلة.":"Paymob Test — no real money is charged. Setup fees are reviewed separately.")}</p>
+    <p id="subscription-payment-note" className={styles.paymentNote}>{view.state==="suspended"?c.suspendedBlocked:view.state==="pending"?c.pendingBlocked:view.state==="active"?errors[locale].active:preview?(ar?"معاينة التصميم؛ الدفع غير متاح هنا.":"Design preview; checkout is unavailable here."):!validChoice?c.selectionEmpty:!isPurchasable?text.blockedNote:text.testNote}</p>
     {error?<p className={styles.paymentError} role="alert">{error}</p>:null}
     {visibleOrderId?<Link className={styles.heroLink} href={`/app/subscription/orders/${visibleOrderId}`}>{ar?"عرض حالة الطلب":"View order status"}</Link>:null}
    </div>

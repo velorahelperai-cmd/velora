@@ -21,6 +21,8 @@ export type SubscriptionOfferView = {
   quotaEnforcement: "ready" | "not_verified";
   /** Public catalog currently forbids production checkout; Test has separate server flags. */
   checkoutEnabled?: false;
+  /** True only after the server confirms Test config and a qualified binding. */
+  testCheckoutReady?: boolean;
   features: readonly SubscriptionFeatureView[];
 };
 export type SubscriptionOffersView = {
@@ -37,7 +39,7 @@ export type SubscriptionChoice = {
 
 /** A selection is only valid against the same published server offer. */
 export function subscriptionOfferSignature(offer: SubscriptionOfferView): string {
-  return JSON.stringify([offer.planId, offer.amountBaisa, offer.currency, offer.automatedOutboundPerMonth, offer.quotaEnforcement, offer.checkoutEnabled ?? false, offer.features]);
+  return JSON.stringify([offer.planId, offer.amountBaisa, offer.currency, offer.automatedOutboundPerMonth, offer.quotaEnforcement, offer.checkoutEnabled ?? false, offer.testCheckoutReady === true, offer.features]);
 }
 export function choiceFromOffer(offer: SubscriptionOfferView): SubscriptionChoice {
   return { persona: offer.persona, package: offer.package, versionId: offer.versionId, term: offer.term, offerSignature: subscriptionOfferSignature(offer) };
@@ -82,7 +84,8 @@ export function isPurchasableOffer(
 ): boolean {
   return isApprovedOffer(persona, pack, term) && catalogStatus === "ready"
     && offer?.persona === persona && offer.package === pack && offer.term === term
-    && offer.currency === "OMR" && offer.amountBaisa === 45000;
+    && offer.currency === "OMR" && offer.amountBaisa === 45000
+    && offer.checkoutEnabled === false && offer.testCheckoutReady === true;
 }
 
 /** Formats integer baisa into strict 3-decimal OMR string (e.g. 45.000 OMR / 45.000 ر.ع.). */
@@ -98,7 +101,7 @@ export function offersViewFromCatalog(result: CatalogResult<PublicCatalogVersion
  if (!result.ok) return {status:"error",offers:[]};
  const offers: SubscriptionOfferView[] = result.data.map(row => ({
   versionId:row.version_id,catalogVersion:row.version,planId:row.plan_id,persona:personaByCode[row.persona],package:row.variant,term:"monthly",amountBaisa:row.amount_baisa,currency:row.currency,
-  automatedOutboundPerMonth:row.automated_outbound_per_month,quotaEnforcement:"not_verified",checkoutEnabled:row.checkout_enabled,
+  automatedOutboundPerMonth:row.automated_outbound_per_month,quotaEnforcement:"not_verified",checkoutEnabled:row.checkout_enabled,testCheckoutReady:false,
   features:Object.entries(row.feature_availability).map(([id,state])=>({id,label:featureLabels[id],availability:state==="target"?"planned":"not_verified"}))
  }));
  return {status:offers.length?"ready":"empty",offers};

@@ -2,8 +2,7 @@ import { loadOwnerBillingSubscription } from "@/lib/billing/wiring/subscription-
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import { getCompanyAccess } from "@/lib/tenancy/access";
-import { readPublicCatalogBackend } from "@/lib/billing/catalog-backend/rpc";
-import { offersViewFromCatalog } from "@/components/app/subscription-offers-view";
+import { readSubscriptionOffersView } from "@/lib/billing/catalog-backend/offer-readiness";
 import { readCompanyEntitlement } from "@/lib/billing/entitlement";
 import { subscriptionViewFromEntitlement } from "@/components/app/subscription-model";
 import { SettingsPage } from "@/components/app/settings";
@@ -17,7 +16,7 @@ export default async function Page() {
   const access = await getCompanyAccess();
   const company = access.ok ? access.context.company : null;
   const initialSubscription = await loadOwnerBillingSubscription(subscriptionViewFromEntitlement(readCompanyEntitlement(company?.id ?? null), company?.status ?? null));
-  const initialOffersView = offersViewFromCatalog(await readPublicCatalogBackend());
+  const initialOffersView = await readSubscriptionOffersView();
   const singleTenant = singleTenantReceptionStatus();
   return (
     <Suspense fallback={<main className="min-h-svh bg-[#07110d]" aria-busy="true" />}>

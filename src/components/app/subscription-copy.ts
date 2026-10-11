@@ -24,7 +24,7 @@ export const subscriptionCopy = {
     personas: {
       level_1: {
         role: "خدمة استفسارات العملاء من معرفة النشاط المعتمدة؛ حالات المزايا المنشورة أدناه تحدد النطاق.",
-        fits: "الأنشطة التي تحتاج موظفة استقبال وخدمة عملاء ذكية على واتساب دون انقطاع.",
+        fits: "للشركات التي تدرس دعم استفسارات العملاء على واتساب قبل الإطلاق؛ جاهزية الخدمة وتفعيلها لم يتم التحقق منهما.",
       },
       level_2: {
         role: "دور مقترح للمبيعات والموقع ومتابعة العملاء؛ التوفر يحدده الكتالوج المنشور والربط الفعلي.",
@@ -119,7 +119,7 @@ export const subscriptionCopy = {
     personas: {
       level_1: {
         role: "Customer enquiry handling from approved company knowledge; published feature states below define scope.",
-        fits: "Businesses needing a smart, always-on AI receptionist and customer care agent on WhatsApp.",
+        fits: "Businesses exploring WhatsApp enquiry support before launch; service readiness and activation are not verified.",
       },
       level_2: {
         role: "Proposed sales, website and follow-up workflows; availability requires published catalog evidence and integrations.",

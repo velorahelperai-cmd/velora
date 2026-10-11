@@ -8,7 +8,7 @@ import { choiceFromSubscriptionIntent } from "./subscription-navigation";
 const basic: SubscriptionOfferView = { versionId:"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", planId:"plan", persona:"level_1", package:"basic", term:"monthly", amountBaisa:45000,currency:"OMR",automatedOutboundPerMonth:734,quotaEnforcement:"not_verified",checkoutEnabled:false,features:[{id:"knowledge",label:{ar:"المعرفة",en:"Company knowledge"},availability:"not_verified"}]};
 const premium: SubscriptionOfferView = {...basic,versionId:"cccccccc-cccc-4ccc-8ccc-cccccccccccc",package:"premium",amountBaisa:87654,automatedOutboundPerMonth:1923};
 function render(offer:SubscriptionOfferView,locale:"en"|"ar"="en",status:"ready"|"error"|"empty"="ready") {
- return renderToStaticMarkup(createElement(SubscriptionOfferCards,{locale,term:"monthly",offers:status==="ready"?[basic,premium]:[],catalogStatus:status,selectedPersona:"level_1",selectedPackage:offer.package,onSelect:()=>{}}));
+ return renderToStaticMarkup(createElement(SubscriptionOfferCards,{locale,term:"monthly",offers:status==="ready"?[offer.package==="basic"?offer:basic,offer.package==="premium"?offer:premium]:[],catalogStatus:status,selectedPersona:"level_1",selectedPackage:offer.package,onSelect:()=>{}}));
 }
 describe("published catalog separate from purchase and service readiness",()=>{
  it("shows the restored Premium edition's real price and allowance without a Draft label",()=>{
@@ -17,8 +17,8 @@ describe("published catalog separate from purchase and service readiness",()=>{
   expect(card).toContain("Published price");expect(card).not.toContain("Draft");
   expect(card).toContain("Plan selected");expect(card).toContain("Checkout unavailable");
  });
- it("labels Basic selection as Test only, never a Live approval or ready service",()=>{
-  const card=render(basic).split('data-persona="level_1"')[1].split("</article>")[0];
+ it("labels server-qualified Basic as Test only, never a Live approval or ready service",()=>{
+  const card=render({...basic,testCheckoutReady:true}).split('data-persona="level_1"')[1].split("</article>")[0];
   expect(card).toContain("Test checkout only");expect(card).toContain("Service readiness not verified");
   expect(card).not.toContain("Approved");expect(card).toContain('data-feature-id="knowledge"');
  });
