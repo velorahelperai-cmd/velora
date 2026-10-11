@@ -198,3 +198,52 @@ export class GeminiAnswerAdapter implements AnswerProvider {
     }
   }
 }
+
+/** Fixed, non-customer connectivity transport. Never enables complete() or paid-key fallback. */
+export function createGeminiSyntheticTransport(apiKey: string, model: AIModelId) {
+  const client = new GoogleGenAI({ apiKey, httpOptions: { timeout: 10_000, retryOptions: { attempts: 1 } } });
+  return async () => {
+    const startedAt = Date.now();
+    try {
+      const response = await client.models.generateContent({
+        model,
+        contents: "Reply with exactly VELORA_SYNTHETIC_OK. This is a synthetic connectivity test.",
+        config: {
+          maxOutputTokens: 128,
+          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+          httpOptions: { timeout: 10_000, retryOptions: { attempts: 1 } },
+        },
+      });
+      const u = response.usageMetadata;
+      const promptTokens = u?.promptTokenCount;
+      const candidateTokens = u?.candidatesTokenCount;
+      const reasoningTokens = u?.thoughtsTokenCount ?? 0;
+      const cachedTokens = u?.cachedContentTokenCount ?? 0;
+      const latencyMs = Date.now() - startedAt;
+      if (!validTokenCount(promptTokens) || !validTokenCount(candidateTokens) ||
+          !validTokenCount(reasoningTokens) || !validTokenCount(cachedTokens) ||
+          promptTokens > 1024 || candidateTokens + reasoningTokens > 128 ||
+          cachedTokens > promptTokens || (u?.toolUsePromptTokenCount ?? 0) !== 0 ||
+          u?.totalTokenCount !== promptTokens + candidateTokens + reasoningTokens ||
+          !matchesRequestedModel(response.modelVersion, model) ||
+          typeof response.responseId !== "string" || !response.responseId.trim() ||
+          response.responseId.length > 200 || response.modelVersion!.length > 100 ||
+          response.text?.trim() !== "VELORA_SYNTHETIC_OK" ||
+          response.candidates?.length !== 1 || response.candidates[0].finishReason !== "STOP") {
+        return { ok: false as const, status: "uncertain" as const, error: "SYNTHETIC_RESPONSE_UNVERIFIED", latencyMs };
+      }
+      return {
+        ok: true as const, status: "success" as const, latencyMs,
+        requestId: response.responseId, responseId: response.responseId, actualModelId: response.modelVersion!,
+        usage: { promptTokens, completionTokens: candidateTokens + reasoningTokens,
+          cachedTokens, reasoningTokens, cacheWriteTokens: 0, totalTokens: u.totalTokenCount },
+      };
+    } catch (error: unknown) {
+      const status = (error as { status?: number })?.status;
+      const rejected = status === 401 || status === 403 || status === 404;
+      return { ok: false as const, status: rejected ? "rejected" as const : "uncertain" as const,
+        error: rejected ? "PROVIDER_REJECTED" : status === 429 ? "PROVIDER_RATE_LIMIT" : "PROVIDER_OUTCOME_UNKNOWN",
+        latencyMs: Date.now() - startedAt };
+    }
+  };
+}
