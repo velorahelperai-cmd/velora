@@ -59,7 +59,7 @@ describe("durable P1/P2 receipt recovery", () => {
     vi.stubEnv("BILLING_PAYMOB_LIVE_ENABLED", "true");
     state.rpc.mockResolvedValue({ data: { ok: true, outcome: "lifecycle_review" }, error: null });
     await processOwnerOrderEvents("tenant", "order");
-    expect(state.rpc).toHaveBeenCalledWith("billing_settle_paymob_hmac_verified", {
+    expect(state.rpc).toHaveBeenCalledWith("billing_settle_live_paymob_hmac_verified", {
       p_evidence: expect.objectContaining({ provider_environment: "live", event_status: status,
         company_id: "tenant", order_id: "order", provider_transaction_id: "910001" }),
     });

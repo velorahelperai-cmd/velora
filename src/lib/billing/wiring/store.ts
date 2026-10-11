@@ -136,7 +136,7 @@ export async function settleHmacVerifiedViaRpc(
   const admin = billingAdmin();
   if (!admin) return { ok: false, code: "admin_not_configured" };
 
-  const { data, error } = await admin.rpc("billing_settle_paymob_hmac_verified", {
+  const { data, error } = await admin.rpc(evidence.provider_environment === "live" ? "billing_settle_live_paymob_hmac_verified" : "billing_settle_paymob_hmac_verified", {
     p_evidence: evidence,
   });
 

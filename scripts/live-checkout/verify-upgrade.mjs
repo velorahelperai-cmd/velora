@@ -1,0 +1,17 @@
+import assert from"node:assert/strict";import{readFileSync,writeFileSync}from"node:fs";import{attachIsolate}from"./postgres.mjs";
+const db=await attachIsolate();
+const query=readFileSync("supabase/upgrade-packages/paymob-live-checkout/00-footprint.readonly.sql","utf8").replace(/^BEGIN;SET LOCAL search_path='';/,"").replace(/;COMMIT;\s*$/,"");
+const footprint=()=>db.sql("SET search_path='';SELECT md5(data::text) FROM("+query+")q(data);");
+const ai=()=>db.sql("SET search_path='';SELECT md5(coalesce(jsonb_agg(jsonb_build_array(p.oid::regprocedure::text,pg_get_functiondef(p.oid),p.proacl::text) ORDER BY p.oid::regprocedure::text)::text,'')) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname IN('public','private') AND p.proname LIKE 'ai_%';");
+const tables=["public.billing_orders","public.billing_payment_attempts","public.billing_provider_events","public.billing_entitlement_applications","public.billing_settlement_outcomes","public.billing_subscriptions","private.billing_service_offers","private.billing_service_order_offers","private.billing_service_grants","private.ai_plan_budget_policies","public.ai_budget_accounts","public.ai_usage_ledger"];
+const history=()=>db.sql("SELECT md5(jsonb_build_array("+tables.map(t=>"(SELECT coalesce(jsonb_agg(to_jsonb(x) ORDER BY to_jsonb(x)::text),'[]'::jsonb) FROM "+t+" x)").join(",")+")::text);");
+const before={footprint:await footprint(),history:await history(),ai:await ai()};
+const installers=["10-live-checkout.review.sql","20-production-compatibility.review.sql"];
+const expectedPosts=installers.map(file=>[...readFileSync("supabase/upgrade-packages/paymob-live-checkout/"+file,"utf8").matchAll(/IS DISTINCT FROM '([a-f0-9]{32})'/g)].at(-1)[1]);
+assert(expectedPosts.includes(before.footprint),"installed footprint must match a reviewed strict postcondition");
+assert.equal(before.ai,readFileSync("scripts/live-checkout/ai-before.txt","utf8").trim());
+for(const file of ["10-live-checkout.review.sql","20-production-compatibility.review.sql"]) await assert.rejects(db.file("supabase/upgrade-packages/paymob-live-checkout/"+file),/LIVE_CHECKOUT_FOOTPRINT_DRIFT/);
+const after={footprint:await footprint(),history:await history(),ai:await ai()};
+assert.deepEqual(after,before);
+const result={matchingIsolatedUpgrade:"PASS",postcondition:before.footprint,reapplyRejected:"PASS",rejectedUpgradePreservesHistory:"PASS",allAIPhaseDefinitionsAndACLsUnchanged:"PASS",aiFingerprint:before.ai,historyFingerprint:before.history};
+writeFileSync("scripts/live-checkout/upgrade-preservation.json",JSON.stringify(result,null,2));console.log(JSON.stringify(result));

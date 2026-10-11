@@ -1,0 +1,14 @@
+import assert from "node:assert/strict";import {readFileSync,writeFileSync} from "node:fs";import {attachIsolate} from "./postgres.mjs";
+const db=await attachIsolate();const dir="supabase/upgrade-packages/paymob-live-checkout/";
+const query=readFileSync(dir+"00-footprint.readonly.sql","utf8").replace(/^BEGIN;SET LOCAL search_path='';/,"").replace(/;COMMIT;\s*$/,"");
+const pre=readFileSync("scripts/live-checkout/baseline-fingerprint.txt","utf8").trim();
+const guard=hash=>"DO $live_guard$ BEGIN IF(SELECT md5(data::text) FROM("+query+")q(data)) IS DISTINCT FROM '"+hash+"' THEN RAISE EXCEPTION 'LIVE_CHECKOUT_FOOTPRINT_DRIFT';END IF;END $live_guard$;";
+let sql=readFileSync(dir+"10-live-checkout.review.sql","utf8").replace("-- GUARD_PRE",guard(pre));
+writeFileSync(dir+"10-live-checkout.review.sql",sql);
+await db.sql(sql);
+const post=await db.sql("SET search_path='';SELECT md5(data::text) FROM("+query+")q(data);");
+writeFileSync("scripts/live-checkout/post-fingerprint.txt",post+"\n");
+sql=sql.replace("-- GUARD_POST",guard(post));
+writeFileSync(dir+"10-live-checkout.review.sql",sql);
+await db.file("scripts/live-checkout/fixtures.sql");
+console.log("ISOLATED_DRAFT_INSTALLED pre="+pre+" post="+post);
