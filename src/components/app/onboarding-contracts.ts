@@ -8,7 +8,8 @@ import type { WhatsappInboxPage } from "@/lib/whatsapp/inbox-contracts";
 
 export type DashboardInboxLoad =
   | (Extract<WhatsappInboxLoad, { ok: true }> & { page?: WhatsappInboxPage })
-  | Extract<WhatsappInboxLoad, { ok: false }>;
+  | Extract<WhatsappInboxLoad, { ok: false }>
+  | { ok: false; code: "FORBIDDEN" };
 
 export function dashboardInboxMetrics(load: DashboardInboxLoad, expectedCompanyId?: string | null) {
   if (!load.ok || (expectedCompanyId && load.meta.companyId !== expectedCompanyId)) {

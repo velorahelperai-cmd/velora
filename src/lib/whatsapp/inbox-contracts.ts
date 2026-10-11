@@ -55,7 +55,8 @@ async function scopedRpc(companyId: string, name: string, args: RecordValue): Pr
     if (!access.context.company || !access.context.membership) return { ok: false, code: "NO_COMPANY" };
     if (access.context.company.id !== companyId) return { ok: false, code: "SCOPE_CHANGED" };
     const read = await sessionHasCompanyCapability(companyId, "wa.conversations.read");
-    if (read !== true) return { ok: false, code: read === null ? "UNAVAILABLE" : "FORBIDDEN" };
+    // The capability helper also returns false for RPC errors, so this is not an explicit denial.
+    if (read !== true) return { ok: false, code: "UNAVAILABLE" };
     const scope = await sessionConversationScope(companyId);
     if (scope !== "all_company" && scope !== "assigned_only") return { ok: false, code: "UNAVAILABLE" };
     // Local RPC shape until the coordinated generated database types are refreshed.

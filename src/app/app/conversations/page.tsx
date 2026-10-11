@@ -12,6 +12,7 @@ export default async function Page() {
     <Suspense fallback={<main className="min-h-svh bg-[#07110d]" aria-busy="true" />}>
       <ConversationsPage
         inbox={loaded.ok ? loaded.conversations : []}
+        forbidden={!loaded.ok && loaded.code === "FORBIDDEN"}
         loadFailed={!loaded.ok && loaded.code === "UNAVAILABLE"}
         noCompany={!loaded.ok && loaded.code === "NO_COMPANY"}
         meta={loaded.ok ? loaded.meta : undefined}

@@ -780,7 +780,9 @@ export function DashboardPage({
               <p className="text-sm text-[var(--color-muted-on-dark)]" role="status">
                 {initialLeads.code === "NO_COMPANY"
                   ? (ar ? "اختر مساحة الشركة لعرض المحادثات المسموح لك بها." : "Select a company workspace to view conversations.")
-                  : (ar ? "تعذّر تحميل بيانات المحادثات. لا توجد بيانات مؤكدة." : "Conversation data could not be loaded.")}
+                  : initialLeads.code === "FORBIDDEN"
+                    ? `${copy.errors.forbiddenTitle}: ${copy.errors.forbiddenBody}`
+                    : (ar ? "تعذّر تحميل بيانات المحادثات. لا توجد بيانات مؤكدة." : "Conversation data could not be loaded.")}
               </p>
             </div>
           ) : recentConversations.length === 0 ? (

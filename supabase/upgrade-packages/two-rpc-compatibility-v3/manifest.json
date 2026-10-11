@@ -25,7 +25,8 @@
       "preflight_cases_passed": 15,
       "preflight_cases_total": 15,
       "additional_coverage": "assignment/delegation and inbox contracts/races",
-      "owned_isolate": "reported removed"
+      "owned_isolate": "reported removed",
+      "original_isolated_function_owners_and_acls_unchanged": 310
     },
     "reported_evidence_file": "C:/Users/DELL/Documents/Codex/2026-10-10/task/two-rpc-compatibility-review-v3/VERIFICATION.v3.json",
     "evidence_file_available_in_cloud": false,
@@ -63,7 +64,7 @@
       "authenticated_only_new_public_rpcs": 2,
       "owner_only_new_private_helpers": 4,
       "existing_claim_service_only": true,
-      "original_function_owners_and_acls_unchanged": 310,
+      "original_production_compared_function_owners_and_acls_unchanged": 288,
       "previous_migration_records_unchanged": 55
     },
     "approval_history": "Initial automatic review denial left both transactions unapplied. Owner then explicitly revoked the prior SQL prohibition in the desktop execution context; desktop subsequently reported successful installation and verification.",

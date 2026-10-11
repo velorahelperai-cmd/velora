@@ -201,3 +201,15 @@ describe("bounded inbox contracts", () => {
     expect(JSON.stringify(result)).not.toContain("secret");
   });
 });
+
+describe("inbox denial provenance", () => {
+ it("preserves an explicit RPC forbidden result", async () => {
+  seam.rpc.mockResolvedValue({data:{ok:false,code:"forbidden"},error:null});
+  expect(await contracts.loadWhatsappInboxPage({companyId})).toEqual({ok:false,code:"FORBIDDEN"});
+ });
+ it("keeps ambiguous helper false unavailable without reading inbox", async () => {
+  seam.capability.mockResolvedValue(false);
+  expect(await contracts.loadWhatsappInboxPage({companyId})).toEqual({ok:false,code:"UNAVAILABLE"});
+  expect(seam.rpc).not.toHaveBeenCalled();
+ });
+});

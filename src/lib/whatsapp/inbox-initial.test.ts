@@ -15,3 +15,25 @@ describe("bounded initial inbox",()=>{
  it("fails closed after a selected-company switch",async()=>{state.access.mockResolvedValueOnce({ok:true,context:{company:{id:company},membership:{}}}).mockResolvedValueOnce({ok:true,context:{company:{id:"other"},membership:{}}});expect(await loadWhatsappInboxInitialPage()).toEqual({ok:false,code:"UNAVAILABLE"});});
  it("does not load data without authoritative read permission",async()=>{state.cap.mockResolvedValue(null);expect(await loadWhatsappInboxInitialPage()).toEqual({ok:false,code:"UNAVAILABLE"});expect(state.page).not.toHaveBeenCalled();});
 });
+
+describe("initial inbox failure classification", () => {
+ it("preserves explicit lower-reader denial without downstream reads", async () => {
+  state.page.mockResolvedValue({ok:false,code:"FORBIDDEN"});
+  expect(await loadWhatsappInboxInitialPage()).toEqual({ok:false,code:"FORBIDDEN"});
+  expect(state.from).not.toHaveBeenCalled();
+ });
+ it.each(["UNAVAILABLE","SCOPE_CHANGED","INVALID_INPUT","NOT_FOUND"])("keeps %s unavailable", async code => {
+  state.page.mockResolvedValue({ok:false,code});
+  expect(await loadWhatsappInboxInitialPage()).toEqual({ok:false,code:"UNAVAILABLE"});
+ });
+ it.each([false,null])("does not interpret ambiguous capability %s as denial", async value => {
+  state.cap.mockResolvedValue(value);
+  expect(await loadWhatsappInboxInitialPage()).toEqual({ok:false,code:"UNAVAILABLE"});
+  expect(state.page).not.toHaveBeenCalled();
+ });
+ it("keeps unknown scope unavailable", async () => {
+  state.scope.mockResolvedValue(null);
+  expect(await loadWhatsappInboxInitialPage()).toEqual({ok:false,code:"UNAVAILABLE"});
+  expect(state.page).not.toHaveBeenCalled();
+ });
+});

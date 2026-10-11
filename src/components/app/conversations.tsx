@@ -535,12 +535,14 @@ function LeadFollowUpPanel({
 }
 
 export function ConversationsPage({
+  forbidden,
   loadFailed,
   noCompany,
   meta,
   page,
 }: {
   inbox: Conversation[];
+  forbidden?: boolean;
   loadFailed?: boolean;
   noCompany?: boolean;
   meta?: WhatsappInboxMeta;
@@ -559,7 +561,17 @@ export function ConversationsPage({
   const inboxPageRef = useRef(page);
   const [readCacheGeneration, setReadCacheGeneration] = useState(0);
   const [inboxBusy, setInboxBusy] = useState(false);
+  const [inboxDenied, setInboxDenied] = useState(false);
+  const accessDenied = forbidden || inboxDenied;
   const [inboxReadError, setInboxReadError] = useState<string | null>(null);
+  const [routeResult, setRouteResult] = useState({ page, meta, forbidden, loadFailed, noCompany });
+  if (routeResult.page !== page || routeResult.meta !== meta || routeResult.forbidden !== forbidden
+    || routeResult.loadFailed !== loadFailed || routeResult.noCompany !== noCompany) {
+    // Route hydration supersedes the previous client refresh before children render.
+    setRouteResult({ page, meta, forbidden, loadFailed, noCompany });
+    setInboxDenied(false);
+    setInboxReadError(null);
+  }
   const [threads, setThreads] = useState<Record<string, ThreadView>>({});
   const threadsRef = useRef<Record<string, ThreadView>>({});
   const [threadBusyId, setThreadBusyId] = useState<string | null>(null);
@@ -685,6 +697,7 @@ export function ConversationsPage({
     setReadyThreadId(null);
     setInboxBusy(false);
     setInboxReadError(null);
+    setInboxDenied(false);
     setConnection(null);
     setAudits({});
     auditGenRef.current += 1;
@@ -744,7 +757,7 @@ export function ConversationsPage({
     setInboxMeta(meta);
     // New route props own hydration; applyPage reads the current snapshot ref.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, meta]);
+  }, [page, meta, forbidden, loadFailed, noCompany]);
 
   const conversations = useMemo(
     () => selectLiveConversations(serverInbox, localInbox),
@@ -866,7 +879,8 @@ export function ConversationsPage({
           setInboxMeta(undefined);
           router.refresh();
         }
-        setInboxReadError(copy.app.inboxLoadFailedBody);
+        setInboxDenied(loaded.code === "FORBIDDEN");
+        setInboxReadError(loaded.code === "FORBIDDEN" ? copy.errors.forbiddenBody : copy.app.inboxLoadFailedBody);
         return false;
       }
       const nextPage = "page" in loaded ? loaded.page : loaded.data;
@@ -896,6 +910,7 @@ export function ConversationsPage({
       ) {
         return false;
       }
+      setInboxDenied(false);
       applyPage(nextPage, Boolean(before));
       if ("meta" in loaded) setInboxMeta(loaded.meta);
       return true;
@@ -1285,7 +1300,9 @@ export function ConversationsPage({
   }, []);
 
   // Empty / Load Failed status checks
-  const emptyTitle = loadFailed
+  const emptyTitle = accessDenied
+    ? copy.errors.forbiddenTitle
+    : loadFailed
     ? copy.app.inboxLoadFailed
     : noCompany
       ? copy.app.inboxNoCompany
@@ -1293,7 +1310,9 @@ export function ConversationsPage({
         ? (locale === "ar" ? "لا توجد محادثات واتساب بعد" : "No WhatsApp conversations yet")
         : copy.app.noResults;
 
-  const emptyBody = loadFailed
+  const emptyBody = accessDenied
+    ? copy.errors.forbiddenBody
+    : loadFailed
     ? copy.app.inboxLoadFailedBody
     : noCompany
       ? copy.app.inboxNoCompanyBody
@@ -1336,7 +1355,9 @@ export function ConversationsPage({
           onClick={() => startTransition(async () => { await loadThread(selectedId); })}>{locale === "ar" ? "إعادة المحاولة" : "Retry"}</button>
       </Notice> : null}
       {/* Top Banner Notice for Unconnected or Setup States */}
-      {noCompany ? (
+      {accessDenied ? (
+        <Notice tone="warn">{copy.errors.forbiddenBody}</Notice>
+      ) : noCompany ? (
         <Notice tone="warn">{copy.app.inboxNoCompanyBody}</Notice>
       ) : loadFailed ? (
         <Notice tone="error">{copy.app.inboxLoadFailedBody}</Notice>

@@ -148,7 +148,7 @@ export type WhatsappInboxLoad =
 /** A bounded initial UI page. Worklist counts describe only the loaded page. */
 export async function loadWhatsappInboxInitialPage(): Promise<
   | { ok: true; conversations: import("./inbox-contracts").WhatsappInboxItem[]; meta: WhatsappInboxMeta; page: import("./inbox-contracts").WhatsappInboxPage }
-  | { ok: false; code: "NO_COMPANY" | "UNAVAILABLE" }
+  | { ok: false; code: "NO_COMPANY" | "FORBIDDEN" | "UNAVAILABLE" }
 > {
   try {
     const access = await getCompanyAccess();
@@ -158,7 +158,8 @@ export async function loadWhatsappInboxInitialPage(): Promise<
     if ((scope !== "all_company" && scope !== "assigned_only") || await sessionHasCompanyCapability(companyId, "wa.conversations.read") !== true) return { ok: false, code: "UNAVAILABLE" };
     const { loadWhatsappInboxPage } = await import("./inbox-contracts");
     const page = await loadWhatsappInboxPage({ companyId, limit: 40 });
-    if (!page.ok || page.data.companyId !== companyId || page.data.conversationScope !== scope) return { ok: false, code: "UNAVAILABLE" };
+    if (!page.ok) return { ok: false, code: page.code === "FORBIDDEN" ? "FORBIDDEN" : "UNAVAILABLE" };
+    if (page.data.companyId !== companyId || page.data.conversationScope !== scope) return { ok: false, code: "UNAVAILABLE" };
     const client = await createClient();
     const [timezoneRow, permissions] = await Promise.all([
       client.from("companies").select("timezone").eq("id", companyId).maybeSingle(),
