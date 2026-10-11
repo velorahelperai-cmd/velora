@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import {safeCompanyReturnHref} from "@/components/app/admin-company-navigation";
 import { notFound, redirect } from "next/navigation";
 import { AccessGate } from "@/components/app/access-gate";
 import {
@@ -23,7 +24,7 @@ type DetailPayload = {
   review_request?: CompanyReviewRequest | null;
 };
 
-export default async function Page({ params }: { params: Promise<{ id: string }> }) {
+export default async function Page({ params, searchParams }: { params: Promise<{ id: string }>; searchParams?:Promise<Record<string,string|string[]|undefined>> }) {
   const { id } = await params;
   const admin = await requirePlatformAdmin();
   if (!admin.ok) {
@@ -67,6 +68,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
   return (
     <AdminCompanyDetail
       key={`company-${payload.company.id}`}
+      returnTo={safeCompanyReturnHref((await searchParams)?.returnTo)}
       initialCompany={payload.company}
       initialMembers={payload.members ?? []}
       initialAudits={payload.audits ?? []}

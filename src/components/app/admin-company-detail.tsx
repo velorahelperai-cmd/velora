@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import {safeCompanyReturnHref} from "./admin-company-navigation";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { adminGetKnowledgeFileUrl, adminListCompanyKnowledge } from "@/lib/knowledge/actions";
@@ -93,6 +94,7 @@ export type AdminCompany = {
 };
 
 type Props = {
+  returnTo?: string;
   initialCompany: AdminCompany;
   initialMembers: AdminMember[];
   initialAudits: AdminAudit[];
@@ -119,6 +121,7 @@ function formatStamp(value: string | null | undefined): string {
 }
 
 export function AdminCompanyDetail({
+  returnTo,
   initialCompany,
   initialMembers,
   initialAudits,
@@ -275,7 +278,7 @@ export function AdminCompanyDetail({
       <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-[#D7C1A5]">
         <div className="flex items-center gap-3">
           <Link
-            href="/admin#companies"
+            href={safeCompanyReturnHref(returnTo)}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#D7C1A5] bg-[#FFFBF5] text-xs font-semibold text-[#6B4932] hover:text-[#18130F] hover:border-[#6B4932] hover:shadow-2xs transition"
           >
             <span>←</span>

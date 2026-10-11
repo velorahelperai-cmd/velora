@@ -2,6 +2,7 @@
 
 import { useDemo } from "@/lib/demo-state";
 import Link from "next/link";
+import {adminCompanyHref,companyListReturnHref,type CompanyListFilters} from "./admin-company-navigation";
 import {AdminRealAISummary} from "@/components/admin/admin-real-ai-summary";
 import {readAdminTruth,type AdminTruth} from "@/lib/answers/runtime/admin-truth";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -112,17 +113,20 @@ export function AdminList({
   initialOverview = null,
   overviewUnavailable = null,
   initialTruth = null,
+  initialCompanyFilters = {search:"",status:"all"},
 }: {
   initialOverview?: AdminOverviewStats | null;
   overviewUnavailable?: { code: AccessCode | "AUTH_ERROR"; message: string | null } | null;
   initialTruth?: AdminTruth | null;
+  initialCompanyFilters?: CompanyListFilters;
 }) {
   const copy = useAppCopy();
   const { locale } = useDemo();
   const { busy, run } = useAction();
   const [activeTab, setActiveTab] = useState<AdminTab>("overview");
-  const [search, setSearch] = useState("");
-  const [status, setStatus] = useState<"all" | CompanyStatus>("all");
+  const [search, setSearch] = useState(initialCompanyFilters.search);
+  const [appliedCompanySearch,setAppliedCompanySearch]=useState(initialCompanyFilters.search);
+  const [status, setStatus] = useState<"all" | CompanyStatus>(initialCompanyFilters.status);
   const [rows, setRows] = useState<AdminCompanyListItem[]>([]);
   const [companiesState, setCompaniesState] = useState<CompaniesLoadState>("loading");
   const [error, setError] = useState<string | null>(null);
@@ -248,6 +252,7 @@ export function AdminList({
         return;
       }
       setRows(result.data);
+      setAppliedCompanySearch(q);
       setCompaniesState("ready");
     } catch {
       if (gen !== companiesGen.current) return;
@@ -258,7 +263,7 @@ export function AdminList({
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
-      void load("");
+      void load(initialCompanyFilters.search);
     });
     return () => window.cancelAnimationFrame(frame);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -777,7 +782,7 @@ export function AdminList({
                     <tr key={row.id} className="hover:bg-[#F7F0E5] transition">
                       <td className="p-3.5">
                         <Link
-                          href={`/admin/companies/${row.id}`}
+                          href={adminCompanyHref(row.id,companyListReturnHref({search:appliedCompanySearch,status}))}
                           className="font-bold text-[#18130F] hover:text-[#6B4932] transition underline-offset-2 hover:underline block"
                         >
                           {row.display_name}
@@ -805,7 +810,7 @@ export function AdminList({
                       </td>
                       <td className="p-3.5 text-end">
                         <Link
-                          href={`/admin/companies/${row.id}`}
+                          href={adminCompanyHref(row.id,companyListReturnHref({search:appliedCompanySearch,status}))}
                           className="inline-flex items-center gap-1 rounded-xl border border-[#D7C1A5] bg-[#F7F0E5] px-3 py-1 text-xs font-semibold text-[#18130F] hover:bg-[#D1AE7C] hover:text-[#18130F] hover:border-[#6B4932] transition"
                         >
                           <span>{isRtl ? "إدارة وتفاصيل" : "Manage"}</span>
@@ -1054,7 +1059,7 @@ export function AdminList({
                 >
                   <div>
                     <Link
-                      href={`/admin/companies/${row.id}`}
+                      href={adminCompanyHref(row.id,companyListReturnHref({search:appliedCompanySearch,status}))}
                       className="text-base font-bold text-[#18130F] hover:text-[#6B4932] transition"
                     >
                       {row.display_name}
@@ -1069,7 +1074,7 @@ export function AdminList({
                     </p>
                   </div>
                   <Link
-                    href={`/admin/companies/${row.id}`}
+                    href={adminCompanyHref(row.id,companyListReturnHref({search:appliedCompanySearch,status}))}
                     className="rounded-xl bg-[#D1AE7C] px-3.5 py-1.5 text-xs font-bold text-[#18130F] hover:bg-[#EFE2CF] transition shadow-xs"
                   >
                     {isRtl ? "مراجعة واعتماد" : "Review & Approve"}
