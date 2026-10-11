@@ -36,7 +36,7 @@ export async function readPlatformTeamSelf(expectedUserId:string):Promise<TeamRe
 }
 export async function readPlatformTeamDirectory(input:unknown):Promise<TeamResult<TeamDirectory>>{
  const request=parseTeamDirectory(input);if(!request)return {ok:false,code:"INVALID_INPUT"};
- return call(request.expectedUserId,"platform_team_read_directory",{p_team_id:request.teamId,p_after_id:request.cursor?.id??null,p_after_revision:request.cursor?.revision??null,p_page_size:request.pageSize},v=>decodeTeamDirectory(v,request));
+ return call(request.expectedUserId,"platform_team_read_directory",{p_team_id:request.teamId,p_after_id:request.cursor?.id??null,p_after_revision:request.cursor?.revision??null,p_page_size:request.pageSize,p_search:request.search},v=>decodeTeamDirectory(v,request));
 }
 export async function mutatePlatformTeam(input:unknown):Promise<TeamResult<TeamMutation>>{
  const request=parseTeamMutation(input);if(!request)return {ok:false,code:"INVALID_INPUT"};

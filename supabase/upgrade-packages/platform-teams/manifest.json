@@ -6,12 +6,12 @@
   "production_project": "vmpifljyozsbtssxhoxd",
   "migration": {
     "path": "supabase/upgrade-packages/platform-teams/10-teams.review.sql",
-    "sha256": "b88248d4b0f22357faa27360db3643db8334cbd97c03cabca195584d52864cc1",
+    "sha256": "c1e943b4ba57babb63fac51ce74f02615adb4e2b84ea2c0bd0c762eab43994c9",
     "mode": "forward, atomic, installer postgres; absent new objects required; outside automated migrations"
   },
   "preflight": {
     "path": "supabase/upgrade-packages/platform-teams/preflight.readonly.sql",
-    "sha256": "67624705d12874c80e6f56bc88134b74c8a6a699f381d2034926277d7784405d",
+    "sha256": "1d99446451a24af06e4b5969640c12766610df6b49058ab2944fe90b0f23c850",
     "transaction": "BEGIN READ ONLY; catalog SELECT; COMMIT",
     "production_rows_or_tokens_returned": false,
     "evidence": {
@@ -42,7 +42,8 @@
       "new_relations_absent": true,
       "authenticated_private_usage": false,
       "authenticated_owner_predicate_execute": true
-    }
+    },
+    "evidence_scope": "Historical r1 catalog-only observation; updated r2 preflight with both old/new directory signature absence requires a fresh approved installer check before release."
   },
   "schema_additions": [
     "public.platform_teams",
@@ -51,16 +52,11 @@
   ],
   "rpcs": [
     "public.platform_team_read_self()",
-    "public.platform_team_read_directory(uuid,uuid,integer,integer)",
+    "public.platform_team_read_directory(uuid,uuid,integer,integer,text)",
     "public.platform_team_preview_transfer(jsonb)",
     "public.platform_team_mutate(jsonb)"
   ],
-  "authority": "Verified existing Auth users/sessions, exp/not_after/current-clock activity lease, current persisted platform owner. Managers derive current same-team roster authority; employees see self/manager only. No company/admin/finance authority inheritance.",
-  "provisional_design_choices": {
-    "one_active_internal_team_per_user": true,
-    "team_manager_independent_of_platform_admin_role": true,
-    "parent_confirmation": "pending"
-  },
+  "authority": "Current verified Auth/session; owner writes; delegated managers require active persisted platform role plus owner-set per-team manager pointer and active same-team membership. Multiple team scopes/memberships; independent revocation; caller-only plural self history. No company/admin/finance inheritance.",
   "verification": {
     "postgres": {
       "synthetic_only": true,
@@ -71,11 +67,12 @@
       "published_ports": 0,
       "persistent_mounts": 0,
       "log_driver": "none",
-      "cases": 16
+      "cases": 29,
+      "result": "29 pass; 0 fail; final complete r2 suite"
     },
-    "focused_vitest": 31,
+    "focused_vitest": 33,
     "aggregate": {
-      "pass": 2033,
+      "pass": 2035,
       "existing_skips": 42
     },
     "typecheck": "pass",
@@ -84,11 +81,11 @@
       "existing_warnings": 7
     },
     "build": "pass",
-    "regressions": "Observed RED then GREEN for missing SQL/TS contracts, committed projections, current-clock session expiry during lock waits and post-write optional identity failure.",
+    "regressions": "Observed RED then GREEN for r2 multi-team model, specialty, transitions, pending roster/self/member/manager-summary revocation; r1 expiry and receipt regressions retained.",
     "independent_review": {
       "model": "gpt-6.1-sol",
       "effort": "high",
-      "result": "no remaining material findings after both fixes; source/SQL/read-only review; 28 focused tests independently run before 3 additional decoder tests",
+      "result": "No remaining material findings after RED/GREEN fixes; final source/SQL/README/original20 mapping reviewed. Reviewer did not run PG, full runtime or live browser.",
       "not_run_by_reviewer": [
         "PostgreSQL harness",
         "production PostgREST/browser"
@@ -97,15 +94,28 @@
   },
   "recovery": "SQL installation is transactional; failure rolls back. If installed but code unpublished, keep UI unexposed. Authorized containment can revoke only four new RPC EXECUTE and two table SELECT, then repair forward. Lost responses replay exact actor/operation UUID/payload after session recovery without duplicate writes/audit. Authority lock contention returns UNAVAILABLE with no changes.",
   "remaining_gates": [
-    "Confirm provisional team model choices",
-    "Approve exact migration hash and rerun catalog preflight",
-    "Authorized installer applies schema, verifies new ACLs/RLS and full-schema/PostgREST role integration",
-    "Authorize synchronized tested main push/deployment after schema verification",
-    "Verify exact deployment, desktop SHA synchronization and owner browser acceptance"
+    "Approve exact r2 migration hash and rerun updated catalog preflight",
+    "Authorized installer applies schema; verify full canonical schema, Auth/pre-request, PostgREST and real finance API separation",
+    "Separate synchronized tested main push/deployment authorization after schema verification",
+    "Exact deployment/desktop SHA synchronization and owner browser acceptance"
   ],
   "limitations": [
-    "Local synthetic PG17.6 is not a full production schema replay on PG17.11",
-    "PostgREST pre-request integration and authenticated live browser acceptance remain pending",
-    "No route imports the new server actions; no live team UI exposed"
-  ]
+    "Synthetic PG17.6 fixture is not full canonical PG17.11/schema/Auth/PostgREST proof",
+    "Existing full HTTP stack attempted; required supabase/postgres:17.6.1.136, supabase/gotrue:v2.196.0, postgrest/postgrest:v14.17 cached images absent; stopped before schema work",
+    "Direct-table RLS uses ordinary statement snapshots; terminal pending-response revision/authority checks apply to supported RPC reads only",
+    "Original twenty scenarios have explicit remaining gaps; case totals do not establish acceptance",
+    "No route imports the new server actions; no team UI exposed; production installation/publication held"
+  ],
+  "revision": "r2; r1 checkpoint and Library archive preserved",
+  "approved_model": {
+    "multiple_independent_active_memberships": true,
+    "multi_team_delegated_admin_responsibility": true,
+    "owner_set_team_scope": "platform_teams.manager_user_id plus active same-team membership",
+    "current_persisted_active_delegated_role_required": true,
+    "platform_role_disable_revokes_all_delegated_rosters": true,
+    "transfer_preserves_unrelated_memberships_and_company_grants": true,
+    "specialty": "owner-set directory text; no authority",
+    "self": "plural caller memberships; denied entries omit team/manager metadata"
+  },
+  "scenario_mapping": "supabase/upgrade-packages/platform-teams/SCENARIO-MAPPING.md; original 20 assertion-level mapping with explicit partial coverage and gaps"
 }
