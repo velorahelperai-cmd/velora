@@ -775,7 +775,7 @@ export function AdminCompanyDetail({
                             setError(result.message ?? copy.errors.authFailed);
                             return;
                           }
-                          const ok = await refresh();
+                          const ok = await refresh({ preserveCompanyForm: true });
                           if (ok) setSuccess(copy.admin.memberEnableDone);
                         });
                       }}
@@ -969,7 +969,7 @@ export function AdminCompanyDetail({
               setError(result.message ?? copy.errors.authFailed);
               return;
             }
-            const ok = await refresh();
+            const ok = await refresh({ preserveCompanyForm: true });
             if (ok) setSuccess(copy.admin.memberDisableDone);
           });
         }}

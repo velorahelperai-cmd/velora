@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-const state=vi.hoisted(()=>({access:vi.fn(),settings:vi.fn(),order:vi.fn(),admin:vi.fn(),site:vi.fn()}));
+const state=vi.hoisted(()=>({access:vi.fn(),settings:vi.fn(),order:vi.fn(),admin:vi.fn(),site:vi.fn(),open:vi.fn()}));
 vi.mock("@/lib/tenancy/access",()=>({getCompanyAccess:state.access}));
 vi.mock("@/lib/supabase/admin",()=>({createAdminClient:state.admin}));
 vi.mock("./order-actions",()=>({createBillingOrderAction:state.order}));
-vi.mock("./test-checkout",()=>({readTestCheckoutConfig:state.settings,openTestCheckout:vi.fn(),fetchPaymobHttp:{}}));
+vi.mock("./test-checkout",()=>({readTestCheckoutConfig:state.settings,openTestCheckout:state.open,fetchPaymobHttp:{}}));
 vi.mock("@/lib/auth/site-url",()=>({siteUrl:state.site}));
 import { startTestCheckoutAction, resumeTestCheckoutAction } from "./test-checkout-actions";
 const input={planVersionId:"version",clientOpId:"operation"};
@@ -15,6 +15,9 @@ describe("owner-only checkout action",()=>{
  it("requires a public callback before creating an order",async()=>{state.site.mockReturnValue("http://localhost:3000");expect(await startTestCheckoutAction(input)).toMatchObject({ok:false,code:"callback_not_configured"});expect(state.order).not.toHaveBeenCalled();});
  it("requires the saved company phone",async()=>{state.access.mockResolvedValue({ok:true,context:{company:{id:"company",status:"active",contact_phone:null},membership:{role:"owner"}}});expect(await startTestCheckoutAction(input)).toMatchObject({ok:false,code:"billing_phone_missing"});expect(state.order).not.toHaveBeenCalled();});
  it("passes only the catalog version and operation to server-priced order creation",async()=>{expect(await startTestCheckoutAction({...input,amountBaisa:1} as typeof input)).toMatchObject({ok:false,code:"plan_not_published"});expect(state.order).toHaveBeenCalledWith({planVersionId:"version",clientOpId:"operation",purchasePurpose:"initial",expectedCompanyId:"company"});expect(state.admin).not.toHaveBeenCalled();});
+ it("rejects null runtime input without creating an order",async()=>{expect(await startTestCheckoutAction(null as unknown as typeof input)).toMatchObject({ok:false,code:"INVALID_INPUT"});expect(state.order).not.toHaveBeenCalled();});
+ it("retains the persisted recovery ID after the order read rejects; read retry creates nothing",async()=>{state.order.mockResolvedValue({ok:true,orderId:"persisted-order",paymentAttemptId:"attempt",specialReference:"reference"});const scoped=vi.fn();const query={select:()=>query,eq:(...args:unknown[])=>{scoped(...args);return query;},in:()=>query,maybeSingle:vi.fn().mockRejectedValue(new Error("Synthetic read failure"))};state.admin.mockReturnValue({from:()=>query});expect(await startTestCheckoutAction(input)).toEqual({ok:false,code:"payment_pending",orderId:"persisted-order"});expect(await resumeTestCheckoutAction({orderId:"persisted-order"})).toMatchObject({ok:false,code:"payment_pending"});expect(state.order).toHaveBeenCalledTimes(1);expect(state.open).not.toHaveBeenCalled();expect(scoped).toHaveBeenCalledWith("company_id","company");expect(scoped).toHaveBeenCalledWith("id","persisted-order");expect(query.maybeSingle).toHaveBeenCalledTimes(2);});
+ it.each([undefined,42,[],{planVersionId:42,clientOpId:"operation"},{planVersionId:"version",clientOpId:null}])("refuses malformed checkout input %j",async value=>{expect(await startTestCheckoutAction(value as unknown as typeof input)).toMatchObject({ok:false,code:"INVALID_INPUT"});expect(state.order).not.toHaveBeenCalled();expect(state.open).not.toHaveBeenCalled();});
 });
 
 describe("resume stored checkout",()=>{

@@ -1,0 +1,20 @@
+import {beforeEach,describe,expect,it,vi} from "vitest";
+const state=vi.hoisted(()=>({snapshot:vi.fn(),verified:vi.fn(),owner:vi.fn()}));
+vi.mock("@/lib/tenancy/access",()=>({requireVerifiedUser:state.verified}));
+vi.mock("@/lib/supabase/server",()=>({createClient:async()=>({rpc:state.owner,auth:{getClaims:async()=>({data:{claims:{session_id:"synthetic-session"}},error:null})}})}));
+vi.mock("@/lib/supabase/admin",()=>({createAdminClient:()=>({rpc:state.snapshot})}));
+vi.mock("../context",()=>({loadApprovedAnswerContext:vi.fn(),verifyAnswerCitationsStillValid:vi.fn()}));
+vi.mock("./execute",()=>({executeRealAnswer:vi.fn()}));
+import {readAdminAIState} from "./admin-actions";
+const valid=()=>({budget:{limit_baisa:1000,spent_baisa:0,held_baisa:0,enabled:true},companies:[],models:[],recent:[]});
+const model=()=>({model_id:"gpt-6-luna",attempts:0,succeeded:0,cost_baisa:0});
+const recent=()=>({id:"synthetic",company_id:"company",model_id:"gpt-6-luna",status:"uncertain",cost_baisa:null,cost_usd:null,reserved_baisa:1,prompt_tokens:null,completion_tokens:null,cached_tokens:null,reasoning_tokens:null,error_code:null,request_id:null,latency_ms:null,created_at:"2026-10-11T00:00:00Z"});
+beforeEach(()=>{vi.clearAllMocks();state.verified.mockResolvedValue({ok:true,context:{userId:"synthetic-owner"}});state.owner.mockResolvedValue({data:true,error:null});});
+describe("owner metrics runtime snapshot contract",()=>{
+ it.each([null,{...valid(),budget:null},{...valid(),budget:{...valid().budget,spent_baisa:"unknown"}},{...valid(),budget:{...valid().budget,held_baisa:-1}},{...valid(),budget:{...valid().budget,limit_baisa:Infinity}},{...valid(),models:[{...model(),attempts:NaN}]},{...valid(),recent:[{...recent(),reserved_baisa:-1}]},{...valid(),recent:[{...recent(),cost_baisa:"unknown"}]},{...valid(),companies:null}])("refuses malformed metrics %j",async snapshot=>{state.snapshot.mockResolvedValue({data:snapshot,error:null});expect(await readAdminAIState()).toEqual({ok:false,error:"AI_DATABASE_UNAVAILABLE"});});
+ it("accepts real zero metrics and empty arrays without fabrication",async()=>{const data=valid();state.snapshot.mockResolvedValue({data,error:null});expect(await readAdminAIState()).toEqual({ok:true,data});});
+ it("preserves nullable unknown usage and fractional costs",async()=>{const data={...valid(),models:[{...model(),cost_baisa:0.25}],recent:[recent()]};state.snapshot.mockResolvedValue({data,error:null});expect(await readAdminAIState()).toEqual({ok:true,data});});
+ it.each(["limit_baisa","spent_baisa","held_baisa"])("requires finite nonnegative %s",async key=>{for(const value of [undefined,null,"0",-1,NaN,Infinity]){state.snapshot.mockResolvedValue({data:{...valid(),budget:{...valid().budget,[key]:value}},error:null});expect(await readAdminAIState()).toEqual({ok:false,error:"AI_DATABASE_UNAVAILABLE"});}});
+ it("accepts zero usage counters but rejects nonnumeric, negative or fractional counters",async()=>{const row={...recent(),cost_baisa:0,cost_usd:0,prompt_tokens:0,completion_tokens:0,cached_tokens:0,reasoning_tokens:0,cache_write_tokens:0,total_tokens:0,latency_ms:0};const data={...valid(),recent:[row]};state.snapshot.mockResolvedValue({data,error:null});expect(await readAdminAIState()).toEqual({ok:true,data});for(const value of ["unknown",-1,NaN,Infinity,0.5]){state.snapshot.mockResolvedValue({data:{...data,recent:[{...row,prompt_tokens:value}]},error:null});expect(await readAdminAIState()).toEqual({ok:false,error:"AI_DATABASE_UNAVAILABLE"});}});
+ it("keeps the platform owner gate ahead of the snapshot",async()=>{state.owner.mockResolvedValue({data:false,error:null});expect(await readAdminAIState()).toEqual({ok:false,error:"OWNER_REQUIRED"});expect(state.snapshot).not.toHaveBeenCalled();});
+});

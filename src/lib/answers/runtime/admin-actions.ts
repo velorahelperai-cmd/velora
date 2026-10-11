@@ -5,7 +5,8 @@ import { requireVerifiedUser } from "@/lib/tenancy/access";
 import { loadApprovedAnswerContext,verifyAnswerCitationsStillValid } from "../context";
 import { ANSWER_MAX_QUESTION_CHARS } from "../constants";
 import { executeRealAnswer } from "./execute";
-import type {AdminAIActionInput,AdminAIState} from "./admin-types";
+import type {AdminAIActionInput} from "./admin-types";
+import { isAdminAIState } from "./admin-snapshot";
 import type {AnswerContextChunk} from "../types";
 
 async function ownerGate(){
@@ -21,8 +22,8 @@ export async function readAdminAIState(){
  const admin=createAdminClient();if(!admin)return {ok:false as const,error:"PERSISTENCE_UNAVAILABLE"};
  const rpc=admin.rpc as unknown as (name:string)=>PromiseLike<{data:unknown;error:unknown}>;
  const result=await rpc.call(admin,"ai_admin_snapshot");
- if(result.error||!result.data)return {ok:false as const,error:"AI_DATABASE_UNAVAILABLE"};
- return {ok:true as const,data:result.data as AdminAIState};
+ if(result.error||!isAdminAIState(result.data))return {ok:false as const,error:"AI_DATABASE_UNAVAILABLE"};
+ return {ok:true as const,data:result.data};
 }
 export async function runAdminAITrial(input:AdminAIActionInput){
  const gate=await ownerGate();if(!gate.ok)return gate;

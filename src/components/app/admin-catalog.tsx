@@ -37,6 +37,7 @@ const copy = {
     cancel: "إلغاء",
     saved: "أكد الخادم حفظ المسودة بنجاح.",
     published: "أكد الخادم نشر الإصدار بنجاح.",
+    refreshFailed: "تعذّر تحديث عرض الكتالوج بعد تأكيد العملية. حدّث الكتالوج قبل إجراء تغييرات أخرى.",
     conflict: "تغيّر الكتالوج أثناء التحرير (تعارض في المراجعة). حدّث البيانات ثم راجع التعديل.",
     error: "تعذّر إتمام الطلب على الخادم. لم يتم تأكيد العملية.",
     annualNotice: "تنبيه: التسعير السنوي غير معتمد في الكتالوج الحالي. الفترات المدعومة هي الاشتراكات الشهرية فقط.",
@@ -88,6 +89,7 @@ const copy = {
     cancel: "Cancel",
     saved: "Server confirmed draft saved successfully.",
     published: "Server confirmed version published successfully.",
+    refreshFailed: "The catalog view could not be refreshed after confirmation. Refresh the catalog before making further changes.",
     conflict: "Catalog was modified during editing (revision conflict). Refresh and review changes.",
     error: "Server request failed. Operation was not confirmed.",
     annualNotice: "Notice: Annual pricing is not approved in this catalog revision. Supported billing cycles are monthly only.",
@@ -126,6 +128,7 @@ export function AdminCatalog({ initial }: { initial: CatalogResult<CatalogAdminS
   const [result, setResult] = useState(initial);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [refreshFailed, setRefreshFailed] = useState(false);
 
   const [filter, setFilter] = useState<"all" | "published" | "draft" | "retired">("all");
   const [code, setCode] = useState<VariantCode>("noor_basic");
@@ -137,7 +140,7 @@ export function AdminCatalog({ initial }: { initial: CatalogResult<CatalogAdminS
   const [review, setReview] = useState<CatalogEditorVersion | null>(null);
 
   const rows = result.ok ? catalogEditorVersions(result.data) : null;
-  const ready = result.ok && rows !== null;
+  const ready = result.ok && rows !== null && !refreshFailed;
   const revision = result.ok ? result.data.revision : null;
 
   const publishedNoura = rows?.find(row => row.code === "noor_basic" && row.status === "published");
@@ -150,15 +153,31 @@ export function AdminCatalog({ initial }: { initial: CatalogResult<CatalogAdminS
 
   async function reload() {
     setBusy(true);
-    setMessage(null);
+    if (!refreshFailed) setMessage(null);
     setReview(null);
     setBindBasic(false);
     try {
-      setResult(await readCatalogAdminAction());
+      const next = await readCatalogAdminAction();
+      setResult(next);
+      setRefreshFailed(!next.ok || catalogEditorVersions(next.data) === null);
     } catch {
       setResult({ ok: false, code: "unavailable" });
+      setRefreshFailed(true);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function refreshConfirmedMutation() {
+    // The old revision is no longer safe for another mutation.
+    setResult({ ok: false, code: "unavailable" });
+    setRefreshFailed(true);
+    try {
+      const next = await readCatalogAdminAction();
+      setResult(next);
+      setRefreshFailed(!next.ok || catalogEditorVersions(next.data) === null);
+    } catch {
+      // Keep the confirmed mutation message while only the view is unavailable.
     }
   }
 
@@ -189,8 +208,8 @@ export function AdminCatalog({ initial }: { initial: CatalogResult<CatalogAdminS
         return;
       }
       setEditing(null);
-      setResult(await readCatalogAdminAction());
       setMessage(c.saved);
+      await refreshConfirmedMutation();
     } catch {
       setMessage(c.error);
     } finally {
@@ -213,8 +232,8 @@ export function AdminCatalog({ initial }: { initial: CatalogResult<CatalogAdminS
       }
       setReview(null);
       setBindBasic(false);
-      setResult(await readCatalogAdminAction());
       setMessage(c.published);
+      await refreshConfirmedMutation();
     } catch {
       setMessage(c.error);
     } finally {
@@ -279,7 +298,8 @@ export function AdminCatalog({ initial }: { initial: CatalogResult<CatalogAdminS
 
         {!ready ? (
           <section className={styles.panel} role="alert">
-            {!result.ok && result.code === "forbidden"
+            {message && refreshFailed ? c.refreshFailed
+              : !result.ok && result.code === "forbidden"
               ? c.forbidden
               : !result.ok && result.code === "conflict"
               ? c.conflict
