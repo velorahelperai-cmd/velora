@@ -1,4 +1,5 @@
 "use server";
+import { normalizeBusinessEmail, normalizeBusinessPhone } from "@/lib/tenancy/business-contacts";
 import {readCompanyBillingDisplay} from "@/lib/billing/wiring/display-read";
 import { readSessionIdentity } from "@/lib/auth/server-identity";
 import { AUTH_RETURN_COOKIE, authFlowHref } from "@/lib/auth/auth-journey";
@@ -824,7 +825,10 @@ export async function saveOwnerBusiness(input: {
     if (error) return error;
   }
   const displayName = input.displayName.trim();
-  if (!displayName || displayName.length > 120 || !input.hours.trim()) {
+  const contactPhone = normalizeBusinessPhone(input.contactPhone);
+  const contactEmail = normalizeBusinessEmail(input.contactEmail);
+  if (!displayName || displayName.length > 120 || !input.hours.trim()
+    || contactPhone === null || contactEmail === null) {
     return { ok: false, code: "INVALID_INPUT" };
   }
 
@@ -838,8 +842,8 @@ export async function saveOwnerBusiness(input: {
       p_country: input.country,
       p_city: input.city,
       p_hours: input.hours,
-      p_contact_phone: input.contactPhone,
-      p_contact_email: input.contactEmail,
+      p_contact_phone: contactPhone,
+      p_contact_email: contactEmail,
       p_member_name:
         input.memberName
         ?? access.context.membership?.member_name

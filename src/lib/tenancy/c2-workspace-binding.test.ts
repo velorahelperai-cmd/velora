@@ -373,3 +373,24 @@ describe("business save runtime shape validation", () => {
     expect(state.client).not.toHaveBeenCalled();
   });
 });
+
+describe("business contact validation", () => {
+  it.each([
+    { contactPhone: "not a phone" }, { contactPhone: "---" }, { contactPhone: "+123456" },
+    { contactPhone: "+1234567890123456" }, { contactEmail: "missing-at.example.com" },
+    { contactEmail: "a@b.com\nInjected" }, { contactEmail: "a\u0000@b.com" }, { contactEmail: `${"a".repeat(249)}@b.com` },
+  ])("rejects malformed contacts %j before persistence", async contact => {
+    expect(await saveOwnerBusiness({ ...business, ...contact, expectedCompanyId: COMPANY_B })).toEqual({ ok: false, code: "INVALID_INPUT" });
+    expect(state.client).not.toHaveBeenCalled();
+    expect(state.rpcRequests).toEqual([]);
+  });
+  it.each([
+    ["", "", "", ""], ["   ", "\t", "", ""],
+    [" +968 9000-0000 ", " Owner+sales@Example.COM ", "+96890000000", "Owner+sales@Example.COM"],
+    ["+1234567", "مبيعات@مثال.عمان", "+1234567", "مبيعات@مثال.عمان"],
+    ["+123456789012345", `${"a".repeat(248)}@b.com`, "+123456789012345", `${"a".repeat(248)}@b.com`],
+  ])("persists normalized optional/international contacts", async (contactPhone, contactEmail, phone, email) => {
+    expect(await saveOwnerBusiness({ ...business, contactPhone, contactEmail, expectedCompanyId: COMPANY_B })).toMatchObject({ ok: true });
+    expect(state.rpcRequests).toEqual([{ name: "upsert_selected_owner_company", input: expect.objectContaining({ p_company_id: COMPANY_B, p_contact_phone: phone, p_contact_email: email }) }]);
+  });
+});

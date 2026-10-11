@@ -1,4 +1,5 @@
 "use client";
+import { normalizeBusinessEmail, normalizeBusinessPhone } from "@/lib/tenancy/business-contacts";
 
 import Link from "next/link";
 import { SetupLoading } from "./setup-loading";
@@ -41,7 +42,7 @@ import { AssistantTester } from "@/components/app/assistant-tester";
 import { KnowledgeEditor } from "@/components/app/knowledge-editor";
 import {
   Button, Field, FieldErrorKey, LangSwitch, LinkButton, Notice, PreviewBadge,
-  isEmail, isPhone, useAction, useAppCopy, useErrorText, useUnsavedWarning,
+  isPhone, useAction, useAppCopy, useErrorText, useUnsavedWarning,
 } from "@/components/app/ui";
 
 import internalStyles from "./internal-ui.module.css";
@@ -770,8 +771,8 @@ function BusinessStep({
     const next: Partial<Record<keyof Business, FieldErrorKey>> = {};
     if (!form.name.trim()) next.name = "required";
     if (!form.hours.trim()) next.hours = "required";
-    if (form.contactPhone && !isPhone(form.contactPhone)) next.contactPhone = "phone";
-    if (form.contactEmail && !isEmail(form.contactEmail)) next.contactEmail = "email";
+    if (normalizeBusinessPhone(form.contactPhone) === null) next.contactPhone = "phone";
+    if (normalizeBusinessEmail(form.contactEmail) === null) next.contactEmail = "email";
     setErrors(next);
     if (Object.keys(next).length) return;
 
