@@ -1,0 +1,42 @@
+-- TEST ONLY: synthetic confirmed platform owner; all configuration is rolled back.
+BEGIN;
+SET LOCAL ROLE postgres;
+CREATE TEMP TABLE budget_owner_fixture(actor uuid,sid uuid,version uuid,revision bigint);
+DO $$ DECLARE u uuid;s uuid:=gen_random_uuid();v uuid:=gen_random_uuid();p uuid:=gen_random_uuid();r bigint;BEGIN
+ SELECT user_id INTO u FROM public.platform_admins WHERE role='owner' AND status='active' LIMIT 1;
+ IF u IS NULL THEN RAISE EXCEPTION 'TEST_OWNER_MISSING';END IF;
+ INSERT INTO auth.sessions(id,user_id) VALUES(s,u);
+ INSERT INTO private.app_session_activity(session_id,user_id,last_activity_at) VALUES(s,u,clock_timestamp());
+ INSERT INTO public.billing_catalog_revision(singleton,revision) VALUES(true,1) ON CONFLICT DO NOTHING;
+ SELECT revision INTO r FROM public.billing_catalog_revision WHERE singleton;
+ INSERT INTO public.billing_plans(id,code,name,status) VALUES(p,'synthetic_budget_owner','Synthetic budget owner test','active');
+ INSERT INTO public.billing_plan_versions(id,plan_id,version,amount_baisa,currency,period_days,period_unit,period_count,status)
+ VALUES(v,p,1,45000,'OMR',30,'month',1,'draft');
+ INSERT INTO budget_owner_fixture VALUES(u,s,v,r);
+ PERFORM set_config('request.jwt.claims',jsonb_build_object('sub',u,'session_id',s,'role','authenticated')::text,true);
+END;$$;
+GRANT SELECT ON budget_owner_fixture TO authenticated;
+SET LOCAL ROLE authenticated;
+DO $$ DECLARE f record;r jsonb;BEGIN SELECT * INTO f FROM budget_owner_fixture;
+ r:=public.billing_bind_ai_budget_draft(f.version,5000,f.revision);
+ IF r->>'ok' IS DISTINCT FROM 'true' OR (r->'data'->>'revision')::bigint<>f.revision+1 THEN RAISE EXCEPTION 'OWNER_BUDGET_BIND_FAILED: %',r;END IF;
+ r:=public.billing_bind_ai_budget_draft(f.version,5000,f.revision+1);
+ IF r->>'ok' IS DISTINCT FROM 'true' OR (r->'data'->>'revision')::bigint<>f.revision+1 THEN RAISE EXCEPTION 'OWNER_IDEMPOTENCY_FAILED';END IF;
+ IF public.billing_bind_ai_budget_draft(f.version,15000,f.revision+1)->>'code'<>'immutable' THEN RAISE EXCEPTION 'OWNER_BUDGET_REWRITE_ALLOWED';END IF;
+ IF public.billing_bind_ai_budget_draft(f.version,5000,f.revision)->>'code'<>'conflict' THEN RAISE EXCEPTION 'STALE_REVISION_ALLOWED';END IF;
+END;$$;
+SET LOCAL ROLE postgres;
+INSERT INTO private.billing_service_offers(plan_version_id,service_code,tier,capabilities) SELECT version,'noura','basic',ARRAY['noura.knowledge.read'] FROM budget_owner_fixture;
+UPDATE public.billing_plan_versions SET status='published' WHERE id=(SELECT version FROM budget_owner_fixture);
+SET LOCAL ROLE authenticated;
+DO $$ DECLARE f record;BEGIN SELECT * INTO f FROM budget_owner_fixture;
+ IF public.billing_bind_ai_budget_draft(f.version,5000,f.revision+1)->>'code'<>'immutable' THEN RAISE EXCEPTION 'NON_DRAFT_CONFIG_ALLOWED';END IF;
+END;$$;
+SET LOCAL ROLE postgres;
+UPDATE private.app_session_activity SET last_activity_at=clock_timestamp()-interval '3 hours' WHERE session_id=(SELECT sid FROM budget_owner_fixture);
+SET LOCAL ROLE authenticated;
+DO $$ DECLARE f record;BEGIN SELECT * INTO f FROM budget_owner_fixture;
+ IF public.billing_bind_ai_budget_draft(f.version,5000,f.revision+1)->>'code'<>'forbidden' THEN RAISE EXCEPTION 'EXPIRED_OWNER_CONFIG_ALLOWED';END IF;
+END;$$;
+SELECT 'PASS|Confirmed owner draft binding, immutable amount, idempotency, revision conflict, non-draft and expired-session denial';
+ROLLBACK;

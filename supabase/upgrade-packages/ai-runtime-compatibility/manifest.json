@@ -1,0 +1,44 @@
+{
+  "source_main": "3d6d374f448e7ec8ded78152bbf12980ab3a8562",
+  "production_initial_footprint_md5": "d264324249abb9fe7ede0cbbba346f7a",
+  "phases": [
+    {
+      "file": "10-accounting.review.sql",
+      "pre": "d264324249abb9fe7ede0cbbba346f7a",
+      "post": "69675d2900be23e06a1735da88e17e20",
+      "policy_pre": "a9f1ce104cf2e74d869ae582dbacc13a",
+      "policy_post": "66e21932eaa60c5e4f0e6417694f8c6c"
+    },
+    {
+      "file": "20-budget-binding.review.sql",
+      "pre": "69675d2900be23e06a1735da88e17e20",
+      "post": "cba20e245166738454e29d65e5d82ce1",
+      "policy_pre": "66e21932eaa60c5e4f0e6417694f8c6c",
+      "policy_post": "66e21932eaa60c5e4f0e6417694f8c6c"
+    },
+    {
+      "file": "30-customer-runtime.review.sql",
+      "pre": "cba20e245166738454e29d65e5d82ce1",
+      "post": "65dd4e93dd82467da59476a9d4541646",
+      "policy_pre": "66e21932eaa60c5e4f0e6417694f8c6c",
+      "policy_post": "81b4093b74ade15c32463fe79f10331c"
+    }
+  ],
+  "applied_to_production": false,
+  "new_authenticated_execute": [
+    "public.billing_bind_ai_budget_draft(uuid,numeric,bigint)"
+  ],
+  "files": {
+    "00-baseline-metadata.readonly.sql": "d743a9c08590abee45ff3fc6a3ad5f566dcdabb5c8099d037bb6fe82dd43d0b1",
+    "05-package-footprint.readonly.sql": "1787db789b4e76e5cb99bd34ea5d373ef7d26adce21cb3004f1aaaff83017612",
+    "07-policy-column-acl.readonly.sql": "d28993e63c506efd00a5a0092521ec94f04ac7cdb75fa65f12638d1eb84b6a97",
+    "10-accounting.review.sql": "1e1f944d43e1a6f793e26b9e24884c006bc3caf6929d3ab152f5233571379f8d",
+    "20-budget-binding.review.sql": "2240fe6e6b7baedf7e67881bd588322879adfedd0e48ca43f705f00d754a71c0",
+    "30-customer-runtime.review.sql": "76c1ce796bdb35561cdc09eb578408ec1915bb0a225b48890792353441761fd1",
+    "README.md": "be57ec9b6a9e6a2d67036a2e12377e4330fbb82c12309da3bef97ce9ab0f374b",
+    "VERIFICATION.md": "e6b510804bd76a9b30f46566609b67680fc9b2c18db096a9a0ff3c3a8e129e73"
+  },
+  "production_initial_policy_acl_md5": "a9f1ce104cf2e74d869ae582dbacc13a",
+  "installed_policy_acl_md5": "81b4093b74ade15c32463fe79f10331c",
+  "intermediate_policy_acl_md5": "66e21932eaa60c5e4f0e6417694f8c6c"
+}

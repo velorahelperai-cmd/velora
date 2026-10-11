@@ -1,0 +1,1 @@
+import {defineConfig} from 'vitest/config';import {resolve} from 'node:path';export default defineConfig({resolve:{alias:{'@':resolve('src')}},test:{include:['scripts/ai-runtime-compatibility/customer.optin.mjs'],testTimeout:60000,hookTimeout:60000,fileParallelism:false}});
