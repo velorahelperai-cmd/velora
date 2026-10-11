@@ -18,6 +18,7 @@ import {
   type IdentityFailureStage,
 } from "@/lib/auth/session-presence";
 import { clearCompanyDrafts } from "@/lib/company-draft";
+import { discardForeignTeamJournal } from "@/lib/platform-teams/ui-state";
 import { emptyBusiness, useDemo } from "@/lib/demo-state";
 import { createClient, tryCreateClient } from "@/lib/supabase/client";
 import {
@@ -87,6 +88,7 @@ export function AccountSessionProvider({
         setStatus(prev=>identityRef.current&&prev==="ready"?"ready":"error");return;
       }
       if(userIdRef.current && userIdRef.current!==result.data.userId){setIdentity(null);providerRouter.refresh();}
+      try{discardForeignTeamJournal(window.sessionStorage,result.data.userId);}catch{/* Storage is optional for identity. */}
       userIdRef.current=result.data.userId;identityRef.current=result.data;
       failureStageRef.current=null;setIdentity(result.data);setStatus("ready");
     }catch{

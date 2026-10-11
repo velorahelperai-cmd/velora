@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { useDemo } from "@/lib/demo-state";
 import { LangSwitch } from "@/components/app/ui";
-import { AccountMenu } from "@/components/app/account-chrome";
+import { AccountMenu, useOptionalAccountSession } from "@/components/app/account-chrome";
 import theme from "./admin-theme.module.css";
 import {
   IconBuilding,
@@ -39,6 +39,8 @@ type NavGroup = {
 export function AdminShell({ children }: { children: ReactNode }) {
   const { locale } = useDemo();
   const pathname = usePathname();
+  const session=useOptionalAccountSession();
+  const teamEditor=session?.status==="ready"&&session.identity?.platformIdentity.role==="owner"&&session.identity.platformIdentity.status==="active"&&!session.identity.platformIdentity.unavailable;
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -90,6 +92,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
     {
       group: isRtl ? "الإعدادات والاشتراكات" : "Catalog & Operations",
       items: [
+        ...(teamEditor?[{label:isRtl?"فرق المنصة الداخلية":"Internal platform teams",href:"/admin/teams",icon:IconUsers,active:pathname.startsWith("/admin/teams")}]:[]),
         {label:isRtl?"\u0637\u0644\u0628\u0627\u062a \u0627\u0644\u0627\u0634\u062a\u0631\u0627\u0643":"Subscription orders",href:"/admin/billing",icon:IconCreditCard,active:pathname.startsWith("/admin/billing")},
         {
           label: isRtl ? "كتالوج الاشتراكات" : "Plans Catalog",
@@ -145,6 +148,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
         { label: isRtl ? "الصلاحيات والمشرفين" : "Access Control", href: "/admin/access" },
       ];
     }
+    if(pathname==="/admin/teams")return [{label:isRtl?"الرئيسية":"Overview",href:"/admin"},{label:isRtl?"فرق المنصة الداخلية":"Internal platform teams",href:"/admin/teams"}];
     return [{ label: isRtl ? "لوحة الإدارة" : "Admin", href: "/admin" }];
   };
 

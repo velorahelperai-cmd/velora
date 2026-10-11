@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import Link from "next/link";
+import { TeamSelfPanel } from "@/components/teams/team-self-panel";
 import { useEffect, useRef, useState } from "react";
 import {
   AccountMenu,
@@ -204,6 +205,7 @@ export function AccountPage({ initial }: { initial: AccountProfileView }) {
             </div>
           </form>
         </section>
+        <TeamSelfPanel actorId={initial.userId}/>
       </div>
     </main>
   );
