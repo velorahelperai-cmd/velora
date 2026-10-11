@@ -12,6 +12,7 @@ vi.mock("@/lib/tenancy/actions", () => ({ getCustomerReadiness: async () => ({ok
 vi.mock("@/lib/customer/dashboard-billing-actions", () => ({ readDashboardBilling: vi.fn() }));
 import ConversationsRoute from "@/app/app/conversations/page";
 import DashboardRoute from "@/app/app/page";
+import { appCopy } from "@/lib/app-copy";
 import { dashboardInboxMetrics } from "./onboarding-contracts";
 
 beforeEach(() => { vi.clearAllMocks(); state.locale = "en"; });
@@ -20,7 +21,9 @@ describe.each(["en", "ar"])("inbox failure presentation in %s", locale => {
   it(`${name} renders explicit denial without outage or empty-success copy`, async () => {
    state.locale=locale;state.load.mockResolvedValue({ok:false,code:"FORBIDDEN"});
    const html=renderToStaticMarkup(await route());
-   expect(html).toContain(locale === "ar" ? "غير مسموح" : "Not allowed");
+   expect(html).toContain(appCopy(locale as "ar"|"en").app.inboxAccessDeniedTitle);
+   expect(html).toContain(appCopy(locale as "ar"|"en").app.inboxAccessDeniedBody);
+   expect(html).not.toContain(locale === "ar" ? "جلستك ما زالت قائمة" : "your session is still active");
    expect(html).not.toContain(locale === "ar" ? "فشل قراءة صندوق" : "The server inbox read failed");
    expect(html).not.toContain(locale === "ar" ? "تعذّر تحميل بيانات المحادثات" : "Conversation data could not be loaded");
    expect(html).not.toContain(locale === "ar" ? "لا توجد محادثات واتساب بعد" : "No WhatsApp conversations yet");
@@ -30,7 +33,7 @@ describe.each(["en", "ar"])("inbox failure presentation in %s", locale => {
    state.locale=locale;state.load.mockResolvedValue({ok:false,code:"UNAVAILABLE"});
    const html=renderToStaticMarkup(await route());
    expect(html).toContain(name === "conversations" ? (locale === "ar" ? "فشل قراءة صندوق" : "The server inbox read failed") : (locale === "ar" ? "تعذّر تحميل بيانات المحادثات" : "Conversation data could not be loaded"));
-   expect(html).not.toContain(locale === "ar" ? "غير مسموح" : "Not allowed");
+   expect(html).not.toContain(appCopy(locale as "ar"|"en").app.inboxAccessDeniedTitle);
   });
  }
 });

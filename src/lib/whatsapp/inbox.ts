@@ -1,3 +1,4 @@
+import { readSessionConversationScope } from "@/lib/access/conversation-scope";
 import { reportInboxReadFailure, type InboxReadStage } from "./inbox-diagnostics";
 import type {
   Conversation,
@@ -161,8 +162,9 @@ export async function loadWhatsappInboxInitialPage(): Promise<
     if (!access.ok || !access.context.company || !access.context.membership) return fail(access.ok || access.code !== "UNAVAILABLE" ? "NO_COMPANY" : "UNAVAILABLE");
     const companyId = access.context.company.id;
     stage = "initial_scope";
-    const scope = await sessionConversationScope(companyId);
-    if (scope !== "all_company" && scope !== "assigned_only") return fail("UNAVAILABLE", "UNKNOWN_SCOPE");
+    const scoped = await readSessionConversationScope(companyId);
+    if (!scoped.ok) return fail(scoped.code, scoped.code === "FORBIDDEN" ? "FORBIDDEN" : "UNKNOWN_SCOPE");
+    const scope = scoped.scope;
     stage = "initial_capability";
     if (await sessionHasCompanyCapability(companyId, "wa.conversations.read") !== true) return fail("UNAVAILABLE", "READ_NOT_CONFIRMED");
     stage = "initial_page";
@@ -186,7 +188,9 @@ export async function loadWhatsappInboxInitialPage(): Promise<
     const current = await getCompanyAccess();
     if (!current.ok || current.context.company?.id !== companyId) return fail("UNAVAILABLE", current.ok ? "SCOPE_CHANGED" : current.code);
     stage = "final_scope";
-    if (await sessionConversationScope(companyId) !== scope) return fail("UNAVAILABLE", "SCOPE_CHANGED");
+    const finalScope = await readSessionConversationScope(companyId);
+    if (!finalScope.ok) return fail(finalScope.code, finalScope.code);
+    if (finalScope.scope !== scope) return fail("UNAVAILABLE", "SCOPE_CHANGED");
     stage = "final_capability";
     if (await sessionHasCompanyCapability(companyId, "wa.conversations.read") !== true) return fail("UNAVAILABLE", "READ_NOT_CONFIRMED");
     stage = "initial_worklist";

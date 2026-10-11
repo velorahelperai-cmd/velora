@@ -880,7 +880,7 @@ export function ConversationsPage({
           router.refresh();
         }
         setInboxDenied(loaded.code === "FORBIDDEN");
-        setInboxReadError(loaded.code === "FORBIDDEN" ? copy.errors.forbiddenBody : copy.app.inboxLoadFailedBody);
+        setInboxReadError(loaded.code === "FORBIDDEN" ? copy.app.inboxAccessDeniedBody : copy.app.inboxLoadFailedBody);
         return false;
       }
       const nextPage = "page" in loaded ? loaded.page : loaded.data;
@@ -1301,7 +1301,7 @@ export function ConversationsPage({
 
   // Empty / Load Failed status checks
   const emptyTitle = accessDenied
-    ? copy.errors.forbiddenTitle
+    ? copy.app.inboxAccessDeniedTitle
     : loadFailed
     ? copy.app.inboxLoadFailed
     : noCompany
@@ -1311,7 +1311,7 @@ export function ConversationsPage({
         : copy.app.noResults;
 
   const emptyBody = accessDenied
-    ? copy.errors.forbiddenBody
+    ? copy.app.inboxAccessDeniedBody
     : loadFailed
     ? copy.app.inboxLoadFailedBody
     : noCompany
@@ -1356,7 +1356,7 @@ export function ConversationsPage({
       </Notice> : null}
       {/* Top Banner Notice for Unconnected or Setup States */}
       {accessDenied ? (
-        <Notice tone="warn">{copy.errors.forbiddenBody}</Notice>
+        <Notice tone="warn">{copy.app.inboxAccessDeniedBody}</Notice>
       ) : noCompany ? (
         <Notice tone="warn">{copy.app.inboxNoCompanyBody}</Notice>
       ) : loadFailed ? (

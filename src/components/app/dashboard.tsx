@@ -781,7 +781,7 @@ export function DashboardPage({
                 {initialLeads.code === "NO_COMPANY"
                   ? (ar ? "اختر مساحة الشركة لعرض المحادثات المسموح لك بها." : "Select a company workspace to view conversations.")
                   : initialLeads.code === "FORBIDDEN"
-                    ? `${copy.errors.forbiddenTitle}: ${copy.errors.forbiddenBody}`
+                    ? `${copy.app.inboxAccessDeniedTitle}: ${copy.app.inboxAccessDeniedBody}`
                     : (ar ? "تعذّر تحميل بيانات المحادثات. لا توجد بيانات مؤكدة." : "Conversation data could not be loaded.")}
               </p>
             </div>

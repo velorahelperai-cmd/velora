@@ -4,6 +4,7 @@ const seam = vi.hoisted(() => ({
   access: vi.fn(), capability: vi.fn(), scope: vi.fn(), rpc: vi.fn(), from: vi.fn(),
 }));
 vi.mock("@/lib/tenancy/access", () => ({ getCompanyAccess: seam.access }));
+vi.mock("@/lib/access/conversation-scope",()=>({readSessionConversationScope:async(id:string)=>{const value=await seam.scope(id);return value&&typeof value==="object"?value:value==="all_company"||value==="assigned_only"?{ok:true,scope:value}:{ok:false,code:"UNAVAILABLE"};}}));
 vi.mock("@/lib/access/actions", () => ({
   sessionHasCompanyCapability: seam.capability, sessionConversationScope: seam.scope,
 }));
@@ -231,4 +232,10 @@ describe("sanitized inbox RPC diagnostics", () => {
   expect(log).toHaveBeenCalledWith("whatsapp.inbox_read_failed",{stage:"page_decode",code:"INVALID_RESPONSE"});
   expect(JSON.stringify(log.mock.calls)).not.toContain("PRIVATE_ROWS");
  });
+});
+
+it("preserves an authoritative absent scope before capability or data reads",async()=>{
+ seam.scope.mockResolvedValue({ok:false,code:"FORBIDDEN"});seam.capability.mockResolvedValue(false);
+ expect(await contracts.loadWhatsappInboxPage({companyId})).toEqual({ok:false,code:"FORBIDDEN"});
+ expect(seam.rpc).not.toHaveBeenCalled();
 });

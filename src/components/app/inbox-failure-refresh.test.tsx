@@ -35,10 +35,10 @@ it.each(["unavailable","no-company","success"])("new route %s replaces a refresh
  const props=initial();let tree=render(props);state.refresh.mockResolvedValue({ok:false,code:"FORBIDDEN"});
  const refresh=nodes(tree).find(n=>n.props.title==="Refresh inbox")!;
  await (refresh.props.onClick as ()=>Promise<void>)();tree=render(props);
- expect(text(tree)).toContain(appCopy("en").errors.forbiddenBody);
+ expect(text(tree)).toContain(appCopy("en").app.inboxAccessDeniedBody);
  const nextProps=next==="success"?initial():{inbox:[],loadFailed:next==="unavailable",noCompany:next==="no-company"};
  tree=render(nextProps);
- expect(text(tree)).not.toContain(appCopy("en").errors.forbiddenBody);
+ expect(text(tree)).not.toContain(appCopy("en").app.inboxAccessDeniedBody);
  if(next==="unavailable")expect(text(tree)).toContain(appCopy("en").app.inboxLoadFailedBody);
  if(next==="no-company")expect(text(tree)).toContain(appCopy("en").app.inboxNoCompanyBody);
 });

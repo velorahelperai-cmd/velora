@@ -1,7 +1,8 @@
+import { readSessionConversationScope } from "@/lib/access/conversation-scope";
 import { reportInboxReadFailure, type InboxReadStage } from "./inbox-diagnostics";
 import { createClient } from "@/lib/supabase/server";
 import { getCompanyAccess } from "@/lib/tenancy/access";
-import { sessionConversationScope, sessionHasCompanyCapability } from "@/lib/access/actions";
+import { sessionHasCompanyCapability } from "@/lib/access/actions";
 import { mapWhatsappConversation } from "./inbox";
 import type { Conversation } from "@/lib/demo-state";
 
@@ -60,13 +61,14 @@ async function scopedRpc(companyId: string, name: string, args: RecordValue): Pr
     if (!access.ok) return fail(access.code === "UNAVAILABLE" ? "UNAVAILABLE" : "NO_COMPANY");
     if (!access.context.company || !access.context.membership) return fail("NO_COMPANY");
     if (access.context.company.id !== companyId) return fail("SCOPE_CHANGED");
+    stage = "page_scope";
+    const scoped = await readSessionConversationScope(companyId);
+    if (!scoped.ok) return fail(scoped.code, scoped.code === "FORBIDDEN" ? "FORBIDDEN" : "UNKNOWN_SCOPE");
+    const scope = scoped.scope;
     stage = "page_capability";
     const read = await sessionHasCompanyCapability(companyId, "wa.conversations.read");
     // The capability helper also returns false for RPC errors, so this is not an explicit denial.
     if (read !== true) return fail("UNAVAILABLE", "READ_NOT_CONFIRMED");
-    stage = "page_scope";
-    const scope = await sessionConversationScope(companyId);
-    if (scope !== "all_company" && scope !== "assigned_only") return fail("UNAVAILABLE", "UNKNOWN_SCOPE");
     // Local RPC shape until the coordinated generated database types are refreshed.
     stage = "page_rpc";
     const client = await createClient() as unknown as { rpc(name: string, args: RecordValue): Promise<{ data: unknown; error: unknown }> };

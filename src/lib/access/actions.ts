@@ -1,5 +1,6 @@
 "use server";
 
+import { readSessionConversationScope } from "./conversation-scope";
 import { reportInboxReadFailure } from "@/lib/whatsapp/inbox-diagnostics";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -381,24 +382,6 @@ export async function sessionHasCompanyCapability(
 export async function sessionConversationScope(
   companyId: string,
 ): Promise<ConversationScope | null> {
-  try {
-    const supabase = await createClient();
-    const { data, error } = await supabase.rpc("company_conversation_scope", {
-      p_company_id: companyId,
-    });
-    if (error) {
-      reportInboxReadFailure("scope_rpc", "RPC_ERROR", error);
-      if (isMissingRpc(error.message, "company_conversation_scope") && accessMigrationCompatEnabled()) {
-        return null;
-      }
-      return null;
-    }
-    if (data === "assigned_only") return "assigned_only";
-    if (data === "all_company") return "all_company";
-    reportInboxReadFailure("scope_rpc", data === null ? "NULL_RESULT" : "INVALID_RESPONSE");
-    return null;
-  } catch (error) {
-    reportInboxReadFailure("scope_rpc", "EXCEPTION", error);
-    return null;
-  }
+  const result = await readSessionConversationScope(companyId);
+  return result.ok ? result.scope : null;
 }

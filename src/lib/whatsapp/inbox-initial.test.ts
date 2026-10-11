@@ -1,6 +1,7 @@
 import {afterEach,beforeEach,describe,expect,it,vi} from "vitest";
 const state=vi.hoisted(()=>({access:vi.fn(),scope:vi.fn(),cap:vi.fn(),page:vi.fn(),thread:vi.fn(),from:vi.fn()}));
 vi.mock("@/lib/tenancy/access",()=>({getCompanyAccess:state.access}));
+vi.mock("@/lib/access/conversation-scope",()=>({readSessionConversationScope:async(id:string)=>{const value=await state.scope(id);return value&&typeof value==="object"?value:value==="all_company"||value==="assigned_only"?{ok:true,scope:value}:{ok:false,code:"UNAVAILABLE"};}}));
 vi.mock("@/lib/access/actions",()=>({sessionConversationScope:state.scope,sessionHasCompanyCapability:state.cap}));
 vi.mock("@/lib/supabase/server",()=>({createClient:async()=>({from:state.from})}));
 vi.mock("./inbox-contracts",()=>({loadWhatsappInboxPage:state.page,loadWhatsappThreadPage:state.thread}));
@@ -76,4 +77,20 @@ it("does not label a final access outage as a scope change", async () => {
  state.access.mockResolvedValueOnce({ok:true,context:{company:{id:company},membership:{role:"owner"}}}).mockResolvedValueOnce({ok:false,code:"UNAVAILABLE"});
  expect(await loadWhatsappInboxInitialPage()).toEqual({ok:false,code:"UNAVAILABLE"});
  expect(log).toHaveBeenCalledWith("whatsapp.inbox_read_failed",{stage:"final_access",code:"UNAVAILABLE"});
+});
+
+describe("authorized scope absence", () => {
+ it("reports no authorized scope before capabilities or inbox reads",async()=>{
+  state.scope.mockResolvedValue({ok:false,code:"FORBIDDEN"});
+  expect(await loadWhatsappInboxInitialPage()).toEqual({ok:false,code:"FORBIDDEN"});
+  expect(state.cap).not.toHaveBeenCalled();expect(state.page).not.toHaveBeenCalled();
+ });
+ it("discards loaded rows when scope access is revoked at the final recheck",async()=>{
+  state.scope.mockResolvedValueOnce({ok:true,scope:"all_company"}).mockResolvedValueOnce({ok:false,code:"FORBIDDEN"});
+  expect(await loadWhatsappInboxInitialPage()).toEqual({ok:false,code:"FORBIDDEN"});
+ });
+ it("discards loaded rows on an expired final session without inventing authorized data",async()=>{
+  state.access.mockResolvedValueOnce({ok:true,context:{company:{id:company},membership:{role:"staff"}}}).mockResolvedValueOnce({ok:false,code:"UNAUTHENTICATED",sessionExpired:true});
+  expect(await loadWhatsappInboxInitialPage()).toEqual({ok:false,code:"UNAVAILABLE"});
+ });
 });
