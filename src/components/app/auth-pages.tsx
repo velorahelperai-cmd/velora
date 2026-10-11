@@ -4,7 +4,7 @@ import { normalizeEmailCode } from "@/lib/auth/email-code";
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useDemo } from "@/lib/demo-state";
 import { fill } from "@/lib/app-copy";
 import { landingCopy } from "@/lib/landing-copy";
@@ -127,14 +127,14 @@ function useGoogleAuth(setNotice: (v: string | null) => void, next?: string | nu
   };
 }
 
-function useAuthenticatedAuthRedirect(next:string|null){
+function useAuthenticatedAuthRedirect(next:string|null, paused=false, navigate?: (path:string)=>void){
  const session=useOptionalAccountSession(),router=useRouter();
  useEffect(()=>{
-  if(session?.status!=="ready"||!session.identity)return;
+  if(paused||session?.status!=="ready"||!session.identity)return;
   let cancelled=false;
-  void resolvePostAuthPath(next).then(result=>{if(!cancelled&&result.ok&&!result.data.next.startsWith("/login"))router.replace(result.data.next);}).catch(()=>{});
+  void resolvePostAuthPath(next).then(result=>{if(!cancelled&&result.ok&&!result.data.next.startsWith("/login")){if(navigate)navigate(result.data.next);else router.replace(result.data.next);}}).catch(()=>{});
   return ()=>{cancelled=true;};
- },[session?.status,session?.identity,next,router]);
+ },[session?.status,session?.identity,next,router,paused,navigate]);
 }
 export function SignupPage() {
   const copy = useAppCopy();
@@ -226,12 +226,17 @@ export function SignupPage() {
 
 export function LoginPage() {
   const copy = useAppCopy();
-  const router = useRouter();
   const params = useSearchParams();
   const returnTo = params.get("next");
-  useAuthenticatedAuthRedirect(returnTo);
-  const session = useOptionalAccountSession();
   const { busy, run } = useAction();
+  const [redirecting, setRedirecting] = useState(false);
+  const navigate = useCallback((path:string) => {
+    // A new Auth cookie needs a fresh protected document, without competing
+    // profile actions or a cached RSC tree from the previous identity.
+    setRedirecting(true);
+    window.location.replace(path);
+  }, []);
+  useAuthenticatedAuthRedirect(returnTo,busy||redirecting,navigate);
   const [form, setForm] = useState({ email: "", password: "" });
   const [errors, setErrors] = useState<Partial<Record<"email" | "password", FieldErrorKey>>>({});
   const [formError, setFormError] = useState<string | null>(() => {
@@ -248,7 +253,7 @@ export function LoginPage() {
 
   function submitEmail(e: React.FormEvent) {
     e.preventDefault();
-    if (busy) return;
+    if (busy||redirecting) return;
     setFormError(null);
     const next: typeof errors = {};
     if (!isEmail(form.email)) next.email = "email";
@@ -265,8 +270,7 @@ export function LoginPage() {
         setFormError(result.message ?? copy.errors.authFailed);
         return;
       }
-      await session?.refresh();
-      clearPendingSignup();router.replace(result.data.next);router.refresh();
+      clearPendingSignup();navigate(result.data.next);
     }).catch(() => setFormError(copy.errors.authFailed));
   }
 
@@ -286,10 +290,10 @@ export function LoginPage() {
         <div className="flex items-center justify-between gap-3">
           <Link href="/forgot-password" className="text-sm font-medium text-[var(--color-action-on-dark)] underline">{copy.auth.forgot}</Link>
         </div>
-        <Button type="submit" busy={busy} busyLabel={copy.loading} className="w-full min-h-12 text-base font-semibold shadow-sm">{copy.auth.login}</Button>
+        <Button type="submit" busy={busy||redirecting} busyLabel={copy.loading} className="w-full min-h-12 text-base font-semibold shadow-sm">{copy.auth.login}</Button>
       </form>
 
-      <GoogleAuthButton busy={busy || google.busy} onGoogle={google.onGoogle} notice={altNotice} />
+      <GoogleAuthButton busy={busy || redirecting || google.busy} onGoogle={google.onGoogle} notice={altNotice} />
     </AuthShell>
   );
 }
