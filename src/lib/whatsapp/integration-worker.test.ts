@@ -2,7 +2,7 @@ import {describe,it,expect,vi} from "vitest";
 vi.mock("server-only",()=>({}));
 vi.mock("@/lib/billing/entitlement",()=>({readCompanyEntitlement:()=>({paid:false}),entitlementAllowsAutomation:()=>false}));
 import {runInboundWorkerAnswer} from "./inbound-worker";
-import type {IntegrationFrame} from "./integration-worker";
+import type {IntegrationFrame,IntegrationPorts} from "./integration-worker";
 const input={jobId:"job",claimToken:"claim",companyId:"company",locale:"en" as const};
 function setup(){
  const frame:IntegrationFrame={job_id:"job",company_id:"company",message_id:"message",conversation_id:"conversation",phone_number_id:"phone",recipient_wa_id:"recipient",
@@ -14,7 +14,7 @@ function setup(){
  reserve:vi.fn(async()=>true),answer:vi.fn(async()=>({ok:true,complete:true,text:"Answer",attempts:[{id:"attempt"}]})),
  stage:vi.fn(async()=>"intent"),claimSend:vi.fn(async()=>({ok:true,claimed:true,attempt_token:"send-claim",intent})),
  send:vi.fn(async()=>({ok:true,waMessageId:"synthetic-wamid"})),finalize:vi.fn(async()=>true),finish:vi.fn(async()=>"accepted"),
- repair:vi.fn(async()=>true),retry:vi.fn(async()=>{}),heartbeat:vi.fn(async()=>true)};
+ repair:vi.fn(async()=>true),retry:vi.fn<IntegrationPorts["retry"]>(async()=>{}),heartbeat:vi.fn(async()=>true)};
  return {frame,chunks,ports,intent};
 }
 describe("persisted WhatsApp integration worker",()=>{
@@ -68,5 +68,31 @@ describe("persisted WhatsApp integration worker",()=>{
  ports.repair.mockImplementation(async()=>{order.push("display");return false;});
  expect(await runInboundWorkerAnswer(input,ports)).toMatchObject({ok:false,code:"ACCEPTANCE_PERSIST_PENDING",sendAccepted:true,jobCompleted:true});
  expect(order).toEqual(["quota","display"]);expect(ports.send).toHaveBeenCalledTimes(1);expect(ports.retry).not.toHaveBeenCalled();
+ });
+
+ it("concurrent denied capacity prevents generation, staging and send",async()=>{
+  const {ports}=setup();ports.reserve.mockResolvedValue(false);
+  const results=await Promise.all(Array.from({length:8},()=>runInboundWorkerAnswer(input,ports)));
+  expect(results.every(r=>!r.ok&&r.code==="ENTITLEMENT_OR_USAGE_DENIED")).toBe(true);
+  expect(ports.answer).not.toHaveBeenCalled();expect(ports.stage).not.toHaveBeenCalled();expect(ports.claimSend).not.toHaveBeenCalled();expect(ports.send).not.toHaveBeenCalled();expect(ports.finish).not.toHaveBeenCalled();
+ });
+ it("saved Premium draft cannot bypass revoked/downgraded plan reservation",async()=>{
+  const {ports,frame,chunks}=setup();frame.ai_status="success";frame.reply_text="Answer";frame.ai_attempt_id="attempt";frame.staged_citations=chunks.map(({sourceId,title,contentVersion})=>({sourceId,title,contentVersion}));ports.reserve.mockResolvedValue(false);
+  expect(await runInboundWorkerAnswer(input,ports)).toMatchObject({ok:false,code:"ENTITLEMENT_OR_USAGE_DENIED"});
+  expect(ports.answer).not.toHaveBeenCalled();expect(ports.stage).not.toHaveBeenCalled();expect(ports.send).not.toHaveBeenCalled();
+ });
+ it("eight persisted unknown send replays do not send or release capacity",async()=>{
+  const {ports,frame,intent}=setup();frame.ai_status="success";frame.reply_text="Answer";frame.ai_attempt_id="attempt";frame.intent_id="intent";
+  ports.claimSend.mockResolvedValue({ok:true,claimed:false,attempt_token:null,intent:{...intent,outcome:"unknown"}} as never);
+  const results=await Promise.all(Array.from({length:8},()=>runInboundWorkerAnswer(input,ports)));
+  expect(results.every(r=>!r.ok&&!r.jobCompleted)).toBe(true);
+  expect(ports.answer).not.toHaveBeenCalled();expect(ports.send).not.toHaveBeenCalled();expect(ports.finalize).not.toHaveBeenCalled();expect(ports.finish).not.toHaveBeenCalled();
+  expect(ports.retry.mock.calls.every(([,uncertain])=>uncertain===true)).toBe(true);
+ });
+ it("in-flight outbound hold never triggers settlement or another send",async()=>{
+  const {ports,frame,intent}=setup();frame.ai_status="success";frame.reply_text="Answer";frame.ai_attempt_id="attempt";frame.intent_id="intent";
+  ports.claimSend.mockResolvedValue({ok:true,claimed:false,attempt_token:null,intent:{...intent,outcome:"attempting"}} as never);
+  expect(await runInboundWorkerAnswer(input,ports)).toMatchObject({ok:false,code:"SEND_IN_PROGRESS_REQUIRES_REVIEW"});
+  expect(ports.send).not.toHaveBeenCalled();expect(ports.finalize).not.toHaveBeenCalled();expect(ports.finish).not.toHaveBeenCalled();expect(ports.retry).not.toHaveBeenCalled();
  });
 });

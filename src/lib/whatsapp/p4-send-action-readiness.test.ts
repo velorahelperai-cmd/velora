@@ -8,6 +8,8 @@ const fixture = vi.hoisted(() => ({
   capability: true as boolean | null,
   dispatch: null as { data: unknown; error: unknown } | null,
   throwDispatch: false,
+  dispatchOnce: false, dispatchUsed: false,
+  conversationVisible: true, queryFilters: [] as Array<[string, unknown]>,
   throwFinalizeOnce: false,
   windowOpen: true,
   vaultCompany: "company-offline-a",
@@ -37,8 +39,8 @@ vi.mock("@/lib/whatsapp/inbox", () => ({ loadWhatsappConversation: vi.fn(), load
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   from: (table: string) => {
     const query = {
-      select: () => query, eq: () => query,
-      maybeSingle: async () => table === "whatsapp_conversations" ? { error: null, data: {
+      select: () => query, eq: (column: string, value: unknown) => { fixture.queryFilters.push([column, value]); return query; },
+      maybeSingle: async () => table === "whatsapp_conversations" && fixture.conversationVisible ? { error: null, data: {
         id: "conversation-offline-a", company_id: "company-offline-a", phone_number_id: "100000000000001", customer_wa_id: "10000000001",
       } } : { error: null, data: null },
     };
@@ -47,6 +49,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   rpc: async (name: string, args: Record<string, unknown>) => {
     fixture.calls.push({ name, args });
     if (name === "whatsapp_authorize_staff_dispatch") {
+      if (fixture.dispatchOnce) { if (fixture.dispatchUsed) return { error: null, data: { ok: false, code: "dispatch_already_authorized" } }; fixture.dispatchUsed = true; }
       if (fixture.throwDispatch) throw new Error("Synthetic dispatch transport uncertainty");
       return fixture.dispatch ?? { error: null, data: fixture.capability === true
         ? { ok: true, authorized: true, intent_id: "intent-offline-a" }
@@ -79,7 +82,7 @@ describe("real staff reply action at persistence and Graph boundaries", () => {
   beforeEach(() => {
     fixture.capability = true;
     fixture.dispatch = null;
-    fixture.throwDispatch = false;
+    fixture.throwDispatch = false; fixture.dispatchOnce = false; fixture.dispatchUsed = false; fixture.conversationVisible = true; fixture.queryFilters = [];
     fixture.throwFinalizeOnce = false;
     fixture.windowOpen = true;
     fixture.vaultCompany = "company-offline-a";
@@ -312,5 +315,57 @@ describe("real staff reply action at persistence and Graph boundaries", () => {
     const { replyWhatsappConversation } = await import("./actions");
     expect(await replyWhatsappConversation(input)).toMatchObject({ ok: true, outcome: "accepted", message: { deliveryState: "accepted" } });
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["dispatch_already_authorized", "staff_authority_revoked", "subscription_inactive", "SERVICE_NOT_ACTIVE"])("honors final dispatch denial after preparation: %s", async reason => {
+    tenantReply();
+    fixture.dispatch = { error: null, data: { ok: false, code: reason } };
+    const { replyWhatsappConversation } = await import("./actions");
+    const r = await replyWhatsappConversation(input);
+    expect(r.ok).toBe(false); expect(r.clientOpId).toBe(input.clientOpId);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(fixture.calls.filter(c => c.name === "whatsapp_authorize_staff_dispatch")).toHaveLength(1);
+    // No locally invented reject may release a hold when the final RPC denies/has ambiguous state.
+    if (reason === "staff_authority_revoked") {
+      expect(fixture.calls.filter(c => c.name === "finalize_whatsapp_send_attempt")).toHaveLength(1);
+      expect(fixture.calls.find(c => c.name === "finalize_whatsapp_send_attempt")?.args).toMatchObject({ p_result: "rejected", p_error_code: reason });
+    } else expect(fixture.calls.some(c => c.name === "finalize_whatsapp_send_attempt")).toBe(false);
+  });
+  it("concurrent replay reaches mocked atomic dispatch once and does not send twice", async () => {
+    tenantReply();
+    const fetch = vi.mocked(globalThis.fetch);
+    fixture.dispatchOnce = true;
+    const { replyWhatsappConversation } = await import("./actions");
+    const results = await Promise.all([replyWhatsappConversation(input), replyWhatsappConversation(input)]);
+    expect(results.some(r => r.ok === false)).toBe(true);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(results.filter(r => r.ok)).toHaveLength(1);
+    expect(fixture.calls.filter(c => c.name === "finalize_whatsapp_send_attempt")).toHaveLength(1);
+    expect(results.every(r => r.clientOpId === input.clientOpId)).toBe(true);
+  });
+  it.each(["unknown", "attempting"])("eight concurrent %s replays preserve operation without claim, release or send", async outcome => {
+    fixture.created = { ok: true, intent: intent({ outcome }) };
+    const { replyWhatsappConversation } = await import("./actions");
+    const results = await Promise.all(Array.from({ length: 8 }, () => replyWhatsappConversation(input)));
+    expect(results.every(r => !r.ok && r.clientOpId === input.clientOpId && !("notAttempted" in r))).toBe(true);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(fixture.calls.every(c => c.name === "create_whatsapp_send_intent")).toBe(true);
+  });
+  it("eight accepted replays do not claim or count a second send", async () => {
+    fixture.created = { ok: true, intent: intent({ outcome: "accepted", wa_message_id: "wamid.offline", message_id: "message-offline-a" }) };
+    const { replyWhatsappConversation } = await import("./actions");
+    await Promise.all(Array.from({ length: 8 }, () => replyWhatsappConversation(input)));
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(fixture.calls.some(c => c.name === "claim_whatsapp_send_attempt" || c.name === "finalize_whatsapp_send_attempt")).toBe(false);
+  });
+
+  it("assigned-only staff cannot reply when the session RLS read hides an unassigned conversation", async () => {
+    fixture.conversationVisible = false;
+    const { replyWhatsappConversation } = await import("./actions");
+    expect(await replyWhatsappConversation(input)).toMatchObject({ ok: false, code: "NOT_FOUND" });
+    expect(fixture.queryFilters).toContainEqual(["company_id", "company-offline-a"]);
+    expect(fixture.queryFilters).toContainEqual(["id", input.conversationId]);
+    expect(fixture.calls).toEqual([]);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 });

@@ -71,4 +71,33 @@ describe("production integration context and send gates", () => {
     expect(await ports.send(intent, "synthetic-secret")).toEqual({ ok: false, code: "SERVICE_WINDOW_CLOSED" });
     expect(send).not.toHaveBeenCalled();
   });
+
+  it.each(["usage_not_configured", "usage_exhausted", "subscription_inactive", "NOURA_JOB_AUTHORITY_CHANGED", "NOURA_SERVICE_NOT_ACTIVE"])("saved draft cannot bypass authoritative quota/plan denial: %s", async code => {
+    const db = client();
+    db.rpc.mockImplementation(async name => ({ data: name === "billing_load_worker_frame"
+      ? { ok: true, data: { ...frame, ai_status: "success", ai_attempt_id: "attempt", reply_text: "Saved reply" } }
+      : name === "whatsapp_reserve_job_usage" ? { ok: false, code } : window, error: null }));
+    const ports = createIntegrationPorts(binding, db as never);
+    await ports.frame();
+    const results = await Promise.all(Array.from({ length: 8 }, () => ports.reserve()));
+    expect(results).toEqual(Array(8).fill(false));
+    expect(db.rpc.mock.calls.filter(([name]) => name === "whatsapp_reserve_job_usage")).toHaveLength(8);
+    expect(send).not.toHaveBeenCalled();
+  });
+  it.each([null, {}, { ok: "true" }, { ok: false, limit: 0 }, { ok: false, limit: null }])("unknown or zero quota denial never becomes unlimited: %j", async quota => {
+    const db = client();
+    db.rpc.mockImplementation(async name => ({ data: name === "billing_load_worker_frame"
+      ? { ok: true, data: { ...frame, ai_status: "success", ai_attempt_id: "attempt", reply_text: "Saved reply" } }
+      : name === "whatsapp_reserve_job_usage" ? quota : window, error: null }));
+    const ports = createIntegrationPorts(binding, db as never);
+    await ports.frame(); expect(await ports.reserve()).toBe(false);
+    expect(send).not.toHaveBeenCalled();
+  });
+  it("forwards unknown settlement as unknown, never converts it to released or accepted", async () => {
+    const db = client({ ok: true, status: "unknown" });
+    const ports = createIntegrationPorts(binding, db as never);
+    expect(await ports.finish("intent")).toBe("unknown");
+    expect(db.rpc).toHaveBeenCalledWith("billing_finalize_automated_usage", { p_company_id: "company", p_intent_id: "intent" });
+    expect(send).not.toHaveBeenCalled();
+  });
 });
