@@ -35,7 +35,8 @@ type AccountSessionValue = {
   refresh: () => Promise<void>;
   clear: () => void;
   expire: () => void;
-  setIdentityName: (name: string) => void;
+  setIdentityName: (name: string, expectedUserId: string) => void;
+  isCurrentUser: (userId: string) => boolean;
 };
 
 const AccountSessionContext = createContext<AccountSessionValue | null>(null);
@@ -120,11 +121,13 @@ export function AccountSessionProvider({
     window.addEventListener("focus",recheck);document.addEventListener("visibilitychange",recheck);
     return ()=>{if(timer)clearTimeout(timer);window.removeEventListener("focus",recheck);document.removeEventListener("visibilitychange",recheck);};
   },[refresh]);
-  const setIdentityName = useCallback((name: string) => {
-    setIdentity((prev) => {const updated=prev?{...prev,fullName:name}:prev;identityRef.current=updated;return updated;});
-  }, []);
+  const isCurrentUser = useCallback((userId:string)=>userIdRef.current===userId&&identityRef.current?.userId===userId,[]);
+  const setIdentityName = useCallback((name: string, expectedUserId: string) => {
+    if(!isCurrentUser(expectedUserId))return;
+    setIdentity((prev) => {const updated=prev?.userId===expectedUserId?{...prev,fullName:name}:prev;identityRef.current=updated;return updated;});
+  }, [isCurrentUser]);
 
-  const sessionValue=useMemo(()=>({status,identity,refresh,clear,expire,setIdentityName}),[status,identity,refresh,clear,expire,setIdentityName]);
+  const sessionValue=useMemo(()=>({status,identity,refresh,clear,expire,setIdentityName,isCurrentUser}),[status,identity,refresh,clear,expire,setIdentityName,isCurrentUser]);
   return (
     <AccountSessionContext.Provider value={sessionValue}>
       {children}

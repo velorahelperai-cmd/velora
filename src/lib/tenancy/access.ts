@@ -3,6 +3,7 @@ import { authFlowHref } from "@/lib/auth/auth-journey";
 import { setupPathForReturn } from "@/lib/auth/setup-return";
 import { allowedReturnPath, pathAtOrUnder, safeInternalPath, staffInvitationReturnPath } from "@/lib/auth/safe-next";
 import { createClient } from "@/lib/supabase/server";
+import { unavailablePlatformIdentity, type AccountPlatformIdentity } from "./account-platform-identity";
 import type {
   AccessCode,
   CompanyContext,
@@ -40,6 +41,8 @@ export function workspaceHomeHref(ctx: CompanyContext): string | null {
 }
 
 export type AccountProfileView = {
+  /** Persisted display metadata; isPlatformAdmin and RPCs remain authoritative. */
+  platformIdentity: AccountPlatformIdentity;
   emailConfirmed?: boolean;
   sessionExpiresAt?: string;
   accessUnavailable?: boolean;
@@ -64,9 +67,11 @@ export type AccountProfileView = {
 
 export function buildAccountProfileView(
   access: { ok: true; context: CompanyContext },
+  platformIdentity: AccountPlatformIdentity = unavailablePlatformIdentity(),
 ): AccountProfileView {
   const ctx = access.context;
   return {
+    platformIdentity,
     userId: ctx.userId,
     fullName: ctx.fullName,
     email: ctx.email,

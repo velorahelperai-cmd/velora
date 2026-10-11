@@ -1,0 +1,47 @@
+{
+  "package": "account-platform-identity-and-controls",
+  "base_commit": "ba601a3b3e4236667d1a04aeb3e6c6c504a92ee2",
+  "production_project": "vmpifljyozsbtssxhoxd",
+  "new_sql_required": false,
+  "new_authority_or_memberships": false,
+  "required_existing_schema": {
+    "platform_admins": {
+      "columns": {"user_id": "uuid NOT NULL", "role": "text NOT NULL (owner|delegated)", "status": "text NOT NULL (active|disabled)"},
+      "query": "authenticated client; SELECT role,status WHERE user_id = verified current user",
+      "policies": ["platform_admins_select_self (permissive SELECT)", "velora_active_session (restrictive active-session gate)"],
+      "privilege": "authenticated SELECT"
+    },
+    "profiles": {
+      "columns": {"user_id": "uuid NOT NULL", "full_name": "text NOT NULL", "support_code": "text NOT NULL"},
+      "privileges": ["authenticated SELECT", "authenticated INSERT", "authenticated UPDATE"],
+      "rls": "enabled; existing account-name upsert remains in place"
+    },
+    "unchanged_workspace_dependencies": ["company_members", "companies", "platform_admin_scopes"],
+    "functions": ["public.is_platform_admin()", "public.app_session_is_valid()", "public.check_app_session(boolean)"],
+    "authority": "Existing RPCs remain authoritative. Display metadata does not grant admin access or select/create a company. A delegated account requires an existing scope for is_platform_admin()."
+  },
+  "read_only_production_catalog_evidence": {
+    "observed_at": "2026-10-11T08:08:06.162988+00:00",
+    "transaction": "BEGIN READ ONLY; targeted catalog SELECTs; COMMIT",
+    "required_columns_and_enum_constraints_present": true,
+    "platform_admins_rls": true,
+    "authenticated_platform_select": true,
+    "self_row_policy": true,
+    "active_session_policy": true,
+    "profiles_rls": true,
+    "authenticated_profile_select": true,
+    "authenticated_profile_insert": true,
+    "authenticated_profile_update": true,
+    "delegated_requires_scope": true,
+    "auth_gate_acl": true,
+    "catalog_compatibility": "pass",
+    "production_rows_or_tokens_returned": false
+  },
+  "closure_gates": {
+    "github_main": "verify exact published commit at handoff",
+    "original_desktop_folder": "parent must synchronize and confirm the same commit",
+    "deployment": "verify exact commit before handoff",
+    "database": "catalog compatibility passed; no SQL application required",
+    "authenticated_browser_acceptance": "pending owner browser: role labels, no unexpected workspace access, Cancel, clipboard success/failure, separate website tab, confirmed name-save recovery"
+  }
+}

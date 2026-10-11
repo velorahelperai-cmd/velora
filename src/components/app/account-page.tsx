@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   AccountMenu,
   AppTopBar,
@@ -22,7 +22,35 @@ export function AccountPage({ initial }: { initial: AccountProfileView }) {
   const [error, setError] = useState<FieldErrorKey>();
   const [formError, setFormError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [clipboard, setClipboard] = useState<"copied" | "failed" | null>(null);
+  const [trackedInitial, setTrackedInitial] = useState(initial);
+  const [confirmedName, setConfirmedName] = useState<string | null>(null);
+  const generation = useRef(0);
+  const clipboardGeneration = useRef(0);
+  const mounted = useRef(true);
   const { busy, run } = useAction();
+  if (trackedInitial !== initial) {
+    setTrackedInitial(initial);
+    if (initial.userId !== profile.userId) {
+      setProfile(initial);setConfirmedName(null);setName(initial.fullName);
+      setError(undefined);setFormError(null);setSaved(false);setClipboard(null);
+    } else {
+      // Unversioned page reads cannot supersede a confirmed write in this session.
+      const nextProfile = confirmedName === null ? initial : { ...initial, fullName: confirmedName };
+      setProfile(nextProfile);
+      if (name === profile.fullName) setName(nextProfile.fullName);
+    }
+  }
+  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;generation.current+=1;clipboardGeneration.current+=1;};},[initial.userId]);
+  const stillCurrent=()=>mounted.current&&(!session||session.isCurrentUser(initial.userId));
+  const controlsReady = !session || (session.status === "ready" && session.identity?.userId === initial.userId);
+  async function copyValue(value:string){
+    if(!value||!stillCurrent())return;
+    const gen=++clipboardGeneration.current;
+    setClipboard(null);
+    try{await navigator.clipboard.writeText(value);if(gen===clipboardGeneration.current&&stillCurrent())setClipboard("copied");}
+    catch{if(gen===clipboardGeneration.current&&stillCurrent())setClipboard("failed");}
+  }
   const dirty = name.trim() !== profile.fullName.trim();
   useUnsavedWarning(dirty && !busy);
   const nameError = useErrorText(error);
@@ -31,6 +59,10 @@ export function AccountPage({ initial }: { initial: AccountProfileView }) {
     profile.role === "owner" ? copy.app.owner
       : profile.role === "staff" ? copy.app.staff
         : copy.account.roleNone;
+  const platform = profile.platformIdentity;
+  const platformLabel = !platform || platform.unavailable ? copy.account.platformUnavailable
+    : platform.role === "owner" ? copy.account.roleOwner
+    : platform.role === "delegated" ? copy.account.roleDelegated : copy.account.platformNone;
 
   return (
     <main className="app-shell px-4 py-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
@@ -59,10 +91,10 @@ export function AccountPage({ initial }: { initial: AccountProfileView }) {
           <dl className="mt-5 grid gap-2 text-sm">
             <div className="flex justify-between gap-3">
               <dt className="text-[var(--color-muted-on-dark)]">{copy.account.platformRole}</dt>
-              <dd>{profile.isPlatformAdmin ? copy.account.roleAdmin : copy.account.roleNone}</dd>
+              <dd>{platformLabel}{platform?.status==="disabled"?` · ${copy.account.platformDisabled}`:""}</dd>
             </div>
             <div className="flex justify-between gap-3">
-              <dt className="text-[var(--color-muted-on-dark)]">{copy.app.roleLabel}</dt>
+              <dt className="text-[var(--color-muted-on-dark)]">{copy.account.companyRole}</dt>
               <dd>{membershipLabel}</dd>
             </div>
             <div className="flex justify-between gap-3">
@@ -73,13 +105,19 @@ export function AccountPage({ initial }: { initial: AccountProfileView }) {
               </dd>
             </div>
           </dl>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button type="button" variant="secondary" disabled={!controlsReady||!profile.supportCode} onClick={()=>void copyValue(profile.supportCode)}>{copy.account.copySupportCode}</Button>
+            <Button type="button" variant="secondary" disabled={!controlsReady||!profile.email} onClick={()=>void copyValue(profile.email)}>{copy.account.copyEmail}</Button>
+            <Link href="/" target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center rounded-full border border-[color:var(--color-border-soft)] px-4 text-sm">{copy.account.viewWebsite}</Link>
+          </div>
+          {clipboard?<div className="mt-3"><Notice tone={clipboard==="copied"?"success":"error"}>{clipboard==="copied"?copy.account.copied:copy.account.copyFailed}</Notice></div>:null}
 
           <form
             className="mt-6 grid max-w-md gap-4"
             noValidate
             onSubmit={(e) => {
               e.preventDefault();
-              if (busy) return;
+              if (busy || !controlsReady || !stillCurrent()) return;
               setFormError(null);
               setSaved(false);
               const next = name.trim();
@@ -93,16 +131,16 @@ export function AccountPage({ initial }: { initial: AccountProfileView }) {
               }
               setError(undefined);
               void run(async () => {
-                const result = await updateAccountName(next);
-                if (!result.ok) {
-                  setFormError(result.message ?? copy.errors.authFailed);
-                  return;
-                }
-                // Trust the write result — do not revert to a stale initial prop.
-                setProfile(result.data);
-                setName(result.data.fullName);
-                setSaved(true);
-                session?.setIdentityName(result.data.fullName);
+                const gen=++generation.current;
+                try{
+                  const result = await updateAccountName(next, initial.userId);
+                  if(gen!==generation.current||!stillCurrent()||result.ok&&result.data.userId!==initial.userId)return;
+                  if (!result.ok) {setFormError(result.message ?? copy.errors.authFailed);return;}
+                  // The confirmed write survives an optional identity refresh failure.
+                  setProfile(result.data);setConfirmedName(result.data.fullName);setName(result.data.fullName);setSaved(true);
+                  session?.setIdentityName(result.data.fullName,initial.userId);
+                  try{await session?.refresh();}catch{/* The name was already confirmed. */}
+                }catch{if(gen===generation.current&&stillCurrent())setFormError(copy.errors.authFailed);}
               });
             }}
           >
@@ -141,9 +179,10 @@ export function AccountPage({ initial }: { initial: AccountProfileView }) {
               </Link>
             </p>
             <div className="flex flex-wrap gap-2">
-              <Button type="submit" busy={busy} busyLabel={copy.saving} disabled={!dirty}>
+              <Button type="submit" busy={busy} busyLabel={copy.saving} disabled={!controlsReady||!dirty}>
                 {copy.save}
               </Button>
+              <Button type="button" variant="secondary" disabled={busy||!dirty} onClick={()=>{setName(profile.fullName);setError(undefined);setFormError(null);setSaved(false);}}>{copy.cancel}</Button>
               {profile.adminHref ? (
                 <Link
                   href={profile.adminHref}

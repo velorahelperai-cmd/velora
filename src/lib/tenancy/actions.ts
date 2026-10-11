@@ -2,6 +2,7 @@
 import { normalizeBusinessEmail, normalizeBusinessPhone } from "@/lib/tenancy/business-contacts";
 import {readCompanyBillingDisplay} from "@/lib/billing/wiring/display-read";
 import { readSessionIdentity } from "@/lib/auth/server-identity";
+import { readAccountPlatformIdentity, unavailablePlatformIdentity } from "./account-platform-identity";
 import { AUTH_RETURN_COOKIE, authFlowHref } from "@/lib/auth/auth-journey";
 import { pathAtOrUnder, safeInternalPath } from "@/lib/auth/safe-next";
 import { emailVerificationError, normalizeEmailCode } from "@/lib/auth/email-code";
@@ -374,10 +375,11 @@ export async function getAccountProfile(): Promise<ActionResult<AccountProfileVi
  const identity=await readSessionIdentity();if(!identity.ok)return {ok:false,code:identity.code,...("expired" in identity&&identity.expired?{sessionExpired:true}:{})};
  const access=await getCompanyAccess();
  if(access.ok&&access.context.userId!==identity.userId)return {ok:false,code:"UNAVAILABLE"};
- if(access.ok)return {ok:true,data:{...buildAccountProfileView(access),emailConfirmed:identity.emailConfirmed,sessionExpiresAt:identity.sessionExpiresAt}};
  if(!access.ok&&access.code==="UNAUTHENTICATED")return {ok:false,code:"UNAUTHENTICATED"};
+ const platformIdentity=identity.emailConfirmed?await readAccountPlatformIdentity(identity.userId):unavailablePlatformIdentity();
+ if(access.ok)return {ok:true,data:{...buildAccountProfileView(access,platformIdentity),emailConfirmed:identity.emailConfirmed,sessionExpiresAt:identity.sessionExpiresAt}};
  // Auth identity survives company/profile outages; no role or company privilege is invented.
- return {ok:true,data:{userId:identity.userId,email:identity.email,fullName:identity.fullName,supportCode:"",isPlatformAdmin:false,role:null,companyName:null,companyId:null,needsCompanyContext:false,adminHref:null,workspaceHref:null,workHref:identity.emailConfirmed?"/account":authFlowHref("/verify-email",null,identity.email),emailConfirmed:identity.emailConfirmed,sessionExpiresAt:identity.sessionExpiresAt,accessUnavailable:access.code==="UNAVAILABLE"}};
+ return {ok:true,data:{platformIdentity,userId:identity.userId,email:identity.email,fullName:identity.fullName,supportCode:"",isPlatformAdmin:false,role:null,companyName:null,companyId:null,needsCompanyContext:false,adminHref:null,workspaceHref:null,workHref:identity.emailConfirmed?"/account":authFlowHref("/verify-email",null,identity.email),emailConfirmed:identity.emailConfirmed,sessionExpiresAt:identity.sessionExpiresAt,accessUnavailable:access.code==="UNAVAILABLE"}};
 }
 export async function selectWorkspaceCompany(companyId: string): Promise<ActionResult<{ companyId: string }>> {
   const access = await getCompanyAccess();
@@ -510,8 +512,12 @@ export async function getCustomerReadiness(): Promise<ActionResult<CustomerReadi
   }
 }
 
-export async function updateAccountName(name: string): Promise<ActionResult<AccountProfileView>> {
+export async function updateAccountName(name: string, expectedUserId?: string): Promise<ActionResult<AccountProfileView>> {
   const verifiedIdentity=await readSessionIdentity();if(!verifiedIdentity.ok)return {ok:false,code:verifiedIdentity.code};
+  if (expectedUserId !== undefined && expectedUserId !== verifiedIdentity.userId) {
+    return { ok: false, code: "UNAUTHENTICATED" };
+  }
+  if(typeof name!=="string")return {ok:false,code:"INVALID_INPUT"};
   const fullName = name.trim();
   if (fullName.length < 2 || fullName.length > 120) {
     return { ok: false, code: "INVALID_INPUT" };
@@ -520,14 +526,14 @@ export async function updateAccountName(name: string): Promise<ActionResult<Acco
     const supabase = await createClient();
     const { data: userData } = await supabase.auth.getUser();
     const user = userData.user;
-    if (!user) return { ok: false, code: "UNAUTHENTICATED" };
+    if (!user || user.id !== verifiedIdentity.userId) return { ok: false, code: "UNAUTHENTICATED" };
     if (!user.email_confirmed_at && !user.phone_confirmed_at) {
       return { ok: false, code: "UNVERIFIED" };
     }
 
     // Capture prior role/company so optional sync failure cannot invent empty + /setup.
     const prior = await getAccountProfile();
-    const priorView = prior.ok ? prior.data : null;
+    const priorView = prior.ok && prior.data.userId === user.id ? prior.data : null;
 
     const { data: saved, error } = await supabase
       .from("profiles")
@@ -562,6 +568,7 @@ export async function updateAccountName(name: string): Promise<ActionResult<Acco
     }
 
     let profile = priorView ?? {
+      platformIdentity: unavailablePlatformIdentity(),
       userId: saved.user_id,
       fullName: saved.full_name,
       email: user.email ?? "",
@@ -577,8 +584,8 @@ export async function updateAccountName(name: string): Promise<ActionResult<Acco
     };
     try {
       const access = await getCompanyAccess();
-      if (access.ok) {
-        profile = buildAccountProfileView(access);
+      if (access.ok && access.context.userId === user.id) {
+        profile = buildAccountProfileView(access, priorView?.platformIdentity);
         profile = { ...profile, fullName: saved.full_name, supportCode: saved.support_code ?? profile.supportCode };
       } else {
         profile = {
@@ -601,7 +608,7 @@ export async function updateAccountName(name: string): Promise<ActionResult<Acco
 
     return {
       ok: true,
-      data: profile,
+      data: { ...profile, platformIdentity: await readAccountPlatformIdentity(user.id) },
     };
   } catch {
     return { ok: false, code: "UNAVAILABLE" };
