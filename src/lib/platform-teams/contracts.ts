@@ -5,7 +5,8 @@ export type TeamStatus = "active"|"disabled";
 export type Team = {id:string;name:string;status:TeamStatus;managerUserId:string|null;revision:number};
 export type TeamMember = {teamId:string;userId:string;status:TeamStatus;revision:number;specialty:string;role?:"manager"|"employee";fullName?:string};
 export type TeamSelf = {memberships:Array<{membership:TeamMember;team:Team|null;manager:{userId:string;fullName:string}|null;access:"active"|"denied"}>};
-export type TeamCursor = {id:string;revision:number};
+// Navigation context is not an authority token; SQL independently checks current access.
+export type TeamCursor = {id:string;revision:number;actorUserId:string;teamId:string|null;search:string;scopeRevision:string};
 export type DirectoryRequest = {expectedUserId:string;teamId:string|null;cursor:TeamCursor|null;pageSize:number;search:string};
 export type TeamDirectory = {kind:"teams"|"members";rows:Array<(Team&{memberCount:number})|TeamMember>;total:number;nextCursor:TeamCursor|null;team:Team|null};
 export type TeamOperation = "create"|"update"|"set_member"|"transfer";
@@ -17,6 +18,7 @@ const object=(v:unknown):Record<string,unknown>|null=>v!==null&&typeof v==="obje
 export const teamUuid=(v:unknown):v is string=>typeof v==="string"&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
 const integer=(v:unknown,min=0):v is number=>typeof v==="number"&&Number.isInteger(v)&&v>=min&&v<=2147483647;
 const expected=(v:unknown):v is number=>integer(v)&&v<2147483647;
+const scopeRevision=(v:unknown):v is string=>typeof v==="string"&&/^[a-f0-9]{32}$/.test(v);
 const bounded=(v:unknown,min:number,max:number)=>typeof v==="string"&&v.trim().length>=min&&v.trim().length<=max;
 const status=(v:unknown):v is TeamStatus=>v==="active"||v==="disabled";
 const unavailable=():TeamFailure=>({ok:false,code:"UNAVAILABLE"});
@@ -51,7 +53,10 @@ export function parseTeamDirectory(input:unknown):DirectoryRequest|null{
  const row=object(input);if(!row||!exact(row,["expectedUserId","teamId","cursor","pageSize","search"])||!teamUuid(row.expectedUserId))return null;
  const teamId=row.teamId??null,pageSize=row.pageSize??25,search=row.search??"";let cursor:TeamCursor|null=null;
  if(typeof search!=="string"||search.trim().length>120||teamId!==null&&!teamUuid(teamId)||!integer(pageSize,1)||pageSize>100)return null;
- if(row.cursor!==undefined&&row.cursor!==null){const c=object(row.cursor);if(!c||!exact(c,["id","revision"])||!teamUuid(c.id)||!integer(c.revision,1))return null;cursor={id:c.id.toLowerCase(),revision:c.revision};}
+ if(row.cursor!==undefined&&row.cursor!==null){
+  const c=object(row.cursor);if(!c||!exact(c,["id","revision","actorUserId","teamId","search","scopeRevision"])||!teamUuid(c.id)||!integer(c.revision,1)||!teamUuid(c.actorUserId)||c.actorUserId.toLowerCase()!==row.expectedUserId.toLowerCase()||c.teamId!==null&&!teamUuid(c.teamId)||c.teamId!==null&&(c.teamId as string).toLowerCase()!==(teamId as string|null)?.toLowerCase()||c.teamId===null&&teamId!==null||c.search!==search.trim()||!scopeRevision(c.scopeRevision))return null;
+  cursor={id:c.id.toLowerCase(),revision:c.revision,actorUserId:c.actorUserId.toLowerCase(),teamId:typeof c.teamId==="string"?c.teamId.toLowerCase():null,search:c.search as string,scopeRevision:c.scopeRevision};
+ }
  return {expectedUserId:row.expectedUserId.toLowerCase(),teamId:typeof teamId==="string"?teamId.toLowerCase():null,cursor,pageSize,search:search.trim()};
 }
 function team(v:unknown):Team|null{
@@ -78,7 +83,7 @@ export function decodeTeamSelf(input:unknown,userId:string):TeamResult<TeamSelf>
  }
  return {ok:true,data:{memberships}};
 }
-export function decodeTeamDirectory(input:unknown,request:Pick<DirectoryRequest,"teamId"|"cursor"|"pageSize">):TeamResult<TeamDirectory>{
+export function decodeTeamDirectory(input:unknown,request:DirectoryRequest):TeamResult<TeamDirectory>{
  const fail=failure(input);if(fail)return fail;const r=object(input),kind=request.teamId===null?"teams":"members";
  if(r?.ok!==true||r.kind!==kind||!Array.isArray(r.rows)||r.rows.length>request.pageSize||!integer(r.total)||r.total<r.rows.length)return unavailable();
  const t=kind==="members"?team(r.team):null;if(kind==="members"&&(!t||t.id!==request.teamId)||kind==="teams"&&r.team!==null)return unavailable();
@@ -91,7 +96,11 @@ export function decodeTeamDirectory(input:unknown,request:Pick<DirectoryRequest,
   }
  }
  let cursor:TeamCursor|null=null;
- if(r.next_cursor!==null){const c=object(r.next_cursor);const last=rows.at(-1);if(!c||!last||rows.length!==request.pageSize||!teamUuid(c.id)||!integer(c.revision,1)||c.id!==("id"in last?last.id:last.userId)||c.revision!==last.revision)return unavailable();cursor={id:c.id,revision:c.revision};}
+ if(r.next_cursor!==null){
+  const c=object(r.next_cursor);const last=rows.at(-1);
+  if(!c||!last||rows.length!==request.pageSize||!exact(c,["id","revision","actor_user_id","team_id","search","scope_revision"])||!teamUuid(c.id)||!integer(c.revision,1)||c.id!==("id"in last?last.id:last.userId)||c.revision!==last.revision||c.actor_user_id!==request.expectedUserId||c.team_id!==request.teamId||c.search!==request.search||!scopeRevision(c.scope_revision)||request.cursor!==null&&c.scope_revision!==request.cursor.scopeRevision)return unavailable();
+  cursor={id:c.id,revision:c.revision,actorUserId:request.expectedUserId,teamId:request.teamId,search:request.search,scopeRevision:c.scope_revision};
+ }
  return {ok:true,data:{kind,rows,total:r.total,nextCursor:cursor,team:t}};
 }
 export function decodeTeamMutation(input:unknown,request:TeamPayload):TeamResult<TeamMutation>{

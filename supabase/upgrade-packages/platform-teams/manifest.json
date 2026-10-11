@@ -6,12 +6,12 @@
   "production_project": "vmpifljyozsbtssxhoxd",
   "migration": {
     "path": "supabase/upgrade-packages/platform-teams/10-teams.review.sql",
-    "sha256": "c1e943b4ba57babb63fac51ce74f02615adb4e2b84ea2c0bd0c762eab43994c9",
+    "sha256": "51edc97e450a892f5e6ea5c76dbc17eadf342d9c08b6d1956fa8122977b65d32",
     "mode": "forward, atomic, installer postgres; absent new objects required; outside automated migrations"
   },
   "preflight": {
     "path": "supabase/upgrade-packages/platform-teams/preflight.readonly.sql",
-    "sha256": "1d99446451a24af06e4b5969640c12766610df6b49058ab2944fe90b0f23c850",
+    "sha256": "b35cbec11295be9af9136cc49b45a862dc61dbaa462960ea98ce0503b7c0ec4a",
     "transaction": "BEGIN READ ONLY; catalog SELECT; COMMIT",
     "production_rows_or_tokens_returned": false,
     "evidence": {
@@ -32,7 +32,7 @@
           "compatible": true
         }
       ],
-      "observed_at": "2026-10-11T08:50:21.141453+00:00",
+      "observed_at": "2026-10-11T10:03:22.78226+00:00",
       "server_version": "17.11",
       "new_rpcs_absent": true,
       "columns_compatible": true,
@@ -43,7 +43,7 @@
       "authenticated_private_usage": false,
       "authenticated_owner_predicate_execute": true
     },
-    "evidence_scope": "Historical r1 catalog-only observation; updated r2 preflight with both old/new directory signature absence requires a fresh approved installer check before release."
+    "evidence_scope": "Fresh r3 catalog-only observation including six-argument directory signature; no production installer or customer/Auth/session data rows."
   },
   "schema_additions": [
     "public.platform_teams",
@@ -52,7 +52,7 @@
   ],
   "rpcs": [
     "public.platform_team_read_self()",
-    "public.platform_team_read_directory(uuid,uuid,integer,integer,text)",
+    "public.platform_team_read_directory(uuid,uuid,integer,integer,text,jsonb)",
     "public.platform_team_preview_transfer(jsonb)",
     "public.platform_team_mutate(jsonb)"
   ],
@@ -67,25 +67,25 @@
       "published_ports": 0,
       "persistent_mounts": 0,
       "log_driver": "none",
-      "cases": 29,
-      "result": "29 pass; 0 fail; final complete r2 suite"
+      "cases": 40,
+      "result": "40 pass; 0 fail; complete r3 suite with exact production dependency bodies"
     },
-    "focused_vitest": 33,
+    "focused_vitest": 36,
     "aggregate": {
-      "pass": 2035,
+      "pass": 2038,
       "existing_skips": 42
     },
-    "typecheck": "pass",
+    "typecheck": "pass after correcting a test cursor fixture TS2739",
     "lint": {
       "errors": 0,
       "existing_warnings": 7
     },
     "build": "pass",
-    "regressions": "Observed RED then GREEN for r2 multi-team model, specialty, transitions, pending roster/self/member/manager-summary revocation; r1 expiry and receipt regressions retained.",
+    "regressions": "R3 observed RED then GREEN: legacy/parser/decoder/RPC context, authorized shared-member cross-team reuse, between-page roster/full-list changes, paused preview owner/destination-manager disable and each captured revision, exact dependency-body drift. Preview read-only audit/outcome counts unchanged.",
     "independent_review": {
       "model": "gpt-6.1-sol",
       "effort": "high",
-      "result": "No remaining material findings after RED/GREEN fixes; final source/SQL/README/original20 mapping reviewed. Reviewer did not run PG, full runtime or live browser.",
+      "result": "No remaining material R3 findings after source/SQL/README/original20 mapping/manifest/provenance consistency review. Reviewer inspected final logs and recomputed dependency hashes; no tests/PG/external calls/live browser run by reviewer.",
       "not_run_by_reviewer": [
         "PostgreSQL harness",
         "production PostgREST/browser"
@@ -94,7 +94,7 @@
   },
   "recovery": "SQL installation is transactional; failure rolls back. If installed but code unpublished, keep UI unexposed. Authorized containment can revoke only four new RPC EXECUTE and two table SELECT, then repair forward. Lost responses replay exact actor/operation UUID/payload after session recovery without duplicate writes/audit. Authority lock contention returns UNAVAILABLE with no changes.",
   "remaining_gates": [
-    "Approve exact r2 migration hash and rerun updated catalog preflight",
+    "Approve exact r3 migration hash and rerun updated catalog preflight immediately before any authorized installation",
     "Authorized installer applies schema; verify full canonical schema, Auth/pre-request, PostgREST and real finance API separation",
     "Separate synchronized tested main push/deployment authorization after schema verification",
     "Exact deployment/desktop SHA synchronization and owner browser acceptance"
@@ -104,9 +104,10 @@
     "Existing full HTTP stack attempted; required supabase/postgres:17.6.1.136, supabase/gotrue:v2.196.0, postgrest/postgrest:v14.17 cached images absent; stopped before schema work",
     "Direct-table RLS uses ordinary statement snapshots; terminal pending-response revision/authority checks apply to supported RPC reads only",
     "Original twenty scenarios have explicit remaining gaps; case totals do not establish acceptance",
-    "No route imports the new server actions; no team UI exposed; production installation/publication held"
+    "No route imports the new server actions; no team UI exposed; production installation/publication held",
+    "Desktop genuine R2: 78-chain G03 prerequisite pin failure; 72-prefix Auth/PostgREST/six synthetic HTTP sessions pass; team preflight rejected runtime owner pin; no team installer/assertions. Rollback probe external delimiter error, not proof."
   ],
-  "revision": "r2; r1 checkpoint and Library archive preserved",
+  "revision": "r3; r1 and r2 checkpoints/artifacts preserved",
   "approved_model": {
     "multiple_independent_active_memberships": true,
     "multi_team_delegated_admin_responsibility": true,
@@ -117,5 +118,17 @@
     "specialty": "owner-set directory text; no authority",
     "self": "plural caller memberships; denied entries omit team/manager metadata"
   },
-  "scenario_mapping": "supabase/upgrade-packages/platform-teams/SCENARIO-MAPPING.md; original 20 assertion-level mapping with explicit partial coverage and gaps"
+  "scenario_mapping": "supabase/upgrade-packages/platform-teams/SCENARIO-MAPPING.md; original 20 assertion-level mapping with explicit partial coverage and gaps",
+  "cursor": "Unsigned read-only navigation context: actor, team-or-list, trimmed search, row position and MD5(owner mode + selected/full authorized team revision map). Current authorization independent before token validation; terminal full-map comparison.",
+  "preview": "Successful read-only materialization followed by VOLATILE current actor/session/owner/destination-manager/all-four-revision check; commit-time revalidation preserved.",
+  "dependency_baseline": {
+    "sql": "scripts/platform-teams/production-dependencies.review.sql",
+    "sql_sha256": "56e012c1952a0659b1dbda5f7628ee9b0b4bb8dd055b285d318a5dcc5b3c904e",
+    "provenance": "scripts/platform-teams/dependency-provenance.json",
+    "scope": "explicitly enabled isolated synthetic local fixture only; three current production function definitions, existing ACLs/data retained; no production apply",
+    "exact_hash_guards": "unchanged production body pins, now also enforced by installer",
+    "checked_in_owner_body_md5": "e76d5a26934f28e28ddf300f5cd2fb19",
+    "desktop_reported_owner_runtime_body_md5": "8e06665ea03c275a7917f4570d18d749",
+    "desktop_runtime_owner_definition_verified": false
+  }
 }

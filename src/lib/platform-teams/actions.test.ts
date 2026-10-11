@@ -19,4 +19,10 @@ describe("authenticated internal team server actions",()=>{
  it("does not accept a success bound to another operation or account",async()=>{state.rpc.mockResolvedValueOnce({data:{...confirmed,operation_id:id(999)},error:null});expect(await(await actions()).mutatePlatformTeam(create)).toEqual({ok:false,code:"UNAVAILABLE"});state.rpc.mockResolvedValueOnce({data:confirmed,error:null});state.identity.mockResolvedValueOnce({ok:true,userId:id(1),emailConfirmed:true}).mockResolvedValueOnce({ok:true,userId:id(7),emailConfirmed:true});expect(await(await actions()).mutatePlatformTeam(create)).toEqual({ok:false,code:"UNAUTHENTICATED"});});
  it("does not pass company/scopes/finance keys into the SQL operation",async()=>{expect(await(await actions()).mutatePlatformTeam({...create,companyId:id(201)})).toEqual({ok:false,code:"INVALID_INPUT"});expect(state.rpc).not.toHaveBeenCalled();});
  it.each(["UNAUTHENTICATED","UNVERIFIED","UNAVAILABLE"])("keeps the committed actor-bound receipt after optional %s recheck",async code=>{state.rpc.mockResolvedValueOnce({data:confirmed,error:null});state.identity.mockResolvedValueOnce({ok:true,userId:id(1),emailConfirmed:true}).mockResolvedValueOnce({ok:false,code});expect(await(await actions()).mutatePlatformTeam(create)).toMatchObject({ok:true,data:{actorUserId:id(1),operationId:id(1000),team:{id:id(101)},accessNeedsRecheck:true}});});
+ it("forwards bound cursor context alongside row position through the authenticated directory RPC",async()=>{
+  const cursor={id:id(2),revision:1,actorUserId:id(1),teamId:id(101),search:"",scopeRevision:"a".repeat(32)};
+  state.rpc.mockResolvedValueOnce({data:{ok:true,kind:"members",team:{...team,revision:2},rows:[],total:2,next_cursor:null},error:null});
+  expect(await(await actions()).readPlatformTeamDirectory({expectedUserId:id(1),teamId:id(101),cursor,pageSize:1})).toMatchObject({ok:true});
+  expect(state.rpc).toHaveBeenCalledWith("platform_team_read_directory",{p_team_id:id(101),p_after_id:id(2),p_after_revision:1,p_page_size:1,p_search:"",p_cursor_context:{actor_user_id:id(1),team_id:id(101),search:"",scope_revision:"a".repeat(32)}});
+ });
 });

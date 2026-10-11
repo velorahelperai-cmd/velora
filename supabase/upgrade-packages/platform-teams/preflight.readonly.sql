@@ -20,7 +20,7 @@ with required_columns(relation,column_name,type_name,not_null) as(values
  select r.signature,r.body_md5,coalesce(p.prosecdef and pg_get_userbyid(p.proowner)='postgres' and 'search_path=""'=any(p.proconfig) and md5(replace(p.prosrc,chr(13),''))=r.body_md5,false)compatible
  from required_functions r left join pg_proc p on p.oid=to_regprocedure(r.signature)
 ),new_relations(name)as(values('public.platform_teams'),('public.platform_team_members'),('private.platform_team_operations')),
-new_functions(signature)as(values('public.platform_team_read_self()'),('public.platform_team_read_directory(uuid,uuid,integer,integer)'),('public.platform_team_read_directory(uuid,uuid,integer,integer,text)'),('public.platform_team_preview_transfer(jsonb)'),('public.platform_team_mutate(jsonb)'))
+new_functions(signature)as(values('public.platform_team_read_self()'),('public.platform_team_read_directory(uuid,uuid,integer,integer)'),('public.platform_team_read_directory(uuid,uuid,integer,integer,text)'),('public.platform_team_read_directory(uuid,uuid,integer,integer,text,jsonb)'),('public.platform_team_preview_transfer(jsonb)'),('public.platform_team_mutate(jsonb)'))
 select jsonb_build_object(
  'observed_at',clock_timestamp(),'server_version',current_setting('server_version'),
  'columns_compatible',(select bool_and(compatible)from column_checks),

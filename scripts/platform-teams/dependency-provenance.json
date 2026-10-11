@@ -1,0 +1,55 @@
+{
+  "project": "vmpifljyozsbtssxhoxd",
+  "observed_at": "2026-10-11 09:57:27.081823+00",
+  "server_version": "17.11",
+  "route": "BEGIN READ ONLY; pg_proc catalog/function definitions only; COMMIT",
+  "data_rows_returned": false,
+  "normalization": "CR removed; exact normalized prosrc hash pins retained",
+  "owner_semantic_comparison": "Current production d465 and checked-in final identity e76 predicates both SELECT EXISTS over public.platform_admins for auth.uid(), role owner, status active. Formatting/AS alias differs; no authority semantics differ between those inspected definitions. Desktop runtime 8e body was not supplied and is not independently semantically verified. Exact production body guard remains unchanged; no canonical allowlist.",
+  "definitions": [
+    {
+      "signature": "app_session_is_valid()",
+      "body_md5": "b42c28f54d05778fcc994156c6ce4086",
+      "owner": "postgres",
+      "security_definer": true,
+      "volatility": "s",
+      "configuration": [
+        "search_path=\"\""
+      ]
+    },
+    {
+      "signature": "is_platform_owner()",
+      "body_md5": "d46584d9ac02072238753afd973d9de3",
+      "owner": "postgres",
+      "security_definer": true,
+      "volatility": "s",
+      "configuration": [
+        "search_path=\"\""
+      ]
+    },
+    {
+      "signature": "private.write_admin_audit(uuid,uuid,text,jsonb,jsonb)",
+      "body_md5": "2f58d7407a5a169c0cb4d87a66661af4",
+      "owner": "postgres",
+      "security_definer": true,
+      "volatility": "v",
+      "configuration": [
+        "search_path=\"\""
+      ]
+    }
+  ],
+  "local_application": "Only explicit velora.fixture_dependencies=synthetic-local on verified isolated fixture; CREATE OR REPLACE definitions preserves existing ACLs; no data/grant changes.",
+  "limitations": [
+    "Dependency overlay does not repair/replay the blocked historical G03 migration.",
+    "Minimal fixture remains insufficient for canonical-schema/Auth/PostgREST acceptance; desktop genuine runtime must rerun package preflight/installation/assertions on production-equivalent isolated baseline."
+  ],
+  "checked_in_owner_source": {
+    "path": "supabase/migrations/20261007230212_vel_platform_owner_identity.sql",
+    "normalized_body_md5": "e76d5a26934f28e28ddf300f5cd2fb19"
+  },
+  "desktop_reported_owner_runtime": {
+    "body_md5": "8e06665ea03c275a7917f4570d18d749",
+    "source": "parent report of 72-migration-prefix runtime; exact local function definition not supplied",
+    "semantic_equivalence_verified": false
+  }
+}

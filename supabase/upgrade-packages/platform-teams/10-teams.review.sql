@@ -19,6 +19,13 @@ begin
  if exists(select 1 from pg_proc where oid in (to_regprocedure('public.is_platform_owner()'),to_regprocedure('public.app_session_is_valid()'),to_regprocedure('private.write_admin_audit(uuid,uuid,text,jsonb,jsonb)'))
   and (not prosecdef or pg_get_userbyid(proowner)<>'postgres' or not ('search_path=""'=any(coalesce(proconfig,'{}')))))
  then raise exception 'TEAM_SECURITY_DEPENDENCY_MISMATCH';end if;
+ if exists(select 1 from(values
+  ('public.is_platform_owner()','d46584d9ac02072238753afd973d9de3'),
+  ('public.app_session_is_valid()','b42c28f54d05778fcc994156c6ce4086'),
+  ('private.write_admin_audit(uuid,uuid,text,jsonb,jsonb)','2f58d7407a5a169c0cb4d87a66661af4')
+ )expected(signature,body_md5)left join pg_proc p on p.oid=to_regprocedure(expected.signature)
+ where md5(replace(p.prosrc,chr(13),''))is distinct from expected.body_md5)
+ then raise exception 'TEAM_DEPENDENCY_BODY_MISMATCH';end if;
 end;$preflight$;
 
 create table public.platform_teams(
@@ -179,25 +186,25 @@ revoke all on function public.platform_team_read_self() from public,anon,authent
 grant execute on function public.platform_team_read_self() to authenticated;
 
 -- VOLATILE obtains current authority after row materialization; a pending read cannot revive revoked scope.
-create function private.platform_team_recheck_directory(p_was_owner boolean,p_teams uuid[],p_revisions jsonb)returns void
+create function private.platform_team_recheck_directory(p_was_owner boolean,p_team uuid,p_revisions jsonb)returns void
 language plpgsql volatile security definer set search_path=''as $$
-declare actor uuid:=private.platform_team_actor();team uuid;current_owner boolean:=public.is_platform_owner();expected record;
+declare actor uuid:=private.platform_team_actor();current_owner boolean:=public.is_platform_owner();current_revisions jsonb;
 begin
- for expected in select key,value from jsonb_each(p_revisions)loop
-  if not exists(select 1 from public.platform_teams where id=expected.key::uuid and revision=(expected.value#>>'{}')::integer)then raise exception 'CONFLICT'using errcode='42501';end if;
- end loop;
- if current_owner then return;end if;
- if p_was_owner or not private.platform_team_manager_eligible(actor)then raise exception 'FORBIDDEN'using errcode='42501';end if;
- if not exists(select 1 from public.platform_teams t join public.platform_team_members m on m.team_id=t.id where t.status='active'and t.manager_user_id=actor and m.user_id=actor and m.status='active')then raise exception 'FORBIDDEN'using errcode='42501';end if;
- foreach team in array p_teams loop
-  if not exists(select 1 from public.platform_teams t join public.platform_team_members m on m.team_id=t.id where t.id=team and t.status='active'and t.manager_user_id=actor and m.user_id=actor and m.status='active')then raise exception 'FORBIDDEN'using errcode='42501';end if;
- end loop;
+ if p_was_owner and not current_owner then raise exception 'FORBIDDEN'using errcode='42501';end if;
+ if not current_owner and (not private.platform_team_manager_eligible(actor)or not exists(
+  select 1 from public.platform_teams t join public.platform_team_members m on m.team_id=t.id
+  where t.status='active'and t.manager_user_id=actor and m.user_id=actor and m.status='active'and(p_team is null or t.id=p_team)
+ ))then raise exception 'FORBIDDEN'using errcode='42501';end if;
+ select coalesce(jsonb_object_agg(t.id::text,t.revision),'{}')into current_revisions from public.platform_teams t
+ where(p_team is null or t.id=p_team)and(current_owner or t.status='active'and t.manager_user_id=actor and exists(
+  select 1 from public.platform_team_members m where m.team_id=t.id and m.user_id=actor and m.status='active'));
+ if p_was_owner is distinct from current_owner or p_revisions is distinct from current_revisions then raise exception 'CONFLICT'using errcode='42501';end if;
 end;$$;
-revoke all on function private.platform_team_recheck_directory(boolean,uuid[],jsonb)from public,anon,authenticated,service_role;
+revoke all on function private.platform_team_recheck_directory(boolean,uuid,jsonb)from public,anon,authenticated,service_role;
 
-create function private.platform_team_read_directory(p_team uuid,p_after uuid,p_revision integer,p_size integer,p_search text) returns jsonb
+create function private.platform_team_read_directory(p_team uuid,p_after uuid,p_revision integer,p_size integer,p_search text,p_cursor_context jsonb) returns jsonb
 language plpgsql stable security definer set search_path='' as $$
-declare actor uuid;owner boolean;managed uuid[];rows jsonb;total integer;next_cursor jsonb;team jsonb;revisions jsonb;keyword text:=btrim(coalesce(p_search,''));
+declare actor uuid;owner boolean;managed uuid[];rows jsonb;total integer;next_cursor jsonb;team jsonb;revisions jsonb;scope_revision text;keyword text:=btrim(coalesce(p_search,''));
 begin
  actor:=private.platform_team_actor();owner:=public.is_platform_owner();
  select coalesce(array_agg(t.id),'{}') into managed from public.platform_teams t join public.platform_team_members m on m.team_id=t.id and m.user_id=actor and m.status='active'
@@ -205,6 +212,18 @@ begin
  if not owner and (cardinality(managed)=0 or p_team is not null and not p_team=any(managed)) then return jsonb_build_object('ok',false,'code','FORBIDDEN');end if;
  if p_size is null or p_size<1 or p_size>100 or length(keyword)>120 or (p_after is null)<>(p_revision is null) or p_revision<1 then return jsonb_build_object('ok',false,'code','INVALID_INPUT');end if;
  select coalesce(jsonb_object_agg(id::text,revision),'{}')into revisions from public.platform_teams where (owner or id=any(managed))and(p_team is null or id=p_team);
+ -- Read-only navigation context; current authority is checked independently above and at return.
+ scope_revision:=md5(jsonb_build_object('owner',owner,'revisions',revisions)::text);
+ if(p_after is null)<>(p_cursor_context is null)then return jsonb_build_object('ok',false,'code','INVALID_INPUT');end if;
+ if p_cursor_context is not null then
+  if jsonb_typeof(p_cursor_context)<>'object'then return jsonb_build_object('ok',false,'code','INVALID_INPUT');end if;
+  if not p_cursor_context?&array['actor_user_id','team_id','search','scope_revision']
+   or exists(select 1 from jsonb_object_keys(p_cursor_context)k where k<>all(array['actor_user_id','team_id','search','scope_revision']))
+   or p_cursor_context->>'actor_user_id' is distinct from actor::text or p_cursor_context->>'team_id' is distinct from p_team::text
+   or p_cursor_context->>'search' is distinct from keyword
+  then return jsonb_build_object('ok',false,'code','INVALID_INPUT');end if;
+  if p_cursor_context->>'scope_revision' is distinct from scope_revision then return jsonb_build_object('ok',false,'code','CONFLICT');end if;
+ end if;
  if p_team is null then
   if p_after is not null and not exists(select 1 from public.platform_teams where id=p_after and revision=p_revision and (owner or id=any(managed)) and position(lower(keyword)in lower(name))>0) then return jsonb_build_object('ok',false,'code','INVALID_INPUT');end if;
   select count(*) into total from public.platform_teams where (owner or id=any(managed)) and position(lower(keyword)in lower(name))>0;
@@ -222,17 +241,17 @@ begin
    where m.team_id=p_team and (owner or m.status='active')and position(lower(keyword)in lower(coalesce(p.full_name,'')||' '||m.specialty))>0 and (p_after is null or m.user_id>p_after)order by m.user_id limit p_size+1)x;
  end if;
  if jsonb_array_length(rows)>p_size then
-  rows:=rows-(jsonb_array_length(rows)-1);next_cursor:=jsonb_build_object('id',case when p_team is null then rows->(p_size-1)->'id'else rows->(p_size-1)->'user_id'end,'revision',rows->(p_size-1)->'revision');
+  rows:=rows-(jsonb_array_length(rows)-1);next_cursor:=jsonb_build_object('id',case when p_team is null then rows->(p_size-1)->'id'else rows->(p_size-1)->'user_id'end,'revision',rows->(p_size-1)->'revision','actor_user_id',actor,'team_id',p_team,'search',keyword,'scope_revision',scope_revision);
  end if;
- perform private.platform_team_recheck_directory(owner,case when p_team is null then managed else array[p_team]end,revisions);
+ perform private.platform_team_recheck_directory(owner,p_team,revisions);
  return jsonb_build_object('ok',true,'kind',case when p_team is null then 'teams'else 'members'end,'rows',rows,'total',total,'next_cursor',next_cursor,'team',team);
 exception when insufficient_privilege then return jsonb_build_object('ok',false,'code',sqlerrm);
 end;$$;
-revoke all on function private.platform_team_read_directory(uuid,uuid,integer,integer,text)from public,anon,authenticated,service_role;
-create function public.platform_team_read_directory(p_team_id uuid default null,p_after_id uuid default null,p_after_revision integer default null,p_page_size integer default 25,p_search text default '')returns jsonb
-language sql stable security definer set search_path=''as $$select private.platform_team_read_directory(p_team_id,p_after_id,p_after_revision,p_page_size,p_search)$$;
-revoke all on function public.platform_team_read_directory(uuid,uuid,integer,integer,text)from public,anon,authenticated,service_role;
-grant execute on function public.platform_team_read_directory(uuid,uuid,integer,integer,text)to authenticated;
+revoke all on function private.platform_team_read_directory(uuid,uuid,integer,integer,text,jsonb)from public,anon,authenticated,service_role;
+create function public.platform_team_read_directory(p_team_id uuid default null,p_after_id uuid default null,p_after_revision integer default null,p_page_size integer default 25,p_search text default '',p_cursor_context jsonb default null)returns jsonb
+language sql stable security definer set search_path=''as $$select private.platform_team_read_directory(p_team_id,p_after_id,p_after_revision,p_page_size,p_search,p_cursor_context)$$;
+revoke all on function public.platform_team_read_directory(uuid,uuid,integer,integer,text,jsonb)from public,anon,authenticated,service_role;
+grant execute on function public.platform_team_read_directory(uuid,uuid,integer,integer,text,jsonb)to authenticated;
 
 -- Shared transfer preview validates every expected revision, including an inactive destination row.
 create function private.platform_team_transfer_preview(p_input jsonb) returns jsonb
@@ -258,12 +277,36 @@ begin
   'manager_before',jsonb_build_object('user_id',src.manager_user_id),'manager_after',jsonb_build_object('user_id',dst.manager_user_id));
 end;$$;
 revoke all on function private.platform_team_transfer_preview(jsonb) from public,anon,authenticated,service_role;
+-- Terminal preview guard reads current authority and all captured revisions; no writes/locks/grants.
+create function private.platform_team_recheck_preview(p_actor uuid,p_preview jsonb)returns void
+language plpgsql volatile security definer set search_path=''as $$
+declare actor uuid:=private.platform_team_actor();source_revision integer;destination_revision integer;member_revision integer;destination_member_revision integer;manager uuid;
+begin
+ if actor is distinct from p_actor then raise exception 'UNAUTHENTICATED'using errcode='42501';end if;
+ if not public.is_platform_owner()then raise exception 'FORBIDDEN'using errcode='42501';end if;
+ select src.revision,dst.revision,m.revision,coalesce(dm.revision,0),dst.manager_user_id
+ into source_revision,destination_revision,member_revision,destination_member_revision,manager
+ from public.platform_teams src cross join public.platform_teams dst
+ left join public.platform_team_members m on m.team_id=src.id and m.user_id=(p_preview->'source_member'->>'user_id')::uuid
+ left join public.platform_team_members dm on dm.team_id=dst.id and dm.user_id=(p_preview->'source_member'->>'user_id')::uuid
+ where src.id=(p_preview->'source_team'->>'id')::uuid and dst.id=(p_preview->'destination_team'->>'id')::uuid;
+ if source_revision is distinct from(p_preview->'source_team'->>'revision')::integer
+  or destination_revision is distinct from(p_preview->'destination_team'->>'revision')::integer
+  or member_revision is distinct from(p_preview->'source_member'->>'revision')::integer
+  or destination_member_revision is distinct from coalesce((p_preview->'destination_member'->>'revision')::integer,0)
+ then raise exception 'CONFLICT'using errcode='42501';end if;
+ if not private.platform_team_manager_eligible(manager)then raise exception 'INVALID_MEMBER'using errcode='42501';end if;
+end;$$;
+revoke all on function private.platform_team_recheck_preview(uuid,jsonb)from public,anon,authenticated,service_role;
 create function public.platform_team_preview_transfer(p_input jsonb) returns jsonb
 language plpgsql stable security definer set search_path='' as $$
+declare actor uuid:=private.platform_team_actor();preview jsonb;
 begin
- perform private.platform_team_actor();if not public.is_platform_owner() then return jsonb_build_object('ok',false,'code','FORBIDDEN');end if;
+ if not public.is_platform_owner() then return jsonb_build_object('ok',false,'code','FORBIDDEN');end if;
  if jsonb_typeof(p_input)<>'object' or p_input->>'op' is distinct from 'transfer' or (p_input->>'operation_id')::uuid is null or length(btrim(coalesce(p_input->>'reason',''))) not between 2 and 240 then return jsonb_build_object('ok',false,'code','INVALID_INPUT');end if;
- return private.platform_team_transfer_preview(p_input);
+ preview:=private.platform_team_transfer_preview(p_input);
+ if preview->>'ok'='true'then perform private.platform_team_recheck_preview(actor,preview);end if;
+ return preview;
 exception when insufficient_privilege then return jsonb_build_object('ok',false,'code',sqlerrm);
  when invalid_text_representation or numeric_value_out_of_range then return jsonb_build_object('ok',false,'code','INVALID_INPUT');
 end;$$;

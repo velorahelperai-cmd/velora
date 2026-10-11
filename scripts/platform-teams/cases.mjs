@@ -17,7 +17,7 @@ const waitBlocked=async operationId=>{
 };
 const payload=(op,fields={})=>({op,operation_id:id(operation++),reason:"Synthetic owner change",...fields});
 const mutate=(input,actor=owner)=>read(actor,"platform_team_mutate",`${lit(JSON.stringify(input))}::jsonb`);
-const directory=(actor,team=null,cursor=null,pageSize=25,search="")=>read(actor,"platform_team_read_directory",`${team?lit(team):"null"}::uuid,${cursor?lit(cursor.id):"null"}::uuid,${cursor?cursor.revision:"null"},${pageSize},${lit(search)}`);
+const directory=(actor,team=null,cursor=null,pageSize=25,search="")=>read(actor,"platform_team_read_directory",`${team?lit(team):"null"}::uuid,${cursor?lit(cursor.id):"null"}::uuid,${cursor?cursor.revision:"null"},${pageSize},${lit(search)},${cursor?lit(JSON.stringify({actor_user_id:cursor.actor_user_id,team_id:cursor.team_id,search:cursor.search,scope_revision:cursor.scope_revision}))+"::jsonb":"null"}`);
 const revision=async(team)=>Number(await sql(`select revision from public.platform_teams where id=${lit(team)}`));
 const memberRevision=async(team,user)=>Number(await sql(`select coalesce((select revision from public.platform_team_members where team_id=${lit(team)} and user_id=${lit(user)}),0)`));
 const setMember=async(team,user,status="active")=>mutate(payload("set_member",{team_id:team,user_id:user,status,expected_team_revision:await revision(team),expected_member_revision:await memberRevision(team,user)}));
@@ -242,5 +242,49 @@ if(process.argv.includes("--red")){
   assert.equal((await mutate(payload("create",{team_id:id(103),name:"Team C",manager_user_id:ma,expected_team_revision:0}))).ok,true);
   const request=payload("update",{team_id:a,name:"Team A",status:"active",manager_user_id:mb,expected_team_revision:await revision(a)});
   assert.equal((await mutate(request)).code,"INVALID_MEMBER");assert.equal(await sql(`select status from public.platform_teams where id='${a}'`),"disabled");
+ });
+ test("roster cursor cannot be reused across two authorized teams sharing the same member revision",async()=>{
+  assert.equal((await setMember(a,outsider)).ok,true);assert.equal((await setMember(b,ea)).ok,true);
+  const page=await directory(owner,a,null,2);assert.equal(page.next_cursor.id,ea);assert.equal(page.next_cursor.revision,await memberRevision(b,ea));
+  const reused=await directory(owner,b,page.next_cursor,2);assert.equal(reused.code,"INVALID_INPUT");
+ });
+ test("between-page roster revocation invalidates navigation without relying on the cursor row changing",async()=>{
+  const page=await directory(ma,a,null,1);assert.equal(page.next_cursor.id,ma);const unchanged=await memberRevision(a,ma);
+  assert.equal((await setMember(a,ea,"disabled")).ok,true);assert.equal(await memberRevision(a,ma),unchanged);
+  assert.equal((await directory(ma,a,page.next_cursor,1)).code,"CONFLICT");
+ });
+ test("team-list cursor binds actor/search and the entire currently authorized scope",async()=>{
+  const page=await directory(owner,null,null,1);assert.equal(page.next_cursor.id,a);
+  assert.equal((await directory(ma,null,page.next_cursor,1)).code,"INVALID_INPUT");
+  assert.equal((await directory(owner,null,page.next_cursor,1,"Team")).code,"INVALID_INPUT");
+  assert.equal((await mutate(payload("update",{team_id:b,name:"Team B revised",status:"active",manager_user_id:mb,expected_team_revision:await revision(b)}))).ok,true);
+  assert.equal((await directory(owner,null,page.next_cursor,1)).code,"CONFLICT");
+ });
+ for(const [name,change,expectedCode]of[
+  ["owner role",`update public.platform_admins set status='disabled'where user_id='${owner}'`,"FORBIDDEN"],
+  ["destination manager role",`update public.platform_admins set status='disabled'where user_id='${mb}'`,"INVALID_MEMBER"],
+  ["source team revision",`update public.platform_teams set revision=revision+1 where id='${a}'`,"CONFLICT"],
+  ["destination team revision",`update public.platform_teams set revision=revision+1 where id='${b}'`,"CONFLICT"],
+  ["source membership revision",`update public.platform_team_members set revision=revision+1 where team_id='${a}'and user_id='${ea}'`,"CONFLICT"],
+  ["absent destination membership",`insert into public.platform_team_members(team_id,user_id,status)values('${b}','${ea}','disabled')`,"CONFLICT"]
+ ])test("pending transfer preview rechecks "+name+" before returning protected projections",async()=>{
+  const request=await transferInput();const audits=await sql("select count(*)from public.admin_audit_logs"),operations=await sql("select count(*)from private.platform_team_operations");
+  await sql(`alter function private.platform_team_transfer_preview(jsonb)rename to test_transfer_preview_base;create function private.platform_team_transfer_preview(p_input jsonb)returns jsonb language plpgsql stable security definer set search_path=''as $$declare result jsonb;begin result:=private.test_transfer_preview_base(p_input);perform pg_advisory_xact_lock(864210113);return result;end;$$;`);
+  const lock=session("begin;select pg_advisory_xact_lock(864210113);select 'LOCKED';",{keepOpen:true});while(!lock.output().includes("LOCKED"))await new Promise(r=>setTimeout(r,20));
+  try{const pending=read(owner,"platform_team_preview_transfer",`${lit(JSON.stringify(request))}::jsonb`);await waitBlocked("platform_team_preview_transfer");await sql(change);lock.child.stdin.end("commit;\n");await lock.done;const result=await pending;assert.equal(result.code,expectedCode);assert.equal("source_team"in result,false);assert.equal(await sql("select count(*)from public.admin_audit_logs"),audits);assert.equal(await sql("select count(*)from private.platform_team_operations"),operations);}
+  finally{if(!lock.child.stdin.destroyed)lock.child.stdin.end("commit;\n");await lock.done;await sql("drop function private.platform_team_transfer_preview(jsonb);alter function private.test_transfer_preview_base(jsonb)rename to platform_team_transfer_preview");}
+ });
+ test("installer rejects exact production dependency body drift before changing existing team state",async()=>{
+  const before=await sql("select jsonb_agg(to_jsonb(t)order by id)from public.platform_teams t");
+  const canonical=await import("node:fs").then(fs=>fs.readFileSync("supabase/migrations/20261007230212_vel_platform_owner_identity.sql","utf8"));
+  const start=canonical.indexOf("create or replace function public.is_platform_owner("),end=canonical.indexOf("$$;",start)+3;
+  await sql(canonical.slice(start,end));
+  try{await assert.rejects(()=>file("supabase/upgrade-packages/platform-teams/10-teams.review.sql"),/TEAM_DEPENDENCY_BODY_MISMATCH/);assert.equal(await sql("select jsonb_agg(to_jsonb(t)order by id)from public.platform_teams t"),before);}
+  finally{await sql("set velora.fixture_dependencies='synthetic-local';"+await import("node:fs").then(fs=>fs.readFileSync("scripts/platform-teams/production-dependencies.review.sql","utf8")));}
+ });
+ test("transfer preview remains valid in a read-only transaction and creates no audit or replay outcome",async()=>{
+  const request=await transferInput();const before=await sql("select jsonb_build_array((select count(*)from public.admin_audit_logs),(select count(*)from private.platform_team_operations))");
+  const result=parse(await sql(`begin read only;${auth(owner)}select public.platform_team_preview_transfer(${lit(JSON.stringify(request))}::jsonb);commit;`));assert.equal(result.ok,true);
+  assert.equal(await sql("select jsonb_build_array((select count(*)from public.admin_audit_logs),(select count(*)from private.platform_team_operations))"),before);
  });
 }

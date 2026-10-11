@@ -9,7 +9,7 @@ describe("internal team runtime contracts",()=>{
  it.each([null,[],{},"text",{...create,expectedUserId:id(7),expectedTeamRevision:-1},{...create,operationId:"bad"},{...create,reason:" "},{...create,name:"x"},{...create,name:"x".repeat(121)},{...create,expectedTeamRevision:1.5},{...create,expectedTeamRevision:"0"}])("rejects malformed request %j",async input=>{expect((await contracts()).parseTeamMutation(input)).toBeNull();});
  it("requires both team/member revision pairs and distinct teams for a transfer",async()=>{const {parseTeamMutation}=await contracts();expect(parseTeamMutation(transfer)).not.toBeNull();expect(parseTeamMutation({...transfer,destinationTeamId:transfer.sourceTeamId})).toBeNull();expect(parseTeamMutation({...transfer,expectedDestinationMemberRevision:undefined})).toBeNull();});
  it("accepts known empty self state but rejects malformed or cross-user membership",async()=>{const {decodeTeamSelf}=await contracts();expect(decodeTeamSelf({ok:true,memberships:[]},id(1))).toEqual({ok:true,data:{memberships:[]}});expect(decodeTeamSelf({ok:true},id(1))).toMatchObject({ok:false,code:"UNAVAILABLE"});expect(decodeTeamSelf({ok:true,membership:{user_id:id(7)},team:null,manager:null},id(1))).toMatchObject({ok:false,code:"UNAVAILABLE"});});
- it("does not fabricate directory rows/counts/cursors from an incomplete response",async()=>{const {decodeTeamDirectory}=await contracts();const input={teamId:null,cursor:null,pageSize:25};expect(decodeTeamDirectory({ok:true,kind:"teams",rows:[],total:0,next_cursor:null,team:null},input)).toMatchObject({ok:true,data:{total:0,rows:[]}});for(const bad of[{ok:true},{ok:true,kind:"teams",rows:[],total:-1,next_cursor:null,team:null},{ok:true,kind:"teams",rows:[{}],total:1,next_cursor:null,team:null}])expect(decodeTeamDirectory(bad,input)).toMatchObject({ok:false,code:"UNAVAILABLE"});});
+ it("does not fabricate directory rows/counts/cursors from an incomplete response",async()=>{const {decodeTeamDirectory}=await contracts();const input={expectedUserId:id(1),teamId:null,cursor:null,pageSize:25,search:""};expect(decodeTeamDirectory({ok:true,kind:"teams",rows:[],total:0,next_cursor:null,team:null},input)).toMatchObject({ok:true,data:{total:0,rows:[]}});for(const bad of[{ok:true},{ok:true,kind:"teams",rows:[],total:-1,next_cursor:null,team:null},{ok:true,kind:"teams",rows:[{}],total:1,next_cursor:null,team:null}])expect(decodeTeamDirectory(bad,input)).toMatchObject({ok:false,code:"UNAVAILABLE"});});
  it("requires confirmed operation/revision identity; failure codes remain distinct",async()=>{const {decodeTeamMutation,parseTeamMutation}=await contracts();const request=parseTeamMutation(create)!;expect(decodeTeamMutation({ok:false,code:"CONFLICT"},request.payload)).toEqual({ok:false,code:"CONFLICT"});expect(decodeTeamMutation({ok:false,code:"forged"},request.payload)).toEqual({ok:false,code:"UNAVAILABLE"});expect(decodeTeamMutation({ok:true,op:"create",operation_id:id(999),team_id:id(101),revision:1},request.payload)).toEqual({ok:false,code:"UNAVAILABLE"});});
  it("decodes employee/manager summaries and rejects a stale manager edge",async()=>{
   const {decodeTeamSelf}=await contracts();const team={id:id(101),name:"Team A",status:"active",revision:2,manager_user_id:id(2)};
@@ -19,11 +19,11 @@ describe("internal team runtime contracts",()=>{
   expect(decodeTeamSelf({ok:true,memberships:[{...employee,membership:{...employee.membership,user_id:id(2),role:"manager"},manager:null}]},id(2))).toMatchObject({ok:true,data:{memberships:[{manager:null}]}});
  });
  it("accepts a scoped roster page and rejects cross-team rows, order and forged continuation",async()=>{
-  const {decodeTeamDirectory}=await contracts();const request={teamId:id(101),cursor:null,pageSize:1};
-  const response={ok:true,kind:"members",team:{id:id(101),name:"Team A",status:"active",revision:2,manager_user_id:id(2)},rows:[{team_id:id(101),user_id:id(2),status:"active",revision:1,specialty:"",role:"manager",full_name:"Manager A"}],total:2,next_cursor:{id:id(2),revision:1}};
+  const {decodeTeamDirectory}=await contracts();const request={expectedUserId:id(1),teamId:id(101),cursor:null,pageSize:1,search:""};
+  const response={ok:true,kind:"members",team:{id:id(101),name:"Team A",status:"active",revision:2,manager_user_id:id(2)},rows:[{team_id:id(101),user_id:id(2),status:"active",revision:1,specialty:"",role:"manager",full_name:"Manager A"}],total:2,next_cursor:{id:id(2),revision:1,actor_user_id:id(1),team_id:id(101),search:"",scope_revision:"a".repeat(32)}};
   expect(decodeTeamDirectory(response,request)).toMatchObject({ok:true,data:{total:2,nextCursor:{id:id(2)}}});
   for(const bad of [{...response,rows:[{...response.rows[0],team_id:id(102)}]},{...response,next_cursor:{id:id(7),revision:1}}])expect(decodeTeamDirectory(bad,request)).toEqual({ok:false,code:"UNAVAILABLE"});
-  expect(decodeTeamDirectory(response,{...request,cursor:{id:id(2),revision:1}})).toEqual({ok:false,code:"UNAVAILABLE"});
+  expect(decodeTeamDirectory(response,{...request,cursor:{id:id(2),revision:1,actorUserId:id(1),teamId:id(101),search:"",scopeRevision:"a".repeat(32)}})).toEqual({ok:false,code:"UNAVAILABLE"});
  });
  it("decodes preview and confirmed transfer projections; rejects wrong revision or destination",async()=>{
   const {parseTeamMutation,decodeTransferPreview,decodeTeamMutation}=await contracts();const request=parseTeamMutation(transfer)!.payload;
@@ -44,5 +44,19 @@ describe("internal team runtime contracts",()=>{
  it("normalizes optional specialty and bounded directory search without accepting authority fields",async()=>{
   const {parseTeamMutation,parseTeamDirectory}=await contracts();expect(parseTeamMutation({...base,op:"set_member",teamId:id(101),userId:id(4),status:"active",expectedTeamRevision:2,expectedMemberRevision:1,specialty:" Finance "})).toMatchObject({payload:{specialty:"Finance"}});
   expect(parseTeamDirectory({expectedUserId:id(1),search:" Team A "})).toMatchObject({search:"Team A"});
+ });
+ it("rejects an unbound legacy cursor and preserves originating account/team/search context",async()=>{
+  const {parseTeamDirectory}=await contracts();const request={expectedUserId:id(1),teamId:id(101),pageSize:1,search:" Finance ",cursor:{id:id(4),revision:1}};
+  expect(parseTeamDirectory(request)).toBeNull();
+  const bound={...request,cursor:{...request.cursor,actorUserId:id(1),teamId:id(101),search:"Finance",scopeRevision:"a".repeat(32)}};
+  expect(parseTeamDirectory(bound)).not.toBeNull();
+  for(const change of[{expectedUserId:id(2)},{teamId:id(102)},{search:"Sales"}])expect(parseTeamDirectory({...bound,...change})).toBeNull();
+ });
+ it("decodes originating cursor context and rejects mismatched account/team/search responses",async()=>{
+  const {decodeTeamDirectory}=await contracts();const request={expectedUserId:id(1),teamId:id(101),cursor:null,pageSize:1,search:""};
+  const next_cursor={id:id(2),revision:1,actor_user_id:id(1),team_id:id(101),search:"",scope_revision:"a".repeat(32)};
+  const response={ok:true,kind:"members",team:{id:id(101),name:"Team A",status:"active",revision:2,manager_user_id:id(2)},rows:[{team_id:id(101),user_id:id(2),status:"active",revision:1,specialty:"",role:"manager",full_name:"Manager A"}],total:2,next_cursor};
+  expect(decodeTeamDirectory(response,request)).toMatchObject({ok:true,data:{nextCursor:{actorUserId:id(1),teamId:id(101),search:"",scopeRevision:"a".repeat(32)}}});
+  for(const change of[{actor_user_id:id(7)},{team_id:id(102)},{search:"Sales"},{scope_revision:"invalid"}])expect(decodeTeamDirectory({...response,next_cursor:{...next_cursor,...change}},request)).toEqual({ok:false,code:"UNAVAILABLE"});
  });
 });

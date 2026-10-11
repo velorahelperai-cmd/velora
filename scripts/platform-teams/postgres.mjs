@@ -27,9 +27,6 @@ export async function bootstrap(){
  await verify();const found=await session(`select 1 from pg_database where datname=${lit(database)}`,{db:"postgres"}).done;
  if(found!=="1")await session(`create database ${database}`,{db:"postgres"}).done;
  await file("scripts/platform-teams/bootstrap.sql");
- // Reuse the exact checked-in existing audit writer and owner definition.
- for(const [path,name] of [["supabase/migrations/20261004090000_vel005d_platform_admin.sql","private.write_admin_audit"],["supabase/migrations/20261007230212_vel_platform_owner_identity.sql","public.is_platform_owner"],["supabase/migrations/20261008010000_vel_session_idle_policy.sql","public.app_session_is_valid"]]){
-  const source=readFileSync(path,"utf8");const start=source.indexOf(`create or replace function ${name}(`);const end=source.indexOf("$$;",start)+3;
-  if(start<0||end<3)throw Error("DEPENDENCY_SOURCE_NOT_FOUND");await sql(source.slice(start,end));
- }
+ // Verified isolated target only; exact current production dependency bodies, with provenance.
+ await sql("set velora.fixture_dependencies='synthetic-local';"+readFileSync("scripts/platform-teams/production-dependencies.review.sql","utf8"));
 }
