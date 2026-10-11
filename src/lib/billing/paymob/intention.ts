@@ -1,6 +1,6 @@
 /**
  * Create Intention client (Oman API host) with mockable HTTP.
- * OMR conversion defaults to NOT_CONFIGURED; trusted Test configuration must verify it.
+ * OMR conversion defaults to NOT_CONFIGURED; trusted server configuration must verify it.
  * Non-positive amounts refused before any HTTP. Malformed responses → invalid_response (no throw).
  * Timeout / opaque failure after send → unknown (reconcile; no new collection).
  */
@@ -20,6 +20,9 @@ export type LockedIntentionOrder = {
   specialReference: string;
   currency: "OMR";
   providerAmount: number | null;
+  /** Persisted server price and immutable plan version; required for Live. */
+  amountBaisa?: number;
+  planVersionId?: string;
   providerAmountUnit: "paymob_amount" | "unconfigured" | null;
   providerAccountRef: string;
   providerEnvironment: "test" | "live";
@@ -46,6 +49,8 @@ export type IntentionCreateFailure = {
     | "config_invalid"
     | "conversion_not_configured"
     | "provider_amount_invalid"
+    | "provider_amount_mismatch"
+    | "locked_order_invalid"
     | "provider_amount_missing"
     | "provider_amount_unit_invalid"
     | "currency_mismatch"
@@ -260,7 +265,7 @@ export async function createPaymobIntention(input: {
     return { ok: false, code: "config_invalid", detail: msg };
   }
 
-  if (input.locked.providerEnvironment !== "test" || input.config.environment !== "test") {
+  if (input.locked.providerEnvironment !== input.config.environment) {
     return { ok: false, code: "environment_mismatch" };
   }
 
@@ -290,6 +295,19 @@ export async function createPaymobIntention(input: {
   const amountCheck = assertPositiveProviderAmount(input.locked.providerAmount);
   if (!amountCheck.ok) {
     return { ok: false, code: amountCheck.code };
+  }
+
+  if (input.config.environment === "live") {
+    const baisa = input.locked.amountBaisa;
+    const version = input.locked.planVersionId;
+    if (typeof baisa !== "number" || !Number.isSafeInteger(baisa) || baisa <= 0 ||
+        typeof version !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(version)) {
+      return { ok: false, code: "locked_order_invalid" };
+    }
+    const scaled = BigInt(baisa) * BigInt(conversion.unitsPerOmr);
+    if (scaled % BigInt(1000) !== BigInt(0) || scaled / BigInt(1000) !== BigInt(amountCheck.amount)) {
+      return { ok: false, code: "provider_amount_mismatch" };
+    }
   }
 
   const body = {

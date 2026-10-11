@@ -51,6 +51,7 @@ export const PAYMOB_SETTING_NAMES = {
   /** Documented merchant owner id for matching signed callback `owner`. */
   merchantOwnerId: "PAYMOB_MERCHANT_OWNER_ID",
   liveEnabled: "PAYMOB_LIVE_ENABLED",
+  liveConfigurationVerified: "PAYMOB_LIVE_CONFIGURATION_VERIFIED",
   apiBaseUrl: "PAYMOB_API_BASE_URL",
   checkoutBaseUrl: "PAYMOB_CHECKOUT_BASE_URL",
 } as const;
@@ -62,6 +63,8 @@ export type PaymobAdapterConfig = {
   /** Server-approved provider units per OMR; never supplied by a browser. */
   verifiedOmrUnitsPerOmr?: number;
   liveEnabled: boolean;
+  /** Trusted operator verified the Live merchant, integration and OMR contract. */
+  liveConfigurationVerified?: boolean;
   apiBaseUrl: string;
   checkoutBaseUrl: string;
   secretKey: string;
@@ -139,8 +142,12 @@ export function assertPaymobConfigForCalls(config: PaymobAdapterConfig): void {
   if (!checkout.ok) {
     throw new Error(checkout.reason);
   }
-  if (config.environment === "live" || config.liveEnabled) {
-    throw new Error("paymob_live_locked: live environment disabled in this package");
+  if (config.environment !== "test" && config.environment !== "live") {
+    throw new Error("paymob_environment_invalid");
+  }
+  if ((config.environment === "live" && config.liveEnabled !== true) ||
+      (config.environment === "test" && config.liveEnabled)) {
+    throw new Error("paymob_live_locked: explicit server opt-in required");
   }
   if (config.currency !== "OMR") {
     throw new Error("paymob_currency_must_be_OMR");
@@ -148,12 +155,31 @@ export function assertPaymobConfigForCalls(config: PaymobAdapterConfig): void {
   if (!Number.isSafeInteger(config.integrationId) || config.integrationId <= 0) {
     throw new Error("paymob_integration_id_invalid");
   }
-  // Keys may carry a country prefix (e.g. om_sk_test_), but must be Test keys.
-  if (!/^(?:[a-z]{2,3}_)?sk_test_[A-Za-z0-9_-]+$/.test(config.secretKey)) {
-    throw new Error("paymob_test_secret_key_required");
+  const mode = config.environment;
+  const secretPattern = new RegExp("^(?:[a-z]{2,3}_)?sk_" + mode + "_[A-Za-z0-9_-]+$");
+  const publicPattern = new RegExp("^(?:[a-z]{2,3}_)?pk_" + mode + "_[A-Za-z0-9_-]+$");
+  if (!secretPattern.test(config.secretKey)) {
+    throw new Error("paymob_" + mode + "_secret_key_required");
   }
-  if (!/^(?:[a-z]{2,3}_)?pk_test_[A-Za-z0-9_-]+$/.test(config.publicKey)) {
-    throw new Error("paymob_test_public_key_required");
+  if (!publicPattern.test(config.publicKey)) {
+    throw new Error("paymob_" + mode + "_public_key_required");
+  }
+  if (mode === "live") {
+    if (config.liveConfigurationVerified !== true) {
+      throw new Error("paymob_live_configuration_unverified");
+    }
+    if (!config.merchantOwnerId || !/^[1-9][0-9]*$/.test(config.merchantOwnerId) ||
+        !Number.isSafeInteger(Number(config.merchantOwnerId))) {
+      throw new Error("paymob_live_merchant_owner_required");
+    }
+    if (!config.hmacSecret || config.hmacSecret.trim() === "") {
+      throw new Error("paymob_live_hmac_secret_required");
+    }
+    // Live must carry its own verified factor; ambient Test settings cannot supply it.
+    const factor = config.verifiedOmrUnitsPerOmr;
+    if (typeof factor !== "number" || !Number.isSafeInteger(factor) || factor <= 0 || factor > 1_000_000) {
+      throw new Error("paymob_omr_factor_unconfirmed");
+    }
   }
 }
 

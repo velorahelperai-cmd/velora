@@ -100,9 +100,6 @@ async function fetchAuthToken(
   if (!config.apiKeyShared || config.apiKeyShared.trim() === "") {
     return { ok: false, result: fail("auth_failed", "api_key_missing") };
   }
-  if (config.environment !== "test" || config.liveEnabled) {
-    return { ok: false, result: fail("api_key_not_environment_isolator") };
-  }
 
   const url = `${config.apiBaseUrl.replace(/\/$/, "")}${PAYMOB_AUTH_TOKEN_PATH}`;
   const result = await requestOnce(http, {
@@ -317,7 +314,9 @@ export async function reconcilePaymobTransaction(input: {
   if (!parsed.ok) return parsed;
   const transaction = parsed.transaction;
   // The API key is shared by test/live: response identity and environment must agree.
-  if (transaction.isLive !== false) return fail("invalid_response", "test_environment_not_proven");
+  if (transaction.isLive !== (input.config.environment === "live")) {
+    return fail("invalid_response", input.config.environment + "_environment_not_proven");
+  }
   if (transaction.integrationId !== input.config.integrationId) return fail("invalid_response", "integration_mismatch");
   if (!input.config.merchantOwnerId || transaction.ownerId !== input.config.merchantOwnerId.trim()) {
     return fail("invalid_response", "owner_mismatch_or_unconfigured");
