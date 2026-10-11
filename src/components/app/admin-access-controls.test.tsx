@@ -1,5 +1,6 @@
 import {beforeEach,describe,expect,it,vi} from "vitest";
 import type {ReactNode} from "react";
+import {appCopy} from "@/lib/app-copy";
 type Slot={value?:unknown;deps?:unknown[];cleanup?:()=>void};
 type Driver={slots:Slot[];cursor:number;effects:Array<()=>void>;mounted:boolean;lateWrites:number};
 const mocked=vi.hoisted(()=>({driver:null as Driver|null,search:vi.fn(),read:vi.fn(),grants:vi.fn(),role:vi.fn()}));
@@ -16,7 +17,7 @@ vi.mock("react",async()=>{
 });
 vi.mock("@/lib/tenancy/actions",()=>({adminSearchAccounts:mocked.search}));
 vi.mock("@/lib/access/actions",()=>({accessGetUserSnapshot:mocked.read,accessSetMemberGrants:mocked.grants,accessSetPlatformRole:mocked.role}));
-const copy={admin:{accountSearchAction:"Search",accessGrantDelegated:"Delegate",accessSaveGrants:"Save grants",accessConfirmSave:"Confirm save",accessSearchFailed:"Search failed",accessLoadFailed:"Load failed",accessSaveFailed:"Save failed",accessSaved:"Saved",accessConfirmGrants:"Confirm {email} {n} {scope}",accessConfirmDelegated:"Delegate {email}"}};
+const copy={admin:{accessNoStaffMemberships:"No staff company memberships are available for this account within your access scope. This list shows existing staff memberships, not all platform companies.",accountSearchAction:"Search",accessGrantDelegated:"Delegate",accessSaveGrants:"Save grants",accessConfirmSave:"Confirm save",accessSearchFailed:"Search failed",accessLoadFailed:"Load failed",accessSaveFailed:"Save failed",accessSaved:"Saved",accessConfirmGrants:"Confirm {email} {n} {scope}",accessConfirmDelegated:"Delegate {email}"}};
 vi.mock("./ui",()=>({Button:"button",Notice:"aside",useAppCopy:()=>copy}));
 vi.mock("next/link",()=>({default:"a"}));
 import {AdminAccessPage} from "./admin-access";
@@ -112,4 +113,28 @@ describe("AdminAccessPage request ownership (independent cloud reproduction)",()
   });
  }
 
+});
+
+describe("staff membership selector empty state",()=>{
+ for(const locale of ["en","ar"] as const){
+  it.each(["none","owner"])(locale+": explains a successful snapshot with %s staff memberships",async kind=>{
+   const message=locale==="ar"?"لا توجد عضويات موظف متاحة لهذا الحساب ضمن نطاق صلاحياتك. تعرض هذه القائمة عضويات الموظف الحالية، وليس جميع شركات المنصة.":"No staff company memberships are available for this account within your access scope. This list shows existing staff memberships, not all platform companies.";
+   copy.admin.accessNoStaffMemberships=message;
+   const data=account();data.memberships=kind==="none"?[]:data.memberships.map(m=>({...m,role:"owner"}));
+   mocked.read.mockResolvedValueOnce({ok:true,data});const h=await loaded();
+   expect(view(h)).toContain(message);expect(button(h,"Save grants")).toBeUndefined();
+   expect(mocked.grants).not.toHaveBeenCalled();expect(mocked.role).not.toHaveBeenCalled();
+  });
+ }
+ it.each(["setup","active","suspended"])("retains existing staff options for a %s company",async companyStatus=>{
+  const data=account();const memberships=data.memberships.map(m=>({...m,companyStatus}));mocked.read.mockResolvedValueOnce({ok:true,data:{...data,memberships}});const h=await loaded();
+  expect(nodes(h.tree()).some(n=>n.props.value==="company-a")).toBe(true);expect(view(h)).not.toContain(copy.admin.accessNoStaffMemberships);
+ });
+ it("does not label an unavailable snapshot as empty memberships",async()=>{
+  mocked.read.mockResolvedValueOnce({ok:false});const h=await loaded();expect(view(h)).toContain("Load failed");expect(view(h)).not.toContain(copy.admin.accessNoStaffMemberships);
+ });
+ it("ships distinct Arabic and English empty-state copy",()=>{
+  const en=appCopy("en").admin as unknown as Record<string,string>,ar=appCopy("ar").admin as unknown as Record<string,string>;
+  expect(en.accessNoStaffMemberships).toContain("existing staff memberships");expect(ar.accessNoStaffMemberships).toContain("عضويات الموظف الحالية");
+ });
 });

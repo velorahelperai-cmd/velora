@@ -315,6 +315,9 @@ export function AdminAccessPage() {
               ))}
             </select>
           </label>
+          {staffMemberships.length === 0 ? (
+            <p role="status" className="text-sm text-[#615244]">{copy.admin.accessNoStaffMemberships}</p>
+          ) : null}
 
           {selectedCompanyId ? (
             <>
