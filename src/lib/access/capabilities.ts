@@ -11,7 +11,8 @@ export const PLATFORM_CAPABILITIES = [
   "platform.view_audit",
 ] as const;
 
-export const COMPANY_CAPABILITIES = [
+/** Existing defaults are preserved; adding a channel never silently grants it. */
+export const DEFAULT_COMPANY_CAPABILITIES = [
   "wa.conversations.read",
   "wa.conversations.reply",
   "wa.conversations.take_over",
@@ -25,6 +26,9 @@ export const COMPANY_CAPABILITIES = [
   "company.profile.write",
   "company.staff.manage",
 ] as const;
+
+export const INSTAGRAM_CAPABILITIES = ["ig.conversations.read", "ig.conversations.assign", "ig.conversations.reply"] as const;
+export const COMPANY_CAPABILITIES = [...DEFAULT_COMPANY_CAPABILITIES, ...INSTAGRAM_CAPABILITIES] as const;
 
 export type PlatformCapability = (typeof PLATFORM_CAPABILITIES)[number];
 export type CompanyCapability = (typeof COMPANY_CAPABILITIES)[number];

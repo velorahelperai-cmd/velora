@@ -10,6 +10,7 @@ import {
 } from "@/lib/access/actions";
 import {
   COMPANY_CAPABILITIES,
+  DEFAULT_COMPANY_CAPABILITIES,
   type CompanyCapability,
   type ConversationScope,
 } from "@/lib/access/capabilities";
@@ -114,7 +115,7 @@ export function AdminAccessPage() {
       const companyId = firstStaff?.companyId ?? "";
       setSelectedCompanyId(companyId);
       const grant = result.data.grants.find((g) => g.companyId === companyId);
-      setCaps(grant?.capabilities ?? [...COMPANY_CAPABILITIES]);
+      setCaps(grant?.capabilities ?? [...DEFAULT_COMPANY_CAPABILITIES]);
       setScope(grant?.conversationScope ?? "all_company");
     } catch {
       if (isCurrent(request)) { setError(copy.admin.accessLoadFailed); setSnapshot(null); }
@@ -301,7 +302,7 @@ export function AdminAccessPage() {
                 const id = e.target.value;
                 setSelectedCompanyId(id);
                 const grant = snapshot.grants.find((g) => g.companyId === id);
-                setCaps(grant?.capabilities ?? [...COMPANY_CAPABILITIES]);
+                setCaps(grant?.capabilities ?? [...DEFAULT_COMPANY_CAPABILITIES]);
                 setScope(grant?.conversationScope ?? "all_company");
                 setConfirm(null);
               }}

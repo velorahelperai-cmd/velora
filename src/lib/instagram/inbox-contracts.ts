@@ -1,0 +1,15 @@
+import type {ConversationScope} from '@/lib/access/capabilities';
+export type InstagramInboxFailureCode='FORBIDDEN'|'NOT_FOUND'|'SCOPE_CHANGED'|'INVALID_INPUT'|'CONFLICT'|'UNAVAILABLE';
+export type InstagramInboxResult<T>={ok:true;data:T}|{ok:false;code:InstagramInboxFailureCode};
+export type InstagramPageInput=Readonly<{companyId:string;limit?:number;cursor?:string|null}>;
+export type InstagramThreadInput=InstagramPageInput&Readonly<{conversationId:string}>;
+export type InstagramReadInput=Readonly<{companyId:string;conversationId:string;readReceipt:string}>;
+export type InstagramAssignInput=Readonly<{companyId:string;conversationId:string;assignedTo:string|null;expectedRevision:number}>;
+export type InstagramMessage=Readonly<{id:string;arrivalSequence:string;direction:'inbound'|'outbound';content:{kind:'text';text:string}|{kind:'non_text'};receivedAt:string;readObservedAt:string|null}>;
+export type InstagramConversation=Readonly<{id:string;inboxSequence:string;accountId:string;counterpartyId:string;assignedTo:string|null;revision:number;unreadCount:number;lastReceivedAt:string|null;latestMessage:InstagramMessage|null}>;
+export type InstagramInboxBinding=Readonly<{companyId:string;actorId:string;conversationScope:ConversationScope}>;
+export type InstagramPage=Readonly<{hasMore:boolean;nextCursor:string|null}>;
+export type InstagramInboxPage=InstagramInboxBinding&InstagramPage&Readonly<{conversations:InstagramConversation[];total:number;unreadTotal:number}>;
+export type InstagramThreadPage=InstagramInboxBinding&InstagramPage&Readonly<{conversationId:string;conversation:InstagramConversation;messages:InstagramMessage[];readReceipt:string|null;unreadCount:number}>;
+export type InstagramReadResult=InstagramInboxBinding&Readonly<{conversationId:string;lastReadSequence:string;unreadCount:number}>;
+export type InstagramAssignment=InstagramInboxBinding&Readonly<{conversationId:string;assignedTo:string|null;revision:number}>;

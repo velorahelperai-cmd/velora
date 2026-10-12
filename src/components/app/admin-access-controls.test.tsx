@@ -138,3 +138,26 @@ describe("staff membership selector empty state",()=>{
   expect(en.accessNoStaffMemberships).toContain("existing staff memberships");expect(ar.accessNoStaffMemberships).toContain("عضويات الموظف الحالية");
  });
 });
+
+describe('Instagram capability defaults',()=>{
+ it('shows IG capabilities unchecked for a staff membership without an existing grant',async()=>{
+  const data=account();data.grants=[];mocked.read.mockResolvedValueOnce({ok:true,data});const h=await loaded();
+  const checkboxes=nodes(h.tree()).filter(n=>n.props.type==='checkbox');
+  const labels=nodes(h.tree()).filter(n=>text(n.props.children).trim()==='ig.conversations.read'||text(n.props.children).trim()==='ig.conversations.assign');
+  expect(checkboxes.length).toBeGreaterThan(12);expect(labels.length).toBeGreaterThan(0);
+  for(const label of labels){const input=nodes(label).find(n=>n.props.type==='checkbox');if(input)expect(input.props.checked).toBe(false);}
+  expect(nodes(h.tree()).filter(n=>text(n.props.children).trim()==='wa.conversations.read').some(n=>nodes(n).some(x=>x.props.type==='checkbox'&&x.props.checked===true))).toBe(true);
+ });
+ it('preserves explicitly granted IG capabilities rather than inheriting WA rights',async()=>{
+  const data=account();data.grants[0].capabilities=['ig.conversations.read'];mocked.read.mockResolvedValueOnce({ok:true,data});const h=await loaded();
+  const checked=nodes(h.tree()).filter(n=>n.props.type==='checkbox'&&n.props.checked===true);expect(checked).toHaveLength(1);
+  expect(nodes(h.tree()).some(n=>text(n.props.children).trim()==='ig.conversations.read'&&nodes(n).some(x=>x.props.type==='checkbox'&&x.props.checked===true))).toBe(true);
+ });
+});
+
+ it('leaves IG unchecked when switching from an explicitly granted company to one with no grant',async()=>{
+  const data=account();data.grants[0].capabilities=['ig.conversations.read'];data.memberships.push({...data.memberships[0],companyId:'company-new'});mocked.read.mockResolvedValueOnce({ok:true,data});const h=await loaded();
+  const select=nodes(h.tree()).find(n=>n.props.value==='company-a'&&typeof n.props.onChange==='function')!;(select.props.onChange as (e:unknown)=>void)({target:{value:'company-new'}});h.render();
+  for(const cap of ['ig.conversations.read','ig.conversations.assign'])expect(nodes(h.tree()).some(n=>text(n.props.children).trim()===cap&&nodes(n).some(x=>x.props.type==='checkbox'&&x.props.checked===true))).toBe(false);
+  expect(nodes(h.tree()).filter(n=>n.props.type==='checkbox'&&n.props.checked===true)).toHaveLength(12);
+ });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   COMPANY_CAPABILITIES,
+  DEFAULT_COMPANY_CAPABILITIES,
   PLATFORM_CAPABILITIES,
   accessMigrationCompatEnabled,
   controlActionCapability,
@@ -181,4 +182,13 @@ describe("grant source evaluation (FIX bypass matrix)", () => {
       }).hasCap,
     ).toBe(false);
   });
+});
+
+it('registers enforced IG read/assignment/reply separately and leaves new IG defaults unchecked',()=>{
+ expect(COMPANY_CAPABILITIES).toContain('ig.conversations.read');
+ expect(COMPANY_CAPABILITIES).toContain('ig.conversations.assign');
+ expect(COMPANY_CAPABILITIES).toContain('ig.conversations.reply');
+ expect(DEFAULT_COMPANY_CAPABILITIES).toHaveLength(12);
+ expect(DEFAULT_COMPANY_CAPABILITIES).not.toContain('ig.conversations.reply');
+ expect(COMPANY_CAPABILITIES).not.toContain('ig.connection.manage');
 });

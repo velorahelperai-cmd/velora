@@ -19,3 +19,7 @@ The user's goal is to make Velora ready for real business use as soon as possibl
 ## Paid verification
 
 Do not run additional paid AI verification calls without a new explicit user request. Offline unit tests and read-only checks do not authorize provider execution. The real owner console remains available for the user's own deliberate trials within the approved lifetime cap.
+
+## Concise delivery and token economy
+
+Provide short summaries only. Do not create unsolicited written reports, status documents, or duplicate handoffs. Create an artifact only when explicitly requested or necessary for a concrete approval, release gate, or safe recovery, and keep it minimal. Minimize token use, tool calls, repeated reads, and repeated tests. Perform only work needed for the current objective; defer optional polish and unrelated tasks. Preserve necessary authorization, persistence, security, and deployment checks.

@@ -1,5 +1,6 @@
 import { createHmac } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+vi.mock("server-only",()=>({}));
 
 const state = vi.hoisted(() => ({
   mode: "tenant_registry" as "tenant_registry" | "single_tenant",

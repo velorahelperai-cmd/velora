@@ -5,12 +5,17 @@ import {getEmbeddedSignupSetup,startEmbeddedSignup,completeEmbeddedSignup,cancel
 import {joinSignupSignals,parseSignupMessage,signupLoginOptions,type SignupSignals} from "@/lib/whatsapp/embedded-signup-browser";
 import {useDemo} from "@/lib/demo-state";
 import {Button,Field,Notice} from "./ui";
+import {WhatsappCoexistenceSignup} from "./whatsapp-coexistence-signup";
 type ClientConfig={appId:string;configId:string;graphVersion:string};
 type BrowserAttempt={attemptId:string;nonce:string;expiresAt:string;config:ClientConfig};
 type FacebookSDK={init:(options:{appId:string;version:string;xfbml:boolean;autoLogAppEvents:boolean})=>void;login:(callback:(response:{authResponse?:{code?:string}})=>void,options:ReturnType<typeof signupLoginOptions>)=>void};
 declare global{interface Window{FB?:FacebookSDK}}
 
-export function WhatsappEmbeddedSignup({companyId,keepOnPhone=false,onConnected,onDisconnected}:{companyId:string;keepOnPhone?:boolean;onConnected?:()=>void;onDisconnected?:()=>void}){
+type SignupProps={companyId:string;keepOnPhone?:boolean;onConnected?:()=>void;onDisconnected?:()=>void};
+export function WhatsappEmbeddedSignup(props:SignupProps){
+ return props.keepOnPhone ? <WhatsappCoexistenceSignup companyId={props.companyId} onConnected={props.onConnected} onDisconnected={props.onDisconnected}/> : <IndependentEmbeddedSignup {...props}/>;
+}
+function IndependentEmbeddedSignup({companyId,keepOnPhone=false,onConnected,onDisconnected}:SignupProps){
  const {locale}=useDemo();const ar=locale==="ar";
  const [config,setConfig]=useState<ClientConfig|null>(null),[sdkReady,setSdkReady]=useState(false),[busy,setBusy]=useState(false),[prepared,setPrepared]=useState(false),[status,setStatus]=useState<string|null>(null),[pin,setPin]=useState("");
  const attempt=useRef<BrowserAttempt|null>(null),signals=useRef<SignupSignals>({}),pinRef=useRef(""),claimed=useRef(false),mounted=useRef(true);

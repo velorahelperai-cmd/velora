@@ -160,6 +160,9 @@ export function splitMetaAuthorizationRevocations(payload: unknown): Array<{ wab
       const changed = asRecord(change);
       if (changed?.field !== "account_update") continue;
       const value = asRecord(changed.value);
+      // Business App removal is scoped to its documented phone_number and is
+      // persisted by the coexistence handler, even when optional legacy data exists.
+      if (value && Object.prototype.hasOwnProperty.call(value, "phone_number")) continue;
       if (value?.event === "PARTNER_REMOVED" && identifier(asRecord(value.waba_info)?.waba_id) === wabaId) {
         // Retain the newest signed removal time for this WABA in the batch.
         if (!seen.has(wabaId) || occurredAt > seen.get(wabaId)!) seen.set(wabaId, occurredAt);

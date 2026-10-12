@@ -1,0 +1,13 @@
+import {expect,it,vi} from "vitest";
+vi.mock("server-only",()=>({}));
+import {reconcileCoexistenceEvents,recordCoexistenceOutboundProof} from "./projection-store";
+const company="10000000-0000-4000-8000-000000000001",link="10000000-0000-4000-8000-000000000002";
+const proof={companyId:company,linkId:link,linkGeneration:1,wabaId:"222",phoneNumberId:"333",waMessageId:"wamid.test",status:"delivered",recipientWaId:"96899000001",occurredAt:"2024-03-09T16:00:00.000Z"};
+const client=(data:unknown,error:unknown=null)=>({rpc:vi.fn().mockResolvedValue({data,error})});
+it("never treats HTTP acceptance or mobile echo as delivery proof",async()=>{const c=client(null);expect(await recordCoexistenceOutboundProof(c,{...proof,status:"sent"})).toEqual({ok:true,verified:false});expect(c.rpc).not.toHaveBeenCalled();});
+it("requires exact company/link/generation for delivered proof",async()=>{expect(await recordCoexistenceOutboundProof(client({ok:true,verified:true,company_id:company,link_id:link,link_generation:1}),proof)).toEqual({ok:true,verified:true});expect(await recordCoexistenceOutboundProof(client({ok:true,verified:true,company_id:link,link_id:link,link_generation:1}),proof)).toEqual({ok:false,code:"UNAVAILABLE",retry:true});});
+it("keeps a real receipt with no accepted staff-send match unverified",async()=>expect(await recordCoexistenceOutboundProof(client({ok:true,verified:false}),proof)).toEqual({ok:true,verified:false}));
+it("requests redelivery when proof persistence is unavailable",async()=>expect(await recordCoexistenceOutboundProof(client(null,{message:"secret"}),proof)).toEqual({ok:false,code:"UNAVAILABLE",retry:true}));
+it("reconciles only company-bound receipts locally and exposes remaining pending work",async()=>{const c=client({ok:true,company_id:company,processed:2,recovered:1,pending:1,conflicts:0,remaining:3});expect(await reconcileCoexistenceEvents(c,company)).toEqual({ok:true,processed:2,recovered:1,pending:1,conflicts:0,remaining:3});expect(c.rpc).toHaveBeenCalledWith("whatsapp_reconcile_coexistence_events",{p_company_id:company,p_limit:50});});
+it.each([{ok:true,company_id:link,processed:0,recovered:0,pending:0,conflicts:0,remaining:0},{ok:true,company_id:company,processed:1,recovered:2,pending:0,conflicts:0,remaining:0}])("never reports success for unbound or contradictory reconciliation counts",async row=>expect(await reconcileCoexistenceEvents(client(row),company)).toEqual({ok:false,code:"UNAVAILABLE",retry:true}));
+it("does not retry local reconciliation automatically",async()=>{const c=client(null,{code:"unavailable"});expect(await reconcileCoexistenceEvents(c,company)).toEqual({ok:false,code:"UNAVAILABLE",retry:true});expect(c.rpc).toHaveBeenCalledTimes(1);});

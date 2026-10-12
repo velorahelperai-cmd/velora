@@ -153,10 +153,11 @@ export function WorkspaceShell({ title, children, actions }: { title: string; ch
   const nav = [
     { href: "/app", label: copy.app.nav.dashboard, icon: "M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z" },
     { href: "/app/conversations", label: copy.app.nav.conversations, icon: "M4 4h16v12H9l-5 4V4z M8 8h8 M8 12h5" },
+    { href: "/app/instagram", label: ar?"إنستغرام":"Instagram", icon: "M4 4h16v16H4z M8 12a4 4 0 1 0 8 0a4 4 0 1 0-8 0" },
     { href: "/app/knowledge", label: copy.app.nav.knowledge, icon: "M4 3h12l4 4v14H4V3z M15 3v5h5 M8 12h8 M8 16h6" },
     { href: "/app/test", label: copy.app.nav.test, icon: "M9 3h6 M10 3v6L4 19q-1 2 2 2h12q3 0 2-2L14 9V3 M8 14h8" },
     { href: "/app/settings", label: copy.app.nav.settings, icon: "M4 6h16 M4 12h16 M4 18h16 M8 3v6 M16 9v6 M10 15v6" },
-  ].filter(item=>profile?.role==="owner"||item.href==="/app/conversations"||item.href==="/app/settings"||item.href==="/app/knowledge"&&knowledgeAllowed);
+  ].filter(item=>profile?.role==="owner"||item.href==="/app/conversations"||item.href==="/app/instagram"||item.href==="/app/settings"||item.href==="/app/knowledge"&&knowledgeAllowed);
   const role = profile?.role ?? null;
   const roleLabel = role === "owner" ? copy.app.owner : role === "staff" ? copy.app.staff : copy.app.workspacePick;
 

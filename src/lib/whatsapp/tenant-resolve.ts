@@ -10,6 +10,8 @@ export type WhatsappTenantResolveOk = {
   providerPhoneNumberId: string;
   providerWabaId?: string;
   status: string;
+  /** Server-verified connection mode; absent only on the legacy Cloud API schema. */
+  connectionMode?: "cloud_api" | "coexistence";
 };
 
 export type WhatsappTenantResolveFail = {
@@ -17,6 +19,8 @@ export type WhatsappTenantResolveFail = {
   eligible: false;
   code: "invalid_input" | "unknown_or_inactive" | "company_suspended" | "conflict" | "unavailable";
   companyId?: string;
+  /** Receipt holding only. Never usable as an outbound or AI authorization. */
+  pendingCoexistence?: true;
 };
 
 export type OutboundBindingFailCode =
@@ -171,7 +175,8 @@ async function resolveCompany(
         };
       }
       if (code === "invalid_input") return { ok: false, eligible: false, code: "invalid_input" };
-      if (code === "unknown_or_inactive" || code === "conflict") return { ok: false, eligible: false, code };
+      if (code === "unknown_or_inactive" || code === "conflict") return { ok: false, eligible: false, code,
+        ...(code==="unknown_or_inactive"&&row.connection_mode==="coexistence_pending"?{pendingCoexistence:true as const}:{}) };
       return { ok: false, eligible: false, code: "unavailable" };
     }
 
@@ -190,6 +195,7 @@ async function resolveCompany(
     ) return { ok: false, eligible: false, code: "unavailable" };
     if (providerId !== phone) return { ok: false, eligible: false, code: "conflict" };
     if (wabaId && row.provider_waba_id !== wabaId) return { ok: false, eligible: false, code: "conflict" };
+    if (row.connection_mode !== undefined && row.connection_mode !== "cloud_api" && row.connection_mode !== "coexistence") return { ok: false, eligible: false, code: "unavailable" };
     if (row.eligible !== true || row.status !== "verified") {
       return { ok: false, eligible: false, code: "unknown_or_inactive" };
     }
@@ -203,6 +209,7 @@ async function resolveCompany(
       providerPhoneNumberId: providerId,
       ...(wabaId ? { providerWabaId: wabaId } : {}),
       status: row.status,
+      connectionMode: row.connection_mode === "coexistence" ? "coexistence" : "cloud_api",
     };
   } catch {
     return { ok: false, eligible: false, code: "unavailable" };
