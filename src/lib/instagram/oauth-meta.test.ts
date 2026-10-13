@@ -19,6 +19,10 @@ it('requires production callback origin to match configured public site',async()
  const {readInstagramOAuthConfig}=await import('./oauth-meta');
  const env={NODE_ENV:'production',INSTAGRAM_APP_ID:'1000',INSTAGRAM_APP_SECRET:'synthetic',INSTAGRAM_LOGIN_CONTRACT_ID:'test',INSTAGRAM_REDIRECT_URI:cfg.redirectUri,NEXT_PUBLIC_SITE_URL:'https://www.velorahelper.com'};
  expect(readInstagramOAuthConfig(env)).not.toBeNull();expect(readInstagramOAuthConfig({...env,NEXT_PUBLIC_SITE_URL:'https://other.invalid'})).toBeNull();expect(readInstagramOAuthConfig({...env,NEXT_PUBLIC_SITE_URL:undefined})).toBeNull();
+ const approved={...env,INSTAGRAM_APP_ID:'1130181646406297',NEXT_PUBLIC_SITE_URL:'https://velorahelper.com'};
+ expect(readInstagramOAuthConfig(approved)).not.toBeNull();
+ for(const redirect of ['https://evil.velorahelper.com/api/instagram/oauth/callback','https://www.velorahelper.com/api/instagram/oauth/callback/','https://www.velorahelper.com/api/instagram/oauth/callback?next=x','http://www.velorahelper.com/api/instagram/oauth/callback'])expect(readInstagramOAuthConfig({...approved,INSTAGRAM_REDIRECT_URI:redirect})).toBeNull();
+ expect(readInstagramOAuthConfig({...approved,INSTAGRAM_APP_ID:'1000'})).toBeNull();
 });
 
 it('unscoped company/owner/app cannot make any OAuth HTTP request',async()=>{f.scope.mockReturnValue(false);const http=transport();expect(await exchangeInstagramCode('code',binding,cfg,{fetch:http})).toEqual({ok:false,code:'REJECTED'});expect(http).not.toHaveBeenCalled();});

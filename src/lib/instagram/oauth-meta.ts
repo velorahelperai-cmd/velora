@@ -11,7 +11,7 @@ const account=(v:unknown):string|null=>typeof v==='string'&&/^[0-9]{1,64}$/.test
 export function readInstagramOAuthConfig(environment:Readonly<Record<string,string|undefined>>=process.env):InstagramOAuthConfig|null{
  const appId=environment.INSTAGRAM_APP_ID?.trim(),appSecret=environment.INSTAGRAM_APP_SECRET,contractId=environment.INSTAGRAM_LOGIN_CONTRACT_ID?.trim(),redirectUri=environment.INSTAGRAM_REDIRECT_URI;
  if(!appId||!/^[0-9]{1,64}$/.test(appId)||!text(appSecret)||!contractId||contractId.length>128||!redirectUri)return null;
- try{const u=new URL(redirectUri);const site=environment.NEXT_PUBLIC_SITE_URL;if(environment.NODE_ENV==='production'&&!site)return null;if(site){const s=new URL(site);if(s.origin!==u.origin||s.username||s.password||s.pathname!=='/'||s.search||s.hash)return null;}if(u.username||u.password||u.search||u.hash||u.pathname!=='/api/instagram/oauth/callback')return null;
+ try{const u=new URL(redirectUri);const site=environment.NEXT_PUBLIC_SITE_URL;if(environment.NODE_ENV==='production'&&!site)return null;if(site){const s=new URL(site);const reviewedCanonicalAlias=appId==='1130181646406297'&&site==='https://velorahelper.com'&&redirectUri==='https://www.velorahelper.com/api/instagram/oauth/callback';if((s.origin!==u.origin&&!reviewedCanonicalAlias)||s.username||s.password||s.pathname!=='/'||s.search||s.hash)return null;}if(u.username||u.password||u.search||u.hash||u.pathname!=='/api/instagram/oauth/callback')return null;
   if(u.protocol!=='https:'&&!(environment.NODE_ENV!=='production'&&u.protocol==='http:'&&u.hostname==='127.0.0.1'))return null;
   return Object.freeze({appId,appSecret,contractId,redirectUri:u.href,requiredPermissions:required});
  }catch{return null;}
