@@ -3,6 +3,7 @@ import type {InstagramRpcClient} from '@/lib/instagram/connection-store';
 import {createInstagramSignedWebhookPersistence,readInstagramInboundRuntime} from '@/lib/instagram/inbound-producer';
 import { createInstagramWebhookHandlers } from "@/lib/instagram/webhook-route";
 import {instagramConfig} from '@/lib/instagram/config';
+import {instagramWebhookChallenge} from '@/lib/instagram/webhook-challenge';
 export const runtime = "nodejs";
 /** Internal persistence wiring; installed signing/provider proof remains closed.
  * Environment presence cannot activate receiving or certify timestamp units. */
@@ -23,5 +24,7 @@ const handlers = createInstagramWebhookHandlers({
     })(batch);
   },
 });
-export const GET = handlers.GET;
+export async function GET(request:Request) {
+  return instagramWebhookChallenge(request) ?? handlers.GET(request);
+}
 export const POST = handlers.POST;
