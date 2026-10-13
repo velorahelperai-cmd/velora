@@ -1,6 +1,6 @@
 import 'server-only';
 import {instagramConfig} from './config';
-import {instagramOwnerConnectScope} from './connect-scope';
+import {instagramOwnerConnectScope,instagramOwnerConnectProfile} from './connect-scope';
 import type {AttemptBinding,ProviderResult} from './connection-contracts';
 export type InstagramOAuthConfig=Readonly<{appId:string;appSecret:string;contractId:string;redirectUri:string;requiredPermissions:readonly string[]}>;
 const required=Object.freeze(['instagram_business_basic','instagram_business_manage_messages']);
@@ -51,7 +51,8 @@ export async function exchangeInstagramCode(code:string,binding:AttemptBinding,c
   const me=new URL('https://graph.instagram.com/v26.0/me');me.searchParams.set('fields','user_id,username,account_type');
   const profile=await request(me.href,{method:'GET',headers:{Authorization:'Bearer '+upgraded.body.access_token}});
   if(!profile.ok||!record(profile.body))return unknown();
-  if(account(profile.body.user_id)!==id||!['BUSINESS','MEDIA_CREATOR'].includes(String(profile.body.account_type)))return rejected();
+  if(account(profile.body.user_id)!==id||!['BUSINESS','MEDIA_CREATOR'].includes(String(profile.body.account_type))
+   ||!instagramOwnerConnectProfile(binding.companyId,binding.userId,binding.appId,profile.body.username))return rejected();
   return {ok:true,accessToken:upgraded.body.access_token,evidence:{appId:cfg.appId,accountId:id,permissions:[...new Set(permissions as string[])],expiresAt:new Date(expires).toISOString(),contractId:cfg.contractId}};
  }catch{return unknown();}
 }

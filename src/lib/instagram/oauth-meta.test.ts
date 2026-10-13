@@ -1,10 +1,11 @@
 import {beforeEach,expect,it,vi} from 'vitest';
 vi.mock('server-only',()=>({}));
-const f=vi.hoisted(()=>({config:vi.fn(),scope:vi.fn()}));vi.mock('./config',()=>({instagramConfig:f.config}));vi.mock('./connect-scope',()=>({instagramOwnerConnectScope:f.scope}));
+const f=vi.hoisted(()=>({config:vi.fn(),scope:vi.fn(),profile:vi.fn()}));vi.mock('./config',()=>({instagramConfig:f.config}));vi.mock('./connect-scope',()=>({instagramOwnerConnectScope:f.scope,instagramOwnerConnectProfile:f.profile}));
 import {instagramAuthorizationUrl,exchangeInstagramCode} from './oauth-meta';
+import {completeInstagramConnection} from './connection-flow';
 const cfg={appId:'1000',appSecret:'synthetic-app-secret',contractId:'instagram-login-v26',redirectUri:'https://www.velorahelper.com/api/instagram/oauth/callback',requiredPermissions:['instagram_business_basic','instagram_business_manage_messages']};
 const binding={companyId:'abcdefab-0000-4000-8000-000000000001',userId:'abcdefab-0000-4000-8000-000000000011',sessionId:'abcdefab-0000-4000-8000-000000000021',attemptId:'abcdefab-0000-4000-8000-000000000003',generation:1,appId:cfg.appId,contractId:cfg.contractId};
-beforeEach(()=>{vi.clearAllMocks();f.scope.mockReturnValue(true);f.config.mockReturnValue({graphVersion:'v26.0',connectEnabled:true});});
+beforeEach(()=>{vi.clearAllMocks();f.scope.mockReturnValue(true);f.profile.mockImplementation((_company:string,_owner:string,_app:string,username:unknown)=>username==='synthetic-business');f.config.mockReturnValue({graphVersion:'v26.0',connectEnabled:true});});
 function transport(change?:unknown){return vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({access_token:'synthetic-short-token',user_id:'100',permissions:cfg.requiredPermissions}))).mockResolvedValueOnce(new Response(JSON.stringify({access_token:'synthetic-long-token',expires_in:3600}))).mockResolvedValueOnce(new Response(JSON.stringify(change??{user_id:'100',username:'synthetic-business',account_type:'BUSINESS'})));}
 it('keeps authorize/code exchange closed before any HTTP',async()=>{f.config.mockReturnValue({graphVersion:'v26.0',connectEnabled:false});const http=transport();expect(instagramAuthorizationUrl(cfg,'a'.repeat(64))).toBeNull();expect(await exchangeInstagramCode('code',binding,cfg,{fetch:http})).toEqual({ok:false,code:'REJECTED'});expect(http).not.toHaveBeenCalled();});
 it('authorize URL contains only public app/redirect/scopes and opaque state',()=>{const url=new URL(instagramAuthorizationUrl(cfg,'a'.repeat(64))!);expect(url.origin).toBe('https://www.instagram.com');expect(url.searchParams.get('response_type')).toBe('code');expect(url.searchParams.get('scope')).toBe(cfg.requiredPermissions.join(','));expect(url.href).not.toContain(cfg.appSecret);});
@@ -22,3 +23,17 @@ it('requires production callback origin to match configured public site',async()
 
 it('unscoped company/owner/app cannot make any OAuth HTTP request',async()=>{f.scope.mockReturnValue(false);const http=transport();expect(await exchangeInstagramCode('code',binding,cfg,{fetch:http})).toEqual({ok:false,code:'REJECTED'});expect(http).not.toHaveBeenCalled();});
 it('scope expiry after code exchange prevents upgrade and profile request',async()=>{const http=vi.fn().mockImplementationOnce(async()=>{f.scope.mockReturnValue(false);return new Response(JSON.stringify({access_token:'synthetic-short-token',user_id:'100',permissions:cfg.requiredPermissions}));});expect(await exchangeInstagramCode('code',binding,cfg,{fetch:http})).toEqual({ok:false,code:'UNKNOWN'});expect(http).toHaveBeenCalledTimes(1);});
+
+it.each([{user_id:'100',username:'another_business',account_type:'BUSINESS'},{user_id:'100',account_type:'BUSINESS'}])('another or missing genuine username rejects before success evidence',async proof=>{const http=transport(proof);expect(await exchangeInstagramCode('code',binding,cfg,{fetch:http})).toEqual({ok:false,code:'REJECTED'});expect(f.profile).toHaveBeenCalledWith(binding.companyId,binding.userId,binding.appId,proof.username);});
+it('matching genuine username keeps exact real numeric account evidence',async()=>{const result=await exchangeInstagramCode('code',binding,cfg,{fetch:transport()});expect(result).toMatchObject({ok:true,evidence:{accountId:'100'}});expect(f.profile).toHaveBeenCalledWith(binding.companyId,binding.userId,binding.appId,'synthetic-business');});
+it('target permission revoked after genuine profile request still rejects',async()=>{f.profile.mockReturnValue(false);expect(await exchangeInstagramCode('code',binding,cfg,{fetch:transport()})).toEqual({ok:false,code:'REJECTED'});});
+
+it('another genuine professional profile is rejected before Vault stage, subscription or finalization',async()=>{
+ const stage=vi.fn(),subscribe=vi.fn(),finalize=vi.fn(),http=transport({user_id:'100',username:'other_business',account_type:'BUSINESS'});
+ const result=await completeInstagramConnection({companyId:binding.companyId,userId:binding.userId,sessionId:binding.sessionId},
+  {attemptId:binding.attemptId,state:'a'.repeat(64),code:'synthetic-code'},binding,{
+   claim:async()=>({kind:'claimed' as const,committed:true as const,binding}),
+   exchange:(code,ref)=>exchangeInstagramCode(code,ref,cfg,{fetch:http}),stage,subscribe,finalize,
+   settleClaim:async()=>({kind:'rejected' as const,binding}),readProgress:async()=>({kind:'rejected' as const,binding})});
+ expect(result).toEqual({ok:false,code:'CONSUMED'});expect(stage).not.toHaveBeenCalled();expect(subscribe).not.toHaveBeenCalled();expect(finalize).not.toHaveBeenCalled();
+});
