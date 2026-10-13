@@ -16,7 +16,8 @@ export default async function SetupLayout({ children }: { children: React.ReactN
     redirect(loginPathForReturn(returnTo));
   }
   if (access.context.needsProfileName) redirect(authFlowHref("/complete-profile", returnTo));
-  if (access.context.isPlatformAdmin) redirect("/admin");
+  if (access.context.needsCompanyContext) redirect(`/app?next=${encodeURIComponent(returnTo)}`);
+  if (access.context.isPlatformAdmin && !access.context.company) redirect("/admin");
   if (access.context.membership?.role === "staff") {
     redirect("/app/conversations");
   }

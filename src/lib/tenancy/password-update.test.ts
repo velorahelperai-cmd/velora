@@ -10,11 +10,20 @@ beforeEach(() => {
   vi.clearAllMocks();
   state.client.mockResolvedValue({ auth: { getUser: state.user, updateUser: state.update } });
   state.user.mockResolvedValue({ data: { user: { id: "private-user-id" } }, error: null });
-  state.identity.mockResolvedValue({ ok: true });
+  state.identity.mockResolvedValue({ ok: true, userId: "private-user-id" });
   state.update.mockResolvedValue({ error: null });
 });
 
 describe("password update diagnostics", () => {
+  it("refuses a stale password form after account switching", async () => {
+    expect(await updatePassword("long-password", "old-account")).toMatchObject({ ok: false, code: "UNAUTHENTICATED" });
+    expect(state.update).not.toHaveBeenCalled();
+  });
+  it("keeps a getUser transport failure distinct from a missing session", async () => {
+    state.user.mockResolvedValue({ data: { user: null }, error: { name: "AuthRetryableFetchError" } });
+    expect(await updatePassword("long-password")).toMatchObject({ ok: false, code: "UNAVAILABLE" });
+    expect(state.update).not.toHaveBeenCalled();
+  });
   it("returns a bounded provider hint without exposing provider text or password", async () => {
     const logs = vi.spyOn(console, "info").mockImplementation(() => {});
     state.update.mockResolvedValue({ error: { message: "private provider payload", code: "private-code" } });

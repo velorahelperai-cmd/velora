@@ -1,15 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { emptyBusiness, useDemo } from "@/lib/demo-state";
-import { selectWorkspaceCompany, signOut } from "@/lib/tenancy/actions";
+import { useDemo } from "@/lib/demo-state";
+import { selectWorkspaceCompany } from "@/lib/tenancy/actions";
 import { getWorkspaceView } from "@/lib/tenancy/workspace-view";
 import type { CompanyRole } from "@/lib/tenancy/types";
-import { AccountMenu, useOptionalAccountSession } from "@/components/app/account-chrome";
+import { AccountMenu, performLogout, useOptionalAccountSession } from "@/components/app/account-chrome";
 import { Button, LangSwitch, Notice, useAppCopy } from "@/components/app/ui";
-import { refreshSelectedWorkspace } from "./workspace-switch";
 import { DiagnosticHint } from "./diagnostic-hint";
 
 import styles from "./internal-ui.module.css";
@@ -22,6 +21,7 @@ type WorkspaceState = {
 };
 
 type ProfileState = {
+  userId: string;
   name: string;
   email: string;
   role: CompanyRole | null;
@@ -32,7 +32,6 @@ export function WorkspaceShell({ title, children, actions }: { title: string; ch
   const copy = useAppCopy();
   const { update, locale } = useDemo();
   const accountSession = useOptionalAccountSession();
-  const router = useRouter();
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
@@ -70,6 +69,7 @@ export function WorkspaceShell({ title, children, actions }: { title: string; ch
 
     setKnowledgeAllowed(knowledgeAllowed);
     setProfile({
+      userId: identity.userId,
       name: displayName,
       email: identity.email,
       role,
@@ -106,7 +106,11 @@ export function WorkspaceShell({ title, children, actions }: { title: string; ch
     setSwitchBusy(true);
     setSwitchError(null);
     try {
-      const result = await selectWorkspaceCompany(id);
+      const preferred = workspace?.needsContext
+        ? new URLSearchParams(window.location.search).get("next")
+        : window.location.pathname + window.location.search;
+      const result = await selectWorkspaceCompany(id, { expectedUserId: profile?.userId, next: preferred });
+      if (profile && accountSession && !accountSession.isCurrentUser(profile.userId)) return;
       if (!result.ok) {
         setSwitchError(copy.app.workspaceSwitchFailed);
         // Revert select UI to last known server selection.
@@ -118,10 +122,7 @@ export function WorkspaceShell({ title, children, actions }: { title: string; ch
       workspaceRequest.current += 1;
       setProfile(null);
       setKnowledgeAllowed(false);
-      await refreshSelectedWorkspace({
-        refreshRoute: () => router.refresh(),
-        refreshAccount: () => accountSession?.refresh() ?? Promise.resolve(),
-      });
+      window.location.replace(result.data.next);
     } catch {
       setSwitchError(copy.app.workspaceSwitchFailed);
     } finally {
@@ -130,23 +131,8 @@ export function WorkspaceShell({ title, children, actions }: { title: string; ch
   }
 
   async function logout() {
-    const result = await signOut();
-    if (!result.ok) {
-      window.alert(result.message ?? copy.auth.logoutFailed);
-      return;
-    }
-    accountSession?.clear();
-    update({
-      account: null,
-      signedIn: false,
-      stage: "guest",
-      business: emptyBusiness,
-      businessSaved: false,
-      setupStep: 0,
-      setupDone: [false, false, false, false],
-    });
-    router.replace("/login");
-    router.refresh();
+    if (!profile || !accountSession?.isCurrentUser(profile.userId)) return;
+    await performLogout(accountSession, update, copy, message => window.alert(message));
   }
 
   const nav = [
@@ -160,7 +146,7 @@ export function WorkspaceShell({ title, children, actions }: { title: string; ch
   const role = profile?.role ?? null;
   const roleLabel = role === "owner" ? copy.app.owner : role === "staff" ? copy.app.staff : copy.app.workspacePick;
 
-  if (!profile) {
+  if (!profile || (accountSession && (accountSession.status !== "ready" || !accountSession.isCurrentUser(profile.userId)))) {
     return <main className={`app-shell ${styles.theme} p-6`} data-internal-ui="true" dir={ar ? "rtl" : "ltr"} aria-busy={!profileLoadFailed}>{profileLoadFailed ? <><Notice tone="error">{copy.app.workspaceSwitchFailed}</Notice><DiagnosticHint diagnostic={workspaceDiagnostic} locale={locale}/><Button className="mt-4" onClick={() => { void reloadWorkspaceState(); }}>{copy.app.readinessRetry}</Button></> : <p>{copy.loading}</p>}</main>;
   }
 
@@ -239,7 +225,7 @@ export function WorkspaceShell({ title, children, actions }: { title: string; ch
           <h1 className="app-title min-w-0 break-words text-2xl lg:text-[2rem]">{title}</h1>
           <div className={styles.workspacePageActions}>{actions}</div>
         </div>
-        <div className="min-w-0">{children}</div>
+        <div className="min-w-0">{workspace?.needsContext ? <Notice tone="info">{copy.app.workspacePick}</Notice> : children}</div>
       </main>
     </div>
   );

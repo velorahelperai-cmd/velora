@@ -19,7 +19,7 @@ describe("persistent staff invitations", () => {
     vi.clearAllMocks();
     mocks.revalidate.mockReset();
     mocks.access.mockResolvedValue({ ok: true, context: { userId: actorA, company: { id: "company", status: "active" }, membership: { role: "owner" } } });
-    mocks.verified.mockResolvedValue({ ok: true, context: { emailConfirmed: true } });
+    mocks.verified.mockResolvedValue({ ok: true, context: { userId: actorA, emailConfirmed: true } });
   });
   it("never calls the database for a denied owner", async () => {
     mocks.access.mockResolvedValue({ ok: false, code: "FORBIDDEN" });
@@ -118,7 +118,7 @@ describe("persistent staff invitations", () => {
     expect(mocks.cookies).not.toHaveBeenCalled();
     mocks.rpc.mockResolvedValueOnce({ data: { ok: true, companyId: "company" }, error: null });
     expect(await acceptStaffInvitation("a".repeat(43))).toEqual({ ok: true, data: { companyId: "company" } });
-    expect(mocks.cookies).toHaveBeenCalledWith("velora_workspace_company", "company", expect.objectContaining({ httpOnly: true }));
+    expect(mocks.cookies).toHaveBeenCalledWith("velora_workspace_company", `${actorA}:company`, expect.objectContaining({ httpOnly: true }));
   });
 });
 

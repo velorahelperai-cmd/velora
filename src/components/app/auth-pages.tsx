@@ -152,7 +152,7 @@ export function SignupPage() {
   const [diagnostic,setDiagnostic]=useState<unknown>(null);
   const [altNotice, setAltNotice] = useState<string | null>(null);
   const returnTo = safeInternalPath(params.get("next"), "");
-  useAuthenticatedAuthRedirect(returnTo);
+  useAuthenticatedAuthRedirect(returnTo,busy);
   const google = useGoogleAuth(setAltNotice, returnTo || null);
   const dirty = Boolean(form.name || form.email || form.password || form.confirm);
   useUnsavedWarning(dirty && !busy);
@@ -248,7 +248,7 @@ export function LoginPage() {
     const err = params.get("error");
     if (err === "verification_browser") return copy.auth.verificationBrowser;
     if (err === "auth_callback") return copy.errors.authFailed;
-    if (err === "oauth_cancelled") return params.get("detail") || copy.auth.oauthCancelled;
+    if (err === "oauth_cancelled") return copy.auth.oauthCancelled;
     return null;
   });
   const [diagnostic,setDiagnostic]=useState<unknown>(null);
@@ -496,6 +496,7 @@ export function VerifyEmailPage() {
         </div>
 
         <LinkButton href={authFlowHref("/login",pendingReturn)} variant="secondary">{copy.auth.login}</LinkButton>
+        <LinkButton href="/forgot-password" variant="secondary">{copy.auth.forgotTitle}</LinkButton>
       </div>
     </AuthShell>
   );
@@ -579,19 +580,29 @@ export function CompleteProfilePage() {
   const copy = useAppCopy();
   const router = useRouter();
   const params=useSearchParams();
+  const session = useOptionalAccountSession();
   const { busy, run } = useAction();
+  const currentUserId = session?.status === "ready" ? session.identity?.userId ?? null : null;
+  const [nameOwner, setNameOwner] = useState(currentUserId);
   const [name, setName] = useState("");
   const [error, setError] = useState<FieldErrorKey>();
   const [formError, setFormError] = useState<string | null>(null);
   const nameError = useErrorText(error);
+  const isCurrentProfileUser = session?.isCurrentUser;
+  if (nameOwner !== currentUserId) {
+    setNameOwner(currentUserId); setName(""); setError(undefined); setFormError(null);
+  }
 
   useEffect(() => {
+    if (!nameOwner || !isCurrentProfileUser) return;
+    let cancelled = false;
     const frame = window.requestAnimationFrame(() => {
       void (async () => {
         try {
           const { createClient } = await import("@/lib/supabase/client");
           const supabase = createClient();
           const { data } = await supabase.auth.getUser();
+          if (cancelled || !isCurrentProfileUser(nameOwner) || data.user?.id !== nameOwner) return;
           const meta = String(data.user?.user_metadata?.full_name || data.user?.user_metadata?.name || "").trim();
           if (meta) setName(meta);
         } catch {
@@ -599,8 +610,8 @@ export function CompleteProfilePage() {
         }
       })();
     });
-    return () => window.cancelAnimationFrame(frame);
-  }, []);
+    return () => { cancelled = true; window.cancelAnimationFrame(frame); };
+  }, [nameOwner, isCurrentProfileUser]);
 
   return (
     <AuthShell title={copy.auth.completeProfileTitle} body={copy.auth.completeProfileBody}>
@@ -609,6 +620,8 @@ export function CompleteProfilePage() {
         noValidate
         onSubmit={(e) => {
           e.preventDefault();
+          const expectedUserId = session?.identity?.userId;
+          if (busy || session?.status !== "ready" || !expectedUserId || !session.isCurrentUser(expectedUserId)) return;
           setFormError(null);
           if (name.trim().length < 2) {
             setError("required");
@@ -616,7 +629,8 @@ export function CompleteProfilePage() {
           }
           setError(undefined);
           void run(async () => {
-            const result = await completeProfileName(name,params.get("next"));
+            const result = await completeProfileName(name,params.get("next"),expectedUserId);
+            if (expectedUserId && session && !session.isCurrentUser(expectedUserId)) return;
             if (!result.ok) {
               setFormError(result.message ?? copy.errors.authFailed);
               return;
@@ -629,7 +643,7 @@ export function CompleteProfilePage() {
         <Field label={copy.auth.name} required error={nameError}>
           {(p) => <input {...p} value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" />}
         </Field>
-        <Button type="submit" busy={busy} busyLabel={copy.loading} className="w-full">{copy.auth.completeProfileSave}</Button>
+        <Button type="submit" busy={busy} disabled={session?.status !== "ready" || !session.identity} busyLabel={copy.loading} className="w-full">{copy.auth.completeProfileSave}</Button>
       </form>
     </AuthShell>
   );
@@ -640,7 +654,9 @@ export function ResetPasswordPage() {
   const { locale } = useDemo();
   const [diagnostic, setDiagnostic] = useState<unknown>(null);
   const router = useRouter();
-  const [ready, setReady] = useState<"loading" | "ok" | "missing">("loading");
+  const session = useOptionalAccountSession();
+  const [ready, setReady] = useState<"loading" | "ok" | "missing" | "unavailable">("loading");
+  const [expectedUserId, setExpectedUserId] = useState<string | null>(null);
   const [form, setForm] = useState({ password: "", confirm: "" });
   const [errors, setErrors] = useState<Partial<Record<"password" | "confirm", FieldErrorKey>>>({});
   const [formError, setFormError] = useState<string | null>(null);
@@ -655,10 +671,12 @@ export function ResetPasswordPage() {
         try {
           const { createClient } = await import("@/lib/supabase/client");
           const supabase = createClient();
-          const { data } = await supabase.auth.getUser();
+          const { data, error } = await supabase.auth.getUser();
+          if (error && error.name !== "AuthSessionMissingError") { setReady("unavailable"); return; }
+          setExpectedUserId(data.user?.id ?? null);
           setReady(data.user ? "ok" : "missing");
         } catch {
-          setReady("missing");
+          setReady("unavailable");
         }
       })();
     });
@@ -668,6 +686,7 @@ export function ResetPasswordPage() {
   return (
     <AuthShell title={copy.auth.resetTitle} footer={<Link href="/login" className="font-semibold text-[var(--color-action-on-dark)] underline">{copy.auth.login}</Link>}>
       {ready === "loading" ? <p className="text-sm text-[var(--color-muted-on-dark)]">{copy.loading}</p> : null}
+      {ready === "unavailable" ? <div className="grid gap-3"><Notice tone="error">{copy.errors.unavailableBody}</Notice><Button onClick={() => window.location.reload()}>{copy.errors.accessRetry}</Button></div> : null}
       {ready === "missing" ? (
         <div className="grid gap-4">
           <Notice tone="error"><strong>{copy.auth.expiredTitle}</strong><br />{copy.auth.expiredBody}</Notice>
@@ -680,6 +699,7 @@ export function ResetPasswordPage() {
           noValidate
           onSubmit={(e) => {
             e.preventDefault();
+            if (busy || !expectedUserId || session?.status !== "ready" || !session.isCurrentUser(expectedUserId)) return;
             setFormError(null);
             const next: typeof errors = {};
             setDiagnostic(null);
@@ -688,7 +708,9 @@ export function ResetPasswordPage() {
             setErrors(next);
             if (Object.keys(next).length) return;
             void run(async () => {
-              const result = await updatePassword(form.password);
+              if (!expectedUserId) return;
+              const result = await updatePassword(form.password,expectedUserId);
+              if (session && !session.isCurrentUser(expectedUserId)) return;
               if (!result.ok) {
                 setDiagnostic(result.diagnostic);
                 setFormError(copy.errors.authFailed);
@@ -708,7 +730,7 @@ export function ResetPasswordPage() {
           <DiagnosticHint diagnostic={diagnostic} locale={locale} />
           <PasswordField label={copy.auth.newPassword} value={form.password} onChange={(v) => setForm({ ...form, password: v })} error={passwordError} hint={copy.auth.passwordHintReal} autoComplete="new-password" />
           <PasswordField label={copy.auth.confirmPassword} value={form.confirm} onChange={(v) => setForm({ ...form, confirm: v })} error={confirmError} autoComplete="new-password" />
-          <Button type="submit" busy={busy} busyLabel={copy.loading} className="w-full">{copy.auth.setPassword}</Button>
+          <Button type="submit" busy={busy} disabled={session?.status !== "ready" || !expectedUserId || !session.isCurrentUser(expectedUserId)} busyLabel={copy.loading} className="w-full">{copy.auth.setPassword}</Button>
         </form>
       ) : null}
       {done ? (

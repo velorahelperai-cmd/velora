@@ -18,7 +18,7 @@ describe("invitation acceptance through the Auth journey", () => {
   });
   it("preserves confirmation and session-expiry gates", () => {
     expect(pathForAccess({ ok: false, code: "UNVERIFIED" }, invitation)).toBe(`/verify-email?next=${encodeURIComponent(invitation)}`);
-    expect(pathForAccess({ ok: false, code: "UNAUTHENTICATED", sessionExpired: true }, invitation)).toBe("/login?reason=session_expired");
+    expect(pathForAccess({ ok: false, code: "UNAUTHENTICATED", sessionExpired: true }, invitation)).toBe(`/login?reason=session_expired&next=${encodeURIComponent(invitation)}`);
   });
   it("does not allow invitation routing to bypass failures or grant workspace access", () => {
     expect(pathForAccess({ ok: false, code: "FORBIDDEN" }, invitation)).toBe("/access?code=FORBIDDEN");

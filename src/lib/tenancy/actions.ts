@@ -169,7 +169,7 @@ export async function signUpWithEmail(input: {
   password: string;
   confirmPassword: string;
   next?: string | null;
-}): Promise<ActionResult<{ needsVerification: boolean; email: string }>> {
+}): Promise<ActionResult<{ needsVerification: boolean; email: string; profilePending?: true }>> {
   const trace = beginDiagnostic("auth_signup");
   trace.stage("input");
   if (!input || typeof input !== "object" || Array.isArray(input)
@@ -202,21 +202,34 @@ export async function signUpWithEmail(input: {
         emailRedirectTo: authCallbackUrl(safeInternalPath(input.next,"/setup")),
       },
     });
-    if (error) {
+    if (error && error.code !== "user_already_exists" && error.code !== "email_exists") {
       return { ok: false, code: "AUTH_ERROR", diagnostic: trace.finish("AUTH_ERROR") };
     }
-    if (data.user?.id) {
+    // Existing-user responses may be obfuscated. Only an actual matching,
+    // confirmed session permits a client-scoped profile write.
+    const confirmedSession = !error && Boolean(data.user?.email_confirmed_at)
+      && Boolean(data.session) && data.session?.user.id === data.user?.id;
+    if (!error && data.session && !confirmedSession) {
+      return { ok: false, code: "AUTH_ERROR", diagnostic: trace.finish("AUTH_ERROR") };
+    }
+    let warning: DiagnosticDetail | undefined;
+    if (confirmedSession && data.user) {
       trace.stage("profile");
-      await supabase.from("profiles").upsert(
-        { user_id: data.user.id, full_name: name.slice(0, 120) },
-        { onConflict: "user_id" },
-      );
+      try {
+        const { error: profileError } = await supabase.from("profiles").upsert(
+          { user_id: data.user.id, full_name: name.slice(0, 120) },
+          { onConflict: "user_id", ignoreDuplicates: true },
+        );
+        if (profileError) warning = trace.finish("UNAVAILABLE");
+      } catch { warning = trace.finish("UNAVAILABLE"); }
     }
     const returnTo=safeInternalPath(input.next,"");
     if(returnTo){const {cookies}=await import("next/headers");(await cookies()).set(AUTH_RETURN_COOKIE,returnTo,{httpOnly:true,sameSite:"lax",path:"/",secure:process.env.NODE_ENV==="production",maxAge:7200});}
-    const needsVerification = !data.user?.email_confirmed_at && !data.session;
-    trace.finish("OK");
-    return { ok: true, data: { needsVerification, email } };
+    const needsVerification = !confirmedSession;
+    if (!warning) trace.finish("OK");
+    // Auth already succeeded. A persistence outage must resume this same user
+    // through loadAuth's idempotent bootstrap, never ask for a second signup.
+    return { ok: true, data: { needsVerification, email, ...(warning ? { profilePending: true as const } : {}) }, ...(warning ? { diagnostic: warning } : {}) };
   } catch {
     return { ok: false, code: "UNAVAILABLE", diagnostic: trace.finish("UNAVAILABLE") };
   }
@@ -256,11 +269,16 @@ export async function resolvePostAuthPath(next?:string|null): Promise<ActionResu
  const trace=beginDiagnostic("auth_login");trace.stage("access");
  try {const access=await getCompanyAccess();trace.stage("handoff");const {cookies}=await import("next/headers");const stored=(await cookies()).get(AUTH_RETURN_COOKIE)?.value;trace.finish("OK");return {ok:true,data:{next:pathForAccess(access,safeInternalPath(next||stored,""))}};}catch{return {ok:false,code:"UNAVAILABLE",diagnostic:trace.finish("UNAVAILABLE")};}
 }
-export async function signOut(): Promise<ActionResult> {
+export async function signOut(expectedUserId?: string): Promise<ActionResult> {
   try {
     const supabase = await createClient();
+    if (expectedUserId !== undefined) {
+      const { data, error } = await supabase.auth.getUser();
+      if (error) return { ok: false, code: "UNAVAILABLE" };
+      if (!data.user || data.user.id !== expectedUserId) return { ok: false, code: "UNAUTHENTICATED" };
+    }
     const { error } = await supabase.auth.signOut({scope:"local"});
-    if (error) return { ok: false, code: "AUTH_ERROR", message: error.message };
+    if (error) return { ok: false, code: "AUTH_ERROR" };
     const {cookies}=await import("next/headers");const store=await cookies();store.delete(WORKSPACE_COMPANY_COOKIE);store.delete(AUTH_RETURN_COOKIE);return { ok: true, data: undefined };
   } catch {
     return { ok: false, code: "UNAVAILABLE" };
@@ -357,14 +375,16 @@ export async function requestPasswordReset(email: string): Promise<ActionResult>
   }
 }
 
-export async function updatePassword(password: string): Promise<ActionResult> {
+export async function updatePassword(password: string, expectedUserId?: string): Promise<ActionResult> {
   const trace = beginDiagnostic("auth_password_update");
   if (typeof password !== "string" || password.length < 8) return { ok: false, code: "INVALID_INPUT", diagnostic: trace.finish("INVALID_INPUT") };
   try {
     trace.stage("session");
     const supabase = await createClient();
-    const { data: userData } = await supabase.auth.getUser();
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError) return { ok: false, code: userError.name === "AuthSessionMissingError" ? "UNAUTHENTICATED" : "UNAVAILABLE", diagnostic: trace.finish(userError.name === "AuthSessionMissingError" ? "UNAUTHENTICATED" : "UNAVAILABLE") };
     if (!userData.user) return { ok: false, code: "UNAUTHENTICATED", diagnostic: trace.finish("UNAUTHENTICATED") };
+    if (expectedUserId !== undefined && userData.user.id !== expectedUserId) return { ok: false, code: "UNAUTHENTICATED", diagnostic: trace.finish("UNAUTHENTICATED") };
     trace.stage("access");
     const identity=await readSessionIdentity();if(!identity.ok)return {ok:false,code:identity.code,diagnostic:trace.finish(identity.code)};
     trace.stage("provider");
@@ -378,17 +398,20 @@ export async function updatePassword(password: string): Promise<ActionResult> {
   }
 }
 
-export async function completeProfileName(name: string, next?:string|null): Promise<ActionResult<{ next: string }>> {
+export async function completeProfileName(name: string, next?:string|null, expectedUserId?: string): Promise<ActionResult<{ next: string }>> {
+  if (typeof name !== "string") return { ok: false, code: "INVALID_INPUT" };
   const identity=await readSessionIdentity();if(!identity.ok)return {ok:false,code:identity.code};
+  if (expectedUserId !== undefined && expectedUserId !== identity.userId) return { ok: false, code: "UNAUTHENTICATED" };
   const fullName = name.trim();
   if (fullName.length < 2 || fullName.length > 120) {
     return { ok: false, code: "INVALID_INPUT" };
   }
   try {
     const supabase = await createClient();
-    const { data: userData } = await supabase.auth.getUser();
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError) return { ok: false, code: "UNAVAILABLE" };
     const user = userData.user;
-    if (!user) return { ok: false, code: "UNAUTHENTICATED" };
+    if (!user || user.id !== identity.userId) return { ok: false, code: "UNAUTHENTICATED" };
     if (!user.email_confirmed_at && !user.phone_confirmed_at) {
       return { ok: false, code: "UNVERIFIED" };
     }
@@ -397,7 +420,7 @@ export async function completeProfileName(name: string, next?:string|null): Prom
       { user_id: user.id, full_name: fullName },
       { onConflict: "user_id" },
     );
-    if (error) return { ok: false, code: "AUTH_ERROR", message: error.message };
+    if (error) return { ok: false, code: "AUTH_ERROR" };
 
     await supabase
       .from("company_members")
@@ -422,24 +445,29 @@ export async function getAccountProfile(): Promise<ActionResult<AccountProfileVi
  // Auth identity survives company/profile outages; no role or company privilege is invented.
  return {ok:true,data:{platformIdentity,userId:identity.userId,email:identity.email,fullName:identity.fullName,supportCode:"",isPlatformAdmin:false,role:null,companyName:null,companyId:null,needsCompanyContext:false,adminHref:null,workspaceHref:null,workHref:identity.emailConfirmed?"/account":authFlowHref("/verify-email",null,identity.email),emailConfirmed:identity.emailConfirmed,sessionExpiresAt:identity.sessionExpiresAt,accessUnavailable:access.code==="UNAVAILABLE"}};
 }
-export async function selectWorkspaceCompany(companyId: string): Promise<ActionResult<{ companyId: string }>> {
+export async function selectWorkspaceCompany(companyId: string, input?: { expectedUserId?: string; next?: string | null }): Promise<ActionResult<{ companyId: string; next: string }>> {
+  if (typeof companyId !== "string") return { ok: false, code: "INVALID_INPUT" };
   const access = await getCompanyAccess();
   if (!access.ok) return { ok: false, code: access.code };
+  if (input?.expectedUserId !== undefined && input.expectedUserId !== access.context.userId) return { ok: false, code: "UNAUTHENTICATED" };
   const id = companyId.trim();
   const allowed = access.context.workspaceChoices.some((row) => row.companyId === id)
     || access.context.membership?.company_id === id;
   if (!id || !allowed) return { ok: false, code: "FORBIDDEN" };
   try {
     const { cookies } = await import("next/headers");
-    (await cookies()).set(WORKSPACE_COMPANY_COOKIE, id, {
+    (await cookies()).set(WORKSPACE_COMPANY_COOKIE, `${access.context.userId}:${id}`, {
       httpOnly: true,
       sameSite: "lax",
       path: "/",
+      secure: process.env.NODE_ENV === "production",
       maxAge: 60 * 60 * 24 * 30,
     });
     revalidatePath("/app");
     revalidatePath("/admin");
-    return { ok: true, data: { companyId: id } };
+    const selected = await getCompanyAccess();
+    if (selected.ok && selected.context.userId !== access.context.userId) return { ok: false, code: "UNAUTHENTICATED" };
+    return { ok: true, data: { companyId: id, next: pathForAccess(selected, safeInternalPath(input?.next, "")) } };
   } catch {
     return { ok: false, code: "UNAVAILABLE" };
   }
@@ -875,6 +903,7 @@ export async function saveOwnerBusiness(input: {
   contactEmail: string;
   memberName?: string;
   expectedCompanyId?: string | null;
+  expectedUserId?: string;
 }): Promise<ActionResult<CompanyRecord>> {
   const trace = beginDiagnostic("company_save");
   trace.stage("input");
@@ -891,6 +920,9 @@ export async function saveOwnerBusiness(input: {
   // Server actions receive runtime input; TypeScript does not validate the transport payload.
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     return { ok: false, code: "INVALID_INPUT", diagnostic: trace.finish("INVALID_INPUT") };
+  }
+  if (input.expectedUserId !== undefined && input.expectedUserId !== access.context.userId) {
+    return { ok: false, code: "UNAUTHENTICATED", diagnostic: trace.finish("UNAUTHENTICATED") };
   }
   const stringFields = ["displayName", "businessType", "replyLanguage", "country", "city", "hours", "contactPhone", "contactEmail"] as const;
   if (stringFields.some(field => typeof input[field] !== "string")

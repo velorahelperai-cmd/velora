@@ -21,7 +21,7 @@ export default async function Page() {
   return (
     <Suspense fallback={<main className="min-h-svh bg-[#07110d]" aria-busy="true" />}>
       <SettingsPage
-        initialAccess={{email: access.ok ? access.context.email : null, companyId: company?.id ?? null, companyName:company?.display_name ?? null, role:access.ok ? access.context.membership?.role ?? null : null, needsCompanyContext:access.ok && access.context.needsCompanyContext, isPlatformAdmin:access.ok && access.context.isPlatformAdmin, choices:access.ok ? access.context.workspaceChoices : []}}
+        initialAccess={{userId: access.ok ? access.context.userId : null, email: access.ok ? access.context.email : null, companyId: company?.id ?? null, companyName:company?.display_name ?? null, role:access.ok ? access.context.membership?.role ?? null : null, needsCompanyContext:access.ok && access.context.needsCompanyContext, isPlatformAdmin:access.ok && access.context.isPlatformAdmin, choices:access.ok ? access.context.workspaceChoices : []}}
         initialCompany={company}
         initialSubscription={initialSubscription}
         initialOffersView={initialOffersView}
