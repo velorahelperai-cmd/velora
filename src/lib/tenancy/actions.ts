@@ -358,17 +358,23 @@ export async function requestPasswordReset(email: string): Promise<ActionResult>
 }
 
 export async function updatePassword(password: string): Promise<ActionResult> {
-  if (password.length < 8) return { ok: false, code: "INVALID_INPUT" };
+  const trace = beginDiagnostic("auth_password_update");
+  if (typeof password !== "string" || password.length < 8) return { ok: false, code: "INVALID_INPUT", diagnostic: trace.finish("INVALID_INPUT") };
   try {
+    trace.stage("session");
     const supabase = await createClient();
     const { data: userData } = await supabase.auth.getUser();
-    if (!userData.user) return { ok: false, code: "UNAUTHENTICATED" };
-    const identity=await readSessionIdentity();if(!identity.ok)return {ok:false,code:identity.code};
+    if (!userData.user) return { ok: false, code: "UNAUTHENTICATED", diagnostic: trace.finish("UNAUTHENTICATED") };
+    trace.stage("access");
+    const identity=await readSessionIdentity();if(!identity.ok)return {ok:false,code:identity.code,diagnostic:trace.finish(identity.code)};
+    trace.stage("provider");
     const { error } = await supabase.auth.updateUser({ password });
-    if (error) return { ok: false, code: "AUTH_ERROR", message: error.message };
+    if (error) return { ok: false, code: "AUTH_ERROR", diagnostic: trace.finish("AUTH_ERROR") };
+    trace.stage("completed");
+    trace.finish("OK");
     return { ok: true, data: undefined };
   } catch {
-    return { ok: false, code: "UNAVAILABLE" };
+    return { ok: false, code: "UNAVAILABLE", diagnostic: trace.finish("UNAVAILABLE") };
   }
 }
 

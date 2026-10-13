@@ -637,6 +637,8 @@ export function CompleteProfilePage() {
 
 export function ResetPasswordPage() {
   const copy = useAppCopy();
+  const { locale } = useDemo();
+  const [diagnostic, setDiagnostic] = useState<unknown>(null);
   const router = useRouter();
   const [ready, setReady] = useState<"loading" | "ok" | "missing">("loading");
   const [form, setForm] = useState({ password: "", confirm: "" });
@@ -680,6 +682,7 @@ export function ResetPasswordPage() {
             e.preventDefault();
             setFormError(null);
             const next: typeof errors = {};
+            setDiagnostic(null);
             if (form.password.length < 8) next.password = "password";
             if (form.confirm !== form.password) next.confirm = "match";
             setErrors(next);
@@ -687,15 +690,22 @@ export function ResetPasswordPage() {
             void run(async () => {
               const result = await updatePassword(form.password);
               if (!result.ok) {
-                setFormError(result.message ?? copy.errors.authFailed);
+                setDiagnostic(result.diagnostic);
+                setFormError(copy.errors.authFailed);
                 return;
               }
               setDone(true);
               router.refresh();
-            }).catch(() => setFormError(copy.errors.authFailed));
+            }).catch(() => {
+              const trace = beginDiagnostic("auth_password_update");
+              trace.stage("provider");
+              setDiagnostic(trace.finish("OUTCOME_UNKNOWN"));
+              setFormError(copy.errors.authFailed);
+            });
           }}
         >
           {formError ? <Notice tone="error">{formError}</Notice> : null}
+          <DiagnosticHint diagnostic={diagnostic} locale={locale} />
           <PasswordField label={copy.auth.newPassword} value={form.password} onChange={(v) => setForm({ ...form, password: v })} error={passwordError} hint={copy.auth.passwordHintReal} autoComplete="new-password" />
           <PasswordField label={copy.auth.confirmPassword} value={form.confirm} onChange={(v) => setForm({ ...form, confirm: v })} error={confirmError} autoComplete="new-password" />
           <Button type="submit" busy={busy} busyLabel={copy.loading} className="w-full">{copy.auth.setPassword}</Button>

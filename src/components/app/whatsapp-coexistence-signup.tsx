@@ -55,6 +55,7 @@ export function WhatsappCoexistenceSignup({ companyId, onConnected, onDisconnect
   const [confirmed, setConfirmed] = useState(false);
   const [popupPending, setPopupPending] = useState(false);
   const [syncSetup, setSyncSetup] = useState<SyncSetup | null>(null);
+  const [syncDiagnostic, setSyncDiagnostic] = useState<unknown>(null);
   const [syncConsent, setSyncConsent] = useState<{ binding: string; types: SyncType[] } | null>(null);
   const [blockedSyncKeys, setBlockedSyncKeys] = useState<string[]>([]);
   const [stateCompanyId, setStateCompanyId] = useState(companyId);
@@ -72,7 +73,7 @@ export function WhatsappCoexistenceSignup({ companyId, onConnected, onDisconnect
     setStateCompanyId(companyId);
     setLoading(true); setDurable(null); setConfig(null); setSdkReadyConfig(null);
     setPhone(""); setConfirmed(false); setPhase("idle"); setNotice(null); setDiagnostic(null);
-    setSyncSetup(null); setSyncConsent(null); setBlockedSyncKeys([]);
+    setSyncSetup(null); setSyncDiagnostic(null); setSyncConsent(null); setBlockedSyncKeys([]);
   }
 
   const reloadFor = useCallback((owner: Owner) => {
@@ -82,6 +83,7 @@ export function WhatsappCoexistenceSignup({ companyId, onConnected, onDisconnect
     ]).then(([setupRead, syncRead]) => {
       if (ownerRef.current !== owner || readSequenceRef.current !== readSequence) return null;
       setSyncSetup(syncRead.status === "fulfilled" && syncRead.value.ok ? syncRead.value : null);
+      setSyncDiagnostic(syncRead.status === "fulfilled" && !syncRead.value.ok ? syncRead.value.diagnostic : null);
       const result = setupRead.status === "fulfilled" ? setupRead.value : null;
       if (!result || !result.ok || result.status.companyId !== owner.companyId) {
         setDurable(null); setConfig(null); setLoading(false);
@@ -95,7 +97,7 @@ export function WhatsappCoexistenceSignup({ companyId, onConnected, onDisconnect
       return result.status;
     }).catch(() => {
       if (ownerRef.current === owner && readSequenceRef.current === readSequence) {
-        setDurable(null); setConfig(null); setSyncSetup(null); setLoading(false); setNotice("UNAVAILABLE");
+        setDurable(null); setConfig(null); setSyncSetup(null); setSyncDiagnostic(null); setLoading(false); setNotice("UNAVAILABLE");
       }
       return null;
     });
@@ -374,6 +376,7 @@ export function WhatsappCoexistenceSignup({ companyId, onConnected, onDisconnect
     </> : !connected && !config && durable ? <Notice tone="info">{t("This signup is awaiting setup. Saved status and disconnection remain available.", "هذا الربط ينتظر الإعداد. يمكنك عرض الحالة المحفوظة وفصل الربط.")}</Notice> : null}
     <p className="text-sm text-[var(--color-muted-soft)]">{t("Chat history is optional and limited to the previous 180 days. Group chats are excluded; media is limited to the most recent 14 days. Keep the Business app open during synchronization, which must start within 24 hours. Messages from unsupported linked devices may not appear here. This signup does not enable AI replies.", "مشاركة السجل اختيارية وتقتصر على آخر 180 يوماً، دون المجموعات، والوسائط لآخر 14 يوماً. أبقِ تطبيق الأعمال مفتوحاً أثناء المزامنة التي يجب أن تبدأ خلال 24 ساعة. قد لا تظهر رسائل الأجهزة المرتبطة غير المدعومة. هذا الربط لا يفعّل ردود الذكاء الاصطناعي.")}</p>
     <div className="grid gap-3 rounded-lg border border-[color:var(--color-border-soft)] p-3" aria-label={t("Optional synchronization", "المزامنة الاختيارية")}>
+      {diagnosticText(syncDiagnostic, locale) ? <p className="break-words text-sm" dir={locale === "ar" ? "rtl" : "ltr"}>{diagnosticText(syncDiagnostic, locale)}</p> : null}
       <p className="text-sm">{t("Choose each synchronization separately. Each type can be requested once for this connection and must start within 24 hours of onboarding. Declined, failed, or uncertain requests need review and cannot be retried here. These requests do not enable AI replies.", "اختر كل مزامنة بشكل منفصل. يمكن طلب كل نوع مرة واحدة لهذا الاتصال، ويجب أن يبدأ خلال 24 ساعة من الربط. تحتاج الطلبات المرفوضة أو الفاشلة أو غير المؤكدة إلى مراجعة ولا يمكن إعادة طلبها هنا. هذه الطلبات لا تفعّل ردود الذكاء الاصطناعي.")}</p>
       {(["history", "smb_app_state_sync"] as const).map(syncType => {
         const saved = syncSetup?.syncs.find(item => item.syncType === syncType);
