@@ -34,13 +34,14 @@ export function InstagramInbox({companyId,owner=false,companyInSetup=false,callb
  const [displayKey,setDisplayKey]=useState(viewKey),[reserved,setReserved]=useState(false),[refresh,setRefresh]=useState(0);
  const [inbox,setInbox]=useState<InstagramInboxPage|null>(null),[thread,setThread]=useState<InstagramThreadPage|null>(null);
  const [saved,setSaved]=useState<Saved|null>(null),[text,setText]=useState(''),[blockers,setBlockers]=useState<string[]>([]);
+ const [readinessVerified,setReadinessVerified]=useState(false);
  const [error,setError]=useState<string|null>(null),[busy,setBusy]=useState(false),[loading,setLoading]=useState(true);
  const notice=(code:string)=>labels[code]?.[ar?1:0]??(ar?'تعذّر إكمال الطلب. حاول تحديث الصفحة.':'The request could not be completed. Refresh this page.');
  useEffect(()=>{
   const fence=epoch,current=++fence.current;
   void(async()=>{try{
    await Promise.resolve();if(current!==fence.current)return;
-   reservation.current=null;setReserved(false);setDisplayKey(viewKey);setInbox(null);setThread(null);setSaved(null);setText('');setError(null);setBlockers([]);setBusy(false);setLoading(true);
+   reservation.current=null;setReserved(false);setDisplayKey(viewKey);setInbox(null);setThread(null);setSaved(null);setText('');setError(null);setBlockers([]);setReadinessVerified(false);setBusy(false);setLoading(true);
    if(!companyId)return;
    const page=await loadInstagramInboxPage({companyId});if(current!==epoch.current)return;
    if(!page.ok){setError(page.code);return;}setInbox(page.data);
@@ -48,7 +49,7 @@ export function InstagramInbox({companyId,owner=false,companyInSetup=false,callb
    const loaded=await loadInstagramThreadPage({companyId,conversationId});if(current!==epoch.current)return;
    if(!loaded.ok){setError(loaded.code);return;}setThread(loaded.data);
    const readiness=await loadInstagramSendReadiness({companyId,conversationId});if(current!==epoch.current)return;
-   if(readiness.ok)setBlockers(readiness.data.blockers);else setError(readiness.code);
+   if(readiness.ok){setBlockers(readiness.data.blockers);setReadinessVerified(true);}else setError(readiness.code);
    if(intentId){const r=await loadInstagramReply({companyId,conversationId,intentId});if(current!==epoch.current)return;
     if(r.ok){setSaved(r.data);setText(r.data.text);}else setError(r.code);}
   }catch{if(current===epoch.current)setError('UNAVAILABLE');}finally{if(current===epoch.current)setLoading(false);}})();
@@ -69,7 +70,7 @@ export function InstagramInbox({companyId,owner=false,companyInSetup=false,callb
   }catch{if(current===epoch.current)setError('UNAVAILABLE');}finally{if(current===epoch.current)setBusy(false);}
  }
  async function send(){
-  if(!companyId||!conversationId||busy||loading||!saved||saved.state!=='ready'||blockers.length)return;
+  if(!companyId||!conversationId||busy||loading||!readinessVerified||!saved||saved.state!=='ready'||blockers.length)return;
   const current=epoch.current;setBusy(true);setError(null);
   try{const r=await sendSavedInstagramReply({companyId,conversationId,intentId:saved.binding.intentId});if(current!==epoch.current)return;
    if(!r.ok){setError(r.code);return;}setSaved({...r.data,text:saved.text});
@@ -97,6 +98,8 @@ export function InstagramInbox({companyId,owner=false,companyInSetup=false,callb
     ?(ar?'محادثات إنستغرام غير متاحة أثناء تجهيز الشركة. يلزم اعتماد تفعيل الشركة قبل عرض المحادثات.':'Instagram conversations are unavailable while the company is in setup. Company activation must be approved before viewing conversations.')
     :notice(error)}</Notice>}
    {loading&&<p aria-busy="true">{ar?'جارٍ التحميل…':'Loading…'}</p>}
+   <Button onClick={()=>{epoch.current++;setReadinessVerified(false);setRefresh(n=>n+1);}} disabled={busy||loading||reserved}>{ar?'تحديث المحادثات':'Refresh conversations'}</Button>
+   {!loading&&inbox&&inbox.conversations.length===0&&<p>{ar?'لا توجد محادثات إنستغرام بعد.':'No Instagram conversations yet.'}</p>}
    <nav aria-label={ar?'محادثات إنستغرام':'Instagram threads'}>{inbox?.conversations.map(c=><button key={c.id} type="button" onClick={()=>select(c.id)} aria-current={conversationId===c.id?'page':undefined}>{c.counterpartyId} · {c.unreadCount}</button>)}</nav>
    {inbox?.hasMore&&<Button onClick={()=>void more('inbox')} disabled={busy||loading}>{ar?'محادثات إضافية':'More conversations'}</Button>}
    {thread&&<section aria-label={ar?'المحادثة':'Conversation'}>
@@ -106,7 +109,7 @@ export function InstagramInbox({companyId,owner=false,companyInSetup=false,callb
     <label>{ar?'نص الرد':'Reply text'}<textarea value={text} readOnly={!!saved||reserved} disabled={busy||loading} onChange={e=>setText(e.target.value)}/></label>
     {!saved?<Button onClick={()=>void save()} disabled={busy||loading||!text||blockers.includes('REPLY_PERMISSION_REQUIRED')}>{ar?'حفظ الرد':'Save reply'}</Button>:<>
      <p role="status">{saved.state==='accepted'?(ar?'قبِل إنستغرام الرسالة؛ لم يتأكد التسليم.':'Instagram accepted the message; delivery is unconfirmed.'):saved.state==='unknown'||saved.state==='claimed'?notice('RECONCILIATION_REQUIRED'):(ar?'الرد محفوظ.':'Reply saved.')}</p>
-     <Button onClick={()=>void send()} disabled={busy||loading||saved.state!=='ready'||blockers.length>0}>{ar?'إرسال الرد المحفوظ':'Send saved reply'}</Button>
+     <Button onClick={()=>void send()} disabled={busy||loading||!readinessVerified||saved.state!=='ready'||blockers.length>0}>{ar?'إرسال الرد المحفوظ':'Send saved reply'}</Button>
      <Button onClick={()=>select(conversationId!)} disabled={busy||saved.state==='unknown'||saved.state==='claimed'}>{ar?'رد جديد':'New reply'}</Button>
     </>}
    </section>}

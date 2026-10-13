@@ -35,6 +35,15 @@ beforeEach(() => {
 });
 
 describe("six-digit signup confirmation with offline Auth boundary", () => {
+  it.each([
+    null, {}, { name: 42, email: "qa@example.test", password: "password", confirmPassword: "password" },
+    { name: "QA", email: "invalid", password: "password", confirmPassword: "password" },
+    { name: "a".repeat(121), email: "qa@example.test", password: "password", confirmPassword: "password" },
+    { name: "QA", email: "qa@example.test", password: null, confirmPassword: "password" },
+  ])("rejects malformed signup input before contacting Auth: %j", async input => {
+    expect(await actions.signUpWithEmail(input as Parameters<typeof actions.signUpWithEmail>[0])).toMatchObject({ ok: false, code: "INVALID_INPUT" });
+    expect(state.client).not.toHaveBeenCalled();
+  });
   it("confirms in a fresh browser and keeps leading zeroes without exchanging a PKCE code", async () => {
     expect(await submit({ email: " QA-A@example.test ", code: "012345", next: "" })).toEqual({ ok: true, data: { next: "/setup" } });
     expect(state.verify).toHaveBeenCalledExactlyOnceWith({ email: user.email, token: "012345", type: "email" });

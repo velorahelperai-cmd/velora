@@ -38,6 +38,7 @@ export function AssistantTester({
   const [billing, setBilling] = useState<{ scope: string; result: DashboardBillingLoad } | null>(null);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
+  const askPending = useRef(false);
   const [lastError, setLastError] = useState<{ scope: string; code: AnswerFailureCode; question: string } | null>(null);
   const suggestions = [
     ...(locale === "ar" ? ["ما هي أوقات العمل؟", "ما الخدمات التي تقدمونها؟"] : ["What are your working hours?", "What services do you offer?"]),
@@ -73,7 +74,8 @@ export function AssistantTester({
 
   async function ask(question: string) {
     const text = question.trim();
-    if (!text || busy) return;
+    if (!text || busy || askPending.current) return;
+    askPending.current = true;
     setBusy(true);
     setLastError(null);
     setAnswer(null);
@@ -92,6 +94,7 @@ export function AssistantTester({
       }
       setAnswer({ scope: requestScope, question: text, result });
     } finally {
+      askPending.current = false;
       setBusy(false);
     }
   }
@@ -139,7 +142,7 @@ export function AssistantTester({
           </span>
         </Notice>
       ) : null}
-      <div className="min-w-0 rounded-2xl border border-[color:var(--color-border-soft)] bg-[#0d1a14]/90 backdrop-blur-md shadow-2xl">
+      <div className="min-w-0 rounded-2xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel)] shadow-sm">
         <div className="flex min-h-[260px] flex-col gap-3 overflow-x-hidden p-3 sm:p-4" aria-live="polite">
           {!visibleAnswer ? <p className="m-auto text-sm text-[var(--color-muted-soft)]">{copy.tester.empty}</p> : (
             <>

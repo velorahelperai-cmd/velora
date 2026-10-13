@@ -168,10 +168,17 @@ export async function signUpWithEmail(input: {
   confirmPassword: string;
   next?: string | null;
 }): Promise<ActionResult<{ needsVerification: boolean; email: string }>> {
+  if (!input || typeof input !== "object" || Array.isArray(input)
+    || typeof input.name !== "string" || typeof input.email !== "string"
+    || typeof input.password !== "string" || typeof input.confirmPassword !== "string"
+    || (input.next != null && typeof input.next !== "string")) {
+    return { ok: false, code: "INVALID_INPUT" };
+  }
   const name = input.name.trim();
   const email = input.email.trim().toLowerCase();
   const password = input.password;
-  if (!name || name.length < 2 || !email || password.length < 8) {
+  if (name.length < 2 || name.length > 120 || email.length > 254
+    || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length < 8) {
     return { ok: false, code: "INVALID_INPUT" };
   }
   if (password !== input.confirmPassword) {
@@ -457,7 +464,15 @@ export async function getCustomerReadiness(): Promise<ActionResult<CustomerReadi
     let subscription:{loadFailed:boolean;status:string|null;paidThrough:string|null}|null=null;
 
     if (hasCompany) {
-      const listed = await listKnowledgeSources({ expectedCompanyId: company!.id });
+      // These sources are independent. Retain each source's failure state so one
+      // unavailable service neither delays nor erases the rest of the checklist.
+      const [knowledgeRead, whatsappRead, billingRead, reviewRead] = await Promise.allSettled([
+        listKnowledgeSources({ expectedCompanyId: company!.id }),
+        getWhatsappCompanyLink(),
+        role === "owner" ? readCompanyBillingDisplay(company!.id) : Promise.resolve(null),
+        role === "owner" ? getCompanyReviewRequest({ expectedCompanyId: company!.id }) : Promise.resolve(null),
+      ]);
+      const listed = knowledgeRead.status === "fulfilled" ? knowledgeRead.value : { ok: false as const, code: "UNAVAILABLE" };
       knowledge = listed.ok
         ? {
           loadFailed: false,
@@ -466,7 +481,7 @@ export async function getCustomerReadiness(): Promise<ActionResult<CustomerReadi
         }
         : { loadFailed: true, sources: [], approvalFoundation: "unavailable" };
 
-      const wa = await getWhatsappCompanyLink();
+      const wa = whatsappRead.status === "fulfilled" ? whatsappRead.value : { ok: false as const, code: "UNAVAILABLE" };
       const liveOpsReady = whatsappLiveOpsReady();
       if (wa.ok) {
         whatsapp = { loadFailed: false, status: wa.data.status, suspended: false, liveOpsReady };
@@ -479,11 +494,11 @@ export async function getCustomerReadiness(): Promise<ActionResult<CustomerReadi
       }
 
       if (role === "owner") {
-        const billing=await readCompanyBillingDisplay(company!.id);
-        subscription=billing.ok&&typeof billing.data.billing_paid==="boolean"&&typeof billing.data.operational_eligible==="boolean"?{loadFailed:false,status:billing.data.billing_paid===true&&billing.data.operational_eligible===true?"active":"inactive",
+        const billing=billingRead.status === "fulfilled" ? billingRead.value : null;
+        subscription=billing?.ok&&typeof billing.data.billing_paid==="boolean"&&typeof billing.data.operational_eligible==="boolean"?{loadFailed:false,status:billing.data.billing_paid===true&&billing.data.operational_eligible===true?"active":"inactive",
           paidThrough:typeof billing.data.qualified_paid_through==="string"?billing.data.qualified_paid_through:null}:{loadFailed:true,status:null,paidThrough:null};
-        const rev = await getCompanyReviewRequest({ expectedCompanyId: company!.id });
-        review = rev.ok
+        const rev = reviewRead.status === "fulfilled" ? reviewRead.value : null;
+        review = rev?.ok
           ? { loadFailed: false, status: rev.data?.status ?? null, proofCurrent: rev.data?.proof_current === true }
           : { loadFailed: true, status: null };
       } else {
@@ -860,9 +875,11 @@ export async function saveOwnerBusiness(input: {
     if (error || !data) {
       return { ok: false, code: "AUTH_ERROR", message: error?.message };
     }
-    revalidatePath("/setup");
-    revalidatePath("/app");
-    revalidatePath("/app/settings");
+    // The RPC has committed. Cache refresh must not turn its receipt into a
+    // failed save, which could prompt the owner to repeat an already saved change.
+    for (const path of ["/setup", "/app", "/app/settings"]) {
+      try { revalidatePath(path); } catch { /* The returned record is authoritative. */ }
+    }
     return { ok: true, data: data as CompanyRecord };
   } catch {
     return { ok: false, code: "UNAVAILABLE" };

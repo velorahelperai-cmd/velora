@@ -108,7 +108,7 @@ export function SubscriptionOfferCards({ locale, term, offers, catalogStatus, se
             {selectedHere ? text.selected : text.review}
           </button>
         ) : <p className={styles.draftPlanNotice} role="status">{state.publication === "error" ? text.errorNote : persona.id !== "level_1" ? text.serviceNote : text.missingNote}</p>}
-        {state.inspectable ? <p className={styles.draftPlanNotice}>{state.purchase === "test_only" ? text.testNote : text.blockedNote}</p> : null}
+        {state.inspectable ? <p className={styles.draftPlanNotice}>{state.purchase === "live" ? text.liveNote : state.purchase === "test_only" ? text.testNote : text.blockedNote}</p> : null}
       </article>;
     })}
   </div>;
@@ -143,7 +143,7 @@ export function SubscriptionCompareTable({ locale, term, offers, catalogStatus, 
           return <tr key={tier.id} data-selected={selectedPersona === tier.id}>
             <th scope="row">
               {tier[locale]}
-              {isBasicPurchasable ? <span className={styles.approvedBadge} style={{ marginInlineStart: 8, fontSize: 10 }}>{catalogStateCopy[locale].test_only}</span> : null}
+              {isBasicPurchasable ? <span className={styles.approvedBadge} style={{ marginInlineStart: 8, fontSize: 10 }}>{findOffer(offers,tier.id,"basic",term)?.liveCheckoutReady ? catalogStateCopy[locale].live : catalogStateCopy[locale].test_only}</span> : null}
             </th>
             <td>
               <bdi>{catalogPriceNote(locale, tier.id, "basic", term, basic, catalogStatus)}</bdi>

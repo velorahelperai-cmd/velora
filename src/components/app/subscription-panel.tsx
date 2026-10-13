@@ -9,20 +9,31 @@ import { SubscriptionCompareTable, SubscriptionOfferCards } from "./subscription
 import type { SubscriptionOffersView, SubscriptionChoice } from "./subscription-offers-view";
 import { currentSubscriptionChoice, isPurchasableOffer, formatOmrBaisa, catalogHasTerm } from "./subscription-offers-view";
 import { choiceFromSubscriptionIntent, subscriptionIntentFromChoice, subscriptionIntentFromParams, subscriptionIntentHref, type SubscriptionIntent } from "./subscription-navigation";
+import { startLiveCheckoutAction } from "@/lib/billing/wiring/live-checkout-actions";
 import { startTestCheckoutAction } from "@/lib/billing/wiring/test-checkout-actions";
 import styles from "./subscription-panel.module.css";
+import { useOptionalAccountSession } from "./account-chrome";
 import { catalogStateCopy } from "./subscription-catalog-state";
 const errors={
  ar:{settings:"الدفع التجريبي يحتاج استكمال إعدادات Paymob Test. تواصل مع إدارة المنصة لتجهيزه.",pending:"طلب الدفع قيد التحقق. افتح حالة الطلب قبل محاولة الدفع مرة أخرى.",phone:"أضف رقم هاتف الشركة في إعدادات النشاط قبل الدفع.",denied:"إدارة الاشتراك متاحة لمالك شركة غير معلّقة فقط.",active:"لشركتك اشتراك قائم بالفعل. التجديد المبكر وتغيير الباقة يحتاجان مراجعة منفصلة.",failed:"تعذّر بدء الدفع التجريبي. حدّث الصفحة وأعد المحاولة؛ إذا استمر الخطأ تواصل مع الدعم."},
  en:{settings:"Paymob Test setup is incomplete. Contact your platform administrator to finish payment setup.",pending:"Payment is being verified. Check the order status before trying again.",phone:"Add your company phone number in business settings before paying.",denied:"Only the owner of an unsuspended company can manage billing.",active:"Your company already has a subscription. Early renewal and plan changes require a separate review.",failed:"Test checkout could not start. Refresh and try again; contact support if the issue continues."}
 };
 function paymentMessage(code:string,locale:"ar"|"en") {const c=errors[locale];if(code==="billing_phone_missing")return c.phone;if(code==="not_owner"||code==="FORBIDDEN")return c.denied;if(code==="ALREADY_SUBSCRIBED"||code==="UPGRADE_NOT_CONFIGURED")return c.active;if(["payment_pending","checkout_persist_failed","PENDING_COLLECTION_RECONCILE","OPEN_COLLECTION_UNRESOLVED"].includes(code))return c.pending;if(["test_not_configured","test_keys_missing","test_config_invalid","omr_conversion_not_configured","checkout_schema_unavailable","callback_not_configured","create_disabled","admin_not_configured","plan_lookup_failed","order_not_ready","schema_unavailable","PUBLIC_OFFER_UNSUPPORTED"].includes(code))return c.settings;return c.failed;}
+function livePaymentMessage(code:string,locale:"ar"|"en") {
+ if(["payment_pending","LIVE_COLLECTION_REQUIRES_RECONCILIATION","PENDING_COLLECTION_RECONCILE","OPEN_COLLECTION_UNRESOLVED"].includes(code))return errors[locale].pending;
+ if(["not_owner","FORBIDDEN","billing_phone_missing","ALREADY_SUBSCRIBED","UPGRADE_NOT_CONFIGURED"].includes(code))return paymentMessage(code,locale);
+ if(code==="CATALOG_REVISION_CONFLICT")return locale==="ar"?"تغير الكتالوج. حدّث الصفحة وراجع الباقة قبل الدفع.":"The catalog changed. Refresh and review the plan before paying.";
+ return locale==="ar"?"الدفع غير متاح حاليًا. حدّث الصفحة؛ تواصل مع الدعم إذا استمر الخطأ.":"Checkout is currently unavailable. Refresh the page; contact support if the issue continues.";
+}
 export function SubscriptionPanel({locale,view,offersView,companyId,preview=false,onRetry}:{companyId?:string;locale:"ar"|"en";view:SubscriptionView;offersView?:SubscriptionOffersView;preview?:boolean;onRetry?:()=>void}){
  const c=subscriptionCopy[locale],ar=locale==="ar";
  const params=useSearchParams(),intent=subscriptionIntentFromParams(params),cycle:SubscriptionCycle=intent?.term??(view.cycle==="yearly"?"yearly":"monthly");
  const [busy,setBusy]=useState(false),[error,setError]=useState<string|null>(null),[orderId,setOrderId]=useState<string|null>(null);
  const [reviewed,setReviewed]=useState<string|null>(null),reviewRef=useRef<HTMLElement>(null);
  const inFlight=useRef(false),operations=useRef(new Map<string,string>());
+ const session=useOptionalAccountSession(),sessionRef=useRef(session),companyRef=useRef(companyId),mounted=useRef(false),requestGeneration=useRef(0);
+ sessionRef.current=session;companyRef.current=companyId;
+ useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;requestGeneration.current+=1;};},[]);
  const requestedChoice=choiceFromSubscriptionIntent(intent,offersView);
  const validChoice=currentSubscriptionChoice(requestedChoice,cycle,offersView),selected=validChoice?.persona??null;
  const selectedOffer=validChoice?offersView?.offers.find(offer=>offer.versionId===validChoice.versionId):null,chosen=subscriptionTiers.find(tier=>tier.id===selected),current=subscriptionTiers.find(tier=>tier.id===view.currentTier);
@@ -38,9 +49,13 @@ export function SubscriptionPanel({locale,view,offersView,companyId,preview=fals
  function changeCycle(term:SubscriptionCycle){setError(null);setOrderId(null);setReviewed(null);replaceIntent({term,...(intent?.persona&&intent.package?{persona:intent.persona,package:intent.package}:{})});}
  async function checkout(){
   if(!canPay||!validChoice||inFlight.current||reviewed!==reviewKey)return;
+  const actor=sessionRef.current?.identity?.userId,requestCompany=companyId,generation=++requestGeneration.current;
+  const current=()=>mounted.current&&requestGeneration.current===generation&&companyRef.current===requestCompany
+   &&(!sessionRef.current||(!!actor&&sessionRef.current.isCurrentUser(actor)&&sessionRef.current.identity?.companyId===requestCompany));
+  if(!current())return;
   inFlight.current=true;setBusy(true);setError(null);
   let op=operations.current.get(validChoice.versionId);if(!op){op=crypto.randomUUID();operations.current.set(validChoice.versionId,op);}
-  try{const result=await startTestCheckoutAction({expectedCompanyId:companyId!,planVersionId:validChoice.versionId,clientOpId:op});if(result.orderId)setOrderId(result.orderId);if(result.ok){window.location.assign(result.url);return;}setError(paymentMessage(result.code,locale));}catch{setError(errors[locale].pending);}finally{inFlight.current=false;setBusy(false);}
+  try{const result=selectedOffer?.liveCheckoutReady===true?await startLiveCheckoutAction({expectedCompanyId:companyId!,planVersionId:validChoice.versionId,clientOpId:op,expectedCatalogRevision:selectedOffer.catalogRevision!}):await startTestCheckoutAction({expectedCompanyId:companyId!,planVersionId:validChoice.versionId,clientOpId:op});if(!current())return;if(result.orderId)setOrderId(result.orderId);if(result.ok){window.location.assign(result.url);return;}setError(selectedOffer?.liveCheckoutReady ? livePaymentMessage(result.code,locale) : paymentMessage(result.code,locale));}catch{if(current())setError(errors[locale].pending);}finally{inFlight.current=false;if(current())setBusy(false);}
  }
  return <div className={styles.root} data-surface="account" data-design-only={preview?"true":undefined} lang={locale} dir={ar?"rtl":"ltr"}>
   <header className={styles.heading}><div><h1>{c.title}</h1><p>{ar?"اختر شخصية فيلورا التي تناسب احتياج شركتك.":"Choose the Velora persona that fits your business."}</p></div><span className={styles.concept}>{c.concept}</span></header>
@@ -75,11 +90,11 @@ export function SubscriptionPanel({locale,view,offersView,companyId,preview=fals
     <h2 id="subscription-next">{ar?"ملخص اختيارك":"Your selection"}</h2>
     <p className={styles.selectionTitle}>{chosen&&validChoice?`${chosen[locale]} · ${c[validChoice.package]}`:intent?.persona&&intent.package?`${subscriptionTiers.find(tier=>tier.id===intent.persona)?.[locale]} · ${c[intent.package]} / ${c[cycle]}`:c.selectionEmpty}</p>
     {selectedOffer?<div className={styles.checkoutAmount}><bdi>{formatOmrBaisa(selectedOffer.amountBaisa,locale)}</bdi><span>/ {c[cycle]}</span></div>:null}
-    <p id="subscription-payment-note" className={styles.paymentNote}>{view.state==="suspended"?c.suspendedBlocked:view.state==="pending"?c.pendingBlocked:view.state==="active"?errors[locale].active:preview?(ar?"معاينة التصميم؛ الدفع غير متاح هنا.":"Design preview; checkout is unavailable here."):!validChoice?c.selectionEmpty:!isPurchasable?text.blockedNote:text.testNote}</p>
+    <p id="subscription-payment-note" className={styles.paymentNote}>{view.state==="suspended"?c.suspendedBlocked:view.state==="pending"?c.pendingBlocked:view.state==="active"?errors[locale].active:preview?(ar?"معاينة التصميم؛ الدفع غير متاح هنا.":"Design preview; checkout is unavailable here."):!validChoice?c.selectionEmpty:!isPurchasable?text.blockedNote:selectedOffer?.liveCheckoutReady?text.liveNote:text.testNote}</p>
     {error?<p className={styles.paymentError} role="alert">{error}</p>:null}
     {visibleOrderId?<Link className={styles.heroLink} href={`/app/subscription/orders/${visibleOrderId}`}>{ar?"عرض حالة الطلب":"View order status"}</Link>:null}
    </div>
-   <button type="button" className={styles.pay} disabled={!canPay} aria-describedby="subscription-payment-note" onClick={()=>{if(reviewed!==reviewKey){setReviewed(reviewKey);setError(null);}else void checkout();}}>{busy?(ar?"جارٍ تجهيز الدفع…":"Preparing checkout…"):validChoice&&!isPurchasable?text.unavailable:reviewed!==reviewKey?(ar?"\u0645\u0631\u0627\u062c\u0639\u0629 \u0627\u0644\u0627\u062e\u062a\u064a\u0627\u0631":"Review selection"):(ar?"متابعة للدفع التجريبي":"Continue to test checkout")}<span aria-hidden="true">↗</span></button>
+   <button type="button" className={styles.pay} disabled={!canPay} aria-describedby="subscription-payment-note" onClick={()=>{if(reviewed!==reviewKey){setReviewed(reviewKey);setError(null);}else void checkout();}}>{busy?(ar?"جارٍ تجهيز الدفع…":"Preparing checkout…"):validChoice&&!isPurchasable?text.unavailable:reviewed!==reviewKey?(ar?"\u0645\u0631\u0627\u062c\u0639\u0629 \u0627\u0644\u0627\u062e\u062a\u064a\u0627\u0631":"Review selection"):selectedOffer?.liveCheckoutReady?(ar?"متابعة للدفع":"Continue to checkout"):(ar?"متابعة للدفع التجريبي":"Continue to test checkout")}<span aria-hidden="true">↗</span></button>
   </section>
  </div>;
 }

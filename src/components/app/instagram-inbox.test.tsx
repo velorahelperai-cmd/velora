@@ -64,3 +64,17 @@ it('selecting the current thread explicitly reloads instead of staying empty and
  render();await settle();const current=nodes(render()).find(n=>n.type==='button'&&n.props['aria-current']==='page')!;
  (current.props.onClick as ()=>void)();render();await settle();expect(f.thread).toHaveBeenCalledTimes(2);expect(textarea()).toBeDefined();expect(button('Save reply').props.disabled).toBe(true);
 });
+it('readiness failure keeps saved reply visible but prevents dispatch until explicit refresh succeeds',async()=>{
+ f.url+='&intent='+id(3);f.ready.mockResolvedValueOnce({ok:false,code:'UNAVAILABLE'});
+ render();await settle();expect(textarea().props.value).toBe(saved.text);
+ expect(button('Send saved reply').props.disabled).toBe(true);
+ f.ready.mockResolvedValue({ok:true,data:{blockers:[],ready:true}});
+ await click('Refresh conversations');render();await settle();
+ expect(button('Send saved reply').props.disabled).toBe(false);expect(f.send).not.toHaveBeenCalled();
+});
+it('empty inbox is distinguished from a failed inbox read',async()=>{
+ f.url='';f.inbox.mockResolvedValue({ok:true,data:{...page,conversations:[]}});
+ render();await settle();expect(nodes(render()).some(n=>n.props.children==='No Instagram conversations yet.')).toBe(true);
+ f.inbox.mockResolvedValue({ok:false,code:'UNAVAILABLE'});await click('Refresh conversations');render();await settle();
+ expect(nodes(render()).some(n=>n.props.children==='No Instagram conversations yet.')).toBe(false);
+});

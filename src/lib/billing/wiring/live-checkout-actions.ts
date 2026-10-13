@@ -4,14 +4,42 @@ import {getCompanyAccess} from "@/lib/tenancy/access";
 import {createAdminClient} from "@/lib/supabase/admin";
 import {siteUrl} from "@/lib/auth/site-url";
 import {readBillingActorSession} from "./public-purchase-persist";
-import {readLiveCheckoutConfig,openLiveCheckout} from "./live-checkout";
+import {readLiveCheckoutConfig,openLiveCheckout,readyLiveCheckoutUrl} from "./live-checkout";
 import {fetchPaymobHttp,type CheckoutClaim,type CheckoutResult} from "./test-checkout";
 import {billingUuid} from "./public-offer-policy";
 import {commercialBaisaToVerifiedPaymobAmount} from "../money";
+import type {SupabaseClient} from "@supabase/supabase-js";
 
 type RpcClient={rpc(name:string,args:Record<string,unknown>):PromiseLike<{data:unknown;error:{code?:string}|null}>};
 type StartInput={planVersionId:string;clientOpId:string;expectedCompanyId:string;expectedCatalogRevision:number};
 const record=(v:unknown):Record<string,unknown>|null=>v!==null&&typeof v==="object"&&!Array.isArray(v)?v as Record<string,unknown>:null;
+
+/** Resume only an already persisted Live checkout; never allocate another provider request. */
+export async function resumeLiveCheckoutAction(input:{orderId:string}):Promise<CheckoutResult>{
+ if(!input||Object.keys(input).some(k=>k!=="orderId")||!billingUuid(input.orderId))return {ok:false,code:"INVALID_INPUT"};
+ const access=await getCompanyAccess("owner");
+ if(!access.ok||!access.context.company||access.context.membership?.role!=="owner"||access.context.membership.status!=="active"
+  ||!["setup","active"].includes(access.context.company.status))return {ok:false,code:"not_owner"};
+ const settings=readLiveCheckoutConfig(process.env);if(!settings.ok)return settings;
+ const session=await readBillingActorSession(access.context.userId);if(!session)return {ok:false,code:"not_owner"};
+ const client=createAdminClient();if(!client)return {ok:false,code:"live_not_configured"};
+ const admin=client as unknown as SupabaseClient;
+ try{
+  const companyId=access.context.company.id;
+  const {data:order,error}=await admin.from("billing_orders").select("id,status,provider_account_ref")
+   .eq("id",input.orderId).eq("company_id",companyId).eq("provider_environment","live").maybeSingle();
+  if(error||!order||order.status!=="submitted"||order.provider_account_ref!==String(settings.config.integrationId))return {ok:false,code:"payment_pending"};
+  const {data:attempt,error:attemptError}=await admin.from("billing_payment_attempts").select("id")
+   .eq("order_id",input.orderId).eq("company_id",companyId).eq("provider_environment","live")
+   .eq("provider_account_ref",String(settings.config.integrationId)).eq("status","provider_submitted")
+   .order("created_at",{ascending:false}).limit(1).maybeSingle();
+  if(attemptError||!attempt||!billingUuid(attempt.id))return {ok:false,code:"payment_pending"};
+  const result=await (admin as unknown as RpcClient).rpc("billing_claim_live_checkout",{p_company_id:companyId,p_order_id:input.orderId,p_attempt_id:attempt.id,p_actor_id:access.context.userId,p_actor_session_id:session});
+  const claim=record(result.data);
+  if(!result.error&&claim?.kind==="ready"&&typeof claim.url==="string"&&readyLiveCheckoutUrl(claim.url,settings.config))return {ok:true,url:claim.url};
+  return {ok:false,code:"payment_pending"};
+ }catch{return {ok:false,code:"payment_pending"};}
+}
 
 /** Browser supplies identifiers/revision only. SQL owns price, service, quota, budget and immutable provider binding. */
 export async function startLiveCheckoutAction(input:StartInput):Promise<CheckoutResult&{orderId?:string}>{

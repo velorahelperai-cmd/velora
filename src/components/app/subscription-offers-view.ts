@@ -19,10 +19,12 @@ export type SubscriptionOfferView = {
   currency: "OMR";
   automatedOutboundPerMonth: number | null;
   quotaEnforcement: "ready" | "not_verified";
-  /** Public catalog currently forbids production checkout; Test has separate server flags. */
+  /** Public catalog alone never authorizes checkout; server readiness is separate. */
   checkoutEnabled?: false;
   /** True only after the server confirms Test config and a qualified binding. */
   testCheckoutReady?: boolean;
+  liveCheckoutReady?: boolean;
+  catalogRevision?: number;
   features: readonly SubscriptionFeatureView[];
 };
 export type SubscriptionOffersView = {
@@ -39,7 +41,7 @@ export type SubscriptionChoice = {
 
 /** A selection is only valid against the same published server offer. */
 export function subscriptionOfferSignature(offer: SubscriptionOfferView): string {
-  return JSON.stringify([offer.planId, offer.amountBaisa, offer.currency, offer.automatedOutboundPerMonth, offer.quotaEnforcement, offer.checkoutEnabled ?? false, offer.testCheckoutReady === true, offer.features]);
+  return JSON.stringify([offer.planId, offer.amountBaisa, offer.currency, offer.automatedOutboundPerMonth, offer.quotaEnforcement, offer.checkoutEnabled ?? false, offer.testCheckoutReady === true, offer.liveCheckoutReady === true, offer.catalogRevision ?? null, offer.features]);
 }
 export function choiceFromOffer(offer: SubscriptionOfferView): SubscriptionChoice {
   return { persona: offer.persona, package: offer.package, versionId: offer.versionId, term: offer.term, offerSignature: subscriptionOfferSignature(offer) };
@@ -68,7 +70,7 @@ export function isApprovedOffer(persona: SubscriptionPersona, pack: Subscription
 }
 
 /**
- * Display eligibility for Paymob Test only; never production checkout authorization.
+ * Display eligibility only; checkout independently enforces the server contract.
  * A test offer is selectable ONLY IF:
  * 1. It matches the inherited Noura Basic Monthly Test-selection reference.
  *    This reference is not evidence of owner/processor Live approval.
@@ -82,6 +84,9 @@ export function isPurchasableOffer(
   offer: SubscriptionOfferView | undefined,
   catalogStatus?: SubscriptionOffersView["status"]
 ): boolean {
+  if(catalogStatus==="ready"&&offer?.persona===persona&&offer.package===pack&&offer.term===term
+    &&persona==="level_1"&&term==="monthly"&&offer.currency==="OMR"&&Number.isSafeInteger(offer.amountBaisa)&&offer.amountBaisa>0
+    &&offer.liveCheckoutReady===true&&Number.isSafeInteger(offer.catalogRevision)&&Number(offer.catalogRevision)>0)return true;
   return isApprovedOffer(persona, pack, term) && catalogStatus === "ready"
     && offer?.persona === persona && offer.package === pack && offer.term === term
     && offer.currency === "OMR" && offer.amountBaisa === 45000

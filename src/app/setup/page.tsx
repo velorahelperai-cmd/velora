@@ -35,7 +35,12 @@ export default async function Page() {
   let reviewLoadFailed = false;
 
   if (company) {
-    const listed = await listKnowledgeSources();
+    const [listed, review] = await Promise.all([
+      listKnowledgeSources({ expectedCompanyId: company.id }),
+      access.context.membership?.role === "owner"
+        ? getCompanyReviewRequest({ expectedCompanyId: company.id })
+        : Promise.resolve(null),
+    ]);
     if (listed.ok) {
       initialKnowledge = listed.data.sources;
       approvalFoundation = listed.data.approvalFoundation;
@@ -43,8 +48,7 @@ export default async function Page() {
       knowledgeLoadFailed = true;
     }
 
-    if (access.context.membership?.role === "owner") {
-      const review = await getCompanyReviewRequest();
+    if (review) {
       if (review.ok) initialReview = review.data;
       else reviewLoadFailed = true;
     }

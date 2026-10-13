@@ -17,5 +17,5 @@ export default async function Page({params}:{params:Promise<{orderId:string}>}) 
  catch { /* The generic unavailable/inaccessible display below does not disclose an order. */ }
  let subscriptionHref="/app/settings?tab=plan";
  if(row?.selection){try{subscriptionHref=subscriptionReturnHref(companyId,row,offersViewFromCatalog(await readPublicCatalogBackend()));}catch{/* Order status remains available when the catalog cannot be read. */}}
- return <SubscriptionPaymentStatus orderId={orderId} subscriptionHref={subscriptionHref} display={mapBillingReturnDisplay({requestCompanyId:companyId,row})}/>;
+ return <SubscriptionPaymentStatus companyId={companyId} orderId={orderId} providerEnvironment={row?.providerEnvironment} subscriptionHref={subscriptionHref} display={mapBillingReturnDisplay({requestCompanyId:companyId,row})}/>;
 }

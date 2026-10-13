@@ -1,16 +1,29 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-const mocks=vi.hoisted(()=>({catalog:vi.fn(),admin:vi.fn(),rpc:vi.fn(),config:vi.fn(),site:vi.fn()}));
+const mocks=vi.hoisted(()=>({catalog:vi.fn(),admin:vi.fn(),rpc:vi.fn(),config:vi.fn(),live:vi.fn(),site:vi.fn()}));
 vi.mock("server-only",()=>({}));
 vi.mock("./rpc",()=>({readPublicCatalogBackend:mocks.catalog}));
 vi.mock("@/lib/supabase/admin",()=>({createAdminClient:mocks.admin}));
 vi.mock("../wiring/test-checkout",()=>({readTestCheckoutConfig:mocks.config}));
 vi.mock("@/lib/auth/site-url",()=>({siteUrl:mocks.site}));
+vi.mock("../wiring/live-checkout",()=>({readLiveCheckoutConfig:mocks.live}));
 import { readSubscriptionOffersView } from "./offer-readiness";
 const id="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",plan="22222222-2222-4222-8222-222222222222";
 const row={code:"noor_basic",currency:"OMR",amount_baisa:45000,period_unit:"month",period_count:1,automated_outbound_per_month:500,feature_availability:{knowledge:"not_verified"},product_code:"velora_ai_staff",plan_id:plan,version_id:id,version:1,persona:"noor",variant:"basic",checkout_enabled:false};
 const bound={id,plan_id:plan,status:"published",plan_status:"active",plan_code:"noor_basic",amount_baisa:45000,currency:"OMR",period_days:30,period_unit:"month",period_count:1,service_code:"noura",tier:"basic",capabilities:["noura.knowledge.read"],bound:true};
-beforeEach(()=>{vi.clearAllMocks();mocks.catalog.mockResolvedValue({ok:true,data:[row]});mocks.admin.mockReturnValue({rpc:mocks.rpc});mocks.config.mockReturnValue({ok:true});mocks.site.mockReturnValue("https://synthetic.velora.example");mocks.rpc.mockResolvedValue({data:{ok:true,data:bound},error:null});});
+beforeEach(()=>{vi.clearAllMocks();mocks.live.mockReturnValue({ok:false,code:"live_disabled"});mocks.catalog.mockResolvedValue({ok:true,data:[row]});mocks.admin.mockReturnValue({rpc:mocks.rpc});mocks.config.mockReturnValue({ok:true});mocks.site.mockReturnValue("https://synthetic.velora.example");mocks.rpc.mockResolvedValue({data:{ok:true,data:bound},error:null});});
 describe("read-only server Test readiness",()=>{
+ it("qualifies Live Premium separately without calling the Test RPC",async()=>{
+  mocks.live.mockReturnValue({ok:true,config:{integrationId:98765,merchantOwnerId:"1001"},unitsPerOmr:1000});
+  mocks.catalog.mockResolvedValue({ok:true,data:[{...row,code:"noor_premium",variant:"premium",amount_baisa:90000}]});
+  mocks.rpc.mockResolvedValue({data:{ok:true,data:{version_id:id,plan_id:plan,amount_baisa:90000,allowance_cap:500,tier:"premium",catalog_revision:7}},error:null});
+  expect((await readSubscriptionOffersView()).offers[0]).toMatchObject({liveCheckoutReady:true,catalogRevision:7,testCheckoutReady:false});
+  expect(mocks.rpc).toHaveBeenCalledExactlyOnceWith("billing_read_public_live_offer",{p_plan_version_id:id,p_integration_id:98765,p_merchant_owner_id:"1001",p_units_per_omr:1000});
+ });
+ it("missing Live schema never falls back into Test checkout",async()=>{
+  mocks.live.mockReturnValue({ok:true,config:{integrationId:98765,merchantOwnerId:"1001"},unitsPerOmr:1000});
+  mocks.rpc.mockResolvedValue({data:null,error:{code:"PGRST202"}});
+  const view=await readSubscriptionOffersView();expect(view.offers[0].liveCheckoutReady).not.toBe(true);expect(view.offers[0].testCheckoutReady).toBe(false);
+ });
  it("requires an actual qualified binding even with valid config",async()=>{
   mocks.rpc.mockResolvedValue({data:{ok:false,code:"PUBLIC_OFFER_UNSUPPORTED"},error:null});
   const view=await readSubscriptionOffersView();

@@ -1,3 +1,4 @@
+vi.mock("./account-chrome",()=>({useOptionalAccountSession:()=>null}));
 import { describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -10,6 +11,7 @@ const request = vi.hoisted(() => ({ query: "" }));
 vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams(request.query) }));
 vi.mock("@/lib/billing/wiring/test-checkout-actions", () => ({ startTestCheckoutAction: vi.fn() }));
 
+vi.mock("@/lib/billing/wiring/live-checkout-actions",()=>({startLiveCheckoutAction:vi.fn()}));
 const intent: SubscriptionIntent = {
   persona: "level_1", package: "basic", term: "monthly",
   versionId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", amountBaisa: 45000, currency: "OMR",

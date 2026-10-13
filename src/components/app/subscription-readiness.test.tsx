@@ -1,9 +1,11 @@
+vi.mock("./account-chrome",()=>({useOptionalAccountSession:()=>null}));
 import { describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 const params=vi.hoisted(()=>({value:"term=monthly"}));
 vi.mock("next/navigation",()=>({useSearchParams:()=>new URLSearchParams(params.value)}));
 vi.mock("@/lib/billing/wiring/test-checkout-actions",()=>({startTestCheckoutAction:vi.fn()}));
+vi.mock("@/lib/billing/wiring/live-checkout-actions",()=>({startLiveCheckoutAction:vi.fn()}));
 import { SubscriptionOfferCards } from "./subscription-offer-cards";
 import { SubscriptionPanel } from "./subscription-panel";
 import { isPurchasableOffer, type SubscriptionOfferView } from "./subscription-offers-view";
@@ -13,6 +15,12 @@ function card(offer:SubscriptionOfferView,locale:"en"|"ar"="en"){
  return renderToStaticMarkup(createElement(SubscriptionOfferCards,{locale,term:"monthly",offers:[offer],catalogStatus:"ready",selectedPersona:"level_1",selectedPackage:offer.package,onSelect:()=>{}})).split('data-persona="level_1"')[1].split("</article>")[0];
 }
 describe("catalog checkout requires observed server readiness",()=>{
+ it("qualified Live Premium displays its payment mode and requires revision",()=>{
+  const live={...basic,package:"premium" as const,amountBaisa:90000,liveCheckoutReady:true,catalogRevision:7};
+  expect(isPurchasableOffer("level_1","premium","monthly",live,"ready")).toBe(true);
+  expect(card(live)).toContain('data-purchase-state="live"');expect(card(live)).toContain("Continue to Paymob");expect(card(live)).not.toContain("Test checkout only");
+  expect(isPurchasableOffer("level_1","premium","monthly",{...live,catalogRevision:undefined},"ready")).toBe(false);
+ });
  it("published unbound Basic stays display-only",()=>{
   expect(isPurchasableOffer("level_1","basic","monthly",basic,"ready")).toBe(false);
   expect(card(basic)).toContain('data-purchase-state="unavailable"');

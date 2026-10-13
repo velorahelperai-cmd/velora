@@ -11,7 +11,7 @@ import type { FinancialQualification, FinancialRecord } from "@/lib/billing/fina
 import { qualifyFinancialOrder } from "@/lib/billing/financial-truth";
 
 export type BillingReturnDbParts = {
-  order: { id: string; company_id: string; status: string; plan_version_id?: string; amount_baisa?: number; currency?: string } | null;
+  order: { id: string; company_id: string; status: string; plan_version_id?: string; amount_baisa?: number; currency?: string; provider_environment?: string } | null;
   attempt: { id: string; status: string } | null;
   latestEvent: { event_status: string; observation_key: string } | null;
   grant: { id: string; applied_paid_through: string } | null;
@@ -54,6 +54,7 @@ export function mapBillingReturnDbParts(
     successEventStored,
     awaitingProcessing,
     ...(selection ? { selection } : {}),
+    ...(["test","live"].includes(order.provider_environment??"") ? {providerEnvironment:order.provider_environment as "test"|"live"} : {}),
   };
 }
 
@@ -78,6 +79,7 @@ export async function loadBillingReturnRow(input: {
     id: String(order.id), company_id: String(order.company_id), status: String(order.status),
     plan_version_id: typeof order.plan_version_id === "string" ? order.plan_version_id : undefined,
     amount_baisa: Number(order.amount_baisa), currency: typeof order.currency === "string" ? order.currency : undefined,
+    provider_environment:typeof order.provider_environment==="string"?order.provider_environment:undefined,
   };
   const { financialDb, readFinancialEvidence } = await import("@/lib/billing/financial-read");
   let evidence;

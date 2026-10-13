@@ -187,7 +187,8 @@ export function SignupPage() {
         router.replace(authFlowHref("/verify-email",returnTo,result.data.email));
         return;
       }
-      clearPendingSignup();await accountSession?.refresh();
+      clearPendingSignup();
+      try { await accountSession?.refresh(); } catch { /* Signup is already confirmed. */ }
       const destination = await resolvePostAuthPath(returnTo);
       if (!destination.ok) { setFormError(destination.message ?? copy.errors.authFailed); return; }
       router.replace(destination.data.next);router.refresh();
@@ -376,7 +377,7 @@ export function VerifyEmailPage() {
         }
         setCode("");
         clearPendingSignup();
-        await session?.refresh();
+        try { await session?.refresh(); } catch { /* Verification is already confirmed. */ }
         router.replace(result.data.next);
         router.refresh();
       } catch {
@@ -760,7 +761,7 @@ export function AcceptInvitePage() {
                 void run(async () => {
                   const result = await acceptStaffInvitation(token);
                   if (!result.ok) { setAcceptError(errorText(result.code)); return; }
-                  await session?.refresh();
+                  try { await session?.refresh(); } catch { /* Membership acceptance is already confirmed. */ }
                   router.replace("/app/conversations");
                   router.refresh();
                 }).catch(() => setAcceptError(errorText("UNAVAILABLE")));

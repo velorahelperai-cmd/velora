@@ -12,6 +12,8 @@ vi.mock("@/components/app/setup-wizard", () => ({ SetupWizard: () => null }));
 vi.mock("@/components/app/access-gate", () => ({ AccessGate: () => null }));
 import SetupLayout from "./layout";
 import SetupPage from "./page";
+import { listKnowledgeSources } from "@/lib/knowledge/actions";
+import { getCompanyReviewRequest } from "@/lib/tenancy/actions";
 const selected = "/app/settings?tab=plan&term=monthly&persona=level_1&package=basic&version=fixture-version&amount=45000&currency=OMR";
 const returnTo = `/setup?next=${encodeURIComponent(selected)}`;
 const context: CompanyContext = {
@@ -21,6 +23,18 @@ const context: CompanyContext = {
 };
 beforeEach(() => { state.path = returnTo; state.access = { ok: true, context }; });
 describe("setup server routes retain the package selection", () => {
+  it("starts the owner's independent review read while knowledge is still pending", async () => {
+    let release!: (value: Awaited<ReturnType<typeof listKnowledgeSources>>) => void;
+    vi.mocked(listKnowledgeSources).mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
+    vi.mocked(getCompanyReviewRequest).mockResolvedValueOnce({ ok: true, data: null });
+    state.access = { ok: true, context: { ...context, company: { id: "company" } as CompanyContext["company"], membership: { role: "owner" } as CompanyContext["membership"] } };
+    const loading = SetupPage();
+    await vi.waitFor(() => expect(listKnowledgeSources).toHaveBeenCalled());
+    const reviewStarted = vi.mocked(getCompanyReviewRequest).mock.calls.length;
+    release({ ok: true, data: { sources: [], approvalFoundation: "ready" } });
+    await loading;
+    expect(reviewStarted).toBe(1);
+  });
   it("passes the selected package into the wizard while allowing required setup", async () => {
     expect(await SetupLayout({ children: "setup content" })).toBe("setup content");
     const page = await SetupPage();

@@ -1,3 +1,4 @@
+vi.mock("@/components/app/account-chrome",()=>({useOptionalAccountSession:()=>null}));
 import { createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -7,6 +8,7 @@ import type { SubscriptionOfferView } from "@/components/app/subscription-offers
 import { SubscriptionPaymentStatus } from "@/components/app/subscription-payment-status";
 
 vi.mock("@/lib/billing/wiring/test-checkout-actions", () => ({ resumeTestCheckoutAction: vi.fn() }));
+vi.mock("@/lib/billing/wiring/live-checkout-actions", () => ({ resumeLiveCheckoutAction: vi.fn() }));
 vi.mock("@/lib/demo-state", () => ({ useDemo: () => ({ locale: "en" }) }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 vi.mock("@/components/app/workspace-shell", () => ({ WorkspaceShell: ({ children }: { children: ReactNode }) => children }));
@@ -19,6 +21,12 @@ const row = () => mapBillingReturnDbParts("company", { order, attempt: null, lat
 const href = `/app/settings?tab=plan&term=monthly&persona=level_1&package=basic&version=${versionId}&amount=45000&currency=OMR`;
 
 describe("selection after returning from payment", () => {
+  it("propagates only persisted provider environment for recovery controls",()=>{
+    expect(mapBillingReturnDbParts("company",{order:{...order,provider_environment:"live"},attempt:null,latestEvent:null,grant:null})?.providerEnvironment).toBe("live");
+    expect(mapBillingReturnDbParts("company",{order:{...order,provider_environment:"browser-value"},attempt:null,latestEvent:null,grant:null})?.providerEnvironment).toBeUndefined();
+    const html=renderToStaticMarkup(createElement(SubscriptionPaymentStatus,{orderId:"order",providerEnvironment:"live",display:{kind:"unresolved",messageKey:"payment_unresolved"}}));
+    expect(html).toContain("Resume checkout");expect(html).not.toContain("Resume test checkout");
+  });
   it("preserves the plan version and amount from a company-scoped persisted order", () => {
     expect(row()).toMatchObject({ selection: { planVersionId: versionId, amountBaisa: 45000, currency: "OMR" } });
     expect(subscriptionReturnHref("company", row(), { status: "ready", offers: [offer] })).toBe(href);

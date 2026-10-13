@@ -19,7 +19,7 @@ export function readLiveCheckoutConfig(settings:Record<string,string|undefined>)
  return {ok:true,config:read.config,unitsPerOmr:read.config.verifiedOmrUnitsPerOmr!};
 }
 
-function readyLiveCheckoutUrl(url:string,config:PaymobAdapterConfig):boolean{
+export function readyLiveCheckoutUrl(url:string,config:PaymobAdapterConfig):boolean{
  try{
   const parsed=new URL(url),keys=[...parsed.searchParams.keys()];
   return !parsed.username&&!parsed.password&&!parsed.hash&&parsed.pathname==="/"

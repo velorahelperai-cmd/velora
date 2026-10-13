@@ -1,5 +1,6 @@
 vi.mock('server-only',()=>({}));
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { revalidatePath } from "next/cache";
 import type { CompanyContext } from "./types";
 
 // External boundaries are offline doubles; the server actions themselves run unchanged.
@@ -351,6 +352,11 @@ describe("readiness pillar uses qualified current billing evidence",()=>{
 });
 
 describe("business save runtime shape validation", () => {
+  it("keeps a committed business save successful when cache refresh fails", async () => {
+    vi.mocked(revalidatePath).mockImplementationOnce(() => { throw new Error("offline cache failure"); });
+    expect(await saveOwnerBusiness({ ...business, expectedCompanyId: COMPANY_B })).toEqual({ ok: true, data: context(COMPANY_B).company });
+    expect(state.writes).toEqual([{ kind: "upsert_selected_owner_company", companyId: COMPANY_B }]);
+  });
   it.each([
     ["null object", null], ["array", []],
     ["numeric name", { ...business, displayName: 42 }],

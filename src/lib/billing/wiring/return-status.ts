@@ -20,6 +20,7 @@ export type BillingReturnDbRow = {
   financial?: FinancialQualification;
   /** Navigation only; persisted locked-order details do not grant entitlement. */
   selection?: { planVersionId: string; amountBaisa: number; currency: "OMR" };
+  providerEnvironment?: "test" | "live";
 };
 
 export type BillingReturnDisplay =

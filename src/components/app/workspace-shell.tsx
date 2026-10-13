@@ -1,14 +1,15 @@
 "use client";
-import {sessionHasCompanyCapability} from "@/lib/access/actions";
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { emptyBusiness, useDemo } from "@/lib/demo-state";
-import { getWorkspaceSwitcher, getAccountProfile, selectWorkspaceCompany, signOut } from "@/lib/tenancy/actions";
+import { selectWorkspaceCompany, signOut } from "@/lib/tenancy/actions";
+import { getWorkspaceView } from "@/lib/tenancy/workspace-view";
 import type { CompanyRole } from "@/lib/tenancy/types";
 import { AccountMenu, useOptionalAccountSession } from "@/components/app/account-chrome";
 import { Button, LangSwitch, Notice, useAppCopy } from "@/components/app/ui";
+import { refreshSelectedWorkspace } from "./workspace-switch";
 
 import styles from "./internal-ui.module.css";
 
@@ -41,55 +42,46 @@ export function WorkspaceShell({ title, children, actions }: { title: string; ch
   const [workspace, setWorkspace] = useState<WorkspaceState | null>(null);
   const [switchBusy, setSwitchBusy] = useState(false);
   const [switchError, setSwitchError] = useState<string | null>(null);
+  const workspaceRequest = useRef(0);
 
   const reloadWorkspaceState = useCallback(async () => {
-    const switcher = await getWorkspaceSwitcher();
-    if (!switcher.ok) {
+    const request = ++workspaceRequest.current;
+    const result = await getWorkspaceView();
+    if (request !== workspaceRequest.current) return { ok: false as const, code: "UNAVAILABLE" as const };
+    if (!result.ok) {
       setProfile(null);
       setKnowledgeAllowed(false);
       setProfileLoadFailed(true);
-      return { ok: false as const, code: switcher.code };
+      return { ok: false as const, code: result.code };
     }
 
-    const identity=await getAccountProfile();
-    if(!identity.ok){
-      setProfile(null);
-      setKnowledgeAllowed(false);
-      setProfileLoadFailed(true);
-      return {ok:false as const,code:identity.code};
-    }
-    setWorkspace(switcher.data);
+    const { workspace, identity, knowledgeAllowed } = result.data;
+    setWorkspace(workspace);
     setProfileLoadFailed(false);
-    const user={id:identity.data.userId,email:identity.data.email,user_metadata:{full_name:identity.data.fullName}};
-    const profileRow={full_name:identity.data.fullName};
-    const selected = switcher.data.selectedCompanyId
-      ? switcher.data.choices.find((row) => row.companyId === switcher.data.selectedCompanyId)
+    const selected = workspace.selectedCompanyId
+      ? workspace.choices.find((row) => row.companyId === workspace.selectedCompanyId)
       : null;
-    const displayName =
-      profileRow?.full_name?.trim()
-      || (user.user_metadata?.full_name as string)
-      || user.email
-      || "User";
+    const displayName = identity.fullName.trim() || identity.email || "User";
     const role = selected?.role ?? null;
 
-    setKnowledgeAllowed(role==="owner"||!!selected&&await sessionHasCompanyCapability(selected.companyId,"knowledge.read")===true);
+    setKnowledgeAllowed(knowledgeAllowed);
     setProfile({
       name: displayName,
-      email: user.email ?? "",
+      email: identity.email,
       role,
       companyName: selected?.displayName ?? "",
     });
     update({
       account: role ? {
         name: displayName,
-        email: user.email ?? "",
+        email: identity.email,
         role,
       } : null,
       signedIn: true,
       stage: "active",
       ...(role ? { viewAs: role } : {}),
     });
-    return { ok: true as const, data: switcher.data };
+    return { ok: true as const, data: workspace };
   }, [update]);
 
   useEffect(() => {
@@ -102,7 +94,7 @@ export function WorkspaceShell({ title, children, actions }: { title: string; ch
         if (!cancelled) setProfileLoadFailed(true);
       }
     })();
-    return () => { cancelled = true; };
+    return () => { cancelled = true; workspaceRequest.current += 1; };
   }, [reloadWorkspaceState]);
 
   async function onSelectCompany(id: string) {
@@ -117,12 +109,15 @@ export function WorkspaceShell({ title, children, actions }: { title: string; ch
         setWorkspace((prev) => (prev ? { ...prev } : prev));
         return;
       }
-      const reloaded = await reloadWorkspaceState();
-      if (!reloaded.ok) {
-        setSwitchError(copy.app.workspaceSwitchFailed);
-      }
-      await accountSession?.refresh();
-      router.refresh();
+      // Hide the old server-rendered children until AppLayout's company key
+      // remounts the shell. Never combine the new sidebar with the old company.
+      workspaceRequest.current += 1;
+      setProfile(null);
+      setKnowledgeAllowed(false);
+      await refreshSelectedWorkspace({
+        refreshRoute: () => router.refresh(),
+        refreshAccount: () => accountSession?.refresh() ?? Promise.resolve(),
+      });
     } catch {
       setSwitchError(copy.app.workspaceSwitchFailed);
     } finally {
