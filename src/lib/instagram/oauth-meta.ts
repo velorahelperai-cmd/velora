@@ -20,6 +20,14 @@ function oauthFailureReason(body:Record<string,unknown>):OAuthFailureReason|unde
  if(/invalid (?:platform app|client(?:[_ ]id|[_ ]secret)?)(?:[.! ]|$)/i.test(message))return 'APP_CREDENTIALS_REJECTED';
  return undefined;
 }
+function safeProviderErrorCodes(body:Record<string,unknown>):{providerCode?:number;providerSubcode?:number}{
+ const source=record(body.error)?body.error:body;
+ const code=source.code,subcode=source.error_subcode;
+ return {
+  ...(typeof code==='number'&&Number.isSafeInteger(code)&&code>=0?{providerCode:code}:{}),
+ ...(typeof subcode==='number'&&Number.isSafeInteger(subcode)&&subcode>=0?{providerSubcode:subcode}:{})
+ };
+}
 /** Server-only configuration. No WhatsApp/app-secret fallback or env rollout. */
 export function readInstagramOAuthConfig(environment:Readonly<Record<string,string|undefined>>=process.env):InstagramOAuthConfig|null{
  const appId=environment.INSTAGRAM_APP_ID?.trim(),appSecret=environment.INSTAGRAM_APP_SECRET,contractId=environment.INSTAGRAM_LOGIN_CONTRACT_ID?.trim(),redirectUri=environment.INSTAGRAM_REDIRECT_URI;
@@ -42,8 +50,8 @@ export function instagramAuthorizationUrl(cfg:InstagramOAuthConfig,state:string)
  * and live verification before activation. Missing evidence fails closed. */
 export async function exchangeInstagramCode(code:string,binding:AttemptBinding,cfg:InstagramOAuthConfig,dependencies:{fetch?:typeof fetch;onDiagnostic?:(value:DiagnosticDetail)=>void}={}):Promise<ProviderResult>{
  let stage:DiagnosticStage='preflight';const trace=beginDiagnostic('instagram_connect');
- const report=(code:string,reason?:OAuthFailureReason)=>{trace.stage(stage);const diagnostic=trace.finish(code.startsWith('HTTP_')||code==='UNPROVEN_RESPONSE'?'OUTCOME_UNKNOWN':'PROVIDER_REJECTED');try{dependencies.onDiagnostic?.(diagnostic);}catch{/* Diagnostics do not change authorization results. */}if(process.env.NODE_ENV==='production')console.info(JSON.stringify({stage,code,...(reason?{reason}:{})}));};
- const rejected=(code='VALIDATION_REJECTED',reason?:OAuthFailureReason):ProviderResult=>{report(code,reason);return {ok:false,code:'REJECTED'};},unknown=(code='UNPROVEN_RESPONSE'):ProviderResult=>{report(code);return {ok:false,code:'UNKNOWN'};};
+ const report=(code:string,reason?:OAuthFailureReason,providerCodes?:{providerCode?:number;providerSubcode?:number})=>{trace.stage(stage);const diagnostic=trace.finish(code.startsWith('HTTP_')||code==='UNPROVEN_RESPONSE'?'OUTCOME_UNKNOWN':'PROVIDER_REJECTED');try{dependencies.onDiagnostic?.(diagnostic);}catch{/* Diagnostics do not change authorization results. */}if(process.env.NODE_ENV==='production')console.info(JSON.stringify({reference:diagnostic.reference,operation:diagnostic.operation,stage,code,...(reason?{reason}:{}),...providerCodes}));};
+ const rejected=(code='VALIDATION_REJECTED',reason?:OAuthFailureReason,providerCodes?:{providerCode?:number;providerSubcode?:number}):ProviderResult=>{report(code,reason,providerCodes);return {ok:false,code:'REJECTED'};},unknown=(code='UNPROVEN_RESPONSE'):ProviderResult=>{report(code);return {ok:false,code:'UNKNOWN'};};
  const flags=instagramConfig();if(!instagramOwnerConnectScope(binding.companyId,binding.userId,binding.appId)||!flags.connectEnabled||flags.graphVersion!=='v26.0'||binding.appId!==cfg.appId||binding.contractId!==cfg.contractId||!text(code)||/[\x00-\x1f\x7f]/.test(code))return rejected();
  const http=dependencies.fetch??fetch;
  async function request(url:string,init:RequestInit){
@@ -63,7 +71,7 @@ export async function exchangeInstagramCode(code:string,binding:AttemptBinding,c
   tokenForm.set('redirect_uri',cfg.redirectUri);
   tokenForm.set('code',code);
   const exchanged=await request('https://api.instagram.com/oauth/access_token',{method:'POST',body:tokenForm});
-  if(!exchanged.ok){return exchanged.status>=400&&exchanged.status<500&&record(exchanged.body)&&(exchanged.body.error_type==='OAuthException'||record(exchanged.body.error))?rejected('OAUTH_HTTP_'+exchanged.status,oauthFailureReason(exchanged.body)):unknown('HTTP_'+exchanged.status);}
+  if(!exchanged.ok){return exchanged.status>=400&&exchanged.status<500&&record(exchanged.body)&&(exchanged.body.error_type==='OAuthException'||record(exchanged.body.error))?rejected('OAUTH_HTTP_'+exchanged.status,oauthFailureReason(exchanged.body),safeProviderErrorCodes(exchanged.body)):unknown('HTTP_'+exchanged.status);}
   let short=exchanged.body;if(record(short)&&Array.isArray(short.data)){if(short.data.length!==1)return rejected();short=short.data[0];}
   if(!record(short)||!text(short.access_token))return unknown();
   stage='granted_permissions';
@@ -88,6 +96,7 @@ export async function exchangeInstagramCode(code:string,binding:AttemptBinding,c
   if(!record(identity)||account(identity.user_id)!==id)return rejected('ACCOUNT_ID_MISMATCH');
   if(!['BUSINESS','MEDIA_CREATOR'].includes(String(identity.account_type)))return rejected('PROFESSIONAL_ACCOUNT_REQUIRED');
   if(!instagramOwnerConnectProfile(binding.companyId,binding.userId,binding.appId,identity.username))return rejected('TARGET_USERNAME_MISMATCH');
+  trace.finish('OK');
   return {ok:true,accessToken:upgraded.body.access_token,evidence:{appId:cfg.appId,accountId:id,permissions:[...new Set(permissions as string[])],expiresAt:new Date(expires).toISOString(),contractId:cfg.contractId}};
  }catch{return unknown();}
 }

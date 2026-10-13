@@ -64,7 +64,7 @@ it('diagnostics emit only stage and sanitized code, never provider body or crede
  try{
   const http=vi.fn().mockResolvedValue(new Response(JSON.stringify({error_type:'OAuthException',error_message:'private-code synthetic-app-secret synthetic-token'}),{status:400}));
   await exchangeInstagramCode('private-code',binding,cfg,{fetch:http});
-  expect(log).toHaveBeenCalledWith(JSON.stringify({stage:'code_exchange',code:'OAUTH_HTTP_400'}));
+  const event=log.mock.calls.map(([value])=>JSON.parse(String(value))).find(row=>row.code==='OAUTH_HTTP_400');expect(event).toMatchObject({reference:expect.stringMatching(/^VEL-[A-F0-9]{16}$/),operation:'instagram_connect',stage:'code_exchange',code:'OAUTH_HTTP_400'});
   expect(log.mock.calls.flat().join('')).not.toMatch(/private-code|synthetic-app-secret|synthetic-token/);
  }finally{vi.unstubAllEnvs();log.mockRestore();}
 });
@@ -81,7 +81,7 @@ it.each([
   const http=vi.fn().mockResolvedValue(new Response(JSON.stringify({error_type:'OAuthException',error_message:message+' synthetic-app-secret private-code private-state synthetic-token'}),{status:400}));
   expect(await exchangeInstagramCode('private-code',binding,cfg,{fetch:http})).toEqual({ok:false,code:'REJECTED'});
   expect(http).toHaveBeenCalledTimes(1);
-  expect(log).toHaveBeenCalledWith(JSON.stringify({stage:'code_exchange',code:'OAUTH_HTTP_400',reason}));
+  const event=log.mock.calls.map(([value])=>JSON.parse(String(value))).find(row=>row.code==='OAUTH_HTTP_400');expect(event).toMatchObject({reference:expect.stringMatching(/^VEL-[A-F0-9]{16}$/),operation:'instagram_connect',stage:'code_exchange',code:'OAUTH_HTTP_400',reason});
   expect(log.mock.calls.flat().join('')).not.toMatch(/synthetic-app-secret|private-code|private-state|synthetic-token/);
  }finally{vi.unstubAllEnvs();log.mockRestore();}
 });
@@ -92,7 +92,7 @@ it('does not guess a diagnostic reason for an unfamiliar OAuth error',async()=>{
  try{
   const http=vi.fn().mockResolvedValue(new Response(JSON.stringify({error:{type:'OAuthException',message:'private unrecognized response',code:'private-code'}}),{status:400}));
   expect(await exchangeInstagramCode('code',binding,cfg,{fetch:http})).toEqual({ok:false,code:'REJECTED'});
-  expect(log).toHaveBeenCalledWith(JSON.stringify({stage:'code_exchange',code:'OAUTH_HTTP_400'}));
+  const event=log.mock.calls.map(([value])=>JSON.parse(String(value))).find(row=>row.code==='OAUTH_HTTP_400');expect(event).toMatchObject({reference:expect.stringMatching(/^VEL-[A-F0-9]{16}$/),operation:'instagram_connect',stage:'code_exchange',code:'OAUTH_HTTP_400'});
  }finally{vi.unstubAllEnvs();log.mockRestore();}
 });
 
@@ -102,6 +102,6 @@ it('recognizes a nested OAuth error without logging provider metadata or text',a
  try{
   const http=vi.fn().mockResolvedValue(new Response(JSON.stringify({error:{type:'OAuthException',message:'Invalid client_secret. synthetic-app-secret',code:190,error_subcode:999,fbtrace_id:'private-trace'}}),{status:400}));
   expect(await exchangeInstagramCode('code',binding,cfg,{fetch:http})).toEqual({ok:false,code:'REJECTED'});
-  expect(log).toHaveBeenCalledWith(JSON.stringify({stage:'code_exchange',code:'OAUTH_HTTP_400',reason:'APP_CREDENTIALS_REJECTED'}));
+  const event=log.mock.calls.map(([value])=>JSON.parse(String(value))).find(row=>row.code==='OAUTH_HTTP_400');expect(event).toMatchObject({reference:expect.stringMatching(/^VEL-[A-F0-9]{16}$/),operation:'instagram_connect',stage:'code_exchange',code:'OAUTH_HTTP_400',reason:'APP_CREDENTIALS_REJECTED',providerCode:190,providerSubcode:999});
  }finally{vi.unstubAllEnvs();log.mockRestore();}
 });
