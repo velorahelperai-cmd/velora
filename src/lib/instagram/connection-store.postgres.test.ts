@@ -47,7 +47,9 @@ describe.skipIf(process.env.VELORA_IG_POSTGRES !== "1")("Instagram adapter + flo
    insert into private.app_session_activity(session_id,user_id,last_activity_at) values('${binding.sessionId}','${binding.userId}',now());`);
  });
  function flow(session: InstagramRpcClient, server: InstagramRpcClient, exchange: () => Promise<ProviderResult>) {
-  return completeInstagramConnection(binding, { attemptId: binding.attemptId, state, code: "synthetic-code" }, binding, { ...createInstagramConnectionStore(session, server), exchange });
+  // This legacy suite installs only the original OAuth migration; subscription SQL
+  // is exercised separately by subscription-checkpoint.postgres.test.ts.
+  return completeInstagramConnection(binding, { attemptId: binding.attemptId, state, code: "synthetic-code" }, binding, { ...createInstagramConnectionStore(session, server), exchange, subscribe: async () => ({ok:true}) });
  }
  it("exchange_observes_committed_claim_from_an_independent_database_session", async () => {
   const session = client("authenticated"), server = client("service_role");

@@ -35,13 +35,18 @@ function fixture(initial: ConnectionProgress = { kind: "pending", binding }) {
     if (progress.kind === "claimed") progress = { kind: outcome, binding };
     return progress;
   });
-  const ports: { -readonly [Key in keyof ConnectionPorts]: ConnectionPorts[Key] } = { readProgress, claim, exchange, stage, finalize, settleClaim };
-  return { ports, events, readProgress, claim, exchange, stage, finalize, settleClaim,
+  const subscribe = vi.fn(async () => ({ ok: true as const }));
+  const ports: { -readonly [Key in keyof ConnectionPorts]: ConnectionPorts[Key] } = { readProgress, claim, exchange, stage, subscribe, finalize, settleClaim };
+  return { ports, events, readProgress, claim, exchange, stage, subscribe, finalize, settleClaim,
     get: () => progress, set: (next: ConnectionProgress) => { progress = next; } };
 }
 const run = (f: ReturnType<typeof fixture>) => completeInstagramConnection(identity, input, binding, f.ports);
 
 describe("Instagram single-use OAuth completion (port-level only)", () => {
+  it('subscription must succeed before finalization',async()=>{
+    const f=fixture();f.ports.subscribe=vi.fn(async()=>({ok:false as const,code:'RECONCILIATION_REQUIRED' as const}));
+    expect(await run(f)).toEqual(reconciliation);expect(f.finalize).not.toHaveBeenCalled();expect(f.get().kind).toBe('vault_staged');
+  });
   it("call_order_claim_exchange_stage_finalize", async () => {
     const f = fixture(); expect(await run(f)).toEqual(linked);
     expect(f.events).toEqual(["claim", "exchange", "stage", "finalize"]);

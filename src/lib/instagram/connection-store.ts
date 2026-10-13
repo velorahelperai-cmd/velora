@@ -17,7 +17,7 @@ export type StartConnectionInput = Readonly<{
   contractId: string; expectedGeneration: number;
 }>;
 export type StartConnectionResult = Readonly<{ ok: true; binding: AttemptBinding; expiresAt: string }> | ConnectionFailure;
-export type InstagramStore = Omit<ConnectionPorts, "exchange">;
+export type InstagramStore = Omit<ConnectionPorts, "exchange" | "subscribe">;
 const uuid = (v: unknown): v is string => typeof v === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(v);
 const text = (v: unknown): v is string => typeof v === "string" && v.trim().length > 0 && v.length <= 128;
 const object = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);

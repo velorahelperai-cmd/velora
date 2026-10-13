@@ -7,6 +7,7 @@ vi.mock('@/lib/supabase/admin',()=>({createAdminClient:f.admin}));
 vi.mock('next/headers',()=>({cookies:async()=>({set:f.set})}));
 vi.mock('./config',()=>({instagramConfig:f.config}));
 vi.mock('./oauth-meta',()=>({readInstagramOAuthConfig:f.oauth,exchangeInstagramCode:f.exchange,instagramAuthorizationUrl:()=> 'https://www.instagram.com/oauth/authorize?state=synthetic'}));
+vi.mock('./subscription',()=>({ensureInstagramSubscription:async()=>({ok:true})}));
 import {loadInstagramOwnerConnection,startInstagramOwnerConnection,completeInstagramOwnerOAuth,disconnectInstagramOwnerConnection} from './owner-actions';
 const id=(n:number)=>`abcdefab-0000-4000-8000-${String(n).padStart(12,'0')}`;
 const b={companyId:id(1),userId:id(11),sessionId:id(21),attemptId:id(3),generation:1,appId:'1000',contractId:'instagram-login-v26'};

@@ -64,6 +64,8 @@ async function runCompletion(
   }
   async function finalize(receipt: string): Promise<ConnectionResult> {
     try {
+      const subscription = await ports.subscribe(binding, receipt);
+      if (!object(subscription) || subscription.ok !== true) return safeFailure(subscription);
       const result = await ports.finalize(binding, receipt);
       if (object(result) && result.ok === true && text(result.linkId)) return { ok: true, linkId: result.linkId };
       const denied = safeFailure(result);

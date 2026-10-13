@@ -60,6 +60,11 @@ export type ConnectionPorts = Readonly<{
    * makes no stage change; exception/UNAVAILABLE may mean a committed lost response.
    */
   stage(binding: AttemptBinding, success: ProviderSuccess): Promise<Readonly<{ stageReceipt: string }> | ConnectionFailure>;
+  /** Establish messages subscription only after a committed, exact Vault stage.
+   * The implementation must commit one subscription claim before its single POST,
+   * retain ambiguous outcomes independently of OAuth, and require provider success
+   * before returning ok. No automatic POST replay or undocumented GET recovery. */
+  subscribe(binding: AttemptBinding, stageReceipt: string): Promise<Readonly<{ ok: true }> | ConnectionFailure>;
   /**
    * Revalidate exact receipt and current owner/native+app session/company/generation,
    * app/contract/evidence/expiry in the binding transaction. Enforce active-account
