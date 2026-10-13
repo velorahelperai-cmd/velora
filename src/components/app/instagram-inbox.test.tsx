@@ -21,13 +21,21 @@ const conversation={id:id(2),counterpartyId:'200',unreadCount:1};
 const page={companyId:id(1),actorId:id(11),conversationScope:'all_company',conversations:[conversation,{...conversation,id:id(4),counterpartyId:'201'}],hasMore:false,nextCursor:null};
 const thread={...page,conversationId:id(2),conversation,messages:[],readReceipt:null};
 const saved={text:' exact saved text ',state:'ready',binding:{companyId:id(1),conversationId:id(2),intentId:id(3)}};
-function render(company=id(1)){f.cursor=0;const tree=InstagramInbox({companyId:company});f.effects.splice(0).forEach(fn=>fn());return tree;}
+let setupOwner=false;
+function render(company=id(1)){f.cursor=0;const tree=InstagramInbox({companyId:company,owner:setupOwner,companyInSetup:setupOwner});f.effects.splice(0).forEach(fn=>fn());return tree;}
 function nodes(tree:ReactElement):ReactElement<Record<string,unknown>>[]{return [tree as ReactElement<Record<string,unknown>>,...Children.toArray((tree.props as {children?:ReactElement[]}).children).filter(isValidElement).flatMap(n=>nodes(n))];}
 const button=(label:string)=>nodes(render()).find(n=>n.type===Button&&n.props.children===label)!;
 const textarea=()=>nodes(render()).find(n=>n.type==='textarea')!;
 const click=async(label:string)=>{const b=button(label);expect(b.props.disabled).not.toBe(true);await (b.props.onClick as ()=>void)();};
 async function settle(){for(let n=0;n<20;n++)await Promise.resolve();render();}
-beforeEach(()=>{for(const s of f.slots)s.cleanup?.();f.slots=[];f.cursor=0;f.effects=[];f.url='thread='+id(2);vi.clearAllMocks();f.inbox.mockResolvedValue({ok:true,data:page});f.thread.mockResolvedValue({ok:true,data:thread});f.read.mockResolvedValue({ok:true});f.ready.mockResolvedValue({ok:true,data:{blockers:['ROLLOUT_DISABLED'],ready:false}});f.load.mockResolvedValue({ok:true,data:saved});f.save.mockResolvedValue({ok:true,data:saved});});
+beforeEach(()=>{setupOwner=false;for(const s of f.slots)s.cleanup?.();f.slots=[];f.cursor=0;f.effects=[];f.url='thread='+id(2);vi.clearAllMocks();f.inbox.mockResolvedValue({ok:true,data:page});f.thread.mockResolvedValue({ok:true,data:thread});f.read.mockResolvedValue({ok:true});f.ready.mockResolvedValue({ok:true,data:{blockers:['ROLLOUT_DISABLED'],ready:false}});f.load.mockResolvedValue({ok:true,data:saved});f.save.mockResolvedValue({ok:true,data:saved});});
+it('explains setup for the native owner without granting inbox access or changing staff denial',async()=>{
+ f.url='';f.inbox.mockResolvedValue({ok:false,code:'FORBIDDEN'});setupOwner=true;render();await settle();
+ expect(nodes(render()).some(n=>String(n.props.children).includes('Company activation must be approved'))).toBe(true);
+ expect(f.thread).not.toHaveBeenCalled();expect(f.send).not.toHaveBeenCalled();
+ setupOwner=false;
+ expect(nodes(render()).some(n=>n.props.children==='You do not have access to this Instagram conversation.')).toBe(true);
+});
 it('rejects oversized UTF-8 draft before reservation, allowing correction',async()=>{
  render();await settle();(textarea().props.onChange as (e:unknown)=>void)({target:{value:'ع'.repeat(501)}});await click('Save reply');await settle();
  expect(f.save).not.toHaveBeenCalled();expect(textarea().props.readOnly).toBe(false);
