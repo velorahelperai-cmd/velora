@@ -53,7 +53,6 @@ it('another genuine professional profile is rejected before Vault stage, subscri
 });
 
 it('diagnostics emit only stage and sanitized code, never provider body or credentials',async()=>{
- const {afterEach}=await import('vitest');
  const log=vi.spyOn(console,'info').mockImplementation(()=>{});
  vi.stubEnv('NODE_ENV','production');
  try{
@@ -61,5 +60,42 @@ it('diagnostics emit only stage and sanitized code, never provider body or crede
   await exchangeInstagramCode('private-code',binding,cfg,{fetch:http});
   expect(log).toHaveBeenCalledWith(JSON.stringify({stage:'code_exchange',code:'OAUTH_HTTP_400'}));
   expect(log.mock.calls.flat().join('')).not.toMatch(/private-code|synthetic-app-secret|synthetic-token/);
+ }finally{vi.unstubAllEnvs();log.mockRestore();}
+});
+
+it.each([
+ ['Error validating verification code. Please make sure your redirect_uri is identical to the one you used in the OAuth dialog request.','REDIRECT_URI_REJECTED'],
+ ['This authorization code has been used.','AUTHORIZATION_CODE_USED'],
+ ['Authorization code has expired.','AUTHORIZATION_CODE_EXPIRED'],
+ ['Invalid platform app.','APP_CREDENTIALS_REJECTED'],
+])('diagnoses a recognized OAuth error using fixed reasons only: %s',async(message,reason)=>{
+ const log=vi.spyOn(console,'info').mockImplementation(()=>{});
+ vi.stubEnv('NODE_ENV','production');
+ try{
+  const http=vi.fn().mockResolvedValue(new Response(JSON.stringify({error_type:'OAuthException',error_message:message+' synthetic-app-secret private-code private-state synthetic-token'}),{status:400}));
+  expect(await exchangeInstagramCode('private-code',binding,cfg,{fetch:http})).toEqual({ok:false,code:'REJECTED'});
+  expect(http).toHaveBeenCalledTimes(1);
+  expect(log).toHaveBeenCalledExactlyOnceWith(JSON.stringify({stage:'code_exchange',code:'OAUTH_HTTP_400',reason}));
+  expect(log.mock.calls.flat().join('')).not.toMatch(/synthetic-app-secret|private-code|private-state|synthetic-token/);
+ }finally{vi.unstubAllEnvs();log.mockRestore();}
+});
+
+it('does not guess a diagnostic reason for an unfamiliar OAuth error',async()=>{
+ const log=vi.spyOn(console,'info').mockImplementation(()=>{});
+ vi.stubEnv('NODE_ENV','production');
+ try{
+  const http=vi.fn().mockResolvedValue(new Response(JSON.stringify({error:{type:'OAuthException',message:'private unrecognized response',code:'private-code'}}),{status:400}));
+  expect(await exchangeInstagramCode('code',binding,cfg,{fetch:http})).toEqual({ok:false,code:'REJECTED'});
+  expect(log).toHaveBeenCalledExactlyOnceWith(JSON.stringify({stage:'code_exchange',code:'OAUTH_HTTP_400'}));
+ }finally{vi.unstubAllEnvs();log.mockRestore();}
+});
+
+it('recognizes a nested OAuth error without logging provider metadata or text',async()=>{
+ const log=vi.spyOn(console,'info').mockImplementation(()=>{});
+ vi.stubEnv('NODE_ENV','production');
+ try{
+  const http=vi.fn().mockResolvedValue(new Response(JSON.stringify({error:{type:'OAuthException',message:'Invalid client_secret. synthetic-app-secret',code:190,error_subcode:999,fbtrace_id:'private-trace'}}),{status:400}));
+  expect(await exchangeInstagramCode('code',binding,cfg,{fetch:http})).toEqual({ok:false,code:'REJECTED'});
+  expect(log).toHaveBeenCalledExactlyOnceWith(JSON.stringify({stage:'code_exchange',code:'OAUTH_HTTP_400',reason:'APP_CREDENTIALS_REJECTED'}));
  }finally{vi.unstubAllEnvs();log.mockRestore();}
 });

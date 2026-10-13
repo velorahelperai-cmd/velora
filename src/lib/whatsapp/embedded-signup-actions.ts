@@ -50,7 +50,7 @@ export async function completeEmbeddedSignup(input:SignupCompletionInput){
  const config=serverConfig(),admin=createAdminClient();if(!config||!admin)return {ok:false as const,code:"NEEDS_SETUP"};
  if(!input||!uuid(input.attemptId)||typeof input.nonce!=="string"||!/^[0-9a-f]{64}$/.test(input.nonce)||typeof input.code!=="string"||!input.code||input.code.length>4096||!/^\d{1,64}$/.test(input.wabaId)||!/^\d{1,64}$/.test(input.phoneNumberId)||!/^\d{6}$/.test(input.pin))return {ok:false as const,code:"INVALID_INPUT"};
  const r=await finishEmbeddedSignup(auth.identity,input,config,createSignupPorts(auth.identity,input,config,auth.client,admin as unknown as SignupRpcClient));
- if(r.ok)revalidatePath("/app/settings");return r;
+ if(r.ok){try{revalidatePath("/app/settings");}catch{/* Authorization is already durably finalized. */}}return r;
 }
 export async function cancelEmbeddedSignup(input:{attemptId:string;nonce:string}){
  const auth=await owner();if(!auth.ok)return auth;
@@ -59,7 +59,7 @@ export async function cancelEmbeddedSignup(input:{attemptId:string;nonce:string}
 }
 export async function disconnectEmbeddedSignup(companyId:string){
  const auth=await scopedOwner(companyId);if(!auth.ok)return auth;
- const r=await signupRpc(auth.client,"whatsapp_disconnect_embedded_signup",{p_company_id:auth.identity.companyId});if(r.ok===true)revalidatePath("/app/settings");return r.ok===true?{ok:true as const}:{ok:false as const,code:String(r.code)};
+ const r=await signupRpc(auth.client,"whatsapp_disconnect_embedded_signup",{p_company_id:auth.identity.companyId});if(r.ok===true){try{revalidatePath("/app/settings");}catch{/* Authorization is already durably revoked. */}}return r.ok===true?{ok:true as const}:{ok:false as const,code:String(r.code)};
 }
 
 export async function getFixedAckSetup(companyId:string){

@@ -7,6 +7,17 @@ const required=Object.freeze(['instagram_business_basic','instagram_business_man
 const record=(v:unknown):v is Record<string,unknown>=>v!==null&&typeof v==='object'&&!Array.isArray(v);
 const text=(v:unknown):v is string=>typeof v==='string'&&v.length>0&&v.length<=16384;
 const account=(v:unknown):string|null=>typeof v==='string'&&/^[0-9]{1,64}$/.test(v)?v:typeof v==='number'&&Number.isSafeInteger(v)&&v>0?String(v):null;
+type OAuthFailureReason='REDIRECT_URI_REJECTED'|'AUTHORIZATION_CODE_USED'|'AUTHORIZATION_CODE_EXPIRED'|'APP_CREDENTIALS_REJECTED';
+/** Diagnostic hints only. Never copy provider text, credentials or identifiers. */
+function oauthFailureReason(body:Record<string,unknown>):OAuthFailureReason|undefined{
+ const message=typeof body.error_message==='string'?body.error_message:record(body.error)?body.error.message:undefined;
+ if(!text(message))return undefined;
+ if(/redirect_uri/i.test(message)&&/identical|mismatch|does not match/i.test(message))return 'REDIRECT_URI_REJECTED';
+ if(/(?:authorization|verification) code (?:has (?:already )?been|was|is) (?:already )?used/i.test(message))return 'AUTHORIZATION_CODE_USED';
+ if(/(?:authorization|verification) code (?:has |is )?expired/i.test(message))return 'AUTHORIZATION_CODE_EXPIRED';
+ if(/invalid (?:platform app|client(?:[_ ]id|[_ ]secret)?)(?:[.! ]|$)/i.test(message))return 'APP_CREDENTIALS_REJECTED';
+ return undefined;
+}
 /** Server-only configuration. No WhatsApp/app-secret fallback or env rollout. */
 export function readInstagramOAuthConfig(environment:Readonly<Record<string,string|undefined>>=process.env):InstagramOAuthConfig|null{
  const appId=environment.INSTAGRAM_APP_ID?.trim(),appSecret=environment.INSTAGRAM_APP_SECRET,contractId=environment.INSTAGRAM_LOGIN_CONTRACT_ID?.trim(),redirectUri=environment.INSTAGRAM_REDIRECT_URI;
@@ -29,8 +40,8 @@ export function instagramAuthorizationUrl(cfg:InstagramOAuthConfig,state:string)
  * and live verification before activation. Missing evidence fails closed. */
 export async function exchangeInstagramCode(code:string,binding:AttemptBinding,cfg:InstagramOAuthConfig,dependencies:{fetch?:typeof fetch}={}):Promise<ProviderResult>{
  let stage='preflight';
- const report=(code:string)=>{if(process.env.NODE_ENV==='production')console.info(JSON.stringify({stage,code}));};
- const rejected=(code='VALIDATION_REJECTED'):ProviderResult=>{report(code);return {ok:false,code:'REJECTED'};},unknown=(code='UNPROVEN_RESPONSE'):ProviderResult=>{report(code);return {ok:false,code:'UNKNOWN'};};
+ const report=(code:string,reason?:OAuthFailureReason)=>{if(process.env.NODE_ENV==='production')console.info(JSON.stringify({stage,code,...(reason?{reason}:{})}));};
+ const rejected=(code='VALIDATION_REJECTED',reason?:OAuthFailureReason):ProviderResult=>{report(code,reason);return {ok:false,code:'REJECTED'};},unknown=(code='UNPROVEN_RESPONSE'):ProviderResult=>{report(code);return {ok:false,code:'UNKNOWN'};};
  const flags=instagramConfig();if(!instagramOwnerConnectScope(binding.companyId,binding.userId,binding.appId)||!flags.connectEnabled||flags.graphVersion!=='v26.0'||binding.appId!==cfg.appId||binding.contractId!==cfg.contractId||!text(code)||/[\x00-\x1f\x7f]/.test(code))return rejected();
  const http=dependencies.fetch??fetch;
  async function request(url:string,init:RequestInit){
@@ -42,7 +53,7 @@ export async function exchangeInstagramCode(code:string,binding:AttemptBinding,c
  try{
   stage='code_exchange';
   const exchanged=await request('https://api.instagram.com/oauth/access_token',{method:'POST',body:new URLSearchParams({client_id:cfg.appId,client_secret:cfg.appSecret,grant_type:'authorization_code',redirect_uri:cfg.redirectUri,code})});
-  if(!exchanged.ok){return exchanged.status>=400&&exchanged.status<500&&record(exchanged.body)&&(exchanged.body.error_type==='OAuthException'||record(exchanged.body.error))?rejected('OAUTH_HTTP_'+exchanged.status):unknown('HTTP_'+exchanged.status);}
+  if(!exchanged.ok){return exchanged.status>=400&&exchanged.status<500&&record(exchanged.body)&&(exchanged.body.error_type==='OAuthException'||record(exchanged.body.error))?rejected('OAUTH_HTTP_'+exchanged.status,oauthFailureReason(exchanged.body)):unknown('HTTP_'+exchanged.status);}
   let short=exchanged.body;if(record(short)&&Array.isArray(short.data)){if(short.data.length!==1)return rejected();short=short.data[0];}
   if(!record(short)||!text(short.access_token))return unknown();
   stage='granted_permissions';
