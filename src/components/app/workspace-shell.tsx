@@ -10,6 +10,7 @@ import type { CompanyRole } from "@/lib/tenancy/types";
 import { AccountMenu, useOptionalAccountSession } from "@/components/app/account-chrome";
 import { Button, LangSwitch, Notice, useAppCopy } from "@/components/app/ui";
 import { refreshSelectedWorkspace } from "./workspace-switch";
+import { DiagnosticHint } from "./diagnostic-hint";
 
 import styles from "./internal-ui.module.css";
 
@@ -38,6 +39,7 @@ export function WorkspaceShell({ title, children, actions }: { title: string; ch
   const ar = locale === "ar";
   const [profile, setProfile] = useState<ProfileState | null>(null);
   const [profileLoadFailed, setProfileLoadFailed] = useState(false);
+  const [workspaceDiagnostic, setWorkspaceDiagnostic] = useState<unknown>(null);
   const [knowledgeAllowed,setKnowledgeAllowed]=useState(false);
   const [workspace, setWorkspace] = useState<WorkspaceState | null>(null);
   const [switchBusy, setSwitchBusy] = useState(false);
@@ -51,12 +53,14 @@ export function WorkspaceShell({ title, children, actions }: { title: string; ch
     if (!result.ok) {
       setProfile(null);
       setKnowledgeAllowed(false);
+      setWorkspaceDiagnostic(result.diagnostic);
       setProfileLoadFailed(true);
       return { ok: false as const, code: result.code };
     }
 
     const { workspace, identity, knowledgeAllowed } = result.data;
     setWorkspace(workspace);
+    setWorkspaceDiagnostic(null);
     setProfileLoadFailed(false);
     const selected = workspace.selectedCompanyId
       ? workspace.choices.find((row) => row.companyId === workspace.selectedCompanyId)
@@ -157,7 +161,7 @@ export function WorkspaceShell({ title, children, actions }: { title: string; ch
   const roleLabel = role === "owner" ? copy.app.owner : role === "staff" ? copy.app.staff : copy.app.workspacePick;
 
   if (!profile) {
-    return <main className={`app-shell ${styles.theme} p-6`} data-internal-ui="true" dir={ar ? "rtl" : "ltr"} aria-busy={!profileLoadFailed}>{profileLoadFailed ? <><Notice tone="error">{copy.app.workspaceSwitchFailed}</Notice><Button className="mt-4" onClick={() => { void reloadWorkspaceState(); }}>{copy.app.readinessRetry}</Button></> : <p>{copy.loading}</p>}</main>;
+    return <main className={`app-shell ${styles.theme} p-6`} data-internal-ui="true" dir={ar ? "rtl" : "ltr"} aria-busy={!profileLoadFailed}>{profileLoadFailed ? <><Notice tone="error">{copy.app.workspaceSwitchFailed}</Notice><DiagnosticHint diagnostic={workspaceDiagnostic} locale={locale}/><Button className="mt-4" onClick={() => { void reloadWorkspaceState(); }}>{copy.app.readinessRetry}</Button></> : <p>{copy.loading}</p>}</main>;
   }
 
   return (

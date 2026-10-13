@@ -8,6 +8,7 @@ import {readCompanyBillingDisplay} from "../wiring/display-read";
 import {billingOwnerGate,recheckBillingOwner} from "./owner-gate";
 import {parseLedgerFilters,encodeBillingCursor,decodeBillingCursor} from "./cursor";
 import {ledgerFailure,adminOrderProjection,type AdminBillingPage} from "./model";
+import {readScopedEmailStatus} from "../email/status";
 const record=(v:unknown):Record<string,unknown>|null=>v!==null&&typeof v==="object"&&!Array.isArray(v)?v as Record<string,unknown>:null;
 export async function readAdminBillingOrders(input:unknown={}):Promise<AdminBillingPage>{
  const gate=await billingOwnerGate();if(!gate.ok)return ledgerFailure(gate.code);const filters=parseLedgerFilters(input);if(!filters)return ledgerFailure("invalid_input");
@@ -31,10 +32,11 @@ export async function readAdminBillingOrder(input:{companyId:string;orderId:stri
  const attempts=evidence.attempts.filter(x=>x.order_id===input.orderId&&sameScope(x));const ids=new Set(attempts.map(x=>x.id));
  const timeline=[...attempts.map(x=>({kind:"attempt",id:String(x.id),at:typeof x.created_at==="string"?x.created_at:null,state:String(x.status)})),...evidence.events.filter(x=>ids.has(x.payment_attempt_id)&&sameScope(x)&&x.amount_baisa_expected===order.amount_baisa&&x.currency_expected===order.currency).map(x=>({kind:"event",id:String(x.id),at:typeof x.created_at==="string"?x.created_at:null,state:String(x.event_status)})),...evidence.grants.filter(x=>x.order_id===input.orderId&&ids.has(x.payment_attempt_id)&&sameScope(x)).map(x=>({kind:"receipt",id:String(x.id),at:typeof x.applied_at==="string"?x.applied_at:null,state:String(x.status??"unknown")})),...evidence.outcomes.filter(x=>x.order_id===input.orderId&&ids.has(x.payment_attempt_id)&&sameScope(x)).map(x=>({kind:"outcome",id:String(x.id),at:typeof x.created_at==="string"?x.created_at:null,state:String(x.outcome)}))];
  const rpc=gate.client as unknown as {rpc(name:string,args:Record<string,unknown>):PromiseLike<{data:unknown;error:unknown}>};const service=await rpc.rpc("billing_admin_read_service_state",{p_company_id:input.companyId});const serviceData=record(service.data);
+ const email=await readScopedEmailStatus(rpc,input.companyId,input.orderId);
  const validService=!service.error&&serviceData?.ok===true&&serviceData.company_id===input.companyId&&Array.isArray(serviceData.states)&&serviceData.states.every((v:unknown)=>{const r=record(v);return r&&typeof r.service==="string"&&typeof r.tier==="string"&&typeof r.activated==="boolean";});
  const serviceStates=validService?serviceData!.states as {service:string;tier:string;activated:boolean}[]:null;
  const u=current.ok?record(current.data.usage):null;
  const snapshot=current.ok?dashboardBillingSnapshot(input.companyId,current.data.journey,current.data.usage,{companyId:input.companyId,billingPaid:current.data.billing_paid,operationalEligible:current.data.operational_eligible,channelReady:"unavailable",usageCompanyId:u?.company_id??null,qualifiedPaidThrough:current.data.qualified_paid_through}):null;
- if(!await recheckBillingOwner(gate.binding))return {status:"forbidden" as const,data:null};return {status:"ready" as const,data:{order:adminOrderProjection(order as FinancialRecord,financial),current:snapshot,serviceStates,timeline}};
+ if(!await recheckBillingOwner(gate.binding))return {status:"forbidden" as const,data:null};return {status:"ready" as const,data:{order:adminOrderProjection(order as FinancialRecord,financial),current:snapshot,serviceStates,email,timeline}};
  }catch{return {status:"unavailable" as const,data:null};}
 }

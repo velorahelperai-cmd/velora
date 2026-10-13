@@ -22,6 +22,16 @@ it("revocation after financial reads erases page disclosure",async()=>{state.rec
 it("owner finance remains readable without AI persistence",async()=>{state.ai.mockResolvedValue({ok:false,error:"AI_DATABASE_UNAVAILABLE"});expect(await readAdminTruth()).toMatchObject({ok:true,data:{ai:null,collections:{live_collected_baisa:0}}});expect(state.collections).toHaveBeenCalledOnce();});
 it("owner revocation before aggregate response denies financial disclosure",async()=>{state.recheck.mockResolvedValueOnce(true).mockResolvedValueOnce(false);expect(await readAdminTruth()).toMatchObject({ok:false});});
 it("company-bound detail rejects bad identifiers before privileged read",async()=>{expect(await readAdminBillingOrder({companyId:cid,orderId:"bad"})).toMatchObject({status:"invalid_input",data:null});expect(state.admin).not.toHaveBeenCalled();});
+it("email detail refuses delegated or expired access before privileged order/status reads",async()=>{
+ state.gate.mockResolvedValue({ok:false,code:"forbidden"});expect(await readAdminBillingOrder({companyId:cid,orderId:oid})).toEqual({status:"forbidden",data:null});expect(state.admin).not.toHaveBeenCalled();expect(state.rpc).not.toHaveBeenCalled();
+});
+it.each([true,false])("email detail uses exact company/order scope and final authority recheck=%s",async current=>{
+ const query={select:vi.fn(),eq:vi.fn(),returns:vi.fn(),maybeSingle:vi.fn().mockResolvedValue({data:order,error:null})};query.select.mockReturnValue(query);query.eq.mockReturnValue(query);query.returns.mockReturnValue(query);state.admin.mockReturnValue({from:()=>query});
+ state.rpc.mockImplementation(async name=>({error:null,data:name==="billing_admin_read_service_state"?{ok:true,company_id:cid,states:[]}:{ok:true,companyId:cid,orderId:oid,email:{state:"accepted",queuedAt:"2026-10-13T00:00:00Z",acceptedAt:"2026-10-13T00:01:00Z",delivered:false,recipient:"private@example.test"}}}));state.recheck.mockResolvedValue(current);
+ const result=await readAdminBillingOrder({companyId:cid,orderId:oid});
+ expect(query.eq).toHaveBeenCalledWith("id",oid);expect(query.eq).toHaveBeenCalledWith("company_id",cid);expect(state.rpc).toHaveBeenCalledWith("billing_admin_read_subscription_email",{p_company_id:cid,p_order_id:oid});
+ if(current)expect(result).toMatchObject({status:"ready",data:{email:{state:"accepted",delivered:false}}});else expect(result).toEqual({status:"forbidden",data:null});expect(JSON.stringify(result)).not.toContain("private@example.test");
+});
 
 it("AI transport rejection preserves independently authorized financial evidence",async()=>{state.ai.mockRejectedValue(Error("SYNTHETIC_AI_READ_ERROR"));expect(await readAdminTruth()).toMatchObject({ok:true,data:{ai:null,collections:{live_collected_baisa:0}}});});
 

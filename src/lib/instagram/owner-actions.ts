@@ -12,6 +12,7 @@ import {completeInstagramConnection} from './connection-flow';
 import type {AttemptBinding,ConnectionResult} from './connection-contracts';
 import {INSTAGRAM_ATTEMPT_COOKIE} from './oauth-route';
 import {ensureInstagramSubscription} from './subscription';
+import type {DiagnosticDetail} from '@/lib/diagnostics/contract';
 type Failure={ok:false;code:'FORBIDDEN'|'INVALID_INPUT'|'WORKSPACE_CHANGED'|'UNAVAILABLE'|'SCHEMA_UNAVAILABLE'|'CONNECT_DISABLED'|'SETUP_REQUIRED'|'RECONCILIATION_REQUIRED'|'CONFLICT'|'EXPIRED'|'CONSUMED'};
 type Status={ok:true;generation:number;link:{linkId:string;accountId:string;generation:number}|null;attemptKind:string|null;contractReady:boolean;connectEnabled:boolean};
 const fail=(code:Failure['code']):Failure=>({ok:false,code});
@@ -94,11 +95,13 @@ export async function completeInstagramOwnerOAuth(input:{attemptId:string;state:
   const server=createAdminClient();if(!server)return fail('UNAVAILABLE');
   const store=createInstagramConnectionStore(session.client,server as unknown as InstagramRpcClient);
   const permitted=()=>instagramConfig().connectEnabled&&instagramOwnerConnectScope(b.companyId,b.userId,b.appId);
-  return await completeInstagramConnection(session.identity,captured,b,{...store,
+  let diagnostic:DiagnosticDetail|undefined;
+  const result=await completeInstagramConnection(session.identity,captured,b,{...store,
    stage:(ref,success)=>permitted()?store.stage(ref,success):Promise.resolve({ok:false,code:'FORBIDDEN'}),
    finalize:(ref,receipt)=>permitted()?store.finalize(ref,receipt):Promise.resolve({ok:false,code:'FORBIDDEN'}),
-   exchange:(code,ref)=>exchangeInstagramCode(code,ref,cfg),
+   exchange:(code,ref)=>exchangeInstagramCode(code,ref,cfg,{onDiagnostic:value=>{diagnostic=value;}}),
    subscribe:(ref,receipt)=>ensureInstagramSubscription(ref,receipt,server as unknown as InstagramRpcClient)});
+  return !result.ok&&diagnostic?{...result,diagnostic}:result;
  }catch{return fail('RECONCILIATION_REQUIRED');}
 }
 export async function disconnectInstagramOwnerConnection(input:{companyId:string;linkId:string;expectedGeneration:number}):Promise<{ok:true}|Failure>{

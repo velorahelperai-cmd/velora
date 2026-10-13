@@ -26,7 +26,7 @@ const labels:Record<string,[string,string]>={
  CONFLICT:['This saved reply differs from your current text. Reload the saved reply.','هذا الرد المحفوظ يختلف عن النص الحالي. أعد تحميل الرد.'],
  INVALID_INPUT:['Enter a reply of at most 1,000 UTF-8 bytes.','أدخل ردًا لا يتجاوز ١٬٠٠٠ بايت بترميز UTF-8.'],
 };
-export function InstagramInbox({companyId,owner=false,companyInSetup=false,callbackResult}:{companyId:string|null;owner?:boolean;companyInSetup?:boolean;callbackResult?:string}){
+export function InstagramInbox({companyId,owner=false,companyInSetup=false,callbackResult,callbackDiagnostic}:{companyId:string|null;owner?:boolean;companyInSetup?:boolean;callbackResult?:string;callbackDiagnostic?:unknown}){
  const {locale}=useDemo(),ar=locale==='ar',router=useRouter(),params=useSearchParams();
  const conversationId=uuid(params.get('thread')),intentId=uuid(params.get('intent'));
  const viewKey=`${companyId}:${conversationId}:${intentId}`;
@@ -92,7 +92,7 @@ export function InstagramInbox({companyId,owner=false,companyInSetup=false,callb
   }}catch{if(current===epoch.current)setError('UNAVAILABLE');}finally{if(current===epoch.current)setBusy(false);}
  }
  return <WorkspaceShell title={ar?'محادثات إنستغرام':'Instagram conversations'}>
-  {companyId&&owner&&<InstagramOwnerConnection key={companyId} companyId={companyId} ar={ar} callbackResult={callbackResult}/>}
+  {companyId&&owner&&<InstagramOwnerConnection key={companyId} companyId={companyId} ar={ar} callbackResult={callbackResult} callbackDiagnostic={callbackDiagnostic}/>}
   {!companyId?<Notice>{ar?'اختر مساحة عمل لعرض إنستغرام.':'Choose a workspace to view Instagram.'}</Notice>:displayKey!==viewKey?<p aria-busy="true">{ar?'جارٍ التحميل…':'Loading…'}</p>:<>
    {error&&<Notice tone="error">{error==='FORBIDDEN'&&owner&&companyInSetup&&!conversationId
     ?(ar?'محادثات إنستغرام غير متاحة أثناء تجهيز الشركة. يلزم اعتماد تفعيل الشركة قبل عرض المحادثات.':'Instagram conversations are unavailable while the company is in setup. Company activation must be approved before viewing conversations.')

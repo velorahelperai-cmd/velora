@@ -1,4 +1,5 @@
 "use client";
+import {DiagnosticHint} from "./diagnostic-hint";
 import { normalizeBusinessEmail, normalizeBusinessPhone } from "@/lib/tenancy/business-contacts";
 
 import Link from "next/link";
@@ -242,6 +243,7 @@ export function SetupWizard({
   }
   const companyId = savedCompany?.id ?? null;
   const [readiness, setReadiness] = useState<CustomerReadinessSnapshot | null>(null);
+  const [diagnostic,setDiagnostic]=useState<unknown>(null);
   const whatsappRequest=useWhatsappRequestReadback(userId,companyId,savedCompany?.updated_at);
   const whatsappLink=whatsappRequest.link;
   useEffect(() => {
@@ -251,7 +253,7 @@ export function SetupWizard({
       if (!companyId) return;
       void getCustomerReadiness().then((r) => {
         if (cancelled) return;
-        setReadiness(r.ok && r.data.companyId === companyId ? r.data : null);
+        setDiagnostic(r.diagnostic);setReadiness(r.ok && r.data.companyId === companyId ? r.data : null);
       }).catch(() => { if (!cancelled) { setReadiness(null); } });
     });
     return () => { cancelled = true; window.cancelAnimationFrame(frame); };
@@ -452,7 +454,7 @@ export function SetupWizard({
           {fill(mCopy.milestoneProgress, { n: step + 1 })} · {copy.setup.resume}
         </p>
 
-        <SetupJourneyNotice
+        <DiagnosticHint diagnostic={diagnostic} locale={locale}/><SetupJourneyNotice
           company={initialCompany ?? null}
           review={initialReview}
           reviewLoadFailed={reviewLoadFailed}
@@ -481,7 +483,7 @@ export function SetupWizard({
                 conflicts={unresolvedBusinessConflicts}
                 onResolveConflicts={resolveBusinessConflicts}
                 companyId={companyId}
-                onCompanySaved={setSavedCompany}
+                onCompanySaved={setSavedCompany} onDiagnostic={setDiagnostic}
                 draft={draft}
                 onDraft={persist}
                 leaveGuardRef={leaveGuardRef}
@@ -506,7 +508,7 @@ export function SetupWizard({
             {step === 2 ? (
               <HoursStep
                 companyId={companyId}
-                onCompanySaved={setSavedCompany}
+                onCompanySaved={setSavedCompany} onDiagnostic={setDiagnostic}
                 company={savedCompany}
                 onDraft={persist}
                 leaveGuardRef={leaveGuardRef}
@@ -556,7 +558,7 @@ export function SetupWizard({
             {step === 4 ? (
               <PersonaStep
                 companyId={companyId}
-                onCompanySaved={setSavedCompany}
+                onCompanySaved={setSavedCompany} onDiagnostic={setDiagnostic}
                 company={savedCompany}
                 onDraft={persist}
                 leaveGuardRef={leaveGuardRef}
@@ -734,6 +736,7 @@ function BusinessStep({
   draft,
   companyId,
   onCompanySaved,
+  onDiagnostic,
   onDraft,
   onDone,
   leaveGuardRef,
@@ -744,6 +747,7 @@ function BusinessStep({
   draft: CompanyDraft;
   companyId: string | null;
   onCompanySaved: (company: CompanyRecord) => void;
+  onDiagnostic: (diagnostic:unknown) => void;
   onDraft: (patch: Partial<CompanyDraft> | ((d: CompanyDraft) => CompanyDraft)) => void;
   onDone: () => void;
   leaveGuardRef: React.MutableRefObject<(() => boolean) | null>;
@@ -795,8 +799,8 @@ function BusinessStep({
         contactPhone: form.contactPhone,
         contactEmail: form.contactEmail,
       });
-      if (!result.ok) {
-        window.alert(result.message ?? copy.errors.authFailed);
+      onDiagnostic(result.diagnostic);if (!result.ok) {
+        window.alert(copy.errors.authFailed);
         return;
       }
       if (!finishCompanySave(result, companyId, (company) => {
@@ -981,6 +985,7 @@ function HoursStep({
   company,
   companyId,
   onCompanySaved,
+  onDiagnostic,
   onDraft,
   onBack,
   onNext,
@@ -989,6 +994,7 @@ function HoursStep({
   company: CompanyRecord | null;
   companyId: string | null;
   onCompanySaved: (company: CompanyRecord) => void;
+  onDiagnostic: (diagnostic:unknown) => void;
   onDraft: (patch: Partial<CompanyDraft> | ((d: CompanyDraft) => CompanyDraft)) => void;
   onBack: () => void;
   onNext: () => void;
@@ -1030,8 +1036,8 @@ function HoursStep({
         contactPhone: form.contactPhone,
         contactEmail: form.contactEmail,
       });
-      if (!result.ok) {
-        setError(result.message ?? copy.errors.authFailed);
+      onDiagnostic(result.diagnostic);if (!result.ok) {
+        setError(copy.errors.authFailed);
         return;
       }
       if (!finishCompanySave(result, companyId, (company) => {
@@ -1079,6 +1085,7 @@ function PersonaStep({
   company,
   companyId,
   onCompanySaved,
+  onDiagnostic,
   onDraft,
   onBack,
   onNext,
@@ -1087,6 +1094,7 @@ function PersonaStep({
   company: CompanyRecord | null;
   companyId: string | null;
   onCompanySaved: (company: CompanyRecord) => void;
+  onDiagnostic: (diagnostic:unknown) => void;
   onDraft: (patch: Partial<CompanyDraft> | ((d: CompanyDraft) => CompanyDraft)) => void;
   onBack: () => void;
   onNext: () => void;
@@ -1128,7 +1136,7 @@ function PersonaStep({
         contactPhone: form.contactPhone,
         contactEmail: form.contactEmail,
       });
-      if (!result.ok) { setSaveError(result.message ?? copy.errors.authFailed); return; }
+      onDiagnostic(result.diagnostic);if (!result.ok) { setSaveError(copy.errors.authFailed); return; }
       if (!finishCompanySave(result, companyId, (company) => {
         languageField.adopt(company.reply_language);
         leaveGuardRef.current = () => true;

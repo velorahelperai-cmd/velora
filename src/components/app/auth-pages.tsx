@@ -1,5 +1,7 @@
 "use client";
 import { authFlowHref, savePendingSignup, readPendingSignup, clearPendingSignup } from "@/lib/auth/auth-journey";
+import {DiagnosticHint} from "./diagnostic-hint";
+import {beginDiagnostic} from "@/lib/diagnostics/flow";
 import { normalizeEmailCode } from "@/lib/auth/email-code";
 
 import Link from "next/link";
@@ -147,6 +149,7 @@ export function SignupPage() {
   const [form, setForm] = useState({ name: "", email: prefillEmail, password: "", confirm: "" });
   const [errors, setErrors] = useState<Partial<Record<"name" | "email" | "password" | "confirm", FieldErrorKey>>>({});
   const [formError, setFormError] = useState<string | null>(null);
+  const [diagnostic,setDiagnostic]=useState<unknown>(null);
   const [altNotice, setAltNotice] = useState<string | null>(null);
   const returnTo = safeInternalPath(params.get("next"), "");
   useAuthenticatedAuthRedirect(returnTo);
@@ -168,7 +171,7 @@ export function SignupPage() {
     if (form.password.length < 8) next.password = "password";
     if (form.confirm !== form.password) next.confirm = "match";
     setErrors(next);
-    setFormError(null);
+    setFormError(null);setDiagnostic(null);
     if (Object.keys(next).length) return;
     void run(async () => {
       const result = await signUpWithEmail({
@@ -179,7 +182,7 @@ export function SignupPage() {
         next: returnTo,
       });
       if (!result.ok) {
-        setFormError(result.message ?? copy.errors.authFailed);
+        setDiagnostic(result.diagnostic);setFormError(copy.errors.authFailed);
         return;
       }
       if (result.data.needsVerification) {
@@ -190,7 +193,7 @@ export function SignupPage() {
       clearPendingSignup();
       try { await accountSession?.refresh(); } catch { /* Signup is already confirmed. */ }
       const destination = await resolvePostAuthPath(returnTo);
-      if (!destination.ok) { setFormError(destination.message ?? copy.errors.authFailed); return; }
+      if (!destination.ok) { setDiagnostic(destination.diagnostic);setFormError(copy.errors.authFailed); return; }
       router.replace(destination.data.next);router.refresh();
     }).catch(() => setFormError(copy.errors.authFailed));
   }
@@ -208,7 +211,7 @@ export function SignupPage() {
       ) : null}
 
       <form className="grid gap-4" onSubmit={submitEmail} noValidate>
-        {formError ? <Notice tone="error">{formError}</Notice> : null}
+        {formError ? <Notice tone="error">{formError}</Notice> : null}<DiagnosticHint diagnostic={diagnostic} locale={locale}/>
         <Field label={copy.auth.name} required error={nameError}>
           {(p) => <input {...p} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} autoComplete="name" />}
         </Field>
@@ -226,6 +229,7 @@ export function SignupPage() {
 }
 
 export function LoginPage() {
+  const {locale}=useDemo();
   const copy = useAppCopy();
   const params = useSearchParams();
   const returnTo = params.get("next");
@@ -247,6 +251,7 @@ export function LoginPage() {
     if (err === "oauth_cancelled") return params.get("detail") || copy.auth.oauthCancelled;
     return null;
   });
+  const [diagnostic,setDiagnostic]=useState<unknown>(null);
   const [altNotice, setAltNotice] = useState<string | null>(null);
   const google = useGoogleAuth(setAltNotice, returnTo);
   const emailError = useErrorText(errors.email);
@@ -255,23 +260,24 @@ export function LoginPage() {
   function submitEmail(e: React.FormEvent) {
     e.preventDefault();
     if (busy||redirecting) return;
-    setFormError(null);
+    setFormError(null);setDiagnostic(null);
     const next: typeof errors = {};
     if (!isEmail(form.email)) next.email = "email";
     if (!form.password) next.password = "required";
     setErrors(next);
     if (Object.keys(next).length) return;
     void run(async () => {
+      const trace=beginDiagnostic("auth_login");trace.stage("provider");
       // Browser Auth coordinates cookies and broadcasts account changes to other tabs.
       const {createClient}=await import("@/lib/supabase/client");
       const {error:authError}=await createClient().auth.signInWithPassword({email:form.email.trim().toLowerCase(),password:form.password});
-      if(authError){setFormError(authError.message||copy.errors.authFailed);return;}
-      const result=await resolvePostAuthPath(returnTo);
+      if(authError){setDiagnostic(trace.finish("AUTH_ERROR"));setFormError(copy.errors.authFailed);return;}
+      trace.stage("access");const result=await resolvePostAuthPath(returnTo);
       if (!result.ok) {
-        setFormError(result.message ?? copy.errors.authFailed);
+        setDiagnostic(result.diagnostic);setFormError(copy.errors.authFailed);
         return;
       }
-      clearPendingSignup();navigate(result.data.next);
+      trace.stage("handoff");trace.finish("OK");clearPendingSignup();navigate(result.data.next);
     }).catch(() => setFormError(copy.errors.authFailed));
   }
 
@@ -283,7 +289,7 @@ export function LoginPage() {
     >
       <form className="grid gap-4" onSubmit={submitEmail} noValidate>
         {params.get("reason") === "session_expired" ? <Notice tone="warn">{copy.errors.sessionExpiredBody}</Notice> : null}
-        {formError ? <Notice tone="error">{formError}</Notice> : null}
+        {formError ? <Notice tone="error">{formError}</Notice> : null}<DiagnosticHint diagnostic={diagnostic} locale={locale}/>
         <Field label={copy.auth.email} required error={emailError}>
           {(p) => <input {...p} type="email" dir="ltr" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} autoComplete="email" inputMode="email" />}
         </Field>
@@ -314,6 +320,7 @@ export function VerifyEmailPage() {
   const [codeInvalid, setCodeInvalid] = useState(false);
   const [emailError, setEmailError] = useState<FieldErrorKey>();
   const [resent, setResent] = useState(false);
+  const {locale}=useDemo();const [diagnostic,setDiagnostic]=useState<unknown>(null);
   const [error, setError] = useState<string | null>(null);
   const [cooldown, setCooldown] = useState(0);
   const [hydrated, setHydrated] = useState(Boolean(emailFromQuery));
@@ -360,7 +367,7 @@ export function VerifyEmailPage() {
   function submitCode(event: React.FormEvent) {
     event.preventDefault();
     if (busy || !hydrated || !registeredEmail) return;
-    setError(null);
+    setError(null);setDiagnostic(null);
     setResent(false);
     const normalized = normalizeEmailCode(code);
     if (!/^[0-9]{6}$/.test(normalized)) {
@@ -371,7 +378,7 @@ export function VerifyEmailPage() {
     void run(async () => {
       try {
         const result = await verifyEmailCode({ email: registeredEmail, code: normalized, next: pendingReturn });
-        if (!result.ok) {
+        setDiagnostic(result.diagnostic);if (!result.ok) {
           setError(result.code === "INVALID_INPUT" ? copy.auth.verificationCodeFormat : verificationMessage(result.message));
           return;
         }
@@ -390,7 +397,7 @@ export function VerifyEmailPage() {
     <AuthShell title={copy.auth.verifyTitle} body={fill(copy.auth.verifyBody, { email: registeredEmail || "…" })}>
       <div className="grid gap-4">
         <Notice tone="info">{copy.auth.verifyRealBody}</Notice>
-        {error ? <Notice tone="error">{error}</Notice> : null}
+        {error ? <Notice tone="error">{error}</Notice> : null}<DiagnosticHint diagnostic={diagnostic} locale={locale}/>
         {resent ? <Notice tone="success">{copy.auth.resent}</Notice> : null}
         <Field label={copy.auth.verifyEmailLabel} hint={copy.auth.verifyEmailHint}>
           {(p) => (
@@ -412,7 +419,7 @@ export function VerifyEmailPage() {
               onChange={(event) => {
                 setCode(normalizeEmailCode(event.target.value));
                 setCodeInvalid(false);
-                setError(null);
+                setError(null);setDiagnostic(null);
               }} />}
           </Field>
           <Button type="submit" busy={busy} busyLabel={copy.loading} disabled={!hydrated || !registeredEmail || busy}>
@@ -427,12 +434,12 @@ export function VerifyEmailPage() {
           disabled={!hydrated || !registeredEmail || busy || cooldown > 0}
           onClick={() => {
             if (busy || cooldown > 0 || !registeredEmail) return;
-            setError(null);
+            setError(null);setDiagnostic(null);
             setResent(false);
             void run(async () => {
               try {
                 const result = await resendVerificationEmail(registeredEmail,pendingReturn);
-                if (!result.ok) {
+                setDiagnostic(result.diagnostic);if (!result.ok) {
                   setError(verificationMessage(result.message));
                   if (result.message === "verification_rate_limited") setCooldown(RESEND_COOLDOWN_SEC);
                   return;
@@ -464,7 +471,7 @@ export function VerifyEmailPage() {
                 onChange={(e) => {
                   setCorrectEmail(e.target.value);
                   setEmailError(undefined);
-                  setError(null);
+                  setError(null);setDiagnostic(null);
                   setResent(false);
                 }}
               />

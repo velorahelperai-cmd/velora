@@ -2,6 +2,7 @@
 import {useEffect,useLayoutEffect,useRef,useState} from 'react';
 import {loadInstagramOwnerConnection,startInstagramOwnerConnection,disconnectInstagramOwnerConnection} from '@/lib/instagram/owner-actions';
 import {Button,Notice} from './ui';
+import {DiagnosticHint} from './diagnostic-hint';
 type Loaded=Extract<Awaited<ReturnType<typeof loadInstagramOwnerConnection>>,{ok:true}>;
 const messages:Record<string,[string,string]>={
  CONNECT_DISABLED:['Instagram connection is awaiting activation approval.','ربط إنستغرام ينتظر الموافقة على التفعيل.'],
@@ -12,7 +13,7 @@ const messages:Record<string,[string,string]>={
  WORKSPACE_CHANGED:['The workspace changed. Refresh this page.','تغيّرت مساحة العمل. حدّث الصفحة.'],
  CONFLICT:['The connection changed. Refresh before disconnecting.','تغيّر الربط. حدّث الصفحة قبل فصله.'],
 };
-export function InstagramOwnerConnection({companyId,ar,callbackResult}:{companyId:string;ar:boolean;callbackResult?:string}){
+export function InstagramOwnerConnection({companyId,ar,callbackResult,callbackDiagnostic}:{companyId:string;ar:boolean;callbackResult?:string;callbackDiagnostic?:unknown}){
  const epoch=useRef(0),reserved=useRef(false);
  const [loaded,setLoaded]=useState<{companyId:string;value:Loaded}|null>(null),[error,setError]=useState<{companyId:string;code:string}|null>(null);
  const [busy,setBusy]=useState(false),[refresh,setRefresh]=useState(0),[disconnected,setDisconnected]=useState<string|null>(null);
@@ -53,6 +54,7 @@ export function InstagramOwnerConnection({companyId,ar,callbackResult}:{companyI
  return <section aria-label={ar?'ربط إنستغرام':'Instagram connection'}>
   <h2>{ar?'ربط إنستغرام':'Instagram connection'}</h2>
   {callbackMessage&&<Notice>{callbackMessage}</Notice>}
+  {callbackMessage&&<DiagnosticHint diagnostic={callbackDiagnostic} locale={ar?'ar':'en'}/>}
   {status?.link&&<p>{ar?'الحساب المرتبط: ':'Connected account: '}<span>{status.link.accountId}</span></p>}
   {blocker&&<Notice>{messages[blocker]?.[ar?1:0]??(ar?'تعذّر إكمال الطلب. حدّث الصفحة.':'The request could not be completed. Refresh this page.')}</Notice>}
   {disconnected===companyId&&<p role="status">{ar?'تم فصل الربط في Velora مع الاحتفاظ بالسجل. إذن إنستغرام يُدار بشكل منفصل.':'Disconnected from Velora; history is retained. Instagram permission is managed separately.'}</p>}

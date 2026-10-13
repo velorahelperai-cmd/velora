@@ -354,7 +354,7 @@ describe("readiness pillar uses qualified current billing evidence",()=>{
 describe("business save runtime shape validation", () => {
   it("keeps a committed business save successful when cache refresh fails", async () => {
     vi.mocked(revalidatePath).mockImplementationOnce(() => { throw new Error("offline cache failure"); });
-    expect(await saveOwnerBusiness({ ...business, expectedCompanyId: COMPANY_B })).toEqual({ ok: true, data: context(COMPANY_B).company });
+    expect(await saveOwnerBusiness({ ...business, expectedCompanyId: COMPANY_B })).toMatchObject({ ok: true, data: context(COMPANY_B).company,diagnostic:{operation:"company_save",stage:"refresh",code:"REFRESH_FAILED"} });
     expect(state.writes).toEqual([{ kind: "upsert_selected_owner_company", companyId: COMPANY_B }]);
   });
   it.each([
@@ -369,13 +369,13 @@ describe("business save runtime shape validation", () => {
     ["array email", { ...business, contactEmail: [] }],
     ["numeric member name", { ...business, memberName: 42 }],
   ])("rejects %s without an RPC or uncaught error", async (_name, input) => {
-    await expect(saveOwnerBusiness(input as Parameters<typeof saveOwnerBusiness>[0])).resolves.toEqual({ ok: false, code: "INVALID_INPUT" });
+    await expect(saveOwnerBusiness(input as Parameters<typeof saveOwnerBusiness>[0])).resolves.toMatchObject({ ok: false, code: "INVALID_INPUT", diagnostic: { operation: "company_save", stage: "input", code: "INVALID_INPUT" } });
     expect(state.client).not.toHaveBeenCalled();
     expect(state.rpcRequests).toEqual([]);
   });
   it("keeps authorization ahead of malformed-input handling", async () => {
     state.access.mockResolvedValue({ ok: false, code: "FORBIDDEN" });
-    await expect(saveOwnerBusiness(null as unknown as Parameters<typeof saveOwnerBusiness>[0])).resolves.toEqual({ ok: false, code: "FORBIDDEN" });
+    await expect(saveOwnerBusiness(null as unknown as Parameters<typeof saveOwnerBusiness>[0])).resolves.toMatchObject({ ok: false, code: "FORBIDDEN", diagnostic: { operation: "company_save", stage: "access", code: "FORBIDDEN" } });
     expect(state.client).not.toHaveBeenCalled();
   });
 });
@@ -386,7 +386,7 @@ describe("business contact validation", () => {
     { contactPhone: "+1234567890123456" }, { contactEmail: "missing-at.example.com" },
     { contactEmail: "a@b.com\nInjected" }, { contactEmail: "a\u0000@b.com" }, { contactEmail: `${"a".repeat(249)}@b.com` },
   ])("rejects malformed contacts %j before persistence", async contact => {
-    expect(await saveOwnerBusiness({ ...business, ...contact, expectedCompanyId: COMPANY_B })).toEqual({ ok: false, code: "INVALID_INPUT" });
+    expect(await saveOwnerBusiness({ ...business, ...contact, expectedCompanyId: COMPANY_B })).toMatchObject({ ok: false, code: "INVALID_INPUT", diagnostic: { operation: "company_save", stage: "input", code: "INVALID_INPUT" } });
     expect(state.client).not.toHaveBeenCalled();
     expect(state.rpcRequests).toEqual([]);
   });

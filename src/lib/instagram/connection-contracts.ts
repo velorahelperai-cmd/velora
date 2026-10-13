@@ -12,7 +12,7 @@ export type ConnectionProgress = Readonly<{ binding: AttemptBinding }> & (
   | Readonly<{ kind: "bound"; linkId: string }>
 );
 export type ConnectionFailureCode = "FORBIDDEN" | "EXPIRED" | "CONSUMED" | "INVALID_INPUT" | "UNAVAILABLE" | "RECONCILIATION_REQUIRED";
-export type ConnectionFailure = Readonly<{ ok: false; code: ConnectionFailureCode }>;
+export type ConnectionFailure = Readonly<{ ok: false; code: ConnectionFailureCode; diagnostic?: import('@/lib/diagnostics/contract').DiagnosticDetail }>;
 /** The only result allowed to cross the future server-action/client boundary. */
 export type ConnectionResult = Readonly<{ ok: true; linkId: string }> | ConnectionFailure;
 export type ProviderBindingEvidence = Readonly<{

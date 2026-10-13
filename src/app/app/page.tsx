@@ -11,7 +11,7 @@ export default async function Page() {
   return (
     <Suspense fallback={<main className="min-h-svh app-shell" aria-busy="true" />}>
       <DashboardPage
-        initialLeads={leads}
+        initialLeads={leads} initialDiagnostic={readiness.diagnostic}
         initialReadiness={readiness.ok ? readiness.data : null}
         readinessLoadFailed={!readiness.ok}
       />

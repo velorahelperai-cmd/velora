@@ -24,7 +24,7 @@ describe("workspace view", () => {
   });
   it("fails closed when the identity and selected workspace disagree", async () => {
     mocks.identity.mockResolvedValue({ ok: true, data: { companyId: "other", role: "owner" } });
-    expect(await getWorkspaceView()).toEqual({ ok: false, code: "UNAVAILABLE" });
+    expect(await getWorkspaceView()).toMatchObject({ ok: false, code: "UNAVAILABLE",diagnostic:{operation:"workspace_load",stage:"workspace",code:"UNAVAILABLE"} });
     expect(mocks.capability).not.toHaveBeenCalled();
   });
   it("does not turn unavailable capability evidence into a grant", async () => {
@@ -33,7 +33,7 @@ describe("workspace view", () => {
   });
   it("returns the authoritative access failure without checking capability", async () => {
     mocks.switcher.mockResolvedValue({ ok: false, code: "FORBIDDEN" });
-    expect(await getWorkspaceView()).toEqual({ ok: false, code: "FORBIDDEN" });
+    expect(await getWorkspaceView()).toMatchObject({ ok: false, code: "FORBIDDEN", diagnostic: { operation: "workspace_load", stage: "workspace", code: "FORBIDDEN" } });
     expect(mocks.capability).not.toHaveBeenCalled();
   });
 });

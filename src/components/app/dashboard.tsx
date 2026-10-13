@@ -1,4 +1,5 @@
 "use client";
+import {DiagnosticHint} from "./diagnostic-hint";
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -396,10 +397,12 @@ export function DashboardPage({
   initialLeads,
   initialReadiness = null,
   readinessLoadFailed = false,
+  initialDiagnostic,
 }: {
   initialLeads: DashboardInboxLoad;
   initialReadiness?: CustomerReadinessSnapshot | null;
   readinessLoadFailed?: boolean;
+  initialDiagnostic?:unknown;
 }) {
   const copy = useAppCopy();
   const router = useRouter();
@@ -407,6 +410,7 @@ export function DashboardPage({
   const ar = locale === "ar";
 
   const [readiness, setReadiness] = useState<CustomerReadinessSnapshot | null>(initialReadiness);
+  const [diagnostic,setDiagnostic]=useState<unknown>(initialDiagnostic);
   const [loadFailed, setLoadFailed] = useState(readinessLoadFailed);
   const [refreshFailed, setRefreshFailed] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -435,7 +439,7 @@ export function DashboardPage({
     setBusy(true);
     try {
       const result = await getCustomerReadiness();
-      if (gen !== genRef.current) return;
+      if (gen !== genRef.current) return;setDiagnostic(result.diagnostic);
       if (!result.ok) {
         setRefreshFailed(true);
         return;
@@ -678,7 +682,7 @@ export function DashboardPage({
           </Button>
         </div>
 
-        {loadFailed && !readiness ? (
+        <DiagnosticHint diagnostic={diagnostic} locale={locale}/>{loadFailed && !readiness ? (
           <div className="mt-4">
             <Notice tone="error">{copy.app.readinessLoadFailed}</Notice>
           </div>

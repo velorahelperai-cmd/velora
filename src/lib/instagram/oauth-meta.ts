@@ -2,6 +2,8 @@ import 'server-only';
 import {instagramConfig} from './config';
 import {instagramOwnerConnectScope,instagramOwnerConnectProfile} from './connect-scope';
 import type {AttemptBinding,ProviderResult} from './connection-contracts';
+import {beginDiagnostic} from '@/lib/diagnostics/flow';
+import type {DiagnosticDetail,DiagnosticStage} from '@/lib/diagnostics/contract';
 export type InstagramOAuthConfig=Readonly<{appId:string;appSecret:string;contractId:string;redirectUri:string;requiredPermissions:readonly string[]}>;
 const required=Object.freeze(['instagram_business_basic','instagram_business_manage_messages']);
 const record=(v:unknown):v is Record<string,unknown>=>v!==null&&typeof v==='object'&&!Array.isArray(v);
@@ -38,9 +40,9 @@ export function instagramAuthorizationUrl(cfg:InstagramOAuthConfig,state:string)
  * permissions and provider expiry must all be proven before Vault staging.
  * Current provider response/field compatibility still requires approved fixtures
  * and live verification before activation. Missing evidence fails closed. */
-export async function exchangeInstagramCode(code:string,binding:AttemptBinding,cfg:InstagramOAuthConfig,dependencies:{fetch?:typeof fetch}={}):Promise<ProviderResult>{
- let stage='preflight';
- const report=(code:string,reason?:OAuthFailureReason)=>{if(process.env.NODE_ENV==='production')console.info(JSON.stringify({stage,code,...(reason?{reason}:{})}));};
+export async function exchangeInstagramCode(code:string,binding:AttemptBinding,cfg:InstagramOAuthConfig,dependencies:{fetch?:typeof fetch;onDiagnostic?:(value:DiagnosticDetail)=>void}={}):Promise<ProviderResult>{
+ let stage:DiagnosticStage='preflight';const trace=beginDiagnostic('instagram_connect');
+ const report=(code:string,reason?:OAuthFailureReason)=>{trace.stage(stage);const diagnostic=trace.finish(code.startsWith('HTTP_')||code==='UNPROVEN_RESPONSE'?'OUTCOME_UNKNOWN':'PROVIDER_REJECTED');try{dependencies.onDiagnostic?.(diagnostic);}catch{/* Diagnostics do not change authorization results. */}if(process.env.NODE_ENV==='production')console.info(JSON.stringify({stage,code,...(reason?{reason}:{})}));};
  const rejected=(code='VALIDATION_REJECTED',reason?:OAuthFailureReason):ProviderResult=>{report(code,reason);return {ok:false,code:'REJECTED'};},unknown=(code='UNPROVEN_RESPONSE'):ProviderResult=>{report(code);return {ok:false,code:'UNKNOWN'};};
  const flags=instagramConfig();if(!instagramOwnerConnectScope(binding.companyId,binding.userId,binding.appId)||!flags.connectEnabled||flags.graphVersion!=='v26.0'||binding.appId!==cfg.appId||binding.contractId!==cfg.contractId||!text(code)||/[\x00-\x1f\x7f]/.test(code))return rejected();
  const http=dependencies.fetch??fetch;
@@ -52,7 +54,15 @@ export async function exchangeInstagramCode(code:string,binding:AttemptBinding,c
   const body:unknown=JSON.parse(raw);return {ok:response.ok,status:response.status,body};}
  try{
   stage='code_exchange';
-  const exchanged=await request('https://api.instagram.com/oauth/access_token',{method:'POST',body:new URLSearchParams({client_id:cfg.appId,client_secret:cfg.appSecret,grant_type:'authorization_code',redirect_uri:cfg.redirectUri,code})});
+  // Meta's Instagram Login token endpoint accepts these credentials as a
+  // multipart form. Keep redirect_uri byte-for-byte equal to the authorize URL.
+  const tokenForm=new FormData();
+  tokenForm.set('client_id',cfg.appId);
+  tokenForm.set('client_secret',cfg.appSecret);
+  tokenForm.set('grant_type','authorization_code');
+  tokenForm.set('redirect_uri',cfg.redirectUri);
+  tokenForm.set('code',code);
+  const exchanged=await request('https://api.instagram.com/oauth/access_token',{method:'POST',body:tokenForm});
   if(!exchanged.ok){return exchanged.status>=400&&exchanged.status<500&&record(exchanged.body)&&(exchanged.body.error_type==='OAuthException'||record(exchanged.body.error))?rejected('OAUTH_HTTP_'+exchanged.status,oauthFailureReason(exchanged.body)):unknown('HTTP_'+exchanged.status);}
   let short=exchanged.body;if(record(short)&&Array.isArray(short.data)){if(short.data.length!==1)return rejected();short=short.data[0];}
   if(!record(short)||!text(short.access_token))return unknown();

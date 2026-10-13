@@ -1,4 +1,6 @@
 "use client";
+import {DiagnosticHint} from "./diagnostic-hint";
+import {beginDiagnostic} from "@/lib/diagnostics/flow";
 
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -208,6 +210,7 @@ function BusinessTab({company,leaveGuardRef}:{company:CompanyRecord;leaveGuardRe
   const [trackedCompany,setTrackedCompany]=useState(company);
   const [conflicts,setConflicts]=useState<Array<keyof typeof form>>([]);
   const [error,setError]=useState<string|null>(null);
+  const [diagnostic,setDiagnostic]=useState<unknown>(null);
   const [saved, setSaved] = useState(false);
   const { busy, run } = useAction();
   if(trackedCompany!==company){
@@ -225,7 +228,7 @@ function BusinessTab({company,leaveGuardRef}:{company:CompanyRecord;leaveGuardRe
       <form className="grid gap-4 lg:grid-cols-2" noValidate onSubmit={(e) => {
         e.preventDefault();
         if(conflicts.length)return;
-        setSaved(false);setError(null);
+        setSaved(false);setError(null);setDiagnostic(null);
         void run(async () => {
           const result = await saveOwnerBusiness({
             expectedCompanyId: company.id,
@@ -238,17 +241,18 @@ function BusinessTab({company,leaveGuardRef}:{company:CompanyRecord;leaveGuardRe
             contactPhone: form.contactPhone,
             contactEmail: form.contactEmail,
           });
-          if (!result.ok) {
+          setDiagnostic(result.diagnostic);if (!result.ok) {
             setError(copy.errors.authFailed);
             return;
           }
           const business=fromCompany(result.data);
           setForm(business);setBaseline(business);setConflicts([]);
-          router.refresh();
           setSaved(true);
+          try{router.refresh();}catch{setDiagnostic(result.diagnostic??beginDiagnostic("company_save").event("refresh","REFRESH_FAILED"));}
         });
       }}>
         {error?<div className="lg:col-span-2"><Notice tone="error">{error}</Notice></div>:null}
+        <div className="lg:col-span-2"><DiagnosticHint diagnostic={diagnostic} locale={locale}/></div>
         {conflicts.length?<div className="lg:col-span-2"><Notice tone="warn">
           <p>{locale==="ar"?"تم تحديث بعض الحقول التي تعدّلها. راجع القيم الأحدث قبل الحفظ.":"Some fields you are editing changed in the saved record. Review the latest values before saving."}</p>
           <Button type="button" variant="secondary" disabled={busy} onClick={()=>{setForm(previous=>conflicts.reduce((next,key)=>({...next,[key]:baseline[key]}),previous));setConflicts([]);}}>{locale==="ar"?"استخدام أحدث القيم المتعارضة":"Use latest conflicting values"}</Button>
