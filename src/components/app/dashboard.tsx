@@ -2,7 +2,6 @@
 import {DiagnosticHint} from "./diagnostic-hint";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { startTransition, useEffect, useRef, useState } from "react";
 import { useDemo } from "@/lib/demo-state";
 import { readDashboardBilling } from "@/lib/customer/dashboard-billing-actions";
@@ -405,7 +404,6 @@ export function DashboardPage({
   initialDiagnostic?:unknown;
 }) {
   const copy = useAppCopy();
-  const router = useRouter();
   const { locale } = useDemo();
   const ar = locale === "ar";
 
@@ -447,7 +445,6 @@ export function DashboardPage({
       setLoadFailed(false);
       setRefreshFailed(false);
       setReadiness(result.data);
-      router.refresh();
     } catch {
       if (gen !== genRef.current) return;
       setRefreshFailed(true);

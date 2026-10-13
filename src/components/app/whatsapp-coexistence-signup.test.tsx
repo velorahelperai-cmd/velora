@@ -101,6 +101,18 @@ beforeEach(() => {
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("real Coexistence component async paths", () => {
+  it("shows the failed sync read stage and support reference without enabling sync, then clears on company switch", async () => {
+    mocks.syncRead.mockResolvedValueOnce({ ok: false, code: "UNAVAILABLE", diagnostic: {
+      reference: "VEL-1234567890ABCDEF", operation: "whatsapp_connect", stage: "channel", code: "UNEXPECTED_FAILURE",
+    } });
+    const h = mount({ companyId: "a" }); await flush(); h.render();
+    expect(text(h.tree())).toContain("VEL-1234567890ABCDEF");
+    expect(text(h.tree())).toContain("Step: Checking the connection");
+    expect(text(h.tree())).toContain("Saved synchronization status unavailable");
+    expect(button(h, "Request chat history").props.disabled).toBe(true);
+    h.render({ companyId: "b" }); await flush(); h.render();
+    expect(text(h.tree())).not.toContain("VEL-1234567890ABCDEF"); h.unmount();
+  });
   it("shows a bounded support reference for a failed status read and clears it on company switch", async () => {
     mocks.read.mockResolvedValueOnce({ok:false,code:"UNAVAILABLE",diagnostic:{reference:"VEL-1234567890ABCDEF",operation:"whatsapp_connect",stage:"channel",code:"UNAVAILABLE"}});
     const h=mount({companyId:"a"});await flush();h.render();
