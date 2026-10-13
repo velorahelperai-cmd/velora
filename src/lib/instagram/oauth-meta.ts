@@ -19,7 +19,7 @@ export function readInstagramOAuthConfig(environment:Readonly<Record<string,stri
 export function instagramAuthorizationUrl(cfg:InstagramOAuthConfig,state:string):string|null{
  const flags=instagramConfig();if(!flags.connectEnabled||flags.graphVersion!=='v26.0'||!/^[a-f0-9]{64}$/.test(state))return null;
  const u=new URL('https://www.instagram.com/oauth/authorize');
- for(const [k,v] of Object.entries({client_id:cfg.appId,redirect_uri:cfg.redirectUri,response_type:'code',scope:cfg.requiredPermissions.join(','),state,enable_fb_login:'0',force_authentication:'1'}))u.searchParams.set(k,v);
+ for(const [k,v] of Object.entries({client_id:cfg.appId,redirect_uri:cfg.redirectUri,response_type:'code',scope:cfg.requiredPermissions.join(','),state,enable_fb_login:'false',force_reauth:'true'}))u.searchParams.set(k,v);
  return u.href;
 }
 /** One code POST and one long-token conversion, never HTTP retries. The server
@@ -51,8 +51,14 @@ export async function exchangeInstagramCode(code:string,binding:AttemptBinding,c
   const me=new URL('https://graph.instagram.com/v26.0/me');me.searchParams.set('fields','user_id,username,account_type');
   const profile=await request(me.href,{method:'GET',headers:{Authorization:'Bearer '+upgraded.body.access_token}});
   if(!profile.ok||!record(profile.body))return unknown();
-  if(account(profile.body.user_id)!==id||!['BUSINESS','MEDIA_CREATOR'].includes(String(profile.body.account_type))
-   ||!instagramOwnerConnectProfile(binding.companyId,binding.userId,binding.appId,profile.body.username))return rejected();
+  const profileBody=profile.body;
+  let identity:unknown=profileBody;
+  if(Array.isArray(profileBody.data)){
+   if(profileBody.data.length!==1||['user_id','username','account_type'].some(field=>field in profileBody))return rejected();
+   identity=profileBody.data[0];
+  }
+  if(!record(identity)||account(identity.user_id)!==id||!['BUSINESS','MEDIA_CREATOR'].includes(String(identity.account_type))
+   ||!instagramOwnerConnectProfile(binding.companyId,binding.userId,binding.appId,identity.username))return rejected();
   return {ok:true,accessToken:upgraded.body.access_token,evidence:{appId:cfg.appId,accountId:id,permissions:[...new Set(permissions as string[])],expiresAt:new Date(expires).toISOString(),contractId:cfg.contractId}};
  }catch{return unknown();}
 }

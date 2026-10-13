@@ -23,6 +23,16 @@ it('requires production callback origin to match configured public site',async()
 
 it('unscoped company/owner/app cannot make any OAuth HTTP request',async()=>{f.scope.mockReturnValue(false);const http=transport();expect(await exchangeInstagramCode('code',binding,cfg,{fetch:http})).toEqual({ok:false,code:'REJECTED'});expect(http).not.toHaveBeenCalled();});
 it('scope expiry after code exchange prevents upgrade and profile request',async()=>{const http=vi.fn().mockImplementationOnce(async()=>{f.scope.mockReturnValue(false);return new Response(JSON.stringify({access_token:'synthetic-short-token',user_id:'100',permissions:cfg.requiredPermissions}));});expect(await exchangeInstagramCode('code',binding,cfg,{fetch:http})).toEqual({ok:false,code:'UNKNOWN'});expect(http).toHaveBeenCalledTimes(1);});
+it('uses documented reauthentication controls without the unsupported alias',()=>{
+ const url=new URL(instagramAuthorizationUrl(cfg,'a'.repeat(64))!);
+ expect(url.searchParams.get('force_reauth')).toBe('true');expect(url.searchParams.get('enable_fb_login')).toBe('false');expect(url.searchParams.has('force_authentication')).toBe(false);
+});
+it('accepts the documented single-account data envelope without weakening identity checks',async()=>{
+ expect(await exchangeInstagramCode('code',binding,cfg,{fetch:transport({data:[{user_id:'100',username:'synthetic-business',account_type:'BUSINESS'}]})})).toMatchObject({ok:true,evidence:{accountId:'100'}});
+});
+it.each([{data:[]},{data:[{user_id:'100'},{user_id:'200'}]},{user_id:'100',data:[{user_id:'100',username:'synthetic-business',account_type:'BUSINESS'}]}])('rejects ambiguous account envelopes',async proof=>{
+ expect(await exchangeInstagramCode('code',binding,cfg,{fetch:transport(proof)})).toEqual({ok:false,code:'REJECTED'});
+});
 
 it.each([{user_id:'100',username:'another_business',account_type:'BUSINESS'},{user_id:'100',account_type:'BUSINESS'}])('another or missing genuine username rejects before success evidence',async proof=>{const http=transport(proof);expect(await exchangeInstagramCode('code',binding,cfg,{fetch:http})).toEqual({ok:false,code:'REJECTED'});expect(f.profile).toHaveBeenCalledWith(binding.companyId,binding.userId,binding.appId,proof.username);});
 it('matching genuine username keeps exact real numeric account evidence',async()=>{const result=await exchangeInstagramCode('code',binding,cfg,{fetch:transport()});expect(result).toMatchObject({ok:true,evidence:{accountId:'100'}});expect(f.profile).toHaveBeenCalledWith(binding.companyId,binding.userId,binding.appId,'synthetic-business');});
