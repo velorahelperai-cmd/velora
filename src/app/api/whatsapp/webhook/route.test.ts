@@ -45,6 +45,7 @@ function signedRequest(raw: string | Uint8Array, header?: string) {
 }
 
 beforeEach(() => {
+  vi.stubEnv('WHATSAPP_RECEIVE_ENABLED','true');
   vi.clearAllMocks();
   state.mode = "tenant_registry";
   state.ready = true;
@@ -61,9 +62,23 @@ beforeEach(() => {
 afterEach(() => {
   expect(globalThis.fetch).not.toHaveBeenCalled();
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
 });
 
 describe("P4 WhatsApp reception route", () => {
+  it('preserves GET verification when event reception is closed',async()=>{
+    vi.stubEnv('WHATSAPP_RECEIVE_ENABLED','false');
+    const response=await GET(new Request('http://localhost/api/whatsapp/webhook?hub.mode=subscribe&hub.verify_token=synthetic-verify-token&hub.challenge=check'));
+    expect(response.status).toBe(200);expect(await response.text()).toBe('check');expect(mocks.createAdminClient).not.toHaveBeenCalled();
+  });
+  it.each([undefined,'false','TRUE'])('blocks every event before body or database when receive is not explicitly enabled (%s)',async flag=>{
+    vi.stubEnv('WHATSAPP_RECEIVE_ENABLED',flag);
+    const request=signedRequest(JSON.stringify(envelope()));
+    const body=vi.spyOn(request,'arrayBuffer');
+    expect((await POST(request)).status).toBe(503);
+    expect(body).not.toHaveBeenCalled();expect(mocks.createAdminClient).not.toHaveBeenCalled();
+    expect(mocks.rpc).not.toHaveBeenCalled();expect(mocks.saveInbound).not.toHaveBeenCalled();expect(mocks.saveStatus).not.toHaveBeenCalled();
+  });
   it("passes signed exact WABA partner removal to the scoped revocation RPC", async () => {
     const payload = { object: "whatsapp_business_account", entry: [{ id: "10000001", time: 1710000000, changes: [{
       field: "account_update", value: { event: "PARTNER_REMOVED", waba_info: { waba_id: "10000001" } },

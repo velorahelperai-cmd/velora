@@ -73,6 +73,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  if (process.env.WHATSAPP_RECEIVE_ENABLED !== "true") {
+    return new Response("receive disabled", { status: 503, headers: { "cache-control": "no-store", "retry-after": "5" } });
+  }
   const config = whatsappConfig();
   const mode = whatsappRoutingMode();
   if (!webhookReady(config)) {
