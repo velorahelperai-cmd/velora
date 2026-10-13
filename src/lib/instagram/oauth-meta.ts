@@ -28,7 +28,9 @@ export function instagramAuthorizationUrl(cfg:InstagramOAuthConfig,state:string)
  * Current provider response/field compatibility still requires approved fixtures
  * and live verification before activation. Missing evidence fails closed. */
 export async function exchangeInstagramCode(code:string,binding:AttemptBinding,cfg:InstagramOAuthConfig,dependencies:{fetch?:typeof fetch}={}):Promise<ProviderResult>{
- const rejected=():ProviderResult=>({ok:false,code:'REJECTED'}),unknown=():ProviderResult=>({ok:false,code:'UNKNOWN'});
+ let stage='preflight';
+ const report=(code:string)=>{if(process.env.NODE_ENV==='production')console.info(JSON.stringify({stage,code}));};
+ const rejected=(code='VALIDATION_REJECTED'):ProviderResult=>{report(code);return {ok:false,code:'REJECTED'};},unknown=(code='UNPROVEN_RESPONSE'):ProviderResult=>{report(code);return {ok:false,code:'UNKNOWN'};};
  const flags=instagramConfig();if(!instagramOwnerConnectScope(binding.companyId,binding.userId,binding.appId)||!flags.connectEnabled||flags.graphVersion!=='v26.0'||binding.appId!==cfg.appId||binding.contractId!==cfg.contractId||!text(code)||/[\x00-\x1f\x7f]/.test(code))return rejected();
  const http=dependencies.fetch??fetch;
  async function request(url:string,init:RequestInit){
@@ -38,16 +40,20 @@ export async function exchangeInstagramCode(code:string,binding:AttemptBinding,c
   const raw=await response.text();if(Buffer.byteLength(raw,'utf8')>65536)throw Error('PROVIDER_RESPONSE_TOO_LARGE');
   const body:unknown=JSON.parse(raw);return {ok:response.ok,status:response.status,body};}
  try{
+  stage='code_exchange';
   const exchanged=await request('https://api.instagram.com/oauth/access_token',{method:'POST',body:new URLSearchParams({client_id:cfg.appId,client_secret:cfg.appSecret,grant_type:'authorization_code',redirect_uri:cfg.redirectUri,code})});
-  if(!exchanged.ok){return exchanged.status>=400&&exchanged.status<500&&record(exchanged.body)&&(exchanged.body.error_type==='OAuthException'||record(exchanged.body.error))?rejected():unknown();}
+  if(!exchanged.ok){return exchanged.status>=400&&exchanged.status<500&&record(exchanged.body)&&(exchanged.body.error_type==='OAuthException'||record(exchanged.body.error))?rejected('OAUTH_HTTP_'+exchanged.status):unknown('HTTP_'+exchanged.status);}
   let short=exchanged.body;if(record(short)&&Array.isArray(short.data)){if(short.data.length!==1)return rejected();short=short.data[0];}
   if(!record(short)||!text(short.access_token))return unknown();
+  stage='granted_permissions';
   const id=account(short.user_id),permissions=typeof short.permissions==='string'?short.permissions.split(',').map(s=>s.trim()):short.permissions;
   if(!id||!Array.isArray(permissions)||permissions.some(p=>typeof p!=='string'||!p||p.length>128)||!cfg.requiredPermissions.every(p=>permissions.includes(p)))return rejected();
+  stage='long_token_exchange';
   const issuedBefore=Date.now(),longUrl=new URL('https://graph.instagram.com/access_token');
   longUrl.searchParams.set('grant_type','ig_exchange_token');longUrl.searchParams.set('client_secret',cfg.appSecret);longUrl.searchParams.set('access_token',short.access_token);
   const upgraded=await request(longUrl.href,{method:'GET'});if(!upgraded.ok||!record(upgraded.body)||!text(upgraded.body.access_token)||!Number.isSafeInteger(upgraded.body.expires_in)||(upgraded.body.expires_in as number)<=0)return unknown();
   const expires=issuedBefore+(upgraded.body.expires_in as number)*1000;if(!Number.isSafeInteger(expires)||expires<=Date.now()||!Number.isFinite(new Date(expires).getTime()))return unknown();
+  stage='profile_read';
   const me=new URL('https://graph.instagram.com/v26.0/me');me.searchParams.set('fields','user_id,username,account_type');
   const profile=await request(me.href,{method:'GET',headers:{Authorization:'Bearer '+upgraded.body.access_token}});
   if(!profile.ok||!record(profile.body))return unknown();
@@ -57,8 +63,10 @@ export async function exchangeInstagramCode(code:string,binding:AttemptBinding,c
    if(profileBody.data.length!==1||['user_id','username','account_type'].some(field=>field in profileBody))return rejected();
    identity=profileBody.data[0];
   }
-  if(!record(identity)||account(identity.user_id)!==id||!['BUSINESS','MEDIA_CREATOR'].includes(String(identity.account_type))
-   ||!instagramOwnerConnectProfile(binding.companyId,binding.userId,binding.appId,identity.username))return rejected();
+  stage='profile_identity';
+  if(!record(identity)||account(identity.user_id)!==id)return rejected('ACCOUNT_ID_MISMATCH');
+  if(!['BUSINESS','MEDIA_CREATOR'].includes(String(identity.account_type)))return rejected('PROFESSIONAL_ACCOUNT_REQUIRED');
+  if(!instagramOwnerConnectProfile(binding.companyId,binding.userId,binding.appId,identity.username))return rejected('TARGET_USERNAME_MISMATCH');
   return {ok:true,accessToken:upgraded.body.access_token,evidence:{appId:cfg.appId,accountId:id,permissions:[...new Set(permissions as string[])],expiresAt:new Date(expires).toISOString(),contractId:cfg.contractId}};
  }catch{return unknown();}
 }

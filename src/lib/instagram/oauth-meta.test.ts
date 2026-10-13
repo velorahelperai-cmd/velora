@@ -51,3 +51,15 @@ it('another genuine professional profile is rejected before Vault stage, subscri
    settleClaim:async()=>({kind:'rejected' as const,binding}),readProgress:async()=>({kind:'rejected' as const,binding})});
  expect(result).toEqual({ok:false,code:'CONSUMED'});expect(stage).not.toHaveBeenCalled();expect(subscribe).not.toHaveBeenCalled();expect(finalize).not.toHaveBeenCalled();
 });
+
+it('diagnostics emit only stage and sanitized code, never provider body or credentials',async()=>{
+ const {afterEach}=await import('vitest');
+ const log=vi.spyOn(console,'info').mockImplementation(()=>{});
+ vi.stubEnv('NODE_ENV','production');
+ try{
+  const http=vi.fn().mockResolvedValue(new Response(JSON.stringify({error_type:'OAuthException',error_message:'private-code synthetic-app-secret synthetic-token'}),{status:400}));
+  await exchangeInstagramCode('private-code',binding,cfg,{fetch:http});
+  expect(log).toHaveBeenCalledWith(JSON.stringify({stage:'code_exchange',code:'OAUTH_HTTP_400'}));
+  expect(log.mock.calls.flat().join('')).not.toMatch(/private-code|synthetic-app-secret|synthetic-token/);
+ }finally{vi.unstubAllEnvs();log.mockRestore();}
+});
