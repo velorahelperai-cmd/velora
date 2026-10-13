@@ -35,7 +35,7 @@ describe("Meta actions preserve the company rendered in the caller", () => {
     state.companyId = "company-b";
     const result = action === "setup" ? await getEmbeddedSignupSetup("company-a")
       : action === "start" ? await startEmbeddedSignup({ companyId: "company-a", keepOnPhone: false }) : await disconnectEmbeddedSignup("company-a");
-    expect(result).toEqual({ ok: false, code: "FORBIDDEN" });
+    expect(result).toMatchObject({ ok: false, code: "FORBIDDEN" });
     expect(state.rpc).not.toHaveBeenCalled(); expect(state.attempt).not.toHaveBeenCalled();
   });
   it.each(["setup", "start", "disconnect"])("rejects an unbound legacy %s call", async action => {

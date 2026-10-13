@@ -1,6 +1,7 @@
 "use client";
 
 import Script from "next/script";
+import {diagnosticText} from "@/lib/diagnostics/contract";
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import {
   getCoexistenceSetup, startCoexistenceSignup, completeCoexistenceSignup,
@@ -49,6 +50,7 @@ export function WhatsappCoexistenceSignup({ companyId, onConnected, onDisconnect
   const sdkReady = config !== null && sdkReadyConfig === configSignature(config);
   const [phase, setPhase] = useState<Phase>("idle");
   const [notice, setNotice] = useState<string | null>(null);
+  const [diagnostic, setDiagnostic] = useState<unknown>(null);
   const [phone, setPhone] = useState("");
   const [confirmed, setConfirmed] = useState(false);
   const [popupPending, setPopupPending] = useState(false);
@@ -69,7 +71,7 @@ export function WhatsappCoexistenceSignup({ companyId, onConnected, onDisconnect
   if (stateCompanyId !== companyId) {
     setStateCompanyId(companyId);
     setLoading(true); setDurable(null); setConfig(null); setSdkReadyConfig(null);
-    setPhone(""); setConfirmed(false); setPhase("idle"); setNotice(null);
+    setPhone(""); setConfirmed(false); setPhase("idle"); setNotice(null); setDiagnostic(null);
     setSyncSetup(null); setSyncConsent(null); setBlockedSyncKeys([]);
   }
 
@@ -84,6 +86,7 @@ export function WhatsappCoexistenceSignup({ companyId, onConnected, onDisconnect
       if (!result || !result.ok || result.status.companyId !== owner.companyId) {
         setDurable(null); setConfig(null); setLoading(false);
         setNotice(result && !result.ok ? result.code : "UNAVAILABLE");
+        setDiagnostic(result && !result.ok ? result.diagnostic : null);
         return null;
       }
       const nextConfig = parsePublicCoexistenceConfig(result.config);
@@ -108,7 +111,7 @@ export function WhatsappCoexistenceSignup({ companyId, onConnected, onDisconnect
     try {
       const result = await cancelCoexistenceSignup({ attemptId: current.attemptId, nonce: current.nonce });
       if (ownerRef.current !== owner) return;
-      if (!result.ok) setNotice(result.code);
+      if (!result.ok) { setNotice(result.code); setDiagnostic(result.diagnostic); }
       await reloadFor(owner);
     } catch {
       if (ownerRef.current === owner) { setNotice("UNAVAILABLE"); await reloadFor(owner); }
@@ -153,14 +156,14 @@ export function WhatsappCoexistenceSignup({ companyId, onConnected, onDisconnect
     const selected = normalizeConfirmedCompanyPhone(phone, confirmed);
     if (!owner || operationRef.current || activeRef.current || popupPendingRef.current || !config || !selected) return;
     const operation = {}; operationRef.current = operation;
-    setPhase("preparing"); setNotice(null);
+    setPhase("preparing"); setNotice(null); setDiagnostic(null);
     try {
       const result = await startCoexistenceSignup({ companyId: owner.companyId, internationalPhoneNumber: selected, confirmed: true });
       if (ownerRef.current !== owner || operationRef.current !== operation) {
         if (result.ok) void cancelCoexistenceSignup({ attemptId: result.attemptId, nonce: result.nonce }).catch(() => undefined);
         return;
       }
-      if (!result.ok) { setNotice(result.code); setPhase("idle"); return; }
+      if (!result.ok) { setNotice(result.code); setDiagnostic(result.diagnostic); setPhase("idle"); return; }
       const attemptConfig = parsePublicCoexistenceConfig(result.config);
       const deadline = signupSignalDeadline(result.expiresAt);
       if (!attemptConfig || deadline === null || deadline <= Date.now()
@@ -187,7 +190,7 @@ export function WhatsappCoexistenceSignup({ companyId, onConnected, onDisconnect
     if (!owner || !current || current.launched || current.submitted || !sdk || !sdkReady || popupPendingRef.current) return;
     const deadline = signupSignalDeadline(current.expiresAt);
     if (deadline === null || deadline <= Date.now()) { void retire(current, "EXPIRED"); return; }
-    current.launched = true; setPhase("meta"); setNotice(null);
+    current.launched = true; setPhase("meta"); setNotice(null); setDiagnostic(null);
     popupAttemptRef.current = current; popupPendingRef.current = true; setPopupPending(true);
 
     // Both listener and SDK callback capture this exact attempt, never a later active slot.
@@ -210,7 +213,7 @@ export function WhatsappCoexistenceSignup({ companyId, onConnected, onDisconnect
       void completeCoexistenceSignup(request).then(async result => {
         if (ownerRef.current !== owner || activeRef.current !== current) return;
         activeRef.current = null;
-        setNotice(result.ok ? null : result.code);
+        setNotice(result.ok ? null : result.code); setDiagnostic(result.diagnostic ?? null);
         const status = await reloadFor(owner);
         if (ownerRef.current === owner) {
           setPhase("idle");
@@ -255,11 +258,11 @@ export function WhatsappCoexistenceSignup({ companyId, onConnected, onDisconnect
     const owner = ownerRef.current;
     if (!owner || operationRef.current || activeRef.current || phase !== "idle") return;
     const operation = {}; operationRef.current = operation;
-    setPhase("disconnecting"); setNotice(null);
+    setPhase("disconnecting"); setNotice(null); setDiagnostic(null);
     try {
       const result = await disconnectCoexistenceSignup(owner.companyId);
       if (ownerRef.current !== owner) return;
-      if (!result.ok) setNotice(result.code);
+      if (!result.ok) { setNotice(result.code); setDiagnostic(result.diagnostic); }
       const status = await reloadFor(owner);
       if (ownerRef.current === owner && status?.connectionStatus === "disconnected") onDisconnected?.();
     } catch {
@@ -294,11 +297,11 @@ export function WhatsappCoexistenceSignup({ companyId, onConnected, onDisconnect
     // Claim outcome can be ambiguous. Never automatically replay a submitted type in this generation.
     syncBlockedRef.current.add(key); setBlockedSyncKeys(previous => [...previous, key]);
     const input = { companyId: owner.companyId, linkId: syncSetup.linkId, linkGeneration: syncSetup.linkGeneration, syncType, consent: true as const };
-    setPhase("requesting-sync"); setNotice(null);
+    setPhase("requesting-sync"); setNotice(null); setDiagnostic(null);
     try {
       const result = await requestCoexistenceHistorySync(input);
       if (ownerRef.current !== owner || operationRef.current !== operation) return;
-      setNotice(result.ok ? "SYNC_ACCEPTED" : result.code);
+      setNotice(result.ok ? "SYNC_ACCEPTED" : result.code); setDiagnostic(result.diagnostic ?? null);
       await reloadFor(owner);
     } catch {
       if (ownerRef.current === owner && operationRef.current === operation) {
@@ -347,6 +350,7 @@ export function WhatsappCoexistenceSignup({ companyId, onConnected, onDisconnect
       <p className="mt-1 text-sm text-[var(--color-muted-soft)]">{t("Authorize your existing WhatsApp Business app number in Meta. You can continue using the app on your phone.", "اربط رقم تطبيق واتساب للأعمال الحالي عبر ميتا مع الاستمرار في استخدام التطبيق على هاتفك.")}</p>
     </div>
     {notice ? <Notice tone="warn">{messages[notice] ?? t("The action did not complete. Refresh the saved status before trying again.", "لم يكتمل الإجراء. حدّث الحالة المحفوظة قبل المحاولة مجدداً.")}</Notice> : null}
+    {diagnosticText(diagnostic,locale) ? <p className="text-sm break-words" dir={locale === "ar" ? "rtl" : "ltr"}>{diagnosticText(diagnostic,locale)}</p> : null}
     {loading ? <p role="status" className="text-sm">{t("Loading saved connection status…", "جارٍ تحميل حالة الربط المحفوظة…")}</p> : durable ? <dl className="grid gap-2 text-sm">
       <div><dt className="text-[var(--color-muted-soft)]">{t("Connection", "الربط")}</dt><dd>{connected ? t("Meta authorization saved", "تم حفظ تفويض ميتا") : durable.connectionStatus === "disconnected" ? t("Velora access stopped", "تم فصل الربط") : durable.connectionStatus === "needs_review" ? t("Needs review", "تحتاج إلى مراجعة") : t("Not connected", "غير مرتبط")}</dd></div>
       {durable.displayPhoneNumber ? <div><dt className="text-[var(--color-muted-soft)]">{t("Business number", "رقم الشركة")}</dt><dd dir="ltr">{durable.displayPhoneNumber}</dd></div> : null}
@@ -395,7 +399,7 @@ export function WhatsappCoexistenceSignup({ companyId, onConnected, onDisconnect
       {phase === "requesting-sync" ? <p role="status" className="text-sm">{t("Requesting synchronization and refreshing the saved result.", "جارٍ طلب المزامنة وتحديث النتيجة المحفوظة.")}</p> : null}
     </div>
     <div className="flex flex-wrap gap-2">
-      <Button type="button" variant="secondary" disabled={busy || phase === "prepared"} onClick={() => { const owner = ownerRef.current; if (owner) { setLoading(true); setNotice(null); void reloadFor(owner); } }}>{t("Refresh saved status", "تحديث الحالة المحفوظة")}</Button>
+      <Button type="button" variant="secondary" disabled={busy || phase === "prepared"} onClick={() => { const owner = ownerRef.current; if (owner) { setLoading(true); setNotice(null); setDiagnostic(null); void reloadFor(owner); } }}>{t("Refresh saved status", "تحديث الحالة المحفوظة")}</Button>
       {durable && durable.connectionStatus !== "not_connected" && durable.connectionStatus !== "disconnected" ? <Button type="button" variant="danger" disabled={busy || phase !== "idle"} busy={phase === "disconnecting"} onClick={() => void disconnect()}>{t("Disconnect Velora access", "فصل وصول فيلورا")}</Button> : null}
     </div>
     {durable && durable.connectionStatus !== "not_connected" ? <p className="text-xs text-[var(--color-muted-soft)]">{t("Stopping Velora access does not remove the Meta connection. To disconnect the Business app from Cloud API, use WhatsApp Business app → Settings → Account → Business Platform → Disconnect Account.", "إيقاف وصول Velora لا يزيل اتصال Meta. لفصل تطبيق الأعمال عن Cloud API، افتح تطبيق واتساب للأعمال ← الإعدادات ← الحساب ← منصة الأعمال ← فصل الحساب.")}</p> : null}

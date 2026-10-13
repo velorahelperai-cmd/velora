@@ -1,4 +1,5 @@
 "use server";
+import {diagnoseWhatsAppConnection,diagnosedWhatsAppPorts} from "./connection-diagnostics";
 import {fixedAckConfig} from "./fixed-ack";
 import {revalidatePath} from "next/cache";
 import {getCompanyAccess} from "@/lib/tenancy/access";
@@ -31,35 +32,45 @@ function serverConfig(){
  return {...publicConfig,enabled:true,appSecret:process.env.WHATSAPP_APP_SECRET?.trim()??"",systemUserToken:process.env.WHATSAPP_EMBEDDED_SIGNUP_SYSTEM_USER_TOKEN?.trim()??""};
 }
 export async function getEmbeddedSignupSetup(companyId:string){
- const auth=await scopedOwner(companyId);if(!auth.ok)return auth;
- const config=embeddedSignupClientConfig();if(!config.ok||!createAdminClient())return {ok:false as const,code:"NEEDS_SETUP"};
- const ready=await signupRpc(auth.client,"whatsapp_embedded_signup_readiness",{p_company_id:auth.identity.companyId});
+ return diagnoseWhatsAppConnection(async trace=>{
+ trace.stage("session");const auth=await scopedOwner(companyId);if(!auth.ok)return auth;
+ trace.stage("preflight");const config=embeddedSignupClientConfig();if(!config.ok||!createAdminClient())return {ok:false as const,code:"NEEDS_SETUP"};
+ trace.stage("readiness");const ready=await signupRpc(auth.client,"whatsapp_embedded_signup_readiness",{p_company_id:auth.identity.companyId});
  if(ready.ok!==true)return {ok:false as const,code:String(ready.code)};return config;
+ });
 }
 export async function startEmbeddedSignup(input:{companyId:string;keepOnPhone:boolean}){
- const auth=await scopedOwner(input?.companyId);if(!auth.ok)return auth;
- const config=embeddedSignupClientConfig();if(!config.ok||!createAdminClient()||input?.keepOnPhone!==false)return {ok:false as const,code:"NEEDS_SETUP"};
- const fresh=createEmbeddedSignupAttempt({...auth.identity,keepOnPhone:false});if(!fresh.ok)return fresh;
- const r=await signupRpc(auth.client,"whatsapp_start_embedded_signup",{p_company_id:auth.identity.companyId,p_attempt_id:fresh.attempt.id,p_nonce:fresh.attempt.nonce,p_keep_on_phone:false,p_app_id:config.appId,p_config_id:config.configId,p_graph_version:config.graphVersion});
+ return diagnoseWhatsAppConnection(async trace=>{
+ trace.stage("session");const auth=await scopedOwner(input?.companyId);if(!auth.ok)return auth;
+ trace.stage("preflight");const config=embeddedSignupClientConfig();if(!config.ok||!createAdminClient()||input?.keepOnPhone!==false)return {ok:false as const,code:"NEEDS_SETUP"};
+ trace.stage("input");const fresh=createEmbeddedSignupAttempt({...auth.identity,keepOnPhone:false});if(!fresh.ok)return fresh;
+ trace.stage("persistence");const r=await signupRpc(auth.client,"whatsapp_start_embedded_signup",{p_company_id:auth.identity.companyId,p_attempt_id:fresh.attempt.id,p_nonce:fresh.attempt.nonce,p_keep_on_phone:false,p_app_id:config.appId,p_config_id:config.configId,p_graph_version:config.graphVersion});
  if(r.ok!==true)return {ok:false as const,code:String(r.code)};
  if(r.attempt_id!==fresh.attempt.id||r.nonce!==fresh.attempt.nonce||typeof r.expires_at!=="string")return {ok:false as const,code:"UNAVAILABLE"};
  return {ok:true as const,attemptId:fresh.attempt.id,nonce:fresh.attempt.nonce,expiresAt:r.expires_at,config:{appId:config.appId,configId:config.configId,graphVersion:config.graphVersion}};
+ });
 }
 export async function completeEmbeddedSignup(input:SignupCompletionInput){
- const auth=await owner();if(!auth.ok)return auth;
- const config=serverConfig(),admin=createAdminClient();if(!config||!admin)return {ok:false as const,code:"NEEDS_SETUP"};
- if(!input||!uuid(input.attemptId)||typeof input.nonce!=="string"||!/^[0-9a-f]{64}$/.test(input.nonce)||typeof input.code!=="string"||!input.code||input.code.length>4096||!/^\d{1,64}$/.test(input.wabaId)||!/^\d{1,64}$/.test(input.phoneNumberId)||!/^\d{6}$/.test(input.pin))return {ok:false as const,code:"INVALID_INPUT"};
- const r=await finishEmbeddedSignup(auth.identity,input,config,createSignupPorts(auth.identity,input,config,auth.client,admin as unknown as SignupRpcClient));
+ return diagnoseWhatsAppConnection(async trace=>{
+ trace.stage("session");const auth=await owner();if(!auth.ok)return auth;
+ trace.stage("preflight");const config=serverConfig(),admin=createAdminClient();if(!config||!admin)return {ok:false as const,code:"NEEDS_SETUP"};
+ trace.stage("input");if(!input||!uuid(input.attemptId)||typeof input.nonce!=="string"||!/^[0-9a-f]{64}$/.test(input.nonce)||typeof input.code!=="string"||!input.code||input.code.length>4096||!/^\d{1,64}$/.test(input.wabaId)||!/^\d{1,64}$/.test(input.phoneNumberId)||!/^\d{6}$/.test(input.pin))return {ok:false as const,code:"INVALID_INPUT"};
+ const r=await finishEmbeddedSignup(auth.identity,input,config,diagnosedWhatsAppPorts(createSignupPorts(auth.identity,input,config,auth.client,admin as unknown as SignupRpcClient),trace));
  if(r.ok){try{revalidatePath("/app/settings");}catch{/* Authorization is already durably finalized. */}}return r;
+ });
 }
 export async function cancelEmbeddedSignup(input:{attemptId:string;nonce:string}){
- const auth=await owner();if(!auth.ok)return auth;
- if(!input||!uuid(input.attemptId)||typeof input.nonce!=="string"||!/^[0-9a-f]{64}$/.test(input.nonce))return {ok:false as const,code:"INVALID_INPUT"};
- const r=await signupRpc(auth.client,"whatsapp_cancel_embedded_signup",{p_company_id:auth.identity.companyId,p_attempt_id:input.attemptId,p_nonce:input.nonce});return r.ok===true?{ok:true as const}:{ok:false as const,code:String(r.code)};
+ return diagnoseWhatsAppConnection(async trace=>{
+ trace.stage("session");const auth=await owner();if(!auth.ok)return auth;
+ trace.stage("input");if(!input||!uuid(input.attemptId)||typeof input.nonce!=="string"||!/^[0-9a-f]{64}$/.test(input.nonce))return {ok:false as const,code:"INVALID_INPUT"};
+ trace.stage("persistence");const r=await signupRpc(auth.client,"whatsapp_cancel_embedded_signup",{p_company_id:auth.identity.companyId,p_attempt_id:input.attemptId,p_nonce:input.nonce});return r.ok===true?{ok:true as const}:{ok:false as const,code:String(r.code)};
+ });
 }
 export async function disconnectEmbeddedSignup(companyId:string){
- const auth=await scopedOwner(companyId);if(!auth.ok)return auth;
- const r=await signupRpc(auth.client,"whatsapp_disconnect_embedded_signup",{p_company_id:auth.identity.companyId});if(r.ok===true){try{revalidatePath("/app/settings");}catch{/* Authorization is already durably revoked. */}}return r.ok===true?{ok:true as const}:{ok:false as const,code:String(r.code)};
+ return diagnoseWhatsAppConnection(async trace=>{
+ trace.stage("session");const auth=await scopedOwner(companyId);if(!auth.ok)return auth;
+ trace.stage("persistence");const r=await signupRpc(auth.client,"whatsapp_disconnect_embedded_signup",{p_company_id:auth.identity.companyId});if(r.ok===true){try{revalidatePath("/app/settings");}catch{/* Authorization is already durably revoked. */}}return r.ok===true?{ok:true as const}:{ok:false as const,code:String(r.code)};
+ });
 }
 
 export async function getFixedAckSetup(companyId:string){

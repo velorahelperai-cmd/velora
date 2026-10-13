@@ -101,6 +101,13 @@ beforeEach(() => {
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("real Coexistence component async paths", () => {
+  it("shows a bounded support reference for a failed status read and clears it on company switch", async () => {
+    mocks.read.mockResolvedValueOnce({ok:false,code:"UNAVAILABLE",diagnostic:{reference:"VEL-1234567890ABCDEF",operation:"whatsapp_connect",stage:"channel",code:"UNAVAILABLE"}});
+    const h=mount({companyId:"a"});await flush();h.render();
+    expect(text(h.tree())).toContain("VEL-1234567890ABCDEF");
+    h.render({companyId:"b"});await flush();h.render();
+    expect(text(h.tree())).not.toContain("VEL-1234567890ABCDEF");h.unmount();
+  });
   it("invalidates old company reads before passive effects run after the new company commits", async () => {
     const oldRead = deferred<unknown>(), newRead = deferred<unknown>();
     mocks.read.mockImplementation((companyId: string) => companyId === "a" ? oldRead.promise : newRead.promise);
