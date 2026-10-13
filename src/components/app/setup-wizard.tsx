@@ -7,6 +7,8 @@ import { SetupLoading } from "./setup-loading";
 import setupStyles from "./setup-wizard.module.css";
 import { useRouter } from "next/navigation";
 import { setupSubscriptionReturn } from "@/lib/auth/setup-return";
+import { readSetupDraft, saveSetupDraft } from "@/lib/tenancy/setup-draft-actions";
+import { setupDraftPayload, type SetupDraftCode } from "@/lib/tenancy/setup-draft";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type Activation, type Business, emptyBusiness, nowMs, useDemo } from "@/lib/demo-state";
 import {
@@ -235,6 +237,12 @@ export function SetupWizard({
 
   const leaveGuardRef = useRef<(() => boolean) | null>(null);
   const hydratedScope = useRef<string | null>(null);
+  const draftRevision = useRef(0);
+  const saveQueue = useRef<Promise<void>>(Promise.resolve());
+  const createdDraft = useRef<CompanyDraft | null>(null);
+  const [draftSaveStatus, setDraftSaveStatus] = useState<"loading" | "saving" | "saved" | "changed" | "error">("loading");
+  const [draftSaveCode, setDraftSaveCode] = useState<SetupDraftCode | null>(null);
+  const [draftRetry, setDraftRetry] = useState(0);
   const [savedCompany, setSavedCompany] = useState<CompanyRecord | null>(initialCompany ?? null);
   const [trackedCompany, setTrackedCompany] = useState(initialCompany ?? null);
   if (trackedCompany !== (initialCompany ?? null)) {
@@ -242,6 +250,8 @@ export function SetupWizard({
     setSavedCompany(initialCompany ?? null);
   }
   const companyId = savedCompany?.id ?? null;
+  const renderedScope = useRef(`${userId}:${companyId ?? "new"}`);
+  useEffect(() => { renderedScope.current = `${userId}:${companyId ?? "new"}`; }, [userId, companyId]);
   const [readiness, setReadiness] = useState<CustomerReadinessSnapshot | null>(null);
   const [diagnostic,setDiagnostic]=useState<unknown>(null);
   const whatsappRequest=useWhatsappRequestReadback(userId,companyId,savedCompany?.updated_at);
@@ -269,11 +279,33 @@ export function SetupWizard({
     setReconciledCompany(savedCompany);
     setBusinessBaseline(refresh.baseline);
     setBusinessConflicts(refresh.conflicts);
-    setDraft({ ...draft, business: refresh.values });
+    setDraft({ ...draft, business: refresh.values, businessBaseline: refresh.baseline });
   }
   useEffect(() => {
-    if (ready && draft.userId === userId && draft.companyId === companyId) writeCompanyDraft(draft);
-  }, [ready, draft, userId, companyId]);
+    if (!ready || draft.userId !== userId || draft.companyId !== companyId || hydratedScope.current !== `${userId}:${companyId ?? "new"}`) return;
+    const payload = setupDraftPayload({ ...draft, businessBaseline });
+    if (!payload) {
+      const frame = window.requestAnimationFrame(() => { setDraftSaveStatus("changed"); setDraftSaveCode("INVALID_INPUT"); });
+      return () => window.cancelAnimationFrame(frame);
+    }
+    const scope = `${userId}:${companyId ?? "new"}`;
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      setDraftSaveStatus("saving");
+      saveQueue.current = saveQueue.current.catch(() => {}).then(async () => {
+        if (cancelled || hydratedScope.current !== scope) return;
+        const result = await saveSetupDraft({ expectedUserId: userId, expectedCompanyId: companyId,
+          expectedRevision: draftRevision.current, draft: { ...draft, ...payload } });
+        // A committed receipt updates the revision even if a newer local edit is queued.
+        if (hydratedScope.current !== scope) return;
+        if (result.ok) draftRevision.current = result.data.revision;
+        if (cancelled) return;
+        if (result.ok) { writeCompanyDraft(result.data.draft); setDraftSaveStatus("saved"); setDraftSaveCode(null); }
+        else { setDraftSaveStatus("error"); setDraftSaveCode(result.code); }
+      }).catch(() => { if (!cancelled) { setDraftSaveStatus("error"); setDraftSaveCode("UNAVAILABLE"); } });
+    }, 600);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [ready, draft, businessBaseline, userId, companyId, draftRetry]);
   const [knowledgeSources, setKnowledgeSources] = useState(initialKnowledge);
   const [knowledgeFailed, setKnowledgeFailed] = useState(knowledgeLoadFailed);
   const [trackedKnowledge, setTrackedKnowledge] = useState({ sources: initialKnowledge, failed: knowledgeLoadFailed });
@@ -327,12 +359,18 @@ export function SetupWizard({
 
   useEffect(() => {
     let cancelled = false;
+    const scope = `${userId}:${companyId ?? "new"}`;
+    if (hydratedScope.current === scope) return;
     const frame = window.requestAnimationFrame(() => {
+      setReady(false); setDraftSaveStatus("loading");
+      void readSetupDraft({ expectedUserId: userId, expectedCompanyId: companyId }).then(result => {
       if (cancelled) return;
-      const scope = `${userId}:${companyId ?? "new"}`;
-      if (hydratedScope.current === scope) return;
+      if (!result.ok) { setDraftSaveStatus("error"); setDraftSaveCode(result.code); return; }
       hydratedScope.current = scope;
-      const stored = readCompanyDraft(userId);
+      draftRevision.current = result.data?.revision ?? 0;
+      const carried = createdDraft.current;
+      const stored = carried?.userId === userId && carried.companyId === companyId ? carried : result.data?.draft ?? readCompanyDraft(userId);
+      createdDraft.current = null;
       const next = hydrateOnboardingDraft(stored, userId, savedCompany);
       const kp = evaluateSetupKnowledgeProgress({
         loadFailed: knowledgeLoadFailed,
@@ -358,13 +396,14 @@ export function SetupWizard({
       next.setupDone = computedDone;
       next.setupStep = resolveSetupResumeStep(stored, userId, savedCompany, computedDone);
       next.userId = userId;
-      writeCompanyDraft(next);
       setKnowledgeSources(initialKnowledge);
       setDraft(next);
       setBusinessBaseline(savedCompany ? companyBusiness(savedCompany) : { ...emptyBusiness });
-      setBusinessConflicts([]);
+      setBusinessConflicts(stored?.businessBaseline && savedCompany ? reconcileDraftFields(stored.business, stored.businessBaseline, companyBusiness(savedCompany)).conflicts : []);
       setReconciledCompany(savedCompany);
+      setDraftSaveCode(null); setDraftSaveStatus("changed");
       setReady(true);
+      }).catch(() => { if (!cancelled) { setDraftSaveStatus("error"); setDraftSaveCode("UNAVAILABLE"); } });
     });
     return () => {
       cancelled = true;
@@ -374,17 +413,27 @@ export function SetupWizard({
   }, [
     userId,
     companyId,
+    draftRetry,
   ]);
 
   const persist = (patch: Partial<CompanyDraft> | ((d: CompanyDraft) => CompanyDraft)) => {
+    if (renderedScope.current !== `${userId}:${companyId ?? "new"}`) return;
     setDraft((prev) => {
       const next =
         typeof patch === "function"
           ? patch(prev)
           : { ...prev, ...patch, userId, companyId: patch.companyId ?? prev.companyId };
+      if (prev.userId !== userId || prev.companyId !== companyId) return prev;
       next.userId = userId;
       return next;
     });
+    setDraftSaveStatus("changed");
+  };
+
+  const adoptCompany = (company: CompanyRecord) => {
+    if (renderedScope.current !== `${userId}:${companyId ?? "new"}` || (companyId && company.id !== companyId)) return;
+    if (!companyId) createdDraft.current = { ...draft, companyId: company.id, business: companyBusiness(company), businessBaseline: companyBusiness(company), setupStep: 1 };
+    setSavedCompany(company);
   };
 
   const unresolvedBusinessConflicts = businessConflicts.filter(key => draft.business[key] !== businessBaseline[key]);
@@ -416,8 +465,8 @@ export function SetupWizard({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- invalidate on binding drift only
   }, [ready, setupTestValid, draft.setupTestPassed]);
 
-  if (!ready) {
-    return <SetupLoading />;
+  if (!ready || draft.userId !== userId || draft.companyId !== companyId) {
+    return draftSaveStatus === "error" ? <Notice tone="error"><p>{ar ? "تعذر تحميل مسودة الإعداد المحفوظة. أعد المحاولة قبل المتابعة." : "Could not load your saved setup draft. Retry before continuing."}</p><Button onClick={() => setDraftRetry(n => n + 1)}>{ar ? "إعادة المحاولة" : "Retry"}</Button></Notice> : <SetupLoading />;
   }
 
   const completedCount = effectiveSetupDone.filter(Boolean).length;
@@ -453,6 +502,17 @@ export function SetupWizard({
         <p className={`mt-2 ${styles.resume}`}>
           {fill(mCopy.milestoneProgress, { n: step + 1 })} · {copy.setup.resume}
         </p>
+        <div role="status" aria-live="polite" className="mt-2 text-sm">
+          {draftSaveStatus === "saved" ? (ar ? "تم حفظ مسودة الإعداد في حسابك." : "Setup draft saved to your account.")
+            : draftSaveStatus === "saving" ? (ar ? "جارٍ حفظ المسودة…" : "Saving setup draft…")
+              : draftSaveCode === "INVALID_INPUT" ? (ar ? "أكمل أو صحح الحقول لحفظ المسودة." : "Correct the fields to save this draft.")
+                : draftSaveStatus === "error" ? (draftSaveCode === "CONFLICT" ? (ar ? "تغيّرت المسودة في نافذة أخرى. حمّل النسخة المحفوظة للمتابعة." : "Another tab changed this draft. Load the saved version to continue.") : (ar ? "لم يتم تأكيد حفظ المسودة. أعد المحاولة." : "Draft save has not been confirmed. Retry."))
+                  : (ar ? "تغييرات المسودة لم تُحفظ بعد." : "Draft changes have not been saved yet.")}
+          {draftSaveStatus === "error" ? <Button variant="secondary" onClick={() => {
+            if (draftSaveCode === "CONFLICT") { if (!window.confirm(copy.unsaved)) return; hydratedScope.current = null; }
+            setDraftRetry(n => n + 1);
+          }}>{draftSaveCode === "CONFLICT" ? (ar ? "تحميل المسودة المحفوظة" : "Load saved draft") : (ar ? "إعادة المحاولة" : "Retry")}</Button> : null}
+        </div>
 
         <DiagnosticHint diagnostic={diagnostic} locale={locale}/><SetupJourneyNotice
           company={initialCompany ?? null}
@@ -479,11 +539,12 @@ export function SetupWizard({
             {/* Milestone 0: Company Profile */}
             {step === 0 ? (
               <BusinessStep
+                key={`${userId}:${companyId ?? "new"}`}
                 baseline={businessBaseline}
                 conflicts={unresolvedBusinessConflicts}
                 onResolveConflicts={resolveBusinessConflicts}
                 companyId={companyId}
-                onCompanySaved={setSavedCompany} onDiagnostic={setDiagnostic}
+                onCompanySaved={adoptCompany} onDiagnostic={setDiagnostic}
                 draft={draft}
                 onDraft={persist}
                 leaveGuardRef={leaveGuardRef}
@@ -507,8 +568,13 @@ export function SetupWizard({
             {/* Milestone 2: Working Hours & Operations */}
             {step === 2 ? (
               <HoursStep
+                key={`${userId}:${companyId ?? "new"}`}
+                userId={userId}
+                draftBusiness={draft.business}
+                conflict={unresolvedBusinessConflicts.includes("hours")}
+                onResolveConflicts={resolveBusinessConflicts}
                 companyId={companyId}
-                onCompanySaved={setSavedCompany} onDiagnostic={setDiagnostic}
+                onCompanySaved={adoptCompany} onDiagnostic={setDiagnostic}
                 company={savedCompany}
                 onDraft={persist}
                 leaveGuardRef={leaveGuardRef}
@@ -557,8 +623,13 @@ export function SetupWizard({
             {/* Milestone 4: Noura AI Persona & Tone */}
             {step === 4 ? (
               <PersonaStep
+                key={`${userId}:${companyId ?? "new"}`}
+                userId={userId}
+                draftBusiness={draft.business}
+                conflict={unresolvedBusinessConflicts.includes("replyLanguage")}
+                onResolveConflicts={resolveBusinessConflicts}
                 companyId={companyId}
-                onCompanySaved={setSavedCompany} onDiagnostic={setDiagnostic}
+                onCompanySaved={adoptCompany} onDiagnostic={setDiagnostic}
                 company={savedCompany}
                 onDraft={persist}
                 leaveGuardRef={leaveGuardRef}
@@ -789,6 +860,7 @@ function BusinessStep({
 
     void run(async () => {
       const result = await saveOwnerBusiness({
+        expectedUserId: draft.userId,
         expectedCompanyId: companyId,
         displayName: form.name,
         businessType: form.type,
@@ -982,6 +1054,7 @@ function PlanStep({ onBack, onNext, planHref }: { onBack: () => void; onNext: ()
 /* ========================================================================= */
 
 function HoursStep({
+  userId, draftBusiness, conflict, onResolveConflicts,
   company,
   companyId,
   onCompanySaved,
@@ -991,6 +1064,10 @@ function HoursStep({
   onNext,
   leaveGuardRef,
 }: {
+  userId: string;
+  draftBusiness: Business;
+  conflict: boolean;
+  onResolveConflicts: () => void;
   company: CompanyRecord | null;
   companyId: string | null;
   onCompanySaved: (company: CompanyRecord) => void;
@@ -1003,13 +1080,12 @@ function HoursStep({
   const copy = useAppCopy();
   const { locale } = useDemo();
   const form = company ? companyBusiness(company) : null;
-  const hoursField = useServerDraftField(form?.hours ?? "");
-  const hours = hoursField.value;
-  const setHours = hoursField.setValue;
+  const hours = draftBusiness.hours;
+  const setHours = (value: string) => onDraft(d => ({ ...d, business: { ...d.business, hours: value } }));
   const [error, setError] = useState<string | null>(null);
   const { busy, run } = useAction();
 
-  const dirty = hoursField.dirty;
+  const dirty = hours !== form?.hours;
   useUnsavedWarning(dirty && !busy);
   useEffect(() => {
     leaveGuardRef.current = () => !dirty || window.confirm(copy.unsaved);
@@ -1018,7 +1094,7 @@ function HoursStep({
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (hoursField.conflict) return;
+    if (conflict) return;
     if (!form || !companyId || !hours.trim()) {
       setError(copy.required);
       return;
@@ -1026,6 +1102,7 @@ function HoursStep({
     setError(null);
     void run(async () => {
       const result = await saveOwnerBusiness({
+        expectedUserId: userId,
         expectedCompanyId: companyId,
         displayName: form.name,
         businessType: form.type,
@@ -1041,9 +1118,8 @@ function HoursStep({
         return;
       }
       if (!finishCompanySave(result, companyId, (company) => {
-        hoursField.adopt(company.hours);
         onCompanySaved(company);
-        onDraft((d) => ({ ...d, business: companyBusiness(company) }));
+        onDraft((d) => ({ ...d, business: { ...d.business, hours: company.hours } }));
         leaveGuardRef.current = () => true;
       }, onNext)) setError(copy.errors.authFailed);
     });
@@ -1051,7 +1127,7 @@ function HoursStep({
 
   return (
     <form className="grid gap-5" noValidate onSubmit={submit}>
-      {hoursField.conflict ? <RefreshConflictNotice onResolve={hoursField.resolve} /> : null}
+      {conflict ? <RefreshConflictNotice onResolve={onResolveConflicts} /> : null}
       <Field label={copy.setup.hours} required error={error ?? undefined}>
         {(p) => (
           <input
@@ -1069,7 +1145,7 @@ function HoursStep({
         <Button variant="secondary" type="button" onClick={onBack}>
           {copy.back}
         </Button>
-        <Button type="submit" busy={busy} disabled={hoursField.conflict}>
+        <Button type="submit" busy={busy} disabled={conflict}>
           {copy.setup.continue}
         </Button>
       </div>
@@ -1082,6 +1158,7 @@ function HoursStep({
 /* ========================================================================= */
 
 function PersonaStep({
+  userId, draftBusiness, conflict, onResolveConflicts,
   company,
   companyId,
   onCompanySaved,
@@ -1091,6 +1168,10 @@ function PersonaStep({
   onNext,
   leaveGuardRef,
 }: {
+  userId: string;
+  draftBusiness: Business;
+  conflict: boolean;
+  onResolveConflicts: () => void;
   company: CompanyRecord | null;
   companyId: string | null;
   onCompanySaved: (company: CompanyRecord) => void;
@@ -1106,11 +1187,10 @@ function PersonaStep({
   const form = company ? companyBusiness(company) : null;
 
   const [saveError, setSaveError] = useState<string | null>(null);
-  const languageField = useServerDraftField<Business["replyLanguage"]>(form?.replyLanguage ?? "both");
-  const lang = languageField.value;
-  const setLang = languageField.setValue;
+  const lang = draftBusiness.replyLanguage;
+  const setLang = (value: Business["replyLanguage"]) => onDraft(d => ({ ...d, business: { ...d.business, replyLanguage: value } }));
   const { busy, run } = useAction();
-  const dirty = languageField.dirty;
+  const dirty = lang !== form?.replyLanguage;
   useUnsavedWarning(dirty && !busy);
   useEffect(() => {
     leaveGuardRef.current = () => !dirty || window.confirm(copy.unsaved);
@@ -1122,10 +1202,11 @@ function PersonaStep({
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!form || !companyId || languageField.conflict) return;
+    if (!form || !companyId || conflict) return;
     setSaveError(null);
     void run(async () => {
       const result = await saveOwnerBusiness({
+        expectedUserId: userId,
         expectedCompanyId: companyId,
         displayName: form.name,
         businessType: form.type,
@@ -1138,10 +1219,9 @@ function PersonaStep({
       });
       onDiagnostic(result.diagnostic);if (!result.ok) { setSaveError(copy.errors.authFailed); return; }
       if (!finishCompanySave(result, companyId, (company) => {
-        languageField.adopt(company.reply_language);
         leaveGuardRef.current = () => true;
         onCompanySaved(company);
-        onDraft((d) => ({ ...d, business: companyBusiness(company) }));
+        onDraft((d) => ({ ...d, business: { ...d.business, replyLanguage: company.reply_language } }));
       }, onNext)) setSaveError(copy.errors.authFailed);
     });
   }
@@ -1150,7 +1230,7 @@ function PersonaStep({
 
   return (
     <form className="grid gap-5" noValidate onSubmit={submit}>
-      {languageField.conflict ? <RefreshConflictNotice onResolve={languageField.resolve} /> : null}
+      {conflict ? <RefreshConflictNotice onResolve={onResolveConflicts} /> : null}
       <Notice tone="info">{locale === "ar" ? "لغة الرد تحفظ في ملف النشاط. النبرة تضبط عبر تعليمات نشاط معتمدة في المعرفة." : "Reply language is saved to the company profile. Set tone through approved business instructions in Knowledge."}</Notice>
       {saveError ? <Notice tone="error">{saveError}</Notice> : null}
 
@@ -1182,7 +1262,7 @@ function PersonaStep({
         <Button variant="secondary" type="button" onClick={onBack}>
           {copy.back}
         </Button>
-        <Button type="submit" busy={busy} disabled={languageField.conflict}>
+        <Button type="submit" busy={busy} disabled={conflict}>
           {copy.setup.continue}
         </Button>
       </div>

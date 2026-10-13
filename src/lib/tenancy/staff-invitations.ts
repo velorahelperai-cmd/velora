@@ -152,7 +152,7 @@ export async function acceptStaffInvitation(token: string): Promise<InvitationRe
     if (result.ok !== true) return { ok: false, code: typeof result.code === "string" ? result.code : "UNAVAILABLE" };
     if (typeof result.companyId !== "string") return { ok: false, code: "UNAVAILABLE" };
     const cookieStore = await cookies();
-    cookieStore.set(WORKSPACE_COMPANY_COOKIE, result.companyId, { httpOnly: true, sameSite: "lax", path: "/", secure: process.env.NODE_ENV === "production", maxAge: 60 * 60 * 24 * 30 });
+    cookieStore.set(WORKSPACE_COMPANY_COOKIE, `${gate.context.userId}:${result.companyId}`, { httpOnly: true, sameSite: "lax", path: "/", secure: process.env.NODE_ENV === "production", maxAge: 60 * 60 * 24 * 30 });
     cookieStore.delete(AUTH_RETURN_COOKIE);
     try { revalidatePath("/app", "layout"); } catch { /* Acceptance is already durable; refresh can be retried. */ }
     return { ok: true, data: { companyId: result.companyId } };

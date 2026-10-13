@@ -25,6 +25,7 @@ export default async function Page() {
     }
     redirect(loginPathForReturn(returnTo));
   }
+  if (access.context.needsCompanyContext) redirect(`/app?next=${encodeURIComponent(returnTo)}`);
   const company = access.context.company;
   const userId = access.context.userId;
 

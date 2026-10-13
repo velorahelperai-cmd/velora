@@ -1,5 +1,6 @@
 import type { Business } from "@/lib/demo-state";
 import { emptyCompanyDraft, type CompanyDraft } from "@/lib/company-draft";
+import { reconcileDraftFields } from "./draft-refresh";
 import type { CompanyRecord, CompanyReviewRequest } from "@/lib/tenancy/types";
 import type { CustomerReadinessSnapshot } from "@/lib/tenancy/customer-readiness";
 import type { WhatsappCompanyLink } from "@/lib/whatsapp/connection";
@@ -32,11 +33,15 @@ export function companyBusiness(company: CompanyRecord): Business {
   };
 }
 
-/** Local storage remembers navigation and an uncreated draft, never saved company facts. */
+/** Editable progress survives reload; the latest company record remains the baseline. */
 export function hydrateOnboardingDraft(stored: CompanyDraft | null, userId: string, company: CompanyRecord | null): CompanyDraft {
   const sameScope = stored?.userId === userId && stored.companyId === (company?.id ?? null);
   const draft = sameScope && stored ? { ...stored } : emptyCompanyDraft(userId);
-  if (company) return { ...draft, companyId: company.id, business: companyBusiness(company), businessSaved: true };
+  if (company) {
+    const server = companyBusiness(company);
+    const business = draft.businessBaseline ? reconcileDraftFields(draft.business, draft.businessBaseline, server).values : server;
+    return { ...draft, companyId: company.id, business, businessBaseline: server, businessSaved: true };
+  }
   return { ...draft, companyId: null, businessSaved: false, setupTestPassed: false, setupTestCompanyId: null, setupTestKnowledgeKey: null };
 }
 

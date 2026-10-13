@@ -17,6 +17,8 @@ export type CompanyDraft = {
   userId: string;
   companyId: string | null;
   business: Business;
+  /** Last authoritative profile used to preserve edits across server refreshes. */
+  businessBaseline?: Business;
   setupStep: number;
   setupDone: boolean[];
   businessSaved: boolean;
@@ -161,6 +163,6 @@ export function draftAllowedFor(
   companyId: string | null,
 ): draft is CompanyDraft {
   if (!draft || draft.userId !== userId) return false;
-  if (companyId && draft.companyId && draft.companyId !== companyId) return false;
+  if (draft.companyId !== companyId) return false;
   return true;
 }

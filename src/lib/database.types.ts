@@ -3,6 +3,12 @@ export type Json = string | number | boolean | null | { [key: string]: Json | un
 export type Database = {
   public: {
     Tables: {
+      company_setup_drafts: {
+        Row: { user_id: string; company_id: string | null; scope_id: string; payload: Json; revision: number; updated_at: string };
+        Insert: { user_id: string; company_id?: string | null; payload: Json; revision?: number; updated_at?: string };
+        Update: { payload?: Json; revision?: number; updated_at?: string };
+        Relationships: [];
+      };
       profiles: {
         Row: {
           user_id: string;
@@ -580,6 +586,7 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      save_company_setup_draft: { Args: { p_expected_user_id: string; p_company_id: string | null; p_expected_revision: number; p_payload: Json }; Returns: Json };
       g03_read_file_generation: { Args: { p_source_id: string; p_company_id: string; p_storage_path: string; p_action?: string }; Returns: Json };
       list_owner_company_review_events_for_company: { Args: {p_company_id:string}; Returns:Json };
       ai_settle_admin_attempt: { Args: {p_id:string;p_status:string;p_cost_usd:number|null;p_cost_baisa:number|null;p_usage:Json;p_request_id:string|null;p_error_code:string|null;p_latency_ms:number;p_response_id:string|null;p_actual_model_id:string|null}; Returns:boolean };

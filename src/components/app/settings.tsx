@@ -23,7 +23,7 @@ import {
   useAction, useAppCopy, useUnsavedWarning,
 } from "@/components/app/ui";
 
-type SettingsAccess = {email:string|null;companyId:string|null;companyName:string|null;role:"owner"|"staff"|null;needsCompanyContext:boolean;isPlatformAdmin:boolean;choices:Array<{companyId:string;displayName:string;role:"owner"|"staff"}>};
+type SettingsAccess = {userId?:string|null;email:string|null;companyId:string|null;companyName:string|null;role:"owner"|"staff"|null;needsCompanyContext:boolean;isPlatformAdmin:boolean;choices:Array<{companyId:string;displayName:string;role:"owner"|"staff"}>};
 
 type Tab = "account" | "business" | "team" | "whatsapp" | "plan";
 
@@ -67,7 +67,8 @@ export function SettingsPage({
   async function switchCompany(id:string) {
     if(!id||id===initialAccess.companyId||switchBusy||!businessLeaveGuard.current())return;
     setSwitchBusy(true);setSwitchError(false);
-    try { const result=await selectWorkspaceCompany(id); if(!result.ok){setSwitchError(true);return;} await accountSession?.refresh();router.refresh(); } catch {setSwitchError(true);} finally {setSwitchBusy(false);}
+    if (!initialAccess.userId) { setSwitchBusy(false); return; }
+    try { const result=await selectWorkspaceCompany(id, { expectedUserId: initialAccess.userId, next: window.location.pathname + window.location.search }); if(accountSession && !accountSession.isCurrentUser(initialAccess.userId))return; if(!result.ok){setSwitchError(true);return;} window.location.replace(result.data.next); } catch {setSwitchError(true);} finally {setSwitchBusy(false);}
   }
   const accessNote=initialAccess.needsCompanyContext?c.permissionNotes.select_company:!initialAccess.companyId?c.permissionNotes.no_company:c.permissionNotes.staff;
 
@@ -88,7 +89,7 @@ export function SettingsPage({
         ) : (
           <>
             {tab === "account" ? <AccountTab /> : null}
-            {effectiveRole === "owner" && initialCompany ? <div hidden={tab !== "business"}><BusinessTab key={initialCompany.id} company={initialCompany} leaveGuardRef={businessLeaveGuard} /></div> : null}
+            {effectiveRole === "owner" && initialCompany ? <div hidden={tab !== "business"}><BusinessTab key={`${initialAccess.userId}:${initialCompany.id}`} userId={initialAccess.userId ?? null} company={initialCompany} leaveGuardRef={businessLeaveGuard} /></div> : null}
             {tab === "team" && initialAccess.companyId ? <CompanyTeamPanel key={`${initialAccess.companyId}:${accountSession?.identity?.userId ?? initialAccess.email ?? "guest"}`} companyId={initialAccess.companyId} accountId={accountSession?.identity?.userId ?? null} /> : null}
             {tab === "whatsapp" ? (
               <WhatsappSettingsPanel
@@ -200,10 +201,11 @@ function AccountTab() {
   return <AccountSettingsLinkCard />;
 }
 
-function BusinessTab({company,leaveGuardRef}:{company:CompanyRecord;leaveGuardRef:{current:()=>boolean}}) {
+function BusinessTab({userId,company,leaveGuardRef}:{userId:string|null;company:CompanyRecord;leaveGuardRef:{current:()=>boolean}}) {
   const copy = useAppCopy();
   const { locale } = useDemo();
   const router=useRouter();
+  const accountSession=useOptionalAccountSession();
   const fromCompany=(row:CompanyRecord)=>({name:row.display_name,type:row.business_type,replyLanguage:row.reply_language,country:row.country,city:row.city,hours:row.hours,contactPhone:row.contact_phone,contactEmail:row.contact_email});
   const [form,setForm]=useState(()=>fromCompany(company));
   const [baseline,setBaseline]=useState(()=>fromCompany(company));
@@ -227,10 +229,12 @@ function BusinessTab({company,leaveGuardRef}:{company:CompanyRecord;leaveGuardRe
     <Card title={copy.app.tabs.business}>
       <form className="grid gap-4 lg:grid-cols-2" noValidate onSubmit={(e) => {
         e.preventDefault();
+        if (!userId || (accountSession && !accountSession.isCurrentUser(userId))) return;
         if(conflicts.length)return;
         setSaved(false);setError(null);setDiagnostic(null);
         void run(async () => {
           const result = await saveOwnerBusiness({
+            expectedUserId: userId,
             expectedCompanyId: company.id,
             displayName: form.name,
             businessType: form.type,
@@ -241,6 +245,7 @@ function BusinessTab({company,leaveGuardRef}:{company:CompanyRecord;leaveGuardRe
             contactPhone: form.contactPhone,
             contactEmail: form.contactEmail,
           });
+          if (accountSession && !accountSession.isCurrentUser(userId)) return;
           setDiagnostic(result.diagnostic);if (!result.ok) {
             setError(copy.errors.authFailed);
             return;

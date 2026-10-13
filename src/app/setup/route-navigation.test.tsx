@@ -23,6 +23,16 @@ const context: CompanyContext = {
 };
 beforeEach(() => { state.path = returnTo; state.access = { ok: true, context }; });
 describe("setup server routes retain the package selection", () => {
+  it("permits setup for a platform admin with an explicitly selected owner membership", async () => {
+    state.access = { ok: true, context: { ...context, isPlatformAdmin: true, company: { id: "company", status: "setup" } as CompanyContext["company"], membership: { role: "owner" } as CompanyContext["membership"] } };
+    expect(await SetupLayout({ children: "owner setup" })).toBe("owner setup");
+  });
+  it("redirects unselected memberships to the chooser before rendering setup", async () => {
+    state.access = { ok: true, context: { ...context, needsCompanyContext: true } };
+    const target = `redirect:/app?next=${encodeURIComponent(returnTo)}`;
+    await expect(SetupLayout({ children: "protected setup" })).rejects.toThrow(target);
+    await expect(SetupPage()).rejects.toThrow(target);
+  });
   it("starts the owner's independent review read while knowledge is still pending", async () => {
     let release!: (value: Awaited<ReturnType<typeof listKnowledgeSources>>) => void;
     vi.mocked(listKnowledgeSources).mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));

@@ -151,6 +151,10 @@ async function loadAuth(): Promise<LoadAuthOk | LoadAuthFail> {
     const sessionGuard=await checkAppSession(supabase);
     if(!sessionGuard.ok)return {ok:false,code:sessionGuard.code,...(sessionGuard.expired?{sessionExpired:true as const}:{}),supabase};
     const identityVerified = Boolean(user.email_confirmed_at || user.phone_confirmed_at);
+    if (!identityVerified) {
+      return { ok: true, supabase, userId, email: user.email ?? "", phone: user.phone ?? "",
+        identityVerified: false, isPlatformAdmin: false, fullName: "", supportCode: "", needsProfileName: true };
+    }
     const { data: adminFlag, error: adminError } = await supabase.rpc("is_platform_admin");
     if (adminError) return { ok: false, code: "UNAVAILABLE", supabase };
 
@@ -178,13 +182,14 @@ async function loadAuth(): Promise<LoadAuthOk | LoadAuthFail> {
       break;
     }
 
-    const { data: profile } = await supabase
+    const { data: profile, error: profileError } = await supabase
       .from("profiles")
       .select("full_name, support_code")
       .eq("user_id", userId)
       .maybeSingle();
 
-    const fullName = (profile?.full_name || metaName || "").trim();
+    if (profileError || !profile) return { ok: false, code: "UNAVAILABLE", supabase };
+    const fullName = (profile.full_name || "").trim();
     const supportCode = (profile?.support_code || "").trim();
     const needsProfileName = fullName.length < 2;
 
@@ -254,7 +259,10 @@ export async function getCompanyAccess(
     let selectedCookie: string | null = null;
     try {
       const { cookies } = await import("next/headers");
-      selectedCookie = (await cookies()).get(WORKSPACE_COMPANY_COOKIE)?.value ?? null;
+      const value = (await cookies()).get(WORKSPACE_COMPANY_COOKIE)?.value;
+      // A selection belongs to the account that made it. A previous account's
+      // cookie (or an old unbound cookie) cannot select a workspace for this user.
+      selectedCookie = value?.startsWith(`${userId}:`) ? value.slice(userId.length + 1) : null;
     } catch {
       selectedCookie = null;
     }
@@ -361,18 +369,36 @@ export function pathForAccess(
   if (!result.ok) {
     if (result.code === "UNVERIFIED") return authFlowHref("/verify-email",preferredNext);
     if (result.code === "FORBIDDEN") return "/access?code=FORBIDDEN";
-    if (result.code === "UNAVAILABLE") return "/access?code=UNAVAILABLE";
-    return result.sessionExpired ? "/login?reason=session_expired" : "/login";
+    const preferred = safeInternalPath(preferredNext, "");
+    if (result.code === "UNAVAILABLE") return `/access?code=UNAVAILABLE${preferred ? `&next=${encodeURIComponent(preferred)}` : ""}`;
+    const login = result.sessionExpired ? "/login?reason=session_expired" : "/login";
+    return preferred ? `${login}${result.sessionExpired ? "&" : "?"}next=${encodeURIComponent(preferred)}` : login;
   }
   if (result.context.needsProfileName) return authFlowHref("/complete-profile",preferredNext);
   const invitationReturn = staffInvitationReturnPath(preferredNext);
   if (invitationReturn) return invitationReturn;
+  const preferredPath = safeInternalPath(preferredNext, "").split(/[?#]/)[0];
+  if (result.context.isPlatformAdmin && result.context.needsCompanyContext
+    && (pathAtOrUnder(preferredPath, "/setup") || pathAtOrUnder(preferredPath, "/app"))) {
+    return `/app?next=${encodeURIComponent(safeInternalPath(preferredNext, "/app"))}`;
+  }
   if (result.context.isPlatformAdmin) {
     return allowedReturnPath(preferredNext, {
       isPlatformAdmin: true,
       hasCompany: Boolean(result.context.company),
       role: result.context.membership?.role ?? null,
     }, "/admin");
+  }
+  if (result.context.needsCompanyContext) {
+    const preferred = safeInternalPath(preferredNext, "");
+    const pathOnly = preferred.split(/[?#]/)[0];
+    if (pathAtOrUnder(pathOnly, "/account")) return preferred;
+    // The existing /app workspace chooser verifies membership on selection.
+    // Carry onboarding intent through it without choosing a company implicitly.
+    if (preferred && (pathAtOrUnder(pathOnly, "/setup") || pathAtOrUnder(pathOnly, "/app")) && pathOnly !== "/app") {
+      return `/app?next=${encodeURIComponent(preferred)}`;
+    }
+    return preferred && pathOnly === "/app" ? preferred : "/app";
   }
   if (!result.context.company) return setupPathForReturn(preferredNext);
   if (result.context.membership?.role === "staff") {

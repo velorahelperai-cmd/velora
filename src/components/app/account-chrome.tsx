@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   createContext,
   useCallback,
@@ -20,13 +20,15 @@ import {
 import { clearCompanyDrafts } from "@/lib/company-draft";
 import { discardForeignTeamJournal } from "@/lib/platform-teams/ui-state";
 import { emptyBusiness, useDemo } from "@/lib/demo-state";
-import { createClient, tryCreateClient } from "@/lib/supabase/client";
+import { tryCreateClient } from "@/lib/supabase/client";
 import {
   getAccountProfile,
   signOut,
   type AccountProfileView,
 } from "@/lib/tenancy/actions";
 import { LangSwitch, useAppCopy } from "@/components/app/ui";
+import {publishSessionContext,publishSessionLogout,subscribeSessionContext} from "@/lib/auth/session-context";
+import {SessionActivityTracker} from "@/lib/auth/session-activity-tracker";
 
 type SessionStatus = "loading" | "guest" | "ready" | "error" | "expired";
 
@@ -37,7 +39,8 @@ type AccountSessionValue = {
   clear: () => void;
   expire: () => void;
   setIdentityName: (name: string, expectedUserId: string) => void;
-  isCurrentUser: (userId: string) => boolean;
+  isCurrentUser: (userId: string, expectedIdentity?: AccountProfileView) => boolean;
+  hasCurrentUser: () => boolean;
 };
 
 const AccountSessionContext = createContext<AccountSessionValue | null>(null);
@@ -57,11 +60,14 @@ export function AccountSessionProvider({
   initial?: AccountProfileView | null;
 }) {
   const providerRouter=useRouter();
+  const pathname=usePathname();
   const [status, setStatus] = useState<SessionStatus>(initial ? "ready" : "loading");
   const [identity, setIdentity] = useState<AccountProfileView | null>(initial ?? null);
   const identityRef=useRef<AccountProfileView|null>(initial??null);
   const userIdRef = useRef<string | null>(initial?.userId ?? null);
   const requestGen = useRef(0);
+  const routeReloading=useRef(false);
+  const publishedContext=useRef<string|null>(null);
   /** Internal only — never rendered to visitors, never logs secrets. */
   const failureStageRef = useRef<IdentityFailureStage | null>(null);
 
@@ -70,24 +76,40 @@ export function AccountSessionProvider({
     requestGen.current += 1;
     userIdRef.current = null;
     identityRef.current = null;
+    publishedContext.current = null;
     failureStageRef.current = null;
     setIdentity(null);
     setStatus("guest");
   }, []);
 
-  const expire=useCallback(()=>{requestGen.current+=1;userIdRef.current=null;identityRef.current=null;setIdentity(null);setStatus("expired");},[]);
+  const expire=useCallback(()=>{requestGen.current+=1;userIdRef.current=null;identityRef.current=null;publishedContext.current=null;setIdentity(null);setStatus("expired");},[]);
 
   const refresh = useCallback(async () => {
+    if(routeReloading.current)return;
     const gen=++requestGen.current;
     try {
       const result=await getAccountProfile();
       if(gen!==requestGen.current)return;
       if(!result.ok){
-        if(result.code==="UNAUTHENTICATED"){if(result.sessionExpired)expire();else clear();return;}
+        if(result.code==="UNAUTHENTICATED"){if(userIdRef.current)publishSessionLogout(userIdRef.current);if(result.sessionExpired)expire();else clear();return;}
         failureStageRef.current=classifyProfileFailure(result.code);
         setStatus(prev=>identityRef.current&&prev==="ready"?"ready":"error");return;
       }
-      if(userIdRef.current && userIdRef.current!==result.data.userId){setIdentity(null);providerRouter.refresh();}
+      // An auth event already observed a new account; an older cookie response
+      // must not revive the prior account while that switch is still loading.
+      if(userIdRef.current && !identityRef.current && userIdRef.current!==result.data.userId){
+        failureStageRef.current="server_auth";setStatus("error");return;
+      }
+      const context={userId:result.data.userId,companyId:result.data.companyId};
+      const signature=JSON.stringify(context);
+      if(publishedContext.current!==signature){publishedContext.current=signature;publishSessionContext(context);}
+      const switching=userIdRef.current!==null&&userIdRef.current!==result.data.userId;
+      const changingWorkspace=identityRef.current!==null&&identityRef.current.companyId!==result.data.companyId;
+      if(switching||changingWorkspace){
+        routeReloading.current=true;
+        userIdRef.current=result.data.userId;identityRef.current=null;setIdentity(null);setStatus("loading");
+        providerRouter.refresh();window.location.reload();return;
+      }
       try{discardForeignTeamJournal(window.sessionStorage,result.data.userId);}catch{/* Storage is optional for identity. */}
       userIdRef.current=result.data.userId;identityRef.current=result.data;
       failureStageRef.current=null;setIdentity(result.data);setStatus("ready");
@@ -96,6 +118,17 @@ export function AccountSessionProvider({
       failureStageRef.current="server_auth";setStatus(prev=>identityRef.current&&prev==="ready"?"ready":"error");
     }
   },[clear,expire,providerRouter]);
+
+  useEffect(()=>subscribeSessionContext(signal=>{
+    if(signal.type==="logout"&&userIdRef.current&&userIdRef.current!==signal.userId)return;
+    const current=identityRef.current;
+    if(signal.type==="context"&&current?.userId===signal.userId&&current.companyId===signal.companyId)return;
+    // Hints never establish a user or workspace. Discard every old request,
+    // then let the refreshed server route and shared cookies establish context.
+    routeReloading.current=true;requestGen.current+=1;userIdRef.current=null;identityRef.current=null;
+    failureStageRef.current=null;setIdentity(null);setStatus("loading");
+    providerRouter.refresh();window.location.reload();
+  }),[providerRouter]);
 
   useEffect(()=>{
     const frame=window.requestAnimationFrame(()=>{void refresh();});
@@ -108,8 +141,10 @@ export function AccountSessionProvider({
     const {data:sub}=supabase.auth.onAuthStateChange((event,session)=>{
       if(timer)clearTimeout(timer);
       if(event==="SIGNED_OUT"){clear();providerRouter.refresh();return;}
-      if(session?.user && userIdRef.current && userIdRef.current!==session.user.id){
-        requestGen.current+=1;userIdRef.current=null;identityRef.current=null;setIdentity(null);setStatus("loading");providerRouter.refresh();
+      if(session?.user && userIdRef.current!==session.user.id){
+        const switching=userIdRef.current!==null;
+        requestGen.current+=1;userIdRef.current=session.user.id;identityRef.current=null;setIdentity(null);setStatus("loading");providerRouter.refresh();
+        if(switching){routeReloading.current=true;window.location.reload();return;}
       }
       // Server Actions update cookies without guaranteeing a browser SIGNED_IN event.
       // INITIAL_SESSION=null therefore checks the server instead of inventing a logout.
@@ -123,16 +158,27 @@ export function AccountSessionProvider({
     window.addEventListener("focus",recheck);document.addEventListener("visibilitychange",recheck);
     return ()=>{if(timer)clearTimeout(timer);window.removeEventListener("focus",recheck);document.removeEventListener("visibilitychange",recheck);};
   },[refresh]);
-  const isCurrentUser = useCallback((userId:string)=>userIdRef.current===userId&&identityRef.current?.userId===userId,[]);
+  const isCurrentUser = useCallback((userId:string,expectedIdentity?:AccountProfileView)=>userIdRef.current===userId&&identityRef.current?.userId===userId&&(!expectedIdentity||identityRef.current===expectedIdentity),[]);
+  const hasCurrentUser = useCallback(()=>userIdRef.current!==null,[]);
   const setIdentityName = useCallback((name: string, expectedUserId: string) => {
     if(!isCurrentUser(expectedUserId))return;
     setIdentity((prev) => {const updated=prev?.userId===expectedUserId?{...prev,fullName:name}:prev;identityRef.current=updated;return updated;});
   }, [isCurrentUser]);
 
-  const sessionValue=useMemo(()=>({status,identity,refresh,clear,expire,setIdentityName,isCurrentUser}),[status,identity,refresh,clear,expire,setIdentityName,isCurrentUser]);
+  const sessionValue=useMemo(()=>({status,identity,refresh,clear,expire,setIdentityName,isCurrentUser,hasCurrentUser}),[status,identity,refresh,clear,expire,setIdentityName,isCurrentUser,hasCurrentUser]);
+  const protectedRoute=/^\/(app|admin|account|setup|complete-profile|reset-password)(\/|$)/.test(pathname);
+  const copy=useAppCopy();
+  const content=protectedRoute&&status!=="ready"
+    ? status==="expired" ? <SessionActivityTracker />
+    : <main className="grid min-h-screen place-content-center gap-3 px-6 text-center" aria-busy={status==="loading"}>
+        <p>{status==="loading"?copy.loading:status==="error"?copy.account.identityError:copy.auth.login}</p>
+        {status==="error"?<button type="button" onClick={()=>void refresh()}>{copy.errors.accessRetry}</button>:null}
+        {status==="guest"?<Link href="/login">{copy.auth.login}</Link>:null}
+      </main>
+    : children;
   return (
     <AccountSessionContext.Provider value={sessionValue}>
-      {children}
+      {content}
     </AccountSessionContext.Provider>
   );
 }
@@ -147,28 +193,23 @@ export function useOptionalAccountSession() {
   return useContext(AccountSessionContext);
 }
 
-async function performLogout(
-  clear: () => void,
+export async function performLogout(
+  session: AccountSessionValue,
   updateDemo: ReturnType<typeof useDemo>["update"],
   copy: ReturnType<typeof useAppCopy>,
-  router: ReturnType<typeof useRouter>,
   onError: (message: string) => void,
 ) {
-  let userId: string | undefined;
-  try {
-    const supabase = createClient();
-    const { data } = await supabase.auth.getUser();
-    userId = data.user?.id;
-  } catch {
-    /* signOut remains authoritative */
-  }
-  const result = await signOut();
+  const userId = session.identity?.userId;
+  if (!userId || !session.isCurrentUser(userId)) return;
+  const result = await signOut(userId);
+  if (!session.isCurrentUser(userId)) return;
   if (!result.ok) {
     onError(result.message ?? copy.auth.logoutFailed);
     return;
   }
-  if (userId) clearCompanyDrafts(userId);
-  clear();
+  clearCompanyDrafts(userId);
+  publishSessionLogout(userId);
+  session.clear();
   updateDemo({
     account: null,
     signedIn: false,
@@ -178,8 +219,9 @@ async function performLogout(
     setupStep: 0,
     setupDone: [false, false, false, false],
   });
-  router.replace("/login");
-  router.refresh();
+  // Discard the prior account's client router cache after confirmed logout.
+  // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+  window.location.assign("/login");
 }
 
 /** Shared account menu: My account, work board, settings, logout. */
@@ -191,7 +233,6 @@ export function AccountMenu({
   showBrand?: boolean;
 }) {
   const copy = useAppCopy();
-  const router = useRouter();
   const { update } = useDemo();
   const session = useOptionalAccountSession();
   const [open, setOpen] = useState(false);
@@ -334,7 +375,7 @@ export function AccountMenu({
             className="flex min-h-11 w-full items-center rounded-xl px-3 text-start text-sm hover:bg-[var(--color-hover-wash)]"
             onClick={() => {
               setOpen(false);
-              void performLogout(session.clear, update, copy, router, setError);
+              void performLogout(session, update, copy, setError);
             }}
           >
             {copy.logout}

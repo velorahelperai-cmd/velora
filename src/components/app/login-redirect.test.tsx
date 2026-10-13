@@ -2,7 +2,7 @@ import { Children, isValidElement, type ReactElement } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 type Slot = { value?: unknown; deps?: unknown[]; cleanup?: () => void };
-const state = vi.hoisted(() => ({ slots: [] as Slot[], cursor: 0, effects: [] as Array<() => void>, session: { status: "guest", identity: null as null | { userId: string }, refresh: vi.fn() }, signIn: vi.fn(), resolve: vi.fn(), replace: vi.fn(), refresh: vi.fn(), documentReplace: vi.fn() }));
+const state = vi.hoisted(() => ({ slots: [] as Slot[], cursor: 0, effects: [] as Array<() => void>, session: { status: "guest", identity: null as null | { userId: string }, refresh: vi.fn(), isCurrentUser: (id: string) => state.session.identity?.userId === id }, signIn: vi.fn(), user: vi.fn(), resolve: vi.fn(), replace: vi.fn(), refresh: vi.fn(), documentReplace: vi.fn() }));
 vi.mock("react", async () => {
   const actual = await vi.importActual<typeof import("react")>("react");
   const slot = () => state.slots[state.cursor++] ?? (state.slots[state.cursor - 1] = {});
@@ -18,9 +18,9 @@ const router = { replace: state.replace, refresh: state.refresh };
 vi.mock("next/navigation", () => ({ useRouter: () => router, useSearchParams: () => new URLSearchParams("next=%2Faccount") }));
 vi.mock("@/lib/demo-state", () => ({ useDemo: () => ({ locale: "en", state: {} }) }));
 vi.mock("@/components/app/account-chrome", () => ({ AccountMenu: () => null, useOptionalAccountSession: () => state.session }));
-vi.mock("@/lib/supabase/client", () => ({ createClient: () => ({ auth: { signInWithPassword: state.signIn } }) }));
+vi.mock("@/lib/supabase/client", () => ({ createClient: () => ({ auth: { signInWithPassword: state.signIn, getUser: state.user } }) }));
 vi.mock("@/lib/tenancy/actions", () => ({ resolvePostAuthPath: state.resolve, completeProfileName: vi.fn(), requestPasswordReset: vi.fn(), resendVerificationEmail: vi.fn(), signUpWithEmail: vi.fn(), updatePassword: vi.fn(), verifyEmailCode: vi.fn() }));
-import { LoginPage } from "./auth-pages";
+import { LoginPage, CompleteProfilePage } from "./auth-pages";
 import { Button, Field, PasswordField } from "./ui";
 
 function render() { state.cursor = 0; const tree = LoginPage(); state.effects.splice(0).forEach(fn => fn()); return tree; }
@@ -41,9 +41,20 @@ beforeEach(() => {
   vi.clearAllMocks(); state.slots = []; state.effects = []; state.session.status = "guest"; state.session.identity = null;
   state.signIn.mockResolvedValue({ error: null }); state.resolve.mockResolvedValue({ ok: true, data: { next: "/account" } });
   state.session.refresh.mockImplementation(() => new Promise(() => {}));
-  vi.stubGlobal("window", { location: { replace: state.documentReplace } });
+  vi.stubGlobal("window", { location: { replace: state.documentReplace }, requestAnimationFrame: (fn: () => void) => { fn(); return 1; }, cancelAnimationFrame: vi.fn() });
 });
 afterEach(() => { for (const s of state.slots) s.cleanup?.(); vi.unstubAllGlobals(); });
+
+it("a late profile prefill cannot place the previous account's name in the new account form", async () => {
+  const old = deferred(); state.user.mockReturnValueOnce(old.promise).mockResolvedValue({ data: { user: { id: "user-b", user_metadata: { full_name: "Saved B" } } }, error: null });
+  const profile = () => { state.cursor = 0; const tree = CompleteProfilePage(); state.effects.splice(0).forEach(fn => fn()); return tree; };
+  state.session.status = "ready"; state.session.identity = { userId: "user-a" }; profile(); await settle();
+  state.session.identity = { userId: "user-b" }; profile(); profile(); await settle();
+  old.resolve({ data: { user: { id: "user-a", user_metadata: { full_name: "Private A" } } }, error: null }); await settle();
+  const field = children(children(profile()).find(n => n.type === "form")!).find(n => n.type === Field)!;
+  const input = (field.props.children as (p: object) => ReactElement<{ value: string }>)({});
+  expect(input.props.value).toBe("Saved B");
+});
 
 it("completes native login after the resolver while profile refresh remains pending", async () => {
   fill(); submit(); await settle();
