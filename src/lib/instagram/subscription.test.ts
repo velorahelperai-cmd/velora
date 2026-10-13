@@ -1,5 +1,6 @@
 import {beforeEach,expect,it,vi} from 'vitest';
 vi.mock('server-only',()=>({}));
+const scope=vi.hoisted(()=>vi.fn());vi.mock('./connect-scope',()=>({instagramOwnerConnectScope:scope}));
 vi.mock('./config',()=>({instagramConfig:()=>({connectEnabled:true,graphVersion:'v26.0'})}));
 import {ensureInstagramSubscription} from './subscription';
 const id=(n:number)=>`abcdefab-0000-4000-8000-${String(n).padStart(12,'0')}`;
@@ -7,7 +8,7 @@ const binding={companyId:id(1),userId:id(11),sessionId:id(21),attemptId:id(31),g
 const receipt=id(51),claimReceipt=id(61),token='synthetic-staged-token';
 const checkpoint=(state:string)=>({binding,stageReceipt:receipt,accountId:'100',fields:['messages'],state});
 const fresh=()=>({...checkpoint('claimed'),kind:'claimed',committed:true,claimReceipt,accessToken:token,notAfter:new Date(Date.now()+10000).toISOString()});
-const transport=vi.fn();beforeEach(()=>{vi.clearAllMocks();transport.mockResolvedValue('verified');});
+const transport=vi.fn();beforeEach(()=>{vi.clearAllMocks();scope.mockReturnValue(true);transport.mockResolvedValue('verified');});
 function fixture(initial='unstarted'){
  let state=initial;const events:string[]=[];
  const rpc=vi.fn(async(name:string,args:Record<string,unknown>)=>{
@@ -38,3 +39,6 @@ it('lost verified settlement response recovers only the persisted checkpoint',as
 it('provider throw records unknown and subsequent replay cannot retry',async()=>{const f=fixture();transport.mockRejectedValue(Error(token));expect((await run(f)).ok).toBe(false);expect(f.state()).toBe('unknown');expect((await run(f)).ok).toBe(false);expect(transport).toHaveBeenCalledTimes(1);});
 it('cross-generation claim proof does not reach provider or settlement',async()=>{const f=fixture();f.rpc.mockResolvedValue({error:null,data:{...fresh(),binding:{...binding,generation:2}}});expect((await run(f)).ok).toBe(false);expect(transport).not.toHaveBeenCalled();expect(f.rpc).toHaveBeenCalledTimes(1);});
 it('expired dispatch deadline creates no provider request',async()=>{const f=fixture();expect((await ensureInstagramSubscription(binding,receipt,f.server,{transport,now:()=>Date.now()+60000})).ok).toBe(false);expect(transport).not.toHaveBeenCalled();expect(f.state()).toBe('unknown');});
+
+it('unscoped subscription cannot claim or call provider',async()=>{scope.mockReturnValue(false);const f=fixture();expect(await run(f)).toEqual({ok:false,code:'FORBIDDEN'});expect(f.rpc).not.toHaveBeenCalled();expect(transport).not.toHaveBeenCalled();});
+it('scope expiry after commit records unknown without provider execution',async()=>{const f=fixture();const original=f.rpc.getMockImplementation()!;f.rpc.mockImplementation(async(name,args)=>{const result=await original(name,args);if(name==='instagram_claim_subscription')scope.mockReturnValue(false);return result;});expect(await run(f)).toEqual({ok:false,code:'RECONCILIATION_REQUIRED'});expect(f.state()).toBe('unknown');expect(transport).not.toHaveBeenCalled();});

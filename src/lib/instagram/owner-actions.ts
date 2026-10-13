@@ -5,6 +5,7 @@ import {createClient} from '@/lib/supabase/server';
 import {createAdminClient} from '@/lib/supabase/admin';
 import {getCompanyAccess} from '@/lib/tenancy/access';
 import {instagramConfig} from './config';
+import {instagramOwnerConnectScope} from './connect-scope';
 import {exchangeInstagramCode,instagramAuthorizationUrl,readInstagramOAuthConfig} from './oauth-meta';
 import {createInstagramConnectionStore,startInstagramConnection,type InstagramRpcClient} from './connection-store';
 import {completeInstagramConnection} from './connection-flow';
@@ -37,7 +38,7 @@ async function rpc(client:InstagramRpcClient,name:string,args:Record<string,unkn
  if(error)return fail(object(error)&&['PGRST202','42883'].includes(String(error.code))?'SCHEMA_UNAVAILABLE':'UNAVAILABLE');
  return object(data)?denial(data)??data:fail('UNAVAILABLE');
 }
-async function status(client:InstagramRpcClient,companyId:string):Promise<Status|Failure>{
+async function status(client:InstagramRpcClient,companyId:string,userId:string):Promise<Status|Failure>{
  const cfg=readInstagramOAuthConfig();
  const data=await rpc(client,'instagram_owner_connection',{p_company_id:companyId,p_app_id:cfg?.appId??null,p_contract_id:cfg?.contractId??null});
  if(data.ok===false)return data as Failure;
@@ -46,12 +47,12 @@ async function status(client:InstagramRpcClient,companyId:string):Promise<Status
  if(data.link!==null){const v=data.link;if(!object(v)||!uuid(v.linkId)||typeof v.accountId!=='string'||!/^\d{1,64}$/.test(v.accountId)||!generation(v.generation)||v.generation<1)return fail('UNAVAILABLE');link={linkId:v.linkId.toLowerCase(),accountId:v.accountId,generation:v.generation};}
  const kinds=['pending','claimed','vault_staged','bound','rejected','unknown','expired','cancelled'];
  if(data.attemptKind!==null&&!kinds.includes(String(data.attemptKind)))return fail('UNAVAILABLE');
- return {ok:true,generation:data.generation,link,attemptKind:data.attemptKind as string|null,contractReady:!!cfg&&data.contractReady,connectEnabled:instagramConfig().connectEnabled};
+ return {ok:true,generation:data.generation,link,attemptKind:data.attemptKind as string|null,contractReady:!!cfg&&data.contractReady,connectEnabled:instagramConfig().connectEnabled&&!!cfg&&instagramOwnerConnectScope(companyId,userId,cfg.appId)};
 }
 export async function loadInstagramOwnerConnection(input:{companyId:string}):Promise<Status|Failure>{
  if(!keys(input,['companyId'])||!uuid(input.companyId))return fail('INVALID_INPUT');
  const company=input.companyId.toLowerCase();
- try{const session=await native(company);return 'ok' in session?session:await status(session.client,company);}catch{return fail('UNAVAILABLE');}
+ try{const session=await native(company);return 'ok' in session?session:await status(session.client,company,session.identity.userId);}catch{return fail('UNAVAILABLE');}
 }
 export async function startInstagramOwnerConnection(input:{companyId:string}):Promise<{ok:true;authorizationUrl:string}|Failure>{
  if(!keys(input,['companyId'])||!uuid(input.companyId))return fail('INVALID_INPUT');
@@ -60,7 +61,8 @@ export async function startInstagramOwnerConnection(input:{companyId:string}):Pr
   const session=await native(company);if('ok' in session)return session;
   if(!instagramConfig().connectEnabled)return fail('CONNECT_DISABLED');
   const cfg=readInstagramOAuthConfig();if(!cfg)return fail('SETUP_REQUIRED');
-  const current=await status(session.client,company);if(!current.ok)return current;
+  if(!instagramOwnerConnectScope(session.identity.companyId,session.identity.userId,cfg.appId))return fail('CONNECT_DISABLED');
+  const current=await status(session.client,company,session.identity.userId);if(!current.ok)return current;
   if(!current.contractReady)return fail('SETUP_REQUIRED');
   if(['claimed','vault_staged','unknown'].includes(current.attemptKind??''))return fail('RECONCILIATION_REQUIRED');
   const attemptId=randomUUID(),state=randomBytes(32).toString('hex'),authorizationUrl=instagramAuthorizationUrl(cfg,state);
@@ -83,13 +85,20 @@ export async function completeInstagramOwnerOAuth(input:{attemptId:string;state:
   const session=await native();if('ok' in session)return session;
   if(!instagramConfig().connectEnabled)return fail('CONNECT_DISABLED');
   const cfg=readInstagramOAuthConfig();if(!cfg)return fail('SETUP_REQUIRED');
+  if(!instagramOwnerConnectScope(session.identity.companyId,session.identity.userId,cfg.appId))return fail('CONNECT_DISABLED');
   const data=await rpc(session.client,'instagram_owner_attempt',{p_company_id:session.identity.companyId,p_attempt_id:captured.attemptId});
   if(data.ok===false)return data as Failure;
   if(data.ok!==true||!binding(data.binding))return fail('UNAVAILABLE');
   const b=Object.freeze({...data.binding});
   if(b.companyId!==session.identity.companyId||b.userId!==session.identity.userId||b.sessionId!==session.identity.sessionId||b.attemptId!==captured.attemptId||b.appId!==cfg.appId||b.contractId!==cfg.contractId)return fail('FORBIDDEN');
   const server=createAdminClient();if(!server)return fail('UNAVAILABLE');
-  return await completeInstagramConnection(session.identity,captured,b,{...createInstagramConnectionStore(session.client,server as unknown as InstagramRpcClient),exchange:(code,ref)=>exchangeInstagramCode(code,ref,cfg),subscribe:(ref,receipt)=>ensureInstagramSubscription(ref,receipt,server as unknown as InstagramRpcClient)});
+  const store=createInstagramConnectionStore(session.client,server as unknown as InstagramRpcClient);
+  const permitted=()=>instagramConfig().connectEnabled&&instagramOwnerConnectScope(b.companyId,b.userId,b.appId);
+  return await completeInstagramConnection(session.identity,captured,b,{...store,
+   stage:(ref,success)=>permitted()?store.stage(ref,success):Promise.resolve({ok:false,code:'FORBIDDEN'}),
+   finalize:(ref,receipt)=>permitted()?store.finalize(ref,receipt):Promise.resolve({ok:false,code:'FORBIDDEN'}),
+   exchange:(code,ref)=>exchangeInstagramCode(code,ref,cfg),
+   subscribe:(ref,receipt)=>ensureInstagramSubscription(ref,receipt,server as unknown as InstagramRpcClient)});
  }catch{return fail('RECONCILIATION_REQUIRED');}
 }
 export async function disconnectInstagramOwnerConnection(input:{companyId:string;linkId:string;expectedGeneration:number}):Promise<{ok:true}|Failure>{

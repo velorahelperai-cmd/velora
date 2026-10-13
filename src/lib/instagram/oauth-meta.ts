@@ -1,5 +1,6 @@
 import 'server-only';
 import {instagramConfig} from './config';
+import {instagramOwnerConnectScope} from './connect-scope';
 import type {AttemptBinding,ProviderResult} from './connection-contracts';
 export type InstagramOAuthConfig=Readonly<{appId:string;appSecret:string;contractId:string;redirectUri:string;requiredPermissions:readonly string[]}>;
 const required=Object.freeze(['instagram_business_basic','instagram_business_manage_messages']);
@@ -28,9 +29,11 @@ export function instagramAuthorizationUrl(cfg:InstagramOAuthConfig,state:string)
  * and live verification before activation. Missing evidence fails closed. */
 export async function exchangeInstagramCode(code:string,binding:AttemptBinding,cfg:InstagramOAuthConfig,dependencies:{fetch?:typeof fetch}={}):Promise<ProviderResult>{
  const rejected=():ProviderResult=>({ok:false,code:'REJECTED'}),unknown=():ProviderResult=>({ok:false,code:'UNKNOWN'});
- const flags=instagramConfig();if(!flags.connectEnabled||flags.graphVersion!=='v26.0'||binding.appId!==cfg.appId||binding.contractId!==cfg.contractId||!text(code)||/[\x00-\x1f\x7f]/.test(code))return rejected();
+ const flags=instagramConfig();if(!instagramOwnerConnectScope(binding.companyId,binding.userId,binding.appId)||!flags.connectEnabled||flags.graphVersion!=='v26.0'||binding.appId!==cfg.appId||binding.contractId!==cfg.contractId||!text(code)||/[\x00-\x1f\x7f]/.test(code))return rejected();
  const http=dependencies.fetch??fetch;
- async function request(url:string,init:RequestInit){const response=await http(url,{...init,cache:'no-store',redirect:'error',credentials:'omit',signal:AbortSignal.timeout(12000)});
+ async function request(url:string,init:RequestInit){
+  if(!instagramConfig().connectEnabled||!instagramOwnerConnectScope(binding.companyId,binding.userId,binding.appId))throw Error('INSTAGRAM_CONNECT_DISABLED');
+  const response=await http(url,{...init,cache:'no-store',redirect:'error',credentials:'omit',signal:AbortSignal.timeout(12000)});
   if(Number(response.headers.get('content-length')??0)>65536)throw Error('PROVIDER_RESPONSE_TOO_LARGE');
   const raw=await response.text();if(Buffer.byteLength(raw,'utf8')>65536)throw Error('PROVIDER_RESPONSE_TOO_LARGE');
   const body:unknown=JSON.parse(raw);return {ok:response.ok,status:response.status,body};}

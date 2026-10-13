@@ -2,6 +2,7 @@ import 'server-only';
 import type {AttemptBinding,ConnectionFailure,ConnectionFailureCode} from './connection-contracts';
 import type {InstagramRpcClient} from './connection-store';
 import {instagramConfig} from './config';
+import {instagramOwnerConnectScope} from './connect-scope';
 import {subscribeInstagramMessages,type InstagramSubscriptionInput,type InstagramSubscriptionOutcome} from './subscription-meta';
 
 type Result=Readonly<{ok:true}>|ConnectionFailure;
@@ -39,6 +40,7 @@ export async function ensureInstagramSubscription(supplied:AttemptBinding,stageR
    ||typeof supplied.appId!=='string'||!/^\d{1,64}$/.test(supplied.appId)||typeof supplied.contractId!=='string'||!supplied.contractId||supplied.contractId.length>128
    ||!Number.isSafeInteger(supplied.generation)||supplied.generation<1||!uuid(stageReceipt))return fail('INVALID_INPUT');
   const b:AttemptBinding=Object.freeze({companyId:supplied.companyId,userId:supplied.userId,sessionId:supplied.sessionId,attemptId:supplied.attemptId,generation:supplied.generation,appId:supplied.appId,contractId:supplied.contractId});
+  if(!instagramConfig().connectEnabled||!instagramOwnerConnectScope(b.companyId,b.userId,b.appId))return fail('FORBIDDEN');
   const args={p_binding:b,p_stage_receipt:stageReceipt};
   async function read():Promise<Result>{try{const data=await rpc(server,'instagram_read_subscription',args);return denial(data)??result(checkpoint(data,b,stageReceipt));}catch{return review();}}
   let raw:unknown;
@@ -55,7 +57,7 @@ export async function ensureInstagramSubscription(supplied:AttemptBinding,stageR
   let outcome:InstagramSubscriptionOutcome='unknown';
   try{
    const now=dependencies.now?.()??Date.now();
-   if(Number.isFinite(now)&&now<Date.parse(claim.notAfter)&&instagramConfig().connectEnabled){
+   if(Number.isFinite(now)&&now<Date.parse(claim.notAfter)&&instagramConfig().connectEnabled&&instagramOwnerConnectScope(b.companyId,b.userId,b.appId)){
     outcome=await(dependencies.transport??subscribeInstagramMessages)({accountId:claim.accountId,accessToken:claim.accessToken});
    }
   }catch{outcome='unknown';}
