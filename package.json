@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "node scripts/instagram-connection/challenge-installation-fingerprint.mjs && next build",
+    "build": "node challenge-installation-fingerprint.mjs && next build",
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "node ./node_modules/typescript/bin/tsc --noEmit",
