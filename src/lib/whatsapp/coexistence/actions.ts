@@ -87,7 +87,7 @@ export async function getCoexistenceSyncSetup(companyId:string){
  return diagnoseWhatsAppConnection(async trace=>{
  if(!uuid(companyId))return {ok:false as const,code:"INVALID_INPUT"};
  trace.stage("session");const auth=await owner(companyId);if(!auth.ok)return auth;
- trace.stage("channel");const status=await readCoexistenceSyncStatus(auth.client,auth.identity.companyId);if(!status.ok)return status;
+ trace.stage("channel");let status:Awaited<ReturnType<typeof readCoexistenceSyncStatus>>;try{status=await readCoexistenceSyncStatus(auth.client,auth.identity.companyId);}catch{return {ok:false as const,code:"UNAVAILABLE" as const};}if(!status.ok)return status;
  trace.stage("preflight");const config=serverConfig();
  const ready=Boolean(config&&createAdminClient()&&(await readCoexistenceSyncReadiness(auth.client,auth.identity.companyId)).ok);
  return {...status,ready};
