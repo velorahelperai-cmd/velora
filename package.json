@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "node challenge-installation-fingerprint.mjs && next build",
+    "build": "next build",
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "node ./node_modules/typescript/bin/tsc --noEmit",
