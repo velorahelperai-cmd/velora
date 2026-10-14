@@ -62,6 +62,9 @@ describe("setup server routes retain the package selection", () => {
     expect(page.props.children.props.initialCompany?.id).toBe('company');
   });
   it("enables the new journey only with an explicit server rollout flag", async () => {
+    state.access={ok:true,context:{...context,company:{id:'company',status:'setup'} as CompanyContext['company'],membership:{role:'owner',status:'active'} as CompanyContext['membership']}};
+    vi.mocked(listKnowledgeSources).mockResolvedValue({ok:false,code:'UNAVAILABLE'});
+    vi.mocked(getCompanyReviewRequest).mockResolvedValue({ok:false,code:'UNAVAILABLE'});
     vi.stubEnv("VELORA_SMART_ONBOARDING_ENABLED", "false");
     expect((await SetupPage()).props.children.props.smartOnboardingEnabled).toBe(false);
     vi.stubEnv("VELORA_SMART_ONBOARDING_ENABLED", "true");

@@ -33,7 +33,7 @@ export async function readSmartSetup(input:Scope):Promise<Result<SmartSetupRead>
   const parsed=receipt(saved.data,input.expectedCompanyId);if(!parsed.ok)return parsed;
   // Newer billing schemas supply independently proven per-channel operational facts.
   const operational=(contract?.companyId===input.expectedCompanyId?contract.subscription:null) as (ChannelContract['subscription']&{operationalReadyChannels?:unknown})|null;
-  const operationalChannels=Array.isArray(operational?.operationalReadyChannels)?operational.operationalReadyChannels.filter((ch):ch is string=>ch==='whatsapp'||ch==='instagram'):[];
+  const operationalChannels=Array.isArray(operational?.operationalReadyChannels)?operational.operationalReadyChannels.filter((ch):ch is 'whatsapp'|'instagram'=>ch==='whatsapp'||ch==='instagram'):[];
   const reviewPolicyEnabled=!policy.error&&policy.data?.ok===true&&policy.data?.companyId===input.expectedCompanyId&&policy.data?.enabled===true;
   return {ok:true,data:{branchSetup:parsed.data,contract,operationalChannels,reviewPolicyEnabled}};
  }catch{return {ok:false,code:'UNAVAILABLE'};}
