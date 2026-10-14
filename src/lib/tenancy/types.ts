@@ -150,7 +150,7 @@ export type CompanyReviewRequest = {
   company_id: string;
   requested_by: string;
   requested_by_email?: string | null;
-  number_ownership: "own" | "new";
+  number_ownership: "own" | "new" | "not_applicable";
   whatsapp_number: string;
   readiness_confirmed: boolean;
   requested_at: string;

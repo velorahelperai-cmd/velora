@@ -49,7 +49,11 @@ import {
 } from "@/components/app/ui";
 
 import internalStyles from "./internal-ui.module.css";
+import { SmartSetupCards } from "./smart-setup-cards";
 import { SetupNavigation } from "./setup-navigation";
+import { SmartSetupBranches } from "./smart-setup-branches";
+import { readSmartSetup, type SmartSetupRead } from "@/lib/tenancy/smart-onboarding-actions";
+import { buildSmartOnboarding, type SmartSetupCard } from "@/lib/tenancy/smart-onboarding";
 
 // Preserve main navigation and behavior with the published setup readability/layout.
 const styles: Record<string, string> = { ...internalStyles };
@@ -212,6 +216,8 @@ const EMPTY_KNOWLEDGE: KnowledgeSourceRecord[] = [];
 
 export function SetupWizard({
   userId,
+  smartOnboardingEnabled = false,
+  masterJourneyEnabled = false,
   preferredNext,
   initialCompany,
   initialKnowledge = EMPTY_KNOWLEDGE,
@@ -221,6 +227,8 @@ export function SetupWizard({
   reviewLoadFailed = false,
 }: {
   userId: string;
+  smartOnboardingEnabled?: boolean;
+  masterJourneyEnabled?: boolean;
   preferredNext?: string;
   initialCompany?: CompanyRecord | null;
   initialKnowledge?: KnowledgeSourceRecord[];
@@ -250,6 +258,27 @@ export function SetupWizard({
     setSavedCompany(initialCompany ?? null);
   }
   const companyId = savedCompany?.id ?? null;
+  const [openPanel,setOpenPanel] = useState<number|"branches"|null>(null);
+  const [smartRead,setSmartRead] = useState<SmartSetupRead|null>(null);
+  const [smartLoad,setSmartLoad] = useState<"loading"|"ready"|"failed">("loading");
+  const [smartRetry,setSmartRetry] = useState(0);
+  const smartScope=useRef<string|null>(null);
+  useEffect(()=>{
+    if(!smartOnboardingEnabled)return;
+    let cancelled=false;
+    const frame=window.requestAnimationFrame(()=>{
+      setSmartRead(null);setSmartLoad("loading");
+      if(!companyId)return;
+      void readSmartSetup({expectedUserId:userId,expectedCompanyId:companyId}).then(result=>{
+        if(cancelled)return;
+        if(!result.ok){setSmartLoad("failed");return;}
+        setSmartRead(result.data);setSmartLoad("ready");
+        const scope=`${userId}:${companyId}`;
+        if(smartScope.current!==scope){smartScope.current=scope;setOpenPanel(result.data.branchSetup.mode===null?"branches":null);}
+      }).catch(()=>{if(!cancelled)setSmartLoad("failed");});
+    });
+    return()=>{cancelled=true;window.cancelAnimationFrame(frame);};
+  },[userId,companyId,savedCompany?.updated_at,smartRetry,smartOnboardingEnabled]);
   const renderedScope = useRef(`${userId}:${companyId ?? "new"}`);
   useEffect(() => { renderedScope.current = `${userId}:${companyId ?? "new"}`; }, [userId, companyId]);
   const [readiness, setReadiness] = useState<CustomerReadinessSnapshot | null>(null);
@@ -443,8 +472,8 @@ export function SetupWizard({
   const step = Math.max(0, Math.min(7, draft.setupStep));
   const go = (n: number, opts?: { skipGuard?: boolean }) => {
     const next = Math.max(0, Math.min(7, n));
-    if (next === step) return;
     if (!opts?.skipGuard && leaveGuardRef.current && !leaveGuardRef.current()) return;
+    setOpenPanel(next);
     persist({ setupStep: next });
   };
   const effectiveSetupDone = serverSetupDone(knowledgeProgress.detail === "knowledge_ready");
@@ -469,8 +498,19 @@ export function SetupWizard({
     return draftSaveStatus === "error" ? <Notice tone="error"><p>{ar ? "تعذر تحميل مسودة الإعداد المحفوظة. أعد المحاولة قبل المتابعة." : "Could not load your saved setup draft. Retry before continuing."}</p><Button onClick={() => setDraftRetry(n => n + 1)}>{ar ? "إعادة المحاولة" : "Retry"}</Button></Notice> : <SetupLoading />;
   }
 
-  const completedCount = effectiveSetupDone.filter(Boolean).length;
-  const progressPercent = Math.round((completedCount / 8) * 100);
+  const smart=buildSmartOnboarding({company:savedCompany,
+    branchSetup:smartRead?.branchSetup??null,
+    contract:smartRead?.contract??null,
+    operationalChannels:smartRead?.operationalChannels??[],
+    knowledge:knowledgeProgress.detail==="knowledge_ready"?"ready":knowledgeFailed?"failed":knowledgeSources.length?"needs_attention":"not_started",
+    review:initialReview,reviewLoadFailed,
+    reviewPolicyReady:smartRead?.reviewPolicyEnabled===true,
+  });
+  const closePanel=()=>{if(leaveGuardRef.current&&!leaveGuardRef.current())return;setOpenPanel(null);};
+  const openCard=(card:SmartSetupCard)=>{
+    if(card.id==="branches"){if(leaveGuardRef.current&&!leaveGuardRef.current())return;setOpenPanel("branches");return;}
+    if(card.step!==null)go(card.step);
+  };
 
   return (
     <main className={`app-shell ${styles.theme} ${styles.setup}`} data-internal-ui="true" dir={ar ? "rtl" : "ltr"}>
@@ -496,11 +536,11 @@ export function SetupWizard({
         <div className={styles.setupTitle}>
           <h1 className="app-title text-3xl break-words lg:text-4xl">{copy.setup.title}</h1>
           <span className={styles.confirmed}>
-            {completedCount} / 8 {ar ? "محطات مؤكدة من السجلات" : "milestones confirmed from records"}
+            {smartOnboardingEnabled?<>{smart.completedRequired} / {smart.totalRequired} {ar ? "متطلبات مؤكدة" : "requirements confirmed"}</>:<>{effectiveSetupDone.filter(Boolean).length} / 8 {ar?"محطات مؤكدة من السجلات":"milestones confirmed from records"}</>}
           </span>
         </div>
         <p className={`mt-2 ${styles.resume}`}>
-          {fill(mCopy.milestoneProgress, { n: step + 1 })} · {copy.setup.resume}
+          {!smartOnboardingEnabled?`${fill(mCopy.milestoneProgress,{n:step+1})} · `:""}{copy.setup.resume}
         </p>
         <div role="status" aria-live="polite" className="mt-2 text-sm">
           {draftSaveStatus === "saved" ? (ar ? "تم حفظ مسودة الإعداد في حسابك." : "Setup draft saved to your account.")
@@ -520,16 +560,16 @@ export function SetupWizard({
           reviewLoadFailed={reviewLoadFailed}
         />
 
-        <SetupNavigation labels={mCopy.steps} shortLabels={ar
-          ? ["الشركة", "الاشتراك", "ساعات العمل", "المعرفة", "لغة الرد", "واتساب", "التجربة", "المراجعة"]
-          : ["Company", "Subscription", "Hours", "Knowledge", "Reply language", "WhatsApp", "Trial", "Review"]}
-          done={effectiveSetupDone} step={step} locale={locale} onSelect={go} />
-        <div className={styles.progress} aria-hidden="true">
-          <div className={styles.progressFill} style={{ width: `${progressPercent}%` }} />
-        </div>
-        <section className={styles.stepPanel}>
+        {smartOnboardingEnabled?(companyId ? <SmartSetupCards locale={locale} {...smart} onOpen={openCard}/> : <Notice tone="info"><p>{ar?"ابدأ باسم النشاط ونوعه والدولة فقط، ثم أضف بقية التفاصيل عند الحاجة.":"Start with your business name, type and country, then add other details when needed."}</p><LinkButton href="/account/businesses/new">{ar?"إنشاء نشاط":"Create a business"}</LinkButton></Notice>):<><SetupNavigation labels={mCopy.steps} shortLabels={ar?["الشركة","الاشتراك","ساعات العمل","المعرفة","لغة الرد","واتساب","التجربة","المراجعة"]:["Company","Subscription","Hours","Knowledge","Reply language","WhatsApp","Trial","Review"]} done={effectiveSetupDone} step={step} locale={locale} onSelect={go}/><div className={styles.progress} aria-hidden="true"><div className={styles.progressFill} style={{width:`${Math.round(effectiveSetupDone.filter(Boolean).length/8*100)}%`}}/></div></>}
+        {smartOnboardingEnabled&&companyId&&smartLoad==="failed"?<Notice tone="warn"><p>{ar?"تعذر تحميل تجهيز الفروع والقنوات. يمكنك متابعة بقية الإعدادات وإعادة المحاولة.":"Branch and channel setup could not be loaded. Continue with other settings and retry."}</p><Button variant="secondary" onClick={()=>setSmartRetry(n=>n+1)}>{ar?"إعادة التحميل":"Reload"}</Button></Notice>:null}
+        {(!smartOnboardingEnabled||companyId&&openPanel!==null)?<section className={styles.stepPanel} aria-label={ar?"إعدادات التجهيز":"Setup settings"}>
+          {smartOnboardingEnabled?<div className="mb-4"><Button variant="secondary" onClick={closePanel}>{ar?"العودة لبطاقات التجهيز":"Return to setup cards"}</Button></div>:null}
+          {openPanel==="branches"?<>
+            <div className={styles.stepHeading}><h2>{ar?"تجهيز الفروع":"Prepare your branches"}</h2></div>
+            {smartRead?.branchSetup.companyId===companyId?<SmartSetupBranches key={`${userId}:${companyId}:${smartRead.branchSetup.revision}`} userId={userId} companyId={companyId} locale={locale} setup={smartRead.branchSetup} onSaved={branchSetup=>{setSmartRead(current=>current?{...current,branchSetup}:null);setSmartRetry(n=>n+1);}} onClose={()=>setOpenPanel(null)}/>:smartLoad==="loading"?<SetupLoading/>:<Notice tone="error">{ar?"تجهيز الفروع غير متاح حاليًا. أعد تحميل الحالة قبل المتابعة.":"Branch setup is unavailable. Reload its status before continuing."}</Notice>}
+          </>:<>
           <div className={styles.stepHeading}>
-            <span className={styles.stepHeadingNumber}>{step + 1}</span>
+            {!smartOnboardingEnabled?<span className={styles.stepHeadingNumber}>{step+1}</span>:null}
             <h2 className="app-title">{mCopy.steps[step]}</h2>
           </div>
           <p className={styles.stepDescription}>{mCopy.stepBodies[step]}</p>
@@ -541,6 +581,7 @@ export function SetupWizard({
               <BusinessStep
                 key={`${userId}:${companyId ?? "new"}`}
                 baseline={businessBaseline}
+                hoursRequired={!masterJourneyEnabled}
                 conflicts={unresolvedBusinessConflicts}
                 onResolveConflicts={resolveBusinessConflicts}
                 companyId={companyId}
@@ -642,6 +683,8 @@ export function SetupWizard({
 
             {/* Milestone 5: WhatsApp Business Meta Connection */}
             {step === 5 ? (
+              <>
+              <div className="mb-4 flex flex-wrap gap-3"><LinkButton href="/app/settings" variant="secondary">{ar?"اختيار القنوات وإعداد واتساب":"Select channels and set up WhatsApp"}</LinkButton><LinkButton href="/app/instagram" variant="secondary">{ar?"ربط إنستغرام":"Connect Instagram"}</LinkButton></div>
               <WhatsAppStep
                 key={userId+":"+(companyId??"none")}
                 userId={userId}
@@ -651,12 +694,12 @@ export function SetupWizard({
                 refreshLink={whatsappRequest.refresh}
                 leaveGuardRef={leaveGuardRef}
                 onLinkSaved={whatsappRequest.adopt}
-                draft={draft}
                 onBack={() => go(4)}
                 onNext={() => {
                   go(6);
                 }}
               />
+              </>
             ) : null}
 
             {/* Milestone 6: Sandbox Testing */}
@@ -734,6 +777,9 @@ export function SetupWizard({
                 onBack={() => go(6)}
                 onDone={() => router.refresh()}
                 setupDone={effectiveSetupDone}
+                selectedChannels={smartOnboardingEnabled?smart.selectedChannels:null}
+                reviewConfigured={!smartOnboardingEnabled||smartRead?.reviewPolicyEnabled===true}
+                hoursRequired={!masterJourneyEnabled}
                 businessName={savedCompany?.display_name ?? ""}
                 sectorLabel={
                   landingCopy(locale).sectors.find((s) => s.id === savedCompany?.business_type)?.label ??
@@ -748,7 +794,8 @@ export function SetupWizard({
               />
             ) : null}
           </div>
-        </section>
+          </>}
+        </section>:null}
       </div>
     </main>
   );
@@ -803,6 +850,7 @@ function RefreshConflictNotice({ onResolve }: { onResolve: () => void }) {
 }
 
 function BusinessStep({
+  hoursRequired,
   baseline, conflicts, onResolveConflicts,
   draft,
   companyId,
@@ -812,6 +860,7 @@ function BusinessStep({
   onDone,
   leaveGuardRef,
 }: {
+  hoursRequired: boolean;
   baseline: Business;
   conflicts: Array<keyof Business>;
   onResolveConflicts: () => void;
@@ -852,7 +901,7 @@ function BusinessStep({
     if (conflicts.length) return;
     const next: Partial<Record<keyof Business, FieldErrorKey>> = {};
     if (!form.name.trim()) next.name = "required";
-    if (!form.hours.trim()) next.hours = "required";
+    if (hoursRequired && !form.hours.trim()) next.hours = "required";
     if (normalizeBusinessPhone(form.contactPhone) === null) next.contactPhone = "phone";
     if (normalizeBusinessEmail(form.contactEmail) === null) next.contactEmail = "email";
     setErrors(next);
@@ -945,7 +994,7 @@ function BusinessStep({
           />
         )}
       </Field>
-      <Field label={copy.setup.hours} required error={hoursError}>
+      <Field label={copy.setup.hours} required={hoursRequired} error={hoursError}>
         {(p) => <input {...p} value={form.hours} placeholder={copy.setup.hoursPlaceholder} onChange={(e) => set("hours", e.target.value)} />}
       </Field>
       <Field label={copy.setup.contactPhone} error={phoneError} hint="+968 …">
@@ -1275,7 +1324,6 @@ function PersonaStep({
 /* ========================================================================= */
 
 function WhatsAppStep({
-  draft,
   userId,
   companyId,
   link,
@@ -1286,7 +1334,6 @@ function WhatsAppStep({
   onBack,
   onNext,
 }: {
-  draft: CompanyDraft;
   userId: string;
   companyId: string | null;
   link: WhatsappCompanyLink | null;
@@ -1302,7 +1349,7 @@ function WhatsAppStep({
   const ar = locale === "ar";
   const [ownership, setOwnership] = useState<"own" | "new">("own");
   const boundLink=link?.companyId===companyId?link:null;
-  const numberField=useServerDraftField(boundLink?.id?boundLink.requestedDisplayNumber:draft.business.contactPhone||"");
+  const numberField=useServerDraftField(boundLink?.id?boundLink.requestedDisplayNumber:"");
   const keepField=useServerDraftField(boundLink?.keepOnPhone?"true":"false");
   const number=numberField.value,keepOnPhone=keepField.value==="true";
   const dirty=numberField.dirty||keepField.dirty||ownership!=="own";
@@ -1478,7 +1525,7 @@ function reviewStatusLabel(
 function activationFromReview(review: CompanyReviewRequest): Activation {
   return {
     whatsappNumber: review.whatsapp_number,
-    numberOwnership: review.number_ownership,
+    numberOwnership: review.number_ownership === "not_applicable" ? "" : review.number_ownership,
     ready: true,
     status: review.status === "pending_review" ? "pending_review" : "not_requested",
     requestedAt: Date.parse(review.requested_at) || nowMs(),
@@ -1597,6 +1644,9 @@ function DecoupledPillarsNotice({
 }
 
 function ActivationStep({
+  hoursRequired,
+  selectedChannels,
+  reviewConfigured,
   readiness,
   whatsappLink,
   onBack,
@@ -1610,6 +1660,9 @@ function ActivationStep({
   initialReview,
   reviewLoadFailed: initialReviewLoadFailed,
 }: {
+  hoursRequired: boolean;
+  selectedChannels: string[] | null;
+  reviewConfigured: boolean;
   readiness: CustomerReadinessSnapshot | null;
   whatsappLink: WhatsappCompanyLink | null;
   onBack: () => void;
@@ -1652,11 +1705,12 @@ function ActivationStep({
   const waiting = status === "pending_review" && review?.proof_current === true;
   const approved = status === "approved" && review?.proof_current === true;
   const tests = state.testHistory.filter((m) => m.from === "customer").length;
+  const instagramOnly = selectedChannels?.length === 1 && selectedChannels[0] === "instagram";
 
   const readyToRequest = Boolean(
-    companyId &&
+    companyId && reviewConfigured &&
       setupDone[0] &&
-      setupDone[2] &&
+      (!hoursRequired || setupDone[2]) &&
       setupDone[3],
   );
 
@@ -1770,8 +1824,8 @@ function ActivationStep({
       setSaveError(copy.setup.reviewNeedCompany);
       return;
     }
-    const ownership = form.numberOwnership;
-    if (ownership !== "own" && ownership !== "new") return;
+    const ownership = instagramOnly ? "not_applicable" : form.numberOwnership;
+    if (ownership !== "own" && ownership !== "new" && ownership !== "not_applicable") return;
     if (ownership === "own" && !isPhone(form.whatsappNumber)) {
       setError("phone");
       return;
@@ -1788,14 +1842,14 @@ function ActivationStep({
             ? await resubmitCompanyReviewRequest({
                 expectedCompanyId: companyId,
                 numberOwnership: ownership,
-                whatsappNumber: form.whatsappNumber,
+                whatsappNumber: instagramOnly ? "" : form.whatsappNumber,
                 ready: form.ready === true,
                 expectedRevision: review.revision,
               })
             : await submitCompanyReviewRequest({
                 expectedCompanyId: companyId,
                 numberOwnership: ownership,
-                whatsappNumber: form.whatsappNumber,
+                whatsappNumber: instagramOnly ? "" : form.whatsappNumber,
                 ready: form.ready === true,
               });
         if (!result.ok) {
@@ -1836,6 +1890,7 @@ function ActivationStep({
 
   const reviewForm = (
     <form className="grid min-w-0 gap-4" noValidate onSubmit={submitOrResubmit}>
+      {!reviewConfigured?<Notice tone="warn">{locale==="ar"?"طلب مراجعة الرحلة الجديدة ينتظر الإعداد المعتمد. يمكنك حفظ بقية التجهيز والعودة لاحقًا.":"The new review flow awaits approved configuration. Save your other setup and return later."}</Notice>:null}
       {status === "changes_requested" && review?.owner_note ? (
         <Notice tone="warn">
           <strong>{copy.setup.changesRequested}</strong>
@@ -1843,7 +1898,7 @@ function ActivationStep({
           {review.owner_note}
         </Notice>
       ) : null}
-      <Field label={copy.setup.numberOwnership} required>
+      {instagramOnly?<Notice tone="info">{locale==="ar"?"المراجعة تخص إنستغرام؛ ربط واتساب غير مطلوب لهذا النشاط.":"This review is for Instagram. A WhatsApp connection is not required for this business."}</Notice>:<Field label={copy.setup.numberOwnership} required>
         {(p) => (
           <div className="grid gap-2 sm:grid-cols-2">
             {(["own", "new"] as const).map((v) => (
@@ -1869,8 +1924,8 @@ function ActivationStep({
             ))}
           </div>
         )}
-      </Field>
-      {form.numberOwnership === "own" ? (
+      </Field>}
+      {!instagramOnly && form.numberOwnership === "own" ? (
         <Field label={copy.setup.whatsappNumber} required error={phoneError} hint="+968 …">
           {(p) => (
             <input
@@ -1901,7 +1956,7 @@ function ActivationStep({
           type="submit"
           busy={busy}
           busyLabel={copy.loading}
-          disabled={!readyToRequest || !form.numberOwnership || !form.ready}
+          disabled={!readyToRequest || (!instagramOnly && !form.numberOwnership) || !form.ready}
         >
           {needsResubmit ? copy.setup.resubmit : copy.setup.requestHelp}
         </Button>

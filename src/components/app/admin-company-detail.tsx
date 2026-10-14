@@ -602,7 +602,7 @@ export function AdminCompanyDetail({
                 </div>
                 <div className="flex justify-between gap-3">
                   <dt className="text-[var(--service-muted)] font-medium">{copy.admin.reviewOwnership}</dt>
-                  <dd className="font-bold text-[var(--service-ink)]">{review.number_ownership === "own" ? copy.setup.ownNumber : copy.setup.newNumber}</dd>
+                  <dd className="font-bold text-[var(--service-ink)]">{review.number_ownership === "not_applicable" ? (locale === "ar" ? "واتساب غير مختار" : "WhatsApp is not selected") : review.number_ownership === "own" ? copy.setup.ownNumber : copy.setup.newNumber}</dd>
                 </div>
                 <div className="flex justify-between gap-3">
                   <dt className="text-[var(--service-muted)] font-medium">{copy.setup.whatsappNumber}</dt>
