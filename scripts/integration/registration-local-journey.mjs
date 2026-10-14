@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import {randomBytes,randomUUID} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
 import {startStack,lit} from './local-http-stack.mjs';
+import {registrationSessionChecks,runRegistrationJourney} from '../internal-ui/registration-journey.mjs';
 await import('./local-http-network-guard.cjs');
+const sessionChecks=registrationSessionChecks(process.argv.slice(2));
 const baseline='20261009215520_g03_verified_review.sql';
 const stack=await startStack({gatewayPort:3330,authPort:3340,restPort:3341,appOrigin:'http://127.0.0.1:3320',throughMigration:baseline,canonicalSqlLineEndings:true,emailConfirmation:true,progress:console.log});
 try {
@@ -22,7 +24,6 @@ try {
  assert.equal((await verify(otp)).ok,false,'expired native proof must deny');
  await assert.rejects(()=>stack.sql("set role anon;select local_auth_fixture.capture_email('{}'::jsonb);"),/permission denied/);
  console.log('REGISTRATION_NATIVE_CONFIRMATION_REQUIRED_PASS');
- const {runRegistrationJourney}=await import('../internal-ui/registration-journey.mjs');
- await runRegistrationJourney(stack);
+ await runRegistrationJourney(stack,{sessionChecks});
 } catch(error) { console.error(stack.redact(error.message));process.exitCode=1; }
 finally {await stack.close();}

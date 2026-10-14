@@ -24,9 +24,9 @@ function renderCatalog(locale: "ar" | "en") {
 describe("admin catalog visible identity and reference", () => {
   it.each([["en", "Noura"], ["ar", "نورا"]] as const)("uses %s display names while preserving catalog codes", (locale, name) => {
     const markup = renderCatalog(locale);
-    expect(markup.match(/<option\b[^>]*value="noor_basic"[^>]*>([^<]+)<\/option>/)?.[1]).toBe(`${name} / Basic`);
+    expect(markup.match(/<option\b[^>]*value="noor_basic"[^>]*>([^<]+)<\/option>/)?.[1]).toBe(`${name} / Standard`);
     expect(markup.match(/<option\b[^>]*value="noor_premium"[^>]*>([^<]+)<\/option>/)?.[1]).toBe(`${name} / Premium`);
-    expect(markup).toContain(`<h3>${name} / Basic</h3>`);
+    expect(markup).toContain(`<h3>${name} / Standard</h3>`);
     expect(markup).not.toContain("noor / ");
   });
 

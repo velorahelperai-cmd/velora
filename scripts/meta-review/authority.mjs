@@ -1,6 +1,6 @@
 // Offline SQL contract tests in the labelled, network-isolated disposable Postgres fixture.
 import assert from 'node:assert/strict';
-import {bootstrap,cleanup,sql,file,lit} from '../instagram-connection/postgres.mjs';
+import {bootstrap,cleanup,sql,lit} from '../instagram-connection/postgres.mjs';
 const migration='supabase/migrations/20261013162534_meta_review_manual_authority.sql';
 const id=n=>`abcdefab-0000-4000-8000-${String(n).padStart(12,'0')}`;
 const actor=(user=11)=>`set role authenticated;set request.jwt.claims=${lit(JSON.stringify({sub:id(user),session_id:id(user+10),role:'authenticated'}))};`;

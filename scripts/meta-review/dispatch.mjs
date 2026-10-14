@@ -1,6 +1,6 @@
 // Offline real SQL review dispatch tests. Supabase Vault and the older WA core are labelled contract doubles.
 import assert from 'node:assert/strict';
-import {setup,reset,id,sql,lit,save,installed,signed,conv,prefix,fingerprint,claim,settle,project} from '../instagram-send/manual-fixture.mjs';
+import {id,sql,lit,save,installed,signed,conv,prefix,fingerprint,claim,settle,project} from '../instagram-send/manual-fixture.mjs';
 import {cleanup,file} from '../instagram-connection/postgres.mjs';
 import {setup as sendSetup,reset as sendReset} from '../instagram-send/fixture.mjs';
 import {readFileSync} from 'node:fs';

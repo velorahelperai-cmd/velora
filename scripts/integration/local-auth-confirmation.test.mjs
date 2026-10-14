@@ -21,3 +21,9 @@ test('registration errors redact browser signup passwords and native credentials
  const stack={redact:value=>String(value).replaceAll('native-fixture-key','[NATIVE_REDACTED]')};
  assert.equal(redact('fill("synthetic-password-value"); native-fixture-key',stack,['synthetic-password-value']),'fill("[LOCAL_CREDENTIAL_REDACTED]"); [NATIVE_REDACTED]');
 });
+
+test('session acceptance is explicit and rejects unknown arguments before starting fixtures',()=>{
+ assert.equal(registration.registrationSessionChecks([]),false);
+ assert.equal(registration.registrationSessionChecks(['--sessions']),true);
+ for(const args of [['--production'],['--sessions','extra'],['false'],null])assert.throws(()=>registration.registrationSessionChecks(args),/LOCAL_REGISTRATION_/);
+});

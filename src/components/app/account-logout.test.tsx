@@ -26,3 +26,9 @@ it("logout completion cannot erase or navigate a new account",async()=>{
  let resolve!:(v:unknown)=>void;f.logout.mockReturnValue(new Promise(ok=>{resolve=ok;}));logout();await settle();f.liveUser="user-b";resolve({ok:true});await settle();
  expect(f.clear).not.toHaveBeenCalled();expect(f.update).not.toHaveBeenCalled();expect(f.drafts).not.toHaveBeenCalled();expect(f.publishLogout).not.toHaveBeenCalled();expect(f.replace).not.toHaveBeenCalled();expect(f.assign).not.toHaveBeenCalled();
 });
+it("failed native logout keeps the current identity and drafts recoverable",async()=>{
+ f.logout.mockResolvedValue({ok:false,code:"AUTH_ERROR",message:"Synthetic logout failure"});logout();await settle();
+ expect(f.logout).toHaveBeenCalledWith("user-a");expect(f.clear).not.toHaveBeenCalled();expect(f.update).not.toHaveBeenCalled();expect(f.drafts).not.toHaveBeenCalled();expect(f.publishLogout).not.toHaveBeenCalled();expect(f.assign).not.toHaveBeenCalled();
+ const closed=render();(nodes(closed).find(n=>n.props["aria-haspopup"]==="menu")!.props.onClick as()=>void)();
+ expect(nodes(render()).some(n=>n.props.children==="Synthetic logout failure")).toBe(true);
+});

@@ -14,7 +14,14 @@ export function redactRegistrationOutput(value,stack,secrets=[]){
  for(const secret of secrets)result=result.replaceAll(secret,'[LOCAL_CREDENTIAL_REDACTED]');
  return result;
 }
-export async function runRegistrationJourney(stack){
+export function registrationSessionChecks(args){
+ if(!Array.isArray(args))throw Error('LOCAL_REGISTRATION_ARGUMENTS_REQUIRED');
+ if(args.length===0)return false;
+ if(args.length===1&&args[0]==='--sessions')return true;
+ throw Error('LOCAL_REGISTRATION_UNKNOWN_ARGUMENT');
+}
+export async function runRegistrationJourney(stack,{sessionChecks=false}={}){
+ if(typeof sessionChecks!=='boolean')throw Error('LOCAL_SESSION_CHECKS_BOOLEAN_REQUIRED');
  assert.equal(typeof stack.readEmailOtp,'function','native confirmation fixture required');await stack.verify();
  const root=resolve(import.meta.dirname,'../..'),scratch=join(tmpdir(),'codex-velora-registration-'+randomUUID()),origin='http://127.0.0.1:3320';
  await mkdir(scratch,{recursive:true});
@@ -24,6 +31,7 @@ export async function runRegistrationJourney(stack){
  let next,browser,stage='startup',log='',passed=0;
  const fixtureSecrets=new Set(),redact=value=>redactRegistrationOutput(value,stack,fixtureSecrets);
  const check=(value,message)=>{assert.equal(value,true,message);passed++;};
+ const enterStage=value=>{stage=value;console.log('LOCAL_REGISTRATION_STAGE:'+stage);};
  try{
   next=spawn(process.execPath,[join(root,'node_modules/next/dist/bin/next'),'dev','--webpack','--hostname','127.0.0.1','--port','3320'],{cwd:scratch,env,windowsHide:true,stdio:['ignore','pipe','pipe']});
   for(const stream of [next.stdout,next.stderr])stream.on('data',v=>{log=redact(log+v.toString()).slice(-5000);});
@@ -35,21 +43,45 @@ export async function runRegistrationJourney(stack){
   async function submitLogin(page,user){await page.goto(origin+'/login',{waitUntil:'domcontentloaded'});await hydrated(page);await page.getByLabel(/^Email address/).fill(user.email);await page.getByLabel(/^Password/).fill(user.password);await page.getByRole('button',{name:'Sign in',exact:true}).click();}
   const first=await context(),page=await first.newPage(),email=`registration-ui-${randomUUID()}@example.invalid`,password=randomBytes(24).toString('base64url')+'aA7!';
   fixtureSecrets.add(password);
-  stage='signup awaiting native confirmation';await page.goto(origin+'/signup?next=%2Fsetup',{waitUntil:'domcontentloaded'});await hydrated(page);
+  enterStage('signup awaiting native confirmation');await page.goto(origin+'/signup?next=%2Fsetup',{waitUntil:'domcontentloaded'});await hydrated(page);
   await page.getByLabel(/^Full name/).fill('Synthetic registered owner');await page.getByLabel(/^Email address/).fill(email);await page.getByLabel(/^Password/).fill(password);await page.getByLabel(/^Confirm password/).fill(password);await page.getByRole('button',{name:'Create account',exact:true}).click();await page.waitForURL(u=>u.pathname==='/verify-email');
   const [user]=await stack.rows(`select id,email_confirmed_at from auth.users where email=${lit(email)}`);check(Boolean(user?.id)&&!user.email_confirmed_at,'new identity remains unconfirmed');
-  const [before]=await stack.rows(`select (select count(*)::int from public.profiles where user_id=${lit(user.id)}) profiles,(select count(*)::int from public.company_members where user_id=${lit(user.id)}) memberships`);check(before.profiles===0&&before.memberships===0,'unconfirmed signup does not mint profile/business authority');
+  // The existing Auth insert trigger creates a personal profile. It grants no
+  // business authority; native confirmation and tenant RLS remain independent.
+  const [before]=await stack.rows(`select (select count(*)::int from public.profiles where user_id=${lit(user.id)}) profiles,(select count(*)::int from public.company_members where user_id=${lit(user.id)}) memberships,(select count(*)::int from auth.sessions where user_id=${lit(user.id)}) sessions`);check(before.profiles===1&&before.memberships===0&&before.sessions===0,'signup trigger preserves one profile without a session or business authority');
   const otp=await stack.readEmailOtp(email);await first.close();
-  stage='fresh browser confirmation';const second=await context(),confirmedPage=await second.newPage();await confirmedPage.goto(origin+'/verify-email?email='+encodeURIComponent(email)+'&next=%2Fsetup',{waitUntil:'domcontentloaded'});await hydrated(confirmedPage);
+  enterStage('fresh browser confirmation');const second=await context(),confirmedPage=await second.newPage();await confirmedPage.goto(origin+'/verify-email?email='+encodeURIComponent(email)+'&next=%2Fsetup',{waitUntil:'domcontentloaded'});await hydrated(confirmedPage);
   await confirmedPage.getByLabel(/^Email confirmation code/).fill(otp);await confirmedPage.getByRole('button',{name:'Confirm code and continue',exact:true}).click();await confirmedPage.waitForURL(u=>u.pathname==='/setup');
   const [receipt]=await stack.rows(`select u.id,u.email_confirmed_at,(select count(*)::int from auth.sessions where user_id=u.id) sessions,(select count(*)::int from public.profiles where user_id=u.id) profiles,(select full_name from public.profiles where user_id=u.id) full_name from auth.users u where u.id=${lit(user.id)}`);
   check(Boolean(receipt.email_confirmed_at)&&receipt.sessions>0,'native confirmation persists identity/session');check(receipt.profiles===1&&receipt.full_name==='Synthetic registered owner','profile uses same native identity and one persisted row');
   const replay=await fetch(stack.url+'/auth/v1/verify',{method:'POST',headers:{apikey:stack.anonKey,'content-type':'application/json'},body:JSON.stringify({email,token:otp,type:'email'})});check(!replay.ok,'consumed native proof cannot be replayed');await second.close();
-  stage='existing account completes missing profile';const existing=await stack.adminCreateUser({email:`registration-existing-${randomUUID()}@example.invalid`}),third=await context(),existingPage=await third.newPage();await submitLogin(existingPage,existing);await existingPage.waitForURL(u=>u.pathname==='/complete-profile');await hydrated(existingPage);await existingPage.getByLabel(/^Full name/).fill('Synthetic completed profile');await existingPage.getByRole('button',{name:'Save and continue',exact:true}).click();await existingPage.waitForURL(u=>u.pathname==='/setup');
+  enterStage('existing account completes missing profile');const existing=await stack.adminCreateUser({email:`registration-existing-${randomUUID()}@example.invalid`}),third=await context(),existingPage=await third.newPage();await submitLogin(existingPage,existing);await existingPage.waitForURL(u=>u.pathname==='/complete-profile');await hydrated(existingPage);await existingPage.getByLabel(/^Full name/).fill('Synthetic completed profile');await existingPage.getByRole('button',{name:'Save and continue',exact:true}).click();await existingPage.waitForURL(u=>u.pathname==='/setup');
   const [profile]=await stack.rows(`select count(*)::int total,min(full_name) full_name from public.profiles where user_id=${lit(existing.id)}`);check(profile.total===1&&profile.full_name==='Synthetic completed profile','existing account completion persists one scoped profile');await third.close();
-  stage='existing identity reload without new signup';const fourth=await context(),returnPage=await fourth.newPage();await submitLogin(returnPage,{email,password});await returnPage.waitForURL(u=>u.pathname==='/setup');
+  enterStage('existing identity reload without new signup');const fourth=await context(),returnPage=await fourth.newPage();await submitLogin(returnPage,{email,password});await returnPage.waitForURL(u=>u.pathname==='/setup');
   const [returned]=await stack.rows(`select count(*)::int total from auth.users where email=${lit(email)}`);check(returned.total===1,'return login reuses original identity');check((await stack.rows(`select full_name from public.profiles where user_id=${lit(user.id)}`))[0].full_name==='Synthetic registered owner','another account never replaces original profile');
-  console.log(`REGISTRATION_LOCAL_JOURNEY_PASS:${passed}; real signup/OTP/fresh-browser/profile/return; isolated only`);
+  if(sessionChecks){
+   enterStage('same cookie logout and sibling tab');
+   const sibling=await fourth.newPage();await sibling.goto(origin+'/setup',{waitUntil:'domcontentloaded'});await sibling.getByRole('button',{name:'Synthetic registered owner',exact:true}).waitFor();
+   const [sessionsBefore]=await stack.rows(`select (select count(*)::int from auth.sessions where user_id=${lit(user.id)}) original,(select count(*)::int from auth.sessions where user_id=${lit(existing.id)}) other`);
+   await returnPage.getByRole('button',{name:'Synthetic registered owner',exact:true}).click();await returnPage.getByRole('menuitem',{name:'Sign out',exact:true}).click();await returnPage.waitForURL(u=>u.pathname==='/login');
+   await sibling.reload({waitUntil:'domcontentloaded'});await sibling.waitForURL(u=>u.pathname==='/login');check(true,'logged-out native cookies cannot reopen protected setup in sibling tab');
+   const [sessionsAfter]=await stack.rows(`select (select count(*)::int from auth.sessions where user_id=${lit(user.id)}) original,(select count(*)::int from auth.sessions where user_id=${lit(existing.id)}) other`);
+   check(sessionsAfter.original===sessionsBefore.original-1&&sessionsAfter.other===sessionsBefore.other,'local logout revokes only its native session');
+   enterStage('same browser switches account after confirmed logout');
+   await submitLogin(returnPage,existing);await returnPage.waitForURL(u=>u.pathname==='/setup');await returnPage.getByRole('button',{name:'Synthetic completed profile',exact:true}).waitFor();
+   await sibling.goto(origin+'/setup',{waitUntil:'domcontentloaded'});await sibling.getByRole('button',{name:'Synthetic completed profile',exact:true}).waitFor();check(await sibling.getByRole('button',{name:'Synthetic registered owner',exact:true}).count()===0,'same browser does not retain old account identity');
+   check((await stack.rows(`select full_name from public.profiles where user_id=${lit(user.id)}`))[0].full_name==='Synthetic registered owner','account switch cannot replace another profile');
+   enterStage('native server idle expiration');
+   // The latest session belongs to the only new login for this isolated user.
+   // Require its actual activity receipt; a missing/revoked session is not idle proof.
+   const [liveSession]=await stack.rows(`select s.id,a.session_id activity_id,a.expired_at,(a.last_activity_at<=clock_timestamp() and a.last_activity_at>clock_timestamp()-interval '2 hours') fresh from (select id from auth.sessions where user_id=${lit(existing.id)}::uuid order by created_at desc limit 1) s left join private.app_session_activity a on a.session_id=s.id and a.user_id=${lit(existing.id)}::uuid`);
+   check(Boolean(liveSession?.id)&&liveSession.activity_id===liveSession.id&&liveSession.expired_at===null&&liveSession.fresh===true,'idle proof starts with a live native session and initialized fresh activity');
+   await stack.sql('update private.app_session_settings set enabled=true where singleton;');
+   const aged=await stack.rows(`with changed as (update private.app_session_activity set last_activity_at=clock_timestamp()-interval '3 hours' where session_id=${lit(liveSession.id)}::uuid and user_id=${lit(existing.id)}::uuid and expired_at is null returning session_id) select session_id from changed`);
+   check(aged.length===1&&aged[0].session_id===liveSession.id,'exact native session activity was backdated');
+   await returnPage.goto(origin+'/setup',{waitUntil:'domcontentloaded'});await returnPage.waitForURL(u=>u.pathname==='/login'&&u.searchParams.get('reason')==='session_expired');check(true,'server idle expiry denies an existing native session');
+  }
+  console.log(`REGISTRATION_LOCAL_JOURNEY_PASS:${passed}; real signup/OTP/fresh-browser/profile/return${sessionChecks?'/logout/sibling/account-switch/idle':''}; isolated only`);
  }catch(error){throw Error(redact(`REGISTRATION_LOCAL_JOURNEY_FAILURE:${stage}:passed=${passed}:${error.message}\n${log}`));}
  finally{await browser?.close();if(next?.pid&&next.exitCode===null)await new Promise(resolveClose=>{const child=spawn('taskkill',['/PID',String(next.pid),'/T','/F'],{env:localEnvironment(),windowsHide:true,stdio:'ignore'});child.once('close',resolveClose);child.once('error',resolveClose);});}
 }

@@ -2,7 +2,7 @@ import {beforeAll,afterAll,beforeEach,expect,it as nativeIt} from 'vitest';
 const it=(name:string,fn:()=>Promise<void>)=>nativeIt(name,fn,15000);
 import {readdirSync,readFileSync} from 'node:fs';
 // @ts-expect-error guarded disposable Postgres fixture, no provider or cloud client
-import {setup,reset,id,sql,lit,cleanup,session,observed} from '../../../scripts/instagram-send/fixture.mjs';
+import {setup,reset,id,sql,lit,cleanup,session} from '../../../scripts/instagram-send/fixture.mjs';
 // @ts-expect-error same fixture database
 import {file} from '../../../scripts/instagram-connection/postgres.mjs';
 const server="set role service_role;set request.jwt.claims='{\"role\":\"service_role\"}';";

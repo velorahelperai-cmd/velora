@@ -1,4 +1,4 @@
-import assert from "node:assert/strict";import {readFileSync,writeFileSync} from "node:fs";import {attachIsolate} from "./postgres.mjs";
+import {readFileSync,writeFileSync} from "node:fs";import {attachIsolate} from "./postgres.mjs";
 const db=await attachIsolate();const dir="supabase/upgrade-packages/paymob-live-checkout/";
 const query=readFileSync(dir+"00-footprint.readonly.sql","utf8").replace(/^BEGIN;SET LOCAL search_path='';/,"").replace(/;COMMIT;\s*$/,"");
 const pre=readFileSync("scripts/live-checkout/baseline-fingerprint.txt","utf8").trim();

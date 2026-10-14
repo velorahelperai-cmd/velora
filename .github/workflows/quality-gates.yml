@@ -1,0 +1,72 @@
+name: Velora quality gates
+
+# This workflow prepares checks only. Main is unprotected until an entitled
+# administrator requires "quality-gate" from GitHub Actions, requires up-to-date
+# PRs, disallows direct pushes/bypass (including admins), then proves failing PRs
+# cannot merge and passing PRs can. Existing Vercel main deployment is unchanged.
+# Offline checks do not satisfy high-risk Auth/RLS/native release acceptance.
+# Post-push checks cannot stop Vercel: enforcement must happen before main.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  merge_group:
+    types: [checks_requested]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: quality / ${{ matrix.check }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        check: [typecheck, lint, unit, contracts, build, safety]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24.18.0
+      - name: Locked dependencies; no lifecycle scripts or provider credentials
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Isolated offline check
+        run: node scripts/ci/run.mjs ${{ matrix.check }}
+  security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24.18.0
+      - run: node scripts/ci/security.mjs
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      # Current Critical/High dev-tool and Moderate DOCX findings stay blocking
+      # until safe scoped remediation; never audit-fix --force or accept silently.
+      - run: npm audit --audit-level=moderate
+  quality-gate:
+    name: quality-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: ${{ always() }}
+    needs: [quality, security]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Fail unless every required job succeeded
+        env:
+          CI_REQUIRED_RESULTS: ${{ toJSON(needs) }}
+        run: node scripts/ci/required-gate.mjs
