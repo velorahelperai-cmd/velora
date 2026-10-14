@@ -10,13 +10,14 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/tenancy/access", async (original) => ({ ...await original<typeof import("@/lib/tenancy/access")>(), getCompanyAccess: async () => state.access }));
 vi.mock("@/lib/knowledge/actions", () => ({ listKnowledgeSources: vi.fn() }));
 vi.mock("@/lib/tenancy/actions", () => ({ getCompanyReviewRequest: vi.fn() }));
-vi.mock('@/lib/tenancy/setup-draft-actions',()=>({readActiveSetupDraft:vi.fn().mockResolvedValue({ok:true,data:null})}));
+vi.mock('@/lib/tenancy/setup-draft-actions',()=>({readActiveSetupDraft:vi.fn().mockResolvedValue({ok:true,data:null}),readSetupDraft:vi.fn().mockResolvedValue({ok:true,data:null})}));
 vi.mock("@/components/app/setup-wizard", () => ({ SetupWizard: () => null }));
 vi.mock("@/components/app/access-gate", () => ({ AccessGate: () => null }));
 import SetupLayout from "./layout";
 import SetupPage from "./page";
 import { listKnowledgeSources } from "@/lib/knowledge/actions";
 import { getCompanyReviewRequest } from "@/lib/tenancy/actions";
+import { readSetupDraft } from '@/lib/tenancy/setup-draft-actions';
 const selected = "/app/settings?tab=plan&term=monthly&persona=level_1&package=basic&version=fixture-version&amount=45000&currency=OMR";
 const returnTo = `/setup?next=${encodeURIComponent(selected)}`;
 const context: CompanyContext = {
@@ -26,6 +27,18 @@ const context: CompanyContext = {
 };
 beforeEach(() => {vi.clearAllMocks();vi.stubEnv('VELORA_MASTER_JOURNEY_ENABLED','true'); state.path = returnTo; state.access = { ok: true, context }; });
 describe("setup server routes retain the package selection", () => {
+  it('ships the authorized draft with the page instead of starting a second client waterfall',async()=>{
+    vi.stubEnv('VELORA_MASTER_JOURNEY_ENABLED','false');
+    const page=await SetupPage();
+    expect(readSetupDraft).toHaveBeenCalledWith({expectedUserId:'owner',expectedCompanyId:null});
+    expect(page.props.children.props.initialDraftRead).toEqual({scope:{expectedUserId:'owner',expectedCompanyId:null},result:{ok:true,data:null}});
+  });
+  it('retains draft read failures for an explicit retry, never inventing an empty saved draft',async()=>{
+    vi.stubEnv('VELORA_MASTER_JOURNEY_ENABLED','false');
+    vi.mocked(readSetupDraft).mockResolvedValueOnce({ok:false,code:'UNAVAILABLE'});
+    const page=await SetupPage();
+    expect(page.props.children.props.initialDraftRead.result).toEqual({ok:false,code:'UNAVAILABLE'});
+  });
   it('rollout-off preserves baseline onboarding before company creation',async()=>{vi.stubEnv('VELORA_MASTER_JOURNEY_ENABLED','false');const page=await SetupPage();expect(page.props.children.props.initialCompany).toBeNull();expect(page.props.children.props.preferredNext).toBe(selected);expect(page.props.children.props.masterJourneyEnabled).toBe(false);});
   it("permits setup for a platform admin with an explicitly selected owner membership", async () => {
     state.access = { ok: true, context: { ...context, isPlatformAdmin: true, company: { id: "company", status: "setup" } as CompanyContext["company"], membership: { role: "owner" } as CompanyContext["membership"] } };
@@ -61,7 +74,7 @@ describe("setup server routes retain the package selection", () => {
     expect(page.props.children.props.preferredNext).toBe(selected);
     expect(page.props.children.props.initialCompany?.id).toBe('company');
   });
-  it("enables the new journey only with an explicit server rollout flag", async () => {
+  it("enables Smart independently without enabling Master contracts", async () => {
     state.access={ok:true,context:{...context,company:{id:'company',status:'setup'} as CompanyContext['company'],membership:{role:'owner',status:'active'} as CompanyContext['membership']}};
     vi.mocked(listKnowledgeSources).mockResolvedValue({ok:false,code:'UNAVAILABLE'});
     vi.mocked(getCompanyReviewRequest).mockResolvedValue({ok:false,code:'UNAVAILABLE'});
@@ -69,7 +82,9 @@ describe("setup server routes retain the package selection", () => {
     expect((await SetupPage()).props.children.props.smartOnboardingEnabled).toBe(false);
     vi.stubEnv("VELORA_SMART_ONBOARDING_ENABLED", "true");
     vi.stubEnv("VELORA_MASTER_JOURNEY_ENABLED", "false");
-    expect((await SetupPage()).props.children.props.smartOnboardingEnabled).toBe(false);
+    const smartOnly=await SetupPage();
+    expect(smartOnly.props.children.props.smartOnboardingEnabled).toBe(true);
+    expect(smartOnly.props.children.props.masterJourneyEnabled).toBe(false);
     vi.stubEnv("VELORA_MASTER_JOURNEY_ENABLED", "true");
     expect((await SetupPage()).props.children.props.smartOnboardingEnabled).toBe(true);
     vi.unstubAllEnvs();

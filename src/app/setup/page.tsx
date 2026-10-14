@@ -12,8 +12,10 @@ import type { KnowledgeSourceRecord } from "@/lib/knowledge/types";
 import { getCompanyAccess, loginPathForReturn } from "@/lib/tenancy/access";
 import { getCompanyReviewRequest } from "@/lib/tenancy/actions";
 import type { CompanyReviewRequest } from "@/lib/tenancy/types";
-import {readActiveSetupDraft} from '@/lib/tenancy/setup-draft-actions';
+import {readActiveSetupDraft,readSetupDraft} from '@/lib/tenancy/setup-draft-actions';
+import type {SetupDraftRecord,SetupDraftResult} from '@/lib/tenancy/setup-draft';
 import {masterJourneyEnabled} from '@/lib/master-journey/rollout';
+import {smartOnboardingEnabled} from '@/lib/tenancy/smart-rollout';
 
 export const metadata: Metadata = { title: "Prepare your business · Velora" };
 
@@ -32,10 +34,14 @@ export default async function Page() {
   const masterEnabled=masterJourneyEnabled();
   if (masterEnabled&&!company) redirect(`/account/businesses/new?next=${encodeURIComponent(returnTo)}`);
   const userId = access.context.userId;
+  let activeDraftResult: SetupDraftResult<SetupDraftRecord|null>|undefined;
   if(masterEnabled){const activeDraft = await readActiveSetupDraft(userId);
    if (!activeDraft.ok) return <AccessGate code="UNAVAILABLE" />;
    if (activeDraft.data && activeDraft.data.draft.companyId !== company?.id) redirect(`/account/businesses/new?next=${encodeURIComponent(returnTo)}`);
+   activeDraftResult=activeDraft;
   }
+  const draftScope={expectedUserId:userId,expectedCompanyId:company?.id??null};
+  const draftRead=activeDraftResult?Promise.resolve(activeDraftResult):readSetupDraft(draftScope);
 
   let initialKnowledge: KnowledgeSourceRecord[] = [];
   let knowledgeLoadFailed = false;
@@ -63,12 +69,15 @@ export default async function Page() {
     }
   }
 
+  const initialDraftRead={scope:draftScope,result:await draftRead};
+
   return (
     <Suspense fallback={<SetupLoading />}>
       <SetupWizard
+        initialDraftRead={initialDraftRead}
         masterJourneyEnabled={masterEnabled}
         userId={userId}
-        smartOnboardingEnabled={process.env.VELORA_SMART_ONBOARDING_ENABLED === "true" && process.env.VELORA_MASTER_JOURNEY_ENABLED === "true"}
+        smartOnboardingEnabled={smartOnboardingEnabled()}
         preferredNext={preferredNext}
         initialCompany={company}
         initialKnowledge={initialKnowledge}

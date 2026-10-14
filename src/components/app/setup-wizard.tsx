@@ -56,6 +56,8 @@ import internalStyles from "./internal-ui.module.css";
 import { SmartSetupCards } from "./smart-setup-cards";
 import { SetupNavigation } from "./setup-navigation";
 import { SmartSetupBranches } from "./smart-setup-branches";
+import { SmartSettingsPanel } from './smart-settings-panel';
+import { SmartBusinessStart } from './smart-business-start';
 import { readSmartSetup, type SmartSetupRead } from "@/lib/tenancy/smart-onboarding-actions";
 import { buildSmartOnboarding, type SmartSetupCard } from "@/lib/tenancy/smart-onboarding";
 
@@ -229,6 +231,7 @@ export function SetupWizard({
   approvalFoundation = "ready",
   initialReview = null,
   reviewLoadFailed = false,
+  initialDraftRead,
 }: {
   userId: string;
   smartOnboardingEnabled?: boolean;
@@ -240,6 +243,7 @@ export function SetupWizard({
   approvalFoundation?: KnowledgeApprovalFoundation;
   initialReview?: CompanyReviewRequest | null;
   reviewLoadFailed?: boolean;
+  initialDraftRead?: {scope: {expectedUserId:string;expectedCompanyId:string|null};result:import('@/lib/tenancy/setup-draft').SetupDraftResult<SetupDraftRecord|null>};
 }) {
   const router = useRouter();
   const copy = useAppCopy();
@@ -249,6 +253,7 @@ export function SetupWizard({
 
   const leaveGuardRef = useRef<(() => boolean) | null>(null);
   const hydratedScope = useRef<string | null>(null);
+  const draftSeed=useRef(initialDraftRead);
   const draftRevision = useRef(0);
   const draftReceipt = useRef<SetupDraftRecord|null>(null);
   const [draftRecord,setDraftRecord]=useState<SetupDraftRecord|null>(null);
@@ -267,7 +272,10 @@ export function SetupWizard({
   }
   const companyId = savedCompany?.id ?? null;
   const [openPanel,setOpenPanel] = useState<number|"branches"|null>(null);
-  const [smartRead,setSmartRead] = useState<SmartSetupRead|null>(null);
+  const [smartReadState,setSmartRead] = useState<SmartSetupRead|null>(null);
+  const [smartReadActorScope,setSmartReadActorScope] = useState<string|null>(null);
+  const currentSmartScope=`${userId}:${companyId ?? "new"}`;
+  const smartRead=smartReadActorScope===currentSmartScope?smartReadState:null;
   const [smartLoad,setSmartLoad] = useState<"loading"|"ready"|"failed">("loading");
   const [smartRetry,setSmartRetry] = useState(0);
   const smartScope=useRef<string|null>(null);
@@ -275,18 +283,25 @@ export function SetupWizard({
     if(!smartOnboardingEnabled)return;
     let cancelled=false;
     const frame=window.requestAnimationFrame(()=>{
-      setSmartRead(null);setSmartLoad("loading");
+      // A receipt refresh must preserve the mounted editor and its durable queue.
+      // A different actor/company never receives the previous scope's readback.
+      if(smartReadActorScope!==currentSmartScope){setSmartRead(null);setSmartLoad("loading");}
       if(!companyId)return;
       void readSmartSetup({expectedUserId:userId,expectedCompanyId:companyId}).then(result=>{
         if(cancelled)return;
         if(!result.ok){setSmartLoad("failed");return;}
-        setSmartRead(result.data);setSmartLoad("ready");
+        setSmartRead(result.data);setSmartReadActorScope(`${userId}:${companyId}`);setSmartLoad("ready");
         const scope=`${userId}:${companyId}`;
-        if(smartScope.current!==scope){smartScope.current=scope;setOpenPanel(result.data.branchSetup.mode===null?"branches":null);}
+        if(smartScope.current!==scope){
+          smartScope.current=scope;
+          // A delayed initial read may suggest a panel, but cannot close the
+          // editor the user has already opened while that read was pending.
+          setOpenPanel(current=>current??(result.data.branchSetup.mode===null?"branches":null));
+        }
       }).catch(()=>{if(!cancelled)setSmartLoad("failed");});
     });
     return()=>{cancelled=true;window.cancelAnimationFrame(frame);};
-  },[userId,companyId,savedCompany?.updated_at,smartRetry,smartOnboardingEnabled]);
+  },[userId,companyId,savedCompany?.updated_at,smartRetry,smartOnboardingEnabled,currentSmartScope,smartReadActorScope]);
   const renderedScope = useRef(`${userId}:${companyId ?? "new"}`);
   useEffect(() => { renderedScope.current = `${userId}:${companyId ?? "new"}`; }, [userId, companyId]);
   const [readiness, setReadiness] = useState<CustomerReadinessSnapshot | null>(null);
@@ -401,7 +416,14 @@ export function SetupWizard({
     if (hydratedScope.current === scope) return;
     const frame = window.requestAnimationFrame(() => {
       setReady(false); setDraftSaveStatus("loading");
-      void readSetupDraft({ expectedUserId: userId, expectedCompanyId: companyId }).then(result => {
+      const seed=draftSeed.current;
+      draftSeed.current=undefined;
+      // Use the authorized server result once. Retry/account/workspace changes
+      // read live persistence rather than reusing an earlier route's draft.
+      const read=draftRetry===0&&seed?.scope.expectedUserId===userId&&seed.scope.expectedCompanyId===companyId
+        ? Promise.resolve(seed.result)
+        : readSetupDraft({ expectedUserId: userId, expectedCompanyId: companyId });
+      void read.then(result => {
       if (cancelled) return;
       if (!result.ok) { setDraftSaveStatus("error"); setDraftSaveCode(result.code); return; }
       hydratedScope.current = scope;
@@ -578,13 +600,13 @@ export function SetupWizard({
           reviewLoadFailed={reviewLoadFailed}
         />
 
-        {smartOnboardingEnabled?(companyId ? <SmartSetupCards locale={locale} {...smart} onOpen={openCard}/> : <Notice tone="info"><p>{ar?"ابدأ باسم النشاط ونوعه والدولة فقط، ثم أضف بقية التفاصيل عند الحاجة.":"Start with your business name, type and country, then add other details when needed."}</p><LinkButton href="/account/businesses/new">{ar?"إنشاء نشاط":"Create a business"}</LinkButton></Notice>):<><SetupNavigation labels={mCopy.steps} shortLabels={ar?["الشركة","الاشتراك","ساعات العمل","المعرفة","لغة الرد","واتساب","التجربة","المراجعة"]:["Company","Subscription","Hours","Knowledge","Reply language","WhatsApp","Trial","Review"]} done={effectiveSetupDone} step={step} locale={locale} onSelect={go}/><div className={styles.progress} aria-hidden="true"><div className={styles.progressFill} style={{width:`${Math.round(effectiveSetupDone.filter(Boolean).length/8*100)}%`}}/></div></>}
+        {smartOnboardingEnabled?(companyId ? <SmartSetupCards locale={locale} {...smart} onOpen={openCard}/> : <SmartBusinessStart key={userId} userId={userId} ar={ar} onCreated={adoptCompany}/>):<><SetupNavigation labels={mCopy.steps} shortLabels={ar?["الشركة","الاشتراك","ساعات العمل","المعرفة","لغة الرد","واتساب","التجربة","المراجعة"]:["Company","Subscription","Hours","Knowledge","Reply language","WhatsApp","Trial","Review"]} done={effectiveSetupDone} step={step} locale={locale} onSelect={go}/><div className={styles.progress} aria-hidden="true"><div className={styles.progressFill} style={{width:`${Math.round(effectiveSetupDone.filter(Boolean).length/8*100)}%`}}/></div></>}
         {smartOnboardingEnabled&&companyId&&smartLoad==="failed"?<Notice tone="warn"><p>{ar?"تعذر تحميل تجهيز الفروع والقنوات. يمكنك متابعة بقية الإعدادات وإعادة المحاولة.":"Branch and channel setup could not be loaded. Continue with other settings and retry."}</p><Button variant="secondary" onClick={()=>setSmartRetry(n=>n+1)}>{ar?"إعادة التحميل":"Reload"}</Button></Notice>:null}
         {(!smartOnboardingEnabled||companyId&&openPanel!==null)?<section className={styles.stepPanel} aria-label={ar?"إعدادات التجهيز":"Setup settings"}>
           {smartOnboardingEnabled?<div className="mb-4"><Button variant="secondary" onClick={closePanel}>{ar?"العودة لبطاقات التجهيز":"Return to setup cards"}</Button></div>:null}
           {openPanel==="branches"?<>
             <div className={styles.stepHeading}><h2>{ar?"تجهيز الفروع":"Prepare your branches"}</h2></div>
-            {smartRead?.branchSetup.companyId===companyId?<SmartSetupBranches key={`${userId}:${companyId}:${smartRead.branchSetup.revision}`} userId={userId} companyId={companyId} locale={locale} setup={smartRead.branchSetup} onSaved={branchSetup=>{setSmartRead(current=>current?{...current,branchSetup}:null);setSmartRetry(n=>n+1);}} onClose={()=>setOpenPanel(null)}/>:smartLoad==="loading"?<SetupLoading/>:<Notice tone="error">{ar?"تجهيز الفروع غير متاح حاليًا. أعد تحميل الحالة قبل المتابعة.":"Branch setup is unavailable. Reload its status before continuing."}</Notice>}
+            {smartRead?.branchSetup.companyId===companyId?<SmartSetupBranches key={`${userId}:${companyId}:${smartRead.branchSetup.branches.find(b=>b.primary)?.id}`} userId={userId} companyId={companyId} locale={locale} setup={smartRead.branchSetup} onSaved={branchSetup=>{setSmartRead(current=>current?{...current,branchSetup}:null);setSmartRetry(n=>n+1);}} onClose={()=>setOpenPanel(null)}/>:smartLoad==="loading"?<SetupLoading/>:<Notice tone="error">{ar?"تجهيز الفروع غير متاح حاليًا. أعد تحميل الحالة قبل المتابعة.":"Branch setup is unavailable. Reload its status before continuing."}</Notice>}
           </>:<>
           <div className={styles.stepHeading}>
             {!smartOnboardingEnabled?<span className={styles.stepHeadingNumber}>{step+1}</span>:null}
@@ -594,8 +616,9 @@ export function SetupWizard({
           {step === 6 ? <Notice tone="info">{ar ? "نجاح الاختبار علامة محلية مرتبطة بمعرفة النشاط، ولا يُحتسب كتفعيل محفوظ أو دليل جودة شامل." : "A successful trial is local progress bound to company knowledge. It is not persisted activation or comprehensive quality evidence."}</Notice> : null}
 
           <div className={styles.stepBody}>
+            {smartOnboardingEnabled&&savedCompany&&[0,2,4].includes(step)?<SmartSettingsPanel key={`${userId}:${companyId}:${step}`} userId={userId} company={savedCompany} locale={locale} section={step===2?'hours':step===4?'language':'profile'} onSaved={adoptCompany} onClose={closePanel}/>:null}
             {/* Milestone 0: Company Profile */}
-            {step === 0 ? (
+            {!smartOnboardingEnabled&&step === 0 ? (
               <BusinessStep
                 companyVersion={savedCompany?.version}
                 key={`${userId}:${companyId ?? "new"}`}
@@ -626,7 +649,7 @@ export function SetupWizard({
             ) : null}
 
             {/* Milestone 2: Working Hours & Operations */}
-            {step === 2 ? (
+            {!smartOnboardingEnabled&&step === 2 ? (
               <HoursStep
                 key={`${userId}:${companyId ?? "new"}`}
                 userId={userId}
@@ -688,7 +711,7 @@ export function SetupWizard({
             ) : null}
 
             {/* Milestone 4: Noura AI Persona & Tone */}
-            {step === 4 ? (
+            {!smartOnboardingEnabled&&step === 4 ? (
               <PersonaStep
                 key={`${userId}:${companyId ?? "new"}`}
                 userId={userId}

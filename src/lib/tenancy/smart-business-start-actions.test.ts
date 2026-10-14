@@ -1,0 +1,15 @@
+import {beforeEach,afterEach,expect,it,vi} from 'vitest';
+const f=vi.hoisted(()=>({access:vi.fn(),client:vi.fn(),rpc:vi.fn()}));
+vi.mock('./access',()=>({getCompanyAccess:f.access}));
+vi.mock('@/lib/supabase/server',()=>({createClient:f.client}));
+vi.mock('next/cache',()=>({revalidatePath:vi.fn()}));
+import {createSmartBusiness} from './smart-business-start-actions';
+const user='11111111-1111-4111-8111-111111111111',attempt='22222222-2222-4222-8222-222222222222',company='33333333-3333-4333-8333-333333333333';
+const input={expectedUserId:user,attemptId:attempt,name:'Shop',type:'retail',country:'OM'};
+const saved={id:company,display_name:'Shop',business_type:'retail',country:'OM',reply_language:'ar',city:'',hours:'',contact_phone:'',contact_email:'',status:'setup',created_by:user,created_at:'2026-10-14',updated_at:'2026-10-14'};
+beforeEach(()=>{vi.clearAllMocks();vi.stubEnv('VELORA_SMART_ONBOARDING_ENABLED','true');vi.stubEnv('VELORA_MASTER_JOURNEY_ENABLED','false');f.access.mockResolvedValue({ok:true,context:{userId:user,membership:null,isPlatformAdmin:false}});f.client.mockResolvedValue({rpc:f.rpc});f.rpc.mockResolvedValue({error:null,data:{ok:true,data:{userId:user,companyId:company,attemptId:attempt,company:saved}}});});
+afterEach(()=>vi.unstubAllEnvs());
+it('uses the actor-bound native first-create receipt while Master stays off',async()=>{expect(await createSmartBusiness(input)).toEqual({ok:true,data:saved});expect(f.rpc).toHaveBeenCalledWith('create_smart_business',{p_expected_user_id:user,p_attempt_id:attempt,p_name:'Shop',p_type:'retail',p_country:'OM'});});
+it('denies wrong actor, staff and malformed attempts before database writes',async()=>{expect(await createSmartBusiness({...input,expectedUserId:company})).toMatchObject({ok:false});f.access.mockResolvedValue({ok:true,context:{userId:user,membership:{role:'staff'},isPlatformAdmin:false}});expect(await createSmartBusiness(input)).toMatchObject({ok:false,code:'FORBIDDEN'});expect(await createSmartBusiness({...input,attemptId:'bad'})).toMatchObject({ok:false,code:'INVALID_INPUT'});expect(f.rpc).not.toHaveBeenCalled();});
+it('never accepts a receipt from another actor, attempt or company',async()=>{for(const patch of [{userId:company},{attemptId:user},{companyId:user}]){f.rpc.mockResolvedValueOnce({error:null,data:{ok:true,data:{userId:user,companyId:company,attemptId:attempt,company:saved,...patch}}});expect(await createSmartBusiness(input)).toMatchObject({ok:false,code:'UNAVAILABLE'});}});
+it('preserves explicit native conflicts and remains inert when Smart is disabled',async()=>{f.rpc.mockResolvedValueOnce({error:null,data:{ok:false,code:'CONFLICT'}});expect(await createSmartBusiness(input)).toEqual({ok:false,code:'CONFLICT'});vi.stubEnv('VELORA_SMART_ONBOARDING_ENABLED','false');f.client.mockClear();expect(await createSmartBusiness(input)).toEqual({ok:false,code:'UNCONFIGURED'});expect(f.client).not.toHaveBeenCalled();});

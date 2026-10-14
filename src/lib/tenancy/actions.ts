@@ -1,5 +1,6 @@
 "use server";
 import {masterJourneyEnabled} from '@/lib/master-journey/rollout';
+import {smartOnboardingEnabled} from './smart-rollout';
 import { normalizeBusinessEmail, normalizeBusinessPhone } from "@/lib/tenancy/business-contacts";
 import { beginDiagnostic } from "@/lib/diagnostics/flow";
 import type { DiagnosticDetail, DiagnosticStage } from "@/lib/diagnostics/contract";
@@ -799,7 +800,7 @@ export async function submitCompanyReviewRequest(input: {
   if (typeof input.whatsappNumber !== "string") return { ok: false, code: "INVALID_INPUT" };
   if (input.ready !== true) return { ok: false, code: "INVALID_INPUT" };
   if (input.numberOwnership !== "own" && input.numberOwnership !== "new"
-    && !(input.numberOwnership === "not_applicable" && process.env.VELORA_MASTER_JOURNEY_ENABLED === "true" && !input.whatsappNumber.trim())) {
+    && !(input.numberOwnership === "not_applicable" && (masterJourneyEnabled()||smartOnboardingEnabled()) && !input.whatsappNumber.trim())) {
     return { ok: false, code: "INVALID_INPUT" };
   }
   const result = await callTransitionCompanyReview({
@@ -833,7 +834,7 @@ export async function resubmitCompanyReviewRequest(input: {
   if (typeof input.expectedRevision !== "number") return { ok: false, code: "INVALID_INPUT" };
   if (input.ready !== true) return { ok: false, code: "INVALID_INPUT" };
   if (typeof input.whatsappNumber !== "string" || (input.numberOwnership !== "own" && input.numberOwnership !== "new"
-    && !(input.numberOwnership === "not_applicable" && process.env.VELORA_MASTER_JOURNEY_ENABLED === "true" && !input.whatsappNumber.trim()))) {
+    && !(input.numberOwnership === "not_applicable" && (masterJourneyEnabled()||smartOnboardingEnabled()) && !input.whatsappNumber.trim()))) {
     return { ok: false, code: "INVALID_INPUT" };
   }
   const result = await callTransitionCompanyReview({

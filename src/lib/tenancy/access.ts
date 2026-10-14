@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { checkAppSession } from "@/lib/auth/session-guard";
 import { authFlowHref } from "@/lib/auth/auth-journey";
 import { setupPathForReturn } from "@/lib/auth/setup-return";
@@ -132,7 +133,9 @@ type LoadAuthFail = {
   supabase?: Awaited<ReturnType<typeof createClient>>;
 };
 
-async function loadAuth(): Promise<LoadAuthOk | LoadAuthFail> {
+// React cache lasts only for this server render. Actions/handlers outside a
+// render still read live authority; no identity survives into another request.
+const loadAuth = cache(async (): Promise<LoadAuthOk | LoadAuthFail> => {
   let supabase: Awaited<ReturnType<typeof createClient>>;
   try {
     supabase = await createClient();
@@ -213,7 +216,7 @@ async function loadAuth(): Promise<LoadAuthOk | LoadAuthFail> {
   } catch {
     return { ok: false, code: "UNAVAILABLE", supabase };
   }
-}
+});
 
 async function loadWorkspaceChoices(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -233,9 +236,7 @@ async function loadWorkspaceChoices(
   }));
 }
 
-export async function getCompanyAccess(
-  requiredRole?: CompanyRole,
-): Promise<AccessResult> {
+const loadCompanyAccess = cache(async (): Promise<AccessResult> => {
   try {
     const auth = await loadAuth();
     if (!auth.ok) return { ok: false, code: auth.code, ...(auth.sessionExpired ? { sessionExpired: true as const } : {}) };
@@ -305,10 +306,6 @@ export async function getCompanyAccess(
     }
 
     const member = picked.membership;
-    if (requiredRole === "owner" && member.role !== "owner") {
-      return { ok: false, code: "FORBIDDEN" };
-    }
-
     const { data: company, error: companyError } = await supabase
       .from("companies")
       .select(
@@ -342,6 +339,13 @@ export async function getCompanyAccess(
   } catch {
     return { ok: false, code: "UNAVAILABLE" };
   }
+});
+
+export async function getCompanyAccess(requiredRole?: CompanyRole): Promise<AccessResult> {
+  const access = await loadCompanyAccess();
+  if (access.ok && requiredRole === "owner" && access.context.membership
+    && access.context.membership.role !== "owner") return { ok: false, code: "FORBIDDEN" };
+  return access;
 }
 
 export async function requirePlatformAdmin(): Promise<AccessResult> {

@@ -1,5 +1,6 @@
 vi.mock('server-only',()=>({}));
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+afterEach(()=>vi.unstubAllEnvs());
 import { revalidatePath } from "next/cache";
 import type { CompanyContext } from "./types";
 
@@ -162,6 +163,20 @@ beforeEach(() => {
   state.order.mockImplementation(async () => {
     state.writes.push({ kind: "billing_order", companyId: COMPANY_B });
     return { ok: false, code: "plan_not_published" };
+  });
+});
+
+describe('Smart-only review validation',()=>{
+  it('passes Instagram-only ownership to native proof validation without Master',async()=>{
+    vi.stubEnv('VELORA_MASTER_JOURNEY_ENABLED','false');vi.stubEnv('VELORA_SMART_ONBOARDING_ENABLED','true');
+    const result=await submitCompanyReviewRequest({numberOwnership:'not_applicable',whatsappNumber:'',ready:true,expectedCompanyId:COMPANY_B});
+    expect(result.ok).toBe(true);
+    expect(state.rpcRequests.some(r=>r.name==='transition_company_review'&&r.input.p_number_ownership==='not_applicable')).toBe(true);
+  });
+  it('does not enable the new review variant when both rollouts are off',async()=>{
+    vi.stubEnv('VELORA_MASTER_JOURNEY_ENABLED','false');vi.stubEnv('VELORA_SMART_ONBOARDING_ENABLED','false');
+    expect(await submitCompanyReviewRequest({numberOwnership:'not_applicable',whatsappNumber:'',ready:true,expectedCompanyId:COMPANY_B})).toMatchObject({ok:false,code:'INVALID_INPUT'});
+    expect(state.rpcRequests).toHaveLength(0);
   });
 });
 
