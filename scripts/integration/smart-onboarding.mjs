@@ -5,13 +5,14 @@ import {readFile} from 'node:fs/promises';
 import {startStack} from './local-http-stack.mjs';
 
 const enterpriseSql=await readFile(process.argv[2]??'supabase/migrations/20261014025849_enterprise_branch_authority.sql','utf8');
+const operationsSql=await readFile(process.argv[3]&&process.argv[3]!=='--ui'?process.argv[3]:'supabase/migrations/20261014032142_enterprise_staff_operations.sql','utf8');
 const smartSql=await readFile('supabase/migrations/20261014031209_smart_progressive_onboarding.sql','utf8');
 const stack=await startStack({gatewayPort:3330,authPort:3340,restPort:3341,appOrigin:'http://127.0.0.1:3320',throughMigration:'20261009215520_g03_verified_review.sql',progress:console.log});
 let passed=0;const eq=(a,b,label)=>{assert.deepEqual(a,b,label);passed++;};
 try{
  await stack.sql('begin;'+await readFile('supabase/migrations/20261011160000_vel_staff_invitation_recovery.sql','utf8')+'commit;');
  eq((await stack.rows("select to_regprocedure('public.read_smart_branch_setup(uuid)')::text as rpc"))[0].rpc,null,'RED: smart setup absent on baseline');
- await stack.sql(enterpriseSql);await stack.sql(smartSql);
+ await stack.sql(enterpriseSql);await stack.sql(operationsSql);await stack.sql(smartSql);
  await stack.sql("notify pgrst,'reload schema';");
  const owner=await stack.adminCreateUser(),staff=await stack.adminCreateUser(),stranger=await stack.adminCreateUser();
  const company=randomUUID(),other=randomUUID();
