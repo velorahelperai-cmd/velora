@@ -30,7 +30,7 @@ export async function runSmartSetupUi(stack,user,company){
  const env=guardedEnvironment(root,{NEXT_PUBLIC_SUPABASE_URL:stack.url,NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:stack.anonKey,SUPABASE_SERVICE_ROLE_KEY:stack.serviceRoleKey,NEXT_PUBLIC_SITE_URL:origin,VELORA_SMART_ONBOARDING_ENABLED:'true',VELORA_MASTER_JOURNEY_ENABLED:'true',WHATSAPP_ALLOW_EXTERNAL_SEND:'false',WHATSAPP_WORKER_ENABLED:'false',WHATSAPP_EMBEDDED_SIGNUP:'false',BILLING_PAYMOB_CREATE_ENABLED:'false',BILLING_PAYMOB_WEBHOOK_ENABLED:'false',BILLING_PAYMOB_SETTLE_ENABLED:'false',BILLING_PAYMOB_LIVE_ENABLED:'false',PAYMOB_LIVE_ENABLED:'false'});
  const next=spawn(process.execPath,['node_modules/next/dist/bin/next','dev','--webpack','--hostname','127.0.0.1','--port','3320'],{cwd:root,env,windowsHide:true,stdio:['ignore','pipe','pipe']});
  let log='';for(const stream of [next.stdout,next.stderr])stream.on('data',v=>{log=stack.redact(log+v.toString()).slice(-4000);});
- let browser;
+ let browser,page;let browserLog='';
  try{
   for(let n=0;n<180;n++){if(next.exitCode!==null)throw Error(`LOCAL_NEXT_EXITED:${log}`);if(log.includes('Ready in'))break;await new Promise(r=>setTimeout(r,500));}
   await assertOwnedListener(next,3320);
@@ -40,8 +40,11 @@ export async function runSmartSetupUi(stack,user,company){
   const context=await browser.newContext({viewport:{width:1280,height:950},serviceWorkers:'block',reducedMotion:'reduce'});context.setDefaultTimeout(90000);
   await context.route('**/*',r=>{const u=new URL(r.request().url());return u.origin===origin||u.origin===stack.url?r.continue():r.abort();});
   await context.addCookies([{name:'velora_locale',value:'en',url:origin}]);
-  const page=await context.newPage();
+  page=await context.newPage();
+  page.on('console',message=>{if(message.type()==='error'||message.text().includes('"reference"'))browserLog=stack.redact(browserLog+'\n'+message.text()).slice(-1500);});
+  page.on('pageerror',error=>{browserLog=stack.redact(browserLog+'\n'+error.message).slice(-1500);});
   await page.goto(origin+'/login',{waitUntil:'networkidle'});
+  await page.waitForFunction(()=>Array.from(document.querySelectorAll('form')).some(form=>Object.getOwnPropertyNames(form).filter(key=>key.startsWith('__reactProps$')).some(key=>typeof form[key]?.onSubmit==='function')));
   await page.getByLabel(/^Email address/).fill(user.email);await page.getByLabel(/^Password/).fill(user.password);
   await page.getByRole('button',{name:'Sign in',exact:true}).click();await page.waitForURL(u=>['/app','/setup'].includes(u.pathname));
   await page.goto(origin+'/setup',{waitUntil:'networkidle'});
@@ -74,7 +77,10 @@ export async function runSmartSetupUi(stack,user,company){
   await page.screenshot({path:join(artifacts,'setup-ar-390.png'),fullPage:true});
   assert.equal(await page.getByRole('progressbar').evaluate(e=>getComputedStyle(e.firstElementChild).transitionDuration),'0s','reduced motion');
   console.log('SMART_ONBOARDING_UI_PASS: nine cards, independent hours, branch save/resume, 320/390/768/1280px, Arabic RTL, reduced motion');
- }catch(error){throw Error(stack.redact(`${error.message}\n${log}`));}
+ }catch(error){
+  const controls=page?await page.locator('form').allTextContents().catch(()=>[]):[];
+  throw Error(stack.redact(`${error.message}\n${page?.url()??''}\n${controls.join('\n')}\n${browserLog}\n${log}`));
+ }
  finally{
   await browser?.close();
   if(next.pid&&next.exitCode===null)await new Promise(r=>{const stop=spawn('taskkill',['/PID',String(next.pid),'/T','/F'],{env:localEnvironment(),windowsHide:true,stdio:'ignore'});stop.once('close',r);stop.once('error',r);});
