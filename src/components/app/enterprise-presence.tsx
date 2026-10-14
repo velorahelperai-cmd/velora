@@ -6,7 +6,7 @@ import { heartbeatEnterprisePresence } from "@/lib/enterprise/actions";
 export function EnterprisePresence({userId,companyId}:{userId:string;companyId:string}) {
  useEffect(()=>{
   let active=true,pending=false;
-  const beat=async()=>{if(!active||pending||document.visibilityState!=="visible")return;pending=true;try{const result=await heartbeatEnterprisePresence(userId,companyId);if(!result.ok&&["FORBIDDEN","UNAUTHENTICATED","NOT_INSTALLED"].includes(result.code))active=false;}finally{pending=false;}};
+  const beat=async()=>{if(!active||pending||document.visibilityState!=="visible")return;pending=true;try{const result=await heartbeatEnterprisePresence(userId,companyId);if(!result.ok&&["FORBIDDEN","UNAUTHENTICATED","NOT_INSTALLED"].includes(result.code))active=false;}catch{/* A failed connection records no presence; retry on the next visible beat. */}finally{pending=false;}};
   const wake=()=>{void beat();};wake();
   const timer=setInterval(wake,30000);document.addEventListener("visibilitychange",wake);
   return ()=>{active=false;clearInterval(timer);document.removeEventListener("visibilitychange",wake);};
