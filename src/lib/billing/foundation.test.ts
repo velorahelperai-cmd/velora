@@ -125,7 +125,7 @@ describe("money: baisa ≠ Paymob units + safe integers", () => {
 });
 
 describe("T7 — never paid (paid_through null)", () => {
-  it("is not ended and has no 7-day inbound window", () => {
+  it("is not ended and has no unpaid grace window", () => {
     const caps = evaluateSubscriptionEntitlement({
       subscription: sub({ companyId: billingTestFixtures.companyA }),
       companyStatus: "active",
@@ -205,24 +205,9 @@ describe("T13 — missing required limit blocks operation", () => {
     expect(assertOperationAllowedByLimit(10)).toEqual({ allowed: true, limit: 10 });
   });
 
-  it("rejects inbound retention when cap not configured", () => {
-    const paidThrough = new Date("2026-10-01T00:00:00.000Z");
-    const inbound = decideInboundStorage({
-      subscription: sub({
-        companyId: billingTestFixtures.companyA,
-        paidThrough,
-        status: "ended",
-      }),
-      companyStatus: "active",
-      retentionMessageCap: null,
-      retentionMessagesUsed: 0,
-      clock: now,
-    });
-    expect(inbound.outcome).toBe("rejected_by_policy");
-    if (inbound.outcome === "rejected_by_policy") {
-      expect(inbound.reason).toBe("retention_cap_not_configured");
-    }
-    expect(isSuccessfulStore(inbound)).toBe(false);
+  it("preserves read-only incoming messages even without the old retention cap", () => {
+    const inbound=decideInboundStorage({subscription:sub({companyId:billingTestFixtures.companyA,paidThrough:new Date("2026-10-01T00:00:00Z"),status:"ended"}),companyStatus:"active",retentionMessageCap:null,retentionMessagesUsed:1000,clock:now});
+    expect(inbound).toEqual({outcome:"stored",reason:"within_retention_window"});expect(isSuccessfulStore(inbound)).toBe(true);
   });
 });
 
@@ -278,7 +263,7 @@ describe("T18 — entitlement checked at evaluation time (not cron-only)", () =>
   });
 });
 
-describe("inbound 7-day window + outcomes", () => {
+describe("inbound 30-day grace + outcomes", () => {
   it("stores within retention window under cap", () => {
     const paidThrough = new Date("2026-10-01T00:00:00.000Z");
     const inbound = decideInboundStorage({
@@ -291,14 +276,14 @@ describe("inbound 7-day window + outcomes", () => {
     expect(inbound).toEqual({ outcome: "stored", reason: "within_retention_window" });
   });
 
-  it("rejects after 7 days", () => {
+  it("rejects exactly at day 30", () => {
     const paidThrough = new Date("2026-10-01T00:00:00.000Z");
     const inbound = decideInboundStorage({
       subscription: sub({ companyId: billingTestFixtures.companyA, paidThrough }),
       companyStatus: "active",
       retentionMessageCap: billingTestFixtures.retentionMessageCap,
       retentionMessagesUsed: 0,
-      clock: fixedClock("2026-10-09T00:00:00.000Z"),
+      clock: fixedClock("2026-10-31T00:00:00.000Z"),
     });
     expect(inbound.outcome).toBe("rejected_by_policy");
     if (inbound.outcome === "rejected_by_policy") {

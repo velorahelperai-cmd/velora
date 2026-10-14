@@ -1,0 +1,31 @@
+import {beforeEach,expect,it,vi} from 'vitest';
+vi.mock('server-only',()=>({}));
+const p=vi.hoisted(()=>({owner:true,company:'abcdefab-0000-4000-8000-000000000001',nativeBody:'Server-observed question',lastMessage:'',trial:vi.fn(),thread:vi.fn(),igThread:vi.fn(),saved:null as Record<string,unknown>|null,insertError:null as {code:string}|null,inserts:[] as unknown[]}));
+const query=(source:string)=>{
+ const q={select:()=>q,eq:(key:string,value:unknown)=>{if(source==='whatsapp_messages'&&key==='id')p.lastMessage=String(value);return q;},order:()=>q,limit:()=>q,
+  insert:(row:unknown)=>{p.inserts.push(row);return Promise.resolve({error:p.insertError});},
+  update:()=>q,maybeSingle:async()=>({data:source==='whatsapp_messages'?{message_type:'text',body:p.nativeBody}:p.saved,error:null}),
+  then:(resolve:(value:unknown)=>unknown)=>Promise.resolve({data:[{execution_id:'execution'}],error:null}).then(resolve)};
+ return q;
+};
+vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({rpc:async()=>({data:p.owner,error:null}),from:(table:string)=>query(table)})}));
+vi.mock('@/lib/supabase/admin',()=>({createAdminClient:()=>({from:(table:string)=>query(table)})}));
+vi.mock('@/lib/tenancy/access',()=>({requireVerifiedUser:async()=>({ok:true,context:{userId:'actor'}}),getCompanyAccess:async()=>({ok:true,context:{company:{id:p.company,status:'active'}}})}));
+vi.mock('@/lib/whatsapp/inbox-contracts',()=>({loadWhatsappThreadPage:p.thread}));
+vi.mock('@/lib/instagram/inbox-actions',()=>({loadInstagramThreadPage:p.igThread}));
+vi.mock('./runtime/admin-actions',()=>({runAdminAITrial:p.trial}));
+vi.mock('./context',()=>({verifyAnswerCitationsStillValid:async()=>true}));
+import {readChannelAIDraft,prepareChannelAIDraft} from './channel-draft-actions';
+const id=(n:number)=>`abcdefab-0000-4000-8000-${String(n).padStart(12,'0')}`;
+const ref={companyId:id(1),conversationId:id(2),channel:'whatsapp' as const};
+beforeEach(()=>{vi.clearAllMocks();vi.stubEnv('AI_CHANNEL_DRAFTS_ENABLED','true');vi.stubEnv('AI_CHANNEL_DRAFT_MODEL','gpt-6-luna');p.owner=true;p.company=id(1);p.saved=null;p.insertError=null;p.inserts=[];p.lastMessage='';p.trial.mockResolvedValue({ok:true,text:'Draft',complete:true,citations:[{sourceId:id(8),title:'Menu',contentVersion:1}]});p.thread.mockResolvedValue({ok:true,data:{conversation:{automationGeneration:1,revision:1},displayedInboundMessageId:id(4),messages:[{id:id(3),direction:'inbound',arrivalSequence:'1'},{id:id(4),direction:'inbound',arrivalSequence:'2'}]}});});
+it('readiness is read-only and never invokes an AI trial',async()=>{expect(await readChannelAIDraft(ref)).toMatchObject({ok:true,messageId:id(4),requested:false});expect(p.trial).not.toHaveBeenCalled();expect(p.inserts).toHaveLength(0);});
+it('does not expose an inbound question to a non-platform-owner',async()=>{p.owner=false;expect(await readChannelAIDraft(ref)).toEqual({ok:false,code:'OWNER_REQUIRED'});expect(p.thread).not.toHaveBeenCalled();});
+it('does not execute without explicit paid-trial confirmation',async()=>{expect(await prepareChannelAIDraft({...ref,messageId:id(4),executionId:id(5),executeConfirmed:false})).toEqual({ok:false,code:'CONFIRMATION_REQUIRED'});expect(p.trial).not.toHaveBeenCalled();expect(p.inserts).toHaveLength(0);});
+it('reads the newest inbound from native storage instead of trusting browser text or oldest messages',async()=>{expect(await prepareChannelAIDraft({...ref,messageId:id(4),executionId:id(5),executeConfirmed:true})).toEqual({ok:true,text:'Draft'});expect(p.lastMessage).toBe(id(4));expect(p.trial).toHaveBeenCalledWith(expect.objectContaining({question:p.nativeBody,contextMode:'company',executionId:id(5)}));});
+it('blocks a workspace mismatch before a paid call',async()=>{p.company=id(9);expect(await prepareChannelAIDraft({...ref,messageId:id(4),executionId:id(5),executeConfirmed:true})).toMatchObject({ok:false});expect(p.trial).not.toHaveBeenCalled();});
+it('keeps a pending duplicate blocked without a second paid call',async()=>{p.insertError={code:'23505'};p.saved={execution_id:id(5),status:'generating',message_id:id(4)};expect(await prepareChannelAIDraft({...ref,messageId:id(4),executionId:id(5),executeConfirmed:true})).toEqual({ok:false,code:'DRAFT_ALREADY_REQUESTED'});expect(p.trial).not.toHaveBeenCalled();});
+it('prepares Instagram from its native inbound and applies its smaller output limit',async()=>{p.igThread.mockResolvedValue({ok:true,data:{conversation:{accountId:'100',counterpartyId:'200',revision:1},messages:[{id:id(3),direction:'inbound',arrivalSequence:'1',content:{kind:'text',text:'Older'}},{id:id(4),direction:'inbound',arrivalSequence:'2',content:{kind:'text',text:'Instagram question'}}]}});expect(await prepareChannelAIDraft({...ref,channel:'instagram',messageId:id(4),executionId:id(5),executeConfirmed:true})).toEqual({ok:true,text:'Draft'});expect(p.thread).not.toHaveBeenCalled();expect(p.trial).toHaveBeenCalledWith(expect.objectContaining({question:'Instagram question',maxOutputTokens:160}));});
+it('does not send a media placeholder to AI',async()=>{p.igThread.mockResolvedValue({ok:true,data:{conversation:{accountId:'100',counterpartyId:'200',revision:1},messages:[{id:id(4),direction:'inbound',arrivalSequence:'2',content:{kind:'non_text'}}]}});expect(await prepareChannelAIDraft({...ref,channel:'instagram',messageId:id(4),executionId:id(5),executeConfirmed:true})).toEqual({ok:false,code:'TEXT_INBOUND_REQUIRED'});expect(p.trial).not.toHaveBeenCalled();});
+it('uses Gemini when selected on the server and retains the enforced owner lifetime budget',async()=>{vi.stubEnv('AI_CHANNEL_DRAFT_MODEL','gemini-3.8-flash');expect(await prepareChannelAIDraft({...ref,messageId:id(4),executionId:id(5),executeConfirmed:true})).toEqual({ok:true,text:'Draft'});expect(p.trial).toHaveBeenCalledWith(expect.objectContaining({model:'gemini-3.8-flash',maxCostBaisa:1000}));});
+it('does not silently switch to another provider for an unknown configured model',async()=>{vi.stubEnv('AI_CHANNEL_DRAFT_MODEL','unapproved-model');expect(await prepareChannelAIDraft({...ref,messageId:id(4),executionId:id(5),executeConfirmed:true})).toEqual({ok:false,code:'DRAFT_MODEL_NOT_CONFIGURED'});expect(p.trial).not.toHaveBeenCalled();expect(p.inserts).toHaveLength(0);});

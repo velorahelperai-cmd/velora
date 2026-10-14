@@ -27,7 +27,7 @@ export async function dispatchInstagramIntent(supplied:InstagramSendBinding,p:In
    const sent=await p.transport(claim);
    outcome=sent.status==='accepted'&&sent.recipientId===b.recipientId&&sendMid(sent.messageId)&&sent.delivery==='unconfirmed'
     ?{status:'accepted',recipientId:sent.recipientId,messageId:sent.messageId}
-    :sent.status==='rejected'?{status:'rejected'}:sent.status==='blocked'?{status:'blocked'}:{status:'unknown'};
+    :sent.status==='rejected'?{status:'rejected',...(sent.detail==='graph_190'?{reauthorizationRequired:true as const}:{})}:sent.status==='blocked'?{status:'blocked'}:{status:'unknown'};
   }
  }catch{outcome={status:'unknown'};}
  let settled:Result;

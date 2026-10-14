@@ -11,7 +11,7 @@ export type InstagramPrepareSend=Readonly<{companyId:string;conversationId:strin
 /** Server-internal credential and claim receipt. Never return this from a Server Action. */
 export type InstagramFreshSendClaim=Readonly<{kind:'fresh';committed:true;binding:InstagramSendBinding;claimReceipt:string;text:string;accessToken:string;notAfter:string}>;
 export type InstagramSendClaim=InstagramFreshSendClaim|Readonly<{kind:'existing';progress:InstagramSendProgress}>|InstagramSendFailure;
-export type InstagramSendSettlement=Readonly<{status:'unknown'|'blocked'|'rejected'}>|Readonly<{status:'accepted';recipientId:string;messageId:string}>;
+export type InstagramSendSettlement=Readonly<{status:'unknown'|'blocked'|'rejected';reauthorizationRequired?:true}>|Readonly<{status:'accepted';recipientId:string;messageId:string}>;
 export type InstagramSendStore=Readonly<{
  prepare(input:InstagramPrepareSend):Promise<InstagramSendResultValue<InstagramSendProgress>>;
  read(binding:InstagramSendBinding):Promise<InstagramSendResultValue<InstagramSendProgress>>;

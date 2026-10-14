@@ -1,11 +1,11 @@
 import {createHash} from 'node:crypto';
 import {beforeEach,expect,it,vi} from 'vitest';
 vi.mock('server-only',()=>({}));
-const f=vi.hoisted(()=>({native:vi.fn(),server:vi.fn(),admin:vi.fn(),access:vi.fn(),dispatch:vi.fn()}));
+const f=vi.hoisted(()=>({native:vi.fn(),server:vi.fn(),admin:vi.fn(),access:vi.fn(),dispatch:vi.fn(),reconcile:vi.fn()}));
 vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({rpc:f.native})}));
 vi.mock('@/lib/supabase/admin',()=>({createAdminClient:f.admin}));
 vi.mock('@/lib/tenancy/access',()=>({getCompanyAccess:f.access}));
-vi.mock('./send-flow',()=>({dispatchInstagramIntent:f.dispatch}));
+vi.mock('./send-flow',()=>({dispatchInstagramIntent:f.dispatch,reconcileInstagramIntent:f.reconcile}));
 import {saveInstagramReply,loadInstagramReply,sendSavedInstagramReply,loadInstagramSendReadiness} from './manual-actions';
 const id=(n:number)=>`abcdefab-0000-4000-8000-${String(n).padStart(12,'0')}`;
 const ref={companyId:id(1),conversationId:id(2),intentId:id(3)};
@@ -20,3 +20,8 @@ it('malformed or another actor native result cannot compose service dispatch',as
 it('missing installed function reports schema readiness without raw error leakage',async()=>{f.native.mockResolvedValue({data:null,error:{code:'PGRST202',message:'PRIVATE_SCHEMA_DETAILS'}});expect(await loadInstagramReply(ref)).toEqual({ok:false,code:'SCHEMA_UNAVAILABLE'});});
 it('native denied replies remain denied even if a service client is configured',async()=>{f.native.mockResolvedValue({data:{ok:false,code:'FORBIDDEN'},error:null});expect(await loadInstagramReply(ref)).toEqual({ok:false,code:'FORBIDDEN'});expect(f.admin).not.toHaveBeenCalled();});
 it('SQL exceptions contain no raw data and never fake empty success',async()=>{f.native.mockRejectedValue(Error('PRIVATE_TOKEN_OR_SQL'));expect(await loadInstagramReply(ref)).toEqual({ok:false,code:'UNAVAILABLE'});});
+it('repairs an accepted send with closed rollout or expired review access without another dispatch',async()=>{
+ const accepted={...data,state:'accepted',providerMessageId:'mid.accepted'};
+ f.native.mockResolvedValue({data:accepted,error:null});f.reconcile.mockResolvedValue({ok:true,data:accepted});
+ expect(await sendSavedInstagramReply(ref)).toMatchObject({ok:true});expect(f.reconcile).toHaveBeenCalledOnce();expect(f.dispatch).not.toHaveBeenCalled();
+});

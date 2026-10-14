@@ -81,40 +81,40 @@ export function AdminConversationsView({
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
-      <div className="flex items-center justify-between pb-3 border-b border-[#D7C1A5]">
+      <div className="flex items-center justify-between pb-3 border-b border-[var(--service-line)]">
         <Link
           href={`/admin/companies/${view.companyId}`}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#D7C1A5] bg-[#FFFBF5] text-xs font-semibold text-[#6B4932] hover:text-[#18130F] hover:border-[#6B4932] hover:shadow-2xs transition"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[var(--service-line)] bg-[var(--service-surface)] text-xs font-semibold text-[var(--service-accent)] hover:text-[var(--service-ink)] hover:border-[var(--service-accent)] hover:shadow-2xs transition"
         >
           <span>←</span>
           <span>{copy.admin.backToList}</span>
         </Link>
       </div>
 
-      <header className="mt-4 rounded-2xl border border-[#D7C1A5] bg-[#EFE2CF] px-4 py-3">
-        <p className="text-xs font-semibold text-[#6B4932]">{copy.admin.conversationsReadonly}</p>
+      <header className="mt-4 rounded-2xl border border-[var(--service-line)] bg-[var(--service-subtle)] px-4 py-3">
+        <p className="text-xs font-semibold text-[var(--service-accent)]">{copy.admin.conversationsReadonly}</p>
         <p className="mt-1 text-sm">
-          <span className="font-medium text-[#6B4932]">{copy.admin.conversationsCompany}: </span>
-          <strong className="break-words text-[#18130F]">{view.companyName}</strong>
+          <span className="font-medium text-[var(--service-accent)]">{copy.admin.conversationsCompany}: </span>
+          <strong className="break-words text-[var(--service-ink)]">{view.companyName}</strong>
         </p>
         <p className="mt-1 text-sm" dir="ltr">
-          <span className="font-medium text-[#6B4932]">{copy.admin.conversationsNumber}: </span>
-          <span className="[font-family:inherit] font-bold text-[#18130F]">{loadedPhone || "—"}</span>
+          <span className="font-medium text-[var(--service-accent)]">{copy.admin.conversationsNumber}: </span>
+          <span className="[font-family:inherit] font-bold text-[var(--service-ink)]">{loadedPhone || "—"}</span>
         </p>
         {view.reviewWhatsappNumber ? (
-          <p className="mt-1 text-xs text-[#615244]" dir="ltr">
+          <p className="mt-1 text-xs text-[var(--service-muted)]" dir="ltr">
             {copy.admin.conversationsReviewNumber}: {view.reviewWhatsappNumber}
           </p>
         ) : null}
       </header>
 
-      <h1 className="mt-6 text-3xl font-extrabold text-[#18130F]">{copy.admin.conversationsTitle}</h1>
-      <p className="mt-2 text-sm text-[#615244]">{copy.admin.conversationsBody}</p>
-      <p className="mt-1 text-xs font-medium text-[#615244]">{copy.admin.conversationsPhoneHint}</p>
+      <h1 className="mt-6 text-3xl font-extrabold text-[var(--service-ink)]">{copy.admin.conversationsTitle}</h1>
+      <p className="mt-2 text-sm text-[var(--service-muted)]">{copy.admin.conversationsBody}</p>
+      <p className="mt-1 text-xs font-medium text-[var(--service-muted)]">{copy.admin.conversationsPhoneHint}</p>
 
       <div className="mt-4 flex flex-wrap items-end gap-3">
         <label className="grid min-w-[16rem] flex-1 gap-1 text-sm">
-          <span className="font-bold text-[#6B4932]">{copy.admin.conversationsPickPhone}</span>
+          <span className="font-bold text-[var(--service-accent)]">{copy.admin.conversationsPickPhone}</span>
           <select
             value={selectPhone}
             onChange={(e) => {
@@ -127,7 +127,7 @@ export function AdminConversationsView({
               }
               void load(next, 0, 0);
             }}
-            className="min-h-11 rounded-xl border border-[#D7C1A5] bg-[#FFFBF5] px-3 text-sm font-medium text-[#18130F] outline-none focus:border-[#6B4932] focus:ring-1 focus:ring-[#6B4932] transition"
+            className="min-h-11 rounded-xl border border-[var(--service-line)] bg-[var(--service-surface)] px-3 text-sm font-medium text-[var(--service-ink)] outline-none focus:border-[var(--service-accent)] focus:ring-1 focus:ring-[var(--service-accent)] transition"
           >
             <option value="">{copy.admin.conversationsNeedPhone}</option>
             {view.phoneIdentities.map((id) => (
@@ -159,33 +159,33 @@ export function AdminConversationsView({
                   onClick={() => setSelectedId(c.id)}
                   className={`w-full rounded-xl border px-3 py-2.5 text-start text-sm transition ${
                     selectedId === c.id
-                      ? "border-[#6B4932] bg-[#EFE2CF] shadow-2xs"
-                      : "border-[#D7C1A5] bg-[#FFFBF5] hover:bg-[#F7F0E5] hover:border-[#6B4932]/40"
+                      ? "border-[var(--service-accent)] bg-[var(--service-subtle)] shadow-2xs"
+                      : "border-[var(--service-line)] bg-[var(--service-surface)] hover:bg-[var(--service-canvas)] hover:border-[var(--service-accent)]/40"
                   }`}
                 >
-                  <strong className="block truncate font-bold text-[#18130F]">{c.customerName || c.customerWaId}</strong>
-                  <span className="text-xs [font-family:inherit] font-medium text-[#615244]" dir="ltr">{c.customerWaId}</span>
+                  <strong className="block truncate font-bold text-[var(--service-ink)]">{c.customerName || c.customerWaId}</strong>
+                  <span className="text-xs [font-family:inherit] font-medium text-[var(--service-muted)]" dir="ltr">{c.customerWaId}</span>
                 </button>
               </li>
             ))}
           </ul>
-          <section className="min-h-[20rem] rounded-2xl border border-[#D7C1A5] bg-[#FFFBF5] p-5 shadow-sm">
+          <section className="min-h-[20rem] rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] p-5 shadow-sm">
             {selected ? (
               <>
-                <h2 className="font-bold text-lg text-[#18130F]">{selected.customerName || selected.customerWaId}</h2>
-                <p className="text-xs [font-family:inherit] font-medium text-[#6B4932]" dir="ltr">{selected.customerWaId}</p>
+                <h2 className="font-bold text-lg text-[var(--service-ink)]">{selected.customerName || selected.customerWaId}</h2>
+                <p className="text-xs [font-family:inherit] font-medium text-[var(--service-accent)]" dir="ltr">{selected.customerWaId}</p>
                 <ul className="mt-4 grid gap-2.5">
                   {selected.messages.map((m) => (
                     <li
                       key={m.id}
                       className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm ${
                         m.direction === "outbound" || m.sender === "staff" || m.sender === "assistant"
-                          ? "ms-auto bg-[#EFE2CF] border border-[#D7C1A5] text-[#18130F]"
-                          : "bg-[#F7F0E5] border border-[#D7C1A5] text-[#18130F]"
+                          ? "ms-auto bg-[var(--service-subtle)] border border-[var(--service-line)] text-[var(--service-ink)]"
+                          : "bg-[var(--service-canvas)] border border-[var(--service-line)] text-[var(--service-ink)]"
                       }`}
                     >
                       <p className="whitespace-pre-wrap break-words leading-relaxed font-medium">{m.body}</p>
-                      <p className="mt-1 text-[10px] font-medium text-[#615244]">
+                      <p className="mt-1 text-[10px] font-medium text-[var(--service-muted)]">
                         {m.sender}
                         {m.receivedAt
                           ? ` · ${new Date(m.receivedAt).toLocaleString(locale === "ar" ? "ar-OM" : "en-GB")}`
@@ -194,11 +194,11 @@ export function AdminConversationsView({
                     </li>
                   ))}
                   {!selected.messages.length ? (
-                    <li className="text-sm font-medium text-[#615244]">{copy.admin.conversationsNoMessages}</li>
+                    <li className="text-sm font-medium text-[var(--service-muted)]">{copy.admin.conversationsNoMessages}</li>
                   ) : null}
                 </ul>
                 {selected.messageTotal > MSG_PAGE_SIZE ? (
-                  <div className="mt-4 flex flex-wrap items-center gap-2 pt-3 border-t border-[#D7C1A5]">
+                  <div className="mt-4 flex flex-wrap items-center gap-2 pt-3 border-t border-[var(--service-line)]">
                     <Button
                       variant="secondary"
                       disabled={busy || messageOffset <= 0}
@@ -206,7 +206,7 @@ export function AdminConversationsView({
                     >
                       {copy.admin.accountPrev}
                     </Button>
-                    <span className="text-xs font-semibold text-[#615244]">
+                    <span className="text-xs font-semibold text-[var(--service-muted)]">
                       {fill(copy.admin.accountPage, { n: msgPageNumber })} · {selected.messageTotal}
                     </span>
                     <Button
@@ -220,7 +220,7 @@ export function AdminConversationsView({
                 ) : null}
               </>
             ) : (
-              <p className="text-sm font-medium text-[#615244]">{copy.app.selectConversation}</p>
+              <p className="text-sm font-medium text-[var(--service-muted)]">{copy.app.selectConversation}</p>
             )}
           </section>
         </div>
@@ -235,7 +235,7 @@ export function AdminConversationsView({
           >
             {copy.admin.accountPrev}
           </Button>
-          <span className="text-xs font-semibold text-[#615244]">{fill(copy.admin.accountPage, { n: pageNumber })}</span>
+          <span className="text-xs font-semibold text-[var(--service-muted)]">{fill(copy.admin.accountPage, { n: pageNumber })}</span>
           <Button
             variant="secondary"
             disabled={busy || !hasMore}

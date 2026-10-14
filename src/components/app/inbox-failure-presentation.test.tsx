@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+vi.mock("server-only", () => ({}));
 import React, { type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 const state = vi.hoisted(() => ({ locale: "en", load: vi.fn() }));
@@ -10,6 +11,7 @@ vi.mock("@/lib/whatsapp/actions", () => ({ controlWhatsappConversation: vi.fn(),
 vi.mock("@/lib/whatsapp/inbox-actions", () => ({ refreshWhatsappInboxInitialPage: vi.fn(), refreshWhatsappInboxPage: vi.fn(), refreshWhatsappThreadPage: vi.fn(), refreshWhatsappControlAuditPage: vi.fn(), refreshWhatsappConnectionStatus: vi.fn(), markWhatsappThreadSeen: vi.fn() }));
 vi.mock("@/lib/tenancy/actions", () => ({ getCustomerReadiness: async () => ({ok:false,code:"UNAVAILABLE"}) }));
 vi.mock("@/lib/customer/dashboard-billing-actions", () => ({ readDashboardBilling: vi.fn() }));
+vi.mock("@/lib/customer/service-inbox-actions", () => ({ readServiceInbox: state.load }));
 import ConversationsRoute from "@/app/app/conversations/page";
 import DashboardRoute from "@/app/app/page";
 import { appCopy } from "@/lib/app-copy";

@@ -3,7 +3,7 @@ import {randomBytes,randomUUID} from 'node:crypto';
 import {cookies} from 'next/headers';
 import {createClient} from '@/lib/supabase/server';
 import {createAdminClient} from '@/lib/supabase/admin';
-import {getCompanyAccess} from '@/lib/tenancy/access';
+import {getCompanyAccess,requirePlatformAdmin} from '@/lib/tenancy/access';
 import {instagramConfig} from './config';
 import {instagramOwnerConnectScope} from './connect-scope';
 import {exchangeInstagramCode,instagramAuthorizationUrl,readInstagramOAuthConfig} from './oauth-meta';
@@ -12,9 +12,10 @@ import {completeInstagramConnection} from './connection-flow';
 import type {AttemptBinding,ConnectionResult} from './connection-contracts';
 import {INSTAGRAM_ATTEMPT_COOKIE} from './oauth-route';
 import {ensureInstagramSubscription} from './subscription';
+import {readPersistedInstagramProfile} from './persisted-profile';
 import type {DiagnosticDetail} from '@/lib/diagnostics/contract';
-type Failure={ok:false;code:'FORBIDDEN'|'INVALID_INPUT'|'WORKSPACE_CHANGED'|'UNAVAILABLE'|'SCHEMA_UNAVAILABLE'|'CONNECT_DISABLED'|'SETUP_REQUIRED'|'RECONCILIATION_REQUIRED'|'CONFLICT'|'EXPIRED'|'CONSUMED'};
-type Status={ok:true;generation:number;link:{linkId:string;accountId:string;generation:number}|null;attemptKind:string|null;contractReady:boolean;connectEnabled:boolean};
+type Failure={ok:false;code:'FORBIDDEN'|'INVALID_INPUT'|'WORKSPACE_CHANGED'|'UNAVAILABLE'|'SCHEMA_UNAVAILABLE'|'CONNECT_DISABLED'|'SETUP_REQUIRED'|'RECONCILIATION_REQUIRED'|'CONFLICT'|'EXPIRED'|'CONSUMED'|'ACCOUNT_MISMATCH'};
+type Status={ok:true;generation:number;link:{linkId:string;accountId:string;generation:number;username?:string|null;expiresAt?:string;needsAuthorization?:boolean}|null;attemptKind:string|null;attemptReason?:string|null;contractReady:boolean;connectEnabled:boolean;subscriptionExpired?:boolean;historyAccessible?:boolean};
 const fail=(code:Failure['code']):Failure=>({ok:false,code});
 const object=(v:unknown):v is Record<string,unknown>=>v!==null&&typeof v==='object'&&!Array.isArray(v);
 const uuid=(v:unknown):v is string=>typeof v==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(v);
@@ -45,15 +46,25 @@ async function status(client:InstagramRpcClient,companyId:string,userId:string):
  if(data.ok===false)return data as Failure;
  if(data.ok!==true||!generation(data.generation)||typeof data.contractReady!=='boolean')return fail('UNAVAILABLE');
  let link:Status['link']=null;
- if(data.link!==null){const v=data.link;if(!object(v)||!uuid(v.linkId)||typeof v.accountId!=='string'||!/^\d{1,64}$/.test(v.accountId)||!generation(v.generation)||v.generation<1)return fail('UNAVAILABLE');link={linkId:v.linkId.toLowerCase(),accountId:v.accountId,generation:v.generation};}
+ if(data.link!==null){const v=data.link;if(!object(v)||!uuid(v.linkId)||typeof v.accountId!=='string'||!/^\d{1,64}$/.test(v.accountId)||!generation(v.generation)||v.generation<1)return fail('UNAVAILABLE');link={linkId:v.linkId.toLowerCase(),accountId:v.accountId,generation:v.generation,...(typeof v.username==='string'||v.username===null?{username:v.username}:{}),...(typeof v.expiresAt==='string'&&Number.isFinite(Date.parse(v.expiresAt))?{expiresAt:v.expiresAt}:{}),...(typeof v.needsAuthorization==='boolean'?{needsAuthorization:v.needsAuthorization}:{})};}
  const kinds=['pending','claimed','vault_staged','bound','rejected','unknown','expired','cancelled'];
  if(data.attemptKind!==null&&!kinds.includes(String(data.attemptKind)))return fail('UNAVAILABLE');
- return {ok:true,generation:data.generation,link,attemptKind:data.attemptKind as string|null,contractReady:!!cfg&&data.contractReady,connectEnabled:instagramConfig().connectEnabled&&!!cfg&&instagramOwnerConnectScope(companyId,userId,cfg.appId)};
+ return {ok:true,generation:data.generation,link,attemptKind:data.attemptKind as string|null,...(data.attemptReason===null||['account_mismatch','provider_rejected'].includes(String(data.attemptReason))?{attemptReason:data.attemptReason as string|null}:{}),contractReady:!!cfg&&data.contractReady,connectEnabled:instagramConfig().connectEnabled&&!!cfg&&instagramOwnerConnectScope(companyId,userId,cfg.appId),...(typeof data.subscriptionExpired==='boolean'?{subscriptionExpired:data.subscriptionExpired}:{}),...(typeof data.historyAccessible==='boolean'?{historyAccessible:data.historyAccessible}:{})};
 }
 export async function loadInstagramOwnerConnection(input:{companyId:string}):Promise<Status|Failure>{
  if(!keys(input,['companyId'])||!uuid(input.companyId))return fail('INVALID_INPUT');
  const company=input.companyId.toLowerCase();
- try{const session=await native(company);return 'ok' in session?session:await status(session.client,company,session.identity.userId);}catch{return fail('UNAVAILABLE');}
+ try{const session=await native(company);if('ok' in session)return session;const current=await status(session.client,company,session.identity.userId);
+  if(!current.ok||!current.link||current.link.username||current.link.needsAuthorization!==false)return current;
+  const admin=createAdminClient() as unknown as InstagramRpcClient|null;if(!admin)return current;
+  const args={p_company_id:company,p_user_id:session.identity.userId,p_session_id:session.identity.sessionId,p_link_id:current.link.linkId,p_generation:current.link.generation};
+  const credential=await rpc(admin,'instagram_owner_profile_credential',args);
+  if(credential.ok!==true||credential.accountId!==current.link.accountId||typeof credential.accessToken!=='string')return current;
+  const profile=await readPersistedInstagramProfile({accountId:current.link.accountId,accessToken:credential.accessToken});
+  if(profile.kind==='unavailable')return current;
+  await admin.rpc('instagram_store_owner_profile',{...args,p_account_id:current.link.accountId,p_username:profile.kind==='profile'?profile.username:null,p_authorization_invalid:profile.kind==='authorization_required'});
+  return await status(session.client,company,session.identity.userId);
+ }catch{return fail('UNAVAILABLE');}
 }
 export async function startInstagramOwnerConnection(input:{companyId:string}):Promise<{ok:true;authorizationUrl:string}|Failure>{
  if(!keys(input,['companyId'])||!uuid(input.companyId))return fail('INVALID_INPUT');
@@ -99,17 +110,50 @@ export async function completeInstagramOwnerOAuth(input:{attemptId:string;state:
   const result=await completeInstagramConnection(session.identity,captured,b,{...store,
    stage:(ref,success)=>permitted()?store.stage(ref,success):Promise.resolve({ok:false,code:'FORBIDDEN'}),
    finalize:(ref,receipt)=>permitted()?store.finalize(ref,receipt):Promise.resolve({ok:false,code:'FORBIDDEN'}),
-   exchange:(code,ref)=>exchangeInstagramCode(code,ref,cfg,{onDiagnostic:value=>{diagnostic=value;}}),
+   exchange:(code,ref)=>exchangeInstagramCode(code,ref,cfg,{onDiagnostic:value=>{diagnostic=value;},...(typeof data.expectedAccountId==='string'&&/^\d{1,64}$/.test(data.expectedAccountId)?{expectedAccountId:data.expectedAccountId}:{})}),
    subscribe:(ref,receipt)=>ensureInstagramSubscription(ref,receipt,server as unknown as InstagramRpcClient)});
   return !result.ok&&diagnostic?{...result,diagnostic}:result;
  }catch{return fail('RECONCILIATION_REQUIRED');}
 }
 export async function disconnectInstagramOwnerConnection(input:{companyId:string;linkId:string;expectedGeneration:number}):Promise<{ok:true}|Failure>{
+ // Kept as a denied compatibility endpoint; hiding a button is not authority.
+ void input;return fail('FORBIDDEN');
+}
+export async function disconnectInstagramAdminConnection(input:{companyId:string;linkId:string;expectedGeneration:number}):Promise<{ok:true;providerRevocation:'unconfirmed'}|Failure>{
  if(!keys(input,['companyId','linkId','expectedGeneration'])||!uuid(input.companyId)||!uuid(input.linkId)||!generation(input.expectedGeneration))return fail('INVALID_INPUT');
  const captured={companyId:input.companyId.toLowerCase(),linkId:input.linkId.toLowerCase(),expectedGeneration:input.expectedGeneration};
- try{const session=await native(captured.companyId);if('ok' in session)return session;
-  const data=await rpc(session.client,'instagram_disconnect_connection',{p_company_id:captured.companyId,p_link_id:captured.linkId,p_expected_generation:captured.expectedGeneration});
+ try{if(!(await requirePlatformAdmin()).ok)return fail('FORBIDDEN');
+  const data=await rpc(await createClient() as unknown as InstagramRpcClient,'instagram_admin_disconnect',{p_company_id:captured.companyId,p_link_id:captured.linkId,p_expected_generation:captured.expectedGeneration});
   if(data.ok===false)return data as Failure;
-  return data.ok===true&&data.linkId===captured.linkId&&generation(data.generation)?{ok:true}:fail('UNAVAILABLE');
+  return data.ok===true&&data.providerRevocation==='unconfirmed'?{ok:true,providerRevocation:'unconfirmed'}:fail('UNAVAILABLE');
  }catch{return fail('UNAVAILABLE');}
+}
+export async function loadInstagramAdminConnection(input:{companyId:string}){
+ if(!keys(input,['companyId'])||!uuid(input.companyId))return fail('INVALID_INPUT');
+ try{if(!(await requirePlatformAdmin()).ok)return fail('FORBIDDEN');const r=await rpc(await createClient() as unknown as InstagramRpcClient,'instagram_admin_connection',{p_company_id:input.companyId});
+  if(r.ok!==true)return fail('FORBIDDEN');if(r.link===null)return {ok:true as const,link:null};if(!object(r.link)||!uuid(r.link.linkId)||!generation(r.link.generation)||typeof r.link.accountId!=='string')return fail('UNAVAILABLE');
+  return {ok:true as const,link:{linkId:r.link.linkId,generation:r.link.generation,accountId:r.link.accountId}};
+ }catch{return fail('UNAVAILABLE');}
+}
+/** Never exchanges the authorization code. Only durable reads and a verified stage can finish. */
+export async function recoverInstagramOwnerConnection(input:{companyId:string}):Promise<ConnectionResult|Failure>{
+ if(!keys(input,['companyId'])||!uuid(input.companyId))return fail('INVALID_INPUT');
+ try{const session=await native(input.companyId);if('ok' in session)return session;
+  const verified=await rpc(session.client,'instagram_verify_unstaged_owner_attempt',{p_company_id:input.companyId});
+  if(verified.ok===true&&verified.resolved===true)return fail('EXPIRED');
+  const r=await rpc(session.client,'instagram_owner_recovery',{p_company_id:input.companyId});if(r.ok!==true||!binding(r.binding))return fail('RECONCILIATION_REQUIRED');
+  const b=r.binding;if(b.companyId!==session.identity.companyId||b.userId!==session.identity.userId||b.sessionId!==session.identity.sessionId)return fail('FORBIDDEN');
+  const admin=createAdminClient();if(!admin)return fail('UNAVAILABLE');const store=createInstagramConnectionStore(session.client,admin as unknown as InstagramRpcClient);
+  const progress=await store.readProgress(b);if(progress.kind==='bound')return {ok:true,linkId:progress.linkId};
+  if(progress.kind!=='vault_staged')return fail('RECONCILIATION_REQUIRED');
+  const subscribed=await ensureInstagramSubscription(b,progress.stageReceipt,admin as unknown as InstagramRpcClient);if(!subscribed.ok)return subscribed;
+  return await store.finalize(b,progress.stageReceipt);
+ }catch{return fail('RECONCILIATION_REQUIRED');}
+}
+export async function cancelInstagramOwnerOAuth(input:{attemptId:string;state:string}){
+ if(!uuid(input?.attemptId)||typeof input.state!=='string'||! /^[a-f0-9]{64}$/.test(input.state))return fail('INVALID_INPUT');
+ try{const session=await native();if('ok' in session)return session;const r=await rpc(session.client,'instagram_owner_attempt',{p_company_id:session.identity.companyId,p_attempt_id:input.attemptId});if(r.ok!==true||!binding(r.binding))return fail('FORBIDDEN');
+  // A non-consuming nonce check must precede cancel; DB uses stored hash in the next migration RPC.
+  const v=await rpc(session.client,'instagram_cancel_owner_oauth',{p_binding:r.binding,p_nonce:input.state});return v.ok===true?{ok:true as const}:fail('RECONCILIATION_REQUIRED');
+ }catch{return fail('RECONCILIATION_REQUIRED');}
 }

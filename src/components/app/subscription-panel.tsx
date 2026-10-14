@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { subscriptionCopy, subscriptionTiers } from "./subscription-copy";
+import {SubscriptionLifecycleNotice} from './subscription-lifecycle-notice';
 import type { SubscriptionCycle, SubscriptionView } from "./subscription-model";
 import { SubscriptionBrandGuide } from "./subscription-brand-guide";
 import { SubscriptionCompareTable, SubscriptionOfferCards } from "./subscription-offer-cards";
@@ -61,6 +62,7 @@ export function SubscriptionPanel({locale,view,offersView,companyId,preview=fals
   <header className={styles.heading}><div><h1>{c.title}</h1><p>{ar?"اختر شخصية فيلورا التي تناسب احتياج شركتك.":"Choose the Velora persona that fits your business."}</p></div><span className={styles.concept}>{c.concept}</span></header>
   <SubscriptionBrandGuide locale={locale}/>
   <section className={styles.summary} aria-labelledby="subscription-current"><div className={styles.summaryTitle}><h2 id="subscription-current">{c.current}</h2><span className={styles.status} data-state={view.state}>{c.states[view.state]}</span></div><p role={view.state==="error"?"alert":"status"}>{c[`${view.state}Note`]}</p>{view.state==="loading"?<div className={styles.skeleton} aria-busy="true"/>:<dl className={styles.facts}><div><dt>{c.currentPlan}</dt><dd>{current?current[locale]:c.noPlan}</dd></div><div><dt>{c.cycle}</dt><dd>{view.cycle?c[view.cycle]:c.unknown}</dd></div><div><dt>{c.renewal}</dt><dd>{view.paidThrough?<bdi>{new Intl.DateTimeFormat(locale,{dateStyle:"medium"}).format(new Date(view.paidThrough))}</bdi>:c.unknown}</dd></div></dl>}{view.state==="error"&&onRetry?<button className={styles.secondary} type="button" onClick={onRetry}>{c.retry}</button>:null}</section>
+  <SubscriptionLifecycleNotice paidThrough={view.paidThrough} ar={ar}/>
   <section aria-labelledby="subscription-plans">
    <div className={styles.planHeading}><div><h2 id="subscription-plans">{ar?"مين تناسب شغلك؟":"Who fits your business?"}</h2><p>{ar?"اختر الشخصية، ثم حدد Basic أو Premium.":"Choose your persona, then pick Basic or Premium."}</p></div>
     <div className={styles.cycles} role="group" aria-label={c.cycle}>{(["monthly","yearly"] as const).filter(term=>term==="monthly"||catalogHasTerm(offersView,term)).map(term=><button type="button" key={term} disabled={busy} aria-pressed={cycle===term} onClick={()=>changeCycle(term)}>{c[term]}</button>)}</div>

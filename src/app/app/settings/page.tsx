@@ -17,7 +17,7 @@ export default async function Page() {
   const company = access.ok ? access.context.company : null;
   const initialSubscription = await loadOwnerBillingSubscription(subscriptionViewFromEntitlement(readCompanyEntitlement(company?.id ?? null), company?.status ?? null));
   const initialOffersView = await readSubscriptionOffersView();
-  const singleTenant = singleTenantReceptionStatus();
+  const singleTenant = singleTenantReceptionStatus(company?.id);
   return (
     <Suspense fallback={<main className="min-h-svh bg-[#07110d]" aria-busy="true" />}>
       <SettingsPage

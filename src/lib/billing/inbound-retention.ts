@@ -5,7 +5,6 @@
 
 import type { Clock } from "@/lib/billing/clock";
 import { systemClock } from "@/lib/billing/clock";
-import { requirePositiveIntLimit } from "@/lib/billing/limits";
 import { evaluateSubscriptionEntitlement } from "@/lib/billing/subscription-state";
 import type {
   CompanyOperationalStatus,
@@ -67,22 +66,8 @@ export function decideInboundStorage(input: InboundDecisionInput): InboundStorag
     };
   }
 
-  const cap = requirePositiveIntLimit(input.retentionMessageCap);
-  if (!cap.ok) {
-    return {
-      outcome: "rejected_by_policy",
-      reason: "retention_cap_not_configured",
-      policyCode: "inbound_rejected_limit",
-    };
-  }
-
-  if (input.retentionMessagesUsed >= cap.value) {
-    return {
-      outcome: "rejected_by_policy",
-      reason: "retention_cap_reached",
-      policyCode: "inbound_rejected_limit",
-    };
-  }
+  // Approved grace preserves read-only incoming messages for the full 30 days.
+  // These legacy cap arguments do not authorize an extra, unapproved cutover.
 
   if (input.storageFailed) {
     return { outcome: "retryable_failure", reason: "storage_failed" };

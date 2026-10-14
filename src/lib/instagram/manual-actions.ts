@@ -6,8 +6,9 @@ import type {InstagramRpcClient} from './connection-store';
 import type {InstagramSendFailureCode,InstagramSendProgress} from './send-contracts';
 import {captureSendProgress,sendObject,sendText,sendTextHash,sendUuid} from './send-validation';
 import {createInstagramSendStore} from './send-store';
-import {dispatchInstagramIntent} from './send-flow';
-import {instagramConfig} from './config';
+import {dispatchInstagramIntent,reconcileInstagramIntent} from './send-flow';
+import {instagramConfig,instagramReviewMode} from './config';
+import {readChannelReviewAccess} from '@/lib/meta-review/actions';
 import {sendInstagramText} from './meta';
 type Ref=Readonly<{companyId:string;conversationId:string;intentId:string}>;
 type Failure={ok:false;code:InstagramSendFailureCode|'WORKSPACE_CHANGED'|'SCHEMA_UNAVAILABLE'};
@@ -59,10 +60,18 @@ export async function loadInstagramReply(input:Ref):Promise<SavedResult>{
 export async function sendSavedInstagramReply(input:Ref){
  if(!reference(input))return fail('INVALID_INPUT');
  const existing=await loadInstagramReply({...input});if(!existing.ok)return existing;
+ if(existing.data.state!=='ready'){
+  const server=createAdminClient();if(!server)return fail('UNAVAILABLE');
+  const store=createInstagramSendStore(await createClient() as unknown as InstagramRpcClient,server as unknown as InstagramRpcClient);
+  return reconcileInstagramIntent(existing.data.binding,{...store,enabled:()=>false,transport:async()=>({status:'blocked' as const,code:'SEND_DISABLED' as const})});
+ }
  // Native saved authority precedes any server credential or irreversible claim.
  if(!instagramConfig().sendEnabled)return fail('SEND_DISABLED');
+ if(process.env.INSTAGRAM_REVIEW_ENABLED==='true'&&!instagramReviewMode(input.companyId))return fail('SEND_DISABLED');
+ const review=instagramReviewMode(input.companyId)?await readChannelReviewAccess(input.companyId,'instagram'):null;
+ if(instagramReviewMode(input.companyId)&&!review?.ok)return fail('ENTITLEMENT_DENIED');
  const server=createAdminClient();if(!server)return fail('UNAVAILABLE');
- const store=createInstagramSendStore(await createClient() as unknown as InstagramRpcClient,server as unknown as InstagramRpcClient);
+ const store=createInstagramSendStore(await createClient() as unknown as InstagramRpcClient,server as unknown as InstagramRpcClient,review?.ok?review.grant.id:undefined);
  return dispatchInstagramIntent(existing.data.binding,{...store,enabled:()=>instagramConfig().sendEnabled,transport:claim=>sendInstagramText({
   professionalAccountId:claim.binding.accountId,recipientId:claim.binding.recipientId,text:claim.text,accessToken:claim.accessToken,
  })});
@@ -72,12 +81,12 @@ export async function loadInstagramSendReadiness(input:Pick<Ref,'companyId'|'con
   if(!sendObject(input)||!sendUuid(input.companyId)||!sendUuid(input.conversationId))return fail('INVALID_INPUT');
   const company=input.companyId.toLowerCase(),conversation=input.conversationId.toLowerCase();
   const session=await native(company);if('ok' in session)return session;
-  const {data,error}=await session.client.rpc('instagram_send_readiness',{p_company_id:company,p_conversation_id:conversation});
+  const {data,error}=await session.client.rpc(instagramReviewMode(company)?'instagram_review_send_readiness':'instagram_send_readiness',{p_company_id:company,p_conversation_id:conversation});
   if(error)return errorCode(error);if(!sendObject(data))return fail('UNAVAILABLE');
   const denied=denial(data);if(denied)return denied;
   const allowed=['REPLY_PERMISSION_REQUIRED','ENTITLEMENT_DENIED','SIGNED_INBOUND_REQUIRED','TIMESTAMP_CONTRACT_UNVERIFIED','INSTALLED_SECRET_UNVERIFIED','WINDOW_CLOSED','ROLLOUT_DISABLED','BINDING_CHANGED'];
   if(data.ok!==true||!Array.isArray(data.blockers)||data.blockers.some(v=>typeof v!=='string'||!allowed.includes(v)))return fail('UNAVAILABLE');
-  const blockers=[...data.blockers];if(!instagramConfig().sendEnabled&&!blockers.includes('ROLLOUT_DISABLED'))blockers.push('ROLLOUT_DISABLED');
+  const blockers=[...data.blockers];if((!instagramConfig().sendEnabled||process.env.INSTAGRAM_REVIEW_ENABLED==='true'&&!instagramReviewMode(company))&&!blockers.includes('ROLLOUT_DISABLED'))blockers.push('ROLLOUT_DISABLED');
   return {ok:true as const,data:{blockers,ready:blockers.length===0}};
  }catch{return fail('UNAVAILABLE');}
 }

@@ -21,14 +21,14 @@ export type EntitlementCapabilities = {
   liveAi: boolean;
   liveSend: boolean;
   manualSendViaVelora: boolean;
-  /** 7-day inbound retention only after a real paid_through end — never for NULL. */
+  /** 30-day read-only grace only after a real paid_through end — never for NULL. */
   inboundRetentionEligible: boolean;
   inboundRetentionEndsAt: Date | null;
   securityBlocked: boolean;
   cancelAtPeriodEnd: boolean;
 };
 
-const RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+const RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
 export function evaluateSubscriptionEntitlement(input: {
   subscription: SubscriptionSnapshot | null;

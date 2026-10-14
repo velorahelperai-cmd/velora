@@ -18,7 +18,7 @@ describe("P4 tenant resolver verifies the complete persisted link contract", () 
     const mock = admin(valid);
     expect(await resolveWhatsappCompanyByProviderPhone(mock.client, "synthetic-phone")).toEqual({
       ok: true, eligible: true, companyId: valid.company_id, linkId: valid.link_id,
-      providerPhoneNumberId: "synthetic-phone", status: "verified", linkGeneration: 2,
+      providerPhoneNumberId: "synthetic-phone", status: "verified", linkGeneration: 2, connectionMode: "cloud_api",
     });
     expect(mock.rpc).toHaveBeenCalledWith("resolve_whatsapp_company_by_provider_phone", { p_provider_phone_number_id: "synthetic-phone" });
   });

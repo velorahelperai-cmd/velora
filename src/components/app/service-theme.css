@@ -1,0 +1,141 @@
+/* Internal services only. Never attach this boundary to the public landing. */
+.app-shell, [data-service-theme] {
+  --service-canvas: #f4f6f8;
+  --service-surface: #ffffff;
+  --service-subtle: #f0f4f6;
+  --service-ink: #172d43;
+  --service-muted: #536579;
+  --service-line: #dce4eb;
+  --service-accent: #087e8b;
+  --service-accent-hover: #066673;
+  --service-accent-soft: #e7f4f5;
+  --service-success: #18704a;
+  --service-warning: #8b5b14;
+  --service-danger: #b13742;
+  --service-radius: .75rem;
+  --service-gap: 1rem;
+  --service-control-height: 2.75rem;
+  --color-night: var(--service-canvas);
+  --color-panel: var(--service-surface);
+  --color-panel-deep: var(--service-subtle);
+  --color-paper: var(--service-surface);
+  --color-on-dark: var(--service-ink);
+  --color-ink: var(--service-ink);
+  --color-text: var(--service-ink);
+  --color-muted-on-dark: var(--service-muted);
+  --color-muted-soft: var(--service-muted);
+  --color-line: var(--service-line);
+  --color-border-soft: var(--service-line);
+  --color-action-on-dark: var(--service-accent);
+  --color-action-on-light: var(--service-accent);
+  --color-on-bright-action: #fff;
+  --color-success-fg: var(--service-success);
+  --color-warn-fg: var(--service-warning);
+  --color-danger-fg: var(--service-danger);
+  --color-danger: var(--service-danger);
+  --color-hover-wash: var(--service-accent-soft);
+  color: var(--service-ink);
+  background: var(--service-canvas);
+  font-family: var(--font-en);
+  line-height: 1.6;
+  min-height: 100svh;
+  color-scheme: light;
+}
+:is(.app-shell, [data-service-theme])[dir="rtl"],
+html[dir="rtl"] :is(.app-shell, [data-service-theme]) { font-family: var(--font-ar); }
+:is(.app-shell, [data-service-theme]) :is(input,textarea,select,button) { font-family: inherit; }
+:is(.app-shell, [data-service-theme]) :is(h1,h2,h3,p,label,li) { overflow-wrap: anywhere; }
+:is(.app-shell, [data-service-theme]) [hidden] {display:none!important;}
+:is(.app-shell, [data-service-theme]) :focus-visible {
+  outline: 2px solid var(--service-accent);
+  outline-offset: 3px;
+  --tw-ring-color: var(--service-accent);
+}
+:is(.app-shell, [data-service-theme]) [data-button="primary"] {
+  color: #fff;
+  background: var(--service-accent);
+  border-radius: var(--service-radius);
+}
+:is(.app-shell, [data-service-theme]) [data-button="primary"]:hover { background: var(--service-accent-hover); }
+:is(.app-shell, [data-service-theme]) [data-button] { min-height: var(--service-control-height); }
+:is(.app-shell, [data-service-theme]) [data-notice="success"] {
+  color: var(--service-success); background: #eef8f2; border-color: #bcdccc;
+}
+:is(.app-shell, [data-service-theme]) [data-notice="warn"] {
+  color: var(--service-warning); background: #fff8eb; border-color: #ead9b4;
+}
+/* Existing shared children are migrated at the service boundary, not at :root. */
+:is(.app-shell, [data-service-theme]) [class~="bg-[#38dc89]"] { background: var(--service-accent); color: #fff; }
+:is(.app-shell, [data-service-theme]) [class~="hover:bg-[#4fe79a]"]:hover { background: var(--service-accent-hover); }
+:is(.app-shell, [data-service-theme]) :is([class~="text-[#38dc89]"],[class~="text-[#9af0c3]"]) { color: var(--service-accent); }
+:is(.app-shell, [data-service-theme]) [class~="text-[#f7fbf8]"] { color: var(--service-ink); }
+:is(.app-shell, [data-service-theme]) [class~="text-[#072317]"] {color:#fff;}
+:is(.app-shell, [data-service-theme]) :is([class~="text-[#b7c6b9]"],[class~="text-[#9aada0]"],[class~="text-[#c5d4cc]"]) { color: var(--service-muted); }
+:is(.app-shell, [data-service-theme]) [class~="text-[#f0cf9d]"] { color: var(--service-warning); }
+:is(.app-shell, [data-service-theme]) [class~="text-[#f0a0a0]"] { color: var(--service-danger); }
+:is(.app-shell, [data-service-theme]) :is([class~="bg-[#0d1a14]"],[class~="bg-[#0d1a14]/60"]) { background: var(--service-subtle); }
+:is(.app-shell, [data-service-theme]) :is([class~="bg-[#38dc89]/10"],[class~="bg-[#38dc89]/20"]) { background: var(--service-accent-soft); }
+:is(.app-shell, [data-service-theme]) [class~="font-[family-name:Tajawal,var(--font-ar),sans-serif]"] { font-family: inherit; }
+@media (prefers-reduced-motion: reduce) {
+  :is(.app-shell, [data-service-theme]) *, :is(.app-shell, [data-service-theme]) *::before,
+  :is(.app-shell, [data-service-theme]) *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
+.service-skip-link {position:fixed;top:8px;inset-inline-start:8px;z-index:100;background:var(--service-surface);color:var(--service-accent);padding:12px;transform:translateY(-160%);border:1px solid var(--service-line);}
+.service-skip-link:focus {transform:none;}
+.app-shell .channel-badge {display:inline-flex;align-items:center;gap:5px;font-size:.75rem;font-weight:500;white-space:nowrap;color:var(--service-accent);}
+.channel-pane {min-width:0;}
+.channel-pane [data-channel-inbox="whatsapp"] {display:grid;grid-template-columns:minmax(0,1fr);height:calc(100svh - 225px);min-height:580px;max-height:none;border:0;border-radius:0;box-shadow:none;}
+.channel-pane [data-inbox-list] {display:none;}
+.channel-pane [data-channel-inbox="whatsapp"] > section:not([data-inbox-list]) {display:flex;min-width:0;}
+.channel-pane [data-channel-inbox="whatsapp"] > aside {display:none;}
+.channel-pane [data-channel-inbox="whatsapp"] > aside:has(button[aria-label="Close"]),
+.channel-pane [data-channel-inbox="whatsapp"] > aside:has(button[aria-label="إغلاق"]) {max-height:100dvh;}
+.channel-pane [data-channel-inbox="whatsapp"] > aside[class*="fixed"] {display:flex;}
+.channel-pane button[aria-label="Back to list"],.channel-pane button[aria-label="العودة للقائمة"] {display:none;}
+.channel-pane [data-native-back] {display:none;}
+.app-shell [data-transcript] {overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;}
+.app-shell [data-channel-inbox="instagram"] {display:flex;flex-direction:column;min-width:0;background:var(--service-surface);border:1px solid var(--service-line);border-radius:var(--service-radius);margin-top:12px;overflow:hidden;}
+.app-shell [data-channel-inbox="instagram"] .ig-thread-header {display:flex;justify-content:space-between;gap:12px;align-items:center;padding:16px;border-bottom:1px solid var(--service-line);}
+.ig-thread-header h2 {font-weight:500;font-size:1rem;}
+.ig-thread-header p {font-size:.8125rem;color:var(--service-muted);}
+.app-shell [data-channel-inbox="instagram"] ol {display:flex;flex-direction:column;gap:16px;padding:20px;min-height:250px;max-height:55svh;list-style:none;background:var(--service-subtle);}
+.app-shell [data-channel-inbox="instagram"] li {max-width:85%;align-self:flex-start;padding:12px 16px;background:var(--service-surface);border:1px solid var(--service-line);border-radius:12px;white-space:pre-wrap;}
+.app-shell [data-channel-inbox="instagram"] li[data-direction="outbound"] {align-self:flex-end;background:var(--service-accent-soft);}
+.ig-message-source,.app-shell [data-channel-inbox="instagram"] time {display:block;font-size:.6875rem;color:var(--service-muted);}
+.app-shell [data-channel-inbox="instagram"] label {display:grid;gap:8px;padding:16px;font-size:.875rem;}
+.app-shell [data-channel-inbox="instagram"] textarea {font:inherit;min-height:88px;border:1px solid var(--service-line);border-radius:8px;padding:12px;resize:vertical;background:var(--service-subtle);}
+.app-shell [data-channel-inbox="instagram"] > :is(button,p,.channel-badge) {margin:8px 16px;}
+.app-shell [data-channel-inbox="instagram"] > button {align-self:flex-start;}
+.channel-pane [data-channel-inbox="instagram"] {border:0;border-radius:0;margin-top:0;}
+.ig-conversation-layout {display:grid;grid-template-columns:minmax(0,1fr);min-width:0;}
+.channel-pane .ig-conversation-layout {flex:1;min-height:0;}
+.channel-pane .ig-conversation-layout [data-channel-inbox="instagram"] {height:100%;min-height:0;overflow-y:auto;}
+.channel-pane .ig-conversation-layout [data-channel-inbox="instagram"] ol {flex:1;min-height:0;max-height:none;margin:0;}
+.channel-pane .ig-conversation-layout [data-channel-inbox="instagram"] > :not(ol) {flex-shrink:0;}
+.app-shell [data-channel-inbox="instagram"] textarea {font-size:1rem;}
+.conversation-details-panel {display:none;background:var(--service-surface);padding:20px;border-inline-start:1px solid var(--service-line);min-width:0;overflow:auto;}
+.conversation-details-panel header {display:flex;align-items:center;justify-content:space-between;gap:8px;padding-bottom:16px;border-bottom:1px solid var(--service-line);}
+.conversation-details-panel h2 {font-size:1rem;font-weight:700;}
+.conversation-details-panel dl {display:grid;gap:10px;margin:20px 0;}
+.conversation-details-panel dt {font-size:.875rem;color:var(--service-muted);}
+.conversation-details-panel dd {margin:0 0 12px;font-size:.9375rem;overflow-wrap:anywhere;}
+.conversation-details-panel a {display:inline-flex;min-height:44px;align-items:center;color:var(--service-accent);text-decoration:underline;}
+.conversation-details-panel[data-details-open="true"] {display:block;position:fixed;inset-block:0;inset-inline-end:0;width:min(100%,400px);z-index:50;box-shadow:0 0 0 100vmax #172d4366;}
+@media(min-width:1536px){
+ .ig-conversation-layout {grid-template-columns:minmax(0,1fr) 280px;}
+ .conversation-details-panel {display:block;position:static;width:auto;box-shadow:none;}
+ .conversation-details-panel header button,.ig-thread-header [data-details-toggle] {display:none;}
+ .channel-pane [data-channel-inbox="whatsapp"] {grid-template-columns:minmax(0,1fr) 280px;}
+ .channel-pane [data-channel-inbox="whatsapp"] > aside {display:flex;position:static;width:auto;box-shadow:none;}
+}
+@media(max-width:1535px){
+ .channel-pane [data-details-toggle] {display:inline-flex;min-height:44px;}
+ .channel-pane [data-channel-inbox="whatsapp"] > aside[data-details-open="true"] {display:flex;position:fixed;inset-block:0;inset-inline-end:0;width:min(100%,400px);max-width:none;z-index:50;background:var(--service-surface);box-shadow:0 0 0 100vmax #172d4366;}
+ .channel-pane aside[data-details-open="true"] button[aria-label="Close"],.channel-pane aside[data-details-open="true"] button[aria-label="إغلاق"] {display:flex;min-width:44px;min-height:44px;}
+}
+@media(max-width:767px){
+ .app-shell[data-immersive="true"] :is([data-workspace-navigation],[data-workspace-page-header]) {display:none;}
+ .channel-pane [data-channel-inbox="whatsapp"] {height:calc(100dvh - 85px);min-height:450px;}
+ .channel-pane [data-channel-inbox="instagram"] ol {max-height:45dvh;}
+ .app-shell [data-channel-inbox="instagram"] li {max-width:94%;}
+}

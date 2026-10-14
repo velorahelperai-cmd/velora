@@ -14,6 +14,8 @@ vi.mock("@/lib/whatsapp/actions", () => ({ controlWhatsappConversation: vi.fn(),
 vi.mock("@/lib/whatsapp/inbox-actions", () => ({ refreshWhatsappInboxInitialPage: vi.fn(), refreshWhatsappInboxPage: vi.fn(), refreshWhatsappThreadPage: vi.fn(),
   refreshWhatsappControlAuditPage: vi.fn(), refreshWhatsappConnectionStatus: vi.fn(), markWhatsappThreadSeen: vi.fn() }));
 import { ConversationsPage } from "./conversations";
+vi.mock('./channel-ai-draft',()=>({ChannelAIDraft:()=>null}));
+vi.mock('./channel-review',()=>({ChannelReviewStatus:()=>null}));
 
 function item(id: string, sequence: string, unreadCount = 0): WhatsappInboxItem {
   return { id, inboxSequence: sequence, unreadCount, intervention: { reasons: [] }, customer: id,
@@ -120,7 +122,7 @@ describe("Inbox renders authoritative data", () => {
     expect(html).not.toContain('title="Unread messages"');
     expect(html).toContain("Connection status unavailable");
     expect(html).not.toContain("Synced");
-    const takeover = html.match(/<button[^>]*title="Take over from Noura"[^>]*>/)?.[0];
+    const takeover = html.match(/<button[^>]*title="Take over from Velora"[^>]*>/)?.[0];
     expect(takeover).toContain("disabled");
     expect(html.match(/<button[^>]*type="submit"[^>]*>/)?.[0]).toContain("disabled");
     expect(html).toContain("Refreshing thread");

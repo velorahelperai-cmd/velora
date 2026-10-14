@@ -1,0 +1,7 @@
+import {expect,it,vi} from 'vitest';
+vi.mock('server-only',()=>({}));
+import {runExpiryEmail} from './expiry-worker';
+const claim={id:'00000000-0000-4000-8000-000000000001',claimToken:'00000000-0000-4000-8000-000000000002',kind:'expired' as const,companyName:'Test',recipient:'owner@example.invalid',expiredAt:'2026-10-01T00:00:00Z',disconnectAt:'2026-10-31T00:00:00Z',deleteAt:'2026-11-30T00:00:00Z'};
+it('disabled worker never claims or sends',async()=>{const send=vi.fn(),read=vi.fn();expect(await runExpiryEmail(false,{claim:read,authorize:async()=>true,send,finish:async()=>true})).toMatchObject({ok:false});expect(read).not.toHaveBeenCalled();expect(send).not.toHaveBeenCalled();});
+it('renewal between claim and dispatch makes zero provider requests',async()=>{const send=vi.fn();expect(await runExpiryEmail(true,{claim:async()=>claim,authorize:async()=>false,send,finish:async()=>true})).toMatchObject({ok:true,accepted:0});expect(send).not.toHaveBeenCalled();});
+it('uncertain mail outcome is settled once and never retried',async()=>{let dispatches=0;const outcomes:string[]=[];expect(await runExpiryEmail(true,{claim:async()=>claim,authorize:async()=>true,send:async()=>{dispatches++;throw Error('timeout');},finish:async(_c,state)=>{outcomes.push(state.kind);return true;}})).toMatchObject({ok:true,accepted:0,reconciliationRequired:true});expect(dispatches).toBe(1);expect(outcomes).toEqual(['reconciliation_required']);});

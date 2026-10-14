@@ -1,4 +1,5 @@
 import { beforeEach, expect, it, vi } from "vitest";
+vi.mock("server-only", () => ({}));
 import type { ComponentProps } from "react";
 import { appCopy } from "@/lib/app-copy";
 type Slot = { value?: unknown; deps?: unknown[] };

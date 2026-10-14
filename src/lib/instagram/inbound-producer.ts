@@ -19,7 +19,7 @@ export async function readInstagramInboundRuntime(environment:Readonly<Record<st
  return {receiveEnabled:true,providerFixtureVerified:true,timestampContractVerified:r.timestampContractVerified,installedSecretVerified:true};
  }catch{return closed();}
 }
-type Installation=Readonly<{parentAppId:string;secret:Readonly<{source:'parent_webhook_app';value:string}>;installedSecretVerified:boolean;providerFixtureVerified:boolean}>;
+type Installation=Readonly<{parentAppId:string;secret:Readonly<{source:'parent_webhook_app';value:string}>;installedSecretVerified:boolean;providerFixtureVerified:boolean;reviewCompanyId?:string}>;
 /** Server-internal composition after raw-body HMAC verification by webhook-route.
  * SQL independently checks the installed fingerprint. Never pass the secret to SQL,
  * accept a company from the event, or normalize undocumented timestamp units. */
@@ -29,8 +29,9 @@ export function createInstagramSignedWebhookPersistence(server:InstagramRpcClien
   &&/^\d{1,64}$/.test(app)&&secret.source==='parent_webhook_app'&&typeof secret.value==='string'&&secret.value.length>0;
  const fingerprint=verified?createHash('sha256').update(secret.value,'utf8').digest('hex'):null;
  // Reuse the existing strict, immutable batch capture and commit acknowledgement.
- const persist=createInstagramWebhookPersistence({rpc:(_name,args)=>server.rpc('instagram_ingest_signed_webhook',{
+ const persist=createInstagramWebhookPersistence({rpc:(_name,args)=>server.rpc(installation.reviewCompanyId?'instagram_ingest_review_webhook':'instagram_ingest_signed_webhook',{
   p_batch:args.p_batch,p_parent_app_id:app,p_secret_fingerprint:fingerprint,
+  ...(installation.reviewCompanyId?{p_company_id:installation.reviewCompanyId}:{}),
  })});
  return batch=>verified?persist(batch):Promise.resolve({status:'retryable' as const});
 }

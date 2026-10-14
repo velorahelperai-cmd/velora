@@ -1,0 +1,6 @@
+import {expect,it,vi} from 'vitest';
+vi.mock('server-only',()=>({}));
+import {readPersistedInstagramProfile} from './persisted-profile';
+it('uses saved credential for a GET and accepts only the same stable professional ID',async()=>{const http=vi.fn().mockResolvedValue(Response.json({user_id:'17841416239520365',username:'changed_name'}));expect(await readPersistedInstagramProfile({accountId:'17841416239520365',accessToken:'synthetic'},http)).toEqual({kind:'profile',username:'changed_name'});expect(http.mock.calls[0][1].method).toBe('GET');});
+it('another account response never supplies a display name',async()=>{expect(await readPersistedInstagramProfile({accountId:'100',accessToken:'synthetic'},async()=>Response.json({user_id:'101',username:'wrong'}))).toEqual({kind:'unavailable'});});
+it('definite token rejection is different from a network-unknown result',async()=>{expect(await readPersistedInstagramProfile({accountId:'100',accessToken:'synthetic'},async()=>Response.json({error:{code:190}},{status:400}))).toEqual({kind:'authorization_required'});expect(await readPersistedInstagramProfile({accountId:'100',accessToken:'synthetic'},async()=>{throw Error('timeout');})).toEqual({kind:'unavailable'});});
