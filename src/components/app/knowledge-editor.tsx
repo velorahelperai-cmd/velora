@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { isSetupFilePath, type SetupFileScope } from "@/lib/tenancy/setup-file";
 import {
   deleteKnowledgeSource,
   listKnowledgeSources,
@@ -40,6 +41,9 @@ type Props = {
   onSourcesChange?: (sources: KnowledgeSourceRecord[]) => void;
   /** Notify parent when load failure clears/sets (e.g. setup Next button). */
   onLoadStateChange?: (failed: boolean) => void;
+  setupFileScope?: SetupFileScope;
+  requireSetupFileScope?: boolean;
+  onSetupFileScopeChange?: () => void;
 };
 
 type KnowledgeCategory = "all" | "profile" | "products" | "pricing" | "policies" | "faq";
@@ -84,12 +88,16 @@ export function KnowledgeEditor({
   approvalFoundation: initialApprovalFoundation = "ready",
   onSourcesChange,
   onLoadStateChange,
+  setupFileScope,
+  requireSetupFileScope = false,
+  onSetupFileScopeChange,
 }: Props) {
   const copy = useAppCopy();
   const { locale } = useDemo();
   const localize = (arabic: string, english: string) => locale === "ar" ? arabic : english;
   const router = useRouter();
   const [sources, setSources] = useState<KnowledgeSourceRecord[]>(initialSources);
+  const fileAttemptBatch = useRef<{ key: string; ids: string[] } | null>(null);
   const [loadFailed, setLoadFailed] = useState(initialLoadFailed);
   const [approvalFoundation, setApprovalFoundation] = useState<KnowledgeApprovalFoundation>(initialApprovalFoundation);
   const [mode, setMode] = useState<"text" | "file" | null>(focusTitle && !initialLoadFailed ? "text" : null);
@@ -247,6 +255,7 @@ export function KnowledgeEditor({
   }
 
   async function saveFilesDb() {
+    if (requireSetupFileScope && !setupFileScope) { setError(localize("لا يمكن رفع ملفات بعد إغلاق مسودة التجهيز. ابدأ مسودة جديدة صراحةً.", "Files cannot be uploaded after this setup draft closes. Explicitly start a new draft.")); return; }
     if (!form.files?.length) {
       setErrors({ files: "required" });
       return;
@@ -266,8 +275,16 @@ export function KnowledgeEditor({
     try {
       const fd = new FormData();
       fd.set("expectedCompanyId", companyId);
+      if (requireSetupFileScope) fd.set("setupFileScopeRequired", "true");
+      if (setupFileScope) {
+        fd.set("setupFileScope", JSON.stringify(setupFileScope));
+        const key = `${setupFileScope.draftId}:` + Array.from(form.files).map(f => `${f.name}:${f.size}:${f.lastModified}`).join("|");
+        if (fileAttemptBatch.current?.key !== key) fileAttemptBatch.current = { key, ids: Array.from(form.files).map(() => crypto.randomUUID()) };
+        fileAttemptBatch.current.ids.forEach(id => fd.append("setupFileAttemptId", id));
+      }
       Array.from(form.files).forEach((f) => fd.append("files", f));
       const result = await uploadKnowledgeFiles(fd);
+      if (setupFileScope) onSetupFileScopeChange?.();
       if (!result.ok) {
         setError(fileErrorMessage(result.message, copy) || result.message || copy.knowledge.saveFailed);
         return;
@@ -339,9 +356,12 @@ export function KnowledgeEditor({
         return;
       }
       setSources((prev) => prev.filter((s) => s.id !== id));
-      setNotice(copy.knowledge.deleted);
+      const deletionNotice = result.data.deletionPending ? result.data.cleanupPolicy === "UNCONFIGURED"
+        ? localize("مُنع الوصول إلى الملف. الحذف الفعلي ينتظر سياسة معتمدة.", "File access is blocked. Physical deletion awaits an approved policy.")
+        : localize("مُنع الوصول إلى الملف. الحذف الفعلي قيد الانتظار.", "File access is blocked. Physical deletion is pending.") : copy.knowledge.deleted;
+      setNotice(deletionNotice);
       refreshAppViews();
-      await reload({ keepNotice: copy.knowledge.deleted });
+      await reload({ keepNotice: deletionNotice });
     } finally {
       setBusy(false);
     }
@@ -847,6 +867,7 @@ export function KnowledgeEditor({
                     <p className="mt-2 text-xs leading-5 text-[var(--color-muted-on-dark)] line-clamp-3">
                       {src.kind === "file" ? <span dir="ltr" className="font-mono">{src.file_name}</span> : src.content}
                     </p>
+                    {src.storage_path && isSetupFilePath(src.storage_path) && <a className="mt-2 inline-flex min-h-11 items-center underline" href={`/api/knowledge/setup-file?companyId=${encodeURIComponent(companyId)}&sourceId=${encodeURIComponent(src.id)}`}>{localize("تنزيل الملف", "Download file")}</a>}
                     {src.kind === "file" && src.status === "ready" && src.content ? (
                       <p className="mt-1 text-xs leading-5 text-[var(--color-muted-soft)] line-clamp-2">
                         {src.content}

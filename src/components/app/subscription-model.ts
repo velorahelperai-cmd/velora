@@ -9,6 +9,9 @@ export type SubscriptionView = {
   cycle: SubscriptionCycle | null;
   paidThrough: string | null;
   pendingOrderId?: string;
+  currentPackage?: "basic" | "premium" | null;
+  planVersionId?: string | null;
+  operationalReady?: boolean;
 };
 
 /** Display-only adapter. Boolean entitlement cannot supply a catalog, tier, or period. */

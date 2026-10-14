@@ -8,6 +8,11 @@ import { useEffect, useRef, useState } from "react";
 import type { CompanyRecord } from "@/lib/tenancy/types";
 import { useDemo } from "@/lib/demo-state";
 import { SubscriptionPanel } from "@/components/app/subscription-panel";
+import {SubscriptionActivationState} from './subscription-activation-state';
+import {CycleCreditSummary} from './cycle-credit-summary';
+import {RenewalWalletPanel} from './renewal-wallet-panel';
+import type {CycleCreditSnapshot} from '@/lib/billing/cycle-credits';
+import type {ActivationState} from '@/lib/billing/activation';
 import type { SubscriptionOffersView } from "./subscription-offers-view";
 import type { SubscriptionView } from "@/components/app/subscription-model";
 import { AccountSettingsLinkCard } from "@/components/app/account-page";
@@ -29,18 +34,24 @@ type Tab = "account" | "business" | "team" | "whatsapp" | "plan";
 
 export function SettingsPage({
   initialAccess,
+  masterJourneyEnabled=false,
   initialCompany,
   initialSubscription,
   initialOffersView,
+  initialActivation = null,
+  initialCredits = null,
   initialWhatsappLink = null,
   whatsappLinkLoadFailed = false,
   whatsappLiveOpsReady = false,
   singleTenantReception = null,
 }: {
   initialAccess: SettingsAccess;
+  masterJourneyEnabled?:boolean;
   initialCompany:CompanyRecord|null;
   initialSubscription: SubscriptionView;
   initialOffersView: SubscriptionOffersView;
+  initialActivation?: ActivationState|null;
+  initialCredits?: CycleCreditSnapshot|null;
   initialWhatsappLink?: import("@/lib/whatsapp/connection").WhatsappCompanyLink | null;
   whatsappLinkLoadFailed?: boolean;
   whatsappLiveOpsReady?: boolean;
@@ -104,7 +115,10 @@ export function SettingsPage({
             {tab === "plan" ? (
               <div className="grid gap-6">
                 <PlanHeroSummary view={initialSubscription} locale={locale} />
-                <SubscriptionPanel key={initialAccess.companyId} companyId={initialAccess.companyId!} locale={locale} view={initialSubscription} offersView={initialOffersView} onRetry={() => router.refresh()} />
+                <SubscriptionActivationState value={initialActivation} ar={locale==='ar'}/>
+                {masterJourneyEnabled&&<CycleCreditSummary value={initialCredits} ar={locale==='ar'}/>}
+                {masterJourneyEnabled&&initialAccess.userId&&initialAccess.companyId&&<RenewalWalletPanel companyId={initialAccess.companyId} expectedUserId={initialAccess.userId} ar={locale==='ar'} renewalPlan={initialOffersView.status==='ready'?(()=>{const offer=initialOffersView.offers.find(o=>o.versionId===initialSubscription.planVersionId);return offer?.catalogRevision?{versionId:offer.versionId,catalogRevision:offer.catalogRevision,amountBaisa:offer.amountBaisa}:undefined;})():undefined}/>}
+                <SubscriptionPanel key={initialAccess.companyId} companyId={initialAccess.companyId!} locale={locale} view={initialSubscription} offersView={initialOffersView} masterJourneyEnabled={masterJourneyEnabled} onRetry={() => router.refresh()} />
               </div>
             ) : null}
           </>
@@ -234,6 +248,7 @@ function BusinessTab({userId,company,leaveGuardRef}:{userId:string|null;company:
         setSaved(false);setError(null);setDiagnostic(null);
         void run(async () => {
           const result = await saveOwnerBusiness({
+            expectedVersion:company.version,
             expectedUserId: userId,
             expectedCompanyId: company.id,
             displayName: form.name,
@@ -265,7 +280,7 @@ function BusinessTab({userId,company,leaveGuardRef}:{userId:string|null;company:
         {saved && !dirty ? <div className="lg:col-span-2"><Notice tone="success">{copy.saved}</Notice></div> : null}
         <Field label={copy.setup.businessName} required>{(p) => <input {...p} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />}</Field>
         <Field label={copy.setup.city}>{(p) => <input {...p} value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} />}</Field>
-        <Field label={copy.setup.hours} required>{(p) => <input {...p} value={form.hours} onChange={(e) => setForm({ ...form, hours: e.target.value })} />}</Field>
+        <Field label={copy.setup.hours}>{(p) => <input {...p} value={form.hours} onChange={(e) => setForm({ ...form, hours: e.target.value })} />}</Field>
         <Field label={copy.setup.contactPhone}>{(p) => <input {...p} dir="ltr" inputMode="tel" value={form.contactPhone} onChange={(e) => setForm({ ...form, contactPhone: e.target.value })} />}</Field>
         <div className="lg:col-span-2"><Button type="submit" busy={busy} busyLabel={copy.saving} disabled={conflicts.length>0 || !dirty || !form.name.trim()}>{copy.save}</Button></div>
       </form>

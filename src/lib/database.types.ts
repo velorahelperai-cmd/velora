@@ -4,7 +4,7 @@ export type Database = {
   public: {
     Tables: {
       company_setup_drafts: {
-        Row: { user_id: string; company_id: string | null; scope_id: string; payload: Json; revision: number; updated_at: string };
+        Row: { user_id: string; company_id: string | null; scope_id: string; payload: Json; revision: number; updated_at: string; draft_id: string; state: string; generation: number; expires_at: string | null; last_meaningful_activity_at: string; paid_protected_at: string | null; paid_protection_receipt_id: string | null; closed_at: string | null; cleanup_policy: string; file_deletion_started_at: string | null };
         Insert: { user_id: string; company_id?: string | null; payload: Json; revision?: number; updated_at?: string };
         Update: { payload?: Json; revision?: number; updated_at?: string };
         Relationships: [];
@@ -33,6 +33,9 @@ export type Database = {
       companies: {
         Row: {
           id: string;
+          version: number;
+          setup_file_destruction_at: string|null;
+          archived_at: string|null;
           display_name: string;
           status: "setup" | "active" | "suspended";
           business_type: string;
@@ -586,6 +589,8 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      create_owner_company_attempt: { Args: { p_expected_user_id: string; p_idempotency_key: string; p_payload: Json }; Returns: Json };
+      update_owner_company_profile: { Args: { p_expected_user_id: string; p_company_id: string; p_expected_version: number; p_patch: Json }; Returns: Json };
       save_company_setup_draft: { Args: { p_expected_user_id: string; p_company_id: string | null; p_expected_revision: number; p_payload: Json }; Returns: Json };
       g03_read_file_generation: { Args: { p_source_id: string; p_company_id: string; p_storage_path: string; p_action?: string }; Returns: Json };
       list_owner_company_review_events_for_company: { Args: {p_company_id:string}; Returns:Json };

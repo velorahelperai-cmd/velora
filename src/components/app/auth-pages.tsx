@@ -713,7 +713,7 @@ export function ResetPasswordPage() {
               if (session && !session.isCurrentUser(expectedUserId)) return;
               if (!result.ok) {
                 setDiagnostic(result.diagnostic);
-                setFormError(copy.errors.authFailed);
+                setFormError(result.message==='PASSWORD_CHANGED_SESSION_REVOCATION_PENDING'?(locale==='ar'?'تغيّرت كلمة المرور، لكن لم نتأكد من إغلاق كل الجلسات. سجّل خروجك وتواصل مع الدعم لإكمال التحقق.':'Your password changed, but closing every session could not be confirmed. Sign out and contact support to complete verification.'):copy.errors.authFailed);
                 return;
               }
               setDone(true);

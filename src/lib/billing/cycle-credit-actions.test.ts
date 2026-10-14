@@ -1,0 +1,11 @@
+import {afterEach,beforeEach,expect,it,vi} from "vitest";
+const f=vi.hoisted(()=>({access:vi.fn(),rpc:vi.fn()}));
+vi.mock("server-only",()=>({}));
+vi.mock("@/lib/tenancy/access",()=>({getCompanyAccess:f.access}));
+vi.mock("./operations/db",()=>({operationRpc:f.rpc}));
+import {readCycleCreditsAction} from "./cycle-credit-actions";
+beforeEach(()=>{vi.clearAllMocks();vi.stubEnv("VELORA_MASTER_JOURNEY_ENABLED","true");f.access.mockResolvedValue({ok:true,context:{company:{id:"company"}}});});
+afterEach(()=>vi.unstubAllEnvs());
+it("default-off rollout stops before Auth/database access",async()=>{vi.stubEnv("VELORA_MASTER_JOURNEY_ENABLED",undefined);expect(await readCycleCreditsAction("company")).toEqual({ok:false,code:"UNCONFIGURED"});expect(f.access).not.toHaveBeenCalled();expect(f.rpc).not.toHaveBeenCalled();});
+it("a workspace switch cannot read a stale expected company",async()=>{expect(await readCycleCreditsAction("other")).toEqual({ok:false,code:"FORBIDDEN"});expect(f.rpc).not.toHaveBeenCalled();});
+it("malformed server accounting fails without inventing balances",async()=>{f.rpc.mockResolvedValue({ok:true,data:{companyId:"company",totalRemaining:500}});expect(await readCycleCreditsAction("company")).toEqual({ok:false,code:"UNAVAILABLE"});});

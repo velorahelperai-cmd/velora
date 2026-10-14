@@ -1,17 +1,18 @@
 vi.mock("server-only", () => ({}));
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const state = vi.hoisted(() => ({ client: vi.fn(), user: vi.fn(), identity: vi.fn(), update: vi.fn() }));
+const state = vi.hoisted(() => ({ client: vi.fn(), user: vi.fn(), identity: vi.fn(), update: vi.fn(),revoke:vi.fn(),logout:vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: state.client }));
 vi.mock("@/lib/auth/server-identity", () => ({ readSessionIdentity: state.identity }));
 import { updatePassword } from "./actions";
 
 beforeEach(() => {
   vi.clearAllMocks();
-  state.client.mockResolvedValue({ auth: { getUser: state.user, updateUser: state.update } });
+  state.client.mockResolvedValue({rpc:state.revoke,auth: { getUser: state.user, updateUser: state.update,signOut:state.logout } });
   state.user.mockResolvedValue({ data: { user: { id: "private-user-id" } }, error: null });
   state.identity.mockResolvedValue({ ok: true, userId: "private-user-id" });
   state.update.mockResolvedValue({ error: null });
+  state.revoke.mockResolvedValue({error:null,data:true});state.logout.mockResolvedValue({error:null});
 });
 
 describe("password update diagnostics", () => {
@@ -54,5 +55,16 @@ describe("password update diagnostics", () => {
   it("preserves confirmed success", async () => {
     expect(await updatePassword("long-password")).toEqual({ ok: true, data: undefined });
     expect(state.update).toHaveBeenCalledExactlyOnceWith({ password: "long-password" });
+    expect(state.revoke).toHaveBeenCalledExactlyOnceWith('master_revoke_account_sessions',{p_expected_user_id:'private-user-id'});
+    expect(state.logout).toHaveBeenCalledExactlyOnceWith({scope:'global'});
+  });
+  it('revokes all native Auth sessions even when the optional local epoch is unavailable',async()=>{
+    state.revoke.mockResolvedValue({error:{code:'PGRST202'},data:null});
+    expect(await updatePassword('long-password')).toMatchObject({ok:true});expect(state.logout).toHaveBeenCalledWith({scope:'global'});
+  });
+  it('reports a changed password with unresolved session revocation as partial failure',async()=>{
+    state.logout.mockResolvedValue({error:{message:'private-provider-error'}});
+    const result=await updatePassword('private-password');expect(result).toMatchObject({ok:false,code:'UNAVAILABLE',message:'PASSWORD_CHANGED_SESSION_REVOCATION_PENDING'});
+    expect(JSON.stringify(result)).not.toContain('private-provider-error');expect(JSON.stringify(result)).not.toContain('private-password');
   });
 });

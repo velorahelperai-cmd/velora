@@ -76,6 +76,7 @@ export function AdminAIConsole({initial,freeState}:{initial:AdminAIState;freeSta
  return <section className={styles.console} dir={ar?"rtl":"ltr"}>
   <header className={styles.header}><div><p className={styles.kicker}>Velora AI</p><h1>{ar?"تجربة الذكاء الفعلية":"Real AI trials"}</h1><p>{ar?"ردود من النماذج الحقيقية، باستهلاك محفوظ وسقف مستقل لتجارب مالك المنصة.":"Actual model responses with durable usage and a separate owner trial budget."}</p></div><Link href="/admin">{ar?"لوحة الإدارة":"Administration"}</Link></header>
   <div className={styles.balance}><div><span>{ar?"متبقي للتجارب":"Trial balance"}</span><strong><bdi>{money(remaining)}</bdi> <small>{ar?"ر.ع":"OMR"}</small></strong></div><p>{ar?"السقف الإجمالي: 1 ر.ع. لا يتجدد تلقائيًا، ولا يُخصم من اشتراك الشركة.":"Total cap: 1 OMR. No automatic reset; company subscriptions are not charged."}<br/>{ar?"المستخدم":"Spent"}: <bdi>{money(Number(budget.spent_baisa))}</bdi> · {ar?"المحجوز":"Held"}: <bdi>{money(Number(budget.held_baisa))}</bdi></p>{refreshControl}</div>
+  <p className="text-sm">{ar?'التكلفة المسجلة محسوبة من استهلاك التوكنز وتسعيرة المحاولة المحفوظة؛ فاتورة المزود النهائية تحتاج المطابقة.':'Recorded cost is calculated from token usage and the saved attempt pricing; the final provider invoice requires reconciliation.'}</p>
   {refreshNotice}
   <SyntheticGeminiConsole initial={freeState??{ready:false,code:"FREE_SYNTHETIC_NEEDS_SETUP"}} ar={ar} attemptedBefore={freeAttempted} onAttempt={()=>setFreeAttempted(true)}/>
   {error?<Notice tone="error">{error}</Notice>:null}

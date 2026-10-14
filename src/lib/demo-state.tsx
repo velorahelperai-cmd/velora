@@ -16,7 +16,7 @@ export type ConversationStatus = "open" | "follow_up" | "handed_over" | "resolve
 export type Account = { name: string; email: string; role: Role };
 export type Business = {
   name: string;
-  type: SectorId | "other";
+  type: SectorId | "other" | "store" | "clinic";
   replyLanguage: "ar" | "en" | "both";
   country: string;
   city: string;

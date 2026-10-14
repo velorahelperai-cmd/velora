@@ -1,4 +1,6 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi, beforeEach,afterEach } from "vitest";
+afterEach(()=>vi.unstubAllEnvs());
+vi.mock('server-only',()=>({}));
 import type { AccessResult } from "@/lib/tenancy/access";
 import type { CompanyContext } from "@/lib/tenancy/types";
 const state = vi.hoisted(() => ({ path: "", access: null as AccessResult | null }));
@@ -8,6 +10,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/tenancy/access", async (original) => ({ ...await original<typeof import("@/lib/tenancy/access")>(), getCompanyAccess: async () => state.access }));
 vi.mock("@/lib/knowledge/actions", () => ({ listKnowledgeSources: vi.fn() }));
 vi.mock("@/lib/tenancy/actions", () => ({ getCompanyReviewRequest: vi.fn() }));
+vi.mock('@/lib/tenancy/setup-draft-actions',()=>({readActiveSetupDraft:vi.fn().mockResolvedValue({ok:true,data:null})}));
 vi.mock("@/components/app/setup-wizard", () => ({ SetupWizard: () => null }));
 vi.mock("@/components/app/access-gate", () => ({ AccessGate: () => null }));
 import SetupLayout from "./layout";
@@ -21,8 +24,9 @@ const context: CompanyContext = {
   needsProfileName: false, emailConfirmed: true, identityVerified: true, isPlatformAdmin: false,
   company: null, membership: null, needsCompanyContext: false, workspaceChoices: [],
 };
-beforeEach(() => { state.path = returnTo; state.access = { ok: true, context }; });
+beforeEach(() => {vi.clearAllMocks();vi.stubEnv('VELORA_MASTER_JOURNEY_ENABLED','true'); state.path = returnTo; state.access = { ok: true, context }; });
 describe("setup server routes retain the package selection", () => {
+  it('rollout-off preserves baseline onboarding before company creation',async()=>{vi.stubEnv('VELORA_MASTER_JOURNEY_ENABLED','false');const page=await SetupPage();expect(page.props.children.props.initialCompany).toBeNull();expect(page.props.children.props.preferredNext).toBe(selected);expect(page.props.children.props.masterJourneyEnabled).toBe(false);});
   it("permits setup for a platform admin with an explicitly selected owner membership", async () => {
     state.access = { ok: true, context: { ...context, isPlatformAdmin: true, company: { id: "company", status: "setup" } as CompanyContext["company"], membership: { role: "owner" } as CompanyContext["membership"] } };
     expect(await SetupLayout({ children: "owner setup" })).toBe("owner setup");
@@ -45,11 +49,17 @@ describe("setup server routes retain the package selection", () => {
     await loading;
     expect(reviewStarted).toBe(1);
   });
-  it("passes the selected package into the wizard while allowing required setup", async () => {
+  it("retains the selected package through the separate new-business journey", async () => {
     expect(await SetupLayout({ children: "setup content" })).toBe("setup content");
+    await expect(SetupPage()).rejects.toThrow(`redirect:/account/businesses/new?next=${encodeURIComponent(returnTo)}`);
+  });
+  it("passes the selected package into the wizard for an existing owner business", async () => {
+    state.access={ok:true,context:{...context,company:{id:'company'} as CompanyContext['company'],membership:{role:'owner'} as CompanyContext['membership']}};
+    vi.mocked(listKnowledgeSources).mockResolvedValueOnce({ok:true,data:{sources:[],approvalFoundation:'ready'}});
+    vi.mocked(getCompanyReviewRequest).mockResolvedValueOnce({ok:true,data:null});
     const page = await SetupPage();
     expect(page.props.children.props.preferredNext).toBe(selected);
-    expect(page.props.children.props.initialCompany).toBeNull();
+    expect(page.props.children.props.initialCompany?.id).toBe('company');
   });
   it("preserves selection through both missing-session route redirects", async () => {
     state.access = { ok: false, code: "UNAUTHENTICATED" };

@@ -32,6 +32,7 @@ import type {
   KnowledgeUploadItemResult,
 } from "@/lib/knowledge/types";
 import { createClient } from "@/lib/supabase/server";
+import { isSetupFilePath, type SetupFileRpc, type SetupFileScope } from "@/lib/tenancy/setup-file";
 import { getCompanyAccess, requirePlatformAdmin } from "@/lib/tenancy/access";
 import type { AccessCode } from "@/lib/tenancy/types";
 
@@ -230,6 +231,15 @@ async function loadStoredBytesBoundToObject(
   if (captured.status === "error") return { ok: false, reason: "error", message: captured.message };
 
   const signal = AbortSignal.timeout(10_000);
+  if (isSetupFilePath(storagePath)) {
+    const { downloadSetupFile } = await import("@/lib/tenancy/setup-file-server");
+    const access = await getCompanyAccess();
+    if (!access.ok || access.context.company?.id !== companyId) return { ok: false, reason: "unreadable" };
+    const loaded = await downloadSetupFile(supabase as unknown as SetupFileRpc, access.context.userId, companyId, sourceId);
+    if (!loaded) return { ok: false, reason: "unreadable" };
+    const verified = await readStorageObjectGeneration(supabase, companyId, sourceId, storagePath);
+    return bindDownloadedBytesToObject({ captured: captured.generation, downloadedBytes: loaded.bytes, verified: verified.status === "ok" ? verified.generation : null });
+  }
   const { data: fileStream, error: downloadError } = await supabase.storage
     .from(KNOWLEDGE_BUCKET)
     .download(storagePath, {}, { signal, cache: "no-store" }).asStream();
@@ -488,7 +498,20 @@ export async function uploadKnowledgeFiles(
 
     const results: KnowledgeUploadItemResult[] = [];
 
+    let setupScope: SetupFileScope | null = null;
+    const scopeValue = formData.get("setupFileScope");
+    if (formData.get("setupFileScopeRequired") === "true" && scopeValue === null) return { ok: false, code: "FORBIDDEN", message: "DRAFT_CLOSED" };
+    if (scopeValue !== null) {
+      if (typeof scopeValue !== "string" || formData.getAll("setupFileScope").length !== 1) return { ok: false, code: "INVALID_INPUT" };
+      try { setupScope = JSON.parse(scopeValue) as SetupFileScope; } catch { return { ok: false, code: "INVALID_INPUT" }; }
+      if (!setupScope || setupScope.expectedUserId !== ctx.userId || setupScope.expectedCompanyId !== ctx.companyId || !setupScope.draftId || !Number.isSafeInteger(setupScope.generation)) return { ok: false, code: "FORBIDDEN" };
+    }
+    const setupAttempts = formData.getAll("setupFileAttemptId");
+    if (setupScope && (setupAttempts.length !== files.length || setupAttempts.some(v => typeof v !== "string" || !/^[a-f0-9-]{36}$/i.test(v)))) return { ok: false, code: "INVALID_INPUT" };
+    let fileIndex = 0;
+
     for (const file of files) {
+      const attemptId = setupAttempts[fileIndex++];
       const fileName = file.name.trim() || "file";
       const contentType = resolveKnowledgeContentType(fileName, file.type);
       if (!contentType) {
@@ -497,6 +520,30 @@ export async function uploadKnowledgeFiles(
       }
 
       const title = fileName.slice(0, 200);
+      if (setupScope) {
+        const db = ctx.supabase as unknown as SetupFileRpc;
+        const reserved = await db.rpc("master_reserve_setup_file", { p_expected_user_id: ctx.userId, p_company_id: ctx.companyId, p_draft_id: setupScope.draftId, p_expected_generation: setupScope.generation, p_attempt_id: attemptId, p_file_name: fileName.replace(/[/\\\u0000-\u001f]/g, "_").slice(0, 180), p_content_type: contentType, p_byte_size: file.size });
+        const receipt = reserved.data as { ok?: boolean; code?: string; data?: { path: string; sourceId: string; state: string; draftGeneration: number } } | null;
+        if (reserved.error || !receipt?.ok || !receipt.data) { results.push({ fileName, ok: false, code: receipt?.code ?? "UPLOAD_FAILED" }); continue; }
+        setupScope.generation = receipt.data.draftGeneration;
+        if (receipt.data.state === "reserved") {
+          const upload = await ctx.supabase.storage.from(KNOWLEDGE_BUCKET).upload(receipt.data.path, new Uint8Array(await file.arrayBuffer()), { contentType, upsert: false });
+          if (upload.error) { results.push({ fileName, ok: false, code: "UPLOAD_FAILED", message: upload.error.message }); continue; }
+        }
+        const finalized = await db.rpc("master_finalize_setup_file", { p_expected_user_id: ctx.userId, p_intent_id: attemptId });
+        const finalReceipt = finalized.data as { ok?: boolean; code?: string; draftGeneration?: number } | null;
+        if (finalized.error || !finalReceipt?.ok) { results.push({ fileName, ok: false, uploaded: true, code: finalReceipt?.code ?? "CLEANUP_PENDING" }); continue; }
+        setupScope.generation = finalReceipt.draftGeneration ?? setupScope.generation;
+        const { data: stored } = await ctx.supabase.from("knowledge_sources").select(ctx.sourceSelect).eq("id", receipt.data.sourceId).eq("company_id", ctx.companyId).single();
+        if (!stored) { results.push({ fileName, ok: false, uploaded: true, code: "CLEANUP_PENDING" }); continue; }
+        let source = asSource(stored, ctx.approvalFoundation);
+        if (isPreparableKnowledgeFile(fileName)) {
+          const loaded = await loadStoredBytesBoundToObject(ctx.supabase, ctx.companyId, source.id, receipt.data.path);
+          if (loaded.ok) source = await prepareStoredFile(ctx.supabase, source, ctx.companyId, loaded.bytes, loaded.generation, ctx.approvalFoundation);
+        }
+        results.push({ fileName, ok: source.status !== "failed", uploaded: true, source, ...(source.status === "failed" ? { code: "UPLOAD_OK_EXTRACT_FAILED" } : {}) });
+        continue;
+      }
       // 1) Create row to obtain source id (no upload yet).
       const { data: row, error: insertError } = await ctx.supabase
         .from("knowledge_sources")
@@ -829,6 +876,7 @@ export async function retryFailedKnowledgeFile(
 
     if (loadError) return { ok: false, code: "AUTH_ERROR", message: loadError.message };
     if (!existing) return { ok: false, code: "FORBIDDEN", message: "not_found" };
+    if (existing.storage_path && isSetupFilePath(existing.storage_path)) return { ok: false, code: "INVALID_INPUT", message: "SCOPED_FILE_REQUIRES_NEW_UPLOAD_INTENT" };
     if (existing.status === "processing") {
       return { ok: false, code: "INVALID_INPUT", message: "busy" };
     }
@@ -1126,7 +1174,7 @@ export async function setKnowledgeSourceApproval(
 
 export async function deleteKnowledgeSource(
   sourceId: string,
-): Promise<KnowledgeActionResult<{ storageDeleted: boolean }>> {
+): Promise<KnowledgeActionResult<{ storageDeleted: boolean; deletionPending?: boolean; cleanupPolicy?: "APPROVED" | "UNCONFIGURED" }>> {
   try {
     const ctx = await requireOwnerCompany("knowledge.delete");
     if (!ctx.ok) return { ok: false, code: ctx.code };
@@ -1140,6 +1188,12 @@ export async function deleteKnowledgeSource(
 
     if (loadError) return { ok: false, code: "AUTH_ERROR", message: loadError.message };
     if (!existing) return { ok: false, code: "FORBIDDEN", message: "not_found" };
+    if (existing.storage_path && isSetupFilePath(existing.storage_path)) {
+      const { data, error } = await (ctx.supabase as unknown as SetupFileRpc).rpc("master_request_setup_file_delete", { p_expected_user_id: ctx.userId, p_company_id: ctx.companyId, p_source_id: sourceId });
+      const receipt = data as { ok?: boolean; code?: string; cleanupPolicy?: "APPROVED" | "UNCONFIGURED" } | null;
+      if (error || !receipt?.ok) return { ok: false, code: "STORAGE_ERROR", message: receipt?.code ?? "CLEANUP_PENDING" };
+      revalidateKnowledge(ctx.companyId); return { ok: true, data: { storageDeleted: false, deletionPending: true, cleanupPolicy: receipt.cleanupPolicy } };
+    }
 
     // Invalidate first: if the row delete later fails, no approved text remains.
     const cleared = await clearAnswerEligibility(
@@ -1228,6 +1282,7 @@ export async function adminGetKnowledgeFileUrl(input: {
     if (!data.storage_path.startsWith(`${input.companyId}/`)) {
       return { ok: false, code: "FORBIDDEN", message: "path_mismatch" };
     }
+    if (isSetupFilePath(data.storage_path)) return { ok: true, data: { url: `/api/knowledge/setup-file?companyId=${encodeURIComponent(input.companyId)}&sourceId=${encodeURIComponent(input.sourceId)}`, fileName: data.file_name || "file" } };
 
     const { data: signed, error: signError } = await supabase.storage
       .from(KNOWLEDGE_BUCKET)

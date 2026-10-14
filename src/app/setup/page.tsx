@@ -12,6 +12,8 @@ import type { KnowledgeSourceRecord } from "@/lib/knowledge/types";
 import { getCompanyAccess, loginPathForReturn } from "@/lib/tenancy/access";
 import { getCompanyReviewRequest } from "@/lib/tenancy/actions";
 import type { CompanyReviewRequest } from "@/lib/tenancy/types";
+import {readActiveSetupDraft} from '@/lib/tenancy/setup-draft-actions';
+import {masterJourneyEnabled} from '@/lib/master-journey/rollout';
 
 export const metadata: Metadata = { title: "Prepare your business · Velora" };
 
@@ -27,7 +29,13 @@ export default async function Page() {
   }
   if (access.context.needsCompanyContext) redirect(`/app?next=${encodeURIComponent(returnTo)}`);
   const company = access.context.company;
+  const masterEnabled=masterJourneyEnabled();
+  if (masterEnabled&&!company) redirect(`/account/businesses/new?next=${encodeURIComponent(returnTo)}`);
   const userId = access.context.userId;
+  if(masterEnabled){const activeDraft = await readActiveSetupDraft(userId);
+   if (!activeDraft.ok) return <AccessGate code="UNAVAILABLE" />;
+   if (activeDraft.data && activeDraft.data.draft.companyId !== company?.id) redirect(`/account/businesses/new?next=${encodeURIComponent(returnTo)}`);
+  }
 
   let initialKnowledge: KnowledgeSourceRecord[] = [];
   let knowledgeLoadFailed = false;
@@ -58,6 +66,7 @@ export default async function Page() {
   return (
     <Suspense fallback={<SetupLoading />}>
       <SetupWizard
+        masterJourneyEnabled={masterEnabled}
         userId={userId}
         preferredNext={preferredNext}
         initialCompany={company}

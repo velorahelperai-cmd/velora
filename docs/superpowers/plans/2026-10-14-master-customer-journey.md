@@ -68,6 +68,8 @@ Interfaces: stable draft ID, lifecycle/generation, meaningful-activity timestamp
 
 ## C. Subscription activation authority
 
+Migration ordering: the CLI-created activation candidate was renamed with owner authorization to `20261014033001_master_subscription_activation.sql`, immediately after its existing `20261014033000` channel dependency; fresh replay must install that foundation first.
+
 Files: activation extension around existing settlement, subscription UI/readiness and isolated SQL tests.
 
 - [ ] Test separate payment/entitlement/start timestamps, 14-day deadline, 30-day duration and once-per-trusted-person seven-day grant.

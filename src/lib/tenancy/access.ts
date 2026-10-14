@@ -3,6 +3,7 @@ import { authFlowHref } from "@/lib/auth/auth-journey";
 import { setupPathForReturn } from "@/lib/auth/setup-return";
 import { allowedReturnPath, pathAtOrUnder, safeInternalPath, staffInvitationReturnPath } from "@/lib/auth/safe-next";
 import { createClient } from "@/lib/supabase/server";
+import {masterJourneyEnabled} from '@/lib/master-journey/rollout';
 import { unavailablePlatformIdentity, type AccountPlatformIdentity } from "./account-platform-identity";
 import type {
   AccessCode,
@@ -46,6 +47,8 @@ export type AccountProfileView = {
   emailConfirmed?: boolean;
   sessionExpiresAt?: string;
   accessUnavailable?: boolean;
+  ownedBusinessCount?: number;
+  hasBusinessMemberships?: boolean;
   userId: string;
   fullName: string;
   email: string;
@@ -72,6 +75,8 @@ export function buildAccountProfileView(
   const ctx = access.context;
   return {
     platformIdentity,
+    ownedBusinessCount:ctx.ownedBusinessCount,
+    hasBusinessMemberships:ctx.hasBusinessMemberships,
     userId: ctx.userId,
     fullName: ctx.fullName,
     email: ctx.email,
@@ -215,10 +220,11 @@ async function loadWorkspaceChoices(
   rows: MembershipRecord[],
 ): Promise<CompanyContext["workspaceChoices"]> {
   if (!rows.length) return [];
-  const { data } = await supabase
+  const { data,error } = await supabase
     .from("companies")
     .select("id, display_name")
     .in("id", rows.map((row) => row.company_id));
+  if(error)throw new Error('WORKSPACE_READ_UNAVAILABLE');
   const names = new Map((data ?? []).map((row) => [row.id, row.display_name]));
   return rows.map((row) => ({
     companyId: row.company_id,
@@ -255,7 +261,15 @@ export async function getCompanyAccess(
 
     if (memberError) return { ok: false, code: "UNAVAILABLE" };
 
-    const rows = (memberships ?? []) as MembershipRecord[];
+    const allRows = (memberships ?? []) as MembershipRecord[];
+    let rows=allRows;
+    const membershipHistory={ownedBusinessCount:allRows.filter(row=>row.role==='owner').length,hasBusinessMemberships:allRows.length>0};
+    if(masterJourneyEnabled()&&allRows.length){
+      const {data:history,error:historyError}=await supabase.from('companies').select('id,archived_at').in('id',allRows.map(row=>row.company_id));
+      if(historyError||!history||history.length!==new Set(allRows.map(row=>row.company_id)).size)return {ok:false,code:'UNAVAILABLE'};
+      const activeIds=new Set(history.filter(row=>row.archived_at===null).map(row=>row.id));
+      rows=allRows.filter(row=>activeIds.has(row.company_id));
+    }
     let selectedCookie: string | null = null;
     try {
       const { cookies } = await import("next/headers");
@@ -285,6 +299,7 @@ export async function getCompanyAccess(
           isPlatformAdmin,
           needsCompanyContext: picked.needsContext,
           workspaceChoices: choices,
+          ...membershipHistory,
         }),
       };
     }
@@ -297,7 +312,7 @@ export async function getCompanyAccess(
     const { data: company, error: companyError } = await supabase
       .from("companies")
       .select(
-        "id, display_name, status, business_type, reply_language, country, city, hours, contact_phone, contact_email, created_by, created_at, updated_at",
+        "*",
       )
       .eq("id", member.company_id)
       .maybeSingle();
@@ -321,6 +336,7 @@ export async function getCompanyAccess(
         membership: member,
         needsCompanyContext: false,
         workspaceChoices: await loadWorkspaceChoices(supabase, rows),
+        ...membershipHistory,
       },
     };
   } catch {

@@ -1,6 +1,7 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
+import {useDemo} from '@/lib/demo-state';
 import { TeamSelfPanel } from "@/components/teams/team-self-panel";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -15,8 +16,9 @@ import {
 import { updateAccountName, type AccountProfileView } from "@/lib/tenancy/actions";
 
 /** Parent should remount with key={userId} so a user switch resets local draft state. */
-export function AccountPage({ initial }: { initial: AccountProfileView }) {
+export function AccountPage({ initial,masterJourneyEnabled=false }: { initial: AccountProfileView;masterJourneyEnabled?:boolean }) {
   const copy = useAppCopy();
+  const ar=useDemo().locale==='ar';
   const session = useOptionalAccountSession();
   const [name, setName] = useState(initial.fullName);
   const [profile, setProfile] = useState(initial);
@@ -180,6 +182,12 @@ export function AccountPage({ initial }: { initial: AccountProfileView }) {
               </Link>
             </p>
             <div className="flex flex-wrap gap-2">
+              {masterJourneyEnabled&&<Link href="/account/businesses/manage" className="inline-flex min-h-11 items-center rounded-full border px-4 text-sm">{ar?'إدارة أنشطتي وسجلها':'Manage my businesses and history'}</Link>}
+              {masterJourneyEnabled&&<Link href="/verify-phone" className="inline-flex min-h-11 items-center rounded-full border px-4 text-sm">{ar?'إدارة الهاتف الشخصي':'Manage personal phone'}</Link>}
+              {masterJourneyEnabled&&<Link href="/account/recovery" className="inline-flex min-h-11 items-center rounded-full border px-4 text-sm">{ar?'طلب استرداد الهوية':'Identity recovery request'}</Link>}
+              {masterJourneyEnabled&&profile.isPlatformAdmin&&<Link href="/admin/identity-recovery" className="inline-flex min-h-11 items-center rounded-full border px-4 text-sm">{ar?'مراجعة استرداد الهوية':'Review identity recovery'}</Link>}
+              {masterJourneyEnabled&&profile.platformIdentity.role==='owner'&&profile.platformIdentity.status==='active'&&<Link href="/admin/ai/cycle-costs" className="inline-flex min-h-11 items-center rounded-full border px-4 text-sm">{ar?'تكلفة الردود حسب العميل والدورة':'Response costs by customer and cycle'}</Link>}
+              {masterJourneyEnabled&&((profile.ownedBusinessCount??0)>0||profile.role==='owner'||profile.role===null&&!profile.isPlatformAdmin&&!profile.hasBusinessMemberships)&&<Link href="/account/businesses/new" className="inline-flex min-h-11 items-center rounded-full border px-4 text-sm">{ar?'إنشاء نشاط جديد':'Create a business'}</Link>}
               <Button type="submit" busy={busy} busyLabel={copy.saving} disabled={!controlsReady||!dirty}>
                 {copy.save}
               </Button>

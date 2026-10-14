@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+vi.mock('server-only',()=>({}));
+vi.mock('@/lib/billing/wiring/checkout-terms-actions',()=>({readCheckoutTermsAction:vi.fn(async()=>({ok:false,code:'UNCONFIGURED'}))}));
 type Node={type:unknown;props:Record<string,unknown>};
 const state=vi.hoisted(()=>({slots:[] as unknown[],cursor:0,cleanup:[] as (()=>void)[],live:vi.fn(),test:vi.fn(),assign:vi.fn(),resume:vi.fn(),current:true,selectedCompany:"company-a"}));
 vi.mock("react",async()=>({...await vi.importActual("react"),

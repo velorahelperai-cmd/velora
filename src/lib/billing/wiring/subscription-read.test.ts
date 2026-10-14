@@ -51,6 +51,13 @@ describe("owner subscription uses authoritative Live entitlement", () => {
   it("shows a verified active Live entitlement", async () => {
     expect((await loadOwnerBillingSubscription(fallback)).state).toBe("active");
   });
+  it('shows proven paid waiting service without claiming operational readiness when master is enabled',async()=>{
+    vi.stubEnv('VELORA_MASTER_JOURNEY_ENABLED','true');
+    try{
+      state.rpc.mockResolvedValue({data:entitlement({active:false}),error:null});
+      expect(await loadOwnerBillingSubscription(fallback)).toMatchObject({state:'active',operationalReady:false});
+    }finally{vi.unstubAllEnvs();}
+  });
   it("keeps service active when only renewal was cancelled", async () => {
     state.rpc.mockResolvedValue({ data: entitlement({ status: "cancel_at_period_end" }), error: null });
     expect((await loadOwnerBillingSubscription(fallback)).state).toBe("active");

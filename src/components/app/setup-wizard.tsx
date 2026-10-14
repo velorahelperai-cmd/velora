@@ -7,8 +7,9 @@ import { SetupLoading } from "./setup-loading";
 import setupStyles from "./setup-wizard.module.css";
 import { useRouter } from "next/navigation";
 import { setupSubscriptionReturn } from "@/lib/auth/setup-return";
-import { readSetupDraft, saveSetupDraft } from "@/lib/tenancy/setup-draft-actions";
-import { setupDraftPayload, type SetupDraftCode } from "@/lib/tenancy/setup-draft";
+import { beginSetupDraft, readSetupDraft, saveSetupDraft } from "@/lib/tenancy/setup-draft-actions";
+import { setupDraftPayload, type SetupDraftCode, type SetupDraftRecord } from "@/lib/tenancy/setup-draft";
+import {SetupDraftLifecycleControls} from './setup-draft-lifecycle-controls';
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type Activation, type Business, emptyBusiness, nowMs, useDemo } from "@/lib/demo-state";
 import {
@@ -16,6 +17,7 @@ import {
   buildSetupTestKnowledgeKey,
   clearSetupTestProgress,
   emptyCompanyDraft,
+  clearCompanyDrafts,
   isSetupTestStillValid,
   markSetupTestPassed,
   readCompanyDraft,
@@ -43,6 +45,8 @@ import type { CompanyRecord, CompanyReviewEvent, CompanyReviewRequest } from "@/
 import { AccountMenu } from "@/components/app/account-chrome";
 import { AssistantTester } from "@/components/app/assistant-tester";
 import { KnowledgeEditor } from "@/components/app/knowledge-editor";
+import {KnowledgeImportReview} from './knowledge-import-review';
+import {BusinessSetupGuidance} from './business-setup-guidance';
 import {
   Button, Field, FieldErrorKey, LangSwitch, LinkButton, Notice, PreviewBadge,
   isPhone, useAction, useAppCopy, useErrorText, useUnsavedWarning,
@@ -212,6 +216,7 @@ const EMPTY_KNOWLEDGE: KnowledgeSourceRecord[] = [];
 
 export function SetupWizard({
   userId,
+  masterJourneyEnabled=false,
   preferredNext,
   initialCompany,
   initialKnowledge = EMPTY_KNOWLEDGE,
@@ -221,6 +226,7 @@ export function SetupWizard({
   reviewLoadFailed = false,
 }: {
   userId: string;
+  masterJourneyEnabled?: boolean;
   preferredNext?: string;
   initialCompany?: CompanyRecord | null;
   initialKnowledge?: KnowledgeSourceRecord[];
@@ -238,6 +244,10 @@ export function SetupWizard({
   const leaveGuardRef = useRef<(() => boolean) | null>(null);
   const hydratedScope = useRef<string | null>(null);
   const draftRevision = useRef(0);
+  const draftReceipt = useRef<SetupDraftRecord|null>(null);
+  const [draftRecord,setDraftRecord]=useState<SetupDraftRecord|null>(null);
+  const draftBeginAttempt=useRef<string|null>(null);
+  const {busy:draftStarting,run:runDraftStart}=useAction();
   const saveQueue = useRef<Promise<void>>(Promise.resolve());
   const createdDraft = useRef<CompanyDraft | null>(null);
   const [draftSaveStatus, setDraftSaveStatus] = useState<"loading" | "saving" | "saved" | "changed" | "error">("loading");
@@ -282,7 +292,7 @@ export function SetupWizard({
     setDraft({ ...draft, business: refresh.values, businessBaseline: refresh.baseline });
   }
   useEffect(() => {
-    if (!ready || draft.userId !== userId || draft.companyId !== companyId || hydratedScope.current !== `${userId}:${companyId ?? "new"}`) return;
+    if (!ready || masterJourneyEnabled&&(!draftReceipt.current || draftReceipt.current.state&&draftReceipt.current.state!=='active') || draft.userId !== userId || draft.companyId !== companyId || hydratedScope.current !== `${userId}:${companyId ?? "new"}`) return;
     const payload = setupDraftPayload({ ...draft, businessBaseline });
     if (!payload) {
       const frame = window.requestAnimationFrame(() => { setDraftSaveStatus("changed"); setDraftSaveCode("INVALID_INPUT"); });
@@ -295,17 +305,18 @@ export function SetupWizard({
       saveQueue.current = saveQueue.current.catch(() => {}).then(async () => {
         if (cancelled || hydratedScope.current !== scope) return;
         const result = await saveSetupDraft({ expectedUserId: userId, expectedCompanyId: companyId,
+          expectedDraftId:draftReceipt.current?.draftId,expectedGeneration:draftReceipt.current?.generation,
           expectedRevision: draftRevision.current, draft: { ...draft, ...payload } });
         // A committed receipt updates the revision even if a newer local edit is queued.
         if (hydratedScope.current !== scope) return;
-        if (result.ok) draftRevision.current = result.data.revision;
+        if (result.ok) {draftRevision.current = result.data.revision;draftReceipt.current=result.data;setDraftRecord(result.data);}
         if (cancelled) return;
         if (result.ok) { writeCompanyDraft(result.data.draft); setDraftSaveStatus("saved"); setDraftSaveCode(null); }
         else { setDraftSaveStatus("error"); setDraftSaveCode(result.code); }
       }).catch(() => { if (!cancelled) { setDraftSaveStatus("error"); setDraftSaveCode("UNAVAILABLE"); } });
     }, 600);
     return () => { cancelled = true; window.clearTimeout(timer); };
-  }, [ready, draft, businessBaseline, userId, companyId, draftRetry]);
+  }, [ready, draft, businessBaseline, userId, companyId, draftRetry,masterJourneyEnabled]);
   const [knowledgeSources, setKnowledgeSources] = useState(initialKnowledge);
   const [knowledgeFailed, setKnowledgeFailed] = useState(knowledgeLoadFailed);
   const [trackedKnowledge, setTrackedKnowledge] = useState({ sources: initialKnowledge, failed: knowledgeLoadFailed });
@@ -368,6 +379,7 @@ export function SetupWizard({
       if (!result.ok) { setDraftSaveStatus("error"); setDraftSaveCode(result.code); return; }
       hydratedScope.current = scope;
       draftRevision.current = result.data?.revision ?? 0;
+      draftReceipt.current=result.data;setDraftRecord(result.data);
       const carried = createdDraft.current;
       const stored = carried?.userId === userId && carried.companyId === companyId ? carried : result.data?.draft ?? readCompanyDraft(userId);
       createdDraft.current = null;
@@ -503,7 +515,7 @@ export function SetupWizard({
           {fill(mCopy.milestoneProgress, { n: step + 1 })} · {copy.setup.resume}
         </p>
         <div role="status" aria-live="polite" className="mt-2 text-sm">
-          {draftSaveStatus === "saved" ? (ar ? "تم حفظ مسودة الإعداد في حسابك." : "Setup draft saved to your account.")
+          {draftRecord?.state && draftRecord.state !== 'active' ? (ar ? "أُغلقت مسودة التجهيز. ابدأ مسودة جديدة لحفظ تغييرات جديدة." : "The setup draft is closed. Start a new draft to save new changes.") : draftSaveStatus === "saved" ? (ar ? "تم حفظ مسودة الإعداد في حسابك." : "Setup draft saved to your account.")
             : draftSaveStatus === "saving" ? (ar ? "جارٍ حفظ المسودة…" : "Saving setup draft…")
               : draftSaveCode === "INVALID_INPUT" ? (ar ? "أكمل أو صحح الحقول لحفظ المسودة." : "Correct the fields to save this draft.")
                 : draftSaveStatus === "error" ? (draftSaveCode === "CONFLICT" ? (ar ? "تغيّرت المسودة في نافذة أخرى. حمّل النسخة المحفوظة للمتابعة." : "Another tab changed this draft. Load the saved version to continue.") : (ar ? "لم يتم تأكيد حفظ المسودة. أعد المحاولة." : "Draft save has not been confirmed. Retry."))
@@ -514,6 +526,14 @@ export function SetupWizard({
           }}>{draftSaveCode === "CONFLICT" ? (ar ? "تحميل المسودة المحفوظة" : "Load saved draft") : (ar ? "إعادة المحاولة" : "Retry")}</Button> : null}
         </div>
 
+        {masterJourneyEnabled&&draftRecord?.draftId&&draftRecord.state==='active'&&draftSaveStatus==='saved'?<SetupDraftLifecycleControls scope={{expectedUserId:userId,expectedCompanyId:companyId}} record={draftRecord} ar={ar}
+          onChange={record=>{if(record.draft.userId!==userId||record.draft.companyId!==companyId)return;draftReceipt.current=record;draftRevision.current=record.revision;setDraftRecord(record);setDraft(record.draft);setDraftSaveStatus('saved');}}
+          onClosed={record=>{if(record.draft.userId!==userId||record.draft.companyId!==companyId)return;draftReceipt.current=record;draftRevision.current=record.revision;setDraftRecord(record);draftBeginAttempt.current=null;clearCompanyDrafts(userId);setDraft({...emptyCompanyDraft(userId),companyId,business:savedCompany?companyBusiness(savedCompany):{...emptyBusiness}});setDraftSaveStatus('changed');}}
+        />:null}
+        {masterJourneyEnabled ? <>
+        {(!draftRecord||draftRecord.state&&draftRecord.state!=='active')?<Notice>{ar?'لا توجد مسودة تجهيز نشطة هنا. النشاط والبيانات المحفوظة فيه يظلان قائمين.':'There is no active setup draft here. The business and its saved profile remain.'}<Button busy={draftStarting} onClick={()=>void runDraftStart(async()=>{draftBeginAttempt.current??=crypto.randomUUID();const scope=renderedScope.current;const result=await beginSetupDraft({expectedUserId:userId,expectedCompanyId:companyId,attemptId:draftBeginAttempt.current,draft});if(renderedScope.current!==scope)return;if(result.ok){draftReceipt.current=result.data;draftRevision.current=result.data.revision;setDraftRecord(result.data);setDraft(result.data.draft);setDraftSaveStatus('saved');setDraftSaveCode(null);}else{setDraftSaveStatus('error');setDraftSaveCode(result.code);}})}>{ar?'بدء مسودة تجهيز':'Start a setup draft'}</Button></Notice>:null}
+
+        </> : null}
         <DiagnosticHint diagnostic={diagnostic} locale={locale}/><SetupJourneyNotice
           company={initialCompany ?? null}
           review={initialReview}
@@ -539,6 +559,7 @@ export function SetupWizard({
             {/* Milestone 0: Company Profile */}
             {step === 0 ? (
               <BusinessStep
+                companyVersion={savedCompany?.version}
                 key={`${userId}:${companyId ?? "new"}`}
                 baseline={businessBaseline}
                 conflicts={unresolvedBusinessConflicts}
@@ -603,10 +624,16 @@ export function SetupWizard({
                 }
               >
                 {companyId ? (
+                  <>
+                  <BusinessSetupGuidance type={draft.business.type} ar={ar}/>
+                  {masterJourneyEnabled&&<KnowledgeImportReview companyId={companyId} expectedUserId={userId} canWrite ar={ar} onApplied={()=>router.refresh()}/>}
                   <KnowledgeEditor
                     key={companyId}
                     companyId={companyId!}
+                    setupFileScope={draftRecord?.draftId && draftRecord.state === 'active' && draftRecord.generation ? {expectedUserId:userId,expectedCompanyId:companyId,draftId:draftRecord.draftId,generation:draftRecord.generation} : undefined}
+                    onSetupFileScopeChange={() => {const scope=renderedScope.current;void readSetupDraft({expectedUserId:userId,expectedCompanyId:companyId}).then(result=>{if(renderedScope.current!==scope||!result.ok||!result.data)return;draftReceipt.current=result.data;draftRevision.current=result.data.revision;setDraftRecord(result.data);});}}
                     compact
+                    requireSetupFileScope={masterJourneyEnabled}
                     canWrite
                     initialSources={initialKnowledge}
                     initialLoadFailed={knowledgeLoadFailed}
@@ -614,6 +641,7 @@ export function SetupWizard({
                     onSourcesChange={onKnowledgeSourcesChange}
                     onLoadStateChange={onKnowledgeLoadStateChange}
                   />
+                  </>
                 ) : (
                   <Notice tone="warn">{copy.knowledge.needCompanyFirst}</Notice>
                 )}
@@ -806,6 +834,7 @@ function BusinessStep({
   baseline, conflicts, onResolveConflicts,
   draft,
   companyId,
+  companyVersion,
   onCompanySaved,
   onDiagnostic,
   onDraft,
@@ -817,6 +846,7 @@ function BusinessStep({
   onResolveConflicts: () => void;
   draft: CompanyDraft;
   companyId: string | null;
+  companyVersion?:number;
   onCompanySaved: (company: CompanyRecord) => void;
   onDiagnostic: (diagnostic:unknown) => void;
   onDraft: (patch: Partial<CompanyDraft> | ((d: CompanyDraft) => CompanyDraft)) => void;
@@ -852,7 +882,8 @@ function BusinessStep({
     if (conflicts.length) return;
     const next: Partial<Record<keyof Business, FieldErrorKey>> = {};
     if (!form.name.trim()) next.name = "required";
-    if (!form.hours.trim()) next.hours = "required";
+    if (!form.type.trim()) next.type = "required";
+    if (!form.country.trim()) next.country = "required";
     if (normalizeBusinessPhone(form.contactPhone) === null) next.contactPhone = "phone";
     if (normalizeBusinessEmail(form.contactEmail) === null) next.contactEmail = "email";
     setErrors(next);
@@ -860,6 +891,7 @@ function BusinessStep({
 
     void run(async () => {
       const result = await saveOwnerBusiness({
+        expectedVersion:companyVersion,
         expectedUserId: draft.userId,
         expectedCompanyId: companyId,
         displayName: form.name,
@@ -918,6 +950,8 @@ function BusinessStep({
                 {s.label}
               </option>
             ))}
+            <option value="clinic">{locale === 'ar' ? 'عيادة' : 'Clinic'}</option>
+            <option value="store">{locale === 'ar' ? 'متجر' : 'Store'}</option>
             <option value="other">{copy.setup.typeOther}</option>
           </select>
         )}
@@ -945,7 +979,7 @@ function BusinessStep({
           />
         )}
       </Field>
-      <Field label={copy.setup.hours} required error={hoursError}>
+      <Field label={copy.setup.hours} error={hoursError}>
         {(p) => <input {...p} value={form.hours} placeholder={copy.setup.hoursPlaceholder} onChange={(e) => set("hours", e.target.value)} />}
       </Field>
       <Field label={copy.setup.contactPhone} error={phoneError} hint="+968 …">
@@ -1102,6 +1136,7 @@ function HoursStep({
     setError(null);
     void run(async () => {
       const result = await saveOwnerBusiness({
+        expectedVersion:company?.version,
         expectedUserId: userId,
         expectedCompanyId: companyId,
         displayName: form.name,
@@ -1206,6 +1241,7 @@ function PersonaStep({
     setSaveError(null);
     void run(async () => {
       const result = await saveOwnerBusiness({
+        expectedVersion:company?.version,
         expectedUserId: userId,
         expectedCompanyId: companyId,
         displayName: form.name,
