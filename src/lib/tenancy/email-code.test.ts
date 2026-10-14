@@ -2,7 +2,7 @@ vi.mock('server-only',()=>({}));
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CompanyContext } from "./types";
 
-const state = vi.hoisted(() => ({ client: vi.fn(), verify: vi.fn(), access: vi.fn() }));
+const state = vi.hoisted(() => ({ client: vi.fn(), verify: vi.fn(), resend: vi.fn(), access: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: state.client }));
 vi.mock("@/lib/billing/operations/actions", () => ({ readSubscriptionJourneyAction: vi.fn() }));
 vi.mock("@/lib/knowledge/actions", () => ({ listKnowledgeSources: vi.fn() }));
@@ -29,7 +29,8 @@ const context: CompanyContext = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  state.client.mockResolvedValue({ auth: { verifyOtp: state.verify } });
+  state.client.mockResolvedValue({ auth: { verifyOtp: state.verify, resend: state.resend } });
+  state.resend.mockResolvedValue({ error: null });
   state.verify.mockResolvedValue({ data: { user, session: { user } }, error: null });
   state.access.mockResolvedValue({ ok: true, context });
 });
@@ -100,5 +101,16 @@ describe("six-digit signup confirmation with offline Auth boundary", () => {
     state.verify.mockResolvedValue({ data, error: null });
     expect(await submit()).toMatchObject({ ok: false, message: "verification_incomplete" });
     expect(state.access).not.toHaveBeenCalled();
+  });
+});
+
+describe("verification resend validates mailbox before Auth transport", () => {
+  it.each([null, 42, "not-an-email", "a@", "a b@example.test", "a".repeat(250) + "@example.test"])("rejects malformed mailbox %j locally", async email => {
+    expect(await actions.resendVerificationEmail(email as string)).toMatchObject({ok:false,code:"INVALID_INPUT"});
+    expect(state.client).not.toHaveBeenCalled();
+  });
+  it("normalizes a valid mailbox and uses native signup resend", async () => {
+    expect(await actions.resendVerificationEmail(" QA-A@example.test ","/setup")).toMatchObject({ok:true});
+    expect(state.resend).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({type:"signup",email:user.email}));
   });
 });

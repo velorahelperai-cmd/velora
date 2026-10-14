@@ -7,6 +7,7 @@ import { createServer, request as httpRequest } from "node:http";
 import { createServer as createTcpServer } from "node:net";
 import { resolve, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { confirmationEnvironment, CONFIRMATION_SQL } from "./local-auth-confirmation.mjs";
 
 export const NETWORK = "velora-c1-ui-e2e";
 export const TASK_LABEL = "c1-ui-http";
@@ -76,7 +77,8 @@ grant all on storage.buckets,storage.objects to service_role;
 `;
 
 /** Start one isolated real local backend. All credentials are returned only in memory. */
-export async function startStack({ gatewayPort = 3130, authPort = 3140, restPort = 3141, appOrigin = "http://127.0.0.1:3120", progress = () => {}, throughMigration, canonicalSqlLineEndings = false } = {}) {
+export async function startStack({ gatewayPort = 3130, authPort = 3140, restPort = 3141, appOrigin = "http://127.0.0.1:3120", progress = () => {}, throughMigration, canonicalSqlLineEndings = false, emailConfirmation = false } = {}) {
+  const mailEnvironment = confirmationEnvironment(emailConfirmation);
   gatewayPort = port(gatewayPort); authPort = port(authPort); restPort = port(restPort);
   if (new Set([gatewayPort, authPort, restPort]).size !== 3) throw Error("STACK_PORTS_MUST_DIFFER");
   appOrigin = localOrigin(appOrigin);
@@ -248,6 +250,13 @@ export async function startStack({ gatewayPort = 3130, authPort = 3140, restPort
     const user = await authRequest("/admin/users", { email, password, email_confirm: true, user_metadata: userMetadata });
     return { id: user.id, email, password, user };
   }
+  async function readEmailOtp(email) {
+    if (!emailConfirmation || typeof email !== "string" || !/@example\.(invalid|test)$/.test(email)) throw Error("LOCAL_SYNTHETIC_CONFIRMATION_REQUIRED");
+    const [mail] = await rows(`select token from local_auth_fixture.email_events where email=${lit(email.toLowerCase())} order by created_at desc limit 1`);
+    if (!mail || !/^[0-9]{6}$/.test(mail.token)) throw Error("LOCAL_CONFIRMATION_MAIL_MISSING");
+    secrets.add(mail.token);
+    return mail.token;
+  }
   const gatewayHandler = (request, response) => {
     const deny = (status, code) => { response.writeHead(status, { "Content-Type": "application/json" }); response.end(JSON.stringify({ code })); };
     if (![`127.0.0.1:${gatewayPort}`, `localhost:${gatewayPort}`].includes(request.headers.host)) return deny(403, "LOCAL_HOST_REQUIRED");
@@ -304,13 +313,14 @@ export async function startStack({ gatewayPort = 3130, authPort = 3140, restPort
     });
     await docker(["exec", "-i", "-u", "postgres", names.postgres, "psql", "-X", "-U", "supabase_admin", "-d", "postgres", "-Atq", "-v", "ON_ERROR_STOP=1"], { input: `CREATE DATABASE ${DB};\nALTER ROLE supabase_auth_admin WITH LOGIN PASSWORD ${lit(databasePassword)};\nALTER ROLE authenticator WITH LOGIN PASSWORD ${lit(databasePassword)};\nGRANT anon,authenticated,service_role TO authenticator;\n` });
     await sql("CREATE SCHEMA auth AUTHORIZATION supabase_auth_admin;");
+    if (emailConfirmation) await sql(CONFIRMATION_SQL);
     progress("LOCAL_DATABASE_READY");
     await runContainer("auth", {
       GOTRUE_API_HOST: "0.0.0.0", GOTRUE_API_PORT: "9999", API_EXTERNAL_URL: `${url}/auth/v1`,
       GOTRUE_DB_DRIVER: "postgres", GOTRUE_DB_DATABASE_URL: `postgres://supabase_auth_admin:${databasePassword}@${names.postgres}:5432/${DB}`,
       GOTRUE_SITE_URL: appOrigin, GOTRUE_URI_ALLOW_LIST: `${appOrigin}/**`, GOTRUE_DISABLE_SIGNUP: "false",
       GOTRUE_JWT_ADMIN_ROLES: "service_role", GOTRUE_JWT_AUD: "authenticated", GOTRUE_JWT_DEFAULT_GROUP_NAME: "authenticated", GOTRUE_JWT_EXP: "3600", GOTRUE_JWT_SECRET: jwtSecret,
-      GOTRUE_JWT_ISSUER: `${url}/auth/v1`, GOTRUE_EXTERNAL_EMAIL_ENABLED: "true", GOTRUE_MAILER_AUTOCONFIRM: "true",
+      GOTRUE_JWT_ISSUER: `${url}/auth/v1`, GOTRUE_EXTERNAL_EMAIL_ENABLED: "true", ...mailEnvironment,
       GOTRUE_EXTERNAL_PHONE_ENABLED: "false", GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED: "false", GOTRUE_SECURITY_REFRESH_TOKEN_ROTATION_ENABLED: "true",
       GOTRUE_LOG_LEVEL: "error", LOG_LEVEL: "error", GOTRUE_METRICS_ENABLED: "false", GOTRUE_TRACING_ENABLED: "false",
     }, ["--publish", `127.0.0.1:${authPort}:9999`]);
@@ -370,7 +380,7 @@ export async function startStack({ gatewayPort = 3130, authPort = 3140, restPort
     await new Promise((ok, fail) => { gateway.once("error", fail); gateway.listen(gatewayPort, "127.0.0.1", ok); });
     await verify();
     progress("LOCAL_HTTP_STACK_READY");
-    return { url, localUrl: url, anonKey, anonJwt: anonKey, serviceRoleKey, serviceJwt: serviceRoleKey, owner, migrationCount, sessionPolicy, runId, network: networkName, database: DB, sql, rows, adminCreateUser, verify, close, redact, names: Object.freeze(names) };
+    return { url, localUrl: url, anonKey, anonJwt: anonKey, serviceRoleKey, serviceJwt: serviceRoleKey, owner, migrationCount, sessionPolicy, runId, network: networkName, database: DB, sql, rows, adminCreateUser, readEmailOtp, verify, close, redact, names: Object.freeze(names) };
   } catch (error) {
     await close().catch(cleanupError => progress(`LOCAL_CLEANUP_REFUSED:${redact(cleanupError.message)}`));
     throw Error(redact(error.message));
