@@ -128,5 +128,31 @@ try {
   // Privileged functions and raw customer tables cannot be used as alternate APIs.
   eq((await stack.rows("select has_table_privilege('authenticated','private.staff_invitations','select') as allowed"))[0].allowed,false,"private invitation tokens");
   eq((await stack.rows("select has_function_privilege('anon','public.enterprise_workspace(uuid)','execute') as allowed"))[0].allowed,false,"anonymous API denied");
+  // Exercise the integration boundary with the actual Master field names,
+  // without installing its independent billing/file executors or changing them.
+  await stack.sql("alter table public.companies add column archived_at timestamptz,add column setup_file_destruction_at timestamptz;");
+  const archiveInvite=await rpc(owner,"enterprise_invite",{p_company_id:company,p_branch_ids:[first],p_role:"manager",p_email:stranger.email,p_name:"Pending manager",p_capabilities:["staff.read"],p_token_hash:"f".repeat(64)});
+  eq(archiveInvite.ok,true,"pending invitation before archive");
+  await stack.sql(`update public.companies set archived_at=clock_timestamp() where id='${company}';`);
+  const beforeBridge=await rpc(owner,"enterprise_workspace",{p_company_id:company});
+  assert.throws(()=>assert.equal(beforeBridge.ok,false),{code:"ERR_ASSERTION"});
+  console.log("RED: archived company is operable through original enterprise RPC");
+  await stack.sql(await readFile("supabase/migrations/20261014051045_enterprise_business_lifecycle_guard.sql","utf8"));
+  eq((await rpc(owner,"enterprise_workspace",{p_company_id:company})).ok,false,"archived direct workspace denied");
+  eq((await rpc(owner,"enterprise_create_branch",{p_company_id:company,p_name:"Injected archived branch",p_timezone:"UTC"})).ok,false,"archived direct mutation denied");
+  eq(await rpc(owner,"enterprise_branch_permission",{p_company_id:company,p_branch_id:first,p_capability:"staff.read"}),false,"archived owner branch grants denied");
+  eq((await rpc(stranger,"enterprise_accept_invite",{p_token_hash:"f".repeat(64)})).ok,false,"archived enterprise invitation cannot be consumed");
+  eq((await rpc(stranger,"accept_staff_invitation",{p_token_hash:"f".repeat(64)})).ok,false,"legacy endpoint cannot bypass archive guard");
+  eq((await rpc(stranger,"enterprise_workspace",{p_company_id:other})).ok,true,"other organization unaffected by archive");
+  const ownerHistory=await fetch(`${stack.url}/rest/v1/companies?select=id,archived_at&id=eq.${company}`,{headers:{apikey:stack.anonKey,Authorization:`Bearer ${sessions.get(owner.id)}`}});
+  eq(ownerHistory.status,200,"owner archive history REST remains usable");
+  const historyRows=await ownerHistory.json();
+  eq(historyRows.map(x=>x.id),[company],"owner retains archived company history through RLS");
+  eq((await visibleMemberships(owner)).map(x=>x.company_id),[company],"owner retains membership history after archive");
+  await stack.sql(`update public.companies set archived_at=null,setup_file_destruction_at=clock_timestamp() where id='${company}';`);
+  eq((await rpc(owner,"enterprise_workspace",{p_company_id:company})).ok,false,"destroyed setup files forbid enterprise operation");
+  await stack.sql(`update public.companies set setup_file_destruction_at=null where id='${company}';`);
+  eq((await rpc(owner,"enterprise_workspace",{p_company_id:company})).ok,true,"restoring eligible company resumes guarded access");
+  eq((await rpc(stranger,"accept_staff_invitation",{p_token_hash:"f".repeat(64)})).ok,true,"blocked invitation remains single-use and can join after restore");
   console.log(`ENTERPRISE_DATABASE_PASS:${passed}`);
 } finally { await stack.close(); }
