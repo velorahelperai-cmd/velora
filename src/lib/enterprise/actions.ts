@@ -7,8 +7,10 @@ import { getCompanyAccess } from "@/lib/tenancy/access";
 import { siteUrl } from "@/lib/auth/site-url";
 import type { EnterpriseWorkspace, EnterpriseResult } from "./contracts";
 import { parseWorkspace, uuid } from "./contracts";
+import { enterpriseLifecycleEnabled } from "./config";
 
 async function gate(expectedUserId: string, companyId: string, ownerOnly=false) {
+  if (!enterpriseLifecycleEnabled()) return {ok:false as const,code:"UNCONFIGURED"};
   if (!uuid(expectedUserId)||!uuid(companyId)) return {ok:false as const,code:"INVALID_INPUT"};
   const access=await getCompanyAccess();
   if (!access.ok) return {ok:false as const,code:access.code};

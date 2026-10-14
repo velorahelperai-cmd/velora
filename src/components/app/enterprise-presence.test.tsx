@@ -21,6 +21,12 @@ it("stops polling once native authorization is withdrawn",async()=>{
  await vi.advanceTimersByTimeAsync(90000);
  expect(state.beat).toHaveBeenCalledTimes(1);
 });
+it("stops polling when the customer release is disabled",async()=>{
+ state.beat.mockResolvedValue({ok:false,code:"UNCONFIGURED"});
+ EnterprisePresence({userId:"user",companyId:"company"});
+ await vi.advanceTimersByTimeAsync(90000);
+ expect(state.beat).toHaveBeenCalledTimes(1);
+});
 it("does not send background-tab presence and cancels when unmounted",async()=>{
  Object.defineProperty(document,"visibilityState",{value:"hidden",writable:true});
  EnterprisePresence({userId:"user",companyId:"company"});
