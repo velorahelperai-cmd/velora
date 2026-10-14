@@ -46,6 +46,11 @@ test("provider fetch/HTTPS/TCP are blocked before native dispatch", () => {
   const result = spawnSync(process.execPath, ["--require", resolve("scripts/integration/local-http-network-guard.cjs"), "-e", script], { env: localEnvironment(), windowsHide: true, encoding: "utf8" });
   assert.equal(result.status, 0, "provider transports must be denied without a network attempt");
 });
+test("smart onboarding ports work while other HTTP destinations remain denied", () => {
+  const script = `const a=require('node:assert/strict'),h=require('node:http');(async()=>{const s=h.createServer((_,r)=>r.end('local'));await new Promise(ok=>s.listen(3330,'127.0.0.1',ok));try{a.equal(await (await fetch('http://127.0.0.1:3330')).text(),'local');for(const port of [3320,3340,3341]){const r=h.request('http://127.0.0.1:'+port);r.on('error',()=>{});r.destroy();}for(const url of ['http://127.0.0.1:9999','https://127.0.0.1:3330','http://example.com:3330'])a.throws(()=>fetch(url),/LOCAL_TEST_EXTERNAL_NETWORK_BLOCKED/);}finally{await new Promise(ok=>s.close(ok));}})().catch(e=>{console.error(e);process.exitCode=1;});`;
+  const result = spawnSync(process.execPath, ["-e", script], { env: guardedEnvironment(resolve("."), {}), windowsHide: true, encoding: "utf8", timeout: 10000 });
+  assert.equal(result.status, 0, result.stderr);
+});
 test("orchestrator requires an explicit run flag and import performs no startup", () => {
   const imported = spawnSync(process.execPath, ["--input-type=module", "-e", "await import('./scripts/integration/local-http-e2e.mjs')"], { env: localEnvironment(), windowsHide: true, encoding: "utf8" });
   assert.equal(imported.status, 0); assert.equal(imported.stdout, "");
