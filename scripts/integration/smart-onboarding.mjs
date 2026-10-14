@@ -6,13 +6,14 @@ import {startStack} from './local-http-stack.mjs';
 
 const enterpriseSql=await readFile(process.argv[2]??'supabase/migrations/20261014025849_enterprise_branch_authority.sql','utf8');
 const operationsSql=await readFile(process.argv[3]&&process.argv[3]!=='--ui'?process.argv[3]:'supabase/migrations/20261014032142_enterprise_staff_operations.sql','utf8');
+const lifecycleSql=await readFile(process.argv[4]&&process.argv[4]!=='--ui'?process.argv[4]:'supabase/migrations/20261014051045_enterprise_business_lifecycle_guard.sql','utf8');
 const smartSql=await readFile('supabase/migrations/20261014031209_smart_progressive_onboarding.sql','utf8');
 const stack=await startStack({gatewayPort:3330,authPort:3340,restPort:3341,appOrigin:'http://127.0.0.1:3320',throughMigration:'20261009215520_g03_verified_review.sql',progress:console.log});
 let passed=0;const eq=(a,b,label)=>{assert.deepEqual(a,b,label);passed++;};
 try{
  await stack.sql('begin;'+await readFile('supabase/migrations/20261011160000_vel_staff_invitation_recovery.sql','utf8')+'commit;');
  eq((await stack.rows("select to_regprocedure('public.read_smart_branch_setup(uuid)')::text as rpc"))[0].rpc,null,'RED: smart setup absent on baseline');
- await stack.sql(enterpriseSql);await stack.sql(operationsSql);await stack.sql(smartSql);
+ await stack.sql(enterpriseSql);await stack.sql(operationsSql);await stack.sql(smartSql);await stack.sql(lifecycleSql);
  await stack.sql("notify pgrst,'reload schema';");
  const owner=await stack.adminCreateUser(),staff=await stack.adminCreateUser(),stranger=await stack.adminCreateUser();
  const company=randomUUID(),other=randomUUID();
@@ -36,7 +37,19 @@ try{
  eq((await read()).data.branches.length,1,'retries never duplicate primary');
  const device=await login(owner);eq((await rpc(owner,'check_app_session',{p_touch:true},device)).ok,true,'second device session');
  eq((await rpc(owner,'read_smart_branch_setup',{p_company_id:company},device)).data,first.data,'cross device resume');
- const raced=await Promise.all([save(1,'multiple','Main A','Main'),save(1,'multiple','Main B','Main')]);
+ // A key-share blocker allows both authorization reads but delays the company
+ // update. This exposes a shared-lock upgrade deadlock deterministically.
+ const casLock=stack.sql(`begin;select 1 from public.companies where id='${company}' for key share;select pg_sleep(4) /* SMART_CAS_LOCK */;commit;`);
+ let casLocked=false;
+ for(let attempt=0;attempt<20;attempt++){
+  casLocked=(await stack.rows("select exists(select 1 from pg_stat_activity where pid<>pg_backend_pid() and wait_event='PgSleep' and query like '%SMART_CAS_LOCK%') as locked"))[0].locked;
+  if(casLocked)break;await new Promise(r=>setTimeout(r,50));
+ }
+ assert.equal(casLocked,true,'concurrent fixture company lock acquired');
+ const settled=await Promise.allSettled([save(1,'multiple','Main A','Main'),save(1,'multiple','Main B','Main')]);
+ await casLock;
+ eq(settled.filter(result=>result.status==='rejected').length,0,'concurrent writes return scoped receipts without lock-upgrade failures');
+ const raced=settled.map(result=>result.value);
  eq(raced.filter(r=>r.ok).length,1,'one concurrent writer wins');eq(raced.filter(r=>r.code==='CONFLICT').length,1,'stale writer conflict');
  const state=(await read()).data;eq(state.mode,'multiple','multiple mode persisted');eq(state.revision,2,'one revision advance');
  eq((await save(state.revision,'multiple','\nInvalid',state.branches[0].name)).code,'INVALID_INPUT','unsafe branch name denied');
@@ -67,6 +80,14 @@ try{
  eq((await stack.rows(`select name from public.company_branches where company_id='${expiryCompany}' and is_primary`))[0].name,'Expiry fixture','expired write never commits branch rename');
  eq((await stack.rows(`select count(*)::int as n from private.smart_branch_setup where company_id='${expiryCompany}'`))[0].n,0,'expired write never commits preferences');
  if(process.argv.includes('--ui')){console.log(`LOCAL_SMART_DATABASE_READY_FOR_UI:${passed}`);await (await import('../internal-ui/smart-onboarding.mjs')).runSmartSetupUi(stack,owner,company);}
+ // Optional-field fixture for the independent Master archive marker. This is
+ // an authority regression, not an end-to-end business archive test.
+ const beforeArchive=(await read()).data,archivePrimary=beforeArchive.branches.find(branch=>branch.primary);
+ await stack.sql(`alter table public.companies add column archived_at timestamptz;update public.companies set archived_at=clock_timestamp() where id='${company}';`);
+ eq((await save(beforeArchive.revision,'multiple','Archived overwrite',archivePrimary.name)).code,'FORBIDDEN','archive blocks smart setup writes');
+ eq((await read()).code,'FORBIDDEN','archive blocks operational setup receipts');
+ eq((await stack.rows(`select name from public.company_branches where company_id='${company}' and is_primary`))[0].name,archivePrimary.name,'archive rejection preserves branch name');
+ await stack.sql(`update public.companies set archived_at=null where id='${company}';`);
  await stack.sql(`update public.company_members set status='disabled' where company_id='${company}' and user_id='${owner.id}';`);
  eq((await read()).ok,false,'old session denied after membership removal');
  console.log(`SMART_ONBOARDING_DATABASE_PASS:${passed}`);

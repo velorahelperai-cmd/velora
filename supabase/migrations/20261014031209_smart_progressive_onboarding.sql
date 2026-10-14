@@ -32,13 +32,16 @@ end;$$;
 
 create function public.save_smart_branch_setup(p_company_id uuid,p_expected_revision integer,p_mode text,p_primary_name text,p_expected_primary_name text) returns jsonb
 language plpgsql security definer set search_path='' as $$
-declare uid uuid:=private.enterprise_authorize(p_company_id);prefs private.smart_branch_setup%rowtype;primary_id uuid;primary_name text;
+declare uid uuid:=private.enterprise_actor();prefs private.smart_branch_setup%rowtype;primary_id uuid;primary_name text;
 begin
  if uid is null then return jsonb_build_object('ok',false,'code','FORBIDDEN');end if;
  perform 1 from public.company_members where company_id=p_company_id and user_id=uid and role='owner' and status='active' for share;
  if not found or not private.enterprise_owner(p_company_id,uid) then return jsonb_build_object('ok',false,'code','FORBIDDEN');end if;
  perform 1 from public.companies where id=p_company_id and status<>'suspended' for update;
  if not found then return jsonb_build_object('ok',false,'code','FORBIDDEN');end if;
+ -- Take the write lock before scoped authorization acquires its lifecycle read
+ -- lock. Concurrent owners serialize here instead of upgrading shared locks.
+ if private.enterprise_authorize(p_company_id) is distinct from uid then return jsonb_build_object('ok',false,'code','FORBIDDEN');end if;
  if p_expected_revision is null or p_expected_revision<0 or p_mode is null or p_mode not in ('single','multiple')
  or p_primary_name is null or char_length(btrim(p_primary_name)) not between 1 and 120 or p_primary_name~'[[:cntrl:]]'
  or p_expected_primary_name is null or char_length(btrim(p_expected_primary_name)) not between 1 and 120 or p_expected_primary_name~'[[:cntrl:]]' then return jsonb_build_object('ok',false,'code','INVALID_INPUT');end if;
