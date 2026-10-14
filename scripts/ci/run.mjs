@@ -8,7 +8,7 @@ const commands = {
   unit: ["node_modules/vitest/vitest.mjs", "run", "--config", "vitest.ci.config.ts", "--maxWorkers=1", "--reporter=dot", "--silent"],
   contracts: ["node_modules/vitest/vitest.mjs", "run", "--config", "vitest.ci.config.ts", "src/lib/channels/contract.test.ts", "src/lib/access", "src/lib/auth", "src/lib/billing/catalog-backend", "src/lib/tenancy/business-authority", "src/lib/tenancy/setup-draft", "--maxWorkers=1", "--reporter=dot", "--silent"],
   build: ["node_modules/next/dist/bin/next", "build", "--webpack"],
-  safety: ["--test", "scripts/ci/safety.test.mjs", "scripts/ci/security.test.mjs"],
+  safety: ["--test", "scripts/ci/safety.test.mjs", "scripts/ci/security.test.mjs", "scripts/integration/local-auth-confirmation.test.mjs"],
 };
 const command = commands[process.argv[2]];
 if (!command) throw Error("CI_UNKNOWN_CHECK");

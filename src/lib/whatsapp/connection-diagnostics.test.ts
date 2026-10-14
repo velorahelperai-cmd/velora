@@ -1,9 +1,9 @@
-import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
+import {afterEach, beforeEach, describe, expect, it, vi, type MockInstance} from "vitest";
 import {diagnoseWhatsAppConnection,diagnosedWhatsAppPorts} from "./connection-diagnostics";
 import {validDiagnostic} from "@/lib/diagnostics/contract";
 
 describe("WhatsApp connection diagnostics",()=>{
- let logs:ReturnType<typeof vi.spyOn>;
+ let logs:MockInstance<typeof console.info>;
  beforeEach(()=>{logs=vi.spyOn(console,"info").mockImplementation(()=>undefined);});
  afterEach(()=>vi.restoreAllMocks());
  it("records the actual failing port with one reference, without replaying provider work or logging arguments",async()=>{
