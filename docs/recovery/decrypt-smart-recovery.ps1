@@ -8,8 +8,10 @@ $ErrorActionPreference = 'Stop'
 if ($PSVersionTable.PSVersion.Major -lt 7) { throw 'Use PowerShell 7 with AES-GCM support.' }
 if (Test-Path -LiteralPath $OutputPath) { throw 'Refusing to overwrite the output file.' }
 $taskManifest = [IO.File]::ReadAllText($ManifestPath) | ConvertFrom-Json
-if ((Get-FileHash -LiteralPath $EncryptedPath -Algorithm SHA256).Hash.ToLowerInvariant() -ne $taskManifest.encryptedSha256) { throw 'Encrypted file integrity check failed.' }
-$taskEnvelope = [IO.File]::ReadAllText($EncryptedPath) | ConvertFrom-Json
+$taskEnvelopeText = [IO.File]::ReadAllText($EncryptedPath).Replace("`r`n","`n")
+$taskEnvelopeHash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($taskEnvelopeText))).ToLowerInvariant()
+if ($taskEnvelopeHash -ne $taskManifest.encryptedSha256) { throw 'Encrypted file integrity check failed.' }
+$taskEnvelope = $taskEnvelopeText | ConvertFrom-Json
 if ($taskEnvelope.version -ne 1 -or $taskEnvelope.algorithm -ne 'AES-256-GCM' -or $taskEnvelope.aad -ne 'VELORA-SCOPED-RECOVERY-V1') { throw 'Unsupported envelope.' }
 $taskKey = [IO.File]::ReadAllBytes($KeyPath)
 if ($taskKey.Length -ne 32) { throw 'Invalid recovery key length.' }
