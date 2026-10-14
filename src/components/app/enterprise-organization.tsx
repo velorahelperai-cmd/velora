@@ -1,0 +1,50 @@
+"use client";
+import Link from "next/link";
+import { useRef, useState } from "react";
+import { useDemo } from "@/lib/demo-state";
+import { createEnterpriseBranch, inviteEnterpriseMember, readEnterpriseWorkspace, setEnterpriseMemberStatus } from "@/lib/enterprise/actions";
+import type { EnterpriseWorkspace } from "@/lib/enterprise/contracts";
+import { Button, Card, Field, Notice } from "./ui";
+import { useOptionalAccountSession } from "./account-chrome";
+
+export function EnterpriseOrganization({initial}:{initial:EnterpriseWorkspace}) {
+ const {locale}=useDemo(),ar=locale==="ar";
+ const session=useOptionalAccountSession();
+ const [denied,setDenied]=useState(false);
+ const [view,setView]=useState(initial),[busy,setBusy]=useState(false),[error,setError]=useState<string|null>(null),[notice,setNotice]=useState<string|null>(null);
+ const [name,setName]=useState(""),[timezone,setTimezone]=useState("Asia/Muscat"),[email,setEmail]=useState(""),[memberName,setMemberName]=useState("");
+ const [role,setRole]=useState<"employee"|"manager">("employee"),[branches,setBranches]=useState<string[]>(initial.branches[0]?[initial.branches[0].id]:[]),[link,setLink]=useState<string|null>(null);
+ const branchAttempt=useRef<{key:string;id:string}|null>(null),inviteAttempt=useRef<{key:string;id:string}|null>(null);
+ const accountId=initial.userId,companyId=initial.companyId;
+ const current=()=>!session||session.isCurrentUser(accountId);
+ const text=(arabic:string,english:string)=>ar?arabic:english;
+ async function refresh(){const result=await readEnterpriseWorkspace(accountId,companyId);if(!current())return;if(!result.ok){setError(result.code);setLink(null);if(["FORBIDDEN","UNAUTHENTICATED"].includes(result.code))setDenied(true);return;}setDenied(false);setView(result.data);}
+ async function run(work:()=>Promise<void>){if(busy||!current())return;setBusy(true);setError(null);setNotice(null);try{await work();}catch{if(current())setError("UNAVAILABLE");}finally{if(current())setBusy(false);}}
+ if((session&&(session.status!=="ready"||session.identity?.userId!==accountId))||denied)return <main className="p-8" role="alert">{text("أعد التحقق من حسابك وصلاحياتك لعرض المؤسسة.","Check your account and access to view the organization.")} <Link href="/app/settings">{text("الإعدادات","Settings")}</Link></main>;
+ return <main className="mx-auto grid w-full max-w-5xl gap-6 px-4 py-8 sm:px-8" dir={ar?"rtl":"ltr"}>
+  <header className="flex flex-wrap items-start justify-between gap-4"><div><Link className="text-sm text-[var(--color-action-on-dark)]" href="/app/settings">{text("إعدادات النشاط","Business settings")}</Link><h1 className="mt-3 text-2xl font-semibold">{text("المؤسسة والفروع","Organization and branches")}</h1></div><Button variant="secondary" disabled={busy} onClick={()=>void run(refresh)}>{text("تحديث الصلاحيات","Refresh access")}</Button></header>
+  {error&&<Notice tone="error">{["FORBIDDEN","UNAUTHENTICATED"].includes(error)?text("تغيّر الحساب أو الوصول. سجّل الدخول مجددًا للتحقق.","Account or access changed. Sign in again to check."):text("تعذر تأكيد النتيجة. حدّث البيانات؛ أعد محاولة الطلب نفسه إذا لم يظهر التغيير.","Could not confirm the result. Refresh; retry the same request if the change is absent.")}</Notice>}
+  {notice&&<Notice tone="success">{notice}</Notice>}
+  <section aria-label={text("الفروع المصرح بها","Authorized branches")} className="grid gap-3 sm:grid-cols-2">{view.branches.map(b=><Card key={b.id} title={b.name}><p className="text-sm text-[var(--color-muted-soft)]">{b.primary?text("الفرع الأساسي","Primary branch"):text("فرع إضافي","Additional branch")} · <span dir="ltr">{b.timezone}</span></p></Card>)}</section>
+  {view.role==="owner"&&<Card title={text("إضافة فرع","Add branch")}>
+   <Notice tone="warn">{text("الفرع الإضافي يُحفظ في مرحلة التجهيز. تشغيل قنواته ومحادثاته متاح بعد اكتمال تجهيز مسارات الفروع.","An additional branch is saved in setup. Its channels and conversations can operate after branch routing is configured.")}</Notice>
+   <form className="mt-4 grid gap-4 sm:grid-cols-2" onSubmit={e=>{e.preventDefault();void run(async()=>{const key=JSON.stringify([name.trim(),timezone]);if(branchAttempt.current?.key!==key)branchAttempt.current={key,id:crypto.randomUUID()};const result=await createEnterpriseBranch({expectedUserId:accountId,companyId,operationId:branchAttempt.current.id,name,timezone});if(!current())return;if(!result.ok){setError(result.code);return;}branchAttempt.current=null;setName("");setNotice(text("تم حفظ الفرع.","Branch saved."));await refresh();});}}>
+    <Field label={text("اسم الفرع","Branch name")} required>{p=><input {...p} value={name} onChange={e=>setName(e.target.value)} maxLength={120} required/>}</Field>
+    <Field label={text("المنطقة الزمنية","Time zone")} required>{p=><input {...p} dir="ltr" value={timezone} onChange={e=>setTimezone(e.target.value)} maxLength={100} required/>}</Field>
+    <Button busy={busy} disabled={busy||!name.trim()} type="submit">{text("حفظ الفرع","Save branch")}</Button>
+   </form>
+  </Card>}
+  {view.role==="owner"&&<Card title={text("دعوة عضو","Invite member")}>
+   <form className="grid gap-4 sm:grid-cols-2" onSubmit={e=>{e.preventDefault();void run(async()=>{const capabilities=["wa.conversations.read","ig.conversations.read","staff.schedule.read"];const key=JSON.stringify([memberName,email,role,branches]);if(inviteAttempt.current?.key!==key)inviteAttempt.current={key,id:crypto.randomUUID()};const result=await inviteEnterpriseMember({expectedUserId:accountId,companyId,operationId:inviteAttempt.current.id,branchIds:branches,role,email,name:memberName,capabilities});if(!current())return;if(!result.ok){setError(result.code);return;}setLink(result.data.inviteUrl);setNotice(result.data.inviteUrl?text("الدعوة صالحة 72 ساعة. شارك الرابط مع الحساب المقصود فقط.","Invitation valid for 72 hours. Share the link only with the intended account."):text("الدعوة محفوظة؛ رابط الاستجابة السابقة غير قابل للاستعادة.","Invitation saved; the previous response link cannot be recovered."));inviteAttempt.current=null;await refresh();});}}>
+    <Field label={text("الاسم","Name")} required>{p=><input {...p} value={memberName} onChange={e=>setMemberName(e.target.value)} minLength={2} maxLength={120} required/>}</Field>
+    <Field label={text("البريد الموثق","Verified email")} required>{p=><input {...p} type="email" dir="ltr" value={email} onChange={e=>setEmail(e.target.value)} maxLength={254} required/>}</Field>
+    <Field label={text("الدور","Role")} required>{p=><select {...p} value={role} onChange={e=>{setRole(e.target.value as typeof role);setBranches(initial.branches[0]?[initial.branches[0].id]:[]);setLink(null);}}><option value="employee">{text("موظف فرع","Branch employee")}</option><option value="manager">{text("مدير فروع","Branch manager")}</option></select>}</Field>
+    <fieldset className="grid gap-2"><legend className="mb-2 text-sm">{text("الفروع المحددة","Explicit branches")}</legend>{view.branches.filter(b=>b.status==="active").map(b=><label key={b.id} className="flex min-h-11 items-center gap-2 text-sm"><input type={role==="employee"?"radio":"checkbox"} name="branches" checked={branches.includes(b.id)} onChange={e=>{setBranches(role==="employee"?[b.id]:e.target.checked?[...branches,b.id]:branches.filter(id=>id!==b.id));setLink(null);}}/>{b.name}</label>)}</fieldset>
+    <p className="text-sm text-[var(--color-muted-soft)] sm:col-span-2">{text("تبدأ العضوية بصلاحيات القراءة وجدول الشفت فقط؛ امنح صلاحيات الرد والتفويض عند تجهيز التشغيل.","Membership starts with read and schedule permissions; grant reply and delegation when operation is configured.")}</p>
+    <Button busy={busy} disabled={busy||!branches.length} type="submit">{text("إنشاء رابط الدعوة","Create invitation link")}</Button>
+   </form>
+   {link&&<div className="mt-4 grid gap-2"><label className="text-sm" htmlFor="enterprise-invite-url">{text("رابط الدعوة","Invitation link")}</label><input id="enterprise-invite-url" className="min-h-11 w-full rounded border bg-transparent px-3 text-sm" dir="ltr" value={link} readOnly onFocus={e=>e.target.select()}/><Button variant="secondary" onClick={()=>void run(async()=>{await navigator.clipboard.writeText(link);setNotice(text("تم نسخ الرابط.","Link copied."));})}>{text("نسخ الرابط","Copy link")}</Button></div>}
+  </Card>}
+  <Card title={text("العضويات","Memberships")}><div className="grid gap-4">{view.accounts.map(a=><article key={a.id} className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-border-soft)] py-3"><div><p>{a.name||text("عضو","Member")}</p><p className="text-sm text-[var(--color-muted-soft)]">{a.role==="manager"?text("مدير","Manager"):text("موظف","Employee")} · {a.status}</p></div>{view.role==="owner"&&a.status!=="terminated"&&<div className="flex flex-wrap gap-2">{a.status==="active"?<Button variant="secondary" disabled={busy} onClick={()=>void run(async()=>{const result=await setEnterpriseMemberStatus({expectedUserId:accountId,companyId,userId:a.userId,status:"suspended"});if(!current())return;if(!result.ok){setError(result.code);return;}await refresh();})}>{text("تعليق الوصول","Suspend access")}</Button>:a.reactivationRequested&&<Button disabled={busy} onClick={()=>void run(async()=>{const result=await setEnterpriseMemberStatus({expectedUserId:accountId,companyId,userId:a.userId,status:"active"});if(!current())return;if(!result.ok){setError(result.code);return;}await refresh();})}>{text("الموافقة على العودة","Approve return")}</Button>}<Button variant="danger" disabled={busy} onClick={()=>{if(!window.confirm(text("إنهاء العضوية نهائيًا؟ العودة تحتاج دعوة جديدة.","Terminate membership? Returning requires a new invitation.")))return;void run(async()=>{const result=await setEnterpriseMemberStatus({expectedUserId:accountId,companyId,userId:a.userId,status:"terminated"});if(!current())return;if(!result.ok){setError(result.code);return;}await refresh();});}}>{text("إنهاء العضوية","Terminate")}</Button></div>}</article>)}</div></Card>
+ </main>;
+}

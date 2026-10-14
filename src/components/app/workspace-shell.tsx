@@ -10,6 +10,7 @@ import type { CompanyRole } from "@/lib/tenancy/types";
 import { AccountMenu, performLogout, useOptionalAccountSession } from "@/components/app/account-chrome";
 import { Button, LangSwitch, Notice, useAppCopy } from "@/components/app/ui";
 import { DiagnosticHint } from "./diagnostic-hint";
+import { EnterprisePresence } from "./enterprise-presence";
 
 import styles from "./internal-ui.module.css";
 
@@ -221,6 +222,7 @@ export function WorkspaceShell({ title, children, actions }: { title: string; ch
         </div>
       </aside>
       <main className={styles.workspaceMain}>
+        {profile?.role==="staff"&&workspace?.selectedCompanyId&&<EnterprisePresence key={`${profile.userId}:${workspace.selectedCompanyId}`} userId={profile.userId} companyId={workspace.selectedCompanyId}/>}
         <div className={styles.workspacePageHeader}>
           <h1 className="app-title min-w-0 break-words text-2xl lg:text-[2rem]">{title}</h1>
           <div className={styles.workspacePageActions}>{actions}</div>
