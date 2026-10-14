@@ -8,7 +8,9 @@ import {
 } from "@/lib/whatsapp/connection-actions";
 import type { WhatsappCompanyLink, WhatsappLinkStatus } from "@/lib/whatsapp/connection";
 import type { SingleTenantReceptionStatus } from "@/lib/whatsapp/config";
+import { useDemo } from "@/lib/demo-state";
 import {WhatsappFixedAckOptIn} from "./whatsapp-fixed-ack-opt-in";
+import {ChannelReviewStatus} from './channel-review';
 import { WhatsappEmbeddedSignup } from "@/components/app/whatsapp-embedded-signup";
 import { whatsappUiState } from "./onboarding-contracts";
 import {
@@ -46,6 +48,7 @@ export function WhatsappSettingsPanel({
   singleTenant?: SingleTenantReceptionStatus | null;
 }) {
   const copy = useAppCopy();
+  const { locale } = useDemo();
   const { busy, run } = useAction();
   const [link, setLink] = useState<WhatsappCompanyLink | null>(initialLink);
   const [loadError, setLoadError] = useState(initialLoadFailed);
@@ -93,6 +96,16 @@ export function WhatsappSettingsPanel({
   const stage1Done = Boolean(link?.requestedDisplayNumber?.trim());
   const stage2Done = verified;
   const stage3Done = connection.tested;
+
+  if(singleTenant?.configurationMode==='meta_test')return <Card title={locale==='ar'?'واتساب — اختبار Meta':'WhatsApp — Meta test'}>
+    <Notice>{locale==='ar'?'وضع اختبار ميتا. الاتصال والرسائل الفعلية يحتاجان إثباتًا منفصلًا.':'Meta test mode. Actual connection and messages require separate evidence.'}</Notice>
+    {singleTenant.currentCompanyMatches?<>
+      <p dir="ltr">Test Phone Number ID: {singleTenant.testPhoneNumberId??'—'}</p>
+      <p>{locale==='ar'?(singleTenant.receiveConfigured?'إعداد الاستقبال موجود؛ وصول رسالة فعلية لم يُثبت بهذه الحالة.':'إعداد استقبال الاختبار غير مكتمل.'):(singleTenant.receiveConfigured?'Receive configuration is present; this status does not prove actual receipt.':'Test receive configuration is incomplete.')}</p>
+      <ChannelReviewStatus companyId={companyId} channel="whatsapp"/>
+      <Link href="/app/conversations">{locale==='ar'?'فتح محادثات الاختبار':'Open test conversations'}</Link>
+    </>:<Notice>{locale==='ar'?'هذه الشركة ليست مساحة اختبار واتساب المحددة.':'This company is outside the configured WhatsApp test workspace.'}</Notice>}
+  </Card>;
 
   return (
     <Card title={copy.app.tabs.whatsapp}>

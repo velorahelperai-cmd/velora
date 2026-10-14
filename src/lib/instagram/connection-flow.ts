@@ -17,7 +17,7 @@ function matches(value: unknown, binding: AttemptBinding): value is AttemptBindi
 function safeFailure(value: unknown): ConnectionFailure {
   const code = object(value) ? value.code : null;
   switch (code) {
-    case "FORBIDDEN": case "EXPIRED": case "CONSUMED": case "INVALID_INPUT": case "UNAVAILABLE": case "RECONCILIATION_REQUIRED": return failure(code);
+    case "FORBIDDEN": case "EXPIRED": case "CONSUMED": case "INVALID_INPUT": case "UNAVAILABLE": case "RECONCILIATION_REQUIRED": case "ACCOUNT_MISMATCH": return failure(code);
     default: return reconcile();
   }
 }
@@ -109,7 +109,8 @@ async function runCompletion(
   const success: ProviderSuccess = Object.freeze({
     ok: true, accessToken: exchanged.accessToken,
     evidence: Object.freeze({ appId: exchanged.evidence.appId, accountId: exchanged.evidence.accountId,
-      permissions: Object.freeze([...exchanged.evidence.permissions]), expiresAt: exchanged.evidence.expiresAt, contractId: exchanged.evidence.contractId }),
+      permissions: Object.freeze([...exchanged.evidence.permissions]), expiresAt: exchanged.evidence.expiresAt, contractId: exchanged.evidence.contractId,
+      ...(exchanged.evidence.username?{username:exchanged.evidence.username}:{}) }),
   });
   try {
     const staged = await ports.stage(binding, success);

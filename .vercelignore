@@ -8,4 +8,7 @@
 /docs/
 /supabase/
 /scripts/
+/.codex/
+/.cursor/
+/output/
 *.tsbuildinfo

@@ -2,6 +2,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { verifyAndParseInstagramWebhook } from "./webhook-parse";
 import type { ParentWebhookSecret, InstagramWebhookEvent } from "./webhook-contracts";
 export const MAX_INSTAGRAM_WEBHOOK_BODY_BYTES = 1_048_576;
+export {readBody as readInstagramWebhookBody};
 export type InstagramWebhookReadiness = Readonly<{ receiveEnabled: boolean; providerFixtureVerified: boolean; parentWebhookSecret?: ParentWebhookSecret; verifyToken?: string }>;
 /** Coordinator boundary ONLY; no DB implementation. A real adapter must atomically
  * commit every supported event, dedup retries and enforce historical account authority. */

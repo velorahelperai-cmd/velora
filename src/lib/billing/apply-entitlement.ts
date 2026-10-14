@@ -85,7 +85,7 @@ export function computePaidThroughAfterSuccessfulPayment(input: {
   return computePaidThroughAfterPeriod({
     now: input.now,
     currentPaidThrough: input.currentPaidThrough,
-    period,
+    period:period.unit==='month'&&period.count===1?{unit:'day',count:30}:period,
   });
 }
 

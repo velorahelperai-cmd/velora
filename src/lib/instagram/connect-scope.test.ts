@@ -17,3 +17,12 @@ it('NaN clock and noncanonical identity fail closed',()=>{expect(allowed([scope]
 it('required expectedUsername accepts only a bounded canonical username',()=>{for(const expectedUsername of [undefined,'','@velorahelperai','velora helperai','VeloraHelperAI','x'.repeat(31),42])expect(allowed([{...scope,expectedUsername}])).toBe(false);});
 it('genuine returned username must match the configured target',()=>{expect(profile(scope.companyId,scope.ownerId,scope.appId,'velorahelperai',env([scope]),now)).toBe(true);expect(profile(scope.companyId,scope.ownerId,scope.appId,'VeloraHelperAI',env([scope]),now)).toBe(true);for(const username of [undefined,null,'other_account','@velorahelperai','velorahelperai ',42])expect(profile(scope.companyId,scope.ownerId,scope.appId,username,env([scope]),now)).toBe(false);});
 it('matching username cannot bypass owner, app or expiry',()=>{expect(profile(scope.companyId,'abcdefab-0000-4000-8000-000000000009',scope.appId,'velorahelperai',env([scope]),now)).toBe(false);expect(profile(scope.companyId,scope.ownerId,'3391832644330595','velorahelperai',env([scope]),now)).toBe(false);expect(profile(scope.companyId,scope.ownerId,scope.appId,'velorahelperai',env([scope]),now+48*3600000)).toBe(false);});
+it('reviewer owner can authorize their own verified professional profile within the seven-day review scope',()=>{
+ const {expectedUsername,...identity}=scope;void expectedUsername;
+ const reviewEnv={INSTAGRAM_REVIEW_ENABLED:'true',INSTAGRAM_REVIEW_COMPANY_ID:scope.companyId,INSTAGRAM_REVIEW_CONNECT_SCOPES:JSON.stringify([{...identity,expiresAt:'2026-10-20T00:00:00.000Z'}])};
+ expect(profile(scope.companyId,scope.ownerId,scope.appId,'reviewer_business',reviewEnv,now)).toBe(true);
+ expect(profile(scope.companyId,scope.ownerId,scope.appId,'reviewer_business',reviewEnv,now+7*24*3600000)).toBe(false);
+ expect(profile(scope.companyId,'abcdefab-0000-4000-8000-000000000009',scope.appId,'reviewer_business',reviewEnv,now)).toBe(false);
+ expect(profile(scope.companyId,scope.ownerId,scope.appId,'reviewer_business',{...reviewEnv,INSTAGRAM_REVIEW_ENABLED:'false'},now)).toBe(false);
+ expect(profile(scope.companyId,scope.ownerId,scope.appId,'bad username',reviewEnv,now)).toBe(false);
+});

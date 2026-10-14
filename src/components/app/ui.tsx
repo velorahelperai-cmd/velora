@@ -19,7 +19,7 @@ export function useErrorText(key?: FieldErrorKey | null): string | undefined {
 }
 
 const inputBase =
-  "min-h-11 w-full min-w-0 rounded-xl border bg-[var(--color-panel-deep)] px-3 text-[15px] text-[var(--color-on-dark)] outline-none transition focus-visible:ring-2 focus-visible:ring-[#38dc89] placeholder:text-[var(--color-muted-soft)]";
+  "min-h-11 w-full min-w-0 rounded-xl border bg-[var(--color-panel-deep)] px-3 text-base text-[var(--color-on-dark)] outline-none transition focus-visible:ring-2 focus-visible:ring-[#38dc89] placeholder:text-[var(--color-muted-soft)]";
 
 export function Field({
   label,
@@ -46,8 +46,7 @@ export function Field({
       onFocusCapture={(e) => {
         const target = e.target as HTMLElement;
         if (target.matches("input, textarea, select")) {
-          const reduce = target.closest('[data-internal-ui="true"]')
-            && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+          const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
           target.scrollIntoView({ block: "center", behavior: reduce ? "auto" : "smooth" });
         }
       }}
@@ -139,6 +138,7 @@ export function Button({
   return (
     <button
       {...rest}
+      data-button={variant}
       disabled={rest.disabled || busy}
       aria-busy={busy || undefined}
       className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-full px-5 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38dc89] disabled:cursor-not-allowed disabled:opacity-60 ${styles} ${className}`}
@@ -174,6 +174,7 @@ export function LinkButton({
   return (
     <Link
       href={href}
+      data-button={variant}
       className={`inline-flex min-h-11 items-center justify-center rounded-full px-5 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38dc89] ${styles} ${className}`}
     >
       {children}
@@ -189,7 +190,7 @@ export function Notice({ tone = "info", children }: { tone?: "info" | "success" 
     warn: "border-[#d9a467]/50 bg-[#d9a467]/10 text-[var(--color-warn-fg)]",
   }[tone];
   return (
-    <div role={tone === "error" ? "alert" : "status"} className={`rounded-xl border px-4 py-3 text-sm leading-6 ${styles}`}>
+    <div data-notice={tone} role={tone === "error" ? "alert" : "status"} className={`rounded-xl border px-4 py-3 text-sm leading-6 ${styles}`}>
       {children}
     </div>
   );

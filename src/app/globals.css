@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "../components/app/service-theme.css";
 
 /* Available globally; applied only by the administration theme boundary. */
 @font-face {
@@ -140,29 +141,7 @@ button {
  * App / admin / auth workspace — light Velora mint (same direction as dashboard preview).
  * Landing keeps :root night tokens + .hero-shell; homepage must not use .app-shell.
  */
-.app-shell {
-  --color-night: #e8f1ea;
-  --color-panel: #ffffff;
-  --color-panel-deep: #f3f8f4;
-  --color-on-dark: #101b16;
-  --color-muted-on-dark: #4d6256;
-  --color-muted-soft: #6a8072;
-  --color-line: rgba(16, 27, 22, 0.12);
-  --color-action-on-dark: #087443;
-  --color-success-fg: #066338;
-  --color-warn-fg: #8a6230;
-  --color-danger-fg: #9a3f2e;
-  --color-hover-wash: rgba(16, 27, 22, 0.05);
-  --color-border-soft: rgba(16, 27, 22, 0.14);
-
-  min-height: 100svh;
-  color: var(--color-on-dark);
-  background:
-    radial-gradient(ellipse 75% 55% at 12% 8%, rgba(56, 220, 137, 0.22), transparent 58%),
-    radial-gradient(ellipse 60% 50% at 92% 18%, rgba(217, 164, 103, 0.16), transparent 52%),
-    radial-gradient(ellipse 70% 55% at 48% 100%, rgba(8, 116, 67, 0.1), transparent 55%),
-    linear-gradient(165deg, #f3f8f4 0%, #e8f1ea 45%, #dce9e1 100%);
-}
+.app-shell { min-height: 100svh; }
 
 .app-shell-aside {
   background: rgba(247, 251, 248, 0.92);

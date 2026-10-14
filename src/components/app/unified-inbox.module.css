@@ -1,0 +1,43 @@
+.inbox {display:grid;grid-template-columns: minmax(270px,320px) minmax(0,1fr);min-height:650px;height:calc(100svh - 175px);max-height:1100px;border:1px solid var(--service-line);border-radius:var(--service-radius);overflow:hidden;background:var(--service-surface);}
+.list {display:flex;flex-direction:column;min-width:0;min-height:0;border-inline-end:1px solid var(--service-line);background:var(--service-surface);}
+.listHeader {padding:20px 16px 16px;border-bottom:1px solid var(--service-line);}
+.listHeader h2 {font-size:1.125rem;font-weight:700;margin:0;}
+.listHeader p,.listFooter {font-size:.8125rem;color:var(--service-muted);}
+.channelFilters {display:flex;gap:4px;margin:16px 0;flex-wrap:wrap;}
+.channelFilters button {min-height:44px;padding:8px 10px;border-radius:8px;border:1px solid transparent;font-size:.8125rem;}
+.channelFilters button[aria-pressed="true"] {background:var(--service-accent-soft);color:var(--service-accent);border-color:var(--service-line);font-weight:500;}
+.search {display:grid;gap:8px;font-size:.8125rem;color:var(--service-muted);margin-top:16px;}
+.search input {width:100%;min-width:0;min-height:44px;border:1px solid var(--service-line);border-radius:8px;background:var(--service-subtle);padding:8px 12px;font-size:1rem;color:var(--service-ink);}
+.rows {flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;}
+.row {display:flex;width:100%;align-items:flex-start;text-align:start;padding:16px;gap:12px;border-bottom:1px solid var(--service-line);transition:background 160ms;}
+.row:hover {background:var(--service-subtle);}
+.row[aria-current="page"] {background:var(--service-accent-soft);box-shadow:inset 3px 0 var(--service-accent);}
+:global([dir="rtl"]) .row[aria-current="page"] {box-shadow:inset -3px 0 var(--service-accent);}
+.avatar {flex:none;width:40px;height:40px;display:grid;place-items:center;border-radius:50%;background:var(--service-subtle);font-weight:500;color:var(--service-accent);}
+.rowBody {display:grid;gap:6px;min-width:0;flex:1;}
+.rowHeading {display:flex;justify-content:space-between;gap:8px;align-items:baseline;}
+.rowHeading strong {font-size:.9375rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.rowHeading time {font-size:.6875rem;white-space:nowrap;color:var(--service-muted);}
+.preview {font-size:.875rem;color:var(--service-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.rowFooter {display:flex;align-items:center;justify-content:space-between;gap:8px;}
+.unread {min-width:22px;min-height:22px;display:grid;place-items:center;padding:1px 5px;background:var(--service-accent);color:white;font-size:.75rem;border-radius:12px;}
+.listFooter {padding:12px 16px;border-top:1px solid var(--service-line);}
+.listFooter a {display:inline-flex;min-height:44px;align-items:center;text-decoration:underline;color:var(--service-accent);}
+.thread {display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;background:var(--service-subtle);}
+.pane {flex:1;min-height:0;overflow:auto;}
+.pane > :global(.channel-pane) {display:flex;flex-direction:column;height:100%;min-height:0;}
+.pane :global(.channel-pane) :global([data-channel-inbox="whatsapp"]) {height:100%;min-height:0;}
+.threadToolbar {display:flex;align-items:center;gap:12px;flex-wrap:wrap;min-height:52px;padding:8px 16px;border-bottom:1px solid var(--service-line);background:white;font-size:.8125rem;}
+.back {display:none;min-height:44px;border:1px solid var(--service-line);border-radius:8px;padding:8px 12px;}
+.welcome {display:grid;place-items:center;height:100%;padding:24px;}
+@media(max-width:1100px){.inbox{grid-template-columns:280px minmax(0,1fr);height:calc(100svh - 240px);min-height:0;}}
+@media(max-width:767px){
+ .inbox {display:block;height:calc(100svh - 190px);min-height:450px;border-radius:10px;}
+ .list {height:100%;border:0;}
+ .thread {display:none;}
+ .inbox[data-selected="true"] .thread {display:flex;position:fixed;inset:0;z-index:40;height:100dvh;min-height:0;padding-bottom:env(safe-area-inset-bottom);}
+ .inbox[data-selected="true"] .list {visibility:hidden;}
+ .back {display:inline-flex;align-items:center;}
+ .threadToolbar {position:sticky;top:0;z-index:20;padding-top:max(8px,env(safe-area-inset-top));}
+}
+@media(prefers-reduced-motion:reduce){.row {transition:none;}}

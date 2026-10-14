@@ -9,7 +9,9 @@ import {
   sessionHasCompanyCapability,
 } from "@/lib/access/actions";
 import { controlActionCapability } from "@/lib/access/capabilities";
-import { externalSendAllowed, sendReady, whatsappConfig, whatsappRoutingMode } from "@/lib/whatsapp/config";
+import { externalSendAllowed, sendReady, whatsappConfig, whatsappConfigurationMode, whatsappRoutingMode } from "@/lib/whatsapp/config";
+import {readChannelReviewAccess} from '@/lib/meta-review/actions';
+import {reviewDispatchCurrent,type ReviewGrant} from '@/lib/meta-review/access';
 import { loadWhatsappConversation, loadWhatsappInbox, type WhatsappInboxMeta } from "@/lib/whatsapp/inbox";
 import { sendWhatsappText } from "@/lib/whatsapp/send";
 import { readServiceWindow } from "@/lib/whatsapp/service-window";
@@ -233,6 +235,8 @@ export async function replyWhatsappConversation(input: {
 
   const mode = whatsappRoutingMode();
   const config = whatsappConfig();
+  const reviewMode=whatsappConfigurationMode()==='meta_test';
+  let reviewGrant:ReviewGrant|null=null;
 
   if (!externalSendAllowed()) {
     return { ok: false, code: "SEND_DISABLED", message: "external_send_disabled", clientOpId };
@@ -405,7 +409,14 @@ export async function replyWhatsappConversation(input: {
   }
 
   // Claim is service_role only — membership already verified above.
-  const claimed = await admin.rpc("claim_whatsapp_send_attempt", {
+  const reviewAccess=reviewMode?await readChannelReviewAccess(companyId,'whatsapp'):null;
+  reviewGrant=reviewAccess?.ok?reviewAccess.grant:null;
+  // Another request may have claimed this same operation since the native read.
+  // Retain its key until storage is refreshed; no local snapshot proves no attempt.
+  if(reviewMode&&!reviewGrant)return {ok:false,code:'SAVE_FAILED',message:'review_access_unavailable',clientOpId};
+  const claimed = reviewGrant ? await (admin as unknown as {rpc:(name:string,args:Record<string,unknown>)=>PromiseLike<{data:unknown;error:unknown}>}).rpc('claim_whatsapp_review_send',{
+    p_intent_id:intent.id,p_actor_user_id:actorUserId,p_grant_id:reviewGrant.id,
+  }) : await admin.rpc("claim_whatsapp_send_attempt", {
     p_intent_id: intent.id,
     p_actor_user_id: actorUserId,
     p_lease_seconds: 90,
@@ -472,6 +483,7 @@ export async function replyWhatsappConversation(input: {
       return { ok: false, code: "COMPANY_SUSPENDED", message: code, clientOpId };
     }
     if (code === "subscription_inactive") {
+      if(reviewMode)return {ok:false,code:'SAVE_FAILED',message:'review_access_unavailable',clientOpId};
       return { ok: false, code: "SUBSCRIPTION_INACTIVE", message: code, clientOpId, outcome: "ready", notAttempted: true };
     }
     if (code === "forbidden") return { ok: false, code: "FORBIDDEN", message: code, clientOpId };
@@ -514,7 +526,9 @@ export async function replyWhatsappConversation(input: {
     return replyFromPreGraphSettlement(classifyPreGraphSettlement(rpc), clientOpId, errorCode);
   };
   const paidProof = asRecord(claimRow.manual_paid_entitlement);
-  const paidEntitlementStillCurrent = () => paidProof?.company_id === companyId && paidProof.environment === "live"
+  const paidEntitlementStillCurrent = () => reviewGrant
+    ? reviewDispatchCurrent(claimRow.review_entitlement,reviewGrant,companyId,'whatsapp',intent!.phone_number_id)
+    : paidProof?.company_id === companyId && paidProof.environment === "live"
     && typeof paidProof.plan_version_id === "string" && paidProof.plan_version_id.trim().length > 0
     && typeof paidProof.paid_through === "string" && Number.isFinite(Date.parse(paidProof.paid_through))
     && Date.parse(paidProof.paid_through) > Date.now();
@@ -566,7 +580,9 @@ export async function replyWhatsappConversation(input: {
     // never retry the gate or call Graph, and never overwrite another send's evidence.
     let dispatchRpc;
     try {
-      dispatchRpc = await supabase.rpc("whatsapp_authorize_staff_dispatch", {
+      dispatchRpc = reviewGrant ? await (supabase as unknown as {rpc:(name:string,args:Record<string,unknown>)=>PromiseLike<{data:unknown;error:unknown}>}).rpc('whatsapp_authorize_review_dispatch',{
+        p_intent_id:intent.id,p_attempt_token:attemptToken,p_grant_id:reviewGrant.id,
+      }) : await supabase.rpc("whatsapp_authorize_staff_dispatch", {
         p_intent_id: intent.id,
         p_attempt_token: attemptToken,
       });
@@ -584,6 +600,7 @@ export async function replyWhatsappConversation(input: {
       if (dispatch.ok === false && definitiveDenials.includes(denial)) return settlePreGraphRejected(denial);
       return { ok: false, code: "UNKNOWN_OUTCOME", message: "dispatch_authority_unconfirmed", clientOpId, outcome: "unknown" };
     }
+    if(reviewGrant&&(typeof dispatch.not_after!=='string'||!Number.isFinite(Date.parse(dispatch.not_after))||Date.parse(dispatch.not_after)<=Date.now()))return settlePreGraphRejected('staff_authority_expired');
     const sent = await sendWhatsappText({
       toWaId: intent.recipient_wa_id,
       body: intent.body,
@@ -598,6 +615,7 @@ export async function replyWhatsappConversation(input: {
         || sent.code === "NOT_CONFIGURED"
         || sent.code === "NEEDS_SETUP"
         || sent.code === "PHONE_MISMATCH"
+        || sent.code === "RECIPIENT_NOT_ALLOWED"
         || sent.code === "SERVICE_WINDOW_CLOSED"
       ) {
         return settlePreGraphRejected(sent.code.toLowerCase());

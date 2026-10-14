@@ -48,7 +48,7 @@ export function instagramAuthorizationUrl(cfg:InstagramOAuthConfig,state:string)
  * permissions and provider expiry must all be proven before Vault staging.
  * Current provider response/field compatibility still requires approved fixtures
  * and live verification before activation. Missing evidence fails closed. */
-export async function exchangeInstagramCode(code:string,binding:AttemptBinding,cfg:InstagramOAuthConfig,dependencies:{fetch?:typeof fetch;onDiagnostic?:(value:DiagnosticDetail)=>void}={}):Promise<ProviderResult>{
+export async function exchangeInstagramCode(code:string,binding:AttemptBinding,cfg:InstagramOAuthConfig,dependencies:{fetch?:typeof fetch;onDiagnostic?:(value:DiagnosticDetail)=>void;expectedAccountId?:string}={}):Promise<ProviderResult>{
  let stage:DiagnosticStage='preflight';const trace=beginDiagnostic('instagram_connect');
  const report=(code:string,reason?:OAuthFailureReason,providerCodes?:{providerCode?:number;providerSubcode?:number})=>{trace.stage(stage);const diagnostic=trace.finish(code.startsWith('HTTP_')||code==='UNPROVEN_RESPONSE'?'OUTCOME_UNKNOWN':'PROVIDER_REJECTED');try{dependencies.onDiagnostic?.(diagnostic);}catch{/* Diagnostics do not change authorization results. */}if(process.env.NODE_ENV==='production')console.info(JSON.stringify({reference:diagnostic.reference,operation:diagnostic.operation,stage,code,...(reason?{reason}:{}),...providerCodes}));};
  const rejected=(code='VALIDATION_REJECTED',reason?:OAuthFailureReason,providerCodes?:{providerCode?:number;providerSubcode?:number}):ProviderResult=>{report(code,reason,providerCodes);return {ok:false,code:'REJECTED'};},unknown=(code='UNPROVEN_RESPONSE'):ProviderResult=>{report(code);return {ok:false,code:'UNKNOWN'};};
@@ -59,7 +59,13 @@ export async function exchangeInstagramCode(code:string,binding:AttemptBinding,c
   const response=await http(url,{...init,cache:'no-store',redirect:'error',credentials:'omit',signal:AbortSignal.timeout(12000)});
   if(Number(response.headers.get('content-length')??0)>65536)throw Error('PROVIDER_RESPONSE_TOO_LARGE');
   const raw=await response.text();if(Buffer.byteLength(raw,'utf8')>65536)throw Error('PROVIDER_RESPONSE_TOO_LARGE');
-  const body:unknown=JSON.parse(raw);return {ok:response.ok,status:response.status,body};}
+  // Meta may encode a scoped user ID as a JSON integer. Preserve the original
+  // decimal token before JavaScript rounds it; identity checks still compare the
+  // exact ID from the independent profile response. Unsupported runtimes fail closed.
+  const body:unknown=JSON.parse(raw,(key,value,context?:{source?:string})=>{
+   if((key==='user_id'||key==='id')&&typeof value==='number'&&/^\d{1,64}$/.test(context?.source??''))return context!.source;
+   return value;
+  });return {ok:response.ok,status:response.status,body};}
  try{
   stage='code_exchange';
   // Meta's Instagram Login token endpoint accepts these credentials as a
@@ -76,27 +82,36 @@ export async function exchangeInstagramCode(code:string,binding:AttemptBinding,c
   if(!record(short)||!text(short.access_token))return unknown();
   stage='granted_permissions';
   const id=account(short.user_id),permissions=typeof short.permissions==='string'?short.permissions.split(',').map(s=>s.trim()):short.permissions;
-  if(!id||!Array.isArray(permissions)||permissions.some(p=>typeof p!=='string'||!p||p.length>128)||!cfg.requiredPermissions.every(p=>permissions.includes(p)))return rejected();
+  if(!id)return rejected('ACCOUNT_ID_UNPROVEN');
+  if(!Array.isArray(permissions)||permissions.some(p=>typeof p!=='string'||!p||p.length>128))return rejected('PERMISSIONS_RESPONSE_UNPROVEN');
+  if(!cfg.requiredPermissions.every(p=>permissions.includes(p)))return rejected('REQUIRED_PERMISSION_NOT_GRANTED');
   stage='long_token_exchange';
   const issuedBefore=Date.now(),longUrl=new URL('https://graph.instagram.com/access_token');
   longUrl.searchParams.set('grant_type','ig_exchange_token');longUrl.searchParams.set('client_secret',cfg.appSecret);longUrl.searchParams.set('access_token',short.access_token);
   const upgraded=await request(longUrl.href,{method:'GET'});if(!upgraded.ok||!record(upgraded.body)||!text(upgraded.body.access_token)||!Number.isSafeInteger(upgraded.body.expires_in)||(upgraded.body.expires_in as number)<=0)return unknown();
   const expires=issuedBefore+(upgraded.body.expires_in as number)*1000;if(!Number.isSafeInteger(expires)||expires<=Date.now()||!Number.isFinite(new Date(expires).getTime()))return unknown();
   stage='profile_read';
-  const me=new URL('https://graph.instagram.com/v26.0/me');me.searchParams.set('fields','user_id,username,account_type');
+  const me=new URL('https://graph.instagram.com/v26.0/me');me.searchParams.set('fields','id,user_id,username,account_type');
   const profile=await request(me.href,{method:'GET',headers:{Authorization:'Bearer '+upgraded.body.access_token}});
   if(!profile.ok||!record(profile.body))return unknown();
   const profileBody=profile.body;
   let identity:unknown=profileBody;
   if(Array.isArray(profileBody.data)){
-   if(profileBody.data.length!==1||['user_id','username','account_type'].some(field=>field in profileBody))return rejected();
+   if(profileBody.data.length!==1||['id','user_id','username','account_type'].some(field=>field in profileBody))return rejected();
    identity=profileBody.data[0];
   }
   stage='profile_identity';
-  if(!record(identity)||account(identity.user_id)!==id)return rejected('ACCOUNT_ID_MISMATCH');
-  if(!['BUSINESS','MEDIA_CREATOR'].includes(String(identity.account_type)))return rejected('PROFESSIONAL_ACCOUNT_REQUIRED');
-  if(!instagramOwnerConnectProfile(binding.companyId,binding.userId,binding.appId,identity.username))return rejected('TARGET_USERNAME_MISMATCH');
+  // The OAuth user_id is app-scoped (/me.id). The distinct /me.user_id is
+  // the professional account ID used in webhooks, subscriptions and messaging.
+  // https://developers.facebook.com/documentation/instagram-platform/instagram-api-with-instagram-login/get-started
+  if(!record(identity)||account(identity.id)!==id)return rejected('ACCOUNT_ID_MISMATCH');
+  const professionalId=account(identity.user_id);if(!professionalId)return rejected('PROFESSIONAL_ACCOUNT_ID_UNPROVEN');
+  if(!['BUSINESS','MEDIA_CREATOR'].includes(String(identity.account_type).toUpperCase()))return rejected('PROFESSIONAL_ACCOUNT_REQUIRED');
+  if(!instagramOwnerConnectScope(binding.companyId,binding.userId,binding.appId))return rejected();
+  // Renewal is pinned by the native stable account ID, not a mutable username.
+  // Different identities still reach the native stage rejection before any Vault write.
+  if(!dependencies.expectedAccountId&&!instagramOwnerConnectProfile(binding.companyId,binding.userId,binding.appId,identity.username))return rejected('TARGET_USERNAME_MISMATCH');
   trace.finish('OK');
-  return {ok:true,accessToken:upgraded.body.access_token,evidence:{appId:cfg.appId,accountId:id,permissions:[...new Set(permissions as string[])],expiresAt:new Date(expires).toISOString(),contractId:cfg.contractId}};
+  return {ok:true,accessToken:upgraded.body.access_token,evidence:{appId:cfg.appId,accountId:professionalId,...(typeof identity.username==='string'?{username:identity.username}:{}),permissions:[...new Set(permissions as string[])],expiresAt:new Date(expires).toISOString(),contractId:cfg.contractId}};
  }catch{return unknown();}
 }

@@ -1,12 +1,12 @@
 .console {
-  --console-base: #F7F0E5;
-  --console-panel: #FFFBF5;
-  --console-muted: #EFE2CF;
-  --console-border: #D7C1A5;
-  --console-action: #D1AE7C;
-  --console-ink: #18130F;
-  --console-link: #6B4932;
-  --console-secondary: #615244;
+  --console-base: var(--service-canvas);
+  --console-panel: var(--service-surface);
+  --console-muted: var(--service-subtle);
+  --console-border: var(--service-line);
+  --console-action: var(--service-accent-soft);
+  --console-ink: var(--service-ink);
+  --console-link: var(--service-accent);
+  --console-secondary: var(--service-muted);
   max-width: 1100px;
   margin: auto;
   color: var(--console-ink);

@@ -1,23 +1,20 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
-import { ConversationsPage } from "@/components/app/conversations";
-import { loadWhatsappInboxInitialPage } from "@/lib/whatsapp/inbox";
+import { UnifiedInbox } from "@/components/app/unified-inbox";
+import { readServiceInbox } from "@/lib/customer/service-inbox-actions";
+import { instagramReviewMode } from '@/lib/instagram/config';
+import {whatsappConfigurationMode,whatsappConfig} from '@/lib/whatsapp/config';
 
 export const metadata: Metadata = { title: "Conversations · Velora" };
 export const dynamic = "force-dynamic";
 
 export default async function Page() {
-  const loaded = await loadWhatsappInboxInitialPage();
+  const loaded = await readServiceInbox();
   return (
-    <Suspense fallback={<main className="min-h-svh bg-[#07110d]" aria-busy="true" />}>
-      <ConversationsPage
-        inbox={loaded.ok ? loaded.conversations : []}
-        forbidden={!loaded.ok && loaded.code === "FORBIDDEN"}
-        loadFailed={!loaded.ok && loaded.code === "UNAVAILABLE"}
-        noCompany={!loaded.ok && loaded.code === "NO_COMPANY"}
-        meta={loaded.ok ? loaded.meta : undefined}
-        page={loaded.ok ? loaded.page : undefined}
-      />
+    <Suspense fallback={<main className="app-shell" aria-busy="true" />}>
+      <UnifiedInbox key={loaded.ok?`${loaded.actorId}:${loaded.companyId}`:'unavailable'} initial={loaded}
+       waReview={loaded.ok&&whatsappConfigurationMode()==='meta_test'&&loaded.companyId===whatsappConfig().companyId}
+       igReview={loaded.ok&&instagramReviewMode(loaded.companyId)}/>
     </Suspense>
   );
 }

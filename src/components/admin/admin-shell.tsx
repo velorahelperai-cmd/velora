@@ -122,7 +122,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
           icon: IconRocket,
           active: false,
           pill: isRtl ? "قريباً" : "Soon",
-          pillColor: "bg-[#EFE2CF] text-[#6B4932] border-[#D7C1A5]",
+          pillColor: "bg-[var(--service-subtle)] text-[var(--service-accent)] border-[var(--service-line)]",
         },
       ],
     },
@@ -162,13 +162,14 @@ export function AdminShell({ children }: { children: ReactNode }) {
   return (
     <div
       data-admin-theme="warm"
-      className={`${theme.theme} min-h-screen flex flex-col antialiased selection:bg-[#D1AE7C]/40 selection:text-[#18130F]`}
+      data-service-theme="true"
+      className={`${theme.theme} min-h-screen flex flex-col antialiased selection:bg-[var(--service-accent-soft)]/40 selection:text-[var(--service-ink)]`}
       dir={isRtl ? "rtl" : "ltr"}
     >
       {/* 📱 Mobile Drawer Backdrop */}
       {mobileOpen && (
         <div
-          className="fixed inset-0 z-40 bg-[#6B4932]/25 backdrop-blur-sm lg:hidden transition-opacity"
+          className="fixed inset-0 z-40 bg-[var(--service-accent)]/25 backdrop-blur-sm lg:hidden transition-opacity"
           onClick={closeMobileMenu}
         />
       )}
@@ -177,7 +178,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
         {/* 🧭 Admin Sidebar */}
         <aside
           onKeyDown={event => { if (event.key === "Escape" && mobileOpen) { event.preventDefault(); closeMobileMenu(); } }}
-          className={`fixed inset-y-0 z-50 flex-col bg-[#EFE2CF] border-[#D7C1A5] transition-all duration-200 ease-in-out ${
+          className={`fixed inset-y-0 z-50 flex-col bg-[var(--service-subtle)] border-[var(--service-line)] transition-all duration-200 ease-in-out ${
             isRtl ? "border-l right-0" : "border-r left-0"
           } ${
             mobileOpen
@@ -188,25 +189,25 @@ export function AdminShell({ children }: { children: ReactNode }) {
           } ${collapsed ? "lg:w-20" : "lg:w-64"}`}
         >
           {/* Sidebar Brand Header */}
-          <div className="flex items-center justify-between h-16 px-4 border-b border-[#D7C1A5]">
+          <div className="flex items-center justify-between h-16 px-4 border-b border-[var(--service-line)]">
             <Link
               href="/admin"
-              className="flex items-center gap-3 group focus:outline-none focus-visible:ring-2 focus-visible:ring-[#6B4932] rounded-xl p-1"
+              className="flex items-center gap-3 group focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--service-accent)] rounded-xl p-1"
             >
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-[#D1AE7C] to-[#E4D3B8] font-bold text-[#18130F] shadow-md shadow-[#6B4932]/20">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-[var(--service-accent-soft)] to-[var(--service-accent-soft)] font-bold text-[var(--service-ink)] shadow-md shadow-[var(--service-accent)]/20">
                 V
               </span>
               {!collapsed && (
                 <div className="min-w-0 transition-opacity">
                   <div className="flex items-center gap-1.5">
-                    <span className="font-bold text-base tracking-tight text-[#18130F] group-hover:text-[#6B4932] transition">
+                    <span className="font-bold text-base tracking-tight text-[var(--service-ink)] group-hover:text-[var(--service-accent)] transition">
                       Velora
                     </span>
-                    <span className="rounded bg-[#6B4932]/15 px-1.5 py-0.5 text-[10px] font-bold text-[#6B4932] border border-[#6B4932]/30">
+                    <span className="rounded bg-[var(--service-accent)]/15 px-1.5 py-0.5 text-[10px] font-bold text-[var(--service-accent)] border border-[var(--service-accent)]/30">
                       ADMIN
                     </span>
                   </div>
-                  <p className="text-[11px] text-[#6B4932] font-medium truncate">
+                  <p className="text-[11px] text-[var(--service-accent)] font-medium truncate">
                     {isRtl ? "منصة التحكم الشاملة" : "Enterprise Control"}
                   </p>
                 </div>
@@ -218,7 +219,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
               ref={closeButtonRef}
               type="button"
               onClick={closeMobileMenu}
-              className="p-1.5 rounded-lg text-[#6B4932] hover:text-[#18130F] hover:bg-[#D7C1A5] lg:hidden"
+              className="p-1.5 rounded-lg text-[var(--service-accent)] hover:text-[var(--service-ink)] hover:bg-[var(--service-line)] lg:hidden"
               aria-label="Close menu"
             >
               <IconX />
@@ -230,7 +231,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
             {navItems.map((group, idx) => (
               <div key={idx} className="space-y-1">
                 {!collapsed && (
-                  <p className="px-3 text-[11px] font-bold uppercase tracking-wider text-[#6B4932]">
+                  <p className="px-3 text-[11px] font-bold uppercase tracking-wider text-[var(--service-accent)]">
                     {group.group}
                   </p>
                 )}
@@ -249,15 +250,15 @@ export function AdminShell({ children }: { children: ReactNode }) {
                         title={collapsed ? item.label : undefined}
                         className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all group ${
                           item.active
-                            ? "bg-[#D1AE7C] text-[#18130F] font-bold shadow-sm shadow-[#6B4932]/20"
-                            : "text-[#18130F] hover:text-[#18130F] hover:bg-[#D7C1A5] font-medium"
+                            ? "bg-[var(--service-accent-soft)] text-[var(--service-ink)] font-bold shadow-sm shadow-[var(--service-accent)]/20"
+                            : "text-[var(--service-ink)] hover:text-[var(--service-ink)] hover:bg-[var(--service-line)] font-medium"
                         } ${collapsed ? "justify-center px-0" : ""}`}
                       >
                         <Icon
                           className={`shrink-0 transition-colors ${
                             item.active
-                              ? "text-[#18130F]"
-                              : "text-[#6B4932] group-hover:text-[#18130F]"
+                              ? "text-[var(--service-ink)]"
+                              : "text-[var(--service-accent)] group-hover:text-[var(--service-ink)]"
                           }`}
                         />
                         {!collapsed && (
@@ -267,7 +268,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
                           <span
                             className={`rounded-full px-2 py-0.5 text-[10px] font-bold border ${
                               item.pillColor ||
-                              "bg-[#EFE2CF] text-[#6B4932] border-[#D7C1A5]"
+                              "bg-[var(--service-subtle)] text-[var(--service-accent)] border-[var(--service-line)]"
                             }`}
                           >
                             {item.pill}
@@ -282,16 +283,16 @@ export function AdminShell({ children }: { children: ReactNode }) {
           </nav>
 
           {/* Sidebar Status Footer */}
-          <div className="p-3 border-t border-[#D7C1A5] space-y-2">
+          <div className="p-3 border-t border-[var(--service-line)] space-y-2">
             {!collapsed && (
-              <div className="rounded-xl border border-[#D7C1A5] bg-[#FFFBF5] p-2.5 shadow-sm">
+              <div className="rounded-xl border border-[var(--service-line)] bg-[var(--service-surface)] p-2.5 shadow-sm">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="flex items-center gap-1.5 text-[#6B4932] font-bold">
-                    <span className="h-2 w-2 rounded-full bg-[#6B4932] animate-pulse" />
+                  <span className="flex items-center gap-1.5 text-[var(--service-accent)] font-bold">
+                    <span className="h-2 w-2 rounded-full bg-[var(--service-accent)] animate-pulse" />
                     {isRtl ? "إدارة منصة فيلورا" : "Velora administration"}
                   </span>
                 </div>
-                <p className="mt-1 text-[11px] text-[#615244]">
+                <p className="mt-1 text-[11px] text-[var(--service-muted)]">
                   {isRtl ? "عرض البيانات وسجل الاستهلاك" : "Data and usage ledger"}
                 </p>
               </div>
@@ -301,7 +302,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
             <button
               type="button"
               onClick={() => setCollapsed(!collapsed)}
-              className="hidden lg:flex w-full items-center justify-center p-2 rounded-xl text-[#6B4932] hover:text-[#18130F] hover:bg-[#D7C1A5] transition"
+              className="hidden lg:flex w-full items-center justify-center p-2 rounded-xl text-[var(--service-accent)] hover:text-[var(--service-ink)] hover:bg-[var(--service-line)] transition"
               title={collapsed ? (isRtl ? "توسيع القائمة" : "Expand") : isRtl ? "طي القائمة" : "Collapse"}
             >
               {isRtl ? (
@@ -320,14 +321,14 @@ export function AdminShell({ children }: { children: ReactNode }) {
           }`}
         >
           {/* 🔝 Persistent Admin Topbar */}
-          <header className="sticky top-0 z-30 flex min-h-16 flex-wrap items-center justify-between gap-2 px-4 py-2 sm:px-6 bg-[#EFE2CF]/95 backdrop-blur-md border-b border-[#D7C1A5]">
+          <header className="sticky top-0 z-30 flex min-h-16 flex-wrap items-center justify-between gap-2 px-4 py-2 sm:px-6 bg-[var(--service-subtle)]/95 backdrop-blur-md border-b border-[var(--service-line)]">
             {/* Left/Start side: Mobile trigger & Breadcrumbs */}
             <div className="flex w-full min-w-0 items-center gap-3 sm:w-auto sm:flex-1">
               <button
                 ref={menuButtonRef}
                 type="button"
                 onClick={() => setMobileOpen(true)}
-                className="shrink-0 p-2 rounded-xl text-[#6B4932] hover:text-[#18130F] hover:bg-[#D7C1A5] lg:hidden"
+                className="shrink-0 p-2 rounded-xl text-[var(--service-accent)] hover:text-[var(--service-ink)] hover:bg-[var(--service-line)] lg:hidden"
                 aria-label="Open navigation"
                 aria-expanded={mobileOpen}
               >
@@ -336,21 +337,21 @@ export function AdminShell({ children }: { children: ReactNode }) {
 
               {/* Breadcrumbs */}
               <nav aria-label="Breadcrumb" className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs sm:text-sm [overflow-wrap:anywhere]">
-                <span className="text-[#6B4932] font-semibold hidden sm:inline">
+                <span className="text-[var(--service-accent)] font-semibold hidden sm:inline">
                   {isRtl ? "لوحة الإدارة" : "Platform Admin"}
                 </span>
-                <span className="text-[#615244] hidden sm:inline">/</span>
+                <span className="text-[var(--service-muted)] hidden sm:inline">/</span>
                 {breadcrumbs.map((crumb, i) => (
                   <span key={i} className="flex min-w-0 items-center gap-2">
-                    {i > 0 && <span className="text-[#615244]">/</span>}
+                    {i > 0 && <span className="text-[var(--service-muted)]">/</span>}
                     {i === breadcrumbs.length - 1 ? (
-                      <span className="min-w-0 font-bold text-[#18130F]">
+                      <span className="min-w-0 font-bold text-[var(--service-ink)]">
                         {crumb.label}
                       </span>
                     ) : (
                       <Link
                         href={crumb.href}
-                        className="min-w-0 text-[#6B4932] hover:text-[#18130F] font-medium transition"
+                        className="min-w-0 text-[var(--service-accent)] hover:text-[var(--service-ink)] font-medium transition"
                       >
                         {crumb.label}
                       </Link>
@@ -363,13 +364,13 @@ export function AdminShell({ children }: { children: ReactNode }) {
             {/* Right/End side: Status pills, LangSwitch, AccountMenu */}
             <div className="flex w-full max-w-full shrink-0 flex-wrap items-center justify-end gap-2 sm:w-auto sm:gap-3">
               {/* AI Router Status Indicator */}
-              <div className="hidden md:flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#EFE2CF] border border-[#D7C1A5] text-xs text-[#6B4932] font-bold">
-                <span className="h-2 w-2 rounded-full bg-[#6B4932]" />
+              <div className="hidden md:flex items-center gap-1.5 px-3 py-1 rounded-full bg-[var(--service-subtle)] border border-[var(--service-line)] text-xs text-[var(--service-accent)] font-bold">
+                <span className="h-2 w-2 rounded-full bg-[var(--service-accent)]" />
                 <span>{isRtl ? "تجارب الذكاء" : "AI trials"}</span>
               </div>
 
               {/* WhatsApp Live Safety Mode */}
-              <div className="hidden lg:flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#EFE2CF] border border-[#D7C1A5] text-xs text-[#6B4932] font-semibold">
+              <div className="hidden lg:flex items-center gap-1.5 px-3 py-1 rounded-full bg-[var(--service-subtle)] border border-[var(--service-line)] text-xs text-[var(--service-accent)] font-semibold">
                 <span>🛡️ {isRtl ? "واتساب المباشر معطل" : "Live WhatsApp Muted"}</span>
               </div>
 
