@@ -68,6 +68,8 @@ export default async function Page() {
       <SetupWizard
         masterJourneyEnabled={masterEnabled}
         userId={userId}
+        masterJourneyEnabled={process.env.VELORA_MASTER_JOURNEY_ENABLED === "true"}
+        smartOnboardingEnabled={process.env.VELORA_SMART_ONBOARDING_ENABLED === "true" && process.env.VELORA_MASTER_JOURNEY_ENABLED === "true"}
         preferredNext={preferredNext}
         initialCompany={company}
         initialKnowledge={initialKnowledge}

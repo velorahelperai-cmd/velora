@@ -5,12 +5,12 @@ import { checkReviewFiles, type ReviewFile, type ReviewStorageReader } from "./r
 
 export type ReviewProofInput = {
   action: "submit" | "resubmit" | "approve";
-  companyId: string; expectedRevision?: number | null; numberOwnership?: "own" | "new" | null;
+  companyId: string; expectedRevision?: number | null; numberOwnership?: "own" | "new" | "not_applicable" | null;
   whatsappNumber?: string | null; ready?: boolean | null; ownerNote?: string | null;
 };
 type RpcResult = { data: unknown; error: { message?: string } | null };
 export type ReviewRpc = { rpc(name: string, args: Record<string, unknown>): PromiseLike<RpcResult> };
-const failureCodes = new Set(["CONFLICT", "PROFILE_INCOMPLETE", "KNOWLEDGE_INCOMPLETE", "FILE_REPREPARE_REQUIRED", "FILE_CHANGED", "FILE_UNAVAILABLE", "FILE_LIMIT", "SOURCE_LIMIT", "PROOF_REQUIRED", "PROOF_EXPIRED"]);
+const failureCodes = new Set(["CONFLICT", "PROFILE_INCOMPLETE", "CHANNEL_SELECTION_REQUIRED", "KNOWLEDGE_INCOMPLETE", "FILE_REPREPARE_REQUIRED", "FILE_CHANGED", "FILE_UNAVAILABLE", "FILE_LIMIT", "SOURCE_LIMIT", "PROOF_REQUIRED", "PROOF_EXPIRED"]);
 type ProofResult = { ok: true } | { ok: false; code: string; request?: unknown };
 
 export async function prepareReviewProof(

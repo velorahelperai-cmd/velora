@@ -61,6 +61,16 @@ describe("setup server routes retain the package selection", () => {
     expect(page.props.children.props.preferredNext).toBe(selected);
     expect(page.props.children.props.initialCompany?.id).toBe('company');
   });
+  it("enables the new journey only with an explicit server rollout flag", async () => {
+    vi.stubEnv("VELORA_SMART_ONBOARDING_ENABLED", "false");
+    expect((await SetupPage()).props.children.props.smartOnboardingEnabled).toBe(false);
+    vi.stubEnv("VELORA_SMART_ONBOARDING_ENABLED", "true");
+    vi.stubEnv("VELORA_MASTER_JOURNEY_ENABLED", "false");
+    expect((await SetupPage()).props.children.props.smartOnboardingEnabled).toBe(false);
+    vi.stubEnv("VELORA_MASTER_JOURNEY_ENABLED", "true");
+    expect((await SetupPage()).props.children.props.smartOnboardingEnabled).toBe(true);
+    vi.unstubAllEnvs();
+  });
   it("preserves selection through both missing-session route redirects", async () => {
     state.access = { ok: false, code: "UNAUTHENTICATED" };
     const target = `redirect:/login?next=${encodeURIComponent(returnTo)}`;

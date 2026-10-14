@@ -77,7 +77,7 @@ function asReviewRequest(value: unknown): CompanyReviewRequest | null {
   if (
     typeof value.company_id !== "string"
     || typeof value.requested_by !== "string"
-    || (ownership !== "own" && ownership !== "new")
+    || (ownership !== "own" && ownership !== "new" && ownership !== "not_applicable")
     || typeof value.whatsapp_number !== "string"
     || typeof value.readiness_confirmed !== "boolean"
     || typeof value.requested_at !== "string"
@@ -115,7 +115,7 @@ async function callTransitionCompanyReview(input: {
   action: ReviewAction;
   companyId: string;
   expectedRevision?: number | null;
-  numberOwnership?: "own" | "new" | null;
+  numberOwnership?: "own" | "new" | "not_applicable" | null;
   whatsappNumber?: string | null;
   ready?: boolean | null;
   ownerNote?: string | null;
@@ -784,7 +784,7 @@ export async function listCompanyReviewEvents(input?: { expectedCompanyId?: stri
 }
 
 export async function submitCompanyReviewRequest(input: {
-  numberOwnership: "own" | "new";
+  numberOwnership: "own" | "new" | "not_applicable";
   whatsappNumber: string;
   ready: boolean;
   expectedRevision?: number;
@@ -798,7 +798,8 @@ export async function submitCompanyReviewRequest(input: {
   }
   if (typeof input.whatsappNumber !== "string") return { ok: false, code: "INVALID_INPUT" };
   if (input.ready !== true) return { ok: false, code: "INVALID_INPUT" };
-  if (input.numberOwnership !== "own" && input.numberOwnership !== "new") {
+  if (input.numberOwnership !== "own" && input.numberOwnership !== "new"
+    && !(input.numberOwnership === "not_applicable" && process.env.VELORA_MASTER_JOURNEY_ENABLED === "true" && !input.whatsappNumber.trim())) {
     return { ok: false, code: "INVALID_INPUT" };
   }
   const result = await callTransitionCompanyReview({
@@ -817,7 +818,7 @@ export async function submitCompanyReviewRequest(input: {
 }
 
 export async function resubmitCompanyReviewRequest(input: {
-  numberOwnership: "own" | "new";
+  numberOwnership: "own" | "new" | "not_applicable";
   whatsappNumber: string;
   ready: boolean;
   expectedRevision?: number;
@@ -831,7 +832,8 @@ export async function resubmitCompanyReviewRequest(input: {
   }
   if (typeof input.expectedRevision !== "number") return { ok: false, code: "INVALID_INPUT" };
   if (input.ready !== true) return { ok: false, code: "INVALID_INPUT" };
-  if (input.numberOwnership !== "own" && input.numberOwnership !== "new") {
+  if (typeof input.whatsappNumber !== "string" || (input.numberOwnership !== "own" && input.numberOwnership !== "new"
+    && !(input.numberOwnership === "not_applicable" && process.env.VELORA_MASTER_JOURNEY_ENABLED === "true" && !input.whatsappNumber.trim()))) {
     return { ok: false, code: "INVALID_INPUT" };
   }
   const result = await callTransitionCompanyReview({
