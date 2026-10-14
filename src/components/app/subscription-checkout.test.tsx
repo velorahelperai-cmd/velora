@@ -16,7 +16,7 @@ vi.mock("@/lib/demo-state",()=>({useDemo:()=>({locale:"en"})}));
 vi.mock("./workspace-shell",()=>({WorkspaceShell:"main"}));
 import {SubscriptionPaymentStatus} from "./subscription-payment-status";
 import { SubscriptionPanel } from "./subscription-panel";
-const offer={versionId:"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",planId:"22222222-2222-4222-8222-222222222222",persona:"level_1" as const,package:"premium" as const,term:"monthly" as const,amountBaisa:90000,currency:"OMR" as const,automatedOutboundPerMonth:1500,quotaEnforcement:"not_verified" as const,liveCheckoutReady:true,catalogRevision:7,features:[]};
+const offer={versionId:"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",planId:"22222222-2222-4222-8222-222222222222",persona:"level_1" as const,package:"premium" as const,term:"monthly" as const,amountBaisa:90000,currency:"OMR" as const,automatedOutboundPerMonth:3000,quotaEnforcement:"not_verified" as const,liveCheckoutReady:true,catalogRevision:7,features:[]};
 const props={locale:"en" as const,companyId:"company-a",view:{state:"empty" as const,currentTier:null,cycle:null,paidThrough:null},offersView:{status:"ready" as const,offers:[offer]}};
 const nodes=(value:unknown):Node[]=>Array.isArray(value)?value.flatMap(nodes):value&&typeof value==="object"&&"props" in value?[value as Node,...nodes((value as Node).props.children)]:[];
 const render=(companyId="company-a")=>{state.cursor=0;return SubscriptionPanel({...props,companyId});};

@@ -89,13 +89,13 @@ describe("catalog evidence", () => {
     expect(isPurchasableOffer("level_1", "basic", "monthly", { ...offer, persona: "level_2" }, "ready")).toBe(false);
     expect(isPurchasableOffer("level_1", "basic", "monthly", { ...offer, amountBaisa: 46000 }, "ready")).toBe(false);
   });
-  it("does not invent message capacity or available capabilities when the catalog is missing", () => {
+  it("shows approved commercial scope without claiming available services when billing is missing", () => {
     const markup = renderToStaticMarkup(createElement(SubscriptionCompareTable, { locale: "en", term: "monthly", offers: [], catalogStatus: "unconfigured", selectedPersona: null }));
-    expect(markup).not.toContain("1,000"); expect(markup).not.toContain(">Available<");
+    expect(markup).toContain("1,000"); expect(markup).toContain("Included — being prepared"); expect(markup).not.toContain(">Available<");
   });
-  it("shows the authoritative quota once without a fixed tier quota", () => {
+  it("does not use a stale billing quota to describe the new commercial plan", () => {
     const markup = renderToStaticMarkup(createElement(SubscriptionOfferCards, { locale: "en", term: "monthly", offers: [offer], catalogStatus: "ready", selectedPersona: null, onSelect: () => {} }));
-    expect(markup).toContain("734"); expect(markup).not.toContain("1,000");
+    expect(markup).not.toContain("734"); expect(markup).toContain("1,000"); expect(markup).not.toContain('data-purchase-state="test_only"');
   });
   it("does not carry monthly availability into the unpublished annual matrix", () => {
     const monthly = { ...offer, features: [{ id: "faq", label: { ar: "أسئلة", en: "FAQ" }, availability: "ready" as const }] };
