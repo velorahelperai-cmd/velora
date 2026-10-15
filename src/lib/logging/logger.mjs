@@ -28,7 +28,7 @@ export function redactLogText(value){
   .replace(/\bBearer\s+[^\s"',;]+/gi,'Bearer [REDACTED]')
   .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g,'[REDACTED]')
   .replace(/\b(password|(?:access|refresh|id|session)[_-]?token|client[_-]?secret|oauth[_-]?secret|token|secret|api[_-]?key|authorization|cookie)\b["']?\s*[:=]\s*["'][^"']*["']/gi,'$1=[REDACTED]')
-  .replace(/\b(password|token|secret|api[_-]?key|authorization|cookie)\b["']?\s*[:=]\s*["']?[^\s,"';}]+/gi,'$1=[REDACTED]')
+  .replace(/\b(password|(?:access|refresh|id|session)[_-]?token|client[_-]?secret|oauth[_-]?secret|token|secret|api[_-]?key|authorization|cookie)\b["']?\s*[:=]\s*["']?[^\s,"';}]+/gi,'$1=[REDACTED]')
   .replace(/\b([a-z0-9._%+-])[a-z0-9._%+-]*@([a-z0-9.-]+\.[a-z]{2,})\b/gi,'$1***@$2');
 }
 export function createStructuredLogger(destination){

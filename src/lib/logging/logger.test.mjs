@@ -6,6 +6,13 @@ import {resolve} from 'node:path';
 import {isolatedEnvironment} from '../../../scripts/ci/safety.mjs';
 import {createStructuredLogger,logEvent,withLogContext} from './logger.mjs';
 function sink(){const lines=[];return {lines,logger:createStructuredLogger({write:line=>lines.push(JSON.parse(line))})};}
+test('unquoted OAuth secrets in exception messages and stacks are redacted',()=>{
+ const {lines,logger}=sink(),refresh=randomUUID(),client=randomUUID();
+ logEvent('error','test.failure',{error:new Error(`refresh_token=${refresh} client_secret=${client}`)},logger);
+ assert.equal(JSON.stringify(lines).includes(refresh),false);
+ assert.equal(JSON.stringify(lines).includes(client),false);
+ assert.ok(lines[0].error.stack);
+});
 test('nested secrets, formatted contacts and spoofed context are protected',()=>{
  const {lines,logger}=sink(),secret=randomUUID();
  withLogContext({request_id:'trusted-request',user_id:'trusted-user'},()=>logEvent('error','test.failure',{request_id:'spoofed',user_id:'raw@example.invalid',payload:{auth:{password:secret}},req:{headers:{Authorization:secret}},res:{headers:{'set-cookie':secret}},customer:{email:'contact@example.invalid',phone:'+968 1234 5678'},error:new Error(JSON.stringify({refresh_token:secret,client_secret:secret}))},logger));
