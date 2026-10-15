@@ -1,5 +1,5 @@
 import {expect,it,vi} from "vitest";
-import {createBrowserLogger,recordSessionCheckUnavailable} from "./browser.mjs";
+import {createBrowserLogger,recordSessionCheckUnavailable,recordLogoutTransportFailed} from "./browser.mjs";
 
 it("emits a safe structured availability warning with native redaction",()=>{
  const lines:Array<Record<string,unknown>>=[];
@@ -21,4 +21,11 @@ it("does not treat arbitrary account text as an identifier",()=>{
 it("keeps debug disabled in production even when the configured level is debug",()=>{
  vi.stubEnv("NODE_ENV","production");vi.stubEnv("NEXT_PUBLIC_LOG_LEVEL","debug");
  try{const lines:unknown[]=[];const logger=createBrowserLogger((line:unknown)=>lines.push(line));logger.debug({event:"test.debug"});expect(lines).toHaveLength(0);}finally{vi.unstubAllEnvs();}
+});
+
+it("records one transport error with a redacted full stack",()=>{
+ const lines:Array<Record<string,unknown>>=[];const logger=createBrowserLogger(line=>lines.push(line));
+ recordLogoutTransportFailed({userId:"11111111-1111-4111-8111-111111111111"},new Error("password=topsecret Bearer bearer-secret owner@example.test"),logger);
+ expect(lines).toHaveLength(1);expect(lines[0]).toMatchObject({level:"error",kind:"security",event:"auth.logout.transport.failed",error:{type:"Error",stack:expect.stringContaining("browser.test.ts")}});
+ const text=JSON.stringify(lines);expect(text).not.toContain("topsecret");expect(text).not.toContain("bearer-secret");expect(text).not.toContain("owner@example.test");
 });
