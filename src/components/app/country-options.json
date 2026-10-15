@@ -1,0 +1,2537 @@
+{
+  "source": "https://github.com/michaelwittig/node-i18n-iso-countries",
+  "revision": "55c3a72603faf0185661e80841074e1c2fcf8db5",
+  "license": "MIT; see country-options.LICENSE",
+  "coverage": "249 ISO 3166-1 entries plus user-assigned XK",
+  "countries": [
+    {
+      "code": "AF",
+      "alpha3": "AFG",
+      "ar": "أفغانستان",
+      "en": "Afghanistan",
+      "aliases": [
+        "أفغانستان",
+        "Afghanistan"
+      ]
+    },
+    {
+      "code": "AL",
+      "alpha3": "ALB",
+      "ar": "ألبانيا",
+      "en": "Albania",
+      "aliases": [
+        "ألبانيا",
+        "Albania"
+      ]
+    },
+    {
+      "code": "DZ",
+      "alpha3": "DZA",
+      "ar": "الجزائر",
+      "en": "Algeria",
+      "aliases": [
+        "الجزائر",
+        "Algeria"
+      ]
+    },
+    {
+      "code": "AS",
+      "alpha3": "ASM",
+      "ar": "ساموا الأمريكية",
+      "en": "American Samoa",
+      "aliases": [
+        "ساموا الأمريكية",
+        "American Samoa"
+      ]
+    },
+    {
+      "code": "AD",
+      "alpha3": "AND",
+      "ar": "أندورا",
+      "en": "Andorra",
+      "aliases": [
+        "أندورا",
+        "Andorra"
+      ]
+    },
+    {
+      "code": "AO",
+      "alpha3": "AGO",
+      "ar": "أنغولا",
+      "en": "Angola",
+      "aliases": [
+        "أنغولا",
+        "Angola"
+      ]
+    },
+    {
+      "code": "AI",
+      "alpha3": "AIA",
+      "ar": "أنغويلا",
+      "en": "Anguilla",
+      "aliases": [
+        "أنغويلا",
+        "Anguilla"
+      ]
+    },
+    {
+      "code": "AQ",
+      "alpha3": "ATA",
+      "ar": "القارة القطبية الجنوبية",
+      "en": "Antarctica",
+      "aliases": [
+        "القارة القطبية الجنوبية",
+        "Antarctica"
+      ]
+    },
+    {
+      "code": "AG",
+      "alpha3": "ATG",
+      "ar": "أنتيغوا وباربودا",
+      "en": "Antigua and Barbuda",
+      "aliases": [
+        "أنتيغوا وباربودا",
+        "Antigua and Barbuda"
+      ]
+    },
+    {
+      "code": "AR",
+      "alpha3": "ARG",
+      "ar": "الأرجنتين",
+      "en": "Argentina",
+      "aliases": [
+        "الأرجنتين",
+        "Argentina"
+      ]
+    },
+    {
+      "code": "AM",
+      "alpha3": "ARM",
+      "ar": "أرمينيا",
+      "en": "Armenia",
+      "aliases": [
+        "أرمينيا",
+        "Armenia"
+      ]
+    },
+    {
+      "code": "AW",
+      "alpha3": "ABW",
+      "ar": "أروبا",
+      "en": "Aruba",
+      "aliases": [
+        "أروبا",
+        "Aruba"
+      ]
+    },
+    {
+      "code": "AU",
+      "alpha3": "AUS",
+      "ar": "أستراليا",
+      "en": "Australia",
+      "aliases": [
+        "أستراليا",
+        "Australia"
+      ]
+    },
+    {
+      "code": "AT",
+      "alpha3": "AUT",
+      "ar": "النمسا",
+      "en": "Austria",
+      "aliases": [
+        "النمسا",
+        "Austria"
+      ]
+    },
+    {
+      "code": "AZ",
+      "alpha3": "AZE",
+      "ar": "أذربيجان",
+      "en": "Azerbaijan",
+      "aliases": [
+        "أذربيجان",
+        "Azerbaijan"
+      ]
+    },
+    {
+      "code": "BS",
+      "alpha3": "BHS",
+      "ar": "باهاماس",
+      "en": "Bahamas",
+      "aliases": [
+        "باهاماس",
+        "Bahamas"
+      ]
+    },
+    {
+      "code": "BH",
+      "alpha3": "BHR",
+      "ar": "البحرين",
+      "en": "Bahrain",
+      "aliases": [
+        "البحرين",
+        "Bahrain"
+      ]
+    },
+    {
+      "code": "BD",
+      "alpha3": "BGD",
+      "ar": "بنغلاديش",
+      "en": "Bangladesh",
+      "aliases": [
+        "بنغلاديش",
+        "Bangladesh"
+      ]
+    },
+    {
+      "code": "BB",
+      "alpha3": "BRB",
+      "ar": "باربادوس",
+      "en": "Barbados",
+      "aliases": [
+        "باربادوس",
+        "Barbados"
+      ]
+    },
+    {
+      "code": "BY",
+      "alpha3": "BLR",
+      "ar": "روسيا البيضاء",
+      "en": "Belarus",
+      "aliases": [
+        "روسيا البيضاء",
+        "Belarus"
+      ]
+    },
+    {
+      "code": "BE",
+      "alpha3": "BEL",
+      "ar": "بلجيكا",
+      "en": "Belgium",
+      "aliases": [
+        "بلجيكا",
+        "Belgium"
+      ]
+    },
+    {
+      "code": "BZ",
+      "alpha3": "BLZ",
+      "ar": "بليز",
+      "en": "Belize",
+      "aliases": [
+        "بليز",
+        "Belize"
+      ]
+    },
+    {
+      "code": "BJ",
+      "alpha3": "BEN",
+      "ar": "بنين",
+      "en": "Benin",
+      "aliases": [
+        "بنين",
+        "Benin"
+      ]
+    },
+    {
+      "code": "BM",
+      "alpha3": "BMU",
+      "ar": "برمودا",
+      "en": "Bermuda",
+      "aliases": [
+        "برمودا",
+        "Bermuda"
+      ]
+    },
+    {
+      "code": "BT",
+      "alpha3": "BTN",
+      "ar": "بوتان",
+      "en": "Bhutan",
+      "aliases": [
+        "بوتان",
+        "Bhutan"
+      ]
+    },
+    {
+      "code": "BO",
+      "alpha3": "BOL",
+      "ar": "بوليفيا",
+      "en": "Bolivia",
+      "aliases": [
+        "بوليفيا",
+        "Bolivia"
+      ]
+    },
+    {
+      "code": "BA",
+      "alpha3": "BIH",
+      "ar": "البوسنة والهرسك",
+      "en": "Bosnia and Herzegovina",
+      "aliases": [
+        "البوسنة والهرسك",
+        "Bosnia and Herzegovina"
+      ]
+    },
+    {
+      "code": "BW",
+      "alpha3": "BWA",
+      "ar": "بوتسوانا",
+      "en": "Botswana",
+      "aliases": [
+        "بوتسوانا",
+        "Botswana"
+      ]
+    },
+    {
+      "code": "BV",
+      "alpha3": "BVT",
+      "ar": "جزيرة بوفيه",
+      "en": "Bouvet Island",
+      "aliases": [
+        "جزيرة بوفيه",
+        "Bouvet Island"
+      ]
+    },
+    {
+      "code": "BR",
+      "alpha3": "BRA",
+      "ar": "البرازيل",
+      "en": "Brazil",
+      "aliases": [
+        "البرازيل",
+        "Brazil"
+      ]
+    },
+    {
+      "code": "IO",
+      "alpha3": "IOT",
+      "ar": "إقليم المحيط الهندي البريطاني",
+      "en": "British Indian Ocean Territory",
+      "aliases": [
+        "إقليم المحيط الهندي البريطاني",
+        "British Indian Ocean Territory"
+      ]
+    },
+    {
+      "code": "BN",
+      "alpha3": "BRN",
+      "ar": "بروناي",
+      "en": "Brunei Darussalam",
+      "aliases": [
+        "بروناي",
+        "Brunei Darussalam"
+      ]
+    },
+    {
+      "code": "BG",
+      "alpha3": "BGR",
+      "ar": "بلغاريا",
+      "en": "Bulgaria",
+      "aliases": [
+        "بلغاريا",
+        "Bulgaria"
+      ]
+    },
+    {
+      "code": "BF",
+      "alpha3": "BFA",
+      "ar": "بوركينا فاسو",
+      "en": "Burkina Faso",
+      "aliases": [
+        "بوركينا فاسو",
+        "Burkina Faso"
+      ]
+    },
+    {
+      "code": "BI",
+      "alpha3": "BDI",
+      "ar": "بوروندي",
+      "en": "Burundi",
+      "aliases": [
+        "بوروندي",
+        "Burundi"
+      ]
+    },
+    {
+      "code": "KH",
+      "alpha3": "KHM",
+      "ar": "كمبوديا",
+      "en": "Cambodia",
+      "aliases": [
+        "كمبوديا",
+        "Cambodia"
+      ]
+    },
+    {
+      "code": "CM",
+      "alpha3": "CMR",
+      "ar": "الكاميرون",
+      "en": "Cameroon",
+      "aliases": [
+        "الكاميرون",
+        "Cameroon"
+      ]
+    },
+    {
+      "code": "CA",
+      "alpha3": "CAN",
+      "ar": "كندا",
+      "en": "Canada",
+      "aliases": [
+        "كندا",
+        "Canada"
+      ]
+    },
+    {
+      "code": "CV",
+      "alpha3": "CPV",
+      "ar": "الرأس الأخضر",
+      "en": "Cape Verde",
+      "aliases": [
+        "الرأس الأخضر",
+        "Cape Verde"
+      ]
+    },
+    {
+      "code": "KY",
+      "alpha3": "CYM",
+      "ar": "جزر كايمان",
+      "en": "Cayman Islands",
+      "aliases": [
+        "جزر كايمان",
+        "Cayman Islands"
+      ]
+    },
+    {
+      "code": "CF",
+      "alpha3": "CAF",
+      "ar": "جمهورية أفريقيا الوسطى",
+      "en": "Central African Republic",
+      "aliases": [
+        "جمهورية أفريقيا الوسطى",
+        "Central African Republic"
+      ]
+    },
+    {
+      "code": "TD",
+      "alpha3": "TCD",
+      "ar": "تشاد",
+      "en": "Chad",
+      "aliases": [
+        "تشاد",
+        "Chad"
+      ]
+    },
+    {
+      "code": "CL",
+      "alpha3": "CHL",
+      "ar": "تشيلي",
+      "en": "Chile",
+      "aliases": [
+        "تشيلي",
+        "Chile"
+      ]
+    },
+    {
+      "code": "CN",
+      "alpha3": "CHN",
+      "ar": "الصين",
+      "en": "People's Republic of China",
+      "aliases": [
+        "الصين",
+        "People's Republic of China",
+        "China"
+      ]
+    },
+    {
+      "code": "CX",
+      "alpha3": "CXR",
+      "ar": "جزيرة عيد الميلاد",
+      "en": "Christmas Island",
+      "aliases": [
+        "جزيرة عيد الميلاد",
+        "Christmas Island"
+      ]
+    },
+    {
+      "code": "CC",
+      "alpha3": "CCK",
+      "ar": "جزر كوكوس",
+      "en": "Cocos (Keeling) Islands",
+      "aliases": [
+        "جزر كوكوس",
+        "Cocos (Keeling) Islands"
+      ]
+    },
+    {
+      "code": "CO",
+      "alpha3": "COL",
+      "ar": "كولومبيا",
+      "en": "Colombia",
+      "aliases": [
+        "كولومبيا",
+        "Colombia"
+      ]
+    },
+    {
+      "code": "KM",
+      "alpha3": "COM",
+      "ar": "جزر القمر",
+      "en": "Comoros",
+      "aliases": [
+        "جزر القمر",
+        "Comoros"
+      ]
+    },
+    {
+      "code": "CG",
+      "alpha3": "COG",
+      "ar": "جمهورية الكونغو",
+      "en": "Republic of the Congo",
+      "aliases": [
+        "جمهورية الكونغو",
+        "Republic of the Congo",
+        "Congo"
+      ]
+    },
+    {
+      "code": "CD",
+      "alpha3": "COD",
+      "ar": "جمهورية الكونغو الديمقراطية",
+      "en": "Democratic Republic of the Congo",
+      "aliases": [
+        "جمهورية الكونغو الديمقراطية",
+        "Democratic Republic of the Congo",
+        "Congo"
+      ]
+    },
+    {
+      "code": "CK",
+      "alpha3": "COK",
+      "ar": "جزر كوك",
+      "en": "Cook Islands",
+      "aliases": [
+        "جزر كوك",
+        "Cook Islands"
+      ]
+    },
+    {
+      "code": "CR",
+      "alpha3": "CRI",
+      "ar": "كوستاريكا",
+      "en": "Costa Rica",
+      "aliases": [
+        "كوستاريكا",
+        "Costa Rica"
+      ]
+    },
+    {
+      "code": "CI",
+      "alpha3": "CIV",
+      "ar": "ساحل العاج",
+      "en": "Cote d'Ivoire",
+      "aliases": [
+        "ساحل العاج",
+        "Cote d'Ivoire",
+        "Côte d'Ivoire",
+        "Ivory Coast"
+      ]
+    },
+    {
+      "code": "HR",
+      "alpha3": "HRV",
+      "ar": "كرواتيا",
+      "en": "Croatia",
+      "aliases": [
+        "كرواتيا",
+        "Croatia"
+      ]
+    },
+    {
+      "code": "CU",
+      "alpha3": "CUB",
+      "ar": "كوبا",
+      "en": "Cuba",
+      "aliases": [
+        "كوبا",
+        "Cuba"
+      ]
+    },
+    {
+      "code": "CY",
+      "alpha3": "CYP",
+      "ar": "قبرص",
+      "en": "Cyprus",
+      "aliases": [
+        "قبرص",
+        "Cyprus"
+      ]
+    },
+    {
+      "code": "CZ",
+      "alpha3": "CZE",
+      "ar": "جمهورية التشيك",
+      "en": "Czech Republic",
+      "aliases": [
+        "جمهورية التشيك",
+        "Czech Republic",
+        "Czechia"
+      ]
+    },
+    {
+      "code": "DK",
+      "alpha3": "DNK",
+      "ar": "الدنمارك",
+      "en": "Denmark",
+      "aliases": [
+        "الدنمارك",
+        "Denmark"
+      ]
+    },
+    {
+      "code": "DJ",
+      "alpha3": "DJI",
+      "ar": "جيبوتي",
+      "en": "Djibouti",
+      "aliases": [
+        "جيبوتي",
+        "Djibouti"
+      ]
+    },
+    {
+      "code": "DM",
+      "alpha3": "DMA",
+      "ar": "دومينيكا",
+      "en": "Dominica",
+      "aliases": [
+        "دومينيكا",
+        "Dominica"
+      ]
+    },
+    {
+      "code": "DO",
+      "alpha3": "DOM",
+      "ar": "جمهورية الدومينيكان",
+      "en": "Dominican Republic",
+      "aliases": [
+        "جمهورية الدومينيكان",
+        "Dominican Republic"
+      ]
+    },
+    {
+      "code": "EC",
+      "alpha3": "ECU",
+      "ar": "الإكوادور",
+      "en": "Ecuador",
+      "aliases": [
+        "الإكوادور",
+        "Ecuador"
+      ]
+    },
+    {
+      "code": "EG",
+      "alpha3": "EGY",
+      "ar": "مصر",
+      "en": "Egypt",
+      "aliases": [
+        "مصر",
+        "Egypt"
+      ]
+    },
+    {
+      "code": "SV",
+      "alpha3": "SLV",
+      "ar": "السلفادور",
+      "en": "El Salvador",
+      "aliases": [
+        "السلفادور",
+        "El Salvador"
+      ]
+    },
+    {
+      "code": "GQ",
+      "alpha3": "GNQ",
+      "ar": "غينيا الاستوائية",
+      "en": "Equatorial Guinea",
+      "aliases": [
+        "غينيا الاستوائية",
+        "Equatorial Guinea"
+      ]
+    },
+    {
+      "code": "ER",
+      "alpha3": "ERI",
+      "ar": "إريتريا",
+      "en": "Eritrea",
+      "aliases": [
+        "إريتريا",
+        "Eritrea"
+      ]
+    },
+    {
+      "code": "EE",
+      "alpha3": "EST",
+      "ar": "إستونيا",
+      "en": "Estonia",
+      "aliases": [
+        "إستونيا",
+        "Estonia"
+      ]
+    },
+    {
+      "code": "ET",
+      "alpha3": "ETH",
+      "ar": "إثيوبيا",
+      "en": "Ethiopia",
+      "aliases": [
+        "إثيوبيا",
+        "Ethiopia"
+      ]
+    },
+    {
+      "code": "FK",
+      "alpha3": "FLK",
+      "ar": "جزر فوكلاند",
+      "en": "Falkland Islands (Malvinas)",
+      "aliases": [
+        "جزر فوكلاند",
+        "Falkland Islands (Malvinas)"
+      ]
+    },
+    {
+      "code": "FO",
+      "alpha3": "FRO",
+      "ar": "جزر فارو",
+      "en": "Faroe Islands",
+      "aliases": [
+        "جزر فارو",
+        "Faroe Islands"
+      ]
+    },
+    {
+      "code": "FJ",
+      "alpha3": "FJI",
+      "ar": "فيجي",
+      "en": "Fiji",
+      "aliases": [
+        "فيجي",
+        "Fiji"
+      ]
+    },
+    {
+      "code": "FI",
+      "alpha3": "FIN",
+      "ar": "فنلندا",
+      "en": "Finland",
+      "aliases": [
+        "فنلندا",
+        "Finland"
+      ]
+    },
+    {
+      "code": "FR",
+      "alpha3": "FRA",
+      "ar": "فرنسا",
+      "en": "France",
+      "aliases": [
+        "فرنسا",
+        "France"
+      ]
+    },
+    {
+      "code": "GF",
+      "alpha3": "GUF",
+      "ar": "غويانا الفرنسية",
+      "en": "French Guiana",
+      "aliases": [
+        "غويانا الفرنسية",
+        "French Guiana"
+      ]
+    },
+    {
+      "code": "PF",
+      "alpha3": "PYF",
+      "ar": "بولينزيا الفرنسية",
+      "en": "French Polynesia",
+      "aliases": [
+        "بولينزيا الفرنسية",
+        "French Polynesia"
+      ]
+    },
+    {
+      "code": "TF",
+      "alpha3": "ATF",
+      "ar": "أراض فرنسية جنوبية وأنتارتيكية",
+      "en": "French Southern Territories",
+      "aliases": [
+        "أراض فرنسية جنوبية وأنتارتيكية",
+        "French Southern Territories"
+      ]
+    },
+    {
+      "code": "GA",
+      "alpha3": "GAB",
+      "ar": "الغابون",
+      "en": "Gabon",
+      "aliases": [
+        "الغابون",
+        "Gabon"
+      ]
+    },
+    {
+      "code": "GM",
+      "alpha3": "GMB",
+      "ar": "غامبيا",
+      "en": "Republic of The Gambia",
+      "aliases": [
+        "غامبيا",
+        "Republic of The Gambia",
+        "The Gambia",
+        "Gambia"
+      ]
+    },
+    {
+      "code": "GE",
+      "alpha3": "GEO",
+      "ar": "جورجيا",
+      "en": "Georgia",
+      "aliases": [
+        "جورجيا",
+        "Georgia"
+      ]
+    },
+    {
+      "code": "DE",
+      "alpha3": "DEU",
+      "ar": "ألمانيا",
+      "en": "Germany",
+      "aliases": [
+        "ألمانيا",
+        "Germany"
+      ]
+    },
+    {
+      "code": "GH",
+      "alpha3": "GHA",
+      "ar": "غانا",
+      "en": "Ghana",
+      "aliases": [
+        "غانا",
+        "Ghana"
+      ]
+    },
+    {
+      "code": "GI",
+      "alpha3": "GIB",
+      "ar": "جبل طارق",
+      "en": "Gibraltar",
+      "aliases": [
+        "جبل طارق",
+        "Gibraltar"
+      ]
+    },
+    {
+      "code": "GR",
+      "alpha3": "GRC",
+      "ar": "اليونان",
+      "en": "Greece",
+      "aliases": [
+        "اليونان",
+        "Greece"
+      ]
+    },
+    {
+      "code": "GL",
+      "alpha3": "GRL",
+      "ar": "جرينلاند",
+      "en": "Greenland",
+      "aliases": [
+        "جرينلاند",
+        "Greenland"
+      ]
+    },
+    {
+      "code": "GD",
+      "alpha3": "GRD",
+      "ar": "غرينادا",
+      "en": "Grenada",
+      "aliases": [
+        "غرينادا",
+        "Grenada"
+      ]
+    },
+    {
+      "code": "GP",
+      "alpha3": "GLP",
+      "ar": "غوادلوب",
+      "en": "Guadeloupe",
+      "aliases": [
+        "غوادلوب",
+        "Guadeloupe"
+      ]
+    },
+    {
+      "code": "GU",
+      "alpha3": "GUM",
+      "ar": "غوام",
+      "en": "Guam",
+      "aliases": [
+        "غوام",
+        "Guam"
+      ]
+    },
+    {
+      "code": "GT",
+      "alpha3": "GTM",
+      "ar": "غواتيمالا",
+      "en": "Guatemala",
+      "aliases": [
+        "غواتيمالا",
+        "Guatemala"
+      ]
+    },
+    {
+      "code": "GN",
+      "alpha3": "GIN",
+      "ar": "غينيا",
+      "en": "Guinea",
+      "aliases": [
+        "غينيا",
+        "Guinea"
+      ]
+    },
+    {
+      "code": "GW",
+      "alpha3": "GNB",
+      "ar": "غينيا بيساو",
+      "en": "Guinea-Bissau",
+      "aliases": [
+        "غينيا بيساو",
+        "Guinea-Bissau"
+      ]
+    },
+    {
+      "code": "GY",
+      "alpha3": "GUY",
+      "ar": "غيانا",
+      "en": "Guyana",
+      "aliases": [
+        "غيانا",
+        "Guyana"
+      ]
+    },
+    {
+      "code": "HT",
+      "alpha3": "HTI",
+      "ar": "هايتي",
+      "en": "Haiti",
+      "aliases": [
+        "هايتي",
+        "Haiti"
+      ]
+    },
+    {
+      "code": "HM",
+      "alpha3": "HMD",
+      "ar": "جزيرة هيرد وجزر ماكدونالد",
+      "en": "Heard Island and McDonald Islands",
+      "aliases": [
+        "جزيرة هيرد وجزر ماكدونالد",
+        "Heard Island and McDonald Islands"
+      ]
+    },
+    {
+      "code": "VA",
+      "alpha3": "VAT",
+      "ar": "الفاتيكان",
+      "en": "Holy See (Vatican City State)",
+      "aliases": [
+        "الفاتيكان",
+        "Holy See (Vatican City State)"
+      ]
+    },
+    {
+      "code": "HN",
+      "alpha3": "HND",
+      "ar": "هندوراس",
+      "en": "Honduras",
+      "aliases": [
+        "هندوراس",
+        "Honduras"
+      ]
+    },
+    {
+      "code": "HK",
+      "alpha3": "HKG",
+      "ar": "هونغ كونغ",
+      "en": "Hong Kong",
+      "aliases": [
+        "هونغ كونغ",
+        "Hong Kong"
+      ]
+    },
+    {
+      "code": "HU",
+      "alpha3": "HUN",
+      "ar": "المجر",
+      "en": "Hungary",
+      "aliases": [
+        "المجر",
+        "Hungary"
+      ]
+    },
+    {
+      "code": "IS",
+      "alpha3": "ISL",
+      "ar": "آيسلندا",
+      "en": "Iceland",
+      "aliases": [
+        "آيسلندا",
+        "Iceland"
+      ]
+    },
+    {
+      "code": "IN",
+      "alpha3": "IND",
+      "ar": "الهند",
+      "en": "India",
+      "aliases": [
+        "الهند",
+        "India"
+      ]
+    },
+    {
+      "code": "ID",
+      "alpha3": "IDN",
+      "ar": "إندونيسيا",
+      "en": "Indonesia",
+      "aliases": [
+        "إندونيسيا",
+        "Indonesia"
+      ]
+    },
+    {
+      "code": "IR",
+      "alpha3": "IRN",
+      "ar": "إيران",
+      "en": "Islamic Republic of Iran",
+      "aliases": [
+        "إيران",
+        "Islamic Republic of Iran",
+        "Iran"
+      ]
+    },
+    {
+      "code": "IQ",
+      "alpha3": "IRQ",
+      "ar": "العراق",
+      "en": "Iraq",
+      "aliases": [
+        "العراق",
+        "Iraq"
+      ]
+    },
+    {
+      "code": "IE",
+      "alpha3": "IRL",
+      "ar": "أيرلندا",
+      "en": "Ireland",
+      "aliases": [
+        "أيرلندا",
+        "Ireland"
+      ]
+    },
+    {
+      "code": "IL",
+      "alpha3": "ISR",
+      "ar": "إسرائيل",
+      "en": "Israel",
+      "aliases": [
+        "إسرائيل",
+        "Israel"
+      ]
+    },
+    {
+      "code": "IT",
+      "alpha3": "ITA",
+      "ar": "إيطاليا",
+      "en": "Italy",
+      "aliases": [
+        "إيطاليا",
+        "Italy"
+      ]
+    },
+    {
+      "code": "JM",
+      "alpha3": "JAM",
+      "ar": "جامايكا",
+      "en": "Jamaica",
+      "aliases": [
+        "جامايكا",
+        "Jamaica"
+      ]
+    },
+    {
+      "code": "JP",
+      "alpha3": "JPN",
+      "ar": "اليابان",
+      "en": "Japan",
+      "aliases": [
+        "اليابان",
+        "Japan"
+      ]
+    },
+    {
+      "code": "JO",
+      "alpha3": "JOR",
+      "ar": "الأردن",
+      "en": "Jordan",
+      "aliases": [
+        "الأردن",
+        "Jordan"
+      ]
+    },
+    {
+      "code": "KZ",
+      "alpha3": "KAZ",
+      "ar": "كازاخستان",
+      "en": "Kazakhstan",
+      "aliases": [
+        "كازاخستان",
+        "Kazakhstan"
+      ]
+    },
+    {
+      "code": "KE",
+      "alpha3": "KEN",
+      "ar": "كينيا",
+      "en": "Kenya",
+      "aliases": [
+        "كينيا",
+        "Kenya"
+      ]
+    },
+    {
+      "code": "KI",
+      "alpha3": "KIR",
+      "ar": "كيريباتي",
+      "en": "Kiribati",
+      "aliases": [
+        "كيريباتي",
+        "Kiribati"
+      ]
+    },
+    {
+      "code": "KP",
+      "alpha3": "PRK",
+      "ar": "كوريا الشمالية",
+      "en": "North Korea",
+      "aliases": [
+        "كوريا الشمالية",
+        "North Korea"
+      ]
+    },
+    {
+      "code": "KR",
+      "alpha3": "KOR",
+      "ar": "كوريا الجنوبية",
+      "en": "South Korea",
+      "aliases": [
+        "كوريا الجنوبية",
+        "South Korea",
+        "Korea, Republic of",
+        "Republic of Korea"
+      ]
+    },
+    {
+      "code": "KW",
+      "alpha3": "KWT",
+      "ar": "الكويت",
+      "en": "Kuwait",
+      "aliases": [
+        "الكويت",
+        "Kuwait"
+      ]
+    },
+    {
+      "code": "KG",
+      "alpha3": "KGZ",
+      "ar": "قيرغيزستان",
+      "en": "Kyrgyzstan",
+      "aliases": [
+        "قيرغيزستان",
+        "Kyrgyzstan"
+      ]
+    },
+    {
+      "code": "LA",
+      "alpha3": "LAO",
+      "ar": "لاوس",
+      "en": "Lao People's Democratic Republic",
+      "aliases": [
+        "لاوس",
+        "Lao People's Democratic Republic"
+      ]
+    },
+    {
+      "code": "LV",
+      "alpha3": "LVA",
+      "ar": "لاتفيا",
+      "en": "Latvia",
+      "aliases": [
+        "لاتفيا",
+        "Latvia"
+      ]
+    },
+    {
+      "code": "LB",
+      "alpha3": "LBN",
+      "ar": "لبنان",
+      "en": "Lebanon",
+      "aliases": [
+        "لبنان",
+        "Lebanon"
+      ]
+    },
+    {
+      "code": "LS",
+      "alpha3": "LSO",
+      "ar": "ليسوتو",
+      "en": "Lesotho",
+      "aliases": [
+        "ليسوتو",
+        "Lesotho"
+      ]
+    },
+    {
+      "code": "LR",
+      "alpha3": "LBR",
+      "ar": "ليبيريا",
+      "en": "Liberia",
+      "aliases": [
+        "ليبيريا",
+        "Liberia"
+      ]
+    },
+    {
+      "code": "LY",
+      "alpha3": "LBY",
+      "ar": "ليبيا",
+      "en": "Libya",
+      "aliases": [
+        "ليبيا",
+        "Libya"
+      ]
+    },
+    {
+      "code": "LI",
+      "alpha3": "LIE",
+      "ar": "ليختنشتاين",
+      "en": "Liechtenstein",
+      "aliases": [
+        "ليختنشتاين",
+        "Liechtenstein"
+      ]
+    },
+    {
+      "code": "LT",
+      "alpha3": "LTU",
+      "ar": "ليتوانيا",
+      "en": "Lithuania",
+      "aliases": [
+        "ليتوانيا",
+        "Lithuania"
+      ]
+    },
+    {
+      "code": "LU",
+      "alpha3": "LUX",
+      "ar": "لوكسمبورغ",
+      "en": "Luxembourg",
+      "aliases": [
+        "لوكسمبورغ",
+        "Luxembourg"
+      ]
+    },
+    {
+      "code": "MO",
+      "alpha3": "MAC",
+      "ar": "ماكاو",
+      "en": "Macao",
+      "aliases": [
+        "ماكاو",
+        "Macao"
+      ]
+    },
+    {
+      "code": "MG",
+      "alpha3": "MDG",
+      "ar": "مدغشقر",
+      "en": "Madagascar",
+      "aliases": [
+        "مدغشقر",
+        "Madagascar"
+      ]
+    },
+    {
+      "code": "MW",
+      "alpha3": "MWI",
+      "ar": "مالاوي",
+      "en": "Malawi",
+      "aliases": [
+        "مالاوي",
+        "Malawi"
+      ]
+    },
+    {
+      "code": "MY",
+      "alpha3": "MYS",
+      "ar": "ماليزيا",
+      "en": "Malaysia",
+      "aliases": [
+        "ماليزيا",
+        "Malaysia"
+      ]
+    },
+    {
+      "code": "MV",
+      "alpha3": "MDV",
+      "ar": "جزر المالديف",
+      "en": "Maldives",
+      "aliases": [
+        "جزر المالديف",
+        "Maldives"
+      ]
+    },
+    {
+      "code": "ML",
+      "alpha3": "MLI",
+      "ar": "مالي",
+      "en": "Mali",
+      "aliases": [
+        "مالي",
+        "Mali"
+      ]
+    },
+    {
+      "code": "MT",
+      "alpha3": "MLT",
+      "ar": "مالطا",
+      "en": "Malta",
+      "aliases": [
+        "مالطا",
+        "Malta"
+      ]
+    },
+    {
+      "code": "MH",
+      "alpha3": "MHL",
+      "ar": "جزر مارشال",
+      "en": "Marshall Islands",
+      "aliases": [
+        "جزر مارشال",
+        "Marshall Islands"
+      ]
+    },
+    {
+      "code": "MQ",
+      "alpha3": "MTQ",
+      "ar": "مارتينيك",
+      "en": "Martinique",
+      "aliases": [
+        "مارتينيك",
+        "Martinique"
+      ]
+    },
+    {
+      "code": "MR",
+      "alpha3": "MRT",
+      "ar": "موريتانيا",
+      "en": "Mauritania",
+      "aliases": [
+        "موريتانيا",
+        "Mauritania"
+      ]
+    },
+    {
+      "code": "MU",
+      "alpha3": "MUS",
+      "ar": "موريشيوس",
+      "en": "Mauritius",
+      "aliases": [
+        "موريشيوس",
+        "Mauritius"
+      ]
+    },
+    {
+      "code": "YT",
+      "alpha3": "MYT",
+      "ar": "مايوت",
+      "en": "Mayotte",
+      "aliases": [
+        "مايوت",
+        "Mayotte"
+      ]
+    },
+    {
+      "code": "MX",
+      "alpha3": "MEX",
+      "ar": "المكسيك",
+      "en": "Mexico",
+      "aliases": [
+        "المكسيك",
+        "Mexico"
+      ]
+    },
+    {
+      "code": "FM",
+      "alpha3": "FSM",
+      "ar": "ولايات ميكرونيسيا المتحدة",
+      "en": "Micronesia, Federated States of",
+      "aliases": [
+        "ولايات ميكرونيسيا المتحدة",
+        "Micronesia, Federated States of"
+      ]
+    },
+    {
+      "code": "MD",
+      "alpha3": "MDA",
+      "ar": "مولدوفا",
+      "en": "Moldova, Republic of",
+      "aliases": [
+        "مولدوفا",
+        "Moldova, Republic of"
+      ]
+    },
+    {
+      "code": "MC",
+      "alpha3": "MCO",
+      "ar": "موناكو",
+      "en": "Monaco",
+      "aliases": [
+        "موناكو",
+        "Monaco"
+      ]
+    },
+    {
+      "code": "MN",
+      "alpha3": "MNG",
+      "ar": "منغوليا",
+      "en": "Mongolia",
+      "aliases": [
+        "منغوليا",
+        "Mongolia"
+      ]
+    },
+    {
+      "code": "MS",
+      "alpha3": "MSR",
+      "ar": "مونتسرات",
+      "en": "Montserrat",
+      "aliases": [
+        "مونتسرات",
+        "Montserrat"
+      ]
+    },
+    {
+      "code": "MA",
+      "alpha3": "MAR",
+      "ar": "المغرب",
+      "en": "Morocco",
+      "aliases": [
+        "المغرب",
+        "Morocco"
+      ]
+    },
+    {
+      "code": "MZ",
+      "alpha3": "MOZ",
+      "ar": "موزمبيق",
+      "en": "Mozambique",
+      "aliases": [
+        "موزمبيق",
+        "Mozambique"
+      ]
+    },
+    {
+      "code": "MM",
+      "alpha3": "MMR",
+      "ar": "بورما",
+      "en": "Myanmar",
+      "aliases": [
+        "بورما",
+        "Myanmar"
+      ]
+    },
+    {
+      "code": "NA",
+      "alpha3": "NAM",
+      "ar": "ناميبيا",
+      "en": "Namibia",
+      "aliases": [
+        "ناميبيا",
+        "Namibia"
+      ]
+    },
+    {
+      "code": "NR",
+      "alpha3": "NRU",
+      "ar": "ناورو",
+      "en": "Nauru",
+      "aliases": [
+        "ناورو",
+        "Nauru"
+      ]
+    },
+    {
+      "code": "NP",
+      "alpha3": "NPL",
+      "ar": "نيبال",
+      "en": "Nepal",
+      "aliases": [
+        "نيبال",
+        "Nepal"
+      ]
+    },
+    {
+      "code": "NL",
+      "alpha3": "NLD",
+      "ar": "هولندا",
+      "en": "Netherlands",
+      "aliases": [
+        "هولندا",
+        "Netherlands",
+        "The Netherlands",
+        "Netherlands (Kingdom of the)"
+      ]
+    },
+    {
+      "code": "NC",
+      "alpha3": "NCL",
+      "ar": "كاليدونيا الجديدة",
+      "en": "New Caledonia",
+      "aliases": [
+        "كاليدونيا الجديدة",
+        "New Caledonia"
+      ]
+    },
+    {
+      "code": "NZ",
+      "alpha3": "NZL",
+      "ar": "نيوزيلندا",
+      "en": "New Zealand",
+      "aliases": [
+        "نيوزيلندا",
+        "New Zealand"
+      ]
+    },
+    {
+      "code": "NI",
+      "alpha3": "NIC",
+      "ar": "نيكاراغوا",
+      "en": "Nicaragua",
+      "aliases": [
+        "نيكاراغوا",
+        "Nicaragua"
+      ]
+    },
+    {
+      "code": "NE",
+      "alpha3": "NER",
+      "ar": "النيجر",
+      "en": "Niger",
+      "aliases": [
+        "النيجر",
+        "Niger"
+      ]
+    },
+    {
+      "code": "NG",
+      "alpha3": "NGA",
+      "ar": "نيجيريا",
+      "en": "Nigeria",
+      "aliases": [
+        "نيجيريا",
+        "Nigeria"
+      ]
+    },
+    {
+      "code": "NU",
+      "alpha3": "NIU",
+      "ar": "نييوي",
+      "en": "Niue",
+      "aliases": [
+        "نييوي",
+        "Niue"
+      ]
+    },
+    {
+      "code": "NF",
+      "alpha3": "NFK",
+      "ar": "جزيرة نورفولك",
+      "en": "Norfolk Island",
+      "aliases": [
+        "جزيرة نورفولك",
+        "Norfolk Island"
+      ]
+    },
+    {
+      "code": "MP",
+      "alpha3": "MNP",
+      "ar": "جزر ماريانا الشمالية",
+      "en": "Northern Mariana Islands",
+      "aliases": [
+        "جزر ماريانا الشمالية",
+        "Northern Mariana Islands"
+      ]
+    },
+    {
+      "code": "MK",
+      "alpha3": "MKD",
+      "ar": "مقدونيا الشمالية",
+      "en": "The Republic of North Macedonia",
+      "aliases": [
+        "مقدونيا الشمالية",
+        "The Republic of North Macedonia",
+        "North Macedonia"
+      ]
+    },
+    {
+      "code": "NO",
+      "alpha3": "NOR",
+      "ar": "النرويج",
+      "en": "Norway",
+      "aliases": [
+        "النرويج",
+        "Norway"
+      ]
+    },
+    {
+      "code": "OM",
+      "alpha3": "OMN",
+      "ar": "عمان",
+      "en": "Oman",
+      "aliases": [
+        "عمان",
+        "Oman"
+      ]
+    },
+    {
+      "code": "PK",
+      "alpha3": "PAK",
+      "ar": "باكستان",
+      "en": "Pakistan",
+      "aliases": [
+        "باكستان",
+        "Pakistan"
+      ]
+    },
+    {
+      "code": "PW",
+      "alpha3": "PLW",
+      "ar": "بالاو",
+      "en": "Palau",
+      "aliases": [
+        "بالاو",
+        "Palau"
+      ]
+    },
+    {
+      "code": "PS",
+      "alpha3": "PSE",
+      "ar": "فلسطين",
+      "en": "State of Palestine",
+      "aliases": [
+        "فلسطين",
+        "State of Palestine",
+        "Palestine"
+      ]
+    },
+    {
+      "code": "PA",
+      "alpha3": "PAN",
+      "ar": "بنما",
+      "en": "Panama",
+      "aliases": [
+        "بنما",
+        "Panama"
+      ]
+    },
+    {
+      "code": "PG",
+      "alpha3": "PNG",
+      "ar": "بابوا غينيا الجديدة",
+      "en": "Papua New Guinea",
+      "aliases": [
+        "بابوا غينيا الجديدة",
+        "Papua New Guinea"
+      ]
+    },
+    {
+      "code": "PY",
+      "alpha3": "PRY",
+      "ar": "باراغواي",
+      "en": "Paraguay",
+      "aliases": [
+        "باراغواي",
+        "Paraguay"
+      ]
+    },
+    {
+      "code": "PE",
+      "alpha3": "PER",
+      "ar": "بيرو",
+      "en": "Peru",
+      "aliases": [
+        "بيرو",
+        "Peru"
+      ]
+    },
+    {
+      "code": "PH",
+      "alpha3": "PHL",
+      "ar": "الفلبين",
+      "en": "Philippines",
+      "aliases": [
+        "الفلبين",
+        "Philippines"
+      ]
+    },
+    {
+      "code": "PN",
+      "alpha3": "PCN",
+      "ar": "جزر بيتكيرن",
+      "en": "Pitcairn",
+      "aliases": [
+        "جزر بيتكيرن",
+        "Pitcairn",
+        "Pitcairn Islands"
+      ]
+    },
+    {
+      "code": "PL",
+      "alpha3": "POL",
+      "ar": "بولندا",
+      "en": "Poland",
+      "aliases": [
+        "بولندا",
+        "Poland"
+      ]
+    },
+    {
+      "code": "PT",
+      "alpha3": "PRT",
+      "ar": "البرتغال",
+      "en": "Portugal",
+      "aliases": [
+        "البرتغال",
+        "Portugal"
+      ]
+    },
+    {
+      "code": "PR",
+      "alpha3": "PRI",
+      "ar": "بورتوريكو",
+      "en": "Puerto Rico",
+      "aliases": [
+        "بورتوريكو",
+        "Puerto Rico"
+      ]
+    },
+    {
+      "code": "QA",
+      "alpha3": "QAT",
+      "ar": "قطر",
+      "en": "Qatar",
+      "aliases": [
+        "قطر",
+        "Qatar"
+      ]
+    },
+    {
+      "code": "RE",
+      "alpha3": "REU",
+      "ar": "لا ريونيون",
+      "en": "Reunion",
+      "aliases": [
+        "لا ريونيون",
+        "Reunion"
+      ]
+    },
+    {
+      "code": "RO",
+      "alpha3": "ROU",
+      "ar": "رومانيا",
+      "en": "Romania",
+      "aliases": [
+        "رومانيا",
+        "Romania"
+      ]
+    },
+    {
+      "code": "RU",
+      "alpha3": "RUS",
+      "ar": "روسيا",
+      "en": "Russian Federation",
+      "aliases": [
+        "روسيا",
+        "Russian Federation",
+        "Russia"
+      ]
+    },
+    {
+      "code": "RW",
+      "alpha3": "RWA",
+      "ar": "رواندا",
+      "en": "Rwanda",
+      "aliases": [
+        "رواندا",
+        "Rwanda"
+      ]
+    },
+    {
+      "code": "SH",
+      "alpha3": "SHN",
+      "ar": "سانت هيلينا وأسينشين وتريستان دا كونا",
+      "en": "Saint Helena",
+      "aliases": [
+        "سانت هيلينا وأسينشين وتريستان دا كونا",
+        "Saint Helena"
+      ]
+    },
+    {
+      "code": "KN",
+      "alpha3": "KNA",
+      "ar": "سانت كيتس ونيفيس",
+      "en": "Saint Kitts and Nevis",
+      "aliases": [
+        "سانت كيتس ونيفيس",
+        "Saint Kitts and Nevis"
+      ]
+    },
+    {
+      "code": "LC",
+      "alpha3": "LCA",
+      "ar": "سانت لوسيا",
+      "en": "Saint Lucia",
+      "aliases": [
+        "سانت لوسيا",
+        "Saint Lucia"
+      ]
+    },
+    {
+      "code": "PM",
+      "alpha3": "SPM",
+      "ar": "سان بيير وميكلون",
+      "en": "Saint Pierre and Miquelon",
+      "aliases": [
+        "سان بيير وميكلون",
+        "Saint Pierre and Miquelon"
+      ]
+    },
+    {
+      "code": "VC",
+      "alpha3": "VCT",
+      "ar": "سانت فينسنت والغرينادين",
+      "en": "Saint Vincent and the Grenadines",
+      "aliases": [
+        "سانت فينسنت والغرينادين",
+        "Saint Vincent and the Grenadines"
+      ]
+    },
+    {
+      "code": "WS",
+      "alpha3": "WSM",
+      "ar": "ساموا",
+      "en": "Samoa",
+      "aliases": [
+        "ساموا",
+        "Samoa"
+      ]
+    },
+    {
+      "code": "SM",
+      "alpha3": "SMR",
+      "ar": "سان مارينو",
+      "en": "San Marino",
+      "aliases": [
+        "سان مارينو",
+        "San Marino"
+      ]
+    },
+    {
+      "code": "ST",
+      "alpha3": "STP",
+      "ar": "ساو تومي وبرينسيب",
+      "en": "Sao Tome and Principe",
+      "aliases": [
+        "ساو تومي وبرينسيب",
+        "Sao Tome and Principe"
+      ]
+    },
+    {
+      "code": "SA",
+      "alpha3": "SAU",
+      "ar": "السعودية",
+      "en": "Saudi Arabia",
+      "aliases": [
+        "السعودية",
+        "Saudi Arabia"
+      ]
+    },
+    {
+      "code": "SN",
+      "alpha3": "SEN",
+      "ar": "السنغال",
+      "en": "Senegal",
+      "aliases": [
+        "السنغال",
+        "Senegal"
+      ]
+    },
+    {
+      "code": "SC",
+      "alpha3": "SYC",
+      "ar": "سيشل",
+      "en": "Seychelles",
+      "aliases": [
+        "سيشل",
+        "Seychelles"
+      ]
+    },
+    {
+      "code": "SL",
+      "alpha3": "SLE",
+      "ar": "سيراليون",
+      "en": "Sierra Leone",
+      "aliases": [
+        "سيراليون",
+        "Sierra Leone"
+      ]
+    },
+    {
+      "code": "SG",
+      "alpha3": "SGP",
+      "ar": "سنغافورة",
+      "en": "Singapore",
+      "aliases": [
+        "سنغافورة",
+        "Singapore"
+      ]
+    },
+    {
+      "code": "SK",
+      "alpha3": "SVK",
+      "ar": "سلوفاكيا",
+      "en": "Slovakia",
+      "aliases": [
+        "سلوفاكيا",
+        "Slovakia"
+      ]
+    },
+    {
+      "code": "SI",
+      "alpha3": "SVN",
+      "ar": "سلوفينيا",
+      "en": "Slovenia",
+      "aliases": [
+        "سلوفينيا",
+        "Slovenia"
+      ]
+    },
+    {
+      "code": "SB",
+      "alpha3": "SLB",
+      "ar": "جزر سليمان",
+      "en": "Solomon Islands",
+      "aliases": [
+        "جزر سليمان",
+        "Solomon Islands"
+      ]
+    },
+    {
+      "code": "SO",
+      "alpha3": "SOM",
+      "ar": "الصومال",
+      "en": "Somalia",
+      "aliases": [
+        "الصومال",
+        "Somalia"
+      ]
+    },
+    {
+      "code": "ZA",
+      "alpha3": "ZAF",
+      "ar": "جنوب أفريقيا",
+      "en": "South Africa",
+      "aliases": [
+        "جنوب أفريقيا",
+        "South Africa"
+      ]
+    },
+    {
+      "code": "GS",
+      "alpha3": "SGS",
+      "ar": "جورجيا الجنوبية وجزر ساندويتش الجنوبية",
+      "en": "South Georgia and the South Sandwich Islands",
+      "aliases": [
+        "جورجيا الجنوبية وجزر ساندويتش الجنوبية",
+        "South Georgia and the South Sandwich Islands"
+      ]
+    },
+    {
+      "code": "ES",
+      "alpha3": "ESP",
+      "ar": "إسبانيا",
+      "en": "Spain",
+      "aliases": [
+        "إسبانيا",
+        "Spain"
+      ]
+    },
+    {
+      "code": "LK",
+      "alpha3": "LKA",
+      "ar": "سريلانكا",
+      "en": "Sri Lanka",
+      "aliases": [
+        "سريلانكا",
+        "Sri Lanka"
+      ]
+    },
+    {
+      "code": "SD",
+      "alpha3": "SDN",
+      "ar": "السودان",
+      "en": "Sudan",
+      "aliases": [
+        "السودان",
+        "Sudan"
+      ]
+    },
+    {
+      "code": "SR",
+      "alpha3": "SUR",
+      "ar": "سورينام",
+      "en": "Suriname",
+      "aliases": [
+        "سورينام",
+        "Suriname"
+      ]
+    },
+    {
+      "code": "SJ",
+      "alpha3": "SJM",
+      "ar": "سفالبارد ويان ماين",
+      "en": "Svalbard and Jan Mayen",
+      "aliases": [
+        "سفالبارد ويان ماين",
+        "Svalbard and Jan Mayen"
+      ]
+    },
+    {
+      "code": "SZ",
+      "alpha3": "SWZ",
+      "ar": "سوازيلاند",
+      "en": "Eswatini",
+      "aliases": [
+        "سوازيلاند",
+        "Eswatini"
+      ]
+    },
+    {
+      "code": "SE",
+      "alpha3": "SWE",
+      "ar": "السويد",
+      "en": "Sweden",
+      "aliases": [
+        "السويد",
+        "Sweden"
+      ]
+    },
+    {
+      "code": "CH",
+      "alpha3": "CHE",
+      "ar": "سويسرا",
+      "en": "Switzerland",
+      "aliases": [
+        "سويسرا",
+        "Switzerland"
+      ]
+    },
+    {
+      "code": "SY",
+      "alpha3": "SYR",
+      "ar": "سوريا",
+      "en": "Syrian Arab Republic",
+      "aliases": [
+        "سوريا",
+        "Syrian Arab Republic"
+      ]
+    },
+    {
+      "code": "TW",
+      "alpha3": "TWN",
+      "ar": "تايوان",
+      "en": "Taiwan, Province of China",
+      "aliases": [
+        "تايوان",
+        "Taiwan, Province of China",
+        "Taiwan"
+      ]
+    },
+    {
+      "code": "TJ",
+      "alpha3": "TJK",
+      "ar": "طاجيكستان",
+      "en": "Tajikistan",
+      "aliases": [
+        "طاجيكستان",
+        "Tajikistan"
+      ]
+    },
+    {
+      "code": "TZ",
+      "alpha3": "TZA",
+      "ar": "تانزانيا",
+      "en": "United Republic of Tanzania",
+      "aliases": [
+        "تانزانيا",
+        "United Republic of Tanzania",
+        "Tanzania"
+      ]
+    },
+    {
+      "code": "TH",
+      "alpha3": "THA",
+      "ar": "تايلاند",
+      "en": "Thailand",
+      "aliases": [
+        "تايلاند",
+        "Thailand"
+      ]
+    },
+    {
+      "code": "TL",
+      "alpha3": "TLS",
+      "ar": "تيمور الشرقية",
+      "en": "Timor-Leste",
+      "aliases": [
+        "تيمور الشرقية",
+        "Timor-Leste"
+      ]
+    },
+    {
+      "code": "TG",
+      "alpha3": "TGO",
+      "ar": "توغو",
+      "en": "Togo",
+      "aliases": [
+        "توغو",
+        "Togo"
+      ]
+    },
+    {
+      "code": "TK",
+      "alpha3": "TKL",
+      "ar": "توكيلاو",
+      "en": "Tokelau",
+      "aliases": [
+        "توكيلاو",
+        "Tokelau"
+      ]
+    },
+    {
+      "code": "TO",
+      "alpha3": "TON",
+      "ar": "تونغا",
+      "en": "Tonga",
+      "aliases": [
+        "تونغا",
+        "Tonga"
+      ]
+    },
+    {
+      "code": "TT",
+      "alpha3": "TTO",
+      "ar": "ترينيداد وتوباغو",
+      "en": "Trinidad and Tobago",
+      "aliases": [
+        "ترينيداد وتوباغو",
+        "Trinidad and Tobago"
+      ]
+    },
+    {
+      "code": "TN",
+      "alpha3": "TUN",
+      "ar": "تونس",
+      "en": "Tunisia",
+      "aliases": [
+        "تونس",
+        "Tunisia"
+      ]
+    },
+    {
+      "code": "TR",
+      "alpha3": "TUR",
+      "ar": "تركيا",
+      "en": "Türkiye",
+      "aliases": [
+        "تركيا",
+        "Türkiye",
+        "Turkey"
+      ]
+    },
+    {
+      "code": "TM",
+      "alpha3": "TKM",
+      "ar": "تركمانستان",
+      "en": "Turkmenistan",
+      "aliases": [
+        "تركمانستان",
+        "Turkmenistan"
+      ]
+    },
+    {
+      "code": "TC",
+      "alpha3": "TCA",
+      "ar": "جزر توركس وكايكوس",
+      "en": "Turks and Caicos Islands",
+      "aliases": [
+        "جزر توركس وكايكوس",
+        "Turks and Caicos Islands"
+      ]
+    },
+    {
+      "code": "TV",
+      "alpha3": "TUV",
+      "ar": "توفالو",
+      "en": "Tuvalu",
+      "aliases": [
+        "توفالو",
+        "Tuvalu"
+      ]
+    },
+    {
+      "code": "UG",
+      "alpha3": "UGA",
+      "ar": "أوغندا",
+      "en": "Uganda",
+      "aliases": [
+        "أوغندا",
+        "Uganda"
+      ]
+    },
+    {
+      "code": "UA",
+      "alpha3": "UKR",
+      "ar": "أوكرانيا",
+      "en": "Ukraine",
+      "aliases": [
+        "أوكرانيا",
+        "Ukraine"
+      ]
+    },
+    {
+      "code": "AE",
+      "alpha3": "ARE",
+      "ar": "الإمارات العربية المتحدة",
+      "en": "United Arab Emirates",
+      "aliases": [
+        "الإمارات العربية المتحدة",
+        "United Arab Emirates",
+        "UAE"
+      ]
+    },
+    {
+      "code": "GB",
+      "alpha3": "GBR",
+      "ar": "المملكة المتحدة",
+      "en": "United Kingdom",
+      "aliases": [
+        "المملكة المتحدة",
+        "United Kingdom",
+        "UK",
+        "Great Britain"
+      ]
+    },
+    {
+      "code": "US",
+      "alpha3": "USA",
+      "ar": "الولايات المتحدة",
+      "en": "United States of America",
+      "aliases": [
+        "الولايات المتحدة",
+        "United States of America",
+        "United States",
+        "USA",
+        "U.S.A.",
+        "US",
+        "U.S."
+      ]
+    },
+    {
+      "code": "UM",
+      "alpha3": "UMI",
+      "ar": "جزر الولايات المتحدة",
+      "en": "United States Minor Outlying Islands",
+      "aliases": [
+        "جزر الولايات المتحدة",
+        "United States Minor Outlying Islands"
+      ]
+    },
+    {
+      "code": "UY",
+      "alpha3": "URY",
+      "ar": "الأوروغواي",
+      "en": "Uruguay",
+      "aliases": [
+        "الأوروغواي",
+        "Uruguay"
+      ]
+    },
+    {
+      "code": "UZ",
+      "alpha3": "UZB",
+      "ar": "أوزبكستان",
+      "en": "Uzbekistan",
+      "aliases": [
+        "أوزبكستان",
+        "Uzbekistan"
+      ]
+    },
+    {
+      "code": "VU",
+      "alpha3": "VUT",
+      "ar": "فانواتو",
+      "en": "Vanuatu",
+      "aliases": [
+        "فانواتو",
+        "Vanuatu"
+      ]
+    },
+    {
+      "code": "VE",
+      "alpha3": "VEN",
+      "ar": "فنزويلا",
+      "en": "Venezuela",
+      "aliases": [
+        "فنزويلا",
+        "Venezuela"
+      ]
+    },
+    {
+      "code": "VN",
+      "alpha3": "VNM",
+      "ar": "فيتنام",
+      "en": "Vietnam",
+      "aliases": [
+        "فيتنام",
+        "Vietnam"
+      ]
+    },
+    {
+      "code": "VG",
+      "alpha3": "VGB",
+      "ar": "جزر العذراء البريطانية",
+      "en": "Virgin Islands, British",
+      "aliases": [
+        "جزر العذراء البريطانية",
+        "Virgin Islands, British"
+      ]
+    },
+    {
+      "code": "VI",
+      "alpha3": "VIR",
+      "ar": "جزر العذراء الأمريكية",
+      "en": "Virgin Islands, U.S.",
+      "aliases": [
+        "جزر العذراء الأمريكية",
+        "Virgin Islands, U.S."
+      ]
+    },
+    {
+      "code": "WF",
+      "alpha3": "WLF",
+      "ar": "والس وفوتونا",
+      "en": "Wallis and Futuna",
+      "aliases": [
+        "والس وفوتونا",
+        "Wallis and Futuna"
+      ]
+    },
+    {
+      "code": "EH",
+      "alpha3": "ESH",
+      "ar": "الصحراء الغربية",
+      "en": "Western Sahara",
+      "aliases": [
+        "الصحراء الغربية",
+        "Western Sahara"
+      ]
+    },
+    {
+      "code": "YE",
+      "alpha3": "YEM",
+      "ar": "اليمن",
+      "en": "Yemen",
+      "aliases": [
+        "اليمن",
+        "Yemen"
+      ]
+    },
+    {
+      "code": "ZM",
+      "alpha3": "ZMB",
+      "ar": "زامبيا",
+      "en": "Zambia",
+      "aliases": [
+        "زامبيا",
+        "Zambia"
+      ]
+    },
+    {
+      "code": "ZW",
+      "alpha3": "ZWE",
+      "ar": "زيمبابوي",
+      "en": "Zimbabwe",
+      "aliases": [
+        "زيمبابوي",
+        "Zimbabwe"
+      ]
+    },
+    {
+      "code": "AX",
+      "alpha3": "ALA",
+      "ar": "جزر أولاند",
+      "en": "Åland Islands",
+      "aliases": [
+        "جزر أولاند",
+        "Åland Islands",
+        "Aland Islands"
+      ]
+    },
+    {
+      "code": "BQ",
+      "alpha3": "BES",
+      "ar": "الجزر الكاريبية الهولندية",
+      "en": "Bonaire, Sint Eustatius and Saba",
+      "aliases": [
+        "الجزر الكاريبية الهولندية",
+        "Bonaire, Sint Eustatius and Saba"
+      ]
+    },
+    {
+      "code": "CW",
+      "alpha3": "CUW",
+      "ar": "كوراساو",
+      "en": "Curaçao",
+      "aliases": [
+        "كوراساو",
+        "Curaçao"
+      ]
+    },
+    {
+      "code": "GG",
+      "alpha3": "GGY",
+      "ar": "غيرنزي",
+      "en": "Guernsey",
+      "aliases": [
+        "غيرنزي",
+        "Guernsey"
+      ]
+    },
+    {
+      "code": "IM",
+      "alpha3": "IMN",
+      "ar": "جزيرة مان",
+      "en": "Isle of Man",
+      "aliases": [
+        "جزيرة مان",
+        "Isle of Man"
+      ]
+    },
+    {
+      "code": "JE",
+      "alpha3": "JEY",
+      "ar": "جيرزي",
+      "en": "Jersey",
+      "aliases": [
+        "جيرزي",
+        "Jersey"
+      ]
+    },
+    {
+      "code": "ME",
+      "alpha3": "MNE",
+      "ar": "الجبل الأسود",
+      "en": "Montenegro",
+      "aliases": [
+        "الجبل الأسود",
+        "Montenegro"
+      ]
+    },
+    {
+      "code": "BL",
+      "alpha3": "BLM",
+      "ar": "سان بارتيلمي",
+      "en": "Saint Barthélemy",
+      "aliases": [
+        "سان بارتيلمي",
+        "Saint Barthélemy"
+      ]
+    },
+    {
+      "code": "MF",
+      "alpha3": "MAF",
+      "ar": "سانت مارتن (الجزء الفرنسي)",
+      "en": "Saint Martin (French part)",
+      "aliases": [
+        "سانت مارتن (الجزء الفرنسي)",
+        "Saint Martin (French part)"
+      ]
+    },
+    {
+      "code": "RS",
+      "alpha3": "SRB",
+      "ar": "صربيا",
+      "en": "Serbia",
+      "aliases": [
+        "صربيا",
+        "Serbia"
+      ]
+    },
+    {
+      "code": "SX",
+      "alpha3": "SXM",
+      "ar": "سانت مارتن (الجزء الهولندي)",
+      "en": "Sint Maarten (Dutch part)",
+      "aliases": [
+        "سانت مارتن (الجزء الهولندي)",
+        "Sint Maarten (Dutch part)"
+      ]
+    },
+    {
+      "code": "SS",
+      "alpha3": "SSD",
+      "ar": "جنوب السودان",
+      "en": "South Sudan",
+      "aliases": [
+        "جنوب السودان",
+        "South Sudan"
+      ]
+    },
+    {
+      "code": "XK",
+      "alpha3": "XKK",
+      "ar": "كوسوفو",
+      "en": "Kosovo",
+      "aliases": [
+        "كوسوفو",
+        "Kosovo"
+      ]
+    }
+  ]
+}

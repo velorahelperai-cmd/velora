@@ -1,6 +1,6 @@
 /* Setup-only palette. Every selector retains the local boundary. */
 .setup.setup {min-height:100svh;padding:24px 24px 64px;color:var(--service-ink);background:var(--service-canvas);font-family:var(--font-en);color-scheme:light;isolation:isolate;}
-.setup:dir(rtl) { font-family: var(--font-ar); }
+.setup.setup:dir(rtl) { --font-ar: "Tajawal", Tahoma, sans-serif; font-family: var(--font-ar); }
 
 /* Embedded knowledge and tester panels retain legacy dark utility classes. */
 .setup [class*="bg-[#0d1a14]"] {
@@ -36,20 +36,22 @@
   font-weight: 500;
 }
 .setup :is(button, a)[class*="bg-[#38dc89]"] {
-  background: var(--service-accent-soft) !important;
-  border-color: #7fad93;
+  background: var(--service-accent) !important;
+  color: #fff !important;
+  border-color: var(--service-accent);
 }
-.setup :is(button, a):not(:disabled):hover { border-color: #6d977e; }
-.setup :is(button, a)[class*="bg-[#38dc89]"]:not(:disabled):hover { background: #b6e5cc !important; }
+.setup :is(button, a):not(:disabled):hover { border-color: var(--service-accent-hover); }
+.setup :is(button, a)[class*="bg-[#38dc89]"]:not(:disabled):hover { background: var(--service-accent-hover) !important; }
 .setup button:disabled {
   opacity: 1 !important;
-  background: #edf1ee !important;
-  border-color: #c4cbc6;
-  border-style: dashed;
+  background: #dfe7ec !important;
+  color: #445568 !important;
+  border-color: #bcc9d2;
+  border-style: solid;
   box-shadow: none;
 }
-.setup button[aria-busy="true"] { background: #fff1d8 !important; border-style: solid; }
-.setup :is(input:not([type="checkbox"]):not([type="radio"]), textarea, select) {
+.setup button[aria-busy="true"] { background: var(--service-accent) !important; color: #fff !important; border-color: var(--service-accent); border-style: solid; }
+.setup :is(input:not([type="checkbox"]):not([type="radio"]), textarea, select):not([data-setup-entry-control]) {
   min-height: 48px;
   padding-block: 10px;
   font-size: 16px;
@@ -215,3 +217,6 @@
     scroll-behavior: auto !important;
   }
 }
+
+.setup[data-first-business="true"] .recordCount { display: none; }
+.setup[data-first-business="true"] .resume { font-size: 16px; line-height: 1.75; }
