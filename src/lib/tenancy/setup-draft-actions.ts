@@ -6,6 +6,7 @@ import { getCompanyAccess } from "./access";
 import { setupDraftFromRow, setupDraftLifecycleFromRow, setupDraftPayload, setupDraftScopeAllowed, type SetupDraftCode, type SetupDraftRecord, type SetupDraftResult, type SetupDraftScope, type SetupDraftLifecycleRecord, type SetupDraftCancellationPreview } from "./setup-draft";
 import type { Json } from "@/lib/database.types";
 
+import {logEvent,withLogContext} from '@/lib/logging/logger.mjs';
 const codes: SetupDraftCode[] = ["UNAUTHENTICATED", "UNVERIFIED", "FORBIDDEN", "UNAVAILABLE", "UNCONFIGURED", "INVALID_INPUT", "CONFLICT", "ACTIVE_DRAFT_EXISTS", "LEGACY_DRAFT_CONFLICT", "DRAFT_CLOSED", "DRAFT_EXPIRED", "DRAFT_BINDING_REQUIRED", "CONFIRMATION_REQUIRED", "COMPANY_REQUIRED"];
 function failure(code: unknown): { ok: false; code: SetupDraftCode } { return { ok: false, code: codes.includes(code as SetupDraftCode) ? code as SetupDraftCode : "UNAVAILABLE" }; }
 type DraftRpcClient = { rpc(name: string, args: Record<string, unknown>): PromiseLike<{ data: unknown; error: unknown }> };
@@ -108,4 +109,19 @@ export async function setupDraftLifecycleAction(input: SetupDraftScope & { draft
     const parsed = setupDraftLifecycleFromRow(receipt.data, { ...input, expectedDraftId: input.draftId });
     return parsed ? { ok: true, data: parsed } : failure("UNAVAILABLE");
   } catch { return failure("UNAVAILABLE"); }
+}
+
+/** Upload lifecycle metadata only. Never read editable setup-field payloads. */
+export async function readSetupFileContext(scope:SetupDraftScope):Promise<SetupDraftResult<SetupDraftRecord|null>>{
+ if(!masterJourneyEnabled())return {ok:true,data:null};
+ const started=Date.now();
+ const recordFailure=(error:unknown)=>withLogContext({user_id:scope.expectedUserId,...(scope.expectedCompanyId?{tenant_id:scope.expectedCompanyId}:{})},()=>logEvent('error','setup.files.context_read_failed',{kind:'application',target:'company_setup_drafts',duration_ms:Date.now()-started,error:error instanceof Error?error:new Error('SETUP_FILE_CONTEXT_READ_FAILED')}));
+ try{const access=await getCompanyAccess();if(!access.ok)return failure(access.code==='NO_COMPANY'?'FORBIDDEN':access.code);
+  if(!setupDraftScopeAllowed(scope,access.context))return failure('FORBIDDEN');
+  const client=await createClient();let query=client.from('company_setup_drafts').select('user_id,company_id,revision,updated_at,draft_id,state,generation,expires_at,paid_protected_at,cleanup_policy').eq('user_id',access.context.userId).eq('state','active');
+  query=scope.expectedCompanyId?query.eq('company_id',scope.expectedCompanyId):query.is('company_id',null);
+  const {data,error}=await query.maybeSingle();if(error){recordFailure(error);return failure('UNAVAILABLE');}if(!data)return {ok:true,data:null};
+  const payload={business:{name:'',type:'other',replyLanguage:'ar',country:'',city:'',hours:'',contactPhone:'',contactEmail:''},setupStep:0};
+  const record=setupDraftFromRow({...data,payload},scope);return record?{ok:true,data:record}:failure('UNAVAILABLE');
+ }catch(error){recordFailure(error);return failure('UNAVAILABLE');}
 }

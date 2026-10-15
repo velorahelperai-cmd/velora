@@ -1,0 +1,9 @@
+import {describe,it,expect,vi} from 'vitest';
+import {businessNameSuggestions,rememberBusinessName} from './field-suggestions';
+const a='00000000-0000-4000-8000-000000000001',b='00000000-0000-4000-8000-000000000002';
+const memory=()=>{const rows=new Map<string,string>();return {rows,getItem:vi.fn((k:string)=>rows.get(k)??null),setItem:vi.fn((k:string,v:string)=>{rows.set(k,v);})};};
+describe('account scoped optional field suggestions',()=>{
+ it('does not reuse another account or legacy draft keys',()=>{const s=memory();s.rows.set(`velora_company_draft_v1:${a}`,'legacy');rememberBusinessName(s,a,'متجر الندى',100);expect(businessNameSuggestions(s,b,101)).toEqual([]);expect(businessNameSuggestions(s,a,101)).toEqual(['متجر الندى']);expect(s.rows.get(`velora_company_draft_v1:${a}`)).toBe('legacy');expect(s.getItem.mock.calls.every(([key])=>key.startsWith('velora_field_suggestions_v1:'))).toBe(true);});
+ it('bounds history and expiry, rejects malformed or foreign envelopes',()=>{const s=memory();for(let i=0;i<8;i++)rememberBusinessName(s,a,`Business ${i}`,100+i);expect(businessNameSuggestions(s,a,109)).toHaveLength(5);expect(businessNameSuggestions(s,a,31*86400000)).toEqual([]);s.rows.set(`velora_field_suggestions_v1:${b}:businessName`,JSON.stringify({userId:a,field:'businessName',items:[{value:'foreign',usedAt:100}]}));expect(businessNameSuggestions(s,b,101)).toEqual([]);rememberBusinessName(s,a,'secret\ninvalid',110);expect(businessNameSuggestions(s,a,111)).not.toContain('secret\ninvalid');});
+ it('never writes while reading and treats unavailable storage as optional',()=>{const s=memory();expect(businessNameSuggestions(s,a)).toEqual([]);expect(s.setItem).not.toHaveBeenCalled();const blocked={getItem:()=>{throw Error('blocked');},setItem:()=>{throw Error('blocked');}};expect(()=>rememberBusinessName(blocked,a,'Name')).not.toThrow();expect(businessNameSuggestions(blocked,a)).toEqual([]);});
+});

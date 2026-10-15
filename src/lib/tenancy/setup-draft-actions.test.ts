@@ -5,7 +5,7 @@ import { emptyCompanyDraft } from "../company-draft";
 const mocks = vi.hoisted(() => ({ access: vi.fn(), client: vi.fn(), rpc: vi.fn(), maybeSingle: vi.fn(), from: vi.fn() }));
 vi.mock("./access", () => ({ getCompanyAccess: mocks.access }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: mocks.client }));
-import { readSetupDraft, saveSetupDraft, readActiveSetupDraft, setupDraftLifecycleAction } from "./setup-draft-actions";
+import { readSetupFileContext, readSetupDraft, saveSetupDraft, readActiveSetupDraft, setupDraftLifecycleAction } from "./setup-draft-actions";
 const scope = { expectedUserId: "owner", expectedCompanyId: null };
 const context = { userId: "owner", company: null, membership: null, needsCompanyContext: false, isPlatformAdmin: false };
 const input = { ...scope, expectedRevision: 0, draft: emptyCompanyDraft("owner") };
@@ -71,4 +71,13 @@ describe("server draft authorization and receipts", () => {
     expect(await readActiveSetupDraft("previous")).toEqual({ ok: false, code: "FORBIDDEN" });
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
+});
+
+it('reads only upload lifecycle metadata, never field payloads or mutations',async()=>{
+ mocks.maybeSingle.mockResolvedValue({data:null,error:null});
+ expect(await readSetupFileContext(scope)).toEqual({ok:true,data:null});
+ const query=mocks.from.mock.results[0].value;
+ expect(query.select.mock.calls[0][0]).not.toContain('payload');
+ expect(query.eq).toHaveBeenCalledWith('user_id','owner');expect(query.eq).toHaveBeenCalledWith('state','active');
+ expect(mocks.rpc).not.toHaveBeenCalled();
 });

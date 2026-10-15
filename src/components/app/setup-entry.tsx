@@ -4,6 +4,7 @@ import { useId, type FormEvent } from 'react';
 import styles from './setup-entry.module.css';
 import { CountryCombobox } from './country-combobox';
 import { SetupEmployee } from './setup-employee';
+import {BusinessNameSuggestions} from './business-name-suggestions';
 
 type Fields = { name: string; type: string; country: string };
 export type SetupEntryProps = {
@@ -13,6 +14,8 @@ export type SetupEntryProps = {
   busy: boolean;
   pending: boolean;
   error: string | null;
+  suggestionUserId?: string|null;
+  suggestionIsCurrent?: () => boolean;
   onChange: (key: keyof Fields, value: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 };
@@ -24,7 +27,7 @@ const businessTypes = [
 ] as const;
 
 /** Presentation only. Creation authority, persistence and receipt recovery stay with the caller. */
-export function SetupEntry({ ar, fields, ready, busy, pending, error, onChange, onSubmit }: SetupEntryProps) {
+export function SetupEntry({ ar, fields, ready, busy, pending, error, onChange, onSubmit, suggestionUserId, suggestionIsCurrent }: SetupEntryProps) {
   const id = useId();
   const locked = pending || !ready;
   const canCreate = ready && Boolean(fields.name.trim()) && !busy;
@@ -49,10 +52,10 @@ export function SetupEntry({ ar, fields, ready, busy, pending, error, onChange, 
               <span>{ar ? 'اسم النشاط' : 'Business name'}</span>
               <span className={styles.required} aria-hidden="true">{ar ? 'مطلوب' : 'Required'}</span>
             </label>
-            <input data-setup-entry-control="" id={`${id}-name`} name="businessName" value={fields.name} maxLength={120}
-              aria-required="true" disabled={locked} autoComplete="organization"
+            <BusinessNameSuggestions ar={ar} userId={suggestionUserId} isCurrent={suggestionIsCurrent} id={`${id}-name`} value={fields.name}
+              disabled={locked}
               placeholder={ar ? 'مثال: متجر الندى' : 'For example, Al Nada Store'}
-              onChange={event => onChange('name', event.target.value)} />
+              onChange={value => onChange('name', value)} />
           </div>
 
           <div className={styles.fieldRow}>

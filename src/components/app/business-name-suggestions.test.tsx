@@ -1,0 +1,17 @@
+import {beforeEach,afterEach,describe,it,expect,vi} from 'vitest';
+import {Children,isValidElement,type ReactNode,type ReactElement} from 'react';
+const hooks=vi.hoisted(()=>({slots:[] as unknown[],cursor:0}));
+vi.mock('react',async()=>({...await vi.importActual<typeof import('react')>('react'),useId:()=> 'suggestions',useState(initial:unknown){const index=hooks.cursor++;if(!(index in hooks.slots))hooks.slots[index]=initial;return [hooks.slots[index],(value:unknown)=>{hooks.slots[index]=typeof value==='function'?(value as (old:unknown)=>unknown)(hooks.slots[index]):value;}];}}));
+import {BusinessNameSuggestions} from './business-name-suggestions';
+import {rememberBusinessName} from '@/lib/field-suggestions';
+type UI={children?:ReactNode;role?:string;value?:string;onFocus?:()=>void;onClick?:()=>void;onKeyDown?:(event:{key:string;preventDefault:()=>void})=>void};
+function role(root:ReactNode,name:string):ReactElement<UI>|undefined{let found:ReactElement<UI>|undefined;Children.forEach(root,node=>{if(found||!isValidElement<UI>(node))return;if(node.props.role===name)found=node;else found=role(node.props.children,name);});return found;}
+const a='00000000-0000-4000-8000-000000000001',b='00000000-0000-4000-8000-000000000002';
+const rows=new Map<string,string>(),storage={getItem:(key:string)=>rows.get(key)??null,setItem:(key:string,value:string)=>{rows.set(key,value);}};
+beforeEach(()=>{hooks.slots=[];hooks.cursor=0;rows.clear();vi.stubGlobal('window',{localStorage:storage});rememberBusinessName(storage,a,'متجر الندى');});
+afterEach(()=>vi.unstubAllGlobals());
+describe('optional name suggestions interaction',()=>{
+ it('opens suggestions on focus without changing the field, and chooses only on a deliberate click',()=>{const onChange=vi.fn(),props={id:'name',value:'',ar:true,userId:a,isCurrent:()=>true,onChange};const render=()=>{hooks.cursor=0;return BusinessNameSuggestions(props);};let tree=render();expect(role(tree,'combobox')?.props.value).toBe('');expect(role(tree,'listbox')).toBeUndefined();role(tree,'combobox')?.props.onFocus?.();tree=render();expect(onChange).not.toHaveBeenCalled();expect(role(tree,'combobox')?.props.value).toBe('');role(tree,'option')?.props.onClick?.();expect(onChange).toHaveBeenCalledWith('متجر الندى');});
+ it('hides another account history and rejects a stale selection handler after account change',()=>{let actor=a;const onChange=vi.fn(),props={id:'name',value:'',ar:true,userId:a,isCurrent:()=>actor===a,onChange};const render=(userId=a)=>{hooks.cursor=0;return BusinessNameSuggestions({...props,userId});};let tree=render();role(tree,'combobox')?.props.onFocus?.();tree=render();const stale=role(tree,'option')?.props.onClick;actor=b;tree=render(b);expect(role(tree,'listbox')).toBeUndefined();stale?.();expect(onChange).not.toHaveBeenCalled();});
+ it('selects a focused suggestion with keyboard Enter instead of submitting the form',()=>{const onChange=vi.fn(),props={id:'name',value:'',ar:true,userId:a,isCurrent:()=>true,onChange};const render=()=>{hooks.cursor=0;return BusinessNameSuggestions(props);};let tree=render();role(tree,'combobox')?.props.onFocus?.();tree=render();role(tree,'combobox')?.props.onKeyDown?.({key:'ArrowDown',preventDefault:vi.fn()});tree=render();const preventDefault=vi.fn();role(tree,'combobox')?.props.onKeyDown?.({key:'Enter',preventDefault});expect(preventDefault).toHaveBeenCalled();expect(onChange).toHaveBeenCalledWith('متجر الندى');});
+});

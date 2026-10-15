@@ -12,8 +12,7 @@ import type { KnowledgeSourceRecord } from "@/lib/knowledge/types";
 import { getCompanyAccess, loginPathForReturn } from "@/lib/tenancy/access";
 import { getCompanyReviewRequest } from "@/lib/tenancy/actions";
 import type { CompanyReviewRequest } from "@/lib/tenancy/types";
-import {readActiveSetupDraft,readSetupDraft} from '@/lib/tenancy/setup-draft-actions';
-import type {SetupDraftRecord,SetupDraftResult} from '@/lib/tenancy/setup-draft';
+import {readSetupFileContext} from '@/lib/tenancy/setup-draft-actions';
 import {masterJourneyEnabled} from '@/lib/master-journey/rollout';
 import {smartOnboardingEnabled} from '@/lib/tenancy/smart-rollout';
 
@@ -34,14 +33,8 @@ export default async function Page() {
   const masterEnabled=masterJourneyEnabled();
   if (masterEnabled&&!company) redirect(`/account/businesses/new?next=${encodeURIComponent(returnTo)}`);
   const userId = access.context.userId;
-  let activeDraftResult: SetupDraftResult<SetupDraftRecord|null>|undefined;
-  if(masterEnabled){const activeDraft = await readActiveSetupDraft(userId);
-   if (!activeDraft.ok) return <AccessGate code="UNAVAILABLE" />;
-   if (activeDraft.data && activeDraft.data.draft.companyId !== company?.id) redirect(`/account/businesses/new?next=${encodeURIComponent(returnTo)}`);
-   activeDraftResult=activeDraft;
-  }
   const draftScope={expectedUserId:userId,expectedCompanyId:company?.id??null};
-  const draftRead=activeDraftResult?Promise.resolve(activeDraftResult):readSetupDraft(draftScope);
+  const draftRead=readSetupFileContext(draftScope);
 
   let initialKnowledge: KnowledgeSourceRecord[] = [];
   let knowledgeLoadFailed = false;
