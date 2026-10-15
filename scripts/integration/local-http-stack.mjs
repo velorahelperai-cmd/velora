@@ -3,7 +3,7 @@
 import { spawn } from "node:child_process";
 import { randomBytes, randomUUID, createHmac } from "node:crypto";
 import { readFile, readdir } from "node:fs/promises";
-import { createServer, request as httpRequest } from "node:http";
+import { Agent, createServer, request as httpRequest } from "node:http";
 import { createServer as createTcpServer } from "node:net";
 import { resolve, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -77,7 +77,8 @@ grant all on storage.buckets,storage.objects to service_role;
 `;
 
 /** Start one isolated real local backend. All credentials are returned only in memory. */
-export async function startStack({ gatewayPort = 3130, authPort = 3140, restPort = 3141, appOrigin = "http://127.0.0.1:3120", progress = () => {}, throughMigration, canonicalSqlLineEndings = false, emailConfirmation = false } = {}) {
+export async function startStack({ gatewayPort = 3130, authPort = 3140, restPort = 3141, appOrigin = "http://127.0.0.1:3120", progress = () => {}, throughMigration, canonicalSqlLineEndings = false, emailConfirmation = false, reuseUpstreamConnections = false } = {}) {
+  if (typeof reuseUpstreamConnections !== "boolean") throw Error("LOCAL_UPSTREAM_REUSE_BOOLEAN_REQUIRED");
   const mailEnvironment = confirmationEnvironment(emailConfirmation);
   gatewayPort = port(gatewayPort); authPort = port(authPort); restPort = port(restPort);
   if (new Set([gatewayPort, authPort, restPort]).size !== 3) throw Error("STACK_PORTS_MUST_DIFFER");
@@ -95,6 +96,9 @@ export async function startStack({ gatewayPort = 3130, authPort = 3140, restPort
   const created = new Set();
   const attached = new Map();
   const ingress = new Map();
+  // Reuse bounded loopback channels instead of spawning Docker exec for every
+  // SSR request. Credentials remain request headers, never connection state.
+  const upstreamAgents = reuseUpstreamConnections ? {auth:new Agent({keepAlive:true,maxSockets:2,maxFreeSockets:2}),rest:new Agent({keepAlive:true,maxSockets:2,maxFreeSockets:2})} : null;
   let networkCreated = false, gateway, closed = false;
   const redact = value => {
     let result = String(value);
@@ -159,6 +163,7 @@ export async function startStack({ gatewayPort = 3130, authPort = 3140, restPort
       gateway.closeAllConnections();
       await new Promise(ok => gateway.close(ok));
     }
+    for (const agent of Object.values(upstreamAgents??{})) agent.destroy();
     for (const server of ingress.values()) {
       for (const socket of server.localSockets) socket.destroy();
       await new Promise(ok => server.close(ok));
@@ -282,9 +287,9 @@ export async function startStack({ gatewayPort = 3130, authPort = 3140, restPort
       if (request.headers[name] !== undefined) headers[name] = request.headers[name];
     headers["x-forwarded-proto"] = "http";
     headers["x-forwarded-host"] = `127.0.0.1:${gatewayPort}`;
-    headers.connection = "close";
+    headers.connection = reuseUpstreamConnections ? "keep-alive" : "close";
     // Authorization is forwarded exactly as supplied; never synthesize a user/session.
-    const upstream = httpRequest({ hostname: "127.0.0.1", port: auth ? authPort : restPort, path: upstreamPath, method: request.method, headers }, incoming => {
+    const upstream = httpRequest({ hostname: "127.0.0.1", port: auth ? authPort : restPort, path: upstreamPath, method: request.method, headers, agent:upstreamAgents?.[auth?'auth':'rest'] }, incoming => {
       for (const [name, value] of Object.entries(incoming.headers))
         if (value !== undefined && !["connection", "transfer-encoding", "access-control-allow-origin", "access-control-allow-headers", "access-control-expose-headers"].includes(name)) response.setHeader(name, value);
       response.writeHead(incoming.statusCode ?? 502);
