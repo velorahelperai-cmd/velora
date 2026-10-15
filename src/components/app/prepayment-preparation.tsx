@@ -22,7 +22,7 @@ export function PrepaymentPreparation({userId,preferredNext=''}:{userId:string;p
  if(session?.status!=='ready'||session.identity?.userId!==userId)return <p role="status">{locale==='ar'?'جارٍ تأكيد الحساب…':'Confirming your account…'}</p>;
  const identity=session.identity;
  // Navigation intent only: query amounts never establish a trusted quote.
- return <main className={pageStyles.page} dir={locale==='ar'?'rtl':'ltr'} data-plan-intent={preferredNext?setupSubscriptionReturn(preferredNext):undefined}><header className={pageStyles.header}><Link href="/">Velora</Link><div><LangSwitch/><AccountMenu compact/></div></header><PreparationForm key={userId} ar={locale==='ar'} userId={userId} isCurrent={()=>session.isCurrentUser(userId,identity)}/></main>;
+ return <main data-service-theme="" className={pageStyles.page} dir={locale==='ar'?'rtl':'ltr'} data-plan-intent={preferredNext?setupSubscriptionReturn(preferredNext):undefined}><header className={pageStyles.header}><Link href="/">Velora</Link><div><LangSwitch/><AccountMenu compact/></div></header><PreparationForm key={userId} ar={locale==='ar'} userId={userId} isCurrent={()=>session.isCurrentUser(userId,identity)}/></main>;
 }
 export function PreparationForm({ar,userId,isCurrent}:{ar:boolean;userId:string;isCurrent:()=>boolean}){
  const id=useId(),form=useRef<HTMLDivElement>(null),[value,setValue]=useState(emptyPreparation),[review,setReview]=useState(false),[errors,setErrors]=useState<string[]>([]),[suggestionStatus,setSuggestionStatus]=useState('');

@@ -1,4 +1,4 @@
-.page{max-width:1180px;margin:auto;padding:24px;color:var(--service-ink,#172d43);font-family:var(--font-en)}
+.page{width:100%;margin:0;padding:24px max(24px,calc((100% - 1180px)/2));color:var(--service-ink,#172d43);font-family:var(--font-en)}
 .page[dir=rtl]{font-family:Tajawal,Tahoma,sans-serif}
 .header{display:flex;justify-content:space-between;gap:16px;align-items:center}
 .header>a{font-size:26px;font-weight:700}.header>div{display:flex;align-items:center;gap:12px}
