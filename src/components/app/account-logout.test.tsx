@@ -29,6 +29,20 @@ it("logout completion cannot erase or navigate a new account",async()=>{
 it("failed native logout keeps the current identity and drafts recoverable",async()=>{
  f.logout.mockResolvedValue({ok:false,code:"AUTH_ERROR",message:"Synthetic logout failure"});logout();await settle();
  expect(f.logout).toHaveBeenCalledWith("user-a");expect(f.clear).not.toHaveBeenCalled();expect(f.update).not.toHaveBeenCalled();expect(f.drafts).not.toHaveBeenCalled();expect(f.publishLogout).not.toHaveBeenCalled();expect(f.assign).not.toHaveBeenCalled();
- const closed=render();(nodes(closed).find(n=>n.props["aria-haspopup"]==="menu")!.props.onClick as()=>void)();
  expect(nodes(render()).some(n=>n.props.children==="Synthetic logout failure")).toBe(true);
+});
+it("shows pending logout immediately while keeping the identity until native confirmation",async()=>{
+ let resolve!:(v:unknown)=>void;f.logout.mockReturnValue(new Promise(ok=>{resolve=ok;}));logout();
+ const pending=nodes(render()).find(n=>n.type==="button"&&n.props.role==="menuitem");
+ expect(pending?.props.disabled).toBe(true);expect(pending?.props["aria-busy"]).toBe(true);
+ expect(pending?.props.children).toBe(appCopy("en").loading);
+ expect(f.clear).not.toHaveBeenCalled();expect(f.assign).not.toHaveBeenCalled();
+ resolve({ok:true});await settle();expect(f.assign).toHaveBeenCalledWith("/login");
+});
+it("coalesces repeated logout clicks before a React render",async()=>{
+ let resolve!:(v:unknown)=>void;f.logout.mockReturnValue(new Promise(ok=>{resolve=ok;}));
+ const closed=render();(nodes(closed).find(n=>n.props["aria-haspopup"]==="menu")!.props.onClick as()=>void)();
+ const button=nodes(render()).find(n=>n.type==="button"&&n.props.role==="menuitem")!;
+ (button.props.onClick as()=>void)();(button.props.onClick as()=>void)();expect(f.logout).toHaveBeenCalledTimes(1);
+ resolve({ok:true});await settle();
 });

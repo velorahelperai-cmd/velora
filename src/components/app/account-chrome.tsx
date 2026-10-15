@@ -249,6 +249,8 @@ export function AccountMenu({
   const session = useOptionalAccountSession();
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loggingOut, setLoggingOut] = useState(false);
+  const logoutPending = useRef(false);
   const menuId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -384,13 +386,21 @@ export function AccountMenu({
           <button
             type="button"
             role="menuitem"
+            disabled={loggingOut}
+            aria-busy={loggingOut}
             className="flex min-h-11 w-full items-center rounded-xl px-3 text-start text-sm hover:bg-[var(--color-hover-wash)]"
             onClick={() => {
-              setOpen(false);
-              void performLogout(session, update, copy, setError);
+              if (logoutPending.current) return;
+              logoutPending.current = true;
+              setLoggingOut(true);
+              setError(null);
+              void performLogout(session, update, copy, setError).finally(() => {
+                logoutPending.current = false;
+                setLoggingOut(false);
+              });
             }}
           >
-            {copy.logout}
+            {loggingOut ? copy.loading : copy.logout}
           </button>
           {error ? <p className="px-3 py-2 text-xs text-[#f0a0a0]">{error}</p> : null}
         </div>
