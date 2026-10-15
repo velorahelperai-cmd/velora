@@ -10,8 +10,14 @@ export function createBrowserLogger(write){
 const logger=createBrowserLogger();
 const identifier=value=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value)?value:null;
 export function recordSessionCheckUnavailable(identity,target=logger){
+ record(identity,'auth.session.check.unavailable','UNAVAILABLE',target);
+}
+export function recordPreparationValidationRejected(identity,target=logger){
+ record(identity,'setup.preparation.validation.rejected','INVALID_INPUT',target);
+}
+function record(identity,event,code,target){
  try{
   target.level=level();
-  target.warn({timestamp:new Date().toISOString(),service:'velora.browser',env:process.env.NODE_ENV??'development',version:process.env.NEXT_PUBLIC_APP_VERSION??'development',request_id:crypto.randomUUID(),trace_id:null,span_id:null,user_id:identifier(identity?.userId),tenant_id:identifier(identity?.companyId),kind:'application',event:'auth.session.check.unavailable',code:'UNAVAILABLE'});
+  target.warn({timestamp:new Date().toISOString(),service:'velora.browser',env:process.env.NODE_ENV??'development',version:process.env.NEXT_PUBLIC_APP_VERSION??'development',request_id:crypto.randomUUID(),trace_id:null,span_id:null,user_id:identifier(identity?.userId),tenant_id:identifier(identity?.companyId),kind:'application',event,code});
  }catch{/* Optional local diagnostics cannot change session authority or recovery. */}
 }
