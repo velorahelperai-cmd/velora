@@ -51,6 +51,8 @@ import {
 
 import internalStyles from "./internal-ui.module.css";
 import { SmartSetupCards } from "./smart-setup-cards";
+import {buildSetupPageView,setupPageStep} from "./setup-page-view";
+import {SetupReviewPrerequisites} from "./setup-review-prerequisites";
 import { SetupNavigation } from "./setup-navigation";
 import { SmartSetupBranches } from "./smart-setup-branches";
 import { SmartSettingsPanel } from './smart-settings-panel';
@@ -153,7 +155,11 @@ function SetupJourneyNotice({
   company,
   review,
   reviewLoadFailed,
+  dataPage = false,
+  ar = false,
 }: {
+  dataPage?: boolean;
+  ar?: boolean;
   company: CompanyRecord | null;
   review: CompanyReviewRequest | null;
   reviewLoadFailed: boolean;
@@ -201,7 +207,7 @@ function SetupJourneyNotice({
   if (company.status === "setup") {
     return (
       <div className="mt-4">
-        <Notice tone="warn">{copy.setup.journeySetup}</Notice>
+        <Notice tone="warn">{dataPage ? (ar ? "بيانات الصفحة لا تعني جاهزية التشغيل؛ الدفع وربط القنوات والمراجعة خطوات مستقلة." : "Page data does not prove operational readiness; payment, channel connection and review are separate steps.") : copy.setup.journeySetup}</Notice>
       </div>
     );
   }
@@ -451,9 +457,10 @@ export function SetupWizard({
   if (unresolvedBusinessConflicts.length !== businessConflicts.length) setBusinessConflicts(unresolvedBusinessConflicts);
   const resolveBusinessConflicts = () => persist(d => ({ ...d, business: { ...d.business, ...Object.fromEntries(unresolvedBusinessConflicts.map(key => [key, businessBaseline[key]])) } }));
 
-  const step = Math.max(0, Math.min(7, draft.setupStep));
+  const step = smartOnboardingEnabled?setupPageStep(draft.setupStep):Math.max(0, Math.min(7, draft.setupStep));
+  const visiblePanel=openPanel===null||openPanel==="branches"?openPanel:smartOnboardingEnabled?setupPageStep(openPanel):openPanel;
   const go = (n: number, opts?: { skipGuard?: boolean }) => {
-    const next = Math.max(0, Math.min(7, n));
+    const next = smartOnboardingEnabled?setupPageStep(n):Math.max(0, Math.min(7, n));
     if (!opts?.skipGuard && leaveGuardRef.current && !leaveGuardRef.current()) return;
     setOpenPanel(next);
     persist({ setupStep: next });
@@ -488,6 +495,7 @@ export function SetupWizard({
     review:initialReview,reviewLoadFailed,
     reviewPolicyReady:smartRead?.reviewPolicyEnabled===true,
   });
+  const pageView=buildSetupPageView(smart,savedCompany,smartRead?.branchSetup??null);
   const closePanel=()=>{if(leaveGuardRef.current&&!leaveGuardRef.current())return;setOpenPanel(null);};
   const openCard=(card:SmartSetupCard)=>{
     if(card.id==="branches"){if(leaveGuardRef.current&&!leaveGuardRef.current())return;setOpenPanel("branches");return;}
@@ -518,13 +526,14 @@ export function SetupWizard({
         <div className={styles.setupTitle}>
           <h1 className="app-title text-3xl break-words lg:text-4xl">{copy.setup.title}</h1>
           <span className={styles.confirmed}>
-            {smartOnboardingEnabled?<>{smart.completedRequired} / {smart.totalRequired} {ar ? "متطلبات مؤكدة" : "requirements confirmed"}</>:<>{effectiveSetupDone.filter(Boolean).length} / 8 {ar?"محطات مؤكدة من السجلات":"milestones confirmed from records"}</>}
+            {smartOnboardingEnabled?<>{pageView.completedRequired} / {pageView.totalRequired} {ar ? "بيانات الصفحة المكتملة" : "page data completed"}</>:<>{effectiveSetupDone.filter(Boolean).length} / 8 {ar?"محطات مؤكدة من السجلات":"milestones confirmed from records"}</>}
           </span>
         </div>
         <p className={`mt-2 ${styles.resume}`}>
           {smartOnboardingEnabled&&!companyId?(ar?"ابدأ بتعريف نشاطك، ثم أكمل إعداد موظفتك الرقمية.":"Introduce your business, then set up your digital employee."):<>{!smartOnboardingEnabled?`${fill(mCopy.milestoneProgress,{n:step+1})} · `:""}{copy.setup.resume}</>}
         </p>
         <DiagnosticHint diagnostic={diagnostic} locale={locale}/><SetupJourneyNotice
+          dataPage={smartOnboardingEnabled} ar={ar}
           company={initialCompany ?? null}
           review={initialReview}
           reviewLoadFailed={reviewLoadFailed}
@@ -532,10 +541,10 @@ export function SetupWizard({
 
         {smartOnboardingEnabled?(companyId ? null : <SmartBusinessStart key={userId} userId={userId} ar={ar} onCreated={adoptCompany}/>):<><SetupNavigation labels={mCopy.steps} shortLabels={ar?["الشركة","الاشتراك","ساعات العمل","المعرفة","لغة الرد","واتساب","التجربة","المراجعة"]:["Company","Subscription","Hours","Knowledge","Reply language","WhatsApp","Trial","Review"]} done={effectiveSetupDone} step={step} locale={locale} onSelect={go}/><div className={styles.progress} aria-hidden="true"><div className={styles.progressFill} style={{width:`${Math.round(effectiveSetupDone.filter(Boolean).length/8*100)}%`}}/></div></>}
         {smartOnboardingEnabled&&companyId&&smartLoad==="failed"?<Notice tone="warn"><p>{ar?"تعذر تحميل تجهيز الفروع والقنوات. يمكنك متابعة بقية الإعدادات وإعادة المحاولة.":"Branch and channel setup could not be loaded. Continue with other settings and retry."}</p><Button variant="secondary" onClick={()=>setSmartRetry(n=>n+1)}>{ar?"إعادة التحميل":"Reload"}</Button></Notice>:null}
-        <SmartSetupCards enabled={smartOnboardingEnabled&&!!companyId} locale={locale} {...smart} onOpen={openCard} onClose={closePanel}
-          activeCardId={openPanel==='branches'?'branches':smart.cards.find(card=>card.step!==null&&card.step===openPanel)?.id??null}>
-        {(!smartOnboardingEnabled||companyId&&openPanel!==null)?<section className={styles.stepPanel} aria-label={ar?"إعدادات التجهيز":"Setup settings"}>
-          {openPanel==="branches"?<>
+        <SmartSetupCards enabled={smartOnboardingEnabled&&!!companyId} locale={locale} {...pageView} progressKind="page" onOpen={openCard} onClose={closePanel}
+          activeCardId={visiblePanel==='branches'?'branches':pageView.cards.find(card=>card.step!==null&&card.step===visiblePanel)?.id??null}>
+        {(!smartOnboardingEnabled||companyId&&visiblePanel!==null)?<section className={styles.stepPanel} aria-label={ar?"إعدادات التجهيز":"Setup settings"}>
+          {visiblePanel==="branches"?<>
             <div className={styles.stepHeading}><h2>{ar?"تجهيز الفروع":"Prepare your branches"}</h2></div>
             {smartRead?.branchSetup.companyId===companyId?<SmartSetupBranches key={`${userId}:${companyId}:${smartRead.branchSetup.branches.find(b=>b.primary)?.id}`} userId={userId} companyId={companyId} locale={locale} setup={smartRead.branchSetup} onSaved={branchSetup=>{setSmartRead(current=>current?{...current,branchSetup}:null);setSmartRetry(n=>n+1);}} onClose={()=>setOpenPanel(null)}/>:smartLoad==="loading"?<SetupLoading/>:<Notice tone="error">{ar?"تجهيز الفروع غير متاح حاليًا. أعد تحميل الحالة قبل المتابعة.":"Branch setup is unavailable. Reload its status before continuing."}</Notice>}
           </>:<>
@@ -574,7 +583,7 @@ export function SetupWizard({
                 planHref={setupSubscriptionReturn(preferredNext)}
                 onBack={() => go(0)}
                 onNext={() => {
-                  go(2);
+                  go(smartOnboardingEnabled?7:2);
                 }}
               />
             ) : null}
@@ -756,7 +765,9 @@ export function SetupWizard({
             {step === 7 ? (
               <ActivationStep
                 leaveGuardRef={leaveGuardRef}
-                onBack={() => go(6)}
+                onBack={() => go(smartOnboardingEnabled?1:6)}
+                pageScope={smartOnboardingEnabled}
+                subscriptionActive={smart.cards.some(card=>card.id==="subscription"&&card.status==="active")}
                 onDone={() => router.refresh()}
                 setupDone={effectiveSetupDone}
                 selectedChannels={smartOnboardingEnabled?smart.selectedChannels:null}
@@ -1636,6 +1647,8 @@ function DecoupledPillarsNotice({
 }
 
 function ActivationStep({
+  pageScope = false,
+  subscriptionActive = false,
   hoursRequired,
   selectedChannels,
   reviewConfigured,
@@ -1652,6 +1665,8 @@ function ActivationStep({
   initialReview,
   reviewLoadFailed: initialReviewLoadFailed,
 }: {
+  pageScope?: boolean;
+  subscriptionActive?: boolean;
   hoursRequired: boolean;
   selectedChannels: string[] | null;
   reviewConfigured: boolean;
@@ -1962,6 +1977,7 @@ function ActivationStep({
   return (
     <div className="grid min-w-0 gap-5 lg:grid-cols-[1fr_360px]">
       <div className="grid min-w-0 gap-4">
+        {pageScope?<SetupReviewPrerequisites ar={locale==="ar"} knowledgeReady={!!setupDone[3]} hoursRequired={hoursRequired} hoursReady={!!setupDone[2]} channelsSelected={!!selectedChannels?.length} subscriptionActive={subscriptionActive}/>:null}
         <DecoupledPillarsNotice locale={locale} setupDone={setupDone} reviewStatus={status} readiness={readiness} whatsappLink={whatsappLink} />
         <Notice tone="warn">
           {locale === "ar"

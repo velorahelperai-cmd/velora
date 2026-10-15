@@ -15,12 +15,13 @@ const copy={
   reasons:{profile:'Complete the business name, type and country.',branches:'Confirm branch count and the main branch name.',knowledge:'Add knowledge and check its approval.',language:'Choose a reply language.',hours:'Working hours can be added later.',trial:'Try a conversation when your knowledge is ready.',unavailable:'Channel status could not be loaded. Retry.',channel_policy:'Channel allocation for this plan awaits approved configuration.',channel_selection:'Select the channels included in your plan.',channel_verification:'Verify permissions, receiving, sending and operational requirements for each channel.',subscription:'Choose a plan and complete payment when ready.',review:'Current approval must reflect the latest business settings.'}},
 };
 
-type Props={locale:'ar'|'en';cards:SmartSetupCard[];percent:number;completedRequired:number;totalRequired:number;onOpen:(card:SmartSetupCard)=>void;activeCardId?:SetupCardId|null;onClose?:()=>void;children?:ReactNode;enabled?:boolean};
+type Props={locale:'ar'|'en';cards:SmartSetupCard[];percent:number;completedRequired:number;totalRequired:number;onOpen:(card:SmartSetupCard)=>void;activeCardId?:SetupCardId|null;onClose?:()=>void;children?:ReactNode;enabled?:boolean;progressKind?:'readiness'|'page'};
 /** Presentation only: ordering, readiness, required flags and navigation guards remain with the caller. */
-export function SmartSetupCards({locale,cards,percent,completedRequired,totalRequired,onOpen,activeCardId=null,onClose,children,enabled=true}:Props){
+export function SmartSetupCards({locale,cards,percent,completedRequired,totalRequired,onOpen,activeCardId=null,onClose,children,enabled=true,progressKind='readiness'}:Props){
  const c=copy[locale],ar=locale==='ar',id=useId(),buttons=useRef(new Map<SetupCardId,HTMLButtonElement>()),previous=useRef(activeCardId);
  useEffect(()=>{const last=previous.current;previous.current=activeCardId;if(last&&!activeCardId&&document.activeElement===document.body)buttons.current.get(last)?.focus({preventScroll:true});},[activeCardId]);
  if(!enabled)return <>{children}</>;
+ const progressLabel=progressKind==='page'?(ar?'اكتمال بيانات الصفحة':'Page data completion'):c.progress;
  const active=cards.find(card=>card.id===activeCardId);
  const guide=active?c.cards[active.id][1]:(ar?'اختَر خطوة للبدء، وأنا أوضح لك ما تحتاجه فيها.':'Choose a step and I will explain what you need.');
  function navigate(event:KeyboardEvent<HTMLButtonElement>,index:number){let next:number|null=null;
@@ -28,8 +29,9 @@ export function SmartSetupCards({locale,cards,percent,completedRequired,totalReq
   if(next!==null){event.preventDefault();buttons.current.get(cards[next].id)?.focus();}
  }
  return <section className={styles.accordion} dir={ar?'rtl':'ltr'} aria-labelledby={`${id}-title`}>
-  <header className={styles.intro}><div><h2 id={`${id}-title`}>{ar?'جهّز نشاطك خطوة بخطوة':'Set up your business step by step'}</h2><p>{ar?'افتح أي قسم متاح وأكمل إعداداته هنا.':'Open any available section and complete its settings here.'}</p></div><div className={styles.progressSummary}><strong>{percent}%</strong><span>{c.progress} · {completedRequired}/{totalRequired}</span></div></header>
-  <div className={styles.progress} role="progressbar" aria-label={c.progress} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}><span style={{width:`${percent}%`}}/></div>
+  <header className={styles.intro}><div><h2 id={`${id}-title`}>{ar?'جهّز نشاطك خطوة بخطوة':'Set up your business step by step'}</h2><p>{ar?'افتح أي قسم متاح وأكمل إعداداته هنا.':'Open any available section and complete its settings here.'}</p></div><div className={styles.progressSummary}><strong>{percent}%</strong><span>{progressLabel} · {completedRequired}/{totalRequired}</span></div></header>
+  <div className={styles.progress} role="progressbar" aria-label={progressLabel} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}><span style={{width:`${percent}%`}}/></div>
+  {progressKind==='page'?<p className={styles.completionNote}>{ar?'هذه النسبة لبيانات النشاط والفروع فقط، ولا تعني جاهزية التشغيل أو تفعيل الخدمة.':'This progress covers business and branch data only; it does not prove operational readiness or activate service.'}</p>:null}
   <div className={styles.layout}>
    <aside className={styles.guide} data-setup-guide="" aria-label={ar?'إرشادات موظفتك الرقمية':'Your digital employee guide'}>
     <div className={styles.portrait}><SetupEmployee ar={ar}/></div>
