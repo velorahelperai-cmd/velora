@@ -5,6 +5,7 @@ import styles from './setup-entry.module.css';
 import { CountryCombobox } from './country-combobox';
 import { SetupEmployee } from './setup-employee';
 import {BusinessNameSuggestions} from './business-name-suggestions';
+import {BusinessTypeCombobox} from './business-type-combobox';
 
 type Fields = { name: string; type: string; country: string };
 export type SetupEntryProps = {
@@ -19,12 +20,6 @@ export type SetupEntryProps = {
   onChange: (key: keyof Fields, value: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 };
-
-const businessTypes = [
-  ['other', 'أخرى', 'Other'], ['retail', 'متجر', 'Store'],
-  ['restaurant', 'مطعم', 'Restaurant'], ['clinic', 'عيادة', 'Clinic'],
-  ['services', 'خدمات', 'Services'],
-] as const;
 
 /** Presentation only. Creation authority, persistence and receipt recovery stay with the caller. */
 export function SetupEntry({ ar, fields, ready, busy, pending, error, onChange, onSubmit, suggestionUserId, suggestionIsCurrent }: SetupEntryProps) {
@@ -56,18 +51,14 @@ export function SetupEntry({ ar, fields, ready, busy, pending, error, onChange, 
               disabled={locked}
               placeholder={ar ? 'مثال: متجر الندى' : 'For example, Al Nada Store'}
               onChange={value => onChange('name', value)} />
+            <p className={styles.hint}>{ar?'اسم النشاط هو اسمك التجاري، مثل «كراميلا برجر».':'Business name is your trading name, for example “Caramella Burger”.'}</p>
           </div>
 
           <div className={styles.fieldRow}>
             <div className={styles.field}>
               <label htmlFor={`${id}-type`}><span>{ar ? 'نوع النشاط' : 'Business type'}</span><span className={styles.required} aria-hidden="true">{ar ? 'مطلوب' : 'Required'}</span></label>
-              <div className={styles.selectWrap}>
-                <select data-setup-entry-control="" id={`${id}-type`} name="businessType" value={fields.type} aria-required="true"
-                  disabled={locked} onChange={event => onChange('type', event.target.value)}>
-                  {businessTypes.map(([value, arabic, english]) => <option key={value} value={value}>{ar ? arabic : english}</option>)}
-                </select>
-                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><path d="m7 10 5 5 5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
-              </div>
+              <BusinessTypeCombobox id={`${id}-type`} value={fields.type} ar={ar} disabled={locked} onChange={value=>onChange('type',value)}/>
+              <p className={styles.hint}>{ar?'النوع يصف ما تقدمه، مثل «مطعم». يمكنك البحث أو اختيار وصف مخصص.':'Type describes what you offer, such as “Restaurant”. Search or choose a custom description.'}</p>
             </div>
             <div className={styles.field}>
               <label htmlFor={`${id}-country`}><span>{ar ? 'الدولة' : 'Country'}</span><span className={styles.required} aria-hidden="true">{ar ? 'مطلوب' : 'Required'}</span></label>
@@ -75,6 +66,7 @@ export function SetupEntry({ ar, fields, ready, busy, pending, error, onChange, 
             </div>
           </div>
 
+          <p className={styles.hint}>{ar?'اختيار القطاع لا يفعّل استشارات متخصصة أو تكاملات إضافية.':'Choosing a sector does not enable specialist advice or additional integrations.'}</p>
           {error ? <div className={styles.error} role="alert"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.7" /><path d="M12 7v6m0 3v.1" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg><p>{error}</p></div> : null}
 
           <div className={styles.actions}>

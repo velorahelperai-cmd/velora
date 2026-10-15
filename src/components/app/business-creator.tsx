@@ -11,6 +11,7 @@ import {Button,Field,Notice,useAction} from './ui';
 import {WorkspaceShell} from './workspace-shell';
 import {BusinessNameSuggestions} from './business-name-suggestions';
 import {rememberBusinessName} from '@/lib/field-suggestions';
+import {BusinessTypeCombobox} from './business-type-combobox';
 type CreatorProps={userId:string;activeDraft:SetupDraftRecord|null;setupReturnTo?:string};
 export function BusinessCreator(props:CreatorProps){return <Creator key={`${props.userId}:${props.activeDraft?.draftId??'new'}`} {...props}/>;}
 function Creator({userId,activeDraft,setupReturnTo='/setup'}:CreatorProps){
@@ -30,8 +31,8 @@ function Creator({userId,activeDraft,setupReturnTo='/setup'}:CreatorProps){
  return <WorkspaceShell title={ar?'إنشاء نشاط جديد':'Create a business'}>
   <Notice>{ar?'لكل نشاط اشتراك ومعرفة وقنوات وصلاحيات مستقلة. إنشاء النشاط لا يمنح اشتراكًا أو أسبوعًا مجانيًا.':'Each business has its own subscription, knowledge, channels and permissions. Creation grants no subscription or free week.'}</Notice>
   {attached?<div className="mt-4 grid gap-3"><Notice tone="warn">{ar?'لديك تجهيز قائم. يمكنك متابعة التجهيز أو إلغاء مسودته من صفحة التجهيز. الأنشطة المكتملة الأخرى تظل متاحة.':'You have an active setup. Continue it or close its draft from setup. Your other completed businesses remain available.'}</Notice><Button busy={busy} onClick={()=>void run(()=>select(attached))}>{ar?'متابعة التجهيز الحالي':'Continue current setup'}</Button></div>:<form onSubmit={submit} className="mt-5 grid max-w-xl gap-4" noValidate>
-   <Field label={ar?'اسم النشاط':'Business name'} required>{p=><BusinessNameSuggestions id={p.id} value={business.name} ar={ar} userId={ready?userId:null} isCurrent={current} onChange={name=>setBusiness({...business,name})}/>}</Field>
-   <Field label={ar?'نوع النشاط':'Business type'} required>{p=><select {...p} value={business.type} onChange={e=>setBusiness({...business,type:e.target.value as Business['type']})}>{[['restaurant','مطعم','Restaurant'],['retail','متجر','Store'],['clinic','عيادة','Clinic'],['services','خدمات','Services'],['other','أخرى','Other']].map(([id,a,en])=><option key={id} value={id}>{ar?a:en}</option>)}</select>}</Field>
+   <Field label={ar?'اسم النشاط':'Business name'} hint={ar?'الاسم التجاري، مثل كراميلا برجر.':'Trading name, for example Caramella Burger.'} required>{p=><BusinessNameSuggestions id={p.id} value={business.name} ar={ar} userId={ready?userId:null} isCurrent={current} onChange={name=>setBusiness({...business,name})}/>}</Field>
+<Field label={ar?'نوع النشاط':'Business type'} hint={ar?'مثل مطعم أو متجر إلكتروني؛ ابحث أو اختر وصفًا مخصصًا.':'For example, Restaurant or Online store. Search or choose a custom description.'} required>{p=><BusinessTypeCombobox id={p.id} value={business.type} ar={ar} disabled={busy} onChange={value=>setBusiness({...business,type:value})}/>}</Field>
    <Field label={ar?'الدولة':'Country'} required>{p=><input {...p} maxLength={80} value={business.country} onChange={e=>setBusiness({...business,country:e.target.value})}/>}</Field>
    <p className="text-sm">{ar?'يمكن استكمال ساعات العمل وبيانات التواصل والمعرفة بعد الإنشاء.':'Hours, contact details and knowledge can be completed after creation.'}</p>
    <Button type="submit" busy={busy} disabled={!ready}>{ar?'إنشاء ومتابعة التجهيز':'Create and continue setup'}</Button>
