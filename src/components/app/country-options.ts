@@ -20,6 +20,7 @@ export function findCountries(query: string, ar: boolean): CountryOption[] {
   });
 }
 export function countryLabel(value: string, ar: boolean) {
+  if(value==='OTHER')return ar?'دولة أخرى':'Other country';
   const country = byCode.get(value.trim().toUpperCase());
   return country ? country[ar ? 'ar' : 'en'] : value;
 }

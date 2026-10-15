@@ -27,22 +27,22 @@
 .entry .intro h2 { margin-block: 10px 12px; font-size: clamp(27px, 2.7vw, 34px); line-height: 1.4; font-weight: 700; letter-spacing: 0; }
 .entry .intro p { max-width: 45ch; color: var(--entry-muted); font-size: 18px; line-height: 1.75; }
 
-.form { display: grid; gap: 28px; background: var(--service-surface, #fff); border: 1px solid var(--service-line, #dce4eb); border-radius: 22px; padding: clamp(24px, 3vw, 36px); }
+.form { display: grid; gap: 18px; background: var(--service-surface, #fff); border: 1px solid var(--service-line, #dce4eb); border-radius: 22px; padding: clamp(18px, 2.5vw, 24px); }
 .field { display: grid; align-content: start; gap: 10px; }
 .entry .field label { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; font-size: 17px; line-height: 1.5; font-weight: 500; }
 .required { font-size: 14px; font-weight: 400; color: var(--entry-muted); }
-.entry .field :is(input,select) { width: 100%; min-width: 0; height: 54px; border: 1px solid var(--entry-border); border-radius: 11px; background: #fff; color: var(--entry-ink); padding: 12px 16px; font-size: 18px; line-height: 1.5; transition: border-color 160ms ease, box-shadow 160ms ease; }
+.entry .field :is(input,select) { width: 100%; min-width: 0; height: 44px; border: 1px solid var(--entry-border); border-radius: 11px; background: #fff; color: var(--entry-ink); padding: 8px 12px; font-size: 17px; line-height: 1.5; transition: border-color 160ms ease, box-shadow 160ms ease; }
 .entry .field input::placeholder { color: var(--entry-muted); opacity: 1; }
 .entry .field :is(input,select):hover:not(:disabled) { border-color: var(--entry-action); }
 .entry .field :is(input,select):disabled { color: var(--entry-disabled-ink); background: #f0f4f6; cursor: not-allowed; opacity: 1; }
 .entry .field :is(input,select):focus-visible, .entry button.submit:focus-visible { outline: 2px solid var(--entry-action) !important; outline-offset: 4px; box-shadow: 0 0 0 5px #e7f4f5; }
-.fieldRow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+.fieldRow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; align-items: start; }
 .selectWrap { position: relative; }
 .entry .selectWrap select { appearance: none; padding-inline-end: 44px; cursor: pointer; }
 .selectWrap svg { position: absolute; inset-inline-end: 15px; top: 16px; width: 22px; height: 22px; pointer-events: none; color: var(--entry-muted); }
 .entry .hint { font-size: 15px; line-height: 1.65; color: var(--entry-muted); }
 .actions { display: grid; gap: 12px; padding-block-start: 2px; }
-.entry button.submit { display: inline-flex; align-items: center; justify-content: center; gap: 12px; width: 100%; min-height: 56px; padding: 13px 20px; border: 1px solid var(--entry-action); border-radius: 12px; font-size: 18px; line-height: 1.5; font-weight: 700; background: var(--entry-action); color: #fff; cursor: pointer; transition: background-color 160ms ease, border-color 160ms ease; }
+.entry button.submit { display: inline-flex; align-items: center; justify-content: center; gap: 12px; width: 100%; min-height: 48px; padding: 10px 16px; border: 1px solid var(--entry-action); border-radius: 12px; font-size: 18px; line-height: 1.5; font-weight: 700; background: var(--entry-action); color: #fff; cursor: pointer; transition: background-color 160ms ease, border-color 160ms ease; }
 .entry button.submit:not(:disabled):hover { background: var(--entry-action-hover); border-color: var(--entry-action-hover); }
 .entry button.submit:not(:disabled):active { background: #05545f; border-color: #05545f; }
 .entry button.submit:disabled:not([aria-busy="true"]) { background: var(--entry-disabled) !important; color: var(--entry-disabled-ink); border: 1px solid #bcc9d2; opacity: 1 !important; cursor: not-allowed; box-shadow: none; }
@@ -83,7 +83,7 @@
 }
 @media (max-width: 480px) {
   .fieldRow { grid-template-columns: minmax(0, 1fr); gap: 24px; }
-  .form { padding: 24px 20px; gap: 24px; border-radius: 18px; }
+  .form { padding: 20px 16px; gap: 16px; border-radius: 18px; }
   .entry .intro h2 { font-size: 28px; }
   .entry .intro p { font-size: 17px; }
   .guide { display: block; }

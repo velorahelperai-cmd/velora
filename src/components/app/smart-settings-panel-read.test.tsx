@@ -5,6 +5,7 @@ vi.mock('react',async()=>({...await vi.importActual<typeof import('react')>('rea
 vi.mock('next/navigation',()=>({useRouter:()=>({refresh:vi.fn()})}));
 vi.mock('@/lib/tenancy/smart-onboarding-actions',()=>({readSmartCompanySettings:h.read,saveSmartCompanySettings:vi.fn()}));
 vi.mock('./use-smart-autosave',()=>({useSmartAccountGuard:()=>()=>h.current,useSmartAutosave:vi.fn()}));
+vi.mock('./account-chrome',()=>({useOptionalAccountSession:()=>null}));
 import {SmartSettingsPanel} from './smart-settings-panel';
 import type {CompanyRecord} from '@/lib/tenancy/types';
 type ViewProps={children?:ReactNode;record?:unknown;onClick?:()=>void};
