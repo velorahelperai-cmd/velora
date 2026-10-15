@@ -35,7 +35,7 @@ export default async function Page() {
   const userId = access.context.userId;
   // Unpaid preparation never reads or restores a server draft. Confirmed
   // companies retain their existing management/recovery path below.
-  if (!company) return <PrepaymentPreparation key={userId} userId={userId} />;
+  if (!company) return <PrepaymentPreparation key={userId} userId={userId} preferredNext={preferredNext} />;
   const draftScope={expectedUserId:userId,expectedCompanyId:company?.id??null};
   const draftRead=readSetupFileContext(draftScope);
 
