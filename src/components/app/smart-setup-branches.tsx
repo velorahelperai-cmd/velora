@@ -9,7 +9,24 @@ import styles from './smart-setup.module.css';
 type Props={userId:string;companyId:string;locale:'ar'|'en';setup:SmartBranchSetup;onSaved:(setup:SmartBranchSetup)=>void;onClose:()=>void};
 type Choice={mode:'single'|'multiple';name:string};
 const validChoice=(v:unknown):v is Choice=>!!v&&typeof v==='object'&&['single','multiple'].includes((v as Choice).mode)&&typeof (v as Choice).name==='string'&&(v as Choice).name.length<=120;
-export function SmartSetupBranches(props:Props){const p=props.setup.branches.find(b=>b.primary);return p?<BranchSettings key={`${props.userId}:${props.companyId}:${p.id}`} {...props} primary={p}/>:<p role="alert">Main branch unavailable.</p>;}
+export function SmartSetupBranches(props:Props){
+ const {userId,companyId,locale,onSaved}=props,current=useSmartAccountGuard(userId,companyId),scope=`${userId}:${companyId}`;
+ const [loaded,setLoaded]=useState<{scope:string;setup:SmartBranchSetup}|null>(null),[failed,setFailed]=useState(false),[retry,setRetry]=useState(0),saved=useRef(onSaved);
+ useLayoutEffect(()=>{saved.current=onSaved;},[onSaved]);
+ // A previous editor may have closed before its server write completed. Read
+ // the authoritative result before exposing an editable cached branch again.
+ useEffect(()=>{let cancelled=false;
+  void readSmartSetup({expectedUserId:userId,expectedCompanyId:companyId}).then(result=>{
+   if(cancelled||!current())return;
+   if(!result.ok){setFailed(true);return;}
+   setLoaded({scope,setup:result.data.branchSetup});setFailed(false);saved.current(result.data.branchSetup);
+  }).catch(()=>{if(!cancelled&&current())setFailed(true);});
+  return()=>{cancelled=true;};
+ },[userId,companyId,current,scope,retry]);
+ const setup=current()&&loaded?.scope===scope?loaded.setup:null,ar=locale==='ar';
+ if(!setup)return failed?<div><p role="alert">{ar?'تعذّر قراءة إعدادات الفروع المحفوظة. أعد المحاولة.':'Could not read saved branch settings. Retry.'}</p><Button type="button" onClick={()=>{setFailed(false);setRetry(value=>value+1);}}>{ar?'إعادة المحاولة':'Retry'}</Button></div>:<p role="status">{ar?'جارٍ تحميل إعدادات الفروع المحفوظة…':'Loading saved branch settings…'}</p>;
+ const p=setup.branches.find(b=>b.primary);return p?<BranchSettings key={`${scope}:${p.id}`} {...props} setup={setup} primary={p}/>:<p role="alert">Main branch unavailable.</p>;
+}
 function BranchSettings({userId,companyId,locale,setup,onSaved,onClose,primary}:Props&{primary:SmartBranchSetup['branches'][number]}){
  const ar=locale==='ar',current=useSmartAccountGuard(userId,companyId),[branches,setBranches]=useState(setup.branches),[reloadError,setReloadError]=useState(false),receipt=useRef<SmartBranchSetup|null>(null),live=useRef(true);
  useLayoutEffect(()=>{live.current=true;return()=>{live.current=false;};},[]);
