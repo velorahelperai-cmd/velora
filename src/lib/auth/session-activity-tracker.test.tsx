@@ -7,9 +7,11 @@ vi.mock("next/navigation",()=>({usePathname:()=>"/app",useRouter:()=>router}));
 vi.mock("@/components/app/account-chrome",()=>({useOptionalAccountSession:()=>f.session}));
 vi.mock("@/lib/supabase/client",()=>({tryCreateClient:()=>({auth:{signOut:f.signOut}})}));
 vi.mock("./session-actions",()=>({checkSessionActivity:f.check}));
+vi.mock("@/lib/logging/browser.mjs",()=>({recordSessionCheckUnavailable:vi.fn()}));
 vi.mock("@/lib/demo-state",()=>({emptyBusiness:{},useDemo:()=>({locale:"en",update:f.update})}));
 vi.mock("./auth-journey",()=>({clearPendingSignup:vi.fn()}));
 import {SessionActivityTracker} from "./session-activity-tracker";
+import {recordSessionCheckUnavailable} from "@/lib/logging/browser.mjs";
 function render(){f.cursor=0;SessionActivityTracker();f.effects.splice(0).forEach(fn=>fn());}
 function session(status="ready",userId="user-a"){const identity=status==="ready"?{userId,sessionExpiresAt:"invalid"}:null;f.currentIdentity=identity;return {status,identity,expire:f.expire,clear:f.clear,isCurrentUser:(id:string,expected?:unknown)=>f.currentUser===id&&(!expected||expected===f.currentIdentity),hasCurrentUser:()=>f.currentUser!==null};}
 function deferred(){let resolve!:(value:unknown)=>void;const promise=new Promise(ok=>{resolve=ok;});return {promise,resolve};}
@@ -48,4 +50,21 @@ it("an expiry logout completion is ignored after peer invalidation unmounts its 
 it("real activity during an in-flight read check is not discarded",async()=>{
  const pending=deferred();f.check.mockReturnValueOnce(pending.promise);render();event("pointerdown");
  pending.resolve({ok:true,expiresAt:"2026-10-14T02:00:00Z"});await settle();expect(f.check).toHaveBeenLastCalledWith(true);
+});
+it("a transport rejection retries a read without expiring the current user",async()=>{
+ f.check.mockRejectedValueOnce(new Error("Synthetic transport outage"));render();await settle();
+ expect(f.expire).not.toHaveBeenCalled();expect(f.clear).not.toHaveBeenCalled();expect(f.signOut).not.toHaveBeenCalled();
+ await vi.advanceTimersByTimeAsync(30000);
+ expect(f.check).toHaveBeenCalledTimes(2);expect(f.check).toHaveBeenLastCalledWith(false);
+});
+it("repeated unavailable checks leave only one bounded retry",async()=>{
+ f.check.mockResolvedValue({ok:false,code:"UNAVAILABLE"});render();await settle();event("focus");await settle();event("visibilitychange");await settle();
+ expect(vi.getTimerCount()).toBe(1);
+ expect(recordSessionCheckUnavailable).toHaveBeenCalledTimes(1);
+});
+it("a late transport rejection cannot schedule recovery for a different account",async()=>{
+ let reject!:(reason:Error)=>void;
+ f.check.mockReturnValueOnce(new Promise((_,fail)=>{reject=fail;}));render();f.currentUser="user-b";
+ reject(new Error("Synthetic old-account outage"));await settle();
+ expect(vi.getTimerCount()).toBe(0);expect(f.expire).not.toHaveBeenCalled();expect(recordSessionCheckUnavailable).not.toHaveBeenCalled();
 });

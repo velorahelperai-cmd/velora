@@ -36,6 +36,10 @@ try{
  next=spawn(process.execPath,[join(root,'node_modules/next/dist/bin/next'),'dev','--webpack','--hostname','127.0.0.1','--port','3320'],{cwd:scratch,env,windowsHide:true,stdio:['ignore','pipe','pipe']});
  for(const stream of [next.stdout,next.stderr])stream.on('data',value=>{serverLog=stack.redact(serverLog+value.toString()).slice(-5000);});
  for(let n=0;n<180;n++){if(next.exitCode!==null)throw Error('LOCAL_NEXT_EXITED');if(serverLog.includes('Ready in'))break;await pause(500);}await assertOwnedListener(next,3320);
+ enter('compile local login before browser timing');
+ const warmupStarted=performance.now();
+ const warmup=await fetch(origin+'/login',{signal:AbortSignal.timeout(120000)});assert.equal(warmup.ok,true,'local login warmup');await warmup.text();
+ logEvent('info','dependency.fixture.completed',{kind:'application',target:'local.next',duration_ms:Math.round(performance.now()-warmupStarted),outcome:'success'});
  const {chromium}=createRequire(join(process.env.USERPROFILE,'.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/package.json'))('playwright');
  browser=await chromium.launch({headless:true,channel:'chrome',env:localEnvironment()});
  async function context(){const ctx=await browser.newContext({viewport:{width:390,height:950},serviceWorkers:'block',reducedMotion:'reduce'});ctx.setDefaultTimeout(45000);await ctx.route('**/*',route=>{const url=new URL(route.request().url());return url.origin===origin||url.origin===stack.url?route.continue():route.abort();});await ctx.addCookies([{name:'velora_locale',value:'en',url:origin}]);return ctx;}
@@ -58,6 +62,21 @@ try{
  const [touched]=await activity();
  await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await pause(1000);
  const [focused]=await activity();check(focused.last_activity_at===touched.last_activity_at,'focus rechecks do not extend native idle activity');
+ enter('session check transport interruption');
+ const browserErrors=[];page.on('pageerror',error=>browserErrors.push(error.name));
+ let interrupted=0;
+ const interrupt=route=>{
+  if(route.request().method()==='POST'&&route.request().headers()['next-action']){interrupted++;return route.abort('internetdisconnected');}
+  return route.fallback();
+ };
+ await ctx.route(origin+'/account',interrupt);
+ await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+ await waitForState(()=>Promise.resolve(interrupted),count=>count>0,'SESSION_CHECK_NOT_INTERRUPTED');await pause(1000);
+ check(new URL(page.url()).pathname==='/account'&&await page.getByRole('button',{name:'Synthetic browser session',exact:true}).count()===1,'transport interruption does not log out the current actor');
+ check(browserErrors.length===0,'transport interruption leaves no unhandled browser exception');
+ await ctx.unroute(origin+'/account',interrupt);
+ await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await pause(1000);
+ const [reconnected]=await activity();check(reconnected.last_activity_at===focused.last_activity_at,'reconnection checks do not invent human activity');
  enter('expired native session closes browser access');
  await stack.sql(`update private.app_session_activity set last_activity_at=clock_timestamp()-interval '3 hours' where session_id=${lit(initial.session_id)}::uuid`);
  await page.evaluate(()=>window.dispatchEvent(new Event('focus')));

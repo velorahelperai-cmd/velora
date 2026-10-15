@@ -6,6 +6,7 @@ import { tryCreateClient } from "@/lib/supabase/client";
 import { checkSessionActivity } from "./session-actions";
 import { emptyBusiness,useDemo } from "@/lib/demo-state";
 import { clearPendingSignup } from "./auth-journey";
+import { recordSessionCheckUnavailable } from "@/lib/logging/browser.mjs";
 /** Server timestamps enforce the policy. This timer provides UI updates only. */
 export function SessionActivityTracker(){
  const {update,locale}=useDemo();
@@ -27,18 +28,23 @@ export function SessionActivityTracker(){
   if(session?.status!=="ready"||!session.identity)return;
   expiryHandled.current=false;
   const identity=session.identity,userId=identity.userId;
-  let stopped=false,busy=false,pendingTouch=false,timer:ReturnType<typeof setTimeout>|undefined;
+  let stopped=false,busy=false,pendingTouch=false,outageLogged=false,timer:ReturnType<typeof setTimeout>|undefined;
   const current=()=>!stopped&&session.isCurrentUser(userId,identity);
   let expiry=Date.parse(session.identity.sessionExpiresAt??"");
   const schedule=()=>{if(timer)clearTimeout(timer);if(Number.isFinite(expiry))timer=setTimeout(()=>{void check(false);},Math.min(Math.max(expiry-Date.now()+100,1000),3600000));};
+  const retry=()=>{if(!outageLogged){recordSessionCheckUnavailable(identity);outageLogged=true;}if(timer)clearTimeout(timer);timer=setTimeout(()=>{void check(false);},30000);};
   async function check(touch:boolean){
     if(!current())return;if(busy){if(touch)pendingTouch=true;return;}busy=true;
     try{
       const result=await checkSessionActivity(touch);
       if(!current())return;
-      if(result.ok){expiry=Date.parse(result.expiresAt);schedule();return;}
+      if(result.ok){outageLogged=false;expiry=Date.parse(result.expiresAt);schedule();return;}
       if(result.code==="UNAUTHENTICATED"){stopped=true;session?.expire();return;}
-      timer=setTimeout(()=>{void check(false);},30000);
+      retry();
+    }catch{
+      // A failed Server Action transport is not proof of expiry. Retry only a
+      // read; reconnecting cannot invent human activity or revive a session.
+      if(current())retry();
     }finally{busy=false;if(pendingTouch&&current()){pendingTouch=false;void check(true);}}
   }
   function activity(event:Event){
