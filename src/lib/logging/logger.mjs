@@ -46,7 +46,12 @@ export function createStructuredLogger(destination){
  },destination);
 }
 const logger=createStructuredLogger();
-export function flushLogs(){return new Promise(resolve=>logger.flush(()=>resolve()));}
+export function flushLogs(){return new Promise((resolve,reject)=>{
+ // Pino's development transport unrefs its worker. Keep the event loop alive
+ // until its flush receipt arrives, with a bounded failure if it never does.
+ const timeout=setTimeout(()=>reject(Error('LOGGER_FLUSH_TIMEOUT')),10000);
+ logger.flush(error=>{clearTimeout(timeout);if(error)reject(error);else resolve();});
+});}
 export function withLogContext(fields,operation){
  const safe={};
  for(const key of ['request_id','trace_id','span_id','user_id','tenant_id']){

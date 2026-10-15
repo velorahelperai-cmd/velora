@@ -6,6 +6,14 @@ import {resolve} from 'node:path';
 import {isolatedEnvironment} from '../../../scripts/ci/safety.mjs';
 import {createStructuredLogger,logEvent,withLogContext} from './logger.mjs';
 function sink(){const lines=[];return {lines,logger:createStructuredLogger({write:line=>lines.push(JSON.parse(line))})};}
+test('development and production finish an awaited flush before process exit',()=>{
+ const cwd=resolve(import.meta.dirname,'../../..');
+ for(const NODE_ENV of ['development','production']){
+ const env={...isolatedEnvironment(),NODE_ENV,NODE_OPTIONS:'--require=./scripts/ci/offline-network-guard.cjs'};
+ const child=spawnSync(process.execPath,['--input-type=module','-e',"import {logEvent,flushLogs} from './src/lib/logging/logger.mjs';logEvent('info','test.flush.probe');await flushLogs();"],{cwd,env,encoding:'utf8',timeout:15000,windowsHide:true});
+ assert.equal(child.status,0);assert.equal(child.stderr.includes('unsettled top-level await'),false);assert.ok(child.stdout.includes('test.flush.probe'));
+ }
+});
 test('unquoted OAuth secrets in exception messages and stacks are redacted',()=>{
  const {lines,logger}=sink(),refresh=randomUUID(),client=randomUUID();
  logEvent('error','test.failure',{error:new Error(`refresh_token=${refresh} client_secret=${client}`)},logger);
