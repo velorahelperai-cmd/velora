@@ -11,6 +11,7 @@ vi.mock("@/lib/auth/session-context",()=>({publishSessionLogout:f.publishLogout,
 vi.mock("@/lib/supabase/client",()=>({createClient:()=>({auth:{getUser:f.getUser}}),tryCreateClient:()=>null}));
 vi.mock("@/lib/demo-state",()=>({emptyBusiness:{},useDemo:()=>({locale:"en",update:f.update})}));
 vi.mock("./ui",()=>({useAppCopy:()=>appCopy("en"),LangSwitch:()=>null}));
+vi.mock("@/lib/logging/browser.mjs",()=>({recordLogoutTransportFailed:vi.fn()}));
 import {AccountMenu} from "./account-chrome";
 type Node={type:unknown;props:Record<string,unknown>};
 function nodes(v:unknown):Node[]{if(Array.isArray(v))return v.flatMap(nodes);if(!v||typeof v!=="object"||!("props"in v))return[];const n=v as Node;return[n,...nodes(n.props.children)];}
@@ -31,6 +32,13 @@ it("failed native logout keeps the current identity and drafts recoverable",asyn
  expect(f.logout).toHaveBeenCalledWith("user-a");expect(f.clear).not.toHaveBeenCalled();expect(f.update).not.toHaveBeenCalled();expect(f.drafts).not.toHaveBeenCalled();expect(f.publishLogout).not.toHaveBeenCalled();expect(f.assign).not.toHaveBeenCalled();
  expect(nodes(render()).some(n=>n.props.children==="Synthetic logout failure")).toBe(true);
 });
+it("a rejected logout transport shows a retryable failure without clearing the account",async()=>{
+ f.logout.mockRejectedValueOnce(new Error('synthetic transport failure'));logout();await settle();
+ expect(f.clear).not.toHaveBeenCalled();expect(f.drafts).not.toHaveBeenCalled();expect(f.publishLogout).not.toHaveBeenCalled();expect(f.assign).not.toHaveBeenCalled();
+ expect(nodes(render()).some(n=>n.props.children===appCopy('en').auth.logoutFailed)).toBe(true);
+ const button=nodes(render()).find(n=>n.type==='button'&&n.props.role==='menuitem')!;expect(button.props.disabled).toBe(false);
+ (button.props.onClick as()=>void)();await settle();expect(f.logout).toHaveBeenCalledTimes(2);expect(f.assign).toHaveBeenCalledWith('/login');
+});
 it("shows pending logout immediately while keeping the identity until native confirmation",async()=>{
  let resolve!:(v:unknown)=>void;f.logout.mockReturnValue(new Promise(ok=>{resolve=ok;}));logout();
  const pending=nodes(render()).find(n=>n.type==="button"&&n.props.role==="menuitem");
@@ -45,4 +53,9 @@ it("coalesces repeated logout clicks before a React render",async()=>{
  const button=nodes(render()).find(n=>n.type==="button"&&n.props.role==="menuitem")!;
  (button.props.onClick as()=>void)();(button.props.onClick as()=>void)();expect(f.logout).toHaveBeenCalledTimes(1);
  resolve({ok:true});await settle();
+});
+
+it("a late transport failure cannot show an error for a different account",async()=>{
+ let reject!:(reason:Error)=>void;f.logout.mockReturnValue(new Promise((_,fail)=>{reject=fail;}));logout();f.liveUser="user-b";reject(new Error("synthetic transport"));await settle();
+ expect(f.clear).not.toHaveBeenCalled();expect(f.assign).not.toHaveBeenCalled();expect(nodes(render()).some(n=>n.props.children===appCopy("en").auth.logoutFailed)).toBe(false);
 });

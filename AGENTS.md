@@ -48,3 +48,7 @@ Do not run additional paid AI verification calls without a new explicit user req
 ## Concise delivery and token economy
 
 Provide short summaries only. Do not create unsolicited written reports, status documents, or duplicate handoffs. Create an artifact only when explicitly requested or necessary for a concrete approval, release gate, or safe recovery, and keep it minimal. Minimize token use, tool calls, repeated reads, and repeated tests. Perform only work needed for the current objective; defer optional polish and unrelated tasks. Preserve necessary authorization, persistence, security, and deployment checks.
+
+## Cost ledger
+
+When Velora work discovers or changes a cost, read and follow `.cursor/rules/cost-ledger.mdc` to update the user's existing desktop cost ledger.

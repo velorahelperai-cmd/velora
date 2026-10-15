@@ -1,0 +1,7 @@
+import {expect,it} from 'vitest';
+import {emptyPreparation,validatePreparation} from './prepayment-preparation';
+const complete=()=>({...emptyPreparation(),name:'متجر الندى',type:'retail',country:'OM',city:'مسقط',phone:'+96892123456',branches:[{name:'الرئيسي',city:'مسقط'}]});
+it('starts blank on every new visit without sharing branch state',()=>{const a=emptyPreparation();a.branches[0].name='old';expect(emptyPreparation()).toMatchObject({name:'',phone:'',country:'',city:'',branches:[{name:'',city:''}]});});
+it('requires each business and branch fact before local review',()=>{expect(validatePreparation(emptyPreparation())).toEqual(expect.arrayContaining(['name','type','phone','country','city','branches.0.name','branches.0.city']));expect(validatePreparation({...complete(),branches:[]})).toContain('branches');});
+it('validates phone numbering and selected country without asserting ownership',()=>{expect(validatePreparation(complete())).toEqual([]);expect(validatePreparation({...complete(),phone:'123'})).toContain('phone');expect(validatePreparation({...complete(),country:'ZZ'})).toContain('country');});
+it('rejects control characters and duplicate branch facts before review',()=>{expect(validatePreparation({...complete(),name:'unsafe\nname'})).toContain('name');expect(validatePreparation({...complete(),branches:[{name:' الرئيسي ',city:'مسقط'},{name:'الرئيسي',city:'مسقط'}]})).toContain('branches.1.duplicate');});

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import {recordLogoutTransportFailed} from "@/lib/logging/browser.mjs";
 import { usePathname, useRouter } from "next/navigation";
 import {
   createContext,
@@ -213,7 +214,14 @@ export async function performLogout(
 ) {
   const userId = session.identity?.userId;
   if (!userId || !session.isCurrentUser(userId)) return;
-  const result = await signOut(userId);
+  let result: Awaited<ReturnType<typeof signOut>>;
+  try {
+    result = await signOut(userId);
+  } catch (error) {
+    recordLogoutTransportFailed({userId,companyId:session.identity?.companyId},error);
+    if (session.isCurrentUser(userId)) onError(copy.auth.logoutFailed);
+    return;
+  }
   if (!session.isCurrentUser(userId)) return;
   if (!result.ok) {
     onError(result.message ?? copy.auth.logoutFailed);
