@@ -1,0 +1,15 @@
+.country { position: relative; min-width: 0; }
+.control { position: relative; }
+.control input { padding-inline-end: 52px !important; }
+.country .control button { position: absolute; inset-inline-end: 2px; top: 2px; width: 48px; height: 50px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 10px; background: transparent; color: var(--service-muted, #536579); cursor: pointer; }
+.country .control button:disabled { background: transparent !important; opacity: 1 !important; cursor: not-allowed; }
+.control svg { height: 22px; width: 22px; }
+.popup { position: absolute; inset-inline: 0; top: calc(100% + 8px); z-index: 20; overflow: hidden; border: 1px solid #8296a5; border-radius: 12px; background: #fff; box-shadow: 0 12px 32px #172d431f; }
+.options { max-height: 280px; overflow-y: auto; overscroll-behavior: contain; padding: 4px; }
+.country .options button { display: flex; width: 100%; min-height: 54px; flex-direction: column; align-items: flex-start; gap: 4px; padding: 10px 12px; border: 1px solid transparent; border-radius: 8px; background: #fff; color: #172d43; text-align: start; font: inherit; font-size: 17px; line-height: 1.4; cursor: pointer; }
+.country .options button[data-active="true"], .country .options button:hover { background: #e7f4f5; border-color: #087e8b; }
+.country .options button[aria-selected="true"] { font-weight: 700; }
+.secondary { color: #536579; font-family: var(--font-en, "Segoe UI", sans-serif); font-size: 13px; }
+.secondary[lang="ar"] { font-family: "Tajawal", Tahoma, sans-serif; font-size: 15px; }
+.empty { padding: 16px; font-size: 15px; line-height: 1.7; color: #536579; }
+@media (prefers-reduced-motion: reduce) { .country * { scroll-behavior: auto !important; transition: none !important; } }

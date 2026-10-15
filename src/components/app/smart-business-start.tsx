@@ -5,7 +5,7 @@ import {createSmartBusiness} from '@/lib/tenancy/smart-business-start-actions';
 import type {CompanyRecord} from '@/lib/tenancy/types';
 import {parseSmartStartStorage,type SmartStartFields,type SmartStartAttempt} from '@/lib/tenancy/smart-business-start-storage';
 import {useOptionalAccountSession} from './account-chrome';
-import {Button,Field,Notice} from './ui';
+import {SetupEntry} from './setup-entry';
 
 type Fields=SmartStartFields;
 type Attempt=SmartStartAttempt;
@@ -46,12 +46,7 @@ export function SmartBusinessStart({userId,ar,onCreated}:{userId:string;ar:boole
       onCreated(result.data);router.refresh();
     }catch{if(current())setError('UNAVAILABLE');}finally{inFlight.current=false;if(current())setBusy(false);}
   }
-  return <form onSubmit={submit} className="grid max-w-xl gap-4" noValidate>
-    <p>{ar?'ابدأ باسم النشاط ونوعه والدولة. بقية الإعدادات تُحفظ تلقائيًا بعد إنشاء النشاط.':'Start with the business name, type and country. Other settings save automatically after creation.'}</p>
-    <Field label={ar?'اسم النشاط':'Business name'} required>{p=><input {...p} value={fields.name} maxLength={120} disabled={pending||!ready} onChange={e=>change('name',e.target.value)}/>}</Field>
-    <Field label={ar?'نوع النشاط':'Business type'} required>{p=><select {...p} value={fields.type} disabled={pending||!ready} onChange={e=>change('type',e.target.value)}>{[['other','أخرى','Other'],['retail','متجر','Store'],['restaurant','مطعم','Restaurant'],['clinic','عيادة','Clinic'],['services','خدمات','Services']].map(([id,a,en])=><option key={id} value={id}>{ar?a:en}</option>)}</select>}</Field>
-    <Field label={ar?'الدولة':'Country'} required>{p=><input {...p} value={fields.country} maxLength={80} disabled={pending||!ready} onChange={e=>change('country',e.target.value)}/>}</Field>
-    {error?<Notice tone="error">{notices[error]?.[ar?0:1]??(ar?'لم يتم تأكيد إنشاء النشاط. استعد النتيجة باستخدام نفس الطلب المحفوظ.':'Creation has not been confirmed. Recover the result using the same saved request.')}</Notice>:null}
-    <Button type="submit" busy={busy} disabled={!ready||!fields.name.trim()}>{pending?(ar?'استعادة نتيجة الإنشاء':'Recover creation result'):(ar?'إنشاء ومتابعة التجهيز':'Create and continue setup')}</Button>
-  </form>;
+  return <SetupEntry ar={ar} fields={fields} ready={ready} busy={busy} pending={pending}
+    error={error?(notices[error]?.[ar?0:1]??(ar?'لم يتم تأكيد إنشاء النشاط. استعد النتيجة باستخدام نفس الطلب المحفوظ.':'Creation has not been confirmed. Recover the result using the same saved request.')):null}
+    onChange={change} onSubmit={submit}/>;
 }

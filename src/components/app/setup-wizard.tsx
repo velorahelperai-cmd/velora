@@ -169,13 +169,7 @@ function SetupJourneyNotice({
       </div>
     );
   }
-  if (!company) {
-    return (
-      <div className="mt-4">
-        <Notice tone="warn">{copy.setup.journeyNoCompany}</Notice>
-      </div>
-    );
-  }
+  if (!company) return null;
   if (company.status === "suspended") {
     return (
       <div className="mt-4">
@@ -545,7 +539,7 @@ export function SetupWizard({
   };
 
   return (
-    <main className={`app-shell ${styles.theme} ${styles.setup}`} data-internal-ui="true" dir={ar ? "rtl" : "ltr"}>
+    <main className={`app-shell ${styles.theme} ${styles.setup}`} data-internal-ui="true" dir={ar ? "rtl" : "ltr"} data-first-business={smartOnboardingEnabled&&!companyId?"true":undefined}>
       {/* Top Brand & Navigation Header */}
       <div className={styles.setupHeader}>
         <Link href="/" className="inline-flex min-h-11 items-center gap-2 text-2xl font-bold tracking-tight">
@@ -572,19 +566,18 @@ export function SetupWizard({
           </span>
         </div>
         <p className={`mt-2 ${styles.resume}`}>
-          {!smartOnboardingEnabled?`${fill(mCopy.milestoneProgress,{n:step+1})} · `:""}{copy.setup.resume}
+          {smartOnboardingEnabled&&!companyId?(ar?"ابدأ بتعريف نشاطك، ثم أكمل إعداد موظفتك الرقمية.":"Introduce your business, then set up your digital employee."):<>{!smartOnboardingEnabled?`${fill(mCopy.milestoneProgress,{n:step+1})} · `:""}{copy.setup.resume}</>}
         </p>
-        <div role="status" aria-live="polite" className="mt-2 text-sm">
-          {draftRecord?.state && draftRecord.state !== 'active' ? (ar ? "أُغلقت مسودة التجهيز. ابدأ مسودة جديدة لحفظ تغييرات جديدة." : "The setup draft is closed. Start a new draft to save new changes.") : draftSaveStatus === "saved" ? (ar ? "تم حفظ مسودة الإعداد في حسابك." : "Setup draft saved to your account.")
-            : draftSaveStatus === "saving" ? (ar ? "جارٍ حفظ المسودة…" : "Saving setup draft…")
-              : draftSaveCode === "INVALID_INPUT" ? (ar ? "أكمل أو صحح الحقول لحفظ المسودة." : "Correct the fields to save this draft.")
-                : draftSaveStatus === "error" ? (draftSaveCode === "CONFLICT" ? (ar ? "تغيّرت المسودة في نافذة أخرى. حمّل النسخة المحفوظة للمتابعة." : "Another tab changed this draft. Load the saved version to continue.") : (ar ? "لم يتم تأكيد حفظ المسودة. أعد المحاولة." : "Draft save has not been confirmed. Retry."))
-                  : (ar ? "تغييرات المسودة لم تُحفظ بعد." : "Draft changes have not been saved yet.")}
-          {draftSaveStatus === "error" ? <Button variant="secondary" onClick={() => {
-            if (draftSaveCode === "CONFLICT") { if (!window.confirm(copy.unsaved)) return; hydratedScope.current = null; }
-            setDraftRetry(n => n + 1);
-          }}>{draftSaveCode === "CONFLICT" ? (ar ? "تحميل المسودة المحفوظة" : "Load saved draft") : (ar ? "إعادة المحاولة" : "Retry")}</Button> : null}
-        </div>
+        {draftRecord?.state && draftRecord.state !== 'active' ? <Notice tone="warn">{ar ? "أُغلقت مسودة التجهيز. ابدأ مسودة جديدة لحفظ تغييرات جديدة." : "The setup draft is closed. Start a new draft to save new changes."}</Notice>
+          : draftSaveStatus === "error" || draftSaveStatus === "changed" && draftSaveCode === "INVALID_INPUT" ? <div role="alert" className="mt-3 grid gap-3 rounded-xl border border-[color:var(--color-danger)] p-4 text-base text-[var(--color-danger-fg)]">
+            <p>{draftSaveCode === "INVALID_INPUT" ? (ar ? "أكمل أو صحح الحقول لحفظ التغييرات." : "Correct the fields to save your changes.")
+              : draftSaveCode === "CONFLICT" ? (ar ? "تغيّرت البيانات في نافذة أخرى. حمّل النسخة المحفوظة للمتابعة." : "Another tab changed these details. Load the saved version to continue.")
+                : (ar ? "لم يتم تأكيد حفظ التغييرات. أعد المحاولة." : "Your changes have not been confirmed as saved. Retry.")}</p>
+            {draftSaveStatus === "error" ? <Button variant="secondary" onClick={() => {
+              if (draftSaveCode === "CONFLICT") { if (!window.confirm(copy.unsaved)) return; hydratedScope.current = null; }
+              setDraftRetry(n => n + 1);
+            }}>{draftSaveCode === "CONFLICT" ? (ar ? "تحميل المسودة المحفوظة" : "Load saved draft") : (ar ? "إعادة المحاولة" : "Retry")}</Button> : null}
+          </div> : null}
 
         {masterJourneyEnabled&&draftRecord?.draftId&&draftRecord.state==='active'&&draftSaveStatus==='saved'?<SetupDraftLifecycleControls scope={{expectedUserId:userId,expectedCompanyId:companyId}} record={draftRecord} ar={ar}
           onChange={record=>{if(record.draft.userId!==userId||record.draft.companyId!==companyId)return;draftReceipt.current=record;draftRevision.current=record.revision;setDraftRecord(record);setDraft(record.draft);setDraftSaveStatus('saved');}}
