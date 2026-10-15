@@ -53,8 +53,8 @@ jobs:
           node-version: 24.18.0
       - run: node scripts/ci/security.mjs
       - run: npm ci --ignore-scripts --no-audit --no-fund
-      # Current Critical/High dev-tool and Moderate DOCX findings stay blocking
-      # until safe scoped remediation; never audit-fix --force or accept silently.
+      # Moderate and higher findings block delivery; no audit suppression or
+      # force downgrade. Scoped overrides have real lint/DOCX compatibility tests.
       - run: npm audit --audit-level=moderate
   quality-gate:
     name: quality-gate
