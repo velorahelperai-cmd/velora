@@ -26,7 +26,7 @@ const fail = (code: ConnectionFailureCode): ConnectionFailure => ({ ok: false, c
 function denial(v: Record<string, unknown>): ConnectionFailure | null {
   if (v.ok !== false) return null;
   switch (v.code) {
-    case "FORBIDDEN": case "EXPIRED": case "CONSUMED": case "INVALID_INPUT": case "UNAVAILABLE": case "RECONCILIATION_REQUIRED": return fail(v.code);
+    case "FORBIDDEN": case "EXPIRED": case "CONSUMED": case "INVALID_INPUT": case "UNAVAILABLE": case "RECONCILIATION_REQUIRED": case "ACCOUNT_MISMATCH": return fail(v.code);
     default: return unavailable();
   }
 }

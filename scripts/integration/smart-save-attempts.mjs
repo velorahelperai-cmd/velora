@@ -1,0 +1,88 @@
+// Networkless disposable PostgreSQL only. Native migration/actor/session bodies;
+// labelled minimal company/branch foundations, no provider or cloud connection.
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {bootstrap,sql,file,cleanup,lit} from '../instagram-connection/postgres.mjs';
+const migration='supabase/migrations/20261014080155_smart_profile_and_branch_attempts_v2.sql';
+const body=(path,name)=>{const source=readFileSync(path,'utf8');const start=new RegExp('create(?: or replace)? function '+name.replaceAll('.','\\.')+'\\(').exec(source)?.index;if(start===undefined)throw Error('NATIVE_FUNCTION_MISSING:'+name);return source.slice(start,source.indexOf('$$;',start)+3);};
+const id=n=>`ab000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
+const owner=id(1),coOwner=id(2),staff=id(3),stranger=id(4),newUser=id(5),company=id(10),other=id(11),branch=id(20),foreignBranch=id(21);
+let checks=0;const eq=(a,b)=>{assert.deepEqual(a,b);checks++;};
+const as=(user)=>`set role authenticated;set request.jwt.claims='${JSON.stringify({role:'authenticated',sub:user,session_id:id(Number(user.slice(-12))+100),exp:4102444800})}';`;
+const rpc=async(user,name,args)=>JSON.parse(await sql(`${as(user)}select public.${name}(${args});`));
+const read=()=>rpc(owner,'read_smart_profile',lit(company));
+const save=(user,attempt,state,payload=state.profile,cid=company)=>rpc(user,'save_smart_profile',`${lit(user)},${lit(cid)},${lit(id(attempt))},${state.revision},${lit(state.profileDigest)},${lit(JSON.stringify(payload))}::jsonb`);
+const branchSave=(user,attempt,revision,name='Main',expected='Fixture',bid=branch)=>rpc(user,'save_smart_branch_setup_v2',`${lit(user)},${lit(company)},${lit(id(attempt))},${lit(bid)},${revision},'single',${lit(name)},${lit(expected)}`);
+try{
+ await bootstrap('supabase/migrations/20261008011000_vel_session_idle_clock_lock_fix.sql');
+ await sql(`drop index public.company_members_one_active_owner_per_user;
+ alter table auth.users add column banned_until timestamptz;
+ alter table public.companies alter column id set default gen_random_uuid();
+ alter table public.companies add column business_type text not null default 'retail',add column country text not null default 'OM',add column city text not null default '',add column hours text not null default '',add column contact_phone text not null default '',add column contact_email text not null default '',add column reply_language text not null default 'both',add column created_by uuid,add column updated_at timestamptz not null default clock_timestamp();
+ -- Labelled platform identity projection; Smart creation never grants admin roles.
+ create function public.is_platform_admin() returns boolean language sql as $$select false$$;`);
+ for(const name of ['private.upsert_owner_company','public.upsert_owner_company'])await sql(body('supabase/migrations/20261008020000_vel_authorization_scope_fixes.sql',name));
+ await sql(body('supabase/migrations/20261013225246_vel_setup_drafts.sql','private.valid_company_setup_payload'));
+ await sql(`insert into public.companies(id,display_name,status) values(${lit(company)},'Fixture','setup'),(${lit(other)},'Other','active');`);
+ const authoritySql="select jsonb_build_object('nativeOwnerOid','public.upsert_owner_company(text,text,text,text,text,text,text,text,text)'::regprocedure::oid,'memberPolicies',(select jsonb_agg(row_to_json(p) order by policyname) from pg_policies p where schemaname='public' and tablename='company_members'),'memberGrants',has_table_privilege('authenticated','public.company_members','select'))";
+ const existingAuthority=await sql(authoritySql);
+ await file('supabase/migrations/20261014080108_smart_setup_foundation.sql');await file(migration);
+ eq(await sql(authoritySql),existingAuthority);
+ eq(await sql(`select name from public.company_branches where company_id=${lit(company)} and is_primary`),'Fixture');
+ for(const user of [owner,coOwner,staff,stranger,newUser])await sql(`insert into auth.users(id,email_confirmed_at) values(${lit(user)},now());insert into auth.sessions(id,user_id) values(${lit(id(Number(user.slice(-12))+100))},${lit(user)});`);
+ await sql(`insert into public.company_members(company_id,user_id,role) values(${lit(company)},${lit(owner)},'owner'),(${lit(company)},${lit(coOwner)},'owner'),(${lit(company)},${lit(staff)},'staff'),(${lit(other)},${lit(stranger)},'owner');
+ update public.company_branches set id=${lit(branch)} where company_id=${lit(company)} and is_primary;
+ update public.company_branches set id=${lit(foreignBranch)} where company_id=${lit(other)} and is_primary;`);
+ const initial=(await read()).data;eq(initial.revision,0);
+ eq((await rpc(staff,'read_smart_profile',lit(company))).code,'FORBIDDEN');eq(await sql(`${as(staff)}select count(*) from public.company_members where user_id=${lit(staff)}`),'1');
+ const payload={...initial.profile,hours:'09:00–17:00'};
+ eq((await save(staff,200,initial,payload)).code,'FORBIDDEN');eq((await save(stranger,201,initial,payload)).code,'FORBIDDEN');
+ eq((await rpc(owner,'save_smart_profile',`${lit(coOwner)},${lit(company)},${lit(id(202))},0,${lit(initial.profileDigest)},${lit(JSON.stringify(payload))}::jsonb`)).code,'FORBIDDEN');
+ const committed=await save(owner,203,initial,payload);eq(committed.ok,true);eq(committed.data.revision,1);
+ eq(await save(owner,203,initial,payload),committed); // unknown/lost committed response
+ eq((await save(owner,203,initial,{...payload,city:'Changed'})).code,'OPERATION_CONFLICT');
+ eq((await save(coOwner,203,initial,payload)).code,'CONFLICT');
+ eq((await save(owner,204,initial,payload)).code,'CONFLICT');
+ const current=(await read()).data;
+ eq((await save(owner,205,current,{...current.profile,country:'AE'})).code,'REVIEW_REQUIRED');
+ await sql(`update public.companies set city='Legacy manual writer' where id=${lit(company)}`);
+ eq((await save(owner,206,current,{...current.profile,hours:'Later'})).code,'CONFLICT');
+ const fresh=(await read()).data;
+ const concurrent=await Promise.all([save(owner,207,fresh,{...fresh.profile,hours:'A'}),save(coOwner,208,fresh,{...fresh.profile,hours:'B'})]);eq(concurrent.filter(r=>r.ok).length,1);eq(concurrent.filter(r=>r.code==='CONFLICT').length,1);
+ eq(await save(owner,203,initial,payload),committed); // newer profile must not alter original receipt
+ await sql(`insert into public.company_members(company_id,user_id,role) values(${lit(other)},${lit(owner)},'owner');`);
+ eq((await save(owner,203,initial,payload,other)).code,'OPERATION_CONFLICT');
+ eq((await branchSave(owner,209,0,'Main','Fixture',foreignBranch)).code,'FORBIDDEN');
+ const branchCommitted=await branchSave(owner,210,0);eq(branchCommitted.ok,true);eq(await branchSave(owner,210,0),branchCommitted);
+ eq((await branchSave(coOwner,210,0)).code,'CONFLICT');eq((await branchSave(owner,210,0,'Other')).code,'OPERATION_CONFLICT');
+ await sql(`update public.company_branches set name='Manual branch writer' where id=${lit(branch)}`);eq((await branchSave(owner,211,1,'Overwrite','Main')).code,'CONFLICT');
+ eq(await branchSave(owner,210,0),branchCommitted); // exact receipt, no manual edit overwritten
+ const createBranch=(user,attempt=212,cid=company)=>rpc(user,'create_smart_branch',`${lit(user)},${lit(cid)},${lit(id(attempt))},'Second','Asia/Muscat'`);
+ eq((await createBranch(staff)).code,'FORBIDDEN');eq((await createBranch(coOwner,212,other)).code,'FORBIDDEN');
+ const added=await createBranch(owner);eq(added.ok,true);eq(await createBranch(owner),added);
+ const rename=(user,attempt,expected,name,bid=added.data.branchId)=>rpc(user,'rename_smart_branch',`${lit(user)},${lit(company)},${lit(bid)},${lit(id(attempt))},${lit(expected)},${lit(name)}`);
+ eq((await rename(owner,213,'Second','New',foreignBranch)).code,'FORBIDDEN');eq((await rename(staff,213,'Second','New')).code,'FORBIDDEN');
+ const renamed=await rename(owner,214,'Second','Renamed');eq(renamed.ok,true);eq(await rename(owner,214,'Second','Renamed'),renamed);
+ eq((await rename(coOwner,214,'Second','Renamed')).code,'CONFLICT');eq((await rename(owner,215,'Second','Stale')).code,'CONFLICT');
+ await sql(`update public.company_branches set status='suspended' where id=${lit(added.data.branchId)}`);eq((await createBranch(owner)).code,'FORBIDDEN');eq((await rename(owner,214,'Second','Renamed')).code,'FORBIDDEN');await sql(`update public.company_branches set status='setup' where id=${lit(added.data.branchId)}`);
+ const createBusiness=(user,attempt,name='New business')=>rpc(user,'create_smart_business',`${lit(user)},${lit(id(attempt))},${lit(name)},'retail','OM'`);
+ eq((await createBusiness(owner,216)).code,'FORBIDDEN');eq((await createBusiness(staff,216)).code,'FORBIDDEN');
+ await sql(`update auth.users set email_confirmed_at=null where id=${lit(newUser)};`);eq((await createBusiness(newUser,217)).code,'FORBIDDEN');await sql(`update auth.users set email_confirmed_at=now() where id=${lit(newUser)};`);
+ const created=await createBusiness(newUser,217);eq(created.ok,true);eq(created.data.company.display_name,'New business');eq(await createBusiness(newUser,217),created);
+ eq((await createBusiness(newUser,217,'Changed')).code,'OPERATION_CONFLICT');eq((await createBusiness(newUser,218)).code,'FORBIDDEN');
+ eq(await sql(`select count(*) from public.company_members where user_id=${lit(newUser)}`),'1');
+ await sql(`update public.company_members set status='disabled' where company_id=${lit(created.data.companyId)} and user_id=${lit(newUser)}`);eq((await createBusiness(newUser,217)).code,'FORBIDDEN');
+ const beforeWait=(await read()).data;
+ const blocker=sql(`begin;select 1 from public.companies where id=${lit(company)} for update;select pg_sleep(3) /* SMART_SAVE_EXPIRY_WAIT */;commit;`);
+ let locked=false;for(let n=0;n<40;n++){locked=await sql("select exists(select 1 from pg_stat_activity where wait_event='PgSleep' and query like '%SMART_SAVE_EXPIRY_WAIT%' and pid<>pg_backend_pid())")==='t';if(locked)break;await new Promise(r=>setTimeout(r,25));}assert.equal(locked,true);
+ await sql(`update auth.sessions set not_after=clock_timestamp()+interval '1 second' where id=${lit(id(102))}`);
+ const waiting=save(coOwner,219,beforeWait,{...beforeWait.profile,hours:'Expired during wait'});
+ await blocker;eq((await waiting).code,'FORBIDDEN');eq((await read()).data.profile.hours,beforeWait.profile.hours);
+ await sql(`update auth.sessions set not_after=clock_timestamp()-interval '1 second' where id=${lit(id(101))};`);
+ eq((await save(owner,203,initial,payload)).code,'FORBIDDEN');eq((await branchSave(owner,210,0)).code,'FORBIDDEN');
+ eq((await read()).code,'FORBIDDEN');
+ await sql(`update auth.sessions set not_after=null where id=${lit(id(101))};alter table public.companies add column archived_at timestamptz;update public.companies set archived_at=now() where id=${lit(company)};`);
+ eq((await save(owner,203,initial,payload)).code,'FORBIDDEN');eq((await branchSave(owner,210,0)).code,'FORBIDDEN');eq((await createBranch(owner)).code,'FORBIDDEN');
+ eq(await sql(`select has_table_privilege('authenticated','private.smart_save_attempts','select')`),'f');eq(await sql(`select has_function_privilege('anon','public.save_smart_profile(uuid,uuid,uuid,bigint,text,jsonb)','execute')`),'f');
+ console.log(`SMART_SAVE_NATIVE_PASS:${checks}; NATIVE_AUTHORITY_ON_LABELLED_FOUNDATIONS`);
+}finally{await cleanup();}

@@ -21,14 +21,21 @@ export function validEmailClaim(value: unknown): value is EmailClaim {
     && Number.isSafeInteger(row.amountBaisa) && row.amountBaisa > 0 && typeof row.paidThrough === "string" && Number.isFinite(Date.parse(row.paidThrough));
 }
 export async function sendReceiptEmail(config: EmailConfig, receipt: EmailClaim, http: typeof fetch = fetch): Promise<EmailOutcome> {
-  const unknown: EmailOutcome = { kind: "reconciliation_required", code: "RESEND_OUTCOME_UNKNOWN" };
   if (!validEmailClaim(receipt) || !emailAddress(config.from) || config.from.split("@")[1] !== config.verifiedDomain) return { kind: "rejected", code: "RESEND_REJECTED" };
   const amount = BigInt(receipt.amountBaisa), thousand = BigInt(1000), money = `${amount / thousand}.${String(amount % thousand).padStart(3, "0")} OMR`;
   const text = `Velora subscription payment confirmed\n\nBusiness: ${receipt.companyName}\nPayment: ${money}\nPaid through: ${new Date(receipt.paidThrough).toISOString()}\nOrder: ${receipt.orderId}\nView your order: ${config.siteOrigin}/app/subscription/orders/${receipt.orderId}\n\nYour Live payment has been verified. Service eligibility and WhatsApp/AI activation remain separate.\n\nتم تأكيد دفعة الاشتراك. تفعيل الخدمات وواتساب والذكاء الاصطناعي يخضع لفحوصات منفصلة.`;
+  return sendSubscriptionMail(config,{recipient:receipt.recipient,idempotencyKey:receipt.idempotencyKey,subject:"Velora subscription payment confirmed",text},http);
+}
+export async function sendSubscriptionMail(config:EmailConfig,message:{recipient:string;idempotencyKey:string;subject:string;text:string;notAfter?:string},http:typeof fetch=fetch):Promise<EmailOutcome>{
+ const unknown:EmailOutcome={kind:'reconciliation_required',code:'RESEND_OUTCOME_UNKNOWN'};
+ if(!emailAddress(message.recipient)||!emailAddress(config.from)||config.from.split('@')[1]!==config.verifiedDomain||!/^velora-(?:subscription-receipt|expiry)\/[a-f0-9-]{36}\/v1$/.test(message.idempotencyKey)||!message.text||message.text.length>12000||!message.subject||message.subject.length>200)return {kind:'rejected',code:'RESEND_REJECTED'};
+ const deadline=message.notAfter===undefined?null:Date.parse(message.notAfter);
+ // Leave a full request timeout within the native dispatch/payment barrier.
+ if(deadline!==null&&(!Number.isFinite(deadline)||Date.now()>=deadline-15000))return {kind:'rejected',code:'RESEND_REJECTED'};
   try {
     const response = await http("https://api.resend.com/emails", { method: "POST", redirect: "error", cache: "no-store", signal: AbortSignal.timeout(15000),
-      headers: { Authorization: `Bearer ${config.apiKey}`, "Content-Type": "application/json", "Idempotency-Key": receipt.idempotencyKey },
-      body: JSON.stringify({ from: config.from, to: [receipt.recipient], subject: "Velora subscription payment confirmed", text }) });
+      headers: { Authorization: `Bearer ${config.apiKey}`, "Content-Type": "application/json", "Idempotency-Key": message.idempotencyKey },
+      body: JSON.stringify({ from: config.from, to: [message.recipient], subject: message.subject, text:message.text }) });
     if (!response.ok) return response.status >= 400 && response.status < 500 && ![408, 409, 425, 429].includes(response.status) ? { kind: "rejected", code: "RESEND_REJECTED" } : unknown;
     const reader = response.body?.getReader(); if (!reader) return unknown;
     const decoder = new TextDecoder(), chunks: string[] = []; let size = 0;

@@ -801,7 +801,7 @@ const ar = {
       "الموقع يعرّف بخدمة قيد التجهيز تديرها TAG CITY TRAD LLC — تاج المدينة للتجارة ش م م.",
       "إنشاء الحساب يتيح تجهيز معلومات النشاط والملفات. الرد الآلي وربط واتساب للعملاء غير مفعّلين.",
       "أمثلة الصفحة توضيحية وليست ردودًا تُرسل للعملاء.",
-      "الباقات اهتمام فقط، وليست اشتراكًا أو دفعًا من هذا الموقع.",
+      "لا يُؤكّد الاشتراك إلا بعد إثبات الدفع الموثوق. ظهور باقة أو طلب دفع لا يثبت تفعيل الخدمة.",
       "المخزون والكاشير والطلبات المؤكدة وقدرات لاحقة أخرى غير مفعّلة.",
     ],
     deletion: [
@@ -1617,7 +1617,7 @@ const en: typeof ar = {
       "This site describes a service being prepared, operated by TAG CITY TRAD LLC — تاج المدينة للتجارة ش م م.",
       "Creating an account lets you prepare business information and files. Automatic replies and a customer WhatsApp connection are not active.",
       "Examples on the site are illustrative. They are not replies sent to customers.",
-      "Plans register interest only. They are not a subscription or a payment on this site.",
+      "A subscription is confirmed only by trusted payment evidence. A displayed plan or payment request does not prove service activation.",
       "Inventory, POS, confirmed orders and other later capabilities are not active.",
     ],
     deletion: [

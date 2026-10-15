@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import {recordLogoutTransportFailed} from "@/lib/logging/browser.mjs";
 import { usePathname, useRouter } from "next/navigation";
 import {
   createContext,
@@ -66,6 +67,7 @@ export function AccountSessionProvider({
   const identityRef=useRef<AccountProfileView|null>(initial??null);
   const userIdRef = useRef<string | null>(initial?.userId ?? null);
   const requestGen = useRef(0);
+  const signalRead=useRef<{generation:number;promise:Promise<void>}|null>(null);
   const routeReloading=useRef(false);
   const publishedContext=useRef<string|null>(null);
   /** Internal only — never rendered to visitors, never logs secrets. */
@@ -119,6 +121,17 @@ export function AccountSessionProvider({
     }
   },[clear,expire,providerRouter]);
 
+  // Mount/Auth/focus notifications often arrive together. Share only reads
+  // within the same authority generation; logout/account changes invalidate it.
+  const refreshFromSignal=useCallback(()=>{
+    if(signalRead.current?.generation===requestGen.current)return signalRead.current.promise;
+    const promise=refresh();
+    const pending={generation:requestGen.current,promise};
+    signalRead.current=pending;
+    void promise.finally(()=>{if(signalRead.current===pending)signalRead.current=null;});
+    return promise;
+  },[refresh]);
+
   useEffect(()=>subscribeSessionContext(signal=>{
     if(signal.type==="logout"&&userIdRef.current&&userIdRef.current!==signal.userId)return;
     const current=identityRef.current;
@@ -131,9 +144,9 @@ export function AccountSessionProvider({
   }),[providerRouter]);
 
   useEffect(()=>{
-    const frame=window.requestAnimationFrame(()=>{void refresh();});
+    const frame=window.requestAnimationFrame(()=>{void refreshFromSignal();});
     return ()=>window.cancelAnimationFrame(frame);
-  },[refresh]);
+  },[refreshFromSignal]);
 
   useEffect(()=>{
     const supabase=tryCreateClient();if(!supabase)return;
@@ -148,16 +161,16 @@ export function AccountSessionProvider({
       }
       // Server Actions update cookies without guaranteeing a browser SIGNED_IN event.
       // INITIAL_SESSION=null therefore checks the server instead of inventing a logout.
-      timer=setTimeout(()=>{void refresh();},0);
+      timer=setTimeout(()=>{void refreshFromSignal();},0);
     });
     return ()=>{if(timer)clearTimeout(timer);sub.subscription.unsubscribe();requestGen.current+=1;};
-  },[clear,refresh,providerRouter]);
+  },[clear,refreshFromSignal,providerRouter]);
   useEffect(()=>{
     let timer:ReturnType<typeof setTimeout>|undefined;
-    const recheck=()=>{if(document.visibilityState!=="visible")return;if(timer)clearTimeout(timer);timer=setTimeout(()=>{void refresh();},0);};
+    const recheck=()=>{if(document.visibilityState!=="visible")return;if(timer)clearTimeout(timer);timer=setTimeout(()=>{void refreshFromSignal();},0);};
     window.addEventListener("focus",recheck);document.addEventListener("visibilitychange",recheck);
     return ()=>{if(timer)clearTimeout(timer);window.removeEventListener("focus",recheck);document.removeEventListener("visibilitychange",recheck);};
-  },[refresh]);
+  },[refreshFromSignal]);
   const isCurrentUser = useCallback((userId:string,expectedIdentity?:AccountProfileView)=>userIdRef.current===userId&&identityRef.current?.userId===userId&&(!expectedIdentity||identityRef.current===expectedIdentity),[]);
   const hasCurrentUser = useCallback(()=>userIdRef.current!==null,[]);
   const setIdentityName = useCallback((name: string, expectedUserId: string) => {
@@ -201,7 +214,14 @@ export async function performLogout(
 ) {
   const userId = session.identity?.userId;
   if (!userId || !session.isCurrentUser(userId)) return;
-  const result = await signOut(userId);
+  let result: Awaited<ReturnType<typeof signOut>>;
+  try {
+    result = await signOut(userId);
+  } catch (error) {
+    recordLogoutTransportFailed({userId,companyId:session.identity?.companyId},error);
+    if (session.isCurrentUser(userId)) onError(copy.auth.logoutFailed);
+    return;
+  }
   if (!session.isCurrentUser(userId)) return;
   if (!result.ok) {
     onError(result.message ?? copy.auth.logoutFailed);
@@ -237,6 +257,8 @@ export function AccountMenu({
   const session = useOptionalAccountSession();
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loggingOut, setLoggingOut] = useState(false);
+  const logoutPending = useRef(false);
   const menuId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -372,13 +394,21 @@ export function AccountMenu({
           <button
             type="button"
             role="menuitem"
+            disabled={loggingOut}
+            aria-busy={loggingOut}
             className="flex min-h-11 w-full items-center rounded-xl px-3 text-start text-sm hover:bg-[var(--color-hover-wash)]"
             onClick={() => {
-              setOpen(false);
-              void performLogout(session, update, copy, setError);
+              if (logoutPending.current) return;
+              logoutPending.current = true;
+              setLoggingOut(true);
+              setError(null);
+              void performLogout(session, update, copy, setError).finally(() => {
+                logoutPending.current = false;
+                setLoggingOut(false);
+              });
             }}
           >
-            {copy.logout}
+            {loggingOut ? copy.loading : copy.logout}
           </button>
           {error ? <p className="px-3 py-2 text-xs text-[#f0a0a0]">{error}</p> : null}
         </div>

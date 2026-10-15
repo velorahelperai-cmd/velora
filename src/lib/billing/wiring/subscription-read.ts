@@ -3,6 +3,7 @@ import {readCompanyBillingDisplay} from "./display-read";
 import { getCompanyAccess } from "@/lib/tenancy/access";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { SubscriptionView } from "@/components/app/subscription-model";
+import {masterJourneyEnabled} from '@/lib/master-journey/rollout';
 export async function loadOwnerBillingSubscription(fallback: SubscriptionView): Promise<SubscriptionView> {
   const access = await getCompanyAccess("owner");
   if (!access.ok || !access.context.company || access.context.membership?.role !== "owner") return fallback;
@@ -21,7 +22,8 @@ export async function loadOwnerBillingSubscription(fallback: SubscriptionView): 
     const evidence=result.data,subscription=evidence.journey.subscription;
     if(typeof evidence.billing_paid!=="boolean"||typeof evidence.operational_eligible!=="boolean")return unavailable;
     const row=subscription&&typeof subscription==="object"&&!Array.isArray(subscription)?subscription as Record<string,unknown>:null;
-    const data={environment:evidence.environment,active:evidence.billing_paid===true&&evidence.operational_eligible===true,
+    const master=masterJourneyEnabled();
+    const data={environment:evidence.environment,active:evidence.billing_paid===true&&(master||evidence.operational_eligible===true),
       status:row?row.status:"none",paid_through:evidence.qualified_paid_through,plan_version_id:row?.plan_version_id??null};
     if(typeof data.status!=="string"||(data.paid_through!==null&&typeof data.paid_through!=="string")
       ||(data.plan_version_id!==null&&typeof data.plan_version_id!=="string"))return unavailable;
@@ -33,6 +35,7 @@ export async function loadOwnerBillingSubscription(fallback: SubscriptionView): 
     const active = data.active === true && future && (data.status === "active" || data.status === "cancel_at_period_end");
     let tier: SubscriptionView["currentTier"] = null;
     let cycle: SubscriptionView["cycle"] = null;
+    let currentPackage: SubscriptionView["currentPackage"] = null;
     if (data.plan_version_id) {
       const { data: version } = await admin.from("billing_plan_versions").select("plan_id,period_unit,period_count")
         .eq("id", data.plan_version_id).maybeSingle();
@@ -41,6 +44,7 @@ export async function loadOwnerBillingSubscription(fallback: SubscriptionView): 
           : version.period_unit === "month" && version.period_count === 1 ? "monthly" : null;
         const { data: plan } = await admin.from("billing_plans").select("code").eq("id", version.plan_id).maybeSingle();
         const code = String(plan?.code ?? "");
+        currentPackage = /_basic$/.test(code) ? 'basic' : /_premium$/.test(code) ? 'premium' : null;
         tier = code.startsWith("noor_") ? "level_1" : code.startsWith("lina_") ? "level_2" : code.startsWith("dana_") ? "level_3" : null;
       }
     }
@@ -53,6 +57,7 @@ export async function loadOwnerBillingSubscription(fallback: SubscriptionView): 
       state: data.status === "suspended" ? "suspended" : active ? "active"
         : paidTimestamp !== null && !future ? "expired" : openOrder ? "pending" : "empty",
       currentTier: tier, cycle, paidThrough,
+      ...(master ? {currentPackage,planVersionId:data.plan_version_id,operationalReady:evidence.operational_eligible===true} : {}),
       ...(openOrder ? { pendingOrderId: String(openOrder.id) } : {}),
     };
   } catch {

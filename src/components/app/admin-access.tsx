@@ -215,29 +215,29 @@ export function AdminAccessPage() {
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
-      <div className="flex flex-wrap items-end justify-between gap-3 pb-3 border-b border-[#D7C1A5]">
+      <div className="flex flex-wrap items-end justify-between gap-3 pb-3 border-b border-[var(--service-line)]">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-[#18130F] tracking-tight">{copy.admin.accessTitle}</h1>
-          <p className="mt-1 text-xs sm:text-sm text-[#615244]">{copy.admin.accessBody}</p>
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-[var(--service-ink)] tracking-tight">{copy.admin.accessTitle}</h1>
+          <p className="mt-1 text-xs sm:text-sm text-[var(--service-muted)]">{copy.admin.accessBody}</p>
         </div>
         <nav className="flex flex-wrap gap-2 text-xs sm:text-sm">
-          <Link href="/admin#accounts" className="inline-flex min-h-10 items-center rounded-xl border border-[#D7C1A5] bg-[#FFFBF5] px-3 text-xs font-semibold text-[#6B4932] hover:text-[#18130F] hover:border-[#6B4932] hover:shadow-2xs transition">
+          <Link href="/admin#accounts" className="inline-flex min-h-10 items-center rounded-xl border border-[var(--service-line)] bg-[var(--service-surface)] px-3 text-xs font-semibold text-[var(--service-accent)] hover:text-[var(--service-ink)] hover:border-[var(--service-accent)] hover:shadow-2xs transition">
             {copy.admin.navAccounts}
           </Link>
-          <span className="inline-flex min-h-10 items-center rounded-xl bg-[#EFE2CF] border border-[#D7C1A5] px-3 text-xs font-bold text-[#6B4932]">
+          <span className="inline-flex min-h-10 items-center rounded-xl bg-[var(--service-subtle)] border border-[var(--service-line)] px-3 text-xs font-bold text-[var(--service-accent)]">
             {copy.admin.navAccess}
           </span>
         </nav>
       </div>
 
-      <section className="mt-6 rounded-3xl border border-[#D7C1A5] bg-[#FFFBF5] p-5 sm:p-6 shadow-sm">
+      <section className="mt-6 rounded-3xl border border-[var(--service-line)] bg-[var(--service-surface)] p-5 sm:p-6 shadow-sm">
         <label className="grid gap-2 text-sm">
-          <span className="font-bold text-[#6B4932]">{copy.admin.accountSearch}</span>
+          <span className="font-bold text-[var(--service-accent)]">{copy.admin.accountSearch}</span>
           <div className="flex flex-wrap gap-2">
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              className="min-h-11 min-w-[16rem] flex-1 rounded-xl border border-[#D7C1A5] bg-[#F7F0E5] px-3 text-sm font-medium text-[#18130F] outline-none focus:border-[#6B4932] focus:bg-[#FFFBF5] focus:ring-1 focus:ring-[#6B4932] transition placeholder:text-[#615244]"
+              className="min-h-11 min-w-[16rem] flex-1 rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)] px-3 text-sm font-medium text-[var(--service-ink)] outline-none focus:border-[var(--service-accent)] focus:bg-[var(--service-surface)] focus:ring-1 focus:ring-[var(--service-accent)] transition placeholder:text-[var(--service-muted)]"
               dir="ltr"
             />
             <Button type="button" busy={busy} onClick={() => void search()}>
@@ -262,11 +262,11 @@ export function AdminAccessPage() {
               <button
                 type="button"
                 disabled={writing}
-                className="grid w-full gap-1 rounded-xl border border-[#D7C1A5] bg-[#F7F0E5] p-3 text-start hover:bg-[#FFFBF5] hover:border-[#6B4932]/40 transition shadow-2xs"
+                className="grid w-full gap-1 rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)] p-3 text-start hover:bg-[var(--service-surface)] hover:border-[var(--service-accent)]/40 transition shadow-2xs"
                 onClick={() => void loadUser(hit.userId)}
               >
-                <strong className="font-bold text-[#18130F]">{hit.fullName || hit.email || hit.userId}</strong>
-                <span className="text-xs [font-family:inherit] font-medium text-[#615244]" dir="ltr">{hit.email} · {hit.supportCode || "—"}</span>
+                <strong className="font-bold text-[var(--service-ink)]">{hit.fullName || hit.email || hit.userId}</strong>
+                <span className="text-xs [font-family:inherit] font-medium text-[var(--service-muted)]" dir="ltr">{hit.email} · {hit.supportCode || "—"}</span>
               </button>
             </li>
           ))}
@@ -274,12 +274,12 @@ export function AdminAccessPage() {
       </section>
 
       {snapshot ? (
-        <section className="mt-6 grid gap-4 rounded-3xl border border-[#D7C1A5] bg-[#FFFBF5] p-5 sm:p-6 shadow-sm">
+        <section className="mt-6 grid gap-4 rounded-3xl border border-[var(--service-line)] bg-[var(--service-surface)] p-5 sm:p-6 shadow-sm">
           <div>
-            <h2 className="text-lg font-bold text-[#18130F]">{copy.admin.accessUserTitle}</h2>
-            <p className="text-sm font-bold text-[#18130F]" dir="ltr">{snapshot.email}</p>
-            <p className="mt-1 text-xs [font-family:inherit] font-medium text-[#615244]" dir="ltr">{snapshot.userId}</p>
-            <p className="mt-2 text-sm font-semibold text-[#6B4932]">
+            <h2 className="text-lg font-bold text-[var(--service-ink)]">{copy.admin.accessUserTitle}</h2>
+            <p className="text-sm font-bold text-[var(--service-ink)]" dir="ltr">{snapshot.email}</p>
+            <p className="mt-1 text-xs [font-family:inherit] font-medium text-[var(--service-muted)]" dir="ltr">{snapshot.userId}</p>
+            <p className="mt-2 text-sm font-semibold text-[var(--service-accent)]">
               {copy.admin.accessPlatformRole}:{" "}
               {snapshot.platform
                 ? `${snapshot.platform.role} / ${snapshot.platform.status}`
@@ -294,7 +294,7 @@ export function AdminAccessPage() {
           </div>
 
           <label className="grid gap-2 text-sm">
-            <span className="font-bold text-[#6B4932]">{copy.admin.accessStaffCompany}</span>
+            <span className="font-bold text-[var(--service-accent)]">{copy.admin.accessStaffCompany}</span>
             <select
               value={selectedCompanyId}
               disabled={busy}
@@ -306,7 +306,7 @@ export function AdminAccessPage() {
                 setScope(grant?.conversationScope ?? "all_company");
                 setConfirm(null);
               }}
-              className="min-h-11 rounded-xl border border-[#D7C1A5] bg-[#F7F0E5] px-3 text-sm font-medium text-[#18130F] outline-none focus:border-[#6B4932] focus:bg-[#FFFBF5] focus:ring-1 focus:ring-[#6B4932] transition"
+              className="min-h-11 rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)] px-3 text-sm font-medium text-[var(--service-ink)] outline-none focus:border-[var(--service-accent)] focus:bg-[var(--service-surface)] focus:ring-1 focus:ring-[var(--service-accent)] transition"
             >
               <option value="">{copy.admin.accessPickCompany}</option>
               {staffMemberships.map((m) => (
@@ -317,13 +317,13 @@ export function AdminAccessPage() {
             </select>
           </label>
           {staffMemberships.length === 0 ? (
-            <p role="status" className="text-sm text-[#615244]">{copy.admin.accessNoStaffMemberships}</p>
+            <p role="status" className="text-sm text-[var(--service-muted)]">{copy.admin.accessNoStaffMemberships}</p>
           ) : null}
 
           {selectedCompanyId ? (
             <>
               <label className="grid gap-2 text-sm">
-                <span className="font-bold text-[#6B4932]">{copy.admin.accessConversationScope}</span>
+                <span className="font-bold text-[var(--service-accent)]">{copy.admin.accessConversationScope}</span>
                 <select
                   value={scope}
                   disabled={busy}
@@ -331,7 +331,7 @@ export function AdminAccessPage() {
                     setScope(e.target.value === "assigned_only" ? "assigned_only" : "all_company");
                     setConfirm(null);
                   }}
-                  className="min-h-11 rounded-xl border border-[#D7C1A5] bg-[#F7F0E5] px-3 text-sm font-medium text-[#18130F] outline-none focus:border-[#6B4932] focus:bg-[#FFFBF5] focus:ring-1 focus:ring-[#6B4932] transition"
+                  className="min-h-11 rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)] px-3 text-sm font-medium text-[var(--service-ink)] outline-none focus:border-[var(--service-accent)] focus:bg-[var(--service-surface)] focus:ring-1 focus:ring-[var(--service-accent)] transition"
                 >
                   <option value="all_company">{copy.admin.accessScopeAll}</option>
                   <option value="assigned_only">{copy.admin.accessScopeAssigned}</option>
@@ -339,15 +339,15 @@ export function AdminAccessPage() {
               </label>
 
               <fieldset className="grid gap-2">
-                <legend className="text-sm font-bold text-[#6B4932]">{copy.admin.accessCapabilities}</legend>
+                <legend className="text-sm font-bold text-[var(--service-accent)]">{copy.admin.accessCapabilities}</legend>
                 {COMPANY_CAPABILITIES.map((cap) => (
-                  <label key={cap} className="flex min-h-10 items-center gap-2 text-sm font-medium text-[#18130F]">
+                  <label key={cap} className="flex min-h-10 items-center gap-2 text-sm font-medium text-[var(--service-ink)]">
                     <input
                       type="checkbox"
                       checked={caps.includes(cap)}
                       disabled={busy}
                       onChange={() => toggleCap(cap)}
-                      className="rounded border-[#D7C1A5] text-[#6B4932] focus:ring-[#6B4932]"
+                      className="rounded border-[var(--service-line)] text-[var(--service-accent)] focus:ring-[var(--service-accent)]"
                     />
                     <span dir="ltr">{cap}</span>
                   </label>

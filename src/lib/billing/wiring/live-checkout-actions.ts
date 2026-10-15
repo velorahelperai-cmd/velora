@@ -9,9 +9,10 @@ import {fetchPaymobHttp,type CheckoutClaim,type CheckoutResult} from "./test-che
 import {billingUuid} from "./public-offer-policy";
 import {commercialBaisaToVerifiedPaymobAmount} from "../money";
 import type {SupabaseClient} from "@supabase/supabase-js";
+import {masterJourneyEnabled} from "@/lib/master-journey/rollout";
 
 type RpcClient={rpc(name:string,args:Record<string,unknown>):PromiseLike<{data:unknown;error:{code?:string}|null}>};
-type StartInput={planVersionId:string;clientOpId:string;expectedCompanyId:string;expectedCatalogRevision:number};
+type StartInput={planVersionId:string;clientOpId:string;expectedCompanyId:string;expectedCatalogRevision:number;termsVersion?:string;consentAccepted?:boolean;purchasePurpose?:"initial"|"upgrade"};
 const record=(v:unknown):Record<string,unknown>|null=>v!==null&&typeof v==="object"&&!Array.isArray(v)?v as Record<string,unknown>:null;
 
 /** Resume only an already persisted Live checkout; never allocate another provider request. */
@@ -43,10 +44,14 @@ export async function resumeLiveCheckoutAction(input:{orderId:string}):Promise<C
 
 /** Browser supplies identifiers/revision only. SQL owns price, service, quota, budget and immutable provider binding. */
 export async function startLiveCheckoutAction(input:StartInput):Promise<CheckoutResult&{orderId?:string}>{
- if(!input||typeof input!=="object"||Object.keys(input).some(k=>!["planVersionId","clientOpId","expectedCompanyId","expectedCatalogRevision"].includes(k))
+ if(!input||typeof input!=="object"||Object.keys(input).some(k=>!["planVersionId","clientOpId","expectedCompanyId","expectedCatalogRevision","termsVersion","consentAccepted","purchasePurpose"].includes(k))
   ||!billingUuid(input.planVersionId)||!billingUuid(input.expectedCompanyId)||typeof input.clientOpId!=="string"
   ||input.clientOpId.trim().length<1||input.clientOpId.trim().length>128
-  ||!Number.isSafeInteger(input.expectedCatalogRevision)||input.expectedCatalogRevision<1)return {ok:false,code:"INVALID_INPUT"};
+  ||!Number.isSafeInteger(input.expectedCatalogRevision)||input.expectedCatalogRevision<1
+  ||input.purchasePurpose!==undefined&&!["initial","upgrade"].includes(input.purchasePurpose))return {ok:false,code:"INVALID_INPUT"};
+ const master=masterJourneyEnabled();
+ if(!master&&input.purchasePurpose==="upgrade")return {ok:false,code:"CHECKOUT_UPGRADE_UNCONFIGURED"};
+ if(master&&(input.consentAccepted!==true||typeof input.termsVersion!=="string"||input.termsVersion.trim().length<1||input.termsVersion.length>128))return {ok:false,code:"CHECKOUT_CONSENT_REQUIRED"};
  const access=await getCompanyAccess("owner");
  if(!access.ok||!access.context.company||access.context.membership?.role!=="owner"||access.context.membership.status!=="active"
   ||!["setup","active"].includes(access.context.company.status))return {ok:false,code:"not_owner"};
@@ -60,7 +65,7 @@ export async function startLiveCheckoutAction(input:StartInput):Promise<Checkout
  const client=createAdminClient();if(!client)return {ok:false,code:"live_not_configured"};
  const admin=client as unknown as RpcClient;
  try{
-  const {data,error}=await admin.rpc("billing_create_live_checkout_order",{
+  const {data,error}=await admin.rpc(input.purchasePurpose==="upgrade"?"billing_create_live_upgrade_order":"billing_create_live_checkout_order",{
    p_company_id:company.id,p_actor_id:access.context.userId,p_actor_session_id:session,
    p_plan_version_id:input.planVersionId,p_client_op_id:input.clientOpId.trim(),p_expected_revision:input.expectedCatalogRevision,
    p_integration_id:settings.config.integrationId,p_merchant_owner_id:settings.config.merchantOwnerId,p_units_per_omr:settings.unitsPerOmr,
@@ -78,6 +83,10 @@ export async function startLiveCheckoutAction(input:StartInput):Promise<Checkout
    ||!Number.isSafeInteger(service.allowance_cap)||Number(service.allowance_cap)<1||Number(service.allowance_cap)>999999999
    ||!Number.isSafeInteger(service.monthly_limit_baisa)||Number(service.monthly_limit_baisa)<1)return {ok:false,code:"live_order_not_ready"};
   const orderId=row.order_id,attemptId=row.payment_attempt_id;
+  if(master){const agreement=await admin.rpc("master_accept_checkout_consent",{p_company_id:company.id,p_order_id:orderId,
+   p_actor_id:access.context.userId,p_actor_session_id:session,p_terms_version:input.termsVersion,p_accepted:true});
+  const accepted=record(agreement.data);
+  if(agreement.error||accepted?.ok!==true)return {ok:false,code:typeof accepted?.code==="string"?accepted.code:"CHECKOUT_CONSENT_UNAVAILABLE",orderId};}
   const args={p_company_id:company.id,p_order_id:orderId,p_attempt_id:attemptId,p_actor_id:access.context.userId,p_actor_session_id:session};
   const checkout=await openLiveCheckout({config:settings.config,actorCompanyId:company.id,
    locked:{companyId:company.id,orderId,paymentAttemptId:attemptId,planVersionId:input.planVersionId,

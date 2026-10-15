@@ -11,12 +11,12 @@ export type ConnectionProgress = Readonly<{ binding: AttemptBinding }> & (
   | Readonly<{ kind: "vault_staged"; stageReceipt: string }>
   | Readonly<{ kind: "bound"; linkId: string }>
 );
-export type ConnectionFailureCode = "FORBIDDEN" | "EXPIRED" | "CONSUMED" | "INVALID_INPUT" | "UNAVAILABLE" | "RECONCILIATION_REQUIRED";
+export type ConnectionFailureCode = "FORBIDDEN" | "EXPIRED" | "CONSUMED" | "INVALID_INPUT" | "UNAVAILABLE" | "RECONCILIATION_REQUIRED" | "ACCOUNT_MISMATCH";
 export type ConnectionFailure = Readonly<{ ok: false; code: ConnectionFailureCode; diagnostic?: import('@/lib/diagnostics/contract').DiagnosticDetail }>;
 /** The only result allowed to cross the future server-action/client boundary. */
 export type ConnectionResult = Readonly<{ ok: true; linkId: string }> | ConnectionFailure;
 export type ProviderBindingEvidence = Readonly<{
-  appId: string; accountId: string; permissions: readonly string[]; expiresAt: string; contractId: string;
+  appId: string; accountId: string; permissions: readonly string[]; expiresAt: string; contractId: string; username?:string;
 }>;
 /** Secret-bearing value exists only between server-side exchange and Vault staging. */
 export type ProviderSuccess = Readonly<{ ok: true; accessToken: string; evidence: ProviderBindingEvidence }>;

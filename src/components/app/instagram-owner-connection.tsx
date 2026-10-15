@@ -1,6 +1,6 @@
 'use client';
 import {useEffect,useLayoutEffect,useRef,useState} from 'react';
-import {loadInstagramOwnerConnection,startInstagramOwnerConnection,disconnectInstagramOwnerConnection} from '@/lib/instagram/owner-actions';
+import {loadInstagramOwnerConnection,startInstagramOwnerConnection,recoverInstagramOwnerConnection} from '@/lib/instagram/owner-actions';
 import {Button,Notice} from './ui';
 import {DiagnosticHint} from './diagnostic-hint';
 type Loaded=Extract<Awaited<ReturnType<typeof loadInstagramOwnerConnection>>,{ok:true}>;
@@ -8,15 +8,15 @@ const messages:Record<string,[string,string]>={
  CONNECT_DISABLED:['Instagram connection is awaiting activation approval.','ربط إنستغرام ينتظر الموافقة على التفعيل.'],
  SETUP_REQUIRED:['Instagram connection setup is not ready.','إعداد ربط إنستغرام غير جاهز.'],
  SCHEMA_UNAVAILABLE:['Instagram storage is awaiting installation.','تخزين إنستغرام ينتظر التثبيت.'],
- RECONCILIATION_REQUIRED:['The previous connection attempt needs review before reconnecting.','محاولة الربط السابقة تحتاج إلى مراجعة قبل إعادة الربط.'],
+ RECONCILIATION_REQUIRED:['Checking connection. The previous valid connection is preserved.','جارٍ التحقق من الربط. الاتصال السابق الصالح محفوظ.'],
  FORBIDDEN:['Only the current workspace owner can manage this connection.','مالك مساحة العمل الحالية فقط يمكنه إدارة الربط.'],
  WORKSPACE_CHANGED:['The workspace changed. Refresh this page.','تغيّرت مساحة العمل. حدّث الصفحة.'],
  CONFLICT:['The connection changed. Refresh before disconnecting.','تغيّر الربط. حدّث الصفحة قبل فصله.'],
 };
-export function InstagramOwnerConnection({companyId,ar,callbackResult,callbackDiagnostic}:{companyId:string;ar:boolean;callbackResult?:string;callbackDiagnostic?:unknown}){
+export function InstagramOwnerConnection({companyId,ar,callbackDiagnostic}:{companyId:string;ar:boolean;callbackResult?:string;callbackDiagnostic?:unknown}){
  const epoch=useRef(0),reserved=useRef(false);
  const [loaded,setLoaded]=useState<{companyId:string;value:Loaded}|null>(null),[error,setError]=useState<{companyId:string;code:string}|null>(null);
- const [busy,setBusy]=useState(false),[refresh,setRefresh]=useState(0),[disconnected,setDisconnected]=useState<string|null>(null);
+ const [busy,setBusy]=useState(false),[refresh,setRefresh]=useState(0);
  // Fence asynchronous navigation during commit, before passive load effects run.
  useLayoutEffect(()=>{const fence=epoch;fence.current++;reserved.current=false;return()=>{fence.current++;};},[companyId]);
  useEffect(()=>{const current=epoch.current;let cancelled=false;
@@ -38,27 +38,33 @@ export function InstagramOwnerConnection({companyId,ar,callbackResult,callbackDi
    window.location.assign(url.href);
   }catch{if(current===epoch.current)setError({companyId,code:'RECONCILIATION_REQUIRED'});}finally{if(current===epoch.current){reserved.current=false;setBusy(false);}}
  }
- async function disconnect(){
-  if(!status?.link||reserved.current||busy)return;reserved.current=true;const current=epoch.current;setBusy(true);setError(null);
-  const input={companyId,linkId:status.link.linkId,expectedGeneration:status.generation};
-  try{const r=await disconnectInstagramOwnerConnection(input);if(current!==epoch.current)return;
-   if(r.ok){setDisconnected(companyId);setLoaded(null);setRefresh(n=>n+1);}else setError({companyId,code:r.code});
+ async function recover(){
+  if(reserved.current||busy)return;reserved.current=true;const current=epoch.current;setBusy(true);setError(null);
+  try{const r=await recoverInstagramOwnerConnection({companyId});if(current!==epoch.current)return;
+   if(!r.ok)setError({companyId,code:r.code});setRefresh(n=>n+1);
   }catch{if(current===epoch.current)setError({companyId,code:'UNAVAILABLE'});}finally{if(current===epoch.current){reserved.current=false;setBusy(false);}}
  }
- const blocker=code??(unresolved?'RECONCILIATION_REQUIRED':status&&!status.connectEnabled?'CONNECT_DISABLED':status&&!status.contractReady?'SETUP_REQUIRED':null);
- const callbackMessage=callbackResult==='not_authorized'
+ const needsConnection=!status?.link||status.link.needsAuthorization===true;
+ const blocker=code??(unresolved?'RECONCILIATION_REQUIRED':needsConnection&&status&&!status.connectEnabled?'CONNECT_DISABLED':needsConnection&&status&&!status.contractReady?'SETUP_REQUIRED':null);
+ const callbackMessage=status?.attemptKind==='rejected'&&status.attemptReason==='account_mismatch'?(ar?'اختر نفس حساب إنستجرام المرتبط. لم نستبدل الاتصال السابق.':'Choose the same linked Instagram account. The previous connection was preserved.')
+  :status?.attemptKind==='cancelled'?(ar?'أُلغيت محاولة الربط؛ الاتصال السابق الصالح محفوظ.':'Connection attempt cancelled; the previous valid connection is preserved.')
+  :status?.attemptKind==='expired'?(ar?'انتهت محاولة التفويض؛ الاتصال السابق الصالح محفوظ.':'Authorization attempt expired; the previous valid connection is preserved.')
+  :status?.attemptKind==='rejected'
   ?(ar?'لم يكتمل تفويض إنستغرام. يمكنك إعادة المحاولة.':'Instagram authorization was not completed. You can try again.')
-  :callbackResult==='needs_review'
+  :unresolved
   ?messages.RECONCILIATION_REQUIRED[ar?1:0]
-  :callbackResult==='setup_required'?messages.SETUP_REQUIRED[ar?1:0]:null;
+  :null;
  return <section aria-label={ar?'ربط إنستغرام':'Instagram connection'}>
   <h2>{ar?'ربط إنستغرام':'Instagram connection'}</h2>
   {callbackMessage&&<Notice>{callbackMessage}</Notice>}
   {callbackMessage&&<DiagnosticHint diagnostic={callbackDiagnostic} locale={ar?'ar':'en'}/>}
-  {status?.link&&<p>{ar?'الحساب المرتبط: ':'Connected account: '}<span>{status.link.accountId}</span></p>}
+  {status?.link&&<p>{ar?'الحساب المرتبط: ':'Connected account: '}<span>{status.link.username?`@${status.link.username}`:status.link.accountId}</span> · {status.link.needsAuthorization===true?(ar?'يحتاج تجديد التفويض':'Authorization renewal needed'):status.link.needsAuthorization===false?(ar?'متصل':'Connected'):(ar?'جارٍ التحقق من الربط':'Checking connection')}</p>}
+  {status?.link?.needsAuthorization&&<Notice>{ar?'انتهى التفويض أو لم تعد الصلاحيات المطلوبة متاحة. جدّد نفس حساب إنستجرام.':'Authorization expired or required permissions are missing. Renew the same Instagram account.'}</Notice>}
+  {status?.subscriptionExpired&&<Notice>{ar?'انتهى الاشتراك؛ الردود متوقفة. هذه حالة دفع وليست طلب تفويض إنستجرام.':'Subscription expired; replies are paused. This is a billing state, separate from Instagram authorization.'} <a href='/app/subscription'>{ar?'التجديد ومواعيد الاحتفاظ':'Renewal and retention deadlines'}</a></Notice>}
+  {status?.historyAccessible===false&&<Notice>{ar?'انتهت مهلة الربط والقراءة. جدّد الاشتراك وأعد ربط نفس الحساب لاستعادة السجل قبل الحذف.':'The connection and read grace period ended. Renew and reconnect the same account to restore history before deletion.'}</Notice>}
   {blocker&&<Notice>{messages[blocker]?.[ar?1:0]??(ar?'تعذّر إكمال الطلب. حدّث الصفحة.':'The request could not be completed. Refresh this page.')}</Notice>}
-  {disconnected===companyId&&<p role="status">{ar?'تم فصل الربط في Velora مع الاحتفاظ بالسجل. إذن إنستغرام يُدار بشكل منفصل.':'Disconnected from Velora; history is retained. Instagram permission is managed separately.'}</p>}
-  <Button onClick={connect} disabled={busy||!connectReady}>{ar?'ربط إنستغرام':'Connect Instagram'}</Button>
-  {status?.link&&<Button onClick={disconnect} disabled={busy}>{ar?'فصل الربط من Velora':'Disconnect from Velora'}</Button>}
+  {needsConnection&&<Button onClick={connect} disabled={busy||!connectReady}>{status?.link?.needsAuthorization?(ar?'تجديد الربط':'Renew connection'):(ar?'ربط إنستغرام':'Connect Instagram')}</Button>}
+  {unresolved&&<Button onClick={recover} disabled={busy}>{ar?'التحقق من نتيجة الربط':'Check connection result'}</Button>}
+  {status?.link&&<p>{ar?'لفصل الربط، تواصل مع إدارة Velora.':'Contact Velora support to disconnect.'}</p>}
  </section>;
 }

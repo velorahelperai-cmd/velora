@@ -11,23 +11,23 @@ function render(offer:SubscriptionOfferView,locale:"en"|"ar"="en",status:"ready"
  return renderToStaticMarkup(createElement(SubscriptionOfferCards,{locale,term:"monthly",offers:status==="ready"?[offer.package==="basic"?offer:basic,offer.package==="premium"?offer:premium]:[],catalogStatus:status,selectedPersona:"level_1",selectedPackage:offer.package,onSelect:()=>{}}));
 }
 describe("published catalog separate from purchase and service readiness",()=>{
- it("shows the restored Premium edition's real price and allowance without a Draft label",()=>{
+ it("shows the approved Premium scope without accepting a differently priced billing version",()=>{
   const html=render(premium);const card=html.split('data-persona="level_1"')[1].split("</article>")[0];
-  expect(card).toContain("87.654 OMR");expect(card).toContain("1,923");
-  expect(card).toContain("Published price");expect(card).not.toContain("Draft");
+  expect(card).toContain("90.000 OMR");expect(card).toContain("3,000");expect(card).not.toContain("87.654 OMR");
+  expect(card).not.toContain("Published price");
   expect(card).toContain("Plan selected");expect(card).toContain("Checkout unavailable");
  });
- it("labels server-qualified Basic as Test only, never a Live approval or ready service",()=>{
+ it("rejects a Test marker on a billing version with a different allowance",()=>{
   const card=render({...basic,testCheckoutReady:true}).split('data-persona="level_1"')[1].split("</article>")[0];
-  expect(card).toContain("Test checkout only");expect(card).toContain("Service readiness not verified");
+  expect(card).not.toContain("Test checkout only");expect(card).toContain('data-purchase-state="unavailable"');expect(card).toContain("Service readiness not verified");
   expect(card).not.toContain("Approved");expect(card).toContain('data-feature-id="knowledge"');
  });
  it("preserves real catalog errors instead of converting them to an unconfigured catalog",()=>{
   expect(offersViewFromCatalog({ok:false,code:"unavailable"}).status).toBe("error");
  });
- it("distinguishes unpublished prices from catalog failures",()=>{
-  expect(render(basic,"en","empty")).toContain("Price not published");
-  expect(render(basic,"en","error")).toContain("Catalog unavailable");
+ it("keeps commercial prices visible while reporting billing failures",()=>{
+  expect(render(basic,"en","empty")).toContain("45.000 OMR");
+  expect(render(basic,"en","error")).toContain("The catalog could not be loaded");
  });
  it("keeps Premium and planned personas out of the existing Test purchase contract",()=>{
   expect(isPurchasableOffer("level_1","premium","monthly",premium,"ready")).toBe(false);
@@ -39,6 +39,6 @@ describe("published catalog separate from purchase and service readiness",()=>{
   expect(choiceFromSubscriptionIntent({...intent,amountBaisa:1},{status:"ready",offers:[premium]})).toBeNull();
  });
  it("renders equivalent Arabic states without publishing planned services",()=>{
-  const html=render(premium,"ar");expect(html).toContain("سعر منشور");expect(html).toContain("الدفع غير متاح");expect(html).toContain("خدمة مخططة");
+  const html=render(premium,"ar");expect(html).not.toContain("سعر منشور");expect(html).toContain("90.000 ر.ع.");expect(html).toContain("الدفع غير متاح");expect(html).toContain("خدمة مخططة");
  });
 });

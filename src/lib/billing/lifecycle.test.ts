@@ -1,0 +1,6 @@
+import {expect,it} from 'vitest';
+import {subscriptionLifecycle,expiryEmailText} from './lifecycle';
+const end='2026-02-28T12:34:56.789Z',day=86400000;
+it('exact expiry, day 30 and day 60 use elapsed time, not calendar months',()=>{const e=Date.parse(end);expect(subscriptionLifecycle(end,e-1).state).toBe('active');expect(subscriptionLifecycle(end,e).state).toBe('read_only');expect(subscriptionLifecycle(end,e+30*day-1).state).toBe('read_only');expect(subscriptionLifecycle(end,e+30*day).state).toBe('disconnected');expect(subscriptionLifecycle(end,e+60*day).state).toBe('purge_due');expect(subscriptionLifecycle(end,e).disconnectAt).toBe('2026-03-30T12:34:56.789Z');});
+it('never-paid and invalid dates cannot manufacture deadlines',()=>{expect(subscriptionLifecycle(null,0).disconnectAt).toBe(null);expect(subscriptionLifecycle('bad',0).state).toBe('unavailable');});
+it('all three reminders include exact disconnection and deletion deadlines',()=>{for(const kind of ['expired','disconnect_7d','disconnect_24h'] as const){const text=expiryEmailText({kind,companyName:'Test',expiredAt:end,disconnectAt:'2026-03-30T12:34:56.789Z',deleteAt:'2026-04-29T12:34:56.789Z'});expect(text).toContain('2026-03-30T12:34:56.789Z');expect(text).toContain('2026-04-29T12:34:56.789Z');}});

@@ -1,4 +1,4 @@
-import { externalSendAllowed, metaGraphVersion, sendReady, whatsappConfig, whatsappRoutingMode } from "./config";
+import { externalSendAllowed, metaGraphVersion, sendReady, whatsappConfig, whatsappConfigurationMode, whatsappRoutingMode } from "./config";
 
 export type SendTextResult =
   | { ok: true; waMessageId: string }
@@ -9,6 +9,7 @@ export type SendTextResult =
         | "NEEDS_SETUP"
         | "SEND_DISABLED"
         | "PHONE_MISMATCH"
+        | "RECIPIENT_NOT_ALLOWED"
         | "SERVICE_WINDOW_CLOSED"
         | "GRAPH_REJECTED"
         | "AMBIGUOUS";
@@ -85,6 +86,16 @@ export async function sendWhatsappText(input: {
   const config = whatsappConfig();
   let accessToken = "";
   let graphVersion = "v22.0"; // Explicit legacy single-tenant compatibility.
+  if (whatsappConfigurationMode() === "meta_test") {
+    const recipients = (process.env.WHATSAPP_TEST_RECIPIENTS ?? "").split(",").map(value => value.trim());
+    if (!/^[1-9]\d{6,14}$/.test(input.toWaId) || recipients.length > 5
+      || recipients.some(value => !/^[1-9]\d{6,14}$/.test(value)) || !recipients.includes(input.toWaId)) {
+      return { ok: false, code: "RECIPIENT_NOT_ALLOWED" };
+    }
+    const configuredVersion = metaGraphVersion();
+    if (!configuredVersion) return { ok: false, code: "NEEDS_SETUP" };
+    graphVersion = configuredVersion;
+  }
   if (mode === "tenant_registry") {
     accessToken = input.accessToken?.trim() ?? "";
     if (!accessToken) return { ok: false, code: "NEEDS_SETUP" };

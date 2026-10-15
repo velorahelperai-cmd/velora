@@ -56,6 +56,12 @@ import {
   type InboxAsyncEpochStore,
 } from "@/components/app/conversations-async";
 import { WorkspaceShell } from "@/components/app/workspace-shell";
+import {IconUsers,IconSparkles,IconMenu,IconRocket,IconShield} from "../admin/admin-icons";
+import { ChannelBadge } from "./channel-badge";
+import {captureTranscriptPosition,restoreTranscriptPosition,type TranscriptPosition} from './transcript-position';
+import {useServerDraftField} from './draft-refresh';
+import { ChannelAIDraft } from "./channel-ai-draft";
+import {ChannelReviewStatus} from './channel-review';
 import { Button, Notice, useAppCopy } from "@/components/app/ui";
 
 export type { UnifiedInboxFilter } from "./conversations-inbox";
@@ -150,7 +156,7 @@ function DeliveryStateTick({ state, locale }: { state?: Message["deliveryState"]
   if (state === "accepted") return <span className="text-[10px] text-[var(--color-muted-soft)]">{locale === "ar" ? "قُبلت للإرسال" : "Accepted"}</span>;
   if (state === "read") {
     return (
-      <span className="inline-flex items-center gap-0.5 text-[#38dc89]" title={locale === "ar" ? "تمت القراءة" : "Read"}>
+      <span className="inline-flex items-center gap-0.5 text-[var(--service-accent)]" title={locale === "ar" ? "تمت القراءة" : "Read"}>
         <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="currentColor">
           <path d="M12.354 4.354a.5.5 0 0 0-.708-.708L5 10.293 1.854 7.146a.5.5 0 1 0-.708.708l3.5 3.5a.5.5 0 0 0 .708 0l7-7zm-3 0a.5.5 0 0 0-.708-.708L5 7.293 6.146 8.44l2.5-2.5 1-1.586z" />
         </svg>
@@ -236,17 +242,23 @@ function LeadFollowUpPanel({
 }) {
   const [leadBusy, setLeadBusy] = useState(false);
   const leadBusyIdRef = useRef<string | null>(null);
-  const [leadStageDraft, setLeadStageDraft] = useState<LeadStage>(conversation.leadStage ?? "new");
-  const [leadReasonDraft, setLeadReasonDraft] = useState(conversation.leadStageReason ?? "");
-  const [leadNoteDraft, setLeadNoteDraft] = useState(conversation.internalNote ?? "");
-  const [followUpStatusDraft, setFollowUpStatusDraft] = useState<FollowUpStatus>(
-    conversation.followUpStatus ?? "none",
-  );
-  const [followUpAtDraft, setFollowUpAtDraft] = useState(toDatetimeLocalValue(conversation.followUpAt));
-  const [assignDraft, setAssignDraft] = useState(conversation.assignedTo ?? "");
+  const stageField=useServerDraftField<LeadStage>(conversation.leadStage??'new');
+  const reasonField=useServerDraftField(conversation.leadStageReason??'');
+  const noteField=useServerDraftField(conversation.internalNote??'');
+  const followUpField=useServerDraftField<FollowUpStatus>(conversation.followUpStatus??'none');
+  const dateField=useServerDraftField(toDatetimeLocalValue(conversation.followUpAt));
+  const assignmentField=useServerDraftField(conversation.assignedTo??'');
+  const leadStageDraft=stageField.value,setLeadStageDraft=stageField.setValue;
+  const leadReasonDraft=reasonField.value,setLeadReasonDraft=reasonField.setValue;
+  const leadNoteDraft=noteField.value,setLeadNoteDraft=noteField.setValue;
+  const followUpStatusDraft=followUpField.value,setFollowUpStatusDraft=followUpField.setValue;
+  const followUpAtDraft=dateField.value,setFollowUpAtDraft=dateField.setValue;
+  const assignDraft=assignmentField.value,setAssignDraft=assignmentField.setValue;
+  const draftFields=[stageField,reasonField,noteField,followUpField,dateField];
+  const draftConflicted=draftFields.some(field=>field.conflict);
 
   async function saveLead(nextFollowUp?: FollowUpStatus) {
-    if (!live || leadBusy || !canReply) return;
+    if (!live || leadBusy || !canReply || draftConflicted) return;
     const status = nextFollowUp ?? followUpStatusDraft;
     let followUpAt: string | null = fromDatetimeLocalValue(followUpAtDraft);
     if (status === "none") followUpAt = null;
@@ -320,7 +332,7 @@ function LeadFollowUpPanel({
   }
 
   async function saveAssignee() {
-    if (!live || busyControl || !canAssign) return;
+    if (!live || busyControl || !canAssign || assignmentField.conflict) return;
     await runControlActionPath({
       store: getEpochStore(),
       busyId: conversation.id,
@@ -368,6 +380,10 @@ function LeadFollowUpPanel({
 
   return (
     <div className="space-y-4 text-xs font-[family-name:Tajawal,var(--font-ar),sans-serif]">
+      {(draftConflicted||assignmentField.conflict)&&<Notice tone="warn">
+        <p>{locale==='ar'?'تغيّرت التفاصيل على الخادم. احتفظنا بتعديلاتك؛ راجعها قبل الحفظ.':'Details changed on the server. Your edits are preserved; review them before saving.'}</p>
+        <Button variant="ghost" onClick={()=>{draftFields.forEach(field=>field.resolve());assignmentField.resolve();}}>{locale==='ar'?'تجاهل تعديلات الحقول واعتماد آخر بيانات':'Discard field edits and use latest values'}</Button>
+      </Notice>}
       <div className="flex items-center justify-between border-b border-[color:var(--color-border-soft)] pb-2">
         <h4 className="font-bold text-sm text-[var(--color-on-dark)] flex items-center gap-1.5">
           <span>📋</span>
@@ -384,7 +400,7 @@ function LeadFollowUpPanel({
           value={leadStageDraft}
           disabled={disabled}
           onChange={(e) => setLeadStageDraft(e.target.value as LeadStage)}
-          className="min-h-9 rounded-xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel-deep)] px-2.5 text-xs text-[var(--color-on-dark)] focus:ring-2 focus:ring-[#38dc89] outline-none disabled:opacity-60"
+          className="min-h-9 rounded-xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel-deep)] px-2.5 text-xs text-[var(--color-on-dark)] focus:ring-2 focus:ring-[var(--service-accent)] outline-none disabled:opacity-60"
         >
           {MANUAL_LEAD_STAGES.map((st) => (
             <option key={st} value={st}>
@@ -404,7 +420,7 @@ function LeadFollowUpPanel({
             disabled={disabled}
             onChange={(e) => setLeadReasonDraft(e.target.value)}
             placeholder={copy.leadReasonRequired}
-            className="min-h-9 rounded-xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel-deep)] px-2.5 text-xs text-[var(--color-on-dark)] focus:ring-2 focus:ring-[#38dc89] outline-none disabled:opacity-60"
+            className="min-h-9 rounded-xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel-deep)] px-2.5 text-xs text-[var(--color-on-dark)] focus:ring-2 focus:ring-[var(--service-accent)] outline-none disabled:opacity-60"
           />
         </label>
       ) : null}
@@ -417,7 +433,7 @@ function LeadFollowUpPanel({
           disabled={disabled}
           onChange={(e) => setLeadNoteDraft(e.target.value)}
           placeholder={locale === "ar" ? "ملاحظات داخلية لفريق العمل..." : "Internal team notes..."}
-          className="rounded-xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel-deep)] p-2.5 text-xs text-[var(--color-on-dark)] focus:ring-2 focus:ring-[#38dc89] outline-none disabled:opacity-60 resize-none"
+          className="rounded-xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel-deep)] p-2.5 text-xs text-[var(--color-on-dark)] focus:ring-2 focus:ring-[var(--service-accent)] outline-none disabled:opacity-60 resize-none"
         />
       </label>
 
@@ -436,7 +452,7 @@ function LeadFollowUpPanel({
               value={followUpAtDraft}
               disabled={disabled}
               onChange={(e) => setFollowUpAtDraft(e.target.value)}
-              className="min-h-9 rounded-xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel-deep)] px-2.5 text-xs text-[var(--color-on-dark)] focus:ring-2 focus:ring-[#38dc89] outline-none disabled:opacity-60"
+              className="min-h-9 rounded-xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel-deep)] px-2.5 text-xs text-[var(--color-on-dark)] focus:ring-2 focus:ring-[var(--service-accent)] outline-none disabled:opacity-60"
             />
             {timezoneAnnouncedUtc ? (
               <p className="text-[10px] text-[var(--color-warn-fg)]">{copy.timezoneUtcNotice}</p>
@@ -448,12 +464,12 @@ function LeadFollowUpPanel({
           {followUpStatusDraft !== "scheduled" ? (
             <button
               type="button"
-              disabled={disabled}
+              disabled={disabled||draftConflicted}
               onClick={() => {
                 setFollowUpStatusDraft("scheduled");
                 void saveLead("scheduled");
               }}
-              className="inline-flex min-h-7 items-center rounded-lg border border-[#38dc89]/40 bg-[#38dc89]/15 px-2.5 text-[11px] font-medium text-[#9af0c3] hover:bg-[#38dc89]/25 disabled:opacity-50"
+              className="inline-flex min-h-7 items-center rounded-lg border border-[var(--service-accent)]/40 bg-[var(--service-accent)]/15 px-2.5 text-[11px] font-medium text-[#9af0c3] hover:bg-[var(--service-accent)]/25 disabled:opacity-50"
             >
               📅 {copy.leadSchedule}
             </button>
@@ -461,18 +477,18 @@ function LeadFollowUpPanel({
             <>
               <button
                 type="button"
-                disabled={disabled}
+                disabled={disabled||draftConflicted}
                 onClick={() => {
                   setFollowUpStatusDraft("completed");
                   void saveLead("completed");
                 }}
-                className="inline-flex min-h-7 items-center rounded-lg border border-[#38dc89]/40 bg-[#38dc89]/15 px-2.5 text-[11px] font-medium text-[#9af0c3] hover:bg-[#38dc89]/25 disabled:opacity-50"
+                className="inline-flex min-h-7 items-center rounded-lg border border-[var(--service-accent)]/40 bg-[var(--service-accent)]/15 px-2.5 text-[11px] font-medium text-[#9af0c3] hover:bg-[var(--service-accent)]/25 disabled:opacity-50"
               >
                 ✓ {copy.leadComplete}
               </button>
               <button
                 type="button"
-                disabled={disabled}
+                disabled={disabled||draftConflicted}
                 onClick={() => {
                   setFollowUpStatusDraft("cancelled");
                   void saveLead("cancelled");
@@ -490,7 +506,7 @@ function LeadFollowUpPanel({
         <Button
           type="button"
           variant="secondary"
-          disabled={disabled}
+          disabled={disabled||draftConflicted}
           busy={leadBusy}
           onClick={() => void saveLead()}
           className="text-xs min-h-8 py-1 px-4"
@@ -508,7 +524,7 @@ function LeadFollowUpPanel({
                 value={assignDraft}
                 disabled={!live || busyControl || pending || selectedUnresolved}
                 onChange={(e) => setAssignDraft(e.target.value)}
-                className="min-h-9 flex-1 rounded-xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel-deep)] px-2 text-xs text-[var(--color-on-dark)] focus:ring-2 focus:ring-[#38dc89] outline-none disabled:opacity-60"
+                className="min-h-9 flex-1 rounded-xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel-deep)] px-2 text-xs text-[var(--color-on-dark)] focus:ring-2 focus:ring-[var(--service-accent)] outline-none disabled:opacity-60"
               >
                 <option value="">{locale === "ar" ? "غير معيّن (الجميع)" : "Unassigned"}</option>
                 {assignees.map((a) => (
@@ -520,7 +536,7 @@ function LeadFollowUpPanel({
               <Button
                 type="button"
                 variant="ghost"
-                disabled={!live || busyControl || pending || selectedUnresolved || assignDraft === (conversation.assignedTo ?? "")}
+                disabled={assignmentField.conflict || !live || busyControl || pending || selectedUnresolved || assignDraft === (conversation.assignedTo ?? "")}
                 onClick={() => void saveAssignee()}
                 className="text-xs min-h-9 px-3 shrink-0"
               >
@@ -540,6 +556,11 @@ export function ConversationsPage({
   noCompany,
   meta,
   page,
+  reviewCompanyId,
+  embedded = false,
+  selectedConversationId,
+  onSelectConversation,
+  refreshVersion = 0,
 }: {
   inbox: Conversation[];
   forbidden?: boolean;
@@ -547,12 +568,17 @@ export function ConversationsPage({
   noCompany?: boolean;
   meta?: WhatsappInboxMeta;
   page?: WhatsappInboxPage;
+  reviewCompanyId?: string;
+  embedded?: boolean;
+  selectedConversationId?: string | null;
+  onSelectConversation?: (id:string|null)=>void;
+  refreshVersion?:number;
 }) {
   const copy = useAppCopy();
   const { locale } = useDemo();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const selectedParam = searchParams.get("c");
+  const selectedParam = embedded ? selectedConversationId ?? null : searchParams.get("c");
 
   const [serverInbox, setServerInbox] = useState<WhatsappInboxItem[]>(page?.conversations ?? []);
   const [localInbox, setLocalInbox] = useState<Record<string, WhatsappInboxItem>>({});
@@ -590,7 +616,10 @@ export function ConversationsPage({
     return requested === "unread" || requested === "noura" || requested === "staff" || requested === "resolved" ? requested : "all";
   });
   const [worklist, setWorklist] = useState<LeadWorklist>("all");
-  const [draft, setDraft] = useState("");
+  const [drafts, setDrafts] = useState<Record<string,string>>({});
+  const draftKey = `${meta?.companyId}:${meta?.conversationScope}:${selectedParam}`;
+  const draft = drafts[draftKey] ?? "";
+  const setDraft = (value:string) => setDrafts(old=>({...old,[draftKey]:value}));
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [pending, startTransition] = useTransition();
 
@@ -606,6 +635,25 @@ export function ConversationsPage({
 
   // Column 3 Drawer toggle for mobile and tablet screens
   const [mobileDetailsOpen, setMobileDetailsOpen] = useState(false);
+  const detailsRef=useRef<HTMLElement>(null);
+  const scrollPositions=useRef<Record<string,TranscriptPosition>>({});
+  useEffect(()=>{
+    if(!mobileDetailsOpen)return;
+    const previous=document.activeElement as HTMLElement|null,oldOverflow=document.body.style.overflow;
+    document.body.style.overflow='hidden';
+    detailsRef.current?.querySelector<HTMLElement>('button')?.focus();
+    const key=(event:KeyboardEvent)=>{
+      if(event.key==='Escape'){setMobileDetailsOpen(false);return;}
+      if(event.key!=='Tab')return;
+      const elements=[...detailsRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled),a[href],input:not(:disabled),select:not(:disabled),textarea:not(:disabled)')??[]].filter(el=>el.getClientRects().length>0);
+      const first=elements[0],last=elements.at(-1);if(!first||!last)return;
+      if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}
+      else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}
+    };
+    const resize=()=>{if(window.innerWidth>=(embedded?1536:1280))setMobileDetailsOpen(false);};
+    document.addEventListener('keydown',key);window.addEventListener('resize',resize);
+    return()=>{document.body.style.overflow=oldOverflow;document.removeEventListener('keydown',key);window.removeEventListener('resize',resize);previous?.focus();};
+  },[mobileDetailsOpen,embedded]);
   const [phoneCopied, setPhoneCopied] = useState(false);
 
   const epochStoreRef = useRef<InboxAsyncEpochStore>({
@@ -628,6 +676,7 @@ export function ConversationsPage({
   const inboxRefreshGen = useRef(0);
 
   const canReply = inboxMeta?.canReply === true;
+  const testReview=!!reviewCompanyId&&inboxMeta?.companyId===reviewCompanyId;
   const canAssign = inboxMeta?.canAssign === true;
   const assignees = inboxMeta?.assignees ?? [];
   const timezone = inboxMeta?.timezone ?? null;
@@ -641,7 +690,6 @@ export function ConversationsPage({
   if (renderedSelection !== selectionKey) {
     setRenderedSelection(selectionKey);
     setReadyThreadId(null);
-    setDraft("");
     setNotice(null); setError(null); setWarn(null);
     setAuditBusy(false); setAuditError(null);
   }
@@ -689,7 +737,7 @@ export function ConversationsPage({
     setNotice(null);
     setError(null);
     setWarn(null);
-    setDraft("");
+    setDrafts({});
     threadsRef.current = {};
     setThreads({});
     setThreadErrors({});
@@ -818,7 +866,7 @@ export function ConversationsPage({
   const selectedReady = Boolean(selectedThread && readyThreadId === selectedId && threadBusyId !== selectedId && selectedId && !threadErrors[selectedId]);
 
   const select = (id: string | null) =>
-    router.replace(id ? `/app/conversations?c=${id}` : "/app/conversations");
+    embedded ? onSelectConversation?.(id) : router.replace(id ? `/app/conversations?c=${id}` : "/app/conversations");
 
   const patch = (id: string, fn: (c: Conversation) => Partial<Conversation>) => {
     const current = snapshotRef.current;
@@ -1002,7 +1050,7 @@ export function ConversationsPage({
     return () => { bumpReadGeneration(selectedId); auditGenRef.current += 1; };
     // Identity changes own the request; render-only page updates must not refetch the same thread.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId, inboxScope, readCacheGeneration]);
+  }, [selectedId, inboxScope, readCacheGeneration,refreshVersion]);
 
   async function refreshConnection() {
     const companyId = inboxMeta?.companyId;
@@ -1060,7 +1108,7 @@ export function ConversationsPage({
   function send(c: Conversation) {
     const draftText = draft.trim();
     const locked = inboxSendLocked(snapshotRef.current.base.find(row => row.id === c.id), Boolean(unresolvedSends[c.id]));
-    if (!draftText || !canReply || !selectedReady || pending || controlBusy || locked) return;
+    if (!draftText || !canReply || !c.assistantPaused || !selectedReady || pending || controlBusy || locked) return;
     setError(null);
     setNotice(null);
     setWarn(null);
@@ -1158,7 +1206,8 @@ export function ConversationsPage({
             status: "handed_over",
             assistantPaused: true,
           }));
-          if (isSelected(c.id)) { setDraft(""); setNotice(copy.app.sentNote); }
+          setDrafts(old=>old[draftKey]===body?{...old,[draftKey]:''}:old);
+          if (isSelected(c.id)) setNotice(copy.app.sentNote);
           await syncControlView(c.id);
         },
       });
@@ -1256,7 +1305,7 @@ export function ConversationsPage({
         clearUnresolved(c.id);
         patch(c.id, (cur) => applyControlState(cur, result.state));
         if (isSelected(c.id)) {
-          if (action === "take_over") setNotice(locale === "ar" ? "تم استلام المحادثة وإيقاف نورا مؤقتاً." : "Taken over. Noura auto-reply paused.");
+          if (action === "take_over") setNotice(locale === "ar" ? "تم استلام المحادثة وإيقاف فيلورا مؤقتاً." : "Taken over. Velora auto-reply paused.");
           else if (action === "resume") setNotice(locale === "ar" ? "تم السماح بالأتمتة لهذه المحادثة. يخضع الإرسال لجاهزية التشغيل." : "Automation enabled for this conversation. Sending remains subject to runtime readiness.");
           else setNotice(copy.app.controlClosed);
         }
@@ -1324,14 +1373,15 @@ export function ConversationsPage({
 
   return (
     <WorkspaceShell
+      embedded={embedded}
       title={locale === "ar" ? "صندوق المحادثات الموحد" : "Unified Inbox"}
       actions={
         <div className="flex items-center gap-2 font-[family-name:Tajawal,var(--font-ar),sans-serif]">
           <div className="hidden sm:inline-flex items-center gap-2 rounded-full border border-[color:var(--color-border-soft)] bg-[var(--color-panel)] px-3 py-1 text-xs text-[var(--color-on-dark)] shadow-sm">
-            <span className={`h-2 w-2 rounded-full ${connection?.receiveReady && connection.sendReady ? "bg-[#38dc89]" : "bg-[var(--color-muted-soft)]"}`} />
-            <span className="font-medium text-[#38dc89]">Meta WhatsApp</span>
+            <span className={`h-2 w-2 rounded-full ${connection?.receiveReady && connection.sendReady ? "bg-[var(--service-accent)]" : "bg-[var(--color-muted-soft)]"}`} />
+            <span className="font-medium text-[var(--service-accent)]">Meta WhatsApp</span>
             <span className="text-[var(--color-muted-soft)]">·</span>
-            <span>{connection ? (connection.receiveReady && connection.sendReady
+            <span>{testReview?(locale==='ar'?'اختبار ميتا · ردود يدوية':'Meta test · manual replies'):connection ? (connection.receiveReady && connection.sendReady
               ? (locale === "ar" ? "الرقم مرتبط" : "Number linked")
               : (locale === "ar" ? "الإعداد يحتاج مراجعة" : "Setup needs review"))
               : (locale === "ar" ? "حالة الربط غير متاحة" : "Connection status unavailable")}</span>
@@ -1343,7 +1393,7 @@ export function ConversationsPage({
             className="text-xs min-h-9 px-3 gap-1.5"
             title={locale === "ar" ? "تحديث المحادثات" : "Refresh inbox"}
           >
-            <span>🔄</span>
+            <IconMenu width={16} height={16} aria-hidden="true"/>
             <span className="hidden sm:inline">{locale === "ar" ? "تحديث" : "Refresh"}</span>
           </Button>
         </div>
@@ -1362,7 +1412,7 @@ export function ConversationsPage({
       ) : loadFailed ? (
         <Notice tone="error">{copy.app.inboxLoadFailedBody}</Notice>
       ) : conversations.length === 0 ? (
-        <div className="mb-4 rounded-2xl border border-[#38dc89]/30 bg-gradient-to-r from-[#38dc89]/10 via-[#0d1a14]/60 to-[#d9a467]/10 p-4 text-xs font-[family-name:Tajawal,var(--font-ar),sans-serif] text-[var(--color-on-dark)] flex flex-wrap items-center justify-between gap-3 shadow-sm">
+        <div className="mb-4 rounded-2xl border border-[var(--service-accent)]/30 bg-gradient-to-r from-[var(--service-accent)]/10 via-[#0d1a14]/60 to-[#d9a467]/10 p-4 text-xs font-[family-name:Tajawal,var(--font-ar),sans-serif] text-[var(--color-on-dark)] flex flex-wrap items-center justify-between gap-3 shadow-sm">
           <div className="flex items-center gap-3">
             <span className="text-2xl">📱</span>
             <div>
@@ -1378,7 +1428,7 @@ export function ConversationsPage({
           </div>
           <Link
             href="/app/settings"
-            className="inline-flex min-h-8 items-center rounded-xl bg-[#38dc89] px-3.5 text-xs font-semibold text-[#072317] hover:bg-[#4fe79a] transition"
+            className="inline-flex min-h-8 items-center rounded-xl bg-[var(--service-accent)] px-3.5 text-xs font-semibold text-[#072317] hover:bg-[#4fe79a] transition"
           >
             {locale === "ar" ? "إعدادات الربط ⚙️" : "Connection Settings ⚙️"}
           </Link>
@@ -1386,7 +1436,7 @@ export function ConversationsPage({
       ) : null}
 
       {/* Main 3-Column Unified Inbox Container */}
-      <div className="grid h-[calc(100svh-11rem)] min-h-[620px] max-h-[920px] w-full grid-cols-1 overflow-hidden rounded-2xl border border-[color:var(--color-line)] bg-[var(--color-panel)] shadow-[0_12px_36px_rgba(16,27,22,0.08)] lg:grid-cols-[330px_1fr] xl:grid-cols-[340px_1fr_320px]">
+      <div data-channel-inbox="whatsapp" data-embedded={embedded} className="grid h-[calc(100svh-11rem)] min-h-[620px] max-h-[920px] w-full grid-cols-1 overflow-hidden rounded-2xl border border-[color:var(--color-line)] bg-[var(--color-panel)] shadow-[0_12px_36px_rgba(16,27,22,0.08)] lg:grid-cols-[330px_1fr] xl:grid-cols-[340px_1fr_320px]">
         {/* ============================================================== */}
         {/* COLUMN 1: CONVERSATIONS LIST & FILTERS                         */}
         {/* ============================================================== */}
@@ -1394,6 +1444,7 @@ export function ConversationsPage({
           className={`flex h-full flex-col border-e border-[color:var(--color-line)] bg-[var(--color-panel-deep)]/70 ${
             selected ? "hidden lg:flex" : "flex"
           }`}
+          data-inbox-list="true"
           aria-label={locale === "ar" ? "قائمة المحادثات" : "Conversations List"}
         >
           {/* Header & Search */}
@@ -1406,7 +1457,7 @@ export function ConversationsPage({
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder={locale === "ar" ? "ابحث باسم العميل أو الرقم..." : "Search customer or phone..."}
-                className="w-full min-h-10 rounded-xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel)] ps-9 pe-8 text-xs text-[var(--color-on-dark)] placeholder:text-[var(--color-muted-soft)] focus:ring-2 focus:ring-[#38dc89] outline-none transition"
+                className="w-full min-h-10 rounded-xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel)] ps-9 pe-8 text-xs text-[var(--color-on-dark)] placeholder:text-[var(--color-muted-soft)] focus:ring-2 focus:ring-[var(--service-accent)] outline-none transition"
               />
               {query ? (
                 <button
@@ -1420,13 +1471,13 @@ export function ConversationsPage({
               ) : null}
             </div>
 
-            {/* Quick Filter Tabs: الكل، غير المقروءة، نورا ترد، تدخل بشري، مغلقة */}
+            {/* Quick Filter Tabs: الكل، غير المقروءة، فيلورا ترد، تدخل بشري، مغلقة */}
             <div className="flex gap-1 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden text-[11px] font-medium font-[family-name:Tajawal,var(--font-ar),sans-serif]">
               {(
                 [
                   { id: "all", labelAr: "الكل", labelEn: "All", count: filterCounts.all, title: locale === "ar" ? "كل المحادثات المتاحة" : "All authorized conversations" },
                   { id: "unread", labelAr: "غير مقروءة", labelEn: "Unread", count: filterCounts.unread, title: locale === "ar" ? "الرسائل غير المقروءة في مساحة العمل" : "Unread messages across the workspace" },
-                  { id: "noura", labelAr: "نورا", labelEn: "Noura", count: undefined, badge: "✨", title: locale === "ar" ? "الأتمتة المسموحة في المحادثات المحملة" : "Automation enabled in loaded conversations" },
+                  { id: "noura", labelAr: "فيلورا", labelEn: "Velora", count: undefined, badge: "✨", title: locale === "ar" ? "الأتمتة المسموحة في المحادثات المحملة" : "Automation enabled in loaded conversations" },
                   { id: "staff", labelAr: "تدخل بشري", labelEn: "Staff", count: filterCounts.staff, badge: "👤", title: locale === "ar" ? "محادثات تحتاج تدخلاً في مساحة العمل" : "Conversations requiring intervention across the workspace" },
                   { id: "resolved", labelAr: "مغلقة", labelEn: "Closed", count: undefined, title: locale === "ar" ? "المحادثات المغلقة المحملة" : "Closed loaded conversations" },
                 ] as const
@@ -1441,7 +1492,7 @@ export function ConversationsPage({
                     title={tab.title}
                     className={`inline-flex items-center gap-1 shrink-0 rounded-xl px-2.5 py-1.5 transition ${
                       active
-                        ? "bg-[#38dc89] text-[#072317] font-bold shadow-sm"
+                        ? "bg-[var(--service-accent)] text-[#072317] font-bold shadow-sm"
                         : "bg-[var(--color-hover-wash)] text-[var(--color-muted-on-dark)] hover:text-[var(--color-on-dark)] border border-transparent"
                     }`}
                   >
@@ -1501,7 +1552,7 @@ export function ConversationsPage({
               const isCurrent = c.id === selectedId;
               const lastMessage = c.messages[c.messages.length - 1];
               const lastMsgTime = lastMessage?.at ? formatConversationTime(lastMessage.at, locale) : "";
-              const isNouraActive = !c.assistantPaused && Boolean(c.automationAllowed) && c.status !== "resolved";
+              const isVeloraActive = !c.assistantPaused && Boolean(c.automationAllowed) && c.status !== "resolved";
               const isAwaitingStaff = c.assistantPaused && c.status !== "resolved";
               const isCustomerWaiting = c.unreadCount > 0;
 
@@ -1513,14 +1564,14 @@ export function ConversationsPage({
                   aria-current={isCurrent ? "true" : undefined}
                   className={`group relative grid w-full gap-1.5 rounded-xl p-3 text-start transition duration-150 border ${
                     isCurrent
-                      ? "border-[#38dc89]/60 bg-[#38dc89]/10 shadow-[0_2px_12px_rgba(56,220,137,0.12)]"
+                      ? "border-[var(--service-accent)]/60 bg-[var(--service-accent)]/10 shadow-[0_2px_12px_rgba(56,220,137,0.12)]"
                       : "border-transparent hover:border-[color:var(--color-border-soft)] hover:bg-[var(--color-hover-wash)]"
                   }`}
                 >
                   {/* Top line: Customer name + Time */}
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 min-w-0">
-                      <div className="h-7 w-7 rounded-full bg-gradient-to-br from-[#38dc89]/25 to-[#1d7d4c]/30 flex items-center justify-center text-xs font-bold text-[#38dc89] shrink-0 border border-[#38dc89]/30">
+                      <div className="h-7 w-7 rounded-full bg-gradient-to-br from-[var(--service-accent)]/25 to-[#1d7d4c]/30 flex items-center justify-center text-xs font-bold text-[var(--service-accent)] shrink-0 border border-[var(--service-accent)]/30">
                         {c.customer.slice(0, 1).toUpperCase()}
                       </div>
                       <span className="font-bold text-xs text-[var(--color-on-dark)] truncate">
@@ -1548,7 +1599,7 @@ export function ConversationsPage({
                           {lastMessage.from === "customer"
                             ? ""
                             : lastMessage.from === "assistant"
-                              ? (locale === "ar" ? "نورا: " : "Noura: ")
+                              ? (locale === "ar" ? "فيلورا: " : "Velora: ")
                               : (locale === "ar" ? "الموظف: " : "Staff: ")}
                         </span>
                         {lastMessage.text}
@@ -1558,11 +1609,11 @@ export function ConversationsPage({
                     )}
                   </p>
 
-                  {/* Badges footer: Noura status + conversation status */}
+                  {/* Badges footer: Velora status + conversation status */}
                   <div className="flex flex-wrap items-center gap-1.5 pt-1 text-[10px]">
-                    {isNouraActive ? (
-                      <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium bg-[#38dc89]/15 text-[#38dc89] border border-[#38dc89]/30">
-                        <span className="h-1.5 w-1.5 rounded-full bg-[#38dc89] animate-pulse" />
+                    {isVeloraActive ? (
+                      <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium bg-[var(--service-accent)]/15 text-[var(--service-accent)] border border-[var(--service-accent)]/30">
+                        <span className="h-1.5 w-1.5 rounded-full bg-[var(--service-accent)] animate-pulse" />
                         ✨ {locale === "ar" ? "الأتمتة مسموحة" : "Automation enabled"}
                       </span>
                     ) : isAwaitingStaff ? (
@@ -1582,7 +1633,7 @@ export function ConversationsPage({
                     ) : null}
 
                     {isCustomerWaiting ? (
-                      <span className="ms-auto rounded-full px-1.5 bg-[#38dc89]/20 text-[#38dc89]"
+                      <span className="ms-auto rounded-full px-1.5 bg-[var(--service-accent)]/20 text-[var(--service-accent)]"
                         title={locale === "ar" ? "رسائل غير مقروءة" : "Unread messages"}>{c.unreadCount}</span>
                     ) : null}
                   </div>
@@ -1623,7 +1674,7 @@ export function ConversationsPage({
                     {locale === "ar" ? "→" : "←"}
                   </button>
 
-                  <div className="h-10 w-10 rounded-full bg-gradient-to-br from-[#38dc89]/20 to-[#1d7d4c]/20 border border-[#38dc89]/30 flex items-center justify-center font-bold text-sm text-[#38dc89] shrink-0">
+                  <div className="h-10 w-10 rounded-full bg-gradient-to-br from-[var(--service-accent)]/20 to-[#1d7d4c]/20 border border-[var(--service-accent)]/30 flex items-center justify-center font-bold text-sm text-[var(--service-accent)] shrink-0">
                     {selected.customer.slice(0, 1).toUpperCase()}
                   </div>
 
@@ -1632,7 +1683,7 @@ export function ConversationsPage({
                       <h2 className="font-bold text-sm text-[var(--color-on-dark)] truncate font-[family-name:Tajawal,var(--font-ar),sans-serif]">
                         {selected.customer}
                       </h2>
-                      <span className="rounded-full px-2 py-0.5 text-[10px] font-medium bg-[#38dc89]/10 text-[#38dc89] border border-[#38dc89]/20">
+                      <span className="rounded-full px-2 py-0.5 text-[10px] font-medium bg-[var(--service-accent)]/10 text-[var(--service-accent)] border border-[var(--service-accent)]/20">
                         WhatsApp
                       </span>
                     </div>
@@ -1645,12 +1696,12 @@ export function ConversationsPage({
                       {selected.assistantPaused ? (
                         <span className="inline-flex items-center gap-1 font-medium text-[#f0cf9d] text-[11px]">
                           <span className="h-1.5 w-1.5 rounded-full bg-[#d9a467]" />
-                          {locale === "ar" ? "تدخل الموظف البشري 👤" : "Staff Active 👤"}
+                          {locale === "ar" ? "تحكم بشري" : "Human control"}
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 font-medium text-[#38dc89] text-[11px]">
-                          <span className="h-1.5 w-1.5 rounded-full bg-[#38dc89] animate-pulse" />
-                          {selected.status === "resolved" ? copy.app.statuses.resolved : (locale === "ar" ? "الأتمتة مسموحة ✨" : "Automation enabled ✨")}
+                        <span className="inline-flex items-center gap-1 font-medium text-[var(--service-accent)] text-[11px]">
+                          <span className="h-1.5 w-1.5 rounded-full bg-[var(--service-accent)] animate-pulse" />
+                          {selected.status === "resolved" ? copy.app.statuses.resolved : (locale === "ar" ? "الأتمتة مسموحة" : "Automation allowed")}
                         </span>
                       )}
                     </div>
@@ -1666,11 +1717,11 @@ export function ConversationsPage({
                           type="button"
                           disabled={controlDisabled("resume")}
                           onClick={() => runControl(selected, "resume")}
-                          className="inline-flex min-h-8 items-center gap-1.5 rounded-xl border border-[#38dc89]/40 bg-[#38dc89]/15 px-3 text-xs font-bold text-[#38dc89] transition hover:bg-[#38dc89]/25 disabled:opacity-50"
-                          title={locale === "ar" ? "السماح لنورا بالرد التلقائي مجدداً" : "Resume Noura"}
+                          className="inline-flex min-h-8 items-center gap-1.5 rounded-xl border border-[var(--service-accent)]/40 bg-[var(--service-accent)]/15 px-3 text-xs font-bold text-[var(--service-accent)] transition hover:bg-[var(--service-accent)]/25 disabled:opacity-50"
+                          title={locale === "ar" ? "السماح لفيلورا بالرد التلقائي مجدداً" : "Resume Velora"}
                         >
-                          <span>🤖</span>
-                          <span>{locale === "ar" ? "تفعيل نورا" : "Resume Noura"}</span>
+                          <IconRocket width={16} height={16} aria-hidden="true"/>
+                          <span>{locale === "ar" ? "إعادة إلى فيلورا" : "Resume Velora"}</span>
                         </button>
                       ) : (
                         <button
@@ -1678,10 +1729,10 @@ export function ConversationsPage({
                           disabled={controlDisabled("take_over")}
                           onClick={() => runControl(selected, "take_over")}
                           className="inline-flex min-h-8 items-center gap-1.5 rounded-xl border border-[#d9a467]/40 bg-[#d9a467]/15 px-3 text-xs font-bold text-[#f0cf9d] transition hover:bg-[#d9a467]/25 disabled:opacity-50"
-                          title={locale === "ar" ? "إيقاف نورا وتولي المحادثة كبشري" : "Take over from Noura"}
+                          title={locale === "ar" ? "إيقاف فيلورا وتولي المحادثة كبشري" : "Take over from Velora"}
                         >
-                          <span>👤</span>
-                          <span>{locale === "ar" ? "استلام يدوي" : "Take Over"}</span>
+                          <IconUsers width={16} height={16} aria-hidden="true"/>
+                          <span>{locale === "ar" ? "استلام المحادثة" : "Take over conversation"}</span>
                         </button>
                       )}
 
@@ -1703,10 +1754,13 @@ export function ConversationsPage({
                   <button
                     type="button"
                     onClick={() => setMobileDetailsOpen((prev) => !prev)}
+                    data-details-toggle="true"
+                    aria-expanded={mobileDetailsOpen}
+                    aria-controls="conversation-details"
                     className="inline-flex min-h-8 items-center gap-1 rounded-xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel-deep)] px-2.5 text-xs text-[var(--color-on-dark)] xl:hidden hover:bg-[var(--color-hover-wash)]"
                     aria-label={locale === "ar" ? "تفاصيل العميل" : "Customer Details"}
                   >
-                    <span>ℹ️</span>
+                    <IconShield width={16} height={16} aria-hidden="true"/>
                     <span className="hidden sm:inline">{locale === "ar" ? "التفاصيل" : "Details"}</span>
                   </button>
                 </div>
@@ -1725,18 +1779,21 @@ export function ConversationsPage({
                     onClick={() => runControl(selected, "resume")}
                     className="text-xs font-bold underline hover:opacity-80"
                   >
-                    {locale === "ar" ? "إعادة تفعيل نورا" : "Activate Noura"}
+                    {locale === "ar" ? "إعادة تفعيل فيلورا" : "Activate Velora"}
                   </button>
                 </div>
               ) : (
-                <div className="border-b border-[#38dc89]/20 bg-[#38dc89]/5 px-4 py-2 text-xs text-[#38dc89] flex items-center gap-2 font-[family-name:Tajawal,var(--font-ar),sans-serif]">
-                  <span>✨</span>
+                <div className="border-b border-[var(--service-accent)]/20 bg-[var(--service-accent)]/5 px-4 py-2 text-xs text-[var(--service-accent)] flex items-center gap-2 font-[family-name:Tajawal,var(--font-ar),sans-serif]">
+                  <IconSparkles width={16} height={16} aria-hidden="true"/>
                   <span>{selected.status === "resolved" ? copy.app.statuses.resolved : (locale === "ar" ? "الأتمتة مسموحة. الإرسال يعتمد على جاهزية التشغيل والمعرفة المعتمدة." : "Automation is enabled. Sending depends on runtime readiness and approved knowledge.")}</span>
                 </div>
               )}
 
               {/* Messages Transcript Scroll Area */}
               <div
+                data-transcript="true"
+                ref={node=>{if(node)restoreTranscriptPosition(node,scrollPositions.current[draftKey]);}}
+                onScroll={event=>{scrollPositions.current[draftKey]=captureTranscriptPosition(event.currentTarget);}}
                 className="flex-1 overflow-y-auto p-4 space-y-4"
                 dir={locale === "ar" ? "rtl" : "ltr"}
               >
@@ -1759,6 +1816,7 @@ export function ConversationsPage({
                   return (
                     <div
                       key={m.id}
+                      data-message-id={m.id}
                       className={`flex flex-col max-w-[85%] sm:max-w-[75%] ${
                         isCustomer ? "me-auto items-start" : "ms-auto items-end"
                       }`}
@@ -1768,13 +1826,13 @@ export function ConversationsPage({
                         {isCustomer ? (
                           <span className="text-[var(--color-muted-soft)]">{selected.customer}</span>
                         ) : isAssistant ? (
-                          <span className="inline-flex items-center gap-1 text-[#38dc89] font-bold">
-                            <span>✨</span>
-                            <span>{locale === "ar" ? "نورا (ذكاء اصطناعي معتمد)" : "Noura (Velora AI)"}</span>
+                          <span className="inline-flex items-center gap-1 text-[var(--service-accent)] font-bold">
+                            <IconSparkles width={16} height={16} aria-hidden="true"/>
+                            <span>{locale === "ar" ? "فيلورا · رد آلي" : "Velora · Automated reply"}</span>
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 text-[#f0cf9d] font-bold">
-                            <span>👤</span>
+                            <IconUsers width={16} height={16} aria-hidden="true"/>
                             <span>{copy.app.staff}</span>
                           </span>
                         )}
@@ -1794,7 +1852,7 @@ export function ConversationsPage({
                             ? "rounded-ss-sm bg-[var(--color-panel-deep)] text-[var(--color-on-dark)] border border-[color:var(--color-border-soft)]"
                             : isAssistant
                               ? "rounded-se-sm bg-gradient-to-br from-[#0c2e1f]/90 to-[#072317] text-[#e6fbf0] border border-[#227249]/60 shadow-[0_4px_16px_rgba(56,220,137,0.08)]"
-                              : "rounded-se-sm bg-[#1b3a2a] text-white border border-[#38dc89]/40"
+                              : "rounded-se-sm bg-[#1b3a2a] text-white border border-[var(--service-accent)]/40"
                         }`}
                       >
                         <p className="whitespace-pre-wrap break-words">{m.text}</p>
@@ -1823,7 +1881,7 @@ export function ConversationsPage({
                       {liveIds.has(selected.id) ? (
                         <button
                           type="button"
-                          className="min-h-8 text-[#38dc89] underline font-bold"
+                          className="min-h-8 text-[var(--service-accent)] underline font-bold"
                           disabled={controlBusy}
                           onClick={() => void retryRefresh(selected.id)}
                         >
@@ -1839,7 +1897,7 @@ export function ConversationsPage({
                       <span>{copy.app.controlOutcomeLocked}</span>
                       <button
                         type="button"
-                        className="min-h-8 text-[#38dc89] underline font-bold"
+                        className="min-h-8 text-[var(--service-accent)] underline font-bold"
                         disabled={controlBusy}
                         onClick={() => void retryRefresh(selected.id)}
                       >
@@ -1855,7 +1913,7 @@ export function ConversationsPage({
                       (error === copy.app.controlUnavailable || error === copy.app.controlUnknownOutcome) ? (
                         <button
                           type="button"
-                          className="min-h-8 text-[#38dc89] underline font-bold"
+                          className="min-h-8 text-[var(--service-accent)] underline font-bold"
                           disabled={controlBusy}
                           onClick={() => void retryRefresh(selected.id)}
                         >
@@ -1869,6 +1927,8 @@ export function ConversationsPage({
 
               {/* Bottom Composer Box */}
               <div className="border-t border-[color:var(--color-line)] p-3 bg-[var(--color-panel)]">
+                {canReply && !testReview && inboxMeta?.companyId && liveIds.has(selected.id) && <ChannelAIDraft key={`${inboxScope}:${selected.id}:${selected.messages.at(-1)?.id}:${selected.revision}`} companyId={inboxMeta.companyId} channel="whatsapp" conversationId={selected.id} ar={locale==='ar'} disabled={!selectedReady||pending||controlBusy||selectedSendLocked} onUse={setDraft}/>}
+                <ChannelBadge channel="whatsapp" ar={locale==="ar"}/>
                 {canReply ? (
                   <form
                     className="flex flex-col gap-2 font-[family-name:Tajawal,var(--font-ar),sans-serif]"
@@ -1879,11 +1939,11 @@ export function ConversationsPage({
                   >
                     {!selected.assistantPaused ? (
                       <p className="text-[11px] text-[#f0cf9d] flex items-center gap-1.5">
-                        <span>ℹ️</span>
+                        <IconShield width={16} height={16} aria-hidden="true"/>
                         <span>
                           {locale === "ar"
-                            ? "ملاحظة: إرسال رد يدوي سيوقف نورا تلقائياً لتمكين الموظف من متابعة المحادثة."
-                            : "Note: Sending a manual reply will pause Noura to ensure no conflicting answers."}
+                            ? "ملاحظة: استلم المحادثة أولًا لإيقاف الرد الآلي وكتابة ردك."
+                            : "Take over this conversation before writing a human reply."}
                         </span>
                       </p>
                     ) : null}
@@ -1894,6 +1954,7 @@ export function ConversationsPage({
                         value={draft}
                         onChange={(e) => setDraft(e.target.value)}
                         onKeyDown={(e) => {
+                          if (e.nativeEvent.isComposing) return;
                           if (e.key === "Enter" && !e.shiftKey) {
                             e.preventDefault();
                             if (selectedReady && canReply && draft.trim() && !pending && !controlBusy && !selectedSendLocked) {
@@ -1907,12 +1968,12 @@ export function ConversationsPage({
                             : (locale === "ar" ? "اكتب ردك للتدخل يدويًا ومراسلة العميل..." : "Type reply to take over and message customer...")
                         }
                         aria-label={copy.app.reply}
-                        disabled={!selectedReady || pending || controlBusy || selectedSendLocked}
-                        className="flex-1 rounded-xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel-deep)] p-2.5 text-xs text-[var(--color-on-dark)] placeholder:text-[var(--color-muted-soft)] focus:ring-2 focus:ring-[#38dc89] outline-none disabled:opacity-60 resize-none transition"
+                        disabled={!selectedReady || !selected.assistantPaused || pending || controlBusy || selectedSendLocked}
+                        className="flex-1 rounded-xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel-deep)] p-2.5 text-xs text-[var(--color-on-dark)] placeholder:text-[var(--color-muted-soft)] focus:ring-2 focus:ring-[var(--service-accent)] outline-none disabled:opacity-60 resize-none transition"
                       />
                       <Button
                         type="submit"
-                        disabled={!selectedReady || !canReply || !draft.trim() || pending || controlBusy || selectedSendLocked || !liveIds.has(selected.id)}
+                        disabled={!selectedReady || !selected.assistantPaused || !canReply || !draft.trim() || pending || controlBusy || selectedSendLocked || !liveIds.has(selected.id)}
                         className="shrink-0 min-h-10 px-4 text-xs font-bold gap-1.5"
                       >
                         <span>📨</span>
@@ -1929,7 +1990,7 @@ export function ConversationsPage({
             </>
           ) : (
             <div className="flex flex-col items-center justify-center h-full p-8 text-center">
-              <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-[#38dc89]/20 to-[#1d7d4c]/10 border border-[#38dc89]/30 flex items-center justify-center text-3xl mb-4 shadow-sm">
+              <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-[var(--service-accent)]/20 to-[#1d7d4c]/10 border border-[var(--service-accent)]/30 flex items-center justify-center text-3xl mb-4 shadow-sm">
                 💬
               </div>
               <h3 className="font-bold text-base text-[var(--color-on-dark)] mb-1 font-[family-name:Tajawal,var(--font-ar),sans-serif]">
@@ -1937,8 +1998,8 @@ export function ConversationsPage({
               </h3>
               <p className="text-xs text-[var(--color-muted-on-dark)] max-w-sm mb-4 leading-5 font-[family-name:Tajawal,var(--font-ar),sans-serif]">
                 {locale === "ar"
-                  ? "اختر أي محادثة من القائمة لمراجعة ردود نورا أو الرد يدويًا ومتابعة حالة العميل."
-                  : "Select a conversation from the list to review Noura's responses or take over manually."}
+                  ? "اختر أي محادثة من القائمة لمراجعة ردود فيلورا أو الرد يدويًا ومتابعة حالة العميل."
+                  : "Select a conversation from the list to review Velora's responses or take over manually."}
               </p>
               {list[0] ? (
                 <Button variant="secondary" onClick={() => select(list[0].id)} className="text-xs">
@@ -1954,6 +2015,11 @@ export function ConversationsPage({
         {/* ============================================================== */}
         {selected ? (
           <aside
+            id="conversation-details"
+            ref={detailsRef}
+            data-details-open={mobileDetailsOpen}
+            role={mobileDetailsOpen?'dialog':undefined}
+            aria-modal={mobileDetailsOpen?true:undefined}
             className={`flex flex-col border-s border-[color:var(--color-line)] bg-[var(--color-panel-deep)]/90 overflow-y-auto p-4 space-y-4 font-[family-name:Tajawal,var(--font-ar),sans-serif] ${
               mobileDetailsOpen
                 ? "fixed inset-y-0 end-0 z-50 w-full max-w-sm bg-[var(--color-panel)] shadow-2xl xl:static xl:w-auto xl:shadow-none"
@@ -1964,7 +2030,7 @@ export function ConversationsPage({
             {/* Header with Close Button for Mobile Drawer */}
             <div className="flex items-center justify-between pb-2 border-b border-[color:var(--color-line)]">
               <h3 className="font-bold text-sm text-[var(--color-on-dark)] flex items-center gap-1.5">
-                <span>👤</span>
+                <IconUsers width={16} height={16} aria-hidden="true"/>
                 {locale === "ar" ? "بيانات العميل والأتمتة" : "Customer & AI Details"}
               </h3>
               <button
@@ -1980,7 +2046,7 @@ export function ConversationsPage({
             {/* Card 1: Customer Profile */}
             <div className="rounded-xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel)] p-3 space-y-2">
               <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-full bg-gradient-to-br from-[#38dc89]/25 to-[#1d7d4c]/30 flex items-center justify-center font-bold text-sm text-[#38dc89] border border-[#38dc89]/40 shrink-0">
+                <div className="h-10 w-10 rounded-full bg-gradient-to-br from-[var(--service-accent)]/25 to-[#1d7d4c]/30 flex items-center justify-center font-bold text-sm text-[var(--service-accent)] border border-[var(--service-accent)]/40 shrink-0">
                   {selected.customer.slice(0, 1).toUpperCase()}
                 </div>
                 <div className="min-w-0">
@@ -1999,7 +2065,7 @@ export function ConversationsPage({
                     <button
                       type="button"
                       onClick={() => copyCustomerPhone(selected.phone)}
-                      className="text-[10px] text-[#38dc89] hover:underline"
+                      className="text-[10px] text-[var(--service-accent)] hover:underline"
                       title={locale === "ar" ? "نسخ الرقم" : "Copy phone"}
                     >
                       {phoneCopied ? (locale === "ar" ? "تم!" : "Copied!") : "📋"}
@@ -2009,7 +2075,7 @@ export function ConversationsPage({
 
                 <div className="flex items-center justify-between text-[11px]">
                   <span className="text-[var(--color-muted-soft)]">{locale === "ar" ? "القناة:" : "Channel:"}</span>
-                  <span className="font-medium text-[#38dc89]">WhatsApp Cloud API</span>
+                  <span className="font-medium text-[var(--service-accent)]">WhatsApp Cloud API</span>
                 </div>
 
                 <div className="flex items-center justify-between text-[11px]">
@@ -2019,7 +2085,7 @@ export function ConversationsPage({
                 {selected.intervention.reasons.length ? <div className="text-[11px] text-[#f0cf9d] space-y-1">
                   {selected.intervention.reasons.map(reason => <p key={reason}>{interventionLabels[reason]}</p>)}
                 </div> : null}
-                {connection ? <div className="pt-2 text-[10px] text-[var(--color-muted-soft)] space-y-1">
+                {!testReview&&connection ? <div className="pt-2 text-[10px] text-[var(--color-muted-soft)] space-y-1">
                   {connection.displayNumber ? <p dir="ltr">{connection.displayNumber}</p> : null}
                   <p>{locale === "ar" ? "حالة الربط:" : "Connection:"} {connection.status.replaceAll("_", " ")}</p>
                   <p>{locale === "ar" ? "التفويض:" : "Authorization:"} {connection.authorizationStatus.replaceAll("_", " ")}</p>
@@ -2031,13 +2097,13 @@ export function ConversationsPage({
               </div>
             </div>
 
-            {/* Card 2: AI Persona (Noura) Card */}
-            <div className="rounded-xl border border-[#38dc89]/30 bg-gradient-to-br from-[#0c2e1f]/40 to-[var(--color-panel)] p-3 space-y-2.5">
+            {/* Card 2: AI Persona (Velora) Card */}
+            <div className="rounded-xl border border-[var(--service-accent)]/30 bg-gradient-to-br from-[#0c2e1f]/40 to-[var(--color-panel)] p-3 space-y-2.5">
               <div className="flex items-center gap-2">
                 <span className="text-xl">✨</span>
                 <div>
-                  <p className="font-bold text-xs text-[#38dc89]">
-                    {locale === "ar" ? "المساعد الذكي: نورا (Noura)" : "AI Persona: Noura"}
+                  <p className="font-bold text-xs text-[var(--service-accent)]">
+                    {locale === "ar" ? "المساعد الذكي: فيلورا (Velora)" : "AI Persona: Velora"}
                   </p>
                   <p className="text-[10px] text-[var(--color-muted-soft)]">
                     {locale === "ar" ? "مساعدة فيلورا الذكية المعتمدة لشركتك" : "Velora's Official AI Assistant"}
@@ -2051,12 +2117,12 @@ export function ConversationsPage({
                   {selected.assistantPaused ? (
                     <span className="font-bold text-[#f0cf9d]">{locale === "ar" ? "متوقفة مؤقتاً" : "Paused"}</span>
                   ) : (
-                    <span className="font-bold text-[#38dc89]">{selected.status === "resolved" ? copy.app.statuses.resolved : (locale === "ar" ? "مسموحة" : "Enabled")}</span>
+                    <span className="font-bold text-[var(--service-accent)]">{selected.status === "resolved" ? copy.app.statuses.resolved : (locale === "ar" ? "مسموحة" : "Enabled")}</span>
                   )}
                 </div>
                 <div className="flex items-center justify-between text-[10px] text-[var(--color-muted-soft)]">
                   <span>{locale === "ar" ? "المعرفة المعتمدة:" : "Knowledge base:"}</span>
-                  <Link href="/app/knowledge" className="text-[#38dc89] font-medium hover:underline">{locale === "ar" ? "إدارة المعرفة" : "Manage knowledge"}</Link>
+                  <Link href="/app/knowledge" className="text-[var(--service-accent)] font-medium hover:underline">{locale === "ar" ? "إدارة المعرفة" : "Manage knowledge"}</Link>
                 </div>
               </div>
 
@@ -2067,10 +2133,10 @@ export function ConversationsPage({
                       type="button"
                       disabled={controlDisabled("resume")}
                       onClick={() => runControl(selected, "resume")}
-                      className="w-full inline-flex min-h-8 items-center justify-center gap-1.5 rounded-lg border border-[#38dc89]/50 bg-[#38dc89]/20 text-xs font-bold text-[#38dc89] hover:bg-[#38dc89]/30 transition disabled:opacity-50"
+                      className="w-full inline-flex min-h-8 items-center justify-center gap-1.5 rounded-lg border border-[var(--service-accent)]/50 bg-[var(--service-accent)]/20 text-xs font-bold text-[var(--service-accent)] hover:bg-[var(--service-accent)]/30 transition disabled:opacity-50"
                     >
-                      <span>🤖</span>
-                      <span>{locale === "ar" ? "إعادة تشغيل نورا" : "Activate Noura"}</span>
+                      <IconRocket width={16} height={16} aria-hidden="true"/>
+                      <span>{locale === "ar" ? "إعادة تشغيل فيلورا" : "Activate Velora"}</span>
                     </button>
                   ) : (
                     <button
@@ -2079,7 +2145,7 @@ export function ConversationsPage({
                       onClick={() => runControl(selected, "take_over")}
                       className="w-full inline-flex min-h-8 items-center justify-center gap-1.5 rounded-lg border border-[#d9a467]/50 bg-[#d9a467]/20 text-xs font-bold text-[#f0cf9d] hover:bg-[#d9a467]/30 transition disabled:opacity-50"
                     >
-                      <span>👤</span>
+                      <IconUsers width={16} height={16} aria-hidden="true"/>
                       <span>{locale === "ar" ? "استلام المحادثة يدويًا" : "Take Over Manually"}</span>
                     </button>
                   )}
@@ -2105,7 +2171,7 @@ export function ConversationsPage({
             {/* Card 3: Lead & CRM Follow-up Panel */}
             <div className="rounded-xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel)] p-3">
               <LeadFollowUpPanel
-                key={`${selected.id}:${selected.leadRevision ?? 1}:${selected.revision ?? 1}`}
+                key={selected.id}
                 conversation={selected}
                 copy={copy.app}
                 locale={locale}
@@ -2144,20 +2210,20 @@ export function ConversationsPage({
             </div>
 
             {/* Card 4: Channel & Subscription Health */}
-            <div className="rounded-xl border border-[color:var(--color-border-soft)] bg-[var(--color-hover-wash)] p-3 text-[11px] space-y-1.5">
+            {testReview&&inboxMeta?.companyId?<ChannelReviewStatus companyId={inboxMeta.companyId} channel="whatsapp"/>:<div className="rounded-xl border border-[color:var(--color-border-soft)] bg-[var(--color-hover-wash)] p-3 text-[11px] space-y-1.5">
               <p className="font-bold text-xs text-[var(--color-on-dark)] flex items-center gap-1.5">
                 <span>🛡️</span>
                 {locale === "ar" ? "حالة الاشتراك والربط" : "Subscription & Integration"}
               </p>
               <div className="flex items-center justify-between text-[var(--color-muted-soft)]">
                 <span>{locale === "ar" ? "باقة الشركة:" : "Plan:"}</span>
-                <span className="text-[#38dc89] font-medium">{locale === "ar" ? "نشطة (Velora SaaS)" : "Active (Velora SaaS)"}</span>
+                <span className="font-medium">{locale === "ar" ? "راجع صفحة الاشتراك" : "Check subscription settings"}</span>
               </div>
               <div className="flex items-center justify-between text-[var(--color-muted-soft)]">
                 <span>{locale === "ar" ? "حماية البيانات:" : "Tenant Isolation:"}</span>
                 <span className="text-[var(--color-on-dark)] font-medium">{locale === "ar" ? "معزولة مشفرة" : "RLS Enforced"}</span>
               </div>
-            </div>
+            </div>}
           </aside>
         ) : null}
       </div>

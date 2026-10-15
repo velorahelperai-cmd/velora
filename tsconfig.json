@@ -37,6 +37,7 @@
   ],
   "exclude": [
     "node_modules",
+    "tmp",
     "artifacts",
     ".next/dev"
   ]

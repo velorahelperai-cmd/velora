@@ -739,6 +739,32 @@
 .root[data-surface] .card .portrait{position:static;inset:auto;width:100%;opacity:1;}
 .root[data-surface] :is(.contrast dt,.facts dt){color:#40554a;}
 .root[data-surface] .card{min-width:0;}
+.root[data-surface] .card .portrait{height:270px;padding:0;overflow:hidden;}
+.characterStage[data-media="video"]{grid-template-rows:minmax(0,1fr) auto;cursor:default;}
+.characterStage[data-media="video"] .characterParallaxLayer{min-height:0;pointer-events:auto;}
+.characterStage[data-media="video"] .characterFloatWrapper{min-height:0;}
+.characterVideo{pointer-events:auto;max-height:100%;filter:none;transform:none;}
+.characterMediaControls{position:static;inset:auto;opacity:1;pointer-events:auto;transition:none;padding-top:5px;}
+.characterMediaControls button{display:flex;gap:8px;padding:0 14px;border-radius:999px;font-size:12px;background:#087443;color:#fff;border:1px solid #087443;}
+.root[data-surface] .characterImage{max-height:100%;max-width:100%;object-fit:contain;transform:none;filter:none;}
+.root[data-surface] .characterFloatWrapper{animation:none;}
+.annualPriceNote,.teamAllowance{color:#40554a;font-size:13px;line-height:1.8;margin:0 0 12px;}
+.addonDetails,.fullComparison{border:1px solid var(--line);border-radius:12px;padding:12px;margin:12px 0;font-size:13px;line-height:1.8;}
+.addonDetails summary,.fullComparison summary{cursor:pointer;min-height:44px;display:flex;align-items:center;font-weight:600;}
+.addonDetails ul{padding-inline-start:20px;list-style:disc;}
+.addonDetails p{margin-top:10px;color:#40554a;}
 .root[data-surface] .featureState{max-width:none;}
 @container subscription (max-width:950px){.root[data-surface] .cards{grid-template-columns:repeat(2,minmax(0,1fr));}}
 @container subscription (max-width:680px){.root[data-surface] .cards{grid-template-columns:1fr;}}
+/* Approved service palette. Public landing pricing remains untouched. */
+.root[data-surface="account"] {--ink:var(--service-ink);--muted:var(--service-muted);--line:var(--service-line);--teal:var(--service-accent);--turf:var(--service-accent);--gold:var(--service-warning);--lilac:var(--service-accent);background:var(--service-surface);color:var(--service-ink);border-radius:var(--service-radius);padding:clamp(16px,2vw,28px);}
+.root[data-surface="account"] :is(h1,h2,h3,strong,.price,.selectionTitle,.checkoutAmount,.featureHeading,.cardTop h3,.cardTop h3 span,.comparisonTable th,.comparisonTable td) {color:var(--service-ink)!important;}
+.root[data-surface="account"] :is(.role,.fits,.editionNote,.featureScope,.featureEmpty,.cycleLabel,.brandIntro,.brandHint p,.catalogNote,.paymentNote,.quota,.quota small,.features li,.contrast,.contrast dd,.contrast dt,.facts dt,.comparisonTable small,.catalogStates p) {color:var(--service-muted)!important;}
+.root[data-surface="account"] :is(.cycles,.packageOptions,.comparisonTabs,.brandGuide,.concept,.featureState,.status,.draftBadge,.draftPlanNotice,.annualDraftBanner) {background:var(--service-subtle);color:var(--service-muted);border-color:var(--service-line);}
+.root[data-surface="account"] :is(.select,.pay,.payLink) {background:var(--service-accent);color:white;border-color:var(--service-accent);}
+.root[data-surface="account"] :is(.select,.pay,.payLink):hover {background:var(--service-accent-hover);}
+.root[data-surface="account"] :is(.cycles button,.packageOptions button)[aria-pressed="true"],.root[data-surface="account"] .comparisonTab[aria-selected="true"] {background:var(--service-accent);color:white;border-color:var(--service-accent);}
+.root[data-surface="account"] :is(.card,.summary,.next,.comparison,.comparisonScroll,.comparisonTable,.guide) {background:var(--service-surface);border-color:var(--service-line);}
+.root[data-surface="account"] .card[data-selected="true"] {border-color:var(--service-accent);box-shadow:0 0 0 2px var(--service-accent);}
+.root[data-surface="account"] a:not(.payLink),.root[data-surface="account"] .brandSignature {color:var(--service-accent);}
+.root[data-surface="account"] :is(button,a,summary):focus-visible {outline-color:var(--service-accent);}

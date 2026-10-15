@@ -33,6 +33,19 @@ describe("server setup progress contract", () => {
     expect(setupDraftFromRow({ ...row, company_id: "company" }, scope)).toBeNull();
     expect(setupDraftFromRow({ ...row, revision: 0 }, scope)).toBeNull();
   });
+  it("permits an explicit additional-business draft without staff or admin implicit ownership", () => {
+    const additional = { ...scope, allowNewBusiness: true };
+    const owner = { ...context, company: { id: "existing" }, membership: { role: "owner" } };
+    expect(setupDraftScopeAllowed(additional, owner)).toBe(true);
+    expect(setupDraftScopeAllowed(additional, { ...owner, membership: { role: "staff" } })).toBe(false);
+    expect(setupDraftScopeAllowed(additional, { ...context, isPlatformAdmin: true })).toBe(false);
+  });
+  it("binds lifecycle receipts to the expected immutable draft and generation", () => {
+    const row = { user_id: "owner", company_id: null, payload: setupDraftPayload(emptyCompanyDraft("owner")), revision: 2, updated_at: "2026-10-14", draft_id: "d1", generation: 2, state: "active", expires_at: "2026-11-13", paid_protected_at: null, cleanup_policy: "UNCONFIGURED" };
+    expect(setupDraftFromRow(row, scope)).toMatchObject({ draftId: "d1", generation: 2, state: "active", paidProtected: false });
+    expect(setupDraftFromRow(row, { ...scope, expectedDraftId: "different" })).toBeNull();
+    expect(setupDraftFromRow({ ...row, state: "cancelled" }, scope)).toBeNull();
+  });
   it("restores unsaved company edits while refreshing untouched server fields", () => {
     const baseline = companyBusiness(company);
     const draft = { ...emptyCompanyDraft("owner"), companyId: company.id, businessBaseline: baseline,

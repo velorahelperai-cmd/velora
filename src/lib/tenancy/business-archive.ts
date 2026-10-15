@@ -1,0 +1,2 @@
+export type BusinessLifecycle={id:string;name:string;status:string;version:number;archivedAt:string|null;restoreAllowed:boolean};
+export function isBusinessLifecycle(v:unknown):v is BusinessLifecycle{if(!v||typeof v!=='object')return false;const c=v as BusinessLifecycle;return typeof c.id==='string'&&typeof c.name==='string'&&typeof c.status==='string'&&Number.isSafeInteger(c.version)&&c.version>0&&(c.archivedAt===null||typeof c.archivedAt==='string')&&typeof c.restoreAllowed==='boolean';}

@@ -3,6 +3,9 @@ export type CompanyStatus = "setup" | "active" | "suspended";
 
 export type CompanyRecord = {
   id: string;
+  /** Authoritative profile revision; absent only before the local master migration. */
+  version?: number;
+  archived_at?: string | null;
   display_name: string;
   status: CompanyStatus;
   business_type: string;
@@ -50,6 +53,8 @@ export type CompanyContext = {
   membership: MembershipRecord | null;
   needsCompanyContext: boolean;
   workspaceChoices: Array<{ companyId: string; displayName: string; role: CompanyRole }>;
+  ownedBusinessCount?: number;
+  hasBusinessMemberships?: boolean;
 };
 
 export type AccessCode =
@@ -150,7 +155,7 @@ export type CompanyReviewRequest = {
   company_id: string;
   requested_by: string;
   requested_by_email?: string | null;
-  number_ownership: "own" | "new";
+  number_ownership: "own" | "new" | "not_applicable";
   whatsapp_number: string;
   readiness_confirmed: boolean;
   requested_at: string;

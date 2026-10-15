@@ -1,4 +1,5 @@
 import {beforeEach,describe,expect,it,vi} from "vitest";
+vi.mock("server-only", () => ({}));
 import type {ComponentProps} from "react";
 import {appCopy} from "@/lib/app-copy";
 const state=vi.hoisted(()=>({slots:[] as Array<{value?:unknown}>,cursor:0,locale:"en" as "en"|"ar",member:vi.fn(),company:vi.fn(),companySave:vi.fn(),read:vi.fn(),save:vi.fn(),publish:vi.fn()}));

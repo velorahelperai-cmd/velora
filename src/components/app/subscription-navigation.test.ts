@@ -18,7 +18,7 @@ const intent: SubscriptionIntent = {
 };
 const offer: SubscriptionOfferView = {
   versionId: intent.versionId!, planId: "plan", persona: "level_1", package: "basic", term: "monthly",
-  amountBaisa: 45000, currency: "OMR", automatedOutboundPerMonth: 734,
+  amountBaisa: 45000, currency: "OMR", automatedOutboundPerMonth: 1000,
   quotaEnforcement: "not_verified", features: [],
 };
 const query = "tab=plan&term=monthly&persona=level_1&package=basic&version=cccccccc-cccc-4ccc-8ccc-cccccccccccc&amount=45000&currency=OMR";
@@ -34,9 +34,9 @@ describe("selected subscription through authentication", () => {
   it("opens annual inspection in the actual account panel without selecting a monthly checkout offer", () => {
     request.query = "tab=plan&term=yearly&persona=level_1&package=basic";
     const markup = renderToStaticMarkup(createElement(SubscriptionPanel, { locale: "en", companyId: "company", view: { state: "empty", currentTier: null, cycle: "monthly", paidThrough: null }, offersView: { status: "ready", offers: [offer] } }));
-    expect(markup).not.toContain('aria-pressed="true">Yearly</button>');
+    expect(markup).toContain('aria-pressed="true">Yearly −20%</button>');
     expect(markup).toContain('annualDraftBanner');
-    expect(markup).not.toContain('data-selected="true"');
+    expect(markup).not.toContain('data-purchase-state="live"'); expect(markup).not.toContain('data-purchase-state="test_only"');
     expect(markup).toMatch(/<button[^>]*disabled=""[^>]*aria-describedby="subscription-payment-note"/);
   });
 
@@ -47,7 +47,7 @@ describe("selected subscription through authentication", () => {
   ])("does not restore checkout for an altered same-version intent %s", params => {
     request.query = params;
     const markup = renderToStaticMarkup(createElement(SubscriptionPanel, { locale: "en", companyId: "company", view: { state: "empty", currentTier: null, cycle: null, paidThrough: null }, offersView: { status: "ready", offers: [offer] } }));
-    expect(markup).not.toContain('data-selected="true"');
+    expect(markup).not.toContain('data-purchase-state="live"'); expect(markup).not.toContain('data-purchase-state="test_only"');
     expect(markup).toMatch(/<button[^>]*disabled=""[^>]*aria-describedby="subscription-payment-note"/);
   });
 

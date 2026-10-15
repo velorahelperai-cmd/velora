@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+vi.mock("server-only", () => ({}));
 import type { ReactNode } from "react";
 const mocks=vi.hoisted(()=>({slots:[] as {value?:unknown}[],cursor:0,list:vi.fn(),overview:vi.fn(),truth:vi.fn(),effects:[] as Array<()=>void>}));
 vi.mock("react",async()=>{

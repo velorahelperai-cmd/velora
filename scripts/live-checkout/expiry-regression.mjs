@@ -3,7 +3,6 @@ const db=await attachIsolate();const parse=s=>JSON.parse(s.split("\n").find(x=>x
 const srv=q=>db.sql("BEGIN;SET LOCAL ROLE service_role;"+q+"COMMIT;");
 const make=()=>db.sql("SELECT test_fixture.live_context();").then(parse);
 const create=(f,op)=>srv("SELECT public.billing_create_live_checkout_order("+[f.company,f.actor,f.session,f.version,op].map(lit).join(",")+","+[f.revision,f.integration,lit("1001"),f.factor].join(",")+");").then(parse);
-const claim=(f,o)=>srv("SELECT public.billing_claim_live_checkout("+[f.company,o.order_id,o.payment_attempt_id,f.actor,f.session].map(lit).join(",")+");").then(parse);
 await db.file("scripts/live-checkout/expired-fixtures.sql");
 let cases=0;
 for(const mode of ["claimed_unknown","submitted_unpaid"]){

@@ -1,0 +1,16 @@
+import {describe,expect,it} from 'vitest';
+import {getExampleNumber} from 'libphonenumber-js/max';
+import examples from 'libphonenumber-js/mobile/examples';
+import {parseBusinessPhoneInput,phoneCountryFromValue,storedPhoneDisplay,maskedPhoneExample} from './business-phone-input';
+const example=(country:'OM'|'EG'|'GB'|'CA')=>getExampleNumber(country,examples)!;
+describe('business phone entry using numbering-plan metadata',()=>{
+ it.each(['OM','EG','GB','CA'] as const)('normalizes local and international %s numbers without duplicating the calling code',country=>{const p=example(country);for(const input of [p.formatNational(),p.formatInternational(),'00'+p.number.slice(1)])expect(parseBusinessPhoneInput(input,country)).toMatchObject({ok:true,value:p.number});});
+ it('accepts Arabic and Persian digits and the Egyptian national trunk prefix',()=>{const p=example('EG'),arabic=p.formatNational().replace(/\d/g,d=>'٠١٢٣٤٥٦٧٨٩'[Number(d)]),persian=p.formatNational().replace(/\d/g,d=>'۰۱۲۳۴۵۶۷۸۹'[Number(d)]);expect(parseBusinessPhoneInput(arabic,'EG')).toMatchObject({ok:true,value:p.number});expect(parseBusinessPhoneInput(persian,'EG')).toMatchObject({ok:true,value:p.number});expect(parseBusinessPhoneInput('0'+p.nationalNumber,'EG')).toMatchObject({ok:true,value:p.number});});
+ it('detects an explicitly pasted international country without rewriting the business country',()=>{const p=example('EG');expect(parseBusinessPhoneInput(p.number,'OM')).toMatchObject({ok:true,country:'EG',value:p.number});expect(phoneCountryFromValue(p.number,'OM')).toBe('EG');});
+ it('uses the actual country for shared calling codes when parsing a national number',()=>{const p=example('CA');expect(parseBusinessPhoneInput(p.nationalNumber,'US')).toMatchObject({ok:false,code:'COUNTRY_MISMATCH'});expect(parseBusinessPhoneInput(p.number,'US')).toMatchObject({ok:true,country:'CA'});});
+ it('accepts fixed-line numbers because business contact is not restricted to mobile or WhatsApp',()=>{expect(parseBusinessPhoneInput('+44 20 7946 0018','GB')).toMatchObject({ok:true,value:'+442079460018'});});
+ it.each(['1','+999123456789','+968+96812345678','123456789012345678901','call me 123456789','123\n456','12345 ext. 8'])('rejects invalid, extracted, extended or oversized input: %s',value=>{expect(parseBusinessPhoneInput(value,'OM').ok).toBe(false);});
+ it('allows an optional empty number and requires a country for local digits',()=>{expect(parseBusinessPhoneInput('','OM')).toMatchObject({ok:true,value:''});expect(parseBusinessPhoneInput(example('OM').nationalNumber,undefined)).toMatchObject({ok:false,code:'COUNTRY_REQUIRED'});});
+ it('keeps legacy raw values readable and only formats a recognized international value for display',()=>{expect(storedPhoneDisplay('legacy-contact','OM')).toBe('legacy-contact');expect(storedPhoneDisplay(example('OM').number,'OM')).toBe(example('OM').formatNational());});
+ it('uses only masked placeholders, with explicit approved OM and EG shapes',()=>{expect(maskedPhoneExample('OM').international).toBe('+968 xxxx xxxx');expect(maskedPhoneExample('EG').international).toBe('+20 10xxxxxxxx');for(const country of ['GB','CA'] as const)expect(maskedPhoneExample(country).national).not.toMatch(/\d/);});
+});

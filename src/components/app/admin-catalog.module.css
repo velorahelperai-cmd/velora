@@ -1,12 +1,12 @@
 .page {
-  --catalog-base: #F7F0E5;
-  --catalog-panel: #FFFBF5;
-  --catalog-muted: #EFE2CF;
-  --catalog-border: #D7C1A5;
-  --catalog-action: #D1AE7C;
-  --catalog-ink: #18130F;
-  --catalog-link: #6B4932;
-  --catalog-secondary: #615244;
+  --catalog-base: var(--service-canvas);
+  --catalog-panel: var(--service-surface);
+  --catalog-muted: var(--service-subtle);
+  --catalog-border: var(--service-line);
+  --catalog-action: var(--service-accent-soft);
+  --catalog-ink: var(--service-ink);
+  --catalog-link: var(--service-accent);
+  --catalog-secondary: var(--service-muted);
   --catalog-emerald: #2E6B4F;
   --catalog-emerald-bg: #E1EFE7;
   --catalog-amber: #8A5B20;

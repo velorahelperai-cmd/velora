@@ -7,8 +7,9 @@ import { SetupLoading } from "./setup-loading";
 import setupStyles from "./setup-wizard.module.css";
 import { useRouter } from "next/navigation";
 import { setupSubscriptionReturn } from "@/lib/auth/setup-return";
-import { readSetupDraft, saveSetupDraft } from "@/lib/tenancy/setup-draft-actions";
-import { setupDraftPayload, type SetupDraftCode } from "@/lib/tenancy/setup-draft";
+import { readSetupFileContext } from "@/lib/tenancy/setup-draft-actions";
+import { type SetupDraftCode, type SetupDraftRecord } from "@/lib/tenancy/setup-draft";
+import {SetupFilePreparation} from './setup-file-preparation';
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type Activation, type Business, emptyBusiness, nowMs, useDemo } from "@/lib/demo-state";
 import {
@@ -18,8 +19,6 @@ import {
   emptyCompanyDraft,
   isSetupTestStillValid,
   markSetupTestPassed,
-  readCompanyDraft,
-  writeCompanyDraft,
 } from "@/lib/company-draft";
 import { fill } from "@/lib/app-copy";
 import type { KnowledgeApprovalFoundation, KnowledgeSourceRecord } from "@/lib/knowledge/types";
@@ -43,13 +42,23 @@ import type { CompanyRecord, CompanyReviewEvent, CompanyReviewRequest } from "@/
 import { AccountMenu } from "@/components/app/account-chrome";
 import { AssistantTester } from "@/components/app/assistant-tester";
 import { KnowledgeEditor } from "@/components/app/knowledge-editor";
+import {KnowledgeImportReview} from './knowledge-import-review';
+import {BusinessSetupGuidance} from './business-setup-guidance';
 import {
   Button, Field, FieldErrorKey, LangSwitch, LinkButton, Notice, PreviewBadge,
   isPhone, useAction, useAppCopy, useErrorText, useUnsavedWarning,
 } from "@/components/app/ui";
 
 import internalStyles from "./internal-ui.module.css";
+import { SmartSetupCards } from "./smart-setup-cards";
+import {buildSetupPageView,setupPageStep} from "./setup-page-view";
+import {SetupReviewPrerequisites} from "./setup-review-prerequisites";
 import { SetupNavigation } from "./setup-navigation";
+import { SmartSetupBranches } from "./smart-setup-branches";
+import { SmartSettingsPanel } from './smart-settings-panel';
+import { SmartBusinessStart } from './smart-business-start';
+import { readSmartSetup, type SmartSetupRead } from "@/lib/tenancy/smart-onboarding-actions";
+import { buildSmartOnboarding, type SmartSetupCard } from "@/lib/tenancy/smart-onboarding";
 
 // Preserve main navigation and behavior with the published setup readability/layout.
 const styles: Record<string, string> = { ...internalStyles };
@@ -146,7 +155,11 @@ function SetupJourneyNotice({
   company,
   review,
   reviewLoadFailed,
+  dataPage = false,
+  ar = false,
 }: {
+  dataPage?: boolean;
+  ar?: boolean;
   company: CompanyRecord | null;
   review: CompanyReviewRequest | null;
   reviewLoadFailed: boolean;
@@ -159,13 +172,7 @@ function SetupJourneyNotice({
       </div>
     );
   }
-  if (!company) {
-    return (
-      <div className="mt-4">
-        <Notice tone="warn">{copy.setup.journeyNoCompany}</Notice>
-      </div>
-    );
-  }
+  if (!company) return null;
   if (company.status === "suspended") {
     return (
       <div className="mt-4">
@@ -200,7 +207,7 @@ function SetupJourneyNotice({
   if (company.status === "setup") {
     return (
       <div className="mt-4">
-        <Notice tone="warn">{copy.setup.journeySetup}</Notice>
+        <Notice tone="warn">{dataPage ? (ar ? "بيانات الصفحة لا تعني جاهزية التشغيل؛ الدفع وربط القنوات والمراجعة خطوات مستقلة." : "Page data does not prove operational readiness; payment, channel connection and review are separate steps.") : copy.setup.journeySetup}</Notice>
       </div>
     );
   }
@@ -212,6 +219,8 @@ const EMPTY_KNOWLEDGE: KnowledgeSourceRecord[] = [];
 
 export function SetupWizard({
   userId,
+  smartOnboardingEnabled = false,
+  masterJourneyEnabled = false,
   preferredNext,
   initialCompany,
   initialKnowledge = EMPTY_KNOWLEDGE,
@@ -219,8 +228,11 @@ export function SetupWizard({
   approvalFoundation = "ready",
   initialReview = null,
   reviewLoadFailed = false,
+  initialDraftRead,
 }: {
   userId: string;
+  smartOnboardingEnabled?: boolean;
+  masterJourneyEnabled?: boolean;
   preferredNext?: string;
   initialCompany?: CompanyRecord | null;
   initialKnowledge?: KnowledgeSourceRecord[];
@@ -228,6 +240,7 @@ export function SetupWizard({
   approvalFoundation?: KnowledgeApprovalFoundation;
   initialReview?: CompanyReviewRequest | null;
   reviewLoadFailed?: boolean;
+  initialDraftRead?: {scope: {expectedUserId:string;expectedCompanyId:string|null};result:import('@/lib/tenancy/setup-draft').SetupDraftResult<SetupDraftRecord|null>};
 }) {
   const router = useRouter();
   const copy = useAppCopy();
@@ -237,12 +250,9 @@ export function SetupWizard({
 
   const leaveGuardRef = useRef<(() => boolean) | null>(null);
   const hydratedScope = useRef<string | null>(null);
-  const draftRevision = useRef(0);
-  const saveQueue = useRef<Promise<void>>(Promise.resolve());
-  const createdDraft = useRef<CompanyDraft | null>(null);
-  const [draftSaveStatus, setDraftSaveStatus] = useState<"loading" | "saving" | "saved" | "changed" | "error">("loading");
-  const [draftSaveCode, setDraftSaveCode] = useState<SetupDraftCode | null>(null);
-  const [draftRetry, setDraftRetry] = useState(0);
+  const draftSeed=useRef(initialDraftRead);
+  const [draftRecord,setDraftRecord]=useState<SetupDraftRecord|null>(null);
+  const [setupFileContextError, setSetupFileContextError] = useState<SetupDraftCode | null>(null);
   const [savedCompany, setSavedCompany] = useState<CompanyRecord | null>(initialCompany ?? null);
   const [trackedCompany, setTrackedCompany] = useState(initialCompany ?? null);
   if (trackedCompany !== (initialCompany ?? null)) {
@@ -250,6 +260,37 @@ export function SetupWizard({
     setSavedCompany(initialCompany ?? null);
   }
   const companyId = savedCompany?.id ?? null;
+  const [openPanel,setOpenPanel] = useState<number|"branches"|null>(null);
+  const [smartReadState,setSmartRead] = useState<SmartSetupRead|null>(null);
+  const [smartReadActorScope,setSmartReadActorScope] = useState<string|null>(null);
+  const currentSmartScope=`${userId}:${companyId ?? "new"}`;
+  const smartRead=smartReadActorScope===currentSmartScope?smartReadState:null;
+  const [smartLoad,setSmartLoad] = useState<"loading"|"ready"|"failed">("loading");
+  const [smartRetry,setSmartRetry] = useState(0);
+  const smartScope=useRef<string|null>(null);
+  useEffect(()=>{
+    if(!smartOnboardingEnabled)return;
+    let cancelled=false;
+    const frame=window.requestAnimationFrame(()=>{
+      // A receipt refresh must preserve the mounted editor and its durable queue.
+      // A different actor/company never receives the previous scope's readback.
+      if(smartReadActorScope!==currentSmartScope){setSmartRead(null);setSmartLoad("loading");}
+      if(!companyId)return;
+      void readSmartSetup({expectedUserId:userId,expectedCompanyId:companyId}).then(result=>{
+        if(cancelled)return;
+        if(!result.ok){setSmartLoad("failed");return;}
+        setSmartRead(result.data);setSmartReadActorScope(`${userId}:${companyId}`);setSmartLoad("ready");
+        const scope=`${userId}:${companyId}`;
+        if(smartScope.current!==scope){
+          smartScope.current=scope;
+          // A delayed initial read may suggest a panel, but cannot close the
+          // editor the user has already opened while that read was pending.
+          setOpenPanel(current=>current??(result.data.branchSetup.mode===null?"branches":null));
+        }
+      }).catch(()=>{if(!cancelled)setSmartLoad("failed");});
+    });
+    return()=>{cancelled=true;window.cancelAnimationFrame(frame);};
+  },[userId,companyId,savedCompany?.updated_at,smartRetry,smartOnboardingEnabled,currentSmartScope,smartReadActorScope]);
   const renderedScope = useRef(`${userId}:${companyId ?? "new"}`);
   useEffect(() => { renderedScope.current = `${userId}:${companyId ?? "new"}`; }, [userId, companyId]);
   const [readiness, setReadiness] = useState<CustomerReadinessSnapshot | null>(null);
@@ -281,31 +322,6 @@ export function SetupWizard({
     setBusinessConflicts(refresh.conflicts);
     setDraft({ ...draft, business: refresh.values, businessBaseline: refresh.baseline });
   }
-  useEffect(() => {
-    if (!ready || draft.userId !== userId || draft.companyId !== companyId || hydratedScope.current !== `${userId}:${companyId ?? "new"}`) return;
-    const payload = setupDraftPayload({ ...draft, businessBaseline });
-    if (!payload) {
-      const frame = window.requestAnimationFrame(() => { setDraftSaveStatus("changed"); setDraftSaveCode("INVALID_INPUT"); });
-      return () => window.cancelAnimationFrame(frame);
-    }
-    const scope = `${userId}:${companyId ?? "new"}`;
-    let cancelled = false;
-    const timer = window.setTimeout(() => {
-      setDraftSaveStatus("saving");
-      saveQueue.current = saveQueue.current.catch(() => {}).then(async () => {
-        if (cancelled || hydratedScope.current !== scope) return;
-        const result = await saveSetupDraft({ expectedUserId: userId, expectedCompanyId: companyId,
-          expectedRevision: draftRevision.current, draft: { ...draft, ...payload } });
-        // A committed receipt updates the revision even if a newer local edit is queued.
-        if (hydratedScope.current !== scope) return;
-        if (result.ok) draftRevision.current = result.data.revision;
-        if (cancelled) return;
-        if (result.ok) { writeCompanyDraft(result.data.draft); setDraftSaveStatus("saved"); setDraftSaveCode(null); }
-        else { setDraftSaveStatus("error"); setDraftSaveCode(result.code); }
-      }).catch(() => { if (!cancelled) { setDraftSaveStatus("error"); setDraftSaveCode("UNAVAILABLE"); } });
-    }, 600);
-    return () => { cancelled = true; window.clearTimeout(timer); };
-  }, [ready, draft, businessBaseline, userId, companyId, draftRetry]);
   const [knowledgeSources, setKnowledgeSources] = useState(initialKnowledge);
   const [knowledgeFailed, setKnowledgeFailed] = useState(knowledgeLoadFailed);
   const [trackedKnowledge, setTrackedKnowledge] = useState({ sources: initialKnowledge, failed: knowledgeLoadFailed });
@@ -362,15 +378,20 @@ export function SetupWizard({
     const scope = `${userId}:${companyId ?? "new"}`;
     if (hydratedScope.current === scope) return;
     const frame = window.requestAnimationFrame(() => {
-      setReady(false); setDraftSaveStatus("loading");
-      void readSetupDraft({ expectedUserId: userId, expectedCompanyId: companyId }).then(result => {
+      setReady(false);
+      const seed=draftSeed.current;
+      draftSeed.current=undefined;
+      // Use the authorized server result once. Retry/account/workspace changes
+      // read live persistence rather than reusing an earlier route's draft.
+      const read=seed?.scope.expectedUserId===userId&&seed.scope.expectedCompanyId===companyId
+        ? Promise.resolve(seed.result)
+        : readSetupFileContext({ expectedUserId: userId, expectedCompanyId: companyId });
+      void read.then(result => {
       if (cancelled) return;
-      if (!result.ok) { setDraftSaveStatus("error"); setDraftSaveCode(result.code); return; }
       hydratedScope.current = scope;
-      draftRevision.current = result.data?.revision ?? 0;
-      const carried = createdDraft.current;
-      const stored = carried?.userId === userId && carried.companyId === companyId ? carried : result.data?.draft ?? readCompanyDraft(userId);
-      createdDraft.current = null;
+      setDraftRecord(result.ok?result.data:null);
+      setSetupFileContextError(result.ok?null:result.code);
+      const stored:CompanyDraft|null=null;
       const next = hydrateOnboardingDraft(stored, userId, savedCompany);
       const kp = evaluateSetupKnowledgeProgress({
         loadFailed: knowledgeLoadFailed,
@@ -399,11 +420,10 @@ export function SetupWizard({
       setKnowledgeSources(initialKnowledge);
       setDraft(next);
       setBusinessBaseline(savedCompany ? companyBusiness(savedCompany) : { ...emptyBusiness });
-      setBusinessConflicts(stored?.businessBaseline && savedCompany ? reconcileDraftFields(stored.business, stored.businessBaseline, companyBusiness(savedCompany)).conflicts : []);
+      setBusinessConflicts([]);
       setReconciledCompany(savedCompany);
-      setDraftSaveCode(null); setDraftSaveStatus("changed");
       setReady(true);
-      }).catch(() => { if (!cancelled) { setDraftSaveStatus("error"); setDraftSaveCode("UNAVAILABLE"); } });
+      }).catch(() => { if (!cancelled) { setSetupFileContextError("UNAVAILABLE"); hydratedScope.current=scope; setDraft(hydrateOnboardingDraft(null,userId,savedCompany)); setBusinessBaseline(savedCompany?companyBusiness(savedCompany):{...emptyBusiness}); setReady(true); } });
     });
     return () => {
       cancelled = true;
@@ -413,7 +433,6 @@ export function SetupWizard({
   }, [
     userId,
     companyId,
-    draftRetry,
   ]);
 
   const persist = (patch: Partial<CompanyDraft> | ((d: CompanyDraft) => CompanyDraft)) => {
@@ -427,12 +446,10 @@ export function SetupWizard({
       next.userId = userId;
       return next;
     });
-    setDraftSaveStatus("changed");
   };
 
   const adoptCompany = (company: CompanyRecord) => {
     if (renderedScope.current !== `${userId}:${companyId ?? "new"}` || (companyId && company.id !== companyId)) return;
-    if (!companyId) createdDraft.current = { ...draft, companyId: company.id, business: companyBusiness(company), businessBaseline: companyBusiness(company), setupStep: 1 };
     setSavedCompany(company);
   };
 
@@ -440,11 +457,12 @@ export function SetupWizard({
   if (unresolvedBusinessConflicts.length !== businessConflicts.length) setBusinessConflicts(unresolvedBusinessConflicts);
   const resolveBusinessConflicts = () => persist(d => ({ ...d, business: { ...d.business, ...Object.fromEntries(unresolvedBusinessConflicts.map(key => [key, businessBaseline[key]])) } }));
 
-  const step = Math.max(0, Math.min(7, draft.setupStep));
+  const step = smartOnboardingEnabled?setupPageStep(draft.setupStep):Math.max(0, Math.min(7, draft.setupStep));
+  const visiblePanel=openPanel===null||openPanel==="branches"?openPanel:smartOnboardingEnabled?setupPageStep(openPanel):openPanel;
   const go = (n: number, opts?: { skipGuard?: boolean }) => {
-    const next = Math.max(0, Math.min(7, n));
-    if (next === step) return;
+    const next = smartOnboardingEnabled?setupPageStep(n):Math.max(0, Math.min(7, n));
     if (!opts?.skipGuard && leaveGuardRef.current && !leaveGuardRef.current()) return;
+    setOpenPanel(next);
     persist({ setupStep: next });
   };
   const effectiveSetupDone = serverSetupDone(knowledgeProgress.detail === "knowledge_ready");
@@ -466,14 +484,26 @@ export function SetupWizard({
   }, [ready, setupTestValid, draft.setupTestPassed]);
 
   if (!ready || draft.userId !== userId || draft.companyId !== companyId) {
-    return draftSaveStatus === "error" ? <Notice tone="error"><p>{ar ? "تعذر تحميل مسودة الإعداد المحفوظة. أعد المحاولة قبل المتابعة." : "Could not load your saved setup draft. Retry before continuing."}</p><Button onClick={() => setDraftRetry(n => n + 1)}>{ar ? "إعادة المحاولة" : "Retry"}</Button></Notice> : <SetupLoading />;
+    return <SetupLoading />;
   }
 
-  const completedCount = effectiveSetupDone.filter(Boolean).length;
-  const progressPercent = Math.round((completedCount / 8) * 100);
+  const smart=buildSmartOnboarding({company:savedCompany,
+    branchSetup:smartRead?.branchSetup??null,
+    contract:smartRead?.contract??null,
+    operationalChannels:smartRead?.operationalChannels??[],
+    knowledge:knowledgeProgress.detail==="knowledge_ready"?"ready":knowledgeFailed?"failed":knowledgeSources.length?"needs_attention":"not_started",
+    review:initialReview,reviewLoadFailed,
+    reviewPolicyReady:smartRead?.reviewPolicyEnabled===true,
+  });
+  const pageView=buildSetupPageView(smart,savedCompany,smartRead?.branchSetup??null);
+  const closePanel=()=>{if(leaveGuardRef.current&&!leaveGuardRef.current())return;setOpenPanel(null);};
+  const openCard=(card:SmartSetupCard)=>{
+    if(card.id==="branches"){if(leaveGuardRef.current&&!leaveGuardRef.current())return;setOpenPanel("branches");return;}
+    if(card.step!==null)go(card.step);
+  };
 
   return (
-    <main className={`app-shell ${styles.theme} ${styles.setup}`} data-internal-ui="true" dir={ar ? "rtl" : "ltr"}>
+    <main className={`app-shell ${styles.theme} ${styles.setup}`} data-internal-ui="true" dir={ar ? "rtl" : "ltr"} data-first-business={smartOnboardingEnabled&&!companyId?"true":undefined}>
       {/* Top Brand & Navigation Header */}
       <div className={styles.setupHeader}>
         <Link href="/" className="inline-flex min-h-11 items-center gap-2 text-2xl font-bold tracking-tight">
@@ -496,51 +526,44 @@ export function SetupWizard({
         <div className={styles.setupTitle}>
           <h1 className="app-title text-3xl break-words lg:text-4xl">{copy.setup.title}</h1>
           <span className={styles.confirmed}>
-            {completedCount} / 8 {ar ? "محطات مؤكدة من السجلات" : "milestones confirmed from records"}
+            {smartOnboardingEnabled?<>{pageView.completedRequired} / {pageView.totalRequired} {ar ? "بيانات الصفحة المكتملة" : "page data completed"}</>:<>{effectiveSetupDone.filter(Boolean).length} / 8 {ar?"محطات مؤكدة من السجلات":"milestones confirmed from records"}</>}
           </span>
         </div>
         <p className={`mt-2 ${styles.resume}`}>
-          {fill(mCopy.milestoneProgress, { n: step + 1 })} · {copy.setup.resume}
+          {smartOnboardingEnabled&&!companyId?(ar?"ابدأ بتعريف نشاطك، ثم أكمل إعداد موظفتك الرقمية.":"Introduce your business, then set up your digital employee."):<>{!smartOnboardingEnabled?`${fill(mCopy.milestoneProgress,{n:step+1})} · `:""}{copy.setup.resume}</>}
         </p>
-        <div role="status" aria-live="polite" className="mt-2 text-sm">
-          {draftSaveStatus === "saved" ? (ar ? "تم حفظ مسودة الإعداد في حسابك." : "Setup draft saved to your account.")
-            : draftSaveStatus === "saving" ? (ar ? "جارٍ حفظ المسودة…" : "Saving setup draft…")
-              : draftSaveCode === "INVALID_INPUT" ? (ar ? "أكمل أو صحح الحقول لحفظ المسودة." : "Correct the fields to save this draft.")
-                : draftSaveStatus === "error" ? (draftSaveCode === "CONFLICT" ? (ar ? "تغيّرت المسودة في نافذة أخرى. حمّل النسخة المحفوظة للمتابعة." : "Another tab changed this draft. Load the saved version to continue.") : (ar ? "لم يتم تأكيد حفظ المسودة. أعد المحاولة." : "Draft save has not been confirmed. Retry."))
-                  : (ar ? "تغييرات المسودة لم تُحفظ بعد." : "Draft changes have not been saved yet.")}
-          {draftSaveStatus === "error" ? <Button variant="secondary" onClick={() => {
-            if (draftSaveCode === "CONFLICT") { if (!window.confirm(copy.unsaved)) return; hydratedScope.current = null; }
-            setDraftRetry(n => n + 1);
-          }}>{draftSaveCode === "CONFLICT" ? (ar ? "تحميل المسودة المحفوظة" : "Load saved draft") : (ar ? "إعادة المحاولة" : "Retry")}</Button> : null}
-        </div>
-
         <DiagnosticHint diagnostic={diagnostic} locale={locale}/><SetupJourneyNotice
+          dataPage={smartOnboardingEnabled} ar={ar}
           company={initialCompany ?? null}
           review={initialReview}
           reviewLoadFailed={reviewLoadFailed}
         />
 
-        <SetupNavigation labels={mCopy.steps} shortLabels={ar
-          ? ["الشركة", "الاشتراك", "ساعات العمل", "المعرفة", "لغة الرد", "واتساب", "التجربة", "المراجعة"]
-          : ["Company", "Subscription", "Hours", "Knowledge", "Reply language", "WhatsApp", "Trial", "Review"]}
-          done={effectiveSetupDone} step={step} locale={locale} onSelect={go} />
-        <div className={styles.progress} aria-hidden="true">
-          <div className={styles.progressFill} style={{ width: `${progressPercent}%` }} />
-        </div>
-        <section className={styles.stepPanel}>
+        {smartOnboardingEnabled?(companyId ? null : <SmartBusinessStart key={userId} userId={userId} ar={ar} onCreated={adoptCompany}/>):<><SetupNavigation labels={mCopy.steps} shortLabels={ar?["الشركة","الاشتراك","ساعات العمل","المعرفة","لغة الرد","واتساب","التجربة","المراجعة"]:["Company","Subscription","Hours","Knowledge","Reply language","WhatsApp","Trial","Review"]} done={effectiveSetupDone} step={step} locale={locale} onSelect={go}/><div className={styles.progress} aria-hidden="true"><div className={styles.progressFill} style={{width:`${Math.round(effectiveSetupDone.filter(Boolean).length/8*100)}%`}}/></div></>}
+        {smartOnboardingEnabled&&companyId&&smartLoad==="failed"?<Notice tone="warn"><p>{ar?"تعذر تحميل تجهيز الفروع والقنوات. يمكنك متابعة بقية الإعدادات وإعادة المحاولة.":"Branch and channel setup could not be loaded. Continue with other settings and retry."}</p><Button variant="secondary" onClick={()=>setSmartRetry(n=>n+1)}>{ar?"إعادة التحميل":"Reload"}</Button></Notice>:null}
+        <SmartSetupCards enabled={smartOnboardingEnabled&&!!companyId} locale={locale} {...pageView} progressKind="page" onOpen={openCard} onClose={closePanel}
+          activeCardId={visiblePanel==='branches'?'branches':pageView.cards.find(card=>card.step!==null&&card.step===visiblePanel)?.id??null}>
+        {(!smartOnboardingEnabled||companyId&&visiblePanel!==null)?<section className={styles.stepPanel} aria-label={ar?"إعدادات التجهيز":"Setup settings"}>
+          {visiblePanel==="branches"?<>
+            <div className={styles.stepHeading}><h2>{ar?"تجهيز الفروع":"Prepare your branches"}</h2></div>
+            {smartRead?.branchSetup.companyId===companyId?<SmartSetupBranches key={`${userId}:${companyId}:${smartRead.branchSetup.branches.find(b=>b.primary)?.id}`} userId={userId} companyId={companyId} locale={locale} setup={smartRead.branchSetup} onSaved={branchSetup=>{setSmartRead(current=>current?{...current,branchSetup}:null);setSmartRetry(n=>n+1);}} onClose={()=>setOpenPanel(null)}/>:smartLoad==="loading"?<SetupLoading/>:<Notice tone="error">{ar?"تجهيز الفروع غير متاح حاليًا. أعد تحميل الحالة قبل المتابعة.":"Branch setup is unavailable. Reload its status before continuing."}</Notice>}
+          </>:<>
           <div className={styles.stepHeading}>
-            <span className={styles.stepHeadingNumber}>{step + 1}</span>
+            {!smartOnboardingEnabled?<span className={styles.stepHeadingNumber}>{step+1}</span>:null}
             <h2 className="app-title">{mCopy.steps[step]}</h2>
           </div>
           <p className={styles.stepDescription}>{mCopy.stepBodies[step]}</p>
           {step === 6 ? <Notice tone="info">{ar ? "نجاح الاختبار علامة محلية مرتبطة بمعرفة النشاط، ولا يُحتسب كتفعيل محفوظ أو دليل جودة شامل." : "A successful trial is local progress bound to company knowledge. It is not persisted activation or comprehensive quality evidence."}</Notice> : null}
 
           <div className={styles.stepBody}>
+            {smartOnboardingEnabled&&savedCompany&&[0,2,4].includes(step)?<SmartSettingsPanel key={`${userId}:${companyId}:${step}`} userId={userId} company={savedCompany} locale={locale} section={step===2?'hours':step===4?'language':'profile'} onSaved={adoptCompany} onClose={closePanel}/>:null}
             {/* Milestone 0: Company Profile */}
-            {step === 0 ? (
+            {!smartOnboardingEnabled&&step === 0 ? (
               <BusinessStep
+                companyVersion={savedCompany?.version}
                 key={`${userId}:${companyId ?? "new"}`}
                 baseline={businessBaseline}
+                hoursRequired={!masterJourneyEnabled}
                 conflicts={unresolvedBusinessConflicts}
                 onResolveConflicts={resolveBusinessConflicts}
                 companyId={companyId}
@@ -560,13 +583,13 @@ export function SetupWizard({
                 planHref={setupSubscriptionReturn(preferredNext)}
                 onBack={() => go(0)}
                 onNext={() => {
-                  go(2);
+                  go(smartOnboardingEnabled?7:2);
                 }}
               />
             ) : null}
 
             {/* Milestone 2: Working Hours & Operations */}
-            {step === 2 ? (
+            {!smartOnboardingEnabled&&step === 2 ? (
               <HoursStep
                 key={`${userId}:${companyId ?? "new"}`}
                 userId={userId}
@@ -603,10 +626,18 @@ export function SetupWizard({
                 }
               >
                 {companyId ? (
+                  <>
+                  <BusinessSetupGuidance type={draft.business.type} ar={ar}/>
+                  {masterJourneyEnabled&&<KnowledgeImportReview companyId={companyId} expectedUserId={userId} canWrite ar={ar} onApplied={()=>router.refresh()}/>}
+                  {masterJourneyEnabled&&setupFileContextError?<Notice tone="error"><p>{ar?'تعذّر تحميل حالة رفع الملفات. يمكنك متابعة بقية الإعدادات.':'File upload status could not be loaded. Other settings remain available.'}</p><Button variant="secondary" onClick={()=>{const scope=renderedScope.current;void readSetupFileContext({expectedUserId:userId,expectedCompanyId:companyId}).then(result=>{if(renderedScope.current!==scope)return;setSetupFileContextError(result.ok?null:result.code);if(result.ok)setDraftRecord(result.data);});}}>{ar?'إعادة المحاولة':'Retry'}</Button></Notice>:null}
+                  {masterJourneyEnabled&&savedCompany&&!setupFileContextError&&(!draftRecord?.draftId||draftRecord.state!=='active')?<SetupFilePreparation userId={userId} company={savedCompany} ar={ar} onPrepared={record=>setDraftRecord(record)}/>:null}
                   <KnowledgeEditor
                     key={companyId}
                     companyId={companyId!}
+                    setupFileScope={draftRecord?.draftId && draftRecord.state === 'active' && draftRecord.generation ? {expectedUserId:userId,expectedCompanyId:companyId,draftId:draftRecord.draftId,generation:draftRecord.generation} : undefined}
+                    onSetupFileScopeChange={() => {const scope=renderedScope.current;void readSetupFileContext({expectedUserId:userId,expectedCompanyId:companyId}).then(result=>{if(renderedScope.current!==scope||!result.ok||!result.data)return;setDraftRecord(result.data);setSetupFileContextError(null);});}}
                     compact
+                    requireSetupFileScope={masterJourneyEnabled}
                     canWrite
                     initialSources={initialKnowledge}
                     initialLoadFailed={knowledgeLoadFailed}
@@ -614,6 +645,7 @@ export function SetupWizard({
                     onSourcesChange={onKnowledgeSourcesChange}
                     onLoadStateChange={onKnowledgeLoadStateChange}
                   />
+                  </>
                 ) : (
                   <Notice tone="warn">{copy.knowledge.needCompanyFirst}</Notice>
                 )}
@@ -621,7 +653,7 @@ export function SetupWizard({
             ) : null}
 
             {/* Milestone 4: Noura AI Persona & Tone */}
-            {step === 4 ? (
+            {!smartOnboardingEnabled&&step === 4 ? (
               <PersonaStep
                 key={`${userId}:${companyId ?? "new"}`}
                 userId={userId}
@@ -642,6 +674,8 @@ export function SetupWizard({
 
             {/* Milestone 5: WhatsApp Business Meta Connection */}
             {step === 5 ? (
+              <>
+              <div className="mb-4 flex flex-wrap gap-3"><LinkButton href="/app/settings" variant="secondary">{ar?"اختيار القنوات وإعداد واتساب":"Select channels and set up WhatsApp"}</LinkButton><LinkButton href="/app/instagram" variant="secondary">{ar?"ربط إنستغرام":"Connect Instagram"}</LinkButton></div>
               <WhatsAppStep
                 key={userId+":"+(companyId??"none")}
                 userId={userId}
@@ -651,12 +685,12 @@ export function SetupWizard({
                 refreshLink={whatsappRequest.refresh}
                 leaveGuardRef={leaveGuardRef}
                 onLinkSaved={whatsappRequest.adopt}
-                draft={draft}
                 onBack={() => go(4)}
                 onNext={() => {
                   go(6);
                 }}
               />
+              </>
             ) : null}
 
             {/* Milestone 6: Sandbox Testing */}
@@ -731,9 +765,14 @@ export function SetupWizard({
             {step === 7 ? (
               <ActivationStep
                 leaveGuardRef={leaveGuardRef}
-                onBack={() => go(6)}
+                onBack={() => go(smartOnboardingEnabled?1:6)}
+                pageScope={smartOnboardingEnabled}
+                subscriptionActive={smart.cards.some(card=>card.id==="subscription"&&card.status==="active")}
                 onDone={() => router.refresh()}
                 setupDone={effectiveSetupDone}
+                selectedChannels={smartOnboardingEnabled?smart.selectedChannels:null}
+                reviewConfigured={!smartOnboardingEnabled||smartRead?.reviewPolicyEnabled===true}
+                hoursRequired={!masterJourneyEnabled}
                 businessName={savedCompany?.display_name ?? ""}
                 sectorLabel={
                   landingCopy(locale).sectors.find((s) => s.id === savedCompany?.business_type)?.label ??
@@ -748,7 +787,9 @@ export function SetupWizard({
               />
             ) : null}
           </div>
-        </section>
+          </>}
+        </section>:null}
+        </SmartSetupCards>
       </div>
     </main>
   );
@@ -803,20 +844,24 @@ function RefreshConflictNotice({ onResolve }: { onResolve: () => void }) {
 }
 
 function BusinessStep({
+  hoursRequired,
   baseline, conflicts, onResolveConflicts,
   draft,
   companyId,
+  companyVersion,
   onCompanySaved,
   onDiagnostic,
   onDraft,
   onDone,
   leaveGuardRef,
 }: {
+  hoursRequired: boolean;
   baseline: Business;
   conflicts: Array<keyof Business>;
   onResolveConflicts: () => void;
   draft: CompanyDraft;
   companyId: string | null;
+  companyVersion?:number;
   onCompanySaved: (company: CompanyRecord) => void;
   onDiagnostic: (diagnostic:unknown) => void;
   onDraft: (patch: Partial<CompanyDraft> | ((d: CompanyDraft) => CompanyDraft)) => void;
@@ -852,7 +897,9 @@ function BusinessStep({
     if (conflicts.length) return;
     const next: Partial<Record<keyof Business, FieldErrorKey>> = {};
     if (!form.name.trim()) next.name = "required";
-    if (!form.hours.trim()) next.hours = "required";
+    if (!form.type.trim()) next.type = "required";
+    if (!form.country.trim()) next.country = "required";
+    if (hoursRequired && !form.hours.trim()) next.hours = "required";
     if (normalizeBusinessPhone(form.contactPhone) === null) next.contactPhone = "phone";
     if (normalizeBusinessEmail(form.contactEmail) === null) next.contactEmail = "email";
     setErrors(next);
@@ -860,6 +907,7 @@ function BusinessStep({
 
     void run(async () => {
       const result = await saveOwnerBusiness({
+        expectedVersion:companyVersion,
         expectedUserId: draft.userId,
         expectedCompanyId: companyId,
         displayName: form.name,
@@ -918,6 +966,8 @@ function BusinessStep({
                 {s.label}
               </option>
             ))}
+            <option value="clinic">{locale === 'ar' ? 'عيادة' : 'Clinic'}</option>
+            <option value="store">{locale === 'ar' ? 'متجر' : 'Store'}</option>
             <option value="other">{copy.setup.typeOther}</option>
           </select>
         )}
@@ -945,7 +995,7 @@ function BusinessStep({
           />
         )}
       </Field>
-      <Field label={copy.setup.hours} required error={hoursError}>
+      <Field label={copy.setup.hours} required={hoursRequired} error={hoursError}>
         {(p) => <input {...p} value={form.hours} placeholder={copy.setup.hoursPlaceholder} onChange={(e) => set("hours", e.target.value)} />}
       </Field>
       <Field label={copy.setup.contactPhone} error={phoneError} hint="+968 …">
@@ -1102,6 +1152,7 @@ function HoursStep({
     setError(null);
     void run(async () => {
       const result = await saveOwnerBusiness({
+        expectedVersion:company?.version,
         expectedUserId: userId,
         expectedCompanyId: companyId,
         displayName: form.name,
@@ -1206,6 +1257,7 @@ function PersonaStep({
     setSaveError(null);
     void run(async () => {
       const result = await saveOwnerBusiness({
+        expectedVersion:company?.version,
         expectedUserId: userId,
         expectedCompanyId: companyId,
         displayName: form.name,
@@ -1275,7 +1327,6 @@ function PersonaStep({
 /* ========================================================================= */
 
 function WhatsAppStep({
-  draft,
   userId,
   companyId,
   link,
@@ -1286,7 +1337,6 @@ function WhatsAppStep({
   onBack,
   onNext,
 }: {
-  draft: CompanyDraft;
   userId: string;
   companyId: string | null;
   link: WhatsappCompanyLink | null;
@@ -1302,7 +1352,7 @@ function WhatsAppStep({
   const ar = locale === "ar";
   const [ownership, setOwnership] = useState<"own" | "new">("own");
   const boundLink=link?.companyId===companyId?link:null;
-  const numberField=useServerDraftField(boundLink?.id?boundLink.requestedDisplayNumber:draft.business.contactPhone||"");
+  const numberField=useServerDraftField(boundLink?.id?boundLink.requestedDisplayNumber:"");
   const keepField=useServerDraftField(boundLink?.keepOnPhone?"true":"false");
   const number=numberField.value,keepOnPhone=keepField.value==="true";
   const dirty=numberField.dirty||keepField.dirty||ownership!=="own";
@@ -1478,7 +1528,7 @@ function reviewStatusLabel(
 function activationFromReview(review: CompanyReviewRequest): Activation {
   return {
     whatsappNumber: review.whatsapp_number,
-    numberOwnership: review.number_ownership,
+    numberOwnership: review.number_ownership === "not_applicable" ? "" : review.number_ownership,
     ready: true,
     status: review.status === "pending_review" ? "pending_review" : "not_requested",
     requestedAt: Date.parse(review.requested_at) || nowMs(),
@@ -1597,6 +1647,11 @@ function DecoupledPillarsNotice({
 }
 
 function ActivationStep({
+  pageScope = false,
+  subscriptionActive = false,
+  hoursRequired,
+  selectedChannels,
+  reviewConfigured,
   readiness,
   whatsappLink,
   onBack,
@@ -1610,6 +1665,11 @@ function ActivationStep({
   initialReview,
   reviewLoadFailed: initialReviewLoadFailed,
 }: {
+  pageScope?: boolean;
+  subscriptionActive?: boolean;
+  hoursRequired: boolean;
+  selectedChannels: string[] | null;
+  reviewConfigured: boolean;
   readiness: CustomerReadinessSnapshot | null;
   whatsappLink: WhatsappCompanyLink | null;
   onBack: () => void;
@@ -1652,11 +1712,12 @@ function ActivationStep({
   const waiting = status === "pending_review" && review?.proof_current === true;
   const approved = status === "approved" && review?.proof_current === true;
   const tests = state.testHistory.filter((m) => m.from === "customer").length;
+  const instagramOnly = selectedChannels?.length === 1 && selectedChannels[0] === "instagram";
 
   const readyToRequest = Boolean(
-    companyId &&
+    companyId && reviewConfigured &&
       setupDone[0] &&
-      setupDone[2] &&
+      (!hoursRequired || setupDone[2]) &&
       setupDone[3],
   );
 
@@ -1770,8 +1831,8 @@ function ActivationStep({
       setSaveError(copy.setup.reviewNeedCompany);
       return;
     }
-    const ownership = form.numberOwnership;
-    if (ownership !== "own" && ownership !== "new") return;
+    const ownership = instagramOnly ? "not_applicable" : form.numberOwnership;
+    if (ownership !== "own" && ownership !== "new" && ownership !== "not_applicable") return;
     if (ownership === "own" && !isPhone(form.whatsappNumber)) {
       setError("phone");
       return;
@@ -1788,14 +1849,14 @@ function ActivationStep({
             ? await resubmitCompanyReviewRequest({
                 expectedCompanyId: companyId,
                 numberOwnership: ownership,
-                whatsappNumber: form.whatsappNumber,
+                whatsappNumber: instagramOnly ? "" : form.whatsappNumber,
                 ready: form.ready === true,
                 expectedRevision: review.revision,
               })
             : await submitCompanyReviewRequest({
                 expectedCompanyId: companyId,
                 numberOwnership: ownership,
-                whatsappNumber: form.whatsappNumber,
+                whatsappNumber: instagramOnly ? "" : form.whatsappNumber,
                 ready: form.ready === true,
               });
         if (!result.ok) {
@@ -1836,6 +1897,7 @@ function ActivationStep({
 
   const reviewForm = (
     <form className="grid min-w-0 gap-4" noValidate onSubmit={submitOrResubmit}>
+      {!reviewConfigured?<Notice tone="warn">{locale==="ar"?"طلب مراجعة الرحلة الجديدة ينتظر الإعداد المعتمد. يمكنك حفظ بقية التجهيز والعودة لاحقًا.":"The new review flow awaits approved configuration. Save your other setup and return later."}</Notice>:null}
       {status === "changes_requested" && review?.owner_note ? (
         <Notice tone="warn">
           <strong>{copy.setup.changesRequested}</strong>
@@ -1843,7 +1905,7 @@ function ActivationStep({
           {review.owner_note}
         </Notice>
       ) : null}
-      <Field label={copy.setup.numberOwnership} required>
+      {instagramOnly?<Notice tone="info">{locale==="ar"?"المراجعة تخص إنستغرام؛ ربط واتساب غير مطلوب لهذا النشاط.":"This review is for Instagram. A WhatsApp connection is not required for this business."}</Notice>:<Field label={copy.setup.numberOwnership} required>
         {(p) => (
           <div className="grid gap-2 sm:grid-cols-2">
             {(["own", "new"] as const).map((v) => (
@@ -1869,8 +1931,8 @@ function ActivationStep({
             ))}
           </div>
         )}
-      </Field>
-      {form.numberOwnership === "own" ? (
+      </Field>}
+      {!instagramOnly && form.numberOwnership === "own" ? (
         <Field label={copy.setup.whatsappNumber} required error={phoneError} hint="+968 …">
           {(p) => (
             <input
@@ -1901,7 +1963,7 @@ function ActivationStep({
           type="submit"
           busy={busy}
           busyLabel={copy.loading}
-          disabled={!readyToRequest || !form.numberOwnership || !form.ready}
+          disabled={!readyToRequest || (!instagramOnly && !form.numberOwnership) || !form.ready}
         >
           {needsResubmit ? copy.setup.resubmit : copy.setup.requestHelp}
         </Button>
@@ -1915,6 +1977,7 @@ function ActivationStep({
   return (
     <div className="grid min-w-0 gap-5 lg:grid-cols-[1fr_360px]">
       <div className="grid min-w-0 gap-4">
+        {pageScope?<SetupReviewPrerequisites ar={locale==="ar"} knowledgeReady={!!setupDone[3]} hoursRequired={hoursRequired} hoursReady={!!setupDone[2]} channelsSelected={!!selectedChannels?.length} subscriptionActive={subscriptionActive}/>:null}
         <DecoupledPillarsNotice locale={locale} setupDone={setupDone} reviewStatus={status} readiness={readiness} whatsappLink={whatsappLink} />
         <Notice tone="warn">
           {locale === "ar"

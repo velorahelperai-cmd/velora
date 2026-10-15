@@ -1,0 +1,35 @@
+import {beforeEach,expect,it,vi} from 'vitest';
+vi.mock('server-only',()=>({}));
+const mocks=vi.hoisted(()=>({enabled:vi.fn(),access:vi.fn(),session:vi.fn(),admin:vi.fn(),rpc:vi.fn(),history:vi.fn()}));
+vi.mock('@/lib/tenancy/business-archive-actions',()=>({readBusinessLifecycle:mocks.history}));
+vi.mock('@/lib/master-journey/rollout',()=>({masterJourneyEnabled:mocks.enabled}));
+vi.mock('@/lib/tenancy/access',()=>({getCompanyAccess:mocks.access}));
+vi.mock('@/lib/supabase/admin',()=>({createAdminClient:mocks.admin}));
+vi.mock('./wiring/public-purchase-persist',()=>({readBillingActorSession:mocks.session}));
+import {readRenewalWalletAction,setAutoRenewAction,convertExcessCollectionAction,requestExcessRefundAction,payRenewalFromWalletAction} from './autorenew-wallet-actions';
+const company='11111111-1111-4111-8111-111111111111',actor='22222222-2222-4222-8222-222222222222',version='33333333-3333-4333-8333-333333333333';
+beforeEach(()=>{vi.clearAllMocks();mocks.enabled.mockReturnValue(true);mocks.access.mockResolvedValue({ok:true,context:{userId:actor,company:{id:company,status:'active'},membership:{role:'owner',status:'active'}}});mocks.session.mockResolvedValue(actor);mocks.admin.mockReturnValue({rpc:mocks.rpc});mocks.rpc.mockResolvedValue({data:{ok:true},error:null});});
+it('disabled rollout blocks every new read or money action before a new schema RPC',async()=>{mocks.enabled.mockReturnValue(false);for(const action of [readRenewalWalletAction,setAutoRenewAction,convertExcessCollectionAction,requestExcessRefundAction,payRenewalFromWalletAction])expect(await action({expectedCompanyId:company} as never)).toMatchObject({ok:false,code:'MASTER_JOURNEY_UNCONFIGURED'});expect(mocks.rpc).not.toHaveBeenCalled();expect(mocks.access).not.toHaveBeenCalled();});
+it('cross-company wallet or renewal inputs cannot reach financial RPCs',async()=>{expect(await requestExcessRefundAction({expectedCompanyId:version,obligationId:version,clientOpId:'request'})).toMatchObject({ok:false,code:'FORBIDDEN'});expect(mocks.rpc).not.toHaveBeenCalled();});
+it('wallet conversion requires explicit legal terms consent and never accepts browser amounts',async()=>{expect(await convertExcessCollectionAction({expectedCompanyId:company,obligationId:version,clientOpId:'convert',termsVersion:'approved',consentAccepted:false})).toMatchObject({ok:false,code:'CONSENT_REQUIRED'});expect(await convertExcessCollectionAction({expectedCompanyId:company,obligationId:version,clientOpId:'convert',termsVersion:'approved',consentAccepted:true,amountBaisa:90000} as never)).toMatchObject({ok:false,code:'INVALID_INPUT'});expect(mocks.rpc).not.toHaveBeenCalled();});
+it('owner stop requires no new consent and passes verified server identity',async()=>{expect(await setAutoRenewAction({expectedCompanyId:company,enabled:false})).toMatchObject({ok:true});expect(mocks.rpc).toHaveBeenCalledWith('master_set_auto_renew',expect.objectContaining({p_company_id:company,p_actor_id:actor,p_actor_session_id:actor,p_enabled:false}));});
+it('archived owner history permits only read, refund review and stopping renewal with native ownership',async()=>{
+ mocks.access.mockResolvedValue({ok:true,context:{userId:actor,company:null,membership:null}});
+ mocks.history.mockResolvedValue({ok:true,data:[{id:company}]});
+ const scope={expectedCompanyId:company,expectedUserId:actor,ownerHistory:true as const};
+ expect(await readRenewalWalletAction(scope)).toMatchObject({ok:true});
+ expect(await requestExcessRefundAction({...scope,obligationId:version,clientOpId:'history-refund'})).toMatchObject({ok:true});
+ expect(await setAutoRenewAction({...scope,enabled:false})).toMatchObject({ok:true});
+ mocks.rpc.mockClear();
+ expect(await setAutoRenewAction({...scope,enabled:true,termsVersion:'approved',consentAccepted:true,planVersionId:version,amountBaisa:45000,currency:'OMR',nextDueAt:'2026-11-14T00:00:00Z'})).toMatchObject({ok:false,code:'FORBIDDEN'});
+ expect(await payRenewalFromWalletAction({...scope,planVersionId:version,expectedCatalogRevision:1,termsVersion:'approved',consentAccepted:true,clientOpId:'history-pay'})).toMatchObject({ok:false,code:'INVALID_INPUT'});
+ expect(mocks.rpc).not.toHaveBeenCalled();
+});
+it('history cannot use another account or a business absent from native owner history',async()=>{
+ mocks.history.mockResolvedValue({ok:true,data:[]});
+ expect(await readRenewalWalletAction({expectedCompanyId:company,expectedUserId:actor,ownerHistory:true})).toMatchObject({ok:false,code:'FORBIDDEN'});
+ expect(await readRenewalWalletAction({expectedCompanyId:company,expectedUserId:version,ownerHistory:true})).toMatchObject({ok:false,code:'FORBIDDEN'});
+ expect(mocks.rpc).not.toHaveBeenCalled();
+});
+it('auto renewal must submit the reviewed native price and due snapshot as expectations',async()=>{expect(await setAutoRenewAction({expectedCompanyId:company,enabled:true,termsVersion:'approved',consentAccepted:true})).toMatchObject({ok:false,code:'AUTORENEW_CONSENT_SNAPSHOT_REQUIRED'});expect(mocks.rpc).not.toHaveBeenCalled();expect(await setAutoRenewAction({expectedCompanyId:company,enabled:true,termsVersion:'approved',consentAccepted:true,planVersionId:version,amountBaisa:45000,currency:'OMR',nextDueAt:'2026-11-14T00:00:00Z'})).toMatchObject({ok:true});expect(mocks.rpc).toHaveBeenCalledWith('master_set_auto_renew',expect.objectContaining({p_expected_plan_version_id:version,p_expected_amount_baisa:45000,p_expected_currency:'OMR',p_expected_due_at:'2026-11-14T00:00:00Z'}));});
+it('wallet renewal supplies identifiers only, never customer price or funding authority',async()=>{expect(await payRenewalFromWalletAction({expectedCompanyId:company,planVersionId:version,expectedCatalogRevision:1,termsVersion:'approved',consentAccepted:true,clientOpId:'renew'})).toMatchObject({ok:true});expect(mocks.rpc).toHaveBeenCalledWith('master_wallet_pay_renewal',expect.objectContaining({p_company_id:company,p_plan_version_id:version,p_actor_id:actor,p_actor_session_id:actor}));});

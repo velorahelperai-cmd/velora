@@ -1,7 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Json } from "@/lib/database.types";
 import type { DeliveryStatus, InboundMessage } from "@/lib/whatsapp/webhook";
-import { whatsappRoutingMode } from "@/lib/whatsapp/config";
+import { whatsappConfig, whatsappConfigurationMode, whatsappRoutingMode } from "@/lib/whatsapp/config";
+import {createHash} from 'node:crypto';
 
 type Admin = SupabaseClient<Database>;
 
@@ -55,7 +56,10 @@ export async function saveInbound(
     p_message_type: message.messageType,
     p_received_at: message.receivedAt,
   };
-  const { data, error } = tenantRegistry
+  const test = whatsappConfigurationMode()==='meta_test';
+  const { data, error } = test
+    ? await (admin as unknown as {rpc:(name:string,args:Record<string,unknown>)=>PromiseLike<{data:Json;error:unknown}>}).rpc('review_store_whatsapp_inbound',{...args,p_waba_id:message.wabaId,p_secret_sha256:createHash('sha256').update(whatsappConfig().appSecret).digest('hex')})
+    : tenantRegistry
     ? await admin.rpc("whatsapp_store_meta_inbound", { ...args, p_waba_id: message.wabaId! })
     : await admin.rpc("save_whatsapp_inbound", args);
 

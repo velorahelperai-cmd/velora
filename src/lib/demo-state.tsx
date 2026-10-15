@@ -6,7 +6,7 @@
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { type Locale, getDirection, setLocaleCookie } from "@/lib/i18n";
-import type { PlanId, SectorId } from "@/lib/landing-copy";
+import type { PlanId } from "@/lib/landing-copy";
 
 export type Role = "owner" | "staff";
 export type SessionStage = "guest" | "unverified" | "active";
@@ -16,7 +16,8 @@ export type ConversationStatus = "open" | "follow_up" | "handed_over" | "resolve
 export type Account = { name: string; email: string; role: Role };
 export type Business = {
   name: string;
-  type: SectorId | "other";
+  /** Server contract: nonempty business type text up to 80 characters, including legacy IDs. */
+  type: string;
   replyLanguage: "ar" | "en" | "both";
   country: string;
   city: string;

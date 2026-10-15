@@ -1,0 +1,14 @@
+import {afterEach,beforeEach,expect,it,vi} from "vitest";
+const h=vi.hoisted(()=>({getUser:vi.fn(),rpc:vi.fn(),session:vi.fn(),create:vi.fn()}));
+vi.mock("@/lib/supabase/server",()=>({createClient:h.create}));
+vi.mock("@/lib/auth/session-guard",()=>({checkAppSession:h.session}));
+import {readAdminCostCompaniesAction,readAdminCostCyclesAction,readAdminCycleCostsAction} from "./cycle-cost-actions";
+const id=(n:number)=>`b5000000-0000-4000-8000-${String(n).padStart(12,"0")}`;
+beforeEach(()=>{vi.clearAllMocks();vi.stubEnv("VELORA_MASTER_JOURNEY_ENABLED","true");h.create.mockResolvedValue({auth:{getUser:h.getUser},rpc:h.rpc});h.getUser.mockResolvedValue({data:{user:{id:id(9)}},error:null});h.session.mockResolvedValue({ok:true});});
+afterEach(()=>vi.unstubAllEnvs());
+it("default-off does not authenticate or query new schema",async()=>{vi.stubEnv("VELORA_MASTER_JOURNEY_ENABLED","false");expect(await readAdminCostCompaniesAction()).toEqual({ok:false,code:"UNCONFIGURED"});expect(h.create).not.toHaveBeenCalled();});
+it("binds every read to current native Auth and session",async()=>{expect(await readAdminCostCyclesAction({companyId:id(1),expectedUserId:id(8)})).toEqual({ok:false,code:"UNAUTHENTICATED"});h.session.mockResolvedValue({ok:false});expect(await readAdminCycleCostsAction({companyId:id(1),cycleId:id(2),expectedUserId:id(9)})).toEqual({ok:false,code:"UNAUTHENTICATED"});expect(h.rpc).not.toHaveBeenCalled();});
+it("native owner denial cannot be bypassed by an authenticated delegated admin",async()=>{h.rpc.mockResolvedValue({data:{ok:false,code:"FORBIDDEN"},error:null});expect(await readAdminCostCompaniesAction()).toEqual({ok:false,code:"FORBIDDEN"});expect(h.rpc).toHaveBeenCalledWith("master_admin_ai_cost_companies",{p_after_company_id:null});});
+it("rejects malformed selectors before reads",async()=>{expect(await readAdminCycleCostsAction({companyId:"wrong",cycleId:id(2),expectedUserId:id(9)})).toEqual({ok:false,code:"INVALID_INPUT"});expect(h.create).not.toHaveBeenCalled();});
+it("only uses cookie-authenticated native RPC and rejects wrong company result",async()=>{h.rpc.mockResolvedValue({data:{ok:true,data:{companyId:id(3),cycles:[],next:null}},error:null});expect(await readAdminCostCyclesAction({companyId:id(1),expectedUserId:id(9)})).toEqual({ok:false,code:"UNAVAILABLE"});expect(h.rpc).toHaveBeenCalledWith("master_admin_ai_cost_cycles",{p_company_id:id(1),p_before_start:null,p_before_cycle_id:null});});
+it("never treats missing schema or thrown RPC as an empty report",async()=>{h.rpc.mockResolvedValue({data:null,error:{code:"PGRST202"}});expect(await readAdminCostCompaniesAction()).toEqual({ok:false,code:"UNAVAILABLE"});h.rpc.mockRejectedValue(Error("offline"));expect(await readAdminCostCompaniesAction()).toEqual({ok:false,code:"UNAVAILABLE"});});

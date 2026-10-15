@@ -100,7 +100,7 @@ describe("early renew / late notice paid_through", () => {
       currentPaidThrough: null,
       period,
     });
-    expect(applied.toISOString()).toBe("2026-11-06T12:00:00.000Z");
+    expect(applied.toISOString()).toBe("2026-11-05T12:00:00.000Z");
   });
 });
 

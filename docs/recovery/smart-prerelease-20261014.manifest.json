@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "scope": "Limited Smart Setup prerelease recovery snapshot; NOT a complete database, Auth, Storage or Vault backup",
+  "capturedAt": "2026-10-14T19:09:17.495405+04:00",
+  "sourceCommit": "63a5c7e44be86610eaef7ef19be55115ed25fd93",
+  "encryptedFile": "smart-prerelease-20261014.enc.json",
+  "encryptedSha256": "136c306f28f29da1b70a60570449eb552f7d946dbd6abae1a5030b84bb72c81c",
+  "plaintextSha256": "8a351771b84460cdc2e77d72da4cb0746a45e7569a0c1b636ad24300b1809e35",
+  "companies": 2,
+  "companyMembers": 4,
+  "functionDefinitions": 15,
+  "otherIncludedData": [
+    "company_member_grants",
+    "private.g03_company_inputs"
+  ],
+  "verification": [
+    "Authenticated decryption round trip passed",
+    "Ciphertext tamper rejected"
+  ],
+  "excludes": [
+    "Auth accounts and password hashes",
+    "Storage objects",
+    "Vault secrets",
+    "Unrelated database tables"
+  ],
+  "sqlRestoreTested": false,
+  "keyLocation": "Kept separately on the operator computer; never committed",
+  "encryptedHashFormat": "UTF-8 without BOM; CRLF normalized to LF"
+}

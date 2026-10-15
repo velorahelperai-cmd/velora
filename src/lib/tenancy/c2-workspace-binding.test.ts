@@ -1,5 +1,6 @@
 vi.mock('server-only',()=>({}));
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+afterEach(()=>vi.unstubAllEnvs());
 import { revalidatePath } from "next/cache";
 import type { CompanyContext } from "./types";
 
@@ -162,6 +163,20 @@ beforeEach(() => {
   state.order.mockImplementation(async () => {
     state.writes.push({ kind: "billing_order", companyId: COMPANY_B });
     return { ok: false, code: "plan_not_published" };
+  });
+});
+
+describe('Smart-only review validation',()=>{
+  it('passes Instagram-only ownership to native proof validation without Master',async()=>{
+    vi.stubEnv('VELORA_MASTER_JOURNEY_ENABLED','false');vi.stubEnv('VELORA_SMART_ONBOARDING_ENABLED','true');
+    const result=await submitCompanyReviewRequest({numberOwnership:'not_applicable',whatsappNumber:'',ready:true,expectedCompanyId:COMPANY_B});
+    expect(result.ok).toBe(true);
+    expect(state.rpcRequests.some(r=>r.name==='transition_company_review'&&r.input.p_number_ownership==='not_applicable')).toBe(true);
+  });
+  it('does not enable the new review variant when both rollouts are off',async()=>{
+    vi.stubEnv('VELORA_MASTER_JOURNEY_ENABLED','false');vi.stubEnv('VELORA_SMART_ONBOARDING_ENABLED','false');
+    expect(await submitCompanyReviewRequest({numberOwnership:'not_applicable',whatsappNumber:'',ready:true,expectedCompanyId:COMPANY_B})).toMatchObject({ok:false,code:'INVALID_INPUT'});
+    expect(state.rpcRequests).toHaveLength(0);
   });
 });
 
@@ -380,6 +395,26 @@ describe("business save runtime shape validation", () => {
   });
 });
 
+describe('profile revision binding after the master migration',()=>{
+ it('refuses absent displayed versions before a native write',async()=>{
+  const scoped=context();scoped.company!.version=8;state.access.mockResolvedValue({ok:true,context:scoped});
+  expect(await saveOwnerBusiness({...business,expectedUserId:USER,expectedCompanyId:COMPANY_B})).toMatchObject({ok:false,code:'CONFLICT'});
+  expect(state.rpcRequests).toHaveLength(0);
+ });
+ it('sends the displayed revision to native CAS and returns its conflict',async()=>{
+  const scoped=context();scoped.company!.version=8;state.access.mockResolvedValue({ok:true,context:scoped});
+  const rpc=vi.fn().mockResolvedValue({error:null,data:{ok:false,code:'CONFLICT'}});state.client.mockResolvedValue({rpc});
+  expect(await saveOwnerBusiness({...business,hours:'',expectedUserId:USER,expectedCompanyId:COMPANY_B,expectedVersion:7})).toMatchObject({ok:false,code:'CONFLICT'});
+  expect(rpc).toHaveBeenCalledWith('update_owner_company_profile',expect.objectContaining({p_expected_user_id:USER,p_company_id:COMPANY_B,p_expected_version:7}));
+ });
+ it('returns only a matching company receipt after a confirmed native save',async()=>{
+  const scoped=context();scoped.company!.version=8;state.access.mockResolvedValue({ok:true,context:scoped});
+  const saved={...scoped.company!,version:9};const rpc=vi.fn().mockResolvedValue({error:null,data:{ok:true,data:saved}});state.client.mockResolvedValue({rpc});
+  expect(await saveOwnerBusiness({...business,hours:'',expectedUserId:USER,expectedCompanyId:COMPANY_B,expectedVersion:8})).toMatchObject({ok:true,data:saved});
+  rpc.mockResolvedValue({error:null,data:{ok:true,data:{...saved,id:COMPANY_A}}});
+  expect(await saveOwnerBusiness({...business,expectedUserId:USER,expectedCompanyId:COMPANY_B,expectedVersion:8})).toMatchObject({ok:false,code:'UNAVAILABLE'});
+ });
+});
 describe("business contact validation", () => {
   it.each([
     { contactPhone: "not a phone" }, { contactPhone: "---" }, { contactPhone: "+123456" },

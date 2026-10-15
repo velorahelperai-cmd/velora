@@ -1,4 +1,6 @@
 "use server";
+import {masterJourneyEnabled} from '@/lib/master-journey/rollout';
+import {smartOnboardingEnabled} from './smart-rollout';
 import { normalizeBusinessEmail, normalizeBusinessPhone } from "@/lib/tenancy/business-contacts";
 import { beginDiagnostic } from "@/lib/diagnostics/flow";
 import type { DiagnosticDetail, DiagnosticStage } from "@/lib/diagnostics/contract";
@@ -76,7 +78,7 @@ function asReviewRequest(value: unknown): CompanyReviewRequest | null {
   if (
     typeof value.company_id !== "string"
     || typeof value.requested_by !== "string"
-    || (ownership !== "own" && ownership !== "new")
+    || (ownership !== "own" && ownership !== "new" && ownership !== "not_applicable")
     || typeof value.whatsapp_number !== "string"
     || typeof value.readiness_confirmed !== "boolean"
     || typeof value.requested_at !== "string"
@@ -114,7 +116,7 @@ async function callTransitionCompanyReview(input: {
   action: ReviewAction;
   companyId: string;
   expectedRevision?: number | null;
-  numberOwnership?: "own" | "new" | null;
+  numberOwnership?: "own" | "new" | "not_applicable" | null;
   whatsappNumber?: string | null;
   ready?: boolean | null;
   ownerNote?: string | null;
@@ -289,7 +291,9 @@ export async function resendVerificationEmail(email: string, next?:string|null):
   const trace = beginDiagnostic("auth_verification_resend");
   trace.stage("input");
   const cleaned = typeof email==="string"?email.trim().toLowerCase():"";
-  if (!cleaned) return { ok: false, code: "INVALID_INPUT", diagnostic: trace.finish("INVALID_INPUT") };
+  if (cleaned.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleaned)) {
+    return { ok: false, code: "INVALID_INPUT", diagnostic: trace.finish("INVALID_INPUT") };
+  }
   try {
     trace.stage("session");
     const supabase = await createClient();
@@ -390,6 +394,13 @@ export async function updatePassword(password: string, expectedUserId?: string):
     trace.stage("provider");
     const { error } = await supabase.auth.updateUser({ password });
     if (error) return { ok: false, code: "AUTH_ERROR", diagnostic: trace.finish("AUTH_ERROR") };
+    // The database epoch rejects existing JWT sessions immediately. Global Auth
+    // logout then removes native sessions and refresh tokens on every device.
+    try { await (supabase as unknown as {rpc(name:string,args:Record<string,unknown>):PromiseLike<unknown>}).rpc('master_revoke_account_sessions',{p_expected_user_id:userData.user.id}); } catch { /* Global Auth remains the native revocation authority on the old schema. */ }
+    try {
+      const revoked = await supabase.auth.signOut({scope:'global'});
+      if (revoked.error) return {ok:false,code:'UNAVAILABLE',message:'PASSWORD_CHANGED_SESSION_REVOCATION_PENDING',diagnostic:trace.finish('UNAVAILABLE')};
+    } catch { return {ok:false,code:'UNAVAILABLE',message:'PASSWORD_CHANGED_SESSION_REVOCATION_PENDING',diagnostic:trace.finish('UNAVAILABLE')}; }
     trace.stage("completed");
     trace.finish("OK");
     return { ok: true, data: undefined };
@@ -422,14 +433,21 @@ export async function completeProfileName(name: string, next?:string|null, expec
     );
     if (error) return { ok: false, code: "AUTH_ERROR" };
 
-    await supabase
-      .from("company_members")
-      .update({ member_name: fullName })
-      .eq("user_id", user.id)
-      .eq("status", "active");
+    // The profile write is confirmed. Membership display metadata and the
+    // destination refresh must not turn that receipt into a failed save.
+    try {
+      await supabase
+        .from("company_members")
+        .update({ member_name: fullName })
+        .eq("user_id", user.id)
+        .eq("status", "active");
+    } catch { /* A later profile edit can retry display synchronization. */ }
 
-    const access = await getCompanyAccess();
-    return { ok: true, data: { next: pathForAccess(access,safeInternalPath(next,"")) } };
+    const access = await getCompanyAccess().catch(() => ({ ok: false as const, code: "UNAVAILABLE" as const }));
+    const scopedAccess = access.ok && access.context.userId !== user.id
+      ? { ok: false as const, code: "UNAVAILABLE" as const }
+      : access;
+    return { ok: true, data: { next: pathForAccess(scopedAccess,safeInternalPath(next,"")) } };
   } catch {
     return { ok: false, code: "UNAVAILABLE" };
   }
@@ -776,7 +794,7 @@ export async function listCompanyReviewEvents(input?: { expectedCompanyId?: stri
 }
 
 export async function submitCompanyReviewRequest(input: {
-  numberOwnership: "own" | "new";
+  numberOwnership: "own" | "new" | "not_applicable";
   whatsappNumber: string;
   ready: boolean;
   expectedRevision?: number;
@@ -790,7 +808,8 @@ export async function submitCompanyReviewRequest(input: {
   }
   if (typeof input.whatsappNumber !== "string") return { ok: false, code: "INVALID_INPUT" };
   if (input.ready !== true) return { ok: false, code: "INVALID_INPUT" };
-  if (input.numberOwnership !== "own" && input.numberOwnership !== "new") {
+  if (input.numberOwnership !== "own" && input.numberOwnership !== "new"
+    && !(input.numberOwnership === "not_applicable" && (masterJourneyEnabled()||smartOnboardingEnabled()) && !input.whatsappNumber.trim())) {
     return { ok: false, code: "INVALID_INPUT" };
   }
   const result = await callTransitionCompanyReview({
@@ -809,7 +828,7 @@ export async function submitCompanyReviewRequest(input: {
 }
 
 export async function resubmitCompanyReviewRequest(input: {
-  numberOwnership: "own" | "new";
+  numberOwnership: "own" | "new" | "not_applicable";
   whatsappNumber: string;
   ready: boolean;
   expectedRevision?: number;
@@ -823,7 +842,8 @@ export async function resubmitCompanyReviewRequest(input: {
   }
   if (typeof input.expectedRevision !== "number") return { ok: false, code: "INVALID_INPUT" };
   if (input.ready !== true) return { ok: false, code: "INVALID_INPUT" };
-  if (input.numberOwnership !== "own" && input.numberOwnership !== "new") {
+  if (typeof input.whatsappNumber !== "string" || (input.numberOwnership !== "own" && input.numberOwnership !== "new"
+    && !(input.numberOwnership === "not_applicable" && (masterJourneyEnabled()||smartOnboardingEnabled()) && !input.whatsappNumber.trim()))) {
     return { ok: false, code: "INVALID_INPUT" };
   }
   const result = await callTransitionCompanyReview({
@@ -904,6 +924,7 @@ export async function saveOwnerBusiness(input: {
   memberName?: string;
   expectedCompanyId?: string | null;
   expectedUserId?: string;
+  expectedVersion?: number;
 }): Promise<ActionResult<CompanyRecord>> {
   const trace = beginDiagnostic("company_save");
   trace.stage("input");
@@ -937,7 +958,7 @@ export async function saveOwnerBusiness(input: {
   const displayName = input.displayName.trim();
   const contactPhone = normalizeBusinessPhone(input.contactPhone);
   const contactEmail = normalizeBusinessEmail(input.contactEmail);
-  if (!displayName || displayName.length > 120 || !input.hours.trim()
+  if (!displayName || displayName.length > 120 || !input.businessType.trim() || !input.country.trim()
     || contactPhone === null || contactEmail === null) {
     return { ok: false, code: "INVALID_INPUT", diagnostic: trace.finish("INVALID_INPUT") };
   }
@@ -945,6 +966,21 @@ export async function saveOwnerBusiness(input: {
     trace.stage("session");
     const supabase = await createClient();
     trace.stage("persistence");
+    if(masterJourneyEnabled()&&access.context.company?.version===undefined)return {ok:false,code:'UNAVAILABLE',diagnostic:trace.finish('UNAVAILABLE')};
+    if(access.context.company?.version!==undefined){
+      if(!Number.isSafeInteger(input.expectedVersion)||input.expectedVersion!<1)return {ok:false,code:'CONFLICT',diagnostic:trace.finish('CONFLICT')};
+      const {data,error}=await supabase.rpc('update_owner_company_profile',{
+        p_expected_user_id:access.context.userId,p_company_id:access.context.company.id,p_expected_version:input.expectedVersion!,
+        p_patch:{name:displayName,type:input.businessType,replyLanguage:input.replyLanguage,country:input.country,city:input.city,hours:input.hours,contactPhone,contactEmail},
+      });
+      const receipt=data as {ok?:boolean;code?:string;data?:CompanyRecord}|null;
+      if(error||!receipt)return {ok:false,code:'UNAVAILABLE',diagnostic:trace.finish('UNAVAILABLE')};
+      if(!receipt.ok||!receipt.data){const code=receipt.code==='CONFLICT'?'CONFLICT':receipt.code==='INVALID_INPUT'?'INVALID_INPUT':receipt.code==='UNAUTHENTICATED'?'UNAUTHENTICATED':receipt.code==='UNVERIFIED'?'UNVERIFIED':'FORBIDDEN';return {ok:false,code,message:receipt.code==='REVIEW_REQUIRED'?'country_change_review_required':undefined,diagnostic:trace.finish(code)};}
+      if(receipt.data.id!==access.context.company.id)return {ok:false,code:'UNAVAILABLE',diagnostic:trace.finish('UNAVAILABLE')};
+      let warning:DiagnosticDetail|undefined;
+      for(const path of ['/setup','/app','/app/settings']){try{revalidatePath(path);}catch{warning=trace.finish('REFRESH_FAILED');}}
+      if(!warning)trace.finish('OK');return {ok:true,data:receipt.data,...(warning?{diagnostic:warning}:{})};
+    }
     const { data, error } = await supabase.rpc(access.context.company?"upsert_selected_owner_company":"upsert_owner_company", {
       ...(access.context.company?{p_company_id:access.context.company.id}:{}),
       p_display_name: displayName,

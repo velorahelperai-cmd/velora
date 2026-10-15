@@ -40,7 +40,7 @@ export async function runAdminAITrial(input:AdminAIActionInput){
  const again=await ownerGate();
  if(!again.ok||again.actorId!==gate.actorId||again.sessionId!==gate.sessionId)return {ok:false as const,error:"ACCESS_CHANGED_AFTER_EXECUTION"};
  if(chunks.length&&!await verifyAnswerCitationsStillValid(company.id,chunks,admin))return {ok:false as const,error:"KNOWLEDGE_CHANGED_AFTER_EXECUTION"};
- return result;
+ return result.ok?{...result,citations:chunks.map(({sourceId,title,contentVersion})=>({sourceId,title,contentVersion}))}:result;
 }
 
 /** Separate synthetic owner test action. Confirmation remains off unless supplied explicitly. */

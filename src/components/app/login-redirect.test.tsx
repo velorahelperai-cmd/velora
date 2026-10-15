@@ -35,7 +35,12 @@ function fill() {
   (password.props.onChange as (v: string) => void)("synthetic-password");
 }
 function submit() { (form().props.onSubmit as (e: unknown) => void)({ preventDefault() {} }); render(); }
-async function settle() { for (let n = 0; n < 12; n++) await Promise.resolve(); }
+async function settle() {
+  // Login loads the browser Auth client dynamically; wait for the module runner
+  // before draining action continuations instead of assuming import timing.
+  await vi.dynamicImportSettled();
+  for (let n = 0; n < 12; n++) await Promise.resolve();
+}
 function deferred() { let resolve!: (value: unknown) => void; const promise = new Promise(ok => { resolve = ok; }); return { promise, resolve }; }
 beforeEach(() => {
   vi.clearAllMocks(); state.slots = []; state.effects = []; state.session.status = "guest"; state.session.identity = null;

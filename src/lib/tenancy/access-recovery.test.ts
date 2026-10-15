@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import {afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ client: vi.fn(), upsert: vi.fn(), profile: vi.fn(), memberships: vi.fn(), guard: vi.fn(), claims: vi.fn(), user: vi.fn(), cookie: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: mocks.client }));
 vi.mock("@/lib/auth/session-guard", () => ({ checkAppSession: mocks.guard }));
@@ -18,7 +18,22 @@ beforeEach(() => {
     from: (table: string) => { const query = { upsert: mocks.upsert, select: () => query, eq: () => query, maybeSingle: mocks.profile, order: mocks.memberships }; return table === "profiles" ? query : query; },
   });
 });
+afterEach(()=>vi.unstubAllEnvs());
 describe("persisted profile is required for company access", () => {
+  it('filters archived workspaces while retaining verified ownership history',async()=>{
+    vi.stubEnv('VELORA_MASTER_JOURNEY_ENABLED','true');
+    mocks.memberships.mockResolvedValue({data:[{company_id:'old',role:'owner',status:'active'}],error:null});
+    const client=await mocks.client(),originalFrom=client.from;
+    client.from=(table:string)=>table==='companies'?{select:()=>({in:async()=>({data:[{id:'old',archived_at:'2026-10-14T00:00:00Z'}],error:null})})}:originalFrom(table);
+    expect(await getCompanyAccess()).toMatchObject({ok:true,context:{company:null,workspaceChoices:[],ownedBusinessCount:1,hasBusinessMemberships:true}});
+  });
+  it('does not turn failed archive evidence into an empty business account',async()=>{
+    vi.stubEnv('VELORA_MASTER_JOURNEY_ENABLED','true');
+    mocks.memberships.mockResolvedValue({data:[{company_id:'old',role:'owner',status:'active'}],error:null});
+    const client=await mocks.client(),originalFrom=client.from;
+    client.from=(table:string)=>table==='companies'?{select:()=>({in:async()=>({data:null,error:{code:'503'}})})}:originalFrom(table);
+    expect(await getCompanyAccess()).toEqual({ok:false,code:'UNAVAILABLE'});
+  });
   it("ignores an old account's workspace selection even when both accounts belong to it", async () => {
     mocks.memberships.mockResolvedValue({ data: [{ company_id: "company-a", role: "owner" }, { company_id: "company-b", role: "staff" }], error: null });
     mocks.cookie.mockReturnValue({ value: "old-user:company-a" });
