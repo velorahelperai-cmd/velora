@@ -16,9 +16,23 @@ export function SmartSettingsPanel(props:Props){
 }
 function SettingsRead(props:Props){
  const [record,setRecord]=useState<SmartCompanySettings|null>(null),[error,setError]=useState<string|null>(null),[retry,setRetry]=useState(0);
- const scope=`${props.userId}:${props.company.id}`;
- useEffect(()=>{let live=true;void readSmartCompanySettings({expectedUserId:props.userId,expectedCompanyId:props.company.id}).then(r=>{if(!live)return;if(r.ok)setRecord(r.data);else setError(r.code);}).catch(()=>{if(live)setError('UNAVAILABLE');});return()=>{live=false;};},[scope,retry,props.userId,props.company.id]);
- if(!record)return <div role={error?'alert':'status'}>{error?(props.locale==='ar'?'تعذر تحميل الإعدادات المحفوظة.':'Could not load saved settings.'):(props.locale==='ar'?'جارٍ تحميل الإعدادات…':'Loading settings…')}{error?<Button onClick={()=>setRetry(n=>n+1)}>{props.locale==='ar'?'إعادة المحاولة':'Retry'}</Button>:null}</div>;
+ const scope=`${props.userId}:${props.company.id}`,current=useSmartAccountGuard(props.userId,props.company.id),ar=props.locale==='ar';
+ useEffect(()=>{let live=true;
+  const timer=setTimeout(()=>{if(live){live=false;setError('TIMEOUT');}},10000);
+  void readSmartCompanySettings({expectedUserId:props.userId,expectedCompanyId:props.company.id}).then(r=>{
+   if(!live||!current())return;live=false;clearTimeout(timer);
+   if(r.ok){setRecord(r.data);setError(null);}else setError(r.code);
+  }).catch(()=>{if(live&&current()){live=false;clearTimeout(timer);setError('UNAVAILABLE');}});
+  return()=>{live=false;clearTimeout(timer);};
+ },[scope,retry,props.userId,props.company.id,current]);
+ if(!record)return <div className={styles.branchForm}>
+  <p role={error?'alert':'status'}>{error==='TIMEOUT'?(ar?'استغرق تحميل بيانات نشاطك وقتًا أطول من المتوقع. أعد المحاولة.':'Loading your business details took longer than expected. Retry.'):
+   error==='FORBIDDEN'?(ar?'لا تسمح صلاحية حسابك بعرض إعدادات هذا النشاط.':'Your account cannot access this business’s settings.'):
+   error?(ar?'تعذّر تحميل بيانات نشاطك المحفوظة. أعد المحاولة.':'Could not load your saved business details. Retry.'):
+   (ar?'جارٍ تحميل بيانات نشاطك…':'Loading your business details…')}</p>
+  <div>{error?<Button type="button" onClick={()=>{setError(null);setRetry(n=>n+1);}}>{ar?'إعادة المحاولة':'Retry'}</Button>:null}
+   <Button type="button" variant="secondary" onClick={props.onClose}>{ar?'العودة للتجهيز':'Return to setup'}</Button></div>
+ </div>;
  return <LoadedSettings key={scope} {...props} record={record}/>;
 }
 function LoadedSettings({userId,company,locale,section,onSaved,onClose,record}:Props&{record:SmartCompanySettings}){
