@@ -17,6 +17,26 @@ function render(){return renderTree().props.value;}
 function deferred(){let resolve!:(v:unknown)=>void;const promise=new Promise(ok=>{resolve=ok;});return {promise,resolve};}
 beforeEach(()=>{vi.clearAllMocks();state.slots=[];state.effects=[];state.authEvent=null;state.peerSignal=null;state.path="/";vi.stubGlobal("window",{location:{reload:state.reload},requestAnimationFrame:()=>1,cancelAnimationFrame:vi.fn(),addEventListener:vi.fn(),removeEventListener:vi.fn()});vi.stubGlobal("document",{addEventListener:vi.fn(),removeEventListener:vi.fn()});});
 afterEach(()=>{for(const slot of state.slots)slot.cleanup?.();vi.useRealTimers();});
+it("mount and INITIAL_SESSION share one in-flight authoritative identity read",async()=>{
+ vi.useFakeTimers();const pending=deferred();state.read.mockReturnValue(pending.promise);
+ const frames:Array<()=>void>=[];
+ vi.stubGlobal("window",{location:{reload:state.reload},requestAnimationFrame:(fn:()=>void)=>{frames.push(fn);return 1;},cancelAnimationFrame:vi.fn(),addEventListener:vi.fn(),removeEventListener:vi.fn()});
+ render();frames[0]!();state.authEvent?.("INITIAL_SESSION",{user:{id:"user-a"}});
+ await vi.advanceTimersByTimeAsync(0);
+ expect(state.read).toHaveBeenCalledTimes(1);
+ pending.resolve({ok:true,data:profile()});await vi.advanceTimersByTimeAsync(0);
+ expect(render().identity?.userId).toBe("user-a");
+});
+it("a new identity generation never shares the prior account's signal read",async()=>{
+ vi.useFakeTimers();const old=deferred();state.read.mockReturnValueOnce(old.promise).mockResolvedValue({ok:true,data:profile("user-b")});
+ const frames:Array<()=>void>=[];
+ vi.stubGlobal("window",{location:{reload:state.reload},requestAnimationFrame:(fn:()=>void)=>{frames.push(fn);return 1;},cancelAnimationFrame:vi.fn(),addEventListener:vi.fn(),removeEventListener:vi.fn()});
+ const current=render();frames[0]!();current.clear();
+ state.authEvent?.("INITIAL_SESSION",{user:{id:"user-b"}});await vi.advanceTimersByTimeAsync(0);
+ expect(state.read).toHaveBeenCalledTimes(2);expect(render().identity?.userId).toBe("user-b");
+ old.resolve({ok:true,data:profile("user-a")});await vi.advanceTimersByTimeAsync(0);
+ expect(render().identity?.userId).toBe("user-b");
+});
 it("a late refresh cannot restore platform owner identity after logout",async()=>{const pending=deferred();state.read.mockReturnValue(pending.promise);const current=render();const request=current.refresh();current.clear();pending.resolve({ok:true,data:profile()});await request;const next=render();expect(next.status).toBe("guest");expect(next.identity).toBeNull();expect(current.isCurrentUser("user-a")).toBe(false);current.setIdentityName("Late name","user-a");expect(render().identity).toBeNull();});
 it("an older owner's refresh/name cannot restore identity during a newer account reload",async()=>{const pending=deferred();state.read.mockReturnValueOnce(pending.promise).mockResolvedValue({ok:true,data:{...profile("user-b"),isPlatformAdmin:false,adminHref:null,platformIdentity:{role:null,status:null,unavailable:false}}});const current=render();const old=current.refresh();const nextRequest=current.refresh();await nextRequest;pending.resolve({ok:true,data:profile()});await old;current.setIdentityName("Old account name","user-a");const next=render();expect(next.identity).toBeNull();expect(next.status).toBe("loading");expect(next.isCurrentUser("user-a")).toBe(false);expect(state.reload).toHaveBeenCalledOnce();});
 it("a second account switch while loading invalidates the first account's pending response",async()=>{

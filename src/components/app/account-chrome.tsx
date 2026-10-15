@@ -66,6 +66,7 @@ export function AccountSessionProvider({
   const identityRef=useRef<AccountProfileView|null>(initial??null);
   const userIdRef = useRef<string | null>(initial?.userId ?? null);
   const requestGen = useRef(0);
+  const signalRead=useRef<{generation:number;promise:Promise<void>}|null>(null);
   const routeReloading=useRef(false);
   const publishedContext=useRef<string|null>(null);
   /** Internal only — never rendered to visitors, never logs secrets. */
@@ -119,6 +120,17 @@ export function AccountSessionProvider({
     }
   },[clear,expire,providerRouter]);
 
+  // Mount/Auth/focus notifications often arrive together. Share only reads
+  // within the same authority generation; logout/account changes invalidate it.
+  const refreshFromSignal=useCallback(()=>{
+    if(signalRead.current?.generation===requestGen.current)return signalRead.current.promise;
+    const promise=refresh();
+    const pending={generation:requestGen.current,promise};
+    signalRead.current=pending;
+    void promise.finally(()=>{if(signalRead.current===pending)signalRead.current=null;});
+    return promise;
+  },[refresh]);
+
   useEffect(()=>subscribeSessionContext(signal=>{
     if(signal.type==="logout"&&userIdRef.current&&userIdRef.current!==signal.userId)return;
     const current=identityRef.current;
@@ -131,9 +143,9 @@ export function AccountSessionProvider({
   }),[providerRouter]);
 
   useEffect(()=>{
-    const frame=window.requestAnimationFrame(()=>{void refresh();});
+    const frame=window.requestAnimationFrame(()=>{void refreshFromSignal();});
     return ()=>window.cancelAnimationFrame(frame);
-  },[refresh]);
+  },[refreshFromSignal]);
 
   useEffect(()=>{
     const supabase=tryCreateClient();if(!supabase)return;
@@ -148,16 +160,16 @@ export function AccountSessionProvider({
       }
       // Server Actions update cookies without guaranteeing a browser SIGNED_IN event.
       // INITIAL_SESSION=null therefore checks the server instead of inventing a logout.
-      timer=setTimeout(()=>{void refresh();},0);
+      timer=setTimeout(()=>{void refreshFromSignal();},0);
     });
     return ()=>{if(timer)clearTimeout(timer);sub.subscription.unsubscribe();requestGen.current+=1;};
-  },[clear,refresh,providerRouter]);
+  },[clear,refreshFromSignal,providerRouter]);
   useEffect(()=>{
     let timer:ReturnType<typeof setTimeout>|undefined;
-    const recheck=()=>{if(document.visibilityState!=="visible")return;if(timer)clearTimeout(timer);timer=setTimeout(()=>{void refresh();},0);};
+    const recheck=()=>{if(document.visibilityState!=="visible")return;if(timer)clearTimeout(timer);timer=setTimeout(()=>{void refreshFromSignal();},0);};
     window.addEventListener("focus",recheck);document.addEventListener("visibilitychange",recheck);
     return ()=>{if(timer)clearTimeout(timer);window.removeEventListener("focus",recheck);document.removeEventListener("visibilitychange",recheck);};
-  },[refresh]);
+  },[refreshFromSignal]);
   const isCurrentUser = useCallback((userId:string,expectedIdentity?:AccountProfileView)=>userIdRef.current===userId&&identityRef.current?.userId===userId&&(!expectedIdentity||identityRef.current===expectedIdentity),[]);
   const hasCurrentUser = useCallback(()=>userIdRef.current!==null,[]);
   const setIdentityName = useCallback((name: string, expectedUserId: string) => {

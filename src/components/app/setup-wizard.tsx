@@ -8,6 +8,7 @@ import setupStyles from "./setup-wizard.module.css";
 import { useRouter } from "next/navigation";
 import { setupSubscriptionReturn } from "@/lib/auth/setup-return";
 import { beginSetupDraft, readSetupDraft, saveSetupDraft } from "@/lib/tenancy/setup-draft-actions";
+import {setupDraftSaveDecision} from "./setup-draft-autosave";
 import { setupDraftPayload, type SetupDraftCode, type SetupDraftRecord } from "@/lib/tenancy/setup-draft";
 import {SetupDraftLifecycleControls} from './setup-draft-lifecycle-controls';
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -261,7 +262,8 @@ export function SetupWizard({
   const {busy:draftStarting,run:runDraftStart}=useAction();
   const saveQueue = useRef<Promise<void>>(Promise.resolve());
   const createdDraft = useRef<CompanyDraft | null>(null);
-  const [draftSaveStatus, setDraftSaveStatus] = useState<"loading" | "saving" | "saved" | "changed" | "error">("loading");
+  const [draftSaveStatus, setDraftSaveStatus] = useState<"idle" | "loading" | "saving" | "saved" | "changed" | "error">("loading");
+  const confirmedDraftPayload=useRef<string|null>(null);
   const [draftSaveCode, setDraftSaveCode] = useState<SetupDraftCode | null>(null);
   const [draftRetry, setDraftRetry] = useState(0);
   const [savedCompany, setSavedCompany] = useState<CompanyRecord | null>(initialCompany ?? null);
@@ -340,6 +342,11 @@ export function SetupWizard({
       const frame = window.requestAnimationFrame(() => { setDraftSaveStatus("changed"); setDraftSaveCode("INVALID_INPUT"); });
       return () => window.cancelAnimationFrame(frame);
     }
+    const decision=setupDraftSaveDecision({...draft,businessBaseline},confirmedDraftPayload.current);
+    if(!decision.needed){
+      const frame=window.requestAnimationFrame(()=>{setDraftSaveStatus(decision.hasContent?"saved":"idle");setDraftSaveCode(null);});
+      return ()=>window.cancelAnimationFrame(frame);
+    }
     const scope = `${userId}:${companyId ?? "new"}`;
     let cancelled = false;
     const timer = window.setTimeout(() => {
@@ -351,14 +358,14 @@ export function SetupWizard({
           expectedRevision: draftRevision.current, draft: { ...draft, ...payload } });
         // A committed receipt updates the revision even if a newer local edit is queued.
         if (hydratedScope.current !== scope) return;
-        if (result.ok) {draftRevision.current = result.data.revision;draftReceipt.current=result.data;setDraftRecord(result.data);}
+        if (result.ok) {draftRevision.current = result.data.revision;draftReceipt.current=result.data;setDraftRecord(result.data);confirmedDraftPayload.current=setupDraftSaveDecision(result.data.draft,null).fingerprint;}
         if (cancelled) return;
-        if (result.ok) { writeCompanyDraft(result.data.draft); setDraftSaveStatus("saved"); setDraftSaveCode(null); }
+        if (result.ok) { writeCompanyDraft(result.data.draft); setDraftSaveStatus(setupDraftSaveDecision(result.data.draft,null).hasContent?"saved":"idle"); setDraftSaveCode(null); }
         else { setDraftSaveStatus("error"); setDraftSaveCode(result.code); }
       }).catch(() => { if (!cancelled) { setDraftSaveStatus("error"); setDraftSaveCode("UNAVAILABLE"); } });
     }, 600);
     return () => { cancelled = true; window.clearTimeout(timer); };
-  }, [ready, draft, businessBaseline, userId, companyId, draftRetry,masterJourneyEnabled]);
+  }, [ready, draft, businessBaseline, userId, companyId, draftRetry,masterJourneyEnabled,draftRecord?.revision]);
   const [knowledgeSources, setKnowledgeSources] = useState(initialKnowledge);
   const [knowledgeFailed, setKnowledgeFailed] = useState(knowledgeLoadFailed);
   const [trackedKnowledge, setTrackedKnowledge] = useState({ sources: initialKnowledge, failed: knowledgeLoadFailed });
@@ -429,6 +436,7 @@ export function SetupWizard({
       hydratedScope.current = scope;
       draftRevision.current = result.data?.revision ?? 0;
       draftReceipt.current=result.data;setDraftRecord(result.data);
+      confirmedDraftPayload.current=result.data?setupDraftSaveDecision(result.data.draft,null).fingerprint:null;
       const carried = createdDraft.current;
       const stored = carried?.userId === userId && carried.companyId === companyId ? carried : result.data?.draft ?? readCompanyDraft(userId);
       createdDraft.current = null;
@@ -462,7 +470,8 @@ export function SetupWizard({
       setBusinessBaseline(savedCompany ? companyBusiness(savedCompany) : { ...emptyBusiness });
       setBusinessConflicts(stored?.businessBaseline && savedCompany ? reconcileDraftFields(stored.business, stored.businessBaseline, companyBusiness(savedCompany)).conflicts : []);
       setReconciledCompany(savedCompany);
-      setDraftSaveCode(null); setDraftSaveStatus("changed");
+      const saveDecision=setupDraftSaveDecision({...next,businessBaseline:savedCompany?companyBusiness(savedCompany):{...emptyBusiness}},confirmedDraftPayload.current);
+      setDraftSaveCode(null); setDraftSaveStatus(saveDecision.needed?"changed":saveDecision.hasContent?"saved":"idle");
       setReady(true);
       }).catch(() => { if (!cancelled) { setDraftSaveStatus("error"); setDraftSaveCode("UNAVAILABLE"); } });
     });
@@ -575,7 +584,7 @@ export function SetupWizard({
           {!smartOnboardingEnabled?`${fill(mCopy.milestoneProgress,{n:step+1})} · `:""}{copy.setup.resume}
         </p>
         <div role="status" aria-live="polite" className="mt-2 text-sm">
-          {draftRecord?.state && draftRecord.state !== 'active' ? (ar ? "أُغلقت مسودة التجهيز. ابدأ مسودة جديدة لحفظ تغييرات جديدة." : "The setup draft is closed. Start a new draft to save new changes.") : draftSaveStatus === "saved" ? (ar ? "تم حفظ مسودة الإعداد في حسابك." : "Setup draft saved to your account.")
+          {draftRecord?.state && draftRecord.state !== 'active' ? (ar ? "أُغلقت مسودة التجهيز. ابدأ مسودة جديدة لحفظ تغييرات جديدة." : "The setup draft is closed. Start a new draft to save new changes.") : draftSaveStatus === "idle" ? (ar ? "ابدأ بإدخال بيانات نشاطك؛ ستُحفظ تغييراتك تلقائيًا." : "Enter your business details; changes will be saved automatically.") : draftSaveStatus === "saved" ? (ar ? "تم حفظ مسودة الإعداد في حسابك." : "Setup draft saved to your account.")
             : draftSaveStatus === "saving" ? (ar ? "جارٍ حفظ المسودة…" : "Saving setup draft…")
               : draftSaveCode === "INVALID_INPUT" ? (ar ? "أكمل أو صحح الحقول لحفظ المسودة." : "Correct the fields to save this draft.")
                 : draftSaveStatus === "error" ? (draftSaveCode === "CONFLICT" ? (ar ? "تغيّرت المسودة في نافذة أخرى. حمّل النسخة المحفوظة للمتابعة." : "Another tab changed this draft. Load the saved version to continue.") : (ar ? "لم يتم تأكيد حفظ المسودة. أعد المحاولة." : "Draft save has not been confirmed. Retry."))
