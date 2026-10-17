@@ -5,7 +5,7 @@ const https = require("node:https");
 const net = require("node:net");
 const tls = require("node:tls");
 const localHosts = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
-const httpPorts = new Set([3120, 3130, 3140, 3141, 3320, 3330, 3340, 3341]);
+const httpPorts = new Set([3120, 3130, 3140, 3141, 3320, 3330, 3340, 3341, 3430, 3440, 3441, 3450, 3630, 3640, 3641, 3650, 3720, 3730, 3740, 3741]);
 function denied() { throw Error("LOCAL_TEST_EXTERNAL_NETWORK_BLOCKED"); }
 function checkUrl(value) {
   const u = new URL(value instanceof Request ? value.url : String(value));

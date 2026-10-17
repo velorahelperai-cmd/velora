@@ -1,50 +1,86 @@
-<!-- BEGIN:nextjs-agent-rules -->
+# VELORA — SHARED PROJECT RULES
 
-# This is NOT the Next.js you know
+## 1. Canonical Project
+All agents work on the same canonical repository:
 
-This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+`C:\Users\DELL\Desktop\Velora new`
 
-This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+Use coordinated Git worktrees for concurrent edits. Never create unrelated project copies.
 
-<!-- END:nextjs-agent-rules -->
+## 2. Mandatory Execution Lock
+- Read `PROJECT_STATE.md` Quick Session Index before working.
+- Strictly follow `FLOW → STAGE → TASK` and `FLOW-LOCK-001`.
+- Never skip stages or silently change approved business requirements.
+- Queue out-of-stage requests for later.
+- Combine related work into practical, substantial tasks without unnecessary fragmentation.
 
-## Permanent ban: Obsidian
+## 3. Agent Responsibilities
+- **Cursor:** Full-stack implementation using parallel agents. No test execution or GitHub pushes.
+- **Antigravity:** UI/UX, responsive design, animations, and assigned frontend implementation.
+- **Codex:** Architecture, research, planning, Chrome/local testing, security review, CI verification, safe integration, GitHub commits and pushes.
 
-Do **not** open, read, search, or modify anything under Obsidian (including Handoffs and decision files). Rely only on the user request and this project codebase.
+No agent may overwrite another agent's unfinished work.
 
-## Delivery priority
+## 4. Complete Production Implementation
+Deliver all approved functionality, not merely an MVP.
 
-The user's goal is to make Velora ready for real business use as soon as possible. Build reusable production paths with real persistence, enforced authorization, and actual integrations. Do not deliver disposable mock implementations that must be rebuilt for launch. Keep tests focused on material failures and continue authorized work through deployment. Administrative AI trials use real model calls with a separately enforced total budget of 1 OMR; customer/WhatsApp activation remains a separate rollout.
+No fake integrations, placeholder behavior, disconnected mockups, or incomplete functionality presented as finished.
 
-## Paid verification
+Preserve authorization, tenant/branch isolation, real persistence, idempotency, and existing integrations.
 
-Do not run additional paid AI verification calls without a new explicit user request. Offline unit tests and read-only checks do not authorize provider execution. The real owner console remains available for the user's own deliberate trials within the approved lifetime cap.
+## 5. Logging — LOG-001
+Use centralized structured production logging with UTC timestamps, severity, service, environment, release, request_id, trace_id when applicable, stable event/error codes, relevant operation context, and diagnostic stack traces where safe.
 
-## Execution continuity — EXEC-001
+Propagate request context, log provider/DB failures, protect secrets through native redaction, and avoid ad-hoc console logging.
 
-- Read PROJECT_STATE.md's Quick Session Index, then only the current Flow/Stage resources, contracts and acceptance. Preserve all approved scope; never substitute an MVP or silently defer features.
-- **Highest priority — FLOW-LOCK-001:** remain in the approved Active Flow/Stage/Task, starting FLOW-001's earliest incomplete required Stage. Advance only after complete acceptance and its transition are verified; historical tests, UI and Build are insufficient. Record active IDs, acceptance, next Stage, dependencies, queued requests and actual evidence in PROJECT_STATE.md.
-- Schedule new approved requests with stable IDs/Flow/Stage/dependencies/priority/acceptance after the active Flow. Only critical security/data-loss risks, defects blocking that Flow or explicit immediate user reprioritisation permit an exception; record its approval/reason. Never silently change the lock or abandon a requirement.
-- Plan minimally, reuse implementation, test identity/permissions/isolation/persistence and integration boundaries, preserve diagnosable error references, update state and integrate completed safe increments through mandatory CI; then begin the exact next authorised Stage. If blocked, work only on an authorised prerequisite or genuinely independent support task.
-- Use 2–4 parallel streams only when they improve delivery without shared Auth/schema/billing/API conflicts. Reuse a suitable clean worktree, record actual task/owner/contracts, and serialize integration; do not assume other chats communicate.
-- OPS-001 requires enforceable pre-main quality gates and exact-SHA postflight, not local tests alone. Prepare CI locally while protection is blocked; never bypass protection or make an unprotected Push. Sensitive Production changes and paid calls keep their separate authorization requirements.
-- Keep the existing Flow/Stage/Feature and maintenance maps current with actual tests, affected files/contracts and diagnosis entry points. Distinguish Implemented, Integrated, Verified and Production Ready; never close work from UI/Build alone.
-- Keep Customer Launch Readiness distinct from Full Approved Scope Completion. Launch requires proven identity/recovery, tenant/branch authority, interruption-safe persistence, finance/activation, authorised channels/AI limits, whole journeys, enforced CI/deployment, diagnosis/monitoring/recovery and no release-blocking defects. No readiness or zero-defect promise from simulations.
-- Add tested CI metadata checks where feasible for task mapping, state updates, evidence and duplicate/missing IDs; manual PR review remains necessary for actual acceptance, scope and authorisation. Never claim external enforcement until its controls are installed and proven. Report current Flow/Stage, transition result, exact next Stage/reason and external blockers without asking the user to choose a predetermined task.
-- Do not add management tools, duplicate reports or issues for minor edits. When blocked, continue independent approved work and report only the concrete blocker.
+Keep logs searchable and useful for Codex diagnosis. Do not initiate a full-repository logging migration without explicit authorization.
 
-## Mandatory production logging — LOG-001
+## 6. Security and Production
+Never expose credentials or sensitive customer data.
 
-- Apply the user's Production Logging Playbook to every future code/infrastructure change and review. Existing coverage is not presumed compliant. Full-repository migration/audit starts only on the explicit "Apply the Logging Playbook to this repo" request; otherwise keep the Flow lock and register required logging prerequisites.
-- Use one shared established structured logger: Node/TypeScript pino + pino-http or winston; Python structlog/contextvars; Go slog JSONHandler/zap/zerolog; Java/Kotlin Logback + logstash-encoder or Log4j2/MDC; .NET Serilog; PHP Monolog JsonFormatter. No ad-hoc console/print/interpolated input logs. Production/staging single-line JSON to stdout/stderr only; local pretty/color output.
-- Every event carries UTC ISO timestamp with milliseconds, level, service, env, release/Git version, request_id, authenticated user_id/tenant_id (never raw email), stable dot-separated event and trace_id/span_id when applicable. HTTP events also carry route template/method/status/duration_ms/client_ip; failures carry error.type/full stack with secrets redacted.
-- Validate incoming X-Request-ID or generate a UUID, return it in response headers and propagate request/authenticated tenant context through async context automatically. Read LOG_LEVEL dynamically; default info in Production and debug locally. TRACE/DEBUG off in Production; validation/retries/handled anomalies WARN, impacted operations ERROR, unrecoverable startup FATAL.
-- Log exceptions once at the handling boundary, never log-and-rethrow. Register uncaughtException/unhandledRejection boundary handlers without duplicating framework reporting. Distinguish application/access/audit/security records by field or stream.
-- Cover one inbound request summary; DB/provider calls (target/duration/outcome); jobs start/end/retries/failure; startup/nonsecret version/config and graceful shutdown; key business events; login/logout/MFA/reset/403/permission/admin/rate-limit/key/export audit events with who/what/when.
-- Native logger redaction must exclude passwords, tokens/JWTs/keys/OAuth secrets/cookies/Authorization/Set-Cookie, sensitive financial/identity/health data, encryption keys and credential-bearing DB URLs; no raw request/response bodies by default. Mask strictly necessary email/phone references. Serialize input as fields to escape control characters; redact secrets embedded in error stacks too.
-- When setting up deployment/Docker/Kubernetes/observability, provide a buffered TLS collector and central store. Loki labels only service/env/level; request/user/trace/IP stay in payload. Do not ship DEBUG; drop/sample noisy healthy/static events, never errors. Alerts: >5x baseline errors, >2% 5xx/5m, new error.type, dependency failure, >10 failed logins/5m, zero logs/10m. Retention: hot 7–30d, warm 30–90d, immutable audit archive >=1y.
-- Explicit full audit order: discover stack/entry points/providers/deployment and present a plan; implement shared logger/context/coverage/redaction and replace ad-hoc logs; then collector/Loki/Grafana/alerts, request_id test-error verification and LOGGING.md. Do not create that guide or claim operational compliance before that scope is actually executed and verified.
+Never run unauthorized paid AI calls, real charges, destructive Production tests, or risky database/provider changes.
 
-## Concise delivery and token economy
+Respect mandatory CI, branch protection, backup, release verification, and rollback requirements under OPS-001.
 
-Provide short summaries only. Do not create unsolicited written reports, status documents, or duplicate handoffs. Create an artifact only when explicitly requested or necessary for a concrete approval, release gate, or safe recovery, and keep it minimal. Minimize token use, tool calls, repeated reads, and repeated tests. Perform only work needed for the current objective; defer optional polish and unrelated tasks. Preserve necessary authorization, persistence, security, and deployment checks.
+## 7. Verification and Completion
+Codex independently verifies functionality, security, data persistence, integration, regression risks, and relevant complete system journeys.
+
+Test the real application's authorized pages and workflows using approved test accounts, without creating unnecessary duplicate test pages or repositories.
+
+Do not claim unverified work is complete.
+
+Distinguish Implemented, Integrated, Verified, and Production Ready.
+
+## 8. Project Traceability
+Keep `PROJECT_STATE.md` concise and accurate with active task IDs, implementation paths, shared contracts, logging/debug entry points, verification evidence, blockers, and exact next authorized work.
+
+Avoid duplicate reports and unnecessary documentation.
+
+## 9. Efficient Execution
+Inspect only relevant files and code sections after reading the project state.
+
+Reuse existing solutions, avoid repeated full-repository scans, and minimize unnecessary tools, steps, and token consumption without reducing quality.
+
+Follow `.cursor/rules/cost-ledger.mdc` when relevant costs change.
+
+## 10. Coordination and Continuation
+Respect each agent's specialized instructions.
+
+Autonomous sequential work requires the user's explicit authorization.
+
+Routine technical decisions within approved scope may proceed independently.
+
+Only interrupt for material blockers, business decisions, or separately required approvals.
+
+Keep responses concise and actionable.
+
+## 11. Next.js Compatibility
+This project may use a Next.js version with breaking changes.
+
+Before modifying Next.js APIs or conventions, consult the relevant installed documentation under `node_modules/next/dist/docs/` and respect deprecation warnings.
+
+Preserve any Next.js-generated agent instructions when regenerated by the framework.
+
+## 12. Graphify-first change context
+
+Before every implementation prompt and after each task, inspect relevant dependencies, impact and linked tests using the existing authorized Graphify index. Compare its indexed commit with the current local commit and read changed or unindexed local source directly. Graph output is static scope guidance, not runtime verification or an automatic blocker when stale/unavailable. Do not install, reindex, upload repository content or change Graphify configuration without explicit authorization. Preserve all existing security, execution-lock and verification gates.

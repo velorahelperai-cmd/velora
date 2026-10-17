@@ -1,6 +1,5 @@
 "use server";
 import {masterJourneyEnabled} from '@/lib/master-journey/rollout';
-import {smartOnboardingEnabled} from './smart-rollout';
 import { normalizeBusinessEmail, normalizeBusinessPhone } from "@/lib/tenancy/business-contacts";
 import { beginDiagnostic } from "@/lib/diagnostics/flow";
 import type { DiagnosticDetail, DiagnosticStage } from "@/lib/diagnostics/contract";
@@ -171,6 +170,7 @@ export async function signUpWithEmail(input: {
   password: string;
   confirmPassword: string;
   next?: string | null;
+  requestNonce?: string | null;
 }): Promise<ActionResult<{ needsVerification: boolean; email: string; profilePending?: true }>> {
   const trace = beginDiagnostic("auth_signup");
   trace.stage("input");
@@ -194,7 +194,43 @@ export async function signUpWithEmail(input: {
 
   try {
     trace.stage("session");
-    const supabase = await createClient();
+    const { createProviderAuthClient } = await import("@/lib/auth/broker/provider");
+    const { admitNativeSession, prepareBrokerAdmissionLineage } = await import("@/lib/auth/broker");
+    const { reserveBoundAuthIntent, claimProviderAttempt } = await import("@/lib/auth/broker/registry");
+    const requestNonce =
+      typeof input.requestNonce === "string" && input.requestNonce.length >= 16
+        ? input.requestNonce
+        : null;
+    if (!requestNonce) return { ok: false, code: "UNAVAILABLE", diagnostic: trace.finish("UNAVAILABLE") };
+    const bundle = createProviderAuthClient();
+    if (!bundle) return { ok: false, code: "UNAVAILABLE", diagnostic: trace.finish("UNAVAILABLE") };
+    const supabase = bundle.client;
+    const { cookies } = await import("next/headers");
+    const cookieStore = await cookies();
+    const writer = {
+      set(name: string, value: string, options?: Record<string, unknown>) {
+        cookieStore.set(name, value, options as never);
+      },
+    };
+    const reader = {
+      getAll: () => cookieStore.getAll().map((c) => ({ name: c.name, value: c.value })),
+    };
+    const lineageCtx = await prepareBrokerAdmissionLineage(reader, writer);
+    if (!lineageCtx.ok) {
+      return { ok: false, code: "UNAVAILABLE", diagnostic: trace.finish("UNAVAILABLE") };
+    }
+    const intent = await reserveBoundAuthIntent({
+      bootstrapHash: lineageCtx.bootstrapHash,
+      requestNonce,
+      purpose: "signup_email",
+    });
+    if (!intent) return { ok: false, code: "UNAVAILABLE", diagnostic: trace.finish("UNAVAILABLE") };
+    const claim = await claimProviderAttempt(intent.id);
+    if (!claim.ok || claim.claimed !== true) {
+      return { ok: false, code: "UNAVAILABLE", diagnostic: trace.finish("UNAVAILABLE") };
+    }
+    let providerSession: import("@supabase/supabase-js").Session | null = null;
+    try {
     trace.stage("provider");
     const { data, error } = await supabase.auth.signUp({
       email,
@@ -204,6 +240,7 @@ export async function signUpWithEmail(input: {
         emailRedirectTo: authCallbackUrl(safeInternalPath(input.next,"/setup")),
       },
     });
+    if (data.session) providerSession = data.session;
     if (error && error.code !== "user_already_exists" && error.code !== "email_exists") {
       return { ok: false, code: "AUTH_ERROR", diagnostic: trace.finish("AUTH_ERROR") };
     }
@@ -212,13 +249,60 @@ export async function signUpWithEmail(input: {
     const confirmedSession = !error && Boolean(data.user?.email_confirmed_at)
       && Boolean(data.session) && data.session?.user.id === data.user?.id;
     if (!error && data.session && !confirmedSession) {
+      const { signOutProviderSessionAfterAdmitFailure } = await import(
+        "@/lib/auth/broker/provider-session"
+      );
+      const cleanup = await signOutProviderSessionAfterAdmitFailure(bundle, data.session, {
+        intentId: intent.id,
+        operationKey: intent.id,
+      });
+      providerSession = null;
+      if (cleanup.outcome !== "confirmed" || !cleanup.durable) {
+        return {
+          ok: false,
+          code: "UNAVAILABLE",
+          message: "PROVIDER_CLEANUP_UNKNOWN",
+          diagnostic: trace.finish("UNAVAILABLE"),
+        };
+      }
       return { ok: false, code: "AUTH_ERROR", diagnostic: trace.finish("AUTH_ERROR") };
+    }
+    if (confirmedSession && data.session) {
+      const admitted = await admitNativeSession({
+        session: data.session,
+        writer,
+        reader,
+        authIntentId: intent.id,
+        browserLineageId: intent.browserLineageId,
+        bootstrapHash: lineageCtx.bootstrapHash,
+      });
+      if (!admitted.ok) {
+        const { signOutProviderSessionAfterAdmitFailure } = await import(
+          "@/lib/auth/broker/provider-session"
+        );
+        const cleanup = await signOutProviderSessionAfterAdmitFailure(bundle, data.session, {
+          intentId: intent.id,
+          operationKey: intent.id,
+        });
+        providerSession = null;
+        if (cleanup.outcome !== "confirmed" || !cleanup.durable) {
+          return {
+            ok: false,
+            code: "UNAVAILABLE",
+            message: "PROVIDER_CLEANUP_UNKNOWN",
+            diagnostic: trace.finish("UNAVAILABLE"),
+          };
+        }
+        return { ok: false, code: "UNAVAILABLE", diagnostic: trace.finish("UNAVAILABLE") };
+      }
+      providerSession = null;
     }
     let warning: DiagnosticDetail | undefined;
     if (confirmedSession && data.user) {
       trace.stage("profile");
       try {
-        const { error: profileError } = await supabase.from("profiles").upsert(
+        const bound = await createClient();
+        const { error: profileError } = await bound.from("profiles").upsert(
           { user_id: data.user.id, full_name: name.slice(0, 120) },
           { onConflict: "user_id", ignoreDuplicates: true },
         );
@@ -226,12 +310,25 @@ export async function signUpWithEmail(input: {
       } catch { warning = trace.finish("UNAVAILABLE"); }
     }
     const returnTo=safeInternalPath(input.next,"");
-    if(returnTo){const {cookies}=await import("next/headers");(await cookies()).set(AUTH_RETURN_COOKIE,returnTo,{httpOnly:true,sameSite:"lax",path:"/",secure:process.env.NODE_ENV==="production",maxAge:7200});}
+    if(returnTo){cookieStore.set(AUTH_RETURN_COOKIE,returnTo,{httpOnly:true,sameSite:"lax",path:"/",secure:process.env.NODE_ENV==="production",maxAge:7200});}
     const needsVerification = !confirmedSession;
     if (!warning) trace.finish("OK");
     // Auth already succeeded. A persistence outage must resume this same user
     // through loadAuth's idempotent bootstrap, never ask for a second signup.
     return { ok: true, data: { needsVerification, email, ...(warning ? { profilePending: true as const } : {}) }, ...(warning ? { diagnostic: warning } : {}) };
+    } catch (err) {
+      if (providerSession) {
+        const { signOutProviderSessionAfterAdmitFailure } = await import(
+          "@/lib/auth/broker/provider-session"
+        );
+        await signOutProviderSessionAfterAdmitFailure(bundle, providerSession, {
+          intentId: intent.id,
+          operationKey: intent.id,
+        });
+      }
+      void err;
+      return { ok: false, code: "UNAVAILABLE", diagnostic: trace.finish("UNAVAILABLE") };
+    }
   } catch {
     return { ok: false, code: "UNAVAILABLE", diagnostic: trace.finish("UNAVAILABLE") };
   }
@@ -241,6 +338,7 @@ export async function signInWithEmail(input: {
   email: string;
   password: string;
   next?: string | null;
+  requestNonce?: string | null;
 }): Promise<ActionResult<{ next: string }>> {
   const trace = beginDiagnostic("auth_login");
   trace.stage("input");
@@ -251,14 +349,38 @@ export async function signInWithEmail(input: {
 
   try {
     trace.stage("session");
-    const supabase = await createClient();
+    const { cookies } = await import("next/headers");
+    const cookieStore = await cookies();
+    const writer = {
+      set(name: string, value: string, options?: Record<string, unknown>) {
+        cookieStore.set(name, value, options as never);
+      },
+    };
+    const { brokerPasswordLogin, commitAuthReturnForGeneration, resolveBrokerSession } = await import("@/lib/auth/broker");
     trace.stage("provider");
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) {
-      return { ok: false, code: "AUTH_ERROR", diagnostic: trace.finish("AUTH_ERROR") };
+    const reader = {
+      getAll: () => cookieStore.getAll().map((c) => ({ name: c.name, value: c.value })),
+    };
+    const admitted = await brokerPasswordLogin({
+      email,
+      password,
+      writer,
+      reader,
+      requestNonce: input.requestNonce,
+    });
+    if (!admitted.ok) {
+      const code = admitted.code === "AUTH_ERROR" || admitted.code === "INVALID_INPUT" ? admitted.code : "UNAVAILABLE";
+      return { ok: false, code, diagnostic: trace.finish(code === "AUTH_ERROR" ? "AUTH_ERROR" : code === "INVALID_INPUT" ? "INVALID_INPUT" : "UNAVAILABLE") };
+    }
+    const resolved = await resolveBrokerSession({
+      getAll: () => cookieStore.getAll().map((c) => ({ name: c.name, value: c.value })),
+    });
+    if (resolved.ok) {
+      const preferred = input.next != null ? safeInternalPath(input.next, "") : "";
+      if (preferred) commitAuthReturnForGeneration(writer, resolved.boundary.generation, preferred);
     }
     trace.stage("access");
-  const access = await getCompanyAccess();
+    const access = await getCompanyAccess();
     const preferred = input.next != null ? safeInternalPath(input.next, "") : "";
     trace.finish("OK");
     return { ok: true, data: { next: pathForAccess(access, preferred || null) } };
@@ -269,19 +391,95 @@ export async function signInWithEmail(input: {
 
 export async function resolvePostAuthPath(next?:string|null): Promise<ActionResult<{ next: string }>> {
  const trace=beginDiagnostic("auth_login");trace.stage("access");
- try {const access=await getCompanyAccess();trace.stage("handoff");const {cookies}=await import("next/headers");const stored=(await cookies()).get(AUTH_RETURN_COOKIE)?.value;trace.finish("OK");return {ok:true,data:{next:pathForAccess(access,safeInternalPath(next||stored,""))}};}catch{return {ok:false,code:"UNAVAILABLE",diagnostic:trace.finish("UNAVAILABLE")};}
+ try {
+  const access=await getCompanyAccess();
+  trace.stage("handoff");
+  const {cookies}=await import("next/headers");
+  const store=await cookies();
+  const {readAuthReturnForGeneration,resolveBrokerSession}=await import("@/lib/auth/broker");
+  const resolved=await resolveBrokerSession({getAll:()=>store.getAll().map(c=>({name:c.name,value:c.value}))});
+  const gen=resolved.ok?resolved.boundary.generation:null;
+  // Generation-named return only — never fall back to shared legacy cookie that may be B's (C3-8).
+  const stored=readAuthReturnForGeneration(
+    {get:(name)=>{const v=store.get(name)?.value;return v?{value:v}:undefined;}},
+    gen,
+  );
+  trace.finish("OK");
+  return {ok:true,data:{next:pathForAccess(access,safeInternalPath(next||stored,""))}};
+ }catch{return {ok:false,code:"UNAVAILABLE",diagnostic:trace.finish("UNAVAILABLE")};}
 }
-export async function signOut(expectedUserId?: string): Promise<ActionResult> {
+export async function signOut(
+  expectedUserId?: string,
+  expectedBoundaryFingerprint?: string | null,
+  operationKey?: string,
+): Promise<ActionResult<{ operationId?: string; status?: string }>> {
   try {
-    const supabase = await createClient();
-    if (expectedUserId !== undefined) {
-      const { data, error } = await supabase.auth.getUser();
-      if (error) return { ok: false, code: "UNAVAILABLE" };
-      if (!data.user || data.user.id !== expectedUserId) return { ok: false, code: "UNAUTHENTICATED" };
+    const { createBrokerBoundClient } = await import("@/lib/supabase/server");
+    const {
+      brokerLogoutOriginal,
+      resolveBrokerSessionByFingerprint,
+      clearAuthReturnForGeneration,
+      clearWorkspaceHintForGeneration,
+    } = await import("@/lib/auth/broker");
+    const { cookies } = await import("next/headers");
+    const store = await cookies();
+    const reader = {
+      getAll: () => store.getAll().map((c) => ({ name: c.name, value: c.value })),
+    };
+    const writer = {
+      set(name: string, value: string, options?: Record<string, unknown>) {
+        store.set(name, value, options as never);
+      },
+    };
+
+    // Prefer the captured boundary — never retarget logout to newer same-user B (C2).
+    let resolved =
+      expectedBoundaryFingerprint
+        ? await resolveBrokerSessionByFingerprint(reader, expectedBoundaryFingerprint)
+        : null;
+    if (!resolved || !resolved.ok) {
+      const bound = await createBrokerBoundClient();
+      if (!bound.bound.ok) {
+        // No broker session and no capture: do not wipe gen-scoped ancillary belonging to another tab.
+        return bound.bound.code === "UNAVAILABLE"
+          ? { ok: false, code: "UNAVAILABLE" }
+          : { ok: true, data: { status: "confirmed" } };
+      }
+      if (expectedBoundaryFingerprint
+        && bound.bound.resolve.boundary.boundaryFingerprint !== expectedBoundaryFingerprint) {
+        return { ok: false, code: "UNAUTHENTICATED" };
+      }
+      resolved = bound.bound.resolve;
     }
-    const { error } = await supabase.auth.signOut({scope:"local"});
-    if (error) return { ok: false, code: "AUTH_ERROR" };
-    const {cookies}=await import("next/headers");const store=await cookies();store.delete(WORKSPACE_COMPANY_COOKIE);store.delete(AUTH_RETURN_COOKIE);return { ok: true, data: undefined };
+    if (expectedUserId !== undefined && resolved.boundary.userId !== expectedUserId) {
+      return { ok: false, code: "UNAUTHENTICATED" };
+    }
+    const result = await brokerLogoutOriginal({
+      resolved,
+      operationKey,
+      writer,
+      expectedUserId,
+      expectedBoundaryFingerprint: expectedBoundaryFingerprint ?? resolved.boundary.boundaryFingerprint,
+    });
+    // Ancillary cleanup bound to THIS generation only (C8).
+    if (result.status === "confirmed" || result.status === "unknown" || result.status === "pending") {
+      clearWorkspaceHintForGeneration(
+        store,
+        WORKSPACE_COMPANY_COOKIE,
+        resolved.boundary.userId,
+        result.generation,
+      );
+      clearAuthReturnForGeneration(store, result.generation);
+    }
+    if (result.status === "confirmed") {
+      return { ok: true, data: { operationId: result.operationId, status: result.status } };
+    }
+    return {
+      ok: false,
+      code: result.code ?? "UNAVAILABLE",
+      message: result.message ?? "LOGOUT_REVOCATION_PENDING",
+      data: { operationId: result.operationId, status: result.status },
+    };
   } catch {
     return { ok: false, code: "UNAVAILABLE" };
   }
@@ -315,6 +513,7 @@ export async function verifyEmailCode(input: {
   email: string;
   code: string;
   next?: string | null;
+  requestNonce?: string | null;
 }): Promise<ActionResult<{ next: string }>> {
   const trace = beginDiagnostic("auth_verification");
   trace.stage("input");
@@ -324,20 +523,95 @@ export async function verifyEmailCode(input: {
     return { ok: false, code: "INVALID_INPUT", diagnostic: trace.finish("INVALID_INPUT") };
   }
   try {
-    // Request-scoped SSR client saves the verified session in response cookies.
-    // Email OTP verification does not exchange a browser-bound PKCE code.
+    // Provider client + broker admit — no shared sb-* cookie write.
     trace.stage("session");
-    const supabase = await createClient();
+    const { createProviderAuthClient } = await import("@/lib/auth/broker/provider");
+    const { admitNativeSession, prepareBrokerAdmissionLineage } = await import("@/lib/auth/broker");
+    const { reserveBoundAuthIntent, claimProviderAttempt } = await import("@/lib/auth/broker/registry");
+    const requestNonce =
+      typeof input.requestNonce === "string" && input.requestNonce.length >= 16
+        ? input.requestNonce
+        : null;
+    if (!requestNonce) {
+      return { ok: false, code: "UNAVAILABLE", message: "verification_unavailable", diagnostic: trace.finish("UNAVAILABLE") };
+    }
+    const bundle = createProviderAuthClient();
+    if (!bundle) return { ok: false, code: "UNAVAILABLE", diagnostic: trace.finish("UNAVAILABLE") };
+    const { cookies } = await import("next/headers");
+    const cookieStore = await cookies();
+    const writer = {
+      set(name: string, value: string, options?: Record<string, unknown>) {
+        cookieStore.set(name, value, options as never);
+      },
+    };
+    const reader = {
+      getAll: () => cookieStore.getAll().map((c) => ({ name: c.name, value: c.value })),
+    };
+    const lineageCtx = await prepareBrokerAdmissionLineage(reader, writer);
+    if (!lineageCtx.ok) {
+      return { ok: false, code: "UNAVAILABLE", message: "verification_unavailable", diagnostic: trace.finish("UNAVAILABLE") };
+    }
+    const intent = await reserveBoundAuthIntent({
+      bootstrapHash: lineageCtx.bootstrapHash,
+      requestNonce,
+      purpose: "verify_email",
+    });
+    if (!intent) {
+      return { ok: false, code: "UNAVAILABLE", message: "verification_unavailable", diagnostic: trace.finish("UNAVAILABLE") };
+    }
+    const claim = await claimProviderAttempt(intent.id);
+    if (!claim.ok || claim.claimed !== true) {
+      return { ok: false, code: "UNAVAILABLE", message: "verification_unavailable", diagnostic: trace.finish("UNAVAILABLE") };
+    }
     trace.stage("provider");
-    const { data, error } = await supabase.auth.verifyOtp({ email, token, type: "email" });
+    const { data, error } = await bundle.client.auth.verifyOtp({ email, token, type: "email" });
     if (error) return { ok: false, code: "AUTH_ERROR", message: emailVerificationError(error), diagnostic: trace.finish("AUTH_ERROR") };
     const user = data.user;
     if (!user?.email_confirmed_at || user.email?.toLowerCase() !== email
       || !data.session || data.session.user.id !== user.id) {
+      if (data.session) {
+        const { signOutProviderSessionAfterAdmitFailure } = await import(
+          "@/lib/auth/broker/provider-session"
+        );
+        await signOutProviderSessionAfterAdmitFailure(bundle, data.session, {
+          intentId: intent.id,
+          operationKey: intent.id,
+        });
+      }
       return { ok: false, code: "AUTH_ERROR", message: "verification_incomplete", diagnostic: trace.finish("AUTH_ERROR") };
     }
+    let admitted: Awaited<ReturnType<typeof admitNativeSession>>;
+    try {
+      admitted = await admitNativeSession({
+        session: data.session, writer, reader, authIntentId: intent.id,
+        browserLineageId: intent.browserLineageId, bootstrapHash: lineageCtx.bootstrapHash,
+      });
+    } catch {
+      const {signOutProviderSessionAfterAdmitFailure} = await import("@/lib/auth/broker/provider-session");
+      // Atomic disposition refuses revocation if admission committed before cookie-write failure.
+      await signOutProviderSessionAfterAdmitFailure(bundle,data.session,{intentId:intent.id,operationKey:intent.id});
+      return {ok:false,code:"UNAVAILABLE",message:"PROVIDER_CLEANUP_UNKNOWN",diagnostic:trace.finish("UNAVAILABLE")};
+    }
+    if (!admitted.ok) {
+      const { signOutProviderSessionAfterAdmitFailure } = await import(
+        "@/lib/auth/broker/provider-session"
+      );
+      const cleanup = await signOutProviderSessionAfterAdmitFailure(bundle, data.session, {
+        intentId: intent.id,
+        operationKey: intent.id,
+      });
+      if (cleanup.outcome !== "confirmed" || !cleanup.durable) {
+        return {
+          ok: false,
+          code: "UNAVAILABLE",
+          message: "PROVIDER_CLEANUP_UNKNOWN",
+          diagnostic: trace.finish("UNAVAILABLE"),
+        };
+      }
+      return { ok: false, code: "UNAVAILABLE", message: "verification_unavailable", diagnostic: trace.finish("UNAVAILABLE") };
+    }
     trace.stage("access");
-  const access = await getCompanyAccess();
+    const access = await getCompanyAccess();
     if (access.ok && access.context.userId !== user.id) {
       return { ok: false, code: "AUTH_ERROR", message: "verification_incomplete", diagnostic: trace.finish("AUTH_ERROR") };
     }
@@ -349,7 +623,7 @@ export async function verifyEmailCode(input: {
     return { ok: true, data: { next: pathForAccess(access, preferred || null) } };
   } catch {
     // A timeout may have consumed the OTP. Leave recovery to the user; never retry automatically.
-    return { ok: false, code: "AUTH_ERROR", message: "verification_unavailable", diagnostic: trace.finish("AUTH_ERROR") };
+    return { ok: false, code: "UNAVAILABLE", message: "verification_unavailable", diagnostic: trace.finish("UNAVAILABLE") };
   }
 }
 
@@ -362,48 +636,92 @@ function recordPasswordResetFailure(stage: "provider" | "request") {
   }
 }
 
-export async function requestPasswordReset(email: string): Promise<ActionResult> {
-  const cleaned = typeof email==="string"?email.trim().toLowerCase():"";
-  if (!cleaned) return { ok: false, code: "INVALID_INPUT" };
-  try {
-    const supabase = await createClient();
-    const { error } = await supabase.auth.resetPasswordForEmail(cleaned, {
-      redirectTo: authCallbackUrl("/reset-password"),
-    });
-    // Provider failures can depend on mailbox existence; keep the public result neutral.
-    if (error) recordPasswordResetFailure("provider");
-    return { ok: true, data: undefined };
-  } catch {
-    recordPasswordResetFailure("request");
-    return { ok: true, data: undefined };
-  }
+export async function requestPasswordReset(email: string, requestNonce?: string | null): Promise<ActionResult> {
+ const cleaned=typeof email==="string"?email.trim().toLowerCase():"";
+ if(!cleaned)return {ok:false,code:"INVALID_INPUT"};
+ try{
+  const {cookies}=await import("next/headers");
+  const {brokerRequestPasswordReset}=await import("@/lib/auth/broker/password-reset");
+  const store=await cookies();
+  const result=await brokerRequestPasswordReset({email:cleaned,requestNonce,reader:{getAll:()=>store.getAll().map(c=>({name:c.name,value:c.value}))},writer:{set:(name,value,options)=>store.set(name,value,options as never)}});
+  return result.ok?{ok:true,data:undefined}:{ok:false,code:"UNAVAILABLE"};
+ }catch{recordPasswordResetFailure("request");return {ok:false,code:"UNAVAILABLE"};}
 }
 
-export async function updatePassword(password: string, expectedUserId?: string): Promise<ActionResult> {
+export async function updatePassword(
+  password: string,
+  expectedUserId?: string,
+  expectedBoundaryFingerprint?: string | null,
+  operationKey?: string,
+): Promise<ActionResult<{ operationId?: string }>> {
   const trace = beginDiagnostic("auth_password_update");
   if (typeof password !== "string" || password.length < 8) return { ok: false, code: "INVALID_INPUT", diagnostic: trace.finish("INVALID_INPUT") };
+  // Boundary capture required for every password mutation (C2-R7).
+  if (!expectedBoundaryFingerprint || !/^[a-f0-9]{16}$/i.test(expectedBoundaryFingerprint)) {
+    return { ok: false, code: "UNAUTHENTICATED", diagnostic: trace.finish("UNAUTHENTICATED") };
+  }
   try {
     trace.stage("session");
-    const supabase = await createClient();
-    const { data: userData, error: userError } = await supabase.auth.getUser();
-    if (userError) return { ok: false, code: userError.name === "AuthSessionMissingError" ? "UNAUTHENTICATED" : "UNAVAILABLE", diagnostic: trace.finish(userError.name === "AuthSessionMissingError" ? "UNAUTHENTICATED" : "UNAVAILABLE") };
-    if (!userData.user) return { ok: false, code: "UNAUTHENTICATED", diagnostic: trace.finish("UNAUTHENTICATED") };
-    if (expectedUserId !== undefined && userData.user.id !== expectedUserId) return { ok: false, code: "UNAUTHENTICATED", diagnostic: trace.finish("UNAUTHENTICATED") };
+    const {
+      brokerUpdatePassword,
+      resolveAuthoritativeForMutation,
+      clearAuthReturnForGeneration,
+      clearWorkspaceHintForGeneration,
+    } = await import("@/lib/auth/broker");
+    const { cookies } = await import("next/headers");
+    const store = await cookies();
+    const reader = {
+      getAll: () => store.getAll().map((c) => ({ name: c.name, value: c.value })),
+    };
+    // Password requires current active tip — not recovery capture resolve (C3-4).
+    const resolved = await resolveAuthoritativeForMutation(reader, expectedBoundaryFingerprint);
+    if (!resolved.ok) {
+      const code = resolved.code === "QUARANTINED" ? "UNAUTHENTICATED" : resolved.code;
+      return { ok: false, code, diagnostic: trace.finish(code) };
+    }
+    if (expectedUserId !== undefined && resolved.boundary.userId !== expectedUserId) {
+      return { ok: false, code: "UNAUTHENTICATED", diagnostic: trace.finish("UNAUTHENTICATED") };
+    }
     trace.stage("access");
-    const identity=await readSessionIdentity();if(!identity.ok)return {ok:false,code:identity.code,diagnostic:trace.finish(identity.code)};
+    const identity = await readSessionIdentity();
+    if (!identity.ok) return { ok: false, code: identity.code, diagnostic: trace.finish(identity.code) };
+    // Tip + identity must agree — fingerprint cleanup resolve is not password authority (C3-4).
+    if (identity.userId !== resolved.boundary.userId) {
+      return { ok: false, code: "UNAUTHENTICATED", diagnostic: trace.finish("UNAUTHENTICATED") };
+    }
+    const writer = {
+      set(name: string, value: string, options?: Record<string, unknown>) {
+        store.set(name, value, options as never);
+      },
+    };
     trace.stage("provider");
-    const { error } = await supabase.auth.updateUser({ password });
-    if (error) return { ok: false, code: "AUTH_ERROR", diagnostic: trace.finish("AUTH_ERROR") };
-    // The database epoch rejects existing JWT sessions immediately. Global Auth
-    // logout then removes native sessions and refresh tokens on every device.
-    try { await (supabase as unknown as {rpc(name:string,args:Record<string,unknown>):PromiseLike<unknown>}).rpc('master_revoke_account_sessions',{p_expected_user_id:userData.user.id}); } catch { /* Global Auth remains the native revocation authority on the old schema. */ }
-    try {
-      const revoked = await supabase.auth.signOut({scope:'global'});
-      if (revoked.error) return {ok:false,code:'UNAVAILABLE',message:'PASSWORD_CHANGED_SESSION_REVOCATION_PENDING',diagnostic:trace.finish('UNAVAILABLE')};
-    } catch { return {ok:false,code:'UNAVAILABLE',message:'PASSWORD_CHANGED_SESSION_REVOCATION_PENDING',diagnostic:trace.finish('UNAVAILABLE')}; }
+    const result = await brokerUpdatePassword({
+      resolved,
+      operationKey,
+      password,
+      writer,
+      expectedUserId,
+      expectedBoundaryFingerprint: expectedBoundaryFingerprint ?? resolved.boundary.boundaryFingerprint,
+    });
+    if (!result.ok) {
+      return {
+        ok: false,
+        code: result.code ?? "UNAVAILABLE",
+        message: result.message,
+        data: { operationId: result.operationId },
+        diagnostic: trace.finish(result.code === "AUTH_ERROR" ? "AUTH_ERROR" : result.code === "INVALID_INPUT" ? "INVALID_INPUT" : "UNAVAILABLE"),
+      };
+    }
+    clearWorkspaceHintForGeneration(
+      store,
+      WORKSPACE_COMPANY_COOKIE,
+      resolved.boundary.userId,
+      resolved.boundary.generation,
+    );
+    clearAuthReturnForGeneration(store, resolved.boundary.generation);
     trace.stage("completed");
     trace.finish("OK");
-    return { ok: true, data: undefined };
+    return { ok: true, data: { operationId: result.operationId } };
   } catch {
     return { ok: false, code: "UNAVAILABLE", diagnostic: trace.finish("UNAVAILABLE") };
   }
@@ -474,17 +792,48 @@ export async function selectWorkspaceCompany(companyId: string, input?: { expect
   if (!id || !allowed) return { ok: false, code: "FORBIDDEN" };
   try {
     const { cookies } = await import("next/headers");
-    (await cookies()).set(WORKSPACE_COMPANY_COOKIE, `${access.context.userId}:${id}`, {
-      httpOnly: true,
-      sameSite: "lax",
-      path: "/",
-      secure: process.env.NODE_ENV === "production",
-      maxAge: 60 * 60 * 24 * 30,
-    });
+    const { createBrokerBoundClient } = await import("@/lib/supabase/server");
+    const { commitWorkspaceForGeneration } = await import("@/lib/auth/broker");
+    const bound = await createBrokerBoundClient();
+    if (!bound.bound.ok) return { ok: false, code: bound.bound.code };
+    if (bound.bound.resolve.boundary.userId !== access.context.userId) {
+      return { ok: false, code: "UNAUTHENTICATED" };
+    }
+    // getCompanyAccess may be request-cached. Native membership authority must
+    // be read at both sides of this hint write, using the captured user client.
+    const nativeClient = bound.bound.client;
+    const readSelectionMembership = async () => {
+      const { data, error } = await nativeClient.from("company_members")
+        .select("company_id,user_id,status")
+        .eq("company_id", id).eq("user_id", access.context.userId)
+        .eq("status", "active").maybeSingle();
+      if (error) return { ok: false as const, code: "UNAVAILABLE" as const };
+      if (!data || data.company_id !== id || data.user_id !== access.context.userId || data.status !== "active") {
+        return { ok: false as const, code: "FORBIDDEN" as const };
+      }
+      return { ok: true as const };
+    };
+    const beforeSelection = await readSelectionMembership();
+    if (!beforeSelection.ok) return beforeSelection;
+    const generation = bound.bound.resolve.boundary.generation;
+    const store = await cookies();
+    commitWorkspaceForGeneration(
+      {
+        set: (name, value, options) => store.set(name, value, options as never),
+        get: (name) => { const v = store.get(name)?.value; return v ? { value: v } : undefined; },
+        delete: (name) => store.delete(name),
+      },
+      generation,
+      access.context.userId,
+      id,
+    );
     revalidatePath("/app");
     revalidatePath("/admin");
     const selected = await getCompanyAccess();
-    if (selected.ok && selected.context.userId !== access.context.userId) return { ok: false, code: "UNAUTHENTICATED" };
+    if (!selected.ok) return { ok: false, code: selected.code };
+    if (selected.context.userId !== access.context.userId) return { ok: false, code: "UNAUTHENTICATED" };
+    const afterSelection = await readSelectionMembership();
+    if (!afterSelection.ok) return afterSelection;
     return { ok: true, data: { companyId: id, next: pathForAccess(selected, safeInternalPath(input?.next, "")) } };
   } catch {
     return { ok: false, code: "UNAVAILABLE" };
@@ -809,7 +1158,7 @@ export async function submitCompanyReviewRequest(input: {
   if (typeof input.whatsappNumber !== "string") return { ok: false, code: "INVALID_INPUT" };
   if (input.ready !== true) return { ok: false, code: "INVALID_INPUT" };
   if (input.numberOwnership !== "own" && input.numberOwnership !== "new"
-    && !(input.numberOwnership === "not_applicable" && (masterJourneyEnabled()||smartOnboardingEnabled()) && !input.whatsappNumber.trim())) {
+    && !(input.numberOwnership === "not_applicable" && (masterJourneyEnabled()) && !input.whatsappNumber.trim())) {
     return { ok: false, code: "INVALID_INPUT" };
   }
   const result = await callTransitionCompanyReview({
@@ -843,7 +1192,7 @@ export async function resubmitCompanyReviewRequest(input: {
   if (typeof input.expectedRevision !== "number") return { ok: false, code: "INVALID_INPUT" };
   if (input.ready !== true) return { ok: false, code: "INVALID_INPUT" };
   if (typeof input.whatsappNumber !== "string" || (input.numberOwnership !== "own" && input.numberOwnership !== "new"
-    && !(input.numberOwnership === "not_applicable" && (masterJourneyEnabled()||smartOnboardingEnabled()) && !input.whatsappNumber.trim()))) {
+    && !(input.numberOwnership === "not_applicable" && (masterJourneyEnabled()) && !input.whatsappNumber.trim()))) {
     return { ok: false, code: "INVALID_INPUT" };
   }
   const result = await callTransitionCompanyReview({

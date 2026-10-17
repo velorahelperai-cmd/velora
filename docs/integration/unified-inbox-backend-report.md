@@ -6,7 +6,7 @@ Branch: `codex/unified-inbox-backend`. Base: `7c7c17d2e9dfa59f15c3a57a411bd9770d
 
 ## Reused and completed
 
-- Reused server-verified Embedded Signup, exact WABA/phone-to-company registry, encrypted Vault credentials, expiry/revocation handling and raw-body HMAC reception. Manual number entry does not prove ownership.
+- Reused server-verified Embedded Signup, exact WABA/phone-to-company registry identifier, Vault-stored connection material, expiry/revocation handling and raw-body HMAC reception. Manual number entry does not prove ownership.
 - Reused the existing durable inbound jobs, per-conversation FIFO/leases/backoff/dead-letter handling, existing AI router/approved company knowledge, cost ledger, saved responses, outbound intents and monotonic delivery evidence. No parallel queue or usage ledger.
 - Added bounded company inbox/thread/audit/connection read actions, actual per-user unread markers and durable intervention summaries. Owner/staff/assigned-only authorization and active sessions are checked in SQL as well as server actions.
 - Added immutable server arrival/event ordering; provider timestamps cannot advance the read cursor. Reading only acknowledges the latest-page boundary issued for that user, preserving later inbound messages.

@@ -20,14 +20,10 @@ async function phonePort(): Promise<PersonalPhonePort> {
       const { data, error } = await rpc.call(client, name, args);
       return error ? { ok: false, code: "UNAVAILABLE" } : personalPhoneReceipt(data);
     },
-    updatePhone: async phone => {
-      const { error } = await client.auth.updateUser({ phone });
-      return { ok: !error };
-    },
-    verifyPhone: async (phone, code) => {
-      const { data, error } = await client.auth.verifyOtp({ phone, token: code, type: "phone_change" });
-      return { ok: !error && Boolean(data.user), ...(data.user ? { userId: data.user.id } : {}) };
-    },
+    // Fail closed: raw Auth phone mutation without bound broker fence is unavailable (C5-R4).
+    // Use personal-phone-change-actions (lease + reserveBoundMutationIntent + sync).
+    updatePhone: async (_phone) => ({ ok: false }),
+    verifyPhone: async (_phone, _code) => ({ ok: false }),
   };
 }
 

@@ -147,12 +147,13 @@ export function writeCompanyDraft(draft: CompanyDraft): void {
 }
 
 /** Remove one user's company draft. No-op when userId is missing (never wipe all drafts). */
-export function clearCompanyDrafts(userId: string | null | undefined): void {
-  if (typeof window === "undefined" || !userId) return;
+export function clearCompanyDrafts(userId: string | null | undefined): boolean {
+  if (typeof window === "undefined" || !userId) return false;
   try {
     window.localStorage.removeItem(keyFor(userId));
+    return window.localStorage.getItem(keyFor(userId)) === null;
   } catch {
-    /* ignore */
+    return false;
   }
 }
 

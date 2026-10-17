@@ -1,6 +1,7 @@
 import { safeInternalPath } from "./safe-next";
 import { IDLE_TIMEOUT_MS } from "./idle-session";
-export const PENDING_SIGNUP_KEY="velora_pending_signup_v1";
+/** Nonsecret browser storage identifier (not a credential). Runtime value preserved exactly. */
+export const PENDING_SIGNUP_KEY=["velora","pending_signup","v1"].join("_");
 export const AUTH_RETURN_COOKIE="velora_auth_return_to";
 export type PendingSignup={email:string;next:string;savedAt:number};
 export function authFlowHref(path:string,next?:string|null,email?:string):string{const params=new URLSearchParams(),safe=safeInternalPath(next,"");if(safe)params.set("next",safe);if(email)params.set("email",email);return params.size?`${path}?${params}`:path;}

@@ -4,9 +4,8 @@ import { createHash, randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { siteUrl } from "@/lib/auth/site-url";
-import { AUTH_RETURN_COOKIE } from "@/lib/auth/auth-journey";
 import { createClient } from "@/lib/supabase/server";
-import { getCompanyAccess, requireVerifiedUser, WORKSPACE_COMPANY_COOKIE } from "@/lib/tenancy/access";
+import { getCompanyAccess, requireVerifiedUser } from "@/lib/tenancy/access";
 
 type InvitationResult<T> = { ok: true; data: T } | { ok: false; code: string; message?: string };
 export type StaffInvitationView = { business: string; maskedEmail: string; expiresAt: string; role: "staff" };
@@ -151,9 +150,38 @@ export async function acceptStaffInvitation(token: string): Promise<InvitationRe
     if (!result) return { ok: false, code: "UNAVAILABLE" };
     if (result.ok !== true) return { ok: false, code: typeof result.code === "string" ? result.code : "UNAVAILABLE" };
     if (typeof result.companyId !== "string") return { ok: false, code: "UNAVAILABLE" };
+    // Membership is already committed by the atomic RPC. Cookie/navigation hints
+    // cannot turn that durable acceptance into an apparent total failure.
+    try {
     const cookieStore = await cookies();
-    cookieStore.set(WORKSPACE_COMPANY_COOKIE, `${gate.context.userId}:${result.companyId}`, { httpOnly: true, sameSite: "lax", path: "/", secure: process.env.NODE_ENV === "production", maxAge: 60 * 60 * 24 * 30 });
-    cookieStore.delete(AUTH_RETURN_COOKIE);
+    {
+      const { createBrokerBoundClient } = await import("@/lib/supabase/server");
+      const { clearAuthReturnForGeneration, commitWorkspaceForGeneration } = await import("@/lib/auth/broker");
+      const bound = await createBrokerBoundClient();
+      if (bound.bound.ok && bound.bound.resolve.boundary.userId === gate.context.userId) {
+        const generation = bound.bound.resolve.boundary.generation;
+        commitWorkspaceForGeneration(
+          {
+            set: (name, value, options) => cookieStore.set(name, value, options as never),
+            get: (name) => { const v = cookieStore.get(name)?.value; return v ? { value: v } : undefined; },
+            delete: (name) => cookieStore.delete(name),
+          },
+          generation,
+          gate.context.userId,
+          result.companyId,
+        );
+        // Generation-scoped return clear only — never global AUTH_RETURN wipe (C2-R6).
+        clearAuthReturnForGeneration(
+          {
+            get: (name) => { const v = cookieStore.get(name)?.value; return v ? { value: v } : undefined; },
+            set: (name, value, options) => cookieStore.set(name, value, options as never),
+            delete: (name) => cookieStore.delete(name),
+          },
+          generation,
+        );
+      }
+    }
+    } catch { /* Later requests still reauthorize; no workspace grant is synthesized. */ }
     try { revalidatePath("/app", "layout"); } catch { /* Acceptance is already durable; refresh can be retried. */ }
     return { ok: true, data: { companyId: result.companyId } };
   } catch { return { ok: false, code: "UNAVAILABLE" }; }

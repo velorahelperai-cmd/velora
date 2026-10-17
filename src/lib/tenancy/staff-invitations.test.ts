@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ rpc: vi.fn(), access: vi.fn(), verified: vi.fn(), revalidate: vi.fn(), cookies: vi.fn(), deleteCookie: vi.fn() }));
+const mocks = vi.hoisted(() => ({ rpc: vi.fn(), access: vi.fn(), verified: vi.fn(), revalidate: vi.fn(), cookies: vi.fn(), bound: vi.fn(), deleteCookie: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidate }));
-vi.mock("next/headers", () => ({ cookies: async () => ({ set: mocks.cookies, delete: mocks.deleteCookie }) }));
-vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ rpc: mocks.rpc }) }));
+vi.mock("next/headers", () => ({ cookies: async () => ({ set: mocks.cookies, get: () => undefined, delete: mocks.deleteCookie }) }));
+vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ rpc: mocks.rpc }), createBrokerBoundClient: mocks.bound }));
 vi.mock("@/lib/tenancy/access", () => ({ getCompanyAccess: mocks.access, requireVerifiedUser: mocks.verified, WORKSPACE_COMPANY_COOKIE: "velora_workspace_company" }));
 vi.mock("@/lib/auth/site-url", () => ({ siteUrl: () => "https://velora.example" }));
 
@@ -17,6 +17,9 @@ const invitation = () => ({ id: "invite", name: "Member", email: "member@example
 describe("persistent staff invitations", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.cookies.mockReset();
+    mocks.bound.mockReset();
+    mocks.bound.mockResolvedValue({bound:{ok:true,resolve:{boundary:{userId:actorA,generation:"synthetic-generation-a"}}}});
     mocks.revalidate.mockReset();
     mocks.access.mockResolvedValue({ ok: true, context: { userId: actorA, company: { id: "company", status: "active" }, membership: { role: "owner" } } });
     mocks.verified.mockResolvedValue({ ok: true, context: { userId: actorA, emailConfirmed: true } });
@@ -118,7 +121,7 @@ describe("persistent staff invitations", () => {
     expect(mocks.cookies).not.toHaveBeenCalled();
     mocks.rpc.mockResolvedValueOnce({ data: { ok: true, companyId: "company" }, error: null });
     expect(await acceptStaffInvitation("a".repeat(43))).toEqual({ ok: true, data: { companyId: "company" } });
-    expect(mocks.cookies).toHaveBeenCalledWith("velora_workspace_company", `${actorA}:company`, expect.objectContaining({ httpOnly: true }));
+    expect(mocks.cookies).toHaveBeenCalledWith("velora_ws_synthetic-generation-a", `${actorA}:company`, expect.objectContaining({ httpOnly: true }));
   });
 });
 
@@ -159,3 +162,6 @@ it("review regression: fresh roster authority cannot be restored by another same
   expect(await listCompanyTeam(actorA)).toEqual({ ok: false, code: "UNAUTHENTICATED" });
   expect(mocks.rpc).not.toHaveBeenCalled();
 });
+
+it("committed membership remains accepted when bound cookie setup throws",async()=>{mocks.verified.mockResolvedValue({ok:true,context:{userId:actorA,emailConfirmed:true}});mocks.rpc.mockResolvedValue({data:{ok:true,companyId:"company"},error:null});mocks.bound.mockRejectedValue(Error("SYNTHETIC_COOKIE_BOUNDARY_UNAVAILABLE"));expect(await acceptStaffInvitation("a".repeat(43))).toEqual({ok:true,data:{companyId:"company"}});});
+it("committed membership remains accepted when optional workspace cookie write fails",async()=>{mocks.verified.mockResolvedValue({ok:true,context:{userId:actorA,emailConfirmed:true}});mocks.rpc.mockResolvedValue({data:{ok:true,companyId:"company"},error:null});mocks.bound.mockResolvedValue({bound:{ok:true,resolve:{boundary:{userId:actorA,generation:"synthetic-generation-a"}}}});mocks.cookies.mockImplementation(()=>{throw Error("SYNTHETIC_COOKIE_WRITE_FAILED");});expect(await acceptStaffInvitation("a".repeat(43))).toEqual({ok:true,data:{companyId:"company"}});});

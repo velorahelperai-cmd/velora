@@ -16,6 +16,336 @@ do $wa_history_guard$ begin
 end; $wa_history_guard$;
 -- END INSTALLATION HISTORY PREFLIGHT
 
+-- Canonical-v1 upgrade added under explicit owner repair authorization; raw captured-live route retained.
+do $installation_route$ begin
+ if exists(select 1 from supabase_migrations.schema_migrations where version='20261010100003') then
+  execute $upgrade_v1$
+-- Upgrade only the exact canonical local-v1 installation; all other drift fails closed.
+do $known_v1_guard$ declare dep record; expected_acl text[]; begin
+ for dep in select * from (values
+ ('private.wa_acceptance_lock(uuid,uuid)','a94ef297af414ed6f76328d0cd729497',true,false),
+ ('private.wa_accepted_receipt_guard()','857cd17d1b92973db238e573d5b4b596',false,false),
+ ('public.billing_finalize_automated_usage(uuid,uuid)','a5061e17a0c113695c2c6709685d7d49',true,true),
+ ('public.finalize_whatsapp_send_attempt(uuid,uuid,text,text,text,uuid)','5813f32f985a86e97fb4d51484806756',true,true),
+ ('public.retry_whatsapp_send_persist(uuid,uuid)','430afac45e828e94f12376ebb4d760c7',true,true),
+ ('public.whatsapp_retry_inbound_job(uuid,uuid,text,boolean,boolean)','4d5fbbfd11b72fd54a1e230f44b0f4ad',true,true),
+ ('public.claim_whatsapp_inbound_job(uuid,integer)','c830267f1d19a7dfdcaca52bdeb1aa30',true,true),
+ ('public.whatsapp_repair_accepted_jobs(integer)','f05132e148366aa152565b568a307aeb',true,true),
+ ('public.billing_read_company_usage(uuid)','15605a3ca0add9bf6fb0949421971915',true,true),
+ ('private.wa_finalize_pre_accepted_usage(uuid,uuid,text,text,text,uuid)','eca34ded58fb668f5446257e127005a7',true,false),
+ ('private.wa_retry_display_pre_accepted_usage(uuid,uuid)','c719a41f5612689dc10474c9db8bd655',true,false),
+ ('private.wa_retry_job_pre_accepted_usage(uuid,uuid,text,boolean,boolean)','e7773738d7e6dceb29df07c9042ec40e',true,false),
+ ('private.wa_claim_job_pre_accepted_usage(uuid,integer)','583f9aac6c0a84680d444b461f4e8ec6',true,false)
+ ) v(signature,body_hash,is_definer,is_public) loop
+  if not exists(select 1 from pg_proc where oid=to_regprocedure(dep.signature)
+    and md5(replace(prosrc,chr(13),''))=dep.body_hash and prosecdef=dep.is_definer
+    and array_to_string(proconfig,',')='search_path=""' and pg_get_userbyid(proowner)='postgres') then
+   raise exception 'ACCEPTED_USAGE_KNOWN_V1_PREREQUISITE_MISMATCH: %',dep.signature using errcode='55000';
+  end if;
+  expected_acl:=case when not dep.is_public then array['postgres=X/postgres']::text[]
+   when dep.signature like 'public.billing_read_company_usage%' then array['authenticated=X/postgres','postgres=X/postgres']::text[]
+   else array['postgres=X/postgres','service_role=X/postgres']::text[] end;
+  if (select array_agg(x order by x) from unnest((select proacl::text[] from pg_proc where oid=to_regprocedure(dep.signature))) x)
+    is distinct from expected_acl then raise exception 'ACCEPTED_USAGE_KNOWN_V1_ACL_MISMATCH: %',dep.signature using errcode='55000';end if;
+ end loop;
+ if to_regprocedure('private.wa_billing_pre_accepted_usage(uuid,uuid)') is not null
+  or (select count(*) from information_schema.columns where table_schema='public' and table_name='whatsapp_send_intents'
+   and ((column_name='acceptance_observed_wa_message_id' and data_type='text')
+    or (column_name='acceptance_observed_at' and data_type='timestamp with time zone')
+    or (column_name='finalized_attempt_token' and data_type='uuid')))<>3
+  or (select count(*) from pg_trigger where tgfoid=to_regprocedure('private.wa_accepted_receipt_guard()') and not tgisinternal and tgenabled in ('O','A')
+    and ((tgrelid='public.whatsapp_send_intents'::regclass and tgname='whatsapp_accepted_receipt_guard')
+      or (tgrelid='public.whatsapp_inbound_jobs'::regclass and tgname='whatsapp_accepted_usage_guard')))<>2
+  or not exists(select 1 from pg_index where indexrelid=to_regclass('public.whatsapp_send_provider_receipt_uidx')
+    and indisunique and indnkeyatts=1 and pg_get_indexdef(indexrelid,1,true)='wa_message_id'
+    and pg_get_expr(indpred,indrelid)='(wa_message_id IS NOT NULL)') then
+  raise exception 'ACCEPTED_USAGE_KNOWN_V1_SCHEMA_MISMATCH' using errcode='55000';
+ end if;
+end; $known_v1_guard$;
+create function private.wa_billing_pre_accepted_usage(p_company_id uuid,p_intent_id uuid) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare j public.whatsapp_inbound_jobs%rowtype;i public.whatsapp_send_intents%rowtype;s text;begin
+ if current_setting('role',true)<>'service_role' then raise exception 'SERVER_ROLE_REQUIRED' using errcode='42501';end if;
+ perform 1 from public.companies where id=p_company_id for no key update;
+ select * into j from public.whatsapp_inbound_jobs where company_id=p_company_id and send_intent_id=p_intent_id for update;
+ select * into i from public.whatsapp_send_intents where id=p_intent_id and company_id=p_company_id and original_job_id=j.id for update;
+ if j.id is null or i.id is null then return jsonb_build_object('ok',false,'code','binding_missing');end if;
+ s:=case when i.outcome='accepted' and exists(select 1 from public.whatsapp_messages where id=i.message_id and company_id=p_company_id
+ and conversation_id=i.conversation_id and wa_message_id=i.wa_message_id and direction='outbound' and sender='assistant') then 'accepted'
+ when i.outcome='rejected' then 'released' else 'unknown' end;
+ if j.usage_status='accepted' and s<>'accepted' then return jsonb_build_object('ok',false,'code','accepted_usage_conflict');end if;
+ update public.whatsapp_inbound_jobs set usage_status=s,status=case when s='accepted' then 'completed' else 'review_required' end,
+ completed_at=case when s='accepted' then coalesce(completed_at,clock_timestamp()) else completed_at end,
+ result_code='send_'||s,claim_token=null,claim_expires_at=null where id=j.id;
+ return jsonb_build_object('ok',true,'status',s,'reused',j.usage_status=s);
+end;$$;
+revoke all on function private.wa_billing_pre_accepted_usage(uuid,uuid) from public,anon,authenticated,service_role;
+create or replace function private.wa_acceptance_lock(p_company uuid,p_intent uuid) returns public.whatsapp_inbound_jobs
+language plpgsql security definer set search_path='' as $$
+declare i public.whatsapp_send_intents%rowtype;j public.whatsapp_inbound_jobs%rowtype;begin
+ select * into i from public.whatsapp_send_intents where id=p_intent and company_id=p_company;if not found then return null;end if;
+ perform 1 from public.companies where id=p_company for no key update;
+ select * into j from public.whatsapp_inbound_jobs where id=i.original_job_id and company_id=p_company and send_intent_id=i.id;
+ if j.id is not null then perform 1 from public.billing_subscriptions where id=j.usage_subscription_id and company_id=p_company for no key update;end if;
+ perform 1 from public.whatsapp_conversations where id=i.conversation_id and company_id=p_company for update;
+ if j.id is not null then select * into j from public.whatsapp_inbound_jobs where id=j.id and company_id=p_company and send_intent_id=i.id for update;end if;
+ perform 1 from public.whatsapp_send_intents where id=p_intent and company_id=p_company for update;
+ return j;
+end; $$;
+revoke all on function private.wa_acceptance_lock(uuid,uuid) from public,anon,authenticated,service_role;
+
+create or replace function private.wa_accepted_receipt_guard() returns trigger language plpgsql set search_path='' as $$ begin
+ if tg_table_name='whatsapp_send_intents' then
+  -- New invariants govern the original automated-reservation repair path only.
+  -- OLD selects the protected contract so changing NEW cannot escape invariants.
+  if tg_op='INSERT' then
+   if new.sender_kind<>'assistant' or new.response_kind is not null or new.original_job_id is null then return new;end if;
+  elsif old.sender_kind<>'assistant' or old.response_kind is not null or old.original_job_id is null then return new;end if;
+  if tg_op='INSERT' then
+   if new.acceptance_observed_wa_message_id is not null or new.acceptance_observed_at is not null or new.finalized_attempt_token is not null then raise exception 'ACCEPTANCE_OBSERVATION_SERVER_ONLY' using errcode='23514';end if;
+  else
+   if old.finalized_attempt_token is null and old.outcome='attempting' and old.attempt_token is not null and new.outcome in ('accepted','rejected','unknown') then
+    if current_user<>(select pg_get_userbyid(relowner) from pg_class where oid=tg_relid) then raise exception 'FINALIZED_ATTEMPT_SERVER_ONLY' using errcode='23514';end if;
+    new.finalized_attempt_token:=old.attempt_token;
+   elsif new.finalized_attempt_token is distinct from old.finalized_attempt_token then raise exception 'FINALIZED_ATTEMPT_IMMUTABLE' using errcode='23514';end if;
+   if row(new.acceptance_observed_wa_message_id,new.acceptance_observed_at) is distinct from row(old.acceptance_observed_wa_message_id,old.acceptance_observed_at) then
+    if old.acceptance_observed_wa_message_id is not null or new.acceptance_observed_wa_message_id is null or old.outcome not in ('attempting','unknown','rejected')
+     or coalesce(old.attempt_token,old.finalized_attempt_token) is null or coalesce(current_setting('velora.acceptance_observation',true),'')<>'1'
+     or current_user<>(select pg_get_userbyid(relowner) from pg_class where oid=tg_relid) then raise exception 'ACCEPTANCE_OBSERVATION_IMMUTABLE' using errcode='23514';end if;
+   end if;
+   if old.outcome='accepted' and nullif(btrim(old.wa_message_id),'') is not null
+   and (new.outcome is distinct from 'accepted' or new.original_job_id is distinct from old.original_job_id)
+   then raise exception 'ACCEPTED_RECEIPT_IMMUTABLE' using errcode='23514';end if;
+  end if;
+ else
+  if tg_op='INSERT' then
+   if new.response_kind is not null then return new;end if;
+  elsif old.response_kind is not null then return new;end if;
+  if tg_op='INSERT' and new.usage_status='accepted' then raise exception 'ACCEPTED_USAGE_SERVER_ONLY' using errcode='23514';end if;
+  if tg_op='UPDATE' then
+   if old.usage_status='accepted' and row(new.response_kind,new.usage_status,new.usage_subscription_id,new.usage_period_start,new.send_intent_id,new.staged_ai_attempt_id,new.staged_reply,new.staged_citations,new.expected_automation_generation)
+    is distinct from row(old.response_kind,old.usage_status,old.usage_subscription_id,old.usage_period_start,old.send_intent_id,old.staged_ai_attempt_id,old.staged_reply,old.staged_citations,old.expected_automation_generation)
+   then raise exception 'ACCEPTED_USAGE_IRREVERSIBLE' using errcode='23514';end if;
+   if new.usage_status='accepted' and old.usage_status is distinct from 'accepted'
+    and (coalesce(current_setting('velora.accepted_usage_settlement',true),'')<>'1'
+    or current_user<>(select pg_get_userbyid(relowner) from pg_class where oid=tg_relid)) then raise exception 'ACCEPTED_USAGE_SERVER_ONLY' using errcode='23514';end if;
+  end if;
+ end if;return new;
+end; $$;
+revoke all on function private.wa_accepted_receipt_guard() from public,anon,authenticated,service_role;
+create or replace trigger whatsapp_accepted_receipt_guard before insert or update on public.whatsapp_send_intents for each row execute function private.wa_accepted_receipt_guard();
+create or replace trigger whatsapp_accepted_usage_guard before insert or update on public.whatsapp_inbound_jobs for each row execute function private.wa_accepted_receipt_guard();
+
+revoke all on function private.wa_billing_pre_accepted_usage(uuid,uuid) from public,anon,authenticated,service_role;
+create or replace function public.billing_finalize_automated_usage(p_company_id uuid,p_intent_id uuid) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare j public.whatsapp_inbound_jobs%rowtype;i public.whatsapp_send_intents%rowtype;state text;begin
+ if current_setting('role',true)<>'service_role' then raise exception 'SERVER_ROLE_REQUIRED' using errcode='42501';end if;
+ j:=private.wa_acceptance_lock(p_company_id,p_intent_id);
+ select * into i from public.whatsapp_send_intents where id=p_intent_id and company_id=p_company_id and original_job_id=j.id for update;
+ if j.response_kind is not null or i.response_kind is not null then return private.wa_billing_pre_accepted_usage(p_company_id,p_intent_id);end if;
+ if j.id is null or i.id is null or i.sender_kind<>'assistant' or j.usage_subscription_id is null or j.usage_period_start is null
+ or j.usage_status is null or not exists(select 1 from public.billing_subscriptions where id=j.usage_subscription_id and company_id=j.company_id)
+ or i.expected_automation_generation is distinct from j.expected_automation_generation or i.body is distinct from j.staged_reply
+ or not exists(select 1 from public.whatsapp_messages m where m.id=j.message_id and m.company_id=j.company_id
+ and m.conversation_id=i.conversation_id and m.direction='inbound' and m.sender='customer')
+ or not exists(select 1 from public.ai_usage_ledger a where a.id=j.staged_ai_attempt_id and a.company_id=j.company_id and a.worker_job_id=j.id
+ and a.status='success' and a.response_text=i.body and a.source_citations=j.staged_citations and a.automation_generation=j.expected_automation_generation)
+ or (j.noura_entitlement_id is not null and (j.noura_subscription_id is distinct from j.usage_subscription_id or j.noura_allowance_period_start is distinct from j.usage_period_start))
+ then return jsonb_build_object('ok',false,'code','reservation_binding_review');end if;
+ if j.usage_status='accepted' then return jsonb_build_object('ok',true,'status','accepted','reused',true);end if;
+ state:=case when i.outcome='accepted' and nullif(btrim(i.wa_message_id),'') is not null
+ and (i.acceptance_observed_wa_message_id is null or i.acceptance_observed_wa_message_id=i.wa_message_id) then 'accepted'
+ when i.outcome='rejected' and i.wa_message_id is null and i.acceptance_observed_wa_message_id is null then 'released' else 'unknown' end;
+ perform set_config('velora.accepted_usage_settlement','1',true);
+ update public.whatsapp_inbound_jobs set usage_status=state,status=case when state='accepted' then 'completed' else 'review_required' end,
+ completed_at=case when state='accepted' then coalesce(completed_at,clock_timestamp()) else completed_at end,
+ result_code='send_'||state,claim_token=null,claim_expires_at=null,updated_at=clock_timestamp() where id=j.id;
+ perform set_config('velora.accepted_usage_settlement','',true);
+ return jsonb_build_object('ok',true,'status',state,'reused',j.usage_status=state);
+end; $$;
+revoke all on function public.billing_finalize_automated_usage(uuid,uuid) from public,anon,authenticated;
+grant execute on function public.billing_finalize_automated_usage(uuid,uuid) to service_role;
+
+revoke all on function private.wa_finalize_pre_accepted_usage(uuid,uuid,text,text,text,uuid) from public,anon,authenticated,service_role;
+create or replace function public.finalize_whatsapp_send_attempt(p_intent_id uuid,p_attempt_token uuid,p_result text,p_wa_message_id text default null,p_error_code text default null,p_actor_user_id uuid default null)
+returns jsonb language plpgsql security definer set search_path='' as $$
+declare i public.whatsapp_send_intents%rowtype;j public.whatsapp_inbound_jobs%rowtype;r jsonb;u jsonb;begin
+ if current_setting('role',true)<>'service_role' then raise exception 'SERVER_ROLE_REQUIRED' using errcode='42501';end if;
+ p_result:=lower(btrim(p_result));
+ select * into i from public.whatsapp_send_intents where id=p_intent_id;
+ -- Staff and fixed responses retain the complete live dispatch/finalization contract.
+ if i.sender_kind='staff' or i.response_kind is not null then
+  return private.wa_finalize_pre_accepted_usage(p_intent_id,p_attempt_token,p_result,p_wa_message_id,p_error_code,p_actor_user_id);
+ end if;
+ if i.id is not null and i.original_job_id is not null and (p_attempt_token is null
+  or coalesce(i.attempt_token,i.finalized_attempt_token) is null
+  or p_attempt_token is distinct from coalesce(i.attempt_token,i.finalized_attempt_token)) then
+  return jsonb_build_object('ok',false,'code','attempt_rejected');
+ end if;
+ j:=private.wa_acceptance_lock(i.company_id,p_intent_id);
+ select * into i from public.whatsapp_send_intents where id=p_intent_id for update;
+ if p_result='accepted' and nullif(btrim(p_wa_message_id),'') is not null and i.outcome in ('attempting','unknown','rejected')
+ and p_attempt_token is not null and coalesce(i.attempt_token,i.finalized_attempt_token)=p_attempt_token and i.acceptance_observed_wa_message_id is null then
+  perform set_config('velora.acceptance_observation','1',true);
+  update public.whatsapp_send_intents set acceptance_observed_wa_message_id=btrim(p_wa_message_id),acceptance_observed_at=clock_timestamp() where id=i.id;
+  perform set_config('velora.acceptance_observation','',true);
+ end if;
+ if p_result='accepted' and nullif(btrim(p_wa_message_id),'') is not null
+ and ((i.acceptance_observed_wa_message_id is not null and i.acceptance_observed_wa_message_id<>btrim(p_wa_message_id))
+ or (i.outcome='accepted' and i.wa_message_id<>btrim(p_wa_message_id))) then
+  return jsonb_build_object('ok',false,'code','receipt_identity_review');end if;
+ if i.provider_error_code='contradictory_receipt_review' then return jsonb_build_object('ok',false,'code','contradictory_receipt_review');end if;
+ -- A later proven response can resolve an unknown attempt using its retained
+ -- original fence. Historical unbound fences are never fabricated. A response
+ -- contradicting proven rejection stays disputed/held; it is not new dispatch.
+ if p_result='accepted' and p_attempt_token is not null and i.finalized_attempt_token=p_attempt_token
+ and nullif(btrim(p_wa_message_id),'') is not null and i.outcome in ('unknown','rejected') then
+  if i.outcome='rejected' then
+   update public.whatsapp_send_intents set outcome='unknown',provider_error_code='contradictory_receipt_review' where id=i.id;
+   perform public.billing_finalize_automated_usage(i.company_id,i.id);
+   return jsonb_build_object('ok',false,'code','contradictory_receipt_review');
+  end if;
+  begin
+   if exists(select 1 from public.whatsapp_messages m where m.wa_message_id=btrim(p_wa_message_id)
+    and (m.company_id,m.conversation_id,m.body,m.sender,m.direction) is distinct from (i.company_id,i.conversation_id,i.body,i.sender_kind,'outbound'))
+   then raise exception 'provider_identity_review' using errcode='23514';end if;
+   update public.whatsapp_send_intents set outcome='accepted',wa_message_id=btrim(p_wa_message_id),provider_error_code='persist_pending' where id=i.id;
+   r:=jsonb_build_object('ok',true,'persist_pending',true,'intent',private.whatsapp_send_intent_public((select x from public.whatsapp_send_intents x where x.id=i.id)));
+  exception when others then
+   update public.whatsapp_send_intents set provider_error_code='provider_identity_review' where id=i.id;
+   r:=jsonb_build_object('ok',false,'code','provider_identity_review');
+  end;
+  if j.id is not null then begin
+   u:=public.billing_finalize_automated_usage(i.company_id,i.id);
+   if u->>'ok' is distinct from 'true' then r:=r||jsonb_build_object('accounting_pending',true);end if;
+  exception when others then r:=r||jsonb_build_object('accounting_pending',true);end;end if;
+  return r;
+ end if;
+ -- Save the fenced observation OUTSIDE the original uniqueness/display scope.
+ -- A disputed canonical identity retains its own receipt and unknown hold.
+ begin
+  r:=private.wa_finalize_pre_accepted_usage(p_intent_id,p_attempt_token,p_result,p_wa_message_id,p_error_code,p_actor_user_id);
+ exception when others then
+  select * into i from public.whatsapp_send_intents where id=p_intent_id;
+  if i.outcome='attempting' and i.acceptance_observed_wa_message_id is not null then
+   update public.whatsapp_send_intents set outcome='unknown',provider_error_code='provider_identity_review',attempt_token=null where id=i.id;
+  end if;
+  r:=jsonb_build_object('ok',false,'code','receipt_or_display_review');
+ end;
+ select * into i from public.whatsapp_send_intents where id=p_intent_id;
+ if j.id is not null and ((r->>'ok'='true' and i.outcome in ('accepted','rejected','unknown'))
+ or (i.outcome='unknown' and i.acceptance_observed_wa_message_id is not null)) then
+  begin
+   u:=public.billing_finalize_automated_usage(i.company_id,i.id);
+   if u->>'ok' is distinct from 'true' then r:=r||jsonb_build_object('accounting_pending',true);end if;
+  exception when others then r:=r||jsonb_build_object('accounting_pending',true);end;
+ end if;
+ return r;
+end; $$;
+revoke all on function public.finalize_whatsapp_send_attempt(uuid,uuid,text,text,text,uuid) from public,anon,authenticated;
+grant execute on function public.finalize_whatsapp_send_attempt(uuid,uuid,text,text,text,uuid) to service_role;
+
+revoke all on function private.wa_retry_display_pre_accepted_usage(uuid,uuid) from public,anon,authenticated,service_role;
+create or replace function public.retry_whatsapp_send_persist(p_intent_id uuid,p_actor_user_id uuid default null) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare i public.whatsapp_send_intents%rowtype;j public.whatsapp_inbound_jobs%rowtype;r jsonb;u jsonb;begin
+ if current_setting('role',true)<>'service_role' then raise exception 'SERVER_ROLE_REQUIRED' using errcode='42501';end if;
+ select * into i from public.whatsapp_send_intents where id=p_intent_id;
+ if i.sender_kind='staff' or i.response_kind is not null then return private.wa_retry_display_pre_accepted_usage(p_intent_id,p_actor_user_id);end if;
+ j:=private.wa_acceptance_lock(i.company_id,i.id);
+ if j.id is not null then begin
+  u:=public.billing_finalize_automated_usage(i.company_id,i.id);
+  if u->>'status' is distinct from 'accepted' then return jsonb_build_object('ok',false,'code','acceptance_accounting_pending');end if;
+ exception when others then return jsonb_build_object('ok',false,'code','acceptance_accounting_pending');end;end if;
+ begin r:=private.wa_retry_display_pre_accepted_usage(p_intent_id,p_actor_user_id);
+ exception when others then return jsonb_build_object('ok',false,'code','display_identity_or_persistence_review');end;
+ return r;
+end; $$;
+revoke all on function public.retry_whatsapp_send_persist(uuid,uuid) from public,anon,authenticated;
+grant execute on function public.retry_whatsapp_send_persist(uuid,uuid) to service_role;
+
+-- Do not let stale-generation/exhaustion or worker exception writers downgrade
+-- a durable accepted receipt. Settlement is independent of current authority.
+revoke all on function private.wa_retry_job_pre_accepted_usage(uuid,uuid,text,boolean,boolean) from public,anon,authenticated,service_role;
+create or replace function public.whatsapp_retry_inbound_job(p_job_id uuid,p_claim_token uuid,p_code text,p_uncertain boolean default false,p_terminal boolean default false) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare j public.whatsapp_inbound_jobs%rowtype;r jsonb;begin
+ if current_setting('role',true)<>'service_role' then raise exception 'SERVER_ROLE_REQUIRED' using errcode='42501';end if;
+ select * into j from public.whatsapp_inbound_jobs where id=p_job_id;
+ if j.response_kind is not null then return jsonb_build_object('ok',false,'code','FIXED_RESPONSE_JOB_REJECTED');end if;
+ if exists(select 1 from public.whatsapp_send_intents where id=j.send_intent_id and company_id=j.company_id and original_job_id=j.id and outcome='accepted' and wa_message_id is not null) then
+  r:=public.billing_finalize_automated_usage(j.company_id,j.send_intent_id);
+  return r||jsonb_build_object('status',case when r->>'status'='accepted' then 'completed' else 'review_required' end);
+ end if;
+ return private.wa_retry_job_pre_accepted_usage(p_job_id,p_claim_token,p_code,p_uncertain,p_terminal);
+end; $$;
+revoke all on function public.whatsapp_retry_inbound_job(uuid,uuid,text,boolean,boolean) from public,anon,authenticated;
+grant execute on function public.whatsapp_retry_inbound_job(uuid,uuid,text,boolean,boolean) to service_role;
+revoke all on function private.wa_claim_job_pre_accepted_usage(uuid,integer) from public,anon,authenticated,service_role;
+create or replace function public.claim_whatsapp_inbound_job(p_job_id uuid,p_lease_seconds integer default 120) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare j public.whatsapp_inbound_jobs%rowtype;begin
+ if current_setting('role',true)<>'service_role' then return jsonb_build_object('ok',false,'code','server_role_required');end if;
+ select * into j from public.whatsapp_inbound_jobs where id=p_job_id;
+ if j.response_kind is not null then return jsonb_build_object('ok',false,'code','FIXED_RESPONSE_JOB_REJECTED');end if;
+ if exists(select 1 from public.whatsapp_send_intents where id=j.send_intent_id and company_id=j.company_id and original_job_id=j.id and outcome='accepted' and wa_message_id is not null) then
+  perform public.billing_finalize_automated_usage(j.company_id,j.send_intent_id);return jsonb_build_object('ok',false,'code','accepted_receipt_repair_only');
+ end if;
+ return private.wa_claim_job_pre_accepted_usage(p_job_id,p_lease_seconds);
+end; $$;
+revoke all on function public.claim_whatsapp_inbound_job(uuid,integer) from public,anon,authenticated;
+grant execute on function public.claim_whatsapp_inbound_job(uuid,integer) to service_role;
+
+create or replace function public.whatsapp_repair_accepted_jobs(p_limit integer default 10) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare candidate record;r jsonb;u jsonb;repaired int:=0;pending int:=0;begin
+ if current_setting('role',true)<>'service_role' then raise exception 'SERVER_ROLE_REQUIRED' using errcode='42501';end if;
+ for candidate in select i.id,i.company_id from public.whatsapp_send_intents i join public.whatsapp_inbound_jobs j
+ on j.id=i.original_job_id and j.company_id=i.company_id and j.send_intent_id=i.id
+ where i.outcome='accepted' and i.wa_message_id is not null and (i.message_id is null or j.usage_status is distinct from 'accepted' or j.status<>'completed')
+ order by i.updated_at,i.id limit greatest(1,least(coalesce(p_limit,10),50)) loop
+  begin
+   u:=public.billing_finalize_automated_usage(candidate.company_id,candidate.id);
+   if u->>'status'='accepted' then r:=public.retry_whatsapp_send_persist(candidate.id,null);
+    if r->>'ok'='true' then repaired:=repaired+1;else pending:=pending+1;end if;
+   else pending:=pending+1;end if;
+  exception when others then pending:=pending+1;end;
+ end loop;
+ return jsonb_build_object('ok',true,'repaired',repaired,'pending',pending);
+end; $$;
+revoke all on function public.whatsapp_repair_accepted_jobs(integer) from public,anon,authenticated;
+grant execute on function public.whatsapp_repair_accepted_jobs(integer) to service_role;
+
+create or replace function public.billing_read_company_usage(p_company_id uuid) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare period timestamptz:=private.wa_worker_month();period_end timestamptz;accepted bigint;held bigint;journey jsonb;cap jsonb;begin
+ if not private.billing_ui_company_owner(p_company_id) then return jsonb_build_object('ok',false,'code','forbidden');end if;
+ period_end:=((period at time zone 'Asia/Muscat')+interval '1 month') at time zone 'Asia/Muscat';
+ select count(*) filter(where j.usage_status='accepted' and coalesce(m.delivery_state,'accepted')<>'failed'),
+ count(*) filter(where j.usage_status in ('reserved','unknown')) into accepted,held
+ from public.whatsapp_inbound_jobs j
+ left join public.whatsapp_send_intents i on i.id=j.send_intent_id and i.company_id=j.company_id and i.original_job_id=j.id
+ left join public.whatsapp_messages m on m.id=i.message_id and m.company_id=i.company_id
+ where j.company_id=p_company_id and j.response_kind is null and j.usage_period_start=period;
+ select accepted+count(*) filter(where i.outcome='accepted' and nullif(btrim(i.wa_message_id),'') is not null
+ and coalesce(m.delivery_state,'accepted')<>'failed'
+ and coalesce(m.received_at,i.acceptance_observed_at,i.updated_at)>=period
+ and coalesce(m.received_at,i.acceptance_observed_at,i.updated_at)<period_end),
+ held+count(*) filter(where i.outcome in ('ready','attempting','unknown') and i.created_at>=period and i.created_at<period_end) into accepted,held
+ from public.whatsapp_send_intents i left join public.whatsapp_messages m on m.id=i.message_id and m.company_id=i.company_id
+ where i.company_id=p_company_id and i.sender_kind='assistant'
+ and not exists(select 1 from public.whatsapp_inbound_jobs j where j.id=i.original_job_id and j.company_id=i.company_id and j.send_intent_id=i.id and j.response_kind is null);
+ journey:=public.billing_read_company_journey(p_company_id);cap:=journey->'data'->'subscription'->'cap';
+ return jsonb_build_object('ok',true,'data',jsonb_build_object('month_start',to_char(period at time zone 'Asia/Muscat','YYYY-MM-DD'),
+ 'successful_automated_outbound',coalesce(accepted,0),'held_outbound_capacity',coalesce(held,0),'cap',cap));
+end; $$;
+revoke all on function public.billing_read_company_usage(uuid) from public,anon;
+grant execute on function public.billing_read_company_usage(uuid) to authenticated;
+notify pgrst,'reload schema';
+  $upgrade_v1$;
+ else
+  execute $raw_install$
 set local lock_timeout='2s';set local statement_timeout='30s';
 lock table public.whatsapp_send_intents,public.whatsapp_inbound_jobs in share row exclusive mode;
 do $$ declare dep record;begin
@@ -339,64 +669,78 @@ end; $$;
 revoke all on function public.billing_read_company_usage(uuid) from public,anon;
 grant execute on function public.billing_read_company_usage(uuid) to authenticated;
 notify pgrst,'reload schema';
+  $raw_install$;
+ end if;
+end; $installation_route$;
+
 -- BEGIN INSTALLATION HISTORY RECORD
 insert into supabase_migrations.schema_migrations(version,statements,name,created_by,idempotency_key,rollback)
-values('20261011233153',ARRAY['-- FORWARD REPAIR DRAFT ONLY. Separate exact production approval required.
--- Captured live definitions are preserved in private aliases. No provider execution.
--- Original job reservation and original intent receipts only. No quota/ledger seeds.
-begin;
-set local lock_timeout=''2s'';set local statement_timeout=''30s'';
-lock table public.whatsapp_send_intents,public.whatsapp_inbound_jobs in share row exclusive mode;
-do $$ declare dep record;begin
+values('20261011233153',ARRAY[$executed_history$
+do $installation_route$ begin
+ if exists(select 1 from supabase_migrations.schema_migrations where version='20261010100003') then
+  execute $upgrade_v1$
+-- Upgrade only the exact canonical local-v1 installation; all other drift fails closed.
+do $known_v1_guard$ declare dep record; expected_acl text[]; begin
  for dep in select * from (values
- (''public.finalize_whatsapp_send_attempt(uuid,uuid,text,text,text,uuid)'',''eca34ded58fb668f5446257e127005a7''),
- (''public.retry_whatsapp_send_persist(uuid,uuid)'',''cf72e4078bb2a07f428cc02f61445c8d''),
- (''public.billing_finalize_automated_usage(uuid,uuid)'',''93ead2a087ad01b7273d8cbb2661cee2''),
- (''public.billing_read_company_usage(uuid)'',''9c50b1b4f21b164cca02411a736f3d10''),
- (''public.whatsapp_repair_accepted_jobs(integer)'',''f03828295567cd4d0aa719180e341e65''),
- (''public.whatsapp_retry_inbound_job(uuid,uuid,text,boolean,boolean)'',''c5c263ced0a37a233edc65bbdb67a452''),
- (''public.claim_whatsapp_inbound_job(uuid,integer)'',''ee4f3900e34ef6eab8cef2597a9861c5'')) dependencies(signature,body_hash) loop
-  if not exists(select 1 from pg_proc where oid=to_regprocedure(dep.signature) and md5(replace(prosrc,chr(13),''''))=dep.body_hash
-   and prosecdef and array_to_string(proconfig,'','')=''search_path=""'') then raise exception ''ACCEPTED_USAGE_PREREQUISITE_MISMATCH: %'',dep.signature using errcode=''55000'';end if;
-  if dep.signature not like ''%billing_read_company_usage%'' and (has_function_privilege(''anon'',to_regprocedure(dep.signature),''EXECUTE'')
-   or has_function_privilege(''authenticated'',to_regprocedure(dep.signature),''EXECUTE'') or not has_function_privilege(''service_role'',to_regprocedure(dep.signature),''EXECUTE''))
-  then raise exception ''ACCEPTED_USAGE_RPC_ACL_MISMATCH: %'',dep.signature using errcode=''55000'';end if;
-
-  if pg_get_userbyid((select proowner from pg_proc where oid=to_regprocedure(dep.signature)))<>''postgres''
-  or (select array_agg(x order by x) from unnest((select proacl::text[] from pg_proc where oid=to_regprocedure(dep.signature))) x)
-     is distinct from (case when dep.signature like ''%billing_read_company_usage%'' then array[''authenticated=X/postgres'',''postgres=X/postgres'',''service_role=X/postgres'']::text[] else array[''postgres=X/postgres'',''service_role=X/postgres'']::text[] end)
-  then raise exception ''ACCEPTED_USAGE_OWNER_OR_EXACT_ACL_MISMATCH: %'',dep.signature using errcode=''55000'';end if;
+ ('private.wa_acceptance_lock(uuid,uuid)','a94ef297af414ed6f76328d0cd729497',true,false),
+ ('private.wa_accepted_receipt_guard()','857cd17d1b92973db238e573d5b4b596',false,false),
+ ('public.billing_finalize_automated_usage(uuid,uuid)','a5061e17a0c113695c2c6709685d7d49',true,true),
+ ('public.finalize_whatsapp_send_attempt(uuid,uuid,text,text,text,uuid)','5813f32f985a86e97fb4d51484806756',true,true),
+ ('public.retry_whatsapp_send_persist(uuid,uuid)','430afac45e828e94f12376ebb4d760c7',true,true),
+ ('public.whatsapp_retry_inbound_job(uuid,uuid,text,boolean,boolean)','4d5fbbfd11b72fd54a1e230f44b0f4ad',true,true),
+ ('public.claim_whatsapp_inbound_job(uuid,integer)','c830267f1d19a7dfdcaca52bdeb1aa30',true,true),
+ ('public.whatsapp_repair_accepted_jobs(integer)','f05132e148366aa152565b568a307aeb',true,true),
+ ('public.billing_read_company_usage(uuid)','15605a3ca0add9bf6fb0949421971915',true,true),
+ ('private.wa_finalize_pre_accepted_usage(uuid,uuid,text,text,text,uuid)','eca34ded58fb668f5446257e127005a7',true,false),
+ ('private.wa_retry_display_pre_accepted_usage(uuid,uuid)','c719a41f5612689dc10474c9db8bd655',true,false),
+ ('private.wa_retry_job_pre_accepted_usage(uuid,uuid,text,boolean,boolean)','e7773738d7e6dceb29df07c9042ec40e',true,false),
+ ('private.wa_claim_job_pre_accepted_usage(uuid,integer)','583f9aac6c0a84680d444b461f4e8ec6',true,false)
+ ) v(signature,body_hash,is_definer,is_public) loop
+  if not exists(select 1 from pg_proc where oid=to_regprocedure(dep.signature)
+    and md5(replace(prosrc,chr(13),''))=dep.body_hash and prosecdef=dep.is_definer
+    and array_to_string(proconfig,',')='search_path=""' and pg_get_userbyid(proowner)='postgres') then
+   raise exception 'ACCEPTED_USAGE_KNOWN_V1_PREREQUISITE_MISMATCH: %',dep.signature using errcode='55000';
+  end if;
+  expected_acl:=case when not dep.is_public then array['postgres=X/postgres']::text[]
+   when dep.signature like 'public.billing_read_company_usage%' then array['authenticated=X/postgres','postgres=X/postgres']::text[]
+   else array['postgres=X/postgres','service_role=X/postgres']::text[] end;
+  if (select array_agg(x order by x) from unnest((select proacl::text[] from pg_proc where oid=to_regprocedure(dep.signature))) x)
+    is distinct from expected_acl then raise exception 'ACCEPTED_USAGE_KNOWN_V1_ACL_MISMATCH: %',dep.signature using errcode='55000';end if;
  end loop;
- if not exists(select 1 from pg_proc where oid=to_regprocedure(''private.whatsapp_guard_persisted_identity()'')
- and md5(replace(prosrc,chr(13),''''))=''2c9414fbe1fa9dce58a2764c87274307'')
- or not exists(select 1 from pg_trigger where tgrelid=''public.whatsapp_send_intents''::regclass and tgfoid=to_regprocedure(''private.whatsapp_guard_persisted_identity()'') and tgenabled in (''O'',''A'') and not tgisinternal)
- or not exists(select 1 from pg_trigger where tgrelid=''public.whatsapp_inbound_jobs''::regclass and tgfoid=to_regprocedure(''private.whatsapp_guard_persisted_identity()'') and tgenabled in (''O'',''A'') and not tgisinternal)
- then raise exception ''ACCEPTED_USAGE_IDENTITY_GUARD_MISMATCH'' using errcode=''55000'';end if;
- if not exists(select 1 from information_schema.columns where table_schema=''public'' and table_name=''whatsapp_inbound_jobs'' and column_name=''response_kind'' and data_type=''text'')
- or not exists(select 1 from information_schema.columns where table_schema=''public'' and table_name=''whatsapp_send_intents'' and column_name=''response_kind'' and data_type=''text'')
- or exists(select 1 from information_schema.columns where table_schema=''public'' and table_name=''whatsapp_send_intents'' and column_name in (''acceptance_observed_wa_message_id'',''acceptance_observed_at'',''finalized_attempt_token''))
- or to_regprocedure(''private.wa_acceptance_lock(uuid,uuid)'') is not null
- then raise exception ''ACCEPTED_USAGE_SCHEMA_OR_REPLAY_MISMATCH'' using errcode=''55000'';end if;
- if to_regprocedure(''public.whatsapp_authorize_staff_dispatch(uuid,uuid)'') is null
- or exists(select 1 from pg_class where oid in (''public.whatsapp_send_intents''::regclass,''public.whatsapp_inbound_jobs''::regclass) and pg_get_userbyid(relowner)<>current_user)
- then raise exception ''ACCEPTED_USAGE_DEPLOYMENT_ORDER_MISMATCH'' using errcode=''55000'';end if;
- if exists(select 1 from public.whatsapp_send_intents where wa_message_id is not null group by wa_message_id having count(*)>1)
- then raise exception ''ACCEPTED_USAGE_HISTORICAL_PROVIDER_DUPLICATES'' using errcode=''23514'',hint=''Review duplicate receipt ownership separately. No receipt is deleted, reassigned or selected as a winner.'';end if;
- if exists(select 1 from public.whatsapp_inbound_jobs j left join public.whatsapp_send_intents i on i.id=j.send_intent_id
- and i.company_id=j.company_id and i.original_job_id=j.id where j.usage_status=''accepted'' and (i.id is null or i.outcome<>''accepted''
- or nullif(btrim(i.wa_message_id),'''') is null or j.usage_subscription_id is null or j.usage_period_start is null))
- then raise exception ''ACCEPTED_USAGE_HISTORICAL_BINDING_MISMATCH'' using errcode=''23514'';end if;
-end; $$;
--- Canonical ownership is unique independently of a display row. Disputed observations
--- remain on their own intent, never another tenant''s row and never a second charge.
-create unique index whatsapp_send_provider_receipt_uidx on public.whatsapp_send_intents(wa_message_id) where wa_message_id is not null;
-alter table public.whatsapp_send_intents add column acceptance_observed_wa_message_id text,
- add column acceptance_observed_at timestamptz,add column finalized_attempt_token uuid,
- add constraint whatsapp_acceptance_observation_pair check ((acceptance_observed_wa_message_id is null and acceptance_observed_at is null)
- or (nullif(btrim(acceptance_observed_wa_message_id),'''') is not null and acceptance_observed_at is not null));
-
-create function private.wa_acceptance_lock(p_company uuid,p_intent uuid) returns public.whatsapp_inbound_jobs
-language plpgsql security definer set search_path='''' as $$
+ if to_regprocedure('private.wa_billing_pre_accepted_usage(uuid,uuid)') is not null
+  or (select count(*) from information_schema.columns where table_schema='public' and table_name='whatsapp_send_intents'
+   and ((column_name='acceptance_observed_wa_message_id' and data_type='text')
+    or (column_name='acceptance_observed_at' and data_type='timestamp with time zone')
+    or (column_name='finalized_attempt_token' and data_type='uuid')))<>3
+  or (select count(*) from pg_trigger where tgfoid=to_regprocedure('private.wa_accepted_receipt_guard()') and not tgisinternal and tgenabled in ('O','A')
+    and ((tgrelid='public.whatsapp_send_intents'::regclass and tgname='whatsapp_accepted_receipt_guard')
+      or (tgrelid='public.whatsapp_inbound_jobs'::regclass and tgname='whatsapp_accepted_usage_guard')))<>2
+  or not exists(select 1 from pg_index where indexrelid=to_regclass('public.whatsapp_send_provider_receipt_uidx')
+    and indisunique and indnkeyatts=1 and pg_get_indexdef(indexrelid,1,true)='wa_message_id'
+    and pg_get_expr(indpred,indrelid)='(wa_message_id IS NOT NULL)') then
+  raise exception 'ACCEPTED_USAGE_KNOWN_V1_SCHEMA_MISMATCH' using errcode='55000';
+ end if;
+end; $known_v1_guard$;
+create function private.wa_billing_pre_accepted_usage(p_company_id uuid,p_intent_id uuid) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare j public.whatsapp_inbound_jobs%rowtype;i public.whatsapp_send_intents%rowtype;s text;begin
+ if current_setting('role',true)<>'service_role' then raise exception 'SERVER_ROLE_REQUIRED' using errcode='42501';end if;
+ perform 1 from public.companies where id=p_company_id for no key update;
+ select * into j from public.whatsapp_inbound_jobs where company_id=p_company_id and send_intent_id=p_intent_id for update;
+ select * into i from public.whatsapp_send_intents where id=p_intent_id and company_id=p_company_id and original_job_id=j.id for update;
+ if j.id is null or i.id is null then return jsonb_build_object('ok',false,'code','binding_missing');end if;
+ s:=case when i.outcome='accepted' and exists(select 1 from public.whatsapp_messages where id=i.message_id and company_id=p_company_id
+ and conversation_id=i.conversation_id and wa_message_id=i.wa_message_id and direction='outbound' and sender='assistant') then 'accepted'
+ when i.outcome='rejected' then 'released' else 'unknown' end;
+ if j.usage_status='accepted' and s<>'accepted' then return jsonb_build_object('ok',false,'code','accepted_usage_conflict');end if;
+ update public.whatsapp_inbound_jobs set usage_status=s,status=case when s='accepted' then 'completed' else 'review_required' end,
+ completed_at=case when s='accepted' then coalesce(completed_at,clock_timestamp()) else completed_at end,
+ result_code='send_'||s,claim_token=null,claim_expires_at=null where id=j.id;
+ return jsonb_build_object('ok',true,'status',s,'reused',j.usage_status=s);
+end;$$;
+revoke all on function private.wa_billing_pre_accepted_usage(uuid,uuid) from public,anon,authenticated,service_role;
+create or replace function private.wa_acceptance_lock(p_company uuid,p_intent uuid) returns public.whatsapp_inbound_jobs
+language plpgsql security definer set search_path='' as $$
 declare i public.whatsapp_send_intents%rowtype;j public.whatsapp_inbound_jobs%rowtype;begin
  select * into i from public.whatsapp_send_intents where id=p_intent and company_id=p_company;if not found then return null;end if;
  perform 1 from public.companies where id=p_company for no key update;
@@ -409,41 +753,357 @@ declare i public.whatsapp_send_intents%rowtype;j public.whatsapp_inbound_jobs%ro
 end; $$;
 revoke all on function private.wa_acceptance_lock(uuid,uuid) from public,anon,authenticated,service_role;
 
-create function private.wa_accepted_receipt_guard() returns trigger language plpgsql set search_path='''' as $$ begin
- if tg_table_name=''whatsapp_send_intents'' then
+create or replace function private.wa_accepted_receipt_guard() returns trigger language plpgsql set search_path='' as $$ begin
+ if tg_table_name='whatsapp_send_intents' then
   -- New invariants govern the original automated-reservation repair path only.
   -- OLD selects the protected contract so changing NEW cannot escape invariants.
-  if tg_op=''INSERT'' then
-   if new.sender_kind<>''assistant'' or new.response_kind is not null or new.original_job_id is null then return new;end if;
-  elsif old.sender_kind<>''assistant'' or old.response_kind is not null or old.original_job_id is null then return new;end if;
-  if tg_op=''INSERT'' then
-   if new.acceptance_observed_wa_message_id is not null or new.acceptance_observed_at is not null or new.finalized_attempt_token is not null then raise exception ''ACCEPTANCE_OBSERVATION_SERVER_ONLY'' using errcode=''23514'';end if;
+  if tg_op='INSERT' then
+   if new.sender_kind<>'assistant' or new.response_kind is not null or new.original_job_id is null then return new;end if;
+  elsif old.sender_kind<>'assistant' or old.response_kind is not null or old.original_job_id is null then return new;end if;
+  if tg_op='INSERT' then
+   if new.acceptance_observed_wa_message_id is not null or new.acceptance_observed_at is not null or new.finalized_attempt_token is not null then raise exception 'ACCEPTANCE_OBSERVATION_SERVER_ONLY' using errcode='23514';end if;
   else
-   if old.finalized_attempt_token is null and old.outcome=''attempting'' and old.attempt_token is not null and new.outcome in (''accepted'',''rejected'',''unknown'') then
-    if current_user<>(select pg_get_userbyid(relowner) from pg_class where oid=tg_relid) then raise exception ''FINALIZED_ATTEMPT_SERVER_ONLY'' using errcode=''23514'';end if;
+   if old.finalized_attempt_token is null and old.outcome='attempting' and old.attempt_token is not null and new.outcome in ('accepted','rejected','unknown') then
+    if current_user<>(select pg_get_userbyid(relowner) from pg_class where oid=tg_relid) then raise exception 'FINALIZED_ATTEMPT_SERVER_ONLY' using errcode='23514';end if;
     new.finalized_attempt_token:=old.attempt_token;
-   elsif new.finalized_attempt_token is distinct from old.finalized_attempt_token then raise exception ''FINALIZED_ATTEMPT_IMMUTABLE'' using errcode=''23514'';end if;
+   elsif new.finalized_attempt_token is distinct from old.finalized_attempt_token then raise exception 'FINALIZED_ATTEMPT_IMMUTABLE' using errcode='23514';end if;
    if row(new.acceptance_observed_wa_message_id,new.acceptance_observed_at) is distinct from row(old.acceptance_observed_wa_message_id,old.acceptance_observed_at) then
-    if old.acceptance_observed_wa_message_id is not null or new.acceptance_observed_wa_message_id is null or old.outcome not in (''attempting'',''unknown'',''rejected'')
-     or coalesce(old.attempt_token,old.finalized_attempt_token) is null or coalesce(current_setting(''velora.acceptance_observation'',true),'''')<>''1''
-     or current_user<>(select pg_get_userbyid(relowner) from pg_class where oid=tg_relid) then raise exception ''ACCEPTANCE_OBSERVATION_IMMUTABLE'' using errcode=''23514'';end if;
+    if old.acceptance_observed_wa_message_id is not null or new.acceptance_observed_wa_message_id is null or old.outcome not in ('attempting','unknown','rejected')
+     or coalesce(old.attempt_token,old.finalized_attempt_token) is null or coalesce(current_setting('velora.acceptance_observation',true),'')<>'1'
+     or current_user<>(select pg_get_userbyid(relowner) from pg_class where oid=tg_relid) then raise exception 'ACCEPTANCE_OBSERVATION_IMMUTABLE' using errcode='23514';end if;
    end if;
-   if old.outcome=''accepted'' and nullif(btrim(old.wa_message_id),'''') is not null
-   and (new.outcome is distinct from ''accepted'' or new.original_job_id is distinct from old.original_job_id)
-   then raise exception ''ACCEPTED_RECEIPT_IMMUTABLE'' using errcode=''23514'';end if;
+   if old.outcome='accepted' and nullif(btrim(old.wa_message_id),'') is not null
+   and (new.outcome is distinct from 'accepted' or new.original_job_id is distinct from old.original_job_id)
+   then raise exception 'ACCEPTED_RECEIPT_IMMUTABLE' using errcode='23514';end if;
   end if;
  else
-  if tg_op=''INSERT'' then
+  if tg_op='INSERT' then
    if new.response_kind is not null then return new;end if;
   elsif old.response_kind is not null then return new;end if;
-  if tg_op=''INSERT'' and new.usage_status=''accepted'' then raise exception ''ACCEPTED_USAGE_SERVER_ONLY'' using errcode=''23514'';end if;
-  if tg_op=''UPDATE'' then
-   if old.usage_status=''accepted'' and row(new.response_kind,new.usage_status,new.usage_subscription_id,new.usage_period_start,new.send_intent_id,new.staged_ai_attempt_id,new.staged_reply,new.staged_citations,new.expected_automation_generation)
+  if tg_op='INSERT' and new.usage_status='accepted' then raise exception 'ACCEPTED_USAGE_SERVER_ONLY' using errcode='23514';end if;
+  if tg_op='UPDATE' then
+   if old.usage_status='accepted' and row(new.response_kind,new.usage_status,new.usage_subscription_id,new.usage_period_start,new.send_intent_id,new.staged_ai_attempt_id,new.staged_reply,new.staged_citations,new.expected_automation_generation)
     is distinct from row(old.response_kind,old.usage_status,old.usage_subscription_id,old.usage_period_start,old.send_intent_id,old.staged_ai_attempt_id,old.staged_reply,old.staged_citations,old.expected_automation_generation)
-   then raise exception ''ACCEPTED_USAGE_IRREVERSIBLE'' using errcode=''23514'';end if;
-   if new.usage_status=''accepted'' and old.usage_status is distinct from ''accepted''
-    and (coalesce(current_setting(''velora.accepted_usage_settlement'',true),'''')<>''1''
-    or current_user<>(select pg_get_userbyid(relowner) from pg_class where oid=tg_relid)) then raise exception ''ACCEPTED_USAGE_SERVER_ONLY'' using errcode=''23514'';end if;
+   then raise exception 'ACCEPTED_USAGE_IRREVERSIBLE' using errcode='23514';end if;
+   if new.usage_status='accepted' and old.usage_status is distinct from 'accepted'
+    and (coalesce(current_setting('velora.accepted_usage_settlement',true),'')<>'1'
+    or current_user<>(select pg_get_userbyid(relowner) from pg_class where oid=tg_relid)) then raise exception 'ACCEPTED_USAGE_SERVER_ONLY' using errcode='23514';end if;
+  end if;
+ end if;return new;
+end; $$;
+revoke all on function private.wa_accepted_receipt_guard() from public,anon,authenticated,service_role;
+create or replace trigger whatsapp_accepted_receipt_guard before insert or update on public.whatsapp_send_intents for each row execute function private.wa_accepted_receipt_guard();
+create or replace trigger whatsapp_accepted_usage_guard before insert or update on public.whatsapp_inbound_jobs for each row execute function private.wa_accepted_receipt_guard();
+
+revoke all on function private.wa_billing_pre_accepted_usage(uuid,uuid) from public,anon,authenticated,service_role;
+create or replace function public.billing_finalize_automated_usage(p_company_id uuid,p_intent_id uuid) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare j public.whatsapp_inbound_jobs%rowtype;i public.whatsapp_send_intents%rowtype;state text;begin
+ if current_setting('role',true)<>'service_role' then raise exception 'SERVER_ROLE_REQUIRED' using errcode='42501';end if;
+ j:=private.wa_acceptance_lock(p_company_id,p_intent_id);
+ select * into i from public.whatsapp_send_intents where id=p_intent_id and company_id=p_company_id and original_job_id=j.id for update;
+ if j.response_kind is not null or i.response_kind is not null then return private.wa_billing_pre_accepted_usage(p_company_id,p_intent_id);end if;
+ if j.id is null or i.id is null or i.sender_kind<>'assistant' or j.usage_subscription_id is null or j.usage_period_start is null
+ or j.usage_status is null or not exists(select 1 from public.billing_subscriptions where id=j.usage_subscription_id and company_id=j.company_id)
+ or i.expected_automation_generation is distinct from j.expected_automation_generation or i.body is distinct from j.staged_reply
+ or not exists(select 1 from public.whatsapp_messages m where m.id=j.message_id and m.company_id=j.company_id
+ and m.conversation_id=i.conversation_id and m.direction='inbound' and m.sender='customer')
+ or not exists(select 1 from public.ai_usage_ledger a where a.id=j.staged_ai_attempt_id and a.company_id=j.company_id and a.worker_job_id=j.id
+ and a.status='success' and a.response_text=i.body and a.source_citations=j.staged_citations and a.automation_generation=j.expected_automation_generation)
+ or (j.noura_entitlement_id is not null and (j.noura_subscription_id is distinct from j.usage_subscription_id or j.noura_allowance_period_start is distinct from j.usage_period_start))
+ then return jsonb_build_object('ok',false,'code','reservation_binding_review');end if;
+ if j.usage_status='accepted' then return jsonb_build_object('ok',true,'status','accepted','reused',true);end if;
+ state:=case when i.outcome='accepted' and nullif(btrim(i.wa_message_id),'') is not null
+ and (i.acceptance_observed_wa_message_id is null or i.acceptance_observed_wa_message_id=i.wa_message_id) then 'accepted'
+ when i.outcome='rejected' and i.wa_message_id is null and i.acceptance_observed_wa_message_id is null then 'released' else 'unknown' end;
+ perform set_config('velora.accepted_usage_settlement','1',true);
+ update public.whatsapp_inbound_jobs set usage_status=state,status=case when state='accepted' then 'completed' else 'review_required' end,
+ completed_at=case when state='accepted' then coalesce(completed_at,clock_timestamp()) else completed_at end,
+ result_code='send_'||state,claim_token=null,claim_expires_at=null,updated_at=clock_timestamp() where id=j.id;
+ perform set_config('velora.accepted_usage_settlement','',true);
+ return jsonb_build_object('ok',true,'status',state,'reused',j.usage_status=state);
+end; $$;
+revoke all on function public.billing_finalize_automated_usage(uuid,uuid) from public,anon,authenticated;
+grant execute on function public.billing_finalize_automated_usage(uuid,uuid) to service_role;
+
+revoke all on function private.wa_finalize_pre_accepted_usage(uuid,uuid,text,text,text,uuid) from public,anon,authenticated,service_role;
+create or replace function public.finalize_whatsapp_send_attempt(p_intent_id uuid,p_attempt_token uuid,p_result text,p_wa_message_id text default null,p_error_code text default null,p_actor_user_id uuid default null)
+returns jsonb language plpgsql security definer set search_path='' as $$
+declare i public.whatsapp_send_intents%rowtype;j public.whatsapp_inbound_jobs%rowtype;r jsonb;u jsonb;begin
+ if current_setting('role',true)<>'service_role' then raise exception 'SERVER_ROLE_REQUIRED' using errcode='42501';end if;
+ p_result:=lower(btrim(p_result));
+ select * into i from public.whatsapp_send_intents where id=p_intent_id;
+ -- Staff and fixed responses retain the complete live dispatch/finalization contract.
+ if i.sender_kind='staff' or i.response_kind is not null then
+  return private.wa_finalize_pre_accepted_usage(p_intent_id,p_attempt_token,p_result,p_wa_message_id,p_error_code,p_actor_user_id);
+ end if;
+ if i.id is not null and i.original_job_id is not null and (p_attempt_token is null
+  or coalesce(i.attempt_token,i.finalized_attempt_token) is null
+  or p_attempt_token is distinct from coalesce(i.attempt_token,i.finalized_attempt_token)) then
+  return jsonb_build_object('ok',false,'code','attempt_rejected');
+ end if;
+ j:=private.wa_acceptance_lock(i.company_id,p_intent_id);
+ select * into i from public.whatsapp_send_intents where id=p_intent_id for update;
+ if p_result='accepted' and nullif(btrim(p_wa_message_id),'') is not null and i.outcome in ('attempting','unknown','rejected')
+ and p_attempt_token is not null and coalesce(i.attempt_token,i.finalized_attempt_token)=p_attempt_token and i.acceptance_observed_wa_message_id is null then
+  perform set_config('velora.acceptance_observation','1',true);
+  update public.whatsapp_send_intents set acceptance_observed_wa_message_id=btrim(p_wa_message_id),acceptance_observed_at=clock_timestamp() where id=i.id;
+  perform set_config('velora.acceptance_observation','',true);
+ end if;
+ if p_result='accepted' and nullif(btrim(p_wa_message_id),'') is not null
+ and ((i.acceptance_observed_wa_message_id is not null and i.acceptance_observed_wa_message_id<>btrim(p_wa_message_id))
+ or (i.outcome='accepted' and i.wa_message_id<>btrim(p_wa_message_id))) then
+  return jsonb_build_object('ok',false,'code','receipt_identity_review');end if;
+ if i.provider_error_code='contradictory_receipt_review' then return jsonb_build_object('ok',false,'code','contradictory_receipt_review');end if;
+ -- A later proven response can resolve an unknown attempt using its retained
+ -- original fence. Historical unbound fences are never fabricated. A response
+ -- contradicting proven rejection stays disputed/held; it is not new dispatch.
+ if p_result='accepted' and p_attempt_token is not null and i.finalized_attempt_token=p_attempt_token
+ and nullif(btrim(p_wa_message_id),'') is not null and i.outcome in ('unknown','rejected') then
+  if i.outcome='rejected' then
+   update public.whatsapp_send_intents set outcome='unknown',provider_error_code='contradictory_receipt_review' where id=i.id;
+   perform public.billing_finalize_automated_usage(i.company_id,i.id);
+   return jsonb_build_object('ok',false,'code','contradictory_receipt_review');
+  end if;
+  begin
+   if exists(select 1 from public.whatsapp_messages m where m.wa_message_id=btrim(p_wa_message_id)
+    and (m.company_id,m.conversation_id,m.body,m.sender,m.direction) is distinct from (i.company_id,i.conversation_id,i.body,i.sender_kind,'outbound'))
+   then raise exception 'provider_identity_review' using errcode='23514';end if;
+   update public.whatsapp_send_intents set outcome='accepted',wa_message_id=btrim(p_wa_message_id),provider_error_code='persist_pending' where id=i.id;
+   r:=jsonb_build_object('ok',true,'persist_pending',true,'intent',private.whatsapp_send_intent_public((select x from public.whatsapp_send_intents x where x.id=i.id)));
+  exception when others then
+   update public.whatsapp_send_intents set provider_error_code='provider_identity_review' where id=i.id;
+   r:=jsonb_build_object('ok',false,'code','provider_identity_review');
+  end;
+  if j.id is not null then begin
+   u:=public.billing_finalize_automated_usage(i.company_id,i.id);
+   if u->>'ok' is distinct from 'true' then r:=r||jsonb_build_object('accounting_pending',true);end if;
+  exception when others then r:=r||jsonb_build_object('accounting_pending',true);end;end if;
+  return r;
+ end if;
+ -- Save the fenced observation OUTSIDE the original uniqueness/display scope.
+ -- A disputed canonical identity retains its own receipt and unknown hold.
+ begin
+  r:=private.wa_finalize_pre_accepted_usage(p_intent_id,p_attempt_token,p_result,p_wa_message_id,p_error_code,p_actor_user_id);
+ exception when others then
+  select * into i from public.whatsapp_send_intents where id=p_intent_id;
+  if i.outcome='attempting' and i.acceptance_observed_wa_message_id is not null then
+   update public.whatsapp_send_intents set outcome='unknown',provider_error_code='provider_identity_review',attempt_token=null where id=i.id;
+  end if;
+  r:=jsonb_build_object('ok',false,'code','receipt_or_display_review');
+ end;
+ select * into i from public.whatsapp_send_intents where id=p_intent_id;
+ if j.id is not null and ((r->>'ok'='true' and i.outcome in ('accepted','rejected','unknown'))
+ or (i.outcome='unknown' and i.acceptance_observed_wa_message_id is not null)) then
+  begin
+   u:=public.billing_finalize_automated_usage(i.company_id,i.id);
+   if u->>'ok' is distinct from 'true' then r:=r||jsonb_build_object('accounting_pending',true);end if;
+  exception when others then r:=r||jsonb_build_object('accounting_pending',true);end;
+ end if;
+ return r;
+end; $$;
+revoke all on function public.finalize_whatsapp_send_attempt(uuid,uuid,text,text,text,uuid) from public,anon,authenticated;
+grant execute on function public.finalize_whatsapp_send_attempt(uuid,uuid,text,text,text,uuid) to service_role;
+
+revoke all on function private.wa_retry_display_pre_accepted_usage(uuid,uuid) from public,anon,authenticated,service_role;
+create or replace function public.retry_whatsapp_send_persist(p_intent_id uuid,p_actor_user_id uuid default null) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare i public.whatsapp_send_intents%rowtype;j public.whatsapp_inbound_jobs%rowtype;r jsonb;u jsonb;begin
+ if current_setting('role',true)<>'service_role' then raise exception 'SERVER_ROLE_REQUIRED' using errcode='42501';end if;
+ select * into i from public.whatsapp_send_intents where id=p_intent_id;
+ if i.sender_kind='staff' or i.response_kind is not null then return private.wa_retry_display_pre_accepted_usage(p_intent_id,p_actor_user_id);end if;
+ j:=private.wa_acceptance_lock(i.company_id,i.id);
+ if j.id is not null then begin
+  u:=public.billing_finalize_automated_usage(i.company_id,i.id);
+  if u->>'status' is distinct from 'accepted' then return jsonb_build_object('ok',false,'code','acceptance_accounting_pending');end if;
+ exception when others then return jsonb_build_object('ok',false,'code','acceptance_accounting_pending');end;end if;
+ begin r:=private.wa_retry_display_pre_accepted_usage(p_intent_id,p_actor_user_id);
+ exception when others then return jsonb_build_object('ok',false,'code','display_identity_or_persistence_review');end;
+ return r;
+end; $$;
+revoke all on function public.retry_whatsapp_send_persist(uuid,uuid) from public,anon,authenticated;
+grant execute on function public.retry_whatsapp_send_persist(uuid,uuid) to service_role;
+
+-- Do not let stale-generation/exhaustion or worker exception writers downgrade
+-- a durable accepted receipt. Settlement is independent of current authority.
+revoke all on function private.wa_retry_job_pre_accepted_usage(uuid,uuid,text,boolean,boolean) from public,anon,authenticated,service_role;
+create or replace function public.whatsapp_retry_inbound_job(p_job_id uuid,p_claim_token uuid,p_code text,p_uncertain boolean default false,p_terminal boolean default false) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare j public.whatsapp_inbound_jobs%rowtype;r jsonb;begin
+ if current_setting('role',true)<>'service_role' then raise exception 'SERVER_ROLE_REQUIRED' using errcode='42501';end if;
+ select * into j from public.whatsapp_inbound_jobs where id=p_job_id;
+ if j.response_kind is not null then return jsonb_build_object('ok',false,'code','FIXED_RESPONSE_JOB_REJECTED');end if;
+ if exists(select 1 from public.whatsapp_send_intents where id=j.send_intent_id and company_id=j.company_id and original_job_id=j.id and outcome='accepted' and wa_message_id is not null) then
+  r:=public.billing_finalize_automated_usage(j.company_id,j.send_intent_id);
+  return r||jsonb_build_object('status',case when r->>'status'='accepted' then 'completed' else 'review_required' end);
+ end if;
+ return private.wa_retry_job_pre_accepted_usage(p_job_id,p_claim_token,p_code,p_uncertain,p_terminal);
+end; $$;
+revoke all on function public.whatsapp_retry_inbound_job(uuid,uuid,text,boolean,boolean) from public,anon,authenticated;
+grant execute on function public.whatsapp_retry_inbound_job(uuid,uuid,text,boolean,boolean) to service_role;
+revoke all on function private.wa_claim_job_pre_accepted_usage(uuid,integer) from public,anon,authenticated,service_role;
+create or replace function public.claim_whatsapp_inbound_job(p_job_id uuid,p_lease_seconds integer default 120) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare j public.whatsapp_inbound_jobs%rowtype;begin
+ if current_setting('role',true)<>'service_role' then return jsonb_build_object('ok',false,'code','server_role_required');end if;
+ select * into j from public.whatsapp_inbound_jobs where id=p_job_id;
+ if j.response_kind is not null then return jsonb_build_object('ok',false,'code','FIXED_RESPONSE_JOB_REJECTED');end if;
+ if exists(select 1 from public.whatsapp_send_intents where id=j.send_intent_id and company_id=j.company_id and original_job_id=j.id and outcome='accepted' and wa_message_id is not null) then
+  perform public.billing_finalize_automated_usage(j.company_id,j.send_intent_id);return jsonb_build_object('ok',false,'code','accepted_receipt_repair_only');
+ end if;
+ return private.wa_claim_job_pre_accepted_usage(p_job_id,p_lease_seconds);
+end; $$;
+revoke all on function public.claim_whatsapp_inbound_job(uuid,integer) from public,anon,authenticated;
+grant execute on function public.claim_whatsapp_inbound_job(uuid,integer) to service_role;
+
+create or replace function public.whatsapp_repair_accepted_jobs(p_limit integer default 10) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare candidate record;r jsonb;u jsonb;repaired int:=0;pending int:=0;begin
+ if current_setting('role',true)<>'service_role' then raise exception 'SERVER_ROLE_REQUIRED' using errcode='42501';end if;
+ for candidate in select i.id,i.company_id from public.whatsapp_send_intents i join public.whatsapp_inbound_jobs j
+ on j.id=i.original_job_id and j.company_id=i.company_id and j.send_intent_id=i.id
+ where i.outcome='accepted' and i.wa_message_id is not null and (i.message_id is null or j.usage_status is distinct from 'accepted' or j.status<>'completed')
+ order by i.updated_at,i.id limit greatest(1,least(coalesce(p_limit,10),50)) loop
+  begin
+   u:=public.billing_finalize_automated_usage(candidate.company_id,candidate.id);
+   if u->>'status'='accepted' then r:=public.retry_whatsapp_send_persist(candidate.id,null);
+    if r->>'ok'='true' then repaired:=repaired+1;else pending:=pending+1;end if;
+   else pending:=pending+1;end if;
+  exception when others then pending:=pending+1;end;
+ end loop;
+ return jsonb_build_object('ok',true,'repaired',repaired,'pending',pending);
+end; $$;
+revoke all on function public.whatsapp_repair_accepted_jobs(integer) from public,anon,authenticated;
+grant execute on function public.whatsapp_repair_accepted_jobs(integer) to service_role;
+
+create or replace function public.billing_read_company_usage(p_company_id uuid) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare period timestamptz:=private.wa_worker_month();period_end timestamptz;accepted bigint;held bigint;journey jsonb;cap jsonb;begin
+ if not private.billing_ui_company_owner(p_company_id) then return jsonb_build_object('ok',false,'code','forbidden');end if;
+ period_end:=((period at time zone 'Asia/Muscat')+interval '1 month') at time zone 'Asia/Muscat';
+ select count(*) filter(where j.usage_status='accepted' and coalesce(m.delivery_state,'accepted')<>'failed'),
+ count(*) filter(where j.usage_status in ('reserved','unknown')) into accepted,held
+ from public.whatsapp_inbound_jobs j
+ left join public.whatsapp_send_intents i on i.id=j.send_intent_id and i.company_id=j.company_id and i.original_job_id=j.id
+ left join public.whatsapp_messages m on m.id=i.message_id and m.company_id=i.company_id
+ where j.company_id=p_company_id and j.response_kind is null and j.usage_period_start=period;
+ select accepted+count(*) filter(where i.outcome='accepted' and nullif(btrim(i.wa_message_id),'') is not null
+ and coalesce(m.delivery_state,'accepted')<>'failed'
+ and coalesce(m.received_at,i.acceptance_observed_at,i.updated_at)>=period
+ and coalesce(m.received_at,i.acceptance_observed_at,i.updated_at)<period_end),
+ held+count(*) filter(where i.outcome in ('ready','attempting','unknown') and i.created_at>=period and i.created_at<period_end) into accepted,held
+ from public.whatsapp_send_intents i left join public.whatsapp_messages m on m.id=i.message_id and m.company_id=i.company_id
+ where i.company_id=p_company_id and i.sender_kind='assistant'
+ and not exists(select 1 from public.whatsapp_inbound_jobs j where j.id=i.original_job_id and j.company_id=i.company_id and j.send_intent_id=i.id and j.response_kind is null);
+ journey:=public.billing_read_company_journey(p_company_id);cap:=journey->'data'->'subscription'->'cap';
+ return jsonb_build_object('ok',true,'data',jsonb_build_object('month_start',to_char(period at time zone 'Asia/Muscat','YYYY-MM-DD'),
+ 'successful_automated_outbound',coalesce(accepted,0),'held_outbound_capacity',coalesce(held,0),'cap',cap));
+end; $$;
+revoke all on function public.billing_read_company_usage(uuid) from public,anon;
+grant execute on function public.billing_read_company_usage(uuid) to authenticated;
+notify pgrst,'reload schema';
+  $upgrade_v1$;
+ else
+  execute $raw_install$
+set local lock_timeout='2s';set local statement_timeout='30s';
+lock table public.whatsapp_send_intents,public.whatsapp_inbound_jobs in share row exclusive mode;
+do $$ declare dep record;begin
+ for dep in select * from (values
+ ('public.finalize_whatsapp_send_attempt(uuid,uuid,text,text,text,uuid)','eca34ded58fb668f5446257e127005a7'),
+ ('public.retry_whatsapp_send_persist(uuid,uuid)','cf72e4078bb2a07f428cc02f61445c8d'),
+ ('public.billing_finalize_automated_usage(uuid,uuid)','93ead2a087ad01b7273d8cbb2661cee2'),
+ ('public.billing_read_company_usage(uuid)','9c50b1b4f21b164cca02411a736f3d10'),
+ ('public.whatsapp_repair_accepted_jobs(integer)','f03828295567cd4d0aa719180e341e65'),
+ ('public.whatsapp_retry_inbound_job(uuid,uuid,text,boolean,boolean)','c5c263ced0a37a233edc65bbdb67a452'),
+ ('public.claim_whatsapp_inbound_job(uuid,integer)','ee4f3900e34ef6eab8cef2597a9861c5')) dependencies(signature,body_hash) loop
+  if not exists(select 1 from pg_proc where oid=to_regprocedure(dep.signature) and md5(replace(prosrc,chr(13),''))=dep.body_hash
+   and prosecdef and array_to_string(proconfig,',')='search_path=""') then raise exception 'ACCEPTED_USAGE_PREREQUISITE_MISMATCH: %',dep.signature using errcode='55000';end if;
+  if dep.signature not like '%billing_read_company_usage%' and (has_function_privilege('anon',to_regprocedure(dep.signature),'EXECUTE')
+   or has_function_privilege('authenticated',to_regprocedure(dep.signature),'EXECUTE') or not has_function_privilege('service_role',to_regprocedure(dep.signature),'EXECUTE'))
+  then raise exception 'ACCEPTED_USAGE_RPC_ACL_MISMATCH: %',dep.signature using errcode='55000';end if;
+
+  if pg_get_userbyid((select proowner from pg_proc where oid=to_regprocedure(dep.signature)))<>'postgres'
+  or (select array_agg(x order by x) from unnest((select proacl::text[] from pg_proc where oid=to_regprocedure(dep.signature))) x)
+     is distinct from (case when dep.signature like '%billing_read_company_usage%' then array['authenticated=X/postgres','postgres=X/postgres','service_role=X/postgres']::text[] else array['postgres=X/postgres','service_role=X/postgres']::text[] end)
+  then raise exception 'ACCEPTED_USAGE_OWNER_OR_EXACT_ACL_MISMATCH: %',dep.signature using errcode='55000';end if;
+ end loop;
+ if not exists(select 1 from pg_proc where oid=to_regprocedure('private.whatsapp_guard_persisted_identity()')
+ and md5(replace(prosrc,chr(13),''))='2c9414fbe1fa9dce58a2764c87274307')
+ or not exists(select 1 from pg_trigger where tgrelid='public.whatsapp_send_intents'::regclass and tgfoid=to_regprocedure('private.whatsapp_guard_persisted_identity()') and tgenabled in ('O','A') and not tgisinternal)
+ or not exists(select 1 from pg_trigger where tgrelid='public.whatsapp_inbound_jobs'::regclass and tgfoid=to_regprocedure('private.whatsapp_guard_persisted_identity()') and tgenabled in ('O','A') and not tgisinternal)
+ then raise exception 'ACCEPTED_USAGE_IDENTITY_GUARD_MISMATCH' using errcode='55000';end if;
+ if not exists(select 1 from information_schema.columns where table_schema='public' and table_name='whatsapp_inbound_jobs' and column_name='response_kind' and data_type='text')
+ or not exists(select 1 from information_schema.columns where table_schema='public' and table_name='whatsapp_send_intents' and column_name='response_kind' and data_type='text')
+ or exists(select 1 from information_schema.columns where table_schema='public' and table_name='whatsapp_send_intents' and column_name in ('acceptance_observed_wa_message_id','acceptance_observed_at','finalized_attempt_token'))
+ or to_regprocedure('private.wa_acceptance_lock(uuid,uuid)') is not null
+ then raise exception 'ACCEPTED_USAGE_SCHEMA_OR_REPLAY_MISMATCH' using errcode='55000';end if;
+ if to_regprocedure('public.whatsapp_authorize_staff_dispatch(uuid,uuid)') is null
+ or exists(select 1 from pg_class where oid in ('public.whatsapp_send_intents'::regclass,'public.whatsapp_inbound_jobs'::regclass) and pg_get_userbyid(relowner)<>current_user)
+ then raise exception 'ACCEPTED_USAGE_DEPLOYMENT_ORDER_MISMATCH' using errcode='55000';end if;
+ if exists(select 1 from public.whatsapp_send_intents where wa_message_id is not null group by wa_message_id having count(*)>1)
+ then raise exception 'ACCEPTED_USAGE_HISTORICAL_PROVIDER_DUPLICATES' using errcode='23514',hint='Review duplicate receipt ownership separately. No receipt is deleted, reassigned or selected as a winner.';end if;
+ if exists(select 1 from public.whatsapp_inbound_jobs j left join public.whatsapp_send_intents i on i.id=j.send_intent_id
+ and i.company_id=j.company_id and i.original_job_id=j.id where j.usage_status='accepted' and (i.id is null or i.outcome<>'accepted'
+ or nullif(btrim(i.wa_message_id),'') is null or j.usage_subscription_id is null or j.usage_period_start is null))
+ then raise exception 'ACCEPTED_USAGE_HISTORICAL_BINDING_MISMATCH' using errcode='23514';end if;
+end; $$;
+-- Canonical ownership is unique independently of a display row. Disputed observations
+-- remain on their own intent, never another tenant's row and never a second charge.
+create unique index whatsapp_send_provider_receipt_uidx on public.whatsapp_send_intents(wa_message_id) where wa_message_id is not null;
+alter table public.whatsapp_send_intents add column acceptance_observed_wa_message_id text,
+ add column acceptance_observed_at timestamptz,add column finalized_attempt_token uuid,
+ add constraint whatsapp_acceptance_observation_pair check ((acceptance_observed_wa_message_id is null and acceptance_observed_at is null)
+ or (nullif(btrim(acceptance_observed_wa_message_id),'') is not null and acceptance_observed_at is not null));
+
+create function private.wa_acceptance_lock(p_company uuid,p_intent uuid) returns public.whatsapp_inbound_jobs
+language plpgsql security definer set search_path='' as $$
+declare i public.whatsapp_send_intents%rowtype;j public.whatsapp_inbound_jobs%rowtype;begin
+ select * into i from public.whatsapp_send_intents where id=p_intent and company_id=p_company;if not found then return null;end if;
+ perform 1 from public.companies where id=p_company for no key update;
+ select * into j from public.whatsapp_inbound_jobs where id=i.original_job_id and company_id=p_company and send_intent_id=i.id;
+ if j.id is not null then perform 1 from public.billing_subscriptions where id=j.usage_subscription_id and company_id=p_company for no key update;end if;
+ perform 1 from public.whatsapp_conversations where id=i.conversation_id and company_id=p_company for update;
+ if j.id is not null then select * into j from public.whatsapp_inbound_jobs where id=j.id and company_id=p_company and send_intent_id=i.id for update;end if;
+ perform 1 from public.whatsapp_send_intents where id=p_intent and company_id=p_company for update;
+ return j;
+end; $$;
+revoke all on function private.wa_acceptance_lock(uuid,uuid) from public,anon,authenticated,service_role;
+
+create function private.wa_accepted_receipt_guard() returns trigger language plpgsql set search_path='' as $$ begin
+ if tg_table_name='whatsapp_send_intents' then
+  -- New invariants govern the original automated-reservation repair path only.
+  -- OLD selects the protected contract so changing NEW cannot escape invariants.
+  if tg_op='INSERT' then
+   if new.sender_kind<>'assistant' or new.response_kind is not null or new.original_job_id is null then return new;end if;
+  elsif old.sender_kind<>'assistant' or old.response_kind is not null or old.original_job_id is null then return new;end if;
+  if tg_op='INSERT' then
+   if new.acceptance_observed_wa_message_id is not null or new.acceptance_observed_at is not null or new.finalized_attempt_token is not null then raise exception 'ACCEPTANCE_OBSERVATION_SERVER_ONLY' using errcode='23514';end if;
+  else
+   if old.finalized_attempt_token is null and old.outcome='attempting' and old.attempt_token is not null and new.outcome in ('accepted','rejected','unknown') then
+    if current_user<>(select pg_get_userbyid(relowner) from pg_class where oid=tg_relid) then raise exception 'FINALIZED_ATTEMPT_SERVER_ONLY' using errcode='23514';end if;
+    new.finalized_attempt_token:=old.attempt_token;
+   elsif new.finalized_attempt_token is distinct from old.finalized_attempt_token then raise exception 'FINALIZED_ATTEMPT_IMMUTABLE' using errcode='23514';end if;
+   if row(new.acceptance_observed_wa_message_id,new.acceptance_observed_at) is distinct from row(old.acceptance_observed_wa_message_id,old.acceptance_observed_at) then
+    if old.acceptance_observed_wa_message_id is not null or new.acceptance_observed_wa_message_id is null or old.outcome not in ('attempting','unknown','rejected')
+     or coalesce(old.attempt_token,old.finalized_attempt_token) is null or coalesce(current_setting('velora.acceptance_observation',true),'')<>'1'
+     or current_user<>(select pg_get_userbyid(relowner) from pg_class where oid=tg_relid) then raise exception 'ACCEPTANCE_OBSERVATION_IMMUTABLE' using errcode='23514';end if;
+   end if;
+   if old.outcome='accepted' and nullif(btrim(old.wa_message_id),'') is not null
+   and (new.outcome is distinct from 'accepted' or new.original_job_id is distinct from old.original_job_id)
+   then raise exception 'ACCEPTED_RECEIPT_IMMUTABLE' using errcode='23514';end if;
+  end if;
+ else
+  if tg_op='INSERT' then
+   if new.response_kind is not null then return new;end if;
+  elsif old.response_kind is not null then return new;end if;
+  if tg_op='INSERT' and new.usage_status='accepted' then raise exception 'ACCEPTED_USAGE_SERVER_ONLY' using errcode='23514';end if;
+  if tg_op='UPDATE' then
+   if old.usage_status='accepted' and row(new.response_kind,new.usage_status,new.usage_subscription_id,new.usage_period_start,new.send_intent_id,new.staged_ai_attempt_id,new.staged_reply,new.staged_citations,new.expected_automation_generation)
+    is distinct from row(old.response_kind,old.usage_status,old.usage_subscription_id,old.usage_period_start,old.send_intent_id,old.staged_ai_attempt_id,old.staged_reply,old.staged_citations,old.expected_automation_generation)
+   then raise exception 'ACCEPTED_USAGE_IRREVERSIBLE' using errcode='23514';end if;
+   if new.usage_status='accepted' and old.usage_status is distinct from 'accepted'
+    and (coalesce(current_setting('velora.accepted_usage_settlement',true),'')<>'1'
+    or current_user<>(select pg_get_userbyid(relowner) from pg_class where oid=tg_relid)) then raise exception 'ACCEPTED_USAGE_SERVER_ONLY' using errcode='23514';end if;
   end if;
  end if;return new;
 end; $$;
@@ -455,31 +1115,31 @@ alter function public.billing_finalize_automated_usage(uuid,uuid) set schema pri
 alter function private.billing_finalize_automated_usage(uuid,uuid) rename to wa_billing_pre_accepted_usage;
 revoke all on function private.wa_billing_pre_accepted_usage(uuid,uuid) from public,anon,authenticated,service_role;
 create function public.billing_finalize_automated_usage(p_company_id uuid,p_intent_id uuid) returns jsonb
-language plpgsql security definer set search_path='''' as $$
+language plpgsql security definer set search_path='' as $$
 declare j public.whatsapp_inbound_jobs%rowtype;i public.whatsapp_send_intents%rowtype;state text;begin
- if current_setting(''role'',true)<>''service_role'' then raise exception ''SERVER_ROLE_REQUIRED'' using errcode=''42501'';end if;
+ if current_setting('role',true)<>'service_role' then raise exception 'SERVER_ROLE_REQUIRED' using errcode='42501';end if;
  j:=private.wa_acceptance_lock(p_company_id,p_intent_id);
  select * into i from public.whatsapp_send_intents where id=p_intent_id and company_id=p_company_id and original_job_id=j.id for update;
  if j.response_kind is not null or i.response_kind is not null then return private.wa_billing_pre_accepted_usage(p_company_id,p_intent_id);end if;
- if j.id is null or i.id is null or i.sender_kind<>''assistant'' or j.usage_subscription_id is null or j.usage_period_start is null
+ if j.id is null or i.id is null or i.sender_kind<>'assistant' or j.usage_subscription_id is null or j.usage_period_start is null
  or j.usage_status is null or not exists(select 1 from public.billing_subscriptions where id=j.usage_subscription_id and company_id=j.company_id)
  or i.expected_automation_generation is distinct from j.expected_automation_generation or i.body is distinct from j.staged_reply
  or not exists(select 1 from public.whatsapp_messages m where m.id=j.message_id and m.company_id=j.company_id
- and m.conversation_id=i.conversation_id and m.direction=''inbound'' and m.sender=''customer'')
+ and m.conversation_id=i.conversation_id and m.direction='inbound' and m.sender='customer')
  or not exists(select 1 from public.ai_usage_ledger a where a.id=j.staged_ai_attempt_id and a.company_id=j.company_id and a.worker_job_id=j.id
- and a.status=''success'' and a.response_text=i.body and a.source_citations=j.staged_citations and a.automation_generation=j.expected_automation_generation)
+ and a.status='success' and a.response_text=i.body and a.source_citations=j.staged_citations and a.automation_generation=j.expected_automation_generation)
  or (j.noura_entitlement_id is not null and (j.noura_subscription_id is distinct from j.usage_subscription_id or j.noura_allowance_period_start is distinct from j.usage_period_start))
- then return jsonb_build_object(''ok'',false,''code'',''reservation_binding_review'');end if;
- if j.usage_status=''accepted'' then return jsonb_build_object(''ok'',true,''status'',''accepted'',''reused'',true);end if;
- state:=case when i.outcome=''accepted'' and nullif(btrim(i.wa_message_id),'''') is not null
- and (i.acceptance_observed_wa_message_id is null or i.acceptance_observed_wa_message_id=i.wa_message_id) then ''accepted''
- when i.outcome=''rejected'' and i.wa_message_id is null and i.acceptance_observed_wa_message_id is null then ''released'' else ''unknown'' end;
- perform set_config(''velora.accepted_usage_settlement'',''1'',true);
- update public.whatsapp_inbound_jobs set usage_status=state,status=case when state=''accepted'' then ''completed'' else ''review_required'' end,
- completed_at=case when state=''accepted'' then coalesce(completed_at,clock_timestamp()) else completed_at end,
- result_code=''send_''||state,claim_token=null,claim_expires_at=null,updated_at=clock_timestamp() where id=j.id;
- perform set_config(''velora.accepted_usage_settlement'','''',true);
- return jsonb_build_object(''ok'',true,''status'',state,''reused'',j.usage_status=state);
+ then return jsonb_build_object('ok',false,'code','reservation_binding_review');end if;
+ if j.usage_status='accepted' then return jsonb_build_object('ok',true,'status','accepted','reused',true);end if;
+ state:=case when i.outcome='accepted' and nullif(btrim(i.wa_message_id),'') is not null
+ and (i.acceptance_observed_wa_message_id is null or i.acceptance_observed_wa_message_id=i.wa_message_id) then 'accepted'
+ when i.outcome='rejected' and i.wa_message_id is null and i.acceptance_observed_wa_message_id is null then 'released' else 'unknown' end;
+ perform set_config('velora.accepted_usage_settlement','1',true);
+ update public.whatsapp_inbound_jobs set usage_status=state,status=case when state='accepted' then 'completed' else 'review_required' end,
+ completed_at=case when state='accepted' then coalesce(completed_at,clock_timestamp()) else completed_at end,
+ result_code='send_'||state,claim_token=null,claim_expires_at=null,updated_at=clock_timestamp() where id=j.id;
+ perform set_config('velora.accepted_usage_settlement','',true);
+ return jsonb_build_object('ok',true,'status',state,'reused',j.usage_status=state);
 end; $$;
 revoke all on function public.billing_finalize_automated_usage(uuid,uuid) from public,anon,authenticated;
 grant execute on function public.billing_finalize_automated_usage(uuid,uuid) to service_role;
@@ -488,57 +1148,57 @@ alter function public.finalize_whatsapp_send_attempt(uuid,uuid,text,text,text,uu
 alter function private.finalize_whatsapp_send_attempt(uuid,uuid,text,text,text,uuid) rename to wa_finalize_pre_accepted_usage;
 revoke all on function private.wa_finalize_pre_accepted_usage(uuid,uuid,text,text,text,uuid) from public,anon,authenticated,service_role;
 create function public.finalize_whatsapp_send_attempt(p_intent_id uuid,p_attempt_token uuid,p_result text,p_wa_message_id text default null,p_error_code text default null,p_actor_user_id uuid default null)
-returns jsonb language plpgsql security definer set search_path='''' as $$
+returns jsonb language plpgsql security definer set search_path='' as $$
 declare i public.whatsapp_send_intents%rowtype;j public.whatsapp_inbound_jobs%rowtype;r jsonb;u jsonb;begin
- if current_setting(''role'',true)<>''service_role'' then raise exception ''SERVER_ROLE_REQUIRED'' using errcode=''42501'';end if;
+ if current_setting('role',true)<>'service_role' then raise exception 'SERVER_ROLE_REQUIRED' using errcode='42501';end if;
  p_result:=lower(btrim(p_result));
  select * into i from public.whatsapp_send_intents where id=p_intent_id;
  -- Staff and fixed responses retain the complete live dispatch/finalization contract.
- if i.sender_kind=''staff'' or i.response_kind is not null then
+ if i.sender_kind='staff' or i.response_kind is not null then
   return private.wa_finalize_pre_accepted_usage(p_intent_id,p_attempt_token,p_result,p_wa_message_id,p_error_code,p_actor_user_id);
  end if;
  if i.id is not null and i.original_job_id is not null and (p_attempt_token is null
   or coalesce(i.attempt_token,i.finalized_attempt_token) is null
   or p_attempt_token is distinct from coalesce(i.attempt_token,i.finalized_attempt_token)) then
-  return jsonb_build_object(''ok'',false,''code'',''attempt_rejected'');
+  return jsonb_build_object('ok',false,'code','attempt_rejected');
  end if;
  j:=private.wa_acceptance_lock(i.company_id,p_intent_id);
  select * into i from public.whatsapp_send_intents where id=p_intent_id for update;
- if p_result=''accepted'' and nullif(btrim(p_wa_message_id),'''') is not null and i.outcome in (''attempting'',''unknown'',''rejected'')
+ if p_result='accepted' and nullif(btrim(p_wa_message_id),'') is not null and i.outcome in ('attempting','unknown','rejected')
  and p_attempt_token is not null and coalesce(i.attempt_token,i.finalized_attempt_token)=p_attempt_token and i.acceptance_observed_wa_message_id is null then
-  perform set_config(''velora.acceptance_observation'',''1'',true);
+  perform set_config('velora.acceptance_observation','1',true);
   update public.whatsapp_send_intents set acceptance_observed_wa_message_id=btrim(p_wa_message_id),acceptance_observed_at=clock_timestamp() where id=i.id;
-  perform set_config(''velora.acceptance_observation'','''',true);
+  perform set_config('velora.acceptance_observation','',true);
  end if;
- if p_result=''accepted'' and nullif(btrim(p_wa_message_id),'''') is not null
+ if p_result='accepted' and nullif(btrim(p_wa_message_id),'') is not null
  and ((i.acceptance_observed_wa_message_id is not null and i.acceptance_observed_wa_message_id<>btrim(p_wa_message_id))
- or (i.outcome=''accepted'' and i.wa_message_id<>btrim(p_wa_message_id))) then
-  return jsonb_build_object(''ok'',false,''code'',''receipt_identity_review'');end if;
- if i.provider_error_code=''contradictory_receipt_review'' then return jsonb_build_object(''ok'',false,''code'',''contradictory_receipt_review'');end if;
+ or (i.outcome='accepted' and i.wa_message_id<>btrim(p_wa_message_id))) then
+  return jsonb_build_object('ok',false,'code','receipt_identity_review');end if;
+ if i.provider_error_code='contradictory_receipt_review' then return jsonb_build_object('ok',false,'code','contradictory_receipt_review');end if;
  -- A later proven response can resolve an unknown attempt using its retained
  -- original fence. Historical unbound fences are never fabricated. A response
  -- contradicting proven rejection stays disputed/held; it is not new dispatch.
- if p_result=''accepted'' and p_attempt_token is not null and i.finalized_attempt_token=p_attempt_token
- and nullif(btrim(p_wa_message_id),'''') is not null and i.outcome in (''unknown'',''rejected'') then
-  if i.outcome=''rejected'' then
-   update public.whatsapp_send_intents set outcome=''unknown'',provider_error_code=''contradictory_receipt_review'' where id=i.id;
+ if p_result='accepted' and p_attempt_token is not null and i.finalized_attempt_token=p_attempt_token
+ and nullif(btrim(p_wa_message_id),'') is not null and i.outcome in ('unknown','rejected') then
+  if i.outcome='rejected' then
+   update public.whatsapp_send_intents set outcome='unknown',provider_error_code='contradictory_receipt_review' where id=i.id;
    perform public.billing_finalize_automated_usage(i.company_id,i.id);
-   return jsonb_build_object(''ok'',false,''code'',''contradictory_receipt_review'');
+   return jsonb_build_object('ok',false,'code','contradictory_receipt_review');
   end if;
   begin
    if exists(select 1 from public.whatsapp_messages m where m.wa_message_id=btrim(p_wa_message_id)
-    and (m.company_id,m.conversation_id,m.body,m.sender,m.direction) is distinct from (i.company_id,i.conversation_id,i.body,i.sender_kind,''outbound''))
-   then raise exception ''provider_identity_review'' using errcode=''23514'';end if;
-   update public.whatsapp_send_intents set outcome=''accepted'',wa_message_id=btrim(p_wa_message_id),provider_error_code=''persist_pending'' where id=i.id;
-   r:=jsonb_build_object(''ok'',true,''persist_pending'',true,''intent'',private.whatsapp_send_intent_public((select x from public.whatsapp_send_intents x where x.id=i.id)));
+    and (m.company_id,m.conversation_id,m.body,m.sender,m.direction) is distinct from (i.company_id,i.conversation_id,i.body,i.sender_kind,'outbound'))
+   then raise exception 'provider_identity_review' using errcode='23514';end if;
+   update public.whatsapp_send_intents set outcome='accepted',wa_message_id=btrim(p_wa_message_id),provider_error_code='persist_pending' where id=i.id;
+   r:=jsonb_build_object('ok',true,'persist_pending',true,'intent',private.whatsapp_send_intent_public((select x from public.whatsapp_send_intents x where x.id=i.id)));
   exception when others then
-   update public.whatsapp_send_intents set provider_error_code=''provider_identity_review'' where id=i.id;
-   r:=jsonb_build_object(''ok'',false,''code'',''provider_identity_review'');
+   update public.whatsapp_send_intents set provider_error_code='provider_identity_review' where id=i.id;
+   r:=jsonb_build_object('ok',false,'code','provider_identity_review');
   end;
   if j.id is not null then begin
    u:=public.billing_finalize_automated_usage(i.company_id,i.id);
-   if u->>''ok'' is distinct from ''true'' then r:=r||jsonb_build_object(''accounting_pending'',true);end if;
-  exception when others then r:=r||jsonb_build_object(''accounting_pending'',true);end;end if;
+   if u->>'ok' is distinct from 'true' then r:=r||jsonb_build_object('accounting_pending',true);end if;
+  exception when others then r:=r||jsonb_build_object('accounting_pending',true);end;end if;
   return r;
  end if;
  -- Save the fenced observation OUTSIDE the original uniqueness/display scope.
@@ -547,18 +1207,18 @@ declare i public.whatsapp_send_intents%rowtype;j public.whatsapp_inbound_jobs%ro
   r:=private.wa_finalize_pre_accepted_usage(p_intent_id,p_attempt_token,p_result,p_wa_message_id,p_error_code,p_actor_user_id);
  exception when others then
   select * into i from public.whatsapp_send_intents where id=p_intent_id;
-  if i.outcome=''attempting'' and i.acceptance_observed_wa_message_id is not null then
-   update public.whatsapp_send_intents set outcome=''unknown'',provider_error_code=''provider_identity_review'',attempt_token=null where id=i.id;
+  if i.outcome='attempting' and i.acceptance_observed_wa_message_id is not null then
+   update public.whatsapp_send_intents set outcome='unknown',provider_error_code='provider_identity_review',attempt_token=null where id=i.id;
   end if;
-  r:=jsonb_build_object(''ok'',false,''code'',''receipt_or_display_review'');
+  r:=jsonb_build_object('ok',false,'code','receipt_or_display_review');
  end;
  select * into i from public.whatsapp_send_intents where id=p_intent_id;
- if j.id is not null and ((r->>''ok''=''true'' and i.outcome in (''accepted'',''rejected'',''unknown''))
- or (i.outcome=''unknown'' and i.acceptance_observed_wa_message_id is not null)) then
+ if j.id is not null and ((r->>'ok'='true' and i.outcome in ('accepted','rejected','unknown'))
+ or (i.outcome='unknown' and i.acceptance_observed_wa_message_id is not null)) then
   begin
    u:=public.billing_finalize_automated_usage(i.company_id,i.id);
-   if u->>''ok'' is distinct from ''true'' then r:=r||jsonb_build_object(''accounting_pending'',true);end if;
-  exception when others then r:=r||jsonb_build_object(''accounting_pending'',true);end;
+   if u->>'ok' is distinct from 'true' then r:=r||jsonb_build_object('accounting_pending',true);end if;
+  exception when others then r:=r||jsonb_build_object('accounting_pending',true);end;
  end if;
  return r;
 end; $$;
@@ -569,18 +1229,18 @@ alter function public.retry_whatsapp_send_persist(uuid,uuid) set schema private;
 alter function private.retry_whatsapp_send_persist(uuid,uuid) rename to wa_retry_display_pre_accepted_usage;
 revoke all on function private.wa_retry_display_pre_accepted_usage(uuid,uuid) from public,anon,authenticated,service_role;
 create function public.retry_whatsapp_send_persist(p_intent_id uuid,p_actor_user_id uuid default null) returns jsonb
-language plpgsql security definer set search_path='''' as $$
+language plpgsql security definer set search_path='' as $$
 declare i public.whatsapp_send_intents%rowtype;j public.whatsapp_inbound_jobs%rowtype;r jsonb;u jsonb;begin
- if current_setting(''role'',true)<>''service_role'' then raise exception ''SERVER_ROLE_REQUIRED'' using errcode=''42501'';end if;
+ if current_setting('role',true)<>'service_role' then raise exception 'SERVER_ROLE_REQUIRED' using errcode='42501';end if;
  select * into i from public.whatsapp_send_intents where id=p_intent_id;
- if i.sender_kind=''staff'' or i.response_kind is not null then return private.wa_retry_display_pre_accepted_usage(p_intent_id,p_actor_user_id);end if;
+ if i.sender_kind='staff' or i.response_kind is not null then return private.wa_retry_display_pre_accepted_usage(p_intent_id,p_actor_user_id);end if;
  j:=private.wa_acceptance_lock(i.company_id,i.id);
  if j.id is not null then begin
   u:=public.billing_finalize_automated_usage(i.company_id,i.id);
-  if u->>''status'' is distinct from ''accepted'' then return jsonb_build_object(''ok'',false,''code'',''acceptance_accounting_pending'');end if;
- exception when others then return jsonb_build_object(''ok'',false,''code'',''acceptance_accounting_pending'');end;end if;
+  if u->>'status' is distinct from 'accepted' then return jsonb_build_object('ok',false,'code','acceptance_accounting_pending');end if;
+ exception when others then return jsonb_build_object('ok',false,'code','acceptance_accounting_pending');end;end if;
  begin r:=private.wa_retry_display_pre_accepted_usage(p_intent_id,p_actor_user_id);
- exception when others then return jsonb_build_object(''ok'',false,''code'',''display_identity_or_persistence_review'');end;
+ exception when others then return jsonb_build_object('ok',false,'code','display_identity_or_persistence_review');end;
  return r;
 end; $$;
 revoke all on function public.retry_whatsapp_send_persist(uuid,uuid) from public,anon,authenticated;
@@ -592,14 +1252,14 @@ alter function public.whatsapp_retry_inbound_job(uuid,uuid,text,boolean,boolean)
 alter function private.whatsapp_retry_inbound_job(uuid,uuid,text,boolean,boolean) rename to wa_retry_job_pre_accepted_usage;
 revoke all on function private.wa_retry_job_pre_accepted_usage(uuid,uuid,text,boolean,boolean) from public,anon,authenticated,service_role;
 create function public.whatsapp_retry_inbound_job(p_job_id uuid,p_claim_token uuid,p_code text,p_uncertain boolean default false,p_terminal boolean default false) returns jsonb
-language plpgsql security definer set search_path='''' as $$
+language plpgsql security definer set search_path='' as $$
 declare j public.whatsapp_inbound_jobs%rowtype;r jsonb;begin
- if current_setting(''role'',true)<>''service_role'' then raise exception ''SERVER_ROLE_REQUIRED'' using errcode=''42501'';end if;
+ if current_setting('role',true)<>'service_role' then raise exception 'SERVER_ROLE_REQUIRED' using errcode='42501';end if;
  select * into j from public.whatsapp_inbound_jobs where id=p_job_id;
- if j.response_kind is not null then return jsonb_build_object(''ok'',false,''code'',''FIXED_RESPONSE_JOB_REJECTED'');end if;
- if exists(select 1 from public.whatsapp_send_intents where id=j.send_intent_id and company_id=j.company_id and original_job_id=j.id and outcome=''accepted'' and wa_message_id is not null) then
+ if j.response_kind is not null then return jsonb_build_object('ok',false,'code','FIXED_RESPONSE_JOB_REJECTED');end if;
+ if exists(select 1 from public.whatsapp_send_intents where id=j.send_intent_id and company_id=j.company_id and original_job_id=j.id and outcome='accepted' and wa_message_id is not null) then
   r:=public.billing_finalize_automated_usage(j.company_id,j.send_intent_id);
-  return r||jsonb_build_object(''status'',case when r->>''status''=''accepted'' then ''completed'' else ''review_required'' end);
+  return r||jsonb_build_object('status',case when r->>'status'='accepted' then 'completed' else 'review_required' end);
  end if;
  return private.wa_retry_job_pre_accepted_usage(p_job_id,p_claim_token,p_code,p_uncertain,p_terminal);
 end; $$;
@@ -609,13 +1269,13 @@ alter function public.claim_whatsapp_inbound_job(uuid,integer) set schema privat
 alter function private.claim_whatsapp_inbound_job(uuid,integer) rename to wa_claim_job_pre_accepted_usage;
 revoke all on function private.wa_claim_job_pre_accepted_usage(uuid,integer) from public,anon,authenticated,service_role;
 create function public.claim_whatsapp_inbound_job(p_job_id uuid,p_lease_seconds integer default 120) returns jsonb
-language plpgsql security definer set search_path='''' as $$
+language plpgsql security definer set search_path='' as $$
 declare j public.whatsapp_inbound_jobs%rowtype;begin
- if current_setting(''role'',true)<>''service_role'' then return jsonb_build_object(''ok'',false,''code'',''server_role_required'');end if;
+ if current_setting('role',true)<>'service_role' then return jsonb_build_object('ok',false,'code','server_role_required');end if;
  select * into j from public.whatsapp_inbound_jobs where id=p_job_id;
- if j.response_kind is not null then return jsonb_build_object(''ok'',false,''code'',''FIXED_RESPONSE_JOB_REJECTED'');end if;
- if exists(select 1 from public.whatsapp_send_intents where id=j.send_intent_id and company_id=j.company_id and original_job_id=j.id and outcome=''accepted'' and wa_message_id is not null) then
-  perform public.billing_finalize_automated_usage(j.company_id,j.send_intent_id);return jsonb_build_object(''ok'',false,''code'',''accepted_receipt_repair_only'');
+ if j.response_kind is not null then return jsonb_build_object('ok',false,'code','FIXED_RESPONSE_JOB_REJECTED');end if;
+ if exists(select 1 from public.whatsapp_send_intents where id=j.send_intent_id and company_id=j.company_id and original_job_id=j.id and outcome='accepted' and wa_message_id is not null) then
+  perform public.billing_finalize_automated_usage(j.company_id,j.send_intent_id);return jsonb_build_object('ok',false,'code','accepted_receipt_repair_only');
  end if;
  return private.wa_claim_job_pre_accepted_usage(p_job_id,p_lease_seconds);
 end; $$;
@@ -623,51 +1283,55 @@ revoke all on function public.claim_whatsapp_inbound_job(uuid,integer) from publ
 grant execute on function public.claim_whatsapp_inbound_job(uuid,integer) to service_role;
 
 create or replace function public.whatsapp_repair_accepted_jobs(p_limit integer default 10) returns jsonb
-language plpgsql security definer set search_path='''' as $$
+language plpgsql security definer set search_path='' as $$
 declare candidate record;r jsonb;u jsonb;repaired int:=0;pending int:=0;begin
- if current_setting(''role'',true)<>''service_role'' then raise exception ''SERVER_ROLE_REQUIRED'' using errcode=''42501'';end if;
+ if current_setting('role',true)<>'service_role' then raise exception 'SERVER_ROLE_REQUIRED' using errcode='42501';end if;
  for candidate in select i.id,i.company_id from public.whatsapp_send_intents i join public.whatsapp_inbound_jobs j
  on j.id=i.original_job_id and j.company_id=i.company_id and j.send_intent_id=i.id
- where i.outcome=''accepted'' and i.wa_message_id is not null and (i.message_id is null or j.usage_status is distinct from ''accepted'' or j.status<>''completed'')
+ where i.outcome='accepted' and i.wa_message_id is not null and (i.message_id is null or j.usage_status is distinct from 'accepted' or j.status<>'completed')
  order by i.updated_at,i.id limit greatest(1,least(coalesce(p_limit,10),50)) loop
   begin
    u:=public.billing_finalize_automated_usage(candidate.company_id,candidate.id);
-   if u->>''status''=''accepted'' then r:=public.retry_whatsapp_send_persist(candidate.id,null);
-    if r->>''ok''=''true'' then repaired:=repaired+1;else pending:=pending+1;end if;
+   if u->>'status'='accepted' then r:=public.retry_whatsapp_send_persist(candidate.id,null);
+    if r->>'ok'='true' then repaired:=repaired+1;else pending:=pending+1;end if;
    else pending:=pending+1;end if;
   exception when others then pending:=pending+1;end;
  end loop;
- return jsonb_build_object(''ok'',true,''repaired'',repaired,''pending'',pending);
+ return jsonb_build_object('ok',true,'repaired',repaired,'pending',pending);
 end; $$;
 revoke all on function public.whatsapp_repair_accepted_jobs(integer) from public,anon,authenticated;
 grant execute on function public.whatsapp_repair_accepted_jobs(integer) to service_role;
 
 create or replace function public.billing_read_company_usage(p_company_id uuid) returns jsonb
-language plpgsql security definer set search_path='''' as $$
+language plpgsql security definer set search_path='' as $$
 declare period timestamptz:=private.wa_worker_month();period_end timestamptz;accepted bigint;held bigint;journey jsonb;cap jsonb;begin
- if not private.billing_ui_company_owner(p_company_id) then return jsonb_build_object(''ok'',false,''code'',''forbidden'');end if;
- period_end:=((period at time zone ''Asia/Muscat'')+interval ''1 month'') at time zone ''Asia/Muscat'';
- select count(*) filter(where j.usage_status=''accepted'' and coalesce(m.delivery_state,''accepted'')<>''failed''),
- count(*) filter(where j.usage_status in (''reserved'',''unknown'')) into accepted,held
+ if not private.billing_ui_company_owner(p_company_id) then return jsonb_build_object('ok',false,'code','forbidden');end if;
+ period_end:=((period at time zone 'Asia/Muscat')+interval '1 month') at time zone 'Asia/Muscat';
+ select count(*) filter(where j.usage_status='accepted' and coalesce(m.delivery_state,'accepted')<>'failed'),
+ count(*) filter(where j.usage_status in ('reserved','unknown')) into accepted,held
  from public.whatsapp_inbound_jobs j
  left join public.whatsapp_send_intents i on i.id=j.send_intent_id and i.company_id=j.company_id and i.original_job_id=j.id
  left join public.whatsapp_messages m on m.id=i.message_id and m.company_id=i.company_id
  where j.company_id=p_company_id and j.response_kind is null and j.usage_period_start=period;
- select accepted+count(*) filter(where i.outcome=''accepted'' and nullif(btrim(i.wa_message_id),'''') is not null
- and coalesce(m.delivery_state,''accepted'')<>''failed''
+ select accepted+count(*) filter(where i.outcome='accepted' and nullif(btrim(i.wa_message_id),'') is not null
+ and coalesce(m.delivery_state,'accepted')<>'failed'
  and coalesce(m.received_at,i.acceptance_observed_at,i.updated_at)>=period
  and coalesce(m.received_at,i.acceptance_observed_at,i.updated_at)<period_end),
- held+count(*) filter(where i.outcome in (''ready'',''attempting'',''unknown'') and i.created_at>=period and i.created_at<period_end) into accepted,held
+ held+count(*) filter(where i.outcome in ('ready','attempting','unknown') and i.created_at>=period and i.created_at<period_end) into accepted,held
  from public.whatsapp_send_intents i left join public.whatsapp_messages m on m.id=i.message_id and m.company_id=i.company_id
- where i.company_id=p_company_id and i.sender_kind=''assistant''
+ where i.company_id=p_company_id and i.sender_kind='assistant'
  and not exists(select 1 from public.whatsapp_inbound_jobs j where j.id=i.original_job_id and j.company_id=i.company_id and j.send_intent_id=i.id and j.response_kind is null);
- journey:=public.billing_read_company_journey(p_company_id);cap:=journey->''data''->''subscription''->''cap'';
- return jsonb_build_object(''ok'',true,''data'',jsonb_build_object(''month_start'',to_char(period at time zone ''Asia/Muscat'',''YYYY-MM-DD''),
- ''successful_automated_outbound'',coalesce(accepted,0),''held_outbound_capacity'',coalesce(held,0),''cap'',cap));
+ journey:=public.billing_read_company_journey(p_company_id);cap:=journey->'data'->'subscription'->'cap';
+ return jsonb_build_object('ok',true,'data',jsonb_build_object('month_start',to_char(period at time zone 'Asia/Muscat','YYYY-MM-DD'),
+ 'successful_automated_outbound',coalesce(accepted,0),'held_outbound_capacity',coalesce(held,0),'cap',cap));
 end; $$;
 revoke all on function public.billing_read_company_usage(uuid) from public,anon;
 grant execute on function public.billing_read_company_usage(uuid) to authenticated;
-notify pgrst,''reload schema'';commit;
-']::text[],'wa_accepted_usage_compatibility_sha256_082b41fc8ffb7d45324b3ddc4e0921c4d04762bf6c114cab86c20b0ad1cb2671',current_user,'velora-wa-install:20261011233153:082b41fc8ffb7d45324b3ddc4e0921c4d04762bf6c114cab86c20b0ad1cb2671',NULL::text[]);
+notify pgrst,'reload schema';
+  $raw_install$;
+ end if;
+end; $installation_route$;
+$executed_history$]::text[],'wa_accepted_usage_compatibility_known_v1_upgrade',current_user,
+'velora-wa-install:20261011233153:f7200b7e541cf3b1aecaced34a79854e531af35ec7ff4344dd2dad5807716b1f',NULL::text[]);
 -- END INSTALLATION HISTORY RECORD
 commit;

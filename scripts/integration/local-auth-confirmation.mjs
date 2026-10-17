@@ -15,6 +15,7 @@ revoke all on schema local_auth_fixture from public,anon,authenticated;
 grant usage on schema local_auth_fixture to supabase_auth_admin;
 create table local_auth_fixture.email_events(
  user_id uuid not null,email text not null,token text not null,action_type text not null,
+ token_hash text, redirect_to text,
  created_at timestamptz not null default clock_timestamp()
 );
 alter table local_auth_fixture.email_events enable row level security;
@@ -25,8 +26,8 @@ create policy synthetic_mail_only on local_auth_fixture.email_events for insert 
 create function local_auth_fixture.capture_email(event jsonb) returns jsonb
 language plpgsql security invoker set search_path='' as $$
 begin
- insert into local_auth_fixture.email_events(user_id,email,token,action_type)
- values((event->'user'->>'id')::uuid,lower(event->'user'->>'email'),event->'email_data'->>'token',event->'email_data'->>'email_action_type');
+ insert into local_auth_fixture.email_events(user_id,email,token,action_type,token_hash,redirect_to)
+ values((event->'user'->>'id')::uuid,lower(event->'user'->>'email'),event->'email_data'->>'token',event->'email_data'->>'email_action_type',event->'email_data'->>'token_hash',event->'email_data'->>'redirect_to');
  return '{}'::jsonb;
 end;
 $$;

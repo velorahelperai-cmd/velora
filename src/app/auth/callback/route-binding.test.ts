@@ -1,0 +1,16 @@
+import {beforeEach,expect,it,vi} from "vitest";
+const f=vi.hoisted(()=>({rows:[] as Array<{name:string;value:string}>,set:vi.fn(),exchange:vi.fn()}));
+vi.mock("next/headers",()=>({cookies:async()=>({getAll:()=>f.rows,get:()=>undefined,set:f.set})}));
+vi.mock("@/lib/supabase/env",()=>({getSupabaseEnv:()=>({ok:true})}));
+vi.mock("@/lib/tenancy/access",()=>({getCompanyAccess:vi.fn(),pathForAccess:vi.fn()}));
+vi.mock("@/lib/auth/broker",async()=>{const c=await import("@/lib/auth/broker/cookies");return{brokerExchangeOAuthCode:f.exchange,readIntentCookie:c.readIntentCookie,expireIntentCookie:c.expireIntentCookie,commitAuthReturnForGeneration:vi.fn(),readAuthReturnForGeneration:()=>null};});
+import {intentCookieName} from "@/lib/auth/broker/cookies";import {GET} from "./route";
+const a="aaaaaaaa-aaaaaaaa-aaaaaaaa",b="bbbbbbbb-bbbbbbbb-bbbbbbbb";
+const req=(state?:string)=>new Request("http://localhost:3320/auth/callback?code=synthetic"+(state?"&vel_intent="+state:"") );
+beforeEach(()=>{vi.clearAllMocks();f.rows=[];f.exchange.mockResolvedValue({ok:false,detail:"pkce_invalid",expireIntent:true});});
+it("missing URL state cannot exchange even with one valid cookie",async()=>{f.rows=[{name:intentCookieName(a),value:a}];expect((await GET(req())).headers.get("location")).toContain("intent_binding");expect(f.exchange).not.toHaveBeenCalled();expect(f.set).not.toHaveBeenCalled();});
+it("foreign state cannot borrow or expire the only sibling intent",async()=>{f.rows=[{name:intentCookieName(b),value:b}];expect((await GET(req(a))).headers.get("location")).toContain("intent_binding");expect(f.exchange).not.toHaveBeenCalled();expect(f.set).not.toHaveBeenCalled();});
+it("concurrent intents exchange only the original named verifier binding",async()=>{f.rows=[a,b].map(value=>({name:intentCookieName(value),value}));await GET(req(a));expect(f.exchange).toHaveBeenCalledWith(expect.objectContaining({stateNonce:a}));expect(f.set.mock.calls.map(c=>c[0])).toContain(intentCookieName(a));expect(f.set.mock.calls.map(c=>c[0])).not.toContain(intentCookieName(b));});
+it("uncertain exchange never expires a sibling or original binding",async()=>{f.rows=[a,b].map(value=>({name:intentCookieName(value),value}));f.exchange.mockRejectedValue(Error("SYNTHETIC_UNCERTAIN"));expect((await GET(req(a))).headers.get("location")).toContain("exchange_failed");expect(f.set).not.toHaveBeenCalled();});
+it("replayed consumed intent without its cookie cannot exchange again",async()=>{f.rows=[{name:intentCookieName(b),value:b}];await GET(req(a));await GET(req(a));expect(f.exchange).not.toHaveBeenCalled();});
+it("URL state plus wrong value in its cookie is rejected",async()=>{f.rows=[{name:intentCookieName(a),value:b}];expect((await GET(req(a))).headers.get("location")).toContain("intent_binding");expect(f.exchange).not.toHaveBeenCalled();});

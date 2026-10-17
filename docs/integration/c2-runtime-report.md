@@ -8,7 +8,31 @@ Added `loadWhatsappInboxInitialPage` and its server refresh action: one 40-row p
 
 Added offline local consumer entry `node scripts/whatsapp-integration/run-worker-local.mjs --fixtures-only`. It refuses other modes, verifies only the task-labelled ephemeral C2 PostgreSQL target and clears provider keys before invoking the opt-in tests. Model/Graph transports are mocks; the actual webhook/consumer handlers, HMAC calculation, routing, jobs, SQL/RLS/Vault, accounting and delivery functions execute.
 
-Verification: four bounded-initial-reader tests passed; four actual HTTP-handler/PostgreSQL journeys passed. Those cover invalid HMAC/worker authentication, duplicate/FIFO ingestion through the consumer, accepted versus delivered/read, wrong-recipient evidence, possible Meta acceptance retained unknown without regenerate/resend, and hard-disabled rollout repair-only reception. TypeScript and scoped ESLint passed. Initial fixture setup needed the local Vault extension; no production SQL/API repair was performed. Broader frozen combined-branch validation belongs to the final integration report.
+Verification: four bounded-initial-reader tests passed.
+
+Four actual HTTP-handler and PostgreSQL journeys passed.
+
+Worker authorization: rejected invalid requests.
+
+HMAC signature checks rejected forged webhook bodies.
+
+Duplicate and FIFO ingestion through the consumer behaved as expected.
+
+Accepted versus delivered or read states were checked.
+
+Wrong-recipient evidence was recorded.
+
+Possible Meta acceptance stayed unknown without regenerate or resend.
+
+Hard-disabled rollout allowed repair-only reception.
+
+TypeScript and scoped ESLint passed.
+
+Initial fixture setup needed the local Vault extension.
+
+No production SQL or API repair was performed.
+
+Broader frozen combined-branch validation belongs to the final integration report.
 
 Fixture target: `velora-c2-runtime-13861eb`, label `velora.task=c2-runtime-integration`, network none, no exposed ports, tmpfs data, no persistent mounts. Shared test harness targets were updated only inside this runtime branch. Billing C1 scripts are reused on a separate database in the same isolated container.
 

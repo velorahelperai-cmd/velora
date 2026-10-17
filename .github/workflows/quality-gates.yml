@@ -40,6 +40,10 @@ jobs:
       - name: Locked dependencies; no lifecycle scripts or provider credentials
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Isolated offline check
+        env:
+          # Redacted per-check receipts for this runner only. Not uploaded;
+          # never a substitute for required quality-gate job success.
+          VELORA_CI_RECEIPT_DIR: ${{ runner.temp }}/velora-ci-receipts
         run: node scripts/ci/run.mjs ${{ matrix.check }}
   security:
     runs-on: ubuntu-latest
@@ -56,12 +60,37 @@ jobs:
       # Moderate and higher findings block delivery; no audit suppression or
       # force downgrade. Scoped overrides have real lint/DOCX compatibility tests.
       - run: npm audit --audit-level=moderate
+  secrets:
+    name: secrets / pinned Gitleaks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24.18.0
+      - name: Install official checksum-pinned Gitleaks 8.24.3
+        run: node scripts/ci/gitleaks-install.mjs
+      - name: Prove clean acceptance and synthetic rejection
+        run: node scripts/ci/gitleaks.mjs self-test
+      - name: Scan tracked working tree; deny private tracked paths
+        run: node scripts/ci/gitleaks.mjs tree
+      - name: Scan new commits without historical baseline exceptions
+        if: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000') || github.event_name == 'merge_group' }}
+        env:
+          SECRET_SCAN_BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+        run: node scripts/ci/gitleaks.mjs range
+      # Historical incident findings are assessed separately with `history`;
+      # passing this new-change gate never certifies old commits or key revocation.
   quality-gate:
     name: quality-gate
     runs-on: ubuntu-latest
     timeout-minutes: 5
     if: ${{ always() }}
-    needs: [quality, security]
+    needs: [quality, security, secrets]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:

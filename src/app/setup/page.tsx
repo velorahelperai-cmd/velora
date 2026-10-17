@@ -6,6 +6,7 @@ import { authFlowHref } from "@/lib/auth/auth-journey";
 import { setupReturnContext } from "@/lib/auth/setup-return";
 import { AccessGate } from "@/components/app/access-gate";
 import { SetupWizard } from "@/components/app/setup-wizard";
+import { PrepaymentPreparation } from "@/components/app/prepayment-preparation";
 import { SetupLoading } from "@/components/app/setup-loading";
 import { listKnowledgeSources } from "@/lib/knowledge/actions";
 import type { KnowledgeSourceRecord } from "@/lib/knowledge/types";
@@ -14,7 +15,6 @@ import { getCompanyReviewRequest } from "@/lib/tenancy/actions";
 import type { CompanyReviewRequest } from "@/lib/tenancy/types";
 import {readSetupFileContext} from '@/lib/tenancy/setup-draft-actions';
 import {masterJourneyEnabled} from '@/lib/master-journey/rollout';
-import {smartOnboardingEnabled} from '@/lib/tenancy/smart-rollout';
 
 export const metadata: Metadata = { title: "Prepare your business · Velora" };
 
@@ -31,8 +31,10 @@ export default async function Page() {
   if (access.context.needsCompanyContext) redirect(`/app?next=${encodeURIComponent(returnTo)}`);
   const company = access.context.company;
   const masterEnabled=masterJourneyEnabled();
-  if (masterEnabled&&!company) redirect(`/account/businesses/new?next=${encodeURIComponent(returnTo)}`);
   const userId = access.context.userId;
+  // Unpaid preparation never reads or restores a server draft. Confirmed
+  // companies retain their existing management/recovery path below.
+  if (!company) return <PrepaymentPreparation key={userId} userId={userId} preferredNext={preferredNext} />;
   const draftScope={expectedUserId:userId,expectedCompanyId:company?.id??null};
   const draftRead=readSetupFileContext(draftScope);
 
@@ -70,7 +72,6 @@ export default async function Page() {
         initialDraftRead={initialDraftRead}
         masterJourneyEnabled={masterEnabled}
         userId={userId}
-        smartOnboardingEnabled={smartOnboardingEnabled()}
         preferredNext={preferredNext}
         initialCompany={company}
         initialKnowledge={initialKnowledge}

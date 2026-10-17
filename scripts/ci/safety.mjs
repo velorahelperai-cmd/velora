@@ -12,7 +12,7 @@ export function assertNoRuntimeEnvFiles(root) {
   }
 }
 export function assertRequiredResults(needs) {
-  for (const job of new Set(["quality", "security", ...Object.keys(needs ?? {})])) {
+  for (const job of new Set(["quality", "security", "secrets", ...Object.keys(needs ?? {})])) {
     if (needs?.[job]?.result !== "success") throw Error(`CI_REQUIRED_CHECK_FAILED_${job}`);
   }
 }

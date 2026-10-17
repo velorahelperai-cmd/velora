@@ -6,6 +6,10 @@ const KNOWLEDGE_UPLOAD_BODY_LIMIT = "28mb";
 const LONG_CACHE = "public, max-age=31536000, immutable";
 
 const nextConfig: NextConfig = {
+  env: {
+    NEXT_PUBLIC_APP_VERSION: process.env.VERCEL_GIT_COMMIT_SHA ?? process.env.VERSION ?? "development",
+    NEXT_PUBLIC_LOG_LEVEL: process.env.LOG_LEVEL ?? (process.env.NODE_ENV === "production" ? "info" : "debug"),
+  },
   reactStrictMode: true,
   serverExternalPackages: ["unpdf", "mammoth"],
   experimental: {

@@ -10,7 +10,6 @@ import { useDemo } from "@/lib/demo-state";
 import { SubscriptionPanel } from "@/components/app/subscription-panel";
 import {SubscriptionActivationState} from './subscription-activation-state';
 import {CycleCreditSummary} from './cycle-credit-summary';
-import {RenewalWalletPanel} from './renewal-wallet-panel';
 import type {CycleCreditSnapshot} from '@/lib/billing/cycle-credits';
 import type {ActivationState} from '@/lib/billing/activation';
 import type { SubscriptionOffersView } from "./subscription-offers-view";
@@ -117,7 +116,6 @@ export function SettingsPage({
                 <PlanHeroSummary view={initialSubscription} locale={locale} />
                 <SubscriptionActivationState value={initialActivation} ar={locale==='ar'}/>
                 {masterJourneyEnabled&&<CycleCreditSummary value={initialCredits} ar={locale==='ar'}/>}
-                {masterJourneyEnabled&&initialAccess.userId&&initialAccess.companyId&&<RenewalWalletPanel companyId={initialAccess.companyId} expectedUserId={initialAccess.userId} ar={locale==='ar'} renewalPlan={initialOffersView.status==='ready'?(()=>{const offer=initialOffersView.offers.find(o=>o.versionId===initialSubscription.planVersionId);return offer?.catalogRevision?{versionId:offer.versionId,catalogRevision:offer.catalogRevision,amountBaisa:offer.amountBaisa}:undefined;})():undefined}/>}
                 <SubscriptionPanel key={initialAccess.companyId} companyId={initialAccess.companyId!} locale={locale} view={initialSubscription} offersView={initialOffersView} masterJourneyEnabled={masterJourneyEnabled} onRetry={() => router.refresh()} />
               </div>
             ) : null}

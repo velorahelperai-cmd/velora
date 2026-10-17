@@ -83,3 +83,12 @@ exports/
 .obsidian/
 .vercel
 .env*
+
+# Local CI verification receipts (WP10A) — redacted JSON only; never commit.
+.ci-receipts/
+
+# Local agent metadata and generated review output stay on this computer.
+.codex/
+output/
+# Keep the nonsecret setup template available when importing into a new repo.
+!.env.example

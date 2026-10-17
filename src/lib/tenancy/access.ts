@@ -274,10 +274,18 @@ const loadCompanyAccess = cache(async (): Promise<AccessResult> => {
     let selectedCookie: string | null = null;
     try {
       const { cookies } = await import("next/headers");
-      const value = (await cookies()).get(WORKSPACE_COMPANY_COOKIE)?.value;
-      // A selection belongs to the account that made it. A previous account's
-      // cookie (or an old unbound cookie) cannot select a workspace for this user.
-      selectedCookie = value?.startsWith(`${userId}:`) ? value.slice(userId.length + 1) : null;
+      const { readWorkspaceCompanyForGeneration, resolveBrokerSession } = await import("@/lib/auth/broker");
+      const store = await cookies();
+      const resolved = await resolveBrokerSession({
+        getAll: () => store.getAll().map((c) => ({ name: c.name, value: c.value })),
+      });
+      const generation = resolved.ok ? resolved.boundary.generation : null;
+      // Generation-named cookie only — shared-name delayed writes cannot retarget B (C2-R6).
+      selectedCookie = readWorkspaceCompanyForGeneration(
+        { get: (name) => { const v = store.get(name)?.value; return v ? { value: v } : undefined; } },
+        generation,
+        userId,
+      );
     } catch {
       selectedCookie = null;
     }

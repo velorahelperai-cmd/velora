@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import {recordLogoutTransportFailed} from "@/lib/logging/browser.mjs";
 import { usePathname, useRouter } from "next/navigation";
 import {
   createContext,
@@ -20,27 +21,43 @@ import {
 import { clearCompanyDrafts } from "@/lib/company-draft";
 import { discardForeignTeamJournal } from "@/lib/platform-teams/ui-state";
 import { emptyBusiness, useDemo } from "@/lib/demo-state";
-import { tryCreateClient } from "@/lib/supabase/client";
 import {
   getAccountProfile,
   signOut,
   type AccountProfileView,
 } from "@/lib/tenancy/actions";
 import { LangSwitch, useAppCopy } from "@/components/app/ui";
-import {publishSessionContext,publishSessionLogout,subscribeSessionContext} from "@/lib/auth/session-context";
+import {publishSessionContext,publishSessionLogout,publishSessionQuarantine,readLocalQuarantine,subscribeSessionContext} from "@/lib/auth/session-context";
 import {SessionActivityTracker} from "@/lib/auth/session-activity-tracker";
+import { OperationRecovery, type RecoveryReceipt } from "./operation-recovery";
+import { createRecoveryReceipt, readRecoveryReceipt } from "@/lib/auth/operation-recovery";
 
-type SessionStatus = "loading" | "guest" | "ready" | "error" | "expired";
+type SessionStatus = "loading" | "guest" | "ready" | "error" | "expired" | "locked";
 
 type AccountSessionValue = {
   status: SessionStatus;
   identity: AccountProfileView | null;
+  boundaryFingerprint: string | null;
   refresh: () => Promise<void>;
   clear: () => void;
   expire: () => void;
+  lock: (boundaryFingerprint?: string | null) => void;
   setIdentityName: (name: string, expectedUserId: string) => void;
   isCurrentUser: (userId: string, expectedIdentity?: AccountProfileView) => boolean;
+  /** True only while session is ready for use — not cleanup-retained expired/locked ids (C3-6). */
   hasCurrentUser: () => boolean;
+  /** Capture retained for quarantine after expire — not a validity grant. */
+  cleanupCapture: () => { userId: string | null; boundaryFingerprint: string | null };
+  /** True only while the captured opaque boundary remains the locked authority. */
+  isCapturedBoundary: (boundaryFingerprint: string | null | undefined) => boolean;
+  /** Live ref snapshot for post-await fences — not React render values (C4-05). */
+  liveSnapshot: () => {
+    status: SessionStatus;
+    userId: string | null;
+    boundaryFingerprint: string | null;
+    ready: boolean;
+  };
+  recoverOperation?: (receipt: RecoveryReceipt | null) => void;
 };
 
 const AccountSessionContext = createContext<AccountSessionValue | null>(null);
@@ -54,17 +71,23 @@ function initialsOf(name: string, email: string) {
 
 export function AccountSessionProvider({
   children,
-  initial,
 }: {
   children: ReactNode;
+  /** Accepted for call-site compatibility only — never trusted as ready identity (C3). */
   initial?: AccountProfileView | null;
 }) {
   const providerRouter=useRouter();
   const pathname=usePathname();
-  const [status, setStatus] = useState<SessionStatus>(initial ? "ready" : "loading");
-  const [identity, setIdentity] = useState<AccountProfileView | null>(initial ?? null);
-  const identityRef=useRef<AccountProfileView|null>(initial??null);
-  const userIdRef = useRef<string | null>(initial?.userId ?? null);
+  // Never start "ready" from SSR initial alone — mount quarantine may lock A before paint (C3).
+  const [status, setStatus] = useState<SessionStatus>("loading");
+  const [recoveryReceipt, setRecoveryReceipt] = useState<RecoveryReceipt | null>(null);
+  const [identity, setIdentity] = useState<AccountProfileView | null>(null);
+  const [boundaryFingerprint, setBoundaryFingerprint] = useState<string | null>(null);
+  const identityRef=useRef<AccountProfileView|null>(null);
+  const userIdRef = useRef<string | null>(null);
+  const boundaryRef = useRef<string | null>(null);
+  const statusRef = useRef<SessionStatus>("loading");
+  const lockedRef = useRef(false);
   const requestGen = useRef(0);
   const signalRead=useRef<{generation:number;promise:Promise<void>}|null>(null);
   const routeReloading=useRef(false);
@@ -72,53 +95,152 @@ export function AccountSessionProvider({
   /** Internal only — never rendered to visitors, never logs secrets. */
   const failureStageRef = useRef<IdentityFailureStage | null>(null);
 
+  const setStatusLive = useCallback((next: SessionStatus) => {
+    statusRef.current = next;
+    setStatus(next);
+  }, []);
+
   const clear = useCallback(() => {
     // Invalidate any in-flight refresh so a stale response cannot restore prior identity.
     requestGen.current += 1;
     userIdRef.current = null;
     identityRef.current = null;
+    boundaryRef.current = null;
+    lockedRef.current = false;
     publishedContext.current = null;
     failureStageRef.current = null;
     setIdentity(null);
-    setStatus("guest");
-  }, []);
+    setBoundaryFingerprint(null);
+    setStatusLive("guest");
+  }, [setStatusLive]);
 
-  const expire=useCallback(()=>{requestGen.current+=1;userIdRef.current=null;identityRef.current=null;publishedContext.current=null;setIdentity(null);setStatus("expired");},[]);
+  // Retain captured boundary across expire so idle quarantine cannot retarget B (C2-R7).
+  const expire=useCallback(()=>{
+    requestGen.current+=1;
+    identityRef.current=null;
+    publishedContext.current=null;
+    setIdentity(null);
+    setStatusLive("expired");
+    // Keep userIdRef + boundaryRef + boundaryFingerprint for capture-bound quarantine.
+  },[setStatusLive]);
+
+  const lock=useCallback((fp?:string|null)=>{
+    requestGen.current+=1;
+    lockedRef.current=true;
+    // Keep userId fence so stale results for THIS capture cannot unlock; clear identity content.
+    identityRef.current=null;setIdentity(null);setStatusLive("locked");
+    const next=fp??boundaryRef.current;
+    if(next){
+      boundaryRef.current=next;
+      setBoundaryFingerprint(next);
+      // Read storage once; keep same-boundary memory receipt when storage is empty/unavailable.
+      const storedReceipt=readRecoveryReceipt(next);
+      setRecoveryReceipt((current)=>current?.boundaryFingerprint===next?current:storedReceipt);
+    }else{
+      setRecoveryReceipt(null);
+    }
+  },[setStatusLive]);
 
   const refresh = useCallback(async () => {
     if(routeReloading.current)return;
+    if(lockedRef.current)return; // captured lock never auto-restores from profile read
     const gen=++requestGen.current;
     try {
-      const result=await getAccountProfile();
+      const { readBrokerSessionStatus } = await import("@/lib/auth/broker-actions");
+      const broker = await readBrokerSessionStatus();
       if(gen!==requestGen.current)return;
-      if(!result.ok){
-        if(result.code==="UNAUTHENTICATED"){if(userIdRef.current)publishSessionLogout(userIdRef.current);if(result.sessionExpired)expire();else clear();return;}
-        failureStageRef.current=classifyProfileFailure(result.code);
-        setStatus(prev=>identityRef.current&&prev==="ready"?"ready":"error");return;
+      if(!broker.ok){
+        if(broker.code==="UNAUTHENTICATED"){
+          if(userIdRef.current)publishSessionLogout(userIdRef.current,boundaryRef.current);
+          clear();
+          return;
+        }
+        failureStageRef.current="server_auth";
+        // Never keep ready after failed reattest (C2-R7).
+        setStatusLive("error");
+        return;
       }
-      // An auth event already observed a new account; an older cookie response
-      // must not revive the prior account while that switch is still loading.
-      if(userIdRef.current && !identityRef.current && userIdRef.current!==result.data.userId){
-        failureStageRef.current="server_auth";setStatus("error");return;
+      // Capture broker boundary BEFORE mutating refs — compare against prior tip (C4-05).
+      const priorBoundary = boundaryRef.current;
+      const brokerBoundary = broker.boundaryFingerprint;
+      const brokerGeneration = broker.generation;
+      if (priorBoundary && identityRef.current && priorBoundary !== brokerBoundary) {
+        routeReloading.current = true;
+        setStatusLive("loading");
+        providerRouter.refresh();
+        window.location.reload();
+        return;
       }
-      const context={userId:result.data.userId,companyId:result.data.companyId};
-      const signature=JSON.stringify(context);
-      if(publishedContext.current!==signature){publishedContext.current=signature;publishSessionContext(context);}
-      const switching=userIdRef.current!==null&&userIdRef.current!==result.data.userId;
-      const changingWorkspace=identityRef.current!==null&&identityRef.current.companyId!==result.data.companyId;
-      if(switching||changingWorkspace){
-        routeReloading.current=true;
-        userIdRef.current=result.data.userId;identityRef.current=null;setIdentity(null);setStatus("loading");
-        providerRouter.refresh();window.location.reload();return;
+      const result = await getAccountProfile();
+      if (gen !== requestGen.current) return;
+      if (!result.ok) {
+        if (result.code === "UNAUTHENTICATED") {
+          if (userIdRef.current) publishSessionLogout(userIdRef.current, boundaryRef.current);
+          if (result.sessionExpired) expire();
+          else clear();
+          return;
+        }
+        failureStageRef.current = classifyProfileFailure(result.code);
+        setStatusLive("error");
+        return;
       }
-      try{discardForeignTeamJournal(window.sessionStorage,result.data.userId);}catch{/* Storage is optional for identity. */}
-      userIdRef.current=result.data.userId;identityRef.current=result.data;
-      failureStageRef.current=null;setIdentity(result.data);setStatus("ready");
-    }catch{
-      if(gen!==requestGen.current)return;
-      failureStageRef.current="server_auth";setStatus(prev=>identityRef.current&&prev==="ready"?"ready":"error");
+      // Re-read live broker status after profile await — same tip/generation (C4-05).
+      const broker2 = await readBrokerSessionStatus();
+      if (gen !== requestGen.current) return;
+      if (
+        !broker2.ok
+        || broker2.userId !== broker.userId
+        || broker2.boundaryFingerprint !== brokerBoundary
+        || broker2.generation !== brokerGeneration
+        || result.data.userId !== broker2.userId
+      ) {
+        failureStageRef.current = "server_auth";
+        setStatusLive("error");
+        return;
+      }
+      if (userIdRef.current && !identityRef.current && userIdRef.current !== result.data.userId) {
+        failureStageRef.current = "server_auth";
+        setStatusLive("error");
+        return;
+      }
+      const context = { userId: result.data.userId, companyId: result.data.companyId };
+      const signature = JSON.stringify(context);
+      if (publishedContext.current !== signature) {
+        publishedContext.current = signature;
+        publishSessionContext(context);
+      }
+      const switching = userIdRef.current !== null && userIdRef.current !== result.data.userId;
+      const changingWorkspace =
+        identityRef.current !== null && identityRef.current.companyId !== result.data.companyId;
+      if (switching || changingWorkspace) {
+        routeReloading.current = true;
+        userIdRef.current = result.data.userId;
+        identityRef.current = null;
+        setIdentity(null);
+        setStatusLive("loading");
+        providerRouter.refresh();
+        window.location.reload();
+        return;
+      }
+      try {
+        discardForeignTeamJournal(window.sessionStorage, result.data.userId);
+      } catch {
+        /* Storage is optional for identity. */
+      }
+      boundaryRef.current = brokerBoundary;
+      setBoundaryFingerprint(brokerBoundary);
+      userIdRef.current = result.data.userId;
+      identityRef.current = result.data;
+      failureStageRef.current = null;
+      setIdentity(result.data);
+      setStatusLive("ready");
+    } catch {
+      if (gen !== requestGen.current) return;
+      failureStageRef.current = "server_auth";
+      // Throw during reattest must not leave ready (C3-6).
+      setStatusLive("error");
     }
-  },[clear,expire,providerRouter]);
+  }, [clear, expire, providerRouter, setStatusLive]);
 
   // Mount/Auth/focus notifications often arrive together. Share only reads
   // within the same authority generation; logout/account changes invalidate it.
@@ -132,56 +254,166 @@ export function AccountSessionProvider({
   },[refresh]);
 
   useEffect(()=>subscribeSessionContext(signal=>{
-    if(signal.type==="logout"&&userIdRef.current&&userIdRef.current!==signal.userId)return;
+    if((signal.type==="logout"||signal.type==="quarantine")&&userIdRef.current&&userIdRef.current!==signal.userId)return;
+    if(signal.type==="quarantine"){
+      if(boundaryRef.current&&signal.boundaryFingerprint&&boundaryRef.current!==signal.boundaryFingerprint)return;
+      lock(signal.boundaryFingerprint);
+      return;
+    }
+    if(signal.type==="logout"){
+      // Same-user logout of A must not clear newer B (boundary-scoped) — C2-R7.
+      if(signal.boundaryFingerprint&&boundaryRef.current&&signal.boundaryFingerprint!==boundaryRef.current)return;
+      if(boundaryRef.current&&!signal.boundaryFingerprint){
+        // Legacy user-only logout hint: ignore when this tab already has a boundary (may be B).
+        return;
+      }
+      clear();
+      return;
+    }
     const current=identityRef.current;
     if(signal.type==="context"&&current?.userId===signal.userId&&current.companyId===signal.companyId)return;
-    // Hints never establish a user or workspace. Discard every old request,
-    // then let the refreshed server route and shared cookies establish context.
     routeReloading.current=true;requestGen.current+=1;userIdRef.current=null;identityRef.current=null;
-    failureStageRef.current=null;setIdentity(null);setStatus("loading");
+    boundaryRef.current=null;failureStageRef.current=null;setIdentity(null);setBoundaryFingerprint(null);setStatusLive("loading");
     providerRouter.refresh();window.location.reload();
-  }),[providerRouter]);
+  }),[providerRouter,lock,clear,setStatusLive]);
 
+  // C3: consume persisted quarantine BEFORE SSR initial / protected content.
+  // Isolate by boundary fingerprint so A's lock never fences same-user B.
   useEffect(()=>{
-    const frame=window.requestAnimationFrame(()=>{void refreshFromSignal();});
-    return ()=>window.cancelAnimationFrame(frame);
-  },[refreshFromSignal]);
-
-  useEffect(()=>{
-    const supabase=tryCreateClient();if(!supabase)return;
-    let timer:ReturnType<typeof setTimeout>|undefined;
-    const {data:sub}=supabase.auth.onAuthStateChange((event,session)=>{
-      if(timer)clearTimeout(timer);
-      if(event==="SIGNED_OUT"){clear();providerRouter.refresh();return;}
-      if(session?.user && userIdRef.current!==session.user.id){
-        const switching=userIdRef.current!==null;
-        requestGen.current+=1;userIdRef.current=session.user.id;identityRef.current=null;setIdentity(null);setStatus("loading");providerRouter.refresh();
-        if(switching){routeReloading.current=true;window.location.reload();return;}
-      }
-      // Server Actions update cookies without guaranteeing a browser SIGNED_IN event.
-      // INITIAL_SESSION=null therefore checks the server instead of inventing a logout.
-      timer=setTimeout(()=>{void refreshFromSignal();},0);
+    let cancelled=false;
+    const frame=window.requestAnimationFrame(()=>{
+      void (async()=>{
+        const signal=readLocalQuarantine();
+        try{
+          const {readBrokerSessionStatus}=await import("@/lib/auth/broker-actions");
+          const broker=await readBrokerSessionStatus();
+          if(cancelled)return;
+          if(signal?.type==="quarantine"){
+            if(broker.ok){
+              if(signal.userId===broker.userId){
+                if(
+                  !signal.boundaryFingerprint
+                  || signal.boundaryFingerprint===broker.boundaryFingerprint
+                ){
+                  userIdRef.current=signal.userId;
+                  boundaryRef.current=signal.boundaryFingerprint??broker.boundaryFingerprint;
+                  lock(signal.boundaryFingerprint??broker.boundaryFingerprint);
+                  return;
+                }
+                // Quarantine targets A; cookies already select B — ignore for this tab.
+              }
+            }else if(broker.code==="UNAUTHENTICATED"||broker.code==="QUARANTINED"){
+              // Captured A gone from cookies — keep locked; never flash SSR initial for A.
+              userIdRef.current=signal.userId;
+              lock(signal.boundaryFingerprint);
+              return;
+            }
+          }
+          if(signal?.type==="logout"){
+            if(broker.ok){
+              if(signal.userId!==broker.userId){ /* foreign */ }
+              else if(signal.boundaryFingerprint&&signal.boundaryFingerprint!==broker.boundaryFingerprint){
+                // Logout of A; cookies already select B — ignore.
+              }else if(!signal.boundaryFingerprint){
+                // User-only hint must not clear fresher B with a known boundary.
+              }else{
+                userIdRef.current=signal.userId;
+                clear();
+                return;
+              }
+            }else if(broker.code==="UNAUTHENTICATED"){
+              userIdRef.current=signal.userId;
+              clear();
+              return;
+            }
+          }
+          if(!broker.ok){
+            // Failed reattest: never seed SSR initial as ready (C2-R7).
+            if(signal?.type==="quarantine"){
+              userIdRef.current=signal.userId;
+              lock(signal.boundaryFingerprint);
+              return;
+            }
+            setStatusLive("error");
+            return;
+          }
+        }catch{
+          if(cancelled)return;
+          if(signal?.type==="quarantine"){
+            userIdRef.current=signal.userId;
+            lock(signal.boundaryFingerprint);
+            return;
+          }
+          setStatusLive("error");
+          return;
+        }
+        if(cancelled||lockedRef.current)return;
+        // Hydrate only after successful broker reattest path via refreshFromSignal.
+        void refreshFromSignal();
+      })();
     });
-    return ()=>{if(timer)clearTimeout(timer);sub.subscription.unsubscribe();requestGen.current+=1;};
-  },[clear,refreshFromSignal,providerRouter]);
+    return ()=>{cancelled=true;window.cancelAnimationFrame(frame);};
+  },[clear,lock,refreshFromSignal,setStatusLive]);
+
   useEffect(()=>{
+    // WP01A: broker status replaces browser Auth observers. Focus/visibility recheck only.
     let timer:ReturnType<typeof setTimeout>|undefined;
-    const recheck=()=>{if(document.visibilityState!=="visible")return;if(timer)clearTimeout(timer);timer=setTimeout(()=>{void refreshFromSignal();},0);};
+    const recheck=()=>{
+      if(document.visibilityState!=="visible")return;
+      if(lockedRef.current)return; // locked capture never auto-unlocks from focus
+      if(timer)clearTimeout(timer);
+      timer=setTimeout(()=>{void refreshFromSignal();},0);
+    };
     window.addEventListener("focus",recheck);document.addEventListener("visibilitychange",recheck);
     return ()=>{if(timer)clearTimeout(timer);window.removeEventListener("focus",recheck);document.removeEventListener("visibilitychange",recheck);};
   },[refreshFromSignal]);
-  const isCurrentUser = useCallback((userId:string,expectedIdentity?:AccountProfileView)=>userIdRef.current===userId&&identityRef.current?.userId===userId&&(!expectedIdentity||identityRef.current===expectedIdentity),[]);
-  const hasCurrentUser = useCallback(()=>userIdRef.current!==null,[]);
+  // Live refs — never close over render status for post-await fences (C4-05).
+  const isCurrentUser = useCallback(
+    (userId: string, expectedIdentity?: AccountProfileView) =>
+      statusRef.current === "ready"
+      && userIdRef.current === userId
+      && identityRef.current?.userId === userId
+      && (!expectedIdentity || identityRef.current === expectedIdentity),
+    [],
+  );
+  const hasCurrentUser = useCallback(
+    () => statusRef.current === "ready" && userIdRef.current !== null && identityRef.current !== null,
+    [],
+  );
+  const cleanupCapture = useCallback(
+    () => ({ userId: userIdRef.current, boundaryFingerprint: boundaryRef.current }),
+    [],
+  );
+  const isCapturedBoundary = useCallback(
+    (fp: string | null | undefined) => Boolean(fp) && lockedRef.current && boundaryRef.current === fp,
+    [],
+  );
+  const liveSnapshot = useCallback(
+    () => ({
+      status: statusRef.current,
+      userId: userIdRef.current,
+      boundaryFingerprint: boundaryRef.current,
+      ready: statusRef.current === "ready" && userIdRef.current !== null && identityRef.current !== null,
+    }),
+    [],
+  );
   const setIdentityName = useCallback((name: string, expectedUserId: string) => {
     if(!isCurrentUser(expectedUserId))return;
     setIdentity((prev) => {const updated=prev?.userId===expectedUserId?{...prev,fullName:name}:prev;identityRef.current=updated;return updated;});
   }, [isCurrentUser]);
 
-  const sessionValue=useMemo(()=>({status,identity,refresh,clear,expire,setIdentityName,isCurrentUser,hasCurrentUser}),[status,identity,refresh,clear,expire,setIdentityName,isCurrentUser,hasCurrentUser]);
+  const recoverOperation = useCallback((receipt: RecoveryReceipt | null) => {
+    if (receipt && boundaryRef.current !== receipt.boundaryFingerprint) return;
+    // Lock first (may hydrate storage); then retain the explicit memory receipt.
+    lock(receipt?.boundaryFingerprint ?? boundaryRef.current);
+    setRecoveryReceipt(receipt);
+  }, [lock]);
+  const sessionValue=useMemo(()=>({status,identity,boundaryFingerprint,refresh,clear,expire,lock,setIdentityName,isCurrentUser,hasCurrentUser,cleanupCapture,isCapturedBoundary,liveSnapshot,recoverOperation}),[status,identity,boundaryFingerprint,refresh,clear,expire,lock,setIdentityName,isCurrentUser,hasCurrentUser,cleanupCapture,isCapturedBoundary,liveSnapshot,recoverOperation]);
   const protectedRoute=/^\/(app|admin|account|setup|complete-profile|reset-password)(\/|$)/.test(pathname);
   const copy=useAppCopy();
   const content=protectedRoute&&status!=="ready"
     ? status==="expired" ? <SessionActivityTracker />
+    : status === "locked" ? <main className="grid min-h-screen place-content-center gap-3 px-6"><LangSwitch /><OperationRecovery receipt={recoveryReceipt} isCaptured={() => isCapturedBoundary(recoveryReceipt?.boundaryFingerprint ?? boundaryRef.current)} /></main>
     : <main className="grid min-h-screen place-content-center gap-3 px-6 text-center" aria-busy={status==="loading"}>
         <p>{status==="loading"?copy.loading:status==="error"?copy.account.identityError:copy.auth.login}</p>
         {status==="error"?<button type="button" onClick={()=>void refresh()}>{copy.errors.accessRetry}</button>:null}
@@ -213,15 +445,14 @@ export async function performLogout(
 ) {
   const userId = session.identity?.userId;
   if (!userId || !session.isCurrentUser(userId)) return;
-  const result = await signOut(userId);
-  if (!session.isCurrentUser(userId)) return;
-  if (!result.ok) {
-    onError(result.message ?? copy.auth.logoutFailed);
-    return;
-  }
+  const companyId = session.identity?.companyId ?? null;
+  const boundaryFp = session.boundaryFingerprint;
+  if (!boundaryFp) return;
+  const receipt = createRecoveryReceipt(userId, boundaryFp, "logout");
+  // Immediate local quarantine BEFORE awaiting server — even on failure/UNKNOWN.
+  session.lock(boundaryFp);
+  publishSessionQuarantine(userId, boundaryFp);
   clearCompanyDrafts(userId);
-  publishSessionLogout(userId);
-  session.clear();
   updateDemo({
     account: null,
     signedIn: false,
@@ -231,6 +462,25 @@ export async function performLogout(
     setupStep: 0,
     setupDone: [false, false, false, false],
   });
+  let result: Awaited<ReturnType<typeof signOut>>;
+  try {
+    result = await signOut(userId, boundaryFp, receipt.operationKey);
+  } catch (error) {
+    if (!session.isCapturedBoundary(boundaryFp)) return;
+    session.recoverOperation?.(receipt);
+    recordLogoutTransportFailed({userId,companyId},error);
+    onError(copy.auth.logoutFailed);
+    return;
+  }
+  // Stale A result must never clear/navigate a newer committed boundary (incl. same user).
+  if (!session.isCapturedBoundary(boundaryFp)) return;
+  if (!result.ok) {
+    session.recoverOperation?.(receipt);
+    onError(result.message ?? copy.auth.logoutFailed);
+    return;
+  }
+  publishSessionLogout(userId, boundaryFp);
+  session.clear();
   // Discard the prior account's client router cache after confirmed logout.
   // eslint-disable-next-line @next/next/no-location-assign-relative-destination
   window.location.assign("/login");

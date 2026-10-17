@@ -1,5 +1,5 @@
 import { checkAppSession } from "@/lib/auth/session-guard";
-import { createServerClient } from "@supabase/ssr";
+import { createBrokerUserClient, listHandleCookies } from "@/lib/auth/broker";
 import { NextResponse, type NextRequest } from "next/server";
 import { getSupabaseEnv } from "@/lib/supabase/env";
 
@@ -12,47 +12,59 @@ export type SessionUpdate = {
   hasUser: boolean;
 };
 
+/**
+ * Broker middleware: resolve opaque handles, refresh tokens server-side without
+ * writing shared sb-* cookies, ignore legacy auth cookies after cutover.
+ */
 export async function updateSession(request: NextRequest): Promise<SessionUpdate> {
-  let supabaseResponse = NextResponse.next({ request });
+  const response = NextResponse.next({ request });
   const env = getSupabaseEnv();
   if (!env.ok) {
-    return { response: supabaseResponse, session: "unavailable", hasUser: false };
+    return { response, session: "unavailable", hasUser: false };
   }
 
-  const supabase = createServerClient(env.url, env.publishableKey, {
-    cookies: {
-      getAll() {
-        return request.cookies.getAll();
-      },
-      setAll(cookiesToSet, cacheHeaders) {
-        cookiesToSet.forEach(({ name, value }) => {
-          request.cookies.set(name, value);
-        });
-        supabaseResponse = NextResponse.next({ request });
-        cookiesToSet.forEach(({ name, value, options }) => {
-          supabaseResponse.cookies.set(name, value, options);
-        });
-        Object.entries(cacheHeaders).forEach(([key, value]) => {
-          supabaseResponse.headers.set(key, value);
-        });
-      },
-    },
-  });
+  const reader = {
+    getAll: () => request.cookies.getAll().map((c) => ({ name: c.name, value: c.value })),
+  };
+
+  // Presence of only legacy sb-* cookies without broker handles → treat as unauthenticated
+  // (explicit reauth; no dual-reader fallback).
+  const handles = listHandleCookies(reader);
+  if (handles.length === 0) {
+    return { response, session: "unauthenticated", hasUser: false };
+  }
 
   try {
-    const { data, error } = await supabase.auth.getClaims();
+    const bound = await createBrokerUserClient(reader);
+    if (!bound.ok) {
+      if (bound.code === "UNAVAILABLE") {
+        return { response, session: "unavailable", hasUser: false };
+      }
+      return { response, session: "unauthenticated", hasUser: false };
+    }
+
+    const { data, error } = await bound.client.auth.getUser();
     if (error) {
-      // Auth/settings failure is not a confirmed missing session — do not force Login.
-      return { response: supabaseResponse, session: "unavailable", hasUser: false };
+      return { response, session: "unavailable", hasUser: false };
     }
-    if (data?.claims?.sub) {
-      const documentNavigation=request.headers.get("sec-fetch-mode")==="navigate";
-      const guard=await checkAppSession(supabase,documentNavigation);
-      if(!guard.ok)return {response:supabaseResponse,session:guard.code==="UNAUTHENTICATED"?"expired":"unavailable",hasUser:false};
-      return { response: supabaseResponse, session: "authenticated", hasUser: true };
+    if (!data.user) {
+      return { response, session: "unauthenticated", hasUser: false };
     }
-    return { response: supabaseResponse, session: "unauthenticated", hasUser: false };
+
+    const documentNavigation = request.headers.get("sec-fetch-mode") === "navigate";
+    const guard = await checkAppSession(bound.client, documentNavigation);
+    if (!guard.ok) {
+      return {
+        response,
+        session: guard.code === "UNAUTHENTICATED" ? "expired" : "unavailable",
+        hasUser: false,
+      };
+    }
+
+    // Refresh may have updated registry tokens; no auth-handle Set-Cookie on refresh.
+    void response;
+    return { response, session: "authenticated", hasUser: true };
   } catch {
-    return { response: supabaseResponse, session: "unavailable", hasUser: false };
+    return { response, session: "unavailable", hasUser: false };
   }
 }

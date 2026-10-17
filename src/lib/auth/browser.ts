@@ -1,29 +1,15 @@
 "use client";
 
-import { createClient } from "@/lib/supabase/client";
+import { ensureBrowserContinuity } from "@/lib/auth/browser-continuity";
+import { startOAuthAction } from "@/lib/auth/broker-actions";
 
 export type OAuthProvider = "google";
 
-function clientCallbackUrl(next = "/setup") {
-  const safe = next.startsWith("/") ? next : "/setup";
-  const origin = typeof window !== "undefined"
-    ? window.location.origin
-    : (process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") || "http://localhost:3000");
-  return `${origin}/auth/callback?next=${encodeURIComponent(safe)}`;
-}
-
-/** Google OAuth only — Apple/phone are not offered in the UI. */
+/** Google OAuth only — Apple/phone are not offered in the UI. Uses server broker PKCE. */
 export async function startOAuth(provider: OAuthProvider = "google", next = "/setup") {
-  const supabase = createClient();
-  const { data, error } = await supabase.auth.signInWithOAuth({
-    provider,
-    options: {
-      redirectTo: clientCallbackUrl(next),
-      queryParams: { prompt: "select_account" },
-    },
-  });
-  if (error) throw error;
-  if (data.url) {
-    window.location.assign(data.url);
-  }
+  const continuity = await ensureBrowserContinuity();
+  if (!continuity.ok) throw new Error(continuity.code);
+  const result = await startOAuthAction(provider, next, continuity.requestNonce);
+  if (!result.ok) throw new Error("OAUTH_UNAVAILABLE");
+  window.location.assign(result.url);
 }

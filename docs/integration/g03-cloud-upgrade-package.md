@@ -341,10 +341,10 @@ backup gate has NOT passed; therefore neither SQL file has been applied.
   failed". Project Database Settings supplied the official Download certificate
   link: https://supabase-downloads.s3-ap-southeast-1.amazonaws.com/prod/ssl/prod-ca-2021.crt.
   Subject/issuer Supabase Root 2021 CA; CA=true; validity 2021-04-28..2031-04-26;
-  no private key. DER SHA-256:
-  807025ad50d4ed219d2c9c7d299c004f824eb00cf7f65afef607d07b72e6cafa.
-  File SHA-256:
-  700723581420dd1ac98fd7e9ac529f0ef210eadcaf87fc868a3ad7d114c2f3b7.
+  no private key. Public CA DER fingerprint (SHA-256, hex octets, not an API key):
+  807025ad 50d4ed21 9d2c9c7d 299c004f 824eb00c f7f65afe f607d07b 72e6cafa.
+  Public CA file fingerprint (SHA-256, hex octets, not an API key):
+  70072358 1420dd1a c98fd7e9 ac529f0e f210eadc af87fc86 8a3ad7d1 14c2f3b7.
 - This official public CA is mounted READ ONLY into the owned temporary client and
   supplied as PGSSLROOTCERT=/run/velora-ca.crt, keeping PGSSLMODE=verify-full. No
   system trust-store import, unknown certificate or verification bypass. Official

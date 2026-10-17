@@ -1,51 +1,227 @@
-import {afterEach,beforeEach,expect,it,vi} from "vitest";
-type Slot={value?:unknown;deps?:unknown[];cleanup?:()=>void};
-const f=vi.hoisted(()=>({slots:[] as Slot[],cursor:0,effects:[] as Array<()=>void>,session:null as unknown,currentIdentity:null as unknown,currentUser:"user-a" as string|null,check:vi.fn(),expire:vi.fn(),clear:vi.fn(),signOut:vi.fn(),update:vi.fn(),replace:vi.fn(),refresh:vi.fn(),listeners:new Map<string,(e:Event)=>void>()}));
-vi.mock("react",()=>({useRef(initial:unknown){const i=f.cursor++;const s=f.slots[i]??(f.slots[i]={});return s.value??(s.value={current:initial});},useEffect(fn:()=>void|(()=>void),deps:unknown[]){const i=f.cursor++;const s=f.slots[i]??(f.slots[i]={});if(!s.deps||deps.some((v,i)=>!Object.is(v,s.deps![i]))){f.effects.push(()=>{s.cleanup?.();s.cleanup=fn()||undefined;});s.deps=deps;}}}));
-const router={replace:f.replace,refresh:f.refresh};
-vi.mock("next/navigation",()=>({usePathname:()=>"/app",useRouter:()=>router}));
-vi.mock("@/components/app/account-chrome",()=>({useOptionalAccountSession:()=>f.session}));
-vi.mock("@/lib/supabase/client",()=>({tryCreateClient:()=>({auth:{signOut:f.signOut}})}));
-vi.mock("./session-actions",()=>({checkSessionActivity:f.check}));
-vi.mock("@/lib/demo-state",()=>({emptyBusiness:{},useDemo:()=>({locale:"en",update:f.update})}));
-vi.mock("./auth-journey",()=>({clearPendingSignup:vi.fn()}));
-import {SessionActivityTracker} from "./session-activity-tracker";
-function render(){f.cursor=0;SessionActivityTracker();f.effects.splice(0).forEach(fn=>fn());}
-function session(status="ready",userId="user-a"){const identity=status==="ready"?{userId,sessionExpiresAt:"invalid"}:null;f.currentIdentity=identity;return {status,identity,expire:f.expire,clear:f.clear,isCurrentUser:(id:string,expected?:unknown)=>f.currentUser===id&&(!expected||expected===f.currentIdentity),hasCurrentUser:()=>f.currentUser!==null};}
-function deferred(){let resolve!:(value:unknown)=>void;const promise=new Promise(ok=>{resolve=ok;});return {promise,resolve};}
-async function settle(){for(let n=0;n<12;n++)await Promise.resolve();}
-function event(name:string){f.listeners.get(name)?.({isTrusted:true,type:name} as Event);}
-beforeEach(()=>{vi.useFakeTimers();vi.setSystemTime(new Date("2026-10-14T00:00:00Z"));vi.clearAllMocks();f.slots=[];f.effects=[];f.listeners.clear();f.currentUser="user-a";f.session=session();f.check.mockResolvedValue({ok:true,expiresAt:"2026-10-14T02:00:00Z"});f.signOut.mockResolvedValue({error:null});vi.stubGlobal("document",{visibilityState:"visible"});vi.stubGlobal("window",{location:{search:""},addEventListener:(name:string,fn:(e:Event)=>void)=>f.listeners.set(name,fn),removeEventListener:(name:string)=>f.listeners.delete(name)});});
-afterEach(()=>{for(const s of f.slots)s.cleanup?.();vi.useRealTimers();});
-it("focus and visibility only check expiry while real input touches activity",async()=>{
- render();await settle();f.check.mockClear();event("focus");await settle();expect(f.check).toHaveBeenLastCalledWith(false);
- f.check.mockClear();event("visibilitychange");await settle();expect(f.check).toHaveBeenLastCalledWith(false);
- f.check.mockClear();event("pointerdown");await settle();expect(f.check).toHaveBeenLastCalledWith(true);
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+
+type Slot = { value?: unknown; deps?: unknown[]; cleanup?: () => void };
+const f = vi.hoisted(() => ({
+  slots: [] as Slot[],
+  cursor: 0,
+  effects: [] as Array<() => void>,
+  session: null as unknown,
+  currentIdentity: null as unknown,
+  currentUser: "user-a" as string | null,
+  liveBoundary: "fp-a",
+  liveReady: true,
+  check: vi.fn(),
+  expire: vi.fn(),
+  clear: vi.fn(),
+  lock: vi.fn(),
+  quarantine: vi.fn(),
+  update: vi.fn(),
+  replace: vi.fn(),
+  refresh: vi.fn(),
+  listeners: new Map<string, (e: Event) => void>(),
+}));
+
+vi.mock("react", () => ({
+  useRef(initial: unknown) {
+    const i = f.cursor++;
+    const s = f.slots[i] ?? (f.slots[i] = {});
+    return s.value ?? (s.value = { current: initial });
+  },
+  useEffect(fn: () => void | (() => void), deps: unknown[]) {
+    const i = f.cursor++;
+    const s = f.slots[i] ?? (f.slots[i] = {});
+    if (!s.deps || deps.some((v, i) => !Object.is(v, s.deps![i]))) {
+      f.effects.push(() => {
+        s.cleanup?.();
+        s.cleanup = fn() || undefined;
+      });
+      s.deps = deps;
+    }
+  },
+}));
+
+const router = { replace: f.replace, refresh: f.refresh };
+vi.mock("next/navigation", () => ({ usePathname: () => "/app", useRouter: () => router }));
+vi.mock("@/components/app/account-chrome", () => ({ useOptionalAccountSession: () => f.session }));
+vi.mock("@/lib/auth/broker-actions", () => ({ quarantineCurrentBrokerSession: f.quarantine }));
+vi.mock("@/lib/auth/session-context", () => ({ publishSessionQuarantine: vi.fn() }));
+vi.mock("./session-actions", () => ({ checkSessionActivity: f.check }));
+vi.mock("@/lib/logging/browser.mjs", () => ({ recordSessionCheckUnavailable: vi.fn() }));
+vi.mock("@/lib/demo-state", () => ({ emptyBusiness: {}, useDemo: () => ({ locale: "en", update: f.update }) }));
+vi.mock("./auth-journey", () => ({ clearPendingSignup: vi.fn() }));
+
+import { SessionActivityTracker } from "./session-activity-tracker";
+import { recordSessionCheckUnavailable } from "@/lib/logging/browser.mjs";
+
+function render() {
+  f.cursor = 0;
+  SessionActivityTracker();
+  f.effects.splice(0).forEach((fn) => fn());
+}
+function session(status = "ready", userId = "user-a") {
+  const identity = status === "ready" || status === "expired" ? { userId, sessionExpiresAt: "invalid" } : null;
+  f.currentIdentity = identity;
+  return {
+    status,
+    identity,
+    boundaryFingerprint: "fp-a",
+    expire: f.expire,
+    clear: f.clear,
+    lock: f.lock,
+    isCurrentUser: (id: string, expected?: unknown) =>
+      f.currentUser === id && (!expected || expected === f.currentIdentity),
+    hasCurrentUser: () => status === "ready" && f.currentUser !== null,
+    liveSnapshot: () => ({ ready: f.liveReady && f.currentUser !== null, userId: f.currentUser, boundaryFingerprint: f.liveBoundary }),
+    cleanupCapture: () => ({ userId: f.currentUser, boundaryFingerprint: "fp-a" }),
+    isCapturedBoundary: (fp: string | null | undefined) => Boolean(fp) && fp === "fp-a",
+  };
+}
+function deferred() {
+  let resolve!: (value: unknown) => void;
+  const promise = new Promise((ok) => {
+    resolve = ok;
+  });
+  return { promise, resolve };
+}
+async function settle() {
+  for (let n = 0; n < 12; n++) await Promise.resolve();
+}
+function event(name: string) {
+  f.listeners.get(name)?.({ isTrusted: true, type: name } as Event);
+}
+
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-10-14T00:00:00Z"));
+  vi.clearAllMocks();
+  f.slots = [];
+  f.effects = [];
+  f.listeners.clear();
+  f.currentUser = "user-a";
+  f.liveBoundary = "fp-a"; f.liveReady = true;
+  f.session = session();
+  f.check.mockResolvedValue({ ok: true, expiresAt: "2026-10-14T02:00:00Z" });
+  f.quarantine.mockResolvedValue({ ok: true });
+  vi.stubGlobal("document", { visibilityState: "visible" });
+  vi.stubGlobal("window", {
+    location: { search: "" },
+    addEventListener: (name: string, fn: (e: Event) => void) => f.listeners.set(name, fn),
+    removeEventListener: (name: string) => f.listeners.delete(name),
+  });
 });
-it("programmatic scroll does not extend idle activity",async()=>{
- render();await settle();f.check.mockClear();event("scroll");await settle();expect(f.check).not.toHaveBeenCalled();
+afterEach(() => {
+  for (const s of f.slots) s.cleanup?.();
+  vi.useRealTimers();
 });
-it.each(["wheel","touchmove"])("real %s scrolling touches idle activity",async name=>{
- render();await settle();event(name);await settle();expect(f.check).toHaveBeenLastCalledWith(true);
+
+it("focus and visibility only check expiry while real input touches activity", async () => {
+  render();
+  await settle();
+  f.check.mockClear();
+  event("focus");
+  await settle();
+  expect(f.check).toHaveBeenLastCalledWith(false);
+  f.check.mockClear();
+  event("visibilitychange");
+  await settle();
+  expect(f.check).toHaveBeenLastCalledWith(false);
+  f.check.mockClear();
+  event("pointerdown");
+  await settle();
+  expect(f.check).toHaveBeenLastCalledWith(true);
 });
-it("a late expiry check cannot expire an account that switched before the next render",async()=>{
- const pending=deferred();f.check.mockReturnValue(pending.promise);render();f.currentUser="user-b";
- pending.resolve({ok:false,code:"UNAUTHENTICATED"});await settle();expect(f.expire).not.toHaveBeenCalled();
+
+it("programmatic scroll does not extend idle activity", async () => {
+  render();
+  await settle();
+  f.check.mockClear();
+  event("scroll");
+  await settle();
+  expect(f.check).not.toHaveBeenCalled();
 });
-it("a late expiry check cannot expire a replacement session for the same user",async()=>{
- const pending=deferred();f.check.mockReturnValue(pending.promise);render();f.currentIdentity={userId:"user-a",sessionExpiresAt:"2026-10-14T04:00:00Z"};
- pending.resolve({ok:false,code:"UNAUTHENTICATED"});await settle();expect(f.expire).not.toHaveBeenCalled();
+
+it.each(["wheel", "touchmove"])("real %s scrolling touches idle activity", async (name) => {
+  render();
+  await settle();
+  event(name);
+  await settle();
+  expect(f.check).toHaveBeenLastCalledWith(true);
 });
-it("an old expiry logout completion cannot clear or navigate a new login",async()=>{
- const pending=deferred();f.signOut.mockReturnValue(pending.promise);f.currentUser=null;f.session=session("expired");render();
- f.currentUser="user-b";pending.resolve({error:null});await settle();expect(f.clear).not.toHaveBeenCalled();expect(f.replace).not.toHaveBeenCalled();expect(f.refresh).not.toHaveBeenCalled();
+
+it("a late expiry check cannot expire an account that switched before the next render", async () => {
+  const pending = deferred();
+  f.check.mockReturnValue(pending.promise);
+  render();
+  f.currentUser = "user-b";
+  pending.resolve({ ok: false, code: "UNAUTHENTICATED" });
+  await settle();
+  expect(f.expire).not.toHaveBeenCalled();
 });
-it("an expiry logout completion is ignored after peer invalidation unmounts its effect",async()=>{
- const pending=deferred();f.signOut.mockReturnValue(pending.promise);f.currentUser=null;f.session=session("expired");render();
- for(const slot of f.slots)slot.cleanup?.();pending.resolve({error:null});await settle();
+
+it("expiry path locks immediately then quarantines the broker handle", async () => {
+  f.currentUser = null;
+  f.session = session("expired");
+  render();
+  await settle();
+  expect(f.lock).toHaveBeenCalledWith("fp-a");
+  expect(f.quarantine).toHaveBeenCalled();
+  expect(f.clear).toHaveBeenCalled();
+  expect(f.replace).toHaveBeenCalled();
+});
+
+it("an old expiry quarantine completion cannot clear or navigate a new login", async () => {
+  const pending = deferred();
+  f.quarantine.mockReturnValue(pending.promise);
+  f.currentUser = null;
+  f.session = session("expired");
+  render();
+  f.currentUser = "user-b";
+  pending.resolve({ ok: true });
+  await settle();
+  expect(f.clear).not.toHaveBeenCalled();
+  expect(f.replace).not.toHaveBeenCalled();
+  expect(f.refresh).not.toHaveBeenCalled();
+});
+
+it("real activity during an in-flight read check is not discarded", async () => {
+  const pending = deferred();
+  f.check.mockReturnValueOnce(pending.promise);
+  render();
+  event("pointerdown");
+  pending.resolve({ ok: true, expiresAt: "2026-10-14T02:00:00Z" });
+  await settle();
+  expect(f.check).toHaveBeenLastCalledWith(true);
+});
+
+it("a transport rejection retries a read without expiring the current user", async () => {
+  f.check.mockRejectedValueOnce(new Error("Synthetic transport outage"));
+  render();
+  await settle();
+  expect(f.expire).not.toHaveBeenCalled();
+  expect(f.clear).not.toHaveBeenCalled();
+  expect(f.quarantine).not.toHaveBeenCalled();
+  await vi.advanceTimersByTimeAsync(30000);
+  expect(f.check).toHaveBeenCalledTimes(2);
+  expect(f.check).toHaveBeenLastCalledWith(false);
+});
+
+it("repeated unavailable checks leave only one bounded retry", async () => {
+  f.check.mockResolvedValue({ ok: false, code: "UNAVAILABLE" });
+  render();
+  await settle();
+  event("focus");
+  await settle();
+  event("visibilitychange");
+  await settle();
+  expect(vi.getTimerCount()).toBe(1);
+  expect(recordSessionCheckUnavailable).toHaveBeenCalledTimes(1);
+});
+
+it("M19 delayed expiry cleanup cannot clear a newer locked capture",async()=>{
+ const pending=deferred();f.quarantine.mockReturnValue(pending.promise);
+ f.currentUser=null;f.session=session("expired");render();
+ f.currentUser="user-b";f.liveBoundary="fp-b";f.liveReady=false;
+ pending.resolve({ok:false});await settle();
+ expect(f.quarantine).toHaveBeenCalledWith("fp-a");
  expect(f.clear).not.toHaveBeenCalled();expect(f.replace).not.toHaveBeenCalled();expect(f.refresh).not.toHaveBeenCalled();
-});
-it("real activity during an in-flight read check is not discarded",async()=>{
- const pending=deferred();f.check.mockReturnValueOnce(pending.promise);render();event("pointerdown");
- pending.resolve({ok:true,expiresAt:"2026-10-14T02:00:00Z"});await settle();expect(f.check).toHaveBeenLastCalledWith(true);
 });

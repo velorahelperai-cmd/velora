@@ -167,11 +167,18 @@ beforeEach(() => {
 });
 
 describe('Smart-only review validation',()=>{
-  it('passes Instagram-only ownership to native proof validation without Master',async()=>{
-    vi.stubEnv('VELORA_MASTER_JOURNEY_ENABLED','false');vi.stubEnv('VELORA_SMART_ONBOARDING_ENABLED','true');
+  it('passes Instagram-only ownership to native proof validation when Master is enabled',async()=>{
+    // Product gate: not_applicable requires masterJourneyEnabled(); Smart env alone is ignored.
+    vi.stubEnv('VELORA_MASTER_JOURNEY_ENABLED','true');vi.stubEnv('VELORA_SMART_ONBOARDING_ENABLED','true');
     const result=await submitCompanyReviewRequest({numberOwnership:'not_applicable',whatsappNumber:'',ready:true,expectedCompanyId:COMPANY_B});
     expect(result.ok).toBe(true);
+    expect(state.rpcRequests.some(r=>r.name==='g03_begin_review_check')).toBe(true);
     expect(state.rpcRequests.some(r=>r.name==='transition_company_review'&&r.input.p_number_ownership==='not_applicable')).toBe(true);
+  });
+  it('Smart-only without Master refuses Instagram-only ownership before native proof',async()=>{
+    vi.stubEnv('VELORA_MASTER_JOURNEY_ENABLED','false');vi.stubEnv('VELORA_SMART_ONBOARDING_ENABLED','true');
+    expect(await submitCompanyReviewRequest({numberOwnership:'not_applicable',whatsappNumber:'',ready:true,expectedCompanyId:COMPANY_B})).toMatchObject({ok:false,code:'INVALID_INPUT'});
+    expect(state.rpcRequests).toHaveLength(0);
   });
   it('does not enable the new review variant when both rollouts are off',async()=>{
     vi.stubEnv('VELORA_MASTER_JOURNEY_ENABLED','false');vi.stubEnv('VELORA_SMART_ONBOARDING_ENABLED','false');

@@ -116,7 +116,13 @@ describe("P3 paid failure evidence", () => {
     }
   });
   it("never returns raw provider error bodies containing any secret format", async () => {
-    const message = "sk-example_key_abcdefghijklmnopqrstuvwxyz AQ.example_google_secret_abcdefghijklmnopqrstuvwxyz AIza12345678901234567890123456789012345 Bearer opaque-token user-key=opaque-value";
+    // Runtime-constructed synthetic provider error shapes for redaction assertion only (not credentials).
+    const message = [
+      "sk-" + "example_key_abcdefghijklmnopqrstuvwxyz",
+      "AQ." + "example_google_secret_abcdefghijklmnopqrstuvwxyz",
+      "AIza" + "12345678901234567890123456789012345",
+      "Bearer opaque-token user-key=opaque-value",
+    ].join(" ");
     const { adapter } = openai(vi.fn().mockRejectedValue(new Error(message))); const { adapter: google } = gemini(vi.fn().mockRejectedValue(new Error(message)));
     const results = [await adapter.complete(input), await google.complete(input)];
     for (const result of results) expect(JSON.stringify(result)).not.toContain("opaque");

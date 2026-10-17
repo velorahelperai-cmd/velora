@@ -307,11 +307,11 @@ create function public.master_authorize_instagram_ai_dispatch(p_company_id uuid,
 -- Native stage/model/send guards use the same proven cycle start, without
 -- changing the separately enforced native provider-cost budgets.
 do $$declare fn record;d text;updated text;stages integer:=0;sends integer:=0;models integer:=0;authorities integer:=0;begin
- for fn in select p.oid,p.proname from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname in('private','public') and (p.proname like '%stage_job_reply%' or p.proname like '%claim_assistant_job_send%' or p.proname='ai_lock_authorized_whatsapp_job' or p.proname='wa_noura_authority') loop
+ for fn in select p.oid,p.proname from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname in('private','public') and (p.proname like '%stage_job_reply%' or p.proname='wa_stage_pre_answer_profile' or p.proname like '%claim_assistant_job_send%' or p.proname='wa_claim_assistant_pre_meta_policy' or p.proname='ai_lock_authorized_whatsapp_job' or p.proname='wa_noura_authority') loop
   d:=pg_get_functiondef(fn.oid);updated:=replace(d,'private.wa_worker_month()','private.master_ai_cycle_period(j.company_id)');
   updated:=replace(updated,'(date_trunc(''month'',clock_timestamp() at time zone ''Asia/Muscat'') at time zone ''Asia/Muscat'')','private.master_ai_cycle_period(j.company_id)');
   if updated=d then continue;end if;
-  if fn.proname like '%stage_job_reply%' then stages:=stages+1;elsif fn.proname like '%claim_assistant_job_send%' then sends:=sends+1;elsif fn.proname='ai_lock_authorized_whatsapp_job' then models:=models+1;elsif fn.proname='wa_noura_authority' then authorities:=authorities+1;end if;execute updated;
+  if fn.proname like '%stage_job_reply%' or fn.proname='wa_stage_pre_answer_profile' then stages:=stages+1;elsif fn.proname like '%claim_assistant_job_send%' or fn.proname='wa_claim_assistant_pre_meta_policy' then sends:=sends+1;elsif fn.proname='ai_lock_authorized_whatsapp_job' then models:=models+1;elsif fn.proname='wa_noura_authority' then authorities:=authorities+1;end if;execute updated;
  end loop;
  if stages<1 or sends<1 or models<>1 or authorities<>1 then raise exception 'CYCLE_NATIVE_PERIOD_PREREQUISITE_MISSING';end if;
 end;$$;

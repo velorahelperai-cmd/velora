@@ -1,18 +1,15 @@
 "use client";
 
-import { createBrowserClient } from "@supabase/ssr";
-import type { Database } from "@/lib/database.types";
-import { getSupabaseEnv } from "@/lib/supabase/env";
-
-export function createClient() {
-  const env = getSupabaseEnv();
-  if (!env.ok) {
-    throw new Error("Supabase public env is incomplete");
-  }
-  return createBrowserClient<Database>(env.url, env.publishableKey);
+/**
+ * WP01A: browser Supabase Auth persistence is retired.
+ * Session authority is the server broker + opaque handle cookies.
+ * Callers must use Server Actions (signIn/signOut/status), not browser tokens.
+ */
+export function createClient(): never {
+  throw new Error("BROWSER_SUPABASE_AUTH_DISABLED");
 }
 
-/** Optional observers must not crash public pages when local setup is absent. */
-export function tryCreateClient(): ReturnType<typeof createClient> | null {
-  try { return createClient(); } catch { return null; }
+/** Optional observers must not crash public pages; Auth observers are retired. */
+export function tryCreateClient(): null {
+  return null;
 }

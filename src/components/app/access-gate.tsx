@@ -4,9 +4,10 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useOptionalAccountSession } from "./account-chrome";
-import { createClient } from "@/lib/supabase/client";
 import { safeInternalPath } from "@/lib/auth/safe-next";
 import { Button, Notice, useAppCopy } from "@/components/app/ui";
+import { quarantineCurrentBrokerSession } from "@/lib/auth/broker-actions";
+import { publishSessionQuarantine } from "@/lib/auth/session-context";
 
 /** Only confirmed expiry auto-redirects; service outages remain retryable. */
 export function AccessGate({
@@ -20,7 +21,9 @@ export function AccessGate({
   const copy = useAppCopy();
   const router = useRouter();
   const pathname = usePathname();
-  const clearSession = useOptionalAccountSession()?.clear;
+  const session = useOptionalAccountSession();
+  const clearSession = session?.clear;
+  const lockSession = session?.lock;
   const [signingIn, setSigningIn] = useState(false);
   const [signInError, setSignInError] = useState(false);
   const signInPending = useRef(false);
@@ -31,8 +34,23 @@ export function AccessGate({
     setSigningIn(true);
     setSignInError(false);
     try {
-      const { error } = await createClient().auth.signOut({ scope: "local" });
-      if (error) throw error;
+      // Cleanup-retained ids vs live validity (C3-6).
+      const capture = session?.cleanupCapture?.() ?? {
+        userId: session?.identity?.userId ?? null,
+        boundaryFingerprint: session?.boundaryFingerprint ?? null,
+      };
+      const userId = capture.userId;
+      const captureFp = capture.boundaryFingerprint;
+      // Immediate local quarantine; broker expires only this handle (no SDK global/others).
+      lockSession?.(captureFp);
+      if (userId) publishSessionQuarantine(userId, captureFp);
+      await quarantineCurrentBrokerSession(captureFp);
+      // Live snapshot after await — not captured React ready/status (C4-05).
+      const live = session?.liveSnapshot?.();
+      if (live && live.boundaryFingerprint !== captureFp) return;
+      if (live?.ready) {
+        if (!captureFp || live.boundaryFingerprint !== captureFp) return;
+      }
       clearSession?.();
       const next = safeInternalPath(pathname + window.location.search, "/");
       const reason = expired ? "session_expired" : "reauthenticate";
@@ -44,7 +62,7 @@ export function AccessGate({
       signInPending.current = false;
       setSigningIn(false);
     }
-  }, [clearSession, expired, pathname, router]);
+  }, [clearSession, expired, lockSession, pathname, router, session]);
   useEffect(() => {
     if (!expired) return;
     const frame = requestAnimationFrame(() => { void signInAgain(); });

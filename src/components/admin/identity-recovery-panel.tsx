@@ -4,8 +4,8 @@ import {useDemo} from "@/lib/demo-state";
 import {useOptionalAccountSession} from "@/components/app/account-chrome";
 import {Button,Field,Notice} from "@/components/app/ui";
 import {adminDecideIdentityRecoveryAction,adminOpenIdentityRecoveryReviewAction,readIdentityRecoveryReviewsAction} from "@/lib/tenancy/identity-recovery-actions";
-import type {IdentityRecoveryCase,IdentityRecoveryResult} from "@/lib/tenancy/identity-recovery";
-type View={actorUserId:string;configuration:"CONFIGURED"|"UNCONFIGURED";cases:IdentityRecoveryCase[]};
+import type {IdentityRecoveryResult,IdentityRecoveryView} from "@/lib/tenancy/identity-recovery";
+type View=IdentityRecoveryView;
 export function IdentityRecoveryAdminPanel({initialResult}:{initialResult:IdentityRecoveryResult<View>}){
  const {locale}=useDemo(),ar=locale==="ar",session=useOptionalAccountSession(),sessionRef=useRef(session);useLayoutEffect(()=>{sessionRef.current=session;},[session]);
  const [result,setResult]=useState(initialResult),[uid,setUid]=useState(""),[busy,setBusy]=useState(false),[error,setError]=useState<string|null>(null);const busyRef=useRef(false);

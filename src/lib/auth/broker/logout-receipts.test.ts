@@ -1,0 +1,14 @@
+import {beforeEach,expect,it,vi} from "vitest";
+const m=vi.hoisted(()=>({freeze:vi.fn(),mark:vi.fn(),patch:vi.fn(),native:vi.fn(),expire:vi.fn()}));
+vi.mock("./registry",()=>({probeBrokerCapability:async()=>({ok:true}),createBrokerOperation:async()=>true,freezeOperationSnapshot:m.freeze,markSessionStatus:m.mark,updateBrokerOperation:m.patch}));
+vi.mock("@supabase/supabase-js",()=>({createClient:()=>({auth:{admin:{signOut:m.native}}})}));
+vi.mock("@/lib/supabase/env",()=>({getSupabaseEnv:()=>({ok:true,url:"http://127.0.0.1:3330"})}));
+vi.mock("./crypto",()=>({newOpaqueHandle:()=>"synthetic-operation",encryptSecret:()=>Buffer.from("sealed")}));
+vi.mock("./cookies",()=>({expireHandleCookie:m.expire}));
+vi.mock("./resolve",()=>({createUserClientFromTokens:()=>null}));vi.mock("./log",()=>({brokerLog:vi.fn()}));
+import {brokerLogoutOriginal} from "./logout";
+const input={resolved:{boundary:{userId:"actor",nativeSessionId:"sid",generation:"generation",cookieName:"vel_sh_synthetic",boundaryFingerprint:"fingerprint"},registryId:"registry",accessToken:"synthetic-access",refreshToken:"synthetic-refresh"},writer:{set:()=>{}}} as never;
+beforeEach(()=>{vi.resetAllMocks();vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY","synthetic-test-only");m.freeze.mockResolvedValue(true);m.mark.mockResolvedValue(true);m.patch.mockResolvedValue(true);m.native.mockResolvedValue({error:null});});
+it("failed snapshot freeze prevents logout side effects and cannot confirm",async()=>{m.freeze.mockResolvedValue(false);const result=await brokerLogoutOriginal(input);expect(result.ok).toBe(false);expect(result.status).toBe("pending");expect(m.mark).not.toHaveBeenCalled();expect(m.native).not.toHaveBeenCalled();expect(m.expire).not.toHaveBeenCalled();});
+it("successful tombstone confirms app revocation while browser cleanup remains pending",async()=>{const result=await brokerLogoutOriginal(input);expect(result.ok).toBe(true);expect(result.stages).toMatchObject({appRevocation:"confirmed",nativeRevocation:"confirmed",clientCleanup:"pending"});expect(m.patch).toHaveBeenLastCalledWith("synthetic-operation",expect.objectContaining({stages:expect.objectContaining({appRevocation:"confirmed",clientCleanup:"pending"})}));});
+it("tombstone failure records unknown app revocation and does not revoke provider",async()=>{m.mark.mockResolvedValue(false);const result=await brokerLogoutOriginal(input);expect(result.ok).toBe(false);expect(result.stages.appRevocation).toBe("unknown");expect(m.native).not.toHaveBeenCalled();});

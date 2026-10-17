@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import Link from "next/link";
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type AriaRole, type ReactNode } from "react";
 import { useDemo } from "@/lib/demo-state";
 import { appCopy } from "@/lib/app-copy";
 
@@ -182,7 +182,17 @@ export function LinkButton({
   );
 }
 
-export function Notice({ tone = "info", children }: { tone?: "info" | "success" | "error" | "warn"; children: ReactNode }) {
+export function Notice({
+  tone = "info",
+  children,
+  id,
+  role,
+}: {
+  tone?: "info" | "success" | "error" | "warn";
+  children: ReactNode;
+  id?: string;
+  role?: AriaRole;
+}) {
   const styles = {
     info: "border-[color:var(--color-border-soft)] bg-[var(--color-hover-wash)] text-[var(--color-on-dark)]",
     success: "border-[#38dc89]/40 bg-[#38dc89]/10 text-[var(--color-success-fg)]",
@@ -190,7 +200,12 @@ export function Notice({ tone = "info", children }: { tone?: "info" | "success" 
     warn: "border-[#d9a467]/50 bg-[#d9a467]/10 text-[var(--color-warn-fg)]",
   }[tone];
   return (
-    <div data-notice={tone} role={tone === "error" ? "alert" : "status"} className={`rounded-xl border px-4 py-3 text-sm leading-6 ${styles}`}>
+    <div
+     data-notice={tone}
+     id={id}
+     role={role ?? (tone === "error" ? "alert" : "status")}
+     className={`rounded-xl border px-4 py-3 text-sm leading-6 ${styles}`}
+    >
       {children}
     </div>
   );

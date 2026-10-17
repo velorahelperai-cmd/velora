@@ -1,0 +1,173 @@
+{
+  "package": "es02-hosted-compat",
+  "status": "Implemented_NotVerified_local_package_only",
+  "base_commit": "f1428a9604573adf023b008b013a55109710c3a4",
+  "hosted_project_ref": "vmpifljyozsbtssxhoxd",
+  "hosted_latest_migration": "20261016220450",
+  "hosted_profile": "PhaseB_present_objects_cleanup_88_migrations",
+  "notes": [
+    "Does not claim 129-source Auth fixture equals this 88-migration hosted footprint",
+    "PAYMOB_EXTERNAL_VERIFICATION Deferred; synthetic settle revoked from all runtime roles",
+    "Identity lost-email+phone restoration remains PrelaunchDeferred (REVIEW/STATUS only)",
+    "After 33007 and before broker 080000: minimal identity native-session boundary fragment (33009:14-22,27-28,31-35 only) — boundary table empty by default; public app/check OID preserved; revoke service_role EXECUTE to match C5 authenticated-only ACL; no phone enrollment/change/attestation/apply",
+    "Postflight/pre-COMMIT require private.vel_broker_capability_contract_matches() and public.vel_broker_capability_probe() ok (probe under service_role EXECUTE grant; strict C5 contract unchanged)",
+    "Repeat apply: preflight/upgrade require pre-expand PhaseB footprint + hosted full-definition kernel MD5s; final installed footprint → deterministic reject (postflight only). Never treat post-upgrade kernel bodies as old pins. Never duplicate financial rows."
+  ],
+  "identity_native_boundary": {
+    "fragment": "fragments/02-identity-native-session-boundary.sql",
+    "source_extract": "20261014033009 lines 14-22,27-28,31-35 (phone omitted)",
+    "objects": [
+      "private.master_identity_session_boundaries",
+      "private.master_identity_session_current(uuid,uuid)",
+      "private.master_identity_pre_session_is_valid()",
+      "private.master_identity_pre_check_app_session(boolean)",
+      "public.app_session_is_valid() wrapper",
+      "public.check_app_session(boolean) wrapper"
+    ],
+    "grants": {
+      "private_functions": "postgres EXECUTE only",
+      "private_table": "RLS on; no anon/authenticated/service_role table grants",
+      "public_app_check": "EXECUTE authenticated only (revoke public/anon/service_role)"
+    },
+    "session_impact": "Empty boundary table is a no-op filter; native idle/expiry/password revocation remain via master_identity_pre_* snapshots of 33007 wrappers. No session generation reset or row deletion."
+  },
+  "pinned_native_kernel": {
+    "hash_kind": "pg_get_functiondef_crlf_normalized",
+    "public.app_session_is_valid()": {
+      "definition_md5": "5f3313dbaee67b8366fef2b55150d067",
+      "prosrc_md5_informational_only": "b42c28f54d05778fcc994156c6ce4086"
+    },
+    "public.check_app_session(boolean)": {
+      "definition_md5": "7d7b359732de20ea37d383b579a45d38",
+      "prosrc_md5_informational_only": "f69c473d94466a93d1d793bbd447478e"
+    }
+  },
+  "inputs": {
+    "revoke-33007": {
+      "path": "supabase/migrations/20261014033007_master_password_session_revocation.sql",
+      "sha256": "e284893e30b19740576c777318c1e118285771496d588836fd7526004674bf4d",
+      "bytes": 6630
+    },
+    "identity-native-boundary": {
+      "path": "supabase/upgrade-packages/es02-hosted-compat/fragments/02-identity-native-session-boundary.sql",
+      "sha256": "b6dc4c0ed7cc443fbf1d383720065dc7052b2cf9c51a41d9cfb439d5cd322526",
+      "bytes": 4579
+    },
+    "wp01a-080000": {
+      "path": "supabase/migrations/20261016080000_wp01a_session_broker.sql",
+      "sha256": "fb8e9e5912e7443c38c1f2efcd7c71bbd9cb2d2b2c4735b2ae4a32accc535c32",
+      "bytes": 11477
+    },
+    "wp01a-090000": {
+      "path": "supabase/migrations/20261016090000_wp01a_session_broker_correction.sql",
+      "sha256": "a74548e58c1b831f549ed35ec695b5b68b0738d9cca56e7d6c3544713125651a",
+      "bytes": 9693
+    },
+    "wp01a-100000": {
+      "path": "supabase/migrations/20261016100000_wp01a_session_broker_correction_r2.sql",
+      "sha256": "c6232a60858ab040991c936a9faa1218e27457f73b724bed87ac05e2b1e165f6",
+      "bytes": 13262
+    },
+    "wp01a-110000": {
+      "path": "supabase/migrations/20261016110000_wp01a_session_broker_correction_c3.sql",
+      "sha256": "01a43273a234451508837afc9a6e18091f5a9663b9cb4f5bf1b15ae2637cbee1",
+      "bytes": 13580
+    },
+    "wp01a-120000": {
+      "path": "supabase/migrations/20261016120000_wp01a_session_broker_correction_c4.sql",
+      "sha256": "6bc137ce8e557b6ad1281bc0b7c165df5f717bcea994152baa3e2ac2b9ec190b",
+      "bytes": 16467
+    },
+    "wp01a-130000": {
+      "path": "supabase/migrations/20261016130000_wp01a_session_broker_retire_admit_overloads.sql",
+      "sha256": "54fff4b4d4d76827d68ace67cf0b3f02e03623fc12c39571aa64c801558a3d9b",
+      "bytes": 878
+    },
+    "wp01a-140000": {
+      "path": "supabase/migrations/20261016140000_wp01a_session_broker_correction_c5.sql",
+      "sha256": "98fa0356b189120c6f8d2eb8e04043845dfcfa1c681dfc555f9a05a5beec32bf",
+      "bytes": 15950
+    },
+    "wp01a-150000": {
+      "path": "supabase/migrations/20261016150000_wp01a_session_broker_correction_c5_r2.sql",
+      "sha256": "3e39ccfdf341cfa4ac3646b97df4e2d8edd4d8fcb6a578c706c3959b799a13a1",
+      "bytes": 19068
+    },
+    "wp01a-160000": {
+      "path": "supabase/migrations/20261016160000_wp01a_session_broker_correction_c5_r3.sql",
+      "sha256": "47cdfb8e4a62cf5434daa54413990406d70de89a028591b93af3f9ac9a5dcbbb",
+      "bytes": 21469
+    },
+    "wp01a-170000": {
+      "path": "supabase/migrations/20261016170000_wp01a_session_broker_correction_c5_r4.sql",
+      "sha256": "3b78c732609ee3565f07ea0a73391186cdb1cb0642d5076f6eb4c74dd2f01468",
+      "bytes": 86056
+    },
+    "capability-acl-semantic": {
+      "path": "supabase/upgrade-packages/es02-hosted-compat/fragments/04-capability-acl-semantic.sql",
+      "sha256": "5dae7f481395883ab8f9c525fa9fb50dc48cd652192ebdc07f247dffa043c8d5",
+      "bytes": 26232
+    },
+    "recovery-minimal": {
+      "path": "supabase/upgrade-packages/es02-hosted-compat/fragments/01-recovery-review-minimal.sql",
+      "sha256": "25b21437c5c624615991c229f0c35206e54df6919bd1998b31692785962b0a9f",
+      "bytes": 6953
+    },
+    "wp01b-180000": {
+      "path": "supabase/migrations/20261016180000_wp01b_recovery_session_tip_fence.sql",
+      "sha256": "7d99e79635d45c7149946bf31fdccfc6a66051b48c140624672809c5b0076796",
+      "bytes": 13962
+    },
+    "es02-120000": {
+      "path": "supabase/migrations/20261017120000_es02_account_bound_purchase.sql",
+      "sha256": "9431680fc9f19490b918457e231fcf639871be1b08c765c680184346b22f666a",
+      "bytes": 32548
+    },
+    "es02-130000": {
+      "path": "supabase/migrations/20261017130000_es02_c1_authority_correction.sql",
+      "sha256": "5697940b3fdedd5277c99cfdf361ce1326556988608a78a86a13cc80172eb0a8",
+      "bytes": 34921
+    },
+    "es02-140000": {
+      "path": "supabase/migrations/20261017140000_es02_c2_atomicity_ledger_snapshot.sql",
+      "sha256": "5676725fb357bb6722b77ef4bdc64f21f51af5ae43fa2e4c7fd808688b57822b",
+      "bytes": 30511
+    },
+    "es02-owned-rpc-acl": {
+      "path": "supabase/upgrade-packages/es02-hosted-compat/fragments/03-owned-rpc-execute-boundary.sql",
+      "sha256": "2cecc5c97077d33c524ec5450a86dddb78a02fd0621e3cb10b360eb4c2f78849",
+      "bytes": 2637
+    },
+    "es02-150000": {
+      "path": "supabase/migrations/20261017150000_es02_c3_exact_client_op_unique.sql",
+      "sha256": "18fb09e5b9c3c9c910394b84abe9d41a17c0026f59eae086428a21e983b53a01",
+      "bytes": 4646
+    },
+    "es02-160000-primary": {
+      "path": "supabase/migrations/20261017160000_es02_hosted_primary_compat.sql",
+      "sha256": "2acbb9c575c673312b541c76cc7e989dd6a2246753eb2ba4de35905875108145",
+      "bytes": 11584
+    },
+    "broker-table-sequence-acl": {
+      "path": "supabase/upgrade-packages/es02-hosted-compat/fragments/05-broker-table-sequence-acl.sql",
+      "sha256": "0a86c5c806e3f9fcb819e549c636fbef0b076db64b35f57d52ac3d1ad6edffcd",
+      "bytes": 10067
+    },
+    "upgrade.sql": {
+      "path": "supabase/upgrade-packages/es02-hosted-compat/upgrade.sql",
+      "sha256": "810ad37e96efdad59d2fa5692fe22bbc1a3961d325e0611eb844ef058d802b7e",
+      "bytes": 407895
+    },
+    "es02-160000-primary-materialized": {
+      "path": "supabase/migrations/20261017160000_es02_hosted_primary_compat.sql",
+      "sha256": "2acbb9c575c673312b541c76cc7e989dd6a2246753eb2ba4de35905875108145"
+    }
+  },
+  "files": {
+    "preflight": "preflight.sql",
+    "upgrade": "upgrade.sql",
+    "postflight": "postflight.sql",
+    "deny_rollback": "deny-rollback.sql",
+    "readme": "README.md"
+  }
+}

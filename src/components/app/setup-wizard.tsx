@@ -42,7 +42,6 @@ import type { CompanyRecord, CompanyReviewEvent, CompanyReviewRequest } from "@/
 import { AccountMenu } from "@/components/app/account-chrome";
 import { AssistantTester } from "@/components/app/assistant-tester";
 import { KnowledgeEditor } from "@/components/app/knowledge-editor";
-import {KnowledgeImportReview} from './knowledge-import-review';
 import {BusinessSetupGuidance} from './business-setup-guidance';
 import {
   Button, Field, FieldErrorKey, LangSwitch, LinkButton, Notice, PreviewBadge,
@@ -50,15 +49,8 @@ import {
 } from "@/components/app/ui";
 
 import internalStyles from "./internal-ui.module.css";
-import { SmartSetupCards } from "./smart-setup-cards";
-import {buildSetupPageView,setupPageStep} from "./setup-page-view";
 import {SetupReviewPrerequisites} from "./setup-review-prerequisites";
 import { SetupNavigation } from "./setup-navigation";
-import { SmartSetupBranches } from "./smart-setup-branches";
-import { SmartSettingsPanel } from './smart-settings-panel';
-import { SmartBusinessStart } from './smart-business-start';
-import { readSmartSetup, type SmartSetupRead } from "@/lib/tenancy/smart-onboarding-actions";
-import { buildSmartOnboarding, type SmartSetupCard } from "@/lib/tenancy/smart-onboarding";
 
 // Preserve main navigation and behavior with the published setup readability/layout.
 const styles: Record<string, string> = { ...internalStyles };
@@ -219,7 +211,6 @@ const EMPTY_KNOWLEDGE: KnowledgeSourceRecord[] = [];
 
 export function SetupWizard({
   userId,
-  smartOnboardingEnabled = false,
   masterJourneyEnabled = false,
   preferredNext,
   initialCompany,
@@ -231,7 +222,6 @@ export function SetupWizard({
   initialDraftRead,
 }: {
   userId: string;
-  smartOnboardingEnabled?: boolean;
   masterJourneyEnabled?: boolean;
   preferredNext?: string;
   initialCompany?: CompanyRecord | null;
@@ -260,37 +250,6 @@ export function SetupWizard({
     setSavedCompany(initialCompany ?? null);
   }
   const companyId = savedCompany?.id ?? null;
-  const [openPanel,setOpenPanel] = useState<number|"branches"|null>(null);
-  const [smartReadState,setSmartRead] = useState<SmartSetupRead|null>(null);
-  const [smartReadActorScope,setSmartReadActorScope] = useState<string|null>(null);
-  const currentSmartScope=`${userId}:${companyId ?? "new"}`;
-  const smartRead=smartReadActorScope===currentSmartScope?smartReadState:null;
-  const [smartLoad,setSmartLoad] = useState<"loading"|"ready"|"failed">("loading");
-  const [smartRetry,setSmartRetry] = useState(0);
-  const smartScope=useRef<string|null>(null);
-  useEffect(()=>{
-    if(!smartOnboardingEnabled)return;
-    let cancelled=false;
-    const frame=window.requestAnimationFrame(()=>{
-      // A receipt refresh must preserve the mounted editor and its durable queue.
-      // A different actor/company never receives the previous scope's readback.
-      if(smartReadActorScope!==currentSmartScope){setSmartRead(null);setSmartLoad("loading");}
-      if(!companyId)return;
-      void readSmartSetup({expectedUserId:userId,expectedCompanyId:companyId}).then(result=>{
-        if(cancelled)return;
-        if(!result.ok){setSmartLoad("failed");return;}
-        setSmartRead(result.data);setSmartReadActorScope(`${userId}:${companyId}`);setSmartLoad("ready");
-        const scope=`${userId}:${companyId}`;
-        if(smartScope.current!==scope){
-          smartScope.current=scope;
-          // A delayed initial read may suggest a panel, but cannot close the
-          // editor the user has already opened while that read was pending.
-          setOpenPanel(current=>current??(result.data.branchSetup.mode===null?"branches":null));
-        }
-      }).catch(()=>{if(!cancelled)setSmartLoad("failed");});
-    });
-    return()=>{cancelled=true;window.cancelAnimationFrame(frame);};
-  },[userId,companyId,savedCompany?.updated_at,smartRetry,smartOnboardingEnabled,currentSmartScope,smartReadActorScope]);
   const renderedScope = useRef(`${userId}:${companyId ?? "new"}`);
   useEffect(() => { renderedScope.current = `${userId}:${companyId ?? "new"}`; }, [userId, companyId]);
   const [readiness, setReadiness] = useState<CustomerReadinessSnapshot | null>(null);
@@ -457,12 +416,10 @@ export function SetupWizard({
   if (unresolvedBusinessConflicts.length !== businessConflicts.length) setBusinessConflicts(unresolvedBusinessConflicts);
   const resolveBusinessConflicts = () => persist(d => ({ ...d, business: { ...d.business, ...Object.fromEntries(unresolvedBusinessConflicts.map(key => [key, businessBaseline[key]])) } }));
 
-  const step = smartOnboardingEnabled?setupPageStep(draft.setupStep):Math.max(0, Math.min(7, draft.setupStep));
-  const visiblePanel=openPanel===null||openPanel==="branches"?openPanel:smartOnboardingEnabled?setupPageStep(openPanel):openPanel;
+  const step = Math.max(0, Math.min(7, draft.setupStep));
   const go = (n: number, opts?: { skipGuard?: boolean }) => {
-    const next = smartOnboardingEnabled?setupPageStep(n):Math.max(0, Math.min(7, n));
+    const next = Math.max(0, Math.min(7, n));
     if (!opts?.skipGuard && leaveGuardRef.current && !leaveGuardRef.current()) return;
-    setOpenPanel(next);
     persist({ setupStep: next });
   };
   const effectiveSetupDone = serverSetupDone(knowledgeProgress.detail === "knowledge_ready");
@@ -486,24 +443,8 @@ export function SetupWizard({
   if (!ready || draft.userId !== userId || draft.companyId !== companyId) {
     return <SetupLoading />;
   }
-
-  const smart=buildSmartOnboarding({company:savedCompany,
-    branchSetup:smartRead?.branchSetup??null,
-    contract:smartRead?.contract??null,
-    operationalChannels:smartRead?.operationalChannels??[],
-    knowledge:knowledgeProgress.detail==="knowledge_ready"?"ready":knowledgeFailed?"failed":knowledgeSources.length?"needs_attention":"not_started",
-    review:initialReview,reviewLoadFailed,
-    reviewPolicyReady:smartRead?.reviewPolicyEnabled===true,
-  });
-  const pageView=buildSetupPageView(smart,savedCompany,smartRead?.branchSetup??null);
-  const closePanel=()=>{if(leaveGuardRef.current&&!leaveGuardRef.current())return;setOpenPanel(null);};
-  const openCard=(card:SmartSetupCard)=>{
-    if(card.id==="branches"){if(leaveGuardRef.current&&!leaveGuardRef.current())return;setOpenPanel("branches");return;}
-    if(card.step!==null)go(card.step);
-  };
-
   return (
-    <main className={`app-shell ${styles.theme} ${styles.setup}`} data-internal-ui="true" dir={ar ? "rtl" : "ltr"} data-first-business={smartOnboardingEnabled&&!companyId?"true":undefined}>
+    <main className={`app-shell ${styles.theme} ${styles.setup}`} data-internal-ui="true" dir={ar ? "rtl" : "ltr"}>
       {/* Top Brand & Navigation Header */}
       <div className={styles.setupHeader}>
         <Link href="/" className="inline-flex min-h-11 items-center gap-2 text-2xl font-bold tracking-tight">
@@ -526,39 +467,33 @@ export function SetupWizard({
         <div className={styles.setupTitle}>
           <h1 className="app-title text-3xl break-words lg:text-4xl">{copy.setup.title}</h1>
           <span className={styles.confirmed}>
-            {smartOnboardingEnabled?<>{pageView.completedRequired} / {pageView.totalRequired} {ar ? "بيانات الصفحة المكتملة" : "page data completed"}</>:<>{effectiveSetupDone.filter(Boolean).length} / 8 {ar?"محطات مؤكدة من السجلات":"milestones confirmed from records"}</>}
+            {effectiveSetupDone.filter(Boolean).length} / 8 {ar?"محطات مؤكدة من السجلات":"milestones confirmed from records"}
           </span>
         </div>
         <p className={`mt-2 ${styles.resume}`}>
-          {smartOnboardingEnabled&&!companyId?(ar?"ابدأ بتعريف نشاطك، ثم أكمل إعداد موظفتك الرقمية.":"Introduce your business, then set up your digital employee."):<>{!smartOnboardingEnabled?`${fill(mCopy.milestoneProgress,{n:step+1})} · `:""}{copy.setup.resume}</>}
+          <>{`${fill(mCopy.milestoneProgress,{n:step+1})} · `}{copy.setup.resume}</>
         </p>
         <DiagnosticHint diagnostic={diagnostic} locale={locale}/><SetupJourneyNotice
-          dataPage={smartOnboardingEnabled} ar={ar}
+          dataPage={false} ar={ar}
           company={initialCompany ?? null}
           review={initialReview}
           reviewLoadFailed={reviewLoadFailed}
         />
 
-        {smartOnboardingEnabled?(companyId ? null : <SmartBusinessStart key={userId} userId={userId} ar={ar} onCreated={adoptCompany}/>):<><SetupNavigation labels={mCopy.steps} shortLabels={ar?["الشركة","الاشتراك","ساعات العمل","المعرفة","لغة الرد","واتساب","التجربة","المراجعة"]:["Company","Subscription","Hours","Knowledge","Reply language","WhatsApp","Trial","Review"]} done={effectiveSetupDone} step={step} locale={locale} onSelect={go}/><div className={styles.progress} aria-hidden="true"><div className={styles.progressFill} style={{width:`${Math.round(effectiveSetupDone.filter(Boolean).length/8*100)}%`}}/></div></>}
-        {smartOnboardingEnabled&&companyId&&smartLoad==="failed"?<Notice tone="warn"><p>{ar?"تعذر تحميل تجهيز الفروع والقنوات. يمكنك متابعة بقية الإعدادات وإعادة المحاولة.":"Branch and channel setup could not be loaded. Continue with other settings and retry."}</p><Button variant="secondary" onClick={()=>setSmartRetry(n=>n+1)}>{ar?"إعادة التحميل":"Reload"}</Button></Notice>:null}
-        <SmartSetupCards enabled={smartOnboardingEnabled&&!!companyId} locale={locale} {...pageView} progressKind="page" onOpen={openCard} onClose={closePanel}
-          activeCardId={visiblePanel==='branches'?'branches':pageView.cards.find(card=>card.step!==null&&card.step===visiblePanel)?.id??null}>
-        {(!smartOnboardingEnabled||companyId&&visiblePanel!==null)?<section className={styles.stepPanel} aria-label={ar?"إعدادات التجهيز":"Setup settings"}>
-          {visiblePanel==="branches"?<>
-            <div className={styles.stepHeading}><h2>{ar?"تجهيز الفروع":"Prepare your branches"}</h2></div>
-            {smartRead?.branchSetup.companyId===companyId?<SmartSetupBranches key={`${userId}:${companyId}:${smartRead.branchSetup.branches.find(b=>b.primary)?.id}`} userId={userId} companyId={companyId} locale={locale} setup={smartRead.branchSetup} onSaved={branchSetup=>{setSmartRead(current=>current?{...current,branchSetup}:null);setSmartRetry(n=>n+1);}} onClose={()=>setOpenPanel(null)}/>:smartLoad==="loading"?<SetupLoading/>:<Notice tone="error">{ar?"تجهيز الفروع غير متاح حاليًا. أعد تحميل الحالة قبل المتابعة.":"Branch setup is unavailable. Reload its status before continuing."}</Notice>}
-          </>:<>
+        <><SetupNavigation labels={mCopy.steps} shortLabels={ar?["الشركة","الاشتراك","ساعات العمل","المعرفة","لغة الرد","واتساب","التجربة","المراجعة"]:["Company","Subscription","Hours","Knowledge","Reply language","WhatsApp","Trial","Review"]} done={effectiveSetupDone} step={step} locale={locale} onSelect={go}/><div className={styles.progress} aria-hidden="true"><div className={styles.progressFill} style={{width:`${Math.round(effectiveSetupDone.filter(Boolean).length/8*100)}%`}}/></div></>
+        <>
+        {true?<section className={styles.stepPanel} aria-label={ar?"إعدادات التجهيز":"Setup settings"}>
+          <>
           <div className={styles.stepHeading}>
-            {!smartOnboardingEnabled?<span className={styles.stepHeadingNumber}>{step+1}</span>:null}
+            <span className={styles.stepHeadingNumber}>{step+1}</span>
             <h2 className="app-title">{mCopy.steps[step]}</h2>
           </div>
           <p className={styles.stepDescription}>{mCopy.stepBodies[step]}</p>
           {step === 6 ? <Notice tone="info">{ar ? "نجاح الاختبار علامة محلية مرتبطة بمعرفة النشاط، ولا يُحتسب كتفعيل محفوظ أو دليل جودة شامل." : "A successful trial is local progress bound to company knowledge. It is not persisted activation or comprehensive quality evidence."}</Notice> : null}
 
           <div className={styles.stepBody}>
-            {smartOnboardingEnabled&&savedCompany&&[0,2,4].includes(step)?<SmartSettingsPanel key={`${userId}:${companyId}:${step}`} userId={userId} company={savedCompany} locale={locale} section={step===2?'hours':step===4?'language':'profile'} onSaved={adoptCompany} onClose={closePanel}/>:null}
-            {/* Milestone 0: Company Profile */}
-            {!smartOnboardingEnabled&&step === 0 ? (
+                        {/* Milestone 0: Company Profile */}
+            {step === 0 ? (
               <BusinessStep
                 companyVersion={savedCompany?.version}
                 key={`${userId}:${companyId ?? "new"}`}
@@ -583,13 +518,13 @@ export function SetupWizard({
                 planHref={setupSubscriptionReturn(preferredNext)}
                 onBack={() => go(0)}
                 onNext={() => {
-                  go(smartOnboardingEnabled?7:2);
+                  go(2);
                 }}
               />
             ) : null}
 
             {/* Milestone 2: Working Hours & Operations */}
-            {!smartOnboardingEnabled&&step === 2 ? (
+            {step === 2 ? (
               <HoursStep
                 key={`${userId}:${companyId ?? "new"}`}
                 userId={userId}
@@ -628,7 +563,7 @@ export function SetupWizard({
                 {companyId ? (
                   <>
                   <BusinessSetupGuidance type={draft.business.type} ar={ar}/>
-                  {masterJourneyEnabled&&<KnowledgeImportReview companyId={companyId} expectedUserId={userId} canWrite ar={ar} onApplied={()=>router.refresh()}/>}
+                  
                   {masterJourneyEnabled&&setupFileContextError?<Notice tone="error"><p>{ar?'تعذّر تحميل حالة رفع الملفات. يمكنك متابعة بقية الإعدادات.':'File upload status could not be loaded. Other settings remain available.'}</p><Button variant="secondary" onClick={()=>{const scope=renderedScope.current;void readSetupFileContext({expectedUserId:userId,expectedCompanyId:companyId}).then(result=>{if(renderedScope.current!==scope)return;setSetupFileContextError(result.ok?null:result.code);if(result.ok)setDraftRecord(result.data);});}}>{ar?'إعادة المحاولة':'Retry'}</Button></Notice>:null}
                   {masterJourneyEnabled&&savedCompany&&!setupFileContextError&&(!draftRecord?.draftId||draftRecord.state!=='active')?<SetupFilePreparation userId={userId} company={savedCompany} ar={ar} onPrepared={record=>setDraftRecord(record)}/>:null}
                   <KnowledgeEditor
@@ -653,7 +588,7 @@ export function SetupWizard({
             ) : null}
 
             {/* Milestone 4: Noura AI Persona & Tone */}
-            {!smartOnboardingEnabled&&step === 4 ? (
+            {step === 4 ? (
               <PersonaStep
                 key={`${userId}:${companyId ?? "new"}`}
                 userId={userId}
@@ -765,13 +700,13 @@ export function SetupWizard({
             {step === 7 ? (
               <ActivationStep
                 leaveGuardRef={leaveGuardRef}
-                onBack={() => go(smartOnboardingEnabled?1:6)}
-                pageScope={smartOnboardingEnabled}
-                subscriptionActive={smart.cards.some(card=>card.id==="subscription"&&card.status==="active")}
+                onBack={() => go(6)}
+                pageScope={false}
+                subscriptionActive={readiness?.items.some(i => i.id === "subscription" && i.detail === "subscription_active" && i.tone === "complete") ?? false}
                 onDone={() => router.refresh()}
                 setupDone={effectiveSetupDone}
-                selectedChannels={smartOnboardingEnabled?smart.selectedChannels:null}
-                reviewConfigured={!smartOnboardingEnabled||smartRead?.reviewPolicyEnabled===true}
+                selectedChannels={null}
+                reviewConfigured={true}
                 hoursRequired={!masterJourneyEnabled}
                 businessName={savedCompany?.display_name ?? ""}
                 sectorLabel={
@@ -787,9 +722,9 @@ export function SetupWizard({
               />
             ) : null}
           </div>
-          </>}
+          </>
         </section>:null}
-        </SmartSetupCards>
+        </>
       </div>
     </main>
   );

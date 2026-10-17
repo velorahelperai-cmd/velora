@@ -3,6 +3,7 @@ import { authFlowHref, savePendingSignup, readPendingSignup, clearPendingSignup 
 import {DiagnosticHint} from "./diagnostic-hint";
 import {beginDiagnostic} from "@/lib/diagnostics/flow";
 import { normalizeEmailCode } from "@/lib/auth/email-code";
+import { createRecoveryReceipt } from "@/lib/auth/operation-recovery";
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -36,7 +37,7 @@ export function AuthShell({ title, body, children, footer }: { title: string; bo
   const tagline = landingCopy(locale).tagline;
   return (
     <main className="app-shell relative overflow-x-hidden px-4 py-6 pb-[max(6rem,env(safe-area-inset-bottom))]">
-      <div className="relative z-10 mx-auto flex max-w-[1100px] items-center justify-between gap-2">
+      <div className="relative z-20 mx-auto flex max-w-[1100px] items-center justify-between gap-2">
         <Link href="/" className="inline-flex min-h-11 min-w-0 items-center gap-2 text-xl font-bold sm:text-2xl">
           <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#38dc89] text-sm text-[#072317] sm:h-9 sm:w-9 sm:text-base">V</span>
           <span className="truncate">{copy.brand}</span>
@@ -174,13 +175,25 @@ export function SignupPage() {
     setFormError(null);setDiagnostic(null);
     if (Object.keys(next).length) return;
     void run(async () => {
+      const { ensureBrowserContinuity, clearAuthGestureNonce } = await import("@/lib/auth/browser-continuity");
+      const continuity = await ensureBrowserContinuity("signup");
+      if (!continuity.ok) {
+        setFormError(
+          continuity.code === "CONTINUITY_RECOVERY_REQUIRED"
+            ? copy.errors.continuityRecovery
+            : copy.errors.authFailed,
+        );
+        return;
+      }
       const result = await signUpWithEmail({
         name: form.name.trim(),
         email: form.email.trim(),
         password: form.password,
         confirmPassword: form.confirm,
         next: returnTo,
+        requestNonce: continuity.requestNonce,
       });
+      if (result.ok || result.code === "INVALID_INPUT" || result.code === "AUTH_ERROR") clearAuthGestureNonce(continuity.requestNonce);
       if (!result.ok) {
         setDiagnostic(result.diagnostic);setFormError(copy.errors.authFailed);
         return;
@@ -268,16 +281,36 @@ export function LoginPage() {
     if (Object.keys(next).length) return;
     void run(async () => {
       const trace=beginDiagnostic("auth_login");trace.stage("provider");
-      // Browser Auth coordinates cookies and broadcasts account changes to other tabs.
-      const {createClient}=await import("@/lib/supabase/client");
-      const {error:authError}=await createClient().auth.signInWithPassword({email:form.email.trim().toLowerCase(),password:form.password});
-      if(authError){setDiagnostic(trace.finish("AUTH_ERROR"));setFormError(copy.errors.authFailed);return;}
-      trace.stage("access");const result=await resolvePostAuthPath(returnTo);
+      const { ensureBrowserContinuity, clearAuthGestureNonce } = await import("@/lib/auth/browser-continuity");
+      const continuity = await ensureBrowserContinuity("login");
+      if (!continuity.ok) {
+        setFormError(
+          continuity.code === "CONTINUITY_RECOVERY_REQUIRED"
+            ? copy.errors.continuityRecovery
+            : copy.errors.authFailed,
+        );
+        return;
+      }
+      // WP01A: password login goes through the server session broker (opaque handles).
+      const {signInWithEmail}=await import("@/lib/tenancy/actions");
+      const admitted=await signInWithEmail({
+        email:form.email.trim().toLowerCase(),
+        password:form.password,
+        next:returnTo,
+        requestNonce: continuity.requestNonce,
+      });
+      if (admitted.ok || admitted.code === "INVALID_INPUT" || admitted.code === "AUTH_ERROR") clearAuthGestureNonce(continuity.requestNonce);
+      if(!admitted.ok){setDiagnostic(admitted.diagnostic??trace.finish("AUTH_ERROR"));setFormError(copy.errors.authFailed);return;}
+      trace.stage("access");
+      const result=admitted.data?.next
+        ? {ok:true as const,data:{next:admitted.data.next},diagnostic:admitted.diagnostic}
+        : await resolvePostAuthPath(returnTo);
       if (!result.ok) {
         setDiagnostic(result.diagnostic);setFormError(copy.errors.authFailed);
         return;
       }
-      trace.stage("handoff");trace.finish("OK");clearPendingSignup();navigate(result.data.next);
+      trace.stage("handoff");trace.finish("OK");clearPendingSignup();
+      navigate(result.data.next);
     }).catch(() => setFormError(copy.errors.authFailed));
   }
 
@@ -337,10 +370,9 @@ export function VerifyEmailPage() {
           return;
         }
         try {
-          const { createClient } = await import("@/lib/supabase/client");
-          const supabase = createClient();
-          const { data } = await supabase.auth.getUser();
-          setRegisteredEmail((data.user?.email ?? readPendingSignup()?.email ?? "").toLowerCase());
+          const { getAccountProfile } = await import("@/lib/tenancy/actions");
+          const profile = await getAccountProfile();
+          setRegisteredEmail((profile.ok ? profile.data.email : readPendingSignup()?.email ?? "").toLowerCase());
         } catch {
           setRegisteredEmail(readPendingSignup()?.email??"");
         } finally {
@@ -377,7 +409,23 @@ export function VerifyEmailPage() {
     setCodeInvalid(false);
     void run(async () => {
       try {
-        const result = await verifyEmailCode({ email: registeredEmail, code: normalized, next: pendingReturn });
+        const { ensureBrowserContinuity, clearAuthGestureNonce } = await import("@/lib/auth/browser-continuity");
+        const continuity = await ensureBrowserContinuity("verify_email");
+        if (!continuity.ok) {
+          setError(
+            continuity.code === "CONTINUITY_RECOVERY_REQUIRED"
+              ? copy.errors.continuityRecovery
+              : copy.auth.verificationUnavailable,
+          );
+          return;
+        }
+        const result = await verifyEmailCode({
+          email: registeredEmail,
+          code: normalized,
+          next: pendingReturn,
+          requestNonce: continuity.requestNonce,
+        });
+        if (result.ok || result.code === "INVALID_INPUT" || result.code === "AUTH_ERROR") clearAuthGestureNonce(continuity.requestNonce);
         setDiagnostic(result.diagnostic);if (!result.ok) {
           setError(result.code === "INVALID_INPUT" ? copy.auth.verificationCodeFormat : verificationMessage(result.message));
           return;
@@ -502,6 +550,15 @@ export function VerifyEmailPage() {
   );
 }
 
+async function requestBoundPasswordReset(email: string) {
+ const {ensureBrowserContinuity,clearAuthGestureNonce}=await import("@/lib/auth/browser-continuity");
+ const continuity=await ensureBrowserContinuity("password_reset");
+ if(!continuity.ok)return {ok:false} as const;
+ const result=await requestPasswordReset(email,continuity.requestNonce);
+ if(result.ok)clearAuthGestureNonce(continuity.requestNonce);
+ return result;
+}
+
 export function ForgotPasswordPage() {
   const copy = useAppCopy();
   const [email, setEmail] = useState("");
@@ -538,7 +595,7 @@ export function ForgotPasswordPage() {
               if (busy || !isEmail(email) || cooldown > 0) return;
               setFormError(null);
               void run(async () => {
-                const result = await requestPasswordReset(email);
+                const result = await requestBoundPasswordReset(email);
                 if (!result.ok) { setFormError(copy.errors.authFailed); return; }
                 setCooldown(RESEND_COOLDOWN_SEC);
               }).catch(() => setFormError(copy.errors.authFailed));
@@ -559,7 +616,7 @@ export function ForgotPasswordPage() {
             setError(undefined);
             setFormError(null);
             void run(async () => {
-              const result = await requestPasswordReset(email);
+              const result = await requestBoundPasswordReset(email);
               if (!result.ok) { setFormError(copy.errors.authFailed); return; }
               setSent(true);
               setCooldown(RESEND_COOLDOWN_SEC);
@@ -599,11 +656,10 @@ export function CompleteProfilePage() {
     const frame = window.requestAnimationFrame(() => {
       void (async () => {
         try {
-          const { createClient } = await import("@/lib/supabase/client");
-          const supabase = createClient();
-          const { data } = await supabase.auth.getUser();
-          if (cancelled || !isCurrentProfileUser(nameOwner) || data.user?.id !== nameOwner) return;
-          const meta = String(data.user?.user_metadata?.full_name || data.user?.user_metadata?.name || "").trim();
+          const { getAccountProfile } = await import("@/lib/tenancy/actions");
+          const profile = await getAccountProfile();
+          if (cancelled || !isCurrentProfileUser(nameOwner) || !profile.ok || profile.data.userId !== nameOwner) return;
+          const meta = String(profile.data.fullName || "").trim();
           if (meta) setName(meta);
         } catch {
           /* ignore */
@@ -669,12 +725,14 @@ export function ResetPasswordPage() {
     const frame = window.requestAnimationFrame(() => {
       void (async () => {
         try {
-          const { createClient } = await import("@/lib/supabase/client");
-          const supabase = createClient();
-          const { data, error } = await supabase.auth.getUser();
-          if (error && error.name !== "AuthSessionMissingError") { setReady("unavailable"); return; }
-          setExpectedUserId(data.user?.id ?? null);
-          setReady(data.user ? "ok" : "missing");
+          const { readBrokerSessionStatus } = await import("@/lib/auth/broker-actions");
+          const status = await readBrokerSessionStatus();
+          if (!status.ok) {
+            setReady(status.code === "UNAVAILABLE" ? "unavailable" : "missing");
+            return;
+          }
+          setExpectedUserId(status.userId);
+          setReady("ok");
         } catch {
           setReady("unavailable");
         }
@@ -709,10 +767,39 @@ export function ResetPasswordPage() {
             if (Object.keys(next).length) return;
             void run(async () => {
               if (!expectedUserId) return;
-              const result = await updatePassword(form.password,expectedUserId);
-              if (session && !session.isCurrentUser(expectedUserId)) return;
+              const boundaryFp = session?.boundaryFingerprint ?? null;
+              if (!boundaryFp || session?.status !== "ready" || !session.hasCurrentUser()) {
+                setFormError(copy.errors.authFailed);
+                return;
+              }
+              const receipt = createRecoveryReceipt(expectedUserId, boundaryFp, "password_revoke");
+              let result: Awaited<ReturnType<typeof updatePassword>>;
+              try {
+                result = await updatePassword(form.password, expectedUserId, boundaryFp, receipt.operationKey);
+              } catch {
+                const live = session.liveSnapshot();
+                if (live.ready && live.userId === expectedUserId && live.boundaryFingerprint === boundaryFp) {
+                  setForm({ password: "", confirm: "" });
+                  session.recoverOperation?.(receipt);
+                }
+                return;
+              }
+              // Live tip after await — refs, not stale React boundary (C4-05).
+              const live = session.liveSnapshot?.();
+              if (
+                !live?.ready ||
+                live.userId !== expectedUserId ||
+                live.boundaryFingerprint !== boundaryFp ||
+                !session.isCurrentUser(expectedUserId)
+              ) {
+                return;
+              }
               if (!result.ok) {
                 setDiagnostic(result.diagnostic);
+                if (result.data?.operationId) {
+                  setForm({ password: "", confirm: "" });
+                  session.recoverOperation?.(receipt);
+                }
                 setFormError(result.message==='PASSWORD_CHANGED_SESSION_REVOCATION_PENDING'?(locale==='ar'?'تغيّرت كلمة المرور، لكن لم نتأكد من إغلاق كل الجلسات. سجّل خروجك وتواصل مع الدعم لإكمال التحقق.':'Your password changed, but closing every session could not be confirmed. Sign out and contact support to complete verification.'):copy.errors.authFailed);
                 return;
               }
@@ -754,6 +841,8 @@ export function AcceptInvitePage() {
   const { busy, run } = useAction();
   const [loaded, setLoaded] = useState<{ token: string; invitation?: StaffInvitationView; code?: string } | null>(null);
   const [acceptError, setAcceptError] = useState<string | null>(null);
+  const [acceptedToken, setAcceptedToken] = useState<string | null>(null);
+  const accepted = acceptedToken === token;
   const invitation = loaded?.token === token ? loaded.invitation : undefined;
   const loading = loaded?.token !== token;
   const signedIn = session?.status === "ready" && Boolean(session.identity);
@@ -784,7 +873,8 @@ export function AcceptInvitePage() {
       <div className="grid gap-4">
         {loading ? <p className="text-sm text-[var(--color-muted-on-dark)]" aria-busy="true">{copy.loading}</p> : null}
         {!loading && !invitation ? <Notice tone="error">{errorText(loaded?.code ?? "INVITE_INVALID")}</Notice> : null}
-        {acceptError ? <Notice tone="error">{acceptError}</Notice> : null}
+        {accepted ? <Notice tone="success">{copy.auth.inviteAccepted}</Notice> : null}
+        {acceptError ? <Notice tone={accepted ? "warn" : "error"}>{acceptError}</Notice> : null}
         {invitation ? (
           <>
             <div className="grid gap-2 rounded-xl border border-[color:var(--color-border-soft)] bg-[var(--color-hover-wash)] p-4 text-sm">
@@ -794,16 +884,21 @@ export function AcceptInvitePage() {
               <p className="text-xs text-[var(--color-muted-soft)]">{locale === "ar" ? "صالحة حتى" : "Valid until"}: {new Date(invitation.expiresAt).toLocaleString(locale === "ar" ? "ar-OM" : "en-OM")}</p>
             </div>
             {emailConfirmed ? (
-              <Button busy={busy} busyLabel={copy.loading} className="w-full" onClick={() => {
-                if (busy) return;
+              <Button busy={busy} disabled={accepted} busyLabel={copy.loading} className="w-full" onClick={() => {
+                if (busy || accepted) return;
                 setAcceptError(null);
+                let committed = false;
                 void run(async () => {
                   const result = await acceptStaffInvitation(token);
                   if (!result.ok) { setAcceptError(errorText(result.code)); return; }
+                  committed = true;
+                  setAcceptedToken(token);
                   try { await session?.refresh(); } catch { /* Membership acceptance is already confirmed. */ }
                   router.replace("/app/conversations");
                   router.refresh();
-                }).catch(() => setAcceptError(errorText("UNAVAILABLE")));
+                }).catch(() => setAcceptError(committed
+                  ? (locale === "ar" ? "تم قبول الدعوة وحفظ العضوية. تعذر تحديث الوصول؛ افتح مساحة العمل مجددًا." : "Invitation accepted and membership saved. Access refresh is unavailable; open the workspace again.")
+                  : errorText("UNAVAILABLE")));
               }}>{copy.auth.acceptInvite}</Button>
             ) : signedIn ? (
               <>

@@ -1,0 +1,3 @@
+title = "Velora pinned default Gitleaks rules; no historical baseline waiver"
+[extend]
+useDefault = true

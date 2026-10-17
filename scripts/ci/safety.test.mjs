@@ -26,23 +26,44 @@ test("any Next runtime env file aborts without reading its contents", () => {
     }
   } finally { rmSync(root, { recursive: true }); }
 });
-test("aggregate requires every expected job to succeed; skipped, cancelled, failed, missing deny", () => {
-  assert.doesNotThrow(() => assertRequiredResults({ quality: { result: "success" }, security: { result: "success" } }));
+test("aggregate requires quality+security+secrets; skipped, cancelled, failed, missing deny", () => {
+  const success = {
+    quality: { result: "success" },
+    security: { result: "success" },
+    secrets: { result: "success" },
+  };
+  assert.doesNotThrow(() => assertRequiredResults(success));
   for (const result of ["failure", "skipped", "cancelled", undefined]) {
-    assert.throws(() => assertRequiredResults({ quality: { result }, security: { result: "success" } }), /CI_REQUIRED_CHECK_FAILED/);
+    assert.throws(
+      () => assertRequiredResults({ ...success, quality: { result } }),
+      /CI_REQUIRED_CHECK_FAILED/,
+    );
   }
+  assert.throws(
+    () => assertRequiredResults({ quality: { result: "success" }, security: { result: "success" } }),
+    /CI_REQUIRED_CHECK_FAILED_secrets/,
+  );
   assert.throws(() => assertRequiredResults({ quality: { result: "success" } }), /CI_REQUIRED_CHECK_FAILED/);
   assert.throws(() => assertRequiredResults({}), /CI_REQUIRED_CHECK_FAILED/);
-  assert.throws(() => assertRequiredResults({ quality: { result: "success" }, security: { result: "success" }, future: { result: "failure" } }), /CI_REQUIRED_CHECK_FAILED/);
+  assert.throws(
+    () => assertRequiredResults({ ...success, future: { result: "failure" } }),
+    /CI_REQUIRED_CHECK_FAILED/,
+  );
 });
-test("PR workflow includes every gate without path skips, secrets or bypasses", () => {
+test("PR workflow includes quality, security, and secrets gates without path skips or bypasses", () => {
   const workflow = readFileSync(".github/workflows/quality-gates.yml", "utf8");
   assert.match(workflow, /pull_request:\s+branches: \[main\]/);
   assert.match(workflow, /merge_group:/);
   assert.match(workflow, /check: \[typecheck, lint, unit, contracts, build, safety\]/);
-  assert.match(workflow, /name: quality-gate[\s\S]*if: \$\{\{ always\(\) \}\}[\s\S]*needs: \[quality, security\]/);
+  assert.match(workflow, /name: secrets \/ pinned Gitleaks/);
+  assert.match(
+    workflow,
+    /name: quality-gate[\s\S]*if: \$\{\{ always\(\) \}\}[\s\S]*needs: \[quality, security, secrets\]/,
+  );
   assert.match(workflow, /npm audit --audit-level=moderate/);
-  assert.doesNotMatch(workflow, /pull_request_target|paths-ignore:|continue-on-error:|secrets\.|contents: write|\|\| true/);
+  assert.match(workflow, /VELORA_CI_RECEIPT_DIR:\s*\$\{\{\s*runner\.temp\s*\}\}\/velora-ci-receipts/);
+  // Deny GitHub secrets.* context / bypass patterns — job name `secrets` is required.
+  assert.doesNotMatch(workflow, /upload-artifact|pull_request_target|paths-ignore:|continue-on-error:|secrets\.|contents: write|\|\| true/);
   for (const action of workflow.matchAll(/uses: ([^\s]+)@([^\s]+)/g)) assert.match(action[2], /^[a-f0-9]{40}$/);
 });
 test("preload denies real fetch, HTTPS, TCP, TLS, UDP and DNS before network execution", () => {

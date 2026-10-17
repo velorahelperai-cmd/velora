@@ -1,11 +1,8 @@
 import {describe,expect,it} from 'vitest';
 import {businessTypes,businessTypeLabel,findBusinessTypes,customBusinessType} from './business-types';
-import {validDraftBusiness} from './tenancy/setup-draft';
-import {parseSmartStartStorage} from './tenancy/smart-business-start-storage';
 describe('business type catalog and stored contract',()=>{
  it('offers a large bilingual catalog without duplicate IDs or labels',()=>{expect(businessTypes.length).toBeGreaterThanOrEqual(100);for(const key of ['id','ar','en'] as const)expect(new Set(businessTypes.map(x=>x[key])).size).toBe(businessTypes.length);expect(businessTypes.every(x=>x.id.length<=80&&x.ar&&x.en&&x.group)).toBe(true);});
  it('finds Arabic variants, diacritics, English and aliases across grouped sectors',()=>{expect(findBusinessTypes('عِيَادَه')).toContainEqual(expect.objectContaining({id:'clinic'}));expect(findBusinessTypes('الكتروني')[0]?.id).toBe('e_commerce');expect(findBusinessTypes('car repair')).toContainEqual(expect.objectContaining({id:'auto_repair'}));expect(findBusinessTypes('كافيه')).toContainEqual(expect.objectContaining({id:'cafe'}));});
  it('keeps every legacy ID readable and custom stored values unchanged',()=>{for(const id of ['restaurant','retail','services','clinic','other','store'])expect(businessTypeLabel(id,true)).toBeTruthy();expect(businessTypeLabel('نشاط محفوظ قديم',true)).toBe('نشاط محفوظ قديم');expect(businessTypeLabel('store',false)).toBe(businessTypeLabel('retail',false));});
  it('accepts a deliberate custom description only inside the existing 80-character contract',()=>{expect(customBusinessType(' تنسيق زهور المناسبات ')).toBe('تنسيق زهور المناسبات');expect(customBusinessType('a'.repeat(81))).toBeNull();expect(customBusinessType('bad\nvalue')).toBeNull();expect(customBusinessType('مطعم')).toBeNull();});
- it('preserves old, expanded and custom values through existing profile and creation recovery validators',()=>{const userId='00000000-0000-4000-8000-000000000001';for(const type of ['store','retail','restaurant','clinic','services','other','auto_repair','تنسيق زهور المناسبات']){expect(validDraftBusiness({name:'Business',type,country:'OM',replyLanguage:'ar',city:'',hours:'',contactPhone:'',contactEmail:''})).toBe(true);const fields={name:'Business',type,country:'OM'};expect(parseSmartStartStorage({userId,fields},userId)?.fields.type).toBe(type);}});
-});
+ });

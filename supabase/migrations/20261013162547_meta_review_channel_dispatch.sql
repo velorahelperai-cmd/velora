@@ -1,10 +1,16 @@
+-- Replace nonexistent legacy kernel reference with the exact canonical private core (same853cf body).
 begin;
 set local lock_timeout='2s';
 set local statement_timeout='30s';
 do $$begin
- if (select md5(replace(prosrc,chr(13),'')) from pg_proc where oid=to_regprocedure('private.wa_claim_pre_fixed_ack(uuid,uuid,integer)')) is distinct from '853cf92ee5ab3e4fae74e0b4c5f4ef0e'
+ if (select md5(replace(prosrc,chr(13),'')) from pg_proc where oid=to_regprocedure('private.wa_claim_send_pre_integration(uuid,uuid,integer)')) is distinct from '853cf92ee5ab3e4fae74e0b4c5f4ef0e'
  or (select md5(replace(prosrc,chr(13),'')) from pg_proc where oid=to_regprocedure('private.wa_staff_session_authority(uuid,uuid,uuid,uuid)')) is distinct from 'fbb2385d31deacab2f65535b1b32da59'
- or (select md5(replace(prosrc,chr(13),'')) from pg_proc where oid=to_regprocedure('private.wa_staff_dispatch_provenance()')) is distinct from 'd4968e4b3c62e1cb75107c2f3013bdf2'
+ or (select md5(replace(prosrc,chr(13),'')) from pg_proc where oid=to_regprocedure('private.wa_staff_dispatch_provenance()')) is distinct from '6a606d8cb57d1e9d504b6cc7b5b0755d'
+ or not exists(select 1 from pg_proc where oid=to_regprocedure('private.wa_claim_send_pre_integration(uuid,uuid,integer)')
+  and prosecdef and pg_get_userbyid(proowner)='postgres' and array_to_string(proconfig,',')='search_path=""')
+ or has_function_privilege('anon','private.wa_claim_send_pre_integration(uuid,uuid,integer)','EXECUTE')
+ or has_function_privilege('authenticated','private.wa_claim_send_pre_integration(uuid,uuid,integer)','EXECUTE')
+ or has_function_privilege('service_role','private.wa_claim_send_pre_integration(uuid,uuid,integer)','EXECUTE')
  or not exists(select 1 from pg_trigger where tgrelid='public.whatsapp_send_intents'::regclass
   and tgfoid='private.wa_staff_dispatch_provenance()'::regprocedure and not tgisinternal and tgenabled in ('O','A'))
  then raise exception 'REVIEW_DISPATCH_KERNEL_MISMATCH' using errcode='55000';end if;
@@ -93,14 +99,14 @@ declare i public.whatsapp_send_intents%rowtype;g private.channel_review_grants%r
  select * into i from public.whatsapp_send_intents where id=p_intent_id for update nowait;
  if not found or i.sender_kind<>'staff' or i.actor_user_id is distinct from p_actor_user_id or i.staff_actor_session_id is null
  or i.link_id is not null or i.staff_claim_plan_version_id is not null or i.staff_claim_paid_through is not null then return jsonb_build_object('ok',false,'code','forbidden');end if;
- if i.outcome<>'ready' then return private.wa_claim_pre_fixed_ack(p_intent_id,p_actor_user_id,90);end if;
+ if i.outcome<>'ready' then return private.wa_claim_send_pre_integration(p_intent_id,p_actor_user_id,90);end if;
  select * into g from private.channel_review_grants where id=p_grant_id and channel='whatsapp' and owner_id=p_actor_user_id
  and company_id=i.company_id and asset_id=i.phone_number_id and i.recipient_wa_id=any(recipient_ids)
  and revoked_at is null and expires_at>clock_timestamp() for update nowait;
  if not found then return jsonb_build_object('ok',false,'code','subscription_inactive');end if;
  perform private.review_whatsapp_window(g.id,i.conversation_id);
  -- The established provider-free core retains conversation/link/capability/attempt/replay guards.
- r:=private.wa_claim_pre_fixed_ack(p_intent_id,p_actor_user_id,90);
+ r:=private.wa_claim_send_pre_integration(p_intent_id,p_actor_user_id,90);
  if r->>'ok'='true' and r->>'claimed'='true' then
   proof:=private.reserve_channel_review(g.id,i.company_id,p_actor_user_id,'whatsapp',i.phone_number_id,i.recipient_wa_id,i.id,(r->>'attempt_token')::uuid);
   perform set_config('velora.review_claim_binding','1',true);

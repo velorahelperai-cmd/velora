@@ -1,0 +1,12 @@
+import {expect,it,vi} from 'vitest';
+const f=vi.hoisted(()=>({read:vi.fn(()=>{throw new Error('unpaid draft must not be read');})}));
+vi.mock('next/headers',()=>({headers:async()=>new Headers()}));
+vi.mock('@/lib/tenancy/access',()=>({getCompanyAccess:async()=>({ok:true,context:{userId:'fixture',company:null,needsCompanyContext:false}}),loginPathForReturn:()=>'/login'}));
+vi.mock('@/lib/tenancy/setup-draft-actions',()=>({readSetupFileContext:f.read}));
+vi.mock('@/lib/master-journey/rollout',()=>({masterJourneyEnabled:()=>false}));
+vi.mock('@/components/app/setup-wizard',()=>({SetupWizard:()=>null}));
+vi.mock('@/lib/knowledge/actions',()=>({listKnowledgeSources:vi.fn()}));
+vi.mock('@/lib/tenancy/actions',()=>({getCompanyReviewRequest:vi.fn()}));
+import Page from './page';
+import {PrepaymentPreparation} from '@/components/app/prepayment-preparation';
+it('routes a verified actor without a company to blank preparation before reading drafts',async()=>{const result=await Page();expect(result.type).toBe(PrepaymentPreparation);expect(result.props).toMatchObject({userId:'fixture'});expect(f.read).not.toHaveBeenCalled();});
