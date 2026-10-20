@@ -1,5 +1,5 @@
-.page{box-sizing:border-box;width:100%;max-width:1240px;margin:0 auto;padding:24px clamp(16px,4vw,40px) 48px;color:#0b3d44;background:linear-gradient(180deg,#f6fafb 0%,#fff 60%);font-family:var(--font-en,"IBM Plex Sans",system-ui,sans-serif);overflow-wrap:anywhere}
-.page[dir=rtl]{font-family:var(--font-ar,"IBM Plex Sans Arabic",Tahoma,sans-serif)}
+.page{box-sizing:border-box;width:100%;max-width:1240px;margin:0 auto;padding:24px clamp(16px,4vw,40px) 48px;color:#0b3d44;background:linear-gradient(180deg,#f6fafb 0%,#fff 60%);font-family:var(--font-en,"Tajawal",system-ui,sans-serif);overflow-wrap:anywhere}
+.page[dir=rtl]{font-family:var(--font-ar,"Tajawal",Tahoma,sans-serif)}
 .page *,.page *::before,.page *::after{box-sizing:border-box}
 .page h1,.page h2,.page h3,.page p,.page ul,.page ol{margin:0;padding:0}
 .page ul,.page ol{list-style:none}
@@ -165,7 +165,7 @@
 .stepper{margin-block-end:24px}
 
 /* Existing-reference review polish; shared stepper placement/appearance stays unchanged. */
-.page{padding-block:14px 24px}.page[dir=rtl]{font-family:"IBM Plex Sans Arabic",Tahoma,sans-serif}
+.page{padding-block:14px 24px}.page[dir=rtl]{font-family:"Tajawal",Tahoma,sans-serif}
 .head{margin-block-end:18px}.head h1{font-size:clamp(28px,3vw,40px);font-weight:700;line-height:1.3}.head p{font-size:16px;line-height:1.6}
 .layout{align-items:start;gap:18px}.card{padding:20px;border-radius:18px}.card h2{font-size:24px;font-weight:700}.muted{font-size:14px;line-height:1.6}
 .branches{gap:12px;margin-block:16px}.branch{grid-template-columns:minmax(100px,150px) minmax(0,1fr);gap:14px;padding:12px;border-radius:15px}.branchBody{gap:10px}.branchTitle h3{font-size:21px;font-weight:700}.chip{font-size:18px;padding:5px 12px}.stats strong{font-size:19px;font-weight:700}.stats li{font-size:13px}.footStrip{padding-block-start:14px;font-size:15px}

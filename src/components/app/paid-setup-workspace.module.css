@@ -1,5 +1,5 @@
-.workspace{box-sizing:border-box;max-width:1280px;margin:auto;padding:24px;color:#103047;font:15px/1.6 var(--font-en,"IBM Plex Sans",sans-serif);overflow-wrap:anywhere}
-.workspace[dir=rtl]{font-family:"IBM Plex Sans Arabic",Tahoma,sans-serif}.workspace *{box-sizing:border-box}
+.workspace{box-sizing:border-box;max-width:1280px;margin:auto;padding:24px;color:#103047;font:15px/1.6 var(--font-en,"Tajawal",sans-serif);overflow-wrap:anywhere}
+.workspace[dir=rtl]{font-family:"Tajawal",Tahoma,sans-serif}.workspace *{box-sizing:border-box}
 .header{margin-bottom:20px}.header h1{font-size:28px;color:#007f98;margin:0}.header p{color:#536b79;margin:4px 0}
 .layout{display:grid;grid-template-columns:260px minmax(0,1fr);grid-template-rows:max-content 1fr;gap:20px;align-items:start}
 .sidebar,.content,.persona,.empty{background:white;border:1px solid #e0eaf0;border-radius:16px;box-shadow:0 8px 28px #10304706;min-width:0}

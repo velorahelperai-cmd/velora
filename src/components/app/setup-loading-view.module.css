@@ -7,7 +7,7 @@
 }
 .shell[dir="rtl"] { font-family: "Tajawal", Tahoma, sans-serif; }
 .content { max-width: 1100px; margin-inline: auto; }
-.brand { display: flex; align-items: center; gap: 10px; padding-block-end: 24px; border-block-end: 1px solid var(--service-line, #dce4eb); font-family: "Segoe UI", sans-serif; font-size: 25px; font-weight: 700; }
+.brand { display: flex; align-items: center; gap: 10px; padding-block-end: 24px; border-block-end: 1px solid var(--service-line, #dce4eb); font-family:var(--font-en); font-size: 25px; font-weight: 700; }
 .brand > span { display: grid; place-items: center; width: 36px; height: 36px; border: 1px solid var(--service-accent, #087e8b); border-radius: 11px; background: var(--service-surface, #fff); color: var(--service-accent, #087e8b); font-size: 20px; }
 .shell h1 { margin: 32px 0 16px; font-size: clamp(30px, 3vw, 38px); font-weight: 700; line-height: 1.45; letter-spacing: 0; }
 .status { display: flex; align-items: center; gap: 12px; font-size: 18px; line-height: 1.75; font-weight: 500; }

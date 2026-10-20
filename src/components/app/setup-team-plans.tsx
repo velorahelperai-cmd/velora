@@ -456,6 +456,7 @@ export function SetupTeamPlans({
         ) : null}
         <div className={styles.actions}>
           <button type="button" className={styles.back} data-plans-back="true" onClick={() => onBack()}>
+            <span aria-hidden="true">{ar ? "\u2192" : "\u2190"}</span>
             {t("رجوع لتعديل البيانات", "Back to edit details")}
           </button>
           <button type="button" className={styles.continue} data-plans-continue="true" onClick={continueLocal}>

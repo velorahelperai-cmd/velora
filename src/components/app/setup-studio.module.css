@@ -118,7 +118,7 @@
 .studio:has([data-order-review]) [data-order-review]>nav {position:absolute;top:42px;left:50%;transform:translateX(-50%);width:min(52%,600px)}
 
 /* User-approved preparation detail; intentionally excludes plans, review and homepage. */
-.studio[dir="rtl"]:has(.shell) {font-family:"IBM Plex Sans Arabic",Tahoma,sans-serif;font-synthesis:none}
+.studio[dir="rtl"]:has(.shell) {font-family:"Tajawal",Tahoma,sans-serif;font-synthesis:none}
 .headlineAccent {color:var(--studio-petrol)}
 
 
@@ -254,7 +254,7 @@
 .substeps [aria-disabled="true"] {cursor:default}
 .sectorBlock {grid-column:1/-1;display:grid;gap:4px;min-width:0}
 .sectorLabel {margin:0;font-size:12px;font-weight:700;line-height:1.25;color:#163b5e}
-.sectorGrid {display:grid;grid-template-columns:repeat(7,max-content);justify-content:start;justify-items:start;align-items:start;gap:4px;min-width:0}
+.sectorGrid {display:flex;flex-wrap:wrap;justify-content:flex-start;align-items:flex-start;gap:4px;min-width:0;max-width:100%}
 .sectorChip {width:max-content;max-width:100%;height:auto;min-height:26px;border:1px solid #d5e4ee;border-radius:8px;background:#fff;padding:2px 8px;font:inherit;font-size:12px;line-height:1.2;color:#163b5e;cursor:pointer;text-align:center;overflow-wrap:anywhere}
 .sectorChip[aria-checked="true"] {border-color:#8fd0dc;background:#e7f6f8;color:#006c82;font-weight:700}
 .legacyType {margin:0;font-size:12px;line-height:1.3;color:var(--studio-muted);overflow-wrap:anywhere}
@@ -266,7 +266,6 @@
 .siteNote,.siteCard .error {margin:0;font-size:11px;line-height:1.3;color:var(--studio-muted)}
 .siteCard .error {color:var(--studio-danger)}
 @media(max-width:767px){
- .sectorGrid {display:flex;flex-wrap:wrap;justify-content:flex-start;align-items:flex-start;gap:4px;min-width:0;max-width:100%}
  .sectorChip,.siteToggle {min-height:40px;padding:6px 8px;font-size:13px}
  .identityGrid .siteCard input {min-height:40px;padding:6px 8px;font-size:14px}
 }
@@ -275,6 +274,13 @@
 .stepCard h2 {margin:0;max-width:100%;font-size:clamp(18px,3vw,24px);line-height:1.3;color:#12355b;overflow-wrap:anywhere}
 .stepCard p {margin:0;color:var(--studio-muted);overflow-wrap:anywhere}
 .choiceGrid {display:flex;flex-wrap:wrap;gap:8px;min-width:0;border:0;margin:0;padding:0}
+.stepCard[data-setup-step="goals"] .choiceGrid>p{flex:0 0 100%;width:100%;line-height:1.55}
+.stepCard[data-setup-step="goals"] .choiceGrid>p:first-child{color:var(--studio-ink);font-weight:700}
+.stepCard[data-setup-step="goals"] .choiceGrid{justify-content:flex-start;align-items:flex-start;margin-block:4px 12px}
+.stepCard[data-setup-step="goals"] .choiceGrid>button{flex:0 1 auto;line-height:1.5;text-align:start}
+.stepCard[data-setup-step="goals"] .choiceGrid>button:is([aria-checked="true"],[aria-pressed="true"]){border-color:#007f98;box-shadow:inset 0 0 0 1px #007f98}
+.stepCard[data-setup-step="goals"] .choiceGrid>button:focus-visible{outline:3px solid #007f98;outline-offset:3px}
+.stepCard[data-setup-step="goals"] .choiceGrid>button[aria-checked="true"] span{color:inherit}
 .channelGrid {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;min-width:0}
 .channelGrid .choice {display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-height:72px;padding:8px;text-align:center}
 .channelGrid .choice svg {flex:0 0 auto}
@@ -285,6 +291,12 @@
 .choice span {display:block;font-size:12px;color:var(--studio-muted)}
 .numericRange {direction:ltr;unicode-bidi:isolate;display:inline-block}
 .conditional,.stepCard select,.stepCard input {display:grid;gap:8px;min-width:0}
+.conditional h3{margin:4px 0;font-size:18px;color:var(--studio-ink)}
+.conditional>[role="radiogroup"]{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px;margin-block:4px 8px;min-width:0}
+.conditional>[role="radiogroup"]>span{flex:0 0 100%;font-weight:700;line-height:1.55;color:var(--studio-ink)}
+.conditional button{flex:0 1 auto;line-height:1.5;text-align:start}
+.conditional button[aria-checked="true"]{border-color:#007f98;box-shadow:inset 0 0 0 1px #007f98}
+.stepCard[data-setup-step="channels"] button:focus-visible{outline:3px solid #007f98;outline-offset:3px}
 .stepCard select,.stepCard input {width:100%;min-height:44px;font-size:16px}
 .stepActions {display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .stepActions .primary,.stepActions .back {flex:1 1 0;min-width:0;width:auto;height:auto;min-height:44px}

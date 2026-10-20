@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { AccountMenu, useOptionalAccountSession } from "./account-chrome";
 import { LangSwitch } from "./ui";
@@ -443,14 +443,24 @@ function StudioPreparationForm({
   const t = (a: string, e: string) => (ar ? a : e);
 
   /** Bound to this render's account and capture. Live session is read at call time. */
-  function actorNow() {
+  const actorNow = useCallback(() => {
     if (!captureToken) return false;
     if (!isCurrent()) return false;
     const live = liveSnapshot();
     if (!live.ready || live.userId !== userId) return false;
     if (!live.boundaryFingerprint || live.boundaryFingerprint !== captureToken) return false;
     return true;
-  }
+  }, [captureToken, isCurrent, liveSnapshot, userId]);
+  const currentActorValidator = useRef(actorNow);
+
+  // Refresh the live validator after a same-boundary identity/profile refresh.
+  // A real account or opaque-boundary change still fails actorNow and remounts.
+  useEffect(() => {
+    currentActorValidator.current = actorNow;
+    const journey = journeyRef.current;
+    if (!journey || !actorNow()) return;
+    journey.bindActor({ accountId: userId, captureToken, isCurrent: actorNow });
+  }, [actorNow, captureToken, userId]);
 
   function remember(journey: SetupPlanJourney) {
     setJourneyForView(journey);
@@ -654,6 +664,7 @@ function StudioPreparationForm({
     }
     journey.replacePreparation(preparation);
     const opened = journey.openPlans();
+    if (opened.ok && journey.snapshot().term === null) journey.setTerm("monthly");
     remember(journey);
     if (!opened.ok) {
       setErrors(opened.code === "SLOT_COUNT" ? ["slot-count"] : (opened.preparationErrors ?? [opened.code]));
@@ -706,7 +717,7 @@ function StudioPreparationForm({
     const pending = journey.confirmReview(accepted);
     remember(journey);
     const result = await pending;
-    if (actorNow() && journeyRef.current === journey && !journey.snapshot().discarded) remember(journey);
+    if (currentActorValidator.current() && journeyRef.current === journey && !journey.snapshot().discarded) remember(journey);
     return result;
   }
   function reviewBack(index = 0) {
