@@ -617,7 +617,10 @@ function openStudioPlans(): InspectedElement {
 }
 
 it("studio submit opens local plans for the entered branch and does not create an order", () => {
+  // A branch identity may contain the old price digits without displaying that price.
+  const uuid = vi.spyOn(crypto, "randomUUID").mockReturnValue("555fcd77-1101-4930-adf1-5e4b8b1cace5");
   const tree = openStudioPlans();
+  uuid.mockRestore();
   const plans = findByAttr(tree, "data-setup-team-plans", "true");
   expect(plans).toBeTruthy();
   expect(plans?.props["data-confirm-wired"]).toBe("false");
@@ -626,7 +629,15 @@ it("studio submit opens local plans for the entered branch and does not create a
   expect(blob).toContain("صور");
   expect(blob).toContain("لم يُختر بعد");
   expect(blob).not.toContain("confirmReview");
-  expect(blob).not.toContain("110");
+  const visibleText = (node: unknown): string => {
+    if (typeof node === "string" || typeof node === "number") return String(node);
+    if (Array.isArray(node)) return node.map(visibleText).join("");
+    if (node && typeof node === "object" && "props" in node) {
+      return visibleText((node as InspectedElement).props.children);
+    }
+    return "";
+  };
+  expect(visibleText(plans)).not.toContain("110");
   expect(findByAttr(tree, "data-setup-review", "true")).toBeNull();
   expect(findByAttr(tree, "data-setup-noura", "stub")).toBeNull();
   expect(findByAttr(tree, "data-setup-summary", "true")).toBeNull();
