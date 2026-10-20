@@ -15,10 +15,10 @@ function isProtectedPath(path: string): boolean {
 export async function proxy(request: NextRequest) {
   // Overwrite incoming hints with the actual validated request URL before forwarding.
   request.headers.set("x-velora-return-path", safeInternalPath(`${request.nextUrl.pathname}${request.nextUrl.search}`, ""));
-  const { response, session } = await updateSession(request);
   const path = request.nextUrl.pathname;
   const search = request.nextUrl.search;
-  if (!isProtectedPath(path)) return response;
+  if (!isProtectedPath(path)) return NextResponse.next({ request });
+  const { response, session } = await updateSession(request);
 
   // Confirmed missing session only → login with safe return. Settings/auth outages → AccessGate.
   if (session === "unavailable") {

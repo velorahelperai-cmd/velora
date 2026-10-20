@@ -1,8 +1,24 @@
+import { cache } from "react";
 import { cookies } from "next/headers";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
 import { createBrokerUserClient } from "@/lib/auth/broker";
 import { createProviderAuthClient } from "@/lib/auth/broker/provider";
+
+function snapshotCookies(cookieStore: Awaited<ReturnType<typeof cookies>>) {
+  const pairs = cookieStore.getAll().map((c) => ({ name: c.name, value: c.value }));
+  const key = pairs.map((c) => `${c.name}=${c.value}`).join("; ");
+  return { key, pairs };
+}
+
+// Per-request memoization keyed by current cookie state. Cookie mutations
+// produce a new key within the same request; React cache resets across requests.
+const resolveBrokerForCookieSnapshot = cache(
+  async (key: string, pairs: Array<{ name: string; value: string }>) => {
+    void key;
+    return createBrokerUserClient({ getAll: () => pairs });
+  },
+);
 
 /**
  * Request-scoped Supabase client backed by the WP01A session broker.
@@ -11,10 +27,8 @@ import { createProviderAuthClient } from "@/lib/auth/broker/provider";
  */
 export async function createClient(): Promise<SupabaseClient<Database>> {
   const cookieStore = await cookies();
-  const reader = {
-    getAll: () => cookieStore.getAll().map((c) => ({ name: c.name, value: c.value })),
-  };
-  const resolved = await createBrokerUserClient(reader);
+  const { key, pairs } = snapshotCookies(cookieStore);
+  const resolved = await resolveBrokerForCookieSnapshot(key, pairs);
   if (resolved.ok) return resolved.client;
 
   // Unauthenticated request path: memory-only provider client with no session.
@@ -41,5 +55,6 @@ export async function createBrokerBoundClient() {
       }
     },
   };
-  return { cookieStore, reader, writer, bound: await createBrokerUserClient(reader) };
+  const { key, pairs } = snapshotCookies(cookieStore);
+  return { cookieStore, reader, writer, bound: await resolveBrokerForCookieSnapshot(key, pairs) };
 }

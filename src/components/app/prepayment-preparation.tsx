@@ -46,7 +46,18 @@ export function PrepaymentPreparation({
   const session = useOptionalAccountSession();
   const { locale } = useDemo();
   if (session?.status !== "ready" || session.identity?.userId !== userId) {
-    return <p role="status">{locale === "ar" ? "جارٍ تأكيد الحساب…" : "Confirming your account…"}</p>;
+    return (
+      <main className="grid min-h-svh place-content-center bg-[#f6fafb] px-6 text-[#006c81]" data-service-theme="" dir={locale === "ar" ? "rtl" : "ltr"}>
+        <div className="flex flex-col items-center gap-6" role="status" aria-label={locale === "ar" ? "جارٍ تأكيد الحساب…" : "Confirming your account…"}>
+          <div className="flex items-center gap-3 text-3xl font-bold" dir="ltr">
+            <span className="grid h-12 w-12 place-items-center rounded-2xl border border-[#cce4e8] bg-white text-2xl shadow-sm" aria-hidden="true">V</span>
+            Velora
+          </div>
+          <span className="h-5 w-5 rounded-full border-2 border-[#cce4e8] border-t-[#007f98] motion-safe:animate-spin" aria-hidden="true" />
+          <span className="sr-only">{locale === "ar" ? "جارٍ تأكيد الحساب…" : "Confirming your account…"}</span>
+        </div>
+      </main>
+    );
   }
   const identity = session.identity;
   if (variant === "studio") {

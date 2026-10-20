@@ -1,5 +1,5 @@
 import "server-only";
-import type { CookieReader, CookieWriter } from "./cookies";
+import { selectCandidateHandles, type CookieReader, type CookieWriter } from "./cookies";
 import { readBoundBrowserContinuity } from "./continuity";
 import { resolveBrokerSession } from "./resolve";
 
@@ -24,6 +24,17 @@ export async function prepareBrokerAdmissionLineage(
   const bound = await readBoundBrowserContinuity(reader);
   if (!bound || bound.state !== "active") {
     return { ok: false, code: "CONTINUITY_REQUIRED" };
+  }
+
+  const candidates = selectCandidateHandles(reader);
+  if (!("failClosed" in candidates) && candidates.length === 0) {
+    return {
+      ok: true,
+      browserLineageId: bound.browserLineageId,
+      parentHandleHash: null,
+      bootstrapHash: bound.bootstrapHash,
+      attemptId: bound.browserLineageId,
+    };
   }
 
   const resolved = await resolveBrokerSession(reader, {

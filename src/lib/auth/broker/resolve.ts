@@ -94,7 +94,47 @@ export async function resolveBrokerSession(
   store: CookieReader,
   options?: BrokerResolveOptions,
 ): Promise<BrokerResolveResult> {
-  const capability = await probeBrokerCapability();
+  const selected = selectCandidateHandles(store);
+  if ("failClosed" in selected || selected.length === 0) {
+    const capability = await probeBrokerCapability();
+    if (!capability.ok) {
+      brokerLog("warn", "auth.broker.resolve.capability_blocked", {
+        error_code: "CAPABILITY_FAIL_CLOSED",
+        codes: capability.codes,
+      });
+      return { ok: false, code: "UNAVAILABLE" };
+    }
+    if ("failClosed" in selected) {
+      brokerLog("warn", "auth.broker.resolve.cookie_quota", { error_code: "HANDLE_COOKIE_LIMIT" });
+      return { ok: false, code: "UNAVAILABLE" };
+    }
+    return { ok: false, code: "UNAUTHENTICATED" };
+  }
+
+  const [{ hashBootstrapAnchor, readBoundBrowserContinuity, readContinuityMirror }, { resolveBoundSession }] =
+    await Promise.all([import("./continuity"), import("./registry")]);
+  const mirror = options?.bootstrapHash ? null : readContinuityMirror(store);
+  const candidateBootstrapHash =
+    options?.bootstrapHash ?? (mirror ? hashBootstrapAnchor(mirror) : null);
+  const handleHashes = selected.map((c) => hashHex(c.value));
+  const byHash = new Map(selected.map((c) => [hashHex(c.value), c]));
+
+  const [capability, bound, row] = await Promise.all([
+    probeBrokerCapability(),
+    options?.bootstrapHash
+      ? Promise.resolve({ bootstrapHash: options.bootstrapHash })
+      : candidateBootstrapHash
+        ? readBoundBrowserContinuity(store)
+        : Promise.resolve(null),
+    candidateBootstrapHash
+      ? resolveBoundSession({
+          bootstrapHash: candidateBootstrapHash,
+          handleHashes,
+          admissionScope: options?.admissionScope ?? "app",
+        })
+      : Promise.resolve(null),
+  ]);
+
   if (!capability.ok) {
     brokerLog("warn", "auth.broker.resolve.capability_blocked", {
       error_code: "CAPABILITY_FAIL_CLOSED",
@@ -102,35 +142,12 @@ export async function resolveBrokerSession(
     });
     return { ok: false, code: "UNAVAILABLE" };
   }
-
-  const selected = selectCandidateHandles(store);
-  if ("failClosed" in selected) {
-    brokerLog("warn", "auth.broker.resolve.cookie_quota", { error_code: "HANDLE_COOKIE_LIMIT" });
-    return { ok: false, code: "UNAVAILABLE" };
-  }
-  if (selected.length === 0) {
-    return { ok: false, code: "UNAUTHENTICATED" };
-  }
-
-  const { readBoundBrowserContinuity } = await import("./continuity");
-  const bound = options?.bootstrapHash
-    ? { bootstrapHash: options.bootstrapHash }
-    : await readBoundBrowserContinuity(store);
   if (!bound?.bootstrapHash) {
     brokerLog("warn", "auth.broker.resolve.continuity_required", {
       error_code: "CONTINUITY_REQUIRED",
     });
     return { ok: false, code: "UNAUTHENTICATED" };
   }
-
-  const handleHashes = selected.map((c) => hashHex(c.value));
-  const byHash = new Map(selected.map((c) => [hashHex(c.value), c]));
-  const { resolveBoundSession } = await import("./registry");
-  const row = await resolveBoundSession({
-    bootstrapHash: bound.bootstrapHash,
-    handleHashes,
-    admissionScope: options?.admissionScope ?? "app",
-  });
   if (!row) {
     // Missing exact current handle (B) — never fall back to max(active)/A.
     return { ok: false, code: "UNAUTHENTICATED" };

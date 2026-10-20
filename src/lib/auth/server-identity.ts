@@ -8,7 +8,10 @@ export async function readSessionIdentity() {
       return { ok: false as const, code: bound.bound.code };
     }
     const client = bound.bound.client;
-    const { data, error } = await client.auth.getUser();
+    const [{ data, error }, guard] = await Promise.all([
+      client.auth.getUser(),
+      checkAppSession(client),
+    ]);
     if (error) {
       return {
         ok: false as const,
@@ -16,7 +19,6 @@ export async function readSessionIdentity() {
       };
     }
     if (!data.user) return { ok: false as const, code: "UNAUTHENTICATED" as const };
-    const guard = await checkAppSession(client);
     if (!guard.ok) return guard;
     return {
       ok: true as const,
