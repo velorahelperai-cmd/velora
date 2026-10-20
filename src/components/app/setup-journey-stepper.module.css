@@ -1,5 +1,5 @@
-.stepper{width:100%;min-width:0;color:#6d84a7;font-family:"IBM Plex Sans Arabic",Tahoma,sans-serif;font-synthesis:none}
-.stepper[dir="ltr"]{font-family:"IBM Plex Sans",Arial,sans-serif}
+.stepper{width:100%;min-width:0;color:#6d84a7;font-family:"Tajawal",Tahoma,sans-serif;font-synthesis:none}
+.stepper[dir="ltr"]{font-family:"Tajawal",Arial,sans-serif}
 .list{display:flex;align-items:center;gap:0;list-style:none;margin:0;padding:4px 0}
 .step{display:flex;flex-direction:row;align-items:center;flex:1;min-width:0;gap:8px;font-size:13px;line-height:1.5;white-space:nowrap}
 .step:last-child{flex:0 0 auto}

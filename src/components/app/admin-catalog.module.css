@@ -143,7 +143,7 @@
 .featurePill[data-state="target"] { background: #EAE3D3; color: var(--catalog-link); font-weight: 600; }
 .featurePill[data-state="not_verified"] { background: var(--catalog-muted); color: var(--catalog-secondary); }
 
-.versionIdText { display: block; font-size: 11px; font-family: monospace; color: var(--catalog-secondary); margin-top: 8px; overflow-wrap: anywhere; }
+.versionIdText { display: block; font-size: 11px; font-family: var(--font-en); color: var(--catalog-secondary); margin-top: 8px; overflow-wrap: anywhere; }
 .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
 
 /* Publish Review Modal / Panel */

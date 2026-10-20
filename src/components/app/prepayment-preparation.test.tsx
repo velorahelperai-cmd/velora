@@ -17,6 +17,7 @@ const state = vi.hoisted(() => ({
   createCalls: [] as unknown[],
   createReply: null as Promise<unknown> | null,
   componentKey: null as string | null,
+  identity: { userId: "11111111-2222-4333-8444-555555555555" },
 }));
 
 vi.mock("@/lib/billing/es02/account-order-actions", () => ({
@@ -89,8 +90,9 @@ vi.mock("./account-chrome", () => ({
   AccountMenu: () => null,
   useOptionalAccountSession: () => ({
     status: "ready",
-    identity: { userId: "11111111-2222-4333-8444-555555555555" },
-    isCurrentUser: () => state.isCurrent,
+    identity: state.identity,
+    isCurrentUser: (_userId: string, expectedIdentity?: { userId: string }) => state.isCurrent
+      && (!expectedIdentity || expectedIdentity === state.identity),
     liveSnapshot: () => ({
       status: state.isCurrent ? "ready" : "expired",
       userId: state.isCurrent ? "11111111-2222-4333-8444-555555555555" : null,
@@ -266,6 +268,7 @@ function openStudioIdentity(tree: InspectedElement): InspectedElement {
 }
 
 beforeEach(() => {
+  state.identity = { userId: "11111111-2222-4333-8444-555555555555" };
   state.review = null;
   state.componentKey = null;
   state.createCalls = [];
@@ -623,6 +626,8 @@ it("studio submit opens local plans for the entered branch and does not create a
   uuid.mockRestore();
   const plans = findByAttr(tree, "data-setup-team-plans", "true");
   expect(plans).toBeTruthy();
+  expect(findByAttr(tree, "data-term", "monthly")?.props["aria-pressed"]).toBe(true);
+  expect(findByAttr(tree, "data-term", "yearly")?.props["aria-pressed"]).toBe(false);
   expect(plans?.props["data-confirm-wired"]).toBe("false");
   const blob = JSON.stringify(plans);
   expect(blob).toContain("الرئيسي");
@@ -650,6 +655,8 @@ it("studio submit opens local plans for the entered branch and does not create a
 
 it("studio back from plans keeps the same draft and branch without a second count entry", () => {
   let tree = openStudioPlans();
+  (findByAttr(tree, "data-term", "yearly")?.props.onClick as (() => void) | undefined)?.();
+  tree = renderStudio();
   const back = findByAttr(tree, "data-plans-back", "true");
   (back?.props.onClick as (() => void) | undefined)?.();
   tree = renderStudio();
@@ -665,6 +672,8 @@ it("studio back from plans keeps the same draft and branch without a second coun
   (findByAttr(tree, "data-setup-destination", "plans")?.props.onClick as (() => void) | undefined)?.();
   tree = renderStudio();
   const again = JSON.stringify(findByAttr(tree, "data-setup-team-plans", "true"));
+  expect(findByAttr(tree, "data-term", "yearly")?.props["aria-pressed"]).toBe(true);
+  expect(findByAttr(tree, "data-term", "monthly")?.props["aria-pressed"]).toBe(false);
   expect(again).toContain("الرئيسي");
   expect(again).toContain("صور");
 });
@@ -731,6 +740,35 @@ function openBoundReview() {
   if (!state.review) throw new Error("Review not bound");
   return state.review;
 }
+
+it("same-account identity refresh retains the current checkout boundary", async () => {
+  const props = openBoundReview();
+  props.onConsentChange?.(true);
+  renderStudio();
+  state.identity = { ...state.identity };
+  renderStudio();
+  state.createReply = Promise.resolve({ ok: false, code: "PAYMOB_EXTERNAL_DEFERRED" });
+  expect(await state.review!.confirmReview(true)).toMatchObject({ ok: false, code: "PAYMOB_EXTERNAL_DEFERRED" });
+  expect(state.createCalls).toHaveLength(1);
+});
+
+it("same-boundary identity refresh during payment preflight retains its result", async () => {
+  let resolve!: (result: unknown) => void;
+  state.createReply = new Promise((done) => { resolve = done; });
+  const props = openBoundReview();
+  props.onConsentChange?.(true);
+  renderStudio();
+  const pending = state.review!.confirmReview(true);
+  renderStudio();
+  state.identity = { ...state.identity };
+  renderStudio();
+  resolve({ ok: false, code: "PAYMOB_EXTERNAL_DEFERRED" });
+  expect(await pending).toMatchObject({ ok: false, code: "PAYMOB_EXTERNAL_DEFERRED" });
+  expect(state.createCalls).toHaveLength(1);
+  renderStudio();
+  expect(state.review!.write.kind).toBe("idle");
+  expect(state.review!.editingLocked).toBe(false);
+});
 
 it("binds consent and UNKNOWN retry to the same operation without sending business facts", async () => {
   let props = openBoundReview();

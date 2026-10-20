@@ -1,5 +1,5 @@
 .theme:global(.app-shell) { background:var(--service-canvas); color:var(--service-ink); font-family:var(--font-en); }
-.theme[dir="rtl"] {font-family: "IBM Plex Sans Arabic", "IBM Plex Sans", Tahoma, sans-serif;}
+.theme[dir="rtl"] {font-family: "Tajawal", Tahoma, sans-serif;}
 .theme :global(.app-panel) {box-shadow: 0 8px 28px #173b2810;}
 .theme :is(button,a,input,textarea,select):focus-visible {outline: 2px solid var(--service-accent);outline-offset: 3px;}
 .theme :is(button,a,input,textarea,select) {transition-duration: 180ms;}

@@ -213,3 +213,19 @@
  .summary{padding:12px;gap:9px 10px}.summary h3{font-size:18px}.summaryLines{gap:9px 12px}.summary>.total{font-size:18px}.continue{font-size:14px;padding:9px 14px;min-height:44px}.back{font-size:10px;min-height:32px}
 }
 @media(max-width:360px){.tier{padding:11px 8px}.tier>button>strong{font-size:19px}.quota{font-size:12px}.role{font-size:12px}.summary>.total{font-size:16px}.continue{font-size:13px;padding:9px 12px}}
+.page .summary{direction:inherit;display:flex;flex-direction:column;align-items:stretch;gap:14px;padding:20px;min-width:0}
+.page[dir="rtl"] .summary{direction:rtl}
+.summary h3{margin:0;font-size:22px;white-space:normal}
+.summaryLines{margin:0;padding:0;display:grid;gap:12px;font-size:15px}
+.summaryLines li{min-width:0}
+.summaryLines li+li::before{content:none}
+.summaryChoice{min-width:0;gap:5px}
+.summaryChoice strong{font-size:18px}
+.summaryChoice span,.summaryChoice small{font-size:14px;line-height:1.5;color:#315c6c}
+.summary>.total{margin:0;padding-block-start:14px;border-block-start:1px solid #dce9ed;font-size:21px;font-weight:700}
+.summary>.actions{display:flex;flex-direction:row;flex-wrap:wrap;gap:10px;align-items:stretch}
+.summary .back,.summary .continue{flex:1 1 160px;display:flex;align-items:center;justify-content:center;gap:8px;min-height:48px;font:inherit;font-size:15px;font-weight:700;padding:10px 12px;border-radius:12px}
+.summary .back{border:1px solid #00758b;color:#006477;background:#fff}
+.summary .back:hover{background:#eef9fa}
+.summary button:focus-visible{outline:3px solid #007f98;outline-offset:3px}
+@media(max-width:760px){.page .summary{padding:16px;gap:12px}.summary>.actions{flex-direction:column}.summary .back,.summary .continue{flex:0 0 auto;width:100%}}
