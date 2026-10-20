@@ -5,20 +5,19 @@ import type { Database } from "@/lib/database.types";
 import { createBrokerUserClient } from "@/lib/auth/broker";
 import { createProviderAuthClient } from "@/lib/auth/broker/provider";
 
-function snapshotCookies(cookieStore: Awaited<ReturnType<typeof cookies>>) {
+function snapshotCookieKey(cookieStore: Awaited<ReturnType<typeof cookies>>): string {
   const pairs = cookieStore.getAll().map((c) => ({ name: c.name, value: c.value }));
-  const key = pairs.map((c) => `${c.name}=${c.value}`).join("; ");
-  return { key, pairs };
+  return JSON.stringify(pairs);
 }
 
-// Per-request memoization keyed by current cookie state. Cookie mutations
-// produce a new key within the same request; React cache resets across requests.
-const resolveBrokerForCookieSnapshot = cache(
-  async (key: string, pairs: Array<{ name: string; value: string }>) => {
-    void key;
-    return createBrokerUserClient({ getAll: () => pairs });
-  },
-);
+// Per-request memoization keyed by a single stable primitive cookie snapshot string.
+// Cookie mutations produce a new key within the same request; React.cache resets across requests.
+const resolveBrokerForCookieSnapshot = cache(async (cookieSnapshotKey: string) => {
+  const pairs = JSON.parse(cookieSnapshotKey) as Array<{ name: string; value: string }>;
+  return createBrokerUserClient({
+    getAll: () => pairs.map((c) => ({ name: c.name, value: c.value })),
+  });
+});
 
 /**
  * Request-scoped Supabase client backed by the WP01A session broker.
@@ -27,8 +26,8 @@ const resolveBrokerForCookieSnapshot = cache(
  */
 export async function createClient(): Promise<SupabaseClient<Database>> {
   const cookieStore = await cookies();
-  const { key, pairs } = snapshotCookies(cookieStore);
-  const resolved = await resolveBrokerForCookieSnapshot(key, pairs);
+  const cookieSnapshotKey = snapshotCookieKey(cookieStore);
+  const resolved = await resolveBrokerForCookieSnapshot(cookieSnapshotKey);
   if (resolved.ok) return resolved.client;
 
   // Unauthenticated request path: memory-only provider client with no session.
@@ -55,6 +54,6 @@ export async function createBrokerBoundClient() {
       }
     },
   };
-  const { key, pairs } = snapshotCookies(cookieStore);
-  return { cookieStore, reader, writer, bound: await resolveBrokerForCookieSnapshot(key, pairs) };
+  const cookieSnapshotKey = snapshotCookieKey(cookieStore);
+  return { cookieStore, reader, writer, bound: await resolveBrokerForCookieSnapshot(cookieSnapshotKey) };
 }

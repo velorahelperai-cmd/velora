@@ -780,7 +780,20 @@ export async function getAccountProfile(): Promise<ActionResult<AccountProfileVi
   identity.emailConfirmed?readAccountPlatformIdentity(identity.userId):Promise.resolve(unavailablePlatformIdentity()),
  ]);
  if(access.ok&&access.context.userId!==identity.userId){trace.finish("UNAVAILABLE");return {ok:false,code:"UNAVAILABLE"};}
- if(!access.ok&&access.code==="UNAUTHENTICATED"){trace.finish("UNAUTHENTICATED");return {ok:false,code:"UNAUTHENTICATED"};}
+ if(!access.ok&&access.code==="UNAUTHENTICATED"){trace.finish("UNAUTHENTICATED");return {ok:false,code:"UNAUTHENTICATED",...("sessionExpired" in access&&access.sessionExpired?{sessionExpired:true}:{})};}
+ if("boundaryFingerprint" in identity||"generation" in identity){
+  try{
+   const {createBrokerBoundClient}=await import("@/lib/supabase/server");
+   const postBound=await createBrokerBoundClient();
+   if(postBound?.bound){
+    if(!postBound.bound.ok){trace.finish(postBound.bound.code==="UNAUTHENTICATED"?"UNAUTHENTICATED":"UNAVAILABLE");return {ok:false,code:postBound.bound.code};}
+    const postBoundary=postBound.bound.resolve.boundary;
+    if(postBoundary.userId!==identity.userId||(identity.boundaryFingerprint&&postBoundary.boundaryFingerprint!==identity.boundaryFingerprint)||(identity.generation&&postBoundary.generation!==identity.generation)){trace.finish("UNAUTHENTICATED");return {ok:false,code:"UNAUTHENTICATED"};}
+   }
+  }catch{
+   /* Optional post-read broker fence when server module is mocked without createBrokerBoundClient */
+  }
+ }
  trace.finish(access.ok?"OK":access.code);
  if(access.ok)return {ok:true,data:{...buildAccountProfileView(access,platformIdentity),emailConfirmed:identity.emailConfirmed,sessionExpiresAt:identity.sessionExpiresAt}};
  // Auth identity survives company/profile outages; no role or company privilege is invented.

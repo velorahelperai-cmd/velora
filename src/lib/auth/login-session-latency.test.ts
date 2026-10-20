@@ -1,8 +1,47 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { randomBytes } from "node:crypto";
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
+
+const rscHolder = await vi.hoisted(async () => {
+  const { createRequire } = await import("node:module");
+  const path = await import("node:path");
+  const req = createRequire(import.meta.url);
+  const reactPkgDir = path.dirname(req.resolve("react/package.json"));
+  const reactServerPath = path.join(reactPkgDir, "cjs", "react.react-server.development.js");
+  const reactServer = req(reactServerPath) as typeof import("react");
+  const reactResolved = req.resolve("react");
+  req.cache[reactResolved] = {
+    id: reactResolved,
+    filename: reactResolved,
+    loaded: true,
+    exports: reactServer,
+    children: [],
+    paths: [],
+  } as unknown as NodeModule;
+  const rscServer = req(
+    "next/dist/compiled/react-server-dom-webpack/cjs/react-server-dom-webpack-server.node.development.js",
+  ) as {
+    renderToReadableStream: (model: unknown) => ReadableStream<Uint8Array>;
+  };
+  return { reactServer, rscServer };
+});
+
+vi.mock("react", () => rscHolder.reactServer);
+
+type RequestStore = {
+  cookies: Array<{ name: string; value: string }>;
+  userId?: string;
+  handleHash?: string;
+  cookieName?: string;
+  generation?: string;
+  accessEnc?: string;
+  refreshEnc?: string;
+};
+
+const requestStorage = new AsyncLocalStorage<RequestStore>();
 
 const state = vi.hoisted(() => ({
   cookies: [] as Array<{ name: string; value: string }>,
@@ -10,7 +49,14 @@ const state = vi.hoisted(() => ({
   authLatencyMs: 0,
   probeOk: true,
   continuityOk: true,
+  continuityState: "active",
+  continuityGeneration: 1,
+  continuityRegistryId: null as string | null,
+  continuityLineageId: null as string | null,
   resolveOk: true,
+  resolveLineageGeneration: 1,
+  resolveRegistryId: null as string | null,
+  resolveLineageId: null as string | null,
   intentOk: true,
   claimOk: true,
   admitOk: true,
@@ -36,14 +82,19 @@ const state = vi.hoisted(() => ({
 
 const sleep = (ms: number) => (ms > 0 ? new Promise((r) => setTimeout(r, ms)) : Promise.resolve());
 
+function activeCookies() {
+  return requestStorage.getStore()?.cookies ?? state.cookies;
+}
+
 vi.mock("next/headers", () => ({
   cookies: async () => ({
-    getAll: () => state.cookies.map((c) => ({ ...c })),
-    get: (name: string) => state.cookies.find((c) => c.name === name),
+    getAll: () => activeCookies().map((c) => ({ ...c })),
+    get: (name: string) => activeCookies().find((c) => c.name === name),
     set: (name: string, value: string) => {
-      const idx = state.cookies.findIndex((c) => c.name === name);
-      if (idx >= 0) state.cookies[idx] = { name, value };
-      else state.cookies.push({ name, value });
+      const target = activeCookies();
+      const idx = target.findIndex((c) => c.name === name);
+      if (idx >= 0) target[idx] = { name, value };
+      else target.push({ name, value });
     },
   }),
 }));
@@ -93,10 +144,10 @@ vi.mock("@/lib/supabase/admin", () => ({
         return {
           data: {
             ok: true,
-            browser_lineage_id: state.lineageId,
-            current_generation: 1,
-            current_registry_id: state.registryId,
-            state: "active",
+            browser_lineage_id: state.continuityLineageId ?? state.lineageId,
+            current_generation: state.continuityGeneration,
+            current_registry_id: state.continuityRegistryId ?? state.registryId,
+            state: state.continuityState,
             valid_until: "2099-01-01T00:00:00Z",
           },
           error: null,
@@ -104,22 +155,23 @@ vi.mock("@/lib/supabase/admin", () => ({
       }
       if (name === "vel_broker_resolve_bound_session") {
         if (!state.resolveOk) return { data: { ok: false, code: "UNAUTHENTICATED" }, error: null };
+        const reqStore = requestStorage.getStore();
         return {
           data: {
             ok: true,
-            registry_id: state.registryId,
-            handle_hash: state.handleHash,
-            cookie_name: state.cookieName,
-            generation: state.generation,
-            user_id: state.userId,
+            registry_id: state.resolveRegistryId ?? state.registryId,
+            handle_hash: reqStore?.handleHash ?? state.handleHash,
+            cookie_name: reqStore?.cookieName ?? state.cookieName,
+            generation: reqStore?.generation ?? state.generation,
+            user_id: reqStore?.userId ?? state.userId,
             native_session_id: state.nativeSessionId,
-            access_token_enc: state.accessEnc,
-            refresh_token_enc: state.refreshEnc,
+            access_token_enc: reqStore?.accessEnc ?? state.accessEnc,
+            refresh_token_enc: reqStore?.refreshEnc ?? state.refreshEnc,
             token_expires_at: "2099-01-01T00:00:00Z",
             refresh_revision: 1,
             auth_ordinal: 1,
-            browser_lineage_id: state.lineageId,
-            lineage_generation: 1,
+            browser_lineage_id: state.resolveLineageId ?? state.lineageId,
+            lineage_generation: state.resolveLineageGeneration,
           },
           error: null,
         };
@@ -222,7 +274,7 @@ vi.mock("@supabase/supabase-js", () => ({
       state.rpcCalls.push(name);
       await sleep(state.rpcLatencyMs);
       if (name === "check_app_session") {
-        if (!state.guardOk) return { data: { ok: false, code: "UNAUTHENTICATED", expired: true }, error: null };
+        if (!state.guardOk) return { data: { ok: false, code: "SESSION_EXPIRED" }, error: null };
         return { data: { ok: true, expires_at: "2099-01-01T00:00:00Z" }, error: null };
       }
       return { data: null, error: null };
@@ -230,13 +282,63 @@ vi.mock("@supabase/supabase-js", () => ({
   }),
 }));
 
-import { encryptSecret, newOpaqueHandle } from "./broker/crypto";
+import { boundaryFingerprint, decryptSecret, encryptSecret, newOpaqueHandle } from "./broker/crypto";
+import { selectCandidateHandles, type CookieReader } from "./broker/cookies";
 import { hashHex, probeBrokerCapability, resolveBoundSession } from "./broker/registry";
 import { readBoundBrowserContinuity } from "./broker/continuity";
+import { createUserClientFromTokens } from "./broker/resolve";
 import { brokerExchangeOAuthCode } from "./broker/login";
+import { checkAppSession } from "./session-guard";
 import { readSessionIdentity } from "./server-identity";
 import { createBrokerBoundClient, createClient } from "@/lib/supabase/server";
 import { proxy } from "@/proxy";
+
+/**
+ * Exact 6431afd baseline implementation of `resolveBrokerSession` + `readSessionIdentity`
+ * without any duplicate `createClient()` call or asymmetric work.
+ */
+async function readSessionIdentityBaseline6431afd(reader: CookieReader) {
+  const capability = await probeBrokerCapability();
+  if (!capability.ok) return { ok: false as const, code: "UNAVAILABLE" as const };
+  const selected = selectCandidateHandles(reader);
+  if ("failClosed" in selected) return { ok: false as const, code: "UNAVAILABLE" as const };
+  if (selected.length === 0) return { ok: false as const, code: "UNAUTHENTICATED" as const };
+  const bound = await readBoundBrowserContinuity(reader);
+  if (!bound?.bootstrapHash) return { ok: false as const, code: "UNAUTHENTICATED" as const };
+  const handleHashes = selected.map((c) => hashHex(c.value));
+  const byHash = new Map(selected.map((c) => [hashHex(c.value), c]));
+  const row = await resolveBoundSession({
+    bootstrapHash: bound.bootstrapHash,
+    handleHashes,
+    admissionScope: "app",
+  });
+  if (!row) return { ok: false as const, code: "UNAUTHENTICATED" as const };
+  const cookie = byHash.get(row.handle_hash);
+  if (!cookie || cookie.name !== row.cookie_name) {
+    return { ok: false as const, code: "UNAUTHENTICATED" as const };
+  }
+  const accessToken = decryptSecret(Buffer.from(row.access_token_enc, "base64"));
+  const refreshToken = decryptSecret(Buffer.from(row.refresh_token_enc, "base64"));
+  if (!accessToken || !refreshToken) return { ok: false as const, code: "UNAVAILABLE" as const };
+  const client = createUserClientFromTokens(accessToken, refreshToken);
+  if (!client) return { ok: false as const, code: "UNAVAILABLE" as const };
+
+  const { data, error } = await client.auth.getUser();
+  if (error || !data.user) return { ok: false as const, code: "UNAUTHENTICATED" as const };
+  const guard = await checkAppSession(client);
+  if (!guard.ok) return guard;
+  return {
+    ok: true as const,
+    userId: data.user.id,
+    email: data.user.email ?? "",
+    fullName: String(data.user.user_metadata?.full_name || data.user.user_metadata?.name || ""),
+    emailConfirmed: !!(data.user.email_confirmed_at || data.user.phone_confirmed_at),
+    sessionExpiresAt: guard.expiresAt,
+    boundaryFingerprint: boundaryFingerprint(cookie.value),
+    nativeSessionId: row.native_session_id,
+    generation: row.generation,
+  };
+}
 
 describe("login and session initialization latency and boundary verification", () => {
   beforeEach(() => {
@@ -259,7 +361,14 @@ describe("login and session initialization latency and boundary verification", (
     state.authLatencyMs = 0;
     state.probeOk = true;
     state.continuityOk = true;
+    state.continuityState = "active";
+    state.continuityGeneration = 1;
+    state.continuityRegistryId = null;
+    state.continuityLineageId = null;
     state.resolveOk = true;
+    state.resolveLineageGeneration = 1;
+    state.resolveRegistryId = null;
+    state.resolveLineageId = null;
     state.intentOk = true;
     state.claimOk = true;
     state.admitOk = true;
@@ -271,55 +380,239 @@ describe("login and session initialization latency and boundary verification", (
     state.restCalls = [];
   });
 
-  it("paired benchmark: resolveBrokerSession + readSessionIdentity cuts sequential round-trip wait under identical 35ms network latency", async () => {
+  it("paired benchmark: compares original 6431afd vs candidate readSessionIdentity with identical fixtures, call counts, and 35ms simulated hop delay", async () => {
     state.rpcLatencyMs = 35;
     state.authLatencyMs = 35;
     const reader = { getAll: () => state.cookies.map((c) => ({ ...c })) };
     const legacySamples: number[] = [];
-    const optimizedSamples: number[] = [];
+    const candidateSamples: number[] = [];
 
     for (let i = 0; i < 6; i++) {
-      // Legacy sequential baseline (3 sequential broker RPCs + 2 sequential auth/guard calls = 5 serial hops)
-      const legacyStart = performance.now();
-      await probeBrokerCapability();
-      const continuity = await readBoundBrowserContinuity(reader);
-      await resolveBoundSession({
-        bootstrapHash: continuity!.bootstrapHash,
-        handleHashes: [state.handleHash],
-        admissionScope: "app",
-      });
-      const client = await createClient();
-      await client.auth.getUser();
-      await client.rpc("check_app_session" as never, { p_touch: false } as never);
-      legacySamples.push(Math.round(performance.now() - legacyStart));
-
-      // Optimized path (parallelized broker resolve + parallelized getUser & checkAppSession = 2 serial hops)
+      // Original 6431afd baseline: 3 sequential broker RPCs + 2 sequential auth/guard calls = 5 serial waves (4 RPCs + 1 Auth call)
       state.rpcCalls = [];
       state.authCalls = [];
-      const optimizedStart = performance.now();
-      const identity = await readSessionIdentity();
-      optimizedSamples.push(Math.round(performance.now() - optimizedStart));
-      expect(identity).toMatchObject({
-        ok: true,
-        userId: state.userId,
-        boundaryFingerprint: expect.stringMatching(/^[0-9a-f]{16}$/),
-      });
+      const legacyStart = performance.now();
+      const legacyIdentity = await readSessionIdentityBaseline6431afd(reader);
+      legacySamples.push(Math.round(performance.now() - legacyStart));
+      expect(state.rpcCalls).toEqual([
+        "vel_broker_capability_probe",
+        "vel_broker_lookup_browser_continuity",
+        "vel_broker_resolve_bound_session",
+        "check_app_session",
+      ]);
+      expect(state.authCalls).toEqual(["auth.getUser"]);
+
+      // Candidate: same 4 RPCs + 1 Auth call executed in 2 parallel waves (wave 1: 3 broker RPCs, wave 2: getUser + check_app_session)
+      state.rpcCalls = [];
+      state.authCalls = [];
+      const candidateStart = performance.now();
+      const candidateIdentity = await readSessionIdentity();
+      candidateSamples.push(Math.round(performance.now() - candidateStart));
+      expect(state.rpcCalls).toHaveLength(4);
+      expect([...state.rpcCalls].sort()).toEqual(
+        [
+          "vel_broker_capability_probe",
+          "vel_broker_lookup_browser_continuity",
+          "vel_broker_resolve_bound_session",
+          "check_app_session",
+        ].sort(),
+      );
+      expect(state.authCalls).toEqual(["auth.getUser"]);
+      expect(candidateIdentity).toEqual(legacyIdentity);
     }
 
     const avg = (arr: number[]) => Math.round(arr.reduce((a, b) => a + b, 0) / arr.length);
     const legacyAvg = avg(legacySamples);
-    const optimizedAvg = avg(optimizedSamples);
+    const candidateAvg = avg(candidateSamples);
     console.info(
       JSON.stringify({
-        benchmark: "session_identity_paired_35ms_hop",
+        benchmark: "simulated_session_identity_paired_35ms_hop",
+        kind: "synthetic_in_memory_simulation_not_production",
         iterations: 6,
-        beforeAvgMs: legacyAvg,
-        afterAvgMs: optimizedAvg,
-        beforeSerialHops: 5,
-        afterSerialHops: 2,
+        baseline6431afdAvgMs: legacyAvg,
+        candidateAvgMs: candidateAvg,
+        baseline6431afdSerialWaves: 5,
+        candidateSerialWaves: 2,
+        rpcCallsPerSide: 4,
+        authCallsPerSide: 1,
       }),
     );
-    expect(optimizedAvg).toBeLessThan(legacyAvg * 0.65);
+    expect(candidateAvg).toBeLessThan(legacyAvg * 0.65);
+  });
+
+  it("actual RSC render memoizes createClient/createBrokerBoundClient once for identical cookies, re-verifies on cookie change, and isolates across requests", async () => {
+    const { reactServer, rscServer } = rscHolder;
+    const secondHandle = newOpaqueHandle();
+    const secondHash = hashHex(secondHandle);
+
+    async function RscSameAndMutatedCookies() {
+      const { cookies } = await import("next/headers");
+      const store = await cookies();
+      // Three calls with identical cookie snapshot within one RSC request
+      const firstBound = await createBrokerBoundClient();
+      const secondClient = await createClient();
+      const thirdBound = await createBrokerBoundClient();
+      expect(firstBound.bound.ok).toBe(true);
+      expect(thirdBound.bound.ok).toBe(true);
+      if (firstBound.bound.ok && thirdBound.bound.ok) {
+        expect(secondClient).toBe(firstBound.bound.client);
+        expect(thirdBound.bound.client).toBe(firstBound.bound.client);
+      }
+      const resolvesBeforeMutation = state.rpcCalls.filter(
+        (c) => c === "vel_broker_resolve_bound_session",
+      ).length;
+
+      // Mutate cookie inside the same request -> must invalidate cache and re-verify
+      const reqStore = requestStorage.getStore()!;
+      reqStore.handleHash = secondHash;
+      store.set(state.cookieName, secondHandle);
+      const afterMutation = await createBrokerBoundClient();
+      const afterMutationRepeat = await createBrokerBoundClient();
+      const resolvesAfterMutation = state.rpcCalls.filter(
+        (c) => c === "vel_broker_resolve_bound_session",
+      ).length;
+      const fp1 = firstBound.bound.ok ? firstBound.bound.resolve.boundary.boundaryFingerprint : "none";
+      const fp2 = afterMutation.bound.ok ? afterMutation.bound.resolve.boundary.boundaryFingerprint : "none";
+      const fp2Repeat = afterMutationRepeat.bound.ok
+        ? afterMutationRepeat.bound.resolve.boundary.boundaryFingerprint
+        : "none";
+      return reactServer.createElement(
+        "div",
+        null,
+        `before=${resolvesBeforeMutation};after=${resolvesAfterMutation};fp1=${fp1};fp2=${fp2};sameAfter=${fp2 === fp2Repeat}`,
+      );
+    }
+
+    const req1Text = await requestStorage.run(
+      {
+        cookies: state.cookies.map((c) => ({ ...c })),
+        handleHash: state.handleHash,
+      },
+      async () => {
+        const stream = rscServer.renderToReadableStream(
+          reactServer.createElement(RscSameAndMutatedCookies),
+        );
+        return new Response(stream).text();
+      },
+    );
+
+    expect(req1Text).toContain("before=1;after=2;");
+    expect(req1Text).toContain(`fp1=${boundaryFingerprint(state.handle)};fp2=${boundaryFingerprint(secondHandle)};sameAfter=true`);
+
+    // Verify request isolation: two separate RSC requests (with identical or distinct cookies) do NOT leak cache across requests
+    state.rpcCalls = [];
+    const userBId = "99999999-9999-4999-8999-999999999999";
+    const handleB = newOpaqueHandle();
+    const hashB = hashHex(handleB);
+    const jwtB = `eyJhbGciOiJIUzI1NiJ9.${Buffer.from(
+      JSON.stringify({ sub: userBId, session_id: state.nativeSessionId }),
+    ).toString("base64url")}.sig`;
+    const accessEncB = encryptSecret(jwtB)!.toString("base64");
+
+    async function RscIsolatedRequest() {
+      const bound1 = await createBrokerBoundClient();
+      const bound2 = await createBrokerBoundClient();
+      const uid1 = bound1.bound.ok ? bound1.bound.resolve.boundary.userId : "none";
+      const uid2 = bound2.bound.ok ? bound2.bound.resolve.boundary.userId : "none";
+      return reactServer.createElement("span", null, `uid=${uid1}:${uid2}`);
+    }
+
+    const [outA1, outB, outA2] = await Promise.all([
+      requestStorage.run(
+        {
+          cookies: state.cookies.map((c) => ({ ...c })),
+          userId: state.userId,
+          handleHash: state.handleHash,
+          accessEnc: state.accessEnc,
+        },
+        async () =>
+          new Response(
+            rscServer.renderToReadableStream(reactServer.createElement(RscIsolatedRequest)),
+          ).text(),
+      ),
+      requestStorage.run(
+        {
+          cookies: [
+            { name: "vel_bc", value: "A".repeat(44) },
+            { name: state.cookieName, value: handleB },
+          ],
+          userId: userBId,
+          handleHash: hashB,
+          accessEnc: accessEncB,
+        },
+        async () =>
+          new Response(
+            rscServer.renderToReadableStream(reactServer.createElement(RscIsolatedRequest)),
+          ).text(),
+      ),
+      requestStorage.run(
+        {
+          cookies: state.cookies.map((c) => ({ ...c })),
+          userId: state.userId,
+          handleHash: state.handleHash,
+          accessEnc: state.accessEnc,
+        },
+        async () =>
+          new Response(
+            rscServer.renderToReadableStream(reactServer.createElement(RscIsolatedRequest)),
+          ).text(),
+      ),
+    ]);
+
+    expect(outA1).toContain(`uid=${state.userId}:${state.userId}`);
+    expect(outB).toContain(`uid=${userBId}:${userBId}`);
+    expect(outA2).toContain(`uid=${state.userId}:${state.userId}`);
+    // 3 distinct RSC requests x 1 cached resolve per request = 3 resolves total (not 6, and not 1 shared across requests)
+    expect(state.rpcCalls.filter((c) => c === "vel_broker_resolve_bound_session")).toHaveLength(3);
+  });
+
+  it("denies access when session is revoked or lineage generation changes during parallel reads", async () => {
+    // 1. Session revoked in continuity (state='revoked') while resolveBoundSession returns stale row
+    state.continuityState = "revoked";
+    expect(await readSessionIdentity()).toEqual({ ok: false, code: "UNAUTHENTICATED" });
+    state.continuityState = "active";
+
+    // 2. Continuity lookup fails (revoked/closed) while resolveBoundSession returns stale row
+    state.continuityOk = false;
+    expect(await readSessionIdentity()).toEqual({ ok: false, code: "UNAUTHENTICATED" });
+    state.continuityOk = true;
+
+    // 3. Generation changes between parallel continuity lookup (gen 2) and bound session resolve (stale gen 1)
+    state.continuityGeneration = 2;
+    state.resolveLineageGeneration = 1;
+    expect(await readSessionIdentity()).toEqual({ ok: false, code: "UNAUTHENTICATED" });
+
+    // 4. Generation changes in reverse order (continuity gen 1 vs bound session gen 2)
+    state.continuityGeneration = 1;
+    state.resolveLineageGeneration = 2;
+    expect(await readSessionIdentity()).toEqual({ ok: false, code: "UNAUTHENTICATED" });
+    state.resolveLineageGeneration = 1;
+
+    // 5. Current registry tip rotates during parallel reads
+    state.continuityRegistryId = "77777777-7777-4777-8777-777777777777";
+    expect(await readSessionIdentity()).toEqual({ ok: false, code: "UNAUTHENTICATED" });
+    state.continuityRegistryId = null;
+
+    // 6. Browser lineage ID diverges during parallel reads
+    state.continuityLineageId = "88888888-8888-4888-8888-888888888888";
+    expect(await readSessionIdentity()).toEqual({ ok: false, code: "UNAUTHENTICATED" });
+    state.continuityLineageId = null;
+
+    // 7. Session revoked in check_app_session while parallel auth.getUser() succeeds with stale token
+    state.guardOk = false;
+    expect(await readSessionIdentity()).toEqual({
+      ok: false,
+      code: "UNAUTHENTICATED",
+      expired: true,
+    });
+    state.guardOk = true;
+
+    // Restoring matching generation and active session succeeds
+    expect(await readSessionIdentity()).toMatchObject({
+      ok: true,
+      userId: state.userId,
+      generation: state.generation,
+    });
   });
 
   it("new Google OAuth callback exchanges code without redundant guest resolve probe", async () => {

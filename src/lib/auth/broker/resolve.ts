@@ -152,6 +152,22 @@ export async function resolveBrokerSession(
     // Missing exact current handle (B) — never fall back to max(active)/A.
     return { ok: false, code: "UNAUTHENTICATED" };
   }
+  if (options?.browserLineageId && row.browser_lineage_id !== options.browserLineageId) {
+    return { ok: false, code: "UNAUTHENTICATED" };
+  }
+  if ("currentGeneration" in bound) {
+    if (
+      bound.state !== "active" ||
+      bound.browserLineageId !== row.browser_lineage_id ||
+      bound.currentGeneration !== Number(row.lineage_generation ?? 0) ||
+      (bound.currentRegistryId !== null && bound.currentRegistryId !== row.registry_id)
+    ) {
+      brokerLog("warn", "auth.broker.resolve.continuity_generation_mismatch", {
+        error_code: "CONTINUITY_GENERATION_MISMATCH",
+      });
+      return { ok: false, code: "UNAUTHENTICATED" };
+    }
+  }
 
   const cookie = byHash.get(row.handle_hash);
   if (!cookie || cookie.name !== row.cookie_name) {

@@ -581,6 +581,28 @@ it("final post-profile broker throw leaves error not ready", async () => {
   expect(render().identity).toBeNull();
 });
 
+it("post-profile generation change or session revocation rejects stale profile and never grants ready", async () => {
+  // 1. Generation changes between pre-profile broker read (gen-a-1) and post-profile reattest (gen-a-2)
+  state.broker
+    .mockResolvedValueOnce(brokerOk("user-a", "fp-a", "gen-a-1"))
+    .mockResolvedValueOnce(brokerOk("user-a", "fp-a", "gen-a-2"));
+  state.read.mockResolvedValue({ ok: true, data: profile() });
+  await render().refresh();
+  expect(render().status).toBe("error");
+  expect(render().identity).toBeNull();
+  expect(render().hasCurrentUser()).toBe(false);
+
+  // 2. Session revoked (UNAUTHENTICATED) between pre-profile broker read and post-profile reattest
+  state.broker
+    .mockResolvedValueOnce(brokerOk("user-a", "fp-a", "gen-a-2"))
+    .mockResolvedValueOnce({ ok: false, code: "UNAUTHENTICATED" });
+  state.read.mockResolvedValue({ ok: true, data: profile() });
+  await render().refresh();
+  expect(render().status).toBe("error");
+  expect(render().identity).toBeNull();
+  expect(render().hasCurrentUser()).toBe(false);
+});
+
 it("same-operation focus join reuses in-flight bootstrap without a new pre-read", async () => {
   vi.useFakeTimers();
   const pending = deferred();
