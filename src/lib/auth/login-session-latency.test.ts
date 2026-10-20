@@ -566,6 +566,22 @@ describe("login and session initialization latency and boundary verification", (
     expect(state.rpcCalls.filter((c) => c === "vel_broker_resolve_bound_session")).toHaveLength(3);
   });
 
+  it.each(["revocation", "generation"] as const)("an explicit fresh RSC fence detects database %s with unchanged cookies", async (change) => {
+    async function RscFreshFence() {
+      const initial = await createBrokerBoundClient();
+      if (change === "revocation") state.resolveOk = false;
+      else state.continuityGeneration = 2;
+      const fresh = await createBrokerBoundClient({ fresh: true });
+      const resolves = state.rpcCalls.filter((name) => name === "vel_broker_resolve_bound_session").length;
+      return rscHolder.reactServer.createElement("div", null, `initial=${initial.bound.ok};fresh=${fresh.bound.ok};resolves=${resolves}`);
+    }
+    const output = await requestStorage.run(
+      { cookies: state.cookies.map((cookie) => ({ ...cookie })), handleHash: state.handleHash },
+      async () => new Response(rscHolder.rscServer.renderToReadableStream(rscHolder.reactServer.createElement(RscFreshFence))).text(),
+    );
+    expect(output).toContain("initial=true;fresh=false;resolves=2");
+  });
+
   it("denies access when session is revoked or lineage generation changes during parallel reads", async () => {
     // 1. Session revoked in continuity (state='revoked') while resolveBoundSession returns stale row
     state.continuityState = "revoked";

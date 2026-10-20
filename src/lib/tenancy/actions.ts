@@ -784,14 +784,13 @@ export async function getAccountProfile(): Promise<ActionResult<AccountProfileVi
  if("boundaryFingerprint" in identity||"generation" in identity){
   try{
    const {createBrokerBoundClient}=await import("@/lib/supabase/server");
-   const postBound=await createBrokerBoundClient();
-   if(postBound?.bound){
-    if(!postBound.bound.ok){trace.finish(postBound.bound.code==="UNAUTHENTICATED"?"UNAUTHENTICATED":"UNAVAILABLE");return {ok:false,code:postBound.bound.code};}
-    const postBoundary=postBound.bound.resolve.boundary;
-    if(postBoundary.userId!==identity.userId||(identity.boundaryFingerprint&&postBoundary.boundaryFingerprint!==identity.boundaryFingerprint)||(identity.generation&&postBoundary.generation!==identity.generation)){trace.finish("UNAUTHENTICATED");return {ok:false,code:"UNAUTHENTICATED"};}
-   }
+   const postBound=await createBrokerBoundClient({fresh:true});
+   if(!postBound.bound.ok){trace.finish(postBound.bound.code==="UNAUTHENTICATED"?"UNAUTHENTICATED":"UNAVAILABLE");return {ok:false,code:postBound.bound.code};}
+   const postBoundary=postBound.bound.resolve.boundary;
+   if(postBoundary.userId!==identity.userId||(identity.boundaryFingerprint&&postBoundary.boundaryFingerprint!==identity.boundaryFingerprint)||(identity.generation&&postBoundary.generation!==identity.generation)){trace.finish("UNAUTHENTICATED");return {ok:false,code:"UNAUTHENTICATED"};}
   }catch{
-   /* Optional post-read broker fence when server module is mocked without createBrokerBoundClient */
+   trace.finish("UNAVAILABLE");
+   return {ok:false,code:"UNAVAILABLE"};
   }
  }
  trace.finish(access.ok?"OK":access.code);

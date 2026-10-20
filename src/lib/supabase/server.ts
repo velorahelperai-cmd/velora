@@ -40,7 +40,7 @@ export async function createClient(): Promise<SupabaseClient<Database>> {
 }
 
 /** Resolve broker session for writers that need handle/cookie mutation. */
-export async function createBrokerBoundClient() {
+export async function createBrokerBoundClient(options?: { fresh?: boolean }) {
   const cookieStore = await cookies();
   const reader = {
     getAll: () => cookieStore.getAll().map((c) => ({ name: c.name, value: c.value })),
@@ -55,5 +55,9 @@ export async function createBrokerBoundClient() {
     },
   };
   const cookieSnapshotKey = snapshotCookieKey(cookieStore);
-  return { cookieStore, reader, writer, bound: await resolveBrokerForCookieSnapshot(cookieSnapshotKey) };
+  // Authority fences must observe DB revocation/rotation even when cookies did not change.
+  const bound = options?.fresh
+    ? await createBrokerUserClient(reader)
+    : await resolveBrokerForCookieSnapshot(cookieSnapshotKey);
+  return { cookieStore, reader, writer, bound };
 }
