@@ -37,7 +37,7 @@ export function AuthShell({ title, body, children, footer }: { title: string; bo
   const tagline = landingCopy(locale).tagline;
   return (
     <main className="app-shell relative overflow-x-hidden px-4 py-6 pb-[max(6rem,env(safe-area-inset-bottom))]">
-      <div className="relative z-20 mx-auto flex max-w-[1100px] items-center justify-between gap-2">
+      <div className="relative z-10 mx-auto flex max-w-[1100px] items-center justify-between gap-2">
         <Link href="/" className="inline-flex min-h-11 min-w-0 items-center gap-2 text-xl font-bold sm:text-2xl">
           <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#38dc89] text-sm text-[#072317] sm:h-9 sm:w-9 sm:text-base">V</span>
           <span className="truncate">{copy.brand}</span>

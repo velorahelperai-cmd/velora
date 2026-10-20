@@ -9,7 +9,7 @@ import { randomUUID } from "crypto";
 import { logEvent, withLogContext } from "@/lib/logging/logger.mjs";
 import { createClient } from "@/lib/supabase/server";
 import { checkAppSession } from "@/lib/auth/session-guard";
-import { validatePreparation, type Preparation } from "@/lib/tenancy/prepayment-preparation";
+import { normalizeOptionalBranchContactPhone, validatePreparation, type Preparation } from "@/lib/tenancy/prepayment-preparation";
 import { billingUuid } from "@/lib/billing/wiring/public-offer-policy";
 import {
   es02Uuid,
@@ -108,7 +108,33 @@ function asObservation(result: {
   };
 }
 
-/** Create or reuse account-bound immutable order from offer selection only (no business draft). */
+/**
+ * Explicit payment-initiation boundary. Review itself is local. While the
+ * provider is deferred this action validates authority/selection, then performs
+ * NO order, payment, provisioning or provider write. A future provider adapter
+ * must durably bind this exact clientOpId and canonical offer before any
+ * external side effect, and reconcile uncertain outcomes on that operation.
+ */
+export async function beginAccountPaymentAction(input: {
+  expectedAccountId: string;
+  selection: Es02OfferSelection;
+  consentAccepted: boolean;
+  clientOpId: string;
+}): Promise<Es02Result<never>> {
+  const auth = await readAuthenticatedAccount(input?.expectedAccountId);
+  if (!auth.ok) return auth;
+  const sanitized = sanitizeCheckoutPayload({
+    selection: input.selection,
+    consentAccepted: input.consentAccepted,
+    clientOpId: input.clientOpId,
+  });
+  if (!sanitized) return { ok: false, code: "INVALID_INPUT" };
+  const resolved = resolveEs02Offer(sanitized.selection);
+  if (!resolved.ok) return { ok: false, code: resolved.code };
+  return { ok: false, code: "PAYMOB_EXTERNAL_DEFERRED" };
+}
+
+/** Existing financial-order primitive; NOT a prepayment-review action. */
 export async function createAccountBoundOrderAction(input: {
   expectedAccountId: string;
   selection: Es02OfferSelection | Es02LegacySingleSelection;
@@ -293,10 +319,12 @@ export async function completeOwnedProvisioningAction(input: {
     hours: "",
     email: "",
   };
-  const branches = input.preparation.branches.map((b) => ({
-    name: b.name.trim(),
-    city: b.city.trim(),
-  }));
+  const branches = [];
+  for (const branch of input.preparation.branches) {
+    const contact = normalizeOptionalBranchContactPhone(branch.contactPhone);
+    if (!contact.ok) return { ok: false, code: "INVALID_INPUT" };
+    branches.push({ name: branch.name.trim(), city: branch.city.trim(), contact_phone: contact.value });
+  }
 
   try {
     const client = await createClient();

@@ -12,4 +12,11 @@
 .secondary { color: #536579; font-family: var(--font-en, "Segoe UI", sans-serif); font-size: 13px; }
 .secondary[lang="ar"] { font-family: "Tajawal", Tahoma, sans-serif; font-size: 15px; }
 .empty { padding: 16px; font-size: 15px; line-height: 1.7; color: #536579; }
+.country[data-compact-options="true"] .popup { inset-inline-end: auto; inline-size: min(320px, calc(100vw - 64px)); max-inline-size: calc(100vw - 32px); }
+.country[data-compact-options="true"] .options button { min-height: 48px; gap: 2px; padding: 6px 10px; font-size: 13px; line-height: 1.35; }
+.country[data-compact-options="true"] .primary { display: flex; align-items: baseline; gap: 6px; inline-size: 100%; min-inline-size: 0; }
+.country[data-compact-options="true"] .optionName { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.country[data-compact-options="true"] .primary bdi { flex: none; white-space: nowrap; }
+.country[data-compact-options="true"] .secondary { max-inline-size: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+.country[data-compact-options="true"] .secondary[lang="ar"] { font-size: 12px; }
 @media (prefers-reduced-motion: reduce) { .country * { scroll-behavior: auto !important; transition: none !important; } }

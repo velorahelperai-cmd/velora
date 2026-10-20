@@ -71,9 +71,9 @@ function initialsOf(name: string, email: string) {
 
 export function AccountSessionProvider({
   children,
+  initial: _initial,
 }: {
   children: ReactNode;
-  /** Accepted for call-site compatibility only — never trusted as ready identity (C3). */
   initial?: AccountProfileView | null;
 }) {
   const providerRouter=useRouter();
@@ -92,6 +92,18 @@ export function AccountSessionProvider({
   const signalRead=useRef<{generation:number;promise:Promise<void>}|null>(null);
   const routeReloading=useRef(false);
   const publishedContext=useRef<string|null>(null);
+  /** One-use mount broker seed for the reserved same-operation epoch only — never persisted. */
+  const bootstrapBrokerSeed = useRef<{
+    epoch: number;
+    broker: {
+      ok: true;
+      userId: string;
+      boundaryFingerprint: string;
+      nativeSessionId: string;
+      contextGeneration: number;
+      generation: string;
+    };
+  } | null>(null);
   /** Internal only — never rendered to visitors, never logs secrets. */
   const failureStageRef = useRef<IdentityFailureStage | null>(null);
 
@@ -103,6 +115,7 @@ export function AccountSessionProvider({
   const clear = useCallback(() => {
     // Invalidate any in-flight refresh so a stale response cannot restore prior identity.
     requestGen.current += 1;
+    bootstrapBrokerSeed.current = null;
     userIdRef.current = null;
     identityRef.current = null;
     boundaryRef.current = null;
@@ -117,6 +130,7 @@ export function AccountSessionProvider({
   // Retain captured boundary across expire so idle quarantine cannot retarget B (C2-R7).
   const expire=useCallback(()=>{
     requestGen.current+=1;
+    bootstrapBrokerSeed.current=null;
     identityRef.current=null;
     publishedContext.current=null;
     setIdentity(null);
@@ -126,6 +140,7 @@ export function AccountSessionProvider({
 
   const lock=useCallback((fp?:string|null)=>{
     requestGen.current+=1;
+    bootstrapBrokerSeed.current=null;
     lockedRef.current=true;
     // Keep userId fence so stale results for THIS capture cannot unlock; clear identity content.
     identityRef.current=null;setIdentity(null);setStatusLive("locked");
@@ -144,10 +159,16 @@ export function AccountSessionProvider({
   const refresh = useCallback(async () => {
     if(routeReloading.current)return;
     if(lockedRef.current)return; // captured lock never auto-restores from profile read
-    const gen=++requestGen.current;
+    // Consume one-use mount seed only while its reserved epoch is still current.
+    const seed =
+      bootstrapBrokerSeed.current && bootstrapBrokerSeed.current.epoch === requestGen.current
+        ? bootstrapBrokerSeed.current
+        : null;
+    bootstrapBrokerSeed.current = null;
+    const gen = seed ? seed.epoch : ++requestGen.current;
     try {
       const { readBrokerSessionStatus } = await import("@/lib/auth/broker-actions");
-      const broker = await readBrokerSessionStatus();
+      const broker = seed ? seed.broker : await readBrokerSessionStatus();
       if(gen!==requestGen.current)return;
       if(!broker.ok){
         if(broker.code==="UNAUTHENTICATED"){
@@ -272,73 +293,71 @@ export function AccountSessionProvider({
     }
     const current=identityRef.current;
     if(signal.type==="context"&&current?.userId===signal.userId&&current.companyId===signal.companyId)return;
-    routeReloading.current=true;requestGen.current+=1;userIdRef.current=null;identityRef.current=null;
+    routeReloading.current=true;requestGen.current+=1;bootstrapBrokerSeed.current=null;userIdRef.current=null;identityRef.current=null;
     boundaryRef.current=null;failureStageRef.current=null;setIdentity(null);setBoundaryFingerprint(null);setStatusLive("loading");
     providerRouter.refresh();window.location.reload();
   }),[providerRouter,lock,clear,setStatusLive]);
 
   // C3: consume persisted quarantine BEFORE SSR initial / protected content.
   // Isolate by boundary fingerprint so A's lock never fences same-user B.
+  // Bootstrap epoch is reserved synchronously before RAF so clear/lock/unmount before
+  // the first frame invalidates scheduled work; focus/visibility joins this same operation
+  // via signalRead until quarantine+seed+refresh complete (no protected profile early).
   useEffect(()=>{
     let cancelled=false;
-    const frame=window.requestAnimationFrame(()=>{
-      void (async()=>{
-        const signal=readLocalQuarantine();
-        try{
-          const {readBrokerSessionStatus}=await import("@/lib/auth/broker-actions");
-          const broker=await readBrokerSessionStatus();
-          if(cancelled)return;
-          if(signal?.type==="quarantine"){
-            if(broker.ok){
-              if(signal.userId===broker.userId){
-                if(
-                  !signal.boundaryFingerprint
-                  || signal.boundaryFingerprint===broker.boundaryFingerprint
-                ){
-                  userIdRef.current=signal.userId;
-                  boundaryRef.current=signal.boundaryFingerprint??broker.boundaryFingerprint;
-                  lock(signal.boundaryFingerprint??broker.boundaryFingerprint);
-                  return;
-                }
-                // Quarantine targets A; cookies already select B — ignore for this tab.
-              }
-            }else if(broker.code==="UNAUTHENTICATED"||broker.code==="QUARANTINED"){
-              // Captured A gone from cookies — keep locked; never flash SSR initial for A.
-              userIdRef.current=signal.userId;
-              lock(signal.boundaryFingerprint);
-              return;
-            }
-          }
-          if(signal?.type==="logout"){
-            if(broker.ok){
-              if(signal.userId!==broker.userId){ /* foreign */ }
-              else if(signal.boundaryFingerprint&&signal.boundaryFingerprint!==broker.boundaryFingerprint){
-                // Logout of A; cookies already select B — ignore.
-              }else if(!signal.boundaryFingerprint){
-                // User-only hint must not clear fresher B with a known boundary.
-              }else{
+    // Reserve BEFORE scheduling RAF / first await (PERF-ES02-ACC-BOOT-001).
+    const epoch=++requestGen.current;
+    let releaseFrame!:()=>void;
+    const frameGate=new Promise<void>((resolve)=>{releaseFrame=resolve;});
+    const bootstrap= (async()=>{
+      await frameGate;
+      if(cancelled||requestGen.current!==epoch)return;
+      const signal=readLocalQuarantine();
+      try{
+        const {readBrokerSessionStatus}=await import("@/lib/auth/broker-actions");
+        const broker=await readBrokerSessionStatus();
+        if(cancelled||requestGen.current!==epoch)return;
+        if(signal?.type==="quarantine"){
+          if(broker.ok){
+            if(signal.userId===broker.userId){
+              if(
+                !signal.boundaryFingerprint
+                || signal.boundaryFingerprint===broker.boundaryFingerprint
+              ){
                 userIdRef.current=signal.userId;
-                clear();
+                boundaryRef.current=signal.boundaryFingerprint??broker.boundaryFingerprint;
+                lock(signal.boundaryFingerprint??broker.boundaryFingerprint);
                 return;
               }
-            }else if(broker.code==="UNAUTHENTICATED"){
+              // Quarantine targets A; cookies already select B — ignore for this tab.
+            }
+          }else if(broker.code==="UNAUTHENTICATED"||broker.code==="QUARANTINED"){
+            // Captured A gone from cookies — keep locked; never flash SSR initial for A.
+            userIdRef.current=signal.userId;
+            lock(signal.boundaryFingerprint);
+            return;
+          }
+        }
+        if(signal?.type==="logout"){
+          if(broker.ok){
+            if(signal.userId!==broker.userId){ /* foreign */ }
+            else if(signal.boundaryFingerprint&&signal.boundaryFingerprint!==broker.boundaryFingerprint){
+              // Logout of A; cookies already select B — ignore.
+            }else if(!signal.boundaryFingerprint){
+              // User-only hint must not clear fresher B with a known boundary.
+            }else{
               userIdRef.current=signal.userId;
               clear();
               return;
             }
-          }
-          if(!broker.ok){
-            // Failed reattest: never seed SSR initial as ready (C2-R7).
-            if(signal?.type==="quarantine"){
-              userIdRef.current=signal.userId;
-              lock(signal.boundaryFingerprint);
-              return;
-            }
-            setStatusLive("error");
+          }else if(broker.code==="UNAUTHENTICATED"){
+            userIdRef.current=signal.userId;
+            clear();
             return;
           }
-        }catch{
-          if(cancelled)return;
+        }
+        if(!broker.ok){
+          // Failed reattest: never seed SSR initial as ready (C2-R7).
           if(signal?.type==="quarantine"){
             userIdRef.current=signal.userId;
             lock(signal.boundaryFingerprint);
@@ -347,13 +366,34 @@ export function AccountSessionProvider({
           setStatusLive("error");
           return;
         }
-        if(cancelled||lockedRef.current)return;
-        // Hydrate only after successful broker reattest path via refreshFromSignal.
-        void refreshFromSignal();
-      })();
-    });
-    return ()=>{cancelled=true;window.cancelAnimationFrame(frame);};
-  },[clear,lock,refreshFromSignal,setStatusLive]);
+        if(cancelled||lockedRef.current||requestGen.current!==epoch)return;
+        // One-use seed for this epoch; call refresh directly (signalRead already owns bootstrap).
+        bootstrapBrokerSeed.current={epoch,broker};
+        await refresh();
+      }catch{
+        if(cancelled||requestGen.current!==epoch)return;
+        if(signal?.type==="quarantine"){
+          userIdRef.current=signal.userId;
+          lock(signal.boundaryFingerprint);
+          return;
+        }
+        setStatusLive("error");
+      }
+    })();
+    const pending={generation:epoch,promise:bootstrap};
+    signalRead.current=pending;
+    void bootstrap.finally(()=>{if(signalRead.current===pending)signalRead.current=null;});
+    const frame=window.requestAnimationFrame(()=>{releaseFrame();});
+    return ()=>{
+      cancelled=true;
+      // Invalidate the entire bootstrap/refresh operation (seed, profile, final broker, publish).
+      requestGen.current+=1;
+      bootstrapBrokerSeed.current=null;
+      if(signalRead.current===pending)signalRead.current=null;
+      window.cancelAnimationFrame(frame);
+      releaseFrame();
+    };
+  },[clear,lock,refresh,setStatusLive]);
 
   useEffect(()=>{
     // WP01A: broker status replaces browser Auth observers. Focus/visibility recheck only.

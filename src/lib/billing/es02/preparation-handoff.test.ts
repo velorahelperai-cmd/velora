@@ -54,8 +54,28 @@ describe("es02 preparation handoff", () => {
         selection: { persona: "level_1", package: "basic", term: "monthly" },
         consentAccepted: true,
         clientOpId,
-        preparation: complete(),
+        answers: { goals: ["support"] },
+        website: "https://example.com",
+        phone: "+96892123456",
       }),
     ).toBeNull();
+  });
+
+  it("keeps answers and website out of a valid handoff", () => {
+    const result = buildPreparationCheckoutHandoff({
+      accountId,
+      clientOpId,
+      consentAccepted: true,
+      selection: { persona: "level_1", package: "basic", term: "monthly" },
+      preparation: { ...complete(), answers: { version: 1, goals: ["sales"], website: { url: "https://example.com" }, channels: { whatsapp: true } } },
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const encoded = JSON.stringify(result.handoff);
+    expect(encoded).not.toContain("example.com");
+    expect(encoded).not.toContain("sales");
+    expect(encoded).not.toContain("whatsapp");
+    expect(encoded).not.toContain("+968");
+    expect(result.handoff.offer.amountBaisa).toBe(45000);
   });
 });

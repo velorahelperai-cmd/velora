@@ -30,7 +30,7 @@ export const AGGREGATE_LIMITATIONS = Object.freeze([
 ]);
 
 const SHA_RE = /^[a-f0-9]{40}$/i;
-const MAX_DIRTY_PATHS = 300;
+const MAX_DIRTY_PATHS = 200;
 
 /** Paths never hashed into candidate identity (private env / receipts / runtime). */
 function isExcludedIdentityPath(relPath) {
