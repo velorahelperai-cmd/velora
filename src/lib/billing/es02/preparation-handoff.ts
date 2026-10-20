@@ -4,7 +4,7 @@
  * Branch count must equal purchased branch slot quantity.
  */
 
-import { validatePreparation, type Preparation } from "@/lib/tenancy/prepayment-preparation";
+import { validatePreparation, type PreparationDraft } from "@/lib/tenancy/prepayment-preparation";
 import { es02Uuid, type Es02CheckoutHandoff, type Es02ImmutableOffer } from "./contracts";
 import {
   isEs02OfferSelection,
@@ -16,7 +16,7 @@ import {
 
 export type PreparationHandoffInput = {
   accountId: string;
-  preparation: Preparation;
+  preparation: PreparationDraft;
   selection: Es02OfferSelection | Es02LegacySingleSelection;
   consentAccepted: boolean;
   clientOpId: string;
@@ -84,7 +84,7 @@ export function sanitizeCheckoutPayload(value: unknown): {
   if (v.consentAccepted !== true || !es02Uuid(v.clientOpId)) return null;
   const selection = normalizeOfferSelection(v.selection ?? v);
   if (!selection) return null;
-  for (const leak of ["preparation", "business", "branches", "name", "phone", "city", "draft"]) {
+  for (const leak of ["preparation", "business", "branches", "name", "phone", "city", "draft", "answers", "website", "goals", "whatsapp", "crm", "ai", "team", "sector"]) {
     if (leak in v) return null;
   }
   return {

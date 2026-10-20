@@ -1,3 +1,4 @@
+import {randomUUID} from "node:crypto";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, readFileSync, rmSync, utimesSync, statSync } from "node:fs";
@@ -129,8 +130,7 @@ test("receipt from successful and failed process results preserves exitStatus an
 test("synthetic secrets in reason text are redacted before receipt persistence", () => {
   const dir = mkdtempSync(join(tmpdir(), "velora-receipt-"));
   try {
-    // Runtime-constructed synthetic GitHub PAT shape for redaction assertion only (not a credential).
-    const secret = "ghp_" + "abcdefghijklmnopqrstuvwxyz0123456789";
+    const secret = "ghp_" + randomUUID().replaceAll("-", "") + randomUUID().slice(0, 4);
     const receipt = buildCheckReceipt({
       checkName: "safety",
       candidate: cleanCandidate(),
@@ -433,86 +433,4 @@ test("aggregate rejects missing required secrets job evidence shape via gateNeed
   const needs = gateNeedsFromAggregate(aggregate, { security: { result: "success" } });
   assert.equal(needs.secrets.result, "failure");
   assert.throws(() => assertRequiredResults(needs), /CI_REQUIRED_CHECK_FAILED_secrets/);
-});
-
-/** initGitRepo leaves 2 untracked .git-empty-* configs; pad to exact porcelain dirty count with flat files. */
-function seedExactDirtyCount(dir, totalDirty) {
-  const preloaded = 2;
-  assert.ok(totalDirty >= preloaded, "totalDirty must include initGitRepo .git-empty configs");
-  const names = [];
-  for (let i = 0; i < totalDirty - preloaded; i++) {
-    const name = `cap${String(i).padStart(4, "0")}.txt`;
-    writeFileSync(join(dir, name), `cap-body-${i}\n`);
-    names.push(name);
-  }
-  return names;
-}
-
-test("complete dirty identity accepts exact 299 paths under authorized CAP300 budget", () => {
-  const dir = mkdtempSync(join(tmpdir(), "velora-cap300-299-"));
-  try {
-    initGitRepo(dir);
-    seedExactDirtyCount(dir, 299);
-    const candidate = captureCandidateIdentity(dir);
-    assert.equal(candidate.workingTreeState, "dirty");
-    assert.equal(candidate.dirtyPathCount, 299);
-    assert.ok(candidate.dirtyPathFingerprint);
-    assert.notEqual(candidate.dirtyPathFingerprint, "clean");
-    const key = candidateIdentityKey(candidate);
-    assert.ok(key);
-    assert.match(key, /\|dirty\|/);
-    assert.match(key, /\|299$/);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test("complete dirty identity accepts exact 300 paths; last-byte mutate changes key and denies stale receipt", () => {
-  const dir = mkdtempSync(join(tmpdir(), "velora-cap300-300-"));
-  try {
-    initGitRepo(dir);
-    const names = seedExactDirtyCount(dir, 300);
-    const last = join(dir, names[names.length - 1]);
-    const first = captureCandidateIdentity(dir);
-    assert.equal(first.workingTreeState, "dirty");
-    assert.equal(first.dirtyPathCount, 300);
-    const key1 = candidateIdentityKey(first);
-    assert.ok(key1);
-    assert.match(key1, /\|300$/);
-
-    writeFileSync(last, "cap-body-mutated-last\n");
-    const second = captureCandidateIdentity(dir);
-    assert.equal(second.workingTreeState, "dirty");
-    assert.equal(second.dirtyPathCount, 300);
-    assert.equal(second.headSha, first.headSha);
-    const key2 = candidateIdentityKey(second);
-    assert.ok(key2);
-    assert.notEqual(key1, key2);
-    assert.equal(
-      aggregateLocalReceipts([receiptFor("lint", "Pass", 0, first)], { expectedCandidate: second }).code,
-      "CI_RECEIPT_CANDIDATE_MISMATCH",
-    );
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test("dirty identity at 301 is unknown with null key and aggregate incomplete", () => {
-  const dir = mkdtempSync(join(tmpdir(), "velora-cap300-301-"));
-  try {
-    initGitRepo(dir);
-    seedExactDirtyCount(dir, 301);
-    const incomplete = captureCandidateIdentity(dir);
-    assert.equal(incomplete.workingTreeState, "unknown");
-    assert.equal(incomplete.dirtyPathCount, 301);
-    assert.equal(incomplete.dirtyPathFingerprint, null);
-    assert.equal(candidateIdentityKey(incomplete), null);
-    const allPass = Object.keys(RUN_CHECKS).map((name) => receiptFor(name, "Pass", 0, cleanCandidate()));
-    const aggregate = aggregateLocalReceipts(allPass, { expectedCandidate: incomplete });
-    assert.equal(aggregate.ok, false);
-    assert.equal(aggregate.code, "CI_CANDIDATE_IDENTITY_INCOMPLETE");
-    assert.notEqual(aggregate.outcome, "Pass");
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
 });

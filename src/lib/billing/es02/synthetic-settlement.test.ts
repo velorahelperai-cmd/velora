@@ -1,3 +1,5 @@
+import {randomUUID} from "node:crypto";
+const syntheticFixturePassword = randomUUID();
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildSyntheticSettlementEvidence,
@@ -12,8 +14,7 @@ const ids = {
   paymentAttemptId: "66666666-7777-4888-8999-000000000000",
 };
 
-/** Owned fixture DB URL without username/password (gate proves ownership via db name + loopback). */
-const ownedDb = "postgresql://127.0.0.1:3742/c1_ui_integration";
+const ownedDb = `postgresql://fixture:${syntheticFixturePassword}@127.0.0.1:3742/c1_ui_integration`;
 const ownedTransport = "http://127.0.0.1:3730";
 
 describe("es02 synthetic settlement fence", () => {
@@ -44,7 +45,7 @@ describe("es02 synthetic settlement fence", () => {
       evaluateSyntheticSettlementGate({
         NODE_ENV: "test",
         VELORA_ES02_OWNED_FIXTURE: "1",
-        VELORA_OWNED_FIXTURE_DATABASE_URL: "postgresql://127.0.0.1:3742/unowned_database",
+        VELORA_OWNED_FIXTURE_DATABASE_URL: `postgresql://fixture:${syntheticFixturePassword}@127.0.0.1:3742/unowned_database`,
         NEXT_PUBLIC_SUPABASE_URL: ownedTransport,
       } as NodeJS.ProcessEnv),
     ).toMatchObject({ allowed: false, reason: "database_not_owned_fixture" });
@@ -60,9 +61,9 @@ describe("es02 synthetic settlement fence", () => {
 
   it("rejects wrong DB scheme, nested pathname, generic DATABASE_URL fallback, and /fixture ownership claims", () => {
     expect(isOwnedFixtureDatabaseUrl("https://127.0.0.1:3742/c1_ui_integration")).toBe(false);
-    expect(isOwnedFixtureDatabaseUrl("postgresql://127.0.0.1:3742/fixture")).toBe(false);
+    expect(isOwnedFixtureDatabaseUrl(`postgresql://fixture:${syntheticFixturePassword}@127.0.0.1:3742/fixture`)).toBe(false);
     expect(
-      isOwnedFixtureDatabaseUrl("postgresql://127.0.0.1:3742/c1_ui_integration/another_database"),
+      isOwnedFixtureDatabaseUrl(`postgresql://fixture:${syntheticFixturePassword}@127.0.0.1:3742/c1_ui_integration/another_database`),
     ).toBe(false);
     expect(
       evaluateSyntheticSettlementGate({

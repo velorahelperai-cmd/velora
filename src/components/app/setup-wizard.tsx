@@ -39,7 +39,9 @@ import { evaluateSetupKnowledgeProgress } from "@/lib/tenancy/customer-readiness
 import { resolveReviewRefresh } from "@/lib/tenancy/review-refresh";
 import { canResubmitReview, reviewFailureMessage } from "@/lib/tenancy/review-ui";
 import type { CompanyRecord, CompanyReviewEvent, CompanyReviewRequest } from "@/lib/tenancy/types";
-import { AccountMenu } from "@/components/app/account-chrome";
+import { AccountMenu, useOptionalAccountSession } from "@/components/app/account-chrome";
+import { PaidAssistantChecklist, PaidSetupFlow } from "./paid-assistant-checklist";
+import {readOwnedPaidBranchSetupAction,readOwnedPaidBranchSetupEntryAction} from "@/lib/tenancy/paid-setup-actions";
 import { AssistantTester } from "@/components/app/assistant-tester";
 import { KnowledgeEditor } from "@/components/app/knowledge-editor";
 import {BusinessSetupGuidance} from './business-setup-guidance';
@@ -209,7 +211,28 @@ function SetupJourneyNotice({
 const companyToBusiness = companyBusiness;
 const EMPTY_KNOWLEDGE: KnowledgeSourceRecord[] = [];
 
-export function SetupWizard({
+/** Confirmed-company setup reads paid branch authority before showing actionable steps.
+ * The prepayment route and the existing no-company recovery implementation stay separate. */
+export function SetupWizard(props:Parameters<typeof LegacySetupWizard>[0]) {
+ const session=useOptionalAccountSession();
+ const {locale}=useDemo();
+ const companyId=props.initialCompany?.id;
+ const identity=session?.identity;
+ const boundaryFingerprint=session?.boundaryFingerprint;
+ const isCurrent=useCallback(()=>{
+  if(!session||!identity||!boundaryFingerprint||identity.companyId!==companyId)return false;
+  const live=session.liveSnapshot();
+  return live.ready&&live.userId===props.userId&&live.boundaryFingerprint===boundaryFingerprint&&session.isCurrentUser(props.userId,identity);
+ },[session,identity,boundaryFingerprint,companyId,props.userId]);
+ if(!companyId)return <LegacySetupWizard {...props}/>;
+ if(session?.status!=="ready"||!boundaryFingerprint||identity?.userId!==props.userId||identity.companyId!==companyId)return <PaidAssistantChecklist locale={locale} model={null} loading={session?.status==="loading"}/>;
+ return <>
+  <header className={styles.setupHeader}><div className={styles.setupHeaderActions}><LangSwitch/><AccountMenu compact/></div></header>
+  <PaidSetupFlow locale={locale} scope={{expectedAccountId:props.userId,companyId,boundaryFingerprint}} isCurrent={isCurrent} readEntry={readOwnedPaidBranchSetupEntryAction} readBranch={readOwnedPaidBranchSetupAction}/>
+ </>;
+}
+
+function LegacySetupWizard({
   userId,
   masterJourneyEnabled = false,
   preferredNext,

@@ -4,6 +4,18 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
+it("optional branch-contact migration validates before writes and does not widen privileges", () => {
+  const sql = readFileSync("supabase/migrations/20261019172428_es02_optional_branch_contact_phone.sql", "utf8");
+  expect(sql).toContain("add column contact_phone text");
+  expect(sql).toContain("company_branches_contact_phone_e164");
+  expect(sql.indexOf("Every optional branch contact")).toBeLessThan(sql.indexOf("update private.es02_account_orders"));
+  expect(sql).toContain("contact_phone = nullif");
+  expect(sql).toContain("private.es02_require_active_actor");
+  expect(sql).toContain("if o.status is distinct from 'settled'");
+  expect(sql).not.toMatch(/^\s*(grant|revoke)\b/im);
+  expect(sql).not.toContain("disable row level security");
+});
+
 const delivery = "supabase/migrations/20261017120000_es02_account_bound_purchase.sql";
 const c1 = "supabase/migrations/20261017130000_es02_c1_authority_correction.sql";
 const c2 = "supabase/migrations/20261017140000_es02_c2_atomicity_ledger_snapshot.sql";

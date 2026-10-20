@@ -24,6 +24,8 @@ vi.mock("@/lib/logging/logger.mjs", () => ({
 }));
 
 import {
+  beginAccountPaymentAction,
+  completeOwnedProvisioningAction,
   createAccountBoundOrderAction,
   readOwnedPurchaseRecoveryAction,
   settleAccountOrderPaymobAction,
@@ -68,6 +70,18 @@ describe("es02 account order actions", () => {
       error: null,
     });
     mocks.checkAppSession.mockResolvedValue({ ok: true });
+  });
+
+  it("validates explicit payment intent without creating an order while provider is deferred", async () => {
+    const input = { expectedAccountId: accountId, selection: { term: "monthly" as const, slots: [{ persona: "level_1" as const, package: "basic" as const }] }, consentAccepted: true, clientOpId: sessionId };
+    await expect(beginAccountPaymentAction(input)).resolves.toEqual({ ok: false, code: "PAYMOB_EXTERNAL_DEFERRED" });
+    expect(mocks.userRpc).not.toHaveBeenCalled();
+    await expect(beginAccountPaymentAction({ ...input, consentAccepted: false })).resolves.toEqual({ ok: false, code: "INVALID_INPUT" });
+    await expect(beginAccountPaymentAction({ ...input, clientOpId: "invalid" })).resolves.toEqual({ ok: false, code: "INVALID_INPUT" });
+    await expect(beginAccountPaymentAction({ ...input, expectedAccountId: foreign })).resolves.toEqual({ ok: false, code: "UNAUTHENTICATED" });
+    mocks.checkAppSession.mockResolvedValue({ ok: false });
+    await expect(beginAccountPaymentAction(input)).resolves.toEqual({ ok: false, code: "UNAUTHENTICATED" });
+    expect(mocks.userRpc).not.toHaveBeenCalled();
   });
 
   it("creates account-bound order without accepting business draft fields", async () => {
@@ -257,4 +271,20 @@ describe("es02 account order actions", () => {
       code: "PAYMOB_EXTERNAL_DEFERRED",
     });
   });
+});
+
+
+describe("optional branch contact provisioning", () => {
+ beforeEach(() => { vi.clearAllMocks(); mocks.getClaims.mockResolvedValue({data:{claims:{sub:accountId,session_id:"11111111-2222-4333-8444-555555555555"}},error:null}); mocks.checkAppSession.mockResolvedValue({ok:true}); });
+it("projects optional branch contact canonically without local IDs in paid provisioning", async () => {
+  mocks.userRpc.mockResolvedValue({data:{ok:false,code:"NOT_SETTLED"},error:null,status:200});
+  await completeOwnedProvisioningAction({expectedAccountId:accountId,orderId:"12121212-3434-4656-8787-909090909090",idempotencyKey:"77777777-8888-4999-8aaa-bbbbbbbbbbbb",preparation:{name:"Local",type:"retail",country:"OM",city:"Muscat",phone:"+96871234567",branches:[{localId:"main",name:"Main",city:"Muscat"},{localId:"second",name:"Other",city:"Sur",contactPhone:"+٩٦٨٩٢١٢٣٤٥٦"}]}});
+  expect(mocks.userRpc).toHaveBeenCalledWith("es02_provision_owned_purchase",expect.objectContaining({p_branches:[{name:"Main",city:"Muscat",contact_phone:null},{name:"Other",city:"Sur",contact_phone:"+96892123456"}]}));
+});
+it("invalid branch contact is rejected before the provisioning RPC", async () => {
+  const result=await completeOwnedProvisioningAction({expectedAccountId:accountId,orderId:"12121212-3434-4656-8787-909090909090",idempotencyKey:"77777777-8888-4999-8aaa-bbbbbbbbbbbb",preparation:{name:"Local",type:"retail",country:"OM",city:"Muscat",phone:"+96871234567",branches:[{name:"Other",city:"Sur",contactPhone:"123"}]}});
+  expect(result).toMatchObject({ok:false,code:"INVALID_INPUT"});
+  expect(mocks.userRpc).not.toHaveBeenCalled();
+});
+
 });

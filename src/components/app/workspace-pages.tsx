@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import type { ReactNode } from "react";
 import {subscriptionPolicyCopy} from '@/lib/billing/lifecycle';
 import { useRouter, useSearchParams } from "next/navigation";
 import type { KnowledgeApprovalFoundation, KnowledgeSourceRecord } from "@/lib/knowledge/types";
@@ -53,7 +54,7 @@ export function TestPage() {
   );
 }
 
-export function LegalPage({ kind }: { kind: "privacy" | "terms" | "deletion" }) {
+export function LegalPage({ kind, draftTerms = false, children }: { kind: "privacy" | "terms" | "deletion"; draftTerms?: boolean; children?: ReactNode }) {
   const copy = useAppCopy();
   const { locale } = useDemo();
   const title = kind === "privacy" ? copy.legal.privacyTitle : kind === "terms" ? copy.legal.termsTitle : copy.legal.deletionTitle;
@@ -69,6 +70,7 @@ export function LegalPage({ kind }: { kind: "privacy" | "terms" | "deletion" }) 
       </div>
       <article className="mx-auto mt-8 max-w-[800px] sm:mt-10">
         <h1 className="text-2xl font-bold leading-snug sm:text-3xl lg:text-4xl">{title}</h1>
+        {kind === "terms" && draftTerms ? children : <>
         <p className="mt-4 text-sm leading-7 text-[var(--color-muted-on-dark)] sm:text-base">{copy.legal.operator}</p>
         <a href={`mailto:${copy.legal.contactEmail}`} dir="ltr" className="mt-2 inline-flex min-h-11 max-w-full items-center break-all text-sm text-[#38dc89] underline underline-offset-4 sm:text-base">{copy.legal.contactEmail}</a>
         <ol className="mt-6 grid gap-3 text-base leading-7 text-[var(--color-on-dark)] sm:gap-4 sm:text-lg sm:leading-8">
@@ -79,6 +81,7 @@ export function LegalPage({ kind }: { kind: "privacy" | "terms" | "deletion" }) 
             </li>
           ))}
         </ol>
+        </>}
         <div className="mt-8"><LinkButton href="/" variant="secondary">{copy.legal.backHome}</LinkButton></div>
       </article>
     </main>

@@ -6,7 +6,7 @@ const h=vi.hoisted(()=>({slots:[] as unknown[],cursor:0}));
 vi.mock('react',async()=>({...await vi.importActual<typeof import('react')>('react'),useState(initial:unknown){const i=h.cursor++;if(!(i in h.slots))h.slots[i]=typeof initial==='function'?(initial as ()=>unknown)():initial;return [h.slots[i],(v:unknown)=>{h.slots[i]=typeof v==='function'?(v as (old:unknown)=>unknown)(h.slots[i]):v;}];},useRef(initial:unknown){const i=h.cursor++;if(!(i in h.slots))h.slots[i]={current:initial};return h.slots[i];}}));
 import {BusinessPhoneField} from './business-phone-field';
 import {BusinessEmailField} from './business-email-field';
-type P={children?:ReactNode;type?:string;value?:string;role?:string;'aria-label'?:string;onClick?:()=>void;onBlur?:()=>void;onChange?:(e:{target:{value:string}})=>void};
+type P={id?:string;htmlFor?:string;children?:ReactNode;type?:string;value?:string;role?:string;'aria-label'?:string;onClick?:()=>void;onBlur?:()=>void;onChange?:(e:{target:{value:string}})=>void};
 function all(root:ReactNode):ReactElement<P>[]{const out:ReactElement<P>[]=[];Children.forEach(root,node=>{if(isValidElement<P>(node)){out.push(node);out.push(...all(node.props.children));}});return out;}
 beforeEach(()=>{h.slots=[];h.cursor=0;});
 describe('contact fields without implicit persistence',()=>{
@@ -14,4 +14,16 @@ describe('contact fields without implicit persistence',()=>{
  it('shows legacy phone data unchanged and rejects stale blur after the actor changes',()=>{let current=true;const change=vi.fn();const render=()=>{h.cursor=0;return BusinessPhoneField({id:'phone',label:'Business phone',ar:false,value:'legacy-contact',businessCountry:'OM',isCurrent:()=>current,onChange:change});};let tree=render();expect(all(tree).find(n=>n.props.type==='tel')?.props.value).toBe('legacy-contact');all(tree).find(n=>n.props.type==='tel')?.props.onChange?.({target:{value:getExampleNumber('OM',examples)!.number}});tree=render();const blur=all(tree).find(n=>n.props.type==='tel')?.props.onBlur;current=false;blur?.();expect(change).not.toHaveBeenCalled();expect(all(render()).find(n=>n.props.type==='tel')?.props.value).toBe('');});
  it('renders a removable default-email chip without emitting a save, and stays empty after removal',()=>{let value='owner@example.test';const change=vi.fn(next=>{value=next;});const render=()=>{h.cursor=0;return BusinessEmailField({id:'email',label:'Business email',ar:false,value,suggestedEmail:'owner@example.test',onChange:change,isCurrent:()=>true});};let tree=render();expect(change).not.toHaveBeenCalled();all(tree).find(n=>n.props['aria-label']==='Remove suggested business email')?.props.onClick?.();tree=render();expect(change).toHaveBeenCalledWith('');expect(all(tree).find(n=>n.props.type==='email')?.props.value).toBe('');});
  it('preserves stored business email and never emits invalid email or a stale account value',()=>{let current=true;const change=vi.fn();const render=()=>{h.cursor=0;return BusinessEmailField({id:'email',label:'Business email',ar:false,value:'Sales@example.test',suggestedEmail:'owner@example.test',isCurrent:()=>current,onChange:change});};let tree=render();expect(all(tree).find(n=>n.props.type==='email')?.props.value).toBe('Sales@example.test');all(tree).find(n=>n.props.type==='email')?.props.onChange?.({target:{value:'bad'}});tree=render();all(tree).find(n=>n.props.type==='email')?.props.onBlur?.();expect(change).not.toHaveBeenCalled();current=false;expect(all(render()).find(n=>n.props.type==='email')?.props.value).toBe('');});
+});
+
+
+it('uses one associated group-level number label only when requested by Studio',()=>{
+ const change=vi.fn();
+ const tree=BusinessPhoneField({id:'studio-phone',label:'Business contact phone',ar:false,value:'',businessCountry:'OM',onChange:change,groupLabel:true});
+ const labels=all(tree).filter(node=>node.type==='label'&&node.props.htmlFor==='studio-phone');
+ expect(labels).toHaveLength(1);
+ expect(labels[0].props.id).toBe('studio-phone-label');
+ expect(all(tree).filter(node=>node.props.id==='studio-phone')).toHaveLength(1);
+ expect(tree.props['aria-labelledby']).toBeUndefined();
+ expect(change).not.toHaveBeenCalled();
 });

@@ -1,0 +1,51 @@
+import {createElement} from "react";
+import {renderToStaticMarkup} from "react-dom/server";
+import {expect,it} from "vitest";
+import {projectTrustedBoundSelection} from "@/lib/tenancy/paid-setup-contracts";
+import {PaidSetupWorkspace,workspaceStepAllowed,nextWorkspaceSelection,type PaidSetupWorkspaceProps} from "./paid-setup-workspace";
+import {unavailablePaidBranchConnectionRead} from "@/lib/tenancy/paid-branch-connection-contracts";
+const scope={expectedAccountId:"actor",companyId:"company",branchId:"branch",boundaryFingerprint:"capture"};
+const read=projectTrustedBoundSelection({companyId:"company",branchId:"branch",branchLabel:"Main branch",orderGroupId:"order",slotIndex:0,persona:"level_2",package:"basic",term:"monthly",maxChannels:1,employeesExcludingOwner:2,clockState:"waiting_readiness",asOf:"now"},{channels:["whatsapp"]});
+const props:PaidSetupWorkspaceProps={locale:"en",scope,read,activeStepId:"whatsapp",availableStepIds:["whatsapp","instagram","hours","knowledge","language","test","team","launch"],isCurrent:()=>true,onSelectStep:()=>{throw Error("No selection during render");}};
+const render=(overrides:Partial<PaidSetupWorkspaceProps>={})=>renderToStaticMarkup(createElement(PaidSetupWorkspace,{...props,...overrides}));
+it("renders seven entitled steps and actual progress with no guide auto-selection",()=>{
+ const html=render();expect(html.match(/data-step-id=/g)).toHaveLength(7);expect(html).not.toContain('data-step-id="instagram"');expect(html).toContain('aria-current="step"');expect(html).not.toContain("data-guide-source");
+ expect(html).toContain('<bdi dir="ltr">0 / 7</bdi>');expect(html).not.toContain('href="/setup/branches/');
+});
+it("renders eight only for a paid two-channel read",()=>{
+ const both=projectTrustedBoundSelection({companyId:"company",branchId:"branch",branchLabel:"Main",orderGroupId:"order",slotIndex:0,persona:"level_2",package:"premium",term:"monthly",maxChannels:2,employeesExcludingOwner:4,clockState:"waiting_readiness",asOf:"now"},{channels:["whatsapp","instagram"]});
+ expect(render({read:both}).match(/data-step-id=/g)).toHaveLength(8);
+});
+it("IG-only never renders WA",()=>{
+ const ig=projectTrustedBoundSelection({companyId:"company",branchId:"branch",branchLabel:"Main",orderGroupId:"order",slotIndex:0,persona:"level_2",package:"basic",term:"monthly",maxChannels:1,employeesExcludingOwner:2,clockState:"waiting_readiness",asOf:"now"},{channels:["instagram"]});
+ expect(render({read:ig,activeStepId:"instagram"})).not.toContain('data-step-id="whatsapp"');
+});
+it.each(["foreign","unpaid","unavailable","stale","empty"] as const)("fails closed for %s",kind=>{
+ const html=render(kind==="foreign"?{scope:{...scope,branchId:"foreign"}}:kind==="unpaid"?{read:{...read,entitlement:null}}:kind==="unavailable"?{read:{...read,sourceStatus:"unavailable"}}:kind==="stale"?{isCurrent:()=>false}:{read:null});
+ expect(html).not.toContain("data-step-id");expect(html).not.toContain('type="radio"');
+});
+it("cannot open a locked or unmounted step from controlled selection",()=>{
+ expect(workspaceStepAllowed(read,scope,"hours",props.availableStepIds)).toBe(false);
+ expect(render({activeStepId:"hours",renderStep:()=>{throw Error("Locked leaf mounted");}})).toContain("Choose an available step");
+ expect(render({availableStepIds:[]})).not.toContain('type="radio"');
+});
+it("keeps launch gated even after all other statuses are verified",()=>{
+ const complete={...read,steps:read.steps.map(s=>({...s,status:"verified" as const}))};
+ expect(workspaceStepAllowed(complete,scope,"launch",props.availableStepIds)).toBe(false);
+});
+it("only mounts a released leaf after authoritative dependencies become ready",()=>{
+ const updated={...read,steps:read.steps.map(s=>s.id==="connect_whatsapp"?{...s,status:"verified" as const}:s.id==="hours"?{...s,status:"pending" as const,actionId:"save_hours"}:s),progress:{...read.progress,verified:1}};
+ expect(render({read:updated,activeStepId:"hours",renderStep:id=>createElement("p",null,"Existing leaf: "+id)})).toContain("Existing leaf: hours");
+ expect(read.progress.verified).toBe(0);
+});
+it("uses RTL and a collapsed accessible mobile step control",()=>{
+ const html=render({locale:"ar"});expect(html).toContain('dir="rtl"');expect(html).toContain('aria-expanded="false"');expect(html).toContain('tabindex="-1"');
+});
+it("advances within the page only after server-confirmed channel and matching proof",()=>{
+ const proof={...unavailablePaidBranchConnectionRead({...scope,channel:"whatsapp"},"now","source_failed"),sourceStatus:"ready" as const,connection:{state:"connected" as const,verified:true,link:{id:"link",generation:2},attempt:null,flow:"wa_new_number" as const,reasonCodes:[]}};
+ const snapshot={scope,read:{...read,steps:read.steps.map(s=>s.id==="connect_whatsapp"?{...s,status:"verified" as const,reasonCodes:[]}:s),progress:{...read.progress,verified:1}},connectionReads:{whatsapp:proof},confirmedChannels:["whatsapp" as const]};
+ expect(nextWorkspaceSelection(snapshot,"whatsapp")).toBe("hours");
+ expect(nextWorkspaceSelection({...snapshot,confirmedChannels:[]},"whatsapp")).toBe("whatsapp");
+ expect(nextWorkspaceSelection({...snapshot,connectionReads:{whatsapp:{...proof,expectedAccountId:"old"}}},"whatsapp")).toBe("whatsapp");
+ expect(nextWorkspaceSelection(snapshot,"hours")).toBe("hours");
+});

@@ -3,9 +3,9 @@ import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { countries, countryLabel, findCountries, type CountryOption } from './country-options';
 import styles from './country-combobox.module.css';
 
-export function CountryCombobox({ id, value, ar, disabled, onChange, labelSuffix, allowCountry, inputLabel, required=true }: {
+export function CountryCombobox({ id, value, ar, disabled, onChange, labelSuffix, allowCountry, inputLabel, required=true, compactOptions=false }: {
   id: string; value: string; ar: boolean; disabled: boolean; onChange: (code: string) => void;
-  labelSuffix?: (code:string)=>string; allowCountry?: (code:string)=>boolean; inputLabel?:string; required?:boolean;
+  labelSuffix?: (code:string)=>string; allowCountry?: (code:string)=>boolean; inputLabel?:string; required?:boolean; compactOptions?:boolean;
 }) {
   const [query, setQuery] = useState<string | null>(null);
   const [active, setActive] = useState(-1);
@@ -39,7 +39,7 @@ export function CountryCombobox({ id, value, ar, disabled, onChange, labelSuffix
     } else if (event.key === 'Escape' && open) { event.preventDefault(); close(); }
     else if (event.key === 'Tab') close();
   }
-  return <div className={styles.country} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) close(); }}>
+  return <div className={styles.country} data-compact-options={compactOptions ? "true" : undefined} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) close(); }}>
     <input type="hidden" name="country" value={value} />
     <div className={styles.control}>
       <input ref={input} id={id} data-setup-entry-control="" role="combobox" aria-autocomplete="list" aria-expanded={open}
@@ -57,7 +57,7 @@ export function CountryCombobox({ id, value, ar, disabled, onChange, labelSuffix
         {results.map((country, index) => <button key={country.code} type="button" role="option" tabIndex={-1}
           id={`${id}-option-${country.code}`} aria-selected={country.code === value.trim().toUpperCase()} data-active={index === active || undefined}
           ref={index === active ? activeOption : undefined} onPointerDown={event => event.preventDefault()} onClick={() => choose(country)}>
-          <span>{country[ar ? 'ar' : 'en']}{labelSuffix?<bdi dir="ltr"> {labelSuffix(country.code)}</bdi>:null}</span><span className={styles.secondary} lang={ar ? 'en' : 'ar'} dir={ar ? 'ltr' : 'rtl'}>{country[ar ? 'en' : 'ar']}</span>
+          <span className={styles.primary}><span className={styles.optionName} title={country[ar ? 'ar' : 'en']}>{country[ar ? 'ar' : 'en']}</span>{labelSuffix?<bdi dir="ltr"> {labelSuffix(country.code)}</bdi>:null}</span><span className={styles.secondary} lang={ar ? 'en' : 'ar'} dir={ar ? 'ltr' : 'rtl'}>{country[ar ? 'en' : 'ar']}</span>
         </button>)}
       </div>
       {!results.length ? <p role="status" className={styles.empty}>{ar ? 'لا توجد دولة بهذا الاسم. جرّب البحث بالعربية أو الإنجليزية.' : 'No matching country. Try an Arabic or English name.'}</p> : null}

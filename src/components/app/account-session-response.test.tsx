@@ -186,6 +186,7 @@ beforeEach(() => {
     boundaryFingerprint: "fp-a",
     nativeSessionId: "11111111-1111-4111-8111-111111111111",
     contextGeneration: 1,
+    generation: "gen-a-1",
   });
   vi.stubGlobal("window", {
     location: { reload: state.reload },
@@ -200,6 +201,22 @@ beforeEach(() => {
 afterEach(() => {
   for (const slot of state.slots) slot.cleanup?.();
   vi.useRealTimers();
+});
+
+const brokerOk = (
+  userId = "user-a",
+  boundaryFingerprint = "fp-a",
+  generation = "gen-a-1",
+) => ({
+  ok: true as const,
+  userId,
+  boundaryFingerprint,
+  nativeSessionId:
+    userId === "user-b"
+      ? "22222222-2222-4222-8222-222222222222"
+      : "11111111-1111-4111-8111-111111111111",
+  contextGeneration: 1,
+  generation,
 });
 
 it("mount shares one in-flight authoritative identity read via broker status", async () => {
@@ -221,12 +238,17 @@ it("mount shares one in-flight authoritative identity read via broker status", a
   render();
   frames[0]!();
   await vi.advanceTimersByTimeAsync(0);
-  expect(state.broker).toHaveBeenCalledTimes(2);
+  // Mount broker seed reused for pre-profile; profile still pending — no second pre-read.
+  expect(state.broker).toHaveBeenCalledTimes(1);
   expect(state.read).toHaveBeenCalledTimes(1);
+  expect(render().status).not.toBe("ready");
   pending.resolve({ ok: true, data: profile() });
   await vi.advanceTimersByTimeAsync(0);
+  // Fresh post-profile broker reattest retained.
+  expect(state.broker).toHaveBeenCalledTimes(2);
   expect(render().identity?.userId).toBe("user-a");
   expect(render().boundaryFingerprint).toBe("fp-a");
+  expect(render().status).toBe("ready");
 });
 
 it("a late refresh cannot restore platform owner identity after logout", async () => {
@@ -374,6 +396,251 @@ it("recoverOperation rejects a foreign-boundary receipt without locking", async 
   state.read.mockResolvedValue({ ok: true, data: profile() });
   await render().refresh();
   render().recoverOperation?.(receipt("fp-foreign"));
+  expect(render().status).toBe("ready");
+  expect(render().identity?.userId).toBe("user-a");
+});
+
+it("standalone refresh always performs a fresh pre-profile broker read", async () => {
+  state.read.mockResolvedValue({ ok: true, data: profile() });
+  await render().refresh();
+  state.broker.mockClear();
+  state.read.mockClear();
+  state.broker.mockResolvedValue(brokerOk("user-a", "fp-a", "gen-a-2"));
+  await render().refresh();
+  // Fresh pre-read + fresh post-profile reattest (no mount seed).
+  expect(state.broker).toHaveBeenCalledTimes(2);
+  expect(state.read).toHaveBeenCalledTimes(1);
+  expect(render().status).toBe("ready");
+});
+
+it("clear while mount broker pending does not ready from late seed", async () => {
+  vi.useFakeTimers();
+  const pendingBroker = deferred();
+  state.broker.mockReturnValue(pendingBroker.promise);
+  state.read.mockResolvedValue({ ok: true, data: profile() });
+  const frames: Array<() => void> = [];
+  vi.stubGlobal("window", {
+    location: { reload: state.reload },
+    requestAnimationFrame: (fn: () => void) => {
+      frames.push(fn);
+      return 1;
+    },
+    cancelAnimationFrame: vi.fn(),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    sessionStorage: memoryStore(),
+  });
+  const session = render();
+  frames[0]!();
+  await vi.advanceTimersByTimeAsync(0);
+  session.clear();
+  expect(render().status).toBe("guest");
+  pendingBroker.resolve(brokerOk());
+  await vi.advanceTimersByTimeAsync(0);
+  expect(render().status).toBe("guest");
+  expect(render().identity).toBeNull();
+  expect(state.read).not.toHaveBeenCalled();
+});
+
+it("lock while mount broker pending keeps locked and drops late seed", async () => {
+  vi.useFakeTimers();
+  const pendingBroker = deferred();
+  state.broker.mockReturnValue(pendingBroker.promise);
+  state.read.mockResolvedValue({ ok: true, data: profile() });
+  const frames: Array<() => void> = [];
+  vi.stubGlobal("window", {
+    location: { reload: state.reload },
+    requestAnimationFrame: (fn: () => void) => {
+      frames.push(fn);
+      return 1;
+    },
+    cancelAnimationFrame: vi.fn(),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    sessionStorage: memoryStore(),
+  });
+  const session = render();
+  frames[0]!();
+  await vi.advanceTimersByTimeAsync(0);
+  session.lock("fp-a");
+  expect(render().status).toBe("locked");
+  pendingBroker.resolve(brokerOk());
+  await vi.advanceTimersByTimeAsync(0);
+  expect(render().status).toBe("locked");
+  expect(render().identity).toBeNull();
+  expect(state.read).not.toHaveBeenCalled();
+});
+
+it("expire while profile await pending does not restore ready from late profile", async () => {
+  const pendingProfile = deferred();
+  const profileEntered = deferred();
+  state.read.mockImplementationOnce(() => {
+    profileEntered.resolve(true);
+    return pendingProfile.promise;
+  });
+  const session = render();
+  const request = session.refresh();
+  await profileEntered.promise;
+  expect(state.read).toHaveBeenCalledTimes(1);
+  session.expire();
+  expect(render().status).toBe("expired");
+  pendingProfile.resolve({ ok: true, data: profile() });
+  await request;
+  expect(render().status).toBe("expired");
+  expect(render().identity).toBeNull();
+});
+
+it("peer B during profile await discards A and reloads without unlocking B", async () => {
+  vi.useFakeTimers();
+  state.path = "/app";
+  const pending = deferred();
+  const profileEntered = deferred();
+  state.read.mockImplementationOnce(() => {
+    profileEntered.resolve(true);
+    return pending.promise;
+  });
+  const old = render().refresh();
+  await profileEntered.promise;
+  expect(state.read).toHaveBeenCalledTimes(1);
+  state.peerSignal?.({ type: "context", userId: "user-b", companyId: null });
+  expect(render().identity).toBeNull();
+  expect(render().status).toBe("loading");
+  pending.resolve({ ok: true, data: profile("user-a") });
+  await old;
+  expect(render().identity).toBeNull();
+  expect(state.reload).toHaveBeenCalled();
+});
+
+it("same-user new tip during pre-profile read reloads instead of ready", async () => {
+  state.read.mockResolvedValue({ ok: true, data: profile() });
+  await render().refresh();
+  expect(render().boundaryFingerprint).toBe("fp-a");
+  state.broker
+    .mockResolvedValueOnce(brokerOk("user-a", "fp-a-next", "gen-a-9"))
+    .mockResolvedValue(brokerOk("user-a", "fp-a-next", "gen-a-9"));
+  state.read.mockResolvedValue({ ok: true, data: profile() });
+  state.reload.mockClear();
+  await render().refresh();
+  // Unchanged tip-mismatch branch: reload + loading; identity retention is baseline behavior.
+  expect(state.reload).toHaveBeenCalled();
+  expect(render().status).toBe("loading");
+  expect(render().status).not.toBe("ready");
+});
+
+it("profile owner mismatch against post-profile broker rejects ready", async () => {
+  state.broker
+    .mockResolvedValueOnce(brokerOk("user-a", "fp-a", "gen-a-1"))
+    .mockResolvedValueOnce(brokerOk("user-a", "fp-a", "gen-a-1"));
+  state.read.mockResolvedValue({ ok: true, data: profile("user-b") });
+  await render().refresh();
+  expect(render().status).toBe("error");
+  expect(render().identity).toBeNull();
+});
+
+it("final post-profile broker throw leaves error not ready", async () => {
+  state.broker
+    .mockResolvedValueOnce(brokerOk("user-a", "fp-a", "gen-a-1"))
+    .mockRejectedValueOnce(new Error("broker unavailable"));
+  state.read.mockResolvedValue({ ok: true, data: profile() });
+  await render().refresh();
+  expect(render().status).toBe("error");
+  expect(render().identity).toBeNull();
+});
+
+it("same-operation focus join reuses in-flight bootstrap without a new pre-read", async () => {
+  vi.useFakeTimers();
+  const pending = deferred();
+  state.read.mockReturnValue(pending.promise);
+  const frames: Array<() => void> = [];
+  const listeners = new Map<string, Array<() => void>>();
+  vi.stubGlobal("window", {
+    location: { reload: state.reload },
+    requestAnimationFrame: (fn: () => void) => {
+      frames.push(fn);
+      return 1;
+    },
+    cancelAnimationFrame: vi.fn(),
+    addEventListener: (type: string, fn: () => void) => {
+      const list = listeners.get(type) ?? [];
+      list.push(fn);
+      listeners.set(type, list);
+    },
+    removeEventListener: vi.fn(),
+    sessionStorage: memoryStore(),
+  });
+  vi.stubGlobal("document", {
+    visibilityState: "visible",
+    addEventListener: (type: string, fn: () => void) => {
+      const list = listeners.get(type) ?? [];
+      list.push(fn);
+      listeners.set(type, list);
+    },
+    removeEventListener: vi.fn(),
+  });
+  render();
+  frames[0]!();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(state.broker).toHaveBeenCalledTimes(1);
+  expect(state.read).toHaveBeenCalledTimes(1);
+  for (const fn of listeners.get("focus") ?? []) fn();
+  await vi.advanceTimersByTimeAsync(0);
+  // Same epoch join — no additional pre-profile broker read.
+  expect(state.broker).toHaveBeenCalledTimes(1);
+  expect(state.read).toHaveBeenCalledTimes(1);
+  pending.resolve({ ok: true, data: profile() });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(state.broker).toHaveBeenCalledTimes(2);
+  expect(render().status).toBe("ready");
+});
+
+it("stale finally cannot clear a newer in-flight refresh", async () => {
+  vi.useFakeTimers();
+  const firstProfile = deferred();
+  const secondProfile = deferred();
+  state.read.mockReturnValueOnce(firstProfile.promise);
+  const frames: Array<() => void> = [];
+  const listeners = new Map<string, Array<() => void>>();
+  vi.stubGlobal("window", {
+    location: { reload: state.reload },
+    requestAnimationFrame: (fn: () => void) => {
+      frames.push(fn);
+      return 1;
+    },
+    cancelAnimationFrame: vi.fn(),
+    addEventListener: (type: string, fn: () => void) => {
+      const list = listeners.get(type) ?? [];
+      list.push(fn);
+      listeners.set(type, list);
+    },
+    removeEventListener: vi.fn(),
+    sessionStorage: memoryStore(),
+  });
+  vi.stubGlobal("document", {
+    visibilityState: "visible",
+    addEventListener: (type: string, fn: () => void) => {
+      const list = listeners.get(type) ?? [];
+      list.push(fn);
+      listeners.set(type, list);
+    },
+    removeEventListener: vi.fn(),
+  });
+  // Mount bootstrap enters profile await (signalRead owns the operation).
+  render();
+  frames[0]!();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(state.read).toHaveBeenCalledTimes(1);
+  render().clear();
+  expect(render().status).toBe("guest");
+  // Newer standalone refresh after invalidation.
+  state.read.mockReturnValueOnce(secondProfile.promise);
+  state.broker.mockResolvedValue(brokerOk("user-a", "fp-a", "gen-a-2"));
+  const second = render().refresh();
+  firstProfile.resolve({ ok: true, data: profile() });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(render().status).not.toBe("ready");
+  expect(render().identity).toBeNull();
+  secondProfile.resolve({ ok: true, data: profile() });
+  await second;
   expect(render().status).toBe("ready");
   expect(render().identity?.userId).toBe("user-a");
 });
