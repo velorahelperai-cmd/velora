@@ -170,31 +170,34 @@ const loadAuth = cache(async (): Promise<LoadAuthOk | LoadAuthFail> => {
       user.user_metadata?.full_name || user.user_metadata?.name || "",
     ).trim();
 
-    // Profile bootstrap: retry only support_code unique collisions; do not swallow other 23505.
-    for (let attempt = 0; attempt < 4; attempt++) {
-      const { error: upsertError } = await supabase.from("profiles").upsert(
-        { user_id: userId, full_name: metaName.slice(0, 120) },
-        { onConflict: "user_id", ignoreDuplicates: true },
-      );
-      if (!upsertError) break;
-      const msg = upsertError.message || "";
-      const isSupportCodeClash =
-        upsertError.code === "23505"
-        && /support_code/i.test(msg);
-      if (isSupportCodeClash && attempt < 3) continue;
-      if (upsertError.code === "23505") {
-        // user_id (or other) conflict — profile should already exist; continue to select.
-        break;
-      }
-      // Non-unique errors: leave select to surface empty profile; do not invent guest.
-      break;
-    }
-
-    const { data: profile, error: profileError } = await supabase
+    const readProfile = () => supabase
       .from("profiles")
       .select("full_name, support_code")
       .eq("user_id", userId)
       .maybeSingle();
+    let { data: profile, error: profileError } = await readProfile();
+    if (profileError) return { ok: false, code: "UNAVAILABLE", supabase };
+
+    if (!profile) {
+      // Bootstrap only a confirmed missing profile. Concurrent readers may race;
+      // ignoreDuplicates preserves the winner's persisted name, then re-read it.
+      for (let attempt = 0; attempt < 4; attempt++) {
+        const { error: upsertError } = await supabase.from("profiles").upsert(
+          { user_id: userId, full_name: metaName.slice(0, 120) },
+          { onConflict: "user_id", ignoreDuplicates: true },
+        );
+        if (!upsertError) break;
+        const msg = upsertError.message || "";
+        const isSupportCodeClash =
+          upsertError.code === "23505"
+          && /support_code/i.test(msg);
+        if (isSupportCodeClash && attempt < 3) continue;
+        // Read the persisted result even on a conflict or failed write; never
+        // substitute OAuth metadata for an unavailable saved profile.
+        break;
+      }
+      ({ data: profile, error: profileError } = await readProfile());
+    }
 
     if (profileError || !profile) return { ok: false, code: "UNAVAILABLE", supabase };
     const fullName = (profile.full_name || "").trim();
@@ -272,22 +275,26 @@ const loadCompanyAccess = cache(async (): Promise<AccessResult> => {
       rows=allRows.filter(row=>activeIds.has(row.company_id));
     }
     let selectedCookie: string | null = null;
-    try {
-      const { cookies } = await import("next/headers");
-      const { readWorkspaceCompanyForGeneration, resolveBrokerSession } = await import("@/lib/auth/broker");
-      const store = await cookies();
-      const resolved = await resolveBrokerSession({
-        getAll: () => store.getAll().map((c) => ({ name: c.name, value: c.value })),
-      });
-      const generation = resolved.ok ? resolved.boundary.generation : null;
-      // Generation-named cookie only — shared-name delayed writes cannot retarget B (C2-R6).
-      selectedCookie = readWorkspaceCompanyForGeneration(
-        { get: (name) => { const v = store.get(name)?.value; return v ? { value: v } : undefined; } },
-        generation,
-        userId,
-      );
-    } catch {
-      selectedCookie = null;
+    // Selection is unused for zero rows or a sole ordinary membership.
+    // Admins still choose explicitly; loadAuth retains all session checks.
+    if (rows.length > 1 || (rows.length === 1 && isPlatformAdmin)) {
+      try {
+        const { cookies } = await import("next/headers");
+        const { readWorkspaceCompanyForGeneration, resolveBrokerSession } = await import("@/lib/auth/broker");
+        const store = await cookies();
+        const resolved = await resolveBrokerSession({
+          getAll: () => store.getAll().map((c) => ({ name: c.name, value: c.value })),
+        });
+        const generation = resolved.ok ? resolved.boundary.generation : null;
+        // Generation-named cookie only - shared-name delayed writes cannot retarget B (C2-R6).
+        selectedCookie = readWorkspaceCompanyForGeneration(
+          { get: (name) => { const v = store.get(name)?.value; return v ? { value: v } : undefined; } },
+          generation,
+          userId,
+        );
+      } catch {
+        selectedCookie = null;
+      }
     }
 
     const picked = pickWorkspaceMembership(rows, selectedCookie, {
@@ -340,7 +347,11 @@ const loadCompanyAccess = cache(async (): Promise<AccessResult> => {
         company: company as CompanyRecord,
         membership: member,
         needsCompanyContext: false,
-        workspaceChoices: await loadWorkspaceChoices(supabase, rows),
+        workspaceChoices: rows.length === 1 ? [{
+          companyId: member.company_id,
+          displayName: company.display_name || member.company_id,
+          role: member.role,
+        }] : await loadWorkspaceChoices(supabase, rows),
         ...membershipHistory,
       },
     };
