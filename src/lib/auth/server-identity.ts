@@ -8,15 +8,19 @@ export async function readSessionIdentity() {
       return { ok: false as const, code: bound.bound.code };
     }
     const client = bound.bound.client;
-    const { data, error } = await client.auth.getUser();
+    const [{ data, error }, guard] = await Promise.all([
+      client.auth.getUser(),
+      checkAppSession(client),
+    ]);
     if (error) {
       return {
         ok: false as const,
         code: error.name === "AuthSessionMissingError" ? ("UNAUTHENTICATED" as const) : ("UNAVAILABLE" as const),
       };
     }
-    if (!data.user) return { ok: false as const, code: "UNAUTHENTICATED" as const };
-    const guard = await checkAppSession(client);
+    if (!data.user || data.user.id !== bound.bound.resolve.boundary.userId) {
+      return { ok: false as const, code: "UNAUTHENTICATED" as const };
+    }
     if (!guard.ok) return guard;
     return {
       ok: true as const,
@@ -27,6 +31,7 @@ export async function readSessionIdentity() {
       sessionExpiresAt: guard.expiresAt,
       boundaryFingerprint: bound.bound.resolve.boundary.boundaryFingerprint,
       nativeSessionId: bound.bound.resolve.boundary.nativeSessionId,
+      generation: bound.bound.resolve.boundary.generation,
     };
   } catch {
     return { ok: false as const, code: "UNAVAILABLE" as const };

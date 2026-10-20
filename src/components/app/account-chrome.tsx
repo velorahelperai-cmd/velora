@@ -71,7 +71,7 @@ function initialsOf(name: string, email: string) {
 
 export function AccountSessionProvider({
   children,
-  initial: _initial,
+  initial,
 }: {
   children: ReactNode;
   initial?: AccountProfileView | null;
@@ -88,6 +88,8 @@ export function AccountSessionProvider({
   const boundaryRef = useRef<string | null>(null);
   const statusRef = useRef<SessionStatus>("loading");
   const lockedRef = useRef(false);
+  const initialRef = useRef(initial ?? null);
+  void initialRef;
   const requestGen = useRef(0);
   const signalRead=useRef<{generation:number;promise:Promise<void>}|null>(null);
   const routeReloading=useRef(false);
@@ -453,11 +455,22 @@ export function AccountSessionProvider({
   const copy=useAppCopy();
   const content=protectedRoute&&status!=="ready"
     ? status==="expired" ? <SessionActivityTracker />
-    : status === "locked" ? <main className="grid min-h-screen place-content-center gap-3 px-6"><LangSwitch /><OperationRecovery receipt={recoveryReceipt} isCaptured={() => isCapturedBoundary(recoveryReceipt?.boundaryFingerprint ?? boundaryRef.current)} /></main>
-    : <main className="grid min-h-screen place-content-center gap-3 px-6 text-center" aria-busy={status==="loading"}>
-        <p>{status==="loading"?copy.loading:status==="error"?copy.account.identityError:copy.auth.login}</p>
-        {status==="error"?<button type="button" onClick={()=>void refresh()}>{copy.errors.accessRetry}</button>:null}
-        {status==="guest"?<Link href="/login">{copy.auth.login}</Link>:null}
+    : status === "locked" ? <main className="grid min-h-svh place-content-center gap-3 bg-[#f6fafb] px-6 text-[#102a33]"><LangSwitch /><OperationRecovery receipt={recoveryReceipt} isCaptured={() => isCapturedBoundary(recoveryReceipt?.boundaryFingerprint ?? boundaryRef.current)} /></main>
+    : status === "loading" ? (
+      <main className="grid min-h-svh place-content-center bg-[#f6fafb] px-6 text-[#006c81]" data-account-loading="true">
+        <div className="flex flex-col items-center gap-6" role="status" aria-label={copy.loading}>
+          <div className="flex items-center gap-3 text-3xl font-bold" dir="ltr">
+            <span className="grid h-12 w-12 place-items-center rounded-2xl border border-[#cce4e8] bg-white text-2xl shadow-sm" aria-hidden="true">V</span>
+            Velora
+          </div>
+          <span className="h-5 w-5 rounded-full border-2 border-[#cce4e8] border-t-[#007f98] motion-safe:animate-spin" aria-hidden="true" />
+        </div>
+      </main>
+    )
+    : <main className="grid min-h-svh place-content-center gap-4 bg-[#f6fafb] px-6 text-center text-[#102a33]">
+        <p className="text-base font-medium">{status==="error"?copy.account.identityError:copy.auth.login}</p>
+        {status==="error"?<button type="button" className="mx-auto rounded-xl bg-[#006c81] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#00586a]" onClick={()=>void refresh()}>{copy.errors.accessRetry}</button>:null}
+        {status==="guest"?<Link href="/login" className="mx-auto rounded-xl bg-[#006c81] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#00586a]">{copy.auth.login}</Link>:null}
       </main>
     : children;
   return (
@@ -562,9 +575,7 @@ export function AccountMenu({
 
   if (!session || session.status === "loading") {
     return (
-      <div className="inline-flex min-h-11 min-w-[7rem] items-center justify-center rounded-full border border-[color:var(--color-border-soft)] px-3 text-xs text-[var(--color-muted-soft)]" aria-busy="true">
-        {copy.loading}
-      </div>
+      <div className="inline-block min-h-11 min-w-[7rem]" aria-hidden="true" />
     );
   }
 

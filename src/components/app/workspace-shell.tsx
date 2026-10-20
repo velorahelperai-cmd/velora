@@ -153,7 +153,7 @@ function WorkspaceChrome({title,children,actions,immersive}:{title:string;childr
   const roleLabel = role === "owner" ? copy.app.owner : role === "staff" ? copy.app.staff : copy.app.workspacePick;
 
   if (!profile || (accountSession && (accountSession.status !== "ready" || !accountSession.isCurrentUser(profile.userId)))) {
-    return <main className={`app-shell ${styles.theme} p-6`} data-internal-ui="true" dir={ar ? "rtl" : "ltr"} aria-busy={!profileLoadFailed}>{profileLoadFailed ? <><Notice tone="error">{copy.app.workspaceSwitchFailed}</Notice><DiagnosticHint diagnostic={workspaceDiagnostic} locale={locale}/><Button className="mt-4" onClick={() => { void reloadWorkspaceState(); }}>{copy.app.readinessRetry}</Button></> : <p>{copy.loading}</p>}</main>;
+    return <main className={`app-shell ${styles.theme} p-6`} data-internal-ui="true" dir={ar ? "rtl" : "ltr"} aria-busy={!profileLoadFailed}>{profileLoadFailed ? <><Notice tone="error">{copy.app.workspaceSwitchFailed}</Notice><DiagnosticHint diagnostic={workspaceDiagnostic} locale={locale}/><Button className="mt-4" onClick={() => { void reloadWorkspaceState(); }}>{copy.app.readinessRetry}</Button></> : <div className="grid min-h-[60svh] place-content-center text-[#006c81]" role="status" aria-label={copy.loading}><div className="flex flex-col items-center gap-6"><div className="flex items-center gap-3 text-3xl font-bold" dir="ltr"><span className="grid h-12 w-12 place-items-center rounded-2xl border border-[#cce4e8] bg-white text-2xl shadow-sm" aria-hidden="true">V</span>Velora</div><span className="h-5 w-5 rounded-full border-2 border-[#cce4e8] border-t-[#007f98] motion-safe:animate-spin" aria-hidden="true" /></div></div>}</main>;
   }
 
   return (

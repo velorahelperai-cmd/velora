@@ -15,6 +15,7 @@ const state = vi.hoisted(() => ({
   quarantine: vi.fn(),
   reload: vi.fn(),
   path: "/",
+  locale: "en" as "en" | "ar",
   refresh: vi.fn(),
 }));
 
@@ -79,7 +80,7 @@ vi.mock("@/lib/auth/broker-actions", () => ({
   readBrokerSessionStatus: state.broker,
   quarantineCurrentBrokerSession: vi.fn(async () => ({ ok: true })),
 }));
-vi.mock("@/lib/demo-state", () => ({ emptyBusiness: {}, useDemo: () => ({ locale: "en" }) }));
+vi.mock("@/lib/demo-state", () => ({ emptyBusiness: {}, useDemo: () => ({ locale: state.locale }) }));
 
 import { AccountSessionProvider } from "./account-chrome";
 
@@ -180,6 +181,7 @@ beforeEach(() => {
   state.effects = [];
   state.peerSignal = null;
   state.path = "/";
+  state.locale = "en";
   state.broker.mockResolvedValue({
     ok: true,
     userId: "user-a",
@@ -217,6 +219,38 @@ const brokerOk = (
       : "11111111-1111-4111-8111-111111111111",
   contextGeneration: 1,
   generation,
+});
+
+it.each(["en", "ar"] as const)("shows a lightweight brand while protected identity is pending (%s)", async locale => {
+  state.locale = locale;
+  state.path = "/setup";
+  const pending = deferred();
+  state.read.mockReturnValue(pending.promise);
+  const first = renderTree();
+  const main = first.props.children;
+  expect(main.props["data-account-loading"]).toBe("true");
+  expect(main.props.className).toContain("bg-[#f6fafb]");
+  expect(main.props.children.props.role).toBe("status");
+  expect(main.props.children.props["aria-label"]).toBeTruthy();
+  expect(JSON.stringify(main)).toContain("Velora");
+  expect(JSON.stringify(main)).toContain("motion-safe:animate-spin");
+  expect(JSON.stringify(main)).not.toContain("private-content");
+  const refresh = first.props.value.refresh();
+  pending.resolve({ ok: true, data: profile() });
+  await refresh;
+  expect(renderTree().props.children).toBe("private-content");
+});
+
+it("keeps account errors and recovery controls visible after branded loading", async () => {
+  state.path = "/setup";
+  state.broker.mockResolvedValue({ ok: false, code: "UNAVAILABLE" });
+  await render().refresh();
+  const main = renderTree().props.children;
+  expect(main.props["data-account-loading"]).toBeUndefined();
+  expect(main.props.className).toContain("bg-[#f6fafb]");
+  expect(JSON.stringify(main)).not.toContain("private-content");
+  const children = main.props.children as Array<{ type?: unknown; props?: { onClick?: unknown } }>;
+  expect(children.some(child => child?.type === "button" && typeof child.props?.onClick === "function")).toBe(true);
 });
 
 it("mount shares one in-flight authoritative identity read via broker status", async () => {
@@ -545,6 +579,28 @@ it("final post-profile broker throw leaves error not ready", async () => {
   await render().refresh();
   expect(render().status).toBe("error");
   expect(render().identity).toBeNull();
+});
+
+it("post-profile generation change or session revocation rejects stale profile and never grants ready", async () => {
+  // 1. Generation changes between pre-profile broker read (gen-a-1) and post-profile reattest (gen-a-2)
+  state.broker
+    .mockResolvedValueOnce(brokerOk("user-a", "fp-a", "gen-a-1"))
+    .mockResolvedValueOnce(brokerOk("user-a", "fp-a", "gen-a-2"));
+  state.read.mockResolvedValue({ ok: true, data: profile() });
+  await render().refresh();
+  expect(render().status).toBe("error");
+  expect(render().identity).toBeNull();
+  expect(render().hasCurrentUser()).toBe(false);
+
+  // 2. Session revoked (UNAUTHENTICATED) between pre-profile broker read and post-profile reattest
+  state.broker
+    .mockResolvedValueOnce(brokerOk("user-a", "fp-a", "gen-a-2"))
+    .mockResolvedValueOnce({ ok: false, code: "UNAUTHENTICATED" });
+  state.read.mockResolvedValue({ ok: true, data: profile() });
+  await render().refresh();
+  expect(render().status).toBe("error");
+  expect(render().identity).toBeNull();
+  expect(render().hasCurrentUser()).toBe(false);
 });
 
 it("same-operation focus join reuses in-flight bootstrap without a new pre-read", async () => {

@@ -248,17 +248,22 @@ export async function brokerExchangeOAuthCode(input: {
   | { ok: true; generation: string }
   | { ok: false; code: "UNAVAILABLE" | "AUTH_ERROR" | "ADMISSION_BLOCKED"; detail?: string; expireIntent?: boolean }
 > {
-  const capability = await probeBrokerCapability();
-  if (!capability.ok) return { ok: false, code: "UNAVAILABLE" };
-  if (!input.stateNonce) return { ok: false, code: "AUTH_ERROR", detail: "missing_intent", expireIntent: false };
-  if (!input.reader) return { ok: false, code: "UNAVAILABLE", detail: "continuity_required", expireIntent: false };
-
-  const lineageCtx = await prepareBrokerAdmissionLineage(input.reader, input.writer);
-  if (!lineageCtx.ok) {
+  if (!input.stateNonce || !input.reader) {
+    const capability = await probeBrokerCapability();
+    if (!capability.ok) return { ok: false, code: "UNAVAILABLE" };
+    if (!input.stateNonce) return { ok: false, code: "AUTH_ERROR", detail: "missing_intent", expireIntent: false };
     return { ok: false, code: "UNAVAILABLE", detail: "continuity_required", expireIntent: false };
   }
 
-  const intent = await loadAuthIntentByNonce(input.stateNonce);
+  const [capability, lineageCtx, intent] = await Promise.all([
+    probeBrokerCapability(),
+    prepareBrokerAdmissionLineage(input.reader, input.writer),
+    loadAuthIntentByNonce(input.stateNonce),
+  ]);
+  if (!capability.ok) return { ok: false, code: "UNAVAILABLE" };
+  if (!lineageCtx.ok) {
+    return { ok: false, code: "UNAVAILABLE", detail: "continuity_required", expireIntent: false };
+  }
   if (!intent) {
     return { ok: false, code: "AUTH_ERROR", detail: "intent_invalid", expireIntent: true };
   }

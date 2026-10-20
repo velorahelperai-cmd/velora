@@ -772,11 +772,28 @@ export async function completeProfileName(name: string, next?:string|null, expec
 }
 
 export async function getAccountProfile(): Promise<ActionResult<AccountProfileView>> {
- const identity=await readSessionIdentity();if(!identity.ok)return {ok:false,code:identity.code,...("expired" in identity&&identity.expired?{sessionExpired:true}:{})};
- const access=await getCompanyAccess();
- if(access.ok&&access.context.userId!==identity.userId)return {ok:false,code:"UNAVAILABLE"};
- if(!access.ok&&access.code==="UNAUTHENTICATED")return {ok:false,code:"UNAUTHENTICATED"};
- const platformIdentity=identity.emailConfirmed?await readAccountPlatformIdentity(identity.userId):unavailablePlatformIdentity();
+ const trace=beginDiagnostic("auth_login");trace.stage("session");
+ const identity=await readSessionIdentity();if(!identity.ok){trace.finish(identity.code==="UNAUTHENTICATED"?"UNAUTHENTICATED":"UNAVAILABLE");return {ok:false,code:identity.code,...("expired" in identity&&identity.expired?{sessionExpired:true}:{})};}
+ trace.stage("access");
+ const [access,platformIdentity]=await Promise.all([
+  getCompanyAccess(),
+  identity.emailConfirmed?readAccountPlatformIdentity(identity.userId):Promise.resolve(unavailablePlatformIdentity()),
+ ]);
+ if(access.ok&&access.context.userId!==identity.userId){trace.finish("UNAVAILABLE");return {ok:false,code:"UNAVAILABLE"};}
+ if(!access.ok&&access.code==="UNAUTHENTICATED"){trace.finish("UNAUTHENTICATED");return {ok:false,code:"UNAUTHENTICATED",...("sessionExpired" in access&&access.sessionExpired?{sessionExpired:true}:{})};}
+ if("boundaryFingerprint" in identity||"generation" in identity){
+  try{
+   const {createBrokerBoundClient}=await import("@/lib/supabase/server");
+   const postBound=await createBrokerBoundClient({fresh:true});
+   if(!postBound.bound.ok){trace.finish(postBound.bound.code==="UNAUTHENTICATED"?"UNAUTHENTICATED":"UNAVAILABLE");return {ok:false,code:postBound.bound.code};}
+   const postBoundary=postBound.bound.resolve.boundary;
+   if(postBoundary.userId!==identity.userId||(identity.boundaryFingerprint&&postBoundary.boundaryFingerprint!==identity.boundaryFingerprint)||(identity.generation&&postBoundary.generation!==identity.generation)){trace.finish("UNAUTHENTICATED");return {ok:false,code:"UNAUTHENTICATED"};}
+  }catch{
+   trace.finish("UNAVAILABLE");
+   return {ok:false,code:"UNAVAILABLE"};
+  }
+ }
+ trace.finish(access.ok?"OK":access.code);
  if(access.ok)return {ok:true,data:{...buildAccountProfileView(access,platformIdentity),emailConfirmed:identity.emailConfirmed,sessionExpiresAt:identity.sessionExpiresAt}};
  // Auth identity survives company/profile outages; no role or company privilege is invented.
  return {ok:true,data:{platformIdentity,userId:identity.userId,email:identity.email,fullName:identity.fullName,supportCode:"",isPlatformAdmin:false,role:null,companyName:null,companyId:null,needsCompanyContext:false,adminHref:null,workspaceHref:null,workHref:identity.emailConfirmed?"/account":authFlowHref("/verify-email",null,identity.email),emailConfirmed:identity.emailConfirmed,sessionExpiresAt:identity.sessionExpiresAt,accessUnavailable:access.code==="UNAVAILABLE"}};
