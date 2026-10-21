@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 const state = vi.hoisted(() => ({ rpc: vi.fn(), clientAvailable: true }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => state.clientAvailable ? { rpc: state.rpc } : null }));
-vi.mock("../config/env", () => ({ getSecureProviderKey: () => null }));
+vi.mock("../config/env", () => ({ getSecureProviderKey: () => null, getGeminiModelId: () => "gemini-3.8-flash" }));
 import { executeRealAnswer } from "./execute";
 import { createRealRuntimeStore, type RealRuntimeStore } from "./store";
 
@@ -80,3 +80,4 @@ describe("P3 real execution dispatch boundary", () => {
     expect(settle).toHaveBeenCalledWith(expect.objectContaining({ status: "uncertain", costBaisa: null }));
   });
 });
+

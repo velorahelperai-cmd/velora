@@ -1,3 +1,5 @@
+// Actor-gate integration is exercised separately with the real server policy.
+vi.mock("./hosted-test",()=>({hostedTestActorAllowed:()=>true}));
 import { beforeEach, describe, expect, it, vi } from "vitest";
 const state=vi.hoisted(()=>({access:vi.fn(),settings:vi.fn(),order:vi.fn(),admin:vi.fn(),site:vi.fn(),open:vi.fn()}));
 vi.mock("@/lib/tenancy/access",()=>({getCompanyAccess:state.access}));

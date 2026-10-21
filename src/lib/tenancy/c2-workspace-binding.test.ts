@@ -35,9 +35,9 @@ import { saveWhatsappLinkRequest } from "@/lib/whatsapp/connection-actions";
 import { listKnowledgeSources, saveTextKnowledgeSource, uploadKnowledgeFiles } from "@/lib/knowledge/actions";
 import { startTestCheckoutAction } from "@/lib/billing/wiring/test-checkout-actions";
 
-const COMPANY_A = "00000000-0000-0000-0000-00000000000a";
-const COMPANY_B = "00000000-0000-0000-0000-00000000000b";
-const USER = "00000000-0000-0000-0000-000000000001";
+const COMPANY_A = "00000000-0000-4000-8000-00000000000a";
+const COMPANY_B = "00000000-0000-4000-8000-00000000000b";
+const USER = "00000000-0000-4000-8000-000000000001";
 const AT = "2026-10-08T00:00:00.000Z";
 const business = {
   displayName: "Synthetic business", businessType: "retail", replyLanguage: "both" as const,
@@ -145,6 +145,9 @@ const actions: Array<{ name: string; run: (binding: Binding) => Promise<Result> 
 ];
 
 beforeEach(() => {
+  vi.stubEnv("BILLING_PAYMOB_HOSTED_TEST_ENABLED", "true");
+  vi.stubEnv("PAYMOB_HOSTED_TEST_ACCOUNT_ID", USER);
+  vi.stubEnv("PAYMOB_HOSTED_TEST_COMPANY_ID", COMPANY_B);
   vi.clearAllMocks(); state.writes.length = 0; state.uploads.length = 0; state.reads.length = 0; state.knowledgeRows = [];
   state.reviewRow = null; state.events = []; state.rpcRequests.length = 0;
   state.access.mockResolvedValue({ ok: true, context: context() });
@@ -286,6 +289,11 @@ describe("rendered-company binding on review reads", () => {
 });
 
 describe("rendered-company binding on owner onboarding actions", () => {
+  it("Test checkout keeps server authorization before order writes", async () => {
+    vi.stubEnv("BILLING_PAYMOB_HOSTED_TEST_ENABLED", "false");
+    expect(await startTestCheckoutAction({planVersionId:"synthetic",clientOpId:"synthetic",expectedCompanyId:COMPANY_B})).toMatchObject({ok:false,code:"hosted_test_not_authorized"});
+    expect(state.writes).toEqual([]); expect(state.order).not.toHaveBeenCalled();
+  });
   for (const action of actions) {
     it(`${action.name} rejects an A form after selection changes to another company the owner belongs to`, async () => {
       const result = await action.run({ expectedCompanyId: COMPANY_A });

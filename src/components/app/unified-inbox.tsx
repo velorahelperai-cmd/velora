@@ -1,5 +1,5 @@
 'use client';
-import {useCallback,useEffect,useMemo,useRef,useState} from 'react';
+import {useCallback,useEffect,useMemo,useRef,useState,useTransition} from 'react';
 import {useRouter,useSearchParams} from 'next/navigation';
 import Link from 'next/link';
 import {useDemo} from '@/lib/demo-state';
@@ -18,9 +18,11 @@ import styles from './unified-inbox.module.css';
 type Snapshot=Awaited<ReturnType<typeof readServiceInbox>>;
 export function UnifiedInbox({initial,waReview=false,igReview=false}:{initial:Snapshot;waReview?:boolean;igReview?:boolean}) {
  const {locale}=useDemo(),ar=locale==='ar',router=useRouter(),params=useSearchParams(),copy=useAppCopy();
+ const [isNavigating,startTransition]=useTransition();
  const [snapshot,setSnapshot]=useState(initial),[refreshing,setRefreshing]=useState(false),[error,setError]=useState(false);
  const [retained,setRetained]=useState<Extract<Snapshot,{ok:true}>|null>(initial.ok?initial:null);
  const [refreshVersion,setRefreshVersion]=useState(0);
+ const [moreLoading,setMoreLoading]=useState<InboxChannel|null>(null);
  const epoch=useRef(0),busy=useRef(false),mounted=useRef(true);
  const [query,setQuery]=useState('');
  const expected=initial.ok?`${initial.companyId}:${initial.actorId}`:null;
@@ -48,14 +50,18 @@ export function UnifiedInbox({initial,waReview=false,igReview=false}:{initial:Sn
  const selected=params.get(source==='instagram'?'thread':'c');
  const selectionValid=channels.includes(source)&&!!selected&&snapshot.ok&&(source==='whatsapp'?snapshot.waAllowed===true&&snapshot.wa.ok:snapshot.igAllowed===true&&snapshot.ig.ok);
  const rows=useMemo(()=>snapshot.ok&&retained?inboxRows(snapshot.wa.ok&&retained.wa.ok?retained.wa.page.conversations:[],snapshot.ig.ok&&retained.ig.ok?retained.ig.data.conversations:[],ar):[],[snapshot,retained,ar]);
- const shown=rows.filter(r=>(filter==='all'||r.channel===filter)&&(!query||`${r.name} ${r.preview}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())));
+ const activeChannels=filter==='all'?channels:[filter];
+ const activeRows=rows.filter(r=>filter==='all'||r.channel===filter);
+ const shown=activeRows.filter(r=>!query||`${r.name} ${r.preview}`.toLocaleLowerCase().includes(query.toLocaleLowerCase()));
+ const anyActiveChannelFailed=activeChannels.some(channel=>{const result=channel==='whatsapp'?(snapshot.ok?snapshot.wa:retained?.wa):(snapshot.ok?snapshot.ig:retained?.ig);return !result||!result.ok;});
+ const showEmpty=!shown.length&&(Boolean(query)?(activeRows.length>0||!anyActiveChannelFailed):(!anyActiveChannelFailed&&activeRows.length===0));
  const select=(channel:InboxChannel|null,id:string|null,intentId?:string)=>{const href=inboxHref(channel,id,filter);router.push(intentId?href+(href.includes("?")?"&":"?")+"intent="+encodeURIComponent(intentId):href);};
  const activeRow=rows.find(r=>r.channel===source&&r.id===selected);
  async function more(channel:InboxChannel){
-  if(!snapshot.ok||!retained||busy.current)return;
+  if(moreLoading!==null||busy.current||!snapshot.ok||!retained)return;
   const wa=retained.wa,ig=retained.ig;
   const cursor=channel==='whatsapp'&&wa.ok?wa.page.nextCursor:channel==='instagram'&&ig.ok?ig.data.nextCursor:null;
-  if(!cursor)return;busy.current=true;setRefreshing(true);const request=++epoch.current;
+  if(!cursor)return;busy.current=true;setMoreLoading(channel);const request=++epoch.current;
   try{if(channel==='whatsapp'&&wa.ok){const result=await refreshWhatsappInboxPage({companyId:retained.companyId,before:cursor});if(!mounted.current||request!==epoch.current)return;
    if(!result.ok||result.data.companyId!==retained.companyId||result.data.membershipFingerprint!==wa.page.membershipFingerprint){setError(true);return;}
    setRetained(old=>old?.wa.ok?{...old,wa:{...old.wa,page:{...result.data,conversations:mergeInboxPageRows(old.wa.page.conversations,result.data.conversations)},conversations:mergeInboxPageRows(old.wa.page.conversations,result.data.conversations)}}:old);
@@ -64,9 +70,9 @@ export function UnifiedInbox({initial,waReview=false,igReview=false}:{initial:Sn
    if(result.data.conversationScope!==ig.data.conversationScope){setSnapshot({ok:false,code:'SCOPE_CHANGED'});setError(true);return;}
    setRetained(old=>old?.ig.ok?{...old,ig:{...old.ig,data:{...result.data,conversations:[...old.ig.data.conversations,...result.data.conversations.filter(c=>old.ig.ok&&!old.ig.data.conversations.some(existing=>existing.id===c.id))]}}}:old);
   }}catch{if(mounted.current&&request===epoch.current)setError(true);}
-  finally{busy.current=false;if(mounted.current&&request===epoch.current)setRefreshing(false);}
+  finally{busy.current=false;if(mounted.current&&request===epoch.current)setMoreLoading(null);}
  }
- return <WorkspaceShell immersive={selectionValid} title={ar?'المحادثات':'Conversations'} actions={<Button variant="secondary" busy={refreshing} onClick={()=>{if(!initial.ok)router.refresh();else void refresh();}}>{ar?'تحديث':'Refresh'}</Button>}>
+ return <WorkspaceShell immersive={selectionValid} title={ar?'المحادثات':'Conversations'} actions={<Button variant="secondary" busy={refreshing||isNavigating} disabled={moreLoading!==null} onClick={()=>{if(!initial.ok)startTransition(()=>{router.refresh();});else void refresh();}}>{ar?'تحديث':'Refresh'}</Button>}>
   {error&&<Notice tone="error">{ar?'تعذّر التحقق من آخر تحديث. حدّث الصفحة قبل متابعة العمل.':'The latest update could not be verified. Refresh before continuing.'}</Notice>}
   {!snapshot.ok?<Notice tone={snapshot.code==='UNAVAILABLE'?'error':'warn'}>{snapshot.code==='NO_COMPANY'?(ar?'اختر نشاطًا من قائمة مساحة العمل.':'Choose a business from the workspace menu.'):snapshot.code==='FORBIDDEN'?<><strong>{copy.app.inboxAccessDeniedTitle}</strong><p>{copy.app.inboxAccessDeniedBody}</p></>:snapshot.code==='UNAVAILABLE'?copy.app.inboxLoadFailedBody:(ar?'تغيّرت الجلسة أو مساحة العمل. حدّث الصفحة للتحقق قبل المتابعة.':'The session or workspace changed. Refresh to verify before continuing.')} <Link href="/app/settings?tab=plan" className="underline">{ar?'الاشتراك والدعم':'Subscription and support'}</Link></Notice>:null}
   {retained&&<>
@@ -80,17 +86,17 @@ export function UnifiedInbox({initial,waReview=false,igReview=false}:{initial:Sn
       {channels.length===2?<div className={styles.channelFilters} aria-label={ar?'القناة':'Channel'}>{(['all',...channels] as const).map(c=><button key={c} type="button" aria-pressed={filter===c} onClick={()=>router.push(inboxHref(null,null,c))}>{c==='all'?(ar?'الكل':'All'):<ChannelBadge channel={c} ar={ar}/>}</button>)}</div>:<ChannelBadge channel={channels[0]??'whatsapp'} ar={ar}/>}
       <label className={styles.search}>{ar?'بحث في المحادثات المحمّلة':'Search loaded conversations'}<input type="search" value={query} onChange={e=>setQuery(e.target.value)} placeholder={ar?'الاسم أو آخر رسالة':'Name or latest message'}/></label>
      </header>
-     <div className={styles.rows}>{channels.map(channel=>{const result=channel==='whatsapp'?snapshot.ok?snapshot.wa:retained.wa:snapshot.ok?snapshot.ig:retained.ig;return !result.ok?<Notice key={channel} tone={result.code==='FORBIDDEN'?'warn':'error'}><ChannelBadge channel={channel} ar={ar}/><p>{result.code==='FORBIDDEN'?(ar?'القراءة غير متاحة. راجع صلاحيات القناة والاشتراك.':'Reading unavailable. Check channel permissions and subscription.'):(ar?'تعذّر تحميل القناة. أعد التحديث.':'This channel could not be loaded. Refresh to retry.')}</p></Notice>:null;})}
-      {!shown.length&&<EmptyState title={query?(ar?'لا نتائج في المحادثات المحمّلة':'No matches in loaded conversations'):(ar?'لا توجد محادثات بعد':'No conversations yet')} body={ar?'تظهر الرسائل الواردة بعد ربط القناة والتحقق من استقبالها.':'Inbound messages appear after connecting and verifying the channel.'}/>}
+     <div className={styles.rows}>{channels.map(channel=>{const result=channel==='whatsapp'?snapshot.ok?snapshot.wa:retained.wa:snapshot.ok?snapshot.ig:retained.ig;if(result.ok)return null;const isForbidden=result.code==='FORBIDDEN';return <Notice key={channel} tone={isForbidden?'warn':'error'}><ChannelBadge channel={channel} ar={ar}/><p>{isForbidden?(ar?'القراءة غير متاحة. راجع صلاحيات القناة والاشتراك.':'Reading unavailable. Check channel permissions and subscription.'):(ar?'تعذّر تحميل القناة. أعد التحديث.':'This channel could not be loaded. Refresh to retry.')}{!isForbidden&&<button type="button" className="underline ms-2 font-medium" disabled={refreshing||moreLoading!==null} onClick={()=>void refresh()}>{ar?'إعادة المحاولة':'Retry'}</button>}</p></Notice>;})}
+      {showEmpty&&<EmptyState title={query?(ar?'لا نتائج في المحادثات المحمّلة':'No matches in loaded conversations'):(ar?'لا توجد محادثات بعد':'No conversations yet')} body={query?(ar?'لم نجد أي محادثة تطابق بحثك في المحادثات المحمّلة.':'No conversations matched your search in loaded conversations.'):(ar?'تظهر الرسائل الواردة بعد ربط القناة والتحقق من استقبالها.':'Inbound messages appear after connecting and verifying the channel.')}/>}
       {shown.map(row=><button type="button" key={row.key} className={styles.row} aria-current={source===row.channel&&selected===row.id?'page':undefined} onClick={()=>select(row.channel,row.id)}><span className={styles.avatar} aria-hidden="true">{row.name.slice(0,1)}</span><span className={styles.rowBody}><span className={styles.rowHeading}><strong dir="auto">{row.name}</strong>{row.at>0&&<time dateTime={new Date(row.at).toISOString()}>{new Date(row.at).toLocaleDateString(ar?'ar-OM':'en-GB',{day:'numeric',month:'short'})}</time>}</span><span className={styles.preview} dir="auto">{row.preview||'—'}</span><span className={styles.rowFooter}><ChannelBadge channel={row.channel} ar={ar}/>{row.unread>0&&<span className={styles.unread} aria-label={ar?`${row.unread} غير مقروءة`:`${row.unread} unread`}>{row.unread}</span>}</span></span></button>)}
      </div>
      <footer className={styles.listFooter}><p>{ar?'الترتيب حسب آخر نشاط بين الصفحات المحمّلة.':'Ordered by latest activity across loaded pages.'}</p><Link href={filter==='instagram'?'/app/instagram':'/app/settings?tab=whatsapp'}>{ar?'إعدادات الربط':'Connection settings'}</Link>
-      {retained.wa.ok&&retained.wa.page.hasMore&&channels.includes('whatsapp')&&<Button variant="ghost" disabled={refreshing} onClick={()=>void more('whatsapp')}>{ar?'مزيد من واتساب':'More WhatsApp'}</Button>}
-      {retained.ig.ok&&retained.ig.data.hasMore&&channels.includes('instagram')&&<Button variant="ghost" disabled={refreshing} onClick={()=>void more('instagram')}>{ar?'مزيد من إنستجرام':'More Instagram'}</Button>}
+      {retained.wa.ok&&retained.wa.page.hasMore&&channels.includes('whatsapp')&&<Button variant="ghost" busy={moreLoading==='whatsapp'} disabled={refreshing||moreLoading!==null} onClick={()=>void more('whatsapp')}>{ar?'مزيد من واتساب':'More WhatsApp'}</Button>}
+      {retained.ig.ok&&retained.ig.data.hasMore&&channels.includes('instagram')&&<Button variant="ghost" busy={moreLoading==='instagram'} disabled={refreshing||moreLoading!==null} onClick={()=>void more('instagram')}>{ar?'مزيد من إنستجرام':'More Instagram'}</Button>}
      </footer>
     </section>
     <div className={styles.thread} data-open={selectionValid}>
-     {selectionValid&&<div className={styles.threadToolbar}><button type="button" onClick={()=>select(null,null)} className={styles.back}>{ar?'الرجوع للمحادثات':'Back to conversations'}</button><Button variant="ghost" busy={refreshing} onClick={()=>void refresh()} aria-label={ar?"تحديث المحادثة":"Refresh conversation"}>{ar?"تحديث":"Refresh"}</Button><ChannelBadge channel={source} ar={ar}/><span dir="auto">{activeRow?.name??(ar?'المحادثة':'Conversation')}</span></div>}
+     {selectionValid&&<div className={styles.threadToolbar}><button type="button" onClick={()=>select(null,null)} className={styles.back}>{ar?'الرجوع للمحادثات':'Back to conversations'}</button><Button variant="ghost" busy={refreshing} disabled={moreLoading!==null} onClick={()=>void refresh()} aria-label={ar?"تحديث المحادثة":"Refresh conversation"}>{ar?"تحديث":"Refresh"}</Button><ChannelBadge channel={source} ar={ar}/><span dir="auto">{activeRow?.name??(ar?'المحادثة':'Conversation')}</span></div>}
      {!selectionValid&&<div className={styles.welcome}><EmptyState title={ar?'اختر محادثة للبدء':'Choose a conversation'} body={ar?'كل رد يخرج عبر قناة المحادثة نفسها. بيانات الأنشطة والحسابات تبقى منفصلة.':'Each reply uses its conversation’s channel. Business and account histories remain separate.'}/></div>}
      {/* Keep native panes mounted: drafts and unresolved operation IDs survive channel navigation. */}
      {retained.wa.ok&&<div className={styles.pane} hidden={!selectionValid||source!=='whatsapp'} inert={!selectionValid||source!=='whatsapp'}><ConversationsPage refreshVersion={refreshVersion} embedded selectedConversationId={selectionValid&&source==='whatsapp'?selected:null} onSelectConversation={id=>select('whatsapp',id)} inbox={retained.wa.conversations} page={retained.wa.page} meta={retained.wa.meta} reviewCompanyId={waReview?retained.companyId:undefined}/></div>}
