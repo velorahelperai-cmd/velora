@@ -17,7 +17,7 @@ function sanitize(value,seen=new WeakSet()){
  const result=Array.isArray(value)?[]:{};
  for(const [key,item] of Object.entries(value)){
   const normalized=key.toLowerCase().replace(/[_-]/g,'');
-  if(/^(password|token|accesstoken|refreshtoken|idtoken|sessiontoken|clientsecret|oauthsecret|apikey|secret|jwt|authorization|cookie|cookies|setcookie|body|cvv|cardnumber|bankaccount|nationalid|passport|healthdata|databaseurl|encryptionkey)$/.test(normalized))result[key]='[REDACTED]';
+  if(/^(password|token|accesstoken|refreshtoken|idtoken|sessiontoken|verifytoken|claimtoken|attempttoken|clientsecret|oauthsecret|appsecret|appsecretproof|xhubsignature|xhubsignature256|stagereceipt|claimreceipt|oauthstate|nonce|pin|apikey|secret|jwt|authorization|cookie|cookies|setcookie|body|cvv|cardnumber|bankaccount|nationalid|passport|healthdata|databaseurl|encryptionkey)$/.test(normalized))result[key]='[REDACTED]';
   else if(normalized==='phone'){let remaining=String(item).replace(/\D/g,'').length;result[key]=String(item).replace(/\d/g,digit=>--remaining>=2?'*':digit);}
   else result[key]=sanitize(item,seen);
  }
@@ -33,7 +33,7 @@ export function createStructuredLogger(destination){
   formatters:{level:label=>({level:label})},
   mixin:()=>({request_id:rootRequestId,trace_id:null,span_id:null,user_id:null,tenant_id:null,...context.getStore()}),
   serializers:{email:redactLogText,phone:value=>String(value).replace(/\d(?=\d{2})/g,'*'),error:error=>({type:error?.type??error?.name??'Error',message:redactLogText(error?.message??''),stack:redactLogText(error?.stack??'')})},
-  redact:{paths:['password','token','access_token','refresh_token','api_key','apiKey','secret','jwt','oauth_secret','sessionToken','authorization','cookie','cookies','cvv','card_number','bank_account','national_id','passport','health_data','database_url','encryption_key','body','req.body','res.body','headers.authorization','headers.Authorization','headers.cookie','headers.Cookie','headers["set-cookie"]','headers["Set-Cookie"]','req.headers.authorization','req.headers.cookie','*.password','*.token','*.access_token','*.refresh_token','*.api_key','*.secret'],censor:'[REDACTED]'},
+  redact:{paths:['password','token','access_token','refresh_token','verify_token','claim_token','attempt_token','api_key','apiKey','secret','app_secret','appsecret_proof','jwt','oauth_secret','oauth_state','nonce','pin','stage_receipt','claim_receipt','sessionToken','authorization','cookie','cookies','cvv','card_number','bank_account','national_id','passport','health_data','database_url','encryption_key','body','req.body','res.body','headers.authorization','headers.Authorization','headers["x-hub-signature-256"]','headers["X-Hub-Signature-256"]','headers.cookie','headers.Cookie','headers["set-cookie"]','headers["Set-Cookie"]','req.headers.authorization','req.headers.cookie','*.password','*.token','*.access_token','*.refresh_token','*.api_key','*.secret'],censor:'[REDACTED]'},
   ...(!destination&&env==='development'?{transport:{target:'pino-pretty',options:{colorize:true,timestampKey:'timestamp',translateTime:"UTC:yyyy-mm-dd'T'HH:MM:ss.l'Z'"}}}:{}),
  },destination);
 }

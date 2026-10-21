@@ -133,7 +133,9 @@ export type Es02ActionCode =
   | "UNAVAILABLE"
   | "UNCONFIGURED"
   | "CONFLICT"
-  | "RECONCILIATION_REQUIRED";
+  | "RECONCILIATION_REQUIRED"
+  /** Current scope is one branch per business; multi-branch is deferred. */
+  | "SECOND_BRANCH_DEFERRED";
 
 export type Es02Result<T> =
   | { ok: true; data: T }

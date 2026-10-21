@@ -1,3 +1,4 @@
+import { hostedTestActorAllowed, hostedTestCompanyAllowed } from "./hosted-test";
 /**
  * Durable webhook event persistence via service_role.
  * Exact duplicate (scope obs unique) → inserted:false, still ok.
@@ -39,7 +40,7 @@ export async function findOrderByProviderOrderId(
   const { data: order } = await admin
     .from("billing_orders")
     .select(
-      "id, company_id, special_reference, amount_baisa, currency, provider_amount, provider_account_ref, provider_environment, status",
+      "id, company_id, special_reference, amount_baisa, currency, provider_amount, provider_account_ref, provider_environment, status, created_by",
     )
     .eq("id", attempt.order_id)
     .eq("company_id", attempt.company_id)
@@ -48,6 +49,8 @@ export async function findOrderByProviderOrderId(
   if (!order || order.currency !== "OMR" || !["test", "live"].includes(order.provider_environment) ||
       !Number.isSafeInteger(Number(order.amount_baisa)) || Number(order.amount_baisa) <= 0 ||
       !Number.isSafeInteger(Number(order.provider_amount)) || Number(order.provider_amount) <= 0) return null;
+
+  if(order.provider_environment === "test" && !hostedTestActorAllowed(order.created_by, order.company_id)) return null;
 
   const merchantOwnerId = process.env.PAYMOB_MERCHANT_OWNER_ID?.trim() || null;
   const integrationIdRaw = process.env[order.provider_environment==="live"?"PAYMOB_INTEGRATION_ID_LIVE":"PAYMOB_INTEGRATION_ID_TEST"]?.trim();
@@ -78,6 +81,7 @@ export async function findOrderByProviderOrderId(
 export async function insertProviderEvent(
   row: DurableEventInsert,
 ): Promise<{ ok: true; inserted: boolean; eventId: string } | { ok: false; code: string }> {
+  if(row.providerEnvironment === "test" && !hostedTestCompanyAllowed(row.companyId)) return {ok:false,code:"hosted_test_not_authorized"};
   const admin = billingAdmin();
   if (!admin) return { ok: false, code: "admin_not_configured" };
 
@@ -133,6 +137,8 @@ export async function insertProviderEvent(
 export async function settleHmacVerifiedViaRpc(
   evidence: Record<string, unknown>,
 ): Promise<{ ok: true; outcome: string } | { ok: false; code: string }> {
+  // A signed Test receipt is evidence only; never a subscription entitlement.
+  if(evidence.provider_environment !== "live") return {ok:false,code:"hosted_test_no_entitlement"};
   const admin = billingAdmin();
   if (!admin) return { ok: false, code: "admin_not_configured" };
 

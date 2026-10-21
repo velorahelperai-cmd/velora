@@ -1,7 +1,7 @@
 import "server-only";
 import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import { isLiveAnsweringEnabled } from "@/lib/answers/guards";
-import { getSecureProviderKey } from "@/lib/answers/config/env";
+import { getGeminiModelId, getSecureProviderKey } from "@/lib/answers/config/env";
 import { calculateTokensCostDetailed } from "@/lib/answers/config/pricing";
 import { buildAnswerSystemPrompt, formatAnswerUserPrompt } from "@/lib/answers/adapters/prompt";
 import { providerRequestLimits, validTokenCount } from "./request-limits";
@@ -16,16 +16,19 @@ import type {
 export interface GeminiAdapterOptions {
   client?: GoogleGenAI;
   apiKey?: string;
+  modelId?: AIModelId;
 }
 
 export class GeminiAnswerAdapter implements AnswerProvider {
   public readonly id = "gemini-adapter";
-  public readonly modelId: AIModelId = "gemini-3.8-flash";
+  public readonly modelId: AIModelId;
   private client: GoogleGenAI | null = null;
   private readonly injectedTestClient: boolean;
 
   constructor(options: GeminiAdapterOptions = {}) {
     this.injectedTestClient = Boolean(options.client);
+    const envModel = typeof getGeminiModelId === "function" ? getGeminiModelId() : null;
+    this.modelId = options.modelId || (envModel as AIModelId) || "gemini-3.8-flash";
     if (options.client) {
       this.client = options.client;
     } else {

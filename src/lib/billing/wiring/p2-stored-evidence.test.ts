@@ -1,3 +1,4 @@
+// Retain durable worker/RPC classification coverage in synthetic Live scope; no provider I/O.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
@@ -10,11 +11,11 @@ vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({
   rpc: state.rpc,
   from(table: string) {
     const row = table === "billing_orders"
-      ? { id: "order", special_reference: "reference", amount_baisa: 5000, provider_account_ref: "71610", provider_environment: "test", currency: "OMR" }
+      ? { id: "order", special_reference: "reference", amount_baisa: 5000, provider_account_ref: "71610", provider_environment: "live", currency: "OMR" }
       : table === "billing_payment_attempts" ? { id: "attempt", order_id: "order" }
       : { id: "event", company_id: "company", payment_attempt_id: "attempt", provider_transaction_id: "800001",
         event_status: "success", provider_account_ref: "71610", amount_baisa_expected: 5000,
-        observation_key: "verified-observation", provider_environment: "test", raw_summary: state.summary };
+        observation_key: "verified-observation", provider_environment: "live", raw_summary: state.summary };
     const query = {
       select(columns: string) { state.selects.push({ table, columns }); return query; },
       eq() { return query; },
@@ -45,7 +46,7 @@ beforeEach(() => {
   state.selects = [];
   state.rpc.mockReset().mockResolvedValue({ data: { outcome: "granted" }, error: null });
   vi.stubEnv("BILLING_PAYMOB_SETTLE_ENABLED", "true");
-  vi.stubEnv("BILLING_PAYMOB_LIVE_ENABLED", "false");
+  vi.stubEnv("BILLING_PAYMOB_LIVE_ENABLED", "true");
   vi.stubEnv("PAYMOB_OMR_CONVERSION_VERIFIED", "true");
   vi.stubEnv("PAYMOB_OMR_UNITS_PER_OMR", "1000");
 });
@@ -54,7 +55,7 @@ afterEach(() => vi.unstubAllEnvs());
 describe("actual stored Paymob evidence loaders", () => {
   it("processes complete newly verified evidence through the actual settlement bridge", async () => {
     await processOwnerOrderEvents("company", "order");
-    expect(state.rpc).toHaveBeenCalledWith("billing_settle_paymob_hmac_verified", {
+    expect(state.rpc).toHaveBeenCalledWith("billing_settle_live_paymob_hmac_verified", {
       p_evidence: expect.objectContaining({ company_id: "company", order_id: "order", payment_attempt_id: "attempt",
         provider_transaction_id: "800001", observation_key: "verified-observation" }),
     });

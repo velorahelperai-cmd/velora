@@ -1,5 +1,5 @@
 import { assertPaymobConfigForCalls, assertAllowedPaymobBaseUrl, PAYMOB_OMAN_API_BASE_URL, PAYMOB_OMAN_CHECKOUT_BASE_URL, type PaymobAdapterConfig } from "../paymob/config";
-import { createPaymobIntention, type LockedIntentionOrder } from "../paymob/intention";
+import { createPaymobIntention, bindPaymobCorrelation, logPaymobSandboxEvent, type PaymobIntentionInput } from "../paymob/intention";
 import { buildOmanHostedCheckoutUrl } from "../paymob/checkout";
 import type { PaymobHttpClient } from "../paymob/http";
 export type CheckoutResult = {ok:true;url:string}|{ok:false;code:string};
@@ -18,23 +18,44 @@ export function readTestCheckoutConfig(env:Record<string,string|undefined>):{ok:
  return {ok:true,config,unitsPerOmr};
 }
 export type CheckoutClaim={kind:"claimed"}|{kind:"ready";url:string}|{kind:"pending"}|{kind:"rejected";code:string};
-export async function openTestCheckout({config,locked,deps}:{config:PaymobAdapterConfig;locked:LockedIntentionOrder;deps:{claim:()=>Promise<CheckoutClaim>;persist:(input:{url:string;providerOrderId:string;providerIntentionId:string|null})=>Promise<boolean>;http:PaymobHttpClient}}):Promise<CheckoutResult>{
- try{assertPaymobConfigForCalls(config);}catch{return {ok:false,code:"test_config_invalid"};}
+export async function openTestCheckout({config,locked,deps}:{config:PaymobAdapterConfig;locked:PaymobIntentionInput;deps:{claim:()=>Promise<CheckoutClaim>;persist:(input:{url:string;providerOrderId:string;providerIntentionId:string|null})=>Promise<boolean>;http:PaymobHttpClient}}):Promise<CheckoutResult>{
+ const correlationId=bindPaymobCorrelation({correlationId:locked.correlationId,orderId:locked.orderId,specialReference:locked.specialReference});
+ try{assertPaymobConfigForCalls(config);}catch{
+  logPaymobSandboxEvent({correlationId,stage:"order_create",code:"test_config_invalid",orderId:locked.orderId,paymentAttemptId:locked.paymentAttemptId,specialReference:locked.specialReference});
+  return {ok:false,code:"test_config_invalid"};
+ }
+ logPaymobSandboxEvent({correlationId,stage:"order_create",code:"locked_order_ready",orderId:locked.orderId,paymentAttemptId:locked.paymentAttemptId,specialReference:locked.specialReference});
  const claim=await deps.claim();
- if(claim.kind==="rejected")return {ok:false,code:claim.code};
- if(claim.kind==="pending")return {ok:false,code:"payment_pending"};
+ if(claim.kind==="rejected"){
+  logPaymobSandboxEvent({correlationId,stage:"checkout_claim",code:claim.code,orderId:locked.orderId,paymentAttemptId:locked.paymentAttemptId,specialReference:locked.specialReference});
+  return {ok:false,code:claim.code};
+ }
+ if(claim.kind==="pending"){
+  logPaymobSandboxEvent({correlationId,stage:"checkout_claim",code:"payment_pending",orderId:locked.orderId,paymentAttemptId:locked.paymentAttemptId,specialReference:locked.specialReference});
+  return {ok:false,code:"payment_pending"};
+ }
  if(claim.kind==="ready"){
-  try{const url=new URL(claim.url);if(url.username||url.password||url.pathname!=="/"||!url.searchParams.get("clientSecret")?.includes("_test_")||!url.searchParams.get("publicKey")?.includes("pk_test_")||!assertAllowedPaymobBaseUrl(url.origin,"checkout").ok)return {ok:false,code:"checkout_invalid"};}catch{return {ok:false,code:"checkout_invalid"};}
+  try{const url=new URL(claim.url);if(url.username||url.password||url.pathname!=="/"||!url.searchParams.get("clientSecret")?.includes("_test_")||!url.searchParams.get("publicKey")?.includes("pk_test_")||!assertAllowedPaymobBaseUrl(url.origin,"checkout").ok){logPaymobSandboxEvent({correlationId,stage:"checkout_ready",code:"checkout_invalid",orderId:locked.orderId,paymentAttemptId:locked.paymentAttemptId});return {ok:false,code:"checkout_invalid"};}}catch{logPaymobSandboxEvent({correlationId,stage:"checkout_ready",code:"checkout_invalid",orderId:locked.orderId,paymentAttemptId:locked.paymentAttemptId});return {ok:false,code:"checkout_invalid"};}
+  logPaymobSandboxEvent({correlationId,stage:"checkout_ready",code:"reused",orderId:locked.orderId,paymentAttemptId:locked.paymentAttemptId,specialReference:locked.specialReference});
   return {ok:true,url:claim.url};
  }
- const intention=await createPaymobIntention({config,locked,http:deps.http});
+ logPaymobSandboxEvent({correlationId,stage:"checkout_claim",code:"claimed",orderId:locked.orderId,paymentAttemptId:locked.paymentAttemptId,specialReference:locked.specialReference});
+ const intention=await createPaymobIntention({config,locked:{...locked,correlationId},http:deps.http});
  if(!intention.ok)return {ok:false,code:intention.needsReconciliation?"payment_pending":intention.code};
- if(!intention.intentionId?.startsWith("pi_test_")||!intention.clientSecret.includes("_test_"))return {ok:false,code:"provider_mode_mismatch"};
+ if(!intention.intentionId?.startsWith("pi_test_")||!intention.clientSecret.includes("_test_")){
+  logPaymobSandboxEvent({correlationId,stage:"checkout_ready",code:"provider_mode_mismatch",orderId:locked.orderId,paymentAttemptId:locked.paymentAttemptId,providerOrderId:intention.intentionOrderId});
+  return {ok:false,code:"provider_mode_mismatch"};
+ }
  const checkout=buildOmanHostedCheckoutUrl({config,clientSecret:intention.clientSecret});
- if(!checkout.ok)return {ok:false,code:checkout.code};
- if(!await deps.persist({url:checkout.url,providerOrderId:String(intention.intentionOrderId),providerIntentionId:intention.intentionId}))return {ok:false,code:"checkout_persist_failed"};
+ if(!checkout.ok){
+  logPaymobSandboxEvent({correlationId,stage:"checkout_ready",code:checkout.code,orderId:locked.orderId,paymentAttemptId:locked.paymentAttemptId,providerOrderId:intention.intentionOrderId});
+  return {ok:false,code:checkout.code};
+ }
+ if(!await deps.persist({url:checkout.url,providerOrderId:String(intention.intentionOrderId),providerIntentionId:intention.intentionId})){
+  logPaymobSandboxEvent({correlationId,stage:"checkout_ready",code:"checkout_persist_failed",orderId:locked.orderId,paymentAttemptId:locked.paymentAttemptId,providerOrderId:intention.intentionOrderId});
+  return {ok:false,code:"checkout_persist_failed"};
+ }
+ logPaymobSandboxEvent({correlationId,stage:"checkout_ready",code:"persisted",orderId:locked.orderId,paymentAttemptId:locked.paymentAttemptId,providerOrderId:intention.intentionOrderId,specialReference:locked.specialReference});
  return {ok:true,url:checkout.url};
 }
 export const fetchPaymobHttp:PaymobHttpClient={async request(input){try{const response=await fetch(input.url,{method:input.method,headers:input.headers,body:input.body,signal:AbortSignal.timeout(input.timeoutMs),redirect:"error",cache:"no-store"});return {kind:"response",response:{status:response.status,headers:{},bodyText:await response.text()}};}catch(error){return error instanceof Error&&(error.name==="TimeoutError"||error.name==="AbortError")?{kind:"timeout"}:{kind:"network_error",message:"provider_request_failed"};}}};
-
-

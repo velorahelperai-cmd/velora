@@ -28,3 +28,9 @@ export function isProviderKeyConfigured(provider: AIProviderName): boolean {
   return Boolean(getSecureProviderKey(provider));
 }
 
+export function getGeminiModelId(): string {
+  if (typeof window !== "undefined") {
+    return "gemini-3.8-flash";
+  }
+  return process.env.AI_GEMINI_MODEL || process.env.GEMINI_MODEL || "gemini-3.8-flash";
+}

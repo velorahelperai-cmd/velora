@@ -26,6 +26,41 @@ test('nested secrets, formatted contacts and spoofed context are protected',()=>
  withLogContext({request_id:'trusted-request',user_id:'trusted-user'},()=>logEvent('error','test.failure',{request_id:'spoofed',user_id:'raw@example.invalid',payload:{auth:{password:secret}},req:{headers:{Authorization:secret}},res:{headers:{'set-cookie':secret}},customer:{email:'contact@example.invalid',phone:'+968 1234 5678'},error:new Error(JSON.stringify({refresh_token:secret,client_secret:secret}))},logger));
  assert.equal(JSON.stringify(lines).includes(secret),false);assert.equal(lines[0].request_id,'trusted-request');assert.equal(lines[0].user_id,'trusted-user');assert.equal(lines[0].customer.email,'c***@example.invalid');assert.equal(lines[0].customer.phone,'+*** **** **78');
 });
+test('Meta, WhatsApp, Instagram and B3 channel secrets are redacted while preserving correlation, stage, duration and error_code',()=>{
+ const {lines,logger}=sink();
+ const metaGraphToken='EAABsbCS1iHgBO7syntheticTokenValue998877665544332211';
+ const igToken='IGQWRPaSyntheticInstagramTokenValue112233445566778899';
+ const hmacSig='sha256=abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789';
+ const verifyToken='velora-verify-'+randomUUID();
+ const pinValue='654321';
+ const nonceValue=randomUUID().replace(/-/g,'');
+ const stageReceipt='receipt-'+randomUUID();
+ withLogContext({request_id:'corr-meta-001',user_id:'actor-1',tenant_id:'company-1'},()=>{
+  logEvent('warn','es02.branch_connection.failed',{
+   stage:'b3.exchange',
+   error_code:'reconciliation_required',
+   duration_ms:142,
+   pin:pinValue,
+   nonce:nonceValue,
+   verify_token:verifyToken,
+   stage_receipt:stageReceipt,
+   headers:{'x-hub-signature-256':hmacSig},
+   error:new Error(`Meta exchange failed token=${metaGraphToken} ig=${igToken} sig=${hmacSig} hub.verify_token=${verifyToken} pin=${pinValue}`),
+  },logger);
+ });
+ const serialized=JSON.stringify(lines);
+ assert.equal(serialized.includes(metaGraphToken),false);
+ assert.equal(serialized.includes(igToken),false);
+ assert.equal(serialized.includes('abcdef0123456789'),false);
+ assert.equal(serialized.includes(verifyToken),false);
+ assert.equal(serialized.includes(pinValue),false);
+ assert.equal(serialized.includes(nonceValue),false);
+ assert.equal(serialized.includes(stageReceipt),false);
+ assert.equal(lines[0].request_id,'corr-meta-001');
+ assert.equal(lines[0].stage,'b3.exchange');
+ assert.equal(lines[0].error_code,'reconciliation_required');
+ assert.equal(lines[0].duration_ms,142);
+});
 test('production LOG_LEVEL cannot enable debug',()=>{
  const previous={NODE_ENV:process.env.NODE_ENV,LOG_LEVEL:process.env.LOG_LEVEL};
  try{process.env.NODE_ENV='production';process.env.LOG_LEVEL='debug';const {lines,logger}=sink();logEvent('debug','test.diagnostic',{},logger);logEvent('info','test.progress',{},logger);assert.equal(lines.length,1);assert.equal(lines[0].level,'info');}

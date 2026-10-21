@@ -6,10 +6,10 @@ import {businessTypes,businessTypeLabel} from "@/lib/business-types";
 import styles from "./paid-assistant-trial.module.css";
 
 export type TrialScope={expectedAccountId:string;companyId:string;branchId:string};
-type TrialContext=TrialScope & {expectedVersion:number;knowledgeRevision:string};
-export type TrialMessage={id:string;scope:TrialScope;version:number;knowledgeRevision:string;question:string;result:AnswerResult;origin:"engine"|"synthetic"};
+type TrialContext=TrialScope & {expectedVersion:number;knowledgeRevision:string;operationId?:string};
+export type TrialMessage={id:string;scope:TrialScope;version:number;knowledgeRevision:string;question:string;result:AnswerResult|Pick<Extract<AnswerResult,{ok:true}>,"ok"|"text"|"citations"|"modelId">;origin:"engine"|"synthetic"};
 /** UI-only host projection; neither an answer nor local acknowledgement grants readiness. */
-export type TrialSnapshot={scope:TrialScope;version:number;knowledgeRevision:string;branchLabel:string;businessType:string;canAsk:boolean|null;messages:TrialMessage[]};
+export type TrialSnapshot={scope:TrialScope;version:number;knowledgeRevision:string;branchLabel:string;businessType:string;canAsk:boolean|null;trialAllowance?:{limit:number;used:number};messages:TrialMessage[]};
 export type PaidAssistantTrialProps={
  locale:"ar"|"en";scope:TrialScope;boundaryFingerprint:string;snapshot:TrialSnapshot|null;
  state:{scope:TrialScope;version:number|null;phase:"loading"|"ready"|"pending"|"error"|"unknown"|"unavailable";requestId:string|null;failure:AnswerFailure|null;canRetry:boolean|null};
@@ -75,6 +75,7 @@ function TrialForm(p:PaidAssistantTrialProps & {snapshot:TrialSnapshot}){
  return <section className={styles.view} dir={ar?"rtl":"ltr"} aria-labelledby={id} aria-busy={pending||p.state.phase==="pending"}>
   <header><h2 id={id}>{t("جرّب مساعدك","Try your assistant")}</h2><p>{t("الفرع: ","Branch: ")}<bdi>{p.snapshot.branchLabel}</bdi> · <bdi>{businessTypeLabel(p.snapshot.businessType,ar)}</bdi></p></header>
   <p className={styles.note}>{t("اختبار داخلي؛ لا تُرسل هذه الرسائل إلى العملاء. ظهور إجابة لا يثبت الجاهزية ولا يطلق الردود الحية.","Internal trial: these messages are not sent to customers. An answer does not prove readiness or launch live replies.")}</p>
+  {p.snapshot.trialAllowance&&<p role="status"><bdi>{p.snapshot.trialAllowance.used} / {p.snapshot.trialAllowance.limit}</bdi> {t("ردود التجربة المجانية المستخدمة","free setup replies used")}</p>}
   <div className={styles.suggestions} aria-label={t("أسئلة مقترحة","Suggested questions")}>{trialSuggestions(p.snapshot.businessType,p.locale).map(question=><button key={question} type="button" disabled={blocked} onClick={()=>{if(p.isCurrent())setDraft(question);}}>{question}</button>)}</div>
   <div className={styles.transcript} role="log" aria-live="polite" aria-relevant="additions text" aria-label={t("محادثة الاختبار","Trial conversation")}>
    {!messages.length&&<p className={styles.empty}>{t("اختر سؤالًا مقترحًا أو اكتب سؤالك لبدء الاختبار.","Choose a suggested question or write your own to start the trial.")}</p>}
@@ -89,7 +90,7 @@ function TrialForm(p:PaidAssistantTrialProps & {snapshot:TrialSnapshot}){
   </div>
   {(uncertain||p.state.phase==="unknown")&&<p role="alert" className={styles.error}>{t("نتيجة الطلب غير معروفة. تحقّق من حالته قبل إرسال طلب جديد؛ لن نعيد المحاولة تلقائيًا.","The request outcome is unknown. Check its status before sending another request; it will not be retried automatically.")}</p>}
   {p.state.phase==="error"&&<div className={styles.error} role="alert"><p>{trialFailureText(p.state.failure?.code??"UNAVAILABLE",ar)}</p><button type="button" disabled={!canRetry} onClick={()=>{if(canRetry)void dispatch(()=>p.onRetry?.({...context,requestId:p.state.requestId!}));}}>{t("إعادة محاولة آمنة","Retry safely")}</button>{!canRetry&&<p>{t("إعادة المحاولة تنتظر إذنًا مؤكدًا من الخادم.","Retry is waiting for explicit server authorization.")}</p>}</div>}
-  <form onSubmit={e=>{e.preventDefault();const question=draft.trim();if(!blocked&&question&&question.length<=ANSWER_MAX_QUESTION_CHARS)void dispatch(()=>p.onAsk?.({...context,question}));}}>
+  <form onSubmit={e=>{e.preventDefault();const question=draft.trim();if(!blocked&&question&&question.length<=ANSWER_MAX_QUESTION_CHARS)void dispatch(()=>p.onAsk?.({...context,question,operationId:crypto.randomUUID()}));}}>
    <label htmlFor={`${id}-question`}>{t("اكتب سؤالك","Write your question")}</label>
    <textarea id={`${id}-question`} dir="auto" rows={3} maxLength={ANSWER_MAX_QUESTION_CHARS} value={draft} disabled={blocked} onChange={e=>{if(p.isCurrent())setDraft(e.target.value);}}/>
    <div className={styles.footer}><small><bdi dir="ltr">{draft.length} / {ANSWER_MAX_QUESTION_CHARS}</bdi></small><button type="submit" disabled={blocked||!draft.trim()||draft.trim().length>ANSWER_MAX_QUESTION_CHARS}>{t("إرسال السؤال","Send question")}</button></div>
