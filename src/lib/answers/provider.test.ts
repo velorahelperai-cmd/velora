@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
@@ -29,7 +30,7 @@ describe("getAnswerProvider", () => {
   });
 
   it("returns GeminiAnswerAdapter when API key is configured", () => {
-    mockKey = "ai-test-key-12345";
+    mockKey = randomUUID();
     mockModelId = "gemini-3.8-pro";
     const provider = getAnswerProvider();
     expect(provider).not.toBeNull();
