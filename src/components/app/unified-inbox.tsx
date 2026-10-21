@@ -51,8 +51,8 @@ export function UnifiedInbox({initial,waReview=false,igReview=false}:{initial:Sn
  const selectionValid=channels.includes(source)&&!!selected&&snapshot.ok&&(source==='whatsapp'?snapshot.waAllowed===true&&snapshot.wa.ok:snapshot.igAllowed===true&&snapshot.ig.ok);
  const rows=useMemo(()=>snapshot.ok&&retained?inboxRows(snapshot.wa.ok&&retained.wa.ok?retained.wa.page.conversations:[],snapshot.ig.ok&&retained.ig.ok?retained.ig.data.conversations:[],ar):[],[snapshot,retained,ar]);
  const activeChannels=filter==='all'?channels:[filter];
- const activeRows=useMemo(()=>rows.filter(r=>filter==='all'||r.channel===filter),[rows,filter]);
- const shown=useMemo(()=>activeRows.filter(r=>!query||`${r.name} ${r.preview}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())),[activeRows,query]);
+ const activeRows=rows.filter(r=>filter==='all'||r.channel===filter);
+ const shown=activeRows.filter(r=>!query||`${r.name} ${r.preview}`.toLocaleLowerCase().includes(query.toLocaleLowerCase()));
  const anyActiveChannelFailed=activeChannels.some(channel=>{const result=channel==='whatsapp'?(snapshot.ok?snapshot.wa:retained?.wa):(snapshot.ok?snapshot.ig:retained?.ig);return !result||!result.ok;});
  const showEmpty=!shown.length&&(Boolean(query)?(activeRows.length>0||!anyActiveChannelFailed):(!anyActiveChannelFailed&&activeRows.length===0));
  const select=(channel:InboxChannel|null,id:string|null,intentId?:string)=>{const href=inboxHref(channel,id,filter);router.push(intentId?href+(href.includes("?")?"&":"?")+"intent="+encodeURIComponent(intentId):href);};

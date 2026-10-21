@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
-import React, { Suspense, type ReactNode } from "react";
+import React, { Suspense, type ComponentProps, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 const state = vi.hoisted(() => ({ locale: "en", load: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn(), replace: vi.fn() }), useSearchParams: () => new URLSearchParams() }));
@@ -17,12 +17,15 @@ import DashboardRoute from "@/app/app/page";
 import { UnifiedInbox } from "./unified-inbox";
 import { appCopy } from "@/lib/app-copy";
 import { dashboardInboxMetrics } from "./onboarding-contracts";
+type ReadableSnapshot = Extract<ComponentProps<typeof UnifiedInbox>["initial"], { ok: true }>;
+type AsyncRouteChild = (props: unknown) => Promise<React.ReactElement>;
+type SuspensePage = React.ReactElement<{ children: React.ReactElement; fallback: ReactNode }>;
 
 async function resolveRouteTree(content: unknown) {
-  if (React.isValidElement(content) && content.type === Suspense) {
-    const child = (content.props as any)?.children;
-    if (React.isValidElement(child) && typeof child.type === "function" && (child.type as any).constructor?.name === "AsyncFunction") {
-      return await (child.type as any)(child.props);
+  if (React.isValidElement<{ children?: ReactNode }>(content) && content.type === Suspense) {
+    const child = content.props.children;
+    if (React.isValidElement(child) && typeof child.type === "function" && child.type.constructor.name === "AsyncFunction") {
+      return await (child.type as AsyncRouteChild)(child.props);
     }
   }
   return content;
@@ -57,16 +60,16 @@ it("does not invent dashboard counts for denied data", () => {
 describe("Conversations page Suspense boundary and key regression", () => {
  it("wraps service inbox read inside Suspense and includes error code in failure key", async () => {
   state.load.mockResolvedValue({ ok: false, code: "UNAVAILABLE" });
-  const pageTree = ConversationsRoute() as React.ReactElement;
+  const pageTree = ConversationsRoute() as SuspensePage;
   expect(React.isValidElement(pageTree)).toBe(true);
   expect(pageTree.type).toBe(Suspense);
-  expect((pageTree.props as any).fallback).toBeDefined();
+  expect(pageTree.props.fallback).toBeDefined();
 
-  const childEl = await (pageTree.props as any).children.type();
+  const childEl = await resolveRouteTree(pageTree) as React.ReactElement;
   expect(childEl.key).toBe("unavailable:UNAVAILABLE");
 
   state.load.mockResolvedValue({ ok: false, code: "FORBIDDEN" });
-  const forbiddenEl = await (pageTree.props as any).children.type();
+  const forbiddenEl = await resolveRouteTree(pageTree) as React.ReactElement;
   expect(forbiddenEl.key).toBe("unavailable:FORBIDDEN");
 
   state.load.mockResolvedValue({
@@ -80,13 +83,13 @@ describe("Conversations page Suspense boundary and key regression", () => {
    wa: { ok: false, code: "UNAVAILABLE" },
    ig: { ok: false, code: "UNAVAILABLE" },
   });
-  const successEl = await (pageTree.props as any).children.type();
+  const successEl = await resolveRouteTree(pageTree) as React.ReactElement;
   expect(successEl.key).toBe("actor-123:company-456");
  });
 });
 
 describe.each(["en", "ar"])("UnifiedInbox failure presentation in %s", locale => {
- const baseInitial = {
+  const baseInitial: ReadableSnapshot = {
   ok: true as const,
   companyId: "11111111-1111-4111-8111-111111111111",
   actorId: "22222222-2222-4222-8222-222222222222",
@@ -99,11 +102,11 @@ describe.each(["en", "ar"])("UnifiedInbox failure presentation in %s", locale =>
    plan_entitlements: {
     status: "UNCONFIGURED" as const,
    },
-  } as any,
+  } as ReadableSnapshot["channelContract"],
   channel_access: {
    whatsapp: true,
    instagram: false,
-  } as any,
+  },
   wa: {
    ok: false as const,
    code: "UNAVAILABLE" as const,
@@ -138,19 +141,30 @@ describe.each(["en", "ar"])("UnifiedInbox failure presentation in %s", locale =>
 
  it("renders empty state when channel loaded successfully with 0 conversations", () => {
   state.locale = locale;
-  const emptyInitial = {
+   const emptyInitial: ReadableSnapshot = {
    ...baseInitial,
    wa: {
     ok: true as const,
     conversations: [],
     page: {
+      kind: "partial",
+      companyId: baseInitial.companyId,
+      conversationScope: "all_company",
+      ordering: "newest_created",
      conversations: [],
+      total: 0,
+      unreadTotal: 0,
+      interventionTotal: 0,
      hasMore: false,
      nextCursor: null,
      membershipFingerprint: "fp-1",
-    } as any,
-    meta: {} as any,
-   } as any,
+    },
+    meta: {
+     companyId: baseInitial.companyId, conversationScope: "all_company", timezone: null, timezoneAnnouncedUtc: true,
+     canReply: false, canAssign: false, assignees: [],
+     counts: { all: 0, awaiting_staff: 0, follow_up_today: 0, overdue: 0, trial_or_quote: 0 },
+    },
+   },
   };
   const html = renderToStaticMarkup(React.createElement(UnifiedInbox, { initial: emptyInitial }));
   expect(html).toContain(locale === "ar" ? "لا توجد محادثات بعد" : "No conversations yet");

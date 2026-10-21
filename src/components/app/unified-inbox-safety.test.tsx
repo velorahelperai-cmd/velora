@@ -58,12 +58,21 @@ vi.mock("@/lib/instagram/inbox-actions", () => ({ loadInstagramInboxPage: (args:
 vi.mock("@/components/app/workspace-shell", () => ({
   WorkspaceShell: ({ children, actions }: { children: ReactNode; actions: ReactNode }) => React.createElement("main", null, actions, children),
 }));
-vi.mock("./conversations", () => ({ ConversationsPage: (props: unknown) => React.createElement("div", { "data-pane": "conversations", ...props as any }) }));
-vi.mock("./instagram-inbox", () => ({ InstagramInbox: (props: unknown) => React.createElement("div", { "data-pane": "instagram", ...props as any }) }));
+vi.mock("./conversations", () => ({ ConversationsPage: (props: unknown) => React.createElement("div", { "data-pane": "conversations", ...props as Record<string, unknown> }) }));
+vi.mock("./instagram-inbox", () => ({ InstagramInbox: (props: unknown) => React.createElement("div", { "data-pane": "instagram", ...props as Record<string, unknown> }) }));
 
 import { UnifiedInbox } from "./unified-inbox";
 import { ConversationsPage } from "./conversations";
 import { InstagramInbox } from "./instagram-inbox";
+type ReadableSnapshot = Extract<ComponentProps<typeof UnifiedInbox>["initial"], { ok: true }>;
+type WhatsappSnapshot = Extract<ReadableSnapshot["wa"], { ok: true }>;
+type InstagramSnapshot = Extract<ReadableSnapshot["ig"], { ok: true }>;
+type Fixture = ReadableSnapshot & { wa: WhatsappSnapshot; ig: InstagramSnapshot };
+
+function conversation(id: string, customer: string, phone: string, inboxSequence: string, text: string, at: number): WhatsappSnapshot["page"]["conversations"][number] {
+  return { id, customer, phone, inboxSequence, unreadCount: 0, assignedTo: null, status: "open", owner: "assistant", assistantPaused: false,
+    topic: "WhatsApp", summary: "", intervention: { reasons: [] }, messages: [{ id: `message-${id}`, from: "customer", text, at }] };
+}
 
 type Node = { type?: unknown; props: Record<string, unknown> };
 function nodes(value: unknown): Node[] {
@@ -96,7 +105,7 @@ beforeEach(() => {
 });
 
 describe("UnifiedInbox membership and page safety", () => {
-  function makeInitial(membershipFp = "fp-initial") {
+  function makeInitial(membershipFp = "fp-initial"): Fixture {
     return {
       ok: true as const,
       companyId: company,
@@ -110,12 +119,12 @@ describe("UnifiedInbox membership and page safety", () => {
         plan_entitlements: {
           status: "UNCONFIGURED" as const,
         },
-      } as any,
-      channel_access: { whatsapp: true, instagram: true } as any,
+      } as ReadableSnapshot["channelContract"],
+      channel_access: { whatsapp: true, instagram: true },
       wa: {
         ok: true as const,
         conversations: [
-          { id: "c1", customer: "Customer 1", phone: "+9681", messages: [{ id: "m1", text: "Msg 1", at: 1000, fromCustomer: true }], unreadCount: 0, assignedTo: null, inboxSequence: "100" } as any,
+          conversation("c1", "Customer 1", "+9681", "100", "Msg 1", 1000),
         ],
         page: {
           companyId: company,
@@ -123,7 +132,7 @@ describe("UnifiedInbox membership and page safety", () => {
           kind: "partial" as const,
           ordering: "newest_created" as const,
           conversations: [
-            { id: "c1", customer: "Customer 1", phone: "+9681", messages: [{ id: "m1", text: "Msg 1", at: 1000, fromCustomer: true }], unreadCount: 0, assignedTo: null, inboxSequence: "100" } as any,
+            conversation("c1", "Customer 1", "+9681", "100", "Msg 1", 1000),
           ],
           hasMore: true,
           nextCursor: "cursor-2",
@@ -132,7 +141,11 @@ describe("UnifiedInbox membership and page safety", () => {
           interventionTotal: 0,
           membershipFingerprint: membershipFp,
         },
-        meta: {} as any,
+        meta: {
+          companyId: company, conversationScope: "all_company", timezone: null, timezoneAnnouncedUtc: true,
+          canReply: false, canAssign: false, assignees: [],
+          counts: { all: 0, awaiting_staff: 0, follow_up_today: 0, overdue: 0, trial_or_quote: 0 },
+        },
       },
       ig: {
         ok: true as const,
@@ -146,7 +159,7 @@ describe("UnifiedInbox membership and page safety", () => {
           hasMore: false,
           nextCursor: null,
         },
-      } as any,
+      },
     };
   }
 
@@ -241,7 +254,7 @@ describe("UnifiedInbox membership and page safety", () => {
 
     // Verify both pages (c1 and c2) are retained
     let allNodes = nodes(tree);
-    let names = allNodes.filter(n => typeof n.props.children === "string").map(n => n.props.children);
+    const names = allNodes.filter(n => typeof n.props.children === "string").map(n => n.props.children);
     expect(names).toContain("Customer 1");
     expect(names).toContain("Customer 2");
 
@@ -255,7 +268,7 @@ describe("UnifiedInbox membership and page safety", () => {
     expect(waPane).toBeDefined();
 
     // Verify wrapper div keeps waPane mounted with hidden and inert
-    const waWrapper = allNodes.find(n => n.props.children && typeof n.props.children === "object" && (n.props.children as any).type === ConversationsPage);
+    const waWrapper = allNodes.find(n => React.isValidElement(n.props.children) && n.props.children.type === ConversationsPage);
     expect(waWrapper).toBeDefined();
     expect(waWrapper!.props.hidden).toBe(true);
     expect(waWrapper!.props.inert).toBe(true);
@@ -297,8 +310,8 @@ describe("UnifiedInbox membership and page safety", () => {
     state.searchParams = new URLSearchParams("channel=whatsapp&source=whatsapp&c=c1");
 
     // Make more() hang
-    let resolveMore: (v: any) => void;
-    state.refreshWhatsappInboxPage.mockImplementation(() => new Promise(res => { resolveMore = res; }));
+    let resolveMore: (v: { ok: true; data: WhatsappSnapshot["page"] }) => void;
+    state.refreshWhatsappInboxPage.mockImplementation(() => new Promise<{ ok: true; data: WhatsappSnapshot["page"] }>(res => { resolveMore = res; }));
 
     let tree = render({ initial });
     const moreBtn = nodes(tree).find(n => n.props.children === "More WhatsApp")!;
