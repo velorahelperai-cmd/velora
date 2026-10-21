@@ -1,6 +1,8 @@
 "use server";
+import { hostedTestActorAllowed } from "./hosted-test";
 import { createBillingOrderAction } from "./order-actions";
 import { readTestCheckoutConfig, openTestCheckout, fetchPaymobHttp, type CheckoutClaim, type CheckoutResult } from "./test-checkout";
+import { bindPaymobCorrelation, logPaymobSandboxEvent } from "../paymob/intention";
 import { getCompanyAccess } from "@/lib/tenancy/access";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { siteUrl } from "@/lib/auth/site-url";
@@ -14,6 +16,7 @@ export async function startTestCheckoutAction(input:{planVersionId:string;client
   if(typeof input.expectedCompanyId!=="string"||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(input.expectedCompanyId))return {ok:false,code:"INVALID_INPUT",message:"invalid_company"};
   if(input.expectedCompanyId!==access.context.company.id)return {ok:false,code:"FORBIDDEN",message:"workspace_changed"};
  }
+ if(!hostedTestActorAllowed(access.context.userId,access.context.company.id))return {ok:false,code:"hosted_test_not_authorized"};
  const settings=readTestCheckoutConfig(process.env);
  if(!settings.ok)return settings;
  let origin:URL;try{origin=new URL(siteUrl());}catch{return {ok:false,code:"callback_not_configured"};}
@@ -22,6 +25,8 @@ export async function startTestCheckoutAction(input:{planVersionId:string;client
  if(!phone)return {ok:false,code:"billing_phone_missing"};
  const result=await createBillingOrderAction({planVersionId:input.planVersionId,clientOpId:input.clientOpId,purchasePurpose:"initial",expectedCompanyId:access.context.company.id});
  if(!result.ok)return result;
+ const correlationId=bindPaymobCorrelation({orderId:result.orderId,specialReference:result.specialReference});
+ logPaymobSandboxEvent({correlationId,stage:"order_create",code:"created",orderId:result.orderId,paymentAttemptId:result.paymentAttemptId,specialReference:result.specialReference});
  try{
  const companyId=access.context.company.id,client=createAdminClient();
  if(!client)return {ok:false,code:"test_not_configured",orderId:result.orderId};
@@ -32,7 +37,7 @@ export async function startTestCheckoutAction(input:{planVersionId:string;client
  if(error||!order||order.provider_environment!=="test"||order.currency!=="OMR"||order.provider_amount_unit!=="paymob_amount"||String(order.provider_account_ref)!==String(settings.config.integrationId))return {ok:false,code:"order_not_ready",orderId:result.orderId};
  const amount=Number(order.provider_amount),expected=commercialBaisaToVerifiedPaymobAmount(order.amount_baisa,settings.unitsPerOmr);
  if(!expected.ok||!Number.isSafeInteger(amount)||amount<=0||amount!==expected.amount)return {ok:false,code:"order_amount_invalid",orderId:result.orderId};
- const checkout=await openTestCheckout({config:settings.config,locked:{companyId,orderId:result.orderId,paymentAttemptId:result.paymentAttemptId,specialReference:result.specialReference,currency:"OMR",providerAmount:amount,providerAmountUnit:"paymob_amount",providerAccountRef:String(order.provider_account_ref),providerEnvironment:"test",integrationId:settings.config.integrationId,billingPhone:phone,itemName:"Velora subscription",notificationUrl:`${origin.origin}/api/billing/paymob/webhook`,redirectionUrl:`${origin.origin}/app/subscription/orders/${result.orderId}`},deps:{http:fetchPaymobHttp,claim:async()=>{const {data,error}=await admin.rpc("billing_claim_test_checkout",{p_company_id:companyId,p_order_id:result.orderId,p_attempt_id:result.paymentAttemptId});if(error||!data)return {kind:"rejected",code:"checkout_schema_unavailable"};return data as CheckoutClaim;},persist:async saved=>{const {data,error}=await admin.rpc("billing_complete_test_checkout",{p_company_id:companyId,p_order_id:result.orderId,p_attempt_id:result.paymentAttemptId,p_provider_order_id:saved.providerOrderId,p_checkout_url:saved.url,p_intention_id:saved.providerIntentionId});return !error&&data===true;}}});
+ const checkout=await openTestCheckout({config:settings.config,locked:{companyId,orderId:result.orderId,paymentAttemptId:result.paymentAttemptId,specialReference:result.specialReference,correlationId,currency:"OMR",providerAmount:amount,providerAmountUnit:"paymob_amount",providerAccountRef:String(order.provider_account_ref),providerEnvironment:"test",integrationId:settings.config.integrationId,billingPhone:phone,itemName:"Velora subscription",notificationUrl:`${origin.origin}/api/billing/paymob/webhook`,redirectionUrl:`${origin.origin}/app/subscription/orders/${result.orderId}`},deps:{http:fetchPaymobHttp,claim:async()=>{const {data,error}=await admin.rpc("billing_claim_test_checkout",{p_company_id:companyId,p_order_id:result.orderId,p_attempt_id:result.paymentAttemptId});if(error||!data)return {kind:"rejected",code:"checkout_schema_unavailable"};return data as CheckoutClaim;},persist:async saved=>{const {data,error}=await admin.rpc("billing_complete_test_checkout",{p_company_id:companyId,p_order_id:result.orderId,p_attempt_id:result.paymentAttemptId,p_provider_order_id:saved.providerOrderId,p_checkout_url:saved.url,p_intention_id:saved.providerIntentionId});return !error&&data===true;}}});
  return {...checkout,orderId:result.orderId};
  }catch{return {ok:false,code:"payment_pending",orderId:result.orderId};}
 }
@@ -41,6 +46,7 @@ export async function startTestCheckoutAction(input:{planVersionId:string;client
 export async function resumeTestCheckoutAction(input:{orderId:string}):Promise<StartTestCheckoutResult>{
  const access=await getCompanyAccess("owner");
  if(!access.ok||!access.context.company||access.context.membership?.role!=="owner"||access.context.company.status==="suspended")return {ok:false,code:"not_owner"};
+ if(!hostedTestActorAllowed(access.context.userId,access.context.company.id))return {ok:false,code:"hosted_test_not_authorized"};
  const settings=readTestCheckoutConfig(process.env);if(!settings.ok)return settings;
  const client=createAdminClient();if(!client)return {ok:false,code:"test_not_configured"};
  // eslint-disable-next-line @typescript-eslint/no-explicit-any

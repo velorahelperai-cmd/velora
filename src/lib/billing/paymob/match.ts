@@ -51,7 +51,7 @@ export type MatchResult =
  */
 export function matchVerifiedObservationToOrder(input: {
   observation: VerifiedTransactionObservation;
-  order: ServerOrderBinding;
+  order: Omit<ServerOrderBinding, "companyId"> & { companyId?: string };
   companyFromUnsignedField?: boolean;
   /**
    * When true, caller tried to bind solely via unsigned merchant_order_id / is_live

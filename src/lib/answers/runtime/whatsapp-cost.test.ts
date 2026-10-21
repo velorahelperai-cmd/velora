@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
-vi.mock("../config/env", () => ({ getSecureProviderKey: () => null }));
+vi.mock("../config/env", () => ({ getGeminiModelId:()=>"gemini-3.8-flash",getSecureProviderKey: () => null }));
 const admin = vi.hoisted(() => ({ create: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: admin.create }));
 import { createClaimedWhatsappAnswerExecutor, executeClaimedWhatsappAnswer } from "./whatsapp-cost";

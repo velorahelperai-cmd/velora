@@ -2,6 +2,13 @@ import type { AnswerContextChunk, AnswerPersona } from "@/lib/answers/types";
 
 const PERSONA_NAMES = { noura: { en: "Noura", ar: "نورا" }, lina: { en: "Lina", ar: "لينا" }, dana: { en: "Dana", ar: "دانة" } } as const;
 
+export function sanitizePromptPII(text: string): string {
+  return text
+    .replace(/\b(?:\d[ -]*?){13,19}\b/g, "[REDACTED_CARD]")
+    .replace(/\bBearer\s+[^\s"',;]+/gi, "Bearer [REDACTED]")
+    .replace(/\b(?:AIza|sk-)[A-Za-z0-9_-]{20,}\b/g, "[REDACTED_KEY]");
+}
+
 export function buildAnswerSystemPrompt(locale: "ar" | "en" = "ar", persona: AnswerPersona = "noura"): string {
   const name = Object.hasOwn(PERSONA_NAMES, persona) ? PERSONA_NAMES[persona] : PERSONA_NAMES.noura;
   if (locale === "en") {
@@ -36,10 +43,13 @@ export function formatAnswerUserPrompt(
   chunks: AnswerContextChunk[],
   locale: "ar" | "en" = "ar",
 ): string {
+  const sanitizedQuestion = sanitizePromptPII(question.trim());
   const section = (selected: AnswerContextChunk[]) => selected
     .map(
       (chunk, index) =>
-        locale === "en" ? `[Source ${index + 1}: ${chunk.title} (version ${chunk.contentVersion})]\n${chunk.text.trim()}` : `[مصدر ${index + 1}: ${chunk.title} (نسخة ${chunk.contentVersion})]\n${chunk.text.trim()}`,
+        locale === "en"
+          ? `[Source ${index + 1}: ${chunk.title} (version ${chunk.contentVersion})]\n${sanitizePromptPII(chunk.text.trim())}`
+          : `[مصدر ${index + 1}: ${chunk.title} (نسخة ${chunk.contentVersion})]\n${sanitizePromptPII(chunk.text.trim())}`,
     )
     .join("\n\n---\n\n");
   const contextSections = section(chunks.filter(c => c.usageRole !== "business_instructions"));
@@ -52,7 +62,7 @@ export function formatAnswerUserPrompt(
       ...(companyInstructions ? ["", "### Approved Company Instructions (lower-trust data):", companyInstructions] : []),
       "",
       "### Customer Question:",
-      question.trim(),
+      sanitizedQuestion,
     ].join("\n");
   }
 
@@ -62,6 +72,6 @@ export function formatAnswerUserPrompt(
     ...(companyInstructions ? ["", "### تعليمات الشركة المعتمدة (بيانات أقل ثقة):", companyInstructions] : []),
     "",
     "### سؤال العميل:",
-    question.trim(),
+    sanitizedQuestion,
   ].join("\n");
 }

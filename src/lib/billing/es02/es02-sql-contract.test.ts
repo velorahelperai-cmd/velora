@@ -58,3 +58,28 @@ describe("es02 SQL migration contract", () => {
     expect(base).toContain("set search_path = ''");
   });
 });
+
+// Source contracts only. These do NOT claim PostgreSQL ACL/role/concurrency execution.
+describe("B5-B8 reviewed source authority contracts", () => {
+  const sql = readFileSync("supabase/migrations/20261020180000_es02_b5_b8_branch_setup_completion.sql", "utf8");
+  it("does not grant authenticated callers an engine proof writer", () => {
+    expect(sql).not.toMatch(/grant execute on function public\.es02_record_owned_branch_assistant_trial\([^;]+to authenticated/i);
+    expect(sql).toMatch(/grant execute on function public\.es02_record_owned_branch_assistant_trial\([^;]+to service_role/i);
+  });
+  it("exposes an authorized bounded answer-context RPC without exposing private table grants", () => {
+    expect(sql).toContain("function public.es02_read_owned_branch_answer_context(");
+    expect(sql).toContain("ANSWER_CONTEXT_OVERFLOW");
+    expect(sql).not.toMatch(/grant\s+select\s+on\s+(table\s+)?private\.es02_branch_website_pages\s+to\s+authenticated/i);
+  });
+  it("passes the authoritative owner/subscription denial before launch readiness", () => {
+    const summary = sql.split("create or replace function public.es02_read_owned_branch_launch_summary(")[1].split("create or replace function public.es02_confirm_owned_branch_launch(")[0];
+    const gate = summary.indexOf("auth_check := public.es02_read_owned_branch_setup");
+    expect(summary.slice(gate, summary.indexOf("select channels", gate))).toContain("return auth_check;");
+  });
+  it("binds indexed text to the unchanged persisted URL and page version", () => {
+    const indexing = sql.split("create or replace function public.es02_index_branch_website_page(")[1];
+    expect(indexing).toContain("p_expected_version");
+    expect(indexing).toContain("p_expected_url");
+    expect(indexing).toContain("PAGE_CHANGED");
+  });
+});

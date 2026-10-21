@@ -29,6 +29,7 @@ import { parseAccountOrderRow, parseOwnedRecoveryRow } from "./account-order";
 import { paymobExternalSettlementStatus } from "./synthetic-settlement";
 import { classifyEs02RpcFailure, type Es02RpcObservation } from "./rpc-classify";
 import { classifyCreateOrderWriteAck, classifyProvisionWriteAck } from "./write-ack";
+import { singleBranchCountAllowed } from "@/lib/tenancy/single-branch-policy";
 
 function es02Log(
   severity: "info" | "warn" | "error",
@@ -131,6 +132,7 @@ export async function beginAccountPaymentAction(input: {
   if (!sanitized) return { ok: false, code: "INVALID_INPUT" };
   const resolved = resolveEs02Offer(sanitized.selection);
   if (!resolved.ok) return { ok: false, code: resolved.code };
+  if (!singleBranchCountAllowed(resolved.offer.branchSlots)) return { ok: false, code: "SECOND_BRANCH_DEFERRED" };
   return { ok: false, code: "PAYMOB_EXTERNAL_DEFERRED" };
 }
 
@@ -167,6 +169,15 @@ export async function createAccountBoundOrderAction(input: {
     return { ok: false, code: resolved.code };
   }
   const offer = resolved.offer;
+  if (!singleBranchCountAllowed(offer.branchSlots)) {
+    es02Log("warn", "es02.order.create.rejected", {
+      request_id: requestId,
+      user_id: auth.accountId,
+      error_code: "SECOND_BRANCH_DEFERRED",
+      operation: "create_account_order",
+    });
+    return { ok: false, code: "SECOND_BRANCH_DEFERRED" };
+  }
   const slotsPayload = offer.slots.map((s) => ({
     persona: s.persona,
     package: s.package,

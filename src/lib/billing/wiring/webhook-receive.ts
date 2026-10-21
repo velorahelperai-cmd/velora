@@ -8,6 +8,7 @@ import {
   classifyNotificationPayload,
   type VerifiedTransactionObservation,
 } from "@/lib/billing/paymob/callback";
+import { bindPaymobCorrelation, logPaymobSandboxEvent } from "@/lib/billing/paymob/intention";
 import { matchVerifiedObservationToOrder, type ServerOrderBinding } from "@/lib/billing/paymob/match";
 import { observationKeyFromVerified } from "@/lib/billing/wiring/observation-key";
 
@@ -87,11 +88,24 @@ export async function receivePaymobWebhook(input: {
   deps: WebhookReceiveDeps;
   rawBody: string;
   hmacQueryParam: string | null;
+  correlationId?: string | null;
 }): Promise<WebhookHttpResult> {
   if (!input.deps.webhookEnabled) {
+    logPaymobSandboxEvent({
+      correlationId: input.correlationId,
+      stage: "webhook_receive",
+      code: "webhook_disabled",
+      status: 503,
+    });
     return { status: 503, body: "webhook_disabled" };
   }
   if (!input.deps.hmacSecret) {
+    logPaymobSandboxEvent({
+      correlationId: input.correlationId,
+      stage: "webhook_receive",
+      code: "hmac_not_configured",
+      status: 503,
+    });
     return { status: 503, body: "hmac_not_configured" };
   }
 
@@ -99,11 +113,23 @@ export async function receivePaymobWebhook(input: {
   try {
     payload = JSON.parse(input.rawBody);
   } catch {
+    logPaymobSandboxEvent({
+      correlationId: input.correlationId,
+      stage: "webhook_receive",
+      code: "bad_json",
+      status: 400,
+    });
     return { status: 400, body: "bad_json" };
   }
 
   const kind = classifyNotificationPayload(payload);
   if (kind === "card_token") {
+    logPaymobSandboxEvent({
+      correlationId: input.correlationId,
+      stage: "webhook_receive",
+      code: "card_token_ignored",
+      status: 202,
+    });
     return { status: 202, body: "card_token_ignored" };
   }
 
@@ -113,27 +139,94 @@ export async function receivePaymobWebhook(input: {
     hmacSecret: input.deps.hmacSecret,
   });
   if (!verified.ok) {
-    if (verified.reason === "hmac_failed" || verified.reason === "isolated_incomplete_fields") {
-      return { status: 401, body: verified.reason };
-    }
-    return { status: 400, body: verified.reason };
+    const status =
+      verified.reason === "hmac_failed" || verified.reason === "isolated_incomplete_fields"
+        ? 401
+        : 400;
+    logPaymobSandboxEvent({
+      correlationId: input.correlationId,
+      stage: "hmac_verify",
+      code: verified.reason,
+      status,
+    });
+    return { status, body: verified.reason };
   }
 
   const obs = verified.observation;
+  const correlationId = bindPaymobCorrelation({
+    correlationId: input.correlationId,
+    providerOrderId: obs.signedOrderId,
+    specialReference: obs.merchantOrderId,
+  });
+  logPaymobSandboxEvent({
+    correlationId,
+    stage: "hmac_verify",
+    code: "verified",
+    providerOrderId: obs.signedOrderId,
+    providerTransactionId: obs.providerTransactionId,
+    specialReference: obs.merchantOrderId,
+  });
+
   const observationKey = observationKeyFromVerified(obs);
 
   const environment=input.deps.providerEnvironment??"test";
   const order = await input.deps.findOrderByProviderOrderId(obs.signedOrderId,{providerAccountRef:String(obs.integrationId),providerEnvironment:environment});
   if (!order) {
+    logPaymobSandboxEvent({
+      correlationId,
+      stage: "order_match",
+      code: "order_not_bound",
+      providerOrderId: obs.signedOrderId,
+      providerTransactionId: obs.providerTransactionId,
+      status: 409,
+    });
     return { status: 409, body: "order_not_bound" };
   }
 
-  if(order.providerEnvironment!==environment)return {status:409,body:"environment_mismatch"};
+  bindPaymobCorrelation({
+    correlationId,
+    orderId: order.orderId,
+    providerOrderId: obs.signedOrderId,
+    specialReference: order.specialReference,
+  });
+
+  if(order.providerEnvironment!==environment){
+    logPaymobSandboxEvent({
+      correlationId,
+      stage: "order_match",
+      code: "environment_mismatch",
+      orderId: order.orderId,
+      paymentAttemptId: order.paymentAttemptId,
+      providerOrderId: obs.signedOrderId,
+      providerTransactionId: obs.providerTransactionId,
+      status: 409,
+    });
+    return {status:409,body:"environment_mismatch"};
+  }
   const lifecycle=obs.pending===false&&obs.success===true&&obs.errorOccured===false&&(obs.isRefunded===true||obs.isVoided===true);
   const match = matchVerifiedObservationToOrder({ observation: obs, order, allowLiveEnvironment:environment==="live", lifecycleReviewOnly:lifecycle });
   if (!match.ok) {
+    logPaymobSandboxEvent({
+      correlationId,
+      stage: "order_match",
+      code: match.reason,
+      orderId: order.orderId,
+      paymentAttemptId: order.paymentAttemptId,
+      providerOrderId: obs.signedOrderId,
+      providerTransactionId: obs.providerTransactionId,
+      status: 409,
+    });
     return { status: 409, body: match.reason };
   }
+  logPaymobSandboxEvent({
+    correlationId,
+    stage: "order_match",
+    code: "matched",
+    orderId: order.orderId,
+    paymentAttemptId: order.paymentAttemptId,
+    providerOrderId: obs.signedOrderId,
+    providerTransactionId: obs.providerTransactionId,
+  });
 
   const eventStatus=lifecycle?(obs.isVoided?"voided":"refunded"):obs.eventStatus;
   const insert = await input.deps.insertProviderEvent({
@@ -150,13 +243,34 @@ export async function receivePaymobWebhook(input: {
   });
 
   if (!insert.ok) {
+    logPaymobSandboxEvent({
+      correlationId,
+      stage: "webhook_receive",
+      code: "persist_failed",
+      orderId: order.orderId,
+      paymentAttemptId: order.paymentAttemptId,
+      providerOrderId: obs.signedOrderId,
+      providerTransactionId: obs.providerTransactionId,
+      status: 500,
+    });
     return { status: 500, body: "persist_failed" };
   }
 
   const awaitingProcessing = eventStatus === "success" || lifecycle;
+  const body = httpBody(true, !insert.inserted, awaitingProcessing);
+  logPaymobSandboxEvent({
+    correlationId,
+    stage: "webhook_receive",
+    code: body,
+    orderId: order.orderId,
+    paymentAttemptId: order.paymentAttemptId,
+    providerOrderId: obs.signedOrderId,
+    providerTransactionId: obs.providerTransactionId,
+    status: 200,
+  });
   return {
     status: 200,
-    body: httpBody(true, !insert.inserted, awaitingProcessing),
+    body,
     eventStored: true,
     awaitingProcessing: awaitingProcessing && insert.inserted,
   };

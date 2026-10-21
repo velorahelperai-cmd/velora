@@ -32,7 +32,7 @@ export async function reconcileStoredBillingEvent(eventId:string,signal?:AbortSi
  signal?.throwIfAborted();
  const result=await processStoredPaymobEvent({event:stored,deps:{settleEnabled:true,settleHmacVerified:settleHmacVerifiedViaRpc}});
  if(!result.ok){
-  const blocked=["provider_verification_not_implemented","settle_disabled","PGRST202","42P01"].includes(result.code);
+  const blocked=["provider_verification_not_implemented","settle_disabled","hosted_test_no_entitlement","PGRST202","42P01"].includes(result.code);
   const permanent=["P0001","settle_result_invalid","INVALID_STORED_EVIDENCE","INVALID_REVERSAL_EVIDENCE"].includes(result.code)||result.code.startsWith("22")||result.code.startsWith("23");
   return {kind:blocked?"blocked":permanent?"review":"retry",code:result.code};
  }

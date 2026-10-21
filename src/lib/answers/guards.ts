@@ -1,3 +1,4 @@
+import { getSecureProviderKey } from "@/lib/answers/config/env";
 import type { AnswerContextChunk } from "@/lib/answers/types";
 
 /**
@@ -15,7 +16,14 @@ export function assertEligibleAnswerChunks(chunks: AnswerContextChunk[]) {
   }
 }
 
-/** Integration-ready, not live: stays off until provider + budget + usage are adopted. */
+/** Integration-ready: enabled when server key or live flag is configured. */
 export function isLiveAnsweringEnabled() {
-  return false;
+  if (process.env.NODE_ENV === "test" && process.env.AI_LIVE_ANSWERING !== "true") {
+    return false;
+  }
+  return (
+    process.env.AI_LIVE_ANSWERING === "true" ||
+    process.env.AI_LIVE_ANSWERING_ENABLED === "true" ||
+    Boolean(getSecureProviderKey("google"))
+  );
 }
