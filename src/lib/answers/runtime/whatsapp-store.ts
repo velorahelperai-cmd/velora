@@ -1,4 +1,5 @@
 import "server-only";
+import { deductReplyCredit } from "@/lib/billing/es02/reply-credit-deduction";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ReservedRuntimeStore } from "./store";
 import type { ClaimedAnswerProfile } from "../approved-retrieval";
@@ -18,13 +19,7 @@ export function createClaimedWhatsappRuntimeStore(binding: { jobId: string; clai
   return {
     async reserve(i) {
       // Fresh paid work allocates the message slot and AI hold in one transaction.
-      const data = await call("ai_reserve_whatsapp_capacity_cost_attempt", {
-        p_id: i.id, p_job_id: binding.jobId, p_claim_token: binding.claimToken, p_attempt: i.attempt,
-        p_model_id: i.model, p_provider: i.provider, p_reserved_baisa: i.reservedBaisa,
-        p_pricing_version: i.pricingVersion, p_pricing_snapshot: i.pricingSnapshot,
-        p_source_citations: i.sourceCitations ?? null,
-        ...(expectedProfile ? { p_expected_persona: expectedProfile.persona, p_expected_plan_version_id: expectedProfile.planVersionId } : {}),
-      });
+      const data = await deductReplyCredit(call, binding, i, expectedProfile);
       if (!data || typeof data !== "object" || Array.isArray(data)) throw Error("INVALID_RESERVATION_RESULT");
       const row = data as Record<string, unknown>;
       if (row.ok === false && typeof row.code === "string" && row.code.trim()) return { ok: false, code: row.code };

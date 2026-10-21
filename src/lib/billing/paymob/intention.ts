@@ -13,6 +13,209 @@ import {
 } from "@/lib/billing/paymob/config";
 import type { PaymobHttpClient, PaymobHttpResult } from "@/lib/billing/paymob/http";
 
+export type PaymobSandboxStage =
+  | "order_create"
+  | "checkout_claim"
+  | "intention_request"
+  | "intention_response"
+  | "checkout_ready"
+  | "webhook_receive"
+  | "hmac_verify"
+  | "order_match"
+  | "settlement"
+  | "return";
+
+export type PaymobSandboxLogEntry = {
+  timestamp: string;
+  scope: "paymob_sandbox";
+  correlationId: string;
+  stage: PaymobSandboxStage;
+  code: string;
+  orderId?: string;
+  paymentAttemptId?: string;
+  providerOrderId?: string;
+  providerTransactionId?: string;
+  status?: number;
+  detail?: string;
+};
+
+// Diagnostics are disposable and bounded; they are never payment authority.
+class CorrelationCache {
+  private entries = new Map<string, { value: string; expiresAt: number }>();
+  get(key: string): string | undefined {
+    const entry = this.entries.get(key);
+    if (!entry) return undefined;
+    if (entry.expiresAt <= Date.now()) { this.entries.delete(key); return undefined; }
+    return entry.value;
+  }
+  set(key: string, value: string): void {
+    const now = Date.now();
+    for (const [id, entry] of this.entries) if (entry.expiresAt <= now) this.entries.delete(id);
+    this.entries.delete(key);
+    while (this.entries.size >= 512) this.entries.delete(this.entries.keys().next().value!);
+    this.entries.set(key, { value, expiresAt: now + 15 * 60 * 1000 });
+  }
+}
+const CORRELATION_BY_ORDER = new CorrelationCache();
+const CORRELATION_BY_PROVIDER_ORDER = new CorrelationCache();
+const CORRELATION_BY_SPECIAL_REF = new CorrelationCache();
+
+let customLogSink: ((entry: PaymobSandboxLogEntry) => void) | null = null;
+
+export function setPaymobSandboxLogSink(
+  sink: ((entry: PaymobSandboxLogEntry) => void) | null,
+): void {
+  customLogSink = sink;
+}
+
+const PAYMOB_CORRELATION_ID_RE = /^[A-Za-z0-9._:-]{6,120}$/;
+const PAYMOB_CORRELATION_KEY_RE = /^[A-Za-z0-9._:-]{1,96}$/;
+
+const SECRET_REDACTION_PATTERNS: RegExp[] = [
+  /(?:[a-z]{2,3}_)?sk_(?:test|live)_[A-Za-z0-9_-]+/gi,
+  /(?:[a-z]{2,3}_)?pk_(?:test|live)_[A-Za-z0-9_-]+/gi,
+  /(?:[a-z]{2,3}_)?csk_(?:test|live)_[A-Za-z0-9_-]+/gi,
+  /(Token\s+)(?!\[REDACTED\])[A-Za-z0-9._~+/-]+=*/gi,
+  /(Bearer\s+)(?!\[REDACTED\])[A-Za-z0-9._~+/-]+=*/gi,
+  /(hmac=)(?!\[REDACTED\])[^&\s"']+/gi,
+  /(clientSecret=)(?!\[REDACTED\])[^&\s"']+/gi,
+  /("?(?:hmacSecret|secretKey|client_secret|clientSecret|authorization|Authorization|pan|card_number|phone_number|billingPhone)"?\s*:\s*"?)(?!(?:Token|Bearer)\s+\[REDACTED\]|\[REDACTED)[^",\s}]+/gi,
+  /(\+\d{7,15})/g,
+];
+
+export function redactPaymobLogText(value: unknown): string {
+  let text = String(value ?? "");
+  for (const pattern of SECRET_REDACTION_PATTERNS) {
+    text = text.replace(pattern, (full, prefix?: string) => {
+      if (typeof prefix === "string" && /^(hmac=|clientSecret=|Token\s+|Bearer\s+)/i.test(prefix)) {
+        return `${prefix.replace(/\s+$/, " ")}[REDACTED]`;
+      }
+      if (typeof prefix === "string" && prefix.includes(":")) {
+        return `${prefix}[REDACTED]`;
+      }
+      if (full.startsWith("+")) {
+        return "[REDACTED_PHONE]";
+      }
+      return "[REDACTED]";
+    });
+  }
+  return text;
+}
+
+function sanitizeCorrelationSegment(value: unknown, pattern: RegExp): string {
+  const raw = value != null ? String(value).trim() : "";
+  if (!raw || !pattern.test(raw)) return "";
+  const redacted = redactPaymobLogText(raw);
+  if (redacted !== raw || /\[REDACTED/i.test(redacted)) return "";
+  return raw;
+}
+
+export function sanitizePaymobCorrelationId(
+  value: unknown,
+  fallback = "paymob-corr-unlinked",
+): string {
+  return sanitizeCorrelationSegment(value, PAYMOB_CORRELATION_ID_RE) || fallback;
+}
+
+export function bindPaymobCorrelation(keys: {
+  correlationId?: string | null;
+  orderId?: string | null;
+  providerOrderId?: string | number | null;
+  specialReference?: string | null;
+}): string {
+  const cleanCorrelation = sanitizeCorrelationSegment(
+    keys.correlationId,
+    PAYMOB_CORRELATION_ID_RE,
+  );
+  const cleanOrder = sanitizeCorrelationSegment(keys.orderId, PAYMOB_CORRELATION_KEY_RE);
+  const cleanProviderOrder = sanitizeCorrelationSegment(
+    keys.providerOrderId,
+    PAYMOB_CORRELATION_KEY_RE,
+  );
+  const cleanRef = sanitizeCorrelationSegment(
+    keys.specialReference,
+    PAYMOB_CORRELATION_KEY_RE,
+  );
+
+  const existing =
+    cleanCorrelation ||
+    (cleanOrder && CORRELATION_BY_ORDER.get(cleanOrder)) ||
+    (cleanProviderOrder && CORRELATION_BY_PROVIDER_ORDER.get(cleanProviderOrder)) ||
+    (cleanRef && CORRELATION_BY_SPECIAL_REF.get(cleanRef));
+
+  const candidate =
+    existing ||
+    (cleanOrder
+      ? `paymob-corr-${cleanOrder}`
+      : cleanRef
+        ? `paymob-corr-${cleanRef}`
+        : cleanProviderOrder
+          ? `paymob-corr-pord-${cleanProviderOrder}`
+          : "paymob-corr-unlinked");
+  const correlationId = sanitizePaymobCorrelationId(candidate, "paymob-corr-unlinked");
+
+  if (cleanOrder) CORRELATION_BY_ORDER.set(cleanOrder, correlationId);
+  if (cleanProviderOrder) CORRELATION_BY_PROVIDER_ORDER.set(cleanProviderOrder, correlationId);
+  if (cleanRef) CORRELATION_BY_SPECIAL_REF.set(cleanRef, correlationId);
+  return correlationId;
+}
+
+export function resolvePaymobCorrelationId(keys: {
+  correlationId?: string | null;
+  orderId?: string | null;
+  providerOrderId?: string | number | null;
+  specialReference?: string | null;
+}): string {
+  return bindPaymobCorrelation(keys);
+}
+
+export function logPaymobSandboxEvent(input: {
+  correlationId?: string | null;
+  stage: PaymobSandboxStage;
+  code: string;
+  orderId?: string | null;
+  paymentAttemptId?: string | null;
+  providerOrderId?: string | number | null;
+  providerTransactionId?: string | number | null;
+  specialReference?: string | null;
+  status?: number;
+  detail?: string;
+}): PaymobSandboxLogEntry {
+  const correlationId = bindPaymobCorrelation({
+    correlationId: input.correlationId,
+    orderId: input.orderId,
+    providerOrderId: input.providerOrderId,
+    specialReference: input.specialReference,
+  });
+
+  const entry: PaymobSandboxLogEntry = {
+    timestamp: new Date().toISOString(),
+    scope: "paymob_sandbox",
+    correlationId,
+    stage: input.stage,
+    code: redactPaymobLogText(input.code),
+    ...(input.orderId ? { orderId: redactPaymobLogText(input.orderId) } : {}),
+    ...(input.paymentAttemptId
+      ? { paymentAttemptId: redactPaymobLogText(input.paymentAttemptId) }
+      : {}),
+    ...(input.providerOrderId != null && String(input.providerOrderId) !== ""
+      ? { providerOrderId: redactPaymobLogText(String(input.providerOrderId)) }
+      : {}),
+    ...(input.providerTransactionId != null && String(input.providerTransactionId) !== ""
+      ? { providerTransactionId: redactPaymobLogText(String(input.providerTransactionId)) }
+      : {}),
+    ...(input.status !== undefined ? { status: input.status } : {}),
+    ...(input.detail ? { detail: redactPaymobLogText(input.detail) } : {}),
+  };
+
+  if (customLogSink) {
+    customLogSink(entry);
+  } else {
+    console.info(JSON.stringify(entry));
+  }
+  return entry;
+}
+
 export type LockedIntentionOrder = {
   companyId: string;
   orderId: string;
@@ -31,6 +234,12 @@ export type LockedIntentionOrder = {
   itemName: string;
   notificationUrl: string;
   redirectionUrl: string;
+};
+
+/** Provider transport needs a locked order, not a provisioned company. Legacy stores may retain companyId. */
+export type PaymobIntentionInput = Omit<LockedIntentionOrder, "companyId"> & {
+  companyId?: string;
+  correlationId?: string;
 };
 
 export type IntentionCreateSuccess = {
@@ -252,49 +461,71 @@ export function mapIntentionHttpResult(
 export async function createPaymobIntention(input: {
   config: PaymobAdapterConfig;
   http: PaymobHttpClient;
-  locked: LockedIntentionOrder;
+  locked: PaymobIntentionInput;
   timeoutMs?: number;
 }): Promise<IntentionCreateResult> {
+  const correlationId = bindPaymobCorrelation({
+    correlationId: input.locked.correlationId,
+    orderId: input.locked.orderId,
+    specialReference: input.locked.specialReference,
+  });
+
+  const failPreHttp = (
+    code: IntentionCreateFailure["code"],
+    detail?: string,
+  ): IntentionCreateFailure => {
+    logPaymobSandboxEvent({
+      correlationId,
+      stage: "intention_request",
+      code,
+      orderId: input.locked.orderId,
+      paymentAttemptId: input.locked.paymentAttemptId,
+      specialReference: input.locked.specialReference,
+      detail,
+    });
+    return detail ? { ok: false, code, detail } : { ok: false, code };
+  };
+
   try {
     assertPaymobConfigForCalls(input.config);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     if (msg.startsWith("paymob_live_locked")) {
-      return { ok: false, code: "live_locked", detail: msg };
+      return failPreHttp("live_locked", msg);
     }
-    return { ok: false, code: "config_invalid", detail: msg };
+    return failPreHttp("config_invalid", msg);
   }
 
   if (input.locked.providerEnvironment !== input.config.environment) {
-    return { ok: false, code: "environment_mismatch" };
+    return failPreHttp("environment_mismatch");
   }
 
   if (input.locked.integrationId !== input.config.integrationId) {
-    return { ok: false, code: "integration_mismatch" };
+    return failPreHttp("integration_mismatch");
   }
 
   if (input.locked.providerAccountRef !== String(input.config.integrationId)) {
-    return { ok: false, code: "integration_mismatch" };
+    return failPreHttp("integration_mismatch");
   }
   if (input.locked.currency !== input.config.currency) {
-    return { ok: false, code: "currency_mismatch" };
+    return failPreHttp("currency_mismatch");
   }
   if (input.locked.providerAmountUnit !== "paymob_amount") {
-    return { ok: false, code: "provider_amount_unit_invalid" };
+    return failPreHttp("provider_amount_unit_invalid");
   }
   if (typeof input.locked.specialReference !== "string" || input.locked.specialReference.trim().length === 0) {
-    return { ok: false, code: "special_reference_invalid" };
+    return failPreHttp("special_reference_invalid");
   }
 
   // Manual locked amount must not bypass the conversion contract while unconfigured.
   const conversion = getPaymobOmrConversionState(input.config);
   if (conversion.status === "NOT_CONFIGURED") {
-    return { ok: false, code: "conversion_not_configured" };
+    return failPreHttp("conversion_not_configured");
   }
 
   const amountCheck = assertPositiveProviderAmount(input.locked.providerAmount);
   if (!amountCheck.ok) {
-    return { ok: false, code: amountCheck.code };
+    return failPreHttp(amountCheck.code);
   }
 
   if (input.config.environment === "live") {
@@ -302,11 +533,11 @@ export async function createPaymobIntention(input: {
     const version = input.locked.planVersionId;
     if (typeof baisa !== "number" || !Number.isSafeInteger(baisa) || baisa <= 0 ||
         typeof version !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(version)) {
-      return { ok: false, code: "locked_order_invalid" };
+      return failPreHttp("locked_order_invalid");
     }
     const scaled = BigInt(baisa) * BigInt(conversion.unitsPerOmr);
     if (scaled % BigInt(1000) !== BigInt(0) || scaled / BigInt(1000) !== BigInt(amountCheck.amount)) {
-      return { ok: false, code: "provider_amount_mismatch" };
+      return failPreHttp("provider_amount_mismatch");
     }
   }
 
@@ -324,6 +555,8 @@ export async function createPaymobIntention(input: {
     ],
     billing_data: {
       phone_number: input.locked.billingPhone,
+      // Fictional billing identity belongs only to the explicitly configured Test path.
+      ...(input.config.environment === "test" ? { first_name: "Velora", last_name: "Sandbox" } : {}),
     },
     special_reference: input.locked.specialReference,
     notification_url: input.locked.notificationUrl,
@@ -331,6 +564,16 @@ export async function createPaymobIntention(input: {
   };
 
   const url = `${input.config.apiBaseUrl.replace(/\/$/, "")}${PAYMOB_INTENTION_PATH}`;
+  logPaymobSandboxEvent({
+    correlationId,
+    stage: "intention_request",
+    code: "sending",
+    orderId: input.locked.orderId,
+    paymentAttemptId: input.locked.paymentAttemptId,
+    specialReference: input.locked.specialReference,
+    detail: `integration=${input.locked.integrationId};amount=${amountCheck.amount};currency=${input.locked.currency}`,
+  });
+
   let result: PaymobHttpResult;
   try {
     // A failed POST may already have created the Intention. Never retry here.
@@ -346,10 +589,50 @@ export async function createPaymobIntention(input: {
       timeoutMs: input.timeoutMs ?? 15_000,
     });
   } catch {
+    logPaymobSandboxEvent({
+      correlationId,
+      stage: "intention_response",
+      code: "network_error",
+      orderId: input.locked.orderId,
+      paymentAttemptId: input.locked.paymentAttemptId,
+      specialReference: input.locked.specialReference,
+      detail: "provider_request_failed",
+    });
     return { ok: false, code: "network_error", detail: "provider_request_failed", needsReconciliation: true };
   }
 
-  return mapIntentionHttpResult(result, input.locked);
+  const mapped = mapIntentionHttpResult(result, input.locked);
+  if (mapped.ok) {
+    bindPaymobCorrelation({
+      correlationId,
+      orderId: input.locked.orderId,
+      providerOrderId: mapped.intentionOrderId,
+      specialReference: input.locked.specialReference,
+    });
+    logPaymobSandboxEvent({
+      correlationId,
+      stage: "intention_response",
+      code: "created",
+      orderId: input.locked.orderId,
+      paymentAttemptId: input.locked.paymentAttemptId,
+      providerOrderId: mapped.intentionOrderId,
+      specialReference: input.locked.specialReference,
+      status: result.kind === "response" ? result.response.status : undefined,
+      detail: mapped.intentionId ? `intentionId=${mapped.intentionId}` : undefined,
+    });
+  } else {
+    logPaymobSandboxEvent({
+      correlationId,
+      stage: "intention_response",
+      code: mapped.code,
+      orderId: input.locked.orderId,
+      paymentAttemptId: input.locked.paymentAttemptId,
+      specialReference: input.locked.specialReference,
+      status: result.kind === "response" ? result.response.status : undefined,
+      detail: mapped.detail,
+    });
+  }
+  return mapped;
 }
 
 export function buildPersistenceAfterIntention(input: {

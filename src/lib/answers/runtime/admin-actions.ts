@@ -48,3 +48,22 @@ export async function runAdminAIConnectivityTest(input:{modelId:"gpt-6-luna"|"gp
  const {executeLiveModelPing}=await import("../diagnostics/ping-test");
  return executeLiveModelPing({...input,executeConfirmed:input?.executeConfirmed===true});
 }
+
+/** Calendar-month provider expense from the existing ledger; this is not a provider invoice. */
+export async function readAdminMonthlyAIUsage(input:{companyId:string;month:string}) {
+ const gate=await ownerGate();if(!gate.ok)return gate;
+ const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+ if(!input||!uuid.test(input.companyId??'')||typeof input.month!=='string')return {ok:false as const,error:'INVALID_INPUT'};
+ const asOf=new Date();
+ const {monthlyUsagePeriod}=await import('./monthly-usage');
+ try{monthlyUsagePeriod(input.month,asOf);}catch{return {ok:false as const,error:'INVALID_INPUT'};}
+ const admin=createAdminClient();if(!admin)return {ok:false as const,error:'PERSISTENCE_UNAVAILABLE'};
+ try {
+  const {readMonthlyAIUsage}=await import('./monthly-usage-read');
+  const data=await readMonthlyAIUsage(admin as unknown as import('./monthly-usage-read').MonthlyUsageDb,input.companyId,input.month,asOf);
+  const again=await ownerGate();
+  if(!again.ok||again.actorId!==gate.actorId||again.sessionId!==gate.sessionId)return {ok:false as const,error:'ACCESS_CHANGED_AFTER_READ'};
+  return {ok:true as const,data};
+ }catch(error){return {ok:false as const,error:error instanceof Error&&error.message==='USAGE_READ_LIMIT'?'REPORT_LIMIT':'USAGE_REPORT_UNAVAILABLE'};}
+}
+
