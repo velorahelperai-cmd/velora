@@ -1,0 +1,13 @@
+{
+  "projectRef": "vmpifljyozsbtssxhoxd",
+  "sha256": "9b031ed85613c1ed8e64c8730c00c2346d305c76a3d87e95d4b1bc257d63a39f",
+  "status": "FAILED_ROLLED_BACK",
+  "errorCode": "42702",
+  "cause": "postflight variable p conflicts with catalog table alias p",
+  "catalogUnchanged": true,
+  "changedSections": [],
+  "migrationRecorded": false,
+  "migrationCount": 96,
+  "functionalTests": "NOT_RUN_APPLICATION_FAILED",
+  "realPaymentsEnabled": false
+}

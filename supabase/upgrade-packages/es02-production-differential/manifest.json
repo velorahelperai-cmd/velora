@@ -1,0 +1,1067 @@
+{
+  "status": "REVIEW_ONLY_NOT_APPLIED",
+  "migrationName": "es02_remaining_production_differential_20261022",
+  "projectRef": "vmpifljyozsbtssxhoxd",
+  "sqlFile": "production.sql",
+  "sha256": "a81eccfa37a256f9acd609de4d2c08a4ffa0d438acec31efdb39a323759a8d6f",
+  "bytes": 717302,
+  "alreadyAppliedExcluded": [
+    "single_branch_scope",
+    "B4 branch_hours",
+    "admin pagination"
+  ],
+  "sourcePins": {
+    "supabase/migrations/20261020180000_es02_b5_b8_branch_setup_completion.sql": "223901ae00e3c130c4370ebf2c655ba6a9e3eddc1a9d88959a74db9a89c615c9",
+    "supabase/migrations/20261022093000_es02_trial_session_history.sql": "d023c0adbd0efb3df2f99d7e56fde89f2ac15647a92f160532cfa35ff6538e2c",
+    "wallet-core.sql": "ba3f66816bc3cd31099a79286486d1226f71b90e9d10e2dabdd98242cb2cdae0",
+    "acceptance-clock.sql": "d8be7cfbd255e300cc6e9192fd9f595cbf6be597824d577b76569fa973efceb0",
+    "authority.sql": "7d8bed659a2863d3d9cbbc5fb9f93f1a47eee36474f4ba2e2071bef414da6f48",
+    "worker-cost.sql": "8a68dda25691164396a760c50042e6a353db33ad426e1487a1a1def7d926d424",
+    "usage-reconciliation.sql": "51f08e0205691a1630802a0ad230ceafdee23c136eedffd0bbb9f223729fee1d",
+    "worker-bridge.sql": "b3d408ce69278eec5ae22dcf8f2106ed673ce6d5d7d42ca34da2d2ee148b410d",
+    "setup-trial-settlement.sql": "b0505f56a066cf81a194be3f8b7149dd517cd59c332ce381066570d8c7c4af4f"
+  },
+  "baselineFunctions": 577,
+  "functions": [
+    {
+      "signature": "private.es02_branch_knowledge_revision(uuid,uuid)",
+      "name": "private.es02_branch_knowledge_revision",
+      "securityDefiner": true,
+      "bodyMd5": "aaf3240647dbb2fd327a81afd641f74b",
+      "operation": "create",
+      "before": null,
+      "after": {
+        "anon": false,
+        "authenticated": false,
+        "service_role": false
+      },
+      "role": null
+    },
+    {
+      "signature": "public.es02_read_owned_branch_answer_context(uuid,uuid,uuid)",
+      "name": "public.es02_read_owned_branch_answer_context",
+      "securityDefiner": true,
+      "bodyMd5": "d9998ba81554f6c4bb7dd4facd12bcc6",
+      "operation": "create",
+      "before": null,
+      "after": {
+        "anon": false,
+        "authenticated": true,
+        "service_role": false
+      },
+      "role": "authenticated"
+    },
+    {
+      "signature": "public.es02_read_owned_branch_knowledge(uuid,uuid,uuid)",
+      "name": "public.es02_read_owned_branch_knowledge",
+      "securityDefiner": true,
+      "bodyMd5": "7c3a93ab1180442df38c70d2dda697a0",
+      "operation": "create",
+      "before": null,
+      "after": {
+        "anon": false,
+        "authenticated": true,
+        "service_role": false
+      },
+      "role": "authenticated"
+    },
+    {
+      "signature": "public.es02_add_owned_branch_website(uuid,uuid,uuid,integer,text)",
+      "name": "public.es02_add_owned_branch_website",
+      "securityDefiner": true,
+      "bodyMd5": "5af780f685a7061ee566e4d2276dea0b",
+      "operation": "create",
+      "before": null,
+      "after": {
+        "anon": false,
+        "authenticated": true,
+        "service_role": false
+      },
+      "role": "authenticated"
+    },
+    {
+      "signature": "public.es02_page_action_owned_branch_knowledge(uuid,uuid,uuid,uuid,text)",
+      "name": "public.es02_page_action_owned_branch_knowledge",
+      "securityDefiner": true,
+      "bodyMd5": "f1b31b4d1cf2b8d4b024122111a8209c",
+      "operation": "create",
+      "before": null,
+      "after": {
+        "anon": false,
+        "authenticated": true,
+        "service_role": false
+      },
+      "role": "authenticated"
+    },
+    {
+      "signature": "public.es02_read_owned_branch_reply_language(uuid,uuid,uuid)",
+      "name": "public.es02_read_owned_branch_reply_language",
+      "securityDefiner": true,
+      "bodyMd5": "dc11cabd31a926c970582d090bfc0c2a",
+      "operation": "create",
+      "before": null,
+      "after": {
+        "anon": false,
+        "authenticated": true,
+        "service_role": false
+      },
+      "role": "authenticated"
+    },
+    {
+      "signature": "public.es02_confirm_owned_branch_reply_language(uuid,uuid,uuid,bigint,text)",
+      "name": "public.es02_confirm_owned_branch_reply_language",
+      "securityDefiner": true,
+      "bodyMd5": "15bcb38a68ba5b4f4b00851a1e122f9d",
+      "operation": "create",
+      "before": null,
+      "after": {
+        "anon": false,
+        "authenticated": true,
+        "service_role": false
+      },
+      "role": "authenticated"
+    },
+    {
+      "signature": "private.es02_trial_context_current(private.es02_branch_trial_operations)",
+      "name": "private.es02_trial_context_current",
+      "securityDefiner": true,
+      "bodyMd5": "cd7225ef33835ffd729ba33cb9eb0291",
+      "operation": "create",
+      "before": null,
+      "after": {
+        "anon": false,
+        "authenticated": false,
+        "service_role": false
+      },
+      "role": null
+    },
+    {
+      "signature": "public.es02_reserve_branch_trial(uuid,uuid,uuid,uuid,uuid,text,text,bigint,text,text,text,numeric,text,jsonb,jsonb)",
+      "name": "public.es02_reserve_branch_trial",
+      "securityDefiner": true,
+      "bodyMd5": "246dd312a3cb65919b987f713726e93c",
+      "operation": "create",
+      "before": null,
+      "after": {
+        "anon": false,
+        "authenticated": false,
+        "service_role": true
+      },
+      "role": "service_role"
+    },
+    {
+      "signature": "public.es02_start_branch_trial(uuid)",
+      "name": "public.es02_start_branch_trial",
+      "securityDefiner": true,
+      "bodyMd5": "d03a0c19523cd07b9dc3ec1a104bdb5f",
+      "operation": "create",
+      "before": null,
+      "after": {
+        "anon": false,
+        "authenticated": false,
+        "service_role": true
+      },
+      "role": "service_role"
+    },
+    {
+      "signature": "public.es02_read_owned_branch_assistant_trial(uuid,uuid,uuid)",
+      "name": "public.es02_read_owned_branch_assistant_trial",
+      "securityDefiner": true,
+      "bodyMd5": "7e7b285ddfde35db5ed71e411e3ca46d",
+      "operation": "create",
+      "before": null,
+      "after": {
+        "anon": false,
+        "authenticated": true,
+        "service_role": false
+      },
+      "role": "authenticated"
+    },
+    {
+      "signature": "public.es02_record_owned_branch_assistant_trial(uuid,uuid,uuid,text,text,text,bigint,text,text,text,uuid)",
+      "name": "public.es02_record_owned_branch_assistant_trial",
+      "securityDefiner": true,
+      "bodyMd5": "0068405f99080b9e33ff18fb104f2c9b",
+      "operation": "create",
+      "before": null,
+      "after": {
+        "anon": false,
+        "authenticated": false,
+        "service_role": true
+      },
+      "role": "service_role"
+    },
+    {
+      "signature": "public.es02_read_owned_branch_launch_summary(uuid,uuid,uuid)",
+      "name": "public.es02_read_owned_branch_launch_summary",
+      "securityDefiner": true,
+      "bodyMd5": "99d265b7b7827e29ff63bced82e08413",
+      "operation": "create",
+      "before": null,
+      "after": {
+        "anon": false,
+        "authenticated": true,
+        "service_role": false
+      },
+      "role": "authenticated"
+    },
+    {
+      "signature": "public.es02_confirm_owned_branch_launch(uuid,uuid,uuid,bigint,text,uuid,boolean)",
+      "name": "public.es02_confirm_owned_branch_launch",
+      "securityDefiner": true,
+      "bodyMd5": "3e1c599a8b3e00eff13697f5d231b634",
+      "operation": "create",
+      "before": null,
+      "after": {
+        "anon": false,
+        "authenticated": true,
+        "service_role": false
+      },
+      "role": "authenticated"
+    },
+    {
+      "signature": "public.es02_index_branch_website_page(uuid,uuid,uuid,uuid,text,text,text,text,integer,text)",
+      "name": "public.es02_index_branch_website_page",
+      "securityDefiner": true,
+      "bodyMd5": "3c174dd9cb80ffb17d36cb3e92b86858",
+      "operation": "create",
+      "before": null,
+      "after": {
+        "anon": false,
+        "authenticated": true,
+        "service_role": false
+      },
+      "role": "authenticated"
+    },
+    {
+      "signature": "private.ai_settle_admin(uuid,text,numeric,numeric,jsonb,text,text,integer,text,text,boolean)",
+      "name": "private.ai_settle_admin",
+      "securityDefiner": false,
+      "bodyMd5": "3ff30068c6d538481855af6a4aadd9c9",
+      "operation": "replace",
+      "before": {
+        "acl": "{postgres=X/postgres}",
+        "args": "p_id uuid, p_status text, p_cost_usd numeric, p_cost_baisa numeric, p_usage jsonb, p_request_id text, p_error_code text, p_latency_ms integer, p_response_id text, p_actual_model_id text, p_require_provider_identity boolean",
+        "hash": "a5fc7368dceafbea4e9ff69afd420cea",
+        "owner": "postgres",
+        "config": [
+          "search_path=\"\""
+        ],
+        "result": "boolean",
+        "definer": false,
+        "language": "plpgsql",
+        "effective": {
+          "anon": false,
+          "service_role": false,
+          "authenticated": false
+        },
+        "signature": "private.ai_settle_admin(uuid,text,numeric,numeric,jsonb,text,text,integer,text,text,boolean)",
+        "volatility": "v"
+      },
+      "after": {
+        "anon": false,
+        "authenticated": false,
+        "service_role": false
+      },
+      "role": null
+    },
+    {
+      "signature": "private.es02_reply_credit_hold_guard()",
+      "name": "private.es02_reply_credit_hold_guard",
+      "securityDefiner": true,
+      "bodyMd5": "be83db7aaf68c53f1d5123f316c96452",
+      "operation": "create",
+      "before": null,
+      "after": {
+        "anon": false,
+        "authenticated": false,
+        "service_role": false
+      },
+      "role": null
+    },
+    {
+      "signature": "private.es02_hold_reply_credit(uuid,uuid,uuid)",
+      "name": "private.es02_hold_reply_credit",
+      "securityDefiner": true,
+      "bodyMd5": "7c91bbfd33f79addc05eb62be44d83b0",
+      "operation": "create",
+      "before": null,
+      "after": {
+        "anon": false,
+        "authenticated": false,
+        "service_role": false
+      },
+      "role": null
+    },
+    {
+      "signature": "private.es02_settle_reply_credit(uuid,text)",
+      "name": "private.es02_settle_reply_credit",
+      "securityDefiner": true,
+      "bodyMd5": "d21330d503c3ddcc953cf6771826a2fd",
+      "operation": "create",
+      "before": null,
+      "after": {
+        "anon": false,
+        "authenticated": false,
+        "service_role": false
+      },
+      "role": null
+    },
+    {
+      "signature": "private.es02_acceptance_evidence_immutable()",
+      "name": "private.es02_acceptance_evidence_immutable",
+      "securityDefiner": false,
+      "bodyMd5": "6d298c12c80233779b25bf4ad7b0d8c1",
+      "operation": "create",
+      "before": null,
+      "after": {
+        "anon": false,
+        "authenticated": false,
+        "service_role": false
+      },
+      "role": null
+    },
+    {
+      "signature": "private.es02_initial_clock_receipt_guard()",
+      "name": "private.es02_initial_clock_receipt_guard",
+      "securityDefiner": false,
+      "bodyMd5": "b0d81f9f6ea951ee7aa6f85bbff52f4f",
+      "operation": "create",
+      "before": null,
+      "after": {
+        "anon": false,
+        "authenticated": false,
+        "service_role": false
+      },
+      "role": null
+    },
+    {
+      "signature": "public.es02_classify_claimed_reply(uuid,uuid,text,text,text[])",
+      "name": "public.es02_classify_claimed_reply",
+      "securityDefiner": true,
+      "bodyMd5": "817c69de3728a26b721c48ceb610d085",
+      "operation": "create",
+      "before": null,
+      "after": {
+        "anon": false,
+        "authenticated": false,
+        "service_role": true
+      },
+      "role": "service_role"
+    },
+    {
+      "signature": "private.es02_start_on_accepted_reply(uuid)",
+      "name": "private.es02_start_on_accepted_reply",
+      "securityDefiner": true,
+      "bodyMd5": "d1f3e311b4a92a73df7988d4ef107d55",
+      "operation": "create",
+      "before": null,
+      "after": {
+        "anon": false,
+        "authenticated": false,
+        "service_role": false
+      },
+      "role": null
+    },
+    {
+      "signature": "private.es02_native_usage_credit_settlement()",
+      "name": "private.es02_native_usage_credit_settlement",
+      "securityDefiner": true,
+      "bodyMd5": "086f8e90ec9b6132f9f10dbb64e47c65",
+      "operation": "create",
+      "before": null,
+      "after": {
+        "anon": false,
+        "authenticated": false,
+        "service_role": false
+      },
+      "role": null
+    },
+    {
+      "signature": "private.es02_paid_branch_readiness(uuid,uuid)",
+      "name": "private.es02_paid_branch_readiness",
+      "securityDefiner": true,
+      "bodyMd5": "c84f4d00f1e63d42e120aeb8688452d8",
+      "operation": "create",
+      "before": null,
+      "after": {
+        "anon": false,
+        "authenticated": false,
+        "service_role": false
+      },
+      "role": null
+    },
+    {
+      "signature": "private.es02_claimed_reply_authority(uuid,uuid)",
+      "name": "private.es02_claimed_reply_authority",
+      "securityDefiner": true,
+      "bodyMd5": "d67926c1c9e336863eb934cddb50f0aa",
+      "operation": "create",
+      "before": null,
+      "after": {
+        "anon": false,
+        "authenticated": false,
+        "service_role": false
+      },
+      "role": null
+    },
+    {
+      "signature": "public.es02_reconcile_activation_readiness(uuid,uuid)",
+      "name": "public.es02_reconcile_activation_readiness",
+      "securityDefiner": true,
+      "bodyMd5": "b6f456dc64f265d74324f0c06e4083e8",
+      "operation": "replace",
+      "before": {
+        "acl": "{postgres=X/postgres,authenticated=X/postgres}",
+        "args": "p_expected_account_id uuid, p_company_id uuid",
+        "hash": "86a70b98cb11a9dcfd8669617eb4f60e",
+        "owner": "postgres",
+        "config": [
+          "search_path=\"\""
+        ],
+        "result": "jsonb",
+        "definer": true,
+        "language": "plpgsql",
+        "effective": {
+          "anon": false,
+          "service_role": false,
+          "authenticated": true
+        },
+        "signature": "public.es02_reconcile_activation_readiness(uuid,uuid)",
+        "volatility": "v"
+      },
+      "after": {
+        "anon": false,
+        "authenticated": true,
+        "service_role": false
+      },
+      "role": "authenticated"
+    },
+    {
+      "signature": "private.es02_worker_cost_binding_guard()",
+      "name": "private.es02_worker_cost_binding_guard",
+      "securityDefiner": true,
+      "bodyMd5": "8db484b6b083009f14bbd012c336df28",
+      "operation": "create",
+      "before": null,
+      "after": {
+        "anon": false,
+        "authenticated": false,
+        "service_role": false
+      },
+      "role": null
+    },
+    {
+      "signature": "private.es02_whatsapp_citations_current(uuid,uuid,jsonb)",
+      "name": "private.es02_whatsapp_citations_current",
+      "securityDefiner": true,
+      "bodyMd5": "a33431d2834dc67cf095533380ab493b",
+      "operation": "create",
+      "before": null,
+      "after": {
+        "anon": false,
+        "authenticated": false,
+        "service_role": false
+      },
+      "role": null
+    },
+    {
+      "signature": "public.es02_reserve_whatsapp_capacity_cost_attempt(uuid,uuid,uuid,integer,text,text,numeric,text,jsonb,jsonb,text,uuid,uuid,integer,text)",
+      "name": "public.es02_reserve_whatsapp_capacity_cost_attempt",
+      "securityDefiner": true,
+      "bodyMd5": "fa82d80580fcd105451bdee99dd5d532",
+      "operation": "create",
+      "before": null,
+      "after": {
+        "anon": false,
+        "authenticated": false,
+        "service_role": true
+      },
+      "role": "service_role"
+    },
+    {
+      "signature": "private.es02_start_whatsapp_attempt(uuid,uuid)",
+      "name": "private.es02_start_whatsapp_attempt",
+      "securityDefiner": true,
+      "bodyMd5": "19d97ff543dc36e04ec1009959e42d1a",
+      "operation": "create",
+      "before": null,
+      "after": {
+        "anon": false,
+        "authenticated": false,
+        "service_role": false
+      },
+      "role": null
+    },
+    {
+      "signature": "private.es02_native_reply_outcome_proven(uuid,text)",
+      "name": "private.es02_native_reply_outcome_proven",
+      "securityDefiner": true,
+      "bodyMd5": "6dd9c31d89355aa746d728ab39ffaf5b",
+      "operation": "create",
+      "before": null,
+      "after": {
+        "anon": false,
+        "authenticated": false,
+        "service_role": false
+      },
+      "role": null
+    },
+    {
+      "signature": "private.es02_reconcile_native_reply_credit(uuid)",
+      "name": "private.es02_reconcile_native_reply_credit",
+      "securityDefiner": true,
+      "bodyMd5": "b83b2d8fe44f5176fc500f8989d4e948",
+      "operation": "create",
+      "before": null,
+      "after": {
+        "anon": false,
+        "authenticated": false,
+        "service_role": false
+      },
+      "role": null
+    },
+    {
+      "signature": "public.billing_finalize_automated_usage(uuid,uuid)",
+      "name": "public.billing_finalize_automated_usage",
+      "securityDefiner": true,
+      "bodyMd5": "b5a04d1897ef55465f8cca6995cd80c2",
+      "operation": "replace",
+      "before": {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "args": "p_company_id uuid, p_intent_id uuid",
+        "hash": "1ae5ded598580b7379bf71ac09bc9bc4",
+        "owner": "postgres",
+        "config": [
+          "search_path=\"\""
+        ],
+        "result": "jsonb",
+        "definer": true,
+        "language": "plpgsql",
+        "effective": {
+          "anon": false,
+          "service_role": true,
+          "authenticated": false
+        },
+        "signature": "public.billing_finalize_automated_usage(uuid,uuid)",
+        "volatility": "v"
+      },
+      "after": {
+        "anon": false,
+        "authenticated": false,
+        "service_role": true
+      },
+      "role": "service_role"
+    },
+    {
+      "signature": "private.es02_job_scope(uuid)",
+      "name": "private.es02_job_scope",
+      "securityDefiner": true,
+      "bodyMd5": "fca823f848debce922b89048b6eca7b1",
+      "operation": "create",
+      "before": null,
+      "after": {
+        "anon": false,
+        "authenticated": false,
+        "service_role": false
+      },
+      "role": null
+    },
+    {
+      "signature": "private.whatsapp_answer_profile(uuid,uuid)",
+      "name": "private.whatsapp_answer_profile",
+      "securityDefiner": true,
+      "bodyMd5": "d5ecc639599180255251d741ac910edf",
+      "operation": "replace",
+      "before": {
+        "acl": "{postgres=X/postgres}",
+        "args": "p_job_id uuid, p_claim_token uuid",
+        "hash": "c91188d4dfb33979efbe90db5f2aeeee",
+        "owner": "postgres",
+        "config": [
+          "search_path=\"\""
+        ],
+        "result": "jsonb",
+        "definer": true,
+        "language": "plpgsql",
+        "effective": {
+          "anon": false,
+          "service_role": false,
+          "authenticated": false
+        },
+        "signature": "private.whatsapp_answer_profile(uuid,uuid)",
+        "volatility": "v"
+      },
+      "after": {
+        "anon": false,
+        "authenticated": false,
+        "service_role": false
+      },
+      "role": null
+    },
+    {
+      "signature": "public.billing_load_worker_frame(uuid,uuid)",
+      "name": "public.billing_load_worker_frame",
+      "securityDefiner": true,
+      "bodyMd5": "b306306b7f80fb3535d7b91ee40ffc90",
+      "operation": "replace",
+      "before": {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "args": "p_job_id uuid, p_claim_token uuid",
+        "hash": "a67a2bd638c257b3cb23f44d42015afc",
+        "owner": "postgres",
+        "config": [
+          "search_path=\"\""
+        ],
+        "result": "jsonb",
+        "definer": true,
+        "language": "plpgsql",
+        "effective": {
+          "anon": false,
+          "service_role": true,
+          "authenticated": false
+        },
+        "signature": "public.billing_load_worker_frame(uuid,uuid)",
+        "volatility": "v"
+      },
+      "after": {
+        "anon": false,
+        "authenticated": false,
+        "service_role": true
+      },
+      "role": "service_role"
+    },
+    {
+      "signature": "public.whatsapp_reserve_job_usage(uuid,uuid)",
+      "name": "public.whatsapp_reserve_job_usage",
+      "securityDefiner": true,
+      "bodyMd5": "5c9e79b10e83aff66ee5d9e4670d1911",
+      "operation": "replace",
+      "before": {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "args": "p_job_id uuid, p_claim_token uuid",
+        "hash": "cd2a5de5c77c72a728a1acff9345051d",
+        "owner": "postgres",
+        "config": [
+          "search_path=\"\""
+        ],
+        "result": "jsonb",
+        "definer": true,
+        "language": "plpgsql",
+        "effective": {
+          "anon": false,
+          "service_role": true,
+          "authenticated": false
+        },
+        "signature": "public.whatsapp_reserve_job_usage(uuid,uuid)",
+        "volatility": "v"
+      },
+      "after": {
+        "anon": false,
+        "authenticated": false,
+        "service_role": true
+      },
+      "role": "service_role"
+    },
+    {
+      "signature": "public.ai_start_whatsapp_attempt(uuid,uuid)",
+      "name": "public.ai_start_whatsapp_attempt",
+      "securityDefiner": true,
+      "bodyMd5": "9c221a58143b6601a153a018573a1162",
+      "operation": "replace",
+      "before": {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "args": "p_id uuid, p_claim_token uuid",
+        "hash": "eb043ea32f66863805aba475d8190b3e",
+        "owner": "postgres",
+        "config": [
+          "search_path=\"\""
+        ],
+        "result": "boolean",
+        "definer": true,
+        "language": "plpgsql",
+        "effective": {
+          "anon": false,
+          "service_role": true,
+          "authenticated": false
+        },
+        "signature": "public.ai_start_whatsapp_attempt(uuid,uuid)",
+        "volatility": "v"
+      },
+      "after": {
+        "anon": false,
+        "authenticated": false,
+        "service_role": true
+      },
+      "role": "service_role"
+    },
+    {
+      "signature": "private.es02_successful_worker_attempt(uuid,uuid,uuid)",
+      "name": "private.es02_successful_worker_attempt",
+      "securityDefiner": true,
+      "bodyMd5": "80f00d22e7618df5afbbd20de53b695c",
+      "operation": "create",
+      "before": null,
+      "after": {
+        "anon": false,
+        "authenticated": false,
+        "service_role": false
+      },
+      "role": null
+    },
+    {
+      "signature": "public.whatsapp_stage_job_reply(uuid,uuid,uuid,jsonb)",
+      "name": "public.whatsapp_stage_job_reply",
+      "securityDefiner": true,
+      "bodyMd5": "c41a0fe7ea8c3592a6da01ebe9814ac6",
+      "operation": "replace",
+      "before": {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "args": "p_job_id uuid, p_claim_token uuid, p_ai_attempt_id uuid, p_citations jsonb",
+        "hash": "ae04a08e8d81adcad51b1b52efa07632",
+        "owner": "postgres",
+        "config": [
+          "search_path=\"\""
+        ],
+        "result": "jsonb",
+        "definer": true,
+        "language": "plpgsql",
+        "effective": {
+          "anon": false,
+          "service_role": true,
+          "authenticated": false
+        },
+        "signature": "public.whatsapp_stage_job_reply(uuid,uuid,uuid,jsonb)",
+        "volatility": "v"
+      },
+      "after": {
+        "anon": false,
+        "authenticated": false,
+        "service_role": true
+      },
+      "role": "service_role"
+    },
+    {
+      "signature": "public.whatsapp_claim_assistant_job_send(uuid,uuid)",
+      "name": "public.whatsapp_claim_assistant_job_send",
+      "securityDefiner": true,
+      "bodyMd5": "e7ba5029c62748cdf5d535433dd1eb13",
+      "operation": "replace",
+      "before": {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "args": "p_job_id uuid, p_claim_token uuid",
+        "hash": "b800b6420711dcb050dd8f7b858f52e6",
+        "owner": "postgres",
+        "config": [
+          "search_path=\"\""
+        ],
+        "result": "jsonb",
+        "definer": true,
+        "language": "plpgsql",
+        "effective": {
+          "anon": false,
+          "service_role": true,
+          "authenticated": false
+        },
+        "signature": "public.whatsapp_claim_assistant_job_send(uuid,uuid)",
+        "volatility": "v"
+      },
+      "after": {
+        "anon": false,
+        "authenticated": false,
+        "service_role": true
+      },
+      "role": "service_role"
+    },
+    {
+      "signature": "public.es02_verify_claimed_reply_citations(uuid,uuid,jsonb)",
+      "name": "public.es02_verify_claimed_reply_citations",
+      "securityDefiner": true,
+      "bodyMd5": "27543849d201624e96464c0a95b27f5c",
+      "operation": "create",
+      "before": null,
+      "after": {
+        "anon": false,
+        "authenticated": false,
+        "service_role": true
+      },
+      "role": "service_role"
+    },
+    {
+      "signature": "public.whatsapp_retrieve_approved_knowledge(uuid,uuid,uuid,text)",
+      "name": "public.whatsapp_retrieve_approved_knowledge",
+      "securityDefiner": true,
+      "bodyMd5": "3305a1267985ba312c45039c0f084e94",
+      "operation": "replace",
+      "before": {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "args": "p_company_id uuid, p_job_id uuid, p_claim_token uuid, p_question text",
+        "hash": "5af35074c8ae6df08cc9ed1551057935",
+        "owner": "postgres",
+        "config": [
+          "search_path=\"\""
+        ],
+        "result": "jsonb",
+        "definer": true,
+        "language": "plpgsql",
+        "effective": {
+          "anon": false,
+          "service_role": true,
+          "authenticated": false
+        },
+        "signature": "public.whatsapp_retrieve_approved_knowledge(uuid,uuid,uuid,text)",
+        "volatility": "v"
+      },
+      "after": {
+        "anon": false,
+        "authenticated": false,
+        "service_role": true
+      },
+      "role": "service_role"
+    }
+  ],
+  "privateAliases": [
+    {
+      "signature": "private.es02_pre_usage_settlement(uuid,uuid)",
+      "before": {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "args": "p_company_id uuid, p_intent_id uuid",
+        "hash": "1ae5ded598580b7379bf71ac09bc9bc4",
+        "owner": "postgres",
+        "config": [
+          "search_path=\"\""
+        ],
+        "result": "jsonb",
+        "definer": true,
+        "language": "plpgsql",
+        "effective": {
+          "anon": false,
+          "service_role": true,
+          "authenticated": false
+        },
+        "signature": "public.billing_finalize_automated_usage(uuid,uuid)",
+        "volatility": "v"
+      }
+    },
+    {
+      "signature": "private.es02_pre_answer_profile(uuid,uuid)",
+      "before": {
+        "acl": "{postgres=X/postgres}",
+        "args": "p_job_id uuid, p_claim_token uuid",
+        "hash": "c91188d4dfb33979efbe90db5f2aeeee",
+        "owner": "postgres",
+        "config": [
+          "search_path=\"\""
+        ],
+        "result": "jsonb",
+        "definer": true,
+        "language": "plpgsql",
+        "effective": {
+          "anon": false,
+          "service_role": false,
+          "authenticated": false
+        },
+        "signature": "private.whatsapp_answer_profile(uuid,uuid)",
+        "volatility": "v"
+      }
+    },
+    {
+      "signature": "private.es02_pre_load_worker_frame(uuid,uuid)",
+      "before": {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "args": "p_job_id uuid, p_claim_token uuid",
+        "hash": "a67a2bd638c257b3cb23f44d42015afc",
+        "owner": "postgres",
+        "config": [
+          "search_path=\"\""
+        ],
+        "result": "jsonb",
+        "definer": true,
+        "language": "plpgsql",
+        "effective": {
+          "anon": false,
+          "service_role": true,
+          "authenticated": false
+        },
+        "signature": "public.billing_load_worker_frame(uuid,uuid)",
+        "volatility": "v"
+      }
+    },
+    {
+      "signature": "private.es02_pre_reserve_job_usage(uuid,uuid)",
+      "before": {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "args": "p_job_id uuid, p_claim_token uuid",
+        "hash": "cd2a5de5c77c72a728a1acff9345051d",
+        "owner": "postgres",
+        "config": [
+          "search_path=\"\""
+        ],
+        "result": "jsonb",
+        "definer": true,
+        "language": "plpgsql",
+        "effective": {
+          "anon": false,
+          "service_role": true,
+          "authenticated": false
+        },
+        "signature": "public.whatsapp_reserve_job_usage(uuid,uuid)",
+        "volatility": "v"
+      }
+    },
+    {
+      "signature": "private.es02_pre_start_whatsapp_attempt(uuid,uuid)",
+      "before": {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "args": "p_id uuid, p_claim_token uuid",
+        "hash": "eb043ea32f66863805aba475d8190b3e",
+        "owner": "postgres",
+        "config": [
+          "search_path=\"\""
+        ],
+        "result": "boolean",
+        "definer": true,
+        "language": "plpgsql",
+        "effective": {
+          "anon": false,
+          "service_role": true,
+          "authenticated": false
+        },
+        "signature": "public.ai_start_whatsapp_attempt(uuid,uuid)",
+        "volatility": "v"
+      }
+    },
+    {
+      "signature": "private.es02_pre_stage_job_reply(uuid,uuid,uuid,jsonb)",
+      "before": {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "args": "p_job_id uuid, p_claim_token uuid, p_ai_attempt_id uuid, p_citations jsonb",
+        "hash": "ae04a08e8d81adcad51b1b52efa07632",
+        "owner": "postgres",
+        "config": [
+          "search_path=\"\""
+        ],
+        "result": "jsonb",
+        "definer": true,
+        "language": "plpgsql",
+        "effective": {
+          "anon": false,
+          "service_role": true,
+          "authenticated": false
+        },
+        "signature": "public.whatsapp_stage_job_reply(uuid,uuid,uuid,jsonb)",
+        "volatility": "v"
+      }
+    },
+    {
+      "signature": "private.es02_pre_claim_assistant_job_send(uuid,uuid)",
+      "before": {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "args": "p_job_id uuid, p_claim_token uuid",
+        "hash": "b800b6420711dcb050dd8f7b858f52e6",
+        "owner": "postgres",
+        "config": [
+          "search_path=\"\""
+        ],
+        "result": "jsonb",
+        "definer": true,
+        "language": "plpgsql",
+        "effective": {
+          "anon": false,
+          "service_role": true,
+          "authenticated": false
+        },
+        "signature": "public.whatsapp_claim_assistant_job_send(uuid,uuid)",
+        "volatility": "v"
+      }
+    },
+    {
+      "signature": "private.es02_pre_retrieve_approved_knowledge(uuid,uuid,uuid,text)",
+      "before": {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "args": "p_company_id uuid, p_job_id uuid, p_claim_token uuid, p_question text",
+        "hash": "5af35074c8ae6df08cc9ed1551057935",
+        "owner": "postgres",
+        "config": [
+          "search_path=\"\""
+        ],
+        "result": "jsonb",
+        "definer": true,
+        "language": "plpgsql",
+        "effective": {
+          "anon": false,
+          "service_role": true,
+          "authenticated": false
+        },
+        "signature": "public.whatsapp_retrieve_approved_knowledge(uuid,uuid,uuid,text)",
+        "volatility": "v"
+      }
+    }
+  ],
+  "newTables": [
+    {
+      "name": "private.es02_branch_knowledge_sources",
+      "rls": true,
+      "directRuntimeAccess": false
+    },
+    {
+      "name": "private.es02_branch_website_pages",
+      "rls": true,
+      "directRuntimeAccess": false
+    },
+    {
+      "name": "private.es02_branch_reply_language_confirmations",
+      "rls": true,
+      "directRuntimeAccess": false
+    },
+    {
+      "name": "private.es02_branch_assistant_trials",
+      "rls": true,
+      "directRuntimeAccess": false
+    },
+    {
+      "name": "private.es02_branch_launch_confirmations",
+      "rls": true,
+      "directRuntimeAccess": false
+    },
+    {
+      "name": "private.es02_branch_trial_operations",
+      "rls": true,
+      "directRuntimeAccess": false
+    },
+    {
+      "name": "private.es02_reply_credit_holds",
+      "rls": true,
+      "directRuntimeAccess": false
+    },
+    {
+      "name": "private.es02_operational_recipient_proofs",
+      "rls": true,
+      "directRuntimeAccess": false
+    },
+    {
+      "name": "private.es02_initial_acceptance_receipts",
+      "rls": true,
+      "directRuntimeAccess": false
+    }
+  ],
+  "tableOrColumnGrantChanges": [],
+  "existingTableDdl": [
+    "public.ai_usage_ledger: usage-mode constraint expands admin_test/company_live to admin_test/company_live/setup_trial, with no row conversion",
+    "public.ai_usage_ledger: five ES02 provenance columns, complete-binding constraint and immutable binding trigger",
+    "public.whatsapp_inbound_jobs: native usage settlement trigger",
+    "private.es02_activation_foundation: initial-clock receipt guard trigger"
+  ],
+  "retiredLogicExcluded": [
+    "master credit foundation",
+    "legacy priority substring adapter",
+    "account-only direct debit and duplicate receipt table"
+  ],
+  "independentLiabilities": [
+    "One preexisting admin_test uncertain attempt, no worker job: preserve unchanged, no settle/retry; not an ES02 company_live cutover blocker"
+  ],
+  "localInstallerModified": false,
+  "functionalTests": "NOT_RUN_OWNER_DEFERRED",
+  "productionWrites": 0,
+  "paymobExternal": "PAYMOB_EXTERNAL_DEFERRED_INDEPENDENT_NOT_LOST_CONSOLIDATION_WORK"
+}

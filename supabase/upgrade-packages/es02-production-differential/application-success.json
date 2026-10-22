@@ -1,0 +1,20 @@
+{
+  "projectRef": "vmpifljyozsbtssxhoxd",
+  "sha256": "a81eccfa37a256f9acd609de4d2c08a4ffa0d438acec31efdb39a323759a8d6f",
+  "migration": {
+    "version": "20261022062222",
+    "name": "es02_remaining_production_differential_20261022"
+  },
+  "status": "APPLIED_SUCCESS",
+  "officialApplyResult": "success=true",
+  "transaction": "single BEGIN/COMMIT including preflight and postflight",
+  "readOnlyPostflightRecheck": "PASS",
+  "migrationCount": 97,
+  "authenticatedFunctions": 11,
+  "serviceRoleFunctions": 13,
+  "newPrivateTables": 9,
+  "directRuntimeTableAccess": false,
+  "functionalTests": "NOT_RUN_PENDING_AFTER_APPLICATION",
+  "realPaymentsEnabled": false,
+  "paymobBlocker": "PAYMOB_EXTERNAL_DEFERRED_INDEPENDENT"
+}

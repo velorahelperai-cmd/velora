@@ -1,0 +1,11 @@
+{
+  "sha256": "342c5f4319c75028f270ce259144b3f7174c3dca92ecd6275b478ad4d6671511",
+  "projectRef": "vmpifljyozsbtssxhoxd",
+  "status": "FAILED_ROLLED_BACK",
+  "errorCode": "42702",
+  "cause": "postflight PLpgSQL variable t conflicts with catalog column t",
+  "catalogUnchanged": true,
+  "migrationCount": 96,
+  "migrationRecorded": false,
+  "functionalTests": "NOT_RUN_APPLICATION_FAILED"
+}

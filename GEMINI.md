@@ -1,1 +1,3 @@
-Read AGENTS.md and the first Current Session Index in PROJECT_STATE.md. They are the shared execution authority. The 2026-10-22 single-directory/single-branch/single-writer override supersedes old worktree guidance. Run `node scripts/consolidation/guard.mjs` before local modification or execution; if ownership differs, read/review only.
+# Velora Gemini / Antigravity instructions
+
+Read and follow [VELORA_RULES.md](VELORA_RULES.md), the single shared rules authority. Read the first Current Session Index and active execution lock in [PROJECT_STATE.md](PROJECT_STATE.md) before work. Do not maintain a separate copy of shared rules here.

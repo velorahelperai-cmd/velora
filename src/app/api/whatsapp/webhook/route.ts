@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { observeWebhookIngress } from "@/lib/logging/ingress-observation-server";
 import { webhookReady, whatsappConfig, whatsappRoutingMode } from "@/lib/whatsapp/config";
 import { saveInbound, saveStatus } from "@/lib/whatsapp/store";
 import { resolveWhatsappCompanyByMetaAsset } from "@/lib/whatsapp/tenant-resolve";
@@ -73,6 +74,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  return observeWebhookIngress("whatsapp", () => handlePost(request));
+}
+async function handlePost(request: Request) {
   if (process.env.WHATSAPP_RECEIVE_ENABLED !== "true") {
     return new Response("receive disabled", { status: 503, headers: { "cache-control": "no-store", "retry-after": "5" } });
   }

@@ -1,4 +1,5 @@
 import {createAdminClient} from '@/lib/supabase/admin';
+import {observeWebhookIngress} from '@/lib/logging/ingress-observation-server';
 import type {InstagramRpcClient} from '@/lib/instagram/connection-store';
 import {createInstagramSignedWebhookPersistence,readInstagramInboundRuntime} from '@/lib/instagram/inbound-producer';
 import { createInstagramWebhookHandlers } from "@/lib/instagram/webhook-route";
@@ -32,6 +33,9 @@ export async function GET(request:Request) {
   return instagramWebhookChallenge(request) ?? handlers.GET(request);
 }
 export async function POST(request:Request){
+ return observeWebhookIngress('instagram',()=>handlePost(request));
+}
+async function handlePost(request:Request){
  const server=createAdminClient() as unknown as InstagramRpcClient|null,companyId=process.env.INSTAGRAM_REVIEW_COMPANY_ID,parent=process.env.INSTAGRAM_PARENT_WEBHOOK_APP_ID,secret=process.env.INSTAGRAM_PARENT_WEBHOOK_APP_SECRET;
  const fingerprint=secret?createHash('sha256').update(secret).digest('hex'):null;
  const args={p_company_id:companyId,p_parent_app_id:parent,p_secret_fingerprint:fingerprint};

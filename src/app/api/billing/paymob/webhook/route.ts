@@ -1,4 +1,5 @@
 import { hostedTestCompanyAllowed } from "@/lib/billing/wiring/hosted-test";
+import { observeWebhookIngress } from "@/lib/logging/ingress-observation-server";
 import { processStoredPaymobEvent, type StoredProviderEvent } from "@/lib/billing/wiring/event-process";
 import { settleHmacVerifiedViaRpc } from "@/lib/billing/wiring/store";
 import type { SavedOrderForWebhook } from "@/lib/billing/wiring/webhook-receive";
@@ -30,6 +31,9 @@ function logWebhookDiag(
 }
 
 export async function POST(request: Request) {
+  return observeWebhookIngress("paymob", () => handlePost(request));
+}
+async function handlePost(request: Request) {
   const headerCorrelationId = request.headers.get("x-velora-correlation-id");
   const flags = readBillingPaymobWiringFlags();
   const secrets = readWiringSecretsPresence();

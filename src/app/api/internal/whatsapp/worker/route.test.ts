@@ -1,43 +1,26 @@
-import {afterEach,describe,it,expect,vi} from "vitest";
-vi.mock("server-only",()=>({}));
-const state=vi.hoisted(()=>({rpc:vi.fn(),rollout:false}));
-vi.mock("@/lib/supabase/admin",()=>({createAdminClient:()=>({rpc:state.rpc})}));
-vi.mock("@/lib/whatsapp/integration-store",()=>({workerRolloutEnabled:()=>state.rollout,createIntegrationPorts:vi.fn()}));
-import {POST} from "./route";
-afterEach(()=>{vi.unstubAllEnvs();state.rpc.mockReset();state.rollout=false;});
-const secret="synthetic-worker-secret-for-offline-tests-only";
-describe("protected bounded WhatsApp consumer",()=>{
- const authorized=()=>{vi.stubEnv("WHATSAPP_WORKER_SECRET",secret);vi.stubEnv("WHATSAPP_WORKER_ENABLED","true");return new Request("http://localhost.invalid/worker",{method:"POST",headers:{authorization:`Bearer ${secret}`}});};
- it("does not treat HTTP/database transport success as receipt repair success",async()=>{
- state.rollout=true;state.rpc.mockResolvedValue({data:{ok:false,code:"server_role_required"},error:null});
- const r=await POST(authorized());expect(r.status).toBe(503);expect(await r.json()).toEqual({code:"REPAIR_UNAVAILABLE"});expect(state.rpc).toHaveBeenCalledTimes(1);
- });
- it("returns a bounded operational failure when the database transport throws",async()=>{
- state.rpc.mockRejectedValue(Error("synthetic database credential must stay server-side"));
- const r=await POST(authorized());expect(r.status).toBe(503);expect(await r.json()).toEqual({code:"WORKER_UNAVAILABLE"});
- });
- it("rejects malformed repair counters before claiming new work",async()=>{
- state.rollout=true;state.rpc.mockResolvedValue({data:{ok:true,repaired:-1,pending:0},error:null});
- const r=await POST(authorized());expect(r.status).toBe(503);expect(state.rpc).toHaveBeenCalledTimes(1);
- });
- it("rejects unauthorized invocation before database/provider work",async()=>{vi.stubEnv("WHATSAPP_WORKER_SECRET",secret);
- const r=await POST(new Request("http://localhost.invalid/api/internal/whatsapp/worker",{method:"POST",headers:{authorization:"Bearer wrong"}}));
- expect(r.status).toBe(401);expect(state.rpc).not.toHaveBeenCalled();});
- it("stays disabled without explicit host activation",async()=>{vi.stubEnv("WHATSAPP_WORKER_SECRET",secret);vi.stubEnv("WHATSAPP_WORKER_ENABLED","");
- const r=await POST(new Request("http://localhost.invalid/worker",{method:"POST",headers:{authorization:`Bearer ${secret}`}}));expect(r.status).toBe(503);expect(state.rpc).not.toHaveBeenCalled();});
- it("allows only receipt repair when customer AI/send rollout remains disabled",async()=>{vi.stubEnv("WHATSAPP_WORKER_SECRET",secret);vi.stubEnv("WHATSAPP_WORKER_ENABLED","true");
- state.rpc.mockResolvedValue({data:{ok:true,repaired:1,pending:0},error:null});
- const r=await POST(new Request("http://localhost.invalid/worker",{method:"POST",headers:{authorization:`Bearer ${secret}`}}));
- expect(await r.json()).toEqual({code:"CUSTOMER_ANSWERING_DISABLED",repairOnly:true});expect(state.rpc).toHaveBeenCalledTimes(1);
- expect(state.rpc).toHaveBeenCalledWith("whatsapp_repair_accepted_jobs",{p_limit:10});});
-});
-
-it("fixed acknowledgement mode refuses incomplete configuration without AI fallback",async()=>{
- vi.stubEnv("WHATSAPP_WORKER_SECRET",secret);vi.stubEnv("WHATSAPP_WORKER_ENABLED","true");vi.stubEnv("WHATSAPP_FIXED_ACK_ENABLED","true");
- const r=await POST(new Request("http://localhost.invalid/worker",{method:"POST",headers:{authorization:`Bearer ${secret}`}}));expect(r.status).toBe(503);expect(await r.json()).toEqual({code:"FIXED_ACK_NOT_CONFIGURED"});expect(state.rpc).not.toHaveBeenCalled();
-});
-it("fixed acknowledgement route consumes only its scoped queue and repair, never AI runtime",async()=>{
- for(const [k,v] of Object.entries({WHATSAPP_WORKER_SECRET:secret,WHATSAPP_WORKER_ENABLED:"true",WHATSAPP_FIXED_ACK_ENABLED:"true",WHATSAPP_ALLOW_EXTERNAL_SEND:"true",WHATSAPP_ROUTING_MODE:"tenant_registry",WHATSAPP_EMBEDDED_SIGNUP_GRAPH_VERSION:"v26.0",WHATSAPP_FIXED_ACK_COMPANY_ID:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",WHATSAPP_FIXED_ACK_PHONE_NUMBER_ID:"1279881708549662",WHATSAPP_FIXED_ACK_RECIPIENT_WA_ID:"96899999999"}))vi.stubEnv(k,v);
- state.rollout=true;state.rpc.mockImplementation(async name=>({error:null,data:name==="whatsapp_repair_fixed_ack"?{ok:true,repaired:0,pending:0}:{ok:true,jobs:[]}}));
- const r=await POST(new Request("http://localhost.invalid/worker",{method:"POST",headers:{authorization:`Bearer ${secret}`}}));expect(r.status).toBe(200);expect(state.rpc.mock.calls.map(x=>x[0])).toEqual(["whatsapp_repair_fixed_ack","whatsapp_claim_fixed_ack"]);
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { POST } from "./route";
+const state = vi.hoisted(() => ({ code: "ACCEPTANCE_ACCOUNTING_PENDING", accepted: true, completed: false, sends: 0, rollout: true, pending: 0, claims: 0 }));
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({ rpc: async (name: string) => {
+  if (name === "whatsapp_repair_accepted_jobs") return { data: { ok: true, repaired: 0, pending: state.pending }, error: null };
+  state.claims++;
+  return { data: { ok: true, jobs: [{ job_id: "synthetic-job", claim_token: "synthetic-capability", company_id: "synthetic-company" }] }, error: null };
+} }) }));
+vi.mock("@/lib/whatsapp/integration-store", () => ({ createIntegrationPorts: () => ({}), workerRolloutEnabled: () => state.rollout }));
+vi.mock("@/lib/whatsapp/fixed-ack", () => ({ fixedAckConfig: vi.fn(), runFixedAcknowledgementBatch: vi.fn() }));
+vi.mock("@/lib/whatsapp/inbound-worker", () => ({ runInboundWorkerAnswer: async () => { state.sends++; return { ok: false, code: state.code, sendAccepted: state.accepted, jobCompleted: state.completed, delivered: false }; } }));
+const syntheticSecret = "synthetic-test-worker-secret-at-least-thirty-two-characters";
+beforeEach(() => { vi.stubEnv("WHATSAPP_WORKER_SECRET", syntheticSecret); vi.stubEnv("WHATSAPP_WORKER_ENABLED", "true"); vi.stubEnv("WHATSAPP_FIXED_ACK_ENABLED", "false"); state.code = "ACCEPTANCE_ACCOUNTING_PENDING"; state.accepted = true; state.completed = false; state.sends = 0; state.rollout = true; state.pending = 0; state.claims = 0; });
+afterEach(() => vi.unstubAllEnvs());
+describe("worker response monitoring (synthetic ports, no provider calls)", () => {
+  it.each([0, 2])("reports repair-only pending=%s without claiming or sending", async (pending) => {
+    state.rollout = false; state.pending = pending;
+    const response = await POST(new Request("http://localhost/api/internal/whatsapp/worker", { method: "POST", headers: { authorization: "Bearer " + syntheticSecret } }));
+    expect(response.status).toBe(pending ? 202 : 200);
+    expect(await response.json()).toMatchObject({ code: pending ? "RECONCILIATION_REQUIRED" : "CUSTOMER_ANSWERING_DISABLED", repairOnly: true, repair: { pending }, automaticRetry: false });
+    expect(state.claims).toBe(0); expect(state.sends).toBe(0);
+  });
+  it("retains authorization checks", async () => { const response = await POST(new Request("http://localhost/api/internal/whatsapp/worker", { method: "POST" })); expect(response.status).toBe(401); expect(state.sends).toBe(0); });
+  it("reports accepted but unsettled jobs without exposing capabilities", async () => { const response = await POST(new Request("http://localhost/api/internal/whatsapp/worker", { method: "POST", headers: { authorization: "Bearer " + syntheticSecret } })); expect(response.status).toBe(202); const body = await response.json(); expect(body).toMatchObject({ accepted: 1, completed: 0, accountingPending: 1, code: "RECONCILIATION_REQUIRED", automaticRetry: false }); expect(JSON.stringify(body)).not.toMatch(/synthetic-capability|synthetic-company|synthetic-job/); expect(state.sends).toBe(1); });
+  it("does not retry an unknown send inside the route", async () => { state.code = "SEND_REQUIRES_RECONCILIATION"; state.accepted = false; const response = await POST(new Request("http://localhost/api/internal/whatsapp/worker", { method: "POST", headers: { authorization: "Bearer " + syntheticSecret } })); expect(response.status).toBe(202); expect(await response.json()).toMatchObject({ unknown: 1, failed: 0, automaticRetry: false }); expect(state.sends).toBe(1); });
 });

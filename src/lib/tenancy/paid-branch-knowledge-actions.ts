@@ -111,7 +111,8 @@ export async function addOwnedBranchWebsiteAction(
     const saved = payload.data?.snapshot;
     const page = saved?.pages.find(p => p.url === input.url.trim());
     if (!page) return null;
-    return indexOwnedBranchWebsiteAction({ ...input, pageId: page.id });
+    if (!Number.isSafeInteger(page.version) || (page.version ?? 0) < 1) return null;
+    return indexOwnedBranchWebsiteAction({ ...input, pageId: page.id, expectedPageVersion: page.version! });
   });
 }
 
@@ -120,7 +121,9 @@ export async function pageActionOwnedBranchKnowledgeAction(
 ): Promise<BranchKnowledgeViewSnapshot | null> {
   const requestId = randomUUID();
   return withLogContext({ request_id: requestId, user_id: input?.expectedAccountId }, async () => {
-    if (!validScope(input) || !input.pageId || !UUID.test(input.pageId)) return null;
+    if (!validScope(input) || !input.pageId || !UUID.test(input.pageId) ||
+        !Number.isSafeInteger(input.pageVersion) || input.pageVersion < 1 || input.pageVersion >= 2147483647 ||
+        !["retry", "retrain"].includes(input.action)) return null;
     const identity = await readSessionIdentity();
     if (!identity.ok || identity.userId !== input.expectedAccountId) return null;
 
@@ -131,18 +134,21 @@ export async function pageActionOwnedBranchKnowledgeAction(
       p_branch_id: input.branchId,
       p_page_id: input.pageId,
       p_action: input.action,
+      p_expected_page_version: input.pageVersion,
     } as never);
 
     const payload = res.data as unknown as { ok?: boolean; data?: { snapshot: BranchKnowledgeViewSnapshot } };
     if (res.error || !payload || payload.ok !== true) return null;
-    if (!payload.data?.snapshot?.pages.some(p => p.id === input.pageId)) return null;
-    return indexOwnedBranchWebsiteAction(input);
+    const page = payload.data?.snapshot?.pages.find(p => p.id === input.pageId && p.companyId === input.companyId && p.branchId === input.branchId);
+    if (!page || page.version !== input.pageVersion + 1) return null;
+    return indexOwnedBranchWebsiteAction({ ...input, expectedPageVersion: page.version });
   });
 }
 
 export async function indexOwnedBranchWebsiteAction(
   input: KnowledgeViewScope & {
     pageId: string;
+    expectedPageVersion?: number;
     // Compatibility fields are ignored: URL and limits come from the server.
     url?: string;
     fetchOptions?: SafeFetchOptions;
@@ -160,6 +166,7 @@ export async function indexOwnedBranchWebsiteAction(
     const snapshot = await readOwnedBranchKnowledgeAction(input);
     const page = snapshot?.pages.find(p => p.id === input.pageId && p.companyId === input.companyId && p.branchId === input.branchId);
     if (!page || !Number.isSafeInteger(page.version)) return null;
+    if (input.expectedPageVersion !== undefined && page.version !== input.expectedPageVersion) return null;
     const fetchRes = await safeFetchWebsite(page.url);
     const client = await createClient();
 

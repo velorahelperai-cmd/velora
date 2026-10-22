@@ -30,8 +30,25 @@ it("indexes a newly saved website from its persisted URL", async () => {
   expect(fake.rpc).toHaveBeenCalledWith("es02_index_branch_website_page", expect.objectContaining({ p_page_id: page.id, p_expected_version: 2, p_extracted_text: "We open at nine." }));
 });
 it("retry actually fetches and indexes the saved page", async () => {
-  await pageActionOwnedBranchKnowledgeAction({ ...scope, pageId: page.id, pageVersion: 2, action: "retry" });
+  await pageActionOwnedBranchKnowledgeAction({ ...scope, pageId: page.id, pageVersion: 1, action: "retry" });
+  expect(fake.rpc).toHaveBeenCalledWith("es02_page_action_owned_branch_knowledge", expect.objectContaining({ p_expected_page_version: 1 }));
   expect(fake.fetch).toHaveBeenCalledWith(page.url);
+});
+it("does not fetch when a stale mutation is rejected", async () => {
+  fake.rpc.mockResolvedValue({ data: { ok: false, code: "CONFLICT" }, error: null });
+  expect(await pageActionOwnedBranchKnowledgeAction({ ...scope, pageId: page.id, pageVersion: 1, action: "retry" })).toBeNull();
+  expect(fake.fetch).not.toHaveBeenCalled();
+});
+it("does not fetch a newer page after mutation succeeds", async () => {
+  fake.rpc.mockImplementation(async (name: string) => ({ data: { ok: true, data: { snapshot: name === "es02_read_owned_branch_knowledge" ? { ...snapshot, pages: [{ ...page, version: 3 }] } : snapshot } }, error: null }));
+  expect(await pageActionOwnedBranchKnowledgeAction({ ...scope, pageId: page.id, pageVersion: 1, action: "retry" })).toBeNull();
+  expect(fake.fetch).not.toHaveBeenCalled();
+});
+it("rejects invalid versions without contacting the database", async () => {
+  for (const pageVersion of [0, -1, 1.5, NaN, 2147483647]) {
+    expect(await pageActionOwnedBranchKnowledgeAction({ ...scope, pageId: page.id, pageVersion, action: "retry" })).toBeNull();
+  }
+  expect(fake.rpc).not.toHaveBeenCalled();
 });
 it("never fetches before authoritative branch/page access succeeds", async () => {
   fake.rpc.mockResolvedValue({ data: { ok: false, code: "FORBIDDEN" }, error: null });

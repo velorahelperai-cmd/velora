@@ -1,0 +1,22 @@
+{
+  "previousSha256": "342c5f4319c75028f270ce259144b3f7174c3dca92ecd6275b478ad4d6671511",
+  "sha256": "a81eccfa37a256f9acd609de4d2c08a4ffa0d438acec31efdb39a323759a8d6f",
+  "exactRenameOnly": true,
+  "reverseHash": "342c5f4319c75028f270ce259144b3f7174c3dca92ecd6275b478ad4d6671511",
+  "manifestUnchangedExceptHashAndSize": true,
+  "renameMap": {
+    "f": "v_postflight_item",
+    "r": "v_postflight_role",
+    "t": "v_postflight_table",
+    "actual": "v_postflight_catalog"
+  },
+  "postflightProcAlreadyDistinct": true,
+  "preflightVariablesReviewed": [
+    "actual",
+    "object_name"
+  ],
+  "catalogIdentifierCollisions": [],
+  "productionApplied": false,
+  "functionalTests": "NOT_RUN_OWNER_DEFERRED",
+  "databaseCompilation": "NOT_RUN"
+}

@@ -1,5 +1,10 @@
 ---
-description: Shared Velora execution authority and single-writer guard
+description: Velora single shared rules reference
 alwaysApply: true
 ---
-Read AGENTS.md and the first Current Session Index in PROJECT_STATE.md. Follow the 2026-10-22 override: canonical directory only, existing persistent branch only, one writer. Old worktrees are read-only preservation sources. Run `node scripts/consolidation/guard.mjs` before mutation/execution; if ownership differs, read/review only. Text rules and this voluntary guard do not technically prevent bypass by other tools.
+Read and follow [VELORA_RULES.md](../../VELORA_RULES.md), the single shared rules authority.
+Read the first Current Session Index and active execution lock in [PROJECT_STATE.md](../../PROJECT_STATE.md) before work.
+Do not maintain a separate copy of shared rules here.
+
+@VELORA_RULES.md
+@PROJECT_STATE.md

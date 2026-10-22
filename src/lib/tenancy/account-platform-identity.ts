@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 
 export type AccountPlatformIdentity = {
-  role: "owner" | "delegated" | null;
+  role: "owner" | "delegated" | "support" | "finance" | "operations" | null;
   status: "active" | "disabled" | null;
   unavailable: boolean;
 };
@@ -19,8 +19,12 @@ export async function readAccountPlatformIdentity(userId: string): Promise<Accou
     const row: unknown = data;
     if (!row || typeof row !== "object" || Array.isArray(row)) return unavailablePlatformIdentity();
     const { role, status } = row as Record<string, unknown>;
-    if ((role !== "owner" && role !== "delegated") || (status !== "active" && status !== "disabled")) return unavailablePlatformIdentity();
-    return { role, status, unavailable: false };
+    const roleStr = String(role ?? "");
+    const statusStr = String(status ?? "");
+    if (!["owner", "delegated", "support", "finance", "operations"].includes(roleStr) || (statusStr !== "active" && statusStr !== "disabled")) {
+      return unavailablePlatformIdentity();
+    }
+    return { role: roleStr as AccountPlatformIdentity["role"], status: statusStr as AccountPlatformIdentity["status"], unavailable: false };
   } catch {
     return unavailablePlatformIdentity();
   }

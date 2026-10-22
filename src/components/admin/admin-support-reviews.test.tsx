@@ -90,9 +90,13 @@ describe("Stage E — Module 09: AdminSupportReviews", () => {
   const sampleData: AdminSupportOverviewData = {
     kpis: {
       pendingReviewsCount: 2,
-      supportSlaHours: 4,
+      openTicketsCount: 1,
+      inProgressTicketsCount: 0,
+      resolvedTicketsCount: 0,
+      supportSlaHours: "UNCONFIGURED",
       reviewGateStatus: "ACTIVE",
       officialSupportChannel: "WhatsApp & Email",
+      officialSupportEmail: "velorahelperai@gmail.com",
     },
     pendingReviews: [
       {
@@ -113,6 +117,24 @@ describe("Stage E — Module 09: AdminSupportReviews", () => {
         review_requested_at: "2026-10-22T07:30:00Z",
       },
     ],
+    tickets: [
+      {
+        id: "tck-001",
+        ticketNumber: "TICK-908123",
+        companyId: "cmp-001",
+        companyName: "Nizwa Roastery",
+        branchId: "main",
+        creatorUserId: "usr-001",
+        assignedToUserId: null,
+        title: "Connection timeout on WhatsApp webhook",
+        description: "Customer reports missing automated greetings",
+        status: "open",
+        priority: "urgent",
+        category: "channel",
+        createdAt: "2026-10-22T08:00:00Z",
+        updatedAt: "2026-10-22T08:00:00Z",
+      },
+    ],
     supportChannels: [
       {
         id: "wa-support",
@@ -122,39 +144,60 @@ describe("Stage E — Module 09: AdminSupportReviews", () => {
         description: "Direct customer escalations & support code lookups",
       },
       {
-        id: "email-support",
-        channel: "Support Desk Email",
-        target: "support@velora.ai",
+        id: "platform-owner",
+        channel: "Platform Escalation Email",
+        target: "velorahelperai@gmail.com",
         status: "OPERATIONAL",
-        description: "Tier-2 business onboarding inquiries and review responses",
+        description: "Platform owner verified escalation and dispute resolution",
+      },
+      {
+        id: "email-desk",
+        channel: "Dedicated Support Desk",
+        target: "UNCONFIGURED",
+        status: "UNCONFIGURED",
+        description: "Custom external ticketing desk unconfigured in platform settings",
       },
     ],
   };
 
-  it("renders Module 09 header and platform owner badge", () => {
+  it("shows unavailable tickets honestly without losing onboarding review data", () => {
+    const data: AdminSupportOverviewData = { ...sampleData, tickets: [], ticketsAvailability: "unavailable", ticketsError: "SUPPORT_READ_UNAVAILABLE", pagination: undefined,
+      kpis: { ...sampleData.kpis, openTicketsCount: "UNKNOWN", inProgressTicketsCount: "UNKNOWN", resolvedTicketsCount: "UNKNOWN" } };
+    const rendered = text(renderSupportReviews({ data }));
+    expect(rendered).toContain("SUPPORT_READ_UNAVAILABLE");
+    expect(rendered).toContain("UNKNOWN");
+    expect(rendered).not.toContain("No support tickets match");
+    expect(data.pendingReviews).toEqual(sampleData.pendingReviews);
+  });
+
+  it("renders Module 09 header and verified platform owner email", () => {
     const tree = renderSupportReviews({ data: sampleData });
     const renderedText = text(tree);
 
     expect(renderedText).toContain("Module 09");
     expect(renderedText).toContain("velorahelperai@gmail.com");
+    // Ensure support@velora.ai is NOT present
+    expect(renderedText).not.toContain("support@velora.ai");
   });
 
-  it("renders 4 KPI summary cards with pending count and SLA", () => {
+  it("renders 4 KPI summary cards with open tickets and UNCONFIGURED SLA", () => {
     const tree = renderSupportReviews({ data: sampleData });
     const renderedText = text(tree);
 
-    expect(renderedText).toContain("2");
-    expect(renderedText).toContain("< 4h");
-    expect(renderedText).toContain("WhatsApp & Email");
+    expect(renderedText).toContain("1");
+    // SLA must be UNCONFIGURED
+    expect(renderedText).toContain("UNCONFIGURED");
+    expect(renderedText).not.toContain("< 4h");
   });
 
-  it("renders pending reviews queue with company name, owner email, and contact phone", () => {
+  it("renders support tickets table with ticket number, priority, and company name", () => {
     const tree = renderSupportReviews({ data: sampleData });
     const renderedText = text(tree);
 
+    expect(renderedText).toContain("TICK-908123");
+    expect(renderedText).toContain("Connection timeout on WhatsApp webhook");
     expect(renderedText).toContain("Nizwa Roastery");
-    expect(renderedText).toContain("roaster@example.com");
-    expect(renderedText).toContain("+96898765432");
+    expect(renderedText).toContain("channel");
   });
 
   it("renders customer support code lookup search input", () => {
@@ -164,15 +207,12 @@ describe("Stage E — Module 09: AdminSupportReviews", () => {
     expect(renderedText).toContain("Support Code Lookup");
   });
 
-  it("renders empty state when pending reviews count is 0", () => {
-    const emptyData: AdminSupportOverviewData = {
-      ...sampleData,
-      kpis: { ...sampleData.kpis, pendingReviewsCount: 0 },
-      pendingReviews: [],
-    };
-    const tree = renderSupportReviews({ data: emptyData });
+  it("renders official support channels with dedicated desk marked UNCONFIGURED", () => {
+    const tree = renderSupportReviews({ data: sampleData });
     const renderedText = text(tree);
 
-    expect(renderedText).toContain("لا توجد طلبات مراجعة معلقة حاليًا");
+    expect(renderedText).toContain("WhatsApp Official Support");
+    expect(renderedText).toContain("Dedicated Support Desk");
+    expect(renderedText).toContain("UNCONFIGURED");
   });
 });

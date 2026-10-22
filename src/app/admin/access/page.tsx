@@ -1,8 +1,18 @@
 import type { Metadata } from "next";
-import { AdminAccessPage } from "@/components/app/admin-access";
+import { adminGetPlatformAccessOverview } from "@/lib/tenancy/access-actions";
+import { AdminPlatformAccess } from "@/components/admin/admin-platform-access";
+import { AccessGate } from "@/components/app/access-gate";
 
-export const metadata: Metadata = { title: "Access · Velora Admin" };
+export const metadata: Metadata = {
+  title: "Access Control & Platform Teams · Velora Admin",
+};
 
-export default function Page() {
-  return <AdminAccessPage />;
+export default async function AccessPage() {
+  const result = await adminGetPlatformAccessOverview();
+
+  if (!result.ok) {
+    return <AccessGate code={result.code === "FORBIDDEN" ? "FORBIDDEN" : "UNAVAILABLE"} />;
+  }
+
+  return <AdminPlatformAccess data={result.data} />;
 }

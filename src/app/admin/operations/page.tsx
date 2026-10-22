@@ -8,13 +8,11 @@ export const metadata: Metadata = {
 };
 
 export interface OperationsPageProps {
-  searchParams?:
-    | Promise<{
-        correlationId?: string;
-        service?: string;
-        severity?: string;
-      }>
-    ;
+  searchParams?: Promise<{
+    correlationId?: string;
+    service?: string;
+    severity?: string;
+  }>;
 }
 
 export default async function OperationsPage(props: OperationsPageProps) {
