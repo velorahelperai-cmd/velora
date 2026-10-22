@@ -8,6 +8,11 @@
 /docs/
 /supabase/
 /scripts/
+!/scripts/
+/scripts/*
+!/scripts/consolidation/
+/scripts/consolidation/*
+!/scripts/consolidation/guard.mjs
 /.codex/
 /.cursor/
 /output/
