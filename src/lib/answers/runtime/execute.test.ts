@@ -1,6 +1,6 @@
 import {describe,it,expect,vi} from "vitest";
 vi.mock("server-only",()=>({}));
-vi.mock("../config/env",()=>({getSecureProviderKey:()=>null}));
+vi.mock("../config/env",()=>({getSecureProviderKey:()=>null,getGeminiModelId:()=>"gemini-3.8-flash"}));
 import {executeRealAnswer} from "./execute";
 import {priceRealUsage,realModelPricing,reserveRealCost} from "./economics";
 import {safeProviderError} from "./errors";
@@ -24,3 +24,5 @@ describe("sourced real text pricing",()=>{
  it("rejects impossible cache usage",()=>expect(()=>priceRealUsage({promptTokens:1,completionTokens:1,cachedTokens:2,cacheWriteTokens:0,reasoningTokens:0},realModelPricing("gpt-6-luna"))).toThrow("INVALID_PROVIDER_USAGE"));
  it("redacts provider credentials before returning error text",()=>{expect(safeProviderError({message:"key sk-proj-dummysecretvalue123456789 and AQ.dummysecretvalue12345678900000"}).message).not.toContain("dummysecretvalue");});
 });
+
+it('retains accepted provider evidence after storage failure without delivery or retry',async()=>{const db=store();const usage={promptTokens:10,completionTokens:8,cachedTokens:2,cacheWriteTokens:0,reasoningTokens:7,totalTokens:18};const call=vi.fn().mockResolvedValue({status:'success',text:'DO_NOT_DELIVER',usage,actualModelId:'gpt-6-luna',requestId:'synthetic-request',responseId:'synthetic-response',latencyMs:2});vi.mocked(db.settle).mockRejectedValue(Error('synthetic storage unavailable'));const result=await executeRealAnswer({...input,model:'gpt-6-luna'},{store:db,call});expect(result).toMatchObject({ok:false,error:'SETTLEMENT_PENDING_RECONCILIATION'});expect(result).not.toHaveProperty('text');expect(call).toHaveBeenCalledTimes(1);expect(db.reserve).toHaveBeenCalledTimes(1);expect(db.settle).toHaveBeenCalledTimes(1);expect(result.attempts[0]).toMatchObject({status:'success',usage,requestId:'synthetic-request',responseId:'synthetic-response',actualModelId:'gpt-6-luna',costUsd:expect.any(Number)});});

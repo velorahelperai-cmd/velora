@@ -8,6 +8,7 @@ import { siteUrl } from "@/lib/auth/site-url";
 import type { EnterpriseWorkspace, EnterpriseResult } from "./contracts";
 import { parseWorkspace, uuid } from "./contracts";
 import { enterpriseLifecycleEnabled } from "./config";
+import { SECOND_BRANCH_DEFERRED, isSecondBranchDeferredError } from "@/lib/tenancy/single-branch-policy";
 
 async function gate(expectedUserId: string, companyId: string, ownerOnly=false) {
   if (!enterpriseLifecycleEnabled()) return {ok:false as const,code:"UNCONFIGURED"};
@@ -23,6 +24,8 @@ async function call(name:string,args:Record<string,unknown>) {
   const rpc=client.rpc as unknown as (name:string,args:Record<string,unknown>)=>PromiseLike<{data:unknown;error:unknown}>;
   const result=await rpc.call(client,name,args);
   if(result.error&&typeof result.error==="object"&&(result.error as Record<string,unknown>).code==="PGRST202")return {ok:false,code:"NOT_INSTALLED"};
+  // Native single-branch scope guard: surface an explicit deferral, not a generic outage.
+  if(isSecondBranchDeferredError(result.error))return {ok:false,code:SECOND_BRANCH_DEFERRED};
   if (result.error||!result.data||typeof result.data!=="object"||Array.isArray(result.data)) return null;
   return result.data as Record<string,unknown>;
 }

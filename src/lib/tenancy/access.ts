@@ -5,7 +5,7 @@ import { setupPathForReturn } from "@/lib/auth/setup-return";
 import { allowedReturnPath, pathAtOrUnder, safeInternalPath, staffInvitationReturnPath } from "@/lib/auth/safe-next";
 import { createClient } from "@/lib/supabase/server";
 import {masterJourneyEnabled} from '@/lib/master-journey/rollout';
-import { unavailablePlatformIdentity, type AccountPlatformIdentity } from "./account-platform-identity";
+import { readAccountPlatformIdentity, unavailablePlatformIdentity, type AccountPlatformIdentity } from "./account-platform-identity";
 import type {
   AccessCode,
   CompanyContext,
@@ -120,6 +120,7 @@ type LoadAuthOk = {
   email: string;
   phone: string;
   identityVerified: boolean;
+  emailConfirmed: boolean;
   isPlatformAdmin: boolean;
   fullName: string;
   supportCode: string;
@@ -161,7 +162,7 @@ const loadAuth = cache(async (): Promise<LoadAuthOk | LoadAuthFail> => {
     const identityVerified = Boolean(user.email_confirmed_at || user.phone_confirmed_at);
     if (!identityVerified) {
       return { ok: true, supabase, userId, email: user.email ?? "", phone: user.phone ?? "",
-        identityVerified: false, isPlatformAdmin: false, fullName: "", supportCode: "", needsProfileName: true };
+        identityVerified: false, emailConfirmed: false, isPlatformAdmin: false, fullName: "", supportCode: "", needsProfileName: true };
     }
     const { data: adminFlag, error: adminError } = await supabase.rpc("is_platform_admin");
     if (adminError) return { ok: false, code: "UNAVAILABLE", supabase };
@@ -211,6 +212,7 @@ const loadAuth = cache(async (): Promise<LoadAuthOk | LoadAuthFail> => {
       email: user.email ?? "",
       phone: user.phone ?? "",
       identityVerified,
+      emailConfirmed: Boolean(user.email_confirmed_at),
       isPlatformAdmin: Boolean(adminFlag),
       fullName,
       supportCode,
@@ -249,6 +251,7 @@ const loadCompanyAccess = cache(async (): Promise<AccessResult> => {
       email,
       phone,
       identityVerified,
+      emailConfirmed,
       isPlatformAdmin,
       fullName,
       supportCode,
@@ -312,6 +315,7 @@ const loadCompanyAccess = cache(async (): Promise<AccessResult> => {
           supportCode,
           needsProfileName,
           identityVerified,
+          emailConfirmed,
           isPlatformAdmin,
           needsCompanyContext: picked.needsContext,
           workspaceChoices: choices,
@@ -341,7 +345,7 @@ const loadCompanyAccess = cache(async (): Promise<AccessResult> => {
         fullName: fullName || member.member_name || "",
         supportCode,
         needsProfileName: (fullName || member.member_name || "").trim().length < 2,
-        emailConfirmed: identityVerified,
+        emailConfirmed,
         identityVerified,
         isPlatformAdmin,
         company: company as CompanyRecord,
@@ -365,14 +369,41 @@ export async function getCompanyAccess(requiredRole?: CompanyRole): Promise<Acce
   if (access.ok && requiredRole === "owner" && access.context.membership
     && access.context.membership.role !== "owner") return { ok: false, code: "FORBIDDEN" };
   return access;
+
+}
+
+export async function requirePlatformOwner(): Promise<AccessResult> {
+  try {
+    const auth = await loadAuth();
+    if (!auth.ok) return { ok: false, code: auth.code, ...(auth.sessionExpired ? { sessionExpired: true as const } : {}) };
+    if (!auth.identityVerified || !auth.emailConfirmed) return { ok: false, code: "UNVERIFIED" };
+    const email = (auth.email || "").trim().toLowerCase();
+    if (email !== "velorahelperai@gmail.com") return { ok: false, code: "FORBIDDEN" };
+    const platform = await readAccountPlatformIdentity(auth.userId);
+    if (platform.unavailable) return { ok: false, code: "UNAVAILABLE" };
+    if (platform.role !== "owner" || platform.status !== "active") return { ok: false, code: "FORBIDDEN" };
+    return {
+      ok: true,
+      context: emptyContext({
+        userId: auth.userId,
+        email: auth.email,
+        phone: auth.phone,
+        fullName: auth.fullName,
+        supportCode: auth.supportCode,
+        needsProfileName: auth.needsProfileName,
+        identityVerified: auth.identityVerified,
+        isPlatformAdmin: true,
+      }),
+    };
+  } catch {
+    return { ok: false, code: "UNAVAILABLE" };
+  }
 }
 
 export async function requirePlatformAdmin(): Promise<AccessResult> {
-  const access = await requireVerifiedUser();
-  if (!access.ok) return access;
-  if (!access.context.isPlatformAdmin) return { ok: false, code: "FORBIDDEN" };
-  return access;
+  return requirePlatformOwner();
 }
+
 
 export async function requireVerifiedUser(): Promise<AccessResult> {
   try {
@@ -422,6 +453,12 @@ export function pathForAccess(
     return `/app?next=${encodeURIComponent(safeInternalPath(preferredNext, "/app"))}`;
   }
   if (result.context.isPlatformAdmin) {
+    if (preferredPath && pathAtOrUnder(preferredPath, "/admin")) {
+      const isOwner = result.context.email?.trim().toLowerCase() === "velorahelperai@gmail.com";
+      if (!isOwner) {
+        return result.context.company ? "/app" : "/access?code=FORBIDDEN";
+      }
+    }
     return allowedReturnPath(preferredNext, {
       isPlatformAdmin: true,
       hasCompany: Boolean(result.context.company),

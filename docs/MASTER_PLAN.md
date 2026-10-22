@@ -55,6 +55,16 @@ Separate compact history remains pinned: exact reference libfile_da9415becb7c819
 
 User confirmation: Sentinel_f26d91dcf9508191be1e20d8047cf4b1. Use the question “كم شخصًا يعمل في نشاطك إجمالًا؟” for the total business workforce across all branches. This count determines only the persona badge: 1–3 Noura, 4–10 Lina, more than 10 Dana (both 11–25 and more than 25). It is not a count of licensed Velora users, and no new mandatory seat-count question is authorized. Per-branch licensed permissions remain owner + 2 employees for Standard/basic, owner + 4 employees for Premium. Team-question scope is now settled; do not reopen it. Preserve the already approved sector list without another question round. This updates documentation only; code, tests and Cursor dispatch remain unchanged. Image approval is still pending.
 
+## Single-branch current scope & explicit multi-branch deferral — 2026-10-21
+
+- **Current Scope**: Velora currently operates strictly with **one branch per business (activity)**.
+- **Multi-branch Support Explicitly Deferred**: Multi-branch support is formally deferred to a post-launch phase. Existing multi-branch database structures, branch columns, enterprise isolation, permissions, and tables are preserved intact and must not be deleted, stripped, or weakened.
+- **Data Integrity & Non-Conversion**: Existing branch records, historical multi-branch test fixtures, and company data are never auto-converted, merged, re-parented, or deleted.
+- **Enforcement & User Transparency**:
+  - Creation of a second or additional active/setup branch for an existing company is blocked at the server/RPC/action boundary with explicit user-facing notice (`SECOND_BRANCH_DEFERRED`).
+  - Native trigger guard `private.es02_single_branch_guard` in migration `20261020150000_es02_single_branch_scope.sql` ensures database-level enforcement without disrupting tenant isolation or existing unit test mocks.
+  - Multi-branch completion must not be claimed; the application remains truthfully scoped to single-branch operational readiness.
+
 ## Current onboarding decision replacement — 2026-10-19, 19:49 UTC
 
 Authority: revised specification Sentinel_2a5162463d348191b6c800ddb7126bd5 (19:48 UTC), explicitly confirmed as a decision by Sentinel_1d40f7cdfec48191afe89eb9fc132753 (19:49 UTC). This supersedes only the earlier recommendation principle/mapping proposal, deferred website-learning quota proposal, and campaign balance currency. It does not advance the ES02 stage or change the verified foundation.

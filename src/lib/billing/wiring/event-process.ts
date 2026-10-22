@@ -3,6 +3,7 @@
  * Preserves RPC semantic outcomes — never collapse review into settled/granted.
  */
 
+import { logPaymobSandboxEvent } from "@/lib/billing/paymob/intention";
 import { buildPaymobHmacSettlementEvidence } from "@/lib/billing/wiring/settlement-bridge";
 
 export type StoredProviderEvent = {
@@ -66,12 +67,36 @@ export async function processStoredPaymobEvent(input: {
   event: StoredProviderEvent;
 }): Promise<ProcessEventResult> {
   if (input.event.eventStatus === "pending") {
+    logPaymobSandboxEvent({
+      stage: "settlement",
+      code: "skipped_pending",
+      orderId: input.event.orderId,
+      paymentAttemptId: input.event.paymentAttemptId,
+      providerTransactionId: input.event.providerTransactionId,
+      specialReference: input.event.specialReference,
+    });
     return { ok: true, outcome: "skipped_pending" };
   }
   if (!["success","refunded","voided"].includes(input.event.eventStatus)) {
+    logPaymobSandboxEvent({
+      stage: "settlement",
+      code: "skipped_failed",
+      orderId: input.event.orderId,
+      paymentAttemptId: input.event.paymentAttemptId,
+      providerTransactionId: input.event.providerTransactionId,
+      specialReference: input.event.specialReference,
+    });
     return { ok: true, outcome: "skipped_failed" };
   }
   if (!input.deps.settleEnabled) {
+    logPaymobSandboxEvent({
+      stage: "settlement",
+      code: "settle_disabled",
+      orderId: input.event.orderId,
+      paymentAttemptId: input.event.paymentAttemptId,
+      providerTransactionId: input.event.providerTransactionId,
+      specialReference: input.event.specialReference,
+    });
     return { ok: true, outcome: "settle_disabled" };
   }
 
@@ -94,18 +119,58 @@ export async function processStoredPaymobEvent(input: {
       settled.code === "idempotent_replay" ||
       settled.code === "already_settled"
     ) {
+      logPaymobSandboxEvent({
+        stage: "settlement",
+        code: "idempotent_replay",
+        orderId: input.event.orderId,
+        paymentAttemptId: input.event.paymentAttemptId,
+        providerTransactionId: input.event.providerTransactionId,
+        specialReference: input.event.specialReference,
+      });
       return { ok: true, outcome: "idempotent_replay" };
     }
     if (settled.code === "duplicate_collection_review") {
+      logPaymobSandboxEvent({
+        stage: "settlement",
+        code: "duplicate_collection_review",
+        orderId: input.event.orderId,
+        paymentAttemptId: input.event.paymentAttemptId,
+        providerTransactionId: input.event.providerTransactionId,
+        specialReference: input.event.specialReference,
+      });
       // Fail-closed reporting if a port surfaces review as error code.
       return { ok: true, outcome: "duplicate_collection_review" };
     }
+    logPaymobSandboxEvent({
+      stage: "settlement",
+      code: settled.code,
+      orderId: input.event.orderId,
+      paymentAttemptId: input.event.paymentAttemptId,
+      providerTransactionId: input.event.providerTransactionId,
+      specialReference: input.event.specialReference,
+    });
     return { ok: false, code: settled.code };
   }
 
   const mapped = mapSuccessfulSettleOutcome(settled.outcome);
   if (!mapped) {
+    logPaymobSandboxEvent({
+      stage: "settlement",
+      code: `unknown_settle_outcome:${settled.outcome}`,
+      orderId: input.event.orderId,
+      paymentAttemptId: input.event.paymentAttemptId,
+      providerTransactionId: input.event.providerTransactionId,
+      specialReference: input.event.specialReference,
+    });
     return { ok: false, code: `unknown_settle_outcome:${settled.outcome}` };
   }
+  logPaymobSandboxEvent({
+    stage: "settlement",
+    code: mapped,
+    orderId: input.event.orderId,
+    paymentAttemptId: input.event.paymentAttemptId,
+    providerTransactionId: input.event.providerTransactionId,
+    specialReference: input.event.specialReference,
+  });
   return { ok: true, outcome: mapped };
 }

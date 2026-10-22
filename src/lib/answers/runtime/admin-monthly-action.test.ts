@@ -1,0 +1,15 @@
+import {beforeEach,expect,it,vi} from 'vitest';
+const m=vi.hoisted(()=>({gate:vi.fn(),admin:vi.fn(),from:vi.fn(),claims:vi.fn(),owner:vi.fn()}));
+vi.mock('@/lib/tenancy/access',()=>({requireVerifiedUser:m.gate}));
+vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({rpc:m.owner,auth:{getClaims:m.claims}})}));
+vi.mock('@/lib/supabase/admin',()=>({createAdminClient:m.admin}));
+vi.mock('@/lib/answers/context',()=>({loadApprovedAnswerContext:vi.fn(),verifyAnswerCitationsStillValid:vi.fn()}));
+vi.mock('@/lib/answers/runtime/execute',()=>({executeRealAnswer:vi.fn()}));
+import * as actions from '@/lib/answers/runtime/admin-actions';
+const company='a0000000-0000-4000-8000-000000000001';
+type Read=(input:{companyId:string;month:string})=>Promise<{ok:boolean;error?:string;data?:{attempts:number;companyId:string}}>;
+const action=()=> (actions as unknown as {readAdminMonthlyAIUsage?:Read}).readAdminMonthlyAIUsage;
+beforeEach(()=>{vi.resetAllMocks();m.gate.mockResolvedValue({ok:true,context:{userId:company}});m.owner.mockResolvedValue({data:true,error:null});m.claims.mockResolvedValue({data:{claims:{session_id:'synthetic-session'}},error:null});const q={eq:()=>q,gte:()=>q,lt:()=>q,order:()=>q,range:async()=>({data:[],error:null})};m.from.mockReturnValue({select:()=>q});m.admin.mockReturnValue({from:m.from});});
+it('does not create a privileged read client when verified actor fails',async()=>{const read=action();expect(read).toBeTypeOf('function');if(!read)return;m.gate.mockResolvedValue({ok:false,code:'UNAUTHENTICATED'});expect(await read({companyId:company,month:'2026-01'})).toMatchObject({ok:false});expect(m.admin).not.toHaveBeenCalled();});
+it('returns the selected company report after existing platform-owner gate',async()=>{const read=action();expect(read).toBeTypeOf('function');if(!read)return;expect(await read({companyId:company,month:'2026-01'})).toMatchObject({ok:true,data:{companyId:company,attempts:0}});expect(m.owner).toHaveBeenCalledWith('is_platform_owner');expect(m.from).toHaveBeenCalledWith('ai_usage_ledger');});
+it('discards report if actor/session authorization changes during read',async()=>{const read=action();expect(read).toBeTypeOf('function');if(!read)return;m.gate.mockResolvedValueOnce({ok:true,context:{userId:company}}).mockResolvedValueOnce({ok:false,code:'UNAUTHENTICATED'});expect(await read({companyId:company,month:'2026-01'})).toMatchObject({ok:false,error:'ACCESS_CHANGED_AFTER_READ'});});

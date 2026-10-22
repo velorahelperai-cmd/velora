@@ -95,7 +95,18 @@ export type AdminCompany = {
   updated_at?: string;
 };
 
+export type AdminCompanyBranch = {
+  id: string;
+  company_id: string;
+  name: string;
+  timezone: string;
+  status: string;
+  is_primary: boolean;
+  created_at?: string;
+};
+
 type Props = {
+  initialBranches?: AdminCompanyBranch[];
   returnTo?: string;
   initialCompany: AdminCompany;
   initialMembers: AdminMember[];
@@ -128,6 +139,7 @@ export function AdminCompanyDetail({
   initialMembers,
   initialAudits,
   initialKnowledge,
+  initialBranches,
   initialReview = null,
   initialWhatsappLink = null,
   whatsappLinkLoadFailed = false,
@@ -139,6 +151,7 @@ export function AdminCompanyDetail({
   const router = useRouter();
   const { busy, run } = useAction();
   const [company, setCompany] = useState(initialCompany);
+  const [branches] = useState<AdminCompanyBranch[]>(initialBranches ?? []);
   const [members, setMembers] = useState(initialMembers);
   const [audits, setAudits] = useState(initialAudits);
   const [knowledge, setKnowledge] = useState(initialKnowledge);
@@ -389,6 +402,122 @@ export function AdminCompanyDetail({
         </form>
         <p className="mt-3 text-xs text-[var(--service-muted)]">{copy.admin.whatsappNote}</p>
       </section>
+      {/* Module 02: Enterprise Branches & Operating Hours */}
+      <section className="mt-6 rounded-3xl border border-[var(--service-line)] bg-[var(--service-surface)] p-5 sm:p-6 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--service-line)] pb-3">
+          <div>
+            <h2 className="text-lg font-bold text-[var(--service-ink)]">
+              فروع المنشأة ومواعيد العمل (Branches & Schedule)
+            </h2>
+            <p className="mt-1 text-xs text-[var(--service-muted)]">
+              عزل الفروع التشغيلية، المناطق الزمنية، ومواعيد العمل المعتمدة لكل فرع.
+            </p>
+          </div>
+          <span className="rounded-full bg-[var(--service-subtle)] px-2.5 py-1 text-xs font-semibold text-[var(--service-accent)] border border-[var(--service-line)]">
+            {branches.length > 0 ? `${branches.length} فرع مسجل` : "الفرع الرئيسي التلقائي"}
+          </span>
+        </div>
+
+        {branches.length > 0 ? (
+          <div className="mt-4 divide-y divide-[var(--service-line)] border border-[var(--service-line)] rounded-2xl overflow-hidden">
+            {branches.map((b) => (
+              <div key={b.id} className="flex flex-wrap items-center justify-between gap-4 p-4 bg-[var(--service-canvas)]/40 hover:bg-[var(--service-canvas)] transition">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-sm text-[var(--service-ink)]">{b.name}</span>
+                    {b.is_primary && (
+                      <span className="rounded-md bg-[var(--service-accent)]/10 px-2 py-0.5 text-[11px] font-bold text-[var(--service-accent)] border border-[var(--service-accent)]/20">
+                        الفرع الرئيسي
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-1 flex items-center gap-3 text-xs text-[var(--service-muted)]">
+                    <span>المنطقة الزمنية: {b.timezone || "UTC"}</span>
+                    <span>•</span>
+                    <span className="font-mono text-[11px]">{b.id.slice(0, 16)}...</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                    b.status === "active"
+                      ? "bg-[var(--service-success)]/10 text-[var(--service-success)] border border-[var(--service-success)]/20"
+                      : "bg-amber-500/10 text-amber-700 border border-amber-500/20"
+                  }`}>
+                    {b.status === "active" ? "نشط" : b.status === "setup" ? "قيد الإعداد" : b.status}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="mt-4 rounded-2xl border border-[var(--service-line)] bg-[var(--service-canvas)]/30 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-sm text-[var(--service-ink)]">{company.display_name}</span>
+                  <span className="rounded-md bg-[var(--service-accent)]/10 px-2 py-0.5 text-[11px] font-bold text-[var(--service-accent)]">
+                    الفرع الأساسي
+                  </span>
+                </div>
+                <div className="mt-1 text-xs text-[var(--service-muted)]">
+                  ساعات العمل: {company.hours || "غير محددة"} • المدينة: {company.city || "—"}
+                </div>
+              </div>
+              <span className="rounded-full bg-[var(--service-success)]/10 px-2.5 py-0.5 text-xs font-semibold text-[var(--service-success)]">
+                نشط
+              </span>
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* Module 05: Assistant Persona Card */}
+      <section className="mt-6 rounded-3xl border border-[var(--service-line)] bg-[var(--service-surface)] p-5 sm:p-6 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--service-line)] pb-3">
+          <div>
+            <h2 className="text-lg font-bold text-[var(--service-ink)]">
+              المساعد الذكي والتخصيص (Assistant Persona)
+            </h2>
+            <p className="mt-1 text-xs text-[var(--service-muted)]">
+              الشخصية المفعلة للمنشأة، لغات الرد، ونموذج الاستجابة المعتمد.
+            </p>
+          </div>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-800 border border-emerald-200">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" />
+            Gemini 3.8 Flash Engine
+          </span>
+        </div>
+
+        <div className="mt-4 grid gap-4 sm:grid-cols-3">
+          <div className="rounded-2xl border border-[var(--service-line)] bg-[var(--service-canvas)]/40 p-4">
+            <div className="text-xs font-medium text-[var(--service-muted)]">شخصية المساعد المعتمدة</div>
+            <div className="mt-1 flex items-center gap-2">
+              <span className="text-base font-bold text-[var(--service-ink)]">
+                {company.business_type === "restaurant" ? "نورة (Noura)" : "لينا (Lina)"}
+              </span>
+              <span className="rounded bg-[var(--service-accent-soft)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--service-accent)]">
+                {company.business_type}
+              </span>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-[var(--service-line)] bg-[var(--service-canvas)]/40 p-4">
+            <div className="text-xs font-medium text-[var(--service-muted)]">لغات الرد المعتمدة</div>
+            <div className="mt-1 text-base font-bold text-[var(--service-ink)]">
+              {company.reply_language === "both" ? "عربي وإنجليزي (Bilingual)" : company.reply_language === "ar" ? "العربية فقط" : "الإنجليزية فقط"}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-[var(--service-line)] bg-[var(--service-canvas)]/40 p-4">
+            <div className="text-xs font-medium text-[var(--service-muted)]">ساعات العمل التشغيلية</div>
+            <div className="mt-1 text-sm font-semibold text-[var(--service-ink)] truncate">
+              {company.hours || "على مدار الساعة (24/7)"}
+            </div>
+          </div>
+        </div>
+      </section>
+
 
         <section className="mt-6 rounded-3xl border border-[var(--service-line)] bg-[var(--service-surface)] p-5 sm:p-6 shadow-sm">
           <h2 className="text-lg font-bold text-[var(--service-ink)]">{copy.admin.whatsappLink}</h2>

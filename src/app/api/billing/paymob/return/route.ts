@@ -3,6 +3,7 @@ import {
   redirectionQueryGrantsEntitlement,
 } from "@/lib/billing/wiring/return-status";
 import { loadBillingReturnRow } from "@/lib/billing/wiring/return-load";
+import { logPaymobSandboxEvent } from "@/lib/billing/paymob/intention";
 import { getCompanyAccess } from "@/lib/tenancy/access";
 
 export const runtime = "nodejs";
@@ -26,6 +27,11 @@ export async function GET(request: Request) {
 
   const access = await getCompanyAccess();
   if (!access.ok || !access.context.company) {
+    logPaymobSandboxEvent({
+      stage: "return",
+      code: "unauthorized",
+      status: 401,
+    });
     return Response.json(
       { kind: "forbidden", messageKey: "order_not_found", grantsEntitlement: false },
       { status: 401 },
@@ -34,6 +40,11 @@ export async function GET(request: Request) {
 
   const requestCompanyId = access.context.company.id;
   if (!orderId) {
+    logPaymobSandboxEvent({
+      stage: "return",
+      code: "missing_order_id",
+      status: 400,
+    });
     return Response.json(
       { kind: "forbidden", messageKey: "order_not_found", grantsEntitlement: false },
       { status: 400 },
@@ -42,6 +53,12 @@ export async function GET(request: Request) {
 
   const row = await loadBillingReturnRow({ requestCompanyId, orderId });
   const display = mapBillingReturnDisplay({ requestCompanyId, row });
+  logPaymobSandboxEvent({
+    stage: "return",
+    code: display.kind,
+    orderId: display.kind === "forbidden" ? undefined : row?.orderId,
+    status: 200,
+  });
 
   return Response.json({
     ...display,

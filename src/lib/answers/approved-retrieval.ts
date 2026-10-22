@@ -6,16 +6,50 @@ export type ClaimedKnowledgeQuery = { question: string; jobId: string; claimToke
 type RpcClient = { rpc: (name: string, args: Record<string, unknown>) => PromiseLike<{ data: unknown; error: unknown }> };
 const object = (value: unknown): Record<string, unknown> | null => value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
 const personaForPlan: Record<string, AnswerPersona> = { noor_basic: "noura", noor_premium: "noura", lina_basic: "lina", lina_premium: "lina", dana_basic: "dana", dana_premium: "dana" };
-export type ClaimedAnswerProfile = { persona: AnswerPersona; planVersionId: string; companyId: string };
+export type NativePlanClaimedAnswerProfile = {
+  authority?: "native_plan";
+  persona: AnswerPersona;
+  planVersionId: string;
+  companyId: string;
+};
+export type Es02ClaimedAnswerProfile = {
+  authority: "es02";
+  persona: AnswerPersona;
+  companyId: string;
+  orderId: string;
+  branchId: string;
+  slotIndex: number;
+  paidFingerprint: string;
+};
+export type ClaimedAnswerProfile = NativePlanClaimedAnswerProfile | Es02ClaimedAnswerProfile;
+const nativeUuid = (v: unknown): v is string => typeof v === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+const es02ProfileKeys = ["es02_order_id", "es02_branch_id", "es02_slot_index", "es02_paid_fingerprint"] as const;
 
-/** Reads no profile text or display name: only the canonical, paid server plan identity. */
+/**
+ * Only the claimed native RPC establishes authority. ES02 carries its immutable
+ * paid order/branch/slot snapshot explicitly; an order UUID is never a plan UUID.
+ * A browser persona/name or a partly mixed response cannot establish either path.
+ */
 export async function loadClaimedAnswerProfile(companyId: string, binding: Pick<ClaimedKnowledgeQuery, "jobId" | "claimToken">, client: RpcClient): Promise<ClaimedAnswerProfile | null> {
   try {
     const { data, error } = await client.rpc("whatsapp_read_answer_profile", { p_company_id: companyId, p_job_id: binding.jobId, p_claim_token: binding.claimToken });
     const result = object(data);
-    if (error || result?.ok !== true || result.company_id !== companyId || result.job_id !== binding.jobId ||
-        typeof result.plan_code !== "string" || !Object.hasOwn(personaForPlan, result.plan_code) || result.persona !== personaForPlan[result.plan_code] ||
-        typeof result.plan_version_id !== "string" || !result.plan_version_id.trim()) return null;
+    if (error || result?.ok !== true || result.company_id !== companyId || result.job_id !== binding.jobId) return null;
+    if (result.authority === "es02") {
+      if (result.plan_version_id != null || result.plan_code != null
+        || !["noura", "lina", "dana"].includes(String(result.persona))
+        || !nativeUuid(result.es02_order_id) || !nativeUuid(result.es02_branch_id)
+        || !Number.isSafeInteger(result.es02_slot_index) || Number(result.es02_slot_index) < 0 || Number(result.es02_slot_index) > 31
+        || typeof result.es02_paid_fingerprint !== "string" || !/^[0-9a-f]{64}$/.test(result.es02_paid_fingerprint)) return null;
+      return {
+        authority: "es02", companyId, persona: result.persona as AnswerPersona,
+        orderId: result.es02_order_id, branchId: result.es02_branch_id,
+        slotIndex: Number(result.es02_slot_index), paidFingerprint: result.es02_paid_fingerprint,
+      };
+    }
+    if ((result.authority !== undefined && result.authority !== "native_plan") || es02ProfileKeys.some(key => result[key] != null)
+      || typeof result.plan_code !== "string" || !Object.hasOwn(personaForPlan, result.plan_code) || result.persona !== personaForPlan[result.plan_code]
+      || typeof result.plan_version_id !== "string" || !result.plan_version_id.trim()) return null;
     return { persona: personaForPlan[result.plan_code], planVersionId: result.plan_version_id, companyId };
   } catch { return null; }
 }

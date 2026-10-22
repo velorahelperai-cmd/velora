@@ -1,0 +1,146 @@
+{
+  "environment": "existing_local_fixture_only",
+  "functions": [
+    {
+      "acl": "{postgres=X/postgres}",
+      "hash": "f823ca2420e388d4d03f88d0f650169e",
+      "owner": "postgres",
+      "config": [
+        "search_path=\"\""
+      ],
+      "definer": true,
+      "signature": "private.es02_b3_current_binding(uuid,uuid,uuid,text)"
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "hash": "3206dfeb2548429bc536fee3d0ee0a25",
+      "owner": "postgres",
+      "config": [
+        "search_path=\"\""
+      ],
+      "definer": false,
+      "signature": "private.es02_b3_pin_matches(private.es02_b3_connection_attempts,jsonb)"
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "hash": "fd5fce85731f09329b0fbfb3dcf31098",
+      "owner": "postgres",
+      "config": [
+        "search_path=\"\""
+      ],
+      "definer": true,
+      "signature": "private.es02_b3_project(uuid,uuid,uuid,text)"
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "hash": "ece63b808ad811a89f22fd28cb25399f",
+      "owner": "postgres",
+      "config": [
+        "search_path=\"\""
+      ],
+      "definer": true,
+      "signature": "private.wa_frame_pre_meta_policy(uuid,uuid)"
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "hash": "c91188d4dfb33979efbe90db5f2aeeee",
+      "owner": "postgres",
+      "config": [
+        "search_path=\"\""
+      ],
+      "definer": true,
+      "signature": "private.whatsapp_answer_profile(uuid,uuid)"
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "hash": "eb043ea32f66863805aba475d8190b3e",
+      "owner": "postgres",
+      "config": [
+        "search_path=\"\""
+      ],
+      "definer": true,
+      "signature": "public.ai_start_whatsapp_attempt(uuid,uuid)"
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "hash": "1ae5ded598580b7379bf71ac09bc9bc4",
+      "owner": "postgres",
+      "config": [
+        "search_path=\"\""
+      ],
+      "definer": true,
+      "signature": "public.billing_finalize_automated_usage(uuid,uuid)"
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "hash": "a67a2bd638c257b3cb23f44d42015afc",
+      "owner": "postgres",
+      "config": [
+        "search_path=\"\""
+      ],
+      "definer": true,
+      "signature": "public.billing_load_worker_frame(uuid,uuid)"
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "hash": "b8d5cf04fecc2de9bedcf8137de4f4b9",
+      "owner": "postgres",
+      "config": [
+        "search_path=\"\""
+      ],
+      "definer": true,
+      "signature": "public.create_whatsapp_assistant_send_intent(text,uuid,text,text,integer,uuid,bigint)"
+    },
+    {
+      "acl": "{postgres=X/postgres,authenticated=X/postgres}",
+      "hash": "86a70b98cb11a9dcfd8669617eb4f60e",
+      "owner": "postgres",
+      "config": [
+        "search_path=\"\""
+      ],
+      "definer": true,
+      "signature": "public.es02_reconcile_activation_readiness(uuid,uuid)"
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "hash": "b800b6420711dcb050dd8f7b858f52e6",
+      "owner": "postgres",
+      "config": [
+        "search_path=\"\""
+      ],
+      "definer": true,
+      "signature": "public.whatsapp_claim_assistant_job_send(uuid,uuid)"
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "hash": "88e06bb8fdd5091ad12106814ff7c370",
+      "owner": "postgres",
+      "config": [
+        "search_path=\"\"",
+        "jit=off"
+      ],
+      "definer": true,
+      "signature": "public.whatsapp_reserve_job_usage(uuid,uuid)"
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "hash": "5af35074c8ae6df08cc9ed1551057935",
+      "owner": "postgres",
+      "config": [
+        "search_path=\"\""
+      ],
+      "definer": true,
+      "signature": "public.whatsapp_retrieve_approved_knowledge(uuid,uuid,uuid,text)"
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "hash": "ae04a08e8d81adcad51b1b52efa07632",
+      "owner": "postgres",
+      "config": [
+        "search_path=\"\""
+      ],
+      "definer": true,
+      "signature": "public.whatsapp_stage_job_reply(uuid,uuid,uuid,jsonb)"
+    }
+  ]
+}

@@ -1,3 +1,4 @@
+// General recovery outcomes use synthetic Live scope; hosted Test never invokes settlement.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
@@ -39,15 +40,16 @@ function successSummary() {
     is_standalone_payment: true };
 }
 beforeEach(() => {
-  state.environment = state.orderEnvironment = "test"; state.status = "success"; state.summary = successSummary();
+  state.environment = state.orderEnvironment = "live"; state.status = "success"; state.summary = successSummary();
   state.rpc.mockReset().mockResolvedValue({ data: { ok: true, outcome: "granted" }, error: null });
-  vi.stubEnv("BILLING_PAYMOB_SETTLE_ENABLED", "true"); vi.stubEnv("BILLING_PAYMOB_LIVE_ENABLED", "false");
+  vi.stubEnv("BILLING_PAYMOB_SETTLE_ENABLED", "true"); vi.stubEnv("BILLING_PAYMOB_LIVE_ENABLED", "true");
   vi.stubEnv("PAYMOB_OMR_CONVERSION_VERIFIED", "true"); vi.stubEnv("PAYMOB_OMR_UNITS_PER_OMR", "1000");
 });
 afterEach(() => vi.unstubAllEnvs());
 
 describe("durable P1/P2 receipt recovery", () => {
   it("blocks Live recovery until the explicit Live flag is enabled", async () => {
+    vi.stubEnv("BILLING_PAYMOB_LIVE_ENABLED", "false");
     state.environment = state.orderEnvironment = "live";
     await processOwnerOrderEvents("tenant", "order");
     expect(await reconcileStoredBillingEvent("event")).toEqual({ kind: "blocked", code: "live_disabled" });
@@ -82,7 +84,7 @@ describe("durable P1/P2 receipt recovery", () => {
     expect(state.rpc).not.toHaveBeenCalled();
   });
   it("refuses a stored receipt whose environment differs from the order", async () => {
-    state.environment = "live"; vi.stubEnv("BILLING_PAYMOB_LIVE_ENABLED", "true");
+    state.environment = "test"; vi.stubEnv("BILLING_PAYMOB_LIVE_ENABLED", "true");
     await processOwnerOrderEvents("tenant", "order");
     expect(await reconcileStoredBillingEvent("event")).toEqual({ kind: "review", code: "provider_scope_binding_mismatch" });
     expect(state.rpc).not.toHaveBeenCalled();
@@ -92,3 +94,5 @@ describe("durable P1/P2 receipt recovery", () => {
     expect(await reconcileStoredBillingEvent("event")).toEqual({ kind: "review", code });
   });
 });
+
+it("durable Test recovery is blocked permanently without invoking entitlement RPC",async()=>{state.environment=state.orderEnvironment="test";expect(await reconcileStoredBillingEvent("event")).toEqual({kind:"blocked",code:"hosted_test_no_entitlement"});expect(state.rpc).not.toHaveBeenCalled();});

@@ -8,6 +8,8 @@ const f = vi.hoisted(() => ({
   effects: [] as Array<() => void>,
   liveUser: "user-a" as string | null,
   liveBoundary: "fp-a" as string | null,
+  status: "ready",
+  locale: "en" as "en" | "ar",
   logout: vi.fn(),
   publishLogout: vi.fn(),
   publishQuarantine: vi.fn(),
@@ -29,8 +31,9 @@ vi.mock("react", async () => {
     ...actual,
     useId: () => "menu",
     useContext: () => ({
-      status: "ready",
-      identity: { userId: "user-a", fullName: "Synthetic", email: "synthetic@example.invalid" },
+      status: f.status,
+      identity: f.liveUser ? { userId: f.liveUser, fullName: f.liveUser === "user-a" ? "Synthetic" : "Second account", email: "synthetic@example.invalid" } : null,
+      refresh: f.refresh,
       boundaryFingerprint: f.liveBoundary,
       clear: f.clear,
       lock: f.lock,
@@ -76,7 +79,7 @@ vi.mock("@/lib/auth/session-context", () => ({
   subscribeSessionContext: vi.fn(),
 }));
 vi.mock("@/lib/demo-state", () => ({ emptyBusiness: {}, useDemo: () => ({ locale: "en", update: f.update }) }));
-vi.mock("./ui", () => ({ useAppCopy: () => appCopy("en"), LangSwitch: () => null }));
+vi.mock("./ui", () => ({ useAppCopy: () => appCopy(f.locale), LangSwitch: () => null }));
 vi.mock("@/lib/logging/browser.mjs", () => ({ recordLogoutTransportFailed: vi.fn() }));
 
 import { AccountMenu } from "./account-chrome";
@@ -110,12 +113,53 @@ beforeEach(() => {
   f.effects = [];
   f.liveUser = "user-a";
   f.liveBoundary = "fp-a";
+  f.status = "ready";
+  f.locale = "en";
   f.logout.mockResolvedValue({ ok: true, data: { status: "confirmed" } });
   vi.stubGlobal("document", { addEventListener: vi.fn(), removeEventListener: vi.fn() });
   vi.stubGlobal("window", { location: { assign: f.assign } });
 });
 afterEach(() => {
   for (const s of f.slots) s.cleanup?.();
+});
+
+it.each(["en", "ar"] as const)("keeps pending header quiet and exposes only the resolved account state (%s)", (locale) => {
+  f.locale = locale;
+  f.status = "loading";
+  let tree = render();
+  expect(tree.props["aria-hidden"]).toBe("true");
+  expect(tree.props.children).toBeUndefined();
+  expect(tree.props.className).toContain("min-w-[7rem]");
+  expect(nodes(tree).some(n => n.props.onClick || n.props.href)).toBe(false);
+  f.status = "ready";
+  tree = render();
+  expect(JSON.stringify(tree)).toContain("Synthetic");
+  expect(nodes(tree).some(n => n.props["aria-haspopup"] === "menu")).toBe(true);
+  // A retained identity must never flash while a new boundary is being checked.
+  f.status = "loading";
+  tree = render();
+  expect(JSON.stringify(tree)).not.toContain("Synthetic");
+  f.liveUser = "user-b";
+  f.status = "ready";
+  tree = render();
+  expect(JSON.stringify(tree)).toContain("Second account");
+  expect(JSON.stringify(tree)).not.toContain('"Synthetic"');
+  f.status = "loading";
+  render();
+  f.liveUser = null;
+  f.status = "guest";
+  tree = render();
+  expect(nodes(tree).some(n => n.props.href === "/login")).toBe(true);
+  expect(nodes(tree).some(n => n.props.href === "/signup")).toBe(true);
+  f.status = "loading";
+  render();
+  f.status = "error";
+  tree = render();
+  expect(JSON.stringify(tree)).toContain(appCopy(locale).account.identityError);
+  const retry = nodes(tree).find(n => n.type === "button")!;
+  (retry.props.onClick as () => void)();
+  expect(f.refresh).toHaveBeenCalledOnce();
+  expect(f.logout).not.toHaveBeenCalled();
 });
 
 it("logout locks immediately then confirms server revoke for the captured user", async () => {

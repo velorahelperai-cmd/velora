@@ -365,6 +365,10 @@ export function AccountSessionProvider({
             lock(signal.boundaryFingerprint);
             return;
           }
+          if(broker.code==="UNAUTHENTICATED"){
+            clear();
+            return;
+          }
           setStatusLive("error");
           return;
         }

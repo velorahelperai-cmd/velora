@@ -8,16 +8,22 @@ import { LangSwitch } from "@/components/app/ui";
 import { AccountMenu, useOptionalAccountSession } from "@/components/app/account-chrome";
 import theme from "./admin-theme.module.css";
 import {
+  IconAlert,
   IconBuilding,
-  IconCheckCircle,
   IconChevronLeft,
   IconChevronRight,
   IconCreditCard,
   IconDashboard,
+  IconFileText,
+  IconHeadphones,
+  IconKey,
+  IconLayers,
   IconMenu,
-  IconRocket,
+  IconPulse,
+  IconSettings,
   IconShield,
   IconSparkles,
+  IconTrending,
   IconUsers,
   IconX,
 } from "./admin-icons";
@@ -39,15 +45,24 @@ type NavGroup = {
 export function AdminShell({ children }: { children: ReactNode }) {
   const { locale } = useDemo();
   const pathname = usePathname();
-  const session=useOptionalAccountSession();
-  const teamEditor=session?.status==="ready"&&session.identity?.platformIdentity.role==="owner"&&session.identity.platformIdentity.status==="active"&&!session.identity.platformIdentity.unavailable;
+  const session = useOptionalAccountSession();
+  const teamEditor =
+    session?.status === "ready" &&
+    session.identity?.platformIdentity.role === "owner" &&
+    session.identity.platformIdentity.status === "active" &&
+    !session.identity.platformIdentity.unavailable;
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
-  const closeMobileMenu = () => { setMobileOpen(false); menuButtonRef.current?.focus(); };
+  const closeMobileMenu = () => {
+    setMobileOpen(false);
+    menuButtonRef.current?.focus();
+  };
 
-  useEffect(() => { if (mobileOpen) closeButtonRef.current?.focus(); }, [mobileOpen]);
+  useEffect(() => {
+    if (mobileOpen) closeButtonRef.current?.focus();
+  }, [mobileOpen]);
 
   // Close mobile drawer on route change
   useEffect(() => {
@@ -57,72 +72,160 @@ export function AdminShell({ children }: { children: ReactNode }) {
 
   const isRtl = locale === "ar";
 
+  const isNavActive = (href: string) => {
+    const cleanPath = pathname.split("#")[0];
+    const targetPath = href.split("#")[0];
+    if (targetPath === "/admin") {
+      return cleanPath === "/admin";
+    }
+    return cleanPath.startsWith(targetPath);
+  };
+
   const navItems: NavGroup[] = [
     {
-      group: isRtl ? "لوحة التحكم الرئيسية" : "Main Dashboard",
+      group: isRtl ? "الرئيسية والتشغيل" : "Main & Operations",
       items: [
         {
-          label: isRtl ? "نظرة عامة والذكاء" : "Overview & AI",
+          label: isRtl ? "لوحة المتابعة التنفيذية" : "Executive Dashboard",
           href: "/admin",
           icon: IconDashboard,
           active: pathname === "/admin",
         },
         {
-          label: isRtl ? "الشركات والعملاء" : "Companies & Tenants",
-          href: "/admin#companies",
-          icon: IconBuilding,
-          active: pathname.startsWith("/admin/companies"),
+          label: isRtl ? "مركز العمليات والأعطال" : "Operations Center",
+          href: "/admin/operations",
+          icon: IconAlert,
+          active: isNavActive("/admin/operations"),
+          pill: isRtl ? "قيد الإعداد" : "In Progress",
+          pillColor: "bg-[var(--service-subtle)] text-[var(--service-warning)] border-[var(--service-line)]",
         },
         {
-          label: isRtl ? "الحسابات والمستخدمين" : "Accounts & Users",
-          href: "/admin#accounts",
-          icon: IconUsers,
-          active: false,
-        },
-        {
-          label: isRtl ? "طلبات التوثيق والمراجعة" : "Verification Reviews",
-          href: "/admin#reviews",
-          icon: IconCheckCircle,
-          active: false,
-        },
-        {
-          label: isRtl ? "موجّه الذكاء وسجل التكلفة" : "AI Router & Ledger",
-          href: "/admin/ai",
-          icon: IconSparkles,
-          active: pathname === "/admin/ai",
-          pill: isRtl ? "فعلي" : "Real",
+          label: isRtl ? "جاهزية وصحة المنصة" : "Platform Health",
+          href: "/admin/health",
+          icon: IconPulse,
+          active: isNavActive("/admin/health"),
+          pill: isRtl ? "قيد الإعداد" : "In Progress",
+          pillColor: "bg-[var(--service-subtle)] text-[var(--service-warning)] border-[var(--service-line)]",
         },
       ],
     },
     {
-      group: isRtl ? "الإعدادات والاشتراكات" : "Catalog & Operations",
+      group: isRtl ? "العملاء والخدمات" : "Customers & Services",
       items: [
-        ...(teamEditor?[{label:isRtl?"فرق المنصة الداخلية":"Internal platform teams",href:"/admin/teams",icon:IconUsers,active:pathname.startsWith("/admin/teams")}]:[]),
-        {label:isRtl?"\u0637\u0644\u0628\u0627\u062a \u0627\u0644\u0627\u0634\u062a\u0631\u0627\u0643":"Subscription orders",href:"/admin/billing",icon:IconCreditCard,active:pathname.startsWith("/admin/billing")},
         {
-          label: isRtl ? "كتالوج الاشتراكات" : "Plans Catalog",
+          label: isRtl ? "الشركات والفروع" : "Companies & Branches",
+          href: "/admin/companies",
+          icon: IconBuilding,
+          active:
+            isNavActive("/admin/companies") ||
+            (pathname === "/admin" && typeof window !== "undefined" && window.location.hash === "#companies"),
+        },
+        {
+          label: isRtl ? "الحسابات والمستخدمين" : "Accounts & Users",
+          href: "/admin/accounts",
+          icon: IconUsers,
+          active:
+            isNavActive("/admin/accounts") ||
+            (pathname === "/admin" && typeof window !== "undefined" && window.location.hash === "#accounts"),
+        },
+        {
+          label: isRtl ? "مركز القنوات والربط" : "Channels Hub",
+          href: "/admin/channels",
+          icon: IconLayers,
+          active: isNavActive("/admin/channels"),
+          pill: isRtl ? "قيد الإعداد" : "In Progress",
+          pillColor: "bg-[var(--service-subtle)] text-[var(--service-warning)] border-[var(--service-line)]",
+        },
+        {
+          label: isRtl ? "مساعدو وتشغيل الذكاء" : "AI Assistants & Operations",
+          href: "/admin/ai",
+          icon: IconSparkles,
+          active: isNavActive("/admin/ai"),
+          pill: isRtl ? "فعلي" : "Live",
+          pillColor: "bg-[var(--service-subtle)] text-[var(--service-accent)] border-[var(--service-line)]",
+        },
+      ],
+    },
+    {
+      group: isRtl ? "الاشتراكات والمالية" : "Billing & Finance",
+      items: [
+        {
+          label: isRtl ? "سجل المدفوعات والطلبات" : "Billing & Orders",
+          href: "/admin/billing",
+          icon: IconCreditCard,
+          active: isNavActive("/admin/billing"),
+        },
+        {
+          label: isRtl ? "كتالوج الباقات والأسعار" : "Plans Catalog",
           href: "/admin/catalog",
           icon: IconCreditCard,
-          active: pathname === "/admin/catalog",
+          active: isNavActive("/admin/catalog"),
+        },
+        {
+          label: isRtl ? "التقارير والتحليل المالي" : "Financial Analytics",
+          href: "/admin/analytics",
+          icon: IconTrending,
+          active: isNavActive("/admin/analytics"),
+          pill: isRtl ? "قيد الإعداد" : "In Progress",
+          pillColor: "bg-[var(--service-subtle)] text-[var(--service-warning)] border-[var(--service-line)]",
+        },
+      ],
+    },
+    {
+      group: isRtl ? "الدعم والحوكمة" : "Support & Governance",
+      items: [
+        {
+          label: isRtl ? "تذاكر الدعم والمراجعات" : "Support & Reviews",
+          href: "/admin/support",
+          icon: IconHeadphones,
+          active:
+            isNavActive("/admin/support") ||
+            (pathname === "/admin" && typeof window !== "undefined" && window.location.hash === "#reviews"),
+          pill: isRtl ? "قيد الإعداد" : "In Progress",
+          pillColor: "bg-[var(--service-subtle)] text-[var(--service-warning)] border-[var(--service-line)]",
         },
         {
           label: isRtl ? "الصلاحيات والمشرفين" : "Access & Grants",
           href: "/admin/access",
           icon: IconShield,
-          active: pathname === "/admin/access",
+          active: isNavActive("/admin/access"),
+        },
+        ...(teamEditor
+          ? [
+              {
+                label: isRtl ? "فرق المنصة الداخلية" : "Internal platform teams",
+                href: "/admin/teams",
+                icon: IconUsers,
+                active: isNavActive("/admin/teams"),
+              },
+            ]
+          : []),
+        {
+          label: isRtl ? "سجل التدقيق والامتثال" : "Audit & Compliance",
+          href: "/admin/audit",
+          icon: IconFileText,
+          active: isNavActive("/admin/audit"),
+          pill: isRtl ? "قيد الإعداد" : "In Progress",
+          pillColor: "bg-[var(--service-subtle)] text-[var(--service-warning)] border-[var(--service-line)]",
         },
       ],
     },
     {
-      group: isRtl ? "خارطة الطريق المستقبلية" : "Roadmap",
+      group: isRtl ? "إعدادات المنصة" : "Platform Settings",
       items: [
         {
-          label: isRtl ? "الميزات المؤسسية القادمة" : "Planned Modules",
-          href: "/admin#future",
-          icon: IconRocket,
-          active: false,
-          pill: isRtl ? "قريباً" : "Soon",
-          pillColor: "bg-[var(--service-subtle)] text-[var(--service-accent)] border-[var(--service-line)]",
+          label: isRtl ? "أتمتة وإعدادات النظام" : "Settings & Automations",
+          href: "/admin/settings",
+          icon: IconSettings,
+          active: isNavActive("/admin/settings"),
+          pill: isRtl ? "قيد الإعداد" : "In Progress",
+          pillColor: "bg-[var(--service-subtle)] text-[var(--service-warning)] border-[var(--service-line)]",
+        },
+        {
+          label: isRtl ? "استرداد الوصول والهوية" : "Identity Recovery",
+          href: "/admin/identity-recovery",
+          icon: IconKey,
+          active: isNavActive("/admin/identity-recovery"),
         },
       ],
     },
@@ -136,24 +239,96 @@ export function AdminShell({ children }: { children: ReactNode }) {
     if (pathname.startsWith("/admin/companies")) {
       return [
         { label: isRtl ? "الرئيسية" : "Overview", href: "/admin" },
-        { label: isRtl ? "الشركات" : "Companies", href: "/admin#companies" },
-        { label: isRtl ? "تفاصيل الشركة" : "Company Detail", href: pathname },
+        { label: isRtl ? "الشركات والفروع" : "Companies & Branches", href: "/admin/companies" },
+        ...(pathname !== "/admin/companies"
+          ? [{ label: isRtl ? "تفاصيل الشركة" : "Company Detail", href: pathname }]
+          : []),
       ];
     }
-    if (pathname === "/admin/ai") return [{label:isRtl?"الرئيسية":"Overview",href:"/admin"},{label:isRtl?"تجارب الذكاء وسجل الاستهلاك":"AI trials and usage",href:"/admin/ai"}];
+    if (pathname.startsWith("/admin/operations")) {
+      return [
+        { label: isRtl ? "الرئيسية" : "Overview", href: "/admin" },
+        { label: isRtl ? "مركز العمليات والأعطال" : "Operations Center", href: "/admin/operations" },
+      ];
+    }
+    if (pathname.startsWith("/admin/health")) {
+      return [
+        { label: isRtl ? "الرئيسية" : "Overview", href: "/admin" },
+        { label: isRtl ? "جاهزية وصحة المنصة" : "Platform Health", href: "/admin/health" },
+      ];
+    }
+    if (pathname.startsWith("/admin/accounts")) {
+      return [
+        { label: isRtl ? "الرئيسية" : "Overview", href: "/admin" },
+        { label: isRtl ? "الحسابات والمستخدمين" : "Accounts & Users", href: "/admin/accounts" },
+      ];
+    }
+    if (pathname.startsWith("/admin/channels")) {
+      return [
+        { label: isRtl ? "الرئيسية" : "Overview", href: "/admin" },
+        { label: isRtl ? "مركز القنوات والربط" : "Channels Hub", href: "/admin/channels" },
+      ];
+    }
+    if (pathname === "/admin/ai") {
+      return [
+        { label: isRtl ? "الرئيسية" : "Overview", href: "/admin" },
+        { label: isRtl ? "مساعدو وتشغيل الذكاء" : "AI Assistants & Operations", href: "/admin/ai" },
+      ];
+    }
+    if (pathname.startsWith("/admin/billing")) {
+      return [
+        { label: isRtl ? "الرئيسية" : "Overview", href: "/admin" },
+        { label: isRtl ? "سجل المدفوعات والطلبات" : "Billing & Orders", href: "/admin/billing" },
+      ];
+    }
     if (pathname === "/admin/catalog") {
       return [
         { label: isRtl ? "الرئيسية" : "Overview", href: "/admin" },
-        { label: isRtl ? "كتالوج الاشتراكات" : "Plans Catalog", href: "/admin/catalog" },
+        { label: isRtl ? "كتالوج الباقات والأسعار" : "Plans Catalog", href: "/admin/catalog" },
+      ];
+    }
+    if (pathname.startsWith("/admin/analytics")) {
+      return [
+        { label: isRtl ? "الرئيسية" : "Overview", href: "/admin" },
+        { label: isRtl ? "التحليلات والتقارير" : "Analytics & Reports", href: "/admin/analytics" },
+      ];
+    }
+    if (pathname.startsWith("/admin/support")) {
+      return [
+        { label: isRtl ? "الرئيسية" : "Overview", href: "/admin" },
+        { label: isRtl ? "تذاكر الدعم والمراجعات" : "Support & Reviews", href: "/admin/support" },
       ];
     }
     if (pathname === "/admin/access") {
       return [
         { label: isRtl ? "الرئيسية" : "Overview", href: "/admin" },
-        { label: isRtl ? "الصلاحيات والمشرفين" : "Access Control", href: "/admin/access" },
+        { label: isRtl ? "الصلاحيات والمشرفين" : "Access & Grants", href: "/admin/access" },
       ];
     }
-    if(pathname==="/admin/teams")return [{label:isRtl?"الرئيسية":"Overview",href:"/admin"},{label:isRtl?"فرق المنصة الداخلية":"Internal platform teams",href:"/admin/teams"}];
+    if (pathname.startsWith("/admin/teams")) {
+      return [
+        { label: isRtl ? "الرئيسية" : "Overview", href: "/admin" },
+        { label: isRtl ? "فرق المنصة الداخلية" : "Internal platform teams", href: "/admin/teams" },
+      ];
+    }
+    if (pathname.startsWith("/admin/audit")) {
+      return [
+        { label: isRtl ? "الرئيسية" : "Overview", href: "/admin" },
+        { label: isRtl ? "سجل التدقيق والامتثال" : "Audit & Compliance", href: "/admin/audit" },
+      ];
+    }
+    if (pathname.startsWith("/admin/settings")) {
+      return [
+        { label: isRtl ? "الرئيسية" : "Overview", href: "/admin" },
+        { label: isRtl ? "إعدادات المنصة والأتمتة" : "Settings & Automations", href: "/admin/settings" },
+      ];
+    }
+    if (pathname.startsWith("/admin/identity-recovery")) {
+      return [
+        { label: isRtl ? "الرئيسية" : "Overview", href: "/admin" },
+        { label: isRtl ? "استرداد الوصول والهوية" : "Identity Recovery", href: "/admin/identity-recovery" },
+      ];
+    }
     return [{ label: isRtl ? "لوحة الإدارة" : "Admin", href: "/admin" }];
   };
 
@@ -177,7 +352,12 @@ export function AdminShell({ children }: { children: ReactNode }) {
       <div className="flex flex-1 min-h-screen">
         {/* 🧭 Admin Sidebar */}
         <aside
-          onKeyDown={event => { if (event.key === "Escape" && mobileOpen) { event.preventDefault(); closeMobileMenu(); } }}
+          onKeyDown={(event) => {
+            if (event.key === "Escape" && mobileOpen) {
+              event.preventDefault();
+              closeMobileMenu();
+            }
+          }}
           className={`fixed inset-y-0 z-50 flex-col bg-[var(--service-subtle)] border-[var(--service-line)] transition-all duration-200 ease-in-out ${
             isRtl ? "border-l right-0" : "border-r left-0"
           } ${
@@ -245,7 +425,9 @@ export function AdminShell({ children }: { children: ReactNode }) {
                         onClick={() => {
                           setMobileOpen(false);
                           const hash = item.href.split("#")[1];
-                          if (pathname === "/admin" && hash) window.dispatchEvent(new CustomEvent("velora-admin-tab", {detail:hash}));
+                          if (pathname === "/admin" && hash) {
+                            window.dispatchEvent(new CustomEvent("velora-admin-tab", { detail: hash }));
+                          }
                         }}
                         title={collapsed ? item.label : undefined}
                         className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all group ${
@@ -261,9 +443,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
                               : "text-[var(--service-accent)] group-hover:text-[var(--service-ink)]"
                           }`}
                         />
-                        {!collapsed && (
-                          <span className="flex-1 truncate">{item.label}</span>
-                        )}
+                        {!collapsed && <span className="flex-1 truncate">{item.label}</span>}
                         {!collapsed && item.pill && (
                           <span
                             className={`rounded-full px-2 py-0.5 text-[10px] font-bold border ${
@@ -336,7 +516,10 @@ export function AdminShell({ children }: { children: ReactNode }) {
               </button>
 
               {/* Breadcrumbs */}
-              <nav aria-label="Breadcrumb" className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs sm:text-sm [overflow-wrap:anywhere]">
+              <nav
+                aria-label="Breadcrumb"
+                className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs sm:text-sm [overflow-wrap:anywhere]"
+              >
                 <span className="text-[var(--service-accent)] font-semibold hidden sm:inline">
                   {isRtl ? "لوحة الإدارة" : "Platform Admin"}
                 </span>
@@ -345,9 +528,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
                   <span key={i} className="flex min-w-0 items-center gap-2">
                     {i > 0 && <span className="text-[var(--service-muted)]">/</span>}
                     {i === breadcrumbs.length - 1 ? (
-                      <span className="min-w-0 font-bold text-[var(--service-ink)]">
-                        {crumb.label}
-                      </span>
+                      <span className="min-w-0 font-bold text-[var(--service-ink)]">{crumb.label}</span>
                     ) : (
                       <Link
                         href={crumb.href}
@@ -383,9 +564,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
           </header>
 
           {/* 📄 Main Content Wrapper */}
-          <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-[1400px] w-full mx-auto">
-            {children}
-          </main>
+          <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-[1400px] w-full mx-auto">{children}</main>
         </div>
       </div>
     </div>

@@ -144,19 +144,24 @@ export function SignupPage() {
   const { state, locale } = useDemo();
   const router = useRouter();
   const params = useSearchParams();
-  const accountSession=useOptionalAccountSession();
   const prefillEmail = (params.get("email") || "").trim().toLowerCase();
   const { busy, run } = useAction();
+  const [redirecting, setRedirecting] = useState(false);
+  const navigate = useCallback((path: string) => {
+    // Read the newly admitted Auth cookie through a fresh protected document.
+    setRedirecting(true);
+    window.location.replace(path);
+  }, []);
   const [form, setForm] = useState({ name: "", email: prefillEmail, password: "", confirm: "" });
   const [errors, setErrors] = useState<Partial<Record<"name" | "email" | "password" | "confirm", FieldErrorKey>>>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [diagnostic,setDiagnostic]=useState<unknown>(null);
   const [altNotice, setAltNotice] = useState<string | null>(null);
   const returnTo = safeInternalPath(params.get("next"), "");
-  useAuthenticatedAuthRedirect(returnTo,busy);
+  useAuthenticatedAuthRedirect(returnTo,busy || redirecting,navigate);
   const google = useGoogleAuth(setAltNotice, returnTo || null);
   const dirty = Boolean(form.name || form.email || form.password || form.confirm);
-  useUnsavedWarning(dirty && !busy);
+  useUnsavedWarning(dirty && !busy && !redirecting);
   const planName = landingCopy(locale).plans.find((p) => p.id === state.planInterest)?.name;
   const nameError = useErrorText(errors.name);
   const emailError = useErrorText(errors.email);
@@ -165,7 +170,7 @@ export function SignupPage() {
 
   function submitEmail(e: React.FormEvent) {
     e.preventDefault();
-    if (busy) return;
+    if (busy || redirecting) return;
     const next: typeof errors = {};
     if (form.name.trim().length < 2) next.name = "required";
     if (!isEmail(form.email)) next.email = "email";
@@ -204,10 +209,9 @@ export function SignupPage() {
         return;
       }
       clearPendingSignup();
-      try { await accountSession?.refresh(); } catch { /* Signup is already confirmed. */ }
       const destination = await resolvePostAuthPath(returnTo);
       if (!destination.ok) { setDiagnostic(destination.diagnostic);setFormError(copy.errors.authFailed); return; }
-      router.replace(destination.data.next);router.refresh();
+      navigate(destination.data.next);
     }).catch(() => setFormError(copy.errors.authFailed));
   }
 
@@ -233,10 +237,10 @@ export function SignupPage() {
         </Field>
         <PasswordField label={copy.auth.password} value={form.password} onChange={(v) => setForm({ ...form, password: v })} error={passwordError} hint={copy.auth.passwordHintReal} autoComplete="new-password" />
         <PasswordField label={copy.auth.confirmPasswordSignup} value={form.confirm} onChange={(v) => setForm({ ...form, confirm: v })} error={confirmError} autoComplete="new-password" />
-        <Button type="submit" busy={busy} busyLabel={copy.loading} className="mt-2 w-full min-h-12 text-base font-semibold shadow-sm">{copy.auth.createAccount}</Button>
+        <Button type="submit" busy={busy || redirecting} busyLabel={copy.loading} className="mt-2 w-full min-h-12 text-base font-semibold shadow-sm">{copy.auth.createAccount}</Button>
       </form>
 
-      <GoogleAuthButton busy={busy || google.busy} onGoogle={google.onGoogle} notice={altNotice} />
+      <GoogleAuthButton busy={busy || redirecting || google.busy} onGoogle={google.onGoogle} notice={altNotice} />
     </AuthShell>
   );
 }

@@ -15,6 +15,13 @@ Desktop.ini
 .env.*
 !.env.example
 
+# Share only the canonical execution rule, never other private Cursor metadata.
+!.cursor/
+.cursor/*
+!.cursor/rules/
+.cursor/rules/*
+!.cursor/rules/velora-canonical.mdc
+
 # Dependencies and build (future)
 node_modules/
 dist/
@@ -46,7 +53,7 @@ artifacts/**/*.png
 !artifacts/**/.gitkeep
 
 # Velora private source backup exclusions
-.cursor/
+# Cursor is private except the shared canonical execution rule below.
 .aws/
 .ssh/
 **/credentials*.json
@@ -92,3 +99,9 @@ exports/
 output/
 # Keep the nonsecret setup template available when importing into a new repo.
 !.env.example
+
+!.cursor/
+.cursor/*
+!.cursor/rules/
+.cursor/rules/*
+!.cursor/rules/velora-canonical.mdc

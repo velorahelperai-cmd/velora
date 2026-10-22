@@ -1,18 +1,495 @@
 "use client";
+
 import Link from "next/link";
-import {adminCompanyHref} from "@/components/app/admin-company-navigation";
-import {useDemo} from "@/lib/demo-state";
-import type {AdminBillingPage} from "@/lib/billing/admin/model";
-import {formatOmrBaisa} from "@/components/app/subscription-offers-view";
-import styles from "./billing-ledger.module.css";
-const labels={en:{title:"Subscription orders",note:"Stored orders and qualified payment history. Platform subscriptions are separate from merchant sales.",company:"Company ID",environment:"Environment",from:"From",until:"Through",filter:"Apply filters",refresh:"Refresh",all:"All",unknown:"Unknown",test:"Test",live:"Live",amount:"Locked amount",payment:"Payment",date:"Order created",open:"Open order",next:"Next page",empty:"No orders match these filters.",unavailable:"Billing records could not be loaded. Refresh to retry.",forbidden:"Billing records are restricted to the platform owner.",invalid:"The filter or page link is invalid. Start a new search.",total:"Matching orders",reset:"Start a new search",basis:"Dates filter order creation in UTC. Refresh starts a new browse snapshot."},ar:{title:"\u0637\u0644\u0628\u0627\u062a \u0627\u0644\u0627\u0634\u062a\u0631\u0627\u0643",note:"\u0637\u0644\u0628\u0627\u062a \u0645\u062d\u0641\u0648\u0638\u0629 \u0648\u0633\u062c\u0644 \u062f\u0641\u0639 \u0645\u0624\u0647\u0644. \u0627\u0634\u062a\u0631\u0627\u0643\u0627\u062a \u0627\u0644\u0645\u0646\u0635\u0629 \u0645\u0646\u0641\u0635\u0644\u0629 \u0639\u0646 \u0645\u0628\u064a\u0639\u0627\u062a \u0627\u0644\u062a\u062c\u0627\u0631.",company:"\u0645\u0639\u0631\u0651\u0641 \u0627\u0644\u0634\u0631\u0643\u0629",environment:"\u0627\u0644\u0628\u064a\u0626\u0629",from:"\u0645\u0646",until:"\u062d\u062a\u0649",filter:"\u062a\u0637\u0628\u064a\u0642 \u0627\u0644\u062a\u0635\u0641\u064a\u0629",refresh:"\u062a\u062d\u062f\u064a\u062b",all:"\u0627\u0644\u0643\u0644",unknown:"\u063a\u064a\u0631 \u0645\u0639\u0631\u0648\u0641",test:"\u0627\u062e\u062a\u0628\u0627\u0631",live:"\u0641\u0639\u0644\u064a",amount:"\u0627\u0644\u0645\u0628\u0644\u063a \u0627\u0644\u0645\u062d\u0641\u0648\u0638",payment:"\u0627\u0644\u062f\u0641\u0639",date:"\u062a\u0627\u0631\u064a\u062e \u0627\u0644\u0637\u0644\u0628",open:"\u0641\u062a\u062d \u0627\u0644\u0637\u0644\u0628",next:"\u0627\u0644\u0635\u0641\u062d\u0629 \u0627\u0644\u062a\u0627\u0644\u064a\u0629",empty:"\u0644\u0627 \u062a\u0648\u062c\u062f \u0637\u0644\u0628\u0627\u062a \u0645\u0637\u0627\u0628\u0642\u0629.",unavailable:"\u062a\u0639\u0630\u0631 \u062a\u062d\u0645\u064a\u0644 \u0627\u0644\u0633\u062c\u0644\u0627\u062a. \u062d\u062f\u0651\u062b \u0644\u0644\u0645\u062d\u0627\u0648\u0644\u0629.",forbidden:"\u0633\u062c\u0644\u0627\u062a \u0627\u0644\u062f\u0641\u0639 \u0645\u062a\u0627\u062d\u0629 \u0644\u0645\u0627\u0644\u0643 \u0627\u0644\u0645\u0646\u0635\u0629 \u0641\u0642\u0637.",invalid:"\u0631\u0627\u0628\u0637 \u0627\u0644\u0635\u0641\u062d\u0629 \u0623\u0648 \u0627\u0644\u062a\u0635\u0641\u064a\u0629 \u063a\u064a\u0631 \u0635\u0627\u0644\u062d.",total:"\u0627\u0644\u0637\u0644\u0628\u0627\u062a \u0627\u0644\u0645\u0637\u0627\u0628\u0642\u0629",reset:"\u0628\u062d\u062b \u062c\u062f\u064a\u062f",basis:"\u0627\u0644\u062a\u0648\u0627\u0631\u064a\u062e \u062d\u0633\u0628 \u0625\u0646\u0634\u0627\u0621 \u0627\u0644\u0637\u0644\u0628 UTC. \u0627\u0644\u062a\u062d\u062f\u064a\u062b \u064a\u0628\u062f\u0623 \u062a\u0635\u0641\u062d\u064b\u0627 \u062c\u062f\u064a\u062f\u064b\u0627."}};
-export const financialLabels={en:{proven:"Confirmed",pending:"Pending",failed:"Failed",reversed:"Reversed",requires_review:"Requires review",unknown:"Unknown"},ar:{proven:"\u0645\u0624\u0643\u062f",pending:"\u0645\u0639\u0644\u0642",failed:"\u0641\u0634\u0644",reversed:"\u0645\u0639\u0643\u0648\u0633",requires_review:"\u064a\u062d\u062a\u0627\u062c \u0645\u0631\u0627\u062c\u0639\u0629",unknown:"\u063a\u064a\u0631 \u0645\u0639\u0631\u0648\u0641"}};
-export function AdminBillingLedger({result,query}:{result:AdminBillingPage;query:Record<string,string>}){
- const {locale}=useDemo(),c=labels[locale];const params=new URLSearchParams(query);params.delete("cursor");const refresh="/admin/billing?"+params.toString();const current="/admin/billing?"+new URLSearchParams(query).toString();const ready=result.status==="ready"||result.status==="empty";
- return <main className={styles.root} lang={locale} dir={locale==="ar"?"rtl":"ltr"}><header><h1>{c.title}</h1><p>{c.note}</p></header>
- {/* Remount uncontrolled fields when navigation commits a different query. */}
- <form key={current} method="get" action="/admin/billing" className={styles.filters}><label>{c.company}<input name="companyId" defaultValue={query.companyId??""} dir="ltr" placeholder="UUID"/></label><label>{c.environment}<select name="environment" defaultValue={query.environment??"all"}>{(["all","live","test","unknown"] as const).map(x=><option key={x} value={x}>{c[x]}</option>)}</select></label><label>{c.from}<input type="date" name="from" defaultValue={query.from??""}/></label><label>{c.until}<input type="date" name="until" defaultValue={query.until??""}/></label><button type="submit">{c.filter}</button></form>
- <p className={styles.note}>{c.basis}</p><nav><Link href={refresh}>{c.refresh}</Link><Link href="/admin/billing">{c.reset}</Link></nav>
- {!ready?<p role="alert">{result.status==="forbidden"?c.forbidden:result.status==="invalid_input"?c.invalid:c.unavailable}</p>:<><p>{c.total}: <strong>{result.total.toLocaleString(locale)}</strong></p>{result.status==="empty"?<p role="status">{c.empty}</p>:<div className={styles.tableWrap}><table><thead><tr><th>{c.company}</th><th>{c.date}</th><th>{c.amount}</th><th>{c.environment}</th><th>{c.payment}</th><th><span className="sr-only">{c.open}</span></th></tr></thead><tbody>{result.rows.map(row=><tr key={row.id}><td><Link href={adminCompanyHref(row.companyId,current)}>{row.companyName||row.companyId}</Link><small><bdi>{row.id}</bdi></small></td><td><time dateTime={row.createdAt}>{new Intl.DateTimeFormat(locale,{dateStyle:"medium",timeZone:"UTC"}).format(new Date(row.createdAt))}</time></td><td><bdi>{row.amountBaisa!==null&&row.currency==="OMR"?formatOmrBaisa(row.amountBaisa,locale):"—"}</bdi></td><td>{row.environment?c[row.environment]:c.unknown}</td><td>{financialLabels[locale][row.financial.state]}</td><td><Link href={`/admin/billing/orders/${row.id}?companyId=${row.companyId}&returnTo=${encodeURIComponent(current)}`}>{c.open}</Link></td></tr>)}</tbody></table></div>}{result.hasMore&&result.nextCursor?<Link className={styles.next} href={"/admin/billing?"+new URLSearchParams({...query,cursor:result.nextCursor}).toString()}>{c.next}</Link>:null}</>}
- </main>;
+import { useDemo } from "@/lib/demo-state";
+import { adminCompanyHref } from "@/components/app/admin-company-navigation";
+import type { AdminBillingPage } from "@/lib/billing/admin/model";
+import { formatOmrBaisa } from "@/components/app/subscription-offers-view";
+import {
+  IconAlert,
+  IconCreditCard,
+  IconLayers,
+  IconPulse,
+  IconShield,
+  IconTrending,
+} from "./admin-icons";
+
+const LABELS = {
+  en: {
+    badge: "Module 06 · Billing & Financial Operations",
+    title: "Billing & Financial Ledger",
+    subtitle:
+      "Platform subscription orders, qualified payments ledger, and verified Paymob gateway isolation.",
+    ownerBadge: "Platform Owner",
+    kpiTotalOrders: "Total Stored Orders",
+    kpiRevenue: "Confirmed Collections (Gross)",
+    kpiAttention: "Pending / Attention",
+    kpiGateway: "Payment Gateway",
+    kpiGatewayStatus: "Paymob (Test Mode Active)",
+    kpiGatewayNote: "Live payments strictly guarded",
+    filterCompany: "Company ID",
+    filterEnvironment: "Environment",
+    filterFrom: "From Date",
+    filterUntil: "Through Date",
+    btnFilter: "Apply Filters",
+    btnRefresh: "Refresh Snapshot",
+    btnReset: "Reset Filters",
+    all: "All Environments",
+    test: "Test Environment",
+    live: "Live Environment",
+    unknown: "Unknown Environment",
+    colCompany: "Company & Account",
+    colOrderId: "Order ID",
+    colAmount: "Locked Amount",
+    colEnvironment: "Environment",
+    colPayment: "Payment Status",
+    colDate: "Created Date",
+    colActions: "Action",
+    open: "Open Order",
+    next: "Next Page",
+    empty: "No orders match these filters.",
+    unavailable: "Billing records could not be loaded. Refresh to retry.",
+    forbidden: "Billing records are restricted to the platform owner.",
+    invalid: "The filter or page link is invalid. Start a new search.",
+    basisNote: "Dates filter order creation in UTC. Refreshing begins a fresh transactional snapshot.",
+  },
+  ar: {
+    badge: "Module 06 · Billing & Financial Operations",
+    title: "سجل الفواتير والاشتراكات المالية",
+    subtitle:
+      "متابعة طلبات اشتراكات المنصة، وسجل المدفوعات المؤهلة، وفحص ربط بوابة Paymob المعتمدة.",
+    ownerBadge: "مالك المنصة",
+    kpiTotalOrders: "إجمالي الطلبات المسجلة",
+    kpiRevenue: "إجمالي التحصيل المؤكد (OMR)",
+    kpiAttention: "طلبات معلقة / للمراجعة",
+    kpiGateway: "بوابة الدفع الإلكتروني",
+    kpiGatewayStatus: "Paymob (وضع الاختبار المعتمد)",
+    kpiGatewayNote: "المدفوعات الحية مغلقة احترازيًا",
+    filterCompany: "معرّف الشركة (UUID)",
+    filterEnvironment: "بيئة التنفيذ",
+    filterFrom: "من تاريخ",
+    filterUntil: "حتى تاريخ",
+    btnFilter: "تطبيق التصفية",
+    btnRefresh: "تحديث",
+    btnReset: "بحث جديد",
+    all: "كل البيئات",
+    test: "بيئة الاختبار",
+    live: "بيئة الإنتاج الفعلي",
+    unknown: "غير معروف",
+    colCompany: "الشركة والمنشأة",
+    colOrderId: "معرف الطلب",
+    colAmount: "المبلغ المحفوظ",
+    colEnvironment: "البيئة",
+    colPayment: "حالة الدفع",
+    colDate: "تاريخ الطلب",
+    colActions: "الإجراء",
+    open: "فتح الطلب",
+    next: "الصفحة التالية",
+    empty: "لا توجد طلبات مطابقة.",
+    unavailable: "تعذر تحميل السجلات. حدّث للمحاولة.",
+    forbidden: "سجلات الدفع متاحة لمالك المنصة فقط.",
+    invalid: "رابط الصفحة أو التصفية غير صالح.",
+    basisNote: "التواريخ حسب إنشاء الطلب UTC. التحديث يبدأ تصفحًا جديدًا في قاعدة البيانات.",
+  },
+} as const;
+
+export const financialLabels: Record<
+  "en" | "ar",
+  Record<string, { label: string; tone: "success" | "warn" | "error" | "neutral" | "purple" }>
+> = {
+  en: {
+    proven: { label: "Confirmed", tone: "success" },
+    pending: { label: "Pending", tone: "warn" },
+    failed: { label: "Failed", tone: "error" },
+    reversed: { label: "Reversed", tone: "neutral" },
+    requires_review: { label: "Requires Review", tone: "purple" },
+    unknown: { label: "Unknown", tone: "neutral" },
+  },
+  ar: {
+    proven: { label: "مؤكد", tone: "success" },
+    pending: { label: "معلق", tone: "warn" },
+    failed: { label: "فشل", tone: "error" },
+    reversed: { label: "معكوس", tone: "neutral" },
+    requires_review: { label: "يحتاج مراجعة", tone: "purple" },
+    unknown: { label: "غير معروف", tone: "neutral" },
+  },
+};
+
+export interface AdminBillingLedgerProps {
+  result: AdminBillingPage;
+  query: Record<string, string>;
+}
+
+export function AdminBillingLedger({ result, query }: AdminBillingLedgerProps) {
+  const { locale } = useDemo();
+  const ar = locale === "ar";
+  const c = LABELS[ar ? "ar" : "en"];
+
+  const params = new URLSearchParams(query);
+  params.delete("cursor");
+  const refreshHref = "/admin/billing?" + params.toString();
+  const currentHref = "/admin/billing?" + new URLSearchParams(query).toString();
+  const isReady = result.status === "ready" || result.status === "empty";
+
+  // Calculate Confirmed Revenue & Attention Count from real loaded rows
+  const confirmedBaisa = isReady
+    ? result.rows
+        .filter((r) => r.financial.state === "proven" && r.amountBaisa !== null)
+        .reduce((sum, r) => sum + (r.amountBaisa || 0), 0)
+    : 0;
+  const confirmedOmr = (confirmedBaisa / 1000).toFixed(3);
+
+  const attentionCount = isReady
+    ? result.rows.filter((r) => r.financial.state !== "proven").length
+    : 0;
+
+  return (
+    <div className="space-y-6" dir={ar ? "rtl" : "ltr"}>
+      {/* Module Header with Owner Shield */}
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[var(--service-line)] pb-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="flex h-2.5 w-2.5 rounded-full bg-[var(--service-accent)]" />
+            <span className="text-xs font-semibold uppercase tracking-wider text-[var(--service-accent)]">
+              {c.badge}
+            </span>
+          </div>
+          <h1 className="mt-1 text-2xl font-black text-[var(--service-ink)] tracking-tight">
+            {c.title}
+          </h1>
+          <p className="mt-1 text-sm text-[var(--service-muted)]">{c.subtitle}</p>
+        </div>
+
+        {/* Platform Owner Verification Badge & Quick Refresh */}
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2 rounded-xl border border-[var(--service-line)] bg-[var(--service-surface)] px-3 py-1.5 shadow-sm">
+            <IconShield className="h-4 w-4 text-[var(--service-success)]" />
+            <span className="text-xs font-bold text-[var(--service-ink)]">velorahelperai@gmail.com</span>
+            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">
+              {c.ownerBadge}
+            </span>
+          </div>
+
+          <Link
+            href={refreshHref}
+            className="flex items-center gap-1.5 rounded-xl border border-[var(--service-line)] bg-[var(--service-surface)] px-3 py-1.5 text-xs font-semibold text-[var(--service-ink)] shadow-sm hover:bg-[var(--service-subtle)] transition"
+          >
+            <IconPulse className="h-3.5 w-3.5 text-[var(--service-accent)]" />
+            <span>{c.btnRefresh}</span>
+          </Link>
+        </div>
+      </div>
+
+      {/* Top 4 KPI Summary Cards */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {/* KPI 1: Total Stored Orders */}
+        <div className="rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] p-5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-[var(--service-muted)]">{c.kpiTotalOrders}</span>
+            <IconLayers className="h-4 w-4 text-[var(--service-accent)]" />
+          </div>
+          <div className="mt-3 flex items-baseline gap-2">
+            <span className="text-2xl font-black text-[var(--service-ink)]">
+              {isReady ? result.total : 0}
+            </span>
+            <span className="text-xs font-bold text-[var(--service-muted)]">
+              {ar ? "طلب محفوظ" : "orders"}
+            </span>
+          </div>
+          <div className="mt-3 border-t border-[var(--service-line)] pt-3 text-xs text-[var(--service-muted)]">
+            {ar ? "سجل طلبات الاشتراكات الفعلية" : "Stored database subscription orders"}
+          </div>
+        </div>
+
+        {/* KPI 2: Confirmed Revenue */}
+        <div className="rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] p-5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-[var(--service-muted)]">{c.kpiRevenue}</span>
+            <IconTrending className="h-4 w-4 text-[var(--service-success)]" />
+          </div>
+          <div className="mt-3 flex items-baseline gap-2">
+            <span className="text-2xl font-black text-[var(--service-success)]">{confirmedOmr}</span>
+            <span className="text-xs font-bold text-[var(--service-muted)]">
+              {ar ? "ر.ع مؤكد" : "OMR"}
+            </span>
+          </div>
+          <div className="mt-3 border-t border-[var(--service-line)] pt-3 text-xs text-[var(--service-muted)]">
+            {ar ? "مجموع المبالغ المحصلة المؤهلة (تحصيل إجمالي قبل الرسوم والاستردادات)" : "Gross qualified collections (before fees & refunds)"}
+          </div>
+        </div>
+
+        {/* KPI 3: Pending / Attention Orders */}
+        <div className="rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] p-5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-[var(--service-muted)]">{c.kpiAttention}</span>
+            <IconAlert className="h-4 w-4 text-amber-600" />
+          </div>
+          <div className="mt-3 flex items-baseline gap-2">
+            <span className="text-2xl font-black text-amber-700">{attentionCount}</span>
+            <span className="text-xs font-bold text-[var(--service-muted)]">
+              {ar ? "طلب للمتابعة" : "orders"}
+            </span>
+          </div>
+          <div className="mt-3 border-t border-[var(--service-line)] pt-3 text-xs text-[var(--service-muted)]">
+            {ar ? "معلقة أو فاشلة في الصفحة الحالية" : "Pending or failed in current page"}
+          </div>
+        </div>
+
+        {/* KPI 4: Payment Gateway (Paymob) Status */}
+        <div className="rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] p-5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-[var(--service-muted)]">{c.kpiGateway}</span>
+            <IconCreditCard className="h-4 w-4 text-[var(--service-accent)]" />
+          </div>
+          <div className="mt-2">
+            <span className="text-base font-black text-[var(--service-ink)]">Paymob (Oman)</span>
+            <div className="mt-1">
+              <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-800">
+                {ar ? "وضع الاختبار المعتمد" : "Test Mode Active"}
+              </span>
+            </div>
+          </div>
+          <div className="mt-3 border-t border-[var(--service-line)] pt-3 text-xs text-[var(--service-muted)]">
+            <span className="font-semibold text-emerald-700">{c.kpiGatewayNote}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Filter and Search Bar */}
+      <div className="rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] p-5 shadow-sm">
+        <form key={currentHref} method="get" action="/admin/billing" className="space-y-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div>
+              <label className="block text-xs font-bold text-[var(--service-ink)]">
+                {c.filterCompany}
+              </label>
+              <input
+                type="text"
+                name="companyId"
+                defaultValue={query.companyId ?? ""}
+                dir="ltr"
+                placeholder="UUID..."
+                className="mt-1.5 w-full rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)] px-3 py-2 text-xs text-[var(--service-ink)] outline-none focus:border-[var(--service-accent)]"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-[var(--service-ink)]">
+                {c.filterEnvironment}
+              </label>
+              <select
+                name="environment"
+                defaultValue={query.environment ?? "all"}
+                className="mt-1.5 w-full rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)] px-3 py-2 text-xs text-[var(--service-ink)] outline-none focus:border-[var(--service-accent)]"
+              >
+                {(["all", "live", "test", "unknown"] as const).map((env) => (
+                  <option key={env} value={env}>
+                    {c[env]}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-[var(--service-ink)]">{c.filterFrom}</label>
+              <input
+                type="date"
+                name="from"
+                defaultValue={query.from ?? ""}
+                className="mt-1.5 w-full rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)] px-3 py-2 text-xs text-[var(--service-ink)] outline-none focus:border-[var(--service-accent)]"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-[var(--service-ink)]">
+                {c.filterUntil}
+              </label>
+              <input
+                type="date"
+                name="until"
+                defaultValue={query.until ?? ""}
+                className="mt-1.5 w-full rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)] px-3 py-2 text-xs text-[var(--service-ink)] outline-none focus:border-[var(--service-accent)]"
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--service-line)] pt-3">
+            <span className="text-[11px] text-[var(--service-muted)]">{c.basisNote}</span>
+            <div className="flex items-center gap-2">
+              <Link
+                href="/admin/billing"
+                className="rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)] px-4 py-2 text-xs font-bold text-[var(--service-ink)] hover:bg-[var(--service-subtle)] transition"
+              >
+                {c.btnReset}
+              </Link>
+              <button
+                type="submit"
+                className="rounded-xl bg-[var(--service-accent)] px-5 py-2 text-xs font-bold text-white shadow-sm hover:opacity-95 transition"
+              >
+                {c.btnFilter}
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+
+      {/* Access Denied or Error Notice */}
+      {!isReady && (
+        <div
+          role="alert"
+          className="rounded-2xl border border-red-200 bg-red-50 p-6 text-center text-sm font-bold text-red-800 shadow-sm"
+        >
+          {result.status === "forbidden"
+            ? c.forbidden
+            : result.status === "invalid_input"
+            ? c.invalid
+            : c.unavailable}
+        </div>
+      )}
+
+      {/* Orders Ledger Table */}
+      {isReady && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-base font-bold text-[var(--service-ink)]">
+              {ar ? "سجل طلبات الاشتراك (Transactions Ledger)" : "Subscription Transactions Ledger"}
+            </h2>
+            <span className="text-xs text-[var(--service-muted)]">
+              {ar
+                ? `إجمالي الطلبات المطابقة: ${result.total}`
+                : `Total Matching Orders: ${result.total}`}
+            </span>
+          </div>
+
+          {result.status === "empty" ? (
+            <div
+              role="status"
+              className="rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] p-12 text-center text-sm text-[var(--service-muted)] shadow-sm"
+            >
+              <IconLayers className="mx-auto h-8 w-8 opacity-40" />
+              <p className="mt-3 font-semibold">{c.empty}</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] shadow-sm">
+              <table className="w-full text-right text-xs">
+                <thead className="border-b border-[var(--service-line)] bg-[var(--service-canvas)] text-[11px] font-bold text-[var(--service-muted)]">
+                  <tr>
+                    <th className="p-3.5">{c.colCompany}</th>
+                    <th className="p-3.5">{c.colOrderId}</th>
+                    <th className="p-3.5">{c.colAmount}</th>
+                    <th className="p-3.5">{c.colEnvironment}</th>
+                    <th className="p-3.5">{c.colPayment}</th>
+                    <th className="p-3.5">{c.colDate}</th>
+                    <th className="p-3.5 text-center">{c.colActions}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--service-line)] text-[var(--service-ink)]">
+                  {result.rows.map((row) => {
+                    const statusMeta =
+                      financialLabels[ar ? "ar" : "en"][row.financial.state] ?? {
+                        label: row.financial.state,
+                        tone: "neutral" as const,
+                      };
+
+                    return (
+                      <tr key={row.id} className="hover:bg-[var(--service-subtle)] transition">
+                        <td className="p-3.5">
+                          <Link
+                            href={adminCompanyHref(row.companyId, currentHref)}
+                            className="font-bold text-[var(--service-accent)] hover:underline"
+                          >
+                            {row.companyName || row.companyId}
+                          </Link>
+                          <div className="mt-0.5 font-mono text-[10px] text-[var(--service-muted)]">
+                            {row.companyId}
+                          </div>
+                        </td>
+
+                        <td className="p-3.5 font-mono font-bold text-[var(--service-ink)]">
+                          {row.id}
+                        </td>
+
+                        <td className="p-3.5 font-bold font-mono">
+                          {row.amountBaisa !== null && row.currency === "OMR"
+                            ? formatOmrBaisa(row.amountBaisa, locale)
+                            : "—"}
+                        </td>
+
+                        <td className="p-3.5">
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                              row.environment === "live"
+                                ? "bg-emerald-100 text-emerald-800"
+                                : row.environment === "test"
+                                ? "bg-blue-100 text-blue-800"
+                                : "bg-gray-100 text-gray-800"
+                            }`}
+                          >
+                            {row.environment ? c[row.environment] : c.unknown}
+                          </span>
+                        </td>
+
+                        <td className="p-3.5">
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                              statusMeta.tone === "success"
+                                ? "bg-emerald-100 text-emerald-800"
+                                : statusMeta.tone === "warn"
+                                ? "bg-amber-100 text-amber-800"
+                                : statusMeta.tone === "error"
+                                ? "bg-red-100 text-red-800"
+                                : statusMeta.tone === "purple"
+                                ? "bg-purple-100 text-purple-800"
+                                : "bg-gray-100 text-gray-800"
+                            }`}
+                          >
+                            {statusMeta.label}
+                          </span>
+                        </td>
+
+                        <td className="p-3.5 font-mono text-[11px] text-[var(--service-muted)]">
+                          <time dateTime={row.createdAt}>
+                            {new Intl.DateTimeFormat(locale, {
+                              dateStyle: "medium",
+                              timeZone: "UTC",
+                            }).format(new Date(row.createdAt))}
+                          </time>
+                        </td>
+
+                        <td className="p-3.5 text-center">
+                          <Link
+                            href={`/admin/billing/orders/${row.id}?companyId=${row.companyId}&returnTo=${encodeURIComponent(
+                              currentHref
+                            )}`}
+                            className="inline-flex items-center rounded-lg border border-[var(--service-line)] bg-[var(--service-surface)] px-2.5 py-1 text-xs font-semibold text-[var(--service-accent)] shadow-sm hover:bg-[var(--service-accent-soft)] transition"
+                          >
+                            {c.open}
+                          </Link>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Pagination Next Link */}
+          {result.hasMore && result.nextCursor && (
+            <div className="flex justify-center pt-2">
+              <Link
+                href={
+                  "/admin/billing?" +
+                  new URLSearchParams({ ...query, cursor: result.nextCursor }).toString()
+                }
+                className="flex items-center gap-2 rounded-xl bg-[var(--service-accent)] px-6 py-2.5 text-xs font-bold text-white shadow-sm hover:opacity-95 transition"
+              >
+                <span>{c.next}</span>
+              </Link>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }

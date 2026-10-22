@@ -1,6 +1,6 @@
 import "server-only";
 import type {AnswerContextChunk,AnswerCitation} from "@/lib/answers/types";
-export type IntegrationFrame={job_id:string;company_id:string;message_id:string;conversation_id:string;phone_number_id:string;recipient_wa_id:string;
+export type IntegrationFrame={authority?:"es02";job_id:string;company_id:string;message_id:string;conversation_id:string;phone_number_id:string;recipient_wa_id:string;
  automation_generation:number;link_id:string;link_generation:number;question:string;service_window_expires_at?:string;ai_status:string|null;reply_text:string|null;
  ai_attempt_id:string|null;intent_id:string|null;staged_citations:AnswerCitation[]|null};
 export type SendIntent={id:string;outcome:string;company_id:string;conversation_id:string;phone_number_id:string;recipient_wa_id:string;body:string};

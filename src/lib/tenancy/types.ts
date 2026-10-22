@@ -88,6 +88,19 @@ export type AdminCompanyListItem = {
 };
 
 /** Admin account row — Auth user id is the key; profile fields may be null. */
+
+export const ADMIN_COMPANIES_PAGE_MIN_LIMIT = 1;
+export const ADMIN_COMPANIES_PAGE_MAX_LIMIT = 100;
+export const ADMIN_COMPANIES_PAGE_DEFAULT_LIMIT = 25;
+
+export type AdminCompanyListPage = {
+  rows: AdminCompanyListItem[];
+  totalCount: number;
+  offset: number;
+  limit: number;
+  hasMore: boolean;
+};
+
 export type AdminAccountSearchItem = {
   user_id: string;
   /** null when profile missing or support_code not assigned yet. */

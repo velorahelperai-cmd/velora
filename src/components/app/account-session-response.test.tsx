@@ -17,6 +17,7 @@ const state = vi.hoisted(() => ({
   path: "/",
   locale: "en" as "en" | "ar",
   refresh: vi.fn(),
+  localQuarantine: null as null | {type:'quarantine';userId:string;boundaryFingerprint:string},
 }));
 
 vi.mock("react", async () => {
@@ -64,7 +65,7 @@ vi.mock("react", async () => {
 const router = { refresh: state.refresh };
 vi.mock("next/navigation", () => ({ useRouter: () => router, usePathname: () => state.path }));
 vi.mock("@/lib/auth/session-context", () => ({
-  readLocalQuarantine: () => null,
+  readLocalQuarantine: () => state.localQuarantine,
   publishSessionContext: state.publish,
   publishSessionLogout: state.logout,
   publishSessionQuarantine: state.quarantine,
@@ -180,6 +181,7 @@ beforeEach(() => {
   state.slots = [];
   state.effects = [];
   state.peerSignal = null;
+  state.localQuarantine = null;
   state.path = "/";
   state.locale = "en";
   state.broker.mockResolvedValue({
@@ -219,6 +221,48 @@ const brokerOk = (
       : "11111111-1111-4111-8111-111111111111",
   contextGeneration: 1,
   generation,
+});
+
+it("mounts a genuinely unauthenticated visitor as guest without reading a private profile", async () => {
+  vi.useFakeTimers();
+  state.path = "/login";
+  state.broker.mockResolvedValue({ok:false,code:"UNAUTHENTICATED"});
+  const frames: Array<() => void> = [];
+  window.requestAnimationFrame = (fn: FrameRequestCallback) => {frames.push(() => fn(0));return 1;};
+  render(); frames[0]!();
+  await vi.advanceTimersByTimeAsync(0);
+  const result = render();
+  expect(result.status).toBe("guest");
+  expect(result.identity).toBeNull();
+  expect(result.hasCurrentUser()).toBe(false);
+  expect(state.read).not.toHaveBeenCalled();
+  expect(state.broker).toHaveBeenCalledTimes(1);
+  expect(state.publish).not.toHaveBeenCalled();
+});
+
+it.each(["UNAVAILABLE","QUARANTINED"])("mount does not downgrade broker %s to a guest success", async code => {
+  vi.useFakeTimers();
+  state.broker.mockResolvedValue({ok:false,code});
+  const frames: Array<() => void> = [];
+  window.requestAnimationFrame = (fn: FrameRequestCallback) => {frames.push(() => fn(0));return 1;};
+  render(); frames[0]!();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(render().status).toBe("error");
+  expect(render().identity).toBeNull();
+  expect(state.read).not.toHaveBeenCalled();
+});
+
+it("mount preserves a captured quarantine when the native session has gone", async () => {
+  vi.useFakeTimers();
+  state.localQuarantine={type:'quarantine',userId:'user-a',boundaryFingerprint:'fp-a'};
+  state.broker.mockResolvedValue({ok:false,code:"UNAUTHENTICATED"});
+  const frames: Array<() => void> = [];
+  window.requestAnimationFrame = (fn: FrameRequestCallback) => {frames.push(() => fn(0));return 1;};
+  render(); frames[0]!();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(render().status).toBe("locked");
+  expect(render().identity).toBeNull();
+  expect(state.read).not.toHaveBeenCalled();
 });
 
 it.each(["en", "ar"] as const)("shows a lightweight brand while protected identity is pending (%s)", async locale => {

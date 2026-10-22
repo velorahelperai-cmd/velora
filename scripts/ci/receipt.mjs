@@ -232,7 +232,7 @@ export function captureCandidateIdentity(cwd = process.cwd()) {
   const root = resolve(cwd);
   const head = (gitText(root, ["rev-parse", "HEAD"]) || "").trim().toLowerCase();
   const headSha = SHA_RE.test(head) ? head : null;
-  const porcelain = gitText(root, ["status", "--porcelain=v1", "-z"]);
+  const porcelain = gitText(root, ["status", "--porcelain=v1", "--untracked-files=all", "-z"]);
   if (porcelain === null || !headSha) {
     return {
       headSha,

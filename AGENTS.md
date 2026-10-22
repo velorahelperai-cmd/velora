@@ -1,11 +1,25 @@
 # VELORA — SHARED PROJECT RULES
 
+## Active consolidation override — 2026-10-22
+
+This section supersedes older worktree/parallel-writer instructions and historical locks for the explicitly authorized consolidation. Shared authority for Codex, Cursor and Antigravity: this file and the first Current Session Index in PROJECT_STATE.md.
+
+- Only edit, run and test in `C:\Users\DELL\Desktop\Velora new`, on the existing persistent development branch `codex/desktop-consolidation-20261015`. `main` is the verified release destination.
+- Do not create task branches, worktrees, project copies or alternate test websites. Old worktrees are read-only preservation sources until recoverable retirement.
+- One writer: Codex chat `01a160e9-558f-7183-88ac-89307520f011`; all other executors have stopped, confirmed by the user. Coordinate generated test files too. Ownership transfer must be explicit and recorded.
+- Before mutation, verify Git top-level, origin, branch, status and task owner with `node scripts/consolidation/guard.mjs`. Stop on mismatch. The guard is a workflow check, not a security boundary against tools that bypass it.
+- Sequence: preserve and consolidate above latest main; enforce shared rules; repair and test the real combined app; review/apply required compatible Supabase migrations; verified main integration/deployment; recoverably retire old copies only after proving unique work and secrets preserved.
+- Keep one remaining-work list in the Current Session Index. Do not run `85-worker-trial-ports.review.sql` or resume its cancelled operation. Incomplete drafts remain explicitly parked.
+- Real application acceptance is required; mocks/unit tests are supporting evidence only. Log trace/request IDs, failure stage and stable error codes with secret redaction. Unknown outcomes and costs must stay unknown.
+- No force push, hard reset, clean, indiscriminate staging, new containers, paid AI verification, live payments/messages, keys, secret uploads or access-denial bypass. Keep Live payment disabled.
+- Production permission is bounded: verify actual deployment-to-Supabase binding, backup/recovery evidence and migration compatibility first. Access/RLS/grants/auth/key changes and irreversible deletion require a specific disclosed approval.
+
 ## 1. Canonical Project
 All agents work on the same canonical repository:
 
 `C:\Users\DELL\Desktop\Velora new`
 
-Use coordinated Git worktrees for concurrent edits. Never create unrelated project copies.
+Use the single approved directory and persistent branch above. No additional worktrees or project copies.
 
 ## 2. Mandatory Execution Lock
 - Read `PROJECT_STATE.md` Quick Session Index before working.
@@ -96,7 +110,7 @@ Before every implementation prompt and after each task, inspect relevant depende
 ## 14. Lean delivery workflow (user instruction, 2026-10-20)
 
 - Give each request one concrete outcome. Reuse or edit existing files first; add a file only when it has a justified independent responsibility.
-- Keep one writer per changed file. Parallelize only independent scopes.
+- Keep one writer for the repository, including tests generating files. Others read/review only.
 - Run focused affected checks and a direct smoke of the changed flow; do not repeat unchanged test matrices. Retain required checks and truthful PASS/FAIL/NotRun evidence.
 - Defer unrelated improvements unless they are actual blockers or prevent direct harm. Do not introduce unrequested refactors or rebuilds.
 - Show the working result before starting another package. Existing permissions, secret redaction, access guards and production restrictions remain in force.

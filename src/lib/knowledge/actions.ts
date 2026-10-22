@@ -1282,19 +1282,12 @@ export async function adminGetKnowledgeFileUrl(input: {
     if (!data.storage_path.startsWith(`${input.companyId}/`)) {
       return { ok: false, code: "FORBIDDEN", message: "path_mismatch" };
     }
-    if (isSetupFilePath(data.storage_path)) return { ok: true, data: { url: `/api/knowledge/setup-file?companyId=${encodeURIComponent(input.companyId)}&sourceId=${encodeURIComponent(input.sourceId)}`, fileName: data.file_name || "file" } };
-
-    const { data: signed, error: signError } = await supabase.storage
-      .from(KNOWLEDGE_BUCKET)
-      .createSignedUrl(data.storage_path, 60);
-
-    if (signError || !signed?.signedUrl) {
-      return { ok: false, code: "STORAGE_ERROR", message: signError?.message };
-    }
-
     return {
       ok: true,
-      data: { url: signed.signedUrl, fileName: data.file_name || "file" },
+      data: {
+        url: `/api/admin/knowledge-file?companyId=${encodeURIComponent(input.companyId)}&sourceId=${encodeURIComponent(input.sourceId)}`,
+        fileName: data.file_name || "file",
+      },
     };
   } catch {
     return { ok: false, code: "UNAVAILABLE" };

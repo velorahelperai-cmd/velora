@@ -3,7 +3,11 @@
 .header h2{font-size:24px;color:#007f98;margin:0}.header p{margin:8px 0 24px;overflow-wrap:anywhere}
 .routes{border:0;padding:0;margin:0;display:flex;flex-wrap:wrap;gap:12px}.routes legend{padding:0;margin-bottom:12px;font-weight:600}
 .choice{display:flex;align-items:center;gap:10px;flex:1 1 240px;min-height:48px;padding:12px 16px;border:1px solid #dfeaf1;border-radius:16px;cursor:pointer;box-sizing:border-box}.choice:has(input:checked){background:#effbfc;border-color:#007f98}.choice input{accent-color:#007f98;flex:none;width:18px;height:18px;margin:0}.choice:focus-within{outline:3px solid #007f98;outline-offset:3px}
-.note{color:#536b79;max-width:76ch;margin:16px 0}.instagram{max-width:70ch}.instagram h3{font-size:20px}.instagram button{min-height:44px;border:0;border-radius:16px;padding:10px 24px;font:inherit;background:#e2e9ec;color:#536572}
+.note{color:#536b79;max-width:76ch;margin:16px 0}.instagram{max-width:70ch}.instagram h3{font-size:20px}.instagram button{min-height:44px;border:0;border-radius:16px;padding:10px 24px;font:inherit;background:#007f98;color:#fff;cursor:pointer}.instagram button:disabled{background:#e2e9ec;color:#536572;cursor:default}
+.inputGroup{display:grid;gap:8px;margin:18px 0;text-align:start}.inputGroup label{font-weight:600;font-size:14px}.textInput{min-height:44px;padding:8px 12px;border:1px solid #bfd3df;border-radius:10px;font:inherit;color:#103047;background:#fff;max-width:340px}.textInput:focus-visible{outline:3px solid #007f98;outline-offset:2px}
+.checkboxRow{display:flex;align-items:flex-start;gap:10px;margin:14px 0;cursor:pointer}.checkboxRow input{accent-color:#007f98;width:18px;height:18px;margin-top:3px;flex:none}
+.statusBanner{margin:16px 0;padding:14px 16px;border-radius:12px;background:#f4f9fb;border:1px solid #d5e6ee;display:grid;gap:8px}.statusBadge{display:inline-flex;align-items:center;width:fit-content;padding:4px 10px;border-radius:999px;font-size:13px;font-weight:600;background:#e3f3f7;color:#005f73}
+.recoveryActions{display:flex;flex-wrap:wrap;gap:12px;margin-top:8px}
 @media(max-width:600px){.view{margin:16px 0;padding:16px}.header h2{font-size:22px}.choice{flex-basis:100%}}
 .connectLayout{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:28px;align-items:center;margin:28px 0}
 .intro h3,.requirements h3{font-size:20px;line-height:1.5}.intro ul,.requirements ul{padding-inline-start:22px}.intro li,.requirements li{margin:12px 0}.intro li::marker,.requirements li::marker{color:#007f98}

@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import "../consolidation/guard.mjs";
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { assertNoRuntimeEnvFiles, isolatedEnvironment } from "./safety.mjs";

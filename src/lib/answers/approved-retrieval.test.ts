@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { loadApprovedAnswerContext, verifyAnswerCitationsStillValid } from "./context";
+import { loadClaimedAnswerProfile } from "./approved-retrieval";
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => { throw Error("inject client"); } }));
 const binding = { question: "espresso price", jobId: "job-a", claimToken: "claim-a" };
@@ -59,5 +60,39 @@ describe("claimed approved retrieval", () => {
     const chain = { eq: () => chain, in: async () => ({ data: [source({ approved_for_answers: false })], error: null }) };
     const db = { from: () => ({ select: () => chain }) };
     expect(await verifyAnswerCitationsStillValid("company-a", [{ sourceId: "espresso", title: "Espresso prices", text: "Espresso costs 1.200 OMR.", contentVersion: 3, usageRole: "business_instructions" }], db as never)).toBe(false);
+  });
+});
+
+
+// RPC-contract doubles only; native SQL separately verifies the paid authority.
+const es02ProfileResult = {
+  ok: true, authority: "es02", company_id: "company-a", job_id: "job-a", persona: "lina",
+  es02_order_id: "6970452d-a20d-4f84-8ec8-744207509177",
+  es02_branch_id: "3701c3a6-026c-43b5-b23c-2858d4ae0477",
+  es02_slot_index: 0, es02_paid_fingerprint: "a".repeat(64),
+};
+describe("discriminated native and ES02 claimed profiles", () => {
+  it("retains the exact legacy native-plan profile shape", async () => {
+    const result = await loadClaimedAnswerProfile("company-a", binding, client({ ok: true, company_id: "company-a", job_id: "job-a", persona: "noura", plan_code: "noor_basic", plan_version_id: "native-plan-version" }));
+    expect(result).toEqual({ companyId: "company-a", persona: "noura", planVersionId: "native-plan-version" });
+  });
+  it("accepts an exact ES02 paid snapshot without inventing a native plan UUID", async () => {
+    const db = client(es02ProfileResult);
+    const result = await loadClaimedAnswerProfile("company-a", binding, db);
+    expect(result).toEqual({ authority: "es02", companyId: "company-a", persona: "lina", orderId: es02ProfileResult.es02_order_id, branchId: es02ProfileResult.es02_branch_id, slotIndex: 0, paidFingerprint: es02ProfileResult.es02_paid_fingerprint });
+    expect(result).not.toHaveProperty("planVersionId");
+    expect(db.rpc).toHaveBeenCalledWith("whatsapp_read_answer_profile", { p_company_id: "company-a", p_job_id: "job-a", p_claim_token: "claim-a" });
+  });
+  it.each([
+    { company_id: "foreign-company" }, { job_id: "foreign-job" }, { authority: "unknown" },
+    { persona: "unapproved-persona" }, { es02_order_id: "not-a-uuid" }, { es02_branch_id: "not-a-uuid" },
+    { es02_slot_index: -1 }, { es02_slot_index: 32 }, { es02_slot_index: 0.5 }, { es02_slot_index: "0" },
+    { es02_paid_fingerprint: "" }, { es02_paid_fingerprint: "g".repeat(64) },
+    { plan_version_id: "native-plan-version" }, { plan_code: "lina_basic" },
+  ])("rejects foreign, malformed or mixed ES02 profile %j", async patch => {
+    expect(await loadClaimedAnswerProfile("company-a", binding, client({ ...es02ProfileResult, ...patch }))).toBeNull();
+  });
+  it("does not infer ES02 authority from stray fields on a legacy response", async () => {
+    expect(await loadClaimedAnswerProfile("company-a", binding, client({ ok: true, company_id: "company-a", job_id: "job-a", persona: "noura", plan_code: "noor_basic", plan_version_id: "native-plan-version", es02_order_id: es02ProfileResult.es02_order_id }))).toBeNull();
   });
 });

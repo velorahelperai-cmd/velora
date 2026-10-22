@@ -8,7 +8,7 @@ vi.mock("react",async()=>{
  return {...actual,useState(initial:unknown){const s=slot();if(!("value" in s))s.value=typeof initial==="function"?(initial as ()=>unknown)():initial;return [s.value,(v:unknown)=>{s.value=typeof v==="function"?(v as (old:unknown)=>unknown)(s.value):v;}];},useRef(initial:unknown){const s=slot();return s.value??(s.value={current:initial});},useMemo(fn:()=>unknown){slot();return fn();},useEffect(fn:()=>void){mocks.effects.push(fn);}};
 });
 vi.mock("@/lib/demo-state",()=>({useDemo:()=>({locale:"en"})}));
-vi.mock("@/lib/tenancy/actions",()=>({adminListCompanies:mocks.list,adminGetOverviewStats:mocks.overview,adminSearchAccounts:vi.fn()}));
+vi.mock("@/lib/tenancy/actions",()=>({adminListCompaniesPage:mocks.list,adminListPendingReviewsPage:vi.fn().mockResolvedValue({ok:true,data:[]}),adminGetOverviewStats:mocks.overview,adminSearchAccounts:vi.fn()}));
 vi.mock("@/lib/answers/runtime/admin-truth",()=>({readAdminTruth:mocks.truth}));
 import { AdminList } from "./admin-list";
 type Node={type:unknown;props:Record<string,unknown>};
@@ -28,7 +28,7 @@ vi.mock("@/lib/knowledge/actions",()=>({adminGetKnowledgeFileUrl:vi.fn(),adminLi
 vi.mock("@/lib/whatsapp/connection-actions",()=>({adminGetWhatsappCompanyLink:vi.fn(),adminMarkWhatsappLinkNeedsExternal:vi.fn(),adminUpdateWhatsappLinkNote:vi.fn()}));
 import {AdminCompanyDetail,type AdminCompany} from "./admin-company-detail";
 import {AdminBillingLedger} from "@/components/admin/billing-ledger";
-beforeEach(()=>{vi.clearAllMocks();mocks.slots=[];mocks.cursor=0;mocks.effects=[];mocks.list.mockResolvedValue({ok:true,data:[company]});mocks.overview.mockResolvedValue({ok:false,code:"FORBIDDEN"});mocks.truth.mockResolvedValue({ok:false});});
+beforeEach(()=>{vi.clearAllMocks();mocks.slots=[];mocks.cursor=0;mocks.effects=[];mocks.list.mockResolvedValue({ok:true,data:{rows:[company],totalCount:1,offset:0,hasMore:false}});mocks.overview.mockResolvedValue({ok:false,code:"FORBIDDEN"});mocks.truth.mockResolvedValue({ok:false});});
 describe("company detail return restores list search",()=>{
  it("company links encode applied search and selected status",async()=>{
   let tree=render();(input(tree).props.onChange as (e:unknown)=>void)({target:{value:"شركة & café"}});(select(tree).props.onChange as (e:unknown)=>void)({target:{value:"active"}});tree=render();await submit(tree);tree=render();
@@ -38,7 +38,7 @@ describe("company detail return restores list search",()=>{
  });
  it("return props restore the search input and status used for reloading",async()=>{
   const props={initialCompanyFilters:{search:"Synthetic",status:"active"}};const tree=render(props);
-  expect(input(tree).props.value).toBe("Synthetic");expect(select(tree).props.value).toBe("active");await submit(tree);expect(mocks.list).toHaveBeenCalledWith("Synthetic");
+  expect(input(tree).props.value).toBe("Synthetic");expect(select(tree).props.value).toBe("active");await submit(tree);expect(mocks.list).toHaveBeenCalledWith({search:"Synthetic",status:"active",limit:25,offset:0});
  });
  it("server page carries return filters and keys the list by them",async()=>{
   const call=Page as (props:unknown)=>ReturnType<typeof Page>;
@@ -62,5 +62,5 @@ it("actual billing company link carries the current filter and browse cursor",()
 
 it("return mount automatically reloads the restored query without another Apply",async()=>{
  vi.stubGlobal("window",{requestAnimationFrame:(fn:()=>void)=>{fn();return 1;},cancelAnimationFrame:vi.fn()});
- try{render({initialCompanyFilters:{search:"restored search",status:"active"}});mocks.effects[0]();await flush();expect(mocks.list).toHaveBeenCalledWith("restored search");}finally{vi.unstubAllGlobals();}
+ try{render({initialCompanyFilters:{search:"restored search",status:"active"}});mocks.effects[0]();await flush();expect(mocks.list).toHaveBeenCalledWith({search:"restored search",status:"active",limit:25,offset:0});}finally{vi.unstubAllGlobals();}
 });

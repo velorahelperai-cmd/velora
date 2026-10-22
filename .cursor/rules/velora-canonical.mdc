@@ -1,0 +1,5 @@
+---
+description: Shared Velora execution authority and single-writer guard
+alwaysApply: true
+---
+Read AGENTS.md and the first Current Session Index in PROJECT_STATE.md. Follow the 2026-10-22 override: canonical directory only, existing persistent branch only, one writer. Old worktrees are read-only preservation sources. Run `node scripts/consolidation/guard.mjs` before mutation/execution; if ownership differs, read/review only. Text rules and this voluntary guard do not technically prevent bypass by other tools.

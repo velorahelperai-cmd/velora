@@ -1,7 +1,7 @@
 import {randomUUID} from "node:crypto";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, readFileSync, rmSync, utimesSync, statSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, utimesSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -230,11 +230,12 @@ test("gateNeedsFromAggregate requires secrets; assertRequiredResults denies inco
   );
 });
 
-test("content-aware dirty identity: same path + same HEAD + different bytes invalidates key", () => {
+test("content-aware dirty identity: nested untracked files and changed bytes invalidate key", () => {
   const dir = mkdtempSync(join(tmpdir(), "velora-content-id-"));
   try {
     initGitRepo(dir);
-    const probe = join(dir, "probe-content.txt");
+    mkdirSync(join(dir, "untracked-source"));
+    const probe = join(dir, "untracked-source", "probe-content.txt");
     writeFileSync(probe, "alpha-bytes\n");
     const first = captureCandidateIdentity(dir);
     assert.equal(first.workingTreeState, "dirty");

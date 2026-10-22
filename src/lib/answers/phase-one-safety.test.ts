@@ -1,6 +1,6 @@
 import {afterEach,describe,expect,it,vi} from "vitest";
 vi.mock("server-only",()=>({}));
-vi.mock("./config/env",()=>({getSecureProviderKey:()=>null,isProviderKeyConfigured:()=>false}));
+vi.mock("./config/env",()=>({getSecureProviderKey:()=>null,isProviderKeyConfigured:()=>false,getGeminiModelId:()=>"gemini-3.8-flash"}));
 import {OpenAIAnswerAdapter} from "./adapters/openai";
 import {GeminiAnswerAdapter} from "./adapters/gemini";
 import {simulateAdminAIAnswer} from "./admin-test";

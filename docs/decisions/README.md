@@ -1,5 +1,19 @@
 # Velora decision register
 
+## Latest direct owner decision — 22 October 2026, LOCAL ES02 correction
+
+**Approved:** implement and test the connected correction locally only. Reserve
+credit before sending; consume once on provider acceptance; release on confirmed
+rejection; UNKNOWN stays held for reconciliation without automatic resend/debit.
+Purchased credit has priority and no ordinary expiry. **Readiness permits
+operation and does not start the INITIAL subscription term.** The first accepted
+operational reply to a real customer starts it, excluding configured test number
+and free setup trial. No price/new-credit/Production change. Exact Production
+permissions require a separate concrete review after local tests. This dated
+decision supersedes earlier readiness-start wording only for this scope;
+historical decisions below are retained as evidence. Current results and limits
+are in PROJECT_STATE.md and the ES02 operational-credits package README.
+
 ## Approval status: ARCHITECTURAL DIRECTION APPROVED; DETAILED CONTRACTS PROPOSED / AWAITING USER APPROVAL
 
 Latest explicit approval **2026-10-15 22:55UTC**, direct user statement relayed by parent: **ten functional Flows and five interrelated execution stages are approved as architectural direction only**. Continue audit/planning without routine approval loops. Detailed task contracts, numeric timing/policy choices, actual code repairs and implementation are not approved. No programming/tests/provider/config/DB/Git-publication/production actions before separate authorization. The prior interrupted planning handoff is superseded by this current scope; the old FLOW-001 execution lock is not reinstated.

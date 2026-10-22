@@ -1,5 +1,41 @@
-.theme {min-height:100svh; color:var(--service-ink);background:var(--service-canvas);font-family:var(--font-en);line-height:1.6;}
-.theme[dir="rtl"] {font-family:var(--font-ar);}
-.theme :is(input,select,textarea,button) {font-family:inherit;}
-.theme :global(.font-mono) {font-variant-numeric:tabular-nums;}
-.theme :is(button,input,select,textarea):disabled {opacity:.6;cursor:not-allowed;}
+.theme {
+  --service-canvas: #f7f6f2;
+  --service-surface: #ffffff;
+  --service-subtle: #f0ede6;
+  --service-ink: #1d2724;
+  --service-muted: #5f6b67;
+  --service-line: #e4e7e5;
+  --service-accent: #0e4a52;
+  --service-accent-hover: #12606a;
+  --service-accent-soft: #eaf1f1;
+  --service-success: #2e8b57;
+  --service-warning: #a66b24;
+  --service-danger: #b13742;
+  --color-night: var(--service-canvas);
+  --color-panel: var(--service-surface);
+  --color-panel-deep: var(--service-subtle);
+  --color-paper: var(--service-surface);
+  --color-on-dark: var(--service-ink);
+  --color-ink: var(--service-ink);
+  --color-text: var(--service-ink);
+  --color-muted-on-dark: var(--service-muted);
+  --color-muted-soft: var(--service-muted);
+  --color-line: var(--service-line);
+  --color-border-soft: var(--service-line);
+  --color-action-on-dark: var(--service-accent);
+  --color-action-on-light: var(--service-accent);
+  --color-on-bright-action: #ffffff;
+  --color-success-fg: var(--service-success);
+  --color-warn-fg: var(--service-warning);
+  --color-danger-fg: var(--service-danger);
+  min-height: 100svh;
+  color: var(--service-ink);
+  background: var(--service-canvas);
+  font-family: var(--font-en);
+  line-height: 1.6;
+  color-scheme: light;
+}
+.theme[dir="rtl"] { font-family: var(--font-ar); }
+.theme :is(input,select,textarea,button) { font-family: inherit; }
+.theme :global(.font-mono) { font-variant-numeric: tabular-nums; }
+.theme :is(button,input,select,textarea):disabled { opacity: .6; cursor: not-allowed; }

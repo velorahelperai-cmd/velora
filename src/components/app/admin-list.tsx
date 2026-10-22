@@ -5,12 +5,13 @@ import Link from "next/link";
 import {adminCompanyHref,companyListReturnHref,type CompanyListFilters} from "./admin-company-navigation";
 import {AdminRealAISummary} from "@/components/admin/admin-real-ai-summary";
 import {readAdminTruth,type AdminTruth} from "@/lib/answers/runtime/admin-truth";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button, Notice, useAction, useAppCopy } from "@/components/app/ui";
 import { fill, type AppCopy } from "@/lib/app-copy";
 import {
   adminGetOverviewStats,
-  adminListCompanies,
+  adminListCompaniesPage,
+  adminListPendingReviewsPage,
   adminSearchAccounts,
 } from "@/lib/tenancy/actions";
 import type {
@@ -128,6 +129,10 @@ export function AdminList({
   const [appliedCompanySearch,setAppliedCompanySearch]=useState(initialCompanyFilters.search);
   const [status, setStatus] = useState<"all" | CompanyStatus>(initialCompanyFilters.status);
   const [rows, setRows] = useState<AdminCompanyListItem[]>([]);
+  const [companyOffset, setCompanyOffset] = useState(0);
+  const [companyTotalCount, setCompanyTotalCount] = useState<number | null>(null);
+  const [companyHasMore, setCompanyHasMore] = useState(false);
+  const COMPANY_PAGE_SIZE = 25;
   const [companiesState, setCompaniesState] = useState<CompaniesLoadState>("loading");
   const [error, setError] = useState<string | null>(null);
 
@@ -153,6 +158,12 @@ export function AdminList({
   const accountsGen = useRef(0);
   const companiesGen = useRef(0);
   const overviewGen = useRef(0);
+  const reviewsGen = useRef(0);
+  const [pendingReviews, setPendingReviews] = useState<AdminCompanyListItem[]>([]);
+  const [reviewsState, setReviewsState] = useState<"loading" | "ready" | "error">("loading");
+  const [reviewsOffset, setReviewsOffset] = useState(0);
+  const [reviewsTotal, setReviewsTotal] = useState<number | null>(null);
+  const [reviewsHasMore, setReviewsHasMore] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [truthState,setTruthState]=useState<{
     source:AdminTruth|null;
@@ -239,19 +250,27 @@ export function AdminList({
     }
   }
 
-  async function load(q = search) {
+  async function load(q = search, st = status, offset = companyOffset) {
     const gen = ++companiesGen.current;
     setError(null);
     setCompaniesState("loading");
     try {
-      const result = await adminListCompanies(q);
+      const result = await adminListCompaniesPage({
+        search: q,
+        status: st,
+        limit: COMPANY_PAGE_SIZE,
+        offset,
+      });
       if (gen !== companiesGen.current) return;
       if (!result.ok) {
         setError(result.message ?? copy.admin.companiesLoadFailed);
         setCompaniesState("error");
         return;
       }
-      setRows(result.data);
+      setRows(result.data.rows);
+      setCompanyTotalCount(result.data.totalCount);
+      setCompanyOffset(result.data.offset);
+      setCompanyHasMore(result.data.hasMore);
       setAppliedCompanySearch(q);
       setCompaniesState("ready");
     } catch {
@@ -261,9 +280,32 @@ export function AdminList({
     }
   }
 
+  async function loadReviews(offset = 0) {
+    const gen = ++reviewsGen.current;
+    setReviewsState("loading");
+    setReviewsTotal(null);
+    try {
+      const result = await adminListPendingReviewsPage({ limit: 25, offset });
+      if (gen !== reviewsGen.current) return;
+      if (!result.ok) {
+        setReviewsState("error");
+        return;
+      }
+      setPendingReviews(result.data.rows);
+      setReviewsOffset(result.data.offset);
+      setReviewsTotal(result.data.totalCount);
+      setReviewsHasMore(result.data.hasMore);
+      setReviewsState("ready");
+    } catch {
+      if (gen !== reviewsGen.current) return;
+      setReviewsState("error");
+    }
+  }
+
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
-      void load(initialCompanyFilters.search);
+      void load(initialCompanyFilters.search, initialCompanyFilters.status, 0);
+      void loadReviews();
     });
     return () => window.cancelAnimationFrame(frame);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -419,16 +461,6 @@ export function AdminList({
     overview &&
     overview.accountsTotal > 0;
 
-  const filtered = useMemo(
-    () => (status === "all" ? rows : rows.filter((r) => r.status === status)),
-    [rows, status],
-  );
-
-  const reviewPending = useMemo(
-    () => rows.filter((r) => r.review_status === "pending_review"),
-    [rows],
-  );
-
   const pageNumber = Math.floor(accountOffset / ACCOUNT_PAGE_SIZE) + 1;
   const isRtl = locale === "ar";
 
@@ -469,8 +501,9 @@ export function AdminList({
             busy={truthLoading}
             onClick={() => {
               void loadOverview();
-              void load(search);
+              void load(appliedCompanySearch, status, companyOffset);
               void loadTruth();
+              void loadReviews();
             }}
             className="flex items-center gap-2 text-xs sm:text-sm border border-[var(--service-line)] bg-[var(--service-surface)] text-[var(--service-ink)] hover:bg-[var(--service-canvas)]"
           >
@@ -622,7 +655,7 @@ export function AdminList({
           <IconBuilding />
           <span>{isRtl ? "الشركات والعملاء" : "Companies"}</span>
           <span className="rounded-full bg-[var(--service-accent)]/10 px-1.5 py-0.2 text-[10px] font-bold">
-            {companiesState === "ready" ? filtered.length : "-"}
+            {companiesState === "ready" ? (companyTotalCount ?? rows.length) : "-"}
           </span>
         </button>
 
@@ -650,9 +683,9 @@ export function AdminList({
         >
           <IconCheckCircle />
           <span>{isRtl ? "طلبات المراجعة" : "Reviews"}</span>
-          {reviewPending.length > 0 && (
+          {reviewsTotal !== null && reviewsTotal > 0 && (
             <span className="rounded-full bg-[var(--service-accent-soft)] text-[var(--service-ink)] px-1.5 py-0.2 text-[10px] font-bold">
-              {reviewPending.length}
+              {reviewsTotal}
             </span>
           )}
         </button>
@@ -703,7 +736,7 @@ export function AdminList({
               <p className="mt-0.5 text-xs text-[var(--service-muted)]">{copy.admin.companiesBody}</p>
             </div>
             <span className="rounded-full bg-[var(--service-canvas)] border border-[var(--service-line)] px-3 py-1 text-xs text-[var(--service-accent)] font-semibold">
-              {companiesState === "ready" ? `${fill(copy.admin.companiesTitle, { n: filtered.length })} (${filtered.length})` : "-"}
+              {companiesState === "ready" ? `${fill(copy.admin.companiesTitle, { n: companyTotalCount ?? rows.length })} (${companyTotalCount ?? rows.length})` : "-"}
             </span>
           </div>
 
@@ -712,7 +745,7 @@ export function AdminList({
             className="grid gap-3 sm:grid-cols-[1fr_auto_auto]"
             onSubmit={(e) => {
               e.preventDefault();
-              void run(() => load(search));
+              void run(() => load(search, status, 0));
             }}
           >
             <div className="relative">
@@ -721,14 +754,20 @@ export function AdminList({
               </span>
               <input
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setCompanyOffset(0);
+                }}
                 placeholder={copy.admin.search}
                 className="min-h-11 w-full rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)] ps-9 pe-3 text-sm text-[var(--service-ink)] outline-none focus:border-[var(--service-accent)] focus:ring-1 focus:ring-[var(--service-accent)] transition placeholder:text-[var(--service-muted)] font-medium"
               />
             </div>
             <select
               value={status}
-              onChange={(e) => setStatus(e.target.value as "all" | CompanyStatus)}
+              onChange={(e) => {
+                setStatus(e.target.value as "all" | CompanyStatus);
+                setCompanyOffset(0);
+              }}
               aria-label={copy.admin.statusFilter}
               className="min-h-11 rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)] px-3 text-sm text-[var(--service-ink)] outline-none focus:border-[var(--service-accent)] font-medium"
             >
@@ -757,7 +796,7 @@ export function AdminList({
                 type="button"
                 variant="secondary"
                 busy={busy}
-                onClick={() => void run(() => load(search))}
+                onClick={() => void run(() => load(search, status, 0))}
               >
                 {copy.admin.companiesRetry}
               </Button>
@@ -778,7 +817,7 @@ export function AdminList({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[var(--service-line)]/60 text-[var(--service-ink)]">
-                  {filtered.map((row) => (
+                  {rows.map((row) => (
                     <tr key={row.id} className="hover:bg-[var(--service-canvas)] transition">
                       <td className="p-3.5">
                         <Link
@@ -818,7 +857,7 @@ export function AdminList({
                       </td>
                     </tr>
                   ))}
-                  {!filtered.length && (
+                  {!rows.length && (
                     <tr>
                       <td colSpan={5} className="py-8 text-center text-sm text-[var(--service-muted)]">
                         {copy.admin.companiesEmpty}
@@ -827,6 +866,41 @@ export function AdminList({
                   )}
                 </tbody>
               </table>
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--service-line)] px-4 py-3 bg-[var(--service-surface)]">
+                <div className="text-xs text-[var(--service-muted)]">
+                  {companiesState === "ready" && (companyTotalCount !== null || rows.length > 0)
+                    ? (isRtl
+                      ? `عرض ${rows.length > 0 ? companyOffset + 1 : 0}-${companyOffset + rows.length} من ${companyTotalCount ?? rows.length} شركة`
+                      : `Showing ${rows.length > 0 ? companyOffset + 1 : 0}-${companyOffset + rows.length} of ${companyTotalCount ?? rows.length} companies`)
+                    : "—"}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={companyOffset === 0 || busy}
+                    onClick={() => {
+                      const prevOffset = Math.max(0, companyOffset - COMPANY_PAGE_SIZE);
+                      void load(appliedCompanySearch, status, prevOffset);
+                    }}
+                    className="text-xs px-3 py-1.5"
+                  >
+                    {isRtl ? "السابق" : "Previous"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={!companyHasMore || busy}
+                    onClick={() => {
+                      const nextOffset = companyOffset + COMPANY_PAGE_SIZE;
+                      void load(appliedCompanySearch, status, nextOffset);
+                    }}
+                    className="text-xs px-3 py-1.5"
+                  >
+                    {isRtl ? "التالي" : "Next"}
+                  </Button>
+                </div>
+              </div>
             </div>
           )}
         </section>
@@ -1025,34 +1099,34 @@ export function AdminList({
                   : "Tenants awaiting onboarding approval and knowledge review"}
               </p>
             </div>
-            {reviewPending.length > 0 && (
+            {reviewsTotal !== null && reviewsTotal > 0 && (
               <span className="rounded-full bg-[var(--service-canvas)] text-[var(--service-accent)] border border-[var(--service-line)] px-2.5 py-0.5 text-xs font-bold">
-                {reviewPending.length} {isRtl ? "قيد الانتظار" : "Pending"}
+                {reviewsTotal} {isRtl ? "قيد الانتظار" : "Pending"}
               </span>
             )}
           </div>
 
-          {companiesState === "loading" && (
+          {reviewsState === "loading" && (
             <p className="text-sm font-medium text-[var(--service-muted)]">{copy.loading}</p>
           )}
 
-          {companiesState === "error" && (
+          {reviewsState === "error" && (
             <div className="grid gap-3">
               <Notice tone="error">{copy.admin.reviewsLoadBlocked}</Notice>
               <Button
                 type="button"
                 variant="secondary"
                 busy={busy}
-                onClick={() => void run(() => load(search))}
+                onClick={() => void run(loadReviews)}
               >
                 {copy.admin.companiesRetry}
               </Button>
             </div>
           )}
 
-          {companiesState === "ready" && (
+          {reviewsState === "ready" && (
             <div className="grid gap-2.5">
-              {reviewPending.map((row) => (
+              {pendingReviews.map((row) => (
                 <div
                   key={`review-${row.id}`}
                   className="flex items-center justify-between p-4 rounded-2xl border border-[var(--service-line)] bg-[var(--service-canvas)]/60 transition hover:bg-[var(--service-canvas)] hover:shadow-xs"
@@ -1082,11 +1156,20 @@ export function AdminList({
                 </div>
               ))}
 
-              {!reviewPending.length && (
+              {!pendingReviews.length && (
                 <div className="py-6 text-center text-sm font-medium text-[var(--service-muted)]">
                   {copy.admin.reviewsEmpty}
                 </div>
               )}
+              <nav className="flex items-center justify-between gap-3" aria-label={isRtl ? "صفحات المراجعات" : "Review pages"}>
+                <Button variant="secondary" data-admin-review-page="previous" disabled={reviewsOffset === 0} onClick={() => void loadReviews(Math.max(0, reviewsOffset - 25))}>
+                  {isRtl ? "السابق" : "Previous"}
+                </Button>
+                <span className="text-xs text-[var(--service-muted)]">{Math.floor(reviewsOffset / 25) + 1}</span>
+                <Button variant="secondary" data-admin-review-page="next" disabled={!reviewsHasMore} onClick={() => void loadReviews(reviewsOffset + 25)}>
+                  {isRtl ? "التالي" : "Next"}
+                </Button>
+              </nav>
             </div>
           )}
         </section>

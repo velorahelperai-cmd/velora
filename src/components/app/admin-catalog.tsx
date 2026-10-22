@@ -5,7 +5,7 @@ import { useDemo } from "@/lib/demo-state";
 import { readCatalogAdminAction, saveCatalogDraftAction, publishCatalogVersionAction, bindNouraBasicDraftAction } from "@/lib/billing/catalog-backend/actions";
 import { FEATURE_KEYS, type CatalogDraft, type CatalogAdminSnapshot, type CatalogResult, type VariantCode } from "@/lib/billing/catalog-backend/contract";
 import { catalogEditorVersions, catalogVariantLabel, editorDraft, VARIANT_CODES, type CatalogEditorVersion } from "./admin-catalog-model";
-import { featureLabels, formatOmrBaisa } from "./subscription-offers-view";
+import { featureLabels, formatOmrBaisa } from "./subscription-offers-view"; import { commercialPlans, commercialAmount } from "./subscription-commercial-catalog";
 import { canBindNouraBasicTestDraft, publishReviewedDraft } from "@/lib/billing/catalog-backend/publication";
 import styles from "./admin-catalog.module.css";
 
@@ -295,6 +295,58 @@ export function AdminCatalog({ initial }: { initial: CatalogResult<CatalogAdminS
         ) : null}
 
         {message ? <p role="status">{message}</p> : null}
+
+        {/* Commercial Catalog Specification Matrix (Monthly vs Annual -20%) */}
+        {ready ? (
+          <div className={styles.panel} style={{ margin: "20px 0" }}>
+            <h2>{locale === "ar" ? "المواصفة التجارية للباقات (شهري وسنوي بخصم 20%)" : "Commercial Plans Specification (Monthly & Annual -20%)"}</h2>
+            <p>{locale === "ar" ? "تفاصيل باقات فيلورا الرسمية المعتمدة للمبيعات. تُقيد الاشتراكات السنوية بخصم 20%، وتُربط بالدفع وفق إصدارات الكتالوج الشهرية المنشورة." : "Official commercial package tiers. Annual subscriptions include an approved 20% discount, mapped to active monthly plan versions."}</p>
+            <div style={{ overflowX: "auto", marginTop: 16 }}>
+              <table style={{ width: "100%", textAlign: locale === "ar" ? "right" : "left", fontSize: 13, borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ borderBottom: "1px solid var(--catalog-border)", color: "var(--catalog-secondary)" }}>
+                    <th style={{ padding: "10px 8px" }}>{locale === "ar" ? "الباقة والشخصية" : "Tier & Persona"}</th>
+                    <th style={{ padding: "10px 8px" }}>{locale === "ar" ? "الاشتراك الشهري" : "Monthly Price"}</th>
+                    <th style={{ padding: "10px 8px" }}>{locale === "ar" ? "الاشتراك السنوي (خصم 20%)" : "Annual Price (20% Off)"}</th>
+                    <th style={{ padding: "10px 8px" }}>{locale === "ar" ? "الحصة الشهرية" : "Monthly Replies"}</th>
+                    <th style={{ padding: "10px 8px" }}>{locale === "ar" ? "حالة ربط الدفع" : "Payment Binding"}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {commercialPlans.map((plan) => {
+                    const code = ((plan.persona === "level_1" ? "noor" : plan.persona === "level_2" ? "lina" : "dana") + "_" + plan.package) as VariantCode;
+                    const monthlyBaisa = commercialAmount(plan, "monthly");
+                    const annualBaisa = commercialAmount(plan, "yearly");
+                    const isPublished = rows?.some((v) => v.code === code && v.status === "published") ?? false;
+
+                    return (
+                      <tr key={code} style={{ borderBottom: "1px solid var(--catalog-border)" }}>
+                        <td style={{ padding: "12px 8px", fontWeight: 700 }}>
+                          {catalogVariantLabel(code, locale)}
+                        </td>
+                        <td style={{ padding: "12px 8px", fontFamily: "var(--font-mono, monospace)" }}>
+                          {formatOmrBaisa(monthlyBaisa, locale)}
+                        </td>
+                        <td style={{ padding: "12px 8px", fontFamily: "var(--font-mono, monospace)", color: "var(--catalog-emerald)" }}>
+                          {formatOmrBaisa(annualBaisa, locale)}
+                          <span style={{ fontSize: 11, marginInlineStart: 6, opacity: 0.8 }}>({locale === "ar" ? "توفير 20%" : "Save 20%"})</span>
+                        </td>
+                        <td style={{ padding: "12px 8px" }}>
+                          {plan.replies.toLocaleString(locale)} {locale === "ar" ? "رد/شهر" : "replies/mo"}
+                        </td>
+                        <td style={{ padding: "12px 8px" }}>
+                          <span className={styles.statusBadge} data-status={isPublished ? "published" : "draft"}>
+                            {isPublished ? (locale === "ar" ? "منشور ومرتبط" : "Published & Linked") : (locale === "ar" ? "مسودة غير منشورة" : "Draft / Unlinked")}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : null}
 
         {!ready ? (
           <section className={styles.panel} role="alert">

@@ -8,6 +8,7 @@ import {sendWhatsappText} from "./send";
 import type {IntegrationFrame,IntegrationPorts} from "./integration-worker";
 import {WorkerInputError} from "./integration-worker";
 import {readServiceWindow} from "./service-window";
+import {bindOperationalRecipient} from "./operational-recipient";
 type RpcClient={rpc:(name:string,args:Record<string,unknown>)=>PromiseLike<{data:unknown;error:unknown}>};
 const object=(x:unknown):Record<string,unknown>|null=>x!==null&&typeof x==="object"&&!Array.isArray(x)?x as Record<string,unknown>:null;
 export function workerRolloutEnabled(){return process.env.WHATSAPP_WORKER_ENABLED==="true"&&isLiveAnsweringEnabled()&&externalSendAllowed()&&whatsappRoutingMode()==="tenant_registry";}
@@ -18,8 +19,12 @@ export function createIntegrationPorts(binding:{jobId:string;claimToken:string;c
  async function rpc(name:string,args:Record<string,unknown>){if(!client)throw Error("STORE_NOT_CONFIGURED");const r=await client.rpc(name,args);if(r.error)throw Error("PERSISTENCE_UNAVAILABLE");return r.data;}
  const args={p_job_id:binding.jobId,p_claim_token:binding.claimToken};
  async function frame():Promise<IntegrationFrame|null>{
+ // A failed refresh must not leave an earlier frame eligible for reserve/send.
+ cachedFrame=null;
+ await bindOperationalRecipient(rpc,binding);
  const r=object(await rpc("billing_load_worker_frame",args));const d=object(r?.data);
  if(r?.ok!==true){if(["unsupported_message","link_unavailable","service_window_closed","service_window_authorization_unavailable"].includes(String(r?.code)))throw new WorkerInputError(String(r?.code));return null;}if(!d)return null;
+ if(d.authority!==undefined&&d.authority!=="es02")return null;
  const ids=["job_id","company_id","message_id","conversation_id","phone_number_id","recipient_wa_id","link_id","question"];
  if(ids.some(k=>typeof d[k]!=="string"||!String(d[k]).trim())||d.job_id!==binding.jobId||d.company_id!==binding.companyId||
  !Number.isSafeInteger(d.automation_generation)||Number(d.automation_generation)<0||!Number.isSafeInteger(d.link_generation)||Number(d.link_generation)<1)return null;
@@ -34,7 +39,13 @@ export function createIntegrationPorts(binding:{jobId:string;claimToken:string;c
  const executor=createClaimedWhatsappAnswerExecutor();
  return {enabled,frame,
  context:async f=>{if(!admin)return null;const c=await loadApprovedAnswerContext(f.company_id,admin,{question:f.question,jobId:f.job_id,claimToken:binding.claimToken});return c.ok?c.chunks:null;},
- verify:async(f,citations)=>{const current=await frame();if(!current||!admin||current.conversation_id!==f.conversation_id||current.automation_generation!==f.automation_generation||current.link_id!==f.link_id||current.link_generation!==f.link_generation)return false;
+ verify:async(f,citations)=>{const current=await frame();if(!current||!admin||f.job_id!==binding.jobId||f.company_id!==binding.companyId||current.authority!==f.authority||current.conversation_id!==f.conversation_id||current.automation_generation!==f.automation_generation||current.link_id!==f.link_id||current.link_generation!==f.link_generation)return false;
+ if(current.authority==="es02"){
+ if(!citations.length)return false;
+ try{const proof=object(await rpc("es02_verify_claimed_reply_citations",{...args,p_source_citations:citations}));
+ return proof?.ok===true&&proof.company_id===current.company_id&&proof.job_id===current.job_id;
+ }catch{return false;}
+ }
  // Revalidate the original citation snapshot directly, even during draft recovery.
  // A new query result may never substitute different versions or require loading the whole corpus.
  return await verifyAnswerCitationsStillValid(f.company_id,citations.map(c=>({...c,text:"citation snapshot"})),admin);},

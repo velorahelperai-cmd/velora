@@ -3,6 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "workspace:verify": "node scripts/consolidation/guard.mjs",
+    "predev": "npm run workspace:verify",
+    "prebuild": "npm run workspace:verify",
+    "prestart": "npm run workspace:verify",
+    "prelint": "npm run workspace:verify",
+    "pretypecheck": "npm run workspace:verify",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
@@ -57,6 +63,6 @@
     "tailwindcss": "4.3.3",
     "typescript": "6.0.3",
     "vite": "7.3.7",
-    "vitest": "4.1.11"
+    "vitest": "4.1.12"
   }
 }

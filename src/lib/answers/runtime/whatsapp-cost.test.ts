@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
-vi.mock("../config/env", () => ({ getSecureProviderKey: () => null }));
+vi.mock("../config/env", () => ({ getGeminiModelId:()=>"gemini-3.8-flash",getSecureProviderKey: () => null }));
 const admin = vi.hoisted(() => ({ create: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: admin.create }));
 import { createClaimedWhatsappAnswerExecutor, executeClaimedWhatsappAnswer } from "./whatsapp-cost";
@@ -99,5 +99,51 @@ describe("claimed worker RPC store", () => {
     admin.create.mockReturnValue({ rpc: vi.fn().mockResolvedValue({ data: { ok: true, id: "attempt", job_id: "different-job", remaining_baisa: 1 }, error: null }) });
     const db = createClaimedWhatsappRuntimeStore({ jobId: "job", claimToken: "claim" });
     await expect(db.reserve({ id: "attempt", attempt: 1, model: "gpt-6-luna", provider: "openai", reservedBaisa: 1, pricingVersion: "fixture", pricingSnapshot: {} })).rejects.toThrow("INVALID_RESERVATION_RESULT");
+  });
+});
+
+
+// Synthetic RPC acknowledgements, not native reservation/settlement evidence.
+const es02ExpectedProfile = {
+  authority: "es02" as const, companyId: "company", persona: "lina" as const,
+  orderId: "6970452d-a20d-4f84-8ec8-744207509177", branchId: "3701c3a6-026c-43b5-b23c-2858d4ae0477",
+  slotIndex: 0, paidFingerprint: "a".repeat(64),
+};
+const es02Acknowledgement = {
+  ok: true, id: "attempt", job_id: "job", company_id: "company", automation_generation: 2, remaining_baisa: 7,
+  answer_persona: "lina", es02_order_id: es02ExpectedProfile.orderId, es02_branch_id: es02ExpectedProfile.branchId,
+  es02_slot_index: 0, es02_paid_fingerprint: es02ExpectedProfile.paidFingerprint,
+};
+const reserveInput = { id: "attempt", attempt: 1, model: "gpt-6-luna" as const, provider: "openai" as const, reservedBaisa: 1, pricingVersion: "fixture", pricingSnapshot: {}, sourceCitations: [] };
+describe("ES02 paid worker profile reservation contract", () => {
+  it("routes the ES02 snapshot to its atomic RPC without a native plan ID", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: es02Acknowledgement, error: null });
+    admin.create.mockReturnValue({ rpc });
+    const db = createClaimedWhatsappRuntimeStore({ jobId: "job", claimToken: "claim" }, es02ExpectedProfile);
+    expect(await db.reserve(reserveInput)).toEqual({ ok: true });
+    expect(rpc).toHaveBeenCalledWith("es02_reserve_whatsapp_capacity_cost_attempt", expect.objectContaining({ p_expected_order_id: es02ExpectedProfile.orderId, p_expected_branch_id: es02ExpectedProfile.branchId, p_expected_slot_index: 0, p_expected_paid_fingerprint: es02ExpectedProfile.paidFingerprint, p_expected_persona: "lina", p_job_id: "job", p_claim_token: "claim" }));
+    expect(rpc.mock.calls[0][1]).not.toHaveProperty("p_expected_plan_version_id");
+  });
+  it.each([
+    { company_id: "foreign-company" }, { answer_persona: "noura" }, { es02_order_id: "foreign-order" },
+    { es02_branch_id: "foreign-branch" }, { es02_slot_index: 1 }, { es02_paid_fingerprint: "b".repeat(64) },
+    { answer_plan_version_id: "fabricated-native-plan" },
+  ])("rejects an ES02 acknowledgement outside its pre-read paid snapshot %j", async patch => {
+    admin.create.mockReturnValue({ rpc: vi.fn().mockResolvedValue({ data: { ...es02Acknowledgement, ...patch }, error: null }) });
+    const db = createClaimedWhatsappRuntimeStore({ jobId: "job", claimToken: "claim" }, es02ExpectedProfile);
+    await expect(db.reserve(reserveInput)).rejects.toThrow("ANSWER_PROFILE_MISMATCH");
+  });
+  it("rejects ES02 provenance attached to a native-plan reservation", async () => {
+    admin.create.mockReturnValue({ rpc: vi.fn().mockResolvedValue({ data: { ...es02Acknowledgement, answer_plan_version_id: "native-plan" }, error: null }) });
+    const db = createClaimedWhatsappRuntimeStore({ jobId: "job", claimToken: "claim" }, { companyId: "company", persona: "lina", planVersionId: "native-plan" });
+    await expect(db.reserve(reserveInput)).rejects.toThrow("ANSWER_PROFILE_MISMATCH");
+  });
+  it("accepts only the same bound provenance on reservation replay", async () => {
+    const rpc = vi.fn().mockResolvedValueOnce({ data: es02Acknowledgement, error: null }).mockResolvedValueOnce({ data: { ...es02Acknowledgement, reused: true }, error: null });
+    admin.create.mockReturnValue({ rpc });
+    const db = createClaimedWhatsappRuntimeStore({ jobId: "job", claimToken: "claim" }, es02ExpectedProfile);
+    expect(await db.reserve(reserveInput)).toEqual({ ok: true });
+    expect(await db.reserve(reserveInput)).toEqual({ ok: true });
+    expect(rpc.mock.calls[0]).toEqual(rpc.mock.calls[1]);
   });
 });

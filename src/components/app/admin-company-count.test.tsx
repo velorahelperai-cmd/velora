@@ -7,7 +7,7 @@ vi.mock("react",async()=>{
  return {...actual,useState(initial:unknown){const s=slot();if(!("value" in s))s.value=typeof initial==="function"?(initial as ()=>unknown)():initial;return [s.value,(v:unknown)=>{s.value=typeof v==="function"?(v as (old:unknown)=>unknown)(s.value):v;}];},useRef(initial:unknown){const s=slot();return s.value??(s.value={current:initial});},useMemo(fn:()=>unknown){slot();return fn();},useEffect(){}};
 });
 vi.mock("@/lib/demo-state",()=>({useDemo:()=>({locale:"en"})}));
-vi.mock("@/lib/tenancy/actions",()=>({adminListCompanies:mocks.list,adminGetOverviewStats:vi.fn(),adminSearchAccounts:vi.fn()}));
+vi.mock("@/lib/tenancy/actions",()=>({adminListCompaniesPage:mocks.list,adminListPendingReviewsPage:vi.fn().mockResolvedValue({ok:true,data:[]}),adminGetOverviewStats:vi.fn(),adminSearchAccounts:vi.fn()}));
 vi.mock("@/lib/answers/runtime/admin-truth",()=>({readAdminTruth:vi.fn()}));
 import { AdminList } from "./admin-list";
 type Node={type:unknown;props:Record<string,unknown>};
@@ -21,14 +21,14 @@ async function search(tree:ReactNode){const form=nodes(tree).find(n=>n.type==="f
 beforeEach(()=>{vi.clearAllMocks();mocks.slots=[];mocks.cursor=0;});
 describe("company count distinguishes unknown from verified zero",()=>{
  it("initial loading badges do not fabricate zero",()=>{const tree=render();expect(count(tree)).toBe("-");expect(header(tree)).not.toContain("(0)");});
- it("a successful empty database read displays real zero",async()=>{mocks.list.mockResolvedValue({ok:true,data:[]});await search(render());const tree=render();expect(count(tree)).toBe("0");expect(header(tree)).toContain("(0)");});
+ it("a successful empty database read displays real zero",async()=>{mocks.list.mockResolvedValue({ok:true,data:{rows:[],totalCount:0,offset:0,hasMore:false}});await search(render());const tree=render();expect(count(tree)).toBe("0");expect(header(tree)).toContain("(0)");});
  it("a successful nonempty read displays the loaded count",async()=>{
-  mocks.list.mockResolvedValue({ok:true,data:[{id:"synthetic-company",display_name:"Synthetic company",status:"active",created_at:"2026-10-11T00:00:00Z"}]});
+  mocks.list.mockResolvedValue({ok:true,data:{rows:[{id:"synthetic-company",display_name:"Synthetic company",status:"active",created_at:"2026-10-11T00:00:00Z"}],totalCount:1,offset:0,hasMore:false}});
   await search(render());expect(count(render())).toBe("1");
  });
  it("failed read keeps count unavailable",async()=>{mocks.list.mockResolvedValue({ok:false,code:"FORBIDDEN"});await search(render());expect(count(render())).toBe("-");});
  it("refresh does not display stale count while pending or rejected",async()=>{
-  mocks.list.mockResolvedValueOnce({ok:true,data:[]});await search(render());expect(count(render())).toBe("0");
+  mocks.list.mockResolvedValueOnce({ok:true,data:{rows:[],totalCount:0,offset:0,hasMore:false}});await search(render());expect(count(render())).toBe("0");
   let reject!:(e:Error)=>void;mocks.list.mockReturnValue(new Promise((_,no)=>{reject=no;}));await search(render());expect(count(render())).toBe("-");
   reject(new Error("Synthetic failure"));await flush();expect(count(render())).toBe("-");
  });

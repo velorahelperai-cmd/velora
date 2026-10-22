@@ -36,6 +36,7 @@ import type {
   AdminAccountSearchItem,
   AdminAccountSearchPage,
   AdminCompanyListItem,
+  AdminCompanyListPage,
   AdminOverviewStats,
   CompanyRecord,
   CompanyReviewEvent,
@@ -44,7 +45,7 @@ import type {
   CompanyStatus,
   ReviewStatus,
 } from "@/lib/tenancy/types";
-import { ADMIN_ACCOUNT_SEARCH_MAX_OFFSET, normalizeAdminAccountQuery } from "@/lib/tenancy/types";
+import { ADMIN_ACCOUNT_SEARCH_MAX_OFFSET, ADMIN_COMPANIES_PAGE_DEFAULT_LIMIT, ADMIN_COMPANIES_PAGE_MAX_LIMIT, ADMIN_COMPANIES_PAGE_MIN_LIMIT, normalizeAdminAccountQuery } from "@/lib/tenancy/types";
 import { getWhatsappCompanyLink } from "@/lib/whatsapp/connection-actions";
 import { whatsappLiveOpsReady } from "@/lib/whatsapp/config";
 
@@ -1378,6 +1379,87 @@ export async function saveOwnerBusiness(input: {
   } catch {
     return { ok: false, code: "UNAVAILABLE", diagnostic: trace.finish("UNAVAILABLE") };
   }
+}
+
+export async function adminListCompaniesPage(input?: {
+  search?: string;
+  status?: "all" | CompanyStatus | "pending_review";
+  limit?: number;
+  offset?: number;
+}): Promise<ActionResult<AdminCompanyListPage>> {
+  const access = await requirePlatformAdmin();
+  if (!access.ok) return { ok: false, code: access.code };
+
+  // Server Actions are directly callable; TypeScript annotations do not validate callers.
+  if (input !== undefined && !isPlainObject(input)) return { ok: false, code: "INVALID_INPUT" };
+  if (input?.search !== undefined && typeof input.search !== "string") return { ok: false, code: "INVALID_INPUT" };
+  if (input?.status !== undefined && !["all", "setup", "active", "suspended", "pending_review"].includes(input.status)) return { ok: false, code: "INVALID_INPUT" };
+  if (input?.limit !== undefined && typeof input.limit !== "number") return { ok: false, code: "INVALID_INPUT" };
+  if (input?.offset !== undefined && (typeof input.offset !== "number" || !Number.isFinite(input.offset) || Math.floor(input.offset) > 2147483647)) return { ok: false, code: "INVALID_INPUT" };
+
+  const rawLimit = input?.limit ?? ADMIN_COMPANIES_PAGE_DEFAULT_LIMIT;
+  const limit = Math.min(
+    Math.max(
+      Number.isFinite(rawLimit) ? Math.floor(rawLimit) : ADMIN_COMPANIES_PAGE_DEFAULT_LIMIT,
+      ADMIN_COMPANIES_PAGE_MIN_LIMIT
+    ),
+    ADMIN_COMPANIES_PAGE_MAX_LIMIT
+  );
+  const rawOffset = input?.offset ?? 0;
+  const offset = Math.max(Number.isFinite(rawOffset) ? Math.floor(rawOffset) : 0, 0);
+  const search = (input?.search ?? "").trim();
+  const status = input?.status ?? "all";
+
+  try {
+    const supabase = await createClient();
+
+    // Direct execution of admin_list_companies_page RPC (no silent fallback to legacy RPC)
+    type PageRpcResponse = { rows?: unknown[]; total_count?: number };
+    const pageRpc = await (supabase.rpc as unknown as (name: string, args: Record<string, unknown>) => PromiseLike<{ data: unknown; error: unknown }>)("admin_list_companies_page", {
+      p_search: search,
+      p_status: status,
+      p_limit: limit,
+      p_offset: offset,
+    });
+
+    if (pageRpc.error) {
+      const err = pageRpc.error as { message?: string };
+      return { ok: false, code: "UNAVAILABLE", message: err.message };
+    }
+
+    if (!pageRpc.data || typeof pageRpc.data !== "object") {
+      return { ok: false, code: "UNAVAILABLE", message: "bad_rpc_payload" };
+    }
+
+    const d = pageRpc.data as PageRpcResponse;
+    if (!Array.isArray(d.rows) || typeof d.total_count !== "number") {
+      return { ok: false, code: "UNAVAILABLE", message: "bad_rpc_payload" };
+    }
+
+    return {
+      ok: true,
+      data: {
+        rows: d.rows as AdminCompanyListItem[],
+        totalCount: d.total_count,
+        offset,
+        limit,
+        hasMore: offset + d.rows.length < d.total_count,
+      },
+    };
+  } catch {
+    return { ok: false, code: "UNAVAILABLE" };
+  }
+}
+
+export async function adminListPendingReviews(): Promise<ActionResult<AdminCompanyListItem[]>> {
+  const result = await adminListPendingReviewsPage();
+  if (!result.ok) return { ok: false, code: result.code };
+  return { ok: true, data: result.data.rows };
+}
+
+export async function adminListPendingReviewsPage(input?: { limit?: number; offset?: number }): Promise<ActionResult<AdminCompanyListPage>> {
+  if (input !== undefined && !isPlainObject(input)) return { ok: false, code: "INVALID_INPUT" };
+  return adminListCompaniesPage({ limit: input?.limit, offset: input?.offset, status: "pending_review" });
 }
 
 export async function adminListCompanies(search = ""): Promise<ActionResult<AdminCompanyListItem[]>> {

@@ -1,20 +1,408 @@
 "use client";
+
 import Link from "next/link";
-import {useDemo} from "@/lib/demo-state";
-import type {readAdminBillingOrder} from "@/lib/billing/admin/actions";
-import {formatOmrBaisa} from "@/components/app/subscription-offers-view";
-import {financialLabels} from "./billing-ledger";
-import styles from "./billing-ledger.module.css";
-export function AdminBillingOrderView({result,back,refresh}:{result:Awaited<ReturnType<typeof readAdminBillingOrder>>;back:string;refresh:string}){
- const {locale}=useDemo(),ar=locale==="ar";const label=(v:boolean|"unavailable"|null|undefined)=>v===true?(ar?"\u0645\u0624\u0643\u062f":"Confirmed"):v===false?(ar?"\u063a\u064a\u0631 \u0645\u0624\u0643\u062f":"Not confirmed"):(ar?"\u063a\u064a\u0631 \u0645\u062a\u0648\u0641\u0631":"Unavailable");const date=(v:string|null)=>v&&Number.isFinite(Date.parse(v))?new Intl.DateTimeFormat(locale,{dateStyle:"medium",timeStyle:"short",timeZone:"UTC"}).format(new Date(v)):"—";
- if(result.status!=="ready"||!result.data)return <main className={styles.root}><h1>{ar?"\u0637\u0644\u0628 \u0627\u0634\u062a\u0631\u0627\u0643":"Subscription order"}</h1><p role="alert">{result.status==="forbidden"?(ar?"\u063a\u064a\u0631 \u0645\u0633\u0645\u0648\u062d":"Access denied"):result.status==="not_found"?(ar?"\u0627\u0644\u0637\u0644\u0628 \u063a\u064a\u0631 \u0645\u0648\u062c\u0648\u062f":"Order not found"):(ar?"\u062a\u0639\u0630\u0631 \u062a\u062d\u0645\u064a\u0644 \u0627\u0644\u0637\u0644\u0628":"Order unavailable")}</p><Link href={back}>{ar?"\u0627\u0644\u0639\u0648\u062f\u0629":"Back to orders"}</Link></main>;
- const {order,current,serviceStates,email,timeline}=result.data;const active=current?.status==="ready"?current:null;
- const emailLabels={queued:ar?"البريد في قائمة الانتظار":"Email queued",claimed:ar?"طلب الإرسال قيد المعالجة؛ لا تعِد الإرسال":"Send claimed; do not resend",accepted:ar?"قبِل مزوّد البريد الطلب؛ لم يتأكد التسليم":"Provider accepted; delivery unconfirmed",rejected:ar?"رفض مزوّد البريد الطلب":"Provider rejected",reconciliation_required:ar?"نتيجة الإرسال غير محسومة؛ تحتاج مراجعة":"Send unresolved; reconciliation required",blocked:ar?"تغير المستلم أو إيصال الدفع؛ أُوقف الإرسال":"Recipient or receipt changed; send blocked",not_queued:ar?"لا يوجد بريد محفوظ لهذا الطلب":"No email queued for this order",unavailable:ar?"تعذّر التحقق من حالة البريد":"Email status unavailable"};
- return <main className={styles.root} lang={locale} dir={ar?"rtl":"ltr"}><header><h1>{ar?"\u0637\u0644\u0628 \u0627\u0634\u062a\u0631\u0627\u0643":"Subscription order"}</h1><p><bdi>{order.id}</bdi></p></header><nav><Link href={back}>{ar?"\u0627\u0644\u0639\u0648\u062f\u0629":"Back to orders"}</Link><Link href={refresh}>{ar?"\u062a\u062d\u062f\u064a\u062b":"Refresh"}</Link><Link href={`/admin/companies/${order.companyId}`}>{ar?"\u0627\u0644\u0634\u0631\u0643\u0629":"Company"}</Link></nav>
- <dl className={styles.facts}><div><dt>{ar?"\u0627\u0644\u0645\u0628\u0644\u063a \u0627\u0644\u0645\u062d\u0641\u0648\u0638":"Locked amount"}</dt><dd><bdi>{order.amountBaisa!==null&&order.currency==="OMR"?formatOmrBaisa(order.amountBaisa,locale):"—"}</bdi></dd></div><div><dt>{ar?"\u062d\u0627\u0644\u0629 \u0627\u0644\u062f\u0641\u0639":"Payment state"}</dt><dd>{financialLabels[locale][order.financial.state]}</dd></div><div><dt>{ar?"\u0627\u0644\u0628\u064a\u0626\u0629":"Environment"}</dt><dd>{order.environment??(ar?"\u063a\u064a\u0631 \u0645\u0639\u0631\u0648\u0641":"Unknown")}</dd></div><div><dt>{ar?"\u062a\u0627\u0631\u064a\u062e \u0627\u0644\u062a\u062d\u0635\u064a\u0644":"Qualified collection date"}</dt><dd>{date(order.financial.collectedAt)}</dd></div><div><dt>{ar?"\u062d\u062a\u0649 \u062a\u0627\u0631\u064a\u062e":"This order paid through"}</dt><dd>{date(order.financial.paidThrough)}</dd></div><div><dt>{ar?"\u0646\u0647\u0627\u064a\u0629 \u0645\u0647\u0644\u0629 \u0627\u0644\u062f\u0641\u0639":"Checkout deadline"}</dt><dd>{date(order.checkoutDeadline)}</dd></div></dl>
- <h2>{ar?"\u0623\u0647\u0644\u064a\u0629 \u0627\u0644\u0634\u0631\u0643\u0629 \u0627\u0644\u062d\u0627\u0644\u064a\u0629":"Current company billing eligibility"}</h2><dl className={styles.facts}><div><dt>{ar?"\u0623\u0647\u0644\u064a\u0629 \u062d\u0627\u0644\u064a\u0629":"Current eligibility"}</dt><dd>{label(active?.operationalEligible)}</dd></div><div><dt>{ar?"\u0631\u0633\u0627\u0626\u0644 \u0645\u0642\u0628\u0648\u0644\u0629":"Accepted messages"}</dt><dd>{active?.sent?.toLocaleString(locale)??"—"}</dd></div><div><dt>{ar?"\u0633\u0639\u0629 \u0645\u062d\u062c\u0648\u0632\u0629":"Held capacity"}</dt><dd>{active?.held?.toLocaleString(locale)??"—"}</dd></div><div><dt>{ar?"\u0633\u0639\u0629 \u0645\u062a\u0628\u0642\u064a\u0629":"Remaining allowance"}</dt><dd>{active?.remaining?.toLocaleString(locale)??"—"}</dd></div></dl>
- <h2>{ar?"\u062a\u0641\u0639\u064a\u0644 \u0645\u0646\u062d \u0627\u0644\u062e\u062f\u0645\u0629":"Service grant activation"}</h2>{serviceStates===null?<p>{label(null)}</p>:serviceStates.length?serviceStates.map((x,i)=><p key={i}>{x.service} / {x.tier}: {label(x.activated)}</p>):<p>{ar?"\u0644\u0627 \u062a\u0648\u062c\u062f \u0645\u0646\u062d\u0629 \u062e\u062f\u0645\u0629 \u062d\u0627\u0644\u064a\u0629.":"No current service grant."}</p>}
- <h2>{ar?"بريد تأكيد الاشتراك":"Subscription confirmation email"}</h2><p role="status">{emailLabels[email?.state??"unavailable"]}</p>{email?.acceptedAt?<p>{ar?"وقت قبول الطلب: ":"Accepted at: "}{date(email.acceptedAt)}</p>:null}
- <p className={styles.note}>{ar?"\u0627\u0644\u062f\u0641\u0639 \u0648\u0627\u0644\u0623\u0647\u0644\u064a\u0629 \u0648\u0627\u0644\u0645\u0646\u062d\u0629 \u0644\u0627 \u062a\u062b\u0628\u062a \u062a\u0634\u063a\u064a\u0644 \u0627\u0644\u062e\u062f\u0645\u0629 \u0623\u0648 \u062c\u0627\u0647\u0632\u064a\u0629 \u0627\u0644\u0642\u0646\u0627\u0629.":"Payment, billing eligibility and a grant do not establish runtime activation or channel readiness."}</p>
- <h2>{ar?"\u0633\u062c\u0644 \u0627\u0644\u0637\u0644\u0628":"Order timeline"}</h2>{timeline.length?<ol className={styles.timeline}>{[...timeline].sort((a,b)=>(a.at??"").localeCompare(b.at??"")).map(x=><li key={`${x.kind}-${x.id}`}><span>{x.kind}: {x.state}</span><br/><time>{date(x.at)}</time><br/><small><bdi>{x.id}</bdi></small></li>)}</ol>:<p>{ar?"\u0644\u0627 \u062a\u0648\u062c\u062f \u0623\u062d\u062f\u0627\u062b \u0645\u0637\u0627\u0628\u0642\u0629 \u0645\u062d\u0641\u0648\u0638\u0629.":"No matching stored events."}</p>}</main>;
+import { useDemo } from "@/lib/demo-state";
+import type { readAdminBillingOrder } from "@/lib/billing/admin/actions";
+import { formatOmrBaisa } from "@/components/app/subscription-offers-view";
+import { financialLabels } from "./billing-ledger";
+import {
+  IconBuilding,
+  IconChevronLeft,
+  IconChevronRight,
+  IconLayers,
+  IconPulse,
+  IconSparkles,
+} from "./admin-icons";
+
+export interface AdminBillingOrderViewProps {
+  result: Awaited<ReturnType<typeof readAdminBillingOrder>>;
+  back: string;
+  refresh: string;
+}
+
+export function AdminBillingOrderView({ result, back, refresh }: AdminBillingOrderViewProps) {
+  const { locale } = useDemo();
+  const ar = locale === "ar";
+
+  const label = (v: boolean | "unavailable" | null | undefined) =>
+    v === true
+      ? ar
+        ? "مؤكد / نشط"
+        : "Confirmed / Active"
+      : v === false
+      ? ar
+        ? "غير مؤكد / متوقف"
+        : "Not Confirmed"
+      : ar
+      ? "غير متوفر"
+      : "Unavailable";
+
+  const formatDate = (v: string | null | undefined) =>
+    v && Number.isFinite(Date.parse(v))
+      ? new Intl.DateTimeFormat(locale, {
+          dateStyle: "medium",
+          timeStyle: "short",
+          timeZone: "UTC",
+        }).format(new Date(v))
+      : "—";
+
+  if (result.status !== "ready" || !result.data) {
+    return (
+      <div className="space-y-6" dir={ar ? "rtl" : "ltr"}>
+        <div className="flex items-center gap-3">
+          <Link
+            href={back}
+            className="inline-flex items-center gap-1 text-xs font-semibold text-[var(--service-accent)] hover:underline"
+          >
+            {ar ? <IconChevronRight className="h-4 w-4" /> : <IconChevronLeft className="h-4 w-4" />}
+            <span>{ar ? "العودة لسجل الفواتير" : "Back to Orders"}</span>
+          </Link>
+        </div>
+
+        <div
+          role="alert"
+          className="rounded-2xl border border-red-200 bg-red-50 p-8 text-center text-sm font-bold text-red-800 shadow-sm"
+        >
+          {result.status === "forbidden"
+            ? ar
+              ? "سجلات الدفع متاحة لمالك المنصة فقط."
+              : "Access denied. Platform owner only."
+            : result.status === "not_found"
+            ? ar
+              ? "طلب الاشتراك غير موجود في قاعدة البيانات."
+              : "Order not found."
+            : ar
+            ? "تعذر تحميل تفاصيل الطلب. حدّث للمحاولة."
+            : "Order unavailable."}
+        </div>
+      </div>
+    );
+  }
+
+  const { order, current, serviceStates, email, timeline } = result.data;
+  const active = current?.status === "ready" ? current : null;
+
+  const emailLabels: Record<string, string> = {
+    queued: ar ? "البريد في قائمة الانتظار" : "Email queued",
+    claimed: ar ? "طلب الإرسال قيد المعالجة" : "Send claimed",
+    accepted: ar ? "قبِل مزوّد البريد الطلب" : "Provider accepted",
+    rejected: ar ? "رفض مزوّد البريد الطلب" : "Provider rejected",
+    reconciliation_required: ar ? "يحتاج مراجعة ومطابقة" : "Reconciliation required",
+    blocked: ar ? "أُوقف الإرسال احترازيًا" : "Send blocked",
+    not_queued: ar ? "لا يوجد بريد مسجل لهذا الطلب" : "No email queued",
+    unavailable: ar ? "تعذّر التحقق من حالة البريد" : "Email status unavailable",
+  };
+
+  const statusMeta = financialLabels[ar ? "ar" : "en"][order.financial.state] ?? {
+    label: order.financial.state,
+    tone: "neutral" as const,
+  };
+
+  return (
+    <div className="space-y-6" dir={ar ? "rtl" : "ltr"}>
+      {/* Navigation & Header */}
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[var(--service-line)] pb-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <Link
+              href={back}
+              className="inline-flex items-center gap-1 text-xs font-semibold text-[var(--service-accent)] hover:underline"
+            >
+              {ar ? <IconChevronRight className="h-4 w-4" /> : <IconChevronLeft className="h-4 w-4" />}
+              <span>{ar ? "سجل الاشتراكات" : "Orders Ledger"}</span>
+            </Link>
+            <span className="text-xs text-[var(--service-muted)]">/</span>
+            <span className="text-xs font-semibold text-[var(--service-muted)]">
+              {ar ? "تفاصيل طلب الاشتراك" : "Order Details"}
+            </span>
+          </div>
+          <h1 className="mt-1 text-2xl font-black text-[var(--service-ink)] tracking-tight">
+            {ar ? "تفاصيل طلب الاشتراك" : "Subscription Order Details"}
+          </h1>
+          <div className="mt-1 flex items-center gap-2">
+            <span className="font-mono text-xs text-[var(--service-muted)]">{order.id}</span>
+            <span
+              className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                statusMeta.tone === "success"
+                  ? "bg-emerald-100 text-emerald-800"
+                  : statusMeta.tone === "warn"
+                  ? "bg-amber-100 text-amber-800"
+                  : "bg-red-100 text-red-800"
+              }`}
+            >
+              {statusMeta.label}
+            </span>
+          </div>
+        </div>
+
+        {/* Action Controls */}
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href={`/admin/companies/${order.companyId}`}
+            className="flex items-center gap-1.5 rounded-xl border border-[var(--service-line)] bg-[var(--service-surface)] px-3 py-1.5 text-xs font-semibold text-[var(--service-ink)] shadow-sm hover:bg-[var(--service-subtle)] transition"
+          >
+            <IconBuilding className="h-3.5 w-3.5 text-[var(--service-accent)]" />
+            <span>{ar ? "ملف الشركة" : "View Company"}</span>
+          </Link>
+
+          <Link
+            href={refresh}
+            className="flex items-center gap-1.5 rounded-xl border border-[var(--service-line)] bg-[var(--service-surface)] px-3 py-1.5 text-xs font-semibold text-[var(--service-ink)] shadow-sm hover:bg-[var(--service-subtle)] transition"
+          >
+            <IconPulse className="h-3.5 w-3.5 text-[var(--service-accent)]" />
+            <span>{ar ? "تحديث" : "Refresh"}</span>
+          </Link>
+        </div>
+      </div>
+
+      {/* Main Order Financial Facts Card */}
+      <div className="rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] p-6 shadow-sm">
+        <h2 className="text-base font-bold text-[var(--service-ink)]">
+          {ar ? "البيانات المالية الأساسية للطلب" : "Order Financial Details"}
+        </h2>
+        <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6 text-xs">
+          <div className="rounded-xl bg-[var(--service-canvas)] p-3 border border-[var(--service-line)]">
+            <div className="text-[10px] font-bold text-[var(--service-muted)]">
+              {ar ? "المبلغ المحفوظ" : "Locked Amount"}
+            </div>
+            <div className="mt-1 font-mono text-base font-black text-[var(--service-accent)]">
+              {order.amountBaisa !== null && order.currency === "OMR"
+                ? formatOmrBaisa(order.amountBaisa, locale)
+                : "—"}
+            </div>
+          </div>
+
+          <div className="rounded-xl bg-[var(--service-canvas)] p-3 border border-[var(--service-line)]">
+            <div className="text-[10px] font-bold text-[var(--service-muted)]">
+              {ar ? "حالة الدفع" : "Payment State"}
+            </div>
+            <div className="mt-1 font-bold text-[var(--service-ink)]">{statusMeta.label}</div>
+          </div>
+
+          <div className="rounded-xl bg-[var(--service-canvas)] p-3 border border-[var(--service-line)]">
+            <div className="text-[10px] font-bold text-[var(--service-muted)]">
+              {ar ? "بيئة التنفيذ" : "Environment"}
+            </div>
+            <div className="mt-1 font-bold text-[var(--service-ink)]">
+              {order.environment ?? (ar ? "غير معروف" : "Unknown")}
+            </div>
+          </div>
+
+          <div className="rounded-xl bg-[var(--service-canvas)] p-3 border border-[var(--service-line)]">
+            <div className="text-[10px] font-bold text-[var(--service-muted)]">
+              {ar ? "تاريخ التحصيل المؤهل" : "Qualified Collection"}
+            </div>
+            <div className="mt-1 font-mono text-[11px] text-[var(--service-ink)]">
+              {formatDate(order.financial.collectedAt)}
+            </div>
+          </div>
+
+          <div className="rounded-xl bg-[var(--service-canvas)] p-3 border border-[var(--service-line)]">
+            <div className="text-[10px] font-bold text-[var(--service-muted)]">
+              {ar ? "صالح حتى تاريخ" : "Paid Through"}
+            </div>
+            <div className="mt-1 font-mono text-[11px] text-[var(--service-ink)]">
+              {formatDate(order.financial.paidThrough)}
+            </div>
+          </div>
+
+          <div className="rounded-xl bg-[var(--service-canvas)] p-3 border border-[var(--service-line)]">
+            <div className="text-[10px] font-bold text-[var(--service-muted)]">
+              {ar ? "مهلة الدفع" : "Checkout Deadline"}
+            </div>
+            <div className="mt-1 font-mono text-[11px] text-[var(--service-ink)]">
+              {formatDate(order.checkoutDeadline)}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Grid: Eligibility & Service Grants */}
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+        {/* Company Billing Eligibility */}
+        <div className="rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] p-6 shadow-sm">
+          <div className="flex items-center justify-between border-b border-[var(--service-line)] pb-3">
+            <h2 className="text-base font-bold text-[var(--service-ink)]">
+              {ar ? "أهلية الشركة التشغيلية الحالية" : "Current Company Eligibility"}
+            </h2>
+            <IconSparkles className="h-4 w-4 text-[var(--service-accent)]" />
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-4 text-xs">
+            <div className="rounded-xl bg-[var(--service-canvas)] p-3 border border-[var(--service-line)]">
+              <span className="text-[10px] font-bold text-[var(--service-muted)]">
+                {ar ? "الأهلية الحالية:" : "Current Eligibility:"}
+              </span>
+              <div className="mt-1 font-bold text-[var(--service-ink)]">
+                {label(active?.operationalEligible)}
+              </div>
+            </div>
+
+            <div className="rounded-xl bg-[var(--service-canvas)] p-3 border border-[var(--service-line)]">
+              <span className="text-[10px] font-bold text-[var(--service-muted)]">
+                {ar ? "الرسائل المقبولة:" : "Accepted Messages:"}
+              </span>
+              <div className="mt-1 font-mono font-bold text-[var(--service-ink)]">
+                {active?.sent?.toLocaleString(locale) ?? "—"}
+              </div>
+            </div>
+
+            <div className="rounded-xl bg-[var(--service-canvas)] p-3 border border-[var(--service-line)]">
+              <span className="text-[10px] font-bold text-[var(--service-muted)]">
+                {ar ? "السعة المحجوزة:" : "Held Capacity:"}
+              </span>
+              <div className="mt-1 font-mono font-bold text-[var(--service-ink)]">
+                {active?.held?.toLocaleString(locale) ?? "—"}
+              </div>
+            </div>
+
+            <div className="rounded-xl bg-[var(--service-canvas)] p-3 border border-[var(--service-line)]">
+              <span className="text-[10px] font-bold text-[var(--service-muted)]">
+                {ar ? "السعة المتبقية:" : "Remaining Allowance:"}
+              </span>
+              <div className="mt-1 font-mono font-bold text-[var(--service-success)]">
+                {active?.remaining?.toLocaleString(locale) ?? "—"}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Service Grants Activation */}
+        <div className="rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] p-6 shadow-sm">
+          <div className="flex items-center justify-between border-b border-[var(--service-line)] pb-3">
+            <h2 className="text-base font-bold text-[var(--service-ink)]">
+              {ar ? "تفعيل منح الخدمة (Service Grants)" : "Service Grants Activation"}
+            </h2>
+            <IconLayers className="h-4 w-4 text-[var(--service-accent)]" />
+          </div>
+          <div className="mt-4 space-y-2 text-xs">
+            {serviceStates === null ? (
+              <p className="text-[var(--service-muted)]">{label(null)}</p>
+            ) : serviceStates.length ? (
+              serviceStates.map((x, i) => (
+                <div
+                  key={i}
+                  className="flex items-center justify-between rounded-xl bg-[var(--service-canvas)] p-3 border border-[var(--service-line)]"
+                >
+                  <span className="font-bold text-[var(--service-ink)]">
+                    {x.service} / {x.tier}
+                  </span>
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                      x.activated ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800"
+                    }`}
+                  >
+                    {label(x.activated)}
+                  </span>
+                </div>
+              ))
+            ) : (
+              <p className="text-[var(--service-muted)]">
+                {ar ? "لا توجد منحة خدمة حالية." : "No current service grant."}
+              </p>
+            )}
+          </div>
+
+          <div className="mt-4 border-t border-[var(--service-line)] pt-3 text-xs">
+            <span className="text-[10px] font-bold text-[var(--service-muted)]">
+              {ar ? "بريد تأكيد الاشتراك:" : "Confirmation Email:"}
+            </span>
+            <div className="mt-1 font-semibold text-[var(--service-ink)]">
+              {emailLabels[email?.state ?? "unavailable"]}
+            </div>
+            {email?.acceptedAt && (
+              <div className="mt-0.5 font-mono text-[11px] text-[var(--service-muted)]">
+                {ar ? "وقت القبول: " : "Accepted at: "} {formatDate(email.acceptedAt)}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Subscription Lifecycle & Integrity Policy Card */}
+      <div className="rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] p-6 shadow-sm">
+        <h2 className="text-base font-bold text-[var(--service-ink)]">
+          {ar ? "حوكمة دورة الاشتراك والنزاهة المالية" : "Subscription Lifecycle & Financial Integrity Governance"}
+        </h2>
+        <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3 text-xs">
+          <div className="rounded-xl bg-[var(--service-canvas)] p-4 border border-[var(--service-line)] space-y-1.5">
+            <div className="font-bold text-[var(--service-ink)]">
+              {ar ? "دورة الاشتراك والبدء التقويمي" : "Calendar Subscription & Activation"}
+            </div>
+            <p className="text-[11px] text-[var(--service-muted)] leading-relaxed">
+              {ar
+                ? "المدة شهر أو سنة تقويمية بحسابات نهاية الشهر والسنوات الكبيسة. الدفع أولاً (Payment-first) مع نافذة تفعيل ٧ أيام؛ وتبدأ الدورة عند جاهزية أول قناة مدفوعة مؤهلة والمساعد."
+                : "Term follows calendar months/years with leap-year and month-end clamping. Payment-first policy with a 7-day activation window; initial term begins on readiness of the first qualified paid channel and assistant."}
+            </p>
+          </div>
+
+          <div className="rounded-xl bg-[var(--service-canvas)] p-4 border border-[var(--service-line)] space-y-1.5">
+            <div className="font-bold text-[var(--service-ink)]">
+              {ar ? "سماح التجديد واستبقاء الإعدادات" : "3-Day Grace & Settings Retention"}
+            </div>
+            <p className="text-[11px] text-[var(--service-muted)] leading-relaxed">
+              {ar
+                ? "فترة السماح عند تعثر التجديد ٣ أيام فقط. لا تُفصل القنوات أو تُحذف إعدادات العميل تلقائيًا؛ تظل الإعدادات محفوظة لإعادة التفعيل بعد سداد الدورة والتحقق من الربط."
+                : "Grace period on renewal failure is strictly 3 days. Channels and customer configurations are never deleted automatically; settings are preserved for re-activation upon new cycle payment and connection validation."}
+            </p>
+          </div>
+
+          <div className="rounded-xl bg-[var(--service-canvas)] p-4 border border-[var(--service-line)] space-y-1.5">
+            <div className="font-bold text-[var(--service-ink)]">
+              {ar ? "أرصدة الردود والتعويضات" : "Reply Credits & Compensations"}
+            </div>
+            <p className="text-[11px] text-[var(--service-muted)] leading-relaxed">
+              {ar
+                ? "إدارة الأرصدة مقسمة عبر ٣ أوعية مستقلة: الحصة الشهرية الأساسية (Base Cap)، وشحن الرصيد (Topup)، والتعويضات الإدارية المعتمدة (Compensation) لحفظ حقوق المشتركين."
+                : "Reply credits are tracked across three discrete pools: Base monthly quota, Topup credits, and administrative Compensations to safeguard subscriber entitlements."}
+            </p>
+          </div>
+
+          <div className="rounded-xl bg-[var(--service-canvas)] p-4 border border-[var(--service-line)] space-y-1.5">
+            <div className="font-bold text-[var(--service-ink)]">
+              {ar ? "منع التكرار وتسوية المعلقات" : "Anti-Double-Charging & Settlement"}
+            </div>
+            <p className="text-[11px] text-[var(--service-muted)] leading-relaxed">
+              {ar
+                ? "حماية مطلقة من تكرار التحصيل عبر قيد إيصال دفع وحيد لكل طلب. المعاملات غير المؤكدة أو المستردة تُصنف تلقائيًا كمراجعة مطلوبة (Requires Review) دون اقتطاع مزدوج."
+                : "Strict anti-double-charging enforced via one-receipt-per-order schema invariants. Ambiguous or refunded events are placed under mandatory review without double debit."}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Order Timeline Events */}
+      <div className="rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] p-6 shadow-sm">
+        <h2 className="text-base font-bold text-[var(--service-ink)]">
+          {ar ? "سجل أحداث الطلب (Order Timeline)" : "Order Timeline"}
+        </h2>
+        {timeline.length ? (
+          <div className="mt-4 space-y-3">
+            {[...timeline]
+              .sort((a, b) => (a.at ?? "").localeCompare(b.at ?? ""))
+              .map((x) => (
+                <div
+                  key={`${x.kind}-${x.id}`}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-[var(--service-canvas)] p-3 border border-[var(--service-line)] text-xs"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-md bg-[var(--service-accent-soft)] px-2 py-0.5 text-[10px] font-bold text-[var(--service-accent)] uppercase">
+                      {x.kind}
+                    </span>
+                    <span className="font-semibold text-[var(--service-ink)]">{x.state}</span>
+                  </div>
+                  <div className="flex items-center gap-3 font-mono text-[11px] text-[var(--service-muted)]">
+                    <time>{formatDate(x.at)}</time>
+                    <span className="text-[10px]">{x.id}</span>
+                  </div>
+                </div>
+              ))}
+          </div>
+        ) : (
+          <p className="mt-4 text-xs text-[var(--service-muted)]">
+            {ar ? "لا توجد أحداث مطابقة محفوظة." : "No matching stored events."}
+          </p>
+        )}
+      </div>
+    </div>
+  );
 }
