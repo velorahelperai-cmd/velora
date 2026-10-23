@@ -9,7 +9,9 @@ declare
   v_start timestamptz:=v_now-interval '24 hours';
   v_result jsonb;
 begin
-  if public.billing_admin_authorized_session() is distinct from true then
+  if auth.uid() is null
+     or not public.app_session_is_valid()
+     or not public.is_platform_owner() then
     raise exception 'forbidden' using errcode='42501';
   end if;
   if char_length(coalesce(p_correlation_id,''))>120

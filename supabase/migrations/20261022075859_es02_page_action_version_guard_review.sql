@@ -2,7 +2,7 @@
 begin;
 do $$
 begin
-  if (select md5(prosrc) from pg_proc where oid = to_regprocedure('public.es02_page_action_owned_branch_knowledge(uuid,uuid,uuid,uuid,text)'))
+  if (select md5(pg_get_functiondef(oid)) from pg_proc where oid = to_regprocedure('public.es02_page_action_owned_branch_knowledge(uuid,uuid,uuid,uuid,text)'))
       is distinct from 'a603d893224730a13332e005a174cc7e' then
     raise exception 'ES02_PAGE_ACTION_BASELINE_CHANGED';
   end if;
@@ -14,11 +14,22 @@ end $$;
 create or replace function public.es02_page_action_owned_branch_knowledge(
   p_expected_account_id uuid, p_company_id uuid, p_branch_id uuid, p_page_id uuid, p_action text
 ) returns jsonb language plpgsql security definer set search_path = '' as $$
-declare auth_check jsonb;
+declare
+  auth_check jsonb;
+  v_current_version integer;
 begin
   auth_check := public.es02_read_owned_branch_setup(p_expected_account_id,p_company_id,p_branch_id);
   if auth_check->>'ok' is distinct from 'true' then return auth_check; end if;
-  return jsonb_build_object('ok',false,'code','VERSION_REQUIRED');
+
+  select version into v_current_version from private.es02_branch_website_pages
+    where id=p_page_id and company_id=p_company_id and branch_id=p_branch_id;
+  if not found or v_current_version is null then
+    return jsonb_build_object('ok',false,'code','NOT_FOUND');
+  end if;
+
+  return public.es02_page_action_owned_branch_knowledge(
+    p_expected_account_id, p_company_id, p_branch_id, p_page_id, p_action, v_current_version
+  );
 end $$;
 
 create function public.es02_page_action_owned_branch_knowledge(
@@ -60,7 +71,10 @@ begin
 exception when others then
   return jsonb_build_object('ok',false,'code','UNAVAILABLE');
 end $$;
+alter function public.es02_page_action_owned_branch_knowledge(uuid,uuid,uuid,uuid,text) owner to postgres;
 alter function public.es02_page_action_owned_branch_knowledge(uuid,uuid,uuid,uuid,text,integer) owner to postgres;
+revoke all on function public.es02_page_action_owned_branch_knowledge(uuid,uuid,uuid,uuid,text) from public,anon,service_role;
 revoke all on function public.es02_page_action_owned_branch_knowledge(uuid,uuid,uuid,uuid,text,integer) from public,anon,service_role;
+grant execute on function public.es02_page_action_owned_branch_knowledge(uuid,uuid,uuid,uuid,text) to authenticated;
 grant execute on function public.es02_page_action_owned_branch_knowledge(uuid,uuid,uuid,uuid,text,integer) to authenticated;
 commit;

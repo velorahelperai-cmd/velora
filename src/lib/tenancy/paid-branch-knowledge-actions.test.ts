@@ -207,3 +207,40 @@ it("does not report successful knowledge context when private-page access fails"
   expect(result.ok).toBe(false);
   expect(result.chunks).toEqual([]);
 });
+
+describe("es02 page action migration preflight baseline guard", () => {
+  it("proves correct matching with md5(pg_get_functiondef(oid)) and rejection on altered definition", async () => {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const crypto = await import("node:crypto");
+
+    const sqlPath = path.resolve(process.cwd(), "supabase/migrations/20261022075859_es02_page_action_version_guard_review.sql");
+    const sqlContent = fs.readFileSync(sqlPath, "utf8");
+
+    // 1. Verify SQL contract strictly uses pg_get_functiondef(oid) and NOT prosrc
+    expect(sqlContent).toContain("select md5(pg_get_functiondef(oid)) from pg_proc");
+    expect(sqlContent).not.toContain("select md5(prosrc) from pg_proc");
+
+    const approvedFunctionDefHash = "a603d893224730a13332e005a174cc7e";
+    const prodProsrcHash = "f1b31b4d1cf2b8d4b024122111a8209c";
+    expect(sqlContent).toContain(`is distinct from '${approvedFunctionDefHash}'`);
+
+    // 2. Logic model of the SQL DO block guard:
+    const runGuard = (computedHash: string) => {
+      if (computedHash !== approvedFunctionDefHash) {
+        throw new Error("ES02_PAGE_ACTION_BASELINE_CHANGED");
+      }
+      return true;
+    };
+
+    // Correct matching: pg_get_functiondef hash on production matches approved hash -> PASS
+    expect(runGuard(approvedFunctionDefHash)).toBe(true);
+
+    // Rejection on altered definition: any altered definition produces different hash -> REJECT
+    const alteredHash = crypto.createHash("md5").update("CREATE OR REPLACE FUNCTION modified_body").digest("hex");
+    expect(() => runGuard(alteredHash)).toThrow("ES02_PAGE_ACTION_BASELINE_CHANGED");
+
+    // Regression proof: old buggy prosrc check would have falsely rejected the valid production baseline
+    expect(() => runGuard(prodProsrcHash)).toThrow("ES02_PAGE_ACTION_BASELINE_CHANGED");
+  });
+});

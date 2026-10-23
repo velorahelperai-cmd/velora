@@ -57,7 +57,11 @@ end $$;
 create function public.admin_read_ingress_attempts(p_request_id uuid default null,p_service text default null,p_severity text default null)
 returns jsonb language plpgsql stable security definer set search_path='' as $$
 begin
-  if public.billing_admin_authorized_session() is distinct from true then raise exception 'forbidden' using errcode='42501'; end if;
+  if auth.uid() is null
+     or not public.app_session_is_valid()
+     or not public.is_platform_owner() then
+    raise exception 'forbidden' using errcode='42501';
+  end if;
   if p_service is not null and p_service not in ('all','billing_paymob','webhook_meta')
     or p_severity is not null and p_severity not in ('all','info','warning','error','critical') then
     raise exception 'invalid_input' using errcode='22023';

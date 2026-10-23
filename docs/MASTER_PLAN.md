@@ -1,4 +1,65 @@
-<!-- ES02-APPROVED-SCREENS-CURRENT -->
+## LIVE-WALKTHROUGH-20261022 — طريقة القبول المعتمدة من المالك
+
+طلب المالك العمل خطوة بخطوة على الموقع المنشور مع التصحيح والأمان وسرعة الاستجابة، وتقليل تكرار الاختبارات والتقارير والتوكن. هذا تعديل لطريقة القبول، لا إذن جديد لنشر أو دفع أو استدعاء مدفوع أو تغيير Production أو نقل ملكية الكاتب.
+
+الأسلوب: حركة حقيقية واحدة → نتيجة مرئية + تحقق خادمي محدود → قياس الاستجابة → أخضر والانتقال، أو عطل واحد وتصحيحه ثم إعادة الحركة المتأثرة فقط. لا إعادة شاملة لرحلات نجحت على نفس النسخة ما لم يتغير اعتمادها. كل الجولة على الموقع الفعلي وبحسابات مخصصة لنا دون بيانات عملاء. لا إنشاء موقع أو بيئة إضافية. نسجل سطرًا واحدًا لكل خطوة: النسخة، النتيجة، دليل الحفظ/المنع، الزمن الفعلي، العطل التالي. حالة البداية لجميع الخطوات أدناه: لم تنفذ في هذه المراجعة.
+
+1. **النسخة:** تثبيت الرابط والـSHA المنشور وتوافق العقود المطلوبة، مع تحديد الكاتب الحالي ومسار نشر التصحيح المعتمد. لا يبدأ قبول نسخة مجهولة أو مختلفة عن الإصلاح.
+2. **الحساب:** دخول وخروج وإعادة فتح الموقع بحسابنا؛ العودة للحساب الصحيح ومنع فتح صفحة محمية بعد الخروج.
+3. **التجهيز والطلب:** إدخال بيانات النشاط والفرع واختيار الباقة ومراجعة السعر. يبقى إدخال ما قبل الدفع في الذاكرة حسب السياسة؛ لا حفظ نشاط مؤقت مخالف لها.
+4. **الدفع:** على الموقع نفسه بوضع Paymob Test المعتمد؛ تأكيد خادمي موثوق، إنشاء واحد بعد التحقق، وعدم تكرار الطلب عند الرجوع أو التحديث. غياب التفويض أو الإعداد يبقي البوابة معلقة ولا يبرر تغيير حالة الدفع يدويًا.
+5. **تجهيز الفرع المدفوع:** ساعات العمل واللغة والمعرفة؛ حفظ ثم تحديث الصفحة ومطابقة البيانات في الفرع نفسه. لا تُقبل أزرار غير موصولة. دعوة الفريق اختيارية فقط إذا كان مسار التخطي المعتمد مثبتًا.
+6. **المساعد والقناة:** سؤال معلوم من معرفة الفرع ثم رسالة من رقمنا للقناة المصرح بها؛ جواب مناسب مرة واحدة، دليل إرسال وتسوية صحيحان، وقياس الزمن. تُنفذ بعد توافر تفويض المكالمات/الرسائل وتكلفتها؛ لا اختلاق رد أو تجاهل UNKNOWN.
+7. **العزل والصلاحيات:** شركتان مخصصتان لنا، محاولة قراءة/تعديل مورد الشركة الأخرى وفتح رابطها المباشر؛ المنع مثبت من الخادم وليس إخفاء رابط فقط. قبول رفض لا يثبت وحده كل RLS؛ مراجعة العقد المتأثر تظل لازمة.
+8. **الهاتف والإطلاق المحدود:** إكمال المسار الأساسي من الهاتف، مراجعة الأخطاء والأزمنة الفعلية والدعم/الاسترداد، ثم إتاحة مدعوين محدودين بموافقة الإطلاق بعد إغلاق البوابات المطلوبة. لا إلغاء لمتطلبات المنتج المتبقية أو SMTP/المزودين.
+
+ميزانية الاستجابة المقترحة للمراجعة وليست قياسات حالية أو وعد SLA: إظهار استجابة للضغط خلال 200ms، والصفحات/الحفظ العادي خلال 2s في اتصال المراجعة. زمن جواب المساعد يقاس منفصلًا من استقبال الرسالة حتى قبول الإرسال مع بيان زمن المزود؛ يحدد حد قبوله بعد أول قياس حقيقي. البطء الظاهر يعالج في خطوته دون مشروع تحسين منفصل.
+
+التحقق لا يتحول إلى حملة اختبارات: تعديل وثائق = فحص diff؛ إصلاح منطقي = فحص مباشر مركز عند الحاجة؛ تعديل مالي/صلاحيات/تزامن = إثبات الحماية المتأثرة قبل تعريضها للعملاء؛ CI والبناء المطلوبان عند الإصدار لا يُتجاوزان. لا ننفذ عمدًا عمليات تدميرية أو تكرار خصم/إرسال على بيانات حقيقية. عند مانع خارجي ننجز فقط الخطوات المستقلة ونبقي البوابة معلقة؛ لا تقدم صوري.
+
+الخطوة العملية التالية: تثبيت الرابط والنسخة المنشورة والكاتب الحالي (خطوة 1)، ثم تقديم حركة واحدة للمستخدم في كل مرة بدل إرسال قائمة تنفيذ كاملة. هذا الطلب لم ينفذ جولة لايف أو نشرًا بعد.
+
+---
+
+## DELIVERY-REVIEW-20261022 — current route recommendation
+
+Owner requested code/plan review and edits to project/global rules. Scope of this task: read-only product review and documentation/rule edits, not product implementation, ownership transfer, stage acceptance or deployment. This section supersedes historical *routing* below; preserved business requirements and acceptance evidence remain valid within their original scopes. Current execution ownership/state is in PROJECT_STATE.md and the actual guard.
+
+### Verified review baseline
+
+- Canonical checkout: `C:\Users\DELL\Desktop\Velora new`, branch `codex/desktop-consolidation-20261015`, HEAD `cedc41baeafa8fbcd864004c69a20b646b3ebf9b`; clean before this documentation task. Git history proves the newer admin/SQL artifact package is committed locally; older state paragraphs calling all those paths untracked are historical.
+- Graphify repository `velorahelperai-cmd/velora` is queryable, but its indexed commit is `90c1c7a` (2026-10-22T05:37:48Z). Used query_graph and file_neighbors for navigation, then inspected local sources. Graph output is neither current runtime proof nor test execution.
+- `node scripts/consolidation/guard.mjs`: exit 1, WRITER_OWNERSHIP_MISMATCH. Guard pins implementation owner `01a1625d-a4ec-7d30-92e6-6fac35a32e4f`. No bypass, owner transfer, product tests or builds performed here.
+- `git ls-remote origin refs/heads/main`: failed authentication/no TTY. GitHub connector combined-status lookup for local HEAD returned no statuses; this does NOT establish CI pass, remote branch membership or deployment. Remote/deployed revision remains unverified here.
+
+### Source findings that determine priority
+
+1. **ES02 knowledge persistence is incomplete:** `src/components/app/paid-setup-step-host.tsx` knowledge branch supplies website/page actions but no `onUploadFiles` or `onSaveText`; `paid-branch-knowledge.tsx` requires those callbacks to enable submission. These visible capabilities cannot complete through this mounted host. Reuse existing knowledge services only after branch-scoped authority/version contracts are approved; do not connect generic company writes as a shortcut.
+2. **ES02 team is deliberately unavailable:** same host, team branch, passes `snapshot={null}`, `phase: unavailable`, and no mutation handlers. Do not count the screen as a working invitation journey. Team is optional in the checklist: retain any approved authoritative optional skip, but do not invent one or mark invitations verified. Establish whether this blocks owner-only launch through its actual readiness contract.
+3. **Code/schema must ship compatibly:** `paid-branch-knowledge-actions.ts` page action sends `p_expected_page_version`; migration `20261022075859_es02_page_action_version_guard_review.sql` supplies the six-argument signature and is labeled REVIEW ONLY. Local files prove the dependency, not current hosted installation. Verify target history/signature and native negative/concurrent cases before any authorized application. Support similarly calls `admin_support_mutate` and depends on review SQL `20261022100000`; source tests alone do not prove hosted tickets work.
+4. **Operations observation is not end-to-end trace completion:** worker route now truthfully returns 202 for pending reconciliation in repair-only mode, but its claim/input construction carries jobId/claimToken/companyId without durable request/trace propagation. Keep full ingress-to-job-to-send/settlement trace acceptance open; HTTP200 does not prove a delivered or charged reply. The existing ingress feature remains off according to the current state receipt; configuration was not inspected here.
+5. **Process contradictions waste cycles:** global AGENTS duplicated 22 sections while repo rules already had a single authority; MASTER_PLAN still contained old active worktree/session routing; state contained older untracked/pending claims despite newer committed source. Resolve routing at the top, preserve historical evidence, and never use stale text to restart completed work or certify a new candidate.
+
+### Fastest recommended route (dependency order, not permission to advance stages)
+
+1. **DELIVERY-01 — pin one releasable candidate.** Existing implementation owner owns the release lane. Record candidate SHA, required SQL signatures/migration hashes, existing receipts, remote/deployed SHA and missing approvals. Reconcile Stage G claims against these exact bytes. Exit: one explicit compatible source/schema list, required CI results and no uncertain ownership. Do not redo unchanged browser/layout work solely because another chat reviewed it.
+2. **DELIVERY-02 — finish the customer setup journey.** Within ES02, first validate the pending page-version correction; then complete branch knowledge upload/Q&A using one agreed persistence contract. Acceptance: save/reload, foreign-company/branch denial, stale revision rejection, failed ingest/retry with no duplicate side effects. Team invitations follow their branch contract; preserve the already-approved optional owner-only path where proven. No new design cycle for wiring the approved design.
+3. **DELIVERY-03 — prove one assistant operating journey.** After setup dependencies pass: branch knowledge → setup trial → readiness/launch → authorized test-channel inbound → answer → send receipt → balance settlement. Prove 10-trial budget persistence, UNKNOWN recovery, no duplicate send/debit, and subscription-start rule. Real provider calls require their separate existing or new explicit authorization; offline tests do not close this gate.
+4. **DELIVERY-04 — controlled publication and hosted acceptance.** Apply only approved compatible migrations once, satisfy required CI/protections, publish only under explicit release scope, and verify deployed SHA and the changed journeys. Paymob Test and SMTP remain independent prelaunch gates until evidenced; no live charges. Sequence source/schema rollout to avoid calling absent RPC signatures.
+5. **After the critical customer journey:** finish remaining admin operational persistence/tracing and queued FLOW requirements according to dependencies. Security, data integrity, billing correctness and required diagnosis blockers stay on the critical path; cosmetic admin expansion and optional add-ons do not interrupt it. Nothing is removed from the approved product scope.
+
+### Execution policy and decision boundary
+
+- One implementer per owned file set, Codex independent review, Antigravity only for approved visual work. Parallelize disjoint contract/test/review preparation when authorized; avoid multiple writers on state/host files.
+- Run focused tests after changed logic, native DB tests for SQL/ACL/concurrency, then required release gates once per unchanged candidate. Existing explicit test deferrals stay visible; never convert them into acceptance.
+- Remaining implementation decisions: transfer/release ownership only if the current owner cannot continue; approve exact new branch knowledge/team contracts and exact SQL/ACL changes before application; confirm provider test/release scope when not already authorized. This review changes none of those permissions.
+- No date estimate is asserted: provider approvals, current hosted contracts and remaining native acceptance were not verified. Next concrete action is DELIVERY-01 by the existing owner, followed by the first allowed dependency task, not a platform rewrite.
+
+Rule edits implemented locally: `VELORA_RULES.md`, global `C:\Users\DELL\.codex\AGENTS.md`, this routing section and `PROJECT_STATE.md`. Product code/SQL unchanged. Documentation checks recorded in PROJECT_STATE.md. Source for instruction organization: https://developers.openai.com/cookbook/examples/codex/iterating-development-workflows-with-codex .
+
+---
+
+<!-- ES02-APPROVED-SCREENS-CURRENT: historical evidence below; use current routing above -->
 
 Active release execution (2026-10-20): User authorized upload/publication after final layout. Existing release-clean worktree now owns branch codex/release-paid-setup-20261020 from verified current remote main b0f3990. Explicit candidate179files plus3 previously retired source deletions; preserve14newer published files instead of older canonical copies. Private/backup/runtime artifacts and unfinished LOG remain excluded; canonical work preserved. Secret checks pass including full pinned Gitleaks tree0findings, scanner rules unchanged. Four required additive schema packages are optional contact_phone/provision compatibility, B1 owner read, B2 private branch selection, and B3 private channel bridge; remote read proves missing RPCs/column. New role-scoped application RPC execution only, no raw private-table access or role/membership expansion, no destructive top-level statements. Hosted Postgres17.11 versus prior local17.6 is a recorded patch-version qualification. Exact corrected candidate checks are in progress; do not label earlier candidate PASS as final acceptance. Next: required checks, safe non-force GitHub branch/PR integration using existing authorized connector, reviewed normal schema deployment and existing application deployment, then observe CI/deployed result. Meta launch remains disabled; no new credentials, paid provider calls or destructive SQL.
 

@@ -1,4 +1,38 @@
-# Current Session Index — CONSOLIDATE-20261022
+# Current Session Index — PRODUCTION-ROLLOUT-20261023
+
+PRODUCTION-ROLLOUT-20261023 — Owner-Authorized Production Rollout of VELORA PLATFORM ADMIN V2 (14 Modules + 5 Reviewed Migrations).
+Execution within canonical project root `C:\Users\DELL\Desktop\Velora new` on branch `codex/desktop-consolidation-20261015`.
+
+1. Supabase Production Target: `vmpifljyozsbtssxhoxd` (Org `wwcihainyknysqjjojyq`, status `ACTIVE_HEALTHY`, PostgreSQL 17.11).
+2. Five Approved Production Migrations Applied & Verified in `supabase_migrations.schema_migrations` (total history count: 102):
+   - `20261023042647_vel_audit_immutability_review`: Immutability triggers `admin_audit_logs_immutable` and `admin_audit_logs_no_truncate` active on `public.admin_audit_logs`.
+   - `20261023042749_vel_admin_operations_safe_diagnostics_review`: Diagnostic RPC `public.admin_read_operations_snapshot` active (strict platform owner only).
+   - `20261023042838_vel_support_tickets_review`: Tables `public.support_tickets`, `public.ticket_notes`, and RPC `public.admin_support_mutate` active.
+   - `20261023042921_ops_ingress_observation_review`: Private table `private.ops_ingress_attempt_observations` and RPCs `public.ops_record_ingress_attempt` / `public.admin_read_ingress_attempts` active.
+   - `20261022075859_es02_page_action_version_guard_review`: Exact SHA-256 `6fdffc2203f19e48e3f462f0281dd4febd632e70cc5253d8553d140bd82d557f`. Dual signature (5-param delegating backward compatibility + 6-param version-guarded) active with `{postgres=X/postgres,authenticated=X/postgres}`.
+3. Live Data Footprint Unchanged: 4 companies, 4 branches, 6 company members, 141 audit logs, 0 support tickets. Zero live rows deleted or altered. No bulk `supabase db push` used.
+4. Comprehensive Quality Gates:
+   - TypeScript `tsc --noEmit`: PASS (0 errors).
+   - Full Vitest CI: 416 test files / 4766 tests PASS (0 failures).
+   - CI Safety & Secrets: 65 tests PASS, 1848 paths verified.
+   - Diff check: `git diff --check` PASS (0 errors).
+5. GitHub & Vercel Delivery:
+   - Fast-Forward ancestor verified against `FETCH_HEAD` (`90c1c7a`). Zero force push.
+   - Truth Ledger: IMPLEMENTED locally = YES; MIGRATED in Production DB = YES (5/5 migrations, 102 total); UPLOADED & DEPLOYED = in delivery turn.
+
+## Previous session index — DELIVERY-REVIEW-20261022
+
+LIVE-WALKTHROUGH-20261022: owner requested sequential live acceptance with immediate correction/security/latency checks and minimal repeated tests/tokens. Method recorded at top of docs/MASTER_PLAN.md and in VELORA_RULES.md. No live step executed by this documentation update; NEXT acceptance action is verify existing deployed URL/SHA and current writer, then one user action at a time. Existing ownership and release/provider permissions remain unchanged.
+
+Owner-authorized code/plan review and project/global rules revision only. Product execution remains with the existing guard owner `01a1625d-a4ec-7d30-92e6-6fac35a32e4f`; no stage advanced and no ownership transfer. Product scope remains ES02/admin repair as recorded below; this chat's task is documentation review, not a new product FLOW.
+Verified local baseline: branch `codex/desktop-consolidation-20261015`, HEAD `cedc41baeafa8fbcd864004c69a20b646b3ebf9b`, clean before rule edits. Newer commit includes reviewed admin/artifact work; old untracked assertions below are historical. Graphify at `90c1c7a` is older and was used for navigation only, checked against local code.
+Confirmed source gaps: paid setup host has no knowledge upload/text save callbacks; team remains null/unavailable; versioned knowledge action and support RPC require review SQL whose hosted state was not rechecked. Ingress observation does not close durable worker/settlement tracing. Exact findings and dependency route: first section of `docs/MASTER_PLAN.md`.
+Rules updated: one shared project authority, concise global Codex reference, immediate routine decisions within authorization, proportionate verification, no repeated mockup approval for wiring an existing approved design, no stale status inside permanent rules. Product/security/business permissions unchanged.
+Verification: `node scripts/consolidation/guard.mjs` BLOCKED (exit 1, WRITER_OWNERSHIP_MISMATCH); no bypass. Product tests/build/native DB/browser NOT_RUN in this review. `git ls-remote origin refs/heads/main` failed authentication; connector returned empty combined statuses for HEAD, not CI PASS. Remote/deployed SHA UNKNOWN here. No commit/push/deploy/DB application/provider calls/secret reads/new dependency.
+Documentation verification: `git diff --check` PASS (exit 0); global instructions read back and refreshed in this chat. Own edits limited to VELORA_RULES.md, docs/MASTER_PLAN.md, this index and global AGENTS.md. Concurrent edits appeared in docs/decisions/ADMIN-REPAIR-20261022.md and scripts/integration/stage-g-browser-acceptance.mjs; preserved, not authored/certified here. HEAD unchanged. Status: rules/routing Implemented / Pending Codex Review; product acceptance not advanced.
+NEXT: existing owner pins compatible source+SQL+receipts and verifies remote/CI/deployed identity (DELIVERY-01); then closes the allowed ES02 knowledge/customer-journey dependencies in the new plan overlay. This is a recommendation and does not close earlier stage acceptance or grant new SQL/provider permissions.
+
+## Previous session index — CONSOLIDATE-20261022 (historical receipts; retain scope qualifiers)
 
 OPS-INGRESS foundation — owner said continue after concrete trace proposal; implemented locally / Pending Codex Review, NOT full tracing completion. Existing three webhook POSTs now have server-generated HTTP attempt roots + safe started/finished/exception observation; private append-only/RLS recorder + strict owner-reader SQL candidate 20261022164405 (SHA256 4b1f57c0627f2483f03b3361ac5a117bac5b0d501291091c8fc8de0bdae756e7). Native compiled/security/idempotency/immutability/negative cases PASS in EXISTING local c1_ui_integration transaction, ROLLBACK+absence PASS. Isolated offline focused Vitest8 files/68 PASS, then updated operations consumer suite10 PASS; typecheck PASS; scoped ESLint/diff-check PASS. Positive real-owner read/two-session SQL concurrency/browser/Build NOT_RUN. Rollout OPS_INGRESS_OBSERVATION_ENABLED remains off/unconfigured; migration NOT APPLIED anywhere permanently. No Production/paid/new-container/env/commit/push/deploy. Existing applied SQL hash unchanged. NEXT: durable native event/job trace binding and worker/settlement propagation; coverage remains PARTIAL/successRate UNKNOWN, never equate HTTP200 with payment/send success. Detailed files/commands/test limits in docs/decisions/ADMIN-REPAIR-20261022.md.
 

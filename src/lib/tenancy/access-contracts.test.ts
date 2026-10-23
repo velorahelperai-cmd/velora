@@ -99,6 +99,19 @@ vi.mock("@/lib/supabase/server", () => ({
         return {
           select: () => ({
             in: () => ({ data: state.scopesMock, error: null }),
+            eq: (_col: string, val: unknown) => {
+              const rows = state.scopesMock.filter((s) => s.admin_user_id === val);
+              const builder = {
+                data: rows,
+                error: null,
+                eq: (_col2: string, val2: unknown) => {
+                  const filtered = rows.filter((s) => s.company_id === val2);
+                  return Promise.resolve({ data: filtered, error: null });
+                },
+                then: (resolve: (val: unknown) => void) => resolve({ data: rows, error: null }),
+              };
+              return builder;
+            },
           }),
           upsert: async (payload: Record<string, unknown>) => {
             state.scopesMock.push(payload);
@@ -283,6 +296,107 @@ describe("Stage E — Module 10: Access Control & Platform Teams Contracts", () 
     if (!suspendOwnerRes.ok) {
       expect(suspendOwnerRes.code).toBe("FORBIDDEN");
       expect(suspendOwnerRes.message).toContain("Cannot suspend platform owner");
+    }
+  });
+
+  // --- Dedicated Security Verification: Negative Tests & Isolation ---
+  it("negative test 1: writing the word operations inside note does not grant authorization", async () => {
+    // Admin has note containing 'operations', but NO operations capability in scopes
+    state.platformAdminsMock.push({
+      user_id: "fake-ops-note-user",
+      role: "delegated",
+      status: "active",
+      note: "Senior operations lead / operations manager",
+    });
+    state.scopesMock.push({
+      admin_user_id: "fake-ops-note-user",
+      company_id: "company-111",
+      usable_capabilities: ["support.tickets.manage"],
+    });
+
+    state.authUser = { id: "fake-ops-note-user", email: "fake@velora.internal", email_confirmed_at: "2026-10-01T00:00:00Z" };
+    const res = await requirePlatformRole(["operations"]);
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.code).toBe("FORBIDDEN");
+    }
+  });
+
+  it("negative test 2: delegation for Company A does not expose Company B data (cross-tenant isolation)", async () => {
+    state.platformAdminsMock.push({
+      user_id: "scoped-admin-1",
+      role: "delegated",
+      status: "active",
+      note: "Branch manager for Company A",
+    });
+    state.scopesMock.push({
+      admin_user_id: "scoped-admin-1",
+      company_id: "company-A",
+      usable_capabilities: ["support.tickets.manage"],
+    });
+
+    state.authUser = { id: "scoped-admin-1", email: "scoped@velora.internal", email_confirmed_at: "2026-10-01T00:00:00Z" };
+    // Accessing Company A -> PASS
+    const scopeARes = await requirePlatformRole(["support"], "company-A");
+    expect(scopeARes.ok).toBe(true);
+
+    // Accessing Company B -> DENIED (Cross-tenant leak strictly blocked)
+    const scopeBRes = await requirePlatformRole(["support"], "company-B");
+    expect(scopeBRes.ok).toBe(false);
+    if (!scopeBRes.ok) {
+      expect(scopeBRes.code).toBe("FORBIDDEN");
+    }
+  });
+
+  it("negative test 3: revoking or suspending delegation blocks access immediately", async () => {
+    state.platformAdminsMock.push({
+      user_id: "revocable-admin",
+      role: "delegated",
+      status: "active",
+      note: "Active staff",
+    });
+    state.scopesMock.push({
+      admin_user_id: "revocable-admin",
+      company_id: "company-A",
+      usable_capabilities: ["support.tickets.manage"],
+    });
+
+    state.authUser = { id: "revocable-admin", email: "rev@velora.internal", email_confirmed_at: "2026-10-01T00:00:00Z" };
+    expect((await requirePlatformRole(["support"], "company-A")).ok).toBe(true);
+
+    // Suspend admin
+    const admin = state.platformAdminsMock.find((r) => r.user_id === "revocable-admin");
+    if (admin) admin.status = "disabled";
+
+    const suspendedRes = await requirePlatformRole(["support"], "company-A");
+    expect(suspendedRes.ok).toBe(false);
+    if (!suspendedRes.ok) {
+      expect(suspendedRes.code).toBe("FORBIDDEN");
+      expect(suspendedRes.message).toContain("revoked or suspended");
+    }
+  });
+
+  it("negative test 4: support or finance role does not gain unauthorized operations or data", async () => {
+    // Support admin attempting operations
+    state.authUser = { id: "staff-support", email: "support@velora.internal", email_confirmed_at: "2026-10-01T00:00:00Z" };
+    const opsRes = await requirePlatformRole(["operations"]);
+    expect(opsRes.ok).toBe(false);
+    if (!opsRes.ok) expect(opsRes.code).toBe("FORBIDDEN");
+
+    // Finance admin attempting operations
+    state.authUser = { id: "staff-finance", email: "finance@velora.internal", email_confirmed_at: "2026-10-01T00:00:00Z" };
+    const opsRes2 = await requirePlatformRole(["operations"]);
+    expect(opsRes2.ok).toBe(false);
+    if (!opsRes2.ok) expect(opsRes2.code).toBe("FORBIDDEN");
+  });
+
+  it("negative test 5: platform owner retains approved sovereign authority", async () => {
+    state.authUser = { id: "owner-123", email: "velorahelperai@gmail.com", email_confirmed_at: "2026-10-01T00:00:00Z" };
+    const ownerRes = await requirePlatformRole(["owner"]);
+    expect(ownerRes.ok).toBe(true);
+    if (ownerRes.ok) {
+      expect(ownerRes.role).toBe("owner");
+      expect(ownerRes.email).toBe("velorahelperai@gmail.com");
     }
   });
 });

@@ -96,8 +96,8 @@ async function runDatabaseProbes() {
 
   // 3. Verify RLS enabled on all critical tables
   const rlsSql = `
-    SELECT count(*) FROM pg_tables 
-    WHERE schemaname = 'public' 
+    SELECT count(*) FROM pg_tables
+    WHERE schemaname = 'public'
       AND tablename IN ('companies', 'company_branches', 'platform_admins', 'admin_audit_logs', 'billing_orders', 'whatsapp_conversations')
       AND rowsecurity = true;
   `;
@@ -260,7 +260,7 @@ async function generateModuleHtml(mod, locale = "ar") {
   const ar = locale === "ar";
   const title = ar ? mod.nameAr : mod.nameEn;
   const dir = ar ? "rtl" : "ltr";
-  
+
   return `<!DOCTYPE html>
 <html lang="${ar ? 'ar' : 'en'}" dir="${dir}">
 <head>

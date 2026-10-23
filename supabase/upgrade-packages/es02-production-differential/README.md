@@ -29,4 +29,3 @@ Check: node --check supabase/upgrade-packages/es02-production-differential/build
 Check: npx eslint supabase/upgrade-packages/es02-production-differential/build.mjs
 
 Sources: the exact pinned repository sources in manifest.json and read-only actual Production pg_catalog capture in production-baseline.json. No new dependency.
-

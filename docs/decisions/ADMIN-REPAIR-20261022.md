@@ -123,4 +123,3 @@ Proposed Fix / Needs Decision — team and branch knowledge contracts:
 Actual focused check: existing isolated/offline CI wrapper ran `vitest run --config vitest.ci.config.ts src/lib/tenancy/paid-branch-knowledge-flow.test.ts src/lib/tenancy/paid-branch-knowledge-actions.test.ts --maxWorkers=1 --reporter=dot`: 2 files, 20 PASS, 0 FAIL. Synthetic port tests verify parameter forwarding, invalid revision rejection, rejected conflict/no fetch and changed-page/no fetch; they do not execute SQL or prove database concurrency. No browser/provider/Production writes, commit, push or deploy.
 
 Sources: PostgreSQL [row locks](https://www.postgresql.org/docs/17/explicit-locking.html) and [PL/pgSQL result status / ROW_COUNT](https://www.postgresql.org/docs/17/plpgsql-statements.html). Security Notes: RLS, existing authorization, SSRF fetch limits and signed-in identity checks retained; no new dependency or secret read.
-

@@ -82,7 +82,8 @@ export type PlatformRoleCheckResult =
  * Strictly verifies database status = 'active' to ensure immediate session invalidation on suspension/revocation.
  */
 export async function requirePlatformRole(
-  allowedRoles: PlatformRole[]
+  allowedRoles: PlatformRole[],
+  targetCompanyId?: string
 ): Promise<PlatformRoleCheckResult> {
   try {
     const supabase = await createClient();
@@ -110,7 +111,7 @@ export async function requirePlatformRole(
       from: (table: string) => {
         select: (cols: string) => {
           eq: (col: string, val: string) => {
-            maybeSingle: () => Promise<{ data: { role?: string; status?: string } | null; error: { message: string } | null }>;
+            maybeSingle: () => Promise<{ data: { role?: string; status?: string; note?: string } | null; error: { message: string } | null }>;
           };
         };
       };
@@ -119,7 +120,7 @@ export async function requirePlatformRole(
     const adminClient = supabase as unknown as AdminTableClient;
     const { data: adminRow, error: adminErr } = await adminClient
       .from("platform_admins")
-      .select("role, status")
+      .select("role, status, note")
       .eq("user_id", user.id)
       .maybeSingle();
 
@@ -131,12 +132,67 @@ export async function requirePlatformRole(
       return { ok: false, code: "FORBIDDEN", message: "Platform admin role revoked or suspended" };
     }
 
-    const assignedRole = adminRow.role as PlatformRole;
+    let assignedRole = adminRow.role as PlatformRole;
 
     // Super Admin / Owner check requires exact canonical email match
-    if (assignedRole === "owner") {
+    if (adminRow.role === "owner") {
       if (email !== "velorahelperai@gmail.com") {
         return { ok: false, code: "FORBIDDEN", message: "Platform owner identity mismatch" };
+      }
+      assignedRole = "owner";
+    } else if (adminRow.role === "delegated") {
+      // NOTE: Free text in adminRow.note is STRICTLY IGNORED for authorization.
+      // platform_admin_scopes is the sole authoritative capability store.
+      try {
+        type ScopeQueryBuilder = {
+          data?: Array<{ usable_capabilities?: string[]; company_id?: string }> | null;
+          eq?: (col2: string, val2: string) => Promise<{ data: Array<{ usable_capabilities?: string[]; company_id?: string }> | null }>;
+          then?: (resolve: (val: unknown) => void) => void;
+        };
+        type ScopeClient = {
+          from: (t: string) => {
+            select: (c: string) => {
+              eq: (col: string, val: string) => ScopeQueryBuilder;
+            };
+          };
+        };
+        const scopeClient = supabase as unknown as ScopeClient;
+        const baseQuery = scopeClient
+          .from("platform_admin_scopes")
+          .select("usable_capabilities, company_id")
+          .eq("admin_user_id", user.id);
+
+        let scopeRows: Array<{ usable_capabilities?: string[]; company_id?: string }> | null = null;
+        if (targetCompanyId && typeof baseQuery.eq === "function") {
+          const res = await baseQuery.eq("company_id", targetCompanyId);
+          scopeRows = (res && typeof res === "object" && "data" in res) ? (res as { data: Array<{ usable_capabilities?: string[]; company_id?: string }> | null }).data : null;
+        } else {
+          const res = await (baseQuery as unknown as Promise<{ data: Array<{ usable_capabilities?: string[]; company_id?: string }> | null }>);
+          scopeRows = (res && typeof res === "object" && "data" in res) ? (res as { data: Array<{ usable_capabilities?: string[]; company_id?: string }> | null }).data : null;
+        }
+
+        const caps = new Set<string>();
+        if (Array.isArray(scopeRows)) {
+          for (const s of scopeRows) {
+            // If targetCompanyId is specified, only accept capabilities bound to targetCompanyId
+            if (targetCompanyId && s.company_id && s.company_id !== targetCompanyId) continue;
+            if (Array.isArray(s.usable_capabilities)) {
+              for (const c of s.usable_capabilities) caps.add(c);
+            }
+          }
+        }
+
+        if (caps.has("operations.center.read") || caps.has("telemetry.read")) {
+          assignedRole = "operations";
+        } else if (caps.has("billing.ledger.read") || caps.has("billing.orders.read")) {
+          assignedRole = "finance";
+        } else if (caps.has("support.tickets.manage") || caps.has("platform.search_accounts")) {
+          assignedRole = "support";
+        } else {
+          return { ok: false, code: "FORBIDDEN", message: "Delegated admin has no matching capability in scope" };
+        }
+      } catch {
+        return { ok: false, code: "FORBIDDEN", message: "Scope verification failed" };
       }
     }
 
