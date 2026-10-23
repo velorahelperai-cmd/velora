@@ -43,6 +43,7 @@ venv/
 
 # Misc
 tmp/
+.tmp/
 temp/
 .cache/
 *.tsbuildinfo
