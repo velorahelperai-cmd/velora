@@ -1,4 +1,3 @@
-import Link from "next/link";
 import type { LandingCopy, SectorId } from "@/lib/landing-copy";
 import { PhoneFrame, PhoneSlot, PhoneScreenBody } from "@/components/landing/conversation-stage";
 
@@ -6,18 +5,10 @@ export function DemoScene({
   copy,
   sector,
   onSector,
-  onPrepare,
-  onReplay,
-  startHref,
-  startLabel,
 }: {
   copy: LandingCopy;
   sector: SectorId;
   onSector: (sector: SectorId) => void;
-  onPrepare: () => void;
-  onReplay: () => void;
-  startHref: string;
-  startLabel: string;
 }) {
   const scene = copy.scenes.find((item) => item.id === 9)!;
   const sample = copy.sampleFor(sector);
@@ -61,28 +52,6 @@ export function DemoScene({
           <p className="mt-4 text-sm leading-6 text-[#adbeaf]">
             {copy.sectors.find((item) => item.id === sector)?.note}
           </p>
-          <div className="mt-8 flex flex-wrap gap-3">
-            <Link
-              href={startHref}
-              className="inline-flex min-h-12 items-center justify-center rounded-full bg-[#38dc89] px-6 text-base font-medium text-[#072317]"
-            >
-              {startLabel}
-            </Link>
-            <button
-              type="button"
-              onClick={onPrepare}
-              className="inline-flex min-h-11 items-center justify-center rounded-full border border-white/25 px-5 text-sm text-[#f7fbf8]"
-            >
-              {copy.demoContact}
-            </button>
-            <button
-              type="button"
-              onClick={onReplay}
-              className="inline-flex min-h-11 items-center justify-center rounded-full border border-white/25 px-5 text-sm text-[#f7fbf8]"
-            >
-              {copy.replay}
-            </button>
-          </div>
         </div>
       </div>
     </section>

@@ -20,3 +20,13 @@ Preserve unrelated work. No reset/clean/force/stash/new branch/worktree/clone or
 Current MASTER-PLAN-001 is planning/documentation only, including the owner-authorized targeted review corrections in the existing Brain and Velora-specific Constitution references. The owner authorizes documentation and agent-instruction delivery to main, including automatic Vercel deployment, after guard/pre-push/required gates and exact-SHA verification. No feature, UI/backend/SQL, provider, env/key or sensitive settings changes. Preserve unrelated deletions until their delivery scope is explicitly resolved; do not bypass the clean-candidate requirement.
 
 For quota exhaustion or disconnection, follow [HANDOFF-LIMIT-001](<C:/Users/DELL/Desktop/Obsidian/AI Workspace/Velora/10-PROJECT-RULES.md#handoff-limit>). Record actual saved progress, Task ID/order, changed files/Git state, checks/results, running or uncertain operations, blocker/next step and writer. A successor reads Brain, verifies reality and prior-writer inactivity, then receives explicit ownership of the whole repository, Brain and generated output. No automatic takeover or restart from zero.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+## This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

@@ -1,0 +1,276 @@
+.root {
+  --setup-glow: rgba(56, 220, 137, 0.28);
+}
+
+.glowOrb {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(48px);
+  pointer-events: none;
+  background: radial-gradient(circle, var(--setup-glow) 0%, transparent 70%);
+  animation: setupGlow 8s ease-in-out infinite alternate;
+}
+
+/* Visual stage: responsive composition — phone above character so chat stays readable. */
+.stage {
+  position: relative;
+  display: grid;
+  width: 100%;
+  max-width: min(34rem, 100%);
+  margin-inline: auto;
+  overflow: visible;
+  isolation: isolate;
+  /* Mobile default: stack character then phone */
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  grid-template-areas:
+    "character"
+    "phone";
+  justify-items: center;
+  align-items: end;
+  gap: clamp(0.75rem, 2.5vw, 1.25rem);
+  min-height: 0;
+  padding-block: 0.25rem;
+  padding-inline: 0.25rem;
+}
+
+.character {
+  grid-area: character;
+  position: relative;
+  z-index: 1;
+  width: min(58%, 17rem);
+  max-width: 17rem;
+  justify-self: center;
+  pointer-events: none;
+  animation: setupFloat 4.2s ease-in-out infinite alternate;
+}
+
+.character img,
+.character :global(img) {
+  display: block;
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+}
+
+.phone {
+  grid-area: phone;
+  position: relative;
+  z-index: 2;
+  width: min(72%, 13.5rem);
+  max-width: 13.5rem;
+  justify-self: center;
+  overflow: hidden;
+  border-radius: 1.6rem;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: #0a1510;
+  animation: setupFloatPhone 5.2s ease-in-out infinite alternate;
+}
+
+.channels {
+  position: absolute;
+  inset-inline-end: 0.25rem;
+  top: 12%;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  pointer-events: none;
+}
+
+.floatIcon {
+  animation: setupFloatIcon 3.8s ease-in-out infinite alternate;
+}
+
+.floatIcon:nth-child(2) {
+  animation-duration: 4.4s;
+  animation-delay: -0.6s;
+}
+
+.floatIcon:nth-child(3) {
+  animation-duration: 5s;
+  animation-delay: -1.2s;
+}
+
+.floatIcon:nth-child(4) {
+  animation-duration: 4.1s;
+  animation-delay: -0.3s;
+}
+
+.bubble {
+  opacity: 0;
+  transform: translateY(10px);
+  animation: setupBubbleIn 0.55s ease-out forwards;
+}
+
+.bubble:nth-child(1) {
+  animation-delay: 0.15s;
+}
+
+.bubble:nth-child(2) {
+  animation-delay: 0.55s;
+}
+
+.bubble:nth-child(3) {
+  animation-delay: 0.95s;
+}
+
+.selectedRing {
+  box-shadow: 0 0 0 2px rgba(56, 220, 137, 0.95), 0 0 22px rgba(56, 220, 137, 0.35);
+  animation: setupPulse 2.8s ease-in-out infinite;
+}
+
+.phoneGlow {
+  box-shadow:
+    0 0 0 1px rgba(56, 220, 137, 0.18),
+    0 18px 50px rgba(0, 0, 0, 0.45),
+    0 0 40px rgba(56, 220, 137, 0.12);
+}
+
+/* Tablet: side-by-side with light decorative overlap; phone stays on top */
+@media (min-width: 640px) {
+  .stage {
+    grid-template-columns:
+      minmax(0, 1.05fr)
+      minmax(0, 0.95fr)
+      auto;
+    grid-template-rows: minmax(22rem, auto);
+    grid-template-areas: "character phone channels";
+    align-items: end;
+    justify-items: stretch;
+    gap: 0;
+    column-gap: 0;
+    min-height: clamp(22rem, 52vw, 28rem);
+    padding-inline-end: 0.5rem;
+  }
+
+  .character {
+    width: clamp(11rem, 42%, 19rem);
+    max-width: 19rem;
+    justify-self: end;
+    /* Pull toward phone for decorative edge overlap only */
+    margin-inline-end: clamp(-2.5rem, -6%, -1.25rem);
+    z-index: 1;
+  }
+
+  .phone {
+    width: clamp(10.5rem, 38%, 13.5rem);
+    max-width: 13.5rem;
+    justify-self: start;
+    margin-inline-start: clamp(-1.75rem, -4%, -0.75rem);
+    margin-block-end: clamp(1.5rem, 4vw, 2.75rem);
+    z-index: 2;
+  }
+
+  .channels {
+    position: relative;
+    inset: auto;
+    top: auto;
+    grid-area: channels;
+    align-self: center;
+    margin-inline-start: 0.5rem;
+    pointer-events: none;
+  }
+}
+
+/* Desktop: stronger decorative overlap, chat still above character */
+@media (min-width: 1024px) {
+  .stage {
+    min-height: clamp(24rem, 36vw, 30rem);
+  }
+
+  .character {
+    width: clamp(14rem, 48%, 19rem);
+    margin-inline-end: clamp(-3.5rem, -8%, -2rem);
+  }
+
+  .phone {
+    width: clamp(11.5rem, 36%, 13.75rem);
+    margin-inline-start: clamp(-2.25rem, -5%, -1rem);
+    margin-block-end: clamp(2rem, 3.5vw, 3.25rem);
+  }
+}
+
+@media (min-width: 1280px) {
+  .character {
+    width: clamp(15rem, 50%, 19.5rem);
+  }
+
+  .phone {
+    width: clamp(12rem, 34%, 14rem);
+  }
+}
+
+@keyframes setupFloat {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes setupFloatPhone {
+  from {
+    transform: translateY(0) rotate(-1deg);
+  }
+  to {
+    transform: translateY(-6px) rotate(1deg);
+  }
+}
+
+@keyframes setupFloatIcon {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes setupBubbleIn {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes setupGlow {
+  from {
+    opacity: 0.35;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 0.7;
+    transform: scale(1.08);
+  }
+}
+
+@keyframes setupPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 2px rgba(56, 220, 137, 0.95), 0 0 18px rgba(56, 220, 137, 0.28);
+  }
+  50% {
+    box-shadow: 0 0 0 3px rgba(56, 220, 137, 1), 0 0 28px rgba(56, 220, 137, 0.45);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glowOrb,
+  .character,
+  .phone,
+  .floatIcon,
+  .selectedRing {
+    animation: none !important;
+  }
+
+  .bubble {
+    opacity: 1;
+    transform: none;
+    animation: none !important;
+  }
+}

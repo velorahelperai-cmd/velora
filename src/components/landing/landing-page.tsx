@@ -9,7 +9,7 @@ import {
   setLocaleCookie,
 } from "@/lib/i18n";
 import { type PlanId, type SectorId, landingCopy } from "@/lib/landing-copy";
-import { playLandingMotion, registerLandingMotion, replaySample, scrollLandingHash } from "@/lib/landing-motion";
+import { playLandingMotion, registerLandingMotion, scrollLandingHash } from "@/lib/landing-motion";
 import { useDemo } from "@/lib/demo-state";
 import Link from "next/link";
 import { AccountMenu } from "@/components/app/account-chrome";
@@ -21,8 +21,15 @@ import { SiteFooter } from "@/components/landing/footer";
 import { LandingChatbot } from "@/components/landing/landing-chatbot";
 import type { SubscriptionOffersView } from "@/components/app/subscription-offers-view";
 import { Packages } from "@/components/landing/packages";
+import { IconGlobe } from "@/components/admin/admin-icons";
 
 registerLandingMotion();
+
+/** Landing locale choices; extend here when more languages ship. */
+const LANDING_LOCALES = [
+  { id: "ar" as const, short: "AR", label: "العربية" },
+  { id: "en" as const, short: "EN", label: "English" },
+] satisfies ReadonlyArray<{ id: Locale; short: string; label: string }>;
 
 export function LandingPage({
   initialLocale,
@@ -42,6 +49,8 @@ export function LandingPage({
   const [customQuestion, setCustomQuestion] = useState<string | null>(null);
   const [catalogueOpen, setCatalogueOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [langMenuOpen, setLangMenuOpen] = useState(false);
+  const langMenuRef = useRef<HTMLDivElement>(null);
   const copy = landingCopy(locale);
   const closeCatalogue = useCallback(() => setCatalogueOpen(false), []);
   const demo = useDemo();
@@ -114,11 +123,10 @@ export function LandingPage({
     const run = () => {
       if (!cancelled) scrollLandingHash(el, hash, { history: "none" });
     };
-    const frame = window.requestAnimationFrame(run);
-    const timer = window.setTimeout(run, 280);
+    // Theater bind is deferred past first paint; wait for it before hash scrub.
+    const timer = window.setTimeout(run, 750);
     return () => {
       cancelled = true;
-      window.cancelAnimationFrame(frame);
       window.clearTimeout(timer);
     };
   }, [locale]);
@@ -143,8 +151,9 @@ export function LandingPage({
     { scope: rootRef, dependencies: [locale], revertOnUpdate: true },
   );
 
-  function switchLocale() {
-    const next: Locale = locale === "ar" ? "en" : "ar";
+  function applyLocale(next: Locale) {
+    setLangMenuOpen(false);
+    if (next === locale) return;
     restoreScrollRef.current = window.scrollY;
     setLocaleCookie(next);
     setLocale(next);
@@ -153,6 +162,24 @@ export function LandingPage({
     document.documentElement.dir = getDirection(next);
     document.documentElement.classList.remove("no-js");
   }
+
+  useEffect(() => {
+    if (!langMenuOpen) return;
+    function onPointerDown(event: MouseEvent) {
+      const root = langMenuRef.current;
+      if (!root || root.contains(event.target as Node)) return;
+      setLangMenuOpen(false);
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setLangMenuOpen(false);
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [langMenuOpen]);
 
   function selectPlan(nextPlan: PlanId) {
     setPlan(nextPlan);
@@ -183,13 +210,59 @@ export function LandingPage({
               type="button"
               className="inline-flex min-h-11 items-center rounded-full border border-white/15 px-3 text-sm lg:hidden"
               aria-expanded={menuOpen}
-              onClick={() => setMenuOpen((open) => !open)}
+              onClick={() => {
+                setLangMenuOpen(false);
+                setMenuOpen((open) => !open);
+              }}
             >
               {locale === "ar" ? "القائمة" : "Menu"}
             </button>
-            <button type="button" onClick={switchLocale} aria-label={copy.langAria} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full border border-white/20 px-3 text-sm">
-              {copy.lang}
-            </button>
+            <div ref={langMenuRef} className="relative shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setMenuOpen(false);
+                  setLangMenuOpen((open) => !open);
+                }}
+                aria-label={copy.langAria}
+                aria-haspopup="listbox"
+                aria-expanded={langMenuOpen}
+                title={copy.langAria}
+                className="inline-flex h-11 min-h-11 w-[4.75rem] shrink-0 items-center justify-center gap-1.5 rounded-full border border-white/20 px-2.5 text-sm font-medium text-[#f7fbf8]"
+              >
+                <IconGlobe className="h-4 w-4 shrink-0" />
+                <span aria-hidden="true">{copy.lang}</span>
+              </button>
+              {langMenuOpen ? (
+                <ul
+                  role="listbox"
+                  aria-label={copy.langAria}
+                  className="absolute end-0 top-[calc(100%+0.35rem)] z-50 min-w-[9.5rem] overflow-hidden rounded-2xl border border-white/10 bg-[#14221b] py-1 text-sm shadow-[0_18px_40px_rgba(0,0,0,0.45)]"
+                >
+                  {LANDING_LOCALES.map((option) => {
+                    const selected = option.id === locale;
+                    return (
+                      <li key={option.id} role="presentation">
+                        <button
+                          type="button"
+                          role="option"
+                          aria-selected={selected}
+                          onClick={() => applyLocale(option.id)}
+                          className={`flex w-full min-h-11 items-center justify-between gap-3 px-3 text-start ${
+                            selected ? "bg-white/10 text-[#38dc89]" : "text-[#f7fbf8] hover:bg-white/5"
+                          }`}
+                        >
+                          <span>{option.label}</span>
+                          <span aria-hidden="true" className="text-xs opacity-70">
+                            {option.short}
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : null}
+            </div>
             <div className="hidden md:block">
               <AccountMenu />
             </div>
@@ -243,15 +316,6 @@ export function LandingPage({
               copy={copy}
               sector={sector}
               onSector={setSector}
-              onReplay={() => {
-                const root = rootRef.current;
-                if (root) replaySample(root);
-              }}
-              onPrepare={() => {
-                document.getElementById("contact")?.scrollIntoView({ behavior: "smooth" });
-              }}
-              startHref={startHref}
-              startLabel={startLabel}
             />
           }
         />

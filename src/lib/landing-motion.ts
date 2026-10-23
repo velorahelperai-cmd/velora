@@ -170,7 +170,9 @@ function bindTheater(root: HTMLElement, compact: boolean) {
       lenis?.raf(time * 1000);
     };
     gsap.ticker.add(lenisTick);
-    gsap.ticker.lagSmoothing(0);
+    // Keep lag smoothing on: lagSmoothing(0) forces catch-up work every frame and
+    // can freeze the homepage tab under StrictMode remounts / HMR / heavy scrub.
+    gsap.ticker.lagSmoothing(500, 33);
   }
 
   const typingThenAnswer = (tl: gsap.core.Timeline, screenId: string, at: number) => {
@@ -462,37 +464,102 @@ function bindTheater(root: HTMLElement, compact: boolean) {
 
   const s6 = scene("6");
   if (s6) {
-    const lead = s6.querySelector(".order-1");
+    const overviewLead = s6.querySelector("[data-seq='overview-lead']");
     const panel = s6.querySelector("[data-seq='panel']");
-    if (lead) enter(s6, [lead], compact ? { y: 28, autoAlpha: 0 } : { x: -72, autoAlpha: 0 }, "top 80%", "top 48%");
-    if (panel) enter(s6, [panel], compact ? { y: 32, autoAlpha: 0 } : { x: 84, autoAlpha: 0 }, "top 78%", "top 46%");
+    const benefits = [...s6.querySelectorAll("[data-seq='benefit']")];
+    const channels = [...s6.querySelectorAll("[data-seq='channel']")];
+    const tabs = [...s6.querySelectorAll("[data-seq='tab']")];
+    const rows = [...s6.querySelectorAll("[data-seq='row-active'], [data-seq='row']")];
+    const followTitle = s6.querySelector("[data-seq='follow-title']");
+    const followSteps = [...s6.querySelectorAll("[data-seq='follow-step']")];
+    const rtl = document.documentElement.dir === "rtl";
+    const fromLead = compact
+      ? { y: 36, autoAlpha: 0 }
+      : { x: rtl ? 64 : -64, y: 18, autoAlpha: 0 };
+    const fromPanel = compact
+      ? { y: 48, scale: 0.97, autoAlpha: 0 }
+      : { x: rtl ? -72 : 72, y: 24, scale: 0.96, autoAlpha: 0 };
+
+    if (overviewLead) enter(s6, [overviewLead], fromLead, "top 88%", "top 58%");
+    if (panel) enter(s6, [panel], fromPanel, "top 86%", "top 52%");
     enter(
       s6,
-      [...s6.querySelectorAll("[data-seq='tab'], [data-seq='row-active'], [data-seq='row']")],
-      compact ? { y: 20, autoAlpha: 0 } : { x: 40, autoAlpha: 0 },
+      benefits,
+      compact ? { y: 28, scale: 0.96, autoAlpha: 0 } : { y: 36, scale: 0.94, autoAlpha: 0 },
+      "top 82%",
+      "top 48%",
+    );
+    enter(
+      s6,
+      channels,
+      compact ? { y: 18, autoAlpha: 0 } : { x: rtl ? 28 : -28, autoAlpha: 0 },
+      "top 78%",
+      "top 44%",
+    );
+    enter(s6, tabs, compact ? { y: 16, autoAlpha: 0 } : { y: 20, autoAlpha: 0 }, "top 74%", "top 42%");
+    enter(
+      s6,
+      rows,
+      compact ? { y: 24, autoAlpha: 0 } : { y: 32, scale: 0.98, autoAlpha: 0 },
       "top 70%",
-      "top 34%",
+      "top 32%",
+    );
+    if (followTitle) {
+      enter(s6, [followTitle], compact ? { y: 24, autoAlpha: 0 } : { y: 28, autoAlpha: 0 }, "top 90%", "top 64%");
+    }
+    enter(
+      s6,
+      followSteps,
+      compact ? { y: 26, scale: 0.97, autoAlpha: 0 } : { y: 34, scale: 0.96, autoAlpha: 0 },
+      "top 86%",
+      "top 52%",
     );
   }
 
   const s7 = scene("7");
   if (s7) {
-    const lead = s7.querySelector(".order-1");
-    if (lead) enter(s7, [lead], compact ? { y: 24, autoAlpha: 0 } : { x: -64, autoAlpha: 0 }, "top 82%", "top 52%");
+    const setupVisual = s7.querySelector("[data-seq='setup-visual']");
+    const badge = s7.querySelector("[data-seq='setup-badge']");
+    const title = s7.querySelector("[data-seq='setup-title']");
+    const body = s7.querySelector("[data-seq='setup-body']");
+    const steps = [...s7.querySelectorAll("[data-seq='step']")];
+    const channels = [...s7.querySelectorAll("[data-seq='setup-channel']")];
+    const personas = [...s7.querySelectorAll("[data-seq='setup-persona']")];
+    const phone = s7.querySelector("[data-seq='setup-phone']");
+    const character = s7.querySelector("[data-seq='setup-character']");
+    const rtl = document.documentElement.dir === "rtl";
+
+    if (badge) enter(s7, [badge], { y: 18, autoAlpha: 0 }, "top 90%", "top 68%");
+    if (title) enter(s7, [title], compact ? { y: 28, autoAlpha: 0 } : { y: 32, autoAlpha: 0 }, "top 88%", "top 60%");
+    if (body) enter(s7, [body], compact ? { y: 22, autoAlpha: 0 } : { y: 26, autoAlpha: 0 }, "top 86%", "top 58%");
     enter(
       s7,
-      [...s7.querySelectorAll("[data-seq='step']")],
-      compact ? { y: 22, autoAlpha: 0 } : { x: 72, autoAlpha: 0 },
-      "top 76%",
-      "top 30%",
+      steps,
+      compact ? { y: 24, scale: 0.96, autoAlpha: 0 } : { y: 30, scale: 0.95, autoAlpha: 0 },
+      "top 82%",
+      "top 48%",
     );
+    if (setupVisual) {
+      enter(
+        s7,
+        [setupVisual],
+        compact ? { y: 36, autoAlpha: 0 } : { x: rtl ? -56 : 56, y: 20, autoAlpha: 0 },
+        "top 84%",
+        "top 50%",
+      );
+    }
+    if (phone) enter(s7, [phone], { y: 24, scale: 0.96, autoAlpha: 0 }, "top 80%", "top 46%");
+    if (character) enter(s7, [character], { y: 28, autoAlpha: 0 }, "top 78%", "top 44%");
+    enter(s7, channels, compact ? { y: 16, autoAlpha: 0 } : { x: rtl ? 20 : -20, autoAlpha: 0 }, "top 76%", "top 42%");
+    enter(s7, personas, { y: 22, scale: 0.96, autoAlpha: 0 }, "top 74%", "top 40%");
   }
 
   const s8 = scene("8");
   if (s8) {
     const heading = s8.querySelector("[data-seq='packages-title']");
     const lead = s8.querySelector("[data-seq='packages-lead']");
-    enter(s8, [heading, lead].filter((item): item is Element => Boolean(item)), { y: 36, autoAlpha: 0 }, "top 84%", "top 60%");
+    enter(s8, heading ? [heading] : [], { y: 12, autoAlpha: 0 }, "top 84%", "top 60%");
+    enter(s8, lead ? [lead] : [], { y: 12, autoAlpha: 0 }, "top 82%", "top 58%");
     enter(s8, [...s8.querySelectorAll("[data-seq='plan']")], { y: 56, scale: 0.94, autoAlpha: 0 }, "top 72%", "top 28%");
   }
 
@@ -521,7 +588,7 @@ function bindTheater(root: HTMLElement, compact: boolean) {
     refreshTimer = window.setTimeout(() => {
       measureRests();
       ScrollTrigger.refresh();
-    }, 120);
+    }, 280);
   };
   const onOrientation = () => scheduleRefresh();
   window.addEventListener("orientationchange", onOrientation);
@@ -554,13 +621,50 @@ function bindTheater(root: HTMLElement, compact: boolean) {
   };
 }
 
+function scheduleTheaterBind(root: HTMLElement, compact: boolean) {
+  let cancelled = false;
+  let idleId = 0;
+  let timeoutId = 0;
+  let cleanup: (() => void) | undefined;
+
+  const start = () => {
+    if (cancelled || cleanup) return;
+    cleanup = bindTheater(root, compact);
+  };
+
+  // Defer the heavy Lenis/ScrollTrigger bind past first paint so / does not
+  // lock the main thread on every visit (StrictMode mounts twice in dev).
+  const raf = window.requestAnimationFrame(() => {
+    if (cancelled) return;
+    if (typeof window.requestIdleCallback === "function") {
+      idleId = window.requestIdleCallback(start, { timeout: 700 });
+    } else {
+      timeoutId = window.setTimeout(start, 0);
+    }
+  });
+
+  return () => {
+    cancelled = true;
+    window.cancelAnimationFrame(raf);
+    if (idleId && typeof window.cancelIdleCallback === "function") {
+      window.cancelIdleCallback(idleId);
+    }
+    if (timeoutId) window.clearTimeout(timeoutId);
+    cleanup?.();
+  };
+}
+
 export function playLandingMotion(root: HTMLElement) {
   const mm = gsap.matchMedia();
 
-  mm.add("(min-width: 1024px) and (prefers-reduced-motion: no-preference)", () => bindTheater(root, false));
+  mm.add("(min-width: 1024px) and (prefers-reduced-motion: no-preference)", () =>
+    scheduleTheaterBind(root, false),
+  );
 
   // Compact theater: same story + phone travel, adapted to the live viewport.
-  mm.add("(max-width: 1023px) and (prefers-reduced-motion: no-preference)", () => bindTheater(root, true));
+  mm.add("(max-width: 1023px) and (prefers-reduced-motion: no-preference)", () =>
+    scheduleTheaterBind(root, true),
+  );
 
   return () => mm.revert();
 }

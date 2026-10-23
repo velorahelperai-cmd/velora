@@ -17,11 +17,11 @@ const scenes = [
     anchor: "story",
     title: {
       ar: "عملاؤك يستحقون ردًا سريعًا. وفريقك يستحق وقتًا أكثر.",
-      en: "Every conversation is a potential order. Handle it with speed and precision.",
+      en: "Your customers deserve faster replies. Your team deserves more time.",
     },
     body: {
-      ar: "فيلورا تساعد نشاطك على الرد على استفسارات العملاء، وتنظيم المحادثات ومتابعة الطلبات، وتقليل الأخطاء الناتجة عن نقص المعلومات أو تكرار العمل. وتخفف الضغط على فريقك ليركّز على المهام الأهم — سواء كنت تبدأ مشروعك أو تدير شركة قائمة.",
-      en: "Rush hours bring high message volume and meal requests. Noura captures customisations and delivery details, preparing the order so your kitchen prepares without delay.",
+      ar: "فيلورا ترد على استفسارات عملائك، وتنظّم المحادثات والمتابعة، وتساعد على تقليل الأخطاء والمهام المتكررة، حتى يركّز فريقك على الأهم — سواء كنت تبدأ مشروعك أو تدير شركة قائمة.",
+      en: "Velora answers customer enquiries, organises conversations and follow-ups, and helps reduce errors and repetitive tasks — so your team can focus on what matters, whether you're launching a business or running an established company.",
     },
     example: {
       ar: {
@@ -176,12 +176,12 @@ const scenes = [
     theme: "light" as const,
     anchor: "overview",
     title: {
-      ar: "كل محادثة واضحة، وكل متابعة في مكانها.",
-      en: "Every conversation is clear, and every follow-up is in place.",
+      ar: "كل محادثة واضحة،\nوكل متابعة في مكانها.",
+      en: "Every conversation is clear,\nand every follow-up is in place.",
     },
     body: {
-      ar: "فيلورا تساعد فريقك يفهم طلب العميل، ويميز المعلومات المؤكدة عن التفاصيل التي تحتاج مراجعة، ويعرف الخطوة التالية دون فقدان سياق المحادثة.",
-      en: "Velora helps your team understand customer requests, distinguish confirmed details from those needing review, and know the next step without losing conversation context.",
+      ar: "فيلورا تنظّم محادثات عملائك، توضّح ما يحتاج متابعة، وتساعد فريقك على إنجاز المهام بدقة ووقت أقل.",
+      en: "Velora organises customer conversations, highlights what needs follow-up, and helps your team finish work with clarity and less time.",
     },
     example: {
       ar: {
@@ -204,25 +204,25 @@ const scenes = [
     theme: "dark" as const,
     anchor: "setup",
     title: {
-      ar: "شغلك يكبر، مش ضغطك.",
-      en: "Your business grows, not your pressure.",
+      ar: "مساعدك الذكي جاهز يبدأ معك\nفي أربع خطوات بسيطة.",
+      en: "Your AI assistant is ready to start with you\nin four simple steps.",
     },
     body: {
-      ar: "لا تفوّت فرصة بسبب رسالة اتأخرت. جهّز مساعدتك الذكية في خطوات بسيطة، وخلي فيلورا تساعدك في متابعة عملائك.",
-      en: "Never miss an opportunity from a delayed reply. Set up your AI assistant in simple steps, and let Velora help you follow up with your customers.",
+      ar: "اختر شخصية مساعدك، عرّفه على نشاطك، جهّز قناة التواصل، وراجع ردوده قبل التشغيل.",
+      en: "Choose your assistant persona, teach it about your business, prepare your communication channel, and review its replies before launch.",
     },
     example: {
       ar: {
-        question: "من اختيار الباقة إلى أول تجربة",
-        answer: "شغلك يكبر، مش ضغطك.",
-        cardTitle: "خطوات التجهيز السلسة",
-        card: "اختيار الشخصية ← قاعدة المعرفة ← ربط واتساب ← تجربة الردود",
+        question: "جهّز المساعد الذكي",
+        answer: "أربع خطوات بسيطة.",
+        cardTitle: "خطوات التجهيز",
+        card: "الشخصية ← النشاط ← القناة ← مراجعة الردود",
       },
       en: {
-        question: "From plan selection to first experience",
-        answer: "Your business grows, not your pressure.",
-        cardTitle: "Seamless Setup Steps",
-        card: "Assistant Persona → Knowledge Base → WhatsApp Link → Example Reply Review",
+        question: "Set up your AI assistant",
+        answer: "Four simple steps.",
+        cardTitle: "Setup steps",
+        card: "Persona → Business → Channel → Review replies",
       },
     },
   },
@@ -330,7 +330,7 @@ const ui = {
   start: { ar: "ابدأ تجهيز حسابك", en: "Prepare your account" },
   tagline: {
     ar: "VELORA — مساعد أعمال ذكي",
-    en: "Organised replies and follow-up — with a clearer next step.",
+    en: "VELORA — Intelligent Business Assistant",
   },
   signIn: { ar: "تسجيل الدخول", en: "Sign in" },
   openWorkspace: { ar: "افتح مساحة العمل", en: "Open your workspace" },
@@ -347,8 +347,8 @@ const ui = {
   },
   staffInitial: { ar: "ف", en: "S" },
   scrollHint: { ar: "مرّر لتتابع القصة", en: "Scroll to follow the story" },
-  lang: { ar: "EN", en: "عر" },
-  langAria: { ar: "التبديل إلى الإنجليزية", en: "Switch to Arabic" },
+  lang: { ar: "AR", en: "EN" },
+  langAria: { ar: "اختيار اللغة", en: "Choose language" },
   menu: { ar: "عرض المنتجات", en: "View products" },
   catalogueTitle: { ar: "المنتجات المتوفرة", en: "Available Products" },
   close: { ar: "إغلاق", en: "Close" },
@@ -363,16 +363,36 @@ const ui = {
   },
   illustrativeBadge: { ar: "أمثلة توضيحية", en: "Illustrative examples" },
   panelTitle: { ar: "متابعة استفسارات العملاء", en: "Customer Enquiry Follow-up" },
+  conversationsTitle: { ar: "المحادثات", en: "Conversations" },
+  followUpHowTitle: { ar: "كيف تعمل المتابعة؟", en: "How does follow-up work?" },
   valuePoints: {
     ar: [
-      "ملخص واضح لكل محادثة",
-      "تحديد الاستفسارات التي تحتاج متابعة",
-      "الخطوة التالية واضحة للفريق",
+      { icon: "fileText", title: "ملخص واضح", body: "أهم تفاصيل كل محادثة." },
+      { icon: "check", title: "متابعة أدق", body: "اعرف ما يحتاج مراجعة." },
+      { icon: "users", title: "وقت أكثر لفريقك", body: "خفّف المهام المتكررة." },
+      { icon: "listChecks", title: "تنظيم أفضل", body: "كل خطوة واضحة للفريق." },
     ],
     en: [
-      "Clear summary for each conversation",
-      "Identify enquiries requiring follow-up",
-      "The next step is clear for the team",
+      { icon: "fileText", title: "Clear summary", body: "The key details of each conversation." },
+      { icon: "check", title: "Sharper follow-up", body: "See what needs a review." },
+      { icon: "users", title: "More time for your team", body: "Ease repetitive tasks." },
+      { icon: "listChecks", title: "Better organisation", body: "Every next step is clear." },
+    ],
+  },
+  channels: {
+    ar: [
+      { id: "all", label: "الكل" },
+      { id: "whatsapp", label: "واتساب" },
+      { id: "instagram", label: "إنستغرام" },
+      { id: "web", label: "الموقع الإلكتروني" },
+      { id: "facebook", label: "فيسبوك" },
+    ],
+    en: [
+      { id: "all", label: "All" },
+      { id: "whatsapp", label: "WhatsApp" },
+      { id: "instagram", label: "Instagram" },
+      { id: "web", label: "Website" },
+      { id: "facebook", label: "Facebook" },
     ],
   },
   tabs: {
@@ -381,14 +401,86 @@ const ui = {
   },
   rows: {
     ar: [
-      ["طلب ٢ برجر", "بانتظار التأكيد", "الخطوة التالية: مراجعة تفاصيل الطلب قبل اعتماده."],
-      ["استفسار عن توفر وجبة", "يحتاج تحققًا", "الخطوة التالية: التأكد من توفر الصنف."],
-      ["توصيل خارج مسقط", "يحتاج معلومات", "الخطوة التالية: تحديد المنطقة والتأكد من نطاق التوصيل."],
+      {
+        sector: "مطعم",
+        title: "طلب وجبتين",
+        status: "بانتظار التأكيد",
+        body: "مراجعة تفاصيل الطلب قبل اعتماده.",
+        channel: "whatsapp",
+        tone: "awaiting",
+      },
+      {
+        sector: "متجر",
+        title: "توفر منتج",
+        status: "يحتاج تحققًا",
+        body: "التأكد من توفر المنتج.",
+        channel: "instagram",
+        tone: "verify",
+      },
+      {
+        sector: "شركة خدمات",
+        title: "طلب خدمة خارج المنطقة",
+        status: "يحتاج معلومات",
+        body: "مراجعة نطاق الخدمة.",
+        channel: "web",
+        tone: "info",
+      },
+      {
+        sector: "نشاط حجوزات",
+        title: "تعديل موعد",
+        status: "تمت المتابعة",
+        body: "أُرسلت التفاصيل للفريق للمراجعة.",
+        channel: "calendar",
+        tone: "done",
+      },
     ],
     en: [
-      ["Order for 2 burgers", "Awaiting confirmation", "Next step: Review order details before confirming."],
-      ["Meal availability enquiry", "Needs verification", "Next step: Check item availability."],
-      ["Delivery outside Muscat", "Needs information", "Next step: Identify area and confirm delivery coverage."],
+      {
+        sector: "Restaurant",
+        title: "Order for two meals",
+        status: "Awaiting confirmation",
+        body: "Review order details before confirming.",
+        channel: "whatsapp",
+        tone: "awaiting",
+      },
+      {
+        sector: "Retail",
+        title: "Product availability",
+        status: "Needs verification",
+        body: "Confirm the product is in stock.",
+        channel: "instagram",
+        tone: "verify",
+      },
+      {
+        sector: "Services",
+        title: "Service request outside coverage",
+        status: "Needs information",
+        body: "Review the service area.",
+        channel: "web",
+        tone: "info",
+      },
+      {
+        sector: "Bookings",
+        title: "Reschedule appointment",
+        status: "Followed up",
+        body: "Details sent to the team for review.",
+        channel: "calendar",
+        tone: "done",
+      },
+    ],
+  },
+  followUpSteps: {
+    ar: [
+      { icon: "message", number: "01", title: "استقبال الاستفسار", body: "تصل محادثة العميل." },
+      { icon: "listChecks", number: "02", title: "فهم التفاصيل", body: "تنظيم ملخص المحادثة." },
+      { icon: "user", number: "03", title: "تحديد المتابعة", body: "توضيح المطلوب للفريق." },
+      { icon: "target", number: "04", title: "إكمال الإجراء", body: "يراجع الفريق الطلب ويؤكده." },
+    ],
+    en: [
+      { icon: "message", number: "01", title: "Receive the enquiry", body: "The customer conversation arrives." },
+      { icon: "listChecks", number: "02", title: "Understand the details", body: "Organise a conversation summary." },
+      { icon: "user", number: "03", title: "Define the follow-up", body: "Clarify what the team needs to do." },
+      { icon: "target", number: "04", title: "Complete the action", body: "The team reviews and confirms the request." },
     ],
   },
   steps: {
@@ -405,18 +497,51 @@ const ui = {
       { title: "Test her out… see the difference", body: "Review preset replies using fictional data. Authorized real trials are separate and do not activate WhatsApp." },
     ],
   },
+  assistantSetup: {
+    badge: { ar: "جهّز المساعد الذكي", en: "Set up your AI assistant" },
+    steps: {
+      ar: [
+        { number: "01", title: "اختر الشخصية", body: "نورا أو لينا أو دانة حسب نشاطك." },
+        { number: "02", title: "عرّفها على نشاطك", body: "أهم الخدمات والأسعار ومواعيد العمل." },
+        { number: "03", title: "جهّز قناة التواصل", body: "ربط واتساب وبقية القنوات." },
+        { number: "04", title: "جرّب الردود", body: "راجع طريقة الرد قبل التشغيل." },
+      ],
+      en: [
+        { number: "01", title: "Choose the persona", body: "Noura, Lina, or Dana based on your business." },
+        { number: "02", title: "Teach it your business", body: "Your key services, pricing, and business hours." },
+        { number: "03", title: "Prepare the channel", body: "Connect WhatsApp and other channels." },
+        { number: "04", title: "Review the replies", body: "Check the response style before launch." },
+      ],
+    },
+    chat: {
+      ar: [
+        { role: "customer" as const, text: "هل تقدمون باقة مناسبة للمشاريع الصغيرة؟" },
+        { role: "assistant" as const, text: "نعم، لدينا باقات مرنة مناسبة للمشاريع الصغيرة." },
+        { role: "assistant" as const, text: "هل تريد أن أرسل لك التفاصيل؟" },
+      ],
+      en: [
+        { role: "customer" as const, text: "Do you offer a plan for small businesses?" },
+        { role: "assistant" as const, text: "Yes — we have flexible plans for small businesses." },
+        { role: "assistant" as const, text: "Would you like me to share the details?" },
+      ],
+    },
+    personaTags: {
+      ar: { noura: "ودودة", lina: "متوازنة", dana: "احترافية" },
+      en: { noura: "Warm", lina: "Balanced", dana: "Professional" },
+    },
+  },
   onboardingStory: {
     eyebrow: {
-      ar: "من اختيار الباقة إلى أول تجربة",
-      en: "From Plan Selection to First Experience",
+      ar: "جهّز المساعد الذكي",
+      en: "Set up your AI assistant",
     },
     headline: {
-      ar: "شغلك يكبر، مش ضغطك.",
-      en: "Your business grows, not your pressure.",
+      ar: "مساعدك الذكي جاهز يبدأ معك في أربع خطوات بسيطة.",
+      en: "Your AI assistant is ready to start with you in four simple steps.",
     },
     supporting: {
-      ar: "لا تفوّت فرصة بسبب رسالة اتأخرت. جهّز مساعدتك الذكية في خطوات بسيطة، وخلي فيلورا تساعدك في متابعة عملائك.",
-      en: "Never miss an opportunity from a delayed reply. Set up your AI assistant in simple steps, and let Velora help you follow up with your customers.",
+      ar: "اختر شخصية مساعدك، عرّفه على نشاطك، جهّز قناة التواصل، وراجع ردوده قبل التشغيل.",
+      en: "Choose your assistant persona, teach it about your business, prepare your communication channel, and review its replies before launch.",
     },
     stages: [
       {
@@ -949,10 +1074,20 @@ export function landingCopy(locale: Locale) {
     noRepeat: t(locale, ui.noRepeat),
     illustrativeBadge: t(locale, ui.illustrativeBadge),
     panelTitle: t(locale, ui.panelTitle),
+    conversationsTitle: t(locale, ui.conversationsTitle),
+    followUpHowTitle: t(locale, ui.followUpHowTitle),
     valuePoints: ui.valuePoints[locale],
+    channels: ui.channels[locale],
     tabs: ui.tabs[locale],
     rows: ui.rows[locale],
+    followUpSteps: ui.followUpSteps[locale],
     steps: ui.steps[locale],
+    assistantSetup: {
+      badge: t(locale, ui.assistantSetup.badge),
+      steps: ui.assistantSetup.steps[locale],
+      chat: ui.assistantSetup.chat[locale],
+      personaTags: ui.assistantSetup.personaTags[locale],
+    },
     onboardingStory: {
       eyebrow: t(locale, ui.onboardingStory.eyebrow),
       headline: t(locale, ui.onboardingStory.headline),

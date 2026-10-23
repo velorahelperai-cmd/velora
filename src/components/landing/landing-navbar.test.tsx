@@ -24,7 +24,6 @@ vi.mock("@gsap/react", () => ({ useGSAP: () => undefined }));
 vi.mock("@/lib/landing-motion", () => ({
   registerLandingMotion: () => undefined,
   playLandingMotion: () => ({ kill: () => undefined }),
-  replaySample: () => undefined,
   scrollLandingHash: () => undefined,
 }));
 
@@ -68,12 +67,18 @@ describe("landing navbar structure", () => {
     expect(html).not.toContain("تعذّر جلب هوية الحساب");
   });
 
-  it("keeps mobile menu trigger and start CTA wiring", () => {
+  it("keeps mobile menu trigger, locale chooser control, and start CTA wiring", () => {
     const html = renderLanding("en");
     expect(html).toContain('aria-expanded="false"');
     expect(html).toContain("Menu");
-    // Server authHref default for guests preparing an account.
+    expect(html).toContain('aria-label="Choose language"');
+    expect(html).toContain('aria-haspopup="listbox"');
+    expect(html).toContain(">EN<");
     expect(html).toContain('href="/signup"');
+    const ar = renderLanding("ar");
+    expect(ar).toContain('aria-label="اختيار اللغة"');
+    expect(ar).toContain('aria-haspopup="listbox"');
+    expect(ar).toContain(">AR<");
   });
 });
 

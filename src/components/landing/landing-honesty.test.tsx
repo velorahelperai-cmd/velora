@@ -19,9 +19,14 @@ describe.each(["ar", "en"] as const)("landing examples (%s)", locale => {
     expect(markup).not.toContain(">Ready<");
     expect(markup).not.toContain(">مكتمل<");
   });
-  it("labels desktop and mobile previews as fictional examples", () => {
+  it("labels the setup showcase as a fictional example using official personas", () => {
     const markup = renderToStaticMarkup(createElement(CinematicOnboarding, { copy }));
-    expect(markup.split(copy.exampleNote).length - 1).toBe(2);
+    expect(markup).toContain(copy.exampleNote);
+    expect(markup).toContain('data-persona="noura"');
+    expect(markup).toContain('data-persona="lina"');
+    expect(markup).toContain('data-persona="dana"');
+    expect(markup).toContain('data-character="noura"');
+    expect(markup.split(copy.exampleNote).length - 1).toBe(1);
   });
   it("keeps booking, reservation and dispatch examples pending staff confirmation", () => {
     const replies = [...copy.scenes.map(scene => scene.example.answer), copy.sampleFor("retail").a, copy.sampleFor("services").a].join(" ");

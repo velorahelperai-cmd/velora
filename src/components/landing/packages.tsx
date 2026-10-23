@@ -26,14 +26,21 @@ export function Packages({ copy, locale, destination, offersView, selectedPlan, 
  const selectedPlanSpec=intent.persona&&intent.package?commercialPlan(intent.persona,intent.package):null;
  const target=destination??{href:"/login?next=%2Fapp%2Fsettings%3Ftab%3Dplan",kind:"login" as const,note:null};
  const catalogNote=offersView?.status==="ready"?c.catalogReady:offersView?.status==="error"?c.catalogError:offersView?.status==="empty"?c.catalogEmpty:c.catalogReasons.schema_unavailable;
- return <section id="packages" data-scene="8" style={{background:"#f2f7f4",color:"#000"}} className="scene px-6 py-20 lg:px-12 lg:py-24">
-  <div data-seq="veil" aria-hidden className="scene-veil" style={{background:"#f2f7f4"}} />
+ return <section id="packages" data-scene="8" style={{background:"#F5F8F5",color:"#101B16"}} className="scene px-6 py-16 lg:px-12 lg:py-20">
+  <div data-seq="veil" aria-hidden className="scene-veil" style={{background:"#F5F8F5"}} />
   <div data-seq="stage" className="relative z-10 mx-auto max-w-[1380px]">
-   <h2 data-seq="packages-title" className="mx-auto max-w-[26ch] text-center text-[clamp(2rem,4vw,3.25rem)] font-bold leading-snug text-black sm:max-w-none">{c.packagesTitle}</h2>
-   <p data-seq="packages-lead" className="mx-auto mt-4 max-w-[52ch] text-center text-lg leading-8 text-[#40554a]">{c.intro}</p>
-   <div className="mx-auto mt-8 h-0.5 w-44 rounded-full bg-[#087443]" data-seq="trace" aria-hidden />
-   <div className={styles.root} data-surface="public" lang={locale} dir={locale === "ar" ? "rtl" : "ltr"} style={{marginTop:32}}>
-    <SubscriptionBrandGuide locale={locale} selectedPersona={validChoice?.persona??intent.persona} />
+   <h2 data-seq="packages-title" className="mx-auto max-w-[28ch] text-center text-[clamp(1.65rem,3.4vw,2.75rem)] font-bold leading-snug text-[#101B16] sm:max-w-none">{c.packagesTitle}</h2>
+   <p data-seq="packages-lead" className="mx-auto mt-3 max-w-[48ch] text-center text-base leading-7 text-[#60736A] sm:text-lg sm:leading-8">{c.packagesLead}</p>
+   <div className="mx-auto mt-4 h-0.5 w-28 rounded-full bg-[#38DC89]" data-seq="trace" aria-hidden />
+   <div className={styles.root} data-surface="public" lang={locale} dir={locale === "ar" ? "rtl" : "ltr"} style={{marginTop:20}}>
+    <SubscriptionBrandGuide
+     locale={locale}
+     selectedPersona={validChoice?.persona??intent.persona}
+     onFocusPersona={(persona)=>{
+      setIntent((previous)=>({term:previous.term,persona,package:previous.package??"basic"}));
+      onSelect(planByPersona[persona]);
+     }}
+    />
     <div id="subscription-plans" className={styles.planHeading}><p>{c.chooseNote}</p><div className={styles.cycles} role="group" aria-label={c.cycle}>
      <button type="button" aria-pressed={term==="monthly"} onClick={()=>changeTerm("monthly")}>{c.monthly}</button>
      <button type="button" aria-pressed={term==="yearly"} onClick={()=>changeTerm("yearly")}>{c.yearly} −20%</button>
