@@ -164,21 +164,23 @@ export function AuthOtpModal({
   useEffect(() => {
     if (!verified) return;
     clearTimers();
-    if (prefersReducedMotion()) {
-      setPhase("done");
-      const id = window.setTimeout(() => onSuccessAnimDone(), 120);
-      timersRef.current.push(id);
-      return () => clearTimers();
-    }
-    setPhase("diamond");
-    timersRef.current.push(window.setTimeout(() => setPhase("orbit"), 700));
-    timersRef.current.push(window.setTimeout(() => setPhase("radar"), 1500));
-    timersRef.current.push(
-      window.setTimeout(() => {
+    const start = window.setTimeout(() => {
+      if (prefersReducedMotion()) {
         setPhase("done");
-        onSuccessAnimDone();
-      }, 2400),
-    );
+        timersRef.current.push(window.setTimeout(() => onSuccessAnimDone(), 120));
+        return;
+      }
+      setPhase("diamond");
+      timersRef.current.push(window.setTimeout(() => setPhase("orbit"), 700));
+      timersRef.current.push(window.setTimeout(() => setPhase("radar"), 1500));
+      timersRef.current.push(
+        window.setTimeout(() => {
+          setPhase("done");
+          onSuccessAnimDone();
+        }, 2400),
+      );
+    }, 0);
+    timersRef.current.push(start);
     return () => clearTimers();
   }, [verified, clearTimers, onSuccessAnimDone]);
 

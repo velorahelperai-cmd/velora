@@ -28,16 +28,16 @@ vi.mock("@/lib/landing-motion", () => ({
 }));
 
 function renderLanding(locale: "ar" | "en") {
-  return renderToStaticMarkup(
-    // DemoProvider/AccountSessionProvider typings require `children` on props; third-arg form fails tsc.
-    // eslint-disable-next-line react/no-children-prop -- typed provider props
-    createElement(DemoProvider, {
-      initialLocale: locale,
-      children: createElement(AccountSessionProvider, {
-        children: createElement(LandingPage, { initialLocale: locale }),
-      }),
+  /* DemoProvider/AccountSessionProvider typings require `children` on props; third-arg form fails tsc. */
+  /* eslint-disable react/no-children-prop -- typed provider props */
+  const tree = createElement(DemoProvider, {
+    initialLocale: locale,
+    children: createElement(AccountSessionProvider, {
+      children: createElement(LandingPage, { initialLocale: locale }),
     }),
-  );
+  });
+  /* eslint-enable react/no-children-prop */
+  return renderToStaticMarkup(tree);
 }
 
 describe("landing navbar structure", () => {
