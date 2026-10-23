@@ -1,3 +1,20 @@
+# Current Session Index - MASTER-PLAN-001 review corrections
+
+- Scope: documentation-only corrections from the two owner-approved reviews. Brain remains the sole plan/decisions/lessons; no phase-four or product code/SQL/provider execution.
+- Writer: 01a166ee-d6cd-7655-b154-55a73b6d90db, entire canonical repository/generated output/Velora Brain and specifically authorized Constitution corrections. Receipt .git/velora-writer-lock.json; explicit handoff required.
+- Source: canonical C:/Users/DELL/Desktop/Velora new; main dd601b705562878a777da7ee8d944761b5e51131; origin/account velorahelperai-cmd/velora. Guard PASS; clean baseline; old detached worktree read-only, no differences imported.
+- Proven delivery: phase two 6acb1413 complete; preceding docs dd601b7 passed actual pre-push, [CI9/9](https://github.com/velorahelperai-cmd/velora/actions/runs/39931577423) and [Vercel Ready Production sameSHA](https://vercel.com/velora-9513/velora/qTpCpRGWtyw8CgqmvTYTc9dBfA4c). This is bounded release proof, not product acceptance.
+- Review corrections: [Brain findings and evidence](<C:/Users/DELL/Desktop/Obsidian/AI Workspace/Velora/06-COVERAGE.md#review-findings>); 55 task dependencies, ARC01–15/Q01–25/CF01–47 traceability, task-specific acceptance, source-status distinctions and unified reading authority. Constitution rule IDs/counts and source history preserved; no plan copied into Git.
+- Blockers/limits: Cursor and Antigravity actual Brain read remains UNVERIFIED; historical primary-source gaps remain. The review uses the available detailed report for the remaining topics; the truncated summary is not claimed as fully reviewed. This source qualification is not a delivery blocker. Commercial and runtime acceptance stays in Brain, not this index.
+- Graphify: build9f3de94e-787f-4f29-ab21-f5296845f8df, indexed2026-10-23T09:32:17.860181Z at dd601b7 matched the review baseline; verify freshness again after commit.
+- Delivery: authorized documentation candidate only; required gates, normal commit/push main, CI/Vercel sameSHA pending for this correction. Final receipts outside Git; no follow-up commit solely for publication evidence. ReqView/Claude retirement stays published; no restored or additional deleted files.
+- Next programming task is in [Brain](<C:/Users/DELL/Desktop/Obsidian/AI Workspace/Velora/00-INDEX.md>), unchanged and not started. Ownership, CAL-TZ-001 and approved business decisions were not reopened.
+
+## Previous session index — before dd601b7 publication (historical)
+
+<details>
+<summary>Preserved earlier current-session snapshot</summary>
+
 # Current Session Index - MASTER-PLAN-001
 
 - Scope/status: phase-three Project Brain migration; local documentation, coverage and review PASS; operational access/publication closure pending. No product FLOW or programming started.
@@ -11,6 +28,8 @@
 - Delivery: documentation/instructions-only main push and automatic Vercel deployment now authorized after guard/pre-push/gates and exact-SHA checks. Deletion scope and GRAPHIFY-FIRST are resolved. This is the reviewed documentation candidate; final pre-push, publication and exact-SHA evidence are recorded outside Git to avoid a receipt commit loop. Actual Cursor/Antigravity access remains UNVERIFIED and blocks full operational closure, not the authorized documentation delivery.
 - Details/evidence: Brain06-COVERAGE/09-SOURCE-REGISTER; private .git/velora-master-plan receipts. First next programming dependency is recorded in Brain and is not authorized to start here.
 - CAL-TZ-001 RESOLVED: IANA per business, Cairo DST, UTC storage; Asia/Muscat only Oman. Documentation only. HANDOFF-LIMIT-001 in Brain defines quota/interruption recovery with explicit ownership, no automatic takeover.
+
+</details>
 
 ## Previous session index — CONSTITUTION-TRANSITION-20261023 (historical candidate checkpoint)
 
