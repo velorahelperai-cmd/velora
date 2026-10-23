@@ -342,8 +342,16 @@ html[dir="ltr"] .hero-veil {
     url("/assets/velora/hero-environment-v2.png") center / cover;
 }
 
-header {
+/* Unlayered type rule beats Tailwind @layer utilities — keep sticky for
+   non-landing headers only so landing can use position:fixed. */
+header:not([data-landing-nav="fixed"]) {
   position: sticky;
+}
+
+header[data-landing-nav="fixed"] {
+  position: fixed;
+  inset-inline: 0;
+  top: 0;
 }
 
 section[id],

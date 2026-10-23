@@ -4,9 +4,9 @@ import {createBrowserLogger,recordSessionCheckUnavailable,recordLogoutTransportF
 it("emits a safe structured availability warning with native redaction",()=>{
  const lines:Array<Record<string,unknown>>=[];
  const logger=createBrowserLogger((line:Record<string,unknown>)=>lines.push(line));
- recordSessionCheckUnavailable({userId:"11111111-1111-4111-8111-111111111111",companyId:null},logger);
+ recordSessionCheckUnavailable({userId:"11111111-1111-4111-8111-111111111111",companyId:null},logger,{stage:"server_auth"});
  expect(lines).toHaveLength(1);
- expect(lines[0]).toMatchObject({level:"warn",service:"velora.browser",event:"auth.session.check.unavailable",code:"UNAVAILABLE",kind:"application",user_id:"11111111-1111-4111-8111-111111111111",tenant_id:null,trace_id:null,span_id:null});
+ expect(lines[0]).toMatchObject({level:"warn",service:"velora.browser",event:"auth.session.check.unavailable",code:"UNAVAILABLE",kind:"security",stage:"server_auth",user_id:"11111111-1111-4111-8111-111111111111",tenant_id:null,trace_id:null,span_id:null});
  expect(lines[0].timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T.*\.\d{3}Z$/);
  expect(lines[0].request_id).toMatch(/^[a-f0-9-]{36}$/);
  expect(lines[0].version).toEqual(expect.any(String));

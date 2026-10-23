@@ -16,11 +16,11 @@ const scenes = [
     theme: "dark" as const,
     anchor: "story",
     title: {
-      ar: "كل محادثة طلب محتمل. استقبلها بدقة ووضوح.",
+      ar: "عملاؤك يستحقون ردًا سريعًا. وفريقك يستحق وقتًا أكثر.",
       en: "Every conversation is a potential order. Handle it with speed and precision.",
     },
     body: {
-      ar: "في أوقات الذروة تنهال طلبات الوجبات واستفسارات التوصيل. نورا تفهم تفاصيل الطلب وتوضح خيارات القائمة، وتجهّز التفاصيل لفريقك للتحضير والتسليم دون تأخير.",
+      ar: "فيلورا تساعد نشاطك على الرد على استفسارات العملاء، وتنظيم المحادثات ومتابعة الطلبات، وتقليل الأخطاء الناتجة عن نقص المعلومات أو تكرار العمل. وتخفف الضغط على فريقك ليركّز على المهام الأهم — سواء كنت تبدأ مشروعك أو تدير شركة قائمة.",
       en: "Rush hours bring high message volume and meal requests. Noura captures customisations and delivery details, preparing the order so your kitchen prepares without delay.",
     },
     example: {
@@ -329,7 +329,7 @@ const ui = {
   try: { ar: "شاهد مسار المحادثة", en: "See the conversation journey" },
   start: { ar: "ابدأ تجهيز حسابك", en: "Prepare your account" },
   tagline: {
-    ar: "تنظيم الرد والمتابعة — والخطوة التالية أوضح.",
+    ar: "VELORA — مساعد أعمال ذكي",
     en: "Organised replies and follow-up — with a clearer next step.",
   },
   signIn: { ar: "تسجيل الدخول", en: "Sign in" },

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import {recordLogoutTransportFailed} from "@/lib/logging/browser.mjs";
+import {recordLogoutTransportFailed,recordSessionCheckUnavailable} from "@/lib/logging/browser.mjs";
 import { usePathname, useRouter } from "next/navigation";
 import {
   createContext,
@@ -179,7 +179,12 @@ export function AccountSessionProvider({
           return;
         }
         failureStageRef.current="server_auth";
-        // Never keep ready after failed reattest (C2-R7).
+        // Transport/availability failure is not logout — keep capture refs, surface error status only.
+        recordSessionCheckUnavailable(
+          {userId:userIdRef.current??undefined,companyId:identityRef.current?.companyId??null},
+          undefined,
+          {code:broker.code,stage:"server_auth"},
+        );
         setStatusLive("error");
         return;
       }
@@ -204,6 +209,11 @@ export function AccountSessionProvider({
           return;
         }
         failureStageRef.current = classifyProfileFailure(result.code);
+        recordSessionCheckUnavailable(
+          {userId:userIdRef.current??undefined,companyId:identityRef.current?.companyId??null},
+          undefined,
+          {code:result.code,stage:failureStageRef.current},
+        );
         setStatusLive("error");
         return;
       }
@@ -218,11 +228,21 @@ export function AccountSessionProvider({
         || result.data.userId !== broker2.userId
       ) {
         failureStageRef.current = "server_auth";
+        recordSessionCheckUnavailable(
+          {userId:userIdRef.current??undefined,companyId:identityRef.current?.companyId??null},
+          undefined,
+          {code:!broker2.ok?broker2.code:"BOUNDARY_MISMATCH",stage:"server_auth"},
+        );
         setStatusLive("error");
         return;
       }
       if (userIdRef.current && !identityRef.current && userIdRef.current !== result.data.userId) {
         failureStageRef.current = "server_auth";
+        recordSessionCheckUnavailable(
+          {userId:userIdRef.current??undefined,companyId:null},
+          undefined,
+          {code:"USER_MISMATCH",stage:"server_auth"},
+        );
         setStatusLive("error");
         return;
       }
@@ -260,7 +280,12 @@ export function AccountSessionProvider({
     } catch {
       if (gen !== requestGen.current) return;
       failureStageRef.current = "server_auth";
-      // Throw during reattest must not leave ready (C3-6).
+      // Throw during reattest must not leave ready (C3-6); not a logout.
+      recordSessionCheckUnavailable(
+        {userId:userIdRef.current??undefined,companyId:identityRef.current?.companyId??null},
+        undefined,
+        {code:"TRANSPORT",stage:"server_auth"},
+      );
       setStatusLive("error");
     }
   }, [clear, expire, providerRouter, setStatusLive]);
@@ -369,6 +394,12 @@ export function AccountSessionProvider({
             clear();
             return;
           }
+          // Availability failure ≠ logout; keep guest chrome until a later successful reattest.
+          recordSessionCheckUnavailable(
+            {userId:userIdRef.current??undefined,companyId:null},
+            undefined,
+            {code:broker.code,stage:"server_auth"},
+          );
           setStatusLive("error");
           return;
         }
@@ -383,6 +414,11 @@ export function AccountSessionProvider({
           lock(signal.boundaryFingerprint);
           return;
         }
+        recordSessionCheckUnavailable(
+          {userId:userIdRef.current??undefined,companyId:null},
+          undefined,
+          {code:"TRANSPORT",stage:"browser_auth"},
+        );
         setStatusLive("error");
       }
     })();
@@ -577,30 +613,13 @@ export function AccountMenu({
     };
   }, [open]);
 
-  if (!session || session.status === "loading") {
+  // Navbar chrome is decoupled from network: only a confirmed ready identity
+  // may replace public Sign-in / Create-account. Loading, transport error,
+  // guest, expired, and locked keep the same public CTAs (no empty slot, no
+  // technical identity-error copy). Session verification continues in the provider.
+  if (!session || session.status !== "ready" || !session.identity) {
     return (
-      <div className="inline-block min-h-11 min-w-[7rem]" aria-hidden="true" />
-    );
-  }
-
-  if (session.status === "error") {
-    return (
-      <div className="flex items-center gap-2">
-        <span className="text-xs text-[#f0a0a0]">{copy.account.identityError}</span>
-        <button
-          type="button"
-          className="inline-flex min-h-11 items-center rounded-full border border-[color:var(--color-border-soft)] px-3 text-sm"
-          onClick={() => void session.refresh()}
-        >
-          {copy.errors.accessRetry}
-        </button>
-      </div>
-    );
-  }
-
-  if (session.status === "guest" || !session.identity) {
-    return (
-      <div className="flex items-center gap-2">
+      <div className="flex min-h-11 min-w-[12.5rem] items-center gap-2" data-account-chrome="public">
         {showBrand ? null : null}
         <Link href="/login" className="inline-flex min-h-11 items-center px-2 text-sm">
           {copy.auth.login}

@@ -10,8 +10,13 @@ export function createBrowserLogger(write){
 }
 const logger=createBrowserLogger();
 const identifier=value=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value)?value:null;
-export function recordSessionCheckUnavailable(identity,target=logger){
- record(identity,'auth.session.check.unavailable','UNAVAILABLE',target);
+export function recordSessionCheckUnavailable(identity,target=logger,fields={}){
+ const code=typeof fields.code==='string'&&fields.code?fields.code:'UNAVAILABLE';
+ const stage=typeof fields.stage==='string'&&fields.stage?fields.stage:undefined;
+ record(identity,'auth.session.check.unavailable',code,target,'warn',{
+  kind:'security',
+  ...(stage?{stage}:{}),
+ });
 }
 export function recordPreparationValidationRejected(identity,target=logger){
  record(identity,'setup.preparation.validation.rejected','INVALID_INPUT',target);

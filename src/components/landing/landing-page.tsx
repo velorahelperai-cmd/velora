@@ -162,8 +162,11 @@ export function LandingPage({
   }
 
   return (
-    <div ref={rootRef}>
-      <header className="sticky top-0 z-40 bg-[#07110d]/90 px-3 py-2.5 text-[#f7fbf8] backdrop-blur sm:px-4 lg:px-10 lg:py-3">
+    <div ref={rootRef} className="[&_[id]]:scroll-mt-16 lg:[&_[id]]:scroll-mt-[4.25rem]">
+      <header
+        data-landing-nav="fixed"
+        className="fixed inset-x-0 top-0 z-40 bg-[#07110d]/90 px-3 py-2.5 text-[#f7fbf8] backdrop-blur sm:px-4 lg:px-10 lg:py-3"
+      >
         <div className="relative flex flex-nowrap items-center justify-between gap-2">
           <a href="#story" className="inline-flex min-h-11 min-w-0 shrink items-center gap-2 text-xl font-bold leading-none sm:text-2xl lg:text-[34px]">
             <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#38dc89] text-sm text-[#072317] lg:h-9 lg:w-9 lg:text-base">V</span>
@@ -222,6 +225,7 @@ export function LandingPage({
           ) : null}
         </div>
       </header>
+      <div aria-hidden="true" data-landing-nav-spacer="" className="h-16 shrink-0 lg:h-[4.25rem]" />
 
       <main>
         <StoryScenes

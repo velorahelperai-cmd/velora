@@ -80,7 +80,10 @@ vi.mock("@/lib/auth/session-context", () => ({
 }));
 vi.mock("@/lib/demo-state", () => ({ emptyBusiness: {}, useDemo: () => ({ locale: "en", update: f.update }) }));
 vi.mock("./ui", () => ({ useAppCopy: () => appCopy(f.locale), LangSwitch: () => null }));
-vi.mock("@/lib/logging/browser.mjs", () => ({ recordLogoutTransportFailed: vi.fn() }));
+vi.mock("@/lib/logging/browser.mjs", () => ({
+  recordLogoutTransportFailed: vi.fn(),
+  recordSessionCheckUnavailable: vi.fn(),
+}));
 
 import { AccountMenu } from "./account-chrome";
 
@@ -90,6 +93,12 @@ function nodes(v: unknown): Node[] {
   if (!v || typeof v !== "object" || !("props" in v)) return [];
   const n = v as Node;
   return [n, ...nodes(n.props.children)];
+}
+function texts(v: unknown): string[] {
+  if (typeof v === "string") return [v];
+  if (Array.isArray(v)) return v.flatMap(texts);
+  if (!v || typeof v !== "object" || !("props" in v)) return [];
+  return texts((v as Node).props.children);
 }
 function render() {
   f.cursor = 0;
@@ -127,23 +136,25 @@ it.each(["en", "ar"] as const)("keeps pending header quiet and exposes only the 
   f.locale = locale;
   f.status = "loading";
   let tree = render();
-  expect(tree.props["aria-hidden"]).toBe("true");
-  expect(tree.props.children).toBeUndefined();
-  expect(tree.props.className).toContain("min-w-[7rem]");
-  expect(nodes(tree).some(n => n.props.onClick || n.props.href)).toBe(false);
+  expect(tree.props["data-account-chrome"]).toBe("public");
+  expect(tree.props.className).toContain("min-w-[12.5rem]");
+  expect(nodes(tree).some(n => n.props.href === "/login")).toBe(true);
+  expect(nodes(tree).some(n => n.props.href === "/signup")).toBe(true);
+  expect(texts(tree)).not.toContain(appCopy(locale).account.identityError);
   f.status = "ready";
   tree = render();
-  expect(JSON.stringify(tree)).toContain("Synthetic");
+  expect(texts(tree).some((t) => t.includes("Synthetic"))).toBe(true);
   expect(nodes(tree).some(n => n.props["aria-haspopup"] === "menu")).toBe(true);
-  // A retained identity must never flash while a new boundary is being checked.
+  // Unverified identity must never flash while a new boundary is being checked.
   f.status = "loading";
   tree = render();
-  expect(JSON.stringify(tree)).not.toContain("Synthetic");
+  expect(texts(tree).some((t) => t.includes("Synthetic"))).toBe(false);
+  expect(nodes(tree).some(n => n.props.href === "/login")).toBe(true);
   f.liveUser = "user-b";
   f.status = "ready";
   tree = render();
-  expect(JSON.stringify(tree)).toContain("Second account");
-  expect(JSON.stringify(tree)).not.toContain('"Synthetic"');
+  expect(texts(tree).some((t) => t.includes("Second account"))).toBe(true);
+  expect(texts(tree).some((t) => t === "Synthetic")).toBe(false);
   f.status = "loading";
   render();
   f.liveUser = null;
@@ -155,10 +166,10 @@ it.each(["en", "ar"] as const)("keeps pending header quiet and exposes only the 
   render();
   f.status = "error";
   tree = render();
-  expect(JSON.stringify(tree)).toContain(appCopy(locale).account.identityError);
-  const retry = nodes(tree).find(n => n.type === "button")!;
-  (retry.props.onClick as () => void)();
-  expect(f.refresh).toHaveBeenCalledOnce();
+  // Navbar never surfaces technical identity-fetch copy; keep public CTAs while provider retries.
+  expect(texts(tree)).not.toContain(appCopy(locale).account.identityError);
+  expect(nodes(tree).some(n => n.props.href === "/login")).toBe(true);
+  expect(nodes(tree).some(n => n.props.href === "/signup")).toBe(true);
   expect(f.logout).not.toHaveBeenCalled();
 });
 
