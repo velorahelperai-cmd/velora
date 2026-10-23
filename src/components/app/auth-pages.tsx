@@ -7,14 +7,22 @@ import { createRecoveryReceipt } from "@/lib/auth/operation-recovery";
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useDemo } from "@/lib/demo-state";
 import { fill } from "@/lib/app-copy";
 import { landingCopy } from "@/lib/landing-copy";
 import { startOAuth } from "@/lib/auth/browser";
 import { safeInternalPath } from "@/lib/auth/safe-next";
+import {
+  AUTH_ENTRY_MORPH_MS,
+  consumeAuthEntryMorph,
+  markAuthEntryMorph,
+  prefersReducedMotion,
+} from "@/lib/auth/auth-entry-morph";
 import { acceptStaffInvitation, readStaffInvitation, type StaffInvitationView } from "@/lib/tenancy/staff-invitations";
 import { AccountMenu, useOptionalAccountSession } from "@/components/app/account-chrome";
+import { AuthMotionCanvas } from "@/components/app/auth-motion-canvas";
+import { AuthOtpModal } from "@/components/app/auth-otp-modal";
 import {
   completeProfileName,
   requestPasswordReset,
@@ -30,11 +38,255 @@ import {
 } from "@/components/app/ui";
 
 const RESEND_COOLDOWN_SEC = 60;
+const AUTH_MORPH_OUT_EVENT = "velora-auth-morph-out";
 
-export function AuthShell({ title, body, children, footer }: { title: string; body?: string; children: ReactNode; footer?: ReactNode }) {
+function AuthEntryMorphLink({
+  href,
+  className,
+  children,
+}: {
+  href: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  const router = useRouter();
+  return (
+    <Link
+      href={href}
+      className={className}
+      onClick={(event) => {
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+        event.preventDefault();
+        markAuthEntryMorph();
+        if (prefersReducedMotion()) {
+          router.push(href);
+          return;
+        }
+        window.dispatchEvent(new CustomEvent(AUTH_MORPH_OUT_EVENT, { detail: { href } }));
+      }}
+    >
+      {children}
+    </Link>
+  );
+}
+
+function AuthTitle({ title }: { title: string }) {
+  const parts = title.trim().split(/\s+/);
+  if (parts.length < 2) return <>{title}</>;
+  const head = parts.slice(0, -1).join(" ");
+  const tail = parts[parts.length - 1];
+  return (
+    <>
+      {head}{" "}
+      <span className="text-[var(--service-accent)]">{tail}</span>
+    </>
+  );
+}
+
+function GoogleMark() {
+  return (
+    <svg aria-hidden="true" width="18" height="18" viewBox="0 0 18 18" className="shrink-0">
+      <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z" />
+      <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332C2.438 15.983 5.482 18 9 18z" />
+      <path fill="#FBBC05" d="M3.964 10.707c-.18-.54-.282-1.117-.282-1.707s.102-1.167.282-1.707V4.961H.957C.348 6.175 0 7.55 0 9s.348 2.825.957 4.039l3.007-2.332z" />
+      <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.961L3.964 7.293C4.672 5.163 6.656 3.58 9 3.58z" />
+    </svg>
+  );
+}
+
+function EntryFieldIcon({ kind }: { kind: "user" | "mail" | "lock" }) {
+  const common = "pointer-events-none absolute start-3.5 h-4 w-4 text-[#536579]";
+  if (kind === "user") {
+    return (
+      <svg aria-hidden="true" className={common} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+        <circle cx="12" cy="7" r="4" />
+      </svg>
+    );
+  }
+  if (kind === "mail") {
+    return (
+      <svg aria-hidden="true" className={common} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+        <polyline points="22,6 12,13 2,6" />
+      </svg>
+    );
+  }
+  return (
+    <svg aria-hidden="true" className={common} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+    </svg>
+  );
+}
+
+function EntrySubmitArrow() {
+  return (
+    <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="5" y1="12" x2="19" y2="12" />
+      <polyline points="12 5 19 12 12 19" />
+    </svg>
+  );
+}
+
+export function AuthShell({
+  title,
+  body,
+  children,
+  footer,
+  entry = false,
+  /** Non-interactive entry chrome behind the verify OTP modal. */
+  entryBackdrop = false,
+}: {
+  title: string;
+  body?: string;
+  children: ReactNode;
+  footer?: ReactNode;
+  /** Owner-approved motion entry chrome for /login and /signup only. */
+  entry?: boolean;
+  entryBackdrop?: boolean;
+}) {
   const copy = useAppCopy();
   const { locale } = useDemo();
+  const router = useRouter();
   const tagline = landingCopy(locale).tagline;
+  const [collapsed, setCollapsed] = useState(false);
+  const [contentVisible, setContentVisible] = useState(true);
+  const [cardReady, setCardReady] = useState(!entry);
+  /** Start true so SSR and first client paint match (no transition string). */
+  const [reduceMotion, setReduceMotion] = useState(true);
+  const morphTimer = useRef<number | null>(null);
+
+  useEffect(() => {
+    setReduceMotion(prefersReducedMotion());
+  }, []);
+
+  useEffect(() => {
+    if (!entry || entryBackdrop) {
+      setCardReady(true);
+      return;
+    }
+    const reduce = prefersReducedMotion();
+    const shouldMorphIn = consumeAuthEntryMorph();
+    if (!shouldMorphIn || reduce) {
+      setCollapsed(false);
+      setContentVisible(true);
+      setCardReady(true);
+      return;
+    }
+    setCollapsed(true);
+    setContentVisible(false);
+    setCardReady(true);
+    const id = window.setTimeout(() => {
+      setCollapsed(false);
+      window.setTimeout(() => setContentVisible(true), 40);
+    }, 40);
+    morphTimer.current = id;
+    return () => window.clearTimeout(id);
+  }, [entry, entryBackdrop]);
+
+  useEffect(() => {
+    if (!entry || entryBackdrop) return;
+    function onMorphOut(event: Event) {
+      const href = (event as CustomEvent<{ href?: string }>).detail?.href;
+      if (!href) return;
+      if (prefersReducedMotion()) {
+        router.push(href);
+        return;
+      }
+      setContentVisible(false);
+      setCollapsed(true);
+      if (morphTimer.current) window.clearTimeout(morphTimer.current);
+      morphTimer.current = window.setTimeout(() => {
+        router.push(href);
+      }, AUTH_ENTRY_MORPH_MS);
+    }
+    window.addEventListener(AUTH_MORPH_OUT_EVENT, onMorphOut);
+    return () => {
+      window.removeEventListener(AUTH_MORPH_OUT_EVENT, onMorphOut);
+      if (morphTimer.current) window.clearTimeout(morphTimer.current);
+    };
+  }, [entry, entryBackdrop, router]);
+
+  if (entry) {
+    const signupTall = typeof title === "string" && /إنشاء|Create|Sign up|حساب/i.test(title);
+    return (
+      <main
+        className="app-shell relative min-h-svh overflow-x-hidden bg-transparent px-4 py-6 pb-[max(6rem,env(safe-area-inset-bottom))]"
+        data-auth-entry-shell="true"
+        data-auth-entry-backdrop={entryBackdrop ? "true" : undefined}
+      >
+        <AuthMotionCanvas />
+        <div className={`relative z-10 mx-auto flex max-w-[1100px] items-center justify-between gap-2 ${entryBackdrop ? "pointer-events-none select-none" : ""}`}>
+          <Link href="/" className="inline-flex min-h-11 min-w-0 items-center gap-2 text-xl font-bold sm:text-2xl" tabIndex={entryBackdrop ? -1 : undefined}>
+            <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--service-accent)] text-sm text-white sm:h-9 sm:w-9 sm:text-base">V</span>
+            <span className="truncate text-[var(--service-ink)]">{copy.brand}</span>
+          </Link>
+          <div className="flex shrink-0 items-center gap-2">
+            <span className="hidden sm:inline-flex"><PreviewBadge note /></span>
+            <LangSwitch />
+            <AccountMenu compact />
+          </div>
+        </div>
+        <div className="relative z-10 mx-auto mt-8 flex max-w-[1100px] flex-col items-center lg:mt-12">
+          <p className="mb-4 hidden text-center text-sm text-[var(--service-accent)] sm:block">{tagline}</p>
+          <div className="relative z-10 flex w-full max-w-[440px] items-center justify-center min-h-[min(560px,70svh)]">
+            <div
+              className={`relative flex flex-col items-center justify-center overflow-hidden border border-[#DCE4EB] bg-[#FFFFFF]/95 shadow-[0_30px_80px_rgba(23,45,67,0.12),inset_0_1px_0_rgba(255,255,255,0.85)] backdrop-blur-2xl ${
+                collapsed ? "rounded-[34px]" : "rounded-[38px]"
+              } ${entryBackdrop ? "pointer-events-none opacity-55" : ""}`}
+              data-auth-entry-card="true"
+              data-auth-entry-collapsed={collapsed ? "true" : "false"}
+              style={{
+                width: !cardReady ? "min(100%, 385px)" : collapsed ? "170px" : "min(100%, 385px)",
+                height: collapsed ? "170px" : undefined,
+                minHeight: collapsed ? undefined : signupTall ? "34rem" : "28rem",
+                maxWidth: "385px",
+                transform: collapsed ? "rotate(-45deg)" : "rotate(0deg)",
+                transition: reduceMotion
+                  ? undefined
+                  : `width ${AUTH_ENTRY_MORPH_MS}ms cubic-bezier(0.22, 1, 0.36, 1), height ${AUTH_ENTRY_MORPH_MS}ms cubic-bezier(0.22, 1, 0.36, 1), min-height ${AUTH_ENTRY_MORPH_MS}ms cubic-bezier(0.22, 1, 0.36, 1), transform ${AUTH_ENTRY_MORPH_MS}ms cubic-bezier(0.22, 1, 0.36, 1), border-radius ${AUTH_ENTRY_MORPH_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`,
+              }}
+            >
+              <div
+                className="pointer-events-none absolute start-0 top-0 h-40 w-40 rounded-ss-[28px] border-s-2 border-t-2 border-[#087E8B]/90"
+                style={{
+                  WebkitMaskImage: "linear-gradient(135deg, rgba(0,0,0,1) 0%, rgba(0,0,0,0) 65%)",
+                  maskImage: "linear-gradient(135deg, rgba(0,0,0,1) 0%, rgba(0,0,0,0) 65%)",
+                }}
+                aria-hidden="true"
+              />
+              <div
+                className="pointer-events-none absolute end-0 bottom-0 h-40 w-40 rounded-ee-[28px] border-e-2 border-b-2 border-[#087E8B]/90"
+                style={{
+                  WebkitMaskImage: "linear-gradient(-45deg, rgba(0,0,0,1) 0%, rgba(0,0,0,0) 65%)",
+                  maskImage: "linear-gradient(-45deg, rgba(0,0,0,1) 0%, rgba(0,0,0,0) 65%)",
+                }}
+                aria-hidden="true"
+              />
+              <div
+                className={`flex h-full w-full flex-col justify-between px-6 py-8 sm:px-7 sm:py-9 ${collapsed ? "opacity-0" : contentVisible ? "opacity-100" : "opacity-0"}`}
+                style={{
+                  transform: collapsed ? "rotate(45deg)" : "none",
+                  transition: reduceMotion ? undefined : "opacity 0.28s ease",
+                }}
+                {...(entryBackdrop || collapsed ? ({ inert: true } as { inert: boolean }) : {})}
+              >
+                <div className="text-center">
+                  <h1 className="text-[25px] font-bold leading-snug tracking-tight text-[#172D43]">
+                    <AuthTitle title={title} />
+                  </h1>
+                  {body ? <p className="mt-1 text-xs leading-5 text-[#536579]">{body}</p> : null}
+                </div>
+                <div className="mt-6 flex w-full flex-col justify-between">{children}</div>
+                {footer ? <div className="mt-5 text-center text-xs text-[#536579]">{footer}</div> : null}
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    );
+  }
   return (
     <main className="app-shell relative overflow-x-hidden px-4 py-6 pb-[max(6rem,env(safe-area-inset-bottom))]">
       <div className="relative z-10 mx-auto flex max-w-[1100px] items-center justify-between gap-2">
@@ -79,33 +331,44 @@ function GoogleAuthButton({
   busy,
   onGoogle,
   notice,
+  entry = false,
 }: {
   busy?: boolean;
   onGoogle: () => void;
   notice?: string | null;
+  entry?: boolean;
 }) {
   const copy = useAppCopy();
   return (
-    <div className="mt-6 grid gap-3">
-      <div className="flex items-center gap-3 text-xs text-[var(--color-muted-soft)]" role="separator">
-        <span className="h-px flex-1 bg-[var(--color-line)]" />
+    <div className={entry ? "mt-5 grid gap-3" : "mt-6 grid gap-3"}>
+      <div
+        className={entry ? "flex items-center gap-3 text-xs text-[#536579]" : "flex items-center gap-3 text-xs text-[var(--color-muted-soft)]"}
+        role="separator"
+      >
+        <span className={entry ? "h-px flex-1 bg-[#DCE4EB]" : "h-px flex-1 bg-[var(--color-line)]"} />
         {copy.auth.orContinue}
-        <span className="h-px flex-1 bg-[var(--color-line)]" />
+        <span className={entry ? "h-px flex-1 bg-[#DCE4EB]" : "h-px flex-1 bg-[var(--color-line)]"} />
       </div>
       <Button
         type="button"
         variant="secondary"
         busy={busy}
         busyLabel={copy.loading}
-        className="w-full min-h-12 border-[color:var(--color-border-soft)] shadow-xs"
+        className={
+          entry
+            ? "w-full min-h-11 rounded-xl border-[#DCE4EB] bg-white text-xs font-semibold text-[#172D43] shadow-none hover:bg-[#F0F4F6] focus-visible:ring-[#087E8B]"
+            : "w-full min-h-12 border-[color:var(--color-border-soft)] shadow-xs"
+        }
         onClick={onGoogle}
       >
         <span className="inline-flex items-center gap-2">
-          <span aria-hidden="true" className="text-base font-bold text-[#4285F4]">G</span>
+          <GoogleMark />
           {copy.auth.withGoogle}
         </span>
       </Button>
-      <p className="text-center text-xs leading-5 text-[var(--color-muted-soft)]">{copy.auth.socialNote}</p>
+      <p className={entry ? "text-center text-[11px] leading-4 text-[#536579]" : "text-center text-xs leading-5 text-[var(--color-muted-soft)]"}>
+        {copy.auth.socialNote}
+      </p>
       {notice ? <Notice tone="warn">{notice}</Notice> : null}
     </div>
   );
@@ -217,30 +480,44 @@ export function SignupPage() {
 
   return (
     <AuthShell
+      entry
       title={copy.auth.signupTitle}
       body={copy.auth.signupBody}
-      footer={<>{copy.auth.haveAccount} <Link href={returnTo ? `/login?next=${encodeURIComponent(returnTo)}` : "/login"} className="font-semibold text-[var(--color-action-on-dark)] underline">{copy.auth.login}</Link></>}
+      footer={<>{copy.auth.haveAccount} <AuthEntryMorphLink href={returnTo ? `/login?next=${encodeURIComponent(returnTo)}` : "/login"} className="font-semibold text-[#087E8B] underline">{copy.auth.login}</AuthEntryMorphLink></>}
     >
       {planName ? (
         <div className="mb-4">
-          <Notice tone="info">{copy.auth.planInterest} <strong>{planName}</strong><br /><span className="text-[var(--color-muted-soft)]">{copy.auth.planNote}</span></Notice>
+          <Notice tone="info">{copy.auth.planInterest} <strong>{planName}</strong><br /><span className="text-[#536579]">{copy.auth.planNote}</span></Notice>
         </div>
       ) : null}
 
-      <form className="grid gap-4" onSubmit={submitEmail} noValidate>
+      <form className="space-y-3" onSubmit={submitEmail} noValidate data-auth-entry-form="signup">
         {formError ? <Notice tone="error">{formError}</Notice> : null}<DiagnosticHint diagnostic={diagnostic} locale={locale}/>
-        <Field label={copy.auth.name} required error={nameError}>
-          {(p) => <input {...p} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} autoComplete="name" />}
+        <Field label={copy.auth.name} required error={nameError} tone="entry">
+          {(p) => (
+            <div className="relative flex items-center">
+              <EntryFieldIcon kind="user" />
+              <input {...p} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} autoComplete="name" />
+            </div>
+          )}
         </Field>
-        <Field label={copy.auth.email} required error={emailError}>
-          {(p) => <input {...p} type="email" dir="ltr" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} autoComplete="email" inputMode="email" />}
+        <Field label={copy.auth.email} required error={emailError} tone="entry">
+          {(p) => (
+            <div className="relative flex items-center">
+              <EntryFieldIcon kind="mail" />
+              <input {...p} type="email" dir="ltr" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} autoComplete="email" inputMode="email" />
+            </div>
+          )}
         </Field>
-        <PasswordField label={copy.auth.password} value={form.password} onChange={(v) => setForm({ ...form, password: v })} error={passwordError} hint={copy.auth.passwordHintReal} autoComplete="new-password" />
-        <PasswordField label={copy.auth.confirmPasswordSignup} value={form.confirm} onChange={(v) => setForm({ ...form, confirm: v })} error={confirmError} autoComplete="new-password" />
-        <Button type="submit" busy={busy || redirecting} busyLabel={copy.loading} className="mt-2 w-full min-h-12 text-base font-semibold shadow-sm">{copy.auth.createAccount}</Button>
+        <PasswordField tone="entry" label={copy.auth.password} value={form.password} onChange={(v) => setForm({ ...form, password: v })} error={passwordError} hint={copy.auth.passwordHintReal} autoComplete="new-password" />
+        <PasswordField tone="entry" label={copy.auth.confirmPasswordSignup} value={form.confirm} onChange={(v) => setForm({ ...form, confirm: v })} error={confirmError} autoComplete="new-password" />
+        <Button type="submit" variant="entry" busy={busy || redirecting} busyLabel={copy.loading} className="mt-1">
+          {copy.auth.createAccount}
+          {!busy && !redirecting ? <EntrySubmitArrow /> : null}
+        </Button>
       </form>
 
-      <GoogleAuthButton busy={busy || redirecting || google.busy} onGoogle={google.onGoogle} notice={altNotice} />
+      <GoogleAuthButton entry busy={busy || redirecting || google.busy} onGoogle={google.onGoogle} notice={altNotice} />
     </AuthShell>
   );
 }
@@ -320,54 +597,61 @@ export function LoginPage() {
 
   return (
     <AuthShell
+      entry
       title={copy.auth.loginTitle}
       body={copy.auth.loginBody}
-      footer={<>{copy.auth.noAccount} <Link href={safeInternalPath(returnTo, "") ? `/signup?next=${encodeURIComponent(safeInternalPath(returnTo, ""))}` : "/signup"} className="font-semibold text-[var(--color-action-on-dark)] underline">{copy.auth.signup}</Link></>}
+      footer={<>{copy.auth.noAccount} <AuthEntryMorphLink href={safeInternalPath(returnTo, "") ? `/signup?next=${encodeURIComponent(safeInternalPath(returnTo, ""))}` : "/signup"} className="font-semibold text-[#087E8B] underline">{copy.auth.signup}</AuthEntryMorphLink></>}
     >
-      <form className="grid gap-4" onSubmit={submitEmail} noValidate>
+      <form className="space-y-4" onSubmit={submitEmail} noValidate data-auth-entry-form="login">
         {params.get("reason") === "session_expired" ? <Notice tone="warn">{copy.errors.sessionExpiredBody}</Notice> : null}
         {formError ? <Notice tone="error">{formError}</Notice> : null}<DiagnosticHint diagnostic={diagnostic} locale={locale}/>
-        <Field label={copy.auth.email} required error={emailError}>
-          {(p) => <input {...p} type="email" dir="ltr" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} autoComplete="email" inputMode="email" />}
+        <Field label={copy.auth.email} required error={emailError} tone="entry">
+          {(p) => (
+            <div className="relative flex items-center">
+              <EntryFieldIcon kind="mail" />
+              <input {...p} type="email" dir="ltr" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} autoComplete="email" inputMode="email" />
+            </div>
+          )}
         </Field>
-        <PasswordField label={copy.auth.password} value={form.password} onChange={(v) => setForm({ ...form, password: v })} error={passwordError} autoComplete="current-password" />
-        <div className="flex items-center justify-between gap-3">
-          <Link href="/forgot-password" className="text-sm font-medium text-[var(--color-action-on-dark)] underline">{copy.auth.forgot}</Link>
+        <PasswordField tone="entry" label={copy.auth.password} value={form.password} onChange={(v) => setForm({ ...form, password: v })} error={passwordError} autoComplete="current-password" />
+        <div className="flex items-center justify-end text-xs">
+          <Link href="/forgot-password" className="font-medium text-[#087E8B]">{copy.auth.forgot}</Link>
         </div>
-        <Button type="submit" busy={busy||redirecting} busyLabel={copy.loading} className="w-full min-h-12 text-base font-semibold shadow-sm">{copy.auth.login}</Button>
+        <Button type="submit" variant="entry" busy={busy || redirecting} busyLabel={copy.loading}>
+          {copy.auth.login}
+          {!busy && !redirecting ? <EntrySubmitArrow /> : null}
+        </Button>
       </form>
 
-      <GoogleAuthButton busy={busy || redirecting || google.busy} onGoogle={google.onGoogle} notice={altNotice} />
+      <GoogleAuthButton entry busy={busy || redirecting || google.busy} onGoogle={google.onGoogle} notice={altNotice} />
     </AuthShell>
   );
 }
 
 export function VerifyEmailPage() {
   const copy = useAppCopy();
-
   const router = useRouter();
   const session = useOptionalAccountSession();
   const params = useSearchParams();
-  const [storedReturn,setStoredReturn]=useState("");
-  const pendingReturn=safeInternalPath(params.get("next"),"")||storedReturn;
+  const [storedReturn, setStoredReturn] = useState("");
+  const pendingReturn = safeInternalPath(params.get("next"), "") || storedReturn;
   const emailFromQuery = (params.get("email") || "").trim().toLowerCase();
   const [registeredEmail, setRegisteredEmail] = useState(emailFromQuery);
-  const [correctEmail, setCorrectEmail] = useState("");
-  const [code, setCode] = useState("");
-  const [codeInvalid, setCodeInvalid] = useState(false);
-  const [emailError, setEmailError] = useState<FieldErrorKey>();
   const [resent, setResent] = useState(false);
-  const {locale}=useDemo();const [diagnostic,setDiagnostic]=useState<unknown>(null);
+  const { locale } = useDemo();
+  const [diagnostic, setDiagnostic] = useState<unknown>(null);
   const [error, setError] = useState<string | null>(null);
   const [cooldown, setCooldown] = useState(0);
   const [hydrated, setHydrated] = useState(Boolean(emailFromQuery));
+  const [modalOpen, setModalOpen] = useState(true);
+  const [verified, setVerified] = useState(false);
+  const [successNext, setSuccessNext] = useState<string | null>(null);
   const { busy, run } = useAction();
-  const emailErrText = useErrorText(emailError);
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
       void (async () => {
-        setStoredReturn(readPendingSignup()?.next??"");
+        setStoredReturn(readPendingSignup()?.next ?? "");
         if (emailFromQuery) {
           setRegisteredEmail(emailFromQuery);
           setHydrated(true);
@@ -378,7 +662,7 @@ export function VerifyEmailPage() {
           const profile = await getAccountProfile();
           setRegisteredEmail((profile.ok ? profile.data.email : readPendingSignup()?.email ?? "").toLowerCase());
         } catch {
-          setRegisteredEmail(readPendingSignup()?.email??"");
+          setRegisteredEmail(readPendingSignup()?.email ?? "");
         } finally {
           setHydrated(true);
         }
@@ -400,17 +684,16 @@ export function VerifyEmailPage() {
     return copy.auth.verificationUnavailable;
   }
 
-  function submitCode(event: React.FormEvent) {
-    event.preventDefault();
-    if (busy || !hydrated || !registeredEmail) return;
-    setError(null);setDiagnostic(null);
+  function submitCode(code: string) {
+    if (busy || !hydrated || !registeredEmail || verified) return;
+    setError(null);
+    setDiagnostic(null);
     setResent(false);
     const normalized = normalizeEmailCode(code);
     if (!/^[0-9]{6}$/.test(normalized)) {
-      setCodeInvalid(true);
+      setError(copy.auth.verificationCodeFormat);
       return;
     }
-    setCodeInvalid(false);
     void run(async () => {
       try {
         const { ensureBrowserContinuity, clearAuthGestureNonce } = await import("@/lib/auth/browser-continuity");
@@ -429,16 +712,22 @@ export function VerifyEmailPage() {
           next: pendingReturn,
           requestNonce: continuity.requestNonce,
         });
-        if (result.ok || result.code === "INVALID_INPUT" || result.code === "AUTH_ERROR") clearAuthGestureNonce(continuity.requestNonce);
-        setDiagnostic(result.diagnostic);if (!result.ok) {
+        if (result.ok || result.code === "INVALID_INPUT" || result.code === "AUTH_ERROR") {
+          clearAuthGestureNonce(continuity.requestNonce);
+        }
+        setDiagnostic(result.diagnostic);
+        if (!result.ok) {
           setError(result.code === "INVALID_INPUT" ? copy.auth.verificationCodeFormat : verificationMessage(result.message));
           return;
         }
-        setCode("");
         clearPendingSignup();
-        try { await session?.refresh(); } catch { /* Verification is already confirmed. */ }
-        router.replace(result.data.next);
-        router.refresh();
+        try {
+          await session?.refresh();
+        } catch {
+          /* Verification is already confirmed. */
+        }
+        setSuccessNext(result.data.next);
+        setVerified(true);
       } catch {
         setError(copy.auth.verificationUnavailable);
       }
@@ -446,111 +735,97 @@ export function VerifyEmailPage() {
   }
 
   return (
-    <AuthShell title={copy.auth.verifyTitle} body={fill(copy.auth.verifyBody, { email: registeredEmail || "…" })}>
-      <div className="grid gap-4">
-        <Notice tone="info">{copy.auth.verifyRealBody}</Notice>
-        {error ? <Notice tone="error">{error}</Notice> : null}<DiagnosticHint diagnostic={diagnostic} locale={locale}/>
-        {resent ? <Notice tone="success">{copy.auth.resent}</Notice> : null}
-        <Field label={copy.auth.verifyEmailLabel} hint={copy.auth.verifyEmailHint}>
-          {(p) => (
-            <input
-              {...p}
-              type="email"
-              dir="ltr"
-              value={registeredEmail}
-              readOnly
-              className={`${p.className} opacity-80`}
-            />
-          )}
-        </Field>
-        <form className="grid gap-3" noValidate onSubmit={submitCode}>
-          <Field label={copy.auth.verificationCodeLabel} required hint={copy.auth.verificationCodeHint}
-            error={codeInvalid ? copy.auth.verificationCodeFormat : undefined}>
-            {(p) => <input {...p} type="text" dir="ltr" inputMode="numeric" autoComplete="one-time-code"
-              maxLength={6} pattern="[0-9]{6}" required value={code} disabled={busy}
-              onChange={(event) => {
-                setCode(normalizeEmailCode(event.target.value));
-                setCodeInvalid(false);
-                setError(null);setDiagnostic(null);
-              }} />}
-          </Field>
-          <Button type="submit" busy={busy} busyLabel={copy.loading} disabled={!hydrated || !registeredEmail || busy}>
-            {copy.auth.verifyCode}
-          </Button>
-        </form>
-        <Button
-          type="button"
-          variant="secondary"
-          busy={busy}
-          busyLabel={copy.loading}
-          disabled={!hydrated || !registeredEmail || busy || cooldown > 0}
-          onClick={() => {
-            if (busy || cooldown > 0 || !registeredEmail) return;
-            setError(null);setDiagnostic(null);
-            setResent(false);
-            void run(async () => {
-              try {
-                const result = await resendVerificationEmail(registeredEmail,pendingReturn);
-                setDiagnostic(result.diagnostic);if (!result.ok) {
-                  setError(verificationMessage(result.message));
-                  if (result.message === "verification_rate_limited") setCooldown(RESEND_COOLDOWN_SEC);
-                  return;
-                }
-                setCode("");
-                setResent(true);
-                setCooldown(RESEND_COOLDOWN_SEC);
-              } catch {
-                setError(copy.auth.verificationUnavailable);
-              }
-            });
-          }}
-        >
-          {cooldown > 0 ? fill(copy.auth.resendIn, { n: cooldown }) : copy.auth.resend}
-        </Button>
+    <>
+      <AuthShell
+        entry
+        entryBackdrop
+        title={copy.auth.verifyTitle}
+        body={fill(copy.auth.verifyBody, { email: registeredEmail || "…" })}
+        footer={
+          !modalOpen ? (
+            <button
+              type="button"
+              className="font-semibold text-[#087E8B] underline"
+              onClick={() => setModalOpen(true)}
+            >
+              {copy.auth.verifyCode}
+            </button>
+          ) : null
+        }
+      >
+        <p className="text-center text-xs leading-5 text-[#536579]">{copy.auth.verifyRealBody}</p>
+        {!modalOpen ? (
+          <div className="mt-4 grid gap-2">
+            <Button type="button" variant="entry" onClick={() => setModalOpen(true)}>
+              {copy.auth.verifyCode}
+            </Button>
+            <LinkButton href={authFlowHref("/login", pendingReturn)} variant="secondary">
+              {copy.auth.login}
+            </LinkButton>
+          </div>
+        ) : null}
+      </AuthShell>
 
-        <div className="grid gap-3 border-t border-[color:var(--color-border-soft)] pt-4">
-          <p className="text-xs leading-5 text-[var(--color-muted-soft)]">{copy.auth.correctEmailHint}</p>
-          <Field label={copy.auth.correctEmail} error={emailErrText}>
-            {(p) => (
-              <input
-                {...p}
-                type="email"
-                dir="ltr"
-                inputMode="email"
-                autoComplete="email"
-                value={correctEmail}
-                disabled={busy}
-                onChange={(e) => {
-                  setCorrectEmail(e.target.value);
-                  setEmailError(undefined);
-                  setError(null);setDiagnostic(null);
-                  setResent(false);
-                }}
-              />
-            )}
-          </Field>
-          <Button
-            type="button"
-            variant="secondary"
-            disabled={busy}
-            onClick={() => {
-              const cleaned = correctEmail.trim().toLowerCase();
-              if (!isEmail(cleaned)) {
-                setEmailError("email");
+      <AuthOtpModal
+        open={modalOpen}
+        email={registeredEmail}
+        title={copy.auth.verifyTitle}
+        body={fill(copy.auth.verifyBody, { email: registeredEmail || "…" })}
+        realBody={copy.auth.verifyRealBody}
+        codeLabel={copy.auth.verificationCodeLabel}
+        codeHint={copy.auth.verificationCodeHint}
+        codeFormat={copy.auth.verificationCodeFormat}
+        verifyLabel={copy.auth.verifyCode}
+        resendLabel={copy.auth.resend}
+        resendInLabel={fill(copy.auth.resendIn, { n: cooldown })}
+        resentNotice={copy.auth.resent}
+        correctEmailLabel={copy.auth.correctEmail}
+        correctEmailHint={copy.auth.correctEmailHint}
+        loginLabel={copy.auth.login}
+        loginHref={authFlowHref("/login", pendingReturn)}
+        closeLabel={copy.close}
+        busy={busy}
+        error={error}
+        diagnostic={<DiagnosticHint diagnostic={diagnostic} locale={locale} />}
+        resent={resent}
+        cooldown={cooldown}
+        verified={verified}
+        onClose={() => {
+          if (verified) return;
+          setModalOpen(false);
+        }}
+        onSubmitCode={submitCode}
+        onResend={() => {
+          if (busy || cooldown > 0 || !registeredEmail || verified) return;
+          setError(null);
+          setDiagnostic(null);
+          setResent(false);
+          void run(async () => {
+            try {
+              const result = await resendVerificationEmail(registeredEmail, pendingReturn);
+              setDiagnostic(result.diagnostic);
+              if (!result.ok) {
+                setError(verificationMessage(result.message));
+                if (result.message === "verification_rate_limited") setCooldown(RESEND_COOLDOWN_SEC);
                 return;
               }
-              // Real new signup path — email only in query; never password.
-              router.push(authFlowHref("/signup",pendingReturn,cleaned));
-            }}
-          >
-            {copy.auth.correctEmail}
-          </Button>
-        </div>
-
-        <LinkButton href={authFlowHref("/login",pendingReturn)} variant="secondary">{copy.auth.login}</LinkButton>
-        <LinkButton href="/forgot-password" variant="secondary">{copy.auth.forgotTitle}</LinkButton>
-      </div>
-    </AuthShell>
+              setResent(true);
+              setCooldown(RESEND_COOLDOWN_SEC);
+            } catch {
+              setError(copy.auth.verificationUnavailable);
+            }
+          });
+        }}
+        onCorrectEmail={(cleaned) => {
+          router.push(authFlowHref("/signup", pendingReturn, cleaned));
+        }}
+        onSuccessAnimDone={() => {
+          if (!successNext) return;
+          router.replace(successNext);
+          router.refresh();
+        }}
+      />
+    </>
   );
 }
 

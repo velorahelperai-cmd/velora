@@ -21,6 +21,10 @@ export function useErrorText(key?: FieldErrorKey | null): string | undefined {
 const inputBase =
   "min-h-11 w-full min-w-0 rounded-xl border bg-[var(--color-panel-deep)] px-3 text-base text-[var(--color-on-dark)] outline-none transition focus-visible:ring-2 focus-visible:ring-[#38dc89] placeholder:text-[var(--color-muted-soft)]";
 
+/** Owner-approved motion entry chrome (login/signup card fields). */
+const inputEntry =
+  "min-h-0 w-full min-w-0 rounded-xl border border-[#DCE4EB] bg-[#F0F4F6] py-2.5 ps-10 pe-4 text-xs text-[#172D43] outline-none transition placeholder:text-[#8A9BAB] focus:border-[#087E8B]/70 focus-visible:ring-2 focus-visible:ring-[#087E8B]/35";
+
 export function Field({
   label,
   required,
@@ -28,6 +32,7 @@ export function Field({
   error,
   children,
   dir,
+  tone = "default",
 }: {
   label: string;
   required?: boolean;
@@ -35,13 +40,15 @@ export function Field({
   error?: string;
   children: (props: { id: string; "aria-invalid": boolean; "aria-describedby"?: string; className: string }) => ReactNode;
   dir?: "ltr" | "rtl";
+  tone?: "default" | "entry";
 }) {
   const copy = useAppCopy();
   const id = useId();
   const describedBy = error ? `${id}-err` : hint ? `${id}-hint` : undefined;
+  const entry = tone === "entry";
   return (
     <div
-      className="grid min-w-0 gap-1.5"
+      className={entry ? "min-w-0" : "grid min-w-0 gap-1.5"}
       dir={dir}
       onFocusCapture={(e) => {
         const target = e.target as HTMLElement;
@@ -51,26 +58,62 @@ export function Field({
         }
       }}
     >
-      <label htmlFor={id} className="flex items-center justify-between text-sm text-[var(--color-on-dark)]">
-        <span>{label}</span>
-        <span className={`text-xs ${required ? "text-[var(--color-action-on-dark)]" : "text-[var(--color-muted-soft)]"}`}>{required ? copy.required : copy.optional}</span>
+      <label
+        htmlFor={id}
+        className={
+          entry
+            ? "mb-1.5 block text-xs text-[#536579]"
+            : "flex items-center justify-between text-sm text-[var(--color-on-dark)]"
+        }
+      >
+        {entry ? (
+          label
+        ) : (
+          <>
+            <span>{label}</span>
+            <span className={`text-xs ${required ? "text-[var(--color-action-on-dark)]" : "text-[var(--color-muted-soft)]"}`}>
+              {required ? copy.required : copy.optional}
+            </span>
+          </>
+        )}
       </label>
       {children({
         id,
         "aria-invalid": Boolean(error),
         "aria-describedby": describedBy,
-        className: `${inputBase} scroll-mb-28 ${error ? "border-[var(--color-danger)]" : "border-[color:var(--color-border-soft)]"}`,
+        className: entry
+          ? `${inputEntry} scroll-mb-28 ${error ? "border-[var(--color-danger)]" : ""}`
+          : `${inputBase} scroll-mb-28 ${error ? "border-[var(--color-danger)]" : "border-[color:var(--color-border-soft)]"}`,
       })}
       {error ? (
-        <p id={`${id}-err`} role="alert" className="text-sm text-[var(--color-danger-fg)]">
+        <p id={`${id}-err`} role="alert" className={entry ? "mt-1 text-xs text-[var(--color-danger-fg)]" : "text-sm text-[var(--color-danger-fg)]"}>
           {error}
         </p>
       ) : hint ? (
-        <p id={`${id}-hint`} className="text-xs leading-5 text-[var(--color-muted-soft)]">
+        <p id={`${id}-hint`} className={entry ? "mt-1 text-[11px] leading-4 text-[#536579]" : "text-xs leading-5 text-[var(--color-muted-soft)]"}>
           {hint}
         </p>
       ) : null}
     </div>
+  );
+}
+
+function EyeIcon({ open }: { open: boolean }) {
+  if (open) {
+    return (
+      <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+        <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+        <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24" />
+        <line x1="1" y1="1" x2="23" y2="23" />
+      </svg>
+    );
+  }
+  return (
+    <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
   );
 }
 
@@ -81,6 +124,7 @@ export function PasswordField({
   error,
   hint,
   autoComplete,
+  tone = "default",
 }: {
   label: string;
   value: string;
@@ -88,13 +132,30 @@ export function PasswordField({
   error?: string;
   hint?: string;
   autoComplete: string;
+  tone?: "default" | "entry";
 }) {
   const copy = useAppCopy();
   const [show, setShow] = useState(false);
+  const entry = tone === "entry";
   return (
-    <Field label={label} required hint={hint} error={error}>
+    <Field label={label} required hint={hint} error={error} tone={tone}>
       {(p) => (
-        <div className="relative">
+        <div className="relative flex items-center">
+          {entry ? (
+            <svg
+              aria-hidden="true"
+              className="pointer-events-none absolute start-3.5 h-4 w-4 text-[#536579]"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+            </svg>
+          ) : null}
           <input
             {...p}
             type={show ? "text" : "password"}
@@ -102,14 +163,19 @@ export function PasswordField({
             onChange={(e) => onChange(e.target.value)}
             autoComplete={autoComplete}
             dir="ltr"
-            className={`${p.className} pr-32`}
+            className={entry ? `${p.className} pe-10` : `${p.className} pr-32`}
           />
           <button
             type="button"
             onClick={() => setShow((s) => !s)}
-            className="absolute inset-y-1 right-1 inline-flex min-h-9 items-center rounded-lg px-3 text-xs text-[var(--color-action-on-dark)] hover:bg-[var(--color-hover-wash)]"
+            aria-label={show ? copy.hidePassword : copy.showPassword}
+            className={
+              entry
+                ? "absolute end-3.5 text-[#536579] hover:text-[#172D43]"
+                : "absolute inset-y-1 right-1 inline-flex min-h-9 items-center rounded-lg px-3 text-xs text-[var(--color-action-on-dark)] hover:bg-[var(--color-hover-wash)]"
+            }
           >
-            {show ? copy.hidePassword : copy.showPassword}
+            {entry ? <EyeIcon open={show} /> : show ? copy.hidePassword : copy.showPassword}
           </button>
         </div>
       )}
@@ -125,15 +191,17 @@ export function Button({
   className = "",
   ...rest
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: "primary" | "secondary" | "ghost" | "danger";
+  variant?: "primary" | "secondary" | "ghost" | "danger" | "entry";
   busy?: boolean;
   busyLabel?: string;
 }) {
   const styles = {
-    primary: "bg-[#38dc89] text-[#072317] hover:bg-[#4fe79a]",
-    secondary: "border border-[color:var(--color-border-soft)] text-[var(--color-on-dark)] hover:bg-[var(--color-hover-wash)]",
-    ghost: "text-[var(--color-action-on-dark)] hover:bg-[var(--color-hover-wash)]",
-    danger: "border border-[color:var(--color-danger)]/60 text-[var(--color-danger-fg)] hover:bg-[color:var(--color-danger)]/10",
+    primary: "min-h-11 rounded-full bg-[#38dc89] px-5 text-sm text-[#072317] hover:bg-[#4fe79a] focus-visible:ring-[#38dc89]",
+    secondary: "min-h-11 rounded-full border border-[color:var(--color-border-soft)] px-5 text-sm text-[var(--color-on-dark)] hover:bg-[var(--color-hover-wash)] focus-visible:ring-[#38dc89]",
+    ghost: "min-h-11 rounded-full px-5 text-sm text-[var(--color-action-on-dark)] hover:bg-[var(--color-hover-wash)] focus-visible:ring-[#38dc89]",
+    danger: "min-h-11 rounded-full border border-[color:var(--color-danger)]/60 px-5 text-sm text-[var(--color-danger-fg)] hover:bg-[color:var(--color-danger)]/10 focus-visible:ring-[#38dc89]",
+    entry:
+      "min-h-0 w-full rounded-xl bg-gradient-to-r from-[#087E8B] to-[#066975] px-5 py-2.5 text-xs font-semibold text-white shadow-[0_0_25px_rgba(8,126,139,0.20)] hover:brightness-105 focus-visible:ring-[#087E8B]",
   }[variant];
   return (
     <button
@@ -141,7 +209,7 @@ export function Button({
       data-button={variant}
       disabled={rest.disabled || busy}
       aria-busy={busy || undefined}
-      className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-full px-5 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38dc89] disabled:cursor-not-allowed disabled:opacity-60 ${styles} ${className}`}
+      className={`inline-flex items-center justify-center gap-2 font-medium transition focus-visible:outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-60 ${styles} ${className}`}
     >
       {busy ? (
         <>

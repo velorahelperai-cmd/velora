@@ -113,12 +113,20 @@ function form() {
 function controls() {
   return children(form());
 }
+function fieldInput(field: ReactElement<Record<string, unknown>>) {
+  const rendered = (
+    field.props.children as (p: object) => ReactElement<Record<string, unknown>>
+  )({});
+  if (rendered.type === "input") return rendered as ReactElement<{ onChange: (e: unknown) => void }>;
+  const nested = Children.toArray(rendered.props.children as React.ReactNode).find(
+    (child) => isValidElement(child) && child.type === "input",
+  ) as ReactElement<{ onChange: (e: unknown) => void }> | undefined;
+  if (!nested) throw new Error("entry field input missing");
+  return nested;
+}
 function fill() {
   const email = controls().find((n) => n.type === Field)!;
-  const input = (
-    email.props.children as (p: object) => ReactElement<{ onChange: (e: unknown) => void }>
-  )({});
-  input.props.onChange({ target: { value: "synthetic@example.invalid" } });
+  fieldInput(email).props.onChange({ target: { value: "synthetic@example.invalid" } });
   const password = controls().find((n) => n.type === PasswordField)!;
   (password.props.onChange as (v: string) => void)("synthetic-password");
 }

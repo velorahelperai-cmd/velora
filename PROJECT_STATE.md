@@ -1,10 +1,11 @@
-# Current Session Index - Homepage Navbar account chrome (HOME-ORDER-001)
+# Current Session Index - PF01-C01 auth entry + homepage leftovers delivery
 
-- Scope: `/` Navbar account slot + fixed header before C01 continuation. Guest Sign-in/Create-account from first paint; no identity-error copy in Navbar; transport failure ≠ logout (LOG-001 via `recordSessionCheckUnavailable`). HP-HERO-COPY-001 Arabic texts included in same homepage candidate. Four benefits still wait approved slot. C01 auth-motion locals preserved, not mixed.
-- Writer: active `bbbf1b17-722a-426a-b948-6f9ad7081677` (writer:acquire). Task tag PF01-C01; surfaces C22/C04.
-- Cause: `AccountMenu` blanked on loading and showed `identityError` on broker/profile UNAVAILABLE; unlayered `header{position:sticky}` overrode Tailwind `fixed`.
-- Evidence: focused Vitest account-logout + landing-navbar + browser logging **15 PASS**; browser `/` shows login+signup, no «تعذّر جلب…», `position:fixed` at scrollY≈900.
-- Delivery: scoped homepage commit attempted; **push may block** while unclean C01 auth-motion / AGENTS remain (no stash/reset). Next: clean or separately authorize C01 WIP, then pre-push + main + CI/Vercel same-SHA.
+- Scope: Owner plan Auth motion C01 — shared login/signup entry chrome + lock morph; real 6-cell OTP modal on `/verify-email`; then dual commit (homepage leftovers → auth) + push + same-SHA CI/Vercel. No Supabase/OAuth/env changes. No fake OTP timers.
+- Writer: active `bbbf1b17-722a-426a-b948-6f9ad7081677` (PF01-C01). Graphify index was stale (`bb9e334` ~9h); verified against live auth/landing files.
+- Auth: `AuthShell` entry morph (`auth-entry-morph.ts`), corner chrome, `AuthMotionCanvas`; `AuthOtpModal` (6 cells, a11y, server-gated success diamond→orbit→radar); VerifyEmail uses entry backdrop + modal. Hydration: reduce-motion flag starts true until mount.
+- Homepage leftovers (separate commit): setup scene grid overlap fix, subscription brand film/copy, landing honesty/navbar tests, related icons/motion.
+- Evidence (pre-push): auth Vitest **21 PASS**; typecheck PASS; screenshots under `.tmp/auth-c01-verify/` (login/signup/verify AR + login EN). Delivery SHA/CI/Vercel filled after push.
+- Next after publish: Brain `/` close with homepage SHA; C01 mark with auth SHA/tests (acceptance C01.1–C01.3 still open for real email/Google journeys).
 
 ## Previous session index — before dd601b7 publication (historical)
 
