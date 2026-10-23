@@ -1,5 +1,5 @@
 ---
-description: Velora shared execution entrypoint
+description: Velora Project Brain access and shared safeguards
 alwaysApply: true
 ---
-Read and follow [AGENTS.md](../../AGENTS.md), including its current Engineering Constitution, Velora-specific rules, session index, ownership and error-knowledge references. Do not maintain another copy of those rules here.
+Read and follow [AGENTS.md](../../AGENTS.md), including PROJECT-BRAIN-READ-FIRST, GRAPHIFY-FIRST and the actual Obsidian Brain links. Prove this client can read the Brain; another agent's success is not evidence. Keep one writer across repository and Brain. Do not copy the plan or constitution here.

@@ -1,4 +1,18 @@
-# Current Session Index — CONSTITUTION-TRANSITION-20261023
+# Current Session Index - MASTER-PLAN-001
+
+- Scope/status: phase-three Project Brain migration; local documentation, coverage and review PASS; operational access/publication closure pending. No product FLOW or programming started.
+- Brain: [sole active planning entry](<C:/Users/DELL/Desktop/Obsidian/AI Workspace/Velora/00-INDEX.md>); decisions/tasks/acceptance/lessons live there. This file records execution truth, ownership and blockers only.
+- Writer: 01a166ee-d6cd-7655-b154-55a73b6d90db; entire canonical repository + generated output + Velora Brain, explicit handoff required. Current receipt: .git/velora-writer-lock.json. Other agents read-only.
+- Current source: main 6acb1413d935531e9069dc607a1d0c4b6d9286c1; origin velorahelperai-cmd/velora. Old worktree remains detached/read-only; 691-entry preservation proof retained, no differences imported.
+- Phase two COMPLETE at that SHA/tree041a5201ddec239c708300011db616be5459ef2e: actual pre-push PASS; unit4766/54skipped, contracts270/38skipped, Safety87, Typecheck/Lint/Build PASS, audit0/Gitleaks0. [CI9jobs success](https://github.com/velorahelperai-cmd/velora/actions/runs/39911708480); [Vercel Ready Production sameSHA](https://vercel.com/velora-9513/velora/B8BrM41LRciJChcHVcFwiPtjqnbF). Receipt .git/velora-transition/final-release.json; homepage/login HTTP200. This is bounded release proof, not full product acceptance or SQL certification.
+- Local Brain coverage:53pages/15handlers/103UI files/951static interaction sites;55task groups;50FeatureIDs/48source sections/14subsections/82ReqView CSVrows. Local plan criteria6/6 within inspected/recovered sources and documented exceptions; static coverage does not prove runtime journeys.
+- Deletion scope: REQVIEW-RETIRE-001 authorizes the existing 13 ReqView deletions; 82 CSV rows and 11 requirement nodes preserved in Brain, historical Git retained. CLAUDE-RETIRE-001 confirms the owner intentionally deleted CLAUDE.md; include that deletion too, preserve Git history, no additional deletions.
+- Access: Cursor CLI requires authentication; actual Ask-client Brain read pending. Antigravity has no callable chat endpoint/native UI control here; actual app read pending. Claude=N/A, unused. Codex proof does not establish either client. Historical primary-source provenance gaps remain documented in Brain.
+- Delivery: documentation/instructions-only main push and automatic Vercel deployment now authorized after guard/pre-push/gates and exact-SHA checks. Deletion scope and GRAPHIFY-FIRST are resolved. This is the reviewed documentation candidate; final pre-push, publication and exact-SHA evidence are recorded outside Git to avoid a receipt commit loop. Actual Cursor/Antigravity access remains UNVERIFIED and blocks full operational closure, not the authorized documentation delivery.
+- Details/evidence: Brain06-COVERAGE/09-SOURCE-REGISTER; private .git/velora-master-plan receipts. First next programming dependency is recorded in Brain and is not authorized to start here.
+- CAL-TZ-001 RESOLVED: IANA per business, Cairo DST, UTC storage; Asia/Muscat only Oman. Documentation only. HANDOFF-LIMIT-001 in Brain defines quota/interruption recovery with explicit ownership, no automatic takeover.
+
+## Previous session index — CONSTITUTION-TRANSITION-20261023 (historical candidate checkpoint)
 
 - Task / active execution lock: Engineering Constitution transition only; no new product FLOW. Status: implementation candidate / release verification in progress; release receipts remain outside Git.
 - Writer: this task exclusively owns the entire repository and generated output. Current owner/explicit handoff: `.git/velora-writer-lock.json`; all other agents are read-only. Canonical original / main / velorahelperai-cmd only.

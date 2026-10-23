@@ -1,3 +1,10 @@
+# Historical source — Project Brain migration
+
+The only active Velora planning/rules/decisions/lessons authority is [Obsidian Project Brain](<C:/Users/DELL/Desktop/Obsidian/AI Workspace/Velora/00-INDEX.md>), reached through AGENTS.md / PROJECT-BRAIN-READ-FIRST. This original body is preserved as read-only historical evidence, not a second editable plan or solution register. Do not append new tasks or decisions here. Relevant source requirements were matched in Brain09-SOURCE-REGISTER; access/decision/publication blockers remain explicit in Brain06-COVERAGE. Do not read this entire history before every task or fall back to it when Brain access fails.
+
+<details>
+<summary>Preserved original source at 6acb1413d935531e9069dc607a1d0c4b6d9286c1 — historical, not execution instructions</summary>
+
 ## LIVE-WALKTHROUGH-20261022 — طريقة القبول المعتمدة من المالك
 
 طلب المالك العمل خطوة بخطوة على الموقع المنشور مع التصحيح والأمان وسرعة الاستجابة، وتقليل تكرار الاختبارات والتقارير والتوكن. هذا تعديل لطريقة القبول، لا إذن جديد لنشر أو دفع أو استدعاء مدفوع أو تغيير Production أو نقل ملكية الكاتب.
@@ -2035,3 +2042,6 @@ ONE existing Cursor/Grok4.7High package plus one targeted repair, now STOP/owner
 Product/test files: src/lib/tenancy/onboarding-answers.ts and .test.ts; src/lib/tenancy/prepayment-preparation.ts and .test.ts; src/components/app/setup-plan-journey.ts and .test.ts; src/lib/billing/es02/preparation-handoff.ts and .test.ts. Version1 answers remain explicitly unallocated; no entitlement/recommender/CRM/AI connection authority. No new persistent state. Mandatory primary/phone/branch IDs and existing UI host preserved; host and its test hashes unchanged. Broad sector remains unsupported pending mapping approval.
 Evidence: C:/Users/DELL/Documents/Codex/2026-10-16/task/es02-question-foundation-final-receipt.json, candidate.json, {unit,types,lint}.{json,log}, review-probes-{initial,final}.json, repair-handoff.txt (same prefix). No browser/DB test repeated: no new screen wiring, runtime sync or migration. This is nonvisual source-foundation verification only, not new three-screen runtime/design acceptance. Existing ES02 stage and prior terms/primary/phone/concurrency evidence preserved. No Production/Commit/Push/provider call.
 Capacity correction is settled: Standard owner+2employees, Premium owner+4employees per branch (owner excluded); source MASTER_PLAN CF45 and approved commercial catalog. Do not reopen owner inclusion. Remaining recommendation decisions: company/branch question allocation and exact-count labeling, sector mapping, mixed-goal priority/exact algorithm and image approval. Proposed six-plan matrix remains unapproved; no automatic next work.
+
+
+</details>

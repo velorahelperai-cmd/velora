@@ -2,4 +2,4 @@
 
 @AGENTS.md
 
-Follow the shared execution entrypoint and its current constitution and project-rule references. Confirm explicit whole-repository ownership before writing or running commands that generate files. Do not maintain a separate rules copy here.
+Follow PROJECT-BRAIN-READ-FIRST and GRAPHIFY-FIRST in the shared entrypoint. Read the actual Obsidian Brain before work; record unavailable access and block the affected task instead of using historical plans. Confirm exclusive repository-and-Brain ownership before any write or generated output. Do not keep another rules copy.

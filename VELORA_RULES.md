@@ -1,3 +1,10 @@
+# Historical source — Project Brain migration
+
+The only active Velora planning/rules/decisions/lessons authority is [Obsidian Project Brain](<C:/Users/DELL/Desktop/Obsidian/AI Workspace/Velora/10-PROJECT-RULES.md>), reached through AGENTS.md / PROJECT-BRAIN-READ-FIRST. This original body is preserved as read-only historical evidence, not a second editable plan or solution register. Do not append new tasks or decisions here. Relevant source requirements were matched in Brain09-SOURCE-REGISTER; access/decision/publication blockers remain explicit in Brain06-COVERAGE. Do not read this entire history before every task or fall back to it when Brain access fails.
+
+<details>
+<summary>Preserved original source at 6acb1413d935531e9069dc607a1d0c4b6d9286c1 — historical, not execution instructions</summary>
+
 # VELORA — مرجع قواعد العمل الموحد
 
 اعتماد المالك: 2026-10-23 (Asia/Muscat) — انتقال Engineering Constitution.
@@ -71,3 +78,6 @@ LOG-001 محفوظ: timestamp بصيغة UTC/ISO Z، وlevel للشدة، وserv
 ## مراجعة المسار — 2026-10-22
 
 تحديث القواعد بتفويض مراجعة المالك: لا تقارير أو خطط موازية؛ عدّل الخطة الموجودة، واجعل أول فهرس حالة قصيرًا يحدد النطاق والكاتب والمانع والخطوة التالية. تحتفظ الأقسام الأقدم بأدلتها كتاريخ، ولا تمنح تفويضًا حاليًا. خطة الإغلاق المقترحة في بداية docs/MASTER_PLAN.md؛ ليست إعلان انتقال مرحلة أو إذن تطبيق SQL أو إطلاق حي. افحص حداثة Graphify مقابل HEAD، ثم تحقق محليًا من النتائج المؤثرة. ثبّت حزمة المصدر وSQL والأدلة قبل قبولها، وسجّل أي تغيير لاحق يبطل الدليل المتأثر فقط.
+
+
+</details>

@@ -1,3 +1,10 @@
+# Historical source — Project Brain migration
+
+The only active Velora planning/rules/decisions/lessons authority is [Obsidian Project Brain](<C:/Users/DELL/Desktop/Obsidian/AI Workspace/Velora/08-LESSONS.md>), reached through AGENTS.md / PROJECT-BRAIN-READ-FIRST. This original body is preserved as read-only historical evidence, not a second editable plan or solution register. Do not append new tasks or decisions here. Relevant source requirements were matched in Brain09-SOURCE-REGISTER; access/decision/publication blockers remain explicit in Brain06-COVERAGE. Do not read this entire history before every task or fall back to it when Brain access fails.
+
+<details>
+<summary>Preserved original source at 6acb1413d935531e9069dc607a1d0c4b6d9286c1 — historical, not execution instructions</summary>
+
 # Error knowledge
 
 This file records observed errors and evidence-bound fixes, not runtime logs or a copy of the Engineering Constitution. Search by error code/fingerprint, read existing evidence, confirm the current version/environment/contract, test narrowly, then update the same record. Reopen broad diagnosis only when new evidence invalidates the old cause or scope.
@@ -57,3 +64,6 @@ Keep trusted context, recursive redaction and production level restrictions. Do 
 - Confirmed context: the value is an inline state.auditLogsMock redaction fixture; the test asserts password, token and nested api_key become the redacted marker. This is not evidence of a live credential or runtime disclosure.
 - Fix candidate: generate three synthetic UUID inputs at runtime; retain every existing redaction assertion. No scanner rule, exclusion, baseline or success threshold is weakened.
 - Verified Solution: three runtime-generated UUID fixture inputs, with every redaction assertion unchanged. The affected audit contract file passed 6/6 offline tests and pinned Gitleaks tree scanning passed 1868 paths with zero findings. No scan suppression or threshold change. Receipt: .git/velora-transition/bounded-security-fix.json.
+
+
+</details>

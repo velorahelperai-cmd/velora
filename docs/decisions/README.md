@@ -1,3 +1,10 @@
+# Historical source — Project Brain migration
+
+The only active Velora planning/rules/decisions/lessons authority is [Obsidian Project Brain](<C:/Users/DELL/Desktop/Obsidian/AI Workspace/Velora/01-DECISIONS.md>), reached through AGENTS.md / PROJECT-BRAIN-READ-FIRST. This original body is preserved as read-only historical evidence, not a second editable plan or solution register. Do not append new tasks or decisions here. Relevant source requirements were matched in Brain09-SOURCE-REGISTER; access/decision/publication blockers remain explicit in Brain06-COVERAGE. Do not read this entire history before every task or fall back to it when Brain access fails.
+
+<details>
+<summary>Preserved original source at 6acb1413d935531e9069dc607a1d0c4b6d9286c1 — historical, not execution instructions</summary>
+
 # Velora decision register
 
 ## Latest direct owner decision — 22 October 2026, LOCAL ES02 correction
@@ -386,3 +393,6 @@ LatestUSERauthorizedread-onlyBR01/BR02closure completed. DIAGNOSTICS C8 official
 ## PF10 mandatory API Keys and Secrets Exposure Protection - SEC-REL-001
 
 Add SEC-REL-001 to PF10/WP10A-B merge/deployacceptance; diagnostics securitysection holdsredactedproof/contracts/TASK-PF10-SEC-01 and TASK-PF10-SEC-02. Auditcommit54b3246:.env.local:9 service_rolematerial and:15/17 OpenAIpatternaliases confirmed(TWOgroups/THREEassignments, notuniquevalidkeycount);FIVEotherMeta/OIDC/Geminiassignmentscandidate;validityNOTTESTED. Filetrackeddespiteignore,historycommitreachable. Useralerted,affectedrelease/sharingholdrecommended;no keyactions/CI/code/historychange. TrustedGitleaks/TruffleHog/detect-secretsunavailable,fullscanner/historyNotRun, ownboundedreviewnotreplacement.48localJS2,304,748bytes/0maps+13publicJS/HTMLpassivematchingnegative forknownmaterial;3map403/notallmapabsence;productionGitrevisionunknown(snapshot03:54:21UTC/hashindetail). CurrentHEADchangedbyotherworktoc81bac55,notfullyrescanned. PublicSupabase/anon/MetaIDs/Paymobpublicdistinctprivatekeys,RLS/HMACmandatory. Proposedpinnedoffline/redactedhistory+diff+env/import/DTO/log/artifact+deployattestationgate,expiryownedexceptions/nocriticalbaselinewaiver. Existingbrokerplan/AGENTS/homepagepreserved. Same4Brainonly;no code/tests/install/CI/provider/keys/production/commit/push.
+
+
+</details>
