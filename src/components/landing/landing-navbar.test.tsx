@@ -29,11 +29,14 @@ vi.mock("@/lib/landing-motion", () => ({
 
 function renderLanding(locale: "ar" | "en") {
   return renderToStaticMarkup(
-    createElement(
-      DemoProvider,
-      { initialLocale: locale },
-      createElement(AccountSessionProvider, null, createElement(LandingPage, { initialLocale: locale })),
-    ),
+    // DemoProvider/AccountSessionProvider typings require `children` on props; third-arg form fails tsc.
+    // eslint-disable-next-line react/no-children-prop -- typed provider props
+    createElement(DemoProvider, {
+      initialLocale: locale,
+      children: createElement(AccountSessionProvider, {
+        children: createElement(LandingPage, { initialLocale: locale }),
+      }),
+    }),
   );
 }
 
