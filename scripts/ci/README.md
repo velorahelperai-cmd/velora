@@ -54,3 +54,19 @@ node --test scripts/ci/safety.test.mjs scripts/ci/required-gate.test.mjs
 # or via the safety check entrypoint:
 node scripts/ci/run.mjs safety
 ```
+
+## Main delivery and exclusive ownership
+
+AGENTS.md is the shared entrypoint. Work only from the canonical Windows original on main, with GitHub account velorahelperai-cmd. One explicit writer owns the entire repository and generated output. Read-only Git uses GIT_OPTIONAL_LOCKS=0. Retired worktrees stay read-only; never use ignore-other-worktrees, force, reset, clean, stash or deletion to bypass a reservation.
+
+The private receipt is .git/velora-writer-lock.json. Identity is VELORA_WRITER_ID, with CODEX_THREAD_ID as Codex fallback; no historical session is pinned. The current writer runs npm run writer:release after an explicit handoff. The next writer sets VELORA_WRITER_ID and VELORA_TASK_ID, then npm run writer:acquire -- --handoff <approved-reference>. Acquisition refuses an active receipt; release refuses another owner. Keep the current handoff/task in the first PROJECT_STATE index. A stale receipt does not prove another writer stopped; resolve ownership explicitly before bounded recovery.
+
+Run npm run hooks:install in this checkout. Git core.hooksPath must be .githooks, with an executable pre-push index entry. An npm script alone does not register a Git hook. Stage only reviewed task files, then npm run prepush executes locked npm ci without lifecycle scripts, Typecheck, Lint, Unit, Contracts, Build, Safety, static Security, moderate-or-higher dependency audit, and pinned Gitleaks installation/self-test/tree scan. Unstaged/untracked candidate changes fail; source identity is checked before/after each command.
+
+Tree receipts under .git/velora-pre-push bind the exact staged tree, remote base, writer/task, Node/platform and dependency installation. After commit the actual Git hook checks exact HEAD/main and scans the new commit range. It may reuse matching tree gates, never another tree or incomplete/failed receipt. Drift blocks push. Full exact-commit receipts can serve the same real push; there is no bypass flag. This cooperative local hook does not prove hosted branch protection; other clients must follow the same policy.
+
+The workflow retains all mandatory jobs and aggregate quality-gate. Post-push CI alone does not stop Vercel auto-deploy; no sensitive hosting/protection setting is changed. Follow CI, deployment source SHA, remote main SHA and published smoke. Keep post-deployment receipts outside Git; no commit solely for the previous deployment. Native DB/security/financial/provider acceptance remains separately authorized.
+
+Guard regressions cover local main ownership and GitHub/Vercel modes, including rejection of forged cloud mode on Windows. Pre-push regressions cover all required categories, each failure/signal/start error, drift and receipt mismatch. Prove real invocation with git hook run pre-push and controlled stdin; no test push is needed. These tests are in safety and do not label simulated gates as product-gate passes.
+
+For the real-hook proof, pass the controlled ref file with git hook run --to-stdin=<path> pre-push -- origin <approved-origin>. On the installed Git 2.51.2, piping stdin to git hook run alone does not forward it to the hook; its default input is empty. No push is sent by this proof.

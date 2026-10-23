@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { adminGetAuditLogsOverview } from "./audit-actions";
 
@@ -232,7 +233,7 @@ describe("Stage E — Module 11: Audit Contracts & Actions", () => {
         actor_user_id: "owner-123",
         company_id: "comp-1",
         action: "security.user_password_reset",
-        before_data: { password: "plainSecret123", token: "bearer-xyz", nested: { api_key: "sec-999" } },
+        before_data: { password: randomUUID(), token: randomUUID(), nested: { api_key: randomUUID() } },
         after_data: { status: "reset_done" },
         created_at: new Date().toISOString(),
       },

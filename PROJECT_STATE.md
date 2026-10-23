@@ -1,4 +1,15 @@
-# Current Session Index — PRODUCTION-ROLLOUT-20261023
+# Current Session Index — CONSTITUTION-TRANSITION-20261023
+
+- Task / active execution lock: Engineering Constitution transition only; no new product FLOW. Status: implementation candidate / release verification in progress; release receipts remain outside Git.
+- Writer: this task exclusively owns the entire repository and generated output. Current owner/explicit handoff: `.git/velora-writer-lock.json`; all other agents are read-only. Canonical original / main / velorahelperai-cmd only.
+- Baseline: published main fb03d613991d53c928fa73e3716e936660764a25. Antigravity rollout below is retained as reported history; this task does not reapply or certify its SQL.
+- Preservation: old main worktree detached at the same SHA; index and 691 status entries unchanged. Before/after fingerprint: 5b47a30c7111e1d63a075525b8d70bb22ca2adc01c847bdef4e786e6aa2749f8. Full lists/hashes: `.git/velora-transition/old-main-detach-{before,after}.json`. Old worktree stays read-only; no cleanup or changes imported.
+- Contracts/details: AGENTS.md → current Obsidian constitution + VELORA_RULES.md; ownership/delivery in scripts/ci/README.md; LOG-001 mapping/error protocol in ERROR_KNOWLEDGE.md.
+- Gate: installed pre-push must pass the exact candidate. No hook/CI bypass, sensitive Production settings or application/UI/DB/env/keys/payment/messages work. Post-push CI/Vercel SHA and smoke evidence go in the report/private receipt, without a receipt-only commit loop.
+- Gate repair: prior candidate quality/build/Safety 87 passed; audit and Gitleaks blockers were corrected with same-major Next/eslint-config-next 16.4.2 and generated redaction fixtures. Targeted locked audit=0 vulnerabilities, fixture=6/6, Gitleaks=0 findings; assertions unchanged. These are scoped proofs, not final-candidate release PASS. Details ERROR-002/003 and private bounded-security-fix receipt. No commit/push yet.
+- Next: verify the corrected exact candidate through all mandatory gates, then commit/push main and CI/Vercel same-SHA verification. Failure or ownership change keeps this task open.
+
+## Previous session index — PRODUCTION-ROLLOUT-20261023
 
 PRODUCTION-ROLLOUT-20261023 — Owner-Authorized Production Rollout of VELORA PLATFORM ADMIN V2 (14 Modules + 5 Reviewed Migrations).
 Execution within canonical project root `C:\Users\DELL\Desktop\Velora new` on branch `codex/desktop-consolidation-20261015`.

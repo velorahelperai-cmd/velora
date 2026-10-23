@@ -1,10 +1,5 @@
 ---
-description: Velora single shared rules reference
+description: Velora shared execution entrypoint
 alwaysApply: true
 ---
-Read and follow [VELORA_RULES.md](../../VELORA_RULES.md), the single shared rules authority.
-Read the first Current Session Index and active execution lock in [PROJECT_STATE.md](../../PROJECT_STATE.md) before work.
-Do not maintain a separate copy of shared rules here.
-
-@VELORA_RULES.md
-@PROJECT_STATE.md
+Read and follow [AGENTS.md](../../AGENTS.md), including its current Engineering Constitution, Velora-specific rules, session index, ownership and error-knowledge references. Do not maintain another copy of those rules here.

@@ -1,11 +1,9 @@
 name: Velora quality gates
 
-# This workflow prepares checks only. Main is unprotected until an entitled
-# administrator requires "quality-gate" from GitHub Actions, requires up-to-date
-# PRs, disallows direct pushes/bypass (including admins), then proves failing PRs
-# cannot merge and passing PRs can. Existing Vercel main deployment is unchanged.
-# Offline checks do not satisfy high-risk Auth/RLS/native release acceptance.
-# Post-push checks cannot stop Vercel: enforcement must happen before main.
+# Installed pre-push runs equivalent mandatory checks before main.
+# Post-push CI does not itself pause Vercel auto-deploy. Hosted protection and
+# Production settings are unchanged; native high-risk acceptance is separately
+# permissioned. See scripts/ci/README.md for the guarded delivery contract.
 on:
   pull_request:
     branches: [main]

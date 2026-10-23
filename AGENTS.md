@@ -1,5 +1,7 @@
-# Velora agent instructions
+# Velora shared execution entrypoint
 
-Read and follow [VELORA_RULES.md](VELORA_RULES.md), the single shared rules authority approved by the owner on 2026-10-22. It supersedes conflicting older instructions within available safety and permission boundaries.
+Read the current [Engineering Constitution index](<C:/Users/DELL/Desktop/Obsidian/AI Workspace/Engineering Constitution/00-INDEX.md>), [website rules](<C:/Users/DELL/Desktop/Obsidian/AI Workspace/Engineering Constitution/01-WEBSITE-RULES.md>) and [workflow rules](<C:/Users/DELL/Desktop/Obsidian/AI Workspace/Engineering Constitution/02-WORKFLOW-RULES.md>) from disk for the relevant task. The owner-approved constitution governs; [VELORA_RULES.md](VELORA_RULES.md) preserves Velora-specific contracts and safeguards without copying the constitution.
 
-Before work, read the first Current Session Index in [PROJECT_STATE.md](PROJECT_STATE.md) and the active execution lock. Rules live only in VELORA_RULES.md; execution ownership, evidence and blockers live in PROJECT_STATE.md.
+Before work, read the first Current Session Index and active execution lock in [PROJECT_STATE.md](PROJECT_STATE.md). Work only in the canonical original on `main`, with one explicitly assigned writer for the entire repository, including generated files. Other agents remain read-only; use `GIT_OPTIONAL_LOCKS=0` for read-only Git inspection. Never infer a handoff from an open/closed app or an old receipt.
+
+Follow [the guarded delivery procedure](scripts/ci/README.md#main-delivery-and-exclusive-ownership). Check [ERROR_KNOWLEDGE.md](ERROR_KNOWLEDGE.md) before repeating diagnosis. Preserve unrelated work and security/payment/integration decisions. Each authorized task requires relevant checks, the installed pre-push gate, commit/push to main, CI and deployment SHA verification. Post-deployment receipts stay outside Git; do not create a commit merely to document the previous deployment.
