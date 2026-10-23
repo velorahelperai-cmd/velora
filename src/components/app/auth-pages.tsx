@@ -152,37 +152,30 @@ export function AuthShell({
   const tagline = landingCopy(locale).tagline;
   const [collapsed, setCollapsed] = useState(false);
   const [contentVisible, setContentVisible] = useState(true);
-  const [cardReady, setCardReady] = useState(!entry);
-  /** Start true so SSR and first client paint match (no transition string). */
-  const [reduceMotion, setReduceMotion] = useState(true);
   const morphTimer = useRef<number | null>(null);
 
   useEffect(() => {
-    setReduceMotion(prefersReducedMotion());
-  }, []);
-
-  useEffect(() => {
-    if (!entry || entryBackdrop) {
-      setCardReady(true);
-      return;
-    }
-    const reduce = prefersReducedMotion();
-    const shouldMorphIn = consumeAuthEntryMorph();
-    if (!shouldMorphIn || reduce) {
-      setCollapsed(false);
-      setContentVisible(true);
-      setCardReady(true);
-      return;
-    }
-    setCollapsed(true);
-    setContentVisible(false);
-    setCardReady(true);
-    const id = window.setTimeout(() => {
-      setCollapsed(false);
-      window.setTimeout(() => setContentVisible(true), 40);
-    }, 40);
-    morphTimer.current = id;
-    return () => window.clearTimeout(id);
+    if (!entry || entryBackdrop) return;
+    // Defer morph decisions to a timer so setState is not sync inside the effect body.
+    const boot = window.setTimeout(() => {
+      const reduce = prefersReducedMotion();
+      const shouldMorphIn = consumeAuthEntryMorph();
+      if (!shouldMorphIn || reduce) {
+        setCollapsed(false);
+        setContentVisible(true);
+        return;
+      }
+      setCollapsed(true);
+      setContentVisible(false);
+      morphTimer.current = window.setTimeout(() => {
+        setCollapsed(false);
+        window.setTimeout(() => setContentVisible(true), 40);
+      }, 40);
+    }, 0);
+    return () => {
+      window.clearTimeout(boot);
+      if (morphTimer.current) window.clearTimeout(morphTimer.current);
+    };
   }, [entry, entryBackdrop]);
 
   useEffect(() => {
@@ -217,6 +210,19 @@ export function AuthShell({
         data-auth-entry-backdrop={entryBackdrop ? "true" : undefined}
       >
         <AuthMotionCanvas />
+        <style>{`
+          .auth-entry-card {
+            transition: width ${AUTH_ENTRY_MORPH_MS}ms cubic-bezier(0.22, 1, 0.36, 1),
+              height ${AUTH_ENTRY_MORPH_MS}ms cubic-bezier(0.22, 1, 0.36, 1),
+              min-height ${AUTH_ENTRY_MORPH_MS}ms cubic-bezier(0.22, 1, 0.36, 1),
+              transform ${AUTH_ENTRY_MORPH_MS}ms cubic-bezier(0.22, 1, 0.36, 1),
+              border-radius ${AUTH_ENTRY_MORPH_MS}ms cubic-bezier(0.22, 1, 0.36, 1);
+          }
+          .auth-entry-card-body { transition: opacity 0.28s ease; }
+          @media (prefers-reduced-motion: reduce) {
+            .auth-entry-card, .auth-entry-card-body { transition: none !important; }
+          }
+        `}</style>
         <div className={`relative z-10 mx-auto flex max-w-[1100px] items-center justify-between gap-2 ${entryBackdrop ? "pointer-events-none select-none" : ""}`}>
           <Link href="/" className="inline-flex min-h-11 min-w-0 items-center gap-2 text-xl font-bold sm:text-2xl" tabIndex={entryBackdrop ? -1 : undefined}>
             <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--service-accent)] text-sm text-white sm:h-9 sm:w-9 sm:text-base">V</span>
@@ -232,20 +238,17 @@ export function AuthShell({
           <p className="mb-4 hidden text-center text-sm text-[var(--service-accent)] sm:block">{tagline}</p>
           <div className="relative z-10 flex w-full max-w-[440px] items-center justify-center min-h-[min(560px,70svh)]">
             <div
-              className={`relative flex flex-col items-center justify-center overflow-hidden border border-[#DCE4EB] bg-[#FFFFFF]/95 shadow-[0_30px_80px_rgba(23,45,67,0.12),inset_0_1px_0_rgba(255,255,255,0.85)] backdrop-blur-2xl ${
+              className={`auth-entry-card relative flex flex-col items-center justify-center overflow-hidden border border-[#DCE4EB] bg-[#FFFFFF]/95 shadow-[0_30px_80px_rgba(23,45,67,0.12),inset_0_1px_0_rgba(255,255,255,0.85)] backdrop-blur-2xl ${
                 collapsed ? "rounded-[34px]" : "rounded-[38px]"
               } ${entryBackdrop ? "pointer-events-none opacity-55" : ""}`}
               data-auth-entry-card="true"
               data-auth-entry-collapsed={collapsed ? "true" : "false"}
               style={{
-                width: !cardReady ? "min(100%, 385px)" : collapsed ? "170px" : "min(100%, 385px)",
+                width: collapsed ? "170px" : "min(100%, 385px)",
                 height: collapsed ? "170px" : undefined,
                 minHeight: collapsed ? undefined : signupTall ? "34rem" : "28rem",
                 maxWidth: "385px",
                 transform: collapsed ? "rotate(-45deg)" : "rotate(0deg)",
-                transition: reduceMotion
-                  ? undefined
-                  : `width ${AUTH_ENTRY_MORPH_MS}ms cubic-bezier(0.22, 1, 0.36, 1), height ${AUTH_ENTRY_MORPH_MS}ms cubic-bezier(0.22, 1, 0.36, 1), min-height ${AUTH_ENTRY_MORPH_MS}ms cubic-bezier(0.22, 1, 0.36, 1), transform ${AUTH_ENTRY_MORPH_MS}ms cubic-bezier(0.22, 1, 0.36, 1), border-radius ${AUTH_ENTRY_MORPH_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`,
               }}
             >
               <div
@@ -265,10 +268,9 @@ export function AuthShell({
                 aria-hidden="true"
               />
               <div
-                className={`flex h-full w-full flex-col justify-between px-6 py-8 sm:px-7 sm:py-9 ${collapsed ? "opacity-0" : contentVisible ? "opacity-100" : "opacity-0"}`}
+                className={`auth-entry-card-body flex h-full w-full flex-col justify-between px-6 py-8 sm:px-7 sm:py-9 ${collapsed ? "opacity-0" : contentVisible ? "opacity-100" : "opacity-0"}`}
                 style={{
                   transform: collapsed ? "rotate(45deg)" : "none",
-                  transition: reduceMotion ? undefined : "opacity 0.28s ease",
                 }}
                 {...(entryBackdrop || collapsed ? ({ inert: true } as { inert: boolean }) : {})}
               >

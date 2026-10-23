@@ -49,8 +49,8 @@ export function SubscriptionBrandGuide({
     if (!node) return;
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (reduce) {
-      setRevealed(true);
-      return;
+      const ready = window.setTimeout(() => setRevealed(true), 0);
+      return () => window.clearTimeout(ready);
     }
     const observer = new IntersectionObserver(
       ([entry]) => {

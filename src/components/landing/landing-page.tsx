@@ -158,9 +158,7 @@ export function LandingPage({
     setLocaleCookie(next);
     setLocale(next);
     demo.setLocale(next);
-    document.documentElement.lang = next;
-    document.documentElement.dir = getDirection(next);
-    document.documentElement.classList.remove("no-js");
+    // document lang/dir sync stays in the locale effect above (lint-safe).
   }
 
   useEffect(() => {

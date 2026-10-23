@@ -29,12 +29,11 @@ vi.mock("@/lib/landing-motion", () => ({
 
 function renderLanding(locale: "ar" | "en") {
   return renderToStaticMarkup(
-    createElement(DemoProvider, {
-      initialLocale: locale,
-      children: createElement(AccountSessionProvider, {
-        children: createElement(LandingPage, { initialLocale: locale }),
-      }),
-    }),
+    createElement(
+      DemoProvider,
+      { initialLocale: locale },
+      createElement(AccountSessionProvider, null, createElement(LandingPage, { initialLocale: locale })),
+    ),
   );
 }
 
