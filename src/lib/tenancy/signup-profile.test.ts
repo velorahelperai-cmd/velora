@@ -120,6 +120,20 @@ describe("signup profile recovery without recreating Auth", () => {
     expect(mocks.admit).not.toHaveBeenCalled();
   });
 
+  it("clears an unconfirmed provider session and continues to verification", async () => {
+    mocks.signup.mockResolvedValue({
+      data: { user, session: { user } },
+      error: null,
+    });
+    expect(await signUpWithEmail(input)).toMatchObject({
+      ok: true,
+      data: { needsVerification: true, email: input.email },
+    });
+    expect(mocks.cleanup).toHaveBeenCalledTimes(1);
+    expect(mocks.admit).not.toHaveBeenCalled();
+    expect(mocks.upsert).not.toHaveBeenCalled();
+  });
+
   it("does not write a profile for the provider's obfuscated existing-user response", async () => {
     mocks.signup.mockResolvedValue({
       data: { user: { ...user, identities: [] }, session: null },

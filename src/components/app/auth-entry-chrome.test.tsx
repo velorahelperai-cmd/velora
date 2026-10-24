@@ -16,8 +16,9 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(),
 }));
 vi.mock("@/lib/demo-state", () => ({ useDemo: () => ({ locale: "ar", state: {}, update: vi.fn() }) }));
+const accountMenu = vi.hoisted(() => ({ type: "account-menu-sentinel" }));
 vi.mock("./account-chrome", () => ({
-  AccountMenu: () => null,
+  AccountMenu: accountMenu.type,
   useOptionalAccountSession: () => ({ status: "guest" }),
 }));
 vi.mock("./auth-motion-canvas", () => ({ AuthMotionCanvas: "canvas" }));
@@ -71,4 +72,7 @@ it("uses the approved entry chrome on login and signup without create/login top 
   expect(signup.some((n) => n.type === "field" && n.props.tone === "entry")).toBe(true);
   // Demo extras from the HTML reference stay out of product pages.
   expect(login.some((n) => typeof n.props.children === "string" && /OTP|Remember me/i.test(n.props.children))).toBe(false);
+  // Entry auth pages keep navbar without public login/signup CTAs (already on those routes).
+  expect(rendered.some((n) => n.type === accountMenu.type)).toBe(false);
+  expect(JSON.stringify(signup)).not.toMatch(/planInterest|الباقة التي أبديت|Plan you showed interest/i);
 });

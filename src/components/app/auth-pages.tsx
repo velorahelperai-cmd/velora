@@ -231,7 +231,6 @@ export function AuthShell({
           <div className="flex shrink-0 items-center gap-2">
             <span className="hidden sm:inline-flex"><PreviewBadge note /></span>
             <LangSwitch />
-            <AccountMenu compact />
           </div>
         </div>
         <div className="relative z-10 mx-auto mt-8 flex max-w-[1100px] flex-col items-center lg:mt-12">
@@ -406,7 +405,7 @@ function useAuthenticatedAuthRedirect(next:string|null, paused=false, navigate?:
 }
 export function SignupPage() {
   const copy = useAppCopy();
-  const { state, locale } = useDemo();
+  const { locale } = useDemo();
   const router = useRouter();
   const params = useSearchParams();
   const prefillEmail = (params.get("email") || "").trim().toLowerCase();
@@ -427,7 +426,6 @@ export function SignupPage() {
   const google = useGoogleAuth(setAltNotice, returnTo || null);
   const dirty = Boolean(form.name || form.email || form.password || form.confirm);
   useUnsavedWarning(dirty && !busy && !redirecting);
-  const planName = landingCopy(locale).plans.find((p) => p.id === state.planInterest)?.name;
   const nameError = useErrorText(errors.name);
   const emailError = useErrorText(errors.email);
   const passwordError = useErrorText(errors.password);
@@ -487,12 +485,6 @@ export function SignupPage() {
       body={copy.auth.signupBody}
       footer={<>{copy.auth.haveAccount} <AuthEntryMorphLink href={returnTo ? `/login?next=${encodeURIComponent(returnTo)}` : "/login"} className="font-semibold text-[#087E8B] underline">{copy.auth.login}</AuthEntryMorphLink></>}
     >
-      {planName ? (
-        <div className="mb-4">
-          <Notice tone="info">{copy.auth.planInterest} <strong>{planName}</strong><br /><span className="text-[#536579]">{copy.auth.planNote}</span></Notice>
-        </div>
-      ) : null}
-
       <form className="space-y-3" onSubmit={submitEmail} noValidate data-auth-entry-form="signup">
         {formError ? <Notice tone="error">{formError}</Notice> : null}<DiagnosticHint diagnostic={diagnostic} locale={locale}/>
         <Field label={copy.auth.name} required error={nameError} tone="entry">

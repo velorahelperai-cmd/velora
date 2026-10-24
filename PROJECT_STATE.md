@@ -1,12 +1,23 @@
-# Current Session Index - PF01-C01 auth entry + homepage leftovers delivery
+# Current Session Index - PF01-C01 signup fix delivery
 
-- Scope: Owner plan Auth motion C01 — shared login/signup entry chrome + lock morph; real 6-cell OTP modal on `/verify-email`; then dual commit (homepage leftovers → auth) + push + same-SHA CI/Vercel. No Supabase/OAuth/env changes. No fake OTP timers.
-- Writer: active `bbbf1b17-722a-426a-b948-6f9ad7081677` (PF01-C01). Graphify index was stale (`bb9e334` ~9h); verified against live auth/landing files.
-- Auth: `AuthShell` entry morph (`auth-entry-morph.ts`), corner chrome, `AuthMotionCanvas`; `AuthOtpModal` (6 cells, a11y, server-gated success diamond→orbit→radar); VerifyEmail uses entry backdrop + modal. Hydration: reduce-motion flag starts true until mount.
-- Homepage leftovers (separate commit): setup scene grid overlap fix, subscription brand film/copy, landing honesty/navbar tests, related icons/motion.
-- Evidence (pre-push): auth Vitest **21 PASS**; typecheck PASS; screenshots under `.tmp/auth-c01-verify/` (login/signup/verify AR + login EN). Delivery SHA/CI/Vercel filled after push.
-- Next after publish: Brain `/` close with homepage SHA; C01 mark with auth SHA/tests (acceptance C01.1–C01.3 still open for real email/Google journeys).
+- Scope: Auth-only C01 fix under writer `bbbf1b17` / PF01-C01: unconfirmed signup session → verification (not AUTH_ERROR); remove entry AccountMenu CTAs + plan-interest notice + Supabase password hint. Packages WIP parked outside tree for this push.
+- Candidate: Auth files + this index only. Delivery SHA filled after push.
+- Evidence (pre-push): signup-profile + auth-entry-chrome + signup-navigation PASS locally before gates.
+- Next after publish: owner retests email signup → verify modal; Google still separate. Packages WIP restore after push.
+## Previous session index — PF01-C01 UI delivery published (historical)
 
+<details>
+<summary>Preserved earlier current-session snapshot</summary>
+
+# Current Session Index - PF01-C01 auth entry + homepage leftovers DELIVERED
+
+- Scope: Owner Auth motion C01 + homepage leftovers dual delivery under writer `bbbf1b17` / PF01-C01. No Supabase/OAuth/env product changes. No fake OTP timers.
+- Published HEAD: `9b47712f04c3524ef8122f8f42d8c6e5ab551c2c` on `origin/main` (includes homepage `3dfc571`, auth `bdc253f`, lint/deps follow-ups).
+- Evidence: local pre-push gates PASS; [CI run 40034580533 success](https://github.com/velorahelperai-cmd/velora/actions/runs/40034580533) same SHA; Vercel Production deployment status success same SHA (`2DiVP5SxGtyZUy78poevhkti2A8x`); smoke HEAD `/` + `/login` HTTP200. Auth Vitest 21 PASS before push.
+- Brain: `/` homepage UI closed with `3dfc571`; C01 UI marked with `9b47712` — C01.1–C01.3 acceptance still open (live email/Google NOT_RUN).
+- Next: authorized C01.1 runtime acceptance (real verify email), then C02+.
+
+</details>
 ## Previous session index — before dd601b7 publication (historical)
 
 <details>

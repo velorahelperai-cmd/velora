@@ -247,8 +247,11 @@ export async function signUpWithEmail(input: {
     }
     // Existing-user responses may be obfuscated. Only an actual matching,
     // confirmed session permits a client-scoped profile write.
-    const confirmedSession = !error && Boolean(data.user?.email_confirmed_at)
-      && Boolean(data.session) && data.session?.user.id === data.user?.id;
+    const userConfirmed = Boolean(data.user?.email_confirmed_at);
+    const sessionMatchesUser = Boolean(data.session) && data.session?.user.id === data.user?.id;
+    const confirmedSession = !error && userConfirmed && sessionMatchesUser;
+    // Unconfirmed signup may still return a provider session. Never admit it;
+    // clear it and continue as verification-required (C01), not AUTH_ERROR.
     if (!error && data.session && !confirmedSession) {
       const { signOutProviderSessionAfterAdmitFailure } = await import(
         "@/lib/auth/broker/provider-session"
@@ -266,7 +269,9 @@ export async function signUpWithEmail(input: {
           diagnostic: trace.finish("UNAVAILABLE"),
         };
       }
-      return { ok: false, code: "AUTH_ERROR", diagnostic: trace.finish("AUTH_ERROR") };
+      if (userConfirmed) {
+        return { ok: false, code: "AUTH_ERROR", diagnostic: trace.finish("AUTH_ERROR") };
+      }
     }
     if (confirmedSession && data.session) {
       const admitted = await admitNativeSession({
