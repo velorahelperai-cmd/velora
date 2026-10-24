@@ -318,8 +318,9 @@ export function LandingPage({
           }
         />
         <Packages copy={copy} destination={subscriptionDestination} locale={locale} offersView={offersView} selectedPlan={plan} onSelect={selectPlan} />
-        <Faq copy={copy} />
+        <Faq copy={copy} locale={locale} />
         <AboutContact
+          locale={locale}
           copy={copy}
           sector={sector}
           plan={plan}
@@ -331,7 +332,7 @@ export function LandingPage({
           }}
         />
       </main>
-      <SiteFooter copy={copy} />
+      <SiteFooter copy={copy} locale={locale} />
       <Catalogue copy={copy} open={catalogueOpen} onClose={closeCatalogue} />
       <LandingChatbot key={locale} copy={copy} />
     </div>

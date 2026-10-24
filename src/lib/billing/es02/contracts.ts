@@ -5,12 +5,13 @@
  */
 
 import type { SubscriptionPackage, SubscriptionPersona, SubscriptionTerm } from "@/components/app/subscription-offers-view";
-import { commercialCatalogRevision } from "@/components/app/subscription-commercial-catalog";
+import { legacyCommercialCatalogRevision, type CommercialCatalogRevision } from "@/components/app/subscription-commercial-catalog";
 
 export const ES02_PURPOSE_INITIAL_SUBSCRIPTION = "initial_subscription" as const;
 export const ES02_CURRENCY = "OMR" as const;
 export const ES02_PRODUCT_CODE = "velora_subscription" as const;
-export const ES02_CATALOG_REVISION = commercialCatalogRevision;
+// Existing unaffected billing offers retain their frozen revision.
+export const ES02_CATALOG_REVISION = legacyCommercialCatalogRevision;
 
 /** Synthetic evidence marker — fixture-owned path only; never customer/Production authority. */
 export const ES02_SYNTHETIC_EVIDENCE_MARKER = "VEL_ES02_SYNTHETIC_LOCAL_ONLY" as const;
@@ -37,7 +38,7 @@ export type Es02BranchSlotOffer = {
 };
 
 export type Es02ImmutableOffer = {
-  catalogRevision: typeof ES02_CATALOG_REVISION;
+  catalogRevision: CommercialCatalogRevision;
   term: SubscriptionTerm;
   /** Canonical per-branch slot map (quantity = branchSlots). */
   slots: readonly Es02BranchSlotOffer[];

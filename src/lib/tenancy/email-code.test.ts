@@ -3,7 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CompanyContext } from "./types";
 
 const NONCE = "synthetic-request-nonce";
-const INTENT = { id: "synthetic-verify-intent", browserLineageId: "synthetic-lineage" };
+const INTENT = { id: "synthetic-verify-intent", stateNonce: "synthetic-state-nonce", browserLineageId: "synthetic-lineage" };
+const BOUNDARY = "0123456789abcdef";
 
 const state = vi.hoisted(() => ({
   createProvider: vi.fn(),
@@ -30,6 +31,14 @@ vi.mock("next/headers", () => ({
 }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: state.cookieClient }));
 vi.mock("@/lib/auth/broker/provider", () => ({ createProviderAuthClient: state.createProvider }));
+vi.mock("@/lib/auth/broker/lineage-auth", () => ({ prepareBrokerAdmissionLineage: state.prepare }));
+vi.mock("@/lib/auth/broker/crypto", () => ({ encryptSecret: () => Buffer.from("synthetic-encrypted") }));
+vi.mock("@/lib/auth/broker/cookies", () => ({ commitIntentCookie: vi.fn() }));
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => {
+  const query = { update: () => query, eq: () => query, is: () => query,
+    select: async () => ({ data: [{ id: INTENT.id }], error: null }) };
+  return { from: () => query };
+} }));
 vi.mock("@/lib/auth/broker", () => ({
   admitNativeSession: state.admit,
   prepareBrokerAdmissionLineage: state.prepare,
@@ -37,6 +46,8 @@ vi.mock("@/lib/auth/broker", () => ({
 vi.mock("@/lib/auth/broker/registry", () => ({
   reserveBoundAuthIntent: state.reserve,
   claimProviderAttempt: state.claim,
+  probeBrokerCapability: async () => ({ ok: true, boundAdmit: true }),
+  loadAuthIntentByNonce: async () => ({ ...INTENT, purpose: "signup_resend", status: "reserved", expiresAt: new Date(Date.now() + 600_000).toISOString(), pkceVerifier: null }),
 }));
 vi.mock("@/lib/auth/broker/provider-session", () => ({
   signOutProviderSessionAfterAdmitFailure: state.cleanup,
@@ -89,9 +100,12 @@ const context: CompanyContext = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  state.createProvider.mockReturnValue({
-    client: { auth: { verifyOtp: state.verify, signUp: state.signup, resend: state.resend } },
-  });
+  state.createProvider.mockImplementation((options?: { persistPkceVerifier?: (v: string) => Promise<void> }) => ({
+    client: { auth: { verifyOtp: state.verify, signUp: state.signup, resend: async (input: unknown) => {
+      await options?.persistPkceVerifier?.("synthetic-verifier");
+      return state.resend(input);
+    } } },
+  }));
   state.cookieClient.mockResolvedValue({ auth: { verifyOtp: state.verify, resend: state.resend } });
   state.resend.mockResolvedValue({ error: null });
   state.verify.mockResolvedValue({ data: { user, session: { user } }, error: null });
@@ -103,7 +117,7 @@ beforeEach(() => {
   });
   state.reserve.mockResolvedValue(INTENT);
   state.claim.mockResolvedValue({ ok: true, claimed: true });
-  state.admit.mockResolvedValue({ ok: true });
+  state.admit.mockResolvedValue({ ok: true, committed: { userId: user.id, boundaryFingerprint: BOUNDARY } });
   state.cleanup.mockResolvedValue({ outcome: "confirmed", durable: true });
 });
 
@@ -150,7 +164,7 @@ describe("six-digit signup confirmation with offline Auth boundary", () => {
   it("confirms in a fresh browser and keeps leading zeroes without exchanging a PKCE code", async () => {
     expect(await submit({ email: " QA-A@example.test ", code: "012345", next: "", requestNonce: NONCE })).toEqual({
       ok: true,
-      data: { next: "/setup" },
+      data: { next: "/setup", userId: user.id, boundaryFingerprint: BOUNDARY },
     });
     expect(state.verify).toHaveBeenCalledExactlyOnceWith({ email: user.email, token: "012345", type: "email" });
     expect(state.reserve).toHaveBeenCalledWith(
@@ -188,12 +202,12 @@ describe("six-digit signup confirmation with offline Auth boundary", () => {
     const plan = "/app/settings?tab=plan&term=monthly&persona=level_1&package=basic";
     expect(await submit({ email: user.email, code: "012345", next: plan, requestNonce: NONCE })).toEqual({
       ok: true,
-      data: { next: `/setup?next=${encodeURIComponent(plan)}` },
+      data: { next: `/setup?next=${encodeURIComponent(plan)}`, userId: user.id, boundaryFingerprint: BOUNDARY },
     });
     for (const next of ["https://example.test/steal", "/admin"]) {
       expect(await submit({ email: user.email, code: "012345", next, requestNonce: NONCE })).toEqual({
         ok: true,
-        data: { next: "/setup" },
+        data: { next: "/setup", userId: user.id, boundaryFingerprint: BOUNDARY },
       });
     }
   });
@@ -260,9 +274,9 @@ describe("verification resend validates mailbox before Auth transport", () => {
   );
 
   it("normalizes a valid mailbox and uses native signup resend", async () => {
-    expect(await actions.resendVerificationEmail(" QA-A@example.test ", "/setup")).toMatchObject({ ok: true });
+    expect(await actions.resendVerificationEmail(" QA-A@example.test ", "/setup", NONCE)).toMatchObject({ ok: true });
     expect(state.resend).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ type: "signup", email: user.email }),
+      expect.objectContaining({ type: "signup", email: user.email, options: { emailRedirectTo: expect.stringContaining(`vel_intent=${INTENT.stateNonce}`) } }),
     );
   });
 });

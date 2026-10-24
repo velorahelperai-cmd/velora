@@ -33,6 +33,14 @@ function callback(overrides:Record<string,unknown>={}){
  return {body:{type:"TRANSACTION",obj},hmacQueryParam:createHmac("sha512",config.hmacSecret).update(fields.map(String).join("")).digest("hex")};
 }
 describe("account-bound sandbox adapter (offline transport and fixture store only)",()=>{
+ it.each([["monthly",75000],["yearly",720000]] as const)("reopens and settles a frozen legacy Dana %s order at its original amount",async(term,amount)=>{
+  const f=fixture();f.order.offer={...f.order.offer,catalogRevision:"2026-10-14",term,persona:"level_3",package:"basic",amountBaisa:amount,repliesPerMonth:3000,slots:[{slotIndex:0,persona:"level_3",package:"basic",amountBaisa:amount,repliesPerMonth:3000,employees:2,channels:1}]};
+  expect(await openAccountSandboxCheckout({...input,deps:f.deps})).toMatchObject({ok:true});
+  expect(f.saved()).toMatchObject({binding:{amountBaisa:amount,providerAmount:amount}});
+  expect(await receiveAccountSandboxPayment({...callback({amount_cents:amount}),config,deps:f.deps})).toMatchObject({ok:true,outcome:"settled"});
+  expect(f.order.offer.amountBaisa).toBe(amount);
+ });
+
  it("persists a test checkout for an account without creating or requiring a company",async()=>{
   const f=fixture();expect(await openAccountSandboxCheckout({...input,deps:f.deps})).toMatchObject({ok:true,url:expect.stringContaining("https://om.checkout.paymob.com/")});
   expect(f.saved()).toMatchObject({binding:{accountId,orderId,amountBaisa:45000,providerAmount:45000,environment:"test"},providerOrderId:"987",providerIntentionId:"pi_test_fixture"});

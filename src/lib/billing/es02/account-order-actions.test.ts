@@ -84,6 +84,11 @@ describe("es02 account order actions", () => {
     expect(mocks.userRpc).not.toHaveBeenCalled();
   });
 
+  it("does not accept a legacy75 RPC row for a new90 Dana order request", async () => {
+    const old={...offer,persona:"level_3",amountBaisa:75000,repliesPerMonth:3000,slots:[{...offer.slots[0],persona:"level_3",amountBaisa:75000,repliesPerMonth:3000}]};
+    mocks.userRpc.mockResolvedValue({data:{ok:true,action:"insert",data:{orderId:"99999999-aaaa-4bbb-8ccc-dddddddddddd",accountId,status:"open",offer:old,specialReference:"ES02-TESTREF01",paymentAttemptId:"66666666-7777-4888-8999-000000000000",environment:"test",settledAt:null,provisionedCompanyId:null,originalOrderGroupId:"12121212-3434-4656-8787-909090909090"}},error:null});
+    await expect(createAccountBoundOrderAction({expectedAccountId:accountId,selection:{persona:"level_3",package:"basic",term:"monthly"},consentAccepted:true,clientOpId:"13131313-1414-4151-8161-171717171717"})).resolves.toEqual({ok:false,code:"UNKNOWN"});
+  });
   it("creates account-bound order without accepting business draft fields", async () => {
     mocks.userRpc.mockResolvedValue({
       data: {

@@ -6,7 +6,9 @@
 import {
   commercialAmount,
   commercialCatalogRevision,
-  commercialPlan,
+  commercialPlanForRevision,
+  legacyCommercialCatalogRevision,
+  type CommercialCatalogRevision,
   type CommercialPlan,
 } from "@/components/app/subscription-commercial-catalog";
 import type {
@@ -107,15 +109,27 @@ export function listApprovedEs02BaseOffers(): Es02ImmutableOffer[] {
   return out;
 }
 
-export function resolveEs02Offer(
+export function resolveEs02Offer(selection: Es02OfferSelection | Es02LegacySingleSelection): ReturnType<typeof resolveOfferForRevision> {
+  const normalized = normalizeOfferSelection(selection);
+  if (!normalized) return { ok: false, code: "INVALID_INPUT" };
+  const revision = normalized.slots.some(slot => slot.persona === "level_3" && slot.package === "basic") ? commercialCatalogRevision : ES02_CATALOG_REVISION;
+  return resolveOfferForRevision(normalized, revision);
+}
+/** Parse a stored server-owned offer under its recorded revision, never choose an old price for a new request. */
+export function resolveRecordedEs02Offer(selection: Es02OfferSelection | Es02LegacySingleSelection, revision: string): ReturnType<typeof resolveOfferForRevision> {
+  if (revision !== commercialCatalogRevision && revision !== legacyCommercialCatalogRevision) return { ok: false, code: "INVALID_INPUT" };
+  return resolveOfferForRevision(selection, revision);
+}
+function resolveOfferForRevision(
   selection: Es02OfferSelection | Es02LegacySingleSelection,
+  revision: CommercialCatalogRevision,
 ): { ok: true; offer: Es02ImmutableOffer } | { ok: false; code: "OFFER_TAMPER" | "INVALID_INPUT" } {
   const normalized = normalizeOfferSelection(selection);
   if (!normalized) return { ok: false, code: "INVALID_INPUT" };
   if (
     normalized.claimedCatalogRevision !== undefined &&
-    normalized.claimedCatalogRevision !== commercialCatalogRevision &&
-    normalized.claimedCatalogRevision !== ES02_CATALOG_REVISION
+    normalized.claimedCatalogRevision !== revision &&
+    !(revision === legacyCommercialCatalogRevision && normalized.claimedCatalogRevision === commercialCatalogRevision)
   ) {
     return { ok: false, code: "OFFER_TAMPER" };
   }
@@ -128,7 +142,9 @@ export function resolveEs02Offer(
     const sel = normalized.slots[i]!;
     let plan: CommercialPlan;
     try {
-      plan = commercialPlan(sel.persona, sel.package);
+      const recorded = commercialPlanForRevision(sel.persona, sel.package, revision);
+      if (!recorded) return { ok: false, code: "INVALID_INPUT" };
+      plan = recorded;
     } catch {
       return { ok: false, code: "INVALID_INPUT" };
     }
@@ -158,7 +174,7 @@ export function resolveEs02Offer(
   return {
     ok: true,
     offer: {
-      catalogRevision: ES02_CATALOG_REVISION,
+      catalogRevision: revision,
       term: normalized.term,
       slots,
       branchSlots,

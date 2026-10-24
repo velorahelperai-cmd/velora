@@ -14,7 +14,8 @@ import {
   type Es02OrderStatus,
   type Es02OwnedRecoveryView,
 } from "./contracts";
-import { offersEqual, resolveEs02Offer } from "./commercial-offer";
+import { offersEqual, resolveRecordedEs02Offer } from "./commercial-offer";
+import { commercialCatalogRevision } from "@/components/app/subscription-commercial-catalog";
 
 const ORDER_STATUSES: readonly Es02OrderStatus[] = [
   "open",
@@ -26,7 +27,8 @@ const ORDER_STATUSES: readonly Es02OrderStatus[] = [
   "cancelled",
 ];
 
-function parseSlots(value: unknown, term: "monthly" | "yearly"): Es02BranchSlotOffer[] | null {
+function parseSlots(value: unknown, term: "monthly" | "yearly", revision: string): Es02BranchSlotOffer[] | null {
+  const resolveRecorded = (selection: Parameters<typeof resolveRecordedEs02Offer>[0]) => resolveRecordedEs02Offer(selection, revision);
   if (!Array.isArray(value) || !value.length) return null;
   const slots: Es02BranchSlotOffer[] = [];
   for (let i = 0; i < value.length; i++) {
@@ -41,7 +43,7 @@ function parseSlots(value: unknown, term: "monthly" | "yearly"): Es02BranchSlotO
     ) {
       return null;
     }
-    const resolved = resolveEs02Offer({
+    const resolved = resolveRecorded({
       term,
       slots: [{ persona: persona as Es02BranchSlotOffer["persona"], package: pack as Es02BranchSlotOffer["package"] }],
     });
@@ -70,7 +72,7 @@ export function parseOfferRow(value: unknown): Es02ImmutableOffer | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const v = value as Record<string, unknown>;
   if (
-    v.catalogRevision !== ES02_CATALOG_REVISION ||
+    (v.catalogRevision !== ES02_CATALOG_REVISION && v.catalogRevision !== commercialCatalogRevision) ||
     v.currency !== ES02_CURRENCY ||
     v.purpose !== ES02_PURPOSE_INITIAL_SUBSCRIPTION ||
     v.productCode !== ES02_PRODUCT_CODE ||
@@ -79,7 +81,8 @@ export function parseOfferRow(value: unknown): Es02ImmutableOffer | null {
     return null;
   }
   const term = v.term as "monthly" | "yearly";
-  let slots = parseSlots(v.slots, term);
+  const resolveRecorded = (selection: Parameters<typeof resolveRecordedEs02Offer>[0]) => resolveRecordedEs02Offer(selection, String(v.catalogRevision));
+  let slots = parseSlots(v.slots, term, String(v.catalogRevision));
   if (!slots) {
     if (
       !["level_1", "level_2", "level_3"].includes(String(v.persona)) ||
@@ -87,7 +90,7 @@ export function parseOfferRow(value: unknown): Es02ImmutableOffer | null {
     ) {
       return null;
     }
-    const resolved = resolveEs02Offer({
+    const resolved = resolveRecorded({
       term,
       slots: [
         {
@@ -99,7 +102,7 @@ export function parseOfferRow(value: unknown): Es02ImmutableOffer | null {
     if (!resolved.ok) return null;
     slots = [...resolved.offer.slots];
   }
-  const recomputed = resolveEs02Offer({
+  const recomputed = resolveRecorded({
     term,
     slots: slots.map((s) => ({ persona: s.persona, package: s.package })),
   });

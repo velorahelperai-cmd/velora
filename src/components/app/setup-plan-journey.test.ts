@@ -157,7 +157,9 @@ describe("setup plan journey", () => {
           employees: plan.employees,
           channels: plan.channels,
         });
-        expect(review.seam.preview.catalogRevision).toBe("2026-10-14");
+        expect(review.seam.preview.catalogRevision).toBe(
+          plan.persona === "level_3" && plan.package === "basic" ? "2026-10-24" : "2026-10-14",
+        );
       }
     }
   });

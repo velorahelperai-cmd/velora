@@ -83,6 +83,7 @@ export function AuthOtpModal({
   resent = false,
   cooldown = 0,
   verified = false,
+  retrySessionOnly = false,
   onClose,
   onSubmitCode,
   onResend,
@@ -113,6 +114,8 @@ export function AuthOtpModal({
   cooldown?: number;
   /** Flip true only after server verifyEmailCode OK — starts success morph. */
   verified?: boolean;
+  /** Email code is already consumed; submit rechecks only the admitted session. */
+  retrySessionOnly?: boolean;
   onClose: () => void;
   onSubmitCode: (code: string) => void;
   onResend: () => void;
@@ -162,20 +165,15 @@ export function AuthOtpModal({
   }, [open, onClose, phase, verified]);
 
   const onSuccessAnimDoneRef = useRef(onSuccessAnimDone);
-  const successStartedRef = useRef(false);
 
   useEffect(() => {
     onSuccessAnimDoneRef.current = onSuccessAnimDone;
   }, [onSuccessAnimDone]);
 
   useEffect(() => {
-    if (!verified) {
-      successStartedRef.current = false;
-      return;
-    }
-    // Cooldown ticks / parent re-renders must not restart the success morph.
-    if (successStartedRef.current) return;
-    successStartedRef.current = true;
+    if (!verified) return;
+    // Dependencies define the verified transition. Cleanup may be followed by
+    // another setup (StrictMode / effect reconnection), so never latch it off.
     clearTimers();
     const start = window.setTimeout(() => {
       if (prefersReducedMotion()) {
@@ -275,6 +273,7 @@ export function AuthOtpModal({
   function submit(event: FormEvent) {
     event.preventDefault();
     if (busy || verified || submittingRef.current || phase !== "input") return;
+    if (retrySessionOnly) { onSubmitCode(""); return; }
     const code = digits.join("");
     if (!/^[0-9]{6}$/.test(code)) {
       setCodeInvalid(true);
@@ -400,7 +399,7 @@ export function AuthOtpModal({
                       pattern="[0-9]*"
                       dir="ltr"
                       aria-label={`${codeLabel} ${index + 1}`}
-                      disabled={busy || verified || phase !== "input"}
+                      disabled={busy || verified || retrySessionOnly || phase !== "input"}
                       value={digit}
                       onChange={(event) => onCellChange(index, event.target.value)}
                       onKeyDown={(event) => onCellKeyDown(index, event)}
@@ -430,7 +429,7 @@ export function AuthOtpModal({
                   variant="secondary"
                   className="border-[#DCE4EB] bg-white text-[#172D43] hover:bg-[#F0F4F6]"
                   busy={busy}
-                  disabled={busy || !email || cooldown > 0}
+                  disabled={busy || !email || cooldown > 0 || retrySessionOnly}
                   onClick={() => {
                     if (busy || cooldown > 0 || !email) return;
                     onResend();

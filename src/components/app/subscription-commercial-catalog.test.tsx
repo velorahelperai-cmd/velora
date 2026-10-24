@@ -11,7 +11,7 @@ const prices = [
   ["level_1", "premium", 90000, 864000, 3000],
   ["level_2", "basic", 65000, 624000, 2000],
   ["level_2", "premium", 120000, 1152000, 6000],
-  ["level_3", "basic", 75000, 720000, 3000],
+  ["level_3", "basic", 90000, 864000, 3000],
   ["level_3", "premium", 150000, 1440000, 10000],
 ] as const;
 

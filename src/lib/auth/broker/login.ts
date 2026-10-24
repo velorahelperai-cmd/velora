@@ -182,7 +182,7 @@ export async function brokerStartOAuth(input: {
   reader?: CookieReader;
   parentHandleHash?: string | null;
   requestNonce?: string | null;
-}): Promise<{ ok: true; url: string } | { ok: false; code: "UNAVAILABLE" | "CONTINUITY_REQUIRED" }> {
+}): Promise<{ ok: true; url: string } | { ok: false; code: "UNAVAILABLE" | "CONTINUITY_REQUIRED" | "OAUTH_NEW_INTENT_REQUIRED" }> {
   const capability = await probeBrokerCapability();
   if (!capability.ok) return { ok: false, code: "UNAVAILABLE" };
   const bundle = createProviderAuthClient();
@@ -206,6 +206,20 @@ export async function brokerStartOAuth(input: {
     ttlSeconds: 600,
   });
   if (!intent) return { ok: false, code: "UNAVAILABLE" };
+
+  const saved = await loadAuthIntentByNonce(intent.stateNonce);
+  if (!saved || saved.purpose !== "oauth_google" || saved.browserLineageId !== lineageCtx.browserLineageId
+    || !Number.isFinite(Date.parse(saved.expiresAt))) return { ok: false, code: "UNAVAILABLE" };
+  if (["committed", "rejected", "expired"].includes(saved.status)) {
+    return { ok: false, code: "OAUTH_NEW_INTENT_REQUIRED" };
+  }
+  // A URL with an unclaimed exchange may be intentionally superseded (cancel,
+  // previous successful navigation, lost start response). New reserve fences it.
+  // Once exchange was claimed, UNKNOWN must retain its original gesture.
+  if (saved.status !== "reserved" || intent.providerState !== "ready") return { ok: false, code: "UNAVAILABLE" };
+  if (saved.pkceVerifier || Date.parse(saved.expiresAt) <= Date.now()) {
+    return { ok: false, code: "OAUTH_NEW_INTENT_REQUIRED" };
+  }
 
   const base = authCallbackUrl(input.next);
   const redirectTo = `${base}${base.includes("?") ? "&" : "?"}vel_intent=${encodeURIComponent(intent.stateNonce)}`;
@@ -310,8 +324,36 @@ export async function brokerExchangeOAuthCode(input: {
   if (!bundle) return { ok: false, code: "UNAVAILABLE", expireIntent: false };
   seedPkceVerifier(bundle, intent.pkceVerifier);
 
-  const { data, error } = await bundle.client.auth.exchangeCodeForSession(input.code);
+  let exchange: Awaited<ReturnType<typeof bundle.client.auth.exchangeCodeForSession>>;
+  try {
+    exchange = await bundle.client.auth.exchangeCodeForSession(input.code);
+  } catch {
+    // The provider may have consumed the code. Keep the claimed attempt/cookie.
+    return { ok: false, code: "UNAVAILABLE", detail: "exchange_failed", expireIntent: false };
+  }
+  const { data, error } = exchange;
   if (error || !data.session) {
+    const { classifyProviderAuthFailure } = await import("@/lib/auth/provider-transport");
+    const status = error?.status ?? 0;
+    const rejected = Boolean(error && !data.session
+      && classifyProviderAuthFailure(error) === "confirmed_reject"
+      && ((status >= 400 && status < 500) || error.code === "pkce_code_verifier_not_found"));
+    // Authorize a new gesture only after a confirmed rejection is durable.
+    // CAS excludes captures/cleanup or another lineage; zero rows are UNKNOWN.
+    let journaled = false;
+    try {
+      const { createAdminClient } = await import("@/lib/supabase/admin");
+      const admin = createAdminClient();
+      if (admin) {
+        const { data: rows, error: journalError } = await admin.from("vel_broker_auth_intents" as never)
+          .update({ status: rejected ? "rejected" : "reserved", provider_state: rejected ? "rejected" : "unknown",
+            cleanup_state: rejected ? "not_needed" : "unknown", updated_at: new Date().toISOString() } as never)
+          .eq("id", intent.id as never).eq("browser_lineage_id", lineageCtx.browserLineageId as never)
+          .eq("status", "reserved" as never).eq("provider_state", "in_flight" as never).select("id");
+        journaled = !journalError && Array.isArray(rows) && rows.length === 1;
+      }
+    } catch { /* An uncertain journal never authorizes provider replay. */ }
+    if (!rejected || !journaled) return { ok: false, code: "UNAVAILABLE", detail: "exchange_failed", expireIntent: false };
     const detail =
       error?.code === "pkce_code_verifier_not_found" ? "verification_browser" : "exchange_failed";
     return { ok: false, code: "AUTH_ERROR", detail, expireIntent: true };

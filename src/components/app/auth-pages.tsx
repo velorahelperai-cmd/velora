@@ -7,7 +7,7 @@ import { createRecoveryReceipt } from "@/lib/auth/operation-recovery";
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useDemo } from "@/lib/demo-state";
 import { fill } from "@/lib/app-copy";
 import { landingCopy } from "@/lib/landing-copy";
@@ -567,16 +567,6 @@ export function LoginPage() {
   const emailError = useErrorText(errors.email);
   const passwordError = useErrorText(errors.password);
 
-  useEffect(() => {
-    const err = params.get("error");
-    // Final OAuth outcomes must not reuse the gesture key for a new intentional attempt.
-    if (err !== "oauth_cancelled" && err !== "auth_callback" && err !== "verification_browser") return;
-    void import("@/lib/auth/browser-continuity").then(({ peekAuthGestureNonce, clearAuthGestureNonce }) => {
-      const nonce = peekAuthGestureNonce();
-      if (nonce) clearAuthGestureNonce(nonce);
-    });
-  }, [params]);
-
   function submitEmail(e: React.FormEvent) {
     e.preventDefault();
     if (busy||redirecting) return;
@@ -654,6 +644,22 @@ export function LoginPage() {
   );
 }
 
+type VerificationBoundary = { userId: string | null; boundaryFingerprint: string | null; status: string };
+type VerifiedBoundary = { userId: string; boundaryFingerprint: string };
+type VerificationCapture = {
+  epoch: number;
+  baseline: VerificationBoundary | null;
+  observed: VerificationBoundary[];
+  overflow?: true;
+};
+type ConfirmedVerification = { capture: VerificationCapture; boundary: VerifiedBoundary; next: string };
+function sameVerificationBoundary(a: VerificationBoundary | null, b: VerificationBoundary | null) {
+  return a?.userId === b?.userId && a?.boundaryFingerprint === b?.boundaryFingerprint;
+}
+function matchesVerifiedBoundary(value: VerificationBoundary | null, expected?: VerifiedBoundary) {
+  return Boolean(expected && value?.userId === expected.userId && value.boundaryFingerprint === expected.boundaryFingerprint);
+}
+
 export function VerifyEmailPage() {
   const copy = useAppCopy();
   const router = useRouter();
@@ -672,12 +678,61 @@ export function VerifyEmailPage() {
   const [modalOpen, setModalOpen] = useState(true);
   const [verified, setVerified] = useState(false);
   const [successNext, setSuccessNext] = useState<string | null>(null);
+  const [retrySessionOnly, setRetrySessionOnly] = useState(false);
   const { busy, run } = useAction();
+  const journey = useRef({ mounted: false, epoch: 0 });
+  const activeCapture = useRef<VerificationCapture | null>(null);
+  const successCapture = useRef<{ capture: VerificationCapture; boundary: VerifiedBoundary } | null>(null);
+  const confirmedCapture = useRef<ConfirmedVerification | null>(null);
+
+  useLayoutEffect(() => {
+    journey.current = { mounted: true, epoch: journey.current.epoch + 1 };
+    activeCapture.current = null;
+    successCapture.current = null;
+    confirmedCapture.current = null;
+    return () => {
+      journey.current = { mounted: false, epoch: journey.current.epoch + 1 };
+      activeCapture.current = null;
+      successCapture.current = null;
+      confirmedCapture.current = null;
+    };
+  }, [emailFromQuery, registeredEmail, pendingReturn]);
+
+  function observe(capture: VerificationCapture) {
+    const live = session?.liveSnapshot() ?? null;
+    if (live) {
+      const previous = capture.observed.at(-1);
+      if (!previous || !sameVerificationBoundary(previous, live) || previous.status !== live.status) {
+        if (capture.observed.length >= 64) capture.overflow = true;
+        else capture.observed.push({ ...live });
+      }
+    }
+    return live;
+  }
+  useLayoutEffect(() => {
+    if (activeCapture.current) observe(activeCapture.current);
+  });
+
+  function captureJourney(): VerificationCapture {
+    const baseline = session?.liveSnapshot() ?? null;
+    const capture = { epoch: journey.current.epoch, baseline, observed: baseline ? [{ ...baseline }] : [] };
+    activeCapture.current = capture;
+    return capture;
+  }
+  function isCurrent(capture: VerificationCapture, expected?: VerifiedBoundary, requireVerified = false) {
+    const live = observe(capture);
+    return journey.current.mounted && activeCapture.current === capture
+      && journey.current.epoch === capture.epoch && !capture.overflow
+      && capture.observed.every(value => value.status !== "locked" && value.status !== "expired"
+        && (sameVerificationBoundary(value, capture.baseline) || matchesVerifiedBoundary(value, expected)))
+      && (!requireVerified || !session || Boolean(live?.ready && live.status === "ready" && matchesVerifiedBoundary(live, expected)));
+  }
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
       void (async () => {
         setStoredReturn(readPendingSignup()?.next ?? "");
+        setRetrySessionOnly(false);
         if (emailFromQuery) {
           setRegisteredEmail(emailFromQuery);
           setHydrated(true);
@@ -710,8 +765,40 @@ export function VerifyEmailPage() {
     return copy.auth.verificationUnavailable;
   }
 
+  async function finishVerification(confirmed: ConfirmedVerification) {
+    const { capture, boundary } = confirmed;
+    try {
+      await session?.refresh();
+    } catch {
+      if (isCurrent(capture, boundary)) {
+        setRetrySessionOnly(true);
+        setError(copy.auth.verificationSessionUnavailable);
+      }
+      return;
+    }
+    if (!isCurrent(capture, boundary)) return;
+    // refresh() resolves on transport failure too. Identity alone is not READY.
+    if (!isCurrent(capture, boundary, true)) {
+      setRetrySessionOnly(true);
+      setError(copy.auth.verificationSessionUnavailable);
+      return;
+    }
+    clearPendingSignup();
+    successCapture.current = { capture, boundary };
+    setRetrySessionOnly(false);
+    setSuccessNext(confirmed.next);
+    setVerified(true);
+  }
+
   function submitCode(code: string) {
     if (busy || !hydrated || !registeredEmail || verified) return;
+    const confirmed = confirmedCapture.current;
+    if (confirmed) {
+      if (!isCurrent(confirmed.capture, confirmed.boundary)) return;
+      setError(null);
+      void run(() => finishVerification(confirmed));
+      return;
+    }
     setError(null);
     setDiagnostic(null);
     setResent(false);
@@ -720,14 +807,15 @@ export function VerifyEmailPage() {
       setError(copy.auth.verificationCodeFormat);
       return;
     }
+    const capture = captureJourney();
     const journeyEmail = registeredEmail;
     const journeyNext = pendingReturn;
     void run(async () => {
       try {
         const { ensureBrowserContinuity, clearAuthGestureNonce } = await import("@/lib/auth/browser-continuity");
         const continuity = await ensureBrowserContinuity("verify_email");
+        if (!isCurrent(capture)) return;
         if (!continuity.ok) {
-          if (registeredEmail !== journeyEmail) return;
           setError(
             continuity.code === "CONTINUITY_RECOVERY_REQUIRED"
               ? copy.errors.continuityRecovery
@@ -741,27 +829,21 @@ export function VerifyEmailPage() {
           next: journeyNext,
           requestNonce: continuity.requestNonce,
         });
+        const boundary = result.ok ? result.data : undefined;
+        if (!isCurrent(capture, boundary)) return;
         if (result.ok || result.code === "INVALID_INPUT" || result.code === "AUTH_ERROR") {
           clearAuthGestureNonce(continuity.requestNonce);
         }
-        // Late response after email/journey change or logout must not mutate the active trip.
-        if (registeredEmail !== journeyEmail || pendingReturn !== journeyNext || verified) return;
         setDiagnostic(result.diagnostic);
         if (!result.ok) {
           setError(result.code === "INVALID_INPUT" ? copy.auth.verificationCodeFormat : verificationMessage(result.message));
           return;
         }
-        clearPendingSignup();
-        try {
-          await session?.refresh();
-        } catch {
-          /* Verification is already confirmed. */
-        }
-        if (registeredEmail !== journeyEmail || verified) return;
-        setSuccessNext(result.data.next);
-        setVerified(true);
+        const confirmed = { capture, boundary: result.data, next: result.data.next };
+        confirmedCapture.current = confirmed;
+        await finishVerification(confirmed);
       } catch {
-        if (registeredEmail !== journeyEmail) return;
+        if (!isCurrent(capture)) return;
         setError(copy.auth.verificationUnavailable);
       }
     });
@@ -808,7 +890,8 @@ export function VerifyEmailPage() {
         codeLabel={copy.auth.verificationCodeLabel}
         codeHint={copy.auth.verificationCodeHint}
         codeFormat={copy.auth.verificationCodeFormat}
-        verifyLabel={copy.auth.verifyCode}
+        verifyLabel={retrySessionOnly ? copy.auth.verificationSessionRetry : copy.auth.verifyCode}
+        retrySessionOnly={retrySessionOnly}
         resendLabel={copy.auth.resend}
         resendInLabel={fill(copy.auth.resendIn, { n: cooldown })}
         resentNotice={copy.auth.resent}
@@ -829,13 +912,20 @@ export function VerifyEmailPage() {
         }}
         onSubmitCode={submitCode}
         onResend={() => {
-          if (busy || cooldown > 0 || !registeredEmail || verified) return;
+          if (busy || cooldown > 0 || !registeredEmail || verified || retrySessionOnly) return;
+          const capture = captureJourney();
           setError(null);
           setDiagnostic(null);
           setResent(false);
           void run(async () => {
             try {
-              const result = await resendVerificationEmail(registeredEmail, pendingReturn);
+              const { ensureBrowserContinuity, clearAuthGestureNonce } = await import("@/lib/auth/browser-continuity");
+              const continuity = await ensureBrowserContinuity("verification_resend");
+              if (!isCurrent(capture)) return;
+              if (!continuity.ok) { setError(copy.auth.verificationUnavailable); return; }
+              const result = await resendVerificationEmail(registeredEmail, pendingReturn, continuity.requestNonce);
+              if (!isCurrent(capture)) return;
+              if (result.ok || result.code === "INVALID_INPUT" || result.code === "AUTH_ERROR") clearAuthGestureNonce(continuity.requestNonce);
               setDiagnostic(result.diagnostic);
               if (!result.ok) {
                 setError(verificationMessage(result.message));
@@ -845,6 +935,7 @@ export function VerifyEmailPage() {
               setResent(true);
               setCooldown(RESEND_COOLDOWN_SEC);
             } catch {
+              if (!isCurrent(capture)) return;
               setError(copy.auth.verificationUnavailable);
             }
           });
@@ -853,7 +944,8 @@ export function VerifyEmailPage() {
           router.push(authFlowHref("/signup", pendingReturn, cleaned));
         }}
         onSuccessAnimDone={() => {
-          if (!successNext) return;
+          const success = successCapture.current;
+          if (!successNext || !success || !isCurrent(success.capture, success.boundary, true)) return;
           router.replace(successNext);
           router.refresh();
         }}

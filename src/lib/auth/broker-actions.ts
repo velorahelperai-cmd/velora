@@ -13,7 +13,7 @@ export async function startOAuthAction(
   provider: "google" = "google",
   next = "/setup",
   requestNonce?: string | null,
-): Promise<{ ok: true; url: string } | { ok: false; code: "UNAVAILABLE" | "CONTINUITY_REQUIRED" }> {
+): Promise<{ ok: true; url: string } | { ok: false; code: "UNAVAILABLE" | "CONTINUITY_REQUIRED" | "OAUTH_NEW_INTENT_REQUIRED" }> {
   const cookieStore = await cookies();
   const writer = {
     set(name: string, value: string, options?: Record<string, unknown>) {

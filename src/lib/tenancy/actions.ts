@@ -12,7 +12,7 @@ import { emailVerificationError, normalizeEmailCode } from "@/lib/auth/email-cod
 
 import { revalidatePath } from "next/cache";
 
-import { authCallbackUrl, siteUrl } from "@/lib/auth/site-url";
+import { siteUrl } from "@/lib/auth/site-url";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { prepareReviewProof, reviewStorageReader, KNOWLEDGE_BUCKET, type ReviewRpc } from "@/lib/tenancy/review-proof";
@@ -195,9 +195,8 @@ export async function signUpWithEmail(input: {
 
   try {
     trace.stage("session");
-    const { createProviderAuthClient } = await import("@/lib/auth/broker/provider");
-    const { admitNativeSession, prepareBrokerAdmissionLineage } = await import("@/lib/auth/broker");
-    const { reserveBoundAuthIntent, claimProviderAttempt } = await import("@/lib/auth/broker/registry");
+    const { admitNativeSession } = await import("@/lib/auth/broker");
+    const { claimProviderAttempt } = await import("@/lib/auth/broker/registry");
     const requestNonce =
       typeof input.requestNonce === "string" && input.requestNonce.length >= 16
         ? input.requestNonce
@@ -213,50 +212,14 @@ export async function signUpWithEmail(input: {
     const reader = {
       getAll: () => cookieStore.getAll().map((c) => ({ name: c.name, value: c.value })),
     };
-    const lineageCtx = await prepareBrokerAdmissionLineage(reader, writer);
-    if (!lineageCtx.ok) {
-      return { ok: false, code: "UNAVAILABLE", diagnostic: trace.finish("UNAVAILABLE") };
-    }
-    const intent = await reserveBoundAuthIntent({
-      bootstrapHash: lineageCtx.bootstrapHash,
-      requestNonce,
-      purpose: "signup_email",
-    });
-    if (!intent) return { ok: false, code: "UNAVAILABLE", diagnostic: trace.finish("UNAVAILABLE") };
-    const claim = await claimProviderAttempt(intent.id);
-    if (!claim.ok || claim.claimed !== true) {
-      return { ok: false, code: "UNAVAILABLE", diagnostic: trace.finish("UNAVAILABLE") };
-    }
-    const { commitIntentCookie } = await import("@/lib/auth/broker/cookies");
-    const { encryptSecret } = await import("@/lib/auth/broker/crypto");
-    const { createAdminClient } = await import("@/lib/supabase/admin");
+    const { prepareEmailConfirmation } = await import("@/lib/auth/broker/email-confirmation");
+    const prepared = await prepareEmailConfirmation({ purpose: "signup_email", requestNonce, next: input.next, reader, writer });
+    if (!prepared.ok) return { ok: false, code: "UNAVAILABLE", diagnostic: trace.finish("UNAVAILABLE") };
+    const { bundle, intent, lineageCtx, emailRedirectTo } = prepared;
     const { classifyProviderAuthFailure, actionCodeForProviderFailure } = await import(
       "@/lib/auth/provider-transport"
     );
-    const admin = createAdminClient();
-    if (!admin) return { ok: false, code: "UNAVAILABLE", diagnostic: trace.finish("UNAVAILABLE") };
-    const bundle = createProviderAuthClient({
-      persistPkceVerifier: async (verifier) => {
-        const encrypted = encryptSecret(verifier)?.toString("base64");
-        if (!encrypted) throw new Error("SIGNUP_VERIFIER_ENCRYPTION_UNAVAILABLE");
-        const { data: rows, error: pkceError } = await admin
-          .from("vel_broker_auth_intents" as never)
-          .update({ pkce_verifier_enc: encrypted, updated_at: new Date().toISOString() } as never)
-          .eq("id", intent.id as never)
-          .eq("status", "reserved" as never)
-          .is("pkce_verifier_enc", null)
-          .select("id");
-        if (pkceError || !Array.isArray(rows) || rows.length !== 1) {
-          throw new Error("SIGNUP_VERIFIER_PERSIST_UNAVAILABLE");
-        }
-        commitIntentCookie(writer, intent.stateNonce, 600);
-      },
-    });
-    if (!bundle) return { ok: false, code: "UNAVAILABLE", diagnostic: trace.finish("UNAVAILABLE") };
     const supabase = bundle.client;
-    const redirectBase = authCallbackUrl(safeInternalPath(input.next, "/setup"));
-    const emailRedirectTo =
-      `${redirectBase}${redirectBase.includes("?") ? "&" : "?"}vel_intent=${encodeURIComponent(intent.stateNonce)}`;
     let providerSession: import("@supabase/supabase-js").Session | null = null;
     try {
     trace.stage("provider");
@@ -273,8 +236,6 @@ export async function signUpWithEmail(input: {
       const code = actionCodeForProviderFailure(classifyProviderAuthFailure(error));
       return { ok: false, code, diagnostic: trace.finish(code) };
     }
-    // Bound confirm-link recovery in the originating browser (OTP remains primary).
-    commitIntentCookie(writer, intent.stateNonce, 600);
     // Existing-user responses may be obfuscated. Only an actual matching,
     // confirmed session permits a client-scoped profile write.
     const userConfirmed = Boolean(data.user?.email_confirmed_at);
@@ -304,14 +265,15 @@ export async function signUpWithEmail(input: {
       }
     }
     if (confirmedSession && data.session) {
-      const admitted = await admitNativeSession({
+      const claim = await claimProviderAttempt(intent.id);
+      const admitted = claim.ok && claim.claimed === true ? await admitNativeSession({
         session: data.session,
         writer,
         reader,
         authIntentId: intent.id,
         browserLineageId: intent.browserLineageId,
         bootstrapHash: lineageCtx.bootstrapHash,
-      });
+      }) : { ok: false as const };
       if (!admitted.ok) {
         const { signOutProviderSessionAfterAdmitFailure } = await import(
           "@/lib/auth/broker/provider-session"
@@ -521,23 +483,36 @@ export async function signOut(
   }
 }
 
-export async function resendVerificationEmail(email: string, next?:string|null): Promise<ActionResult> {
+export async function resendVerificationEmail(email: string, next?:string|null, requestNonce?: string | null): Promise<ActionResult> {
   const trace = beginDiagnostic("auth_verification_resend");
   trace.stage("input");
   const cleaned = typeof email==="string"?email.trim().toLowerCase():"";
   if (cleaned.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleaned)) {
     return { ok: false, code: "INVALID_INPUT", diagnostic: trace.finish("INVALID_INPUT") };
   }
+  if (typeof requestNonce !== "string" || requestNonce.length < 16) return { ok: false, code: "UNAVAILABLE", diagnostic: trace.finish("UNAVAILABLE") };
   try {
     trace.stage("session");
-    const supabase = await createClient();
+    const { cookies } = await import("next/headers");
+    const store = await cookies();
+    const { prepareEmailConfirmation } = await import("@/lib/auth/broker/email-confirmation");
+    const prepared = await prepareEmailConfirmation({
+      purpose: "signup_resend", requestNonce, next,
+      reader: { getAll: () => store.getAll().map(c => ({ name: c.name, value: c.value })) },
+      writer: { set: (name, value, options) => store.set(name, value, options as never) },
+    });
+    if (!prepared.ok) return { ok: false, code: "UNAVAILABLE", diagnostic: trace.finish("UNAVAILABLE") };
     trace.stage("provider");
-    const { error } = await supabase.auth.resend({
+    const { error } = await prepared.bundle.client.auth.resend({
       type: "signup",
       email: cleaned,
-      options: { emailRedirectTo: authCallbackUrl(safeInternalPath(next,"/setup")) },
+      options: { emailRedirectTo: prepared.emailRedirectTo },
     });
-    if (error) return { ok: false, code: "AUTH_ERROR", message: emailVerificationError(error), diagnostic: trace.finish("AUTH_ERROR") };
+    if (error) {
+      const { classifyProviderAuthFailure, actionCodeForProviderFailure } = await import("@/lib/auth/provider-transport");
+      const kind = classifyProviderAuthFailure(error), code = actionCodeForProviderFailure(kind);
+      return { ok: false, code, message: kind === "unknown_transport" ? "verification_unavailable" : emailVerificationError(error), diagnostic: trace.finish(code) };
+    }
     trace.finish("OK");
     return { ok: true, data: undefined };
   } catch {
@@ -550,7 +525,7 @@ export async function verifyEmailCode(input: {
   code: string;
   next?: string | null;
   requestNonce?: string | null;
-}): Promise<ActionResult<{ next: string }>> {
+}): Promise<ActionResult<{ next: string; userId: string; boundaryFingerprint: string }>> {
   const trace = beginDiagnostic("auth_verification");
   trace.stage("input");
   const email = typeof input?.email === "string" ? input.email.trim().toLowerCase() : "";
@@ -668,7 +643,7 @@ export async function verifyEmailCode(input: {
       preferred = "";
     }
     trace.finish("OK");
-    return { ok: true, data: { next: pathForAccess(access, preferred || null) } };
+    return { ok: true, data: { next: pathForAccess(access, preferred || null), userId: user.id, boundaryFingerprint: admitted.committed.boundaryFingerprint } };
   } catch {
     // A timeout may have consumed the OTP. Leave recovery to the user; never retry automatically.
     return { ok: false, code: "UNAVAILABLE", message: "verification_unavailable", diagnostic: trace.finish("UNAVAILABLE") };

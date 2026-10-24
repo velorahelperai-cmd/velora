@@ -987,8 +987,8 @@ const ui = {
       "en": "What about scope and cost?"
     },
     "a": {
-      "ar": "لا نعرض سعرًا أو حصة محادثات هنا. كلاهما يُحدَّد في العرض المتفق عليه قبل التفعيل.",
-      "en": "We do not show a price or a conversation allowance here. Both are set in the agreed offer before activation."
+      "ar": "تختلف التكلفة حسب الشخصية والباقة ومدة الاشتراك. راجع الأسعار والمزايا في قسم الباقات، وتأكد من تفاصيل العرض قبل الشراء.",
+      "en": "Cost varies by persona, plan and subscription duration. Review prices and features in the plans section, and confirm the offer details before purchasing."
     }
   },
   {
@@ -997,8 +997,8 @@ const ui = {
       "en": "Do I need three subscriptions?"
     },
     "a": {
-      "ar": "التصور منتج واحد بمستوى واحد للشركة، ويمكن الترقية إلى مستوى أعلى. الشهري والسنوي خيارا مدة الاشتراك؛ تفاصيل المستويات قيد الاعتماد.",
-      "en": "The model is one product and one tier per company, with higher-tier upgrades. Monthly and annual terms are planned; tier details are being finalised."
+      "ar": "لا، وجود ثلاث شخصيات لا يعني شراء ثلاثة اشتراكات معًا. تختار الشخصية والباقة المناسبة لاحتياج نشاطك.",
+      "en": "No. Having three personas does not mean buying three subscriptions together. Choose the persona and plan that suit your business needs."
     }
   }
 ],

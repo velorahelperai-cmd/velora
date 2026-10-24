@@ -5,7 +5,7 @@
 import "server-only";
 import type { Es02AccountOrderView } from "./contracts";
 import { es02Uuid } from "./contracts";
-import { offerFingerprint, offersEqual, resolveEs02Offer } from "./commercial-offer";
+import { offerFingerprint, offersEqual, resolveRecordedEs02Offer } from "./commercial-offer";
 import { commercialBaisaToVerifiedPaymobAmount } from "../money";
 import { assertPaymobConfigForCalls, type PaymobAdapterConfig } from "../paymob/config";
 import type { PaymobHttpClient } from "../paymob/http";
@@ -41,7 +41,7 @@ function assertTest(config:PaymobAdapterConfig){
 }
 function bindingFor(order:Es02AccountOrderView,config:PaymobAdapterConfig):Binding|null{
  if(!es02Uuid(order.accountId)||!es02Uuid(order.orderId)||!es02Uuid(order.paymentAttemptId)||!order.specialReference||order.environment!=="test")return null;
- const canonical=resolveEs02Offer({term:order.offer.term,slots:order.offer.slots.map(s=>({persona:s.persona,package:s.package}))});
+ const canonical=resolveRecordedEs02Offer({term:order.offer.term,slots:order.offer.slots.map(s=>({persona:s.persona,package:s.package}))},order.offer.catalogRevision);
  if(!canonical.ok||!offersEqual(order.offer,canonical.offer))return null;
  const converted=commercialBaisaToVerifiedPaymobAmount(order.offer.amountBaisa,config.verifiedOmrUnitsPerOmr??0);if(!converted.ok)return null;
  return {accountId:order.accountId,orderId:order.orderId,paymentAttemptId:order.paymentAttemptId,specialReference:order.specialReference,offerFingerprint:offerFingerprint(order.offer),amountBaisa:order.offer.amountBaisa,providerAmount:converted.amount,currency:"OMR",environment:"test",providerAccountRef:String(config.integrationId),merchantOwnerId:config.merchantOwnerId!};

@@ -45,6 +45,7 @@ vi.mock("@/lib/supabase/server", () => ({
   createBrokerBoundClient: mocks.bound,
 }));
 vi.mock("@/lib/auth/broker/provider", () => ({ createProviderAuthClient: mocks.createProvider }));
+vi.mock("@/lib/auth/broker/lineage-auth", () => ({ prepareBrokerAdmissionLineage: mocks.prepare }));
 vi.mock("@/lib/auth/broker", () => ({
   admitNativeSession: mocks.admit,
   prepareBrokerAdmissionLineage: mocks.prepare,
@@ -53,6 +54,8 @@ vi.mock("@/lib/auth/broker", () => ({
 vi.mock("@/lib/auth/broker/registry", () => ({
   reserveBoundAuthIntent: mocks.reserve,
   claimProviderAttempt: mocks.claim,
+  probeBrokerCapability: async () => ({ ok: true, boundAdmit: true }),
+  loadAuthIntentByNonce: async () => ({ ...INTENT, purpose: "signup_email", status: "reserved", expiresAt: new Date(Date.now() + 600_000).toISOString(), pkceVerifier: null }),
 }));
 vi.mock("@/lib/auth/broker/provider-session", () => ({
   signOutProviderSessionAfterAdmitFailure: mocks.cleanup,
@@ -81,7 +84,10 @@ const user = { id: uid, email: input.email, email_confirmed_at: null as string |
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.createProvider.mockImplementation((options?: { persistPkceVerifier?: (v: string) => Promise<void> }) => ({
-    client: { auth: { signUp: mocks.signup } },
+    client: { auth: { signUp: async (input: unknown) => {
+      await options?.persistPkceVerifier?.("synthetic-verifier");
+      return mocks.signup(input);
+    } } },
     options,
   }));
   mocks.signup.mockResolvedValue({ data: { user, session: null }, error: null });

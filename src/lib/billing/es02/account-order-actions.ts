@@ -21,6 +21,7 @@ import {
 } from "./contracts";
 import {
   resolveEs02Offer,
+  offersEqual,
   type Es02LegacySingleSelection,
   type Es02OfferSelection,
 } from "./commercial-offer";
@@ -221,7 +222,7 @@ export async function createAccountBoundOrderAction(input: {
     }
     // Ambiguous/malformed success body after attempted write → UNKNOWN (retain op identity).
     const order = parseAccountOrderRow(ack.data, auth.accountId);
-    if (!order) {
+    if (!order || !offersEqual(order.offer, offer)) {
       es02Log("error", "es02.order.create.ack_malformed", {
         request_id: requestId,
         user_id: auth.accountId,

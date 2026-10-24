@@ -4,7 +4,9 @@ import type { SubscriptionOfferView, SubscriptionPackage, SubscriptionPersona, S
  * It describes the offering; only matching, server-qualified billing versions
  * authorize checkout. No synthetic plan/version IDs or payment readiness.
  */
-export const commercialCatalogRevision = "2026-10-14";
+export const legacyCommercialCatalogRevision = "2026-10-14";
+export const commercialCatalogRevision = "2026-10-24";
+export type CommercialCatalogRevision = typeof commercialCatalogRevision | typeof legacyCommercialCatalogRevision;
 export const annualDiscountPercent = 20;
 export type CommercialFeature = { id: string; label: { ar: string; en: string } };
 export type CommercialPlan = {
@@ -58,7 +60,7 @@ export const commercialPlans: readonly CommercialPlan[] = [
     f("content", "إنشاء صور وريلز وقصص مع اعتماد قبل النشر", "Images, reels and stories with approval before publishing"),
     f("advertising", "إدارة الإعلانات بميزانية إعلانية منفصلة", "Ad management with a separate advertising budget"),
   ] },
-  { persona: "level_3", package: "basic", monthlyBaisa: 75000, replies: 3000, employees: 2, channels: 1, features: operations, addons: [] },
+  { persona: "level_3", package: "basic", monthlyBaisa: 90000, replies: 3000, employees: 2, channels: 1, features: operations, addons: [] },
   { persona: "level_3", package: "premium", monthlyBaisa: 150000, replies: 10000, employees: 4, channels: 2, features: [...operations,
     f("operations_workflows", "أتمتة التشغيل وتوزيع المهام على الفروع", "Operational workflows and branch assignment"),
     f("operations_alerts", "تنبيهات تأخير الطلبات والمهام", "Order and task delay alerts"),
@@ -87,4 +89,13 @@ export function matchesCommercialOffer(offer: SubscriptionOfferView): boolean {
 export function matchingCommercialOffer(plan: CommercialPlan, term: SubscriptionTerm, offers: readonly SubscriptionOfferView[]): SubscriptionOfferView | undefined {
   const matches = offers.filter(offer => offer.persona === plan.persona && offer.package === plan.package && offer.term === term && matchesCommercialOffer(offer));
   return matches.length === 1 ? matches[0] : undefined;
+}
+
+/** Immutable historic order reconstruction only; new selections always use the current catalog. */
+export function commercialPlanForRevision(persona: SubscriptionPersona, pack: SubscriptionPackage, revision: string): CommercialPlan | null {
+  if (revision !== commercialCatalogRevision && revision !== legacyCommercialCatalogRevision) return null;
+  const plan = commercialPlan(persona, pack);
+  if (!plan) return null;
+  return revision === legacyCommercialCatalogRevision && persona === "level_3" && pack === "basic"
+    ? { ...plan, monthlyBaisa: 75000 } : plan;
 }
