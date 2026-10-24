@@ -1,11 +1,14 @@
 "use client";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { usePathname } from "next/navigation";
+import { useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { LandingCopy, PlanId } from "@/lib/landing-copy";
 import { subscriptionCopy, subscriptionTiers } from "@/components/app/subscription-copy";
 import { commercialAmount, commercialPlan, matchingCommercialOffer } from "@/components/app/subscription-commercial-catalog";
 import { catalogOfferState } from "@/components/app/subscription-catalog-state";
 import { formatOmrBaisa, type SubscriptionOffersView, type SubscriptionPersona, type SubscriptionPackage, type SubscriptionTerm } from "@/components/app/subscription-offers-view";
 import type { SubscriptionDestination, SubscriptionIntent } from "@/components/app/subscription-navigation";
+import { SubscriptionBrandGuide } from "@/components/app/subscription-brand-guide";
+import catalogStyles from "@/components/app/subscription-panel.module.css";
 import { SubscriptionCompareTable } from "@/components/app/subscription-offer-cards";
 import { packageMedia } from "./approved-assets";
 import { PackagePlayback } from "./package-playback";
@@ -40,7 +43,9 @@ export function Packages({ copy, locale, destination, offersView, selectedPlan, 
   selectedPlan: PlanId | null; onSelect: (plan: PlanId) => void;
 }) {
   void copy; void selectedPlan; void destination;
+  const homepageActive = usePathname() === "/";
   const ar = locale === "ar", c = subscriptionCopy[locale];
+  const [comparisonOpen, setComparisonOpen] = useState(false);
   const [term, setTerm] = useState<SubscriptionTerm>("monthly");
   const [tiers, setTiers] = useState<Record<SubscriptionPersona, SubscriptionPackage>>({ level_1: "basic", level_2: "basic", level_3: "basic" });
   const [intent, setIntent] = useState<SubscriptionIntent>({ term: "monthly" });
@@ -48,31 +53,39 @@ export function Packages({ copy, locale, destination, offersView, selectedPlan, 
   const playback = useSyncExternalStore(player.subscribe, player.getSnapshot, player.getServerSnapshot);
   const videos = useRef<Array<HTMLVideoElement | null>>([]);
   const cards = useRef<Array<HTMLElement | null>>([]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const nodes = videos.current.filter((v): v is HTMLVideoElement => !!v);
     const articles = cards.current.filter((v): v is HTMLElement => !!v);
     player.connect(nodes, ids.map(id => packageMedia[id][locale]));
     const visible = new Set<number>(), reduce = matchMedia("(prefers-reduced-motion: reduce)");
-    const sync = () => player.environment(visible, document.hidden, reduce.matches);
+    let suspended = false;
+    const sync = () => player.environment(visible, document.hidden || suspended || !homepageActive || window.location.pathname !== "/", reduce.matches);
+    const hide = () => { suspended = true; sync(); };
+    const show = () => { suspended = false; sync(); };
+    const route = () => { if (window.location.pathname === "/") show(); else hide(); };
+    const navigation = (window as Window & { navigation?: EventTarget }).navigation;
+    const navigate = (event: Event) => { const url = (event as Event & { destination?: { url: string } }).destination?.url; if (url && new URL(url, window.location.href).pathname !== "/") hide(); };
     const observer = new IntersectionObserver(entries => {
       entries.forEach(entry => { const index = articles.indexOf(entry.target as HTMLElement); if (entry.isIntersecting) visible.add(index); else visible.delete(index); }); sync();
     }, { threshold: 0.35 });
     articles.forEach(article => observer.observe(article));
     document.addEventListener("visibilitychange", sync); reduce.addEventListener("change", sync);
+    window.addEventListener("pagehide", hide); window.addEventListener("pageshow", show); window.addEventListener("popstate", route); navigation?.addEventListener("navigate", navigate);
     const other = (event: Event) => { if ((event as CustomEvent<string>).detail !== "homepage-packages") player.externalPause(); };
     window.addEventListener("velora-character-play", other); sync();
-    return () => { observer.disconnect(); document.removeEventListener("visibilitychange", sync); reduce.removeEventListener("change", sync); window.removeEventListener("velora-character-play", other); player.disconnect(); };
-  }, [locale, player]);
+    return () => { window.removeEventListener("popstate", route); navigation?.removeEventListener("navigate", navigate); window.removeEventListener("pagehide", hide); window.removeEventListener("pageshow", show); observer.disconnect(); document.removeEventListener("visibilitychange", sync); reduce.removeEventListener("change", sync); window.removeEventListener("velora-character-play", other); player.disconnect(); };
+  }, [locale, player, homepageActive]);
   const offers = offersView?.status === "ready" ? offersView.offers : [];
-  return <section id="packages" data-scene="8" className={styles.pricing + " scene"} lang={locale} dir={ar ? "rtl" : "ltr"}>
+  return <><div className={styles.originalFilm} lang={locale} dir={ar ? "rtl" : "ltr"}><div className={catalogStyles.root} data-surface="public"><SubscriptionBrandGuide homepage active={homepageActive} locale={locale} selectedPersona={intent.persona} onFocusPersona={persona => { setIntent({ term, persona, package: tiers[persona] }); onSelect(planByPersona[persona]); }} /></div></div><section id="packages" data-scene="8" className={styles.pricing + " scene"} lang={locale} dir={ar ? "rtl" : "ltr"}>
     <div className="background" aria-hidden="true" />
-    <div className="hero">
+    <div className="hero" id="subscription-plans">
       <h2 data-seq="packages-title">{c.packagesTitle}</h2><p data-seq="packages-lead">{c.oneProduct}</p>
       <div className="global-controls">
         <div className="segment" role="group" aria-label={c.cycle}>{(["monthly", "yearly"] as const).map(value => <button key={value} type="button" aria-pressed={term === value} onClick={() => { setTerm(value); setIntent(previous => ({ term: value, ...(previous.persona && previous.package ? { persona: previous.persona, package: previous.package } : {}) })); }}>{c[value]}{value === "yearly" ? " −20%" : ""}</button>)}</div>
       </div>
       {playback.error ? <p className="media-status" role="status">{ar ? "تعذّر تشغيل الفيديو. اضغط على الشخصية للمحاولة مجددًا." : "The video could not play. Select the character to try again."}</p> : null}
     </div>
+    <p className="character-help" id="packages-media-help">{ar ? "اضغط على الشخصية لتشغيل المعاينة أو إيقافها. عند التركيز عليها، اضغط M لكتم الصوت أو تشغيله." : "Select a character to play or pause her preview. When focused, press M to mute or enable sound."}</p>
     <div className="stage">
       {subscriptionTiers.map((persona, index) => {
         const id = ids[index], media = packageMedia[id], pack = tiers[persona.id], plan = commercialPlan(persona.id, pack);
@@ -80,41 +93,37 @@ export function Packages({ copy, locale, destination, offersView, selectedPlan, 
         const mismatch = (offers.some(item => item.persona === persona.id && item.package === pack && item.term === term) && !offer);
         return <article key={persona.id} ref={node => { cards.current[index] = node; }} className={"persona" + (playback.current === index && playback.playing ? " is-playing" : "")} data-id={id} data-persona={persona.id} aria-label={persona[locale]}>
           <div className="halo" aria-hidden="true" /><div className="contact-shadow" aria-hidden="true" />
-          <button type="button" className="character" aria-label={(ar ? "تشغيل معاينة " : "Play preview for ") + persona[locale]} aria-pressed={playback.current === index && playback.playing} onClick={() => player.select(index)}>
+          <button type="button" className="character" aria-label={(ar ? "تشغيل معاينة " : "Play preview for ") + persona[locale]} aria-pressed={playback.current === index && playback.playing} aria-describedby="packages-media-help" aria-keyshortcuts="M" onClick={() => { if (playback.current === index) player.toggle(); else player.select(index); }} onKeyDown={event => { if (event.key.toLowerCase() === "m" && !event.ctrlKey && !event.altKey && !event.metaKey && !event.repeat) { event.preventDefault(); player.mute(); } }}>
             <video key={locale + id} ref={node => { videos.current[index] = node; }} className="character-media" width="640" height="960" poster={locale === "en" ? media.enPoster : media.poster} preload="none" muted={playback.muted} playsInline aria-hidden="true"
             onPlay={event => { player.played(index, event.currentTarget); window.dispatchEvent(new CustomEvent("velora-character-play", { detail: "homepage-packages" })); }}
             onPause={event => player.paused(index, event.currentTarget)} onEnded={event => player.ended(index, event.currentTarget)} onError={event => player.failed(index, event.currentTarget)} />
           </button>
-          <div className="character-controls">
-            <button type="button" className="mute" aria-label={ar ? playback.muted ? "تشغيل صوت المعاينات" : "كتم صوت المعاينات" : playback.muted ? "Enable preview sound" : "Mute preview sound"} aria-pressed={!playback.muted} onClick={() => player.mute()}>
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4z" />{playback.muted ? <path d="m16 9 5 6m0-6-5 6" /> : <path d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14" />}</svg>
-            </button>
-            <button type="button" className="motion" aria-label={ar ? (playback.current === index && playback.playing) ? "إيقاف حركة الشخصية" : "تشغيل حركة الشخصية" : (playback.current === index && playback.playing) ? "Pause character motion" : "Play character motion"} aria-pressed={(playback.current === index && playback.playing)} onClick={() => { if (playback.current === index) player.toggle(); else player.select(index); }}>
-              <svg viewBox="0 0 24 24" aria-hidden="true">{(playback.current === index && playback.playing) ? <path d="M8 5v14M16 5v14" /> : <path d="m8 5 11 7-11 7z" />}</svg>
-            </button>
-          </div>
           <div className="persona-title"><h3>{ar ? ["نورا", "لينا", "دانا"][index] : persona.en}</h3><span className="roman" lang={ar ? "en" : "ar"}>{ar ? persona.en : ["نورا", "لينا", "دانا"][index]}</span>
             <p className="role">{index === 1 ? ar ? "أسلوب مرن للتنمية" : "A flexible approach to growth" : (ar ? ["إجابات واضحة واهتمام بعملائك", "أسلوب مرن للتنمية", "عمليات منظمة ومتابعة واضحة"] : ["Clear answers. Thoughtful customer care.", "A flexible approach to growth", "Organized operations. Clear follow-through."])[index]}</p>
             <div className="preview-sequence"><div className="preview-track" aria-hidden="true">{ids.map((key, dot) => <span key={key} style={{ display: "contents" }}>{dot ? <span className="preview-line" /> : null}<span className={"preview-dot" + (dot === playback.current ? " active" : "")} /></span>)}</div><span className="preview-caption">{ar ? "معاينة ثقافية" : "Cultural preview"}</span></div>
           </div>
           <div className="panel">
             <p className="panel-description">{descriptions[locale][index]}</p>
-            <div className="plan-segment" role="group" aria-label={c.packageLevel + " " + persona[locale]}>{(["basic", "premium"] as const).map(value => <button key={value} type="button" aria-pressed={pack === value} onClick={() => { setTiers(previous => ({ ...previous, [persona.id]: value })); if (intent.persona === persona.id) setIntent({ term, persona: persona.id, package: value }); }}>{c[value]}</button>)}</div>
+            <div className="plan-segment" role="group" aria-label={c.packageLevel + " " + persona[locale]}>{(["basic", "premium"] as const).map(value => <button key={value} type="button" data-tier={value} aria-pressed={pack === value} onClick={() => { setTiers(previous => ({ ...previous, [persona.id]: value })); if (intent.persona === persona.id) setIntent({ term, persona: persona.id, package: value }); }}>{c[value]}{value === "premium" ? <svg className="premium-crown" viewBox="0 0 20 20" aria-hidden="true"><defs><linearGradient id={"premium-gold-" + id} x1="0" y1="0" x2=".8" y2="1"><stop offset="0" stopColor="#fff1a2" /><stop offset=".45" stopColor="#e6b742" /><stop offset="1" stopColor="#ad7724" /></linearGradient></defs><path fill={"url(#premium-gold-" + id + ")"} d="m2 5 4 3 4-5 4 5 4-3-2 10H4Z" /><path d="M5 18h10M5 13h10" /></svg> : null}</button>)}</div>
             <div className="price"><bdi className="amount">{formatOmrBaisa(commercialAmount(plan, term), locale)}</bdi><span className="period">{c[term]}</span></div>
             <p className="billing">{term === "yearly" ? ar ? "خصم 20٪ · إجمالي سنوي يُدفع مقدمًا" : "20% discount · Annual total paid upfront" : ar ? "الفوترة الشهرية" : "Billed monthly"}</p>
             <p className="quota">{plan.replies.toLocaleString("en-US")} {ar ? "رد شهريًا" : "replies / month"} · {ar ? "المالك + " + plan.employees + " موظفين · " + (plan.channels === 1 ? "قناة واحدة" : "قناتان") : "Owner + " + plan.employees + " employees · " + plan.channels + " channel" + (plan.channels > 1 ? "s" : "")}</p>
-            <details><summary>{c.featuresHeading} ({plan.features.length})</summary><ul className="features">{plan.features.map(feature => {
+            <details><summary>{c.featuresHeading} ({plan.features.length})</summary><ul className="features feature-viewport" tabIndex={0} data-lenis-prevent="" aria-label={c.featuresHeading + " " + persona[locale]}>{plan.features.map(feature => {
               const availability = offer?.features.find(item => item.id === feature.id)?.availability;
               return <li key={feature.id} data-feature-id={feature.id}><FeatureIcon id={feature.id} /><span>{feature.label[locale]}{availability ? <small> · {c.featureAvailability[availability]}</small> : null}</span></li>;
             })}</ul></details>
             {plan.addons.length ? <details className="catalog-detail"><summary>{ar ? "إضافات اختيارية بسعر إضافي" : "Optional paid add-ons"}</summary><ul>{plan.addons.map(addon => <li key={addon.id}>{addon.label[locale]}</li>)}</ul><p>{ar ? "تُحدد الحصص ورسوم التجهيز والتشغيل قبل الشراء." : "Allowances, setup and recurring charges are quoted before purchase."}</p></details> : null}
-            <button type="button" className="cta" disabled={mismatch} aria-pressed={intent.persona === persona.id && intent.package === pack} onClick={() => { setIntent({ term, persona: persona.id, package: pack }); onSelect(planByPersona[persona.id]); }}>{c.select}</button>
+            <div className="plan-footer"><button type="button" className="cta" disabled={mismatch} aria-pressed={intent.persona === persona.id && intent.package === pack} onClick={() => { setIntent({ term, persona: persona.id, package: pack }); onSelect(planByPersona[persona.id]); }}>{c.select}</button>
             <p className="purchase-note" data-purchase-state={state.purchase}>{mismatch ? ar ? "سعر العرض المنشور لا يطابق السعر المعروض. الدفع غير متاح لهذه الباقة." : "The published offer does not match this price. Checkout is unavailable for this plan." : state.purchase === "live" ? ar ? "تخضع أهلية الدفع وتفعيل الخدمة للتحقق." : "Payment and service eligibility require verification." : state.purchase === "test_only" ? ar ? "الدفع التجريبي فقط؛ الدفع الحقيقي غير متاح." : "Test checkout only; live payment is unavailable." : ar ? "استعرض الباقة؛ الدفع غير متاح حتى تجهيز عرض مطابق." : "Explore this plan; checkout requires a matching qualified offer."}</p>
             <p className="note" data-service-state={state.service}>{state.service === "planned" ? ar ? "خدمة مخططة." : "Planned service." : ar ? "جاهزية الخدمة غير متحقق منها." : "Service readiness is not verified."} {ar ? "السعر لكل فرع. رسوم واتساب والإعلانات منفصلة." : "Price per branch. WhatsApp and advertising fees are separate."}</p>
+            </div>
           </div><span className="speaking">{ar ? "تعرّف عليّ" : "Meet me"}</span>
         </article>;
       })}
     </div>
-    <div className="catalog-comparison"><details><summary>{c.compare}</summary><SubscriptionCompareTable locale={locale} term={term} offers={offers} catalogStatus={offersView?.status} selectedPersona={intent.persona ?? null} /></details></div>
-  </section>;
+    <div className="catalog-comparison">
+      <button id="packages-compare-toggle" type="button" className="compare-toggle" aria-expanded={comparisonOpen} aria-controls="packages-comparison" onClick={() => setComparisonOpen(open => !open)}><span>{ar ? "قارن الباقات" : "Compare packages"}</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 9 7 7 7-7" /></svg></button>
+      <div id="packages-comparison" className="comparison-expansion" role="region" aria-labelledby="packages-compare-toggle" aria-hidden={!comparisonOpen} inert={!comparisonOpen} data-open={comparisonOpen}><div className="comparison-reveal"><div className={catalogStyles.root + " comparison-content"} data-surface="public"><SubscriptionCompareTable homepage locale={locale} term={term} offers={offers} catalogStatus={offersView?.status} selectedPersona={intent.persona ?? null} /></div></div></div>
+    </div>
+  </section></>;
 }

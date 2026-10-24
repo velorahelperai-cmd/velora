@@ -131,7 +131,6 @@ export function LandingPage({
     };
   }, [locale]);
 
-  const activeQuestion = customQuestion ?? copy.sampleFor(sector).q;
 
   const restoreScrollRef = useRef<number | null>(null);
 
@@ -324,12 +323,9 @@ export function LandingPage({
           copy={copy}
           sector={sector}
           plan={plan}
-          question={activeQuestion}
+          question={customQuestion ?? ""}
           onSector={setSector}
-          onQuestion={(value) => {
-            const isSample = value.trim() === "" || value === copy.sampleFor(sector).q;
-            setCustomQuestion(isSample ? null : value);
-          }}
+          onQuestion={setCustomQuestion}
         />
       </main>
       <SiteFooter copy={copy} locale={locale} />

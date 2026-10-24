@@ -1,4 +1,5 @@
 import Image from "next/image";
+import { IconUsers } from "@/components/admin/admin-icons";
 import { Fragment } from "react";
 import styles from "./phone-messages.module.css";
 
@@ -153,14 +154,34 @@ export function SourceCard({
   tone = "dark",
   seq = "source",
   avatar,
+  team = false,
 }: {
   title: string;
   body: string;
   tone?: "dark" | "light";
   seq?: string;
   avatar?: string;
+  team?: boolean;
 }) {
   const dark = tone === "dark";
+  if (team) return (
+    <aside data-seq={seq} data-team-summary="" aria-label={title} className="source-card w-full max-w-[320px] rounded-2xl border border-[#38dc89]/70 bg-white p-5 text-[#101b16] shadow-[0_16px_36px_rgba(0,0,0,0.18)]">
+      <div className="flex items-center gap-3 border-b border-[#dce9df] pb-3">
+        <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#087443] text-white"><IconUsers aria-hidden="true" className="h-5 w-5" /></span>
+        <p className="text-base font-bold text-[#087443]">{title}</p>
+      </div>
+      <dl className="mt-3 space-y-3">
+        {body.split("\n").map(line => {
+          const split = line.indexOf(":");
+          return <div key={line} className="grid grid-cols-[5rem_minmax(0,1fr)] items-start gap-3">
+            <dt className="text-xs font-medium leading-6 text-[#627368]">{split < 0 ? title : line.slice(0, split)}</dt>
+            <dd className="m-0 min-w-0 text-sm font-semibold leading-6 text-[#24382e]">{split < 0 ? line : line.slice(split + 1).trim()}</dd>
+          </div>;
+        })}
+      </dl>
+    </aside>
+  );
+
   return (
     <aside
       data-seq={seq}

@@ -66,9 +66,9 @@ export function SubscriptionOfferCards({ locale, term, offers, catalogStatus, se
   </div>;
 }
 
-export function SubscriptionCompareTable({ locale, term, offers, catalogStatus, selectedPersona }: {
+export function SubscriptionCompareTable({ locale, term, offers, catalogStatus, selectedPersona, homepage = false }: {
   locale: "ar" | "en"; term: SubscriptionTerm; offers: readonly SubscriptionOfferView[];
-  catalogStatus?: SubscriptionOffersView["status"]; selectedPersona: SubscriptionChoice["persona"] | null;
+  catalogStatus?: SubscriptionOffersView["status"]; selectedPersona: SubscriptionChoice["persona"] | null; homepage?: boolean;
 }) {
   const c = subscriptionCopy[locale], ar = locale === "ar";
   const [activeTab, setActiveTab] = useState<SubscriptionChoice["persona"] | "all">(selectedPersona ?? "all");
@@ -83,17 +83,17 @@ export function SubscriptionCompareTable({ locale, term, offers, catalogStatus, 
         return <td key={pack}><bdi>{formatOmrBaisa(commercialAmount(plan, term), locale)}</bdi><small>{ar ? `${plan.replies.toLocaleString("en-US")} رد شهريًا` : `${plan.replies.toLocaleString("en-US")} replies per month`}</small></td>;
       })}</tr>)}</tbody>
     </table></div>
-    <details className={styles.fullComparison}><summary>{c.allFeaturesHeading}</summary><p>{c.allFeaturesNote}</p>
+    <details className={styles.fullComparison}><summary>{c.allFeaturesHeading}{homepage ? <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 9 7 7 7-7" /></svg> : null}</summary><p>{c.allFeaturesNote}</p>
       <div className={styles.comparisonTabs} role="group" aria-label={c.comparePersona}>
         {(["all", "level_1", "level_2", "level_3"] as const).map(value => <button key={value} type="button" aria-pressed={activeTab === value} className={styles.comparisonTab} onClick={() => setActiveTab(value)}>{value === "all" ? c.filterAll : subscriptionTiers.find(persona => persona.id === value)![locale]}</button>)}
       </div>
-      <div className={styles.comparisonScroll}><table className={styles.comparisonTable} aria-label={c.allFeaturesHeading}>
+      <div className={styles.comparisonScroll + (homepage ? " feature-comparison-scroll" : "")} data-lenis-prevent={homepage ? "" : undefined} role={homepage ? "region" : undefined} aria-label={homepage ? c.allFeaturesHeading : undefined} tabIndex={homepage ? 0 : undefined}><table className={styles.comparisonTable} aria-label={c.allFeaturesHeading}>
         <thead><tr><th scope="col">{c.featuresHeading}</th>{compared.map(plan => <th key={plan.persona + plan.package} scope="col">{subscriptionTiers.find(persona => persona.id === plan.persona)![locale]} · {c[plan.package]}</th>)}</tr></thead>
         <tbody>{features.map(feature => <tr key={feature.id}><th scope="row">{feature.label[locale]}</th>{compared.map(plan => {
           const included = plan.features.some(item => item.id === feature.id);
           const offer = catalogStatus === "ready" ? matchingCommercialOffer(plan, term, offers) : undefined;
           const available = offer?.features.find(item => item.id === feature.id)?.availability;
-          return <td key={plan.persona + plan.package}>{included ? (available ? c.featureAvailability[available] : ar ? "ضمن الباقة — قيد التجهيز" : "Included — being prepared") : "—"}</td>;
+          return <td key={plan.persona + plan.package}>{included ? (homepage ? <><span className="feature-inclusion" role="img" aria-label={ar ? "ضمن الباقة" : "Included in plan"}>✓</span><small>{available ? c.featureAvailability[available] : ar ? "قيد التجهيز" : "Being prepared"}</small></> : available ? c.featureAvailability[available] : ar ? "ضمن الباقة — قيد التجهيز" : "Included — being prepared") : "—"}</td>;
         })}</tr>)}</tbody>
       </table></div>
     </details>

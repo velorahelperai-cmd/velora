@@ -313,7 +313,7 @@ export function StoryScenes({
           <div data-seq="stage" data-phone="start" className="story-stage relative z-10 mx-auto max-w-[1380px]">
           <div className="story-visual stage-row">
             <div>
-              <SourceCard seq="staff" avatar={copy.staffInitial} title={handoff.example.cardTitle} body={handoff.example.card} />
+              <SourceCard seq="staff" team title={handoff.example.cardTitle} body={handoff.example.card} />
               <p data-seq="paused" data-indicator="paused" className="mt-4 inline-flex rounded-full bg-[#38dc89]/15 px-4 py-2 text-base font-medium text-[#b6f5d4]">
                 {copy.paused}
               </p>

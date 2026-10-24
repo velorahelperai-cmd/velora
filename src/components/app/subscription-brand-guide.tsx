@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { SubscriptionPersona } from "./subscription-offers-view";
 import { subscriptionCopy, subscriptionTiers } from "./subscription-copy";
 import styles from "./subscription-panel.module.css";
@@ -19,10 +19,15 @@ const PERSONA_STRIP: ReadonlyArray<{
 export function SubscriptionBrandGuide({
   locale,
   selectedPersona = null,
+  active = true,
+  homepage = false,
   onFocusPersona,
 }: {
   locale: "ar" | "en";
   selectedPersona?: SubscriptionPersona | null;
+  /** The homepage owner disables media before leaving its route. */
+  active?: boolean;
+  homepage?: boolean;
   /** Optional: scroll/focus plan cards without inventing a purchase. */
   onFocusPersona?: (persona: SubscriptionPersona) => void;
 }) {
@@ -32,17 +37,51 @@ export function SubscriptionBrandGuide({
   const [playing, setPlaying] = useState(false);
   const [failed, setFailed] = useState(false);
   const [revealed, setRevealed] = useState(false);
-  const active = selectedPersona ?? "level_1";
+  const focusedPersona = selectedPersona ?? "level_1";
 
-  useEffect(() => {
+  const playback = useRef<{ toggle: () => void; played: () => void; owns: () => boolean }>({ toggle() {}, played() {}, owns: () => false });
+  useLayoutEffect(() => {
+    const node = video.current;
+    if (!node) return;
     const media = window.matchMedia("(prefers-reduced-motion: reduce)");
-    if (!media.matches) void video.current?.play().catch(() => undefined);
-    const onChange = () => {
-      if (media.matches) video.current?.pause();
+    let live = true, suspended = false, visible = false, userPaused = false, explicitPlayback = false, epoch = 0;
+    const allowed = () => live && active && !suspended && !document.hidden && visible && (!homepage || window.location.pathname === "/");
+    const owns = () => allowed() && !userPaused && (!media.matches || explicitPlayback);
+    const stop = () => { epoch++; explicitPlayback = false; node.pause(); if (live) setPlaying(false); };
+    const start = (explicit = false) => {
+      if (!allowed() || userPaused || (media.matches && !explicit)) return;
+      explicitPlayback = explicit;
+      const request = ++epoch;
+      void node.play().then(() => {
+        // A reused node may already belong to a newer, valid effect/request.
+        if (playback.current !== controller && playback.current.owns()) return;
+        if (!owns()) node.pause();
+      }).catch(() => { if (live && request === epoch) setPlaying(false); });
     };
-    media.addEventListener("change", onChange);
-    return () => media.removeEventListener("change", onChange);
-  }, []);
+    const sync = () => { if (!allowed() || media.matches || userPaused) stop(); else start(); };
+    const hide = () => { suspended = true; stop(); };
+    const show = () => { suspended = false; sync(); };
+    const route = () => { if (homepage) { if (window.location.pathname === "/") show(); else hide(); } };
+    const navigation = (window as Window & { navigation?: EventTarget }).navigation;
+    const navigate = (event: Event) => { const url = (event as Event & { destination?: { url: string } }).destination?.url; if (homepage && url && new URL(url, window.location.href).pathname !== "/") hide(); };
+    const controller = {
+      toggle() { if (!node.paused) { userPaused = true; stop(); } else { userPaused = false; start(true); } },
+      played() { if (!owns()) node.pause(); else setPlaying(true); },
+      owns,
+    };
+    playback.current = controller;
+    const observer = new IntersectionObserver(([entry]) => { visible = entry.isIntersecting; sync(); }, { threshold: 0.15 });
+    observer.observe(node);
+    media.addEventListener("change", sync); document.addEventListener("visibilitychange", sync);
+    window.addEventListener("pagehide", hide); window.addEventListener("pageshow", show); window.addEventListener("popstate", route); navigation?.addEventListener("navigate", navigate);
+    return () => {
+      live = false; suspended = true; epoch++;
+      observer.disconnect(); media.removeEventListener("change", sync); document.removeEventListener("visibilitychange", sync);
+      window.removeEventListener("pagehide", hide); window.removeEventListener("pageshow", show); window.removeEventListener("popstate", route); navigation?.removeEventListener("navigate", navigate);
+      if (playback.current === controller) playback.current = { toggle() {}, played() {}, owns: () => false };
+      node.pause(); node.load();
+    };
+  }, [active, homepage]);
 
   useEffect(() => {
     const node = root.current;
@@ -66,10 +105,7 @@ export function SubscriptionBrandGuide({
   }, []);
 
   function togglePlayback() {
-    const media = video.current;
-    if (!media || failed) return;
-    if (playing) media.pause();
-    else void media.play().catch(() => undefined);
+    if (!failed) playback.current.toggle();
   }
 
   return (
@@ -97,7 +133,7 @@ export function SubscriptionBrandGuide({
               event.preventDefault();
               togglePlayback();
             }}
-            onPlay={() => setPlaying(true)}
+            onPlay={() => playback.current.played()}
             onPause={() => setPlaying(false)}
             onError={() => setFailed(true)}
             aria-label={
@@ -140,7 +176,7 @@ export function SubscriptionBrandGuide({
       <ul className={styles.filmPersonas} aria-label={c.filmPersonasLabel}>
         {PERSONA_STRIP.map((persona) => {
           const tier = subscriptionTiers.find((item) => item.id === persona.id)!;
-          const selected = active === persona.id;
+          const selected = focusedPersona === persona.id;
           return (
             <li key={persona.id}>
               <button
