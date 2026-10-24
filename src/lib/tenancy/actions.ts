@@ -203,9 +203,6 @@ export async function signUpWithEmail(input: {
         ? input.requestNonce
         : null;
     if (!requestNonce) return { ok: false, code: "UNAVAILABLE", diagnostic: trace.finish("UNAVAILABLE") };
-    const bundle = createProviderAuthClient();
-    if (!bundle) return { ok: false, code: "UNAVAILABLE", diagnostic: trace.finish("UNAVAILABLE") };
-    const supabase = bundle.client;
     const { cookies } = await import("next/headers");
     const cookieStore = await cookies();
     const writer = {
@@ -230,6 +227,36 @@ export async function signUpWithEmail(input: {
     if (!claim.ok || claim.claimed !== true) {
       return { ok: false, code: "UNAVAILABLE", diagnostic: trace.finish("UNAVAILABLE") };
     }
+    const { commitIntentCookie } = await import("@/lib/auth/broker/cookies");
+    const { encryptSecret } = await import("@/lib/auth/broker/crypto");
+    const { createAdminClient } = await import("@/lib/supabase/admin");
+    const { classifyProviderAuthFailure, actionCodeForProviderFailure } = await import(
+      "@/lib/auth/provider-transport"
+    );
+    const admin = createAdminClient();
+    if (!admin) return { ok: false, code: "UNAVAILABLE", diagnostic: trace.finish("UNAVAILABLE") };
+    const bundle = createProviderAuthClient({
+      persistPkceVerifier: async (verifier) => {
+        const encrypted = encryptSecret(verifier)?.toString("base64");
+        if (!encrypted) throw new Error("SIGNUP_VERIFIER_ENCRYPTION_UNAVAILABLE");
+        const { data: rows, error: pkceError } = await admin
+          .from("vel_broker_auth_intents" as never)
+          .update({ pkce_verifier_enc: encrypted, updated_at: new Date().toISOString() } as never)
+          .eq("id", intent.id as never)
+          .eq("status", "reserved" as never)
+          .is("pkce_verifier_enc", null)
+          .select("id");
+        if (pkceError || !Array.isArray(rows) || rows.length !== 1) {
+          throw new Error("SIGNUP_VERIFIER_PERSIST_UNAVAILABLE");
+        }
+        commitIntentCookie(writer, intent.stateNonce, 600);
+      },
+    });
+    if (!bundle) return { ok: false, code: "UNAVAILABLE", diagnostic: trace.finish("UNAVAILABLE") };
+    const supabase = bundle.client;
+    const redirectBase = authCallbackUrl(safeInternalPath(input.next, "/setup"));
+    const emailRedirectTo =
+      `${redirectBase}${redirectBase.includes("?") ? "&" : "?"}vel_intent=${encodeURIComponent(intent.stateNonce)}`;
     let providerSession: import("@supabase/supabase-js").Session | null = null;
     try {
     trace.stage("provider");
@@ -238,13 +265,16 @@ export async function signUpWithEmail(input: {
       password,
       options: {
         data: { full_name: name },
-        emailRedirectTo: authCallbackUrl(safeInternalPath(input.next,"/setup")),
+        emailRedirectTo,
       },
     });
     if (data.session) providerSession = data.session;
     if (error && error.code !== "user_already_exists" && error.code !== "email_exists") {
-      return { ok: false, code: "AUTH_ERROR", diagnostic: trace.finish("AUTH_ERROR") };
+      const code = actionCodeForProviderFailure(classifyProviderAuthFailure(error));
+      return { ok: false, code, diagnostic: trace.finish(code) };
     }
+    // Bound confirm-link recovery in the originating browser (OTP remains primary).
+    commitIntentCookie(writer, intent.stateNonce, 600);
     // Existing-user responses may be obfuscated. Only an actual matching,
     // confirmed session permits a client-scoped profile write.
     const userConfirmed = Boolean(data.user?.email_confirmed_at);
@@ -571,7 +601,19 @@ export async function verifyEmailCode(input: {
     }
     trace.stage("provider");
     const { data, error } = await bundle.client.auth.verifyOtp({ email, token, type: "email" });
-    if (error) return { ok: false, code: "AUTH_ERROR", message: emailVerificationError(error), diagnostic: trace.finish("AUTH_ERROR") };
+    if (error) {
+      const { classifyProviderAuthFailure, actionCodeForProviderFailure } = await import(
+        "@/lib/auth/provider-transport"
+      );
+      const kind = classifyProviderAuthFailure(error);
+      const code = actionCodeForProviderFailure(kind);
+      return {
+        ok: false,
+        code,
+        message: kind === "unknown_transport" ? "verification_unavailable" : emailVerificationError(error),
+        diagnostic: trace.finish(code),
+      };
+    }
     const user = data.user;
     if (!user?.email_confirmed_at || user.email?.toLowerCase() !== email
       || !data.session || data.session.user.id !== user.id) {

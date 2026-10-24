@@ -122,11 +122,15 @@ function locksAvailable(): boolean {
 }
 
 /** Preserve one pending gesture across uncertain transport, scoped to Auth purpose. */
-export function takeAuthGestureNonce(purpose = "auth"): string {
+export function takeAuthGestureNonce(purpose = "auth", options?: { fresh?: boolean }): string {
   try {
-    const prior = JSON.parse(sessionStorage.getItem(GESTURE_NONCE_KEY) ?? "null");
-    if (prior?.purpose === purpose && typeof prior.nonce === "string" && prior.nonce.length >= 16
-      && Number.isFinite(prior.createdAt) && Date.now() >= prior.createdAt && Date.now()-prior.createdAt < 600000) return prior.nonce;
+    if (!options?.fresh) {
+      const prior = JSON.parse(sessionStorage.getItem(GESTURE_NONCE_KEY) ?? "null");
+      if (prior?.purpose === purpose && typeof prior.nonce === "string" && prior.nonce.length >= 16
+        && Number.isFinite(prior.createdAt) && Date.now() >= prior.createdAt && Date.now()-prior.createdAt < 600000) {
+        return prior.nonce;
+      }
+    }
   } catch { /* Storage is optional; server still enforces nonce ownership. */ }
   const bytes = new Uint8Array(16);
   const nonce = typeof crypto.randomUUID === "function" ? crypto.randomUUID() : (crypto.getRandomValues(bytes),bytesToB64url(bytes));

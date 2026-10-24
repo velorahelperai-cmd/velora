@@ -375,14 +375,34 @@ function GoogleAuthButton({
   );
 }
 
-function useGoogleAuth(setNotice: (v: string | null) => void, next?: string | null) {
+function useAuthEntryLock() {
+  const locked = useRef(false);
+  const [busy, setBusy] = useState(false);
+  const run = useCallback(async (fn: () => void | Promise<void>) => {
+    if (locked.current) return;
+    locked.current = true;
+    setBusy(true);
+    try {
+      await fn();
+    } finally {
+      locked.current = false;
+      setBusy(false);
+    }
+  }, []);
+  return { busy, run, locked };
+}
+
+function useGoogleAuth(
+  setNotice: (v: string | null) => void,
+  next: string | null | undefined,
+  entryLock: { busy: boolean; run: (fn: () => void | Promise<void>) => Promise<void> },
+) {
   const copy = useAppCopy();
-  const { busy, run } = useAction();
   return {
-    busy,
+    busy: entryLock.busy,
     onGoogle: () => {
       setNotice(null);
-      void run(async () => {
+      void entryLock.run(async () => {
         try {
           const destination = next != null ? safeInternalPath(next, "/setup") : "/setup";
           await startOAuth("google", destination);
@@ -409,7 +429,8 @@ export function SignupPage() {
   const router = useRouter();
   const params = useSearchParams();
   const prefillEmail = (params.get("email") || "").trim().toLowerCase();
-  const { busy, run } = useAction();
+  const entryLock = useAuthEntryLock();
+  const { busy, run } = entryLock;
   const [redirecting, setRedirecting] = useState(false);
   const navigate = useCallback((path: string) => {
     // Read the newly admitted Auth cookie through a fresh protected document.
@@ -423,7 +444,7 @@ export function SignupPage() {
   const [altNotice, setAltNotice] = useState<string | null>(null);
   const returnTo = safeInternalPath(params.get("next"), "");
   useAuthenticatedAuthRedirect(returnTo,busy || redirecting,navigate);
-  const google = useGoogleAuth(setAltNotice, returnTo || null);
+  const google = useGoogleAuth(setAltNotice, returnTo || null, entryLock);
   const dirty = Boolean(form.name || form.email || form.password || form.confirm);
   useUnsavedWarning(dirty && !busy && !redirecting);
   const nameError = useErrorText(errors.name);
@@ -521,7 +542,8 @@ export function LoginPage() {
   const copy = useAppCopy();
   const params = useSearchParams();
   const returnTo = params.get("next");
-  const { busy, run } = useAction();
+  const entryLock = useAuthEntryLock();
+  const { busy, run } = entryLock;
   const [redirecting, setRedirecting] = useState(false);
   const navigate = useCallback((path:string) => {
     // A new Auth cookie needs a fresh protected document, without competing
@@ -541,9 +563,19 @@ export function LoginPage() {
   });
   const [diagnostic,setDiagnostic]=useState<unknown>(null);
   const [altNotice, setAltNotice] = useState<string | null>(null);
-  const google = useGoogleAuth(setAltNotice, returnTo);
+  const google = useGoogleAuth(setAltNotice, returnTo, entryLock);
   const emailError = useErrorText(errors.email);
   const passwordError = useErrorText(errors.password);
+
+  useEffect(() => {
+    const err = params.get("error");
+    // Final OAuth outcomes must not reuse the gesture key for a new intentional attempt.
+    if (err !== "oauth_cancelled" && err !== "auth_callback" && err !== "verification_browser") return;
+    void import("@/lib/auth/browser-continuity").then(({ peekAuthGestureNonce, clearAuthGestureNonce }) => {
+      const nonce = peekAuthGestureNonce();
+      if (nonce) clearAuthGestureNonce(nonce);
+    });
+  }, [params]);
 
   function submitEmail(e: React.FormEvent) {
     e.preventDefault();
@@ -688,11 +720,14 @@ export function VerifyEmailPage() {
       setError(copy.auth.verificationCodeFormat);
       return;
     }
+    const journeyEmail = registeredEmail;
+    const journeyNext = pendingReturn;
     void run(async () => {
       try {
         const { ensureBrowserContinuity, clearAuthGestureNonce } = await import("@/lib/auth/browser-continuity");
         const continuity = await ensureBrowserContinuity("verify_email");
         if (!continuity.ok) {
+          if (registeredEmail !== journeyEmail) return;
           setError(
             continuity.code === "CONTINUITY_RECOVERY_REQUIRED"
               ? copy.errors.continuityRecovery
@@ -701,14 +736,16 @@ export function VerifyEmailPage() {
           return;
         }
         const result = await verifyEmailCode({
-          email: registeredEmail,
+          email: journeyEmail,
           code: normalized,
-          next: pendingReturn,
+          next: journeyNext,
           requestNonce: continuity.requestNonce,
         });
         if (result.ok || result.code === "INVALID_INPUT" || result.code === "AUTH_ERROR") {
           clearAuthGestureNonce(continuity.requestNonce);
         }
+        // Late response after email/journey change or logout must not mutate the active trip.
+        if (registeredEmail !== journeyEmail || pendingReturn !== journeyNext || verified) return;
         setDiagnostic(result.diagnostic);
         if (!result.ok) {
           setError(result.code === "INVALID_INPUT" ? copy.auth.verificationCodeFormat : verificationMessage(result.message));
@@ -720,9 +757,11 @@ export function VerifyEmailPage() {
         } catch {
           /* Verification is already confirmed. */
         }
+        if (registeredEmail !== journeyEmail || verified) return;
         setSuccessNext(result.data.next);
         setVerified(true);
       } catch {
+        if (registeredEmail !== journeyEmail) return;
         setError(copy.auth.verificationUnavailable);
       }
     });

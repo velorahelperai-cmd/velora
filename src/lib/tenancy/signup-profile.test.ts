@@ -2,7 +2,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 
 const NONCE = "synthetic-request-nonce";
-const INTENT = { id: "synthetic-signup-intent", browserLineageId: "synthetic-lineage" };
+const INTENT = {
+  id: "synthetic-signup-intent",
+  stateNonce: "synthetic-state-nonce",
+  browserLineageId: "synthetic-lineage",
+};
 const uid = "synthetic-user";
 
 const mocks = vi.hoisted(() => ({
@@ -20,6 +24,8 @@ const mocks = vi.hoisted(() => ({
   member: vi.fn(),
   from: vi.fn(),
   commit: vi.fn(),
+  intentCookie: vi.fn(),
+  adminFrom: vi.fn(),
 }));
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -51,6 +57,11 @@ vi.mock("@/lib/auth/broker/registry", () => ({
 vi.mock("@/lib/auth/broker/provider-session", () => ({
   signOutProviderSessionAfterAdmitFailure: mocks.cleanup,
 }));
+vi.mock("@/lib/auth/broker/cookies", () => ({ commitIntentCookie: mocks.intentCookie }));
+vi.mock("@/lib/auth/broker/crypto", () => ({ encryptSecret: () => Buffer.from("enc") }));
+vi.mock("@/lib/supabase/admin", () => ({
+  createAdminClient: () => ({ from: mocks.adminFrom }),
+}));
 vi.mock("@/lib/tenancy/access", async (original) => ({
   ...await original<typeof import("./access")>(),
   getCompanyAccess: mocks.access,
@@ -69,7 +80,10 @@ const user = { id: uid, email: input.email, email_confirmed_at: null as string |
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.createProvider.mockReturnValue({ client: { auth: { signUp: mocks.signup } } });
+  mocks.createProvider.mockImplementation((options?: { persistPkceVerifier?: (v: string) => Promise<void> }) => ({
+    client: { auth: { signUp: mocks.signup } },
+    options,
+  }));
   mocks.signup.mockResolvedValue({ data: { user, session: null }, error: null });
   mocks.upsert.mockResolvedValue({ error: null });
   mocks.prepare.mockResolvedValue({
@@ -81,6 +95,13 @@ beforeEach(() => {
   mocks.claim.mockResolvedValue({ ok: true, claimed: true });
   mocks.admit.mockResolvedValue({ ok: true });
   mocks.cleanup.mockResolvedValue({ outcome: "confirmed", durable: true });
+  const pkceChain = {
+    update: () => pkceChain,
+    eq: () => pkceChain,
+    is: () => pkceChain,
+    select: async () => ({ data: [{ id: INTENT.id }], error: null }),
+  };
+  mocks.adminFrom.mockReturnValue(pkceChain);
   const query = {
     select: () => query,
     eq: () => query,
@@ -117,6 +138,23 @@ describe("signup profile recovery without recreating Auth", () => {
     expect(mocks.reserve).toHaveBeenCalledWith(
       expect.objectContaining({ purpose: "signup_email", requestNonce: NONCE }),
     );
+    expect(mocks.admit).not.toHaveBeenCalled();
+    expect(mocks.signup).toHaveBeenCalledWith(
+      expect.objectContaining({
+        options: expect.objectContaining({
+          emailRedirectTo: expect.stringContaining(`vel_intent=${encodeURIComponent(INTENT.stateNonce)}`),
+        }),
+      }),
+    );
+    expect(mocks.intentCookie).toHaveBeenCalledWith(expect.anything(), INTENT.stateNonce, 600);
+  });
+
+  it("keeps transport failures UNKNOWN without treating them as credential rejects", async () => {
+    mocks.signup.mockResolvedValue({
+      data: { user: null, session: null },
+      error: { status: 503, code: "service_unavailable", message: "private upstream" },
+    });
+    expect(await signUpWithEmail(input)).toMatchObject({ ok: false, code: "UNAVAILABLE" });
     expect(mocks.admit).not.toHaveBeenCalled();
   });
 

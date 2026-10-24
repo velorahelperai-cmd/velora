@@ -161,13 +161,26 @@ export function AuthOtpModal({
     return () => document.removeEventListener("keydown", onKey);
   }, [open, onClose, phase, verified]);
 
+  const onSuccessAnimDoneRef = useRef(onSuccessAnimDone);
+  const successStartedRef = useRef(false);
+
   useEffect(() => {
-    if (!verified) return;
+    onSuccessAnimDoneRef.current = onSuccessAnimDone;
+  }, [onSuccessAnimDone]);
+
+  useEffect(() => {
+    if (!verified) {
+      successStartedRef.current = false;
+      return;
+    }
+    // Cooldown ticks / parent re-renders must not restart the success morph.
+    if (successStartedRef.current) return;
+    successStartedRef.current = true;
     clearTimers();
     const start = window.setTimeout(() => {
       if (prefersReducedMotion()) {
         setPhase("done");
-        timersRef.current.push(window.setTimeout(() => onSuccessAnimDone(), 120));
+        timersRef.current.push(window.setTimeout(() => onSuccessAnimDoneRef.current(), 120));
         return;
       }
       setPhase("diamond");
@@ -176,13 +189,13 @@ export function AuthOtpModal({
       timersRef.current.push(
         window.setTimeout(() => {
           setPhase("done");
-          onSuccessAnimDone();
+          onSuccessAnimDoneRef.current();
         }, 2400),
       );
     }, 0);
     timersRef.current.push(start);
     return () => clearTimers();
-  }, [verified, clearTimers, onSuccessAnimDone]);
+  }, [verified, clearTimers]);
 
   useEffect(() => () => clearTimers(), [clearTimers]);
 

@@ -18,7 +18,16 @@ describe("WhatsApp connection diagnostics",()=>{
   const entries=logs.mock.calls.map(call=>JSON.parse(String(call[0])));
   expect(new Set(entries.map(row=>row.reference))).toEqual(new Set([result.diagnostic!.reference]));
   expect(JSON.stringify(entries)).not.toMatch(/private-token|private-code/);
-  entries.forEach(({durationMs,...detail})=>{expect(validDiagnostic(detail)).toBe(true);expect(durationMs).toBeGreaterThanOrEqual(0);});
+  // Console rows follow LOG-001; only the four DiagnosticDetail fields feed validDiagnostic.
+  entries.forEach((row)=>{
+    expect(row.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T.*Z$/);
+    expect(["info","warn","error"]).toContain(row.level);
+    expect(typeof row.service).toBe("string");
+    expect(row.request_id).toBe(row.reference);
+    expect(row.event).toMatch(/\./);
+    expect(row.duration_ms).toBeGreaterThanOrEqual(0);
+    expect(validDiagnostic({reference:row.reference,operation:row.operation,stage:row.stage,code:row.code})).toBe(true);
+  });
  });
  it("preserves successful results and exception semantics even when logging fails",async()=>{
   logs.mockImplementation(()=>{throw Error("logger unavailable");});

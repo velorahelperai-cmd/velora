@@ -7,16 +7,27 @@ const state = vi.hoisted(() => ({
   replace: vi.fn(), routerRefresh: vi.fn(), accountRefresh: vi.fn(), navigate: vi.fn(),
   save: vi.fn(), clear: vi.fn(), continuity: vi.fn(), clearNonce: vi.fn(),
 }));
-vi.mock("react", async () => ({ ...await vi.importActual<typeof import("react")>("react"),
-  useState(initial: unknown) {
-    const index = state.cursor++;
-    if (!(index in state.slots)) state.slots[index] = initial && typeof initial === "object" && "confirm" in initial
-      ? { name: "Synthetic signup test", email: "signup@example.test", password: "synthetic-fixture-only", confirm: "synthetic-fixture-only" }
-      : initial;
-    return [state.slots[index], (value: unknown) => { state.slots[index] = value; }];
-  },
-  useEffect: vi.fn(), useCallback: (fn: unknown) => fn,
-}));
+vi.mock("react", async () => {
+  const actual = await vi.importActual<typeof import("react")>("react");
+  return {
+    ...actual,
+    useState(initial: unknown) {
+      const index = state.cursor++;
+      if (!(index in state.slots)) {
+        state.slots[index] = initial && typeof initial === "object" && "confirm" in initial
+          ? { name: "Synthetic signup test", email: "signup@example.test", password: "synthetic-fixture-only", confirm: "synthetic-fixture-only" }
+          : typeof initial === "function" ? (initial as () => unknown)() : initial;
+      }
+      return [state.slots[index], (value: unknown) => {
+        state.slots[index] = typeof value === "function" ? (value as (prev: unknown) => unknown)(state.slots[index]) : value;
+      }];
+    },
+    useEffect: vi.fn(),
+    useCallback: (fn: unknown) => fn,
+    useRef: (initial: unknown) => ({ current: initial }),
+  };
+});
+
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: state.replace, refresh: state.routerRefresh }), useSearchParams: () => new URLSearchParams() }));
 vi.mock("@/lib/demo-state", () => ({ useDemo: () => ({ locale: "en", state: {} }) }));
 vi.mock("./account-chrome", () => ({ AccountMenu: "aside", useOptionalAccountSession: () => ({ status: "guest", refresh: state.accountRefresh }) }));

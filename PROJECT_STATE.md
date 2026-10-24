@@ -1,9 +1,8 @@
-# Current Session Index - PF01-C01 signup fix delivery
+# Current Session Index - PF01-C01 defect fixes (delivery candidate)
 
-- Scope: Auth-only C01 fix under writer `bbbf1b17` / PF01-C01: unconfirmed signup session → verification (not AUTH_ERROR); remove entry AccountMenu CTAs + plan-interest notice + Supabase password hint. Packages WIP parked outside tree for this push.
-- Candidate: Auth files + this index only. Delivery SHA filled after push.
-- Evidence (pre-push): signup-profile + auth-entry-chrome + signup-navigation PASS locally before gates.
-- Next after publish: owner retests email signup → verify modal; Google still separate. Packages WIP restore after push.
+- Scope: C01 defects 1–7 under writer `bbbf1b17`: email confirm link+PKCE binding, UNKNOWN transport, Google PKCE row proof + gesture clear on final OAuth errors, shared email/Google lock, verify late fence, OTP success arm-once, LOG-001 diagnostic fields. Packages WIP parked for push.
+- Evidence (pre-push candidate): focused Vitest transport/diagnostics/signup-profile/email-code/otp/login/signup PASS; typecheck PASS. SHA filled after push.
+- Next: owner retests live email+Google after CI/Vercel same SHA.
 ## Previous session index — PF01-C01 UI delivery published (historical)
 
 <details>

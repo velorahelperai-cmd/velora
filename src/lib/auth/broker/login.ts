@@ -227,12 +227,17 @@ export async function brokerStartOAuth(input: {
   const { encryptSecret } = await import("./crypto");
   const pkceEnc = encryptSecret(verifier)?.toString("base64");
   if (!pkceEnc) return { ok: false, code: "UNAVAILABLE" };
-  const { error: pkceError } = await admin
+  const { data: pkceRows, error: pkceError } = await admin
     .from("vel_broker_auth_intents" as never)
     .update({ pkce_verifier_enc: pkceEnc, updated_at: new Date().toISOString() } as never)
     .eq("id", intent.id as never)
-    .eq("status", "reserved" as never);
-  if (pkceError) return { ok: false, code: "UNAVAILABLE" };
+    .eq("status", "reserved" as never)
+    .is("pkce_verifier_enc", null)
+    .select("id");
+  // Zero-row "success" must not expose a provider URL without a durable verifier.
+  if (pkceError || !Array.isArray(pkceRows) || pkceRows.length !== 1) {
+    return { ok: false, code: "UNAVAILABLE" };
+  }
 
   commitIntentCookie(input.writer, intent.stateNonce, 600);
   return { ok: true, url: data.url };
