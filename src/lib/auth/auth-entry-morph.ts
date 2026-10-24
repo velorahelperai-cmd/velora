@@ -3,20 +3,26 @@ export const AUTH_ENTRY_MORPH_KEY = "velora.auth.entry.morph";
 
 export const AUTH_ENTRY_MORPH_MS = 580;
 
-export function markAuthEntryMorph(): void {
+type AuthEntryMorphGeometry = { height: number };
+
+export function markAuthEntryMorph(geometry?: AuthEntryMorphGeometry): void {
   try {
-    sessionStorage.setItem(AUTH_ENTRY_MORPH_KEY, "1");
+    sessionStorage.setItem(AUTH_ENTRY_MORPH_KEY, geometry ? JSON.stringify(geometry) : "1");
   } catch {
     /* private mode / blocked storage — morph becomes instant swap */
   }
 }
 
 /** Returns true once when the previous in-app switch requested a morph reveal. */
-export function consumeAuthEntryMorph(): boolean {
+export function consumeAuthEntryMorph(): boolean | AuthEntryMorphGeometry {
   try {
     const value = sessionStorage.getItem(AUTH_ENTRY_MORPH_KEY);
     if (value) sessionStorage.removeItem(AUTH_ENTRY_MORPH_KEY);
-    return value === "1";
+    if (value === "1") return true;
+    if (!value) return false;
+    const geometry = JSON.parse(value);
+    return geometry && Number.isFinite(geometry.height) && geometry.height > 0 && geometry.height < 10000
+      ? { height: geometry.height } : false;
   } catch {
     return false;
   }

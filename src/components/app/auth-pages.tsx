@@ -53,11 +53,13 @@ function AuthEntryMorphLink({
   return (
     <Link
       href={href}
+      prefetch={true}
       className={className}
       onClick={(event) => {
         if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
         event.preventDefault();
-        markAuthEntryMorph();
+        const stage = event.currentTarget.closest("[data-auth-entry-stage]");
+        markAuthEntryMorph(stage ? { height: stage.getBoundingClientRect().height } : undefined);
         if (prefersReducedMotion()) {
           router.push(href);
           return;
@@ -153,56 +155,104 @@ export function AuthShell({
   const [collapsed, setCollapsed] = useState(false);
   const [contentVisible, setContentVisible] = useState(true);
   const morphTimer = useRef<number | null>(null);
+  const morphingOut = useRef(false);
+  const navigationStarted = useRef(false);
+  const incomingFrames = useRef<number[]>([]);
+  const [incoming, setIncoming] = useState(false);
+  const incomingMorph = useRef<ReturnType<typeof consumeAuthEntryMorph> | undefined>(undefined);
+  const entryBody = useRef<HTMLDivElement | null>(null);
+  const [expandedHeight, setExpandedHeight] = useState<number>();
+  const [sourceStageHeight, setSourceStageHeight] = useState<number>();
+  const signupTall = /إنشاء|Create|Sign up|حساب/i.test(title);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (!entry || !entryBody.current) return;
+    const body = entryBody.current;
+    const measure = () => setExpandedHeight(Math.max(signupTall ? 544 : 448, Math.ceil(body.scrollHeight + 2)));
+    measure();
+    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
+    observer?.observe(body);
+    return () => observer?.disconnect();
+  }, [entry, signupTall]);
+
+  useLayoutEffect(() => {
     if (!entry || entryBackdrop) return;
-    // Defer morph decisions to a timer so setState is not sync inside the effect body.
-    const boot = window.setTimeout(() => {
-      const reduce = prefersReducedMotion();
-      const shouldMorphIn = consumeAuthEntryMorph();
-      if (!shouldMorphIn || reduce) {
+    const shouldMorphIn = incomingMorph.current ?? consumeAuthEntryMorph();
+    incomingMorph.current = shouldMorphIn;
+    if (!shouldMorphIn || prefersReducedMotion()) return;
+    // Restore the incoming geometry before paint; waiting for an effect would flash the full card.
+    if (typeof shouldMorphIn === "object") setSourceStageHeight(shouldMorphIn.height);
+    setIncoming(true);
+    // Set the incoming pose before paint; give CSS a frame before revealing it.
+    setCollapsed(true);
+    setContentVisible(false);
+    let revealFrame = 0;
+    const frame = window.requestAnimationFrame(() => {
+      revealFrame = window.requestAnimationFrame(() => {
         setCollapsed(false);
-        setContentVisible(true);
-        return;
-      }
-      setCollapsed(true);
-      setContentVisible(false);
-      morphTimer.current = window.setTimeout(() => {
-        setCollapsed(false);
-        window.setTimeout(() => setContentVisible(true), 40);
-      }, 40);
-    }, 0);
+        morphTimer.current = window.setTimeout(() => {
+          incomingMorph.current = false;
+          setContentVisible(true);
+          setIncoming(false);
+        }, AUTH_ENTRY_MORPH_MS - 160);
+        incomingFrames.current.push(revealFrame);
+      });
+    });
+    incomingFrames.current.push(frame);
     return () => {
-      window.clearTimeout(boot);
+      window.cancelAnimationFrame(frame);
+      window.cancelAnimationFrame(revealFrame);
       if (morphTimer.current) window.clearTimeout(morphTimer.current);
     };
   }, [entry, entryBackdrop]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!entry || entryBackdrop) return;
+    function clearMotion() {
+      if (morphTimer.current) window.clearTimeout(morphTimer.current);
+      for (const frame of incomingFrames.current) window.cancelAnimationFrame(frame);
+      incomingFrames.current = [];
+    }
+    function restoreEntry() {
+      clearMotion();
+      consumeAuthEntryMorph();
+      incomingMorph.current = false;
+      morphingOut.current = false;
+      navigationStarted.current = false;
+      setCollapsed(false);
+      setContentVisible(true);
+      setIncoming(false);
+    }
+    // Next can restore this route's state; never restore its outgoing lock pose.
+    if (morphingOut.current) restoreEntry();
     function onMorphOut(event: Event) {
       const href = (event as CustomEvent<{ href?: string }>).detail?.href;
-      if (!href) return;
-      if (prefersReducedMotion()) {
-        router.push(href);
-        return;
-      }
+      if (!href || morphingOut.current) return;
+      morphingOut.current = true;
+      clearMotion();
+      if (prefersReducedMotion()) { router.push(href); return; }
       setContentVisible(false);
       setCollapsed(true);
-      if (morphTimer.current) window.clearTimeout(morphTimer.current);
       morphTimer.current = window.setTimeout(() => {
-        router.push(href);
+        navigationStarted.current = true;
+        router.push(href, { scroll: false });
       }, AUTH_ENTRY_MORPH_MS);
     }
     window.addEventListener(AUTH_MORPH_OUT_EVENT, onMorphOut);
+    window.addEventListener("popstate", restoreEntry);
+    window.addEventListener("pageshow", restoreEntry);
+    window.addEventListener("pagehide", restoreEntry);
     return () => {
       window.removeEventListener(AUTH_MORPH_OUT_EVENT, onMorphOut);
-      if (morphTimer.current) window.clearTimeout(morphTimer.current);
+      window.removeEventListener("popstate", restoreEntry);
+      window.removeEventListener("pageshow", restoreEntry);
+      window.removeEventListener("pagehide", restoreEntry);
+      clearMotion();
+      if (morphingOut.current && !navigationStarted.current) consumeAuthEntryMorph();
     };
   }, [entry, entryBackdrop, router]);
 
   if (entry) {
-    const signupTall = typeof title === "string" && /إنشاء|Create|Sign up|حساب/i.test(title);
     return (
       <main
         className="app-shell relative min-h-svh overflow-x-hidden bg-transparent px-4 py-6 pb-[max(6rem,env(safe-area-inset-bottom))]"
@@ -218,9 +268,9 @@ export function AuthShell({
               transform ${AUTH_ENTRY_MORPH_MS}ms cubic-bezier(0.22, 1, 0.36, 1),
               border-radius ${AUTH_ENTRY_MORPH_MS}ms cubic-bezier(0.22, 1, 0.36, 1);
           }
-          .auth-entry-card-body { transition: opacity 0.28s ease; }
+          .auth-entry-card-body { transition: opacity 0.28s ease, transform 580ms cubic-bezier(0.22, 1, 0.36, 1); }
           @media (prefers-reduced-motion: reduce) {
-            .auth-entry-card, .auth-entry-card-body { transition: none !important; }
+            .auth-entry-card, .auth-entry-card-body, [data-auth-entry-stage] { transition: none !important; }
           }
         `}</style>
         <div className={`relative z-10 mx-auto flex max-w-[1100px] items-center justify-between gap-2 ${entryBackdrop ? "pointer-events-none select-none" : ""}`}>
@@ -235,7 +285,11 @@ export function AuthShell({
         </div>
         <div className="relative z-10 mx-auto mt-8 flex max-w-[1100px] flex-col items-center lg:mt-12">
           <p className="mb-4 hidden text-center text-sm text-[var(--service-accent)] sm:block">{tagline}</p>
-          <div className="relative z-10 flex w-full max-w-[440px] items-center justify-center min-h-[min(560px,70svh)]">
+          <div
+            className="relative z-10 flex w-full max-w-[440px] items-center justify-center min-h-[min(560px,70svh)]"
+            data-auth-entry-stage="true"
+            style={{ height: collapsed && sourceStageHeight ? sourceStageHeight : expandedHeight, transition: incoming && collapsed ? "none" : "height 580ms cubic-bezier(0.22, 1, 0.36, 1)" }}
+          >
             <div
               className={`auth-entry-card relative flex flex-col items-center justify-center overflow-hidden border border-[#DCE4EB] bg-[#FFFFFF]/95 shadow-[0_30px_80px_rgba(23,45,67,0.12),inset_0_1px_0_rgba(255,255,255,0.85)] backdrop-blur-2xl ${
                 collapsed ? "rounded-[34px]" : "rounded-[38px]"
@@ -243,9 +297,10 @@ export function AuthShell({
               data-auth-entry-card="true"
               data-auth-entry-collapsed={collapsed ? "true" : "false"}
               style={{
+                transition: incoming && collapsed ? "none" : undefined,
                 width: collapsed ? "170px" : "min(100%, 385px)",
-                height: collapsed ? "170px" : undefined,
-                minHeight: collapsed ? undefined : signupTall ? "34rem" : "28rem",
+                height: collapsed ? "170px" : expandedHeight,
+                minHeight: collapsed || expandedHeight ? undefined : signupTall ? "34rem" : "28rem",
                 maxWidth: "385px",
                 transform: collapsed ? "rotate(-45deg)" : "rotate(0deg)",
               }}
@@ -267,9 +322,12 @@ export function AuthShell({
                 aria-hidden="true"
               />
               <div
-                className={`auth-entry-card-body flex h-full w-full flex-col justify-between px-6 py-8 sm:px-7 sm:py-9 ${collapsed ? "opacity-0" : contentVisible ? "opacity-100" : "opacity-0"}`}
+                ref={entryBody}
+                className={`auth-entry-card-body flex shrink-0 flex-col justify-between px-6 py-8 sm:px-7 sm:py-9 ${collapsed ? "opacity-0" : contentVisible ? "opacity-100" : "opacity-0"}`}
                 style={{
+                  transition: incoming && collapsed ? "none" : undefined,
                   transform: collapsed ? "rotate(45deg)" : "none",
+                  width: "min(calc(100vw - 34px), 383px)",
                 }}
                 {...(entryBackdrop || collapsed ? ({ inert: true } as { inert: boolean }) : {})}
               >
@@ -679,6 +737,7 @@ export function VerifyEmailPage() {
   const [verified, setVerified] = useState(false);
   const [successNext, setSuccessNext] = useState<string | null>(null);
   const [retrySessionOnly, setRetrySessionOnly] = useState(false);
+  const [verificationRequest, setVerificationRequest] = useState<{ email: string; next: string; query: string } | null>(null);
   const { busy, run } = useAction();
   const journey = useRef({ mounted: false, epoch: 0 });
   const activeCapture = useRef<VerificationCapture | null>(null);
@@ -811,6 +870,7 @@ export function VerifyEmailPage() {
     const journeyEmail = registeredEmail;
     const journeyNext = pendingReturn;
     void run(async () => {
+      setVerificationRequest({ email: journeyEmail, next: journeyNext, query: emailFromQuery });
       try {
         const { ensureBrowserContinuity, clearAuthGestureNonce } = await import("@/lib/auth/browser-continuity");
         const continuity = await ensureBrowserContinuity("verify_email");
@@ -845,6 +905,9 @@ export function VerifyEmailPage() {
       } catch {
         if (!isCurrent(capture)) return;
         setError(copy.auth.verificationUnavailable);
+      } finally {
+        // Presentation only: run() serializes this operation; server result fences above stay authoritative.
+        if (journey.current.mounted) setVerificationRequest(null);
       }
     });
   }
@@ -853,20 +916,10 @@ export function VerifyEmailPage() {
     <>
       <AuthShell
         entry
-        entryBackdrop
+        entryBackdrop={modalOpen}
         title={copy.auth.verifyTitle}
         body={fill(copy.auth.verifyBody, { email: registeredEmail || "…" })}
-        footer={
-          !modalOpen ? (
-            <button
-              type="button"
-              className="font-semibold text-[#087E8B] underline"
-              onClick={() => setModalOpen(true)}
-            >
-              {copy.auth.verifyCode}
-            </button>
-          ) : null
-        }
+
       >
         <p className="text-center text-xs leading-5 text-[#536579]">{copy.auth.verifyRealBody}</p>
         {!modalOpen ? (
@@ -874,9 +927,9 @@ export function VerifyEmailPage() {
             <Button type="button" variant="entry" onClick={() => setModalOpen(true)}>
               {copy.auth.verifyCode}
             </Button>
-            <LinkButton href={authFlowHref("/login", pendingReturn)} variant="secondary">
+            <Link href={authFlowHref("/login", pendingReturn)} className="inline-flex min-h-11 items-center justify-center rounded-xl border border-[#DCE4EB] bg-white px-4 text-xs font-semibold text-[#172D43] hover:bg-[#F0F4F6] focus-visible:outline-2 focus-visible:outline-[#087E8B]">
               {copy.auth.login}
-            </LinkButton>
+            </Link>
           </div>
         ) : null}
       </AuthShell>
@@ -892,7 +945,8 @@ export function VerifyEmailPage() {
         codeFormat={copy.auth.verificationCodeFormat}
         verifyLabel={retrySessionOnly ? copy.auth.verificationSessionRetry : copy.auth.verifyCode}
         retrySessionOnly={retrySessionOnly}
-        resendLabel={copy.auth.resend}
+        resendPrompt={copy.auth.didntReceiveCode}
+        resendLabel={copy.auth.resendShort}
         resendInLabel={fill(copy.auth.resendIn, { n: cooldown })}
         resentNotice={copy.auth.resent}
         correctEmailLabel={copy.auth.correctEmail}
@@ -906,6 +960,11 @@ export function VerifyEmailPage() {
         resent={resent}
         cooldown={cooldown}
         verified={verified}
+        verifying={busy && verificationRequest?.email === registeredEmail && verificationRequest.next === pendingReturn && verificationRequest.query === emailFromQuery}
+        verifyingLabel={copy.auth.verificationPending}
+        verifiedLabel={copy.auth.verificationSecured}
+        successTitle={copy.auth.verifiedTitle}
+        successBody={copy.auth.verifiedBody}
         onClose={() => {
           if (verified) return;
           setModalOpen(false);

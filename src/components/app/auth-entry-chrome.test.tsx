@@ -6,6 +6,7 @@ vi.mock("react", async () => {
   return {
     ...actual,
     useEffect: vi.fn(),
+    useLayoutEffect: vi.fn(),
     useRef: (initial: unknown) => ({ current: initial }),
     useState: (initial: unknown) => [initial, vi.fn()],
     useCallback: (fn: unknown) => fn,

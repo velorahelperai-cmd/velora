@@ -46,7 +46,7 @@ async function submit(expectSent=true){
 }
 async function accept(){await act(async()=>{resolveVerify(accepted);});}
 async function resend(){
- await render();const button=[...container.querySelectorAll("button")].find(button=>button.textContent==="Send a new confirmation code")!;
+ await render();const button=container.querySelector<HTMLButtonElement>("[data-auth-otp-resend]")!;
  expect(button).toBeTruthy();await act(async()=>{button.dispatchEvent(new MouseEvent("click",{bubbles:true}));});
 }
 describe("mounted verification result ownership",()=>{
@@ -88,7 +88,7 @@ describe("mounted verification result ownership",()=>{
   expect(state.verify).not.toHaveBeenCalled();expect(state.clear).not.toHaveBeenCalled();
  });
  it("admits the matching result and navigates once",async()=>{
-  await submit();await accept();await act(async()=>{vi.advanceTimersByTime(120);});expect(state.replace).toHaveBeenCalledExactlyOnceWith("/setup");
+  await submit();expect(container.querySelector("[data-auth-otp-pending]")).not.toBeNull();expect(container.querySelector("[data-auth-otp-success]")).toBeNull();await accept();await act(async()=>{vi.advanceTimersByTime(120);});expect(state.replace).toHaveBeenCalledExactlyOnceWith("/setup");
  });
  it.each(["new account","same user new session","logout"])("ignores the old result after %s",async scenario=>{
   if(scenario!=="new account")state.snapshot={status:"ready",userId:"user-a",boundaryFingerprint:"aaaaaaaaaaaaaaaa",ready:true};
@@ -122,6 +122,6 @@ describe("mounted verification result ownership",()=>{
   let complete!:(value:{ok:true})=>void;state.resend.mockImplementation(()=>new Promise(resolve=>{complete=resolve;}));
   await resend();state.snapshot={status:"ready",userId:"user-b",boundaryFingerprint:"bbbbbbbbbbbbbbbb",ready:true};
   await render();await act(async()=>{complete({ok:true});});expect(state.clearNonce).not.toHaveBeenCalled();
-  expect([...container.querySelectorAll("button")].find(button=>button.textContent==="Send a new confirmation code")?.disabled).toBe(false);
+  expect(container.querySelector<HTMLButtonElement>("[data-auth-otp-resend]")?.disabled).toBe(false);
  });
 });
