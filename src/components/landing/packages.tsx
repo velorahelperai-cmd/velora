@@ -1,12 +1,11 @@
 "use client";
-import Link from "next/link";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { LandingCopy, PlanId } from "@/lib/landing-copy";
 import { subscriptionCopy, subscriptionTiers } from "@/components/app/subscription-copy";
 import { commercialAmount, commercialPlan, matchingCommercialOffer } from "@/components/app/subscription-commercial-catalog";
 import { catalogOfferState } from "@/components/app/subscription-catalog-state";
-import { choiceFromOffer, formatOmrBaisa, type SubscriptionOffersView, type SubscriptionPersona, type SubscriptionPackage, type SubscriptionTerm } from "@/components/app/subscription-offers-view";
-import { subscriptionIntentFromChoice, subscriptionIntentHref, type SubscriptionDestination, type SubscriptionIntent } from "@/components/app/subscription-navigation";
+import { formatOmrBaisa, type SubscriptionOffersView, type SubscriptionPersona, type SubscriptionPackage, type SubscriptionTerm } from "@/components/app/subscription-offers-view";
+import type { SubscriptionDestination, SubscriptionIntent } from "@/components/app/subscription-navigation";
 import { SubscriptionCompareTable } from "@/components/app/subscription-offer-cards";
 import { packageMedia } from "./approved-assets";
 import { PackagePlayback } from "./package-playback";
@@ -40,7 +39,7 @@ export function Packages({ copy, locale, destination, offersView, selectedPlan, 
   copy: LandingCopy; locale: "ar" | "en"; destination?: SubscriptionDestination; offersView?: SubscriptionOffersView;
   selectedPlan: PlanId | null; onSelect: (plan: PlanId) => void;
 }) {
-  void copy; void selectedPlan;
+  void copy; void selectedPlan; void destination;
   const ar = locale === "ar", c = subscriptionCopy[locale];
   const [term, setTerm] = useState<SubscriptionTerm>("monthly");
   const [tiers, setTiers] = useState<Record<SubscriptionPersona, SubscriptionPackage>>({ level_1: "basic", level_2: "basic", level_3: "basic" });
@@ -65,19 +64,12 @@ export function Packages({ copy, locale, destination, offersView, selectedPlan, 
     return () => { observer.disconnect(); document.removeEventListener("visibilitychange", sync); reduce.removeEventListener("change", sync); window.removeEventListener("velora-character-play", other); player.disconnect(); };
   }, [locale, player]);
   const offers = offersView?.status === "ready" ? offersView.offers : [];
-  const selectedSpec = intent.persona && intent.package ? commercialPlan(intent.persona, intent.package) : null;
-  const selectedOffer = selectedSpec ? matchingCommercialOffer(selectedSpec, term, offers) : undefined;
-  const selectedState = catalogOfferState(selectedOffer, term, offersView?.status);
-  const safeIntent = selectedOffer && selectedState.inspectable ? subscriptionIntentFromChoice(choiceFromOffer(selectedOffer), offersView) : intent;
-  const target = destination ?? { href: "/login?next=%2Fapp%2Fsettings%3Ftab%3Dplan", kind: "login" as const, note: null };
   return <section id="packages" data-scene="8" className={styles.pricing + " scene"} lang={locale} dir={ar ? "rtl" : "ltr"}>
     <div className="background" aria-hidden="true" />
     <div className="hero">
       <h2 data-seq="packages-title">{c.packagesTitle}</h2><p data-seq="packages-lead">{c.oneProduct}</p>
       <div className="global-controls">
         <div className="segment" role="group" aria-label={c.cycle}>{(["monthly", "yearly"] as const).map(value => <button key={value} type="button" aria-pressed={term === value} onClick={() => { setTerm(value); setIntent(previous => ({ term: value, ...(previous.persona && previous.package ? { persona: previous.persona, package: previous.package } : {}) })); }}>{c[value]}{value === "yearly" ? " −20%" : ""}</button>)}</div>
-        <button type="button" className="sound" aria-pressed={!playback.muted} onClick={() => player.mute()}>{ar ? playback.muted ? "تشغيل الصوت" : "كتم الصوت" : playback.muted ? "Enable sound" : "Mute sound"}</button>
-        <button type="button" className="sound" aria-pressed={playback.playing} onClick={() => player.toggle()}>{ar ? playback.playing ? "إيقاف الحركة" : "تشغيل الحركة" : playback.playing ? "Pause motion" : "Play motion"}</button>
       </div>
       {playback.error ? <p className="media-status" role="status">{ar ? "تعذّر تشغيل الفيديو. اضغط على الشخصية للمحاولة مجددًا." : "The video could not play. Select the character to try again."}</p> : null}
     </div>
@@ -88,11 +80,19 @@ export function Packages({ copy, locale, destination, offersView, selectedPlan, 
         const mismatch = (offers.some(item => item.persona === persona.id && item.package === pack && item.term === term) && !offer);
         return <article key={persona.id} ref={node => { cards.current[index] = node; }} className={"persona" + (playback.current === index && playback.playing ? " is-playing" : "")} data-id={id} data-persona={persona.id} aria-label={persona[locale]}>
           <div className="halo" aria-hidden="true" /><div className="contact-shadow" aria-hidden="true" />
-          <video key={locale + id} ref={node => { videos.current[index] = node; }} className="character" width="640" height="960" poster={locale === "en" ? media.enPoster : media.poster} preload="none" muted={playback.muted} playsInline
-            role="button" tabIndex={0} aria-label={(ar ? "تشغيل معاينة " : "Play preview for ") + persona[locale]} aria-pressed={playback.current === index && playback.playing}
-            onClick={() => player.select(index)} onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); player.select(index); } }}
+          <button type="button" className="character" aria-label={(ar ? "تشغيل معاينة " : "Play preview for ") + persona[locale]} aria-pressed={playback.current === index && playback.playing} onClick={() => player.select(index)}>
+            <video key={locale + id} ref={node => { videos.current[index] = node; }} className="character-media" width="640" height="960" poster={locale === "en" ? media.enPoster : media.poster} preload="none" muted={playback.muted} playsInline aria-hidden="true"
             onPlay={event => { player.played(index, event.currentTarget); window.dispatchEvent(new CustomEvent("velora-character-play", { detail: "homepage-packages" })); }}
             onPause={event => player.paused(index, event.currentTarget)} onEnded={event => player.ended(index, event.currentTarget)} onError={event => player.failed(index, event.currentTarget)} />
+          </button>
+          <div className="character-controls">
+            <button type="button" className="mute" aria-label={ar ? playback.muted ? "تشغيل صوت المعاينات" : "كتم صوت المعاينات" : playback.muted ? "Enable preview sound" : "Mute preview sound"} aria-pressed={!playback.muted} onClick={() => player.mute()}>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4z" />{playback.muted ? <path d="m16 9 5 6m0-6-5 6" /> : <path d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14" />}</svg>
+            </button>
+            <button type="button" className="motion" aria-label={ar ? (playback.current === index && playback.playing) ? "إيقاف حركة الشخصية" : "تشغيل حركة الشخصية" : (playback.current === index && playback.playing) ? "Pause character motion" : "Play character motion"} aria-pressed={(playback.current === index && playback.playing)} onClick={() => { if (playback.current === index) player.toggle(); else player.select(index); }}>
+              <svg viewBox="0 0 24 24" aria-hidden="true">{(playback.current === index && playback.playing) ? <path d="M8 5v14M16 5v14" /> : <path d="m8 5 11 7-11 7z" />}</svg>
+            </button>
+          </div>
           <div className="persona-title"><h3>{ar ? ["نورا", "لينا", "دانا"][index] : persona.en}</h3><span className="roman" lang={ar ? "en" : "ar"}>{ar ? persona.en : ["نورا", "لينا", "دانا"][index]}</span>
             <p className="role">{index === 1 ? ar ? "أسلوب مرن للتنمية" : "A flexible approach to growth" : (ar ? ["إجابات واضحة واهتمام بعملائك", "أسلوب مرن للتنمية", "عمليات منظمة ومتابعة واضحة"] : ["Clear answers. Thoughtful customer care.", "A flexible approach to growth", "Organized operations. Clear follow-through."])[index]}</p>
             <div className="preview-sequence"><div className="preview-track" aria-hidden="true">{ids.map((key, dot) => <span key={key} style={{ display: "contents" }}>{dot ? <span className="preview-line" /> : null}<span className={"preview-dot" + (dot === playback.current ? " active" : "")} /></span>)}</div><span className="preview-caption">{ar ? "معاينة ثقافية" : "Cultural preview"}</span></div>
@@ -116,6 +116,5 @@ export function Packages({ copy, locale, destination, offersView, selectedPlan, 
       })}
     </div>
     <div className="catalog-comparison"><details><summary>{c.compare}</summary><SubscriptionCompareTable locale={locale} term={term} offers={offers} catalogStatus={offersView?.status} selectedPersona={intent.persona ?? null} /></details></div>
-    <div className="catalog-next"><p>{selectedSpec ? subscriptionTiers.find(p => p.id === intent.persona)?.[locale] + " · " + c[intent.package!] + " · " + formatOmrBaisa(commercialAmount(selectedSpec, term), locale) : c.selectionEmpty}</p>{target.note ? <p>{c.permissionNotes[target.note]}</p> : null}<Link href={subscriptionIntentHref(target, safeIntent)}>{c.navigationLabels[target.kind]}</Link></div>
   </section>;
 }

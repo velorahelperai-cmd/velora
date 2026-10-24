@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { PackagePlayback } from "./package-playback";
 
-function deferred() { let resolve!: () => void; let reject!: () => void; const promise = new Promise<void>((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; }
+function deferred() { let resolve!: () => void; let reject!: (reason?: unknown) => void; const promise = new Promise<void>((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; }
 function video() {
   const pending: ReturnType<typeof deferred>[] = [];
   return {
@@ -20,20 +20,20 @@ function setup() {
   return { model, videos };
 }
 describe("exclusive original package playback", () => {
-  it("loads only the current visible source and starts muted", () => {
+  it("loads only the current visible source and attempts sound where permitted", () => {
     const { model, videos } = setup();
     expect(videos.every(item => item.src === "")).toBe(true);
     model.environment([0, 1, 2], false, false);
     expect(videos.map(item => item.src)).toEqual(["noura-ar.webm", "", ""]);
-    expect(videos[0].muted).toBe(true);
+    expect(videos[0].muted).toBe(false);
   });
   it("guards rapid selections and stale play rejections without changing the sound preference", async () => {
     const { model, videos } = setup(); model.environment([0, 1, 2], false, false);
     const stale = videos[0].pending[0]; model.mute(); model.select(1); model.select(2);
     stale.reject(); videos[1].pending[0].resolve(); videos[2].pending[0].resolve(); await Promise.resolve();
-    expect(model.getSnapshot()).toMatchObject({ current: 2, playing: true, muted: false, error: false });
+    expect(model.getSnapshot()).toMatchObject({ current: 2, playing: true, muted: true, error: false });
     expect(videos.map(item => item.paused)).toEqual([true, true, false]);
-    expect(videos[2].muted).toBe(false);
+    expect(videos[2].muted).toBe(true);
   });
   it("does not pause a newer request for the same video when an older promise resolves", async () => {
     const { model, videos } = setup(); model.environment([0, 1, 2], false, false);
@@ -69,7 +69,34 @@ describe("exclusive original package playback", () => {
     model.connect(next as unknown as HTMLVideoElement[], ["noura-en.webm", "lina-en.webm", "dana-en.webm"]);
     model.environment([0, 1, 2], false, false); videos[0].pending[0].resolve(); await Promise.resolve();
     expect(videos.every(item => item.paused && !item.src)).toBe(true);
-    expect(next[0].src).toBe("noura-en.webm"); expect(next[0].muted).toBe(false);
+    expect(next[0].src).toBe("noura-en.webm"); expect(next[0].muted).toBe(true);
     expect(next[1].src).toBe(""); expect(next[2].src).toBe("");
+  });
+});
+
+describe("browser-policy audio recovery", () => {
+  it("falls back to muted autoplay only on a current policy rejection, then lets a character gesture enable sound", async () => {
+    const { model, videos } = setup(); model.environment([0, 1, 2], false, false);
+    videos[0].pending[0].reject(new DOMException("gesture required", "NotAllowedError")); await Promise.resolve();
+    expect(videos[0].muted).toBe(true); expect(videos[0].pending).toHaveLength(2);
+    videos[0].pending[1].resolve(); await Promise.resolve();
+    expect(model.getSnapshot()).toMatchObject({ playing: true, muted: true, error: false });
+    model.select(1); expect(videos[1].muted).toBe(false); expect(videos[0].paused).toBe(true);
+  });
+  it("retains an explicit mute when selecting another character after policy fallback", async () => {
+    const { model, videos } = setup(); model.environment([0, 1, 2], false, false);
+    videos[0].pending[0].reject(new DOMException("gesture required", "NotAllowedError")); await Promise.resolve();
+    videos[0].pending[1].resolve(); await Promise.resolve(); model.mute(); model.mute(); model.select(1);
+    expect(videos[1].muted).toBe(true);
+  });
+  it("does not retry a stale audible rejection on the old character", async () => {
+    const { model, videos } = setup(); model.environment([0, 1, 2], false, false);
+    const stale = videos[0].pending[0]; model.select(2); stale.reject(new DOMException("blocked", "NotAllowedError")); await Promise.resolve();
+    expect(videos[0].pending).toHaveLength(1); expect(model.getSnapshot().current).toBe(2);
+  });
+  it("keeps decode failures visible instead of treating them as autoplay policy", async () => {
+    const { model, videos } = setup(); model.environment([0], false, false);
+    videos[0].pending[0].reject(new DOMException("unsupported", "NotSupportedError")); await Promise.resolve();
+    expect(videos[0].pending).toHaveLength(1); expect(model.getSnapshot().error).toBe(true);
   });
 });
