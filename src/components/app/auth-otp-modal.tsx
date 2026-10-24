@@ -8,7 +8,6 @@ import {
   useState,
   type FormEvent,
   type KeyboardEvent,
-  type ReactNode,
 } from "react";
 import { normalizeEmailCode } from "@/lib/auth/email-code";
 import { prefersReducedMotion } from "@/lib/auth/auth-entry-morph";
@@ -78,7 +77,6 @@ export function AuthOtpModal({
   closeLabel,
   busy = false,
   error = null,
-  diagnostic = null,
   resent = false,
   cooldown = 0,
   verified = false,
@@ -114,7 +112,6 @@ export function AuthOtpModal({
   closeLabel: string;
   busy?: boolean;
   error?: string | null;
-  diagnostic?: ReactNode;
   resent?: boolean;
   cooldown?: number;
   /** Flip true only after server verifyEmailCode OK — starts success morph. */
@@ -128,7 +125,7 @@ export function AuthOtpModal({
   /** Email code is already consumed; submit rechecks only the admitted session. */
   retrySessionOnly?: boolean;
   onClose: () => void;
-  onSubmitCode: (code: string) => void;
+  onSubmitCode: (code: string) => void | Promise<void>;
   onResend: () => void;
   onCorrectEmail: (email: string) => void;
   onSuccessAnimDone: () => void;
@@ -146,6 +143,14 @@ export function AuthOtpModal({
   const [emailError, setEmailError] = useState<FieldErrorKey>();
   const emailErrText = useErrorText(emailError);
   const submittingRef = useRef(false);
+  const submissionSequence = useRef(0);
+  const lastAutoCode = useRef<string | null>(null);
+  const rejectedInput = useRef(false);
+  const digitsRef = useRef(digits);
+  useEffect(() => {
+    if (!open) { submissionSequence.current += 1; submittingRef.current = false; }
+    lastAutoCode.current = null;
+  }, [open, email]);
 
   const clearTimers = useCallback(() => {
     for (const id of timersRef.current) window.clearTimeout(id);
@@ -209,10 +214,40 @@ export function AuthOtpModal({
 
   useEffect(() => () => clearTimers(), [clearTimers]);
 
+  function updateDigits(next: string[]) {
+    digitsRef.current = next;
+    setDigits(next);
+  }
+
+  function submitValue(code: string, automatic: boolean) {
+    if (!open || !email || busy || verified || submittingRef.current || phase !== "input") return;
+    if (automatic && (retrySessionOnly || lastAutoCode.current === code)) return;
+    if (!retrySessionOnly && (rejectedInput.current || !/^[0-9]{6}$/.test(code))) { setCodeInvalid(true); return; }
+    if (automatic) lastAutoCode.current = code;
+    submittingRef.current = true;
+    const request = ++submissionSequence.current;
+    let pending: void | Promise<void>;
+    try { pending = onSubmitCode(code); }
+    catch { if (submissionSequence.current === request) submittingRef.current = false; return; }
+    // The real caller owns error presentation. Keep Enter/button serialized with auto-submit.
+    void Promise.resolve(pending).catch(() => {}).finally(() => {
+      if (submissionSequence.current === request) submittingRef.current = false;
+    });
+  }
+
+  function maybeAutoSubmit(next: string[]) {
+    const code = next.join("");
+    if (!/^[0-9]{6}$/.test(code)) { lastAutoCode.current = null; return; }
+    submitValue(code, true);
+  }
+
   function applyDigits(next: string[], startIndex = 0) {
-    const capped = next.slice(0, CELL_COUNT);
+    if (next.length > CELL_COUNT) { rejectedInput.current = true; setCodeInvalid(true); return; }
+    rejectedInput.current = false;
+    const capped = [...next];
     while (capped.length < CELL_COUNT) capped.push("");
-    setDigits(capped);
+    updateDigits(capped);
+    maybeAutoSubmit(capped);
     setCodeInvalid(false);
     const filled = capped.findIndex((d) => !d);
     const nextFocus = filled === -1 ? CELL_COUNT - 1 : Math.max(startIndex, filled);
@@ -225,15 +260,18 @@ export function AuthOtpModal({
     const cleaned = normalizeEmailCode(raw).replace(/\D/g, "");
     if (cleaned.length > 1) {
       // Paste / OTP autofill into one cell
-      const chars = cleaned.slice(0, CELL_COUNT).split("");
+      if (cleaned.length > CELL_COUNT) { rejectedInput.current = true; setCodeInvalid(true); return; }
+      const chars = cleaned.split("");
       const next = Array.from({ length: CELL_COUNT }, (_, i) => chars[i] ?? "");
       applyDigits(next, Math.min(chars.length, CELL_COUNT - 1));
       return;
     }
+    rejectedInput.current = false;
     const digit = cleaned.slice(-1);
-    const next = [...digits];
+    const next = [...digitsRef.current];
     next[index] = digit;
-    setDigits(next);
+    updateDigits(next);
+    maybeAutoSubmit(next);
     setCodeInvalid(false);
     if (digit && index < CELL_COUNT - 1) {
       setFocusIndex(index + 1);
@@ -245,16 +283,20 @@ export function AuthOtpModal({
     if (phase !== "input" || busy || verified) return;
     if (event.key === "Backspace") {
       event.preventDefault();
+      rejectedInput.current = false;
+      setCodeInvalid(false);
       if (digits[index]) {
-        const next = [...digits];
+        const next = [...digitsRef.current];
         next[index] = "";
-        setDigits(next);
+        updateDigits(next);
+        lastAutoCode.current = null;
         return;
       }
       if (index > 0) {
-        const next = [...digits];
+        const next = [...digitsRef.current];
         next[index - 1] = "";
-        setDigits(next);
+        updateDigits(next);
+        lastAutoCode.current = null;
         setFocusIndex(index - 1);
         cellRefs.current[index - 1]?.focus();
       }
@@ -279,24 +321,12 @@ export function AuthOtpModal({
     const text = normalizeEmailCode(event.clipboardData.getData("text")).replace(/\D/g, "");
     if (!text) return;
     event.preventDefault();
-    applyDigits(text.slice(0, CELL_COUNT).split(""));
+    applyDigits(text.split(""));
   }
 
   function submit(event: FormEvent) {
     event.preventDefault();
-    if (busy || verified || submittingRef.current || phase !== "input") return;
-    if (retrySessionOnly) { onSubmitCode(""); return; }
-    const code = digits.join("");
-    if (!/^[0-9]{6}$/.test(code)) {
-      setCodeInvalid(true);
-      return;
-    }
-    submittingRef.current = true;
-    try {
-      onSubmitCode(code);
-    } finally {
-      submittingRef.current = false;
-    }
+    submitValue(retrySessionOnly ? "" : digitsRef.current.join(""), false);
   }
 
   if (!open) return null;
@@ -360,6 +390,8 @@ export function AuthOtpModal({
           {!completed ? <p className="mt-2 text-[11px] leading-4 text-[#087E8B]">{realBody}</p> : null}
         </div>
 
+
+
         {completed ? (
           <div className="relative z-10 my-10 grid place-items-center" data-auth-otp-success="true" aria-live="polite">
             <span className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500 text-3xl text-white shadow-[0_12px_40px_rgba(16,185,129,0.35)]">
@@ -373,7 +405,6 @@ export function AuthOtpModal({
                 {error}
               </p>
             ) : null}
-            {diagnostic}
             {resent ? (
               <p role="status" className="mb-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
                 {resentNotice}
@@ -420,7 +451,7 @@ export function AuthOtpModal({
                       type="text"
                       inputMode="numeric"
                       autoComplete={index === 0 ? "one-time-code" : "off"}
-                      maxLength={phase === "input" ? 6 : 1}
+                      maxLength={phase === "input" ? 10 : 1}
                       pattern="[0-9]*"
                       dir="ltr"
                       aria-label={`${codeLabel} ${index + 1}`}

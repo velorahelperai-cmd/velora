@@ -1,13 +1,13 @@
 "use client";
 import { authFlowHref, savePendingSignup, readPendingSignup, clearPendingSignup } from "@/lib/auth/auth-journey";
-import {DiagnosticHint} from "./diagnostic-hint";
+
 import {beginDiagnostic} from "@/lib/diagnostics/flow";
 import { normalizeEmailCode } from "@/lib/auth/email-code";
 import { createRecoveryReceipt } from "@/lib/auth/operation-recovery";
 
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
+import { createContext, Suspense, useContext, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useDemo } from "@/lib/demo-state";
 import { fill } from "@/lib/app-copy";
 import { landingCopy } from "@/lib/landing-copy";
@@ -23,6 +23,7 @@ import { acceptStaffInvitation, readStaffInvitation, type StaffInvitationView } 
 import { AccountMenu, useOptionalAccountSession } from "@/components/app/account-chrome";
 import { AuthMotionCanvas } from "@/components/app/auth-motion-canvas";
 import { AuthOtpModal } from "@/components/app/auth-otp-modal";
+import { rememberVerificationResend, useVerificationCooldown } from "./use-verification-cooldown";
 import {
   completeProfileName,
   requestPasswordReset,
@@ -37,6 +38,18 @@ import {
   isEmail, useAction, useAppCopy, useErrorText, useUnsavedWarning,
 } from "@/components/app/ui";
 
+type AuthEntryLock = { busy: boolean; locked: { current: boolean }; run: (fn: () => void | Promise<void>) => Promise<void> };
+const AuthEntryContext = createContext<{ lock: AuthEntryLock; changeMode: (href: string) => void } | null>(null);
+
+function useAuthRequestScope(mode: "login" | "signup", query: string) {
+  const embedded = Boolean(useContext(AuthEntryContext));
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  return useCallback(() => () => mounted.current && (!embedded || (
+    window.location.pathname === "/" + mode && new URLSearchParams(window.location.search).toString() === query
+  )), [embedded, mode, query]);
+}
+
 const RESEND_COOLDOWN_SEC = 60;
 const AUTH_MORPH_OUT_EVENT = "velora-auth-morph-out";
 
@@ -50,6 +63,7 @@ function AuthEntryMorphLink({
   children: ReactNode;
 }) {
   const router = useRouter();
+  const sharedEntry = useContext(AuthEntryContext);
   return (
     <Link
       href={href}
@@ -58,6 +72,7 @@ function AuthEntryMorphLink({
       onClick={(event) => {
         if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
         event.preventDefault();
+        if (sharedEntry) { sharedEntry.changeMode(href); return; }
         const stage = event.currentTarget.closest("[data-auth-entry-stage]");
         markAuthEntryMorph(stage ? { height: stage.getBoundingClientRect().height } : undefined);
         if (prefersReducedMotion()) {
@@ -149,6 +164,7 @@ export function AuthShell({
   entryBackdrop?: boolean;
 }) {
   const copy = useAppCopy();
+  const embedded = useContext(AuthEntryContext);
   const { locale } = useDemo();
   const router = useRouter();
   const tagline = landingCopy(locale).tagline;
@@ -176,7 +192,7 @@ export function AuthShell({
   }, [entry, signupTall]);
 
   useLayoutEffect(() => {
-    if (!entry || entryBackdrop) return;
+    if (!entry || entryBackdrop || embedded) return;
     const shouldMorphIn = incomingMorph.current ?? consumeAuthEntryMorph();
     incomingMorph.current = shouldMorphIn;
     if (!shouldMorphIn || prefersReducedMotion()) return;
@@ -204,10 +220,10 @@ export function AuthShell({
       window.cancelAnimationFrame(revealFrame);
       if (morphTimer.current) window.clearTimeout(morphTimer.current);
     };
-  }, [entry, entryBackdrop]);
+  }, [entry, entryBackdrop, embedded]);
 
   useLayoutEffect(() => {
-    if (!entry || entryBackdrop) return;
+    if (!entry || entryBackdrop || embedded) return;
     function clearMotion() {
       if (morphTimer.current) window.clearTimeout(morphTimer.current);
       for (const frame of incomingFrames.current) window.cancelAnimationFrame(frame);
@@ -250,7 +266,10 @@ export function AuthShell({
       clearMotion();
       if (morphingOut.current && !navigationStarted.current) consumeAuthEntryMorph();
     };
-  }, [entry, entryBackdrop, router]);
+  }, [entry, entryBackdrop, router, embedded]);
+
+  // The shared layout owns the single canvas/card. Route-specific controllers only supply their form/footer.
+  if (entry && embedded) return <>{children}{footer ? <div className="mt-5 text-center text-xs text-[#536579]">{footer}</div> : null}</>;
 
   if (entry) {
     return (
@@ -332,7 +351,7 @@ export function AuthShell({
                 {...(entryBackdrop || collapsed ? ({ inert: true } as { inert: boolean }) : {})}
               >
                 <div className="text-center">
-                  <h1 className="text-[25px] font-bold leading-snug tracking-tight text-[#172D43]">
+                  <h1 tabIndex={-1} data-auth-entry-heading="true" className="text-[25px] font-bold leading-snug tracking-tight text-[#172D43] focus:outline-none">
                     <AuthTitle title={title} />
                   </h1>
                   {body ? <p className="mt-1 text-xs leading-5 text-[#536579]">{body}</p> : null}
@@ -378,13 +397,13 @@ export function AuthShell({
   );
 }
 
-function providerErrorMessage(err: unknown, fallback: string) {
-  const message = err instanceof Error ? err.message : String(err ?? "");
-  if (/provider is not enabled|unsupported provider|validation_failed/i.test(message)) {
-    return fallback;
-  }
-  return message || fallback;
+function authEntryFailure(code: unknown, copy: ReturnType<typeof useAppCopy>, login: boolean) {
+  if (code === "INVALID_INPUT") return copy.auth.checkFields;
+  if (code === "AUTH_ERROR") return login ? copy.auth.loginRejected : copy.auth.signupRejected;
+  return copy.auth.serviceUnavailable;
 }
+
+function providerErrorMessage(err: unknown, fallback: string) { void err; return fallback; }
 
 function GoogleAuthButton({
   busy,
@@ -433,7 +452,10 @@ function GoogleAuthButton({
   );
 }
 
-function useAuthEntryLock() {
+function useAuthEntryLock(): AuthEntryLock {
+  const shared = useContext(AuthEntryContext);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const locked = useRef(false);
   const [busy, setBusy] = useState(false);
   const run = useCallback(async (fn: () => void | Promise<void>) => {
@@ -444,28 +466,31 @@ function useAuthEntryLock() {
       await fn();
     } finally {
       locked.current = false;
-      setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   }, []);
-  return { busy, run, locked };
+  return shared?.lock ?? { busy, run, locked };
 }
 
 function useGoogleAuth(
   setNotice: (v: string | null) => void,
   next: string | null | undefined,
   entryLock: { busy: boolean; run: (fn: () => void | Promise<void>) => Promise<void> },
+  captureScope: () => () => boolean,
 ) {
   const copy = useAppCopy();
   return {
     busy: entryLock.busy,
     onGoogle: () => {
+      const current = captureScope();
       setNotice(null);
       void entryLock.run(async () => {
+        if (!current()) return;
         try {
           const destination = next != null ? safeInternalPath(next, "/setup") : "/setup";
-          await startOAuth("google", destination);
+          await startOAuth("google", destination, current);
         } catch (err) {
-          setNotice(providerErrorMessage(err, copy.auth.googleUnavailable));
+          if (current()) setNotice(providerErrorMessage(err, copy.auth.googleUnavailable));
         }
       });
     },
@@ -481,11 +506,48 @@ function useAuthenticatedAuthRedirect(next:string|null, paused=false, navigate?:
   return ()=>{cancelled=true;};
  },[session?.status,session?.identity,next,router,paused,navigate]);
 }
+/** One mounted entry experience; route adapters retain both public deep links. */
+function AuthEntryMode({mode}:{mode:"login"|"signup"}) {
+  const query = useSearchParams().toString();
+  return <div key={mode+":"+query} className="auth-mode-surface" data-auth-entry-mode={mode}>{mode === "signup" ? <SignupPage /> : <LoginPage />}</div>;
+}
+export function AuthEntryExperience() {
+  const mode = usePathname() === "/signup" ? "signup" : "login";
+  const copy = useAppCopy();
+  const lock = useAuthEntryLock();
+  const host = useRef<HTMLDivElement>(null);
+  const previousMode = useRef(mode);
+  const changeMode = useCallback((href: string) => {
+    if (!/^\/(login|signup)(?:\?|$)/.test(href)) return;
+    if (window.location.pathname + window.location.search === href) return;
+    // Installed Next16 integrates native history with pathname/search hooks, with no route fetch or page flip.
+    window.history.pushState(null, "", href);
+  }, []);
+  useEffect(() => {
+    document.title = mode === "signup" ? "Create account · Velora" : "Sign in · Velora";
+    let frame = 0;
+    if (previousMode.current !== mode) frame = window.requestAnimationFrame(() => host.current?.querySelector<HTMLElement>("[data-auth-entry-heading]")?.focus({ preventScroll: true }));
+    previousMode.current = mode;
+    return () => window.cancelAnimationFrame(frame);
+  }, [mode]);
+  return <div ref={host} data-auth-entry-host="true">
+    <style>{"@keyframes veloraAuthFormIn{from{opacity:.35;transform:translateY(5px)}to{opacity:1;transform:none}}.auth-mode-surface{animation:veloraAuthFormIn 180ms ease-out}@media(prefers-reduced-motion:reduce){.auth-mode-surface{animation:none}}"}</style>
+    <AuthShell entry title={mode === "signup" ? copy.auth.signupTitle : copy.auth.loginTitle} body={mode === "signup" ? copy.auth.signupBody : copy.auth.loginBody}>
+      <AuthEntryContext.Provider value={{ lock, changeMode }}>
+        <Suspense fallback={<div role="status" aria-busy="true" className="min-h-64 text-center text-sm text-[#536579]">{copy.loading}</div>}>
+          <AuthEntryMode mode={mode} />
+        </Suspense>
+      </AuthEntryContext.Provider>
+    </AuthShell>
+  </div>;
+}
+
 export function SignupPage() {
   const copy = useAppCopy();
-  const { locale } = useDemo();
+
   const router = useRouter();
   const params = useSearchParams();
+  const captureScope = useAuthRequestScope("signup", params.toString());
   const prefillEmail = (params.get("email") || "").trim().toLowerCase();
   const entryLock = useAuthEntryLock();
   const { busy, run } = entryLock;
@@ -498,11 +560,11 @@ export function SignupPage() {
   const [form, setForm] = useState({ name: "", email: prefillEmail, password: "", confirm: "" });
   const [errors, setErrors] = useState<Partial<Record<"name" | "email" | "password" | "confirm", FieldErrorKey>>>({});
   const [formError, setFormError] = useState<string | null>(null);
-  const [diagnostic,setDiagnostic]=useState<unknown>(null);
+
   const [altNotice, setAltNotice] = useState<string | null>(null);
   const returnTo = safeInternalPath(params.get("next"), "");
   useAuthenticatedAuthRedirect(returnTo,busy || redirecting,navigate);
-  const google = useGoogleAuth(setAltNotice, returnTo || null, entryLock);
+  const google = useGoogleAuth(setAltNotice, returnTo || null, entryLock, captureScope);
   const dirty = Boolean(form.name || form.email || form.password || form.confirm);
   useUnsavedWarning(dirty && !busy && !redirecting);
   const nameError = useErrorText(errors.name);
@@ -519,16 +581,19 @@ export function SignupPage() {
     if (form.password.length < 8) next.password = "password";
     if (form.confirm !== form.password) next.confirm = "match";
     setErrors(next);
-    setFormError(null);setDiagnostic(null);
+    setFormError(null);
     if (Object.keys(next).length) return;
+    const current = captureScope();
     void run(async () => {
+      if (!current()) return;
       const { ensureBrowserContinuity, clearAuthGestureNonce } = await import("@/lib/auth/browser-continuity");
       const continuity = await ensureBrowserContinuity("signup");
+      if (!current()) { if (continuity.ok) clearAuthGestureNonce(continuity.requestNonce); return; }
       if (!continuity.ok) {
         setFormError(
           continuity.code === "CONTINUITY_RECOVERY_REQUIRED"
             ? copy.errors.continuityRecovery
-            : copy.errors.authFailed,
+            : copy.auth.serviceUnavailable,
         );
         return;
       }
@@ -541,20 +606,23 @@ export function SignupPage() {
         requestNonce: continuity.requestNonce,
       });
       if (result.ok || result.code === "INVALID_INPUT" || result.code === "AUTH_ERROR") clearAuthGestureNonce(continuity.requestNonce);
+      if (!current()) return;
       if (!result.ok) {
-        setDiagnostic(result.diagnostic);setFormError(copy.errors.authFailed);
+        setFormError(authEntryFailure(result.code, copy, false));
         return;
       }
       if (result.data.needsVerification) {
         savePendingSignup(result.data.email,returnTo);
+        void rememberVerificationResend(result.data.email);
         router.replace(authFlowHref("/verify-email",returnTo,result.data.email));
         return;
       }
       clearPendingSignup();
       const destination = await resolvePostAuthPath(returnTo);
-      if (!destination.ok) { setDiagnostic(destination.diagnostic);setFormError(copy.errors.authFailed); return; }
+      if (!current()) return;
+      if (!destination.ok) { setFormError(authEntryFailure(destination.code, copy, false)); return; }
       navigate(destination.data.next);
-    }).catch(() => setFormError(copy.errors.authFailed));
+    }).catch(() => { if (current()) setFormError(copy.auth.serviceUnavailable); });
   }
 
   return (
@@ -565,7 +633,7 @@ export function SignupPage() {
       footer={<>{copy.auth.haveAccount} <AuthEntryMorphLink href={returnTo ? `/login?next=${encodeURIComponent(returnTo)}` : "/login"} className="font-semibold text-[#087E8B] underline">{copy.auth.login}</AuthEntryMorphLink></>}
     >
       <form className="space-y-3" onSubmit={submitEmail} noValidate data-auth-entry-form="signup">
-        {formError ? <Notice tone="error">{formError}</Notice> : null}<DiagnosticHint diagnostic={diagnostic} locale={locale}/>
+        {formError ? <Notice tone="error">{formError}</Notice> : null}
         <Field label={copy.auth.name} required error={nameError} tone="entry">
           {(p) => (
             <div className="relative flex items-center">
@@ -596,10 +664,11 @@ export function SignupPage() {
 }
 
 export function LoginPage() {
-  const {locale}=useDemo();
+
   const copy = useAppCopy();
   const params = useSearchParams();
   const returnTo = params.get("next");
+  const captureScope = useAuthRequestScope("login", params.toString());
   const entryLock = useAuthEntryLock();
   const { busy, run } = entryLock;
   const [redirecting, setRedirecting] = useState(false);
@@ -619,30 +688,33 @@ export function LoginPage() {
     if (err === "oauth_cancelled") return copy.auth.oauthCancelled;
     return null;
   });
-  const [diagnostic,setDiagnostic]=useState<unknown>(null);
+
   const [altNotice, setAltNotice] = useState<string | null>(null);
-  const google = useGoogleAuth(setAltNotice, returnTo, entryLock);
+  const google = useGoogleAuth(setAltNotice, returnTo, entryLock, captureScope);
   const emailError = useErrorText(errors.email);
   const passwordError = useErrorText(errors.password);
 
   function submitEmail(e: React.FormEvent) {
     e.preventDefault();
     if (busy||redirecting) return;
-    setFormError(null);setDiagnostic(null);
+    setFormError(null);
     const next: typeof errors = {};
     if (!isEmail(form.email)) next.email = "email";
     if (!form.password) next.password = "required";
     setErrors(next);
     if (Object.keys(next).length) return;
+    const current = captureScope();
     void run(async () => {
+      if (!current()) return;
       const trace=beginDiagnostic("auth_login");trace.stage("provider");
       const { ensureBrowserContinuity, clearAuthGestureNonce } = await import("@/lib/auth/browser-continuity");
       const continuity = await ensureBrowserContinuity("login");
+      if (!current()) { if (continuity.ok) clearAuthGestureNonce(continuity.requestNonce); return; }
       if (!continuity.ok) {
         setFormError(
           continuity.code === "CONTINUITY_RECOVERY_REQUIRED"
             ? copy.errors.continuityRecovery
-            : copy.errors.authFailed,
+            : copy.auth.serviceUnavailable,
         );
         return;
       }
@@ -655,18 +727,20 @@ export function LoginPage() {
         requestNonce: continuity.requestNonce,
       });
       if (admitted.ok || admitted.code === "INVALID_INPUT" || admitted.code === "AUTH_ERROR") clearAuthGestureNonce(continuity.requestNonce);
-      if(!admitted.ok){setDiagnostic(admitted.diagnostic??trace.finish("AUTH_ERROR"));setFormError(copy.errors.authFailed);return;}
+      if (!current()) return;
+      if(!admitted.ok){if (!admitted.diagnostic) trace.finish(admitted.code === "UNAVAILABLE" ? "UNAVAILABLE" : admitted.code === "INVALID_INPUT" ? "INVALID_INPUT" : "AUTH_ERROR");setFormError(authEntryFailure(admitted.code, copy, true));return;}
       trace.stage("access");
       const result=admitted.data?.next
         ? {ok:true as const,data:{next:admitted.data.next},diagnostic:admitted.diagnostic}
         : await resolvePostAuthPath(returnTo);
+      if (!current()) return;
       if (!result.ok) {
-        setDiagnostic(result.diagnostic);setFormError(copy.errors.authFailed);
+        setFormError(authEntryFailure(result.code, copy, true));
         return;
       }
       trace.stage("handoff");trace.finish("OK");clearPendingSignup();
       navigate(result.data.next);
-    }).catch(() => setFormError(copy.errors.authFailed));
+    }).catch(() => { if (current()) setFormError(copy.auth.serviceUnavailable); });
   }
 
   return (
@@ -678,7 +752,7 @@ export function LoginPage() {
     >
       <form className="space-y-4" onSubmit={submitEmail} noValidate data-auth-entry-form="login">
         {params.get("reason") === "session_expired" ? <Notice tone="warn">{copy.errors.sessionExpiredBody}</Notice> : null}
-        {formError ? <Notice tone="error">{formError}</Notice> : null}<DiagnosticHint diagnostic={diagnostic} locale={locale}/>
+        {formError ? <Notice tone="error">{formError}</Notice> : null}
         <Field label={copy.auth.email} required error={emailError} tone="entry">
           {(p) => (
             <div className="relative flex items-center">
@@ -728,10 +802,11 @@ export function VerifyEmailPage() {
   const emailFromQuery = (params.get("email") || "").trim().toLowerCase();
   const [registeredEmail, setRegisteredEmail] = useState(emailFromQuery);
   const [resent, setResent] = useState(false);
-  const { locale } = useDemo();
-  const [diagnostic, setDiagnostic] = useState<unknown>(null);
+
+
   const [error, setError] = useState<string | null>(null);
-  const [cooldown, setCooldown] = useState(0);
+  const resendClock = useVerificationCooldown(registeredEmail);
+  const cooldown = resendClock.ready ? resendClock.seconds : 1;
   const [hydrated, setHydrated] = useState(Boolean(emailFromQuery));
   const [modalOpen, setModalOpen] = useState(true);
   const [verified, setVerified] = useState(false);
@@ -811,17 +886,13 @@ export function VerifyEmailPage() {
     return () => window.cancelAnimationFrame(frame);
   }, [emailFromQuery]);
 
-  useEffect(() => {
-    if (cooldown <= 0) return;
-    const t = window.setTimeout(() => setCooldown((c) => c - 1), 1000);
-    return () => window.clearTimeout(t);
-  }, [cooldown]);
 
-  function verificationMessage(message?: string) {
+
+  function verificationMessage(message?: string, fallback = copy.auth.verificationUnavailable) {
     if (message === "verification_code_invalid") return copy.auth.verificationCodeInvalid;
     if (message === "verification_rate_limited") return copy.auth.verificationRateLimited;
     if (message === "verification_incomplete") return copy.auth.verificationIncomplete;
-    return copy.auth.verificationUnavailable;
+    return fallback;
   }
 
   async function finishVerification(confirmed: ConfirmedVerification) {
@@ -855,11 +926,10 @@ export function VerifyEmailPage() {
     if (confirmed) {
       if (!isCurrent(confirmed.capture, confirmed.boundary)) return;
       setError(null);
-      void run(() => finishVerification(confirmed));
-      return;
+      return run(() => finishVerification(confirmed));
     }
     setError(null);
-    setDiagnostic(null);
+
     setResent(false);
     const normalized = normalizeEmailCode(code);
     if (!/^[0-9]{6}$/.test(normalized)) {
@@ -869,7 +939,7 @@ export function VerifyEmailPage() {
     const capture = captureJourney();
     const journeyEmail = registeredEmail;
     const journeyNext = pendingReturn;
-    void run(async () => {
+    return run(async () => {
       setVerificationRequest({ email: journeyEmail, next: journeyNext, query: emailFromQuery });
       try {
         const { ensureBrowserContinuity, clearAuthGestureNonce } = await import("@/lib/auth/browser-continuity");
@@ -894,7 +964,7 @@ export function VerifyEmailPage() {
         if (result.ok || result.code === "INVALID_INPUT" || result.code === "AUTH_ERROR") {
           clearAuthGestureNonce(continuity.requestNonce);
         }
-        setDiagnostic(result.diagnostic);
+
         if (!result.ok) {
           setError(result.code === "INVALID_INPUT" ? copy.auth.verificationCodeFormat : verificationMessage(result.message));
           return;
@@ -956,7 +1026,7 @@ export function VerifyEmailPage() {
         closeLabel={copy.close}
         busy={busy}
         error={error}
-        diagnostic={<DiagnosticHint diagnostic={diagnostic} locale={locale} />}
+
         resent={resent}
         cooldown={cooldown}
         verified={verified}
@@ -974,28 +1044,29 @@ export function VerifyEmailPage() {
           if (busy || cooldown > 0 || !registeredEmail || verified || retrySessionOnly) return;
           const capture = captureJourney();
           setError(null);
-          setDiagnostic(null);
+
           setResent(false);
           void run(async () => {
             try {
               const { ensureBrowserContinuity, clearAuthGestureNonce } = await import("@/lib/auth/browser-continuity");
               const continuity = await ensureBrowserContinuity("verification_resend");
               if (!isCurrent(capture)) return;
-              if (!continuity.ok) { setError(copy.auth.verificationUnavailable); return; }
+              if (!continuity.ok) { setError(copy.auth.verificationResendUnavailable); return; }
+              if (!await resendClock.reserve() || !isCurrent(capture)) return;
               const result = await resendVerificationEmail(registeredEmail, pendingReturn, continuity.requestNonce);
               if (!isCurrent(capture)) return;
               if (result.ok || result.code === "INVALID_INPUT" || result.code === "AUTH_ERROR") clearAuthGestureNonce(continuity.requestNonce);
-              setDiagnostic(result.diagnostic);
+
               if (!result.ok) {
-                setError(verificationMessage(result.message));
-                if (result.message === "verification_rate_limited") setCooldown(RESEND_COOLDOWN_SEC);
+                setError(verificationMessage(result.message, copy.auth.verificationResendUnavailable));
+                if (result.message === "verification_rate_limited") resendClock.extend();
                 return;
               }
               setResent(true);
-              setCooldown(RESEND_COOLDOWN_SEC);
+              resendClock.extend();
             } catch {
               if (!isCurrent(capture)) return;
-              setError(copy.auth.verificationUnavailable);
+              setError(copy.auth.verificationResendUnavailable);
             }
           });
         }}
@@ -1171,7 +1242,7 @@ export function CompleteProfilePage() {
 export function ResetPasswordPage() {
   const copy = useAppCopy();
   const { locale } = useDemo();
-  const [diagnostic, setDiagnostic] = useState<unknown>(null);
+
   const router = useRouter();
   const session = useOptionalAccountSession();
   const [ready, setReady] = useState<"loading" | "ok" | "missing" | "unavailable">("loading");
@@ -1223,7 +1294,7 @@ export function ResetPasswordPage() {
             if (busy || !expectedUserId || session?.status !== "ready" || !session.isCurrentUser(expectedUserId)) return;
             setFormError(null);
             const next: typeof errors = {};
-            setDiagnostic(null);
+
             if (form.password.length < 8) next.password = "password";
             if (form.confirm !== form.password) next.confirm = "match";
             setErrors(next);
@@ -1258,7 +1329,7 @@ export function ResetPasswordPage() {
                 return;
               }
               if (!result.ok) {
-                setDiagnostic(result.diagnostic);
+
                 if (result.data?.operationId) {
                   setForm({ password: "", confirm: "" });
                   session.recoverOperation?.(receipt);
@@ -1271,13 +1342,13 @@ export function ResetPasswordPage() {
             }).catch(() => {
               const trace = beginDiagnostic("auth_password_update");
               trace.stage("provider");
-              setDiagnostic(trace.finish("OUTCOME_UNKNOWN"));
+              void (trace.finish("OUTCOME_UNKNOWN"));
               setFormError(copy.errors.authFailed);
             });
           }}
         >
           {formError ? <Notice tone="error">{formError}</Notice> : null}
-          <DiagnosticHint diagnostic={diagnostic} locale={locale} />
+
           <PasswordField label={copy.auth.newPassword} value={form.password} onChange={(v) => setForm({ ...form, password: v })} error={passwordError} hint={copy.auth.passwordHintReal} autoComplete="new-password" />
           <PasswordField label={copy.auth.confirmPassword} value={form.confirm} onChange={(v) => setForm({ ...form, confirm: v })} error={confirmError} autoComplete="new-password" />
           <Button type="submit" busy={busy} disabled={session?.status !== "ready" || !expectedUserId || !session.isCurrentUser(expectedUserId)} busyLabel={copy.loading} className="w-full">{copy.auth.setPassword}</Button>

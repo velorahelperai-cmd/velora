@@ -5,12 +5,13 @@ type Node = { type: unknown; props: Record<string, unknown> };
 const state = vi.hoisted(() => ({
   slots: [] as unknown[], cursor: 0, signup: vi.fn(), resolve: vi.fn(),
   replace: vi.fn(), routerRefresh: vi.fn(), accountRefresh: vi.fn(), navigate: vi.fn(),
-  save: vi.fn(), clear: vi.fn(), continuity: vi.fn(), clearNonce: vi.fn(),
+  remember: vi.fn(), save: vi.fn(), clear: vi.fn(), continuity: vi.fn(), clearNonce: vi.fn(),
 }));
 vi.mock("react", async () => {
   const actual = await vi.importActual<typeof import("react")>("react");
   return {
     ...actual,
+    useContext: () => null,
     useState(initial: unknown) {
       const index = state.cursor++;
       if (!(index in state.slots)) {
@@ -35,6 +36,7 @@ vi.mock("@/lib/tenancy/actions", () => ({ signUpWithEmail: state.signup, resolve
 vi.mock("@/lib/auth/browser-continuity", () => ({ ensureBrowserContinuity: state.continuity, clearAuthGestureNonce: state.clearNonce }));
 vi.mock("@/lib/auth/auth-journey", async () => ({ ...await vi.importActual<typeof import("@/lib/auth/auth-journey")>("@/lib/auth/auth-journey"), savePendingSignup: state.save, clearPendingSignup: state.clear }));
 vi.mock("./ui", () => ({ Button: "button", Field: "field", PasswordField: "password", Notice: "aside", useUnsavedWarning: vi.fn(), useErrorText: () => null, isEmail: (v: string) => v.includes("@"), useAppCopy: () => appCopy("en"), useAction: () => ({ busy: false, run: (fn: () => unknown) => fn() }) }));
+vi.mock("./use-verification-cooldown", () => ({ rememberVerificationResend: state.remember }));
 import { SignupPage } from "./auth-pages";
 function nodes(value: unknown): Node[] {
   if (Array.isArray(value)) return value.flatMap(nodes);
@@ -63,6 +65,7 @@ it("preserves verification for unconfirmed signup without navigating into setup"
   state.signup.mockResolvedValue({ ok: true, data: { needsVerification: true, email: "signup@example.test" } });
   submit(); await settle();
   expect(state.save).toHaveBeenCalledWith("signup@example.test", "");
+  expect(state.remember).toHaveBeenCalledWith("signup@example.test");
   expect(state.replace).toHaveBeenCalledWith("/verify-email?email=signup%40example.test");
   expect(state.navigate).not.toHaveBeenCalled();
   expect(state.resolve).not.toHaveBeenCalled();

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { ApprovedAccountLoader } from "./approved-account-loader";
 import {recordLogoutTransportFailed,recordSessionCheckUnavailable} from "@/lib/logging/browser.mjs";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -496,17 +497,7 @@ export function AccountSessionProvider({
   const content=protectedRoute&&status!=="ready"
     ? status==="expired" ? <SessionActivityTracker />
     : status === "locked" ? <main className="grid min-h-svh place-content-center gap-3 bg-[#f6fafb] px-6 text-[#102a33]"><LangSwitch /><OperationRecovery receipt={recoveryReceipt} isCaptured={() => isCapturedBoundary(recoveryReceipt?.boundaryFingerprint ?? boundaryRef.current)} /></main>
-    : status === "loading" ? (
-      <main className="grid min-h-svh place-content-center bg-[#f6fafb] px-6 text-[#006c81]" data-account-loading="true">
-        <div className="flex flex-col items-center gap-6" role="status" aria-label={copy.loading}>
-          <div className="flex items-center gap-3 text-3xl font-bold" dir="ltr">
-            <span className="grid h-12 w-12 place-items-center rounded-2xl border border-[#cce4e8] bg-white text-2xl shadow-sm" aria-hidden="true">V</span>
-            Velora
-          </div>
-          <span className="h-5 w-5 rounded-full border-2 border-[#cce4e8] border-t-[#007f98] motion-safe:animate-spin" aria-hidden="true" />
-        </div>
-      </main>
-    )
+    : status === "loading" ? <ApprovedAccountLoader label={copy.loading} />
     : <main className="grid min-h-svh place-content-center gap-4 bg-[#f6fafb] px-6 text-center text-[#102a33]">
         <p className="text-base font-medium">{status==="error"?copy.account.identityError:copy.auth.login}</p>
         {status==="error"?<button type="button" className="mx-auto rounded-xl bg-[#006c81] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#00586a]" onClick={()=>void refresh()}>{copy.errors.accessRetry}</button>:null}

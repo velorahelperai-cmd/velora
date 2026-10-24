@@ -26,9 +26,10 @@ vi.mock("@/lib/auth/auth-journey",async()=>({
 }));
 import {VerifyEmailPage} from "./auth-pages";
 const accepted={ok:true as const,data:{next:"/setup",userId:"user-a",boundaryFingerprint:"aaaaaaaaaaaaaaaa"}};
+let testClock=0;
 let resolveVerify:(result:typeof accepted)=>void,root:Root,container:HTMLDivElement,mounted=false;
 beforeEach(()=>{
- vi.resetAllMocks();vi.useFakeTimers();vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT",true);
+ vi.resetAllMocks();vi.useFakeTimers();vi.setSystemTime(Date.UTC(2026,9,24,19,++testClock*5));localStorage.clear();vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT",true);
  vi.stubGlobal("matchMedia",()=>({matches:true,addEventListener(){},removeEventListener(){}}));
  state.query="email=fixture%40example.test";state.snapshot={status:"guest",userId:null,boundaryFingerprint:null,ready:false};
  state.verify.mockImplementation(()=>new Promise(resolve=>{resolveVerify=resolve;}));
@@ -115,6 +116,8 @@ describe("mounted verification result ownership",()=>{
   state.resend.mockResolvedValue({ok:false,code:"UNAVAILABLE",message:"verification_unavailable"});
   await resend();expect(state.resend).toHaveBeenCalledExactlyOnceWith("fixture@example.test","","00000000-0000-4000-8000-000000000001");
   expect(state.continuity).toHaveBeenCalledWith("verification_resend");expect(state.clearNonce).not.toHaveBeenCalled();
+  await resend();expect(state.resend).toHaveBeenCalledTimes(1);
+  await act(async()=>{vi.advanceTimersByTime(61000);});
   state.resend.mockResolvedValue({ok:true});await resend();
   expect(state.clearNonce).toHaveBeenCalledExactlyOnceWith("00000000-0000-4000-8000-000000000001");
  });
@@ -122,6 +125,8 @@ describe("mounted verification result ownership",()=>{
   let complete!:(value:{ok:true})=>void;state.resend.mockImplementation(()=>new Promise(resolve=>{complete=resolve;}));
   await resend();state.snapshot={status:"ready",userId:"user-b",boundaryFingerprint:"bbbbbbbbbbbbbbbb",ready:true};
   await render();await act(async()=>{complete({ok:true});});expect(state.clearNonce).not.toHaveBeenCalled();
+  expect(container.querySelector<HTMLButtonElement>("[data-auth-otp-resend]")?.disabled).toBe(true);
+  await act(async()=>{vi.advanceTimersByTime(61000);});
   expect(container.querySelector<HTMLButtonElement>("[data-auth-otp-resend]")?.disabled).toBe(false);
  });
 });

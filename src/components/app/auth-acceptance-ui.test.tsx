@@ -119,3 +119,31 @@ it("keeps reduced-motion verification static until a real confirmed result",asyn
   await act(async()=>root.render(createElement(StrictMode,null,createElement(AuthOtpModal,{...animationProps,verified:true,onSuccessAnimDone:done}))));await advanceAnimation(120);expect(done).toHaveBeenCalledTimes(1);
  }finally{vi.useRealTimers();}
 });
+
+
+it("automatically sends a complete normalized six-digit code exactly once while its request is pending",async()=>{
+ let finish!:()=>void;const send=vi.fn(()=>new Promise<void>(resolve=>{finish=resolve;}));
+ await act(async()=>root.render(createElement(AuthOtpModal,{...animationProps,onSubmitCode:send,onSuccessAnimDone:vi.fn()})));
+ const paste=async(value:string)=>{const e=new Event("paste",{bubbles:true,cancelable:true});Object.defineProperty(e,"clipboardData",{value:{getData:()=>value}});await act(async()=>{container.querySelector('form')!.dispatchEvent(e);});};
+ await paste('01234');expect(send).not.toHaveBeenCalled();
+ await paste('٠١٢٣٤٥');expect(send).toHaveBeenCalledExactlyOnceWith('012345');
+ await act(async()=>{const f=container.querySelector('form')!;f.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));f.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));});
+ expect(send).toHaveBeenCalledTimes(1);await act(async()=>finish());
+});
+it("does not auto-loop after a rejected code, but permits explicit retry or deliberate corrected input",async()=>{
+ const send=vi.fn().mockResolvedValue(undefined),done=vi.fn();
+ const render=async(error?:string)=>{await act(async()=>root.render(createElement(AuthOtpModal,{...animationProps,error,onSubmitCode:send,onSuccessAnimDone:done})));};
+ const paste=async(value:string)=>{const e=new Event('paste',{bubbles:true,cancelable:true});Object.defineProperty(e,'clipboardData',{value:{getData:()=>value}});await act(async()=>{container.querySelector('form')!.dispatchEvent(e);});};
+ await render();await paste('012345');expect(send).toHaveBeenCalledTimes(1);
+ await render('This code expired');expect(send).toHaveBeenCalledTimes(1);expect(done).not.toHaveBeenCalled();
+ await paste('012345');expect(send).toHaveBeenCalledTimes(1);
+ await act(async()=>{container.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));});expect(send).toHaveBeenCalledTimes(2);
+ await paste('01234');await paste('012345');expect(send).toHaveBeenCalledTimes(3);
+});
+
+
+it("rejects an overlength provider code instead of truncating and auto-sending its first six digits",async()=>{
+ const send=vi.fn().mockResolvedValue(undefined);await act(async()=>root.render(createElement(AuthOtpModal,{...animationProps,onSubmitCode:send,onSuccessAnimDone:vi.fn()})));
+ const paste=new Event('paste',{bubbles:true,cancelable:true});Object.defineProperty(paste,'clipboardData',{value:{getData:()=> '01234567'}});await act(async()=>{container.querySelector('form')!.dispatchEvent(paste);});
+ expect(send).not.toHaveBeenCalled();expect([...container.querySelectorAll<HTMLInputElement>('[data-auth-otp-cell]')].map(e=>e.value).join('')).toBe('');expect(container.querySelector<HTMLInputElement>('[data-auth-otp-cell]')!.maxLength).toBeGreaterThanOrEqual(8);
+});

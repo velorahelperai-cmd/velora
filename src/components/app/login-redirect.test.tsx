@@ -36,6 +36,7 @@ vi.mock("react", async () => {
   };
   return {
     ...actual,
+    useContext: () => null,
     useState(initial: unknown) {
       const s = slot();
       if (!("value" in s)) s.value = typeof initial === "function" ? (initial as () => unknown)() : initial;

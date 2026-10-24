@@ -5,6 +5,7 @@ vi.mock("react", async () => {
   const actual = await vi.importActual<typeof import("react")>("react");
   return {
     ...actual,
+    useContext: () => null,
     useEffect: vi.fn(),
     useLayoutEffect: vi.fn(),
     useRef: (initial: unknown) => ({ current: initial }),

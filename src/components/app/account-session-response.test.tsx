@@ -265,20 +265,18 @@ it("mount preserves a captured quarantine when the native session has gone", asy
   expect(state.read).not.toHaveBeenCalled();
 });
 
-it.each(["en", "ar"] as const)("shows a lightweight brand while protected identity is pending (%s)", async locale => {
+it.each(["en", "ar"] as const)("delegates protected pending identity to the approved loader (%s)", async locale => {
   state.locale = locale;
   state.path = "/setup";
   const pending = deferred();
   state.read.mockReturnValue(pending.promise);
   const first = renderTree();
-  const main = first.props.children;
-  expect(main.props["data-account-loading"]).toBe("true");
-  expect(main.props.className).toContain("bg-[#f6fafb]");
-  expect(main.props.children.props.role).toBe("status");
-  expect(main.props.children.props["aria-label"]).toBeTruthy();
-  expect(JSON.stringify(main)).toContain("Velora");
-  expect(JSON.stringify(main)).toContain("motion-safe:animate-spin");
-  expect(JSON.stringify(main)).not.toContain("private-content");
+  const loader = first.props.children;
+  expect(typeof loader.type).toBe("function");
+  expect(loader.type.name).toBe("ApprovedAccountLoader");
+  expect(loader.props.label).toBeTruthy();
+  expect(JSON.stringify(loader)).not.toContain("motion-safe:animate-spin");
+  expect(JSON.stringify(loader)).not.toContain("private-content");
   const refresh = first.props.value.refresh();
   pending.resolve({ ok: true, data: profile() });
   await refresh;

@@ -33,3 +33,18 @@ describe("Google gesture lifecycle",()=>{
   await expect(startOAuth()).rejects.toThrow("OAUTH_UNAVAILABLE");expect(m.start).toHaveBeenCalledTimes(2);expect(m.assign).not.toHaveBeenCalled();
  });
 });
+
+
+it("does not start a provider request after the owning UI scope is cancelled",async()=>{
+ await startOAuth('google','/setup',()=>false);expect(m.start).not.toHaveBeenCalled();expect(m.assign).not.toHaveBeenCalled();
+});
+it("does not redirect a completed Google request after its UI scope changes",async()=>{
+ let finish!:(v:unknown)=>void,current=true;m.start.mockImplementation(()=>new Promise(resolve=>{finish=resolve;}));
+ const pending=startOAuth('google','/setup',()=>current);await Promise.resolve();await Promise.resolve();current=false;finish({ok:true,url:'https://provider.example/late'});await pending;
+ expect(m.assign).not.toHaveBeenCalled();expect(peekAuthGestureNonce()).not.toBeNull();
+});
+it("cleans only the server-authorized terminal nonce and never retries after cancellation",async()=>{
+ let finish!:(v:unknown)=>void,current=true;m.start.mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve;})).mockResolvedValue({ok:true,url:'https://provider.example/unwanted'});
+ const pending=startOAuth('google','/setup',()=>current);await Promise.resolve();await Promise.resolve();current=false;finish({ok:false,code:'OAUTH_NEW_INTENT_REQUIRED'});await pending;
+ expect(m.start).toHaveBeenCalledTimes(1);expect(peekAuthGestureNonce()).toBeNull();expect(m.assign).not.toHaveBeenCalled();
+});
