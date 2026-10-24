@@ -1,8 +1,10 @@
-# Current Session Index - PF01-C01 defect fixes (delivery candidate)
+# Current Session Index - PF01-C01 defect fixes DELIVERED
 
-- Scope: C01 defects 1–7 under writer `bbbf1b17`: email confirm link+PKCE binding, UNKNOWN transport, Google PKCE row proof + gesture clear on final OAuth errors, shared email/Google lock, verify late fence, OTP success arm-once, LOG-001 diagnostic fields. Packages WIP parked for push.
-- Evidence (pre-push candidate): focused Vitest transport/diagnostics/signup-profile/email-code/otp/login/signup PASS; typecheck PASS. SHA filled after push.
-- Next: owner retests live email+Google after CI/Vercel same SHA.
+- Scope: C01 defects 1–7 under writer `bbbf1b17`: email confirm link+PKCE binding, UNKNOWN transport, Google PKCE row proof + gesture clear on final OAuth errors, shared email/Google lock, verify late fence, OTP success arm-once, LOG-001 diagnostic fields. Packages WIP parked outside tree.
+- Published HEAD: `f63701fb2c7e4b7b5beb0dced2d01a6648eccebe` on `origin/main`.
+- Evidence: local pre-push PASS; [CI run 40052928580 success](https://github.com/velorahelperai-cmd/velora/actions/runs/40052928580) same SHA; Vercel Production Ready same SHA (`dpl_98uCvkAsDJGtp7itMSi2sZ8jETTe` / `velora-kjmidiv4v`); smoke HEAD `/` `/login` `/signup` HTTP200.
+- Live email/Google provider acceptance: still NOT_RUN pending owner retest. Graphify index remained behind HEAD (nav-only; defects re-proved on current code).
+- Next: owner live email+Google retest; do not start C02.
 ## Previous session index — PF01-C01 UI delivery published (historical)
 
 <details>
