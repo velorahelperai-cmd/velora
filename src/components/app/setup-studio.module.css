@@ -3,11 +3,14 @@
   --studio-petrol:#007f98; --studio-petrol-deep:#006c81;
   --studio-ink:#102947; --studio-muted:#617ea3; --studio-line:#dfeaf1;
   --studio-soft:#e9f7fa; --studio-danger:#c0392b;
-  width:100%; min-height:100dvh; margin:0;
+  /* Owner: enlarge whole /setup studio surface 10% (nested formBody zoom stays 0.75 → effective +10%). */
+  --studio-scale:1.1;
+  width:100%; min-height:calc(100dvh / var(--studio-scale)); margin:0;
   --studio-gap:12px; --studio-title:clamp(24px,2.4vw,34px);
   padding:18px max(16px,calc((100% - 1280px)/2)) 28px;
   background:radial-gradient(ellipse at 0 34%,#eaf7f6 0,transparent 40%),linear-gradient(180deg,#f8fcfd,#fff 78%);
   color:var(--studio-ink); font-family:var(--font-en); font-size:16px;
+  zoom:var(--studio-scale);
 }
 .studio[dir="rtl"] {font-family:var(--font-ar)}
 .studio,.studio *,.studio *::before,.studio *::after {box-sizing:border-box}
@@ -53,6 +56,14 @@
 .steps {min-width:0;margin:0;padding:0;line-height:1}
 .formBody {min-width:0;zoom:0.75;margin:0;padding-block-start:0}
 @supports not (zoom:1) {
+  .studio {
+    zoom:unset;
+    transform:scale(var(--studio-scale));
+    transform-origin:top center;
+    width:calc(100% / var(--studio-scale));
+    max-width:none;
+    margin-inline:auto;
+  }
   .formBody {transform:scale(0.75);transform-origin:top right;width:133.333%;max-width:none}
   .studio[dir="ltr"] .formBody {transform-origin:top left}
 }
