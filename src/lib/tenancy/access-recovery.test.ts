@@ -30,8 +30,35 @@ beforeEach(() => {
     },
   });
 });
-afterEach(()=>vi.unstubAllEnvs());
+afterEach(()=>{vi.unstubAllEnvs();vi.useRealTimers();});
 describe("persisted profile is required for company access", () => {
+  it("overlaps independent identity/session and admin/profile reads without publishing access early", async () => {
+    vi.useFakeTimers();
+    const delayed=<T,>(value:T)=>new Promise<T>(resolve=>setTimeout(()=>resolve(value),50));
+    mocks.user.mockImplementation(()=>delayed({data:{user},error:null}));
+    mocks.guard.mockImplementation(()=>delayed({ok:true}));
+    mocks.admin.mockImplementation(()=>delayed({data:false,error:null}));
+    mocks.profile.mockImplementation(()=>delayed({data:{full_name:'Saved Name',support_code:'SYNTHETIC'},error:null}));
+    let settled=false;
+    const started=Date.now();
+    const pending=getCompanyAccess().then(value=>{settled=true;return value;});
+    await vi.advanceTimersByTimeAsync(0);
+    const guardStartedWithIdentity=mocks.guard.mock.calls.length===1;
+    expect(mocks.memberships).not.toHaveBeenCalled();
+    await vi.runAllTimersAsync();
+    expect(await pending).toMatchObject({ok:true,context:{fullName:'Saved Name'}});
+    expect(settled).toBe(true);
+    console.info('isolated read-only access benchmark',{hopDelayMs:50,elapsedMs:Date.now()-started});
+    expect(guardStartedWithIdentity).toBe(true);
+    expect(Date.now()-started).toBe(100);
+    expect(mocks.upsert).not.toHaveBeenCalled();
+  });
+  it("keeps revocation authoritative when independent reads finish in either order",async()=>{
+    mocks.guard.mockResolvedValue({ok:false,code:'UNAUTHENTICATED',expired:true});
+    expect(await getCompanyAccess()).toEqual({ok:false,code:'UNAUTHENTICATED',sessionExpired:true});
+    expect(mocks.admin).not.toHaveBeenCalled();expect(mocks.profile).not.toHaveBeenCalled();
+    expect(mocks.memberships).not.toHaveBeenCalled();expect(mocks.upsert).not.toHaveBeenCalled();
+  });
   it("reads an existing profile without attempting to insert or replace it", async () => {
     expect(await getCompanyAccess()).toMatchObject({ ok: true, context: { fullName: "Saved Name", supportCode: "SYNTHETIC" } });
     expect(mocks.profile).toHaveBeenCalledTimes(1);

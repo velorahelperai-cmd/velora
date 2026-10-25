@@ -1,5 +1,7 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, mkdtempSync, realpathSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { indexManifest, extractIndex, assertManifestUnchanged, assertSnapshot, capturePreserved, assertPreserved, gateInvocation, assertApprovedDelta } from './candidate-snapshot.mjs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
@@ -39,13 +41,7 @@ export function runGates(plan, runner, assertCandidate = () => {}) {
   }
   return passed;
 }
-function candidateTree() {
-  const changed = spawnSync('git', ['diff', '--quiet'], { windowsHide: true });
-  if (changed.status !== 0 || git('ls-files', '--others', '--exclude-standard', '-z')) throw Error('PRE_PUSH_UNSTAGED_OR_UNTRACKED_FILES');
-  return git('write-tree');
-}
 const digest = value => createHash('sha256').update(value).digest('hex');
-function readReceipt(file) { try { return JSON.parse(readFileSync(file, 'utf8')); } catch { return null; } }
 export function deliveryIdentity(ownership) {
   if (ownership?.mode !== 'local' || typeof ownership.owner !== 'string' || !ownership.owner
     || typeof ownership.task !== 'string' || !ownership.task.trim()
@@ -78,75 +74,70 @@ export function receiptMatches(receipt, identity, required) {
     && Array.isArray(receipt.passed) && receipt.passed.length === required.length
     && new Set(receipt.passed).size === required.length && required.every(id => receipt.passed.includes(id));
 }
+export function assertCanonicalDrivers(root,manifest) {
+  for (const entry of manifest.entries.filter(entry => entry.path.startsWith('scripts/ci/') || entry.path.startsWith('.githooks/') || entry.path === 'scripts/consolidation/guard.mjs' || entry.path === 'src/lib/logging/redaction.mjs')) {
+    const value=spawnSync('git',['hash-object','--path='+entry.path,entry.path],{cwd:root,encoding:'utf8',env:{...isolatedEnvironment(),GIT_OPTIONAL_LOCKS:'0'},windowsHide:true});
+    if(value.status!==0||value.stdout.trim()!==entry.oid)throw Error('PRE_PUSH_DRIVER_NOT_STAGED');
+  }
+}
 function main() {
-  const mode = process.argv[2];
-  const ownership = verifyWorkspace(process.env, { delivery: mode !== 'install' });
-  if (mode === 'install') {
-    git('config', '--local', 'core.hooksPath', '.githooks');
-    console.log('Git pre-push installed: .githooks/pre-push'); return;
+  // Never let inherited Git redirect options re-point canonical ownership checks.
+  for(const key of ['GIT_DIR','GIT_WORK_TREE','GIT_INDEX_FILE'])delete process.env[key];
+  process.env.GIT_OPTIONAL_LOCKS='0';
+  const mode=process.argv[2];
+  const ownership=verifyWorkspace(process.env,{delivery:mode!=='install'});
+  if(mode==='install'){git('config','--local','core.hooksPath','.githooks');console.log('Git pre-push installed: .githooks/pre-push');return;}
+  const root=realpathSync(process.cwd());assertNoRuntimeEnvFiles(root);
+  const head=git('rev-parse','HEAD');let base;
+  if(mode==='check'){
+    const remote=spawnSync('git',['-c','credential.username=velorahelperai-cmd','ls-remote','origin','refs/heads/main'],{encoding:'utf8',env:{...process.env,GIT_TERMINAL_PROMPT:'0',GCM_INTERACTIVE:'never'},windowsHide:true});
+    if(remote.status!==0)throw Error('PRE_PUSH_REMOTE_MAIN_UNVERIFIED');
+    base=remote.stdout.trim().split(/\s+/)[0];if(!sha(base))throw Error('PRE_PUSH_REMOTE_MAIN_UNVERIFIED');
+  }else{
+    if(mode!=='origin'||process.argv[3]!==ORIGIN)throw Error('PRE_PUSH_ORIGIN_MISMATCH');
+    base=parsePush(readFileSync(0,'utf8'),head).base;
   }
-  assertNoRuntimeEnvFiles(process.cwd());
-  const head = git('rev-parse', 'HEAD');
-  let base;
-  if (mode === 'check') {
-    const remote = spawnSync('git', ['-c', 'credential.username=velorahelperai-cmd', 'ls-remote', 'origin', 'refs/heads/main'],
-      { encoding: 'utf8', env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' }, windowsHide: true });
-    if (remote.status !== 0) throw Error('PRE_PUSH_REMOTE_MAIN_UNVERIFIED');
-    base = remote.stdout.trim().split(/\s+/)[0];
-    if (!sha(base)) throw Error('PRE_PUSH_REMOTE_MAIN_UNVERIFIED');
-  } else {
-    if (mode !== 'origin' || process.argv[3] !== ORIGIN) throw Error('PRE_PUSH_ORIGIN_MISMATCH');
-    base = parsePush(readFileSync(0, 'utf8'), head).base;
-  }
-  git('merge-base', '--is-ancestor', base, head);
-  git('merge-base', '--is-ancestor', ownership.publicationBase, base);
-  const tree = candidateTree();
-  if (mode !== 'check' && git('rev-parse', 'HEAD^{tree}') !== tree) throw Error('PRE_PUSH_HEAD_TREE_MISMATCH');
-  const npmCli = process.env.npm_execpath?.endsWith('npm-cli.js') ? process.env.npm_execpath
-    : join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
-  if (!existsSync(npmCli)) throw Error('PRE_PUSH_NPM_RUNTIME_MISSING');
-  const directory = resolve('.git/velora-pre-push', tree);
-  mkdirSync(directory, { recursive: true });
-  const installFingerprint = () => existsSync('node_modules/.package-lock.json') ? digest(readFileSync('node_modules/.package-lock.json')) : 'missing';
-  const identity = { tree, base, ...deliveryIdentity(ownership), node: process.version, platform: process.platform,
-    installFingerprint: installFingerprint() };
-  const plan = gatePlan(npmCli);
-  const allIds = plan.map(gate => gate.id);
-  const treePlan = plan.filter(gate => gate.id !== 'secrets/range');
-  const treeIds = treePlan.map(gate => gate.id);
-  const fullFile = join(directory, 'full.json');
-  const treeFile = join(directory, 'tree.json');
-  const current = readReceipt(fullFile);
-  const assertCandidate = () => {
-    assertSameOwnership(ownership, verifyWorkspace(process.env, { delivery: true }));
-    if (candidateTree() !== tree || git('rev-parse', 'HEAD') !== head) throw Error('PRE_PUSH_CANDIDATE_CHANGED');
-    assertCandidatePathsOwned(git('diff', '--no-renames', '--name-only', '-z', base, tree).split('\0').filter(Boolean), ownership);
+  git('merge-base','--is-ancestor',base,head);git('merge-base','--is-ancestor',ownership.publicationBase,base);
+  const manifest=indexManifest(root,{writeObjects:true}),tree=manifest.tree;
+  if(mode!=='check'&&git('rev-parse','HEAD^{tree}')!==tree)throw Error('PRE_PUSH_HEAD_TREE_MISMATCH');
+  const approvedFile=resolve('.git/velora-pre-push/approved.json');
+  if(!existsSync(approvedFile))throw Error('PRE_PUSH_APPROVED_MANIFEST_REQUIRED');
+  const approvedBytes=readFileSync(approvedFile),approved=JSON.parse(approvedBytes);
+  if(approved.schemaVersion!==1||approved.owner!==ownership.owner||approved.task!==ownership.task||approved.publicationBase!==ownership.publicationBase)throw Error('PRE_PUSH_APPROVED_MANIFEST_INVALID');
+  const changed=git('diff','--no-renames','--name-only','-z',base,tree).split('\0').filter(Boolean);
+  assertApprovedDelta(changed,approved.paths);assertCandidatePathsOwned(changed,ownership);
+  const entries=new Map(manifest.entries.map(entry=>[entry.path,entry.oid]));
+  for(const path of approved.paths)if((entries.get(path)??null)!==approved.blobs?.[path])throw Error('PRE_PUSH_APPROVED_BLOB_CHANGED');
+  assertCanonicalDrivers(root,manifest);
+  const preserved=capturePreserved(root,approved.paths);
+  const indexDigest=digest(readFileSync('.git/index'));
+  const snapshot=realpathSync(mkdtempSync(join(tmpdir(),'velora-candidate-')));
+  const extracted=extractIndex(root,snapshot);
+  if(JSON.stringify(extracted)!==JSON.stringify(manifest))throw Error('PRE_PUSH_CANDIDATE_CHANGED');
+  const directory=resolve('.git/velora-pre-push',tree,Date.now()+'-'+snapshot.split(/[\\/]/).pop());mkdirSync(directory,{recursive:true});
+  const context={schemaVersion:1,canonical:root,snapshot,head,base,manifest,ownership:deliveryIdentity(ownership)};
+  const contextFile=join(directory,'context.json');const contextBytes=JSON.stringify(context);writeFileSync(contextFile,contextBytes);
+  writeFileSync(join(directory,'preserved.json'),JSON.stringify(preserved,null,2)+'\n');
+  const assertCandidate=()=>{
+    assertSameOwnership(ownership,verifyWorkspace(process.env,{delivery:true}));
+    if(git('rev-parse','HEAD')!==head||digest(readFileSync('.git/index'))!==indexDigest||!readFileSync(approvedFile).equals(approvedBytes)||readFileSync(contextFile,'utf8')!==contextBytes)throw Error('PRE_PUSH_CANDIDATE_CHANGED');
+    assertManifestUnchanged(root,manifest);assertSnapshot(snapshot,manifest);assertPreserved(root,preserved,approved.paths);
   };
-  assertCandidate();
-  if (mode !== 'check' && current?.head === head && receiptMatches(current, identity, allIds)) {
-    console.log('Pre-push PASS: exact commit/tree and unchanged task/runtime receipt verified.'); return;
-  }
-  const childEnv = { ...isolatedEnvironment(), VELORA_WRITER_ID: ownership.owner, VELORA_TASK_ID: ownership.task,
-    VELORA_CI_RECEIPT_DIR: join(directory, 'checks'), SECRET_SCAN_BASE: base };
-  const runner = gate => {
-    console.log('PRE_PUSH_GATE ' + gate.id);
-    return spawnSync(process.execPath, gate.args, { env: childEnv, stdio: 'inherit', windowsHide: true });
+  const npmCli=process.env.npm_execpath?.endsWith('npm-cli.js')?process.env.npm_execpath:join(dirname(process.execPath),'node_modules','npm','bin','npm-cli.js');
+  if(!existsSync(npmCli))throw Error('PRE_PUSH_NPM_RUNTIME_MISSING');
+  const plan=gatePlan(npmCli).filter(gate=>mode!=='check'||gate.id!=='secrets/range');
+  const childEnv={...isolatedEnvironment(),GIT_OPTIONAL_LOCKS:'0',VELORA_WRITER_ID:ownership.owner,VELORA_TASK_ID:ownership.task,VELORA_CI_RECEIPT_DIR:join(directory,'checks'),SECRET_SCAN_BASE:base};
+  const runner=gate=>{
+    console.log('PRE_PUSH_GATE '+gate.id);const invocation=gateInvocation(gate,context,contextFile);const start=Date.now();
+    const result=spawnSync(process.execPath,invocation.args,{cwd:invocation.cwd,env:childEnv,stdio:'inherit',windowsHide:true});
+    console.log('PRE_PUSH_GATE_DURATION '+gate.id+' '+(Date.now()-start)+'ms');return result;
   };
-  const cached = readReceipt(treeFile);
-  let passed;
-  if (receiptMatches(cached, identity, treeIds)) {
-    passed = [...treeIds];
-    console.log('Pre-push: reusing passing checks for identical staged tree, task, dependencies and Node runtime.');
-  } else {
-    passed = runGates(treePlan, runner, assertCandidate);
-    identity.installFingerprint = installFingerprint();
-    writeFileSync(treeFile, JSON.stringify({ ...identity, passed, result: 'PASS', testedAt: new Date().toISOString() }, null, 2) + '\n');
-  }
-  if (mode !== 'check') {
-    passed.push(...runGates(plan.filter(gate => gate.id === 'secrets/range'), runner, assertCandidate));
-    writeFileSync(fullFile, JSON.stringify({ ...identity, head, passed, result: 'PASS', testedAt: new Date().toISOString() }, null, 2) + '\n');
-  }
-  console.log('Pre-push PASS: ' + (mode === 'check' ? 'staged candidate tree; commit-range scan remains mandatory in Git hook.' : 'exact commit, all mandatory gates.') );
+  // Live operations only: a saved JSON receipt cannot authorize this run or skip a gate.
+  const passed=runGates(plan,runner,assertCandidate);
+  const installFile=join(snapshot,'node_modules/.package-lock.json');
+  const identity={tree,base,head,...deliveryIdentity(ownership),node:process.version,platform:process.platform,installFingerprint:existsSync(installFile)?digest(readFileSync(installFile)):'missing'};
+  writeFileSync(join(directory,mode==='check'?'tree.json':'full.json'),JSON.stringify({...identity,snapshot,contextFile,passed,result:'PASS',preservedFingerprint:digest(JSON.stringify(preserved)),testedAt:new Date().toISOString()},null,2)+'\n');
+  console.log('Pre-push PASS: '+(mode==='check'?'exact staged snapshot; range and all gates remain mandatory in Git hook.':'exact commit/tree; all13 live gates; excluded work preserved.'));
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try { main(); }

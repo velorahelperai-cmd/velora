@@ -23,6 +23,33 @@ async function render(done:()=>void,cooldown=0){
 }
 async function advance(ms:number){await act(async()=>{vi.advanceTimersByTime(ms);});}
 describe("real OTP success lifecycle",()=>{
+ it("keeps the same six cells and scene through server success",async()=>{
+  const done=vi.fn();
+  await act(async()=>root.render(createElement(AuthOtpModal,{...props,onSuccessAnimDone:done})));
+  const cells=Array.from(container.querySelectorAll('[data-auth-otp-cell]'));
+  const scene=container.querySelector('[data-auth-otp-cells]');
+  await act(async()=>root.render(createElement(AuthOtpModal,{...props,verifying:true,onSuccessAnimDone:done})));
+  await advance(1100);
+  expect(Array.from(container.querySelectorAll('[data-auth-otp-cell]'))).toEqual(cells);
+  expect(container.querySelector('[data-auth-otp-success]')).toBeNull();
+  await act(async()=>root.render(createElement(AuthOtpModal,{...props,verified:true,onSuccessAnimDone:done})));
+  await advance(901);
+  expect(container.querySelector('[data-auth-otp-cells]')).toBe(scene);
+  expect(Array.from(container.querySelectorAll('[data-auth-otp-cell]'))).toEqual(cells);
+  expect(cells.every(cell=>(cell as HTMLInputElement).disabled)).toBe(true);
+ });
+ it("restores the same editable cells after failure and cancels old phases on close",async()=>{
+  const done=vi.fn();
+  const show=async(extra:Partial<React.ComponentProps<typeof AuthOtpModal>>)=>act(async()=>root.render(createElement(AuthOtpModal,{...props,onSuccessAnimDone:done,...extra})));
+  await show({});const cells=Array.from(container.querySelectorAll('[data-auth-otp-cell]'));
+  await show({verifying:true});await advance(1100);
+  await show({verifying:false,error:'Incorrect code'});await advance(1);
+  expect(container.querySelector('[role=alert]')?.textContent).toBe('Incorrect code');
+  expect(Array.from(container.querySelectorAll('[data-auth-otp-cell]'))).toEqual(cells);
+  expect(cells.every(cell=>!(cell as HTMLInputElement).disabled)).toBe(true);
+  await show({verified:true});await advance(200);await show({open:false});await advance(5000);
+  expect(done).not.toHaveBeenCalled();expect(container.querySelector('[role=dialog]')).toBeNull();
+ });
  it("survives StrictMode effect replay and completes once",async()=>{
   const done=vi.fn();await render(done);await advance(2400);expect(done).toHaveBeenCalledTimes(1);
   expect(container.querySelector('[data-auth-otp-success="true"]')).not.toBeNull();

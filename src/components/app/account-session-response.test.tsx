@@ -757,3 +757,56 @@ it('correlates session-check timeout as UNKNOWN without logging the thrown paylo
  const packet={request_id:'VEL-ABCDEFABCDEFABCD',trace_id:'abcdefabcdefabcdefabcdefabcdefab',parent_span_id:'abcdefabcdefabcd'};const info=vi.spyOn(console,'info').mockImplementation(()=>{});state.broker.mockRejectedValue(Error('private broker transport payload'));
  try{const value=render();await value.refresh(packet);const rows=info.mock.calls.map(([row])=>JSON.parse(String(row)));expect(rows.some(row=>row.request_id===packet.request_id&&row.code==='OUTCOME_UNKNOWN')).toBe(true);expect(JSON.stringify(rows)).not.toContain('private broker transport payload');expect(state.read).not.toHaveBeenCalled();}finally{info.mockRestore();}
 });
+
+it('traces direct session refresh through profile completion and final reattestation',async()=>{
+ const info=vi.spyOn(console,'info').mockImplementation(()=>{});
+ state.read.mockResolvedValue({ok:true,data:profile()});
+ try{
+  await render().refresh();
+  const rows=info.mock.calls.map(([row])=>JSON.parse(String(row))).filter(row=>row.operation==='auth_session_check');
+  expect(rows.some(row=>row.stage==='profile'&&row.code==='OK')).toBe(true);
+  expect(rows.some(row=>row.stage==='refresh'&&row.code==='STARTED')).toBe(true);
+  expect(rows.at(-1)).toMatchObject({stage:'completed',code:'OK'});
+  expect(rows.at(-1).request_id).toMatch(/^VEL-[A-F0-9]{16}$/);
+  expect(JSON.stringify(rows)).not.toContain('synthetic@example.invalid');
+ }finally{info.mockRestore();}
+});
+
+it.each(['broker','profile','reattest'])('bounds a stalled %s read and ignores its late result',async stage=>{
+ vi.useFakeTimers();const late=deferred();
+ state.broker.mockResolvedValue(brokerOk());state.read.mockResolvedValue({ok:true,data:profile()});
+ if(stage==='broker')state.broker.mockReturnValueOnce(late.promise);
+ if(stage==='profile')state.read.mockReturnValueOnce(late.promise);
+ if(stage==='reattest')state.broker.mockResolvedValueOnce(brokerOk()).mockReturnValueOnce(late.promise);
+ const pending=render().refresh();await vi.advanceTimersByTimeAsync(30000);await pending;
+ expect(render().status).toBe('error');expect(render().hasCurrentUser()).toBe(false);
+ const reads=state.read.mock.calls.length,brokers=state.broker.mock.calls.length;
+ await vi.advanceTimersByTimeAsync(60000);
+ expect(state.read).toHaveBeenCalledTimes(reads);expect(state.broker).toHaveBeenCalledTimes(brokers);
+ await render().refresh();expect(render().status).toBe('ready');
+ late.resolve(stage==='profile'?{ok:true,data:profile('user-b')}:brokerOk('user-b','fp-b','gen-b'));
+ await vi.advanceTimersByTimeAsync(0);expect(render().identity?.userId).toBe('user-a');
+});
+
+it('bounds the initial mount broker read and removes its timer on unmount',async()=>{
+ vi.useFakeTimers();state.broker.mockReturnValue(new Promise(()=>{}));
+ const frames:Array<()=>void>=[];window.requestAnimationFrame=(fn:FrameRequestCallback)=>{frames.push(()=>fn(0));return 1;};
+ render();frames[0]!();await vi.advanceTimersByTimeAsync(0);
+ for(const slot of state.slots)slot.cleanup?.();
+ await vi.advanceTimersByTimeAsync(0);expect(vi.getTimerCount()).toBe(0);expect(state.read).not.toHaveBeenCalled();
+});
+
+it('shares the mount deadline and trace across a slow seed broker and profile',async()=>{
+ vi.useFakeTimers();const info=vi.spyOn(console,'info').mockImplementation(()=>{});
+ state.broker.mockImplementationOnce(()=>new Promise(resolve=>setTimeout(()=>resolve(brokerOk()),20000)));
+ state.read.mockImplementationOnce(()=>new Promise(resolve=>setTimeout(()=>resolve({ok:true,data:profile()}),11000)));
+ const frames:Array<()=>void>=[];window.requestAnimationFrame=(fn:FrameRequestCallback)=>{frames.push(()=>fn(0));return 1;};
+ try{
+  render();frames[0]!();await vi.advanceTimersByTimeAsync(30000);
+  expect(render().status).toBe('error');expect(render().hasCurrentUser()).toBe(false);
+  const rows=info.mock.calls.map(([row])=>JSON.parse(String(row))).filter(row=>row.operation==='auth_session_check');
+  const first=rows[0];expect(first.stage).toBe('session');
+  expect(rows.some(row=>row.request_id===first.request_id&&row.duration_ms===30000&&row.code==='UNAVAILABLE')).toBe(true);
+  await vi.advanceTimersByTimeAsync(2000);expect(render().hasCurrentUser()).toBe(false);
+ }finally{info.mockRestore();}
+});

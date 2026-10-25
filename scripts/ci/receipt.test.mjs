@@ -22,6 +22,15 @@ import {
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const runEntrypoint = resolve(root, "scripts/ci/run.mjs");
 
+test('staged snapshot receipt binds exact tree, base and ownership without claiming clean HEAD',()=>{
+ const candidate={headSha:'a'.repeat(40),workingTreeState:'staged_snapshot',treeSha:'b'.repeat(40),baseSha:'c'.repeat(40),owner:'writer',task:'task',reservationFingerprint:'d'.repeat(64)};
+ const receipt=buildCheckReceipt({checkName:'unit',candidate,processResult:{status:0}});
+ assert.equal(receipt.candidate.workingTreeState,'staged_snapshot');assert.equal(receipt.candidate.treeSha,candidate.treeSha);
+ assert.ok(receipt.candidate.identityKey.includes(candidate.treeSha));
+ for(const key of ['treeSha','baseSha','owner','task','reservationFingerprint'])assert.notEqual(candidateIdentityKey({...candidate,[key]:key==='owner'||key==='task'?'other':'e'.repeat(key==='reservationFingerprint'?64:40)}),candidateIdentityKey(candidate));
+ assert.equal(candidateIdentityKey({...candidate,treeSha:null}),null);
+});
+
 function cleanCandidate(overrides = {}) {
   return {
     headSha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",

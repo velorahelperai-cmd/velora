@@ -20,11 +20,41 @@ it('preserves edits made before late hydration and uses the proven native versio
 it('does not write before a successful read proves the current draft version',async()=>{
  actions.read.mockReturnValue(new Promise(()=>{}));await render();await act(async()=>{expect(await api.save({name:'Typed'})).toMatchObject({ok:false});});expect(actions.save).not.toHaveBeenCalled();
 });
-it('serializes rapid writes using a synchronous lock',async()=>{
- await render();const write=deferred();actions.save.mockReturnValue(write.promise);let first!:Promise<unknown>;await act(async()=>{first=api.save({name:'Typed'});expect(await api.save({name:'Typed'})).toBeNull();});expect(actions.save).toHaveBeenCalledTimes(1);await act(async()=>{write.resolve({ok:true,data:record('Typed',1)});await first;});
+it('reuses an in-flight write for the same eligible payload and skips a no-op after confirm',async()=>{
+ await render();const write=deferred();actions.save.mockReturnValue(write.promise);let first!:Promise<unknown>;let second!:Promise<unknown>;
+ await act(async()=>{first=api.save({name:'Typed'});second=api.save({name:'Typed'});});
+ expect(actions.save).toHaveBeenCalledTimes(1);
+ await act(async()=>{write.resolve({ok:true,data:record('Typed',1)});expect(await first).toMatchObject({ok:true,data:{version:1}});expect(await second).toMatchObject({ok:true,data:{version:1}});});
+ await act(async()=>{expect(await api.save({name:'Typed'})).toMatchObject({ok:true,data:{version:1}});});
+ expect(actions.save).toHaveBeenCalledTimes(1);
+});
+it('queues a newer payload while a write is in flight without dropping the latest edit',async()=>{
+ await render();const firstWrite=deferred();actions.save.mockReturnValueOnce(firstWrite.promise).mockResolvedValueOnce({ok:true,data:record('Second',2)});
+ let first!:Promise<unknown>;await act(async()=>{first=api.save({name:'First'});void api.save({name:'Second'});});
+ expect(actions.save).toHaveBeenCalledTimes(1);
+ await act(async()=>{firstWrite.resolve({ok:true,data:record('First',1)});await first;});
+ expect(actions.save).toHaveBeenCalledTimes(2);
+ expect(actions.save.mock.calls[1]?.[0]).toMatchObject({expectedVersion:1,patch:{name:'Second'}});
 });
 it('reconciles an unknown write result by readback without sending another write',async()=>{
  await render();actions.save.mockRejectedValue(Error('transport'));actions.read.mockResolvedValue({ok:true,data:record('Typed',1)});await act(async()=>{expect(await api.save({name:'Typed'})).toMatchObject({ok:true,data:{version:1}});});expect(actions.save).toHaveBeenCalledTimes(1);
+});
+it('queues a return to the confirmed payload behind a different pending write',async()=>{
+ actions.read.mockResolvedValue({ok:true,data:record('Original',7)});await render();
+ const write=deferred();actions.save.mockReturnValueOnce(write.promise).mockResolvedValueOnce({ok:true,data:record('Original',9)});
+ let pending!:Promise<unknown>;
+ await act(async()=>{pending=api.save({name:'Changed'});void api.save({name:'Original'});});
+ await act(async()=>{write.resolve({ok:true,data:record('Changed',8)});await pending;});
+ expect(actions.save).toHaveBeenCalledTimes(2);
+ expect(actions.save.mock.calls[1]?.[0]).toMatchObject({expectedVersion:8,patch:{name:'Original'}});
+});
+it('drops an obsolete queued payload when the latest request matches the pending write',async()=>{
+ await render();const write=deferred();actions.save.mockReturnValueOnce(write.promise).mockResolvedValue({ok:true,data:record('Obsolete',2)});
+ let pending!:Promise<unknown>;
+ await act(async()=>{pending=api.save({name:'Latest'});api.markEdited();void api.save({name:'Obsolete'});api.markEdited();void api.save({name:'Latest'});});
+ await act(async()=>{write.resolve({ok:true,data:record('Latest',1)});await pending;});
+ expect(actions.save).toHaveBeenCalledTimes(1);
+ expect(api.hasUnconfirmedChanges()).toBe(false);
 });
 it('requires explicit reload before writing over a conflicting saved draft',async()=>{
  await render();actions.save.mockResolvedValue({ok:false,code:'CONFLICT'});actions.read.mockResolvedValue({ok:true,data:record('Other',2)});await act(async()=>{expect(await api.save({name:'Typed'})).toMatchObject({ok:false,code:'CONFLICT'});expect(await api.save({name:'Typed'})).toMatchObject({ok:false,code:'CONFLICT'});});expect(actions.save).toHaveBeenCalledTimes(1);await act(async()=>{await api.reload();});expect(host.querySelector('input')?.value).toBe('Other');
@@ -34,4 +64,39 @@ it('keeps UNKNOWN blocked when readback is also unavailable',async()=>{
 });
 it('ignores late hydration from a replaced account boundary',async()=>{
  const old=deferred();actions.read.mockReturnValueOnce(old.promise).mockResolvedValue({ok:true,data:record('New',3)});await render('a');await render('b');await act(async()=>old.resolve({ok:true,data:record('Old',1)}));expect(host.querySelector('input')?.value).toBe('New');
+});
+it('keeps saveStatus silent while a write is in flight and only surfaces fail',async()=>{
+ await render();const write=deferred();actions.save.mockReturnValue(write.promise);
+ let pending!:Promise<unknown>;
+ await act(async()=>{pending=api.save({name:'Typed'});});
+ expect(api.saveStatus).not.toBe('pending');
+ expect(api.saveStatus).not.toBe('fail');
+ await act(async()=>{write.resolve({ok:true,data:record('Typed',1)});await pending;});
+ expect(api.saveStatus).toBe('ok');
+});
+it('awaits the in-flight confirmation without starting a duplicate write',async()=>{
+ await render();const write=deferred();actions.save.mockReturnValue(write.promise);
+ let savePromise!:Promise<unknown>;let confirmPromise!:Promise<unknown>;
+ await act(async()=>{savePromise=api.save({name:'Typed'});confirmPromise=api.awaitConfirmed();});
+ expect(actions.save).toHaveBeenCalledTimes(1);
+ await act(async()=>{write.resolve({ok:true,data:record('Typed',1)});expect(await savePromise).toMatchObject({ok:true});expect(await confirmPromise).toMatchObject({ok:true,data:{version:1}});});
+ expect(actions.save).toHaveBeenCalledTimes(1);
+});
+it('retries a failed write only on explicit retrySave',async()=>{
+ await render();actions.save.mockResolvedValueOnce({ok:false,code:'UNAVAILABLE'});actions.read.mockResolvedValue({ok:false,code:'UNAVAILABLE'});
+ await act(async()=>{expect(await api.save({name:'Typed'})).toMatchObject({ok:false,code:'UNAVAILABLE'});});
+ expect(api.saveStatus).toBe('fail');
+ expect(actions.save).toHaveBeenCalledTimes(1);
+ actions.save.mockResolvedValueOnce({ok:true,data:record('Typed',1)});
+ await act(async()=>{expect(await api.retrySave()).toMatchObject({ok:true,data:{version:1}});});
+ expect(actions.save).toHaveBeenCalledTimes(2);
+ expect(api.saveStatus).toBe('ok');
+});
+it('does not cancel an in-flight write when the step host unmounts',async()=>{
+ await render();const write=deferred();actions.save.mockReturnValue(write.promise);
+ let pending!:Promise<unknown>;
+ await act(async()=>{pending=api.save({name:'Typed'});});
+ await act(async()=>root.unmount());
+ await act(async()=>{write.resolve({ok:true,data:record('Typed',1)});await pending;});
+ expect(actions.save).toHaveBeenCalledTimes(1);
 });

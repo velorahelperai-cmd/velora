@@ -150,23 +150,24 @@ const loadAuth = cache(async (): Promise<LoadAuthOk | LoadAuthFail> => {
     if (!claimsData?.claims?.sub) return { ok: false, code: "UNAUTHENTICATED", supabase };
 
     const userId = String(claimsData.claims.sub);
-    const { data: userData, error: userError } = await supabase.auth.getUser();
+    // Claims are verified first. These read-only checks are independent;
+    // neither can publish access before both identity and session pass.
+    const [{ data: userData, error: userError }, sessionGuard] = await Promise.all([
+      supabase.auth.getUser(),
+      checkAppSession(supabase),
+    ]);
     if (userError) return { ok: false, code: "UNAVAILABLE", supabase };
     const user = userData.user;
     if (!user || user.id !== userId) {
       return { ok: false, code: "UNAUTHENTICATED", supabase };
     }
 
-    const sessionGuard=await checkAppSession(supabase);
     if(!sessionGuard.ok)return {ok:false,code:sessionGuard.code,...(sessionGuard.expired?{sessionExpired:true as const}:{}),supabase};
     const identityVerified = Boolean(user.email_confirmed_at || user.phone_confirmed_at);
     if (!identityVerified) {
       return { ok: true, supabase, userId, email: user.email ?? "", phone: user.phone ?? "",
         identityVerified: false, emailConfirmed: false, isPlatformAdmin: false, fullName: "", supportCode: "", needsProfileName: true };
     }
-    const { data: adminFlag, error: adminError } = await supabase.rpc("is_platform_admin");
-    if (adminError) return { ok: false, code: "UNAVAILABLE", supabase };
-
     const metaName = String(
       user.user_metadata?.full_name || user.user_metadata?.name || "",
     ).trim();
@@ -176,7 +177,15 @@ const loadAuth = cache(async (): Promise<LoadAuthOk | LoadAuthFail> => {
       .select("full_name, support_code")
       .eq("user_id", userId)
       .maybeSingle();
-    let { data: profile, error: profileError } = await readProfile();
+    // Both queries stay under the same authenticated client/RLS scope.
+    // Bootstrap remains conditional on a confirmed missing persisted profile.
+    const [adminResult, profileResult] = await Promise.all([
+      supabase.rpc("is_platform_admin"),
+      readProfile(),
+    ]);
+    const { data: adminFlag, error: adminError } = adminResult;
+    if (adminError) return { ok: false, code: "UNAVAILABLE", supabase };
+    let { data: profile, error: profileError } = profileResult;
     if (profileError) return { ok: false, code: "UNAVAILABLE", supabase };
 
     if (!profile) {

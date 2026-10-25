@@ -292,6 +292,10 @@ export function captureCandidateIdentity(cwd = process.cwd()) {
 
 export function candidateIdentityKey(candidate) {
   if (!candidate?.headSha || !SHA_RE.test(candidate.headSha)) return null;
+  if(candidate.workingTreeState==='staged_snapshot'){
+    if(!SHA_RE.test(candidate.treeSha??'')||!SHA_RE.test(candidate.baseSha??'')||!candidate.owner||!candidate.task||!/^[a-f0-9]{64}$/.test(candidate.reservationFingerprint??''))return null;
+    return `${candidate.headSha}|staged_snapshot|${candidate.treeSha}|${candidate.baseSha}|${candidate.owner}|${candidate.task}|${candidate.reservationFingerprint}`;
+  }
   if (candidate.workingTreeState !== "clean" && candidate.workingTreeState !== "dirty") return null;
   if (candidate.workingTreeState === "clean") return `${candidate.headSha.toLowerCase()}|clean`;
   if (!candidate.dirtyPathFingerprint || candidate.dirtyPathFingerprint === "clean") return null;
@@ -370,6 +374,7 @@ export function buildCheckReceipt(input) {
           dirtyPathCount: candidate.dirtyPathCount,
           dirtyPathFingerprint: candidate.dirtyPathFingerprint,
           capturedAt: candidate.capturedAt,
+          ...(candidate.workingTreeState==='staged_snapshot'?{treeSha:candidate.treeSha,baseSha:candidate.baseSha,owner:candidate.owner,task:candidate.task,reservationFingerprint:candidate.reservationFingerprint}:{}),
           identityKey,
         }
       : null,

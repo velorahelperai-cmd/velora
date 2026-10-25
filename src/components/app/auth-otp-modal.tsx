@@ -135,6 +135,7 @@ export function AuthOtpModal({
   const restoreFocusRef = useRef<HTMLElement | null>(null);
   const cellRefs = useRef<Array<HTMLInputElement | null>>([]);
   const timersRef = useRef<number[]>([]);
+  const focusFrameRef = useRef<number | null>(null);
   const [digits, setDigits] = useState<string[]>(() => Array.from({ length: CELL_COUNT }, () => ""));
   const [focusIndex, setFocusIndex] = useState(0);
   const [phase, setPhase] = useState<AuthOtpPhase>("input");
@@ -147,9 +148,14 @@ export function AuthOtpModal({
   const lastAutoCode = useRef<string | null>(null);
   const rejectedInput = useRef(false);
   const digitsRef = useRef(digits);
+  const restoreInputFocus = useRef(false);
   useEffect(() => {
-    if (!open) { submissionSequence.current += 1; submittingRef.current = false; }
     lastAutoCode.current = null;
+    return () => {
+      submissionSequence.current += 1;
+      submittingRef.current = false;
+      if (focusFrameRef.current !== null) window.cancelAnimationFrame(focusFrameRef.current);
+    };
   }, [open, email]);
 
   const clearTimers = useCallback(() => {
@@ -210,9 +216,21 @@ export function AuthOtpModal({
     }, 0);
     timersRef.current.push(start);
     return () => clearTimers();
-  }, [open, verified, verifying, clearTimers]);
+  }, [open, email, verified, verifying, clearTimers]);
 
   useEffect(() => () => clearTimers(), [clearTimers]);
+
+  useEffect(() => {
+    if (!open) { restoreInputFocus.current = false; return; }
+    if (busy || verifying || verified || phase !== "input") {
+      restoreInputFocus.current = true;
+      return;
+    }
+    if (!restoreInputFocus.current) return;
+    restoreInputFocus.current = false;
+    const frame = window.requestAnimationFrame(() => cellRefs.current[focusIndex]?.focus());
+    return () => window.cancelAnimationFrame(frame);
+  }, [open, busy, verifying, verified, phase, focusIndex]);
 
   function updateDigits(next: string[]) {
     digitsRef.current = next;
@@ -252,7 +270,8 @@ export function AuthOtpModal({
     const filled = capped.findIndex((d) => !d);
     const nextFocus = filled === -1 ? CELL_COUNT - 1 : Math.max(startIndex, filled);
     setFocusIndex(nextFocus);
-    window.requestAnimationFrame(() => cellRefs.current[nextFocus]?.focus());
+    if (focusFrameRef.current !== null) window.cancelAnimationFrame(focusFrameRef.current);
+    focusFrameRef.current = window.requestAnimationFrame(() => cellRefs.current[nextFocus]?.focus());
   }
 
   function onCellChange(index: number, raw: string) {
@@ -334,6 +353,7 @@ export function AuthOtpModal({
   const showRadar = verified && (phase === "radar" || phase === "done");
   const completed = verified && phase === "done";
   const pending = verifying && !verified;
+  const inputActive = phase === "input" && !pending && !verified;
 
   return (
     <div
@@ -358,8 +378,11 @@ export function AuthOtpModal({
         }`}
       >
         <style>{`
+          .auth-otp-scene { height: 72px; transition: height 680ms cubic-bezier(.22,1,.36,1); }
+          .auth-otp-scene[data-expanded="true"] { height: 170px; }
+          .auth-otp-controls { display:grid; transition: grid-template-rows 680ms cubic-bezier(.22,1,.36,1), opacity 150ms cubic-bezier(.22,1,.36,1); }
           @media (prefers-reduced-motion: reduce) {
-            .auth-otp-tile, .auth-otp-digit, .auth-otp-radar { transition: none !important; animation: none !important; }
+            .auth-otp-tile, .auth-otp-anchor, .auth-otp-digit, .auth-otp-radar, .auth-otp-scene, .auth-otp-controls { transition: none !important; animation: none !important; }
           }
         `}</style>
         <div
@@ -381,24 +404,19 @@ export function AuthOtpModal({
         </div>
 
         <div className="relative z-10 w-full text-center">
-          <h2 id={titleId} className="text-[25px] font-bold leading-snug tracking-tight text-[#172D43]">
-            {completed ? successTitle ?? title : title}
+          <h2 id={titleId} className="grid text-[25px] font-bold leading-snug tracking-tight text-[#172D43]">
+            <span className="col-start-1 row-start-1" style={{visibility:completed ? "hidden" : undefined}} aria-hidden={completed || undefined}>{title}</span>
+            <span className="col-start-1 row-start-1" style={{visibility:completed ? undefined : "hidden"}} aria-hidden={!completed || undefined}>{successTitle ?? title}</span>
           </h2>
-          <p id={descId} className="mt-1 text-xs leading-5 text-[#536579]">
-            {completed ? successBody ?? body : body}
+          <p id={descId} className="mt-1 grid text-xs leading-5 text-[#536579]">
+            <span className="col-start-1 row-start-1" style={{visibility:completed ? "hidden" : undefined}} aria-hidden={completed || undefined}>{body}</span>
+            <span className="col-start-1 row-start-1" style={{visibility:completed ? undefined : "hidden"}} aria-hidden={!completed || undefined}>{successBody ?? body}</span>
           </p>
-          {!completed ? <p className="mt-2 text-[11px] leading-4 text-[#087E8B]">{realBody}</p> : null}
+          <p className="mt-2 text-[11px] leading-4 text-[#087E8B]" style={{visibility:completed ? "hidden" : undefined}} aria-hidden={completed || undefined}>{realBody}</p>
         </div>
 
 
 
-        {completed ? (
-          <div className="relative z-10 my-10 grid place-items-center" data-auth-otp-success="true" aria-live="polite">
-            <span className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500 text-3xl text-white shadow-[0_12px_40px_rgba(16,185,129,0.35)]">
-              ✓
-            </span>
-          </div>
-        ) : (
           <form className="relative z-10 mt-5 w-full" noValidate onSubmit={submit} onPaste={onPaste}>
             {error ? (
               <p role="alert" className="mb-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
@@ -411,9 +429,10 @@ export function AuthOtpModal({
               </p>
             ) : null}
 
-            <p className="mb-2 text-center text-xs text-[#536579]">{codeLabel}</p>
+            <p className="mb-2 text-center text-xs text-[#536579]" style={{visibility:completed ? "hidden" : undefined}} aria-hidden={completed || undefined}>{codeLabel}</p>
             <div
-              className={`relative mx-auto w-full ${phase === "input" && !pending ? "h-[72px]" : "h-[170px]"}`}
+              className="auth-otp-scene relative mx-auto w-full"
+              data-expanded={!inputActive}
               role="group"
               aria-label={codeLabel}
               data-auth-otp-cells="true"
@@ -424,7 +443,11 @@ export function AuthOtpModal({
                 return (
                   <div
                     key={index}
-                    className={`auth-otp-tile absolute left-1/2 top-1/2 flex h-[56px] w-[48px] items-center justify-center rounded-[16px] bg-[#F0F4F6] sm:w-[52px] ${
+                    className="auth-otp-anchor pointer-events-none absolute inset-0"
+                    style={{transform: phase === "input" ? `translate3d(${((index + 0.5) / CELL_COUNT - 0.5) * 100}%, 0, 0)` : `translate3d(${pose.x}px, ${pose.y}px, 0)`, transition:"transform 680ms cubic-bezier(.22,1,.36,1)"}}
+                  >
+                  <div
+                    className={`auth-otp-tile pointer-events-auto absolute left-1/2 top-1/2 flex items-center justify-center rounded-[16px] bg-[#F0F4F6] ${
                       active
                         ? "border-[1.5px] border-[#E46F51] shadow-[0_0_20px_rgba(228,111,81,0.25)]"
                         : digit
@@ -432,15 +455,13 @@ export function AuthOtpModal({
                           : "border border-[#DCE4EB]"
                     }`}
                     style={{
-                      left: phase === "input" ? `${((index + 0.5) * 100) / CELL_COUNT}%` : undefined,
-                      width: phase === "input" ? "min(52px, calc(100% / 6 - 4px))" : undefined,
-                      height: phase === "input" ? "auto" : undefined,
-                      aspectRatio: phase === "input" ? "1" : undefined,
-                      minHeight: phase === "input" ? "44px" : undefined,
-                      transform: phase === "input" ? "translate3d(-50%, -50%, 0)" : `translate3d(calc(-50% + ${pose.x}px), calc(-50% + ${pose.y}px), 0) rotate(${pose.boxRotate}deg) scale(${pose.scale})`,
+                      width: "min(52px, calc(100% / 6 - 4px))",
+                      aspectRatio: "1",
+                      minHeight: "44px",
+                      transform: `translate3d(-50%, -50%, 0) rotate(${pose.boxRotate}deg) scale(${pose.scale})`,
                       opacity: pose.opacity,
                       transition:
-                        "left 0.68s cubic-bezier(0.22, 1, 0.36, 1), width 0.68s cubic-bezier(0.22, 1, 0.36, 1), transform 0.68s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.4s ease, border-color 0.35s ease, box-shadow 0.35s ease",
+                        "transform 0.68s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.4s cubic-bezier(.22,1,.36,1), border-color 0.35s ease, box-shadow 0.35s ease",
                     }}
                   >
                     <input
@@ -456,6 +477,7 @@ export function AuthOtpModal({
                       dir="ltr"
                       aria-label={`${codeLabel} ${index + 1}`}
                       disabled={busy || verifying || verified || retrySessionOnly || phase !== "input"}
+                      aria-hidden={phase === "radar" || phase === "done" || undefined}
                       value={digit}
                       onChange={(event) => onCellChange(index, event.target.value)}
                       onKeyDown={(event) => onCellKeyDown(index, event)}
@@ -464,12 +486,14 @@ export function AuthOtpModal({
                       style={{ transform: `rotate(${pose.textRotate}deg)`, transition: "transform 0.68s cubic-bezier(0.22, 1, 0.36, 1)", outline: "none", borderRadius: "14px" }}
                     />
                   </div>
+                  </div>
                 );
               })}
               <div
                 className="auth-otp-radar pointer-events-none absolute inset-0 grid place-items-center"
                 aria-hidden="true"
                 data-auth-otp-confirmed={showRadar ? "true" : undefined}
+                data-auth-otp-success={completed ? "true" : undefined}
                 style={{ opacity: showRadar ? 1 : 0, transform: completed ? "scale(1.1)" : "scale(1)", transition: "opacity 700ms ease, transform 550ms ease" }}
               >
                 <div className="absolute h-[154px] w-[154px] rounded-full border border-emerald-500/25">
@@ -481,28 +505,31 @@ export function AuthOtpModal({
                 </span>
               </div>
             </div>
-            {phase === "input" && !pending ? codeInvalid ? (
+            <div className="auth-otp-controls" inert={!inputActive} aria-hidden={!inputActive || undefined} style={{gridTemplateRows:inputActive ? "1fr" : "0fr",opacity:inputActive ? 1 : 0}}>
+            <div className="min-h-0 overflow-hidden">
+            {codeInvalid ? (
               <p role="alert" className="mt-2 text-center text-xs text-[var(--color-danger-fg)]">
                 {codeFormat}
               </p>
             ) : (
               <p className="mt-2 text-center text-[11px] text-[#536579]">{codeHint}</p>
-            ) : null}
+            )}
 
-            {phase === "input" && !pending ? (
               <div className="mt-4 grid gap-2">
                 <Button type="submit" variant="entry" busy={busy} busyLabel={verifyLabel} disabled={busy || !email}>
                   {verifyLabel}
                 </Button>
 
               </div>
-            ) : null}
+            </div>
+            </div>
           </form>
-        )}
 
-        {pending || showRadar ? <p role="status" className="relative z-10 mt-3 min-h-9 text-center text-xs font-semibold text-[#087E8B]" data-auth-otp-pending={pending ? "true" : undefined}>{pending ? verifyingLabel : verifiedLabel}</p> : null}
-        {phase === "input" && !pending && !verified ? (
-          <div className="relative z-10 mt-4 w-full text-center text-xs text-[#536579]">
+        <div className="auth-otp-controls relative z-10 w-full" style={{gridTemplateRows:inputActive ? "0fr" : "1fr"}}><div className="min-h-0 overflow-hidden">
+        <p role="status" className="mt-3 min-h-9 text-center text-xs font-semibold text-[#087E8B]" data-auth-otp-pending={pending ? "true" : undefined}>{pending ? verifyingLabel : showRadar ? verifiedLabel : ""}</p>
+        </div></div>
+          <div className="auth-otp-controls relative z-10 w-full" inert={!inputActive} aria-hidden={!inputActive || undefined} style={{gridTemplateRows:inputActive ? "1fr" : "0fr",opacity:inputActive ? 1 : 0}}>
+          <div className="min-h-0 overflow-hidden text-center text-xs text-[#536579]"><div className="mt-4">
             <p className="flex flex-wrap items-center justify-center gap-x-1.5 gap-y-1">
               {resendPrompt ? <span>{resendPrompt}</span> : null}
               <button
@@ -540,7 +567,7 @@ export function AuthOtpModal({
               </button>
             </details>
           </div>
-        ) : null}
+          </div></div>
         {!verified ? (
           <button
             type="button"

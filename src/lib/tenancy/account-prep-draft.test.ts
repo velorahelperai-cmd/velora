@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   accountPrepDraftFromRow,
   accountPrepExpiresAt,
+  accountPrepPayloadsEqual,
   accountPrepPayloadToFormState,
   mergeAccountPrepDraftPayload,
   parseAccountPrepDraftPatch,
   preparationToAccountPrepPatch,
 } from "./account-prep-draft";
 import { emptyPreparation } from "./prepayment-preparation";
+import type { AccountPrepDraftPayload } from "./account-prep-draft";
 
 describe("account prep draft contract", () => {
   it("rejects unknown keys and accepts a field allowlist patch", () => {
@@ -24,6 +26,42 @@ describe("account prep draft contract", () => {
       city: "Salalah",
       goals: ["sales"],
     });
+  });
+
+  it("compares eligible fields after normalization without reordering branches or goals", () => {
+    const left: AccountPrepDraftPayload = {
+      name: " TAG CITY ",
+      website: { kind: "none" as const },
+      country: "OM",
+      city: "نزوى",
+      phone: "+96893180420",
+      type: "technology",
+      whatsappExisting: "yes" as const,
+      goals: ["support", "sales"],
+      branches: [{ name: "TAG CITY", city: "نزوى" }],
+    };
+    const right: AccountPrepDraftPayload = {
+      name: "TAG CITY",
+      website: { kind: "none" as const },
+      country: "OM",
+      city: "نزوى",
+      phone: "+96893180420",
+      type: "technology",
+      whatsappExisting: "yes" as const,
+      goals: ["support", "sales"],
+      branches: [{ name: "TAG CITY", city: "نزوى" }],
+    };
+    expect(accountPrepPayloadsEqual(left, right)).toBe(true);
+    expect(accountPrepPayloadsEqual(left, { ...right, goals: ["sales", "support"] })).toBe(false);
+    expect(
+      accountPrepPayloadsEqual(left, {
+        ...right,
+        branches: [
+          { name: "TAG CITY", city: "نزوى" },
+          { name: "Other", city: "مسقط" },
+        ],
+      }),
+    ).toBe(false);
   });
 
   it("clamps four calendar months at month ends and does not use visit extension", () => {

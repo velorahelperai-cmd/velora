@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { AccountMenu, useOptionalAccountSession } from "./account-chrome";
+import { ApprovedAccountLoader } from "./approved-account-loader";
 import { LangSwitch } from "./ui";
 import { SetupStudioLangSwitch } from "./setup-studio-lang-switch";
 import { useDemo } from "@/lib/demo-state";
@@ -54,18 +55,7 @@ export function PrepaymentPreparation({
   const session = useOptionalAccountSession();
   const { locale } = useDemo();
   if (session?.status !== "ready" || session.identity?.userId !== userId) {
-    return (
-      <main className="grid min-h-svh place-content-center bg-[#f6fafb] px-6 text-[#006c81]" data-service-theme="" dir={locale === "ar" ? "rtl" : "ltr"}>
-        <div className="flex flex-col items-center gap-6" role="status" aria-label={locale === "ar" ? "جارٍ تأكيد الحساب…" : "Confirming your account…"}>
-          <div className="flex items-center gap-3 text-3xl font-bold" dir="ltr">
-            <span className="grid h-12 w-12 place-items-center rounded-2xl border border-[#cce4e8] bg-white text-2xl shadow-sm" aria-hidden="true">V</span>
-            Velora
-          </div>
-          <span className="h-5 w-5 rounded-full border-2 border-[#cce4e8] border-t-[#007f98] motion-safe:animate-spin" aria-hidden="true" />
-          <span className="sr-only">{locale === "ar" ? "جارٍ تأكيد الحساب…" : "Confirming your account…"}</span>
-        </div>
-      </main>
-    );
+    return <ApprovedAccountLoader label={locale === "ar" ? "جارٍ تأكيد الحساب…" : "Confirming your account…"} />;
   }
   const identity = session.identity;
   if (variant === "studio") {
@@ -236,7 +226,7 @@ export function PreparationForm({
           </div>
         ) : (
           <div ref={form} role="form" aria-label={t("بيانات التجهيز المحلية", "Local preparation details")} className={styles.form}>
-            <fieldset disabled={!draft.hydrated||draft.saveStatus==="pending"} onChangeCapture={draft.markEdited} onClickCapture={draft.markEdited} style={{display:"contents",border:0,margin:0,padding:0,minWidth:0}}>
+            <fieldset disabled={!draft.hydrated} onChangeCapture={draft.markEdited} style={{display:"contents",border:0,margin:0,padding:0,minWidth:0}}>
             <div className={styles.field}>
               <label htmlFor={`${id}-name`}>{labels.name}</label>
               <BusinessNameSuggestions
@@ -500,7 +490,6 @@ function StudioPreparationForm({
     setValue(restored.preparation);setNoSite(restored.website?.kind==='none');setSiteUrl(restored.website?.kind==='url'?restored.website.value:'');
     setGoalsDraft(restored.goals);setChannelDraft({...blankChannelDraft(),whatsapp:true,existingUse:restored.whatsappExisting??""});
   }});
-  const saveStatus=draft.saveStatus;
 
 
   function remember(journey: SetupPlanJourney) {
@@ -629,8 +618,8 @@ function StudioPreparationForm({
     storeAnswers(result.answers);
     setStepErrors([]);
   }
-  async function openLocalPlans() {
-    if (!actorNow() || phase !== "form" || saveStatus === "pending" || !draft.hydrated) return;
+  function openLocalPlans() {
+    if (!actorNow() || phase !== "form" || !draft.hydrated) return;
     const rejected = validatePreparation(preparedValue);
     const website = screen1WebsiteChange(answersRef.current, noSite, siteUrl);
     if (!website.ok) rejected.push("website");
@@ -675,8 +664,8 @@ function StudioPreparationForm({
       whatsappExisting: whatsappDraft.existingUse || null,
       goals: goalsResult.answers.goals,
     });
-    const saveResult=await draft.save(patch);
-    if(!saveResult?.ok||!currentActorValidator.current())return;
+    // Navigate immediately after field validation; persist only when eligible fields changed.
+    void draft.save(patch);
 
     const existing = journeyRef.current;
     const journey =
@@ -742,6 +731,26 @@ function StudioPreparationForm({
   async function reviewConfirm(accepted: boolean): Promise<SetupPlanConfirmResult> {
     const journey = journeyRef.current;
     if (!journey || !actorNow()) return { ok: false, code: "ACTOR_NOT_CURRENT" };
+    const snap = journey.snapshot();
+    const prepPatch = preparationToAccountPrepPatch({
+      preparation: snap.preparation,
+      website: snap.preparation.answers?.website ?? null,
+      whatsappExisting: snap.preparation.answers?.whatsapp?.existingUse ?? null,
+      goals: snap.preparation.answers?.goals ?? [],
+    });
+    // Payment / server-bound confirm waits for the latest eligible snapshot; step nav does not.
+    const draftResult = await draft.save(prepPatch);
+    if (!currentActorValidator.current() || journeyRef.current !== journey) return { ok: false, code: "STALE_CAPTURE" };
+    if (!draftResult?.ok) {
+      const code = draftResult?.code === "CONFLICT" ? "CONFLICT" : "UNAVAILABLE";
+      return { ok: false, code };
+    }
+    const confirmed = await draft.awaitConfirmed();
+    if (!currentActorValidator.current() || journeyRef.current !== journey) return { ok: false, code: "STALE_CAPTURE" };
+    if (!confirmed?.ok) {
+      const code = confirmed?.code === "CONFLICT" ? "CONFLICT" : "UNAVAILABLE";
+      return { ok: false, code };
+    }
     const pending = journey.confirmReview(accepted);
     remember(journey);
     const result = await pending;
@@ -791,6 +800,8 @@ function StudioPreparationForm({
 
   return (
     <div className={phase !== "form" ? planStyles.stack : studioStyles.shell}>
+      {/* Fail-only draft notice stays mounted across form/plans/review; silent saves never surface here. */}
+      <AccountPrepDraftStatus draft={draft} ar={ar}/>
       {/*
         Shell uses physical LTR grid tracks so stage+summary stay visually left and
         form right (approved), while each region restores logical RTL/LTR text.
@@ -831,7 +842,7 @@ function StudioPreparationForm({
             aria-labelledby={`${id}-heading`}
             className={`${studioStyles.panel} ${studioStyles.formBody}`}
           >
-            <fieldset disabled={!draft.hydrated||draft.saveStatus==="pending"} onChangeCapture={draft.markEdited} onClickCapture={draft.markEdited} style={{display:"contents",border:0,margin:0,padding:0,minWidth:0}}>
+            <fieldset disabled={!draft.hydrated} onChangeCapture={draft.markEdited} style={{display:"contents",border:0,margin:0,padding:0,minWidth:0}}>
             <div className={studioStyles.stepStack} data-setup-step="activity">
             <div className={studioStyles.accordion} data-open={openSection === "identity"}>
               <button
@@ -1139,19 +1150,16 @@ function StudioPreparationForm({
               type="button"
               className={studioStyles.primary}
               onClick={() => openLocalPlans()}
-              disabled={!draft.hydrated || saveStatus === "pending"}
-              aria-busy={saveStatus === "pending" || undefined}
+              disabled={!draft.hydrated}
               data-setup-continue="true"
               data-setup-review-action="true"
               data-setup-destination="plans"
-              data-prep-save={saveStatus}
             >
               {t("التالي: قابل فريقك", "Next: Meet your team")}
               <span aria-hidden="true"><StudioIcon kind="arrow" forward={ar ? "left" : "right"} /></span>
             </button>
             </div>
           </fieldset>
-            <AccountPrepDraftStatus draft={draft} ar={ar}/>
           </div>
       </div>
       ) : activeJourney && planSnap && phase === "review" ? (
@@ -1193,9 +1201,24 @@ function StudioPreparationForm({
   );
 }
 
+/** Fail-only. Normal silent saves never show pending/success chrome. */
 function AccountPrepDraftStatus({draft,ar}:{draft:ReturnType<typeof useAccountPrepDraft>;ar:boolean}){
- if(draft.hydrated&&draft.saveStatus!=='fail'&&draft.saveStatus!=='pending')return null;
- const loading=draft.hydrating,pending=draft.saveStatus==='pending';
- const message=loading?(ar?'جارٍ تحميل المسودة المحفوظة…':'Loading your saved draft…'):pending?(ar?'جارٍ حفظ مسودة التجهيز…':'Saving preparation draft…'):draft.code==='CONFLICT'?(ar?'تغيّرت المسودة في مكان آخر. أعد تحميل النسخة المحفوظة وراجعها.':'The draft changed elsewhere. Reload and review the saved version.'):(ar?'تعذّر تأكيد حالة المسودة. أعد تحميل النسخة المحفوظة قبل المحاولة مرة أخرى.':'The draft result could not be confirmed. Reload the saved version before trying again.');
- return <div role={draft.saveStatus==='fail'?'alert':'status'} data-prep-draft-status={loading?'loading':draft.saveStatus} className="space-y-2 text-sm"><p>{message}</p>{!pending?<button type="button" className="font-semibold underline" onClick={()=>void draft.reload()}>{ar?'إعادة تحميل المسودة المحفوظة':'Reload saved draft'}</button>:null}</div>;
+ if(draft.saveStatus!=='fail')return null;
+ const conflict=draft.code==='CONFLICT';
+ const message=conflict
+  ?(ar?'تغيّرت المسودة في مكان آخر. أعد تحميل النسخة المحفوظة وراجعها.':'The draft changed elsewhere. Reload and review the saved version.')
+  :(ar?'تعذّر حفظ مسودة التجهيز. يمكنك إعادة المحاولة دون فقدان المدخلات.':'Preparation draft could not be saved. Retry without losing your inputs.');
+ return (
+  <div role="alert" data-prep-draft-status="fail" className="space-y-2 text-sm" aria-live="polite">
+   <p>{message}</p>
+   <button
+    type="button"
+    className="font-semibold underline"
+    data-prep-draft-retry={conflict?'reload':'save'}
+    onClick={()=>{if(conflict)void draft.reload();else void draft.retrySave();}}
+   >
+    {conflict?(ar?'إعادة تحميل المسودة المحفوظة':'Reload saved draft'):(ar?'إعادة المحاولة':'Retry')}
+   </button>
+  </div>
+ );
 }

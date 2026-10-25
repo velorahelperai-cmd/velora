@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createElement, type ReactNode } from "react";
 import type { SetupOrderReviewProps } from "./setup-order-review";
+import type { AccountPrepDraftRecord, AccountPrepDraftResult } from "@/lib/tenancy/account-prep-draft";
 
 type Slot = { value?: unknown; deps?: unknown[]; cleanup?: () => void };
 type InspectedElement = { type: unknown; props: Record<string, unknown> };
@@ -850,7 +851,12 @@ it("drops a pending review completion when the capture changes", async () => {
   props.onConsentChange?.(true);
   renderStudio();
   const pending = state.review!.confirmReview(true);
-  renderStudio();
+  // Draft confirm is awaited before the payment write starts (payment gate).
+  for (let i = 0; i < 30; i += 1) {
+    await Promise.resolve();
+    renderStudio();
+    if (state.review?.write.kind === "inflight") break;
+  }
   expect(state.review!.write.kind).toBe("inflight");
   state.boundary = "boundary-b";
   renderStudio();
@@ -1045,15 +1051,51 @@ it('preserves every restored branch on the next save',async()=>{
  const {readAccountPrepDraft,saveAccountPrepDraft}=await import('@/lib/tenancy/account-prep-draft-actions');
  vi.mocked(readAccountPrepDraft).mockResolvedValueOnce({ok:true,data:{draftId:'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',accountId:state.identity.userId,payload:{name:'Saved Cafe',type:'broad:retail_ecommerce',country:'OM',city:'Muscat',phone:'+96892123456',website:{kind:'none'},whatsappExisting:'no',goals:['support'],branches:[{name:'Main',city:'Muscat'},{name:'Second',city:'Salalah'}]},version:4,state:'active',createdAt:'2026-10-25T00:00:00Z',updatedAt:'2026-10-25T00:00:00Z',expiresAt:'2027-02-25T00:00:00Z'}});
  renderStudio();await new Promise<void>(resolve=>setTimeout(resolve,0));const tree=renderStudio();
+ const writesBefore=vi.mocked(saveAccountPrepDraft).mock.calls.length;
  await (findByAttr(tree,'data-setup-destination','plans')?.props.onClick as ()=>void|Promise<void>)();
- expect(vi.mocked(saveAccountPrepDraft).mock.calls.at(-1)?.[0]).toMatchObject({patch:{branches:[{name:'Main',city:'Muscat'},{name:'Second',city:'Salalah'}]}});
+ // Unchanged restored snapshot must not issue another write (noop compare).
+ expect(vi.mocked(saveAccountPrepDraft).mock.calls.length).toBe(writesBefore);
  expect(findByAttr(renderStudio(),'data-setup-team-plans','true')).toBeTruthy();
+ const slot=state.slots.find(s=>Array.isArray((s.value as {branches?:unknown})?.branches));
+ expect((slot?.value as {branches:{name:string;city:string}[]}).branches).toMatchObject([{name:'Main',city:'Muscat'},{name:'Second',city:'Salalah'}]);
 });
 
 it.each([{kind:'none'} as const,{kind:'url',value:'https://example.com/'} as const])('preserves a restored website choice on the next save: %j',async website=>{
  const {readAccountPrepDraft,saveAccountPrepDraft}=await import('@/lib/tenancy/account-prep-draft-actions');
  vi.mocked(readAccountPrepDraft).mockResolvedValueOnce({ok:true,data:{draftId:'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',accountId:state.identity.userId,payload:{name:'Saved Cafe',type:'broad:retail_ecommerce',country:'OM',city:'Muscat',phone:'+96892123456',website,whatsappExisting:'no',goals:['support'],branches:[{name:'Main',city:'Muscat'}]},version:4,state:'active',createdAt:'2026-10-25T00:00:00Z',updatedAt:'2026-10-25T00:00:00Z',expiresAt:'2027-02-25T00:00:00Z'}});
  renderStudio();await new Promise<void>(resolve=>setTimeout(resolve,0));const tree=renderStudio();
+ const writesBefore=vi.mocked(saveAccountPrepDraft).mock.calls.length;
  await (findByAttr(tree,'data-setup-destination','plans')?.props.onClick as ()=>void|Promise<void>)();
- expect(vi.mocked(saveAccountPrepDraft).mock.calls.at(-1)?.[0]).toMatchObject({patch:{website}});
+ expect(vi.mocked(saveAccountPrepDraft).mock.calls.length).toBe(writesBefore);
+ expect(findByAttr(renderStudio(),'data-setup-team-plans','true')).toBeTruthy();
+});
+
+it('navigates to plans immediately without save pending/success chrome while a write is still open',async()=>{
+ const {saveAccountPrepDraft}=await import('@/lib/tenancy/account-prep-draft-actions');
+ let resolveWrite!:(value:AccountPrepDraftResult<AccountPrepDraftRecord>)=>void;
+ const openWrite=new Promise<AccountPrepDraftResult<AccountPrepDraftRecord>>((resolve)=>{resolveWrite=resolve;});
+ vi.mocked(saveAccountPrepDraft).mockImplementationOnce(()=>openWrite);
+ const tree=await openStudioPlans();
+ expect(findByAttr(tree,'data-setup-team-plans','true')).toBeTruthy();
+ expect(findByAttr(tree,'data-prep-draft-status','pending')).toBeNull();
+ expect(findByAttr(tree,'data-prep-draft-status','fail')).toBeNull();
+ expect(JSON.stringify(tree)).not.toContain('حفظ في الخلفية');
+ expect(JSON.stringify(tree)).not.toContain('جارٍ حفظ');
+ resolveWrite({
+  ok:true,
+  data:{
+   draftId:'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+   accountId:state.identity.userId,
+   payload:{name:'متجر الندى'},
+   version:1,
+   state:'active',
+   createdAt:'2026-10-25T00:00:00.000Z',
+   updatedAt:'2026-10-25T00:00:00.000Z',
+   expiresAt:'2027-02-25T00:00:00.000Z',
+  },
+ });
+ await new Promise<void>(resolve=>setTimeout(resolve,0));
+ const after=renderStudio();
+ expect(findByAttr(after,'data-prep-draft-status','ok')).toBeNull();
+ expect(findByAttr(after,'data-setup-team-plans','true')).toBeTruthy();
 });

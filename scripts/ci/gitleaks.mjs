@@ -6,8 +6,11 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { binary, version } from './gitleaks-install.mjs';
 import { forbiddenTrackedPath } from './security-rules.mjs';
+import {candidateContextArgument,loadGateContext} from './candidate-snapshot.mjs';
 const source = dirname(fileURLToPath(import.meta.url));
 const root = process.cwd();
+const context=loadGateContext(candidateContextArgument());
+const fileRoot=context?.snapshot??root;
 // Do not pass application credentials or scanner configuration overrides to child processes.
 const env = {};
 for (const name of ['PATH','Path','SystemRoot','SYSTEMROOT','TEMP','TMP','HOME','USERPROFILE']) if (process.env[name]) env[name] = process.env[name];
@@ -30,7 +33,7 @@ function scan(args) {
   } finally { rmSync(temporary, { recursive: true, force: true }); }
 }
 function snapshot(mode) {
-  const indexed = split(git(['ls-files','-z']));
+  const indexed = context ? context.manifest.entries.map(entry=>entry.path) : split(git(['ls-files','-z']));
   console.log(`SCAN_SCOPE mode=${mode}; indexed=${indexed.length}`);
   const denied = indexed.filter(forbiddenTrackedPath);
   for (const file of denied) console.error(`PRIVATE_TRACKED_PATH ${file}`);
@@ -40,8 +43,8 @@ function snapshot(mode) {
   const temporary = mkdtempSync(join(tmpdir(), 'velora-secret-snapshot-'));
   try {
     for (const file of files) {
-      const absolute = resolve(root, file);
-      if (!absolute.startsWith(root + '\\') && !absolute.startsWith(root + '/')) throw new Error('Unsafe snapshot path');
+      const absolute = resolve(fileRoot, file);
+      if (!absolute.startsWith(fileRoot + '\\') && !absolute.startsWith(fileRoot + '/')) throw new Error('Unsafe snapshot path');
       if (lstatSync(absolute).isSymbolicLink()) throw new Error('Symlink cannot be safely scanned');
       const target = join(temporary, file); mkdirSync(dirname(target), { recursive: true }); copyFileSync(absolute,target);
     }
@@ -65,6 +68,7 @@ export function main(mode = process.argv[2] ?? 'changes') {
   if (mode === 'range') {
     const base = process.env.SECRET_SCAN_BASE;
     if (!/^[a-f0-9]{40}$/.test(base ?? '')) throw new Error('Exact base commit required');
+    if(context&&base!==context.base)throw new Error('Exact base commit required');
     return scan(['git',root,`--log-opts=${base}..HEAD`]);
   }
   if (['changes','tree'].includes(mode)) return snapshot(mode);

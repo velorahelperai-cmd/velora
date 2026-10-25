@@ -178,6 +178,55 @@ export function mergeAccountPrepDraftPayload(
   return { ...base, ...patch };
 }
 
+/** Eligible-field snapshot for equality. Preserves branch/goal order; does not reorder for compare. */
+export function canonicalizeAccountPrepPayload(payload: AccountPrepDraftPayload): AccountPrepDraftPayload {
+  const out: AccountPrepDraftPayload = {};
+  if (payload.name !== undefined) out.name = payload.name.trim();
+  if (payload.website !== undefined) {
+    if (payload.website === null) out.website = null;
+    else if (payload.website.kind === "none") out.website = { kind: "none" };
+    else out.website = { kind: "url", value: payload.website.value.trim() };
+  }
+  if (payload.country !== undefined) out.country = payload.country.trim();
+  if (payload.city !== undefined) out.city = payload.city.trim();
+  if (payload.phone !== undefined) out.phone = payload.phone.trim();
+  if (payload.type !== undefined) out.type = payload.type.trim();
+  if (payload.whatsappExisting !== undefined) out.whatsappExisting = payload.whatsappExisting;
+  if (payload.goals !== undefined) out.goals = [...payload.goals];
+  if (payload.branches !== undefined) {
+    out.branches = payload.branches.map((row) => {
+      const branch: AccountPrepDraftBranch = { name: row.name.trim(), city: row.city.trim() };
+      if (row.contactPhone !== undefined) {
+        branch.contactPhone = row.contactPhone === null ? null : row.contactPhone.trim();
+      }
+      return branch;
+    });
+  }
+  return out;
+}
+
+function sameCanonical(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return (
+      Array.isArray(left) &&
+      Array.isArray(right) &&
+      left.length === right.length &&
+      left.every((value, index) => sameCanonical(value, right[index]))
+    );
+  }
+  if (!left || !right || typeof left !== "object" || typeof right !== "object") return false;
+  const a = left as Record<string, unknown>;
+  const b = right as Record<string, unknown>;
+  const keys = Object.keys(a);
+  return keys.length === Object.keys(b).length && keys.every((key) => Object.hasOwn(b, key) && sameCanonical(a[key], b[key]));
+}
+
+/** True when eligible save fields match after contract normalization (not object identity / key order). */
+export function accountPrepPayloadsEqual(left: AccountPrepDraftPayload, right: AccountPrepDraftPayload): boolean {
+  return sameCanonical(canonicalizeAccountPrepPayload(left), canonicalizeAccountPrepPayload(right));
+}
+
 /** Four calendar months from createdAt (UTC). Visit must not call this to extend retention. */
 export function accountPrepExpiresAt(createdAt: Date): Date {
   const year = createdAt.getUTCFullYear();

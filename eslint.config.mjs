@@ -3,7 +3,7 @@ import nextTs from "eslint-config-next/typescript";
 
 const eslintConfig = [
   {
-    ignores: [".next/**", "node_modules/**", "artifacts/**", "tmp/**"],
+    ignores: [".next/**", "node_modules/**", "artifacts/**", "tmp/**", "scripts/account-deletion/.vite/**"],
   },
   ...nextVitals,
   ...nextTs,

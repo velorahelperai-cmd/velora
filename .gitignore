@@ -27,6 +27,7 @@ node_modules/
 dist/
 build/
 .next/
+/scripts/account-deletion/.vite/
 out/
 coverage/
 *.log

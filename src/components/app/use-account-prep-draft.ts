@@ -1,66 +1,165 @@
 "use client";
 import {useCallback,useEffect,useLayoutEffect,useRef,useState} from 'react';
 import {readAccountPrepDraft,saveAccountPrepDraft} from '@/lib/tenancy/account-prep-draft-actions';
-import type {AccountPrepDraftCode,AccountPrepDraftPayload,AccountPrepDraftRecord,AccountPrepDraftResult,AccountPrepSaveStatus} from '@/lib/tenancy/account-prep-draft';
+import {
+  accountPrepPayloadsEqual,
+  type AccountPrepDraftCode,
+  type AccountPrepDraftPayload,
+  type AccountPrepDraftRecord,
+  type AccountPrepDraftResult,
+  type AccountPrepSaveStatus,
+} from '@/lib/tenancy/account-prep-draft';
 
-function sameValue(left:unknown,right:unknown):boolean{
- if(Object.is(left,right))return true;
- if(Array.isArray(left)||Array.isArray(right))return Array.isArray(left)&&Array.isArray(right)&&left.length===right.length&&left.every((value,index)=>sameValue(value,right[index]));
- if(!left||!right||typeof left!=='object'||typeof right!=='object')return false;
- const a=left as Record<string,unknown>,b=right as Record<string,unknown>,keys=Object.keys(a);return keys.length===Object.keys(b).length&&keys.every(key=>Object.hasOwn(b,key)&&sameValue(a[key],b[key]));
-}
+type InFlight = {
+  payload: AccountPrepDraftPayload;
+  promise: Promise<AccountPrepDraftResult<AccountPrepDraftRecord>|null>;
+  editGen: number;
+};
 
 /** Shared account draft controller. Readback is not a second write; native CAS stays authoritative. */
 export function useAccountPrepDraft({accountId,captureToken='',isCurrent,restore}:{accountId:string;captureToken?:string;isCurrent:()=>boolean;restore:(payload:AccountPrepDraftPayload)=>void}){
  const scope=accountId+':'+captureToken;
- const callbacks=useRef({isCurrent,restore}),live=useRef(false),liveScope=useRef(scope),readEpoch=useRef(0),writeEpoch=useRef(0),writeLock=useRef(false),dirty=useRef(false);
- const record=useRef<AccountPrepDraftRecord|null>(null),loaded=useRef(false),blocked=useRef<AccountPrepDraftCode|null>(null);
+ const callbacks=useRef({isCurrent,restore});
+ const live=useRef(false),liveScope=useRef(scope),readEpoch=useRef(0);
+ const record=useRef<AccountPrepDraftRecord|null>(null);
+ const confirmed=useRef<AccountPrepDraftPayload|null>(null);
+ const lastPatch=useRef<AccountPrepDraftPayload|null>(null);
+ const loaded=useRef(false),blocked=useRef<AccountPrepDraftCode|null>(null);
+ const dirty=useRef(false),editGen=useRef(0);
+ const inFlight=useRef<InFlight|null>(null);
+ const queued=useRef<AccountPrepDraftPayload|null>(null);
+ const writeRunner=useRef<(patch:AccountPrepDraftPayload)=>Promise<AccountPrepDraftResult<AccountPrepDraftRecord>|null>>(()=>Promise.resolve(null));
  const [hydration,setHydration]=useState({scope,kind:'loading' as 'loading'|'ready'|'error'});
  const [saved,setSaved]=useState({scope,status:'idle' as AccountPrepSaveStatus,code:null as AccountPrepDraftCode|null});
  useLayoutEffect(()=>{callbacks.current={isCurrent,restore};},[isCurrent,restore]);
- useLayoutEffect(()=>{live.current=true;liveScope.current=scope;record.current=null;loaded.current=false;blocked.current=null;dirty.current=false;writeLock.current=false;readEpoch.current++;writeEpoch.current++;return()=>{live.current=false;};},[scope]);
- const valid=useCallback(()=>live.current&&liveScope.current===scope&&callbacks.current.isCurrent(),[scope]);
+ useLayoutEffect(()=>{
+  live.current=true;liveScope.current=scope;record.current=null;confirmed.current=null;lastPatch.current=null;loaded.current=false;blocked.current=null;
+  dirty.current=false;editGen.current=0;inFlight.current=null;queued.current=null;readEpoch.current++;
+  return()=>{live.current=false;};
+ },[scope]);
+ const ours=useCallback(()=>liveScope.current===scope&&callbacks.current.isCurrent(),[scope]);
+ const valid=useCallback(()=>live.current&&ours(),[ours]);
+ const publish=useCallback((status:AccountPrepSaveStatus,code:AccountPrepDraftCode|null)=>{
+  if(live.current&&liveScope.current===scope)setSaved({scope,status,code});
+ },[scope]);
  const load=useCallback((explicit:boolean):Promise<boolean>=>{
-  if(!valid()||writeLock.current)return Promise.resolve(false);
-  const epoch=++readEpoch.current;loaded.current=false;if(explicit)dirty.current=false;
-  // Promise callbacks are the read subscription; even a synchronous transport throw cannot synchronously update an effect.
+  if(!valid()||inFlight.current)return Promise.resolve(false);
+  const epoch=++readEpoch.current;loaded.current=false;if(explicit){dirty.current=false;editGen.current++;}
   return Promise.resolve().then(()=>readAccountPrepDraft(accountId)).then(result=>{
-   if(!valid()||epoch!==readEpoch.current)return false;
-   if(!result.ok){setHydration({scope,kind:'error'});setSaved({scope,status:'fail',code:result.code});return false;}
-   if(result.data&&result.data.accountId!==accountId){setHydration({scope,kind:'error'});setSaved({scope,status:'fail',code:'UNAVAILABLE'});return false;}
+   if(!ours()||epoch!==readEpoch.current)return false;
+   if(!result.ok){if(live.current)setHydration({scope,kind:'error'});publish('fail',result.code);return false;}
+   if(result.data&&result.data.accountId!==accountId){if(live.current)setHydration({scope,kind:'error'});publish('fail','UNAVAILABLE');return false;}
    record.current=result.data;loaded.current=true;blocked.current=null;
+   confirmed.current=result.data?result.data.payload:null;
    if(result.data&&!dirty.current)callbacks.current.restore(result.data.payload);
-   setHydration({scope,kind:'ready'});setSaved({scope,status:result.data?'ok':'idle',code:null});return true;
-  }).catch(()=>{if(valid()&&epoch===readEpoch.current){setHydration({scope,kind:'error'});setSaved({scope,status:'fail',code:'UNAVAILABLE'});}return false;});
- },[accountId,scope,valid]);
+   if(live.current)setHydration({scope,kind:'ready'});publish(result.data?'ok':'idle',null);return true;
+  }).catch(()=>{if(ours()&&epoch===readEpoch.current){if(live.current)setHydration({scope,kind:'error'});publish('fail','UNAVAILABLE');}return false;});
+ },[accountId,ours,publish,scope,valid]);
  useEffect(()=>{void load(false);},[load]);
- const reload=useCallback(()=>{if(!valid()||writeLock.current)return Promise.resolve(false);setHydration({scope,kind:'loading'});return load(true);},[load,scope,valid]);
- const markEdited=useCallback(()=>{if(valid())dirty.current=true;},[valid]);
- const save=useCallback(async(patch:AccountPrepDraftPayload):Promise<AccountPrepDraftResult<AccountPrepDraftRecord>|null>=>{
-  if(!valid()||writeLock.current)return null;
-  if(!loaded.current||blocked.current){const code=blocked.current??'UNAVAILABLE';setSaved({scope,status:'fail',code});return {ok:false,code};}
-  writeLock.current=true;const epoch=++writeEpoch.current;
-  const current=()=>valid()&&writeEpoch.current===epoch;
-  setSaved({scope,status:'pending',code:null});
+ const reload=useCallback(()=>{if(!valid()||inFlight.current)return Promise.resolve(false);if(live.current)setHydration({scope,kind:'loading'});return load(true);},[load,scope,valid]);
+ const markEdited=useCallback(()=>{if(valid()){dirty.current=true;editGen.current++;}},[valid]);
+ const hasUnconfirmedChanges=useCallback(()=>dirty.current||Boolean(inFlight.current)||Boolean(queued.current),[ ]);
+ useEffect(()=>{
+  if(typeof window==='undefined'||typeof window.addEventListener!=='function')return;
+  const warn=(event:BeforeUnloadEvent)=>{if(!hasUnconfirmedChanges())return;event.preventDefault();event.returnValue='';};
+  window.addEventListener('beforeunload',warn);return()=>window.removeEventListener('beforeunload',warn);
+ },[hasUnconfirmedChanges]);
+
+ useLayoutEffect(()=>{writeRunner.current=(patch:AccountPrepDraftPayload):Promise<AccountPrepDraftResult<AccountPrepDraftRecord>|null>=>{
+  if(!ours())return Promise.resolve(null);
+  if(!loaded.current||blocked.current){const code=blocked.current??'UNAVAILABLE';publish('fail',code);return Promise.resolve({ok:false,code});}
+  const startedEdit=editGen.current;
+  lastPatch.current=patch;
+  publish('idle',null);
   const prior=record.current;
-  try{
+  const work=(async():Promise<AccountPrepDraftResult<AccountPrepDraftRecord>|null>=>{
    let result:AccountPrepDraftResult<AccountPrepDraftRecord>;
-   try{result=await saveAccountPrepDraft({expectedAccountId:accountId,expectedVersion:prior?.version??0,patch,...(prior?{draftId:prior.draftId}:{})});}catch{result={ok:false,code:'UNAVAILABLE'};}
-   if(!current())return null;
-   if(result.ok&&result.data.accountId===accountId){record.current=result.data;blocked.current=null;setSaved({scope,status:'ok',code:null});return result;}
+   try{result=await saveAccountPrepDraft({expectedAccountId:accountId,expectedVersion:prior?.version??0,patch,...(prior?{draftId:prior.draftId}:{})});}
+   catch{result={ok:false,code:'UNAVAILABLE'};}
+   if(!ours())return null;
+   if(result.ok&&result.data.accountId===accountId){
+    record.current=result.data;confirmed.current=result.data.payload;blocked.current=null;
+    if(editGen.current===(inFlight.current?.editGen??startedEdit))dirty.current=false;
+    publish('ok',null);return result;
+   }
    const failure:AccountPrepDraftCode=result.ok?'UNAVAILABLE':result.code;
    if(failure==='UNAVAILABLE'||failure==='CONFLICT'){
-    // A lost response may already have committed. Observe once; never resend automatically.
-    try{const observed=await readAccountPrepDraft(accountId);if(!current())return null;
+    try{
+     const observed=await readAccountPrepDraft(accountId);if(!ours())return null;
      if(observed.ok&&observed.data&&observed.data.accountId===accountId){
-      record.current=observed.data;
-      if(Object.keys(patch).every(key=>sameValue(observed.data!.payload[key as keyof AccountPrepDraftPayload],patch[key as keyof AccountPrepDraftPayload]))){blocked.current=null;setSaved({scope,status:'ok',code:null});return {ok:true,data:observed.data};}
+      record.current=observed.data;confirmed.current=observed.data.payload;
+      if(accountPrepPayloadsEqual(observed.data.payload,patch)){
+       blocked.current=null;if(editGen.current===(inFlight.current?.editGen??startedEdit))dirty.current=false;
+       publish('ok',null);return {ok:true,data:observed.data};
+      }
      }
-    }catch{/* Keep UNKNOWN; a manual reload is required before another write. */}
-    if(!current())return null;blocked.current=failure;
+    }catch{/* Keep UNKNOWN; manual retry only. */}
+    if(!ours())return null;blocked.current=failure;
    }
-   setSaved({scope,status:'fail',code:failure});return {ok:false,code:failure};
-  }finally{if(current())writeLock.current=false;}
- },[accountId,scope,valid]);
- return {hydrated:hydration.scope===scope&&hydration.kind==='ready',hydrating:hydration.scope!==scope||hydration.kind==='loading',saveStatus:saved.scope===scope?saved.status:'idle' as AccountPrepSaveStatus,code:saved.scope===scope?saved.code:null,reload,markEdited,save};
+   publish('fail',failure);return {ok:false,code:failure};
+  })();
+  const flight:InFlight={payload:patch,promise:work.then(async(first)=>{
+   if(inFlight.current===flight)inFlight.current=null;
+   if(!ours())return first;
+   const next=queued.current;queued.current=null;
+   if(next&&(!confirmed.current||!accountPrepPayloadsEqual(next,confirmed.current))){
+    return writeRunner.current(next);
+   }
+   return first;
+  }),editGen:startedEdit};
+  inFlight.current=flight;
+  return flight.promise;
+ };},[accountId,ours,publish]);
+
+ const save=useCallback(async(patch:AccountPrepDraftPayload):Promise<AccountPrepDraftResult<AccountPrepDraftRecord>|null>=>{
+  if(!ours())return null;
+  lastPatch.current=patch;
+  if(!loaded.current||blocked.current){const code=blocked.current??'UNAVAILABLE';publish('fail',code);return {ok:false,code};}
+  if(inFlight.current){
+   queued.current=accountPrepPayloadsEqual(patch,inFlight.current.payload)?null:patch;
+   if(!queued.current)inFlight.current.editGen=editGen.current;
+   return inFlight.current.promise;
+  }
+  if(confirmed.current&&accountPrepPayloadsEqual(patch,confirmed.current)){
+   dirty.current=false;publish('ok',null);
+   return record.current?{ok:true,data:record.current}:{ok:false,code:'UNAVAILABLE'};
+  }
+  return writeRunner.current(patch);
+ },[ours,publish]);
+
+ const awaitConfirmed=useCallback(async():Promise<AccountPrepDraftResult<AccountPrepDraftRecord>|null>=>{
+  if(!ours())return null;
+  if(blocked.current)return {ok:false,code:blocked.current};
+  if(inFlight.current)return inFlight.current.promise;
+  if(queued.current){
+   const queuedResult=await save(queued.current);
+   if(queuedResult&&!queuedResult.ok)return queuedResult;
+   const remainingFlight:InFlight|null=inFlight.current as InFlight|null;
+   if(remainingFlight)return remainingFlight.promise;
+  }
+  if(confirmed.current&&record.current)return {ok:true,data:record.current};
+  return record.current?{ok:true,data:record.current}:{ok:false,code:'UNAVAILABLE'};
+ },[ours,save]);
+
+ /** Manual only. CONFLICT requires reload; other failures retry the last eligible patch once per click. */
+ const retrySave=useCallback(():Promise<AccountPrepDraftResult<AccountPrepDraftRecord>|null>=>{
+  if(!ours())return Promise.resolve(null);
+  if(blocked.current==='CONFLICT')return reload().then(ok=>ok&&record.current?{ok:true,data:record.current}:{ok:false,code:'CONFLICT'});
+  const patch=lastPatch.current;
+  if(!patch)return reload().then(ok=>ok&&record.current?{ok:true,data:record.current}:{ok:false,code:'UNAVAILABLE'});
+  blocked.current=null;publish('idle',null);return save(patch);
+ },[ours,publish,reload,save]);
+
+ return {
+  hydrated:hydration.scope===scope&&hydration.kind==='ready',
+  hydrating:hydration.scope!==scope||hydration.kind==='loading',
+  saveStatus:saved.scope===scope?saved.status:'idle' as AccountPrepSaveStatus,
+  code:saved.scope===scope?saved.code:null,
+  hasUnconfirmedChanges,
+  reload,
+  retrySave,
+  markEdited,
+  save,
+  awaitConfirmed,
+ };
 }

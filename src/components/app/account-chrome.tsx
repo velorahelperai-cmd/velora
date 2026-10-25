@@ -3,6 +3,7 @@
 import Link from "next/link";
 import {beginDiagnostic} from "@/lib/diagnostics/flow";
 import {readAuthCorrelation} from "@/lib/diagnostics/correlation.mjs";
+import {createSessionReadBudget} from "@/lib/auth/session-read-budget";
 import { ApprovedAccountLoader, useApprovedLoaderGate } from "./approved-account-loader";
 import {recordLogoutTransportFailed,recordSessionCheckUnavailable} from "@/lib/logging/browser.mjs";
 import { usePathname, useRouter } from "next/navigation";
@@ -94,12 +95,19 @@ export function AccountSessionProvider({
   const initialRef = useRef(initial ?? null);
   void initialRef;
   const requestGen = useRef(0);
+  const readBudgets = useRef(new Set<ReturnType<typeof createSessionReadBudget>>());
+  const cancelReadBudgets = useCallback(() => {
+    for (const budget of readBudgets.current) budget.cancel();
+    readBudgets.current.clear();
+  }, []);
+  useEffect(() => () => {requestGen.current += 1;cancelReadBudgets();}, [cancelReadBudgets]);
   const signalRead=useRef<{generation:number;promise:Promise<void>}|null>(null);
   const routeReloading=useRef(false);
   const publishedContext=useRef<string|null>(null);
   /** One-use mount broker seed for the reserved same-operation epoch only — never persisted. */
   const bootstrapBrokerSeed = useRef<{
     epoch: number;
+    budget: ReturnType<typeof createSessionReadBudget>;
     broker: {
       ok: true;
       userId: string;
@@ -120,6 +128,7 @@ export function AccountSessionProvider({
   const clear = useCallback(() => {
     // Invalidate any in-flight refresh so a stale response cannot restore prior identity.
     requestGen.current += 1;
+    cancelReadBudgets();
     bootstrapBrokerSeed.current = null;
     userIdRef.current = null;
     identityRef.current = null;
@@ -130,21 +139,23 @@ export function AccountSessionProvider({
     setIdentity(null);
     setBoundaryFingerprint(null);
     setStatusLive("guest");
-  }, [setStatusLive]);
+  }, [setStatusLive, cancelReadBudgets]);
 
   // Retain captured boundary across expire so idle quarantine cannot retarget B (C2-R7).
   const expire=useCallback(()=>{
     requestGen.current+=1;
+    cancelReadBudgets();
     bootstrapBrokerSeed.current=null;
     identityRef.current=null;
     publishedContext.current=null;
     setIdentity(null);
     setStatusLive("expired");
     // Keep userIdRef + boundaryRef + boundaryFingerprint for capture-bound quarantine.
-  },[setStatusLive]);
+  },[setStatusLive,cancelReadBudgets]);
 
   const lock=useCallback((fp?:string|null)=>{
     requestGen.current+=1;
+    cancelReadBudgets();
     bootstrapBrokerSeed.current=null;
     lockedRef.current=true;
     // Keep userId fence so stale results for THIS capture cannot unlock; clear identity content.
@@ -159,12 +170,14 @@ export function AccountSessionProvider({
     }else{
       setRecoveryReceipt(null);
     }
-  },[setStatusLive]);
+  },[setStatusLive,cancelReadBudgets]);
 
   const refresh = useCallback(async (correlation?: unknown) => {
     // Optional log metadata never changes the session attestation or generation fences.
     const parent = readAuthCorrelation(correlation);
-    const trace = parent ? beginDiagnostic("auth_session_check", parent) : null;
+    // Direct /setup bootstrap and manual refresh need the same fixed,
+    // redacted timing envelope as verification-triggered refreshes.
+    const trace = beginDiagnostic("auth_session_check", parent);
     trace?.stage("session");
     if(routeReloading.current){trace?.finish("CONFLICT");return;}
     if(lockedRef.current){trace?.finish("FORBIDDEN");return;} // captured lock never auto-restores from profile read
@@ -175,9 +188,11 @@ export function AccountSessionProvider({
         : null;
     bootstrapBrokerSeed.current = null;
     const gen = seed ? seed.epoch : ++requestGen.current;
+    const budget = seed?.budget ?? createSessionReadBudget();
+    readBudgets.current.add(budget);
     try {
-      const { readBrokerSessionStatus } = await import("@/lib/auth/broker-actions");
-      const broker = seed ? seed.broker : (trace ? await readBrokerSessionStatus(trace.correlation) : await readBrokerSessionStatus());
+      const { readBrokerSessionStatus } = await budget.read(() => import("@/lib/auth/broker-actions"));
+      const broker = seed ? seed.broker : await budget.read(() => readBrokerSessionStatus(trace.correlation));
       if(gen!==requestGen.current){trace?.finish("CONFLICT");return;}
       if(!broker.ok){
         if(broker.code==="UNAUTHENTICATED"){
@@ -210,8 +225,9 @@ export function AccountSessionProvider({
         return;
       }
       trace?.stage("profile");
-      const result = trace ? await getAccountProfile(trace.correlation) : await getAccountProfile();
+      const result = await budget.read(() => getAccountProfile(trace.correlation));
       if (gen !== requestGen.current) {trace?.finish("CONFLICT");return;}
+      trace.event("profile", result.ok ? "OK" : "UNAVAILABLE");
       if (!result.ok) {
         if (result.code === "UNAUTHENTICATED") {
           if (userIdRef.current) publishSessionLogout(userIdRef.current, boundaryRef.current);
@@ -231,7 +247,8 @@ export function AccountSessionProvider({
         return;
       }
       // Re-read live broker status after profile await — same tip/generation (C4-05).
-      const broker2 = (trace ? await readBrokerSessionStatus(trace.correlation) : await readBrokerSessionStatus());
+      trace.stage("refresh");
+      const broker2 = await budget.read(() => readBrokerSessionStatus(trace.correlation));
       if (gen !== requestGen.current) {trace?.finish("CONFLICT");return;}
       if (
         !broker2.ok
@@ -305,6 +322,8 @@ export function AccountSessionProvider({
       );
       setStatusLive("error");
       trace?.finish("OUTCOME_UNKNOWN");
+    } finally {
+      budget.cancel();readBudgets.current.delete(budget);
     }
   }, [clear, expire, providerRouter, setStatusLive]);
 
@@ -358,10 +377,15 @@ export function AccountSessionProvider({
       await frameGate;
       if(cancelled||requestGen.current!==epoch)return;
       const signal=readLocalQuarantine();
+      const budget=createSessionReadBudget();
+      readBudgets.current.add(budget);
+      const bootstrapTrace=beginDiagnostic("auth_session_check");
+      bootstrapTrace.stage("session");
       try{
-        const {readBrokerSessionStatus}=await import("@/lib/auth/broker-actions");
-        const broker=await readBrokerSessionStatus();
+        const {readBrokerSessionStatus}=await budget.read(()=>import("@/lib/auth/broker-actions"));
+        const broker=await budget.read(()=>readBrokerSessionStatus(bootstrapTrace.correlation));
         if(cancelled||requestGen.current!==epoch)return;
+        bootstrapTrace.event("session",broker.ok?"OK":broker.code==="UNAUTHENTICATED"?"UNAUTHENTICATED":"UNAVAILABLE");
         if(signal?.type==="quarantine"){
           if(broker.ok){
             if(signal.userId===broker.userId){
@@ -423,10 +447,13 @@ export function AccountSessionProvider({
         }
         if(cancelled||lockedRef.current||requestGen.current!==epoch)return;
         // One-use seed for this epoch; call refresh directly (signalRead already owns bootstrap).
-        bootstrapBrokerSeed.current={epoch,broker};
-        await refresh();
+        bootstrapBrokerSeed.current={epoch,broker,budget};
+        bootstrapTrace.stage("refresh");
+        await refresh(bootstrapTrace.correlation);
+        bootstrapTrace.event("completed",cancelled||requestGen.current!==epoch?"CONFLICT":statusRef.current==="ready"?"OK":"UNAVAILABLE");
       }catch{
         if(cancelled||requestGen.current!==epoch)return;
+        bootstrapTrace.finish("OUTCOME_UNKNOWN");
         if(signal?.type==="quarantine"){
           userIdRef.current=signal.userId;
           lock(signal.boundaryFingerprint);
@@ -438,6 +465,8 @@ export function AccountSessionProvider({
           {code:"TRANSPORT",stage:"browser_auth"},
         );
         setStatusLive("error");
+      }finally{
+        budget.cancel();readBudgets.current.delete(budget);
       }
     })();
     const pending={generation:epoch,promise:bootstrap};
@@ -448,12 +477,13 @@ export function AccountSessionProvider({
       cancelled=true;
       // Invalidate the entire bootstrap/refresh operation (seed, profile, final broker, publish).
       requestGen.current+=1;
+      cancelReadBudgets();
       bootstrapBrokerSeed.current=null;
       if(signalRead.current===pending)signalRead.current=null;
       window.cancelAnimationFrame(frame);
       releaseFrame();
     };
-  },[clear,lock,refresh,setStatusLive]);
+  },[clear,lock,refresh,setStatusLive,cancelReadBudgets]);
 
   useEffect(()=>{
     // WP01A: broker status replaces browser Auth observers. Focus/visibility recheck only.
