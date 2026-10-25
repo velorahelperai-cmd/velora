@@ -21,6 +21,10 @@ it('release drops an in-flight claim so a failed provider attempt does not look 
  await act(async()=>{current.release();});expect(current.seconds).toBe(0);expect(localStorage.length).toBe(0);
  await act(async()=>{expect(await current.reserve()).toBe(true);current.extend();});expect(current.seconds).toBe(60);
 });
+it('extend honors a provider-reported wait shorter than the default advisory interval',async()=>{
+ await render();await act(async()=>{expect(await current.reserve()).toBe(true);current.extend(12);});
+ expect(current.seconds).toBe(12);
+});
 it('adopts another tab deadline and recomputes on focus rather than trusting timer ticks',async()=>{
  await render();await act(async()=>{await current.reserve();current.extend();});const key=localStorage.key(0)!;vi.setSystemTime(Date.now()+30000);localStorage.setItem(key,String(Date.now()+60000));await act(async()=>window.dispatchEvent(new StorageEvent('storage',{key})));expect(current.seconds).toBe(60);
  vi.setSystemTime(Date.now()+45000);await act(async()=>window.dispatchEvent(new Event('focus')));expect(current.seconds).toBe(15);localStorage.removeItem(key);await act(async()=>window.dispatchEvent(new StorageEvent('storage',{key})));expect(current.seconds).toBe(15);

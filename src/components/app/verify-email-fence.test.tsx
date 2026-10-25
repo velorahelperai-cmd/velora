@@ -5,13 +5,14 @@ import { afterEach,beforeEach,describe,expect,it,vi } from "vitest";
 const state=vi.hoisted(()=>({
  query:"email=fixture%40example.test",verify:vi.fn(),resend:vi.fn(),continuity:vi.fn(),clearNonce:vi.fn(),refresh:vi.fn(),clear:vi.fn(),replace:vi.fn(),routerRefresh:vi.fn(),
  snapshot:{status:"guest",userId:null as string|null,boundaryFingerprint:null as string|null,ready:false},
+ identity:null as null|{userId:string;email:string},
 }));
 vi.mock("next/navigation",()=>({useRouter:()=>({replace:state.replace,refresh:state.routerRefresh,push:vi.fn()}),useSearchParams:()=>new URLSearchParams(state.query)}));
 vi.mock("next/link",()=>({default:({children,href}:{children:ReactNode;href:string})=>createElement("a",{href},children)}));
 vi.mock("@/lib/demo-state",()=>({useDemo:()=>({locale:"en",state:{}})}));
 vi.mock("./auth-motion-canvas",()=>({AuthMotionCanvas:()=>null}));
 vi.mock("./account-chrome",()=>({AccountMenu:()=>null,useOptionalAccountSession:()=>({
- status:state.snapshot.status,identity:null,refresh:state.refresh,boundaryFingerprint:state.snapshot.boundaryFingerprint,liveSnapshot:()=>state.snapshot,
+ status:state.snapshot.status,identity:state.identity,refresh:state.refresh,boundaryFingerprint:state.snapshot.boundaryFingerprint,liveSnapshot:()=>state.snapshot,
 })}));
 vi.mock("@/lib/tenancy/actions",()=>({
  verifyEmailCode:state.verify,getAccountProfile:vi.fn(),resendVerificationEmail:state.resend,completeProfileName:vi.fn(),
@@ -31,7 +32,7 @@ let resolveVerify:(result:typeof accepted)=>void,root:Root,container:HTMLDivElem
 beforeEach(()=>{
  vi.resetAllMocks();vi.useFakeTimers();vi.setSystemTime(Date.UTC(2026,9,24,19,++testClock*5));localStorage.clear();vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT",true);
  vi.stubGlobal("matchMedia",()=>({matches:true,addEventListener(){},removeEventListener(){}}));
- state.query="email=fixture%40example.test";state.snapshot={status:"guest",userId:null,boundaryFingerprint:null,ready:false};
+ state.query="email=fixture%40example.test";state.snapshot={status:"guest",userId:null,boundaryFingerprint:null,ready:false};state.identity=null;
  state.verify.mockImplementation(()=>new Promise(resolve=>{resolveVerify=resolve;}));
  state.continuity.mockResolvedValue({ok:true,requestNonce:"00000000-0000-4000-8000-000000000001"});
  state.refresh.mockImplementation(async()=>{state.snapshot={status:"ready",userId:"user-a",boundaryFingerprint:"aaaaaaaaaaaaaaaa",ready:true};});
@@ -129,6 +130,7 @@ describe("mounted verification result ownership",()=>{
   await act(async()=>{vi.advanceTimersByTime(5000);});expect(state.replace).not.toHaveBeenCalled();
  });
  it("keeps the same-user fingerprint renewal as the same journey and completes after provider OK",async()=>{
+  state.identity={userId:"user-a",email:"fixture@example.test"};
   state.snapshot={status:"ready",userId:"user-a",boundaryFingerprint:"aaaaaaaaaaaaaaaa",ready:true};
   await submit();
   // Exact prior false-positive: same userId, new boundaryFingerprint mid-flight.
@@ -140,6 +142,18 @@ describe("mounted verification result ownership",()=>{
   expect(state.refresh).toHaveBeenCalled();
   await act(async()=>{vi.advanceTimersByTime(120);});
   expect(state.replace).toHaveBeenCalledExactlyOnceWith("/setup");
+ });
+ it("rejects same userId when the live mailbox is not the verification journey email",async()=>{
+  state.identity={userId:"user-a",email:"fixture@example.test"};
+  state.snapshot={status:"ready",userId:"user-a",boundaryFingerprint:"aaaaaaaaaaaaaaaa",ready:true};
+  await submit();
+  state.identity={userId:"user-a",email:"other@example.test"};
+  state.snapshot={status:"ready",userId:"user-a",boundaryFingerprint:"bbbbbbbbbbbbbbbb",ready:true};
+  state.refresh.mockImplementation(async()=>{});await render();await accept();
+  expect(state.verify).toHaveBeenCalledTimes(1);
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain("browser session changed or expired");
+  expect(container.querySelector("[data-auth-verify-fence]")?.getAttribute("data-auth-verify-fence")).toBe("foreign_session");
+  expect(state.replace).not.toHaveBeenCalled();
  });
  it("ignores completion after the email journey changes",async()=>{
   await submit();state.query="email=other%40example.test";await render();await accept();
@@ -156,15 +170,38 @@ describe("mounted verification result ownership",()=>{
  it("binds native resend to continuity and preserves UNKNOWN nonce",async()=>{
   state.resend.mockResolvedValue({ok:false,code:"UNAVAILABLE",message:"verification_unavailable"});
   await resend();expect(state.resend).toHaveBeenCalledExactlyOnceWith("fixture@example.test","","00000000-0000-4000-8000-000000000001",expect.objectContaining({request_id:expect.stringMatching(/^VEL-[A-F0-9]{16}$/)}));
-  expect(state.continuity).toHaveBeenCalledWith("verification_resend",expect.objectContaining({request_id:expect.stringMatching(/^VEL-[A-F0-9]{16}$/)}));expect(state.clearNonce).not.toHaveBeenCalled();
+  expect(state.continuity).toHaveBeenCalledWith("verification_resend",expect.objectContaining({request_id:expect.stringMatching(/^VEL-[A-F0-9]{16}$/)}),{freshGesture:true});expect(state.clearNonce).not.toHaveBeenCalled();
   // Failed acceptance must not start the advisory wait — immediate retry stays available.
   await resend();expect(state.resend).toHaveBeenCalledTimes(2);
   state.resend.mockResolvedValue({ok:true});await resend();
   expect(state.clearNonce).toHaveBeenCalledExactlyOnceWith("00000000-0000-4000-8000-000000000001");
   expect(state.resend).toHaveBeenCalledTimes(3);
+  expect(container.textContent).toContain("A new code was requested");
   await resend();expect(state.resend).toHaveBeenCalledTimes(3);
   await act(async()=>{vi.advanceTimersByTime(61000);});
   await resend();expect(state.resend).toHaveBeenCalledTimes(4);
+ });
+ it("rate-limits without claiming send success and honors provider wait seconds",async()=>{
+  state.resend.mockResolvedValue({ok:false,code:"AUTH_ERROR",message:"verification_rate_limited",data:{retryAfterSeconds:12}});
+  await resend();
+  expect(state.resend).toHaveBeenCalledTimes(1);
+  expect(container.textContent).not.toContain("A new code was requested");
+  expect(container.querySelector('[role="alert"]')?.textContent?.length).toBeGreaterThan(0);
+  expect(container.querySelector<HTMLButtonElement>("[data-auth-otp-resend]")?.disabled).toBe(true);
+  await act(async()=>{vi.advanceTimersByTime(11000);});
+  expect(container.querySelector<HTMLButtonElement>("[data-auth-otp-resend]")?.disabled).toBe(true);
+  await act(async()=>{vi.advanceTimersByTime(2000);});
+  expect(container.querySelector<HTMLButtonElement>("[data-auth-otp-resend]")?.disabled).toBe(false);
+ });
+ it("serializes one in-flight resend so a double gesture cannot open two Auth calls",async()=>{
+  let release!:(value:{ok:true})=>void;
+  state.resend.mockImplementation(()=>new Promise(resolve=>{release=resolve;}));
+  await resend();
+  const button=container.querySelector<HTMLButtonElement>("[data-auth-otp-resend]")!;
+  await act(async()=>{button.click();button.click();});
+  expect(state.resend).toHaveBeenCalledTimes(1);
+  await act(async()=>{release({ok:true});});
+  expect(state.resend).toHaveBeenCalledTimes(1);
  });
  it("ignores a stale resend reply after a session switch",async()=>{
   let complete!:(value:{ok:true})=>void;state.resend.mockImplementation(()=>new Promise(resolve=>{complete=resolve;}));

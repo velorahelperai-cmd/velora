@@ -722,11 +722,19 @@ export function AuthEntryForm({mode}:{mode:"login"|"signup"}) {
 export function SignupPage() { return <AuthEntryForm mode="signup"/>; }
 export function LoginPage() { return <AuthEntryForm mode="login"/>; }
 
-type VerificationBoundary = { userId: string | null; boundaryFingerprint: string | null; status: string };
+type VerificationBoundary = {
+  userId: string | null;
+  boundaryFingerprint: string | null;
+  status: string;
+  /** Lowercased mailbox from live identity when present — never userId alone for renewal. */
+  email: string | null;
+};
 type VerifiedBoundary = { userId: string; boundaryFingerprint: string };
 type VerificationCapture = {
   trace: ReturnType<typeof beginDiagnostic>;
   epoch: number;
+  /** Journey mailbox captured at start — binds same-user renewal to this verification email. */
+  journeyEmail: string;
   baseline: VerificationBoundary | null;
   observed: VerificationBoundary[];
   overflow?: true;
@@ -753,21 +761,35 @@ function matchesVerifiedBoundary(value: VerificationBoundary | null, expected?: 
 }
 /**
  * SESSION-001 fence for one observation.
- * Same authenticated userId may rotate boundaryFingerprint (renewal).
- * Different userId, logout, locked/expired, or a foreign session on a guest journey still break.
+ * Same-user fingerprint renewal requires matching userId AND journey mailbox continuity
+ * (live identity email when present, else baseline email). userId alone is never enough.
+ * Account switch, logout, locked/expired, and foreign sessions on a guest journey still break.
  */
 function observationFenceReason(
   value: VerificationBoundary,
   baseline: VerificationBoundary | null,
-  expected?: VerifiedBoundary,
+  expected: VerifiedBoundary | undefined,
+  journeyEmail: string,
 ): VerificationFenceReason | null {
   if (value.status === "locked") return "status_locked";
   if (value.status === "expired") return "status_expired";
   if (sameVerificationBoundary(value, baseline)) return null;
   if (matchesVerifiedBoundary(value, expected)) return null;
-  // Same-user session renewal: fingerprint may change; account identity must not.
-  if (value.userId && baseline?.userId && value.userId === baseline.userId) return null;
-  if (expected?.userId && value.userId === expected.userId) return null;
+  const mailbox = (value.email || baseline?.email || "").trim().toLowerCase();
+  const journey = journeyEmail.trim().toLowerCase();
+  const mailboxBound = Boolean(journey) && (!mailbox || mailbox === journey);
+  // Same authenticated principal renewing its boundary fingerprint mid-flight.
+  if (
+    value.userId
+    && baseline?.userId
+    && value.userId === baseline.userId
+    && mailboxBound
+    && (value.status === "ready" || value.status === "error" || value.status === baseline.status)
+  ) {
+    return null;
+  }
+  // Post-admit expected identity may rotate fingerprint; still require mailbox continuity.
+  if (expected?.userId && value.userId === expected.userId && mailboxBound && value.status !== "guest") return null;
   if (baseline?.userId && value.userId && value.userId !== baseline.userId) return "account_switched";
   if (baseline?.userId && !value.userId) return "signed_out";
   if (!baseline?.userId && value.userId && expected && value.userId !== expected.userId) return "account_switched";
@@ -819,11 +841,19 @@ export function VerifyEmailPage() {
   function observe(capture: VerificationCapture) {
     const live = session?.liveSnapshot() ?? null;
     if (live) {
+      const email = (session?.identity?.email || "").trim().toLowerCase() || null;
+      const row: VerificationBoundary = {
+        userId: live.userId,
+        boundaryFingerprint: live.boundaryFingerprint,
+        status: live.status,
+        email,
+      };
       const previous = capture.observed.at(-1);
-      if (!previous || !sameVerificationBoundary(previous, live) || previous.status !== live.status) {
+      if (!previous || !sameVerificationBoundary(previous, row) || previous.status !== row.status || previous.email !== row.email) {
         if (capture.observed.length >= 64) capture.overflow = true;
-        else capture.observed.push({ ...live });
+        else capture.observed.push(row);
       }
+      return { ...live, email };
     }
     return live;
   }
@@ -832,8 +862,18 @@ export function VerifyEmailPage() {
   });
 
   function captureJourney(operation: "auth_verification" | "auth_verification_resend" = "auth_verification"): VerificationCapture {
-    const baseline = session?.liveSnapshot() ?? null;
-    const capture = { trace: beginDiagnostic(operation), epoch: journey.current.epoch, baseline, observed: baseline ? [{ ...baseline }] : [] };
+    const live = session?.liveSnapshot() ?? null;
+    const email = (session?.identity?.email || "").trim().toLowerCase() || null;
+    const baseline: VerificationBoundary | null = live
+      ? { userId: live.userId, boundaryFingerprint: live.boundaryFingerprint, status: live.status, email }
+      : null;
+    const capture: VerificationCapture = {
+      trace: beginDiagnostic(operation),
+      epoch: journey.current.epoch,
+      journeyEmail: registeredEmail.trim().toLowerCase(),
+      baseline,
+      observed: baseline ? [{ ...baseline }] : [],
+    };
     capture.trace.stage("session");
     activeCapture.current = capture;
     return capture;
@@ -845,7 +885,7 @@ export function VerifyEmailPage() {
     if (journey.current.epoch !== capture.epoch) return { ok: false, reason: "epoch_changed" };
     if (capture.overflow) return { ok: false, reason: "overflow" };
     for (const value of capture.observed) {
-      const reason = observationFenceReason(value, capture.baseline, expected);
+      const reason = observationFenceReason(value, capture.baseline, expected, capture.journeyEmail);
       if (reason) return { ok: false, reason };
     }
     if (requireVerified && session) {
@@ -1097,33 +1137,46 @@ export function VerifyEmailPage() {
               const beforeContinuity = evaluateCurrent(capture);
               if (!beforeContinuity.ok) { reportInterrupted(capture, beforeContinuity.reason, true); return; }
               const { ensureBrowserContinuity, clearAuthGestureNonce } = await import("@/lib/auth/browser-continuity");
-              const continuity = await ensureBrowserContinuity("verification_resend", capture.trace.correlation);
+              // Fresh gesture every click so a spent PKCE intent cannot block Auth `/resend`.
+              const continuity = await ensureBrowserContinuity("verification_resend", capture.trace.correlation, { freshGesture: true });
               const afterContinuity = evaluateCurrent(capture);
               if (!afterContinuity.ok) { reportInterrupted(capture, afterContinuity.reason, true); return; }
               if (!continuity.ok) { capture.trace.finish("UNAVAILABLE"); setFenceReason(null); setError(copy.auth.verificationResendUnavailable); return; }
-              // Soft claim only — durable 60s wait starts after provider acceptance or provider rate-limit.
-              if (!await resendClock.reserve()) { capture.trace.finish("CONFLICT"); return; }
+              // Soft claim only — durable wait starts after provider acceptance or provider rate-limit.
+              if (!await resendClock.reserve()) {
+                capture.trace.finish("CONFLICT");
+                setFenceReason(null);
+                // Active advisory wait (e.g. after signup acceptance) — not Auth acceptance of this click.
+                if (resendClock.seconds > 0) setError(copy.auth.verificationRateLimited);
+                return;
+              }
               const afterReserve = evaluateCurrent(capture);
               if (!afterReserve.ok) { resendClock.release(); reportInterrupted(capture, afterReserve.reason, true); return; }
               capture.trace.stage("provider");
               const result = await resendVerificationEmail(registeredEmail, pendingReturn, continuity.requestNonce, capture.trace.correlation);
               const afterResend = evaluateCurrent(capture);
+              const rateLimited = result.message === "verification_rate_limited";
+              const retryAfter = !result.ok && rateLimited && result.data && typeof (result.data as { retryAfterSeconds?: unknown }).retryAfterSeconds === "number"
+                ? (result.data as { retryAfterSeconds: number }).retryAfterSeconds
+                : undefined;
               // Provider acceptance (ok or rate_limit) commits the advisory wait even if the UI journey fences after the reply.
-              const providerAcceptedWait = result.ok || result.message === "verification_rate_limited";
+              const providerAcceptedWait = result.ok || rateLimited;
               if (!afterResend.ok) {
-                if (providerAcceptedWait) resendClock.extend();
+                if (providerAcceptedWait) resendClock.extend(retryAfter);
                 else resendClock.release();
                 reportInterrupted(capture, afterResend.reason, true);
                 return;
               }
-              if (result.ok || result.code === "INVALID_INPUT" || result.code === "AUTH_ERROR") clearAuthGestureNonce(continuity.requestNonce);
+              if (result.ok || result.code === "INVALID_INPUT" || result.code === "AUTH_ERROR" || result.message === "verification_gesture_spent") {
+                clearAuthGestureNonce(continuity.requestNonce);
+              }
 
               if (!result.ok) {
                 capture.trace.finish(result.diagnostic?.code ?? (result.code === "UNAVAILABLE" ? "UNAVAILABLE" : result.code === "INVALID_INPUT" ? "INVALID_INPUT" : "AUTH_ERROR"));
                 setFenceReason(null);
                 setError(verificationMessage(result.message, copy.auth.verificationResendUnavailable));
-                // Acceptance failed: do not show resent notice. Only honor provider-reported wait.
-                if (result.message === "verification_rate_limited") resendClock.extend();
+                // Rate limit is a wait, not send success — never setResent.
+                if (rateLimited) resendClock.extend(retryAfter);
                 else resendClock.release();
                 return;
               }

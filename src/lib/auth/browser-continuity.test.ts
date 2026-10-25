@@ -145,3 +145,14 @@ it("pending gesture nonce survives retry until its matching terminal acknowledgm
  const values=new Map<string,string>();vi.stubGlobal("sessionStorage",{getItem:(k:string)=>values.get(k)??null,setItem:(k:string,v:string)=>values.set(k,v),removeItem:(k:string)=>values.delete(k)});
  try{const mod=await import("./browser-continuity");const n=mod.takeAuthGestureNonce("login");expect(mod.takeAuthGestureNonce("login")).toBe(n);mod.clearAuthGestureNonce("other");expect(mod.takeAuthGestureNonce("login")).toBe(n);mod.clearAuthGestureNonce(n);expect(mod.takeAuthGestureNonce("login")).not.toBe(n);}finally{vi.unstubAllGlobals();}
 });
+
+it("freshGesture issues a new verification_resend nonce instead of reusing a spent one",async()=>{
+ vi.unstubAllGlobals();
+ const values=new Map<string,string>();vi.stubGlobal("sessionStorage",{getItem:(k:string)=>values.get(k)??null,setItem:(k:string,v:string)=>values.set(k,v),removeItem:(k:string)=>values.delete(k)});
+ try{
+  const mod=await import("./browser-continuity");
+  const first=mod.takeAuthGestureNonce("verification_resend");
+  expect(mod.takeAuthGestureNonce("verification_resend")).toBe(first);
+  expect(mod.takeAuthGestureNonce("verification_resend",{fresh:true})).not.toBe(first);
+ }finally{vi.unstubAllGlobals();}
+});

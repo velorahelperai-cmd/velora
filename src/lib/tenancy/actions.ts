@@ -9,7 +9,7 @@ import { readSessionIdentity } from "@/lib/auth/server-identity";
 import { readAccountPlatformIdentity, unavailablePlatformIdentity } from "./account-platform-identity";
 import { AUTH_RETURN_COOKIE, authFlowHref } from "@/lib/auth/auth-journey";
 import { pathAtOrUnder, safeInternalPath } from "@/lib/auth/safe-next";
-import { emailVerificationError, normalizeEmailCode } from "@/lib/auth/email-code";
+import { emailVerificationError, emailVerificationRetryAfterSeconds, normalizeEmailCode } from "@/lib/auth/email-code";
 
 import { revalidatePath } from "next/cache";
 
@@ -520,7 +520,15 @@ export async function resendVerificationEmail(email: string, next?:string|null, 
       reader: { getAll: () => store.getAll().map(c => ({ name: c.name, value: c.value })) },
       writer: { set: (name, value, options) => store.set(name, value, options as never) },
     });
-    if (!prepared.ok) return { ok: false, code: "UNAVAILABLE", diagnostic: trace.finish("UNAVAILABLE") };
+    // gesture_spent = this nonce already bound PKCE; Auth was never re-entered. Fresh gesture required.
+    if (!prepared.ok) {
+      return {
+        ok: false,
+        code: "UNAVAILABLE",
+        message: prepared.reason === "gesture_spent" ? "verification_gesture_spent" : "verification_unavailable",
+        diagnostic: trace.finish("UNAVAILABLE"),
+      };
+    }
     trace.stage("provider");
     providerAttempted = true;
     const { error } = await prepared.bundle.client.auth.resend({
@@ -531,7 +539,15 @@ export async function resendVerificationEmail(email: string, next?:string|null, 
     if (error) {
       const { classifyProviderAuthFailure, actionCodeForProviderFailure } = await import("@/lib/auth/provider-transport");
       const kind = classifyProviderAuthFailure(error), code = actionCodeForProviderFailure(kind);
-      return { ok: false, code, message: kind === "unknown_transport" ? "verification_unavailable" : emailVerificationError(error), diagnostic: trace.finish(kind === "unknown_transport" ? "OUTCOME_UNKNOWN" : code) };
+      const message = kind === "unknown_transport" ? "verification_unavailable" : emailVerificationError(error);
+      const retryAfterSeconds = message === "verification_rate_limited" ? emailVerificationRetryAfterSeconds(error) : null;
+      return {
+        ok: false,
+        code,
+        message,
+        data: retryAfterSeconds ? { retryAfterSeconds } : undefined,
+        diagnostic: trace.finish(kind === "unknown_transport" ? "OUTCOME_UNKNOWN" : code),
+      };
     }
     trace.finish("OK");
     return { ok: true, data: undefined };

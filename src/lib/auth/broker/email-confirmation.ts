@@ -17,27 +17,27 @@ export async function prepareEmailConfirmation(input: {
   writer: CookieWriter;
 }) {
   const capability = await probeBrokerCapability();
-  if (!capability.ok || !capability.boundAdmit) return { ok: false as const };
+  if (!capability.ok || !capability.boundAdmit) return { ok: false as const, reason: "unavailable" as const };
   const lineageCtx = await prepareBrokerAdmissionLineage(input.reader, input.writer);
-  if (!lineageCtx.ok) return { ok: false as const };
+  if (!lineageCtx.ok) return { ok: false as const, reason: "unavailable" as const };
   const intent = await reserveBoundAuthIntent({
     bootstrapHash: lineageCtx.bootstrapHash, requestNonce: input.requestNonce, purpose: input.purpose,
   });
-  if (!intent) return { ok: false as const };
+  if (!intent) return { ok: false as const, reason: "unavailable" as const };
   const saved = await loadAuthIntentByNonce(intent.stateNonce);
   if (!saved || saved.purpose !== input.purpose || saved.status !== "reserved"
     || saved.browserLineageId !== lineageCtx.browserLineageId
     || !Number.isFinite(Date.parse(saved.expiresAt)) || Date.parse(saved.expiresAt) <= Date.now()) {
-    return { ok: false as const };
+    return { ok: false as const, reason: "unavailable" as const };
   }
   if (saved.pkceVerifier) {
-    // A previous mail may have been accepted. Restore only its browser binding;
-    // never replace its verifier or report that another email was sent.
+    // Same gesture already bound PKCE — do not call Auth again (may have delivered).
+    // Callers that need another send must open a fresh requestNonce (verification_resend).
     commitIntentCookie(input.writer, intent.stateNonce, 600);
-    return { ok: false as const };
+    return { ok: false as const, reason: "gesture_spent" as const };
   }
   const admin = createAdminClient();
-  if (!admin) return { ok: false as const };
+  if (!admin) return { ok: false as const, reason: "unavailable" as const };
   const bundle = createProviderAuthClient({ persistPkceVerifier: async verifier => {
     const encrypted = encryptSecret(verifier)?.toString("base64");
     if (!encrypted) throw new Error("EMAIL_VERIFIER_ENCRYPTION_UNAVAILABLE");
@@ -48,7 +48,7 @@ export async function prepareEmailConfirmation(input: {
     if (error || !Array.isArray(data) || data.length !== 1) throw new Error("EMAIL_VERIFIER_PERSIST_UNAVAILABLE");
     commitIntentCookie(input.writer, intent.stateNonce, 600);
   } });
-  if (!bundle) return { ok: false as const };
+  if (!bundle) return { ok: false as const, reason: "unavailable" as const };
   const base = authCallbackUrl(safeInternalPath(input.next, "/setup"));
   return {
     ok: true as const, bundle, intent, lineageCtx,

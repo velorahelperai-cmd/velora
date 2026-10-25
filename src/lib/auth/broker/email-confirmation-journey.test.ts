@@ -82,4 +82,19 @@ describe("email request to bound callback",()=>{
   m.send.mockResolvedValue({data:{user:null,session:null},error:{status:503,name:"AuthRetryableFetchError"}});
   expect(await resendVerificationEmail(actor.email,"/setup",requestNonce)).toMatchObject({ok:false,code:"UNAVAILABLE"});
  });
+ it("spent PKCE gesture never re-enters Auth resend; a fresh nonce can send once",async()=>{
+  m.send.mockResolvedValue({data:{user:null,session:null},error:{status:503,name:"AuthRetryableFetchError"}});
+  expect(await resendVerificationEmail(actor.email,"/setup",requestNonce)).toMatchObject({ok:false,code:"UNAVAILABLE"});
+  expect(m.send).toHaveBeenCalledTimes(1);
+  // Same nonce keeps durable verifier — broker refuses another Auth call (pre-Auth stop).
+  expect(await resendVerificationEmail(actor.email,"/setup",requestNonce)).toMatchObject({
+   ok:false,code:"UNAVAILABLE",message:"verification_gesture_spent",
+  });
+  expect(m.send).toHaveBeenCalledTimes(1);
+  // Explicit new gesture (UI freshGesture) may call Auth again exactly once.
+  m.row={id:"fixture-intent-2",purpose:"signup_resend",status:"reserved",provider_state:"ready",pkce_verifier_enc:null};
+  m.send.mockResolvedValue({data:{user:null,session:null},error:null});
+  expect(await resendVerificationEmail(actor.email,"/setup",requestNonce+"-fresh")).toMatchObject({ok:true});
+  expect(m.send).toHaveBeenCalledTimes(2);
+ });
 });

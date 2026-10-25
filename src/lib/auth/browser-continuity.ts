@@ -146,7 +146,15 @@ export function clearAuthGestureNonce(nonce: string): void {
   try { if (peekAuthGestureNonce() === nonce) sessionStorage.removeItem(GESTURE_NONCE_KEY); } catch { /* Optional retry persistence. */ }
 }
 
-export async function ensureBrowserContinuity(purpose = "auth", correlation?: unknown): Promise<ContinuityOk | ContinuityFail> {
+/**
+ * @param options.freshGesture — each explicit verification_resend click must open a new broker
+ * intent. Reusing a spent PKCE gesture after uncertain transport never reaches Auth `/resend`.
+ */
+export async function ensureBrowserContinuity(
+  purpose = "auth",
+  correlation?: unknown,
+  options?: { freshGesture?: boolean },
+): Promise<ContinuityOk | ContinuityFail> {
   if (typeof window === "undefined" || !locksAvailable()) {
     return { ok: false, code: "CONTINUITY_UNAVAILABLE" };
   }
@@ -194,7 +202,7 @@ export async function ensureBrowserContinuity(purpose = "auth", correlation?: un
         return {
           ok: true as const,
           protocolVersion: PROTOCOL_VERSION,
-          requestNonce: takeAuthGestureNonce(purpose),
+          requestNonce: takeAuthGestureNonce(purpose, { fresh: options?.freshGesture === true }),
         };
       }
       if (stored.kind === "ok" && mirror === stored.record.anchor) {
@@ -203,7 +211,7 @@ export async function ensureBrowserContinuity(purpose = "auth", correlation?: un
         return {
           ok: true as const,
           protocolVersion: PROTOCOL_VERSION,
-          requestNonce: takeAuthGestureNonce(purpose),
+          requestNonce: takeAuthGestureNonce(purpose, { fresh: options?.freshGesture === true }),
         };
       }
 
@@ -233,7 +241,7 @@ export async function ensureBrowserContinuity(purpose = "auth", correlation?: un
       return {
         ok: true as const,
         protocolVersion: PROTOCOL_VERSION,
-        requestNonce: takeAuthGestureNonce(purpose),
+        requestNonce: takeAuthGestureNonce(purpose, { fresh: options?.freshGesture === true }),
       };
     });
   } catch {

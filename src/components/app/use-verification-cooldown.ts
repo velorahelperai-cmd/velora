@@ -4,6 +4,7 @@ import {useEffect,useRef,useState} from 'react';
 // Matches the existing hosted Minimum interval per user, read-only verified at 60s.
 // This is advisory browser coordination; Supabase remains the server enforcement.
 export const VERIFICATION_RESEND_SECONDS=60;
+const MAX_ADVISORY_SECONDS=600;
 const eventName='velora-verification-cooldown';
 const memory=new Map<string,number>();
 async function contextKey(email:string){
@@ -11,7 +12,7 @@ async function contextKey(email:string){
 }
 function readDeadline(key:string|null,localKey:string,now=Date.now()){
   let deadline=memory.get(localKey)||0;
-  try{if(key){const stored=Number(localStorage.getItem(key));if(Number.isFinite(stored)&&stored>now&&stored<=now+VERIFICATION_RESEND_SECONDS*1000+1000)deadline=Math.max(deadline,stored);}}catch{}
+  try{if(key){const stored=Number(localStorage.getItem(key));if(Number.isFinite(stored)&&stored>now&&stored<=now+MAX_ADVISORY_SECONDS*1000+1000)deadline=Math.max(deadline,stored);}}catch{}
   return deadline>now?deadline:0;
 }
 function writeDeadline(key:string|null,localKey:string,deadline:number){
@@ -40,7 +41,7 @@ export function useVerificationCooldown(email:string){
     return()=>{alive=false;window.clearInterval(timer);window.removeEventListener('storage',storage);window.removeEventListener(eventName,shared);window.removeEventListener('focus',sync);document.removeEventListener('visibilitychange',visible);};
   },[normalized]);
   function syncLocal(row:typeof current.current){if(current.current!==row)return;setDisplay({email:row.email,ready:true,seconds:Math.max(0,Math.ceil((row.deadline-Date.now())/1000))});}
-  /** Soft claim only. Does not start the 60s wait — call extend() after provider acceptance (or provider rate-limit). */
+  /** Soft claim only. Does not start the advisory wait — call extend() after provider acceptance (or provider rate-limit). */
   async function reserve(){
     const row=current.current;if(!row.ready||row.email!==normalized)return false;
     const claim=()=>{
@@ -55,10 +56,11 @@ export function useVerificationCooldown(email:string){
     return claim();
   }
   /** Commit the advisory wait only after accepted send or provider-reported rate limit. */
-  function extend(){
+  function extend(seconds=VERIFICATION_RESEND_SECONDS){
     const row=current.current;if(!row.ready||row.email!==normalized)return;
+    const wait=Math.min(MAX_ADVISORY_SECONDS,Math.max(1,Math.floor(Number.isFinite(seconds)?seconds:VERIFICATION_RESEND_SECONDS)));
     row.inFlight=false;
-    row.deadline=writeDeadline(row.key,row.localKey,Date.now()+VERIFICATION_RESEND_SECONDS*1000);
+    row.deadline=writeDeadline(row.key,row.localKey,Date.now()+wait*1000);
     syncLocal(row);
   }
   /** Drop an in-flight claim without pretending the mail was accepted. */
