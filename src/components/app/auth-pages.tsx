@@ -1155,9 +1155,9 @@ export function VerifyEmailPage() {
               capture.trace.stage("provider");
               const result = await resendVerificationEmail(registeredEmail, pendingReturn, continuity.requestNonce, capture.trace.correlation);
               const afterResend = evaluateCurrent(capture);
-              const rateLimited = result.message === "verification_rate_limited";
-              const retryAfter = !result.ok && rateLimited && result.data && typeof (result.data as { retryAfterSeconds?: unknown }).retryAfterSeconds === "number"
-                ? (result.data as { retryAfterSeconds: number }).retryAfterSeconds
+              const rateLimited = !result.ok && result.message === "verification_rate_limited";
+              const retryAfter = rateLimited && result.data && typeof result.data.retryAfterSeconds === "number"
+                ? result.data.retryAfterSeconds
                 : undefined;
               // Provider acceptance (ok or rate_limit) commits the advisory wait even if the UI journey fences after the reply.
               const providerAcceptedWait = result.ok || rateLimited;
@@ -1167,7 +1167,7 @@ export function VerifyEmailPage() {
                 reportInterrupted(capture, afterResend.reason, true);
                 return;
               }
-              if (result.ok || result.code === "INVALID_INPUT" || result.code === "AUTH_ERROR" || result.message === "verification_gesture_spent") {
+              if (result.ok || result.code === "INVALID_INPUT" || result.code === "AUTH_ERROR" || (!result.ok && result.message === "verification_gesture_spent")) {
                 clearAuthGestureNonce(continuity.requestNonce);
               }
 

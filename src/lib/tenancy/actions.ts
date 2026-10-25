@@ -500,7 +500,12 @@ export async function signOut(
   }
 }
 
-export async function resendVerificationEmail(email: string, next?:string|null, requestNonce?: string | null, correlation?: unknown): Promise<ActionResult> {
+export async function resendVerificationEmail(
+  email: string,
+  next?: string | null,
+  requestNonce?: string | null,
+  correlation?: unknown,
+): Promise<ActionResult<{ retryAfterSeconds?: number } | undefined>> {
   return withAuthDiagnostic<Awaited<ReturnType<typeof resendVerificationEmail>>>("auth_verification_resend", correlation, async (trace) => {
   let providerAttempted = false;
 
