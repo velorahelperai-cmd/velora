@@ -1,3 +1,4 @@
+import { readAuthCorrelation } from "@/lib/diagnostics/correlation.mjs";
 import { Children, isValidElement, type ReactElement } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
@@ -94,12 +95,12 @@ vi.mock("@/lib/auth/browser-continuity", () => ({
   clearAuthGestureNonce: state.clearNonce,
 }));
 
-import { LoginPage, CompleteProfilePage } from "./auth-pages";
+import { AuthEntryForm, CompleteProfilePage } from "./auth-pages";
 import { Button, Field, PasswordField } from "./ui";
 
 function render() {
   state.cursor = 0;
-  const tree = LoginPage();
+  const tree = AuthEntryForm({mode:"login"});
   state.effects.splice(0).forEach((fn) => fn());
   return tree;
 }
@@ -109,7 +110,11 @@ function children(tree: ReactElement): ReactElement<Record<string, unknown>>[] {
   ) as ReactElement<Record<string, unknown>>[];
 }
 function form() {
-  return children(render()).find((n) => n.type === "form")!;
+  const search = (node:ReactElement):ReactElement<Record<string,unknown>>|undefined => {
+    if(node.type === "form") return node as ReactElement<Record<string,unknown>>;
+    for(const child of children(node)){const found=search(child);if(found)return found;}
+  };
+  return search(render())!;
 }
 function controls() {
   return children(form());
@@ -215,12 +220,21 @@ it("completes broker login with server-returned destination while profile refres
   fill();
   submit();
   await settle();
-  expect(state.ensureContinuity).toHaveBeenCalledWith("login");
+  expect(state.ensureContinuity).toHaveBeenCalledTimes(1);
+  const [intent, correlation] = state.ensureContinuity.mock.calls[0];
+  expect(intent).toBe("login");
+  expect(correlation).toEqual({
+    request_id: expect.stringMatching(/^VEL-[A-F0-9]{16}$/),
+    trace_id: expect.stringMatching(/^[a-f0-9]{32}$/),
+    parent_span_id: expect.stringMatching(/^[a-f0-9]{16}$/),
+  });
+  expect(readAuthCorrelation(correlation)).toEqual(correlation);
   expect(state.signIn).toHaveBeenCalledWith({
     email: "synthetic@example.invalid",
     password: "synthetic-password",
     next: "/account",
     requestNonce: REQUEST_NONCE,
+    correlation,
   });
   expect(state.clearNonce).toHaveBeenCalledWith(REQUEST_NONCE);
   expect(state.documentReplace).toHaveBeenCalledWith("/account");

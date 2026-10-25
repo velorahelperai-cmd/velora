@@ -78,6 +78,16 @@ vi.mock("react", async () => {
         s.deps = deps;
       }
     },
+useLayoutEffect(fn: () => void | (() => void), deps: unknown[]) {
+      const s = slot();
+      if (!s.deps || deps.some((v, i) => !Object.is(v, s.deps![i]))) {
+        state.effects.push(() => {
+          s.cleanup?.();
+          s.cleanup = fn() || undefined;
+        });
+        s.deps = deps;
+      }
+    },
   };
 });
 
@@ -102,7 +112,8 @@ vi.mock("./account-chrome", () => ({
   }),
 }));
 vi.mock("./ui", () => ({ LangSwitch: () => null }));
-vi.mock("@/lib/demo-state", () => ({ useDemo: () => ({ locale: "ar" }) }));
+vi.mock("./setup-studio-lang-switch", () => ({ SetupStudioLangSwitch: () => null }));
+vi.mock("@/lib/demo-state", () => ({ useDemo: () => ({ locale: "ar", setLocale: () => {} }) }));
 vi.mock("./business-name-suggestions", () => ({
   BusinessNameSuggestions: function MockName(props: { id: string; value: string; onChange: (v: string) => void }) {
     return createElement("input", {
@@ -133,6 +144,18 @@ vi.mock("./country-combobox", () => ({
     });
   },
 }));
+vi.mock("./city-combobox", () => ({
+  CityCombobox: function MockCity(props: { id: string; value: string; country: string; onChange: (v: string) => void }) {
+    return createElement("input", {
+      id: props.id,
+      value: props.value,
+      "data-field": "city",
+      "data-city-country": props.country,
+      disabled: !props.country.trim(),
+      onChange: (e: { target: { value: string } }) => props.onChange(e.target.value),
+    });
+  },
+}));
 vi.mock("./business-phone-field", () => ({
   BusinessPhoneField: function MockPhone(props: {
     id: string;
@@ -153,6 +176,22 @@ vi.mock("./setup-studio-noura", () => ({
   SetupStudioNoura: function MockNoura(props: { motionEnabled: boolean }) {
     return createElement("div", { "data-setup-noura": "stub", "data-motion": String(props.motionEnabled) });
   },
+}));
+vi.mock("@/lib/tenancy/account-prep-draft-actions", () => ({
+  readAccountPrepDraft: vi.fn(async () => ({ ok: true, data: null })),
+  saveAccountPrepDraft: vi.fn(async (input: { expectedAccountId: string; expectedVersion: number }) => ({
+    ok: true,
+    data: {
+      draftId: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+      accountId: input.expectedAccountId,
+      payload: {},
+      version: input.expectedVersion + 1,
+      state: "active",
+      createdAt: "2026-10-25T00:00:00.000Z",
+      updatedAt: "2026-10-25T00:00:00.000Z",
+      expiresAt: "2027-02-25T00:00:00.000Z",
+    },
+  })),
 }));
 vi.mock("./setup-entry.module.css", () => ({
   default: new Proxy({}, { get: (_t, key) => String(key) }),
@@ -306,7 +345,7 @@ afterEach(() => {
 it("renders a blank local form and no payment or server-submit action", () => {
   const html = renderToStaticMarkup(createElement(PrepaymentPreparation, { userId: "11111111-2222-4333-8444-555555555555" }));
   expect(html).toContain("data-service-theme");
-  expect(html).toContain("مراجعة البيانات محليًا");
+  expect(html).toContain("حفظ المسودة ومراجعة البيانات");
   expect(html).toContain("اسم الفرع");
   expect(html).not.toContain("<form");
   expect(html).not.toContain('type="submit"');
@@ -348,7 +387,7 @@ it("collapsed Add branch opens a new local branch and preserves the existing row
   (add?.props.onClick as (() => void) | undefined)?.();
   tree = renderStudio();
   let fieldsets = 0;
-  walk(tree, (el) => { if (el.type === "fieldset") fieldsets += 1; });
+  walk(tree, (el) => { if (el.type === "fieldset" && el.props.style === undefined) fieldsets += 1; });
   expect(fieldsets).toBe(2);
   expect(collectButtons(tree).some(b => b.props["aria-pressed"] === true)).toBe(true);
   expect(state.createCalls).toHaveLength(0);
@@ -381,8 +420,9 @@ it("studio branch mode add/remove keeps at least one branch via state callbacks"
   expect(removes.some((b) => b.props.disabled === true)).toBe(true);
 });
 
-it("studio review action runs validation callback and keeps accordion aria-expanded honest", () => {
+it("studio review action runs validation callback and keeps accordion aria-expanded honest", async () => {
   let tree = renderStudio();
+  await new Promise<void>(resolve=>setTimeout(resolve,0));tree=renderStudio();
   const identity = collectButtons(tree).find((b) => String(b.props["aria-controls"] ?? "").endsWith("-identity-panel"));
   expect(identity?.props["aria-expanded"]).toBe(true);
   const review = findByAttr(tree, "data-setup-review-action", "true");
@@ -431,6 +471,21 @@ function tierButton(tree: unknown, pack: string): InspectedElement | null {
 
 function fireChange(el: InspectedElement | null, value: string) {
   (el?.props.onChange as ((e: { target: { value: string } }) => void) | undefined)?.({ target: { value } });
+}
+
+function fireCheck(el: InspectedElement | null, checked: boolean) {
+  (el?.props.onChange as ((e: { target: { checked: boolean; value: string } }) => void) | undefined)?.({
+    target: { checked, value: "" },
+  });
+}
+
+function chooseStudioSector(tree: unknown, sectorId: string) {
+  fireChange(findByAttr(tree, "data-sector-select", "true"), sectorId);
+}
+
+function toggleNoSite(tree: unknown) {
+  const box = findByAttr(tree, "data-setup-no-site", "true");
+  fireCheck(box, !Boolean(box?.props.checked));
 }
 
 function inputById(tree: unknown, idSuffix: string): InspectedElement | null {
@@ -591,13 +646,18 @@ it("recovering a missing primary never renames or discards a meaningful added br
 });
 
 /** Fill the studio form, re-render so submit closes over the values, then open plans. */
-function openStudioPlans(): InspectedElement {
+async function openStudioPlans(existingUse: "yes" | "no" = "no"): Promise<InspectedElement> {
   let tree = openStudioIdentity(renderStudio());
+  await new Promise<void>(resolve=>setTimeout(resolve,0));tree=openStudioIdentity(renderStudio());
   fireChange(findByAttr(tree, "data-field", "name"), "متجر الندى");
-  (collectButtons(tree).find((b) => b.props["data-sector"] === "retail_ecommerce")?.props.onClick as (() => void) | undefined)?.();
+  chooseStudioSector(tree, "retail_ecommerce");
   fireChange(findByAttr(tree, "data-field", "country"), "OM");
   fireChange(findByAttr(tree, "data-field", "phone"), "+96892123456");
   fireChange(inputById(tree, "-city"), "مسقط");
+  tree = renderStudio();
+  (findByAttr(tree, "data-whatsapp-existing", existingUse)?.props.onClick as (() => void) | undefined)?.();
+  tree = renderStudio();
+  (findByAttr(tree, "data-goal", "support")?.props.onClick as (() => void) | undefined)?.();
   tree = renderStudio();
   const branches = collectButtons(tree).find((b) => b.text.includes("فروعك"));
   (branches?.props.onClick as (() => void) | undefined)?.();
@@ -605,24 +665,14 @@ function openStudioPlans(): InspectedElement {
   fireChange(inputById(tree, "-branch-0-name"), "الرئيسي");
   fireChange(inputById(tree, "-branch-0-city"), "صور");
   tree = renderStudio();
-  (findByAttr(tree, "data-setup-review-action", "true")?.props.onClick as (() => void) | undefined)?.();
-  tree = renderStudio();
-  (findByAttr(tree, "data-channel", "instagram")?.props.onClick as (() => void) | undefined)?.();
-  tree = renderStudio();
-  (findByAttr(tree, "data-setup-destination", "goals")?.props.onClick as (() => void) | undefined)?.();
-  tree = renderStudio();
-  (findByAttr(tree, "data-goal", "support")?.props.onClick as (() => void) | undefined)?.();
-  tree = renderStudio();
-  (findByAttr(tree, "data-team-range", "1-3")?.props.onClick as (() => void) | undefined)?.();
-  tree = renderStudio();
-  (findByAttr(tree, "data-setup-destination", "plans")?.props.onClick as (() => void) | undefined)?.();
+  await (findByAttr(tree, "data-setup-destination", "plans")?.props.onClick as (() => void | Promise<void>) | undefined)?.();
   return renderStudio();
 }
 
-it("studio submit opens local plans for the entered branch and does not create an order", () => {
+it("studio submit opens local plans for the entered branch and does not create an order", async () => {
   // A branch identity may contain the old price digits without displaying that price.
   const uuid = vi.spyOn(crypto, "randomUUID").mockReturnValue("555fcd77-1101-4930-adf1-5e4b8b1cace5");
-  const tree = openStudioPlans();
+  const tree = await openStudioPlans();
   uuid.mockRestore();
   const plans = findByAttr(tree, "data-setup-team-plans", "true");
   expect(plans).toBeTruthy();
@@ -653,23 +703,22 @@ it("studio submit opens local plans for the entered branch and does not create a
   expect(findByAttr(tree, "data-active-step", "2")).toBeTruthy();
 });
 
-it("studio back from plans keeps the same draft and branch without a second count entry", () => {
-  let tree = openStudioPlans();
+it("studio back from plans keeps the same draft and branch without a second count entry", async () => {
+  let tree = await openStudioPlans();
   (findByAttr(tree, "data-term", "yearly")?.props.onClick as (() => void) | undefined)?.();
   tree = renderStudio();
   const back = findByAttr(tree, "data-plans-back", "true");
   (back?.props.onClick as (() => void) | undefined)?.();
   tree = renderStudio();
-  expect(findByAttr(tree, "data-setup-step", "goals")).toBeTruthy();
+  expect(findByAttr(tree, "data-setup-step", "activity")).toBeTruthy();
+  expect(findByAttr(tree, "data-setup-step", "goals")).toBeNull();
   tree = openStudioIdentity(tree);
   expect(findByAttr(tree, "data-setup-team-plans", "true")).toBeNull();
   expect(findByAttr(tree, "data-field", "name")?.props.value).toBe("متجر الندى");
   expect(findByAttr(tree, "data-setup-summary", "true")).toBeTruthy();
-  (findByAttr(tree, "data-setup-review-action", "true")?.props.onClick as (() => void) | undefined)?.();
-  tree = renderStudio();
-  (findByAttr(tree, "data-setup-destination", "goals")?.props.onClick as (() => void) | undefined)?.();
-  tree = renderStudio();
-  (findByAttr(tree, "data-setup-destination", "plans")?.props.onClick as (() => void) | undefined)?.();
+  expect(findByAttr(tree, "data-goal", "support")?.props["aria-pressed"]).toBe(true);
+  expect(findByAttr(tree, "data-team-range", "1-3")).toBeNull();
+  await (findByAttr(tree, "data-setup-destination", "plans")?.props.onClick as (() => void | Promise<void>) | undefined)?.();
   tree = renderStudio();
   const again = JSON.stringify(findByAttr(tree, "data-setup-team-plans", "true"));
   expect(findByAttr(tree, "data-term", "yearly")?.props["aria-pressed"]).toBe(true);
@@ -678,8 +727,8 @@ it("studio back from plans keeps the same draft and branch without a second coun
   expect(again).toContain("صور");
 });
 
-it("studio capture change leaves plans and clears the in-memory draft", () => {
-  openStudioPlans();
+it("studio capture change leaves plans and clears the in-memory draft", async () => {
+  await openStudioPlans();
   state.boundary = "boundary-b";
   renderStudio();
   const tree = openStudioIdentity(renderStudio());
@@ -688,8 +737,8 @@ it("studio capture change leaves plans and clears the in-memory draft", () => {
   expect(findByAttr(tree, "data-setup-summary", "true")).toBeTruthy();
 });
 
-it("studio remount after release does not reuse the released journey", () => {
-  let tree = openStudioPlans();
+it("studio remount after release does not reuse the released journey", async () => {
+  let tree = await openStudioPlans();
   expect(findByAttr(tree, "data-setup-team-plans", "true")).toBeTruthy();
   const staleChoice = tierButton(tree, "premium")?.props.onClick as (() => void) | undefined;
   for (const slot of state.slots) {
@@ -703,20 +752,20 @@ it("studio remount after release does not reuse the released journey", () => {
   tree = openStudioIdentity(renderStudio());
   expect(findByAttr(tree, "data-setup-team-plans", "true")).toBeNull();
   expect(findByAttr(tree, "data-field", "name")?.props.value).toBe("");
-  tree = openStudioPlans();
+  tree = await openStudioPlans();
   staleChoice?.();
   tree = renderStudio();
   expect(findByAttr(tree, "data-setup-team-plans", "true")).toBeTruthy();
   expect(JSON.stringify(findByAttr(tree, "data-setup-team-plans", "true"))).toContain("لم يُختر بعد");
 });
 
-it("a plans callback from capture A does not mutate capture B", () => {
-  const first = openStudioPlans();
+it("a plans callback from capture A does not mutate capture B", async () => {
+  const first = await openStudioPlans();
   const stale = tierButton(first, "premium")?.props.onClick as (() => void) | undefined;
   expect(typeof stale).toBe("function");
   state.boundary = "boundary-b";
   renderStudio();
-  const second = openStudioPlans();
+  const second = await openStudioPlans();
   expect(JSON.stringify(second)).toContain("لم يُختر بعد");
   stale?.();
   const after = renderStudio();
@@ -728,8 +777,8 @@ it("a plans callback from capture A does not mutate capture B", () => {
   expect(JSON.stringify(chosen)).toContain("نورا · القياسية");
 });
 
-function openBoundReview() {
-  let tree = openStudioPlans();
+async function openBoundReview() {
+  let tree = await openStudioPlans();
   (tierButton(tree, "basic")?.props.onClick as () => void)();
   tree = renderStudio();
   (findByAttr(tree, "data-term", "monthly")?.props.onClick as () => void)();
@@ -742,7 +791,7 @@ function openBoundReview() {
 }
 
 it("same-account identity refresh retains the current checkout boundary", async () => {
-  const props = openBoundReview();
+  const props = await openBoundReview();
   props.onConsentChange?.(true);
   renderStudio();
   state.identity = { ...state.identity };
@@ -755,7 +804,7 @@ it("same-account identity refresh retains the current checkout boundary", async 
 it("same-boundary identity refresh during payment preflight retains its result", async () => {
   let resolve!: (result: unknown) => void;
   state.createReply = new Promise((done) => { resolve = done; });
-  const props = openBoundReview();
+  const props = await openBoundReview();
   props.onConsentChange?.(true);
   renderStudio();
   const pending = state.review!.confirmReview(true);
@@ -771,7 +820,7 @@ it("same-boundary identity refresh during payment preflight retains its result",
 });
 
 it("binds consent and UNKNOWN retry to the same operation without sending business facts", async () => {
-  let props = openBoundReview();
+  let props = await openBoundReview();
   expect(props.consentAccepted).toBe(false);
   expect(state.createCalls).toHaveLength(0);
   expect(await props.confirmReview(false)).toMatchObject({ ok: false, code: "CONSENT_REQUIRED" });
@@ -797,7 +846,7 @@ it("binds consent and UNKNOWN retry to the same operation without sending busine
 it("drops a pending review completion when the capture changes", async () => {
   let resolve!: (result: unknown) => void;
   state.createReply = new Promise((done) => { resolve = done; });
-  const props = openBoundReview();
+  const props = await openBoundReview();
   props.onConsentChange?.(true);
   renderStudio();
   const pending = state.review!.confirmReview(true);
@@ -813,9 +862,9 @@ it("drops a pending review completion when the capture changes", async () => {
   expect(state.createCalls).toHaveLength(1);
 });
 
-it("studio plans stay closed without a ready nonempty boundary", () => {
+it("studio plans stay closed without a ready nonempty boundary", async () => {
   state.boundary = "";
-  const missing = openStudioIdentity(openStudioPlans());
+  const missing = openStudioIdentity(await openStudioPlans());
   expect(findByAttr(missing, "data-setup-team-plans", "true")).toBeNull();
   expect(findByAttr(missing, "data-field", "name")?.props.value).toBe("متجر الندى");
 
@@ -823,28 +872,29 @@ it("studio plans stay closed without a ready nonempty boundary", () => {
   state.effects = [];
   state.boundary = "boundary-a";
   state.ready = false;
-  const unready = openStudioIdentity(openStudioPlans());
+  const unready = openStudioIdentity(await openStudioPlans());
   expect(findByAttr(unready, "data-setup-team-plans", "true")).toBeNull();
   expect(findByAttr(unready, "data-field", "name")?.props.value).toBe("متجر الندى");
 });
 
-it("studio sector chips store a broad category and leave a legacy detailed type untouched until chosen", () => {
+it("studio sector dropdown stores a broad category and leaves a legacy detailed type untouched until chosen", () => {
   let tree = openStudioIdentity(renderStudio());
-  expect(collectButtons(tree).filter((b) => b.props.role === "radio")).toHaveLength(13);
-  expect(collectButtons(tree).some((b) => b.props["data-sector"] === "travel" && String(b.props.children).includes("السفر والسياحة"))).toBe(true);
-  expect(collectButtons(tree).some((b) => b.props["aria-checked"] === true)).toBe(false);
-  expect(JSON.stringify(tree)).not.toContain("data-field\":\"type\"");
-  (collectButtons(tree).find((b) => b.props["data-sector"] === "food")?.props.onClick as () => void)();
+  const select = findByAttr(tree, "data-sector-select", "true");
+  expect(select).toBeTruthy();
+  expect(select?.props.value).toBe("");
+  expect(JSON.stringify(select)).toContain("السفر والسياحة");
+  expect(findByAttr(tree, "data-field", "type")).toBeTruthy();
+  chooseStudioSector(tree, "food");
   tree = renderStudio();
   const slot = state.slots.find((s) => Array.isArray((s.value as { branches?: unknown })?.branches))!;
   expect((slot.value as { type: string }).type).toBe("broad:food");
   expect((slot.value as { type: string }).type).not.toBe("restaurant");
   slot.value = { ...(slot.value as object), type: "restaurant" };
   tree = renderStudio();
-  expect(collectButtons(tree).some((b) => b.props["aria-checked"] === true)).toBe(false);
+  expect(findByAttr(tree, "data-sector-select", "true")?.props.value).toBe("");
   expect(findByAttr(tree, "data-preserved-type", "restaurant")).toBeTruthy();
   expect(JSON.stringify(findByAttr(tree, "data-preserved-type", "restaurant"))).toContain("مطعم");
-  (collectButtons(tree).find((b) => b.props["data-sector"] === "food")?.props.onClick as () => void)();
+  chooseStudioSector(tree, "food");
   tree = renderStudio();
   expect((slot.value as { type: string }).type).toBe("broad:food");
 });
@@ -870,7 +920,7 @@ it("optional website and no-site stay compatible with other answers and block a 
   tree = renderStudio();
   expect((slot.value as { answers: { website: { value: string }; goals: string[] } }).answers.website.value).toBe("https://example.com/?ref=1");
   expect((slot.value as { answers: { goals: string[] } }).answers.goals).toEqual(["support"]);
-  (collectButtons(tree).find((b) => b.props["data-setup-no-site"] === "true")?.props.onClick as () => void)();
+  toggleNoSite(tree);
   tree = renderStudio();
   expect(findByAttr(tree, "data-setup-website-error", "CONTRADICTION")).toBeTruthy();
   expect((slot.value as { answers: { website: { kind: string } } }).answers.website).toEqual({ kind: "url", value: "https://example.com/?ref=1" });
@@ -878,34 +928,40 @@ it("optional website and no-site stay compatible with other answers and block a 
   fireChange(findByAttr(tree, "data-field", "country"), "OM");
   fireChange(findByAttr(tree, "data-field", "phone"), "+96892123456");
   fireChange(inputById(tree, "-city"), "مسقط");
-  (collectButtons(renderStudio()).find((b) => b.props["data-sector"] === "food")?.props.onClick as () => void)();
+  chooseStudioSector(renderStudio(), "food");
   tree = renderStudio();
+  expect(findByAttr(tree, "data-setup-whatsapp-existing", "true")).toBeTruthy();
+  expect(findByAttr(tree, "data-setup-activity-goals", "true")).toBeTruthy();
   (findByAttr(tree, "data-setup-review-action", "true")?.props.onClick as () => void)();
   tree = renderStudio();
   expect(findByAttr(tree, "data-setup-team-plans", "true")).toBeNull();
   expect(findByAttr(tree, "data-setup-step", "channels")).toBeNull();
+  expect(findByAttr(tree, "data-setup-step", "goals")).toBeNull();
+  expect(findByAttr(tree, "data-setup-step", "activity")).toBeTruthy();
+  expect(findByAttr(tree, "data-setup-destination", "channels")).toBeNull();
+  expect(findByAttr(tree, "data-setup-destination", "goals")).toBeNull();
   const label = JSON.stringify(findByAttr(tree, "data-setup-review-action", "true")?.props.children);
-  expect(label).toContain("قنواتك");
-  expect(findByAttr(tree, "data-setup-destination", "channels")).toBeTruthy();
+  expect(label).toContain("قابل فريقك");
+  expect(findByAttr(tree, "data-setup-destination", "plans")).toBeTruthy();
   expect(findByAttr(tree, "data-setup-substep-button", "channels")).toBeNull();
   expect(findByAttr(tree, "data-setup-substep-button", "goals")).toBeNull();
 });
 
-it("a cleared no-site choice keeps the plans destination and the rest of the visit", () => {
-  let tree = openStudioPlans();
+it("a cleared no-site choice keeps the plans destination and the rest of the visit", async () => {
+  let tree = await openStudioPlans();
   const back = findByAttr(tree, "data-plans-back", "true");
   (back?.props.onClick as () => void)();
   tree = openStudioIdentity(renderStudio());
-  (collectButtons(tree).find((b) => b.props["data-setup-no-site"] === "true")?.props.onClick as () => void)();
+  toggleNoSite(tree);
   tree = renderStudio();
   const slot = state.slots.find((s) => Array.isArray((s.value as { branches?: unknown })?.branches))!;
   expect((slot.value as { answers: { website: { kind: string } } | null }).answers?.website).toEqual({ kind: "none" });
   expect((slot.value as { type: string }).type).toBe("broad:retail_ecommerce");
-  (findByAttr(tree, "data-setup-review-action", "true")?.props.onClick as () => void)();
+  (findByAttr(tree, "data-whatsapp-existing", "no")?.props.onClick as () => void)();
   tree = renderStudio();
-  (findByAttr(tree, "data-setup-destination", "goals")?.props.onClick as () => void)();
-  tree = renderStudio();
-  (findByAttr(tree, "data-setup-destination", "plans")?.props.onClick as () => void)();
+  expect(findByAttr(tree, "data-goal", "support")?.props["aria-pressed"]).toBe(true);
+  expect(findByAttr(tree, "data-team-range", "1-3")).toBeNull();
+  await (findByAttr(tree, "data-setup-destination", "plans")?.props.onClick as () => void | Promise<void>)();
   tree = renderStudio();
   expect(findByAttr(tree, "data-setup-team-plans", "true")).toBeTruthy();
   expect(findByAttr(tree, "data-setup-destination", "plans")).toBeNull();
@@ -922,53 +978,82 @@ it("applies the website result that was computed before the preparation update",
   expect(findByAttr(shown, "data-setup-website-error", "INVALID_URL")).toBeNull();
   const slot = state.slots.find((s) => Array.isArray((s.value as { branches?: unknown })?.branches))!;
   expect((slot.value as { answers: { website: { value: string } } }).answers.website.value).toBe("https://example.com/a");
-  (collectButtons(shown).find((b) => b.props["data-setup-no-site"] === "true")?.props.onClick as () => void)();
+  toggleNoSite(shown);
   const after = renderStudio();
   expect(findByAttr(after, "data-setup-website-error", "CONTRADICTION")).toBeTruthy();
   expect((slot.value as { answers: { website: { value: string } } }).answers.website.value).toBe("https://example.com/a");
 });
 
-it("clears hidden whatsapp answers, keeps instagram, and leaves the plan unselected for a dana badge", () => {
+it("stores whatsapp existing-use on activity and opens plans without a team-size question", async () => {
   let tree = openStudioIdentity(renderStudio());
+  await new Promise<void>(resolve=>setTimeout(resolve,0));tree=openStudioIdentity(renderStudio());
   fireChange(findByAttr(tree, "data-field", "name"), "متجر الندى");
-  (collectButtons(tree).find((b) => b.props["data-sector"] === "travel")?.props.onClick as () => void)();
+  chooseStudioSector(tree, "travel");
   fireChange(findByAttr(tree, "data-field", "country"), "OM");
   fireChange(findByAttr(tree, "data-field", "phone"), "+96892123456");
   fireChange(inputById(tree, "-city"), "مسقط");
   tree = renderStudio();
-  (findByAttr(tree, "data-setup-review-action", "true")?.props.onClick as () => void)();
-  tree = renderStudio();
-  (findByAttr(tree, "data-channel", "instagram")?.props.onClick as () => void)();
-  (findByAttr(renderStudio(), "data-channel", "whatsapp")?.props.onClick as () => void)();
-  tree = renderStudio();
   (findByAttr(tree, "data-whatsapp-existing", "yes")?.props.onClick as () => void)();
-  tree = renderStudio();
-  let platform: InspectedElement | null = null;
-  walk(tree, (el) => { if (el.type === "select") platform = el; });
-  fireChange(platform, "Twilio");
   tree = renderStudio();
   (findByAttr(tree, "data-whatsapp-existing", "no")?.props.onClick as () => void)();
   tree = renderStudio();
   const slot = state.slots.find((s) => Array.isArray((s.value as { branches?: unknown })?.branches))!;
-  const answers = (slot.value as { answers: { channels: { instagram: boolean }; whatsapp: { platform: string | null; existingUse: string } } }).answers;
-  expect(answers.channels.instagram).toBe(true);
+  const answers = (slot.value as { answers: { channels: { whatsapp: boolean; instagram: boolean }; whatsapp: { platform: string | null; existingUse: string } } }).answers;
+  expect(answers.channels.whatsapp).toBe(true);
+  expect(answers.channels.instagram).toBe(false);
   expect(answers.whatsapp).toEqual({ existingUse: "no", platform: null, platformOther: null, verification: null, facebookBusinessAccount: null });
-  const stale = findByAttr(tree, "data-channel", "whatsapp")?.props.onClick as () => void;
+  const stale = findByAttr(tree, "data-whatsapp-existing", "yes")?.props.onClick as () => void;
   state.isCurrent = false;
   stale();
-  expect((slot.value as { answers: { channels: { whatsapp: boolean } } }).answers.channels.whatsapp).toBe(true);
+  expect((slot.value as { answers: { whatsapp: { existingUse: string } } }).answers.whatsapp.existingUse).toBe("no");
   state.isCurrent = true;
-  (findByAttr(renderStudio(), "data-setup-destination", "goals")?.props.onClick as () => void)();
   tree = renderStudio();
   (findByAttr(tree, "data-goal", "sales")?.props.onClick as () => void)();
   tree = renderStudio();
-  (findByAttr(tree, "data-team-range", "11-25")?.props.onClick as () => void)();
-  tree = renderStudio();
-  expect(findByAttr(tree, "data-workforce-badge", "level_3")).toBeTruthy();
-  expect(JSON.stringify(findByAttr(tree, "data-workforce-badge", "level_3"))).toContain("دانا");
-  expect(JSON.stringify(tree)).not.toContain("نورة");
-  (findByAttr(tree, "data-setup-destination", "plans")?.props.onClick as () => void)();
+  expect(findByAttr(tree, "data-setup-activity-goals", "true")).toBeTruthy();
+  expect(findByAttr(tree, "data-setup-step", "goals")).toBeNull();
+  expect(findByAttr(tree, "data-team-range", "11-25")).toBeNull();
+  expect(findByAttr(tree, "data-workforce-badge", "level_3")).toBeNull();
+  expect(JSON.stringify(tree)).not.toContain("كم شخصًا يعمل في نشاطك");
+  await (findByAttr(tree, "data-setup-destination", "plans")?.props.onClick as () => void | Promise<void>)();
   tree = renderStudio();
   expect(JSON.stringify(findByAttr(tree, "data-setup-team-plans", "true"))).toContain("لم يُختر بعد");
   expect(state.createCalls).toHaveLength(0);
+});
+
+it('hydrates saved activity fields without dropping channel defaults or the primary branch',async()=>{
+ const {readAccountPrepDraft}=await import('@/lib/tenancy/account-prep-draft-actions');vi.mocked(readAccountPrepDraft).mockResolvedValueOnce({ok:true,data:{draftId:'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',accountId:state.identity.userId,payload:{name:'Saved cafe',type:'broad:retail_ecommerce',country:'OM',city:'Muscat',phone:'+96892123456',website:{kind:'none'},whatsappExisting:'yes',goals:['support'],branches:[{name:'Main',city:'Muscat'}]},version:4,state:'active',createdAt:'2026-10-25T00:00:00Z',updatedAt:'2026-10-25T00:00:00Z',expiresAt:'2027-02-25T00:00:00Z'}});
+ renderStudio();await new Promise<void>(resolve=>setTimeout(resolve,0));const tree=openStudioIdentity(renderStudio());expect(findByAttr(tree,'data-field','name')?.props.value).toBe('Saved cafe');expect(findByAttr(tree,'data-whatsapp-existing','yes')?.props['aria-checked']).toBe(true);expect(findByAttr(tree,'data-goal','support')?.props['aria-pressed']).toBe(true);
+});
+
+it('accepts the C09 WhatsApp yes answer without requiring hidden later-stage details',async()=>{
+ const tree=await openStudioPlans('yes');
+ expect(findByAttr(tree,'data-setup-team-plans','true')).toBeTruthy();
+ const {saveAccountPrepDraft}=await import('@/lib/tenancy/account-prep-draft-actions');
+ expect(vi.mocked(saveAccountPrepDraft).mock.calls.at(-1)?.[0]).toMatchObject({patch:{whatsappExisting:'yes'}});
+});
+it('keeps a restored custom primary branch name when the business name changes',async()=>{
+ const {readAccountPrepDraft}=await import('@/lib/tenancy/account-prep-draft-actions');
+ vi.mocked(readAccountPrepDraft).mockResolvedValueOnce({ok:true,data:{draftId:'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',accountId:state.identity.userId,payload:{name:'Saved cafe',city:'Muscat',branches:[{name:'Custom main',city:'Salalah'}]},version:4,state:'active',createdAt:'2026-10-25T00:00:00Z',updatedAt:'2026-10-25T00:00:00Z',expiresAt:'2027-02-25T00:00:00Z'}});
+ renderStudio();await new Promise<void>(resolve=>setTimeout(resolve,0));let tree=openStudioIdentity(renderStudio());
+ fireChange(findByAttr(tree,'data-field','name'),'Renamed cafe');tree=renderStudio();
+ const slot=state.slots.find(s=>Array.isArray((s.value as {branches?:unknown})?.branches))!;
+ expect((slot.value as {branches:{name:string;city:string}[]}).branches[0]).toMatchObject({name:'Custom main',city:'Salalah'});
+});
+
+it('preserves every restored branch on the next save',async()=>{
+ const {readAccountPrepDraft,saveAccountPrepDraft}=await import('@/lib/tenancy/account-prep-draft-actions');
+ vi.mocked(readAccountPrepDraft).mockResolvedValueOnce({ok:true,data:{draftId:'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',accountId:state.identity.userId,payload:{name:'Saved Cafe',type:'broad:retail_ecommerce',country:'OM',city:'Muscat',phone:'+96892123456',website:{kind:'none'},whatsappExisting:'no',goals:['support'],branches:[{name:'Main',city:'Muscat'},{name:'Second',city:'Salalah'}]},version:4,state:'active',createdAt:'2026-10-25T00:00:00Z',updatedAt:'2026-10-25T00:00:00Z',expiresAt:'2027-02-25T00:00:00Z'}});
+ renderStudio();await new Promise<void>(resolve=>setTimeout(resolve,0));const tree=renderStudio();
+ await (findByAttr(tree,'data-setup-destination','plans')?.props.onClick as ()=>void|Promise<void>)();
+ expect(vi.mocked(saveAccountPrepDraft).mock.calls.at(-1)?.[0]).toMatchObject({patch:{branches:[{name:'Main',city:'Muscat'},{name:'Second',city:'Salalah'}]}});
+ expect(findByAttr(renderStudio(),'data-setup-team-plans','true')).toBeTruthy();
+});
+
+it.each([{kind:'none'} as const,{kind:'url',value:'https://example.com/'} as const])('preserves a restored website choice on the next save: %j',async website=>{
+ const {readAccountPrepDraft,saveAccountPrepDraft}=await import('@/lib/tenancy/account-prep-draft-actions');
+ vi.mocked(readAccountPrepDraft).mockResolvedValueOnce({ok:true,data:{draftId:'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',accountId:state.identity.userId,payload:{name:'Saved Cafe',type:'broad:retail_ecommerce',country:'OM',city:'Muscat',phone:'+96892123456',website,whatsappExisting:'no',goals:['support'],branches:[{name:'Main',city:'Muscat'}]},version:4,state:'active',createdAt:'2026-10-25T00:00:00Z',updatedAt:'2026-10-25T00:00:00Z',expiresAt:'2027-02-25T00:00:00Z'}});
+ renderStudio();await new Promise<void>(resolve=>setTimeout(resolve,0));const tree=renderStudio();
+ await (findByAttr(tree,'data-setup-destination','plans')?.props.onClick as ()=>void|Promise<void>)();
+ expect(vi.mocked(saveAccountPrepDraft).mock.calls.at(-1)?.[0]).toMatchObject({patch:{website}});
 });

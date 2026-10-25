@@ -1,3 +1,5 @@
+import {withAuthDiagnostic} from "@/lib/diagnostics/server-flow";
+import {readAuthCorrelationHeaders} from "@/lib/diagnostics/correlation.mjs";
 import { cookies, headers } from "next/headers";
 import { NextResponse } from "next/server";
 import { siteUrl } from "@/lib/auth/site-url";
@@ -63,6 +65,7 @@ function postOriginOk(request: Request): boolean {
 
 /** GET: metadata only — whether identity artifacts exist (no tokens/ids). */
 export async function GET(request: Request) {
+  return withContinuityTrace(request, async () => {
   if (!getOriginOk(request)) {
     return noStoreJson({ ok: false, code: "ORIGIN" }, 403);
   }
@@ -75,10 +78,13 @@ export async function GET(request: Request) {
     hasArtifacts: continuityArtifactsPresent(reader),
     protocolVersion: 2,
   });
+
+  });
 }
 
 /** POST: enroll/bind continuity from client anchor + mirror cookie. Never Set-Cookie vel_bc. */
 export async function POST(request: Request) {
+  return withContinuityTrace(request, async () => {
   if (!postOriginOk(request)) {
     return noStoreJson({ ok: false, code: "ORIGIN" }, 403);
   }
@@ -110,4 +116,16 @@ export async function POST(request: Request) {
     protocolVersion: 2,
     lineageFingerprint: bound.lineageFingerprint,
   });
+
+  });
+}
+
+/** Diagnostic scope only; origin, throttle and lineage checks remain inside the original handler. */
+async function withContinuityTrace(request:Request,work:()=>Promise<Response>):Promise<Response>{
+ const incoming=readAuthCorrelationHeaders(request.headers);
+ if(!incoming)return work();
+ return withAuthDiagnostic('auth_continuity',incoming,async trace=>{
+  trace.stage('session');const result=await work();
+  trace.finish(result.ok?'OK':result.status===403?'FORBIDDEN':result.status===429?'CONFLICT':'UNAVAILABLE');return result;
+ });
 }

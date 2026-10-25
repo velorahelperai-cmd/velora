@@ -9,6 +9,39 @@ export type Database = {
         Update: { payload?: Json; revision?: number; updated_at?: string };
         Relationships: [];
       };
+      account_prep_drafts: {
+        Row: {
+          draft_id: string;
+          account_id: string;
+          payload: Json;
+          version: number;
+          state: "active" | "linked" | "expired_pending_cleanup" | "cancelled";
+          created_at: string;
+          updated_at: string;
+          expires_at: string;
+          linked_order_id: string | null;
+        };
+        Insert: {
+          draft_id?: string;
+          account_id: string;
+          payload?: Json;
+          version?: number;
+          state?: "active" | "linked" | "expired_pending_cleanup" | "cancelled";
+          created_at?: string;
+          updated_at?: string;
+          expires_at: string;
+          linked_order_id?: string | null;
+        };
+        Update: {
+          payload?: Json;
+          version?: number;
+          state?: "active" | "linked" | "expired_pending_cleanup" | "cancelled";
+          updated_at?: string;
+          expires_at?: string;
+          linked_order_id?: string | null;
+        };
+        Relationships: [];
+      };
       profiles: {
         Row: {
           user_id: string;
@@ -592,6 +625,9 @@ export type Database = {
       create_owner_company_attempt: { Args: { p_expected_user_id: string; p_idempotency_key: string; p_payload: Json }; Returns: Json };
       update_owner_company_profile: { Args: { p_expected_user_id: string; p_company_id: string; p_expected_version: number; p_patch: Json }; Returns: Json };
       save_company_setup_draft: { Args: { p_expected_user_id: string; p_company_id: string | null; p_expected_revision: number; p_payload: Json }; Returns: Json };
+      read_account_prep_draft: { Args: { p_expected_account_id: string }; Returns: Json };
+      save_account_prep_draft: { Args: { p_expected_account_id: string; p_expected_version: number; p_patch: Json; p_draft_id?: string | null }; Returns: Json };
+      account_prep_draft_expiry_dry_run: { Args: { p_limit?: number }; Returns: Json };
       g03_read_file_generation: { Args: { p_source_id: string; p_company_id: string; p_storage_path: string; p_action?: string }; Returns: Json };
       list_owner_company_review_events_for_company: { Args: {p_company_id:string}; Returns:Json };
       ai_settle_admin_attempt: { Args: {p_id:string;p_status:string;p_cost_usd:number|null;p_cost_baisa:number|null;p_usage:Json;p_request_id:string|null;p_error_code:string|null;p_latency_ms:number;p_response_id:string|null;p_actual_model_id:string|null}; Returns:boolean };

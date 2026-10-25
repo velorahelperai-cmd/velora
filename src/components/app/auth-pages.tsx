@@ -39,15 +39,16 @@ import {
 } from "@/components/app/ui";
 
 type AuthEntryLock = { busy: boolean; locked: { current: boolean }; run: (fn: () => void | Promise<void>) => Promise<void> };
-const AuthEntryContext = createContext<{ lock: AuthEntryLock; changeMode: (href: string) => void } | null>(null);
+const AuthEntryContext = createContext<{ lock: AuthEntryLock; changeMode: (href: string) => void; requestEpoch: {current:number} } | null>(null);
 
 function useAuthRequestScope(mode: "login" | "signup", query: string) {
-  const embedded = Boolean(useContext(AuthEntryContext));
+  const shared = useContext(AuthEntryContext);
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
-  return useCallback(() => () => mounted.current && (!embedded || (
-    window.location.pathname === "/" + mode && new URLSearchParams(window.location.search).toString() === query
-  )), [embedded, mode, query]);
+  return useCallback(() => {
+    const epoch = shared?.requestEpoch.current;
+    return () => mounted.current && (!shared || (shared.requestEpoch.current === epoch && window.location.pathname === "/"+mode && new URLSearchParams(window.location.search).toString() === query));
+  },[shared,mode,query]);
 }
 
 const RESEND_COOLDOWN_SEC = 60;
@@ -146,6 +147,15 @@ function EntrySubmitArrow() {
   );
 }
 
+function AuthEntryHeading({title,body}:{title:string;body?:string}) {
+  return <div className="text-center">
+                  <h1 tabIndex={-1} data-auth-entry-heading="true" className="text-[25px] font-bold leading-snug tracking-tight text-[#172D43] focus:outline-none">
+                    <AuthTitle title={title} />
+                  </h1>
+                  {body ? <p className="mt-1 text-xs leading-5 text-[#536579]">{body}</p> : null}
+                </div>;
+}
+
 export function AuthShell({
   title,
   body,
@@ -154,6 +164,8 @@ export function AuthShell({
   entry = false,
   /** Non-interactive entry chrome behind the verify OTP modal. */
   entryBackdrop = false,
+  onEntryModeChange,
+  onEntryInterrupt,
 }: {
   title: string;
   body?: string;
@@ -162,17 +174,22 @@ export function AuthShell({
   /** Owner-approved motion entry chrome for /login and /signup only. */
   entry?: boolean;
   entryBackdrop?: boolean;
+  onEntryModeChange?: (href:string) => void;
+  onEntryInterrupt?: () => void;
 }) {
   const copy = useAppCopy();
   const embedded = useContext(AuthEntryContext);
   const { locale } = useDemo();
   const router = useRouter();
+  const pushRoute = router.push;
   const tagline = landingCopy(locale).tagline;
   const [collapsed, setCollapsed] = useState(false);
   const [contentVisible, setContentVisible] = useState(true);
   const morphTimer = useRef<number | null>(null);
   const morphingOut = useRef(false);
   const navigationStarted = useRef(false);
+  const pendingModeHref = useRef<string|null>(null);
+  const focusAfterMorph = useRef(false);
   const incomingFrames = useRef<number[]>([]);
   const [incoming, setIncoming] = useState(false);
   const incomingMorph = useRef<ReturnType<typeof consumeAuthEntryMorph> | undefined>(undefined);
@@ -230,46 +247,67 @@ export function AuthShell({
       incomingFrames.current = [];
     }
     function restoreEntry() {
-      clearMotion();
-      consumeAuthEntryMorph();
-      incomingMorph.current = false;
-      morphingOut.current = false;
-      navigationStarted.current = false;
-      setCollapsed(false);
-      setContentVisible(true);
-      setIncoming(false);
+      clearMotion();consumeAuthEntryMorph();incomingMorph.current = false;
+      morphingOut.current = false;navigationStarted.current = false;pendingModeHref.current = null;
+      focusAfterMorph.current = true;
+      onEntryInterrupt?.();
+      setCollapsed(false);setContentVisible(true);setIncoming(false);
     }
-    // Next can restore this route's state; never restore its outgoing lock pose.
     if (morphingOut.current) restoreEntry();
-    function onMorphOut(event: Event) {
-      const href = (event as CustomEvent<{ href?: string }>).detail?.href;
-      if (!href || morphingOut.current) return;
-      morphingOut.current = true;
-      clearMotion();
-      if (prefersReducedMotion()) { router.push(href); return; }
-      setContentVisible(false);
-      setCollapsed(true);
-      morphTimer.current = window.setTimeout(() => {
-        navigationStarted.current = true;
-        router.push(href, { scroll: false });
-      }, AUTH_ENTRY_MORPH_MS);
+    function commit(href:string) {
+      navigationStarted.current = true;
+      if (onEntryModeChange) onEntryModeChange(href);
+      else pushRoute(href, {scroll:false});
     }
-    window.addEventListener(AUTH_MORPH_OUT_EVENT, onMorphOut);
-    window.addEventListener("popstate", restoreEntry);
-    window.addEventListener("pageshow", restoreEntry);
-    window.addEventListener("pagehide", restoreEntry);
+    function onMorphOut(event:Event) {
+      const href = (event as CustomEvent<{href?:string}>).detail?.href;
+      if (!href || morphingOut.current || (onEntryModeChange && !/^\/(login|signup)(?:\?|$)/.test(href))) return;
+      clearMotion();morphingOut.current = true;navigationStarted.current = false;pendingModeHref.current = href;
+      focusAfterMorph.current = true;
+      const measured = entryBody.current?.closest('[data-auth-entry-stage]')?.getBoundingClientRect().height;
+      if (measured && measured > 0) setSourceStageHeight(measured);
+      if (prefersReducedMotion()) { commit(href);restoreEntry();return; }
+      setIncoming(false);setContentVisible(false);setCollapsed(true);
+      morphTimer.current = window.setTimeout(() => {
+        commit(href);
+        if (onEntryModeChange) {
+          // Exact reference EC: mode commit at600ms, hold the closed shape80ms, then reopen.
+          morphTimer.current = window.setTimeout(() => {
+            setCollapsed(false);setContentVisible(true);setIncoming(false);
+            morphingOut.current = false;navigationStarted.current = false;pendingModeHref.current = null;
+          }, 80);
+        }
+      }, onEntryModeChange ? 600 : AUTH_ENTRY_MORPH_MS);
+    }
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
+    function onMotionPreference() {
+      if (!media.matches || !morphingOut.current) return;
+      const href = pendingModeHref.current;
+      if (href && !navigationStarted.current) commit(href);
+      restoreEntry();
+    }
+    window.addEventListener(AUTH_MORPH_OUT_EVENT,onMorphOut);
+    window.addEventListener('popstate',restoreEntry);window.addEventListener('pageshow',restoreEntry);window.addEventListener('pagehide',restoreEntry);
+    media.addEventListener('change',onMotionPreference);
     return () => {
-      window.removeEventListener(AUTH_MORPH_OUT_EVENT, onMorphOut);
-      window.removeEventListener("popstate", restoreEntry);
-      window.removeEventListener("pageshow", restoreEntry);
-      window.removeEventListener("pagehide", restoreEntry);
-      clearMotion();
+      window.removeEventListener(AUTH_MORPH_OUT_EVENT,onMorphOut);
+      window.removeEventListener('popstate',restoreEntry);window.removeEventListener('pageshow',restoreEntry);window.removeEventListener('pagehide',restoreEntry);
+      media.removeEventListener('change',onMotionPreference);clearMotion();
       if (morphingOut.current && !navigationStarted.current) consumeAuthEntryMorph();
     };
-  }, [entry, entryBackdrop, router, embedded]);
+  },[entry,entryBackdrop,embedded,pushRoute,onEntryModeChange,onEntryInterrupt]);
+
+  useEffect(() => {
+    if (!entry || embedded || collapsed || !contentVisible || !focusAfterMorph.current) return;
+    const timer = window.setTimeout(() => {
+      entryBody.current?.querySelector<HTMLElement>('[data-auth-entry-heading]')?.focus({preventScroll:true});
+      focusAfterMorph.current = false;
+    },prefersReducedMotion() ? 0 : 150);
+    return () => window.clearTimeout(timer);
+  },[entry,embedded,collapsed,contentVisible,title]);
 
   // The shared layout owns the single canvas/card. Route-specific controllers only supply their form/footer.
-  if (entry && embedded) return <>{children}{footer ? <div className="mt-5 text-center text-xs text-[#536579]">{footer}</div> : null}</>;
+  if (entry && embedded) return <><AuthEntryHeading title={title} body={body}/><div className="mt-6">{children}</div>{footer ? <div className="mt-5 text-center text-xs text-[#536579]">{footer}</div> : null}</>;
 
   if (entry) {
     return (
@@ -287,9 +325,10 @@ export function AuthShell({
               transform ${AUTH_ENTRY_MORPH_MS}ms cubic-bezier(0.22, 1, 0.36, 1),
               border-radius ${AUTH_ENTRY_MORPH_MS}ms cubic-bezier(0.22, 1, 0.36, 1);
           }
-          .auth-entry-card-body { transition: opacity 0.28s ease, transform 580ms cubic-bezier(0.22, 1, 0.36, 1); }
+          .auth-entry-card-body { transition: opacity 300ms ease 150ms, transform 300ms ease 150ms; }
+          [data-auth-entry-collapsed="true"] .auth-entry-card-body { transition-duration:150ms; transition-delay:0ms; }
           @media (prefers-reduced-motion: reduce) {
-            .auth-entry-card, .auth-entry-card-body, [data-auth-entry-stage] { transition: none !important; }
+            .auth-entry-card, .auth-entry-card-body, .auth-entry-lock, [data-auth-entry-stage] { transition: none !important; }
           }
         `}</style>
         <div className={`relative z-10 mx-auto flex max-w-[1100px] items-center justify-between gap-2 ${entryBackdrop ? "pointer-events-none select-none" : ""}`}>
@@ -311,16 +350,16 @@ export function AuthShell({
           >
             <div
               className={`auth-entry-card relative flex flex-col items-center justify-center overflow-hidden border border-[#DCE4EB] bg-[#FFFFFF]/95 shadow-[0_30px_80px_rgba(23,45,67,0.12),inset_0_1px_0_rgba(255,255,255,0.85)] backdrop-blur-2xl ${
-                collapsed ? "rounded-[34px]" : "rounded-[38px]"
+                collapsed ? "rounded-[34px]" : "rounded-[28px]"
               } ${entryBackdrop ? "pointer-events-none opacity-55" : ""}`}
               data-auth-entry-card="true"
               data-auth-entry-collapsed={collapsed ? "true" : "false"}
               style={{
                 transition: incoming && collapsed ? "none" : undefined,
-                width: collapsed ? "170px" : "min(100%, 385px)",
+                width: collapsed ? "170px" : "min(100%, 400px)",
                 height: collapsed ? "170px" : expandedHeight,
                 minHeight: collapsed || expandedHeight ? undefined : signupTall ? "34rem" : "28rem",
-                maxWidth: "385px",
+                maxWidth: "400px",
                 transform: collapsed ? "rotate(-45deg)" : "rotate(0deg)",
               }}
             >
@@ -340,23 +379,21 @@ export function AuthShell({
                 }}
                 aria-hidden="true"
               />
+              <div aria-hidden="true" data-auth-lock-mark="true" className={`auth-entry-lock absolute inset-0 flex items-center justify-center pointer-events-none transition-all duration-300 ${collapsed ? "opacity-100 scale-100 delay-100" : "opacity-0 scale-50"}`}>
+                <div className="rotate-45 w-14 h-14 rounded-2xl bg-[#F0F4F6] border border-[#B5C9D2] flex items-center justify-center"><div className="w-8 h-[2px] bg-[#087E8B]/30 -rotate-45"/></div>
+              </div>
               <div
                 ref={entryBody}
                 className={`auth-entry-card-body flex shrink-0 flex-col justify-between px-6 py-8 sm:px-7 sm:py-9 ${collapsed ? "opacity-0" : contentVisible ? "opacity-100" : "opacity-0"}`}
                 style={{
                   transition: incoming && collapsed ? "none" : undefined,
-                  transform: collapsed ? "rotate(45deg)" : "none",
-                  width: "min(calc(100vw - 34px), 383px)",
+                  transform: collapsed ? "scale(0.9)" : "scale(1)",
+                  width: "min(calc(100vw - 34px), 398px)",
                 }}
                 {...(entryBackdrop || collapsed ? ({ inert: true } as { inert: boolean }) : {})}
               >
-                <div className="text-center">
-                  <h1 tabIndex={-1} data-auth-entry-heading="true" className="text-[25px] font-bold leading-snug tracking-tight text-[#172D43] focus:outline-none">
-                    <AuthTitle title={title} />
-                  </h1>
-                  {body ? <p className="mt-1 text-xs leading-5 text-[#536579]">{body}</p> : null}
-                </div>
-                <div className="mt-6 flex w-full flex-col justify-between">{children}</div>
+                {!onEntryModeChange ? <AuthEntryHeading title={title} body={body}/> : null}
+                <div className={onEntryModeChange ? "flex w-full flex-col justify-between" : "mt-6 flex w-full flex-col justify-between"}>{children}</div>
                 {footer ? <div className="mt-5 text-center text-xs text-[#536579]">{footer}</div> : null}
               </div>
             </div>
@@ -509,276 +546,186 @@ function useAuthenticatedAuthRedirect(next:string|null, paused=false, navigate?:
 /** One mounted entry experience; route adapters retain both public deep links. */
 function AuthEntryMode({mode}:{mode:"login"|"signup"}) {
   const query = useSearchParams().toString();
-  return <div key={mode+":"+query} className="auth-mode-surface" data-auth-entry-mode={mode}>{mode === "signup" ? <SignupPage /> : <LoginPage />}</div>;
+  return <div key={mode+":"+query} className="auth-mode-surface" data-auth-entry-mode={mode}>{<AuthEntryForm mode={mode} />}</div>;
 }
 export function AuthEntryExperience() {
   const mode = usePathname() === "/signup" ? "signup" : "login";
   const copy = useAppCopy();
   const lock = useAuthEntryLock();
-  const host = useRef<HTMLDivElement>(null);
-  const previousMode = useRef(mode);
-  const changeMode = useCallback((href: string) => {
-    if (!/^\/(login|signup)(?:\?|$)/.test(href)) return;
-    if (window.location.pathname + window.location.search === href) return;
-    // Installed Next16 integrates native history with pathname/search hooks, with no route fetch or page flip.
-    window.history.pushState(null, "", href);
-  }, []);
-  useEffect(() => {
-    document.title = mode === "signup" ? "Create account · Velora" : "Sign in · Velora";
-    let frame = 0;
-    if (previousMode.current !== mode) frame = window.requestAnimationFrame(() => host.current?.querySelector<HTMLElement>("[data-auth-entry-heading]")?.focus({ preventScroll: true }));
-    previousMode.current = mode;
-    return () => window.cancelAnimationFrame(frame);
-  }, [mode]);
-  return <div ref={host} data-auth-entry-host="true">
-    <style>{"@keyframes veloraAuthFormIn{from{opacity:.35;transform:translateY(5px)}to{opacity:1;transform:none}}.auth-mode-surface{animation:veloraAuthFormIn 180ms ease-out}@media(prefers-reduced-motion:reduce){.auth-mode-surface{animation:none}}"}</style>
-    <AuthShell entry title={mode === "signup" ? copy.auth.signupTitle : copy.auth.loginTitle} body={mode === "signup" ? copy.auth.signupBody : copy.auth.loginBody}>
-      <AuthEntryContext.Provider value={{ lock, changeMode }}>
-        <Suspense fallback={<div role="status" aria-busy="true" className="min-h-64 text-center text-sm text-[#536579]">{copy.loading}</div>}>
-          <AuthEntryMode mode={mode} />
-        </Suspense>
+  const requestEpoch = useRef(0);
+  const commitMode = useCallback((href:string) => { window.history.pushState(null,"",href); },[]);
+  const interrupt = useCallback(() => { requestEpoch.current += 1; },[]);
+  const changeMode = useCallback((href:string) => {
+    if (!/^\/(login|signup)(?:\?|$)/.test(href) || window.location.pathname+window.location.search === href) return;
+    requestEpoch.current += 1;
+    window.dispatchEvent(new CustomEvent(AUTH_MORPH_OUT_EVENT,{detail:{href}}));
+  },[]);
+  useEffect(() => { document.title = mode === "signup" ? "Create account · Velora" : "Sign in · Velora"; },[mode]);
+  return <div data-auth-entry-host="true">
+    <AuthShell entry title={mode === "signup" ? copy.auth.signupTitle : copy.auth.loginTitle} body={mode === "signup" ? copy.auth.signupBody : copy.auth.loginBody} onEntryModeChange={commitMode} onEntryInterrupt={interrupt}>
+      <AuthEntryContext.Provider value={{lock,changeMode,requestEpoch}}>
+        <Suspense fallback={<div role="status" aria-busy="true" className="min-h-64 text-center text-sm text-[#536579]">{copy.loading}</div>}><AuthEntryMode mode={mode}/></Suspense>
       </AuthEntryContext.Provider>
     </AuthShell>
   </div>;
 }
 
-export function SignupPage() {
+/** Both entry modes share this form, field state, submit controller and visual implementation. */
+export function AuthEntryForm({mode}:{mode:"login"|"signup"}) {
+  const signup = mode === "signup";
   const copy = useAppCopy();
-
   const router = useRouter();
   const params = useSearchParams();
-  const captureScope = useAuthRequestScope("signup", params.toString());
-  const prefillEmail = (params.get("email") || "").trim().toLowerCase();
+  const returnTo = signup ? safeInternalPath(params.get("next"), "") : params.get("next");
+  const captureScope = useAuthRequestScope(mode, params.toString());
   const entryLock = useAuthEntryLock();
-  const { busy, run } = entryLock;
+  const {busy, run} = entryLock;
   const [redirecting, setRedirecting] = useState(false);
-  const navigate = useCallback((path: string) => {
-    // Read the newly admitted Auth cookie through a fresh protected document.
+  const navigate = useCallback((path:string) => {
+    // The newly admitted cookie is read through a fresh protected document.
     setRedirecting(true);
     window.location.replace(path);
   }, []);
-  const [form, setForm] = useState({ name: "", email: prefillEmail, password: "", confirm: "" });
-  const [errors, setErrors] = useState<Partial<Record<"name" | "email" | "password" | "confirm", FieldErrorKey>>>({});
-  const [formError, setFormError] = useState<string | null>(null);
-
-  const [altNotice, setAltNotice] = useState<string | null>(null);
-  const returnTo = safeInternalPath(params.get("next"), "");
-  useAuthenticatedAuthRedirect(returnTo,busy || redirecting,navigate);
-  const google = useGoogleAuth(setAltNotice, returnTo || null, entryLock, captureScope);
-  const dirty = Boolean(form.name || form.email || form.password || form.confirm);
-  useUnsavedWarning(dirty && !busy && !redirecting);
+  useAuthenticatedAuthRedirect(returnTo, busy || redirecting, navigate);
+  const [form, setForm] = useState({name:"", email:signup ? (params.get("email") || "").trim().toLowerCase() : "", password:"", confirm:""});
+  const [errors, setErrors] = useState<Partial<Record<"name"|"email"|"password"|"confirm",FieldErrorKey>>>({});
+  const [formError, setFormError] = useState<string|null>(() => {
+    if (signup) return null;
+    const error = params.get("error");
+    if (error === "verification_browser") return copy.auth.verificationBrowser;
+    if (error === "auth_callback") return copy.errors.authFailed;
+    if (error === "oauth_cancelled") return copy.auth.oauthCancelled;
+    return null;
+  });
+  const [continuation, setContinuation] = useState<{email:string;next:string;outcome:"pending"|"uncertain"}|null>(null);
+  const [altNotice, setAltNotice] = useState<string|null>(null);
+  const google = useGoogleAuth(setAltNotice, returnTo, entryLock, captureScope);
+  useUnsavedWarning(signup && !continuation && Boolean(form.name || form.email || form.password || form.confirm) && !busy && !redirecting);
   const nameError = useErrorText(errors.name);
   const emailError = useErrorText(errors.email);
   const passwordError = useErrorText(errors.password);
   const confirmError = useErrorText(errors.confirm);
 
-  function submitEmail(e: React.FormEvent) {
-    e.preventDefault();
-    if (busy || redirecting) return;
-    const next: typeof errors = {};
-    if (form.name.trim().length < 2) next.name = "required";
-    if (!isEmail(form.email)) next.email = "email";
-    if (form.password.length < 8) next.password = "password";
-    if (form.confirm !== form.password) next.confirm = "match";
-    setErrors(next);
-    setFormError(null);
-    if (Object.keys(next).length) return;
-    const current = captureScope();
-    void run(async () => {
-      if (!current()) return;
-      const { ensureBrowserContinuity, clearAuthGestureNonce } = await import("@/lib/auth/browser-continuity");
-      const continuity = await ensureBrowserContinuity("signup");
-      if (!current()) { if (continuity.ok) clearAuthGestureNonce(continuity.requestNonce); return; }
-      if (!continuity.ok) {
-        setFormError(
-          continuity.code === "CONTINUITY_RECOVERY_REQUIRED"
-            ? copy.errors.continuityRecovery
-            : copy.auth.serviceUnavailable,
-        );
-        return;
-      }
-      const result = await signUpWithEmail({
-        name: form.name.trim(),
-        email: form.email.trim(),
-        password: form.password,
-        confirmPassword: form.confirm,
-        next: returnTo,
-        requestNonce: continuity.requestNonce,
-      });
-      if (result.ok || result.code === "INVALID_INPUT" || result.code === "AUTH_ERROR") clearAuthGestureNonce(continuity.requestNonce);
-      if (!current()) return;
-      if (!result.ok) {
-        setFormError(authEntryFailure(result.code, copy, false));
-        return;
-      }
-      if (result.data.needsVerification) {
-        savePendingSignup(result.data.email,returnTo);
-        void rememberVerificationResend(result.data.email);
-        router.replace(authFlowHref("/verify-email",returnTo,result.data.email));
-        return;
-      }
-      clearPendingSignup();
-      const destination = await resolvePostAuthPath(returnTo);
-      if (!current()) return;
-      if (!destination.ok) { setFormError(authEntryFailure(destination.code, copy, false)); return; }
-      navigate(destination.data.next);
-    }).catch(() => { if (current()) setFormError(copy.auth.serviceUnavailable); });
+  function showSignupContinuation(email:string, outcome:"pending"|"uncertain", next=returnTo || "") {
+    // A pending journey is browser intent, never evidence of account existence or mail delivery.
+    setContinuation({email:email.trim().toLowerCase(),next:safeInternalPath(next,""),outcome});
+    setForm(previous=>({...previous,password:"",confirm:""}));
+    setFormError(null);setErrors({});
   }
 
-  return (
-    <AuthShell
-      entry
-      title={copy.auth.signupTitle}
-      body={copy.auth.signupBody}
-      footer={<>{copy.auth.haveAccount} <AuthEntryMorphLink href={returnTo ? `/login?next=${encodeURIComponent(returnTo)}` : "/login"} className="font-semibold text-[#087E8B] underline">{copy.auth.login}</AuthEntryMorphLink></>}
-    >
-      <form className="space-y-3" onSubmit={submitEmail} noValidate data-auth-entry-form="signup">
-        {formError ? <Notice tone="error">{formError}</Notice> : null}
-        <Field label={copy.auth.name} required error={nameError} tone="entry">
-          {(p) => (
-            <div className="relative flex items-center">
-              <EntryFieldIcon kind="user" />
-              <input {...p} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} autoComplete="name" />
-            </div>
-          )}
-        </Field>
-        <Field label={copy.auth.email} required error={emailError} tone="entry">
-          {(p) => (
-            <div className="relative flex items-center">
-              <EntryFieldIcon kind="mail" />
-              <input {...p} type="email" dir="ltr" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} autoComplete="email" inputMode="email" />
-            </div>
-          )}
-        </Field>
-        <PasswordField tone="entry" label={copy.auth.password} value={form.password} onChange={(v) => setForm({ ...form, password: v })} error={passwordError} hint={copy.auth.passwordHintReal} autoComplete="new-password" />
-        <PasswordField tone="entry" label={copy.auth.confirmPasswordSignup} value={form.confirm} onChange={(v) => setForm({ ...form, confirm: v })} error={confirmError} autoComplete="new-password" />
-        <Button type="submit" variant="entry" busy={busy || redirecting} busyLabel={copy.loading} className="mt-1">
-          {copy.auth.createAccount}
-          {!busy && !redirecting ? <EntrySubmitArrow /> : null}
-        </Button>
-      </form>
-
-      <GoogleAuthButton entry busy={busy || redirecting || google.busy} onGoogle={google.onGoogle} notice={altNotice} />
-    </AuthShell>
-  );
-}
-
-export function LoginPage() {
-
-  const copy = useAppCopy();
-  const params = useSearchParams();
-  const returnTo = params.get("next");
-  const captureScope = useAuthRequestScope("login", params.toString());
-  const entryLock = useAuthEntryLock();
-  const { busy, run } = entryLock;
-  const [redirecting, setRedirecting] = useState(false);
-  const navigate = useCallback((path:string) => {
-    // A new Auth cookie needs a fresh protected document, without competing
-    // profile actions or a cached RSC tree from the previous identity.
-    setRedirecting(true);
-    window.location.replace(path);
-  }, []);
-  useAuthenticatedAuthRedirect(returnTo,busy||redirecting,navigate);
-  const [form, setForm] = useState({ email: "", password: "" });
-  const [errors, setErrors] = useState<Partial<Record<"email" | "password", FieldErrorKey>>>({});
-  const [formError, setFormError] = useState<string | null>(() => {
-    const err = params.get("error");
-    if (err === "verification_browser") return copy.auth.verificationBrowser;
-    if (err === "auth_callback") return copy.errors.authFailed;
-    if (err === "oauth_cancelled") return copy.auth.oauthCancelled;
-    return null;
-  });
-
-  const [altNotice, setAltNotice] = useState<string | null>(null);
-  const google = useGoogleAuth(setAltNotice, returnTo, entryLock, captureScope);
-  const emailError = useErrorText(errors.email);
-  const passwordError = useErrorText(errors.password);
-
-  function submitEmail(e: React.FormEvent) {
-    e.preventDefault();
-    if (busy||redirecting) return;
+  function submitEmail(event:React.FormEvent) {
+    event.preventDefault();
+    if (busy || redirecting || entryLock.locked.current) return;
     setFormError(null);
-    const next: typeof errors = {};
+    const normalizedEmail = form.email.trim().toLowerCase();
+    const previousJourney = signup && isEmail(normalizedEmail) ? readPendingSignup() : null;
+    if (previousJourney?.email === normalizedEmail) {
+      showSignupContinuation(normalizedEmail,"pending",returnTo || previousJourney.next);
+      return;
+    }
+    const next:typeof errors = {};
+    if (signup && form.name.trim().length < 2) next.name = "required";
     if (!isEmail(form.email)) next.email = "email";
-    if (!form.password) next.password = "required";
+    if (signup ? form.password.length < 8 : !form.password) next.password = signup ? "password" : "required";
+    if (signup && form.confirm !== form.password) next.confirm = "match";
     setErrors(next);
     if (Object.keys(next).length) return;
     const current = captureScope();
+    const trace = beginDiagnostic(signup ? "auth_signup" : "auth_login");
+    let signupAttempted = false;
     void run(async () => {
-      if (!current()) return;
-      const trace=beginDiagnostic("auth_login");trace.stage("provider");
-      const { ensureBrowserContinuity, clearAuthGestureNonce } = await import("@/lib/auth/browser-continuity");
-      const continuity = await ensureBrowserContinuity("login");
-      if (!current()) { if (continuity.ok) clearAuthGestureNonce(continuity.requestNonce); return; }
+      if (!current()) { trace.finish("CONFLICT"); return; }
+      trace.stage("session");
+      const {ensureBrowserContinuity, clearAuthGestureNonce} = await import("@/lib/auth/browser-continuity");
+      const continuity = await ensureBrowserContinuity(mode, trace.correlation);
+      if (!current()) { trace.finish("CONFLICT"); if (continuity.ok) clearAuthGestureNonce(continuity.requestNonce); return; }
       if (!continuity.ok) {
-        setFormError(
-          continuity.code === "CONTINUITY_RECOVERY_REQUIRED"
-            ? copy.errors.continuityRecovery
-            : copy.auth.serviceUnavailable,
-        );
+        trace.finish("UNAVAILABLE");
+        setFormError(continuity.code === "CONTINUITY_RECOVERY_REQUIRED" ? copy.errors.continuityRecovery : copy.auth.serviceUnavailable);
         return;
       }
-      // WP01A: password login goes through the server session broker (opaque handles).
-      const {signInWithEmail}=await import("@/lib/tenancy/actions");
-      const admitted=await signInWithEmail({
-        email:form.email.trim().toLowerCase(),
-        password:form.password,
-        next:returnTo,
-        requestNonce: continuity.requestNonce,
-      });
+      trace.stage("provider");
+      // UI is shared; the two server operations and their security contracts remain distinct.
+      if (signup) {
+        signupAttempted = true;
+        const result = await signUpWithEmail({name:form.name.trim(), email:form.email.trim(), password:form.password, confirmPassword:form.confirm, next:returnTo, requestNonce:continuity.requestNonce, correlation: trace.correlation});
+        if (result.ok || result.code === "INVALID_INPUT" || result.code === "AUTH_ERROR") clearAuthGestureNonce(continuity.requestNonce);
+        if (!current()) { trace.finish("CONFLICT"); return; }
+        if (!result.ok) {
+          trace.finish(result.diagnostic?.code ?? (result.code === "UNAVAILABLE" ? "UNAVAILABLE" : result.code === "INVALID_INPUT" ? "INVALID_INPUT" : "AUTH_ERROR"));
+          if (result.code === "UNAVAILABLE") showSignupContinuation(normalizedEmail,"uncertain");
+          else setFormError(authEntryFailure(result.code, copy, false));
+          return;
+        }
+        if (result.data.needsVerification) {
+          // Processing completed; this is not proof of a new account or delivered email.
+          trace.stage("completed");trace.finish("OK");
+          savePendingSignup(result.data.email, returnTo || "");
+          void rememberVerificationResend(result.data.email);
+          showSignupContinuation(result.data.email,"pending");
+          return;
+        }
+        clearPendingSignup();
+        const destination = await resolvePostAuthPath(returnTo, trace.correlation);
+        if (!current()) { trace.finish("CONFLICT"); return; }
+        if (!destination.ok) { trace.finish("UNAVAILABLE"); setFormError(authEntryFailure(destination.code, copy, false)); return; }
+        trace.stage("handoff");trace.finish("OK");
+        navigate(destination.data.next);
+        return;
+      }
+      const {signInWithEmail} = await import("@/lib/tenancy/actions");
+      const admitted = await signInWithEmail({email:form.email.trim().toLowerCase(), password:form.password, next:returnTo, requestNonce:continuity.requestNonce, correlation: trace.correlation});
       if (admitted.ok || admitted.code === "INVALID_INPUT" || admitted.code === "AUTH_ERROR") clearAuthGestureNonce(continuity.requestNonce);
-      if (!current()) return;
-      if(!admitted.ok){if (!admitted.diagnostic) trace.finish(admitted.code === "UNAVAILABLE" ? "UNAVAILABLE" : admitted.code === "INVALID_INPUT" ? "INVALID_INPUT" : "AUTH_ERROR");setFormError(authEntryFailure(admitted.code, copy, true));return;}
-      trace.stage("access");
-      const result=admitted.data?.next
-        ? {ok:true as const,data:{next:admitted.data.next},diagnostic:admitted.diagnostic}
-        : await resolvePostAuthPath(returnTo);
-      if (!current()) return;
-      if (!result.ok) {
-        setFormError(authEntryFailure(result.code, copy, true));
+      if (!current()) { trace.finish("CONFLICT"); return; }
+      if (!admitted.ok) {
+        trace.finish(admitted.diagnostic?.code ?? (admitted.code === "UNAVAILABLE" ? "UNAVAILABLE" : admitted.code === "INVALID_INPUT" ? "INVALID_INPUT" : "AUTH_ERROR"));
+        setFormError(authEntryFailure(admitted.code, copy, true));
         return;
       }
-      trace.stage("handoff");trace.finish("OK");clearPendingSignup();
-      navigate(result.data.next);
-    }).catch(() => { if (current()) setFormError(copy.auth.serviceUnavailable); });
+      trace?.stage("access");
+      const destination = admitted.data?.next ? {ok:true as const, data:{next:admitted.data.next}} : await resolvePostAuthPath(returnTo, trace.correlation);
+      if (!current()) { trace.finish("CONFLICT"); return; }
+      if (!destination.ok) { trace.finish("UNAVAILABLE"); setFormError(authEntryFailure(destination.code, copy, true)); return; }
+      trace?.stage("handoff");trace?.finish("OK");clearPendingSignup();
+      navigate(destination.data.next);
+    }).catch(() => {
+      trace.finish("OUTCOME_UNKNOWN");
+      if (!current()) { trace.finish("CONFLICT"); return; }
+      if (signupAttempted) showSignupContinuation(normalizedEmail,"uncertain");
+      else setFormError(copy.auth.serviceUnavailable);
+    });
   }
-
-  return (
-    <AuthShell
-      entry
-      title={copy.auth.loginTitle}
-      body={copy.auth.loginBody}
-      footer={<>{copy.auth.noAccount} <AuthEntryMorphLink href={safeInternalPath(returnTo, "") ? `/signup?next=${encodeURIComponent(safeInternalPath(returnTo, ""))}` : "/signup"} className="font-semibold text-[#087E8B] underline">{copy.auth.signup}</AuthEntryMorphLink></>}
-    >
-      <form className="space-y-4" onSubmit={submitEmail} noValidate data-auth-entry-form="login">
-        {params.get("reason") === "session_expired" ? <Notice tone="warn">{copy.errors.sessionExpiredBody}</Notice> : null}
-        {formError ? <Notice tone="error">{formError}</Notice> : null}
-        <Field label={copy.auth.email} required error={emailError} tone="entry">
-          {(p) => (
-            <div className="relative flex items-center">
-              <EntryFieldIcon kind="mail" />
-              <input {...p} type="email" dir="ltr" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} autoComplete="email" inputMode="email" />
-            </div>
-          )}
-        </Field>
-        <PasswordField tone="entry" label={copy.auth.password} value={form.password} onChange={(v) => setForm({ ...form, password: v })} error={passwordError} autoComplete="current-password" />
-        <div className="flex items-center justify-end text-xs">
-          <Link href="/forgot-password" className="font-medium text-[#087E8B]">{copy.auth.forgot}</Link>
-        </div>
-        <Button type="submit" variant="entry" busy={busy || redirecting} busyLabel={copy.loading}>
-          {copy.auth.login}
-          {!busy && !redirecting ? <EntrySubmitArrow /> : null}
-        </Button>
-      </form>
-
-      <GoogleAuthButton entry busy={busy || redirecting || google.busy} onGoogle={google.onGoogle} notice={altNotice} />
-    </AuthShell>
-  );
+  return <AuthShell entry title={continuation ? copy.auth.signupNextTitle : signup ? copy.auth.signupTitle : copy.auth.loginTitle} body={continuation ? fill(copy.auth.signupNextBody,{email:continuation.email}) : signup ? copy.auth.signupBody : copy.auth.loginBody}
+    footer={continuation ? undefined : <>{signup ? copy.auth.haveAccount : copy.auth.noAccount}{" "}<AuthEntryMorphLink href={authFlowHref(signup ? "/login" : "/signup", returnTo)} className="font-semibold text-[#087E8B] underline">{signup ? copy.auth.login : copy.auth.signup}</AuthEntryMorphLink></>}>
+    {continuation ? <div className="space-y-4" data-auth-signup-continuation={continuation.outcome}>
+      {continuation.outcome === "uncertain" ? <Notice tone="warn">{copy.auth.signupOutcomeUnknown}</Notice> : null}
+      <Button type="button" variant="entry" data-auth-continue-verification onClick={()=>router.replace(authFlowHref("/verify-email",continuation.next,continuation.email))}>{copy.auth.enterVerificationCode}</Button>
+      <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-1 text-sm">
+        <AuthEntryMorphLink href={authFlowHref("/login",continuation.next)} className="inline-flex min-h-11 items-center font-semibold text-[#087E8B] underline">{copy.auth.login}</AuthEntryMorphLink>
+        <Link href="/forgot-password" className="inline-flex min-h-11 items-center font-medium text-[#087E8B] underline">{copy.auth.forgot}</Link>
+      </div>
+      {continuation.outcome === "pending" ? <button type="button" data-auth-use-another-email className="mx-auto block min-h-11 text-sm font-medium text-[#37545C] underline" onClick={()=>setContinuation(null)}>{copy.auth.useAnotherEmail}</button> : null}
+    </div> : <><form className={signup ? "space-y-3" : "space-y-4"} onSubmit={submitEmail} noValidate data-auth-entry-form={mode}>
+      {!signup && params.get("reason") === "session_expired" ? <Notice tone="warn">{copy.errors.sessionExpiredBody}</Notice> : null}
+      {formError ? <Notice tone="error">{formError}</Notice> : null}
+      {signup ? <Field label={copy.auth.name} required error={nameError} tone="entry">{props => <div className="relative flex items-center"><EntryFieldIcon kind="user"/><input {...props} value={form.name} onChange={event=>setForm({...form,name:event.target.value})} autoComplete="name"/></div>}</Field> : null}
+      <Field label={copy.auth.email} required error={emailError} tone="entry">{props => <div className="relative flex items-center"><EntryFieldIcon kind="mail"/><input {...props} type="email" dir="ltr" value={form.email} onChange={event=>setForm({...form,email:event.target.value})} autoComplete="email" inputMode="email"/></div>}</Field>
+      <PasswordField tone="entry" label={copy.auth.password} value={form.password} onChange={value=>setForm({...form,password:value})} error={passwordError} hint={signup ? copy.auth.passwordHintReal : undefined} autoComplete={signup ? "new-password" : "current-password"}/>
+      {signup ? <PasswordField tone="entry" label={copy.auth.confirmPasswordSignup} value={form.confirm} onChange={value=>setForm({...form,confirm:value})} error={confirmError} autoComplete="new-password"/> : <div className="flex items-center justify-end text-xs"><Link href="/forgot-password" className="font-medium text-[#087E8B]">{copy.auth.forgot}</Link></div>}
+      <Button type="submit" variant="entry" busy={busy || redirecting} busyLabel={copy.loading} className={signup ? "mt-1" : undefined}>{signup ? copy.auth.createAccount : copy.auth.login}{!busy && !redirecting ? <EntrySubmitArrow/> : null}</Button>
+    </form>
+    <GoogleAuthButton entry busy={busy || redirecting || google.busy} onGoogle={google.onGoogle} notice={altNotice}/></>}
+  </AuthShell>;
 }
+
+/** Compatibility exports have no separate form or transition implementation. */
+export function SignupPage() { return <AuthEntryForm mode="signup"/>; }
+export function LoginPage() { return <AuthEntryForm mode="login"/>; }
 
 type VerificationBoundary = { userId: string | null; boundaryFingerprint: string | null; status: string };
 type VerifiedBoundary = { userId: string; boundaryFingerprint: string };
 type VerificationCapture = {
+  trace: ReturnType<typeof beginDiagnostic>;
   epoch: number;
   baseline: VerificationBoundary | null;
   observed: VerificationBoundary[];
@@ -847,9 +794,10 @@ export function VerifyEmailPage() {
     if (activeCapture.current) observe(activeCapture.current);
   });
 
-  function captureJourney(): VerificationCapture {
+  function captureJourney(operation: "auth_verification" | "auth_verification_resend" = "auth_verification"): VerificationCapture {
     const baseline = session?.liveSnapshot() ?? null;
-    const capture = { epoch: journey.current.epoch, baseline, observed: baseline ? [{ ...baseline }] : [] };
+    const capture = { trace: beginDiagnostic(operation), epoch: journey.current.epoch, baseline, observed: baseline ? [{ ...baseline }] : [] };
+    capture.trace.stage("session");
     activeCapture.current = capture;
     return capture;
   }
@@ -860,6 +808,17 @@ export function VerifyEmailPage() {
       && capture.observed.every(value => value.status !== "locked" && value.status !== "expired"
         && (sameVerificationBoundary(value, capture.baseline) || matchesVerifiedBoundary(value, expected)))
       && (!requireVerified || !session || Boolean(live?.ready && live.status === "ready" && matchesVerifiedBoundary(live, expected)));
+  }
+
+  function reportInterrupted(capture:VerificationCapture, resend=false) {
+    capture.trace.event("session", "CONFLICT");
+    // A stale response must never write into a different email journey or unmounted page.
+    if(!journey.current.mounted || activeCapture.current!==capture || journey.current.epoch!==capture.epoch)return;
+    successCapture.current=null;confirmedCapture.current=null;
+    setVerified(false);setSuccessNext(null);setRetrySessionOnly(false);
+    setError(copy.auth.verificationContextChanged);
+    capture.trace.event("session","UNAVAILABLE");
+    void resend;
   }
 
   useEffect(() => {
@@ -898,21 +857,25 @@ export function VerifyEmailPage() {
   async function finishVerification(confirmed: ConfirmedVerification) {
     const { capture, boundary } = confirmed;
     try {
-      await session?.refresh();
+      capture.trace.stage("refresh");
+      await session?.refresh(capture.trace.correlation);
     } catch {
+      capture.trace.event("refresh", "OUTCOME_UNKNOWN");
       if (isCurrent(capture, boundary)) {
         setRetrySessionOnly(true);
         setError(copy.auth.verificationSessionUnavailable);
-      }
+      } else reportInterrupted(capture);
       return;
     }
-    if (!isCurrent(capture, boundary)) return;
+    if (!isCurrent(capture, boundary)) { reportInterrupted(capture); return; }
     // refresh() resolves on transport failure too. Identity alone is not READY.
     if (!isCurrent(capture, boundary, true)) {
+      capture.trace.event("refresh", "REFRESH_FAILED");
       setRetrySessionOnly(true);
       setError(copy.auth.verificationSessionUnavailable);
       return;
     }
+    capture.trace.event("refresh", "OK");
     clearPendingSignup();
     successCapture.current = { capture, boundary };
     setRetrySessionOnly(false);
@@ -924,7 +887,7 @@ export function VerifyEmailPage() {
     if (busy || !hydrated || !registeredEmail || verified) return;
     const confirmed = confirmedCapture.current;
     if (confirmed) {
-      if (!isCurrent(confirmed.capture, confirmed.boundary)) return;
+      if (!isCurrent(confirmed.capture, confirmed.boundary)) { reportInterrupted(confirmed.capture); return; }
       setError(null);
       return run(() => finishVerification(confirmed));
     }
@@ -943,9 +906,10 @@ export function VerifyEmailPage() {
       setVerificationRequest({ email: journeyEmail, next: journeyNext, query: emailFromQuery });
       try {
         const { ensureBrowserContinuity, clearAuthGestureNonce } = await import("@/lib/auth/browser-continuity");
-        const continuity = await ensureBrowserContinuity("verify_email");
-        if (!isCurrent(capture)) return;
+        const continuity = await ensureBrowserContinuity("verify_email", capture.trace.correlation);
+        if (!isCurrent(capture)) { reportInterrupted(capture); return; }
         if (!continuity.ok) {
+          capture.trace.finish("UNAVAILABLE");
           setError(
             continuity.code === "CONTINUITY_RECOVERY_REQUIRED"
               ? copy.errors.continuityRecovery
@@ -953,27 +917,32 @@ export function VerifyEmailPage() {
           );
           return;
         }
+        capture.trace.stage("provider");
         const result = await verifyEmailCode({
           email: journeyEmail,
           code: normalized,
+          correlation: capture.trace.correlation,
           next: journeyNext,
           requestNonce: continuity.requestNonce,
         });
         const boundary = result.ok ? result.data : undefined;
-        if (!isCurrent(capture, boundary)) return;
+        if (!isCurrent(capture, boundary)) { reportInterrupted(capture); return; }
         if (result.ok || result.code === "INVALID_INPUT" || result.code === "AUTH_ERROR") {
           clearAuthGestureNonce(continuity.requestNonce);
         }
 
         if (!result.ok) {
+          capture.trace.finish(result.diagnostic?.code ?? (result.code === "UNAVAILABLE" ? "UNAVAILABLE" : result.code === "INVALID_INPUT" ? "INVALID_INPUT" : "AUTH_ERROR"));
           setError(result.code === "INVALID_INPUT" ? copy.auth.verificationCodeFormat : verificationMessage(result.message));
           return;
         }
+        capture.trace.event("provider", "OK");
         const confirmed = { capture, boundary: result.data, next: result.data.next };
         confirmedCapture.current = confirmed;
         await finishVerification(confirmed);
       } catch {
-        if (!isCurrent(capture)) return;
+        capture.trace.finish("OUTCOME_UNKNOWN");
+        if (!isCurrent(capture)) { reportInterrupted(capture); return; }
         setError(copy.auth.verificationUnavailable);
       } finally {
         // Presentation only: run() serializes this operation; server result fences above stay authoritative.
@@ -1042,30 +1011,35 @@ export function VerifyEmailPage() {
         onSubmitCode={submitCode}
         onResend={() => {
           if (busy || cooldown > 0 || !registeredEmail || verified || retrySessionOnly) return;
-          const capture = captureJourney();
+          const capture = captureJourney("auth_verification_resend");
           setError(null);
 
           setResent(false);
           void run(async () => {
             try {
               const { ensureBrowserContinuity, clearAuthGestureNonce } = await import("@/lib/auth/browser-continuity");
-              const continuity = await ensureBrowserContinuity("verification_resend");
-              if (!isCurrent(capture)) return;
-              if (!continuity.ok) { setError(copy.auth.verificationResendUnavailable); return; }
-              if (!await resendClock.reserve() || !isCurrent(capture)) return;
-              const result = await resendVerificationEmail(registeredEmail, pendingReturn, continuity.requestNonce);
-              if (!isCurrent(capture)) return;
+              const continuity = await ensureBrowserContinuity("verification_resend", capture.trace.correlation);
+              if (!isCurrent(capture)) { reportInterrupted(capture,true); return; }
+              if (!continuity.ok) { capture.trace.finish("UNAVAILABLE"); setError(copy.auth.verificationResendUnavailable); return; }
+              if (!await resendClock.reserve()) { capture.trace.finish("CONFLICT"); return; }
+              if (!isCurrent(capture)) { reportInterrupted(capture,true); return; }
+              capture.trace.stage("provider");
+              const result = await resendVerificationEmail(registeredEmail, pendingReturn, continuity.requestNonce, capture.trace.correlation);
+              if (!isCurrent(capture)) { reportInterrupted(capture,true); return; }
               if (result.ok || result.code === "INVALID_INPUT" || result.code === "AUTH_ERROR") clearAuthGestureNonce(continuity.requestNonce);
 
               if (!result.ok) {
+                capture.trace.finish(result.diagnostic?.code ?? (result.code === "UNAVAILABLE" ? "UNAVAILABLE" : result.code === "INVALID_INPUT" ? "INVALID_INPUT" : "AUTH_ERROR"));
                 setError(verificationMessage(result.message, copy.auth.verificationResendUnavailable));
                 if (result.message === "verification_rate_limited") resendClock.extend();
                 return;
               }
+              capture.trace.finish("OK");
               setResent(true);
               resendClock.extend();
             } catch {
-              if (!isCurrent(capture)) return;
+              capture.trace.finish("OUTCOME_UNKNOWN");
+              if (!isCurrent(capture)) { reportInterrupted(capture,true); return; }
               setError(copy.auth.verificationResendUnavailable);
             }
           });
@@ -1075,7 +1049,18 @@ export function VerifyEmailPage() {
         }}
         onSuccessAnimDone={() => {
           const success = successCapture.current;
-          if (!successNext || !success || !isCurrent(success.capture, success.boundary, true)) return;
+          if (!successNext || !success) return;
+          if (!isCurrent(success.capture, success.boundary)) { reportInterrupted(success.capture); return; }
+          if (!isCurrent(success.capture, success.boundary, true)) {
+            success.capture.trace.event("refresh", "REFRESH_FAILED");
+            // Verification already succeeded. Recover the same session without replaying the consumed code.
+            successCapture.current = null;
+            setVerified(false);
+            setRetrySessionOnly(true);
+            setError(copy.auth.verificationSessionUnavailable);
+            return;
+          }
+          success.capture.trace.stage("handoff");success.capture.trace.finish("OK");
           router.replace(successNext);
           router.refresh();
         }}

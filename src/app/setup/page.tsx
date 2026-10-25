@@ -1,3 +1,4 @@
+import {canUseAccountPrepDraft} from "@/lib/tenancy/account-prep-eligibility";
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
@@ -32,9 +33,10 @@ export default async function Page() {
   const company = access.context.company;
   const masterEnabled=masterJourneyEnabled();
   const userId = access.context.userId;
-  // Unpaid preparation never reads or restores a server draft. Confirmed
+  // Unpaid preparation reads only its account-owned draft. Confirmed
   // companies retain their existing management/recovery path below.
   if (!company) {
+    if(!canUseAccountPrepDraft(access.context))return <AccessGate code="FORBIDDEN"/>;
     return (
       <PrepaymentPreparation key={userId} userId={userId} preferredNext={preferredNext} variant="studio" />
     );

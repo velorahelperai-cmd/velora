@@ -3,7 +3,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
-import { verifyWorkspace, git, ORIGIN } from '../consolidation/guard.mjs';
+import { verifyWorkspace, git, overlaps, ORIGIN } from '../consolidation/guard.mjs';
 import { assertNoRuntimeEnvFiles, isolatedEnvironment } from './safety.mjs';
 
 const sha = value => /^[a-f0-9]{40}$/.test(value ?? '');
@@ -46,16 +46,41 @@ function candidateTree() {
 }
 const digest = value => createHash('sha256').update(value).digest('hex');
 function readReceipt(file) { try { return JSON.parse(readFileSync(file, 'utf8')); } catch { return null; } }
+export function deliveryIdentity(ownership) {
+  if (ownership?.mode !== 'local' || typeof ownership.owner !== 'string' || !ownership.owner
+    || typeof ownership.task !== 'string' || !ownership.task.trim()
+    || !sha(ownership.publicationBase)
+    || !/^[a-f0-9]{64}$/.test(ownership.reservationFingerprint ?? '')) {
+    throw Error('PRE_PUSH_OWNERSHIP_INVALID');
+  }
+  return { owner: ownership.owner, task: ownership.task, publicationBase: ownership.publicationBase,
+    reservationFingerprint: ownership.reservationFingerprint };
+}
+export function assertSameOwnership(expected, current) {
+  if (JSON.stringify(deliveryIdentity(expected)) !== JSON.stringify(deliveryIdentity(current))) {
+    throw Error('PRE_PUSH_OWNERSHIP_CHANGED');
+  }
+}
+export function assertCandidatePathsOwned(paths, ownership) {
+  if (!Array.isArray(ownership.paths) || !ownership.paths.length
+    || paths.some(path => !ownership.paths.some(scope => overlaps(scope, path)))) {
+    throw Error('PRE_PUSH_UNLEASED_PATH');
+  }
+}
 export function receiptMatches(receipt, identity, required) {
+  if (typeof identity.task !== 'string' || !identity.task.trim()
+    || !sha(identity.publicationBase) || !/^[a-f0-9]{64}$/.test(identity.reservationFingerprint ?? '')) return false;
   return receipt?.result === 'PASS' && receipt.tree === identity.tree && receipt.base === identity.base
-    && receipt.owner === identity.owner && receipt.task === identity.task && receipt.node === identity.node
+    && receipt.owner === identity.owner && receipt.task === identity.task
+    && receipt.publicationBase === identity.publicationBase
+    && receipt.reservationFingerprint === identity.reservationFingerprint && receipt.node === identity.node
     && receipt.platform === identity.platform && receipt.installFingerprint === identity.installFingerprint
     && Array.isArray(receipt.passed) && receipt.passed.length === required.length
     && new Set(receipt.passed).size === required.length && required.every(id => receipt.passed.includes(id));
 }
 function main() {
-  const ownership = verifyWorkspace();
   const mode = process.argv[2];
+  const ownership = verifyWorkspace(process.env, { delivery: mode !== 'install' });
   if (mode === 'install') {
     git('config', '--local', 'core.hooksPath', '.githooks');
     console.log('Git pre-push installed: .githooks/pre-push'); return;
@@ -74,8 +99,7 @@ function main() {
     base = parsePush(readFileSync(0, 'utf8'), head).base;
   }
   git('merge-base', '--is-ancestor', base, head);
-  const lock = JSON.parse(readFileSync('.git/velora-writer-lock.json', 'utf8'));
-  git('merge-base', '--is-ancestor', lock.publicationBase, base);
+  git('merge-base', '--is-ancestor', ownership.publicationBase, base);
   const tree = candidateTree();
   if (mode !== 'check' && git('rev-parse', 'HEAD^{tree}') !== tree) throw Error('PRE_PUSH_HEAD_TREE_MISMATCH');
   const npmCli = process.env.npm_execpath?.endsWith('npm-cli.js') ? process.env.npm_execpath
@@ -84,7 +108,7 @@ function main() {
   const directory = resolve('.git/velora-pre-push', tree);
   mkdirSync(directory, { recursive: true });
   const installFingerprint = () => existsSync('node_modules/.package-lock.json') ? digest(readFileSync('node_modules/.package-lock.json')) : 'missing';
-  const identity = { tree, base, owner: ownership.owner, task: ownership.task, node: process.version, platform: process.platform,
+  const identity = { tree, base, ...deliveryIdentity(ownership), node: process.version, platform: process.platform,
     installFingerprint: installFingerprint() };
   const plan = gatePlan(npmCli);
   const allIds = plan.map(gate => gate.id);
@@ -94,14 +118,15 @@ function main() {
   const treeFile = join(directory, 'tree.json');
   const current = readReceipt(fullFile);
   const assertCandidate = () => {
-    verifyWorkspace();
+    assertSameOwnership(ownership, verifyWorkspace(process.env, { delivery: true }));
     if (candidateTree() !== tree || git('rev-parse', 'HEAD') !== head) throw Error('PRE_PUSH_CANDIDATE_CHANGED');
+    assertCandidatePathsOwned(git('diff', '--no-renames', '--name-only', '-z', base, tree).split('\0').filter(Boolean), ownership);
   };
   assertCandidate();
   if (mode !== 'check' && current?.head === head && receiptMatches(current, identity, allIds)) {
     console.log('Pre-push PASS: exact commit/tree and unchanged task/runtime receipt verified.'); return;
   }
-  const childEnv = { ...isolatedEnvironment(), VELORA_WRITER_ID: ownership.owner,
+  const childEnv = { ...isolatedEnvironment(), VELORA_WRITER_ID: ownership.owner, VELORA_TASK_ID: ownership.task,
     VELORA_CI_RECEIPT_DIR: join(directory, 'checks'), SECRET_SCAN_BASE: base };
   const runner = gate => {
     console.log('PRE_PUSH_GATE ' + gate.id);

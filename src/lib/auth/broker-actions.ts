@@ -1,5 +1,6 @@
 "use server";
 
+import { withAuthDiagnostic } from "@/lib/diagnostics/server-flow";
 import { cookies } from "next/headers";
 import { safeInternalPath } from "@/lib/auth/safe-next";
 import {
@@ -32,7 +33,7 @@ export async function startOAuthAction(
   });
 }
 
-export async function readBrokerSessionStatus(): Promise<
+export async function readBrokerSessionStatus(correlation?: unknown): Promise<
   | {
       ok: true;
       userId: string;
@@ -43,8 +44,11 @@ export async function readBrokerSessionStatus(): Promise<
     }
   | { ok: false; code: "UNAUTHENTICATED" | "UNAVAILABLE" | "QUARANTINED" }
 > {
+  return withAuthDiagnostic<Awaited<ReturnType<typeof readBrokerSessionStatus>>>("auth_session_check", correlation, async trace => {
+  trace.stage("session");
   const bound = await createBrokerBoundClient();
-  if (!bound.bound.ok) return bound.bound;
+  if (!bound.bound.ok) { trace.finish(bound.bound.code === "UNAUTHENTICATED" ? "UNAUTHENTICATED" : "UNAVAILABLE"); return bound.bound; }
+  trace.finish("OK");
   return {
     ok: true,
     userId: bound.bound.resolve.boundary.userId,
@@ -53,6 +57,8 @@ export async function readBrokerSessionStatus(): Promise<
     contextGeneration: bound.bound.resolve.boundary.contextGeneration,
     generation: bound.bound.resolve.boundary.generation,
   };
+
+  });
 }
 
 /**

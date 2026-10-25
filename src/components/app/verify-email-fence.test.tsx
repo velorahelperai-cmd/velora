@@ -97,6 +97,7 @@ describe("mounted verification result ownership",()=>{
   state.snapshot=scenario==="logout"?{status:"guest",userId:null,boundaryFingerprint:null,ready:false}:
    {status:"ready",userId:scenario==="new account"?"user-b":"user-a",boundaryFingerprint:"bbbbbbbbbbbbbbbb",ready:true};
   state.refresh.mockImplementation(async()=>{});await render();await accept();
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain("browser session changed or expired");
   expect(state.clear).not.toHaveBeenCalled();expect(state.refresh).not.toHaveBeenCalled();
   await act(async()=>{vi.advanceTimersByTime(5000);});expect(state.replace).not.toHaveBeenCalled();
  });
@@ -114,8 +115,8 @@ describe("mounted verification result ownership",()=>{
  });
  it("binds native resend to continuity and preserves UNKNOWN nonce",async()=>{
   state.resend.mockResolvedValue({ok:false,code:"UNAVAILABLE",message:"verification_unavailable"});
-  await resend();expect(state.resend).toHaveBeenCalledExactlyOnceWith("fixture@example.test","","00000000-0000-4000-8000-000000000001");
-  expect(state.continuity).toHaveBeenCalledWith("verification_resend");expect(state.clearNonce).not.toHaveBeenCalled();
+  await resend();expect(state.resend).toHaveBeenCalledExactlyOnceWith("fixture@example.test","","00000000-0000-4000-8000-000000000001",expect.objectContaining({request_id:expect.stringMatching(/^VEL-[A-F0-9]{16}$/)}));
+  expect(state.continuity).toHaveBeenCalledWith("verification_resend",expect.objectContaining({request_id:expect.stringMatching(/^VEL-[A-F0-9]{16}$/)}));expect(state.clearNonce).not.toHaveBeenCalled();
   await resend();expect(state.resend).toHaveBeenCalledTimes(1);
   await act(async()=>{vi.advanceTimersByTime(61000);});
   state.resend.mockResolvedValue({ok:true});await resend();
@@ -129,4 +130,55 @@ describe("mounted verification result ownership",()=>{
   await act(async()=>{vi.advanceTimersByTime(61000);});
   expect(container.querySelector<HTMLButtonElement>("[data-auth-otp-resend]")?.disabled).toBe(false);
  });
+});
+
+it("restores session-only recovery when readiness is lost at success animation completion",async()=>{
+ await submit();await accept();state.snapshot={status:"error",userId:"user-a",boundaryFingerprint:"aaaaaaaaaaaaaaaa",ready:false};await render();
+ await act(async()=>{vi.advanceTimersByTime(120);});await act(async()=>{vi.advanceTimersByTime(20);});expect(state.replace).not.toHaveBeenCalled();
+ expect(container.querySelector('[role="alert"]')?.textContent).toContain("session check is unavailable");
+ const retry=[...container.querySelectorAll("button")].find(button=>button.textContent==="Retry session check");expect(retry).toBeTruthy();
+ state.snapshot={status:"ready",userId:"user-a",boundaryFingerprint:"aaaaaaaaaaaaaaaa",ready:true};await render();await act(async()=>{retry!.click();});await act(async()=>{vi.advanceTimersByTime(120);});
+ expect(state.verify).toHaveBeenCalledTimes(1);expect(state.refresh).toHaveBeenCalledTimes(2);expect(state.replace).toHaveBeenCalledExactlyOnceWith("/setup");
+});
+
+it.each(['expired','locked'])('explains blocked verification for an initially %s session without contacting provider',async status=>{
+ state.snapshot={status,userId:'user-a',boundaryFingerprint:'aaaaaaaaaaaaaaaa',ready:false};await submit(false);
+ expect(state.verify).not.toHaveBeenCalled();expect(container.querySelector('[role="alert"]')?.textContent).toContain('browser session changed or expired');expect(state.replace).not.toHaveBeenCalled();
+});
+it('explains blocked resend instead of silently claiming delivery',async()=>{
+ state.snapshot={status:'expired',userId:'user-a',boundaryFingerprint:'aaaaaaaaaaaaaaaa',ready:false};await resend();
+ expect(state.resend).not.toHaveBeenCalled();expect(container.querySelector('[role="alert"]')?.textContent).toContain('browser session changed or expired');expect(container.textContent).not.toContain('new code has been requested');
+});
+it('does not place an interrupted old request error into a new email journey',async()=>{
+ let finish!:(value:{ok:true;requestNonce:string})=>void;state.continuity.mockImplementation(()=>new Promise(resolve=>{finish=resolve;}));await submit(false);state.query='email=other%40example.test';await render();await act(async()=>{finish({ok:true,requestNonce:'00000000-0000-4000-8000-000000000001'});});
+ expect(state.verify).not.toHaveBeenCalled();expect(container.textContent).not.toContain('browser session changed or expired');
+});
+
+it('reports a boundary change even when the admitted-session refresh throws',async()=>{
+ state.refresh.mockImplementationOnce(async()=>{state.snapshot={status:'ready',userId:'user-b',boundaryFingerprint:'bbbbbbbbbbbbbbbb',ready:true};throw new Error('synthetic session-read failure');});await submit();await accept();
+ expect(container.querySelector('[role="alert"]')?.textContent).toContain('browser session changed or expired');expect(state.verify).toHaveBeenCalledTimes(1);expect(state.clear).not.toHaveBeenCalled();expect(state.replace).not.toHaveBeenCalled();
+});
+
+it.each(['/complete-profile?next=%2Fsetup','/setup','/app'])('follows the server-authorized next route %s instead of forcing setup',async next=>{
+ state.query='email=fixture%40example.test&next=%2Fsetup';await submit();await act(async()=>resolveVerify({...accepted,data:{...accepted.data,next}}));await act(async()=>{vi.advanceTimersByTime(120);});
+ expect(state.replace).toHaveBeenCalledExactlyOnceWith(next);expect(state.verify).toHaveBeenCalledTimes(1);expect(state.refresh).toHaveBeenCalledTimes(1);
+});
+it('runs sixth-digit autosubmit through provider, READY session and full success animation before navigation',async()=>{
+ vi.stubGlobal('matchMedia',()=>({matches:false,addEventListener(){},removeEventListener(){}}));await render();const cells=container.querySelectorAll<HTMLInputElement>('[data-auth-otp-cell]');
+ for(let i=0;i<5;i++){await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(cells[i],String(i));cells[i].dispatchEvent(new Event('input',{bubbles:true}));});}
+ expect(state.verify).not.toHaveBeenCalled();expect(state.continuity).not.toHaveBeenCalled();
+ await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(cells[5],'5');cells[5].dispatchEvent(new Event('input',{bubbles:true}));});
+ expect(state.verify).toHaveBeenCalledTimes(1);expect(state.continuity).toHaveBeenCalledWith('verify_email',expect.objectContaining({request_id:expect.stringMatching(/^VEL-[A-F0-9]{16}$/)}));expect(state.refresh).not.toHaveBeenCalled();expect(state.replace).not.toHaveBeenCalled();
+ await act(async()=>{container.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));vi.advanceTimersByTime(1100);});expect(state.verify).toHaveBeenCalledTimes(1);expect(container.querySelector('[data-auth-otp-success]')).toBeNull();
+ await act(async()=>resolveVerify({...accepted,data:{...accepted.data,next:'/complete-profile?next=%2Fsetup'}}));await act(async()=>{vi.advanceTimersByTime(0);});expect(state.refresh).toHaveBeenCalledTimes(1);expect(state.replace).not.toHaveBeenCalled();
+ expect(state.snapshot.status).toBe('ready');await act(async()=>{vi.advanceTimersByTime(1199);});expect(state.replace).not.toHaveBeenCalled();await act(async()=>{vi.advanceTimersByTime(1);});
+ expect(state.replace).toHaveBeenCalledExactlyOnceWith('/complete-profile?next=%2Fsetup');expect(state.verify.mock.invocationCallOrder[0]).toBeLessThan(state.refresh.mock.invocationCallOrder[0]);expect(state.refresh.mock.invocationCallOrder[0]).toBeLessThan(state.replace.mock.invocationCallOrder[0]);
+});
+
+it('keeps verify and session-only recovery under the same correlation without replaying the code',async()=>{
+ state.refresh.mockImplementationOnce(async()=>{state.snapshot={status:'error',userId:null,boundaryFingerprint:null,ready:false};});await submit();const packet=state.verify.mock.calls[0][0].correlation;expect(packet?.request_id).toMatch(/^VEL-[A-F0-9]{16}$/);await accept();expect(state.refresh).toHaveBeenLastCalledWith(packet);
+ await act(async()=>{container.querySelector<HTMLButtonElement>('form button[type="submit"]')!.click();});expect(state.verify).toHaveBeenCalledTimes(1);expect(state.refresh).toHaveBeenLastCalledWith(packet);
+});
+it('sends bounded correlation on resend without exposing it in customer copy',async()=>{
+ state.resend.mockResolvedValue({ok:true,data:undefined});await resend();const packet=state.resend.mock.calls[0][3];expect(packet?.trace_id).toMatch(/^[a-f0-9]{32}$/);expect(container.textContent).not.toContain(packet.request_id);
 });

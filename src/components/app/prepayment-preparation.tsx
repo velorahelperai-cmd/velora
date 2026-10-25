@@ -3,19 +3,27 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { AccountMenu, useOptionalAccountSession } from "./account-chrome";
 import { LangSwitch } from "./ui";
+import { SetupStudioLangSwitch } from "./setup-studio-lang-switch";
 import { useDemo } from "@/lib/demo-state";
 import { createPreparationBranch, emptyPreparation, validatePreparation, type Preparation } from "@/lib/tenancy/prepayment-preparation";
+import {
+  accountPrepPayloadToFormState,
+  preparationToAccountPrepPatch,
+} from "@/lib/tenancy/account-prep-draft";
+import {useAccountPrepDraft} from "./use-account-prep-draft";
 import { BusinessNameSuggestions } from "./business-name-suggestions";
 import { BusinessTypeCombobox } from "./business-type-combobox";
 import { CountryCombobox } from "./country-combobox";
+import { CityCombobox } from "./city-combobox";
 import { countryLabel } from "./country-options";
+import { cityKnownInCountry } from "./city-options";
 import { BusinessPhoneField } from "./business-phone-field";
 import { businessTypeLabel } from "@/lib/business-types";
 import { broadSectorFromType, broadSectorStorageId, broadSectors, preservedDetailedTypeLabel, type BroadSectorId } from "@/lib/business-sectors";
 import { applyScreen1Website, screen1WebsiteChange } from "@/lib/tenancy/screen1-website";
-import type { OnboardingAi, OnboardingAnswers, OnboardingCrm, OnboardingTeamRange } from "@/lib/tenancy/onboarding-answers";
-import { blankChannelDraft, channelContinueMissing, clearHiddenChannelFields, commitChannelDraft, commitGoals, commitOptionalChoice, commitTeamRange, goalsContinueMissing, otherTextMissing, teamContinueMissing, type ChannelDraft } from "@/lib/tenancy/setup-data-steps";
-import { SetupChannelStep, SetupGoalStep } from "./setup-data-screens";
+import type { OnboardingAnswers } from "@/lib/tenancy/onboarding-answers";
+import { blankChannelDraft, clearHiddenChannelFields, commitChannelDraft, commitGoals, goalsContinueMissing, type ChannelDraft } from "@/lib/tenancy/setup-data-steps";
+import { SetupActivityGoals, SetupWhatsAppExistingQuestion } from "./setup-data-screens";
 import { businessNameSuggestions, rememberBusinessName, forgetBusinessNames } from "@/lib/field-suggestions";
 import { recordPreparationValidationRejected } from "@/lib/logging/browser.mjs";
 import { setupSubscriptionReturn } from "@/lib/auth/setup-return";
@@ -32,7 +40,7 @@ import planStyles from "./setup-team-plans.module.css";
 
 export type PreparationVariant = "default" | "studio";
 
-/** The authenticated actor is a mount boundary; no draft/server state enters. */
+/** The authenticated actor is a mount boundary; unpaid prep draft loads only after identity match. */
 export function PrepaymentPreparation({
   userId,
   preferredNext = "",
@@ -88,7 +96,7 @@ export function PrepaymentPreparation({
           <AccountMenu compact />
         </div>
       </header>
-      <PreparationForm key={userId} ar={locale === "ar"} userId={userId} isCurrent={() => session.isCurrentUser(userId, identity)} />
+      <PreparationForm key={`${userId}:${session.boundaryFingerprint??""}`} captureToken={session.boundaryFingerprint??""} ar={locale === "ar"} userId={userId} isCurrent={() => session.isCurrentUser(userId, identity)} />
     </main>
   );
 }
@@ -97,10 +105,12 @@ export function PreparationForm({
   ar,
   userId,
   isCurrent,
+  captureToken="",
 }: {
   ar: boolean;
   userId: string;
   isCurrent: () => boolean;
+  captureToken?: string;
 }) {
   const id = useId();
   const form = useRef<HTMLDivElement>(null);
@@ -109,8 +119,10 @@ export function PreparationForm({
   const [errors, setErrors] = useState<string[]>([]);
   const [suggestionStatus, setSuggestionStatus] = useState("");
   const t = (a: string, e: string) => (ar ? a : e);
+  const draft=useAccountPrepDraft({accountId:userId,captureToken,isCurrent,restore:payload=>setValue(accountPrepPayloadToFormState(payload).preparation)});
   function change(key: Exclude<keyof Preparation, "branches">, next: string) {
     if (isCurrent()) {
+      draft.markEdited();
       setValue((old) => ({ ...old, [key]: next }));
       setErrors([]);
     }
@@ -122,13 +134,18 @@ export function PreparationForm({
         branches: old.branches.map((row, i) => (i === index ? { ...row, [key]: next } : row)),
       }));
   }
-  function submit() {
-    if (!isCurrent() || review) return;
+  async function submit() {
+    if (!isCurrent() || review || !draft.hydrated) return;
     const rejected = validatePreparation(value);
     if (form.current?.querySelector("input:invalid")) rejected.push("input");
     setErrors(rejected);
     if (rejected.length) recordPreparationValidationRejected({ userId });
-    else setReview(true);
+    else {
+      // This presentation edits only these fields; keep unseen website/channel/goal data intact.
+      const full=preparationToAccountPrepPatch({preparation:value,website:null,whatsappExisting:null,goals:[]});
+      const {website:_website,whatsappExisting:_whatsapp,goals:_goals,...patch}=full;
+      const result=await draft.save(patch);if(result?.ok&&isCurrent())setReview(true);
+    }
   }
   function suggestion(remove: boolean) {
     if (!isCurrent()) return;
@@ -178,8 +195,8 @@ export function PreparationForm({
           <h2 id={`${id}-heading`}>{t("جهّز نشاطك قبل الدفع", "Prepare your business before payment")}</h2>
           <p>
             {t(
-              "البيانات في ذاكرة هذه الصفحة فقط. المغادرة أو إعادة التحميل تبدأ نموذجًا فارغًا. لا يُنشأ نشاط أو فرع قبل تأكيد الدفع.",
-              "Details stay in this page memory. Leaving or reloading starts blank. No business or branch is created before verified payment.",
+              "تُحفظ مسودة التجهيز لهذا الحساب عند المراجعة، وتظل صالحة أربعة أشهر من إنشائها. لا يُنشأ نشاط أو فرع قبل تأكيد الدفع.",
+              "Review saves an account-owned preparation draft for four calendar months from creation. No business or branch is created before verified payment.",
             )}
           </p>
         </div>
@@ -219,6 +236,7 @@ export function PreparationForm({
           </div>
         ) : (
           <div ref={form} role="form" aria-label={t("بيانات التجهيز المحلية", "Local preparation details")} className={styles.form}>
+            <fieldset disabled={!draft.hydrated||draft.saveStatus==="pending"} onChangeCapture={draft.markEdited} onClickCapture={draft.markEdited} style={{display:"contents",border:0,margin:0,padding:0,minWidth:0}}>
             <div className={styles.field}>
               <label htmlFor={`${id}-name`}>{labels.name}</label>
               <BusinessNameSuggestions
@@ -310,8 +328,10 @@ export function PreparationForm({
               </p>
             ) : null}
             <button type="button" onClick={submit} className={styles.submit}>
-              {t("مراجعة البيانات محليًا", "Review details locally")}
+              {t("حفظ المسودة ومراجعة البيانات", "Save draft and review details")}
             </button>
+          </fieldset>
+            <AccountPrepDraftStatus draft={draft} ar={ar}/>
           </div>
         )}
       </div>
@@ -319,8 +339,8 @@ export function PreparationForm({
         <h3>{t("قبل المتابعة", "Before continuing")}</h3>
         <p>
           {t(
-            "مراجعة هذه البيانات لا تحفظها على السيرفر ولا تثبت الدفع أو تفعّل الخدمة.",
-            "Review does not save these details to the server, prove payment or activate service.",
+            "حفظ مسودة التجهيز لا يثبت الدفع ولا يفعّل الخدمة.",
+            "Saving the preparation draft does not prove payment or activate service.",
           )}
         </p>
       </aside>
@@ -328,10 +348,11 @@ export function PreparationForm({
   );
 }
 
-function StudioIcon({ kind, forward = "left" }: { kind: "store" | "pin" | "pencil" | "chevron" | "arrow" | "plus"; forward?: "left" | "right" }) {
+function StudioIcon({ kind, forward = "left" }: { kind: "store" | "pin" | "phone" | "pencil" | "chevron" | "arrow" | "plus"; forward?: "left" | "right" }) {
   if (kind === "plus") return <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>;
   if (kind === "store") return <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><path d="M4 3h16l2 6v2a3 3 0 0 1-5 2 3 3 0 0 1-5 0 3 3 0 0 1-5 0 3 3 0 0 1-5-2V9l2-6Zm1.4 2L4 9h16l-1.4-4H5.4ZM4 15h2v6h4v-5h4v5h4v-6h2v8H4v-8Z" /></svg>;
   if (kind === "pin") return <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path fillRule="evenodd" d="M12 2a8 8 0 0 0-8 8c0 6 8 12 8 12s8-6 8-12a8 8 0 0 0-8-8Zm0 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" /></svg>;
+  if (kind === "phone") return <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M6.6 3.2c.5-.5 1.3-.5 1.8 0l2 2c.5.5.5 1.3 0 1.8L9 8.4a12.4 12.4 0 0 0 6.6 6.6l1.4-1.4c.5-.5 1.3-.5 1.8 0l2 2c.5.5.5 1.3 0 1.8l-1.5 1.5c-.5.5-1.2.7-1.9.5A17.5 17.5 0 0 1 4.6 6.6c-.2-.7 0-1.4.5-1.9L6.6 3.2Z" /></svg>;
   const arrow = forward === "right" ? <path d="M5 12h14m-6-6 6 6-6 6" /> : <path d="M19 12H5m6-6-6 6 6 6" />;
   return <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{kind === "pencil" ? <><path d="m15 4 5 5M4 16 16 4a2 2 0 0 1 3 0l1 1a2 2 0 0 1 0 3L8 20l-5 1 1-5Z" /></> : kind === "chevron" ? <path d="m7 10 5 5 5-5" /> : arrow}</svg>;
 }
@@ -366,8 +387,7 @@ function StudioShell({
           Velora
         </Link>
         <div className={studioStyles.headerTools}>
-          <span className={studioStyles.activeLocale}>{ar ? "عربي" : "EN"}</span>
-          <LangSwitch />
+          <SetupStudioLangSwitch />
           <div className={studioStyles.accountControl}><AccountMenu compact /></div>
         </div>
       </header>
@@ -434,14 +454,8 @@ function StudioPreparationForm({
   const [siteUrl, setSiteUrl] = useState("");
   const [noSite, setNoSite] = useState(false);
   const [siteError, setSiteError] = useState<"CONTRADICTION" | "INVALID_URL" | null>(null);
-  const [dataStep, setDataStep] = useState<"activity" | "channels" | "goals">("activity");
   const [channelDraft, setChannelDraft] = useState<ChannelDraft>(blankChannelDraft);
   const [goalsDraft, setGoalsDraft] = useState<string[]>([]);
-  const [rangeDraft, setRangeDraft] = useState<OnboardingTeamRange | null>(null);
-  const [crmChoice, setCrmChoice] = useState<OnboardingCrm | null>(null);
-  const [crmOther, setCrmOther] = useState("");
-  const [aiChoice, setAiChoice] = useState<OnboardingAi | null>(null);
-  const [aiOther, setAiOther] = useState("");
   const [stepErrors, setStepErrors] = useState<string[]>([]);
   const answersRef = useRef<OnboardingAnswers | null>(null);
   useEffect(() => {
@@ -473,6 +487,22 @@ function StudioPreparationForm({
     journey.bindActor({ accountId: userId, captureToken, isCurrent: actorNow });
   }, [actorNow, captureToken, userId]);
 
+  const draft=useAccountPrepDraft({accountId:userId,captureToken,isCurrent:actorNow,restore:payload=>{
+    const restored=accountPrepPayloadToFormState(payload);
+    setBranchMode(restored.preparation.branches.length > 1 ? "multiple" : "single");
+    const primary = restored.preparation.branches[0];
+    if (primary) primary.localId = originalBranchLocalId;
+    firstBranchDefaults.current = {
+      attached: true,
+      name: !primary?.name || primary.name === restored.preparation.name,
+      city: !primary?.city || primary.city === restored.preparation.city,
+    };
+    setValue(restored.preparation);setNoSite(restored.website?.kind==='none');setSiteUrl(restored.website?.kind==='url'?restored.website.value:'');
+    setGoalsDraft(restored.goals);setChannelDraft({...blankChannelDraft(),whatsapp:true,existingUse:restored.whatsappExisting??""});
+  }});
+  const saveStatus=draft.saveStatus;
+
+
   function remember(journey: SetupPlanJourney) {
     setJourneyForView(journey);
     setPlanSnap(journey.snapshot());
@@ -490,7 +520,22 @@ function StudioPreparationForm({
     restoreRecoveredDefaults();
     const followName = key === "name" && firstBranchDefaults.current.attached && firstBranchDefaults.current.name;
     const followCity = key === "city" && firstBranchDefaults.current.attached && firstBranchDefaults.current.city;
-    setValue((previous) => { const old = withAutomaticPrimaryBranch(previous, originalBranchLocalId); return ({
+    setValue((previous) => {
+      const old = withAutomaticPrimaryBranch(previous, originalBranchLocalId);
+      if (key === "country") {
+        const keepCity = cityKnownInCountry(next, old.city) ? old.city : "";
+        return {
+          ...old,
+          country: next,
+          city: keepCity,
+          branches: firstBranchDefaults.current.attached && firstBranchDefaults.current.city
+            ? old.branches.map((row) =>
+                row.localId === originalBranchLocalId ? { ...row, city: keepCity } : row,
+              )
+            : old.branches,
+        };
+      }
+      return {
       ...old,
       [key]: next,
       branches: followName || followCity
@@ -500,7 +545,8 @@ function StudioPreparationForm({
             ...(followCity ? { city: next } : {}),
           } : row)
         : old.branches,
-    }); });
+    };
+    });
     setErrors([]);
   }
   function branch(index: number, key: "name" | "city" | "contactPhone", next: string) {
@@ -573,38 +619,9 @@ function StudioPreparationForm({
   function chooseSector(id: BroadSectorId) {
     change("type", broadSectorStorageId(id));
   }
-  function continueActivity() {
-    if (!actorNow() || phase !== "form" || dataStep !== "activity") return;
-    const rejected = validatePreparation(preparedValue);
-    const website = screen1WebsiteChange(answersRef.current, noSite, siteUrl);
-    if (!website.ok) rejected.push("website");
-    if (form.current?.querySelector("input:invalid")) rejected.push("input");
-    if (rejected.length) {
-      setErrors(rejected);
-      recordPreparationValidationRejected({ userId });
-      return;
-    }
-    setErrors([]);
-    setDataStep("channels");
-  }
-  function continueChannels() {
-    if (!actorNow() || dataStep !== "channels") return;
-    const missing = channelContinueMissing(channelDraft);
-    if (missing.length) {
-      setStepErrors(missing);
-      return;
-    }
-    const result = commitChannelDraft(answersRef.current, channelDraft);
-    if (!result.ok) {
-      setStepErrors(["answers"]);
-      return;
-    }
-    storeAnswers(result.answers);
-    setStepErrors([]);
-    setDataStep("goals");
-  }
   function toggleGoal(goal: string) {
     if (!isCurrent()) return;
+    draft.markEdited();
     const next = goalsDraft.includes(goal) ? goalsDraft.filter((item) => item !== goal) : [...goalsDraft, goal];
     setGoalsDraft(next);
     const result = commitGoals(answersRef.current, next);
@@ -612,54 +629,55 @@ function StudioPreparationForm({
     storeAnswers(result.answers);
     setStepErrors([]);
   }
-  function chooseRange(range: OnboardingTeamRange) {
-    if (!isCurrent()) return;
-    setRangeDraft(range);
-    const result = commitTeamRange(answersRef.current, range);
-    if (!result.ok) return;
-    storeAnswers(result.answers);
-  }
-  function chooseCrm(choice: OnboardingCrm) {
-    if (!isCurrent()) return;
-    const next = crmChoice === choice ? null : choice;
-    const other = next === "other" ? crmOther : "";
-    setCrmChoice(next);
-    setCrmOther(other);
-    const result = commitOptionalChoice(answersRef.current, "crm", next, other);
-    if (!result.ok) return;
-    storeAnswers(result.answers);
-  }
-  function chooseAi(choice: OnboardingAi) {
-    if (!isCurrent()) return;
-    const next = aiChoice === choice ? null : choice;
-    const other = next === "other" ? aiOther : "";
-    setAiChoice(next);
-    setAiOther(other);
-    const result = commitOptionalChoice(answersRef.current, "ai", next, other);
-    if (!result.ok) return;
-    storeAnswers(result.answers);
-  }
-  function openLocalPlans() {
-    if (!actorNow() || phase !== "form" || dataStep !== "goals") return;
-    const missing = [...goalsContinueMissing(goalsDraft), ...teamContinueMissing(rangeDraft), ...otherTextMissing(crmChoice, crmOther), ...otherTextMissing(aiChoice, aiOther)];
-    if (missing.length) {
-      setStepErrors(missing);
-      return;
-    }
-    const crmResult = commitOptionalChoice(answersRef.current, "crm", crmChoice, crmOther);
-    const aiResult = crmResult.ok ? commitOptionalChoice(crmResult.answers, "ai", aiChoice, aiOther) : crmResult;
-    if (!aiResult.ok) {
-      setStepErrors(["answers"]);
-      return;
-    }
-    storeAnswers(aiResult.answers);
-    const preparation = { ...preparedValue, answers: aiResult.answers };
-    const rejected = validatePreparation(preparation);
-    if (rejected.length) {
+  async function openLocalPlans() {
+    if (!actorNow() || phase !== "form" || saveStatus === "pending" || !draft.hydrated) return;
+    const rejected = validatePreparation(preparedValue);
+    const website = screen1WebsiteChange(answersRef.current, noSite, siteUrl);
+    if (!website.ok) rejected.push("website");
+    if (form.current?.querySelector("input:invalid")) rejected.push("input");
+    const whatsappDraft = { ...channelDraft, whatsapp: true as const };
+    // C09 asks only whether WhatsApp is already used. Provider/readiness details
+    // belong to the later channel setup and are not present on this form.
+    const channelMissing = whatsappDraft.existingUse ? [] : ["existingUse"];
+    if (channelMissing.length) rejected.push("whatsappExisting");
+    const goalsMissing = goalsContinueMissing(goalsDraft);
+    if (goalsMissing.length) rejected.push(...goalsMissing);
+    if (rejected.length || !website.ok) {
       setErrors(rejected);
+      setStepErrors([...channelMissing, ...goalsMissing]);
       recordPreparationValidationRejected({ userId });
       return;
     }
+    const channelResult = commitChannelDraft(website.answers, whatsappDraft);
+    if (!channelResult.ok) {
+      setErrors(["whatsappExisting"]);
+      setStepErrors(["answers"]);
+      return;
+    }
+    const goalsResult = commitGoals(channelResult.answers, goalsDraft);
+    if (!goalsResult.ok) {
+      setStepErrors(["answers"]);
+      return;
+    }
+    storeAnswers(goalsResult.answers);
+    setChannelDraft(clearHiddenChannelFields(whatsappDraft));
+    const preparation = { ...preparedValue, answers: goalsResult.answers };
+    const invalid = validatePreparation(preparation);
+    if (invalid.length) {
+      setErrors(invalid);
+      recordPreparationValidationRejected({ userId });
+      return;
+    }
+
+    const patch = preparationToAccountPrepPatch({
+      preparation,
+      website: goalsResult.answers.website,
+      whatsappExisting: whatsappDraft.existingUse || null,
+      goals: goalsResult.answers.goals,
+    });
+    const saveResult=await draft.save(patch);
+    if(!saveResult?.ok||!currentActorValidator.current())return;
+
     const existing = journeyRef.current;
     const journey =
       existing && !existing.snapshot().discarded
@@ -704,7 +722,6 @@ function StudioPreparationForm({
     if (!journey || !actorNow()) return { ok: false as const, code: "ACTOR_NOT_CURRENT" as const };
     const result = journey.backToPreparation();
     remember(journey);
-    setDataStep("goals");
     setPhase("form");
     return result;
   }
@@ -751,9 +768,10 @@ function StudioPreparationForm({
   };
 
   const filledBranches = preparedValue.branches.filter((b) => b.name.trim() || b.city.trim());
-  const summaryName = preparedValue.name.trim() || t("لم يُسمَّ بعد", "Not named yet");
+  const summaryName = preparedValue.name.trim() || t("أضف اسم النشاط", "Add your business name");
   const summaryPlace =
     [preparedValue.city.trim(), countryLabel(preparedValue.country, ar)].filter(Boolean).join(" · ") || t("الموقع لاحقًا", "Location later");
+  const summaryPhone = preparedValue.phone.trim() || t("أضف هاتف النشاط", "Add business phone");
   const summaryBranches =
     filledBranches.length === 0
       ? t("لا فروع بعد", "No branches yet")
@@ -787,16 +805,15 @@ function StudioPreparationForm({
           <span className={studioStyles.summaryLabel}>{t("ملخص نشاطك", "Business summary")}</span>
           <strong>{summaryName}</strong>
           <p><StudioIcon kind="pin" />{summaryPlace}</p>
+          <p><StudioIcon kind="phone" />{summaryPhone}</p>
           <p><StudioIcon kind="store" />{summaryBranches}</p>
         </div>
-        <p className={studioStyles.summaryNote}>
-          {t("سيظهر نشاطك التجاري وفروعه في مراجعة الطلب قبل الإرسال.", "Your business and branches appear in local review before submission.")}
-        </p>
       </div>
       </aside>
       ) : null}
 
       {phase === "form" ? (
+      <div className={studioStyles.mainColumn}>
       <header className={studioStyles.intro}>
         <h1 id={`${id}-heading`} className={studioStyles.headline} data-setup-hero="true">
           <span>{t("لنمنح نشاطك", "Let's give your business")}</span>{" "}
@@ -806,40 +823,7 @@ function StudioPreparationForm({
           {t("أدخل بيانات نشاطك التجاري وفروعه للمتابعة.", "Enter your business details and branches to continue.")}
         </p>
       </header>
-      ) : null}
-
-{phase !== "review" ? <SetupJourneyStepper ar={ar} activeStep={phase === "form" ? 1 : 2} className={studioStyles.steps} /> : null}
-
-      {activeJourney && planSnap && phase === "review" ? (
-          <SetupOrderReview
-            ar={ar}
-            slots={planSnap.slots}
-            term={planSnap.term}
-            write={planSnap.write}
-            editingLocked={planSnap.editingLocked}
-            actor={{ accountId: planSnap.accountId, captureToken: planSnap.captureToken }}
-            consentAccepted={planSnap.consentAccepted}
-            onConsentChange={reviewConsent}
-            confirmReview={reviewConfirm}
-            retrySameOperation={() => reviewConfirm(true)}
-            onEditBranch={reviewBack}
-            onBackToPlans={() => reviewBack()}
-            motionEnabled={motionEnabled}
-          />
-        ) : activeJourney && planSnap ? (
-          <SetupTeamPlans
-            ar={ar}
-            state={planSnap}
-            onSelect={onSelect}
-            onTerm={onTerm}
-            onBack={onBack}
-            onContinue={onContinue}
-            readPlan={activeJourney.readPlan}
-            presentAddons={activeJourney.presentAddons}
-            motionEnabled={motionEnabled}
-            initialBranchIndex={planBranchFocus}
-          />
-        ) : (
+      <SetupJourneyStepper ar={ar} activeStep={1} className={studioStyles.steps} />
           <div
             ref={form}
             role="form"
@@ -847,60 +831,8 @@ function StudioPreparationForm({
             aria-labelledby={`${id}-heading`}
             className={`${studioStyles.panel} ${studioStyles.formBody}`}
           >
-            <ol className={studioStyles.substeps} data-setup-substeps="true" aria-label={t("مراحل النشاط", "Activity stages")}>
-              {([
-                ["activity", "نشاطك", "Your activity"],
-                ["channels", "قنواتك", "Your channels"],
-                ["goals", "أهدافك", "Your goals"],
-              ] as const).map(([id, arLabel, enLabel]) => {
-                const order = { activity: 0, channels: 1, goals: 2 };
-                const past = order[id] < order[dataStep];
-                return (
-                  <li key={id} data-setup-substep={id} aria-current={id === dataStep ? "step" : undefined}>
-                    {past ? (
-                      <button type="button" data-setup-substep-button={id} onClick={() => { if (actorNow()) setDataStep(id); }}>{t(arLabel, enLabel)}</button>
-                    ) : (
-                      <span aria-disabled={id === dataStep ? undefined : "true"}>{t(arLabel, enLabel)}</span>
-                    )}
-                  </li>
-                );
-              })}
-            </ol>
-            {dataStep === "channels" ? (
-              <SetupChannelStep ar={ar} draft={channelDraft} errors={stepErrors} onDraft={editChannels} onBack={() => { if (actorNow()) setDataStep("activity"); }} onContinue={continueChannels} />
-            ) : dataStep === "goals" ? (
-              <SetupGoalStep
-                ar={ar}
-                goals={goalsDraft}
-                range={rangeDraft}
-                crm={crmChoice}
-                crmOther={crmOther}
-                ai={aiChoice}
-                aiOther={aiOther}
-                errors={stepErrors}
-                onGoal={toggleGoal}
-                onRange={chooseRange}
-                onCrm={chooseCrm}
-                onCrmOther={(text) => {
-                  if (!isCurrent()) return;
-                  setCrmOther(text);
-                  if (crmChoice !== "other") return;
-                  const result = commitOptionalChoice(answersRef.current, "crm", "other", text);
-                  if (result.ok) storeAnswers(result.answers);
-                }}
-                onAi={chooseAi}
-                onAiOther={(text) => {
-                  if (!isCurrent()) return;
-                  setAiOther(text);
-                  if (aiChoice !== "other") return;
-                  const result = commitOptionalChoice(answersRef.current, "ai", "other", text);
-                  if (result.ok) storeAnswers(result.answers);
-                }}
-                onBack={() => { if (actorNow()) setDataStep("channels"); }}
-                onContinue={openLocalPlans}
-              />
-            ) : (
-            <div className={studioStyles.stepStack}>
+            <fieldset disabled={!draft.hydrated||draft.saveStatus==="pending"} onChangeCapture={draft.markEdited} onClickCapture={draft.markEdited} style={{display:"contents",border:0,margin:0,padding:0,minWidth:0}}>
+            <div className={studioStyles.stepStack} data-setup-step="activity">
             <div className={studioStyles.accordion} data-open={openSection === "identity"}>
               <button
                 type="button"
@@ -921,7 +853,7 @@ function StudioPreparationForm({
               </button>
               {openSection === "identity" ? (
                 <div className={`${studioStyles.accordionBody} ${studioStyles.identityGrid}`} id={`${id}-identity-panel`} role="region" aria-labelledby={`${id}-identity-tab`}>
-                  <div className={studioStyles.field}>
+                  <div className={`${studioStyles.field} ${studioStyles.nameField}`}>
                     <label htmlFor={`${id}-name`}>
                       {labels.name}
                       <span className={studioStyles.req} aria-hidden="true">
@@ -936,6 +868,41 @@ function StudioPreparationForm({
                       isCurrent={isCurrent}
                       onChange={(next) => change("name", next)}
                     />
+                  </div>
+                  <div className={`${studioStyles.field} ${studioStyles.siteField}`}>
+                    <label htmlFor={`${id}-website`}>
+                      {t("موقعك الإلكتروني (اختياري)", "Your website (optional)")}
+                    </label>
+                    <div className={studioStyles.siteRow}>
+                      <input
+                        id={`${id}-website`}
+                        type="url"
+                        inputMode="url"
+                        autoComplete="url"
+                        maxLength={200}
+                        value={siteUrl}
+                        disabled={noSite && !siteUrl.trim()}
+                        aria-invalid={siteError ? true : undefined}
+                        onChange={(e) => applySite(noSite, e.target.value)}
+                      />
+                      <label className={studioStyles.siteCheck} htmlFor={`${id}-no-site`}>
+                        <input
+                          id={`${id}-no-site`}
+                          type="checkbox"
+                          data-setup-no-site="true"
+                          checked={noSite}
+                          onChange={(e) => applySite(e.target.checked, siteUrl)}
+                        />
+                        <span>{t("لا يتوفر موقع", "No website available")}</span>
+                      </label>
+                    </div>
+                    {siteError ? (
+                      <p className={studioStyles.error} role="alert" data-setup-website-error={siteError}>
+                        {siteError === "CONTRADICTION"
+                          ? t("أزل الرابط أو ألغِ «لا يتوفر موقع».", "Remove the link or turn off “no website”.")
+                          : t("استخدم رابط http أو https صالحًا.", "Use a valid http or https link.")}
+                      </p>
+                    ) : null}
                   </div>
                   <div className={studioStyles.fieldRow}>
                     <div className={studioStyles.field}>
@@ -960,113 +927,73 @@ function StudioPreparationForm({
                           *
                         </span>
                       </label>
-                      <input
+                      <CityCombobox
                         id={`${id}-city`}
                         value={preparedValue.city}
-                        maxLength={120}
-                        required
-                        autoComplete="off"
-                        onChange={(e) => change("city", e.target.value)}
+                        country={preparedValue.country}
+                        ar={ar}
+                        onChange={(next) => change("city", next)}
                       />
                     </div>
                   </div>
-                  <div className={studioStyles.phoneField}>
-                  <BusinessPhoneField
-                    groupLabel
-                    id={`${id}-phone`}
-                    label={labels.phone}
-                    value={preparedValue.phone}
-                    businessCountry={preparedValue.country}
-                    ar={ar}
-                    isCurrent={isCurrent}
-                    onChange={(next) => change("phone", next)}
-                  />
-                  </div>
-                  <div className={studioStyles.sectorBlock}>
-                    <p id={`${id}-sector-label`} className={studioStyles.sectorLabel}>
-                      {labels.type}
-                      <span className={studioStyles.req} aria-hidden="true">*</span>
-                    </p>
-                    <div
-                      id={`${id}-type`}
-                      className={studioStyles.sectorGrid}
-                      role="radiogroup"
-                      aria-required="true"
-                      aria-invalid={errors.includes("type") || undefined}
-                      aria-labelledby={`${id}-sector-label`}
-                      onKeyDown={(event) => {
-                        const forward = event.key === "ArrowDown" || (ar ? event.key === "ArrowLeft" : event.key === "ArrowRight");
-                        const back = event.key === "ArrowUp" || (ar ? event.key === "ArrowRight" : event.key === "ArrowLeft");
-                        if (!forward && !back) return;
-                        event.preventDefault();
-                        const ids = broadSectors.map((item) => item.id);
-                        const current = broadSectorFromType(preparedValue.type);
-                        const next = !current
-                          ? (forward ? ids[0] : ids[ids.length - 1])
-                          : ids[(ids.indexOf(current) + (forward ? 1 : -1) + ids.length) % ids.length];
-                        chooseSector(next);
-                        queueMicrotask(() => form.current?.querySelector<HTMLButtonElement>(`[data-sector="${next}"]`)?.focus());
-                      }}
-                    >
-                      {broadSectors.map((item) => {
-                        const selected = broadSectorFromType(preparedValue.type) === item.id;
-                        return (
-                          <button
-                            key={item.id}
-                            type="button"
-                            role="radio"
-                            className={studioStyles.sectorChip}
-                            data-sector={item.id}
-                            aria-checked={selected}
-                            onClick={() => chooseSector(item.id)}
-                          >
-                            {ar ? item.ar : item.en}
-                          </button>
-                        );
-                      })}
+                  <div className={studioStyles.contactRow}>
+                    <div className={studioStyles.phoneField}>
+                      <BusinessPhoneField
+                        groupLabel
+                        id={`${id}-phone`}
+                        label={labels.phone}
+                        value={preparedValue.phone}
+                        businessCountry={preparedValue.country}
+                        ar={ar}
+                        isCurrent={isCurrent}
+                        onChange={(next) => change("phone", next)}
+                      />
                     </div>
-                    {preservedDetailedTypeLabel(preparedValue.type, ar) ? (
-                      <p className={studioStyles.legacyType} data-preserved-type={preparedValue.type}>
-                        {t("النوع التفصيلي المحفوظ:", "Saved detailed type:")} {preservedDetailedTypeLabel(preparedValue.type, ar)}
-                      </p>
-                    ) : null}
+                    <div className={studioStyles.sectorBlock}>
+                      <label htmlFor={`${id}-type`} className={studioStyles.sectorLabel} id={`${id}-sector-label`}>
+                        {labels.type}
+                        <span className={studioStyles.req} aria-hidden="true">*</span>
+                      </label>
+                      <select
+                        id={`${id}-type`}
+                        data-sector-select="true"
+                        data-field="type"
+                        required
+                        aria-required="true"
+                        aria-invalid={errors.includes("type") || undefined}
+                        aria-labelledby={`${id}-sector-label`}
+                        value={broadSectorFromType(preparedValue.type) ?? ""}
+                        onChange={(e) => {
+                          const next = e.target.value as BroadSectorId | "";
+                          if (next) chooseSector(next);
+                        }}
+                      >
+                        <option value="">{t("اختر القطاع", "Choose a sector")}</option>
+                        {broadSectors.map((item) => (
+                          <option key={item.id} value={item.id} data-sector={item.id}>
+                            {ar ? item.ar : item.en}
+                          </option>
+                        ))}
+                      </select>
+                      {preservedDetailedTypeLabel(preparedValue.type, ar) ? (
+                        <p className={studioStyles.legacyType} data-preserved-type={preparedValue.type}>
+                          {t("النوع التفصيلي المحفوظ:", "Saved detailed type:")} {preservedDetailedTypeLabel(preparedValue.type, ar)}
+                        </p>
+                      ) : null}
+                    </div>
                   </div>
-                  <div className={studioStyles.siteCard}>
-                    <label htmlFor={`${id}-website`}>
-                      {t("موقعك الإلكتروني (اختياري)", "Your website (optional)")}
-                    </label>
-                    <input
-                      id={`${id}-website`}
-                      type="url"
-                      inputMode="url"
-                      autoComplete="url"
-                      maxLength={200}
-                      value={siteUrl}
-                      disabled={noSite && !siteUrl.trim()}
-                      aria-invalid={siteError ? true : undefined}
-                      aria-describedby={`${id}-website-note`}
-                      onChange={(e) => applySite(noSite, e.target.value)}
-                    />
-                    <button
-                      type="button"
-                      className={studioStyles.siteToggle}
-                      data-setup-no-site="true"
-                      aria-pressed={noSite}
-                      onClick={() => applySite(!noSite, siteUrl)}
-                    >
-                      {t("لا أملك موقعًا", "I do not have a website")}
-                    </button>
-                    <p id={`${id}-website-note`} className={studioStyles.siteNote}>
-                      {t("التعلّم من الموقع يتم بعد الدفع.", "Learning from the website happens after payment.")}
-                    </p>
-                    {siteError ? (
-                      <p className={studioStyles.error} role="alert" data-setup-website-error={siteError}>
-                        {siteError === "CONTRADICTION"
-                          ? t("أزل الرابط أو ألغِ «لا أملك موقعًا».", "Remove the link or turn off “no website”.")
-                          : t("استخدم رابط http أو https صالحًا.", "Use a valid http or https link.")}
-                      </p>
-                    ) : null}
-                  </div>
+                  <SetupWhatsAppExistingQuestion
+                    ar={ar}
+                    draft={channelDraft}
+                    onDraft={editChannels}
+                    error={stepErrors.includes("existingUse") || errors.includes("whatsappExisting")}
+                  />
+                  <SetupActivityGoals
+                    ar={ar}
+                    goals={goalsDraft}
+                    errors={stepErrors}
+                    onGoal={toggleGoal}
+                  />
 
                 </div>
               ) : null}
@@ -1136,24 +1063,33 @@ function StudioPreparationForm({
                           <legend>
                             {t("الفرع", "Branch")} {index + 1}
                           </legend>
-                          {(["name", "city"] as const).map((key) => (
-                            <div className={studioStyles.field} key={key}>
-                              <label htmlFor={`${id}-branch-${index}-${key}`}>
-                                {key === "name" ? t("اسم الفرع", "Branch name") : t("مدينة الفرع", "Branch city")}
-                                <span className={studioStyles.req} aria-hidden="true">
-                                  *
-                                </span>
-                              </label>
-                              <input
-                                id={`${id}-branch-${index}-${key}`}
-                                value={row[key]}
-                                maxLength={120}
-                                required
-                                autoComplete="off"
-                                onChange={(e) => branch(index, key, e.target.value)}
-                              />
-                            </div>
-                          ))}
+                          <div className={studioStyles.field}>
+                            <label htmlFor={`${id}-branch-${index}-name`}>
+                              {t("اسم الفرع", "Branch name")}
+                              <span className={studioStyles.req} aria-hidden="true">*</span>
+                            </label>
+                            <input
+                              id={`${id}-branch-${index}-name`}
+                              value={row.name}
+                              maxLength={120}
+                              required
+                              autoComplete="off"
+                              onChange={(e) => branch(index, "name", e.target.value)}
+                            />
+                          </div>
+                          <div className={studioStyles.field}>
+                            <label htmlFor={`${id}-branch-${index}-city`}>
+                              {t("مدينة الفرع", "Branch city")}
+                              <span className={studioStyles.req} aria-hidden="true">*</span>
+                            </label>
+                            <CityCombobox
+                              id={`${id}-branch-${index}-city`}
+                              value={row.city}
+                              country={preparedValue.country}
+                              ar={ar}
+                              onChange={(next) => branch(index, "city", next)}
+                            />
+                          </div>
                           {row.localId !== originalBranchLocalId ? (
                             <div className={studioStyles.phoneField} data-branch-contact-field="true">
                               <BusinessPhoneField id={`${id}-branch-${row.localId ?? index}-phone`} label={t("هاتف الفرع (اختياري)", "Branch phone (optional)")} value={row.contactPhone ?? ""} businessCountry={preparedValue.country} ar={ar} isCurrent={actorNow} groupLabel onChange={(next) => branch(index, "contactPhone", next)} />
@@ -1199,16 +1135,67 @@ function StudioPreparationForm({
               </p>
             ) : null}
 
-            <button type="button" className={studioStyles.primary} onClick={continueActivity} data-setup-continue="true" data-setup-review-action="true" data-setup-destination="channels">
-              {t("التالي: قنواتك", "Next: Your channels")}
+            <button
+              type="button"
+              className={studioStyles.primary}
+              onClick={() => openLocalPlans()}
+              disabled={!draft.hydrated || saveStatus === "pending"}
+              aria-busy={saveStatus === "pending" || undefined}
+              data-setup-continue="true"
+              data-setup-review-action="true"
+              data-setup-destination="plans"
+              data-prep-save={saveStatus}
+            >
+              {t("التالي: قابل فريقك", "Next: Meet your team")}
               <span aria-hidden="true"><StudioIcon kind="arrow" forward={ar ? "left" : "right"} /></span>
             </button>
             </div>
-            )}
+          </fieldset>
+            <AccountPrepDraftStatus draft={draft} ar={ar}/>
           </div>
-        )}
+      </div>
+      ) : activeJourney && planSnap && phase === "review" ? (
+          <SetupOrderReview
+            ar={ar}
+            slots={planSnap.slots}
+            term={planSnap.term}
+            write={planSnap.write}
+            editingLocked={planSnap.editingLocked}
+            actor={{ accountId: planSnap.accountId, captureToken: planSnap.captureToken }}
+            consentAccepted={planSnap.consentAccepted}
+            onConsentChange={reviewConsent}
+            confirmReview={reviewConfirm}
+            retrySameOperation={() => reviewConfirm(true)}
+            onEditBranch={reviewBack}
+            onBackToPlans={() => reviewBack()}
+            motionEnabled={motionEnabled}
+          />
+        ) : activeJourney && planSnap ? (
+          <>
+            <SetupJourneyStepper ar={ar} activeStep={2} className={studioStyles.steps} />
+            <SetupTeamPlans
+              ar={ar}
+              state={planSnap}
+              onSelect={onSelect}
+              onTerm={onTerm}
+              onBack={onBack}
+              onContinue={onContinue}
+              readPlan={activeJourney.readPlan}
+              presentAddons={activeJourney.presentAddons}
+              motionEnabled={motionEnabled}
+              initialBranchIndex={planBranchFocus}
+            />
+          </>
+        ) : null}
 
 
     </div>
   );
+}
+
+function AccountPrepDraftStatus({draft,ar}:{draft:ReturnType<typeof useAccountPrepDraft>;ar:boolean}){
+ if(draft.hydrated&&draft.saveStatus!=='fail'&&draft.saveStatus!=='pending')return null;
+ const loading=draft.hydrating,pending=draft.saveStatus==='pending';
+ const message=loading?(ar?'جارٍ تحميل المسودة المحفوظة…':'Loading your saved draft…'):pending?(ar?'جارٍ حفظ مسودة التجهيز…':'Saving preparation draft…'):draft.code==='CONFLICT'?(ar?'تغيّرت المسودة في مكان آخر. أعد تحميل النسخة المحفوظة وراجعها.':'The draft changed elsewhere. Reload and review the saved version.'):(ar?'تعذّر تأكيد حالة المسودة. أعد تحميل النسخة المحفوظة قبل المحاولة مرة أخرى.':'The draft result could not be confirmed. Reload the saved version before trying again.');
+ return <div role={draft.saveStatus==='fail'?'alert':'status'} data-prep-draft-status={loading?'loading':draft.saveStatus} className="space-y-2 text-sm"><p>{message}</p>{!pending?<button type="button" className="font-semibold underline" onClick={()=>void draft.reload()}>{ar?'إعادة تحميل المسودة المحفوظة':'Reload saved draft'}</button>:null}</div>;
 }

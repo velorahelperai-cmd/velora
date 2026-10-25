@@ -6,20 +6,33 @@ The owner-approved sole Project Brain is [Velora / 00-INDEX](<C:/Users/DELL/Desk
 
 1. Prove actual Brain access in the current agent/environment. If unavailable or an approved decision conflicts, block the affected task, record the exact missing access/decision and do not substitute an old plan. Codex access does not prove Cursor or Antigravity access. Claude is currently unused (N/A), not a closure requirement.
 2. **GRAPHIFY-FIRST:** after Brain, use Graphify as the primary and mandatory starting point for technical discovery and analysis: identify target files, dependencies, impact and related tests. Verify repository, indexed commit and date against Git HEAD. Do not browse the project or history in bulk or at random. Read only the relevant current code sections and necessary instructions/safeguards to verify and implement the scoped task. If the index is unavailable, stale or of unknown freshness, record the specific blocker; do not automatically substitute a broad filesystem scan. Graphify is not a source of approved decisions or a replacement for current-code verification.
-3. Inspect current code and GitHub evidence. Read only the first Current Session Index of [PROJECT_STATE.md](PROJECT_STATE.md), and the current execution lock, for writer/evidence/blockers. Do not reread the entire history before each task.
+3. Inspect current code and GitHub evidence. Read only the first Current Session Index of [PROJECT_STATE.md](PROJECT_STATE.md), and the current **file leases**, for writers/evidence/blockers on the paths you will touch. Do not reread the entire history before each task.
 4. Consult only a historical section explicitly marked unmapped in the Brain source register or required by an authorized scoped review. Matched MASTER_PLAN/decision/error files remain evidence, never a second active plan; do not reread their full history.
 5. Treat STRUCTURAL, MAPPED, SPEC_READY and RUNTIME_VERIFIED as distinct. Follow task-specific acceptance and the review dispositions in [Brain coverage](<C:/Users/DELL/Desktop/Obsidian/AI Workspace/Velora/06-COVERAGE.md#review-findings>); a count or migration checklist is not product acceptance. Historical proposals never become approved architecture, policy or performance limits merely by being mapped.
 6. Execute only the authorized task in its approved sequence with applicable security, logging and tests. After proven success update its Brain task with commit/test evidence and the concise execution index. Checkbox completion alone is not DONE.
 
 ## Technical safeguards
 
-Canonical code checkout: C:\Users\DELL\Desktop\Velora new; origin velorahelperai-cmd/velora; main only; allowed GitHub account velorahelperai-cmd. One explicit writer owns the whole repository, generated output and Velora Brain together. Others are read-only. Use GIT_OPTIONAL_LOCKS=0 for read-only Git inspection. Never infer handoff from an app's presence or an old receipt.
+Canonical repository root: `C:\Users\DELL\Desktop\Velora new`; origin `velorahelperai-cmd/velora`; allowed GitHub account `velorahelperai-cmd`. Use `GIT_OPTIONAL_LOCKS=0` for read-only Git inspection.
 
-Preserve unrelated work. No reset/clean/force/stash/new branch/worktree/clone or automatic old-worktree cleanup. Follow [guarded delivery](scripts/ci/README.md#main-delivery-and-exclusive-ownership); do not bypass hooks/CI or weaken protection. Normal authorized delivery requires mandatory gates, commit/push main and CI/Vercel exact-SHA evidence; post-deployment receipts stay outside Git.
+### PARALLEL-FILES-001 — file-scoped parallel work (owner 2026-10-25)
 
-Current MASTER-PLAN-001 is planning/documentation only, including the owner-authorized targeted review corrections in the existing Brain and Velora-specific Constitution references. The owner authorizes documentation and agent-instruction delivery to main, including automatic Vercel deployment, after guard/pre-push/required gates and exact-SHA verification. No feature, UI/backend/SQL, provider, env/key or sensitive settings changes. Preserve unrelated deletions until their delivery scope is explicitly resolved; do not bypass the clean-candidate requirement.
+**APPROVED and ACTIVE for agent behavior.** Whole-repository exclusive writer is **SUPERSEDED**.
 
-For quota exhaustion or disconnection, follow [HANDOFF-LIMIT-001](<C:/Users/DELL/Desktop/Obsidian/AI Workspace/Velora/10-PROJECT-RULES.md#handoff-limit>). Record actual saved progress, Task ID/order, changed files/Git state, checks/results, running or uncertain operations, blocker/next step and writer. A successor reads Brain, verifies reality and prior-writer inactivity, then receives explicit ownership of the whole repository, Brain and generated output. No automatic takeover or restart from zero.
+1. **Lock files actually used, not the whole project or stage.** Before writing, list the paths you will modify (code, tests, generated output, and any Brain notes for that task). Record those leases in the first Current Session Index and in `.git/velora-writer-lock.json` (or its documented multi-lease successor). Do not claim unrelated paths.
+2. **Any agent may start an independent task immediately** when its file set does not overlap an active lease — including while C01 or any other task is running. Finishing or handing off another independent task is **not** a prerequisite.
+3. **Same project, same `main` only.** All agents work in the canonical checkout `C:\Users\DELL\Desktop\Velora new` on `main`. **No Worktrees, no separate branches, no clones** as parallel workspaces. Isolation is by file lease, not by tree/branch.
+4. **On path conflict, stop only the conflicting files.** Non-overlapping work on the same `main` checkout continues. Re-negotiate or wait only for the overlapping paths.
+5. **Security approvals stay mandatory.** No Commit or Push to `main` without explicit owner permission for that delivery. No force push, reset/clean that discards others' work, hook/CI bypass, secret reads/prints, provider/env/production mutations, or destructive DB actions without their specific approvals.
+6. **Delivery:** after owner-authorized commit/push, mandatory gates, exact-SHA CI/Vercel evidence, and post-deployment receipts outside Git still apply. Follow [guarded delivery](scripts/ci/README.md#main-delivery-and-exclusive-ownership).
+
+**Technical guard note:** `scripts/consolidation/guard.mjs` may still enforce a legacy whole-repo receipt until a separate authorized guard update. That implementation lag must **not** be used as a reason to refuse starting a non-overlapping independent task on the same `main` checkout. Do not bypass or weaken the guard for Commit/Push; if delivery is blocked by the legacy check, record the blocker and request the scoped guard transition — do not impersonate another writer.
+
+Preserve unrelated work in the shared tree; stage only your leased paths.
+
+Current MASTER-PLAN-001 documentation limits remain: no unauthorized feature/SQL/provider/env changes under a docs-only charter. Owner-authorized product tasks follow their own Brain scope.
+
+For quota exhaustion or disconnection, follow [HANDOFF-LIMIT-001](<C:/Users/DELL/Desktop/Obsidian/AI Workspace/Velora/10-PROJECT-RULES.md#handoff-limit>). Record actual saved progress, Task ID/order, **leased files**, Git state, checks/results, running or uncertain operations, blocker/next step and writer. A successor verifies reality, prior inactivity on those leases, then receives explicit handoff of **those files** (and related Brain notes). No automatic takeover of unrelated leases; no restart from zero.
 
 <!-- BEGIN:nextjs-agent-rules -->
 

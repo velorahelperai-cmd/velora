@@ -37,14 +37,14 @@ vi.mock("@/lib/auth/browser-continuity", () => ({ ensureBrowserContinuity: state
 vi.mock("@/lib/auth/auth-journey", async () => ({ ...await vi.importActual<typeof import("@/lib/auth/auth-journey")>("@/lib/auth/auth-journey"), savePendingSignup: state.save, clearPendingSignup: state.clear }));
 vi.mock("./ui", () => ({ Button: "button", Field: "field", PasswordField: "password", Notice: "aside", useUnsavedWarning: vi.fn(), useErrorText: () => null, isEmail: (v: string) => v.includes("@"), useAppCopy: () => appCopy("en"), useAction: () => ({ busy: false, run: (fn: () => unknown) => fn() }) }));
 vi.mock("./use-verification-cooldown", () => ({ rememberVerificationResend: state.remember }));
-import { SignupPage } from "./auth-pages";
+import { AuthEntryForm } from "./auth-pages";
 function nodes(value: unknown): Node[] {
   if (Array.isArray(value)) return value.flatMap(nodes);
   if (!value || typeof value !== "object" || !("props" in value)) return [];
   const node = value as Node;
   return [node, ...nodes(node.props.children)];
 }
-function submit() { state.cursor = 0; const tree = SignupPage(); (nodes(tree).find(n => n.type === "form")!.props.onSubmit as (e: unknown) => void)({ preventDefault() {} }); }
+function submit() { state.cursor = 0; const tree = AuthEntryForm({mode:"signup"}); (nodes(tree).find(n => n.type === "form")!.props.onSubmit as (e: unknown) => void)({ preventDefault() {} }); }
 async function settle() { for (let i = 0; i < 30; i++) await Promise.resolve(); }
 beforeEach(() => {
   vi.resetAllMocks(); state.slots = []; state.cursor = 0;
@@ -66,7 +66,7 @@ it("preserves verification for unconfirmed signup without navigating into setup"
   submit(); await settle();
   expect(state.save).toHaveBeenCalledWith("signup@example.test", "");
   expect(state.remember).toHaveBeenCalledWith("signup@example.test");
-  expect(state.replace).toHaveBeenCalledWith("/verify-email?email=signup%40example.test");
+  expect(state.replace).not.toHaveBeenCalled();
   expect(state.navigate).not.toHaveBeenCalled();
   expect(state.resolve).not.toHaveBeenCalled();
 });

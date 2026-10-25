@@ -55,11 +55,18 @@ node --test scripts/ci/safety.test.mjs scripts/ci/required-gate.test.mjs
 node scripts/ci/run.mjs safety
 ```
 
-## Main delivery and exclusive ownership
+<a id="main-delivery-and-exclusive-ownership"></a>
+## Main delivery and file-scoped parallel ownership
 
-AGENTS.md is the shared entrypoint. Work only from the canonical Windows original on main, with GitHub account velorahelperai-cmd. One explicit writer owns the entire repository and generated output. Read-only Git uses GIT_OPTIONAL_LOCKS=0. Retired worktrees stay read-only; never use ignore-other-worktrees, force, reset, clean, stash or deletion to bypass a reservation.
+AGENTS.md is the shared entrypoint. Canonical Windows root: `C:\Users\DELL\Desktop\Velora new` on `main` only; GitHub account `velorahelperai-cmd`. **PARALLEL-FILES-001 (owner 2026-10-25, corrected):** lock only the files actually used; independent agents may work in parallel on non-overlapping paths in the **same** checkout and **same** `main`. No Worktrees, no separate branches, no clones for parallel work. Do not require finishing or handing off another independent task to start. Read-only Git uses `GIT_OPTIONAL_LOCKS=0`. Never use force, reset, clean, stash or deletion to discard another agent's leased files or bypass a reservation.
 
-The private receipt is .git/velora-writer-lock.json. Identity is VELORA_WRITER_ID, with CODEX_THREAD_ID as Codex fallback; no historical session is pinned. The current writer runs npm run writer:release after an explicit handoff. The next writer sets VELORA_WRITER_ID and VELORA_TASK_ID, then npm run writer:acquire -- --handoff <approved-reference>. Acquisition refuses an active receipt; release refuses another owner. Keep the current handoff/task in the first PROJECT_STATE index. A stale receipt does not prove another writer stopped; resolve ownership explicitly before bounded recovery.
+**Commit / Push** to `main` still require explicit owner permission for that delivery. No hook/CI bypass, force push, or secret/provider/production mutations without their approvals.
+
+The active schema-v2 registry is `.git/velora-path-reservations.json`; the old `.git/velora-writer-lock.json` is preserved evidence, never ownership or publication authority. Identity is `VELORA_WRITER_ID`, with `CODEX_THREAD_ID` as Codex fallback; no historical session is pinned. `VELORA_TASK_ID` selects one of the current owner's explicit task leases. Each lease records its publication baseline. Existing v2 leases missing that field require an explicit same-owner re-reservation after approval; do not guess another owner's status or transfer its paths. Record leased paths/task in the first PROJECT_STATE index.
+
+Acquire only listed paths with `npm run writer:acquire -- --task=TASK --paths=src/example.ts,src/example.test.ts`; release only that current owner's task with `npm run writer:release -- --task=TASK`. A legacy handoff-only acquire fails closed. Independent non-overlapping tasks do not require another task's handoff.
+
+Before authorized aggregate gates/staging, coordinate other writers and claim delivery using `node scripts/consolidation/guard.mjs delivery-start --task=TASK`; this requires all active leases to belong to the delivery owner. Pre-push requires that exact owner/task claim and binds receipts to task, publication baseline and a deterministic registry fingerprint. Any ownership/lease change during a gate blocks reuse/delivery. `delivery-end` clears only the current owner's claim. No command grants commit/push approval or permits staging another agent's WIP.
 
 Run npm run hooks:install in this checkout. Git core.hooksPath must be .githooks, with an executable pre-push index entry. An npm script alone does not register a Git hook. Stage only reviewed task files, then npm run prepush executes locked npm ci without lifecycle scripts, Typecheck, Lint, Unit, Contracts, Build, Safety, static Security, moderate-or-higher dependency audit, and pinned Gitleaks installation/self-test/tree scan. Unstaged/untracked candidate changes fail; source identity is checked before/after each command.
 

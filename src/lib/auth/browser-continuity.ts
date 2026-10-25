@@ -1,5 +1,6 @@
 "use client";
 
+import {authCorrelationHeaders} from "@/lib/diagnostics/correlation.mjs";
 import {
   BROKER_CONTINUITY_COOKIE,
   CONTINUITY_LOCK_NAME,
@@ -64,13 +65,13 @@ function writeMirror(anchor: string): void {
     `${BROKER_CONTINUITY_COOKIE}=${encodeURIComponent(anchor)}; Path=/; SameSite=Lax; Max-Age=${60 * 60 * 24 * 30}${secure}`;
 }
 
-async function continuityStatus(): Promise<{ hasArtifacts: boolean } | null> {
+async function continuityStatus(correlation?: unknown): Promise<{ hasArtifacts: boolean } | null> {
   try {
     const res = await fetch("/auth/broker/continuity", {
       method: "GET",
       credentials: "same-origin",
       cache: "no-store",
-      headers: { Accept: "application/json" },
+      headers: { Accept: "application/json", ...authCorrelationHeaders(correlation) },
     });
     if (!res.ok) return null;
     const body = (await res.json()) as {
@@ -92,13 +93,14 @@ async function continuityStatus(): Promise<{ hasArtifacts: boolean } | null> {
   }
 }
 
-async function enrollContinuity(anchor: string): Promise<boolean> {
+async function enrollContinuity(anchor: string, correlation?: unknown): Promise<boolean> {
   try {
     const res = await fetch("/auth/broker/continuity", {
       method: "POST",
       credentials: "same-origin",
       cache: "no-store",
       headers: {
+        ...authCorrelationHeaders(correlation),
         "Content-Type": "application/json",
         Accept: "application/json",
       },
@@ -144,7 +146,7 @@ export function clearAuthGestureNonce(nonce: string): void {
   try { if (peekAuthGestureNonce() === nonce) sessionStorage.removeItem(GESTURE_NONCE_KEY); } catch { /* Optional retry persistence. */ }
 }
 
-export async function ensureBrowserContinuity(purpose = "auth"): Promise<ContinuityOk | ContinuityFail> {
+export async function ensureBrowserContinuity(purpose = "auth", correlation?: unknown): Promise<ContinuityOk | ContinuityFail> {
   if (typeof window === "undefined" || !locksAvailable()) {
     return { ok: false, code: "CONTINUITY_UNAVAILABLE" };
   }
@@ -173,7 +175,7 @@ export async function ensureBrowserContinuity(purpose = "auth"): Promise<Continu
         return { ok: false, code: "CONTINUITY_RECOVERY_REQUIRED" as const };
       }
       const mirror = readMirror();
-      const status = await continuityStatus();
+      const status = await continuityStatus(correlation);
       if (!status) return { ok: false, code: "CONTINUITY_UNAVAILABLE" as const };
 
       if (stored.kind === "absent" && (mirror || status.hasArtifacts)) {
@@ -187,7 +189,7 @@ export async function ensureBrowserContinuity(purpose = "auth"): Promise<Continu
         if (readMirror() !== stored.record.anchor) {
           return { ok: false, code: "CONTINUITY_UNAVAILABLE" as const };
         }
-        const enrolled = await enrollContinuity(stored.record.anchor);
+        const enrolled = await enrollContinuity(stored.record.anchor, correlation);
         if (!enrolled) return { ok: false, code: "CONTINUITY_UNAVAILABLE" as const };
         return {
           ok: true as const,
@@ -196,7 +198,7 @@ export async function ensureBrowserContinuity(purpose = "auth"): Promise<Continu
         };
       }
       if (stored.kind === "ok" && mirror === stored.record.anchor) {
-        const enrolled = await enrollContinuity(stored.record.anchor);
+        const enrolled = await enrollContinuity(stored.record.anchor, correlation);
         if (!enrolled) return { ok: false, code: "CONTINUITY_UNAVAILABLE" as const };
         return {
           ok: true as const,
@@ -226,7 +228,7 @@ export async function ensureBrowserContinuity(purpose = "auth"): Promise<Continu
       if (readMirror() !== anchor) {
         return { ok: false, code: "CONTINUITY_UNAVAILABLE" as const };
       }
-      const enrolled = await enrollContinuity(anchor);
+      const enrolled = await enrollContinuity(anchor, correlation);
       if (!enrolled) return { ok: false, code: "CONTINUITY_UNAVAILABLE" as const };
       return {
         ok: true as const,

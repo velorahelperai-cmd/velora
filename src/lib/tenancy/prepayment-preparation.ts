@@ -10,7 +10,7 @@ export function normalizeOptionalBranchContactPhone(value:unknown):{ok:true;valu
  const parsed=parseBusinessPhoneInput(value,undefined);
  return parsed.ok?{ok:true,value:parsed.value||null}:{ok:false,code:'INVALID_BRANCH_PHONE'};
 }
-/** Deliberately has no persistence or server port. A new mount starts blank. */
+/** Local blank seed. Server unpaid draft hydrate is a separate account_prep_drafts read. */
 export function emptyPreparation():Preparation{return {name:'',type:'',phone:'',country:'',city:'',branches:[createPreparationBranch()]};}
 const text=(value:string,max=120)=>Boolean(value.trim())&&value.length<=max&&!/[\u0000-\u001f\u007f]/.test(value);
 export function validatePreparation(value:PreparationDraft):string[]{

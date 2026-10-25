@@ -1,3 +1,4 @@
+import {readAuthCorrelation} from "../diagnostics/correlation.mjs";
 // Browser adapter for the shared Pino logging stack. No remote ingestion,
 // cookies, request bodies, unredacted errors or arbitrary user fields are accepted.
 import pino from 'pino/browser.js';
@@ -11,10 +12,12 @@ export function createBrowserLogger(write){
 const logger=createBrowserLogger();
 const identifier=value=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value)?value:null;
 export function recordSessionCheckUnavailable(identity,target=logger,fields={}){
+ const correlation=readAuthCorrelation(fields.correlation);
  const code=typeof fields.code==='string'&&fields.code?fields.code:'UNAVAILABLE';
  const stage=typeof fields.stage==='string'&&fields.stage?fields.stage:undefined;
  record(identity,'auth.session.check.unavailable',code,target,'warn',{
   kind:'security',
+  ...(correlation?{request_id:correlation.request_id,trace_id:correlation.trace_id,span_id:correlation.parent_span_id}:{}),
   ...(stage?{stage}:{}),
  });
 }

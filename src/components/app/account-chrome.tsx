@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { ApprovedAccountLoader } from "./approved-account-loader";
+import {beginDiagnostic} from "@/lib/diagnostics/flow";
+import {readAuthCorrelation} from "@/lib/diagnostics/correlation.mjs";
+import { ApprovedAccountLoader, useApprovedLoaderGate } from "./approved-account-loader";
 import {recordLogoutTransportFailed,recordSessionCheckUnavailable} from "@/lib/logging/browser.mjs";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -39,7 +41,7 @@ type AccountSessionValue = {
   status: SessionStatus;
   identity: AccountProfileView | null;
   boundaryFingerprint: string | null;
-  refresh: () => Promise<void>;
+  refresh: (correlation?: unknown) => Promise<void>;
   clear: () => void;
   expire: () => void;
   lock: (boundaryFingerprint?: string | null) => void;
@@ -159,9 +161,13 @@ export function AccountSessionProvider({
     }
   },[setStatusLive]);
 
-  const refresh = useCallback(async () => {
-    if(routeReloading.current)return;
-    if(lockedRef.current)return; // captured lock never auto-restores from profile read
+  const refresh = useCallback(async (correlation?: unknown) => {
+    // Optional log metadata never changes the session attestation or generation fences.
+    const parent = readAuthCorrelation(correlation);
+    const trace = parent ? beginDiagnostic("auth_session_check", parent) : null;
+    trace?.stage("session");
+    if(routeReloading.current){trace?.finish("CONFLICT");return;}
+    if(lockedRef.current){trace?.finish("FORBIDDEN");return;} // captured lock never auto-restores from profile read
     // Consume one-use mount seed only while its reserved epoch is still current.
     const seed =
       bootstrapBrokerSeed.current && bootstrapBrokerSeed.current.epoch === requestGen.current
@@ -171,12 +177,13 @@ export function AccountSessionProvider({
     const gen = seed ? seed.epoch : ++requestGen.current;
     try {
       const { readBrokerSessionStatus } = await import("@/lib/auth/broker-actions");
-      const broker = seed ? seed.broker : await readBrokerSessionStatus();
-      if(gen!==requestGen.current)return;
+      const broker = seed ? seed.broker : (trace ? await readBrokerSessionStatus(trace.correlation) : await readBrokerSessionStatus());
+      if(gen!==requestGen.current){trace?.finish("CONFLICT");return;}
       if(!broker.ok){
         if(broker.code==="UNAUTHENTICATED"){
           if(userIdRef.current)publishSessionLogout(userIdRef.current,boundaryRef.current);
           clear();
+          trace?.finish("UNAUTHENTICATED");
           return;
         }
         failureStageRef.current="server_auth";
@@ -184,9 +191,10 @@ export function AccountSessionProvider({
         recordSessionCheckUnavailable(
           {userId:userIdRef.current??undefined,companyId:identityRef.current?.companyId??null},
           undefined,
-          {code:broker.code,stage:"server_auth"},
+          {code:broker.code,stage:"server_auth",...(trace?{correlation:trace.correlation}:{})},
         );
         setStatusLive("error");
+        trace?.finish("UNAVAILABLE");
         return;
       }
       // Capture broker boundary BEFORE mutating refs — compare against prior tip (C4-05).
@@ -197,30 +205,34 @@ export function AccountSessionProvider({
         routeReloading.current = true;
         setStatusLive("loading");
         providerRouter.refresh();
+        trace?.event("handoff", "CONFLICT");
         window.location.reload();
         return;
       }
-      const result = await getAccountProfile();
-      if (gen !== requestGen.current) return;
+      trace?.stage("profile");
+      const result = trace ? await getAccountProfile(trace.correlation) : await getAccountProfile();
+      if (gen !== requestGen.current) {trace?.finish("CONFLICT");return;}
       if (!result.ok) {
         if (result.code === "UNAUTHENTICATED") {
           if (userIdRef.current) publishSessionLogout(userIdRef.current, boundaryRef.current);
           if (result.sessionExpired) expire();
           else clear();
+          trace?.finish("UNAUTHENTICATED");
           return;
         }
         failureStageRef.current = classifyProfileFailure(result.code);
         recordSessionCheckUnavailable(
           {userId:userIdRef.current??undefined,companyId:identityRef.current?.companyId??null},
           undefined,
-          {code:result.code,stage:failureStageRef.current},
+          {code:result.code,stage:failureStageRef.current,...(trace?{correlation:trace.correlation}:{})},
         );
         setStatusLive("error");
+        trace?.finish("UNAVAILABLE");
         return;
       }
       // Re-read live broker status after profile await — same tip/generation (C4-05).
-      const broker2 = await readBrokerSessionStatus();
-      if (gen !== requestGen.current) return;
+      const broker2 = (trace ? await readBrokerSessionStatus(trace.correlation) : await readBrokerSessionStatus());
+      if (gen !== requestGen.current) {trace?.finish("CONFLICT");return;}
       if (
         !broker2.ok
         || broker2.userId !== broker.userId
@@ -232,9 +244,10 @@ export function AccountSessionProvider({
         recordSessionCheckUnavailable(
           {userId:userIdRef.current??undefined,companyId:identityRef.current?.companyId??null},
           undefined,
-          {code:!broker2.ok?broker2.code:"BOUNDARY_MISMATCH",stage:"server_auth"},
+          {code:!broker2.ok?broker2.code:"BOUNDARY_MISMATCH",stage:"server_auth",...(trace?{correlation:trace.correlation}:{})},
         );
         setStatusLive("error");
+        trace?.finish("UNAVAILABLE");
         return;
       }
       if (userIdRef.current && !identityRef.current && userIdRef.current !== result.data.userId) {
@@ -242,9 +255,10 @@ export function AccountSessionProvider({
         recordSessionCheckUnavailable(
           {userId:userIdRef.current??undefined,companyId:null},
           undefined,
-          {code:"USER_MISMATCH",stage:"server_auth"},
+          {code:"USER_MISMATCH",stage:"server_auth",...(trace?{correlation:trace.correlation}:{})},
         );
         setStatusLive("error");
+        trace?.finish("UNAVAILABLE");
         return;
       }
       const context = { userId: result.data.userId, companyId: result.data.companyId };
@@ -263,6 +277,7 @@ export function AccountSessionProvider({
         setIdentity(null);
         setStatusLive("loading");
         providerRouter.refresh();
+        trace?.event("handoff", "CONFLICT");
         window.location.reload();
         return;
       }
@@ -278,16 +293,18 @@ export function AccountSessionProvider({
       failureStageRef.current = null;
       setIdentity(result.data);
       setStatusLive("ready");
+      trace?.event("completed", "OK");
     } catch {
-      if (gen !== requestGen.current) return;
+      if (gen !== requestGen.current) {trace?.finish("CONFLICT");return;}
       failureStageRef.current = "server_auth";
       // Throw during reattest must not leave ready (C3-6); not a logout.
       recordSessionCheckUnavailable(
         {userId:userIdRef.current??undefined,companyId:identityRef.current?.companyId??null},
         undefined,
-        {code:"TRANSPORT",stage:"server_auth"},
+        {code:"TRANSPORT",stage:"server_auth",...(trace?{correlation:trace.correlation}:{})},
       );
       setStatusLive("error");
+      trace?.finish("OUTCOME_UNKNOWN");
     }
   }, [clear, expire, providerRouter, setStatusLive]);
 
@@ -494,10 +511,11 @@ export function AccountSessionProvider({
   const sessionValue=useMemo(()=>({status,identity,boundaryFingerprint,refresh,clear,expire,lock,setIdentityName,isCurrentUser,hasCurrentUser,cleanupCapture,isCapturedBoundary,liveSnapshot,recoverOperation}),[status,identity,boundaryFingerprint,refresh,clear,expire,lock,setIdentityName,isCurrentUser,hasCurrentUser,cleanupCapture,isCapturedBoundary,liveSnapshot,recoverOperation]);
   const protectedRoute=/^\/(app|admin|account|setup|complete-profile|reset-password)(\/|$)/.test(pathname);
   const copy=useAppCopy();
-  const content=protectedRoute&&status!=="ready"
+  const loaderGate=useApprovedLoaderGate(protectedRoute&&status==="loading",protectedRoute&&status==="ready",pathname);
+  const content=protectedRoute&&(status!=="ready"||loaderGate.holding)
     ? status==="expired" ? <SessionActivityTracker />
     : status === "locked" ? <main className="grid min-h-svh place-content-center gap-3 bg-[#f6fafb] px-6 text-[#102a33]"><LangSwitch /><OperationRecovery receipt={recoveryReceipt} isCaptured={() => isCapturedBoundary(recoveryReceipt?.boundaryFingerprint ?? boundaryRef.current)} /></main>
-    : status === "loading" ? <ApprovedAccountLoader label={copy.loading} />
+    : status === "loading" || (status === "ready"&&loaderGate.holding) ? <ApprovedAccountLoader key={pathname} label={copy.loading} ready={status==="ready"} onComplete={loaderGate.finish} />
     : <main className="grid min-h-svh place-content-center gap-4 bg-[#f6fafb] px-6 text-center text-[#102a33]">
         <p className="text-base font-medium">{status==="error"?copy.account.identityError:copy.auth.login}</p>
         {status==="error"?<button type="button" className="mx-auto rounded-xl bg-[#006c81] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#00586a]" onClick={()=>void refresh()}>{copy.errors.accessRetry}</button>:null}

@@ -280,6 +280,11 @@ it.each(["en", "ar"] as const)("delegates protected pending identity to the appr
   const refresh = first.props.value.refresh();
   pending.resolve({ ok: true, data: profile() });
   await refresh;
+  const finishing=renderTree();
+  expect(finishing.props.value.status).toBe("ready");
+  expect(finishing.props.children.type.name).toBe("ApprovedAccountLoader");
+  expect(finishing.props.children.props.ready).toBe(true);
+  finishing.props.children.props.onComplete();
   expect(renderTree().props.children).toBe("private-content");
 });
 
@@ -741,4 +746,14 @@ it("stale finally cannot clear a newer in-flight refresh", async () => {
   await second;
   expect(render().status).toBe("ready");
   expect(render().identity?.userId).toBe("user-a");
+});
+
+it('links every authoritative session read to the requesting auth operation',async()=>{
+ const packet={request_id:'VEL-0123456789ABCDEF',trace_id:'1234567890abcdef1234567890abcdef',parent_span_id:'1234567890abcdef'};state.read.mockResolvedValue({ok:true,data:profile()});const value=render();await value.refresh(packet);
+ const child=state.read.mock.calls.at(-1)?.[0];expect(child).toMatchObject({request_id:packet.request_id,trace_id:packet.trace_id});expect(child.parent_span_id).not.toBe(packet.parent_span_id);expect(state.broker.mock.calls.slice(-2).every(args=>args[0]?.request_id===packet.request_id&&args[0]?.trace_id===packet.trace_id)).toBe(true);
+});
+
+it('correlates session-check timeout as UNKNOWN without logging the thrown payload',async()=>{
+ const packet={request_id:'VEL-ABCDEFABCDEFABCD',trace_id:'abcdefabcdefabcdefabcdefabcdefab',parent_span_id:'abcdefabcdefabcd'};const info=vi.spyOn(console,'info').mockImplementation(()=>{});state.broker.mockRejectedValue(Error('private broker transport payload'));
+ try{const value=render();await value.refresh(packet);const rows=info.mock.calls.map(([row])=>JSON.parse(String(row)));expect(rows.some(row=>row.request_id===packet.request_id&&row.code==='OUTCOME_UNKNOWN')).toBe(true);expect(JSON.stringify(rows)).not.toContain('private broker transport payload');expect(state.read).not.toHaveBeenCalled();}finally{info.mockRestore();}
 });

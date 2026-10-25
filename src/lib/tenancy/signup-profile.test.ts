@@ -11,6 +11,10 @@ const uid = "synthetic-user";
 
 const mocks = vi.hoisted(() => ({
   signup: vi.fn(),
+  loadIntent: vi.fn(),
+  verify: vi.fn(),
+  resend: vi.fn(),
+  passwordLogin: vi.fn(),
   upsert: vi.fn(),
   cookie: vi.fn(),
   access: vi.fn(),
@@ -48,6 +52,9 @@ vi.mock("@/lib/auth/broker/provider", () => ({ createProviderAuthClient: mocks.c
 vi.mock("@/lib/auth/broker/lineage-auth", () => ({ prepareBrokerAdmissionLineage: mocks.prepare }));
 vi.mock("@/lib/auth/broker", () => ({
   admitNativeSession: mocks.admit,
+  brokerPasswordLogin: mocks.passwordLogin,
+  commitAuthReturnForGeneration: vi.fn(),
+  resolveBrokerSession: vi.fn(),
   prepareBrokerAdmissionLineage: mocks.prepare,
   commitWorkspaceForGeneration: mocks.commit,
 }));
@@ -55,7 +62,7 @@ vi.mock("@/lib/auth/broker/registry", () => ({
   reserveBoundAuthIntent: mocks.reserve,
   claimProviderAttempt: mocks.claim,
   probeBrokerCapability: async () => ({ ok: true, boundAdmit: true }),
-  loadAuthIntentByNonce: async () => ({ ...INTENT, purpose: "signup_email", status: "reserved", expiresAt: new Date(Date.now() + 600_000).toISOString(), pkceVerifier: null }),
+  loadAuthIntentByNonce: mocks.loadIntent,
 }));
 vi.mock("@/lib/auth/broker/provider-session", () => ({
   signOutProviderSessionAfterAdmitFailure: mocks.cleanup,
@@ -70,7 +77,7 @@ vi.mock("@/lib/tenancy/access", async (original) => ({
   getCompanyAccess: mocks.access,
 }));
 
-import { signUpWithEmail, selectWorkspaceCompany } from "./actions";
+import { signInWithEmail, signUpWithEmail, verifyEmailCode, resendVerificationEmail, selectWorkspaceCompany } from "./actions";
 
 const input = {
   name: "New Name",
@@ -83,8 +90,10 @@ const user = { id: uid, email: input.email, email_confirmed_at: null as string |
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.loadIntent.mockResolvedValue({...INTENT,purpose:"signup_email",status:"reserved",expiresAt:new Date(Date.now()+600_000).toISOString(),pkceVerifier:null});
+  mocks.passwordLogin.mockResolvedValue({ok:false,code:"AUTH_ERROR"});
   mocks.createProvider.mockImplementation((options?: { persistPkceVerifier?: (v: string) => Promise<void> }) => ({
-    client: { auth: { signUp: async (input: unknown) => {
+    client: { auth: { verifyOtp: mocks.verify, resend: mocks.resend, signUp: async (input: unknown) => {
       await options?.persistPkceVerifier?.("synthetic-verifier");
       return mocks.signup(input);
     } } },
@@ -300,4 +309,55 @@ describe("workspace selection resumes the selected role's journey", () => {
       data: { next: "/app/conversations" },
     });
   });
+});
+
+it.each(['not-an-email','person@host','a'.repeat(255)+'@example.test'])('rejects malformed login email before the broker/provider boundary: %s',async email=>{
+ expect(await signInWithEmail({email,password:'synthetic-fixture-only',requestNonce:NONCE})).toMatchObject({ok:false,code:'INVALID_INPUT'});expect(mocks.passwordLogin).not.toHaveBeenCalled();
+});
+it('normalizes a valid login email and preserves existing password handling',async()=>{
+ expect(await signInWithEmail({email:'  QA@EXAMPLE.TEST  ',password:'x',requestNonce:NONCE})).toMatchObject({ok:false,code:'AUTH_ERROR'});expect(mocks.passwordLogin).toHaveBeenCalledWith(expect.objectContaining({email:'qa@example.test',password:'x'}));
+});
+
+const correlation={request_id:'VEL-0123456789ABCDEF',trace_id:'1234567890abcdef1234567890abcdef',parent_span_id:'1234567890abcdef'};
+it('keeps login diagnostics linked to the browser packet without changing invalid-credential behavior',async()=>{
+ const info=vi.spyOn(console,'info').mockImplementation(()=>{});
+ try{const result=await signInWithEmail({...input,correlation});expect(result).toMatchObject({ok:false,code:'AUTH_ERROR',diagnostic:{reference:correlation.request_id}});const rows=info.mock.calls.map(([row])=>JSON.parse(String(row)));expect(rows.every(row=>row.trace_id===correlation.trace_id)).toBe(true);expect(rows.at(-1).parent_span_id).toBe(correlation.parent_span_id);}finally{info.mockRestore();}
+});
+it('fails closed on provider-reported expiry (mocked provider contract)',async()=>{
+ const info=vi.spyOn(console,'info').mockImplementation(()=>{});
+ mocks.verify.mockResolvedValue({data:{user:null,session:null},error:{code:'otp_expired',status:403,message:'sensitive provider payload'}});
+ try{const result=await verifyEmailCode({email:input.email,code:'012345',requestNonce:NONCE,correlation});expect(result).toMatchObject({ok:false,code:'AUTH_ERROR',message:'verification_code_invalid',diagnostic:{reference:correlation.request_id}});expect(mocks.admit).not.toHaveBeenCalled();expect(mocks.access).not.toHaveBeenCalled();expect(mocks.upsert).not.toHaveBeenCalled();const text=JSON.stringify(info.mock.calls);expect(info.mock.calls.some(([line])=>Object.values(JSON.parse(String(line))).includes('012345'))).toBe(false);expect(text).not.toContain(input.email);expect(text).not.toContain('sensitive provider payload');}finally{info.mockRestore();}
+});
+it('distinguishes uncertain verification transport in logs without admitting a session',async()=>{
+ const info=vi.spyOn(console,'info').mockImplementation(()=>{});mocks.verify.mockRejectedValue(Error('private network payload'));
+ try{expect(await verifyEmailCode({email:input.email,code:'012345',requestNonce:NONCE,correlation})).toMatchObject({ok:false,code:'UNAVAILABLE',message:'verification_unavailable'});expect(mocks.admit).not.toHaveBeenCalled();expect(JSON.stringify(info.mock.calls)).toContain('OUTCOME_UNKNOWN');expect(JSON.stringify(info.mock.calls)).not.toContain('private network payload');}finally{info.mockRestore();}
+});
+it('links a resend provider rate rejection and never logs the mailbox',async()=>{
+ const info=vi.spyOn(console,'info').mockImplementation(()=>{});mocks.loadIntent.mockResolvedValue({...INTENT,purpose:'signup_resend',status:'reserved',expiresAt:new Date(Date.now()+600_000).toISOString(),pkceVerifier:null});mocks.resend.mockResolvedValue({error:{status:429}});
+ try{expect(await resendVerificationEmail(input.email,null,NONCE,correlation)).toMatchObject({ok:false,message:'verification_rate_limited',diagnostic:{reference:correlation.request_id}});expect(JSON.stringify(info.mock.calls)).not.toContain(input.email);}finally{info.mockRestore();}
+});
+
+it('correlates a thrown signup as UNKNOWN without exposing the error payload',async()=>{
+ const info=vi.spyOn(console,'info').mockImplementation(()=>{});mocks.signup.mockRejectedValue(Error('private signup transport'));
+ try{expect(await signUpWithEmail({...input,correlation})).toMatchObject({ok:false,code:'UNAVAILABLE',diagnostic:{code:'OUTCOME_UNKNOWN',reference:correlation.request_id}});expect(JSON.stringify(info.mock.calls)).not.toContain('private signup transport');expect(mocks.admit).not.toHaveBeenCalled();}finally{info.mockRestore();}
+});
+it('records unknown cleanup after a rejected confirmed-session admission without claiming signup success',async()=>{
+ const info=vi.spyOn(console,'info').mockImplementation(()=>{});const confirmed={...user,email_confirmed_at:'confirmed'};mocks.signup.mockResolvedValue({data:{user:confirmed,session:{user:confirmed}},error:null});mocks.admit.mockResolvedValue({ok:false});mocks.cleanup.mockResolvedValue({outcome:'unknown',durable:false});
+ try{expect(await signUpWithEmail({...input,correlation})).toMatchObject({ok:false,code:'UNAVAILABLE',message:'PROVIDER_CLEANUP_UNKNOWN',diagnostic:{code:'OUTCOME_UNKNOWN'}});expect(mocks.upsert).not.toHaveBeenCalled();}finally{info.mockRestore();}
+});
+
+it('rejects simulated OTP reuse after a confirmed verification without admitting a second session',async()=>{
+ const info=vi.spyOn(console,'info').mockImplementation(()=>{});const confirmed={...user,email_confirmed_at:'confirmed'};
+ mocks.verify.mockResolvedValueOnce({data:{user:confirmed,session:{user:confirmed}},error:null}).mockResolvedValueOnce({data:{user:null,session:null},error:{code:'otp_expired',status:403}});
+ mocks.admit.mockResolvedValue({ok:true,committed:{boundaryFingerprint:'aaaaaaaaaaaaaaaa'}});mocks.access.mockResolvedValue({ok:true,context:{userId:uid,isPlatformAdmin:false,needsProfileName:true}});
+ try{const first=await verifyEmailCode({email:input.email,code:'012345',requestNonce:NONCE,correlation});expect(first).toMatchObject({ok:true,data:{userId:uid,next:'/complete-profile'}});const replay=await verifyEmailCode({email:input.email,code:'012345',requestNonce:NONCE+'-new-gesture',correlation});expect(replay).toMatchObject({ok:false,code:'AUTH_ERROR',message:'verification_code_invalid'});expect(mocks.verify).toHaveBeenCalledTimes(2);expect(mocks.admit).toHaveBeenCalledTimes(1);expect(mocks.access).toHaveBeenCalledTimes(1);}finally{info.mockRestore();}
+});
+it('stops a previously claimed verification intent before another native OTP request',async()=>{
+ const info=vi.spyOn(console,'info').mockImplementation(()=>{});mocks.claim.mockResolvedValue({ok:true,claimed:false});
+ try{expect(await verifyEmailCode({email:input.email,code:'012345',requestNonce:NONCE,correlation})).toMatchObject({ok:false,code:'UNAVAILABLE'});expect(mocks.verify).not.toHaveBeenCalled();expect(mocks.admit).not.toHaveBeenCalled();}finally{info.mockRestore();}
+});
+
+it('records a thrown password-login outcome as UNKNOWN with the same root reference',async()=>{
+ const info=vi.spyOn(console,'info').mockImplementation(()=>{});mocks.passwordLogin.mockRejectedValue(Error('private login transport'));
+ try{expect(await signInWithEmail({...input,correlation})).toMatchObject({ok:false,code:'UNAVAILABLE',diagnostic:{reference:correlation.request_id,code:'OUTCOME_UNKNOWN'}});expect(mocks.access).not.toHaveBeenCalled();expect(JSON.stringify(info.mock.calls)).not.toContain('private login transport');}finally{info.mockRestore();}
 });

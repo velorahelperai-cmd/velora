@@ -1,6 +1,7 @@
 "use server";
 import {masterJourneyEnabled} from '@/lib/master-journey/rollout';
 import { normalizeBusinessEmail, normalizeBusinessPhone } from "@/lib/tenancy/business-contacts";
+import { withAuthDiagnostic } from "@/lib/diagnostics/server-flow";
 import { beginDiagnostic } from "@/lib/diagnostics/flow";
 import type { DiagnosticDetail, DiagnosticStage } from "@/lib/diagnostics/contract";
 import {readCompanyBillingDisplay} from "@/lib/billing/wiring/display-read";
@@ -172,8 +173,11 @@ export async function signUpWithEmail(input: {
   confirmPassword: string;
   next?: string | null;
   requestNonce?: string | null;
+  correlation?: unknown;
 }): Promise<ActionResult<{ needsVerification: boolean; email: string; profilePending?: true }>> {
-  const trace = beginDiagnostic("auth_signup");
+  return withAuthDiagnostic<Awaited<ReturnType<typeof signUpWithEmail>>>("auth_signup", input?.correlation, async (trace) => {
+  let providerAttempted = false;
+
   trace.stage("input");
   if (!input || typeof input !== "object" || Array.isArray(input)
     || typeof input.name !== "string" || typeof input.email !== "string"
@@ -223,6 +227,7 @@ export async function signUpWithEmail(input: {
     let providerSession: import("@supabase/supabase-js").Session | null = null;
     try {
     trace.stage("provider");
+    providerAttempted = true;
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
@@ -233,8 +238,9 @@ export async function signUpWithEmail(input: {
     });
     if (data.session) providerSession = data.session;
     if (error && error.code !== "user_already_exists" && error.code !== "email_exists") {
-      const code = actionCodeForProviderFailure(classifyProviderAuthFailure(error));
-      return { ok: false, code, diagnostic: trace.finish(code) };
+      const kind = classifyProviderAuthFailure(error);
+      const code = actionCodeForProviderFailure(kind);
+      return { ok: false, code, diagnostic: trace.finish(kind === "unknown_transport" ? "OUTCOME_UNKNOWN" : code) };
     }
     // Existing-user responses may be obfuscated. Only an actual matching,
     // confirmed session permits a client-scoped profile write.
@@ -257,7 +263,7 @@ export async function signUpWithEmail(input: {
           ok: false,
           code: "UNAVAILABLE",
           message: "PROVIDER_CLEANUP_UNKNOWN",
-          diagnostic: trace.finish("UNAVAILABLE"),
+          diagnostic: trace.finish("OUTCOME_UNKNOWN"),
         };
       }
       if (userConfirmed) {
@@ -288,7 +294,7 @@ export async function signUpWithEmail(input: {
             ok: false,
             code: "UNAVAILABLE",
             message: "PROVIDER_CLEANUP_UNKNOWN",
-            diagnostic: trace.finish("UNAVAILABLE"),
+            diagnostic: trace.finish("OUTCOME_UNKNOWN"),
           };
         }
         return { ok: false, code: "UNAVAILABLE", diagnostic: trace.finish("UNAVAILABLE") };
@@ -325,11 +331,13 @@ export async function signUpWithEmail(input: {
         });
       }
       void err;
-      return { ok: false, code: "UNAVAILABLE", diagnostic: trace.finish("UNAVAILABLE") };
+      return { ok: false, code: "UNAVAILABLE", diagnostic: trace.finish("OUTCOME_UNKNOWN") };
     }
   } catch {
-    return { ok: false, code: "UNAVAILABLE", diagnostic: trace.finish("UNAVAILABLE") };
+    return { ok: false, code: "UNAVAILABLE", diagnostic: trace.finish(providerAttempted ? "OUTCOME_UNKNOWN" : "UNAVAILABLE") };
   }
+
+  });
 }
 
 export async function signInWithEmail(input: {
@@ -337,13 +345,16 @@ export async function signInWithEmail(input: {
   password: string;
   next?: string | null;
   requestNonce?: string | null;
+  correlation?: unknown;
 }): Promise<ActionResult<{ next: string }>> {
-  const trace = beginDiagnostic("auth_login");
+  return withAuthDiagnostic<Awaited<ReturnType<typeof signInWithEmail>>>("auth_login", input?.correlation, async (trace) => {
+
+  let providerAttempted = false;
   trace.stage("input");
   if(!input||typeof input.email!=="string"||typeof input.password!=="string")return {ok:false,code:"INVALID_INPUT",diagnostic:trace.finish("INVALID_INPUT")};
   const email = input.email.trim().toLowerCase();
   const password = input.password;
-  if (!email || !password) return { ok: false, code: "INVALID_INPUT", diagnostic: trace.finish("INVALID_INPUT") };
+  if (!email || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !password) return { ok: false, code: "INVALID_INPUT", diagnostic: trace.finish("INVALID_INPUT") };
 
   try {
     trace.stage("session");
@@ -356,6 +367,7 @@ export async function signInWithEmail(input: {
     };
     const { brokerPasswordLogin, commitAuthReturnForGeneration, resolveBrokerSession } = await import("@/lib/auth/broker");
     trace.stage("provider");
+    providerAttempted = true;
     const reader = {
       getAll: () => cookieStore.getAll().map((c) => ({ name: c.name, value: c.value })),
     };
@@ -383,12 +395,15 @@ export async function signInWithEmail(input: {
     trace.finish("OK");
     return { ok: true, data: { next: pathForAccess(access, preferred || null) } };
   } catch {
-    return { ok: false, code: "UNAVAILABLE", diagnostic: trace.finish("UNAVAILABLE") };
+    return { ok: false, code: "UNAVAILABLE", diagnostic: trace.finish(providerAttempted ? "OUTCOME_UNKNOWN" : "UNAVAILABLE") };
   }
+
+  });
 }
 
-export async function resolvePostAuthPath(next?:string|null): Promise<ActionResult<{ next: string }>> {
- const trace=beginDiagnostic("auth_login");trace.stage("access");
+export async function resolvePostAuthPath(next?:string|null, correlation?: unknown): Promise<ActionResult<{ next: string }>> {
+  return withAuthDiagnostic<Awaited<ReturnType<typeof resolvePostAuthPath>>>("auth_login", correlation, async (trace) => {
+trace.stage("access");
  try {
   const access=await getCompanyAccess();
   trace.stage("handoff");
@@ -405,6 +420,8 @@ export async function resolvePostAuthPath(next?:string|null): Promise<ActionResu
   trace.finish("OK");
   return {ok:true,data:{next:pathForAccess(access,safeInternalPath(next||stored,""))}};
  }catch{return {ok:false,code:"UNAVAILABLE",diagnostic:trace.finish("UNAVAILABLE")};}
+
+  });
 }
 export async function signOut(
   expectedUserId?: string,
@@ -483,8 +500,10 @@ export async function signOut(
   }
 }
 
-export async function resendVerificationEmail(email: string, next?:string|null, requestNonce?: string | null): Promise<ActionResult> {
-  const trace = beginDiagnostic("auth_verification_resend");
+export async function resendVerificationEmail(email: string, next?:string|null, requestNonce?: string | null, correlation?: unknown): Promise<ActionResult> {
+  return withAuthDiagnostic<Awaited<ReturnType<typeof resendVerificationEmail>>>("auth_verification_resend", correlation, async (trace) => {
+  let providerAttempted = false;
+
   trace.stage("input");
   const cleaned = typeof email==="string"?email.trim().toLowerCase():"";
   if (cleaned.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleaned)) {
@@ -503,6 +522,7 @@ export async function resendVerificationEmail(email: string, next?:string|null, 
     });
     if (!prepared.ok) return { ok: false, code: "UNAVAILABLE", diagnostic: trace.finish("UNAVAILABLE") };
     trace.stage("provider");
+    providerAttempted = true;
     const { error } = await prepared.bundle.client.auth.resend({
       type: "signup",
       email: cleaned,
@@ -511,13 +531,15 @@ export async function resendVerificationEmail(email: string, next?:string|null, 
     if (error) {
       const { classifyProviderAuthFailure, actionCodeForProviderFailure } = await import("@/lib/auth/provider-transport");
       const kind = classifyProviderAuthFailure(error), code = actionCodeForProviderFailure(kind);
-      return { ok: false, code, message: kind === "unknown_transport" ? "verification_unavailable" : emailVerificationError(error), diagnostic: trace.finish(code) };
+      return { ok: false, code, message: kind === "unknown_transport" ? "verification_unavailable" : emailVerificationError(error), diagnostic: trace.finish(kind === "unknown_transport" ? "OUTCOME_UNKNOWN" : code) };
     }
     trace.finish("OK");
     return { ok: true, data: undefined };
   } catch {
-    return { ok: false, code: "UNAVAILABLE", diagnostic: trace.finish("UNAVAILABLE") };
+    return { ok: false, code: "UNAVAILABLE", diagnostic: trace.finish(providerAttempted ? "OUTCOME_UNKNOWN" : "UNAVAILABLE") };
   }
+
+  });
 }
 
 export async function verifyEmailCode(input: {
@@ -525,8 +547,11 @@ export async function verifyEmailCode(input: {
   code: string;
   next?: string | null;
   requestNonce?: string | null;
+  correlation?: unknown;
 }): Promise<ActionResult<{ next: string; userId: string; boundaryFingerprint: string }>> {
-  const trace = beginDiagnostic("auth_verification");
+  return withAuthDiagnostic<Awaited<ReturnType<typeof verifyEmailCode>>>("auth_verification", input?.correlation, async (trace) => {
+  let providerAttempted = false;
+
   trace.stage("input");
   const email = typeof input?.email === "string" ? input.email.trim().toLowerCase() : "";
   const token = typeof input?.code === "string" ? normalizeEmailCode(input.code) : "";
@@ -575,6 +600,7 @@ export async function verifyEmailCode(input: {
       return { ok: false, code: "UNAVAILABLE", message: "verification_unavailable", diagnostic: trace.finish("UNAVAILABLE") };
     }
     trace.stage("provider");
+    providerAttempted = true;
     const { data, error } = await bundle.client.auth.verifyOtp({ email, token, type: "email" });
     if (error) {
       const { classifyProviderAuthFailure, actionCodeForProviderFailure } = await import(
@@ -586,7 +612,7 @@ export async function verifyEmailCode(input: {
         ok: false,
         code,
         message: kind === "unknown_transport" ? "verification_unavailable" : emailVerificationError(error),
-        diagnostic: trace.finish(code),
+        diagnostic: trace.finish(kind === "unknown_transport" ? "OUTCOME_UNKNOWN" : code),
       };
     }
     const user = data.user;
@@ -613,7 +639,7 @@ export async function verifyEmailCode(input: {
       const {signOutProviderSessionAfterAdmitFailure} = await import("@/lib/auth/broker/provider-session");
       // Atomic disposition refuses revocation if admission committed before cookie-write failure.
       await signOutProviderSessionAfterAdmitFailure(bundle,data.session,{intentId:intent.id,operationKey:intent.id});
-      return {ok:false,code:"UNAVAILABLE",message:"PROVIDER_CLEANUP_UNKNOWN",diagnostic:trace.finish("UNAVAILABLE")};
+      return {ok:false,code:"UNAVAILABLE",message:"PROVIDER_CLEANUP_UNKNOWN",diagnostic:trace.finish("OUTCOME_UNKNOWN")};
     }
     if (!admitted.ok) {
       const { signOutProviderSessionAfterAdmitFailure } = await import(
@@ -628,7 +654,7 @@ export async function verifyEmailCode(input: {
           ok: false,
           code: "UNAVAILABLE",
           message: "PROVIDER_CLEANUP_UNKNOWN",
-          diagnostic: trace.finish("UNAVAILABLE"),
+          diagnostic: trace.finish("OUTCOME_UNKNOWN"),
         };
       }
       return { ok: false, code: "UNAVAILABLE", message: "verification_unavailable", diagnostic: trace.finish("UNAVAILABLE") };
@@ -646,8 +672,10 @@ export async function verifyEmailCode(input: {
     return { ok: true, data: { next: pathForAccess(access, preferred || null), userId: user.id, boundaryFingerprint: admitted.committed.boundaryFingerprint } };
   } catch {
     // A timeout may have consumed the OTP. Leave recovery to the user; never retry automatically.
-    return { ok: false, code: "UNAVAILABLE", message: "verification_unavailable", diagnostic: trace.finish("UNAVAILABLE") };
+    return { ok: false, code: "UNAVAILABLE", message: "verification_unavailable", diagnostic: trace.finish(providerAttempted ? "OUTCOME_UNKNOWN" : "UNAVAILABLE") };
   }
+
+  });
 }
 
 function recordPasswordResetFailure(stage: "provider" | "request") {
@@ -794,8 +822,9 @@ export async function completeProfileName(name: string, next?:string|null, expec
   }
 }
 
-export async function getAccountProfile(): Promise<ActionResult<AccountProfileView>> {
- const trace=beginDiagnostic("auth_login");trace.stage("session");
+export async function getAccountProfile(correlation?: unknown): Promise<ActionResult<AccountProfileView>> {
+  return withAuthDiagnostic<Awaited<ReturnType<typeof getAccountProfile>>>("auth_session_check", correlation, async (trace) => {
+trace.stage("session");
  const identity=await readSessionIdentity();if(!identity.ok){trace.finish(identity.code==="UNAUTHENTICATED"?"UNAUTHENTICATED":"UNAVAILABLE");return {ok:false,code:identity.code,...("expired" in identity&&identity.expired?{sessionExpired:true}:{})};}
  trace.stage("access");
  const [access,platformIdentity]=await Promise.all([
@@ -820,6 +849,8 @@ export async function getAccountProfile(): Promise<ActionResult<AccountProfileVi
  if(access.ok)return {ok:true,data:{...buildAccountProfileView(access,platformIdentity),emailConfirmed:identity.emailConfirmed,sessionExpiresAt:identity.sessionExpiresAt}};
  // Auth identity survives company/profile outages; no role or company privilege is invented.
  return {ok:true,data:{platformIdentity,userId:identity.userId,email:identity.email,fullName:identity.fullName,supportCode:"",isPlatformAdmin:false,role:null,companyName:null,companyId:null,needsCompanyContext:false,adminHref:null,workspaceHref:null,workHref:identity.emailConfirmed?"/account":authFlowHref("/verify-email",null,identity.email),emailConfirmed:identity.emailConfirmed,sessionExpiresAt:identity.sessionExpiresAt,accessUnavailable:access.code==="UNAVAILABLE"}};
+
+  });
 }
 export async function selectWorkspaceCompany(companyId: string, input?: { expectedUserId?: string; next?: string | null }): Promise<ActionResult<{ companyId: string; next: string }>> {
   if (typeof companyId !== "string") return { ok: false, code: "INVALID_INPUT" };

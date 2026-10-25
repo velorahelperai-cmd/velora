@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parsePush, gatePlan, runGates, receiptMatches } from './pre-push.mjs';
+import { parsePush, gatePlan, runGates, receiptMatches, deliveryIdentity, assertSameOwnership, assertCandidatePathsOwned } from './pre-push.mjs';
 const head = 'a'.repeat(40), base = 'b'.repeat(40);
 test('only the exact current main commit may update existing remote main', () => {
   assert.deepEqual(parsePush('refs/heads/main ' + head + ' refs/heads/main ' + base + '\n', head), { head, base });
@@ -36,10 +36,29 @@ test('candidate drift blocks receipt creation even when a command returns zero',
   assert.throws(() => runGates(gatePlan('npm-cli'), () => ({ status: 0 }), () => { if (++calls === 2) throw Error('drift'); }), /drift/);
 });
 test('receipts cannot cover a different tree, base, writer, task, runtime, install or missing gate', () => {
-  const id = { tree: head, base, owner: 'writer', task: 'task', node: 'v24', platform: 'win32', installFingerprint: 'locked' };
+  const id = { tree: head, base, owner: 'writer', task: 'task', publicationBase: base, reservationFingerprint: 'c'.repeat(64), node: 'v24', platform: 'win32', installFingerprint: 'locked' };
   const receipt = { ...id, result: 'PASS', passed: ['build', 'security'] };
   assert.equal(receiptMatches(receipt, id, ['build', 'security']), true);
   for (const key of Object.keys(id)) assert.equal(receiptMatches(receipt, { ...id, [key]: 'different' }, ['build']), false);
   assert.equal(receiptMatches(receipt, id, ['missing']), false);
   assert.equal(receiptMatches({ ...receipt, result: 'FAIL' }, id, ['build']), false);
+});
+
+test('missing task or lease identity never matches a legacy receipt', () => {
+  const identity = { tree: head, base, owner: 'writer', node: 'v24', platform: 'win32', installFingerprint: 'locked' };
+  assert.equal(receiptMatches({ ...identity, result: 'PASS', passed: ['build'] }, identity, ['build']), false);
+});
+test('delivery identity rejects absent task and fences scope changes during a gate', () => {
+  const ownership = { mode: 'local', owner: 'writer', task: 'TASK', publicationBase: base, reservationFingerprint: 'c'.repeat(64) };
+  assert.equal(deliveryIdentity(ownership).task, 'TASK');
+  assert.throws(() => deliveryIdentity({ ...ownership, task: undefined }), /PRE_PUSH_OWNERSHIP_INVALID/);
+  assertSameOwnership(ownership, { ...ownership });
+  for (const patch of [{ task: 'OTHER' }, { owner: 'other' }, { publicationBase: head }, { reservationFingerprint: 'd'.repeat(64) }])
+    assert.throws(() => assertSameOwnership(ownership, { ...ownership, ...patch }), /PRE_PUSH_OWNERSHIP_CHANGED/);
+});
+test('candidate paths must be covered by the delivery owner leases', () => {
+  const ownership = { paths: ['src/a.ts', 'tests/**'] };
+  assertCandidatePathsOwned(['src/a.ts', 'tests/nested/a.test.ts'], ownership);
+  assert.throws(() => assertCandidatePathsOwned(['src/other.ts'], ownership), /PRE_PUSH_UNLEASED_PATH/);
+  assert.throws(() => assertCandidatePathsOwned(['src/a.ts'], { paths: [] }), /PRE_PUSH_UNLEASED_PATH/);
 });

@@ -2,6 +2,8 @@
 
 The only active Velora planning/rules/decisions/lessons authority is [Obsidian Project Brain](<C:/Users/DELL/Desktop/Obsidian/AI Workspace/Velora/10-PROJECT-RULES.md>), reached through AGENTS.md / PROJECT-BRAIN-READ-FIRST. This original body is preserved as read-only historical evidence, not a second editable plan or solution register. Do not append new tasks or decisions here. Relevant source requirements were matched in Brain09-SOURCE-REGISTER; access/decision/publication blockers remain explicit in Brain06-COVERAGE. Do not read this entire history before every task or fall back to it when Brain access fails.
 
+**SUPERSEDED inside the preserved body (owner 2026-10-25):** whole-repo exclusive writer and “wait for other-task handoff before starting.” Active policy is **PARALLEL-FILES-001** / updated **WORK-05**: file-scoped leases; all agents on the same canonical project and same `main`; no Worktrees or separate branches; conflict stops overlapping paths only; Commit/Push still need explicit owner permission.
+
 <details>
 <summary>Preserved original source at 6acb1413d935531e9069dc607a1d0c4b6d9286c1 — historical, not execution instructions</summary>
 

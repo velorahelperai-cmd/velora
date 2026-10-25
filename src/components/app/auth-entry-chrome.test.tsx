@@ -45,7 +45,7 @@ vi.mock("./ui", () => ({
   useAction: () => ({ busy: false, run: (fn: () => unknown) => fn() }),
 }));
 
-import { AuthShell, LoginPage, SignupPage } from "./auth-pages";
+import { AuthShell, AuthEntryForm } from "./auth-pages";
 
 type Node = { type: unknown; props: Record<string, unknown> };
 function nodes(value: unknown): Node[] {
@@ -56,8 +56,8 @@ function nodes(value: unknown): Node[] {
 }
 
 it("uses the approved entry chrome on login and signup without create/login top tabs", () => {
-  const login = nodes(LoginPage());
-  const signup = nodes(SignupPage());
+  const login = nodes(AuthEntryForm({mode:"login"}));
+  const signup = nodes(AuthEntryForm({mode:"signup"}));
   expect(login.some((n) => n.type === AuthShell && n.props.entry === true)).toBe(true);
   expect(signup.some((n) => n.type === AuthShell && n.props.entry === true)).toBe(true);
   const rendered = nodes(AuthShell({ entry: true, title: appCopy("ar").auth.loginTitle, children: null }));
