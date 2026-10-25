@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { act, createElement, type ReactNode } from "react";
+import { setTimeout as hostTurn } from "node:timers/promises";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach,beforeEach,describe,expect,it,vi } from "vitest";
 const state=vi.hoisted(()=>({
@@ -28,9 +29,10 @@ vi.mock("@/lib/auth/auth-journey",async()=>({
 import {VerifyEmailPage} from "./auth-pages";
 const accepted={ok:true as const,data:{next:"/setup",userId:"user-a",boundaryFingerprint:"aaaaaaaaaaaaaaaa"}};
 let testClock=0;
+let initialResendReady=false;
 let resolveVerify:(result:typeof accepted)=>void,root:Root,container:HTMLDivElement,mounted=false;
 beforeEach(()=>{
- vi.resetAllMocks();vi.useFakeTimers();vi.setSystemTime(Date.UTC(2026,9,24,19,++testClock*5));localStorage.clear();vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT",true);
+ initialResendReady=false;vi.resetAllMocks();vi.useFakeTimers();vi.setSystemTime(Date.UTC(2026,9,24,19,++testClock*5));localStorage.clear();vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT",true);
  vi.stubGlobal("matchMedia",()=>({matches:true,addEventListener(){},removeEventListener(){}}));
  state.query="email=fixture%40example.test";state.snapshot={status:"guest",userId:null,boundaryFingerprint:null,ready:false};state.identity=null;
  state.verify.mockImplementation(()=>new Promise(resolve=>{resolveVerify=resolve;}));
@@ -49,7 +51,16 @@ async function submit(expectSent=true){
 async function accept(){await act(async()=>{resolveVerify(accepted);});}
 async function resend(){
  await render();const button=container.querySelector<HTMLButtonElement>("[data-auth-otp-resend]")!;
- expect(button).toBeTruthy();await act(async()=>{button.dispatchEvent(new MouseEvent("click",{bubbles:true}));});
+ expect(button).toBeTruthy();
+ // Native digest completion is independent of the fake clock. Wait for the
+ // initial enabled control, but preserve later deliberate cooldown-blocked clicks.
+ if(!initialResendReady){
+  for(let attempt=0;button.disabled&&attempt<100;attempt++){
+   await act(async()=>{await hostTurn(10);});
+  }
+  expect(button.disabled).toBe(false);initialResendReady=true;
+ }
+ await act(async()=>{button.dispatchEvent(new MouseEvent("click",{bubbles:true}));});
 }
 describe("mounted verification result ownership",()=>{
  it.each(["resolved error", "throw"])("recovers by session read only after refresh %s",async mode=>{
@@ -180,6 +191,19 @@ describe("mounted verification result ownership",()=>{
   await resend();expect(state.resend).toHaveBeenCalledTimes(3);
   await act(async()=>{vi.advanceTimersByTime(61000);});
   await resend();expect(state.resend).toHaveBeenCalledTimes(4);
+ });
+ it("waits for delayed cooldown initialization before resending",async()=>{
+  const digest=vi.spyOn(crypto.subtle,"digest").mockImplementation(async()=>{
+   await hostTurn(250);return new ArrayBuffer(32);
+  });
+  state.resend.mockResolvedValue({ok:false,code:"AUTH_ERROR",message:"verification_rate_limited",data:{retryAfterSeconds:12}});
+  try{
+   await resend();
+   expect(digest).toHaveBeenCalled();
+   expect(state.resend).toHaveBeenCalledTimes(1);
+   expect(container.querySelector<HTMLButtonElement>("[data-auth-otp-resend]")?.disabled).toBe(true);
+   expect(container.textContent).not.toContain("A new code was requested");
+  }finally{digest.mockRestore();}
  });
  it("rate-limits without claiming send success and honors provider wait seconds",async()=>{
   state.resend.mockResolvedValue({ok:false,code:"AUTH_ERROR",message:"verification_rate_limited",data:{retryAfterSeconds:12}});
