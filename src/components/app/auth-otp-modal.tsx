@@ -371,15 +371,36 @@ export function AuthOtpModal({
         aria-describedby={descId}
         data-auth-otp-modal="true"
         data-auth-otp-phase={phase}
-        className={`relative max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain flex w-full max-w-[24rem] flex-col items-center rounded-[38px] border bg-white px-6 py-6 shadow-[0_30px_80px_rgba(23,45,67,0.16),inset_0_1px_0_rgba(255,255,255,0.85)] sm:max-w-[385px] sm:px-7 sm:py-7 ${
+        className={`relative max-h-[calc(100dvh-2rem)] min-w-0 overflow-y-auto overscroll-contain flex w-full max-w-[24rem] flex-col items-center rounded-[38px] border bg-white px-6 py-6 shadow-[0_30px_80px_rgba(23,45,67,0.16),inset_0_1px_0_rgba(255,255,255,0.85)] sm:max-w-[385px] sm:px-7 sm:py-7 ${
           showRadar
             ? "border-emerald-500/25 shadow-[0_25px_80px_rgba(16,185,129,0.1)]"
             : "border-[#DCE4EB]"
         }`}
       >
         <style>{`
-          .auth-otp-scene { height: 72px; transition: height 680ms cubic-bezier(.22,1,.36,1); }
+          .auth-otp-scene {
+            height: 72px;
+            min-width: 0;
+            width: 100%;
+            container-type: inline-size;
+            --otp-gap: 4px;
+            /* cqi resolves against the scene; % on a 0×0 anchor would collapse the tiles. */
+            --otp-cell: min(52px, calc((100cqi - (5 * var(--otp-gap))) / 6));
+            transition: height 680ms cubic-bezier(.22,1,.36,1);
+          }
           .auth-otp-scene[data-expanded="true"] { height: 170px; }
+          .auth-otp-anchor {
+            position: absolute;
+            top: 50%;
+            width: 0;
+            height: 0;
+          }
+          .auth-otp-tile {
+            width: var(--otp-cell);
+            aspect-ratio: 1;
+            min-width: 0;
+            min-height: 0;
+          }
           .auth-otp-controls { display:grid; transition: grid-template-rows 680ms cubic-bezier(.22,1,.36,1), opacity 150ms cubic-bezier(.22,1,.36,1); }
           @media (prefers-reduced-motion: reduce) {
             .auth-otp-tile, .auth-otp-anchor, .auth-otp-digit, .auth-otp-radar, .auth-otp-scene, .auth-otp-controls { transition: none !important; animation: none !important; }
@@ -403,23 +424,23 @@ export function AuthOtpModal({
             : null}
         </div>
 
-        <div className="relative z-10 w-full text-center">
-          <h2 id={titleId} className="grid text-[25px] font-bold leading-snug tracking-tight text-[#172D43]">
+        <div className="relative z-10 w-full min-w-0 text-center">
+          <h2 id={titleId} className="grid break-words text-[25px] font-bold leading-snug tracking-tight text-[#172D43]">
             <span className="col-start-1 row-start-1" style={{visibility:completed ? "hidden" : undefined}} aria-hidden={completed || undefined}>{title}</span>
             <span className="col-start-1 row-start-1" style={{visibility:completed ? undefined : "hidden"}} aria-hidden={!completed || undefined}>{successTitle ?? title}</span>
           </h2>
-          <p id={descId} className="mt-1 grid text-xs leading-5 text-[#536579]">
+          <p id={descId} className="mt-1 grid break-words text-xs leading-5 text-[#536579]">
             <span className="col-start-1 row-start-1" style={{visibility:completed ? "hidden" : undefined}} aria-hidden={completed || undefined}>{body}</span>
             <span className="col-start-1 row-start-1" style={{visibility:completed ? undefined : "hidden"}} aria-hidden={!completed || undefined}>{successBody ?? body}</span>
           </p>
-          <p className="mt-2 text-[11px] leading-4 text-[#087E8B]" style={{visibility:completed ? "hidden" : undefined}} aria-hidden={completed || undefined}>{realBody}</p>
+          <p className="mt-2 break-words text-[11px] leading-4 text-[#087E8B]" style={{visibility:completed ? "hidden" : undefined}} aria-hidden={completed || undefined}>{realBody}</p>
         </div>
 
 
 
-          <form className="relative z-10 mt-5 w-full" noValidate onSubmit={submit} onPaste={onPaste}>
+          <form className="relative z-10 mt-5 w-full min-w-0" noValidate onSubmit={submit} onPaste={onPaste}>
             {error ? (
-              <p role="alert" className="mb-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+              <p role="alert" className="mb-3 break-words rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
                 {error}
               </p>
             ) : null}
@@ -431,7 +452,7 @@ export function AuthOtpModal({
 
             <p className="mb-2 text-center text-xs text-[#536579]" style={{visibility:completed ? "hidden" : undefined}} aria-hidden={completed || undefined}>{codeLabel}</p>
             <div
-              className="auth-otp-scene relative mx-auto w-full"
+              className="auth-otp-scene relative mx-auto"
               data-expanded={!inputActive}
               role="group"
               aria-label={codeLabel}
@@ -440,14 +461,20 @@ export function AuthOtpModal({
               {digits.map((digit, index) => {
                 const pose = poseFor(phase, index);
                 const active = phase === "input" && focusIndex === index;
+                // Point anchors (0×0) at slot centers — never translate a full-width inset box (that overflowed the dialog).
+                const inputLeft = `${((index + 0.5) / CELL_COUNT) * 100}%`;
                 return (
                   <div
                     key={index}
-                    className="auth-otp-anchor pointer-events-none absolute inset-0"
-                    style={{transform: phase === "input" ? `translate3d(${((index + 0.5) / CELL_COUNT - 0.5) * 100}%, 0, 0)` : `translate3d(${pose.x}px, ${pose.y}px, 0)`, transition:"transform 680ms cubic-bezier(.22,1,.36,1)"}}
+                    className="auth-otp-anchor pointer-events-none"
+                    style={{
+                      left: phase === "input" ? inputLeft : "50%",
+                      transform: phase === "input" ? "translate3d(0, 0, 0)" : `translate3d(${pose.x}px, ${pose.y}px, 0)`,
+                      transition: "left 680ms cubic-bezier(.22,1,.36,1), transform 680ms cubic-bezier(.22,1,.36,1)",
+                    }}
                   >
                   <div
-                    className={`auth-otp-tile pointer-events-auto absolute left-1/2 top-1/2 flex items-center justify-center rounded-[16px] bg-[#F0F4F6] ${
+                    className={`auth-otp-tile pointer-events-auto absolute left-0 top-0 flex items-center justify-center rounded-[16px] bg-[#F0F4F6] ${
                       active
                         ? "border-[1.5px] border-[#E46F51] shadow-[0_0_20px_rgba(228,111,81,0.25)]"
                         : digit
@@ -455,9 +482,6 @@ export function AuthOtpModal({
                           : "border border-[#DCE4EB]"
                     }`}
                     style={{
-                      width: "min(52px, calc(100% / 6 - 4px))",
-                      aspectRatio: "1",
-                      minHeight: "44px",
                       transform: `translate3d(-50%, -50%, 0) rotate(${pose.boxRotate}deg) scale(${pose.scale})`,
                       opacity: pose.opacity,
                       transition:

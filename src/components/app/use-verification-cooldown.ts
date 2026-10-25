@@ -27,11 +27,11 @@ export async function rememberVerificationResend(email:string){
 export function useVerificationCooldown(email:string){
   const normalized=email.trim().toLowerCase();
   const [display,setDisplay]=useState({email:'',seconds:0,ready:false});
-  const current=useRef({email:'',key:null as string|null,localKey:'',deadline:0,ready:false});
+  const current=useRef({email:'',key:null as string|null,localKey:'',deadline:0,ready:false,inFlight:false});
   useEffect(()=>{
-    let alive=true;current.current={email:normalized,key:null,localKey:normalized,deadline:0,ready:false};
+    let alive=true;current.current={email:normalized,key:null,localKey:normalized,deadline:0,ready:false,inFlight:false};
     const sync=()=>{const row=current.current;if(!alive||!row.ready||row.email!==normalized)return;row.deadline=Math.max(row.deadline,readDeadline(row.key,row.localKey));setDisplay({email:normalized,ready:true,seconds:Math.max(0,Math.ceil((row.deadline-Date.now())/1000))});};
-    void contextKey(normalized).then(key=>{if(!alive)return;current.current={email:normalized,key,localKey:key||normalized,deadline:0,ready:true};sync();});
+    void contextKey(normalized).then(key=>{if(!alive)return;current.current={email:normalized,key,localKey:key||normalized,deadline:0,ready:true,inFlight:false};sync();});
     const storage=(e:StorageEvent)=>{if(e.key===current.current.key)sync();};
     const shared=(e:Event)=>{if((e as CustomEvent<{key:string}>).detail?.key===current.current.key)sync();};
     const visible=()=>{if(!document.hidden)sync();};
@@ -40,13 +40,33 @@ export function useVerificationCooldown(email:string){
     return()=>{alive=false;window.clearInterval(timer);window.removeEventListener('storage',storage);window.removeEventListener(eventName,shared);window.removeEventListener('focus',sync);document.removeEventListener('visibilitychange',visible);};
   },[normalized]);
   function syncLocal(row:typeof current.current){if(current.current!==row)return;setDisplay({email:row.email,ready:true,seconds:Math.max(0,Math.ceil((row.deadline-Date.now())/1000))});}
+  /** Soft claim only. Does not start the 60s wait — call extend() after provider acceptance (or provider rate-limit). */
   async function reserve(){
     const row=current.current;if(!row.ready||row.email!==normalized)return false;
-    const claim=()=>{if(current.current!==row)return false;row.deadline=Math.max(row.deadline,readDeadline(row.key,row.localKey));if(row.deadline>Date.now()){syncLocal(row);return false;}row.deadline=writeDeadline(row.key,row.localKey,Date.now()+VERIFICATION_RESEND_SECONDS*1000);syncLocal(row);return true;};
+    const claim=()=>{
+      if(current.current!==row||row.inFlight)return false;
+      row.deadline=Math.max(row.deadline,readDeadline(row.key,row.localKey));
+      if(row.deadline>Date.now()){syncLocal(row);return false;}
+      row.inFlight=true;
+      return true;
+    };
     // Where supported, serialize simultaneous tab gestures. Provider enforcement is always final.
     if(row.key&&navigator.locks){try{return await navigator.locks.request(row.key,claim);}catch{}}
     return claim();
   }
-  function extend(){const row=current.current;if(!row.ready||row.email!==normalized)return;row.deadline=writeDeadline(row.key,row.localKey,Date.now()+VERIFICATION_RESEND_SECONDS*1000);syncLocal(row);}
-  return {ready:display.email===normalized&&display.ready,seconds:display.email===normalized?display.seconds:0,reserve,extend};
+  /** Commit the advisory wait only after accepted send or provider-reported rate limit. */
+  function extend(){
+    const row=current.current;if(!row.ready||row.email!==normalized)return;
+    row.inFlight=false;
+    row.deadline=writeDeadline(row.key,row.localKey,Date.now()+VERIFICATION_RESEND_SECONDS*1000);
+    syncLocal(row);
+  }
+  /** Drop an in-flight claim without pretending the mail was accepted. */
+  function release(){
+    const row=current.current;if(!row.ready||row.email!==normalized)return;
+    row.inFlight=false;
+    row.deadline=Math.max(row.deadline,readDeadline(row.key,row.localKey));
+    syncLocal(row);
+  }
+  return {ready:display.email===normalized&&display.ready,seconds:display.email===normalized?display.seconds:0,reserve,extend,release};
 }

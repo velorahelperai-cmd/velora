@@ -61,4 +61,25 @@ describe("AuthOtpModal", () => {
     // Static markup still starts at input until effects run — verified alone must not invent filled digits.
     expect(done).not.toMatch(/auto-verify|setTimeout\(.*done/i);
   });
+
+  it("sizes OTP cells to the scene without full-width translated anchors or overflow-x clip hacks", () => {
+    const html = renderToStaticMarkup(createElement(AuthOtpModal, {
+      ...base,
+      error: "تغيّرت جلسة المتصفح أو انتهت. أغلق هذه النافذة وسجّل الدخول مجددًا للمتابعة بأمان.",
+    }));
+    expect(html).toContain("--otp-cell:");
+    expect(html).toContain("100cqi");
+    expect(html).toContain("container-type: inline-size");
+    expect(html).toContain("width: 0");
+    expect(html).toContain("height: 0");
+    expect(html).toContain("min-w-0");
+    expect(html).toContain("break-words");
+    expect(html).not.toMatch(/overflow-x:\s*hidden/);
+    expect(html).not.toContain('minHeight:"44px"');
+    expect(html).not.toContain("minHeight: \"44px\"");
+    expect(html).not.toMatch(/auth-otp-anchor[^>]*inset-0/);
+    // Input anchors use slot-center percentages, not ±% of a full-width box.
+    expect(html).toMatch(/left:8\.333/);
+    expect(html).toMatch(/left:91\.666/);
+  });
 });

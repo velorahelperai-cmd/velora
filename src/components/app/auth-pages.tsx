@@ -732,11 +732,47 @@ type VerificationCapture = {
   overflow?: true;
 };
 type ConfirmedVerification = { capture: VerificationCapture; boundary: VerifiedBoundary; next: string };
+/** Exact fence break reason — public copy stays generic; tests assert this code. */
+type VerificationFenceReason =
+  | "unmounted"
+  | "capture_replaced"
+  | "epoch_changed"
+  | "overflow"
+  | "status_locked"
+  | "status_expired"
+  | "account_switched"
+  | "signed_out"
+  | "foreign_session"
+  | "not_ready";
+type VerificationFenceResult = { ok: true; reason: null } | { ok: false; reason: VerificationFenceReason };
 function sameVerificationBoundary(a: VerificationBoundary | null, b: VerificationBoundary | null) {
   return a?.userId === b?.userId && a?.boundaryFingerprint === b?.boundaryFingerprint;
 }
 function matchesVerifiedBoundary(value: VerificationBoundary | null, expected?: VerifiedBoundary) {
   return Boolean(expected && value?.userId === expected.userId && value.boundaryFingerprint === expected.boundaryFingerprint);
+}
+/**
+ * SESSION-001 fence for one observation.
+ * Same authenticated userId may rotate boundaryFingerprint (renewal).
+ * Different userId, logout, locked/expired, or a foreign session on a guest journey still break.
+ */
+function observationFenceReason(
+  value: VerificationBoundary,
+  baseline: VerificationBoundary | null,
+  expected?: VerifiedBoundary,
+): VerificationFenceReason | null {
+  if (value.status === "locked") return "status_locked";
+  if (value.status === "expired") return "status_expired";
+  if (sameVerificationBoundary(value, baseline)) return null;
+  if (matchesVerifiedBoundary(value, expected)) return null;
+  // Same-user session renewal: fingerprint may change; account identity must not.
+  if (value.userId && baseline?.userId && value.userId === baseline.userId) return null;
+  if (expected?.userId && value.userId === expected.userId) return null;
+  if (baseline?.userId && value.userId && value.userId !== baseline.userId) return "account_switched";
+  if (baseline?.userId && !value.userId) return "signed_out";
+  if (!baseline?.userId && value.userId && expected && value.userId !== expected.userId) return "account_switched";
+  if (!baseline?.userId && value.userId) return "foreign_session";
+  return "foreign_session";
 }
 
 export function VerifyEmailPage() {
@@ -752,6 +788,7 @@ export function VerifyEmailPage() {
 
 
   const [error, setError] = useState<string | null>(null);
+  const [fenceReason, setFenceReason] = useState<VerificationFenceReason | null>(null);
   const resendClock = useVerificationCooldown(registeredEmail);
   const cooldown = resendClock.ready ? resendClock.seconds : 1;
   const [hydrated, setHydrated] = useState(Boolean(emailFromQuery));
@@ -801,24 +838,43 @@ export function VerifyEmailPage() {
     activeCapture.current = capture;
     return capture;
   }
-  function isCurrent(capture: VerificationCapture, expected?: VerifiedBoundary, requireVerified = false) {
+  function evaluateCurrent(capture: VerificationCapture, expected?: VerifiedBoundary, requireVerified = false): VerificationFenceResult {
     const live = observe(capture);
-    return journey.current.mounted && activeCapture.current === capture
-      && journey.current.epoch === capture.epoch && !capture.overflow
-      && capture.observed.every(value => value.status !== "locked" && value.status !== "expired"
-        && (sameVerificationBoundary(value, capture.baseline) || matchesVerifiedBoundary(value, expected)))
-      && (!requireVerified || !session || Boolean(live?.ready && live.status === "ready" && matchesVerifiedBoundary(live, expected)));
+    if (!journey.current.mounted) return { ok: false, reason: "unmounted" };
+    if (activeCapture.current !== capture) return { ok: false, reason: "capture_replaced" };
+    if (journey.current.epoch !== capture.epoch) return { ok: false, reason: "epoch_changed" };
+    if (capture.overflow) return { ok: false, reason: "overflow" };
+    for (const value of capture.observed) {
+      const reason = observationFenceReason(value, capture.baseline, expected);
+      if (reason) return { ok: false, reason };
+    }
+    if (requireVerified && session) {
+      if (live?.ready && live.status === "ready" && matchesVerifiedBoundary(live, expected)) return { ok: true, reason: null };
+      if (live?.userId && expected && live.userId !== expected.userId) return { ok: false, reason: "account_switched" };
+      if (live && (live.status === "locked" || live.status === "expired")) {
+        return { ok: false, reason: live.status === "locked" ? "status_locked" : "status_expired" };
+      }
+      return { ok: false, reason: "not_ready" };
+    }
+    return { ok: true, reason: null };
   }
-
-  function reportInterrupted(capture:VerificationCapture, resend=false) {
+  function reportInterrupted(capture: VerificationCapture, reason: VerificationFenceReason, resend = false) {
     capture.trace.event("session", "CONFLICT");
     // A stale response must never write into a different email journey or unmounted page.
-    if(!journey.current.mounted || activeCapture.current!==capture || journey.current.epoch!==capture.epoch)return;
-    successCapture.current=null;confirmedCapture.current=null;
-    setVerified(false);setSuccessNext(null);setRetrySessionOnly(false);
+    if (!journey.current.mounted || activeCapture.current !== capture || journey.current.epoch !== capture.epoch) return;
+    successCapture.current = null;
+    confirmedCapture.current = null;
+    setVerified(false);
+    setSuccessNext(null);
+    setRetrySessionOnly(false);
+    setFenceReason(reason);
     setError(copy.auth.verificationContextChanged);
-    capture.trace.event("session","UNAVAILABLE");
+    capture.trace.event("session", "UNAVAILABLE");
     void resend;
+  }
+  function clearVerifyError() {
+    setFenceReason(null);
+    setError(null);
   }
 
   useEffect(() => {
@@ -861,16 +917,25 @@ export function VerifyEmailPage() {
       await session?.refresh(capture.trace.correlation);
     } catch {
       capture.trace.event("refresh", "OUTCOME_UNKNOWN");
-      if (isCurrent(capture, boundary)) {
+      const gate = evaluateCurrent(capture, boundary);
+      if (gate.ok) {
+        setFenceReason(null);
         setRetrySessionOnly(true);
         setError(copy.auth.verificationSessionUnavailable);
-      } else reportInterrupted(capture);
+      } else reportInterrupted(capture, gate.reason);
       return;
     }
-    if (!isCurrent(capture, boundary)) { reportInterrupted(capture); return; }
+    const afterRefresh = evaluateCurrent(capture, boundary);
+    if (!afterRefresh.ok) { reportInterrupted(capture, afterRefresh.reason); return; }
     // refresh() resolves on transport failure too. Identity alone is not READY.
-    if (!isCurrent(capture, boundary, true)) {
+    const ready = evaluateCurrent(capture, boundary, true);
+    if (!ready.ok) {
+      if (ready.reason === "account_switched" || ready.reason === "signed_out" || ready.reason === "foreign_session" || ready.reason === "status_locked" || ready.reason === "status_expired") {
+        reportInterrupted(capture, ready.reason);
+        return;
+      }
       capture.trace.event("refresh", "REFRESH_FAILED");
+      setFenceReason(null);
       setRetrySessionOnly(true);
       setError(copy.auth.verificationSessionUnavailable);
       return;
@@ -878,6 +943,7 @@ export function VerifyEmailPage() {
     capture.trace.event("refresh", "OK");
     clearPendingSignup();
     successCapture.current = { capture, boundary };
+    setFenceReason(null);
     setRetrySessionOnly(false);
     setSuccessNext(confirmed.next);
     setVerified(true);
@@ -887,15 +953,17 @@ export function VerifyEmailPage() {
     if (busy || !hydrated || !registeredEmail || verified) return;
     const confirmed = confirmedCapture.current;
     if (confirmed) {
-      if (!isCurrent(confirmed.capture, confirmed.boundary)) { reportInterrupted(confirmed.capture); return; }
-      setError(null);
+      const gate = evaluateCurrent(confirmed.capture, confirmed.boundary);
+      if (!gate.ok) { reportInterrupted(confirmed.capture, gate.reason); return; }
+      clearVerifyError();
       return run(() => finishVerification(confirmed));
     }
-    setError(null);
+    clearVerifyError();
 
     setResent(false);
     const normalized = normalizeEmailCode(code);
     if (!/^[0-9]{6}$/.test(normalized)) {
+      setFenceReason(null);
       setError(copy.auth.verificationCodeFormat);
       return;
     }
@@ -905,11 +973,16 @@ export function VerifyEmailPage() {
     return run(async () => {
       setVerificationRequest({ email: journeyEmail, next: journeyNext, query: emailFromQuery });
       try {
+        // Fence before continuity/provider: locked/expired/foreign never reach verifyEmailCode.
+        const beforeContinuity = evaluateCurrent(capture);
+        if (!beforeContinuity.ok) { reportInterrupted(capture, beforeContinuity.reason); return; }
         const { ensureBrowserContinuity, clearAuthGestureNonce } = await import("@/lib/auth/browser-continuity");
         const continuity = await ensureBrowserContinuity("verify_email", capture.trace.correlation);
-        if (!isCurrent(capture)) { reportInterrupted(capture); return; }
+        const afterContinuity = evaluateCurrent(capture);
+        if (!afterContinuity.ok) { reportInterrupted(capture, afterContinuity.reason); return; }
         if (!continuity.ok) {
           capture.trace.finish("UNAVAILABLE");
+          setFenceReason(null);
           setError(
             continuity.code === "CONTINUITY_RECOVERY_REQUIRED"
               ? copy.errors.continuityRecovery
@@ -926,13 +999,15 @@ export function VerifyEmailPage() {
           requestNonce: continuity.requestNonce,
         });
         const boundary = result.ok ? result.data : undefined;
-        if (!isCurrent(capture, boundary)) { reportInterrupted(capture); return; }
+        const afterProvider = evaluateCurrent(capture, boundary);
+        if (!afterProvider.ok) { reportInterrupted(capture, afterProvider.reason); return; }
         if (result.ok || result.code === "INVALID_INPUT" || result.code === "AUTH_ERROR") {
           clearAuthGestureNonce(continuity.requestNonce);
         }
 
         if (!result.ok) {
           capture.trace.finish(result.diagnostic?.code ?? (result.code === "UNAVAILABLE" ? "UNAVAILABLE" : result.code === "INVALID_INPUT" ? "INVALID_INPUT" : "AUTH_ERROR"));
+          setFenceReason(null);
           setError(result.code === "INVALID_INPUT" ? copy.auth.verificationCodeFormat : verificationMessage(result.message));
           return;
         }
@@ -942,7 +1017,9 @@ export function VerifyEmailPage() {
         await finishVerification(confirmed);
       } catch {
         capture.trace.finish("OUTCOME_UNKNOWN");
-        if (!isCurrent(capture)) { reportInterrupted(capture); return; }
+        const gate = evaluateCurrent(capture);
+        if (!gate.ok) { reportInterrupted(capture, gate.reason); return; }
+        setFenceReason(null);
         setError(copy.auth.verificationUnavailable);
       } finally {
         // Presentation only: run() serializes this operation; server result fences above stay authoritative.
@@ -1012,34 +1089,54 @@ export function VerifyEmailPage() {
         onResend={() => {
           if (busy || cooldown > 0 || !registeredEmail || verified || retrySessionOnly) return;
           const capture = captureJourney("auth_verification_resend");
-          setError(null);
-
+          clearVerifyError();
           setResent(false);
           void run(async () => {
             try {
+              // Fence before continuity/provider so locked/expired/foreign never touch the mail provider.
+              const beforeContinuity = evaluateCurrent(capture);
+              if (!beforeContinuity.ok) { reportInterrupted(capture, beforeContinuity.reason, true); return; }
               const { ensureBrowserContinuity, clearAuthGestureNonce } = await import("@/lib/auth/browser-continuity");
               const continuity = await ensureBrowserContinuity("verification_resend", capture.trace.correlation);
-              if (!isCurrent(capture)) { reportInterrupted(capture,true); return; }
-              if (!continuity.ok) { capture.trace.finish("UNAVAILABLE"); setError(copy.auth.verificationResendUnavailable); return; }
+              const afterContinuity = evaluateCurrent(capture);
+              if (!afterContinuity.ok) { reportInterrupted(capture, afterContinuity.reason, true); return; }
+              if (!continuity.ok) { capture.trace.finish("UNAVAILABLE"); setFenceReason(null); setError(copy.auth.verificationResendUnavailable); return; }
+              // Soft claim only — durable 60s wait starts after provider acceptance or provider rate-limit.
               if (!await resendClock.reserve()) { capture.trace.finish("CONFLICT"); return; }
-              if (!isCurrent(capture)) { reportInterrupted(capture,true); return; }
+              const afterReserve = evaluateCurrent(capture);
+              if (!afterReserve.ok) { resendClock.release(); reportInterrupted(capture, afterReserve.reason, true); return; }
               capture.trace.stage("provider");
               const result = await resendVerificationEmail(registeredEmail, pendingReturn, continuity.requestNonce, capture.trace.correlation);
-              if (!isCurrent(capture)) { reportInterrupted(capture,true); return; }
+              const afterResend = evaluateCurrent(capture);
+              // Provider acceptance (ok or rate_limit) commits the advisory wait even if the UI journey fences after the reply.
+              const providerAcceptedWait = result.ok || result.message === "verification_rate_limited";
+              if (!afterResend.ok) {
+                if (providerAcceptedWait) resendClock.extend();
+                else resendClock.release();
+                reportInterrupted(capture, afterResend.reason, true);
+                return;
+              }
               if (result.ok || result.code === "INVALID_INPUT" || result.code === "AUTH_ERROR") clearAuthGestureNonce(continuity.requestNonce);
 
               if (!result.ok) {
                 capture.trace.finish(result.diagnostic?.code ?? (result.code === "UNAVAILABLE" ? "UNAVAILABLE" : result.code === "INVALID_INPUT" ? "INVALID_INPUT" : "AUTH_ERROR"));
+                setFenceReason(null);
                 setError(verificationMessage(result.message, copy.auth.verificationResendUnavailable));
+                // Acceptance failed: do not show resent notice. Only honor provider-reported wait.
                 if (result.message === "verification_rate_limited") resendClock.extend();
+                else resendClock.release();
                 return;
               }
+              // Accepted by Auth/mail path — not proof the inbox received the message.
               capture.trace.finish("OK");
               setResent(true);
               resendClock.extend();
             } catch {
               capture.trace.finish("OUTCOME_UNKNOWN");
-              if (!isCurrent(capture)) { reportInterrupted(capture,true); return; }
+              resendClock.release();
+              const gate = evaluateCurrent(capture);
+              if (!gate.ok) { reportInterrupted(capture, gate.reason, true); return; }
+              setFenceReason(null);
               setError(copy.auth.verificationResendUnavailable);
             }
           });
@@ -1050,11 +1147,18 @@ export function VerifyEmailPage() {
         onSuccessAnimDone={() => {
           const success = successCapture.current;
           if (!successNext || !success) return;
-          if (!isCurrent(success.capture, success.boundary)) { reportInterrupted(success.capture); return; }
-          if (!isCurrent(success.capture, success.boundary, true)) {
+          const gate = evaluateCurrent(success.capture, success.boundary);
+          if (!gate.ok) { reportInterrupted(success.capture, gate.reason); return; }
+          const ready = evaluateCurrent(success.capture, success.boundary, true);
+          if (!ready.ok) {
+            if (ready.reason === "account_switched" || ready.reason === "signed_out" || ready.reason === "foreign_session" || ready.reason === "status_locked" || ready.reason === "status_expired") {
+              reportInterrupted(success.capture, ready.reason);
+              return;
+            }
             success.capture.trace.event("refresh", "REFRESH_FAILED");
             // Verification already succeeded. Recover the same session without replaying the consumed code.
             successCapture.current = null;
+            setFenceReason(null);
             setVerified(false);
             setRetrySessionOnly(true);
             setError(copy.auth.verificationSessionUnavailable);
@@ -1065,6 +1169,7 @@ export function VerifyEmailPage() {
           router.refresh();
         }}
       />
+      {fenceReason ? <span hidden data-auth-verify-fence={fenceReason} /> : null}
     </>
   );
 }

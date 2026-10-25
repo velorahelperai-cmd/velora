@@ -87,19 +87,59 @@ describe("mounted verification result ownership",()=>{
   await submit(false);state.snapshot={status:"ready",userId:"user-b",boundaryFingerprint:"bbbbbbbbbbbbbbbb",ready:true};
   await render();await act(async()=>{resume({ok:true,requestNonce:"00000000-0000-4000-8000-000000000001"});});
   expect(state.verify).not.toHaveBeenCalled();expect(state.clear).not.toHaveBeenCalled();
+  expect(container.querySelector("[data-auth-verify-fence]")?.getAttribute("data-auth-verify-fence")).toBe("foreign_session");
+ });
+ it("still contacts the provider when the same user rotates fingerprint during continuity",async()=>{
+  state.snapshot={status:"ready",userId:"user-a",boundaryFingerprint:"aaaaaaaaaaaaaaaa",ready:true};
+  let resume!:(value:{ok:true;requestNonce:string})=>void;
+  state.continuity.mockImplementation(()=>new Promise(resolve=>{resume=resolve;}));
+  await submit(false);
+  state.snapshot={status:"ready",userId:"user-a",boundaryFingerprint:"bbbbbbbbbbbbbbbb",ready:true};
+  await render();
+  await act(async()=>{resume({ok:true,requestNonce:"00000000-0000-4000-8000-000000000001"});});
+  expect(state.verify).toHaveBeenCalledTimes(1);
+  expect(container.querySelector("[data-auth-verify-fence]")).toBeNull();
+  await accept();
+  await act(async()=>{vi.advanceTimersByTime(120);});
+  expect(state.replace).toHaveBeenCalledExactlyOnceWith("/setup");
  });
  it("admits the matching result and navigates once",async()=>{
   await submit();expect(container.querySelector("[data-auth-otp-pending]")).not.toBeNull();expect(container.querySelector("[data-auth-otp-success]")).toBeNull();await accept();await act(async()=>{vi.advanceTimersByTime(120);});expect(state.replace).toHaveBeenCalledExactlyOnceWith("/setup");
  });
- it.each(["new account","same user new session","logout"])("ignores the old result after %s",async scenario=>{
-  if(scenario!=="new account")state.snapshot={status:"ready",userId:"user-a",boundaryFingerprint:"aaaaaaaaaaaaaaaa",ready:true};
+ it("ignores the old result after a real account switch and records account_switched",async()=>{
+  state.snapshot={status:"ready",userId:"user-a",boundaryFingerprint:"aaaaaaaaaaaaaaaa",ready:true};
   await submit();
-  state.snapshot=scenario==="logout"?{status:"guest",userId:null,boundaryFingerprint:null,ready:false}:
-   {status:"ready",userId:scenario==="new account"?"user-b":"user-a",boundaryFingerprint:"bbbbbbbbbbbbbbbb",ready:true};
+  state.snapshot={status:"ready",userId:"user-b",boundaryFingerprint:"bbbbbbbbbbbbbbbb",ready:true};
   state.refresh.mockImplementation(async()=>{});await render();await accept();
+  expect(state.verify).toHaveBeenCalledTimes(1);
   expect(container.querySelector('[role="alert"]')?.textContent).toContain("browser session changed or expired");
+  expect(container.querySelector("[data-auth-verify-fence]")?.getAttribute("data-auth-verify-fence")).toBe("account_switched");
   expect(state.clear).not.toHaveBeenCalled();expect(state.refresh).not.toHaveBeenCalled();
   await act(async()=>{vi.advanceTimersByTime(5000);});expect(state.replace).not.toHaveBeenCalled();
+ });
+ it("ignores the old result after logout and records signed_out",async()=>{
+  state.snapshot={status:"ready",userId:"user-a",boundaryFingerprint:"aaaaaaaaaaaaaaaa",ready:true};
+  await submit();
+  state.snapshot={status:"guest",userId:null,boundaryFingerprint:null,ready:false};
+  state.refresh.mockImplementation(async()=>{});await render();await accept();
+  expect(state.verify).toHaveBeenCalledTimes(1);
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain("browser session changed or expired");
+  expect(container.querySelector("[data-auth-verify-fence]")?.getAttribute("data-auth-verify-fence")).toBe("signed_out");
+  expect(state.refresh).not.toHaveBeenCalled();
+  await act(async()=>{vi.advanceTimersByTime(5000);});expect(state.replace).not.toHaveBeenCalled();
+ });
+ it("keeps the same-user fingerprint renewal as the same journey and completes after provider OK",async()=>{
+  state.snapshot={status:"ready",userId:"user-a",boundaryFingerprint:"aaaaaaaaaaaaaaaa",ready:true};
+  await submit();
+  // Exact prior false-positive: same userId, new boundaryFingerprint mid-flight.
+  state.snapshot={status:"ready",userId:"user-a",boundaryFingerprint:"bbbbbbbbbbbbbbbb",ready:true};
+  await render();await accept();
+  expect(state.verify).toHaveBeenCalledTimes(1);
+  expect(container.querySelector("[data-auth-verify-fence]")).toBeNull();
+  expect(container.querySelector('[role="alert"]')?.textContent ?? "").not.toContain("browser session changed or expired");
+  expect(state.refresh).toHaveBeenCalled();
+  await act(async()=>{vi.advanceTimersByTime(120);});
+  expect(state.replace).toHaveBeenCalledExactlyOnceWith("/setup");
  });
  it("ignores completion after the email journey changes",async()=>{
   await submit();state.query="email=other%40example.test";await render();await accept();
@@ -117,16 +157,22 @@ describe("mounted verification result ownership",()=>{
   state.resend.mockResolvedValue({ok:false,code:"UNAVAILABLE",message:"verification_unavailable"});
   await resend();expect(state.resend).toHaveBeenCalledExactlyOnceWith("fixture@example.test","","00000000-0000-4000-8000-000000000001",expect.objectContaining({request_id:expect.stringMatching(/^VEL-[A-F0-9]{16}$/)}));
   expect(state.continuity).toHaveBeenCalledWith("verification_resend",expect.objectContaining({request_id:expect.stringMatching(/^VEL-[A-F0-9]{16}$/)}));expect(state.clearNonce).not.toHaveBeenCalled();
-  await resend();expect(state.resend).toHaveBeenCalledTimes(1);
-  await act(async()=>{vi.advanceTimersByTime(61000);});
+  // Failed acceptance must not start the advisory wait — immediate retry stays available.
+  await resend();expect(state.resend).toHaveBeenCalledTimes(2);
   state.resend.mockResolvedValue({ok:true});await resend();
   expect(state.clearNonce).toHaveBeenCalledExactlyOnceWith("00000000-0000-4000-8000-000000000001");
+  expect(state.resend).toHaveBeenCalledTimes(3);
+  await resend();expect(state.resend).toHaveBeenCalledTimes(3);
+  await act(async()=>{vi.advanceTimersByTime(61000);});
+  await resend();expect(state.resend).toHaveBeenCalledTimes(4);
  });
  it("ignores a stale resend reply after a session switch",async()=>{
   let complete!:(value:{ok:true})=>void;state.resend.mockImplementation(()=>new Promise(resolve=>{complete=resolve;}));
   await resend();state.snapshot={status:"ready",userId:"user-b",boundaryFingerprint:"bbbbbbbbbbbbbbbb",ready:true};
   await render();await act(async()=>{complete({ok:true});});expect(state.clearNonce).not.toHaveBeenCalled();
+  // Provider accepted before the fence — advisory wait commits; UI must not claim delivery success.
   expect(container.querySelector<HTMLButtonElement>("[data-auth-otp-resend]")?.disabled).toBe(true);
+  expect(container.textContent).not.toContain("A new code was requested");
   await act(async()=>{vi.advanceTimersByTime(61000);});
   expect(container.querySelector<HTMLButtonElement>("[data-auth-otp-resend]")?.disabled).toBe(false);
  });
@@ -141,13 +187,46 @@ it("restores session-only recovery when readiness is lost at success animation c
  expect(state.verify).toHaveBeenCalledTimes(1);expect(state.refresh).toHaveBeenCalledTimes(2);expect(state.replace).toHaveBeenCalledExactlyOnceWith("/setup");
 });
 
-it.each(['expired','locked'])('explains blocked verification for an initially %s session without contacting provider',async status=>{
+it.each([{status:'expired',reason:'status_expired'},{status:'locked',reason:'status_locked'}] as const)('explains blocked verification for an initially $status session without contacting provider',async({status,reason})=>{
  state.snapshot={status,userId:'user-a',boundaryFingerprint:'aaaaaaaaaaaaaaaa',ready:false};await submit(false);
- expect(state.verify).not.toHaveBeenCalled();expect(container.querySelector('[role="alert"]')?.textContent).toContain('browser session changed or expired');expect(state.replace).not.toHaveBeenCalled();
+ expect(state.verify).not.toHaveBeenCalled();
+ expect(state.continuity).not.toHaveBeenCalled();
+ expect(container.querySelector('[role="alert"]')?.textContent).toContain('browser session changed or expired');
+ expect(container.querySelector('[data-auth-verify-fence]')?.getAttribute('data-auth-verify-fence')).toBe(reason);
+ expect(state.replace).not.toHaveBeenCalled();
 });
 it('explains blocked resend instead of silently claiming delivery',async()=>{
  state.snapshot={status:'expired',userId:'user-a',boundaryFingerprint:'aaaaaaaaaaaaaaaa',ready:false};await resend();
- expect(state.resend).not.toHaveBeenCalled();expect(container.querySelector('[role="alert"]')?.textContent).toContain('browser session changed or expired');expect(container.textContent).not.toContain('new code has been requested');
+ expect(state.resend).not.toHaveBeenCalled();
+ expect(state.continuity).not.toHaveBeenCalled();
+ expect(container.querySelector('[role="alert"]')?.textContent).toContain('browser session changed or expired');
+ expect(container.querySelector('[data-auth-verify-fence]')?.getAttribute('data-auth-verify-fence')).toBe('status_expired');
+ expect(container.textContent).not.toContain('new code has been requested');
+});
+it('blocks resend before the provider when continuity sees a foreign account',async()=>{
+ let resume!:(value:{ok:true;requestNonce:string})=>void;
+ state.continuity.mockImplementation(()=>new Promise(resolve=>{resume=resolve;}));
+ await resend();
+ expect(state.continuity).toHaveBeenCalledTimes(1);
+ expect(state.resend).not.toHaveBeenCalled();
+ state.snapshot={status:'ready',userId:'user-b',boundaryFingerprint:'bbbbbbbbbbbbbbbb',ready:true};
+ await render();
+ await act(async()=>{resume({ok:true,requestNonce:'00000000-0000-4000-8000-000000000001'});});
+ expect(state.resend).not.toHaveBeenCalled();
+ expect(container.querySelector('[data-auth-verify-fence]')?.getAttribute('data-auth-verify-fence')).toBe('foreign_session');
+});
+it('still reaches the resend provider when the same user only rotates fingerprint',async()=>{
+ state.snapshot={status:'ready',userId:'user-a',boundaryFingerprint:'aaaaaaaaaaaaaaaa',ready:true};
+ state.resend.mockResolvedValue({ok:true});
+ let resume!:(value:{ok:true;requestNonce:string})=>void;
+ state.continuity.mockImplementation(()=>new Promise(resolve=>{resume=resolve;}));
+ await resend();
+ state.snapshot={status:'ready',userId:'user-a',boundaryFingerprint:'bbbbbbbbbbbbbbbb',ready:true};
+ await render();
+ await act(async()=>{resume({ok:true,requestNonce:'00000000-0000-4000-8000-000000000001'});});
+ expect(state.resend).toHaveBeenCalledTimes(1);
+ expect(container.querySelector('[data-auth-verify-fence]')).toBeNull();
+ expect(container.querySelector('[role="alert"]')).toBeNull();
 });
 it('does not place an interrupted old request error into a new email journey',async()=>{
  let finish!:(value:{ok:true;requestNonce:string})=>void;state.continuity.mockImplementation(()=>new Promise(resolve=>{finish=resolve;}));await submit(false);state.query='email=other%40example.test';await render();await act(async()=>{finish({ok:true,requestNonce:'00000000-0000-4000-8000-000000000001'});});
