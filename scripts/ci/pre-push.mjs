@@ -9,11 +9,13 @@ import { verifyWorkspace, git, overlaps, ORIGIN } from '../consolidation/guard.m
 import { assertNoRuntimeEnvFiles, isolatedEnvironment } from './safety.mjs';
 
 const sha = value => /^[a-f0-9]{40}$/.test(value ?? '');
-export function parsePush(input, head) {
+export function parsePush(input, head, source) {
   const lines = input.trim().split('\n').filter(Boolean);
   if (lines.length !== 1) throw Error('PRE_PUSH_SINGLE_MAIN_UPDATE_REQUIRED');
   const [localRef, localSha, remoteRef, remoteSha, extra] = lines[0].trim().split(/\s+/);
-  if (extra || localRef !== 'refs/heads/main' || remoteRef !== 'refs/heads/main'
+  const verifiedMain = source?.symbolicHead === 'refs/heads/main' && source?.mainHead === head;
+  if ((source !== undefined && !verifiedMain) || (localRef === 'HEAD' && !verifiedMain)
+    || extra || !['refs/heads/main', 'HEAD'].includes(localRef) || remoteRef !== 'refs/heads/main'
     || !sha(localSha) || localSha === '0'.repeat(40) || localSha !== head
     || !sha(remoteSha) || remoteSha === '0'.repeat(40)) throw Error('PRE_PUSH_MAIN_SOURCE_INVALID');
   return { head: localSha, base: remoteSha };
@@ -95,7 +97,10 @@ function main() {
     base=remote.stdout.trim().split(/\s+/)[0];if(!sha(base))throw Error('PRE_PUSH_REMOTE_MAIN_UNVERIFIED');
   }else{
     if(mode!=='origin'||process.argv[3]!==ORIGIN)throw Error('PRE_PUSH_ORIGIN_MISMATCH');
-    base=parsePush(readFileSync(0,'utf8'),head).base;
+    base=parsePush(readFileSync(0,'utf8'),head,{
+      symbolicHead:git('symbolic-ref','--quiet','HEAD'),
+      mainHead:git('rev-parse','refs/heads/main'),
+    }).base;
   }
   git('merge-base','--is-ancestor',base,head);git('merge-base','--is-ancestor',ownership.publicationBase,base);
   const manifest=indexManifest(root,{writeObjects:true}),tree=manifest.tree;

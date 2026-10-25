@@ -165,6 +165,9 @@ export function validateWorkspace(c, { delivery = false } = {}) {
     requireThat(c.registry.deliveryOwner === c.writer && c.registry.deliveryTask === task,
       'DELIVERY_OWNERSHIP_REQUIRED');
     requireThat(c.registry.reservations.every(x => x.owner === c.writer), 'ACTIVE_WRITERS_MUST_PAUSE');
+    if (c.registry.deliveryReservationFingerprint !== undefined) requireThat(
+      c.registry.deliveryReservationFingerprint === reservationFingerprint(c.registry),
+      'DELIVERY_RESUME_IDENTITY_CHANGED');
   }
 
   return {
@@ -208,11 +211,11 @@ const emptyRegistry = () => ({
   deliveryTask: null
 });
 
-function readRegistry() {
+function readRegistry(bytes) {
   const file = registryPath();
-  const data = existsSync(file)
-    ? JSON.parse(readFileSync(file, 'utf8'))
-    : emptyRegistry();
+  const data = bytes !== undefined
+    ? (bytes === null ? emptyRegistry() : JSON.parse(bytes))
+    : existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : emptyRegistry();
 
   requireThat(
     data.schemaVersion === 2 &&
@@ -222,6 +225,25 @@ function readRegistry() {
     'RESERVATION_REGISTRY_INVALID'
   );
   return data;
+}
+
+
+// Read bytes once so the evidence hash and reported state describe the same observation.
+export function reservationStatus(env = process.env) {
+  const file = registryPath();
+  const bytes = existsSync(file) ? readFileSync(file) : null;
+  const registry = readRegistry(bytes);
+  const owner = env.VELORA_WRITER_ID ?? env.CODEX_THREAD_ID;
+  const task = env.VELORA_TASK_ID;
+  const deliveryState = !registry.deliveryOwner ? 'unclaimed'
+    : registry.deliveryOwner !== owner ? 'foreign'
+      : registry.deliveryTask === task ? 'owned' : 'same-owner-other-task';
+  return { ...registry, observedAt: new Date().toISOString(), registryPath: file,
+    registryExists: bytes !== null,
+    registrySha256: bytes === null ? null : createHash('sha256').update(bytes).digest('hex'),
+    observerOwner: owner ?? null, observerTask: task ?? null, deliveryState,
+    ownReservationCount: registry.reservations.filter(x => x.owner === owner).length,
+    foreignReservationCount: registry.reservations.filter(x => x.owner !== owner).length };
 }
 
 function writeRegistry(value) {
@@ -293,7 +315,7 @@ export function reservePaths({ owner, task, paths }) {
 
   return mutateRegistry(r => {
     requireThat(
-      !r.deliveryOwner || r.deliveryOwner === owner,
+      !r.deliveryOwner,
       'DELIVERY_IN_PROGRESS'
     );
 
@@ -349,7 +371,8 @@ export function claimDelivery(owner, task) {
   requireThat(typeof task === 'string' && task.trim().length > 0, 'TASK_ID_REQUIRED');
 
   return mutateRegistry(r => {
-    requireThat(!r.deliveryOwner, 'DELIVERY_ALREADY_CLAIMED');
+    const alreadyOwned = r.deliveryOwner === owner && r.deliveryTask === task;
+    requireThat(!r.deliveryOwner || alreadyOwned, 'DELIVERY_ALREADY_CLAIMED');
 
     // Shared working directory and Git index:
     // other agents must pause writes and staging for delivery.
@@ -361,11 +384,22 @@ export function claimDelivery(owner, task) {
     const selected = r.reservations.filter(x => x.owner === owner && x.task === task);
     requireThat(selected.length === 1, 'TASK_RESERVATION_REQUIRED');
     requireThat(sha(selected[0].publicationBase), 'PUBLICATION_BASE_REQUIRED');
+    for (const reservation of r.reservations) {
+      requireThat(Array.isArray(reservation.paths) && reservation.paths.length > 0
+        && reservation.paths.every(path => normalizeScope(path) === path)
+        && sha(reservation.publicationBase), 'RESERVATION_REGISTRY_INVALID');
+    }
+    if (alreadyOwned) requireThat(
+      typeof r.deliveryReservationFingerprint === 'string'
+        && r.deliveryReservationFingerprint === reservationFingerprint(r),
+      'DELIVERY_RESUME_IDENTITY_CHANGED');
     r.deliveryOwner = owner;
     r.deliveryTask = task;
+    r.deliveryReservationFingerprint = reservationFingerprint(r);
     return {
       deliveryOwner: owner,
       deliveryTask: task,
+      alreadyOwned,
       note: 'Review completed files before staging. Commit and push require explicit approval.'
     };
   });
@@ -379,6 +413,7 @@ export function endDelivery(owner) {
     );
     r.deliveryOwner = null;
     r.deliveryTask = null;
+    delete r.deliveryReservationFingerprint;
     return { deliveryOwner: null, deliveryTask: null };
   });
 }
@@ -449,7 +484,7 @@ if (
       result = verifyWorkspace();
     } else if (command === 'status') {
       basicLocalCheck();
-      result = readRegistry();
+      result = reservationStatus();
     } else {
       const owner = basicLocalCheck();
 

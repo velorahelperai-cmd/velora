@@ -62,3 +62,23 @@ test('candidate paths must be covered by the delivery owner leases', () => {
   assert.throws(() => assertCandidatePathsOwned(['src/other.ts'], ownership), /PRE_PUSH_UNLEASED_PATH/);
   assert.throws(() => assertCandidatePathsOwned(['src/a.ts'], { paths: [] }), /PRE_PUSH_UNLEASED_PATH/);
 });
+
+// Verified HEAD alias regression; keep the existing delivery gates unchanged.
+{
+const head='a'.repeat(40), base='b'.repeat(40), zero='0'.repeat(40);
+const context={symbolicHead:'refs/heads/main',mainHead:head};
+const line=(localRef='HEAD',localSha=head,remoteRef='refs/heads/main',remoteSha=base)=>[localRef,localSha,remoteRef,remoteSha].join(' ');
+test('canonical main retains compatible two-argument API',()=>assert.deepEqual(parsePush(line('refs/heads/main'),head),{head,base}));
+for(const ref of ['HEAD','refs/heads/main']) {
+ test(ref+' accepts verified current main',()=>assert.deepEqual(parsePush(line(ref)+'\r\n',head,context),{head,base}));
+ for(const [label,ctx] of [['detached',{...context,symbolicHead:null}],['other branch',{...context,symbolicHead:'refs/heads/other'}],['main SHA differs',{...context,mainHead:base}],['missing main SHA',{symbolicHead:context.symbolicHead}]])
+  test(ref+' rejects '+label,()=>assert.throws(()=>parsePush(line(ref),head,ctx)));
+ for(const [label,input] of [['wrong local SHA',line(ref,base)],['local deletion SHA',line(ref,zero)],['bad local SHA',line(ref,'bad')],['other target',line(ref,head,'refs/heads/other')],['remote deletion SHA',line(ref,head,'refs/heads/main',zero)],['bad remote SHA',line(ref,head,'refs/heads/main','bad')],['extra field',line(ref)+' extra'],['additional update',line(ref)+'\n'+line(ref)]])
+  test(ref+' rejects '+label,()=>assert.throws(()=>parsePush(input,head,context)));
+}
+test('HEAD requires verified context',()=>assert.throws(()=>parsePush(line(),head)));
+for(const ref of ['refs/heads/other','refs/tags/main','(delete)','head',''])
+ test('rejects source '+JSON.stringify(ref),()=>assert.throws(()=>parsePush(line(ref),head,context)));
+test('rejects empty updates',()=>assert.throws(()=>parsePush('',head,context)));
+
+}

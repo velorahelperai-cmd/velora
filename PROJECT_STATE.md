@@ -1,3 +1,11 @@
+# Current Session Index - GUARD-COORDINATION-20261025
+
+- Writer 01a17460-5583-7377-b043-300f890820fb; canonical main baseline 3f6578faa880f0571cb0c47dc81b588a717f71ec. Owner authorized local repair and scoped commit/push after required gates. Auth published and released before this reservation; deletion and other WIP preserved.
+- Leased paths: scripts/consolidation/guard.mjs, scripts/consolidation/guard-lifecycle.test.mjs, scripts/ci/pre-push.mjs, scripts/ci/pre-push.test.mjs, scripts/ci/run.mjs, scripts/ci/README.md, PROJECT_STATE.md. External Brain writes NOT attempted: supported registry rejects external paths; WORK-19/08-LESSONS follow-up pending supported ownership.
+- Graphify-first discovery build d2e48d98-406e-47a3-bb4d-f40a11ef3a16 indexed e07c32f at 2026-10-25T15:51:56Z; stale against baseline. Recorded limitation; rule10 lines82/100 permits scoped current-source verification, not broad scan or invented refresh. Exact guard/prepush source hashes matched prepared fixture before application.
+- Implemented protected same-owner delivery resume, fresh status evidence, reservation freeze during delivery and verified HEAD/main alias; reused mutex and approved snapshot/gates. Targeted repository tests71/71 PASS; independent review has no remaining findings after portable-path correction. Scoped lint and mandatory delivery gates tracked in final outside-Git receipts. Scratch parser34 and lifecycle6 passed; no full product acceptance claim.
+- Resume/closure: record final tests/commit/cloud evidence outside Git, stop source writes, end own delivery claim, release own task via writer:release, read registry and prove absence. No force/reset/stash/deletion/DB/provider mutations. Abandoned identity or interrupted mutex recovery remains fail-closed with documented RECOVERY_BLOCKED rather than unsupported clearing.
+
 # Current Session Index - EXCLUDED-DELIVERY-20261025
 
 - Writer01a171a9-6405-7813-889e-524f0d81f251; canonical main base95a8adc3c4a93178506a06b9bf3e591abb232db9; Graphify exact HEAD build2c574b81-f5da-4d10-a9aa-cb63fdef027f verified. Owner authorizes ALL excluded work review regardless author, ready approved main publication and exact-SHA CI/Vercel; explicitly reconfirmed10% whole/setup enlargement. No deletion migration/Production activation, cache/temp preview publication, data/secret/permission changes or work deletion.
