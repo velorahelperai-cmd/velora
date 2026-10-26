@@ -31,7 +31,6 @@ import {
   completeOwnedProvisioningAction,
   createAccountBoundOrderAction,
   readOwnedPurchaseRecoveryAction,
-  settleAccountOrderPaymobAction,
   settleAccountOrderSyntheticAction,
 } from "./account-order-actions";
 
@@ -279,14 +278,10 @@ describe("es02 account order actions", () => {
     expect((await readOwnedPurchaseRecoveryAction({ expectedAccountId: accountId })).ok).toBe(false);
   });
 
-  it("disables customer synthetic settle and keeps Paymob deferred", async () => {
+  it("disables customer synthetic settlement", async () => {
     await expect(settleAccountOrderSyntheticAction()).resolves.toEqual({
       ok: false,
       code: "SYNTHETIC_DISABLED",
-    });
-    await expect(settleAccountOrderPaymobAction()).resolves.toEqual({
-      ok: false,
-      code: "PAYMOB_EXTERNAL_DEFERRED",
     });
   });
 });

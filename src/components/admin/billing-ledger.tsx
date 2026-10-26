@@ -19,13 +19,13 @@ const LABELS = {
     badge: "Module 06 · Billing & Financial Operations",
     title: "Billing & Financial Ledger",
     subtitle:
-      "Platform subscription orders, qualified payments ledger, and verified Paymob gateway isolation.",
+      "Platform subscription orders and qualified payment records.",
     ownerBadge: "Platform Owner",
     kpiTotalOrders: "Total Stored Orders",
     kpiRevenue: "Confirmed Collections (Gross)",
     kpiAttention: "Pending / Attention",
     kpiGateway: "Payment Gateway",
-    kpiGatewayStatus: "Paymob (Test Mode Active)",
+    kpiGatewayStatus: "Thawani UAT",
     kpiGatewayNote: "Live payments strictly guarded",
     filterCompany: "Company ID",
     filterEnvironment: "Environment",
@@ -57,13 +57,13 @@ const LABELS = {
     badge: "Module 06 · Billing & Financial Operations",
     title: "سجل الفواتير والاشتراكات المالية",
     subtitle:
-      "متابعة طلبات اشتراكات المنصة، وسجل المدفوعات المؤهلة، وفحص ربط بوابة Paymob المعتمدة.",
+      "متابعة طلبات اشتراكات المنصة وسجل المدفوعات المؤهلة.",
     ownerBadge: "مالك المنصة",
     kpiTotalOrders: "إجمالي الطلبات المسجلة",
     kpiRevenue: "إجمالي التحصيل المؤكد (OMR)",
     kpiAttention: "طلبات معلقة / للمراجعة",
     kpiGateway: "بوابة الدفع الإلكتروني",
-    kpiGatewayStatus: "Paymob (وضع الاختبار المعتمد)",
+    kpiGatewayStatus: "ثواني UAT",
     kpiGatewayNote: "المدفوعات الحية مغلقة احترازيًا",
     filterCompany: "معرّف الشركة (UUID)",
     filterEnvironment: "بيئة التنفيذ",
@@ -235,17 +235,17 @@ export function AdminBillingLedger({ result, query }: AdminBillingLedgerProps) {
           </div>
         </div>
 
-        {/* KPI 4: Payment Gateway (Paymob) Status */}
+        {/* KPI 4: Payment Gateway */}
         <div className="rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] p-5 shadow-sm">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-[var(--service-muted)]">{c.kpiGateway}</span>
             <IconCreditCard className="h-4 w-4 text-[var(--service-accent)]" />
           </div>
           <div className="mt-2">
-            <span className="text-base font-black text-[var(--service-ink)]">Paymob (Oman)</span>
+            <span className="text-base font-black text-[var(--service-ink)]">Thawani UAT</span>
             <div className="mt-1">
               <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-800">
-                {ar ? "وضع الاختبار المعتمد" : "Test Mode Active"}
+                {ar ? "اختبار لحساب محدد" : "Restricted Test account"}
               </span>
             </div>
           </div>
@@ -260,10 +260,10 @@ export function AdminBillingLedger({ result, query }: AdminBillingLedgerProps) {
         <form key={currentHref} method="get" action="/admin/billing" className="space-y-4">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div>
-              <label className="block text-xs font-bold text-[var(--service-ink)]">
+              <label htmlFor="billing-filter-1" className="block text-xs font-bold text-[var(--service-ink)]">
                 {c.filterCompany}
               </label>
-              <input
+              <input id="billing-filter-1"
                 type="text"
                 name="companyId"
                 defaultValue={query.companyId ?? ""}
@@ -274,10 +274,10 @@ export function AdminBillingLedger({ result, query }: AdminBillingLedgerProps) {
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-[var(--service-ink)]">
+              <label htmlFor="billing-filter-2" className="block text-xs font-bold text-[var(--service-ink)]">
                 {c.filterEnvironment}
               </label>
-              <select
+              <select id="billing-filter-2"
                 name="environment"
                 defaultValue={query.environment ?? "all"}
                 className="mt-1.5 w-full rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)] px-3 py-2 text-xs text-[var(--service-ink)] outline-none focus:border-[var(--service-accent)]"
@@ -291,8 +291,8 @@ export function AdminBillingLedger({ result, query }: AdminBillingLedgerProps) {
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-[var(--service-ink)]">{c.filterFrom}</label>
-              <input
+              <label htmlFor="billing-filter-3" className="block text-xs font-bold text-[var(--service-ink)]">{c.filterFrom}</label>
+              <input id="billing-filter-3"
                 type="date"
                 name="from"
                 defaultValue={query.from ?? ""}
@@ -301,10 +301,10 @@ export function AdminBillingLedger({ result, query }: AdminBillingLedgerProps) {
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-[var(--service-ink)]">
+              <label htmlFor="billing-filter-4" className="block text-xs font-bold text-[var(--service-ink)]">
                 {c.filterUntil}
               </label>
-              <input
+              <input id="billing-filter-4"
                 type="date"
                 name="until"
                 defaultValue={query.until ?? ""}

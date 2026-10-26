@@ -7,16 +7,10 @@ import {
   persistOrderWithAttempt,
   resolveAttemptForOrder,
 } from "@/lib/billing/wiring/order-create-persist";
-import { processStoredPaymobEvent } from "@/lib/billing/wiring/event-process";
-import { runBillingEventProcessing } from "@/lib/billing/wiring/process-runner";
-import { mapBillingReturnDbParts } from "@/lib/billing/wiring/return-load";
-import { mapBillingReturnDisplay } from "@/lib/billing/wiring/return-status";
-import { provenReturnQualification } from "./financial-truth.fixtures";
 import { decideCreateBillingOrder } from "@/lib/billing/wiring/order-create";
 
 const COMPANY = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const ORDER = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
-const PAID_THROUGH = "2027-06-01T00:00:00.000Z";
 
 /** In-memory attempt store with bootstrap uniqueness (mirrors partial unique index). */
 function createAtomicAttemptStore() {
@@ -148,148 +142,6 @@ describe("FIX-02 concurrent orphan repair", () => {
     const next = store.insertAfterFailed(ORDER);
     expect(next).toBe("attempt-1");
     expect(store.byOrder.get(ORDER)?.id).toBe(next);
-  });
-});
-
-describe("FIX-02 settle semantic outcomes", () => {
-  const baseEvent = {
-    id: "e1",
-    companyId: COMPANY,
-    orderId: ORDER,
-    paymentAttemptId: "attempt-1",
-    providerTransactionId: "tx-1",
-    eventStatus: "success" as const,
-    providerAccountRef: "71610",
-    specialReference: "sr",
-    amountBaisa: 9000,
-    observationKey: "v1_a",
-  };
-
-  it("maps granted / idempotent_replay / duplicate_collection_review distinctly", async () => {
-    expect(
-      await processStoredPaymobEvent({
-        event: baseEvent,
-        deps: {
-          settleEnabled: true,
-          settleHmacVerified: async () => ({ ok: true, outcome: "granted" }),
-        },
-      }),
-    ).toEqual({ ok: true, outcome: "granted" });
-
-    expect(
-      await processStoredPaymobEvent({
-        event: baseEvent,
-        deps: {
-          settleEnabled: true,
-          settleHmacVerified: async () => ({ ok: true, outcome: "idempotent_replay" }),
-        },
-      }),
-    ).toEqual({ ok: true, outcome: "idempotent_replay" });
-
-    expect(
-      await processStoredPaymobEvent({
-        event: baseEvent,
-        deps: {
-          settleEnabled: true,
-          settleHmacVerified: async () => ({
-            ok: true,
-            outcome: "duplicate_collection_review",
-          }),
-        },
-      }),
-    ).toEqual({ ok: true, outcome: "duplicate_collection_review" });
-  });
-
-  it("two different collections: two financial records, one grant, review outcome", async () => {
-    const ledger: Array<{ txn: string; outcome: string }> = [];
-    let grants = 0;
-
-    async function settle(evidence: Record<string, unknown>) {
-      const txn = String(evidence.provider_transaction_id);
-      if (grants === 0) {
-        grants = 1;
-        ledger.push({ txn, outcome: "granted" });
-        return { ok: true as const, outcome: "granted" };
-      }
-      ledger.push({ txn, outcome: "duplicate_collection_review" });
-      return { ok: true as const, outcome: "duplicate_collection_review" };
-    }
-
-    const e1 = { ...baseEvent, providerTransactionId: "tx-A", observationKey: "v1_a" };
-    const e2 = { ...baseEvent, providerTransactionId: "tx-B", observationKey: "v1_b" };
-
-    const r1 = await processStoredPaymobEvent({
-      event: e1,
-      deps: { settleEnabled: true, settleHmacVerified: settle },
-    });
-    const r2 = await processStoredPaymobEvent({
-      event: e2,
-      deps: { settleEnabled: true, settleHmacVerified: settle },
-    });
-
-    expect(r1).toEqual({ ok: true, outcome: "granted" });
-    expect(r2).toEqual({ ok: true, outcome: "duplicate_collection_review" });
-    expect(ledger).toHaveLength(2);
-    expect(grants).toBe(1);
-
-    const runner = await runBillingEventProcessing({
-      deps: {
-        settleEnabled: true,
-        loadAwaitingSuccessEvents: async () => [e2],
-        settleHmacVerified: settle,
-      },
-    });
-    expect(runner).toMatchObject({
-      ok: true,
-      outcomes: { duplicate_collection_review: 1 },
-    });
-    expect(grants).toBe(1);
-  });
-
-  it("stored → process fail → retry grant → return success", async () => {
-    let grants = 0;
-    let calls = 0;
-    const event = { ...baseEvent };
-
-    const load = async () => (grants ? [] : [event]);
-    const settle = async () => {
-      calls += 1;
-      if (calls === 1) return { ok: false as const, code: "fixture_failure" };
-      grants = 1;
-      return { ok: true as const, outcome: "granted" };
-    };
-
-    expect(
-      await runBillingEventProcessing({
-        deps: { settleEnabled: true, loadAwaitingSuccessEvents: load, settleHmacVerified: settle },
-      }),
-    ).toMatchObject({ ok: false, code: "fixture_failure" });
-
-    const awaiting = mapBillingReturnDbParts(COMPANY, {
-      order: { id: ORDER, company_id: COMPANY, status: "submitted" },
-      attempt: { id: "attempt-1", status: "provider_submitted" },
-      latestEvent: { event_status: "success", observation_key: "v1_a" },
-      grant: null,
-    });
-    expect(mapBillingReturnDisplay({ requestCompanyId: COMPANY, row: awaiting }).kind).toBe(
-      "awaiting_processing",
-    );
-
-    expect(
-      await runBillingEventProcessing({
-        deps: { settleEnabled: true, loadAwaitingSuccessEvents: load, settleHmacVerified: settle },
-      }),
-    ).toMatchObject({ ok: true, outcomes: { granted: 1 } });
-
-    const done = mapBillingReturnDbParts(COMPANY, {
-      order: { id: ORDER, company_id: COMPANY, status: "closed" },
-      attempt: { id: "attempt-1", status: "paid" },
-      latestEvent: { event_status: "success", observation_key: "v1_a" },
-      grant: { id: "g1", applied_paid_through: PAID_THROUGH },
-      financial: provenReturnQualification(COMPANY, ORDER, PAID_THROUGH),
-    });
-    expect(mapBillingReturnDisplay({ requestCompanyId: COMPANY, row: done }).kind).toBe("success");
-    expect(grants).toBe(1);
   });
 });
 

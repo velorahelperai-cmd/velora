@@ -148,6 +148,7 @@ function WorkspaceChrome({title,children,actions,immersive}:{title:string;childr
     { href: "/app/instagram", label: ar?"ربط إنستجرام":"Instagram connection", icon: "M4 4h16v16H4z M8 12a4 4 0 1 0 8 0a4 4 0 1 0-8 0" },
     { href: "/app/knowledge", label: copy.app.nav.knowledge, icon: "M4 3h12l4 4v14H4V3z M15 3v5h5 M8 12h8 M8 16h6" },
     { href: "/app/test", label: copy.app.nav.test, icon: "M9 3h6 M10 3v6L4 19q-1 2 2 2h12q3 0 2-2L14 9V3 M8 14h8" },
+    { href: "/app/subscription", label: ar ? "اشتراكي" : "My subscription", icon: "M3 5h18v14H3z M3 9h18 M7 14h4" },
     { href: "/app/settings", label: copy.app.nav.settings, icon: "M4 6h16 M4 12h16 M4 18h16 M8 3v6 M16 9v6 M10 15v6" },
   ].filter(item=>profile?.role==="owner"||item.href==="/app/conversations"||item.href==="/app/settings"||item.href==="/app/knowledge"&&knowledgeAllowed);
   const role = profile?.role ?? null;

@@ -49,6 +49,28 @@ export function LandingPage({
   const [customQuestion, setCustomQuestion] = useState<string | null>(null);
   const [catalogueOpen, setCatalogueOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [activeSection, setActiveSection] = useState<string | null>(null);
+  useEffect(() => {
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      const root = rootRef.current;
+      if (!root) return;
+      const boundary = (root.querySelector("header")?.getBoundingClientRect().bottom ?? 68) + 100;
+      const sections = ["how", "demo", "packages", "faq", "contact"];
+      let current: string | null = null;
+      for (const id of sections) {
+        const element = root.querySelector<HTMLElement>(`#${id}`);
+        if (element && element.getBoundingClientRect().top <= boundary) current = id;
+      }
+      setActiveSection(current);
+    };
+    const schedule = () => { if (!frame) frame = requestAnimationFrame(update); };
+    schedule();
+    window.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("resize", schedule);
+    return () => { cancelAnimationFrame(frame); window.removeEventListener("scroll", schedule); window.removeEventListener("resize", schedule); };
+  }, []);
   const [langMenuOpen, setLangMenuOpen] = useState(false);
   const langMenuRef = useRef<HTMLDivElement>(null);
   const copy = landingCopy(locale);
@@ -197,10 +219,10 @@ export function LandingPage({
             <span className="truncate">Velora</span>
           </a>
           <nav className="hidden items-center gap-4 text-sm lg:flex" aria-label="Primary">
-            <a className="inline-flex min-h-11 items-center" href="#how">{copy.nav.how}</a>
-            <a className="inline-flex min-h-11 items-center" href="#demo">{copy.nav.activities}</a>
-            <a className="inline-flex min-h-11 items-center" href="#packages">{copy.nav.packages}</a>
-            <a className="inline-flex min-h-11 items-center" href="#faq">{copy.nav.faq}</a>
+            <a aria-current={activeSection === "how" ? "location" : undefined} className="inline-flex min-h-11 items-center aria-[current=location]:underline underline-offset-8 focus-visible:outline-2 focus-visible:outline-offset-4" href="#how">{copy.nav.how}</a>
+            <a aria-current={activeSection === "demo" ? "location" : undefined} className="inline-flex min-h-11 items-center aria-[current=location]:underline underline-offset-8 focus-visible:outline-2 focus-visible:outline-offset-4" href="#demo">{copy.nav.activities}</a>
+            <a aria-current={activeSection === "packages" ? "location" : undefined} className="inline-flex min-h-11 items-center aria-[current=location]:underline underline-offset-8 focus-visible:outline-2 focus-visible:outline-offset-4" href="#packages">{copy.nav.packages}</a>
+            <a aria-current={activeSection === "faq" ? "location" : undefined} className="inline-flex min-h-11 items-center aria-[current=location]:underline underline-offset-8 focus-visible:outline-2 focus-visible:outline-offset-4" href="#faq">{copy.nav.faq}</a>
           </nav>
           <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
             <button
@@ -281,8 +303,9 @@ export function LandingPage({
               ).map(([key, href, label]) => (
                 <a
                   key={key}
-                  className="inline-flex min-h-11 items-center rounded-xl px-3 hover:bg-white/5"
+                  className="inline-flex min-h-11 items-center rounded-xl px-3 hover:bg-white/5 aria-[current=location]:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2"
                   href={href}
+                  aria-current={activeSection === href.slice(1) ? "location" : undefined}
                   onClick={() => setMenuOpen(false)}
                 >
                   {label}

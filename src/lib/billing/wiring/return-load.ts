@@ -9,7 +9,7 @@
 import type { BillingReturnDbRow } from "@/lib/billing/wiring/return-status";
 import type { FinancialQualification, FinancialRecord } from "@/lib/billing/financial-truth";
 import { qualifyFinancialOrder } from "@/lib/billing/financial-truth";
-import { logPaymobSandboxEvent } from "@/lib/billing/paymob/intention";
+
 
 export type BillingReturnDbParts = {
   order: { id: string; company_id: string; status: string; plan_version_id?: string; amount_baisa?: number; currency?: string; provider_environment?: string } | null;
@@ -76,10 +76,6 @@ export async function loadBillingReturnRow(input: {
     .maybeSingle();
 
   if (error || !order || order.company_id !== input.requestCompanyId) {
-    logPaymobSandboxEvent({
-      stage: "return",
-      code: "order_not_found",
-    });
     return null;
   }
   const displayOrder: NonNullable<BillingReturnDbParts["order"]> = {
@@ -92,11 +88,6 @@ export async function loadBillingReturnRow(input: {
   let evidence;
   try { evidence = await readFinancialEvidence(financialDb(admin), [order], input.requestCompanyId); }
   catch {
-    logPaymobSandboxEvent({
-      stage: "return",
-      code: "evidence_unknown",
-      orderId: input.orderId,
-    });
     // Missing evidence is unknown, never success, failed or a zero collection.
     return mapBillingReturnDbParts(input.requestCompanyId, { order: displayOrder, attempt: null, latestEvent: null, grant: null,
       financial: { companyId: input.requestCompanyId, orderId: input.orderId, state: "unknown", collectionProven: false, paidThrough: null, collectedAt: null, environment: null } });
@@ -119,12 +110,6 @@ export async function loadBillingReturnRow(input: {
         }
       : null,
     financial: qualifyFinancialOrder(input.requestCompanyId, order, evidence),
-  });
-  logPaymobSandboxEvent({
-    stage: "return",
-    code: mapped?.orderStatus ?? "loaded",
-    orderId: input.orderId,
-    paymentAttemptId: attempt ? String(attempt.id) : undefined,
   });
   return mapped;
 }

@@ -2,7 +2,7 @@ export const subscriptionCopy = {
   ar: {
     guideWelcome: "أنا فيلورا، أساعدك تختار باقتك.",
     guideIntro: "لكل فرع باقته. اختر الموظفة المناسبة، ثم Standard أو Premium.",
-    guideChoose: "تعرّف على نورا ولينا ودانة واختر الباقة المناسبة لفرعك.",
+    guideChoose: "تعرّف على نورا ولينا ودانا واختر الباقة المناسبة لفرعك.",
     guideSelected: "اختيارك الحالي: {name}. راجع المستوى والمزايا قبل المتابعة.",
     featuresHeading: "مزايا الباقة", personaLabel: "الشخصية",
     comparePublishedNote: "قارن الباقات لنفس مدة الاشتراك. السنوي بخصم ٢٠٪ والدفع للسنة مقدمًا.",
@@ -15,7 +15,7 @@ export const subscriptionCopy = {
     packagesLead: "ثلاث شخصيات ذكية، بأساليب مختلفة، وباقات تناسب احتياجات نشاطك.",
     filmHeadlineLead: "مساعدتك الذكية.",
     filmHeadlineAccent: "بأسلوب علامتك التجارية.",
-    filmBody: "نورا ولينا ودانة، شخصيات بأساليب مختلفة لتناسب طريقة تواصلك مع عملائك.",
+    filmBody: "نورا ولينا ودانا، شخصيات بأساليب مختلفة لتناسب طريقة تواصلك مع عملائك.",
     filmPlay: "تشغيل الفيديو",
     filmPause: "إيقاف الفيديو مؤقتًا",
     filmUnavailable: "تعذّر تشغيل الفيديو",
@@ -67,7 +67,7 @@ export const subscriptionCopy = {
     comparisonRows: ["السعر", "المزايا المشمولة", "حدود الاستخدام"],
     unavailable: "لم يُعتمد بعد", next: "الخطوة التالية", selection: "الباقة المختارة",
     subscribe: "متابعة الاشتراك", renew: "تجديد الاشتراك", upgrade: "ترقية الباقة", manage: "إدارة الاشتراك",
-    blocked: "الدفع غير متاح حاليًا: Paymob Test وتحويل مبلغ OMR غير مهيأين.",
+    blocked: "الدفع لهذا الاشتراك غير متاح حاليًا.",
     upgradeBlocked: "الترقية غير متاحة حتى اعتماد سياسة التسعير والتحصيل.",
     suspendedBlocked: "راجع الدعم بخصوص التعليق الأمني. الدفع لا يرفع التعليق.",
     pendingBlocked: "طلب الدفع قيد التحقق. لا تنشئ طلب دفع جديدًا قبل حسم حالته.",
@@ -174,7 +174,7 @@ export const subscriptionCopy = {
     comparisonRows: ["Price", "Included features", "Usage limits"],
     unavailable: "Not approved yet", next: "Next step", selection: "Selected plan",
     subscribe: "Continue subscription", renew: "Renew subscription", upgrade: "Upgrade plan", manage: "Manage subscription",
-    blocked: "Payment is unavailable: Paymob Test and OMR amount conversion are not configured.",
+    blocked: "Checkout for this subscription is currently unavailable.",
     upgradeBlocked: "Upgrades are unavailable until pricing and collection policy are approved.",
     suspendedBlocked: "Contact support about the security suspension. Payment does not lift the hold.",
     pendingBlocked: "Payment is being verified. Do not create another payment request until its status is resolved.",
@@ -217,5 +217,5 @@ export const subscriptionCopy = {
 export const subscriptionTiers = [
   { id: "level_1", ar: "نورا", en: "Noura", initial: "N", portrait: 0 },
   { id: "level_2", ar: "لينا", en: "Lina", initial: "L", portrait: 1 },
-  { id: "level_3", ar: "دانة", en: "Dana", initial: "D", portrait: 2 },
+  { id: "level_3", ar: "دانا", en: "Dana", initial: "D", portrait: 2 },
 ] as const;

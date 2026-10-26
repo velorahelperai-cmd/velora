@@ -129,7 +129,7 @@ export function AdminFinancialAnalytics({ data }: AdminFinancialAnalyticsProps) 
             </span>
           </div>
           <div className="mt-3 border-t border-[var(--service-line)] pt-3 text-xs text-[var(--service-muted)]">
-            {ar ? "بوابة Paymob (وضع الاختبار التجريبي معزول)" : "Paymob Test Isolation Active"}
+            {ar ? "السجل المالي حسب بيئة الدفع" : "Financial records by payment environment"}
           </div>
         </div>
       </div>

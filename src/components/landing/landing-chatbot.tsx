@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { createPortal } from "react-dom";
 import { useEffect, useId, useRef, useState } from "react";
 import styles from "./phone-messages.module.css";
 import { PhoneStatusBar } from "./conversation-stage";
@@ -29,6 +30,22 @@ export function LandingChatbot({ copy }: { copy: LandingCopy }) {
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const seqRef = useRef(0);
+  const launcherRef = useRef<HTMLButtonElement>(null);
+  const [dock, setDock] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    // Keep an open conversation where the user opened it. Closed help belongs
+    // in the packages flow, so its launcher cannot obscure a purchase control.
+    if (open) return;
+    const section = document.getElementById("packages");
+    const slot = document.getElementById("packages-chat-slot");
+    if (!section || !slot) return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (document.activeElement === launcherRef.current) return;
+      setDock(entry.isIntersecting ? slot : null);
+    });
+    observer.observe(section);
+    return () => observer.disconnect();
+  }, [open]);
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" });
@@ -57,8 +74,8 @@ export function LandingChatbot({ copy }: { copy: LandingCopy }) {
     }, 520);
   }
 
-  return (
-    <div className="pointer-events-none fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-50 flex flex-col items-start gap-3 sm:inset-x-auto sm:bottom-4 sm:start-4">
+  const content = (
+    <div data-chat-placement={dock ? "inline" : "floating"} onKeyDown={event => { if (open && event.key === "Escape") { event.stopPropagation(); setOpen(false); launcherRef.current?.focus(); } }} className={dock ? "relative flex flex-col items-center gap-3 px-4 py-6" : "pointer-events-none fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-50 flex flex-col items-start gap-3 sm:inset-x-auto sm:bottom-4 sm:start-4"}>
       {open ? (
         <section
           id={panelId}
@@ -149,14 +166,16 @@ export function LandingChatbot({ copy }: { copy: LandingCopy }) {
       ) : null}
 
       <button
+        ref={launcherRef}
         type="button"
+        aria-label={copy.chat.openLabel}
         aria-expanded={open}
         aria-controls={panelId}
         onClick={() => setOpen((v) => !v)}
-        className="landing-chat-float pointer-events-auto group relative inline-flex items-end gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38dc89]"
+        className={`${dock ? "" : "landing-chat-float "}pointer-events-auto group relative inline-flex items-end gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38dc89]`}
       >
         {!open ? (
-          <span className="mb-1 hidden max-w-[9.5rem] rounded-2xl rounded-es-md border border-white/10 bg-[#0d1a14]/95 px-3 py-2 text-xs leading-5 text-[#f7fbf8] shadow-lg sm:mb-2 sm:inline-block">
+          <span className={`${dock ? "inline-block" : "hidden"} mb-1 max-w-[9.5rem] rounded-2xl rounded-es-md border border-white/10 bg-[#0d1a14]/95 px-3 py-2 text-xs leading-5 text-[#f7fbf8] shadow-lg sm:mb-2 sm:inline-block`}>
             {copy.chat.bubble}
           </span>
         ) : null}
@@ -173,4 +192,5 @@ export function LandingChatbot({ copy }: { copy: LandingCopy }) {
       </button>
     </div>
   );
+  return dock ? createPortal(content, dock) : content;
 }

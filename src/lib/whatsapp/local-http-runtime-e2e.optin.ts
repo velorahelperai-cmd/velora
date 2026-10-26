@@ -23,12 +23,6 @@ import { onboardMetaSignup, type MetaSignupConfig, type MetaSignupInput } from "
 import { finishEmbeddedSignup, type SignupCompletionInput } from "./embedded-signup-flow";
 import { createSignupPorts } from "./embedded-signup-store";
 import { POST as receiveWebhook } from "@/app/api/whatsapp/webhook/route";
-import { buildProcessedObj, signProcessedObj } from "@/lib/billing/paymob/fixtures";
-import { verifyAndMapProcessedCallback } from "@/lib/billing/paymob/callback";
-import { receivePaymobWebhook } from "@/lib/billing/wiring/webhook-receive";
-import { findOrderByProviderOrderId, insertProviderEvent } from "@/lib/billing/wiring/store";
-import { observationKeyFromVerified } from "@/lib/billing/wiring/observation-key";
-import { buildPaymobHmacSettlementEvidence } from "@/lib/billing/wiring/settlement-bridge";
 
 const enabled = process.env.C1_HTTP_E2E_TESTS === "1";
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -246,9 +240,6 @@ describe.skipIf(!enabled)("isolated real HTTP company runtime journey", () => {
     const providerOrderId = String(BigInt(`0x${randomBytes(6).toString("hex")}`) + BigInt(1));
     const providerTransactionId = String(BigInt(`0x${randomBytes(6).toString("hex")}`) + BigInt(1));
     const account = "74002", merchant = "84001";
-    vi.stubEnv("PAYMOB_MERCHANT_OWNER_ID", merchant);
-    vi.stubEnv("PAYMOB_INTEGRATION_ID_LIVE", account);
-    vi.stubEnv("PAYMOB_INTEGRATION_ID_TEST", "74001");
     await db.sql(`BEGIN;
       INSERT INTO public.billing_orders(id,company_id,plan_version_id,amount_baisa,currency,period_days,period_unit,period_count,provider_account_ref,provider_environment,provider_amount,provider_amount_unit,special_reference,client_op_id,input_fingerprint,status,product_code,purchase_purpose,created_by,deadline_policy_approved)
       SELECT ${lit(orderId)}::uuid,${lit(companyId)}::uuid,id,amount_baisa,currency,period_days,period_unit,period_count,${lit(account)},'live',amount_baisa,'paymob_amount',${lit(specialReference)},${lit(`synthetic-http-op-${runId}`)},${lit(`synthetic-http-fingerprint-${runId}`)},'locked','velora_ai_staff','initial',${lit(userId)}::uuid,true FROM public.billing_plan_versions WHERE id=${lit(planVersionId)}::uuid;
@@ -258,15 +249,12 @@ describe.skipIf(!enabled)("isolated real HTTP company runtime journey", () => {
       INSERT INTO public.knowledge_sources(id,company_id,kind,title,content,status,created_by) SELECT ${lit(otherSourceId)}::uuid,${lit(otherCompanyId)}::uuid,'text','Synthetic foreign knowledge','Foreign tenant must remain unreadable','ready',user_id FROM public.platform_admins WHERE role='owner' AND status='active' LIMIT 1;
       COMMIT;`);
 
-    // Stage a real HMAC-verified local callback through the production receiver.
-    // All signed fields are synthetic; no processor or financial endpoint is called.
-    const signedObject = buildProcessedObj({ id: Number(providerTransactionId), amount_cents: amount, integration_id: Number(account), owner: Number(merchant), is_live: true, order: { id: Number(providerOrderId), merchant_order_id: specialReference } });
-    const hmacSecret = `synthetic-receipt-${randomUUID()}`, signature = signProcessedObj(signedObject, hmacSecret);
-    const callbackBody = { type: "TRANSACTION", obj: signedObject };
-    const verified = verifyAndMapProcessedCallback({ body: callbackBody, hmacQueryParam: signature, hmacSecret });
-    must(verified.ok, "SYNTHETIC_RECEIPT_SIGNATURE_REJECTED");
-    expect(await receivePaymobWebhook({ deps: { webhookEnabled: true, hmacSecret, providerEnvironment: "live", findOrderByProviderOrderId, insertProviderEvent }, rawBody: JSON.stringify(callbackBody), hmacQueryParam: signature })).toMatchObject({ status: 200, eventStored: true });
-    const evidence = buildPaymobHmacSettlementEvidence({ companyId, orderId, paymentAttemptId: attemptId, providerAccountRef: account, providerTransactionId, specialReference, amountBaisa: amount, providerEnvironment: "live", observationKey: observationKeyFromVerified(verified.observation) });
+    // Local-only historical receipt fixture for the WhatsApp entitlement journey.
+    // This does not test a payment gateway or claim provider verification.
+    const observationKey = `historical-http-${runId}`;
+    const summary = { hmac_verified: true, signed_owner: merchant, integration_id: Number(account), amount_cents: amount, provider_order_id: providerOrderId, provider_transaction_id: providerTransactionId, currency: "OMR", pending: false, success: true, error_occured: false, is_auth: false, is_capture: false, is_refunded: false, is_voided: false, has_parent_transaction: false, is_standalone_payment: true };
+    await db.sql(`INSERT INTO public.billing_provider_events(payment_attempt_id,provider,provider_account_ref,provider_environment,provider_transaction_id,event_status,observation_key,company_id,amount_baisa_expected,currency_expected,raw_summary) VALUES(${lit(attemptId)}::uuid,'paymob',${lit(account)},'live',${lit(providerTransactionId)},'success',${lit(observationKey)},${lit(companyId)}::uuid,${amount},'OMR',${lit(JSON.stringify(summary))}::jsonb);`);
+    const evidence = { evidence_marker: "VEL_PAYMOB_SERVER_HMAC_VERIFIED", authenticity: { source: "server_adapter_attestation", verified: true, method: "paymob_hmac_sha512" }, company_id: companyId, order_id: orderId, payment_attempt_id: attemptId, provider: "paymob", provider_account_ref: account, provider_environment: "live", provider_transaction_id: providerTransactionId, special_reference: specialReference, amount_baisa: amount, currency: "OMR", currency_expected: "OMR", event_status: "success", observation_key: observationKey };
     expect(await rpc(admin, "billing_settle_paymob_hmac_verified", { p_evidence: evidence })).toMatchObject({ outcome: "granted" });
     const entitlement = await rpc(customer, "billing_read_company_operational_entitlement", { p_company_id: companyId });
     expect(entitlement).toMatchObject({ ok: true, active: true, environment: "live", plan_version_id: planVersionId });

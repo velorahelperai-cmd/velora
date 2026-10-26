@@ -1,5 +1,7 @@
 # Velora shared execution entrypoint
 
+Local debugging (owner request 2026-10-26): use [the on-demand troubleshooting entrypoint](docs/TROUBLESHOOTING.md), search prior signatures before diagnosis, then run only affected checks. Graphify is needed for dependency/impact questions, with freshness verified. Keep mandatory security/delivery gates and existing file leases. This scoped instruction adds no background service or publication authority.
+
 ## PROJECT-BRAIN-READ-FIRST
 
 The owner-approved sole Project Brain is [Velora / 00-INDEX](<C:/Users/DELL/Desktop/Obsidian/AI Workspace/Velora/00-INDEX.md>). Read the approved task, sequence and applicable rules there before every task. [Project rules](<C:/Users/DELL/Desktop/Obsidian/AI Workspace/Velora/10-PROJECT-RULES.md>), [decisions](<C:/Users/DELL/Desktop/Obsidian/AI Workspace/Velora/01-DECISIONS.md>), [acceptance](<C:/Users/DELL/Desktop/Obsidian/AI Workspace/Velora/02-ACCEPTANCE.md>) and [error knowledge / LOG-001](<C:/Users/DELL/Desktop/Obsidian/AI Workspace/Velora/08-LESSONS.md>) are active there. Follow the current Engineering Constitution links from the Brain; do not copy that constitution here.

@@ -25,8 +25,8 @@ export default async function Page() {
       <h1 className="text-2xl font-semibold">{ar ? "شركاتك" : "Your businesses"}</h1>
       <p className="text-sm opacity-80">
         {ar
-          ? "إدارة الأرشفة وطلب الحذف أُزيلت مؤقتًا مع تنظيف ما بعد WP01A، وستُعاد في ES04 وفق Velora Brain."
-          : "Archive and deletion management was retired with post-WP01A cleanup and will be rebuilt in ES04 per Velora Brain."}
+          ? "إدارة الأرشفة وطلبات الحذف غير متاحة حاليًا. ارجع إلى حسابك لمتابعة أنشطتك أو تواصل مع الدعم."
+          : "Archive and deletion management is currently unavailable. Return to your account to view your businesses or contact support."}
       </p>
     </main>
   );

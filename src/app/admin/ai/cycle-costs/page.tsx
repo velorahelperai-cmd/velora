@@ -1,16 +1,18 @@
 import Link from "next/link";
+import { cookies } from "next/headers";
+import { LOCALE_COOKIE, resolveLocale } from "@/lib/i18n";
 
 /** Phase B admin cycle-cost RPCs removed; required re-implementation in ES04. */
-export default function Page() {
+export default async function Page() {
+  const ar = resolveLocale((await cookies()).get(LOCALE_COOKIE)?.value) === "ar";
   return (
-    <main className="mx-auto max-w-3xl p-6">
+    <main className="mx-auto max-w-3xl p-6" dir={ar ? "rtl" : "ltr"}>
       <Link href="/admin" className="text-sm underline">
-        Admin
+        {ar ? "لوحة الإدارة" : "Administration"}
       </Link>
-      <h1 className="mt-4 text-2xl font-semibold">Cycle costs</h1>
+      <h1 className="mt-4 text-2xl font-semibold">{ar ? "تكاليف دورات الاشتراك" : "Subscription cycle costs"}</h1>
       <p className="mt-2 text-sm opacity-80">
-        This administrative cost reader was retired with post-WP01A Phase B cleanup. It will be
-        rebuilt under ES04; package cost requirements remain in Velora Brain.
+        {ar ? "عرض تكاليف الدورات غير متاح حاليًا. ارجع إلى لوحة الإدارة لمتابعة البيانات المتاحة." : "Cycle cost reporting is currently unavailable. Return to administration to view available data."}
       </p>
     </main>
   );

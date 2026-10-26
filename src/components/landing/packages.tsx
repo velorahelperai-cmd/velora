@@ -103,11 +103,12 @@ export function Packages({ copy, locale, destination, offersView, selectedPlan, 
             <div className="preview-sequence"><div className="preview-track" aria-hidden="true">{ids.map((key, dot) => <span key={key} style={{ display: "contents" }}>{dot ? <span className="preview-line" /> : null}<span className={"preview-dot" + (dot === playback.current ? " active" : "")} /></span>)}</div><span className="preview-caption">{ar ? "معاينة ثقافية" : "Cultural preview"}</span></div>
           </div>
           <div className="panel">
-            <p className="panel-description">{descriptions[locale][index]}</p>
             <div className="plan-segment" role="group" aria-label={c.packageLevel + " " + persona[locale]}>{(["basic", "premium"] as const).map(value => <button key={value} type="button" data-tier={value} aria-pressed={pack === value} onClick={() => { setTiers(previous => ({ ...previous, [persona.id]: value })); if (intent.persona === persona.id) setIntent({ term, persona: persona.id, package: value }); }}>{c[value]}{value === "premium" ? <svg className="premium-crown" viewBox="0 0 20 20" aria-hidden="true"><defs><linearGradient id={"premium-gold-" + id} x1="0" y1="0" x2=".8" y2="1"><stop offset="0" stopColor="#fff1a2" /><stop offset=".45" stopColor="#e6b742" /><stop offset="1" stopColor="#ad7724" /></linearGradient></defs><path fill={"url(#premium-gold-" + id + ")"} d="m2 5 4 3 4-5 4 5 4-3-2 10H4Z" /><path d="M5 18h10M5 13h10" /></svg> : null}</button>)}</div>
             <div className="price"><bdi className="amount">{formatOmrBaisa(commercialAmount(plan, term), locale)}</bdi><span className="period">{c[term]}</span></div>
             <p className="billing">{term === "yearly" ? ar ? "خصم 20٪ · إجمالي سنوي يُدفع مقدمًا" : "20% discount · Annual total paid upfront" : ar ? "الفوترة الشهرية" : "Billed monthly"}</p>
+            {term === "yearly" && <p className="billing">{ar ? "ما يعادل " : "Equivalent to "}<bdi>{formatOmrBaisa(commercialAmount(plan, term) / 12, locale)}</bdi>{ar ? " شهريًا" : " per month"}</p>}
             <p className="quota">{plan.replies.toLocaleString("en-US")} {ar ? "رد شهريًا" : "replies / month"} · {ar ? "المالك + " + plan.employees + " موظفين · " + (plan.channels === 1 ? "قناة واحدة" : "قناتان") : "Owner + " + plan.employees + " employees · " + plan.channels + " channel" + (plan.channels > 1 ? "s" : "")}</p>
+            <p className="panel-description">{descriptions[locale][index]}</p>
             <details><summary>{c.featuresHeading} ({plan.features.length})</summary><ul className="features feature-viewport" tabIndex={0} data-lenis-prevent="" aria-label={c.featuresHeading + " " + persona[locale]}>{plan.features.map(feature => {
               const availability = offer?.features.find(item => item.id === feature.id)?.availability;
               return <li key={feature.id} data-feature-id={feature.id}><FeatureIcon id={feature.id} /><span>{feature.label[locale]}{availability ? <small> · {c.featureAvailability[availability]}</small> : null}</span></li>;
@@ -121,6 +122,7 @@ export function Packages({ copy, locale, destination, offersView, selectedPlan, 
         </article>;
       })}
     </div>
+    <div id="packages-chat-slot" />
     <div className="catalog-comparison">
       <button id="packages-compare-toggle" type="button" className="compare-toggle" aria-expanded={comparisonOpen} aria-controls="packages-comparison" onClick={() => setComparisonOpen(open => !open)}><span>{ar ? "قارن الباقات" : "Compare packages"}</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 9 7 7 7-7" /></svg></button>
       <div id="packages-comparison" className="comparison-expansion" role="region" aria-labelledby="packages-compare-toggle" aria-hidden={!comparisonOpen} inert={!comparisonOpen} data-open={comparisonOpen}><div className="comparison-reveal"><div className={catalogStyles.root + " comparison-content"} data-surface="public"><SubscriptionCompareTable homepage locale={locale} term={term} offers={offers} catalogStatus={offersView?.status} selectedPersona={intent.persona ?? null} /></div></div></div>

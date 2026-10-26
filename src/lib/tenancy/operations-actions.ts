@@ -58,14 +58,14 @@ export async function adminGetOperationsOverview(query?: AdminOperationsQuery): 
       events.push({ id: String(row.id), traceId: "UNKNOWN", requestId: "UNKNOWN", companyId: row.companyId as string | null,
         service: String(row.service), severity: row.severity as "info" | "warning", errorCode: String(row.errorCode), message: String(row.message), createdAt: String(row.createdAt) });
     }
-    const webhookPipes: WebhookPipeHealth[] = [["whatsapp", "WhatsApp Cloud API"], ["instagram", "Instagram Graph API"], ["paymob", "Paymob Webhook"]].map(([key, channel]) => ({
+    const webhookPipes: WebhookPipeHealth[] = [["whatsapp", "WhatsApp Cloud API"], ["instagram", "Instagram Graph API"], ["paymob", "Historical payment events"]].map(([key, channel]) => ({
       channel, status: "unknown", eventsCount: sources.get(key)!.count, successRate: "UNKNOWN", lastActiveAt: sources.get(key)!.lastActiveAt,
     }));
     const services: PlatformServiceHealth[] = [
       { id: "postgres", name: "Supabase PostgreSQL Database", status: dbError ? "DEGRADED" : "OPERATIONAL", latencyMs: dbLatency, details: dbError ? "Read probe failed" : "Read probe succeeded; writes were not tested" },
       { id: "gotrue", name: "GoTrue Auth & Platform Sessions", status: "OPERATIONAL", details: "Current native owner request authorized; not a global auth health measurement" },
       { id: "meta-webhook", name: "Meta Cloud & Graph API Webhooks", status: "UNKNOWN", details: "24h per-channel stored activity; failed ingress and durable request/trace context are not measured" },
-      { id: "paymob-pipe", name: "Paymob Payment Notifications", status: "UNKNOWN", details: "24h recorded provider events do not measure ingress success or prove payment acceptance" },
+      { id: "paymob-pipe", name: "Historical payment notifications", status: "UNKNOWN", details: "24h recorded provider events do not measure ingress success or prove payment acceptance" },
       { id: "ai-router", name: "Multi-Model AI Engine", status: "UNKNOWN", details: "No provider execution probe; credential presence is not operational evidence" },
     ];
     if (process.env.OPS_INGRESS_OBSERVATION_ENABLED === "true" && (!query?.correlationId?.trim() || uuid.test(query.correlationId.trim()))) {

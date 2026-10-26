@@ -19,6 +19,8 @@ vi.mock("react", async () => {
     !a || a.length !== b.length || b.some((v, i) => !Object.is(a[i], v));
   return {
     ...actual,
+    // This driver checks static markup; real transition behavior has dedicated DOM tests.
+    useTransition() { return [false, (action: () => void) => action()]; },
     useState(initial: unknown) {
       const { d, s } = slot();
       if (!("value" in s))

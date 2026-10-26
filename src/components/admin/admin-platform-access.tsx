@@ -1,4 +1,5 @@
 "use client";
+import { AccessibleDialog } from "@/components/app/accessible-dialog";
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -452,7 +453,7 @@ export function AdminPlatformAccess({ data }: AdminPlatformAccessProps) {
 
       {/* Grant Modal */}
       {showGrantModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-xs">
+        <AccessibleDialog label={ar ? "تفويض مشرف منصة جديد" : "Grant platform access"} onClose={() => setShowGrantModal(false)} busy={isPending}>
           <div className="w-full max-w-lg rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] p-6 shadow-xl space-y-4">
             <div className="flex items-center justify-between border-b border-[var(--service-line)] pb-3">
               <h3 className="text-base font-bold text-[var(--service-ink)]">
@@ -460,6 +461,7 @@ export function AdminPlatformAccess({ data }: AdminPlatformAccessProps) {
               </h3>
               <button
                 type="button"
+                aria-label={ar ? "إغلاق" : "Close"}
                 onClick={() => setShowGrantModal(false)}
                 className="rounded-lg p-1 text-[var(--service-muted)] hover:bg-[var(--service-subtle)]"
               >
@@ -475,10 +477,10 @@ export function AdminPlatformAccess({ data }: AdminPlatformAccessProps) {
 
             <div className="space-y-3 text-xs">
               <div>
-                <label className="block font-semibold text-[var(--service-ink)] mb-1">
+                <label htmlFor="admin-platform-access-field-1" className="block font-semibold text-[var(--service-ink)] mb-1">
                   {ar ? "معرف المستخدم (User ID)" : "Target User ID (UUID)"}
                 </label>
-                <input
+                <input id="admin-platform-access-field-1"
                   type="text"
                   value={grantUserId}
                   onChange={(e) => setGrantUserId(e.target.value)}
@@ -488,10 +490,10 @@ export function AdminPlatformAccess({ data }: AdminPlatformAccessProps) {
               </div>
 
               <div>
-                <label className="block font-semibold text-[var(--service-ink)] mb-1">
+                <label htmlFor="admin-platform-access-field-2" className="block font-semibold text-[var(--service-ink)] mb-1">
                   {ar ? "الدور الإداري المخصص" : "Scoped Platform Role"}
                 </label>
-                <select
+                <select id="admin-platform-access-field-2"
                   value={grantRole}
                   onChange={(e) => setGrantRole(e.target.value as Exclude<PlatformRole, "owner">)}
                   className="w-full rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)] p-2.5 outline-none focus:border-[var(--service-accent)]"
@@ -503,10 +505,10 @@ export function AdminPlatformAccess({ data }: AdminPlatformAccessProps) {
               </div>
 
               <div>
-                <label className="block font-semibold text-[var(--service-ink)] mb-1">
+                <label htmlFor="admin-platform-access-field-3" className="block font-semibold text-[var(--service-ink)] mb-1">
                   {ar ? "ملاحظة / سبب التفويض" : "Note / Delegation Reason"}
                 </label>
-                <textarea
+                <textarea id="admin-platform-access-field-3"
                   value={grantNote}
                   onChange={(e) => setGrantNote(e.target.value)}
                   rows={2}
@@ -534,12 +536,12 @@ export function AdminPlatformAccess({ data }: AdminPlatformAccessProps) {
               </button>
             </div>
           </div>
-        </div>
+        </AccessibleDialog>
       )}
 
       {/* Edit Modal */}
       {editingAdmin && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-xs">
+        <AccessibleDialog label={ar ? "تعديل الصلاحية" : "Edit access"} onClose={() => setEditingAdmin(null)} busy={isPending}>
           <div className="w-full max-w-lg rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] p-6 shadow-xl space-y-4">
             <div className="flex items-center justify-between border-b border-[var(--service-line)] pb-3">
               <h3 className="text-base font-bold text-[var(--service-ink)]">
@@ -547,6 +549,7 @@ export function AdminPlatformAccess({ data }: AdminPlatformAccessProps) {
               </h3>
               <button
                 type="button"
+                aria-label={ar ? "إغلاق" : "Close"}
                 onClick={() => setEditingAdmin(null)}
                 className="rounded-lg p-1 text-[var(--service-muted)] hover:bg-[var(--service-subtle)]"
               >
@@ -562,10 +565,10 @@ export function AdminPlatformAccess({ data }: AdminPlatformAccessProps) {
 
             <div className="space-y-3 text-xs">
               <div>
-                <label className="block font-semibold text-[var(--service-ink)] mb-1">
+                <label htmlFor="admin-platform-access-field-4" className="block font-semibold text-[var(--service-ink)] mb-1">
                   {ar ? "الدور الإداري" : "Platform Role"}
                 </label>
-                <select
+                <select id="admin-platform-access-field-4"
                   value={editRole}
                   onChange={(e) => setEditRole(e.target.value as Exclude<PlatformRole, "owner">)}
                   className="w-full rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)] p-2.5 outline-none focus:border-[var(--service-accent)]"
@@ -577,10 +580,10 @@ export function AdminPlatformAccess({ data }: AdminPlatformAccessProps) {
               </div>
 
               <div>
-                <label className="block font-semibold text-[var(--service-ink)] mb-1">
+                <label htmlFor="admin-platform-access-field-5" className="block font-semibold text-[var(--service-ink)] mb-1">
                   {ar ? "الحالة التشغيلية" : "Operational Status"}
                 </label>
-                <select
+                <select id="admin-platform-access-field-5"
                   value={editStatus}
                   onChange={(e) => setEditStatus(e.target.value as PlatformAdminStatus)}
                   className="w-full rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)] p-2.5 outline-none focus:border-[var(--service-accent)]"
@@ -591,10 +594,10 @@ export function AdminPlatformAccess({ data }: AdminPlatformAccessProps) {
               </div>
 
               <div>
-                <label className="block font-semibold text-[var(--service-ink)] mb-1">
+                <label htmlFor="admin-platform-access-field-6" className="block font-semibold text-[var(--service-ink)] mb-1">
                   {ar ? "الملاحظات" : "Notes"}
                 </label>
-                <textarea
+                <textarea id="admin-platform-access-field-6"
                   value={editNote}
                   onChange={(e) => setEditNote(e.target.value)}
                   rows={2}
@@ -621,12 +624,12 @@ export function AdminPlatformAccess({ data }: AdminPlatformAccessProps) {
               </button>
             </div>
           </div>
-        </div>
+        </AccessibleDialog>
       )}
 
       {/* Revoke Confirmation Modal */}
       {confirmRevokeAdmin && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-xs">
+        <AccessibleDialog label={ar ? "إلغاء التفويض" : "Revoke access"} onClose={() => setConfirmRevokeAdmin(null)} busy={isPending}>
           <div className="w-full max-w-md rounded-2xl border border-red-200 bg-[var(--service-surface)] p-6 shadow-xl space-y-4">
             <div className="flex items-center gap-3 text-red-600">
               <IconAlert className="h-6 w-6" />
@@ -659,7 +662,7 @@ export function AdminPlatformAccess({ data }: AdminPlatformAccessProps) {
               </button>
             </div>
           </div>
-        </div>
+        </AccessibleDialog>
       )}
     </div>
   );

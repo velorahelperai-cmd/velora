@@ -421,15 +421,32 @@ export function useAction() {
 export const isEmail = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
 export const isPhone = (v: string) => /^\+\d{7,15}$/.test(v.replace(/[\s-]/g, ""));
 
-export function Tabs<T extends string>({ tabs, value, onChange }: { tabs: { id: T; label: string }[]; value: T; onChange: (t: T) => void }) {
+export function Tabs<T extends string>({ tabs, value, onChange, panelId }: { tabs: { id: T; label: string }[]; value: T; onChange: (t: T) => void; panelId?: string }) {
   return (
-    <div role="tablist" className="flex gap-1 overflow-x-auto rounded-full border border-[color:var(--color-border-soft)] bg-[#0d1a14] p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div role={panelId ? "tablist" : "group"} className="flex gap-1 overflow-x-auto rounded-full border border-[color:var(--color-border-soft)] bg-[#0d1a14] p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {tabs.map((t) => (
         <button
           key={t.id}
-          role="tab"
+          role={panelId ? "tab" : undefined}
+          id={panelId ? `${panelId}-tab-${t.id}` : undefined}
+          aria-controls={panelId}
+          tabIndex={value === t.id ? 0 : -1}
           type="button"
-          aria-selected={value === t.id}
+          aria-selected={panelId ? value === t.id : undefined}
+          aria-pressed={panelId ? undefined : value === t.id}
+          onKeyDown={event => {
+            const direction = getComputedStyle(event.currentTarget).direction === "rtl" ? -1 : 1;
+            const index = tabs.findIndex(tab => tab.id === t.id);
+            let next: number;
+            if (event.key === "Home") next = 0;
+            else if (event.key === "End") next = tabs.length - 1;
+            else if (event.key === "ArrowRight") next = (index + direction + tabs.length) % tabs.length;
+            else if (event.key === "ArrowLeft") next = (index - direction + tabs.length) % tabs.length;
+            else return;
+            event.preventDefault();
+            (event.currentTarget.parentElement?.children[next] as HTMLButtonElement | undefined)?.focus();
+            onChange(tabs[next].id);
+          }}
           onClick={() => onChange(t.id)}
           className={`min-h-11 shrink-0 snap-start rounded-full px-4 text-sm transition ${value === t.id ? "bg-[#38dc89] text-[#072317]" : "text-[var(--color-on-dark)] hover:bg-[var(--color-hover-wash)]"}`}
         >

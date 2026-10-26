@@ -1,4 +1,5 @@
 "use client";
+import { AccessibleDialog } from "@/components/app/accessible-dialog";
 
 import { useRef, useState, useTransition } from "react";
 import Link from "next/link";
@@ -318,6 +319,7 @@ export function AdminSupportReviews({ data, filters }: AdminSupportReviewsProps)
           <div className="relative flex-1 min-w-[240px]">
             <input
               type="text"
+              aria-label={ar ? "البحث عن حساب بكود الدعم أو البريد أو الهاتف" : "Find account by support code, email or phone"}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder={ar ? "أدخل كود الدعم (VEL-...) أو البريد أو الهاتف..." : "Enter Support Code (VEL-...), email, or phone..."}
@@ -763,7 +765,7 @@ export function AdminSupportReviews({ data, filters }: AdminSupportReviewsProps)
 
       {/* Modal: Create Support Ticket */}
       {showCreateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-xs">
+        <AccessibleDialog label={ar ? "إنشاء تذكرة دعم" : "Create support ticket"} onClose={() => setShowCreateModal(false)} busy={isSubmitting}>
           <div className="w-full max-w-lg rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] p-6 shadow-xl space-y-4">
             <div className="flex items-center justify-between border-b border-[var(--service-line)] pb-3">
               <h3 className="text-base font-bold text-[var(--service-ink)]">
@@ -771,6 +773,7 @@ export function AdminSupportReviews({ data, filters }: AdminSupportReviewsProps)
               </h3>
               <button
                 type="button"
+                aria-label={ar ? "إغلاق" : "Close"}
                 onClick={() => setShowCreateModal(false)}
                 className="rounded-lg p-1 text-[var(--service-muted)] hover:bg-[var(--service-subtle)]"
               >
@@ -780,10 +783,10 @@ export function AdminSupportReviews({ data, filters }: AdminSupportReviewsProps)
 
             <form onSubmit={handleCreateTicket} className="space-y-3 text-xs">
               <div>
-                <label className="block font-semibold text-[var(--service-ink)] mb-1">
+                <label htmlFor="admin-support-reviews-field-1" className="block font-semibold text-[var(--service-ink)] mb-1">
                   {ar ? "معرف المنشأة (Company ID)" : "Company ID"}
                 </label>
-                <input
+                <input id="admin-support-reviews-field-1"
                   type="text"
                   required
                   value={newTicketForm.companyId}
@@ -794,10 +797,10 @@ export function AdminSupportReviews({ data, filters }: AdminSupportReviewsProps)
               </div>
 
               <div>
-                <label className="block font-semibold text-[var(--service-ink)] mb-1">
+                <label htmlFor="admin-support-reviews-field-2" className="block font-semibold text-[var(--service-ink)] mb-1">
                   {ar ? "معرف الفرع (اختياري)" : "Branch ID (Optional)"}
                 </label>
-                <input
+                <input id="admin-support-reviews-field-2"
                   type="text"
                   value={newTicketForm.branchId}
                   onChange={(e) => setNewTicketForm({ ...newTicketForm, branchId: e.target.value })}
@@ -807,10 +810,10 @@ export function AdminSupportReviews({ data, filters }: AdminSupportReviewsProps)
               </div>
 
               <div>
-                <label className="block font-semibold text-[var(--service-ink)] mb-1">
+                <label htmlFor="admin-support-reviews-field-3" className="block font-semibold text-[var(--service-ink)] mb-1">
                   {ar ? "عنوان التذكرة / المشكلة" : "Ticket Subject / Title"}
                 </label>
-                <input
+                <input id="admin-support-reviews-field-3"
                   type="text"
                   required
                   value={newTicketForm.title}
@@ -822,10 +825,10 @@ export function AdminSupportReviews({ data, filters }: AdminSupportReviewsProps)
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-semibold text-[var(--service-ink)] mb-1">
+                  <label htmlFor="admin-support-reviews-field-4" className="block font-semibold text-[var(--service-ink)] mb-1">
                     {ar ? "التصنيف" : "Category"}
                   </label>
-                  <select
+                  <select id="admin-support-reviews-field-4"
                     value={newTicketForm.category}
                     onChange={(e) => setNewTicketForm({ ...newTicketForm, category: e.target.value as TicketCategory })}
                     className="w-full rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)] px-3 py-2 outline-none focus:border-[var(--service-accent)]"
@@ -840,10 +843,10 @@ export function AdminSupportReviews({ data, filters }: AdminSupportReviewsProps)
                 </div>
 
                 <div>
-                  <label className="block font-semibold text-[var(--service-ink)] mb-1">
+                  <label htmlFor="admin-support-reviews-field-5" className="block font-semibold text-[var(--service-ink)] mb-1">
                     {ar ? "الأولوية" : "Priority"}
                   </label>
-                  <select
+                  <select id="admin-support-reviews-field-5"
                     value={newTicketForm.priority}
                     onChange={(e) => setNewTicketForm({ ...newTicketForm, priority: e.target.value as TicketPriority })}
                     className="w-full rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)] px-3 py-2 outline-none focus:border-[var(--service-accent)]"
@@ -857,10 +860,10 @@ export function AdminSupportReviews({ data, filters }: AdminSupportReviewsProps)
               </div>
 
               <div>
-                <label className="block font-semibold text-[var(--service-ink)] mb-1">
+                <label htmlFor="admin-support-reviews-field-6" className="block font-semibold text-[var(--service-ink)] mb-1">
                   {ar ? "تفاصيل الشكوى / البلاغ" : "Detailed Description"}
                 </label>
-                <textarea
+                <textarea id="admin-support-reviews-field-6"
                   required
                   rows={3}
                   value={newTicketForm.description}
@@ -871,10 +874,10 @@ export function AdminSupportReviews({ data, filters }: AdminSupportReviewsProps)
               </div>
 
               <div>
-                <label className="block font-semibold text-[var(--service-ink)] mb-1">
+                <label htmlFor="admin-support-reviews-field-7" className="block font-semibold text-[var(--service-ink)] mb-1">
                   {ar ? "ملاحظة داخلية أولية (اختياري)" : "Initial Internal Note (Optional)"}
                 </label>
-                <input
+                <input id="admin-support-reviews-field-7"
                   type="text"
                   value={newTicketForm.initialNote}
                   onChange={(e) => setNewTicketForm({ ...newTicketForm, initialNote: e.target.value })}
@@ -892,7 +895,7 @@ export function AdminSupportReviews({ data, filters }: AdminSupportReviewsProps)
               <div className="flex items-center justify-end gap-2 pt-2 border-t border-[var(--service-line)]">
                 <button
                   type="button"
-                  onClick={() => setShowCreateModal(false)}
+                onClick={() => setShowCreateModal(false)}
                   className="rounded-xl border border-[var(--service-line)] px-4 py-2 font-bold text-[var(--service-ink)] hover:bg-[var(--service-subtle)]"
                 >
                   {ar ? "إلغاء" : "Cancel"}
@@ -907,12 +910,12 @@ export function AdminSupportReviews({ data, filters }: AdminSupportReviewsProps)
               </div>
             </form>
           </div>
-        </div>
+        </AccessibleDialog>
       )}
 
       {/* Modal: Add Internal Note */}
       {noteTicket && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-xs">
+        <AccessibleDialog label={ar ? "إضافة ملاحظة" : "Add note"} onClose={() => setNoteTicket(null)} busy={isSubmitting}>
           <div className="w-full max-w-md rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] p-6 shadow-xl space-y-4">
             <div className="flex items-center justify-between border-b border-[var(--service-line)] pb-3">
               <div>
@@ -925,6 +928,7 @@ export function AdminSupportReviews({ data, filters }: AdminSupportReviewsProps)
               </div>
               <button
                 type="button"
+                aria-label={ar ? "إغلاق" : "Close"}
                 onClick={() => setNoteTicket(null)}
                 className="rounded-lg p-1 text-[var(--service-muted)] hover:bg-[var(--service-subtle)]"
               >
@@ -934,10 +938,10 @@ export function AdminSupportReviews({ data, filters }: AdminSupportReviewsProps)
 
             <form onSubmit={handleAddNote} className="space-y-3 text-xs">
               <div>
-                <label className="block font-semibold text-[var(--service-ink)] mb-1">
+                <label htmlFor="admin-support-reviews-field-8" className="block font-semibold text-[var(--service-ink)] mb-1">
                   {ar ? "نص الملاحظة" : "Note Content"}
                 </label>
-                <textarea
+                <textarea id="admin-support-reviews-field-8"
                   required
                   rows={4}
                   value={noteContent}
@@ -956,7 +960,7 @@ export function AdminSupportReviews({ data, filters }: AdminSupportReviewsProps)
               <div className="flex items-center justify-end gap-2 pt-2 border-t border-[var(--service-line)]">
                 <button
                   type="button"
-                  onClick={() => setNoteTicket(null)}
+                onClick={() => setNoteTicket(null)}
                   className="rounded-xl border border-[var(--service-line)] px-4 py-2 font-bold text-[var(--service-ink)] hover:bg-[var(--service-subtle)]"
                 >
                   {ar ? "إلغاء" : "Cancel"}
@@ -971,7 +975,7 @@ export function AdminSupportReviews({ data, filters }: AdminSupportReviewsProps)
               </div>
             </form>
           </div>
-        </div>
+        </AccessibleDialog>
       )}
     </div>
   );

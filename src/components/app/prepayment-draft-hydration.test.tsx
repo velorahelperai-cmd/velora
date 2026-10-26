@@ -9,10 +9,10 @@ const ACCOUNT='22222222-2222-4222-8222-222222222222';
 const record=(name='Saved',version=7)=>({draftId:'11111111-1111-4111-8111-111111111111',accountId:ACCOUNT,payload:{name},version,state:'active' as const,createdAt:'2026-10-25T00:00:00Z',updatedAt:'2026-10-25T00:00:00Z',expiresAt:'2027-02-25T00:00:00Z'});
 function deferred<T=unknown>(){let resolve!:(value:T)=>void;const promise=new Promise<T>(ok=>{resolve=ok;});return {promise,resolve};}
 let api:ReturnType<typeof useAccountPrepDraft>,root:Root,host:HTMLDivElement,current=true;
-function Fixture({scope='a'}:{scope?:string}){const [name,setName]=useState('');const draft=useAccountPrepDraft({accountId:ACCOUNT,captureToken:scope,isCurrent:()=>current,restore:payload=>setName(payload.name??'')});useLayoutEffect(()=>{api=draft;},[draft]);return createElement('input',{value:name,onChange:(event:React.ChangeEvent<HTMLInputElement>)=>{draft.markEdited();setName(event.target.value);},'data-value':name});}
-async function render(scope='a'){await act(async()=>root.render(createElement(Fixture,{key:scope,scope})));}
-beforeEach(()=>{vi.resetAllMocks();current=true;vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);host=document.createElement('div');document.body.appendChild(host);root=createRoot(host);actions.read.mockResolvedValue({ok:true,data:null});});
-afterEach(async()=>{await act(async()=>root.unmount());host.remove();vi.unstubAllGlobals();});
+function Fixture({scope='a',accountId=ACCOUNT}:{scope?:string;accountId?:string}){const [name,setName]=useState('');const draft=useAccountPrepDraft({accountId,captureToken:scope,isCurrent:()=>current,restore:payload=>setName(payload.name??'')});useLayoutEffect(()=>{api=draft;},[draft]);return createElement('input',{value:name,onChange:(event:React.ChangeEvent<HTMLInputElement>)=>{draft.markEdited();setName(event.target.value);},'data-value':name});}
+async function render(scope='a',accountId=ACCOUNT){await act(async()=>root.render(createElement(Fixture,{key:scope,scope,accountId})));}
+beforeEach(()=>{vi.resetAllMocks();localStorage.clear();current=true;vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);host=document.createElement('div');document.body.appendChild(host);root=createRoot(host);actions.read.mockResolvedValue({ok:true,data:null});});
+afterEach(async()=>{await act(async()=>root.unmount());host.remove();vi.useRealTimers();vi.unstubAllGlobals();});
 it('preserves edits made before late hydration and uses the proven native version',async()=>{
  const read=deferred();actions.read.mockReturnValue(read.promise);await render();await act(async()=>{const input=host.querySelector('input')!;Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,'Typed');input.dispatchEvent(new Event('input',{bubbles:true}));});
  await act(async()=>read.resolve({ok:true,data:record()}));expect(host.querySelector('input')?.value).toBe('Typed');actions.save.mockResolvedValue({ok:true,data:record('Typed',8)});await act(async()=>{await api.save({name:'Typed'});});expect(actions.save).toHaveBeenCalledWith(expect.objectContaining({expectedVersion:7,draftId:record().draftId}));
@@ -82,7 +82,7 @@ it('awaits the in-flight confirmation without starting a duplicate write',async(
  await act(async()=>{write.resolve({ok:true,data:record('Typed',1)});expect(await savePromise).toMatchObject({ok:true});expect(await confirmPromise).toMatchObject({ok:true,data:{version:1}});});
  expect(actions.save).toHaveBeenCalledTimes(1);
 });
-it('retries a failed write only on explicit retrySave',async()=>{
+it('allows an immediate explicit retry before the background retry',async()=>{
  await render();actions.save.mockResolvedValueOnce({ok:false,code:'UNAVAILABLE'});actions.read.mockResolvedValue({ok:false,code:'UNAVAILABLE'});
  await act(async()=>{expect(await api.save({name:'Typed'})).toMatchObject({ok:false,code:'UNAVAILABLE'});});
  expect(api.saveStatus).toBe('fail');
@@ -99,4 +99,84 @@ it('does not cancel an in-flight write when the step host unmounts',async()=>{
  await act(async()=>root.unmount());
  await act(async()=>{write.resolve({ok:true,data:record('Typed',1)});await pending;});
  expect(actions.save).toHaveBeenCalledTimes(1);
+});
+
+it('enables local editing while the first server read is unavailable',async()=>{
+ actions.read.mockResolvedValue({ok:false,code:'UNAVAILABLE'});await render();expect(api.hydrated).toBe(true);
+});
+it('restores unsynced local input after remount without waiting for the server',async()=>{
+ actions.read.mockResolvedValue({ok:false,code:'UNAVAILABLE'});await render();
+ await act(async()=>{api.markEdited();api.checkpoint({name:'Offline'});});
+ await render('b');expect(host.querySelector('input')?.value).toBe('Offline');expect(api.hydrated).toBe(true);
+});
+it('keeps late server hydration from replacing locally recovered input',async()=>{
+ actions.read.mockResolvedValue({ok:false,code:'UNAVAILABLE'});await render();
+ await act(async()=>{api.markEdited();api.checkpoint({name:'Offline'});});
+ const late=deferred();actions.read.mockReturnValue(late.promise);await render('b');
+ await act(async()=>late.resolve({ok:true,data:record('Elsewhere',3)}));
+ expect(host.querySelector('input')?.value).toBe('Offline');expect(api.code).toBe('CONFLICT');expect(actions.save).not.toHaveBeenCalled();
+});
+it('reconnects the missing read before retrying an offline save',async()=>{
+ actions.read.mockResolvedValue({ok:false,code:'UNAVAILABLE'});await render();
+ await act(async()=>{await api.save({name:'Offline'});});
+ actions.read.mockResolvedValue({ok:true,data:null});actions.save.mockResolvedValue({ok:true,data:record('Offline',1)});
+ await act(async()=>{expect(await api.retrySave()).toMatchObject({ok:true});});
+ expect(actions.save).toHaveBeenCalledWith(expect.objectContaining({expectedVersion:0,patch:{name:'Offline'}}));
+});
+
+it('isolates local recovery by authenticated account',async()=>{
+ actions.read.mockResolvedValue({ok:false,code:'UNAVAILABLE'});await render();
+ await act(async()=>{api.markEdited();api.checkpoint({name:'Private A'});});
+ await render('b','33333333-3333-4333-8333-333333333333');expect(host.querySelector('input')?.value).toBe('');
+ await render('c');expect(host.querySelector('input')?.value).toBe('Private A');
+});
+it('continues editing with honest status when local storage is unavailable',async()=>{
+ const storage=vi.spyOn(Storage.prototype,'setItem').mockImplementation(()=>{throw Error('quota');});
+ actions.read.mockResolvedValue({ok:false,code:'UNAVAILABLE'});await render();
+ await act(async()=>{api.markEdited();api.checkpoint({name:'Memory only'});});
+ expect(api.hydrated).toBe(true);expect(api.localSaved).toBe(false);expect(await api.awaitConfirmed()).toMatchObject({ok:false});storage.mockRestore();
+});
+it('retries pending local data on a real online event',async()=>{
+ actions.read.mockResolvedValue({ok:false,code:'UNAVAILABLE'});await render();
+ await act(async()=>{api.markEdited();api.checkpoint({name:'Reconnect'});});
+ actions.read.mockResolvedValue({ok:true,data:null});actions.save.mockResolvedValue({ok:true,data:record('Reconnect',1)});
+ await act(async()=>window.dispatchEvent(new Event('online')));expect(actions.save).toHaveBeenCalledTimes(1);expect(api.saveStatus).toBe('ok');
+});
+it('keeps newer local typing when an older server save finishes',async()=>{
+ await render();const write=deferred();actions.save.mockReturnValue(write.promise);let pending!:Promise<unknown>;
+ await act(async()=>{api.markEdited();pending=api.save({name:'Earlier'});api.markEdited();api.checkpoint({name:'Latest typing'});});
+ await act(async()=>{write.resolve({ok:true,data:record('Earlier',1)});await pending;});
+ actions.read.mockResolvedValue({ok:false,code:'UNAVAILABLE'});await render('b');expect(host.querySelector('input')?.value).toBe('Latest typing');
+});
+it('ignores corrupt and expired local records',async()=>{
+ localStorage.setItem('velora:account-prep:v1:'+ACCOUNT,'not json');await render();expect(api.hydrated).toBe(true);
+ localStorage.setItem('velora:account-prep:v1:'+ACCOUNT,JSON.stringify({schema:1,accountId:ACCOUNT,payload:{name:'Expired'},expiresAt:0,pending:true}));
+ await render('b');expect(host.querySelector('input')?.value).toBe('');
+});
+
+it('uploads a step saved before the initial read completes once its version is known',async()=>{
+ const initial=deferred();actions.read.mockReturnValue(initial.promise);await render();
+ await act(async()=>{await api.save({name:'Early step'});});expect(actions.save).not.toHaveBeenCalled();
+ actions.save.mockResolvedValue({ok:true,data:record('Early step',1)});
+ await act(async()=>initial.resolve({ok:true,data:null}));expect(actions.save).toHaveBeenCalledTimes(1);
+});
+
+it('retries initial temporary read failures even before any edits',async()=>{
+ vi.useFakeTimers();actions.read.mockResolvedValueOnce({ok:false,code:'UNAVAILABLE'}).mockResolvedValueOnce({ok:true,data:null});
+ await render();expect(api.saveStatus).toBe('fail');
+ await act(async()=>{await vi.advanceTimersByTimeAsync(15000);});
+ expect(actions.read).toHaveBeenCalledTimes(2);expect(api.code).toBeNull();expect(actions.save).not.toHaveBeenCalled();
+});
+it('keeps retrying temporary read failures then syncs the latest local payload',async()=>{
+ vi.useFakeTimers();actions.read.mockResolvedValue({ok:false,code:'UNAVAILABLE'});await render();
+ await act(async()=>{await api.save({name:'First'});api.markEdited();api.checkpoint({name:'Latest'});});
+ await act(async()=>{await vi.advanceTimersByTimeAsync(15000);});expect(actions.read).toHaveBeenCalledTimes(2);
+ actions.read.mockResolvedValue({ok:true,data:null});actions.save.mockResolvedValue({ok:true,data:record('Latest',1)});
+ await act(async()=>{await vi.advanceTimersByTimeAsync(15000);});
+ expect(actions.save).toHaveBeenCalledTimes(1);expect(actions.save).toHaveBeenCalledWith(expect.objectContaining({patch:{name:'Latest'}}));expect(api.saveStatus).toBe('ok');
+ const reads=actions.read.mock.calls.length;await act(async()=>{await vi.advanceTimersByTimeAsync(60000);});expect(actions.read).toHaveBeenCalledTimes(reads);expect(actions.save).toHaveBeenCalledTimes(1);
+});
+it('never automatically retries a conflict',async()=>{
+ vi.useFakeTimers();actions.read.mockResolvedValue({ok:false,code:'CONFLICT'});await render();await act(async()=>{await api.save({name:'Local'});await vi.advanceTimersByTimeAsync(60000);window.dispatchEvent(new Event('online'));});
+ expect(actions.read).toHaveBeenCalledTimes(1);expect(actions.save).not.toHaveBeenCalled();expect(api.code).toBe('CONFLICT');
 });

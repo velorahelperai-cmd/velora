@@ -488,10 +488,10 @@ export function AdminAIOperations({ initial, freeState }: AdminAIOperationsProps
           {/* Trial Configuration Form (7 cols) */}
           <form onSubmit={handleSubmitTrial} className="space-y-4 lg:col-span-7">
             <div>
-              <label className="block text-xs font-bold text-[var(--service-ink)]">
+              <label htmlFor="admin-ai-field-1" className="block text-xs font-bold text-[var(--service-ink)]">
                 {ar ? "الشركة المرتبطة بالسجل التشغيلي" : "Target Company for Ledger"}
               </label>
-              <select
+              <select id="admin-ai-field-1"
                 value={companyId}
                 onChange={(e) => setCompanyId(e.target.value)}
                 disabled={busy}
@@ -507,10 +507,10 @@ export function AdminAIOperations({ initial, freeState }: AdminAIOperationsProps
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
-                <label className="block text-xs font-bold text-[var(--service-ink)]">
+                <label htmlFor="admin-ai-field-2" className="block text-xs font-bold text-[var(--service-ink)]">
                   {ar ? "النموذج المختار" : "Selected Model"}
                 </label>
-                <select
+                <select id="admin-ai-field-2"
                   value={model}
                   onChange={(e) => setModel(e.target.value as AdminAIActionInput["model"])}
                   disabled={busy}
@@ -524,10 +524,10 @@ export function AdminAIOperations({ initial, freeState }: AdminAIOperationsProps
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-[var(--service-ink)]">
+                <label htmlFor="admin-ai-field-3" className="block text-xs font-bold text-[var(--service-ink)]">
                   {ar ? "مصدر المعرفة والسياق" : "Context & Knowledge Mode"}
                 </label>
-                <select
+                <select id="admin-ai-field-3"
                   value={contextMode}
                   onChange={(e) => setContextMode(e.target.value as AdminAIActionInput["contextMode"])}
                   disabled={busy}
@@ -540,10 +540,10 @@ export function AdminAIOperations({ initial, freeState }: AdminAIOperationsProps
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-[var(--service-ink)]">
+              <label htmlFor="admin-ai-field-4" className="block text-xs font-bold text-[var(--service-ink)]">
                 {ar ? "السؤال أو الرسالة التجريبية" : "Test Prompt / Question"}
               </label>
-              <textarea
+              <textarea id="admin-ai-field-4"
                 value={question}
                 onChange={(e) => setQuestion(e.target.value)}
                 maxLength={1000}

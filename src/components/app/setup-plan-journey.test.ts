@@ -615,6 +615,7 @@ describe("setup plan journey", () => {
   });
 
   it("keeps review editable and restartable when payment is deferred, without any RPC", async () => {
+    vi.stubEnv("BILLING_ES02_THAWANI_TEST_ENABLED", "false");
     mocks.userRpc.mockReset();
     mocks.getClaims.mockResolvedValue({ data: { claims: { sub: accountId, session_id: "11111111-2222-4333-8444-555555555555" } }, error: null });
     mocks.checkAppSession.mockResolvedValue({ ok: true });
@@ -624,7 +625,7 @@ describe("setup plan journey", () => {
     });
     arm(target);
     expect(mocks.userRpc).not.toHaveBeenCalled();
-    await expect(target.confirmReview(true)).resolves.toMatchObject({ ok: false, code: "PAYMOB_EXTERNAL_DEFERRED" });
+    await expect(target.confirmReview(true)).resolves.toMatchObject({ ok: false, code: "UNCONFIGURED" });
     expect(mocks.userRpc).not.toHaveBeenCalled();
     expect(target.snapshot().write.kind).toBe("idle");
     expect(target.snapshot().editingLocked).toBe(false);
@@ -634,6 +635,7 @@ describe("setup plan journey", () => {
     const restarted = createSetupPlanJourney({ actor: { accountId, captureToken: "new", isCurrent: () => true } });
     expect(restarted.snapshot().write.kind).toBe("idle");
     expect(restarted.snapshot().preview).toBeNull();
+    vi.unstubAllEnvs();
   });
 });
 

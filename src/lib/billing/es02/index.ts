@@ -7,7 +7,6 @@ export * from "./account-order";
 export * from "./rpc-classify";
 export {
   createAccountBoundOrderAction,
-  settleAccountOrderPaymobAction,
   settleAccountOrderSyntheticAction,
   readOwnedPurchaseRecoveryAction,
   completeOwnedProvisioningAction,

@@ -23,17 +23,13 @@ vi.mock("@/lib/access/actions", () => ({ sessionHasCompanyCapability: state.cap 
 vi.mock("@/lib/auth/server-identity", () => ({ readSessionIdentity: vi.fn() }));
 vi.mock("@/lib/billing/wiring/display-read", () => ({ readCompanyBillingDisplay: state.journey }));
 vi.mock("@/lib/billing/wiring/order-actions", () => ({ createBillingOrderAction: state.order }));
-vi.mock("@/lib/billing/wiring/test-checkout", () => ({
-  readTestCheckoutConfig: state.settings, openTestCheckout: state.open,
-  fetchPaymobHttp: { request: state.provider },
-}));
 vi.mock("@/lib/auth/site-url", () => ({ siteUrl: () => "https://synthetic.example.com" }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
 import { getCompanyReviewRequest, getCustomerReadiness, listCompanyReviewEvents, saveOwnerBusiness, submitCompanyReviewRequest, resubmitCompanyReviewRequest } from "./actions";
 import { saveWhatsappLinkRequest } from "@/lib/whatsapp/connection-actions";
 import { listKnowledgeSources, saveTextKnowledgeSource, uploadKnowledgeFiles } from "@/lib/knowledge/actions";
-import { startTestCheckoutAction } from "@/lib/billing/wiring/test-checkout-actions";
+import { startTestCheckoutAction, resumeTestCheckoutAction } from "@/lib/billing/wiring/test-checkout-actions";
 
 const COMPANY_A = "00000000-0000-4000-8000-00000000000a";
 const COMPANY_B = "00000000-0000-4000-8000-00000000000b";
@@ -141,13 +137,9 @@ const actions: Array<{ name: string; run: (binding: Binding) => Promise<Result> 
     if ("expectedCompanyId" in binding) form.append("expectedCompanyId", binding.expectedCompanyId instanceof Blob ? binding.expectedCompanyId : String(binding.expectedCompanyId));
     return uploadKnowledgeFiles(form);
   } },
-  { name: "Test checkout", run: binding => startTestCheckoutAction({ planVersionId: "version", clientOpId: "operation", ...binding } as Parameters<typeof startTestCheckoutAction>[0]) },
 ];
 
 beforeEach(() => {
-  vi.stubEnv("BILLING_PAYMOB_HOSTED_TEST_ENABLED", "true");
-  vi.stubEnv("PAYMOB_HOSTED_TEST_ACCOUNT_ID", USER);
-  vi.stubEnv("PAYMOB_HOSTED_TEST_COMPANY_ID", COMPANY_B);
   vi.clearAllMocks(); state.writes.length = 0; state.uploads.length = 0; state.reads.length = 0; state.knowledgeRows = [];
   state.reviewRow = null; state.events = []; state.rpcRequests.length = 0;
   state.access.mockResolvedValue({ ok: true, context: context() });
@@ -289,10 +281,11 @@ describe("rendered-company binding on review reads", () => {
 });
 
 describe("rendered-company binding on owner onboarding actions", () => {
-  it("Test checkout keeps server authorization before order writes", async () => {
-    vi.stubEnv("BILLING_PAYMOB_HOSTED_TEST_ENABLED", "false");
-    expect(await startTestCheckoutAction({planVersionId:"synthetic",clientOpId:"synthetic",expectedCompanyId:COMPANY_B})).toMatchObject({ok:false,code:"hosted_test_not_authorized"});
-    expect(state.writes).toEqual([]); expect(state.order).not.toHaveBeenCalled();
+  it.each([COMPANY_A, COMPANY_B, undefined, "", "company-b", 12, {}])("retired checkout cannot read or write for binding %j", async expectedCompanyId => {
+    expect(await startTestCheckoutAction({ planVersionId: "version", clientOpId: "operation", expectedCompanyId } as Parameters<typeof startTestCheckoutAction>[0])).toEqual({ ok: false, code: "test_not_configured" });
+    expect(await resumeTestCheckoutAction({ orderId: expectedCompanyId } as Parameters<typeof resumeTestCheckoutAction>[0])).toEqual({ ok: false, code: "test_not_configured" });
+    for (const boundary of [state.access, state.client, state.admin, state.order, state.open, state.provider, revalidatePath]) expect(boundary).not.toHaveBeenCalled();
+    expect(state.writes).toEqual([]); expect(state.reads).toEqual([]); expect(state.uploads).toEqual([]); expect(state.rpcRequests).toEqual([]);
   });
   for (const action of actions) {
     it(`${action.name} rejects an A form after selection changes to another company the owner belongs to`, async () => {
@@ -304,7 +297,7 @@ describe("rendered-company binding on owner onboarding actions", () => {
     });
     it(`${action.name} accepts a matching rendered company without changing legacy writes`, async () => {
       const result = await action.run({ expectedCompanyId: COMPANY_B });
-      expect(result).toMatchObject(action.name === "Test checkout" ? { ok: false, code: "plan_not_published" } : { ok: true });
+      expect(result).toMatchObject({ ok: true });
       expect(state.writes.length).toBeGreaterThan(0);
       expect(state.writes.every(write => write.companyId === COMPANY_B)).toBe(true);
       if (action.name.startsWith("review ")) {
@@ -315,7 +308,7 @@ describe("rendered-company binding on owner onboarding actions", () => {
     });
     it(`${action.name} preserves callers that omit the rendered company`, async () => {
       const result = await action.run({});
-      expect(result).toMatchObject(action.name === "Test checkout" ? { ok: false, code: "plan_not_published" } : { ok: true });
+      expect(result).toMatchObject({ ok: true });
       expect(state.writes.length).toBeGreaterThan(0);
     });
     it.each(["", "company-b", 12, {}, undefined])(`${action.name} rejects malformed binding %j before side effects`, async expectedCompanyId => {

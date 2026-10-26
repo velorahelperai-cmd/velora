@@ -273,7 +273,7 @@ function collectButtons(tree: unknown): Array<{ props: Record<string, unknown>; 
   return buttons;
 }
 
-function findByAttr(tree: unknown, attr: string, value: string): InspectedElement | null {
+function findByAttr(tree: unknown, attr: string, value: string | number): InspectedElement | null {
   const matches: InspectedElement[] = [];
   walk(tree, (el) => {
     if (el.props[attr] === value) matches.push(el);
@@ -775,7 +775,8 @@ it("a plans callback from capture A does not mutate capture B", async () => {
   expect(plans).not.toContain("نورا · المميزة");
   (tierButton(after, "basic")?.props.onClick as (() => void) | undefined)?.();
   const chosen = renderStudio();
-  expect(JSON.stringify(chosen)).toContain("نورا · القياسية");
+  expect(JSON.stringify(findByAttr(chosen, "data-summary-branch", 0))).toContain("نورا");
+  expect(JSON.stringify(findByAttr(chosen, "data-summary-branch", 0))).toContain("القياسية");
 });
 
 async function openBoundReview() {
@@ -1099,4 +1100,12 @@ it('navigates to plans immediately without save pending/success chrome while a w
  const after=renderStudio();
  expect(findByAttr(after,'data-prep-draft-status','ok')).toBeNull();
  expect(findByAttr(after,'data-setup-team-plans','true')).toBeTruthy();
+});
+
+it('keeps temporary sync failures silent when the draft is stored locally',async()=>{
+ const {saveAccountPrepDraft}=await import('@/lib/tenancy/account-prep-draft-actions');
+ vi.mocked(saveAccountPrepDraft).mockResolvedValueOnce({ok:false,code:'UNAVAILABLE'});
+ await openStudioPlans();await new Promise<void>(resolve=>setTimeout(resolve,0));const tree=renderStudio();
+ expect(findByAttr(tree,'data-setup-team-plans','true')).toBeTruthy();
+ expect(findByAttr(tree,'data-prep-draft-status','fail')).toBeNull();
 });

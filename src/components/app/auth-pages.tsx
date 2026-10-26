@@ -629,7 +629,12 @@ export function AuthEntryForm({mode}:{mode:"login"|"signup"}) {
     if (signup ? form.password.length < 8 : !form.password) next.password = signup ? "password" : "required";
     if (signup && form.confirm !== form.password) next.confirm = "match";
     setErrors(next);
-    if (Object.keys(next).length) return;
+    if (Object.keys(next).length) {
+      const fields = Array.from(event.currentTarget.querySelectorAll<HTMLInputElement>("input"));
+      const order = signup ? ["name", "email", "password", "confirm"] as const : ["email", "password"] as const;
+      fields[order.findIndex(key => Boolean(next[key]))]?.focus();
+      return;
+    }
     const current = captureScope();
     const trace = beginDiagnostic(signup ? "auth_signup" : "auth_login");
     let signupAttempted = false;
@@ -799,6 +804,7 @@ function observationFenceReason(
 
 export function VerifyEmailPage() {
   const copy = useAppCopy();
+  const { locale } = useDemo();
   const router = useRouter();
   const session = useOptionalAccountSession();
   const params = useSearchParams();
@@ -1068,11 +1074,20 @@ export function VerifyEmailPage() {
     });
   }
 
+  if (hydrated && !registeredEmail.trim()) {
+    return <AuthShell entry title={copy.auth.verifyTitle} body={locale === "ar" ? "ابدأ التسجيل أو سجّل الدخول لتأكيد بريدك الإلكتروني." : "Sign up or sign in to confirm your email address."}>
+      <div className="grid gap-3">
+        <LinkButton href={authFlowHref("/signup", pendingReturn)}>{locale === "ar" ? "إنشاء حساب" : "Create account"}</LinkButton>
+        <LinkButton href={authFlowHref("/login", pendingReturn)} variant="secondary">{copy.auth.login}</LinkButton>
+      </div>
+    </AuthShell>;
+  }
+
   return (
     <>
       <AuthShell
         entry
-        entryBackdrop={modalOpen}
+        entryBackdrop={modalOpen && hydrated && Boolean(registeredEmail)}
         title={copy.auth.verifyTitle}
         body={fill(copy.auth.verifyBody, { email: registeredEmail || "…" })}
 
@@ -1091,7 +1106,7 @@ export function VerifyEmailPage() {
       </AuthShell>
 
       <AuthOtpModal
-        open={modalOpen}
+        open={modalOpen && hydrated && Boolean(registeredEmail)}
         email={registeredEmail}
         title={copy.auth.verifyTitle}
         body={fill(copy.auth.verifyBody, { email: registeredEmail || "…" })}

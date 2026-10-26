@@ -1,4 +1,5 @@
 "use client";
+import { AccessibleDialog } from "./accessible-dialog";
 import Link from "next/link";
 import { useState } from "react";
 import { useDemo } from "@/lib/demo-state";
@@ -536,7 +537,7 @@ export function AdminCatalog({ initial }: { initial: CatalogResult<CatalogAdminS
 
         {/* Publish Review Modal */}
         {review && ready ? (
-          <div className={styles.modalOverlay} role="dialog" aria-modal="true" aria-labelledby="catalog-publish-title">
+          <AccessibleDialog label={c.publishReview} busy={busy} onClose={() => setReview(null)}>
             <div className={styles.modalCard}>
               <h2 id="catalog-publish-title">{c.publishReview}</h2>
               <div className={styles.modalWarning}>
@@ -583,7 +584,7 @@ export function AdminCatalog({ initial }: { initial: CatalogResult<CatalogAdminS
                 </button>
               </div>
             </div>
-          </div>
+          </AccessibleDialog>
         ) : null}
       </div>
     </div>

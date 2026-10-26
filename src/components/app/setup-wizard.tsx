@@ -1519,7 +1519,7 @@ function DecoupledPillarsNotice({
       id: "state_1_subscription",
       title: ar ? "1. باقة الاشتراك" : "1. Subscription",
       statusText: subscriptionActive ? (ar ? "اشتراك ساري من السجلات" : "Active recorded subscription") : (ar ? "لا يوجد اشتراك ساري مؤكد" : "No confirmed active subscription"),
-      detail: ar ? "التسوية المالية عبر Paymob" : "Paymob Billing Settlement",
+      detail: ar ? "التحقق من الدفع" : "Payment verification",
       state: subscriptionActive ? ("complete" as const) : ("pending" as const),
     },
     {

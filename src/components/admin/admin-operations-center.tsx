@@ -146,7 +146,7 @@ export function AdminOperationsCenter({ data }: AdminOperationsCenterProps) {
             )}
           </div>
           <div className="mt-3 border-t border-[var(--service-line)] pt-3 text-xs text-[var(--service-muted)]">
-            {ar ? "WhatsApp وInstagram وPaymob" : "WhatsApp, Instagram & Paymob"}
+            {ar ? "WhatsApp وInstagram والمدفوعات" : "WhatsApp, Instagram & payments"}
           </div>
         </div>
 
@@ -303,6 +303,7 @@ export function AdminOperationsCenter({ data }: AdminOperationsCenterProps) {
           <form onSubmit={handleServerSearch} className="flex flex-wrap items-center gap-2 text-xs">
             <input
               type="text"
+              aria-label={ar ? "معرّف التتبع أو الطلب" : "Trace or request ID"}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder={ar ? "البحث بـ trace_id أو request_id..." : "Filter by trace_id or request_id..."}
@@ -315,6 +316,7 @@ export function AdminOperationsCenter({ data }: AdminOperationsCenterProps) {
               {ar ? "تتبع وبحث" : "Search Trace"}
             </button>
             <select
+              aria-label={ar ? "الخدمة" : "Service"}
               value={serviceFilter}
               onChange={(e) => setServiceFilter(e.target.value)}
               className="rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)] px-3 py-1.5 text-xs outline-none focus:border-[var(--service-accent)]"
@@ -322,9 +324,10 @@ export function AdminOperationsCenter({ data }: AdminOperationsCenterProps) {
               <option value="all">{ar ? "كل الخدمات" : "All Services"}</option>
               <option value="webhook_meta">Meta Webhooks</option>
               <option value="ai_engine">AI Engine</option>
-              <option value="billing_paymob">Billing & Paymob</option>
+              <option value="billing_paymob">Historical billing</option>
             </select>
             <select
+              aria-label={ar ? "مستوى الحدث" : "Severity"}
               value={severityFilter}
               onChange={(e) => setSeverityFilter(e.target.value)}
               className="rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)] px-3 py-1.5 text-xs outline-none focus:border-[var(--service-accent)]"

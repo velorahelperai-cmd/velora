@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { loadBillingReturnRow, mapBillingReturnDbParts } from "./return-load";
 import { mapBillingReturnDisplay, redirectionQueryGrantsEntitlement } from "./return-status";
 import { readAdminTruth } from "@/lib/answers/runtime/admin-truth";
-import { GET as paymentReturn } from "@/app/api/billing/paymob/return/route";
+
 import { financialFixture } from "./financial-truth.fixtures";
 vi.mock("server-only", () => ({}));
 
@@ -98,17 +98,6 @@ describe("G07 financial truth regression", () => {
   });
   it("does not grant from a forged success URL", () => {
     expect(redirectionQueryGrantsEntitlement({ success: "true", hmac: "forged" })).toBe(false);
-  });
-  it("the return HTTP route ignores forged success/hmac while the order remains pending", async () => {
-    const f = seed(); state.tables.billing_entitlement_applications = []; state.tables.billing_settlement_outcomes = [];
-    f.attempt.status = "provider_submitted"; f.event.event_status = "pending";
-    const response = await paymentReturn(new Request(`http://localhost.invalid/api/billing/paymob/return?order_id=${f.order.id}&success=true&hmac=forged`));
-    expect(await response.json()).toMatchObject({ kind: "verifying", grantsEntitlement: false });
-  });
-  it("the return HTTP route hides financial details for another tenant", async () => {
-    const f = seed(); state.companyId = "other";
-    const response = await paymentReturn(new Request(`http://localhost.invalid/api/billing/paymob/return?order_id=${f.order.id}&success=true`));
-    expect(await response.json()).toEqual({ kind: "forbidden", messageKey: "order_not_found", grantsEntitlement: false, orderId: null });
   });
   it("does not read another company's order", async () => {
     const f = seed(); expect(await loadBillingReturnRow({ requestCompanyId: "other", orderId: f.order.id })).toBeNull();

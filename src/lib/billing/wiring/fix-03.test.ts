@@ -9,7 +9,6 @@ import {
   resolveAttemptForOrder,
 } from "@/lib/billing/wiring/order-create-persist";
 import { mapResolveOrCreateRpcPayload } from "@/lib/billing/wiring/attempt-resolve-rpc";
-import { processStoredPaymobEvent } from "@/lib/billing/wiring/event-process";
 
 const COMPANY = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const ORDER = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
@@ -278,52 +277,5 @@ describe("FIX-03 RPC payload mapping", () => {
       paymentAttemptId: "a2",
       status: "unresolved",
     });
-  });
-});
-
-describe("FIX-03 settlement semantics unchanged", () => {
-  it("granted / idempotent_replay / duplicate_collection_review still distinct", async () => {
-    const base = {
-      id: "e",
-      companyId: COMPANY,
-      orderId: ORDER,
-      paymentAttemptId: "a",
-      providerTransactionId: "t",
-      eventStatus: "success" as const,
-      providerAccountRef: "71610",
-      specialReference: "sr",
-      amountBaisa: 1,
-      observationKey: "k",
-    };
-    expect(
-      await processStoredPaymobEvent({
-        event: base,
-        deps: {
-          settleEnabled: true,
-          settleHmacVerified: async () => ({ ok: true, outcome: "granted" }),
-        },
-      }),
-    ).toEqual({ ok: true, outcome: "granted" });
-    expect(
-      await processStoredPaymobEvent({
-        event: base,
-        deps: {
-          settleEnabled: true,
-          settleHmacVerified: async () => ({ ok: true, outcome: "idempotent_replay" }),
-        },
-      }),
-    ).toEqual({ ok: true, outcome: "idempotent_replay" });
-    expect(
-      await processStoredPaymobEvent({
-        event: base,
-        deps: {
-          settleEnabled: true,
-          settleHmacVerified: async () => ({
-            ok: true,
-            outcome: "duplicate_collection_review",
-          }),
-        },
-      }),
-    ).toEqual({ ok: true, outcome: "duplicate_collection_review" });
   });
 });

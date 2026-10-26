@@ -4,7 +4,6 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { processStoredPaymobEvent } from "@/lib/billing/wiring/event-process";
 import {
   decidePurchaseGate,
   purchaseGateToUiState,
@@ -228,81 +227,6 @@ describe("active subscription — no implicit renew", () => {
       amountBaisa: 9000,
     });
     expect(fp1).toBe(fp2);
-  });
-});
-
-describe("settlement concurrency semantics (reuse wiring)", () => {
-  it("duplicate webhook collection → review, single grant; crash-retry idempotent", async () => {
-    let grants = 0;
-    const settle = async (evidence: Record<string, unknown>) => {
-      const txn = String(evidence.provider_transaction_id);
-      if (grants === 0) {
-        grants = 1;
-        return { ok: true as const, outcome: "granted" };
-      }
-      void txn;
-      return { ok: true as const, outcome: "duplicate_collection_review" };
-    };
-    const base = {
-      id: "e",
-      companyId: COMPANY_A,
-      orderId: "o",
-      paymentAttemptId: "a",
-      eventStatus: "success" as const,
-      providerAccountRef: "71610",
-      specialReference: "sr",
-      amountBaisa: 9000,
-      observationKey: "k",
-    };
-    expect(
-      await processStoredPaymobEvent({
-        event: { ...base, providerTransactionId: "t1" },
-        deps: { settleEnabled: true, settleHmacVerified: settle },
-      }),
-    ).toEqual({ ok: true, outcome: "granted" });
-    expect(
-      await processStoredPaymobEvent({
-        event: { ...base, providerTransactionId: "t2", observationKey: "k2" },
-        deps: { settleEnabled: true, settleHmacVerified: settle },
-      }),
-    ).toEqual({ ok: true, outcome: "duplicate_collection_review" });
-    expect(grants).toBe(1);
-
-    expect(
-      await processStoredPaymobEvent({
-        event: { ...base, providerTransactionId: "t1" },
-        deps: {
-          settleEnabled: true,
-          settleHmacVerified: async () => ({ ok: true, outcome: "idempotent_replay" }),
-        },
-      }),
-    ).toEqual({ ok: true, outcome: "idempotent_replay" });
-  });
-
-  it("pending then success does not double-grant", async () => {
-    let settleCalls = 0;
-    await processStoredPaymobEvent({
-      event: {
-        id: "e",
-        companyId: COMPANY_A,
-        orderId: "o",
-        paymentAttemptId: "a",
-        providerTransactionId: "t",
-        eventStatus: "pending",
-        providerAccountRef: "71610",
-        specialReference: "sr",
-        amountBaisa: 1,
-        observationKey: "p",
-      },
-      deps: {
-        settleEnabled: true,
-        settleHmacVerified: async () => {
-          settleCalls += 1;
-          return { ok: true, outcome: "granted" };
-        },
-      },
-    });
-    expect(settleCalls).toBe(0);
   });
 });
 

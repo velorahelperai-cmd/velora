@@ -37,5 +37,5 @@ export default async function AuditPage(props: AuditPageProps) {
     return <AccessGate code={result.code === "FORBIDDEN" ? "FORBIDDEN" : "UNAVAILABLE"} />;
   }
 
-  return <AdminAuditCompliance data={result.data} />;
+  return <AdminAuditCompliance key={JSON.stringify(filter)} data={result.data} initialFilter={filter} />;
 }

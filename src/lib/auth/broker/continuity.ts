@@ -78,6 +78,24 @@ export async function readBoundBrowserContinuity(
   return mapContinuityRow(hash, data as Record<string, unknown>);
 }
 
+/** Allowlisted diagnostics only; never emit raw SDK errors, identifiers or payloads. */
+function logBindFailure(error: unknown, started: number) {
+  const row = error && typeof error === "object" ? error as Record<string, unknown> : {};
+  const cause = row.cause && typeof row.cause === "object" ? row.cause as Record<string, unknown> : {};
+  const transportCodes = ["ECONNREFUSED", "ECONNRESET", "ETIMEDOUT", "ENOTFOUND", "EAI_AGAIN", "UND_ERR_CONNECT_TIMEOUT", "UND_ERR_HEADERS_TIMEOUT", "UND_ERR_SOCKET"];
+  const backendCodes = ["PGRST202", "PGRST301", "42P01", "42883", "42501", "23505", "57P01", "53300"];
+  // SDK transport errors can flatten the cause into details. Inspect, never copy, text.
+  const text = [row.code, cause.code, row.message, row.details].filter(v => typeof v === "string").join(" ");
+  const transport = transportCodes.find(code => new RegExp(`\\b${code}\\b`).test(text));
+  const backend = typeof row.code === "string" && backendCodes.includes(row.code) ? row.code : undefined;
+  const category = transport || /fetch failed|network error/i.test(text) ? "transport" : backend ? "backend" : "unknown";
+  brokerLog("warn", "auth.broker.continuity.bind_failed", {
+    stage: "continuity_bind",
+    error_category: category,
+    error_code: transport ?? backend ?? (category === "transport" ? "TRANSPORT" : "BIND_FAILED"),
+    duration_ms: Math.max(0, Math.round(performance.now() - started)),
+  });
+}
 /** Explicit POST enrollment only — INSERT-capable bind. */
 export async function bindBrowserContinuityFromAnchor(
   anchor: string,
@@ -90,10 +108,20 @@ export async function bindBrowserContinuityFromAnchor(
   const admin = createAdminClient();
   if (!admin) return { ok: false, code: "UNAVAILABLE" };
   const hash = hashBootstrapAnchor(anchor);
-  const { data, error } = await admin.rpc("vel_broker_bind_browser_continuity" as never, {
-    p_bootstrap_hash: hash,
-  } as never);
+  const started = performance.now();
+  const result = await (async () => {
+    try {
+      return await admin.rpc("vel_broker_bind_browser_continuity" as never, {
+        p_bootstrap_hash: hash,
+      } as never);
+    } catch (error) {
+      logBindFailure(error, started);
+      throw error;
+    }
+  })();
+  const { data, error } = result;
   if (error || !data || typeof data !== "object") {
+    logBindFailure(error, started);
     return { ok: false, code: "BIND_FAILED" };
   }
   const row = data as Record<string, unknown>;

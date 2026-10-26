@@ -93,8 +93,8 @@ const T = {
   confirm: { ar: "المتابعة للدفع", en: "Continue to payment" },
   confirming: { ar: "جارٍ التحقق من توفر الدفع…", en: "Checking payment availability…" },
   back: { ar: "العودة للباقات", en: "Back to plans" },
-  infoTitle: { ar: "الدفع الإلكتروني غير متاح حالياً", en: "Online payment is not available right now" },
-  infoBody: { ar: "اختياراتك محلية ولم يبدأ الدفع. يمكنك إدخالها مجددًا إذا أُغلق المتصفح.", en: "Your choices stay local and payment has not started. You can enter them again if the browser closes." },
+  infoTitle: { ar: "تأكيد الطلب والدفع", en: "Order and payment confirmation" },
+  infoBody: { ar: "عند المتابعة نتحقق من المبلغ ونحفظ تفاصيل الطلب. يبدأ تجهيز النشاط بعد تأكيد الدفع.", en: "Continuing validates the amount and saves your order details. Business setup starts after payment is verified." },
   incomplete: {
     ar: "اختياراتك غير مكتملة. ارجع إلى الباقات لاختيار باقة ومدة لكل فرع.",
     en: "Your choices are incomplete. Go back to the plans to pick a plan and term for every branch.",
@@ -126,7 +126,7 @@ export function safeTestCheckoutUrl(value?: string): string | null {
   try {
     const target = new URL(value);
     if (target.origin === "https://uatcheckout.thawani.om" && /^\/pay\/checkout_[A-Za-z0-9]{8,150}$/.test(target.pathname) && !target.username && !target.password && !target.hash && /^[A-Za-z0-9_-]{8,256}$/.test(target.searchParams.get("key") ?? "") && [...target.searchParams.keys()].length === 1) return target.href;
-    return target.origin === "https://om.checkout.paymob.com" && target.pathname === "/" && !target.username && !target.password && !target.hash && /^om(?:n)?_pk_test_/.test(target.searchParams.get("publicKey") ?? "") && /^(?:om(?:n)?_csk|pi)_test_/.test(target.searchParams.get("clientSecret") ?? "") ? target.href : null;
+    return null;
   } catch { return null; }
 }
 

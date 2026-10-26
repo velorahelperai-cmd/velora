@@ -27,7 +27,7 @@ import {
 } from "./commercial-offer";
 import { sanitizeCheckoutPayload } from "./preparation-handoff";
 import { parseAccountOrderRow, parseOwnedRecoveryRow } from "./account-order";
-import { paymobExternalSettlementStatus } from "./synthetic-settlement";
+
 import { classifyEs02RpcFailure, type Es02RpcObservation } from "./rpc-classify";
 import { classifyCreateOrderWriteAck, classifyProvisionWriteAck } from "./write-ack";
 import { singleBranchCountAllowed } from "@/lib/tenancy/single-branch-policy";
@@ -114,7 +114,7 @@ function asObservation(result: {
 /**
  * Explicit payment-initiation boundary. Review itself is local. The gated Test
  * adapter durably binds the operation, canonical offer and preparation before
- * contacting Paymob. Disabled configuration performs no writes.
+ * contacting the payment provider. Disabled configuration performs no writes.
  */
 export async function beginAccountPaymentAction(input: {
   expectedAccountId: string;
@@ -253,12 +253,6 @@ export async function createAccountBoundOrderAction(input: {
     });
     return { ok: false, code: "UNKNOWN" };
   }
-}
-
-/** Explicit Deferred boundary — never claims Paymob success. */
-export async function settleAccountOrderPaymobAction(): Promise<Es02Result<never>> {
-  const deferred = paymobExternalSettlementStatus();
-  return { ok: false, code: deferred.code };
 }
 
 /**

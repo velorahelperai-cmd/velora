@@ -1,0 +1,19 @@
+.root{min-height:0;border-radius:20px;font-family:inherit;container-type:inline-size;padding-block:16px}
+.root :global(.stage){padding-inline:12px;gap:12px}
+.root :global(.persona){isolation:isolate}
+.root :global(.persona-title){top:64px;right:16px;width:48%}
+.root :global(.persona-title h3){font-size:32px}
+.root :global(.panel){margin-top:235px;width:70%;padding:22px 16px 18px;border-radius:24px;background:rgba(255,254,251,.96)}
+.root :global(.character){width:390px;height:585px;left:-92px;bottom:auto;top:0;pointer-events:none}
+.portrait{width:100%;height:100%;object-fit:contain;object-position:center bottom}
+.root :global(.amount){margin:0;font-size:27px;color:var(--ink)}
+.root :global(.period){margin:0}
+.root :global(.quota){margin:8px 0;padding:8px 0;font-size:12px}
+.root :global(.panel-description){font-size:13px}
+.root :global(.status){text-align:start;font-size:11px;line-height:1.7;margin:10px 0}
+.root :global(.status p){margin:4px 0}
+.root :global(.note){font-size:11px;line-height:1.7}
+.root :global(.persona[data-selected=true] .panel){outline:2px solid var(--accent);outline-offset:3px}
+.standardBody{display:contents}
+@container(max-width:900px){.root :global(.stage){grid-template-columns:1fr;max-width:460px}.root :global(.persona){min-height:640px}.root :global(.character){width:430px;height:645px;left:-85px}.root :global(.panel){margin-top:240px;width:68%}.root :global(.persona-title){right:20px}}
+@container(max-width:350px){.root :global(.stage){padding-inline:4px}.root :global(.character){width:360px;height:540px;left:-80px}.root :global(.persona-title){right:8px;top:50px}.root :global(.panel){margin-top:200px;width:72%;padding:18px 12px}.root :global(.amount){font-size:23px}}

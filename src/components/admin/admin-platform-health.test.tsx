@@ -17,6 +17,8 @@ vi.mock("react", async () => {
   };
   return {
     ...actual,
+    useRef: (initial: unknown) => ({ current: initial }),
+    useTransition: () => [false, (action: () => void) => action()],
     useState(initial: unknown) {
       if (!mocked.driver) {
         return [initial, () => {}];
@@ -35,6 +37,7 @@ vi.mock("react", async () => {
   };
 });
 
+vi.mock("@/lib/tenancy/health-actions", () => ({adminGetPlatformHealthOverview: vi.fn()}));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
     refresh: vi.fn(),

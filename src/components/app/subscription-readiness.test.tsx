@@ -18,7 +18,7 @@ describe("catalog checkout requires observed server readiness",()=>{
  it("qualified Live Premium displays its payment mode and requires revision",()=>{
   const live={...basic,package:"premium" as const,amountBaisa:90000,automatedOutboundPerMonth:3000,liveCheckoutReady:true,catalogRevision:7};
   expect(isPurchasableOffer("level_1","premium","monthly",live,"ready")).toBe(true);
-  expect(card(live)).toContain('data-purchase-state="live"');expect(card(live)).toContain("Continue to Paymob");expect(card(live)).not.toContain("Test checkout only");
+  expect(card(live)).toContain('data-purchase-state="live"');expect(card(live)).toContain("Continue to checkout");expect(card(live)).not.toContain("Test checkout only");
   expect(isPurchasableOffer("level_1","premium","monthly",{...live,catalogRevision:undefined},"ready")).toBe(false);
  });
  it("published unbound Basic stays display-only",()=>{

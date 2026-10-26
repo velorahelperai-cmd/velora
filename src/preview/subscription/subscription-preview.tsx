@@ -10,22 +10,22 @@ const designOffers:SubscriptionOfferView[] = (["level_1","level_2","level_3"] as
 const states: SubscriptionDisplayState[] = ["unconfigured", "loading", "error", "empty", "pending", "active", "expired", "suspended"];
 /** Synthetic scenarios stay here; the real settings route never imports this file. */
 function fixture(state: SubscriptionDisplayState): SubscriptionView {
-  return { state, currentTier: ["active", "expired", "suspended", "pending"].includes(state) ? "level_2" : null, cycle: ["active", "expired"].includes(state) ? "monthly" : null, paidThrough: null };
+  return { state, currentPackage: "basic", currentTier: ["active", "expired", "suspended", "pending"].includes(state) ? "level_2" : null, cycle: ["active", "expired"].includes(state) ? "monthly" : null, paidThrough: null };
 }
 export function SubscriptionPreview() {
   const [locale, setLocale] = useState<"ar" | "en">("ar");
-  const [scenario, setScenario] = useState<SubscriptionDisplayState>("empty");
+  const [scenario, setScenario] = useState<SubscriptionDisplayState>("active");
   const c = subscriptionCopy[locale];
-  return <main lang={locale} dir={locale === "ar" ? "rtl" : "ltr"} style={{ background:"#050b08", minHeight:"100svh", padding:"24px 16px", color:"#d4e8dc" }}>
+  return <main lang={locale} dir={locale === "ar" ? "rtl" : "ltr"} style={{ background:"#f4f6f8", minHeight:"100svh", padding:"24px 16px", color:"#172d43" }}>
     <div style={{ maxWidth:1180, margin:"0 auto" }}>
       <header style={{ display:"flex", gap:12, flexWrap:"wrap", alignItems:"center", marginBottom:20 }}>
         <strong>{c.previewTitle}</strong><span>{locale==="ar"?"أسعار وبيانات توضيحية للتصميم فقط — الدفع معطّل":"Illustrative prices and data only — checkout disabled"}</span><span style={{ fontSize:12 }}>{c.preview}</span>
-        <label>{c.scenario} <select aria-label={c.scenario} value={scenario} onChange={(e) => setScenario(e.target.value as SubscriptionDisplayState)} style={{ background:"#1c3427", color:"#d4e8dc", padding:10, borderRadius:8 }}>
+        <label>{c.scenario} <select aria-label={c.scenario} value={scenario} onChange={(e) => setScenario(e.target.value as SubscriptionDisplayState)} style={{ background:"#ffffff", color:"#172d43", padding:10, borderRadius:8 }}>
           {states.map((state) => <option key={state} value={state}>{c.states[state]}</option>)}
         </select></label>
-        <button type="button" onClick={() => setLocale(locale === "ar" ? "en" : "ar")} style={{ minHeight:44, padding:"8px 20px", borderRadius:8, background:"#123c2a", color:"white" }}>{locale === "ar" ? "English" : "العربية"}</button>
+        <button type="button" onClick={() => setLocale(locale === "ar" ? "en" : "ar")} style={{ minHeight:44, padding:"8px 20px", borderRadius:8, background:"#087e8b", color:"white" }}>{locale === "ar" ? "English" : "العربية"}</button>
       </header>
-      <SubscriptionPanel key={scenario} locale={locale} view={fixture(scenario)} offersView={{status:"ready", offers:designOffers}} preview onRetry={() => setScenario("unconfigured")} />
+      <SubscriptionPanel accountOverview companyName={locale === "ar" ? "منشأة توضيحية" : "Example business"} key={scenario} locale={locale} view={fixture(scenario)} offersView={{status:"ready", offers:designOffers}} preview onRetry={() => setScenario("unconfigured")} />
     </div>
   </main>;
 }

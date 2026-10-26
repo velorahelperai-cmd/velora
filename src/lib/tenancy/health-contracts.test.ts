@@ -110,7 +110,8 @@ describe("Module 14 Platform Health & Readiness Contracts", () => {
       expect(probeIds).toContain("gotrue_auth");
       expect(probeIds).toContain("meta_wa_webhook");
       expect(probeIds).toContain("meta_ig_webhook");
-      expect(probeIds).toContain("paymob_gateway");
+      expect(probeIds).not.toContain("paymob_gateway");
+      expect(res.data.probes.find(p => p.id === "payment_gateway")?.status).toBe("UNKNOWN");
       expect(probeIds).toContain("ai_router_fleet");
       expect(probeIds).toContain("storage_service");
 

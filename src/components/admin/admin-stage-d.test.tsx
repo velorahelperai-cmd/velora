@@ -50,7 +50,7 @@ describe("Stage D — AI, Billing & Catalog Master Suite (Modules 05, 06, 07)", 
     expect(markup).toContain("GPT-6.1 Sol");
   });
 
-  it("Module 06: renders Billing & Payments ledger with confirmed revenue and Paymob Test isolation", () => {
+  it("Module 06: renders Billing & Payments ledger with confirmed revenue and restricted Test checkout", () => {
     state.locale = "ar";
     const markup = renderToStaticMarkup(
       createElement(AdminBillingLedger, {
@@ -89,8 +89,9 @@ describe("Stage D — AI, Billing & Catalog Master Suite (Modules 05, 06, 07)", 
 
     // Module 06 badge
     expect(markup).toContain("Module 06");
-    // Paymob status
-    expect(markup).toContain("Paymob");
+    // restricted Test gateway
+    expect(markup).toContain("Thawani UAT");
+    expect(markup).not.toContain("Paymob");
     // Order row and amount
     expect(markup).toContain("مقهى مسقط");
     expect(markup).toContain("ord-101");

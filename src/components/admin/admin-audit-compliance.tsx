@@ -1,4 +1,5 @@
 "use client";
+import { AccessibleDialog } from "@/components/app/accessible-dialog";
 
 import { useState } from "react";
 import Link from "next/link";
@@ -20,6 +21,7 @@ import {
 
 export interface AdminAuditComplianceProps {
   data: AdminAuditOverviewData;
+  initialFilter?: { action?: string; category?: string; search?: string; companyId?: string };
 }
 
 const CATEGORY_STYLES: Record<AuditCategory, { ar: string; en: string; style: string }> = {
@@ -31,29 +33,25 @@ const CATEGORY_STYLES: Record<AuditCategory, { ar: string; en: string; style: st
   system: { ar: "نظام وتشغيل", en: "System", style: "bg-stone-100 text-stone-700 border-stone-200" },
 };
 
-export function AdminAuditCompliance({ data }: AdminAuditComplianceProps) {
+export function AdminAuditCompliance({ data, initialFilter = {} }: AdminAuditComplianceProps) {
   const { locale } = useDemo();
   const ar = locale === "ar";
 
-  const [categoryFilter, setCategoryFilter] = useState<string>("all");
-  const [actionFilter, setActionFilter] = useState<string>("all");
-  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [categoryFilter, setCategoryFilter] = useState<string>(initialFilter.category || "");
+  const [actionFilter, setActionFilter] = useState<string>(initialFilter.action || "");
+  const [searchQuery, setSearchQuery] = useState<string>(initialFilter.search || "");
 
   // Inspect detail modal state
   const [inspectedEntry, setInspectedEntry] = useState<AdminAuditLogEntry | null>(null);
 
-  const filteredLogs = data.logs.filter((log) => {
-    if (categoryFilter !== "all" && log.category !== categoryFilter) return false;
-    if (actionFilter !== "all" && log.action !== actionFilter) return false;
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      const matchAct = log.action.toLowerCase().includes(q);
-      const matchComp = log.companyName?.toLowerCase().includes(q) || log.companyId?.toLowerCase().includes(q);
-      const matchActor = log.actorUserId.toLowerCase().includes(q);
-      if (!matchAct && !matchComp && !matchActor) return false;
-    }
-    return true;
-  });
+  const filteredLogs = data.logs;
+  function pageHref(offset: number) {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(initialFilter)) if (value) query.set(key, value);
+    query.set("limit", String(data.pagination.limit));
+    query.set("offset", String(offset));
+    return `/admin/audit?${query}`;
+  }
 
   return (
     <div className="space-y-6" dir={ar ? "rtl" : "ltr"}>
@@ -185,11 +183,12 @@ export function AdminAuditCompliance({ data }: AdminAuditComplianceProps) {
           </div>
 
           {/* Quick Filters */}
-          <div className="flex flex-wrap items-center gap-2 text-xs">
+          <form action="/admin/audit" className="flex flex-wrap items-center gap-2 text-xs">
+            {initialFilter.companyId && <input type="hidden" name="companyId" value={initialFilter.companyId} />}
             <div className="relative">
               <IconSearch className="pointer-events-none absolute start-2.5 top-2 h-3.5 w-3.5 text-[var(--service-muted)]" />
               <input
-                type="text"
+                type="search" name="search" maxLength={120} aria-label={ar ? "البحث في سجل التدقيق" : "Search audit logs"}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder={ar ? "البحث بالعملية أو المنشأة..." : "Filter by action or company..."}
@@ -197,11 +196,11 @@ export function AdminAuditCompliance({ data }: AdminAuditComplianceProps) {
               />
             </div>
             <select
-              value={categoryFilter}
+              name="category" aria-label={ar ? "التصنيف" : "Category"} value={categoryFilter}
               onChange={(e) => setCategoryFilter(e.target.value)}
               className="rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)] px-3 py-1.5 text-xs outline-none focus:border-[var(--service-accent)]"
             >
-              <option value="all">{ar ? "كل التصنيفات" : "All Categories"}</option>
+              <option value="">{ar ? "كل التصنيفات" : "All Categories"}</option>
               <option value="security">{ar ? "أمان وصلاحيات" : "Security"}</option>
               <option value="support">{ar ? "دعم وتذاكر" : "Support"}</option>
               <option value="company">{ar ? "منشآت وتهيئة" : "Company"}</option>
@@ -209,13 +208,14 @@ export function AdminAuditCompliance({ data }: AdminAuditComplianceProps) {
               <option value="channel">{ar ? "قنوات ورسائل" : "Channel"}</option>
               <option value="system">{ar ? "نظام وتشغيل" : "System"}</option>
             </select>
-            {data.availableActions.length > 0 && (
+            {(data.availableActions.length > 0 || actionFilter) && (
               <select
-                value={actionFilter}
+                name="action" aria-label={ar ? "العملية" : "Action"} value={actionFilter}
                 onChange={(e) => setActionFilter(e.target.value)}
                 className="rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)] px-3 py-1.5 text-xs outline-none focus:border-[var(--service-accent)] max-w-[180px]"
               >
-                <option value="all">{ar ? "كل العمليات" : "All Actions"}</option>
+                <option value="">{ar ? "كل العمليات" : "All Actions"}</option>
+                {actionFilter && !data.availableActions.includes(actionFilter) && <option value={actionFilter}>{actionFilter}</option>}
                 {data.availableActions.map((act) => (
                   <option key={act} value={act}>
                     {act}
@@ -223,8 +223,15 @@ export function AdminAuditCompliance({ data }: AdminAuditComplianceProps) {
                 ))}
               </select>
             )}
-          </div>
+            <button type="submit" className="min-h-11 rounded-xl border px-4">{ar ? "بحث" : "Search"}</button>
+            <Link href="/admin/audit" className="underline">{ar ? "مسح المرشحات" : "Clear filters"}</Link>
+          </form>
         </div>
+        <nav aria-label={ar ? "صفحات السجل" : "Audit pages"} className="mb-4 flex flex-wrap items-center gap-4 text-sm">
+          <span>{ar ? "عدد النتائج:" : "Results:"} {data.pagination.totalCount}</span>
+          {data.pagination.offset > 0 && <Link className="underline" href={pageHref(Math.max(0, data.pagination.offset - data.pagination.limit))}>{ar ? "السابق" : "Previous"}</Link>}
+          {data.pagination.hasMore && <Link className="underline" href={pageHref(data.pagination.offset + data.pagination.limit)}>{ar ? "التالي" : "Next"}</Link>}
+        </nav>
 
         {/* Audit Table */}
         <div className="overflow-x-auto rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)]">
@@ -312,7 +319,7 @@ export function AdminAuditCompliance({ data }: AdminAuditComplianceProps) {
 
       {/* Inspect Detail Modal */}
       {inspectedEntry && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-xs">
+        <AccessibleDialog label={ar ? "تفاصيل سجل التدقيق" : "Audit log details"} onClose={() => setInspectedEntry(null)} busy={false}>
           <div className="w-full max-w-2xl rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] p-6 shadow-xl space-y-4 max-h-[85vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-[var(--service-line)] pb-3">
               <div>
@@ -333,6 +340,7 @@ export function AdminAuditCompliance({ data }: AdminAuditComplianceProps) {
               </div>
               <button
                 type="button"
+                aria-label={ar ? "إغلاق" : "Close"}
                 onClick={() => setInspectedEntry(null)}
                 className="rounded-lg p-1 text-[var(--service-muted)] hover:bg-[var(--service-subtle)]"
               >
@@ -377,7 +385,7 @@ export function AdminAuditCompliance({ data }: AdminAuditComplianceProps) {
               </button>
             </div>
           </div>
-        </div>
+        </AccessibleDialog>
       )}
     </div>
   );

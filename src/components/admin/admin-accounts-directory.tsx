@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import Link from "next/link";
+import { useDemo } from "@/lib/demo-state";
 import { useRouter } from "next/navigation";
 import type { AdminAccountSearchItem } from "@/lib/tenancy/types";
 import { AccountDeletionPanel } from './account-deletion-panel';
@@ -26,51 +27,59 @@ export function AdminAccountsDirectory({
   maxOffset = 500,
 }: AdminAccountsDirectoryProps) {
   const router = useRouter();
+  const { locale } = useDemo();
+  const ar = locale === "ar";
   const [search, setSearch] = useState(initialQuery);
-  const [isSearching, setIsSearching] = useState(false);
+  const [previousQuery, setPreviousQuery] = useState(initialQuery);
+  const [isSearching, startTransition] = useTransition();
+  if (previousQuery !== initialQuery) {
+    setPreviousQuery(initialQuery);
+    setSearch(initialQuery);
+  }
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setIsSearching(true);
     const params = new URLSearchParams();
     if (search.trim()) params.set("q", search.trim());
     params.set("offset", "0");
-    router.push(`/admin/accounts?${params.toString()}`);
+    startTransition(() => router.push(`/admin/accounts?${params.toString()}`));
   };
 
   const handlePageChange = (newOffset: number) => {
     const params = new URLSearchParams();
-    if (search.trim()) params.set("q", search.trim());
+    if (initialQuery.trim()) params.set("q", initialQuery.trim());
     params.set("offset", String(Math.max(0, newOffset)));
-    router.push(`/admin/accounts?${params.toString()}`);
+    startTransition(() => router.push(`/admin/accounts?${params.toString()}`));
   };
 
   const startIndex = initialOffset + 1;
   const endIndex = initialOffset + accounts.length;
 
   return (
-    <div className="space-y-6" dir="rtl">
+    <div className="space-y-6" dir={ar ? "rtl" : "ltr"}>
       {/* Search Header */}
       <div className="rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] p-5 shadow-sm">
-        <form onSubmit={handleSearchSubmit} className="flex flex-wrap items-center gap-3">
-          <div className="relative flex-1 min-w-[260px]">
+        <form onSubmit={handleSearchSubmit} aria-busy={isSearching} className="flex flex-wrap items-end gap-3">
+          <div className="relative flex-1 min-w-0 basis-64">
+            <label htmlFor="admin-account-search" className="mb-2 block text-sm font-medium text-[var(--service-ink)]">{ar ? "البحث عن حساب" : "Search accounts"}</label>
             <input
+              id="admin-account-search"
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="البحث بالاسم، البريد، الهاتف، أو كود الدعم (Support Code)..."
-              className="w-full rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)] px-4 py-2.5 text-sm text-[var(--service-ink)] placeholder-[var(--service-muted)] outline-none focus:border-[var(--service-accent)] focus:ring-1 focus:ring-[var(--service-accent)] transition"
+              placeholder={ar ? "اسم، بريد، هاتف أو كود دعم" : "Name, email, phone or support code"}
+              className="w-full rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)] ps-4 pe-16 py-2.5 text-sm text-[var(--service-ink)] placeholder-[var(--service-muted)] outline-none focus:border-[var(--service-accent)] focus:ring-1 focus:ring-[var(--service-accent)] transition"
             />
             {search && (
               <button
                 type="button"
                 onClick={() => {
                   setSearch("");
-                  router.push("/admin/accounts");
+                  startTransition(() => router.push("/admin/accounts"));
                 }}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-[var(--service-muted)] hover:text-[var(--service-ink)]"
+                className="absolute end-3 bottom-3 text-xs text-[var(--service-muted)] hover:text-[var(--service-ink)]"
               >
-                مسح
+                {ar ? "مسح" : "Clear"}
               </button>
             )}
           </div>
@@ -79,14 +88,14 @@ export function AdminAccountsDirectory({
             disabled={isSearching}
             className="rounded-xl bg-[var(--service-accent)] px-5 py-2.5 text-xs font-bold text-white shadow-sm hover:opacity-95 transition disabled:opacity-50"
           >
-            {isSearching ? "جارِ البحث..." : "بحث"}
+            {isSearching ? (ar ? "جارِ البحث..." : "Searching...") : (ar ? "بحث" : "Search")}
           </button>
           {initialQuery && (
             <Link
               href="/admin/accounts"
               className="rounded-xl border border-[var(--service-line)] bg-[var(--service-surface)] px-4 py-2.5 text-xs font-semibold text-[var(--service-ink)] hover:bg-[var(--service-subtle)] transition"
             >
-              إعادة الضبط
+              {ar ? "إعادة الضبط" : "Reset"}
             </Link>
           )}
         </form>
@@ -101,23 +110,23 @@ export function AdminAccountsDirectory({
             </svg>
           </div>
           <h3 className="mt-4 text-base font-bold text-[var(--service-ink)]">
-            لا توجد حسابات مطابقة
+            {ar ? "لا توجد حسابات مطابقة" : "No matching accounts"}
           </h3>
           <p className="mt-1 text-sm text-[var(--service-muted)]">
-            لم يتم العثور على أي حسابات بالمعايير المحددة. جرب كلمة بحث أخرى.
+            {ar ? "لم يتم العثور على أي حسابات بالمعايير المحددة. جرب كلمة بحث أخرى." : "No accounts matched these criteria. Try another search."}
           </p>
         </div>
       ) : (
         <div className="rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-right text-sm">
+            <table className="w-full text-start text-sm">
               <thead className="border-b border-[var(--service-line)] bg-[var(--service-subtle)] text-xs font-bold text-[var(--service-muted)]">
                 <tr>
-                  <th className="px-5 py-3.5">المستخدم وكود الدعم</th>
-                  <th className="px-5 py-3.5">البريد وحالة التوثيق</th>
-                  <th className="px-5 py-3.5">الهاتف الموثق</th>
-                  <th className="px-5 py-3.5">المنشآت المرتبطة</th>
-                  <th className="px-5 py-3.5 text-left">إجراءات</th>
+                  <th className="px-5 py-3.5">{ar ? "المستخدم وكود الدعم" : "User and support code"}</th>
+                  <th className="px-5 py-3.5">{ar ? "البريد وحالة التوثيق" : "Email and verification"}</th>
+                  <th className="px-5 py-3.5">{ar ? "الهاتف الموثق" : "Verified phone"}</th>
+                  <th className="px-5 py-3.5">{ar ? "المنشآت المرتبطة" : "Linked businesses"}</th>
+                  <th className="px-5 py-3.5 text-end">{ar ? "إجراءات" : "Actions"}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--service-line)]">
@@ -125,7 +134,7 @@ export function AdminAccountsDirectory({
                   <tr key={acc.user_id} className="hover:bg-[var(--service-canvas)]/50 transition">
                     <td className="px-5 py-4">
                       <div className="font-bold text-[var(--service-ink)]">
-                        {acc.full_name || "بدون اسم مسجل"}
+                        {acc.full_name || (ar ? "بدون اسم مسجل" : "No name recorded")}
                       </div>
                       <div className="mt-0.5 flex items-center gap-1.5 font-mono text-xs text-[var(--service-muted)]">
                         <span>{acc.support_code || acc.user_id.slice(0, 12)}</span>
@@ -141,15 +150,15 @@ export function AdminAccountsDirectory({
                             <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
                             </svg>
-                            مؤكد
+                            {ar ? "مؤكد" : "Verified"}
                           </span>
                         ) : acc.email_confirmed === false ? (
                           <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-700 border border-amber-500/20">
-                            غير مؤكد
+                            {ar ? "غير مؤكد" : "Unverified"}
                           </span>
                         ) : (
                           <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-500">
-                            غير محدد
+                            {ar ? "غير محدد" : "Unknown"}
                           </span>
                         )}
                       </div>
@@ -165,7 +174,7 @@ export function AdminAccountsDirectory({
                     </td>
                     <td className="px-5 py-4">
                       {acc.companies.length === 0 ? (
-                        <span className="text-xs text-[var(--service-muted)]">لا توجد منشأة</span>
+                        <span className="text-xs text-[var(--service-muted)]">{ar ? "لا توجد منشأة" : "No business"}</span>
                       ) : (
                         <div className="flex flex-wrap gap-1.5 max-w-xs">
                           {acc.companies.map((c) => (
@@ -176,20 +185,20 @@ export function AdminAccountsDirectory({
                             >
                               <span className="font-medium truncate max-w-[120px]">{c.display_name}</span>
                               <span className="rounded bg-[var(--service-surface)] px-1 text-[10px] text-[var(--service-muted)]">
-                                {c.role === "owner" ? "مالك" : "عضو"}
+                                {c.role === "owner" ? (ar ? "مالك" : "Owner") : (ar ? "عضو" : "Member")}
                               </span>
                             </Link>
                           ))}
                         </div>
                       )}
                     </td>
-                    <td className="px-5 py-4 text-left">
+                    <td className="px-5 py-4 text-end">
                       <div className="flex items-center justify-end gap-2">
                         <Link
                           href={`/admin/identity-recovery?userId=${acc.user_id}`}
                           className="rounded-lg border border-[var(--service-line)] bg-[var(--service-surface)] px-2.5 py-1 text-xs font-semibold text-[var(--service-ink)] hover:bg-[var(--service-subtle)] transition"
                         >
-                          استرداد الهوية
+                          {ar ? "استرداد الهوية" : "Recover identity"}
                         </Link>
                         <AccountDeletionPanel key={acc.user_id} target={acc.user_id} email={acc.email}/>
                       </div>
@@ -203,8 +212,8 @@ export function AdminAccountsDirectory({
           {/* Pagination Controls */}
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--service-line)] bg-[var(--service-subtle)] px-5 py-3 text-xs text-[var(--service-muted)]">
             <div>
-              عرض <span className="font-bold text-[var(--service-ink)]">{startIndex}</span> إلى{" "}
-              <span className="font-bold text-[var(--service-ink)]">{endIndex}</span> حساب
+              {ar ? "عرض" : "Showing"} <span className="font-bold text-[var(--service-ink)]">{startIndex}</span> {ar ? "إلى" : "to"}{" "}
+              <span className="font-bold text-[var(--service-ink)]">{endIndex}</span> {ar ? "حساب" : "accounts"}
             </div>
             <div className="flex items-center gap-2">
               <button
@@ -213,7 +222,7 @@ export function AdminAccountsDirectory({
                 onClick={() => handlePageChange(initialOffset - initialLimit)}
                 className="rounded-lg border border-[var(--service-line)] bg-[var(--service-surface)] px-3 py-1.5 font-bold text-[var(--service-ink)] hover:bg-[var(--service-canvas)] transition disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                ← السابق
+                {ar ? "← السابق" : "Previous"}
               </button>
               <button
                 type="button"
@@ -221,7 +230,7 @@ export function AdminAccountsDirectory({
                 onClick={() => handlePageChange(initialOffset + initialLimit)}
                 className="rounded-lg border border-[var(--service-line)] bg-[var(--service-surface)] px-3 py-1.5 font-bold text-[var(--service-ink)] hover:bg-[var(--service-canvas)] transition disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                التالي →
+                {ar ? "التالي →" : "Next"}
               </button>
             </div>
           </div>
@@ -230,7 +239,7 @@ export function AdminAccountsDirectory({
 
       {atBrowseWindowEnd && (
         <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-amber-800">
-          تم الوصول إلى الحد الأقصى للتصفح المتسلسل ({maxOffset} حساب). يرجى استخدام شريط البحث لتحديد حسابات معينة بدقة.
+          {ar ? `تم الوصول إلى الحد الأقصى للتصفح المتسلسل (${maxOffset} حساب). يرجى استخدام البحث لتحديد حسابات معينة.` : `The browsing limit (${maxOffset} accounts) was reached. Use search to find specific accounts.`}
         </div>
       )}
     </div>

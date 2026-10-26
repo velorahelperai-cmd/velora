@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRef, useState, useTransition } from "react";
+import { adminGetPlatformHealthOverview } from "@/lib/tenancy/health-actions";
+import { AccessGate } from "@/components/app/access-gate";
 import { useDemo } from "@/lib/demo-state";
 import type { PlatformHealthOverviewData, SubsystemProbe } from "@/lib/tenancy/health-types";
 import {
@@ -23,21 +24,33 @@ export interface AdminPlatformHealthProps {
 }
 
 export function AdminPlatformHealth({ data }: AdminPlatformHealthProps) {
-  const router = useRouter();
   const { locale } = useDemo();
   const ar = locale === "ar";
 
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const { kpis, probes, invariants, evaluatedAt } = data;
+  const [isRefreshing, startTransition] = useTransition();
+  const [snapshot, setSnapshot] = useState<{ source: PlatformHealthOverviewData; value: PlatformHealthOverviewData; stale: boolean; denied: "FORBIDDEN" | "UNAUTHENTICATED" | null }>({ source: data, value: data, stale: false, denied: null });
+  const inFlight = useRef(false);
+  if (snapshot.source !== data) setSnapshot({ source: data, value: data, stale: false, denied: null });
+  const { kpis, probes, invariants, evaluatedAt } = snapshot.value;
 
-  const handleRefresh = async () => {
-    setIsRefreshing(true);
-    try {
-      router.refresh();
-    } finally {
-      setTimeout(() => setIsRefreshing(false), 600);
-    }
+  const handleRefresh = () => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    const source = data;
+    startTransition(async () => {
+      try {
+        const result = await adminGetPlatformHealthOverview();
+        setSnapshot(previous => previous.source !== source ? previous : result.ok
+          ? { ...previous, value: result.data, stale: false, denied: null }
+          : result.code === "UNAVAILABLE"
+            ? { ...previous, stale: true }
+            : { ...previous, denied: result.code });
+      } catch {
+        setSnapshot(previous => previous.source !== source ? previous : { ...previous, stale: true });
+      } finally { inFlight.current = false; }
+    });
   };
+  if (snapshot.denied) return <AccessGate code={snapshot.denied === "FORBIDDEN" ? "FORBIDDEN" : "UNAVAILABLE"} />;
 
   const getProbeIcon = (category: SubsystemProbe["category"]) => {
     switch (category) {
@@ -97,7 +110,8 @@ export function AdminPlatformHealth({ data }: AdminPlatformHealthProps) {
   };
 
   return (
-    <div className="space-y-6" dir={ar ? "rtl" : "ltr"}>
+    <div className="space-y-6" dir={ar ? "rtl" : "ltr"} aria-busy={isRefreshing}>
+      {snapshot.stale && <p role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">{ar ? "تعذّر تحديث الفحص. المعروض هو آخر نتيجة ناجحة، وقد لا يعكس الحالة الحالية. أعد المحاولة." : "The refresh failed. The last successful result is shown and may not reflect the current state. Try again."}</p>}
       {/* Header Info */}
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[var(--service-line)] pb-4">
         <div>

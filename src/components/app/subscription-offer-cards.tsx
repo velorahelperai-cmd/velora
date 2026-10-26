@@ -1,5 +1,9 @@
 "use client";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
+import Image from "next/image";
+import { packageMedia } from "@/components/landing/approved-assets";
+import homepageStyles from "@/components/landing/approved-sections.module.css";
+import accountCards from "./subscription-homepage-cards.module.css";
 import { SubscriptionCharacter } from "./subscription-character";
 import { subscriptionCopy, subscriptionTiers } from "./subscription-copy";
 import type { SubscriptionChoice, SubscriptionOfferView, SubscriptionOffersView, SubscriptionTerm } from "./subscription-offers-view";
@@ -9,60 +13,74 @@ import { commercialAmount, commercialCatalogRevision, commercialPlan, commercial
 import styles from "./subscription-panel.module.css";
 import { catalogOfferState, catalogStateCopy } from "./subscription-catalog-state";
 
-export function SubscriptionOfferCards({ locale, term, offers, catalogStatus, selectedPersona, selectedPackage, currentPersona, disabled = false, onSelectionInvalidated, onSelect, onInspect }: {
+function OfferFeatures({ homepageStyle, label, children }: { homepageStyle: boolean; label: string; children: ReactNode }) {
+  return homepageStyle ? <details><summary>{label}</summary>{children}</details> : <><p className={styles.featureHeading}>{label}</p>{children}</>;
+}
+
+export function SubscriptionOfferCards({ locale, term, offers, catalogStatus, selectedPersona, selectedPackage, currentPersona, homepageStyle = false, disabled = false, onSelectionInvalidated, onSelect, onInspect }: {
   locale: "ar" | "en"; term: SubscriptionTerm; offers: readonly SubscriptionOfferView[];
   catalogStatus?: SubscriptionOffersView["status"];
   selectedPackage?: SubscriptionChoice["package"]; selectedPersona: SubscriptionChoice["persona"] | null; currentPersona?: SubscriptionChoice["persona"] | null;
+  homepageStyle?: boolean;
   disabled?: boolean; onSelectionInvalidated?: () => void; onSelect: (choice: SubscriptionChoice) => void;
   onInspect?: (intent: SubscriptionIntent) => void;
 }) {
   const c = subscriptionCopy[locale], text = catalogStateCopy[locale], ar = locale === "ar";
   const [packages, setPackages] = useState<Record<SubscriptionChoice["persona"], SubscriptionChoice["package"]>>({ level_1: "basic", level_2: "basic", level_3: "basic" });
-  return <div className={styles.cards}>
+  const visual = (normal: string, homepage: string) => homepageStyle ? homepage : normal;
+  return <div className={homepageStyle ? `${homepageStyles.pricing} ${accountCards.root}` : undefined} dir={ar ? "rtl" : "ltr"}>
+    {homepageStyle && <div className="background" aria-hidden="true" />}
+    <div className={visual(styles.cards, "stage")}>
     {subscriptionTiers.map(persona => {
       const pack = selectedPersona === persona.id && selectedPackage ? selectedPackage : packages[persona.id];
       const plan = commercialPlan(persona.id, pack);
       const offer = catalogStatus === "ready" ? matchingCommercialOffer(plan, term, offers) : undefined;
       const state = catalogOfferState(offer, term, catalogStatus), selectedHere = selectedPersona === persona.id && (!selectedPackage || selectedPackage === pack);
       const profile = c.personas[persona.id];
-      return <article key={persona.id} aria-label={persona[locale]} data-persona={persona.id} data-seq="plan" className={styles.card} data-selected={selectedHere} data-commercial-revision={commercialCatalogRevision}>
-        <div className={styles.portrait}><SubscriptionCharacter name={persona.id === "level_1" ? "noor" : persona.id === "level_2" ? "lina" : "dana"} label={persona[locale]} locale={locale} selected={selectedHere} size="staff" /></div>
-        <div className={styles.cardTop}>
-          <h3>{persona[locale]}<span lang={ar ? "en" : "ar"}>{persona[ar ? "en" : "ar"]}</span></h3>
-          <span className={styles.approvedBadge}>{c[pack]}</span>
+      const mediaId = persona.id === "level_1" ? "noura" : persona.id === "level_2" ? "lina" : "dana";
+      return <article data-id={mediaId} key={persona.id} aria-label={persona[locale]} data-persona={persona.id} data-seq="plan" className={visual(styles.card, "persona")} data-selected={selectedHere} data-commercial-revision={commercialCatalogRevision}>
+        {homepageStyle ? <><div className="halo" aria-hidden="true" /><div className="contact-shadow" aria-hidden="true" /><div className="character" aria-hidden="true"><Image src={packageMedia[mediaId].poster} alt="" width={640} height={960} sizes="(max-width: 760px) 380px, 420px" className={accountCards.portrait} /></div></> : <div className={styles.portrait}><SubscriptionCharacter name={persona.id === "level_1" ? "noor" : persona.id === "level_2" ? "lina" : "dana"} label={persona[locale]} locale={locale} selected={selectedHere} size="staff" /></div>}
+        <div className={visual(styles.cardTop, "persona-title")}>
+          {homepageStyle ? <><h3>{persona[locale]}</h3><span className="roman" lang={ar ? "en" : "ar"}>{persona[ar ? "en" : "ar"]}</span></> : <h3>{persona[locale]}<span lang={ar ? "en" : "ar"}>{persona[ar ? "en" : "ar"]}</span></h3>}
+          {!homepageStyle && <span className={styles.approvedBadge}>{c[pack]}</span>}
+          {homepageStyle && <p className="role">{profile.title}</p>}
           {currentPersona === persona.id ? <span className={styles.currentBadge}>{c.currentBadge}</span> : null}
         </div>
-        <p className={styles.role}><strong>{profile.title}</strong></p>
-        <p className={styles.fits}>{profile.role}</p>
-        <div className={styles.packageOptions} role="group" aria-label={c.packageLevel + " " + persona[locale]}>
-          {(["basic", "premium"] as const).map(value => <button key={value} type="button" aria-pressed={pack === value} disabled={disabled} onClick={() => {
+        <div className={homepageStyle ? "panel" : accountCards.standardBody}>
+        {!homepageStyle && <><p className={styles.role}><strong>{profile.title}</strong></p><p className={styles.fits}>{profile.role}</p></>}
+        <div className={visual(styles.packageOptions, "plan-segment")} role="group" aria-label={c.packageLevel + " " + persona[locale]}>
+          {(["basic", "premium"] as const).map(value => <button key={value} data-tier={value} type="button" aria-pressed={pack === value} disabled={disabled} onClick={() => {
             if (value !== pack && selectedPersona === persona.id) onSelectionInvalidated?.();
             setPackages(previous => ({ ...previous, [persona.id]: value }));
           }}>{c[value]}</button>)}
         </div>
-        <div className={styles.priceBlock}><p className={styles.price} data-catalog-version={offer?.versionId}><bdi>{formatOmrBaisa(commercialAmount(plan, term), locale)}</bdi></p><p className={styles.cycleLabel}>{text[term]}</p></div>
-        {term === "yearly" ? <p className={styles.annualPriceNote}>{ar ? "خصم 20٪ على السنوي — يعادل " : "20% annual discount — equivalent to "}<bdi>{formatOmrBaisa(commercialAmount(plan, term) / 12, locale)}</bdi>{ar ? " شهريًا. تُدفع السنة مقدمًا." : " per month. Paid yearly upfront."}</p> : null}
-        <p className={styles.quota}>{ar ? `${plan.replies.toLocaleString("en-US")} رد آلي شهريًا` : `${plan.replies.toLocaleString("en-US")} automated replies per month`}</p>
-        <p className={styles.teamAllowance}>{ar ? `المالك + ${plan.employees} موظفين` : `Owner + ${plan.employees} employees`}<br />{ar ? (plan.channels === 1 ? "قناة واحدة: واتساب أو إنستغرام" : "واتساب وإنستغرام معًا") : (plan.channels === 1 ? "One channel: WhatsApp or Instagram" : "WhatsApp and Instagram")}</p>
-        <p className={styles.featureHeading}>{c.featuresHeading}</p>
-        <ul className={styles.features}>{plan.features.map(feature => {
+        <div className={visual(styles.priceBlock, "price")}><p className={visual(styles.price, "amount")} data-catalog-version={offer?.versionId}><bdi>{formatOmrBaisa(commercialAmount(plan, term), locale)}</bdi></p><p className={visual(styles.cycleLabel, "period")}>{text[term]}</p></div>
+        {term === "yearly" ? <p className={visual(styles.annualPriceNote, "billing")}>{ar ? "خصم 20٪ على السنوي — يعادل " : "20% annual discount — equivalent to "}<bdi>{formatOmrBaisa(commercialAmount(plan, term) / 12, locale)}</bdi>{ar ? " شهريًا. تُدفع السنة مقدمًا." : " per month. Paid yearly upfront."}</p> : null}
+        <p className={visual(styles.quota, "quota")}>{ar ? `${plan.replies.toLocaleString("en-US")} رد آلي شهريًا` : `${plan.replies.toLocaleString("en-US")} automated replies per month`}</p>
+        <p className={visual(styles.teamAllowance, "quota")}>{ar ? `المالك + ${plan.employees} موظفين` : `Owner + ${plan.employees} employees`}<br />{ar ? (plan.channels === 1 ? "قناة واحدة: واتساب أو إنستغرام" : "واتساب وإنستغرام معًا") : (plan.channels === 1 ? "One channel: WhatsApp or Instagram" : "WhatsApp and Instagram")}</p>
+        {homepageStyle && <p className="panel-description">{profile.role}</p>}
+        <OfferFeatures homepageStyle={homepageStyle} label={c.featuresHeading}>
+          <ul className={visual(styles.features, "features feature-viewport")}>{plan.features.map(feature => {
           const availability = offer?.features.find(item => item.id === feature.id)?.availability;
           return <li key={feature.id} data-feature-id={feature.id}><span>{feature.label[locale]}</span>{availability ? <span className={styles.featureState} data-availability={availability}>{c.featureAvailability[availability]}</span> : null}</li>;
         })}</ul>
+        </OfferFeatures>
         {plan.addons.length ? <details className={styles.addonDetails}><summary>{ar ? "إضافات اختيارية بسعر إضافي" : "Optional paid add-ons"}</summary><ul>{plan.addons.map(addon => <li key={addon.id}>{addon.label[locale]}</li>)}</ul><p>{ar ? "تُحدد الحصص ورسوم التجهيز والتشغيل لكل إضافة قبل الشراء." : "Each add-on's allowances, setup and recurring charges are quoted before purchase."}</p></details> : null}
-        <p className={styles.featureScope}>{ar ? "السعر لكل فرع. رسوم واتساب والإعلانات منفصلة، والمزايا تُفعّل حسب جاهزية الخدمة والربط." : "Price per branch. WhatsApp and advertising fees are separate; features activate when their service and integrations are ready."}</p>
-        <div className={styles.catalogStates} aria-label={ar ? "حالة الاشتراك" : "Subscription availability"}>
+        <p className={visual(styles.featureScope, "note")}>{ar ? "السعر لكل فرع. رسوم واتساب والإعلانات منفصلة، والمزايا تُفعّل حسب جاهزية الخدمة والربط." : "Price per branch. WhatsApp and advertising fees are separate; features activate when their service and integrations are ready."}</p>
+        <div className={visual(styles.catalogStates, "status")} aria-label={ar ? "حالة الاشتراك" : "Subscription availability"}>
           <p data-purchase-state={state.purchase}>{text[state.purchase]}</p>
           <p data-service-state={persona.id === "level_1" ? "not_verified" : "planned"}>{persona.id === "level_1" ? text.not_verified : text.planned}</p>
           {offer ? <small>{text.published}</small> : catalogStatus === "error" ? <small>{text.errorNote}</small> : null}
         </div>
-        <button type="button" className={styles.select} aria-label={(selectedHere ? text.selected : c.select) + " " + persona[locale] + " / " + c[pack]} aria-pressed={selectedHere} disabled={disabled}
+        <button type="button" className={visual(styles.select, "cta")} aria-label={(selectedHere ? text.selected : c.select) + " " + persona[locale] + " / " + c[pack]} aria-pressed={selectedHere} disabled={disabled}
           onClick={() => { if (disabled) return; if (offer && state.inspectable) onSelect(choiceFromOffer(offer)); else onInspect?.({ persona: persona.id, package: pack, term }); }}>
           {selectedHere ? text.selected : c.select}
         </button>
-        <p className={styles.draftPlanNotice}>{state.purchase === "live" ? text.liveNote : state.purchase === "test_only" ? text.testNote : text.blockedNote}</p>
+        <p className={visual(styles.draftPlanNotice, "note")}>{state.purchase === "live" ? text.liveNote : state.purchase === "test_only" ? text.testNote : text.blockedNote}</p>
+        </div>
       </article>;
     })}
+    </div>
   </div>;
 }
 

@@ -150,7 +150,7 @@ describe("Stage D — Module 06: AdminBillingLedger", () => {
     ],
   };
 
-  it("renders 4 KPI summary cards with total orders, revenue, and Paymob status", () => {
+  it("renders 4 KPI summary cards with total orders, revenue, and restricted Test gateway", () => {
     const tree = renderBillingLedger({ result: samplePage, query: {} });
     const renderedText = text(tree);
 
@@ -159,7 +159,8 @@ describe("Stage D — Module 06: AdminBillingLedger", () => {
     // Confirmed revenue = 45.000 OMR (only proven order ord-001)
     expect(renderedText).toContain("45.000");
     // Paymob test status
-    expect(renderedText).toContain("Paymob");
+    expect(renderedText).toContain("Thawani UAT");
+    expect(renderedText).not.toContain("Paymob");
   });
 
   it("renders transactions ledger table with company links and formatted amounts", () => {

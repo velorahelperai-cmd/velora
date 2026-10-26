@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { AccountMenu, useOptionalAccountSession } from "./account-chrome";
 import { ApprovedAccountLoader } from "./approved-account-loader";
@@ -110,6 +110,8 @@ export function PreparationForm({
   const [suggestionStatus, setSuggestionStatus] = useState("");
   const t = (a: string, e: string) => (ar ? a : e);
   const draft=useAccountPrepDraft({accountId:userId,captureToken,isCurrent,restore:payload=>setValue(accountPrepPayloadToFormState(payload).preparation)});
+  const {checkpoint,hydrated}=draft;
+  useEffect(()=>{if(!hydrated)return;const {website:_w,whatsappExisting:_e,goals:_g,...patch}=preparationToAccountPrepPatch({preparation:value,website:null,whatsappExisting:null,goals:[]});checkpoint(patch);},[value,hydrated,checkpoint]);
   function change(key: Exclude<keyof Preparation, "branches">, next: string) {
     if (isCurrent()) {
       draft.markEdited();
@@ -118,6 +120,7 @@ export function PreparationForm({
     }
   }
   function branch(index: number, key: "name" | "city", next: string) {
+    draft.markEdited();
     if (isCurrent())
       setValue((old) => ({
         ...old,
@@ -134,7 +137,7 @@ export function PreparationForm({
       // This presentation edits only these fields; keep unseen website/channel/goal data intact.
       const full=preparationToAccountPrepPatch({preparation:value,website:null,whatsappExisting:null,goals:[]});
       const {website:_website,whatsappExisting:_whatsapp,goals:_goals,...patch}=full;
-      const result=await draft.save(patch);if(result?.ok&&isCurrent())setReview(true);
+      void draft.save(patch);if(isCurrent())setReview(true);
     }
   }
   function suggestion(remove: boolean) {
@@ -290,6 +293,7 @@ export function PreparationForm({
                   type="button"
                   disabled={value.branches.length === 1}
                   onClick={() => {
+                    draft.markEdited();
                     if (isCurrent())
                       setValue((old) => ({
                         ...old,
@@ -304,6 +308,7 @@ export function PreparationForm({
             <button
               type="button"
               onClick={() => {
+                draft.markEdited();
                 if (isCurrent()) setValue((old) => ({ ...old, branches: [...old.branches, { name: "", city: "" }] }));
               }}
             >
@@ -451,10 +456,11 @@ function StudioPreparationForm({
   useEffect(() => {
     answersRef.current = value.answers ?? null;
   }, [value.answers]);
-  const allBranches = withAutomaticPrimaryBranch(value, originalBranchLocalId);
-  const preparedValue = branchMode === "single" && allBranches.branches.length > 1
-    ? { ...allBranches, branches: allBranches.branches.slice(0, 1) }
-    : allBranches;
+  const preparedValue = useMemo(()=>{
+    const allBranches=withAutomaticPrimaryBranch(value,originalBranchLocalId);
+    return branchMode === "single" && allBranches.branches.length > 1
+      ? {...allBranches,branches:allBranches.branches.slice(0,1)} : allBranches;
+  },[value,originalBranchLocalId,branchMode]);
   const t = (a: string, e: string) => (ar ? a : e);
 
   /** Bound to this render's account and capture. Live session is read at call time. */
@@ -491,6 +497,12 @@ function StudioPreparationForm({
     setGoalsDraft(restored.goals);setChannelDraft({...blankChannelDraft(),whatsapp:true,existingUse:restored.whatsappExisting??""});
   }});
 
+  const {checkpoint,hydrated}=draft;
+  useEffect(()=>{
+    if(!hydrated)return;
+    checkpoint(preparationToAccountPrepPatch({preparation:preparedValue,website:noSite?{kind:'none'}:siteUrl?{kind:'url',value:siteUrl}:null,whatsappExisting:channelDraft.existingUse||null,goals:goalsDraft as OnboardingAnswers['goals']}));
+  },[preparedValue,noSite,siteUrl,channelDraft.existingUse,goalsDraft,hydrated,checkpoint]);
+
 
   function remember(journey: SetupPlanJourney) {
     setJourneyForView(journey);
@@ -506,6 +518,7 @@ function StudioPreparationForm({
 
   function change(key: Exclude<keyof Preparation, "branches">, next: string) {
     if (!isCurrent()) return;
+    draft.markEdited();
     restoreRecoveredDefaults();
     const followName = key === "name" && firstBranchDefaults.current.attached && firstBranchDefaults.current.name;
     const followCity = key === "city" && firstBranchDefaults.current.attached && firstBranchDefaults.current.city;
@@ -540,6 +553,7 @@ function StudioPreparationForm({
   }
   function branch(index: number, key: "name" | "city" | "contactPhone", next: string) {
     if (!isCurrent()) return;
+    draft.markEdited();
     restoreRecoveredDefaults();
     const rowId = preparedValue.branches[index]?.localId;
     if (rowId === originalBranchLocalId && key !== "contactPhone" && firstBranchDefaults.current.attached) firstBranchDefaults.current[key] = false;
@@ -557,6 +571,7 @@ function StudioPreparationForm({
     if (!isCurrent() || preparedValue.branches.length <= 1) return;
     const rowId = preparedValue.branches[index]?.localId;
     if (rowId === originalBranchLocalId || index === 0) return;
+    draft.markEdited();
     restoreRecoveredDefaults();
     setValue((previous) => { const old = withAutomaticPrimaryBranch(previous, originalBranchLocalId); return ({
       ...old,
@@ -565,6 +580,7 @@ function StudioPreparationForm({
   }
   function setMode(mode: "single" | "multiple") {
     if (!isCurrent()) return;
+    draft.markEdited();
     restoreRecoveredDefaults();
     setBranchMode(mode);
     setEditingBranches(true);
@@ -573,6 +589,7 @@ function StudioPreparationForm({
   }
   function addBranch() {
     if (!actorNow()) return;
+    draft.markEdited();
     restoreRecoveredDefaults();
     setOpenSection("branches");
     setEditingBranches(true);
@@ -588,6 +605,7 @@ function StudioPreparationForm({
   }
   function applySite(nextNoSite: boolean, nextUrl: string) {
     if (!isCurrent()) return;
+    draft.markEdited();
     const next = applyScreen1Website(answersRef.current, nextNoSite, nextUrl);
     answersRef.current = next.answers;
     setNoSite(next.noSite);
@@ -598,6 +616,7 @@ function StudioPreparationForm({
   }
   function editChannels(next: ChannelDraft) {
     if (!isCurrent()) return;
+    draft.markEdited();
     const clean = clearHiddenChannelFields(next);
     setChannelDraft(clean);
     const result = commitChannelDraft(answersRef.current, clean);
@@ -1201,13 +1220,15 @@ function StudioPreparationForm({
   );
 }
 
-/** Fail-only. Normal silent saves never show pending/success chrome. */
+/** Background sync is silent when local recovery is safe; actionable failures remain visible. */
 function AccountPrepDraftStatus({draft,ar}:{draft:ReturnType<typeof useAccountPrepDraft>;ar:boolean}){
- if(draft.saveStatus!=='fail')return null;
+ if(draft.saveStatus!=='fail' || (draft.code==='UNAVAILABLE' && draft.localSaved))return null;
  const conflict=draft.code==='CONFLICT';
  const message=conflict
   ?(ar?'تغيّرت المسودة في مكان آخر. أعد تحميل النسخة المحفوظة وراجعها.':'The draft changed elsewhere. Reload and review the saved version.')
-  :(ar?'تعذّر حفظ مسودة التجهيز. يمكنك إعادة المحاولة دون فقدان المدخلات.':'Preparation draft could not be saved. Retry without losing your inputs.');
+  :draft.localSaved
+   ?(ar?'مسودتك محفوظة على هذا الجهاز. تعذّرت المزامنة مؤقتًا؛ يمكنك متابعة التجهيز.':'Your draft is saved on this device. Sync is temporarily unavailable; you can keep editing.')
+   :(ar?'تعذّر الحفظ على هذا الجهاز والمزامنة. يمكنك المتابعة، لكن لا تغلق الصفحة قبل إعادة المحاولة.':'Local saving and sync are unavailable. Keep editing, but do not close this page before retrying.');
  return (
   <div role="alert" data-prep-draft-status="fail" className="space-y-2 text-sm" aria-live="polite">
    <p>{message}</p>

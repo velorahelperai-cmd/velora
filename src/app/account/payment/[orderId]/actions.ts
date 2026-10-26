@@ -17,15 +17,15 @@ export async function verifyThawaniPayment(orderId: string): Promise<{ ok: true;
 }
 
 export async function finishTestCheckout(orderId: string): Promise<{ ok: true; next: string } | { ok: false }> {
-  const thawani = process.env.BILLING_ES02_THAWANI_TEST_ENABLED === "true";
-  if (!es02Uuid(orderId) || (!thawani && process.env.BILLING_ES02_PAYMOB_TEST_ENABLED !== "true")) return { ok: false };
+
+  if (!es02Uuid(orderId) || process.env.BILLING_ES02_THAWANI_TEST_ENABLED !== "true") return { ok: false };
   const client = await createClient();
   const { data, error } = await client.auth.getClaims();
   const accountId = data?.claims?.sub;
-  if (error || !es02Uuid(accountId) || accountId !== (thawani ? process.env.THAWANI_TEST_ACCOUNT_ID : process.env.PAYMOB_HOSTED_TEST_ACCOUNT_ID)?.trim()) return { ok: false };
+  if (error || !es02Uuid(accountId) || accountId !== process.env.THAWANI_TEST_ACCOUNT_ID?.trim()) return { ok: false };
   if (!(await checkAppSession(client)).ok) return { ok: false };
   try {
-    const result = await client.rpc((thawani ? "es02_finish_thawani_test_checkout" : "es02_finish_test_checkout") as never, { p_expected_account_id: accountId, p_order_id: orderId } as never);
+    const result = await client.rpc("es02_finish_thawani_test_checkout" as never, { p_expected_account_id: accountId, p_order_id: orderId } as never);
     if (result.error) return { ok: false };
     const ack = classifyProvisionWriteAck(result.data);
     if (ack.status !== "success") return { ok: false };

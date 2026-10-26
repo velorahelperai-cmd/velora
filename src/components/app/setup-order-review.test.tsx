@@ -58,19 +58,13 @@ const SLOTS: BranchSlotChoice[] = [
 const idle: SetupPlanWrite = { kind: "idle" };
 const ACTOR = { accountId: "acc-1", captureToken: "tok-1" };
 
-describe("Paymob Test destination", () => {
+describe("Test checkout destination", () => {
   it("accepts Thawani UAT only with a session and public key", () => {
     const url = "https://uatcheckout.thawani.om/pay/checkout_abcdefgh12345678?key=publicfixture123";
     expect(safeTestCheckoutUrl(url)).toBe(url);
     for (const invalid of [url.replace("uatcheckout", "checkout"), url.replace("checkout_abcdefgh12345678", "other"), `${url}#x`, url.replace("?key=publicfixture123", ""), url.replace("https://", "https://attacker@")]) expect(safeTestCheckoutUrl(invalid)).toBeNull();
   });
-  it("accepts only the configured Test checkout origin and credentials", () => {
-    const url = "https://om.checkout.paymob.com/?publicKey=om_pk_test_example&clientSecret=pi_test_example";
-    expect(safeTestCheckoutUrl(url)).toBe(url);
-    expect(safeTestCheckoutUrl(url.replace("om_pk_test_", "omn_pk_test_"))).not.toBeNull();
-    expect(safeTestCheckoutUrl(url.replace("om_pk_test_", "omn_pk_test_").replace("pi_test_", "omn_csk_test_"))).not.toBeNull();
-    for (const invalid of ["bad", "javascript:alert(1)", url.replace("om.checkout.paymob.com", "attacker.example"), url.replace("om_pk_test_", "om_pk_live_"), url.replace("pi_test_", "pi_live_"), `${url}#fragment`]) expect(safeTestCheckoutUrl(invalid)).toBeNull();
-  });
+
 });
 
 function viewProps(over: Partial<ViewProps> = {}): ViewProps {
@@ -152,7 +146,7 @@ describe("static markup", () => {
     const plain = text(out);
     expect(out).toContain('dir="rtl"');
     expect(out).toContain('lang="ar"');
-    for (const s of ["راجع تفاصيل اشتراكك", "راجع اختياراتك قبل الانتقال للدفع.", "تفاصيل الاشتراك", "ملخص الطلب", "الإجمالي الشهري", "لم يتم الدفع", "أوافق على", "شروط الاشتراك", "المتابعة للدفع", "العودة للباقات", "الدفع الإلكتروني غير متاح حالياً", "اختياراتك محلية ولم يبدأ الدفع. يمكنك إدخالها مجددًا إذا أُغلق المتصفح.", "نورا • القياسية", "لينا • المميزة", "دانا • القياسية", "مراجعة الطلب"]) {
+    for (const s of ["راجع تفاصيل اشتراكك", "راجع اختياراتك قبل الانتقال للدفع.", "تفاصيل الاشتراك", "ملخص الطلب", "الإجمالي الشهري", "لم يتم الدفع", "أوافق على", "شروط الاشتراك", "المتابعة للدفع", "العودة للباقات", "تأكيد الطلب والدفع", "عند المتابعة نتحقق من المبلغ ونحفظ تفاصيل الطلب. يبدأ تجهيز النشاط بعد تأكيد الدفع.", "نورا • القياسية", "لينا • المميزة", "دانا • القياسية", "مراجعة الطلب"]) {
       expect(plain).toContain(s);
     }
     for (const x of SLOTS) {
