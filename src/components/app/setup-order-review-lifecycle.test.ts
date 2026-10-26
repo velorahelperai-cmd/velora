@@ -215,7 +215,7 @@ const SLOT_LABELS = [
   { label: { name: "Second", city: "Sohar" }, persona: "level_2" as const, package: "premium" as const },
 ];
 
-describe("existing order: amounts come from order.offer, catalog only for features", () => {
+describe("existing order: amounts come from order.offer; feature labels from offer snapshot", () => {
   it("without an order the model is a labelled catalog preview", () => {
     const m = buildReviewModel(SLOT_LABELS, "monthly");
     expect(m.source).toBe("preview");
@@ -238,8 +238,17 @@ describe("existing order: amounts come from order.offer, catalog only for featur
     expect(m.rows.map((r) => r.amountBaisa)).toEqual(bumped.slots.map((s) => s.amountBaisa));
     expect(m.rows[0].amountBaisa).not.toBe(preview.rows[0].amountBaisa);
     expect(m.branchCount).toBe(bumped.branchSlots);
-    // features/quotas still render from the catalog plan
-    expect(m.rows[0].plan).toBe(commercialPlan("level_1", "basic"));
+    // Quotas/persona stay catalog-backed; features prefer the frozen offer-slot snapshot (cloned plan).
+    const catalog = commercialPlan("level_1", "basic");
+    expect(catalog).toBeTruthy();
+    expect(m.rows[0].plan).not.toBe(catalog);
+    expect(m.rows[0].plan).toEqual({
+      ...catalog!,
+      features: bumped.slots[0]!.features.map((feature) => ({
+        id: feature.id,
+        label: { ar: feature.label.ar, en: feature.label.en },
+      })),
+    });
     expect(m.rows.map((r) => r.name)).toEqual(["Main", "Second"]);
   });
   it("the order's persona/package are authoritative over the local slot choice", () => {
