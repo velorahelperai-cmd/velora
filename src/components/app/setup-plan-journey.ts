@@ -235,6 +235,10 @@ function cloneOffer(offer: Es02ImmutableOffer): Es02ImmutableOffer {
       repliesPerMonth: slot.repliesPerMonth,
       employees: slot.employees,
       channels: slot.channels,
+      features: slot.features.map((feature) => ({
+        id: feature.id,
+        label: { ar: feature.label.ar, en: feature.label.en },
+      })),
     })),
     branchSlots: offer.branchSlots,
     amountBaisa: offer.amountBaisa,
