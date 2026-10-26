@@ -125,6 +125,7 @@ export function safeTestCheckoutUrl(value?: string): string | null {
   if (!value) return null;
   try {
     const target = new URL(value);
+    if (target.origin === "https://uatcheckout.thawani.om" && /^\/pay\/checkout_[A-Za-z0-9]{8,150}$/.test(target.pathname) && !target.username && !target.password && !target.hash && /^[A-Za-z0-9_-]{8,256}$/.test(target.searchParams.get("key") ?? "") && [...target.searchParams.keys()].length === 1) return target.href;
     return target.origin === "https://om.checkout.paymob.com" && target.pathname === "/" && !target.username && !target.password && !target.hash && /^om(?:n)?_pk_test_/.test(target.searchParams.get("publicKey") ?? "") && /^(?:om(?:n)?_csk|pi)_test_/.test(target.searchParams.get("clientSecret") ?? "") ? target.href : null;
   } catch { return null; }
 }

@@ -270,13 +270,14 @@ it("selects an explicit tier per branch, keeps the other branch, and totals only
   (premium?.props.onClick as (() => void) | undefined)?.();
   tree = renderPlans(propsFor(source, calls));
   expect(calls.select).toBe(1);
-  expect(texts(tree)).toContain("نورا · المميزة");
+  expect(texts(findByAttr(tree, "data-summary-branch", 0))).toContain("نورا");
+  expect(texts(findByAttr(tree, "data-summary-branch", 0))).toContain("المميزة");
   expect(texts(tree)).toContain("صور");
   expect(texts(tree)).toContain("لم يُختر بعد");
-  (findByAttr(tree, "data-branch-index", 1)?.props.onClick as (() => void) | undefined)?.();
+  (findByAttr(tree, "data-branch-select", "true")?.props.onChange as ((event: {currentTarget: {value: string}}) => void))({currentTarget: {value: "1"}});
   tree = renderPlans(propsFor(source, calls));
   expect(calls.select).toBe(1);
-  expect(findByAttr(tree, "data-branch-index", 1)?.props["aria-pressed"]).toBe(true);
+  expect(findByAttr(tree, "data-branch-select", "true")?.props.value).toBe(1);
   (findByAttr(tree, "data-persona", "level_3")?.props.onClick as (() => void) | undefined)?.();
   tree = renderPlans(propsFor(source, calls));
   (tierButton(tree, "basic")?.props.onClick as (() => void) | undefined)?.();
@@ -308,7 +309,7 @@ it("shows every catalog plan, monthly allowance, and future call add-on without 
     for (const pack of ["basic", "premium"] as const) {
       const plan = commercialPlan(persona, pack);
       expect(blob).toContain(String(commercialAmount(plan, "monthly") / 1000));
-      expect(blob).toContain(String(commercialAmount(plan, "yearly") / 1000));
+      expect(texts(findByAttr(findByAttr(tree, "data-tier", pack), "data-active-term", "monthly"))).not.toContain("ر.ع سنويًا");
       for (const feature of plan.features) expect(blob).toContain(`"data-feature":"${feature.id}"`);
     }
   }
@@ -342,7 +343,7 @@ it("shows a chosen branch's persona and tier again, while an unchosen branch sta
   let tree = renderPlans(propsFor(source, calls));
   (tierButton(tree, "premium")?.props.onClick as (() => void) | undefined)?.();
   tree = renderPlans(propsFor(source, calls));
-  (findByAttr(tree, "data-branch-index", 1)?.props.onClick as (() => void) | undefined)?.();
+  (findByAttr(tree, "data-branch-select", "true")?.props.onChange as ((event: {currentTarget: {value: string}}) => void))({currentTarget: {value: "1"}});
   tree = renderPlans(propsFor(source, calls));
   expect(calls.select).toBe(1);
   expect(tierButton(tree, "basic")?.props["aria-pressed"]).toBe(false);
@@ -354,7 +355,7 @@ it("shows a chosen branch's persona and tier again, while an unchosen branch sta
   expect(source.snapshot().slots[1]?.persona).toBeNull();
   (tierButton(tree, "basic")?.props.onClick as (() => void) | undefined)?.();
   tree = renderPlans(propsFor(source, calls));
-  (findByAttr(tree, "data-branch-index", 0)?.props.onClick as (() => void) | undefined)?.();
+  (findByAttr(tree, "data-branch-select", "true")?.props.onChange as ((event: {currentTarget: {value: string}}) => void))({currentTarget: {value: "0"}});
   tree = renderPlans(propsFor(source, calls));
   expect(calls.select).toBe(2);
   expect(findByAttr(tree, "data-preview", "true")?.props["data-persona"]).toBe("level_1");
@@ -383,7 +384,7 @@ it("continues only through local review and reports a blocked seam without an or
   expect(source.snapshot().write.kind).toBe("idle");
   expect(source.snapshot().step).toBe("plans");
   (tierButton(tree, "basic")?.props.onClick as (() => void) | undefined)?.();
-  (findByAttr(tree, "data-branch-index", 1)?.props.onClick as (() => void) | undefined)?.();
+  (findByAttr(tree, "data-branch-select", "true")?.props.onChange as ((event: {currentTarget: {value: string}}) => void))({currentTarget: {value: "1"}});
   tree = renderPlans(propsFor(source, calls));
   (findByAttr(tree, "data-persona", "level_2")?.props.onClick as (() => void) | undefined)?.();
   tree = renderPlans(propsFor(source, calls));
@@ -506,7 +507,7 @@ it("returns an edited review branch to its existing persona and tier without cha
   source.setSlot(1, { persona: "level_2", package: "premium" });
   const calls = { select: 0, term: 0, back: 0, next: 0 };
   const tree = renderPlans({ ...propsFor(source, calls), initialBranchIndex: 1 });
-  expect(findByAttr(tree, "data-branch-index", 1)?.props["aria-pressed"]).toBe(true);
+  expect(findByAttr(tree, "data-branch-select", "true")?.props.value).toBe(1);
   expect(findByAttr(tree, "data-persona", "level_2")?.props["aria-pressed"]).toBe(true);
   expect(tierButton(tree, "premium")?.props["aria-pressed"]).toBe(true);
   expect(calls.select).toBe(0);
@@ -592,11 +593,11 @@ it("keeps each branch choice on that slot after the list order changes", () => {
   const first = findByAttr(tree, "data-branch-index", 0);
   const second = findByAttr(tree, "data-branch-index", 1);
   expect(first?.props["data-branch-local-id"]).toBe("row-صور");
-  expect(texts(first)).toContain("دانا");
-  expect(texts(first)).toContain("القياسية");
+  expect(texts(findByAttr(tree, "data-summary-branch", 0))).toContain("دانا");
+  expect(texts(findByAttr(tree, "data-summary-branch", 0))).toContain("القياسية");
   expect(second?.props["data-branch-local-id"]).toBe("row-الرئيسي");
-  expect(texts(second)).toContain("نورا");
-  expect(texts(second)).toContain("المميزة");
+  expect(texts(findByAttr(tree, "data-summary-branch", 1))).toContain("نورا");
+  expect(texts(findByAttr(tree, "data-summary-branch", 1))).toContain("المميزة");
   expect(texts(findByAttr(tree, "data-scenario-mark", "standard"))).toContain("القياسية");
   expect(texts(tree)).not.toContain("إضافة Premium");
   expect(texts(tree)).toContain("إضافة المميزة");
@@ -632,7 +633,7 @@ it("keeps legacy missing or duplicate local IDs compatible without duplicate sib
       expect(keys).toHaveLength(2);
       expect(new Set(keys).size).toBe(2);
     }
-    const mobile = findByAttr(tree, "data-mobile-branch-select", "true");
+    const mobile = findByAttr(tree, "data-branch-select", "true");
     const keys: unknown[] = [];
     walk(mobile, el => { if (el.type === "option") keys.push((el as InspectedElement & { key?: unknown }).key); });
     expect(keys).toHaveLength(2);
@@ -673,4 +674,20 @@ it("highlights each persona's own Standard duties rather than only shared FAQs",
     expect(texts(highlights)).toContain(expected.label.en);
   }
   expect(calls.select).toBe(0);
+});
+
+it("shows only the selected billing term price on each plan card", () => {
+  const source = journey();
+  const calls = { select: 0, term: 0, back: 0, next: 0 };
+  for (const term of ["monthly", "yearly"] as const) {
+    source.setTerm(term);
+    const tree = renderPlans(propsFor(source, calls));
+    for (const pack of ["basic", "premium"] as const) {
+      const price = findByAttr(findByAttr(tree, "data-tier", pack), "data-active-term", term);
+      expect(price).toBeTruthy();
+      expect(texts(price)).toContain(String(commercialAmount(commercialPlan("level_1", pack), term) / 1000));
+      expect(texts(price)).toContain(term === "yearly" ? "ر.ع سنويًا" : "ر.ع شهريًا");
+      expect(texts(price)).not.toContain(term === "yearly" ? "ر.ع شهريًا" : "ر.ع سنويًا");
+    }
+  }
 });

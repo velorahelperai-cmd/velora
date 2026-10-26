@@ -252,3 +252,52 @@
 .summary .back:hover{background:#eef9fa}
 .summary button:focus-visible{outline:3px solid #007f98;outline-offset:3px}
 @media(max-width:760px){.page .summary{padding:16px;gap:12px;zoom:.7}.summary>.actions{flex-direction:column}.summary .back,.summary .continue{flex:0 0 auto;width:100%}}
+
+/* Compact layout: each column follows its own content height. */
+.stack{gap:8px}
+.page{grid-template-areas:"heading heading" "selection options";grid-template-rows:auto auto;gap:8px 24px;align-items:start}
+.heading{padding:0;gap:4px}
+.selectionColumn,.optionsColumn{display:flex;flex-direction:column;gap:12px;min-width:0}
+.selectionColumn>*,.optionsColumn>*{align-self:stretch}
+.selectionColumn{grid-area:selection}
+.optionsColumn{grid-area:options}
+.personas{padding-block:40px 0}
+@media(max-width:760px){
+ .page{grid-template-areas:"heading" "selection" "options";grid-template-rows:auto auto auto;gap:8px}
+ .selectionColumn,.optionsColumn{gap:10px}
+ .personas{padding-block:36px 0}
+}
+
+/* Show one selected-term price and keep allowance details side by side. */
+.price>span:only-child{order:initial;font-size:14px;opacity:1;color:inherit}
+.price>span:only-child strong{font-size:32px;font-weight:700;line-height:1.15}
+.quota{grid-template-columns:repeat(2,minmax(0,1fr));align-items:center;column-gap:12px}
+.quota>span{min-width:0}
+@media(max-width:760px){.price>span:only-child strong{font-size:28px}.quota{column-gap:8px}}
+
+/* Branch and billing term share the same row above the plan cards. */
+.planControls{display:flex;align-items:flex-end;gap:16px;min-width:0}
+.page[dir="rtl"] .planControls{direction:rtl}
+.planControls>.branchBlock{flex:1 1 0;min-width:0;padding:0;border:0;align-self:stretch}
+.planControls>.terms{flex:0 0 auto;align-self:flex-end}
+@media(max-width:760px){.planControls{gap:10px}.planControls>.branchBlock h3{font-size:17px}}
+
+/* Follow the selected language within the branch/term row. */
+.planControls>.branchBlock,.planControls>.terms{direction:inherit;text-align:start}
+.planControls .branch{padding-inline-start:18px;padding-inline-end:49px;text-align:start}
+.planControls .branch::before{left:auto;right:auto;inset-inline-end:16px}
+.planControls .mobileBranches{text-align:start}
+
+/* Approved compact branch dropdown and equal-height billing controls. */
+.planControls{align-items:flex-end;gap:12px;padding:10px 12px;border:1px solid #e2edf0;border-radius:14px;background:#f8fcfd}
+.planControls>.branchBlock{zoom:1;flex:1 1 0;max-width:360px;gap:5px}
+.branchLabel{font-size:12px;font-weight:600;color:#315c6c;text-align:start}
+.branchSelect{display:block;width:100%;min-width:0;height:44px;min-height:44px;padding:8px 10px;border:1px solid #cce1e7;border-radius:10px;background:#fff;color:#10475e;font:inherit;font-size:13px;text-align:start;direction:inherit;text-overflow:ellipsis}
+.planControls>.terms{height:44px;min-height:44px;margin-inline-start:auto;padding:3px;align-items:stretch}
+.planControls .term{min-height:36px;padding:4px 10px}
+@media(max-width:760px){.planControls{gap:8px;padding:8px}.branchSelect{font-size:12px}.planControls .term{padding-inline:8px;font-size:11px}.planControls .termSave{font-size:9px;padding-inline:4px}}
+
+/* Keep the original question with a compact portrait of the focused persona. */
+.branchLabel{display:flex;align-items:center;gap:7px;line-height:1.4}
+.branchPersonaAvatar{position:relative;display:block;width:28px;height:28px;flex:0 0 28px;border-radius:50%;overflow:hidden;background:#eaf5f7;border:1px solid #d2e7ec}
+.branchPersonaAvatar img{display:block;width:100%;height:100%;object-fit:cover;object-position:center top;transform:scale(2.8);transform-origin:50% 0%}

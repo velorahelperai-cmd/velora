@@ -59,6 +59,11 @@ const idle: SetupPlanWrite = { kind: "idle" };
 const ACTOR = { accountId: "acc-1", captureToken: "tok-1" };
 
 describe("Paymob Test destination", () => {
+  it("accepts Thawani UAT only with a session and public key", () => {
+    const url = "https://uatcheckout.thawani.om/pay/checkout_abcdefgh12345678?key=publicfixture123";
+    expect(safeTestCheckoutUrl(url)).toBe(url);
+    for (const invalid of [url.replace("uatcheckout", "checkout"), url.replace("checkout_abcdefgh12345678", "other"), `${url}#x`, url.replace("?key=publicfixture123", ""), url.replace("https://", "https://attacker@")]) expect(safeTestCheckoutUrl(invalid)).toBeNull();
+  });
   it("accepts only the configured Test checkout origin and credentials", () => {
     const url = "https://om.checkout.paymob.com/?publicKey=om_pk_test_example&clientSecret=pi_test_example";
     expect(safeTestCheckoutUrl(url)).toBe(url);

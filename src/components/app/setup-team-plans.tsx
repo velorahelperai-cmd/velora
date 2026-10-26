@@ -338,6 +338,7 @@ export function SetupTeamPlans({
         <p>{t("شاهد مثالًا، ثم اختر من يناسب نشاطك.", "Watch an example, then choose who fits your business.")}</p>
       </div>
 
+      <div className={styles.selectionColumn}>
       <div className={styles.personas} data-plans-region="personas" role="group" aria-label={t("شخصيات الفريق", "Team characters")}>
         {PEOPLE.map((item) => {
           const focused = item.id === focus;
@@ -379,54 +380,6 @@ export function SetupTeamPlans({
             </button>
           );
         })}
-      </div>
-
-      <div className={styles.panel} data-plans-region="example">
-        <h3>{t(`ماذا تنجز ${person.ar}؟`, `What does ${person.en} do?`)}</h3>
-        <p>{t("اختر أحد السيناريوهات لمشاهدة مثال توضيحي لقدرات الشخصية.", "Choose a scenario to see an illustrative example of this persona's capabilities.")}</p>
-        <div className={styles.scenarioButtons} role="tablist" aria-label={t("أمثلة توضيحية", "Illustrative examples")}>
-          {stories.map((item, index) => (
-            <button key={item.mark} type="button" role="tab" aria-selected={scenario === index} data-scenario-mark={item.mark} onClick={() => setScenario(index)}>
-              <span>{ar ? SCENARIO_TITLES[focus][index]!.ar : SCENARIO_TITLES[focus][index]!.en}</span>
-              <small>{item.mark === "standard" ? t("القياسية", "Standard") : item.mark === "premium" ? t("المميزة", "Premium") : t("إضافة مشروطة", "Conditional add-on")}</small>
-            </button>
-          ))}
-        </div>
-        <div className={styles.exampleConversation}>
-          <span className={styles.exampleBadge}>{t("مثال توضيحي", "Illustrative example")}</span>
-          <div className={styles.customerRow}><span className={styles.customerIcon} aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><circle cx="12" cy="7" r="4" /><path d="M4 22v-3a8 8 0 0 1 16 0v3Z" /></svg></span><div className={styles.customerQuestion}>{ar ? EXAMPLE_QUESTIONS[focus].ar : EXAMPLE_QUESTIONS[focus].en}</div></div>
-          <div className={styles.employeeAnswer}>
-            {/* eslint-disable-next-line @next/next/no-img-element -- local approved persona poster */}
-            <span className={styles.employeeAvatar} aria-hidden="true"><img src={person.poster} alt="" width={54} height={54} /></span>
-            <p data-example-illustrative="true">{ar ? story.ar : story.en}</p>
-          </div>
-        </div>
-        <p className={styles.illustrativeNote}>{t("مثال توضيحي. ليس محادثة تعمل الآن، ولا قناة متصلة، ولا حجزًا أو تحصيلًا.", "Illustrative example. Not a live conversation, a connected channel, a final booking, or a collection.")}</p>
-      </div>
-
-      <div className={styles.branchBlock} data-plans-region="branches">
-        <h3>{t(`أين ستعمل ${person.ar}؟`, `Where will ${person.en} work?`)}</h3>
-        <select className={styles.mobileBranches} data-mobile-branch-select="true" value={activeIndex} aria-label={t("الفرع الذي ستعمل به الموظفة", "Branch for this persona")} onChange={(event) => showBranch(Number(event.currentTarget.value))}>
-          {state.slots.map((slot, index) => <option key={slotKeys[index]} value={index}>{slot.label.name} - {slot.label.city}</option>)}
-        </select>
-        <div className={styles.branches} role="group" aria-label={t("فروع الطلب", "Order branches")}>
-          {state.slots.map((slot, index) => {
-            const picked = slot.persona && slot.package;
-            const who = PEOPLE.find((item) => item.id === slot.persona);
-            return (
-              <button key={slotKeys[index]} type="button" className={styles.branch} aria-pressed={index === activeIndex} data-branch-index={index} data-branch-local-id={slot.label.localId ?? ""} onClick={() => showBranch(index)}>
-                <strong>
-                  {slot.label.name} — {slot.label.city}
-                </strong>
-                <span>
-                  {picked && who
-                    ? `${ar ? who.ar : who.en} · ${slot.package === "premium" ? t("المميزة", "Premium") : t("القياسية", "Standard")}`
-                    : t("لم يُختر بعد", "Not chosen yet")}
-                </span>
-              </button>
-            );
-          })}
-        </div>
       </div>
 
       <div className={styles.summary} data-plans-region="summary" aria-live="polite">
@@ -478,8 +431,47 @@ export function SetupTeamPlans({
         </div>
       </div>
 
+      </div>
+
+      <div className={styles.optionsColumn}>
+      <div className={styles.panel} data-plans-region="example">
+        <h3>{t(`ماذا تنجز ${person.ar}؟`, `What does ${person.en} do?`)}</h3>
+        <p>{t("اختر أحد السيناريوهات لمشاهدة مثال توضيحي لقدرات الشخصية.", "Choose a scenario to see an illustrative example of this persona's capabilities.")}</p>
+        <div className={styles.scenarioButtons} role="tablist" aria-label={t("أمثلة توضيحية", "Illustrative examples")}>
+          {stories.map((item, index) => (
+            <button key={item.mark} type="button" role="tab" aria-selected={scenario === index} data-scenario-mark={item.mark} onClick={() => setScenario(index)}>
+              <span>{ar ? SCENARIO_TITLES[focus][index]!.ar : SCENARIO_TITLES[focus][index]!.en}</span>
+              <small>{item.mark === "standard" ? t("القياسية", "Standard") : item.mark === "premium" ? t("المميزة", "Premium") : t("إضافة مشروطة", "Conditional add-on")}</small>
+            </button>
+          ))}
+        </div>
+        <div className={styles.exampleConversation}>
+          <span className={styles.exampleBadge}>{t("مثال توضيحي", "Illustrative example")}</span>
+          <div className={styles.customerRow}><span className={styles.customerIcon} aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><circle cx="12" cy="7" r="4" /><path d="M4 22v-3a8 8 0 0 1 16 0v3Z" /></svg></span><div className={styles.customerQuestion}>{ar ? EXAMPLE_QUESTIONS[focus].ar : EXAMPLE_QUESTIONS[focus].en}</div></div>
+          <div className={styles.employeeAnswer}>
+            {/* eslint-disable-next-line @next/next/no-img-element -- local approved persona poster */}
+            <span className={styles.employeeAvatar} aria-hidden="true"><img src={person.poster} alt="" width={54} height={54} /></span>
+            <p data-example-illustrative="true">{ar ? story.ar : story.en}</p>
+          </div>
+        </div>
+        <p className={styles.illustrativeNote}>{t("مثال توضيحي. ليس محادثة تعمل الآن، ولا قناة متصلة، ولا حجزًا أو تحصيلًا.", "Illustrative example. Not a live conversation, a connected channel, a final booking, or a collection.")}</p>
+      </div>
+
       <div className={styles.planBlock} data-plans-region="plans">
-      <h3>{t("اختر الباقة المناسبة", "Choose the right plan")}</h3>
+      <div className={styles.planControls} dir={ar ? "rtl" : "ltr"}>
+      <div className={styles.branchBlock} data-plans-region="branches">
+        <label className={styles.branchLabel} htmlFor={`${id}-branch`}>
+          <span className={styles.branchPersonaAvatar} aria-hidden="true">
+            {/* eslint-disable-next-line @next/next/no-img-element -- existing local persona portrait */}
+            <img src={person.poster} alt="" width={28} height={28} />
+          </span>
+          <span>{t(`أين ستعمل ${person.ar}؟`, `Where will ${person.en} work?`)}</span>
+        </label>
+        <select id={`${id}-branch`} className={styles.branchSelect} data-branch-select="true" value={activeIndex} onChange={(event) => showBranch(Number(event.currentTarget.value))}>
+          {state.slots.map((slot, index) => <option key={slotKeys[index]} value={index} data-branch-index={index} data-branch-local-id={slot.label.localId ?? ""}>{slot.label.name} — {slot.label.city}</option>)}
+        </select>
+      </div>
+
       <div className={styles.terms} role="group" aria-label={t("مدة كل الفروع", "Term for every branch")}>
         <button type="button" className={styles.term} aria-pressed={state.term === "monthly"} data-term="monthly" onClick={() => onTerm("monthly")}>
           {t("شهري", "Monthly")}
@@ -488,6 +480,8 @@ export function SetupTeamPlans({
           <span>{t("سنوي", "Yearly")}</span>
           <span className={styles.termSave}>{t(`−${annualDiscountPercent}%`, `−${annualDiscountPercent}%`)}</span>
         </button>
+      </div>
+
       </div>
 
       <div className={styles.tiers}>
@@ -501,10 +495,7 @@ export function SetupTeamPlans({
                 <strong>{pack === "basic" ? t("القياسية", "Standard") : t("المميزة", "Premium")}</strong>
                 <span className={styles.price} data-active-term={state.term ?? "monthly"}>
                   <span>
-                    <strong>{omr(commercialAmount(plan, "monthly"))}</strong> {t("ر.ع شهريًا", "OMR monthly")}
-                  </span>
-                  <span>
-                    <strong>{omr(commercialAmount(plan, "yearly"))}</strong> {t("ر.ع سنويًا", "OMR yearly")}
+                    <strong>{omr(commercialAmount(plan, state.term ?? "monthly"))}</strong> {state.term === "yearly" ? t("ر.ع سنويًا", "OMR yearly") : t("ر.ع شهريًا", "OMR monthly")}
                   </span>
                 </span>
                 <span className={styles.quota}>
@@ -577,6 +568,7 @@ export function SetupTeamPlans({
       </div>
 
 
+      </div>
     </section>
   );
 }

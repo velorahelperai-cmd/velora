@@ -1,4 +1,5 @@
 import "server-only";
+import { beginThawaniTestCheckout } from "./thawani-account-checkout";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { siteUrl } from "@/lib/auth/site-url";
@@ -22,6 +23,7 @@ export type AccountCheckoutData = { order: Es02AccountOrderView; action: "insert
 
 /** Configuration is deliberately checked before creating an unpaid order. */
 export async function beginAccountTestCheckout(input: AccountCheckoutInput): Promise<Es02Result<AccountCheckoutData>> {
+  if (process.env.BILLING_ES02_THAWANI_TEST_ENABLED === "true") return beginThawaniTestCheckout(input);
   if (process.env.BILLING_ES02_PAYMOB_TEST_ENABLED !== "true") return { ok: false, code: "PAYMOB_EXTERNAL_DEFERRED" };
   if (process.env.PAYMOB_HOSTED_TEST_ACCOUNT_ID?.trim() !== input.accountId) return { ok: false, code: "FORBIDDEN" };
   const settings = readTestCheckoutConfig(process.env);

@@ -7,6 +7,7 @@ import { parseAccountOrderRow } from "@/lib/billing/es02/account-order";
 import { Card, Notice } from "@/components/app/ui";
 import { AccessGate } from "@/components/app/access-gate";
 import { ContinueSetup } from "./continue-setup";
+import { ThawaniVerify } from "./thawani-verify";
 
 export const dynamic = "force-dynamic";
 export default async function Page({ params }: { params: Promise<{ orderId: string }> }) {
@@ -18,7 +19,9 @@ export default async function Page({ params }: { params: Promise<{ orderId: stri
   if (error || !es02Uuid(accountId)) redirect(`/login?next=${encodeURIComponent(`/account/payment/${orderId}`)}`);
   const session = await checkAppSession(client);
   if (!session.ok) return <AccessGate code="SESSION_EXPIRED" />;
-  const result = await client.rpc("es02_read_test_payment" as never, { p_expected_account_id: accountId, p_order_id: orderId } as never);
+  const thawani = process.env.BILLING_ES02_THAWANI_TEST_ENABLED === "true";
+  const provider = thawani ? "ثواني" : "Paymob";
+  const result = await client.rpc((thawani ? "es02_read_thawani_test_payment" : "es02_read_test_payment") as never, { p_expected_account_id: accountId, p_order_id: orderId } as never);
   const row = result.data as { ok?: boolean; data?: { order?: unknown; state?: string; paidAt?: string } } | null;
   const order = parseAccountOrderRow(row?.data?.order, accountId);
   if (result.error || row?.ok !== true || !order || order.orderId !== orderId) return <AccessGate code="UNAVAILABLE" />;
@@ -26,7 +29,8 @@ export default async function Page({ params }: { params: Promise<{ orderId: stri
   const persona = { level_1: "نور", level_2: "سامي", level_3: "دانا" }[order.offer.persona];
   return <main dir="rtl" className="mx-auto max-w-2xl space-y-4 px-4 py-10">
     <Card title={paid ? "تم تأكيد الدفع التجريبي" : "التحقق من نتيجة الدفع"}>
-      <Notice>{paid ? "استلمنا تأكيد Paymob وحُفظت نتيجة الدفع التجريبي. لم يتم تحصيل أموال حقيقية." : "لم يصل تأكيد نهائي من Paymob بعد. لا تبدأ طلب دفع جديد؛ حدّث حالة هذا الطلب."}</Notice>
+      <Notice>{paid ? `استلمنا تأكيد ${provider} وحُفظت نتيجة الدفع التجريبي. لم يتم تحصيل أموال حقيقية.` : `لم يتأكد اكتمال الدفع لدى ${provider} بعد. لا تبدأ طلب دفع جديد؛ حدّث حالة هذا الطلب.`}</Notice>
+      {!paid && thawani ? <ThawaniVerify key={orderId} orderId={orderId} /> : null}
       {paid ? <ContinueSetup key={orderId} orderId={orderId} /> : null}
       <dl className="my-6 grid grid-cols-2 gap-3">
         <dt>مرجع الطلب</dt><dd dir="ltr">{order.specialReference}</dd>
