@@ -357,7 +357,9 @@ export function AccountSessionProvider({
       budget.cancel();readBudgets.current.delete(budget);
     }
   }, [clear, expire, providerRouter, setStatusLive, retainReadyOnTransient, clearSoftRetry]);
-  refreshRef.current = refresh;
+  useEffect(() => {
+    refreshRef.current = refresh;
+  }, [refresh]);
 
   // Mount/Auth/focus notifications often arrive together. Share only reads
   // within the same authority generation; logout/account changes invalidate it.
