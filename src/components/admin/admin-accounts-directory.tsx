@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { AdminAccountSearchItem } from "@/lib/tenancy/types";
+import { AccountDeletionPanel } from './account-deletion-panel';
 
 export interface AdminAccountsDirectoryProps {
   initialQuery?: string;
@@ -190,6 +191,7 @@ export function AdminAccountsDirectory({
                         >
                           استرداد الهوية
                         </Link>
+                        <AccountDeletionPanel key={acc.user_id} target={acc.user_id} email={acc.email}/>
                       </div>
                     </td>
                   </tr>
