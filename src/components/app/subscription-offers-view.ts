@@ -1,4 +1,5 @@
 import type { CatalogResult, PublicCatalogVersion } from "@/lib/billing/catalog-backend/contract";
+import { commercialCatalogFeatureLabels } from "./subscription-commercial-catalog";
 /** UI projection boundary. Populate from the backend catalog contract; never seed UI prices. */
 export type SubscriptionPersona = "level_1" | "level_2" | "level_3";
 export type SubscriptionPackage = "basic" | "premium";
@@ -59,10 +60,8 @@ export function catalogHasTerm(catalog: SubscriptionOffersView | undefined, term
 }
 
 const personaByCode = { noor: "level_1", lina: "level_2", dana: "level_3" } as const;
-export const featureLabels: Record<string, { ar: string; en: string }> = {
- faq:{ar:"الأسئلة الشائعة",en:"Frequently asked questions"}, knowledge:{ar:"معرفة الشركة",en:"Company knowledge"}, enquiry_handoff:{ar:"تحويل الاستفسارات",en:"Enquiry handoff"},
- website:{ar:"الموقع الإلكتروني",en:"Website"}, lead_followup:{ar:"متابعة العملاء المحتملين",en:"Lead follow-up"}, reports:{ar:"التقارير",en:"Reports"}, pos:{ar:"نقاط البيع",en:"Point of sale"}, orders:{ar:"الطلبات",en:"Orders"}, endcustomer_payment:{ar:"دفع العملاء",en:"Customer payments"}, accounting:{ar:"المحاسبة",en:"Accounting"}
-};
+/** Labels for A11 readiness editor and public catalog projection — same copy as commercial plans. */
+export const featureLabels: Record<string, { ar: string; en: string }> = commercialCatalogFeatureLabels();
 
 /** Inherited Test-selection variant gate; it does not authorize production checkout. */
 export function isApprovedOffer(persona: SubscriptionPersona, pack: SubscriptionPackage, term: SubscriptionTerm): boolean {

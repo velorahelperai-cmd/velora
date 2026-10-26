@@ -63,6 +63,8 @@ function parseSlots(value: unknown, term: "monthly" | "yearly", revision: string
       repliesPerMonth: base.repliesPerMonth,
       employees: base.employees,
       channels: base.channels,
+      // Rebuild features from the recorded catalog revision (legacy rows without features stay compatible).
+      features: base.features,
     });
   }
   return slots;

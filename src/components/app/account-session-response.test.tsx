@@ -300,6 +300,60 @@ it("keeps account errors and recovery controls visible after branded loading", a
   expect(children.some(child => child?.type === "button" && typeof child.props?.onClick === "function")).toBe(true);
 });
 
+it("retains an already-ready setup session across later transient UNAVAILABLE reattest", async () => {
+  vi.useFakeTimers();
+  state.path = "/setup";
+  state.read.mockResolvedValue({ ok: true, data: profile() });
+  await render().refresh();
+  expect(render().status).toBe("ready");
+  const finishing = renderTree();
+  expect(finishing.props.children.props.ready).toBe(true);
+  finishing.props.children.props.onComplete();
+  expect(renderTree().props.children).toBe("private-content");
+
+  state.broker.mockResolvedValue({ ok: false, code: "UNAVAILABLE" });
+  await render().refresh();
+  expect(render().status).toBe("ready");
+  expect(render().identity?.userId).toBe("user-a");
+  expect(renderTree().props.children).toBe("private-content");
+
+  // Soft retry recovers without wiping the page.
+  state.broker.mockResolvedValue(brokerOk());
+  await vi.advanceTimersByTimeAsync(2500);
+  await Promise.resolve();
+  expect(render().status).toBe("ready");
+  expect(renderTree().props.children).toBe("private-content");
+});
+
+it("retains ready across a later TRANSPORT throw during reattest", async () => {
+  state.path = "/setup";
+  state.read.mockResolvedValue({ ok: true, data: profile() });
+  await render().refresh();
+  expect(render().status).toBe("ready");
+  renderTree().props.children.props.onComplete();
+  expect(renderTree().props.children).toBe("private-content");
+  state.broker.mockRejectedValue(new Error("network"));
+  await render().refresh();
+  expect(render().status).toBe("ready");
+  expect(render().identity?.userId).toBe("user-a");
+  expect(renderTree().props.children).toBe("private-content");
+});
+
+it("still fails closed on tip mismatch after ready", async () => {
+  state.path = "/setup";
+  state.read.mockResolvedValue({ ok: true, data: profile() });
+  await render().refresh();
+  expect(render().status).toBe("ready");
+  renderTree().props.children.props.onComplete();
+  expect(renderTree().props.children).toBe("private-content");
+  state.broker
+    .mockResolvedValueOnce(brokerOk("user-a", "fp-a", "gen-a-1"))
+    .mockResolvedValueOnce(brokerOk("user-a", "fp-a", "gen-a-2"));
+  await render().refresh();
+  expect(render().status).toBe("error");
+  expect(renderTree().props.children).not.toBe("private-content");
+});
+
 it("mount shares one in-flight authoritative identity read via broker status", async () => {
   vi.useFakeTimers();
   const pending = deferred();

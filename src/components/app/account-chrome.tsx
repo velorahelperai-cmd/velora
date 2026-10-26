@@ -96,14 +96,38 @@ export function AccountSessionProvider({
   void initialRef;
   const requestGen = useRef(0);
   const readBudgets = useRef(new Set<ReturnType<typeof createSessionReadBudget>>());
+  const softRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refreshRef = useRef<(correlation?: unknown) => Promise<void>>(async () => {});
   const cancelReadBudgets = useCallback(() => {
     for (const budget of readBudgets.current) budget.cancel();
     readBudgets.current.clear();
   }, []);
-  useEffect(() => () => {requestGen.current += 1;cancelReadBudgets();}, [cancelReadBudgets]);
+  const clearSoftRetry = useCallback(() => {
+    if (softRetryTimerRef.current) {
+      clearTimeout(softRetryTimerRef.current);
+      softRetryTimerRef.current = null;
+    }
+  }, []);
+  useEffect(() => () => {requestGen.current += 1;cancelReadBudgets();clearSoftRetry();}, [cancelReadBudgets, clearSoftRetry]);
   const signalRead=useRef<{generation:number;promise:Promise<void>}|null>(null);
   const routeReloading=useRef(false);
   const publishedContext=useRef<string|null>(null);
+  /** Retain an already-ready identity across transport blips; real logout/mismatch still fail closed. */
+  const retainReadyOnTransient = useCallback((code: string): boolean => {
+    if (code !== "UNAVAILABLE" && code !== "TRANSPORT" && code !== "AUTH_ERROR") return false;
+    if (lockedRef.current || statusRef.current !== "ready") return false;
+    const identity = identityRef.current;
+    const userId = userIdRef.current;
+    if (!identity || !userId || identity.userId !== userId) return false;
+    if (!softRetryTimerRef.current) {
+      softRetryTimerRef.current = setTimeout(() => {
+        softRetryTimerRef.current = null;
+        if (lockedRef.current || statusRef.current !== "ready") return;
+        void refreshRef.current();
+      }, 2500);
+    }
+    return true;
+  }, []);
   /** One-use mount broker seed for the reserved same-operation epoch only — never persisted. */
   const bootstrapBrokerSeed = useRef<{
     epoch: number;
@@ -129,6 +153,7 @@ export function AccountSessionProvider({
     // Invalidate any in-flight refresh so a stale response cannot restore prior identity.
     requestGen.current += 1;
     cancelReadBudgets();
+    clearSoftRetry();
     bootstrapBrokerSeed.current = null;
     userIdRef.current = null;
     identityRef.current = null;
@@ -139,23 +164,25 @@ export function AccountSessionProvider({
     setIdentity(null);
     setBoundaryFingerprint(null);
     setStatusLive("guest");
-  }, [setStatusLive, cancelReadBudgets]);
+  }, [setStatusLive, cancelReadBudgets, clearSoftRetry]);
 
   // Retain captured boundary across expire so idle quarantine cannot retarget B (C2-R7).
   const expire=useCallback(()=>{
     requestGen.current+=1;
     cancelReadBudgets();
+    clearSoftRetry();
     bootstrapBrokerSeed.current=null;
     identityRef.current=null;
     publishedContext.current=null;
     setIdentity(null);
     setStatusLive("expired");
     // Keep userIdRef + boundaryRef + boundaryFingerprint for capture-bound quarantine.
-  },[setStatusLive,cancelReadBudgets]);
+  },[setStatusLive,cancelReadBudgets,clearSoftRetry]);
 
   const lock=useCallback((fp?:string|null)=>{
     requestGen.current+=1;
     cancelReadBudgets();
+    clearSoftRetry();
     bootstrapBrokerSeed.current=null;
     lockedRef.current=true;
     // Keep userId fence so stale results for THIS capture cannot unlock; clear identity content.
@@ -170,7 +197,7 @@ export function AccountSessionProvider({
     }else{
       setRecoveryReceipt(null);
     }
-  },[setStatusLive,cancelReadBudgets]);
+  },[setStatusLive,cancelReadBudgets,clearSoftRetry]);
 
   const refresh = useCallback(async (correlation?: unknown) => {
     // Optional log metadata never changes the session attestation or generation fences.
@@ -202,13 +229,14 @@ export function AccountSessionProvider({
           return;
         }
         failureStageRef.current="server_auth";
-        // Transport/availability failure is not logout — keep capture refs, surface error status only.
+        // Transport/availability failure is not logout — keep capture refs.
+        // If already ready, retain the page and soft-retry instead of wiping /setup.
         recordSessionCheckUnavailable(
           {userId:userIdRef.current??undefined,companyId:identityRef.current?.companyId??null},
           undefined,
           {code:broker.code,stage:"server_auth",...(trace?{correlation:trace.correlation}:{})},
         );
-        setStatusLive("error");
+        if(!retainReadyOnTransient(broker.code))setStatusLive("error");
         trace?.finish("UNAVAILABLE");
         return;
       }
@@ -242,7 +270,7 @@ export function AccountSessionProvider({
           undefined,
           {code:result.code,stage:failureStageRef.current,...(trace?{correlation:trace.correlation}:{})},
         );
-        setStatusLive("error");
+        if(!retainReadyOnTransient(result.code))setStatusLive("error");
         trace?.finish("UNAVAILABLE");
         return;
       }
@@ -258,12 +286,14 @@ export function AccountSessionProvider({
         || result.data.userId !== broker2.userId
       ) {
         failureStageRef.current = "server_auth";
+        const reattestCode=!broker2.ok?broker2.code:"BOUNDARY_MISMATCH";
         recordSessionCheckUnavailable(
           {userId:userIdRef.current??undefined,companyId:identityRef.current?.companyId??null},
           undefined,
-          {code:!broker2.ok?broker2.code:"BOUNDARY_MISMATCH",stage:"server_auth",...(trace?{correlation:trace.correlation}:{})},
+          {code:reattestCode,stage:"server_auth",...(trace?{correlation:trace.correlation}:{})},
         );
-        setStatusLive("error");
+        // Tip/generation mismatch stays fail-closed; pure transport UNAVAILABLE may retain ready.
+        if(!retainReadyOnTransient(reattestCode))setStatusLive("error");
         trace?.finish("UNAVAILABLE");
         return;
       }
@@ -308,24 +338,26 @@ export function AccountSessionProvider({
       userIdRef.current = result.data.userId;
       identityRef.current = result.data;
       failureStageRef.current = null;
+      clearSoftRetry();
       setIdentity(result.data);
       setStatusLive("ready");
       trace?.event("completed", "OK");
     } catch {
       if (gen !== requestGen.current) {trace?.finish("CONFLICT");return;}
       failureStageRef.current = "server_auth";
-      // Throw during reattest must not leave ready (C3-6); not a logout.
+      // Throw during reattest is not logout. Keep ready when identity was already admitted.
       recordSessionCheckUnavailable(
         {userId:userIdRef.current??undefined,companyId:identityRef.current?.companyId??null},
         undefined,
         {code:"TRANSPORT",stage:"server_auth",...(trace?{correlation:trace.correlation}:{})},
       );
-      setStatusLive("error");
+      if(!retainReadyOnTransient("TRANSPORT"))setStatusLive("error");
       trace?.finish("OUTCOME_UNKNOWN");
     } finally {
       budget.cancel();readBudgets.current.delete(budget);
     }
-  }, [clear, expire, providerRouter, setStatusLive]);
+  }, [clear, expire, providerRouter, setStatusLive, retainReadyOnTransient, clearSoftRetry]);
+  refreshRef.current = refresh;
 
   // Mount/Auth/focus notifications often arrive together. Share only reads
   // within the same authority generation; logout/account changes invalidate it.
@@ -436,13 +468,13 @@ export function AccountSessionProvider({
             clear();
             return;
           }
-          // Availability failure ≠ logout; keep guest chrome until a later successful reattest.
+          // Availability failure ≠ logout; retain ready if already admitted, else error chrome.
           recordSessionCheckUnavailable(
             {userId:userIdRef.current??undefined,companyId:null},
             undefined,
             {code:broker.code,stage:"server_auth"},
           );
-          setStatusLive("error");
+          if(!retainReadyOnTransient(broker.code))setStatusLive("error");
           return;
         }
         if(cancelled||lockedRef.current||requestGen.current!==epoch)return;
@@ -464,7 +496,7 @@ export function AccountSessionProvider({
           undefined,
           {code:"TRANSPORT",stage:"browser_auth"},
         );
-        setStatusLive("error");
+        if(!retainReadyOnTransient("TRANSPORT"))setStatusLive("error");
       }finally{
         budget.cancel();readBudgets.current.delete(budget);
       }
@@ -478,12 +510,13 @@ export function AccountSessionProvider({
       // Invalidate the entire bootstrap/refresh operation (seed, profile, final broker, publish).
       requestGen.current+=1;
       cancelReadBudgets();
+      clearSoftRetry();
       bootstrapBrokerSeed.current=null;
       if(signalRead.current===pending)signalRead.current=null;
       window.cancelAnimationFrame(frame);
       releaseFrame();
     };
-  },[clear,lock,refresh,setStatusLive,cancelReadBudgets]);
+  },[clear,lock,refresh,setStatusLive,cancelReadBudgets,clearSoftRetry,retainReadyOnTransient]);
 
   useEffect(()=>{
     // WP01A: broker status replaces browser Auth observers. Focus/visibility recheck only.

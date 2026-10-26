@@ -26,7 +26,7 @@ Canonical repository root: `C:\Users\DELL\Desktop\Velora new`; origin `velorahel
 5. **Security approvals stay mandatory.** No Commit or Push to `main` without explicit owner permission for that delivery. No force push, reset/clean that discards others' work, hook/CI bypass, secret reads/prints, provider/env/production mutations, or destructive DB actions without their specific approvals.
 6. **Delivery:** after owner-authorized commit/push, mandatory gates, exact-SHA CI/Vercel evidence, and post-deployment receipts outside Git still apply. Follow [guarded delivery](scripts/ci/README.md#main-delivery-and-exclusive-ownership).
 
-**Technical guard note:** `scripts/consolidation/guard.mjs` may still enforce a legacy whole-repo receipt until a separate authorized guard update. That implementation lag must **not** be used as a reason to refuse starting a non-overlapping independent task on the same `main` checkout. Do not bypass or weaken the guard for Commit/Push; if delivery is blocked by the legacy check, record the blocker and request the scoped guard transition — do not impersonate another writer.
+**Delivery coordination:** independent file-scoped development continues during immutable-snapshot delivery; one publication coordinator owns index/HEAD changes. Follow the current [guarded delivery contract](scripts/ci/README.md#main-delivery-and-exclusive-ownership).
 
 Preserve unrelated work in the shared tree; stage only your leased paths.
 

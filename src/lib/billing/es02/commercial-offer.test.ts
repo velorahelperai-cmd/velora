@@ -47,4 +47,17 @@ describe("es02 commercial offer", () => {
     expect(resolved.offer.channels).toBe(1 + 1);
     expect(resolved.offer.slots).toHaveLength(2);
   });
+
+  it("snapshots included plan features onto each slot at resolve", () => {
+    const resolved = resolveEs02Offer({
+      term: "monthly",
+      slots: [{ persona: "level_1", package: "premium" }],
+    });
+    expect(resolved.ok).toBe(true);
+    if (!resolved.ok) return;
+    const features = resolved.offer.slots[0]!.features;
+    expect(features.length).toBeGreaterThan(0);
+    expect(features.some((f) => f.id === "faq" && f.label.ar.length > 0 && f.label.en.length > 0)).toBe(true);
+    expect(features.some((f) => f.id === "case_tracking")).toBe(true);
+  });
 });

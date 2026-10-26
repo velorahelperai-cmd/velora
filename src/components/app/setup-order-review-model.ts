@@ -107,6 +107,11 @@ function buildOrderModel(slots: readonly ReviewSlot[], offer: Es02ImmutableOffer
       incomplete.push(s.slotIndex);
       continue;
     }
+    // Prefer frozen offer-slot feature snapshot over live marketing catalog copy.
+    const planForDisplay =
+      s.features.length > 0
+        ? { ...plan, features: s.features.map((feature) => ({ id: feature.id, label: { ...feature.label } })) }
+        : plan;
     rows.push({
       index: s.slotIndex,
       name: label.name,
@@ -114,7 +119,7 @@ function buildOrderModel(slots: readonly ReviewSlot[], offer: Es02ImmutableOffer
       ...(label.contactPhone ? { contactPhone: label.contactPhone } : {}),
       persona: s.persona,
       package: s.package,
-      plan,
+      plan: planForDisplay,
       amountBaisa: s.amountBaisa,
     });
   }

@@ -37,29 +37,48 @@ test('own delivery resumes idempotently while foreign owner or different task ca
 test('owned resume preserves protected scopes and baseline; acquisition cannot expand an active claim',()=>{
  for(const drift of [r=>r.reservations[0].paths.push('src/extra.ts'),r=>r.reservations[0].publicationBase='c'.repeat(40),r=>delete r.deliveryReservationFingerprint]){
   reset();reserve();claimDelivery('A','TASK');const before=readFileSync(file);
-  assert.throws(()=>reserve('A','TASK',['src/extra.ts']),/DELIVERY_IN_PROGRESS/);assert.deepEqual(readFileSync(file),before);
+  assert.throws(()=>reserve('A','TASK',['src/extra.ts']),/DELIVERY_SCOPE_FROZEN/);assert.deepEqual(readFileSync(file),before);
   const r=JSON.parse(before);drift(r);writeFileSync(file,JSON.stringify(r));
   assert.throws(()=>claimDelivery('A','TASK'),/DELIVERY_RESUME_IDENTITY_CHANGED/);
  }
 });
-test('competing writers retain independent paths, overlaps fail and delivery waits',()=>{
+test('competing paths conflict while independent writer leases survive delivery',()=>{
  reset();reserve();reserve('B','OTHER',['src/b.ts']);assert.throws(()=>reserve('B','OVERLAP',['src/a.ts']),/PATH_ALREADY_RESERVED/);
- assert.throws(()=>claimDelivery('A','TASK'),/ACTIVE_WRITERS_MUST_PAUSE/);
+ claimDelivery('A','TASK');reserve('B','OTHER',['src/c.ts']);
  assert.throws(()=>releasePaths({owner:'B',task:'TASK'}),/RESERVATION_NOT_FOUND/);
- releasePaths({owner:'B',task:'OTHER'});claimDelivery('A','TASK');assert.throws(()=>reserve('B','OTHER',['src/b.ts']),/DELIVERY_IN_PROGRESS/);
+ assert.throws(()=>reserve('B','CONFLICT',['src/a.ts']),/DELIVERY_PATH_CONFLICT/);
+ reserve('A','INDEPENDENT',['src/d.ts']);releasePaths({owner:'A',task:'INDEPENDENT'});
+ releasePaths({owner:'B',task:'OTHER'});assert.equal(claimDelivery('A','TASK').alreadyOwned,true);
+ assert.ok(reservationStatus(env).deliveryMutableScopes.includes('src/c.ts'));
 });
+
 test('interrupted mutex fails closed and requires verified recovery, never timeout stealing',()=>{
  reset();reserve();const mutex=new URL('./.git/velora-path-reservations.mutex',moduleUrl);mkdirSync(mutex);
  const saved=readFileSync(file);try{assert.throws(()=>claimDelivery('A','TASK'),/REGISTRY_BUSY/);assert.deepEqual(readFileSync(file),saved);}finally{rmdirSync(mutex);}
  // Fixture cleanup above is not an operator recovery mechanism.
  claimDelivery('A','TASK');endDelivery('A');releasePaths({owner:'A',task:'TASK'});assert.equal(reservationStatus(env).reservations.length,0);
 });
-test('delivery acquisition races a new foreign reservation without admitting both',async()=>{
+test('delivery acquisition serializes with disjoint reservation races without global pause',async()=>{
  const child=code=>new Promise(resolve=>{const p=spawn(process.execPath,['--input-type=module','-e',code],{stdio:['ignore','pipe','pipe'],windowsHide:true});let text='';p.stdout.on('data',d=>text+=d);p.stderr.on('data',d=>text+=d);p.on('exit',code=>resolve({code,text}));});
  for(let i=0;i<8;i++){reset();reserve();const results=await Promise.all([
  child('import {claimDelivery} from '+JSON.stringify(moduleUrl)+';try{claimDelivery("A","TASK");console.log("OK")}catch(e){console.log(e.message)}'),
  child('import {reservePaths} from '+JSON.stringify(moduleUrl)+';try{reservePaths({owner:"B",task:"OTHER",paths:["src/b.ts"]});console.log("OK")}catch(e){console.log(e.message)}')]);
- assert.ok(results.every(x=>x.code===0));const r=reservationStatus(env);assert.ok(!(r.deliveryOwner==='A'&&r.reservations.some(x=>x.owner==='B')));
- assert.ok(results.some(x=>x.text.trim()==='OK'));assert.ok(results.some(x=>/REGISTRY_BUSY|ACTIVE_WRITERS_MUST_PAUSE|DELIVERY_IN_PROGRESS/.test(x.text)));
+ assert.ok(results.every(x=>x.code===0));const r=reservationStatus(env);if(r.deliveryOwner==='A'&&r.reservations.some(x=>x.owner==='B'))assert.ok(r.deliveryMutableScopes.includes('src/b.ts'));
+ assert.ok(results.some(x=>x.text.trim()==='OK'));assert.ok(results.every(x=>x.text.trim()==='OK'||x.text.trim()==='REGISTRY_BUSY'));
+ if(r.deliveryOwner==='A')assert.throws(()=>claimDelivery('C','SECOND'),/DELIVERY_ALREADY_CLAIMED/);
  }
+});
+
+test('disjoint writers continue through a frozen delivery and cannot become second publisher',()=>{
+ reset();reserve();reserve('B','OTHER',['src/b.ts']);claimDelivery('A','TASK');
+ const fingerprint=reservationStatus(env).deliveryReservationFingerprint;
+ reserve('B','OTHER',['src/c.ts']);reserve('C','NEW',['src/d.ts']);
+ releasePaths({owner:'B',task:'OTHER'});
+ assert.equal(claimDelivery('A','TASK').alreadyOwned,true);
+ assert.equal(reservationStatus(env).deliveryReservationFingerprint,fingerprint);
+ assert.ok(reservationStatus(env).deliveryMutableScopes.includes('src/c.ts'));
+ assert.throws(()=>reserve('B','CONFLICT',['src/a.ts']),/DELIVERY_PATH_CONFLICT|PATH_ALREADY_RESERVED/);
+ assert.throws(()=>claimDelivery('C','NEW'),/DELIVERY_ALREADY_CLAIMED/);
+ endDelivery('A');releasePaths({owner:'A',task:'TASK'});
+ assert.equal(reservationStatus(env).reservations[0].owner,'C');
 });

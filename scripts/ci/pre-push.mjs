@@ -5,7 +5,7 @@ import { indexManifest, extractIndex, assertManifestUnchanged, assertSnapshot, c
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
-import { verifyWorkspace, git, overlaps, ORIGIN } from '../consolidation/guard.mjs';
+import { verifyWorkspace, git, overlaps, ORIGIN, reservationStatus, deliveryIdentityFingerprint, allowedDeliveryScopes } from '../consolidation/guard.mjs';
 import { assertNoRuntimeEnvFiles, isolatedEnvironment } from './safety.mjs';
 
 const sha = value => /^[a-f0-9]{40}$/.test(value ?? '');
@@ -65,6 +65,20 @@ export function assertCandidatePathsOwned(paths, ownership) {
     throw Error('PRE_PUSH_UNLEASED_PATH');
   }
 }
+// Retry only read-only preservation observation when a legitimate disjoint
+// lease is acquired/released during the observation; never rerun a quality gate.
+export function withConcurrentScopes(readOwnership, observe) {
+  let current=readOwnership();
+  for(let attempt=0;attempt<8;attempt++){
+    let result,error;try{result=observe(current.mutableScopes);}catch(caught){error=caught;}
+    const latest=readOwnership();assertSameOwnership(current,latest);
+    if(JSON.stringify(current.mutableScopes)===JSON.stringify(latest.mutableScopes)){
+      if(error)throw error;return {result,ownership:latest};
+    }
+    current=latest;
+  }
+  throw Error('PRE_PUSH_SCOPE_OBSERVATION_BUSY');
+}
 export function receiptMatches(receipt, identity, required) {
   if (typeof identity.task !== 'string' || !identity.task.trim()
     || !sha(identity.publicationBase) || !/^[a-f0-9]{64}$/.test(identity.reservationFingerprint ?? '')) return false;
@@ -114,7 +128,15 @@ function main() {
   const entries=new Map(manifest.entries.map(entry=>[entry.path,entry.oid]));
   for(const path of approved.paths)if((entries.get(path)??null)!==approved.blobs?.[path])throw Error('PRE_PUSH_APPROVED_BLOB_CHANGED');
   assertCanonicalDrivers(root,manifest);
-  const preserved=capturePreserved(root,approved.paths);
+  const readScopeOwnership=()=>{
+    const registry=reservationStatus(process.env);
+    const current={...ownership,owner:registry.deliveryOwner,task:registry.deliveryTask,
+      reservationFingerprint:deliveryIdentityFingerprint(registry),mutableScopes:allowedDeliveryScopes(registry)};
+    assertSameOwnership(ownership,current);return current;
+  };
+  const observation=withConcurrentScopes(readScopeOwnership,scopes=>capturePreserved(root,approved.paths,[],scopes));
+  let concurrentScopes=observation.ownership.mutableScopes;
+  const preserved=observation.result;
   const indexDigest=digest(readFileSync('.git/index'));
   const snapshot=realpathSync(mkdtempSync(join(tmpdir(),'velora-candidate-')));
   const extracted=extractIndex(root,snapshot);
@@ -124,9 +146,11 @@ function main() {
   const contextFile=join(directory,'context.json');const contextBytes=JSON.stringify(context);writeFileSync(contextFile,contextBytes);
   writeFileSync(join(directory,'preserved.json'),JSON.stringify(preserved,null,2)+'\n');
   const assertCandidate=()=>{
-    assertSameOwnership(ownership,verifyWorkspace(process.env,{delivery:true}));
+    const currentOwnership=verifyWorkspace(process.env,{delivery:true});
+    assertSameOwnership(ownership,currentOwnership);
+    concurrentScopes=currentOwnership.mutableScopes;
     if(git('rev-parse','HEAD')!==head||digest(readFileSync('.git/index'))!==indexDigest||!readFileSync(approvedFile).equals(approvedBytes)||readFileSync(contextFile,'utf8')!==contextBytes)throw Error('PRE_PUSH_CANDIDATE_CHANGED');
-    assertManifestUnchanged(root,manifest);assertSnapshot(snapshot,manifest);assertPreserved(root,preserved,approved.paths);
+    assertManifestUnchanged(root,manifest);assertSnapshot(snapshot,manifest);concurrentScopes=withConcurrentScopes(readScopeOwnership,scopes=>assertPreserved(root,preserved,approved.paths,scopes)).ownership.mutableScopes;
   };
   const npmCli=process.env.npm_execpath?.endsWith('npm-cli.js')?process.env.npm_execpath:join(dirname(process.execPath),'node_modules','npm','bin','npm-cli.js');
   if(!existsSync(npmCli))throw Error('PRE_PUSH_NPM_RUNTIME_MISSING');
@@ -141,7 +165,7 @@ function main() {
   const passed=runGates(plan,runner,assertCandidate);
   const installFile=join(snapshot,'node_modules/.package-lock.json');
   const identity={tree,base,head,...deliveryIdentity(ownership),node:process.version,platform:process.platform,installFingerprint:existsSync(installFile)?digest(readFileSync(installFile)):'missing'};
-  writeFileSync(join(directory,mode==='check'?'tree.json':'full.json'),JSON.stringify({...identity,snapshot,contextFile,passed,result:'PASS',preservedFingerprint:digest(JSON.stringify(preserved)),testedAt:new Date().toISOString()},null,2)+'\n');
+  writeFileSync(join(directory,mode==='check'?'tree.json':'full.json'),JSON.stringify({...identity,snapshot,contextFile,passed,result:'PASS',preservedFingerprint:digest(JSON.stringify(preserved)),concurrentScopes,preservationMode:'immutable-unleased-and-disjoint-working-scopes',testedAt:new Date().toISOString()},null,2)+'\n');
   console.log('Pre-push PASS: '+(mode==='check'?'exact staged snapshot; range and all gates remain mandatory in Git hook.':'exact commit/tree; all13 live gates; excluded work preserved.'));
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

@@ -3,7 +3,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { annualDiscountPercent, commercialAmount } from "@/components/app/subscription-commercial-catalog";
 import type { SetupPlanJourney, SetupPlanJourneySnapshot } from "@/components/app/setup-plan-journey";
-import type { SubscriptionPersona } from "@/components/app/subscription-offers-view";
+import type { SubscriptionFeatureView, SubscriptionPersona } from "@/components/app/subscription-offers-view";
 import styles from "./setup-team-plans.module.css";
 
 export type SetupTeamPlansProps = {
@@ -18,6 +18,8 @@ export type SetupTeamPlansProps = {
   presentAddons: SetupPlanJourney["presentAddons"];
   /** Header motion toggle. Reduced motion still forces the static poster. */
   motionEnabled?: boolean;
+  /** Optional published catalog readiness overlay (A11 feature_availability projection). */
+  featureAvailability?: Readonly<Record<string, SubscriptionFeatureView["availability"]>>;
 };
 
 /** Dana/Lina alpha exports match the previously verified named GIF identities.
@@ -263,6 +265,7 @@ export function SetupTeamPlans({
   readPlan,
   presentAddons,
   motionEnabled = true,
+  featureAvailability,
 }: SetupTeamPlansProps) {
   const id = useId();
   const [focus, setFocus] = useState<SubscriptionPersona>(state.slots[initialBranchIndex]?.persona ?? "level_1");
@@ -353,6 +356,16 @@ export function SetupTeamPlans({
                 setScenario(0);
               }}
             >
+              {focused ? (
+                <span className={styles.personaHint} data-persona-hint="true" aria-hidden="true">
+                  <span className={styles.personaHintCloud}>
+                    {t("اضغط على الشخصية لاختيار الباقة", "Tap a persona to choose the plan")}
+                  </span>
+                  <span className={styles.personaHintDots}>
+                    <span /><span /><span />
+                  </span>
+                </span>
+              ) : null}
               {focused ? (
                 <TeamPersonaMotion video={item.video} poster={item.poster} label={label} motionEnabled={motionEnabled} />
               ) : (
@@ -472,9 +485,9 @@ export function SetupTeamPlans({
           {t("شهري", "Monthly")}
         </button>
         <button type="button" className={styles.term} aria-pressed={state.term === "yearly"} data-term="yearly" onClick={() => onTerm("yearly")}>
-          {t(`سنوي — توفير ${annualDiscountPercent}%`, `Yearly — save ${annualDiscountPercent}%`)}
+          <span>{t("سنوي", "Yearly")}</span>
+          <span className={styles.termSave}>{t(`−${annualDiscountPercent}%`, `−${annualDiscountPercent}%`)}</span>
         </button>
-        <p>{t("الخصم السنوي لا يحوّل الردود إلى رصيد سنوي. الحصة تبقى شهرية.", "The yearly discount does not turn replies into a yearly pool. The allowance stays monthly.")}</p>
       </div>
 
       <div className={styles.tiers}>
@@ -519,12 +532,28 @@ export function SetupTeamPlans({
                   {t("عرض جميع المميزات", "Show all features")}
                 </summary>
                 <ul className={styles.featureList}>
-                  {features.map((feature) => (
-                    <li key={feature.id} data-feature={feature.id}>
-                      {pack === "premium" && premiumOnly.some((item) => item.id === feature.id) ? t("إضافة المميزة: ", "Premium addition: ") : null}
-                      {ar ? feature.label.ar : feature.label.en}
-                    </li>
-                  ))}
+                  {features.map((feature) => {
+                    const availability = featureAvailability?.[feature.id];
+                    return (
+                      <li key={feature.id} data-feature={feature.id} data-availability={availability ?? undefined}>
+                        <span>
+                          {pack === "premium" && premiumOnly.some((item) => item.id === feature.id) ? t("إضافة المميزة: ", "Premium addition: ") : null}
+                          {ar ? feature.label.ar : feature.label.en}
+                        </span>
+                        {availability ? (
+                          <small className={styles.featureState} data-availability={availability}>
+                            {availability === "planned"
+                              ? t("مخططة", "Planned")
+                              : availability === "not_verified"
+                                ? t("غير متحققة", "Not verified")
+                                : availability === "ready"
+                                  ? t("جاهزة", "Ready")
+                                  : t("تحتاج إعدادًا", "Configuration required")}
+                          </small>
+                        ) : null}
+                      </li>
+                    );
+                  })}
                 </ul>
                 {pack === "premium" ? (
                   <ul className={styles.addonList}>

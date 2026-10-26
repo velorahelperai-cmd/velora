@@ -63,6 +63,27 @@ export function reservationFingerprint(registry) {
   })).digest('hex');
 }
 
+export function deliveryIdentityFingerprint(registry, owner = registry.deliveryOwner, task = registry.deliveryTask) {
+  const selected = registry.reservations.filter(x => x.owner === owner && x.task === task);
+  requireThat(selected.length === 1, 'TASK_RESERVATION_REQUIRED');
+  requireThat(sha(selected[0].publicationBase), 'PUBLICATION_BASE_REQUIRED');
+  requireThat(Array.isArray(selected[0].paths) && selected[0].paths.length > 0
+    && selected[0].paths.every(path => normalizeScope(path) === path), 'RESERVATION_REGISTRY_INVALID');
+  return reservationFingerprint({ reservations: selected, deliveryOwner: owner, deliveryTask: task });
+}
+
+export function allowedDeliveryScopes(registry) {
+  if (!registry.deliveryOwner) return [];
+  const selected = registry.reservations.find(x => x.owner === registry.deliveryOwner && x.task === registry.deliveryTask);
+  requireThat(selected, 'TASK_RESERVATION_REQUIRED');
+  const recorded = registry.deliveryMutableScopes ?? [];
+  requireThat(Array.isArray(recorded), 'RESERVATION_REGISTRY_INVALID');
+  const others = registry.reservations.filter(x => x !== selected).flatMap(x => x.paths);
+  const scopes = [...new Set([...recorded, ...others].map(normalizeScope))].sort();
+  requireThat(!scopes.some(scope => selected.paths.some(path => overlaps(scope, path))), 'DELIVERY_PATH_CONFLICT');
+  return scopes;
+}
+
 export function validateWorkspace(c, { delivery = false } = {}) {
   const e = c.env ?? {};
 
@@ -164,9 +185,8 @@ export function validateWorkspace(c, { delivery = false } = {}) {
   if (delivery) {
     requireThat(c.registry.deliveryOwner === c.writer && c.registry.deliveryTask === task,
       'DELIVERY_OWNERSHIP_REQUIRED');
-    requireThat(c.registry.reservations.every(x => x.owner === c.writer), 'ACTIVE_WRITERS_MUST_PAUSE');
-    if (c.registry.deliveryReservationFingerprint !== undefined) requireThat(
-      c.registry.deliveryReservationFingerprint === reservationFingerprint(c.registry),
+    requireThat(
+      c.registry.deliveryReservationFingerprint === deliveryIdentityFingerprint(c.registry, c.writer, task),
       'DELIVERY_RESUME_IDENTITY_CHANGED');
   }
 
@@ -179,9 +199,10 @@ export function validateWorkspace(c, { delivery = false } = {}) {
     owner: c.writer,
     task,
     publicationBase: selected[0].publicationBase,
-    reservationFingerprint: reservationFingerprint(c.registry),
+    reservationFingerprint: delivery ? deliveryIdentityFingerprint(c.registry, c.writer, task) : reservationFingerprint(c.registry),
     tasks: taskNames,
-    paths: delivery ? mine.flatMap(x => x.paths) : selected[0].paths
+    paths: selected[0].paths,
+    mutableScopes: delivery ? allowedDeliveryScopes(c.registry) : []
   };
 }
 
@@ -314,10 +335,15 @@ export function reservePaths({ owner, task, paths }) {
   requireThat(sha(publicationBase), 'PUBLICATION_BASE_REQUIRED');
 
   return mutateRegistry(r => {
-    requireThat(
-      !r.deliveryOwner,
-      'DELIVERY_IN_PROGRESS'
-    );
+    if (r.deliveryOwner) {
+      const frozen = r.reservations.find(x => x.owner === r.deliveryOwner && x.task === r.deliveryTask);
+      requireThat(frozen, 'TASK_RESERVATION_REQUIRED');
+      if (owner === r.deliveryOwner && task === r.deliveryTask) {
+        requireThat(requested.every(path => frozen.paths.includes(path)), 'DELIVERY_SCOPE_FROZEN');
+        return { owner, task, paths: requested };
+      }
+      requireThat(!requested.some(path => frozen.paths.some(scope => overlaps(path, scope))), 'DELIVERY_PATH_CONFLICT');
+    }
 
     for (const other of r.reservations.filter(x => x.owner !== owner)) {
       requireThat(
@@ -345,13 +371,14 @@ export function reservePaths({ owner, task, paths }) {
       });
     }
 
+    if (r.deliveryOwner) r.deliveryMutableScopes = allowedDeliveryScopes(r);
     return { owner, task, paths: requested };
   });
 }
 
 export function releasePaths({ owner, task }) {
   return mutateRegistry(r => {
-    requireThat(r.deliveryOwner !== owner, 'DELIVERY_IN_PROGRESS');
+    requireThat(!(r.deliveryOwner === owner && r.deliveryTask === task), 'DELIVERY_IN_PROGRESS');
 
     const previous = r.reservations.length;
     r.reservations = r.reservations.filter(
@@ -374,28 +401,23 @@ export function claimDelivery(owner, task) {
     const alreadyOwned = r.deliveryOwner === owner && r.deliveryTask === task;
     requireThat(!r.deliveryOwner || alreadyOwned, 'DELIVERY_ALREADY_CLAIMED');
 
-    // Shared working directory and Git index:
-    // other agents must pause writes and staging for delivery.
-    requireThat(
-      r.reservations.every(x => x.owner === owner),
-      'ACTIVE_WRITERS_MUST_PAUSE'
-    );
-
+    // One publisher owns the index/HEAD; disjoint working scopes remain writable.
     const selected = r.reservations.filter(x => x.owner === owner && x.task === task);
     requireThat(selected.length === 1, 'TASK_RESERVATION_REQUIRED');
     requireThat(sha(selected[0].publicationBase), 'PUBLICATION_BASE_REQUIRED');
     for (const reservation of r.reservations) {
       requireThat(Array.isArray(reservation.paths) && reservation.paths.length > 0
-        && reservation.paths.every(path => normalizeScope(path) === path)
-        && sha(reservation.publicationBase), 'RESERVATION_REGISTRY_INVALID');
+        && reservation.paths.every(path => normalizeScope(path) === path), 'RESERVATION_REGISTRY_INVALID');
     }
     if (alreadyOwned) requireThat(
       typeof r.deliveryReservationFingerprint === 'string'
-        && r.deliveryReservationFingerprint === reservationFingerprint(r),
+        && r.deliveryReservationFingerprint === deliveryIdentityFingerprint(r, owner, task),
       'DELIVERY_RESUME_IDENTITY_CHANGED');
     r.deliveryOwner = owner;
     r.deliveryTask = task;
-    r.deliveryReservationFingerprint = reservationFingerprint(r);
+    r.deliveryReservationFingerprint = deliveryIdentityFingerprint(r, owner, task);
+    if (!alreadyOwned) r.deliveryMutableScopes = [];
+    r.deliveryMutableScopes = allowedDeliveryScopes(r);
     return {
       deliveryOwner: owner,
       deliveryTask: task,
@@ -414,6 +436,7 @@ export function endDelivery(owner) {
     r.deliveryOwner = null;
     r.deliveryTask = null;
     delete r.deliveryReservationFingerprint;
+    delete r.deliveryMutableScopes;
     return { deliveryOwner: null, deliveryTask: null };
   });
 }

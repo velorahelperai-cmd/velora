@@ -2,7 +2,7 @@ import { createHmac } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 import { openAccountSandboxCheckout, receiveAccountSandboxPayment } from "./sandbox-checkout";
-import { resolveEs02Offer } from "./commercial-offer";
+import { resolveEs02Offer, resolveRecordedEs02Offer } from "./commercial-offer";
 import { readTestCheckoutConfig } from "../wiring/test-checkout";
 import { setPaymobSandboxLogSink, type PaymobSandboxLogEntry } from "../paymob/intention";
 import type { Es02AccountOrderView } from "./contracts";
@@ -34,7 +34,12 @@ function callback(overrides:Record<string,unknown>={}){
 }
 describe("account-bound sandbox adapter (offline transport and fixture store only)",()=>{
  it.each([["monthly",75000],["yearly",720000]] as const)("reopens and settles a frozen legacy Dana %s order at its original amount",async(term,amount)=>{
-  const f=fixture();f.order.offer={...f.order.offer,catalogRevision:"2026-10-14",term,persona:"level_3",package:"basic",amountBaisa:amount,repliesPerMonth:3000,slots:[{slotIndex:0,persona:"level_3",package:"basic",amountBaisa:amount,repliesPerMonth:3000,employees:2,channels:1}]};
+  const f=fixture();
+  const recorded=resolveRecordedEs02Offer({term,slots:[{persona:"level_3",package:"basic"}]},"2026-10-14");
+  expect(recorded.ok).toBe(true);
+  if(!recorded.ok)return;
+  expect(recorded.offer.amountBaisa).toBe(amount);
+  f.order.offer=recorded.offer;
   expect(await openAccountSandboxCheckout({...input,deps:f.deps})).toMatchObject({ok:true});
   expect(f.saved()).toMatchObject({binding:{amountBaisa:amount,providerAmount:amount}});
   expect(await receiveAccountSandboxPayment({...callback({amount_cents:amount}),config,deps:f.deps})).toMatchObject({ok:true,outcome:"settled"});

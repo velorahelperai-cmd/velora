@@ -522,8 +522,39 @@ it("does not wire financial confirmation in the plans leaf", () => {
   const css = readFileSync(new URL("./setup-team-plans.module.css", import.meta.url), "utf8");
   expect(css).toContain('"personas panel"');
   expect(css).toContain('"branches plans"');
+  expect(css).toContain('"summary plans"');
+  expect(css).toContain(".personaHint");
   expect(css).toContain(".scenarioButtons button[aria-selected=\"true\"]");
   expect(css).not.toContain(".scenario button");
+  expect(css).toMatch(/\.branchBlock\{[^}]*zoom:\.7/);
+  expect(css).toMatch(/\.page \.summary\{[^}]*zoom:\.7/);
+  expect(css).toContain(".termSave");
+  expect(sourceText).toContain("termSave");
+  expect(sourceText).not.toContain("سنوي — توفير");
+});
+
+it("shows a floating tip that personas are tappable", () => {
+  const tree = renderPlans(propsFor(journey(), { select: 0, term: 0, back: 0, next: 0 }));
+  const hint = findByAttr(tree, "data-persona-hint", "true");
+  expect(hint).toBeTruthy();
+  expect(texts(hint)).toContain("اضغط على الشخصية لاختيار الباقة");
+  const focused = findByAttr(tree, "data-persona", "level_1");
+  expect(focused?.props["aria-pressed"]).toBe(true);
+  expect(texts(focused)).toContain("اضغط على الشخصية لاختيار الباقة");
+  const css = readFileSync(new URL("./setup-team-plans.module.css", import.meta.url), "utf8");
+  expect(css).toContain(".personaHintCloud");
+  expect(css).toContain(".personaHintDots");
+  expect(css).toContain("backdrop-filter:blur");
+});
+
+it("overlays published catalog feature readiness on the feature list", () => {
+  const tree = renderPlans({
+    ...propsFor(journey(), { select: 0, term: 0, back: 0, next: 0 }),
+    featureAvailability: { faq: "planned", knowledge: "not_verified" },
+  });
+  const faq = findByAttr(tree, "data-feature", "faq");
+  expect(faq?.props["data-availability"]).toBe("planned");
+  expect(texts(faq)).toContain("مخططة");
 });
 
 function tierButton(tree: unknown, pack: string): InspectedElement | null {

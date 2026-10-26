@@ -14,6 +14,27 @@ export type CommercialPlan = {
   replies: number; employees: number; channels: number;
   features: readonly CommercialFeature[]; addons: readonly CommercialFeature[];
 };
+
+/** Stable allowlist of commercial feature/addon ids for admin catalog readiness (A11). */
+export function commercialCatalogFeatureIds(): readonly string[] {
+  const ids = new Set<string>();
+  for (const plan of commercialPlans) {
+    for (const feature of plan.features) ids.add(feature.id);
+    for (const addon of plan.addons) ids.add(addon.id);
+  }
+  return [...ids].sort();
+}
+
+/** Arabic/English labels for every commercial feature/addon id. */
+export function commercialCatalogFeatureLabels(): Record<string, { ar: string; en: string }> {
+  const labels: Record<string, { ar: string; en: string }> = {};
+  for (const plan of commercialPlans) {
+    for (const feature of [...plan.features, ...plan.addons]) {
+      labels[feature.id] = { ar: feature.label.ar, en: feature.label.en };
+    }
+  }
+  return labels;
+}
 const f = (id: string, ar: string, en: string): CommercialFeature => ({ id, label: { ar, en } });
 const support = [
   f("faq", "الرد على الأسئلة ومعلومات النشاط", "Business information and FAQs"),

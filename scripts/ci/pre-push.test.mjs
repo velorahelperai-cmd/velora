@@ -1,6 +1,7 @@
+import {deliveryIdentityFingerprint} from '../consolidation/guard.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parsePush, gatePlan, runGates, receiptMatches, deliveryIdentity, assertSameOwnership, assertCandidatePathsOwned } from './pre-push.mjs';
+import { parsePush, gatePlan, runGates, receiptMatches, withConcurrentScopes, deliveryIdentity, assertSameOwnership, assertCandidatePathsOwned } from './pre-push.mjs';
 const head = 'a'.repeat(40), base = 'b'.repeat(40);
 test('only the exact current main commit may update existing remote main', () => {
   assert.deepEqual(parsePush('refs/heads/main ' + head + ' refs/heads/main ' + base + '\n', head), { head, base });
@@ -82,3 +83,22 @@ for(const ref of ['refs/heads/other','refs/tags/main','(delete)','head',''])
 test('rejects empty updates',()=>assert.throws(()=>parsePush('',head,context)));
 
 }
+
+test('delivery receipt identity ignores disjoint registry activity but binds package lease',()=>{
+ const registry={reservations:[{owner:'A',task:'PACKAGE',paths:['src/a.ts'],publicationBase:base}],deliveryOwner:'A',deliveryTask:'PACKAGE'};
+ const ownership=()=>({mode:'local',owner:'A',task:'PACKAGE',publicationBase:base,reservationFingerprint:deliveryIdentityFingerprint(registry)});
+ const frozen=ownership();registry.reservations.push({owner:'B',task:'WORK',paths:['src/b.ts'],publicationBase:base});
+ assert.doesNotThrow(()=>assertSameOwnership(frozen,ownership()));registry.reservations[1].paths.push('src/c.ts');
+ assert.doesNotThrow(()=>assertSameOwnership(frozen,ownership()));registry.reservations.pop();
+ assert.doesNotThrow(()=>assertSameOwnership(frozen,ownership()));registry.reservations[0].paths.push('src/extra.ts');
+ assert.throws(()=>assertSameOwnership(frozen,ownership()),/PRE_PUSH_OWNERSHIP_CHANGED/);
+});
+
+test('scope observation tolerates a disjoint lease appearing during a working-file read',()=>{
+ const owned={mode:'local',owner:'A',task:'PACKAGE',publicationBase:base,reservationFingerprint:'a'.repeat(64)};
+ let reads=0,observations=0;const read=()=>({...owned,mutableScopes:++reads===1?[]:['writer/**']});
+ const result=withConcurrentScopes(read,scopes=>{observations++;if(!scopes.length)throw Error('PRE_PUSH_PRESERVED_WORK_CHANGED');return 'preserved';});
+ assert.equal(result.result,'preserved');assert.equal(observations,2);
+ assert.throws(()=>withConcurrentScopes(()=>({...owned,mutableScopes:[]}),()=>{throw Error('PRE_PUSH_PRESERVED_POINTER');}),/PRE_PUSH_PRESERVED_POINTER/);
+ let changed=false;assert.throws(()=>withConcurrentScopes(()=>({...owned,mutableScopes:[],reservationFingerprint:changed?'b'.repeat(64):owned.reservationFingerprint}),()=>{changed=true;}),/PRE_PUSH_OWNERSHIP_CHANGED/);
+});

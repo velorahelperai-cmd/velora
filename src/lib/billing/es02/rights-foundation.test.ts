@@ -29,6 +29,7 @@ const offer: Es02ImmutableOffer = {
       repliesPerMonth: 1000,
       employees: 2,
       channels: 1,
+      features: [{ id: "faq", label: { ar: "الرد على الأسئلة ومعلومات النشاط", en: "Business information and FAQs" } }],
     },
   ],
 };

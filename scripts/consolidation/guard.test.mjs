@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { validateWorkspace, normalizeScope, overlaps, reservationFingerprint, ORIGIN, REPOSITORY } from './guard.mjs';
+import { validateWorkspace, normalizeScope, overlaps, reservationFingerprint, deliveryIdentityFingerprint, ORIGIN, REPOSITORY } from './guard.mjs';
 import { writerRequest, runWriterRequest } from './writer.mjs';
 const commit = 'a'.repeat(40);
 const local = () => ({ env: {}, platform: 'win32', directoryMatches: true, gitRootMatches: true, commonDirectoryMatches: true,
@@ -45,17 +45,24 @@ test('task selection and publication baseline are mandatory for delivery identit
   delete c.registry.reservations[0].publicationBase;
   assert.throws(() => validateWorkspace(c), /PUBLICATION_BASE_REQUIRED/);
 });
-test('delivery requires the selected task claim and paused other writers', () => {
+test('delivery freezes only its selected lease while other writers continue', () => {
   const c = local();
   assert.throws(() => validateWorkspace(c, { delivery: true }), /DELIVERY_OWNERSHIP_REQUIRED/);
   c.registry.deliveryOwner = c.writer; c.registry.deliveryTask = c.task;
-  assert.equal(validateWorkspace(c, { delivery: true }).task, c.task);
+  c.registry.deliveryReservationFingerprint = deliveryIdentityFingerprint(c.registry);
+  const identity = validateWorkspace(c, { delivery: true });
+  c.registry.reservations.push({ owner: 'writer-B', task: 'OTHER', paths: ['src/b.ts'], publicationBase: commit });
+  assert.equal(validateWorkspace(c, { delivery: true }).reservationFingerprint, identity.reservationFingerprint);
+  assert.deepEqual(validateWorkspace(c, { delivery: true }).paths, ['src/a.ts']);
+  c.registry.reservations.push({ owner: c.writer, task: 'INDEPENDENT', paths: ['src/c.ts'], publicationBase: commit });
+  assert.deepEqual(validateWorkspace(c, { delivery: true }).paths, ['src/a.ts']);
+  assert.deepEqual(validateWorkspace(c, { delivery: true }).mutableScopes, ['src/b.ts', 'src/c.ts']);
   c.registry.deliveryTask = 'OTHER';
   assert.throws(() => validateWorkspace(c, { delivery: true }), /DELIVERY_OWNERSHIP_REQUIRED/);
-  c.registry.deliveryTask = c.task;
-  c.registry.reservations.push({ owner: 'writer-B', task: 'OTHER', paths: ['src/b.ts'], publicationBase: commit });
-  assert.throws(() => validateWorkspace(c, { delivery: true }), /ACTIVE_WRITERS_MUST_PAUSE/);
+  c.registry.deliveryTask = c.task;c.registry.reservations[0].paths.push('src/extra.ts');
+  assert.throws(() => validateWorkspace(c, { delivery: true }), /DELIVERY_RESUME_IDENTITY_CHANGED/);
 });
+
 test('scope parsing rejects traversal and Git metadata including Windows case aliases', () => {
   for (const value of ['../a', '/a', 'C:\\a', '.git/config', '.GIT/**', 'a/../b', 'a/*'])
     assert.throws(() => normalizeScope(value));

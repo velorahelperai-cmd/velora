@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { validateDraft, projectPublicCatalog } from "./contract";
+import { commercialCatalogFeatureIds } from "@/components/app/subscription-commercial-catalog";
+import { FEATURE_KEYS, validateDraft, projectPublicCatalog } from "./contract";
 const valid = { code:"noor_basic", currency:"OMR", amount_baisa:45000, period_unit:"month", period_count:1, automated_outbound_per_month:1000, feature_availability:{faq:"target"} };
 describe("catalog backend boundary",()=>{
  it("accepts positive business baisa and successful automated outbound cap",()=>expect(validateDraft(valid)).toEqual(valid));
@@ -9,6 +10,16 @@ describe("catalog backend boundary",()=>{
   expect(validateDraft({...valid,code:"other"})).toBeNull(); expect(validateDraft({...valid,currency:"USD"})).toBeNull();
   expect(validateDraft({...valid,feature_availability:{pos:"operational"}})).toBeNull();
   expect(validateDraft({...valid,feature_availability:{private_cost:"target"}})).toBeNull();
+ });
+ it("accepts commercial catalog feature ids for readiness and rejects unknown keys",()=>{
+  expect(validateDraft({...valid,feature_availability:{case_tracking:"target",contacts:"not_verified"}})).toEqual({
+   ...valid,feature_availability:{case_tracking:"target",contacts:"not_verified"},
+  });
+  expect(validateDraft({...valid,feature_availability:{not_a_real_feature:"target"}})).toBeNull();
+ });
+ it("keeps FEATURE_KEYS aligned with every commercial feature and addon id",()=>{
+  const commercial=commercialCatalogFeatureIds();
+  expect([...FEATURE_KEYS].sort()).toEqual([...commercial].sort());
  });
  it("keeps annual unavailable rather than inventing a price",()=>expect(validateDraft({...valid,period_unit:"year"})).toBeNull());
  it("projects only approved metadata and preserves immutable ids",()=>{

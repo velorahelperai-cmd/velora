@@ -80,6 +80,7 @@ const T = {
   yearly: { ar: "سنوياً", en: "per year" },
   omr: { ar: "ر.ع", en: "OMR" },
   repliesPerMonth: { ar: "رد شهرياً", en: "replies per month" },
+  featuresTitle: { ar: "مميزات الباقة", en: "Plan features" },
   termLabel: { ar: "المدة", en: "Term" },
   termMonthly: { ar: "شهرية", en: "Monthly" },
   termYearly: { ar: "سنوية", en: "Yearly" },
@@ -392,6 +393,18 @@ export function SetupOrderReviewView(p: ViewProps) {
                             <strong>{row.plan.channels}</strong><span>{ar ? "قنوات تواصل" : "channels"}</span>
                           </li>
                         </ul>
+                        {row.plan.features.length ? (
+                          <div className={styles.offerFeatures} data-role="offer-features" data-source={model.source}>
+                            <p className={styles.offerFeaturesTitle}>{tx(ar, T.featuresTitle)}</p>
+                            <ul>
+                              {row.plan.features.map((feature) => (
+                                <li key={feature.id} data-feature={feature.id}>
+                                  {ar ? feature.label.ar : feature.label.en}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ) : null}
                       </>
                     ) : null}
                   </div>

@@ -4,7 +4,7 @@ import {createHash} from 'node:crypto';
 import {existsSync,lstatSync,mkdirSync,readFileSync,readdirSync,realpathSync,writeFileSync} from 'node:fs';
 import {dirname,join,resolve,sep,basename} from 'node:path';
 import {tmpdir} from 'node:os';
-import {verifyWorkspace} from '../consolidation/guard.mjs';
+import {verifyWorkspace,normalizeScope,overlaps} from '../consolidation/guard.mjs';
 import {forbiddenTrackedPath} from './security-rules.mjs';
 
 const oidPattern=/^[a-f0-9]{40}$/;
@@ -141,17 +141,27 @@ export function assertApprovedDelta(changed,approved){
  if(changed.some(path=>!approved.includes(path)))fail('PRE_PUSH_UNAPPROVED_PATH');
 }
 
-export function capturePreserved(root,_approved,fixedPaths=[]){
- const excluded=new Set();
- for(const file of fixedPaths)excluded.add(file);
+function concurrentScopeCheck(approved, mutableScopes) {
+ if(!Array.isArray(mutableScopes))fail('PRE_PUSH_MUTABLE_SCOPES_INVALID');
+ const scopes=[...new Set(mutableScopes.map(normalizeScope))];
+ if(scopes.some(scope=>approved.some(path=>overlaps(scope,normalizeScope(path)))))fail('PRE_PUSH_MUTABLE_SCOPE_OVERLAP');
+ return path=>!forbiddenTrackedPath(path.toLowerCase())&&scopes.some(scope=>overlaps(scope,normalizeScope(path)));
+}
+export function capturePreserved(root,approved,fixedPaths=[],mutableScopes=[]){
+ const mutable=concurrentScopeCheck(approved,mutableScopes);
+ const excluded=new Set(fixedPaths);
  for(const args of [['diff','--name-only','-z','HEAD'],['ls-files','--others','--exclude-standard','-z']]){
   for(const file of git(root,args,{encoding:'utf8'}).split('\0').filter(Boolean))excluded.add(file);
  }
- // Include existing generated cache even after the approved ignore is installed.
- const cache=join(root,'scripts/account-deletion/.vite');
- const collect=(directory,prefix)=>{for(const name of readdirSync(directory)){const rel=prefix+'/'+name;const absolute=join(directory,name);if(lstatSync(absolute).isDirectory()&&!lstatSync(absolute).isSymbolicLink())collect(absolute,rel);else excluded.add(rel);}};
- if(existsSync(cache)){plainDirectory(cache);collect(cache,'scripts/account-deletion/.vite');}
- return [...excluded].sort().map(path=>{
+ // Do not inspect files being edited by another reserved writer. The publisher
+ // extracts only index blobs into a separate snapshot and never writes their WIP.
+ const cachePath='scripts/account-deletion/.vite',cache=join(root,cachePath);
+ const collect=(directory,prefix)=>{for(const name of readdirSync(directory)){
+  const rel=prefix+'/'+name;if(mutable(rel))continue;const absolute=join(directory,name);
+  if(lstatSync(absolute).isDirectory()&&!lstatSync(absolute).isSymbolicLink())collect(absolute,rel);else excluded.add(rel);
+ }};
+ if(!mutable(cachePath)&&existsSync(cache)){plainDirectory(cache);collect(cache,cachePath);}
+ return [...excluded].sort().filter(path=>!mutable(path)).map(path=>{
   if(forbiddenTrackedPath(path.toLowerCase()))return {path,kind:'private-not-opened'};
   const absolute=resolve(root,path);if(!absolute.startsWith(resolve(root)+sep))fail('PRE_PUSH_UNSAFE_PRESERVED_PATH');
   if(!existsSync(absolute))return {path,kind:'missing'};
@@ -160,8 +170,10 @@ export function capturePreserved(root,_approved,fixedPaths=[]){
   return {path,kind:'file',digest:createHash('sha256').update(readFileSync(absolute)).digest('hex')};
  });
 }
-export function assertPreserved(root,before,approved){
- if(JSON.stringify(capturePreserved(root,approved,before.map(entry=>entry.path)))!==JSON.stringify(before))fail('PRE_PUSH_PRESERVED_WORK_CHANGED');
+export function assertPreserved(root,before,approved,mutableScopes=[]){
+ const mutable=concurrentScopeCheck(approved,mutableScopes);
+ const immutable=before.filter(entry=>!mutable(entry.path));
+ if(JSON.stringify(capturePreserved(root,approved,before.map(entry=>entry.path),mutableScopes))!==JSON.stringify(immutable))fail('PRE_PUSH_PRESERVED_WORK_CHANGED');
 }
 
 export function gateInvocation(gate,context,contextFile){

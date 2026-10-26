@@ -26,6 +26,12 @@ export type Es02OrderStatus =
   | "failed"
   | "cancelled";
 
+/** Feature labels frozen onto the offer at resolve time (as written for that catalog revision). */
+export type Es02OfferFeature = {
+  id: string;
+  label: { ar: string; en: string };
+};
+
 /** One branch slot: independent persona/tier; order shares one term. */
 export type Es02BranchSlotOffer = {
   slotIndex: number;
@@ -35,6 +41,8 @@ export type Es02BranchSlotOffer = {
   repliesPerMonth: number;
   employees: number;
   channels: number;
+  /** Snapshot of included plan features at resolve; never re-read live marketing copy later. */
+  features: readonly Es02OfferFeature[];
 };
 
 export type Es02ImmutableOffer = {

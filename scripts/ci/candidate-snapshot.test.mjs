@@ -1,3 +1,4 @@
+import {pathToFileURL} from 'node:url';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
@@ -16,7 +17,7 @@ test('gate execution separates published dependencies from canonical guarded dri
  assert.equal(invocation.cwd,context.canonical);assert.equal(invocation.args[0],join(context.snapshot,'scripts/ci/run.mjs'));
  assert.deepEqual(invocation.args.slice(-2),['--candidate-context','context.json']);
 });
-test('preserved excluded work is content-bound and a changed or added path blocks delivery',t=>{
+test('unleased excluded work remains content-bound and unauthorized changes block delivery',t=>{
  const {root,git}=fixture(t);writeFileSync(join(root,'unready.js'),'keep');
  const before=capturePreserved(root,['keep.txt']);assertPreserved(root,before,['keep.txt']);
  writeFileSync(join(root,'unready.js'),'changed');assert.throws(()=>assertPreserved(root,before,['keep.txt']),/PRE_PUSH_PRESERVED_WORK_CHANGED/);
@@ -105,4 +106,55 @@ test('all13 gates remain required; every failure and snapshot drift deny simulat
  assertCandidatePathsOwned(['removed.txt'],{paths:['removed.txt']});assert.throws(()=>assertCandidatePathsOwned(['removed.txt'],{paths:['other.txt']}),/PRE_PUSH_UNLEASED_PATH/);
  assert.throws(()=>parsePush(`refs/heads/main ${'a'.repeat(40)} refs/heads/main ${'b'.repeat(40)}`,'c'.repeat(40)),/PRE_PUSH_MAIN_SOURCE_INVALID/);
  assert.equal(resolve('.').length>0,true);
+});
+
+test('disjoint working edits and new files do not drift a frozen candidate',t=>{
+ const {root,directory}=fixture(t);const approved=['keep.txt'];
+ writeFileSync(join(root,'writer.txt'),'initial');
+ const before=capturePreserved(root,approved,[],['writer.txt','parallel/**']);
+ const frozen=indexManifest(root);const snapshot=join(directory,'parallel-frozen');mkdirSync(snapshot);
+ extractIndex(root,snapshot);
+ writeFileSync(join(root,'writer.txt'),'writer continues');mkdirSync(join(root,'parallel'));
+ writeFileSync(join(root,'parallel','new.txt'),'new work');
+ assertPreserved(root,before,approved,['writer.txt','parallel/**']);
+ assertManifestUnchanged(root,frozen);assertSnapshot(snapshot,frozen);
+ assert.equal(readFileSync(join(root,'writer.txt'),'utf8'),'writer continues');
+ assert.equal(readFileSync(join(root,'parallel','new.txt'),'utf8'),'new work');
+ assert.throws(()=>assertPreserved(root,before,approved,['keep.txt']),/PRE_PUSH_MUTABLE_SCOPE_OVERLAP/);
+});
+
+test('one coordinator runs frozen gates while another writer acquires edits and releases its scope',async t=>{
+ const {root,directory,snapshot,git}=fixture(t);
+ const guardPath=join(directory,'delivery-guard.mjs');
+ const code=readFileSync(new URL('../consolidation/guard.mjs',import.meta.url),'utf8')
+  .replace(/export const ROOT = .*?;/,'export const ROOT = '+JSON.stringify(root)+';')
+  .replace("const publicationBase = git('rev-parse', 'HEAD');","const publicationBase = '"+'a'.repeat(40)+"';");
+ writeFileSync(guardPath,code);const api=await import(pathToFileURL(guardPath).href);
+ const env={VELORA_WRITER_ID:'publisher',VELORA_TASK_ID:'PACKAGE'};
+ api.reservePaths({owner:'publisher',task:'PACKAGE',paths:['keep.txt']});
+ api.reservePaths({owner:'writer',task:'WORK',paths:['writer.txt']});
+ api.claimDelivery('publisher','PACKAGE');writeFileSync(join(root,'writer.txt'),'initial');
+ const manifest=extractIndex(root,snapshot),head=git('rev-parse','HEAD');
+ const before=capturePreserved(root,['keep.txt'],[],api.reservationStatus(env).deliveryMutableScopes);
+ const fingerprint=api.reservationStatus(env).deliveryReservationFingerprint;
+ const assertFrozen=()=>{
+  const current=api.reservationStatus(env);assert.equal(current.deliveryReservationFingerprint,fingerprint);
+  assert.equal(git('rev-parse','HEAD'),head);assertManifestUnchanged(root,manifest);assertSnapshot(snapshot,manifest);
+  assertPreserved(root,before,['keep.txt'],current.deliveryMutableScopes);
+ };
+ const passed=runGates(gatePlan('npm-cli'),gate=>{
+  if(gate.id==='unit'){
+   api.reservePaths({owner:'writer',task:'WORK',paths:['parallel/**']});
+   writeFileSync(join(root,'writer.txt'),'edited while gates run');mkdirSync(join(root,'parallel'));
+   writeFileSync(join(root,'parallel','new.txt'),'new concurrent work');
+   api.releasePaths({owner:'writer',task:'WORK'});
+  }
+  return {status:0};
+ },assertFrozen);
+ assert.equal(passed.length,13);assert.equal(readFileSync(join(root,'writer.txt'),'utf8'),'edited while gates run');
+ assert.equal(readFileSync(join(root,'parallel','new.txt'),'utf8'),'new concurrent work');
+ assert.throws(()=>api.reservePaths({owner:'other',task:'BAD',paths:['keep.txt']}),/DELIVERY_PATH_CONFLICT/);
+ assert.throws(()=>api.claimDelivery('other','SECOND'),/DELIVERY_ALREADY_CLAIMED/);
+ git('add','writer.txt');assert.throws(()=>assertManifestUnchanged(root,manifest),/SNAPSHOT_INDEX_CHANGED/);
+ api.endDelivery('publisher');api.releasePaths({owner:'publisher',task:'PACKAGE'});
 });

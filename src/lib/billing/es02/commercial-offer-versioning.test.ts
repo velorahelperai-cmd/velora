@@ -8,12 +8,17 @@ function recorded(term: "monthly" | "yearly", amount: number) {
 describe("Dana approved new-offer pricing with immutable legacy orders", () => {
   it.each([["monthly", 90000, 75000], ["yearly", 864000, 720000]] as const)("prices new %s offers while preserving recorded old amounts", (term, current, previous) => {
     const frozen = recorded(term, previous);
-    expect(parseOfferRow(frozen)).toEqual(frozen);
+    const parsedFrozen = parseOfferRow(frozen);
+    expect(parsedFrozen).not.toBeNull();
+    expect(parsedFrozen!.amountBaisa).toBe(previous);
+    expect(parsedFrozen!.catalogRevision).toBe("2026-10-14");
+    expect(parsedFrozen!.slots[0]!.features.length).toBeGreaterThan(0);
     const result = resolveEs02Offer({ term, slots: [{ persona: "level_3", package: "basic" }] });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.offer.amountBaisa).toBe(current);
     expect(result.offer.catalogRevision).not.toBe(frozen.catalogRevision);
+    expect(result.offer.slots[0]!.features.length).toBeGreaterThan(0);
     expect(parseOfferRow(result.offer)).toEqual(result.offer);
     expect(parseOfferRow({ ...frozen, amountBaisa: current })).toBeNull();
     expect(resolveEs02Offer({ term, slots: [{ persona: "level_3", package: "basic" }], claimedCatalogRevision: frozen.catalogRevision, claimedAmountBaisa: previous })).toEqual({ ok: false, code: "OFFER_TAMPER" });

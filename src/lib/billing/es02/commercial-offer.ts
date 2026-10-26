@@ -161,6 +161,10 @@ function resolveOfferForRevision(
       repliesPerMonth: plan.replies,
       employees: plan.employees,
       channels: plan.channels,
+      features: plan.features.map((feature) => ({
+        id: feature.id,
+        label: { ar: feature.label.ar, en: feature.label.en },
+      })),
     });
   }
   const branchSlots = slots.length;
@@ -200,7 +204,16 @@ export function offerFingerprint(offer: Es02ImmutableOffer): string {
     offer.currency,
     offer.purpose,
     offer.productCode,
-    offer.slots.map((s) => [s.slotIndex, s.persona, s.package, s.amountBaisa, s.repliesPerMonth, s.employees, s.channels]),
+    offer.slots.map((s) => [
+      s.slotIndex,
+      s.persona,
+      s.package,
+      s.amountBaisa,
+      s.repliesPerMonth,
+      s.employees,
+      s.channels,
+      s.features.map((feature) => [feature.id, feature.label.ar, feature.label.en]),
+    ]),
   ]);
 }
 

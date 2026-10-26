@@ -1,5 +1,13 @@
 export const VARIANT_CODES = ["noor_basic","noor_premium","lina_basic","lina_premium","dana_basic","dana_premium"] as const;
-export const FEATURE_KEYS = ["faq","knowledge","enquiry_handoff","website","lead_followup","reports","pos","orders","endcustomer_payment","accounting"] as const;
+/** Allowlist aligned with commercial catalog feature/addon ids (readiness only; not free-text CMS). */
+export const FEATURE_KEYS = [
+  "accounting","advertising","alerts","booking_requests","bookings","calls","campaigns","cart_recovery",
+  "case_tracking","change_requests","contacts","content","csat","custom_workflows","endcustomer_payment",
+  "enquiry_handoff","faq","history","instagram_comments","knowledge","lead_followup","leads","manual_reminders",
+  "operations_alerts","operations_workflows","order_status","orders","payment_followup","pos","quotes",
+  "recommendations","reminders","reports","routing","sales_routing","sales_workflows","stock","store",
+  "summaries","voice_messages","website",
+] as const;
 export type VariantCode = typeof VARIANT_CODES[number];
 export type FeatureAvailability = Partial<Record<typeof FEATURE_KEYS[number],"target"|"not_verified">>;
 export type CatalogDraft = {code:VariantCode;currency:"OMR";amount_baisa:number;period_unit:"month";period_count:1;automated_outbound_per_month:number;feature_availability:FeatureAvailability};
