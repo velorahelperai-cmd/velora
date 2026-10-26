@@ -6,6 +6,7 @@ import {createMotionBudget,createMotionController,PERSONA_POSTERS,PERSONA_VIDEOS
 import {setupBranchFromReturn,setupBranchPath} from "@/lib/auth/setup-return";
 import {PaidSetupWorkspace,nextWorkspaceSelection} from "./paid-setup-workspace";
 import {PaidSetupStepHost} from "./paid-setup-step-host";
+import {PaidChannelSelection} from "./paid-channel-selection";
 import {readOwnedPaidSetupWorkspaceAction,type PaidSetupWorkspaceRead} from "@/lib/tenancy/paid-setup-workspace-actions";
 
 function subscribeSetupLocation(notify:()=>void) {
@@ -88,6 +89,7 @@ function PaidSetupBranchRead(p:PaidSetupFlowProps&{branchId:string;refreshVersio
  const ar=p.locale==="ar",persona=snapshot?.read.entitlement?.persona;
  const knownPersona=persona==="level_1"||persona==="level_2"||persona==="level_3"?persona:null;
  const personaName=knownPersona?({level_1:ar?"نورا":"Noura",level_2:ar?"لينا":"Lina",level_3:ar?"دانا":"Dana"})[knownPersona]:undefined;
+ if(snapshot?.read.sourceStatus==="selection_required"&&snapshot.read.entitlement&&isCurrent())return <PaidChannelSelection locale={p.locale} scope={{...scope,branchId}} read={snapshot.read} isCurrent={isCurrent} onRefresh={p.retry}/>;
  return <PaidSetupWorkspace locale={p.locale} scope={{...scope,branchId}} read={snapshot?.read??null} loading={snapshot===undefined} activeStepId={selected} isCurrent={isCurrent} onSelectStep={setSelected} onRefresh={p.retry} availableStepIds={["whatsapp","instagram","hours","knowledge","language","test","team","launch"]} connectionReads={snapshot?.connectionReads} renderStep={(step)=><PaidSetupStepHost locale={p.locale} scope={{...scope,branchId}} step={step} isCurrent={isCurrent} onRefresh={p.retry} read={snapshot?.read??null}/>} persona={knownPersona?<><div className={styles.workspaceFigure}><PaidChecklistPersonaVisual persona={knownPersona} alt={personaName??""}/></div><p className={styles.workspacePersonaName}>{personaName}</p></>:undefined}/>;
 }
 
