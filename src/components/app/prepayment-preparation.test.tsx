@@ -820,7 +820,7 @@ it("same-boundary identity refresh during payment preflight retains its result",
   expect(state.review!.editingLocked).toBe(false);
 });
 
-it("binds consent and UNKNOWN retry to the same operation without sending business facts", async () => {
+it("binds consent, preparation and UNKNOWN retry to the same operation", async () => {
   let props = await openBoundReview();
   expect(props.consentAccepted).toBe(false);
   expect(state.createCalls).toHaveLength(0);
@@ -836,7 +836,8 @@ it("binds consent and UNKNOWN retry to the same operation without sending busine
   await props.retrySameOperation?.();
   expect(state.createCalls).toHaveLength(2);
   expect(state.createCalls[1]).toEqual(state.createCalls[0]);
-  expect(Object.keys(state.createCalls[0] as object).sort()).toEqual(["clientOpId", "consentAccepted", "expectedAccountId", "selection"]);
+  expect(Object.keys(state.createCalls[0] as object).sort()).toEqual(["clientOpId", "consentAccepted", "expectedAccountId", "preparation", "selection"]);
+  expect(state.createCalls[0]).toMatchObject({ preparation: { name: "متجر الندى", country: "OM", phone: "+96892123456" } });
   const staleConfirm = props.confirmReview;
   state.boundary = "boundary-b";
   renderStudio();

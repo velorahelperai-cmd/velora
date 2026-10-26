@@ -4,7 +4,10 @@ const mocks = vi.hoisted(() => ({
   getClaims: vi.fn(),
   checkAppSession: vi.fn(),
   userRpc: vi.fn(),
+  beginCheckout: vi.fn(),
 }));
+
+vi.mock("./account-checkout", () => ({ beginAccountTestCheckout: mocks.beginCheckout }));
 
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => ({
@@ -70,6 +73,16 @@ describe("es02 account order actions", () => {
       error: null,
     });
     mocks.checkAppSession.mockResolvedValue({ ok: true });
+    mocks.beginCheckout.mockResolvedValue({ ok: false, code: "PAYMOB_EXTERNAL_DEFERRED" });
+  });
+
+  it("hands an authenticated payment gesture to the durable Test checkout boundary", async () => {
+    const preparation = { name: "Test business", type: "retail", country: "OM", city: "Muscat", phone: "+96890000000", branches: [{ name: "Main", city: "Muscat" }] };
+    const input = { expectedAccountId: accountId, selection: { term: "monthly" as const, slots: [{ persona: "level_1" as const, package: "basic" as const }] }, consentAccepted: true, clientOpId: sessionId, preparation };
+    mocks.beginCheckout.mockResolvedValue({ ok: false, code: "UNKNOWN" });
+    await expect(beginAccountPaymentAction(input)).resolves.toEqual({ ok: false, code: "UNKNOWN" });
+    expect(mocks.beginCheckout).toHaveBeenCalledWith(expect.objectContaining({ accountId, sessionId, clientOpId: sessionId, preparation }));
+    expect(mocks.userRpc).not.toHaveBeenCalled();
   });
 
   it("validates explicit payment intent without creating an order while provider is deferred", async () => {

@@ -31,6 +31,7 @@ import { paymobExternalSettlementStatus } from "./synthetic-settlement";
 import { classifyEs02RpcFailure, type Es02RpcObservation } from "./rpc-classify";
 import { classifyCreateOrderWriteAck, classifyProvisionWriteAck } from "./write-ack";
 import { singleBranchCountAllowed } from "@/lib/tenancy/single-branch-policy";
+import { beginAccountTestCheckout, type AccountCheckoutData } from "./account-checkout";
 
 function es02Log(
   severity: "info" | "warn" | "error",
@@ -111,18 +112,17 @@ function asObservation(result: {
 }
 
 /**
- * Explicit payment-initiation boundary. Review itself is local. While the
- * provider is deferred this action validates authority/selection, then performs
- * NO order, payment, provisioning or provider write. A future provider adapter
- * must durably bind this exact clientOpId and canonical offer before any
- * external side effect, and reconcile uncertain outcomes on that operation.
+ * Explicit payment-initiation boundary. Review itself is local. The gated Test
+ * adapter durably binds the operation, canonical offer and preparation before
+ * contacting Paymob. Disabled configuration performs no writes.
  */
 export async function beginAccountPaymentAction(input: {
   expectedAccountId: string;
   selection: Es02OfferSelection;
   consentAccepted: boolean;
   clientOpId: string;
-}): Promise<Es02Result<never>> {
+  preparation?: Preparation;
+}): Promise<Es02Result<AccountCheckoutData>> {
   const auth = await readAuthenticatedAccount(input?.expectedAccountId);
   if (!auth.ok) return auth;
   const sanitized = sanitizeCheckoutPayload({
@@ -134,7 +134,7 @@ export async function beginAccountPaymentAction(input: {
   const resolved = resolveEs02Offer(sanitized.selection);
   if (!resolved.ok) return { ok: false, code: resolved.code };
   if (!singleBranchCountAllowed(resolved.offer.branchSlots)) return { ok: false, code: "SECOND_BRANCH_DEFERRED" };
-  return { ok: false, code: "PAYMOB_EXTERNAL_DEFERRED" };
+  return beginAccountTestCheckout({ accountId: auth.accountId, sessionId: auth.sessionId, clientOpId: sanitized.clientOpId, selection: sanitized.selection, preparation: input.preparation });
 }
 
 /** Existing financial-order primitive; NOT a prepayment-review action. */

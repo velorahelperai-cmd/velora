@@ -35,7 +35,7 @@ export type SetupPlanCreateOrder = (input: {
   selection: Es02OfferSelection;
   consentAccepted: boolean;
   clientOpId: string;
-}) => Promise<Es02Result<{ order: Es02AccountOrderView; action: "insert" | "reuse" }>>;
+}) => Promise<Es02Result<{ order: Es02AccountOrderView; action: "insert" | "reuse"; checkoutUrl?: string }>>;
 
 export type SetupPlanActor = {
   accountId: string;
@@ -72,6 +72,7 @@ export type SetupPlanWrite =
   | { kind: "denied"; clientOpId: string; selection: Es02OfferSelection; code: Es02ActionCode }
   | {
       kind: "unpaid";
+      checkoutUrl?: string;
       clientOpId: string;
       selection: Es02OfferSelection;
       order: Es02AccountOrderView;
@@ -95,6 +96,7 @@ export type SetupPlanStepResult =
 export type SetupPlanConfirmResult =
   | {
       ok: true;
+      checkoutUrl?: string;
       settlement: "UNPAID";
       serviceReady: false;
       order: Es02AccountOrderView;
@@ -281,6 +283,7 @@ function cloneWrite(value: SetupPlanWrite): SetupPlanWrite {
     selection,
     order: cloneOrder(value.order),
     action: value.action,
+    ...(value.checkoutUrl ? { checkoutUrl: value.checkoutUrl } : {}),
     settlement: "UNPAID",
     serviceReady: false,
   };
@@ -311,7 +314,7 @@ export function createSetupPlanJourney(input: {
   const injectedCreateOrder = input.createOrder;
   const createOrder: SetupPlanCreateOrder = injectedCreateOrder
     ? injectedCreateOrder
-    : (orderInput) => setupPlanBeginPayment(orderInput);
+      : (orderInput) => setupPlanBeginPayment({ ...orderInput, preparation: clonePreparation(preparation) });
   const newClientOpId = input.newClientOpId ?? (() => globalThis.crypto.randomUUID());
 
   function locked(): boolean {
@@ -467,6 +470,7 @@ export function createSetupPlanJourney(input: {
           order: cloneOrder(write.order),
           action: write.action,
           clientOpId: write.clientOpId,
+          ...(write.checkoutUrl ? { checkoutUrl: write.checkoutUrl } : {}),
         },
       };
     }
@@ -559,6 +563,7 @@ export function createSetupPlanJourney(input: {
       const retainedOrder = cloneOrder(result.data.order);
       write = {
         kind: "unpaid",
+        ...(result.data.checkoutUrl ? { checkoutUrl: result.data.checkoutUrl } : {}),
         clientOpId: retainedOpId,
         selection: retainedSelection,
         order: retainedOrder,
@@ -568,6 +573,7 @@ export function createSetupPlanJourney(input: {
       };
       return {
         ok: true,
+        ...(result.data.checkoutUrl ? { checkoutUrl: result.data.checkoutUrl } : {}),
         settlement: "UNPAID",
         serviceReady: false,
         order: cloneOrder(retainedOrder),
@@ -578,12 +584,8 @@ export function createSetupPlanJourney(input: {
       if (discarded || generation !== decision.capturedGeneration || accountId !== decision.capturedAccountId || !isCurrent()) {
         return stale(decision);
       }
-      // The current product boundary is read-only and provider-deferred. A lost
-      // preflight response cannot have started payment and must not lock a draft.
-      if (!injectedCreateOrder) {
-        write = { kind: "idle" };
-        return { ok: false, code: "UNAVAILABLE" };
-      }
+      // A lost payment response may follow a committed order or provider call.
+      // Keep the operation identity even when the default adapter is used.
       write = { kind: "unknown", clientOpId: decision.clientOpId, selection: decision.selection, code: "UNKNOWN" };
       return { ok: false, code: "UNKNOWN", clientOpId: decision.clientOpId };
     }

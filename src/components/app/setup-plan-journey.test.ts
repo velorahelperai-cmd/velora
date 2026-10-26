@@ -115,6 +115,17 @@ describe("setup plan journey", () => {
     return review;
   }
 
+  it("retains the same checkout URL when confirming an already-created order", async () => {
+    const checkoutUrl = "https://om.checkout.paymob.com/?publicKey=om_pk_test_fixture&clientSecret=pi_test_fixture";
+    const createOrder = vi.fn(async () => ({ ok: true as const, data: { order: orderFor({ term: "monthly", slots: [{ persona: "level_1", package: "basic" }] }), action: "insert" as const, checkoutUrl } }));
+    const target = journey({ createOrder });
+    arm(target);
+    expect(await target.confirmReview(true)).toMatchObject({ ok: true, checkoutUrl });
+    expect(target.snapshot().write).toMatchObject({ kind: "unpaid", checkoutUrl });
+    expect(await target.confirmReview(true)).toMatchObject({ ok: true, checkoutUrl });
+    expect(createOrder).toHaveBeenCalledTimes(1);
+  });
+
   it("derives one slot per branch and preserves choices when the draft grows", () => {
     const target = journey({
       preparation: preparation([

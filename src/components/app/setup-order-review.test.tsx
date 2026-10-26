@@ -6,6 +6,7 @@ import { annualDiscountPercent, commercialAmount, commercialPlan } from "@/compo
 import {
   SetupOrderReview,
   SetupOrderReviewView,
+  safeTestCheckoutUrl,
   type SetupOrderReviewProps,
   type ViewProps,
 } from "./setup-order-review";
@@ -56,6 +57,16 @@ const SLOTS: BranchSlotChoice[] = [
 ];
 const idle: SetupPlanWrite = { kind: "idle" };
 const ACTOR = { accountId: "acc-1", captureToken: "tok-1" };
+
+describe("Paymob Test destination", () => {
+  it("accepts only the configured Test checkout origin and credentials", () => {
+    const url = "https://om.checkout.paymob.com/?publicKey=om_pk_test_example&clientSecret=pi_test_example";
+    expect(safeTestCheckoutUrl(url)).toBe(url);
+    expect(safeTestCheckoutUrl(url.replace("om_pk_test_", "omn_pk_test_"))).not.toBeNull();
+    expect(safeTestCheckoutUrl(url.replace("om_pk_test_", "omn_pk_test_").replace("pi_test_", "omn_csk_test_"))).not.toBeNull();
+    for (const invalid of ["bad", "javascript:alert(1)", url.replace("om.checkout.paymob.com", "attacker.example"), url.replace("om_pk_test_", "om_pk_live_"), url.replace("pi_test_", "pi_live_"), `${url}#fragment`]) expect(safeTestCheckoutUrl(invalid)).toBeNull();
+  });
+});
 
 function viewProps(over: Partial<ViewProps> = {}): ViewProps {
   const model = buildReviewModel(SLOTS, "monthly");

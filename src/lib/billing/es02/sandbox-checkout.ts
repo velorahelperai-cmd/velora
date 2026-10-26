@@ -80,7 +80,7 @@ export async function openAccountSandboxCheckout(input:{accountId:string;orderId
   }
   bindPaymobCorrelation({correlationId,orderId:order.orderId,specialReference:order.specialReference});
   let claimToken:string|null=null;
-  return await openTestCheckout({config,locked:{orderId:order.orderId,paymentAttemptId:order.paymentAttemptId,specialReference:order.specialReference,correlationId,currency:"OMR",amountBaisa:binding.amountBaisa,providerAmount:binding.providerAmount,providerAmountUnit:"paymob_amount",providerAccountRef:binding.providerAccountRef,providerEnvironment:"test",integrationId:config.integrationId,billingPhone:input.billingPhone,itemName:"Velora subscription",notificationUrl:origin.origin+"/api/billing/es02/paymob/sandbox/webhook",redirectionUrl:origin.origin+"/account/orders/"+order.orderId},deps:{http:deps.http,
+  return await openTestCheckout({config,locked:{orderId:order.orderId,paymentAttemptId:order.paymentAttemptId,specialReference:order.specialReference,correlationId,currency:"OMR",amountBaisa:binding.amountBaisa,providerAmount:binding.providerAmount,providerAmountUnit:"paymob_amount",providerAccountRef:binding.providerAccountRef,providerEnvironment:"test",integrationId:config.integrationId,billingPhone:input.billingPhone,itemName:"Velora subscription",notificationUrl:origin.origin+"/api/billing/es02/paymob/sandbox/webhook",redirectionUrl:origin.origin+"/api/billing/es02/paymob/return?order_id="+order.orderId},deps:{http:deps.http,
    claim:async()=>{
     const claim=await deps.claim(binding);
     if(claim.kind==="claimed"){

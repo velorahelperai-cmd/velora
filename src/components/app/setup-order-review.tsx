@@ -121,6 +121,14 @@ const T = {
 type Key = { ar: string; en: string };
 const tx = (ar: boolean, k: Key) => (ar ? k.ar : k.en);
 
+export function safeTestCheckoutUrl(value?: string): string | null {
+  if (!value) return null;
+  try {
+    const target = new URL(value);
+    return target.origin === "https://om.checkout.paymob.com" && target.pathname === "/" && !target.username && !target.password && !target.hash && /^om(?:n)?_pk_test_/.test(target.searchParams.get("publicKey") ?? "") && /^(?:om(?:n)?_csk|pi)_test_/.test(target.searchParams.get("clientSecret") ?? "") ? target.href : null;
+  } catch { return null; }
+}
+
 function PinIcon() {
   return (
     <svg className={styles.pin} viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
@@ -267,6 +275,7 @@ export type ViewProps = {
   outcomeUnknown?: boolean;
   motionEnabled?: boolean;
   reference: string | null;
+  checkoutUrl?: string;
   canRetry: boolean;
   termsHref: string | null;
   ids: { title: string; consent: string; status: string };
@@ -295,6 +304,7 @@ export function SetupOrderReviewView(p: ViewProps) {
       <div className={styles.statusOk} data-role="status-created">
         <strong>{tx(ar, T.createdTitle)}</strong>
         <span>{tx(ar, T.createdBody)}</span>
+        {safeTestCheckoutUrl(p.checkoutUrl) ? <a className={styles.secondary} href={safeTestCheckoutUrl(p.checkoutUrl)!} rel="noreferrer">{tx(ar, T.confirm)}</a> : null}
         {p.reference ? (
           <span>
             {tx(ar, T.reference)}: <bdi dir="ltr" data-role="order-reference">{p.reference}</bdi>
@@ -535,7 +545,11 @@ export function SetupOrderReview(props: SetupOrderReviewProps) {
           setLocal({ kind: "failed", code: event.code, outcome: event.outcome, clientOpId: event.clientOpId });
         }
       },
-      onConfirmed: (result) => cell.props.onConfirmed?.(result),
+      onConfirmed: (result) => {
+        cell.props.onConfirmed?.(result);
+        const checkoutUrl = safeTestCheckoutUrl(result.checkoutUrl);
+        if (checkoutUrl && typeof window !== "undefined") window.location.assign(checkoutUrl);
+      },
       currentOpId: () => {
         const w = cell.props.write;
         return w.kind === "idle" ? undefined : w.clientOpId;
@@ -621,6 +635,7 @@ export function SetupOrderReview(props: SetupOrderReviewProps) {
       outcomeUnknown={outcomeUnknown}
       motionEnabled={props.motionEnabled !== false}
       reference={reference}
+      checkoutUrl={write.kind === "unpaid" ? write.checkoutUrl : local.kind === "created" ? local.result.checkoutUrl : undefined}
       canRetry={phase === "unknown" && !!props.retrySameOperation && !busy}
       termsHref={props.termsHref === undefined ? "/terms" : props.termsHref}
       ids={ids}
