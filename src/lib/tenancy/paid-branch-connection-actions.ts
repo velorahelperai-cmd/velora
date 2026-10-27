@@ -77,6 +77,10 @@ export async function readOwnedPaidBranchConnectionAction(scope: PaidBranchConne
     const session = await sessionClient(parsed.expectedAccountId, requestId, asOf, parsed);
     if ("ok" in session) return session.read;
     const result = await runPaidBranchConnectionRead(parsed, createPaidBranchConnectionStore(session.client, session.client, asOf), asOf);
+    const pendingAttempt = result.read.connection.attempt;
+    if (result.read.sourceStatus === "ready" && result.read.connection.flow === "wa_new_number" && pendingAttempt?.status === "pending" && Date.parse(pendingAttempt.expiresAt) <= Date.now()) {
+      logEvent("info", "es02.branch_connection.cancel_flag", { enabled: process.env.VELORA_EXPIRED_WA_CANCEL_ENABLED === "true" });
+    }
     // Local owner diagnostics only. Never project credentials or probe/write Meta.
     if (process.env.NODE_ENV === 'development' && process.env.NEXT_PUBLIC_SITE_URL === 'http://127.0.0.1:3330'
       && parsed.branchId === 'a268f9d8-fe5b-41b2-a337-97046a5eaa5c' && result.read.sourceStatus === 'ready') {
@@ -312,35 +316,80 @@ async function instagramCallback(input: { attemptId: string; state: string; code
 async function attemptMutation(input: PaidBranchConnectionScope & { flow: PaidBranchConnectionFlow; attemptId: string; generation: number; oauthState?: string }, kind: "recover" | "cancel"): Promise<PaidBranchConnectionMutation> {
   const requestId = randomUUID();
   const asOf = new Date().toISOString();
-  return withLogContext({ request_id: requestId, user_id: input?.expectedAccountId }, async () => {
+  return withLogContext(kind === "cancel" && input?.flow === "wa_new_number" ? { request_id: requestId } : { request_id: requestId, user_id: input?.expectedAccountId }, async () => {
+    const started = Date.now();
+    const stage = (name: string, since: number, outcome: string, code?: string) => {
+      if (kind === "cancel" && input?.flow === "wa_new_number") logEvent("info", "es02.branch_connection.cancel_stage", { stage: name, duration_ms: Date.now() - since, outcome, ...(code ? { error_code: code } : {}) });
+    };
     const request = attemptRequest(input, asOf);
-    if ("ok" in request) return request;
+    if ("ok" in request) { stage("validation", started, "denied", request.code); return request; }
     if (kind === "cancel" && typeof input.oauthState === "string") request.oauthState = input.oauthState;
+    const sessionStarted = Date.now();
+    stage("session", sessionStarted, "started");
     const session = await sessionClient(request.expectedAccountId, requestId, asOf, request);
-    if ("ok" in session) return session;
+    if ("ok" in session) { stage("session", sessionStarted, "denied", session.code); return session; }
+    stage("session", sessionStarted, "ok");
     const store = createPaidBranchConnectionStore(session.client, session.client, asOf, { sessionId: session.sessionId });
-    let pendingRead:PaidBranchConnectionRead|null=null;
-    if(kind==='cancel'&&request.flow==='wa_new_number'){
-      const current=await store.read(request);
-      if(!current)return {ok:false,code:'source_failed',read:unavailablePaidBranchConnectionRead(request,asOf,'source_failed')};
-      if(current.connection.attempt?.id!==request.attemptId||current.connection.attempt.generation!==request.generation)return {ok:false,code:'reconciliation_required',read:current};
-      if(current.connection.attempt.status==='cancelled'&&!current.connection.verified)return {ok:true,read:current};
-      if(current.connection.attempt.status!=='pending')return {ok:false,code:'reconciliation_required',read:current};
-      pendingRead=current;
+    let pendingRead: PaidBranchConnectionRead | null = null;
+    if (kind === "cancel" && request.flow === "wa_new_number") {
+      const readStarted = Date.now();
+      stage("read", readStarted, "started");
+      const current = await store.read(request);
+      stage("read", readStarted, current ? "ok" : "unknown");
+      if (!current) return { ok: false, code: "source_failed", read: unavailablePaidBranchConnectionRead(request, asOf, "source_failed") };
+      if (current.connection.attempt?.id !== request.attemptId || current.connection.attempt.generation !== request.generation) return { ok: false, code: "reconciliation_required", read: current };
+      if (current.connection.attempt.status === "cancelled" && !current.connection.verified) return { ok: true, read: current };
+      if (current.connection.attempt.status !== "pending" || current.connection.verified) return { ok: false, code: "reconciliation_required", read: current };
+      pendingRead = current;
     }
-    let result=await (kind === "recover" ? runPaidBranchConnectionRecover : runPaidBranchConnectionCancel)(request, store, asOf);
-    // Disabled until the exact reviewed database function is installed and explicitly enabled locally.
-    if(kind==='cancel'&&request.flow==='wa_new_number'&&!result.ok&&result.code==='forbidden'&&pendingRead?.connection.attempt
-      &&Date.parse(pendingRead.connection.attempt.expiresAt)<=Date.now()&&process.env.VELORA_EXPIRED_WA_CANCEL_ENABLED==='true'){
-      try{
-        const fallback=await session.client.rpc('es02_b3_cancel_expired_unstarted_whatsapp',{p_expected_account_id:request.expectedAccountId,p_company_id:request.companyId,p_branch_id:request.branchId,p_attempt_id:request.attemptId,p_generation:request.generation});
-        const data=fallback.data as {ok?:unknown;read?:unknown;code?:unknown}|null;
-        const read=parsePaidBranchConnectionRead(data?.read,request);
-        if(!fallback.error&&data?.ok===true&&read?.connection.attempt?.id===request.attemptId&&read.connection.attempt.generation===request.generation&&read.connection.attempt.status==='cancelled')result={ok:true,read};
-        else if(!fallback.error&&data?.ok===false&&data.code==='reconciliation_required')result={ok:false,code:'reconciliation_required',read:pendingRead};
-      }catch{/* Preserve the original denial; never invent success. */}
+    const expiry = pendingRead?.connection.attempt?.expiresAt;
+    if (kind === "cancel" && request.flow === "wa_new_number" && pendingRead) {
+      logEvent("info", "es02.branch_connection.cancel_flag", { enabled: process.env.VELORA_EXPIRED_WA_CANCEL_ENABLED === "true" });
     }
-    if(kind==='cancel'&&request.flow==='wa_new_number'&&result.ok){const admin=createAdminClient();if(admin)await signupCheckpointRpc(admin as unknown as PaidBranchConnectionRpc,'discard',signupCheckpointBinding(request,session.sessionId));}
+    const directExpiredCancel = kind === "cancel" && request.flow === "wa_new_number" && pendingRead && expiry
+      && Number.isFinite(Date.parse(expiry)) && Date.parse(expiry) <= Date.now()
+      && process.env.VELORA_EXPIRED_WA_CANCEL_ENABLED === "true";
+    let result: PaidBranchConnectionMutation;
+    if (directExpiredCancel && pendingRead) {
+      const rpcStarted = Date.now();
+      stage("expired_rpc", rpcStarted, "started");
+      try {
+        const fallback = await session.client.rpc("es02_b3_cancel_expired_unstarted_whatsapp", { p_expected_account_id: request.expectedAccountId, p_company_id: request.companyId, p_branch_id: request.branchId, p_attempt_id: request.attemptId, p_generation: request.generation });
+        const data = fallback.data as { ok?: unknown; read?: unknown; code?: unknown } | null;
+        const read = parsePaidBranchConnectionRead(data?.read, request);
+        if (!fallback.error && data?.ok === true && read?.connection.attempt?.id === request.attemptId && read.connection.attempt.generation === request.generation && read.connection.attempt.status === "cancelled" && !read.connection.verified) {
+          result = { ok: true, read };
+          stage("expired_rpc", rpcStarted, "confirmed");
+        } else if (!fallback.error && data?.ok === false && (data.code === "forbidden" || data.code === "reconciliation_required")) {
+          result = { ok: false, code: data.code, read: pendingRead };
+          stage("expired_rpc", rpcStarted, "denied", data.code);
+        } else {
+          result = { ok: false, code: "source_failed", read: pendingRead };
+          stage("expired_rpc", rpcStarted, "unknown");
+        }
+      } catch {
+        result = { ok: false, code: "source_failed", read: pendingRead };
+        stage("expired_rpc", rpcStarted, "unknown");
+      }
+    } else {
+      const rpcStarted = Date.now();
+      stage("standard_rpc", rpcStarted, "started");
+      try {
+        result = await (kind === "recover" ? runPaidBranchConnectionRecover : runPaidBranchConnectionCancel)(request, store, asOf);
+        stage("standard_rpc", rpcStarted, result.ok ? "confirmed" : result.code === "source_failed" ? "unknown" : "denied", result.ok ? undefined : result.code);
+      } catch (error) {
+        stage("standard_rpc", rpcStarted, "unknown");
+        throw error;
+      }
+    }
+    if (kind === "cancel" && request.flow === "wa_new_number" && result.ok) {
+      const cleanupStarted = Date.now();
+      const admin = createAdminClient();
+      stage("checkpoint_cleanup", cleanupStarted, "started");
+      const cleaned = admin ? await signupCheckpointRpc(admin as unknown as PaidBranchConnectionRpc, "discard", signupCheckpointBinding(request, session.sessionId)) : null;
+      stage("checkpoint_cleanup", cleanupStarted, cleaned ? "confirmed" : "unknown");
+    }
+    stage("complete", started, result.ok ? "confirmed" : "not_confirmed", result.ok ? undefined : result.code);
     return result;
   });
 }

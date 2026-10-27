@@ -86,6 +86,17 @@ describe("coexistence actions use the attempt parser and the config gate", () =>
     expect(state.exchange).not.toHaveBeenCalled();
   });
 
+  it('reports the expired cancellation flag during an owned read without mutation', async () => {
+    vi.stubEnv('VELORA_EXPIRED_WA_CANCEL_ENABLED','true');
+    try {
+      const current={...connectionRead(),connection:{...connectionRead().connection,flow:'wa_new_number',attempt:{...connectionRead().connection.attempt,expiresAt:'2000-01-01T00:00:00Z'}}};
+      state.rpc.mockResolvedValue({data:current,error:null});
+      await readOwnedPaidBranchConnectionAction(scope);
+      expect(state.log).toHaveBeenCalledWith('info','es02.branch_connection.cancel_flag',{enabled:true});
+      expect(names()).toEqual(['es02_b3_read_owned_branch_connection']);
+    } finally {vi.unstubAllEnvs();}
+  });
+
   it('logs only bounded local diagnostics and never exposes checkpoint credentials or calls Meta', async () => {
     vi.stubEnv('NODE_ENV','development');
     vi.stubEnv('NEXT_PUBLIC_SITE_URL','http://127.0.0.1:3330');
@@ -180,11 +191,34 @@ describe('owned registration preparation',()=>{
  it('starts Embedded Signup without the local GET verification token while retaining readiness gates',async()=>{vi.stubEnv('WHATSAPP_ROUTING_MODE','tenant_registry');vi.stubEnv('WHATSAPP_RECEIVE_ENABLED','true');vi.stubEnv('WHATSAPP_VERIFY_TOKEN','');const read={...connectionRead(),connection:{...connectionRead().connection,flow:'wa_new_number',attempt:{...connectionRead().connection.attempt,expiresAt:'2099-01-01T00:00:00Z'}}};state.rpc.mockImplementation(async(name:string)=>name==='es02_b3_whatsapp_signup_checkpoint'?{data:{ok:true},error:null}:{data:{ok:true,read,launch:{flow:'wa_new_number',attemptId,nonce:'a'.repeat(64),appId:'111',configId:'123',graphVersion:'v25.0'}},error:null});expect(await startOwnedPaidBranchConnectionAction({...scope,flow:'wa_new_number',clientOpId:'77777777-7777-4777-8777-777777777777',expectedRevision:'1'})).toMatchObject({ok:true,launch:{attemptId,flow:'wa_new_number'}});expect(names()).toEqual(['es02_b3_whatsapp_signup_checkpoint','es02_b3_start_owned_branch_connection']);expect(state.probe).not.toHaveBeenCalled();});
  it('does not cancel an attempt after a provider completion claim may have started',async()=>{const current=recovery('claimed');state.rpc.mockResolvedValue({data:current,error:null});expect(await cancelOwnedPaidBranchConnectionAction(input)).toMatchObject({ok:false,code:'reconciliation_required'});expect(names()).not.toContain('es02_b3_cancel_owned_branch_connection');expect(names()).not.toContain('es02_b3_whatsapp_signup_checkpoint');});
  it('recognizes the same confirmed cancelled attempt without another cancellation or provider call',async()=>{const current=recovery('pending');current.connection.attempt.status='cancelled';state.rpc.mockResolvedValue({data:current,error:null});expect(await cancelOwnedPaidBranchConnectionAction(input)).toMatchObject({ok:true,read:{connection:{attempt:{status:'cancelled'}}}});expect(names()).not.toContain('es02_b3_cancel_owned_branch_connection');expect(state.probe).not.toHaveBeenCalled();});
+ it('cancels an expired attempt directly and logs no request or provider secrets',async()=>{
+  vi.stubEnv('VELORA_EXPIRED_WA_CANCEL_ENABLED','true');
+  const current=recovery('pending');current.connection.attempt.expiresAt='2020-01-01T00:00:00Z';
+  const cancelled=structuredClone(current);cancelled.connection.attempt.status='cancelled';
+  state.rpc.mockImplementation(async(name:string)=>name==='es02_b3_read_owned_branch_connection'?{data:current,error:null}:name==='es02_b3_cancel_expired_unstarted_whatsapp'?{data:{ok:true,read:cancelled},error:null}:{data:{ok:true},error:null});
+  expect(await cancelOwnedPaidBranchConnectionAction(input)).toMatchObject({ok:true,read:{connection:{attempt:{status:'cancelled'}}}});
+  expect(names()).toContain('es02_b3_cancel_expired_unstarted_whatsapp');expect(names()).not.toContain('es02_b3_cancel_owned_branch_connection');
+  expect(state.log).toHaveBeenCalledWith('info','es02.branch_connection.cancel_flag',{enabled:true});
+  const logs=JSON.stringify(state.log.mock.calls);expect(logs).not.toContain('one-use-code');expect(logs).not.toContain(attemptId);expect(logs).not.toContain(scope.expectedAccountId);
+ });
+ it.each(['transport','exception','invalid'])('keeps an unknown %s result unconfirmed without retry',async mode=>{
+  vi.stubEnv('VELORA_EXPIRED_WA_CANCEL_ENABLED','true');
+  const current=recovery('pending');current.connection.attempt.expiresAt='2020-01-01T00:00:00Z';
+  state.rpc.mockImplementation(async(name:string)=>{if(name==='es02_b3_read_owned_branch_connection')return {data:current,error:null};if(mode==='exception')throw Error('private-token');return mode==='transport'?{data:null,error:{message:'private-token'}}:{data:{ok:true,read:current},error:null};});
+  expect(await cancelOwnedPaidBranchConnectionAction(input)).toMatchObject({ok:false,code:'source_failed'});
+  expect(names().filter(n=>n==='es02_b3_cancel_expired_unstarted_whatsapp')).toHaveLength(1);expect(names()).not.toContain('es02_b3_cancel_owned_branch_connection');expect(JSON.stringify(state.log.mock.calls)).not.toContain('private-token');
+ });
+ it.each(['disabled','unexpired','generation'])('does not use the expired RPC when %s',async mode=>{
+  vi.stubEnv('VELORA_EXPIRED_WA_CANCEL_ENABLED',mode==='disabled'?'false':'true');
+  const current=recovery('pending');current.connection.attempt.expiresAt=mode==='unexpired'?'2099-01-01T00:00:00Z':'2020-01-01T00:00:00Z';if(mode==='generation')current.connection.attempt.generation=2;
+  state.rpc.mockImplementation(async(name:string)=>name==='es02_b3_read_owned_branch_connection'?{data:current,error:null}:{data:{ok:false,code:'forbidden',read:current},error:null});
+  await cancelOwnedPaidBranchConnectionAction(input);expect(names()).not.toContain('es02_b3_cancel_expired_unstarted_whatsapp');
+ });
  it('uses the reviewed fallback only when enabled and preserves its refusal',async()=>{
   vi.stubEnv('VELORA_EXPIRED_WA_CANCEL_ENABLED','true');
   const current=recovery('pending');current.connection.attempt.expiresAt='2020-01-01T00:00:00Z';
   state.rpc.mockImplementation(async(name:string)=>name==='es02_b3_read_owned_branch_connection'?{data:current,error:null}:name==='es02_b3_cancel_owned_branch_connection'?{data:{ok:false,code:'forbidden',read:current},error:null}:{data:{ok:false,code:'reconciliation_required'},error:null});
   expect(await cancelOwnedPaidBranchConnectionAction(input)).toMatchObject({ok:false,code:'reconciliation_required'});
-  expect(names()).toContain('es02_b3_cancel_expired_unstarted_whatsapp');expect(state.probe).not.toHaveBeenCalled();
+  expect(names()).toContain('es02_b3_cancel_expired_unstarted_whatsapp');expect(names()).not.toContain('es02_b3_cancel_owned_branch_connection');expect(state.probe).not.toHaveBeenCalled();
  });
 });
