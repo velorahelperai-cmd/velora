@@ -1,13 +1,17 @@
 "use client";
-import { useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useCallback,useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import styles from "./paid-assistant-checklist.module.css";
+import {SetupBranchPicker} from "./setup-branch-picker";
+import {paidSetupActivation} from '@/lib/tenancy/paid-setup-activation';
 import type { PaidBranchSetupRead, PaidBranchSetupEntryRead, PaidSetupStepId } from "@/lib/tenancy/paid-setup-contracts";
 import {createMotionBudget,createMotionController,PERSONA_POSTERS,PERSONA_VIDEOS,TIER_NAMES} from "./setup-order-review-model";
 import {setupBranchFromReturn,setupBranchPath} from "@/lib/auth/setup-return";
-import {PaidSetupWorkspace,nextWorkspaceSelection} from "./paid-setup-workspace";
+import {PaidSetupWorkspace,PaidSetupLoadingFrame,nextWorkspaceSelection} from "./paid-setup-workspace";
 import {PaidSetupStepHost} from "./paid-setup-step-host";
 import {PaidChannelSelection} from "./paid-channel-selection";
-import {readOwnedPaidSetupWorkspaceAction,type PaidSetupWorkspaceRead} from "@/lib/tenancy/paid-setup-workspace-actions";
+import {readOwnedPaidSetupWorkspaceAction,readOwnedPaidSetupDetailsAction,type PaidSetupWorkspaceRead} from "@/lib/tenancy/paid-setup-workspace-actions";
+import {composePaidSetupProgress} from '@/lib/tenancy/paid-setup-progress';
+import {confirmSetupLeave} from './paid-setup-unsaved';
 
 function subscribeSetupLocation(notify:()=>void) {
  const restore=(event:PageTransitionEvent)=>{if(event.persisted)window.location.reload();};
@@ -18,6 +22,7 @@ function subscribeSetupLocation(notify:()=>void) {
 const setupLocation=()=>window.location.pathname+window.location.search;
 
 export type PaidSetupFlowProps={
+ renderHeader?:(branchSelector:ReactNode,title?:string,planSummary?:ReactNode)=>ReactNode;
  locale:"ar"|"en";
  scope:{expectedAccountId:string;companyId:string;boundaryFingerprint:string};
  /** Live session check, including the captured identity and boundary, after every await. */
@@ -25,9 +30,10 @@ export type PaidSetupFlowProps={
  readEntry:(input:{expectedAccountId:string;companyId:string})=>Promise<PaidBranchSetupEntryRead>;
  readBranch:(input:{expectedAccountId:string;companyId:string;branchId:string})=>Promise<PaidBranchSetupRead>;
  readWorkspace?:(input:{expectedAccountId:string;companyId:string;branchId:string})=>Promise<PaidSetupWorkspaceRead|null>;
+ onWorkspaceRead?:(read:PaidSetupWorkspaceRead|null)=>void;
 };
 export function PaidSetupFlow(p:PaidSetupFlowProps) {
- return <div className={styles.surface} dir={p.locale==="ar"?"rtl":"ltr"}><PaidSetupScope key={JSON.stringify(p.scope)} {...p}/></div>;
+ return <div className={styles.surface} data-paid-setup-root dir={p.locale==="ar"?"rtl":"ltr"}><PaidSetupScope key={JSON.stringify(p.scope)} {...p}/></div>;
 }
 function PaidSetupScope(p:PaidSetupFlowProps) {
  const [attempt,setAttempt]=useState(0);
@@ -39,6 +45,8 @@ function PaidSetupEntry(p:PaidSetupFlowProps&{retry:()=>void}) {
  const [choice,setChoice]=useState<{location:string;id:string}|null>(null);
  const branchId=choice?.location===location?choice.id:setupBranchFromReturn(location);
  const generation=useRef(0);
+ const [headerRead,setHeaderRead]=useState<PaidSetupWorkspaceRead|null|undefined>(undefined);
+ const receiveWorkspace=useCallback((value:PaidSetupWorkspaceRead|null)=>setHeaderRead(value),[]);
  const {scope,isCurrent,readEntry}=p;
  useEffect(()=>{
   const request=++generation.current;let active=true;
@@ -49,19 +57,31 @@ function PaidSetupEntry(p:PaidSetupFlowProps&{retry:()=>void}) {
   return()=>{active=false;};
  },[scope.expectedAccountId,scope.companyId,isCurrent,readEntry]);
  const ar=p.locale==="ar",t=(a:string,e:string)=>ar?a:e;
- if(entry===undefined)return <PaidAssistantChecklist locale={p.locale} model={null} loading/>;
- if(!entry||entry.sourceStatus==="unavailable"||new Set(entry.branches.map(b=>b.id)).size!==entry.branches.length)return <PaidAssistantChecklist locale={p.locale} model={null} onRetry={p.retry}/>;
- return <div dir={ar?"rtl":"ltr"}>
-  <section className={styles.page}><label className={styles.selector}>{t("اختر الفرع لإعداد مساعده","Choose a branch to set up its assistant")}<select aria-label={t("الفرع","Branch")} value={entry.branches.some(b=>b.id===branchId)?branchId:""} onChange={e=>{
-   const id=e.target.value;
-   if(!isCurrent()||!entry.branches.some(b=>b.id===id))return;
+ if(entry===undefined)return <>{p.renderHeader?.(null)}<PaidAssistantChecklist locale={p.locale} model={null} loading/></>;
+ if(!entry||entry.sourceStatus==="unavailable"||new Set(entry.branches.map(b=>b.id)).size!==entry.branches.length)return <>{p.renderHeader?.(null)}<PaidAssistantChecklist locale={p.locale} model={null} onRetry={p.retry}/></>;
+ const currentHeader=isCurrent()&&headerRead?.scope.expectedAccountId===scope.expectedAccountId&&headerRead.scope.companyId===scope.companyId&&headerRead.scope.branchId===branchId&&headerRead.read.sourceStatus==='ready'?headerRead:null;
+ const proofs=currentHeader?Object.values(currentHeader.connectionReads).filter(value=>!!value):[];
+ const disconnected=proofs.length>0&&proofs.every(value=>value.sourceStatus==='ready'&&value.connection.state==='not_connected');
+ const pending=proofs.some(value=>value.connection.state==='pending');
+ const status=currentHeader?.read.launch.confirmed?t('جاهز','Ready'):currentHeader?.read.launch.canRequest?t('جاهز للإطلاق','Ready to launch'):currentHeader?(currentHeader.confirmedChannels.length?t('قيد التجهيز','In setup'):disconnected?t('غير مربوط','Not connected'):pending?t('جارٍ الربط','Connecting'):t('يحتاج مراجعة','Needs attention')):headerRead===null?t('الحالة غير متاحة','Status unavailable'):t('جارٍ التحقق','Checking');
+ const branchSelector=<SetupBranchPicker locale={p.locale} branches={entry.branches} selectedId={branchId} status={status} ready={!!(currentHeader?.read.launch.confirmed||currentHeader?.read.launch.canRequest)} isCurrent={isCurrent} onSelect={(id,root)=>{
+   if(!isCurrent()||!entry.branches.some(branch=>branch.id===id))return false;
+   if(id===branchId)return true;
+   if(!confirmSetupLeave(root.closest('[data-paid-setup-root]'),p.locale))return false;
    const href=setupBranchPath(id);
    if(href!=="/setup"){window.history.replaceState(window.history.state,"",href);window.dispatchEvent(new PopStateEvent("popstate"));}
-   setChoice({location:setupLocation(),id});
-  }}><option value="" disabled>{t("اختر الفرع","Choose branch")}</option>{entry.branches.map(b=><option key={b.id} value={b.id}>{b.label}</option>)}</select></label>
+   setChoice({location:setupLocation(),id});return true;
+ }}/>;
+ const headerPersona=currentHeader?.read.entitlement?.persona;
+ const headerName=headerPersona?({level_1:t('نورا','Noura'),level_2:t('لينا','Lina'),level_3:t('دانا','Dana')})[headerPersona]:null;
+ const plan=currentHeader?.read.entitlement;
+ const clock=currentHeader?paidSetupActivation(currentHeader.activation,scope.companyId,plan?.orderGroupId):null;
+ const summary=plan&&headerName?<div className={styles.headerPlan} role="group" aria-label={t('ملخص الباقة والتفعيل','Plan and activation summary')}><div className={styles.headerPlanName}><strong>{headerName} · {plan.package==='basic'?t('القياسية','Standard'):t('المميزة','Premium')}</strong>{clock&&<span>{clock.termUnit==='month'?t('شهرية','Monthly'):t('سنوية','Yearly')}</span>}<span className={styles.branchStatus}>{clock?.clockState==='waiting_readiness'?t('المدة لم تبدأ','Period not started'):clock?.clockState==='active'?t('المدة بدأت','Period started'):clock?.clockState==='ended'?t('المدة انتهت','Period ended'):t('حالة المدة غير متاحة','Period status unavailable')}</span></div><dl><div><dt>{t('القنوات','Channels')}</dt><dd>{plan.maxChannels}</dd></div><div><dt>{t('مقاعد الفريق','Team seats')}</dt><dd>{plan.employeesExcludingOwner}</dd></div><div><dt>{t('التشغيل','Launch')}</dt><dd>{currentHeader.read.launch.confirmed?t('مؤكد','Confirmed'):currentHeader.read.launch.canRequest?t('بانتظار تأكيدك','Awaiting confirmation'):t('قيد التجهيز','In preparation')}</dd></div></dl></div>:undefined;
+ return <div dir={ar?'rtl':'ltr'}>{p.renderHeader?.(branchSelector,headerName?t(`جهّز ${headerName} لعملائك`,`Prepare ${headerName} for your customers`):undefined,summary)}
+  {(!p.renderHeader||!entry.branches.length||!branchId)&&<section className={styles.page}>{!p.renderHeader&&branchSelector}
   {!entry.branches.length&&<p role="status">{t("لا توجد فروع مدفوعة متاحة للإعداد.","No paid branches are available for setup.")}</p>}
-  {!branchId&&entry.branches.length>0&&<p role="status">{t("اختر فرعًا لعرض إعداداته.","Choose a branch to view its setup.")}</p>}</section>
-  {branchId&&entry.branches.some(b=>b.id===branchId)&&<PaidSetupBranch key={branchId} {...p} branchId={branchId}/>}
+  {!branchId&&entry.branches.length>0&&<p role="status">{t("اختر فرعًا لعرض إعداداته.","Choose a branch to view its setup.")}</p>}</section>}
+  {branchId&&entry.branches.some(b=>b.id===branchId)&&<PaidSetupBranch key={branchId} {...p} branchId={branchId} onWorkspaceRead={receiveWorkspace}/>}
  </div>;
 }
 function PaidSetupBranch(p:PaidSetupFlowProps&{branchId:string}) {
@@ -72,25 +92,33 @@ function PaidSetupBranchRead(p:PaidSetupFlowProps&{branchId:string;refreshVersio
  const [snapshot,setSnapshot]=useState<PaidSetupWorkspaceRead|null|undefined>(undefined);
  const [selected,setSelected]=useState<ChecklistStepId|null>(null);
  const generation=useRef(0);
- const {scope,isCurrent,branchId,refreshVersion}=p;
+ const {scope,isCurrent,branchId,refreshVersion,onWorkspaceRead}=p;
  const readWorkspace=p.readWorkspace??readOwnedPaidSetupWorkspaceAction;
+ const connectionFirst=!p.readWorkspace;
  useEffect(()=>{
   const request=++generation.current;let active=true;
   if(!isCurrent())return;
   const input={expectedAccountId:scope.expectedAccountId,companyId:scope.companyId,branchId};
-  void readWorkspace(input).then(result=>{
+  void (connectionFirst?readOwnedPaidSetupWorkspaceAction({...input,connectionFirst:true}):readWorkspace(input)).then(result=>{
    if(!active||request!==generation.current||!isCurrent())return;
-   if(!result||result.scope.expectedAccountId!==input.expectedAccountId||result.scope.companyId!==input.companyId||result.scope.branchId!==branchId||!paidChecklistFromRead(result.read,input)){setSnapshot(null);return;}
+   if(!result||result.scope.expectedAccountId!==input.expectedAccountId||result.scope.companyId!==input.companyId||result.scope.branchId!==branchId||!paidChecklistFromRead(result.read,input)){setSnapshot(null);onWorkspaceRead?.(null);return;}
    setSnapshot(result);
+   onWorkspaceRead?.(result);
    setSelected(previous=>nextWorkspaceSelection(result,previous));
-  }).catch(()=>{if(active&&request===generation.current&&isCurrent())setSnapshot(null);});
+   // Paint the authorized connection UI before optional setup metadata arrives.
+   if(connectionFirst&&result.read.entitlement)void readOwnedPaidSetupDetailsAction(input,result.read.entitlement.orderGroupId).then(details=>{
+     if(!active||request!==generation.current||!isCurrent()||!details||details.scope.expectedAccountId!==input.expectedAccountId||details.scope.companyId!==input.companyId||details.scope.branchId!==branchId)return;
+     const enriched={...result,read:composePaidSetupProgress(result.read,details.summary),activation:details.activation};
+     setSnapshot(enriched);onWorkspaceRead?.(enriched);
+   }).catch(()=>{/* Optional metadata remains unknown; connection controls stay usable. */});
+  }).catch(()=>{if(active&&request===generation.current&&isCurrent()){setSnapshot(null);onWorkspaceRead?.(null);}});
   return()=>{active=false;};
- },[scope.expectedAccountId,scope.companyId,branchId,isCurrent,readWorkspace,refreshVersion]);
+ },[scope.expectedAccountId,scope.companyId,branchId,isCurrent,readWorkspace,refreshVersion,onWorkspaceRead,connectionFirst]);
  const ar=p.locale==="ar",persona=snapshot?.read.entitlement?.persona;
  const knownPersona=persona==="level_1"||persona==="level_2"||persona==="level_3"?persona:null;
  const personaName=knownPersona?({level_1:ar?"نورا":"Noura",level_2:ar?"لينا":"Lina",level_3:ar?"دانا":"Dana"})[knownPersona]:undefined;
  if(snapshot?.read.sourceStatus==="selection_required"&&snapshot.read.entitlement&&isCurrent())return <PaidChannelSelection locale={p.locale} scope={{...scope,branchId}} read={snapshot.read} isCurrent={isCurrent} onRefresh={p.retry}/>;
- return <PaidSetupWorkspace locale={p.locale} scope={{...scope,branchId}} read={snapshot?.read??null} loading={snapshot===undefined} activeStepId={selected} isCurrent={isCurrent} onSelectStep={setSelected} onRefresh={p.retry} availableStepIds={["whatsapp","instagram","hours","knowledge","language","test","team","launch"]} connectionReads={snapshot?.connectionReads} renderStep={(step)=><PaidSetupStepHost locale={p.locale} scope={{...scope,branchId}} step={step} isCurrent={isCurrent} onRefresh={p.retry} read={snapshot?.read??null}/>} persona={knownPersona?<><div className={styles.workspaceFigure}><PaidChecklistPersonaVisual persona={knownPersona} alt={personaName??""}/></div><p className={styles.workspacePersonaName}>{personaName}</p></>:undefined}/>;
+ return <PaidSetupWorkspace statusInHeader={!!p.renderHeader} locale={p.locale} scope={{...scope,branchId}} read={snapshot?.read??null} activation={snapshot?.activation??null} loading={snapshot===undefined} activeStepId={selected} isCurrent={isCurrent} onSelectStep={setSelected} onRefresh={p.retry} availableStepIds={["whatsapp","instagram","hours","knowledge","language","test","team","launch"]} connectionReads={snapshot?.connectionReads} renderStep={(step)=><PaidSetupStepHost locale={p.locale} scope={{...scope,branchId}} step={step} isCurrent={isCurrent} onRefresh={p.retry} read={snapshot?.read??null}/>} persona={knownPersona?<><div className={styles.workspaceFigure}><PaidChecklistPersonaVisual persona={knownPersona} alt={personaName??""}/></div><p className={styles.workspacePersonaName}>{personaName}</p></>:undefined}/>;
 }
 
 const personaMotionBudget=createMotionBudget(1);
@@ -199,7 +227,7 @@ function Checklist({locale,model,loading=false,personaName,planName,personaVisua
  const pack=model?.entitlement?.package;
  const tierName=pack==="basic"||pack==="premium"?TIER_NAMES[pack][locale]:undefined;
  const shell=(content:ReactNode)=><section className={styles.page} dir={ar?"rtl":"ltr"} aria-labelledby={id}><h1 id={id}>{t("جهّز مساعدك","Set up your assistant")}</h1>{content}</section>;
- if(loading) return shell(<p role="status">{t("جارٍ تحميل إعداد الفرع…","Loading branch setup…")}</p>);
+ if(loading) return <PaidSetupLoadingFrame locale={locale}/>;
  if(!model||model.sourceStatus==="unavailable") return shell(<div role="alert"><p>{t("تعذر تحميل الإعداد. حاول مرة أخرى.","Setup could not be loaded. Try again.")}</p>{onRetry&&<button type="button" onClick={onRetry}>{t("إعادة المحاولة","Retry")}</button>}</div>);
  if(!model.branches.length) return shell(<p>{t("لا توجد فروع متاحة للإعداد.","No branches are available for setup.")}</p>);
  const selector=model.branches.length>1?<label className={styles.selector}>{t("الفرع","Branch")}<select value={model.selectedBranchId??""} disabled={!onBranchChange} onChange={e=>onBranchChange?.(e.target.value)}><option value="" disabled>{t("اختر الفرع","Choose branch")}</option>{model.branches.map(b=><option key={b.id} value={b.id}>{b.label}</option>)}</select></label>:null;

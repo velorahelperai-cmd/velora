@@ -1,4 +1,5 @@
 import "server-only";
+import {openSignupPreparation} from '@/lib/whatsapp/signup-preparation';
 import { completeInstagramConnection } from "@/lib/instagram/connection-flow";
 import type { AttemptBinding, ConnectionPorts } from "@/lib/instagram/connection-contracts";
 import { createInstagramConnectionStore, type InstagramRpcClient } from "@/lib/instagram/connection-store";
@@ -93,10 +94,12 @@ export async function exchangeOwnedBranchConnection(input: {
     const config = metaConfig();
     const claim = signupClaim(legacy, request, slot.sessionId);
     if (!config || !claim || claim.keep_on_phone) return { ok: false, code: "setup_required" };
+    const prepared=completion.authorizationTicket===undefined?undefined:openSignupPreparation(config.appSecret,completion.authorizationTicket,{accountId:request.expectedAccountId,sessionId:slot.sessionId,companyId:request.companyId,branchId:request.branchId,attemptId:request.attemptId,generation:request.generation,nonce:String(completion.nonce),wabaId:String(completion.wabaId),phoneNumberId:String(completion.phoneNumberId)});
+    if(prepared===null)return {ok:false,code:'forbidden'};
     const ports = createSignupPorts(identity, completion as never, config, input.session as SignupRpcClient, input.admin as SignupRpcClient);
     const finished = await finishEmbeddedSignup(identity, completion as never, config, {
       claim: async () => claim,
-      provider: (providerInput) => onboardMetaSignup(config, providerInput),
+      provider: (providerInput) => onboardMetaSignup(config, providerInput,fetch,prepared?{token:prepared}:undefined),
       finalize: async (_claim, token, proof) => {
         slot.accessToken = token;
         slot.proof = proof;

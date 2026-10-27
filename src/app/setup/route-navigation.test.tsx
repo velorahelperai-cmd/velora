@@ -27,21 +27,13 @@ const context: CompanyContext = {
 };
 beforeEach(() => {vi.clearAllMocks();vi.stubEnv('VELORA_MASTER_JOURNEY_ENABLED','true'); state.path = returnTo; state.access = { ok: true, context }; });
 describe("setup server routes retain the package selection", () => {
-  it('ships the authorized draft with the page instead of starting a second client waterfall',async()=>{
+  it('renders the confirmed-company paid wizard without reading unused legacy data',async()=>{
     vi.stubEnv('VELORA_MASTER_JOURNEY_ENABLED','false');
     state.access={ok:true,context:{...context,company:{id:'company'} as CompanyContext['company']}};
-    vi.mocked(listKnowledgeSources).mockResolvedValueOnce({ok:false,code:'UNAVAILABLE'});
     const page=await SetupPage();
-    expect(readSetupFileContext).toHaveBeenCalledWith({expectedUserId:'owner',expectedCompanyId:'company'});
-    expect(page.props.children.props.initialDraftRead).toEqual({scope:{expectedUserId:'owner',expectedCompanyId:'company'},result:{ok:true,data:null}});
-  });
-  it('retains draft read failures for an explicit retry, never inventing an empty saved draft',async()=>{
-    vi.stubEnv('VELORA_MASTER_JOURNEY_ENABLED','false');
-    state.access={ok:true,context:{...context,company:{id:'company'} as CompanyContext['company']}};
-    vi.mocked(listKnowledgeSources).mockResolvedValueOnce({ok:false,code:'UNAVAILABLE'});
-    vi.mocked(readSetupFileContext).mockResolvedValueOnce({ok:false,code:'UNAVAILABLE'});
-    const page=await SetupPage();
-    expect(page.props.children.props.initialDraftRead.result).toEqual({ok:false,code:'UNAVAILABLE'});
+    expect(page.props.children.props.initialCompany.id).toBe('company');
+    expect(readSetupFileContext).not.toHaveBeenCalled();expect(listKnowledgeSources).not.toHaveBeenCalled();expect(getCompanyReviewRequest).not.toHaveBeenCalled();
+    expect(page.props.children.props.initialDraftRead).toBeUndefined();
   });
   it('rollout-off uses local unpaid preparation without restoring drafts',async()=>{vi.stubEnv('VELORA_MASTER_JOURNEY_ENABLED','false');const page=await SetupPage();expect(page.props.userId).toBe('owner');expect(page.props.preferredNext).toBe(selected);expect(readSetupFileContext).not.toHaveBeenCalled();});
   it("permits setup for a platform admin with an explicitly selected owner membership", async () => {
@@ -54,17 +46,10 @@ describe("setup server routes retain the package selection", () => {
     await expect(SetupLayout({ children: "protected setup" })).rejects.toThrow(target);
     await expect(SetupPage()).rejects.toThrow(target);
   });
-  it("starts the owner's independent review read while knowledge is still pending", async () => {
-    let release!: (value: Awaited<ReturnType<typeof listKnowledgeSources>>) => void;
-    vi.mocked(listKnowledgeSources).mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
-    vi.mocked(getCompanyReviewRequest).mockResolvedValueOnce({ ok: true, data: null });
-    state.access = { ok: true, context: { ...context, company: { id: "company" } as CompanyContext["company"], membership: { role: "owner" } as CompanyContext["membership"] } };
-    const loading = SetupPage();
-    await vi.waitFor(() => expect(listKnowledgeSources).toHaveBeenCalled());
-    const reviewStarted = vi.mocked(getCompanyReviewRequest).mock.calls.length;
-    release({ ok: true, data: { sources: [], approvalFoundation: "ready" } });
-    await loading;
-    expect(reviewStarted).toBe(1);
+  it("does not block paid connection UI on pending knowledge or administrative review",async()=>{
+    vi.mocked(listKnowledgeSources).mockImplementation(()=>new Promise(()=>{}));vi.mocked(getCompanyReviewRequest).mockImplementation(()=>new Promise(()=>{}));
+    state.access={ok:true,context:{...context,company:{id:'company'} as CompanyContext['company'],membership:{role:'owner'} as CompanyContext['membership']}};
+    const page=await SetupPage();expect(page.props.children.props.initialCompany.id).toBe('company');expect(listKnowledgeSources).not.toHaveBeenCalled();expect(getCompanyReviewRequest).not.toHaveBeenCalled();
   });
   it("retains the selected package through the separate new-business journey", async () => {
     expect(await SetupLayout({ children: "setup content" })).toBe("setup content");

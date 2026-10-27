@@ -55,17 +55,15 @@ export function WhatsappConnectionGuide(props: WhatsappConnectionGuideProps) {
   // A route change starts its own sequence, never retaining another route's index.
   return <Guide key={props.route} {...props} />;
 }
-function Guide({route,locale,connectionStatus,connectEnabled=false,connecting=false,onConnect,onReviewRequirements}: WhatsappConnectionGuideProps) {
+function Guide({route,locale,connectEnabled=false,connecting=false,onConnect,onReviewRequirements}: WhatsappConnectionGuideProps) {
   const [index,setIndex] = useState(0);
   const id = useId();
   const ar = locale === "ar";
   const t = (a:string,e:string) => ar?a:e;
   const steps = guideSteps[route], current = steps[index], language = ar?0:1;
   return <section className={styles.guide} data-sequence={!!onReviewRequirements} dir={ar?"rtl":"ltr"} aria-labelledby={id}>
-    <header className={styles.header}><h2 id={id}>{t("ربط الحساب","Connect account")}</h2><span>{connectionStatus ?? t("لم يبدأ","Not started")}</span></header>
-    <h3 className={styles.heading}>{t("أنت على وشك الانتهاء","You're almost there")}</h3>
-    <p className={styles.subtitle}>{route==="coexistence"?t("دليل ربط تطبيق واتساب للأعمال الحالي.","Guide to connecting your existing WhatsApp Business App."):t("دليل ربط رقم واتساب جديد.","Guide to connecting a new WhatsApp number.")}</p>
-<div className={styles.connectArea} data-guide-connect-area="true"><button type="button" className={styles.connect} data-connect-action="true" disabled={!connectEnabled||connecting||!onConnect} onClick={onConnect}>{connecting?t("جارٍ الاتصال…","Connecting…"):t("المتابعة باستخدام فيسبوك","Continue with Facebook")}</button></div>
+    <h3 id={id} className={styles.heading}>{t("أنت على وشك الانتهاء","You're almost there")}</h3>
+    <p className={styles.subtitle}>{t("تابع باستخدام Facebook واتبع التعليمات أدناه لربط رقمك.","Continue with Facebook and follow the instructions below to link your number")}</p>
     <div className={styles.panel} data-guide-source={current.source}>
       <div className={styles.picture}>
         {/* Exact reference pixels: no image optimizer/provider request. */}
@@ -82,8 +80,8 @@ function Guide({route,locale,connectionStatus,connectEnabled=false,connecting=fa
         </nav>
       </div>
     </div>
-    <p className={styles.reference}>{t("صور مرجعية من مزوّد آخر؛ قد تختلف نافذة Meta الحالية. الأسهم تغيّر الشرح فقط.","Reference images from another provider; the current Meta window may differ. Arrows change only the guide.")}</p>
     {route==="coexistence"&&<p className={styles.reference}>{t("التسلسل المرجعي المتاح ينتقل من تسمية الخطوة ٣ إلى ٥.","The available reference sequence jumps from displayed step 3 to 5.")}</p>}
+<div className={styles.connectArea} data-guide-connect-area="true"><button type="button" className={styles.connect} data-connect-action="true" disabled={!connectEnabled||connecting||!onConnect} onClick={onConnect}>{connecting?t("جارٍ الاتصال…","Connecting…"):t("المتابعة باستخدام فيسبوك","Continue with Facebook")}</button></div>
     {onReviewRequirements&&<div className={styles.footer}><button type="button" className={styles.connect} onClick={onReviewRequirements}>{t("مراجعة متطلبات الربط","Review connection requirements")}</button></div>}
   </section>;
 }

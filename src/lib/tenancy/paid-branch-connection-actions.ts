@@ -9,6 +9,8 @@ import { createClient } from "@/lib/supabase/server";
 import { instagramAuthorizationUrl, readInstagramOAuthConfig } from "@/lib/instagram/oauth-meta";
 import { INSTAGRAM_ATTEMPT_COOKIE } from "@/lib/instagram/oauth-route";
 import { embeddedSignupClientConfig } from "@/lib/whatsapp/embedded-signup";
+import {onboardMetaSignup} from '@/lib/whatsapp/embedded-signup-meta';
+import {sealSignupPreparation,openSignupPreparation} from '@/lib/whatsapp/signup-preparation';
 import { exchangeAfterCommittedClaim, exchangeOwnedBranchConnection } from "@/lib/tenancy/paid-branch-connection-adapters";
 import { coexistenceServerConfig } from "@/lib/tenancy/paid-branch-connection-coexistence-config";
 import {
@@ -109,6 +111,25 @@ export async function startOwnedPaidBranchConnectionAction(input: StartOwnedPaid
   });
 }
 
+/** Read provider registration state after Facebook authorization, before the native completion claim. */
+export async function prepareOwnedWhatsappRegistrationAction(input:CompleteOwnedPaidBranchConnectionInput):Promise<{ok:true;registrationRequired:boolean;authorizationTicket:string}|{ok:false}>{
+ const asOf=new Date().toISOString(),request=attemptRequest(input,asOf);
+ if('ok' in request||request.flow!=='wa_new_number')return {ok:false};
+ const row=input.completion as Record<string,unknown>;
+ if(!row||row.attemptId!==request.attemptId||typeof row.nonce!=='string'||!/^[0-9a-f]{64}$/.test(row.nonce)||typeof row.code!=='string'||!row.code||row.code.length>4096||typeof row.wabaId!=='string'||!/^\d{1,64}$/.test(row.wabaId)||typeof row.phoneNumberId!=='string'||!/^\d{1,64}$/.test(row.phoneNumberId)||row.pin!==''||row.authorizationTicket!==undefined)return {ok:false};
+ const session=await sessionClient(request.expectedAccountId,randomUUID(),asOf,request);if('ok' in session)return {ok:false};
+ const current=await runPaidBranchConnectionRead(request,createPaidBranchConnectionStore(session.client,session.client,asOf),asOf);
+ const attempt=current.read.connection.attempt;
+ if(current.read.sourceStatus!=='ready'||current.read.connection.flow!=='wa_new_number'||attempt?.id!==request.attemptId||attempt.generation!==request.generation||attempt.status!=='pending'||Date.parse(attempt.expiresAt)<=Date.now())return {ok:false};
+ const config=embeddedSignupClientConfig(),appSecret=process.env.WHATSAPP_APP_SECRET?.trim()??'',systemUserToken=process.env.WHATSAPP_EMBEDDED_SIGNUP_SYSTEM_USER_TOKEN?.trim()??'';
+ if(!config.ok||!appSecret||!systemUserToken)return {ok:false};
+ let captured:{token:string;registrationRequired:boolean}|null=null;
+ await onboardMetaSignup({...config,enabled:true,appSecret,systemUserToken},{code:String(row.code),wabaId:String(row.wabaId),phoneNumberId:String(row.phoneNumberId),pin:'',keepOnPhone:false},fetch,{probe:true,capture:(token,registrationRequired)=>{captured={token,registrationRequired};}});
+ if(!captured)return {ok:false};
+ const result=captured as {token:string;registrationRequired:boolean};
+ return {ok:true,registrationRequired:result.registrationRequired,authorizationTicket:sealSignupPreparation(appSecret,{accountId:request.expectedAccountId,sessionId:session.sessionId,companyId:request.companyId,branchId:request.branchId,attemptId:request.attemptId,generation:request.generation,nonce:String(row.nonce),wabaId:String(row.wabaId),phoneNumberId:String(row.phoneNumberId)},result.token)};
+}
+
 export async function completeOwnedPaidBranchConnectionAction(input: CompleteOwnedPaidBranchConnectionInput): Promise<PaidBranchConnectionMutation> {
   const requestId = randomUUID();
   const asOf = new Date().toISOString();
@@ -120,6 +141,11 @@ export async function completeOwnedPaidBranchConnectionAction(input: CompleteOwn
     }
     const session = await sessionClient(request.expectedAccountId, requestId, asOf, request);
     if ("ok" in session) return session;
+    const completion=input.completion as unknown as Record<string,unknown>;
+    if(request.flow==='wa_new_number'&&completion.authorizationTicket!==undefined&&!openSignupPreparation(process.env.WHATSAPP_APP_SECRET?.trim()??'',completion.authorizationTicket,{accountId:request.expectedAccountId,sessionId:session.sessionId,companyId:request.companyId,branchId:request.branchId,attemptId:request.attemptId,generation:request.generation,nonce:String(completion.nonce),wabaId:String(completion.wabaId),phoneNumberId:String(completion.phoneNumberId)})){
+      const current=await runPaidBranchConnectionRead(request,createPaidBranchConnectionStore(session.client,session.client,asOf),asOf);
+      return {ok:false,code:'invalid_input',read:current.read};
+    }
     const admin = createAdminClient();
     if (!admin) return { ok: false, code: "setup_required", read: unavailablePaidBranchConnectionRead(request, asOf, "setup_required") };
     const proof = admin as unknown as PaidBranchConnectionRpc;

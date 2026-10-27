@@ -1,0 +1,86 @@
+-- Synthetic identifiers/content only, in the disposable local database.
+do $$ begin
+ if current_database()<>'c1_ui_integration' or inet_client_addr() is not null then raise exception 'LOCAL_FIXTURE_REQUIRED';end if;
+ if has_function_privilege('anon','public.es02_begin_thawani_live_checkout(uuid,uuid,text,jsonb,jsonb,boolean,uuid)','EXECUTE') then raise exception 'ANON_CREATE';end if;
+ if has_function_privilege('authenticated','public.es02_record_thawani_live_payment(uuid,uuid,text,uuid,text,integer,text)','EXECUTE') then raise exception 'CLIENT_SETTLEMENT';end if;
+ if has_function_privilege('authenticated','private.es02_provision_thawani_live_purchase(uuid,uuid,uuid,jsonb,jsonb)','EXECUTE') then raise exception 'DIRECT_LIVE_PROVISION';end if;
+ if has_table_privilege('service_role','private.es02_thawani_live_grants','INSERT') then raise exception 'UNSCOPED_GRANT_WRITE';end if;
+end $$;
+create function pg_temp.must(value boolean,label text) returns void language plpgsql as $$begin if value is distinct from true then raise exception 'ASSERT_FAILED:%',label;end if;end $$;
+do $$
+declare actor uuid:='177ef439-3fb0-4e3e-96b8-2a9e8661386d';sid uuid:=gen_random_uuid();lineage uuid:=gen_random_uuid();registry uuid:=gen_random_uuid();op uuid:=gen_random_uuid();grantid uuid:=gen_random_uuid();oid uuid;company uuid;branchid uuid;sourceid uuid;contentversion integer;r jsonb;again jsonb;claim jsonb;
+ prep jsonb:='{"name":"Synthetic Live contract regression","type":"retail","country":"OM","city":"Muscat","phone":"+96890000000","branches":[{"name":"Main","city":"Muscat"}]}';
+begin
+ insert into auth.users(id,email_confirmed_at) values(actor,clock_timestamp());
+ insert into auth.sessions(id,user_id,created_at,updated_at,not_after) values(sid,actor,clock_timestamp(),clock_timestamp(),clock_timestamp()+interval '1 hour');
+ insert into private.app_session_activity(session_id,user_id,last_activity_at) values(sid,actor,clock_timestamp());
+ insert into public.vel_broker_browser_lineages(id,bootstrap_hash,valid_until) values(lineage,'fixture-'||lineage,clock_timestamp()+interval '1 hour');
+ insert into public.vel_broker_sessions(id,handle_hash,cookie_name,generation,user_id,native_session_id,access_token_enc,refresh_token_enc,token_expires_at,status,browser_lineage_id)
+ values(registry,'fixture-'||registry,'fixture','1',actor,sid,'synthetic-only','synthetic-only',clock_timestamp()+interval '1 hour','active',lineage);
+ update public.vel_broker_browser_lineages set current_registry_id=registry where id=lineage;
+ insert into private.es02_thawani_live_grants(id,account_id,enabled,amount_baisa,currency,approved_at,expires_at) values(grantid,actor,true,100,'OMR',clock_timestamp(),clock_timestamp()+interval '1 day');
+ perform set_config('request.jwt.claims',jsonb_build_object('role','authenticated','sub',actor,'session_id',sid)::text,true);
+ perform set_config('request.jwt.claim.sub',actor::text,true);perform set_config('request.jwt.claim.role','authenticated',true);
+ perform pg_temp.must(public.es02_begin_thawani_live_checkout(actor,op,'monthly','[{"persona":"level_3","package":"basic"}]',jsonb_set(prep,'{branches,0,contactPhone}','"bad"'),true,grantid)->>'code'='INVALID_INPUT','invalid_optional_phone_rejected_before_order');
+ perform pg_temp.must((select order_id is null from private.es02_thawani_live_grants where id=grantid),'invalid_preparation_does_not_consume_grant');
+ r:=public.es02_begin_thawani_live_checkout(actor,op,'monthly','[{"persona":"level_3","package":"basic"}]',prep,true,grantid);
+ perform pg_temp.must(r->>'ok'='true','native_live_begin');oid:=(r->'data'->>'orderId')::uuid;
+ perform pg_temp.must(r->'data'->>'environment'='live' and (r->'data'->'offer'->>'amountBaisa')::int=90000 and (r->'collection'->>'amountBaisa')::int=100,'catalog_and_collection_are_separate');
+ again:=public.es02_begin_thawani_live_checkout(actor,gen_random_uuid(),'monthly','[{"persona":"level_3","package":"basic"}]',prep,true,grantid);
+ perform pg_temp.must(again->>'action'='reuse' and again->'data'->>'orderId'=oid::text,'new_client_operation_recovers_same_order');
+ perform pg_temp.must(public.es02_begin_thawani_live_checkout(actor,gen_random_uuid(),'yearly','[{"persona":"level_3","package":"basic"}]',prep,true,grantid)->>'code'='CONFLICT','immutable_plan_and_term');
+ perform pg_temp.must((select count(*)=0 from public.companies where created_by=actor),'no_unpaid_business');
+ perform pg_temp.must(public.es02_finish_thawani_live_checkout(actor,oid)->>'code'='NOT_SETTLED','unpaid_rights_denied');
+ perform set_config('request.jwt.claims','{"role":"service_role"}',true);perform set_config('request.jwt.claim.role','service_role',true);
+ claim:=public.es02_claim_thawani_live_checkout(actor,oid,sid);
+ perform pg_temp.must(claim->>'kind'='claimed','durable_claim_before_provider');
+ again:=public.es02_claim_thawani_live_checkout(actor,oid,sid);
+ perform pg_temp.must(again->>'kind'='recover' and again->>'token'=claim->>'token','uncertain_create_preserves_claim');
+ perform pg_temp.must(public.es02_complete_thawani_live_checkout(actor,oid,(claim->>'token')::uuid,'checkout_livenativefixture','993001'),'save_provider_binding');
+ perform pg_temp.must(public.es02_complete_thawani_live_checkout(actor,oid,(claim->>'token')::uuid,'checkout_livenativefixture','993001'),'idempotent_provider_binding');
+ perform pg_temp.must(not public.es02_complete_thawani_live_checkout(actor,oid,(claim->>'token')::uuid,'checkout_foreignfixture','993002'),'foreign_binding_denied');
+ perform pg_temp.must(public.es02_record_thawani_live_payment(actor,oid,'checkout_livenativefixture',(claim->>'token')::uuid,'993001',90000,'OMR')->>'ok'='false','catalog_price_not_collected');
+ perform pg_temp.must(public.es02_record_thawani_live_payment(actor,oid,'checkout_livenativefixture',(claim->>'token')::uuid,'993001',100,'USD')->>'ok'='false','foreign_currency_denied');
+ perform pg_temp.must(public.es02_record_thawani_live_payment(actor,oid,'checkout_livenativefixture',(claim->>'token')::uuid,'993001',100,'OMR')->>'outcome'='settled','verified_collection_settles');
+ perform pg_temp.must(public.es02_record_thawani_live_payment(actor,oid,'checkout_livenativefixture',(claim->>'token')::uuid,'993001',100,'OMR')->>'outcome'='duplicate','repeated_notification_is_idempotent');
+ perform pg_temp.must((select count(*)=1 and sum(amount_baisa)=100 from private.es02_account_settlement_events where order_id=oid),'ledger_contains_actual_cash_once');
+ perform pg_temp.must((select discount_baisa=89900 from private.es02_thawani_live_checkouts where order_id=oid),'discount_is_explicit');
+ perform set_config('request.jwt.claims',jsonb_build_object('role','authenticated','sub',actor,'session_id',sid)::text,true);perform set_config('request.jwt.claim.role','authenticated',true);
+ -- Reproduce the hosted legacy owner index with an existing Test business.
+ insert into public.companies(id,display_name,created_by,status) values('f1000000-0000-4000-8000-000000000099','Synthetic prior Test',actor,'setup');
+ insert into public.company_members(company_id,user_id,role,status) values('f1000000-0000-4000-8000-000000000099',actor,'owner','active') on conflict do nothing;
+ create unique index if not exists company_members_one_active_owner_per_user on public.company_members(user_id) where role='owner' and status='active';
+ perform pg_temp.must(public.es02_finish_thawani_live_checkout(actor,oid)->>'code'='RECONCILIATION_REQUIRED','legacy_owner_index_reproduces_paid_provision_failure');
+ perform pg_temp.must((select status='settled' and provisioned_company_id is null from private.es02_account_orders where id=oid),'blocked_provision_preserves_paid_order');
+ drop index public.company_members_one_active_owner_per_user;
+ -- Existing approved business-authority migration removes this obsolete index.
+ r:=public.es02_finish_thawani_live_checkout(actor,oid);
+ perform pg_temp.must(r->>'ok'='true','native_live_provision');company:=(r->'data'->>'companyId')::uuid;
+ again:=public.es02_finish_thawani_live_checkout(actor,oid);
+ perform pg_temp.must(again->>'action'='reuse' and again->'data'->>'companyId'=company::text,'exactly_once_provision_replay');
+ perform pg_temp.must((select count(*)=1 from public.company_branches where company_id=company and is_primary),'one_primary_branch');
+ perform pg_temp.must((select count(*)=2 from public.company_members where user_id=actor and role='owner' and status='active'),'prior_owner_membership_preserved');
+ perform pg_temp.must((select count(*)=1 from private.es02_branch_slot_rights where company_id=company and amount_baisa=90000),'full_selected_plan_rights');
+ perform pg_temp.must((select clock_state='waiting_readiness' and subscription_started_at is null from private.es02_activation_foundation where company_id=company),'payment_does_not_start_clock');
+ select id into branchid from public.company_branches where company_id=company and is_primary;
+ r:=public.es02_select_owned_branch_channels(actor,company,branchid,gen_random_uuid(),'["whatsapp"]');
+ perform pg_temp.must(r->>'ok'='true','paid_live_channel_selection');
+ r:=public.es02_b3_read_owned_branch_connection(actor,company,branchid,'whatsapp');
+ perform pg_temp.must(r->>'sourceStatus'='ready' and r->'connection'->>'verified'='false','paid_live_channel_authority_reachable_without_fake_connection');
+ r:=public.es02_save_owned_branch_knowledge_text(actor,company,branchid,1,'Synthetic opening hours','We open at nine.');
+ perform pg_temp.must(r->>'ok'='true','native_branch_text_saved');
+ select id,content_version into sourceid,contentversion from public.knowledge_sources where company_id=company and kind='text';
+ perform pg_temp.must((select approved_for_answers=false from public.knowledge_sources where id=sourceid),'new_text_not_automatically_approved');
+ again:=public.es02_save_owned_branch_knowledge_text(actor,company,branchid,1,'Synthetic opening hours','We open at nine.');
+ perform pg_temp.must(again->>'ok'='true' and (select count(*)=1 from public.knowledge_sources where company_id=company and kind='text'),'same_text_retry_deduplicated');
+ r:=public.es02_approve_owned_branch_knowledge_source(actor,company,branchid,sourceid,contentversion+1,true);
+ perform pg_temp.must(r->>'code'='CONFLICT','stale_knowledge_approval_denied');
+ r:=public.es02_approve_owned_branch_knowledge_source(actor,company,branchid,sourceid,contentversion,true);
+ perform pg_temp.must(r->>'ok'='true' and (select approved_for_answers=true and approved_version=content_version from public.knowledge_sources where id=sourceid),'exact_version_explicitly_approved');
+ r:=public.es02_bind_owned_branch_knowledge_source(actor,gen_random_uuid(),branchid,sourceid,contentversion);
+ perform pg_temp.must(r->>'ok'='false','foreign_company_knowledge_binding_denied');
+ r:=public.es02_approve_owned_branch_knowledge_source(actor,company,branchid,sourceid,contentversion,false);
+ perform pg_temp.must(r->>'ok'='true' and (select approved_for_answers=false from public.knowledge_sources where id=sourceid),'explicit_approval_revocation');
+ raise notice 'PASS: native Live grant/order/claim/settlement/discount/rights/replay/clock assertions';
+end $$;
+select 'PASS: native Live grant, immutable preparation, claim recovery, exact cash ledger, full rights, replay, START-001, branch knowledge and versioned explicit approval';

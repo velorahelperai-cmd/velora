@@ -37,8 +37,8 @@ it('does not enable connection without both permission and a real callback',()=>
  expect(render({connectEnabled:true,connecting:true,onConnect:()=>{}})).toContain('data-connect-action="true" disabled=""');
  expect(render({connectEnabled:true,onConnect:()=>{throw Error("Rendering must not connect");}})).not.toContain('data-connect-action="true" disabled=""');
 });
-it('keeps the connect area before changing guide content in DOM and keyboard order',()=>{
+it('places the real Facebook action below the visual guide as in the approved reference',()=>{
  const html=renderToStaticMarkup(createElement(WhatsappConnectionGuide,{route:'new-number',locale:'en'}));
- expect(html.indexOf('data-guide-connect-area')).toBeLessThan(html.indexOf('data-guide-source'));
+ expect(html.indexOf('data-guide-connect-area')).toBeGreaterThan(html.indexOf('data-guide-source'));
  expect(html.match(/data-connect-action/g)).toHaveLength(1);
 });

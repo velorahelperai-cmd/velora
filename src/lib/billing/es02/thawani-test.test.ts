@@ -6,6 +6,15 @@ const binding = { reference: "ES02-test", amountBaisa: 45000, token: "claim-toke
 const data = { session_id: "checkout_fixture123", client_reference_id: binding.reference, mode: "payment", payment_status: "unpaid", currency: "OMR", total_amount: 45000, invoice: "123456", metadata: { binding: binding.token } };
 const response = (value: unknown) => new Response(JSON.stringify({ success: true, data: value }), { status: 200 });
 describe("Thawani UAT authority", () => {
+ it("accepts the owned popup return path while retaining exact origin and path guards",async()=>{
+  const target="https://www.velorahelper.com/account/payment/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee/popup";
+  const http=vi.fn().mockImplementation(async()=>response(data));
+  await expect(createThawaniTestSession(config,binding,target,http)).resolves.toMatchObject({status:"unpaid"});
+  expect(JSON.parse(http.mock.calls[0][1].body)).toMatchObject({success_url:target,cancel_url:target});
+  for(const invalid of [target.replace('www.velorahelper.com','evil.example'),target+'/extra',target+'?next=https://evil.example',target+'#paid',target.replace('/popup','/other'),target.replace('https://','https://attacker@')]){
+   http.mockClear();await expect(createThawaniTestSession(config,binding,invalid,http)).rejects.toThrow();expect(http).not.toHaveBeenCalled();
+  }
+ });
  it("requires explicit UAT, account and keys; rejects live configuration", () => {
   const env = { BILLING_ES02_THAWANI_TEST_ENABLED: "true", THAWANI_ENVIRONMENT: "uat", THAWANI_TEST_ACCOUNT_ID: config.accountId, THAWANI_SECRET_KEY_TEST: config.secretKey, THAWANI_PUBLIC_KEY_TEST: config.publicKey };
   expect(readThawaniTestConfig(env)).toEqual(config);

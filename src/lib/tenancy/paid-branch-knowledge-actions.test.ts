@@ -1,4 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
+const fileMocks=vi.hoisted(()=>({upload:vi.fn(),access:vi.fn()}));
+vi.mock('@/lib/knowledge/actions',()=>({uploadKnowledgeFiles:fileMocks.upload}));
+vi.mock('./access',()=>({getCompanyAccess:fileMocks.access}));
 
 const VALID_ACCOUNT_ID = "11111111-1111-4111-8111-111111111111";
 const VALID_COMPANY_ID = "22222222-2222-4222-8222-222222222222";
@@ -31,8 +34,23 @@ import {
   isSafePublicUrl,
   loadApprovedBranchKnowledgeContext,
   readOwnedBranchKnowledgeAction,
+  saveOwnedBranchKnowledgeTextAction,
+  approveOwnedBranchKnowledgeSourceAction,
+  uploadOwnedBranchKnowledgeFilesAction,
 } from "./paid-branch-knowledge-actions";
 import { safeFetchWebsite } from "./safe-website-fetcher";
+
+describe('branch knowledge writes',()=>{
+ const scope={expectedAccountId:VALID_ACCOUNT_ID,companyId:VALID_COMPANY_ID,branchId:VALID_BRANCH_ID};
+ const snapshot={scope,version:1,branchLabel:'Main',websiteQuota:{limit:10,used:0},pages:[],files:[],faq:[],capabilities:{canAddWebsite:true,canUploadFiles:true,canSaveText:true}};
+ beforeEach(()=>{currentSessionId=VALID_ACCOUNT_ID;rpcMock=vi.fn().mockResolvedValue({data:{ok:true,data:{snapshot}},error:null});fileMocks.upload.mockReset();fileMocks.access.mockResolvedValue({ok:true,context:{userId:VALID_ACCOUNT_ID,company:{id:VALID_COMPANY_ID}}});});
+ it('saves trimmed text through the owned branch contract without approving it',async()=>{expect(await saveOwnedBranchKnowledgeTextAction({...scope,expectedVersion:1,title:' Q ',content:' A '})).toEqual(snapshot);expect(rpcMock).toHaveBeenCalledWith('es02_save_owned_branch_knowledge_text',expect.objectContaining({p_title:'Q',p_content:'A',p_branch_id:VALID_BRANCH_ID}));expect(rpcMock).toHaveBeenCalledTimes(1);});
+ it('binds explicit approval to the exact source version',async()=>{const source='44444444-4444-4444-8444-444444444444';expect(await approveOwnedBranchKnowledgeSourceAction({...scope,sourceId:source,contentVersion:3,approved:true})).toEqual(snapshot);expect(rpcMock).toHaveBeenCalledWith('es02_approve_owned_branch_knowledge_source',expect.objectContaining({p_source_id:source,p_content_version:3,p_approved:true}));});
+ it('rejects a switched identity and malformed text before writes',async()=>{currentSessionId=null;expect(await saveOwnedBranchKnowledgeTextAction({...scope,expectedVersion:1,title:'Q',content:'A'})).toBeNull();currentSessionId=VALID_ACCOUNT_ID;expect(await saveOwnedBranchKnowledgeTextAction({...scope,expectedVersion:1,title:'Q',content:'x'.repeat(20001)})).toBeNull();expect(rpcMock).not.toHaveBeenCalled();});
+ it('rejects a foreign snapshot returned after a write',async()=>{rpcMock.mockResolvedValue({data:{ok:true,data:{snapshot:{...snapshot,scope:{...scope,branchId:VALID_COMPANY_ID}}}},error:null});expect(await saveOwnedBranchKnowledgeTextAction({...scope,expectedVersion:1,title:'Q',content:'A'})).toBeNull();});
+ it('uses the real uploader then binds the returned company source and version without approval',async()=>{const source={id:'44444444-4444-4444-8444-444444444444',company_id:VALID_COMPANY_ID,content_version:2};fileMocks.upload.mockResolvedValue({ok:true,data:[{ok:true,source}]});expect(await uploadOwnedBranchKnowledgeFilesAction({...scope,expectedVersion:1,files:[new File(['fixture'],'fixture.txt',{type:'text/plain'})]})).toEqual(snapshot);const form=fileMocks.upload.mock.calls[0]![0] as FormData;expect(form.get('expectedCompanyId')).toBe(VALID_COMPANY_ID);expect(rpcMock).toHaveBeenCalledWith('es02_bind_owned_branch_knowledge_source',expect.objectContaining({p_source_id:source.id,p_content_version:2,p_branch_id:VALID_BRANCH_ID}));expect(rpcMock.mock.calls.some(call=>String(call[0]).includes('approve'))).toBe(false);});
+ it('does not upload into a changed selected company',async()=>{fileMocks.access.mockResolvedValue({ok:true,context:{userId:VALID_ACCOUNT_ID,company:{id:VALID_BRANCH_ID}}});expect(await uploadOwnedBranchKnowledgeFilesAction({...scope,expectedVersion:1,files:[new File(['fixture'],'fixture.txt')]})).toBeNull();expect(fileMocks.upload).not.toHaveBeenCalled();});
+});
 vi.mock("./safe-website-fetcher", async () => ({ ...(await vi.importActual<typeof import("./safe-website-fetcher")>("./safe-website-fetcher")), safeFetchWebsite: vi.fn() }));
 vi.mock("@/lib/answers/context", () => ({ loadApprovedAnswerContext: vi.fn(async () => ({ ok: false, code: "NO_KNOWLEDGE" })) }));
 

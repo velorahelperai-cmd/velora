@@ -2,6 +2,25 @@
 -- Unknown relations and protected dependencies fail closed; no audit/finance bypass.
 begin;
 set local role postgres;
+-- Storage owns its schema relations (including objects) as supabase_storage_admin.
+-- Never alter those tables from this migration. The authenticated Storage API
+-- remains behind its existing restrictive session policy; the wrapper below
+-- adds the target deletion fence to app_session_is_valid().
+do $storage_session_fence_preflight$
+begin
+ if not exists(select 1 from pg_class c join pg_namespace n on n.oid=c.relnamespace
+   where n.nspname='storage' and c.relname='objects' and c.relkind='r' and c.relrowsecurity) then
+  raise exception 'AD_STORAGE_OBJECTS_RLS_MISSING';
+ end if;
+ if not exists(select 1 from pg_policy p join pg_class c on c.oid=p.polrelid join pg_namespace n on n.oid=c.relnamespace
+   where n.nspname='storage' and c.relname='objects' and p.polname='velora_active_session' and p.polpermissive=false and p.polcmd='*'
+    and exists(select 1 from unnest(p.polroles) u(role_oid) join pg_roles r on r.oid=u.role_oid where r.rolname='authenticated')
+    and coalesce(pg_get_expr(p.polqual,p.polrelid),'') like '%app_session_is_valid%'
+    and coalesce(pg_get_expr(p.polwithcheck,p.polrelid),'') like '%app_session_is_valid%') then
+  raise exception 'AD_STORAGE_SESSION_FENCE_UNVERIFIED';
+ end if;
+end;
+$storage_session_fence_preflight$;
 create table private.ad_policy(singleton boolean primary key default true check(singleton),version integer not null default 2,preview_seconds integer not null default 300 check(preview_seconds between 30 and 900));
 insert into private.ad_policy values(true,2,300);
 create table private.ad_classification(target uuid primary key,is_test boolean not null,revision bigint not null default 1);
@@ -393,13 +412,12 @@ declare op private.ad_operations; doc jsonb; matched boolean; root_id text; refs
  return case when tg_op='DELETE' then old else new end;
 end$$;
 do $$declare r record;begin
- for r in select c.oid,n.nspname,c.relname from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname in('public','private','storage') and c.relkind='r' and c.relname not like 'ad\_%' escape '\' loop
-  -- Native Storage owns its prefix/multipart housekeeping. Fence the actual object
-  -- admission/replacement, not API-internal empty-prefix garbage collection.
-  if r.nspname<>'storage' or r.relname='objects' then
-   execute format('create trigger ad_account_write_fence before insert or update or delete on %I.%I for each row execute function private.ad_write_fence()',r.nspname,r.relname);
-  end if;
-  if r.nspname in('public','storage') then
+ -- Application data fences remain on public/private tables. Storage is managed
+ -- by its API; the exact storage.objects scope is still previewed and removed via
+ -- the API, while the preflighted authenticated session policy blocks new writes.
+ for r in select c.oid,n.nspname,c.relname from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname in('public','private') and c.relkind='r' and c.relname not like 'ad\_%' escape '\' loop
+  execute format('create trigger ad_account_write_fence before insert or update or delete on %I.%I for each row execute function private.ad_write_fence()',r.nspname,r.relname);
+  if r.nspname='public' then
    execute format('create policy ad_account_access_fence on %I.%I as restrictive for all to authenticated using(private.ad_not_deleting((select auth.uid()))) with check(private.ad_not_deleting((select auth.uid())))',r.nspname,r.relname);
   end if;
  end loop;

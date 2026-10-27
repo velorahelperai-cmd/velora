@@ -3,6 +3,7 @@ import {useId, useLayoutEffect, useRef, useState} from "react";
 import {isPreparableKnowledgeFile, validateKnowledgeBatch} from "@/lib/knowledge/constants";
 import {isApprovedForAnswers, type KnowledgeSourceRecord, type KnowledgeStatus} from "@/lib/knowledge/types";
 import styles from "./paid-branch-knowledge.module.css";
+import {confirmSetupLeave,useSetupUnsavedChanges} from './paid-setup-unsaved';
 
 /** View projections supplied by the future branch-aware host, not persistence DTOs. */
 export type KnowledgeViewScope = {expectedAccountId:string; companyId:string; branchId:string};
@@ -24,9 +25,11 @@ export type PaidBranchKnowledgeProps = {
   snapshot:BranchKnowledgeViewSnapshot | null;
   state:{scope:KnowledgeViewScope; version:number | null; phase:"loading" | "ready" | "busy" | "saved" | "conflict" | "unavailable"};
   isCurrent:()=>boolean;
+  onReload?:()=>void|Promise<void>;
   onAddWebsite?:(input:CommandContext & {url:string; rightsAttested:true})=>void | Promise<void>;
   onUploadFiles?:(input:CommandContext & {files:File[]})=>void | Promise<void>;
   onSaveText?:(input:CommandContext & {title:string; content:string})=>void | Promise<void>;
+  onSourceApproval?:(input:KnowledgeViewScope & {sourceId:string;contentVersion:number;approved:boolean})=>void|Promise<void>;
   onPageAction?:(input:CommandContext & {pageId:string; pageVersion:number; action:"retry" | "retrain"})=>void | Promise<void>;
 };
 const sameScope = (a:KnowledgeViewScope,b:KnowledgeViewScope) => !!a.expectedAccountId && !!a.companyId && !!a.branchId &&
@@ -55,7 +58,7 @@ export function PaidBranchKnowledge(p:PaidBranchKnowledgeProps) {
   const ar=p.locale==="ar",t=(a:string,e:string)=>ar?a:e;
   const scoped=!!p.boundaryFingerprint && sameScope(p.scope,p.state.scope);
   if(scoped && p.state.phase==="loading")return <section className={styles.view} dir={ar?"rtl":"ltr"} aria-busy="true"><p role="status">{t("جارٍ تحميل معرفة الفرع…","Loading branch knowledge…")}</p></section>;
-  if(!scoped || !p.snapshot || !sameScope(p.scope,p.snapshot.scope) || !version(p.snapshot.version) || p.state.version!==p.snapshot.version || p.state.phase==="unavailable")
+  if(!scoped || !p.snapshot || !sameScope(p.scope,p.snapshot.scope) || !version(p.snapshot.version) || p.state.version!==p.snapshot.version)
     return <section className={styles.view} dir={ar?"rtl":"ltr"}><p role="status">{t("معرفة هذا الفرع غير متاحة. أعد تحميل بياناته.","Knowledge for this branch is unavailable. Reload its data.")}</p></section>;
   return <KnowledgeForm key={branchKnowledgeViewKey(p)} {...p} snapshot={p.snapshot}/>;
 }
@@ -65,6 +68,8 @@ function KnowledgeForm(p:PaidBranchKnowledgeProps & {snapshot:BranchKnowledgeVie
   const [question,setQuestion]=useState(""),[answer,setAnswer]=useState("");
   const [busy,setBusy]=useState(false),[failed,setFailed]=useState(false);
   const mounted=useRef(false),reserved=useRef(false);
+  const dirty=!!(url||question||answer||files.length);
+  useSetupUnsavedChanges(dirty,p.isCurrent,p.locale);
   useLayoutEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
   const quotaKnown=knownWebsiteQuota(p.snapshot.websiteQuota);
   const locked=busy || p.state.phase==="busy" || p.state.phase==="conflict" || !quotaKnown;
@@ -77,6 +82,7 @@ function KnowledgeForm(p:PaidBranchKnowledgeProps & {snapshot:BranchKnowledgeVie
   const canSaveText=!locked && p.snapshot.capabilities.canSaveText===true && !!p.onSaveText && !!question.trim() && question.trim().length<=200 && !!answer.trim();
   async function dispatch(callback:(()=>void|Promise<void>)|undefined) {
     if(!callback || locked || reserved.current || !p.isCurrent())return;
+    if([!!url,!!(question||answer),!!files.length].filter(Boolean).length>1&&!window.confirm(t('لديك مسودات في أكثر من قسم. قد يؤدي تحديث النسخة المحفوظة إلى فقد المسودات الأخرى. هل تريد المتابعة؟','You have drafts in multiple sections. Updating the saved version may discard the other drafts. Continue?')))return;
     reserved.current=true;setBusy(true);setFailed(false);
     try{await callback();}catch{if(mounted.current && p.isCurrent())setFailed(true);}
     finally{reserved.current=false;if(mounted.current && p.isCurrent())setBusy(false);}
@@ -90,9 +96,11 @@ function KnowledgeForm(p:PaidBranchKnowledgeProps & {snapshot:BranchKnowledgeVie
       {kind==="text" && <p dir="auto" className={styles.text}>{source.content}</p>}
       {source.failure_code && <p className={styles.error}>{t("تعذّر تجهيز المصدر؛ راجع الملف أو المحتوى.","The source could not be prepared; review the file or content.")}</p>}
       <small>{isApprovedForAnswers(source)?t("هذه النسخة معتمدة للإجابات","This version is approved for answers"):t("هذه النسخة غير معتمدة للإجابات","This version is not approved for answers")}</small>
+      {p.onSourceApproval&&source.status==='ready'&&Number.isSafeInteger(source.content_version)&&source.content_version!>0&&<button type="button" disabled={locked} onClick={()=>void dispatch(()=>p.onSourceApproval?.({...p.scope,sourceId:source.id,contentVersion:source.content_version!,approved:!isApprovedForAnswers(source)}))}>{isApprovedForAnswers(source)?t('إلغاء اعتماد هذه النسخة','Remove approval for this version'):t('اعتماد هذه النسخة لإجابات المساعد','Approve this version for assistant answers')}</button>}
     </li>)}</ul>:<p className={styles.note}>{t("لا توجد مصادر مرتبطة بهذا الفرع في هذا القسم.","No sources are assigned to this branch in this section.")}</p>;
   }
-  return <section className={styles.view} dir={ar?"rtl":"ltr"} aria-labelledby={id} aria-busy={busy || p.state.phase==="busy"}>
+  if(p.state.phase==='unavailable')return <section className={styles.view} data-setup-unsaved={dirty?'true':undefined} dir={ar?'rtl':'ltr'}><p role="alert">{t('معرفة هذا الفرع غير متاحة. لم نؤكد الحفظ؛ تعديلاتك المحلية محفوظة في هذه الشاشة.','Knowledge for this branch is unavailable. Saving is not confirmed; your local edits are retained in this screen.')}</p>{p.onReload&&<button type="button" onClick={event=>{if(p.isCurrent()&&confirmSetupLeave(event.currentTarget.parentElement?.parentElement??null,p.locale))void p.onReload?.();}}>{t('إعادة المحاولة','Retry')}</button>}</section>;
+  return <section className={styles.view} data-setup-unsaved={dirty?'true':undefined} dir={ar?"rtl":"ltr"} aria-labelledby={id} aria-busy={busy || p.state.phase==="busy"}>
     <header className={styles.header}><h2 id={id}>{t("معرفة الفرع","Branch knowledge")}</h2><p>{t("الفرع: ","Branch: ")}<bdi>{p.snapshot.branchLabel}</bdi></p></header>
     <p className={styles.note}>{t("أضف معلومات نشاطك من الموقع أو الملفات أو الأسئلة والأجوبة. تجهيز المصدر لا يعني اعتماده للإجابات ولا يفعّل ردود العملاء.","Add business information from your website, files, or questions and answers. Preparing a source does not approve it for answers or enable customer replies.")}</p>
     {!quotaKnown && <p role="status" className={styles.error}>{t("حصة صفحات الموقع غير متاحة. الإجراءات معطّلة حتى تصل البيانات الموثوقة.","Website quota is unavailable. Actions are disabled until authoritative data is available.")}</p>}
@@ -103,7 +111,8 @@ function KnowledgeForm(p:PaidBranchKnowledgeProps & {snapshot:BranchKnowledgeVie
       <div className={styles.sectionHeading}><h3 id={`${id}-website`}>{t("الموقع الإلكتروني","Website")}</h3><span>{quotaKnown?<><bdi dir="ltr">{p.snapshot.websiteQuota.used} / {p.snapshot.websiteQuota.limit}</bdi> {t("صفحة","pages")}</>:t("الحصة غير معروفة","Quota unknown")}</span></div>
       <form noValidate onSubmit={event=>{event.preventDefault();if(canAdd)void dispatch(()=>p.onAddWebsite?.({...context,url:url.trim(),rightsAttested:true}));}}>
         <fieldset disabled={locked}><legend className={styles.srOnly}>{t("إضافة صفحة","Add page")}</legend>
-          <label className={styles.field}>{t("رابط الصفحة","Page URL")}<input type="url" dir="ltr" value={url} onChange={event=>{if(p.isCurrent())setUrl(event.target.value);}} placeholder="https://example.com/about"/></label>
+          <label className={styles.field}>{t("رابط الصفحة","Page URL")}<input type="url" dir="ltr" value={url} aria-describedby={`${id}-url-help`} onChange={event=>{if(p.isCurrent())setUrl(event.target.value);}} placeholder="https://example.com/about"/></label>
+          <p id={`${id}-url-help`} className={styles.note}>{t('أضف رابط HTTPS مباشرًا لصفحة تملك محتواها، من دون بيانات دخول أو معاملات تتبّع.','Use a direct HTTPS page you have permission to use, without login details or tracking parameters.')}</p>
           <label className={styles.check}><input type="checkbox" checked={attested} onChange={event=>{if(p.isCurrent())setAttested(event.target.checked);}}/>{t("لدي إذن باستخدام محتوى هذه الصفحة.","I have permission to use this page's content.")}</label>
           <button type="submit" className={styles.primary} disabled={!canAdd}>{t("إضافة الصفحة","Add page")}</button>
         </fieldset>
@@ -130,7 +139,8 @@ function KnowledgeForm(p:PaidBranchKnowledgeProps & {snapshot:BranchKnowledgeVie
     <section className={styles.section} aria-labelledby={`${id}-faq`}><h3 id={`${id}-faq`}>{t("الأسئلة والأجوبة","Questions and answers")}</h3>
       <form noValidate onSubmit={event=>{event.preventDefault();if(canSaveText)void dispatch(()=>p.onSaveText?.({...context,title:question.trim(),content:answer.trim()}));}}><fieldset disabled={locked}><legend className={styles.srOnly}>{t("إضافة سؤال وجواب","Add a question and answer")}</legend>
         <label className={styles.field}>{t("السؤال","Question")}<input dir="auto" value={question} maxLength={200} onChange={event=>{if(p.isCurrent())setQuestion(event.target.value);}}/></label>
-        <label className={styles.field}>{t("الإجابة","Answer")}<textarea dir="auto" rows={3} value={answer} onChange={event=>{if(p.isCurrent())setAnswer(event.target.value);}}/></label>
+        <label className={styles.field}>{t("الإجابة","Answer")}<textarea dir="auto" rows={3} maxLength={20000} value={answer} aria-describedby={`${id}-answer-help`} onChange={event=>{if(p.isCurrent())setAnswer(event.target.value);}}/></label>
+        <p id={`${id}-answer-help`} className={styles.note}>{t('اكتب الإجابة التي تريد أن يعتمد عليها المساعد. الحفظ لا يعتمد المصدر تلقائيًا للإجابات.','Write the information your assistant should use. Saving does not automatically approve the source for answers.')}</p>
         <button type="submit" className={styles.primary} disabled={!canSaveText}>{t("حفظ السؤال والجواب","Save question and answer")}</button>
       </fieldset></form>{sources(p.snapshot.faq,"text")}
     </section>

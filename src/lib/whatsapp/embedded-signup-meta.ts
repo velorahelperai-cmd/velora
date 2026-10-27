@@ -18,9 +18,9 @@ function validateToken(value:unknown,appId:string,wabaId:string){
  return {scopes:scopes as string[],expires,dataExpires};
 }
 
-export async function onboardMetaSignup(config:MetaSignupConfig,input:MetaSignupInput,http:MetaFetch=fetch):Promise<MetaSignupResult>{
+export async function onboardMetaSignup(config:MetaSignupConfig,input:MetaSignupInput,http:MetaFetch=fetch,preparation?:{token?:string;probe?:boolean;capture?:(token:string,registrationRequired:boolean)=>void}):Promise<MetaSignupResult>{
  if(!config.enabled||!id(config.appId)||!config.appSecret||!config.systemUserToken||!/^v\d+\.0$/.test(config.graphVersion)||input.keepOnPhone)return {ok:false,code:"NEEDS_SETUP"};
- if(!id(input.wabaId)||!id(input.phoneNumberId)||!input.code||input.code.length>4096||!/^\d{6}$/.test(input.pin))return {ok:false,code:"INVALID_INPUT"};
+ if(!id(input.wabaId)||!id(input.phoneNumberId)||!input.code||input.code.length>4096||!(input.pin===''||/^\d{6}$/.test(input.pin)))return {ok:false,code:"INVALID_INPUT"};
  let wrote=false;
  const base=`https://graph.facebook.com/${config.graphVersion}`;
  async function request(path:string,token?:string,body?:Record<string,unknown>,query?:Record<string,string>){
@@ -44,7 +44,7 @@ export async function onboardMetaSignup(config:MetaSignupConfig,input:MetaSignup
   }throw Error("META_LIST_INCOMPLETE");
  }
  try{
-  const exchange=await request("oauth/access_token",undefined,undefined,{client_id:config.appId,client_secret:config.appSecret,code:input.code});
+  const exchange=preparation?.token?{access_token:preparation.token}:await request("oauth/access_token",undefined,undefined,{client_id:config.appId,client_secret:config.appSecret,code:input.code});
   if(typeof exchange.access_token!=="string"||!exchange.access_token.trim())return {ok:false,code:"META_AUTHORIZATION_REJECTED"};
   const token=exchange.access_token;
   if(!validateToken((await request("debug_token",config.systemUserToken,undefined,{input_token:token})).data,config.appId,input.wabaId))return {ok:false,code:"META_AUTHORIZATION_REJECTED"};
@@ -56,6 +56,9 @@ export async function onboardMetaSignup(config:MetaSignupConfig,input:MetaSignup
   const fields={fields:"id,display_phone_number,code_verification_status,platform_type,status,is_on_biz_app"};
   let phone=await request(input.phoneNumberId,token,undefined,fields);
   if(phone.id!==input.phoneNumberId||phone.code_verification_status!=="VERIFIED"||phone.is_on_biz_app!==false)return {ok:false,code:"META_ASSET_REJECTED"};
+  const registrationRequired=phone.status!=="CONNECTED"||phone.platform_type!=="CLOUD_API";
+  if(preparation?.probe){preparation.capture?.(token,registrationRequired);return {ok:false,code:'RECONCILIATION_REQUIRED'};}
+  if(registrationRequired&&!/^\d{6}$/.test(input.pin))return {ok:false,code:'INVALID_INPUT'};
   const subscribed=await request(`${input.wabaId}/subscribed_apps`,token,{});
   if(subscribed.success!==true)return {ok:false,code:"RECONCILIATION_REQUIRED"};
   if(phone.status!=="CONNECTED"||phone.platform_type!=="CLOUD_API"){

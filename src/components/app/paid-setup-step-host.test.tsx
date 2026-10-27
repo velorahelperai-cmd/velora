@@ -12,6 +12,9 @@ vi.mock("@/lib/tenancy/paid-branch-knowledge-actions", () => ({
   readOwnedBranchKnowledgeAction: vi.fn(async () => null),
   addOwnedBranchWebsiteAction: vi.fn(),
   pageActionOwnedBranchKnowledgeAction: vi.fn(),
+  saveOwnedBranchKnowledgeTextAction:vi.fn(),
+  uploadOwnedBranchKnowledgeFilesAction:vi.fn(),
+  approveOwnedBranchKnowledgeSourceAction:vi.fn(),
 }));
 
 vi.mock("@/lib/tenancy/paid-reply-language-actions", () => ({

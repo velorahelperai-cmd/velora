@@ -16,7 +16,7 @@ it("requires an explicit route and never starts a provider on render",()=>{
   expect(html).not.toContain("checked=");
   expect(html).not.toContain("data-guide-source");
   expect(html).not.toContain("<script");
-  expect(html).toContain("separate migration assessment");
+  expect(html).not.toContain("separate migration assessment");
 });
 it.each([
   {read:null},

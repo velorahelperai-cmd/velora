@@ -18,6 +18,48 @@ import { ANSWER_MAX_CONTEXT_CHARS, ANSWER_MAX_SOURCES } from "@/lib/answers/cons
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+function boundKnowledgeSnapshot(data:unknown,scope:KnowledgeViewScope):BranchKnowledgeViewSnapshot|null{
+ const value=data as {ok?:boolean;data?:{snapshot?:BranchKnowledgeViewSnapshot}}|null,s=value?.data?.snapshot;
+ return value?.ok===true&&s?.scope?.expectedAccountId===scope.expectedAccountId&&s.scope.companyId===scope.companyId&&s.scope.branchId===scope.branchId&&s.version===1&&Array.isArray(s.files)&&Array.isArray(s.faq)&&Array.isArray(s.pages)?s:null;
+}
+
+export async function saveOwnedBranchKnowledgeTextAction(input:KnowledgeViewScope&{expectedVersion:number;title:string;content:string}):Promise<BranchKnowledgeViewSnapshot|null>{
+ try{
+ if(!validScope(input)||input.expectedVersion!==1||typeof input.title!=='string'||!input.title.trim()||input.title.trim().length>200||typeof input.content!=='string'||!input.content.trim()||input.content.trim().length>20000)return null;
+ const identity=await readSessionIdentity();if(!identity.ok||identity.userId!==input.expectedAccountId)return null;
+ const client=await createClient();const result=await client.rpc('es02_save_owned_branch_knowledge_text' as never,{p_expected_account_id:input.expectedAccountId,p_company_id:input.companyId,p_branch_id:input.branchId,p_expected_version:input.expectedVersion,p_title:input.title.trim(),p_content:input.content.trim()} as never);
+ return result.error?null:boundKnowledgeSnapshot(result.data,input);
+ }catch{return null;}
+}
+
+export async function approveOwnedBranchKnowledgeSourceAction(input:KnowledgeViewScope&{sourceId:string;contentVersion:number;approved:boolean}):Promise<BranchKnowledgeViewSnapshot|null>{
+ try{
+ if(!validScope(input)||!UUID.test(input.sourceId)||!Number.isSafeInteger(input.contentVersion)||input.contentVersion<1||typeof input.approved!=='boolean')return null;
+ const identity=await readSessionIdentity();if(!identity.ok||identity.userId!==input.expectedAccountId)return null;
+ const client=await createClient();const result=await client.rpc('es02_approve_owned_branch_knowledge_source' as never,{p_expected_account_id:input.expectedAccountId,p_company_id:input.companyId,p_branch_id:input.branchId,p_source_id:input.sourceId,p_content_version:input.contentVersion,p_approved:input.approved} as never);
+ return result.error?null:boundKnowledgeSnapshot(result.data,input);
+ }catch{return null;}
+}
+
+export async function uploadOwnedBranchKnowledgeFilesAction(input:KnowledgeViewScope&{expectedVersion:number;files:File[]}):Promise<BranchKnowledgeViewSnapshot|null>{
+ try{
+ if(!validScope(input)||input.expectedVersion!==1||!Array.isArray(input.files)||input.files.length<1||input.files.length>5)return null;
+ const identity=await readSessionIdentity();if(!identity.ok||identity.userId!==input.expectedAccountId)return null;
+ const snapshot=await readOwnedBranchKnowledgeAction(input);if(!snapshot||snapshot.version!==input.expectedVersion||snapshot.capabilities.canUploadFiles!==true)return null;
+ const {getCompanyAccess}=await import('./access');const access=await getCompanyAccess('owner');
+ if(!access.ok||access.context.userId!==input.expectedAccountId||access.context.company?.id!==input.companyId)return null;
+ const {uploadKnowledgeFiles}=await import('@/lib/knowledge/actions');const form=new FormData();form.set('expectedCompanyId',input.companyId);for(const file of input.files)form.append('files',file);
+ const uploaded=await uploadKnowledgeFiles(form);if(!uploaded.ok)return null;
+ const client=await createClient();let latest:BranchKnowledgeViewSnapshot|null=null;
+ for(const item of uploaded.data){
+  const source=item.source;if(!source||source.company_id!==input.companyId||!UUID.test(source.id)||!Number.isSafeInteger(source.content_version)||source.content_version!<1)continue;
+  const result=await client.rpc('es02_bind_owned_branch_knowledge_source' as never,{p_expected_account_id:input.expectedAccountId,p_company_id:input.companyId,p_branch_id:input.branchId,p_source_id:source.id,p_content_version:source.content_version} as never);
+  if(result.error)return null;latest=boundKnowledgeSnapshot(result.data,input);if(!latest)return null;
+ }
+ return latest;
+ }catch{return null;}
+}
+
 function validScope(s: unknown): s is KnowledgeViewScope {
   if (!s || typeof s !== "object") return false;
   const scope = s as Record<string, unknown>;

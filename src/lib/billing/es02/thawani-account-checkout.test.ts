@@ -25,6 +25,7 @@ describe("owned Thawani UAT checkout", () => {
   expect(mocks.rpc).toHaveBeenCalledWith("es02_begin_thawani_test_checkout", expect.objectContaining({ p_preparation: input.preparation, p_term: "monthly", p_slots: selection.slots }));
   expect(mocks.rpc.mock.invocationCallOrder[0]).toBeLessThan(mocks.create.mock.invocationCallOrder[0]!);
   expect(mocks.admin).toHaveBeenCalledWith("es02_complete_thawani_test_checkout", expect.objectContaining({ p_session_id: "checkout_fixture123", p_claim_token: orderId }));
+  expect(mocks.create).toHaveBeenCalledWith(expect.anything(),expect.anything(),`https://www.velorahelper.com/account/payment/${orderId}/popup`);
  });
  it.each(["foreign", "live", "disabled", "invalid_preparation"])("blocks %s before writes", async mode => {
   if (mode === "foreign") vi.stubEnv("THAWANI_TEST_ACCOUNT_ID", orderId);

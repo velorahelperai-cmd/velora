@@ -119,6 +119,7 @@ export type CompleteWhatsappNewNumberInput = {
   wabaId: string;
   phoneNumberId: string;
   pin: string;
+  authorizationTicket?: string;
 };
 
 export type CompleteWhatsappCoexistenceInput = {

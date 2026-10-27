@@ -28,8 +28,8 @@ vi.mock("@/lib/billing/es02/account-order-actions", () => ({
   },
 }));
 
-vi.mock("./setup-order-review", () => ({
-  SetupOrderReview: (props: SetupOrderReviewProps) => {
+vi.mock("./setup-payment-dialog", () => ({
+  SetupPaymentDialog: (props: SetupOrderReviewProps) => {
     state.review = props;
     return createElement("section", { "data-review-binding": "true" });
   },

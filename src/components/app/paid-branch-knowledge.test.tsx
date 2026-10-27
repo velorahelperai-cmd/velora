@@ -6,6 +6,11 @@ import {PaidBranchKnowledge,branchKnowledgeViewKey,knownWebsiteQuota,knowledgePr
 const scope={expectedAccountId:"actor",companyId:"company",branchId:"branch"};
 const props:PaidBranchKnowledgeProps={locale:"en",scope,boundaryFingerprint:"capture",state:{scope,version:1,phase:"ready"},snapshot:{scope,version:1,branchLabel:"Main",websiteQuota:{limit:10,used:2},pages:[{id:"page",companyId:"company",branchId:"branch",version:3,url:"https://example.com/about",status:"failed",error:"Could not read page",capabilities:{canRetry:true,canRetrain:false}}],files:[],faq:[],capabilities:{canAddWebsite:true,canUploadFiles:true,canSaveText:true}},isCurrent:()=>true};
 const render=(extra:Partial<PaidBranchKnowledgeProps>={})=>renderToStaticMarkup(createElement(PaidBranchKnowledge,{...props,...extra}));
+it('offers explicit version approval for a ready bound source without approving it on render',()=>{
+ const source={id:'source',company_id:'company',kind:'text',title:'Q',content:'A',status:'ready',content_version:2,approved_for_answers:false,approved_version:null} as KnowledgeSourceRecord;
+ const html=render({snapshot:{...props.snapshot!,faq:[{branchId:'branch',source}]},onSourceApproval:()=>{throw Error('no render mutation');}});
+ expect(html).toContain('Approve this version for assistant answers');expect(html).toContain('not approved for answers');
+});
 it("uses content-sensitive direction for question and answer in Arabic",()=>{
  const html=render({locale:"ar"});expect(html).toContain('<input dir="auto"');expect(html).toContain('<textarea dir="auto"');
 });

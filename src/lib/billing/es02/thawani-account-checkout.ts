@@ -47,7 +47,7 @@ export async function beginThawaniTestCheckout(input: AccountCheckoutInput): Pro
     if (claimed.error || !claim) return { ok: false, code: "UNKNOWN" };
     if (claim.kind === "ready" && claim.sessionId) return { ok: true, data: { order, action: ack.action, checkoutUrl: thawaniTestCheckoutUrl(config, claim.sessionId) } };
     if (claim.kind !== "claimed" || !es02Uuid(claim.token)) return { ok: false, code: "UNKNOWN" };
-    const session = await createThawaniTestSession(config, { reference: order.specialReference, amountBaisa: order.offer.amountBaisa, token: claim.token }, "https://www.velorahelper.com/account/payment/" + order.orderId);
+    const session = await createThawaniTestSession(config, { reference: order.specialReference, amountBaisa: order.offer.amountBaisa, token: claim.token }, "https://www.velorahelper.com/account/payment/" + order.orderId + "/popup");
     const saved = await admin.rpc("es02_complete_thawani_test_checkout" as never, { p_account_id: input.accountId, p_order_id: order.orderId, p_claim_token: claim.token, p_session_id: session.sessionId, p_invoice: session.invoice } as never);
     if (saved.error || saved.data !== true) return { ok: false, code: "UNKNOWN" };
     return { ok: true, data: { order, action: ack.action, checkoutUrl: thawaniTestCheckoutUrl(config, session.sessionId) } };

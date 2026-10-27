@@ -18,5 +18,5 @@ export function ContinueSetup({ orderId }: { orderId: string }) {
     // One attempt per mounted order; retries are explicit and keep the order ID.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderId]);
-  return retry ? <div><p>تم تأكيد الدفع التجريبي. تجهيز النشاط لم يتأكد بعد؛ أعد المحاولة لنفس الطلب دون دفع جديد.</p><button type="button" onClick={() => void finish()} className="underline">متابعة تجهيز النشاط</button></div> : <p role="status">جارٍ حفظ نشاطك والانتقال إلى التجهيز حسب الباقة…</p>;
+  return retry ? <div><p>تم تأكيد الدفع. تجهيز النشاط لم يتأكد بعد؛ أعد المحاولة لنفس الطلب دون دفع جديد.</p><button type="button" onClick={() => void finish()} className="underline">متابعة تجهيز النشاط</button></div> : <p role="status">جارٍ حفظ نشاطك والانتقال إلى التجهيز حسب الباقة…</p>;
 }

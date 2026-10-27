@@ -23,6 +23,10 @@ function fake(overrides:{debug?:unknown;finalDebug?:unknown;phone?:unknown;subsc
 }
 const input={code:"ephemeral-code",wabaId:"222",phoneNumberId:"333",pin:"123456",keepOnPhone:false};
 describe("Meta Embedded Signup verification",()=>{
+ it('probes real registration status without any provider writes or public token result',async()=>{const f=fake();let required:boolean|undefined;const result=await onboardMetaSignup(config,{...input,pin:''},f.http,{probe:true,capture:(_token,value)=>{required=value;}});expect(required).toBe(false);expect(f.writes).toEqual([]);expect(result).not.toHaveProperty('accessToken');});
+ it('requires a PIN only when the verified number is not registered',async()=>{const f=fake({unregistered:true});let required:boolean|undefined;await onboardMetaSignup(config,{...input,pin:''},f.http,{probe:true,capture:(_token,value)=>{required=value;}});expect(required).toBe(true);expect(f.writes).toEqual([]);});
+ it('completes an already registered number with no PIN and without re-exchanging its code',async()=>{const f=fake();const http=async(url:string,init?:RequestInit)=>{expect(url).not.toContain('oauth/access_token');return f.http(url,init);};expect(await onboardMetaSignup(config,{...input,pin:''},http,{token:'prepared-token'})).toMatchObject({ok:true});expect(f.writes.some(path=>path.endsWith('/register'))).toBe(false);});
+ it('does not write when registration is required and no PIN was provided',async()=>{const f=fake({unregistered:true});expect(await onboardMetaSignup(config,{...input,pin:''},f.http,{token:'prepared-token'})).toEqual({ok:false,code:'INVALID_INPUT'});expect(f.writes).toEqual([]);});
  it("keeps default-off setup from executing any provider request",async()=>{
   const f=fake(); const r=await onboardMetaSignup({...config,enabled:false},input,f.http);
   expect(r).toEqual({ok:false,code:"NEEDS_SETUP"});expect(f.writes).toEqual([]);

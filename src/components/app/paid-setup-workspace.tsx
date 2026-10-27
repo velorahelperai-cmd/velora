@@ -7,6 +7,8 @@ import {checklistSteps,paidChecklistFromRead,type ChecklistStepId,type PaidSetup
 import {PaidChannelView} from "./paid-channel-view";
 import styles from "./paid-setup-workspace.module.css";
 import type {PaidSetupWorkspaceRead} from "@/lib/tenancy/paid-setup-workspace-actions";
+import {paidSetupActivation,type PaidSetupActivation} from '@/lib/tenancy/paid-setup-activation';
+import {confirmSetupLeave} from './paid-setup-unsaved';
 
 export function nextWorkspaceSelection(snapshot:PaidSetupWorkspaceRead,previous:ChecklistStepId|null):ChecklistStepId|null {
   const model=paidChecklistFromRead(snapshot.read,snapshot.scope);
@@ -46,6 +48,8 @@ export type PaidSetupWorkspaceProps={
   /** Existing scoped leaves are supplied by the integration owner once released. */
   renderStep?:(step:Exclude<ChecklistStepId,"whatsapp"|"instagram">)=>ReactNode;
   persona?:ReactNode;
+  activation?:PaidSetupActivation|null;
+  statusInHeader?:boolean;
 };
 
 export function workspaceStepAllowed(read:PaidBranchSetupRead|null,scope:PaidSetupWorkspaceProps["scope"],id:ChecklistStepId,available:readonly ChecklistStepId[]):boolean {
@@ -63,11 +67,23 @@ export function PaidSetupWorkspace(props:PaidSetupWorkspaceProps) {
   // Never carry collapsed-menu or leaf-local state across an identity boundary.
   return <Workspace key={JSON.stringify(props.scope)} {...props}/>;
 }
+/** The presentation frame does not depend on a successful setup read. Unknowns remain non-actionable. */
+export function PaidSetupLoadingFrame({locale}:{locale:'ar'|'en'}){return <section className={styles.workspace} dir={locale==='ar'?'rtl':'ltr'} aria-busy="true"><PendingWorkspace locale={locale} loading/></section>;}
+function PendingWorkspace({locale,loading,onRetry}:{locale:'ar'|'en';loading:boolean;onRetry?:()=>void}){
+ const ar=locale==='ar',t=(a:string,e:string)=>ar?a:e;
+ return <div className={styles.layout} data-setup-frame="pending">
+   <aside className={styles.sidebar} aria-label={t('رحلة التجهيز','Setup journey')}><div className={styles.progressHeading}><strong>{t('رحلة التجهيز','Setup journey')}</strong></div><p className={loading?styles.srOnly:styles.pendingNote}>{loading?t('جارٍ جلب الحالة…','Fetching status…'):t('الحالة غير متاحة','Status unavailable')}</p>
+     <div className={styles.skeletonRail} aria-hidden="true">{[0,1,2,3,4].map(key=><div key={key}><span/><span/></div>)}</div>
+   </aside>
+   <section className={styles.content} aria-label={t('محتوى المرحلة','Stage content')}><header className={styles.contentHeader}><h2>{t('إعداد الفرع','Branch setup')}</h2></header><div className={styles.empty} role={loading?'status':'alert'}><p className={loading?styles.srOnly:undefined}>{loading?t('جارٍ تحميل إعدادات الفرع…','Loading branch setup…'):t('إعدادات الفرع غير متاحة حاليًا. تحقّق من الجلسة والاستحقاق ثم أعد المحاولة.','Branch setup is unavailable. Check your session and entitlement, then retry.')}</p>{loading&&<div className={styles.skeletonContent} aria-hidden="true"><span/><span/><span/><div/></div>}{!loading&&onRetry&&<button type="button" onClick={onRetry}>{t('إعادة المحاولة','Retry')}</button>}</div></section>
+ </div>;
+}
 function Workspace(p:PaidSetupWorkspaceProps) {
   const ar=p.locale==="ar",t=(a:string,e:string)=>ar?a:e;
   const titleId=useId(),navId=useId(),panelId=useId();
   const [expanded,setExpanded]=useState(false);
   const heading=useRef<HTMLHeadingElement>(null);
+  const shell=useRef<HTMLElement>(null);
   const previous=useRef(p.activeStepId);
   const isCurrent=p.isCurrent;
   const current=isCurrent();
@@ -76,31 +92,38 @@ function Workspace(p:PaidSetupWorkspaceProps) {
   const valid=current&&!!model&&model.branches.some(branch=>branch.id===p.scope.branchId)&&steps.length>0;
   const active=p.activeStepId;
   const allowed=!!active&&workspaceStepAllowed(p.read,p.scope,active,p.availableStepIds);
+  const nextStep=steps.find(step=>step.status!=='verified'&&step.status!=='skipped_optional'&&workspaceStepAllowed(p.read,p.scope,step.id,p.availableStepIds));
+  const activation=valid?paidSetupActivation(p.activation,p.scope.companyId,p.read?.entitlement?.orderGroupId):null;
+  const entitlement=valid?p.read?.entitlement:null;
+  const personaName=entitlement?({level_1:t('نورا','Noura'),level_2:t('لينا','Lina'),level_3:t('دانا','Dana')})[entitlement.persona]:'';
   useEffect(()=>{
     if(previous.current!==active&&isCurrent())heading.current?.focus();
     previous.current=active;
   },[active,isCurrent]);
   const select=(step:ChecklistStepId)=>{
     if(!p.isCurrent()||!workspaceStepAllowed(p.read,p.scope,step,p.availableStepIds))return;
+    if(step!==active&&!confirmSetupLeave(shell.current,p.locale))return;
     setExpanded(false);
     if(step===active)heading.current?.focus();
     else p.onSelectStep(step);
   };
   const position=steps.findIndex(step=>step.id===active);
   const previousStep=steps.slice(0,Math.max(position,0)).reverse().find(step=>workspaceStepAllowed(p.read,p.scope,step.id,p.availableStepIds));
-  return <section className={styles.workspace} dir={ar?"rtl":"ltr"} aria-labelledby={titleId}>
-    <header className={styles.header}><h1 id={titleId}>{t("جهّز مساعدك","Set up your assistant")}</h1>
-      <p>{t("أكمل إعداد الفرع لبدء استقبال عملائك.","Complete branch setup to start serving your customers.")}</p>
+  const refresh=()=>{if(p.isCurrent()&&confirmSetupLeave(shell.current,p.locale))p.onRefresh?.();};
+  return <section ref={shell} className={styles.workspace} dir={ar?"rtl":"ltr"} aria-labelledby={titleId} aria-busy={p.loading||undefined}>
+    <header className={p.loading||p.statusInHeader?styles.srOnly:styles.header}><div className={styles.introduction}><h1 id={titleId} className={p.statusInHeader?styles.srOnly:undefined}>{personaName?t(`جهّز ${personaName} لعملائك`,`Prepare ${personaName} for your customers`):t("جهّز مساعدك","Set up your assistant")}</h1>
+      </div>
+      {entitlement&&!p.statusInHeader&&<aside className={styles.planSummary} aria-label={t('ملخص الباقة والتفعيل','Plan and activation summary')}><div className={styles.planTop}><span>{t('باقة فرعك','Your branch plan')}</span><span className={styles.activationBadge} data-clock={activation?.clockState??'unknown'}>{activation?.clockState==='waiting_readiness'?t('المدة لم تبدأ','Period not started'):activation?.clockState==='active'?t('المدة بدأت','Period started'):activation?.clockState==='ended'?t('المدة انتهت','Period ended'):t('حالة المدة غير متاحة','Period status unavailable')}</span></div>
+        <h2>{personaName} <span>· {entitlement.package==='basic'?t('القياسية','Standard'):t('المميزة','Premium')}</span></h2>
+        <p>{model?.branches.find(b=>b.id===p.scope.branchId)?.label}{activation?` · ${activation.termUnit==='month'?t('شهرية','Monthly'):t('سنوية','Yearly')}`:''}</p>
+        <dl><div><dt>{t('القنوات','Channels')}</dt><dd>{entitlement.maxChannels}</dd></div><div><dt>{t('مقاعد الفريق','Team seats')}</dt><dd>{entitlement.employeesExcludingOwner}</dd></div><div><dt>{t('التشغيل','Launch')}</dt><dd>{model?.launch.confirmed?t('مؤكد','Confirmed'):model?.launch.canRequest?t('بانتظار تأكيدك','Awaiting confirmation'):t('قيد التجهيز','In preparation')}</dd></div></dl>
+      </aside>}
     </header>
-    {!valid?<div className={styles.empty} role={p.loading?"status":"alert"}>
-      <p>{p.loading?t("جارٍ تحميل إعدادات الفرع…","Loading branch setup…"):t("إعدادات الفرع غير متاحة حاليًا. تحقّق من الجلسة والاستحقاق ثم أعد المحاولة.","Branch setup is unavailable. Check your session and entitlement, then retry.")}</p>
-      {p.onRefresh&&!p.loading&&<button type="button" onClick={()=>{if(p.isCurrent())p.onRefresh?.();}}>{t("إعادة المحاولة","Retry")}</button>}
-    </div>:<div className={styles.layout}>
+    {!valid?<PendingWorkspace locale={p.locale} loading={!!p.loading} onRetry={p.onRefresh?refresh:undefined}/>:<div className={styles.layout}>
       <aside className={styles.sidebar}>
         <div className={styles.progress}>
-          <p><bdi dir="ltr">{model.progress.verified} / {model.progress.denominator}</bdi> {t("مكتملة","complete")}</p>
+          <div className={styles.progressHeading}><strong>{t('رحلة التجهيز','Setup journey')}</strong><p><bdi dir="ltr">{model.progress.verified} / {model.progress.denominator}</bdi> {t("مكتملة","complete")}</p></div>
           <progress value={model.progress.verified} max={model.progress.denominator??undefined} aria-label={t("تقدم إعداد الفرع","Branch setup progress")}/>
-          {model.progress.skippedOptional>0&&<small>{t("دعوة الفريق متخطاة؛ لا تُحسب خطوة مكتملة.","Team invitation skipped; not counted as completed.")}</small>}
         </div>
         <button className={styles.toggle} type="button" aria-expanded={expanded} aria-controls={navId} onClick={()=>setExpanded(value=>!value)}>
           {active?titles[active][ar?0:1]:t("خطوات الإعداد","Setup steps")} <span aria-hidden="true">{expanded?"−":"+"}</span>
@@ -118,23 +141,21 @@ function Workspace(p:PaidSetupWorkspaceProps) {
             </li>;
           })}</ol>
         </nav>
-        <p className={styles.notice}>{t("لن يرد المساعد على العملاء قبل تأكيد التشغيل.","The assistant will not reply to customers before launch confirmation.")}</p>
+        {nextStep&&<button type="button" className={styles.nextAction} onClick={()=>select(nextStep.id)}><span>{t('الخطوة التالية','Next step')}</span><strong>{titles[nextStep.id][ar?0:1]}</strong><span aria-hidden="true">{ar?'←':'→'}</span></button>}
       </aside>
       <section id={panelId} className={styles.content} aria-labelledby={panelId+"-heading"}>
         <header className={styles.contentHeader}>
-          <h2 id={panelId+"-heading"} ref={heading} tabIndex={-1}>{active?titles[active][ar?0:1]:t("اختر خطوة للمتابعة","Choose a step to continue")}</h2>
+          <h2 id={panelId+"-heading"} ref={heading} tabIndex={-1} className={styles.srOnly}>{active?titles[active][ar?0:1]:t("اختر خطوة للمتابعة","Choose a step to continue")}</h2>
           <div className={styles.controls}>
             {previousStep&&<button type="button" onClick={()=>select(previousStep.id)}>{t("الخطوة السابقة","Previous step")}</button>}
-            {p.onRefresh&&<button type="button" onClick={()=>{if(p.isCurrent())p.onRefresh?.();}}>{t("تحديث الحالة","Refresh status")}</button>}
           </div>
         </header>
         <div className={styles.body} key={active}>
           {!active||!allowed?<p role="status">{t("اختر خطوة متاحة. تُفتح الخطوات بعد تحقق متطلباتها.","Choose an available step. Steps open after their prerequisites are verified.")}</p>:
-            active==="whatsapp"||active==="instagram"?<PaidChannelView locale={p.locale} scope={p.scope} read={p.read} channel={active} connectionRead={p.connectionReads?.[active]} isCurrent={p.isCurrent} onRefresh={p.onRefresh}/>:
+            active==="whatsapp"||active==="instagram"?<PaidChannelView locale={p.locale} scope={p.scope} read={p.read} channel={active} connectionRead={p.connectionReads?.[active]} isCurrent={p.isCurrent} onRefresh={refresh} hideStatusBadge={p.statusInHeader}/>:
               p.renderStep?.(active)??<p role="status">{t("هذه الشاشة غير متاحة بعد. لم تتغير حالة الخطوة.","This screen is not available yet. The step status has not changed.")}</p>}
         </div>
       </section>
-      {p.persona&&<aside className={styles.persona} aria-label={t("مساعد الفرع","Branch assistant")}>{p.persona}</aside>}
     </div>}
   </section>;
 }

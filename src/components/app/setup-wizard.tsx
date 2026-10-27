@@ -5,6 +5,9 @@ import { normalizeBusinessEmail, normalizeBusinessPhone } from "@/lib/tenancy/bu
 import Link from "next/link";
 import { SetupLoading } from "./setup-loading";
 import setupStyles from "./setup-wizard.module.css";
+import paidStyles from './paid-assistant-checklist.module.css';
+import studioStyles from './setup-studio.module.css';
+import {SetupStudioLangSwitch} from './setup-studio-lang-switch';
 import { useRouter } from "next/navigation";
 import { setupSubscriptionReturn } from "@/lib/auth/setup-return";
 import { readSetupFileContext } from "@/lib/tenancy/setup-draft-actions";
@@ -226,10 +229,9 @@ export function SetupWizard(props:Parameters<typeof LegacySetupWizard>[0]) {
  },[session,identity,boundaryFingerprint,companyId,props.userId]);
  if(!companyId)return <LegacySetupWizard {...props}/>;
  if(session?.status!=="ready"||!boundaryFingerprint||identity?.userId!==props.userId||identity.companyId!==companyId)return <PaidAssistantChecklist locale={locale} model={null} loading={session?.status==="loading"}/>;
- return <>
-  <header className={styles.setupHeader}><div className={styles.setupHeaderActions}><LangSwitch/><AccountMenu compact/></div></header>
-  <PaidSetupFlow locale={locale} scope={{expectedAccountId:props.userId,companyId,boundaryFingerprint}} isCurrent={isCurrent} readEntry={readOwnedPaidBranchSetupEntryAction} readBranch={readOwnedPaidBranchSetupAction}/>
- </>;
+ return <main className={paidStyles.paidShell} dir={locale==='ar'?'rtl':'ltr'} data-service-theme="">
+  <PaidSetupFlow locale={locale} scope={{expectedAccountId:props.userId,companyId,boundaryFingerprint}} isCurrent={isCurrent} readEntry={readOwnedPaidBranchSetupEntryAction} readBranch={readOwnedPaidBranchSetupAction} renderHeader={(branchSelector,title,planSummary)=><header className={`${studioStyles.header} ${paidStyles.paidHeader} ${paidStyles.titleHeader}`}>{title&&<h1 className={paidStyles.headerTitle}>{title}</h1>}<div className={paidStyles.headerBrand}><Link href="/" className={studioStyles.brand}>Velora</Link>{branchSelector}{planSummary}</div><div className={studioStyles.headerTools}><SetupStudioLangSwitch/><div className={studioStyles.accountControl}><AccountMenu compact/></div></div></header>}/>
+ </main>;
 }
 
 function LegacySetupWizard({

@@ -1,7 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach,afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
-const state = vi.hoisted(() => ({ rpc: vi.fn(), exchange: vi.fn() }));
+const state = vi.hoisted(() => ({ rpc: vi.fn(), exchange: vi.fn(),probe:vi.fn() }));
+vi.mock('@/lib/whatsapp/embedded-signup-meta',()=>({onboardMetaSignup:state.probe}));
+import {openSignupPreparation,sealSignupPreparation} from '@/lib/whatsapp/signup-preparation';
 vi.mock("next/headers", () => ({ cookies: async () => ({ set() {}, get: () => undefined }) }));
 vi.mock("@/lib/logging/logger.mjs", () => ({ logEvent() {}, withLogContext: async (_ctx: unknown, run: () => Promise<unknown>) => run() }));
 vi.mock("@/lib/auth/server-identity", () => ({ readSessionIdentity: async () => ({ ok: true, userId: "11111111-1111-4111-8111-111111111111", sessionId: "44444444-4444-4444-8444-444444444444" }) }));
@@ -17,6 +19,7 @@ import {
   completeOwnedPaidBranchConnectionAction,
   recoverOwnedPaidBranchConnectionAction,
   startOwnedPaidBranchConnectionAction,
+  prepareOwnedWhatsappRegistrationAction,
 } from "./paid-branch-connection-actions";
 import type { CompleteWhatsappCoexistenceInput } from "./paid-branch-connection-contracts";
 
@@ -122,4 +125,14 @@ describe("coexistence actions use the attempt parser and the config gate", () =>
     expect(state.rpc).not.toHaveBeenCalled();
     expect(state.exchange).not.toHaveBeenCalled();
   });
+});
+
+describe('owned registration preparation',()=>{
+ const input={...scope,flow:'wa_new_number' as const,attemptId,generation:1,completion:{attemptId,nonce:'a'.repeat(64),code:'one-use-code',wabaId:'222',phoneNumberId:'333',pin:''}};
+ beforeEach(()=>{vi.clearAllMocks();vi.stubEnv('WHATSAPP_EMBEDDED_SIGNUP','true');vi.stubEnv('WHATSAPP_EMBEDDED_SIGNUP_APP_ID','111');vi.stubEnv('WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID','123');vi.stubEnv('WHATSAPP_EMBEDDED_SIGNUP_GRAPH_VERSION','v25.0');vi.stubEnv('WHATSAPP_APP_SECRET','test-secret');vi.stubEnv('WHATSAPP_EMBEDDED_SIGNUP_SYSTEM_USER_TOKEN','test-system-token');state.rpc.mockResolvedValue({data:{...connectionRead(),connection:{...connectionRead().connection,flow:'wa_new_number',attempt:{...connectionRead().connection.attempt,expiresAt:'2099-01-01T00:00:00Z'}}},error:null});state.probe.mockImplementation(async(_config,_input,_fetch,options)=>{options.capture('private-token',false);return {ok:false,code:'RECONCILIATION_REQUIRED'};});});
+ afterEach(()=>{vi.unstubAllEnvs();vi.useRealTimers();});
+ it('returns only an encrypted bound ticket after checking the owned pending attempt',async()=>{const result=await prepareOwnedWhatsappRegistrationAction(input);expect(result.ok).toBe(true);if(!result.ok)return;expect(result.registrationRequired).toBe(false);expect(JSON.stringify(result)).not.toContain('private-token');expect(openSignupPreparation('test-secret',result.authorizationTicket,{accountId:scope.expectedAccountId,sessionId:'44444444-4444-4444-8444-444444444444',companyId:scope.companyId,branchId:scope.branchId,attemptId,generation:1,nonce:'a'.repeat(64),wabaId:'222',phoneNumberId:'333'})).toBe('private-token');expect(state.rpc.mock.calls.map(call=>call[0])).toEqual(['es02_b3_read_owned_branch_connection']);});
+ it.each(['account','attempt','generation','expired','claimed','source'])('denies %s before exchanging an authorization code',async kind=>{let request=input;if(kind==='account')request={...input,expectedAccountId:'99999999-9999-4999-8999-999999999999'};else {const data={...connectionRead(),connection:{...connectionRead().connection,flow:'wa_new_number',attempt:{...connectionRead().connection.attempt,expiresAt:'2099-01-01T00:00:00Z'}}};if(kind==='attempt')data.connection.attempt.id='99999999-9999-4999-8999-999999999999';if(kind==='generation')data.connection.attempt.generation=2;if(kind==='expired')data.connection.attempt.expiresAt='2000-01-01T00:00:00Z';if(kind==='claimed')data.connection.attempt.status='claimed';state.rpc.mockResolvedValue({data,error:kind==='source'?{message:'offline'}:null});}expect(await prepareOwnedWhatsappRegistrationAction(request)).toEqual({ok:false});expect(state.probe).not.toHaveBeenCalled();});
+ it('does not produce a ticket from a failed provider probe',async()=>{state.probe.mockResolvedValue({ok:false,code:'META_UNAVAILABLE'});expect(await prepareOwnedWhatsappRegistrationAction(input)).toEqual({ok:false});});
+ it('rejects an expired continuation before any native claim or exchange',async()=>{vi.useFakeTimers();const ticket=sealSignupPreparation('test-secret',{accountId:scope.expectedAccountId,sessionId:'44444444-4444-4444-8444-444444444444',companyId:scope.companyId,branchId:scope.branchId,attemptId,generation:1,nonce:'a'.repeat(64),wabaId:'222',phoneNumberId:'333'},'private-token');vi.advanceTimersByTime(300_001);const result=await completeOwnedPaidBranchConnectionAction({...input,completion:{...input.completion,authorizationTicket:ticket}});expect(result.ok).toBe(false);expect(names()).toEqual(['es02_b3_read_owned_branch_connection']);expect(state.exchange).not.toHaveBeenCalled();});
 });

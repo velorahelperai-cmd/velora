@@ -59,6 +59,19 @@ const idle: SetupPlanWrite = { kind: "idle" };
 const ACTOR = { accountId: "acc-1", captureToken: "tok-1" };
 
 describe("Test checkout destination", () => {
+  it('accepts Live Thawani and owned recovery destinations only in the explicit local mode',()=>{
+    const live='https://checkout.thawani.om/pay/checkout_abcdefgh12345678?key=publicfixture123';
+    vi.stubEnv('NEXT_PUBLIC_LOCAL_LIVE_CUSTOMER','');expect(safeTestCheckoutUrl(live)).toBeNull();
+    vi.stubEnv('NEXT_PUBLIC_LOCAL_LIVE_CUSTOMER','1');expect(safeTestCheckoutUrl(live)).toBe(live);
+    expect(safeTestCheckoutUrl('http://127.0.0.1:3330/account/payment/11111111-1111-4111-8111-111111111111/popup')).not.toBeNull();
+    expect(safeTestCheckoutUrl(live.replace('checkout.thawani.om','checkout.thawani.om.evil.example'))).toBeNull();
+    expect(safeTestCheckoutUrl('http://127.0.0.1:3330/account/payment/11111111-1111-4111-8111-111111111111/popup?paid=true')).toBeNull();vi.unstubAllEnvs();
+  });
+  it('shows the server-supplied actual collection and merchant separately from catalog price',()=>{const rendered=html(viewProps({checkoutNotice:{ar:'المستحق100بيسة · Caramela',en:'Due OMR0.100 · Caramela'}}));expect(rendered).toContain('collection-offer');expect(rendered).toContain('Caramela');});
+  it("keeps managed payment status inside the review instead of exposing a parent-page checkout link",()=>{
+    const rendered=html(viewProps({phase:"created",checkoutUrl:"https://uatcheckout.thawani.om/pay/checkout_abcdefgh12345678?key=publicfixture123",paymentStatus:createElement("p",null,"Managed verification"),paymentStateLabel:"Payment confirmed"}));
+    expect(rendered).toContain("Managed verification");expect(rendered).toContain("Payment confirmed");expect(rendered).not.toContain('href="https://uatcheckout.thawani.om');
+  });
   it("accepts Thawani UAT only with a session and public key", () => {
     const url = "https://uatcheckout.thawani.om/pay/checkout_abcdefgh12345678?key=publicfixture123";
     expect(safeTestCheckoutUrl(url)).toBe(url);

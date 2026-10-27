@@ -4,6 +4,8 @@ import { randomUUID } from "node:crypto";
 import { readSessionIdentity } from "@/lib/auth/server-identity";
 import { withLogContext } from "@/lib/logging/logger.mjs";
 import { createClient } from "@/lib/supabase/server";
+import {readOwnedPaidBranchSetupAction} from './paid-setup-actions';
+import {normalizePaidLaunchSnapshot} from './paid-launch-projection';
 import type {
   LaunchScope,
   LaunchSummarySnapshot,
@@ -46,7 +48,8 @@ export async function readOwnedBranchLaunchSummaryAction(
 
     const payload = res.data as unknown as { ok?: boolean; data?: { snapshot: LaunchSummarySnapshot } };
     if (res.error || !payload || payload.ok !== true) return null;
-    return payload.data?.snapshot ?? null;
+    const branch = await readOwnedPaidBranchSetupAction(scope);
+    return normalizePaidLaunchSnapshot(payload.data?.snapshot,scope,branch);
   });
 }
 
@@ -76,6 +79,7 @@ export async function confirmOwnedBranchLaunchAction(
 
     const payload = res.data as unknown as { ok?: boolean; data?: { snapshot: LaunchSummarySnapshot } };
     if (res.error || !payload || payload.ok !== true) return null;
-    return payload.data?.snapshot ?? null;
+    const branch = await readOwnedPaidBranchSetupAction(input);
+    return normalizePaidLaunchSnapshot(payload.data?.snapshot,input,branch);
   });
 }

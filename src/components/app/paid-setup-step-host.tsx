@@ -15,6 +15,9 @@ import {
   addOwnedBranchWebsiteAction,
   pageActionOwnedBranchKnowledgeAction,
   readOwnedBranchKnowledgeAction,
+  saveOwnedBranchKnowledgeTextAction,
+  uploadOwnedBranchKnowledgeFilesAction,
+  approveOwnedBranchKnowledgeSourceAction,
 } from "@/lib/tenancy/paid-branch-knowledge-actions";
 import { PaidReplyLanguage, type ReplyLanguageSnapshot } from "./paid-reply-language";
 import {
@@ -45,6 +48,8 @@ export type PaidSetupStepHostProps = {
 export function PaidSetupStepHost(props: PaidSetupStepHostProps) {
   const { locale, scope, step, isCurrent, onRefresh } = props;
   const { expectedAccountId, companyId, branchId } = scope;
+  const [readVersion,setReadVersion]=useState(0);
+  const retryRead=()=>{if(isCurrent())setReadVersion(v=>v+1);};
   const targetScope = useMemo(
     () => ({ expectedAccountId, companyId, branchId }),
     [expectedAccountId, companyId, branchId],
@@ -67,11 +72,11 @@ export function PaidSetupStepHost(props: PaidSetupStepHostProps) {
       } else {
         setHoursPhase("unavailable");
       }
-    });
+    }).catch(()=>{if(active&&isCurrent())setHoursPhase('unavailable');});
     return () => {
       active = false;
     };
-  }, [step, targetScope, isCurrent]);
+  }, [step, targetScope, isCurrent,readVersion]);
 
   // 2. Knowledge step
   const [knowledgeSnap, setKnowledgeSnap] = useState<BranchKnowledgeViewSnapshot | null>(null);
@@ -88,11 +93,11 @@ export function PaidSetupStepHost(props: PaidSetupStepHostProps) {
       } else {
         setKnowledgePhase("unavailable");
       }
-    });
+    }).catch(()=>{if(active&&isCurrent())setKnowledgePhase('unavailable');});
     return () => {
       active = false;
     };
-  }, [step, targetScope, isCurrent]);
+  }, [step, targetScope, isCurrent,readVersion]);
 
   // 3. Language step
   const [langSnap, setLangSnap] = useState<ReplyLanguageSnapshot | null>(null);
@@ -109,11 +114,11 @@ export function PaidSetupStepHost(props: PaidSetupStepHostProps) {
       } else {
         setLangPhase("unavailable");
       }
-    });
+    }).catch(()=>{if(active&&isCurrent())setLangPhase('unavailable');});
     return () => {
       active = false;
     };
-  }, [step, targetScope, isCurrent]);
+  }, [step, targetScope, isCurrent,readVersion]);
 
   // 4. Test step
   const [trialSnap, setTrialSnap] = useState<TrialSnapshot | null>(null);
@@ -130,11 +135,11 @@ export function PaidSetupStepHost(props: PaidSetupStepHostProps) {
       } else {
         setTrialPhase("unavailable");
       }
-    });
+    }).catch(()=>{if(active&&isCurrent())setTrialPhase('unavailable');});
     return () => {
       active = false;
     };
-  }, [step, targetScope, isCurrent]);
+  }, [step, targetScope, isCurrent,readVersion]);
 
   // 5. Team step: authoritative invitation feature is pending integration; marked unavailable honestly
   // to avoid misleading success or synthetic data.
@@ -154,12 +159,14 @@ export function PaidSetupStepHost(props: PaidSetupStepHostProps) {
       } else {
         setLaunchPhase("unavailable");
       }
-    });
+    }).catch(()=>{if(active&&isCurrent())setLaunchPhase('unavailable');});
     return () => {
       active = false;
     };
-  }, [step, targetScope, isCurrent]);
+  }, [step, targetScope, isCurrent,readVersion]);
 
+  const unavailableRead=(step==='hours'&&hoursPhase==='unavailable'&&!hoursSnap)||(step==='knowledge'&&knowledgePhase==='unavailable'&&!knowledgeSnap)||(step==='language'&&langPhase==='unavailable'&&!langSnap)||(step==='test'&&trialPhase==='unavailable'&&!trialSnap)||(step==='launch'&&launchPhase==='unavailable'&&!launchSnap);
+  if(unavailableRead)return <section dir={locale==='ar'?'rtl':'ltr'}><p role="alert">{locale==='ar'?'تعذّر تحميل بيانات هذه الخطوة. لم تتغير حالة التجهيز.':'Unable to load this step. Setup status has not changed.'}</p><button type="button" onClick={retryRead}>{locale==='ar'?'إعادة المحاولة':'Retry'}</button></section>;
   switch (step) {
     case "hours":
       return (
@@ -173,21 +180,21 @@ export function PaidSetupStepHost(props: PaidSetupStepHostProps) {
           isCurrent={isCurrent}
           onSave={async (draft) => {
             setHoursPhase("saving");
-            const res = await saveOwnedBranchHoursAction(draft);
+            const res = await saveOwnedBranchHoursAction(draft).catch(()=>null);
             if (!isCurrent()) return;
-            if (res.ok) {
+            if (res?.ok) {
               setHoursSnap(res.snapshot);
               setHoursPhase("saved");
               onRefresh?.();
             } else {
-              setHoursPhase(res.code === "conflict" ? "conflict" : "unavailable");
+              setHoursPhase(res?.code === "conflict" ? "conflict" : "unavailable");
             }
           }}
           onCopy={async (draft) => {
             setHoursPhase("saving");
-            const res = await copyOwnedBranchHoursAction(draft);
+            const res = await copyOwnedBranchHoursAction(draft).catch(()=>null);
             if (!isCurrent()) return;
-            if (res.ok) {
+            if (res?.ok) {
               setHoursCopyTargets(res.targets);
               setHoursPhase("ready");
               onRefresh?.();
@@ -195,15 +202,7 @@ export function PaidSetupStepHost(props: PaidSetupStepHostProps) {
               setHoursPhase("unavailable");
             }
           }}
-          onReload={() => {
-            void readOwnedBranchHoursAction(targetScope).then((res) => {
-              if (res.ok && res.snapshot) {
-                setHoursSnap(res.snapshot);
-                setHoursCopyTargets(res.copyTargets);
-                setHoursPhase("ready");
-              }
-            });
-          }}
+          onReload={retryRead}
         />
       );
 
@@ -214,11 +213,12 @@ export function PaidSetupStepHost(props: PaidSetupStepHostProps) {
           scope={targetScope}
           boundaryFingerprint={scope.boundaryFingerprint}
           snapshot={knowledgeSnap}
+          onReload={retryRead}
           state={{ scope: targetScope, version: knowledgeSnap?.version ?? null, phase: knowledgePhase }}
           isCurrent={isCurrent}
           onAddWebsite={async (input) => {
             setKnowledgePhase("busy");
-            const res = await addOwnedBranchWebsiteAction(input);
+            const res = await addOwnedBranchWebsiteAction(input).catch(()=>null);
             if (!isCurrent()) return;
             if (res) {
               setKnowledgeSnap(res);
@@ -230,14 +230,27 @@ export function PaidSetupStepHost(props: PaidSetupStepHostProps) {
           }}
           onPageAction={async (input) => {
             setKnowledgePhase("busy");
-            const res = await pageActionOwnedBranchKnowledgeAction(input);
+            const res = await pageActionOwnedBranchKnowledgeAction(input).catch(()=>null);
             if (!isCurrent()) return;
             if (res) {
               setKnowledgeSnap(res);
               setKnowledgePhase("ready");
+              onRefresh?.();
             } else {
               setKnowledgePhase("unavailable");
             }
+          }}
+          onSaveText={async input=>{
+            setKnowledgePhase('busy');const result=await saveOwnedBranchKnowledgeTextAction(input).catch(()=>null);if(!isCurrent())return;
+            if(result){setKnowledgeSnap(result);setKnowledgePhase('saved');onRefresh?.();}else setKnowledgePhase('unavailable');
+          }}
+          onUploadFiles={async input=>{
+            setKnowledgePhase('busy');const result=await uploadOwnedBranchKnowledgeFilesAction(input).catch(()=>null);if(!isCurrent())return;
+            if(result){setKnowledgeSnap(result);setKnowledgePhase('saved');onRefresh?.();}else setKnowledgePhase('unavailable');
+          }}
+          onSourceApproval={async input=>{
+            setKnowledgePhase('busy');const result=await approveOwnedBranchKnowledgeSourceAction(input).catch(()=>null);if(!isCurrent())return;
+            if(result){setKnowledgeSnap(result);setKnowledgePhase('ready');onRefresh?.();}else setKnowledgePhase('conflict');
           }}
         />
       );
@@ -249,11 +262,12 @@ export function PaidSetupStepHost(props: PaidSetupStepHostProps) {
           scope={targetScope}
           boundaryFingerprint={scope.boundaryFingerprint}
           snapshot={langSnap}
+          onReload={retryRead}
           state={{ scope: targetScope, version: langSnap?.version ?? null, phase: langPhase }}
           isCurrent={isCurrent}
           onConfirm={async (input) => {
             setLangPhase("saving");
-            const res = await confirmOwnedBranchReplyLanguageAction(input);
+            const res = await confirmOwnedBranchReplyLanguageAction(input).catch(()=>null);
             if (!isCurrent()) return;
             if (res) {
               setLangSnap(res);
@@ -284,14 +298,14 @@ export function PaidSetupStepHost(props: PaidSetupStepHostProps) {
           isCurrent={isCurrent}
           onAsk={async (input) => {
             setTrialPhase("pending");
-            const res = await askOwnedBranchAssistantTrialAction(input);
+            const res = await askOwnedBranchAssistantTrialAction(input).catch(()=>null);
             if (!isCurrent()) return;
-            if (res.ok && res.snapshot) {
+            if (res?.ok && res.snapshot) {
               setTrialSnap(res.snapshot);
               setTrialPhase("ready");
               onRefresh?.();
             } else {
-              setTrialPhase(!res.ok && (res.code === "TRIAL_PENDING" || res.code === "TRIAL_OUTCOME_UNKNOWN") ? "unknown" : "error");
+              setTrialPhase(!res || (!res.ok && (res.code === "TRIAL_PENDING" || res.code === "TRIAL_OUTCOME_UNKNOWN")) ? "unknown" : "error");
             }
           }}
         />
@@ -328,21 +342,17 @@ export function PaidSetupStepHost(props: PaidSetupStepHostProps) {
           isCurrent={isCurrent}
           onLaunch={async (input) => {
             setLaunchPhase("pending");
-            const res = await confirmOwnedBranchLaunchAction(input);
+            const res = await confirmOwnedBranchLaunchAction(input).catch(()=>null);
             if (!isCurrent()) return;
             if (res) {
               setLaunchSnap(res);
               setLaunchPhase("ready");
               onRefresh?.();
             } else {
-              setLaunchPhase("error");
+              setLaunchPhase("unknown");
             }
           }}
-          onRefresh={() => {
-            void readOwnedBranchLaunchSummaryAction(targetScope).then((snap) => {
-              if (snap) setLaunchSnap(snap);
-            });
-          }}
+          onRefresh={retryRead}
         />
       );
   }

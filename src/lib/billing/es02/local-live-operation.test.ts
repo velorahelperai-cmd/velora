@@ -1,0 +1,13 @@
+import {beforeEach,afterEach,expect,it,vi} from 'vitest';
+import {mkdir,readFile,unlink} from 'node:fs/promises';
+import {resolve,join} from 'node:path';
+vi.mock('server-only',()=>({}));
+import {retainLocalLiveOperation,readLocalLiveOperation,bindLocalLiveOrder} from './local-live-operation';
+const root=resolve('artifacts/local-live-customer/operation-fixture'),binding={accountId:'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',grantId:'11111111-2222-4333-8444-555555555555'};
+const input={clientOpId:binding.accountId,selection:{term:'monthly' as const,slots:[{persona:'level_1' as const,package:'basic' as const}]},preparation:{name:'Fixture',type:'retail',country:'OM',city:'Muscat',phone:'+96890000000',branches:[{name:'Main',city:'Muscat'}]}};
+const file=join(root,'Velora','LocalCustomer',`operation-${binding.grantId}.json`);
+beforeEach(async()=>{vi.stubEnv('LOCALAPPDATA',root);await mkdir(join(root,'Velora','LocalCustomer'),{recursive:true});await unlink(file).catch(()=>{});});
+afterEach(async()=>{await unlink(file).catch(()=>{});vi.unstubAllEnvs();});
+it('retains a stable operation across page refresh and server restart without saving secrets',async()=>{await retainLocalLiveOperation({...binding,secretKey:'NEVER_STORE_ME'} as typeof binding,input);await bindLocalLiveOrder(binding,binding.grantId);expect(await readLocalLiveOperation(binding)).toMatchObject({...input,orderId:binding.grantId});expect(await readFile(file,'utf8')).not.toContain('NEVER_STORE_ME');});
+it('reuses the first operation id and refuses a changed plan or owner',async()=>{await retainLocalLiveOperation(binding,input);expect((await retainLocalLiveOperation(binding,{...input,clientOpId:binding.grantId})).clientOpId).toBe(input.clientOpId);await expect(retainLocalLiveOperation(binding,{...input,selection:{...input.selection,term:'yearly'}})).rejects.toThrow('LOCAL_OPERATION_RECOVERY_REQUIRED');await expect(readLocalLiveOperation({...binding,accountId:binding.grantId})).rejects.toThrow('LOCAL_OPERATION_RECOVERY_REQUIRED');});
+it('cannot replace a saved native order id',async()=>{await retainLocalLiveOperation(binding,input);await bindLocalLiveOrder(binding,binding.grantId);await expect(bindLocalLiveOrder(binding,binding.accountId)).rejects.toThrow('LOCAL_OPERATION_RECOVERY_REQUIRED');});

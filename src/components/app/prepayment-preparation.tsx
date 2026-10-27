@@ -30,7 +30,7 @@ import { recordPreparationValidationRejected } from "@/lib/logging/browser.mjs";
 import { setupSubscriptionReturn } from "@/lib/auth/setup-return";
 import { SetupStudioNoura } from "./setup-studio-noura";
 import { SetupTeamPlans } from "./setup-team-plans";
-import { SetupOrderReview } from "./setup-order-review";
+import { SetupPaymentDialog } from "./setup-payment-dialog";
 import { SetupJourneyStepper } from "./setup-journey-stepper";
 import { createSetupPlanJourney, type SetupPlanConfirmResult, type SetupPlanJourney, type SetupPlanJourneySnapshot } from "@/components/app/setup-plan-journey";
 import type { SubscriptionPackage, SubscriptionPersona, SubscriptionTerm } from "@/components/app/subscription-offers-view";
@@ -46,9 +46,11 @@ export function PrepaymentPreparation({
   userId,
   preferredNext = "",
   variant = "default",
+  checkoutNotice,
 }: {
   userId: string;
   preferredNext?: string;
+  checkoutNotice?: {ar:string;en:string};
   /** `studio` is /setup botanical presentation only; sibling routes keep default. */
   variant?: PreparationVariant;
 }) {
@@ -64,6 +66,7 @@ export function PrepaymentPreparation({
       <StudioShell
         userId={userId}
         preferredNext={preferredNext}
+        checkoutNotice={checkoutNotice}
         ar={locale === "ar"}
         captureToken={live.boundaryFingerprint ?? ""}
         liveSnapshot={session.liveSnapshot}
@@ -355,6 +358,7 @@ function StudioIcon({ kind, forward = "left" }: { kind: "store" | "pin" | "phone
 function StudioShell({
   userId,
   preferredNext,
+  checkoutNotice,
   ar,
   captureToken,
   liveSnapshot,
@@ -362,6 +366,7 @@ function StudioShell({
 }: {
   userId: string;
   preferredNext: string;
+  checkoutNotice?: {ar:string;en:string};
   ar: boolean;
   captureToken: string;
   liveSnapshot: () => { ready: boolean; userId: string | null; boundaryFingerprint: string | null };
@@ -389,6 +394,7 @@ function StudioShell({
       <StudioPreparationForm
         key={`${userId}:${captureToken}:${isCurrent() ? "live" : "blocked"}`}
         ar={ar}
+        checkoutNotice={checkoutNotice}
         userId={userId}
         captureToken={captureToken}
         liveSnapshot={liveSnapshot}
@@ -424,6 +430,7 @@ function StudioPreparationForm({
   liveSnapshot,
   isCurrent,
   motionEnabled,
+  checkoutNotice,
 }: {
   ar: boolean;
   userId: string;
@@ -431,6 +438,7 @@ function StudioPreparationForm({
   liveSnapshot: () => { ready: boolean; userId: string | null; boundaryFingerprint: string | null };
   isCurrent: () => boolean;
   motionEnabled: boolean;
+  checkoutNotice?: {ar:string;en:string};
 }) {
   const id = useId();
   const form = useRef<HTMLDivElement>(null);
@@ -1181,23 +1189,7 @@ function StudioPreparationForm({
           </fieldset>
           </div>
       </div>
-      ) : activeJourney && planSnap && phase === "review" ? (
-          <SetupOrderReview
-            ar={ar}
-            slots={planSnap.slots}
-            term={planSnap.term}
-            write={planSnap.write}
-            editingLocked={planSnap.editingLocked}
-            actor={{ accountId: planSnap.accountId, captureToken: planSnap.captureToken }}
-            consentAccepted={planSnap.consentAccepted}
-            onConsentChange={reviewConsent}
-            confirmReview={reviewConfirm}
-            retrySameOperation={() => reviewConfirm(true)}
-            onEditBranch={reviewBack}
-            onBackToPlans={() => reviewBack()}
-            motionEnabled={motionEnabled}
-          />
-        ) : activeJourney && planSnap ? (
+      ) : activeJourney && planSnap ? (
           <>
             <SetupJourneyStepper ar={ar} activeStep={2} className={studioStyles.steps} />
             <SetupTeamPlans
@@ -1212,6 +1204,23 @@ function StudioPreparationForm({
               motionEnabled={motionEnabled}
               initialBranchIndex={planBranchFocus}
             />
+            {phase === "review" && <SetupPaymentDialog
+              ar={ar}
+              checkoutNotice={checkoutNotice}
+              slots={planSnap.slots}
+              term={planSnap.term}
+              write={planSnap.write}
+              editingLocked={planSnap.editingLocked}
+              actor={{ accountId: planSnap.accountId, captureToken: planSnap.captureToken }}
+              consentAccepted={planSnap.consentAccepted}
+              onConsentChange={reviewConsent}
+              confirmReview={reviewConfirm}
+              retrySameOperation={() => reviewConfirm(true)}
+              onEditBranch={reviewBack}
+              onBackToPlans={() => reviewBack()}
+              motionEnabled={motionEnabled}
+              isCurrent={actorNow}
+            />}
           </>
         ) : null}
 

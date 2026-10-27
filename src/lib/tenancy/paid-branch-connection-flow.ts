@@ -121,7 +121,7 @@ export function paidBranchCompletionAccepted(flow: PaidBranchConnectionFlow, att
       && typeof row.code === "string" && row.code.length > 0 && row.code.length <= 4096
       && typeof row.wabaId === "string" && PROVIDER_ID.test(row.wabaId)
       && typeof row.phoneNumberId === "string" && PROVIDER_ID.test(row.phoneNumberId)
-      && typeof row.pin === "string" && /^\d{6}$/.test(row.pin);
+      && typeof row.pin === "string" && (/^\d{6}$/.test(row.pin)||(row.pin===''&&typeof row.authorizationTicket==='string'&&row.authorizationTicket.length>0&&row.authorizationTicket.length<=16384));
   }
   if (flow === "wa_coexistence") {
     return row.confirmed === true

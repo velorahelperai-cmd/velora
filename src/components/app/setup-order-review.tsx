@@ -55,6 +55,12 @@ export type SetupOrderReviewProps = {
   retrySameOperation?: () => Promise<SetupPlanConfirmResult>;
   /** Fired once with the server result when an order was created (UNPAID, service not ready). */
   onConfirmed?: (result: Extract<SetupPlanConfirmResult, { ok: true }>) => void;
+  /** Synchronous user-gesture gate for a managed payment popup. */
+  beforeConfirm?: () => boolean;
+  managedCheckout?: boolean;
+  paymentStatus?: ReactNode;
+  paymentStateLabel?: string;
+  checkoutNotice?: {ar:string;en:string};
   onEditBranch: (index: number) => void;
   onBackToPlans: () => void;
   /** Motion toggle for the persona figures. Default true; motion still needs no reduced-motion preference and viewport presence. */
@@ -125,7 +131,10 @@ export function safeTestCheckoutUrl(value?: string): string | null {
   if (!value) return null;
   try {
     const target = new URL(value);
-    if (target.origin === "https://uatcheckout.thawani.om" && /^\/pay\/checkout_[A-Za-z0-9]{8,150}$/.test(target.pathname) && !target.username && !target.password && !target.hash && /^[A-Za-z0-9_-]{8,256}$/.test(target.searchParams.get("key") ?? "") && [...target.searchParams.keys()].length === 1) return target.href;
+    const localLive=process.env.NEXT_PUBLIC_LOCAL_LIVE_CUSTOMER==='1';
+    const provider=target.origin==='https://uatcheckout.thawani.om'||(localLive&&target.origin==='https://checkout.thawani.om');
+    if (provider && /^\/pay\/checkout_[A-Za-z0-9]{8,150}$/.test(target.pathname) && !target.username && !target.password && !target.hash && /^[A-Za-z0-9_-]{8,256}$/.test(target.searchParams.get("key") ?? "") && [...target.searchParams.keys()].length === 1) return target.href;
+    if(localLive&&target.origin==='http://127.0.0.1:3330'&&/^\/account\/payment\/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/popup$/.test(target.pathname)&&!target.search&&!target.hash&&!target.username&&!target.password)return target.href;
     return null;
   } catch { return null; }
 }
@@ -264,6 +273,9 @@ function PersonaFigure({ persona, alt, enabled }: { persona: SubscriptionPersona
 (PersonaFigure as unknown as { hooks: boolean }).hooks = true;
 
 export type ViewProps = {
+  paymentStatus?: ReactNode;
+  paymentStateLabel?: string;
+  checkoutNotice?: {ar:string;en:string};
   ar: boolean;
   model: ReviewModel;
   slots: readonly BranchSlotChoice[];
@@ -301,7 +313,7 @@ export function SetupOrderReviewView(p: ViewProps) {
   if (phase === "switched") {
     statusNode = <p className={styles.statusError} data-role="status-switched">{tx(ar, T.switched)}</p>;
   } else if (phase === "created") {
-    statusNode = (
+    statusNode = p.paymentStatus ?? (
       <div className={styles.statusOk} data-role="status-created">
         <strong>{tx(ar, T.createdTitle)}</strong>
         <span>{tx(ar, T.createdBody)}</span>
@@ -451,15 +463,16 @@ export function SetupOrderReviewView(p: ViewProps) {
             ))}
           </ul>
           <div className={styles.total}>
-            <span>{tx(ar, yearly ? T.totalYearly : T.totalMonthly)}</span>
+            <span>{p.checkoutNotice?(ar?'قيمة الباقة قبل الخصم':'Plan value before discount'):tx(ar, yearly ? T.totalYearly : T.totalMonthly)}</span>
             <p data-role="total">
               <bdi dir="ltr" className={styles.totalNum}>{formatOmr(model.totalBaisa)}</bdi> <span>{tx(ar, T.omr)}</span>
             </p>
-            <span className={styles.badge} data-role="unpaid-badge">{tx(ar, T.unpaid)}</span>
+            <span className={styles.badge} data-role="unpaid-badge">{p.paymentStateLabel ?? tx(ar, T.unpaid)}</span>
             <small className={styles.muted} data-role="price-source" data-source={model.source}>
               {tx(ar, model.source === "order" ? T.priceOrder : T.pricePreview)}
             </small>
           </div>
+          {p.checkoutNotice&&<p role="note" data-role="collection-offer"><strong>{tx(ar,p.checkoutNotice)}</strong></p>}
 
           {showConfirm ? (
             <label className={styles.consent} htmlFor={p.ids.consent}>
@@ -549,7 +562,7 @@ export function SetupOrderReview(props: SetupOrderReviewProps) {
       onConfirmed: (result) => {
         cell.props.onConfirmed?.(result);
         const checkoutUrl = safeTestCheckoutUrl(result.checkoutUrl);
-        if (checkoutUrl && typeof window !== "undefined") window.location.assign(checkoutUrl);
+        if (!cell.props.managedCheckout && checkoutUrl && typeof window !== "undefined") window.location.assign(checkoutUrl);
       },
       currentOpId: () => {
         const w = cell.props.write;
@@ -579,6 +592,7 @@ export function SetupOrderReview(props: SetupOrderReviewProps) {
     if (!liveFor(key) || controller.isBusy()) return;
     const live = cell.live;
     if (!live.complete || !live.consent || cell.props.write.kind === "inflight") return;
+    if (cell.props.beforeConfirm?.() === false) return;
     void controller.start(key, () => {
       // Re-checked synchronously right before the bound callback fires.
       if (!liveFor(key)) return Promise.reject(new Error("stale"));
@@ -589,6 +603,7 @@ export function SetupOrderReview(props: SetupOrderReviewProps) {
   function onRetry() {
     if (!liveFor(key) || controller.isBusy()) return;
     if (!cell.props.retrySameOperation) return;
+    if (cell.props.beforeConfirm?.() === false) return;
     void controller.start(key, () => {
       const retry = cell.props.retrySameOperation;
       if (!liveFor(key) || !retry) return Promise.reject(new Error("stale"));
@@ -637,6 +652,9 @@ export function SetupOrderReview(props: SetupOrderReviewProps) {
       motionEnabled={props.motionEnabled !== false}
       reference={reference}
       checkoutUrl={write.kind === "unpaid" ? write.checkoutUrl : local.kind === "created" ? local.result.checkoutUrl : undefined}
+      paymentStatus={props.paymentStatus}
+      paymentStateLabel={props.paymentStateLabel}
+      checkoutNotice={props.checkoutNotice}
       canRetry={phase === "unknown" && !!props.retrySameOperation && !busy}
       termsHref={props.termsHref === undefined ? "/terms" : props.termsHref}
       ids={ids}

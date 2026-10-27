@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
+import {projectTrustedBoundSelection,mergePaidBranchChannelProof} from './paid-setup-contracts';
 
 const VALID_ACCOUNT_ID = "11111111-1111-4111-8111-111111111111";
 const OTHER_ACCOUNT_ID = "99999999-9999-4999-8999-999999999999";
@@ -8,6 +9,7 @@ const VALID_OP_ID = "44444444-4444-4444-8444-444444444444";
 
 let currentSessionId: string | null = VALID_ACCOUNT_ID;
 let rpcMock = vi.fn();
+vi.mock('./paid-setup-actions',()=>({readOwnedPaidBranchSetupAction:vi.fn(async()=>mergePaidBranchChannelProof(projectTrustedBoundSelection({companyId:VALID_COMPANY_ID,branchId:VALID_BRANCH_ID,branchLabel:'Main',orderGroupId:VALID_COMPANY_ID,slotIndex:0,persona:'level_1',package:'basic',term:'monthly',maxChannels:1,employeesExcludingOwner:2,clockState:'waiting_readiness',asOf:'2026-10-26T00:00:00Z'},{channels:['whatsapp']}),[{companyId:VALID_COMPANY_ID,branchId:VALID_BRANCH_ID,channel:'whatsapp',verified:true,generation:1,revoked:false,stale:false}]))}));
 
 vi.mock("@/lib/auth/server-identity", () => ({
   readSessionIdentity: vi.fn(async () => {
@@ -50,12 +52,12 @@ describe("paid-launch-actions", () => {
             setup: {
               companyId: VALID_COMPANY_ID,
               selectedBranchId: VALID_BRANCH_ID,
-              sourceStatus: "ready",
-              selectedChannels: ["whatsapp"],
-              entitlement: { package: "basic" },
+              sourceStatus: null,
+              selectedChannels: null,
+              entitlement: null,
               launch: { confirmationRequired: true, confirmed: false, canRequest: true, blockedReasons: [] },
             },
-            readiness: { status: "ready", revision: "rev-hash", blockers: [] },
+            readiness: { status: "ready", revision: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", blockers: [] },
             summary: {
               channels: [{ channel: "whatsapp", detail: "تم إثبات الربط", status: "verified" }],
               hours: { detail: "مكتملة ومحفوظة", status: "verified" },

@@ -8,6 +8,7 @@ import {
   type BranchHoursSnapshot,
 } from "@/lib/tenancy/branch-hours-contracts";
 import styles from "./paid-branch-hours.module.css";
+import {confirmSetupLeave,useSetupUnsavedChanges} from './paid-setup-unsaved';
 
 export type PaidBranchHoursProps = {
   locale: "ar" | "en";
@@ -35,7 +36,7 @@ export function PaidBranchHours(p: PaidBranchHoursProps) {
   const scoped = !!p.boundaryFingerprint && sameBranchHoursScope(p.scope, p.state.scope);
   if (scoped && p.state.phase === "loading") return <section className={styles.view} dir={p.locale === "ar" ? "rtl" : "ltr"} aria-busy="true"><p role="status">{t("جارٍ تحميل مواعيد الفرع…", "Loading branch hours…")}</p></section>;
   if (!scoped || !p.snapshot || !sameBranchHoursScope(p.scope, p.snapshot.scope) ||
-      p.state.version !== p.snapshot.version || p.state.phase === "unavailable" || !validateBranchHours(p.snapshot.schedule).ok)
+      p.state.version !== p.snapshot.version || !validateBranchHours(p.snapshot.schedule).ok)
     return <section className={styles.view} dir={p.locale === "ar" ? "rtl" : "ltr"}><p role="status">{t("مواعيد هذا الفرع غير متاحة. أعد تحميل بيانات الفرع.", "Hours for this branch are unavailable. Reload the branch data.")}</p></section>;
   return <HoursForm key={branchHoursViewKey(p)} {...p} snapshot={p.snapshot}/>;
 }
@@ -56,6 +57,7 @@ function HoursForm(p: PaidBranchHoursProps & {snapshot: BranchHoursSnapshot}) {
   const fingerprint = JSON.stringify([p.scope, p.snapshot.version, draft, selected, p.copyTargets]);
   const confirming = copy.ok && confirmation === fingerprint;
   const dirty = JSON.stringify(draft) !== JSON.stringify(p.snapshot.schedule);
+  useSetupUnsavedChanges(dirty,p.isCurrent,p.locale);
   const label = (day: BranchHoursDay) => dayLabels[day][ar ? 0 : 1];
   function change(day: BranchHoursDay, value: BranchHoursDayValue) {
     if (locked || !p.isCurrent()) return;
@@ -72,13 +74,14 @@ function HoursForm(p: PaidBranchHoursProps & {snapshot: BranchHoursSnapshot}) {
     if (value.state === "open") return value.intervals.map(interval => `${interval.start}–${interval.end}${interval.nextDay ? t(" (اليوم التالي)", " (next day)") : ""}`).join("، ");
     return value.state === "unset" ? t("غير مضبوط", "Not set") : t("مغلق", "Closed");
   }
-  return <section className={styles.view} dir={ar ? "rtl" : "ltr"} aria-labelledby={id} aria-busy={busy || p.state.phase === "saving"}>
+  if(p.state.phase==='unavailable')return <section className={styles.view} data-setup-unsaved={dirty?'true':undefined} dir={ar?'rtl':'ltr'}><p role="alert">{t('مواعيد هذا الفرع غير متاحة. لم نؤكد الحفظ؛ تعديلاتك المحلية محفوظة في هذه الشاشة.','Hours for this branch are unavailable. Saving is not confirmed; your local edits are retained in this screen.')}</p>{p.onReload&&<button type="button" onClick={event=>{if(p.isCurrent()&&confirmSetupLeave(event.currentTarget.parentElement?.parentElement??null,p.locale))p.onReload?.({...p.scope});}}>{t('إعادة المحاولة','Retry')}</button>}</section>;
+  return <section className={styles.view} data-setup-unsaved={dirty?'true':undefined} dir={ar ? "rtl" : "ltr"} aria-labelledby={id} aria-busy={busy || p.state.phase === "saving"}>
     <header className={styles.header}><h2 id={id}>{t("مواعيد عمل الفرع", "Branch working hours")}</h2>
       <p><bdi>{p.snapshot.branchLabel}</bdi> <span>{t("المنطقة الزمنية: ", "Timezone: ")}<bdi>{p.snapshot.timezone || t("غير معروفة", "Unknown")}</bdi></span></p>
     </header>
     <p className={styles.note}>{t("الأوقات حسب ساعة الفرع المحلية. تُسجّل الفترة في يوم بدايتها؛ امتدادها إلى اليوم التالي يظهر أسفل ذلك اليوم. لا تغيّر هذه الصفحة سياسة الرد خارج الدوام.", "Times use the branch's local clock. Each interval belongs to its starting day; carry-over appears on the following day. This page does not change after-hours reply policy.")}</p>
     {!knownBranchHoursTimezone(p.snapshot.timezone) && <p role="status" className={styles.error}>{t("يجب تأكيد المنطقة الزمنية المخزنة قبل الحفظ أو النسخ. لم تُستخدم منطقة افتراضية.", "Confirm the stored timezone before saving or copying. No default timezone was used.")}</p>}
-    {p.state.phase === "conflict" && <div role="alert" className={styles.error}><p>{t("تغيّرت المواعيد المحفوظة. أعد التحميل لمراجعتها قبل الحفظ؛ ستُستبدل تعديلاتك المحلية.", "Saved hours changed. Reload to review them before saving; this replaces your local edits.")}</p>{p.onReload && <button type="button" onClick={() => {if (p.isCurrent()) p.onReload?.({...p.scope});}}>{t("إعادة التحميل", "Reload")}</button>}</div>}
+    {p.state.phase === "conflict" && <div role="alert" className={styles.error}><p>{t("تغيّرت المواعيد المحفوظة. أعد التحميل لمراجعتها قبل الحفظ؛ ستُستبدل تعديلاتك المحلية.", "Saved hours changed. Reload to review them before saving; this replaces your local edits.")}</p>{p.onReload && <button type="button" onClick={event => {if (p.isCurrent()&&confirmSetupLeave(event.currentTarget.closest("section")?.parentElement??null,p.locale)) p.onReload?.({...p.scope});}}>{t("إعادة التحميل", "Reload")}</button>}</div>}
     {p.state.phase === "saved" && !dirty && <p role="status">{t("تم تأكيد حفظ هذه النسخة من الخادم.", "The server confirmed this saved version.")}</p>}
     {failed && <p role="alert" className={styles.error}>{t("تعذر إرسال الطلب. راجع الحالة الحالية قبل المحاولة مجددًا.", "The request could not be submitted. Review the current state before trying again.")}</p>}
     <form noValidate onSubmit={event => {event.preventDefault(); if (save.ok && p.onSave) void dispatch(() => p.onSave?.(save.draft));}}>

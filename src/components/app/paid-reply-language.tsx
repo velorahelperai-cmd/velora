@@ -2,6 +2,7 @@
 import {useId,useLayoutEffect,useRef,useState} from "react";
 import type {CompanyRecord} from "@/lib/tenancy/types";
 import styles from "./paid-reply-language.module.css";
+import {useSetupUnsavedChanges} from './paid-setup-unsaved';
 
 export type ReplyLanguageScope={expectedAccountId:string;companyId:string;branchId:string};
 /** Presentation projection only. The host must validate the authoritative company and setup result. */
@@ -16,6 +17,7 @@ export type PaidReplyLanguageProps={
   snapshot:ReplyLanguageSnapshot|null;
   state:{scope:ReplyLanguageScope;version:number|null;phase:"loading"|"ready"|"saving"|"error"|"conflict"|"unavailable"};
   isCurrent:()=>boolean;
+  onReload?:()=>void;
   onConfirm?:(input:ReplyLanguageScope & {expectedVersion:number;replyLanguage:CompanyRecord["reply_language"]})=>void|Promise<void>;
 };
 const sameScope=(a:ReplyLanguageScope,b:ReplyLanguageScope)=>!!a.expectedAccountId&&!!a.companyId&&!!a.branchId&&a.expectedAccountId===b.expectedAccountId&&a.companyId===b.companyId&&a.branchId===b.branchId;
@@ -25,7 +27,7 @@ export function PaidReplyLanguage(p:PaidReplyLanguageProps){
   const ar=p.locale==="ar",t=(a:string,e:string)=>ar?a:e;
   const scoped=!!p.boundaryFingerprint&&sameScope(p.scope,p.state.scope);
   if(scoped&&p.state.phase==="loading")return <section className={styles.view} dir={ar?"rtl":"ltr"} aria-busy="true"><p role="status">{t("جارٍ تحميل إعداد لغة الرد.","Loading reply-language settings.")}</p></section>;
-  if(!scoped||!p.snapshot||!sameScope(p.scope,p.snapshot.scope)||!validVersion(p.snapshot.version)||p.state.version!==p.snapshot.version||p.state.phase==="unavailable")
+  if(!scoped||!p.snapshot||!sameScope(p.scope,p.snapshot.scope)||!validVersion(p.snapshot.version)||p.state.version!==p.snapshot.version)
     return <section className={styles.view} dir={ar?"rtl":"ltr"}><p role="status">{t("إعداد لغة الرد غير متاح لهذا الحساب والفرع. أعد تحميل البيانات.","Reply-language settings are unavailable for this account and branch. Reload the data.")}</p></section>;
   return <LanguageForm key={replyLanguageViewKey(p)} {...p} snapshot={p.snapshot}/>;
 }
@@ -36,6 +38,8 @@ function LanguageForm(p:PaidReplyLanguageProps & {snapshot:ReplyLanguageSnapshot
   useLayoutEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
   const known=["ar","en","both"].includes(p.snapshot.replyLanguage??"");
   const confirmed=p.snapshot.confirmation==="confirmed"&&p.snapshot.replyLanguage==="both";
+  useSetupUnsavedChanges(ack&&!confirmed,p.isCurrent,p.locale);
+  if(p.state.phase==='unavailable')return <section className={styles.view} data-setup-unsaved={ack&&!confirmed?'true':undefined}><p role="status">{t('إعداد لغة الرد غير متاح. لم يتأكد الحفظ.','Reply-language settings are unavailable. Saving is unconfirmed.')}</p>{p.onReload&&<button onClick={()=>{if(p.isCurrent())p.onReload?.();}}>{t('إعادة المحاولة','Retry')}</button>}</section>;
   const locked=p.state.phase!=="ready"||pending||!known||p.snapshot.confirmation!=="unconfirmed"||p.snapshot.canConfirm!==true||!p.onConfirm;
   async function submit(){
     if(locked||!ack||reserved.current||!p.isCurrent())return;
@@ -45,7 +49,7 @@ function LanguageForm(p:PaidReplyLanguageProps & {snapshot:ReplyLanguageSnapshot
     finally{reserved.current=false;if(mounted.current&&p.isCurrent())setPending(false);}
   }
   const current=p.snapshot.replyLanguage==="ar"?t("العربية","Arabic"):p.snapshot.replyLanguage==="en"?t("الإنجليزية","English"):p.snapshot.replyLanguage==="both"?t("العربية والإنجليزية حسب لغة العميل","Arabic and English, following the customer"):t("غير معروف","Unknown");
-  return <section className={styles.view} dir={ar?"rtl":"ltr"} aria-labelledby={id} aria-busy={pending||p.state.phase==="saving"}>
+  return <section className={styles.view} data-setup-unsaved={ack&&!confirmed?'true':undefined} dir={ar?"rtl":"ltr"} aria-labelledby={id} aria-busy={pending||p.state.phase==="saving"}>
     <header><p className={styles.eyebrow}>{t("إعداد المساعد","Assistant setup")}</p><h2 id={id}>{t("لغة الرد التلقائية","Automatic reply language")}</h2>
       <p>{t("الشركة: ","Company: ")}<bdi>{p.snapshot.companyLabel}</bdi> · {t("الفرع المحدد: ","Selected branch: ")}<bdi>{p.snapshot.branchLabel}</bdi></p></header>
     <div className={styles.explanation}><h3>{t("العربية والإنجليزية، حسب لغة العميل","Arabic and English, following the customer")}</h3>

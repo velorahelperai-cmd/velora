@@ -259,6 +259,19 @@ export async function startStack({ gatewayPort = 3130, authPort = 3140, restPort
     ingress.set(kind, server);
     progress(`LOCAL_INTERNAL_TCP_INGRESS_READY:${kind}`);
   }
+  async function closeLocalIngress(kind) {
+    const server=ingress.get(kind);
+    if(!server)return false;
+    for(const socket of server.localSockets)socket.destroy();
+    await new Promise(ok=>server.close(ok));
+    ingress.delete(kind);
+    return true;
+  }
+  async function ensureLocalIngress(kind) {
+    const ports={auth:[authPort,9999],storage:[nativeStoragePort,5000],rest:[restPort,3000]};
+    const binding=ports[kind];if(!binding)throw Error('LOCAL_INGRESS_KIND_INVALID');
+    await localIngress(kind,binding[0],binding[1]);
+  }
   async function authRequest(path, body, accessToken = serviceRoleKey) {
     const response = await fetch(`http://127.0.0.1:${authPort}${path}`, { method: "POST", redirect: "error", signal: AbortSignal.timeout(15_000), headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json", Connection: "close" }, body: JSON.stringify(body) });
     if (!response.ok) throw Error(`LOCAL_AUTH_REQUEST_${response.status}: ${redact(await response.text())}`);
@@ -440,7 +453,7 @@ export async function startStack({ gatewayPort = 3130, authPort = 3140, restPort
     await new Promise((ok, fail) => { gateway.once("error", fail); gateway.listen(gatewayPort, "127.0.0.1", ok); });
     await verify();
     progress("LOCAL_HTTP_STACK_READY");
-    return { databaseUrl: databasePort === undefined ? undefined : `postgresql://supabase_admin:${databasePassword}@127.0.0.1:${databasePort}/${DB}`, url, localUrl: url, anonKey, anonJwt: anonKey, serviceRoleKey, serviceJwt: serviceRoleKey, owner, migrationCount, sessionPolicy, runId, network: networkName, database: DB, sql, rows, adminCreateUser, readEmailOtp, readEmailRecoveryLink, verify, close, redact, names: Object.freeze(names) };
+    return { databaseUrl: databasePort === undefined ? undefined : `postgresql://supabase_admin:${databasePassword}@127.0.0.1:${databasePort}/${DB}`, url, localUrl: url, anonKey, anonJwt: anonKey, serviceRoleKey, serviceJwt: serviceRoleKey, owner, migrationCount, sessionPolicy, runId, network: networkName, database: DB, sql, rows, adminCreateUser, readEmailOtp, readEmailRecoveryLink, verify, closeLocalIngress, ensureLocalIngress, close, redact, names: Object.freeze(names) };
   } catch (error) {
     await close().catch(cleanupError => progress(`LOCAL_CLEANUP_REFUSED:${redact(cleanupError.message)}`));
     throw Error(redact(error.message));

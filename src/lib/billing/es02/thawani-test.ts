@@ -45,7 +45,7 @@ export function thawaniTestCheckoutUrl(config: ThawaniTestConfig, sessionId: str
 
 export async function createThawaniTestSession(config: ThawaniTestConfig, binding: ThawaniBinding, returnUrl: string, http: typeof fetch = fetch): Promise<ThawaniSession> {
   const target = new URL(returnUrl);
-  if (target.origin !== "https://www.velorahelper.com" || !/^\/account\/payment\/[0-9a-f-]{36}$/.test(target.pathname) || target.search || target.hash || target.username || target.password
+  if (target.origin !== "https://www.velorahelper.com" || !/^\/account\/payment\/[0-9a-f-]{36}(?:\/popup)?$/.test(target.pathname) || target.search || target.hash || target.username || target.password
     || !Number.isSafeInteger(binding.amountBaisa) || binding.amountBaisa < 100 || !binding.reference || !binding.token) throw new Error("thawani_invalid_binding");
   const row = await request(config, "/checkout/session", { method: "POST", body: JSON.stringify({
     client_reference_id: binding.reference, mode: "payment", products: [{ name: "Velora Test subscription", quantity: 1, unit_amount: binding.amountBaisa }],

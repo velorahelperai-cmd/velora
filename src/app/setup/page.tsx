@@ -9,12 +9,12 @@ import { AccessGate } from "@/components/app/access-gate";
 import { SetupWizard } from "@/components/app/setup-wizard";
 import { PrepaymentPreparation } from "@/components/app/prepayment-preparation";
 import { SetupLoading } from "@/components/app/setup-loading";
-import { listKnowledgeSources } from "@/lib/knowledge/actions";
-import type { KnowledgeSourceRecord } from "@/lib/knowledge/types";
+
+
 import { getCompanyAccess, loginPathForReturn } from "@/lib/tenancy/access";
-import { getCompanyReviewRequest } from "@/lib/tenancy/actions";
-import type { CompanyReviewRequest } from "@/lib/tenancy/types";
-import {readSetupFileContext} from '@/lib/tenancy/setup-draft-actions';
+
+
+
 import {masterJourneyEnabled} from '@/lib/master-journey/rollout';
 
 export const metadata: Metadata = { title: "Prepare your business · Velora" };
@@ -41,51 +41,7 @@ export default async function Page() {
       <PrepaymentPreparation key={userId} userId={userId} preferredNext={preferredNext} variant="studio" />
     );
   }
-  const draftScope={expectedUserId:userId,expectedCompanyId:company?.id??null};
-  const draftRead=readSetupFileContext(draftScope);
-
-  let initialKnowledge: KnowledgeSourceRecord[] = [];
-  let knowledgeLoadFailed = false;
-  let approvalFoundation: "ready" | "unavailable" = "ready";
-  let initialReview: CompanyReviewRequest | null = null;
-  let reviewLoadFailed = false;
-
-  if (company) {
-    const [listed, review] = await Promise.all([
-      listKnowledgeSources({ expectedCompanyId: company.id }),
-      access.context.membership?.role === "owner"
-        ? getCompanyReviewRequest({ expectedCompanyId: company.id })
-        : Promise.resolve(null),
-    ]);
-    if (listed.ok) {
-      initialKnowledge = listed.data.sources;
-      approvalFoundation = listed.data.approvalFoundation;
-    } else {
-      knowledgeLoadFailed = true;
-    }
-
-    if (review) {
-      if (review.ok) initialReview = review.data;
-      else reviewLoadFailed = true;
-    }
-  }
-
-  const initialDraftRead={scope:draftScope,result:await draftRead};
-
-  return (
-    <Suspense fallback={<SetupLoading />}>
-      <SetupWizard
-        initialDraftRead={initialDraftRead}
-        masterJourneyEnabled={masterEnabled}
-        userId={userId}
-        preferredNext={preferredNext}
-        initialCompany={company}
-        initialKnowledge={initialKnowledge}
-        knowledgeLoadFailed={knowledgeLoadFailed}
-        approvalFoundation={approvalFoundation}
-        initialReview={initialReview}
-        reviewLoadFailed={reviewLoadFailed}
-      />
-    </Suspense>
-  );
+  // Confirmed-company setup uses paid branch reads in SetupWizard. Legacy draft,
+  // company knowledge and administrative review data are not consumed by that path.
+  return <Suspense fallback={<SetupLoading />}><SetupWizard masterJourneyEnabled={masterEnabled} userId={userId} preferredNext={preferredNext} initialCompany={company}/></Suspense>;
 }

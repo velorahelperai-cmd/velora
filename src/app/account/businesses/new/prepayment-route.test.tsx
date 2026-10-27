@@ -1,4 +1,5 @@
 import {expect,it,vi} from 'vitest';
+vi.mock('@/lib/billing/es02/local-live-operation',()=>({readLocalLiveOperation:vi.fn(async()=>null)}));
 const f=vi.hoisted(()=>({read:vi.fn(()=>{throw new Error('new preparation cannot restore server drafts');})}));
 vi.mock('@/lib/master-journey/rollout',()=>({masterJourneyEnabled:()=>true}));
 vi.mock('@/lib/tenancy/access',()=>({getCompanyAccess:async()=>({ok:true,context:{userId:'fixture',company:null,workspaceChoices:[]}})}));
