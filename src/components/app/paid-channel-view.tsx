@@ -82,20 +82,21 @@ async function resolveDefaultActions(): Promise<Required<Pick<PaidChannelViewAct
   };
 }
 
-function loadMetaFacebookSdk(appId: string, graphVersion: string): Promise<FbSdk | null> {
+function loadMetaFacebookSdk(appId: string, graphVersion: string, trace: (stage: string) => void): Promise<FbSdk | null> {
+  trace("sdk_load_started");
   if (typeof window === "undefined" || typeof document === "undefined") return Promise.resolve(null);
   const win = window as unknown as { FB?: FbSdk; fbAsyncInit?: () => void };
   if (win.FB) {
-    win.FB.init({ appId, autoLogAppEvents: true, xfbml: true, version: graphVersion });
-    return Promise.resolve(win.FB);
+    try { win.FB.init({ appId, autoLogAppEvents: true, xfbml: true, version: graphVersion }); trace("sdk_init_ready"); return Promise.resolve(win.FB); }
+    catch { trace("sdk_init_failed"); return Promise.resolve(null); }
   }
   return new Promise((resolve) => {
-    const timeout = window.setTimeout(() => resolve(null), 15_000);
+    const timeout = window.setTimeout(() => { trace("sdk_load_timeout"); resolve(null); }, 15_000);
     win.fbAsyncInit = () => {
       window.clearTimeout(timeout);
       if (win.FB) {
-        win.FB.init({ appId, autoLogAppEvents: true, xfbml: true, version: graphVersion });
-        resolve(win.FB);
+        try { win.FB.init({ appId, autoLogAppEvents: true, xfbml: true, version: graphVersion }); trace("sdk_init_ready"); resolve(win.FB); }
+        catch { trace("sdk_init_failed"); resolve(null); }
       } else {
         resolve(null);
       }
@@ -109,6 +110,7 @@ function loadMetaFacebookSdk(appId: string, graphVersion: string): Promise<FbSdk
       script.crossOrigin = "anonymous";
       script.onerror = () => {
         window.clearTimeout(timeout);
+        trace("sdk_load_failed");
         resolve(null);
       };
       document.head.appendChild(script);
@@ -116,16 +118,25 @@ function loadMetaFacebookSdk(appId: string, graphVersion: string): Promise<FbSdk
   });
 }
 
-async function runBrowserWhatsappSdkPopup(
+export async function runBrowserWhatsappSdkPopup(
   launch: Extract<PaidBranchConnectionLaunch, { flow: "wa_new_number" | "wa_coexistence" }>,
 ): Promise<WhatsappSdkPopupResult> {
-  const fb = await loadMetaFacebookSdk(launch.appId, launch.graphVersion);
+  // A fresh, non-identifying correlation value; never log attempt IDs or provider payloads.
+  const correlationId = crypto.randomUUID();
+  const trace = (stage: string, facts: Record<string, boolean> = {}) => console.info("whatsapp_signup_stage", { correlation_id: correlationId, stage, ...facts });
+  const fb = await loadMetaFacebookSdk(launch.appId, launch.graphVersion, trace);
   if (!fb) return { kind: "error" };
+  return launchPreparedWhatsappSdkPopup(launch, fb, trace);
+}
 
+function launchPreparedWhatsappSdkPopup(
+  launch: Extract<PaidBranchConnectionLaunch, { flow: "wa_new_number" | "wa_coexistence" }>,
+  fb: FbSdk, trace: (stage: string, facts?: Record<string, boolean>) => void,
+): Promise<WhatsappSdkPopupResult> {
   return new Promise((resolve) => {
     let settled = false;
     let onMessage: (event: MessageEvent) => void = () => {};
-    const timeout=window.setTimeout(()=>finishOnce({kind:'error'}),5*60_000);
+    const timeout=window.setTimeout(()=>{trace('callback_or_signal_timeout');finishOnce({kind:'error'});},5*60_000);
     const finishOnce = (result: WhatsappSdkPopupResult) => {
       if (settled) return;
       settled = true;
@@ -142,8 +153,10 @@ async function runBrowserWhatsappSdkPopup(
         }
       };
       onMessage = (event: MessageEvent) => {
+        if (settled) return;
         const parsed = parseSignupMessage(event.origin, event.data);
         if (!parsed) return;
+        trace("signup_signal", { finish: parsed.event === "FINISH", cancel: parsed.event === "CANCEL", error: parsed.event === "ERROR" || parsed.event === "UNSUPPORTED", assets_received: parsed.event === "FINISH" });
         if (parsed.event === "CANCEL") {
           finishOnce({ kind: "cancelled" });
           return;
@@ -156,13 +169,17 @@ async function runBrowserWhatsappSdkPopup(
         checkReady();
       };
       window.addEventListener("message", onMessage);
+      trace("fb_login_invoked");
       fb.login((response) => {
+        if (settled) return;
         const code = response?.authResponse?.code;
+        trace("oauth_callback_received", { code_received: typeof code === "string" && code.trim().length > 0 });
         if (typeof code === "string" && code.trim().length > 0) {
           signals = joinSignupSignals(signals, { code });
           checkReady();
         } else if (!settled) {
-          finishOnce({ kind: "cancelled" });
+          // A missing code is not an explicit Meta cancellation: keep the attempt for reconciliation.
+          finishOnce({ kind: "error" });
         }
       }, signupLoginOptions(launch.configId));
       return;
@@ -184,23 +201,30 @@ async function runBrowserWhatsappSdkPopup(
       }
     };
     onMessage = (event: MessageEvent) => {
+      if (settled) return;
       const obs = parseEmbeddedSignupMessage({ origin: event.origin, data: event.data }, "coexistence");
       if (obs.kind === "ignored") return;
+      trace("signup_signal", { finish: obs.kind === "finish", cancel: obs.kind === "cancel", error: obs.kind === "error" || obs.kind === "invalid" || obs.kind === "unknown", assets_received: obs.kind === "finish" });
       attempt = joinSignupSignal(attempt, launch.attemptId, obs);
       checkCoexistence();
     };
     window.addEventListener("message", onMessage);
+    trace("fb_login_invoked");
     fb.login((response) => {
+      if (settled) return;
       const code = response?.authResponse?.code;
+      trace("oauth_callback_received", { code_received: typeof code === "string" && code.trim().length > 0 });
       if (typeof code === "string" && code.trim().length > 0) {
         attempt = joinSignupSignal(attempt, launch.attemptId, { kind: "code", code });
         checkCoexistence();
       } else if (!settled) {
-        finishOnce({ kind: "cancelled" });
+        finishOnce({ kind: "error" });
       }
     }, coexistenceLoginOptions(launch.configId));
   });
 }
+
+function currentTime(): number { return Date.now(); }
 
 function makeClientOpId(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -224,6 +248,8 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
   const [awaitingPin,setAwaitingPin]=useState(false);
   const pinAnswer=useRef<((value:string|null)=>void)|null>(null);
   const connectReserved=useRef(false);
+  const preparedPopup = useRef<{ attemptId: string; generation: number; expiresAt: number; launch: () => void; abandon: () => void } | null>(null);
+  const [popupReady, setPopupReady] = useState(false);
   const [confirmedPhone, setConfirmedPhone] = useState("");
   const [phoneConfirmed, setPhoneConfirmed] = useState(false);
   const unsavedConnection=!!(awaitingPin||pin||confirmedPhone)&&!(connectionRead?.connection.state==='connected'&&connectionRead.connection.verified);
@@ -240,6 +266,7 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
     mounted.current = true;
     return () => {
       mounted.current = false;
+      preparedPopup.current?.abandon(); preparedPopup.current = null;
       pinAnswer.current?.(null);pinAnswer.current=null;
     };
   }, []);
@@ -280,6 +307,7 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
       return;
     }
     connectReserved.current=true;
+    let ownsReservation = true;
     setFeedback(null);
     setInFlight("starting");
     try {
@@ -304,10 +332,32 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
         setInFlight(null);
         return;
       }
-      const runPopup = actions?.launchWhatsappSdk ?? runBrowserWhatsappSdkPopup;
-      const popupResult = await runPopup(started.launch);
+      const attempt = started.read.connection.attempt;
+      const expiresAt = Date.parse(attempt?.expiresAt ?? "");
+      if (!attempt || attempt.id !== started.launch.attemptId || attempt.status !== "pending" || !Number.isFinite(expiresAt) || expiresAt <= currentTime()) {
+        setInFlight(null); setFeedback(t("انتهت المحاولة أو تعذّر التحقق منها. استخدم الاسترداد أو الإلغاء.", "The attempt expired or could not be verified. Use recovery or cancellation.")); return;
+      }
+      const generation = attempt.generation;
+      const correlationId = makeClientOpId();
+      const trace = (stage: string, facts: Record<string, boolean> = {}) => console.info("whatsapp_signup_stage", { correlation_id: correlationId, stage, ...facts });
+      const fb = actions?.launchWhatsappSdk ? null : await loadMetaFacebookSdk(started.launch.appId, started.launch.graphVersion, trace);
       if (!mounted.current || !checkCurrent()) return;
-      const generation = started.read.connection.attempt?.generation ?? 1;
+      if (!actions?.launchWhatsappSdk && !fb) { setInFlight(null); setFeedback(t("تعذر تجهيز Facebook. راجع حالة المحاولة قبل المتابعة.", "Facebook could not be prepared. Review the attempt before continuing.")); return; }
+      if (expiresAt <= currentTime()) { setInFlight(null); setFeedback(t("انتهت المحاولة. استخدم الاسترداد أو الإلغاء.", "The attempt expired. Use recovery or cancellation.")); return; }
+      let abandoned = false;
+      const popupResult = await new Promise<WhatsappSdkPopupResult>((resolve) => {
+        const timer = window.setTimeout(() => { abandoned = true; preparedPopup.current = null; setPopupReady(false); setFeedback(t("انتهت المحاولة. استخدم الاسترداد أو الإلغاء.", "The attempt expired. Use recovery or cancellation.")); resolve({kind:"error"}); }, Math.min(expiresAt - Date.now(), 2_147_483_647));
+        const abandon = () => { abandoned = true; ownsReservation = false; window.clearTimeout(timer); resolve({kind:"error"}); };
+        preparedPopup.current = { attemptId: attempt.id, generation, expiresAt, abandon, launch: () => {
+          window.clearTimeout(timer); preparedPopup.current = null; setPopupReady(false); connectReserved.current = true; setInFlight("starting");
+          try {
+            const popup = actions?.launchWhatsappSdk ? actions.launchWhatsappSdk(started.launch as Extract<PaidBranchConnectionLaunch, {flow:"wa_new_number"|"wa_coexistence"}>) : launchPreparedWhatsappSdkPopup(started.launch as Extract<PaidBranchConnectionLaunch, {flow:"wa_new_number"|"wa_coexistence"}>, fb!, trace);
+            void popup.then(resolve, () => resolve({kind:"error"}));
+          } catch { trace("fb_login_failed"); resolve({kind:"error"}); }
+        } };
+        connectReserved.current = false; setInFlight(null); setPopupReady(true);
+      });
+      if (abandoned || !mounted.current || !checkCurrent()) return;
       if (popupResult.kind === "cancelled") {
         setInFlight("cancelling");
         const cancelled = await resolved.cancelConnection!({
@@ -397,7 +447,17 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
       if (!mounted.current) return;
       setInFlight(null);
       setFeedback(t("تعذر إتمام عملية الربط حاليًا. حدّث الحالة أو استخدم الاسترداد.", "Connection could not be completed right now. Refresh status or use recovery."));
-    }finally{connectReserved.current=false;}
+    }finally{if (ownsReservation) connectReserved.current=false;}
+  };
+
+  const handlePreparedFacebook = () => {
+    const prepared = preparedPopup.current;
+    const current = connection?.connection.attempt;
+    if (!prepared || connectReserved.current || inFlight || !checkCurrent() || !current || current.id !== prepared.attemptId || current.generation !== prepared.generation || current.status !== "pending" || prepared.expiresAt <= currentTime()) {
+      if (prepared) { prepared.abandon(); preparedPopup.current = null; setPopupReady(false); }
+      return;
+    }
+    prepared.launch();
   };
 
   const handleInstagramConnect = async () => {
@@ -439,6 +499,7 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
     const attempt = connection?.connection.attempt;
     const flow = connection?.connection.flow;
     if (connectReserved.current || !checkCurrent() || !connection || !attempt || !flow || !viewModel.canRecover) return;
+    preparedPopup.current?.abandon(); preparedPopup.current = null; setPopupReady(false);
     connectReserved.current=true;
     setFeedback(null);
     setInFlight("recovering");
@@ -491,6 +552,7 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
     const attempt = connection?.connection.attempt;
     const flow = connection?.connection.flow;
     if (cancelUncertain || connectReserved.current || !checkCurrent() || !connection || !attempt || !flow || !viewModel.canCancel) return;
+    preparedPopup.current?.abandon(); preparedPopup.current = null; setPopupReady(false);
     connectReserved.current=true;
     setFeedback(null);
     setInFlight("cancelling");
@@ -599,8 +661,8 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
               <span>{t("أؤكد أن هذا الرقم مفعل حاليًا على تطبيق WhatsApp Business ولن أقوم بحذفه أو فصله.","I confirm this number is currently active on the WhatsApp Business App and I will not delete or disconnect it.")}</span>
             </label>
           </div>}
-          <WhatsappConnectionGuide route={route} locale={locale} connectionStatus={channelConnectionLabel(connection,locale)} connectEnabled={canStartSelectedWhatsapp&&!inFlight} connecting={!!inFlight} onConnect={()=>void handleWhatsappConnect()}/>
-          <button type="button" className={styles.back} disabled={!!inFlight} onClick={()=>setScreen("choice")}>{t("رجوع","Go back")}</button>
+          <WhatsappConnectionGuide route={route} locale={locale} connectionStatus={channelConnectionLabel(connection,locale)} connectEnabled={(popupReady || canStartSelectedWhatsapp)&&!inFlight} connecting={!!inFlight} preparing={!popupReady} onConnect={popupReady ? handlePreparedFacebook : ()=>void handleWhatsappConnect()}/>
+          <button type="button" className={styles.back} disabled={!!inFlight || popupReady} onClick={()=>setScreen("choice")}>{t("رجوع","Go back")}</button>
         </div>}
       </> : <div className={styles.instagram}>
         <h3>{t("حساب Instagram الاحترافي", "Instagram professional account")}</h3>

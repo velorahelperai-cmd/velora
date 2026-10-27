@@ -27,7 +27,7 @@ type ActiveAttempt = {
   attemptId: string; nonce: string; expiresAt: string;
   confirmedPhoneNumber: string; config: PublicCoexistenceClientConfig;
   signals: SignupAttempt; codeReceivedAt?: number;
-  launched: boolean; submitted: boolean; detach?: () => void;
+  launched: boolean; submitted: boolean; uncertain?: boolean; detach?: () => void;
 };
 type FacebookSDK = {
   init(options: { appId: string; version: string; xfbml: boolean; autoLogAppEvents: boolean }): void;
@@ -134,7 +134,7 @@ export function WhatsappCoexistenceSignup({ companyId, onConnected, onDisconnect
     void reloadFor(owner);
     const timer = window.setInterval(() => {
       const current = activeRef.current;
-      if (!current || current.submitted || ownerRef.current !== owner) return;
+      if (!current || current.submitted || current.uncertain || ownerRef.current !== owner) return;
       const deadline = signupSignalDeadline(current.expiresAt, current.codeReceivedAt);
       if (deadline === null || deadline <= Date.now()) void retire(current, "EXPIRED");
     }, 500);
@@ -146,7 +146,7 @@ export function WhatsappCoexistenceSignup({ companyId, onConnected, onDisconnect
       current?.detach?.(); activeRef.current = null;
       if (current) {
         current.signals = createSignupAttempt(current.attemptId);
-        if (!current.submitted) void cancelCoexistenceSignup({ attemptId: current.attemptId, nonce: current.nonce }).catch(() => undefined);
+        if (!current.submitted && !current.uncertain) void cancelCoexistenceSignup({ attemptId: current.attemptId, nonce: current.nonce }).catch(() => undefined);
       }
     };
     // retire operates only on identity-bound refs; locale and render callbacks are irrelevant here.
@@ -244,15 +244,15 @@ export function WhatsappCoexistenceSignup({ companyId, onConnected, onDisconnect
           popupAttemptRef.current = null; popupPendingRef.current = false;
           if (ownerRef.current !== null) setPopupPending(false);
         }
-        if (ownerRef.current !== owner || activeRef.current !== current || current.submitted) return;
+        if (ownerRef.current !== owner || activeRef.current !== current || current.submitted || current.uncertain) return;
         const code = coexistenceCodeFromResponse(response);
-        if (!code) { void retire(current, "CANCELLED"); return; }
+        if (!code) { current.uncertain = true; current.detach?.(); setNotice("RECONCILIATION_REQUIRED"); return; }
         if (current.codeReceivedAt === undefined) current.codeReceivedAt = Date.now();
         receiveSignal({ kind: "code", code });
       }, coexistenceLoginOptions(current.config.configId));
     } catch {
       popupAttemptRef.current = null; popupPendingRef.current = false; setPopupPending(false);
-      void retire(current, "SDK_UNAVAILABLE");
+      current.uncertain = true; current.detach?.(); setNotice("RECONCILIATION_REQUIRED");
     }
   }
 

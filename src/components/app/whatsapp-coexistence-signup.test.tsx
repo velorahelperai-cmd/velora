@@ -388,6 +388,17 @@ describe("real Coexistence component async paths", () => {
     expect(text(h.tree())).not.toContain("Meta authorization saved"); h.unmount();
   });
 
+  it("preserves a Coexistence attempt when callback has no code", async () => {
+    const h = mount({ companyId: "a" }); await prepared(h); click(button(h, "Continue to Meta")); h.render();
+    callbacks[0]({}); await flush(); h.render();
+    expect(mocks.cancel).not.toHaveBeenCalled(); expect(mocks.complete).not.toHaveBeenCalled();
+    callbacks[0]({ authResponse: { code: "late" } }); emit(finish()); await flush();
+    expect(mocks.complete).not.toHaveBeenCalled();
+    clock += 700_000; timers.forEach(fn => fn()); await flush(); h.render();
+    expect(mocks.cancel).not.toHaveBeenCalled();
+    h.unmount(); await flush(); expect(mocks.cancel).not.toHaveBeenCalled();
+  });
+
   it("does not let an old SDK callback release a newer still-open popup", async () => {
     const h = mount({ companyId: "a" }); await prepared(h); click(button(h, "Continue to Meta")); h.render();
     click(button(h, "Cancel signup")); await flush(); h.render();
