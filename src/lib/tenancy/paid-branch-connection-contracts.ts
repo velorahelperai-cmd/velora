@@ -92,7 +92,7 @@ export type PaidBranchConnectionDenial = {
 
 /** Complete, recover, and cancel do not carry launch material. */
 export type PaidBranchConnectionMutation =
-  | { ok: true; read: PaidBranchConnectionRead }
+  | { ok: true; read: PaidBranchConnectionRead; continuation?:{registrationRequired:boolean;authorizationTicket:string;nonce:string;wabaId:string;phoneNumberId:string} }
   | PaidBranchConnectionDenial;
 
 /** Start success always includes the server-issued launch descriptor for that flow and attempt. */
@@ -224,12 +224,12 @@ function capabilitiesFor(read: Omit<PaidBranchConnectionRead, "capabilities">): 
     || read.connection.state === "legacy_ambiguous"
     || read.connection.state === "unavailable"
     || read.connection.reasonCodes.some((code) => CAPABILITY_DENY.has(code));
-  const recoverable = !!attempt && (attempt.status === "unknown" || attempt.status === "vault_staged" || attempt.status === "claimed");
+  const recoverable = !!attempt && (attempt.status === "unknown" || attempt.status === "vault_staged" || attempt.status === "claimed" || (attempt.status === "pending" && read.connection.flow === "wa_new_number"));
   const terminal = attempt?.status === "cancelled" || attempt?.status === "expired" || attempt?.status === "rejected";
   return {
     canStart: !hardDeny && read.connection.state !== "reconciliation_required" && read.connection.state !== "connected" && (read.connection.state === "not_connected" || !!terminal),
     canRecover: !hardDeny && recoverable,
-    canCancel: !hardDeny && read.connection.state !== "reconciliation_required" && read.connection.state !== "connected" && !!attempt && (attempt.status === "pending" || attempt.status === "claimed"),
+    canCancel: !hardDeny && read.connection.state !== "reconciliation_required" && read.connection.state !== "connected" && !!attempt && (attempt.status === "pending" || (attempt.status === "claimed" && read.connection.flow !== "wa_new_number")),
     allowedFlows: hardDeny || read.connection.state === "connected" || read.connection.state === "reconciliation_required" ? [] : paidBranchConnectionFlowFor(read.channel),
   };
 }

@@ -11,6 +11,7 @@ function configure() {
 }
 afterEach(() => vi.unstubAllEnvs());
 describe("Embedded Signup attempt security", () => {
+  it('uses existing app settings without requiring or exposing an extra server token',()=>{configure();vi.stubEnv('WHATSAPP_EMBEDDED_SIGNUP_SYSTEM_USER_TOKEN','');const result=embeddedSignupClientConfig();expect(result).toEqual({ok:true,appId:'123',configId:'456',graphVersion:'v25.0'});expect(JSON.stringify(result)).not.toContain('app-secret');expect(JSON.stringify(result)).not.toContain('123|app-secret');});
   it("creates independent unpredictable attempt and nonce identities at the same timestamp", () => {
     configure();
     const input = {companyId:"company",userId:"owner",sessionId:"session",keepOnPhone:false,now:"2026-10-08T01:00:00.000Z"};

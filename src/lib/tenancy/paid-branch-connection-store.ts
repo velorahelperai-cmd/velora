@@ -8,6 +8,7 @@ import {
   type PaidBranchConnectionScope,
 } from "@/lib/tenancy/paid-branch-connection-contracts";
 import type { PaidBranchConnectionAttemptRequest, PaidBranchConnectionCommandResult, PaidBranchConnectionStartRequest, PaidBranchConnectionStorePorts } from "@/lib/tenancy/paid-branch-connection-flow";
+import {logEvent} from '@/lib/logging/logger.mjs';
 
 export type PaidBranchConnectionRpc = {
   rpc(name: string, args: Record<string, unknown>): Promise<{ data: unknown; error: unknown }>;
@@ -46,7 +47,13 @@ function mutation(scope: PaidBranchConnectionScope, data: unknown, flow?: PaidBr
 async function call(client: PaidBranchConnectionRpc, name: string, args: Record<string, unknown>, scope: PaidBranchConnectionScope, asOf: string, flow?: PaidBranchConnectionFlow): Promise<PaidBranchConnectionCommandResult | null> {
   try {
     const result = await client.rpc(name, args);
-    if (result.error) return { ok: false, code: "source_failed", read: unavailablePaidBranchConnectionRead(scope, asOf, "source_failed") };
+    if (result.error) {
+      if(name==='es02_b3_cancel_owned_branch_connection'&&process.env.NODE_ENV==='development'&&process.env.NEXT_PUBLIC_SITE_URL==='http://127.0.0.1:3330'){
+        const error=result.error as {code?:unknown};
+        logEvent('warn','es02.branch_connection.local_cancel_rpc_error',{error_code:typeof error.code==='string'&&/^[A-Z0-9_]{1,40}$/.test(error.code)?error.code:'UNAVAILABLE'});
+      }
+      return { ok: false, code: "source_failed", read: unavailablePaidBranchConnectionRead(scope, asOf, "source_failed") };
+    }
     return mutation(scope, result.data, flow);
   } catch {
     return null;

@@ -11,10 +11,12 @@ import { INSTAGRAM_ATTEMPT_COOKIE } from "@/lib/instagram/oauth-route";
 import { embeddedSignupClientConfig } from "@/lib/whatsapp/embedded-signup";
 import {onboardMetaSignup} from '@/lib/whatsapp/embedded-signup-meta';
 import {sealSignupPreparation,openSignupPreparation} from '@/lib/whatsapp/signup-preparation';
+import {signupCheckpointBinding,signupCheckpointRpc,signupCodeHash,parseSignupCheckpoint} from '@/lib/whatsapp/signup-checkpoint';
 import { exchangeAfterCommittedClaim, exchangeOwnedBranchConnection } from "@/lib/tenancy/paid-branch-connection-adapters";
 import { coexistenceServerConfig } from "@/lib/tenancy/paid-branch-connection-coexistence-config";
 import {
   unavailablePaidBranchConnectionRead,
+  parsePaidBranchConnectionRead,
   type CompleteOwnedPaidBranchConnectionInput,
   type PaidBranchConnectionDenial,
   type PaidBranchConnectionFlow,
@@ -75,6 +77,35 @@ export async function readOwnedPaidBranchConnectionAction(scope: PaidBranchConne
     const session = await sessionClient(parsed.expectedAccountId, requestId, asOf, parsed);
     if ("ok" in session) return session.read;
     const result = await runPaidBranchConnectionRead(parsed, createPaidBranchConnectionStore(session.client, session.client, asOf), asOf);
+    // Local owner diagnostics only. Never project credentials or probe/write Meta.
+    if (process.env.NODE_ENV === 'development' && process.env.NEXT_PUBLIC_SITE_URL === 'http://127.0.0.1:3330'
+      && parsed.branchId === 'a268f9d8-fe5b-41b2-a337-97046a5eaa5c' && result.read.sourceStatus === 'ready') {
+      const attempt = result.read.connection.attempt;
+      let checkpointAvailability = 'not_checked';
+      let sessionMatch: boolean | null = null;
+      if (attempt && result.read.connection.flow === 'wa_new_number') {
+        const admin = createAdminClient();
+        try{if(admin){
+          const legacy=await admin.from('whatsapp_embedded_signup_attempts').select('session_id')
+            .eq('id',attempt.id).eq('company_id',parsed.companyId).eq('user_id',parsed.expectedAccountId).maybeSingle();
+          const legacyRow=legacy.data as {session_id?:unknown}|null;
+          if(!legacy.error&&typeof legacyRow?.session_id==='string')sessionMatch=legacyRow.session_id.toLowerCase()===session.sessionId;
+        }}catch{/* Diagnostics must not affect the normal read. */}
+        const checkpoint = admin ? parseSignupCheckpoint(await signupCheckpointRpc(admin as unknown as PaidBranchConnectionRpc,
+          'load', signupCheckpointBinding({...parsed, flow:'wa_new_number', attemptId:attempt.id, generation:attempt.generation}, session.sessionId))) : null;
+        // A denied/expired load does not prove that no checkpoint row exists.
+        checkpointAvailability = checkpoint ? 'available' : 'unavailable_or_absent';
+      }
+      logEvent('warn', 'es02.branch_connection.local_read_diagnostic', {
+        request_id: requestId, branch_id: parsed.branchId, attempt_id: attempt?.id ?? null,
+        attempt_status: attempt?.status ?? null, expires_at: attempt?.expiresAt ?? null,
+        expired: attempt ? Date.parse(attempt.expiresAt) <= Date.now() : null,
+        connection_state: result.read.connection.state, flow: result.read.connection.flow,
+        verified: result.read.connection.verified, checkpoint_availability: checkpointAvailability,
+        session_matches_legacy: sessionMatch,
+        reason_codes: result.read.connection.reasonCodes, last_error_code: 'NOT_EXPOSED_BY_READ_CONTRACT',
+      });
+    }
     return result.read;
   });
 }
@@ -88,6 +119,12 @@ export async function startOwnedPaidBranchConnectionAction(input: StartOwnedPaid
     if (parsed.flow === "wa_coexistence" && parsed.confirmed !== true) return { ok: false, code: "invalid_input", read: unavailablePaidBranchConnectionRead(parsed, asOf, "invalid_input") };
     const session = await sessionClient(parsed.expectedAccountId, requestId, asOf, parsed);
     if ("ok" in session) return session;
+    if(parsed.flow==='wa_new_number'){
+      const admin=createAdminClient();
+      // The existing Meta app callback is retained. Its GET verification token is not an onboarding credential.
+      const ready=process.env.WHATSAPP_ROUTING_MODE==='tenant_registry'&&process.env.WHATSAPP_RECEIVE_ENABLED==='true'&&admin&&await signupCheckpointRpc(admin as unknown as PaidBranchConnectionRpc,'ready',{accountId:parsed.expectedAccountId,companyId:parsed.companyId,branchId:parsed.branchId,sessionId:session.sessionId});
+      if(!ready)return {ok:false,code:'setup_required',read:unavailablePaidBranchConnectionRead(parsed,asOf,'setup_required')};
+    }
     const material = serverLaunch(parsed.flow);
     if (!material) return { ok: false, code: "setup_required", read: unavailablePaidBranchConnectionRead(parsed, asOf, "setup_required") };
     const store = createPaidBranchConnectionStore(session.client, session.client, asOf, { sessionId: session.sessionId });
@@ -121,12 +158,18 @@ export async function prepareOwnedWhatsappRegistrationAction(input:CompleteOwned
  const current=await runPaidBranchConnectionRead(request,createPaidBranchConnectionStore(session.client,session.client,asOf),asOf);
  const attempt=current.read.connection.attempt;
  if(current.read.sourceStatus!=='ready'||current.read.connection.flow!=='wa_new_number'||attempt?.id!==request.attemptId||attempt.generation!==request.generation||attempt.status!=='pending'||Date.parse(attempt.expiresAt)<=Date.now())return {ok:false};
- const config=embeddedSignupClientConfig(),appSecret=process.env.WHATSAPP_APP_SECRET?.trim()??'',systemUserToken=process.env.WHATSAPP_EMBEDDED_SIGNUP_SYSTEM_USER_TOKEN?.trim()??'';
- if(!config.ok||!appSecret||!systemUserToken)return {ok:false};
+ const config=embeddedSignupClientConfig(),appSecret=process.env.WHATSAPP_APP_SECRET?.trim()??'';
+ if(!config.ok||!appSecret)return {ok:false};
+ const admin=createAdminClient();if(!admin)return {ok:false};
+ const binding=signupCheckpointBinding(request,session.sessionId),reservation=randomUUID();
+ const reserved=await signupCheckpointRpc(admin as unknown as PaidBranchConnectionRpc,'reserve',{...binding,...config,nonce:row.nonce,codeHash:signupCodeHash(String(row.code)),wabaId:row.wabaId,phoneNumberId:row.phoneNumberId},reservation);
+ if(!reserved)return {ok:false};
+ if(reserved.acquired!==true)return {ok:false}; // Never re-exchange a one-use code; recovery loads the checkpoint.
  let captured:{token:string;registrationRequired:boolean}|null=null;
- await onboardMetaSignup({...config,enabled:true,appSecret,systemUserToken},{code:String(row.code),wabaId:String(row.wabaId),phoneNumberId:String(row.phoneNumberId),pin:'',keepOnPhone:false},fetch,{probe:true,capture:(token,registrationRequired)=>{captured={token,registrationRequired};}});
+ await onboardMetaSignup({...config,enabled:true,appSecret},{code:String(row.code),wabaId:String(row.wabaId),phoneNumberId:String(row.phoneNumberId),pin:'',keepOnPhone:false},fetch,{probe:true,capture:(token,registrationRequired)=>{captured={token,registrationRequired};}});
  if(!captured)return {ok:false};
  const result=captured as {token:string;registrationRequired:boolean};
+ if(!await signupCheckpointRpc(admin as unknown as PaidBranchConnectionRpc,'save',binding,reservation,result.token))return {ok:false};
  return {ok:true,registrationRequired:result.registrationRequired,authorizationTicket:sealSignupPreparation(appSecret,{accountId:request.expectedAccountId,sessionId:session.sessionId,companyId:request.companyId,branchId:request.branchId,attemptId:request.attemptId,generation:request.generation,nonce:String(row.nonce),wabaId:String(row.wabaId),phoneNumberId:String(row.phoneNumberId)},result.token)};
 }
 
@@ -142,9 +185,15 @@ export async function completeOwnedPaidBranchConnectionAction(input: CompleteOwn
     const session = await sessionClient(request.expectedAccountId, requestId, asOf, request);
     if ("ok" in session) return session;
     const completion=input.completion as unknown as Record<string,unknown>;
-    if(request.flow==='wa_new_number'&&completion.authorizationTicket!==undefined&&!openSignupPreparation(process.env.WHATSAPP_APP_SECRET?.trim()??'',completion.authorizationTicket,{accountId:request.expectedAccountId,sessionId:session.sessionId,companyId:request.companyId,branchId:request.branchId,attemptId:request.attemptId,generation:request.generation,nonce:String(completion.nonce),wabaId:String(completion.wabaId),phoneNumberId:String(completion.phoneNumberId)})){
+    if(request.flow==='wa_new_number'){
       const current=await runPaidBranchConnectionRead(request,createPaidBranchConnectionStore(session.client,session.client,asOf),asOf);
-      return {ok:false,code:'invalid_input',read:current.read};
+      if(current.read.sourceStatus!=='ready'||current.read.connection.attempt?.id!==request.attemptId||current.read.connection.attempt.generation!==request.generation)return {ok:false,code:'forbidden',read:current.read};
+      if(current.read.connection.verified&&current.read.connection.attempt.status==='bound')return {ok:true,read:current.read};
+      const token=openSignupPreparation(process.env.WHATSAPP_APP_SECRET?.trim()??'',completion.authorizationTicket,{accountId:request.expectedAccountId,sessionId:session.sessionId,companyId:request.companyId,branchId:request.branchId,attemptId:request.attemptId,generation:request.generation,nonce:String(completion.nonce),wabaId:String(completion.wabaId),phoneNumberId:String(completion.phoneNumberId)});
+      if(!token)return {ok:false,code:'invalid_input',read:current.read};
+      const checkpointAdmin=createAdminClient();
+      const checkpoint=checkpointAdmin?parseSignupCheckpoint(await signupCheckpointRpc(checkpointAdmin as unknown as PaidBranchConnectionRpc,'load',signupCheckpointBinding(request,session.sessionId))):null;
+      if(!checkpoint||checkpoint.token!==token||checkpoint.nonce!==completion.nonce||checkpoint.wabaId!==completion.wabaId||checkpoint.phoneNumberId!==completion.phoneNumberId)return {ok:false,code:'reconciliation_required',read:current.read};
     }
     const admin = createAdminClient();
     if (!admin) return { ok: false, code: "setup_required", read: unavailablePaidBranchConnectionRead(request, asOf, "setup_required") };
@@ -176,16 +225,52 @@ export async function completeOwnedPaidBranchConnectionAction(input: CompleteOwn
       },
       stage: (accessToken, evidence) => stageOwnedConnection(proof, request, slot.sessionId, accessToken, evidence),
     }), slot);
-    return publicMutation(await runPaidBranchConnectionComplete(request, store, asOf));
+    const result=publicMutation(await runPaidBranchConnectionComplete(request, store, asOf));
+    if(request.flow==='wa_new_number'&&result.ok&&result.read.connection.verified)await signupCheckpointRpc(proof,'discard',signupCheckpointBinding(request,session.sessionId));
+    return result;
   });
 }
 
 export async function recoverOwnedPaidBranchConnectionAction(input: PaidBranchConnectionScope & { flow: PaidBranchConnectionFlow; attemptId: string; generation: number }): Promise<PaidBranchConnectionMutation> {
-  return attemptMutation(input, "recover");
+  if(input.flow==='wa_new_number'){
+    const current=await readOwnedPaidBranchConnectionAction(input);
+    const attempt=current.connection.attempt;
+    if(current.sourceStatus==='ready'&&attempt?.id===input.attemptId&&attempt.generation===input.generation
+      && Date.parse(attempt.expiresAt)<=Date.now())return {ok:false,code:'expired',read:current};
+  }
+  const recovered=await attemptMutation(input,"recover");
+  if(input.flow!=='wa_new_number'||!recovered.ok||recovered.read.sourceStatus!=='ready'||recovered.read.connection.verified)return recovered;
+  const request=attemptRequest(input,new Date().toISOString());if('ok' in request)return request;
+  const session=await sessionClient(request.expectedAccountId,randomUUID(),new Date().toISOString(),request);if('ok' in session)return session;
+  const admin=createAdminClient(),config=embeddedSignupClientConfig();
+  const appSecret=process.env.WHATSAPP_APP_SECRET?.trim()??'';
+  if(!admin||!config.ok||!appSecret)return recovered;
+  const checkpoint=parseSignupCheckpoint(await signupCheckpointRpc(admin as unknown as PaidBranchConnectionRpc,'load',signupCheckpointBinding(request,session.sessionId)));
+  if(!checkpoint||checkpoint.appId!==config.appId||checkpoint.configId!==config.configId||checkpoint.graphVersion!==config.graphVersion)return recovered;
+  const providerInput={code:'durable-checkpoint',wabaId:checkpoint.wabaId,phoneNumberId:checkpoint.phoneNumberId,pin:'',keepOnPhone:false};
+  if(recovered.read.connection.attempt?.status==='pending'){
+   let registrationRequired:boolean|undefined;
+   await onboardMetaSignup({...config,enabled:true,appSecret},providerInput,fetch,{token:checkpoint.token,probe:true,capture:(_token,required)=>{registrationRequired=required;}});
+   if(registrationRequired===undefined)return recovered;
+   return {...recovered,continuation:{registrationRequired,nonce:checkpoint.nonce,wabaId:checkpoint.wabaId,phoneNumberId:checkpoint.phoneNumberId,authorizationTicket:sealSignupPreparation(appSecret,{...signupCheckpointBinding(request,session.sessionId),nonce:checkpoint.nonce,wabaId:checkpoint.wabaId,phoneNumberId:checkpoint.phoneNumberId},checkpoint.token)}};
+  }
+  // An interrupted write is reconciled by GET requests only. Never re-register or re-subscribe.
+  const verified=await onboardMetaSignup({...config,enabled:true,appSecret},providerInput,fetch,{token:checkpoint.token,readOnly:true});
+  if(!verified.ok)return recovered;
+  const store=createPaidBranchConnectionStore(session.client,admin as unknown as PaidBranchConnectionRpc,new Date().toISOString(),{sessionId:session.sessionId,accessToken:verified.accessToken,proof:verified.proof});
+  const result=publicMutation(await store.finalize(request)??{ok:false,code:'reconciliation_required',read:recovered.read});
+  if(result.ok&&result.read.connection.verified)await signupCheckpointRpc(admin as unknown as PaidBranchConnectionRpc,'discard',signupCheckpointBinding(request,session.sessionId));
+  return result;
 }
 
 export async function cancelOwnedPaidBranchConnectionAction(input: PaidBranchConnectionScope & { flow: PaidBranchConnectionFlow; attemptId: string; generation: number; oauthState?: string }): Promise<PaidBranchConnectionMutation> {
-  return attemptMutation(input, "cancel");
+  const result=await attemptMutation(input, "cancel");
+  if(process.env.NODE_ENV==='development'&&process.env.NEXT_PUBLIC_SITE_URL==='http://127.0.0.1:3330'){
+    logEvent('warn','es02.branch_connection.local_cancel_result',{attempt_id:result.read.connection.attempt?.id??null,
+      ok:result.ok,error_code:result.ok?null:result.code,attempt_status:result.read.connection.attempt?.status??null,
+      connection_state:result.read.connection.state});
+  }
+  return result;
 }
 
 export async function classifyOwnedInstagramAttempt(attemptId: string): Promise<"legacy" | "branch" | "unavailable"> {
@@ -234,7 +319,29 @@ async function attemptMutation(input: PaidBranchConnectionScope & { flow: PaidBr
     const session = await sessionClient(request.expectedAccountId, requestId, asOf, request);
     if ("ok" in session) return session;
     const store = createPaidBranchConnectionStore(session.client, session.client, asOf, { sessionId: session.sessionId });
-    return (kind === "recover" ? runPaidBranchConnectionRecover : runPaidBranchConnectionCancel)(request, store, asOf);
+    let pendingRead:PaidBranchConnectionRead|null=null;
+    if(kind==='cancel'&&request.flow==='wa_new_number'){
+      const current=await store.read(request);
+      if(!current)return {ok:false,code:'source_failed',read:unavailablePaidBranchConnectionRead(request,asOf,'source_failed')};
+      if(current.connection.attempt?.id!==request.attemptId||current.connection.attempt.generation!==request.generation)return {ok:false,code:'reconciliation_required',read:current};
+      if(current.connection.attempt.status==='cancelled'&&!current.connection.verified)return {ok:true,read:current};
+      if(current.connection.attempt.status!=='pending')return {ok:false,code:'reconciliation_required',read:current};
+      pendingRead=current;
+    }
+    let result=await (kind === "recover" ? runPaidBranchConnectionRecover : runPaidBranchConnectionCancel)(request, store, asOf);
+    // Disabled until the exact reviewed database function is installed and explicitly enabled locally.
+    if(kind==='cancel'&&request.flow==='wa_new_number'&&!result.ok&&result.code==='forbidden'&&pendingRead?.connection.attempt
+      &&Date.parse(pendingRead.connection.attempt.expiresAt)<=Date.now()&&process.env.VELORA_EXPIRED_WA_CANCEL_ENABLED==='true'){
+      try{
+        const fallback=await session.client.rpc('es02_b3_cancel_expired_unstarted_whatsapp',{p_expected_account_id:request.expectedAccountId,p_company_id:request.companyId,p_branch_id:request.branchId,p_attempt_id:request.attemptId,p_generation:request.generation});
+        const data=fallback.data as {ok?:unknown;read?:unknown;code?:unknown}|null;
+        const read=parsePaidBranchConnectionRead(data?.read,request);
+        if(!fallback.error&&data?.ok===true&&read?.connection.attempt?.id===request.attemptId&&read.connection.attempt.generation===request.generation&&read.connection.attempt.status==='cancelled')result={ok:true,read};
+        else if(!fallback.error&&data?.ok===false&&data.code==='reconciliation_required')result={ok:false,code:'reconciliation_required',read:pendingRead};
+      }catch{/* Preserve the original denial; never invent success. */}
+    }
+    if(kind==='cancel'&&request.flow==='wa_new_number'&&result.ok){const admin=createAdminClient();if(admin)await signupCheckpointRpc(admin as unknown as PaidBranchConnectionRpc,'discard',signupCheckpointBinding(request,session.sessionId));}
+    return result;
   });
 }
 

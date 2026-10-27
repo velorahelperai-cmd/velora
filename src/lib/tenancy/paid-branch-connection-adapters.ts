@@ -11,7 +11,6 @@ import type { PaidBranchConnectionProof, PaidBranchConnectionRpc } from "@/lib/t
 import { embeddedSignupClientConfig } from "@/lib/whatsapp/embedded-signup";
 import { finishEmbeddedSignup, type SignupClaim } from "@/lib/whatsapp/embedded-signup-flow";
 import { onboardMetaSignup, type MetaSignupConfig } from "@/lib/whatsapp/embedded-signup-meta";
-import { createSignupPorts, type SignupRpcClient } from "@/lib/whatsapp/embedded-signup-store";
 import { coexistenceServerConfig } from "@/lib/tenancy/paid-branch-connection-coexistence-config";
 import { finishCoexistenceSignup, type CoexistenceSignupClaim } from "@/lib/whatsapp/coexistence/flow";
 import { createCoexistenceSignupPorts, type CoexistenceSignupRpcClient } from "@/lib/whatsapp/coexistence/signup-store";
@@ -56,9 +55,8 @@ function metaConfig(): (MetaSignupConfig & { configId: string }) | null {
   const config = embeddedSignupClientConfig();
   if (!config.ok) return null;
   const appSecret = process.env.WHATSAPP_APP_SECRET?.trim() ?? "";
-  const systemUserToken = process.env.WHATSAPP_EMBEDDED_SIGNUP_SYSTEM_USER_TOKEN?.trim() ?? "";
-  if (!appSecret || !systemUserToken) return null;
-  return { enabled: true, appId: config.appId, configId: config.configId, graphVersion: config.graphVersion, appSecret, systemUserToken };
+  if (!appSecret) return null;
+  return { enabled: true, appId: config.appId, configId: config.configId, graphVersion: config.graphVersion, appSecret };
 }
 
 function signupClaim(legacy: Record<string, unknown>, request: PaidBranchConnectionAttemptRequest, sessionId: string): SignupClaim | null {
@@ -96,7 +94,6 @@ export async function exchangeOwnedBranchConnection(input: {
     if (!config || !claim || claim.keep_on_phone) return { ok: false, code: "setup_required" };
     const prepared=completion.authorizationTicket===undefined?undefined:openSignupPreparation(config.appSecret,completion.authorizationTicket,{accountId:request.expectedAccountId,sessionId:slot.sessionId,companyId:request.companyId,branchId:request.branchId,attemptId:request.attemptId,generation:request.generation,nonce:String(completion.nonce),wabaId:String(completion.wabaId),phoneNumberId:String(completion.phoneNumberId)});
     if(prepared===null)return {ok:false,code:'forbidden'};
-    const ports = createSignupPorts(identity, completion as never, config, input.session as SignupRpcClient, input.admin as SignupRpcClient);
     const finished = await finishEmbeddedSignup(identity, completion as never, config, {
       claim: async () => claim,
       provider: (providerInput) => onboardMetaSignup(config, providerInput,fetch,prepared?{token:prepared}:undefined),
@@ -106,7 +103,8 @@ export async function exchangeOwnedBranchConnection(input: {
         const saved = await input.finalize();
         return saved?.ok ? { ok: true } : { ok: false, code: "RECONCILIATION_REQUIRED" };
       },
-      fail: ports.fail,
+      // Keep the claimed native attempt recoverable; do not consume the staged token on transport failure.
+      fail: async () => {},
     });
     return finished.ok ? { ok: true, accessToken: slot.accessToken, proof: slot.proof } : { ok: false, code: "reconciliation_required" };
   }

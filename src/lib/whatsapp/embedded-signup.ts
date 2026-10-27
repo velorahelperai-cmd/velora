@@ -36,8 +36,7 @@ export function embeddedSignupEnabled() {
     && Boolean(env("WHATSAPP_EMBEDDED_SIGNUP_APP_ID"))
     && Boolean(env("WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID"))
     && /^v\d+\.0$/.test(env("WHATSAPP_EMBEDDED_SIGNUP_GRAPH_VERSION"))
-    && Boolean(env("WHATSAPP_APP_SECRET"))
-    && Boolean(env("WHATSAPP_EMBEDDED_SIGNUP_SYSTEM_USER_TOKEN"));
+    && Boolean(env("WHATSAPP_APP_SECRET"));
 }
 
 export function embeddedSignupClientConfig() {

@@ -24,9 +24,9 @@ async function owner(companyId?:string){
 }
 /** A dedicated configuration and tenant routing are required; default remains disabled. */
 function serverConfig(){
- const appId=env("WHATSAPP_EMBEDDED_SIGNUP_APP_ID"),configId=env("WHATSAPP_COEXISTENCE_CONFIG_ID"),graphVersion=env("WHATSAPP_EMBEDDED_SIGNUP_GRAPH_VERSION"),appSecret=env("WHATSAPP_APP_SECRET"),systemUserToken=env("WHATSAPP_EMBEDDED_SIGNUP_SYSTEM_USER_TOKEN");
- if(env("WHATSAPP_COEXISTENCE")!=="true"||env("WHATSAPP_ROUTING_MODE")!=="tenant_registry"||!assetId(appId)||!assetId(configId)||configId===env("WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID")||!/^v\d+\.0$/.test(graphVersion)||!appSecret||!systemUserToken)return null;
- return {enabled:true,appId,configId,graphVersion,appSecret,systemUserToken};
+ const appId=env("WHATSAPP_EMBEDDED_SIGNUP_APP_ID"),configId=env("WHATSAPP_COEXISTENCE_CONFIG_ID"),graphVersion=env("WHATSAPP_EMBEDDED_SIGNUP_GRAPH_VERSION"),appSecret=env("WHATSAPP_APP_SECRET");
+ if(env("WHATSAPP_COEXISTENCE")!=="true"||env("WHATSAPP_ROUTING_MODE")!=="tenant_registry"||!assetId(appId)||!assetId(configId)||configId===env("WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID")||!/^v\d+\.0$/.test(graphVersion)||!appSecret)return null;
+ return {enabled:true,appId,configId,graphVersion,appSecret};
 }
 function publicConfig(config:NonNullable<ReturnType<typeof serverConfig>>):PublicCoexistenceClientConfig{return {appId:config.appId,configId:config.configId,graphVersion:config.graphVersion};}
 export async function getCoexistenceSetup(companyId:string){

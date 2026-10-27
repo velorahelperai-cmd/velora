@@ -37,6 +37,7 @@ function fake(options: { invalidDebug?: boolean; debugReadFails?: boolean; secon
 }
 
 describe("coexistence provider", () => {
+  it('derives app-only debug authorization without a system user token',async()=>{const f=fake();const {systemUserToken:_unused,...appConfig}=config;const result=await prepareCoexistenceSignup(appConfig,input,f.http,()=>now);expect(result.ok).toBe(true);const request=f.requests.find(r=>r.path==='debug_token')!;expect((request.init?.headers as Record<string,string>).Authorization).toBe('Bearer 111|app-secret');expect(JSON.stringify(result)).not.toContain('111|app-secret');});
   it("exchanges the code server-side and discovers the exact confirmed phone across complete pages", async () => {
     const f = fake({ secondPage: true });
     const result = await prepareCoexistenceSignup(config, input, f.http, () => now);

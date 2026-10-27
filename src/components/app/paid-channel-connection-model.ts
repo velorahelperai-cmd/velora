@@ -124,6 +124,8 @@ export function derivePaidChannelConnectionViewModel(
   const { state, verified, attempt, link, reasonCodes } = read.connection;
   const { canStart, canRecover, canCancel, allowedFlows } = read.capabilities;
   const hasRevision = typeof read.revision === "string" && read.revision.length > 0;
+  const pendingExpired = attempt?.status === 'pending' && Number.isFinite(Date.parse(read.asOf))
+    && Date.parse(attempt.expiresAt) <= Date.parse(read.asOf);
 
   let uiState: PaidChannelUiState = "not_connected";
   if (state === "connected" && verified && link && link.generation >= 1) {
@@ -132,6 +134,8 @@ export function derivePaidChannelConnectionViewModel(
     uiState = "connected_unverified";
   } else if (inFlight === "starting" || inFlight === "completing") {
     uiState = "authorizing";
+  } else if (pendingExpired) {
+    uiState = 'expired';
   } else if (state === "reconciliation_required" || state === "legacy_ambiguous" || canRecover || reasonCodes.includes("conflict")) {
     uiState = "recoverable_failure";
   } else if (state === "pending" || attempt?.status === "pending" || attempt?.status === "claimed") {
@@ -147,7 +151,11 @@ export function derivePaidChannelConnectionViewModel(
   }
 
   let guidance: string | null = null;
+  if (pendingExpired) guidance = locale === 'ar'
+    ? 'انتهت مهلة محاولة الربط. ألغِ المحاولة الحالية بأمان قبل إعادة التفويض؛ لم يتم تأكيد الاتصال.'
+    : 'This connection attempt has expired. Safely cancel the current attempt before authorizing again; connection has not been verified.';
   for (const code of reasonCodes) {
+    if (guidance) break;
     const entry = reasonGuidanceTable[code];
     if (entry) {
       guidance = entry[idx];
@@ -171,7 +179,7 @@ export function derivePaidChannelConnectionViewModel(
   }
 
   const effectiveCanStart = canStart && hasRevision && !inFlight;
-  const effectiveCanRecover = canRecover && !!attempt && !!read.connection.flow && !inFlight;
+  const effectiveCanRecover = canRecover && !pendingExpired && !!attempt && !!read.connection.flow && !inFlight;
   const effectiveCanCancel = canCancel && !!attempt && !!read.connection.flow && !inFlight;
 
   return {

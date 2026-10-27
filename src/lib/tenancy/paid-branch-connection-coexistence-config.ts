@@ -10,7 +10,6 @@ export type PaidBranchCoexistenceConfig = {
   configId: string;
   graphVersion: string;
   appSecret: string;
-  systemUserToken: string;
 };
 
 export function coexistenceServerConfig(env: NodeJS.ProcessEnv = process.env): PaidBranchCoexistenceConfig | null {
@@ -20,7 +19,6 @@ export function coexistenceServerConfig(env: NodeJS.ProcessEnv = process.env): P
   const embeddedConfigId = read("WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID");
   const graphVersion = read("WHATSAPP_EMBEDDED_SIGNUP_GRAPH_VERSION");
   const appSecret = read("WHATSAPP_APP_SECRET");
-  const systemUserToken = read("WHATSAPP_EMBEDDED_SIGNUP_SYSTEM_USER_TOKEN");
   if (
     read("WHATSAPP_COEXISTENCE") !== "true"
     || read("WHATSAPP_ROUTING_MODE") !== "tenant_registry"
@@ -29,7 +27,6 @@ export function coexistenceServerConfig(env: NodeJS.ProcessEnv = process.env): P
     || configId === embeddedConfigId
     || !/^v\d+\.0$/.test(graphVersion)
     || !appSecret
-    || !systemUserToken
   ) return null;
-  return { enabled: true, appId, configId, graphVersion, appSecret, systemUserToken };
+  return { enabled: true, appId, configId, graphVersion, appSecret };
 }

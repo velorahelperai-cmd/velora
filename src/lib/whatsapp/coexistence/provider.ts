@@ -1,7 +1,7 @@
 import "server-only";
 import { selectServerCoexistenceAsset, type ServerFetchedPhoneAsset } from "./asset-selection";
 
-export type CoexistenceProviderConfig = { enabled: boolean; appId: string; appSecret: string; systemUserToken: string; graphVersion: string };
+export type CoexistenceProviderConfig = { enabled: boolean; appId: string; appSecret: string; systemUserToken?: string; graphVersion: string };
 export type CoexistenceProviderInput = { code: string; wabaId?: string; phoneNumberId?: string; confirmedPhoneNumber: string };
 export type CoexistenceProviderFailureCode = "NEEDS_SETUP" | "INVALID_INPUT" | "META_AUTHORIZATION_REJECTED" | "META_ASSET_REJECTED" | "META_UNAVAILABLE" | "RECONCILIATION_REQUIRED";
 export type CoexistenceProviderFailure = { ok: false; code: CoexistenceProviderFailureCode };
@@ -28,7 +28,7 @@ const canonicalNumber = (value: unknown): string | null => {
   const digits = compact.startsWith("+") ? compact.slice(1) : compact;
   return /^[1-9]\d{6,14}$/.test(digits) ? `+${digits}` : null;
 };
-const configured = (config: CoexistenceProviderConfig) => config.enabled === true && id(config.appId) && typeof config.appSecret === "string" && !!config.appSecret.trim() && typeof config.systemUserToken === "string" && !!config.systemUserToken.trim() && typeof config.graphVersion === "string" && /^v\d+\.0$/.test(config.graphVersion);
+const configured = (config: CoexistenceProviderConfig) => config.enabled === true && id(config.appId) && typeof config.appSecret === "string" && !!config.appSecret.trim() && typeof config.graphVersion === "string" && /^v\d+\.0$/.test(config.graphVersion);
 
 function verifiedToken(value: unknown, appId: string, now: number, requestedWabaId?: string) {
   const data = object(value);
@@ -113,7 +113,7 @@ export async function prepareCoexistenceSignup(config: CoexistenceProviderConfig
     if (typeof exchange.access_token !== "string" || !exchange.access_token.trim()) return { ok: false, code: "META_AUTHORIZATION_REJECTED" };
     const accessToken = exchange.access_token;
     const now = clock();
-    const token = verifiedToken((await api.request("debug_token", config.systemUserToken, { input_token: accessToken })).data, config.appId, now, input.wabaId);
+    const token = verifiedToken((await api.request("debug_token", `${config.appId}|${config.appSecret}`, { input_token: accessToken })).data, config.appId, now, input.wabaId);
     if (!token) return { ok: false, code: "META_AUTHORIZATION_REJECTED" };
     if ((await api.request(token.wabaId, accessToken, { fields: "id" })).id !== token.wabaId) return { ok: false, code: "META_ASSET_REJECTED" };
     const rows = await api.list(`${token.wabaId}/phone_numbers`, accessToken, "id,display_phone_number,platform_type");
@@ -144,7 +144,7 @@ export async function subscribeAndVerifyCoexistence(config: CoexistenceProviderC
     if (!apps.some(raw => object(object(raw)?.whatsapp_business_api_data)?.id === config.appId)) return { ok: false, code: "RECONCILIATION_REQUIRED" };
     const phone = await api.request(proof.phone_number_id, accessToken, { fields: "id,display_phone_number,is_on_biz_app,platform_type" });
     const now = clock();
-    const token = verifiedToken((await api.request("debug_token", config.systemUserToken, { input_token: accessToken })).data, config.appId, now, proof.waba_id);
+    const token = verifiedToken((await api.request("debug_token", `${config.appId}|${config.appSecret}`, { input_token: accessToken })).data, config.appId, now, proof.waba_id);
     if (!token) return { ok: false, code: "RECONCILIATION_REQUIRED" };
     const displayPhoneNumber = canonicalNumber(phone.display_phone_number);
     // This is a direct asset readback, not a fabricated one-row complete list.

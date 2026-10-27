@@ -14,6 +14,7 @@ import {
   type PaidBranchConnectionLaunch,
   type PaidBranchConnectionMutation,
   type PaidBranchConnectionRead,
+  type PaidBranchConnectionScope,
   type PaidBranchConnectionDenial,
   type PaidBranchConnectionStartResult,
   type RecoverOwnedPaidBranchConnectionInput,
@@ -43,6 +44,7 @@ export type PaidChannelViewActions = {
   completeConnection?: (input: CompleteOwnedPaidBranchConnectionInput) => Promise<PaidBranchConnectionMutation>;
   recoverConnection?: (input: RecoverOwnedPaidBranchConnectionInput) => Promise<PaidBranchConnectionMutation>;
   cancelConnection?: (input: CancelOwnedPaidBranchConnectionInput) => Promise<PaidBranchConnectionMutation>;
+  readConnection?: (input: PaidBranchConnectionScope) => Promise<PaidBranchConnectionRead>;
   launchWhatsappSdk?: (launch: Extract<PaidBranchConnectionLaunch, { flow: "wa_new_number" | "wa_coexistence" }>) => Promise<WhatsappSdkPopupResult>;
   navigateToUrl?: (url: string) => void;
 };
@@ -68,7 +70,7 @@ type FbSdk = {
   login: (callback: (response: { authResponse?: { code?: unknown } }) => void, options: Record<string, unknown>) => void;
 };
 
-async function resolveDefaultActions(): Promise<Required<Pick<PaidChannelViewActions, "startConnection" | "completeConnection" | "recoverConnection" | "cancelConnection" | "prepareRegistration">>> {
+async function resolveDefaultActions(): Promise<Required<Pick<PaidChannelViewActions, "startConnection" | "completeConnection" | "recoverConnection" | "cancelConnection" | "prepareRegistration" | "readConnection">>> {
   const mod = await import("@/lib/tenancy/paid-branch-connection-actions");
   return {
     prepareRegistration:mod.prepareOwnedWhatsappRegistrationAction,
@@ -76,6 +78,7 @@ async function resolveDefaultActions(): Promise<Required<Pick<PaidChannelViewAct
     completeConnection: mod.completeOwnedPaidBranchConnectionAction,
     recoverConnection: mod.recoverOwnedPaidBranchConnectionAction,
     cancelConnection: mod.cancelOwnedPaidBranchConnectionAction,
+    readConnection: mod.readOwnedPaidBranchConnectionAction,
   };
 }
 
@@ -122,9 +125,11 @@ async function runBrowserWhatsappSdkPopup(
   return new Promise((resolve) => {
     let settled = false;
     let onMessage: (event: MessageEvent) => void = () => {};
+    const timeout=window.setTimeout(()=>finishOnce({kind:'error'}),5*60_000);
     const finishOnce = (result: WhatsappSdkPopupResult) => {
       if (settled) return;
       settled = true;
+      window.clearTimeout(timeout);
       window.removeEventListener("message", onMessage);
       resolve(result);
     };
@@ -226,6 +231,7 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
   const [localOverride, setLocalOverride] = useState<{ base: PaidBranchConnectionRead | null | undefined; read: PaidBranchConnectionRead } | null>(null);
   const [inFlight, setInFlight] = useState<"starting" | "completing" | "recovering" | "cancelling" | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [cancelUncertain, setCancelUncertain] = useState(false);
   const mounted = useRef(true);
   const titleId = useId();
   const setLocalConnection = (next: PaidBranchConnectionRead) => setLocalOverride({ base: connectionRead, read: next });
@@ -267,6 +273,12 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
 
   const handleWhatsappConnect = async () => {
     if (connectReserved.current || inFlight || !checkCurrent() || !connection || !connection.revision || !selectedWhatsappFlow || !canStartSelectedWhatsapp) return;
+    // Meta's JavaScript SDK refuses FB.login on HTTP and may never call back.
+    // Check before creating a server attempt; injected launchers are test doubles.
+    if (!actions?.launchWhatsappSdk && window.location.protocol !== 'https:') {
+      setFeedback(t('يتطلب ربط Facebook صفحة HTTPS. افتح رابط التجهيز الآمن قبل بدء الربط.', 'Facebook connection requires an HTTPS page. Open the secure setup link before starting.'));
+      return;
+    }
     connectReserved.current=true;
     setFeedback(null);
     setInFlight("starting");
@@ -331,9 +343,7 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
         const prepared=await resolved.prepareRegistration?.({expectedAccountId:scope.expectedAccountId,companyId:scope.companyId,branchId:scope.branchId,channel:'whatsapp',flow:'wa_new_number',attemptId:started.launch.attemptId,generation,completion:{attemptId:started.launch.attemptId,nonce:started.launch.nonce,code:popupResult.code,wabaId:popupResult.wabaId,phoneNumberId:popupResult.phoneNumberId,pin:''}}).catch(()=>({ok:false as const}));
         if(!mounted.current||!checkCurrent())return;
         if(!prepared?.ok){
-          const cancelled=await resolved.cancelConnection!({expectedAccountId:scope.expectedAccountId,companyId:scope.companyId,branchId:scope.branchId,channel:'whatsapp',flow:selectedWhatsappFlow,attemptId:started.launch.attemptId,generation});
-          if(!mounted.current||!checkCurrent())return;
-          setLocalConnection(cancelled.read);setInFlight(null);setFeedback(cancelled.ok?t('تعذّر إكمال التحقق. أُلغيت المحاولة؛ ابدأ تفويض Facebook من جديد، ولن نعيد استخدام كود التفويض السابق.','Verification could not finish. The attempt was cancelled; start Facebook authorization again. The previous authorization code will not be reused.'):t('نتيجة التفويض غير مؤكدة. حدّث حالة المحاولة قبل بدء ربط جديد.','Authorization outcome is unconfirmed. Refresh the attempt status before starting a new connection.'));return;
+          setInFlight(null);setFeedback(t('نتيجة التفويض غير مؤكدة. استخدم استكمال المحاولة للتحقق من الحالة المحفوظة قبل بدء ربط جديد.','Authorization outcome is unconfirmed. Recover the attempt to check its saved state before starting a new connection.'));onRefresh?.();return;
         }
         authorizationTicket=prepared.authorizationTicket;
         if(prepared.registrationRequired){
@@ -428,7 +438,8 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
   const handleRecover = async () => {
     const attempt = connection?.connection.attempt;
     const flow = connection?.connection.flow;
-    if (!checkCurrent() || !connection || !attempt || !flow || !viewModel.canRecover) return;
+    if (connectReserved.current || !checkCurrent() || !connection || !attempt || !flow || !viewModel.canRecover) return;
+    connectReserved.current=true;
     setFeedback(null);
     setInFlight("recovering");
     try {
@@ -444,23 +455,48 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
       });
       if (!mounted.current || !checkCurrent()) return;
       setLocalConnection(recovered.read);
+      if(recovered.ok&&recovered.continuation&&flow==='wa_new_number'){
+        const continuation=recovered.continuation;
+        let registrationPin='';
+        if(continuation.registrationRequired){
+          setPin('');setAwaitingPin(true);
+          const answer=await new Promise<string|null>(resolve=>{pinAnswer.current=resolve;});
+          if(!mounted.current||!checkCurrent())return;
+          setAwaitingPin(false);setPin('');
+          if(answer===null){
+            const cancelFn=actions?.cancelConnection??(await resolveDefaultActions()).cancelConnection;
+            const cancelled=await cancelFn({expectedAccountId:scope.expectedAccountId,companyId:scope.companyId,branchId:scope.branchId,channel:'whatsapp',flow,attemptId:attempt.id,generation:attempt.generation});
+            if(!mounted.current||!checkCurrent())return;
+            setLocalConnection(cancelled.read);setInFlight(null);onRefresh?.();return;
+          }
+          registrationPin=answer;
+        }
+        setInFlight('completing');
+        const completeFn=actions?.completeConnection??(await resolveDefaultActions()).completeConnection;
+        const completed=await completeFn({expectedAccountId:scope.expectedAccountId,companyId:scope.companyId,branchId:scope.branchId,channel:'whatsapp',flow,attemptId:attempt.id,generation:attempt.generation,completion:{attemptId:attempt.id,nonce:continuation.nonce,code:'durable-checkpoint',wabaId:continuation.wabaId,phoneNumberId:continuation.phoneNumberId,pin:registrationPin,authorizationTicket:continuation.authorizationTicket}});
+        registrationPin='';
+        if(!mounted.current||!checkCurrent())return;
+        setLocalConnection(completed.read);
+      }
       setInFlight(null);
       onRefresh?.();
     } catch {
       if (!mounted.current) return;
       setInFlight(null);
-    }
+      setFeedback(t('تعذّر التحقق الآن. المحاولة محفوظة؛ حاول استكمالها مرة أخرى.','Verification is unavailable. Your attempt is saved; try recovery again.'));
+    }finally{connectReserved.current=false;}
   };
 
   const handleCancel = async () => {
     const attempt = connection?.connection.attempt;
     const flow = connection?.connection.flow;
-    if (!checkCurrent() || !connection || !attempt || !flow || !viewModel.canCancel) return;
+    if (cancelUncertain || connectReserved.current || !checkCurrent() || !connection || !attempt || !flow || !viewModel.canCancel) return;
+    connectReserved.current=true;
     setFeedback(null);
     setInFlight("cancelling");
     try {
       const cancelFn = actions?.cancelConnection ?? (await resolveDefaultActions()).cancelConnection;
-      const cancelled = await cancelFn({
+      const operation=cancelFn({
         expectedAccountId: scope.expectedAccountId,
         companyId: scope.companyId,
         branchId: scope.branchId,
@@ -469,14 +505,42 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
         attemptId: attempt.id,
         generation: attempt.generation,
       });
+      let timer:ReturnType<typeof setTimeout>|undefined;
+      const cancelled=await Promise.race([operation,new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new Error('CANCEL_TIMEOUT')),15000);})]).finally(()=>{if(timer)clearTimeout(timer);});
       if (!mounted.current || !checkCurrent()) return;
-      setLocalConnection(cancelled.read);
-      setInFlight(null);
-      onRefresh?.();
+      if(cancelled.read.sourceStatus==='ready')setLocalConnection(cancelled.read);
+      if(cancelled.ok){
+        setScreen('choice');setRoute(null);setPin('');setConfirmedPhone('');setPhoneConfirmed(false);
+        setFeedback(t('تم إلغاء المحاولة. اختر طريقة الربط عندما تكون مستعدًا.','Attempt cancelled. Choose a connection method when you are ready.'));
+      }else{
+        setFeedback(cancelled.code==='forbidden'
+          ? t('تعذّر إلغاء المحاولة من هذه الجلسة. المحاولة محفوظة وتحتاج مراجعة قبل بدء ربط جديد.','This session cannot cancel the attempt. It is preserved and needs review before starting a new connection.')
+          : t('لم يتم تأكيد الإلغاء. المحاولة محفوظة؛ يمكنك إعادة المحاولة دون بدء ربط جديد.','Cancellation was not confirmed. Your attempt is preserved; you can retry without starting a new connection.'));
+      }
     } catch {
-      if (!mounted.current) return;
-      setInFlight(null);
-    }
+      if (!mounted.current || !checkCurrent()) return;
+      setCancelUncertain(true);
+      setFeedback(t('لم تتأكد نتيجة الإلغاء. تحقق من الحالة قبل أي محاولة أخرى.','Cancellation is unconfirmed. Check the status before trying again.'));
+    }finally{connectReserved.current=false;if(mounted.current)setInFlight(null);}
+  };
+
+  const checkCancellation = async () => {
+    if(connectReserved.current||!checkCurrent()||!connection?.connection.attempt)return;
+    connectReserved.current=true;setInFlight('recovering');
+    try{
+      const readFn=actions?.readConnection??(await resolveDefaultActions()).readConnection;
+      let timer:ReturnType<typeof setTimeout>|undefined;
+      const latest=await Promise.race([readFn({expectedAccountId:scope.expectedAccountId,companyId:scope.companyId,branchId:scope.branchId,channel}),new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new Error('READ_TIMEOUT')),15000);})]).finally(()=>{if(timer)clearTimeout(timer);});
+      if(!mounted.current||!checkCurrent())return;
+      const old=connection.connection.attempt;
+      if(latest.sourceStatus==='ready'&&latest.connection.attempt?.id===old.id&&latest.connection.attempt.generation===old.generation&&latest.connection.attempt.status==='cancelled'){
+        setLocalConnection(latest);setCancelUncertain(false);setScreen('choice');setRoute(null);
+        setFeedback(t('تم إلغاء المحاولة. اختر طريقة الربط عندما تكون مستعدًا.','Attempt cancelled. Choose a connection method when you are ready.'));
+      }else{
+        setFeedback(t('لم يتأكد الإلغاء بعد. انتظر ثم تحقق مجددًا، دون بدء ربط جديد.','Cancellation is not confirmed yet. Wait and check again before starting a new connection.'));
+      }
+    }catch{if(mounted.current&&checkCurrent())setFeedback(t('تعذّر قراءة الحالة. حاول التحقق مجددًا.','Could not read the status. Try checking again.'));}
+    finally{connectReserved.current=false;if(mounted.current)setInFlight(null);}
   };
 
   return <section className={styles.view} data-setup-unsaved={unsavedConnection?'true':undefined} dir={ar ? "rtl" : "ltr"} aria-label={channel==='whatsapp'?t('ربط واتساب','Connect WhatsApp'):t('ربط إنستغرام','Connect Instagram')}>
@@ -486,11 +550,12 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
         {!hideStatusBadge&&<span className={styles.statusBadge} role="status" aria-label={channelConnectionLabel(connection, locale)}>{viewModel.badgeLabel}</span>}
         {viewModel.guidance && <p>{viewModel.guidance}</p>}
         {feedback && <p role="alert">{feedback}</p>}
-        {!awaitingPin&&(viewModel.canRecover || viewModel.canCancel) && <div className={styles.recoveryActions}>
-          {viewModel.canRecover && <button type="button" className={styles.primary} data-recover-action="true" onClick={() => void handleRecover()}>
+        {!awaitingPin&&(viewModel.canRecover || viewModel.canCancel || cancelUncertain) && <div className={styles.recoveryActions}>
+          {cancelUncertain && <button type="button" className={styles.back} data-check-cancellation="true" disabled={!!inFlight} onClick={() => void checkCancellation()}>{t('التحقق من حالة الإلغاء','Check cancellation status')}</button>}
+          {viewModel.canRecover && !cancelUncertain && <button type="button" className={styles.primary} data-recover-action="true" onClick={() => void handleRecover()}>
             {inFlight === "recovering" ? t("جارٍ التحقق…", "Verifying…") : t("استرداد والتحقق من الربط", "Recover and verify connection")}
           </button>}
-          {viewModel.canCancel && <button type="button" className={styles.back} data-cancel-action="true" onClick={() => void handleCancel()}>
+          {viewModel.canCancel && !cancelUncertain && <button type="button" className={styles.back} data-cancel-action="true" onClick={() => void handleCancel()}>
             {inFlight === "cancelling" ? t("جارٍ الإلغاء…", "Cancelling…") : t("إلغاء المحاولة الحالية", "Cancel current attempt")}
           </button>}
         </div>}
@@ -506,7 +571,7 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
           <input id={titleId+'-pin'} aria-describedby={titleId+'-pin-help'} className={styles.textInput} type="password" inputMode="numeric" maxLength={6} autoComplete="off" value={pin} onChange={event=>setPin(event.target.value.replace(/\D/g,'').slice(0,6))}/>
           <div className={styles.requirementActions}><button type="submit" className={styles.primary} disabled={!/^\d{6}$/.test(pin)}>{t('إكمال التسجيل والتحقق','Finish registration and verify')}</button><button type="button" className={styles.back} onClick={()=>{if(checkCurrent()){const answer=pinAnswer.current;pinAnswer.current=null;answer?.(null);}}}>{t('إلغاء المحاولة','Cancel attempt')}</button></div>
         </form>}
-        {screen==="choice"&&<div className={styles.connectLayout} data-wa-screen="choice">
+        {screen==="choice"&&<><p className={styles.stageCaption}>{t("الخطوة ١/٢","Step 1/2")}</p><div className={styles.connectLayout} data-wa-screen="choice">
         <div className={styles.intro}>
           <div className={styles.brands} aria-hidden="true"><span><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M20 11.5a8 8 0 0 1-11.7 7.1L4 20l1.4-4.3A8 8 0 1 1 20 11.5Z"/><path d="M9 7.5c.5 3.5 2 5 5.5 6l1-1.5-2-1-1 1a7 7 0 0 1-3-3l1-1-1-2Z"/></svg></span><span>↔</span><span>Meta</span></div>
           <h3>{t("اربط رقم واتساب الخاص بنشاطك","Connect your business WhatsApp number")}</h3>
@@ -522,10 +587,10 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
             <small>{value==="new-number"?t("رقم تملكه وغير مرتبط بحساب واتساب أو مزود آخر. سنراجع متطلبات التحقق قبل المتابعة.","A number you own that is not linked to WhatsApp or another provider. Review verification requirements before continuing."):t("Coexistence: استمر في استخدام التطبيق على هاتفك مع إدارة المحادثات من فيلورا، إذا كان حسابك مؤهلًا. لا تحذف حسابك أو تفصل الرقم.","Coexistence: keep using the app on your phone while managing conversations in Velora, if your account is eligible. Do not delete your account or disconnect your number.")}</small>
           </label>)}
         </fieldset>
-        <button className={styles.primary} type="button" data-route-continue disabled={!route || !!inFlight} onClick={()=>{if(checkCurrent())setScreen("requirements");}}>{t("متابعة إلى الربط مع Facebook","Continue to Facebook connection")}</button></div></div>}
+        <button className={styles.primary} type="button" data-route-continue disabled={!route || !!inFlight} onClick={()=>{if(checkCurrent())setScreen("requirements");}}>{t("متابعة إلى الربط مع Facebook","Continue to Facebook connection")}</button></div></div></>}
         {screen==="guide"&&route&&<div data-wa-screen="guide"><button type="button" className={styles.back} data-back-to-choice onClick={()=>setScreen("choice")}>{t("رجوع","Go back")}</button><WhatsappConnectionGuide route={route} locale={locale} connectionStatus={effectiveRead === undefined ? t("دليل الربط", "Connection guide") : channelConnectionLabel(connection, locale)} connectEnabled={!!selectedWhatsappFlow && viewModel.canStartFlow(selectedWhatsappFlow)} connecting={inFlight === "starting" || inFlight === "completing"} onConnect={()=>setScreen("requirements")} onReviewRequirements={()=>setScreen("requirements")}/></div>}
         {screen==="requirements"&&route&&!awaitingPin&&<div className={styles.requirements} data-wa-screen="requirements">
-          <p className={styles.stageCaption}>{t("اختيار الرقم ← ربط الحساب","Choose number → Connect account")}</p>
+          <p className={styles.stageCaption}>{t("الخطوة ٢/٢","Step 2/2")}</p>
           {route==="coexistence"&&<div className={styles.inputGroup}>
             <label htmlFor={titleId+"-phone"}>{t("رقم تطبيق WhatsApp Business الحالي (بصيغة دولية مثل +968...)","Existing WhatsApp Business App number (E.164 format e.g. +968...)")}</label>
             <input id={titleId+"-phone"} className={styles.textInput} type="tel" inputMode="tel" autoComplete="tel" dir="ltr" value={confirmedPhone} onChange={e=>setConfirmedPhone(e.target.value)} placeholder="+96890000000"/>
@@ -536,7 +601,6 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
           </div>}
           <WhatsappConnectionGuide route={route} locale={locale} connectionStatus={channelConnectionLabel(connection,locale)} connectEnabled={canStartSelectedWhatsapp&&!inFlight} connecting={!!inFlight} onConnect={()=>void handleWhatsappConnect()}/>
           <button type="button" className={styles.back} disabled={!!inFlight} onClick={()=>setScreen("choice")}>{t("رجوع","Go back")}</button>
-          {!canStartSelectedWhatsapp&&<p role="status">{t("أكمل الحقول المطلوبة وتأكد من جاهزية الفرع لبدء الربط. مراجعة المتطلبات وحدها لا تثبت اكتمال الربط.","Complete the required fields and branch readiness to start connection. Reviewing requirements alone does not prove completion.")}</p>}
         </div>}
       </> : <div className={styles.instagram}>
         <h3>{t("حساب Instagram الاحترافي", "Instagram professional account")}</h3>

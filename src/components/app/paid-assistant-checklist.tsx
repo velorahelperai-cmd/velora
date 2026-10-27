@@ -43,7 +43,9 @@ function PaidSetupEntry(p:PaidSetupFlowProps&{retry:()=>void}) {
  const [entry,setEntry]=useState<PaidBranchSetupEntryRead|null|undefined>(undefined);
  const location=useSyncExternalStore(subscribeSetupLocation,setupLocation,()=>"/setup");
  const [choice,setChoice]=useState<{location:string;id:string}|null>(null);
- const branchId=choice?.location===location?choice.id:setupBranchFromReturn(location);
+ const requestedBranchId=choice?.location===location?choice.id:setupBranchFromReturn(location);
+ // Default only from the authenticated owned list; explicit links remain scoped below.
+ const branchId=requestedBranchId||(entry?.sourceStatus!=="unavailable"?entry?.branches[0]?.id:null)||null;
  const generation=useRef(0);
  const [headerRead,setHeaderRead]=useState<PaidSetupWorkspaceRead|null|undefined>(undefined);
  const receiveWorkspace=useCallback((value:PaidSetupWorkspaceRead|null)=>setHeaderRead(value),[]);

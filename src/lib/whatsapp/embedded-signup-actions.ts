@@ -29,7 +29,7 @@ async function scopedOwner(companyId:unknown){
 }
 function serverConfig(){
  const publicConfig=embeddedSignupClientConfig();if(!publicConfig.ok)return null;
- return {...publicConfig,enabled:true,appSecret:process.env.WHATSAPP_APP_SECRET?.trim()??"",systemUserToken:process.env.WHATSAPP_EMBEDDED_SIGNUP_SYSTEM_USER_TOKEN?.trim()??""};
+ return {...publicConfig,enabled:true,appSecret:process.env.WHATSAPP_APP_SECRET?.trim()??""};
 }
 export async function getEmbeddedSignupSetup(companyId:string){
  return diagnoseWhatsAppConnection(async trace=>{

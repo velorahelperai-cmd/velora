@@ -3,6 +3,15 @@ import type {PaidBranchConnectionRead} from "@/lib/tenancy/paid-branch-connectio
 import {channelConnectionLabel,derivePaidChannelConnectionViewModel,scopedChannelConnection} from "./paid-channel-connection-model";
 const scope={expectedAccountId:"account",companyId:"company",branchId:"branch",channel:"whatsapp" as const};
 const read:PaidBranchConnectionRead={schemaVersion:1,...scope,sourceStatus:"ready",asOf:"2026-10-20T00:00:00Z",revision:"1",connection:{state:"pending",flow:"wa_coexistence",attempt:{id:"attempt",generation:2,expiresAt:"2026-10-20T01:00:00Z",status:"pending"},link:null,verified:false,reasonCodes:[]},capabilities:{canStart:false,canRecover:false,canCancel:false,allowedFlows:[]}};
+it('shows a safe exit for expired pending attempts without permitting recovery or inventing cancellation',()=>{
+ const expired={...read,asOf:'2026-10-20T02:00:00Z',capabilities:{...read.capabilities,canRecover:true,canCancel:true}};
+ for(const locale of ['ar','en'] as const){
+  const model=derivePaidChannelConnectionViewModel(expired,locale);
+  expect(model.uiState).toBe('expired');expect(model.canRecover).toBe(false);
+  expect(model.canCancel).toBe(true);expect(model.canStart).toBe(false);expect(model.guidance).toBeTruthy();
+ }
+ expect(expired.connection.attempt?.status).toBe('pending');
+});
 it.each(["expectedAccountId","companyId","branchId","channel"] as const)("rejects stale flat %s",field=>{
  expect(scopedChannelConnection({...read,[field]:"other"},scope)).toBeNull();
 });

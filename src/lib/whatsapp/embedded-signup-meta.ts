@@ -1,6 +1,6 @@
 import "server-only";
 /** Server provider adapter. Secrets and raw provider errors never cross its boundary. */
-export type MetaSignupConfig={enabled:boolean;appId:string;appSecret:string;systemUserToken:string;graphVersion:string};
+export type MetaSignupConfig={enabled:boolean;appId:string;appSecret:string;systemUserToken?:string;graphVersion:string};
 export type MetaSignupInput={code:string;wabaId:string;phoneNumberId:string;pin:string;keepOnPhone:boolean};
 export type MetaSignupProof={app_id:string;waba_id:string;phone_number_id:string;display_phone_number:string;scopes:string[];granular_scopes:{scope:string;target_ids:string[]}[];expires_at:number;data_access_expires_at:number;authorization_expires_at:string|null;code_verification_status:"VERIFIED";platform_type:"CLOUD_API";registered:true;subscribed:true;is_on_biz_app:false;verified_at:string};
 export type MetaSignupResult={ok:true;accessToken:string;proof:MetaSignupProof}|{ok:false;code:"NEEDS_SETUP"|"INVALID_INPUT"|"META_AUTHORIZATION_REJECTED"|"META_ASSET_REJECTED"|"META_UNAVAILABLE"|"RECONCILIATION_REQUIRED"};
@@ -18,8 +18,9 @@ function validateToken(value:unknown,appId:string,wabaId:string){
  return {scopes:scopes as string[],expires,dataExpires};
 }
 
-export async function onboardMetaSignup(config:MetaSignupConfig,input:MetaSignupInput,http:MetaFetch=fetch,preparation?:{token?:string;probe?:boolean;capture?:(token:string,registrationRequired:boolean)=>void}):Promise<MetaSignupResult>{
- if(!config.enabled||!id(config.appId)||!config.appSecret||!config.systemUserToken||!/^v\d+\.0$/.test(config.graphVersion)||input.keepOnPhone)return {ok:false,code:"NEEDS_SETUP"};
+export async function onboardMetaSignup(config:MetaSignupConfig,input:MetaSignupInput,http:MetaFetch=fetch,preparation?:{token?:string;probe?:boolean;readOnly?:boolean;capture?:(token:string,registrationRequired:boolean)=>void}):Promise<MetaSignupResult>{
+ if(!config.enabled||!id(config.appId)||!config.appSecret||!/^v\d+\.0$/.test(config.graphVersion)||input.keepOnPhone)return {ok:false,code:"NEEDS_SETUP"};
+ const appAccessToken=`${config.appId}|${config.appSecret}`; // Server-only debug credential; never return or log.
  if(!id(input.wabaId)||!id(input.phoneNumberId)||!input.code||input.code.length>4096||!(input.pin===''||/^\d{6}$/.test(input.pin)))return {ok:false,code:"INVALID_INPUT"};
  let wrote=false;
  const base=`https://graph.facebook.com/${config.graphVersion}`;
@@ -47,7 +48,7 @@ export async function onboardMetaSignup(config:MetaSignupConfig,input:MetaSignup
   const exchange=preparation?.token?{access_token:preparation.token}:await request("oauth/access_token",undefined,undefined,{client_id:config.appId,client_secret:config.appSecret,code:input.code});
   if(typeof exchange.access_token!=="string"||!exchange.access_token.trim())return {ok:false,code:"META_AUTHORIZATION_REJECTED"};
   const token=exchange.access_token;
-  if(!validateToken((await request("debug_token",config.systemUserToken,undefined,{input_token:token})).data,config.appId,input.wabaId))return {ok:false,code:"META_AUTHORIZATION_REJECTED"};
+  if(!validateToken((await request("debug_token",appAccessToken,undefined,{input_token:token})).data,config.appId,input.wabaId))return {ok:false,code:"META_AUTHORIZATION_REJECTED"};
   const waba=await request(input.wabaId,token,undefined,{fields:"id"});
   if(waba.id!==input.wabaId)return {ok:false,code:"META_ASSET_REJECTED"};
   const phones=await list(`${input.wabaId}/phone_numbers`,token);
@@ -58,19 +59,22 @@ export async function onboardMetaSignup(config:MetaSignupConfig,input:MetaSignup
   if(phone.id!==input.phoneNumberId||phone.code_verification_status!=="VERIFIED"||phone.is_on_biz_app!==false)return {ok:false,code:"META_ASSET_REJECTED"};
   const registrationRequired=phone.status!=="CONNECTED"||phone.platform_type!=="CLOUD_API";
   if(preparation?.probe){preparation.capture?.(token,registrationRequired);return {ok:false,code:'RECONCILIATION_REQUIRED'};}
-  if(registrationRequired&&!/^\d{6}$/.test(input.pin))return {ok:false,code:'INVALID_INPUT'};
-  const subscribed=await request(`${input.wabaId}/subscribed_apps`,token,{});
-  if(subscribed.success!==true)return {ok:false,code:"RECONCILIATION_REQUIRED"};
-  if(phone.status!=="CONNECTED"||phone.platform_type!=="CLOUD_API"){
-   const registration=await request(`${input.phoneNumberId}/register`,token,{messaging_product:"whatsapp",pin:input.pin});
-   if(registration.success!==true)return {ok:false,code:"RECONCILIATION_REQUIRED"};
+  if(preparation?.readOnly&&registrationRequired)return {ok:false,code:'RECONCILIATION_REQUIRED'};
+  if(!preparation?.readOnly){
+   if(registrationRequired&&!/^\d{6}$/.test(input.pin))return {ok:false,code:'INVALID_INPUT'};
+   const subscribed=await request(`${input.wabaId}/subscribed_apps`,token,{});
+   if(subscribed.success!==true)return {ok:false,code:"RECONCILIATION_REQUIRED"};
+   if(registrationRequired){
+    const registration=await request(`${input.phoneNumberId}/register`,token,{messaging_product:"whatsapp",pin:input.pin});
+    if(registration.success!==true)return {ok:false,code:"RECONCILIATION_REQUIRED"};
+   }
   }
   phone=await request(input.phoneNumberId,token,undefined,fields);
   const apps=await list(`${input.wabaId}/subscribed_apps`,token);
   if(!apps.some(a=>{const row=object(a);return object(row?.whatsapp_business_api_data)?.id===config.appId;})
    ||phone.id!==input.phoneNumberId||phone.code_verification_status!=="VERIFIED"||phone.platform_type!=="CLOUD_API"||phone.status!=="CONNECTED"||phone.is_on_biz_app!==false
    ||typeof phone.display_phone_number!=="string"||!phone.display_phone_number.trim()||phone.display_phone_number.length>40)return {ok:false,code:"RECONCILIATION_REQUIRED"};
-  const finalToken=validateToken((await request("debug_token",config.systemUserToken,undefined,{input_token:token})).data,config.appId,input.wabaId);
+  const finalToken=validateToken((await request("debug_token",appAccessToken,undefined,{input_token:token})).data,config.appId,input.wabaId);
   if(!finalToken)return {ok:false,code:"RECONCILIATION_REQUIRED"};
   const {scopes,expires,dataExpires}=finalToken;
   const deadlines=[expires,dataExpires].filter(x=>x>0);
