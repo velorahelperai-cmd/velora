@@ -279,6 +279,9 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
   const canStartInstagram = viewModel.canStartFlow("instagram_direct");
 
   const handleWhatsappConnect = async () => {
+    // Same-boundary profile refreshes replace isCurrent. Keep every new-number
+    // await fence live; scope changes still remount/abort. Coexistence is unchanged.
+    const checkCurrent = () => (selectedWhatsappFlow === 'wa_new_number' ? currentAuthority.current?.() ?? true : isCurrent?.() ?? true);
     if (connectReserved.current || inFlight || !checkCurrent() || !connection || !connection.revision || !selectedWhatsappFlow || !canStartSelectedWhatsapp) return;
     // Meta's JavaScript SDK refuses FB.login on HTTP and may never call back.
     // Check before creating a server attempt; injected launchers are test doubles.
