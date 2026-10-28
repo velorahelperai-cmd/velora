@@ -52,7 +52,7 @@ it.each(['same-profile','refreshed-profile'] as const)('captures FINISH and OAut
  // onCode denial, before the injected Server Action boundary is reached.
  const stages=s.trace.mock.calls.map(call=>call[1]?.stage);
  expect({captureCalls:s.actions.captureAuthorization.mock.calls.length,unknown:stages.includes('early_authorization_unknown')}).toEqual({captureCalls:1,unknown:false});
- expect(s.actions.captureAuthorization).toHaveBeenCalledWith({...scope,channel:'whatsapp',attemptId:'attempt',generation:16,nonce:'synthetic-nonce',code:'synthetic-code'});
+ expect(s.actions.captureAuthorization).toHaveBeenCalledWith({...scope,channel:'whatsapp',attemptId:'attempt',generation:16,nonce:'synthetic-nonce',code:'synthetic-code',correlationId:expect.any(String)});
  expect(stages).toEqual(expect.arrayContaining(['signup_signal','oauth_callback_received','early_authorization_saved']));
  expect(s.actions.prepareRegistration).toHaveBeenCalledTimes(1);
  expect(s.actions.completeConnection).toHaveBeenCalledTimes(1);

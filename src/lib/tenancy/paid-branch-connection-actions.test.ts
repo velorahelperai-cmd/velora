@@ -231,6 +231,13 @@ describe('early authorization server boundary',()=>{
  afterEach(()=>vi.unstubAllEnvs());
  it('persists code before FINISH without asset IDs or plaintext code in RPC binding',async()=>{expect(await captureOwnedWhatsappAuthorizationAction(input)).toEqual({ok:true});expect(state.early).toHaveBeenCalledTimes(1);const reserve=state.rpc.mock.calls.find(c=>c[1].p_operation==='reserve')![1];expect(reserve.p_binding).toMatchObject({accountId:scope.expectedAccountId,sessionId:'44444444-4444-4444-8444-444444444444',companyId:scope.companyId,branchId:scope.branchId,attemptId,generation:1,appId:'111',configId:'123',nonce:'a'.repeat(64)});expect(reserve.p_binding).not.toHaveProperty('wabaId');expect(JSON.stringify(reserve)).not.toContain('synthetic-code');});
  it.each(['account','expired','generation'])('rejects %s before exchange',async kind=>{if(kind==='expired')state.rpc.mockResolvedValue({data:{...current(),connection:{...current().connection,attempt:{...current().connection.attempt,expiresAt:'2000-01-01T00:00:00Z'}}},error:null});expect(await captureOwnedWhatsappAuthorizationAction({...input,...(kind==='account'?{expectedAccountId:'99999999-9999-4999-8999-999999999999'}:kind==='generation'?{generation:2}:{})})).toEqual({ok:false});expect(state.early).not.toHaveBeenCalled();});
+ it('correlates only valid client UUIDs and never logs malformed values',async()=>{
+  const correlationId='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  expect(await captureOwnedWhatsappAuthorizationAction({...input,correlationId})).toEqual({ok:true});
+  expect(state.log.mock.calls.filter(c=>c[1]==='whatsapp.early_authorization.stage').every(c=>c[2].correlation_id===correlationId)).toBe(true);
+  state.log.mockClear();await captureOwnedWhatsappAuthorizationAction({...input,correlationId:'synthetic-secret'});
+  expect(JSON.stringify(state.log.mock.calls)).not.toContain('synthetic-secret');
+ });
  it('logs bounded capture stages and never logs OAuth, nonce or customer identity',async()=>{
   expect(await captureOwnedWhatsappAuthorizationAction(input)).toEqual({ok:true});
   const events=state.log.mock.calls.filter(c=>c[1]==='whatsapp.early_authorization.stage');expect(events.map(c=>c[2].stage)).toEqual(['received','input','identity','identity','attempt','attempt','configuration','reservation','reservation','exchange','exchange','save','save','complete']);

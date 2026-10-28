@@ -40,7 +40,7 @@ export type WhatsappSdkPopupResult =
   | { kind: "error" };
 
 export type PaidChannelViewActions = {
-  captureAuthorization?:(input:PaidBranchConnectionScope&{attemptId:string;generation:number;nonce:string;code:string})=>Promise<{ok:boolean}>;
+  captureAuthorization?:(input:PaidBranchConnectionScope&{attemptId:string;generation:number;nonce:string;code:string;correlationId?:string})=>Promise<{ok:boolean}>;
   prepareRegistration?:(input:CompleteOwnedPaidBranchConnectionInput)=>Promise<{ok:true;registrationRequired:boolean;autoPinEligible?:boolean;authorizationTicket:string}|{ok:false}>;
   startConnection?: (input: StartOwnedPaidBranchConnectionInput) => Promise<PaidBranchConnectionStartResult | PaidBranchConnectionDenial>;
   completeConnection?: (input: CompleteOwnedPaidBranchConnectionInput) => Promise<PaidBranchConnectionMutation>;
@@ -127,7 +127,7 @@ export async function runBrowserWhatsappSdkPopup(
 ): Promise<WhatsappSdkPopupResult> {
   // A fresh, non-identifying correlation value; never log attempt IDs or provider payloads.
   const correlationId = crypto.randomUUID();
-  const trace = (stage: string, facts: Record<string, boolean> = {}) => console.info("whatsapp_signup_stage", { correlation_id: correlationId, stage, ...facts });
+  const trace = (stage: string, facts: Record<string, boolean> = {}) => console.info("whatsapp_signup_stage", { correlation_id: correlationId, timestamp: new Date().toISOString(), stage, ...facts });
   const fb = await loadMetaFacebookSdk(launch.appId, launch.graphVersion, trace);
   if (!fb) return { kind: "error" };
   return launchPreparedWhatsappSdkPopup(launch, fb, trace, lifecycle);
@@ -322,7 +322,7 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
       }
       const generation = attempt.generation;
       const correlationId = makeClientOpId();
-      const trace = (stage: string, facts: Record<string, boolean> = {}) => console.info("whatsapp_signup_stage", { correlation_id: correlationId, stage, ...facts });
+      const trace = (stage: string, facts: Record<string, boolean> = {}) => console.info("whatsapp_signup_stage", { correlation_id: correlationId, timestamp: new Date().toISOString(), stage, ...facts });
       const fb = actions?.launchWhatsappSdk ? null : await loadMetaFacebookSdk(started.launch.appId, started.launch.graphVersion, trace);
       if (!mounted.current || !checkCurrent()) return;
       if (!actions?.launchWhatsappSdk && !fb) { setInFlight(null); setFeedback(t("تعذر تجهيز Facebook. راجع حالة المحاولة قبل المتابعة.", "Facebook could not be prepared. Review the attempt before continuing.")); return; }
@@ -336,7 +336,7 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
           try {
             const controller=new AbortController();popupCapture.current=controller;
             const preparedLaunch=started.launch;
-            const lifecycle:PopupLifecycle={expiresAt,onCode:preparedLaunch.flow==='wa_new_number'&&resolved.captureAuthorization?async code=>{if(!mounted.current||!checkCurrent())return false;const result=await resolved.captureAuthorization!({...scope,channel:'whatsapp',attemptId:attempt.id,generation,nonce:preparedLaunch.nonce,code});return mounted.current&&checkCurrent()&&result.ok;}:undefined,isCurrent:()=>mounted.current&&(currentAuthority.current?.()??true),signal:controller.signal,onObservation:stage=>{
+            const lifecycle:PopupLifecycle={expiresAt,onCode:preparedLaunch.flow==='wa_new_number'&&resolved.captureAuthorization?async code=>{if(!mounted.current||!checkCurrent())return false;const result=await resolved.captureAuthorization!({...scope,channel:'whatsapp',attemptId:attempt.id,generation,nonce:preparedLaunch.nonce,code,correlationId});return mounted.current&&checkCurrent()&&result.ok;}:undefined,isCurrent:()=>mounted.current&&(currentAuthority.current?.()??true),signal:controller.signal,onObservation:stage=>{
               if(!mounted.current||!checkCurrent())return;
               if(stage==='waiting_timeout'||stage==='popup_closed'||stage==='callback_without_code'){setInFlight(null);setFeedback(t('نتيجة Meta غير محسومة. ننتظر التفويض ضمن صلاحية المحاولة؛ لا تبدأ محاولة أخرى.','Meta outcome is unconfirmed. Waiting within this attempt’s validity; do not start another attempt.'));}
             }};

@@ -155,12 +155,13 @@ export async function startOwnedPaidBranchConnectionAction(input: StartOwnedPaid
 }
 
 /** Code is exchanged and saved before FINISH. No asset authority is granted here. */
-export async function captureOwnedWhatsappAuthorizationAction(input:PaidBranchConnectionScope&{attemptId:string;generation:number;nonce:string;code:string}):Promise<{ok:boolean}>{
+export async function captureOwnedWhatsappAuthorizationAction(input:PaidBranchConnectionScope&{attemptId:string;generation:number;nonce:string;code:string;correlationId?:string}):Promise<{ok:boolean}>{
  const requestId=randomUUID(),started=Date.now();
  return withLogContext({request_id:requestId},async()=>{
   // Fixed labels only: never input, code, nonce, session/account IDs, provider URL/body or raw Error.
   const attemptRef=typeof input?.attemptId==='string'&&UUID.test(input.attemptId)?createHash('sha256').update(input.attemptId.toLowerCase()).digest('hex').slice(0,24):'invalid';
-  const report=(stage:string,outcome:string,durationMs:number,reasonCode?:string)=>{try{logEvent('info','whatsapp.early_authorization.stage',{stage,outcome,duration_ms:Math.max(0,durationMs),attempt_ref:attemptRef,...(reasonCode?{reason_code:reasonCode}:{})});}catch{/* logging cannot change authorization */}};
+  const correlationId=typeof input?.correlationId==='string'&&UUID.test(input.correlationId)?input.correlationId.toLowerCase():null;
+  const report=(stage:string,outcome:string,durationMs:number,reasonCode?:string)=>{try{logEvent('info','whatsapp.early_authorization.stage',{stage,outcome,duration_ms:Math.max(0,durationMs),attempt_ref:attemptRef,...(correlationId?{correlation_id:correlationId}:{}),...(reasonCode?{reason_code:reasonCode}:{})});}catch{/* logging cannot change authorization */}};
   const finish=(ok:boolean)=>{report('complete',ok?'confirmed':'unknown',Date.now()-started);return {ok};};
   let stage='input';let stageStarted=Date.now();report('received','started',0);
   try{
