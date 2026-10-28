@@ -92,7 +92,7 @@ export type PaidBranchConnectionDenial = {
 
 /** Complete, recover, and cancel do not carry launch material. */
 export type PaidBranchConnectionMutation =
-  | { ok: true; read: PaidBranchConnectionRead; continuation?:{registrationRequired:boolean;authorizationTicket:string;nonce:string;wabaId:string;phoneNumberId:string} }
+  | { ok: true; read: PaidBranchConnectionRead; continuation?:{registrationRequired:boolean;autoPinEligible?:boolean;authorizationTicket:string;nonce:string;wabaId:string;phoneNumberId:string} }
   | PaidBranchConnectionDenial;
 
 /** Start success always includes the server-issued launch descriptor for that flow and attempt. */

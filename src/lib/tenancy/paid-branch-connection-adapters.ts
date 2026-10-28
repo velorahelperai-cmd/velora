@@ -1,4 +1,5 @@
 import "server-only";
+import {autoPinAllowed} from "@/lib/whatsapp/auto-pin";
 import {openSignupPreparation} from '@/lib/whatsapp/signup-preparation';
 import { completeInstagramConnection } from "@/lib/instagram/connection-flow";
 import type { AttemptBinding, ConnectionPorts } from "@/lib/instagram/connection-contracts";
@@ -96,7 +97,7 @@ export async function exchangeOwnedBranchConnection(input: {
     if(prepared===null)return {ok:false,code:'forbidden'};
     const finished = await finishEmbeddedSignup(identity, completion as never, config, {
       claim: async () => claim,
-      provider: (providerInput) => onboardMetaSignup(config, providerInput,fetch,prepared?{token:prepared}:undefined),
+      provider: (providerInput) => onboardMetaSignup(config, providerInput,fetch,{...(prepared?{token:prepared}:{}),autoPinAllowed:()=>autoPinAllowed({companyId:request.companyId,branchId:request.branchId,phoneNumberId:providerInput.phoneNumberId})}),
       finalize: async (_claim, token, proof) => {
         slot.accessToken = token;
         slot.proof = proof;

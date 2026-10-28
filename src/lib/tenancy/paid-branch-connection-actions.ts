@@ -10,6 +10,7 @@ import { instagramAuthorizationUrl, readInstagramOAuthConfig } from "@/lib/insta
 import { INSTAGRAM_ATTEMPT_COOKIE } from "@/lib/instagram/oauth-route";
 import { embeddedSignupClientConfig } from "@/lib/whatsapp/embedded-signup";
 import {captureEarlyAuthorization,earlyAuthorizationRpc} from '@/lib/whatsapp/early-authorization';
+import {autoPinAllowed} from '@/lib/whatsapp/auto-pin';
 import {onboardMetaSignup} from '@/lib/whatsapp/embedded-signup-meta';
 import {sealSignupPreparation,openSignupPreparation} from '@/lib/whatsapp/signup-preparation';
 import {signupCheckpointBinding,signupCheckpointRpc,parseSignupCheckpoint} from '@/lib/whatsapp/signup-checkpoint';
@@ -180,7 +181,7 @@ export async function captureOwnedWhatsappAuthorizationAction(input:PaidBranchCo
 }
 
 /** Read provider registration state after Facebook authorization, before the native completion claim. */
-export async function prepareOwnedWhatsappRegistrationAction(input:CompleteOwnedPaidBranchConnectionInput):Promise<{ok:true;registrationRequired:boolean;authorizationTicket:string}|{ok:false}>{
+export async function prepareOwnedWhatsappRegistrationAction(input:CompleteOwnedPaidBranchConnectionInput):Promise<{ok:true;registrationRequired:boolean;autoPinEligible?:boolean;authorizationTicket:string}|{ok:false}>{
  const asOf=new Date().toISOString(),request=attemptRequest(input,asOf);
  if('ok' in request||request.flow!=='wa_new_number')return {ok:false};
  const row=input.completion as Record<string,unknown>;
@@ -203,7 +204,7 @@ export async function prepareOwnedWhatsappRegistrationAction(input:CompleteOwned
   await onboardMetaSignup({...config,enabled:true,appSecret},{code:'early-authorization',wabaId:String(row.wabaId),phoneNumberId:String(row.phoneNumberId),pin:'',keepOnPhone:false},fetch,{token,probe:true,capture:(_token,required)=>{registrationRequired=required;}});
   if(registrationRequired===undefined)return {ok:false};
   if(early&&!await earlyAuthorizationRpc(admin as unknown as PaidBranchConnectionRpc,'promote',earlyBinding))return {ok:false};
-  return {ok:true,registrationRequired,authorizationTicket:sealSignupPreparation(appSecret,{...binding,nonce:String(row.nonce),wabaId:String(row.wabaId),phoneNumberId:String(row.phoneNumberId)},token)};
+  return {ok:true,registrationRequired,autoPinEligible:registrationRequired&&autoPinAllowed({companyId:request.companyId,branchId:request.branchId,phoneNumberId:String(row.phoneNumberId)}),authorizationTicket:sealSignupPreparation(appSecret,{...binding,nonce:String(row.nonce),wabaId:String(row.wabaId),phoneNumberId:String(row.phoneNumberId)},token)};
 }
 
 export async function completeOwnedPaidBranchConnectionAction(input: CompleteOwnedPaidBranchConnectionInput): Promise<PaidBranchConnectionMutation> {
@@ -285,7 +286,7 @@ export async function recoverOwnedPaidBranchConnectionAction(input: PaidBranchCo
    let registrationRequired:boolean|undefined;
    await onboardMetaSignup({...config,enabled:true,appSecret},providerInput,fetch,{token:checkpoint.token,probe:true,capture:(_token,required)=>{registrationRequired=required;}});
    if(registrationRequired===undefined)return recovered;
-   return {...recovered,continuation:{registrationRequired,nonce:checkpoint.nonce,wabaId:checkpoint.wabaId,phoneNumberId:checkpoint.phoneNumberId,authorizationTicket:sealSignupPreparation(appSecret,{...signupCheckpointBinding(request,session.sessionId),nonce:checkpoint.nonce,wabaId:checkpoint.wabaId,phoneNumberId:checkpoint.phoneNumberId},checkpoint.token)}};
+   return {...recovered,continuation:{registrationRequired,autoPinEligible:registrationRequired&&autoPinAllowed({companyId:request.companyId,branchId:request.branchId,phoneNumberId:checkpoint.phoneNumberId}),nonce:checkpoint.nonce,wabaId:checkpoint.wabaId,phoneNumberId:checkpoint.phoneNumberId,authorizationTicket:sealSignupPreparation(appSecret,{...signupCheckpointBinding(request,session.sessionId),nonce:checkpoint.nonce,wabaId:checkpoint.wabaId,phoneNumberId:checkpoint.phoneNumberId},checkpoint.token)}};
   }
   // An interrupted write is reconciled by GET requests only. Never re-register or re-subscribe.
   const verified=await onboardMetaSignup({...config,enabled:true,appSecret},providerInput,fetch,{token:checkpoint.token,readOnly:true});

@@ -1,4 +1,5 @@
 import "server-only";
+import {randomInt} from "node:crypto";
 /** Server provider adapter. Secrets and raw provider errors never cross its boundary. */
 export type MetaSignupConfig={enabled:boolean;appId:string;appSecret:string;systemUserToken?:string;graphVersion:string};
 export type MetaSignupInput={code:string;wabaId:string;phoneNumberId:string;pin:string;keepOnPhone:boolean};
@@ -18,7 +19,7 @@ function validateToken(value:unknown,appId:string,wabaId?:string){
  return {scopes:scopes as string[],expires,dataExpires};
 }
 
-export async function onboardMetaSignup(config:MetaSignupConfig,input:MetaSignupInput,http:MetaFetch=fetch,preparation?:{token?:string;probe?:boolean;readOnly?:boolean;capture?:(token:string,registrationRequired:boolean)=>void}):Promise<MetaSignupResult>{
+export async function onboardMetaSignup(config:MetaSignupConfig,input:MetaSignupInput,http:MetaFetch=fetch,preparation?:{token?:string;probe?:boolean;readOnly?:boolean;autoPinAllowed?:()=>boolean;capture?:(token:string,registrationRequired:boolean)=>void}):Promise<MetaSignupResult>{
  if(!config.enabled||!id(config.appId)||!config.appSecret||!/^v\d+\.0$/.test(config.graphVersion)||input.keepOnPhone)return {ok:false,code:"NEEDS_SETUP"};
  const appAccessToken=`${config.appId}|${config.appSecret}`; // Server-only debug credential; never return or log.
  if(!id(input.wabaId)||!id(input.phoneNumberId)||!input.code||input.code.length>4096||!(input.pin===''||/^\d{6}$/.test(input.pin)))return {ok:false,code:"INVALID_INPUT"};
@@ -61,11 +62,13 @@ export async function onboardMetaSignup(config:MetaSignupConfig,input:MetaSignup
   if(preparation?.probe){preparation.capture?.(token,registrationRequired);return {ok:false,code:'RECONCILIATION_REQUIRED'};}
   if(preparation?.readOnly&&registrationRequired)return {ok:false,code:'RECONCILIATION_REQUIRED'};
   if(!preparation?.readOnly){
-   if(registrationRequired&&!/^\d{6}$/.test(input.pin))return {ok:false,code:'INVALID_INPUT'};
+   if(registrationRequired&&!/^\d{6}$/.test(input.pin)&&!preparation?.autoPinAllowed?.())return {ok:false,code:'INVALID_INPUT'};
    const subscribed=await request(`${input.wabaId}/subscribed_apps`,token,{});
    if(subscribed.success!==true)return {ok:false,code:"RECONCILIATION_REQUIRED"};
    if(registrationRequired){
-    const registration=await request(`${input.phoneNumberId}/register`,token,{messaging_product:"whatsapp",pin:input.pin});
+    const pin=input.pin|| (preparation?.autoPinAllowed?.()?String(randomInt(0,1_000_000)).padStart(6,"0"):null);
+    if(!pin)return {ok:false,code:"INVALID_INPUT"};
+    const registration=await request(`${input.phoneNumberId}/register`,token,{messaging_product:"whatsapp",pin});
     if(registration.success!==true)return {ok:false,code:"RECONCILIATION_REQUIRED"};
    }
   }

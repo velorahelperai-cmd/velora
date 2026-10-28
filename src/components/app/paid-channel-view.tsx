@@ -41,7 +41,7 @@ export type WhatsappSdkPopupResult =
 
 export type PaidChannelViewActions = {
   captureAuthorization?:(input:PaidBranchConnectionScope&{attemptId:string;generation:number;nonce:string;code:string})=>Promise<{ok:boolean}>;
-  prepareRegistration?:(input:CompleteOwnedPaidBranchConnectionInput)=>Promise<{ok:true;registrationRequired:boolean;authorizationTicket:string}|{ok:false}>;
+  prepareRegistration?:(input:CompleteOwnedPaidBranchConnectionInput)=>Promise<{ok:true;registrationRequired:boolean;autoPinEligible?:boolean;authorizationTicket:string}|{ok:false}>;
   startConnection?: (input: StartOwnedPaidBranchConnectionInput) => Promise<PaidBranchConnectionStartResult | PaidBranchConnectionDenial>;
   completeConnection?: (input: CompleteOwnedPaidBranchConnectionInput) => Promise<PaidBranchConnectionMutation>;
   recoverConnection?: (input: RecoverOwnedPaidBranchConnectionInput) => Promise<PaidBranchConnectionMutation>;
@@ -386,7 +386,8 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
           setInFlight(null);setFeedback(t('نتيجة التفويض غير مؤكدة. استخدم استكمال المحاولة للتحقق من الحالة المحفوظة قبل بدء ربط جديد.','Authorization outcome is unconfirmed. Recover the attempt to check its saved state before starting a new connection.'));onRefresh?.();return;
         }
         authorizationTicket=prepared.authorizationTicket;
-        if(prepared.registrationRequired){
+        if(prepared.registrationRequired&&prepared.autoPinEligible)setFeedback(t('يُستكمل تسجيل الرقم تلقائيًا دون طلب PIN.','Completing phone registration automatically without a PIN prompt.'));
+        if(prepared.registrationRequired&&!prepared.autoPinEligible){
         setPin('');setAwaitingPin(true);
         const answer=await new Promise<string|null>(resolve=>{pinAnswer.current=resolve;});
         if(!mounted.current||!checkCurrent())return;
@@ -509,7 +510,8 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
       if(recovered.ok&&recovered.continuation&&flow==='wa_new_number'){
         const continuation=recovered.continuation;
         let registrationPin='';
-        if(continuation.registrationRequired){
+        if(continuation.registrationRequired&&continuation.autoPinEligible)setFeedback(t('يُستكمل تسجيل الرقم تلقائيًا دون طلب PIN.','Completing phone registration automatically without a PIN prompt.'));
+        if(continuation.registrationRequired&&!continuation.autoPinEligible){
           setPin('');setAwaitingPin(true);
           const answer=await new Promise<string|null>(resolve=>{pinAnswer.current=resolve;});
           if(!mounted.current||!checkCurrent())return;
