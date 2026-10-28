@@ -1,6 +1,6 @@
 "use server";
 
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { cookies } from "next/headers";
 import { readSessionIdentity } from "@/lib/auth/server-identity";
 import { logEvent, withLogContext } from "@/lib/logging/logger.mjs";
@@ -155,13 +155,28 @@ export async function startOwnedPaidBranchConnectionAction(input: StartOwnedPaid
 
 /** Code is exchanged and saved before FINISH. No asset authority is granted here. */
 export async function captureOwnedWhatsappAuthorizationAction(input:PaidBranchConnectionScope&{attemptId:string;generation:number;nonce:string;code:string}):Promise<{ok:boolean}>{
- const asOf=new Date().toISOString();const request=attemptRequest({...input,flow:'wa_new_number'},asOf);if('ok' in request||typeof input.code!=='string'||!input.code.trim()||input.code.length>4096||!/^([a-f0-9]{64})$/.test(input.nonce))return {ok:false};
- const session=await sessionClient(request.expectedAccountId,randomUUID(),asOf,request);if('ok' in session)return {ok:false};
- const current=await runPaidBranchConnectionRead(request,createPaidBranchConnectionStore(session.client,session.client,asOf),asOf);const a=current.read.connection.attempt;
- if(current.read.sourceStatus!=='ready'||a?.id!==request.attemptId||a.generation!==request.generation||a.status!=='pending'||Date.parse(a.expiresAt)<=Date.now())return {ok:false};
- const config=embeddedSignupClientConfig(),appSecret=process.env.WHATSAPP_APP_SECRET?.trim()??'',admin=createAdminClient();if(!config.ok||!appSecret||!admin)return {ok:false};
- const binding={...signupCheckpointBinding(request,session.sessionId),...config,nonce:input.nonce};
- return {ok:await captureEarlyAuthorization(admin as unknown as PaidBranchConnectionRpc,binding,input.code,{...config,enabled:true,appSecret})};
+ const requestId=randomUUID(),started=Date.now();
+ return withLogContext({request_id:requestId},async()=>{
+  // Fixed labels only: never input, code, nonce, session/account IDs, provider URL/body or raw Error.
+  const attemptRef=typeof input?.attemptId==='string'&&UUID.test(input.attemptId)?createHash('sha256').update(input.attemptId.toLowerCase()).digest('hex').slice(0,24):'invalid';
+  const report=(stage:string,outcome:string,durationMs:number,reasonCode?:string)=>{try{logEvent('info','whatsapp.early_authorization.stage',{stage,outcome,duration_ms:Math.max(0,durationMs),attempt_ref:attemptRef,...(reasonCode?{reason_code:reasonCode}:{})});}catch{/* logging cannot change authorization */}};
+  const finish=(ok:boolean)=>{report('complete',ok?'confirmed':'unknown',Date.now()-started);return {ok};};
+  let stage='input';let stageStarted=Date.now();report('received','started',0);
+  try{
+   const asOf=new Date().toISOString();const request=attemptRequest({...input,flow:'wa_new_number'},asOf);
+   if('ok' in request||typeof input.code!=='string'||!input.code.trim()||input.code.length>4096||!/^([a-f0-9]{64})$/.test(input.nonce)){report(stage,'denied',Date.now()-stageStarted,'INPUT_REJECTED');return finish(false);}
+   report(stage,'confirmed',Date.now()-stageStarted);
+   stage='identity';stageStarted=Date.now();report(stage,'started',0);
+   const session=await sessionClient(request.expectedAccountId,requestId,asOf,request);if('ok' in session){report(stage,'denied',Date.now()-stageStarted,'IDENTITY_REJECTED');return finish(false);}report(stage,'confirmed',Date.now()-stageStarted);
+   stage='attempt';stageStarted=Date.now();report(stage,'started',0);
+   const current=await runPaidBranchConnectionRead(request,createPaidBranchConnectionStore(session.client,session.client,asOf),asOf);const a=current.read.connection.attempt;
+   if(current.read.sourceStatus!=='ready'||a?.id!==request.attemptId||a.generation!==request.generation||a.status!=='pending'||Date.parse(a.expiresAt)<=Date.now()){const reason=current.read.sourceStatus!=='ready'?'ATTEMPT_READ_UNAVAILABLE':a?.id!==request.attemptId?'ATTEMPT_MISMATCH':a.generation!==request.generation?'GENERATION_MISMATCH':a.status!=='pending'?'ATTEMPT_NOT_PENDING':'ATTEMPT_EXPIRED';report(stage,'denied',Date.now()-stageStarted,reason);return finish(false);}report(stage,'confirmed',Date.now()-stageStarted);
+   stage='configuration';stageStarted=Date.now();
+   const config=embeddedSignupClientConfig(),appSecret=process.env.WHATSAPP_APP_SECRET?.trim()??'',admin=createAdminClient();if(!config.ok||!appSecret||!admin){report(stage,'denied',Date.now()-stageStarted,!config.ok?'SIGNUP_CONFIG_UNAVAILABLE':!appSecret?'APP_CREDENTIAL_UNAVAILABLE':'SERVER_CLIENT_UNAVAILABLE');return finish(false);}report(stage,'confirmed',Date.now()-stageStarted);
+   const binding={...signupCheckpointBinding(request,session.sessionId),...config,nonce:input.nonce};
+   return finish(await captureEarlyAuthorization(admin as unknown as PaidBranchConnectionRpc,binding,input.code,{...config,enabled:true,appSecret},undefined,report));
+  }catch(error){report(stage,'unknown',Date.now()-stageStarted);report('complete','unknown',Date.now()-started);throw error;}
+ });
 }
 
 /** Read provider registration state after Facebook authorization, before the native completion claim. */
