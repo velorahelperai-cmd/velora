@@ -1,6 +1,6 @@
 "use client";
 
-import {useEffect, useId, useRef, useState} from "react";
+import {useEffect, useLayoutEffect, useId, useRef, useState} from "react";
 import type {PaidBranchSetupRead, PaidSetupChannel} from "@/lib/tenancy/paid-setup-contracts";
 import {checklistSteps, paidChecklistFromRead, type PaidSetupFlowProps} from "./paid-assistant-checklist";
 import {WhatsappConnectionGuide} from "./whatsapp-connection-guide";
@@ -25,7 +25,8 @@ import {
   derivePaidChannelConnectionViewModel,
   scopedChannelConnection,
 } from "./paid-channel-connection-model";
-import {joinSignupSignals, parseSignupMessage, signupLoginOptions, type SignupSignals} from "@/lib/whatsapp/embedded-signup-browser";
+import {createSignupPopupSession,type PopupObservation} from "@/lib/whatsapp/signup-popup-session";
+import {parseSignupMessage, signupLoginOptions} from "@/lib/whatsapp/embedded-signup-browser";
 import {
   coexistenceLoginOptions,
   createSignupAttempt,
@@ -39,6 +40,7 @@ export type WhatsappSdkPopupResult =
   | { kind: "error" };
 
 export type PaidChannelViewActions = {
+  captureAuthorization?:(input:PaidBranchConnectionScope&{attemptId:string;generation:number;nonce:string;code:string})=>Promise<{ok:boolean}>;
   prepareRegistration?:(input:CompleteOwnedPaidBranchConnectionInput)=>Promise<{ok:true;registrationRequired:boolean;authorizationTicket:string}|{ok:false}>;
   startConnection?: (input: StartOwnedPaidBranchConnectionInput) => Promise<PaidBranchConnectionStartResult | PaidBranchConnectionDenial>;
   completeConnection?: (input: CompleteOwnedPaidBranchConnectionInput) => Promise<PaidBranchConnectionMutation>;
@@ -70,9 +72,10 @@ type FbSdk = {
   login: (callback: (response: { authResponse?: { code?: unknown } }) => void, options: Record<string, unknown>) => void;
 };
 
-async function resolveDefaultActions(): Promise<Required<Pick<PaidChannelViewActions, "startConnection" | "completeConnection" | "recoverConnection" | "cancelConnection" | "prepareRegistration" | "readConnection">>> {
+async function resolveDefaultActions(): Promise<Required<Pick<PaidChannelViewActions, "startConnection" | "completeConnection" | "recoverConnection" | "cancelConnection" | "prepareRegistration" | "readConnection" | "captureAuthorization">>> {
   const mod = await import("@/lib/tenancy/paid-branch-connection-actions");
   return {
+    captureAuthorization:mod.captureOwnedWhatsappAuthorizationAction,
     prepareRegistration:mod.prepareOwnedWhatsappRegistrationAction,
     startConnection: mod.startOwnedPaidBranchConnectionAction,
     completeConnection: mod.completeOwnedPaidBranchConnectionAction,
@@ -120,71 +123,21 @@ function loadMetaFacebookSdk(appId: string, graphVersion: string, trace: (stage:
 
 export async function runBrowserWhatsappSdkPopup(
   launch: Extract<PaidBranchConnectionLaunch, { flow: "wa_new_number" | "wa_coexistence" }>,
+  lifecycle?:PopupLifecycle,
 ): Promise<WhatsappSdkPopupResult> {
   // A fresh, non-identifying correlation value; never log attempt IDs or provider payloads.
   const correlationId = crypto.randomUUID();
   const trace = (stage: string, facts: Record<string, boolean> = {}) => console.info("whatsapp_signup_stage", { correlation_id: correlationId, stage, ...facts });
   const fb = await loadMetaFacebookSdk(launch.appId, launch.graphVersion, trace);
   if (!fb) return { kind: "error" };
-  return launchPreparedWhatsappSdkPopup(launch, fb, trace);
+  return launchPreparedWhatsappSdkPopup(launch, fb, trace, lifecycle);
 }
 
-function launchPreparedWhatsappSdkPopup(
-  launch: Extract<PaidBranchConnectionLaunch, { flow: "wa_new_number" | "wa_coexistence" }>,
-  fb: FbSdk, trace: (stage: string, facts?: Record<string, boolean>) => void,
-): Promise<WhatsappSdkPopupResult> {
-  return new Promise((resolve) => {
-    let settled = false;
-    let onMessage: (event: MessageEvent) => void = () => {};
+function launchCoexistenceSdkPopup(launch:Extract<PaidBranchConnectionLaunch,{flow:"wa_coexistence"}>,fb:FbSdk,trace:(stage:string,facts?:Record<string,boolean>)=>void):Promise<WhatsappSdkPopupResult>{
+  return new Promise(resolve=>{
+    let settled=false;let onMessage:(event:MessageEvent)=>void=()=>{};
     const timeout=window.setTimeout(()=>{trace('callback_or_signal_timeout');finishOnce({kind:'error'});},5*60_000);
-    const finishOnce = (result: WhatsappSdkPopupResult) => {
-      if (settled) return;
-      settled = true;
-      window.clearTimeout(timeout);
-      window.removeEventListener("message", onMessage);
-      resolve(result);
-    };
-
-    if (launch.flow === "wa_new_number") {
-      let signals: SignupSignals = {};
-      const checkReady = () => {
-        if (signals.code && signals.wabaId && signals.phoneNumberId) {
-          finishOnce({ kind: "completed", code: signals.code, wabaId: signals.wabaId, phoneNumberId: signals.phoneNumberId });
-        }
-      };
-      onMessage = (event: MessageEvent) => {
-        if (settled) return;
-        const parsed = parseSignupMessage(event.origin, event.data);
-        if (!parsed) return;
-        trace("signup_signal", { finish: parsed.event === "FINISH", cancel: parsed.event === "CANCEL", error: parsed.event === "ERROR" || parsed.event === "UNSUPPORTED", assets_received: parsed.event === "FINISH" });
-        if (parsed.event === "CANCEL") {
-          finishOnce({ kind: "cancelled" });
-          return;
-        }
-        if (parsed.event === "ERROR" || parsed.event === "UNSUPPORTED") {
-          finishOnce({ kind: "error" });
-          return;
-        }
-        signals = joinSignupSignals(signals, parsed);
-        checkReady();
-      };
-      window.addEventListener("message", onMessage);
-      trace("fb_login_invoked");
-      fb.login((response) => {
-        if (settled) return;
-        const code = response?.authResponse?.code;
-        trace("oauth_callback_received", { code_received: typeof code === "string" && code.trim().length > 0 });
-        if (typeof code === "string" && code.trim().length > 0) {
-          signals = joinSignupSignals(signals, { code });
-          checkReady();
-        } else if (!settled) {
-          // A missing code is not an explicit Meta cancellation: keep the attempt for reconciliation.
-          finishOnce({ kind: "error" });
-        }
-      }, signupLoginOptions(launch.configId));
-      return;
-    }
-
+    const finishOnce=(result:WhatsappSdkPopupResult)=>{if(settled)return;settled=true;window.clearTimeout(timeout);window.removeEventListener('message',onMessage);resolve(result);};
     let attempt = createSignupAttempt(launch.attemptId);
     const checkCoexistence = () => {
       if (attempt.status === "ready-for-server-validation" && attempt.code && attempt.session) {
@@ -224,6 +177,29 @@ function launchPreparedWhatsappSdkPopup(
   });
 }
 
+type PopupLifecycle={expiresAt:number;isCurrent:()=>boolean;signal?:AbortSignal;onCode?:(code:string)=>Promise<boolean>;onObservation?:(stage:PopupObservation)=>void};
+function launchPreparedWhatsappSdkPopup(
+ launch:Extract<PaidBranchConnectionLaunch,{flow:"wa_new_number"|"wa_coexistence"}>,fb:FbSdk,
+ trace:(stage:string,facts?:Record<string,boolean>)=>void,lifecycle?:PopupLifecycle,
+):Promise<WhatsappSdkPopupResult>{
+ if(launch.flow==='wa_coexistence')return launchCoexistenceSdkPopup(launch,fb,trace);
+ if(lifecycle&&(!lifecycle.isCurrent()||lifecycle.signal?.aborted||!Number.isFinite(lifecycle.expiresAt)||lifecycle.expiresAt<=Date.now())){trace('attempt_not_launchable');return Promise.resolve({kind:'error'});}
+ const session=createSignupPopupSession({expiresAt:lifecycle?.expiresAt??Date.now()+5*60_000,isCurrent:lifecycle?.isCurrent??(()=>true),signal:lifecycle?.signal,onCode:lifecycle?.onCode,onObservation:lifecycle?.onObservation,trace});
+ const onMessage=(event:MessageEvent)=>{
+  const parsed=parseSignupMessage(event.origin,event.data);if(!parsed)return;
+  if(parsed.event==='FINISH')session.assets(parsed);else if(parsed.event==='CANCEL')session.cancelled();else session.error();
+ };
+ window.addEventListener('message',onMessage);
+ // Capture only the synchronously opened SDK popup, as in Meta's official sample.
+ const originalOpen=window.open;let popup:Window|null=null,closed=false;
+ const capture:typeof window.open=function(...args){const opened=originalOpen.apply(window,args);if(opened)popup=opened;return opened;};
+ window.open=capture;
+ try{trace('fb_login_invoked');fb.login(response=>session.code(response?.authResponse?.code),signupLoginOptions(launch.configId));}
+ catch{trace('fb_login_failed');session.error();}finally{if(window.open===capture)window.open=originalOpen;}
+ const poll=setInterval(()=>{try{if(popup?.closed&&!closed){closed=true;session.closed();}}catch{/* COOP is unknown, never cancellation. */}},500);
+ return session.promise.finally(()=>{clearInterval(poll);window.removeEventListener('message',onMessage);popup=null;});
+}
+
 function currentTime(): number { return Date.now(); }
 
 function makeClientOpId(): string {
@@ -258,7 +234,10 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
   const [inFlight, setInFlight] = useState<"starting" | "completing" | "recovering" | "cancelling" | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [cancelUncertain, setCancelUncertain] = useState(false);
+  const popupCapture=useRef<AbortController|null>(null);
   const mounted = useRef(true);
+  const currentAuthority=useRef(isCurrent);
+  useLayoutEffect(()=>{currentAuthority.current=isCurrent;},[isCurrent]);
   const titleId = useId();
   const setLocalConnection = (next: PaidBranchConnectionRead) => setLocalOverride({ base: connectionRead, read: next });
 
@@ -266,6 +245,7 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
     mounted.current = true;
     return () => {
       mounted.current = false;
+      popupCapture.current?.abort();popupCapture.current=null;
       preparedPopup.current?.abandon(); preparedPopup.current = null;
       pinAnswer.current?.(null);pinAnswer.current=null;
     };
@@ -351,7 +331,13 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
         preparedPopup.current = { attemptId: attempt.id, generation, expiresAt, abandon, launch: () => {
           window.clearTimeout(timer); preparedPopup.current = null; setPopupReady(false); connectReserved.current = true; setInFlight("starting");
           try {
-            const popup = actions?.launchWhatsappSdk ? actions.launchWhatsappSdk(started.launch as Extract<PaidBranchConnectionLaunch, {flow:"wa_new_number"|"wa_coexistence"}>) : launchPreparedWhatsappSdkPopup(started.launch as Extract<PaidBranchConnectionLaunch, {flow:"wa_new_number"|"wa_coexistence"}>, fb!, trace);
+            const controller=new AbortController();popupCapture.current=controller;
+            const preparedLaunch=started.launch;
+            const lifecycle:PopupLifecycle={expiresAt,onCode:preparedLaunch.flow==='wa_new_number'&&resolved.captureAuthorization?async code=>{if(!mounted.current||!checkCurrent())return false;const result=await resolved.captureAuthorization!({...scope,channel:'whatsapp',attemptId:attempt.id,generation,nonce:preparedLaunch.nonce,code});return mounted.current&&checkCurrent()&&result.ok;}:undefined,isCurrent:()=>mounted.current&&(currentAuthority.current?.()??true),signal:controller.signal,onObservation:stage=>{
+              if(!mounted.current||!checkCurrent())return;
+              if(stage==='waiting_timeout'||stage==='popup_closed'||stage==='callback_without_code'){setInFlight(null);setFeedback(t('نتيجة Meta غير محسومة. ننتظر التفويض ضمن صلاحية المحاولة؛ لا تبدأ محاولة أخرى.','Meta outcome is unconfirmed. Waiting within this attempt’s validity; do not start another attempt.'));}
+            }};
+            const popup = actions?.launchWhatsappSdk ? actions.launchWhatsappSdk(started.launch as Extract<PaidBranchConnectionLaunch, {flow:"wa_new_number"|"wa_coexistence"}>) : launchPreparedWhatsappSdkPopup(started.launch as Extract<PaidBranchConnectionLaunch, {flow:"wa_new_number"|"wa_coexistence"}>, fb!, trace, lifecycle);
             void popup.then(resolve, () => resolve({kind:"error"}));
           } catch { trace("fb_login_failed"); resolve({kind:"error"}); }
         } };
@@ -384,6 +370,7 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
         onRefresh?.();
         return;
       }
+      if(started.launch.flow==='wa_new_number'&&currentTime()>=expiresAt){trace('attempt_expired_before_server');setInFlight(null);setFeedback(t('انتهت صلاحية المحاولة؛ لم يُرسل التفويض للإكمال. راجع حالة الأصول أولًا.','The attempt expired; authorization was not submitted. Review the existing assets first.'));onRefresh?.();return;}
       setInFlight("completing");
       // Registration follows Embedded Signup; never collect or persist the PIN before authorization.
       let registrationPin='';

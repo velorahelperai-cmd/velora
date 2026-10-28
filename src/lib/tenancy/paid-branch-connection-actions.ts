@@ -9,9 +9,10 @@ import { createClient } from "@/lib/supabase/server";
 import { instagramAuthorizationUrl, readInstagramOAuthConfig } from "@/lib/instagram/oauth-meta";
 import { INSTAGRAM_ATTEMPT_COOKIE } from "@/lib/instagram/oauth-route";
 import { embeddedSignupClientConfig } from "@/lib/whatsapp/embedded-signup";
+import {captureEarlyAuthorization,earlyAuthorizationRpc} from '@/lib/whatsapp/early-authorization';
 import {onboardMetaSignup} from '@/lib/whatsapp/embedded-signup-meta';
 import {sealSignupPreparation,openSignupPreparation} from '@/lib/whatsapp/signup-preparation';
-import {signupCheckpointBinding,signupCheckpointRpc,signupCodeHash,parseSignupCheckpoint} from '@/lib/whatsapp/signup-checkpoint';
+import {signupCheckpointBinding,signupCheckpointRpc,parseSignupCheckpoint} from '@/lib/whatsapp/signup-checkpoint';
 import { exchangeAfterCommittedClaim, exchangeOwnedBranchConnection } from "@/lib/tenancy/paid-branch-connection-adapters";
 import { coexistenceServerConfig } from "@/lib/tenancy/paid-branch-connection-coexistence-config";
 import {
@@ -152,6 +153,17 @@ export async function startOwnedPaidBranchConnectionAction(input: StartOwnedPaid
   });
 }
 
+/** Code is exchanged and saved before FINISH. No asset authority is granted here. */
+export async function captureOwnedWhatsappAuthorizationAction(input:PaidBranchConnectionScope&{attemptId:string;generation:number;nonce:string;code:string}):Promise<{ok:boolean}>{
+ const asOf=new Date().toISOString();const request=attemptRequest({...input,flow:'wa_new_number'},asOf);if('ok' in request||typeof input.code!=='string'||!input.code.trim()||input.code.length>4096||!/^([a-f0-9]{64})$/.test(input.nonce))return {ok:false};
+ const session=await sessionClient(request.expectedAccountId,randomUUID(),asOf,request);if('ok' in session)return {ok:false};
+ const current=await runPaidBranchConnectionRead(request,createPaidBranchConnectionStore(session.client,session.client,asOf),asOf);const a=current.read.connection.attempt;
+ if(current.read.sourceStatus!=='ready'||a?.id!==request.attemptId||a.generation!==request.generation||a.status!=='pending'||Date.parse(a.expiresAt)<=Date.now())return {ok:false};
+ const config=embeddedSignupClientConfig(),appSecret=process.env.WHATSAPP_APP_SECRET?.trim()??'',admin=createAdminClient();if(!config.ok||!appSecret||!admin)return {ok:false};
+ const binding={...signupCheckpointBinding(request,session.sessionId),...config,nonce:input.nonce};
+ return {ok:await captureEarlyAuthorization(admin as unknown as PaidBranchConnectionRpc,binding,input.code,{...config,enabled:true,appSecret})};
+}
+
 /** Read provider registration state after Facebook authorization, before the native completion claim. */
 export async function prepareOwnedWhatsappRegistrationAction(input:CompleteOwnedPaidBranchConnectionInput):Promise<{ok:true;registrationRequired:boolean;authorizationTicket:string}|{ok:false}>{
  const asOf=new Date().toISOString(),request=attemptRequest(input,asOf);
@@ -165,16 +177,18 @@ export async function prepareOwnedWhatsappRegistrationAction(input:CompleteOwned
  const config=embeddedSignupClientConfig(),appSecret=process.env.WHATSAPP_APP_SECRET?.trim()??'';
  if(!config.ok||!appSecret)return {ok:false};
  const admin=createAdminClient();if(!admin)return {ok:false};
- const binding=signupCheckpointBinding(request,session.sessionId),reservation=randomUUID();
- const reserved=await signupCheckpointRpc(admin as unknown as PaidBranchConnectionRpc,'reserve',{...binding,...config,nonce:row.nonce,codeHash:signupCodeHash(String(row.code)),wabaId:row.wabaId,phoneNumberId:row.phoneNumberId},reservation);
- if(!reserved)return {ok:false};
- if(reserved.acquired!==true)return {ok:false}; // Never re-exchange a one-use code; recovery loads the checkpoint.
- let captured:{token:string;registrationRequired:boolean}|null=null;
- await onboardMetaSignup({...config,enabled:true,appSecret},{code:String(row.code),wabaId:String(row.wabaId),phoneNumberId:String(row.phoneNumberId),pin:'',keepOnPhone:false},fetch,{probe:true,capture:(token,registrationRequired)=>{captured={token,registrationRequired};}});
- if(!captured)return {ok:false};
- const result=captured as {token:string;registrationRequired:boolean};
- if(!await signupCheckpointRpc(admin as unknown as PaidBranchConnectionRpc,'save',binding,reservation,result.token))return {ok:false};
- return {ok:true,registrationRequired:result.registrationRequired,authorizationTicket:sealSignupPreparation(appSecret,{accountId:request.expectedAccountId,sessionId:session.sessionId,companyId:request.companyId,branchId:request.branchId,attemptId:request.attemptId,generation:request.generation,nonce:String(row.nonce),wabaId:String(row.wabaId),phoneNumberId:String(row.phoneNumberId)},result.token)};
+ const binding=signupCheckpointBinding(request,session.sessionId);
+  const earlyBinding={...binding,...config,nonce:row.nonce,wabaId:row.wabaId,phoneNumberId:row.phoneNumberId};
+  if(row.code!=='early-authorization'&&!await captureEarlyAuthorization(admin as unknown as PaidBranchConnectionRpc,earlyBinding,String(row.code),{...config,enabled:true,appSecret}))return {ok:false};
+  const early=await earlyAuthorizationRpc(admin as unknown as PaidBranchConnectionRpc,'load',earlyBinding);
+  const existing=early?null:parseSignupCheckpoint(await signupCheckpointRpc(admin as unknown as PaidBranchConnectionRpc,'load',binding));
+  if(existing&&(existing.wabaId!==row.wabaId||existing.phoneNumberId!==row.phoneNumberId||existing.nonce!==row.nonce||existing.appId!==config.appId||existing.configId!==config.configId||existing.graphVersion!==config.graphVersion))return {ok:false};
+  const token=early?.token??existing?.token;if(typeof token!=='string'||!token)return {ok:false};
+  let registrationRequired:boolean|undefined;
+  await onboardMetaSignup({...config,enabled:true,appSecret},{code:'early-authorization',wabaId:String(row.wabaId),phoneNumberId:String(row.phoneNumberId),pin:'',keepOnPhone:false},fetch,{token,probe:true,capture:(_token,required)=>{registrationRequired=required;}});
+  if(registrationRequired===undefined)return {ok:false};
+  if(early&&!await earlyAuthorizationRpc(admin as unknown as PaidBranchConnectionRpc,'promote',earlyBinding))return {ok:false};
+  return {ok:true,registrationRequired,authorizationTicket:sealSignupPreparation(appSecret,{...binding,nonce:String(row.nonce),wabaId:String(row.wabaId),phoneNumberId:String(row.phoneNumberId)},token)};
 }
 
 export async function completeOwnedPaidBranchConnectionAction(input: CompleteOwnedPaidBranchConnectionInput): Promise<PaidBranchConnectionMutation> {

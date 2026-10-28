@@ -1,6 +1,6 @@
 import {describe,expect,it,vi} from "vitest";
 vi.mock("server-only",()=>({}));
-import {onboardMetaSignup, type MetaSignupConfig} from "./embedded-signup-meta";
+import {exchangeEarlyMetaAuthorization,onboardMetaSignup, type MetaSignupConfig} from "./embedded-signup-meta";
 
 const config:MetaSignupConfig={enabled:true,appId:"111",appSecret:"secret",systemUserToken:"system",graphVersion:"v25.0"};
 const debug={data:{app_id:"111",is_valid:true,expires_at:0,data_access_expires_at:0,scopes:["whatsapp_business_management","whatsapp_business_messaging"],granular_scopes:[{scope:"whatsapp_business_management",target_ids:["222"]},{scope:"whatsapp_business_messaging",target_ids:["222"]}]}};
@@ -63,4 +63,10 @@ describe("Meta Embedded Signup verification",()=>{
  it("refuses unsupported keep-on-phone without doing any account write",async()=>{
   const f=fake();expect(await onboardMetaSignup(config,{...input,keepOnPhone:true},f.http)).toEqual({ok:false,code:"NEEDS_SETUP"});expect(f.writes).toEqual([]);
  });
+});
+
+describe('pre-FINISH server exchange',()=>{
+ it('exchanges and checks app scopes without requiring WABA IDs or writing assets',async()=>{const f=fake(),paths:string[]=[];const http=async(url:string,init?:RequestInit)=>{paths.push(new URL(url).pathname);return f.http(url,init);};expect(await exchangeEarlyMetaAuthorization(config,'synthetic-code',http)).toEqual({ok:true,token:'business-secret'});expect(paths).toEqual(['/v25.0/oauth/access_token','/v25.0/debug_token']);expect(f.writes).toEqual([]);});
+ it.each([{...debug.data,app_id:'999'},{...debug.data,is_valid:false},{...debug.data,expires_at:1},{...debug.data,granular_scopes:[]},{...debug.data,scopes:[]}])('rejects invalid early grants without granting asset authority',async data=>{expect(await exchangeEarlyMetaAuthorization(config,'code',fake({debug:{data}}).http)).toEqual({ok:false});});
+ it('does not expose provider exception details',async()=>{expect(await exchangeEarlyMetaAuthorization(config,'code',async()=>{throw Error('sensitive provider URL');})).toEqual({ok:false});});
 });

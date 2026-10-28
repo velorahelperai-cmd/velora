@@ -8,13 +8,13 @@ export type MetaFetch=(url:string,init?:RequestInit)=>Promise<Response>;
 const object=(v:unknown):Record<string,unknown>|null=>v!==null&&typeof v==="object"&&!Array.isArray(v)?v as Record<string,unknown>:null;
 const requiredScopes=["whatsapp_business_management","whatsapp_business_messaging"];
 const id=(v:string)=>/^\d{1,64}$/.test(v);
-function validateToken(value:unknown,appId:string,wabaId:string){
+function validateToken(value:unknown,appId:string,wabaId?:string){
  const debug=object(value),scopes=debug?.scopes,expires=debug?.expires_at,dataExpires=debug?.data_access_expires_at;
  const granular=Array.isArray(debug?.granular_scopes)?debug.granular_scopes.map(object):[];
  if(!debug||debug.is_valid!==true||String(debug.app_id)!==appId||!Array.isArray(scopes)||!scopes.every(x=>typeof x==="string")||!requiredScopes.every(x=>scopes.includes(x))
  ||typeof expires!=="number"||!Number.isSafeInteger(expires)||expires<0||typeof dataExpires!=="number"||!Number.isSafeInteger(dataExpires)||dataExpires<0
  ||[expires,dataExpires].some(x=>x!==0&&x*1000<=Date.now())
- ||!requiredScopes.every(scope=>granular.some(g=>g?.scope===scope&&Array.isArray(g.target_ids)&&g.target_ids.includes(wabaId))))return null;
+ ||!requiredScopes.every(scope=>granular.some(g=>g?.scope===scope&&Array.isArray(g.target_ids)&&(wabaId?g.target_ids.includes(wabaId):g.target_ids.some(target=>typeof target==='string'&&/^\d{1,64}$/.test(target))))))return null;
  return {scopes:scopes as string[],expires,dataExpires};
 }
 
@@ -80,4 +80,20 @@ export async function onboardMetaSignup(config:MetaSignupConfig,input:MetaSignup
   const deadlines=[expires,dataExpires].filter(x=>x>0);
   return {ok:true,accessToken:token,proof:{app_id:config.appId,waba_id:input.wabaId,phone_number_id:input.phoneNumberId,display_phone_number:phone.display_phone_number,scopes:scopes as string[],granular_scopes:requiredScopes.map(scope=>({scope,target_ids:[input.wabaId]})),expires_at:expires,data_access_expires_at:dataExpires,authorization_expires_at:deadlines.length?new Date(Math.min(...deadlines)*1000).toISOString():null,code_verification_status:"VERIFIED",platform_type:"CLOUD_API",registered:true,subscribed:true,is_on_biz_app:false,verified_at:new Date().toISOString()}};
  }catch{return {ok:false,code:wrote?"RECONCILIATION_REQUIRED":"META_UNAVAILABLE"};}
+}
+
+/** Server-only pre-asset exchange. Returns no authority to bind a WABA or send messages. */
+export async function exchangeEarlyMetaAuthorization(config:MetaSignupConfig,code:string,http:MetaFetch=fetch):Promise<{ok:true;token:string}|{ok:false}>{
+ if(!config.enabled||!id(config.appId)||!config.appSecret||!/^v\d+\.0$/.test(config.graphVersion)||!code.trim()||code.length>4096)return {ok:false};
+ try{
+  const url=new URL(`https://graph.facebook.com/${config.graphVersion}/oauth/access_token`);
+  url.searchParams.set('client_id',config.appId);url.searchParams.set('client_secret',config.appSecret);url.searchParams.set('code',code);
+  const exchanged=await http(url.toString(),{cache:'no-store',signal:AbortSignal.timeout(15000)});
+  if(!exchanged.ok)return {ok:false};const value=object(await exchanged.json());const token=value?.access_token;
+  if(typeof token!=='string'||!token||token.length>16384||value?.error)return {ok:false};
+  const debug=new URL(`https://graph.facebook.com/${config.graphVersion}/debug_token`);debug.searchParams.set('input_token',token);
+  const checked=await http(debug.toString(),{headers:{Authorization:`Bearer ${config.appId}|${config.appSecret}`},cache:'no-store',signal:AbortSignal.timeout(15000)});
+  if(!checked.ok||!validateToken(object(await checked.json())?.data,config.appId))return {ok:false};
+  return {ok:true,token};
+ }catch{return {ok:false};}
 }

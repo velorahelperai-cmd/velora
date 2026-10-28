@@ -76,7 +76,7 @@ it('starts Facebook without a PIN and skips the field for a server-confirmed reg
 it('asks for a PIN only after the server proves registration is needed, then cancels the same attempt',async()=>{const actions=ports(true);await render({connectionRead:connection,actions});await facebook();expect(actions.prepareRegistration).toHaveBeenCalledTimes(1);expect(actions.completeConnection).not.toHaveBeenCalled();const input=host.querySelector<HTMLInputElement>('input[type="password"]')!;expect(input).not.toBeNull();expect(document.getElementById(input.getAttribute('aria-describedby')!)?.textContent).toContain('not the SMS');const cancel=Array.from(host.querySelectorAll('button')).find(b=>b.textContent==='Cancel attempt')!;await act(async()=>cancel.click());expect(actions.cancelConnection).toHaveBeenCalledWith(expect.objectContaining({attemptId:'attempt',generation:1}));expect(actions.completeConnection).not.toHaveBeenCalled();});
 it('finishes the same attempt after a required PIN without starting Facebook again',async()=>{const actions=ports(true);await render({connectionRead:connection,actions});await facebook();const input=host.querySelector<HTMLInputElement>('input[type="password"]')!;await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,'123456');input.dispatchEvent(new Event('input',{bubbles:true}));});await act(async()=>host.querySelector('form[data-registration-pin]')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));expect(actions.completeConnection).toHaveBeenCalledWith(expect.objectContaining({attemptId:'attempt',completion:expect.objectContaining({pin:'123456'})}));expect(actions.startConnection).toHaveBeenCalledTimes(1);expect(host.querySelector('input[type="password"]')).toBeNull();});
 it('does not ask for a PIN or complete when provider preparation is unavailable',async()=>{const actions=ports();actions.prepareRegistration.mockRejectedValue(new Error('offline'));await render({connectionRead:connection,actions});await facebook();expect(host.querySelector('input[type="password"]')).toBeNull();expect(actions.completeConnection).not.toHaveBeenCalled();expect(actions.startConnection).toHaveBeenCalledTimes(1);});
-it('cancels a closed Meta popup without asking for PIN or completing',async()=>{const actions=ports();actions.launchWhatsappSdk.mockResolvedValue({kind:'cancelled'} as never);await render({connectionRead:connection,actions});await facebook();expect(actions.cancelConnection).toHaveBeenCalledTimes(1);expect(actions.prepareRegistration).not.toHaveBeenCalled();expect(actions.completeConnection).not.toHaveBeenCalled();});
+it('cancels only an explicit Meta CANCEL without asking for PIN or completing',async()=>{const actions=ports();actions.launchWhatsappSdk.mockResolvedValue({kind:'cancelled'} as never);await render({connectionRead:connection,actions});await facebook();expect(actions.cancelConnection).toHaveBeenCalledTimes(1);expect(actions.prepareRegistration).not.toHaveBeenCalled();expect(actions.completeConnection).not.toHaveBeenCalled();});
 it('deduplicates simultaneous Facebook clicks',async()=>{const actions=ports();let finish:((value:never)=>void)|undefined;actions.launchWhatsappSdk.mockImplementation(()=>new Promise(resolve=>{finish=resolve;}));await render({connectionRead:connection,actions});await click('input[value="new-number"]');await click('[data-route-continue]');const button=host.querySelector<HTMLButtonElement>('[data-connect-action]')!;await act(async()=>{button.click();button.click();});expect(actions.startConnection).toHaveBeenCalledTimes(1);await click('[data-connect-action]');await act(async()=>finish?.({kind:'cancelled'} as never));});
 it('resumes a server-saved attempt after remount without another Facebook popup or start',async()=>{const actions=ports();const pending=(await actions.startConnection()).read;actions.startConnection.mockClear();const saved={...pending,capabilities:{...pending.capabilities,canRecover:true}};const recoverConnection=vi.fn(async()=>({ok:true as const,read:saved,continuation:{registrationRequired:false,authorizationTicket:'refreshed-ticket',nonce:'nonce',wabaId:'222',phoneNumberId:'333'}}));await render({connectionRead:saved,actions:{...actions,recoverConnection}});await click('[data-recover-action]');expect(recoverConnection).toHaveBeenCalledWith(expect.objectContaining({attemptId:'attempt',generation:1}));expect(actions.completeConnection).toHaveBeenCalledWith(expect.objectContaining({completion:expect.objectContaining({authorizationTicket:'refreshed-ticket',code:'durable-checkpoint',pin:''})}));expect(actions.launchWhatsappSdk).not.toHaveBeenCalled();expect(actions.startConnection).not.toHaveBeenCalled();expect(host.textContent).not.toContain('Connected successfully');});
 it("shows Facebook and its illustrated instructions without collecting a PIN first",async()=>{await render();const next=host.querySelector<HTMLButtonElement>('[data-route-continue]')!;expect(next.disabled).toBe(true);await click('input[value="new-number"]');await click('[data-route-continue]');expect(host.querySelector('[data-wa-screen="requirements"]')).not.toBeNull();expect(host.querySelector('[data-guide-source]')).not.toBeNull();expect(host.querySelector('input[type="password"]')).toBeNull();expect(host.querySelector<HTMLButtonElement>('[data-connect-action]')!.disabled).toBe(true);expect(start).not.toHaveBeenCalled();});
@@ -84,23 +84,16 @@ it("shows coexistence requirements without a separate illustrated-guide button",
 it("keeps Arabic direction and shows no unsupported channel or tutorial promise",async()=>{await render({locale:"ar"});expect(host.querySelector('section')!.dir).toBe('rtl');expect(host.textContent).toContain('Coexistence');expect(host.textContent).not.toContain('Messenger');expect(host.textContent).not.toContain('TikTok');expect(host.querySelector('video')).toBeNull();expect(host.querySelector('details summary')).not.toBeNull();});
 it("hides connection controls for a stale account",async()=>{await render({isCurrent:()=>false});expect(host.querySelector('input[type="radio"]')).toBeNull();expect(host.querySelector('[data-connect-action]')).toBeNull();expect(start).not.toHaveBeenCalled();});
 
-it('treats a Facebook callback with no code as unknown, not a cancellation',async()=>{
- const login=vi.fn((callback:(value:object)=>void)=>callback({}));
- vi.stubGlobal('FB',{init:vi.fn(),login});
- const result=await runBrowserWhatsappSdkPopup({flow:'wa_new_number',attemptId:'attempt',nonce:'nonce',appId:'111',configId:'cfg',graphVersion:'v25.0'});
- expect(result).toEqual({kind:'error'});expect(login).toHaveBeenCalledTimes(1);
-});
-
-it('keeps a missing Coexistence callback code unknown and emits only safe diagnostics',async()=>{
- const log=vi.spyOn(console,'info').mockImplementation(()=>{});
- const login=vi.fn((callback:(value:object)=>void)=>callback({}));
- vi.stubGlobal('FB',{init:vi.fn(),login});
- try {
-  const result=await runBrowserWhatsappSdkPopup({flow:'wa_coexistence',attemptId:'private-attempt',nonce:'private-nonce',appId:'111',configId:'cfg',graphVersion:'v25.0',confirmedPhoneNumber:'+96891234567'});
-  expect(result).toEqual({kind:'error'});
-  expect(log.mock.calls.some(call=>call[1]?.stage==='oauth_callback_received'&&call[1]?.code_received===false)).toBe(true);
+it.each(['wa_new_number'] as const)('retains a missing %s callback code as UNKNOWN until authority ends',async flow=>{
+ const controller=new AbortController(),log=vi.spyOn(console,'info').mockImplementation(()=>{});
+ const login=vi.fn((callback:(value:object)=>void)=>callback({}));vi.stubGlobal('FB',{init:vi.fn(),login});
+ try{
+  const pending=runBrowserWhatsappSdkPopup({flow,attemptId:'private-attempt',nonce:'private-nonce',appId:'111',configId:'cfg',graphVersion:'v25.0',confirmedPhoneNumber:'+96891234567'} as never,{expiresAt:Date.now()+600000,isCurrent:()=>true,signal:controller.signal});
+  let resolved=false;void pending.then(()=>{resolved=true;});await Promise.resolve();await Promise.resolve();
+  expect(resolved).toBe(false);expect(log.mock.calls.some(call=>call[1]?.stage==='callback_without_code')).toBe(true);
+  controller.abort();expect(await pending).toEqual({kind:'error'});expect(login).toHaveBeenCalledTimes(1);
   expect(JSON.stringify(log.mock.calls)).not.toContain('private-attempt');expect(JSON.stringify(log.mock.calls)).not.toContain('private-nonce');
- } finally {log.mockRestore();}
+ }finally{log.mockRestore();}
 });
 
 it('prepares once then invokes the popup synchronously from a separate user click',async()=>{
@@ -137,10 +130,16 @@ it.each(['callback-first','signal-first'] as const)('joins FINISH and OAuth in %
  if(order==='callback-first'){callback({authResponse:{code:'code'}});finish();}else{finish();callback({authResponse:{code:'code'}});}
  expect(await pending).toEqual({kind:'completed',code:'code',wabaId:'222',phoneNumberId:'333'});
 });
-it('keeps popup without callback unconfirmed after timeout and ignores late callback',async()=>{
- vi.useFakeTimers();let callback:(r:object)=>void=()=>{};
+it('keeps listening after the UI timeout and accepts a late callback within attempt validity',async()=>{
+ vi.useFakeTimers();let callback:(r:object)=>void=()=>{};const observation=vi.fn();
  vi.stubGlobal('FB',{init:vi.fn(),login:vi.fn((cb:(r:object)=>void)=>{callback=cb;})});
- try{const pending=runBrowserWhatsappSdkPopup({flow:'wa_new_number',attemptId:'attempt',nonce:'nonce',appId:'111',configId:'cfg',graphVersion:'v25.0'});await Promise.resolve();await Promise.resolve();await vi.advanceTimersByTimeAsync(300000);expect(await pending).toEqual({kind:'error'});callback({authResponse:{code:'late'}});}finally{vi.useRealTimers();}
+ try{
+  const pending=runBrowserWhatsappSdkPopup({flow:'wa_new_number',attemptId:'attempt',nonce:'nonce',appId:'111',configId:'cfg',graphVersion:'v25.0'},{expiresAt:Date.now()+600000,isCurrent:()=>true,onObservation:observation});
+  let resolved=false;void pending.then(()=>{resolved=true;});await Promise.resolve();await Promise.resolve();await vi.advanceTimersByTimeAsync(300000);
+  expect(resolved).toBe(false);expect(observation).toHaveBeenCalledWith('waiting_timeout');
+  window.dispatchEvent(new MessageEvent('message',{origin:'https://www.facebook.com',data:JSON.stringify({type:'WA_EMBEDDED_SIGNUP',event:'FINISH',data:{waba_id:'222',phone_number_id:'333'}})}));
+  callback({authResponse:{code:'late'}});expect(await pending).toEqual({kind:'completed',code:'late',wabaId:'222',phoneNumberId:'333'});
+ }finally{vi.useRealTimers();}
 });
 it('reports a blocked or failed SDK login as unconfirmed without cancelling the attempt',async()=>{
  const actions=ports();actions.launchWhatsappSdk.mockRejectedValueOnce(new Error('popup blocked'));
@@ -152,3 +151,42 @@ it('does not launch when Facebook SDK initialization fails',async()=>{
  const result=await runBrowserWhatsappSdkPopup({flow:'wa_new_number',attemptId:'attempt',nonce:'nonce',appId:'111',configId:'cfg',graphVersion:'v25.0'});
  expect(result).toEqual({kind:'error'});expect((window as unknown as {FB:{login:ReturnType<typeof vi.fn>}}).FB.login).not.toHaveBeenCalled();
 });
+it('observes SDK popup closure without cancellation and restores window.open',async()=>{
+ vi.useFakeTimers();const controller=new AbortController(),observation=vi.fn();let callback:(r:object)=>void=()=>{};
+ let popupClosed=false;const readClosed=vi.fn(()=>popupClosed);const fakePopup={get closed(){return readClosed();}};const originalOpen=window.open;const open=vi.fn(()=>fakePopup as unknown as Window);window.open=open;
+ vi.stubGlobal('FB',{init:vi.fn(),login:vi.fn((cb:(r:object)=>void)=>{callback=cb;window.open('about:blank');})});
+ try{
+  const pending=runBrowserWhatsappSdkPopup({flow:'wa_new_number',attemptId:'attempt',nonce:'nonce',appId:'111',configId:'cfg',graphVersion:'v25.0'},{expiresAt:Date.now()+600000,isCurrent:()=>true,signal:controller.signal,onObservation:observation});
+  await vi.advanceTimersByTimeAsync(0);expect(open).toHaveBeenCalledTimes(1);expect(window.open).toBe(open);popupClosed=true;await vi.advanceTimersByTimeAsync(500);expect(readClosed).toHaveBeenCalled();expect(observation).toHaveBeenCalledWith('popup_closed');
+  controller.abort();expect(await pending).toEqual({kind:'error'});callback({authResponse:{code:'late'}});expect(vi.getTimerCount()).toBe(0);
+ }finally{window.open=originalOpen;vi.useRealTimers();}
+});
+it('never launches an expired capture even after successful SDK preparation',async()=>{
+ const login=vi.fn();vi.stubGlobal('FB',{init:vi.fn(),login});
+ const result=await runBrowserWhatsappSdkPopup({flow:'wa_new_number',attemptId:'attempt',nonce:'nonce',appId:'111',configId:'cfg',graphVersion:'v25.0'},{expiresAt:Date.now()-1,isCurrent:()=>true});expect(result).toEqual({kind:'error'});expect(login).not.toHaveBeenCalled();
+});
+
+it('sends OAuth code to durable server capture before FINISH after SDK preparation',async()=>{
+ let callback:(r:object)=>void=()=>{};const login=vi.fn((cb:(r:object)=>void)=>{callback=cb;});const onCode=vi.fn(async()=>true);
+ vi.stubGlobal('FB',{init:vi.fn(),login});
+ const pending=runBrowserWhatsappSdkPopup({flow:'wa_new_number',attemptId:'attempt',nonce:'nonce',appId:'111',configId:'cfg',graphVersion:'v25.0'},{expiresAt:Date.now()+600000,isCurrent:()=>true,onCode});
+ await Promise.resolve();await Promise.resolve();expect(login).toHaveBeenCalledTimes(1);callback({authResponse:{code:'synthetic-code'}});await Promise.resolve();expect(onCode).toHaveBeenCalledWith('synthetic-code');
+ window.dispatchEvent(new MessageEvent('message',{origin:'https://www.facebook.com',data:JSON.stringify({type:'WA_EMBEDDED_SIGNUP',event:'FINISH',data:{waba_id:'222',phone_number_id:'333'}})}));
+ expect(await pending).toEqual({kind:'completed',code:'early-authorization',wabaId:'222',phoneNumberId:'333'});
+});
+it('does not apply the new-number early storage hook to Coexistence',async()=>{
+ let callback:(r:object)=>void=()=>{};const onCode=vi.fn(async()=>true);vi.stubGlobal('FB',{init:vi.fn(),login:vi.fn((cb:(r:object)=>void)=>{callback=cb;})});
+ const controller=new AbortController();const pending=runBrowserWhatsappSdkPopup({flow:'wa_coexistence',attemptId:'attempt',nonce:'nonce',appId:'111',configId:'cfg',graphVersion:'v25.0',confirmedPhoneNumber:'+96891234567'},{expiresAt:Date.now()+600000,isCurrent:()=>true,onCode,signal:controller.signal});
+ callback({authResponse:{code:'code'}});await Promise.resolve();expect(onCode).not.toHaveBeenCalled();callback({});expect(await pending).toEqual({kind:'error'});
+});
+
+it.each(['none','code','finish'] as const)('preserves original Coexistence CANCEL semantics after %s evidence',async partial=>{
+ let callback:(r:object)=>void=()=>{};vi.stubGlobal('FB',{init:vi.fn(),login:vi.fn((cb:(r:object)=>void)=>{callback=cb;})});
+ const pending=runBrowserWhatsappSdkPopup({flow:'wa_coexistence',attemptId:'attempt',nonce:'nonce',appId:'111',configId:'cfg',graphVersion:'v25.0',confirmedPhoneNumber:'+96891234567'});
+ await Promise.resolve();await Promise.resolve();
+ if(partial==='code')callback({authResponse:{code:'code'}});
+ if(partial==='finish')window.dispatchEvent(new MessageEvent('message',{origin:'https://www.facebook.com',data:JSON.stringify({type:'WA_EMBEDDED_SIGNUP',event:'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING',data:{waba_id:'222',phone_number_id:'333'}})}));
+ window.dispatchEvent(new MessageEvent('message',{origin:'https://www.facebook.com',data:JSON.stringify({type:'WA_EMBEDDED_SIGNUP',event:'CANCEL',data:{}})}));
+ expect(await pending).toEqual({kind:'cancelled'});
+});
+it('preserves original missing-code failure for Coexistence',async()=>{vi.stubGlobal('FB',{init:vi.fn(),login:vi.fn((cb:(r:object)=>void)=>cb({}))});expect(await runBrowserWhatsappSdkPopup({flow:'wa_coexistence',attemptId:'attempt',nonce:'nonce',appId:'111',configId:'cfg',graphVersion:'v25.0',confirmedPhoneNumber:'+96891234567'})).toEqual({kind:'error'});});
