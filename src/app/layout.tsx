@@ -1,3 +1,4 @@
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import { SessionActivityTracker } from "@/lib/auth/session-activity-tracker";
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
@@ -36,6 +37,7 @@ export default async function RootLayout({
           <AccountSessionProvider><SessionActivityTracker />{children}</AccountSessionProvider>
         </DemoProvider>
         <CacheBootstrap />
+        <SpeedInsights />
       </body>
     </html>
   );
