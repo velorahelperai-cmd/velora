@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import {setupTiming} from "@/lib/diagnostics/setup-timing";
 import {beginDiagnostic} from "@/lib/diagnostics/flow";
 import {readAuthCorrelation} from "@/lib/diagnostics/correlation.mjs";
 import {createSessionReadBudget} from "@/lib/auth/session-read-budget";
@@ -575,9 +576,13 @@ export function AccountSessionProvider({
   }, [lock]);
   const sessionValue=useMemo(()=>({status,identity,boundaryFingerprint,refresh,clear,expire,lock,setIdentityName,isCurrentUser,hasCurrentUser,cleanupCapture,isCapturedBoundary,liveSnapshot,recoverOperation}),[status,identity,boundaryFingerprint,refresh,clear,expire,lock,setIdentityName,isCurrentUser,hasCurrentUser,cleanupCapture,isCapturedBoundary,liveSnapshot,recoverOperation]);
   const protectedRoute=/^\/(app|admin|account|setup|complete-profile|reset-password)(\/|$)/.test(pathname);
+  const setupRoute=/^\/setup(\/|$)/.test(pathname);
   const copy=useAppCopy();
   const loaderGate=useApprovedLoaderGate(protectedRoute&&status==="loading",protectedRoute&&status==="ready",pathname);
-  const content=protectedRoute&&(status!=="ready"||loaderGate.holding)
+  const admitted=status==='ready'&&!!identity&&!!boundaryFingerprint;
+  useEffect(()=>{if(protectedRoute&&status==='ready'&&identity&&boundaryFingerprint)setupTiming('session_ready')();},[protectedRoute,status,identity,boundaryFingerprint]);
+  useEffect(()=>{if(protectedRoute&&status==='ready'&&!loaderGate.holding)setupTiming('content_visible')();},[protectedRoute,status,loaderGate.holding]);
+  const content=protectedRoute&&(status!=="ready"||loaderGate.holding||(setupRoute&&!admitted))
     ? status==="expired" ? <SessionActivityTracker />
     : status === "locked" ? <main className="grid min-h-svh place-content-center gap-3 bg-[#f6fafb] px-6 text-[#102a33]"><LangSwitch /><OperationRecovery receipt={recoveryReceipt} isCaptured={() => isCapturedBoundary(recoveryReceipt?.boundaryFingerprint ?? boundaryRef.current)} /></main>
     : status === "loading" || (status === "ready"&&loaderGate.holding) ? <ApprovedAccountLoader key={pathname} label={copy.loading} ready={status==="ready"} onComplete={loaderGate.finish} />
@@ -589,7 +594,12 @@ export function AccountSessionProvider({
     : children;
   return (
     <AccountSessionContext.Provider value={sessionValue}>
-      {content}
+      {setupRoute ? <>
+        {admitted&&<div key={JSON.stringify([identity.userId,identity.companyId,boundaryFingerprint])} hidden={loaderGate.holding} inert={loaderGate.holding} aria-hidden={loaderGate.holding||undefined}>
+          {children}
+        </div>}
+        {(!admitted||loaderGate.holding)&&content}
+      </> : content}
     </AccountSessionContext.Provider>
   );
 }

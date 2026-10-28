@@ -102,10 +102,20 @@ const profile = (userId = "user-a"): AccountProfileView => ({
 });
 const initial = profile();
 
-function renderTree() {
+function rawRenderTree() {
   state.cursor = 0;
   const tree = AccountSessionProvider({ initial, children: "private-content" });
   state.effects.splice(0).forEach((fn) => fn());
+  return tree;
+}
+// Existing assertions address the visible gate; raw tests also inspect mounted hidden content.
+function renderTree() {
+  const tree=rawRenderTree();
+  const shell=tree.props.children;
+  if(shell?.type===Symbol.for('react.fragment')) {
+    const [protectedContent,fallback]=shell.props.children;
+    return {...tree,props:{...tree.props,children:fallback||(protectedContent?.props.hidden?null:protectedContent?.props.children)}};
+  }
   return tree;
 }
 function render() {
@@ -863,4 +873,28 @@ it('shares the mount deadline and trace across a slow seed broker and profile',a
   expect(rows.some(row=>row.request_id===first.request_id&&row.duration_ms===30000&&row.code==='UNAVAILABLE')).toBe(true);
   await vi.advanceTimersByTimeAsync(2000);expect(render().hasCurrentUser()).toBe(false);
  }finally{info.mockRestore();}
+});
+it('mounts authenticated setup behind the animation without waiting for its finish',async()=>{
+ state.path='/setup';state.read.mockResolvedValue({ok:true,data:profile()});
+ const first=rawRenderTree();expect(JSON.stringify(first.props.children)).not.toContain('private-content');
+ await first.props.value.refresh();
+ const ready=rawRenderTree();expect(ready.props.value.status).toBe('ready');
+ const serialized=JSON.stringify(ready.props.children);
+ expect(serialized).toContain('private-content');
+ expect(serialized).toContain('"hidden":true');
+ expect(serialized).toContain('"inert":true');
+ ready.props.value.lock('fp-a');
+ expect(JSON.stringify(rawRenderTree().props.children)).not.toContain('private-content');
+});
+it('does not mount private setup when profile attestation fails',async()=>{
+ state.path='/setup';state.read.mockResolvedValue({ok:false,code:'UNAVAILABLE'});
+ await render().refresh();
+ const tree=rawRenderTree();expect(tree.props.value.status).toBe('error');
+ expect(JSON.stringify(tree.props.children)).not.toContain('private-content');
+});
+
+it('removes hidden setup immediately when a fresh broker contradicts its identity',async()=>{
+ state.path='/setup';state.read.mockResolvedValue({ok:true,data:profile()});await render().refresh();expect(JSON.stringify(rawRenderTree().props.children)).toContain('private-content');
+ state.broker.mockResolvedValueOnce(brokerOk()).mockResolvedValueOnce(brokerOk('user-b','fp-b','gen-b'));
+ await render().refresh();const tree=rawRenderTree();expect(tree.props.value.status).toBe('error');expect(JSON.stringify(tree.props.children)).not.toContain('private-content');
 });

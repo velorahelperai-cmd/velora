@@ -1,5 +1,6 @@
 "use server";
 
+import {setupTiming} from "@/lib/diagnostics/setup-timing";
 import {getCompanyAccess} from "./access";
 import {readOwnedPaidBranchSetupAction,type ReadOwnedPaidBranchSetupInput} from "./paid-setup-actions";
 import {readOwnedPaidBranchConnectionAction} from "./paid-branch-connection-actions";
@@ -21,25 +22,35 @@ export type PaidSetupWorkspaceRead={
 export async function readOwnedPaidSetupWorkspaceAction(input:ReadOwnedPaidBranchSetupInput&{connectionFirst?:boolean}):Promise<PaidSetupWorkspaceRead|null> {
   const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
   if(!input||[input.expectedAccountId,input.companyId,input.branchId].some(value=>typeof value!=="string"||value.length!==36||!uuid.test(value)))return null;
+  const endOwner=setupTiming('owner');
   const access=await getCompanyAccess("owner");
+  endOwner();
   if(!access.ok||access.context.needsCompanyContext||access.context.membership?.role!=="owner"||
     access.context.userId!==input.expectedAccountId||access.context.company?.id!==input.companyId)return null;
   const scope={expectedAccountId:access.context.userId,companyId:access.context.company.id,branchId:input.branchId};
+  const endInitial=setupTiming('initial');
   const initial=await readOwnedPaidBranchSetupAction(scope);
+  endInitial();
   if(initial.companyId!==scope.companyId||initial.selectedBranchId!==scope.branchId)return null;
   if(initial.sourceStatus!=="ready"||!initial.selectedChannels?.length)return {scope,read:initial,connectionReads:{},confirmedChannels:[]};
   const channels=initial.selectedChannels;
   if(new Set(channels).size!==channels.length||channels.some(channel=>channel!=="whatsapp"&&channel!=="instagram"))return null;
+  const endBefore=setupTiming('connections_before');
   const before=await Promise.all(channels.map(channel=>readOwnedPaidBranchConnectionAction({...scope,channel})));
+  endBefore();
   // A zero-progress, disconnected branch may show its real connection controls now.
   // No completed proof is exposed; start actions still recheck authority and revision.
   if(input.connectionFirst===true&&initial.progress.verified===0&&initial.steps.every(step=>step.status!=='verified')&&before.every((value,index)=>value.sourceStatus==='ready'&&value.expectedAccountId===scope.expectedAccountId&&value.companyId===scope.companyId&&value.branchId===scope.branchId&&value.channel===channels[index]&&value.connection.state==='not_connected'&&!value.connection.verified&&!value.connection.attempt&&!value.connection.link)){
     return {scope,read:initial,connectionReads:Object.fromEntries(channels.map((channel,index)=>[channel,before[index]])),confirmedChannels:[],activation:null};
   }
+  const endRecheck=setupTiming('recheck');
   const read=await readOwnedPaidBranchSetupAction(scope);
+  endRecheck();
   if(read.sourceStatus!=="ready"||read.companyId!==scope.companyId||read.selectedBranchId!==scope.branchId||
     JSON.stringify(read.selectedChannels)!==JSON.stringify(channels)||JSON.stringify(read.entitlement)!==JSON.stringify(initial.entitlement))return null;
+  const endAfter=setupTiming('connections_after');
   const after=await Promise.all(channels.map(channel=>readOwnedPaidBranchConnectionAction({...scope,channel})));
+  endAfter();
   const connectionReads:PaidSetupWorkspaceRead["connectionReads"]={},confirmedChannels:PaidSetupChannel[]=[];
   for(let index=0;index<channels.length;index++){
     const channel=channels[index]!,first=before[index]!,last=after[index]!;

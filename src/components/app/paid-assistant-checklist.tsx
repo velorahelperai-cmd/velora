@@ -1,4 +1,5 @@
 "use client";
+import {setupTiming,observeSetupUsable} from "@/lib/diagnostics/setup-timing";
 import { useCallback,useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import styles from "./paid-assistant-checklist.module.css";
 import {SetupBranchPicker} from "./setup-branch-picker";
@@ -33,7 +34,9 @@ export type PaidSetupFlowProps={
  onWorkspaceRead?:(read:PaidSetupWorkspaceRead|null)=>void;
 };
 export function PaidSetupFlow(p:PaidSetupFlowProps) {
- return <div className={styles.surface} data-paid-setup-root dir={p.locale==="ar"?"rtl":"ltr"}><PaidSetupScope key={JSON.stringify(p.scope)} {...p}/></div>;
+ const root=useRef<HTMLDivElement>(null);
+ useEffect(()=>{if(root.current)return observeSetupUsable(root.current,p.isCurrent);},[p.isCurrent]);
+ return <div ref={root} className={styles.surface} data-paid-setup-root dir={p.locale==="ar"?"rtl":"ltr"}><PaidSetupScope key={JSON.stringify(p.scope)} {...p}/></div>;
 }
 function PaidSetupScope(p:PaidSetupFlowProps) {
  const [attempt,setAttempt]=useState(0);
@@ -53,9 +56,10 @@ function PaidSetupEntry(p:PaidSetupFlowProps&{retry:()=>void}) {
  useEffect(()=>{
   const request=++generation.current;let active=true;
   if(!isCurrent())return;
+  const endTiming=setupTiming('entry');
   void readEntry({expectedAccountId:scope.expectedAccountId,companyId:scope.companyId}).then(result=>{
    if(active&&generation.current===request&&isCurrent())setEntry(result.companyId===scope.companyId?result:null);
-  }).catch(()=>{if(active&&generation.current===request&&isCurrent())setEntry(null);});
+  }).catch(()=>{if(active&&generation.current===request&&isCurrent())setEntry(null);}).finally(endTiming);
   return()=>{active=false;};
  },[scope.expectedAccountId,scope.companyId,isCurrent,readEntry]);
  const ar=p.locale==="ar",t=(a:string,e:string)=>ar?a:e;
@@ -101,6 +105,7 @@ function PaidSetupBranchRead(p:PaidSetupFlowProps&{branchId:string;refreshVersio
   const request=++generation.current;let active=true;
   if(!isCurrent())return;
   const input={expectedAccountId:scope.expectedAccountId,companyId:scope.companyId,branchId};
+  const endTiming=setupTiming('workspace');
   void (connectionFirst?readOwnedPaidSetupWorkspaceAction({...input,connectionFirst:true}):readWorkspace(input)).then(result=>{
    if(!active||request!==generation.current||!isCurrent())return;
    if(!result||result.scope.expectedAccountId!==input.expectedAccountId||result.scope.companyId!==input.companyId||result.scope.branchId!==branchId||!paidChecklistFromRead(result.read,input)){setSnapshot(null);onWorkspaceRead?.(null);return;}
@@ -113,7 +118,7 @@ function PaidSetupBranchRead(p:PaidSetupFlowProps&{branchId:string;refreshVersio
      const enriched={...result,read:composePaidSetupProgress(result.read,details.summary),activation:details.activation};
      setSnapshot(enriched);onWorkspaceRead?.(enriched);
    }).catch(()=>{/* Optional metadata remains unknown; connection controls stay usable. */});
-  }).catch(()=>{if(active&&request===generation.current&&isCurrent()){setSnapshot(null);onWorkspaceRead?.(null);}});
+  }).catch(()=>{if(active&&request===generation.current&&isCurrent()){setSnapshot(null);onWorkspaceRead?.(null);}}).finally(endTiming);
   return()=>{active=false;};
  },[scope.expectedAccountId,scope.companyId,branchId,isCurrent,readWorkspace,refreshVersion,onWorkspaceRead,connectionFirst]);
  const ar=p.locale==="ar",persona=snapshot?.read.entitlement?.persona;
