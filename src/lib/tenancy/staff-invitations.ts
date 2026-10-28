@@ -139,7 +139,7 @@ export async function listCompanyTeam(expectedUserId: string): Promise<Invitatio
   } catch { return { ok: false, code: "UNAVAILABLE" }; }
 }
 
-export async function acceptStaffInvitation(token: string): Promise<InvitationResult<{ companyId: string }>> {
+export async function acceptStaffInvitation(token: string): Promise<InvitationResult<{ companyId: string; branchId?: string }>> {
   const hash = tokenHash(token);
   if (!hash) return { ok: false, code: "INVALID_INPUT" };
   try {
@@ -149,7 +149,7 @@ export async function acceptStaffInvitation(token: string): Promise<InvitationRe
     const result = await callInvitationRpc("accept_staff_invitation", { p_token_hash: hash });
     if (!result) return { ok: false, code: "UNAVAILABLE" };
     if (result.ok !== true) return { ok: false, code: typeof result.code === "string" ? result.code : "UNAVAILABLE" };
-    if (typeof result.companyId !== "string") return { ok: false, code: "UNAVAILABLE" };
+    if (typeof result.companyId !== "string" || (result.branchId !== undefined && (!uuid(result.branchId) || !uuid(result.companyId)))) return { ok: false, code: "UNAVAILABLE" };
     // Membership is already committed by the atomic RPC. Cookie/navigation hints
     // cannot turn that durable acceptance into an apparent total failure.
     try {
@@ -183,6 +183,6 @@ export async function acceptStaffInvitation(token: string): Promise<InvitationRe
     }
     } catch { /* Later requests still reauthorize; no workspace grant is synthesized. */ }
     try { revalidatePath("/app", "layout"); } catch { /* Acceptance is already durable; refresh can be retried. */ }
-    return { ok: true, data: { companyId: result.companyId } };
+    return { ok: true, data: { companyId: result.companyId, ...(typeof result.branchId === "string" ? { branchId: result.branchId } : {}) } };
   } catch { return { ok: false, code: "UNAVAILABLE" }; }
 }

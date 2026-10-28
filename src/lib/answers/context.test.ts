@@ -82,6 +82,21 @@ function fakeClient(opts: {
 }
 
 describe("loadApprovedAnswerContext — stale text rejected before generation", () => {
+  it("fails closed if a branch source selection returns an unbound row", async () => {
+    const {client}=fakeClient({rows:[textRow({id:'bound'}),textRow({id:'other-branch',content:'OTHER_BRANCH_SECRET'})]});
+    const packed=await loadApprovedAnswerContext('co-a',client,undefined,['bound']);
+    expect(packed).toEqual({ok:false,code:'UNAVAILABLE'});
+  });
+  it("does not load company-wide knowledge for an empty branch selection", async () => {
+    const from=vi.fn(()=>{throw Error('must not query');});
+    expect(await loadApprovedAnswerContext('co-a',{from} as never,undefined,[])).toEqual({ok:false,code:'NO_KNOWLEDGE'});
+    expect(from).not.toHaveBeenCalled();
+  });
+  it("keeps approved bound text eligible",async()=>{
+    const {client}=fakeClient({rows:[textRow({id:'bound'})]});
+    const packed=await loadApprovedAnswerContext('co-a',client,undefined,['bound']);
+    expect(packed.ok&&packed.chunks.map(x=>x.sourceId)).toEqual(['bound']);
+  });
   it("packs an approved file source whose object still matches", async () => {
     const { client, listCalls } = fakeClient({
       rows: [fileRow()],

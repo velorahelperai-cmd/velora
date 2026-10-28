@@ -12,6 +12,8 @@ import {
 } from "@/lib/tenancy/branch-hours-actions";
 import { PaidBranchKnowledge, type BranchKnowledgeViewSnapshot } from "./paid-branch-knowledge";
 import {
+  mutateOwnedBranchKnowledgeSourceAction,
+  removeOwnedBranchKnowledgePageAction,
   addOwnedBranchWebsiteAction,
   pageActionOwnedBranchKnowledgeAction,
   readOwnedBranchKnowledgeAction,
@@ -27,9 +29,11 @@ import {
 import { PaidAssistantTrial, type TrialSnapshot } from "./paid-assistant-trial";
 import {
   askOwnedBranchAssistantTrialAction,
+  recoverOwnedBranchAssistantTrialAction,
   readOwnedBranchAssistantTrialAction,
 } from "@/lib/tenancy/paid-assistant-trial-actions";
-import { PaidTeamInvitations } from "./paid-team-invitations";
+import { PaidTeamInvitations, type BranchTeamSnapshot, type PaidTeamInvitationsProps } from "./paid-team-invitations";
+import { readOwnedBranchTeamAction, inviteOwnedBranchTeamAction, revokeOwnedBranchTeamAction } from "@/lib/tenancy/paid-team-actions";
 import { PaidLaunchSummary, type LaunchSummarySnapshot } from "./paid-launch-summary";
 import {
   confirmOwnedBranchLaunchAction,
@@ -141,8 +145,19 @@ export function PaidSetupStepHost(props: PaidSetupStepHostProps) {
     };
   }, [step, targetScope, isCurrent,readVersion]);
 
-  // 5. Team step: authoritative invitation feature is pending integration; marked unavailable honestly
-  // to avoid misleading success or synthetic data.
+  // 5. Team step
+  const [teamSnap,setTeamSnap]=useState<BranchTeamSnapshot|null>(null);
+  const [teamPhase,setTeamPhase]=useState<PaidTeamInvitationsProps['state']['phase']>('loading');
+  const [inviteUrl,setInviteUrl]=useState<string|null>(null);
+  useEffect(()=>{
+    if(step!=='team'||!isCurrent())return;
+    let active=true;
+    void readOwnedBranchTeamAction(targetScope).then(snap=>{
+      if(!active||!isCurrent())return;
+      setTeamSnap(snap);setTeamPhase(snap?'ready':'unavailable');
+    }).catch(()=>{if(active&&isCurrent())setTeamPhase('unavailable');});
+    return ()=>{active=false;};
+  },[step,targetScope,isCurrent,readVersion]);
 
   // 6. Launch step
   const [launchSnap, setLaunchSnap] = useState<LaunchSummarySnapshot | null>(null);
@@ -248,6 +263,16 @@ export function PaidSetupStepHost(props: PaidSetupStepHostProps) {
             setKnowledgePhase('busy');const result=await uploadOwnedBranchKnowledgeFilesAction(input).catch(()=>null);if(!isCurrent())return;
             if(result){setKnowledgeSnap(result);setKnowledgePhase('saved');onRefresh?.();}else setKnowledgePhase('unavailable');
           }}
+          onSourceMutation={async input=>{
+            if(!isCurrent())return;
+            setKnowledgePhase('busy');const result=await mutateOwnedBranchKnowledgeSourceAction(input).catch(()=>null);if(!isCurrent())return;
+            if(result){setKnowledgeSnap(result);setKnowledgePhase('saved');onRefresh?.();}else setKnowledgePhase('conflict');
+          }}
+          onRemovePage={async input=>{
+            if(!isCurrent())return;
+            setKnowledgePhase('busy');const result=await removeOwnedBranchKnowledgePageAction(input).catch(()=>null);if(!isCurrent())return;
+            if(result){setKnowledgeSnap(result);setKnowledgePhase('saved');onRefresh?.();}else setKnowledgePhase('conflict');
+          }}
           onSourceApproval={async input=>{
             setKnowledgePhase('busy');const result=await approveOwnedBranchKnowledgeSourceAction(input).catch(()=>null);if(!isCurrent())return;
             if(result){setKnowledgeSnap(result);setKnowledgePhase('ready');onRefresh?.();}else setKnowledgePhase('conflict');
@@ -283,6 +308,15 @@ export function PaidSetupStepHost(props: PaidSetupStepHostProps) {
     case "test":
       return (
         <PaidAssistantTrial
+          onRefresh={retryRead}
+          onRecover={async operationId => {
+            if(!isCurrent())return;
+            setTrialPhase("pending");
+            const result=await recoverOwnedBranchAssistantTrialAction({...targetScope,operationId}).catch(()=>null);
+            if(!isCurrent())return;
+            if(result?.ok){setTrialSnap(result.snapshot);setTrialPhase("ready");onRefresh?.();}
+            else setTrialPhase("unknown");
+          }}
           locale={locale}
           scope={targetScope}
           boundaryFingerprint={scope.boundaryFingerprint}
@@ -313,15 +347,33 @@ export function PaidSetupStepHost(props: PaidSetupStepHostProps) {
 
     case "team":
       return (
+        <section>
         <PaidTeamInvitations
           locale={locale}
           scope={targetScope}
           boundaryFingerprint={scope.boundaryFingerprint}
-          snapshot={null}
+          snapshot={teamSnap}
+          inviteUrl={inviteUrl}
+          onRevoke={async input=>{
+            if(!isCurrent())return;
+            setTeamPhase('pending');setInviteUrl(null);
+            const result=await revokeOwnedBranchTeamAction(input).catch(()=>null);
+            if(!isCurrent())return;
+            if(result?.ok){setTeamSnap(result.snapshot);setTeamPhase('ready');onRefresh?.();}
+            else setTeamPhase(result&&!result.ok&&result.code!=='UNKNOWN'?'error':'unknown');
+          }}
+          onInvite={async input=>{
+            if(!isCurrent())return;
+            setTeamPhase('pending');setInviteUrl(null);
+            const result=await inviteOwnedBranchTeamAction(input).catch(()=>null);
+            if(!isCurrent())return;
+            if(result?.ok){setTeamSnap(result.data.snapshot);setInviteUrl(result.data.inviteUrl);setTeamPhase('ready');onRefresh?.();}
+            else setTeamPhase('unknown');
+          }}
           state={{
             scope: targetScope,
-            version: null,
-            phase: "unavailable",
+            version: teamSnap?.version??null,
+            phase: teamPhase,
             operationId: null,
             operation: null,
             canRetry: false,
@@ -329,6 +381,8 @@ export function PaidSetupStepHost(props: PaidSetupStepHostProps) {
           }}
           isCurrent={isCurrent}
         />
+        {['unknown','error','unavailable'].includes(teamPhase)&&<button type="button" onClick={retryRead}>{locale==='ar'?'تحديث حالة الدعوات':'Refresh invitations'}</button>}
+        </section>
       );
 
     case "launch":
@@ -352,7 +406,13 @@ export function PaidSetupStepHost(props: PaidSetupStepHostProps) {
               setLaunchPhase("unknown");
             }
           }}
-          onRefresh={retryRead}
+          onRefresh={async()=>{
+            if(!isCurrent())return;
+            setLaunchPhase('loading');
+            const result=await readOwnedBranchLaunchSummaryAction(targetScope).catch(()=>null);
+            if(!isCurrent())return;
+            setLaunchSnap(result);setLaunchPhase(result?'ready':'unavailable');
+          }}
         />
       );
   }

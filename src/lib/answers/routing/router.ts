@@ -1,3 +1,4 @@
+import {classifyHandoffPolicy,DEFAULT_RISK_KEYWORDS} from "./handoff-policy";
 import type {
   AIModelId,
   AnswerProvider,
@@ -19,14 +20,6 @@ export interface ClassificationResult {
   verificationRequired: boolean;
 }
 
-// These requests need authoritative business state, not a more capable language model.
-// This conservative local guard complements (and cannot replace) the shared action verifier.
-const SENSITIVE_KEYWORDS = [
-  "استرجاع", "تعويض", "تحويل بنكي", "حوالة", "تأكيد الدفع", "استلام الدفع", "تم الدفع",
-  "بيانات البطاقة", "كلمة المرور", "رمز التحقق", "تشخيص", "استشارة قانونية",
-  "refund", "compensation", "bank transfer", "payment received", "payment confirmed",
-  "credit card", "password", "otp", "diagnosis", "legal advice",
-];
 const MODEL_COMPLEXITY: Record<AIModelId, number> = {
   "gpt-6-luna": 1, "gemini-3.8-flash": 2, "gpt-6.1-sol": 3,
 };
@@ -49,42 +42,7 @@ export interface RouterConfig {
 }
 
 export const DEFAULT_ROUTER_CONFIG: RouterConfig = {
-  riskKeywords: [
-    "شكوى",
-    "استرجاع",
-    "غش",
-    "نصب",
-    "احتيال",
-    "سرقة",
-    "محامي",
-    "قضية",
-    "تعويض",
-    "شرطة",
-    "حماية المستهلك",
-    "سيء جدا",
-    "غير راضي",
-    "ارفع شكوى",
-    "اريد المدير",
-    "المدير المسؤول",
-    "تالف",
-    "خربان",
-    "متضرر",
-    "خصم خاص",
-    "تفاوض",
-    "استثناء",
-    "complaint",
-    "refund",
-    "fraud",
-    "scam",
-    "lawyer",
-    "compensation",
-    "police",
-    "consumer protection",
-    "unacceptable",
-    "manager",
-    "damaged",
-    "negotiate",
-  ],
+  riskKeywords: [...DEFAULT_RISK_KEYWORDS],
   catalogKeywords: [
     "كتالوج",
     "منيو",
@@ -154,15 +112,12 @@ export class MultiModelAIRouter implements AnswerProvider {
     const questionLower = (request.question || "").toLowerCase();
     const contextChars = request.chunks.reduce((sum, c) => sum + c.text.length, 0);
     const chunkCount = request.chunks.length;
-    const verificationRequired = SENSITIVE_KEYWORDS.some((keyword) => questionLower.includes(keyword));
+    const {verificationRequired,matchedRisk} = classifyHandoffPolicy(request.question, this.config.riskKeywords);
     const resultWithOverride = (result: ClassificationResult): ClassificationResult => request.forceModelId
       ? { ...result, modelId: request.forceModelId, reason: `Explicit model override: ${request.forceModelId}. ${result.reason}` }
       : result;
 
     // 2. Risk & Escalation Check -> Route to Sol
-    const matchedRisk = this.config.riskKeywords.find((kw) =>
-      questionLower.includes(kw.toLowerCase()),
-    );
     if (matchedRisk || verificationRequired) {
       return resultWithOverride({
         modelId: "gpt-6.1-sol",

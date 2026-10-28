@@ -1,6 +1,6 @@
 name: Velora quality gates
 
-# Installed pre-push runs equivalent mandatory checks before main.
+# Security and quality checks run in CI.
 # Post-push CI does not itself pause Vercel auto-deploy. Hosted protection and
 # Production settings are unchanged; native high-risk acceptance is separately
 # permissioned. See scripts/ci/README.md for the guarded delivery contract.
@@ -27,7 +27,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        check: [typecheck, lint, unit, contracts, build, safety]
+        check: [typecheck, lint, unit, contracts, build]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -55,6 +55,8 @@ jobs:
           node-version: 24.18.0
       - run: node scripts/ci/security.mjs
       - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Security and product contract checks
+        run: node --test scripts/ci/safety.test.mjs scripts/ci/required-gate.test.mjs scripts/ci/security.test.mjs scripts/ci/source-paths.test.mjs scripts/ci/dependency-compatibility.test.mjs scripts/ci/receipt.test.mjs scripts/integration/local-auth-confirmation.test.mjs src/lib/logging/logger.test.mjs
       # Moderate and higher findings block delivery; no audit suppression or
       # force downgrade. Scoped overrides have real lint/DOCX compatibility tests.
       - run: npm audit --audit-level=moderate

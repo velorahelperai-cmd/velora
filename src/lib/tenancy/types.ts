@@ -55,6 +55,8 @@ export type CompanyContext = {
   workspaceChoices: Array<{ companyId: string; displayName: string; role: CompanyRole }>;
   ownedBusinessCount?: number;
   hasBusinessMemberships?: boolean;
+  /** Navigation hint only; branch RPCs independently authorize every read. */
+  hasBranchMemberships?: boolean;
 };
 
 export type AccessCode =

@@ -11,7 +11,6 @@ npm run ci:lint
 npm run ci:unit
 npm run ci:contracts
 npm run ci:build
-npm run ci:safety
 ```
 
 Exit codes keep their previous meaning. Receipts are written only when `VELORA_CI_RECEIPT_DIR` is set.
@@ -51,50 +50,9 @@ Gitleaks / `security.mjs` remain separate jobs. Do not upload receipt directorie
 ```bash
 node --test scripts/ci/receipt.test.mjs
 node --test scripts/ci/safety.test.mjs scripts/ci/required-gate.test.mjs
-# or via the safety check entrypoint:
-node scripts/ci/run.mjs safety
 ```
 
-<a id="main-delivery-and-exclusive-ownership"></a>
-## Main delivery and file-scoped parallel ownership
 
-AGENTS.md is the shared entrypoint. Canonical Windows root: `C:\Users\DELL\Desktop\Velora new` on `main` only; GitHub account `velorahelperai-cmd`. **PARALLEL-FILES-001 (owner 2026-10-25, corrected):** lock only the files actually used; independent agents may work in parallel on non-overlapping paths in the **same** checkout and **same** `main`. No Worktrees, no separate branches, no clones for parallel work. Do not require finishing or handing off another independent task to start. Read-only Git uses `GIT_OPTIONAL_LOCKS=0`. Never use force, reset, clean, stash or deletion to discard another agent's leased files or bypass a reservation.
+## Delivery
 
-**Commit / Push** to `main` still require explicit owner permission for that delivery. No hook/CI bypass, force push, or secret/provider/production mutations without their approvals.
-
-The active schema-v2 registry is `.git/velora-path-reservations.json`; the old `.git/velora-writer-lock.json` is preserved evidence, never ownership or publication authority. Identity is `VELORA_WRITER_ID`, with `CODEX_THREAD_ID` as Codex fallback; no historical session is pinned. `VELORA_TASK_ID` selects one of the current owner's explicit task leases. Each lease records its publication baseline. Existing v2 leases missing that field require an explicit same-owner re-reservation after approval; do not guess another owner's status or transfer its paths. Record leased paths/task in the first PROJECT_STATE index.
-
-Acquire only listed paths with `npm run writer:acquire -- --task=TASK --paths=src/example.ts,src/example.test.ts`; release only that current owner's task with `npm run writer:release -- --task=TASK`. A legacy handoff-only acquire fails closed. Independent non-overlapping tasks do not require another task's handoff.
-
-Before authorized staging/gates, claim the single publication/index coordinator using `node scripts/consolidation/guard.mjs delivery-start --task=TASK`. Only the selected task lease (owner, task, paths and publication baseline) is frozen. Other writers may retain/acquire/grow/release disjoint scopes and continue editing their working files. They may not change the shared Git index, HEAD, approved manifest or committed package while this claim exists. Overlap is a real path conflict; a second publisher is rejected. Pre-push binds the selected reservation identity, not unrelated registry activity. `delivery-end` clears only the current owner claim and never grants commit/push approval.
-
-Run npm run hooks:install in this checkout. Git core.hooksPath must be .githooks, with an executable pre-push index entry. An npm script alone does not register a Git hook. Stage only reviewed task files. The owner-approved staged-snapshot delivery (2026-10-25) preserves other work in place and tests the exact Git index tree, including staged deletions. This replaces rejection of unrelated unstaged/untracked files with approved-manifest, source, ownership and preservation checks; no gate is reduced.
-
-Before prepush, save the reviewed publication allowlist in .git/velora-pre-push/approved.json: schemaVersion1, owner, task, publicationBase, exact paths array, and blobs mapping each path to its candidate Git blob OID (null for staged deletion). All candidate changes relative to remote main must belong to this explicit allowlist and to the selected delivery lease. Unexpected paths or changed approved blobs block publication. Never populate the allowlist from an unreviewed blanket git add.
-
-The controller remains canonical under verifyWorkspace and extracts an immutable files-only snapshot from stage0 blobs, with independently installed dependencies and no .git, clone, branch, worktree or original node_modules link. Driver sources must match indexed sources when the controller starts. Index/HEAD, approved blobs, context, snapshot source and installation identity remain checked around every gate. The atomic registry records allowed disjoint working scopes for this delivery, retaining them even if their writer completes/releases between observations. Preservation checks do not read/hash these concurrently mutable files or treat their new files as candidate drift; unleased WIP and unstaged edits in selected paths remain content-bound. The publisher never rewrites or removes original WIP. A bounded fresh-scope read handles acquisition during preservation observation; this never reruns/skips a quality gate. Private-file and pointer protections remain active, and private credentials are never opened.
-
-npm run prepush runs twelve live tree gates: npm ci without lifecycle scripts, Typecheck, Lint, Unit, Contracts, Build, Safety, static Security, moderate-or-higher dependency audit, pinned Gitleaks install/self-test/tree. Tests and builds use the snapshot cwd; driver ownership remains canonical. Security and Gitleaks tree enumerate candidate entries, while the actual Git hook scans base..HEAD in the canonical repository. The snapshot is an execution artifact, not OS isolation for malicious test code.
-
-Run receipts under .git/velora-pre-push/<tree>/<run> bind tree, remote base, head, selected writer/task reservation, Node/platform and snapshot install fingerprint. They document results and cannot skip a gate. The actual Git hook requires HEAD^{tree} to match the candidate, then re-runs all13 live gates including the exact commit-range scan. There is no receipt-reuse/bypass flag. This cooperative local hook does not prove hosted branch protection. Keep snapshot evidence until publication verification; never delete or relocate original work to satisfy the gate.
-
-The workflow retains all mandatory jobs and aggregate quality-gate. Post-push CI alone does not stop Vercel auto-deploy; no sensitive hosting/protection setting is changed. Follow CI, deployment source SHA, remote main SHA and published smoke. Keep post-deployment receipts outside Git; no commit solely for the previous deployment. Native DB/security/financial/provider acceptance remains separately authorized.
-
-Guard regressions cover local main ownership and GitHub/Vercel modes, including rejection of forged cloud mode on Windows. Pre-push regressions cover all required categories, each failure/signal/start error, drift and receipt mismatch. Prove real invocation with git hook run pre-push and controlled stdin; no test push is needed. These tests are in safety and do not label simulated gates as product-gate passes.
-
-For the real-hook proof, pass the controlled ref file with git hook run --to-stdin=<path> pre-push -- origin <approved-origin>. On the installed Git 2.51.2, piping stdin to git hook run alone does not forward it to the hook; its default input is empty. No push is sent by this proof.
-
-
-### Delivery status, resume and safe pause
-
-Use `node scripts/consolidation/guard.mjs status` with your own writer/task environment before acting on a reservation report. The receipt includes a fresh UTC observation, canonical registry path, exact-byte SHA256, delivery owner/task and observer classification. An open task or historical legacy lock is not an active reservation. Nonempty reservations may be the delivery owner's own files; they do not mean delivery acquisition failed. Re-read status after release; never reuse a cached message as ownership evidence.
-
-`delivery-start --task=TASK` uses the existing mutex. Matching owner/task resume requires the selected scope/base fingerprint to match; disjoint reservation changes do not invalidate it. The selected delivery lease cannot expand; an owner may still work on a different disjoint task. A delivery-scoped `deliveryMutableScopes` journal retains authorized disjoint paths through writer release, and is cleared at delivery-end. It is not a second task registry or publication authority. Old claims without a matching frozen identity fail closed. Errors distinguish `DELIVERY_PATH_CONFLICT`, `DELIVERY_SCOPE_FROZEN` and `DELIVERY_ALREADY_CLAIMED`.
-
-The Git hook accepts canonical main or the literal HEAD alias only when symbolic HEAD is main and local SHA, HEAD and refs/heads/main agree. The target must be existing remote main and exactly one update. Approved blobs, candidate tree, HEAD/index, preserved work and delivery ownership remain checked around live gates; saved receipts never skip gates. Verify the approved manifest against the current candidate after any commit/source change. Use PowerShell-compatible commands in this Windows checkout; Bash here-string syntax is not PowerShell receipt evidence.
-
-Before pausing/completing local write or publication work, save a concise checkpoint with task/writer/scopes, saved source/evidence, Git state, actual outcome and running/uncertain operations. Once local gates/push have a reconciled outcome and writes stop, end your delivery claim and release your task with `writer:release`, then read fresh status and prove no own reservation remains. CI/deployment may be explicitly PENDING: read-only monitoring of an immutable SHA requires no writer lease. If later edits are needed, reacquire only their paths. Never release blindly while a protected operation is still uncertain. Release preserves work and does not mark pending acceptance as passed.
-
-For an apparently abandoned lease, first establish that its writer and delivery operations have stopped and preserve its work/checkpoint. Age alone is never proof. Resume the original owning task to perform supported owner-scoped end/release; never impersonate it or delete registry/mutex files. If that identity cannot resume, or an interrupted mutex remains, report RECOVERY_BLOCKED with owner, task, saved evidence and exact lock; request a separately authorized supported recovery path. This repair adds no time-based stealing or manual-clear command.
-
-Verified incident: own/foreign status and HEAD spelling initially caused confusing blocks; the former global all-writers rule also coupled unrelated reservations and WIP hashes to delivery identity. Owner policy21:47UTC replaces that global pause with selected-path ownership plus an immutable tested candidate. Regressions prove disjoint acquisition/edit/new-file/release through frozen gates, stable selected identity, real overlap and second-publisher rejection, and continued index/HEAD/snapshot/security/gate fencing. Existing root-cause/proportional-prevention requirements remain in WORK-19 and Brain08-LESSONS; no guaranteed nonrecurrence claim.
+Review the intended changes and preserve unrelated work. CI independently runs quality, security, dependency audit, and pinned Gitleaks checks. Production and hosted acceptance require separate evidence.

@@ -38,3 +38,11 @@ it("shows prior-day carry-over explicitly even when no interval starts today",()
  const schedule=emptyBranchHours();schedule.monday={state:"open",intervals:[{start:"22:00",end:"02:00",nextDay:true}]};schedule.tuesday={state:"closed"};
  expect(render({snapshot:{...props.snapshot!,schedule}})).toContain("Carry-over from the previous day until:");
 });
+
+it.each(["ar","en"] as const)("renders persisted holiday dates with full-day override guidance in %s",locale=>{
+ const schedule={...emptyBranchHours(),exceptions:[{date:"2026-12-01",hours:{state:"closed" as const}}]};
+ const html=render({locale,snapshot:{...props.snapshot!,schedule}});
+ expect(html).toContain('value="2026-12-01"');
+ expect(html).toContain(locale==='ar'?"مغلق طوال اليوم":"Closed all day");
+ expect(html).toContain(locale==='ar'?"امتداد اليوم السابق":"previous-day carry-over");
+});

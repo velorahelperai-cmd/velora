@@ -29,6 +29,8 @@ export type PaidBranchKnowledgeProps = {
   onAddWebsite?:(input:CommandContext & {url:string; rightsAttested:true})=>void | Promise<void>;
   onUploadFiles?:(input:CommandContext & {files:File[]})=>void | Promise<void>;
   onSaveText?:(input:CommandContext & {title:string; content:string})=>void | Promise<void>;
+  onSourceMutation?:(input:KnowledgeViewScope & {sourceId:string;contentVersion:number;action:"edit"|"remove";title?:string;content?:string})=>void|Promise<void>;
+  onRemovePage?:(input:KnowledgeViewScope & {pageId:string;pageVersion:number})=>void|Promise<void>;
   onSourceApproval?:(input:KnowledgeViewScope & {sourceId:string;contentVersion:number;approved:boolean})=>void|Promise<void>;
   onPageAction?:(input:CommandContext & {pageId:string; pageVersion:number; action:"retry" | "retrain"})=>void | Promise<void>;
 };
@@ -66,9 +68,13 @@ function KnowledgeForm(p:PaidBranchKnowledgeProps & {snapshot:BranchKnowledgeVie
   const ar=p.locale==="ar",t=(a:string,e:string)=>ar?a:e,id=useId();
   const [url,setUrl]=useState(""),[attested,setAttested]=useState(false),[files,setFiles]=useState<File[]>([]);
   const [question,setQuestion]=useState(""),[answer,setAnswer]=useState("");
+  const [editingDraft,setEditing]=useState<{sourceId:string;contentVersion:number;title:string;content:string}|null>(null);
   const [busy,setBusy]=useState(false),[failed,setFailed]=useState(false);
   const mounted=useRef(false),reserved=useRef(false);
-  const dirty=!!(url||question||answer||files.length);
+  const savedEditSource=editingDraft?p.snapshot.faq.find(item=>item.branchId===p.scope.branchId&&item.source.id===editingDraft.sourceId)?.source:null;
+  const editConfirmed=!!(editingDraft&&savedEditSource&&savedEditSource.content_version!==editingDraft.contentVersion&&savedEditSource.title===editingDraft.title.trim()&&savedEditSource.content===editingDraft.content.trim());
+  const editing=editConfirmed?null:editingDraft;
+  const dirty=!!(url||question||answer||files.length||editing);
   useSetupUnsavedChanges(dirty,p.isCurrent,p.locale);
   useLayoutEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
   const quotaKnown=knownWebsiteQuota(p.snapshot.websiteQuota);
@@ -94,6 +100,10 @@ function KnowledgeForm(p:PaidBranchKnowledgeProps & {snapshot:BranchKnowledgeVie
       <strong dir="auto">{source.title}</strong><span>{status(source.status)}</span>
       {kind==="file" && source.file_name && <bdi>{source.file_name}</bdi>}
       {kind==="text" && <p dir="auto" className={styles.text}>{source.content}</p>}
+      {p.onSourceMutation&&Number.isSafeInteger(source.content_version)&&source.content_version!>0&&<div className={styles.actions}>
+        {kind==='text'&&<button type="button" disabled={locked} onClick={()=>{if(p.isCurrent())setEditing({sourceId:source.id,contentVersion:source.content_version!,title:source.title,content:source.content??''});}}>{t('تعديل النص','Edit text')}</button>}
+        <button type="button" disabled={locked} onClick={()=>{if(p.isCurrent()&&window.confirm(t('إزالة المصدر من هذا الفرع؟ سيبقى الأصل محفوظًا.','Remove this source from this branch? The original will remain stored.')))void dispatch(()=>p.onSourceMutation?.({...p.scope,sourceId:source.id,contentVersion:source.content_version!,action:'remove'}));}}>{t('إزالة من الفرع','Remove from branch')}</button>
+      </div>}
       {source.failure_code && <p className={styles.error}>{t("تعذّر تجهيز المصدر؛ راجع الملف أو المحتوى.","The source could not be prepared; review the file or content.")}</p>}
       <small>{isApprovedForAnswers(source)?t("هذه النسخة معتمدة للإجابات","This version is approved for answers"):t("هذه النسخة غير معتمدة للإجابات","This version is not approved for answers")}</small>
       {p.onSourceApproval&&source.status==='ready'&&Number.isSafeInteger(source.content_version)&&source.content_version!>0&&<button type="button" disabled={locked} onClick={()=>void dispatch(()=>p.onSourceApproval?.({...p.scope,sourceId:source.id,contentVersion:source.content_version!,approved:!isApprovedForAnswers(source)}))}>{isApprovedForAnswers(source)?t('إلغاء اعتماد هذه النسخة','Remove approval for this version'):t('اعتماد هذه النسخة لإجابات المساعد','Approve this version for assistant answers')}</button>}
@@ -107,6 +117,14 @@ function KnowledgeForm(p:PaidBranchKnowledgeProps & {snapshot:BranchKnowledgeVie
     {p.state.phase==="conflict" && <p role="alert" className={styles.error}>{t("تغيّرت بيانات المعرفة. أعد التحميل وراجع التغييرات قبل المتابعة.","Knowledge data changed. Reload and review the changes before continuing.")}</p>}
     {p.state.phase==="saved" && !url && !question && !answer && !files.length && <p role="status">{t("أكد الخادم حفظ هذه النسخة.","The server confirmed this saved version.")}</p>}
     {failed && <p role="alert" className={styles.error}>{t("تعذر إرسال الطلب. راجع الحالة الحالية قبل إعادة المحاولة.","The request could not be submitted. Review its current state before retrying.")}</p>}
+    {editing&&<form onSubmit={event=>{event.preventDefault();if(editing.title.trim()&&editing.content.trim())void dispatch(async()=>{await p.onSourceMutation?.({...p.scope,...editing,action:'edit'});});}}><fieldset disabled={locked}>
+      <legend>{t('تعديل النص المحفوظ','Edit saved text')}</legend>
+      <label>{t('العنوان','Title')}<input value={editing.title} maxLength={200} onChange={e=>{if(p.isCurrent())setEditing({...editing,title:e.target.value});}}/></label>
+      <label>{t('المحتوى','Content')}<textarea value={editing.content} maxLength={20000} onChange={e=>{if(p.isCurrent())setEditing({...editing,content:e.target.value});}}/></label>
+      <p>{t('التعديل يلغي اعتماد النسخة السابقة للإجابات.','Editing removes approval of the previous version for answers.')}</p>
+      <button type="submit" disabled={!editing.title.trim()||!editing.content.trim()}>{t('حفظ التعديل','Save edit')}</button>
+      <button type="button" onClick={()=>{if(p.isCurrent())setEditing(null);}}>{t('إلغاء','Cancel')}</button>
+    </fieldset></form>}
     <section className={styles.section} aria-labelledby={`${id}-website`}>
       <div className={styles.sectionHeading}><h3 id={`${id}-website`}>{t("الموقع الإلكتروني","Website")}</h3><span>{quotaKnown?<><bdi dir="ltr">{p.snapshot.websiteQuota.used} / {p.snapshot.websiteQuota.limit}</bdi> {t("صفحة","pages")}</>:t("الحصة غير معروفة","Quota unknown")}</span></div>
       <form noValidate onSubmit={event=>{event.preventDefault();if(canAdd)void dispatch(()=>p.onAddWebsite?.({...context,url:url.trim(),rightsAttested:true}));}}>
@@ -124,7 +142,7 @@ function KnowledgeForm(p:PaidBranchKnowledgeProps & {snapshot:BranchKnowledgeVie
           <div className={styles.actions}>{(["retry","retrain"] as const).map(action=>{
             const permitted=pageReady && (action==="retry"?page.capabilities.canRetry:page.capabilities.canRetrain)===true;
             return <button type="button" key={action} disabled={locked || !permitted || !p.onPageAction} onClick={()=>{if(permitted && version(page.version))void dispatch(()=>p.onPageAction?.({...context,pageId:page.id,pageVersion:page.version!,action}));}}>{action==="retry"?t("إعادة المحاولة","Retry"):t("إعادة المعالجة","Reprocess")}</button>;
-          })}</div>
+          })}{p.onRemovePage&&<button type="button" disabled={locked||!version(page.version)||page.version!<1} onClick={()=>{if(p.isCurrent()&&window.confirm(t('حذف هذه الصفحة من معرفة الفرع؟','Delete this page from branch knowledge?')))void dispatch(()=>p.onRemovePage?.({...p.scope,pageId:page.id,pageVersion:page.version!}));}}>{t('حذف الصفحة','Delete page')}</button>}</div>
         </li>;
       })}</ul>:<p className={styles.note}>{t("لا توجد صفحات مرتبطة بهذا الفرع بعد.","No pages are assigned to this branch yet.")}</p>}
     </section>

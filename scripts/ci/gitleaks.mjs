@@ -6,10 +6,11 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { binary, version } from './gitleaks-install.mjs';
 import { forbiddenTrackedPath } from './security-rules.mjs';
-import {candidateContextArgument,loadGateContext} from './candidate-snapshot.mjs';
+// Legacy candidate contexts require the retired delivery controller; reject them explicitly.
+if (process.argv.includes('--candidate-context')) throw new Error('CI_LEGACY_CANDIDATE_CONTEXT_UNSUPPORTED');
 const source = dirname(fileURLToPath(import.meta.url));
 const root = process.cwd();
-const context=loadGateContext(candidateContextArgument());
+const context=null;
 const fileRoot=context?.snapshot??root;
 // Do not pass application credentials or scanner configuration overrides to child processes.
 const env = {};

@@ -1,9 +1,35 @@
-import {createElement} from "react";import {renderToStaticMarkup} from "react-dom/server";import {expect,it} from "vitest";
+// @vitest-environment jsdom
+import {act,createElement} from "react";import {renderToStaticMarkup} from "react-dom/server";import {createRoot} from "react-dom/client";import {expect,it,vi} from "vitest";
 import {PaidAssistantTrial,trialSuggestions,trialViewKey,type PaidAssistantTrialProps,type TrialMessage} from "./paid-assistant-trial";
 import {businessTypes} from "@/lib/business-types";
 const scope={expectedAccountId:"actor",companyId:"company",branchId:"branch"};
 const props:PaidAssistantTrialProps={locale:"en",scope,boundaryFingerprint:"capture",snapshot:{scope,version:1,knowledgeRevision:"k1",branchLabel:"Branch",businessType:"restaurant",canAsk:true,messages:[]},state:{scope,version:1,phase:"ready",requestId:null,failure:null,canRetry:false},isCurrent:()=>true,onAsk:()=>{throw Error("Render must not ask");}};
 const render=(patch:Partial<PaidAssistantTrialProps>={})=>renderToStaticMarkup(createElement(PaidAssistantTrial,{...props,...patch}));
+it('labels handoff as preview without a real transfer or consumed reply',()=>{
+ expect(render({snapshot:{...props.snapshot!,handoffPreview:'human_request'}})).toContain('No real conversation was transferred');
+});
+it('recovers saved result without asking the provider and explains discarded obsolete context',async()=>{
+ vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);
+ const host=document.createElement('div'),root=createRoot(host),onRecover=vi.fn(),onAsk=vi.fn();
+ try{
+  await act(async()=>root.render(createElement(PaidAssistantTrial,{...props,onRecover,onAsk,snapshot:{...props.snapshot!,pendingOperation:{id:'saved-op',status:'success',recoverable:true}}})));
+  expect(host.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(true);
+  const button=Array.from(host.querySelectorAll('button')).find(b=>b.textContent==='Recover saved answer')!;
+  await act(async()=>button.click());expect(onRecover).toHaveBeenCalledWith('saved-op');expect(onAsk).not.toHaveBeenCalled();
+ }finally{await act(async()=>root.unmount());vi.unstubAllGlobals();}
+ expect(render({snapshot:{...props.snapshot!,recoveryNotice:'context_changed'}})).toContain('without using a trial reply');
+});
+it("refreshes an unknown result without resending and blocks refresh after authority loss",async()=>{
+ vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);
+ const host=document.createElement('div'),root=createRoot(host),onRefresh=vi.fn(),onAsk=vi.fn();let current=true;
+ try{
+  await act(async()=>root.render(createElement(PaidAssistantTrial,{...props,state:{...props.state,phase:'unknown'},isCurrent:()=>current,onAsk,onRefresh} as PaidAssistantTrialProps)));
+  const button=Array.from(host.querySelectorAll('button')).find(b=>b.textContent==='Check request status');
+  expect(button).toBeDefined();
+  await act(async()=>button!.click());expect(onRefresh).toHaveBeenCalledTimes(1);expect(onAsk).not.toHaveBeenCalled();
+  current=false;await act(async()=>button!.click());expect(onRefresh).toHaveBeenCalledTimes(1);
+ }finally{await act(async()=>root.unmount());vi.unstubAllGlobals();}
+});
 it.each(["ar","en"] as const)("renders %s with three suggestions, free text and no effects",locale=>{const html=render({locale});expect(html).toMatch(/maxlength="1000"/i);expect(html).toContain('<textarea');expect(html).toContain('dir="auto"');expect(trialSuggestions("restaurant",locale)).toHaveLength(3);expect(html).not.toContain("Synthetic UI example");});
 it.each(["restaurant","retail","school","clinic","real_estate","hotel","beauty_salon","auto_repair","other","custom"])("suggests three distinct questions for %s",type=>{expect(new Set(trialSuggestions(type,"en")).size).toBe(3);});
 it("reuses sector catalog and retail alias without guessing from names",()=>{expect(trialSuggestions("store","en")).toEqual(trialSuggestions("retail","en"));expect(trialSuggestions("restaurant","en")).not.toEqual(trialSuggestions("clinic","en"));expect(trialSuggestions("custom restaurant name","en")).toEqual(trialSuggestions("other","en"));});

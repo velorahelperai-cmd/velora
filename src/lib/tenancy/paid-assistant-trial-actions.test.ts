@@ -36,7 +36,7 @@ vi.mock("./branch-hours-actions", () => ({
       version: 1,
       branchLabel: "Main Branch",
       timezone: "Asia/Muscat",
-      schedule: { monday: { state: "open", intervals: [{ start: "09:00", end: "18:00", nextDay: false }] } },
+      schedule: { tuesday:{state:"closed"},wednesday:{state:"closed"},thursday:{state:"closed"},friday:{state:"closed"},saturday:{state:"closed"},sunday:{state:"closed"}, monday: { state: "open", intervals: [{ start: "09:00", end: "18:00", nextDay: false }] } },
     },
   })),
 }));
@@ -65,6 +65,7 @@ vi.mock("./paid-branch-knowledge-actions", () => ({
 
 import {
   askOwnedBranchAssistantTrialAction,
+  recoverOwnedBranchAssistantTrialAction,
   readOwnedBranchAssistantTrialAction,
 } from "./paid-assistant-trial-actions";
 import { setAnswerProviderForTesting } from "@/lib/answers/provider";
@@ -108,6 +109,44 @@ describe("paid-assistant-trial-actions", () => {
       branchId: VALID_BRANCH_ID,
     });
     expect(res).toBeNull();
+  });
+  it.each(['اريد المدير','refund this payment'])('previews escalation for %s without provider, ledger or receipt mutation',async question=>{
+    const complete=vi.fn();setAnswerProviderForTesting({id:'must-not-run',complete});
+    const result=await askOwnedBranchAssistantTrialAction({expectedAccountId:VALID_ACCOUNT_ID,companyId:VALID_COMPANY_ID,branchId:VALID_BRANCH_ID,expectedVersion:1,knowledgeRevision:'rev_1',question});
+    expect(result).toMatchObject({ok:true,snapshot:{handoffPreview:expect.any(String),messages:[]}});
+    expect(complete).not.toHaveBeenCalled();expect(trustedRpc).not.toHaveBeenCalled();
+  });
+
+  it("recovers a saved receipt without reserving allowance or calling the provider",async()=>{
+    const operationId="66666666-6666-4666-8666-666666666666";
+    const scope={expectedAccountId:VALID_ACCOUNT_ID,companyId:VALID_COMPANY_ID,branchId:VALID_BRANCH_ID};
+    const complete=vi.fn();setAnswerProviderForTesting({id:"must-not-run",complete});
+    rpcMock.mockResolvedValue({data:{ok:true,data:{snapshot:{scope,version:1,knowledgeRevision:"rev_1",messages:[{executionId:operationId,origin:"engine"}]}}},error:null});
+    expect(await recoverOwnedBranchAssistantTrialAction({...scope,operationId})).toMatchObject({ok:true});
+    expect(complete).not.toHaveBeenCalled();
+    expect(trustedRpc.mock.calls.map(c=>c[0])).toEqual(["es02_recover_branch_trial_result"]);
+  });
+  it("does not recover or expose another account's receipt",async()=>{
+    const scope={expectedAccountId:VALID_ACCOUNT_ID,companyId:VALID_COMPANY_ID,branchId:VALID_BRANCH_ID};
+    currentSessionId=OTHER_ACCOUNT_ID;
+    expect(await recoverOwnedBranchAssistantTrialAction({...scope,operationId:VALID_ACCOUNT_ID})).toMatchObject({ok:false,code:"UNAUTHENTICATED"});
+    expect(trustedRpc).not.toHaveBeenCalled();
+  });
+
+  it.each(["version", "knowledge", "branch", "unavailable"])("rejects %s trial context before reserving or calling AI", async (failure) => {
+    const scope = { expectedAccountId: VALID_ACCOUNT_ID, companyId: VALID_COMPANY_ID, branchId: VALID_BRANCH_ID };
+    const normalRpc = rpcMock;
+    rpcMock = vi.fn(async (name, args) => name === "es02_read_owned_branch_assistant_trial"
+      ? { error: failure === "unavailable" ? { message: "offline" } : null, data: { ok: true, data: { snapshot: {
+        scope: failure === "branch" ? { ...scope, branchId: OTHER_ACCOUNT_ID } : scope,
+        version: failure === "version" ? 2 : 1, knowledgeRevision: failure === "knowledge" ? "rev_2" : "rev_1", messages: [],
+      } } } } : normalRpc(name, args));
+    const complete = vi.fn(async (): Promise<AnswerResult> => ({ ok: false, code: "UNAVAILABLE", message: "must not dispatch" }));
+    setAnswerProviderForTesting({ id: "test-only", complete });
+    const result = await askOwnedBranchAssistantTrialAction({ ...scope, expectedVersion: 1, knowledgeRevision: "rev_1", question: "Hours?" });
+    expect(result).toMatchObject({ ok: false, code: ["unavailable","branch"].includes(failure) ? "UNAVAILABLE" : "CONTEXT_CHANGED" });
+    expect(complete).not.toHaveBeenCalled();
+    expect(trustedRpc).not.toHaveBeenCalled();
   });
 
   it("denies account mismatch on trial ask", async () => {
@@ -216,12 +255,8 @@ describe("paid-assistant-trial-actions", () => {
     expect(rpcMock).not.toHaveBeenCalledWith("es02_record_owned_branch_assistant_trial", expect.anything());
     expect(mockProvider.complete).toHaveBeenCalledWith(expect.objectContaining({ persona: "lina" }));
     expect(trustedRpc).toHaveBeenCalledWith(
-      "es02_record_owned_branch_assistant_trial",
-      expect.objectContaining({
-        p_answer: "نعمل من 9 صباحاً حتى 6 مساءً.",
-        p_model_id: "gemini-3.8-flash",
-        p_knowledge_revision: "rev_1",
-      })
+      "es02_checkpoint_branch_trial_result",
+      expect.objectContaining({ p_result: expect.objectContaining({answer: "نعمل من 9 صباحاً حتى 6 مساءً.", modelId:"gemini-3.8-flash"}) })
     );
   });
 });
@@ -237,7 +272,7 @@ it("never calls provider when branch authorization fails", async () => {
 });
 it.each(["hours", "knowledge", "language"])("stops before provider when %s context cannot be read", async (part) => {
   currentSessionId = VALID_ACCOUNT_ID;
-  rpcMock = vi.fn().mockResolvedValue({ data: { ok: true, data: { persona: "level_2" } }, error: null });
+  rpcMock = vi.fn().mockResolvedValue({ data: { ok: true, data: { persona: "level_2", snapshot: { scope: { expectedAccountId: VALID_ACCOUNT_ID, companyId: VALID_COMPANY_ID, branchId: VALID_BRANCH_ID }, version: 1, knowledgeRevision: "rev_1", messages: [] } } }, error: null });
   const complete = vi.fn(async (): Promise<AnswerResult> => ({ ok: false, code: "UNAVAILABLE", message: "fake only" }));
   setAnswerProviderForTesting({ id: "fake-only", complete });
   if (part === "hours") vi.mocked((await import("./branch-hours-actions")).readOwnedBranchHoursAction).mockResolvedValueOnce({ ok: false, code: "UNAVAILABLE" } as never);
@@ -250,7 +285,7 @@ it.each(["hours", "knowledge", "language"])("stops before provider when %s conte
 
 it("does not spend a provider request without a trusted receipt writer", async () => {
   currentSessionId = VALID_ACCOUNT_ID;
-  rpcMock = vi.fn().mockResolvedValue({ data: { ok: true, data: { persona: "level_2" } }, error: null });
+  rpcMock = vi.fn().mockResolvedValue({ data: { ok: true, data: { persona: "level_2", snapshot: { scope: { expectedAccountId: VALID_ACCOUNT_ID, companyId: VALID_COMPANY_ID, branchId: VALID_BRANCH_ID }, version: 1, knowledgeRevision: "rev_1", messages: [] } } }, error: null });
   trustedAvailable = false;
   const complete = vi.fn(async (): Promise<AnswerResult> => ({ ok: false, code: "UNAVAILABLE", message: "fake only" }));
   setAnswerProviderForTesting({ id: "fake-only", complete });
@@ -264,7 +299,7 @@ it("does not spend a provider request without a trusted receipt writer", async (
 it.each(["TRIAL_LIMIT_REACHED", "TRIAL_PENDING"])("does not call provider when durable allowance reports %s", async (code) => {
   currentSessionId = VALID_ACCOUNT_ID;
   trustedAvailable = true;
-  rpcMock = vi.fn().mockResolvedValue({ data: { ok: true, data: { persona: "level_2" } }, error: null });
+  rpcMock = vi.fn().mockResolvedValue({ data: { ok: true, data: { persona: "level_2", snapshot: { scope: { expectedAccountId: VALID_ACCOUNT_ID, companyId: VALID_COMPANY_ID, branchId: VALID_BRANCH_ID }, version: 1, knowledgeRevision: "rev_1", messages: [] } } }, error: null });
   trustedRpc = vi.fn().mockResolvedValue({ data: { ok: false, code }, error: null });
   const complete = vi.fn(async (): Promise<AnswerResult> => ({ ok: false, code: "UNAVAILABLE", message: "fake only" }));
   setAnswerProviderForTesting({ id: "fake-only", complete });

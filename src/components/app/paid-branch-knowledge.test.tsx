@@ -57,3 +57,10 @@ it("resets form on account, branch, capture or version changes, preserving local
  const key=branchKnowledgeViewKey(props);for(const field of ["expectedAccountId","companyId","branchId"] as const)expect(branchKnowledgeViewKey({...props,scope:{...scope,[field]:"new"}})).not.toBe(key);
  expect(branchKnowledgeViewKey({...props,boundaryFingerprint:"new"})).not.toBe(key);expect(branchKnowledgeViewKey({...props,snapshot:{...props.snapshot!,version:2}})).not.toBe(key);expect(branchKnowledgeViewKey({...props,locale:"ar"})).toBe(key);
 });
+
+it('offers scoped edit and honest branch removal only with current source versions',()=>{
+ const source={id:'source',company_id:'company',kind:'text',title:'Q',content:'A',status:'ready',content_version:2} as KnowledgeSourceRecord;
+ const html=render({snapshot:{...props.snapshot!,faq:[{branchId:'branch',source}]},onSourceMutation:()=>{throw Error('no render mutation');},onRemovePage:()=>{throw Error('no render mutation');}});
+ expect(html).toContain('Edit text');expect(html).toContain('Remove from branch');expect(html).toContain('Delete page');
+ expect(render({snapshot:{...props.snapshot!,faq:[{branchId:'other',source}]},onSourceMutation:()=>{}})).not.toContain('Edit text');
+});

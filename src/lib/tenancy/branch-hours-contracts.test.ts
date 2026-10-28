@@ -1,5 +1,5 @@
 import {expect,it} from "vitest";
-import {emptyBranchHours,validateBranchHours,prepareBranchHoursSave,prepareBranchHoursCopy,type BranchHoursSnapshot} from "./branch-hours-contracts";
+import {emptyBranchHours,validateBranchHours,prepareBranchHoursSave,prepareBranchHoursCopy,branchHoursAssistantContext,type BranchHoursSnapshot} from "./branch-hours-contracts";
 const scope={expectedAccountId:"owner",companyId:"company",branchId:"source"};
 const snapshot:BranchHoursSnapshot={scope,version:3,branchLabel:"Main",timezone:"Asia/Muscat",schedule:emptyBranchHours()};
 const period=(start:string,end:string,nextDay=false)=>({state:"open" as const,intervals:[{start,end,nextDay}]});
@@ -54,4 +54,36 @@ it("copies local clock values unchanged without a timezone mutation",()=>{
 it("rejects unknown target zones and ambiguous inventory",()=>{
  expect(prepareBranchHoursCopy(scope,snapshot,snapshot.schedule,[{...targets[0],timezone:null}],["target"])).toEqual({ok:false,code:"timezone"});
  expect(prepareBranchHoursCopy(scope,snapshot,snapshot.schedule,[targets[0],targets[0]],["target"])).toEqual({ok:false,code:"selection"});
+});
+
+it("retains isolated calendar exceptions through validation, cloning and save",()=>{
+ const schedule={...emptyBranchHours(),exceptions:[{date:"2028-02-29",hours:{state:"closed" as const}}]};
+ const result=prepareBranchHoursSave(scope,snapshot,schedule);
+ expect(result.ok).toBe(true);
+ if(result.ok){expect(result.draft.schedule.exceptions).toEqual(schedule.exceptions);schedule.exceptions[0].date="2028-03-01";expect(result.draft.schedule.exceptions![0].date).toBe("2028-02-29");}
+});
+it.each(["2026-02-29","2026-13-01","2026-04-31","26-01-01",""])("rejects invalid exception date %s",date=>{
+ expect(validateBranchHours({...emptyBranchHours(),exceptions:[{date,hours:{state:"closed"}}]}).ok).toBe(false);
+});
+it("rejects duplicate, unset, malformed and overnight date exceptions",()=>{
+ const entry={date:"2026-12-01",hours:{state:"closed"}};
+ for(const exceptions of [[entry,entry],[{...entry,hours:{state:"unset"}}],[{...entry,extra:true}],[{...entry,hours:period("22:00","02:00",true)}],new Array(1)])
+ expect(validateBranchHours({...emptyBranchHours(),exceptions}).ok).toBe(false);
+});
+it("accepts split special hours and rejects exception overlap or sparse intervals",()=>{
+ const hours={state:"open",intervals:[{start:"09:00",end:"12:00",nextDay:false},{start:"13:00",end:"17:00",nextDay:false}]};
+ const schedule={...emptyBranchHours(),exceptions:[{date:"2026-12-01",hours}]};
+ expect(validateBranchHours(schedule).ok).toBe(true);hours.intervals[1].start="11:00";expect(validateBranchHours(schedule).ok).toBe(false);
+ hours.intervals=new Array(1);expect(validateBranchHours(schedule).ok).toBe(false);
+});
+it("AI context explains full-date overrides and fails closed on invalid context",()=>{
+ const saved={...snapshot,schedule:{...emptyBranchHours(),exceptions:[{date:"2026-12-01",hours:{state:"closed" as const}}]}};
+ expect(branchHoursAssistantContext(saved)).toContain("including weekly carry-over");
+ expect(branchHoursAssistantContext(saved)).toContain("2026-12-01");
+ expect(branchHoursAssistantContext({...saved,timezone:null})).toBeNull();
+ expect(branchHoursAssistantContext({...saved,schedule:{...saved.schedule,exceptions:[{date:"bad",hours:{state:"closed"}}]}})).toBeNull();
+});
+
+it("permits date exception intervals ending at midnight including a full day",()=>{
+ for(const start of ["00:00","22:00"]) expect(validateBranchHours({...emptyBranchHours(),exceptions:[{date:"2026-12-01",hours:period(start,"00:00",true)}]}).ok).toBe(true);
 });

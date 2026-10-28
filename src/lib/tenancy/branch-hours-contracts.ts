@@ -6,7 +6,10 @@ export type BranchHoursInterval = {start: string; end: string; nextDay: boolean}
  * that day; an explicit overnight interval from the prior day may still extend
  * into it. The UI must show that carry-over rather than hide it. */
 export type BranchHoursDayValue = {state: "unset" | "closed"} | {state: "open"; intervals: BranchHoursInterval[]};
-export type BranchHoursSchedule = Record<BranchHoursDay, BranchHoursDayValue>;
+/** Exceptions replace the entire local calendar date, including weekly carry-over.
+ * Split overnight exceptions across two dates; nextDay only permits an end at midnight. */
+export type BranchHoursException = {date: string; hours: Exclude<BranchHoursDayValue, {state: "unset" | "closed"}> | {state: "closed"}};
+export type BranchHoursSchedule = Record<BranchHoursDay, BranchHoursDayValue> & {exceptions?: BranchHoursException[]};
 export type BranchHoursScope = {expectedAccountId: string; companyId: string; branchId: string};
 export type BranchHoursSnapshot = {
   scope: BranchHoursScope;
@@ -23,7 +26,8 @@ export type BranchHoursCopyDraft = {
   targets: {branchId: string; expectedVersion: number}[];
 };
 export type BranchHoursIssue = {
-  code: "invalid_schedule" | "invalid_day" | "empty_intervals" | "invalid_interval" | "invalid_time" | "end_not_after_start" | "overlap";
+  code: "invalid_schedule" | "invalid_day" | "empty_intervals" | "invalid_interval" | "invalid_time" | "end_not_after_start" | "overlap" | "invalid_exception";
+  date?: string;
   day?: BranchHoursDay;
   interval?: number;
   otherDay?: BranchHoursDay;
@@ -32,12 +36,17 @@ export type BranchHoursIssue = {
 export type BranchHoursValidation = {ok: true; schedule: BranchHoursSchedule} | {ok: false; issues: BranchHoursIssue[]};
 
 export function emptyBranchHours(): BranchHoursSchedule {
-  return Object.fromEntries(BRANCH_HOURS_DAYS.map(day => [day, {state: "unset"}])) as BranchHoursSchedule;
+  return {monday:{state:"unset"},tuesday:{state:"unset"},wednesday:{state:"unset"},
+    thursday:{state:"unset"},friday:{state:"unset"},saturday:{state:"unset"},sunday:{state:"unset"}};
 }
 export function cloneBranchHours(schedule: BranchHoursSchedule): BranchHoursSchedule {
-  return Object.fromEntries(BRANCH_HOURS_DAYS.map(day => [day, schedule[day].state === "open"
+  const copy = emptyBranchHours();
+  for (const day of BRANCH_HOURS_DAYS) copy[day] = schedule[day].state === "open"
     ? {state: "open", intervals: schedule[day].intervals.map(interval => ({...interval}))}
-    : {...schedule[day]}])) as BranchHoursSchedule;
+    : {...schedule[day]};
+  if (schedule.exceptions !== undefined) copy.exceptions = schedule.exceptions.map(entry => ({date: entry.date,
+    hours: entry.hours.state === "open" ? {state: "open", intervals: entry.hours.intervals.map(interval => ({...interval}))} : {state: "closed"}}));
+  return copy;
 }
 export function branchHoursMinute(value: unknown): number | null {
   if (typeof value !== "string" || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value)) return null;
@@ -47,7 +56,7 @@ const record = (value: unknown): value is Record<string, unknown> => !!value && 
 const exactKeys = (value: Record<string, unknown>, keys: readonly string[]) => Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
 
 export function validateBranchHours(value: unknown): BranchHoursValidation {
-  if (!record(value) || !exactKeys(value, BRANCH_HOURS_DAYS)) return {ok: false, issues: [{code: "invalid_schedule"}]};
+  if (!record(value) || !exactKeys(value, Object.hasOwn(value, "exceptions") ? [...BRANCH_HOURS_DAYS, "exceptions"] : BRANCH_HOURS_DAYS)) return {ok: false, issues: [{code: "invalid_schedule"}]};
   const issues: BranchHoursIssue[] = [];
   const spans: {day: BranchHoursDay; interval: number; start: number; end: number}[] = [];
   for (const [dayIndex, day] of BRANCH_HOURS_DAYS.entries()) {
@@ -59,6 +68,9 @@ export function validateBranchHours(value: unknown): BranchHoursValidation {
     if (item.state !== "open") continue;
     if (!Array.isArray(item.intervals) || !item.intervals.length) {
       issues.push({code: "empty_intervals", day}); continue;
+    }
+    if (Array.from({length: item.intervals.length}, (_, index) => Object.hasOwn(item.intervals as unknown[], index)).some(present => !present)) {
+      issues.push({code: "invalid_interval", day}); continue;
     }
     item.intervals.forEach((interval: unknown, index: number) => {
       if (!record(interval) || !exactKeys(interval, ["start", "end", "nextDay"]) || typeof interval.nextDay !== "boolean") {
@@ -77,6 +89,24 @@ export function validateBranchHours(value: unknown): BranchHoursValidation {
     const a = spans[i], b = spans[j];
     if ([-10080, 0, 10080].some(offset => Math.max(a.start, b.start + offset) < Math.min(a.end, b.end + offset)))
       issues.push({code: "overlap", day: a.day, interval: a.interval, otherDay: b.day, otherInterval: b.interval});
+  }
+  if (Object.hasOwn(value, "exceptions")) {
+    if (!Array.isArray(value.exceptions) || value.exceptions.length > 366) issues.push({code: "invalid_exception"});
+    else {
+      const dates = new Set<string>();
+      for (const entry of value.exceptions) {
+        if (!record(entry) || !exactKeys(entry, ["date", "hours"]) || !validBranchHoursDate(entry.date) || dates.has(entry.date)) {
+          issues.push({code: "invalid_exception"}); continue;
+        }
+        dates.add(entry.date);
+        const hours = entry.hours;
+        if (!record(hours) || !["closed", "open"].includes(String(hours.state)) ||
+          !validateBranchHours({...emptyBranchHours(), monday: hours}).ok ||
+          (hours.state === "open" && (hours.intervals as BranchHoursInterval[]).some(interval => interval.nextDay && interval.end !== "00:00"))) {
+          issues.push({code: "invalid_exception", date: entry.date});
+        }
+      }
+    }
   }
   return issues.length ? {ok: false, issues} : {ok: true, schedule: cloneBranchHours(value as BranchHoursSchedule)};
 }
@@ -117,4 +147,21 @@ export function prepareBranchHoursCopy(scope: BranchHoursScope, snapshot: Branch
     targets.push({branchId: id, expectedVersion: target.version});
   }
   return {ok: true, draft: {source: source.draft, mode: "local-weekday-clock", targets}};
+}
+
+/** Strict ISO calendar date without timezone conversion or date rollover. */
+export function validBranchHoursDate(value: unknown): value is string {
+  if (typeof value !== "string" || !/^[1-9]\d{3}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+export function branchHoursAssistantContext(snapshot: BranchHoursSnapshot): string | null {
+  if (!knownBranchHoursTimezone(snapshot.timezone) || !validateBranchHours(snapshot.schedule).ok) return null;
+  return `Branch hours (${snapshot.branchLabel}, timezone: ${snapshot.timezone}):\n` +
+    `Weekly intervals belong to their start day and may carry into the next day. ` +
+    `Date exceptions override the entire named local calendar date, including weekly carry-over. ` +
+    `A closed exception means closed all that date. Open exception intervals apply only within that date. ` +
+    `Dates without exceptions follow the weekly schedule. Unset means unknown, not closed.\n` +
+    JSON.stringify(snapshot.schedule);
 }

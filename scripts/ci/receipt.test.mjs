@@ -141,7 +141,7 @@ test("synthetic secrets in reason text are redacted before receipt persistence",
   try {
     const secret = "ghp_" + randomUUID().replaceAll("-", "") + randomUUID().slice(0, 4);
     const receipt = buildCheckReceipt({
-      checkName: "safety",
+      checkName: "build",
       candidate: cleanCandidate(),
       processResult: { status: 1 },
       reasonCode: `token=${secret} Bearer ${secret}`,
@@ -176,15 +176,15 @@ test("aggregate accepts matching Pass set and rejects missing/mixed/stale/NotRun
   });
   assert.equal(
     aggregateLocalReceipts(
-      [...allPass.slice(0, 5), receiptFor("safety", "Pass", 0, dirtyOther)],
+      [...allPass.slice(0, 4), receiptFor("build", "Pass", 0, dirtyOther)],
       { expectedCandidate: candidate },
     ).code,
     "CI_RECEIPT_CANDIDATE_MISMATCH",
   );
 
   const mixed = [
-    ...Object.keys(RUN_CHECKS).slice(0, 5).map((name) => receiptFor(name, "Pass", 0, candidate)),
-    receiptFor("safety", "Pass", 0, dirtyOther),
+    ...Object.keys(RUN_CHECKS).slice(0, 4).map((name) => receiptFor(name, "Pass", 0, candidate)),
+    receiptFor("build", "Pass", 0, dirtyOther),
   ];
   assert.equal(aggregateLocalReceipts(mixed).code, "CI_RECEIPT_CANDIDATE_MIXED");
 

@@ -3,12 +3,6 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "workspace:verify": "node scripts/consolidation/guard.mjs",
-    "predev": "npm run workspace:verify",
-    "prebuild": "npm run workspace:verify",
-    "prestart": "npm run workspace:verify",
-    "prelint": "npm run workspace:verify",
-    "pretypecheck": "npm run workspace:verify",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
@@ -19,17 +13,12 @@
     "ci:unit": "node scripts/ci/run.mjs unit",
     "ci:contracts": "node scripts/ci/run.mjs contracts",
     "ci:build": "node scripts/ci/run.mjs build",
-    "ci:safety": "node scripts/ci/run.mjs safety",
     "ci:secrets": "node scripts/ci/security.mjs",
     "ci:aggregate-receipts": "node scripts/ci/aggregate-receipts.mjs",
     "db:apply:vel005a": "node ./scripts/apply-vel005a.mjs",
     "test:rls:vel005a": "node ./scripts/vel005a-rls-check.mjs",
     "test:draft:vel005a": "node ./scripts/vel005a-draft-check.mjs",
-    "test:admin:vel005c": "node ./scripts/vel005c-admin-isolation.mjs",
-    "writer:acquire": "node scripts/consolidation/writer.mjs acquire",
-    "writer:release": "node scripts/consolidation/writer.mjs release",
-    "hooks:install": "node scripts/ci/pre-push.mjs install",
-    "prepush": "node scripts/ci/pre-push.mjs check"
+    "test:admin:vel005c": "node ./scripts/vel005c-admin-isolation.mjs"
   },
   "dependencies": {
     "@google/genai": "2.28.0",

@@ -1,7 +1,6 @@
 /** Existing LOCAL database only; synthetic diagnostics; entire candidate rolls back.
  * No Production connection, credentials, Auth users or business rows are accessed.
  */
-import '../consolidation/guard.mjs';
 import { readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 const candidate=readFileSync(new URL('../../supabase/migrations/20261022164405_ops_ingress_observation_review.sql',import.meta.url),'utf8');

@@ -17,7 +17,6 @@ export const RUN_CHECKS = Object.freeze({
   unit: { name: "unit", scope: "ci/quality/unit" },
   contracts: { name: "contracts", scope: "ci/quality/contracts" },
   build: { name: "build", scope: "ci/quality/build" },
-  safety: { name: "safety", scope: "ci/quality/safety" },
 });
 
 export const OUTCOMES = Object.freeze(["Pass", "Fail", "Blocked", "NotRun"]);

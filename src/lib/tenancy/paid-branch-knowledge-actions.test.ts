@@ -29,6 +29,8 @@ vi.mock("@/lib/logging/logger.mjs", () => ({
 }));
 
 import {
+  mutateOwnedBranchKnowledgeSourceAction,
+  removeOwnedBranchKnowledgePageAction,
   addOwnedBranchWebsiteAction,
   indexOwnedBranchWebsiteAction,
   isSafePublicUrl,
@@ -44,6 +46,9 @@ describe('branch knowledge writes',()=>{
  const scope={expectedAccountId:VALID_ACCOUNT_ID,companyId:VALID_COMPANY_ID,branchId:VALID_BRANCH_ID};
  const snapshot={scope,version:1,branchLabel:'Main',websiteQuota:{limit:10,used:0},pages:[],files:[],faq:[],capabilities:{canAddWebsite:true,canUploadFiles:true,canSaveText:true}};
  beforeEach(()=>{currentSessionId=VALID_ACCOUNT_ID;rpcMock=vi.fn().mockResolvedValue({data:{ok:true,data:{snapshot}},error:null});fileMocks.upload.mockReset();fileMocks.access.mockResolvedValue({ok:true,context:{userId:VALID_ACCOUNT_ID,company:{id:VALID_COMPANY_ID}}});});
+ it('edits and removes only exact scoped source versions and deletes exact page versions',async()=>{const sourceId='44444444-4444-4444-8444-444444444444';expect(await mutateOwnedBranchKnowledgeSourceAction({...scope,sourceId,contentVersion:3,action:'edit',title:' Q ',content:' A '})).toEqual(snapshot);expect(rpcMock).toHaveBeenLastCalledWith('es02_mutate_owned_branch_knowledge_source',expect.objectContaining({p_content_version:3,p_action:'edit',p_title:'Q',p_content:'A'}));expect(await mutateOwnedBranchKnowledgeSourceAction({...scope,sourceId,contentVersion:3,action:'remove'})).toEqual(snapshot);expect(await removeOwnedBranchKnowledgePageAction({...scope,pageId:sourceId,pageVersion:4})).toEqual(snapshot);expect(rpcMock).toHaveBeenLastCalledWith('es02_remove_owned_branch_knowledge_page',expect.objectContaining({p_page_version:4,p_branch_id:scope.branchId}));});
+ it('fails closed for invalid versions, switched identity and stale SQL result',async()=>{const input={...scope,sourceId:'44444444-4444-4444-8444-444444444444',contentVersion:0,action:'remove' as const};expect(await mutateOwnedBranchKnowledgeSourceAction(input)).toBeNull();currentSessionId=null;expect(await mutateOwnedBranchKnowledgeSourceAction({...input,contentVersion:2})).toBeNull();expect(rpcMock).not.toHaveBeenCalled();currentSessionId=VALID_ACCOUNT_ID;rpcMock.mockResolvedValue({data:{ok:false,code:'CONFLICT'},error:null});expect(await mutateOwnedBranchKnowledgeSourceAction({...input,contentVersion:2})).toBeNull();});
+ it('does not report partial file batches as saved',async()=>{fileMocks.upload.mockResolvedValue({ok:true,data:[{ok:false,code:'FAILED'}]});expect(await uploadOwnedBranchKnowledgeFilesAction({...scope,expectedVersion:1,files:[new File(['fixture'],'fixture.txt')]})).toBeNull();expect(rpcMock).toHaveBeenCalledTimes(1);});
  it('saves trimmed text through the owned branch contract without approving it',async()=>{expect(await saveOwnedBranchKnowledgeTextAction({...scope,expectedVersion:1,title:' Q ',content:' A '})).toEqual(snapshot);expect(rpcMock).toHaveBeenCalledWith('es02_save_owned_branch_knowledge_text',expect.objectContaining({p_title:'Q',p_content:'A',p_branch_id:VALID_BRANCH_ID}));expect(rpcMock).toHaveBeenCalledTimes(1);});
  it('binds explicit approval to the exact source version',async()=>{const source='44444444-4444-4444-8444-444444444444';expect(await approveOwnedBranchKnowledgeSourceAction({...scope,sourceId:source,contentVersion:3,approved:true})).toEqual(snapshot);expect(rpcMock).toHaveBeenCalledWith('es02_approve_owned_branch_knowledge_source',expect.objectContaining({p_source_id:source,p_content_version:3,p_approved:true}));});
  it('rejects a switched identity and malformed text before writes',async()=>{currentSessionId=null;expect(await saveOwnedBranchKnowledgeTextAction({...scope,expectedVersion:1,title:'Q',content:'A'})).toBeNull();currentSessionId=VALID_ACCOUNT_ID;expect(await saveOwnedBranchKnowledgeTextAction({...scope,expectedVersion:1,title:'Q',content:'x'.repeat(20001)})).toBeNull();expect(rpcMock).not.toHaveBeenCalled();});
@@ -202,6 +207,19 @@ describe("paid-branch-knowledge-actions", () => {
   });
 
   describe("loadApprovedBranchKnowledgeContext", () => {
+    it.each(["bound", "foreign"])("restricts answer sources to the verified branch (%s)", async (binding) => {
+      const sourceId="55555555-5555-4555-8555-555555555555";
+      rpcMock.mockResolvedValueOnce({data:{ok:true,data:{pages:[],knowledgeRevision:"k1"}},error:null});
+      rpcMock.mockResolvedValueOnce({data:{ok:true,data:{snapshot:{
+        scope:{expectedAccountId:VALID_ACCOUNT_ID,companyId:VALID_COMPANY_ID,branchId:VALID_BRANCH_ID},version:1,pages:[],faq:[],
+        files:[{branchId:binding==="bound"?VALID_BRANCH_ID:VALID_COMPANY_ID,source:{id:sourceId,company_id:VALID_COMPANY_ID}}],
+      }}},error:null});
+      const loader=vi.mocked((await import("@/lib/answers/context")).loadApprovedAnswerContext);
+      loader.mockClear();
+      await loadApprovedBranchKnowledgeContext(VALID_COMPANY_ID,VALID_BRANCH_ID);
+      if(binding==="bound")expect(loader).toHaveBeenCalledWith(VALID_COMPANY_ID,expect.anything(),undefined,[sourceId]);
+      else expect(loader).not.toHaveBeenCalled();
+    });
     it("loads indexed branch website pages and approved company knowledge", async () => {
       rpcMock.mockResolvedValueOnce({ data: { ok: true, data: {
         pages: [{ id: "44444444-4444-4444-8444-444444444444", version: 1, url: "https://velora.om", title: "Velora Main", extracted_text: "Exclusive fashion boutique in Muscat." }], knowledgeRevision: "server-revision",

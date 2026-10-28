@@ -1586,7 +1586,7 @@ export function AcceptInvitePage() {
                   committed = true;
                   setAcceptedToken(token);
                   try { await session?.refresh(); } catch { /* Membership acceptance is already confirmed. */ }
-                  router.replace("/app/conversations");
+                  router.replace(result.data.branchId ? `/branch?company=${encodeURIComponent(result.data.companyId)}&branch=${encodeURIComponent(result.data.branchId)}` : "/app/conversations");
                   router.refresh();
                 }).catch(() => setAcceptError(committed
                   ? (locale === "ar" ? "تم قبول الدعوة وحفظ العضوية. تعذر تحديث الوصول؛ افتح مساحة العمل مجددًا." : "Invitation accepted and membership saved. Access refresh is unavailable; open the workspace again.")

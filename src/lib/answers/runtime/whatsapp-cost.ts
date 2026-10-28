@@ -24,6 +24,7 @@ export function createClaimedWhatsappAnswerExecutor(): (input: ClaimedWhatsappAn
     if (!isLiveAnsweringEnabled()) return { ok: false, error: "LIVE_AI_DISABLED", attempts: [] };
     let store: ClaimedWhatsappRuntimeStore;
     let persona: AnswerPersona;
+    let locale: "ar" | "en";
     try {
       const admin = createAdminClient();
       if (!admin) return { ok: false, error: "PERSISTENCE_UNAVAILABLE", attempts: [] };
@@ -36,9 +37,32 @@ export function createClaimedWhatsappAnswerExecutor(): (input: ClaimedWhatsappAn
       const profile = await loadClaimedAnswerProfile(frame.company_id, input, client);
       if (!profile) return { ok: false, error: "ANSWER_PROFILE_UNAVAILABLE", attempts: [] };
       persona = profile.persona;
-      store = createClaimedWhatsappRuntimeStore(input, profile);
+      const nativeStore = createClaimedWhatsappRuntimeStore(input, profile);
+      store = nativeStore;
+      locale = input.locale;
+      // ES02 setup owns branch confirmations. Preserve the separate native-plan contract.
+      if (profile.authority === "es02") {
+      const readLanguage = async () => {
+        const read = await client.rpc("es02_read_claimed_reply_language", {p_company_id:frame.company_id,p_job_id:input.jobId,p_claim_token:input.claimToken});
+        const row = read.data as {ok?:boolean;company_id?:string;job_id?:string;branch_id?:string;reply_language?:string;revision?:number} | null;
+        if (read.error || row?.ok !== true || row.company_id !== frame.company_id || row.job_id !== input.jobId ||
+          typeof row.branch_id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(row.branch_id) ||
+          (profile.authority === "es02" && row.branch_id !== profile.branchId) ||
+          !["ar","en","both"].includes(row.reply_language ?? "") || !Number.isSafeInteger(row.revision) || Number(row.revision)<1) return null;
+        return {branch:row.branch_id,language:row.reply_language!,revision:row.revision!};
+      };
+      const language = await readLanguage();
+      if (!language) return {ok:false,error:"REPLY_LANGUAGE_UNCONFIRMED",attempts:[]};
+      // Fixed branch choices override caller locale; bilingual follows the stored inbound question.
+      locale = language.language === "en" || (language.language === "both" && !/[\u0600-\u06ff]/.test(frame.question)) ? "en" : "ar";
+      store = {...nativeStore,start:async id=>{
+        if (!await nativeStore.start(id)) return false;
+        const fresh = await readLanguage().catch(()=>null);
+        return !!fresh && fresh.branch===language.branch && fresh.language===language.language && fresh.revision===language.revision;
+      }};
+      }
     }
     catch { return { ok: false, error: "PERSISTENCE_UNAVAILABLE", attempts: [] }; }
-    return executeClaimedWhatsappAnswer(input, { store, call: callRealModel, persona });
+    return executeClaimedWhatsappAnswer({...input,locale}, { store, call: callRealModel, persona });
   };
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
-import { pathForAccess } from "./access";
+import { pathForAccess, workspaceHomeHref } from "./access";
 import type { CompanyContext, CompanyRecord } from "./types";
 
 const selected = "/app/settings?tab=plan&term=monthly&persona=level_1&package=basic&version=version-1&amount=45000&currency=OMR";
@@ -42,4 +42,15 @@ describe("selected subscription through required company setup", () => {
     expect(pathForAccess({ ok: true, context }, "https://example.test")).toBe("/setup");
     expect(pathForAccess({ ok: true, context }, "/admin")).toBe("/setup");
   });
+});
+
+it("routes branch-only membership without creating company authority",()=>{
+ const branch={...context,company:null,membership:null,hasBranchMemberships:true};
+ expect(pathForAccess({ok:true,context:branch})).toBe('/branch');
+ expect(pathForAccess({ok:true,context:branch},'/branch?company=a&branch=b')).toBe('/branch?company=a&branch=b');
+ expect(pathForAccess({ok:true,context:branch},'https://example.test')).toBe('/branch');
+ expect(pathForAccess({ok:true,context:branch},'/admin')).toBe('/branch');
+ expect(workspaceHomeHref(branch)).toBe('/branch');
+ expect(pathForAccess({ok:true,context:{...branch,hasBranchMemberships:false}})).toBe('/setup');
+ expect(workspaceHomeHref({...branch,hasBranchMemberships:false})).toBeNull();
 });

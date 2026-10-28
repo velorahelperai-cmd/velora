@@ -165,3 +165,13 @@ it("review regression: fresh roster authority cannot be restored by another same
 
 it("committed membership remains accepted when bound cookie setup throws",async()=>{mocks.verified.mockResolvedValue({ok:true,context:{userId:actorA,emailConfirmed:true}});mocks.rpc.mockResolvedValue({data:{ok:true,companyId:"company"},error:null});mocks.bound.mockRejectedValue(Error("SYNTHETIC_COOKIE_BOUNDARY_UNAVAILABLE"));expect(await acceptStaffInvitation("a".repeat(43))).toEqual({ok:true,data:{companyId:"company"}});});
 it("committed membership remains accepted when optional workspace cookie write fails",async()=>{mocks.verified.mockResolvedValue({ok:true,context:{userId:actorA,emailConfirmed:true}});mocks.rpc.mockResolvedValue({data:{ok:true,companyId:"company"},error:null});mocks.bound.mockResolvedValue({bound:{ok:true,resolve:{boundary:{userId:actorA,generation:"synthetic-generation-a"}}}});mocks.cookies.mockImplementation(()=>{throw Error("SYNTHETIC_COOKIE_WRITE_FAILED");});expect(await acceptStaffInvitation("a".repeat(43))).toEqual({ok:true,data:{companyId:"company"}});});
+
+it("returns only validated branch scope after atomic acceptance",async()=>{
+ mocks.verified.mockResolvedValue({ok:true,context:{userId:actorA,emailConfirmed:true}});
+ mocks.rpc.mockResolvedValue({data:{ok:true,companyId:actorA,branchId:actorB},error:null});
+ expect(await acceptStaffInvitation("a".repeat(43))).toEqual({ok:true,data:{companyId:actorA,branchId:actorB}});
+ for(const branchId of [null,"bad",42]){
+  mocks.rpc.mockResolvedValue({data:{ok:true,companyId:actorA,branchId},error:null});
+  expect(await acceptStaffInvitation("a".repeat(43))).toEqual({ok:false,code:"UNAVAILABLE"});
+ }
+});

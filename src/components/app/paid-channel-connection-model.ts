@@ -126,6 +126,11 @@ export function derivePaidChannelConnectionViewModel(
   const hasRevision = typeof read.revision === "string" && read.revision.length > 0;
   const pendingExpired = attempt?.status === 'pending' && Number.isFinite(Date.parse(read.asOf))
     && Date.parse(attempt.expiresAt) <= Date.parse(read.asOf);
+  // This read contract does not establish whether a checkpoint exists; fail closed.
+  const requiresExpiredReview = read.connection.flow === 'wa_new_number' && !!attempt &&
+    ['pending','claimed','unknown','expired'].includes(attempt.status) &&
+    (attempt.status === 'expired' || !Number.isFinite(Date.parse(attempt.expiresAt)) ||
+      !Number.isFinite(Date.parse(read.asOf)) || Date.parse(attempt.expiresAt) <= Date.parse(read.asOf));
 
   let uiState: PaidChannelUiState = "not_connected";
   if (state === "connected" && verified && link && link.generation >= 1) {
@@ -151,7 +156,10 @@ export function derivePaidChannelConnectionViewModel(
   }
 
   let guidance: string | null = null;
-  if (pendingExpired) guidance = locale === 'ar'
+  if (requiresExpiredReview) guidance = locale === 'ar'
+    ? 'انتهت المحاولة أو تعذّر التحقق من صلاحيتها. يلزم مراجعة المحاولة والأصول المحفوظة قبل الإلغاء أو بدء ربط جديد؛ لم يتم تأكيد الاتصال.'
+    : 'The attempt expired or its validity is uncertain. Review the attempt and saved assets before cancellation or a new connection; the connection is not confirmed.';
+  else if (pendingExpired) guidance = locale === 'ar'
     ? 'انتهت مهلة محاولة الربط. ألغِ المحاولة الحالية بأمان قبل إعادة التفويض؛ لم يتم تأكيد الاتصال.'
     : 'This connection attempt has expired. Safely cancel the current attempt before authorizing again; connection has not been verified.';
   for (const code of reasonCodes) {
@@ -178,9 +186,9 @@ export function derivePaidChannelConnectionViewModel(
     }
   }
 
-  const effectiveCanStart = canStart && hasRevision && !inFlight;
-  const effectiveCanRecover = canRecover && !pendingExpired && !!attempt && !!read.connection.flow && !inFlight;
-  const effectiveCanCancel = canCancel && !!attempt && !!read.connection.flow && !inFlight;
+  const effectiveCanStart = canStart && hasRevision && !inFlight && !requiresExpiredReview;
+  const effectiveCanRecover = canRecover && !pendingExpired && !requiresExpiredReview && !!attempt && !!read.connection.flow && !inFlight;
+  const effectiveCanCancel = canCancel && !requiresExpiredReview && !!attempt && !!read.connection.flow && !inFlight;
 
   return {
     uiState,

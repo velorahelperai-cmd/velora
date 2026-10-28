@@ -34,6 +34,7 @@ export function pickWorkspaceMembership<T extends { company_id: string }>(
 
 /** Operational workspace home from membership only — never /admin. */
 export function workspaceHomeHref(ctx: CompanyContext): string | null {
+  if (!ctx.company && ctx.hasBranchMemberships === true) return "/branch";
   if (ctx.workspaceChoices.length === 0) return null;
   if (ctx.needsCompanyContext) return "/app";
   if (!ctx.company || !ctx.membership) return null;
@@ -314,6 +315,12 @@ const loadCompanyAccess = cache(async (): Promise<AccessResult> => {
     });
     if (!picked.ok) {
       const choices = await loadWorkspaceChoices(supabase, rows);
+      let hasBranchMemberships=false;
+      if(rows.length===0){
+        const {listMyBranchAccess}=await import('./branch-inbox');
+        const branches=await listMyBranchAccess();
+        hasBranchMemberships=branches!==null&&branches.length>0;
+      }
       return {
         ok: true,
         context: emptyContext({
@@ -328,6 +335,7 @@ const loadCompanyAccess = cache(async (): Promise<AccessResult> => {
           isPlatformAdmin,
           needsCompanyContext: picked.needsContext,
           workspaceChoices: choices,
+          hasBranchMemberships,
           ...membershipHistory,
         }),
       };
@@ -485,7 +493,13 @@ export function pathForAccess(
     }
     return preferred && pathOnly === "/app" ? preferred : "/app";
   }
-  if (!result.context.company) return setupPathForReturn(preferredNext);
+  if (!result.context.company) {
+    if(result.context.hasBranchMemberships===true){
+      const preferred=safeInternalPath(preferredNext, "");
+      return preferred.split(/[?#]/)[0]==='/branch'?preferred:'/branch';
+    }
+    return setupPathForReturn(preferredNext);
+  }
   if (result.context.membership?.role === "staff") {
     return allowedReturnPath(preferredNext, {
       isPlatformAdmin: false,

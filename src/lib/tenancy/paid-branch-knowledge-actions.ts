@@ -41,6 +41,25 @@ export async function approveOwnedBranchKnowledgeSourceAction(input:KnowledgeVie
  }catch{return null;}
 }
 
+export async function mutateOwnedBranchKnowledgeSourceAction(input:KnowledgeViewScope&{sourceId:string;contentVersion:number;action:"edit"|"remove";title?:string;content?:string}):Promise<BranchKnowledgeViewSnapshot|null>{
+ try{
+ if(!validScope(input)||!UUID.test(input.sourceId)||!Number.isSafeInteger(input.contentVersion)||input.contentVersion<1||input.contentVersion>=2147483647||!['edit','remove'].includes(input.action))return null;
+ if(input.action==='edit'&&(typeof input.title!=='string'||!input.title.trim()||input.title.trim().length>200||typeof input.content!=='string'||!input.content.trim()||input.content.trim().length>20000))return null;
+ const identity=await readSessionIdentity();if(!identity.ok||identity.userId!==input.expectedAccountId)return null;
+ const client=await createClient();const result=await client.rpc('es02_mutate_owned_branch_knowledge_source' as never,{p_expected_account_id:input.expectedAccountId,p_company_id:input.companyId,p_branch_id:input.branchId,p_source_id:input.sourceId,p_content_version:input.contentVersion,p_action:input.action,p_title:input.title?.trim()??null,p_content:input.content?.trim()??null} as never);
+ return result.error?null:boundKnowledgeSnapshot(result.data,input);
+ }catch{return null;}
+}
+
+export async function removeOwnedBranchKnowledgePageAction(input:KnowledgeViewScope&{pageId:string;pageVersion:number}):Promise<BranchKnowledgeViewSnapshot|null>{
+ try{
+ if(!validScope(input)||!UUID.test(input.pageId)||!Number.isSafeInteger(input.pageVersion)||input.pageVersion<1)return null;
+ const identity=await readSessionIdentity();if(!identity.ok||identity.userId!==input.expectedAccountId)return null;
+ const client=await createClient();const result=await client.rpc('es02_remove_owned_branch_knowledge_page' as never,{p_expected_account_id:input.expectedAccountId,p_company_id:input.companyId,p_branch_id:input.branchId,p_page_id:input.pageId,p_page_version:input.pageVersion} as never);
+ return result.error?null:boundKnowledgeSnapshot(result.data,input);
+ }catch{return null;}
+}
+
 export async function uploadOwnedBranchKnowledgeFilesAction(input:KnowledgeViewScope&{expectedVersion:number;files:File[]}):Promise<BranchKnowledgeViewSnapshot|null>{
  try{
  if(!validScope(input)||input.expectedVersion!==1||!Array.isArray(input.files)||input.files.length<1||input.files.length>5)return null;
@@ -52,7 +71,7 @@ export async function uploadOwnedBranchKnowledgeFilesAction(input:KnowledgeViewS
  const uploaded=await uploadKnowledgeFiles(form);if(!uploaded.ok)return null;
  const client=await createClient();let latest:BranchKnowledgeViewSnapshot|null=null;
  for(const item of uploaded.data){
-  const source=item.source;if(!source||source.company_id!==input.companyId||!UUID.test(source.id)||!Number.isSafeInteger(source.content_version)||source.content_version!<1)continue;
+  const source=item.source;if(!item.ok||!source||source.company_id!==input.companyId||!UUID.test(source.id)||!Number.isSafeInteger(source.content_version)||source.content_version!<1)return null;
   const result=await client.rpc('es02_bind_owned_branch_knowledge_source' as never,{p_expected_account_id:input.expectedAccountId,p_company_id:input.companyId,p_branch_id:input.branchId,p_source_id:source.id,p_content_version:source.content_version} as never);
   if(result.error)return null;latest=boundKnowledgeSnapshot(result.data,input);if(!latest)return null;
  }
@@ -273,7 +292,14 @@ export async function loadApprovedBranchKnowledgeContext(
       chunks.push({ sourceId: `page-${page.id}`, title: page.title || page.url, contentVersion: page.version, text: page.extracted_text, usageRole: "knowledge" });
     }
     // Reuse canonical approval AND file-object integrity checks for public knowledge.
-    const company = await loadApprovedAnswerContext(companyId, client);
+    const scope = { expectedAccountId: identity.userId, companyId, branchId };
+    const sourceRead = await readOwnedBranchKnowledgeAction(scope);
+    const bound = boundKnowledgeSnapshot({ok:true,data:{snapshot:sourceRead}},scope);
+    if (!bound) return unavailable;
+    const sources = [...bound.files, ...bound.faq];
+    if (sources.some(item => item.branchId !== branchId || item.source.company_id !== companyId || !UUID.test(item.source.id))) return unavailable;
+    const sourceIds = [...new Set(sources.map(item => item.source.id))];
+    const company = await loadApprovedAnswerContext(companyId, client, undefined, sourceIds);
     if (!company.ok && company.code !== "NO_KNOWLEDGE") return unavailable;
     if (company.ok) chunks.push(...company.chunks);
     if (!chunks.length || chunks.length > ANSWER_MAX_SOURCES || chunks.reduce((n, c) => n + c.title.length + c.text.length + 6, 0) > ANSWER_MAX_CONTEXT_CHARS) return unavailable;

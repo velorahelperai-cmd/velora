@@ -1,7 +1,4 @@
 import { spawnSync } from "node:child_process";
-import { verifyWorkspace } from "../consolidation/guard.mjs";
-console.log(JSON.stringify(verifyWorkspace()));
-import {candidateContextArgument,loadGateContext,snapshotCandidateIdentity} from './candidate-snapshot.mjs';
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { assertNoRuntimeEnvFiles, isolatedEnvironment } from "./safety.mjs";
@@ -17,17 +14,16 @@ const commands = {
   unit: ["node_modules/vitest/vitest.mjs", "run", "--config", "vitest.ci.config.ts", "--maxWorkers=1", "--reporter=dot", "--silent"],
   contracts: ["node_modules/vitest/vitest.mjs", "run", "--config", "vitest.ci.config.ts", "src/lib/channels/contract.test.ts", "src/lib/access", "src/lib/auth", "src/lib/billing/catalog-backend", "src/lib/tenancy/business-authority", "src/lib/tenancy/setup-draft", "--maxWorkers=1", "--reporter=dot", "--silent"],
   build: ["node_modules/next/dist/bin/next", "build", "--webpack"],
-  safety: ["--test", "scripts/ci/safety.test.mjs", "scripts/ci/required-gate.test.mjs", "scripts/ci/security.test.mjs", "scripts/ci/dependency-compatibility.test.mjs", "scripts/ci/receipt.test.mjs", "scripts/integration/local-auth-confirmation.test.mjs", "src/lib/logging/logger.test.mjs", "scripts/consolidation/guard.test.mjs", "scripts/consolidation/guard-lifecycle.test.mjs", "scripts/ci/pre-push.test.mjs", "scripts/ci/candidate-snapshot.test.mjs"],
 };
 
 const checkName = process.argv[2];
 const command = commands[checkName];
 if (!command) throw Error("CI_UNKNOWN_CHECK");
 
-const context=loadGateContext(candidateContextArgument());
-const cwd = context?.snapshot ?? process.cwd();
+if (process.argv.includes("--candidate-context")) throw Error("CI_LEGACY_CANDIDATE_CONTEXT_UNSUPPORTED");
+const cwd = process.cwd();
 const runId = randomUUID();
-const candidate = context ? snapshotCandidateIdentity(context) : captureCandidateIdentity(cwd);
+const candidate = captureCandidateIdentity(cwd);
 const receiptDir = process.env.VELORA_CI_RECEIPT_DIR
   ? resolve(process.env.VELORA_CI_RECEIPT_DIR)
   : null;

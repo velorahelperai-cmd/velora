@@ -14,7 +14,9 @@ import type {
 import { realModelPricing, reserveRealCost, priceRealUsage } from "@/lib/answers/runtime/economics";
 import { buildAnswerSystemPrompt, formatAnswerUserPrompt } from "@/lib/answers/adapters/prompt";
 import { getAnswerProvider } from "@/lib/answers/provider";
+import { classifyHandoffPolicy } from "@/lib/answers/routing/handoff-policy";
 import { loadApprovedBranchKnowledgeContext } from "./paid-branch-knowledge-actions";
+import { branchHoursAssistantContext } from "./branch-hours-contracts";
 import { readOwnedBranchHoursAction } from "./branch-hours-actions";
 import { readOwnedBranchReplyLanguageAction } from "./paid-reply-language-actions";
 
@@ -55,7 +57,12 @@ export async function readOwnedBranchAssistantTrialAction(
 
     const payload = res.data as unknown as { ok?: boolean; data?: { snapshot: TrialSnapshot } };
     if (res.error || !payload || payload.ok !== true) return null;
-    return payload.data?.snapshot ?? null;
+    const snapshot = payload.data?.snapshot;
+    if (!snapshot || snapshot.scope?.expectedAccountId !== scope.expectedAccountId || snapshot.scope?.companyId !== scope.companyId || snapshot.scope?.branchId !== scope.branchId) return null;
+    const recovery = await client.rpc("es02_read_owned_branch_trial_recovery" as never, {p_expected_account_id:scope.expectedAccountId,p_company_id:scope.companyId,p_branch_id:scope.branchId} as never);
+    const value = recovery.data as unknown as {ok?:boolean;operation?:{id:string;status:string;recoverable:boolean}|null};
+    const op = !recovery.error && value?.ok === true ? value.operation : null;
+    return op && UUID.test(op.id) && ["reserved","running","uncertain","success"].includes(op.status) && typeof op.recoverable === "boolean" ? {...snapshot,pendingOperation:op,canAsk:false} : snapshot;
   });
 }
 
@@ -64,7 +71,10 @@ export async function askOwnedBranchAssistantTrialAction(
 ): Promise<AssistantTrialAskResult> {
   const requestId = randomUUID();
   return withLogContext({ request_id: requestId, user_id: input?.expectedAccountId }, async () => {
-    if (!validScope(input) || !input.question?.trim() || input.question.trim().length > 1000 || (input.operationId !== undefined && !UUID.test(input.operationId))) {
+    if (!validScope(input) || typeof input.question !== "string" || !input.question.trim() || input.question.trim().length > 1000 ||
+        !Number.isSafeInteger(input.expectedVersion) || input.expectedVersion < 1 ||
+        typeof input.knowledgeRevision !== "string" || !input.knowledgeRevision.trim() ||
+        (input.operationId !== undefined && !UUID.test(input.operationId))) {
       return { ok: false, code: "INVALID_INPUT", message: "Question is required and scope must be valid" };
     }
     const identity = await readSessionIdentity();
@@ -82,6 +92,14 @@ export async function askOwnedBranchAssistantTrialAction(
     const gate = authority.data as unknown as { ok?: boolean; code?: string; data?: { persona?: string } } | null;
     if (authority.error || gate?.ok !== true) {
       return { ok: false, code: gate?.code || "UNAVAILABLE", message: "Branch authorization is unavailable or denied" };
+    }
+    const preview=classifyHandoffPolicy(input.question).previewReason;
+    if(preview){
+      const snapshot=await readOwnedBranchAssistantTrialAction(input);
+      if(!snapshot||snapshot.version!==input.expectedVersion||snapshot.knowledgeRevision!==input.knowledgeRevision)return {ok:false,code:'CONTEXT_CHANGED',message:'Reload the current branch before previewing escalation'};
+      // Pure policy preview: never claim a customer conversation was transferred,
+      // and never reserve a provider attempt or grant an engine trial receipt.
+      return {ok:true,snapshot:{...snapshot,handoffPreview:preview}};
     }
     // 1. Authoritative Answer Provider (Gemini). Return explicit error if not configured.
     const provider = getAnswerProvider();
@@ -108,16 +126,21 @@ export async function askOwnedBranchAssistantTrialAction(
     });
 
     if (!hours.ok || !hours.snapshot) return { ok: false, code: "UNAVAILABLE", message: "Branch hours could not be verified" };
-    let hoursChunkText = "";
-    const hoursRev = hours.ok && hours.snapshot ? (hours.snapshot.version ?? 1) : 0;
-    if (hours.ok && hours.snapshot) {
-      hoursChunkText = `Branch hours (${hours.snapshot.branchLabel}, timezone: ${hours.snapshot.timezone || "unknown"}):\n` +
-        JSON.stringify(hours.snapshot.schedule);
-    }
+    const hoursRev = hours.snapshot.version;
+    const hoursChunkText = branchHoursAssistantContext(hours.snapshot);
+    if (!hoursChunkText) return {ok:false,code:"UNAVAILABLE",message:"Branch hours are invalid or unavailable"};
 
     // 3. Load approved branch knowledge (indexed website pages + approved sources)
     const knowledgeContext = await loadApprovedBranchKnowledgeContext(input.companyId, input.branchId);
     if (!knowledgeContext.ok || knowledgeContext.chunks.length === 0) return { ok: false, code: "UNAVAILABLE", message: "Approved knowledge could not be verified" };
+    // Validate the disclosed context before reserving allowance or spending a provider request.
+    const trial = await readOwnedBranchAssistantTrialAction(input);
+    if (!trial) return { ok: false, code: "UNAVAILABLE", message: "Trial context could not be verified" };
+    if (trial.scope?.expectedAccountId !== input.expectedAccountId || trial.scope?.companyId !== input.companyId ||
+        trial.scope?.branchId !== input.branchId || trial.version !== input.expectedVersion ||
+        trial.knowledgeRevision !== input.knowledgeRevision || knowledgeContext.knowledgeRevision !== input.knowledgeRevision) {
+      return { ok: false, code: "CONTEXT_CHANGED", message: "Trial context changed; reload the branch before asking" };
+    }
     const chunks = [...knowledgeContext.chunks];
 
     if (hoursChunkText) {
@@ -196,55 +219,41 @@ export async function askOwnedBranchAssistantTrialAction(
       if (!await settle(safeFailure ? "rejected" : "uncertain")) return { ok: false, code: "TRIAL_PENDING", message: "Accounting requires reconciliation; do not retry" };
       return { ok: false, code: safeFailure ? completion.code : "TRIAL_OUTCOME_UNKNOWN", message: completion.message || "Provider did not return a verified answer" };
     }
+    if (!completion.text.trim() || completion.modelId !== configuredModel) {
+      await settle("uncertain");
+      return { ok: false, code: "TRIAL_OUTCOME_UNKNOWN", message: "Provider response identity could not be verified" };
+    }
+    let result;
     try {
-      if (!await settle("success", completion)) return { ok: false, code: "TRIAL_PENDING", message: "Accounting requires reconciliation; do not retry" };
+      const usage = { promptTokens: completion.usage.promptTokens!, completionTokens: completion.usage.completionTokens!, cachedTokens: completion.usage.cachedTokens!, reasoningTokens: completion.usage.reasoningTokens!, cacheWriteTokens: completion.usage.cacheWriteTokens ?? 0, totalTokens: completion.usage.totalTokens! };
+      const cost = priceRealUsage(usage, pricing);
+      if (!completion.usage.actualModelId || !completion.usage.requestId) throw Error("PROVIDER_IDENTITY_MISSING");
+      result = { question: input.question.trim(), answer: completion.text.trim(), modelId: configuredModel, usage, ...cost, requestId: completion.usage.requestId, responseId: completion.usage.responseId ?? null, actualModelId: completion.usage.actualModelId, latencyMs: completion.usage.latencyMs ?? 0 };
     } catch {
       await settle("uncertain");
-      return { ok: false, code: "TRIAL_OUTCOME_UNKNOWN", message: "Provider usage could not be verified; do not retry" };
+      return { ok: false, code: "TRIAL_OUTCOME_UNKNOWN", message: "Provider usage could not be verified" };
     }
-
-    if (!completion.text.trim() || completion.modelId !== configuredModel) return { ok: false, code: "UNAVAILABLE", message: "Provider response identity could not be verified" };
-    // A completed provider request is never repeated after a context/receipt failure.
-    const freshIdentity = await readSessionIdentity();
-    const freshGateResult = await authorityClient.rpc("es02_read_owned_branch_setup" as never, {
-      p_expected_account_id: input.expectedAccountId, p_company_id: input.companyId, p_branch_id: input.branchId,
-    } as never);
-    const freshGate = freshGateResult.data as unknown as typeof gate;
-    const freshKnowledge = await loadApprovedBranchKnowledgeContext(input.companyId, input.branchId);
-    const freshHours = await readOwnedBranchHoursAction(input);
-    const freshLanguage = await readOwnedBranchReplyLanguageAction(input);
-    if (!freshIdentity.ok || freshIdentity.userId !== identity.userId || freshIdentity.nativeSessionId !== identity.nativeSessionId ||
-        freshGateResult.error || freshGate?.ok !== true || freshGate.data?.persona !== gate.data?.persona ||
-        !freshKnowledge.ok || freshKnowledge.knowledgeRevision !== knowledgeContext.knowledgeRevision ||
-        !freshHours.ok || freshHours.snapshot?.version !== hours.snapshot.version ||
-        freshLanguage?.replyLanguage !== langRes.replyLanguage || getGeminiModelId() !== configuredModel) {
-      return { ok: false, code: "CONTEXT_CHANGED", message: "Authorization or answer context changed; no trial proof was recorded" };
-    }
-    const answerText = completion.text;
-    const modelId = completion.modelId;
-    const effectiveKnowledgeRev = knowledgeContext.knowledgeRevision;
-
-    // 6. Record genuine engine interaction in DB with revision hashes
-    const res = await writer.rpc("es02_record_owned_branch_assistant_trial" as never, {
-      p_expected_account_id: input.expectedAccountId,
-      p_company_id: input.companyId,
-      p_branch_id: input.branchId,
-      p_question: input.question.trim(),
-      p_answer: answerText,
-      p_model_id: modelId,
-      p_hours_revision: hoursRev,
-      p_language_code: langRes.replyLanguage,
-      p_persona: persona,
-      p_execution_id: operationId,
-      p_knowledge_revision: effectiveKnowledgeRev,
-    } as never);
-
-    const payload = res.data as unknown as { ok?: boolean };
-    if (res.error || !payload || payload.ok !== true) {
-      return { ok: false, code: "TRIAL_PENDING", message: "The provider operation completed but its receipt requires reconciliation; do not resend" };
-    }
+    const binding = { p_operation_id: operationId, p_account_id: identity.userId, p_session_id: identity.nativeSessionId, p_company_id: input.companyId, p_branch_id: input.branchId };
+    const saved = await writer.rpc("es02_checkpoint_branch_trial_result" as never, { ...binding, p_result: result } as never);
+    if (saved.error || (saved.data as unknown as {ok?:boolean})?.ok !== true) return { ok: false, code: "TRIAL_PENDING", message: "Result persistence is unconfirmed; do not resend" };
+    const recovered = await writer.rpc("es02_recover_branch_trial_result" as never, binding as never);
+    if (recovered.error || (recovered.data as unknown as {ok?:boolean})?.ok !== true) return { ok: false, code: "TRIAL_PENDING", message: "The saved result needs recovery; do not resend" };
     const snapshot = await readOwnedBranchAssistantTrialAction(input);
     if (!snapshot) return { ok: false, code: "TRIAL_PENDING", message: "The saved trial receipt could not be read; do not resend" };
-    return { ok: true, snapshot };
+    return { ok: true, snapshot: (recovered.data as unknown as {discarded?:boolean})?.discarded===true ? {...snapshot,recoveryNotice:"context_changed"} : snapshot };
   });
+}
+
+/** Recover a persisted response only. This action never dispatches an AI request. */
+export async function recoverOwnedBranchAssistantTrialAction(input: TrialScope & {operationId:string}):Promise<AssistantTrialAskResult>{
+  if(!validScope(input)||!UUID.test(input.operationId))return {ok:false,code:"INVALID_INPUT",message:"Invalid recovery scope"};
+  const identity=await readSessionIdentity();
+  if(!identity.ok||identity.userId!==input.expectedAccountId||!UUID.test(identity.nativeSessionId||""))return {ok:false,code:"UNAUTHENTICATED",message:"A current session is required"};
+  const snapshot=await readOwnedBranchAssistantTrialAction(input);
+  if(!snapshot)return {ok:false,code:"UNAVAILABLE",message:"Branch authority could not be verified"};
+  const writer=createAdminClient();if(!writer)return {ok:false,code:"UNAVAILABLE",message:"Recovery is unavailable"};
+  const result=await writer.rpc("es02_recover_branch_trial_result" as never,{p_operation_id:input.operationId,p_account_id:identity.userId,p_session_id:identity.nativeSessionId,p_company_id:input.companyId,p_branch_id:input.branchId} as never);
+  if(result.error||(result.data as unknown as {ok?:boolean})?.ok!==true)return {ok:false,code:"TRIAL_PENDING",message:"Recovery remains unconfirmed; do not resend"};
+  const fresh=await readOwnedBranchAssistantTrialAction(input);
+  return fresh&&((result.data as unknown as {discarded?:boolean})?.discarded===true||fresh.messages.some(m=>m.executionId===input.operationId&&m.origin==="engine"))?{ok:true,snapshot:(result.data as unknown as {discarded?:boolean})?.discarded===true?{...fresh,recoveryNotice:"context_changed"}:fresh}:{ok:false,code:"TRIAL_PENDING",message:"Saved receipt could not be verified"};
 }

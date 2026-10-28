@@ -25,6 +25,12 @@ describe("approved tenant voice and fixed plan persona", () => {
     expect(prompt).toContain(text);
     expect(prompt).toContain("version 3");
   });
+  it("enforces the effective reply locale in trusted system instructions", () => {
+    expect(buildAnswerSystemPrompt("en", "lina")).toContain("Respond in English even when the customer question");
+    expect(buildAnswerSystemPrompt("ar", "dana")).toContain("أجيبي بالعربية حتى لو كان سؤال العميل");
+    expect(buildAnswerSystemPrompt("en")).not.toContain("أجيبي بالعربية");
+    expect(buildAnswerSystemPrompt("ar")).not.toContain("Respond in English");
+  });
   it("keeps the administrative default Noura", () => {
     expect(buildAnswerSystemPrompt("en")).toContain("You are Noura,");
   });

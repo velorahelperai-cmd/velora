@@ -54,7 +54,7 @@ test("PR workflow includes quality, security, and secrets gates without path ski
   const workflow = readFileSync(".github/workflows/quality-gates.yml", "utf8");
   assert.match(workflow, /pull_request:\s+branches: \[main\]/);
   assert.match(workflow, /merge_group:/);
-  assert.match(workflow, /check: \[typecheck, lint, unit, contracts, build, safety\]/);
+  assert.match(workflow, /check: \[typecheck, lint, unit, contracts, build\]/);
   assert.match(workflow, /name: secrets \/ pinned Gitleaks/);
   assert.match(
     workflow,

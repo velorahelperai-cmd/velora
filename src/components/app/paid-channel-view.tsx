@@ -5,6 +5,7 @@ import type {PaidBranchSetupRead, PaidSetupChannel} from "@/lib/tenancy/paid-set
 import {checklistSteps, paidChecklistFromRead, type PaidSetupFlowProps} from "./paid-assistant-checklist";
 import {WhatsappConnectionGuide} from "./whatsapp-connection-guide";
 import styles from "./paid-channel-view.module.css";
+import type {WhatsappReviewRequestInput,WhatsappReviewRequestResult,WhatsappReviewReceipt} from '@/lib/tenancy/whatsapp-review-request-actions';
 import {useSetupUnsavedChanges} from './paid-setup-unsaved';
 import {
   normalizeConfirmedPhone,
@@ -40,6 +41,7 @@ export type WhatsappSdkPopupResult =
   | { kind: "error" };
 
 export type PaidChannelViewActions = {
+  reviewRequest?:(input:WhatsappReviewRequestInput)=>Promise<WhatsappReviewRequestResult>;
   captureAuthorization?:(input:PaidBranchConnectionScope&{attemptId:string;generation:number;nonce:string;code:string;correlationId?:string})=>Promise<{ok:boolean}>;
   prepareRegistration?:(input:CompleteOwnedPaidBranchConnectionInput)=>Promise<{ok:true;registrationRequired:boolean;autoPinEligible?:boolean;authorizationTicket:string}|{ok:false}>;
   startConnection?: (input: StartOwnedPaidBranchConnectionInput) => Promise<PaidBranchConnectionStartResult | PaidBranchConnectionDenial>;
@@ -234,6 +236,8 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
   const [inFlight, setInFlight] = useState<"starting" | "completing" | "recovering" | "cancelling" | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [cancelUncertain, setCancelUncertain] = useState(false);
+  const [reviewResult,setReviewReceipt]=useState<{key:string;receipt:WhatsappReviewReceipt|null}|null>(null);
+  const reviewBinding=useRef('');
   const popupCapture=useRef<AbortController|null>(null);
   const mounted = useRef(true);
   const currentAuthority=useRef(isCurrent);
@@ -261,6 +265,23 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
   const effectiveRead = localOverride && localOverride.base === connectionRead ? localOverride.read : connectionRead;
   const connection = scopedChannelConnection(effectiveRead, {...scope, channel});
   const viewModel = derivePaidChannelConnectionViewModel(connection, locale, {inFlight});
+  const reviewAttempt=connection?.connection.attempt;
+  const canRequestReview=channel==='whatsapp'&&connection?.sourceStatus==='ready'&&connection.connection.flow==='wa_new_number'&&!!reviewAttempt&&['pending','claimed','unknown'].includes(reviewAttempt.status)&&Date.parse(reviewAttempt.expiresAt)<=Date.parse(connection.asOf);
+  const reviewKey=JSON.stringify([scope.expectedAccountId,scope.companyId,scope.branchId,scope.boundaryFingerprint,reviewAttempt?.id,reviewAttempt?.generation,reviewAttempt?.status,connection?.connection.verified]);
+  const reviewReceipt=reviewResult?.key===reviewKey?reviewResult.receipt:null;
+  useLayoutEffect(()=>{reviewBinding.current=reviewKey;},[reviewKey]);
+  const handleReviewRequest=async(request:boolean)=>{
+    if(!canRequestReview||!reviewAttempt||connectReserved.current||!checkCurrent())return;
+    const captured=reviewKey;connectReserved.current=true;setInFlight('recovering');
+    try{
+      const action=actions?.reviewRequest??(await import('@/lib/tenancy/whatsapp-review-request-actions')).ownedWhatsappReviewRequestAction;
+      const result=await action({...scope,channel:'whatsapp',attemptId:reviewAttempt.id,generation:reviewAttempt.generation,request});
+      if(!mounted.current||!checkCurrent()||reviewBinding.current!==captured)return;
+      if(result.ok){setReviewReceipt({key:captured,receipt:result.receipt});setFeedback(result.receipt?t('تم حفظ طلب المراجعة وهو قيد الانتظار. المحاولة والأصول محفوظة؛ الربط لم يكتمل.','Review request is saved and pending. The attempt and assets are preserved; connection is not complete.'):t('لا يوجد طلب مراجعة محفوظ لهذه المحاولة.','No review request is saved for this attempt.'));}
+      else setFeedback(t('تعذر تأكيد طلب المراجعة لهذه المحاولة. تحقق من الحالة؛ لم تتغير الأصول.','The review request could not be confirmed for this attempt. Check its status; assets were not changed.'));
+    }catch{if(mounted.current&&checkCurrent()&&reviewBinding.current===captured)setFeedback(t('تعذر التحقق من طلب المراجعة الآن.','Review request status is unavailable.'));}
+    finally{connectReserved.current=false;if(mounted.current)setInFlight(null);}
+  };
   const available = checkCurrent() && !!scope.expectedAccountId && !!scope.boundaryFingerprint && !!branch &&
     !!channelStep && (channelStep.status === "pending" || channelStep.status === "verified") &&
     channelStep.dependencyIds.every(id => steps.some(step => step.id === id && step.status === "verified"));
@@ -318,7 +339,7 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
       const attempt = started.read.connection.attempt;
       const expiresAt = Date.parse(attempt?.expiresAt ?? "");
       if (!attempt || attempt.id !== started.launch.attemptId || attempt.status !== "pending" || !Number.isFinite(expiresAt) || expiresAt <= currentTime()) {
-        setInFlight(null); setFeedback(t("انتهت المحاولة أو تعذّر التحقق منها. استخدم الاسترداد أو الإلغاء.", "The attempt expired or could not be verified. Use recovery or cancellation.")); return;
+        setInFlight(null); setFeedback(started.launch.flow==='wa_new_number'?t('انتهت المحاولة أو تعذّر التحقق منها. راجع المحاولة والأصول المحفوظة قبل المتابعة.','The attempt expired or could not be verified. Review the attempt and saved assets before proceeding.'):t("انتهت المحاولة أو تعذّر التحقق منها. استخدم الاسترداد أو الإلغاء.", "The attempt expired or could not be verified. Use recovery or cancellation.")); return;
       }
       const generation = attempt.generation;
       const correlationId = makeClientOpId();
@@ -326,10 +347,10 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
       const fb = actions?.launchWhatsappSdk ? null : await loadMetaFacebookSdk(started.launch.appId, started.launch.graphVersion, trace);
       if (!mounted.current || !checkCurrent()) return;
       if (!actions?.launchWhatsappSdk && !fb) { setInFlight(null); setFeedback(t("تعذر تجهيز Facebook. راجع حالة المحاولة قبل المتابعة.", "Facebook could not be prepared. Review the attempt before continuing.")); return; }
-      if (expiresAt <= currentTime()) { setInFlight(null); setFeedback(t("انتهت المحاولة. استخدم الاسترداد أو الإلغاء.", "The attempt expired. Use recovery or cancellation.")); return; }
+      if (expiresAt <= currentTime()) { setInFlight(null); setFeedback(started.launch.flow==='wa_new_number'?t('انتهت المحاولة. راجع المحاولة والأصول المحفوظة قبل المتابعة.','The attempt expired. Review the attempt and saved assets before proceeding.'):t("انتهت المحاولة. استخدم الاسترداد أو الإلغاء.", "The attempt expired. Use recovery or cancellation.")); return; }
       let abandoned = false;
       const popupResult = await new Promise<WhatsappSdkPopupResult>((resolve) => {
-        const timer = window.setTimeout(() => { abandoned = true; preparedPopup.current = null; setPopupReady(false); setFeedback(t("انتهت المحاولة. استخدم الاسترداد أو الإلغاء.", "The attempt expired. Use recovery or cancellation.")); resolve({kind:"error"}); }, Math.min(expiresAt - Date.now(), 2_147_483_647));
+        const timer = window.setTimeout(() => { abandoned = true; preparedPopup.current = null; setPopupReady(false); setFeedback(started.launch.flow==='wa_new_number'?t('انتهت المحاولة. راجع المحاولة والأصول المحفوظة قبل المتابعة.','The attempt expired. Review the attempt and saved assets before proceeding.'):t("انتهت المحاولة. استخدم الاسترداد أو الإلغاء.", "The attempt expired. Use recovery or cancellation.")); resolve({kind:"error"}); }, Math.min(expiresAt - Date.now(), 2_147_483_647));
         const abandon = () => { abandoned = true; ownsReservation = false; window.clearTimeout(timer); resolve({kind:"error"}); };
         preparedPopup.current = { attemptId: attempt.id, generation, expiresAt, abandon, launch: () => {
           window.clearTimeout(timer); preparedPopup.current = null; setPopupReady(false); connectReserved.current = true; setInFlight("starting");
@@ -393,6 +414,7 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
         if(!mounted.current||!checkCurrent())return;
         setAwaitingPin(false);setPin('');
         if(answer===null){
+          if(currentTime()>=expiresAt){setInFlight(null);setFeedback(t('انتهت المحاولة. راجع المحاولة والأصول المحفوظة قبل المتابعة.','The attempt expired. Review the attempt and saved assets before proceeding.'));return;}
           setInFlight('cancelling');
           const cancelled=await resolved.cancelConnection!({expectedAccountId:scope.expectedAccountId,companyId:scope.companyId,branchId:scope.branchId,channel:'whatsapp',flow:selectedWhatsappFlow,attemptId:started.launch.attemptId,generation});
           if(!mounted.current||!checkCurrent())return;
@@ -431,7 +453,7 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
       registrationPin='';
       if (!mounted.current || !checkCurrent()) return;
       setLocalConnection(completed.read);
-      if(!completed.ok&&completed.code==='invalid_input')setFeedback(t('إذن إكمال التسجيل غير صالح أو انتهت صلاحيته. ألغِ المحاولة ثم ابدأ تفويض Facebook من جديد.','The registration continuation is invalid or expired. Cancel this attempt, then start Facebook authorization again.'));
+      if(!completed.ok&&completed.code==='invalid_input')setFeedback(t('إذن إكمال التسجيل غير صالح أو انتهت صلاحيته. راجع المحاولة والأصول المحفوظة قبل المتابعة.','The registration continuation is invalid or expired. Review the attempt and saved assets before proceeding.'));
       setInFlight(null);
       onRefresh?.();
     } catch {
@@ -567,6 +589,11 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
         setScreen('choice');setRoute(null);setPin('');setConfirmedPhone('');setPhoneConfirmed(false);
         setFeedback(t('تم إلغاء المحاولة. اختر طريقة الربط عندما تكون مستعدًا.','Attempt cancelled. Choose a connection method when you are ready.'));
       }else{
+        if(flow==='wa_new_number'&&cancelled.code==='reconciliation_required'){
+          setCancelUncertain(true);
+          setFeedback(t('تحتاج المحاولة إلى مراجعة إدارية قبل تأكيد الإلغاء. تبقى المحاولة محفوظة؛ لا تبدأ ربطًا جديدًا.','Administrative review is required before cancellation can be confirmed. The attempt is preserved; do not start a new connection.'));
+          return;
+        }
         setFeedback(cancelled.code==='forbidden'
           ? t('تعذّر إلغاء المحاولة من هذه الجلسة. المحاولة محفوظة وتحتاج مراجعة قبل بدء ربط جديد.','This session cannot cancel the attempt. It is preserved and needs review before starting a new connection.')
           : t('لم يتم تأكيد الإلغاء. المحاولة محفوظة؛ يمكنك إعادة المحاولة دون بدء ربط جديد.','Cancellation was not confirmed. Your attempt is preserved; you can retry without starting a new connection.'));
@@ -604,6 +631,11 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
         {!hideStatusBadge&&<span className={styles.statusBadge} role="status" aria-label={channelConnectionLabel(connection, locale)}>{viewModel.badgeLabel}</span>}
         {viewModel.guidance && <p>{viewModel.guidance}</p>}
         {feedback && <p role="alert">{feedback}</p>}
+        {canRequestReview&&!awaitingPin&&<div className={styles.recoveryActions}>
+          {reviewReceipt&&<p role="status">{t('المراجعة قيد الانتظار','Review pending')} <bdi>{reviewReceipt.id}</bdi></p>}
+          <button type="button" className={styles.primary} data-request-review disabled={!!inFlight||!!reviewReceipt} onClick={()=>void handleReviewRequest(true)}>{t('طلب مراجعة إدارية','Request administrative review')}</button>
+          <button type="button" className={styles.back} data-refresh-review disabled={!!inFlight} onClick={()=>void handleReviewRequest(false)}>{t('تحديث حالة المراجعة','Refresh review status')}</button>
+        </div>}
         {!awaitingPin&&(viewModel.canRecover || viewModel.canCancel || cancelUncertain) && <div className={styles.recoveryActions}>
           {cancelUncertain && <button type="button" className={styles.back} data-check-cancellation="true" disabled={!!inFlight} onClick={() => void checkCancellation()}>{t('التحقق من حالة الإلغاء','Check cancellation status')}</button>}
           {viewModel.canRecover && !cancelUncertain && <button type="button" className={styles.primary} data-recover-action="true" onClick={() => void handleRecover()}>

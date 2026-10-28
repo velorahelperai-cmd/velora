@@ -19,6 +19,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (access.context.needsCompanyContext) {
     return <div key={`${access.context.userId}:${access.context.company?.id??"none"}:${access.context.membership?.role??"none"}`}>{children}</div>;
   }
-  if (!access.context.company) redirect(`/setup?next=${encodeURIComponent(returnTo)}`);
+  if (!access.context.company) {
+    if(access.context.hasBranchMemberships===true)redirect('/branch');
+    redirect(`/setup?next=${encodeURIComponent(returnTo)}`);
+  }
   return <div key={`${access.context.userId}:${access.context.company?.id??"none"}:${access.context.membership?.role??"none"}`}>{children}</div>;
 }

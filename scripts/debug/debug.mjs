@@ -5,7 +5,6 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { redactLogText } from '../../src/lib/logging/redaction.mjs';
 import { isolatedEnvironment } from '../ci/safety.mjs';
-import { verifyWorkspace } from '../consolidation/guard.mjs';
 
 const root = resolve(fileURLToPath(new URL('../..', import.meta.url)));
 const categories = new Set(['types', 'lint', 'runtime', 'browser', 'network', 'supabase', 'react', 'build', 'test']);
@@ -116,7 +115,6 @@ async function main(args) {
   }
   if (action === 'check') {
     const command = commandFor(kind, paths);
-    verifyWorkspace();
     // Lookup before execution; failures are never auto-retried or cached as passes.
     const previous = history();
     const env = { ...isolatedEnvironment(), NODE_OPTIONS: `--require="${resolve(root, 'scripts/ci/offline-network-guard.cjs').replaceAll('\\', '/')}"` };
@@ -129,7 +127,6 @@ async function main(args) {
   }
   if (action === 'browser') {
     if (!paths[0]) throw Error('PLAYWRIGHT_MODULE_PATH_REQUIRED');
-    verifyWorkspace();
     const previous = history();
     const events = await collectBrowser(kind, paths[0]);
     const records = events.flatMap(event => diagnose(JSON.stringify(event), event.category, previous));

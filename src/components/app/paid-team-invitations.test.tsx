@@ -1,4 +1,5 @@
-import {createElement} from "react";import {renderToStaticMarkup} from "react-dom/server";import {expect,it} from "vitest";
+// @vitest-environment jsdom
+import {act,createElement} from "react";import {renderToStaticMarkup} from "react-dom/server";import {expect,it,vi} from "vitest";
 import {PaidTeamInvitations,knownTeamSeats,validTeamRecipient,teamViewKey,type PaidTeamInvitationsProps} from "./paid-team-invitations";
 const scope={expectedAccountId:"actor",companyId:"company",branchId:"branch"},op="11111111-1111-4111-8111-111111111111";
 const props:PaidTeamInvitationsProps={locale:"en",scope,boundaryFingerprint:"capture",snapshot:{scope,version:1,branchLabel:"Branch",seats:{limit:2,available:2},allowedRoles:["staff"],canInvite:true,canSkip:true,skip:"not_skipped",createOperationId:op,skipOperationId:"22222222-2222-4222-8222-222222222222",invitations:[]},state:{scope,version:1,phase:"ready",operationId:null,operation:null,canRetry:null,retrySafe:null},isCurrent:()=>true,onInvite:()=>{throw Error("No render mutations");},onSkip:()=>{throw Error("No render skips");}};
@@ -16,3 +17,26 @@ it("shows skip confirmation only from host and does not claim email sent",()=>{e
 it("requires authorized staff role and operation IDs",()=>{for(const extra of [{allowedRoles:[]},{createOperationId:"invalid"},{canInvite:false}])expect(render({snapshot:{...props.snapshot!,...extra}})).toContain('autoComplete="name" maxLength="120" disabled=""');});
 it("hides foreign branch invitations and stale account snapshots",()=>{expect(render({snapshot:{...props.snapshot!,invitations:[{scope:{...scope,branchId:"other"},invitation:{id:"x",name:"PRIVATE",email:"private@example.com",status:"invited",expiresAt:"2099-01-01",revision:1}}]}})).not.toContain("PRIVATE");expect(render({state:{...props.state,scope:{...scope,expectedAccountId:"other"}}})).toContain("team data is unavailable");});
 it("resets across scope/revision/capture and authoritative operation replacement",()=>{const key=teamViewKey(props);for(const field of ["expectedAccountId","companyId","branchId"] as const)expect(teamViewKey({...props,scope:{...scope,[field]:"new"}})).not.toBe(key);expect(teamViewKey({...props,snapshot:{...props.snapshot!,version:2}})).not.toBe(key);expect(teamViewKey({...props,boundaryFingerprint:"new"})).not.toBe(key);expect(teamViewKey({...props,snapshot:{...props.snapshot!,createOperationId:"new"}})).not.toBe(key);expect(teamViewKey({...props,locale:"ar"})).toBe(key);});
+
+it("requires explicit permission selection and shows activation/link-only delivery boundary",()=>{const h=render({inviteUrl:"https://example.test/accept-invite?token=local"});expect(h).toContain("Permissions for this branch only");expect(h).not.toContain('checked=""');expect(h).toContain("requires a valid channel connection");expect(h).toContain("no email sent");});
+
+it("explicitly regenerates a pending recipient at full seats without sending or mutating on selection",async()=>{
+ const {createRoot}=await import("react-dom/client");vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT",true);
+ const host=document.createElement("div"),root=createRoot(host),invite=vi.fn();document.body.append(host);
+ const invitation={id:op,name:"Existing Staff",email:"staff@example.test",status:"invited" as const,expiresAt:"2099-01-01",revision:1};
+ try{
+  await act(async()=>root.render(createElement(PaidTeamInvitations,{...props,onInvite:invite,snapshot:{...props.snapshot!,canInvite:false,canReplace:true,seats:{limit:2,available:0},invitations:[{scope,invitation}]}})));
+  expect(host.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(true);
+  await act(async()=>host.querySelector<HTMLButtonElement>('[data-regenerate-invitation]')!.click());
+  expect(invite).not.toHaveBeenCalled();expect(host.querySelector<HTMLInputElement>('input[type="email"]')!.readOnly).toBe(true);
+  expect(host.textContent).toContain("old link is invalidated");
+  await act(async()=>host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
+  expect(host.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(false);
+  await act(async()=>host.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
+  expect(invite).toHaveBeenCalledExactlyOnceWith({...scope,expectedVersion:1,operationId:op,name:invitation.name,email:invitation.email,role:'staff',capabilities:['wa.conversations.read']});
+ }finally{await act(async()=>root.unmount());host.remove();vi.unstubAllGlobals();}
+});
+it("requires server replacement permission even at full seats",()=>{
+ const invitation={id:op,name:"Staff",email:"staff@example.test",status:"invited" as const,expiresAt:"2099-01-01",revision:1};
+ expect(render({snapshot:{...props.snapshot!,canInvite:false,canReplace:false,seats:{limit:2,available:0},invitations:[{scope,invitation}]}})).toContain('disabled="">Regenerate invitation link');
+});

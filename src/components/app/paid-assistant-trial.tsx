@@ -9,8 +9,10 @@ export type TrialScope={expectedAccountId:string;companyId:string;branchId:strin
 type TrialContext=TrialScope & {expectedVersion:number;knowledgeRevision:string;operationId?:string};
 export type TrialMessage={id:string;executionId?:string|null;scope:TrialScope;version:number;knowledgeRevision:string;question:string;result:AnswerResult|Pick<Extract<AnswerResult,{ok:true}>,"ok"|"text"|"citations"|"modelId">;origin:"engine"|"synthetic"};
 /** UI-only host projection; neither an answer nor local acknowledgement grants readiness. */
-export type TrialSnapshot={scope:TrialScope;version:number;knowledgeRevision:string;branchLabel:string;businessType:string;canAsk:boolean|null;trialAllowance?:{limit:number;used:number};messages:TrialMessage[]};
+export type TrialSnapshot={scope:TrialScope;version:number;knowledgeRevision:string;branchLabel:string;businessType:string;canAsk:boolean|null;handoffPreview?:"human_request"|"sensitive";recoveryNotice?:"context_changed";trialAllowance?:{limit:number;used:number};pendingOperation?:{id:string;status:string;recoverable:boolean}|null;messages:TrialMessage[]};
 export type PaidAssistantTrialProps={
+ onRecover?:(operationId:string)=>void|Promise<void>;
+ onRefresh?:()=>void|Promise<void>;
  locale:"ar"|"en";scope:TrialScope;boundaryFingerprint:string;snapshot:TrialSnapshot|null;
  state:{scope:TrialScope;version:number|null;phase:"loading"|"ready"|"pending"|"error"|"unknown"|"unavailable";requestId:string|null;failure:AnswerFailure|null;canRetry:boolean|null};
  isCurrent:()=>boolean;onAsk?:(input:TrialContext & {question:string})=>void|Promise<void>;onRetry?:(input:TrialContext & {requestId:string})=>void|Promise<void>;
@@ -63,7 +65,7 @@ function TrialForm(p:PaidAssistantTrialProps & {snapshot:TrialSnapshot}){
  const [draft,setDraft]=useState(""),[pending,setPending]=useState(false),[uncertain,setUncertain]=useState(false);
  const mounted=useRef(false),reserved=useRef(false);
  useLayoutEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
- const blocked=pending||uncertain||p.state.phase!=="ready"||p.snapshot.canAsk!==true||!p.onAsk;
+ const blocked=pending||uncertain||!!p.snapshot.pendingOperation||p.state.phase!=="ready"||p.snapshot.canAsk!==true||!p.onAsk;
  const canRetry=!pending&&!uncertain&&p.state.phase==="error"&&p.state.failure?.retrySafe===true&&p.state.canRetry===true&&!!p.state.requestId?.trim()&&p.state.failure.requestId===p.state.requestId&&!!p.onRetry;
  const context:TrialContext={...p.scope,expectedVersion:p.snapshot.version,knowledgeRevision:p.snapshot.knowledgeRevision};
  async function dispatch(run:()=>void|Promise<void>){
@@ -90,6 +92,10 @@ function TrialForm(p:PaidAssistantTrialProps & {snapshot:TrialSnapshot}){
   </div>
   {(uncertain||p.state.phase==="unknown")&&<p role="alert" className={styles.error}>{t("نتيجة الطلب غير معروفة. تحقّق من حالته قبل إرسال طلب جديد؛ لن نعيد المحاولة تلقائيًا.","The request outcome is unknown. Check its status before sending another request; it will not be retried automatically.")}</p>}
   {p.state.phase==="error"&&<div className={styles.error} role="alert"><p>{trialFailureText(p.state.failure?.code??"UNAVAILABLE",ar)}</p><button type="button" disabled={!canRetry} onClick={()=>{if(canRetry)void dispatch(()=>p.onRetry?.({...context,requestId:p.state.requestId!}));}}>{t("إعادة محاولة آمنة","Retry safely")}</button>{!canRetry&&<p>{t("إعادة المحاولة تنتظر إذنًا مؤكدًا من الخادم.","Retry is waiting for explicit server authorization.")}</p>}</div>}
+  {(p.state.phase==="unknown"||p.state.phase==="error")&&p.onRefresh&&<button type="button" disabled={pending} onClick={()=>{if(!pending&&p.isCurrent())void dispatch(()=>p.onRefresh?.());}}>{t("التحقق من حالة الطلب","Check request status")}</button>}
+  {p.snapshot.handoffPreview&&<p role="status">{t("معاينة التصعيد والمراجعة البشرية فقط: صُنّف الطلب وفق سياسة المساعد. لم تُحوّل محادثة حقيقية ولم يُرسل طلب AI أو يُخصم رد من التجربة.","Escalation and human-review preview only: the request matched the assistant policy. No real conversation was transferred, no AI request was sent, and no trial reply was used.")}</p>}
+  {p.snapshot.recoveryNotice==="context_changed"&&<p role="status">{t("تغيّرت الإعدادات أثناء الطلب السابق. سُجّلت تكلفته دون احتسابه من ردود التجربة؛ يمكنك إرسال سؤال بالإعدادات الحالية.","Settings changed during the previous request. Its cost was recorded without using a trial reply; you can ask with the current settings.")}</p>}
+  {p.snapshot.pendingOperation&&<div role="status"><p>{t("يوجد طلب سابق لم تُحسم نتيجته بعد. لن نرسل سؤالًا جديدًا أثناء التسوية.","A previous request is unresolved. New questions are blocked during reconciliation.")}</p>{p.snapshot.pendingOperation.recoverable&&p.onRecover&&<button type="button" disabled={pending} onClick={()=>{if(!pending&&p.isCurrent())void dispatch(()=>p.onRecover?.(p.snapshot.pendingOperation!.id));}}>{t("استعادة الرد المحفوظ","Recover saved answer")}</button>}{p.onRefresh&&<button type="button" disabled={pending} onClick={()=>{if(!pending&&p.isCurrent())void dispatch(()=>p.onRefresh?.());}}>{t("تحديث الحالة","Refresh status")}</button>}</div>}
   <form onSubmit={e=>{e.preventDefault();const question=draft.trim();if(!blocked&&question&&question.length<=ANSWER_MAX_QUESTION_CHARS)void dispatch(()=>p.onAsk?.({...context,question,operationId:crypto.randomUUID()}));}}>
    <label htmlFor={`${id}-question`}>{t("اكتب سؤالك","Write your question")}</label>
    <textarea id={`${id}-question`} dir="auto" rows={3} maxLength={ANSWER_MAX_QUESTION_CHARS} value={draft} disabled={blocked} onChange={e=>{if(p.isCurrent())setDraft(e.target.value);}}/>

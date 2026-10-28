@@ -129,7 +129,10 @@ export async function loadApprovedAnswerContext(
   companyId: string,
   client?: KnowledgeClient,
   query?: ClaimedKnowledgeQuery,
+  allowedSourceIds?: readonly string[],
 ): Promise<PackedContext> {
+  if (allowedSourceIds && query) return { ok: false, code: "UNAVAILABLE" };
+  if (allowedSourceIds?.length === 0) return { ok: false, code: "NO_KNOWLEDGE" };
   const supabase = client ?? await createClient();
   if (query) {
     const result = await retrieveApprovedRows(companyId, query, supabase as unknown as Parameters<typeof retrieveApprovedRows>[2]);
@@ -140,12 +143,14 @@ export async function loadApprovedAnswerContext(
     if (intact.rows.length !== result.rows.length) return { ok: false, code: "APPROVAL_INCOMPLETE" };
     return packApprovedRows(intact.rows);
   }
-  const { data, error } = await supabase
+  let sourceQuery = supabase
     .from("knowledge_sources")
     .select(APPROVED_SELECT)
     .eq("company_id", companyId)
     .eq("status", "ready")
-    .eq("approved_for_answers", true)
+    .eq("approved_for_answers", true);
+  if (allowedSourceIds) sourceQuery = sourceQuery.in("id", [...allowedSourceIds]);
+  const { data, error } = await sourceQuery
     .order("updated_at", { ascending: false })
     .limit(ANSWER_MAX_SOURCES + 1);
 
@@ -159,6 +164,7 @@ export async function loadApprovedAnswerContext(
   if ((data?.length ?? 0) > ANSWER_MAX_SOURCES) {
     return { ok: false, code: "CONTEXT_OVERFLOW" };
   }
+  if (allowedSourceIds && data?.some(row => !allowedSourceIds.includes(row.id))) return { ok: false, code: "UNAVAILABLE" };
 
   const dbEligible = ((data ?? []) as ApprovedRow[]).filter(
     (row) =>
@@ -176,11 +182,13 @@ export async function loadApprovedAnswerContext(
 
   if (!rows.length) {
     // Distinguish empty company knowledge from ready-but-unapproved sources.
-    const readyProbe = await supabase
+    let probeQuery = supabase
       .from("knowledge_sources")
       .select("id", { count: "exact", head: true })
       .eq("company_id", companyId)
       .eq("status", "ready");
+    if (allowedSourceIds) probeQuery = probeQuery.in("id", [...allowedSourceIds]);
+    const readyProbe = await probeQuery;
     if (readyProbe.error) {
       if (isMissingApprovalColumnError(readyProbe.error)) {
         return { ok: false, code: "APPROVAL_FOUNDATION_UNAVAILABLE" };
