@@ -650,6 +650,7 @@ export async function verifyEmailCode(input: {
       }
       return { ok: false, code: "AUTH_ERROR", message: "verification_incomplete", diagnostic: trace.finish("AUTH_ERROR") };
     }
+    trace.stage("session");
     let admitted: Awaited<ReturnType<typeof admitNativeSession>>;
     try {
       admitted = await admitNativeSession({
@@ -660,7 +661,7 @@ export async function verifyEmailCode(input: {
       const {signOutProviderSessionAfterAdmitFailure} = await import("@/lib/auth/broker/provider-session");
       // Atomic disposition refuses revocation if admission committed before cookie-write failure.
       await signOutProviderSessionAfterAdmitFailure(bundle,data.session,{intentId:intent.id,operationKey:intent.id});
-      return {ok:false,code:"UNAVAILABLE",message:"PROVIDER_CLEANUP_UNKNOWN",diagnostic:trace.finish("OUTCOME_UNKNOWN")};
+      return {ok:false,code:"UNAVAILABLE",message:"verification_confirmed_session_unavailable",diagnostic:trace.finish("OUTCOME_UNKNOWN")};
     }
     if (!admitted.ok) {
       const { signOutProviderSessionAfterAdmitFailure } = await import(
@@ -674,11 +675,11 @@ export async function verifyEmailCode(input: {
         return {
           ok: false,
           code: "UNAVAILABLE",
-          message: "PROVIDER_CLEANUP_UNKNOWN",
+          message: "verification_confirmed_session_unavailable",
           diagnostic: trace.finish("OUTCOME_UNKNOWN"),
         };
       }
-      return { ok: false, code: "UNAVAILABLE", message: "verification_unavailable", diagnostic: trace.finish("UNAVAILABLE") };
+      return { ok: false, code: "UNAVAILABLE", message: "verification_confirmed_session_unavailable", diagnostic: trace.finish("UNAVAILABLE") };
     }
     trace.stage("access");
     const access = await getCompanyAccess();

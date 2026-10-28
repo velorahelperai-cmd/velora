@@ -254,6 +254,7 @@ it.each([{status:'expired',reason:'status_expired'},{status:'locked',reason:'sta
  expect(state.continuity).not.toHaveBeenCalled();
  expect(container.querySelector('[role="alert"]')?.textContent).toContain('browser session changed or expired');
  expect(container.querySelector('[data-auth-verify-fence]')?.getAttribute('data-auth-verify-fence')).toBe(reason);
+ expect(container.querySelector('[role="alert"]')?.textContent).toContain(reason.toUpperCase());
  expect(state.replace).not.toHaveBeenCalled();
 });
 it('explains blocked resend instead of silently claiming delivery',async()=>{

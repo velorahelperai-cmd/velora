@@ -953,6 +953,7 @@ export function VerifyEmailPage() {
     if (message === "verification_code_invalid") return copy.auth.verificationCodeInvalid;
     if (message === "verification_rate_limited") return copy.auth.verificationRateLimited;
     if (message === "verification_incomplete") return copy.auth.verificationIncomplete;
+    if (message === "verification_confirmed_session_unavailable") return locale === "ar" ? "تأكد بريدك، لكن تعذر إنشاء الجلسة. سجّل الدخول مجددًا للمتابعة." : "Your email is confirmed, but the session could not be created. Sign in again to continue.";
     return fallback;
   }
 
@@ -1126,7 +1127,7 @@ export function VerifyEmailPage() {
         loginHref={authFlowHref("/login", pendingReturn)}
         closeLabel={copy.close}
         busy={busy}
-        error={error}
+        error={error && fenceReason ? `${error} (${fenceReason.toUpperCase()})` : error}
 
         resent={resent}
         cooldown={cooldown}
