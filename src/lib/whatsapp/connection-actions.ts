@@ -42,7 +42,7 @@ function mapLinkResult(
     if (code === "invalid_input") return { ok: false, code: "INVALID_INPUT" };
     if (code === "already_verified") return { ok: false, code: "ALREADY_VERIFIED" };
     if (code === "invalid_transition") return { ok: false, code: "INVALID_TRANSITION" };
-    return { ok: false, code: "UNAVAILABLE", message: code || undefined };
+    return { ok: false, code: "UNAVAILABLE" };
   }
   const linkRaw = asRecord(row.link as Json);
   if (!linkRaw) return { ok: false, code: "UNAVAILABLE" };
@@ -70,7 +70,7 @@ export async function getWhatsappCompanyLink(): Promise<ActionOk<WhatsappCompany
   try {
     const supabase = await createClient();
     const { data, error } = await supabase.rpc("get_selected_whatsapp_company_link",{p_company_id:access.context.company.id});
-    if (error) return { ok: false, code: "UNAVAILABLE", message: error.message };
+    if (error) return { ok: false, code: "UNAVAILABLE" };
     return mapLinkResult(data, false);
   } catch {
     return { ok: false, code: "UNAVAILABLE" };
@@ -121,7 +121,7 @@ export async function saveWhatsappLinkRequest(input: {
       p_requested_display_number: number,
       p_keep_on_phone: Boolean(input.keepOnPhone),
     });
-    if (error) return { ok: false, code: "UNAVAILABLE", message: error.message };
+    if (error) return { ok: false, code: "UNAVAILABLE" };
     return mapLinkResult(data, false);
   } catch {
     return { ok: false, code: "UNAVAILABLE" };
@@ -145,7 +145,7 @@ export async function adminGetWhatsappCompanyLink(
     const { data, error } = await supabase.rpc("admin_get_whatsapp_company_link", {
       p_company_id: companyId,
     });
-    if (error) return { ok: false, code: "UNAVAILABLE", message: error.message };
+    if (error) return { ok: false, code: "UNAVAILABLE" };
     return mapLinkResult(data, true);
   } catch {
     return { ok: false, code: "UNAVAILABLE" };
@@ -172,7 +172,7 @@ export async function adminUpdateWhatsappLinkNote(input: {
       p_company_id: input.companyId,
       p_admin_note: note,
     });
-    if (error) return { ok: false, code: "UNAVAILABLE", message: error.message };
+    if (error) return { ok: false, code: "UNAVAILABLE" };
     return mapLinkResult(data, true);
   } catch {
     return { ok: false, code: "UNAVAILABLE" };
@@ -196,7 +196,7 @@ export async function adminMarkWhatsappLinkNeedsExternal(
     const { data, error } = await supabase.rpc("admin_mark_whatsapp_link_needs_external", {
       p_company_id: companyId,
     });
-    if (error) return { ok: false, code: "UNAVAILABLE", message: error.message };
+    if (error) return { ok: false, code: "UNAVAILABLE" };
     return mapLinkResult(data, true);
   } catch {
     return { ok: false, code: "UNAVAILABLE" };

@@ -15,3 +15,13 @@ Validation: rate package119 TS tests; native concurrent/ACL/replay/reset/monitor
 Remaining: real two-user/company/branch hosted journeys, real Google/email/provider/payment acceptance remain unverified. New limits require observations before enforcement; merchant-specific AI/Thawani quotas UNKNOWN. Leaked-password protection disabled in Auth configuration. Public conversations/messages retain excess mutation/TRUNCATE grants, without proven remote SQL execution path. Broad security-definer advisory counts are not proof of vulnerabilities. Some legacy actions outside this repair still expose raw errors; full endpoint audit remains open.
 
 References: [OWASP DoS](https://cheatsheetseries.owasp.org/cheatsheets/Denial_of_Service_Cheat_Sheet.html), [Supabase Auth limits](https://supabase.com/docs/guides/auth/rate-limits), [Gemini limits](https://ai.google.dev/gemini-api/docs/rate-limits), [Thawani](https://thawani.om/developers).
+
+## Follow-up — legacy errors and privileges
+
+Legacy tenancy account/review/admin database failures now return fixed public messages; unknown conversation/grant refusal codes are bounded while known conflict/business codes remain. Injected failure regressions reproduced leaks before repair. Tenancy/review/profile targeted33 PASS; access errors3 PASS.
+
+WhatsApp connection actions no longer forward five raw database failures or unknown rejection details; billing attempt wrappers return three fixed failure codes. Existing authorization/RPC arguments and financial success behavior retained. Additional26 targeted tests PASS including FIX03/04/05 regressions; synthetic leak tests first reproduced nine failures. No provider operations executed.
+
+Production migration20261029010107 removes obsolete client mutation/TRUNCATE/MAINTAIN privileges on conversations/messages, preserves authenticated SELECT under existing RLS, and preserves service/definer writers. Three native PostgreSQL tests PASS; live catalog confirms client mutation=false, SELECT=true, service access=true. No customer rows or Meta state modified.
+
+Leaked-password protection: inspected the actual Velora organization in Chrome; plan FREE. UI states Pro or above required. Enabling and saving did not persist: reload shows disabled. No paid upgrade initiated. See [official availability](https://supabase.com/docs/guides/auth/password-security). This remains unavailable on the current plan, not enabled or runtime-verified.

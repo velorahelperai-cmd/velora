@@ -220,7 +220,7 @@ export async function accessSetMemberGrants(input: {
     if (code === "not_member" || code === "owner_grants_implicit") {
       return { ok: false, code: "INVALID_INPUT", message: code };
     }
-    return { ok: false, code: "FORBIDDEN", message: code };
+    return { ok: false, code: "FORBIDDEN", message: "forbidden" };
   } catch {
     return { ok: false, code: "UNAVAILABLE" };
   }

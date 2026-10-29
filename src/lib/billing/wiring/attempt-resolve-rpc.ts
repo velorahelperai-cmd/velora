@@ -117,7 +117,7 @@ export function createResolveOrCreateAttemptRpc(admin: {
       p_company_id: companyId,
     });
     if (error) {
-      return { ok: false, code: String(error.code ?? error.message ?? "resolve_rpc_failed") };
+      return { ok: false, code: "resolve_rpc_failed" };
     }
     return mapResolveOrCreateRpcPayload(data);
   };
@@ -138,7 +138,7 @@ export function createConfirmFailedAttemptRpc(admin: {
       p_evidence: evidence,
     });
     if (error) {
-      return { ok: false, code: String(error.code ?? error.message ?? "confirm_failed_rpc_failed") };
+      return { ok: false, code: "confirm_failed_rpc_failed" };
     }
     return mapConfirmFailedRpcPayload(data);
   };
@@ -164,7 +164,7 @@ export function createOpenAfterFailedAttemptRpc(admin: {
       },
     );
     if (error) {
-      return { ok: false, code: String(error.code ?? error.message ?? "open_after_failed_rpc_failed") };
+      return { ok: false, code: "open_after_failed_rpc_failed" };
     }
     return mapOpenAfterFailedRpcPayload(data);
   };

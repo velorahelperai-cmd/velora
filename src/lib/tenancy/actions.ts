@@ -1107,7 +1107,7 @@ export async function updateAccountName(name: string, expectedUserId?: string): 
       .select("user_id, full_name, support_code")
       .single();
     if (error || !saved) {
-      return { ok: false, code: "AUTH_ERROR", message: error?.message };
+      return { ok: false, code: "AUTH_ERROR", message: "operation_unavailable" };
     }
 
     try {
@@ -1207,7 +1207,7 @@ export async function getCompanyReviewRequest(input?: { expectedCompanyId?: stri
   }
   try {
     const { data, error } = await gate.supabase.rpc("g03_read_review_request", { p_company_id: gate.companyId });
-    if (error) return { ok: false, code: "AUTH_ERROR", message: error.message };
+    if (error) return { ok: false, code: "AUTH_ERROR", message: "operation_unavailable" };
     if (!data) return { ok: true, data: null };
     const parsed = asReviewRequest(data);
     if (!parsed) return { ok: false, code: "UNAVAILABLE" };
@@ -1226,7 +1226,7 @@ export async function listCompanyReviewEvents(input?: { expectedCompanyId?: stri
   }
   try {
     const { data, error } = await gate.supabase.rpc("list_owner_company_review_events_for_company", { p_company_id: gate.companyId });
-    if (error) return { ok: false, code: "AUTH_ERROR", message: error.message };
+    if (error) return { ok: false, code: "AUTH_ERROR", message: "operation_unavailable" };
     const rows = Array.isArray(data) ? data : [];
     const events: CompanyReviewEvent[] = rows.flatMap((row) => {
       if (!isPlainObject(row)) return [];
@@ -1507,8 +1507,7 @@ export async function adminListCompaniesPage(input?: {
     });
 
     if (pageRpc.error) {
-      const err = pageRpc.error as { message?: string };
-      return { ok: false, code: "UNAVAILABLE", message: err.message };
+      return { ok: false, code: "UNAVAILABLE", message: "operation_unavailable" };
     }
 
     if (!pageRpc.data || typeof pageRpc.data !== "object") {
@@ -1552,7 +1551,7 @@ export async function adminListCompanies(search = ""): Promise<ActionResult<Admi
   try {
     const supabase = await createClient();
     const { data, error } = await supabase.rpc("admin_list_companies", { p_search: search });
-    if (error) return { ok: false, code: "UNAVAILABLE", message: error.message };
+    if (error) return { ok: false, code: "UNAVAILABLE", message: "operation_unavailable" };
     return { ok: true, data: (data ?? []) as AdminCompanyListItem[] };
   } catch {
     return { ok: false, code: "UNAVAILABLE" };
@@ -1565,7 +1564,7 @@ export async function adminGetCompany(companyId: string): Promise<ActionResult<u
   try {
     const supabase = await createClient();
     const { data, error } = await supabase.rpc("admin_get_company", { p_company_id: companyId });
-    if (error) return { ok: false, code: "UNAVAILABLE", message: error.message };
+    if (error) return { ok: false, code: "UNAVAILABLE", message: "operation_unavailable" };
     if (!data) return { ok: false, code: "INVALID_INPUT", message: "NOT_FOUND" };
     return { ok: true, data };
   } catch {
@@ -1592,7 +1591,7 @@ export async function adminGetOverviewStats(): Promise<ActionResult<AdminOvervie
       if (isMissingAdminAccountJourneyError(error.message)) {
         return { ok: false, code: "UNAVAILABLE", message: ADMIN_ACCOUNT_JOURNEY_DEPENDENCY };
       }
-      return { ok: false, code: "UNAVAILABLE", message: error.message };
+      return { ok: false, code: "UNAVAILABLE", message: "operation_unavailable" };
     }
     if (!isPlainObject(data) || data.ok !== true) {
       return { ok: false, code: "UNAVAILABLE", message: "bad_rpc_payload" };
@@ -1653,7 +1652,7 @@ export async function adminSearchAccounts(input: {
       if (isMissingAdminAccountJourneyError(error.message)) {
         return { ok: false, code: "UNAVAILABLE", message: ADMIN_ACCOUNT_JOURNEY_DEPENDENCY };
       }
-      return { ok: false, code: "UNAVAILABLE", message: error.message };
+      return { ok: false, code: "UNAVAILABLE", message: "operation_unavailable" };
     }
     const rows = (data ?? []).map((row) => {
       const companiesRaw = row.companies;
@@ -1820,7 +1819,7 @@ export async function adminListCompanyConversations(input: {
           message: ADMIN_CONVERSATIONS_RPC_DEPENDENCY,
         };
       }
-      return { ok: false, code: "UNAVAILABLE", message: error.message };
+      return { ok: false, code: "UNAVAILABLE", message: "operation_unavailable" };
     }
     if (!isPlainObject(data) || data.ok !== true) {
       if (isPlainObject(data) && data.code === "NOT_FOUND") {
@@ -1830,12 +1829,12 @@ export async function adminListCompanyConversations(input: {
         return { ok: false, code: "INVALID_INPUT", message: "INVALID_PHONE" };
       }
       if (isPlainObject(data) && (data.code === "FORBIDDEN" || data.code === "forbidden")) {
-        return { ok: false, code: "FORBIDDEN", message: String(data.code) };
+        return { ok: false, code: "FORBIDDEN", message: "forbidden" };
       }
       return {
         ok: false,
         code: "UNAVAILABLE",
-        message: isPlainObject(data) ? String(data.code ?? "bad_rpc_payload") : "bad_rpc_payload",
+        message: "bad_rpc_payload",
       };
     }
     const convs = Array.isArray(data.conversations) ? data.conversations : [];
@@ -1895,7 +1894,7 @@ export async function adminUpdateCompany(input: {
       p_contact_phone: input.contactPhone,
       p_contact_email: input.contactEmail,
     });
-    if (error || !data) return { ok: false, code: "AUTH_ERROR", message: error?.message };
+    if (error || !data) return { ok: false, code: "AUTH_ERROR", message: "operation_unavailable" };
     revalidatePath("/admin");
     revalidatePath(`/admin/companies/${input.companyId}`);
     return { ok: true, data: data as CompanyRecord };
@@ -1916,7 +1915,7 @@ export async function adminSetCompanyStatus(
       p_company_id: companyId,
       p_status: status,
     });
-    if (error || !data) return { ok: false, code: "AUTH_ERROR", message: error?.message };
+    if (error || !data) return { ok: false, code: "AUTH_ERROR", message: "operation_unavailable" };
     revalidatePath("/admin");
     revalidatePath(`/admin/companies/${companyId}`);
     return { ok: true, data: data as CompanyRecord };
@@ -1952,7 +1951,7 @@ export async function adminSetMemberStatus(input: {
       p_role: input.role ?? null,
       p_member_name: input.memberName ?? null,
     });
-    if (error) return { ok: false, code: "AUTH_ERROR", message: error.message };
+    if (error) return { ok: false, code: "AUTH_ERROR", message: "operation_unavailable" };
     revalidatePath("/admin");
     revalidatePath(`/admin/companies/${input.companyId}`);
     return { ok: true, data: undefined };
