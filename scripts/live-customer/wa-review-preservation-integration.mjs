@@ -18,6 +18,8 @@ try {
  const fixture=(await read('scripts/live-customer/whatsapp-recovery-regression.sql')).split('-- AFTER_FIXTURE')[0];
  await stack.sql('begin;set local role postgres;create table private.wa_recovery_fixture(binding jsonb);'+original.slice(0,original.indexOf(marker))+fixture+'\nend $$;commit;');
  const migration=(await readdir('supabase/migrations')).find(f=>f.endsWith('_wa_review_preserve_supersession.sql'));
+ // Match hosted extension ACLs: postgres can REFERENCES, but cannot add a Vault trigger.
+ await stack.sql('revoke all on vault.secrets from postgres,service_role;grant select,delete,truncate,references on vault.secrets to postgres with grant option;grant select,delete on vault.secrets to service_role;');
  if(migration)await stack.sql(await read('supabase/migrations/'+migration));
  const [beforeRace,afterRace]=(await read('scripts/live-customer/wa-review-preservation-regression.sql')).split('-- AFTER_CONCURRENT_RESOLUTION');
  await stack.sql(beforeRace);

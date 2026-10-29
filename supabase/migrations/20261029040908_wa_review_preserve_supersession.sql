@@ -1,5 +1,6 @@
 -- Administrative retirement only. Never decrypt, delete or claim provider completion.
 begin;
+set local role postgres;
 set local lock_timeout='5s';
 set local statement_timeout='60s';
 alter table private.wa_checkpoint_review_requests
@@ -10,6 +11,7 @@ alter table private.wa_checkpoint_review_requests
  add column decision_ref text,
  add column checkpoint_digest text,
  add column replacement_phone_hash text,
+ add column retained_secret_id uuid references vault.secrets(id) on delete restrict,
  add column resolution_evidence jsonb,
  add constraint wa_review_resolution_complete check(
   (status='pending' and resolved_at is null and resolved_by is null and decision_ref is null and checkpoint_digest is null and replacement_phone_hash is null and resolution_evidence is null)
@@ -17,22 +19,32 @@ alter table private.wa_checkpoint_review_requests
       and decision_ref is not null and checkpoint_digest is not null and checkpoint_digest ~ '^[a-f0-9]{64}$'
       and replacement_phone_hash is not null and replacement_phone_hash ~ '^[a-f0-9]{64}$'
       and resolution_evidence is not null and jsonb_typeof(resolution_evidence)='object'));
+-- REFERENCES is granted on hosted Vault; TRIGGER is not. The FK prevents expiry cleanup
+-- from deleting the retained credential without changing a managed extension object.
+update private.wa_checkpoint_review_requests r set retained_secret_id=c.token_secret_id
+ from private.es02_b3_whatsapp_signup_checkpoints c where c.attempt_id=r.attempt_id;
+alter table private.wa_checkpoint_review_requests alter column retained_secret_id set not null;
 
 -- Review receipts and closed attempts are permanent evidence, not cleanup eligibility.
 create function private.wa_review_preserve_evidence() returns trigger
 language plpgsql security definer set search_path='' as $$
 begin
  if tg_table_name='wa_checkpoint_review_requests' then
+  if tg_op='INSERT' then
+   select c.token_secret_id into new.retained_secret_id from private.es02_b3_whatsapp_signup_checkpoints c where c.attempt_id=new.attempt_id;
+   if new.retained_secret_id is null then raise exception 'WA_REVIEW_CHECKPOINT_REQUIRED' using errcode='23514';end if;
+   return new;
+  end if;
   if tg_op='DELETE' or old.status='closed_preserved' then
+   raise exception 'WA_REVIEW_EVIDENCE_PRESERVED' using errcode='23514';
+  end if;
+  if new.retained_secret_id is distinct from old.retained_secret_id or new.attempt_id is distinct from old.attempt_id
+   or new.account_id is distinct from old.account_id or new.company_id is distinct from old.company_id
+   or new.branch_id is distinct from old.branch_id or new.generation is distinct from old.generation then
    raise exception 'WA_REVIEW_EVIDENCE_PRESERVED' using errcode='23514';
   end if;
  elsif tg_table_name='es02_b3_whatsapp_signup_checkpoints' then
   if exists(select 1 from private.wa_checkpoint_review_requests r where r.attempt_id=old.attempt_id) then
-   raise exception 'WA_REVIEW_EVIDENCE_PRESERVED' using errcode='23514';
-  end if;
- elsif tg_table_name='secrets' then
-  if exists(select 1 from private.es02_b3_whatsapp_signup_checkpoints c
-   join private.wa_checkpoint_review_requests r on r.attempt_id=c.attempt_id where c.token_secret_id=old.id) then
    raise exception 'WA_REVIEW_EVIDENCE_PRESERVED' using errcode='23514';
   end if;
  else
@@ -45,11 +57,9 @@ begin
 end $$;
 alter function private.wa_review_preserve_evidence() owner to postgres;
 revoke all on function private.wa_review_preserve_evidence() from public,anon,authenticated,service_role;
-create trigger wa_review_preserve_receipt before update or delete on private.wa_checkpoint_review_requests
+create trigger wa_review_preserve_receipt before insert or update or delete on private.wa_checkpoint_review_requests
  for each row execute function private.wa_review_preserve_evidence();
 create trigger wa_review_preserve_checkpoint before update or delete on private.es02_b3_whatsapp_signup_checkpoints
- for each row execute function private.wa_review_preserve_evidence();
-create trigger wa_review_preserve_vault before update or delete on vault.secrets
  for each row execute function private.wa_review_preserve_evidence();
 create trigger wa_review_preserve_attempt before update or delete on private.es02_b3_connection_attempts
  for each row execute function private.wa_review_preserve_evidence();
@@ -134,6 +144,7 @@ begin
   return jsonb_build_object('ok',false,'code','connection_or_work_present');end if;
  select * into c from private.es02_b3_whatsapp_signup_checkpoints where attempt_id=a.id for update;
  if c.attempt_id is null or c.token_secret_id is null or c.waba_id is distinct from p_waba_id or c.phone_number_id is distinct from p_phone_id
+  or r.retained_secret_id is distinct from c.token_secret_id
   or encode(sha256(convert_to(to_jsonb(c)::text,'UTF8')),'hex') is distinct from p_checkpoint_digest
   or not exists(select 1 from vault.secrets where id=c.token_secret_id) then
   return jsonb_build_object('ok',false,'code','checkpoint_changed');end if;

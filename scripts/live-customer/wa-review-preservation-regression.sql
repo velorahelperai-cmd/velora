@@ -83,14 +83,14 @@ begin
  -- Neither direct deletion, replacement, expiry discard nor resurrection can lose/reuse the retained evidence.
  begin delete from private.es02_b3_whatsapp_signup_checkpoints where attempt_id=aid;raise exception 'CHECKPOINT_DELETE_ALLOWED';exception when check_violation then null;end;
  begin update private.es02_b3_whatsapp_signup_checkpoints set token_secret_id=null where attempt_id=aid;raise exception 'SECRET_DETACH_ALLOWED';exception when check_violation then null;end;
- begin delete from vault.secrets where id=secret_id;raise exception 'VAULT_DELETE_ALLOWED';exception when check_violation then null;end;
+ begin delete from vault.secrets where id=secret_id;raise exception 'VAULT_DELETE_ALLOWED';exception when foreign_key_violation then null;end;
  begin update private.es02_b3_connection_attempts set status='pending' where id=aid;raise exception 'OLD_CALLBACK_REVIVED';exception when check_violation then null;end;
  perform set_config('role','service_role',true);
  result:=public.es02_b3_whatsapp_signup_checkpoint('load',b,null,null);
  if result->>'ok'='true' then raise exception 'RETIRED_TOKEN_RELOADED';end if;
  result:=public.es02_b3_whatsapp_signup_checkpoint('save',b,'11111111-1111-4111-8111-111111111111','replacement-must-not-save');
  if result->>'ok'='true' then raise exception 'RETIRED_CALLBACK_REUSED';end if;
- begin perform public.es02_b3_whatsapp_signup_checkpoint('discard',b,null,null);raise exception 'EXPIRY_DISCARD_ALLOWED';exception when check_violation then null;end;
+ begin perform public.es02_b3_whatsapp_signup_checkpoint('discard',b,null,null);raise exception 'EXPIRY_DISCARD_ALLOWED';exception when foreign_key_violation then null;end;
  perform set_config('role','postgres',true);
  -- Native owner/session/paid binding is still mandatory; only the reviewed Coexistence phone may follow.
  rev:=private.es02_b3_project(uid,cid,bid,'whatsapp')->>'revision';
