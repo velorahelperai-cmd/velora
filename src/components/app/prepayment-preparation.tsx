@@ -112,7 +112,7 @@ export function PreparationForm({
   const [errors, setErrors] = useState<string[]>([]);
   const [suggestionStatus, setSuggestionStatus] = useState("");
   const t = (a: string, e: string) => (ar ? a : e);
-  const draft=useAccountPrepDraft({accountId:userId,captureToken,isCurrent,restore:payload=>setValue(accountPrepPayloadToFormState(payload).preparation)});
+  const draft=useAccountPrepDraft({accountId:userId,captureToken,isCurrent,localOnly:true,restore:payload=>setValue(accountPrepPayloadToFormState(payload).preparation)});
   const {checkpoint,hydrated}=draft;
   useEffect(()=>{if(!hydrated)return;const {website:_w,whatsappExisting:_e,goals:_g,...patch}=preparationToAccountPrepPatch({preparation:value,website:null,whatsappExisting:null,goals:[]});checkpoint(patch);},[value,hydrated,checkpoint]);
   function change(key: Exclude<keyof Preparation, "branches">, next: string) {
@@ -491,7 +491,7 @@ function StudioPreparationForm({
     journey.bindActor({ accountId: userId, captureToken, isCurrent: actorNow });
   }, [actorNow, captureToken, userId]);
 
-  const draft=useAccountPrepDraft({accountId:userId,captureToken,isCurrent:actorNow,restore:payload=>{
+  const draft=useAccountPrepDraft({accountId:userId,captureToken,isCurrent:actorNow,localOnly:true,restore:payload=>{
     const restored=accountPrepPayloadToFormState(payload);
     setBranchMode(restored.preparation.branches.length > 1 ? "multiple" : "single");
     const primary = restored.preparation.branches[0];
@@ -765,19 +765,10 @@ function StudioPreparationForm({
       whatsappExisting: snap.preparation.answers?.whatsapp?.existingUse ?? null,
       goals: snap.preparation.answers?.goals ?? [],
     });
-    // Payment / server-bound confirm waits for the latest eligible snapshot; step nav does not.
-    const draftResult = await draft.save(prepPatch);
+    // The payment boundary has its own durable, authenticated checkout binding.
+    // Preparation itself remains local until the user starts that boundary.
+    await draft.save(prepPatch);
     if (!currentActorValidator.current() || journeyRef.current !== journey) return { ok: false, code: "STALE_CAPTURE" };
-    if (!draftResult?.ok) {
-      const code = draftResult?.code === "CONFLICT" ? "CONFLICT" : "UNAVAILABLE";
-      return { ok: false, code };
-    }
-    const confirmed = await draft.awaitConfirmed();
-    if (!currentActorValidator.current() || journeyRef.current !== journey) return { ok: false, code: "STALE_CAPTURE" };
-    if (!confirmed?.ok) {
-      const code = confirmed?.code === "CONFLICT" ? "CONFLICT" : "UNAVAILABLE";
-      return { ok: false, code };
-    }
     const pending = journey.confirmReview(accepted);
     remember(journey);
     const result = await pending;
@@ -1237,7 +1228,7 @@ function AccountPrepDraftStatus({draft,ar}:{draft:ReturnType<typeof useAccountPr
   ?(ar?'تغيّرت المسودة في مكان آخر. أعد تحميل النسخة المحفوظة وراجعها.':'The draft changed elsewhere. Reload and review the saved version.')
   :draft.localSaved
    ?(ar?'مسودتك محفوظة على هذا الجهاز. تعذّرت المزامنة مؤقتًا؛ يمكنك متابعة التجهيز.':'Your draft is saved on this device. Sync is temporarily unavailable; you can keep editing.')
-   :(ar?'تعذّر الحفظ على هذا الجهاز والمزامنة. يمكنك المتابعة، لكن لا تغلق الصفحة قبل إعادة المحاولة.':'Local saving and sync are unavailable. Keep editing, but do not close this page before retrying.');
+   :(ar?'تعذّر الحفظ على هذا الجهاز. لا تغلق الصفحة قبل إعادة المحاولة.':'Saving on this device failed. Do not close this page before retrying.');
  return (
   <div role="alert" data-prep-draft-status="fail" className="space-y-2 text-sm" aria-live="polite">
    <p>{message}</p>

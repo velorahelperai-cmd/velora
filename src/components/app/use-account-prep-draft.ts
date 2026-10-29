@@ -18,7 +18,7 @@ type InFlight = {
 };
 
 /** Shared account draft controller. Readback is not a second write; native CAS stays authoritative. */
-export function useAccountPrepDraft({accountId,captureToken='',isCurrent,restore}:{accountId:string;captureToken?:string;isCurrent:()=>boolean;restore:(payload:AccountPrepDraftPayload)=>void}){
+export function useAccountPrepDraft({accountId,captureToken='',isCurrent,restore,localOnly=false}:{accountId:string;captureToken?:string;isCurrent:()=>boolean;restore:(payload:AccountPrepDraftPayload)=>void;localOnly?:boolean}){
  const storageKey='velora:account-prep:v1:'+accountId;
  const localBase=useRef<{version:number;draftId:string}|null>(null);
  const recovered=useRef(false),syncRequested=useRef(false);
@@ -34,7 +34,6 @@ export function useAccountPrepDraft({accountId,captureToken='',isCurrent,restore
  const dirty=useRef(false),editGen=useRef(0);
  const inFlight=useRef<InFlight|null>(null);
  const queued=useRef<AccountPrepDraftPayload|null>(null);
- const checkpointTimer=useRef<ReturnType<typeof setTimeout>|null>(null);
  const writeRunner=useRef<(patch:AccountPrepDraftPayload)=>Promise<AccountPrepDraftResult<AccountPrepDraftRecord>|null>>(()=>Promise.resolve(null));
  const [hydration,setHydration]=useState({scope,kind:'loading' as 'loading'|'ready'|'error'});
  const [saved,setSaved]=useState({scope,status:'idle' as AccountPrepSaveStatus,code:null as AccountPrepDraftCode|null});
@@ -53,7 +52,7 @@ export function useAccountPrepDraft({accountId,captureToken='',isCurrent,restore
     const website=raw.payload?.website;
     if(parsed.ok && (website==null || website.kind==='none' || (website.kind==='url' && typeof website.value==='string' && website.value.length<=200))){
      const payload={...parsed.value,website};localPayload.current=payload;
-     localBase.current=raw.base;recovered.current=raw.pending===true;dirty.current=recovered.current;
+     localBase.current=raw.base;recovered.current=!localOnly&&raw.pending===true;dirty.current=localOnly||recovered.current;
      if(recovered.current){lastPatch.current=payload;syncRequested.current=true;}
      callbacks.current.restore(payload);setLocalSaved(true);
     }
@@ -61,8 +60,8 @@ export function useAccountPrepDraft({accountId,captureToken='',isCurrent,restore
   }catch{/* Storage unavailable/corrupt: retain editable in-memory form. */}
   setHydration({scope,kind:'ready'});
   });
-  return()=>{live.current=false;if(checkpointTimer.current)clearTimeout(checkpointTimer.current);};
- },[scope,accountId,storageKey]);
+  return()=>{live.current=false;};
+ },[scope,accountId,storageKey,localOnly]);
  const ours=useCallback(()=>liveScope.current===scope&&callbacks.current.isCurrent(),[scope]);
  const valid=useCallback(()=>live.current&&ours(),[ours]);
  const publish=useCallback((status:AccountPrepSaveStatus,code:AccountPrepDraftCode|null)=>{
@@ -71,20 +70,13 @@ export function useAccountPrepDraft({accountId,captureToken='',isCurrent,restore
  const persist=useCallback((payload:AccountPrepDraftPayload,pending:boolean)=>{
   if(!valid())return;
   localPayload.current=payload;
-  try{window.localStorage.setItem(storageKey,JSON.stringify({schema:1,accountId,payload,pending,base:localBase.current,expiresAt:Date.now()+30*24*60*60*1000}));if(live.current)setLocalSaved(true);}
-  catch{if(live.current)setLocalSaved(false);}
- },[accountId,valid,storageKey]);
+  try{window.localStorage.setItem(storageKey,JSON.stringify({schema:1,accountId,payload,pending,base:localBase.current,expiresAt:Date.now()+30*24*60*60*1000}));if(live.current)setLocalSaved(true);if(localOnly)publish('idle',null);}
+  catch{if(live.current)setLocalSaved(false);if(localOnly)publish('fail','UNAVAILABLE');}
+ },[accountId,valid,storageKey,localOnly,publish]);
  const checkpoint=useCallback((payload:AccountPrepDraftPayload)=>{
   if(!valid()||!dirty.current)return;
   const merged={...localPayload.current,...payload};
-  lastPatch.current=merged;persist(merged,true);syncRequested.current=true;
-  if(checkpointTimer.current)clearTimeout(checkpointTimer.current);
-  checkpointTimer.current=setTimeout(()=>{
-   checkpointTimer.current=null;
-   if(!valid()||!loaded.current||blocked.current||!lastPatch.current||!parseAccountPrepDraftPatch(lastPatch.current).ok)return;
-   if(inFlight.current){queued.current=lastPatch.current;return;}
-   syncRequested.current=false;void writeRunner.current(lastPatch.current);
-  },800);
+  lastPatch.current=merged;persist(merged,true);
  },[persist,valid]);
  const load=useCallback((explicit:boolean):Promise<boolean>=>{
   if(!valid()||inFlight.current)return Promise.resolve(false);
@@ -109,8 +101,8 @@ export function useAccountPrepDraft({accountId,captureToken='',isCurrent,restore
    return true;
   }).catch(()=>{if(ours()&&epoch===readEpoch.current){publish('fail','UNAVAILABLE');}return false;});
  },[accountId,ours,persist,publish,scope,valid]);
- useEffect(()=>{void load(false);},[load]);
- const reload=useCallback(()=>{if(!valid()||inFlight.current)return Promise.resolve(false);return load(true);},[load,valid]);
+ useEffect(()=>{if(!localOnly)void load(false);},[load,localOnly]);
+ const reload=useCallback(()=>{if(localOnly||!valid()||inFlight.current)return Promise.resolve(false);return load(true);},[load,valid,localOnly]);
  const markEdited=useCallback(()=>{if(valid()){dirty.current=true;editGen.current++;}},[valid]);
  const hasUnconfirmedChanges=useCallback(()=>dirty.current||Boolean(inFlight.current)||Boolean(queued.current),[ ]);
  useEffect(()=>{
@@ -173,6 +165,7 @@ export function useAccountPrepDraft({accountId,captureToken='',isCurrent,restore
 
  const save=useCallback(async(patch:AccountPrepDraftPayload):Promise<AccountPrepDraftResult<AccountPrepDraftRecord>|null>=>{
   if(!ours())return null;
+  if(localOnly){persist({...localPayload.current,...patch},true);return null;}
   lastPatch.current=patch;dirty.current=true;syncRequested.current=true;persist(patch,true);
   if(!loaded.current||blocked.current){const code=blocked.current??'UNAVAILABLE';publish('fail',code);return {ok:false,code};}
   if(inFlight.current){
@@ -185,7 +178,7 @@ export function useAccountPrepDraft({accountId,captureToken='',isCurrent,restore
    return record.current?{ok:true,data:record.current}:{ok:false,code:'UNAVAILABLE'};
   }
   return writeRunner.current(patch);
- },[ours,persist,publish]);
+ },[ours,persist,publish,localOnly]);
 
  const awaitConfirmed=useCallback(async():Promise<AccountPrepDraftResult<AccountPrepDraftRecord>|null>=>{
   if(!ours())return null;
@@ -204,13 +197,15 @@ export function useAccountPrepDraft({accountId,captureToken='',isCurrent,restore
  /** Reconnect without replacing local edits. Conflicts require explicit server reload. */
  const retrySave=useCallback(async():Promise<AccountPrepDraftResult<AccountPrepDraftRecord>|null>=>{
   if(!ours())return null;
+  if(localOnly){if(localPayload.current)persist(localPayload.current,true);return null;}
   if(blocked.current==='CONFLICT')return {ok:false,code:'CONFLICT'};
   if(!loaded.current && !await load(false))return {ok:false,code:blocked.current??'UNAVAILABLE'};
   const patch=lastPatch.current;
   if(!patch)return record.current?{ok:true,data:record.current}:null;
   blocked.current=null;return save(patch);
- },[ours,load,save]);
+ },[ours,load,save,localOnly,persist]);
  useEffect(()=>{
+  if(localOnly)return;
   const retry=()=>{if(valid() && (dirty.current || !loaded.current) && !inFlight.current && (!blocked.current || blocked.current==='UNAVAILABLE'))void retrySave();};
   if(typeof window==='undefined'||typeof window.addEventListener!=='function')return;
   window.addEventListener('online',retry);
@@ -219,7 +214,7 @@ export function useAccountPrepDraft({accountId,captureToken='',isCurrent,restore
   // Initial read failures also retry; clean/confirmed drafts never poll.
   const timer=saved.scope===scope && saved.status==='fail' && saved.code==='UNAVAILABLE'?window.setTimeout(retry,15000):undefined;
   return()=>{window.removeEventListener('online',retry);window.removeEventListener('focus',retry);if(timer!==undefined)window.clearTimeout(timer);};
- },[retrySave,saved,scope,valid]);
+ },[retrySave,saved,scope,valid,localOnly]);
 
  return {
   hydrated:hydration.scope===scope&&hydration.kind==='ready',

@@ -9,10 +9,31 @@ const ACCOUNT='22222222-2222-4222-8222-222222222222';
 const record=(name='Saved',version=7)=>({draftId:'11111111-1111-4111-8111-111111111111',accountId:ACCOUNT,payload:{name},version,state:'active' as const,createdAt:'2026-10-25T00:00:00Z',updatedAt:'2026-10-25T00:00:00Z',expiresAt:'2027-02-25T00:00:00Z'});
 function deferred<T=unknown>(){let resolve!:(value:T)=>void;const promise=new Promise<T>(ok=>{resolve=ok;});return {promise,resolve};}
 let api:ReturnType<typeof useAccountPrepDraft>,root:Root,host:HTMLDivElement,current=true;
-function Fixture({scope='a',accountId=ACCOUNT}:{scope?:string;accountId?:string}){const [name,setName]=useState('');const draft=useAccountPrepDraft({accountId,captureToken:scope,isCurrent:()=>current,restore:payload=>setName(payload.name??'')});useLayoutEffect(()=>{api=draft;},[draft]);return createElement('input',{value:name,onChange:(event:React.ChangeEvent<HTMLInputElement>)=>{draft.markEdited();setName(event.target.value);},'data-value':name});}
+function Fixture({scope='a',accountId=ACCOUNT,localOnly=false}:{scope?:string;accountId?:string;localOnly?:boolean}){const [name,setName]=useState('');const draft=useAccountPrepDraft({accountId,captureToken:scope,isCurrent:()=>current,localOnly,restore:payload=>setName(payload.name??'')});useLayoutEffect(()=>{api=draft;},[draft]);return createElement('input',{value:name,onChange:(event:React.ChangeEvent<HTMLInputElement>)=>{draft.markEdited();setName(event.target.value);},'data-value':name});}
 async function render(scope='a',accountId=ACCOUNT){await act(async()=>root.render(createElement(Fixture,{key:scope,scope,accountId})));}
 beforeEach(()=>{vi.resetAllMocks();localStorage.clear();current=true;vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);host=document.createElement('div');document.body.appendChild(host);root=createRoot(host);actions.read.mockResolvedValue({ok:true,data:null});});
 afterEach(async()=>{await act(async()=>root.unmount());host.remove();vi.useRealTimers();vi.unstubAllGlobals();});
+it('local-only preparation survives reload without reading or writing a server draft',async()=>{
+ await act(async()=>root.render(createElement(Fixture,{localOnly:true})));
+ await act(async()=>{api.markEdited();api.checkpoint({name:'VELORA QA',phone:''});await api.save({name:'VELORA QA',phone:''});window.dispatchEvent(new Event('focus'));});
+ await act(async()=>root.render(createElement(Fixture,{key:'reload',localOnly:true})));
+ expect(host.querySelector('input')?.value).toBe('VELORA QA');expect(actions.read).not.toHaveBeenCalled();expect(actions.save).not.toHaveBeenCalled();
+});
+it('does not replace a local preparation with an old server draft',async()=>{
+ localStorage.setItem('velora:account-prep:v1:'+ACCOUNT,JSON.stringify({schema:1,accountId:ACCOUNT,payload:{name:'Local'},pending:false,expiresAt:Date.now()+60000}));
+ actions.read.mockResolvedValue({ok:true,data:record('Old server')});
+ await act(async()=>root.render(createElement(Fixture,{localOnly:true})));
+ expect(host.querySelector('input')?.value).toBe('Local');expect(actions.read).not.toHaveBeenCalled();
+});
+it('reports local storage failure without sending the preparation to the server',async()=>{
+ await act(async()=>root.render(createElement(Fixture,{localOnly:true})));
+ const write=vi.spyOn(Storage.prototype,'setItem').mockImplementation(()=>{throw Error('storage unavailable');});
+ await act(async()=>{api.markEdited();api.checkpoint({name:'Local'});});
+ expect(api.localSaved).toBe(false);expect(api.saveStatus).toBe('fail');expect(actions.save).not.toHaveBeenCalled();
+ write.mockRestore();
+ await act(async()=>{await api.retrySave();});
+ expect(api.localSaved).toBe(true);expect(api.saveStatus).toBe('idle');
+});
 it('preserves edits made before late hydration and uses the proven native version',async()=>{
  const read=deferred();actions.read.mockReturnValue(read.promise);await render();await act(async()=>{const input=host.querySelector('input')!;Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,'Typed');input.dispatchEvent(new Event('input',{bubbles:true}));});
  await act(async()=>read.resolve({ok:true,data:record()}));expect(host.querySelector('input')?.value).toBe('Typed');actions.save.mockResolvedValue({ok:true,data:record('Typed',8)});await act(async()=>{await api.save({name:'Typed'});});expect(actions.save).toHaveBeenCalledWith(expect.objectContaining({expectedVersion:7,draftId:record().draftId}));
@@ -179,9 +200,4 @@ it('keeps retrying temporary read failures then syncs the latest local payload',
 it('never automatically retries a conflict',async()=>{
  vi.useFakeTimers();actions.read.mockResolvedValue({ok:false,code:'CONFLICT'});await render();await act(async()=>{await api.save({name:'Local'});await vi.advanceTimersByTimeAsync(60000);window.dispatchEvent(new Event('online'));});
  expect(actions.read).toHaveBeenCalledTimes(1);expect(actions.save).not.toHaveBeenCalled();expect(api.code).toBe('CONFLICT');
-});
-it('syncs a partial checkpoint without requiring a phone or advancing checkout',async()=>{
- actions.save.mockResolvedValue({ok:true,data:record('VELORA QA',1)});await render();
- await act(async()=>{api.markEdited();api.checkpoint({name:'VELORA QA',phone:''});await new Promise(resolve=>setTimeout(resolve,900));});
- expect(actions.save).toHaveBeenCalledWith(expect.objectContaining({expectedAccountId:ACCOUNT,expectedVersion:0,patch:{name:'VELORA QA',phone:''}}));
 });

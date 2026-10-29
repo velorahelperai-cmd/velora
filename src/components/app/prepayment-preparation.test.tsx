@@ -19,6 +19,7 @@ const state = vi.hoisted(() => ({
   createReply: null as Promise<unknown> | null,
   componentKey: null as string | null,
   identity: { userId: "11111111-2222-4333-8444-555555555555" },
+  localStorageEnabled: false,
 }));
 
 vi.mock("@/lib/billing/es02/account-order-actions", () => ({
@@ -307,6 +308,11 @@ function openStudioIdentity(tree: InspectedElement): InspectedElement {
   return renderStudio();
 }
 
+function seedLocalPreparation(payload: Record<string, unknown>) {
+  state.localStorageEnabled = true;
+  window.localStorage.setItem(`velora:account-prep:v1:${state.identity.userId}`, JSON.stringify({schema:1, accountId:state.identity.userId, payload, pending:true, expiresAt:Date.now()+60000}));
+}
+
 beforeEach(() => {
   state.identity = { userId: "11111111-2222-4333-8444-555555555555" };
   state.review = null;
@@ -319,6 +325,8 @@ beforeEach(() => {
   state.isCurrent = true;
   state.ready = true;
   state.boundary = "boundary-a";
+  state.localStorageEnabled = false;
+  const localValues = new Map<string,string>();
   vi.stubGlobal("window", {
     matchMedia: () => ({
       matches: false,
@@ -331,9 +339,9 @@ beforeEach(() => {
     },
     cancelAnimationFrame: () => {},
     localStorage: {
-      getItem: () => null,
-      setItem: () => {},
-      removeItem: () => {},
+      getItem: (key:string) => state.localStorageEnabled ? localValues.get(key) ?? null : null,
+      setItem: (key:string,value:string) => { if(state.localStorageEnabled)localValues.set(key,value); },
+      removeItem: (key:string) => { localValues.delete(key); },
     },
   });
 });
@@ -1030,19 +1038,21 @@ it("stores whatsapp existing-use on activity and opens plans without a team-size
 });
 
 it('hydrates saved activity fields without dropping channel defaults or the primary branch',async()=>{
- const {readAccountPrepDraft}=await import('@/lib/tenancy/account-prep-draft-actions');vi.mocked(readAccountPrepDraft).mockResolvedValueOnce({ok:true,data:{draftId:'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',accountId:state.identity.userId,payload:{name:'Saved cafe',type:'broad:retail_ecommerce',country:'OM',city:'Muscat',phone:'+96892123456',website:{kind:'none'},whatsappExisting:'yes',goals:['support'],branches:[{name:'Main',city:'Muscat'}]},version:4,state:'active',createdAt:'2026-10-25T00:00:00Z',updatedAt:'2026-10-25T00:00:00Z',expiresAt:'2027-02-25T00:00:00Z'}});
+ seedLocalPreparation({name:'Saved cafe',type:'broad:retail_ecommerce',country:'OM',city:'Muscat',phone:'+96892123456',website:{kind:'none'},whatsappExisting:'yes',goals:['support'],branches:[{name:'Main',city:'Muscat'}]});
  renderStudio();await new Promise<void>(resolve=>setTimeout(resolve,0));const tree=openStudioIdentity(renderStudio());expect(findByAttr(tree,'data-field','name')?.props.value).toBe('Saved cafe');expect(findByAttr(tree,'data-whatsapp-existing','yes')?.props['aria-checked']).toBe(true);expect(findByAttr(tree,'data-goal','support')?.props['aria-pressed']).toBe(true);
 });
 
 it('accepts the C09 WhatsApp yes answer without requiring hidden later-stage details',async()=>{
+ state.localStorageEnabled=true;
  const tree=await openStudioPlans('yes');
  expect(findByAttr(tree,'data-setup-team-plans','true')).toBeTruthy();
  const {saveAccountPrepDraft}=await import('@/lib/tenancy/account-prep-draft-actions');
- expect(vi.mocked(saveAccountPrepDraft).mock.calls.at(-1)?.[0]).toMatchObject({patch:{whatsappExisting:'yes'}});
+ expect(vi.mocked(saveAccountPrepDraft)).not.toHaveBeenCalled();
+ const saved=JSON.parse(window.localStorage.getItem(`velora:account-prep:v1:${state.identity.userId}`)!);
+ expect(saved.payload.whatsappExisting).toBe('yes');
 });
 it('keeps a restored custom primary branch name when the business name changes',async()=>{
- const {readAccountPrepDraft}=await import('@/lib/tenancy/account-prep-draft-actions');
- vi.mocked(readAccountPrepDraft).mockResolvedValueOnce({ok:true,data:{draftId:'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',accountId:state.identity.userId,payload:{name:'Saved cafe',city:'Muscat',branches:[{name:'Custom main',city:'Salalah'}]},version:4,state:'active',createdAt:'2026-10-25T00:00:00Z',updatedAt:'2026-10-25T00:00:00Z',expiresAt:'2027-02-25T00:00:00Z'}});
+ seedLocalPreparation({name:'Saved cafe',city:'Muscat',branches:[{name:'Custom main',city:'Salalah'}]});
  renderStudio();await new Promise<void>(resolve=>setTimeout(resolve,0));let tree=openStudioIdentity(renderStudio());
  fireChange(findByAttr(tree,'data-field','name'),'Renamed cafe');tree=renderStudio();
  const slot=state.slots.find(s=>Array.isArray((s.value as {branches?:unknown})?.branches))!;
@@ -1050,8 +1060,8 @@ it('keeps a restored custom primary branch name when the business name changes',
 });
 
 it('preserves every restored branch on the next save',async()=>{
- const {readAccountPrepDraft,saveAccountPrepDraft}=await import('@/lib/tenancy/account-prep-draft-actions');
- vi.mocked(readAccountPrepDraft).mockResolvedValueOnce({ok:true,data:{draftId:'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',accountId:state.identity.userId,payload:{name:'Saved Cafe',type:'broad:retail_ecommerce',country:'OM',city:'Muscat',phone:'+96892123456',website:{kind:'none'},whatsappExisting:'no',goals:['support'],branches:[{name:'Main',city:'Muscat'},{name:'Second',city:'Salalah'}]},version:4,state:'active',createdAt:'2026-10-25T00:00:00Z',updatedAt:'2026-10-25T00:00:00Z',expiresAt:'2027-02-25T00:00:00Z'}});
+ const {saveAccountPrepDraft}=await import('@/lib/tenancy/account-prep-draft-actions');
+ seedLocalPreparation({name:'Saved Cafe',type:'broad:retail_ecommerce',country:'OM',city:'Muscat',phone:'+96892123456',website:{kind:'none'},whatsappExisting:'no',goals:['support'],branches:[{name:'Main',city:'Muscat'},{name:'Second',city:'Salalah'}]});
  renderStudio();await new Promise<void>(resolve=>setTimeout(resolve,0));const tree=renderStudio();
  const writesBefore=vi.mocked(saveAccountPrepDraft).mock.calls.length;
  await (findByAttr(tree,'data-setup-destination','plans')?.props.onClick as ()=>void|Promise<void>)();
@@ -1063,8 +1073,8 @@ it('preserves every restored branch on the next save',async()=>{
 });
 
 it.each([{kind:'none'} as const,{kind:'url',value:'https://example.com/'} as const])('preserves a restored website choice on the next save: %j',async website=>{
- const {readAccountPrepDraft,saveAccountPrepDraft}=await import('@/lib/tenancy/account-prep-draft-actions');
- vi.mocked(readAccountPrepDraft).mockResolvedValueOnce({ok:true,data:{draftId:'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',accountId:state.identity.userId,payload:{name:'Saved Cafe',type:'broad:retail_ecommerce',country:'OM',city:'Muscat',phone:'+96892123456',website,whatsappExisting:'no',goals:['support'],branches:[{name:'Main',city:'Muscat'}]},version:4,state:'active',createdAt:'2026-10-25T00:00:00Z',updatedAt:'2026-10-25T00:00:00Z',expiresAt:'2027-02-25T00:00:00Z'}});
+ const {saveAccountPrepDraft}=await import('@/lib/tenancy/account-prep-draft-actions');
+ seedLocalPreparation({name:'Saved Cafe',type:'broad:retail_ecommerce',country:'OM',city:'Muscat',phone:'+96892123456',website,whatsappExisting:'no',goals:['support'],branches:[{name:'Main',city:'Muscat'}]});
  renderStudio();await new Promise<void>(resolve=>setTimeout(resolve,0));const tree=renderStudio();
  const writesBefore=vi.mocked(saveAccountPrepDraft).mock.calls.length;
  await (findByAttr(tree,'data-setup-destination','plans')?.props.onClick as ()=>void|Promise<void>)();
