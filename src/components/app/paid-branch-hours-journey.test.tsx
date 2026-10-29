@@ -30,6 +30,16 @@ describe("PaidBranchHours radical fix & non-blocking UI journey", () => {
     hoursActionResolve = null;
   });
 
+  it("does not report unsaved changes when server JSON keys arrive in a different order", async () => {
+    const host=document.createElement("div"),root=createRoot(host);
+    try {
+      await act(async()=>root.render(createElement(PaidSetupStepHost,{read:null,locale:"en",scope:{...scope,boundaryFingerprint:"boundary"},step:"hours",isCurrent:()=>true})));
+      const schedule=Object.fromEntries(Object.entries(emptyBranchHours()).reverse()) as BranchHoursSnapshot["schedule"];
+      await act(async()=>hoursActionResolve?.({ok:true,snapshot:{scope,version:1,branchLabel:"Main",timezone:"Asia/Muscat",schedule},copyTargets:[]}));
+      expect(host.querySelector('[data-setup-unsaved="true"]')).toBeNull();
+    } finally {await act(async()=>root.unmount());}
+  });
+
   it("immediately renders the weekly schedule form inside PaidSetupStepHost without blocking navigation", async () => {
     const host = document.createElement("div");
     const root = createRoot(host);

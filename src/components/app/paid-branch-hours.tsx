@@ -72,7 +72,7 @@ function HoursForm(p: PaidBranchHoursProps) {
   if(p.snapshot&&sourceVersion!==p.snapshot.version){
     setSourceVersion(p.snapshot.version);
     if(!userEdited){setDraft(cloneBranchHours(p.snapshot.schedule));setConflictWithServer(false);}
-    else setConflictWithServer(JSON.stringify(draft)!==JSON.stringify(p.snapshot.schedule));
+    else setConflictWithServer(JSON.stringify(draft)!==JSON.stringify(cloneBranchHours(p.snapshot.schedule)));
   }
 
   const locked = busy || p.state.phase === "saving" || p.state.phase === "conflict";
@@ -85,8 +85,8 @@ function HoursForm(p: PaidBranchHoursProps) {
   const fingerprint = JSON.stringify([p.scope, p.snapshot?.version, draft, selected, p.copyTargets]);
   const confirming = copy.ok && confirmation === fingerprint;
 
-  const baseSchedule = p.snapshot?.schedule ?? emptyBranchHours();
-  const dirty = JSON.stringify(draft) !== JSON.stringify(baseSchedule);
+  const baseSchedule = p.snapshot ? cloneBranchHours(p.snapshot.schedule) : emptyBranchHours();
+  const dirty = userEdited && JSON.stringify(draft) !== JSON.stringify(baseSchedule);
   useSetupUnsavedChanges(dirty, p.isCurrent, p.locale);
 
   const label = (day: BranchHoursDay) => dayLabels[day][ar ? 0 : 1];
