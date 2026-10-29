@@ -225,7 +225,7 @@ export function projectTrustedBoundSelection(facts: PaidSlotFacts, binding: Trus
     reasonCodes: ["connection_not_verified"],
   }));
   const channelIds = channelSteps.map((item) => item.id);
-  const hours = step("hours", { required: true, status: "unavailable", dependencyIds: channelIds, reasonCodes: ["readiness_unavailable"] });
+  const hours = step("hours", { required: true, status: "pending", dependencyIds: [], reasonCodes: ["setup_incomplete"] });
   const knowledge = step("knowledge", { required: true, status: "unavailable", dependencyIds: ["hours"], reasonCodes: ["readiness_unavailable"] });
   const language = step("language", { required: true, status: "unavailable", dependencyIds: ["knowledge"], reasonCodes: ["automatic_language", "readiness_unavailable"] });
   const assistant = step("assistant_test", { required: true, status: "unavailable", dependencyIds: ["language"], reasonCodes: ["readiness_unavailable"] });

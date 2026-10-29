@@ -27,8 +27,9 @@ it.each(["foreign","unpaid","unavailable","stale","empty"] as const)("fails clos
  expect(html).not.toContain("data-step-id");expect(html).not.toContain('type="radio"');
 });
 it("cannot open a locked or unmounted step from controlled selection",()=>{
- expect(workspaceStepAllowed(read,scope,"hours",props.availableStepIds)).toBe(false);
- expect(render({activeStepId:"hours",renderStep:()=>{throw Error("Locked leaf mounted");}})).toContain("Choose an available step");
+ expect(workspaceStepAllowed(read,scope,"hours",props.availableStepIds)).toBe(true);
+ expect(workspaceStepAllowed(read,scope,"knowledge",props.availableStepIds)).toBe(false);
+ expect(render({activeStepId:"knowledge",renderStep:()=>{throw Error("Locked leaf mounted");}})).toContain("Choose an available step");
  expect(render({availableStepIds:[]})).not.toContain('type="radio"');
 });
 it("keeps launch gated even after all other statuses are verified",()=>{
@@ -36,18 +37,21 @@ it("keeps launch gated even after all other statuses are verified",()=>{
  expect(workspaceStepAllowed(complete,scope,"launch",props.availableStepIds)).toBe(false);
 });
 it("only mounts a released leaf after authoritative dependencies become ready",()=>{
- const updated={...read,steps:read.steps.map(s=>s.id==="connect_whatsapp"?{...s,status:"verified" as const}:s.id==="hours"?{...s,status:"pending" as const,actionId:"save_hours"}:s),progress:{...read.progress,verified:1}};
- expect(render({read:updated,activeStepId:"hours",renderStep:id=>createElement("p",null,"Existing leaf: "+id)})).toContain("Existing leaf: hours");
+ const updated={...read,steps:read.steps.map(s=>s.id==="hours"?{...s,status:"verified" as const}:s.id==="knowledge"?{...s,status:"pending" as const,actionId:"save_knowledge"}:s),progress:{...read.progress,verified:1}};
+ expect(render({read:updated,activeStepId:"knowledge",renderStep:id=>createElement("p",null,"Existing leaf: "+id)})).toContain("Existing leaf: knowledge");
  expect(read.progress.verified).toBe(0);
 });
 it("uses RTL and a collapsed accessible mobile step control",()=>{
  const html=render({locale:"ar"});expect(html).toContain('dir="rtl"');expect(html).toContain('aria-expanded="false"');expect(html).toContain('tabindex="-1"');
 });
-it("advances within the page only after server-confirmed channel and matching proof",()=>{
+it("advances within the page only after server-confirmed channel and matching proof, and resumes incomplete business steps when WhatsApp is pending",()=>{
  const proof={...unavailablePaidBranchConnectionRead({...scope,channel:"whatsapp"},"now","source_failed"),sourceStatus:"ready" as const,connection:{state:"connected" as const,verified:true,link:{id:"link",generation:2},attempt:null,flow:"wa_new_number" as const,reasonCodes:[]}};
  const snapshot={scope,read:{...read,steps:read.steps.map(s=>s.id==="connect_whatsapp"?{...s,status:"verified" as const,reasonCodes:[]}:s),progress:{...read.progress,verified:1}},connectionReads:{whatsapp:proof},confirmedChannels:["whatsapp" as const]};
  expect(nextWorkspaceSelection(snapshot,"whatsapp")).toBe("hours");
  expect(nextWorkspaceSelection({...snapshot,confirmedChannels:[]},"whatsapp")).toBe("whatsapp");
  expect(nextWorkspaceSelection({...snapshot,connectionReads:{whatsapp:{...proof,expectedAccountId:"old"}}},"whatsapp")).toBe("whatsapp");
  expect(nextWorkspaceSelection(snapshot,"hours")).toBe("hours");
+ const hoursSaved={scope,read:{...read,steps:read.steps.map(s=>s.id==="hours"?{...s,status:"verified" as const,reasonCodes:[]}:s.id==="knowledge"?{...s,status:"pending" as const,reasonCodes:["setup_incomplete"]}:s),progress:{...read.progress,verified:1}},connectionReads:{},confirmedChannels:[]};
+ expect(nextWorkspaceSelection(hoursSaved,"hours")).toBe("knowledge");
+ expect(nextWorkspaceSelection(hoursSaved,null)).toBe("knowledge");
 });

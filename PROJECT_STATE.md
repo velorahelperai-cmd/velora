@@ -1,3 +1,27 @@
+# Current Session Index - SETUP-CONTINUE-WITHOUT-WA-AND-I02-3-LIVE-PASS-20261029
+
+- **Task 1 (`I02.3` — Fix Meta Test Inbound Reception & Live Verification) — PASS:**
+  - **Approved Production Migration Applied:** `supabase/migrations/20261029224500_fix_save_whatsapp_inbound_receive_only_schema.sql` applied to Supabase Production `vmpifljyozsbtssxhoxd` (`applied_version: "20261029190051"`).
+  - **Security & Permissions Verified:** `public.save_whatsapp_inbound_receive_only` verified `SECURITY DEFINER`, `search_path=""`, `anon_exec=false`, `auth_exec=false`, `service_role_exec=true`.
+  - **Live Inbound Message Verified in Production DB (`TAG CITY` / `40d2d885-8b63-49c4-b3da-d2e9566f2750`):**
+    - `public.whatsapp_conversations`: `id = f1d7b8b3-74d4-4163-8bf1-648d00b57f71`, `customer_wa_id = '96876351423'`, `phone_number_id = '1261345677073276'`, `status = 'open'`, `automation_allowed = false`.
+    - `public.whatsapp_messages`: `id = fa852a7f-3c3d-41ca-a418-ed48b4e1fd34`, `direction = 'inbound'`, `sender = 'customer'`, `message_type = 'text'`, `body = 'باتور'`, `wa_message_id = 'wamid.HBgLOTY4NzYzNTE0MjMVAgASGCBBNTJCNjk5MkUzRDY4NUM0M0Q5MDY4REM4NTM4NjJDMgA='`, `received_at = '2026-10-29T19:02:33+00:00'`.
+    - `public.whatsapp_inbound_jobs`: `id = f4da10e2-bfe4-4d2c-a7ca-126c3c9a6dab`, `status = 'completed'`, `result_code = 'SETUP_META_TEST_RECEIVE_ONLY'`, `attempt_count = 0`, `claim_token = null`, `completed_at = '2026-10-29T19:02:38.165054+00:00'`.
+    - Outbound / AI replies: `0` (`outbound_count = 0`). Commercial WhatsApp channel status remains unverified (`not_connected` / `pending`), subscription clock remains `waiting_readiness`, `WHATSAPP_WORKER_ENABLED=false`.
+
+- **Task 2 (Decouple `/setup` Business Setup Steps from Incomplete WhatsApp Connection) — IMPLEMENTED & VERIFIED:**
+  - **Contract & Progress Updates (`src/lib/tenancy/paid-setup-contracts.ts`, `src/lib/tenancy/paid-setup-progress.ts`):**
+    - Decoupled `hours` from channel connection dependencies (`dependencyIds: []`, initial `status: "pending"`, `reasonCodes: ["setup_incomplete"]`), allowing the customer to complete `hours` → `knowledge` → `language` → `assistant_test` (`test`) → `invitations` (`team`) with real server persistence while WhatsApp remains in its true unverified state (`pending` / `not_connected` / `reconciliation_required`).
+    - Kept `launch` strictly gated on `requiredBeforeLaunch` (`[...channelIds, "hours", "knowledge", "language", "assistant_test"]`) and server `readiness.status === "ready"` (`es02_read_owned_branch_launch_summary` / `es02_confirm_owned_branch_launch` still block on `channel_unverified:whatsapp`).
+  - **Workspace & Channel View Updates (`src/components/app/paid-setup-workspace.tsx`, `src/components/app/paid-channel-view.tsx`, `src/components/app/paid-assistant-checklist.tsx`, `src/components/app/paid-channel-view.module.css`):**
+    - Added **«استكمال إعداد النشاط»** (`"Continue business setup"`, `data-continue-business-setup`) button inside the canonical WhatsApp step (`PaidChannelView`) whenever WhatsApp is not verified (`channelStep?.status !== "verified" && !connection?.connection.verified`), navigating directly to `hours` inside `/setup`.
+    - Updated `nextWorkspaceSelection` and `PaidSetupBranchRead` enrichment so that saving a business setup step advances to the next open incomplete step (`hours` → `knowledge` → `language` → `test`) and reloading `/setup` after starting business setup resumes the first open incomplete business step without faking WhatsApp verification or inflating `progress.verified`.
+  - **Local Quality Gates:**
+    - Targeted Vitest: 12 test files, 164/164 PASS.
+    - `npm run typecheck`: PASS.
+    - `npx eslint` (scoped): PASS.
+    - `node scripts/ci/security.mjs`: PASS (2087 paths).
+
 # Current Session Index - I02-3-FIX-RECEIVE-ONLY-RPC-SCHEMA-20261029
 
 - **Task `I02.3` — Root Cause Fix for `public.save_whatsapp_inbound_receive_only`:**

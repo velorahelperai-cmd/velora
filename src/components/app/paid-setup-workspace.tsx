@@ -14,16 +14,43 @@ export function nextWorkspaceSelection(snapshot:PaidSetupWorkspaceRead,previous:
   const model=paidChecklistFromRead(snapshot.read,snapshot.scope);
   const steps=model?checklistSteps(model):[];
   if(!steps.length)return null;
-  const selected=previous&&steps.some(step=>step.id===previous)?previous:steps[0]!.id;
-  if(selected!=="whatsapp"&&selected!=="instagram")return selected;
-  const proof=snapshot.connectionReads[selected],step=steps.find(item=>item.id===selected)!;
-  if(!snapshot.confirmedChannels.includes(selected)||step.status!=="verified"||step.reasonCodes.length||
-    !proof||proof.sourceStatus!=="ready"||proof.expectedAccountId!==snapshot.scope.expectedAccountId||
-    proof.companyId!==snapshot.scope.companyId||proof.branchId!==snapshot.scope.branchId||proof.channel!==selected||
-    proof.connection.state!=="connected"||!proof.connection.verified||proof.connection.reasonCodes.length||
-    !proof.connection.link||!Number.isSafeInteger(proof.connection.link.generation)||proof.connection.link.generation<1)return selected;
-  // Choosing the next screen never grants its controls readiness.
-  return steps.slice(steps.findIndex(item=>item.id===selected)+1).find(item=>item.status!=="verified"&&item.status!=="skipped_optional")?.id??selected;
+  const isConfirmedChannel=(channel:"whatsapp"|"instagram")=>{
+    const proof=snapshot.connectionReads[channel],step=steps.find(item=>item.id===channel);
+    return !!step&&snapshot.confirmedChannels.includes(channel)&&step.status==="verified"&&step.reasonCodes.length===0&&
+      !!proof&&proof.sourceStatus==="ready"&&proof.expectedAccountId===snapshot.scope.expectedAccountId&&
+      proof.companyId===snapshot.scope.companyId&&proof.branchId===snapshot.scope.branchId&&proof.channel===channel&&
+      proof.connection.state==="connected"&&proof.connection.verified&&proof.connection.reasonCodes.length===0&&
+      !!proof.connection.link&&Number.isSafeInteger(proof.connection.link.generation)&&proof.connection.link.generation>=1;
+  };
+  const stepOpen=(id:ChecklistStepId)=>{
+    const step=steps.find(item=>item.id===id);
+    if(!step)return false;
+    const dependencies=step.dependencyIds.every(dep=>steps.some(item=>item.id===dep&&(item.status==="verified"||(item.id==="team"&&item.status==="skipped_optional"))));
+    if(id==="launch")return model!.launch.canRequest&&dependencies;
+    return step.actionId!==null&&(step.status==="verified"||step.status==="skipped_optional"||(step.status==="pending"&&dependencies));
+  };
+  const nonChannelSteps=steps.filter(item=>item.id!=="whatsapp"&&item.id!=="instagram");
+  const businessSetupStarted=nonChannelSteps.some(item=>item.status==="verified");
+  const nextIncompleteOpen=(fromIndex=0)=>steps.slice(fromIndex).find(item=>item.status!=="verified"&&item.status!=="skipped_optional"&&stepOpen(item.id))?.id??null;
+  const nextBusinessIncomplete=nonChannelSteps.find(item=>item.status!=="verified"&&item.status!=="skipped_optional"&&stepOpen(item.id))?.id??null;
+  if(!previous||!steps.some(step=>step.id===previous)){
+    if(businessSetupStarted&&nextBusinessIncomplete)return nextBusinessIncomplete;
+    const first=steps[0]!.id;
+    if((first==="whatsapp"||first==="instagram")&&isConfirmedChannel(first)){
+      return nextIncompleteOpen(1)??first;
+    }
+    return first;
+  }
+  const selected=previous;
+  if(selected==="whatsapp"||selected==="instagram"){
+    if(!isConfirmedChannel(selected))return selected;
+    return nextIncompleteOpen(steps.findIndex(item=>item.id===selected)+1)??selected;
+  }
+  const currentStep=steps.find(item=>item.id===selected);
+  if(currentStep&&currentStep.status==="verified"){
+    return nextIncompleteOpen(steps.findIndex(item=>item.id===selected)+1)??nextIncompleteOpen(0)??selected;
+  }
+  return selected;
 }
 
 const titles:Record<ChecklistStepId,readonly [string,string]>={
@@ -152,7 +179,7 @@ function Workspace(p:PaidSetupWorkspaceProps) {
         </header>
         <div className={styles.body} key={active}>
           {!active||!allowed?<p role="status">{t("اختر خطوة متاحة. تُفتح الخطوات بعد تحقق متطلباتها.","Choose an available step. Steps open after their prerequisites are verified.")}</p>:
-            active==="whatsapp"||active==="instagram"?<PaidChannelView locale={p.locale} scope={p.scope} read={p.read} channel={active} connectionRead={p.connectionReads?.[active]} isCurrent={p.isCurrent} onRefresh={refresh} hideStatusBadge={p.statusInHeader}/>:
+            active==="whatsapp"||active==="instagram"?<PaidChannelView locale={p.locale} scope={p.scope} read={p.read} channel={active} connectionRead={p.connectionReads?.[active]} isCurrent={p.isCurrent} onRefresh={refresh} onContinueSetup={active==="whatsapp"&&workspaceStepAllowed(p.read,p.scope,"hours",p.availableStepIds)?()=>select("hours"):undefined} hideStatusBadge={p.statusInHeader}/>:
               p.renderStep?.(active)??<p role="status">{t("هذه الشاشة غير متاحة بعد. لم تتغير حالة الخطوة.","This screen is not available yet. The step status has not changed.")}</p>}
         </div>
       </section>

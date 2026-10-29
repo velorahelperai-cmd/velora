@@ -65,6 +65,8 @@ export type PaidChannelViewProps = {
   isCurrent?: () => boolean;
   /** Trigger authoritative B1 + B3 reread in parent workspace. */
   onRefresh?: () => void;
+  /** Navigate directly to Business Hours while WhatsApp connection is incomplete. */
+  onContinueSetup?: () => void;
   /** Optional dependency injection for tests. */
   actions?: PaidChannelViewActions;
 };
@@ -219,7 +221,7 @@ export function PaidChannelView(props: PaidChannelViewProps) {
   return <ChannelView key={identity} {...props}/>;
 }
 
-function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, onRefresh, actions,hideStatusBadge}: PaidChannelViewProps) {
+function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, onRefresh, onContinueSetup, actions,hideStatusBadge}: PaidChannelViewProps) {
   const [route, setRoute] = useState<"new-number" | "coexistence" | null>(null);
   const [screen, setScreen] = useState<"choice" | "guide" | "requirements">("choice");
   const [pin, setPin] = useState("");
@@ -732,7 +734,8 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
             <small>{value==="new-number"?t("رقم تملكه وغير مرتبط بحساب واتساب أو مزود آخر. سنراجع متطلبات التحقق قبل المتابعة.","A number you own that is not linked to WhatsApp or another provider. Review verification requirements before continuing."):t("Coexistence: استمر في استخدام التطبيق على هاتفك مع إدارة المحادثات من فيلورا، إذا كان حسابك مؤهلًا. لا تحذف حسابك أو تفصل الرقم.","Coexistence: keep using the app on your phone while managing conversations in Velora, if your account is eligible. Do not delete your account or disconnect your number.")}</small>
           </label>)}
         </fieldset>
-        <button className={styles.primary} type="button" data-route-continue disabled={!route || !!inFlight} onClick={()=>{if(checkCurrent())setScreen("requirements");}}>{t("متابعة إلى الربط مع Facebook","Continue to Facebook connection")}</button></div></div></>}
+        <button className={styles.primary} type="button" data-route-continue disabled={!route || !!inFlight} onClick={()=>{if(checkCurrent())setScreen("requirements");}}>{t("متابعة إلى الربط مع Facebook","Continue to Facebook connection")}</button>
+        {onContinueSetup && channelStep?.status !== "verified" && !connection?.connection.verified && <button className={styles.back} type="button" data-continue-business-setup disabled={!!inFlight} onClick={()=>{if(checkCurrent())onContinueSetup();}}>{t("استكمال إعداد النشاط","Continue business setup")}</button>}</div></div></>}
         {screen==="guide"&&route&&<div data-wa-screen="guide"><button type="button" className={styles.back} data-back-to-choice onClick={()=>setScreen("choice")}>{t("رجوع","Go back")}</button><WhatsappConnectionGuide route={route} locale={locale} connectionStatus={effectiveRead === undefined ? t("دليل الربط", "Connection guide") : channelConnectionLabel(connection, locale)} connectEnabled={!!selectedWhatsappFlow && viewModel.canStartFlow(selectedWhatsappFlow)} connecting={inFlight === "starting" || inFlight === "completing"} onConnect={()=>setScreen("requirements")} onReviewRequirements={()=>setScreen("requirements")} feedback={feedback}/></div>}
         {screen==="requirements"&&route&&!awaitingPin&&<div className={styles.requirements} data-wa-screen="requirements">
           <p className={styles.stageCaption}>{t("الخطوة ٢/٢","Step 2/2")}</p>
@@ -745,7 +748,10 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
             </label>
           </div>}
           <WhatsappConnectionGuide route={route} locale={locale} connectionStatus={channelConnectionLabel(connection,locale)} connectEnabled={(popupReady || canStartSelectedWhatsapp)&&!inFlight} connecting={!!inFlight} preparing={!popupReady} onConnect={popupReady ? handlePreparedFacebook : ()=>void handleWhatsappConnect()} feedback={feedback}/>
-          <button type="button" className={styles.back} disabled={!!inFlight || popupReady} onClick={()=>setScreen("choice")}>{t("رجوع","Go back")}</button>
+          <div className={styles.requirementActions}>
+            <button type="button" className={styles.back} disabled={!!inFlight || popupReady} onClick={()=>setScreen("choice")}>{t("رجوع","Go back")}</button>
+            {onContinueSetup && channelStep?.status !== "verified" && !connection?.connection.verified && <button type="button" className={styles.back} data-continue-business-setup disabled={!!inFlight || popupReady} onClick={()=>{if(checkCurrent())onContinueSetup();}}>{t("استكمال إعداد النشاط","Continue business setup")}</button>}
+          </div>
         </div>}
       </> : <div className={styles.instagram}>
         <h3>{t("حساب Instagram الاحترافي", "Instagram professional account")}</h3>

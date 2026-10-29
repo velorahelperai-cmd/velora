@@ -116,7 +116,7 @@ function PaidSetupBranchRead(p:PaidSetupFlowProps&{branchId:string;refreshVersio
    if(connectionFirst&&result.read.entitlement)void readOwnedPaidSetupDetailsAction(input,result.read.entitlement.orderGroupId).then(details=>{
      if(!active||request!==generation.current||!isCurrent()||!details||details.scope.expectedAccountId!==input.expectedAccountId||details.scope.companyId!==input.companyId||details.scope.branchId!==branchId)return;
      const enriched={...result,read:composePaidSetupProgress(result.read,details.summary),activation:details.activation};
-     setSnapshot(enriched);onWorkspaceRead?.(enriched);
+     setSnapshot(enriched);onWorkspaceRead?.(enriched);setSelected(previous=>nextWorkspaceSelection(enriched,previous));
    }).catch(()=>{/* Optional metadata remains unknown; connection controls stay usable. */});
   }).catch(()=>{if(active&&request===generation.current&&isCurrent()){setSnapshot(null);onWorkspaceRead?.(null);}}).finally(endTiming);
   return()=>{active=false;};
