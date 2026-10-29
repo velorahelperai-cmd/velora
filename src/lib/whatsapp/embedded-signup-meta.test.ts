@@ -1,5 +1,7 @@
 import {describe,expect,it,vi} from "vitest";
 vi.mock("server-only",()=>({}));
+const logSpy=vi.hoisted(()=>vi.fn());
+vi.mock("@/lib/logging/logger.mjs",()=>({logEvent:logSpy}));
 import {exchangeEarlyMetaAuthorization,onboardMetaSignup, type MetaSignupConfig} from "./embedded-signup-meta";
 
 const config:MetaSignupConfig={enabled:true,appId:"111",appSecret:"secret",systemUserToken:"system",graphVersion:"v25.0"};
@@ -42,12 +44,19 @@ describe("Meta Embedded Signup verification",()=>{
   expect(r).toEqual({ok:false,code:"NEEDS_SETUP"});expect(f.writes).toEqual([]);
  });
  it.each([
-  {data:{...debug.data,app_id:"999"}},
-  {data:{...debug.data,is_valid:false}},
-  {data:{...debug.data,granular_scopes:[{scope:"whatsapp_business_management",target_ids:["222"]},{scope:"whatsapp_business_messaging",target_ids:["999"]}]}},
-  {data:{...debug.data,expires_at:1}},
- ])("rejects wrong-app, revoked, ungranted, or expired tokens before writes",async bad=>{
+  [{data:{...debug.data,app_id:"999"}},"APP_ID_MISMATCH"],
+  [{data:{...debug.data,is_valid:false}},"TOKEN_INVALID"],
+  [{data:{...debug.data,granular_scopes:[{scope:"whatsapp_business_management",target_ids:["222"]},{scope:"whatsapp_business_messaging",target_ids:["999"]}]}},"GRANULAR_WABA_NOT_GRANTED"],
+  [{data:{...debug.data,expires_at:1}},"TOKEN_EXPIRED"],
+ ])("rejects wrong-app, revoked, ungranted, or expired tokens before writes (%s)",async (bad,reason)=>{
+  logSpy.mockClear();
   const f=fake({debug:bad});expect(await onboardMetaSignup(config,input,f.http)).toEqual({ok:false,code:"META_AUTHORIZATION_REJECTED"});expect(f.writes).toEqual([]);
+  expect(logSpy).toHaveBeenCalledWith("warn","whatsapp.embedded_signup.meta_stage",expect.objectContaining({stage:"debug_token",outcome:"rejected",error_code:"META_AUTHORIZATION_REJECTED",reason_code:reason}));
+  const encoded=JSON.stringify(logSpy.mock.calls);
+  expect(encoded).not.toContain("business-secret");
+  expect(encoded).not.toContain("secret");
+  expect(encoded).not.toContain("ephemeral-code");
+  expect(encoded).not.toContain("123456");
  });
  it("requires the selected phone to belong to the granted WABA",async()=>{
   const f=fake({phone:{...phone,id:"444"}});expect(await onboardMetaSignup(config,input,f.http)).toEqual({ok:false,code:"META_ASSET_REJECTED"});expect(f.writes).toEqual([]);

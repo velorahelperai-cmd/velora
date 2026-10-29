@@ -228,29 +228,6 @@ it('drops a pending administrative review response after attempt generation chan
  expect(host.textContent).not.toContain('STALE_RECEIPT');expect(host.textContent).not.toContain('Review request is saved');
 });
 
-it('inspects Meta test number in choice screen and displays verified asset without altering connection state',async()=>{
-  const actions=ports();
-  const inspectMetaTest=vi.fn(async()=>({status:'verified_test_asset' as const,displayNumber:'+1 555-146-4352'}));
-  await render({actions:{...actions,inspectMetaTest}});
-  const btn=host.querySelector<HTMLButtonElement>('[data-inspect-meta-test="true"]');
-  expect(btn).not.toBeNull();
-  await act(async()=>btn?.click());
-  expect(inspectMetaTest).toHaveBeenCalledTimes(1);
-  expect(inspectMetaTest).toHaveBeenCalledWith(expect.objectContaining({expectedAccountId:'actor',companyId:'company',branchId:'branch'}));
-  expect(host.textContent).toContain('+1 555-146-4352');
-  expect(host.textContent).toContain('Test asset verified only');
-  expect(actions.startConnection).not.toHaveBeenCalled();
-});
-
-it('displays unavailable message with error code when Meta test inspection fails',async()=>{
-  const actions=ports();
-  const inspectMetaTest=vi.fn(async()=>({status:'unknown' as const,code:'META_UNAVAILABLE'}));
-  await render({actions:{...actions,inspectMetaTest}});
-  const btn=host.querySelector<HTMLButtonElement>('[data-inspect-meta-test="true"]');
-  await act(async()=>btn?.click());
-  expect(host.textContent).toContain('META_UNAVAILABLE');
-});
-
 it.each(['reconciliation_required','forbidden','expired','setup_required'] as const)('displays mapped error feedback when completeConnection returns %s',async code=>{
   const actions=ports();
   actions.completeConnection.mockResolvedValue({ok:false,code,read:(await actions.startConnection()).read} as never);

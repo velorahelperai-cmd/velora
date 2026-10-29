@@ -225,29 +225,45 @@ export async function captureOwnedWhatsappAuthorizationAction(input:PaidBranchCo
 
 /** Read provider registration state after Facebook authorization, before the native completion claim. */
 export async function prepareOwnedWhatsappRegistrationAction(input:CompleteOwnedPaidBranchConnectionInput):Promise<{ok:true;registrationRequired:boolean;autoPinEligible?:boolean;authorizationTicket:string}|{ok:false}>{
- const asOf=new Date().toISOString(),request=attemptRequest(input,asOf);
- if('ok' in request||request.flow!=='wa_new_number')return {ok:false};
- const row=input.completion as Record<string,unknown>;
- if(!row||row.attemptId!==request.attemptId||typeof row.nonce!=='string'||!/^[0-9a-f]{64}$/.test(row.nonce)||typeof row.code!=='string'||!row.code||row.code.length>4096||typeof row.wabaId!=='string'||!/^\d{1,64}$/.test(row.wabaId)||typeof row.phoneNumberId!=='string'||!/^\d{1,64}$/.test(row.phoneNumberId)||row.pin!==''||row.authorizationTicket!==undefined)return {ok:false};
- const session=await sessionClient(request.expectedAccountId,randomUUID(),asOf,request);if('ok' in session)return {ok:false};
- const current=await runPaidBranchConnectionRead(request,createPaidBranchConnectionStore(session.client,session.client,asOf),asOf);
- const attempt=current.read.connection.attempt;
- if(current.read.sourceStatus!=='ready'||current.read.connection.flow!=='wa_new_number'||attempt?.id!==request.attemptId||attempt.generation!==request.generation||attempt.status!=='pending'||Date.parse(attempt.expiresAt)<=Date.now())return {ok:false};
- const config=embeddedSignupClientConfig(),appSecret=process.env.WHATSAPP_APP_SECRET?.trim()??'';
- if(!config.ok||!appSecret)return {ok:false};
- const admin=createAdminClient();if(!admin)return {ok:false};
- const binding=signupCheckpointBinding(request,session.sessionId);
+ const requestId=randomUUID(),started=Date.now(),asOf=new Date().toISOString();
+ const correlationId=typeof input?.attemptId==='string'&&UUID.test(input.attemptId)?input.attemptId.toLowerCase():requestId;
+ const stage=(name:string,since:number,outcome:string,code?:string)=>{try{logEvent('info','es02.branch_connection.prepare_stage',{correlation_id:correlationId,stage:name,duration_ms:Math.max(0,Date.now()-since),outcome,...(code?{error_code:code}:{}),...(input?.attemptId&&UUID.test(input.attemptId)?{attempt_id:input.attemptId.toLowerCase()}:{}),...(typeof input?.generation==='number'?{generation:input.generation}:{})});}catch{}};
+ return withLogContext({request_id:requestId},async()=>{
+  stage('validation',started,'started');
+  const request=attemptRequest(input,asOf);
+  if('ok' in request||request.flow!=='wa_new_number'){stage('validation',started,'denied','invalid_input');return {ok:false};}
+  const row=input.completion as Record<string,unknown>;
+  if(!row||row.attemptId!==request.attemptId||typeof row.nonce!=='string'||!/^[0-9a-f]{64}$/.test(row.nonce)||typeof row.code!=='string'||!row.code||row.code.length>4096||typeof row.wabaId!=='string'||!/^\d{1,64}$/.test(row.wabaId)||typeof row.phoneNumberId!=='string'||!/^\d{1,64}$/.test(row.phoneNumberId)||row.pin!==''||row.authorizationTicket!==undefined){stage('validation',started,'denied','invalid_completion');return {ok:false};}
+  stage('validation',started,'ok');
+  const sessionStarted=Date.now();
+  const session=await sessionClient(request.expectedAccountId,requestId,asOf,request);if('ok' in session){stage('session',sessionStarted,'denied',session.code);return {ok:false};}
+  stage('session',sessionStarted,'ok');
+  const attemptStarted=Date.now();
+  const current=await runPaidBranchConnectionRead(request,createPaidBranchConnectionStore(session.client,session.client,asOf),asOf);
+  const attempt=current.read.connection.attempt;
+  if(current.read.sourceStatus!=='ready'||current.read.connection.flow!=='wa_new_number'||attempt?.id!==request.attemptId||attempt.generation!==request.generation||attempt.status!=='pending'||Date.parse(attempt.expiresAt)<=Date.now()){stage('attempt',attemptStarted,'denied',attempt?.status!=='pending'?'attempt_not_pending':'attempt_expired_or_mismatch');return {ok:false};}
+  stage('attempt',attemptStarted,'ok');
+  const config=embeddedSignupClientConfig(),appSecret=process.env.WHATSAPP_APP_SECRET?.trim()??'';
+  if(!config.ok||!appSecret){stage('prerequisites',started,'denied','setup_required');return {ok:false};}
+  const admin=createAdminClient();if(!admin){stage('prerequisites',started,'denied','admin_unavailable');return {ok:false};}
+  const binding=signupCheckpointBinding(request,session.sessionId);
   const earlyBinding={...binding,...config,nonce:row.nonce,wabaId:row.wabaId,phoneNumberId:row.phoneNumberId};
-  if(row.code!=='early-authorization'&&!await captureEarlyAuthorization(admin as unknown as PaidBranchConnectionRpc,earlyBinding,String(row.code),{...config,enabled:true,appSecret}))return {ok:false};
+  const tokenStarted=Date.now();
+  if(row.code!=='early-authorization'&&!await captureEarlyAuthorization(admin as unknown as PaidBranchConnectionRpc,earlyBinding,String(row.code),{...config,enabled:true,appSecret})){stage('token_capture',tokenStarted,'denied','early_capture_failed');return {ok:false};}
   const early=await earlyAuthorizationRpc(admin as unknown as PaidBranchConnectionRpc,'load',earlyBinding);
   const existing=early?null:parseSignupCheckpoint(await signupCheckpointRpc(admin as unknown as PaidBranchConnectionRpc,'load',binding));
-  if(existing&&(existing.wabaId!==row.wabaId||existing.phoneNumberId!==row.phoneNumberId||existing.nonce!==row.nonce||existing.appId!==config.appId||existing.configId!==config.configId||existing.graphVersion!==config.graphVersion))return {ok:false};
-  const token=early?.token??existing?.token;if(typeof token!=='string'||!token)return {ok:false};
+  if(existing&&(existing.wabaId!==row.wabaId||existing.phoneNumberId!==row.phoneNumberId||existing.nonce!==row.nonce||existing.appId!==config.appId||existing.configId!==config.configId||existing.graphVersion!==config.graphVersion)){stage('token_capture',tokenStarted,'denied','checkpoint_mismatch');return {ok:false};}
+  const token=early?.token??existing?.token;if(typeof token!=='string'||!token){stage('token_capture',tokenStarted,'denied','token_missing');return {ok:false};}
+  stage('token_capture',tokenStarted,'ok');
+  const probeStarted=Date.now();
   let registrationRequired:boolean|undefined;
-  await onboardMetaSignup({...config,enabled:true,appSecret},{code:'early-authorization',wabaId:String(row.wabaId),phoneNumberId:String(row.phoneNumberId),pin:'',keepOnPhone:false},fetch,{token,probe:true,capture:(_token,required)=>{registrationRequired=required;}});
-  if(registrationRequired===undefined)return {ok:false};
-  if(early&&!await earlyAuthorizationRpc(admin as unknown as PaidBranchConnectionRpc,'promote',earlyBinding))return {ok:false};
+  const probed=await onboardMetaSignup({...config,enabled:true,appSecret},{code:'early-authorization',wabaId:String(row.wabaId),phoneNumberId:String(row.phoneNumberId),pin:'',keepOnPhone:false},fetch,{token,probe:true,capture:(_token,required)=>{registrationRequired=required;}});
+  if(registrationRequired===undefined){stage('probe',probeStarted,'denied',!probed.ok?probed.code:'probe_failed');return {ok:false};}
+  stage('probe',probeStarted,'ok');
+  if(early&&!await earlyAuthorizationRpc(admin as unknown as PaidBranchConnectionRpc,'promote',earlyBinding)){stage('promote',probeStarted,'denied','promote_failed');return {ok:false};}
+  stage('complete',started,'ok');
   return {ok:true,registrationRequired,autoPinEligible:registrationRequired&&autoPinAllowed({companyId:request.companyId,branchId:request.branchId,phoneNumberId:String(row.phoneNumberId)}),authorizationTicket:sealSignupPreparation(appSecret,{...binding,nonce:String(row.nonce),wabaId:String(row.wabaId),phoneNumberId:String(row.phoneNumberId)},token)};
+ });
 }
 
 export async function completeOwnedPaidBranchConnectionAction(input: CompleteOwnedPaidBranchConnectionInput): Promise<PaidBranchConnectionMutation> {

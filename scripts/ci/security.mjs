@@ -17,7 +17,9 @@ for (const file of files) {
   if (forbiddenTrackedPath(file)) { failures.push({ file, rule: "private-path" }); continue; }
   // Never follow a tracked pointer into the permanently excluded knowledge store.
   if (/(?:^|\/)\.?obsidian(?:\/|$)/i.test(file)) continue;
-  if (lstatSync(join(root,file)).isSymbolicLink()) { failures.push({ file, rule: "tracked-symlink" }); continue; }
+  let stat;
+  try { stat = lstatSync(join(root, file)); } catch (err) { if (err && err.code === "ENOENT") continue; throw err; }
+  if (stat.isSymbolicLink()) { failures.push({ file, rule: "tracked-symlink" }); continue; }
   const content = readFileSync(join(root,file));
   if (content.includes(0)) continue;
   // Public anon examples may appear only in the explicit example template.
