@@ -1,5 +1,5 @@
 "use client";
-import {awaitSetupRequest} from "./paid-setup-request";
+import {observeSetupRead} from "./paid-setup-request";
 import {setupTiming,observeSetupUsable} from "@/lib/diagnostics/setup-timing";
 import { useCallback,useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import styles from "./paid-assistant-checklist.module.css";
@@ -58,7 +58,7 @@ function PaidSetupEntry(p:PaidSetupFlowProps&{retry:()=>void}) {
   const request=++generation.current;let active=true;
   if(!isCurrent())return;
   const endTiming=setupTiming('entry');
-  void awaitSetupRequest(readEntry({expectedAccountId:scope.expectedAccountId,companyId:scope.companyId})).then(result=>{
+  void observeSetupRead(readEntry({expectedAccountId:scope.expectedAccountId,companyId:scope.companyId}),()=>{if(active&&generation.current===request&&isCurrent())setEntry(null);}).then(result=>{
    if(active&&generation.current===request&&isCurrent())setEntry(result.companyId===scope.companyId?result:null);
   }).catch(()=>{if(active&&generation.current===request&&isCurrent())setEntry(null);}).finally(endTiming);
   return()=>{active=false;};
@@ -108,7 +108,7 @@ function PaidSetupBranchRead(p:PaidSetupFlowProps&{branchId:string;refreshVersio
   if(!isCurrent())return;
   const input={expectedAccountId:scope.expectedAccountId,companyId:scope.companyId,branchId};
   const endTiming=setupTiming('workspace');
-  void awaitSetupRequest(connectionFirst?readOwnedPaidSetupWorkspaceAction({...input,connectionFirst:true}):readWorkspace(input)).then(result=>{
+  void observeSetupRead(connectionFirst?readOwnedPaidSetupWorkspaceAction({...input,connectionFirst:true}):readWorkspace(input),()=>{if(active&&request===generation.current&&isCurrent()){setRefreshFailed(true);setSnapshot(previous=>previous===undefined?null:previous);}}).then(result=>{
    if(!active||request!==generation.current||!isCurrent())return;
    if(!result){setRefreshFailed(true);setSnapshot(previous=>previous===undefined?null:previous);return;}
    if(result.scope.expectedAccountId!==input.expectedAccountId||result.scope.companyId!==input.companyId||result.scope.branchId!==branchId||!paidChecklistFromRead(result.read,input)){setSnapshot(null);onWorkspaceRead?.(null);return;}
@@ -117,7 +117,7 @@ function PaidSetupBranchRead(p:PaidSetupFlowProps&{branchId:string;refreshVersio
    onWorkspaceRead?.(result);
    setSelected(previous=>nextWorkspaceSelection(result,previous));
    // Paint the authorized connection UI before optional setup metadata arrives.
-   if(connectionFirst&&result.read.entitlement)void awaitSetupRequest(readOwnedPaidSetupDetailsAction(input,result.read.entitlement.orderGroupId)).then(details=>{
+   if(connectionFirst&&result.read.entitlement)void observeSetupRead(readOwnedPaidSetupDetailsAction(input,result.read.entitlement.orderGroupId),()=>{}).then(details=>{
      if(!active||request!==generation.current||!isCurrent()||!details||details.scope.expectedAccountId!==input.expectedAccountId||details.scope.companyId!==input.companyId||details.scope.branchId!==branchId)return;
      const enriched={...result,read:composePaidSetupProgress(result.read,details.summary),activation:details.activation};
      setSnapshot(enriched);onWorkspaceRead?.(enriched);setSelected(previous=>previous??nextWorkspaceSelection(enriched,null));

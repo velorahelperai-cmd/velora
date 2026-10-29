@@ -11,7 +11,7 @@ vi.mock('@/lib/tenancy/paid-setup-workspace-actions',()=>({readOwnedPaidSetupWor
 const a='11111111-1111-4111-8111-111111111111',b='22222222-2222-4222-8222-222222222222';
 let root:Root,host:HTMLDivElement;
 beforeEach(()=>{vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);window.history.replaceState(null,'','/setup');host=document.createElement('div');document.body.append(host);root=createRoot(host);});
-afterEach(async()=>{await act(async()=>root.unmount());host.remove();vi.unstubAllGlobals();});
+afterEach(async()=>{vi.useRealTimers();await act(async()=>root.unmount());host.remove();vi.unstubAllGlobals();});
 async function mount(ids:string[],url='/setup',current=true,unavailable=false){
  window.history.replaceState(null,'',url);
  const readWorkspace=vi.fn(async(_input:{expectedAccountId:string;companyId:string;branchId:string})=>null);
@@ -24,18 +24,21 @@ it('preserves an explicit valid branch on refresh',async()=>{const read=await mo
 it('does not read a foreign explicit branch or silently substitute another',async()=>{const read=await mount([a],`/setup?branch=${b}`);expect(read).not.toHaveBeenCalled();});
 it.each([{ids:[],current:true,unavailable:false},{ids:[a],current:false,unavailable:false},{ids:[a],current:true,unavailable:true}])('does not default from empty, revoked or unavailable scope %j',async({ids,current,unavailable})=>{expect(await mount(ids,'/setup',current,unavailable)).not.toHaveBeenCalled();});
 
-it.each(['reject','unavailable'])('preserves the mounted draft after a workspace refresh %s',async outcome=>{
+it.each(['reject','unavailable','slow'])('preserves the mounted draft after a workspace refresh %s',async outcome=>{
  const scope={expectedAccountId:'account',companyId:'company',branchId:a};
  const read=projectTrustedBoundSelection({companyId:'company',branchId:a,branchLabel:'Main',orderGroupId:'order',slotIndex:0,persona:'level_1',package:'basic',term:'monthly',maxChannels:1,employeesExcludingOwner:2,clockState:'waiting_readiness',asOf:'now'},{channels:['whatsapp']});
  const workspace:PaidSetupWorkspaceRead={scope,read,connectionReads:{},confirmedChannels:[],activation:null};
  const readWorkspace=vi.fn().mockResolvedValueOnce(workspace);
- if(outcome==='reject')readWorkspace.mockRejectedValueOnce(new Error('offline'));else readWorkspace.mockResolvedValueOnce(null);
+ let finish!:(value:PaidSetupWorkspaceRead)=>void;
+ if(outcome==='reject')readWorkspace.mockRejectedValueOnce(new Error('offline'));else if(outcome==='slow'){vi.useFakeTimers();readWorkspace.mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve;}));}else readWorkspace.mockResolvedValueOnce(null);
  await act(async()=>root.render(createElement(PaidSetupFlow,{locale:'en',scope:{expectedAccountId:'account',companyId:'company',boundaryFingerprint:'boundary'},isCurrent:()=>true,readEntry:async():Promise<PaidBranchSetupEntryRead>=>({schemaVersion:1,sourceStatus:'selection_required',companyId:'company',selectedBranchId:null,branches:[{id:a,label:'Main',isPrimary:true}],asOf:'now',reasonCodes:[]}),readBranch:vi.fn(),readWorkspace})));
  const input=host.querySelector<HTMLInputElement>('input[aria-label="local draft"]')!;
  input.value='Keep local text';
  await act(async()=>Array.from(host.querySelectorAll('button')).find(b=>b.textContent==='Reload workspace')!.click());
+ if(outcome==='slow')await act(async()=>vi.advanceTimersByTimeAsync(15000));
  expect(readWorkspace).toHaveBeenCalledTimes(2);
  expect(host.querySelector('input[aria-label="local draft"]')).toBe(input);
  expect(input.value).toBe('Keep local text');
  expect(host.textContent).toContain('Setup status could not be refreshed');
+ if(outcome==='slow'){await act(async()=>finish(workspace));expect(host.textContent).not.toContain('Setup status could not be refreshed');expect(host.querySelector('input[aria-label="local draft"]')).toBe(input);expect(input.value).toBe('Keep local text');}
 });

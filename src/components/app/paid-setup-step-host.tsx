@@ -1,6 +1,6 @@
 "use client";
 
-import {awaitSetupRequest} from "./paid-setup-request";
+import {awaitSetupRequest,observeSetupRead} from "./paid-setup-request";
 import { useCallback, useLayoutEffect, useEffect, useMemo, useRef, useState } from "react";
 import type { ChecklistStepId } from "./paid-assistant-checklist";
 import type { PaidBranchSetupRead } from "@/lib/tenancy/paid-setup-contracts";
@@ -97,7 +97,6 @@ function StepHost(props: PaidSetupStepHostProps) {
     const timer = setTimeout(() => {
       if (!active || !isCurrentRef.current()) return;
       if (hoursInFlightKeyRef.current === scopeKey) {
-        hoursInFlightKeyRef.current = null;
         setHoursPhase("unavailable");
       }
     }, 10000);
@@ -117,7 +116,6 @@ function StepHost(props: PaidSetupStepHostProps) {
     }).catch(() => {
       clearTimeout(timer);
       if (active && isCurrentRef.current()) {
-        hoursInFlightKeyRef.current = null;
         setHoursPhase("unavailable");
       }
     });
@@ -138,7 +136,7 @@ function StepHost(props: PaidSetupStepHostProps) {
   useEffect(() => {
     if (step !== "knowledge" || !isCurrent()) return;
     let active = true;
-    void awaitSetupRequest(readOwnedBranchKnowledgeAction(targetScope)).then((snap) => {
+    void observeSetupRead(readOwnedBranchKnowledgeAction(targetScope),()=>{if(active&&isCurrent())setKnowledgePhase("unavailable");}).then((snap) => {
       if (!active || !isCurrent()) return;
       if (snap) {
         setKnowledgeSnap(snap);
@@ -159,7 +157,7 @@ function StepHost(props: PaidSetupStepHostProps) {
   useEffect(() => {
     if (step !== "language" || !isCurrent()) return;
     let active = true;
-    void awaitSetupRequest(readOwnedBranchReplyLanguageAction(targetScope)).then((snap) => {
+    void observeSetupRead(readOwnedBranchReplyLanguageAction(targetScope),()=>{if(active&&isCurrent())setLangPhase("unavailable");}).then((snap) => {
       if (!active || !isCurrent()) return;
       if (snap) {
         setLangSnap(snap);
@@ -180,7 +178,7 @@ function StepHost(props: PaidSetupStepHostProps) {
   useEffect(() => {
     if (step !== "test" || !isCurrent()) return;
     let active = true;
-    void awaitSetupRequest(readOwnedBranchAssistantTrialAction(targetScope)).then((snap) => {
+    void observeSetupRead(readOwnedBranchAssistantTrialAction(targetScope),()=>{if(active&&isCurrent())setTrialPhase("unavailable");}).then((snap) => {
       if (!active || !isCurrent()) return;
       if (snap) {
         setTrialSnap(snap);
@@ -201,7 +199,7 @@ function StepHost(props: PaidSetupStepHostProps) {
   useEffect(()=>{
     if(step!=='team'||!isCurrent())return;
     let active=true;
-    void awaitSetupRequest(readOwnedBranchTeamAction(targetScope)).then(snap=>{
+    void observeSetupRead(readOwnedBranchTeamAction(targetScope),()=>{if(active&&isCurrent())setTeamPhase("unavailable");}).then(snap=>{
       if(!active||!isCurrent())return;
       setTeamSnap(snap);setTeamPhase(snap?'ready':'unavailable');
     }).catch(()=>{if(active&&isCurrent())setTeamPhase('unavailable');});
@@ -215,7 +213,7 @@ function StepHost(props: PaidSetupStepHostProps) {
   useEffect(() => {
     if (step !== "launch" || !isCurrent()) return;
     let active = true;
-    void awaitSetupRequest(readOwnedBranchLaunchSummaryAction(targetScope)).then((snap) => {
+    void observeSetupRead(readOwnedBranchLaunchSummaryAction(targetScope),()=>{if(active&&isCurrent())setLaunchPhase("unavailable");}).then((snap) => {
       if (!active || !isCurrent()) return;
       if (snap) {
         setLaunchSnap(snap);

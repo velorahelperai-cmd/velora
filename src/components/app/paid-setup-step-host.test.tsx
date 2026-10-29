@@ -53,7 +53,7 @@ const baseProps: PaidSetupStepHostProps = {
 };
 
 describe("PaidSetupStepHost", () => {
-  it('bounds stalled team reads and ignores their late result',async()=>{
+  it('bounds stalled team loading and keeps a late unavailable result unconfirmed',async()=>{
     vi.useFakeTimers();vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);
     let finish!:(value:null)=>void;
     vi.mocked(readOwnedBranchTeamAction).mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve;}));
