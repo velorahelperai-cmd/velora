@@ -20,7 +20,7 @@ try{
  await stack.sql(identities);await stack.sql(await fixture('branch-chat-data'));
  for(const name of ['branch-isolation-catalog','branch-chat-catalog','branch-chat-rls-catalog','branch-chat-qa-live-scope','branch-chat-qa-rls'])await stack.sql('set check_function_bodies=off;'+(await fixture(name)).replace(/grant execute on function public.control_whatsapp_conversation[\s\S]*?to authenticated;/,''));
  await stack.sql(`alter table private.instagram_messages add account_id text;update private.instagram_messages set account_id=case when company_id='${id(21)}' then 'ig21' else 'ig22' end;alter table public.whatsapp_conversations add automation_allowed boolean default true,add control_revision integer default 0;create publication supabase_realtime;`);
- await stack.sql(await readFile('supabase/migrations/20261029021640_branch_inbox_realtime.sql','utf8'));
+ await stack.sql(await readFile('supabase/migrations/20261029024411_branch_inbox_realtime.sql','utf8'));
  await stack.sql('grant usage on schema public,auth to authenticated;');
  await delay(5000);
  const own=await subscribe(1,11),foreign=await subscribe(2,12);await delay(1500);
