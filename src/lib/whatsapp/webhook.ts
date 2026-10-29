@@ -287,7 +287,21 @@ export async function routeWebhookEvents(input: {
         result: "persisted",
         companyId: mapped.companyId,
       });
-    } catch {
+    } catch (error) {
+      const errObj = error instanceof Error ? (error as Error & { permanent?: unknown; code?: unknown }) : null;
+      const permanent =
+        errObj && errObj.permanent === true && typeof errObj.code === "string" ? errObj.code : null;
+      if (permanent) {
+        dispositions.push({
+          kind: "message",
+          phoneNumberId: message.phoneNumberId,
+          waMessageId: message.waMessageId,
+          result: "rejected",
+          code: permanent,
+          companyId: mapped.companyId,
+        });
+        continue;
+      }
       retry = true;
       dispositions.push({
         kind: "message",

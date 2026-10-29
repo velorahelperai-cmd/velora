@@ -7,6 +7,8 @@ import {WhatsappConnectionGuide} from "./whatsapp-connection-guide";
 import styles from "./paid-channel-view.module.css";
 import type {WhatsappReviewRequestInput,WhatsappReviewRequestResult,WhatsappReviewReceipt} from '@/lib/tenancy/whatsapp-review-request-actions';
 import {useSetupUnsavedChanges} from './paid-setup-unsaved';
+import type {SetupMetaTestScope} from "@/lib/tenancy/setup-meta-test";
+import type {SetupMetaTestInspection} from "@/lib/tenancy/setup-meta-test-actions";
 import {
   normalizeConfirmedPhone,
   type CancelOwnedPaidBranchConnectionInput,
@@ -51,6 +53,7 @@ export type PaidChannelViewActions = {
   readConnection?: (input: PaidBranchConnectionScope) => Promise<PaidBranchConnectionRead>;
   launchWhatsappSdk?: (launch: Extract<PaidBranchConnectionLaunch, { flow: "wa_new_number" | "wa_coexistence" }>) => Promise<WhatsappSdkPopupResult>;
   navigateToUrl?: (url: string) => void;
+  inspectMetaTest?: (scope: SetupMetaTestScope) => Promise<SetupMetaTestInspection>;
 };
 
 export type PaidChannelViewProps = {
@@ -74,8 +77,9 @@ type FbSdk = {
   login: (callback: (response: { authResponse?: { code?: unknown } }) => void, options: Record<string, unknown>) => void;
 };
 
-async function resolveDefaultActions(): Promise<Required<Pick<PaidChannelViewActions, "startConnection" | "completeConnection" | "recoverConnection" | "cancelConnection" | "prepareRegistration" | "readConnection" | "captureAuthorization">>> {
+async function resolveDefaultActions(): Promise<Required<Pick<PaidChannelViewActions, "startConnection" | "completeConnection" | "recoverConnection" | "cancelConnection" | "prepareRegistration" | "readConnection" | "captureAuthorization" | "inspectMetaTest">>> {
   const mod = await import("@/lib/tenancy/paid-branch-connection-actions");
+  const metaMod = await import("@/lib/tenancy/setup-meta-test-actions");
   return {
     captureAuthorization:mod.captureOwnedWhatsappAuthorizationAction,
     prepareRegistration:mod.prepareOwnedWhatsappRegistrationAction,
@@ -84,6 +88,7 @@ async function resolveDefaultActions(): Promise<Required<Pick<PaidChannelViewAct
     recoverConnection: mod.recoverOwnedPaidBranchConnectionAction,
     cancelConnection: mod.cancelOwnedPaidBranchConnectionAction,
     readConnection: mod.readOwnedPaidBranchConnectionAction,
+    inspectMetaTest: metaMod.inspectOwnedSetupMetaTestAction,
   };
 }
 
@@ -236,6 +241,8 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
   const [inFlight, setInFlight] = useState<"starting" | "completing" | "recovering" | "cancelling" | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [cancelUncertain, setCancelUncertain] = useState(false);
+  const [metaTestInspection, setMetaTestInspection] = useState<SetupMetaTestInspection | null>(null);
+  const [inspectingMetaTest, setInspectingMetaTest] = useState(false);
   const [reviewResult,setReviewReceipt]=useState<{key:string;receipt:WhatsappReviewReceipt|null}|null>(null);
   const reviewBinding=useRef('');
   const popupCapture=useRef<AbortController|null>(null);
@@ -281,6 +288,25 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
       else setFeedback(t('تعذر تأكيد طلب المراجعة لهذه المحاولة. تحقق من الحالة؛ لم تتغير الأصول.','The review request could not be confirmed for this attempt. Check its status; assets were not changed.'));
     }catch{if(mounted.current&&checkCurrent()&&reviewBinding.current===captured)setFeedback(t('تعذر التحقق من طلب المراجعة الآن.','Review request status is unavailable.'));}
     finally{connectReserved.current=false;if(mounted.current)setInFlight(null);}
+  };
+  const handleInspectMetaTest = async () => {
+    if (inspectingMetaTest || inFlight || !checkCurrent()) return;
+    setInspectingMetaTest(true);
+    try {
+      const inspectFn = actions?.inspectMetaTest ?? (await resolveDefaultActions()).inspectMetaTest;
+      const result = await inspectFn({
+        expectedAccountId: scope.expectedAccountId,
+        companyId: scope.companyId,
+        branchId: scope.branchId,
+      });
+      if (!mounted.current || !checkCurrent()) return;
+      setMetaTestInspection(result);
+    } catch {
+      if (!mounted.current || !checkCurrent()) return;
+      setMetaTestInspection({ status: "unknown", code: "META_UNAVAILABLE" });
+    } finally {
+      if (mounted.current) setInspectingMetaTest(false);
+    }
   };
   const available = checkCurrent() && !!scope.expectedAccountId && !!scope.boundaryFingerprint && !!branch &&
     !!channelStep && (channelStep.status === "pending" || channelStep.status === "verified") &&
@@ -453,7 +479,21 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
       registrationPin='';
       if (!mounted.current || !checkCurrent()) return;
       setLocalConnection(completed.read);
-      if(!completed.ok&&completed.code==='invalid_input')setFeedback(t('إذن إكمال التسجيل غير صالح أو انتهت صلاحيته. راجع المحاولة والأصول المحفوظة قبل المتابعة.','The registration continuation is invalid or expired. Review the attempt and saved assets before proceeding.'));
+      if (!completed.ok) {
+        if (completed.code === 'invalid_input') {
+          setFeedback(t('إذن إكمال التسجيل غير صالح أو انتهت صلاحيته. راجع المحاولة والأصول المحفوظة قبل المتابعة.', 'The registration continuation is invalid or expired. Review the attempt and saved assets before proceeding.'));
+        } else if (completed.code === 'reconciliation_required') {
+          setFeedback(t('تحتاج بيانات الربط إلى مصالحة ومراجعة مع الخادم. استخدم الاسترداد للتحقق من الحالة المحفوظة قبل أي محاولة جديدة.', 'Connection data requires server reconciliation. Use recovery to verify the saved state before trying again.'));
+        } else if (completed.code === 'forbidden') {
+          setFeedback(t('الجلسة الحالية غير مصرح لها بإتمام هذا الربط. تحقّق من حسابك وأعد المحاولة.', 'The current session is not authorized to complete this connection. Verify your account and try again.'));
+        } else if (completed.code === 'expired') {
+          setFeedback(t('انتهت صلاحية محاولة الربط. راجع المحاولة والأصول المحفوظة قبل المتابعة.', 'The connection attempt has expired. Review the attempt and saved assets before proceeding.'));
+        } else if (completed.code === 'setup_required') {
+          setFeedback(t('متطلبات الربط أو إعدادات الحساب غير مكتملة على الخادم. راجع الإعدادات ثم أعد المحاولة.', 'Connection prerequisites or server setup are incomplete. Review settings and retry.'));
+        } else {
+          setFeedback(t('تعذّر إتمام التحقق من الربط وحفظه. استخدم الاسترداد للتحقق من الحالة المحفوظة.', 'Connection verification and save could not be completed. Use recovery to check the saved state.'));
+        }
+      }
       setInFlight(null);
       onRefresh?.();
     } catch {
@@ -552,6 +592,17 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
         registrationPin='';
         if(!mounted.current||!checkCurrent())return;
         setLocalConnection(completed.read);
+        if (!completed.ok) {
+          if (completed.code === 'reconciliation_required') {
+            setFeedback(t('تحتاج بيانات الربط إلى مصالحة ومراجعة مع الخادم. تفاصيل المحاولة محفوظة.', 'Connection data requires server reconciliation. Attempt details are preserved.'));
+          } else if (completed.code === 'forbidden') {
+            setFeedback(t('الجلسة الحالية غير مصرح لها بإتمام هذا الربط.', 'The current session is not authorized to complete this connection.'));
+          } else if (completed.code === 'expired') {
+            setFeedback(t('انتهت صلاحية المحاولة أثناء الاسترداد. راجع الحالة المحفوظة.', 'The attempt expired during recovery. Review the saved state.'));
+          } else {
+            setFeedback(t('تعذّر إتمام استرداد الربط. راجع الحالة المحفوظة.', 'Connection recovery could not be completed. Review the saved state.'));
+          }
+        }
       }
       setInFlight(null);
       onRefresh?.();
@@ -624,6 +675,7 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
     finally{connectReserved.current=false;if(mounted.current)setInFlight(null);}
   };
 
+
   return <section className={styles.view} data-setup-unsaved={unsavedConnection?'true':undefined} dir={ar ? "rtl" : "ltr"} aria-label={channel==='whatsapp'?t('ربط واتساب','Connect WhatsApp'):t('ربط إنستغرام','Connect Instagram')}>
     <header className={styles.header}>
       {available && !hideStatusBadge && <p>{t("الفرع: ", "Branch: ")}<bdi>{branch.label}</bdi></p>}
@@ -665,6 +717,7 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
           <h4>{t("بعد ربط رقمك", "Once your number is connected")}</h4>
           <ul><li>{t("محادثات عملائك بهوية نشاطك", "Customer conversations with your business identity")}</li><li>{t("إدارة المحادثات من فيلورا", "Manage conversations in Velora")}</li><li>{t("تحكّم في بدء ردود المساعد بعد اكتمال التجهيز", "Start assistant replies after completing setup")}</li></ul>
           <details className={styles.helpDetails}><summary>{t("دليل المساعدة", "Help guide")}</summary><p>{t("جهّز حساب Meta الذي تدير منه نشاطك، واختر طريقة الرقم من البطاقة. ستجد خطوات الربط بعد اختيار الطريقة. لو تستخدم تطبيق WhatsApp Business، اختر Coexistence واحتفظ بالتطبيق ورقمك.","Have the Meta account that manages your business ready and choose your number's route. Connection instructions follow your route selection. If you use WhatsApp Business App, choose Coexistence and keep your app and number.")}</p></details>
+          <details className={styles.helpDetails} data-meta-test-section="true"><summary>{t("فحص رقم Meta التجريبي (وضع اختبار تقني)", "Check Meta test number (technical test mode)")}</summary><div style={{marginTop:8,padding:12,border:'1px solid var(--channel-line)',borderRadius:10,background:'var(--channel-subtle)'}}><p style={{margin:'0 0 10px',fontSize:13,color:'var(--channel-muted)'}}>{t('فحص قراءة خادمي لرقم Meta التجريبي المحدد. هذا الفحص لا ينشئ محاولة ربط ولا يربط واتساب تجاريًا ولا يبدأ الاشتراك.','Server read check for the configured Meta test number. This check does not create a connection attempt, does not commercially connect WhatsApp, and does not start the subscription.')}</p><button type="button" className={styles.back} data-inspect-meta-test="true" disabled={inspectingMetaTest||!!inFlight} onClick={()=>void handleInspectMetaTest()}>{inspectingMetaTest?t('جارٍ الفحص…','Checking…'):t('فحص رقم Meta التجريبي','Inspect Meta test number')}</button>{metaTestInspection&&<p role="status" data-meta-test-result="true" style={{marginTop:10,fontSize:13,fontWeight:600}}>{metaTestInspection.status==='verified_test_asset'?`${t('تم التحقق من الأصل التجريبي فقط: ','Test asset verified only: ')}${metaTestInspection.displayNumber}`:`${t('نتيجة فحص الأصل التجريبي: غير متاح','Test asset check outcome: unavailable')} (${metaTestInspection.code})`}</p>}</div></details>
         </div><div className={styles.routeCard}><h3>{t("تفاصيل مهمة قبل الربط", "Key details before you connect")}</h3><fieldset className={styles.routes} disabled={!!inFlight}>
           <legend>{t("كيف تستخدم هذا الرقم؟", "How do you use this number?")}</legend>
           {(["new-number", "coexistence"] as const).map(value => <label key={value} className={styles.choice}>

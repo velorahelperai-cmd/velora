@@ -2,20 +2,17 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Json } from "@/lib/database.types";
 import type { DeliveryStatus, InboundMessage } from "@/lib/whatsapp/webhook";
 import { whatsappConfig, whatsappConfigurationMode, whatsappRoutingMode } from "@/lib/whatsapp/config";
+import {
+  SETUP_META_TEST_INBOUND_SCOPE,
+  saveSetupMetaTestInboundReceiveOnly,
+  SetupMetaTestInboundRejectError,
+} from "@/lib/tenancy/setup-meta-test-inbound";
+import { INBOUND_CLAIM_LEASE_SECONDS, type SaveInboundResult } from "@/lib/whatsapp/store-types";
 import {createHash} from 'node:crypto';
 
 type Admin = SupabaseClient<Database>;
 
-/** Default processing lease (seconds). Contract only — no worker runs here. */
-export const INBOUND_CLAIM_LEASE_SECONDS = 120;
-
-export type SaveInboundResult = {
-  inserted: boolean;
-  messageId: string;
-  conversationId: string;
-  jobId: string;
-  jobStatus: string;
-};
+export { INBOUND_CLAIM_LEASE_SECONDS, type SaveInboundResult, SetupMetaTestInboundRejectError };
 
 function asRecord(value: Json | null | undefined): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -57,6 +54,10 @@ export async function saveInbound(
     p_received_at: message.receivedAt,
   };
   const test = whatsappConfigurationMode()==='meta_test';
+  if (test && companyId === SETUP_META_TEST_INBOUND_SCOPE.companyId) {
+    // TAG CITY Setup Meta-test: receive/save-only fence. Never mint a review grant.
+    return saveSetupMetaTestInboundReceiveOnly(admin, companyId, message);
+  }
   const { data, error } = test
     ? await (admin as unknown as {rpc:(name:string,args:Record<string,unknown>)=>PromiseLike<{data:Json;error:unknown}>}).rpc('review_store_whatsapp_inbound',{...args,p_waba_id:message.wabaId,p_secret_sha256:createHash('sha256').update(whatsappConfig().appSecret).digest('hex')})
     : tenantRegistry
