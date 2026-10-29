@@ -50,12 +50,13 @@ export type WhatsappConnectionGuideProps = {
   onConnect?: () => void;
   /** Local navigation only; does not start Meta authorization. */
   onReviewRequirements?: () => void;
+  feedback?: string | null;
 };
 export function WhatsappConnectionGuide(props: WhatsappConnectionGuideProps) {
   // A route change starts its own sequence, never retaining another route's index.
   return <Guide key={props.route} {...props} />;
 }
-function Guide({route,locale,connectEnabled=false,connecting=false,preparing=false,onConnect,onReviewRequirements}: WhatsappConnectionGuideProps) {
+function Guide({route,locale,connectEnabled=false,connecting=false,preparing=false,onConnect,onReviewRequirements,feedback}: WhatsappConnectionGuideProps) {
   const [index,setIndex] = useState(0);
   const id = useId();
   const ar = locale === "ar";
@@ -81,7 +82,7 @@ function Guide({route,locale,connectEnabled=false,connecting=false,preparing=fal
       </div>
     </div>
     {route==="coexistence"&&<p className={styles.reference}>{t("التسلسل المرجعي المتاح ينتقل من تسمية الخطوة ٣ إلى ٥.","The available reference sequence jumps from displayed step 3 to 5.")}</p>}
-<div className={styles.connectArea} data-guide-connect-area="true"><button type="button" className={styles.connect} data-connect-action="true" disabled={!connectEnabled||connecting||!onConnect} onClick={onConnect}>{connecting?t("جارٍ الاتصال…","Connecting…"):preparing?t("تجهيز الاتصال الآمن","Prepare secure connection"):t("المتابعة باستخدام فيسبوك","Continue with Facebook")}</button></div>
+<div className={styles.connectArea} data-guide-connect-area="true"><button type="button" className={styles.connect} data-connect-action="true" disabled={!connectEnabled||connecting||!onConnect} onClick={onConnect}>{connecting?t("جارٍ الاتصال…","Connecting…"):preparing?t("تجهيز الاتصال الآمن","Prepare secure connection"):t("المتابعة باستخدام فيسبوك","Continue with Facebook")}</button>{feedback && <p className={styles.feedbackText} role="alert" data-connect-feedback="true">{feedback}</p>}</div>
     {onReviewRequirements&&<div className={styles.footer}><button type="button" className={styles.connect} onClick={onReviewRequirements}>{t("مراجعة متطلبات الربط","Review connection requirements")}</button></div>}
   </section>;
 }

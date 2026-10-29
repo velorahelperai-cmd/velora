@@ -42,3 +42,14 @@ it('places the real Facebook action below the visual guide as in the approved re
  expect(html.indexOf('data-guide-connect-area')).toBeGreaterThan(html.indexOf('data-guide-source'));
  expect(html.match(/data-connect-action/g)).toHaveLength(1);
 });
+
+it('renders error or status feedback directly within the connect area below the button', () => {
+  const html = renderToStaticMarkup(createElement(WhatsappConnectionGuide, {
+    route: 'new-number',
+    locale: 'en',
+    feedback: 'Something went wrong with connection',
+  }));
+  expect(html).toContain('data-connect-feedback="true"');
+  expect(html).toContain('Something went wrong with connection');
+  expect(html.indexOf('data-connect-feedback="true"')).toBeGreaterThan(html.indexOf('data-connect-action="true"'));
+});

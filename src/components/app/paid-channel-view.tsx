@@ -303,7 +303,33 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
     // Same-boundary profile refreshes replace isCurrent. Keep every new-number
     // await fence live; scope changes still remount/abort. Coexistence is unchanged.
     const checkCurrent = () => (selectedWhatsappFlow === 'wa_new_number' ? currentAuthority.current?.() ?? true : isCurrent?.() ?? true);
-    if (connectReserved.current || inFlight || !checkCurrent() || !connection || !connection.revision || !selectedWhatsappFlow || !canStartSelectedWhatsapp) return;
+    if (connectReserved.current || inFlight) return;
+    if (!checkCurrent()) {
+      setFeedback(t('انتهت صلاحية الجلسة أو تغير سياق الحساب. حدّث الصفحة قبل المتابعة.', 'Session expired or account context changed. Refresh the page before continuing.'));
+      return;
+    }
+    if (!connection || !connection.revision) {
+      setFeedback(t('بيانات القناة غير مكتملة أو لم تُحمّل بعد. انتظر لحظة أو حدّث الصفحة.', 'Channel data is incomplete or still loading. Wait a moment or refresh the page.'));
+      return;
+    }
+    if (!selectedWhatsappFlow) {
+      setFeedback(t('يرجى اختيار مسار الربط (رقم جديد أو Coexistence) أولاً.', 'Please select a connection route first (new number or Coexistence).'));
+      return;
+    }
+    if (!canStartSelectedWhatsapp) {
+      if (selectedWhatsappFlow === "wa_coexistence") {
+        if (!normalizedPhone) {
+          setFeedback(t('يرجى إدخال رقم WhatsApp Business بصيغة دولية صحيحة (مثال: +968...) قبل المتابعة.', 'Please enter the WhatsApp Business number in valid international format (e.g. +968...) before continuing.'));
+        } else if (!phoneConfirmed) {
+          setFeedback(t('يرجى تأكيد أن الرقم مفعّل حاليًا على WhatsApp Business بالضغط على مربع التأكيد.', 'Please confirm that the number is active on WhatsApp Business by checking the confirmation box.'));
+        } else {
+          setFeedback(t('لا يمكن بدء ربط Coexistence حاليًا. تحقق من متطلبات القناة.', 'Cannot start Coexistence connection right now. Check channel requirements.'));
+        }
+      } else {
+        setFeedback(t('لا يمكن بدء ربط هذا الرقم حاليًا. راجع متطلبات الربط أو حالة الفرع.', 'Cannot start connecting this number right now. Review connection requirements or branch status.'));
+      }
+      return;
+    }
     // Meta's JavaScript SDK refuses FB.login on HTTP and may never call back.
     // Check before creating a server attempt; injected launchers are test doubles.
     if (!actions?.launchWhatsappSdk && window.location.protocol !== 'https:') {
@@ -337,7 +363,7 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
           setFeedback(started.code === 'setup_required'
             ? t('متطلبات ربط واتساب على الخادم غير مفعّلة حاليًا (يلزم تفعيل وضع التوجيه وEmbedded Signup). لم يتم إنشاء محاولة ربط.', 'WhatsApp server connection prerequisites are not enabled yet (routing mode and Embedded Signup must be active). No connection attempt was created.')
             : started.code === 'conflict'
-              ? t('توجد محاولة ربط نشطة أو قناة مرتبطة بالفعل. راجع الحالة المحفوظة قبل المتابعة.', 'An active connection attempt or linked channel already exists. Review the saved state before continuing.')
+              ? t('توجد محاولة ربط نشطة أو قيد المراجعة لهذا الفرع، أو يتعارض نوع الربط مع إعدادات الفرع المحفوظة (مثل تقييد المراجعة برقم Coexistence محدد). راجع الحالة أو استخدم الاسترداد.', 'An active or review-restricted connection exists for this branch, or the route conflicts with saved branch settings (e.g. review restriction to a specific Coexistence number). Review status or use recovery.')
               : t('تعذّر بدء محاولة الربط حاليًا. راجع الحالة المحفوظة ثم أعد المحاولة.', 'Could not start the connection attempt right now. Review the saved state and try again.'));
         }
         setInFlight(null);
@@ -707,7 +733,7 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
           </label>)}
         </fieldset>
         <button className={styles.primary} type="button" data-route-continue disabled={!route || !!inFlight} onClick={()=>{if(checkCurrent())setScreen("requirements");}}>{t("متابعة إلى الربط مع Facebook","Continue to Facebook connection")}</button></div></div></>}
-        {screen==="guide"&&route&&<div data-wa-screen="guide"><button type="button" className={styles.back} data-back-to-choice onClick={()=>setScreen("choice")}>{t("رجوع","Go back")}</button><WhatsappConnectionGuide route={route} locale={locale} connectionStatus={effectiveRead === undefined ? t("دليل الربط", "Connection guide") : channelConnectionLabel(connection, locale)} connectEnabled={!!selectedWhatsappFlow && viewModel.canStartFlow(selectedWhatsappFlow)} connecting={inFlight === "starting" || inFlight === "completing"} onConnect={()=>setScreen("requirements")} onReviewRequirements={()=>setScreen("requirements")}/></div>}
+        {screen==="guide"&&route&&<div data-wa-screen="guide"><button type="button" className={styles.back} data-back-to-choice onClick={()=>setScreen("choice")}>{t("رجوع","Go back")}</button><WhatsappConnectionGuide route={route} locale={locale} connectionStatus={effectiveRead === undefined ? t("دليل الربط", "Connection guide") : channelConnectionLabel(connection, locale)} connectEnabled={!!selectedWhatsappFlow && viewModel.canStartFlow(selectedWhatsappFlow)} connecting={inFlight === "starting" || inFlight === "completing"} onConnect={()=>setScreen("requirements")} onReviewRequirements={()=>setScreen("requirements")} feedback={feedback}/></div>}
         {screen==="requirements"&&route&&!awaitingPin&&<div className={styles.requirements} data-wa-screen="requirements">
           <p className={styles.stageCaption}>{t("الخطوة ٢/٢","Step 2/2")}</p>
           {route==="coexistence"&&<div className={styles.inputGroup}>
@@ -718,7 +744,7 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
               <span>{t("أؤكد أن هذا الرقم مفعل حاليًا على تطبيق WhatsApp Business ولن أقوم بحذفه أو فصله.","I confirm this number is currently active on the WhatsApp Business App and I will not delete or disconnect it.")}</span>
             </label>
           </div>}
-          <WhatsappConnectionGuide route={route} locale={locale} connectionStatus={channelConnectionLabel(connection,locale)} connectEnabled={(popupReady || canStartSelectedWhatsapp)&&!inFlight} connecting={!!inFlight} preparing={!popupReady} onConnect={popupReady ? handlePreparedFacebook : ()=>void handleWhatsappConnect()}/>
+          <WhatsappConnectionGuide route={route} locale={locale} connectionStatus={channelConnectionLabel(connection,locale)} connectEnabled={(popupReady || canStartSelectedWhatsapp)&&!inFlight} connecting={!!inFlight} preparing={!popupReady} onConnect={popupReady ? handlePreparedFacebook : ()=>void handleWhatsappConnect()} feedback={feedback}/>
           <button type="button" className={styles.back} disabled={!!inFlight || popupReady} onClick={()=>setScreen("choice")}>{t("رجوع","Go back")}</button>
         </div>}
       </> : <div className={styles.instagram}>
