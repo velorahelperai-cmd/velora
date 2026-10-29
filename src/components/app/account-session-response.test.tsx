@@ -760,6 +760,32 @@ it("same-operation focus join reuses in-flight bootstrap without a new pre-read"
   expect(render().status).toBe("ready");
 });
 
+it.each(["focus", "visibilitychange"])("post-OTP refresh survives %s without returning before READY", async event => {
+  vi.useFakeTimers();
+  const pendingProfile = deferred();
+  state.read.mockReturnValue(pendingProfile.promise);
+  const listeners = new Map<string, () => void>();
+  window.addEventListener = vi.fn((type, fn) => { listeners.set(type, fn as () => void); });
+  vi.stubGlobal("document", {
+    visibilityState: "visible",
+    addEventListener: (type: string, fn: () => void) => listeners.set(type, fn),
+    removeEventListener: vi.fn(),
+  });
+  const session = render();
+  session.clear(); // Signup page starts unauthenticated; admission now exists server-side.
+  const refresh = session.refresh();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(state.read).toHaveBeenCalledTimes(1);
+  listeners.get(event)!();
+  await vi.advanceTimersByTimeAsync(0);
+  pendingProfile.resolve({ ok: true, data: profile() });
+  await refresh;
+  // This is exactly the live snapshot the OTP continuation checks after await.
+  expect(session.liveSnapshot()).toMatchObject({ ready: true, status: "ready", userId: "user-a" });
+  expect(state.read).toHaveBeenCalledTimes(1);
+  expect(state.broker).toHaveBeenCalledTimes(2);
+});
+
 it("stale finally cannot clear a newer in-flight refresh", async () => {
   vi.useFakeTimers();
   const firstProfile = deferred();

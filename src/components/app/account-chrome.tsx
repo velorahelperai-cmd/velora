@@ -200,7 +200,7 @@ export function AccountSessionProvider({
     }
   },[setStatusLive,cancelReadBudgets,clearSoftRetry]);
 
-  const refresh = useCallback(async (correlation?: unknown) => {
+  const performRefresh = useCallback(async (correlation?: unknown) => {
     // Optional log metadata never changes the session attestation or generation fences.
     const parent = readAuthCorrelation(correlation);
     // Direct /setup bootstrap and manual refresh need the same fixed,
@@ -358,6 +358,16 @@ export function AccountSessionProvider({
       budget.cancel();readBudgets.current.delete(budget);
     }
   }, [clear, expire, providerRouter, setStatusLive, retainReadyOnTransient, clearSoftRetry]);
+  // Track explicit post-auth reads too: a focus/visibility hint must join them,
+  // not increment requestGen and return the auth caller before READY. Explicit
+  // refresh still starts fresh; clear/lock/account changes invalidate by epoch.
+  const refresh = useCallback((correlation?: unknown) => {
+    const promise = performRefresh(correlation);
+    const pending = { generation: requestGen.current, promise };
+    signalRead.current = pending;
+    void promise.finally(() => { if (signalRead.current === pending) signalRead.current = null; });
+    return promise;
+  }, [performRefresh]);
   useEffect(() => {
     refreshRef.current = refresh;
   }, [refresh]);
@@ -366,11 +376,7 @@ export function AccountSessionProvider({
   // within the same authority generation; logout/account changes invalidate it.
   const refreshFromSignal=useCallback(()=>{
     if(signalRead.current?.generation===requestGen.current)return signalRead.current.promise;
-    const promise=refresh();
-    const pending={generation:requestGen.current,promise};
-    signalRead.current=pending;
-    void promise.finally(()=>{if(signalRead.current===pending)signalRead.current=null;});
-    return promise;
+    return refresh();
   },[refresh]);
 
   useEffect(()=>subscribeSessionContext(signal=>{
