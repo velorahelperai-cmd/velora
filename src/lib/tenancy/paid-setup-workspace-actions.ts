@@ -10,6 +10,7 @@ import {readOwnedBranchLaunchSummaryAction} from './paid-launch-actions';
 import {composePaidSetupProgress} from './paid-setup-progress';
 import {readEs02ActivationFoundationAction} from '@/lib/billing/es02/account-order-actions';
 import {paidSetupActivation,type PaidSetupActivation} from './paid-setup-activation';
+import {setupMetaTestConfig} from './setup-meta-test';
 
 /** Read composition only, not a new persistence/readiness contract. */
 export type PaidSetupWorkspaceRead={
@@ -18,8 +19,14 @@ export type PaidSetupWorkspaceRead={
   connectionReads:Partial<Record<PaidSetupChannel,PaidBranchConnectionRead>>;
   confirmedChannels:PaidSetupChannel[];
   activation?:PaidSetupActivation|null;
+  testSetupHref?:string;
 };
 export async function readOwnedPaidSetupWorkspaceAction(input:ReadOwnedPaidBranchSetupInput&{connectionFirst?:boolean}):Promise<PaidSetupWorkspaceRead|null> {
+ const result=await readPaidWorkspace(input);
+ if(!result||!result.read.entitlement||!setupMetaTestConfig(input,process.env))return result;
+ return {...result,testSetupHref:`/setup/test?branch=${encodeURIComponent(input.branchId)}`};
+}
+async function readPaidWorkspace(input:ReadOwnedPaidBranchSetupInput&{connectionFirst?:boolean}):Promise<PaidSetupWorkspaceRead|null> {
   const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
   if(!input||[input.expectedAccountId,input.companyId,input.branchId].some(value=>typeof value!=="string"||value.length!==36||!uuid.test(value)))return null;
   const endOwner=setupTiming('owner');
