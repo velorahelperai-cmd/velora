@@ -34,6 +34,7 @@ export function useAccountPrepDraft({accountId,captureToken='',isCurrent,restore
  const dirty=useRef(false),editGen=useRef(0);
  const inFlight=useRef<InFlight|null>(null);
  const queued=useRef<AccountPrepDraftPayload|null>(null);
+ const checkpointTimer=useRef<ReturnType<typeof setTimeout>|null>(null);
  const writeRunner=useRef<(patch:AccountPrepDraftPayload)=>Promise<AccountPrepDraftResult<AccountPrepDraftRecord>|null>>(()=>Promise.resolve(null));
  const [hydration,setHydration]=useState({scope,kind:'loading' as 'loading'|'ready'|'error'});
  const [saved,setSaved]=useState({scope,status:'idle' as AccountPrepSaveStatus,code:null as AccountPrepDraftCode|null});
@@ -60,7 +61,7 @@ export function useAccountPrepDraft({accountId,captureToken='',isCurrent,restore
   }catch{/* Storage unavailable/corrupt: retain editable in-memory form. */}
   setHydration({scope,kind:'ready'});
   });
-  return()=>{live.current=false;};
+  return()=>{live.current=false;if(checkpointTimer.current)clearTimeout(checkpointTimer.current);};
  },[scope,accountId,storageKey]);
  const ours=useCallback(()=>liveScope.current===scope&&callbacks.current.isCurrent(),[scope]);
  const valid=useCallback(()=>live.current&&ours(),[ours]);
@@ -76,7 +77,14 @@ export function useAccountPrepDraft({accountId,captureToken='',isCurrent,restore
  const checkpoint=useCallback((payload:AccountPrepDraftPayload)=>{
   if(!valid()||!dirty.current)return;
   const merged={...localPayload.current,...payload};
-  lastPatch.current=merged;persist(merged,true);
+  lastPatch.current=merged;persist(merged,true);syncRequested.current=true;
+  if(checkpointTimer.current)clearTimeout(checkpointTimer.current);
+  checkpointTimer.current=setTimeout(()=>{
+   checkpointTimer.current=null;
+   if(!valid()||!loaded.current||blocked.current||!lastPatch.current||!parseAccountPrepDraftPatch(lastPatch.current).ok)return;
+   if(inFlight.current){queued.current=lastPatch.current;return;}
+   syncRequested.current=false;void writeRunner.current(lastPatch.current);
+  },800);
  },[persist,valid]);
  const load=useCallback((explicit:boolean):Promise<boolean>=>{
   if(!valid()||inFlight.current)return Promise.resolve(false);

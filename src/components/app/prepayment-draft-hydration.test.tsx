@@ -180,3 +180,8 @@ it('never automatically retries a conflict',async()=>{
  vi.useFakeTimers();actions.read.mockResolvedValue({ok:false,code:'CONFLICT'});await render();await act(async()=>{await api.save({name:'Local'});await vi.advanceTimersByTimeAsync(60000);window.dispatchEvent(new Event('online'));});
  expect(actions.read).toHaveBeenCalledTimes(1);expect(actions.save).not.toHaveBeenCalled();expect(api.code).toBe('CONFLICT');
 });
+it('syncs a partial checkpoint without requiring a phone or advancing checkout',async()=>{
+ actions.save.mockResolvedValue({ok:true,data:record('VELORA QA',1)});await render();
+ await act(async()=>{api.markEdited();api.checkpoint({name:'VELORA QA',phone:''});await new Promise(resolve=>setTimeout(resolve,900));});
+ expect(actions.save).toHaveBeenCalledWith(expect.objectContaining({expectedAccountId:ACCOUNT,expectedVersion:0,patch:{name:'VELORA QA',phone:''}}));
+});
