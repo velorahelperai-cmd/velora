@@ -1,0 +1,13 @@
+# Branch staff chat access
+
+Owner policy: branch_active staff with the channel read capability may read every conversation in explicitly granted branches, including self-assigned, assigned-to-other and unassigned conversations. Reading grants no claim, send, reassignment or delete capability. Legacy company assigned_only stays assigned_only.
+
+Root cause: es02_read_branch_inbox accepted branch membership, then called company-only billing_chat_access and billing_history_account_allowed. Both rejected branch_active. Direct table RLS also understood company authority only.
+
+Migration20261029013249 adds explicit branch overloads for billing/history. The old company entrypoint retains its exact membership guard and delegates to the extracted unchanged lifecycle policy. The branch RPC checks exact branch/session/capability, subscription lifecycle and verified active channel/account binding. WhatsApp conversation/message SELECT policies admit a separate strictly branch-only staff predicate derived from verified account-to-branch mapping. No company capability, table mutation grant, send/claim/reassignment RPC, paid quota, subscription policy, webhook or worker change.
+
+Compatibility: three normalized Production function-body hashes are guarded before migration. Existing private helper/public inbox ACLs retained; new internal helpers deny PUBLIC/anon/authenticated/service_role execution, except the RLS predicate's authenticated EXECUTE. Private schema remains unexposed. Existing active-branch/channel and active-legacy-link unique indexes preserve account mapping. No DML on customer tables.
+
+Verification: six targeted native PostgreSQL groups PASS. Same Production snapshot reproduces original refusal before applying migration. Covers both channels list/selected conversation/messages, foreign company/branch/account/session, inactive membership, revoked grant/link, idle/revoked session, billing/history expiry, receipt-null/paid history/reconnection rules, RLS all-assignment reads, legacy assigned_only and eight denied direct mutations. Scoped ESLint/diff check PASS; independent source review found no blocking defect.
+
+Limits: actual native/session/authorization/inbox SQL bodies execute against synthetic local table shapes/identities/claims. Lifecycle receipt production, JSON projection formatting, token signatures, HTTP/Realtime, actual Meta and customer/human delivery are not runtime acceptance here. Receipt and projection adapters are explicit doubles. No claim/send/reassignment RPC is enabled for read-only staff. Hosted authenticated journey remains NOT_RUN; no customer data or Meta state used.
