@@ -1,0 +1,25 @@
+# Branch inbox Realtime — 2026-10-29
+
+Owner scope: add branch staff Realtime, retain RLS and branch isolation, verify in isolated QA, publish after checks, verify the deployed SHA. No customer-data, Meta, payment or test-invitation operation. Hosted acceptance that is not actually exercised remains UNKNOWN.
+
+Design: WP01A keeps provider tokens server-only. A same-origin SSE endpoint uses a fresh broker-bound user Supabase client to subscribe to a dedicated, minimal invalidation table through native Postgres Changes. Only empty refresh signals cross SSE. The branch page then refreshes through the existing server inbox RPC and its current session, branch, link and billing checks. There is no browser Supabase client, service-role subscription, raw chat publication or new write capability.
+
+The invalidation table has one row per company/branch/channel, SELECT-only authenticated access, and RLS requiring a verified live session, explicit branch read capability, current verified channel binding and the existing billing/history policy. Four AFTER triggers update only that new table when conversation/message rows change. No existing customer rows are backfilled or updated. Optional notification errors log a SQLSTATE only and do not abort the original write.
+
+The SSE connection lasts at most45 seconds, waits for both channel join and actual Postgres Changes readiness, rechecks fresh broker authority and branch access every15 seconds and before signals, closes on revocation/abort/error, and removes its upstream channel. The client coalesces refreshes over250ms, closes subscriptions when scope changes/unmounts, recreates terminal transport failures after5 seconds, and revalidates after reconnect/visibility to cover missed events. Explicit revocation stops retrying. Timer values are transport budgets, not billing quotas or new rate limits.
+
+Plan: (1) schema/permission and notification migration; (2) broker-bound SSE and branch refresh component; (3) minimal native PostgreSQL/Realtime and client/server targeted cases; (4) scoped review, security/secrets, CI, metadata-only migration application and exact-SHA publication verification. Keep unrelated WIP unchanged. Initial Graphify snapshot7eec372 differed from baseb7fa7a2 only in the previous QA test/docs package; scoped review subsequently confirmed the refreshed index at exact baseb7fa7a2.
+
+## Verification
+
+Targeted application cases:11/11 PASS across the stream, route and mounted React component. Covers exact scope/anonymous/cross-origin/error refusal, server-only token handling, fresh boundary changes, idle revocation, empty SSE signals, concurrency, abort/cancel/lifetime cleanup, burst coalescing, stale-scope cleanup, and terminal HTTP-error recovery. Scoped ESLint and TypeScript noEmit PASS. Independent review found a terminal EventSource retry defect; corrected with a regression case and rereviewed with no remaining blocking findings.
+
+Native isolated QA: actual Supabase Realtime2.143.3, signed synthetic JWTs, actual Production authorization/session bodies, the new migration and existing reduced table fixtures.13 WhatsApp/Instagram message/conversation INSERT/UPDATE/DELETE/control-field writes, positive control delivery to both identities, foreign-company and unauthorized same-company-branch exclusion, grant/native-session revocation and metadata-only payloads. Actual Realtime SDK feeds the actual SSE helper: ready/change contain empty JSON; idle grant revocation closes/removes the subscription. Deliberately failing notification persistence preserves the original source update. Disposable internal network, temporary PostgreSQL storage, verified owner labels and loopback ingress; no provider calls or Production fixtures.
+
+Local synthetic lifecycle receipts/projections are explicitly reduced adapters; they do not establish real paid entitlement. The same-company second branch has no linked provider account in this legacy fixture, so its refusal does not prove a two-linked-branch browser journey. A real native JWT signature is verified by local Realtime, but GoTrue issuance, broker HTTP/Next browser journey, hosted authenticated Realtime, Meta/payment and provider acceptance remain **UNKNOWN**.
+
+## Delivery
+
+Application code, a metadata-only migration and new QA scripts. No existing customer row backfill, subscription/quota/idempotency change or new client mutation grant. Raw chat tables stay outside the Realtime publication. Optional notification failure can delay freshness until a reconnect refresh; it does not weaken read authorization. Publication/CI and Production catalog verification are recorded in the task's delivery receipt after execution.
+
+Sources: [Postgres Changes](https://supabase.com/docs/guides/realtime/postgres-changes), [Realtime authorization](https://supabase.com/docs/guides/realtime/authorization), [official self-hosting composition](https://github.com/supabase/supabase/blob/master/docker/docker-compose.yml). Changelog checked2026-10-29; upcoming TLS cipher removal does not change this API contract.
