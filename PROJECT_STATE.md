@@ -1,3 +1,29 @@
+# Current Session Index - I02-3-FIX-RECEIVE-ONLY-RPC-SCHEMA-20261029
+
+- **Task `I02.3` — Root Cause Fix for `public.save_whatsapp_inbound_receive_only`:**
+  - **Issue Identified & Confirmed:** Production schema inspection of `public.whatsapp_inbound_jobs` verified that columns `next_retry_at` and `last_error_code` do not exist on the table. The table schema contains: `next_attempt_at` (`NOT NULL DEFAULT now()`), `status`, `claim_token`, `claim_expires_at`, `completed_at`, `result_code`, `attempt_count`, `created_at`, `updated_at`, etc. Attempting to update non-existent columns caused PostgreSQL execution failures.
+  - **Remediation Migration (`supabase/migrations/20261029224500_fix_save_whatsapp_inbound_receive_only_schema.sql`):**
+    - Corrected the `UPDATE public.whatsapp_inbound_jobs` statement to:
+      ```sql
+      update public.whatsapp_inbound_jobs
+         set status = 'completed',
+             claim_token = null,
+             claim_expires_at = null,
+             completed_at = coalesce(completed_at, pg_catalog.clock_timestamp()),
+             result_code = 'SETUP_META_TEST_RECEIVE_ONLY',
+             updated_at = pg_catalog.clock_timestamp()
+       where id = v_job.id
+         and company_id = p_company_id
+       returning * into v_job;
+      ```
+    - Kept `next_attempt_at` untouched (avoiding invalid nulling of a NOT NULL column).
+    - Preserved single-transaction atomicity, locking advisory lock `87420101`, duplicate redelivery handling (`RECEIVE_ONLY_UNRESOLVED_JOB` when claimed or pending send intent), status verification, and `SECURITY DEFINER` restricted to `service_role`.
+  - **Local Quality Gates:**
+    - Targeted Vitest: 3 test files, 29/29 PASS (`tag-city-meta-test-routing.test.ts`, `webhook.test.ts`, `route.test.ts`).
+    - `npm run typecheck`: PASS.
+    - `node scripts/ci/security.mjs`: PASS (tracked secret baseline 2086 paths).
+    - `npx eslint`: PASS.
+
 # Current Session Index - I02-3-META-TEST-INBOUND-RECEIVE-ONLY-20261029
 
 - **Task `I02.3` — Authorized Meta Test Inbound Receive-Only in Canonical `/api/whatsapp/webhook`:**
