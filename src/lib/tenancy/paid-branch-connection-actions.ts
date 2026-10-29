@@ -11,7 +11,6 @@ import { INSTAGRAM_ATTEMPT_COOKIE } from "@/lib/instagram/oauth-route";
 import { embeddedSignupClientConfig } from "@/lib/whatsapp/embedded-signup";
 import {captureEarlyAuthorization,earlyAuthorizationRpc} from '@/lib/whatsapp/early-authorization';
 import {autoPinAllowed} from '@/lib/whatsapp/auto-pin';
-import {createExpiredCheckpointReader,inspectExpiredCheckpoint,type ExpiredCheckpointReviewResult} from '@/lib/whatsapp/expired-checkpoint-reconciliation';
 import {onboardMetaSignup} from '@/lib/whatsapp/embedded-signup-meta';
 import {sealSignupPreparation,openSignupPreparation} from '@/lib/whatsapp/signup-preparation';
 import {signupCheckpointBinding,signupCheckpointRpc,parseSignupCheckpoint} from '@/lib/whatsapp/signup-checkpoint';
@@ -477,22 +476,6 @@ export async function recoverOwnedPaidBranchConnectionAction(input: PaidBranchCo
   if(result.ok&&result.read.connection.verified)await signupCheckpointRpc(admin as unknown as PaidBranchConnectionRpc,'discard',signupCheckpointBinding(request,session.sessionId));
   stage("complete", started, result.ok ? "ok" : "failed", !result.ok ? result.code : undefined);
   return result;
-}
-
-/** Read-only review: no claim, cancellation, extension, cleanup or provider writes. */
-export async function reviewExpiredWhatsappCheckpointAction(input: PaidBranchConnectionScope & {flow:PaidBranchConnectionFlow;attemptId:string;generation:number}):Promise<ExpiredCheckpointReviewResult>{
- const unavailable={outcome:'UNKNOWN' as const,reason:'UNAVAILABLE' as const};
- const request=attemptRequest(input,new Date().toISOString());
- if('ok' in request||request.flow!=='wa_new_number')return unavailable;
- const session=await sessionClient(request.expectedAccountId,randomUUID(),new Date().toISOString(),request);
- if('ok' in session)return unavailable;
- const current=await runPaidBranchConnectionRead(request,createPaidBranchConnectionStore(session.client,session.client,new Date().toISOString()),new Date().toISOString());
- const attempt=current.read.connection.attempt;
- if(current.read.sourceStatus!=='ready'||current.read.connection.flow!=='wa_new_number'||attempt?.id!==request.attemptId||attempt.generation!==request.generation||!['pending','claimed','unknown'].includes(attempt.status)||!Number.isFinite(Date.parse(attempt.expiresAt))||Date.parse(attempt.expiresAt)>Date.now())return unavailable;
- const config=embeddedSignupClientConfig(),admin=createAdminClient();
- const appSecret=process.env.WHATSAPP_APP_SECRET?.trim()??'';
- if(!config.ok||!admin||!appSecret)return unavailable;
- return inspectExpiredCheckpoint(signupCheckpointBinding(request,session.sessionId),{read:createExpiredCheckpointReader(admin as unknown as PaidBranchConnectionRpc),fetcher:fetch,config:{...config,enabled:true,appSecret}});
 }
 
 export async function cancelOwnedPaidBranchConnectionAction(input: PaidBranchConnectionScope & { flow: PaidBranchConnectionFlow; attemptId: string; generation: number; oauthState?: string }): Promise<PaidBranchConnectionMutation> {

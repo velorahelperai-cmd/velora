@@ -15,7 +15,6 @@ vi.mock("@/lib/tenancy/paid-branch-connection-adapters", async () => {
 });
 
 import {
-  reviewExpiredWhatsappCheckpointAction,
   readOwnedPaidBranchConnectionAction,
   cancelOwnedPaidBranchConnectionAction,
   completeOwnedPaidBranchConnectionAction,
@@ -264,25 +263,4 @@ describe('early authorization server boundary',()=>{
  it('reports the pre-reservation denial without provider requests',async()=>{vi.stubEnv('WHATSAPP_APP_SECRET','');expect(await captureOwnedWhatsappAuthorizationAction(input)).toEqual({ok:false});expect(state.log).toHaveBeenCalledWith('info','whatsapp.early_authorization.stage',expect.objectContaining({stage:'configuration',outcome:'denied'}));expect(state.early).not.toHaveBeenCalled();});
  it('verifies assets using stored token and promotes without re-exchanging code',async()=>{state.rpc.mockImplementation(async(name:string,p:Record<string,unknown>)=>({data:name==='es02_b3_early_whatsapp_authorization'?p.p_operation==='load'?{ok:true,token:'private-token'}:{ok:true,promoted:true}:current(),error:null}));state.probe.mockImplementation(async(_c,_i,_f,o)=>{o.capture('private-token',false);return {ok:false};});const r=await prepareOwnedWhatsappRegistrationAction({...scope,flow:'wa_new_number',attemptId,generation:1,completion:{attemptId,nonce:input.nonce,code:'early-authorization',wabaId:'222',phoneNumberId:'333',pin:''}});expect(r.ok).toBe(true);expect(state.early).not.toHaveBeenCalled();expect(state.probe.mock.calls[0][3]).toMatchObject({token:'private-token',probe:true});expect(state.rpc.mock.calls.some(c=>c[1].p_operation==='promote')).toBe(true);expect(JSON.stringify(r)).not.toContain('private-token');});
  it('does not promote without provider asset proof',async()=>{state.rpc.mockImplementation(async(name:string)=>({data:name==='es02_b3_early_whatsapp_authorization'?{ok:true,token:'private-token'}:current(),error:null}));state.probe.mockResolvedValue({ok:false,code:'META_ASSET_REJECTED'});const r=await prepareOwnedWhatsappRegistrationAction({...scope,flow:'wa_new_number',attemptId,generation:1,completion:{attemptId,nonce:input.nonce,code:'early-authorization',wabaId:'222',phoneNumberId:'333',pin:''}});expect(r).toEqual({ok:false});expect(state.rpc.mock.calls.some(c=>c[1].p_operation==='promote')).toBe(false);});
-});
-
-describe('expired checkpoint review boundary',()=>{
- beforeEach(()=>{vi.clearAllMocks();vi.stubEnv('WHATSAPP_EMBEDDED_SIGNUP','true');vi.stubEnv('WHATSAPP_EMBEDDED_SIGNUP_APP_ID','111');vi.stubEnv('WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID','123');vi.stubEnv('WHATSAPP_EMBEDDED_SIGNUP_GRAPH_VERSION','v25.0');vi.stubEnv('WHATSAPP_APP_SECRET','test-secret');});
- afterEach(()=>vi.unstubAllGlobals());
- it('reads only the bound expired attempt and never returns the credential',async()=>{
-  const current={...connectionRead(),connection:{...connectionRead().connection,flow:'wa_new_number',attempt:{...connectionRead().connection.attempt,expiresAt:'2000-01-01T00:00:00Z'}}};
-  state.rpc.mockImplementation(async(name:string)=>name==='wa_expired_checkpoint_review'?{data:{ok:true,token:'synthetic-secret',wabaId:'222',phoneNumberId:'333',appId:'111',configId:'123',graphVersion:'v25.0'},error:null}:{data:current,error:null});
-  state.probe.mockResolvedValue({ok:false,code:'RECONCILIATION_REQUIRED'});
-  const f=vi.fn(async()=>Response.json({id:'333',status:'PENDING',platform_type:'NOT_APPLICABLE'}));vi.stubGlobal('fetch',f);
-  const result=await reviewExpiredWhatsappCheckpointAction({...scope,flow:'wa_new_number',attemptId,generation:1});
-  expect(result).toEqual({outcome:'UNKNOWN',reason:'REVIEW_REQUIRED'});expect(JSON.stringify(result)).not.toContain('synthetic-secret');
-  expect(names()).toContain('wa_expired_checkpoint_review');expect(names()).not.toContain('es02_b3_cancel_owned_branch_connection');expect(state.probe.mock.calls[0][3]).toMatchObject({token:'synthetic-secret',readOnly:true});expect(f).not.toHaveBeenCalled();
- });
- it('does not read or call Meta for coexistence',async()=>{const f=vi.fn();vi.stubGlobal('fetch',f);expect(await reviewExpiredWhatsappCheckpointAction({...scope,flow:'wa_coexistence',attemptId,generation:1})).toEqual({outcome:'UNKNOWN',reason:'UNAVAILABLE'});expect(state.rpc).not.toHaveBeenCalled();expect(f).not.toHaveBeenCalled();});
- it('rejects a generation mismatch before checkpoint access',async()=>{
-  const current={...connectionRead(),connection:{...connectionRead().connection,flow:'wa_new_number',attempt:{...connectionRead().connection.attempt,expiresAt:'2000-01-01T00:00:00Z'}}};
-  state.rpc.mockResolvedValue({data:current,error:null});
-  expect(await reviewExpiredWhatsappCheckpointAction({...scope,flow:'wa_new_number',attemptId,generation:2})).toEqual({outcome:'UNKNOWN',reason:'UNAVAILABLE'});
-  expect(names()).not.toContain('wa_expired_checkpoint_review');expect(state.probe).not.toHaveBeenCalled();
- });
 });
