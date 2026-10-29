@@ -1,3 +1,12 @@
+# Current Session Index - SETUP-UX-DATA-FLOW-20261030 (LOCAL GATES PASS / PUBLISHING)
+
+- Owner explicitly requested checking the concurrent session, finishing remaining canonical `/setup`, running checks, then committing/pushing and verifying CI/deployment. The other active chat (اعرف حالة خطة فيلورا) is working on homepage/Noura quota, not a completed setup handoff; setup files had stayed stable. Current follow-up completes the hours/host integration. Homepage, account-chrome, auth diagnostics and unrelated SQL remain excluded.
+- Original forms remain visible during bounded reads; unknown presentation values grant no save/launch capability. Seven-day hours and knowledge drafts survive hydration and read failures; workspace refresh failures preserve mounted inputs and show retry status. Original step rail replaces the extra Continue business setup button. AI displays submitted questions without inventing answers; team/launch operation reservations prevent duplicate requests.
+- Host remounts on account/company/branch/boundary/step changes, fences old async completions, and bounds reads/mutations. Timed-out mutations remain unconfirmed and are not automatically retried. Hours save requires a verified read; missing client claims fail closed before any RPC. No new routes, schema changes, provider mutations or TAG CITY writes.
+- Graphify build `592b8be0-d861-4ef9-bada-4514be83ba1b`, indexed HEAD `0bf79fccf2c975007745f4afb1fdc35a3dfba80a` at `2026-10-29T19:53:47.944399Z`.
+- Validation: local typecheck and production build PASS; tracked sources plus setup additions ESLint PASS (1415 files, zero warnings/errors); security Node suites 69 PASS; npm audit zero vulnerabilities; pinned Gitleaks self-test PASS. Earlier contracts 313 PASS / 38 skipped; full unit PASS 492 files / 5270 tests (5 files / 54 tests skipped); final focused regressions 62 PASS plus corrected entry-fixture 9 PASS and hours-action 7 PASS. Final TypeScript and touched-source lint PASS. Pinned secret tree PASS, 2091 files. Browser access to authenticated canonical /setup confirmed, but deployed candidate and live save/reload have not yet been verified.
+- Publication pending successful final checks. Full paid/provider/launch runtime acceptance remains separate; no claim of RUNTIME_VERIFIED.
+
 # Current Session Index - SETUP-CONTINUE-WITHOUT-WA-AND-I02-3-LIVE-PASS-20261029
 
 - **Task 1 (`I02.3` — Fix Meta Test Inbound Reception & Live Verification) — PASS:**

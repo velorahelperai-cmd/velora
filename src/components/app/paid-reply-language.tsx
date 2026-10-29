@@ -26,11 +26,12 @@ export const replyLanguageViewKey=(p:PaidReplyLanguageProps)=>JSON.stringify([p.
 export function PaidReplyLanguage(p:PaidReplyLanguageProps){
   const ar=p.locale==="ar",t=(a:string,e:string)=>ar?a:e;
   const scoped=!!p.boundaryFingerprint&&sameScope(p.scope,p.state.scope);
-  if(scoped&&p.state.phase==="loading")return <section className={styles.view} dir={ar?"rtl":"ltr"} aria-busy="true"><p role="status">{t("جارٍ تحميل إعداد لغة الرد.","Loading reply-language settings.")}</p></section>;
-  if(!scoped||!p.snapshot||!sameScope(p.scope,p.snapshot.scope)||!validVersion(p.snapshot.version)||p.state.version!==p.snapshot.version)
+  if(!scoped||(!p.snapshot&&p.state.phase!=="loading"&&p.state.phase!=="unavailable")||(p.snapshot&&(!sameScope(p.scope,p.snapshot.scope)||!validVersion(p.snapshot.version)||p.state.version!==p.snapshot.version)))
     return <section className={styles.view} dir={ar?"rtl":"ltr"}><p role="status">{t("إعداد لغة الرد غير متاح لهذا الحساب والفرع. أعد تحميل البيانات.","Reply-language settings are unavailable for this account and branch. Reload the data.")}</p></section>;
-  return <LanguageForm key={replyLanguageViewKey(p)} {...p} snapshot={p.snapshot}/>;
+ const presentation:ReplyLanguageSnapshot=p.snapshot??{scope:p.scope,version:0,companyLabel:"—",branchLabel:"—",replyLanguage:null,confirmation:"unknown",canConfirm:null};
+  return <LanguageForm key={replyLanguageViewKey(p)} {...p} snapshot={presentation}/>;
 }
+
 function LanguageForm(p:PaidReplyLanguageProps & {snapshot:ReplyLanguageSnapshot}){
   const ar=p.locale==="ar",t=(a:string,e:string)=>ar?a:e,id=useId();
   const [ack,setAck]=useState(false),[pending,setPending]=useState(false),[failed,setFailed]=useState(false);
@@ -39,7 +40,7 @@ function LanguageForm(p:PaidReplyLanguageProps & {snapshot:ReplyLanguageSnapshot
   const known=["ar","en","both"].includes(p.snapshot.replyLanguage??"");
   const confirmed=p.snapshot.confirmation==="confirmed"&&p.snapshot.replyLanguage==="both";
   useSetupUnsavedChanges(ack&&!confirmed,p.isCurrent,p.locale);
-  if(p.state.phase==='unavailable')return <section className={styles.view} data-setup-unsaved={ack&&!confirmed?'true':undefined}><p role="status">{t('إعداد لغة الرد غير متاح. لم يتأكد الحفظ.','Reply-language settings are unavailable. Saving is unconfirmed.')}</p>{p.onReload&&<button onClick={()=>{if(p.isCurrent())p.onReload?.();}}>{t('إعادة المحاولة','Retry')}</button>}</section>;
+
   const locked=p.state.phase!=="ready"||pending||!known||p.snapshot.confirmation!=="unconfirmed"||p.snapshot.canConfirm!==true||!p.onConfirm;
   async function submit(){
     if(locked||!ack||reserved.current||!p.isCurrent())return;
@@ -50,6 +51,9 @@ function LanguageForm(p:PaidReplyLanguageProps & {snapshot:ReplyLanguageSnapshot
   }
   const current=p.snapshot.replyLanguage==="ar"?t("العربية","Arabic"):p.snapshot.replyLanguage==="en"?t("الإنجليزية","English"):p.snapshot.replyLanguage==="both"?t("العربية والإنجليزية حسب لغة العميل","Arabic and English, following the customer"):t("غير معروف","Unknown");
   return <section className={styles.view} data-setup-unsaved={ack&&!confirmed?'true':undefined} dir={ar?"rtl":"ltr"} aria-labelledby={id} aria-busy={pending||p.state.phase==="saving"}>
+  {p.state.phase==="loading"&&<p role="status">{t("جارٍ تحميل إعداد لغة الرد.","Loading reply-language settings.")}</p>}
+  {p.state.phase==="unavailable"&&<p role="status">{t("تعذّر التحقق من البيانات. الحفظ غير مؤكد.","Data could not be verified. Saving is unconfirmed.")}</p>}
+  {p.state.phase==="unavailable"&&p.onReload&&<button type="button" onClick={()=>{if(p.isCurrent())void p.onReload?.();}}>{t("إعادة المحاولة","Retry")}</button>}
     <header><p className={styles.eyebrow}>{t("إعداد المساعد","Assistant setup")}</p><h2 id={id}>{t("لغة الرد التلقائية","Automatic reply language")}</h2>
       <p>{t("الشركة: ","Company: ")}<bdi>{p.snapshot.companyLabel}</bdi> · {t("الفرع المحدد: ","Selected branch: ")}<bdi>{p.snapshot.branchLabel}</bdi></p></header>
     <div className={styles.explanation}><h3>{t("العربية والإنجليزية، حسب لغة العميل","Arabic and English, following the customer")}</h3>

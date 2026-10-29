@@ -26,11 +26,12 @@ export const validTeamRecipient=(name:string,email:string)=>name.trim().length>=
 const labels:Record<CompanyStaffInvitation["status"],[string,string]>={invited:["دعوة محفوظة","Saved invitation"],expired:["منتهية","Expired"],accepted:["مقبولة","Accepted"],cancelled:["ملغاة","Cancelled"],conflicted:["دعوات متعارضة","Conflicting invitations"]};
 export function PaidTeamInvitations(p:PaidTeamInvitationsProps){
  const ar=p.locale==="ar",t=(a:string,e:string)=>ar?a:e,scoped=!!p.boundaryFingerprint&&same(p.scope,p.state.scope);
- if(scoped&&p.state.phase==="loading")return <section className={styles.view} dir={ar?"rtl":"ltr"} aria-busy="true"><p role="status">{t("جارٍ تحميل فريق الفرع.","Loading the branch team.")}</p></section>;
- if(!scoped||!p.snapshot||!same(p.scope,p.snapshot.scope)||!Number.isSafeInteger(p.snapshot.version)||p.snapshot.version<1||p.state.version!==p.snapshot.version||p.state.phase==="unavailable")
+ if(!scoped||(!p.snapshot&&p.state.phase!=="loading"&&p.state.phase!=="unavailable")||(p.snapshot&&(!same(p.scope,p.snapshot.scope)||!Number.isSafeInteger(p.snapshot.version)||p.snapshot.version<1||p.state.version!==p.snapshot.version)))
  return <section className={styles.view} dir={ar?"rtl":"ltr"}><p role="status">{t("بيانات فريق الفرع غير متاحة. أعد تحميل الحساب والفرع.","Branch team data is unavailable. Reload the account and branch.")}</p></section>;
- return <TeamForm key={teamViewKey(p)} {...p} snapshot={p.snapshot}/>;
+ const presentation:BranchTeamSnapshot=p.snapshot??{scope:p.scope,version:0,branchLabel:"—",seats:{limit:null,available:null},allowedRoles:[],canInvite:null,canSkip:null,skip:"unknown",createOperationId:null,skipOperationId:null,invitations:[]};
+ return <TeamForm key={JSON.stringify([p.scope,p.boundaryFingerprint,p.snapshot?.createOperationId,p.snapshot?.skipOperationId])} {...p} snapshot={presentation}/>;
 }
+
 function TeamForm(p:PaidTeamInvitationsProps & {snapshot:BranchTeamSnapshot}){
  const ar=p.locale==="ar",t=(a:string,e:string)=>ar?a:e,id=useId();
  const [capabilities,setCapabilities]=useState<string[]>([]);
@@ -49,10 +50,13 @@ function TeamForm(p:PaidTeamInvitationsProps & {snapshot:BranchTeamSnapshot}){
  const context=(id:string):Context=>({...p.scope,expectedVersion:p.snapshot.version,operationId:id});
  async function dispatch(run:()=>void|Promise<void>){
   if(reserved.current||!p.isCurrent())return;reserved.current=true;setPending(true);
-  try{await run();/* Wait for authoritative host refresh/new operation before accepting another submission. */}
-  catch{if(mounted.current&&p.isCurrent()){setUnknown(true);setPending(false);}}
+  try{await run();/* Authoritative operation IDs determine when another invitation is permitted. */}
+  catch{if(mounted.current&&p.isCurrent())setUnknown(true);}
+  finally{if(mounted.current&&p.isCurrent())setPending(false);}
  }
  return <section className={styles.view} dir={ar?"rtl":"ltr"} aria-labelledby={id} aria-busy={pending||p.state.phase==="pending"}>
+  {p.state.phase==="loading"&&<p role="status">{t("جارٍ تحميل فريق الفرع.","Loading the branch team.")}</p>}
+  {p.state.phase==="unavailable"&&<p role="status">{t("تعذّر التحقق من البيانات. الحفظ غير مؤكد.","Data could not be verified. Saving is unconfirmed.")}</p>}
   <header><span className={styles.badge}>{t("اختياري","Optional")}</span><h2 id={id}>{t("ادعُ فريقك","Invite your team")}</h2><p>{t("الفرع: ","Branch: ")}<bdi>{p.snapshot.branchLabel}</bdi></p></header>
   <p className={styles.note}>{t("يمكنك متابعة الإعداد دون دعوة موظفين الآن. التخطي لا ينشئ دعوات ولا يرسل رسائل.","You can continue setup without inviting staff now. Skipping does not create invitations or send messages.")}</p>
   <div className={styles.seats}><strong>{t("مقاعد الموظفين المتاحة","Available staff seats")}</strong><bdi dir="ltr">{seatsKnown?`${p.snapshot.seats.available} / ${p.snapshot.seats.limit}`:"—"}</bdi><p>{t("هذه سعة الفرع التي يؤكدها الخادم. المالك غير محسوب ضمن مقاعد الموظفين.","This is the branch capacity confirmed by the server. The owner is excluded from staff seats.")}</p></div>

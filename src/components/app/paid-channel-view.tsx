@@ -1,5 +1,6 @@
 "use client";
 
+import {awaitSetupRequest} from "./paid-setup-request";
 import {useEffect, useLayoutEffect, useId, useRef, useState} from "react";
 import type {PaidBranchSetupRead, PaidSetupChannel} from "@/lib/tenancy/paid-setup-contracts";
 import {checklistSteps, paidChecklistFromRead, type PaidSetupFlowProps} from "./paid-assistant-checklist";
@@ -65,8 +66,6 @@ export type PaidChannelViewProps = {
   isCurrent?: () => boolean;
   /** Trigger authoritative B1 + B3 reread in parent workspace. */
   onRefresh?: () => void;
-  /** Navigate directly to Business Hours while WhatsApp connection is incomplete. */
-  onContinueSetup?: () => void;
   /** Optional dependency injection for tests. */
   actions?: PaidChannelViewActions;
 };
@@ -79,13 +78,13 @@ type FbSdk = {
 async function resolveDefaultActions(): Promise<Required<Pick<PaidChannelViewActions, "startConnection" | "completeConnection" | "recoverConnection" | "cancelConnection" | "prepareRegistration" | "readConnection" | "captureAuthorization">>> {
   const mod = await import("@/lib/tenancy/paid-branch-connection-actions");
   return {
-    captureAuthorization:mod.captureOwnedWhatsappAuthorizationAction,
-    prepareRegistration:mod.prepareOwnedWhatsappRegistrationAction,
-    startConnection: mod.startOwnedPaidBranchConnectionAction,
-    completeConnection: mod.completeOwnedPaidBranchConnectionAction,
-    recoverConnection: mod.recoverOwnedPaidBranchConnectionAction,
-    cancelConnection: mod.cancelOwnedPaidBranchConnectionAction,
-    readConnection: mod.readOwnedPaidBranchConnectionAction,
+    captureAuthorization:input => awaitSetupRequest(mod.captureOwnedWhatsappAuthorizationAction(input),60_000),
+    prepareRegistration:input => awaitSetupRequest(mod.prepareOwnedWhatsappRegistrationAction(input),60_000),
+    startConnection: input => awaitSetupRequest(mod.startOwnedPaidBranchConnectionAction(input),60_000),
+    completeConnection: input => awaitSetupRequest(mod.completeOwnedPaidBranchConnectionAction(input),60_000),
+    recoverConnection: input => awaitSetupRequest(mod.recoverOwnedPaidBranchConnectionAction(input),60_000),
+    cancelConnection: input => awaitSetupRequest(mod.cancelOwnedPaidBranchConnectionAction(input),60_000),
+    readConnection: input => awaitSetupRequest(mod.readOwnedPaidBranchConnectionAction(input),60_000),
   };
 }
 
@@ -221,7 +220,7 @@ export function PaidChannelView(props: PaidChannelViewProps) {
   return <ChannelView key={identity} {...props}/>;
 }
 
-function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, onRefresh, onContinueSetup, actions,hideStatusBadge}: PaidChannelViewProps) {
+function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, onRefresh, actions,hideStatusBadge}: PaidChannelViewProps) {
   const [route, setRoute] = useState<"new-number" | "coexistence" | null>(null);
   const [screen, setScreen] = useState<"choice" | "guide" | "requirements">("choice");
   const [pin, setPin] = useState("");
@@ -277,7 +276,7 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
     const captured=reviewKey;connectReserved.current=true;setInFlight('recovering');
     try{
       const action=actions?.reviewRequest??(await import('@/lib/tenancy/whatsapp-review-request-actions')).ownedWhatsappReviewRequestAction;
-      const result=await action({...scope,channel:'whatsapp',attemptId:reviewAttempt.id,generation:reviewAttempt.generation,request});
+      const result=await awaitSetupRequest(action({...scope,channel:'whatsapp',attemptId:reviewAttempt.id,generation:reviewAttempt.generation,request}),60_000);
       if(!mounted.current||!checkCurrent()||reviewBinding.current!==captured)return;
       if(result.ok){setReviewReceipt({key:captured,receipt:result.receipt});setFeedback(result.receipt?t('تم حفظ طلب المراجعة وهو قيد الانتظار. المحاولة والأصول محفوظة؛ الربط لم يكتمل.','Review request is saved and pending. The attempt and assets are preserved; connection is not complete.'):t('لا يوجد طلب مراجعة محفوظ لهذه المحاولة.','No review request is saved for this attempt.'));}
       else setFeedback(t('تعذر تأكيد طلب المراجعة لهذه المحاولة. تحقق من الحالة؛ لم تتغير الأصول.','The review request could not be confirmed for this attempt. Check its status; assets were not changed.'));
@@ -735,7 +734,7 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
           </label>)}
         </fieldset>
         <button className={styles.primary} type="button" data-route-continue disabled={!route || !!inFlight} onClick={()=>{if(checkCurrent())setScreen("requirements");}}>{t("متابعة إلى الربط مع Facebook","Continue to Facebook connection")}</button>
-        {onContinueSetup && channelStep?.status !== "verified" && !connection?.connection.verified && <button className={styles.back} type="button" data-continue-business-setup disabled={!!inFlight} onClick={()=>{if(checkCurrent())onContinueSetup();}}>{t("استكمال إعداد النشاط","Continue business setup")}</button>}</div></div></>}
+        </div></div></>}
         {screen==="guide"&&route&&<div data-wa-screen="guide"><button type="button" className={styles.back} data-back-to-choice onClick={()=>setScreen("choice")}>{t("رجوع","Go back")}</button><WhatsappConnectionGuide route={route} locale={locale} connectionStatus={effectiveRead === undefined ? t("دليل الربط", "Connection guide") : channelConnectionLabel(connection, locale)} connectEnabled={!!selectedWhatsappFlow && viewModel.canStartFlow(selectedWhatsappFlow)} connecting={inFlight === "starting" || inFlight === "completing"} onConnect={()=>setScreen("requirements")} onReviewRequirements={()=>setScreen("requirements")} feedback={feedback}/></div>}
         {screen==="requirements"&&route&&!awaitingPin&&<div className={styles.requirements} data-wa-screen="requirements">
           <p className={styles.stageCaption}>{t("الخطوة ٢/٢","Step 2/2")}</p>
@@ -750,7 +749,7 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
           <WhatsappConnectionGuide route={route} locale={locale} connectionStatus={channelConnectionLabel(connection,locale)} connectEnabled={(popupReady || canStartSelectedWhatsapp)&&!inFlight} connecting={!!inFlight} preparing={!popupReady} onConnect={popupReady ? handlePreparedFacebook : ()=>void handleWhatsappConnect()} feedback={feedback}/>
           <div className={styles.requirementActions}>
             <button type="button" className={styles.back} disabled={!!inFlight || popupReady} onClick={()=>setScreen("choice")}>{t("رجوع","Go back")}</button>
-            {onContinueSetup && channelStep?.status !== "verified" && !connection?.connection.verified && <button type="button" className={styles.back} data-continue-business-setup disabled={!!inFlight || popupReady} onClick={()=>{if(checkCurrent())onContinueSetup();}}>{t("استكمال إعداد النشاط","Continue business setup")}</button>}
+
           </div>
         </div>}
       </> : <div className={styles.instagram}>

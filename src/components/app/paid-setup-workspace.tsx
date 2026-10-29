@@ -100,9 +100,9 @@ function PendingWorkspace({locale,loading,onRetry}:{locale:'ar'|'en';loading:boo
  const ar=locale==='ar',t=(a:string,e:string)=>ar?a:e;
  return <div className={styles.layout} data-setup-frame="pending">
    <aside className={styles.sidebar} aria-label={t('رحلة التجهيز','Setup journey')}><div className={styles.progressHeading}><strong>{t('رحلة التجهيز','Setup journey')}</strong></div><p className={loading?styles.srOnly:styles.pendingNote}>{loading?t('جارٍ جلب الحالة…','Fetching status…'):t('الحالة غير متاحة','Status unavailable')}</p>
-     <div className={styles.skeletonRail} aria-hidden="true">{[0,1,2,3,4].map(key=><div key={key}><span/><span/></div>)}</div>
+     <nav className={styles.navigation} aria-label={t("خطوات إعداد المساعد","Assistant setup steps")}><ol>{Object.entries(titles).map(([id,label],index)=><li key={id}><button type="button" disabled><span className={styles.number}>{index+1}</span><span className={styles.stepText}><strong>{label[ar?0:1]}</strong><small>{t("بانتظار التحقق","Awaiting verification")}</small></span></button></li>)}</ol></nav>
    </aside>
-   <section className={styles.content} aria-label={t('محتوى المرحلة','Stage content')}><header className={styles.contentHeader}><h2>{t('إعداد الفرع','Branch setup')}</h2></header><div className={styles.empty} role={loading?'status':'alert'}><p className={loading?styles.srOnly:undefined}>{loading?t('جارٍ تحميل إعدادات الفرع…','Loading branch setup…'):t('إعدادات الفرع غير متاحة حاليًا. تحقّق من الجلسة والاستحقاق ثم أعد المحاولة.','Branch setup is unavailable. Check your session and entitlement, then retry.')}</p>{loading&&<div className={styles.skeletonContent} aria-hidden="true"><span/><span/><span/><div/></div>}{!loading&&onRetry&&<button type="button" onClick={onRetry}>{t('إعادة المحاولة','Retry')}</button>}</div></section>
+   <section className={styles.content} aria-label={t('محتوى المرحلة','Stage content')}><header className={styles.contentHeader}><h2>{t('إعداد الفرع','Branch setup')}</h2></header><div className={styles.empty} role={loading?'status':'alert'}><p className={loading?styles.srOnly:undefined}>{loading?t('جارٍ تحميل إعدادات الفرع…','Loading branch setup…'):t('إعدادات الفرع غير متاحة حاليًا. تحقّق من الجلسة والاستحقاق ثم أعد المحاولة.','Branch setup is unavailable. Check your session and entitlement, then retry.')}</p><p>{t("اربط قنوات نشاطك، وأضف مواعيد العمل والمعرفة، ثم جرّب المساعد وراجع متطلبات التشغيل. ستظهر الإعدادات المحفوظة بعد التحقق من صلاحيات الفرع.","Connect your business channels, add hours and knowledge, then try your assistant and review launch requirements. Saved settings appear after branch access is verified.")}</p>{!loading&&onRetry&&<button type="button" onClick={onRetry}>{t('إعادة المحاولة','Retry')}</button>}</div></section>
  </div>;
 }
 function Workspace(p:PaidSetupWorkspaceProps) {
@@ -179,7 +179,7 @@ function Workspace(p:PaidSetupWorkspaceProps) {
         </header>
         <div className={styles.body} key={active}>
           {!active||!allowed?<p role="status">{t("اختر خطوة متاحة. تُفتح الخطوات بعد تحقق متطلباتها.","Choose an available step. Steps open after their prerequisites are verified.")}</p>:
-            active==="whatsapp"||active==="instagram"?<PaidChannelView locale={p.locale} scope={p.scope} read={p.read} channel={active} connectionRead={p.connectionReads?.[active]} isCurrent={p.isCurrent} onRefresh={refresh} onContinueSetup={active==="whatsapp"&&workspaceStepAllowed(p.read,p.scope,"hours",p.availableStepIds)?()=>select("hours"):undefined} hideStatusBadge={p.statusInHeader}/>:
+            active==="whatsapp"||active==="instagram"?<PaidChannelView locale={p.locale} scope={p.scope} read={p.read} channel={active} connectionRead={p.connectionReads?.[active]} isCurrent={p.isCurrent} onRefresh={refresh} hideStatusBadge={p.statusInHeader}/>:
               p.renderStep?.(active)??<p role="status">{t("هذه الشاشة غير متاحة بعد. لم تتغير حالة الخطوة.","This screen is not available yet. The step status has not changed.")}</p>}
         </div>
       </section>

@@ -1,4 +1,5 @@
 "use client";
+import {awaitSetupRequest} from "./paid-setup-request";
 import {useRef,useState} from "react";
 import {selectOwnedPaidBranchChannelsAction} from "@/lib/tenancy/paid-setup-actions";
 import type {PaidBranchSetupRead,PaidSetupChannel} from "@/lib/tenancy/paid-setup-contracts";
@@ -22,7 +23,7 @@ function Selection(p:Props) {
   const selection=JSON.stringify(channels);
   if(operation.current?.channels!==selection)operation.current={channels:selection,id:crypto.randomUUID()};
   try{
-   const result=await selectOwnedPaidBranchChannelsAction({expectedAccountId:p.scope.expectedAccountId,companyId:p.scope.companyId,branchId:p.scope.branchId,clientOpId:operation.current.id,channels});
+   const result=await awaitSetupRequest(selectOwnedPaidBranchChannelsAction({expectedAccountId:p.scope.expectedAccountId,companyId:p.scope.companyId,branchId:p.scope.branchId,clientOpId:operation.current.id,channels}),60_000);
    if(!p.isCurrent())return;
    if(result.ok&&result.companyId===p.scope.companyId&&result.branchId===p.scope.branchId||!result.ok&&result.code==="already_selected")p.onRefresh();
    else setFailed(true);

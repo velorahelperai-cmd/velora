@@ -1,4 +1,5 @@
 "use client";
+import {awaitSetupRequest} from "./paid-setup-request";
 import {setupTiming,observeSetupUsable} from "@/lib/diagnostics/setup-timing";
 import { useCallback,useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import styles from "./paid-assistant-checklist.module.css";
@@ -57,7 +58,7 @@ function PaidSetupEntry(p:PaidSetupFlowProps&{retry:()=>void}) {
   const request=++generation.current;let active=true;
   if(!isCurrent())return;
   const endTiming=setupTiming('entry');
-  void readEntry({expectedAccountId:scope.expectedAccountId,companyId:scope.companyId}).then(result=>{
+  void awaitSetupRequest(readEntry({expectedAccountId:scope.expectedAccountId,companyId:scope.companyId})).then(result=>{
    if(active&&generation.current===request&&isCurrent())setEntry(result.companyId===scope.companyId?result:null);
   }).catch(()=>{if(active&&generation.current===request&&isCurrent())setEntry(null);}).finally(endTiming);
   return()=>{active=false;};
@@ -97,6 +98,7 @@ function PaidSetupBranch(p:PaidSetupFlowProps&{branchId:string}) {
 function PaidSetupBranchRead(p:PaidSetupFlowProps&{branchId:string;refreshVersion:number;retry:()=>void}) {
  const [snapshot,setSnapshot]=useState<PaidSetupWorkspaceRead|null|undefined>(undefined);
  const [selected,setSelected]=useState<ChecklistStepId|null>(null);
+ const [refreshFailed,setRefreshFailed]=useState(false);
  const generation=useRef(0);
  const {scope,isCurrent,branchId,refreshVersion,onWorkspaceRead}=p;
  const readWorkspace=p.readWorkspace??readOwnedPaidSetupWorkspaceAction;
@@ -106,26 +108,28 @@ function PaidSetupBranchRead(p:PaidSetupFlowProps&{branchId:string;refreshVersio
   if(!isCurrent())return;
   const input={expectedAccountId:scope.expectedAccountId,companyId:scope.companyId,branchId};
   const endTiming=setupTiming('workspace');
-  void (connectionFirst?readOwnedPaidSetupWorkspaceAction({...input,connectionFirst:true}):readWorkspace(input)).then(result=>{
+  void awaitSetupRequest(connectionFirst?readOwnedPaidSetupWorkspaceAction({...input,connectionFirst:true}):readWorkspace(input)).then(result=>{
    if(!active||request!==generation.current||!isCurrent())return;
-   if(!result||result.scope.expectedAccountId!==input.expectedAccountId||result.scope.companyId!==input.companyId||result.scope.branchId!==branchId||!paidChecklistFromRead(result.read,input)){setSnapshot(null);onWorkspaceRead?.(null);return;}
+   if(!result){setRefreshFailed(true);setSnapshot(previous=>previous===undefined?null:previous);return;}
+   if(result.scope.expectedAccountId!==input.expectedAccountId||result.scope.companyId!==input.companyId||result.scope.branchId!==branchId||!paidChecklistFromRead(result.read,input)){setSnapshot(null);onWorkspaceRead?.(null);return;}
+   setRefreshFailed(false);
    setSnapshot(result);
    onWorkspaceRead?.(result);
    setSelected(previous=>nextWorkspaceSelection(result,previous));
    // Paint the authorized connection UI before optional setup metadata arrives.
-   if(connectionFirst&&result.read.entitlement)void readOwnedPaidSetupDetailsAction(input,result.read.entitlement.orderGroupId).then(details=>{
+   if(connectionFirst&&result.read.entitlement)void awaitSetupRequest(readOwnedPaidSetupDetailsAction(input,result.read.entitlement.orderGroupId)).then(details=>{
      if(!active||request!==generation.current||!isCurrent()||!details||details.scope.expectedAccountId!==input.expectedAccountId||details.scope.companyId!==input.companyId||details.scope.branchId!==branchId)return;
      const enriched={...result,read:composePaidSetupProgress(result.read,details.summary),activation:details.activation};
-     setSnapshot(enriched);onWorkspaceRead?.(enriched);setSelected(previous=>nextWorkspaceSelection(enriched,previous));
+     setSnapshot(enriched);onWorkspaceRead?.(enriched);setSelected(previous=>previous??nextWorkspaceSelection(enriched,null));
    }).catch(()=>{/* Optional metadata remains unknown; connection controls stay usable. */});
-  }).catch(()=>{if(active&&request===generation.current&&isCurrent()){setSnapshot(null);onWorkspaceRead?.(null);}}).finally(endTiming);
+  }).catch(()=>{if(active&&request===generation.current&&isCurrent()){setRefreshFailed(true);setSnapshot(previous=>previous===undefined?null:previous);}}).finally(endTiming);
   return()=>{active=false;};
  },[scope.expectedAccountId,scope.companyId,branchId,isCurrent,readWorkspace,refreshVersion,onWorkspaceRead,connectionFirst]);
  const ar=p.locale==="ar",persona=snapshot?.read.entitlement?.persona;
  const knownPersona=persona==="level_1"||persona==="level_2"||persona==="level_3"?persona:null;
  const personaName=knownPersona?({level_1:ar?"نورا":"Noura",level_2:ar?"لينا":"Lina",level_3:ar?"دانا":"Dana"})[knownPersona]:undefined;
  if(snapshot?.read.sourceStatus==="selection_required"&&snapshot.read.entitlement&&isCurrent())return <PaidChannelSelection locale={p.locale} scope={{...scope,branchId}} read={snapshot.read} isCurrent={isCurrent} onRefresh={p.retry}/>;
- return <PaidSetupWorkspace statusInHeader={!!p.renderHeader} locale={p.locale} scope={{...scope,branchId}} read={snapshot?.read??null} activation={snapshot?.activation??null} loading={snapshot===undefined} activeStepId={selected} isCurrent={isCurrent} onSelectStep={setSelected} onRefresh={p.retry} availableStepIds={["whatsapp","instagram","hours","knowledge","language","test","team","launch"]} connectionReads={snapshot?.connectionReads} renderStep={(step)=><PaidSetupStepHost locale={p.locale} scope={{...scope,branchId}} step={step} isCurrent={isCurrent} onRefresh={p.retry} read={snapshot?.read??null}/>} persona={knownPersona?<><div className={styles.workspaceFigure}><PaidChecklistPersonaVisual persona={knownPersona} alt={personaName??""}/></div><p className={styles.workspacePersonaName}>{personaName}</p></>:undefined}/>;
+ return <>{refreshFailed&&<p role="status">{ar?"تعذر تحديث حالة الإعداد. احتُفظ بمدخلاتك؛ أعد التحقق قبل المتابعة.":"Setup status could not be refreshed. Your inputs are preserved; verify the status before continuing."} <button type="button" onClick={p.retry}>{ar?"إعادة التحقق":"Retry verification"}</button></p>}<PaidSetupWorkspace statusInHeader={!!p.renderHeader} locale={p.locale} scope={{...scope,branchId}} read={snapshot?.read??null} activation={snapshot?.activation??null} loading={snapshot===undefined} activeStepId={selected} isCurrent={isCurrent} onSelectStep={setSelected} onRefresh={p.retry} availableStepIds={["whatsapp","instagram","hours","knowledge","language","test","team","launch"]} connectionReads={snapshot?.connectionReads} renderStep={(step)=><PaidSetupStepHost locale={p.locale} scope={{...scope,branchId}} step={step} isCurrent={isCurrent} onRefresh={p.retry} read={snapshot?.read??null}/>} persona={knownPersona?<><div className={styles.workspaceFigure}><PaidChecklistPersonaVisual persona={knownPersona} alt={personaName??""}/></div><p className={styles.workspacePersonaName}>{personaName}</p></>:undefined}/></>;
 }
 
 const personaMotionBudget=createMotionBudget(1);

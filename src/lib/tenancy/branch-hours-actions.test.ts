@@ -7,6 +7,7 @@ const VALID_BRANCH_ID = "33333333-3333-4333-8333-333333333333";
 
 let currentSessionId: string | null = VALID_ACCOUNT_ID;
 let rpcMock = vi.fn();
+let missingClaims = false;
 
 vi.mock("@/lib/auth/server-identity", () => ({
   readSessionIdentity: vi.fn(async () => {
@@ -19,7 +20,7 @@ vi.mock("@/lib/supabase/server", () => ({
   createClient: vi.fn(async () => ({
     auth: {
       getClaims: vi.fn(async () => ({
-        data: { claims: { sub: currentSessionId } },
+        data: missingClaims ? null : { claims: { sub: currentSessionId } },
         error: null,
       })),
     },
@@ -42,6 +43,7 @@ import { emptyBranchHours } from "./branch-hours-contracts";
 describe("branch-hours-actions", () => {
   beforeEach(() => {
     currentSessionId = VALID_ACCOUNT_ID;
+    missingClaims = false;
     rpcMock = vi.fn().mockResolvedValue({
       data: {
         ok: true,
@@ -84,6 +86,13 @@ describe("branch-hours-actions", () => {
       branchId: VALID_BRANCH_ID,
     });
     expect(res).toEqual({ ok: false, code: "forbidden", snapshot: null });
+  });
+
+  it("denies missing client claims even when session identity is valid", async () => {
+    missingClaims = true;
+    const res = await readOwnedBranchHoursAction({expectedAccountId: VALID_ACCOUNT_ID, companyId: VALID_COMPANY_ID, branchId: VALID_BRANCH_ID});
+    expect(res).toEqual({ok:false,code:"forbidden",snapshot:null});
+    expect(rpcMock).not.toHaveBeenCalled();
   });
 
   it("successfully reads branch hours when authorized", async () => {

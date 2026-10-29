@@ -55,13 +55,15 @@ export function trialFailureText(code:AnswerFailure["code"],ar:boolean):string{
 }
 export function PaidAssistantTrial(p:PaidAssistantTrialProps){
  const ar=p.locale==="ar",t=(a:string,e:string)=>ar?a:e,scoped=!!p.boundaryFingerprint&&same(p.scope,p.state.scope);
- if(scoped&&p.state.phase==="loading")return <section className={styles.view} dir={ar?"rtl":"ltr"} aria-busy="true"><p role="status">{t("جارٍ تحميل تجربة المساعد.","Loading the assistant trial.")}</p></section>;
- if(!scoped||!p.snapshot||!same(p.scope,p.snapshot.scope)||!Number.isSafeInteger(p.snapshot.version)||p.snapshot.version<1||!p.snapshot.knowledgeRevision||p.state.version!==p.snapshot.version||p.state.phase==="unavailable")
+ if(!scoped||(!p.snapshot&&p.state.phase!=="loading"&&p.state.phase!=="unavailable")||(p.snapshot&&(!same(p.scope,p.snapshot.scope)||!Number.isSafeInteger(p.snapshot.version)||p.snapshot.version<1||!p.snapshot.knowledgeRevision||p.state.version!==p.snapshot.version)))
  return <section className={styles.view} dir={ar?"rtl":"ltr"}><p role="status">{t("تجربة هذا الفرع غير متاحة. أعد تحميل بيانات الحساب والفرع.","This branch's trial is unavailable. Reload the account and branch data.")}</p></section>;
- return <TrialForm key={trialViewKey(p)} {...p} snapshot={p.snapshot}/>;
+ const presentation:TrialSnapshot=p.snapshot??{scope:p.scope,version:0,knowledgeRevision:"",branchLabel:"—",businessType:"",canAsk:null,messages:[]};
+ return <TrialForm key={JSON.stringify([p.scope,p.boundaryFingerprint])} {...p} snapshot={presentation}/>;
 }
+
 function TrialForm(p:PaidAssistantTrialProps & {snapshot:TrialSnapshot}){
  const ar=p.locale==="ar",t=(a:string,e:string)=>ar?a:e,id=useId();
+ const [submitted,setSubmitted]=useState<string|null>(null);
  const [draft,setDraft]=useState(""),[pending,setPending]=useState(false),[uncertain,setUncertain]=useState(false);
  const mounted=useRef(false),reserved=useRef(false);
  useLayoutEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
@@ -75,12 +77,16 @@ function TrialForm(p:PaidAssistantTrialProps & {snapshot:TrialSnapshot}){
  }
  const messages=p.snapshot.messages.filter(m=>same(p.scope,m.scope)&&m.version===p.snapshot.version&&m.knowledgeRevision===p.snapshot.knowledgeRevision);
  return <section className={styles.view} dir={ar?"rtl":"ltr"} aria-labelledby={id} aria-busy={pending||p.state.phase==="pending"}>
+  {p.state.phase==="loading"&&<p role="status">{t("جارٍ تحميل تجربة المساعد.","Loading the assistant trial.")}</p>}
+  {p.state.phase==="unavailable"&&<p role="status">{t("تعذّر التحقق من البيانات. الحفظ غير مؤكد.","Data could not be verified. Saving is unconfirmed.")}</p>}
+  {p.state.phase==="unavailable"&&p.onRefresh&&<button type="button" onClick={()=>{if(p.isCurrent())void p.onRefresh?.();}}>{t("إعادة المحاولة","Retry")}</button>}
   <header><h2 id={id}>{t("جرّب مساعدك","Try your assistant")}</h2><p>{t("الفرع: ","Branch: ")}<bdi>{p.snapshot.branchLabel}</bdi> · <bdi>{businessTypeLabel(p.snapshot.businessType,ar)}</bdi></p></header>
   <p className={styles.note}>{t("اختبار داخلي؛ لا تُرسل هذه الرسائل إلى العملاء. ظهور إجابة لا يثبت الجاهزية ولا يطلق الردود الحية.","Internal trial: these messages are not sent to customers. An answer does not prove readiness or launch live replies.")}</p>
   {p.snapshot.trialAllowance&&<p role="status"><bdi>{p.snapshot.trialAllowance.used} / {p.snapshot.trialAllowance.limit}</bdi> {t("ردود التجربة المجانية المستخدمة","free setup replies used")}</p>}
   <div className={styles.suggestions} aria-label={t("أسئلة مقترحة","Suggested questions")}>{trialSuggestions(p.snapshot.businessType,p.locale).map(question=><button key={question} type="button" disabled={blocked} onClick={()=>{if(p.isCurrent())setDraft(question);}}>{question}</button>)}</div>
   <div className={styles.transcript} role="log" aria-live="polite" aria-relevant="additions text" aria-label={t("محادثة الاختبار","Trial conversation")}>
-   {!messages.length&&<p className={styles.empty}>{t("اختر سؤالًا مقترحًا أو اكتب سؤالك لبدء الاختبار.","Choose a suggested question or write your own to start the trial.")}</p>}
+   {submitted&&!messages.some(message=>message.question===submitted)&&<article><div className={styles.question}><small>{t("سؤالك","Your question")}</small><p dir="auto">{submitted}</p></div><p role="status">{pending||p.state.phase==="pending"?t("جارٍ انتظار نتيجة الطلب…","Waiting for the request result…"):t("لم تتأكد نتيجة هذا السؤال بعد.","This question has no confirmed result yet.")}</p></article>}
+   {!submitted&&!messages.length&&<p className={styles.empty}>{t("اختر سؤالًا مقترحًا أو اكتب سؤالك لبدء الاختبار.","Choose a suggested question or write your own to start the trial.")}</p>}
    {messages.map(m=><article key={m.id}>
     {m.origin==="synthetic"&&<p className={styles.synthetic}>{t("مثال اصطناعي للواجهة — ليس نتيجة ذكاء اصطناعي أو دليل جاهزية.","Synthetic UI example — not an AI result or readiness evidence.")}</p>}
     <div className={styles.question}><small>{t("سؤالك","Your question")}</small><p dir="auto">{m.question}</p></div>
@@ -96,9 +102,9 @@ function TrialForm(p:PaidAssistantTrialProps & {snapshot:TrialSnapshot}){
   {p.snapshot.handoffPreview&&<p role="status">{t("معاينة التصعيد والمراجعة البشرية فقط: صُنّف الطلب وفق سياسة المساعد. لم تُحوّل محادثة حقيقية ولم يُرسل طلب AI أو يُخصم رد من التجربة.","Escalation and human-review preview only: the request matched the assistant policy. No real conversation was transferred, no AI request was sent, and no trial reply was used.")}</p>}
   {p.snapshot.recoveryNotice==="context_changed"&&<p role="status">{t("تغيّرت الإعدادات أثناء الطلب السابق. سُجّلت تكلفته دون احتسابه من ردود التجربة؛ يمكنك إرسال سؤال بالإعدادات الحالية.","Settings changed during the previous request. Its cost was recorded without using a trial reply; you can ask with the current settings.")}</p>}
   {p.snapshot.pendingOperation&&<div role="status"><p>{t("يوجد طلب سابق لم تُحسم نتيجته بعد. لن نرسل سؤالًا جديدًا أثناء التسوية.","A previous request is unresolved. New questions are blocked during reconciliation.")}</p>{p.snapshot.pendingOperation.recoverable&&p.onRecover&&<button type="button" disabled={pending} onClick={()=>{if(!pending&&p.isCurrent())void dispatch(()=>p.onRecover?.(p.snapshot.pendingOperation!.id));}}>{t("استعادة الرد المحفوظ","Recover saved answer")}</button>}{p.onRefresh&&<button type="button" disabled={pending} onClick={()=>{if(!pending&&p.isCurrent())void dispatch(()=>p.onRefresh?.());}}>{t("تحديث الحالة","Refresh status")}</button>}</div>}
-  <form onSubmit={e=>{e.preventDefault();const question=draft.trim();if(!blocked&&question&&question.length<=ANSWER_MAX_QUESTION_CHARS)void dispatch(()=>p.onAsk?.({...context,question,operationId:crypto.randomUUID()}));}}>
+  <form onSubmit={e=>{e.preventDefault();const question=draft.trim();if(!blocked&&question&&question.length<=ANSWER_MAX_QUESTION_CHARS){setSubmitted(question);void dispatch(()=>p.onAsk?.({...context,question,operationId:crypto.randomUUID()}));}}}>
    <label htmlFor={`${id}-question`}>{t("اكتب سؤالك","Write your question")}</label>
-   <textarea id={`${id}-question`} dir="auto" rows={3} maxLength={ANSWER_MAX_QUESTION_CHARS} value={draft} disabled={blocked} onChange={e=>{if(p.isCurrent())setDraft(e.target.value);}}/>
+   <textarea id={`${id}-question`} dir="auto" rows={3} maxLength={ANSWER_MAX_QUESTION_CHARS} value={draft} disabled={pending||p.state.phase==="pending"} onChange={e=>{if(p.isCurrent())setDraft(e.target.value);}}/>
    <div className={styles.footer}><small><bdi dir="ltr">{draft.length} / {ANSWER_MAX_QUESTION_CHARS}</bdi></small><button type="submit" disabled={blocked||!draft.trim()||draft.trim().length>ANSWER_MAX_QUESTION_CHARS}>{t("إرسال السؤال","Send question")}</button></div>
   </form>
   {!p.onAsk&&<p className={styles.note}>{t("الاختبار غير مربوط بمحرك الإجابات بعد.","This trial is not connected to the answer engine yet.")}</p>}

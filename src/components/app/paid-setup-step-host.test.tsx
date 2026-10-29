@@ -53,6 +53,23 @@ const baseProps: PaidSetupStepHostProps = {
 };
 
 describe("PaidSetupStepHost", () => {
+  it('bounds stalled team reads and ignores their late result',async()=>{
+    vi.useFakeTimers();vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);
+    let finish!:(value:null)=>void;
+    vi.mocked(readOwnedBranchTeamAction).mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve;}));
+    const host=document.createElement('div'),root=createRoot(host);
+    try{
+      await act(async()=>root.render(createElement(PaidSetupStepHost,{...baseProps,step:'team'})));
+      await act(async()=>vi.advanceTimersByTimeAsync(15000));
+      expect(host.textContent).toContain('Refresh invitations');
+      await act(async()=>finish(null));
+      expect(host.textContent).toContain('Refresh invitations');
+    }finally{await act(async()=>root.unmount());vi.useRealTimers();vi.unstubAllGlobals();}
+  });
+  it('renders launch requirements while the initial read is pending',()=>{
+    const html=renderToStaticMarkup(createElement(PaidSetupStepHost,{...baseProps,step:'launch'}));
+    expect(html).toContain('Review and confirm launch');expect(html).toContain('<dl');
+  });
   it('blocks stale launch consent throughout an unresolved status refresh',async()=>{
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);
     const scope={expectedAccountId:baseProps.scope.expectedAccountId,companyId:baseProps.scope.companyId,branchId:baseProps.scope.branchId};
@@ -67,7 +84,7 @@ describe("PaidSetupStepHost", () => {
       expect(host.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(false);
       await act(async()=>Array.from(host.querySelectorAll('button')).find(b=>b.textContent==='Refresh operation status')!.click());
       expect(host.textContent).toContain('Loading the launch summary.');
-      expect(host.querySelector('button[type="submit"]')).toBeNull();
+      expect(host.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(true);
       expect(confirmOwnedBranchLaunchAction).not.toHaveBeenCalled();
       await act(async()=>finish(snapshot));
       expect(host.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(true);

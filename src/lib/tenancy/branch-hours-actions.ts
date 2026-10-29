@@ -35,23 +35,64 @@ function logHoursFailure(operation: string, code: string, requestId: string) {
   });
 }
 
+type SessionClientSuccess = {
+  client: BranchHoursRpc;
+  timing: {
+    identityMs: number;
+    clientMs: number;
+    claimsMs: number;
+  };
+};
+
+type SessionClientFailure = {
+  ok: false;
+  code: "unauthenticated" | "forbidden";
+};
+
 async function sessionClient(
   expectedAccountId: string,
   requestId: string
-): Promise<{ client: BranchHoursRpc } | { ok: false; code: "unauthenticated" | "forbidden" }> {
-  const identity = await readSessionIdentity();
+): Promise<SessionClientSuccess | SessionClientFailure> {
+  const t0 = Date.now();
+  let identityMs = 0, clientMs = 0;
+  // Concurrently resolve session identity and create client to eliminate sequential network roundtrips
+  const [identityResult, clientResult] = await Promise.allSettled([
+    readSessionIdentity().finally(() => { identityMs = Date.now() - t0; }),
+    createClient().finally(() => { clientMs = Date.now() - t0; }),
+  ]);
+
+
+  if (identityResult.status !== "fulfilled") {
+    logHoursFailure("session", "unauthenticated", requestId);
+    return { ok: false, code: "unauthenticated" };
+  }
+
+  const identity = identityResult.value;
   if (!identity.ok || identity.userId !== expectedAccountId) {
     const code = identity.ok ? "forbidden" : "unauthenticated";
     logHoursFailure("session", code, requestId);
     return { ok: false, code };
   }
-  const client = await createClient();
+
+  if (clientResult.status !== "fulfilled") {
+    logHoursFailure("session", "unauthenticated", requestId);
+    return { ok: false, code: "unauthenticated" };
+  }
+
+  const client = clientResult.value;
+
+  const tClaims = Date.now();
   const claims = await client.auth.getClaims();
+  const claimsMs = Date.now() - tClaims;
   if (claims.error || claims.data?.claims?.sub !== expectedAccountId) {
     logHoursFailure("session", "forbidden", requestId);
     return { ok: false, code: "forbidden" };
   }
-  return { client: client as unknown as BranchHoursRpc };
+
+  return {
+    client: client as unknown as BranchHoursRpc,
+    timing: { identityMs, clientMs, claimsMs },
+  };
 }
 
 export async function readOwnedBranchHoursAction(
@@ -59,6 +100,7 @@ export async function readOwnedBranchHoursAction(
 ): Promise<BranchHoursReadResult> {
   const requestId = randomUUID();
   const accountId = scope?.expectedAccountId;
+  const tTotalStart = Date.now();
   return withLogContext({ request_id: requestId, user_id: accountId }, async () => {
     if (!accountId || !UUID.test(accountId)) {
       logHoursFailure("read", "invalid_input", requestId);
@@ -69,7 +111,22 @@ export async function readOwnedBranchHoursAction(
       return { ok: false, code: session.code, snapshot: null };
     }
     const store = createBranchHoursStore(session.client);
+    const tRpc = Date.now();
     const result = await runBranchHoursRead(scope, store);
+    const rpcMs = Date.now() - tRpc;
+    const totalMs = Date.now() - tTotalStart;
+
+    logEvent("info", "es02.branch_hours.timing", {
+      request_id: requestId,
+      operation: "read",
+      identity_ms: session.timing.identityMs,
+      client_ms: session.timing.clientMs,
+      claims_ms: session.timing.claimsMs,
+      rpc_ms: rpcMs,
+      total_ms: totalMs,
+      ok: result.ok,
+    });
+
     if (!result.ok) {
       logHoursFailure("read", result.code, requestId);
     }
@@ -82,6 +139,7 @@ export async function saveOwnedBranchHoursAction(
 ): Promise<BranchHoursSaveResult> {
   const requestId = randomUUID();
   const accountId = draft?.scope?.expectedAccountId;
+  const tTotalStart = Date.now();
   return withLogContext({ request_id: requestId, user_id: accountId }, async () => {
     if (!accountId || !UUID.test(accountId)) {
       logHoursFailure("save", "invalid_input", requestId);
@@ -92,7 +150,22 @@ export async function saveOwnedBranchHoursAction(
       return { ok: false, code: session.code };
     }
     const store = createBranchHoursStore(session.client);
+    const tRpc = Date.now();
     const result = await runBranchHoursSave(draft, store);
+    const rpcMs = Date.now() - tRpc;
+    const totalMs = Date.now() - tTotalStart;
+
+    logEvent("info", "es02.branch_hours.timing", {
+      request_id: requestId,
+      operation: "save",
+      identity_ms: session.timing.identityMs,
+      client_ms: session.timing.clientMs,
+      claims_ms: session.timing.claimsMs,
+      rpc_ms: rpcMs,
+      total_ms: totalMs,
+      ok: result.ok,
+    });
+
     if (!result.ok) {
       logHoursFailure("save", result.code, requestId);
     }
@@ -105,17 +178,33 @@ export async function copyOwnedBranchHoursAction(
 ): Promise<BranchHoursCopyResult> {
   const requestId = randomUUID();
   const accountId = draft?.source?.scope?.expectedAccountId;
+  const tTotalStart = Date.now();
   return withLogContext({ request_id: requestId, user_id: accountId }, async () => {
     if (!accountId || !UUID.test(accountId)) {
       logHoursFailure("copy", "invalid_input", requestId);
-      return { ok: false, code: "invalid_input" };
+      return { ok: false, code: "invalid_input", targets: [] };
     }
     const session = await sessionClient(accountId, requestId);
     if ("ok" in session) {
-      return { ok: false, code: session.code };
+      return { ok: false, code: session.code, targets: [] };
     }
     const store = createBranchHoursStore(session.client);
+    const tRpc = Date.now();
     const result = await runBranchHoursCopy(draft, store);
+    const rpcMs = Date.now() - tRpc;
+    const totalMs = Date.now() - tTotalStart;
+
+    logEvent("info", "es02.branch_hours.timing", {
+      request_id: requestId,
+      operation: "copy",
+      identity_ms: session.timing.identityMs,
+      client_ms: session.timing.clientMs,
+      claims_ms: session.timing.claimsMs,
+      rpc_ms: rpcMs,
+      total_ms: totalMs,
+      ok: result.ok,
+    });
+
     if (!result.ok) {
       logHoursFailure("copy", result.code, requestId);
     }
