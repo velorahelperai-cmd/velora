@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Link from 'next/link';
 import {companyListFilters,companyListReturnHref} from "@/components/app/admin-company-navigation";
 import { AdminList } from "@/components/app/admin-list";
 import { adminGetOverviewStats } from "@/lib/tenancy/actions";
@@ -11,7 +10,7 @@ export default async function Page({searchParams}: {searchParams?:Promise<Record
   const filters=companyListFilters(await searchParams??{});
   const [overview,truth] = await Promise.all([adminGetOverviewStats(),readAdminTruth()]);
   return (
-    <><Link href="/admin/qa">إدارة تجربة VELORA QA</Link><AdminList
+    <AdminList
       key={companyListReturnHref(filters)}
       initialCompanyFilters={filters}
       initialOverview={overview.ok ? overview.data : null}
@@ -21,6 +20,6 @@ export default async function Page({searchParams}: {searchParams?:Promise<Record
           ? { code: overview.code, message: overview.message ?? null }
           : null
       }
-    /></>
+    />
   );
 }

@@ -91,6 +91,12 @@ export function AdminShell({ children }: { children: ReactNode }) {
           icon: IconDashboard,
           active: pathname === "/admin",
         },
+        ...(teamEditor ? [{
+          label: isRtl ? "إدارة تجربة VELORA QA" : "VELORA QA experiments",
+          href: "/admin/qa",
+          icon: IconSettings,
+          active: isNavActive("/admin/qa"),
+        }] : []),
         {
           label: isRtl ? "مركز العمليات والأعطال" : "Operations Center",
           href: "/admin/operations",
