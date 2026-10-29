@@ -96,7 +96,8 @@ export type Es02OwnedRecoveryView = {
 export type Es02ActivationFoundation = {
   companyId: string;
   orderGroupId: string;
-  paymentConfirmedAt: string;
+  /** Null only for an explicit non-cash QA grant; never infer collected payment. */
+  paymentConfirmedAt: string | null;
   entitlementCreatedAt: string;
   activationDeadlineAt: string;
   bonusDays: 7;

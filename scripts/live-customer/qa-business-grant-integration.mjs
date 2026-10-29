@@ -15,7 +15,7 @@ try{
 
  await stack.sql(await read('supabase/migrations/20261014033011_master_business_archive.sql'));
  await stack.sql(await read('supabase/migrations/20261028172913_es02_reply_language_cas.sql'));
- const candidatePath='supabase/migrations/20261029023158_qa_business_grant.sql',testPath='scripts/live-customer/qa-business-grant-regression.sql';
+ const candidatePath='supabase/migrations/20261029030258_qa_business_grant.sql',testPath='scripts/live-customer/qa-business-grant-regression.sql';
  console.log(await stack.sql('begin;\n'+strip(await read(candidatePath))+'\n'+strip(await read(testPath))+'\ncommit;'));
  const f=JSON.parse(await stack.sql("select value from public.qa_grant_fixture where key='context'"));
  const auth=`set role authenticated;set request.jwt.claims='${JSON.stringify({role:'authenticated',sub:f.actor,session_id:f.sid})}';set request.jwt.claim.sub='${f.actor}';set request.jwt.claim.role='authenticated';`;
