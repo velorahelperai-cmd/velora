@@ -5,7 +5,7 @@ import {createHash} from 'node:crypto';
 const read=async p=>(await readFile(p,'utf8')).replaceAll('\r\n','\n');
 const strip=s=>s.replace(/^\s*(begin|commit);\s*$/gmi,'');
 const digest=async p=>createHash('sha256').update(await readFile(p)).digest('hex');
-const inputPaths=['scripts/live-customer/existing-business-live.sql','scripts/live-customer/existing-business-regression.sql','scripts/live-customer/setup-retention-cron-integration.mjs','scripts/integration/local-cron-test-stack.mjs','scripts/live-customer/checkout-retention-audit.sql','supabase/migrations/20261029011436_checkout_retention_audit.sql'];
+const inputPaths=['scripts/live-customer/existing-business-live.sql','scripts/live-customer/existing-business-regression.sql','scripts/live-customer/setup-retention-cron-integration.mjs','scripts/integration/local-cron-test-stack.mjs','scripts/live-customer/checkout-retention-audit.sql','supabase/migrations/20261029013822_checkout_retention_audit.sql'];
 const inputHashes=Object.fromEntries(await Promise.all(inputPaths.map(async p=>[p,await digest(p)])));
 let stack;
 try{
@@ -16,7 +16,7 @@ try{
  await stack.sql(await read('scripts/live-customer/native-live-candidate.sql'));
  await stack.sql(await read('scripts/live-customer/native-knowledge-candidate.sql'));
  if(!process.argv.includes('--without-candidate'))await stack.sql(await read('scripts/live-customer/existing-business-live.sql'));
- await stack.sql(await read('supabase/migrations/20261029011436_checkout_retention_audit.sql'));
+ await stack.sql(await read('supabase/migrations/20261029013822_checkout_retention_audit.sql'));
  const privileges=JSON.parse(await stack.sql(`select jsonb_build_object('anon',has_function_privilege('anon','private.checkout_retention_audit()','execute'),'authenticated',has_function_privilege('authenticated','private.checkout_retention_audit()','execute'),'service',has_function_privilege('service_role','private.checkout_retention_audit()','execute'))`));
  if(Object.values(privileges).some(Boolean))throw Error('RETENTION_AUDIT_PRIVILEGE_EXPOSED');
  console.log(await stack.sql(await read('scripts/live-customer/existing-business-regression.sql')));
