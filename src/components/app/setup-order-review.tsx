@@ -60,6 +60,7 @@ export type SetupOrderReviewProps = {
   managedCheckout?: boolean;
   paymentStatus?: ReactNode;
   paymentStateLabel?: string;
+  qaSimulationAction?: ReactNode;
   checkoutNotice?: {ar:string;en:string};
   onEditBranch: (index: number) => void;
   onBackToPlans: () => void;
@@ -273,6 +274,7 @@ function PersonaFigure({ persona, alt, enabled }: { persona: SubscriptionPersona
 (PersonaFigure as unknown as { hooks: boolean }).hooks = true;
 
 export type ViewProps = {
+  qaSimulationAction?: ReactNode;
   paymentStatus?: ReactNode;
   paymentStateLabel?: string;
   checkoutNotice?: {ar:string;en:string};
@@ -512,6 +514,7 @@ export function SetupOrderReviewView(p: ViewProps) {
               {busy ? tx(ar, T.confirming) : tx(ar, T.confirm)}
             </button>
           ) : null}
+          {p.qaSimulationAction}
           <button type="button" className={styles.secondary} data-action="back" disabled={p.locked} onClick={p.onBack}>
             {tx(ar, T.back)}
           </button>
@@ -654,6 +657,7 @@ export function SetupOrderReview(props: SetupOrderReviewProps) {
       checkoutUrl={write.kind === "unpaid" ? write.checkoutUrl : local.kind === "created" ? local.result.checkoutUrl : undefined}
       paymentStatus={props.paymentStatus}
       paymentStateLabel={props.paymentStateLabel}
+      qaSimulationAction={props.qaSimulationAction}
       checkoutNotice={props.checkoutNotice}
       canRetry={phase === "unknown" && !!props.retrySameOperation && !busy}
       termsHref={props.termsHref === undefined ? "/terms" : props.termsHref}

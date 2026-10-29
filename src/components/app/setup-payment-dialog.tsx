@@ -7,6 +7,8 @@ import {SetupOrderReview,safeTestCheckoutUrl,type SetupOrderReviewProps} from '.
 import {actorKey,createLiveCell} from './setup-order-review-model';
 import type {SetupPlanConfirmResult} from './setup-plan-journey';
 import styles from './setup-payment-dialog.module.css';
+import reviewStyles from './setup-order-review.module.css';
+import {readQaSetupSimulationAccess} from '@/lib/tenancy/qa-setup-simulation-actions';
 
 type Props=SetupOrderReviewProps&{isCurrent:()=>boolean;navigate?:(next:string)=>void};
 type Payment={orderId:string;url:string|null};
@@ -14,6 +16,9 @@ type Phase='idle'|'creating'|'waiting'|'checking'|'paid'|'unknown'|'setup_failed
 export function SetupPaymentDialog(p:Props){return <PaymentDialog key={JSON.stringify(p.actor)} {...p}/>;}
 
 function PaymentDialog(p:Props){
+ const [qaAllowed,setQaAllowed]=useState(false);
+ const qaAccountId=p.actor.accountId,qaCurrent=p.isCurrent;
+ useEffect(()=>{let active=true;void readQaSetupSimulationAccess(qaAccountId).then(allowed=>{if(active&&qaCurrent())setQaAllowed(allowed);}).catch(()=>{});return()=>{active=false;};},[qaAccountId,qaCurrent]);
  const t=(a:string,e:string)=>p.ar?a:e;
  const stored=p.write.kind==='unpaid'&&p.write.order.accountId===p.actor.accountId&&es02Uuid(p.write.order.orderId)?{orderId:p.write.order.orderId,url:safeTestCheckoutUrl(p.write.checkoutUrl)}:null;
  const [payment,setPayment]=useState<Payment|null>(stored),[phase,setPhase]=useState<Phase>(stored?'waiting':'idle');
@@ -133,6 +138,7 @@ function PaymentDialog(p:Props){
  const content=<>
   {notice&&<p className={styles.notice} role="alert">{notice}</p>}
   <SetupOrderReview {...p} beforeConfirm={beforeConfirm} managedCheckout paymentStatus={paymentStatus} paymentStateLabel={payment?label:undefined}
+   qaSimulationAction={qaAllowed&&!payment&&!busy?<a className={reviewStyles.secondary} href="/setup/qa" target="_blank" rel="noreferrer" data-qa-simulation>{t('محاكاة تجربة ما بعد الدفع','Simulate post-payment setup')}</a>:undefined}
    confirmReview={accepted=>confirm(()=>p.confirmReview(accepted))}
    retrySameOperation={p.retrySameOperation?()=>confirm(()=>p.retrySameOperation!()):undefined} onConfirmed={confirmed}/>
  </>;

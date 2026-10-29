@@ -4,6 +4,8 @@ import {createRoot,type Root} from 'react-dom/client';
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
 import type {SetupOrderReviewProps} from './setup-order-review';
 const mocks=vi.hoisted(()=>({verify:vi.fn(),finish:vi.fn(),confirm:vi.fn(),navigate:vi.fn(),review:null as SetupOrderReviewProps|null}));
+const qa=vi.hoisted(()=>({access:vi.fn(async()=>false)}));
+vi.mock('@/lib/tenancy/qa-setup-simulation-actions',()=>({readQaSetupSimulationAccess:qa.access}));
 vi.mock('@/app/account/payment/[orderId]/actions',()=>({verifyThawaniPayment:mocks.verify,finishTestCheckout:mocks.finish}));
 vi.mock('./setup-order-review',async original=>({...await original<typeof import('./setup-order-review')>(),SetupOrderReview:(p:SetupOrderReviewProps)=>{mocks.review=p;return createElement('div',{'data-review':true},createElement('button',{onClick:()=>{if(p.beforeConfirm?.()===false)return;void p.confirmReview(true).then(r=>{if(r.ok)p.onConfirmed?.(r);});}},'Pay'),p.paymentStatus);}}));
 import {SetupPaymentDialog} from './setup-payment-dialog';
@@ -18,6 +20,7 @@ const props={ar:false,slots:[{label:{name:'TAG CITY',city:'Nizwa'},persona:'leve
 let root:Root,host:HTMLDivElement,popup:{closed:boolean;opener:unknown;document:{title:string;body:{textContent:string}};location:{replace:ReturnType<typeof vi.fn>};close:ReturnType<typeof vi.fn>;focus:ReturnType<typeof vi.fn>},open:ReturnType<typeof vi.fn>;
 let channels:Array<{onmessage:((event:{data:unknown})=>void)|null;close:ReturnType<typeof vi.fn>}>;
 beforeEach(()=>{
+ qa.access.mockResolvedValue(false);
  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);vi.useFakeTimers({toFake:['setTimeout','clearTimeout','Date']});vi.clearAllMocks();channels=[];
  HTMLDialogElement.prototype.showModal=function(){this.setAttribute('open','');};HTMLDialogElement.prototype.close=function(){this.removeAttribute('open');};
  popup={closed:false,opener:window,document:{title:'',body:{textContent:''}},location:{replace:vi.fn()},close:vi.fn(()=>{popup.closed=true;}),focus:vi.fn()};
@@ -31,6 +34,11 @@ async function pay(){await act(async()=>host.querySelector<HTMLButtonElement>('[
 it('opens the popup synchronously and does not create an order if blocked',async()=>{open.mockReturnValue(null);await render();await pay();expect(open).toHaveBeenCalledOnce();expect(mocks.confirm).not.toHaveBeenCalled();expect(host.textContent).toContain('Allow popups');});
 it('keeps the parent dialog and sends only the validated UAT checkout to a popup without opener',async()=>{await render();await pay();expect(open.mock.invocationCallOrder[0]).toBeLessThan(mocks.confirm.mock.invocationCallOrder[0]!);expect(popup.opener).toBeNull();expect(popup.location.replace).toHaveBeenCalledWith(url);expect(host.querySelector('dialog[open]')).not.toBeNull();expect(mocks.navigate).not.toHaveBeenCalled();expect(mocks.verify).toHaveBeenCalledWith(orderId);expect(mocks.finish).not.toHaveBeenCalled();});
 it('does not treat closing the popup or a return hint as payment proof',async()=>{await render();await pay();popup.closed=true;await act(async()=>{channels[0]!.onmessage?.({data:{type:'velora-payment-return',orderId}});});expect(mocks.verify.mock.calls.length).toBeGreaterThanOrEqual(2);expect(mocks.finish).not.toHaveBeenCalled();expect(mocks.navigate).not.toHaveBeenCalled();});
+it('offers a separate simulation action only after server authorization without creating checkout',async()=>{
+ await render();expect(mocks.review?.qaSimulationAction).toBeUndefined();
+ qa.access.mockResolvedValue(true);await act(async()=>root.render(null));await render();
+ expect(mocks.review?.qaSimulationAction).toBeTruthy();expect(mocks.confirm).not.toHaveBeenCalled();expect(mocks.finish).not.toHaveBeenCalled();expect(open).not.toHaveBeenCalled();
+});
 it('provisions only after server payment proof, then navigates directly to setup',async()=>{mocks.verify.mockResolvedValue({ok:true,paid:true});await render();await pay();expect(mocks.finish).toHaveBeenCalledWith(orderId);expect(mocks.navigate).toHaveBeenCalledWith('/setup');expect(popup.close).toHaveBeenCalled();});
 it('reopens the same unpaid checkout without creating another order',async()=>{await render();await pay();popup.closed=true;await act(async()=>host.querySelector<HTMLButtonElement>('[data-resume-payment]')!.click());expect(mocks.confirm).toHaveBeenCalledOnce();expect(popup.location.replace).toHaveBeenLastCalledWith(url);});
 it('rejects unsafe provider and post-payment destinations',async()=>{mocks.confirm.mockResolvedValue({...success,checkoutUrl:'https://evil.example/pay'});await render();await pay();expect(popup.location.replace).not.toHaveBeenCalled();expect(mocks.navigate).not.toHaveBeenCalled();});
