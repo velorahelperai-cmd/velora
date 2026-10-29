@@ -1,3 +1,13 @@
+# Current Session Index - TAG-CITY-META-TEST-ROUTING-20261029 - DEPLOYED & VERIFIED
+
+- **Delivery Summary:** Owner-authorized deployment completed under strict safety gates (APPROVED WITH SAFETY GATES).
+  - **Commit SHA:** ef679b5dbe524540e9b548317c5e931b76b876d5 on main.
+  - **CI Quality Gates:** GitHub Actions run 40889868126 SUCCESS 8/8.
+  - **Supabase Migration:** 20261029165000_setup_meta_test_inbound_receive_only applied to vmpifljyozsbtssxhoxd.
+  - **Vercel Production Env:** WHATSAPP_TEST_COMPANY_ID=40d2d885-8b63-49c4-b3da-d2e9566f2750, VELORA_SETUP_META_TEST_RECIPIENT_WA_ID=96876351423, WHATSAPP_WORKER_ENABLED=false.
+  - **Production Deployment:** dpl_CJHrQrmAsoTRyDvecRv5w69mbLNG at https://www.velorahelper.com.
+  - **Live Verification:** /setup returns 307 login redirect; /login returns 200 OK.
+
 # Current Session Index - TAG-CITY-META-TEST-ROUTING-20261029
 
 - **Part 1 (Receive-only atomicity & worker claim preservation - CLOSED):** Forward SQL migration supabase/migrations/20261029165000_setup_meta_test_inbound_receive_only.sql defines public.save_whatsapp_inbound_receive_only (SECURITY DEFINER, service_role only). For new messages (inserted = true), it saves conversation+message and locks/commits whatsapp_inbound_jobs as status='completed', result_code='SETUP_META_TEST_RECEIVE_ONLY', claim_token=null inside the same PostgreSQL transaction. On duplicate redelivery (inserted = false), active worker-claimed jobs (status = 'claimed' or pending send intent) reject with RECEIVE_ONLY_UNRESOLVED_JOB (23514), leaving the active worker claim completely untouched; ordinary duplicates return the saved state without mutating prior jobs. Verified via isolated native PostgreSQL tests (14 tests PASS).
