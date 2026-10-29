@@ -25,3 +25,17 @@ WhatsApp connection actions no longer forward five raw database failures or unkn
 Production migration20261029010107 removes obsolete client mutation/TRUNCATE/MAINTAIN privileges on conversations/messages, preserves authenticated SELECT under existing RLS, and preserves service/definer writers. Three native PostgreSQL tests PASS; live catalog confirms client mutation=false, SELECT=true, service access=true. No customer rows or Meta state modified.
 
 Leaked-password protection: inspected the actual Velora organization in Chrome; plan FREE. UI states Pro or above required. Enabling and saving did not persist: reload shows disabled. No paid upgrade initiated. See [official availability](https://supabase.com/docs/guides/auth/password-security). This remains unavailable on the current plan, not enabled or runtime-verified.
+
+## Remaining review — no repetition of delivered repairs
+
+New fixes: team invite/revoke RPCs allowlist documented refusal codes; unknown backend text becomes UNKNOWN. WhatsApp reply intent/claim/finalize unknown refusals become fixed public messages. Four new injected leak cases failed before repair. Affected team9 and send55 tests PASS; typecheck/scoped lint PASS. Idempotency, paid quotas, existing throttles, worker/webhook and human handoff logic unchanged; no live provider send.
+
+Read-only Production recheck confirms conversations/messages UPDATE/DELETE/TRUNCATE absent and SELECT retained; raw delivery receipt access remains denied. No repeated grant migration. Auth advisor still reports leaked-password protection disabled; previously verified FREE-plan restriction remains unresolved, no repeated activation attempt or paid upgrade.
+
+Rate observations at2026-10-29T01:10Z: all seven policies monitor; zero retained subjects/hits/excesses across all endpoints. Bounded Vercel runtime query00:50–01:11UTC returned no security.rate entries. This supplies no evidence to enable blocking or establish correct live observation coverage. No new enforcement activated. Existing Auth throttling, quota/financial concurrency protections remain.
+
+Hosted isolation: requested explicit approved test identities/companies/branches; current record only identifies a dedicated registration account with no memberships. Do not create Production companies or use customers to fill this gap. Hosted multi-account/company/branch acceptance remains UNKNOWN pending that scope. Live Meta, AI, payment and human-delivery integrations remain UNKNOWN.
+
+New native isolation3 PASS:15 unchanged Production authorization/session function bodies in a disposable database with synthetic identities, two companies and three branches. Allows own grants; denies foreign account/session/company/branch, ungranted capability, revoked/idle/deleting sessions and revoked branch grant; recovery allowed. Table shape/claims are synthetic; token verification, HTTP and full billing/inbox lifecycle not exercised.
+
+Confirmed functional blocker: branch_active staff pass their explicit branch capability but private.billing_chat_access rejects membership unless status=active. Full branch inbox acceptance remains blocked; widening company-wide billing authority is not a safe isolated security fix. Recorded separately, no authorization expansion made.

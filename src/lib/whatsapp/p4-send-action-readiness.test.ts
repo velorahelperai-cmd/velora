@@ -105,6 +105,16 @@ describe("real staff reply action at persistence and Graph boundaries", () => {
     vi.unstubAllEnvs();
   });
   const input = { conversationId: "conversation-offline-a", body: "Offline reply", clientOpId: "offline-op-0001" };
+  it.each(["intent", "claim", "finalize"] as const)("bounds unknown %s RPC rejection details", async (stage) => {
+    const rejection = { ok: false, code: "private schema diagnostic with synthetic secret" };
+    if (stage === "intent") fixture.created = rejection;
+    if (stage === "claim") fixture.claimed = rejection;
+    if (stage === "finalize") fixture.finalized = { error: null, data: rejection };
+    const { replyWhatsappConversation } = await import("./actions");
+    expect(await replyWhatsappConversation(input)).toMatchObject({ ok: false, code: "SAVE_FAILED", message: `${stage}_failed` });
+    if (stage !== "finalize") expect(globalThis.fetch).not.toHaveBeenCalled();
+    else expect(globalThis.fetch).toHaveBeenCalledOnce();
+  });
   it("denies reply and human control when capability lookup is unknown", async () => {
     fixture.capability = null;
     const { replyWhatsappConversation, controlWhatsappConversation } = await import("./actions");

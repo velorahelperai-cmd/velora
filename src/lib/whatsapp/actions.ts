@@ -338,7 +338,7 @@ export async function replyWhatsappConversation(input: {
     if (code === "phone_mismatch") return { ok: false, code: "PHONE_MISMATCH", message: code, clientOpId };
     if (code === "content_mismatch") return { ok: false, code: "CONTENT_MISMATCH", message: code, clientOpId };
     if (code === "invalid_input") return { ok: false, code: "INVALID_INPUT", message: code, clientOpId };
-    return { ok: false, code: "SAVE_FAILED", message: code || "intent_failed", clientOpId };
+    return { ok: false, code: "SAVE_FAILED", message: "intent_failed", clientOpId };
   }
 
   let intent = intentFrom(createdRow.intent);
@@ -490,7 +490,7 @@ export async function replyWhatsappConversation(input: {
     if (code === "binding_mismatch" || code === "phone_mismatch") {
       return { ok: false, code: "PHONE_MISMATCH", message: code, clientOpId };
     }
-    return { ok: false, code: "SAVE_FAILED", message: code || "claim_failed", clientOpId };
+    return { ok: false, code: "SAVE_FAILED", message: "claim_failed", clientOpId };
   }
   if (claimRow.claimed !== true || claimedIntent?.outcome !== "attempting") {
     return { ok: false, code: "IN_PROGRESS", message: "claim_not_confirmed", clientOpId, outcome: "attempting" };
@@ -673,7 +673,7 @@ export async function replyWhatsappConversation(input: {
       if (code === "provider_id_conflict" || code === "accept_evidence_lost") {
         return { ok: false, code: "UNKNOWN_OUTCOME", message: code, clientOpId, outcome: "unknown" };
       }
-      return { ok: false, code: "SAVE_FAILED", message: code || "finalize_failed", clientOpId, outcome: "unknown" };
+      return { ok: false, code: "SAVE_FAILED", message: "finalize_failed", clientOpId, outcome: "unknown" };
     }
     if (finalRow?.ok === true && finalRow.persist_pending === true) {
       const retried = await admin.rpc("retry_whatsapp_send_persist", {
