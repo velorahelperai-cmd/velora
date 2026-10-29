@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { matchMetaTestInboundMessage } from "@/lib/whatsapp/config";
 
 export type InboundMessage = {
   /** Signed entry.id; optional only for the explicit legacy single-tenant contract. */
@@ -266,6 +267,43 @@ export async function routeWebhookEvents(input: {
   }
 
   for (const message of input.messages) {
+    if (input.mode === "tenant_registry") {
+      const metaTestMatch = matchMetaTestInboundMessage(message);
+      if (metaTestMatch.matched) {
+        if (!metaTestMatch.allowed) {
+          dispositions.push({
+            kind: "message",
+            phoneNumberId: message.phoneNumberId,
+            waMessageId: message.waMessageId,
+            result: "rejected",
+            code: metaTestMatch.code,
+          });
+          continue;
+        }
+        try {
+          await input.saveInbound(metaTestMatch.companyId, message);
+          dispositions.push({
+            kind: "message",
+            phoneNumberId: message.phoneNumberId,
+            waMessageId: message.waMessageId,
+            result: "persisted",
+            companyId: metaTestMatch.companyId,
+          });
+        } catch {
+          retry = true;
+          dispositions.push({
+            kind: "message",
+            phoneNumberId: message.phoneNumberId,
+            waMessageId: message.waMessageId,
+            result: "retry",
+            code: "store_failed",
+            companyId: metaTestMatch.companyId,
+          });
+        }
+        continue;
+      }
+    }
+
     const mapped = await mapPhone(message.phoneNumberId, message.wabaId);
     if (!mapped.ok) {
       if (mapped.retry) retry = true;

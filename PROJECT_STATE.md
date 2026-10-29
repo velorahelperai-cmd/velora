@@ -1,3 +1,17 @@
+# Current Session Index - I02-3-META-TEST-INBOUND-RECEIVE-ONLY-20261029
+
+- **Task `I02.3` — Authorized Meta Test Inbound Receive-Only in Canonical `/api/whatsapp/webhook`:**
+  - **Root Blocker Resolved:** Under `WHATSAPP_CONFIGURATION_MODE=live` and `WHATSAPP_ROUTING_MODE=tenant_registry`, `/api/whatsapp/webhook` routed all inbound messages through `resolveWhatsappCompanyByMetaAsset`, which rejected Meta's test asset (`WABA: 2057350774985092`, `Phone ID: 1261345677073276`) because it has no `verified` link in `whatsapp_company_links` (and must not fake one), and `saveInbound` in `tenant_registry` mode invoked `whatsapp_store_meta_inbound` (which requires a `verified` link and creates a `pending` runnable job).
+  - **Implementation:**
+    - `src/lib/whatsapp/config.ts`: Added `metaTestInboundAssetConfig` and `matchMetaTestInboundMessage` to validate the exact authorized Meta test asset (`WHATSAPP_TEST_COMPANY_ID`, `WHATSAPP_TEST_WABA_ID`, `WHATSAPP_TEST_PHONE_NUMBER_ID`) and normalized allowed sender WA IDs (`WHATSAPP_TEST_RECIPIENTS` / `VELORA_SETUP_META_TEST_RECIPIENT_WA_ID`, max 5) without altering `WHATSAPP_CONFIGURATION_MODE=live` or `WHATSAPP_ROUTING_MODE=tenant_registry`.
+    - `src/lib/whatsapp/webhook.ts`: In `routeWebhookEvents` (`mode === "tenant_registry"`), messages targeting the configured Meta test asset are verified for exact WABA + Phone ID + authorized sender (`96876351423`) and routed to the pinned company (`40d2d885-8b63-49c4-b3da-d2e9566f2750`); any mismatch on WABA, Phone ID, or sender is rejected (`test_asset_waba_mismatch`, `test_asset_phone_mismatch`, `test_sender_not_allowed`). All commercial messages (`matched === false`) continue through `tenant_registry` resolver untouched.
+    - `src/lib/whatsapp/store.ts`: In `saveInbound`, matched authorized Meta test messages in `live` + `tenant_registry` mode call the atomic `public.save_whatsapp_inbound_receive_only` RPC (`SECURITY DEFINER`, `service_role` only) and enforce `job_status === "completed"` and `result_code === "SETUP_META_TEST_RECEIVE_ONLY"`. Commercial messages continue using `whatsapp_store_meta_inbound`.
+    - `src/lib/whatsapp/tag-city-meta-test-routing.test.ts`: Added unit tests covering `live` + `tenant_registry` isolation, exact WABA/Phone/sender/company matching, rejection of unauthorized senders or mismatched assets, and atomic `save_whatsapp_inbound_receive_only` persistence.
+  - **Meta & Production Verification:**
+    - Meta App (`3391832644330595`, `v26.0`) webhook subscription verified active on `https://www.velorahelper.com/api/whatsapp/webhook` with `messages` subscribed.
+    - Vercel Production env verified (`WHATSAPP_CONFIGURATION_MODE=live`, `WHATSAPP_ROUTING_MODE=tenant_registry`, `WHATSAPP_RECEIVE_ENABLED=true`, `WHATSAPP_WORKER_ENABLED=false`, `WHATSAPP_TEST_ALLOW_EXTERNAL_SEND=false`).
+    - Local Gates: 4 Vitest files (26/26 PASS), `npm run typecheck` (PASS), `eslint` (PASS), `node scripts/ci/security.mjs` (PASS).
+
 # Current Session Index - SECURE-CONNECTION-BUTTON-DIAGNOSTICS-20261029
 
 - **Root-Cause Investigation for Button Unresponsiveness in `/setup` on Production:**

@@ -1,7 +1,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Json } from "@/lib/database.types";
 import type { DeliveryStatus, InboundMessage } from "@/lib/whatsapp/webhook";
-import { whatsappConfig, whatsappConfigurationMode, whatsappRoutingMode } from "@/lib/whatsapp/config";
+import {
+  matchMetaTestInboundMessage,
+  whatsappConfig,
+  whatsappConfigurationMode,
+  whatsappRoutingMode,
+} from "@/lib/whatsapp/config";
 import { INBOUND_CLAIM_LEASE_SECONDS, type SaveInboundResult } from "@/lib/whatsapp/store-types";
 import {createHash} from 'node:crypto';
 
@@ -49,8 +54,14 @@ export async function saveInbound(
     p_received_at: message.receivedAt,
   };
   const test = whatsappConfigurationMode()==='meta_test';
+  const metaTestMatch = !test && tenantRegistry ? matchMetaTestInboundMessage(message) : { matched: false as const };
+  if (metaTestMatch.matched && (!metaTestMatch.allowed || metaTestMatch.companyId !== companyId)) {
+    throw new Error("save_inbound_meta_test_scope_mismatch");
+  }
   const { data, error } = test
     ? await (admin as unknown as {rpc:(name:string,args:Record<string,unknown>)=>PromiseLike<{data:Json;error:unknown}>}).rpc('review_store_whatsapp_inbound',{...args,p_waba_id:message.wabaId,p_secret_sha256:createHash('sha256').update(whatsappConfig().appSecret).digest('hex')})
+    : metaTestMatch.matched
+    ? await (admin as unknown as {rpc:(name:string,args:Record<string,unknown>)=>PromiseLike<{data:Json;error:unknown}>}).rpc("save_whatsapp_inbound_receive_only", args)
     : tenantRegistry
     ? await admin.rpc("whatsapp_store_meta_inbound", { ...args, p_waba_id: message.wabaId! })
     : await admin.rpc("save_whatsapp_inbound", args);
@@ -61,6 +72,9 @@ export async function saveInbound(
   if (!row || row.ok !== true) throw new Error("save_inbound_failed");
   if (typeof row.job_status !== "string" || !["pending", "claimed", "completed", "failed", "retry_wait", "dead_letter", "review_required"].includes(row.job_status)) {
     throw new Error("save_inbound_job_status");
+  }
+  if (metaTestMatch.matched && (row.job_status !== "completed" || row.result_code !== "SETUP_META_TEST_RECEIVE_ONLY")) {
+    throw new Error("save_inbound_receive_only_invariant");
   }
 
   return {
