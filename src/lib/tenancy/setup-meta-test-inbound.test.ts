@@ -337,7 +337,7 @@ describe("saveSetupMetaTestInboundReceiveOnly", () => {
     expect(rpc).not.toHaveBeenCalled();
   });
 
-  it(
+  it.runIf(process.env.VELORA_META_TEST_POSTGRES_TESTS === "1")(
     "proves single-transaction atomicity, step-failure rollback, and worker race prevention in real PostgreSQL",
     async () => {
       const pg = await isolatedPostgres();
