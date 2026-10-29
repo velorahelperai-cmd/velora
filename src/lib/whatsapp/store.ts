@@ -1,8 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Json } from "@/lib/database.types";
-import type { DeliveryStatus, InboundMessage } from "@/lib/whatsapp/webhook";
 import {
   matchMetaTestInboundMessage,
+  type DeliveryStatus,
+  type InboundMessage,
+} from "@/lib/whatsapp/webhook";
+import {
   whatsappConfig,
   whatsappConfigurationMode,
   whatsappRoutingMode,

@@ -1,5 +1,93 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { matchMetaTestInboundMessage } from "@/lib/whatsapp/config";
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const META_NUMERIC_ID_RE = /^[0-9]{1,64}$/;
+const WA_ID_RE = /^[1-9][0-9]{6,19}$/;
+
+function normalizeWaId(raw: string): string | null {
+  const digits = raw.replace(/\D+/g, "");
+  return WA_ID_RE.test(digits) ? digits : null;
+}
+
+export type MetaTestInboundAssetConfig = {
+  companyId: string;
+  wabaId: string;
+  phoneNumberId: string;
+  allowedSenders: string[];
+};
+
+export function metaTestInboundAssetConfig(
+  source: Record<string, string | undefined> = process.env,
+): MetaTestInboundAssetConfig | null {
+  const companyId = source["WHATSAPP_TEST_COMPANY_ID"]?.trim() ?? "";
+  const wabaId = source["WHATSAPP_TEST_WABA_ID"]?.trim() ?? "";
+  const phoneNumberId = source["WHATSAPP_TEST_PHONE_NUMBER_ID"]?.trim() ?? "";
+  if (!UUID_RE.test(companyId) || !META_NUMERIC_ID_RE.test(wabaId) || !META_NUMERIC_ID_RE.test(phoneNumberId)) {
+    return null;
+  }
+
+  const rawRecipients = [
+    ...(source["WHATSAPP_TEST_RECIPIENTS"]?.trim() ?? "").split(/[\s,;]+/),
+    source["VELORA_SETUP_META_TEST_RECIPIENT_WA_ID"]?.trim() ?? "",
+  ].filter(Boolean);
+  if (rawRecipients.length === 0) return null;
+
+  const seen = new Set<string>();
+  const allowedSenders: string[] = [];
+  for (const item of rawRecipients) {
+    const normalized = normalizeWaId(item);
+    if (!normalized) return null;
+    if (!seen.has(normalized)) {
+      seen.add(normalized);
+      allowedSenders.push(normalized);
+    }
+  }
+  if (allowedSenders.length === 0 || allowedSenders.length > 5) return null;
+
+  return {
+    companyId,
+    wabaId,
+    phoneNumberId,
+    allowedSenders,
+  };
+}
+
+export type MetaTestInboundMatch =
+  | { matched: false }
+  | { matched: true; allowed: true; companyId: string }
+  | {
+      matched: true;
+      allowed: false;
+      code:
+        | "test_asset_waba_mismatch"
+        | "test_asset_phone_mismatch"
+        | "test_sender_not_allowed";
+    };
+
+export function matchMetaTestInboundMessage(
+  message: { wabaId?: string; phoneNumberId: string; customerWaId: string },
+  source: Record<string, string | undefined> = process.env,
+): MetaTestInboundMatch {
+  const cfg = metaTestInboundAssetConfig(source);
+  if (!cfg) return { matched: false };
+
+  const wabaMatches = message.wabaId === cfg.wabaId;
+  const phoneMatches = message.phoneNumberId === cfg.phoneNumberId;
+  if (!wabaMatches && !phoneMatches) {
+    return { matched: false };
+  }
+  if (!wabaMatches) {
+    return { matched: true, allowed: false, code: "test_asset_waba_mismatch" };
+  }
+  if (!phoneMatches) {
+    return { matched: true, allowed: false, code: "test_asset_phone_mismatch" };
+  }
+  const senderWaId = normalizeWaId(message.customerWaId);
+  if (!senderWaId || !cfg.allowedSenders.includes(senderWaId)) {
+    return { matched: true, allowed: false, code: "test_sender_not_allowed" };
+  }
+  return { matched: true, allowed: true, companyId: cfg.companyId };
+}
 
 export type InboundMessage = {
   /** Signed entry.id; optional only for the explicit legacy single-tenant contract. */
