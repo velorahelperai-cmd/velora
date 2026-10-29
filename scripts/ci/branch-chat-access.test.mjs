@@ -24,7 +24,7 @@ before(async()=>{
  create policy whatsapp_messages_select on public.whatsapp_messages for select to authenticated using(exists(select 1 from public.whatsapp_conversations c where c.id=whatsapp_messages.conversation_id and c.company_id=whatsapp_messages.company_id and private.conversation_readable(c.company_id,c.assigned_to)));
  create policy session_guard on public.whatsapp_conversations as restrictive for all to authenticated using(public.app_session_is_valid());
  create policy session_guard on public.whatsapp_messages as restrictive for all to authenticated using(public.app_session_is_valid());`);
- await db.file('supabase/migrations/20261029013249_branch_staff_chat_scope.sql');
+ await db.file('supabase/migrations/20261029014606_branch_staff_chat_scope.sql');
 },{timeout:120000});
 after(async()=>{await db?.close();},{timeout:30000});
 
