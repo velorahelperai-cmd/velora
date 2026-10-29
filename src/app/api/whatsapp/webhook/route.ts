@@ -87,6 +87,11 @@ async function handlePost(request: Request) {
     return new Response("not configured", { status: WEBHOOK_HTTP.notConfigured });
   }
 
+  // Reject impossible signatures before buffering an unauthenticated body.
+  const signature = request.headers.get("x-hub-signature-256");
+  if (!signature || !/^sha256=[a-f0-9]{64}$/.test(signature)) {
+    return new Response("invalid signature", { status: WEBHOOK_HTTP.invalidSignature });
+  }
   let raw: Uint8Array;
   try {
     raw = new Uint8Array(await request.arrayBuffer());
@@ -94,7 +99,7 @@ async function handlePost(request: Request) {
     logWebhookDiag("post_body_unavailable", { mode, retry: true });
     return new Response("body unavailable", { status: WEBHOOK_HTTP.retryable });
   }
-  if (!signatureMatches(raw, request.headers.get("x-hub-signature-256"), config.appSecret)) {
+  if (!signatureMatches(raw, signature, config.appSecret)) {
     logWebhookDiag("post_bad_signature", { mode, bytes: raw.length });
     return new Response("invalid signature", { status: WEBHOOK_HTTP.invalidSignature });
   }

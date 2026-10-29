@@ -1,4 +1,5 @@
 "use server";
+import {checkRateLimit} from "@/lib/security/rate-limit";
 import {createHash,randomBytes} from "node:crypto";
 import {readSessionIdentity} from "@/lib/auth/server-identity";
 import {createClient} from "@/lib/supabase/server";
@@ -20,11 +21,13 @@ export async function readOwnedBranchTeamAction(scope:TeamScope):Promise<BranchT
  try{if(!await authorized(scope))return null;const r=await call('es02_read_owned_branch_team',args(scope));const data=r.data as {ok?:boolean;snapshot?:unknown}|null;return !r.error&&data?.ok===true?snapshot(data.snapshot,scope):null;}catch{return null;}
 }
 export type TeamInvitationInput=TeamScope&{expectedVersion:number;operationId:string;name:string;email:string;role:'staff';capabilities:string[]};
-export type TeamInvitationResult={ok:true;data:{snapshot:BranchTeamSnapshot;inviteUrl:string|null;delivery:'link_only'}}|{ok:false;code:string};
+export type TeamInvitationResult={ok:true;data:{snapshot:BranchTeamSnapshot;inviteUrl:string|null;delivery:'link_only'}}|{ok:false;code:string;httpStatus?:429|503;retryAfterSeconds?:number};
 export async function inviteOwnedBranchTeamAction(input:TeamInvitationInput):Promise<TeamInvitationResult>{
  try{
  if(!valid(input)||input.expectedVersion!==1||!uuid(input.operationId)||input.role!=='staff'||typeof input.name!=='string'||input.name.trim().length<2||input.name.trim().length>120||typeof input.email!=='string'||input.email.length>254||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email.trim())||!Array.isArray(input.capabilities)||!input.capabilities.length||input.capabilities.length>2||!input.capabilities.every(c=>['wa.conversations.read','ig.conversations.read'].includes(c)))return {ok:false,code:'INVALID_INPUT'};
  if(!await authorized(input))return {ok:false,code:'UNAUTHENTICATED'};
+ const rate=await checkRateLimit('invitation',`account:${input.expectedAccountId}`);
+ if(!rate.allowed)return {ok:false,code:rate.code,httpStatus:rate.httpStatus,retryAfterSeconds:rate.retryAfterSeconds};
  const token=randomBytes(32).toString('base64url');
  const r=await call('es02_invite_owned_branch_team',{...args(input),p_expected_version:input.expectedVersion,p_operation_id:input.operationId,p_name:input.name.trim(),p_email:input.email.trim().toLowerCase(),p_capabilities:[...new Set(input.capabilities)].sort(),p_token_hash:createHash('sha256').update(token).digest('hex')});
  const data=r.data as {ok?:boolean;code?:string;snapshot?:unknown;tokenMatched?:boolean;replayed?:boolean}|null;

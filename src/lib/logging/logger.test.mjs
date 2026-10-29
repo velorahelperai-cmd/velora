@@ -6,6 +6,22 @@ import {resolve} from 'node:path';
 import {isolatedEnvironment} from '../../../scripts/ci/safety.mjs';
 import {createStructuredLogger,logEvent,withLogContext} from './logger.mjs';
 function sink(){const lines=[];return {lines,logger:createStructuredLogger({write:line=>lines.push(JSON.parse(line))})};}
+test('message strings and interpolated credentials are redacted after formatting',()=>{
+ const {lines,logger}=sink(),secret=randomUUID();
+ logger.warn(`password=${secret}`);
+ logger.warn('password=%s',secret);
+ logger.warn({event:'test.failure'},'Bearer %s',secret);
+ logger.warn({event:'test.failure'},'details=%j',{token:secret});
+ assert.equal(JSON.stringify(lines).includes(secret),false);
+ assert.equal(lines.length,4);
+ assert.equal(lines[2].event,'test.failure');
+});
+test('provider key formats are redacted even without a labelled field',()=>{
+ const {lines,logger}=sink();
+ const keys=['sk-'+'x'.repeat(40),'AIza'+'x'.repeat(35),'sb_secret_'+'x'.repeat(32)];
+ for(const key of keys)logEvent('error','test.provider',{error:new Error(`Provider rejected ${key}`)},logger);
+ for(const key of keys)assert.equal(JSON.stringify(lines).includes(key),false);
+});
 test('development and production finish an awaited flush before process exit',()=>{
  const cwd=resolve(import.meta.dirname,'../../..');
  for(const NODE_ENV of ['development','production']){

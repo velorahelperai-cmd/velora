@@ -1,4 +1,5 @@
 "use server";
+import {checkAuthRateLimit} from "@/lib/security/rate-limit";
 import {masterJourneyEnabled} from '@/lib/master-journey/rollout';
 import { normalizeBusinessEmail, normalizeBusinessPhone } from "@/lib/tenancy/business-contacts";
 import { withAuthDiagnostic } from "@/lib/diagnostics/server-flow";
@@ -56,7 +57,7 @@ type ReviewAction = "submit" | "resubmit" | "request_changes" | "approve";
 
 export type ActionResult<T = undefined> =
   | { ok: true; data: T; diagnostic?: DiagnosticDetail }
-  | { ok: false; sessionExpired?:boolean; code: AccessCode | "AUTH_ERROR"; message?: string; data?: T; diagnostic?: DiagnosticDetail };
+  | { ok: false; sessionExpired?:boolean; code: AccessCode | "AUTH_ERROR"; message?: string; retryAfterSeconds?: number; httpStatus?: 429 | 503; data?: T; diagnostic?: DiagnosticDetail };
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value != null && typeof value === "object" && !Array.isArray(value);
@@ -198,6 +199,8 @@ export async function signUpWithEmail(input: {
   }
 
   try {
+    const rate = await checkAuthRateLimit("auth_signup");
+    if (!rate.allowed) return {ok:false,code:"UNAVAILABLE",message:rate.code === "RATE_LIMITED" ? "verification_rate_limited" : "verification_unavailable",retryAfterSeconds:rate.retryAfterSeconds,httpStatus:rate.httpStatus,diagnostic:trace.finish("UNAVAILABLE")};
     trace.stage("session");
     const { admitNativeSession } = await import("@/lib/auth/broker");
     const { claimProviderAttempt } = await import("@/lib/auth/broker/registry");
@@ -357,6 +360,8 @@ export async function signInWithEmail(input: {
   if (!email || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !password) return { ok: false, code: "INVALID_INPUT", diagnostic: trace.finish("INVALID_INPUT") };
 
   try {
+    const rate = await checkAuthRateLimit("auth_login");
+    if (!rate.allowed) return {ok:false,code:"UNAVAILABLE",message:rate.code === "RATE_LIMITED" ? "verification_rate_limited" : "verification_unavailable",retryAfterSeconds:rate.retryAfterSeconds,httpStatus:rate.httpStatus,diagnostic:trace.finish("UNAVAILABLE")};
     trace.stage("session");
     const { cookies } = await import("next/headers");
     const cookieStore = await cookies();
@@ -516,6 +521,8 @@ export async function resendVerificationEmail(
   }
   if (typeof requestNonce !== "string" || requestNonce.length < 16) return { ok: false, code: "UNAVAILABLE", diagnostic: trace.finish("UNAVAILABLE") };
   try {
+    const rate = await checkAuthRateLimit("otp_resend");
+    if (!rate.allowed) return {ok:false,code:"UNAVAILABLE",message:rate.code === "RATE_LIMITED" ? "verification_rate_limited" : "verification_unavailable",retryAfterSeconds:rate.retryAfterSeconds,httpStatus:rate.httpStatus,diagnostic:trace.finish("UNAVAILABLE")};
     trace.stage("session");
     const { cookies } = await import("next/headers");
     const store = await cookies();
@@ -580,6 +587,8 @@ export async function verifyEmailCode(input: {
     return { ok: false, code: "INVALID_INPUT", diagnostic: trace.finish("INVALID_INPUT") };
   }
   try {
+    const rate = await checkAuthRateLimit("otp_verify");
+    if (!rate.allowed) return {ok:false,code:"UNAVAILABLE",message:rate.code === "RATE_LIMITED" ? "verification_rate_limited" : "verification_unavailable",retryAfterSeconds:rate.retryAfterSeconds,httpStatus:rate.httpStatus,diagnostic:trace.finish("UNAVAILABLE")};
     // Provider client + broker admit — no shared sb-* cookie write.
     trace.stage("session");
     const { createProviderAuthClient } = await import("@/lib/auth/broker/provider");

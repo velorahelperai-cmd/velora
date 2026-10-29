@@ -101,7 +101,7 @@ async function listKnowledgeRowsForCompany(
   }
 
   if (!isExactMissingApprovalColumnError(extended.error)) {
-    return { ok: false, message: extended.error.message };
+    return { ok: false, message: "knowledge_operation_unavailable" };
   }
 
   const base = await supabase
@@ -110,7 +110,7 @@ async function listKnowledgeRowsForCompany(
     .eq("company_id", companyId)
     .order("updated_at", { ascending: false });
 
-  if (base.error) return { ok: false, message: base.error.message };
+  if (base.error) return { ok: false, message: "knowledge_operation_unavailable" };
   return {
     ok: true,
     payload: {
@@ -228,7 +228,7 @@ async function loadStoredBytesBoundToObject(
   const captured = await readStorageObjectGeneration(supabase, companyId, sourceId, storagePath);
   if (captured.status === "missing") return { ok: false, reason: "missing" };
   if (captured.status === "unreadable") return { ok: false, reason: "unreadable" };
-  if (captured.status === "error") return { ok: false, reason: "error", message: captured.message };
+  if (captured.status === "error") return { ok: false, reason: "error", message: "knowledge_operation_unavailable" };
 
   const signal = AbortSignal.timeout(10_000);
   if (isSetupFilePath(storagePath)) {
@@ -245,7 +245,7 @@ async function loadStoredBytesBoundToObject(
     .download(storagePath, {}, { signal, cache: "no-store" }).asStream();
   if (downloadError || !fileStream) {
     if (isStorageObjectMissingError(downloadError?.message)) return { ok: false, reason: "missing" };
-    return { ok: false, reason: "download_failed", message: downloadError?.message };
+    return { ok: false, reason: "download_failed", message: "knowledge_operation_unavailable" };
   }
 
   const bytes = await readBoundedKnowledgeStream(fileStream, signal);
@@ -400,7 +400,7 @@ export async function listKnowledgeSources(input?: { expectedCompanyId?: string 
       if (error) return error;
     }
     const listed = await listKnowledgeRowsForCompany(ctx.supabase, ctx.companyId);
-    if (!listed.ok) return { ok: false, code: "AUTH_ERROR", message: listed.message };
+    if (!listed.ok) return { ok: false, code: "AUTH_ERROR", message: "knowledge_operation_unavailable" };
     return { ok: true, data: listed.payload };
   } catch {
     return { ok: false, code: "UNAVAILABLE" };
@@ -447,7 +447,7 @@ export async function saveTextKnowledgeSource(input: {
         .eq("kind", "text")
         .select(ctx.sourceSelect)
         .maybeSingle();
-      if (error) return { ok: false, code: "AUTH_ERROR", message: error.message };
+      if (error) return { ok: false, code: "AUTH_ERROR", message: "knowledge_operation_unavailable" };
       if (!data) return { ok: false, code: "FORBIDDEN", message: "not_found" };
       revalidateKnowledge(ctx.companyId);
       return { ok: true, data: asSource(data, ctx.approvalFoundation) };
@@ -466,7 +466,7 @@ export async function saveTextKnowledgeSource(input: {
       })
       .select(ctx.sourceSelect)
       .single();
-    if (error || !data) return { ok: false, code: "AUTH_ERROR", message: error?.message };
+    if (error || !data) return { ok: false, code: "AUTH_ERROR", message: "knowledge_operation_unavailable" };
     revalidateKnowledge(ctx.companyId);
     return { ok: true, data: asSource(data, ctx.approvalFoundation) };
   } catch {
@@ -528,7 +528,7 @@ export async function uploadKnowledgeFiles(
         setupScope.generation = receipt.data.draftGeneration;
         if (receipt.data.state === "reserved") {
           const upload = await ctx.supabase.storage.from(KNOWLEDGE_BUCKET).upload(receipt.data.path, new Uint8Array(await file.arrayBuffer()), { contentType, upsert: false });
-          if (upload.error) { results.push({ fileName, ok: false, code: "UPLOAD_FAILED", message: upload.error.message }); continue; }
+          if (upload.error) { results.push({ fileName, ok: false, code: "UPLOAD_FAILED", message: "knowledge_operation_unavailable" }); continue; }
         }
         const finalized = await db.rpc("master_finalize_setup_file", { p_expected_user_id: ctx.userId, p_intent_id: attemptId });
         const finalReceipt = finalized.data as { ok?: boolean; code?: string; draftGeneration?: number } | null;
@@ -562,7 +562,7 @@ export async function uploadKnowledgeFiles(
         .single();
 
       if (insertError || !row) {
-        results.push({ fileName, ok: false, code: "UPLOAD_FAILED", message: insertError?.message });
+        results.push({ fileName, ok: false, code: "UPLOAD_FAILED", message: "knowledge_operation_unavailable" });
         continue;
       }
 
@@ -594,7 +594,7 @@ export async function uploadKnowledgeFiles(
           fileName,
           ok: false,
           code: "UPLOAD_FAILED",
-          message: reserveError?.message ?? "path_reserve_failed",
+          message: "knowledge_operation_unavailable",
         });
         continue;
       }
@@ -621,7 +621,7 @@ export async function uploadKnowledgeFiles(
           fileName,
           ok: false,
           code: "UPLOAD_FAILED",
-          message: uploadError.message,
+          message: "knowledge_operation_unavailable",
           source: failed ?? asSource({ ...reserved, status: "failed", storage_path: path }, ctx.approvalFoundation),
         });
         continue;
@@ -704,7 +704,7 @@ export async function uploadKnowledgeFiles(
             fileName,
             ok: false,
             code: "CLEANUP_FAILED",
-            message: removeError.message,
+            message: "knowledge_operation_unavailable",
             source: failed ?? asSource({ ...reserved, status: "failed", storage_path: path }, ctx.approvalFoundation),
           });
           continue;
@@ -721,7 +721,7 @@ export async function uploadKnowledgeFiles(
           fileName,
           ok: false,
           code: "UPLOAD_FAILED",
-          message: updateError?.message ?? "update_failed",
+          message: "knowledge_operation_unavailable",
           source: failed ?? undefined,
         });
         continue;
@@ -779,7 +779,7 @@ export async function repairStoredKnowledgeFile(
       .eq("kind", "file")
       .maybeSingle();
 
-    if (loadError) return { ok: false, code: "AUTH_ERROR", message: loadError.message };
+    if (loadError) return { ok: false, code: "AUTH_ERROR", message: "knowledge_operation_unavailable" };
     if (!existing?.storage_path) {
       return { ok: false, code: "INVALID_INPUT", message: "not_found" };
     }
@@ -788,7 +788,7 @@ export async function repairStoredKnowledgeFile(
     }
 
     const read = await readStorageObjectGeneration(ctx.supabase, ctx.companyId, existing.id, existing.storage_path);
-    if (read.status === "error") return { ok: false, code: "STORAGE_ERROR", message: read.message };
+    if (read.status === "error") return { ok: false, code: "STORAGE_ERROR", message: "knowledge_operation_unavailable" };
     const captured = read.status === "ok" ? read.generation : null;
     if (!captured) {
       const failed = await markFileFailed(
@@ -816,7 +816,7 @@ export async function repairStoredKnowledgeFile(
         .eq("company_id", ctx.companyId)
         .select(ctx.sourceSelect)
         .single();
-      if (error || !data) return { ok: false, code: "AUTH_ERROR", message: error?.message };
+      if (error || !data) return { ok: false, code: "AUTH_ERROR", message: "knowledge_operation_unavailable" };
       revalidateKnowledge(ctx.companyId);
       return { ok: true, data: asSource(data, ctx.approvalFoundation) };
     }
@@ -835,7 +835,7 @@ export async function repairStoredKnowledgeFile(
         ctx.approvalFoundation,
       );
       revalidateKnowledge(ctx.companyId);
-      return { ok: false, code: "STORAGE_ERROR", message: downloadError?.message ?? "download_failed", };
+      return { ok: false, code: "STORAGE_ERROR", message: "knowledge_operation_unavailable", };
     }
     const prepared = await prepareStoredFile(
       ctx.supabase,
@@ -874,7 +874,7 @@ export async function retryFailedKnowledgeFile(
       .eq("kind", "file")
       .maybeSingle();
 
-    if (loadError) return { ok: false, code: "AUTH_ERROR", message: loadError.message };
+    if (loadError) return { ok: false, code: "AUTH_ERROR", message: "knowledge_operation_unavailable" };
     if (!existing) return { ok: false, code: "FORBIDDEN", message: "not_found" };
     if (existing.storage_path && isSetupFilePath(existing.storage_path)) return { ok: false, code: "INVALID_INPUT", message: "SCOPED_FILE_REQUIRES_NEW_UPLOAD_INTENT" };
     if (existing.status === "processing") {
@@ -909,7 +909,7 @@ export async function retryFailedKnowledgeFile(
         .from(KNOWLEDGE_BUCKET)
         .remove([existing.storage_path]);
       if (removeError) {
-        return { ok: false, code: "STORAGE_ERROR", message: removeError.message };
+        return { ok: false, code: "STORAGE_ERROR", message: "knowledge_operation_unavailable" };
       }
     }
 
@@ -931,7 +931,7 @@ export async function retryFailedKnowledgeFile(
       .select(ctx.sourceSelect)
       .single();
     if (reserveError || !reserved) {
-      return { ok: false, code: "AUTH_ERROR", message: reserveError?.message ?? "path_reserve_failed" };
+      return { ok: false, code: "AUTH_ERROR", message: "knowledge_operation_unavailable" };
     }
 
     const { error: uploadError } = await ctx.supabase.storage.from(KNOWLEDGE_BUCKET).upload(
@@ -944,7 +944,7 @@ export async function retryFailedKnowledgeFile(
     );
     if (uploadError) {
       await markFileFailed(ctx.supabase, existing.id, ctx.companyId, path, null, ctx.approvalFoundation);
-      return { ok: false, code: "STORAGE_ERROR", message: uploadError.message };
+      return { ok: false, code: "STORAGE_ERROR", message: "knowledge_operation_unavailable" };
     }
 
     const preparable = isPreparableKnowledgeFile(fileName);
@@ -989,10 +989,10 @@ export async function retryFailedKnowledgeFile(
       const { error: removeError } = await ctx.supabase.storage.from(KNOWLEDGE_BUCKET).remove([path]);
       if (removeError) {
         await markFileFailed(ctx.supabase, existing.id, ctx.companyId, path, null, ctx.approvalFoundation);
-        return { ok: false, code: "STORAGE_ERROR", message: removeError.message };
+        return { ok: false, code: "STORAGE_ERROR", message: "knowledge_operation_unavailable" };
       }
       await markFileFailed(ctx.supabase, existing.id, ctx.companyId, null, null, ctx.approvalFoundation);
-      return { ok: false, code: "AUTH_ERROR", message: error?.message };
+      return { ok: false, code: "AUTH_ERROR", message: "knowledge_operation_unavailable" };
     }
 
     const finished = preparable && boundBytes && boundGeneration
@@ -1035,7 +1035,7 @@ export async function retryKnowledgePrepare(
       .eq("company_id", ctx.companyId)
       .eq("kind", "file")
       .maybeSingle();
-    if (loadError) return { ok: false, code: "AUTH_ERROR", message: loadError.message };
+    if (loadError) return { ok: false, code: "AUTH_ERROR", message: "knowledge_operation_unavailable" };
     if (!existing?.storage_path || !isPreparableKnowledgeFile(existing.file_name)) {
       return { ok: false, code: "INVALID_INPUT", message: "not_preparable" };
     }
@@ -1051,7 +1051,7 @@ export async function retryKnowledgePrepare(
         return { ok: false, code: "CONFLICT", message: "OBJECT_IDENTITY_CONFLICT" };
       }
       if (loaded.reason === "error") {
-        return { ok: false, code: "STORAGE_ERROR", message: loaded.message };
+        return { ok: false, code: "STORAGE_ERROR", message: "knowledge_operation_unavailable" };
       }
       if (loaded.reason === "missing") {
         const failed = await markFileFailed(
@@ -1085,7 +1085,7 @@ export async function retryKnowledgePrepare(
       return {
         ok: false,
         code: "STORAGE_ERROR",
-        message: loaded.message ?? "download_failed",
+        message: "knowledge_operation_unavailable",
         data: failed ?? undefined,
       };
     }
@@ -1128,7 +1128,7 @@ export async function setKnowledgeSourceApproval(
 
     // Probe foundation before calling the approval RPC — do not hide missing migration as auth noise.
     const probe = await listKnowledgeRowsForCompany(ctx.supabase, ctx.companyId);
-    if (!probe.ok) return { ok: false, code: "AUTH_ERROR", message: probe.message };
+    if (!probe.ok) return { ok: false, code: "AUTH_ERROR", message: "knowledge_operation_unavailable" };
     if (probe.payload.approvalFoundation === "unavailable") {
       return {
         ok: false,
@@ -1161,7 +1161,7 @@ export async function setKnowledgeSourceApproval(
       if (msg.includes("version_changed")) {
         return { ok: false, code: "FORBIDDEN", message: "version_changed" };
       }
-      return { ok: false, code: "AUTH_ERROR", message: error.message };
+      return { ok: false, code: "AUTH_ERROR", message: "knowledge_operation_unavailable" };
     }
     if (!data) return { ok: false, code: "FORBIDDEN", message: "not_found" };
 
@@ -1186,7 +1186,7 @@ export async function deleteKnowledgeSource(
       .eq("company_id", ctx.companyId)
       .maybeSingle();
 
-    if (loadError) return { ok: false, code: "AUTH_ERROR", message: loadError.message };
+    if (loadError) return { ok: false, code: "AUTH_ERROR", message: "knowledge_operation_unavailable" };
     if (!existing) return { ok: false, code: "FORBIDDEN", message: "not_found" };
     if (existing.storage_path && isSetupFilePath(existing.storage_path)) {
       const { data, error } = await (ctx.supabase as unknown as SetupFileRpc).rpc("master_request_setup_file_delete", { p_expected_user_id: ctx.userId, p_company_id: ctx.companyId, p_source_id: sourceId });
@@ -1214,7 +1214,7 @@ export async function deleteKnowledgeSource(
         .from(KNOWLEDGE_BUCKET)
         .remove([existing.storage_path]);
       if (storageError) {
-        return { ok: false, code: "STORAGE_ERROR", message: storageError.message };
+        return { ok: false, code: "STORAGE_ERROR", message: "knowledge_operation_unavailable" };
       }
       storageDeleted = true;
     }
@@ -1230,8 +1230,8 @@ export async function deleteKnowledgeSource(
         ok: false,
         code: "AUTH_ERROR",
         message: existing.storage_path
-          ? `DELETE_PARTIAL:${deleteError.message}`
-          : deleteError.message,
+          ? "DELETE_PARTIAL:knowledge_operation_unavailable"
+          : "knowledge_operation_unavailable",
       };
     }
 
@@ -1252,7 +1252,7 @@ export async function adminListCompanyKnowledge(
   try {
     const supabase = await createClient();
     const listed = await listKnowledgeRowsForCompany(supabase, companyId);
-    if (!listed.ok) return { ok: false, code: "AUTH_ERROR", message: listed.message };
+    if (!listed.ok) return { ok: false, code: "AUTH_ERROR", message: "knowledge_operation_unavailable" };
     return { ok: true, data: listed.payload };
   } catch {
     return { ok: false, code: "UNAVAILABLE" };
@@ -1277,7 +1277,7 @@ export async function adminGetKnowledgeFileUrl(input: {
       .eq("kind", "file")
       .maybeSingle();
 
-    if (error) return { ok: false, code: "AUTH_ERROR", message: error.message };
+    if (error) return { ok: false, code: "AUTH_ERROR", message: "knowledge_operation_unavailable" };
     if (!data?.storage_path) return { ok: false, code: "FORBIDDEN", message: "not_found" };
     if (!data.storage_path.startsWith(`${input.companyId}/`)) {
       return { ok: false, code: "FORBIDDEN", message: "path_mismatch" };

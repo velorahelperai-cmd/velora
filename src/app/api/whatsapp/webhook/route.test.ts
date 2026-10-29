@@ -66,6 +66,12 @@ afterEach(() => {
 });
 
 describe("P4 WhatsApp reception route", () => {
+  it.each(['', 'sha1=invalid', 'sha256='+ 'z'.repeat(64)])('rejects malformed authentication before consuming the body (%s)',async signature=>{
+    const request=signedRequest('{}',signature),read=vi.spyOn(request,'arrayBuffer');
+    expect((await POST(request)).status).toBe(401);
+    expect(read).not.toHaveBeenCalled();
+    expect(mocks.createAdminClient).not.toHaveBeenCalled();
+  });
   it('preserves GET verification when event reception is closed',async()=>{
     vi.stubEnv('WHATSAPP_RECEIVE_ENABLED','false');
     const response=await GET(new Request('http://localhost/api/whatsapp/webhook?hub.mode=subscribe&hub.verify_token=synthetic-verify-token&hub.challenge=check'));
@@ -134,7 +140,7 @@ describe("P4 WhatsApp reception route", () => {
   });
 
   it("keeps unreadable request bodies retryable without routing or persistence", async () => {
-    const request = new Request("http://localhost/api/whatsapp/webhook", { method: "POST" });
+    const request = signedRequest("{}");
     vi.spyOn(request, "text").mockRejectedValue(new Error("body stream interrupted"));
     vi.spyOn(request, "arrayBuffer").mockRejectedValue(new Error("body stream interrupted"));
     expect((await POST(request)).status).toBe(500);

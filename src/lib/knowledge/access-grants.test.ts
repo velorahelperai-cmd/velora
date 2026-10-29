@@ -8,6 +8,14 @@ import {listKnowledgeSources,saveTextKnowledgeSource,deleteKnowledgeSource} from
 describe("knowledge grants are checked on the server",()=>{
  beforeEach(()=>{vi.clearAllMocks();state.role="staff";state.suspended=false;state.cap.mockResolvedValue(false);const q={select:()=>q,eq:()=>q,order:()=>q,limit:()=>q,then:(resolve:(x:unknown)=>unknown)=>Promise.resolve({data:[],error:null}).then(resolve)};state.client.mockResolvedValue({from:()=>q});});
  it("denies ungranted staff reads",async()=>{expect(await listKnowledgeSources()).toMatchObject({ok:false,code:"FORBIDDEN"});expect(state.cap).toHaveBeenCalledWith("company-b","knowledge.read");expect(state.client).not.toHaveBeenCalled();});
+ it("does not return raw database errors to an authorized client",async()=>{
+  state.role="owner";
+  const q={select:()=>q,eq:()=>q,order:async()=>({data:null,error:{message:"internal relation private.synthetic_secret does not exist"}})};
+  state.client.mockResolvedValue({from:()=>q});
+  const result=await listKnowledgeSources();
+  expect(result).toMatchObject({ok:false,code:"AUTH_ERROR"});
+  expect(JSON.stringify(result)).not.toContain("private.synthetic_secret");
+ });
  it("allows explicit read grant only for the selected company",async()=>{state.cap.mockResolvedValue(true);expect(await listKnowledgeSources()).toMatchObject({ok:true});expect(state.cap).toHaveBeenCalledWith("company-b","knowledge.read");});
  it("rejects staff writes despite a readable company",async()=>{expect(await saveTextKnowledgeSource({title:"Valid title",content:"Valid content"})).toMatchObject({ok:false,code:"FORBIDDEN"});expect(state.cap).toHaveBeenCalledWith("company-b","knowledge.write");expect(state.client).not.toHaveBeenCalled();});
  it("checks delete independently of write",async()=>{state.cap.mockImplementation(async(_id:string,cap:string)=>cap==="knowledge.write");expect(await deleteKnowledgeSource("00000000-0000-0000-0000-000000000001")).toMatchObject({ok:false,code:"FORBIDDEN"});expect(state.cap).toHaveBeenCalledWith("company-b","knowledge.delete");expect(state.client).not.toHaveBeenCalled();});

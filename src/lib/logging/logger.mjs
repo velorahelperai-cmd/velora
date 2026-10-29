@@ -3,6 +3,7 @@ export {redactLogText} from './redaction.mjs';
 import pino from 'pino';
 import {AsyncLocalStorage} from 'node:async_hooks';
 import {randomUUID} from 'node:crypto';
+import {format} from 'node:util';
 
 const context=new AsyncLocalStorage();
 const rootRequestId=randomUUID();
@@ -27,7 +28,19 @@ export function createStructuredLogger(destination){
  const env=process.env.NODE_ENV??'development';
  return pino({
   level:level(),
-  hooks:{logMethod(args,method){if(['production','staging'].includes(process.env.NODE_ENV)&&this.levelVal<30)this.level=level();const first=args[0];if(first&&typeof first==='object'){const fields={};for(const [key,value] of Object.entries(first))if(!reserved.has(key))fields[key]=value;args[0]=sanitize(fields);}return method.apply(this,args);}},
+  hooks:{logMethod(args,method){
+   if(['production','staging'].includes(process.env.NODE_ENV)&&this.levelVal<30)this.level=level();
+   const first=args[0],structured=first&&typeof first==='object';
+   if(structured){
+    const fields=first instanceof Error?{error:first}:{};
+    if(!(first instanceof Error))for(const [key,value] of Object.entries(first))if(!reserved.has(key))fields[key]=value;
+    args[0]=sanitize(fields);
+   }
+   // Format first: a placeholder can separate a sensitive key from its value.
+   const offset=structured?1:0;
+   if(args.length>offset)args.splice(offset,args.length-offset,redactLogText(format(...args.slice(offset).map(value=>value&&typeof value==='object'?sanitize(value):value))));
+   return method.apply(this,args);
+  }},
   base:{service:process.env.SERVICE_NAME??'velora',env,version:process.env.VERSION??process.env.VERCEL_GIT_COMMIT_SHA??'unknown'},
   timestamp:()=>',"timestamp":'+JSON.stringify(new Date().toISOString()),
   formatters:{level:label=>({level:label})},

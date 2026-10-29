@@ -127,6 +127,7 @@ export const es02Uuid = (value: unknown): value is string =>
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 
 export type Es02ActionCode =
+  | "RATE_LIMITED"
   | "UNAUTHENTICATED"
   | "FORBIDDEN"
   | "INVALID_INPUT"
@@ -148,4 +149,4 @@ export type Es02ActionCode =
 
 export type Es02Result<T> =
   | { ok: true; data: T }
-  | { ok: false; code: Es02ActionCode };
+  | { ok: false; code: Es02ActionCode; httpStatus?:429|503; retryAfterSeconds?:number };

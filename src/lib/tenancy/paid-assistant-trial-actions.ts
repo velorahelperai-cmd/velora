@@ -1,4 +1,5 @@
 "use server";
+import {checkRateLimit} from "@/lib/security/rate-limit";
 
 import { randomUUID } from "node:crypto";
 import { readSessionIdentity } from "@/lib/auth/server-identity";
@@ -37,7 +38,7 @@ function validScope(s: unknown): s is TrialScope {
 
 export type AssistantTrialAskResult =
   | { ok: true; snapshot: TrialSnapshot }
-  | { ok: false; code: string; message: string };
+  | { ok: false; code: string; message: string; httpStatus?:429|503; retryAfterSeconds?:number };
 
 export async function readOwnedBranchAssistantTrialAction(
   scope: TrialScope
@@ -203,6 +204,11 @@ export async function askOwnedBranchAssistantTrialAction(
       } as never);
       return !settled.error && settled.data === true;
     };
+    const rate=await checkRateLimit('ai_trial',`company:${input.companyId}`);
+    if(!rate.allowed){
+      if(!await settle('rejected'))return {ok:false,code:'TRIAL_PENDING',message:'Accounting requires reconciliation; do not retry'};
+      return {ok:false,code:rate.code,message:'Please wait before another request',httpStatus:rate.httpStatus,retryAfterSeconds:rate.retryAfterSeconds};
+    }
     const started = await writer.rpc("es02_start_branch_trial" as never, { p_operation_id: operationId } as never);
     if (started.error || (started.data as unknown as { ok?: boolean })?.ok !== true) {
       await settle("rejected");

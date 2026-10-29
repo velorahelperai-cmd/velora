@@ -4,6 +4,7 @@
  * PAYMOB_EXTERNAL_VERIFICATION: Deferred.
  */
 "use server";
+import {checkRateLimit} from "@/lib/security/rate-limit";
 
 import { randomUUID } from "crypto";
 import { logEvent, withLogContext } from "@/lib/logging/logger.mjs";
@@ -134,6 +135,8 @@ export async function beginAccountPaymentAction(input: {
   const resolved = resolveEs02Offer(sanitized.selection);
   if (!resolved.ok) return { ok: false, code: resolved.code };
   if (!singleBranchCountAllowed(resolved.offer.branchSlots)) return { ok: false, code: "SECOND_BRANCH_DEFERRED" };
+  const rate=await checkRateLimit("checkout",`account:${auth.accountId}`,{accountId:auth.accountId,operationId:sanitized.clientOpId});
+  if(!rate.allowed)return {ok:false,code:rate.code,httpStatus:rate.httpStatus,retryAfterSeconds:rate.retryAfterSeconds};
   return beginAccountTestCheckout({ accountId: auth.accountId, sessionId: auth.sessionId, clientOpId: sanitized.clientOpId, selection: sanitized.selection, preparation: input.preparation });
 }
 

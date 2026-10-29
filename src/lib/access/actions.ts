@@ -93,14 +93,14 @@ export async function accessGetUserSnapshot(
           message: "DEPENDENCY_MISSING:access_get_user_snapshot:20261006120000_vel_access_management_01",
         };
       }
-      return { ok: false, code: "UNAVAILABLE", message: error.message };
+      return { ok: false, code: "UNAVAILABLE", message: "access_operation_unavailable" };
     }
     const row = asRecord(data as Json);
     if (!row) return { ok: false, code: "UNAVAILABLE" };
     if (row.ok !== true) {
       if (String(row.code) === "not_found") return { ok: false, code: "NOT_FOUND" };
       if (String(row.code) === "forbidden") return { ok: false, code: "FORBIDDEN" };
-      return { ok: false, code: "UNAVAILABLE", message: String(row.code ?? "") };
+      return { ok: false, code: "UNAVAILABLE", message: "access_operation_unavailable" };
     }
 
     const platformRaw = asRecord(row.platform as Json);
@@ -210,7 +210,7 @@ export async function accessSetMemberGrants(input: {
           message: "DEPENDENCY_MISSING:access_set_member_grants:20261006120000_vel_access_management_01",
         };
       }
-      return { ok: false, code: "UNAVAILABLE", message: error.message };
+      return { ok: false, code: "UNAVAILABLE", message: "access_operation_unavailable" };
     }
     const row = asRecord(data as Json);
     if (!row) return { ok: false, code: "UNAVAILABLE" };
@@ -265,12 +265,12 @@ export async function accessAddCompanyStaff(input: {
       }
       if (/forbidden|42501/i.test(error.message)) return { ok: false, code: "FORBIDDEN" };
       if (/revision_conflict|grant_failed:revision_conflict/i.test(error.message)) {
-        return { ok: false, code: "CONFLICT", message: error.message };
+        return { ok: false, code: "CONFLICT", message: "revision_conflict" };
       }
       if (/already_owner|not_found|invalid_input|revision_required/i.test(error.message)) {
-        return { ok: false, code: "INVALID_INPUT", message: error.message };
+        return { ok: false, code: "INVALID_INPUT", message: "invalid_input" };
       }
-      return { ok: false, code: "UNAVAILABLE", message: error.message };
+      return { ok: false, code: "UNAVAILABLE", message: "access_operation_unavailable" };
     }
     const row = asRecord(data as Json);
     if (!row) return { ok: false, code: "UNAVAILABLE" };
@@ -283,7 +283,7 @@ export async function accessAddCompanyStaff(input: {
         },
       };
     }
-    return { ok: false, code: "UNAVAILABLE", message: String(row.code ?? "") };
+    return { ok: false, code: "UNAVAILABLE", message: "access_operation_unavailable" };
   } catch {
     return { ok: false, code: "UNAVAILABLE" };
   }
@@ -326,7 +326,7 @@ export async function accessSetPlatformRole(input: {
         };
       }
       if (/forbidden|42501/i.test(error.message)) return { ok: false, code: "FORBIDDEN" };
-      return { ok: false, code: "UNAVAILABLE", message: error.message };
+      return { ok: false, code: "UNAVAILABLE", message: "access_operation_unavailable" };
     }
     const row = asRecord(data as Json);
     if (!row) return { ok: false, code: "UNAVAILABLE" };
