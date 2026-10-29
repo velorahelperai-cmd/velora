@@ -48,9 +48,37 @@ export function nextWorkspaceSelection(snapshot:PaidSetupWorkspaceRead,previous:
   }
   const currentStep=steps.find(item=>item.id===selected);
   if(currentStep&&currentStep.status==="verified"){
-    return nextIncompleteOpen(steps.findIndex(item=>item.id===selected)+1)??nextIncompleteOpen(0)??selected;
+    return nextIncompleteOpen(steps.findIndex(item=>item.id===selected)+1)??selected;
   }
   return selected;
+}
+
+export function stepBlockedReason(
+  stepId: ChecklistStepId,
+  steps: readonly {id:ChecklistStepId;status:string;dependencyIds:readonly ChecklistStepId[]}[],
+  model: ReturnType<typeof paidChecklistFromRead>,
+  locale: "ar" | "en"
+): string {
+  const ar = locale === "ar", t = (a: string, e: string) => ar ? a : e;
+  if (stepId === "launch" && model?.launch.blockedReasons?.length) {
+    const first = model.launch.blockedReasons[0];
+    if (first.startsWith("channel_unverified:whatsapp")) return t("بانتظار التحقق من ربط واتساب", "Awaiting WhatsApp connection verification");
+    if (first.startsWith("channel_unverified:instagram")) return t("بانتظار التحقق من ربط إنستجرام", "Awaiting Instagram connection verification");
+    if (first === "hours_incomplete") return t("بانتظار حفظ مواعيد العمل", "Awaiting business hours");
+    if (first === "knowledge_incomplete") return t("بانتظار إضافة المعرفة", "Awaiting knowledge setup");
+    if (first === "language_unconfirmed") return t("بانتظار تأكيد لغة الرد", "Awaiting reply language");
+    if (first === "trial_incomplete") return t("بانتظار تجربة المساعد", "Awaiting assistant trial");
+    return t("بانتظار متطلبات التشغيل", "Awaiting launch requirements");
+  }
+  const current = steps.find(item => item.id === stepId);
+  const unmet = current?.dependencyIds.find(dep => {
+    const s = steps.find(item => item.id === dep);
+    return !s || (s.status !== "verified" && !(s.id === "team" && s.status === "skipped_optional"));
+  });
+  if (unmet && titles[unmet]) {
+    return t(`بانتظار: ${titles[unmet][0]}`, `Waiting for: ${titles[unmet][1]}`);
+  }
+  return t("بانتظار المتطلبات", "Prerequisites required");
 }
 
 const titles:Record<ChecklistStepId,readonly [string,string]>={
@@ -119,7 +147,10 @@ function Workspace(p:PaidSetupWorkspaceProps) {
   const valid=current&&!!model&&model.branches.some(branch=>branch.id===p.scope.branchId)&&steps.length>0;
   const active=p.activeStepId;
   const allowed=!!active&&workspaceStepAllowed(p.read,p.scope,active,p.availableStepIds);
-  const nextStep=steps.find(step=>step.status!=='verified'&&step.status!=='skipped_optional'&&workspaceStepAllowed(p.read,p.scope,step.id,p.availableStepIds));
+  const position=steps.findIndex(step=>step.id===active);
+  const nextCandidate=position>=0&&position+1<steps.length?steps[position+1]:null;
+  const nextAllowed=!!nextCandidate&&workspaceStepAllowed(p.read,p.scope,nextCandidate.id,p.availableStepIds);
+  const nextBlockedReason=nextCandidate&&!nextAllowed?stepBlockedReason(nextCandidate.id,steps,model,p.locale):null;
   const activation=valid?paidSetupActivation(p.activation,p.scope.companyId,p.read?.entitlement?.orderGroupId):null;
   const entitlement=valid?p.read?.entitlement:null;
   const personaName=entitlement?({level_1:t('نورا','Noura'),level_2:t('لينا','Lina'),level_3:t('دانا','Dana')})[entitlement.persona]:'';
@@ -134,7 +165,6 @@ function Workspace(p:PaidSetupWorkspaceProps) {
     if(step===active)heading.current?.focus();
     else p.onSelectStep(step);
   };
-  const position=steps.findIndex(step=>step.id===active);
   const previousStep=steps.slice(0,Math.max(position,0)).reverse().find(step=>workspaceStepAllowed(p.read,p.scope,step.id,p.availableStepIds));
   const refresh=()=>{if(p.isCurrent()&&confirmSetupLeave(shell.current,p.locale))p.onRefresh?.();};
   return <section ref={shell} className={styles.workspace} dir={ar?"rtl":"ltr"} aria-labelledby={titleId} aria-busy={p.loading||undefined}>
@@ -168,13 +198,37 @@ function Workspace(p:PaidSetupWorkspaceProps) {
             </li>;
           })}</ol>
         </nav>
-        {nextStep&&<button type="button" className={styles.nextAction} onClick={()=>select(nextStep.id)}><span>{t('الخطوة التالية','Next step')}</span><strong>{titles[nextStep.id][ar?0:1]}</strong><span aria-hidden="true">{ar?'←':'→'}</span></button>}
+        {nextCandidate&&(
+          nextAllowed ? (
+            <button type="button" className={styles.nextAction} onClick={()=>select(nextCandidate.id)}>
+              <span>{t('الخطوة التالية','Next step')}</span>
+              <strong>{titles[nextCandidate.id][ar?0:1]}</strong>
+              <span aria-hidden="true">{ar?'←':'→'}</span>
+            </button>
+          ) : (
+            <button type="button" className={styles.nextAction} disabled aria-disabled="true" title={nextBlockedReason??undefined}>
+              <span>{t('الخطوة التالية','Next step')}</span>
+              <strong>{titles[nextCandidate.id][ar?0:1]}</strong>
+              {nextBlockedReason&&<small className={styles.nextActionBlocked}>{nextBlockedReason}</small>}
+            </button>
+          )
+        )}
       </aside>
       <section id={panelId} className={styles.content} aria-labelledby={panelId+"-heading"}>
         <header className={styles.contentHeader}>
           <h2 id={panelId+"-heading"} ref={heading} tabIndex={-1} className={styles.srOnly}>{active?titles[active][ar?0:1]:t("اختر خطوة للمتابعة","Choose a step to continue")}</h2>
           <div className={styles.controls}>
             {previousStep&&<button type="button" onClick={()=>select(previousStep.id)}>{t("الخطوة السابقة","Previous step")}</button>}
+            {nextCandidate&&(
+              <button
+                type="button"
+                disabled={!nextAllowed}
+                title={nextBlockedReason??undefined}
+                onClick={()=>nextAllowed&&select(nextCandidate.id)}
+              >
+                {t("الخطوة التالية: ","Next step: ")}{titles[nextCandidate.id][ar?0:1]}
+              </button>
+            )}
           </div>
         </header>
         <div className={styles.body} key={active}>

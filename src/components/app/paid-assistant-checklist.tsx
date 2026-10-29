@@ -97,12 +97,28 @@ function PaidSetupBranch(p:PaidSetupFlowProps&{branchId:string}) {
 }
 function PaidSetupBranchRead(p:PaidSetupFlowProps&{branchId:string;refreshVersion:number;retry:()=>void}) {
  const [snapshot,setSnapshot]=useState<PaidSetupWorkspaceRead|null|undefined>(undefined);
- const [selected,setSelected]=useState<ChecklistStepId|null>(null);
+ const storageKey=`velora:setup:step:${p.scope.companyId}:${p.branchId}`;
+ const [selected,setSelected]=useState<ChecklistStepId|null>(()=>{
+   if(typeof window==="undefined")return null;
+   try{
+     const saved=window.sessionStorage.getItem(storageKey);
+     return saved&&order.includes(saved as ChecklistStepId)?(saved as ChecklistStepId):null;
+   }catch{return null;}
+ });
  const [refreshFailed,setRefreshFailed]=useState(false);
  const generation=useRef(0);
  const {scope,isCurrent,branchId,refreshVersion,onWorkspaceRead}=p;
  const readWorkspace=p.readWorkspace??readOwnedPaidSetupWorkspaceAction;
  const connectionFirst=!p.readWorkspace;
+
+ useEffect(()=>{
+   if(typeof window==="undefined")return;
+   try{
+     if(selected)window.sessionStorage.setItem(storageKey,selected);
+     else window.sessionStorage.removeItem(storageKey);
+   }catch{}
+ },[selected,storageKey]);
+
  useEffect(()=>{
   const request=++generation.current;let active=true;
   if(!isCurrent())return;
@@ -120,7 +136,7 @@ function PaidSetupBranchRead(p:PaidSetupFlowProps&{branchId:string;refreshVersio
    if(connectionFirst&&result.read.entitlement)void observeSetupRead(readOwnedPaidSetupDetailsAction(input,result.read.entitlement.orderGroupId),()=>{}).then(details=>{
      if(!active||request!==generation.current||!isCurrent()||!details||details.scope.expectedAccountId!==input.expectedAccountId||details.scope.companyId!==input.companyId||details.scope.branchId!==branchId)return;
      const enriched={...result,read:composePaidSetupProgress(result.read,details.summary),activation:details.activation};
-     setSnapshot(enriched);onWorkspaceRead?.(enriched);setSelected(previous=>previous??nextWorkspaceSelection(enriched,null));
+     setSnapshot(enriched);onWorkspaceRead?.(enriched);setSelected(previous=>nextWorkspaceSelection(enriched,previous));
    }).catch(()=>{/* Optional metadata remains unknown; connection controls stay usable. */});
   }).catch(()=>{if(active&&request===generation.current&&isCurrent()){setRefreshFailed(true);setSnapshot(previous=>previous===undefined?null:previous);}}).finally(endTiming);
   return()=>{active=false;};

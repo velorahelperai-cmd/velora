@@ -1,3 +1,21 @@
+# Current Session Index - SETUP-NAVIGATION-AND-NEXT-STEP-20261030
+
+- **Task (Radical Fix for `/setup` Navigation & Next Step Logic — SINGLE-SETUP-PATH-001):**
+  - **Defect Identified & Addressed:** In `paid-setup-workspace.tsx`, `nextStep` was previously searched across all steps starting from index 0 (`whatsapp`), which caused the "Next step" button to display `Next step: Connect WhatsApp` on every screen (including `hours`, `knowledge`, `language`, etc.) and jump backwards to WhatsApp.
+  - **Core Fixes Implemented (`src/components/app/paid-setup-workspace.tsx`, `src/components/app/paid-assistant-checklist.tsx`, `src/components/app/paid-setup-workspace.module.css`):**
+    - **Relative Sequence Calculation:** Replaced global search with linear forward progression relative to `activeStepId`: `nextCandidate = steps[position + 1]`.
+    - **Dependency & State Bounding:** Evaluated `nextAllowed = workspaceStepAllowed(read, scope, nextCandidate.id, availableStepIds)`. If prerequisites are unmet, the button renders in a disabled state with `aria-disabled="true"` and an explicit Arabic/English explanation badge (`stepBlockedReason`) such as `بانتظار: مواعيد العمل` or `بانتظار التحقق من ربط واتساب`, preventing dependency bypass.
+    - **Symmetric Navigation Controls:** Kept backward navigation strictly via header `previousStep` and checklist rail buttons; forward button only moves to `nextCandidate`. On the final step (`launch`), no forward button is rendered.
+    - **Automatic Forward Transition on Save:** In `nextWorkspaceSelection`, removed the backwards fallback (`?? nextIncompleteOpen(0)`). Once a step (e.g. `hours`) is saved and confirmed by server snapshot, `nextWorkspaceSelection` automatically advances forward to the newly-unlocked step (`knowledge`).
+    - **Selection & Saved Progress Recovery on Refresh:** In `PaidSetupBranchRead`, hydrated `selected` step from tenant/branch-scoped `sessionStorage` (`velora:setup:step:${companyId}:${branchId}`). Validated against server snapshot on arrival: respects active selection if allowed, advances if verified, and falls back to first incomplete open step from server progress if clean or invalidated.
+    - **WhatsApp Isolation Maintained:** Waiting on commercial WhatsApp does not block business setup steps (`hours` -> `knowledge` -> `language` -> `test` -> `team`), while `launch` remains strictly gated on all prerequisites including commercial WhatsApp verification.
+  - **Verification:**
+    - Targeted Vitest: 22 test files, 335/335 PASS (added 4 new tests in `paid-setup-workspace.interaction.test.tsx` and 2 in `paid-setup-workspace.test.tsx`).
+    - TypeScript (`tsc --noEmit`): PASS (0 errors).
+    - Security scan (`scripts/ci/security.mjs`): PASS (2091 paths).
+    - ESLint scoped check: PASS (0 errors, 0 warnings).
+    - Zero mock/test routes, compensatory buttons, or data mutations.
+
 # Current Session Index - SETUP-UX-DATA-FLOW-20261030 (PUBLISHED / LIVE READ FOLLOW-UP)
 
 - Owner explicitly requested checking the concurrent session, finishing remaining canonical `/setup`, running checks, then committing/pushing and verifying CI/deployment. The other active chat (اعرف حالة خطة فيلورا) is working on homepage/Noura quota, not a completed setup handoff; setup files had stayed stable. Current follow-up completes the hours/host integration. Homepage, account-chrome, auth diagnostics and unrelated SQL remain excluded.
