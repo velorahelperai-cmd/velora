@@ -9,14 +9,18 @@ import type {SetupPlanConfirmResult} from './setup-plan-journey';
 import styles from './setup-payment-dialog.module.css';
 import reviewStyles from './setup-order-review.module.css';
 import {readQaSetupSimulationAccess} from '@/lib/tenancy/qa-setup-simulation-actions';
+import {grantQaBusiness} from '@/lib/tenancy/qa-business-grant-actions';
+import type {Preparation} from '@/lib/tenancy/prepayment-preparation';
 
-type Props=SetupOrderReviewProps&{isCurrent:()=>boolean;navigate?:(next:string)=>void};
+type Props=SetupOrderReviewProps&{isCurrent:()=>boolean;navigate?:(next:string)=>void;qaPreparation?:Preparation};
 type Payment={orderId:string;url:string|null};
 type Phase='idle'|'creating'|'waiting'|'checking'|'paid'|'unknown'|'setup_failed'|'finished';
 export function SetupPaymentDialog(p:Props){return <PaymentDialog key={JSON.stringify(p.actor)} {...p}/>;}
 
 function PaymentDialog(p:Props){
  const [qaAllowed,setQaAllowed]=useState(false);
+ const [qaBusy,setQaBusy]=useState(false),[qaConfirm,setQaConfirm]=useState(false);
+ const qaOperation=useRef<string|null>(null),qaFlight=useRef(false);
  const qaAccountId=p.actor.accountId,qaCurrent=p.isCurrent;
  useEffect(()=>{let active=true;void readQaSetupSimulationAccess(qaAccountId).then(allowed=>{if(active&&qaCurrent())setQaAllowed(allowed);}).catch(()=>{});return()=>{active=false;};},[qaAccountId,qaCurrent]);
  const t=(a:string,e:string)=>p.ar?a:e;
@@ -48,7 +52,7 @@ function PaymentDialog(p:Props){
   }catch{closePopup();setNotice(t('تعذر فتح نافذة الدفع. أعد المحاولة.','Could not open the payment window. Try again.'));return false;}
  }
  function beforeConfirm(){
-  if(creating.current||!current()||!openPopup())return false;
+  if(qaFlight.current||creating.current||!current()||!openPopup())return false;
   creating.current=true;setPhase('creating');setNotice('');return true;
  }
  async function confirm(invoke:()=>Promise<SetupPlanConfirmResult>){
@@ -127,7 +131,7 @@ function PaymentDialog(p:Props){
   return()=>{active=false;if(timer)clearTimeout(timer);channel?.close();window.removeEventListener('focus',focused);document.removeEventListener('visibilitychange',focused);wake.current=()=>{};};
  },[orderId,live]);
  if(!activeNow)return null;
- const busy=phase==='creating'||phase==='checking'||phase==='paid'||phase==='finished';
+ const busy=qaBusy||phase==='creating'||phase==='checking'||phase==='paid'||phase==='finished';
  const label=paidConfirmed?t('تم تأكيد الدفع','Payment confirmed'):t('بانتظار تأكيد الدفع','Awaiting payment confirmation');
  const paymentStatus=payment?<div className={styles.status}>
   <strong role="status">{paidConfirmed?label:phase==='checking'?t('جارٍ التحقق من الدفع…','Verifying payment…'):label}</strong>
@@ -138,7 +142,14 @@ function PaymentDialog(p:Props){
  const content=<>
   {notice&&<p className={styles.notice} role="alert">{notice}</p>}
   <SetupOrderReview {...p} beforeConfirm={beforeConfirm} managedCheckout paymentStatus={paymentStatus} paymentStateLabel={payment?label:undefined}
-   qaSimulationAction={qaAllowed&&!payment&&!busy?<a className={reviewStyles.secondary} href="/setup/qa" target="_blank" rel="noreferrer" data-qa-simulation>{t('محاكاة تجربة ما بعد الدفع','Simulate post-payment setup')}</a>:undefined}
+   qaSimulationAction={qaAllowed&&!payment&&!busy&&p.qaPreparation?<div>
+    <button type="button" className={reviewStyles.secondary} disabled={qaBusy} onClick={()=>setQaConfirm(true)} data-qa-simulation>{t('تجربة كاملة — VELORA QA','Full VELORA QA experience')}</button>
+    {qaConfirm&&<div role="group" aria-label="VELORA QA grant">
+     <p>{t('سيُسجّل نشاط VELORA QA والباقة المحددة بمنحة داخلية، دون تحصيل مالي. يبدأ التجهيز الأصلي؛ يستطيع الأدمن أرشفة التجربة وإعادتها.','Create VELORA QA with the selected plan as a non-cash internal grant. Original setup opens; an admin can archive and restart it.')}</p>
+     <button type="button" disabled={qaBusy||!p.term} onClick={()=>{if(qaFlight.current||creating.current||!current()||!p.qaPreparation||!p.term)return;qaFlight.current=true;setQaBusy(true);qaOperation.current??=crypto.randomUUID();void grantQaBusiness({accountId:p.actor.accountId,operationId:qaOperation.current,preparation:p.qaPreparation,selection:{term:p.term,slots:p.slots.map(s=>({persona:s.persona!,package:s.package!}))}}).then(r=>{if(!current())return;if(r.ok)(p.navigate??(next=>window.location.assign(next)))('/setup');else setNotice(t('لم يتأكد إنشاء التجربة: ','QA creation not confirmed: ')+r.code);}).catch(()=>{if(current())setNotice('QA: UNKNOWN');}).finally(()=>{qaFlight.current=false;if(current())setQaBusy(false);});}}>{t('تأكيد تسجيل نشاط التجربة','Confirm QA business creation')}</button>
+     <button type="button" disabled={qaBusy} onClick={()=>setQaConfirm(false)}>{t('إلغاء','Cancel')}</button>
+    </div>}
+   </div>:undefined}
    confirmReview={accepted=>confirm(()=>p.confirmReview(accepted))}
    retrySameOperation={p.retrySameOperation?()=>confirm(()=>p.retrySameOperation!()):undefined} onConfirmed={confirmed}/>
  </>;

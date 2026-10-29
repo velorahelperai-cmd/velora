@@ -1,0 +1,73 @@
+begin;
+-- Synthetic data, disposable owned loopback DB only. No provider requests.
+do $$begin if current_database()<>'c1_ui_integration' or inet_client_addr() is not null then raise exception 'DISPOSABLE_ONLY';end if;end$$;
+create function pg_temp.must(v boolean,label text) returns void language plpgsql as $$begin if v is distinct from true then raise exception 'ASSERT_FAILED:%',label;end if;end$$;
+create table public.qa_grant_fixture(key text primary key,value jsonb);
+create function pg_temp.login(actor uuid) returns void language plpgsql as $$declare sid uuid;begin
+ select id into sid from auth.sessions where user_id=actor order by created_at desc limit 1;
+ perform set_config('request.jwt.claims',jsonb_build_object('role','authenticated','sub',actor,'session_id',sid)::text,false);
+ perform set_config('request.jwt.claim.sub',actor::text,false);perform set_config('request.jwt.claim.role','authenticated',false);
+end$$;
+do $$declare actor uuid;sid uuid;lineage uuid;registry uuid;begin
+ foreach actor in array array['83ad69f7-cbb0-4e3a-a34e-8085e5203dc7'::uuid,'11111111-2222-4333-8444-555555555555'::uuid,(select user_id from public.platform_admins where role='owner' and status='active' limit 1)] loop
+  sid:=gen_random_uuid();lineage:=gen_random_uuid();registry:=gen_random_uuid();
+  insert into auth.users(id,email,email_confirmed_at) values(actor,case when actor='83ad69f7-cbb0-4e3a-a34e-8085e5203dc7' then 'velorahelperai+meta-review@gmail.com' else 'synthetic-admin@example.invalid' end,clock_timestamp()) on conflict(id) do nothing;
+  insert into auth.sessions(id,user_id,created_at,updated_at,not_after) values(sid,actor,clock_timestamp(),clock_timestamp(),clock_timestamp()+interval '1 hour');
+  insert into private.app_session_activity(session_id,user_id,last_activity_at) values(sid,actor,clock_timestamp());
+  insert into public.vel_broker_browser_lineages(id,bootstrap_hash,valid_until) values(lineage,'fixture-'||lineage,clock_timestamp()+interval '1 hour');
+  insert into public.vel_broker_sessions(id,handle_hash,cookie_name,generation,user_id,native_session_id,access_token_enc,refresh_token_enc,token_expires_at,status,browser_lineage_id) values(registry,'fixture-'||registry,'fixture-'||registry,'fixture-'||registry,actor,sid,'synthetic','synthetic',clock_timestamp()+interval '1 hour','active',lineage);
+  update public.vel_broker_browser_lineages set current_registry_id=registry where id=lineage;
+ end loop;
+end$$;
+do $$declare a uuid:='83ad69f7-cbb0-4e3a-a34e-8085e5203dc7';op uuid:=gen_random_uuid();r jsonb;cid uuid;bid uuid;oid uuid;
+ business jsonb:='{"name":"VELORA QA","type":"technology","country":"OM","city":"Nizwa","phone":"+96890000000"}';
+ branches jsonb:='[{"name":"QA Main","city":"Nizwa"}]';slots jsonb:='[{"persona":"level_1","package":"basic"}]';
+begin
+ perform pg_temp.login(a);
+ r:=public.es02_grant_qa_setup(a,op,'monthly',slots,business,branches);
+ perform pg_temp.must(r->>'ok'='true','grant '||r::text);cid:=(r->>'companyId')::uuid;
+ select order_id into oid from private.es02_qa_setup_grants where company_id=cid;
+ select id into bid from public.company_branches where company_id=cid;
+ perform pg_temp.must((select status='provisioned' and settled_at is null and settlement_authority is null and environment='test' from private.es02_account_orders where id=oid),'no fabricated payment');
+ perform pg_temp.must(not exists(select 1 from private.es02_account_settlement_events),'no financial receipt');
+ perform pg_temp.must((select count(*)=1 from private.es02_branch_slot_rights where company_id=cid and package='basic' and term='monthly' and employees=2 and replies_per_month=1000),'persisted package rights');
+ perform pg_temp.must((select payment_confirmed_at is null and clock_state='waiting_readiness' from private.es02_activation_foundation where company_id=cid),'no payment timestamp or clock start');
+ r:=public.es02_read_owned_branch_setup(a,cid,bid);perform pg_temp.must(r->>'ok'='true','original setup read '||r::text);
+ r:=public.es02_select_owned_branch_channels(a,cid,bid,gen_random_uuid(),'["whatsapp"]');perform pg_temp.must(r->>'ok'='true','original channel selection '||r::text);
+ r:=private.es02_b3_current_binding(a,cid,bid,'whatsapp');perform pg_temp.must(r->>'ok'='true','original setup binding '||r::text);
+ r:=public.es02_confirm_owned_branch_reply_language(a,cid,bid,1,'ar');perform pg_temp.must(r->>'ok'='true','original language save '||r::text);
+ perform pg_temp.must((select reply_language='ar' from private.es02_branch_reply_language_confirmations where company_id=cid and branch_id=bid),'setup persisted in database');
+ r:=private.es02_paid_branch_readiness(cid,bid);perform pg_temp.must(r->>'ok'='false','no live operational authorization');
+ r:=public.es02_grant_qa_setup(a,op,'monthly',slots,business,branches);perform pg_temp.must(r->>'companyId'=cid::text and r->>'action'='reuse','idempotent retry');
+ r:=public.es02_grant_qa_setup(a,gen_random_uuid(),'yearly',slots,business,branches);perform pg_temp.must(r->>'code'='CONFLICT','selection immutable');
+ r:=public.es02_admin_reset_qa_setup(cid,'RESET VELORA QA');perform pg_temp.must(r->>'code'='FORBIDDEN','customer cannot reset');
+ insert into public.qa_grant_fixture values('context',jsonb_build_object('actor',a,'sid',(select id from auth.sessions where user_id=a limit 1),'company',cid,'branch',bid,'order',oid,'business',business,'branches',branches,'slots',slots));
+ perform pg_temp.login('11111111-2222-4333-8444-555555555555');
+ r:=public.es02_read_owned_branch_setup('11111111-2222-4333-8444-555555555555',cid,bid);perform pg_temp.must(r->>'ok'='false','foreign account denied');
+ r:=public.es02_grant_qa_setup('11111111-2222-4333-8444-555555555555',op,'monthly',slots,business,branches);perform pg_temp.must(r->>'code'='FORBIDDEN','foreign grant denied');
+ r:=private.es02_create_test_account_order('11111111-2222-4333-8444-555555555555',gen_random_uuid(),'monthly',slots,true);
+ perform pg_temp.must(r->>'ok'='true','ordinary unpaid fixture order');
+ r:=public.es02_provision_owned_purchase('11111111-2222-4333-8444-555555555555',(r->'data'->>'orderId')::uuid,gen_random_uuid(),business,branches);
+ perform pg_temp.must(r->>'code'='NOT_SETTLED','ordinary unpaid purchase still denied');
+ perform pg_temp.login((select user_id from public.platform_admins where role='owner' and status='active' limit 1));
+ r:=public.es02_admin_reset_qa_setup(cid);perform pg_temp.must(r->>'operation'='archive_and_revoke','admin preview '||r::text);
+ perform pg_temp.must((select reset_at is null from private.es02_qa_setup_grants where order_id=oid),'preview read only');
+ r:=public.es02_admin_reset_qa_setup(cid,'wrong');perform pg_temp.must(r->>'code'='CONFIRMATION_REQUIRED','explicit confirmation');
+ r:=public.es02_admin_reset_qa_setup(cid,'RESET VELORA QA');perform pg_temp.must(r->>'action'='reset','admin reset '||r::text);
+ perform pg_temp.must((select archived_at is not null and status='suspended' from public.companies where id=cid),'archive retained');
+ perform pg_temp.login(a);
+ r:=public.es02_read_owned_branch_setup(a,cid,bid);perform pg_temp.must(r->>'ok'='false','old access revoked');
+ r:=public.es02_grant_qa_setup(a,gen_random_uuid(),'yearly',slots,business,branches);perform pg_temp.must(r->>'ok'='true' and r->>'companyId'<>cid::text,'new cycle without conflict '||r::text);
+ perform pg_temp.must((select count(*)=2 from private.es02_qa_setup_grants),'history preserved');
+ cid:=(r->>'companyId')::uuid;
+ perform pg_temp.login((select user_id from public.platform_admins where role='owner' and status='active' limit 1));
+ r:=public.es02_admin_reset_qa_setup(cid,'RESET VELORA QA');perform pg_temp.must(r->>'action'='reset','second cycle reset');
+ perform pg_temp.login(a);
+ r:=public.es02_grant_qa_setup(a,gen_random_uuid(),'monthly',slots,business,'[{"name":"","city":"Nizwa"}]');
+ perform pg_temp.must(r->>'ok'='false','failed provision rejected');
+ perform pg_temp.must((select count(*)=2 from private.es02_qa_setup_grants) and (select count(*)=2 from private.es02_account_orders where account_id=a),'failed grant rolled back without orphan order');
+ perform pg_temp.must(not has_table_privilege('authenticated','private.es02_qa_setup_grants','select') and not has_function_privilege('anon','public.es02_grant_qa_setup(uuid,uuid,text,jsonb,jsonb,jsonb)','execute'),'private grant ACL');
+end$$;
+select 'grant, package persistence, setup read, live proof rejection, identity isolation, retry, admin preview, reset and restart: PASS';
+
+commit;

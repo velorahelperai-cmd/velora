@@ -4,10 +4,11 @@ import {createRoot,type Root} from 'react-dom/client';
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
 import type {SetupOrderReviewProps} from './setup-order-review';
 const mocks=vi.hoisted(()=>({verify:vi.fn(),finish:vi.fn(),confirm:vi.fn(),navigate:vi.fn(),review:null as SetupOrderReviewProps|null}));
-const qa=vi.hoisted(()=>({access:vi.fn(async()=>false)}));
+const qa=vi.hoisted(()=>({access:vi.fn(async()=>false),grant:vi.fn()}));
+vi.mock('@/lib/tenancy/qa-business-grant-actions',()=>({grantQaBusiness:qa.grant}));
 vi.mock('@/lib/tenancy/qa-setup-simulation-actions',()=>({readQaSetupSimulationAccess:qa.access}));
 vi.mock('@/app/account/payment/[orderId]/actions',()=>({verifyThawaniPayment:mocks.verify,finishTestCheckout:mocks.finish}));
-vi.mock('./setup-order-review',async original=>({...await original<typeof import('./setup-order-review')>(),SetupOrderReview:(p:SetupOrderReviewProps)=>{mocks.review=p;return createElement('div',{'data-review':true},createElement('button',{onClick:()=>{if(p.beforeConfirm?.()===false)return;void p.confirmReview(true).then(r=>{if(r.ok)p.onConfirmed?.(r);});}},'Pay'),p.paymentStatus);}}));
+vi.mock('./setup-order-review',async original=>({...await original<typeof import('./setup-order-review')>(),SetupOrderReview:(p:SetupOrderReviewProps)=>{mocks.review=p;return createElement('div',{'data-review':true},createElement('button',{onClick:()=>{if(p.beforeConfirm?.()===false)return;void p.confirmReview(true).then(r=>{if(r.ok)p.onConfirmed?.(r);});}},'Pay'),p.paymentStatus,p.qaSimulationAction);}}));
 import {SetupPaymentDialog} from './setup-payment-dialog';
 import {resolveEs02Offer} from '@/lib/billing/es02/commercial-offer';
 const orderId='11111111-2222-4333-8444-555555555555',accountId='aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
@@ -16,7 +17,7 @@ const resolved=resolveEs02Offer(selection);if(!resolved.ok)throw Error('fixture'
 const order={orderId,accountId,status:'open' as const,offer:resolved.offer,specialReference:'REF-ONE',paymentAttemptId:orderId,environment:'test' as const,settledAt:null,provisionedCompanyId:null,originalOrderGroupId:orderId};
 const url='https://uatcheckout.thawani.om/pay/checkout_abcdefgh12345678?key=publicfixture123';
 const success={ok:true as const,order,checkoutUrl:url,settlement:'UNPAID' as const,serviceReady:false as const,clientOpId:orderId,action:'insert' as const};
-const props={ar:false,slots:[{label:{name:'TAG CITY',city:'Nizwa'},persona:'level_1' as const,package:'basic' as const}],term:'monthly' as const,write:{kind:'idle' as const},actor:{accountId,captureToken:'capture'},consentAccepted:true,confirmReview:mocks.confirm,onEditBranch:vi.fn(),onBackToPlans:vi.fn(),isCurrent:()=>true,navigate:mocks.navigate};
+const props={qaPreparation:{name:'VELORA QA',type:'technology',country:'OM',city:'Nizwa',phone:'+96890000000',branches:[{name:'QA Main',city:'Nizwa'}]},ar:false,slots:[{label:{name:'TAG CITY',city:'Nizwa'},persona:'level_1' as const,package:'basic' as const}],term:'monthly' as const,write:{kind:'idle' as const},actor:{accountId,captureToken:'capture'},consentAccepted:true,confirmReview:mocks.confirm,onEditBranch:vi.fn(),onBackToPlans:vi.fn(),isCurrent:()=>true,navigate:mocks.navigate};
 let root:Root,host:HTMLDivElement,popup:{closed:boolean;opener:unknown;document:{title:string;body:{textContent:string}};location:{replace:ReturnType<typeof vi.fn>};close:ReturnType<typeof vi.fn>;focus:ReturnType<typeof vi.fn>},open:ReturnType<typeof vi.fn>;
 let channels:Array<{onmessage:((event:{data:unknown})=>void)|null;close:ReturnType<typeof vi.fn>}>;
 beforeEach(()=>{
@@ -57,3 +58,5 @@ it('recovers a saved order with an uncertain checkout URL only after an explicit
  await act(async()=>host.querySelector<HTMLButtonElement>('[data-resume-payment]')!.click());
  expect(retry).toHaveBeenCalledOnce();expect(open).toHaveBeenCalledOnce();expect(popup.location.replace).toHaveBeenCalledWith(url);expect(mocks.confirm).not.toHaveBeenCalled();
 });
+
+it('creates the selected QA grant only after explicit confirmation, with no gateway calls',async()=>{qa.access.mockResolvedValue(true);qa.grant.mockResolvedValue({ok:true,companyId:orderId});await render();await act(async()=>host.querySelector<HTMLButtonElement>('[data-qa-simulation]')!.click());expect(qa.grant).not.toHaveBeenCalled();await act(async()=>[...host.querySelectorAll('button')].find(b=>b.textContent==='Confirm QA business creation')!.click());expect(qa.grant).toHaveBeenCalledWith(expect.objectContaining({preparation:props.qaPreparation,selection}));expect(mocks.navigate).toHaveBeenCalledWith('/setup');expect(mocks.confirm).not.toHaveBeenCalled();expect(mocks.verify).not.toHaveBeenCalled();expect(open).not.toHaveBeenCalled();});

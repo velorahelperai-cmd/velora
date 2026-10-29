@@ -1196,6 +1196,7 @@ function StudioPreparationForm({
               initialBranchIndex={planBranchFocus}
             />
             {phase === "review" && <SetupPaymentDialog
+              qaPreparation={preparedValue}
               ar={ar}
               checkoutNotice={checkoutNotice}
               slots={planSnap.slots}
