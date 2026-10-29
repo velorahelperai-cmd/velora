@@ -30,6 +30,11 @@ export async function createClient(): Promise<SupabaseClient<Database>> {
   const resolved = await resolveBrokerForCookieSnapshot(cookieSnapshotKey);
   if (resolved.ok) return resolved.client;
 
+  // A broker/refresh outage is not evidence of logout. Returning a sessionless
+  // client here makes activity checks expire and quarantine a valid session.
+  // Existing callers handle a failed client read as unavailable, without granting access.
+  if (resolved.code === "UNAVAILABLE") throw new Error("BROKER_SESSION_UNAVAILABLE");
+
   // Unauthenticated request path: memory-only provider client with no session.
   // Callers that require auth still fail at getUser/RPC under RLS.
   const bundle = createProviderAuthClient();

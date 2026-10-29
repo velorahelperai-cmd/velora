@@ -1,3 +1,9 @@
+# Current Session Index - AUTH-AUDIT-20261029
+
+- PARTIAL: reproduced broker UNAVAILABLE -> guest fallback -> false UNAUTHENTICATED activity result. Fixed shared Supabase server factory to preserve unavailable without clearing or bypassing session authority. Original Production STATUS_LOCKED incident cause remains unproven.
+- Evidence: 3 red regressions before fix; 93 direct/session/UI tests PASS; Auth/broker targeted 257 PASS and 38 SKIP (overlap, not additive); draft/callback 15 PASS. Typecheck and scoped lint PASS. Isolated real Supabase Auth runner 12 checks PASS including received local-hook OTP, wrong/expired/replay, refresh, logout/re-login and account-failure isolation. No external SMTP/Google or full browser broker acceptance claimed.
+- Details and remaining acceptance: docs/AUTH-AUDIT-20261029.md. Graphify and Supabase connectors fail missing link_id; Supabase dashboard requires sign-in. Production mail/Google UNKNOWN per owner. CI/deployment pending. No TAG CITY, Meta/checkpoint, pricing/payment or Production DB change.
+
 # Current Session Index - DELIVERY-SETUP-FINANCE-20261027
 
 - Owner antigravity-01a17760; task DELIVERY-SETUP-FINANCE-20261027; canonical main base 950f4b9d61905068acaa7677ab5fe0f0a25e5dff. User authorized delivery and push of all completed work across Codex and Antigravity: setup color unification (semantic CSS tokens), /setup navigation/layout polish, Facebook-first WhatsApp connection preparation, Thawani live checkout foundation and recovery dialogs, and native live customer binding regressions.
