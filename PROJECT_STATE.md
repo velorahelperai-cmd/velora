@@ -1,3 +1,12 @@
+# Current Session Index - SETUP-UNIFIED-RELEASE-DELIVERY-20261030
+
+- **Task (Deploy Unified 5-Step Setup Release & Production Verification — SINGLE-SETUP-PATH-001 / C11–C16):**
+  - Owner authorization granted: Published canonical unified 5-step `/setup` release to `main`. Commits: `48b1167` (unify setup journey across 35 files) and `c636d3c` (align test steps count to 5 and suppress img lint warning).
+  - **CI & Quality Gates:** GitHub Actions run `40989967142` completed **8/8 PASS** (secrets/gitleaks, typecheck, lint, contracts, security, build, unit 5257 tests passed, quality-gate).
+  - **Vercel Production Deployment:** Production deployment `dpl_AWKdozhTUqgT8J3jNqHcu5wU97NF` on `velora-n8f0wd621-velora-9513.vercel.app` (aliased to `https://www.velorahelper.com`) is **● Ready** on exact commit `c636d3c`. Production HTTP inspection verified `/setup` redirects to `/login?next=%2Fsetup` (307) and `/app/settings` redirects to `/login?next=%2Fapp%2Fsettings` (307) with login returning 200 OK.
+  - Zero SQL migrations, database mutations, production env changes, test route creations, or worker activation performed. TAG CITY and existing business/subscription data preserved untouched.
+  - **Live Acceptance:** Live browser authentication pass and live Gemini provider execution inside assistant trial using authenticated TAG CITY account require an active customer login session; local test/mock checks remain passed while live provider execution remains OPEN pending customer session dispatch.
+
 # Current Session Index - SETUP-UNIFIED-RELEASE-INTEGRATION-20261030
 
 - **Task (Unified `/setup` 5-step release & integration — SINGLE-SETUP-PATH-001 / C11–C16):**
