@@ -170,15 +170,13 @@ function DashboardBillingCard({ companyId }: { companyId: string | null }) {
             </span>
           </div>
         </div>
-      ) : (
+      ) : billing === null ? null : (
         <p className="relative mt-4 text-sm text-[var(--color-muted-on-dark)]" role="status">
-          {billing === null
-            ? text.loading
-            : billing.status === "forbidden"
-              ? text.forbidden
-              : billing.status === "empty" && billing.companyId === companyId
-                ? text.empty
-                : text.unavailable}
+          {billing.status === "forbidden"
+            ? text.forbidden
+            : billing.status === "empty" && billing.companyId === companyId
+              ? text.empty
+              : text.unavailable}
         </p>
       )}
     </section>
@@ -745,9 +743,7 @@ export function DashboardPage({
               );
             })}
           </ul>
-        ) : !loadFailed ? (
-          <p className="mt-4 text-sm text-[var(--color-muted-soft)]">{copy.loading}</p>
-        ) : null}
+        ) : !loadFailed ? null : null}
       </section>
 
       {/* Bottom Dual Grid: Recent Conversations Feed & Knowledge Health */}

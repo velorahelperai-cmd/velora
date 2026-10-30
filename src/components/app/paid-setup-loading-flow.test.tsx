@@ -10,7 +10,7 @@ vi.mock('./paid-setup-step-host',()=>({PaidSetupStepHost:({step}:{step:string})=
 import {PaidSetupFlow} from './paid-assistant-checklist';
 import {projectTrustedBoundSelection} from '@/lib/tenancy/paid-setup-contracts';
 afterEach(()=>{vi.unstubAllGlobals();vi.clearAllMocks();sessionStorage.clear();});
-it('opens hours/knowledge before slow Meta proof, and late progress cannot discard the active draft',async()=>{
+it('opens knowledge before slow Meta proof, and late progress cannot discard the active draft',async()=>{
  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);
  const scope={expectedAccountId:'actor',companyId:'company',boundaryFingerprint:'boundary'};
  const read=projectTrustedBoundSelection({companyId:'company',branchId:'branch',branchLabel:'Main',orderGroupId:'order',slotIndex:0,persona:'level_1',package:'basic',term:'monthly',maxChannels:1,employeesExcludingOwner:2,clockState:'waiting_readiness',asOf:'now'},{channels:['whatsapp']});
@@ -20,10 +20,11 @@ it('opens hours/knowledge before slow Meta proof, and late progress cannot disca
  const host=document.createElement('div'),root=createRoot(host);document.body.append(host);
  try{
   await act(async()=>root.render(createElement(PaidSetupFlow,{locale:'en',scope,isCurrent:()=>true,readEntry:async()=>({schemaVersion:1 as const,companyId:'company',sourceStatus:'selection_required' as const,selectedBranchId:null,reasonCodes:[],branches:[{id:'branch',label:'Main',isPrimary:true}],asOf:'now'}),readBranch:async()=>read})));
-  const hours=host.querySelector<HTMLButtonElement>('[data-step-id="hours"] button')!,knowledge=host.querySelector<HTMLButtonElement>('[data-step-id="knowledge"] button')!;
-  expect(hours.disabled).toBe(false);expect(knowledge.disabled).toBe(false);expect(host.querySelector<HTMLButtonElement>('[data-step-id="launch"] button')?.disabled).toBe(true);
-  await act(async()=>hours.click());const draft=host.querySelector('textarea')!;draft.value='unsaved changes';
-  await act(async()=>finish({...shell,read:{...read,steps:read.steps.map(step=>step.id==='hours'?{...step,status:'verified',reasonCodes:[]}:step)}}));
+  expect(host.querySelector('[data-step-id="hours"]')).toBeNull();
+  const knowledge=host.querySelector<HTMLButtonElement>('[data-step-id="knowledge"] button')!;
+  expect(knowledge.disabled).toBe(false);expect(host.querySelector<HTMLButtonElement>('[data-step-id="launch"] button')?.disabled).toBe(true);
+  await act(async()=>knowledge.click());const draft=host.querySelector('textarea')!;draft.value='unsaved changes';
+  await act(async()=>finish({...shell,read:{...read,steps:read.steps.map(step=>step.id==='knowledge'?{...step,status:'verified',reasonCodes:[]}:step)}}));
   expect(host.querySelector('textarea')).toBe(draft);expect(draft.value).toBe('unsaved changes');
  }finally{await act(async()=>root.unmount());host.remove();}
 });

@@ -58,6 +58,8 @@ it("maps all 8 channel connection states honestly in Arabic and English",()=>{
  const reconnect:PaidBranchConnectionRead={...notConnected,connection:{...notConnected.connection,attempt:{id:"attempt",generation:1,expiresAt:"2026-10-20T01:00:00Z",status:"cancelled"}}};
  expect(derivePaidChannelConnectionViewModel(reconnect,"ar").uiState).toBe("reconnect_ready");
  expect(derivePaidChannelConnectionViewModel(reconnect,"ar").badgeLabel).toBe("إعادة ربط");
+ expect(derivePaidChannelConnectionViewModel(reconnect,"ar").guidance).toBe("");
+ expect(derivePaidChannelConnectionViewModel(reconnect,"en").guidance).toBe("");
 
  const recoverable:PaidBranchConnectionRead={...read,connection:{...read.connection,state:"reconciliation_required",attempt:{id:"attempt",generation:2,expiresAt:"2026-10-20T01:00:00Z",status:"unknown"},reasonCodes:["reconciliation_required"]},capabilities:{canStart:false,canRecover:true,canCancel:false,allowedFlows:[]}};
  expect(derivePaidChannelConnectionViewModel(recoverable,"ar").uiState).toBe("recoverable_failure");

@@ -129,8 +129,8 @@ function TrialForm(p:PaidAssistantTrialProps & {snapshot:TrialSnapshot}){
   ask(draft);
  }
 
- return <section className={styles.view} data-assistant-chat="" dir={ar?"rtl":"ltr"} aria-labelledby={id} aria-busy={waiting}>
-  {p.state.phase==="loading"&&!p.snapshot.messages.length&&<p role="status" className={styles.statusLine}>{t("جارٍ تحميل تجربة المساعد.","Loading the assistant trial.")}</p>}
+ return <section className={styles.view} data-assistant-chat="" dir={ar?"rtl":"ltr"} aria-labelledby={id} aria-busy={waiting || p.state.phase==="loading"}>
+  {p.state.phase==="loading"&&<p role="status" className={styles.srOnly}>{t("يتم التحقق من حالة المساعد.","Checking assistant status.")}</p>}
   {p.state.phase==="unavailable"&&<p role="status" className={styles.alert}>{t("تعذّر التحقق من البيانات.","Data could not be verified.")}{p.onRefresh&&<> <button type="button" className={styles.link} onClick={()=>{if(p.isCurrent())void p.onRefresh?.();}}>{t("إعادة المحاولة","Retry")}</button></>}</p>}
 
   <header className={styles.chatHeader}>

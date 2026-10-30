@@ -94,13 +94,11 @@ function StepHost(props: PaidSetupStepHostProps) {
     hoursInFlightKeyRef.current = scopeKey;
 
     let active = true;
+    // Slow reads must not flip to "unavailable" — that showed a false error banner while
+    // the request could still succeed. Keep loading; apply late verified results when they arrive.
     void observeSetupRead(
       (reader?reader.read("hours"):readOwnedBranchHoursAction(targetScope)),
-      () => {
-        if (active && isCurrentRef.current() && hoursInFlightKeyRef.current === scopeKey) {
-          setHoursPhase("unavailable");
-        }
-      },
+      () => {},
       10_000,
     ).then((res) => {
       if (!active || !isCurrentRef.current()) return;
@@ -110,13 +108,14 @@ function StepHost(props: PaidSetupStepHostProps) {
         setHoursSnap(res.snapshot);
         setHoursCopyTargets(res.copyTargets);
         setHoursPhase("ready");
-      } else {
-        setHoursPhase("unavailable");
+      } else if (active && isCurrentRef.current()) {
+        // Stay loading with the form usable; save remains gated until a verified snapshot.
+        setHoursPhase("loading");
       }
     }).catch(() => {
       if (active && isCurrentRef.current() && hoursInFlightKeyRef.current === scopeKey) {
         hoursInFlightKeyRef.current = null;
-        setHoursPhase("unavailable");
+        setHoursPhase("loading");
       }
     });
 

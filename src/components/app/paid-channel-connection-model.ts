@@ -180,9 +180,7 @@ export function derivePaidChannelConnectionViewModel(
         ? "تم التحقق من ربط القناة وحفظها لهذا الفرع بنجاح."
         : "Channel connection is verified and bound to this branch.";
     } else if (uiState === "reconnect_ready") {
-      guidance = locale === "ar"
-        ? "لم تكتمل المحاولة السابقة. يمكنك إعادة بدء الربط الآن."
-        : "The previous attempt did not complete. You can restart the connection now.";
+      guidance = "";
     }
   }
 

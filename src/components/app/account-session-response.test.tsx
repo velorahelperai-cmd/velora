@@ -275,27 +275,38 @@ it("mount preserves a captured quarantine when the native session has gone", asy
   expect(state.read).not.toHaveBeenCalled();
 });
 
-it.each(["en", "ar"] as const)("delegates protected pending identity to the approved loader (%s)", async locale => {
+it.each(["en", "ar"] as const)("shows the setup shell while keeping protected children fenced (%s)", async locale => {
   state.locale = locale;
   state.path = "/setup";
   const pending = deferred();
   state.read.mockReturnValue(pending.promise);
-  const first = renderTree();
-  const loader = first.props.children;
-  expect(typeof loader.type).toBe("function");
-  expect(loader.type.name).toBe("ApprovedAccountLoader");
-  expect(loader.props.label).toBeTruthy();
-  expect(JSON.stringify(loader)).not.toContain("motion-safe:animate-spin");
-  expect(JSON.stringify(loader)).not.toContain("private-content");
+  const first = rawRenderTree();
+  const [protectedContent, fallback] = first.props.children.props.children;
+  expect(protectedContent).toBeFalsy();
+  const [shell, hiddenLoader] = fallback.props.children;
+  expect(shell.type.name).toBe("SetupLoading");
+  expect(hiddenLoader.props.style.visibility).toBe("hidden");
+  expect(hiddenLoader.props["aria-hidden"]).toBe("true");
+  expect(hiddenLoader.props.inert).toBe(true);
+  expect(hiddenLoader.props.children.type.name).toBe("ApprovedAccountLoader");
+  expect(JSON.stringify(first.props.children)).not.toContain("private-content");
   const refresh = first.props.value.refresh();
   pending.resolve({ ok: true, data: profile() });
   await refresh;
-  const finishing=renderTree();
+  const finishing = renderTree();
   expect(finishing.props.value.status).toBe("ready");
-  expect(finishing.props.children.type.name).toBe("ApprovedAccountLoader");
-  expect(finishing.props.children.props.ready).toBe(true);
-  finishing.props.children.props.onComplete();
+  const loader = finishing.props.children.props.children[1].props.children;
+  expect(loader.props.ready).toBe(true);
+  loader.props.onComplete();
   expect(renderTree().props.children).toBe("private-content");
+});
+
+it("retains the visible approved loader on another protected route", () => {
+  state.path = "/account";
+  state.read.mockReturnValue(deferred().promise);
+  const first = renderTree();
+  expect(first.props.children.type.name).toBe("ApprovedAccountLoader");
+  expect(JSON.stringify(first.props.children)).not.toContain("private-content");
 });
 
 it("keeps account errors and recovery controls visible after branded loading", async () => {
@@ -317,8 +328,8 @@ it("retains an already-ready setup session across later transient UNAVAILABLE re
   await render().refresh();
   expect(render().status).toBe("ready");
   const finishing = renderTree();
-  expect(finishing.props.children.props.ready).toBe(true);
-  finishing.props.children.props.onComplete();
+  expect(finishing.props.children.props.children[1].props.children.props.ready).toBe(true);
+  finishing.props.children.props.children[1].props.children.props.onComplete();
   expect(renderTree().props.children).toBe("private-content");
 
   state.broker.mockResolvedValue({ ok: false, code: "UNAVAILABLE" });
@@ -340,7 +351,7 @@ it("retains ready across a later TRANSPORT throw during reattest", async () => {
   state.read.mockResolvedValue({ ok: true, data: profile() });
   await render().refresh();
   expect(render().status).toBe("ready");
-  renderTree().props.children.props.onComplete();
+  renderTree().props.children.props.children[1].props.children.props.onComplete();
   expect(renderTree().props.children).toBe("private-content");
   state.broker.mockRejectedValue(new Error("network"));
   await render().refresh();
@@ -354,7 +365,7 @@ it("still fails closed on tip mismatch after ready", async () => {
   state.read.mockResolvedValue({ ok: true, data: profile() });
   await render().refresh();
   expect(render().status).toBe("ready");
-  renderTree().props.children.props.onComplete();
+  renderTree().props.children.props.children[1].props.children.props.onComplete();
   expect(renderTree().props.children).toBe("private-content");
   state.broker
     .mockResolvedValueOnce(brokerOk("user-a", "fp-a", "gen-a-1"))

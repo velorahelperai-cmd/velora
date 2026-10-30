@@ -7,6 +7,8 @@ it('keeps both observed routes separate and preserves source order', () => {
   expect(guideSteps.coexistence.map(s => s.source)).toEqual(['8','9','10','11','12','13','14','15']);
   expect(guideSteps['new-number'].map(s => s.source)).toEqual(['17.1','17.2','17.3','17.4','17.5','17.6','17.7','17.8','17.9']);
   expect(guideSteps.coexistence.find(s => s.source === '13')?.image).toBeUndefined();
+  expect(guideSteps.coexistence.find(s => s.source === '9')?.image).toContain('/9.png');
+  expect(guideSteps['new-number'].find(s => s.source === '17.2')?.image).toContain('/17.2.png');
 });
 it('bounds manual navigation without wrapping or advancing provider state', () => {
   expect(guideIndex(0, -1, 8)).toBe(0);

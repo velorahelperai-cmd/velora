@@ -237,7 +237,7 @@ export function CompanyTeamPanel({ companyId, accountId = null }: { companyId: s
         {["invited", "expired", "conflicted"].includes(invitation.status) && !(state.result?.inviteUrl && state.result.invitation.id === invitation.id && state.result.invitation.revision === invitation.revision) ? <p className="w-full text-xs">{text.missing}</p> : null}
         {["invited", "expired", "conflicted"].includes(invitation.status) ? <div className="flex flex-wrap gap-2"><Button variant="secondary" disabled={locked || !!confirmation} onClick={() => confirm("replace", invitation)}>{text.replace}</Button><Button variant="danger" disabled={locked || !!confirmation} onClick={() => confirm("cancel", invitation)}>{text.cancel}</Button></div> : null}
       </div>) : <p className="text-sm">{text.empty}</p>}
-    </div> : !state.readFailed ? <p role="status">{copy.loading}</p> : null}
+    </div> : null}
 
     {confirmation ? <div className="mt-5 grid gap-3 rounded-xl border border-[color:var(--color-border-soft)] p-4" role="group" aria-label={confirmation.action === "replace" ? text.replace : text.cancel}>
       <strong dir="ltr" className="break-all">{confirmation.invitation.email}</strong>

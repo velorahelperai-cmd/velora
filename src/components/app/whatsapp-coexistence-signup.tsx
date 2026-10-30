@@ -353,7 +353,7 @@ export function WhatsappCoexistenceSignup({ companyId, onConnected, onDisconnect
     </div>
     {notice ? <Notice tone="warn">{messages[notice] ?? t("The action did not complete. Refresh the saved status before trying again.", "لم يكتمل الإجراء. حدّث الحالة المحفوظة قبل المحاولة مجدداً.")}</Notice> : null}
     {diagnosticText(diagnostic,locale) ? <p className="text-sm break-words" dir={locale === "ar" ? "rtl" : "ltr"}>{diagnosticText(diagnostic,locale)}</p> : null}
-    {loading ? <p role="status" className="text-sm">{t("Loading saved connection status…", "جارٍ تحميل حالة الربط المحفوظة…")}</p> : durable ? <dl className="grid gap-2 text-sm">
+    {loading ? null : durable ? <dl className="grid gap-2 text-sm">
       <div><dt className="text-[var(--color-muted-soft)]">{t("Connection", "الربط")}</dt><dd>{connected ? t("Meta authorization saved", "تم حفظ تفويض ميتا") : durable.connectionStatus === "disconnected" ? t("Velora access stopped", "تم فصل الربط") : durable.connectionStatus === "needs_review" ? t("Needs review", "تحتاج إلى مراجعة") : t("Not connected", "غير مرتبط")}</dd></div>
       {durable.displayPhoneNumber ? <div><dt className="text-[var(--color-muted-soft)]">{t("Business number", "رقم الشركة")}</dt><dd dir="ltr">{durable.displayPhoneNumber}</dd></div> : null}
       <div><dt className="text-[var(--color-muted-soft)]">{t("Live messaging", "الرسائل الفعلية")}</dt><dd>{connected && durable.liveVerified ? t("Inbound and outbound messaging verified", "تم التحقق من استقبال الرسائل وإرسالها") : t("Not yet verified", "لم يتم التحقق بعد")}</dd></div>

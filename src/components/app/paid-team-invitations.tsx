@@ -54,15 +54,13 @@ function TeamForm(p:PaidTeamInvitationsProps & {snapshot:BranchTeamSnapshot}){
   catch{if(mounted.current&&p.isCurrent())setUnknown(true);}
   finally{if(mounted.current&&p.isCurrent())setPending(false);}
  }
- return <section className={styles.view} dir={ar?"rtl":"ltr"} aria-labelledby={id} aria-busy={pending||p.state.phase==="pending"}>
-  {p.state.phase==="loading"&&<p role="status">{t("جارٍ تحميل فريق الفرع.","Loading the branch team.")}</p>}
+ return <section className={styles.view} dir={ar?"rtl":"ltr"} aria-labelledby={id} aria-busy={pending||p.state.phase==="pending"||p.state.phase==="loading"}>
   {p.state.phase==="unavailable"&&<p role="status">{t("تعذّر التحقق من البيانات. الحفظ غير مؤكد.","Data could not be verified. Saving is unconfirmed.")}</p>}
   <header><span className={styles.badge}>{t("اختياري","Optional")}</span><h2 id={id}>{t("ادعُ فريقك","Invite your team")}</h2><p>{t("الفرع: ","Branch: ")}<bdi>{p.snapshot.branchLabel}</bdi></p></header>
   <p className={styles.note}>{t("يمكنك متابعة الإعداد دون دعوة موظفين الآن. التخطي لا ينشئ دعوات ولا يرسل رسائل.","You can continue setup without inviting staff now. Skipping does not create invitations or send messages.")}</p>
   <div className={styles.seats}><strong>{t("مقاعد الموظفين المتاحة","Available staff seats")}</strong><bdi dir="ltr">{seatsKnown?`${p.snapshot.seats.available} / ${p.snapshot.seats.limit}`:"—"}</bdi><p>{t("هذه سعة الفرع التي يؤكدها الخادم. المالك غير محسوب ضمن مقاعد الموظفين.","This is the branch capacity confirmed by the server. The owner is excluded from staff seats.")}</p></div>
   {!seatsKnown&&<p role="status">{t("تعذّر التحقق من المقاعد. إنشاء الدعوات معطّل.","Seat availability could not be verified. Invitation creation is disabled.")}</p>}
   {seatsKnown&&p.snapshot.seats.available===0&&<p role="status">{t("لا توجد مقاعد موظفين متاحة حاليًا لهذا الفرع.","No staff seats are currently available for this branch.")}</p>}
-  {p.snapshot.skip==="skipped"&&p.state.phase==="ready"&&<p role="status">{t("أكد الخادم تخطي هذه الخطوة الاختيارية.","The server confirmed that this optional step was skipped.")}</p>}
   {(unknown||p.state.phase==="unknown")&&<p role="alert" className={styles.error}>{t("نتيجة العملية غير معروفة. حدّث حالتها قبل المحاولة مجددًا لتجنب تكرار الدعوة.","The operation outcome is unknown. Refresh its status before trying again to avoid a duplicate invitation.")}</p>}
   {p.state.phase==="error"&&<div role="alert" className={styles.error}><p>{t("تعذّر إتمام العملية. راجع صلاحياتك والمقاعد وحالة الدعوة.","The operation could not be completed. Review permissions, seats and invitation status.")}</p><button type="button" disabled={!canRetry} onClick={()=>{if(canRetry)void dispatch(()=>p.onRetry?.({...context(p.state.operationId!),operation:p.state.operation!}));}}>{t("إعادة المحاولة نفسها","Retry the same operation")}</button></div>}
   {(pending||p.state.phase==="pending")&&<p role="status">{t("بانتظار تأكيد حالة العملية من الخادم…","Waiting for the server to confirm the operation state…")}</p>}

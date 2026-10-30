@@ -61,8 +61,7 @@ function LaunchForm(p:PaidLaunchSummaryProps & {snapshot:LaunchSummarySnapshot})
   catch{if(mounted.current&&p.isCurrent())setRefreshFailed(true);}
   finally{readReserved.current=false;if(mounted.current&&p.isCurrent())setRefreshing(false);}
  }
- return <section className={styles.view} dir={ar?"rtl":"ltr"} aria-labelledby={id} aria-busy={pending||refreshing||p.state.phase==="pending"}>
-  {p.state.phase==="loading"&&<p role="status">{t("جارٍ تحميل ملخص الإطلاق.","Loading the launch summary.")}</p>}
+ return <section className={styles.view} dir={ar?"rtl":"ltr"} aria-labelledby={id} aria-busy={pending||refreshing||p.state.phase==="pending"||p.state.phase==="loading"}>
   {p.state.phase==="unavailable"&&<p role="status">{t("تعذر التحقق من ملخص الإطلاق.","Launch summary could not be verified.")}</p>}
   <header><h2 id={id}>{t("راجع ثم أكّد الإطلاق","Review and confirm launch")}</h2><p>{t("الفرع: ","Branch: ")}<bdi>{s.branchLabel}</bdi></p></header>
   <p className={styles.note}>{t("راجع الإعدادات المؤكدة لهذا الفرع. التأكيد الصريح يطلب الإطلاق؛ ولا يبدأ الرد على العملاء إلا بعد أن يؤكد النظام نجاح العملية.","Review this branch's confirmed settings. Explicit confirmation requests launch; customer replies begin only after the system confirms the operation succeeded.")}</p>

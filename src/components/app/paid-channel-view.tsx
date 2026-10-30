@@ -711,6 +711,9 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
 
 
   const commercialIncomplete = channel === "whatsapp" && !(connection?.connection.verified && connection.connection.state === "connected");
+  // A server-scoped verified link or unresolved attempt must never offer a new signup.
+  const showWhatsappOnboarding = !viewModel.isReady && (!connection || viewModel.canStart || popupReady || !!inFlight || awaitingPin);
+
 
   return <section className={styles.view} data-setup-unsaved={unsavedConnection?'true':undefined} dir={ar ? "rtl" : "ltr"} aria-label={channel==='whatsapp'?t('ربط واتساب','Connect WhatsApp'):t('ربط إنستغرام','Connect Instagram')}>
     <header className={styles.header}>
@@ -737,7 +740,9 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
     </header>
     {!available ? <p role="status">{t("هذه القناة غير متاحة لهذا الفرع. ارجع إلى قائمة الإعداد للتحقق من اختيارك.", "This channel is unavailable for this branch. Return to setup to check your selection.")}</p> :
       channel === "whatsapp" ? <>
-        {awaitingPin&&<form className={styles.requirements} data-registration-pin onSubmit={event=>{event.preventDefault();if(checkCurrent()&&/^\d{6}$/.test(pin)){const answer=pinAnswer.current;pinAnswer.current=null;answer?.(pin);}}}>
+        {viewModel.isReady && <section className={styles.requirements} data-whatsapp-connected role="status"><h3>{t('واتساب متصل','WhatsApp connected')}</h3><p>{t('تم التحقق من ربط القناة لهذا الفرع.','This branch’s channel connection has been verified.')}</p><a href="/app/settings?tab=whatsapp">{t('إدارة إعدادات واتساب','Manage WhatsApp settings')}</a></section>}
+        {connection && !viewModel.isReady && !showWhatsappOnboarding && <p role="status">{t('راجع حالة المحاولة الحالية قبل بدء ربط آخر.','Review the current connection attempt before starting another.')}</p>}
+        {awaitingPin&&!viewModel.isReady&&<form className={styles.requirements} data-registration-pin onSubmit={event=>{event.preventDefault();if(checkCurrent()&&/^\d{6}$/.test(pin)){const answer=pinAnswer.current;pinAnswer.current=null;answer?.(pin);}}}>
           <h3>{t('خطوة أخيرة لتسجيل الرقم','Complete number registration')}</h3>
           <p role="status">{t('تحقق الخادم من تفويض Meta، والرقم ما زال يحتاج إكمال التسجيل. الربط لم يكتمل بعد.','The server checked Meta authorization. This number still needs registration; connection is not complete.')}</p>
           <label htmlFor={titleId+'-pin'}>{t('رقم PIN لحماية واتساب (6 أرقام)','WhatsApp security PIN (6 digits)')}</label>
@@ -745,15 +750,15 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
           <input id={titleId+'-pin'} aria-describedby={titleId+'-pin-help'} className={styles.textInput} type="password" inputMode="numeric" maxLength={6} autoComplete="off" value={pin} onChange={event=>setPin(event.target.value.replace(/\D/g,'').slice(0,6))}/>
           <div className={styles.requirementActions}><button type="submit" className={styles.primary} disabled={!/^\d{6}$/.test(pin)}>{t('إكمال التسجيل والتحقق','Finish registration and verify')}</button><button type="button" className={styles.back} onClick={()=>{if(checkCurrent()){const answer=pinAnswer.current;pinAnswer.current=null;answer?.(null);}}}>{t('إلغاء المحاولة','Cancel attempt')}</button></div>
         </form>}
-        {screen==="choice"&&<><p className={styles.stageCaption}>{t("الخطوة ١/٢","Step 1/2")}</p><div className={styles.connectLayout} data-wa-screen="choice">
-        <div className={styles.intro}>
+        {showWhatsappOnboarding&&screen==="choice"&&<><p className={styles.stageCaption}>{t("الخطوة ١/٢","Step 1/2")}</p><div className={styles.connectLayout} data-wa-screen="choice" data-route-selected={!!route}>
+        <div className={styles.intro} hidden={!!route}>
           <div className={styles.brands} aria-hidden="true"><span><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M20 11.5a8 8 0 0 1-11.7 7.1L4 20l1.4-4.3A8 8 0 1 1 20 11.5Z"/><path d="M9 7.5c.5 3.5 2 5 5.5 6l1-1.5-2-1-1 1a7 7 0 0 1-3-3l1-1-1-2Z"/></svg></span><span>↔</span><span>Meta</span></div>
           <h3>{t("اربط رقم واتساب الخاص بنشاطك","Connect your business WhatsApp number")}</h3>
           <p>{t("اختر الطريقة المناسبة لرقمك. ستُكمل التفويض مع Meta، ثم نتحقق من الاتصال هنا.","Choose the right route for your number. Authorize with Meta, then return here to verify your connection.")}</p>
           <h4>{t("بعد ربط رقمك", "Once your number is connected")}</h4>
           <ul><li>{t("محادثات عملائك بهوية نشاطك", "Customer conversations with your business identity")}</li><li>{t("إدارة المحادثات من فيلورا", "Manage conversations in Velora")}</li><li>{t("تحكّم في بدء ردود المساعد بعد اكتمال التجهيز", "Start assistant replies after completing setup")}</li></ul>
           <details className={styles.helpDetails}><summary>{t("دليل المساعدة", "Help guide")}</summary><p>{t("جهّز حساب Meta الذي تدير منه نشاطك، واختر طريقة الرقم من البطاقة. ستجد خطوات الربط بعد اختيار الطريقة. لو تستخدم تطبيق WhatsApp Business، اختر Coexistence واحتفظ بالتطبيق ورقمك.","Have the Meta account that manages your business ready and choose your number's route. Connection instructions follow your route selection. If you use WhatsApp Business App, choose Coexistence and keep your app and number.")}</p></details>
-        </div><div className={styles.routeCard}><h3>{t("تفاصيل مهمة قبل الربط", "Key details before you connect")}</h3><fieldset className={styles.routes} disabled={!!inFlight}>
+        </div><div className={styles.routeCard}><h3 hidden={!!route}>{t("تفاصيل مهمة قبل الربط", "Key details before you connect")}</h3><fieldset className={styles.routes} disabled={!!inFlight} hidden={!!route}>
           <legend>{t("كيف تستخدم هذا الرقم؟", "How do you use this number?")}</legend>
           {(["new-number", "coexistence"] as const).map(value => <label key={value} className={styles.choice}>
             <input type="radio" name={titleId + "-route"} value={value} checked={route === value} onChange={() => {if(checkCurrent())setRoute(value);}}/>
@@ -761,11 +766,7 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
             <small>{value==="new-number"?t("رقم تملكه وغير مرتبط بحساب واتساب أو مزود آخر. سنراجع متطلبات التحقق قبل المتابعة.","A number you own that is not linked to WhatsApp or another provider. Review verification requirements before continuing."):t("Coexistence: استمر في استخدام التطبيق على هاتفك مع إدارة المحادثات من فيلورا، إذا كان حسابك مؤهلًا. لا تحذف حسابك أو تفصل الرقم.","Coexistence: keep using the app on your phone while managing conversations in Velora, if your account is eligible. Do not delete your account or disconnect your number.")}</small>
           </label>)}
         </fieldset>
-        <button className={styles.primary} type="button" data-route-continue disabled={!route || !!inFlight} onClick={()=>{if(checkCurrent())setScreen("requirements");}}>{t("متابعة إلى الربط مع Facebook","Continue to Facebook connection")}</button>
-        </div></div></>}
-        {screen==="guide"&&route&&<div data-wa-screen="guide"><button type="button" className={styles.back} data-back-to-choice onClick={()=>setScreen("choice")}>{t("رجوع","Go back")}</button><WhatsappConnectionGuide route={route} locale={locale} connectionStatus={effectiveRead === undefined ? t("دليل الربط", "Connection guide") : channelConnectionLabel(connection, locale)} connectEnabled={!!selectedWhatsappFlow && viewModel.canStartFlow(selectedWhatsappFlow)} connecting={inFlight === "starting" || inFlight === "completing"} onConnect={()=>setScreen("requirements")} onReviewRequirements={()=>setScreen("requirements")} feedback={feedback}/></div>}
-        {screen==="requirements"&&route&&!awaitingPin&&<div className={styles.requirements} data-wa-screen="requirements">
-          <p className={styles.stageCaption}>{t("الخطوة ٢/٢","Step 2/2")}</p>
+        {route && <div className={styles.routeSummary}><span>{route === "new-number" ? t("رقم جديد", "New number") : t("تطبيق WhatsApp Business الحالي", "Existing WhatsApp Business App")}</span><button type="button" className={styles.back} onClick={()=>{if(checkCurrent()&&!connectReserved.current&&!inFlight){setRoute(null);setConfirmedPhone("");setPhoneConfirmed(false);}}}>{t("تغيير", "Change")}</button></div>}
           {route==="coexistence"&&<div className={styles.inputGroup}>
             <label htmlFor={titleId+"-phone"}>{t("رقم تطبيق WhatsApp Business الحالي (بصيغة دولية مثل +968...)","Existing WhatsApp Business App number (E.164 format e.g. +968...)")}</label>
             <input id={titleId+"-phone"} className={styles.textInput} type="tel" inputMode="tel" autoComplete="tel" dir="ltr" value={confirmedPhone} onChange={e=>setConfirmedPhone(e.target.value)} placeholder="+96890000000"/>
@@ -774,6 +775,12 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
               <span>{t("أؤكد أن هذا الرقم مفعل حاليًا على تطبيق WhatsApp Business ولن أقوم بحذفه أو فصله.","I confirm this number is currently active on the WhatsApp Business App and I will not delete or disconnect it.")}</span>
             </label>
           </div>}
+        {route && <p>{t("المتابعة تجهّز محاولة الربط. يُفتح Facebook عند ضغط الزر أسفل الإرشادات.", "Continuing prepares a connection attempt. Facebook opens when you press the button below the guide.")}</p>}
+        <button className={styles.primary} type="button" data-route-continue disabled={!route || !!inFlight || !connection?.revision || !canStartSelectedWhatsapp} onClick={()=>{if(checkCurrent()){setScreen("requirements");void handleWhatsappConnect();}}}>{t("متابعة إلى الربط مع Facebook","Continue to Facebook connection")}</button>
+        </div></div>{route&&<WhatsappConnectionGuide route={route} locale={locale} connectionStatus={channelConnectionLabel(connection,locale)} />}</>}
+        {showWhatsappOnboarding&&screen==="guide"&&route&&<div data-wa-screen="guide"><button type="button" className={styles.back} data-back-to-choice onClick={()=>setScreen("choice")}>{t("رجوع","Go back")}</button><WhatsappConnectionGuide route={route} locale={locale} connectionStatus={effectiveRead === undefined ? t("دليل الربط", "Connection guide") : channelConnectionLabel(connection, locale)} connectEnabled={!!selectedWhatsappFlow && viewModel.canStartFlow(selectedWhatsappFlow)} connecting={inFlight === "starting" || inFlight === "completing"} onConnect={()=>setScreen("requirements")} onReviewRequirements={()=>setScreen("requirements")} feedback={feedback}/></div>}
+        {showWhatsappOnboarding&&screen==="requirements"&&route&&!awaitingPin&&<div className={styles.requirements} data-wa-screen="requirements">
+          <p className={styles.stageCaption}>{t("الخطوة ٢/٢","Step 2/2")}</p>
           <WhatsappConnectionGuide route={route} locale={locale} connectionStatus={channelConnectionLabel(connection,locale)} connectEnabled={(popupReady || canStartSelectedWhatsapp)&&!inFlight} connecting={!!inFlight} preparing={!popupReady} onConnect={popupReady ? handlePreparedFacebook : ()=>void handleWhatsappConnect()} feedback={feedback}/>
           <div className={styles.requirementActions}>
             <button type="button" className={styles.back} disabled={!!inFlight || popupReady} onClick={()=>setScreen("choice")}>{t("رجوع","Go back")}</button>

@@ -46,3 +46,25 @@
 @media(max-width:600px){.guide .panel{grid-template-columns:minmax(0,1fr);min-height:0;gap:16px}.guide .picture{height:auto;min-height:0}.guide .picture img{height:auto;max-height:280px;max-width:100%}.guide .navigation>button{font-size:34px}}
 
 .feedbackText{margin-top:10px;color:#c92a2a;background:#fff5f5;border:1px solid #ffc9c9;border-radius:8px;padding:8px 12px;font-size:13px;text-align:center;max-width:min(100%,360px);line-height:1.5}
+
+/* Customer-approved reference: unboxed guide, image left and explanation right. */
+.guide{box-sizing:border-box;max-width:864px;padding:0;background:#fff;border:0;border-radius:0;box-shadow:none;color:#202a32}
+.guide .header{display:flex;align-items:center;gap:9px;margin:0 0 42px}.guide .header h2{margin:0;font-size:14px;line-height:1.3;font-weight:600}.guide .header span{padding:3px 9px;border-radius:6px;background:#e8f3fd;color:#3774a9;font-size:11px;font-weight:600}
+.guide .heading{font-size:19px;line-height:1.35;font-weight:600;margin:0 0 7px}.guide .subtitle{font-size:12px;color:#687682;margin:0 0 25px;line-height:1.5}
+.guide .panel{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:clamp(36px,9vw,110px);max-width:650px;margin:0 auto;direction:ltr;min-height:324px;align-items:center}
+.guide .picture{height:324px;min-height:0;display:flex;justify-content:center;align-items:center}.guide .picture img{height:324px;width:auto;max-width:100%;object-fit:contain;filter:drop-shadow(0 4px 9px rgba(23,45,67,.12))}
+.guide .explanation{direction:ltr;min-width:0}.guide[dir=rtl] .explanation{direction:rtl}.guide .explanation>p:first-child{font-size:12px;color:#75828b;margin:0 0 10px}.guide .explanation h4{font-size:16px;line-height:1.4;margin:0 0 12px;font-weight:600}.guide .explanation p,.guide .instructions{font-size:13px;line-height:1.65;color:#4e5a63}.guide .instructions{padding-inline-start:19px;margin:0 0 12px}.guide .instructions li{margin:4px 0}.guide .explanation .tip{color:#16865b;margin-top:14px}
+.guide .navigation{display:flex;align-items:center;gap:4px;justify-content:space-between;margin-top:18px}.guide .navigation>button{display:grid;place-items:center;width:36px;height:44px;min-width:36px;min-height:44px;padding:0;border:0;border-radius:0;background:transparent;color:#87929b;font-size:28px;box-shadow:none}.guide .navigation>button:disabled{visibility:hidden}.guide .navigation>button:hover:not(:disabled){background:transparent;color:#424e56}.guide .dots{display:flex;flex-wrap:nowrap;justify-content:center}.guide .dots button{width:22px;min-width:22px;height:44px;min-height:44px;padding:0}.guide .dots span{width:5px;height:5px;border-radius:5px;background:#cbd2d7}.guide .dots [aria-current=step] span{width:16px;background:#139663}
+.guide .connectArea{position:static;display:flex;align-items:center;padding:0;margin:28px 0 0;border:0;box-shadow:none;background:transparent}.guide .connect{width:min(100%,320px);min-height:44px;border:0;border-radius:6px;background:#1877f2;color:#fff;font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:10px}.guide .connect:hover:not(:disabled){background:#1468d7}.guide .connect:disabled{background:#e2e9ec;color:#536572}.facebookIcon{font:700 19px/1 Arial,sans-serif}.guide .withheld{min-height:230px}
+@media(max-width:600px){.guide .header{margin-bottom:26px}.guide .panel{grid-template-columns:minmax(0,1fr);gap:18px;min-height:0}.guide .picture{height:auto;min-height:0}.guide .picture img{height:auto;max-height:300px}.guide .explanation{order:0}.guide .connectArea{margin-top:22px}.guide .connect{width:100%}.guide .dots button{width:21px;min-width:21px}}
+@media(prefers-reduced-motion:reduce){.guide *{animation:none;transition:none}}
+/* Desktop reference geometry; the provider action retains a 44px hit target. */
+@media(min-width:701px){
+ .guide .subtitle{margin-bottom:54px}
+ .guide .panel{width:min(650px,calc(100% - max(20px, (100% - 558px)/2) - 20px));max-width:650px;margin-left:max(20px,calc((100% - 558px)/2));margin-right:auto;grid-template-columns:249px minmax(0,1fr);gap:150px}
+ .guide .explanation{position:relative;top:30px}
+ .guide .connectArea{margin-top:33px}
+ .guide .connect{transform:translateX(-7px);border-radius:0;background:linear-gradient(to bottom,transparent 7.5px,#1877f2 7.5px,#1877f2 36.5px,transparent 36.5px)}
+ .guide .connect:hover:not(:disabled){background:linear-gradient(to bottom,transparent 7.5px,#1468d7 7.5px,#1468d7 36.5px,transparent 36.5px)}
+ .guide .connect:disabled{background:linear-gradient(to bottom,transparent 7.5px,#e2e9ec 7.5px,#e2e9ec 36.5px,transparent 36.5px)}
+}

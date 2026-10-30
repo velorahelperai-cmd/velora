@@ -105,7 +105,6 @@ function KnowledgeForm(p:PaidBranchKnowledgeProps & {snapshot:BranchKnowledgeVie
   const [editingDraft,setEditing]=useState<{sourceId:string;contentVersion:number;title:string;content:string}|null>(null);
   const [busy,setBusy]=useState(false),[failure,setFailure]=useState<OperationTarget | null>(null),[activeOp,setActiveOp]=useState<OperationTarget | null>(null);
   const [dragging,setDragging]=useState(false);
-  const [langOpen,setLangOpen]=useState(false),[langQuery,setLangQuery]=useState("");
   const [selectedLanguages,setSelectedLanguages]=useState<AiReplyLanguageCode[]>(()=>replyContractToLanguages(p.languageSnapshot?.replyLanguage));
   const [languageSourceVersion,setLanguageSourceVersion]=useState(p.languageSnapshot?.version??null);
   const mounted=useRef(false),reserved=useRef(false),dragDepth=useRef(0);
@@ -143,11 +142,6 @@ function KnowledgeForm(p:PaidBranchKnowledgeProps & {snapshot:BranchKnowledgeVie
   const languagePhase=p.languageState?.phase??"unavailable";
   const languageLocked=busy || languagePhase==="saving" || languagePhase==="loading" || languagePhase==="unavailable" || languagePhase==="conflict";
   const canSaveLanguages=!languageLocked && !!p.onConfirmLanguages && !!p.languageSnapshot && p.languageSnapshot.canConfirm===true && Number.isSafeInteger(p.languageSnapshot.version) && p.languageSnapshot.version>=1 && !!draftLanguageContract && languageDirty;
-  const languageOptions=AI_REPLY_LANGUAGE_CODES.filter(code=>{
-    const label=replyLanguageLabel(code,p.locale).toLowerCase();
-    const query=langQuery.trim().toLowerCase();
-    return !query || code.includes(query) || label.includes(query);
-  });
   async function dispatch(target:OperationTarget, callback:(()=>void|Promise<void>)|undefined, options?:{ignoreKnowledgeLock?:boolean}) {
     if(!callback || reserved.current || !p.isCurrent())return;
     if(!options?.ignoreKnowledgeLock && locked)return;
@@ -190,81 +184,70 @@ function KnowledgeForm(p:PaidBranchKnowledgeProps & {snapshot:BranchKnowledgeVie
   const approvalState=p.snapshot.version===0?"unverified":approvedCount>0?"approved":"pending";
   const approvalLabel=approvalState==="unverified"?t("الاعتماد غير متحقق بعد","Approval has not been verified yet"):approvalState==="approved"?t(`نسخ معتمدة للإجابات: ${approvedCount}`,`Approved answer versions: ${approvedCount}`):t("لا توجد نسخة معتمدة للإجابات","No version is approved for answers");
   const libraryCount=pages.length+boundFiles.length+boundFaq.length;
-  const tabMeta:Record<StudioTab,{icon:string;label:string}>={
-    website:{icon:"🌐",label:t("الموقع الإلكتروني","Website")},
-    files:{icon:"📁",label:t("الملفات","Files")},
-    faq:{icon:"💬",label:t("الأسئلة والأجوبة","Questions and answers")},
+  const tabMeta:Record<StudioTab,string>={
+    website:t("الموقع","Website"),
+    files:t("الملفات","Files"),
+    faq:t("أسئلة وأجوبة","Questions and answers"),
   };
 
-  return <section className={styles.view} data-knowledge-studio="" data-setup-unsaved={dirty?'true':undefined} dir={ar?"rtl":"ltr"} aria-labelledby={id} aria-busy={busy || p.state.phase==="busy"}>
-    {p.state.phase==="loading"&&<p role="status" className={styles.statusLine}>{t("جارٍ تحميل معرفة الفرع…","Loading branch knowledge…")}</p>}
+  return <section className={styles.view} data-knowledge-studio="" data-setup-unsaved={dirty?'true':undefined} dir={ar?"rtl":"ltr"} aria-labelledby={id} aria-busy={busy || p.state.phase==="busy" || p.state.phase==="loading"}>
     {p.state.phase==="unavailable"&&<p role="status" className={styles.error}>{t("تعذّر التحقق من البيانات. الحفظ غير مؤكد.","Data could not be verified. Saving is unconfirmed.")}</p>}
     {p.state.phase==="unavailable"&&p.onReload&&<button type="button" onClick={()=>{if(p.isCurrent())void p.onReload?.();}}>{t("إعادة المحاولة","Retry")}</button>}
+    <div className={styles.stage}>
     <header className={styles.header}>
-      <div className={styles.headingCopy}>
-        <h2 id={id}>{t("معرفة الفرع","Branch knowledge")}</h2>
-        <p className={styles.note}>{t("أضف معلومات نشاطك من الموقع أو الملفات أو الأسئلة والأجوبة. تجهيز المصدر لا يعني اعتماده للإجابات ولا يفعّل ردود العملاء.","Add business information from your website, files, or questions and answers. Preparing a source does not approve it for answers or enable customer replies.")}</p>
-      </div>
-      <div className={styles.statusRow}>
-        <p className={styles.branch}>{t("الفرع: ","Branch: ")}<bdi>{p.snapshot.branchLabel}</bdi></p>
-        <p className={styles.badge} data-approval={approvalState}>{approvalLabel}</p>
-        <p className={styles.quota}>{quotaKnown?<><bdi dir="ltr">{p.snapshot.websiteQuota.used} / {p.snapshot.websiteQuota.limit}</bdi> {t("صفحة","pages")}</>:t("الحصة غير معروفة","Quota unknown")}</p>
-      </div>
+      <p className={styles.kicker}><bdi>{p.snapshot.branchLabel}</bdi>{quotaKnown?<> · <bdi dir="ltr">{p.snapshot.websiteQuota.used} / {p.snapshot.websiteQuota.limit}</bdi></>:null}</p>
+      <h2 id={id}>{t("معرفة الفرع","Branch knowledge")}</h2>
+      <p className={styles.lede}>{t("أضف مصدرًا واحدًا في كل مرة — موقع أو ملف أو سؤال وجواب.","Add one source at a time — a page, a file, or a Q&A.")}</p>
+      <p className={styles.badge} data-approval={approvalState}>{approvalLabel}</p>
     </header>
     {!quotaKnown && <p role="status" className={styles.error}>{t("حصة صفحات الموقع غير متاحة. الإجراءات معطّلة حتى تصل البيانات الموثوقة.","Website quota is unavailable. Actions are disabled until authoritative data is available.")}</p>}
     {p.state.phase==="conflict" && <p role="alert" className={styles.error}>{t("تغيّرت بيانات المعرفة. أعد التحميل وراجع التغييرات قبل المتابعة.","Knowledge data changed. Reload and review the changes before continuing.")}</p>}
-    {p.state.phase==="saved" && !url && !question && !answer && !files.length && !editing && <p role="status">{t("أكد الخادم حفظ هذه النسخة.","The server confirmed this saved version.")}</p>}
-    {languagePhase==="saved" && !languageDirty && <p role="status">{t("أكد الخادم حفظ لغات الرد.","The server confirmed the reply languages.")}</p>}
     {failure && failure!=="library" && failure!=="languages" && tab!==failure && operationAlert(failure)}
     <section className={styles.languageCard} data-knowledge-languages="" aria-labelledby={`${id}-languages`}>
-      <div className={styles.languageHead}>
-        <h3 id={`${id}-languages`}>{t("المساعد يرد بأي لغات؟","Which languages should the assistant reply in?")}</h3>
-        <p className={styles.note}>{t("العربية والإنجليزية فقط حسب دعم المساعد الحالي. عند اختيارهما معًا يتبع المساعد لغة العميل.","Arabic and English only, matching current assistant support. When both are selected, the assistant follows the customer language.")}</p>
+      <div className={styles.languageRow}>
+        <h3 id={`${id}-languages`}>{t("لغة الرد","Reply language")}</h3>
+        <div className={styles.langToggles} role="group" aria-label={t("لغات الرد","Reply languages")} aria-live="polite">
+          {AI_REPLY_LANGUAGE_CODES.map(code=>{
+            const selected=selectedLanguages.includes(code);
+            return <button
+              key={code}
+              type="button"
+              className={selected?styles.langOn:styles.langOff}
+              aria-pressed={selected}
+              disabled={languageLocked}
+              title={t("عند اختيار الاثنين يتبع المساعد لغة العميل.","With both selected, the assistant follows the customer.")}
+              onClick={()=>{
+                if(!p.isCurrent())return;
+                setSelectedLanguages(current=>selected?current.filter(item=>item!==code):[...current,code]);
+              }}
+            >{replyLanguageLabel(code,p.locale)}</button>;
+          })}
+        </div>
+        <button
+          type="button"
+          className={styles.langSave}
+          disabled={!canSaveLanguages}
+          onClick={()=>{
+            if(!canSaveLanguages||!draftLanguageContract||!p.languageSnapshot)return;
+            void dispatch("languages",()=>p.onConfirmLanguages?.({...p.scope,expectedVersion:p.languageSnapshot!.version,replyLanguage:draftLanguageContract}),{ignoreKnowledgeLock:true});
+          }}
+        >
+          {activeOp==="languages"||languagePhase==="saving"?t("جارٍ الحفظ…","Saving…"):t("حفظ","Save")}
+        </button>
       </div>
       {operationAlert("languages")}
-      {languagePhase==="loading"&&<p role="status" className={styles.statusLine}>{t("جارٍ تحميل لغات الرد…","Loading reply languages…")}</p>}
       {languagePhase==="unavailable"&&<p role="status" className={styles.error}>{t("تعذّر التحقق من لغات الرد.","Reply languages could not be verified.")}</p>}
       {languagePhase==="conflict"&&<p role="alert" className={styles.error}>{t("تغيّرت لغات الرد. أعد التحميل قبل الحفظ.","Reply languages changed. Reload before saving.")}</p>}
-      <div className={styles.languageChips} aria-live="polite">
-        {selectedLanguages.length===0?<p className={styles.note}>{t("اختر لغة واحدة واحدة على الأقل.","Select at least one language.")}</p>:selectedLanguages.map(code=>(
-          <button key={code} type="button" className={styles.chip} disabled={languageLocked} onClick={()=>{if(!p.isCurrent())return;setSelectedLanguages(current=>current.filter(item=>item!==code));}}>
-            {replyLanguageLabel(code,p.locale)} <span aria-hidden="true">×</span>
-          </button>
-        ))}
-      </div>
-      <div className={styles.languagePicker}>
-        <button type="button" className={styles.ghost} aria-expanded={langOpen} disabled={languageLocked} onClick={()=>{if(p.isCurrent())setLangOpen(open=>!open);}}>{t("إضافة لغة","Add language")}</button>
-        {langOpen&&<div className={styles.languageMenu} role="listbox" aria-multiselectable="true">
-          <input className={styles.languageSearch} value={langQuery} disabled={languageLocked} placeholder={t("بحث","Search")} aria-label={t("بحث في اللغات","Search languages")} onChange={event=>{if(p.isCurrent())setLangQuery(event.target.value);}}/>
-          {languageOptions.map(code=>{
-            const selected=selectedLanguages.includes(code);
-            return <button key={code} type="button" role="option" aria-selected={selected} className={selected?styles.languageOptionActive:styles.languageOption} disabled={languageLocked} onClick={()=>{
-              if(!p.isCurrent())return;
-              setSelectedLanguages(current=>selected?current.filter(item=>item!==code):[...current,code]);
-            }}>{replyLanguageLabel(code,p.locale)}</button>;
-          })}
-          {languageOptions.length===0&&<p className={styles.note}>{t("لا نتائج.","No matches.")}</p>}
-        </div>}
-      </div>
-      <button
-        type="button"
-        className={styles.primary}
-        disabled={!canSaveLanguages}
-        onClick={()=>{
-          if(!canSaveLanguages||!draftLanguageContract||!p.languageSnapshot)return;
-          void dispatch("languages",()=>p.onConfirmLanguages?.({...p.scope,expectedVersion:p.languageSnapshot!.version,replyLanguage:draftLanguageContract}),{ignoreKnowledgeLock:true});
-        }}
-      >
-        {activeOp==="languages"||languagePhase==="saving"?t("جارٍ الحفظ…","Saving…"):t("حفظ اللغات","Save languages")}
-      </button>
+      {selectedLanguages.length===0&&<p className={styles.note}>{t("اختر لغة واحدة واحدة على الأقل.","Select at least one language.")}</p>}
     </section>
+    <div className={styles.shell}>
     <div className={styles.tabs} role="tablist" aria-label={t("أقسام المعرفة","Knowledge sections")} aria-orientation="horizontal" onKeyDown={onTabsKey}>
-      {TABS.map(item=><button key={item} ref={node=>{tabRefs.current[item]=node;}} id={`${id}-tab-${item}`} type="button" role="tab" aria-selected={tab===item} aria-controls={`${id}-panel-${item}`} tabIndex={tab===item?0:-1} className={tab===item?styles.tabActive:styles.tab} onClick={()=>{if(p.isCurrent())setTab(item);}}><span aria-hidden="true">{tabMeta[item].icon}</span> {tabMeta[item].label}</button>)}
+      {TABS.map(item=><button key={item} ref={node=>{tabRefs.current[item]=node;}} id={`${id}-tab-${item}`} type="button" role="tab" aria-selected={tab===item} aria-controls={`${id}-panel-${item}`} tabIndex={tab===item?0:-1} className={tab===item?styles.tabActive:styles.tab} onClick={()=>{if(p.isCurrent())setTab(item);}}>{tabMeta[item]}</button>)}
     </div>
     <div className={styles.studio}>
       <div className={styles.workspace}>
         <section hidden={tab!=="website"} data-panel="website" className={styles.panel} id={`${id}-panel-website`} role="tabpanel" aria-labelledby={`${id}-tab-website`}>
-          <div className={styles.sectionHeading}><h3 id={`${id}-website`}>{t("الموقع الإلكتروني","Website")}</h3></div>
+          <div className={styles.sectionHeading}><h3 id={`${id}-website`} className={styles.srOnly}>{t("الموقع الإلكتروني","Website")}</h3></div>
           {tab==="website" && operationAlert("website")}
           <form noValidate onSubmit={event=>{event.preventDefault();if(canAdd)void dispatch("website",()=>p.onAddWebsite?.({...context,url:urlTrim,rightsAttested:true}));}}>
             <fieldset disabled={busy||p.state.phase==="busy"}><legend className={styles.srOnly}>{t("إضافة صفحة","Add page")}</legend>
@@ -277,10 +260,9 @@ function KnowledgeForm(p:PaidBranchKnowledgeProps & {snapshot:BranchKnowledgeVie
           </form>
         </section>
         <section hidden={tab!=="files"} data-panel="files" className={styles.panel} id={`${id}-panel-files`} role="tabpanel" aria-labelledby={`${id}-tab-files`}>
-          <h3 id={`${id}-files`}>{t("الملفات","Files")}</h3>
+          <h3 id={`${id}-files`} className={styles.srOnly}>{t("الملفات","Files")}</h3>
           {tab==="files" && operationAlert("files")}
-          <p className={styles.note}>{t("التجهيز الحالي يدعم PDF النصي وTXT وDOCX. رفع ملف لا يضمن استخراج نص منه؛ الصور والجداول غير مدعومة للتجهيز هنا.","Current preparation supports text-based PDF, TXT and DOCX. Uploading does not guarantee text extraction; images and spreadsheets cannot be prepared here.")}</p>
-          <p className={styles.note}>{t("الحد الفعلي: 10MB للملف، و5 ملفات و25MB للدفعة.","Actual limits: 10MB per file, 5 files and 25MB per batch.")}</p>
+          <p className={styles.note}>{t("PDF نصي أو TXT أو DOCX — حتى 10MB للملف و5 ملفات للدفعة.","Text PDF, TXT, or DOCX — up to 10MB per file and 5 files per batch.")}</p>
           <form noValidate onSubmit={event=>{event.preventDefault();if(canUpload)void dispatch("files",()=>p.onUploadFiles?.({...context,files:[...files]}));}}>
             <fieldset disabled={busy||p.state.phase==="busy"}><legend className={styles.srOnly}>{t("رفع الملفات","Upload files")}</legend>
               <div className={styles.drop} data-file-drop="" data-dragging={dragging||undefined} onDragEnter={event=>{event.preventDefault();dragDepth.current+=1;setDragging(true);}} onDragOver={event=>{event.preventDefault();}} onDragLeave={event=>{event.preventDefault();dragDepth.current=Math.max(0,dragDepth.current-1);if(dragDepth.current===0)setDragging(false);}} onDrop={(event:DragEvent<HTMLDivElement>)=>{event.preventDefault();dragDepth.current=0;setDragging(false);chooseFiles(event.dataTransfer?.files);}}>
@@ -294,7 +276,7 @@ function KnowledgeForm(p:PaidBranchKnowledgeProps & {snapshot:BranchKnowledgeVie
           </form>
         </section>
         <section hidden={tab!=="faq"} data-panel="faq" className={styles.panel} id={`${id}-panel-faq`} role="tabpanel" aria-labelledby={`${id}-tab-faq`}>
-          <h3 id={`${id}-faq`}>{t("الأسئلة والأجوبة","Questions and answers")}</h3>
+          <h3 id={`${id}-faq`} className={styles.srOnly}>{t("الأسئلة والأجوبة","Questions and answers")}</h3>
           {tab==="faq" && operationAlert("faq")}
           {editing&&<form className={styles.editor} onSubmit={event=>{event.preventDefault();if(!locked&&editing.title.trim()&&editing.content.trim())void dispatch("faq",async()=>{await p.onSourceMutation?.({...p.scope,...editing,action:'edit'});});}}><fieldset disabled={busy||p.state.phase==="busy"}>
             <legend>{t('تعديل النص المحفوظ','Edit saved text')}</legend>
@@ -353,6 +335,8 @@ function KnowledgeForm(p:PaidBranchKnowledgeProps & {snapshot:BranchKnowledgeVie
         </ul>}
       </details>
     </div>
+    </div>
     {!p.onAddWebsite && !p.onUploadFiles && !p.onSaveText && !p.onPageAction && <p className={styles.note}>{t("الإجراءات غير مرتبطة بالحفظ بعد. التعديلات محلية فقط.","Actions are not connected to persistence yet. Edits are local only.")}</p>}
+    </div>
   </section>;
 }

@@ -10,10 +10,14 @@ import type {PaidSetupWorkspaceRead} from "@/lib/tenancy/paid-setup-workspace-ac
 import {paidSetupActivation,type PaidSetupActivation} from '@/lib/tenancy/paid-setup-activation';
 import {confirmSetupLeave} from './paid-setup-unsaved';
 
+/** Hidden from /setup for now; PaidBranchHours stays mounted elsewhere later. */
+const SETUP_HIDDEN_STEPS = new Set<ChecklistStepId>(["hours"]);
+
 export function nextWorkspaceSelection(snapshot:PaidSetupWorkspaceRead,previous:ChecklistStepId|null):ChecklistStepId|null {
   const model=paidChecklistFromRead(snapshot.read,snapshot.scope);
   const steps=model?checklistSteps(model):[];
   if(!steps.length)return null;
+  if(previous&&SETUP_HIDDEN_STEPS.has(previous))previous=null;
   const isConfirmedChannel=(channel:"whatsapp"|"instagram")=>{
     const proof=snapshot.connectionReads[channel],step=steps.find(item=>item.id===channel);
     return !!step&&snapshot.confirmedChannels.includes(channel)&&step.status==="verified"&&step.reasonCodes.length===0&&
@@ -23,17 +27,19 @@ export function nextWorkspaceSelection(snapshot:PaidSetupWorkspaceRead,previous:
       !!proof.connection.link&&Number.isSafeInteger(proof.connection.link.generation)&&proof.connection.link.generation>=1;
   };
   const stepOpen=(id:ChecklistStepId)=>{
+    if(SETUP_HIDDEN_STEPS.has(id))return false;
     const step=steps.find(item=>item.id===id);
     if(!step)return false;
     if((id==='hours'||id==='knowledge')&&step.actionId!==null)return true;
-    const dependencies=step.dependencyIds.every(dep=>steps.some(item=>item.id===dep&&item.status==="verified"));
+    const dependencies=step.dependencyIds.every(dep=>SETUP_HIDDEN_STEPS.has(dep)||steps.some(item=>item.id===dep&&item.status==="verified"));
     if(id==="launch")return model!.launch.canRequest&&dependencies;
     return step.actionId!==null&&(step.status==="verified"||step.status==="skipped_optional"||(step.status==="pending"&&dependencies));
   };
   const nonChannelSteps=steps.filter(item=>item.id!=="whatsapp"&&item.id!=="instagram");
+  // Count verified hidden steps (e.g. hours) so resume still advances past them.
   const businessSetupStarted=nonChannelSteps.some(item=>item.status==="verified");
-  const nextIncompleteOpen=(fromIndex=0)=>steps.slice(fromIndex).find(item=>item.status!=="verified"&&item.status!=="skipped_optional"&&stepOpen(item.id))?.id??null;
-  const nextBusinessIncomplete=nonChannelSteps.find(item=>item.status!=="verified"&&item.status!=="skipped_optional"&&stepOpen(item.id))?.id??null;
+  const nextIncompleteOpen=(fromIndex=0)=>steps.slice(fromIndex).find(item=>!SETUP_HIDDEN_STEPS.has(item.id)&&item.status!=="verified"&&item.status!=="skipped_optional"&&stepOpen(item.id))?.id??null;
+  const nextBusinessIncomplete=nonChannelSteps.find(item=>!SETUP_HIDDEN_STEPS.has(item.id)&&item.status!=="verified"&&item.status!=="skipped_optional"&&stepOpen(item.id))?.id??null;
   if(!previous||!steps.some(step=>step.id===previous)){
     if(businessSetupStarted&&nextBusinessIncomplete)return nextBusinessIncomplete;
     const first=steps[0]!.id;
@@ -117,7 +123,7 @@ export function workspaceStepAllowed(read:PaidBranchSetupRead|null,scope:PaidSet
   // Editing these independent sections is not a readiness assertion. Their
   // own reads/writes verify native authority; trial and launch keep prerequisites.
   if((id==='hours'||id==='knowledge')&&step.actionId!==null)return true;
-  const dependencies=step.dependencyIds.every(dep=>steps.some(item=>item.id===dep&&item.status==="verified"));
+  const dependencies=step.dependencyIds.every(dep=>!available.includes(dep)||steps.some(item=>item.id===dep&&item.status==="verified"));
   if(id==="launch")return model.launch.canRequest&&dependencies;
   return step.actionId!==null&&(step.status==="verified"||step.status==="skipped_optional"||(step.status==="pending"&&dependencies));
 }
@@ -131,10 +137,14 @@ export function PaidSetupLoadingFrame({locale}:{locale:'ar'|'en'}){return <secti
 function PendingWorkspace({locale,loading,onRetry}:{locale:'ar'|'en';loading:boolean;onRetry?:()=>void}){
  const ar=locale==='ar',t=(a:string,e:string)=>ar?a:e;
  return <div className={styles.layout} data-setup-frame="pending">
-   <aside className={styles.sidebar} aria-label={t('رحلة التجهيز','Setup journey')}><div className={styles.progressHeading}><strong>{t('رحلة التجهيز','Setup journey')}</strong></div><p className={loading?styles.srOnly:styles.pendingNote}>{loading?t('جارٍ جلب الحالة…','Fetching status…'):t('الحالة غير متاحة','Status unavailable')}</p>
-     <nav className={styles.navigation} aria-label={t("خطوات إعداد المساعد","Assistant setup steps")}><ol>{Object.entries(titles).map(([id,label],index)=><li key={id}><button type="button" disabled><span className={styles.number}>{index+1}</span><span className={styles.stepText}><strong>{label[ar?0:1]}</strong><small>{t("بانتظار التحقق","Awaiting verification")}</small></span></button></li>)}</ol></nav>
+   <aside className={styles.sidebar} aria-label={t('رحلة التجهيز','Setup journey')}>
+     <div className={styles.progressHeading}><strong>{t('رحلة التجهيز','Setup journey')}</strong></div>
+     <div className={styles.skeletonRail} aria-hidden="true">{Array.from({length:5},(_,index)=><div key={index}><span/><span/></div>)}</div>
    </aside>
-   <section className={styles.content} aria-label={t('محتوى المرحلة','Stage content')}><header className={styles.contentHeader}><h2>{t('إعداد الفرع','Branch setup')}</h2></header><div className={styles.empty} role={loading?'status':'alert'}><p className={loading?styles.srOnly:undefined}>{loading?t('جارٍ تحميل إعدادات الفرع…','Loading branch setup…'):t('إعدادات الفرع غير متاحة حاليًا. تحقّق من الجلسة والاستحقاق ثم أعد المحاولة.','Branch setup is unavailable. Check your session and entitlement, then retry.')}</p><p>{t("اربط قنوات نشاطك، وأضف مواعيد العمل والمعرفة، ثم جرّب المساعد وراجع متطلبات التشغيل. ستظهر الإعدادات المحفوظة بعد التحقق من صلاحيات الفرع.","Connect your business channels, add hours and knowledge, then try your assistant and review launch requirements. Saved settings appear after branch access is verified.")}</p>{!loading&&onRetry&&<button type="button" onClick={onRetry}>{t('إعادة المحاولة','Retry')}</button>}</div></section>
+   <section className={styles.content} aria-label={t('محتوى المرحلة','Stage content')}>
+     {loading?<><span className={styles.srOnly} role="status">{t('جارٍ تحميل إعدادات الفرع…','Loading branch setup…')}</span><div className={styles.skeletonContent} aria-hidden="true"><span/><span/><span/><div/></div></>:
+       <div className={styles.empty} role="alert"><p>{t('تعذّر تحميل إعدادات الفرع. تحقق من الجلسة ثم أعد المحاولة.','Branch setup could not be loaded. Check your session, then retry.')}</p>{onRetry&&<button type="button" onClick={onRetry}>{t('إعادة المحاولة','Retry')}</button>}</div>}
+   </section>
  </div>;
 }
 function Workspace(p:PaidSetupWorkspaceProps) {
@@ -148,11 +158,12 @@ function Workspace(p:PaidSetupWorkspaceProps) {
   const current=isCurrent();
   const model=p.read?paidChecklistFromRead(p.read,p.scope):null;
   const steps=model?checklistSteps(model):[];
-  const valid=current&&!!model&&model.branches.some(branch=>branch.id===p.scope.branchId)&&steps.length>0;
+  const visibleSteps=steps.filter(step=>p.availableStepIds.includes(step.id));
+  const valid=current&&!!model&&model.branches.some(branch=>branch.id===p.scope.branchId)&&visibleSteps.length>0;
   const active=p.activeStepId;
   const allowed=!!active&&workspaceStepAllowed(p.read,p.scope,active,p.availableStepIds);
-  const position=steps.findIndex(step=>step.id===active);
-  const nextCandidate=position>=0&&position+1<steps.length?steps[position+1]:null;
+  const position=visibleSteps.findIndex(step=>step.id===active);
+  const nextCandidate=position>=0&&position+1<visibleSteps.length?visibleSteps[position+1]:null;
   const nextAllowed=!!nextCandidate&&workspaceStepAllowed(p.read,p.scope,nextCandidate.id,p.availableStepIds);
   const nextBlockedReason=nextCandidate&&!nextAllowed?stepBlockedReason(nextCandidate.id,steps,model,p.locale):null;
   const activation=valid?paidSetupActivation(p.activation,p.scope.companyId,p.read?.entitlement?.orderGroupId):null;
@@ -169,7 +180,7 @@ function Workspace(p:PaidSetupWorkspaceProps) {
     if(step===active)heading.current?.focus();
     else p.onSelectStep(step);
   };
-  const previousStep=steps.slice(0,Math.max(position,0)).reverse().find(step=>workspaceStepAllowed(p.read,p.scope,step.id,p.availableStepIds));
+  const previousStep=visibleSteps.slice(0,Math.max(position,0)).reverse().find(step=>workspaceStepAllowed(p.read,p.scope,step.id,p.availableStepIds));
   const refresh=()=>{if(p.isCurrent()&&confirmSetupLeave(shell.current,p.locale))p.onRefresh?.();};
   return <section ref={shell} className={styles.workspace} dir={ar?"rtl":"ltr"} aria-labelledby={titleId} aria-busy={p.loading||undefined}>
     <header className={p.loading||p.statusInHeader?styles.srOnly:styles.header}><div className={styles.introduction}><h1 id={titleId} className={p.statusInHeader?styles.srOnly:undefined}>{personaName?t(`جهّز ${personaName} لعملائك`,`Prepare ${personaName} for your customers`):t("جهّز مساعدك","Set up your assistant")}</h1>
@@ -187,10 +198,10 @@ function Workspace(p:PaidSetupWorkspaceProps) {
           <progress value={model.progress.verified} max={model.progress.denominator??undefined} aria-label={t("تقدم إعداد الفرع","Branch setup progress")}/>
         </div>
         <button className={styles.toggle} type="button" aria-expanded={expanded} aria-controls={navId} onClick={()=>setExpanded(value=>!value)}>
-          {active?titles[active][ar?0:1]:t("خطوات الإعداد","Setup steps")} <span aria-hidden="true">{expanded?"−":"+"}</span>
+          {active&&p.availableStepIds.includes(active)?titles[active][ar?0:1]:t("خطوات الإعداد","Setup steps")} <span aria-hidden="true">{expanded?"−":"+"}</span>
         </button>
         <nav id={navId} className={styles.navigation} data-expanded={expanded} aria-label={t("خطوات إعداد المساعد","Assistant setup steps")}>
-          <ol>{steps.map((step,index)=>{
+          <ol>{visibleSteps.map((step,index)=>{
             const enabled=workspaceStepAllowed(p.read,p.scope,step.id,p.availableStepIds);
             const verified=step.status==="verified",skipped=step.status==="skipped_optional";
             const status=verified?t("مكتملة","Complete"):skipped?t("تم التخطي","Skipped"):step.status==="unavailable"&&!enabled?t("غير متاح","Unavailable"):!enabled?t("بانتظار المتطلبات","Waiting for prerequisites"):t("متاحة","Available");

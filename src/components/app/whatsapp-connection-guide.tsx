@@ -19,7 +19,7 @@ const finish: Step["copy"] = ["أنه الخطوات ثم ارجع إلى فيل
 export const guideSteps: Record<Route, readonly Step[]> = {
   coexistence: [
     step("8",["تسجيل الدخول","Sign in"],login),
-    step("9",["مراجعة الربط","Review connection"],review,false),
+    step("9",["مراجعة الربط","Review connection"],review),
     step("10",["رقم تطبيق واتساب للأعمال","Business App number"],["راجع رمز الدولة ورقم تطبيق WhatsApp Business الحالي. قد تختلف تسميات نافذة Meta عن المثال.","Check the country code and your existing WhatsApp Business App number. Meta's labels may differ from this reference."]),
     step("11",["أصول النشاط","Business assets"],assets),
     step("12",["بيانات النشاط","Business details"],details),
@@ -29,7 +29,7 @@ export const guideSteps: Record<Route, readonly Step[]> = {
   ],
   "new-number": [
     step("17.1",["تسجيل الدخول","Sign in"],login),
-    step("17.2",["مراجعة الربط","Review connection"],review,false),
+    step("17.2",["مراجعة الربط","Review connection"],review),
     step("17.3",["إضافة الرقم","Add the number"],["راجع رمز الدولة والرقم الذي تريد ربطه.","Check the country code and the number you want to connect."]),
     step("17.4",["اختيار الرقم","Choose the number"],["اختر إضافة رقم جديد من الخيارات المتاحة لحسابك.","Choose to add a new number from the options available to your account."]),
     step("17.5",["التحقق من الرقم","Verify the number"],["أدخل رمز التحقق داخل نافذة Meta فقط.","Enter the verification code only in the Meta window."]),
@@ -56,15 +56,16 @@ export function WhatsappConnectionGuide(props: WhatsappConnectionGuideProps) {
   // A route change starts its own sequence, never retaining another route's index.
   return <Guide key={props.route} {...props} />;
 }
-function Guide({route,locale,connectEnabled=false,connecting=false,preparing=false,onConnect,onReviewRequirements,feedback}: WhatsappConnectionGuideProps) {
+function Guide({route,locale,connectionStatus,connectEnabled=false,connecting=false,preparing=false,onConnect,onReviewRequirements,feedback}: WhatsappConnectionGuideProps) {
   const [index,setIndex] = useState(0);
   const id = useId();
   const ar = locale === "ar";
   const t = (a:string,e:string) => ar?a:e;
   const steps = guideSteps[route], current = steps[index], language = ar?0:1;
   return <section className={styles.guide} data-sequence={!!onReviewRequirements} dir={ar?"rtl":"ltr"} aria-labelledby={id}>
+    <header className={styles.header}><h2>{t("ربط الحساب","Connect Account")}</h2>{connectionStatus&&<span>{connectionStatus}</span>}</header>
     <h3 id={id} className={styles.heading}>{t("أنت على وشك الانتهاء","You're almost there")}</h3>
-    <p className={styles.subtitle}>{t("تابع باستخدام Facebook واتبع التعليمات أدناه لربط رقمك.","Continue with Facebook and follow the instructions below to link your number")}</p>
+    <p className={styles.subtitle}>{t("تابع باستخدام Facebook واتبع التعليمات أدناه لربط تطبيق WhatsApp Business.","Continue with Facebook and follow the instructions below to connect your WhatsApp Business App.")}</p>
     <div className={styles.panel} data-guide-source={current.source}>
       <div className={styles.picture}>
         {/* Exact reference pixels: no image optimizer/provider request. */}
@@ -73,7 +74,8 @@ function Guide({route,locale,connectEnabled=false,connecting=false,preparing=fal
       </div>
       <div className={styles.explanation}>
         <p aria-live="polite" aria-atomic="true">{t("الخطوة","Step")} {index+1} {t("من","of")} {steps.length}</p>
-        <h4>{current.title[language]}</h4><p>{current.copy[language]}</p>
+        <h4>{index===0?t("تسجيل الدخول إلى Facebook","Sign in to Facebook"):current.title[language]}</h4>
+        {index===0?<><ul className={styles.instructions}><li>{t("سجّل الدخول في نافذة Facebook الرسمية.","Sign in within the official Facebook window.")}</li><li>{t("أدخل بيانات الدخول داخل نافذة Meta فقط.","Enter your credentials only in Meta’s window.")}</li></ul><p className={styles.tip}>{t("استخدم حساب Facebook الذي تدير به نشاطك التجاري.","Use the Facebook account you use to manage your business.")}</p></>:<p>{current.copy[language]}</p>}
         <nav className={styles.navigation} aria-label={t("خطوات الدليل","Guide steps")}>
           <button type="button" disabled={index===0} aria-label={t("الخطوة السابقة","Previous step")} onClick={()=>setIndex(i=>guideIndex(i,-1,steps.length))}>{ar?"›":"‹"}</button>
           <div className={styles.dots}>{steps.map((s,i)=><button type="button" key={s.source} aria-label={t("الخطوة ","Step ")+(i+1)} aria-current={i===index?"step":undefined} onClick={()=>setIndex(i)}><span /></button>)}</div>
@@ -81,7 +83,7 @@ function Guide({route,locale,connectEnabled=false,connecting=false,preparing=fal
         </nav>
       </div>
     </div>
-<div className={styles.connectArea} data-guide-connect-area="true"><button type="button" className={styles.connect} data-connect-action="true" disabled={!connectEnabled||connecting||!onConnect} onClick={onConnect}>{connecting?t("جارٍ الاتصال…","Connecting…"):preparing?t("تجهيز الاتصال الآمن","Prepare secure connection"):t("المتابعة باستخدام فيسبوك","Continue with Facebook")}</button>{feedback && <p className={styles.feedbackText} role="alert" data-connect-feedback="true">{feedback}</p>}</div>
+<div className={styles.connectArea} data-guide-connect-area="true"><button type="button" className={styles.connect} data-connect-action="true" disabled={!connectEnabled||connecting||!onConnect} onClick={onConnect}><span className={styles.facebookIcon} aria-hidden="true">f</span>{connecting?t("جارٍ الاتصال…","Connecting…"):preparing?t("تجهيز الاتصال الآمن","Prepare secure connection"):t("المتابعة باستخدام Facebook","Continue with Facebook")}</button>{feedback && <p className={styles.feedbackText} role="alert" data-connect-feedback="true">{feedback}</p>}</div>
     {onReviewRequirements&&<div className={styles.footer}><button type="button" className={styles.connect} onClick={onReviewRequirements}>{t("مراجعة متطلبات الربط","Review connection requirements")}</button></div>}
   </section>;
 }

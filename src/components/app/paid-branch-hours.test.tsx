@@ -25,18 +25,21 @@ const render = (patch: Partial<PaidBranchHoursProps> = {}) =>
   renderToStaticMarkup(createElement(PaidBranchHours, {...props, ...patch}));
 
 describe("PaidBranchHours", () => {
-  it.each(["ar", "en"] as const)("renders seven explicit unset days in %s", locale => {
+  it.each(["ar", "en"] as const)("renders seven read-only day summaries without per-day editors in %s", locale => {
     const html = render({locale});
     expect(html.match(/data-hours-day=/g)).toHaveLength(7);
+    expect(html).not.toContain("+ Add interval");
+    expect(html).not.toContain("+ إضافة فترة");
+    expect(html).not.toMatch(/data-hours-day="[^"]+"[\s\S]*?<select/);
     expect(html).toContain('dir="' + (locale === "ar" ? "rtl" : "ltr") + '"');
     expect(html).toContain("Asia/Muscat");
-    expect(html).toContain('disabled=""');
+    expect(html).toContain(locale === "ar" ? "إضافة مواعيد" : "Add hours");
   });
 
-  it("does not infer saved state or readiness from a render", () => {
+  it("does not show server-confirmed status copy to the customer", () => {
     expect(render()).not.toContain("server confirmed");
     expect(render({onSave: () => { throw Error("No render side effects"); }})).not.toContain("server confirmed");
-    expect(render({state: {...props.state, phase: "saved"}})).toContain("server confirmed");
+    expect(render({state: {...props.state, phase: "saved"}})).not.toContain("server confirmed");
   });
 
   it.each([
@@ -52,27 +55,38 @@ describe("PaidBranchHours", () => {
   it("renders schedule form immediately when snapshot is null (non-blocking local draft)", () => {
     const html = render({snapshot: null, state: {...props.state, version: null, phase: "loading"}});
     expect(html.match(/data-hours-day=/g)).toHaveLength(7);
-    expect(html).toContain("Loading branch hours…");
-    expect(html).toContain("Saving is disabled until server connection and version are confirmed.");
+    expect(html).not.toContain("Loading branch hours");
+    expect(html).not.toContain("جارٍ تحميل مواعيد الفرع");
+    expect(html).toContain('aria-busy="true"');
+    expect(html).toContain('data-hours-action="add"');
     expect(html).toContain('disabled=""');
   });
 
   it("distinguishes loading and conflict without blocking the form", () => {
     const loadingHtml = render({state: {...props.state, phase: "loading"}});
-    expect(loadingHtml).toContain("Loading branch hours…");
+    expect(loadingHtml).not.toContain("Loading branch hours");
+    expect(loadingHtml).toContain('aria-busy="true"');
     expect(loadingHtml.match(/data-hours-day=/g)).toHaveLength(7);
 
     const conflictHtml = render({state: {...props.state, phase: "conflict"}});
     expect(conflictHtml).toContain("Saved hours changed");
-    expect(conflictHtml).toContain("<fieldset");
+    expect(conflictHtml.match(/data-hours-day=/g)).toHaveLength(7);
     expect(conflictHtml).toContain('disabled=""');
   });
 
-  it("renders non-blocking retry indicator when phase is unavailable and snapshot is null", () => {
-    const html = render({snapshot: null, state: {...props.state, version: null, phase: "unavailable"}, onReload: () => {}});
+  it("keeps the form usable while loading without the unavailable error banner", () => {
+    const html = render({snapshot: null, state: {...props.state, version: null, phase: "loading"}, onReload: () => {}});
     expect(html.match(/data-hours-day=/g)).toHaveLength(7);
-    expect(html).toContain("Hours for this branch are unavailable");
-    expect(html).toContain("Retry");
+    expect(html).not.toContain("Loading branch hours");
+    expect(html).not.toContain("Retry");
+    expect(html).not.toContain("Hours for this branch are unavailable");
+    expect(html).not.toContain("Saving is not confirmed");
+  });
+
+  it("does not render the unavailable hours error banner", () => {
+    const html = render({snapshot: null, state: {...props.state, version: null, phase: "unavailable"}, onReload: () => {}});
+    expect(html).not.toContain("Hours for this branch are unavailable. Saving is not confirmed.");
+    expect(html).not.toContain("مواعيد هذا الفرع غير متاحة. الحفظ غير مؤكد.");
   });
 
   it("does not substitute a default timezone", () => {
@@ -107,19 +121,16 @@ describe("PaidBranchHours", () => {
     expect(html).toContain(locale === "ar" ? "امتداد اليوم السابق" : "previous-day carry-over");
   });
 
-  it.each(["ar", "en"] as const)("renders compact presets and a single quick-apply control in %s", locale => {
+  it.each(["ar", "en"] as const)("renders a centered add/edit rest state without the old quick-apply bar in %s", locale => {
     const html = render({locale});
     expect(html).not.toMatch(/[\u{1F300}-\u{1FAFF}]/u);
     expect(html).toContain(locale === "ar" ? "مواعيد العمل" : "Working hours");
-    expect(html).toContain(locale === "ar" ? "تطبيق سريع" : "Quick apply");
-    expect(html).toContain(locale === "ar" ? "الأحد – الخميس" : "Sun – Thu");
-    expect(html).toContain(locale === "ar" ? "السبت – الخميس" : "Sat – Thu");
-    expect(html).toContain(locale === "ar" ? "طوال الأسبوع" : "All week");
-    expect(html).toContain(locale === "ar" ? "على الأيام المفتوحة" : "To open days");
-    expect(html).toContain(locale === "ar" ? "على كل الأيام" : "To all days");
-    expect(html).toContain(locale === "ar" ? "على أيام العمل" : "To workdays");
-    expect(html).toContain(`>${locale === "ar" ? "تطبيق" : "Apply"}<`);
-    expect(html).not.toContain(locale === "ar" ? "تطبيق على (الأحد - الخميس)" : "Apply to (Sun - Thu)");
+    expect(html).toContain(locale === "ar" ? "إضافة مواعيد" : "Add hours");
+    expect(html).toContain('data-hours-mode="rest"');
+    expect(html).toContain('data-hours-action="add"');
+    expect(html).not.toContain(locale === "ar" ? "تطبيق سريع" : "Quick apply");
+    expect(html).not.toContain(locale === "ar" ? "على أيام العمل" : "To workdays");
+    expect(html).not.toContain(`>${locale === "ar" ? "تطبيق" : "Apply"}<`);
   });
 
   it("renders days starting with Sunday for natural Arab regional business week", () => {

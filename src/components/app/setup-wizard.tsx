@@ -1397,7 +1397,6 @@ function WhatsAppStep({
         </div>
       </div>
 
-      {linkStatus==="loading"?<p role="status" aria-live="polite">{ar?"جارٍ تحميل طلب الربط المحفوظ.":"Loading the saved link request."}</p>:null}
       {linkStatus==="failed"?<div role="alert"><Notice tone="error">{ar?"تعذر قراءة طلب الربط. لم تُحفظ التعديلات؛ أعد القراءة قبل المتابعة.":"Could not read the saved link request. Changes have not been saved; reload before continuing."}</Notice></div>:null}
       <Button type="button" variant="secondary" disabled={busy||linkStatus==="loading"} onClick={refreshLink}>{ar?"تحديث الطلب المحفوظ":"Refresh saved request"}</Button>
       {numberField.conflict||keepField.conflict?<Notice tone="warn">{ar?"تغير الطلب المحفوظ. احتُفظ بتعديلاتك غير المحفوظة.":"The saved request changed. Your unsaved edits were kept."} <Button type="button" variant="secondary" disabled={busy} onClick={()=>{numberField.resolve();keepField.resolve();}}>{ar?"استخدام القيم المحفوظة":"Use saved values"}</Button></Notice>:null}

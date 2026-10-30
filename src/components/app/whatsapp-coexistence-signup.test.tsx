@@ -129,7 +129,8 @@ describe("real Coexistence component async paths", () => {
     await flush(); h.render({ companyId: "b" }, false);
     expect(text(h.tree())).not.toContain("Meta authorization saved");
     expect(text(h.tree())).not.toContain("+96892222222");
-    expect(text(h.tree())).toContain("Loading saved connection status");
+    expect(text(h.tree())).not.toContain("Loading saved connection status");
+    expect(text(h.tree())).not.toContain("Not connected");
     expect(mocks.read).toHaveBeenCalledWith("b");
     newRead.resolve(setup("b")); await flush(); h.render();
     expect(text(h.tree())).toContain("Not connected"); h.unmount();

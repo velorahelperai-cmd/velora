@@ -68,30 +68,39 @@ describe("PaidSetupStepHost", () => {
       await act(async()=>host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
       expect(host.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(false);
       await act(async()=>Array.from(host.querySelectorAll('button')).find(b=>b.textContent==='Refresh operation status')!.click());
-      expect(host.textContent).toContain('Loading the launch summary.');
+      expect(host.textContent).not.toContain('Loading the launch summary.');
+      expect(host.querySelector('[aria-busy="true"]')).not.toBeNull();
       expect(host.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(true);
       expect(confirmOwnedBranchLaunchAction).not.toHaveBeenCalled();
       await act(async()=>finish(snapshot));
       expect(host.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(true);
     }finally{await act(async()=>root.unmount());vi.unstubAllGlobals();}
   });
-  it("renders hours step view loading state in SSR", () => {
+  it("renders hours step without customer loading copy in SSR", () => {
     const html = renderToStaticMarkup(createElement(PaidSetupStepHost, { ...baseProps, step: "hours" }));
-    expect(html).toContain("Loading branch hours…");
+    expect(html).toContain("Working hours");
+    expect(html).not.toContain("Loading branch hours");
+    expect(html).toContain('aria-busy="true"');
   });
 
-  it("renders knowledge step view loading state in SSR", () => {
+  it("renders knowledge step without customer loading copy in SSR", () => {
     const html = renderToStaticMarkup(createElement(PaidSetupStepHost, { ...baseProps, step: "knowledge" }));
-    expect(html).toContain("Loading branch knowledge…");
+    expect(html).toContain("Branch knowledge");
+    expect(html).not.toContain("Loading branch knowledge");
+    expect(html).toContain('aria-busy="true"');
   });
 
-  it("renders test assistant step view loading state in SSR", () => {
+  it("renders test assistant step without customer loading copy in SSR", () => {
     const html = renderToStaticMarkup(createElement(PaidSetupStepHost, { ...baseProps, step: "test" }));
-    expect(html).toContain("Loading the assistant trial.");
+    expect(html).toContain("Try your assistant");
+    expect(html).not.toContain("Loading the assistant trial");
+    expect(html).toContain('aria-busy="true"');
   });
 
-  it("renders launch step view loading state in SSR", () => {
+  it("renders launch step without customer loading copy in SSR", () => {
     const html = renderToStaticMarkup(createElement(PaidSetupStepHost, { ...baseProps, step: "launch" }));
-    expect(html).toContain("Loading the launch summary.");
+    expect(html).toContain("Review and confirm launch");
+    expect(html).not.toContain("Loading the launch summary");
+    expect(html).toContain('aria-busy="true"');
   });
 });
