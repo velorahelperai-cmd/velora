@@ -4,6 +4,8 @@ import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
+vi.mock("@/lib/tenancy/paid-team-actions",()=>({readOwnedBranchTeamAction:vi.fn(async()=>null),inviteOwnedBranchTeamAction:vi.fn()}));
+
 vi.mock("@/lib/tenancy/branch-hours-actions", () => ({
   readOwnedBranchHoursAction: vi.fn(async () => ({ ok: false, code: "unavailable", snapshot: null })),
   saveOwnedBranchHoursAction: vi.fn(),
@@ -35,6 +37,7 @@ vi.mock("@/lib/tenancy/paid-launch-actions", () => ({
 }));
 
 import { PaidSetupStepHost, type PaidSetupStepHostProps } from "./paid-setup-step-host";
+
 import {readOwnedBranchLaunchSummaryAction,confirmOwnedBranchLaunchAction} from '@/lib/tenancy/paid-launch-actions';
 
 const baseProps: PaidSetupStepHostProps = {

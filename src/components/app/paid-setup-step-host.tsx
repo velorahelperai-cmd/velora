@@ -5,6 +5,7 @@ import {awaitSetupRequest,observeSetupRead} from "./paid-setup-request";
 import { useCallback, useLayoutEffect, useEffect, useMemo, useRef, useState } from "react";
 import type { ChecklistStepId } from "./paid-assistant-checklist";
 import type { PaidBranchSetupRead } from "@/lib/tenancy/paid-setup-contracts";
+import type { AnswerFailure, AnswerFailureCode } from "@/lib/answers/types";
 import { PaidBranchHours } from "./paid-branch-hours";
 import type { BranchHoursCopyTarget, BranchHoursSnapshot } from "@/lib/tenancy/branch-hours-contracts";
 import {
@@ -34,11 +35,34 @@ import {
   recoverOwnedBranchAssistantTrialAction,
   readOwnedBranchAssistantTrialAction,
 } from "@/lib/tenancy/paid-assistant-trial-actions";
+import { PaidTeamInvitations, type BranchTeamSnapshot } from "./paid-team-invitations";
+import {
+  readOwnedBranchTeamAction,
+  inviteOwnedBranchTeamAction,
+  revokeOwnedBranchTeamAction,
+} from "@/lib/tenancy/paid-team-actions";
 import { PaidLaunchSummary, type LaunchSummarySnapshot } from "./paid-launch-summary";
 import {
   confirmOwnedBranchLaunchAction,
   readOwnedBranchLaunchSummaryAction,
 } from "@/lib/tenancy/paid-launch-actions";
+
+const KNOWN_FAILURE_CODES = new Set<AnswerFailureCode>([
+  "NEEDS_SETUP",
+  "NO_KNOWLEDGE",
+  "APPROVAL_INCOMPLETE",
+  "APPROVAL_FOUNDATION_UNAVAILABLE",
+  "CONTEXT_OVERFLOW",
+  "INVALID_INPUT",
+  "UNAUTHENTICATED",
+  "UNVERIFIED",
+  "FORBIDDEN",
+  "UNAVAILABLE",
+]);
+
+function normalizeTrialFailureCode(code: string): AnswerFailureCode {
+  return KNOWN_FAILURE_CODES.has(code as AnswerFailureCode) ? (code as AnswerFailureCode) : "UNAVAILABLE";
+}
 
 export type PaidSetupStepHostProps = {
   reader?:SetupReader;
@@ -48,6 +72,7 @@ export type PaidSetupStepHostProps = {
   isCurrent: () => boolean;
   onRefresh?: () => void;
   read: PaidBranchSetupRead | null;
+  onSelectStep?: (stepId: ChecklistStepId) => void;
 };
 
 export function PaidSetupStepHost(props: PaidSetupStepHostProps) {
@@ -71,7 +96,8 @@ function StepHost(props: PaidSetupStepHostProps) {
     if(!isCurrentRef.current())return;
     if(step==="hours")setHoursPhase("loading");
     if(step==="knowledge"){setKnowledgePhase("loading");setLangPhase("loading");}
-    if(step==="test")setTrialPhase("loading");
+    if(step==="test"){setTrialPhase("loading");setTrialFailure(null);setTrialRequestId(null);}
+    if(step==="team"){setTeamPhase("loading");setInviteUrl(null);}
     if(step==="launch")setLaunchPhase("loading");
     reader?.invalidate();
     setReadVersion(v=>v+1);
@@ -162,6 +188,9 @@ function StepHost(props: PaidSetupStepHostProps) {
   // 3. Test step
   const [trialSnap, setTrialSnap] = useState<TrialSnapshot | null>(null);
   const [trialPhase, setTrialPhase] = useState<"loading" | "ready" | "pending" | "error" | "unknown" | "unavailable">("loading");
+  const [trialFailure, setTrialFailure] = useState<AnswerFailure | null>(null);
+  const [trialRequestId, setTrialRequestId] = useState<string | null>(null);
+  const lastTrialQuestionRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (step !== "test" || !isCurrent()) return;
@@ -170,6 +199,8 @@ function StepHost(props: PaidSetupStepHostProps) {
       if (!active || !isCurrent()) return;
       if (snap) {
         setTrialSnap(snap);
+        setTrialFailure(null);
+        setTrialRequestId(null);
         setTrialPhase("ready");
       } else {
         setTrialPhase("unavailable");
@@ -179,6 +210,31 @@ function StepHost(props: PaidSetupStepHostProps) {
       active = false;
     };
   }, [step, targetScope, isCurrent,readVersion,reader]);
+
+  // 4. Team step
+  const [teamSnap, setTeamSnap] = useState<BranchTeamSnapshot | null>(null);
+  const [teamPhase, setTeamPhase] = useState<"loading" | "ready" | "pending" | "error" | "unknown" | "unavailable">("loading");
+  const [inviteUrl, setInviteUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (step !== "team" || !isCurrent()) return;
+    let active = true;
+    void observeSetupRead(
+      (reader ? reader.read("team") : readOwnedBranchTeamAction(targetScope)),
+      () => { if (active && isCurrent()) setTeamPhase("unavailable"); }
+    ).then((snap) => {
+      if (!active || !isCurrent()) return;
+      if (snap) {
+        setTeamSnap(snap);
+        setTeamPhase("ready");
+      } else {
+        setTeamPhase("unavailable");
+      }
+    }).catch(() => { if (active && isCurrent()) setTeamPhase("unavailable"); });
+    return () => {
+      active = false;
+    };
+  }, [step, targetScope, isCurrent, readVersion, reader]);
 
   // 5. Launch step
   const [launchSnap, setLaunchSnap] = useState<LaunchSummarySnapshot | null>(null);
@@ -200,6 +256,33 @@ function StepHost(props: PaidSetupStepHostProps) {
       active = false;
     };
   }, [step, targetScope, isCurrent,readVersion,reader]);
+
+  const executeTrialAsk = async (input: { expectedAccountId: string; companyId: string; branchId: string; expectedVersion: number; knowledgeRevision: string; question: string; operationId?: string }) => {
+    lastTrialQuestionRef.current = input.question;
+    setTrialPhase("pending");
+    setTrialFailure(null);
+    setTrialRequestId(null);
+    const res = await runMutation(askOwnedBranchAssistantTrialAction(input), 60_000).catch(() => null);
+    if (!isCurrent()) return;
+    if (res?.ok) {
+      setTrialSnap(res.snapshot);
+      setTrialPhase("ready");
+      onRefresh?.();
+    } else if (!res || res.code === "TRIAL_PENDING" || res.code === "TRIAL_OUTCOME_UNKNOWN") {
+      setTrialPhase("unknown");
+    } else {
+      const reqId = res.requestId ?? (res.retrySafe ? (input.operationId ?? crypto.randomUUID()) : null);
+      setTrialRequestId(reqId);
+      setTrialFailure({
+        ok: false,
+        code: normalizeTrialFailureCode(res.code),
+        message: res.code,
+        requestId: reqId ?? undefined,
+        retrySafe: res.retrySafe === true,
+      });
+      setTrialPhase("error");
+    }
+  };
 
   switch (step) {
     case "hours":
@@ -322,7 +405,7 @@ function StepHost(props: PaidSetupStepHostProps) {
             setTrialPhase("pending");
             const result=await runMutation(recoverOwnedBranchAssistantTrialAction({...targetScope,operationId}),60_000).catch(()=>null);
             if(!isCurrent())return;
-            if(result?.ok){setTrialSnap(result.snapshot);setTrialPhase("ready");onRefresh?.();}
+            if(result?.ok){setTrialSnap(result.snapshot);setTrialFailure(null);setTrialRequestId(null);setTrialPhase("ready");onRefresh?.();}
             else setTrialPhase("unknown");
           }}
           locale={locale}
@@ -334,24 +417,62 @@ function StepHost(props: PaidSetupStepHostProps) {
             scope: targetScope,
             version: trialSnap?.version ?? null,
             phase: trialPhase,
-            requestId: null,
-            failure: null,
-            canRetry: false,
+            requestId: trialRequestId,
+            failure: trialFailure,
+            canRetry: trialFailure?.retrySafe === true && !!trialRequestId,
           }}
           isCurrent={isCurrent}
-          onAsk={async (input) => {
-            setTrialPhase("pending");
-            const res = await runMutation(askOwnedBranchAssistantTrialAction(input),60_000).catch(()=>null);
-            if (!isCurrent()) return;
-            if (res?.ok && res.snapshot) {
-              setTrialSnap(res.snapshot);
-              setTrialPhase("ready");
-              onRefresh?.();
-            } else {
-              setTrialPhase(!res || (!res.ok && (res.code === "TRIAL_PENDING" || res.code === "TRIAL_OUTCOME_UNKNOWN")) ? "unknown" : "error");
-            }
+          onAsk={executeTrialAsk}
+          onRetry={async (input) => {
+            const question = lastTrialQuestionRef.current;
+            if (!question) return;
+            await executeTrialAsk({ ...input, question, operationId: crypto.randomUUID() });
           }}
         />
+      );
+
+    case "team":
+      return (
+        <section>
+          <PaidTeamInvitations
+            locale={locale}
+            scope={targetScope}
+            boundaryFingerprint={scope.boundaryFingerprint}
+            snapshot={teamSnap}
+            inviteUrl={inviteUrl}
+            onRevoke={async input => {
+              if (!isCurrent()) return;
+              setTeamPhase('pending'); setInviteUrl(null);
+              const result = await runMutation(revokeOwnedBranchTeamAction(input), 60_000).catch(() => null);
+              if (!isCurrent()) return;
+              if (result?.ok) { setTeamSnap(result.snapshot); setTeamPhase('ready'); onRefresh?.(); }
+              else setTeamPhase(result && !result.ok && result.code !== 'UNKNOWN' ? 'error' : 'unknown');
+            }}
+            onInvite={async input => {
+              if (!isCurrent()) return;
+              setTeamPhase('pending'); setInviteUrl(null);
+              const result = await runMutation(inviteOwnedBranchTeamAction(input), 60_000).catch(() => null);
+              if (!isCurrent()) return;
+              if (result?.ok) { setTeamSnap(result.data.snapshot); setInviteUrl(result.data.inviteUrl); setTeamPhase('ready'); onRefresh?.(); }
+              else setTeamPhase('unknown');
+            }}
+            state={{
+              scope: targetScope,
+              version: teamSnap?.version ?? null,
+              phase: teamPhase,
+              operationId: null,
+              operation: null,
+              canRetry: false,
+              retrySafe: false,
+            }}
+            isCurrent={isCurrent}
+          />
+          {['unknown', 'error', 'unavailable'].includes(teamPhase) && (
+            <button type="button" onClick={retryRead}>
+              {locale === 'ar' ? 'تحديث حالة الدعوات' : 'Refresh invitations'}
+            </button>
+          )}
+        </section>
       );
 
     case "launch":
@@ -363,6 +484,7 @@ function StepHost(props: PaidSetupStepHostProps) {
           snapshot={launchSnap}
           state={{ scope: targetScope, version: launchSnap?.version ?? null, phase: launchPhase }}
           isCurrent={isCurrent}
+          onSelectStep={props.onSelectStep}
           onLaunch={async (input) => {
             setLaunchPhase("pending");
             const res = await runMutation(confirmOwnedBranchLaunchAction(input),60_000).catch(()=>null);

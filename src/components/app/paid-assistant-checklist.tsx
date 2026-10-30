@@ -163,7 +163,7 @@ function PaidSetupBranchRead(p:PaidSetupFlowProps&{branchId:string;refreshVersio
  const knownPersona=persona==="level_1"||persona==="level_2"||persona==="level_3"?persona:null;
  const personaName=knownPersona?({level_1:ar?"نورا":"Noura",level_2:ar?"لينا":"Lina",level_3:ar?"دانا":"Dana"})[knownPersona]:undefined;
  if(snapshot?.read.sourceStatus==="selection_required"&&snapshot.read.entitlement&&isCurrent())return <PaidChannelSelection locale={p.locale} scope={{...scope,branchId}} read={snapshot.read} isCurrent={isCurrent} onRefresh={p.retry}/>;
- return <div ref={branchRoot}>{refreshFailed&&<p role="status">{ar?"تعذر تحديث حالة الإعداد. احتُفظ بمدخلاتك؛ أعد التحقق قبل المتابعة.":"Setup status could not be refreshed. Your inputs are preserved; verify the status before continuing."} <button type="button" onClick={p.retry}>{ar?"إعادة التحقق":"Retry verification"}</button></p>}<PaidSetupWorkspace statusInHeader={!!p.renderHeader} locale={p.locale} scope={{...scope,branchId}} read={snapshot?.read??null} activation={snapshot?.activation??null} loading={snapshot===undefined} activeStepId={selected} isCurrent={isCurrent} onSelectStep={step=>{manualSelection.current=true;setSelected(step);}} onPrefetchStep={step=>{if(connectionFirst&&step==="hours")reader.prefetchHours();}} onRefresh={p.retry} availableStepIds={["whatsapp","instagram","knowledge","test","launch"]} connectionReads={snapshot?.connectionReads} renderStep={(step)=><PaidSetupStepHost reader={connectionFirst?reader:undefined} locale={p.locale} scope={{...scope,branchId}} step={step} isCurrent={isCurrent} onRefresh={p.retry} read={snapshot?.read??null}/>} persona={knownPersona?<><div className={styles.workspaceFigure}><PaidChecklistPersonaVisual persona={knownPersona} alt={personaName??""}/></div><p className={styles.workspacePersonaName}>{personaName}</p></>:undefined}/></div>;
+ return <div ref={branchRoot}>{refreshFailed&&<p role="status">{ar?"تعذر تحديث حالة الإعداد. احتُفظ بمدخلاتك؛ أعد التحقق قبل المتابعة.":"Setup status could not be refreshed. Your inputs are preserved; verify the status before continuing."} <button type="button" onClick={p.retry}>{ar?"إعادة التحقق":"Retry verification"}</button></p>}<PaidSetupWorkspace statusInHeader={!!p.renderHeader} locale={p.locale} scope={{...scope,branchId}} read={snapshot?.read??null} activation={snapshot?.activation??null} loading={snapshot===undefined} activeStepId={selected} isCurrent={isCurrent} onSelectStep={step=>{manualSelection.current=true;setSelected(step);}} onPrefetchStep={step=>{if(connectionFirst&&step==="hours")reader.prefetchHours();}} onRefresh={p.retry} availableStepIds={["whatsapp","instagram","hours","knowledge","test","team","launch"]} connectionReads={snapshot?.connectionReads} renderStep={(step)=><PaidSetupStepHost reader={connectionFirst?reader:undefined} locale={p.locale} scope={{...scope,branchId}} step={step} isCurrent={isCurrent} onRefresh={p.retry} read={snapshot?.read??null} onSelectStep={nextStep=>{manualSelection.current=true;setSelected(nextStep);}}/>} persona={knownPersona?<><div className={styles.workspaceFigure}><PaidChecklistPersonaVisual persona={knownPersona} alt={personaName??""}/></div><p className={styles.workspacePersonaName}>{personaName}</p></>:undefined}/></div>;
 }
 
 const personaMotionBudget=createMotionBudget(1);
@@ -200,7 +200,7 @@ function PersonaVisual({persona,alt}:{persona:keyof typeof PERSONA_POSTERS;alt:s
   {play&&<video ref={video} muted loop playsInline preload="metadata" aria-hidden="true" tabIndex={-1} disablePictureInPicture disableRemotePlayback onPlaying={event=>{event.currentTarget.dataset.playing="true";}} onError={()=>controller.current?.reportError()}/>}
  </div>;
 }
-export type ChecklistStepId = "whatsapp"|"instagram"|"hours"|"knowledge"|"test"|"launch";
+export type ChecklistStepId = "whatsapp"|"instagram"|"hours"|"knowledge"|"test"|"team"|"launch";
 type Channel = "whatsapp"|"instagram";
 type StepStatus = "blocked"|"pending"|"verified"|"skipped_optional"|"unavailable";
 /** Local presentation boundary matching proposed B1; not a shared backend contract.
@@ -214,28 +214,25 @@ export type PaidChecklistModel = {
  progress:{denominator:number|null;verified:number;skippedOptional:number};
  launch:{confirmationRequired:true;confirmed:boolean;canRequest:boolean;blockedReasons:readonly string[]}; asOf:string;
 };
-const serverStepIds:Record<PaidSetupStepId,ChecklistStepId>={connect_whatsapp:"whatsapp",connect_instagram:"instagram",hours:"hours",knowledge:"knowledge",assistant_test:"test",launch:"launch"};
+const serverStepIds:Record<PaidSetupStepId,ChecklistStepId>={connect_whatsapp:"whatsapp",connect_instagram:"instagram",hours:"hours",knowledge:"knowledge",assistant_test:"test",invitations:"team",launch:"launch"};
 /** Translate IDs only. Never derive channel identity, counts or readiness from UI choices. */
 export function paidChecklistFromRead(read:PaidBranchSetupRead,expected:{companyId:string;branchId:string}):PaidChecklistModel|null {
  if(read.companyId!==expected.companyId||read.selectedBranchId!==expected.branchId) return null;
- // Legacy setup payloads may still list invitations; team management lives in Settings.
- const steps=read.steps
-  .filter(step=>(step.id as string)!=="invitations")
-  .map(step=>({...step,dependencyIds:step.dependencyIds.filter(id=>(id as string)!=="invitations")}));
+ const steps=read.steps;
  if(steps.some(step=>!serverStepIds[step.id as PaidSetupStepId]||step.dependencyIds.some(id=>!serverStepIds[id as PaidSetupStepId]))) return null;
  const mapped=steps.map(step=>({...step,id:serverStepIds[step.id as PaidSetupStepId],dependencyIds:step.dependencyIds.map(id=>serverStepIds[id as PaidSetupStepId])}));
  return {...read,steps:mapped,progress:{...read.progress,denominator:read.progress.denominator===null?null:mapped.length,verified:Math.min(read.progress.verified,mapped.length),skippedOptional:0}};
 }
-const order:readonly ChecklistStepId[]=["whatsapp","instagram","hours","knowledge","test","launch"];
+const order:readonly ChecklistStepId[]=["whatsapp","instagram","hours","knowledge","test","team","launch"];
 const subscribeHost = () => () => {};
 const localHostSnapshot = () => ["localhost","127.0.0.1","[::1]"].includes(window.location.hostname);
 const serverHostSnapshot = () => false;
 export function checklistSteps(model:PaidChecklistModel) {
  const channels=model.selectedChannels;
  if(model.sourceStatus!=="ready"||!model.entitlement||!channels?.length||new Set(channels).size!==channels.length||channels.length>model.entitlement.maxChannels) return [];
- const ids=order.filter(id=>id!=="whatsapp"&&id!=="instagram"||channels.includes(id as Channel));
+ const ids=order.filter(id=>id==="whatsapp"||id==="instagram"?channels.includes(id as Channel):id==="team"?model.steps.some(s=>s.id==="team"):true);
  if(model.steps.length!==ids.length||new Set(model.steps.map(s=>s.id)).size!==ids.length||!ids.every(id=>model.steps.some(s=>s.id===id))) return [];
- if(model.steps.some(s=>s.status==="skipped_optional")) return [];
+ if(model.steps.some(s=>s.status==="skipped_optional"&&(s.id!=="team"||s.required))) return [];
  if(model.progress.denominator!==ids.length||model.progress.verified<0||model.progress.verified>ids.length) return [];
  return ids.map(id=>model.steps.find(s=>s.id===id)!);
 }
@@ -245,6 +242,7 @@ const labels:Record<ChecklistStepId,[string,string,string,string]>={
  hours:["مواعيد العمل","Business hours","حدد مواعيد عمل الفرع.","Set this branch's business hours."],
  knowledge:["المعرفة واللغات","Knowledge & languages","أضف معلومات نشاطك ولغات رد المساعد.","Add your business information and assistant reply languages."],
  test:["تجربة المساعد","Test assistant","اختبر المساعد قبل تشغيله.","Test your assistant before launch."],
+ team:["دعوة الفريق","Invite team","أضف أعضاء فريقك لإدارة المحادثات.","Invite your team to manage conversations."],
  launch:["التشغيل","Launch","راجع الإعداد وأكد بدء التشغيل.","Review setup and explicitly confirm launch."],
 };
 export type PaidAssistantChecklistProps={
@@ -290,14 +288,14 @@ function Checklist({locale,model,loading=false,personaName,planName,personaVisua
    {fixture&&<p className={styles.notice}>{t("معاينة محلية: يمكن استعراض الخطوات ٢–٦ دون تغيير اكتمال الإعداد أو تشغيل المساعد.","Local preview: inspect steps 2–6 without changing completion or launching the assistant.")}</p>}
    <ol className={styles.steps}>{steps.map((step,index)=>{
     const verified=step.status==="verified",skipped=step.status==="skipped_optional";
-    const dependenciesReady=step.dependencyIds.every(dep=>steps.some(s=>s.id===dep&&s.status==="verified"));
+    const dependenciesReady=step.dependencyIds.every(dep=>steps.some(s=>s.id===dep&&(s.status==="verified"||(s.id==="team"&&s.status==="skipped_optional"))));
     const allowed=(verified||skipped||(step.status==="pending"&&dependenciesReady))&&step.actionId!==null;
     const launch=step.id==="launch";
     const canOpen=!fixture&&(launch?model.launch.canRequest&&dependenciesReady&&!!onReviewLaunch:allowed&&!!onOpenStep&&(!availableStepIds||availableStepIds.includes(step.id)));
     const preview=fixture&&index+1>=2&&index+1<=5&&!launch;
     return <li key={step.id} className={styles.row} data-step-id={step.id} data-state={step.status}>
      <span className={styles.number} aria-hidden="true">{verified?"✓":index+1}</span>
-     <div className={styles.rowCopy}><h2>{labels[step.id][ar?0:1]}</h2><p>{labels[step.id][ar?2:3]}</p></div>
+     <div className={styles.rowCopy}><h2>{labels[step.id][ar?0:1]}{step.id==="team"&&<small>{t("اختياري","Optional")}</small>}</h2><p>{labels[step.id][ar?2:3]}</p></div>
      <div className={styles.action}>{verified||skipped?<span>{verified?t("مكتملة","Complete"):t("تم التخطي","Skipped")}</span>:step.status==="unavailable"?<span>{t("غير متاح","Unavailable")}</span>:!canOpen&&!preview?<span>{t("بانتظار اكتمال المتطلبات","Waiting for prerequisites")}</span>:null}
       {preview?<button type="button" data-fixture-step={index+1} onClick={()=>setInspected(step.id)}>{t("استعراض","Inspect")}</button>:canOpen?<button type="button" onClick={()=>{if(launch)onReviewLaunch?.(branchId);else if(step.actionId)onOpenStep?.(branchId,step.id,step.actionId);}}>{verified||skipped?t("مراجعة","Review"):launch?t("مراجعة التشغيل","Review launch"):t("متابعة","Continue")}</button>:null}
      </div>

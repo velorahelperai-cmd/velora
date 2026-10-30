@@ -83,33 +83,36 @@ describe("runtime projection without a persisted channel", () => {
 });
 
 describe("future trusted binding shape", () => {
-  it("projects one entitled channel as five steps and both as six without invitations or language", () => {
+  it("projects one entitled channel as six steps and both as seven with invitations", () => {
     const whatsapp = projectTrustedBoundSelection(facts, { channels: ["whatsapp"], invitationSkipped: true });
     const instagram = projectTrustedBoundSelection(facts, { channels: ["instagram"], invitationSkipped: true });
     const both = projectTrustedBoundSelection(premium, { channels: ["instagram", "whatsapp"], invitationSkipped: true });
     expect(whatsapp.steps.map((step) => step.id)).toEqual([
-      "connect_whatsapp", "hours", "knowledge", "assistant_test", "launch",
+      "connect_whatsapp", "hours", "knowledge", "assistant_test", "invitations", "launch",
     ]);
     expect(instagram.steps.map((step) => step.id)).toEqual([
-      "connect_instagram", "hours", "knowledge", "assistant_test", "launch",
+      "connect_instagram", "hours", "knowledge", "assistant_test", "invitations", "launch",
     ]);
     expect(both.steps.map((step) => step.id)).toEqual([
-      "connect_whatsapp", "connect_instagram", "hours", "knowledge", "assistant_test", "launch",
+      "connect_whatsapp", "connect_instagram", "hours", "knowledge", "assistant_test", "invitations", "launch",
     ]);
-    expect(whatsapp.steps).toHaveLength(5);
-    expect(both.steps).toHaveLength(6);
+    expect(whatsapp.steps).toHaveLength(6);
+    expect(both.steps).toHaveLength(7);
     expect(whatsapp.selectedChannels).toEqual(["whatsapp"]);
     expect(both.selectedChannels).toEqual(["whatsapp", "instagram"]);
   });
 
-  it("keeps a dynamic denominator and ignores invitationSkipped without inventing a team step", () => {
+  it("keeps a dynamic denominator and a distinct skipped invitation", () => {
     const skipped = projectTrustedBoundSelection(facts, { channels: ["whatsapp"], invitationSkipped: true });
     const open = projectTrustedBoundSelection(premium, { channels: ["whatsapp", "instagram"] });
-    expect(skipped.progress).toEqual({ denominator: 5, verified: 0, skippedOptional: 0 });
-    expect(skipped.steps.map((step) => step.id)).not.toContain("invitations");
-    expect(skipped.steps.map((step) => step.id)).not.toContain("language");
-    expect(open.progress).toEqual({ denominator: 6, verified: 0, skippedOptional: 0 });
-    expect(open.steps.map((step) => step.id)).not.toContain("invitations");
+    expect(skipped.progress).toEqual({ denominator: 6, verified: 0, skippedOptional: 1 });
+    expect(skipped.steps.find((step) => step.id === "invitations")).toMatchObject({
+      required: false,
+      status: "skipped_optional",
+      reasonCodes: ["invitation_skipped"],
+    });
+    expect(open.progress).toEqual({ denominator: 7, verified: 0, skippedOptional: 0 });
+    expect(open.steps.find((step) => step.id === "invitations")?.status).toBe("pending");
     expect(skipped.steps.find((step) => step.id === "assistant_test")?.dependencyIds).toEqual(["knowledge"]);
     expect(skipped.steps.every((step) => step.status !== "verified")).toBe(true);
     expect(skipped.launch.canRequest).toBe(false);

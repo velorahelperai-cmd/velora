@@ -15,3 +15,46 @@ it("requires host launch receipt and confirmed B1 state for launched message",()
 it.each(["expectedAccountId","companyId","branchId"] as const)("rejects mismatched %s",field=>expect(render({snapshot:{...props.snapshot!,scope:{...scope,[field]:"foreign"}}})).toContain("summary is unavailable"));
 it("rejects B1 identity mismatch or stale version",()=>{expect(render({snapshot:{...props.snapshot!,setup:{...props.snapshot!.setup,selectedBranchId:"other"}}})).toContain("summary is unavailable");expect(render({state:{scope,version:2,phase:"ready"}})).toContain("summary is unavailable");});
 it("resets consent for captured scope, readiness revision, operation and version",()=>{const key=launchViewKey(props);for(const field of ["expectedAccountId","companyId","branchId"] as const)expect(launchViewKey({...props,scope:{...scope,[field]:"new"}})).not.toBe(key);for(const snapshot of [{...props.snapshot!,version:2},{...props.snapshot!,readiness:{...props.snapshot!.readiness,revision:"r2"}},{...props.snapshot!,operationId:"other"}])expect(launchViewKey({...props,snapshot})).not.toBe(key);expect(launchViewKey({...props,boundaryFingerprint:"new"})).not.toBe(key);expect(launchViewKey({...props,locale:"ar"})).toBe(key);});
+it("renders all 6 approved summary sections with real data and edit links",()=>{
+  const arHtml=render({locale:"ar"});
+  expect(arHtml).toContain("الباقة");
+  expect(arHtml).toContain("واتساب");
+  expect(arHtml).toContain("مواعيد العمل");
+  expect(arHtml).toContain("المعرفة والبيانات");
+  expect(arHtml).toContain("لغات الرد");
+  expect(arHtml).toContain("فريق العمل");
+  expect(arHtml).toContain("تعديل");
+  const enHtml=render({locale:"en"});
+  expect(enHtml).toContain("Plan");
+  expect(enHtml).toContain("WhatsApp");
+  expect(enHtml).toContain("Business hours");
+  expect(enHtml).toContain("Knowledge base");
+  expect(enHtml).toContain("Reply languages");
+  expect(enHtml).toContain("Staff team");
+  expect(enHtml).toContain("Edit");
+});
+it("displays customer-friendly blocker explanations in simple Arabic",()=>{
+  const snapshot={
+    ...props.snapshot!,
+    readiness:{status:"blocked" as const,revision:"r1",blockers:["trial_incomplete","channel_unverified:whatsapp"]},
+    setup:{...props.snapshot!.setup,launch:{...props.snapshot!.setup.launch,canRequest:false,blockedReasons:["trial_incomplete","channel_unverified:whatsapp"]}},
+  };
+  const html=render({locale:"ar",snapshot});
+  expect(html).toContain("يلزم تجربة المساعد والتأكد من صحة إجاباته قبل التفعيل");
+  expect(html).toContain("يلزم ربط قناة واتساب الخاصة بالفرع والتحقق من اتصالها");
+  expect(html).toContain("إكمال الإجراء");
+});
+it("displays package renewal change policy and omits misleading edit link for package",()=>{
+  const arHtml=render({locale:"ar"});
+  expect(arHtml).toContain("الباقة الحالية:");
+  expect(arHtml).toContain("سياسة التغيير: يسري تعديل الباقة مع بداية دورة التجديد القادمة");
+  const packageSectionAr = arHtml.split("<div><dt>واتساب")[0];
+  expect(packageSectionAr).toContain("الباقة");
+  expect(packageSectionAr).not.toMatch(/class="[^"]*editBtn[^"]*"/);
+  const enHtml=render({locale:"en"});
+  expect(enHtml).toContain("Current plan:");
+  expect(enHtml).toContain("Change policy: Plan changes take effect at the start of the next renewal cycle");
+  const packageSectionEn = enHtml.split("<div><dt>WhatsApp")[0];
+  expect(packageSectionEn).toContain("Plan");
+  expect(packageSectionEn).not.toMatch(/class="[^"]*editBtn[^"]*"/);
+});

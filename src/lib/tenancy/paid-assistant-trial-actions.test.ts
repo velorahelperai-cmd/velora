@@ -69,10 +69,11 @@ import {
   readOwnedBranchAssistantTrialAction,
 } from "./paid-assistant-trial-actions";
 import { setAnswerProviderForTesting } from "@/lib/answers/provider";
-import type { AnswerProvider, AnswerResult } from "@/lib/answers/types";
+import type { AnswerProvider, AnswerResult, AnswerUsage } from "@/lib/answers/types";
 
 describe("paid-assistant-trial-actions", () => {
   beforeEach(() => {
+    process.env.VELORA_TRIAL_BUDGET_CAP_BAISA = "2";
     currentSessionId = VALID_ACCOUNT_ID;
     trustedAvailable = true;
     trustedRpc = vi.fn(async (name: string) => ({ data: name === "ai_settle_admin_attempt" ? true : { ok: true, newlyReserved: true, state: "reserved", receiptId: "receipt" }, error: null }));
@@ -182,13 +183,14 @@ describe("paid-assistant-trial-actions", () => {
     expect(rpcMock).not.toHaveBeenCalledWith("es02_record_owned_branch_assistant_trial", expect.anything());
   });
 
-  it("fails with provider error when completion fails (no fake answer)", async () => {
+  it("fails with provider error when completion fails and surfaces retrySafe metadata (no fake answer)", async () => {
     const mockProvider: AnswerProvider = {
       id: "mock-gemini",
       complete: vi.fn(async (): Promise<AnswerResult> => ({
         ok: false,
         code: "UNAVAILABLE",
         message: "Quota exceeded",
+        requestId: "req-err-1",
         retrySafe: true,
       })),
     };
@@ -207,42 +209,55 @@ describe("paid-assistant-trial-actions", () => {
       ok: false,
       code: "UNAVAILABLE",
       message: "Quota exceeded",
+      requestId: "req-err-1",
+      retrySafe: true,
     });
+    expect(trustedRpc).toHaveBeenCalledWith("ai_settle_admin_attempt", expect.objectContaining({ p_status: "rejected", p_cost_baisa: 0 }));
     expect(rpcMock).not.toHaveBeenCalledWith("es02_record_owned_branch_assistant_trial", expect.anything());
   });
 
-  it("records genuine engine answer when provider succeeds", async () => {
+  it("grounds branch hours question, knowledge question, and out-of-knowledge question with branch-isolated context", async () => {
+    const capturedRequests: Array<{ question: string; chunks: Array<{ sourceId: string; title: string; text: string }>; persona?: string }> = [];
     const mockProvider: AnswerProvider = {
       id: "mock-gemini",
-      complete: vi.fn(async (req): Promise<AnswerResult> => ({
-        ok: true,
-        text: "نعمل من 9 صباحاً حتى 6 مساءً.",
-        citations: [],
-        usage: {
-          promptChars: req.question.length,
-          contextChars: 100,
-          sourceCount: 1,
-          promptTokens: 25,
-          completionTokens: 20,
-          cachedTokens: 0,
-          reasoningTokens: 0,
-          totalTokens: 45,
+      complete: vi.fn(async (req: Parameters<AnswerProvider["complete"]>[0]): Promise<AnswerResult> => {
+        capturedRequests.push({ question: req.question, chunks: req.chunks, persona: req.persona });
+        const text = req.question.includes("مواعيد")
+          ? "نعمل يوم الإثنين من 09:00 إلى 18:00 بتوقيت مسقط."
+          : req.question.includes("التوصيل")
+            ? "سياسة الاسترجاع لدينا هي 14 يومًا."
+            : "عذراً، لا تتوفر لدي هذه المعلومة في المعرفة المعتمدة للفرع، ويمكنني إحالة استفسارك للموظف المختص.";
+        return {
+          ok: true,
+          text,
+          citations: req.chunks.map(c => ({ sourceId: c.sourceId, title: c.title, contentVersion: c.contentVersion })),
+          usage: {
+            promptChars: req.question.length,
+            contextChars: 100,
+            sourceCount: req.chunks.length,
+            promptTokens: 25,
+            completionTokens: 20,
+            cachedTokens: 0,
+            reasoningTokens: 0,
+            totalTokens: 45,
+            modelId: "gemini-3.8-flash",
+            provider: "google",
+            estimatedCostBaisa: 1,
+            estimatedCostUsd: 0.001,
+            requestId: "req-123",
+            responseId: "req-123",
+            actualModelId: "gemini-3.8-flash",
+            latencyMs: 1,
+          },
           modelId: "gemini-3.8-flash",
-          provider: "google",
-          estimatedCostBaisa: 1,
-          estimatedCostUsd: 0.001,
-          requestId: "req-123",
-          responseId: "req-123",
-          actualModelId: "gemini-3.8-flash",
-          latencyMs: 1,
-        },
-        modelId: "gemini-3.8-flash",
-        attemptsCount: 1,
-      })),
+          attemptsCount: 1,
+        };
+      }),
     };
     setAnswerProviderForTesting(mockProvider);
 
-    const res = await askOwnedBranchAssistantTrialAction({
+    // 1. Branch working hours question
+    const hoursRes = await askOwnedBranchAssistantTrialAction({
       expectedAccountId: VALID_ACCOUNT_ID,
       companyId: VALID_COMPANY_ID,
       branchId: VALID_BRANCH_ID,
@@ -250,13 +265,40 @@ describe("paid-assistant-trial-actions", () => {
       knowledgeRevision: "rev_1",
       question: "ما مواعيد العمل؟",
     });
+    expect(hoursRes.ok).toBe(true);
+    expect(capturedRequests[0]?.chunks.some(c => c.sourceId === `hours-${VALID_BRANCH_ID}` && c.text.includes("09:00"))).toBe(true);
 
-    expect(res.ok).toBe(true);
-    expect(rpcMock).not.toHaveBeenCalledWith("es02_record_owned_branch_assistant_trial", expect.anything());
-    expect(mockProvider.complete).toHaveBeenCalledWith(expect.objectContaining({ persona: "lina" }));
+    // 2. Branch knowledge question
+    const knowRes = await askOwnedBranchAssistantTrialAction({
+      expectedAccountId: VALID_ACCOUNT_ID,
+      companyId: VALID_COMPANY_ID,
+      branchId: VALID_BRANCH_ID,
+      expectedVersion: 1,
+      knowledgeRevision: "rev_1",
+      question: "ما تفاصيل خدمة التوصيل والضمان؟",
+    });
+    expect(knowRes.ok).toBe(true);
+    expect(capturedRequests[1]?.chunks.some(c => c.sourceId === "source-1" && c.text.includes("14 days"))).toBe(true);
+
+    // 3. Out-of-knowledge question
+    const outRes = await askOwnedBranchAssistantTrialAction({
+      expectedAccountId: VALID_ACCOUNT_ID,
+      companyId: VALID_COMPANY_ID,
+      branchId: VALID_BRANCH_ID,
+      expectedVersion: 1,
+      knowledgeRevision: "rev_1",
+      question: "هل لديكم فرع في طوكيو؟",
+    });
+    expect(outRes.ok).toBe(true);
     expect(trustedRpc).toHaveBeenCalledWith(
       "es02_checkpoint_branch_trial_result",
-      expect.objectContaining({ p_result: expect.objectContaining({answer: "نعمل من 9 صباحاً حتى 6 مساءً.", modelId:"gemini-3.8-flash"}) })
+      expect.objectContaining({
+        p_branch_id: VALID_BRANCH_ID,
+        p_result: expect.objectContaining({
+          question: "هل لديكم فرع في طوكيو؟",
+          answer: expect.stringContaining("لا تتوفر لدي هذه المعلومة"),
+        }),
+      }),
     );
   });
 });
@@ -341,5 +383,144 @@ describe("consolidated trial replay receipt", () => {
     setAnswerProviderForTesting({ id: "test-only", complete });
     expect(await askOwnedBranchAssistantTrialAction(input)).toEqual({ ok: true, snapshot });
     expect(complete).not.toHaveBeenCalled();
+  });
+});
+
+describe("trial budget cap, billed-but-unusable calls and settlement failure", () => {
+  const input = { expectedAccountId: VALID_ACCOUNT_ID, companyId: VALID_COMPANY_ID, branchId: VALID_BRANCH_ID, expectedVersion: 1, knowledgeRevision: "rev_1", question: "ما مواعيد العمل؟" };
+  const usage: AnswerUsage = { promptChars: 1, contextChars: 1, sourceCount: 1, promptTokens: 600, completionTokens: 256, cachedTokens: 0, reasoningTokens: 100, totalTokens: 856, modelId: "gemini-3.8-flash", provider: "google", requestId: "r1", responseId: "r1", actualModelId: "gemini-3.8-flash", latencyMs: 5 };
+  type Handler = (name: string, args: Record<string, unknown>) => { data: unknown; error: unknown } | Promise<{ data: unknown; error: unknown }>;
+  const setup = (handler?: Handler) => {
+    currentSessionId = VALID_ACCOUNT_ID; trustedAvailable = true;
+    rpcMock = vi.fn().mockResolvedValue({ data: { ok: true, data: { persona: "level_2", snapshot: { scope: { expectedAccountId: VALID_ACCOUNT_ID, companyId: VALID_COMPANY_ID, branchId: VALID_BRANCH_ID }, version: 1, knowledgeRevision: "rev_1", messages: [] } } }, error: null });
+    trustedRpc = vi.fn(async (name: string, args: Record<string, unknown>) =>
+      (handler ? await handler(name, args) : null) ?? { data: name === "ai_settle_admin_attempt" ? true : { ok: true, newlyReserved: true, state: "reserved" }, error: null });
+  };
+  const called = (name: string) => trustedRpc.mock.calls.filter(c => c[0] === name).map(c => c[1] as Record<string, unknown>);
+  const failingProvider = (extra: Partial<Extract<AnswerResult, { ok: false }>> = {}) => vi.fn(async (): Promise<AnswerResult> => ({ ok: false, code: "UNAVAILABLE", message: "Gemini returned no complete answer.", usage, providerAttempted: true, retrySafe: false, ...extra }));
+
+  it("reserves from the provider token count and stops before any reservation when counting fails", async () => {
+    setup();
+    const complete = failingProvider();
+    setAnswerProviderForTesting({ id: "p", complete, countInputTokens: vi.fn(async () => null) });
+    expect(await askOwnedBranchAssistantTrialAction(input)).toMatchObject({ ok: false, code: "UNAVAILABLE" });
+    expect(trustedRpc).not.toHaveBeenCalled();
+    expect(complete).not.toHaveBeenCalled();
+    setup();
+    setAnswerProviderForTesting({ id: "p", complete, countInputTokens: vi.fn(async () => 400) });
+    await askOwnedBranchAssistantTrialAction(input);
+    // (400*0.75 + 256*3.75)/1e6 USD * 1.2 / 2.6008 * 1000 baisa
+    expect(called("es02_reserve_branch_trial_capped")[0].p_reserved_baisa).toBeCloseTo(((400 * 0.75 + 256 * 3.75) / 1e6) * 1.2 * 1000 / 2.6008, 5);
+  });
+
+  it("prices an empty/truncated provider result as incomplete and never counts it as a reply", async () => {
+    setup();
+    setAnswerProviderForTesting({ id: "p", complete: failingProvider() });
+    expect(await askOwnedBranchAssistantTrialAction(input)).toMatchObject({ ok: false, code: "UNAVAILABLE" });
+    const settle = called("ai_settle_admin_attempt");
+    expect(settle).toHaveLength(1);
+    expect(settle[0].p_status).toBe("incomplete");
+    expect(settle[0].p_cost_baisa as number).toBeGreaterThan(0);
+    expect(trustedRpc).not.toHaveBeenCalledWith("es02_checkpoint_branch_trial_result", expect.anything());
+  });
+
+  it("holds an unverifiable billed call as uncertain when the incomplete settlement is refused", async () => {
+    setup(async (name, args) => name === "ai_settle_admin_attempt" && args.p_status === "incomplete" ? { data: null, error: { message: "PROVIDER_MODEL_MISMATCH" } } : (null as never));
+    setAnswerProviderForTesting({ id: "p", complete: failingProvider() });
+    expect(await askOwnedBranchAssistantTrialAction(input)).toMatchObject({ ok: false, code: "UNAVAILABLE" });
+    expect(called("ai_settle_admin_attempt").map(a => a.p_status)).toEqual(["incomplete", "uncertain"]);
+    expect(called("ai_settle_admin_attempt")[1].p_cost_baisa).toBeNull();
+  });
+
+  it("reports TRIAL_PENDING and never resends when settlement fails or throws", async () => {
+    for (const mode of ["false", "throws"]) {
+      setup(async name => name === "ai_settle_admin_attempt" ? (mode === "throws" ? Promise.reject(new Error("network")) : { data: false, error: null }) : (null as never));
+      const complete = failingProvider();
+      setAnswerProviderForTesting({ id: "p", complete });
+      expect(await askOwnedBranchAssistantTrialAction(input)).toMatchObject({ ok: false, code: "TRIAL_PENDING" });
+      expect(complete).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("does not dispatch when the reservation call throws", async () => {
+    setup(async name => name === "es02_reserve_branch_trial_capped" ? Promise.reject(new Error("network")) : (null as never));
+    const complete = failingProvider();
+    setAnswerProviderForTesting({ id: "p", complete });
+    expect(await askOwnedBranchAssistantTrialAction(input)).toMatchObject({ ok: false, code: "UNAVAILABLE" });
+    expect(complete).not.toHaveBeenCalled();
+  });
+
+  it("stops before any reservation when the trial budget cap is missing in restricted mode", async () => {
+    vi.stubEnv("VELORA_LOCAL_CUSTOMER_MODE", "live");
+    vi.stubEnv("VELORA_TRIAL_PINNED_BRANCH_ID", VALID_BRANCH_ID);
+    delete process.env.VELORA_TRIAL_BUDGET_CAP_BAISA;
+    try {
+      setup();
+      const complete = failingProvider();
+      setAnswerProviderForTesting({ id: "p", complete });
+      expect(await askOwnedBranchAssistantTrialAction(input)).toMatchObject({
+        ok: false,
+        code: "UNAVAILABLE",
+        message: expect.stringContaining("Restricted trial configuration is incomplete"),
+      });
+      expect(trustedRpc).not.toHaveBeenCalled();
+      expect(complete).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("stops before any reservation when branch does not match pinned branch in restricted mode", async () => {
+    vi.stubEnv("VELORA_TRIAL_PINNED_BRANCH_ID", "a268f9d8-fe5b-41b2-a337-97046a5eaa5c");
+    vi.stubEnv("VELORA_TRIAL_BUDGET_CAP_BAISA", "2");
+    try {
+      setup();
+      const complete = failingProvider();
+      setAnswerProviderForTesting({ id: "p", complete });
+      expect(await askOwnedBranchAssistantTrialAction({ ...input, branchId: "44444444-4444-4444-8444-444444444444" })).toMatchObject({
+        ok: false,
+        code: "FORBIDDEN",
+      });
+      expect(trustedRpc).not.toHaveBeenCalled();
+      expect(complete).not.toHaveBeenCalled();
+    } finally { vi.unstubAllEnvs(); }
+  });
+
+  it("permits standard reservation without local restriction when local customer mode is inactive", async () => {
+    delete process.env.VELORA_LOCAL_CUSTOMER_MODE;
+    delete process.env.VELORA_TRIAL_PINNED_BRANCH_ID;
+    delete process.env.VELORA_TRIAL_BUDGET_CAP_BAISA;
+    setup();
+    const complete = failingProvider();
+    setAnswerProviderForTesting({ id: "p", complete });
+    await askOwnedBranchAssistantTrialAction(input);
+    expect(called("es02_reserve_branch_trial")).toHaveLength(1);
+    expect(called("es02_reserve_branch_trial_capped")).toHaveLength(0);
+  });
+
+  it("uses the atomic capped reservation and stops before the provider when the cap is exceeded", async () => {
+    vi.stubEnv("VELORA_TRIAL_BUDGET_CAP_BAISA", "2");
+    try {
+      setup(async name => name === "es02_reserve_branch_trial_capped" ? { data: { ok: false, code: "TRIAL_BUDGET_EXCEEDED", committedBaisa: 1.9, capBaisa: 2 }, error: null } : (null as never));
+      const complete = failingProvider();
+      setAnswerProviderForTesting({ id: "p", complete, countInputTokens: vi.fn(async () => 400) });
+      expect(await askOwnedBranchAssistantTrialAction(input)).toMatchObject({ ok: false, code: "UNAVAILABLE", message: expect.stringContaining("budget") });
+      expect(called("es02_reserve_branch_trial_capped")[0].p_trial_cap_baisa).toBe(2);
+      expect(called("es02_reserve_branch_trial")).toHaveLength(0);
+      expect(complete).not.toHaveBeenCalled();
+      expect(called("ai_settle_admin_attempt")).toHaveLength(0);
+    } finally { vi.unstubAllEnvs(); }
+  });
+
+  it("fails closed on an invalid cap configuration before any reservation", async () => {
+    vi.stubEnv("VELORA_TRIAL_BUDGET_CAP_BAISA", "abc");
+    try {
+      setup();
+      const complete = failingProvider();
+      setAnswerProviderForTesting({ id: "p", complete });
+      expect(await askOwnedBranchAssistantTrialAction(input)).toMatchObject({ ok: false, code: "UNAVAILABLE" });
+      expect(trustedRpc).not.toHaveBeenCalled();
+      expect(complete).not.toHaveBeenCalled();
+    } finally { vi.unstubAllEnvs(); }
   });
 });

@@ -4,11 +4,12 @@ import {readOwnedBranchHoursAction} from '@/lib/tenancy/branch-hours-actions';
 import {readOwnedBranchKnowledgeAction} from '@/lib/tenancy/paid-branch-knowledge-actions';
 import {readOwnedBranchReplyLanguageAction} from '@/lib/tenancy/paid-reply-language-actions';
 import {readOwnedBranchAssistantTrialAction} from '@/lib/tenancy/paid-assistant-trial-actions';
+import {readOwnedBranchTeamAction} from '@/lib/tenancy/paid-team-actions';
 import {readOwnedBranchLaunchSummaryAction} from '@/lib/tenancy/paid-launch-actions';
 
 export const runtime='nodejs';
 export const dynamic='force-dynamic';
-const readers={shell:readOwnedPaidSetupShellAction,workspace:readOwnedPaidSetupWorkspaceAction,hours:readOwnedBranchHoursAction,knowledge:readOwnedBranchKnowledgeAction,language:readOwnedBranchReplyLanguageAction,trial:readOwnedBranchAssistantTrialAction,launch:readOwnedBranchLaunchSummaryAction};
+const readers={shell:readOwnedPaidSetupShellAction,workspace:readOwnedPaidSetupWorkspaceAction,hours:readOwnedBranchHoursAction,knowledge:readOwnedBranchKnowledgeAction,language:readOwnedBranchReplyLanguageAction,trial:readOwnedBranchAssistantTrialAction,team:readOwnedBranchTeamAction,launch:readOwnedBranchLaunchSummaryAction};
 const headers={'Cache-Control':'private, no-store, max-age=0','Vary':'Cookie','X-Content-Type-Options':'nosniff'};
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 

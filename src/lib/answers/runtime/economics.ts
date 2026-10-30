@@ -27,13 +27,20 @@ export function priceRealUsage(usage:RealTokenUsage, pricing:RealPricing) {
  const usd=((usage.promptTokens-usage.cachedTokens-usage.cacheWriteTokens)*rates.input+usage.cachedTokens*rates.cached+usage.cacheWriteTokens*rates.write+usage.completionTokens*rates.output)/1_000_000;
  return {costUsd:Math.ceil(usd*1e10)/1e10,costBaisa:Math.ceil(usd*1000/pricing.usdPerOmr*1e6)/1e6};
 }
-export function reserveRealCost(model:AIModelId, system:string, prompt:string, pricing:RealPricing) {
+export function reserveRealCost(model:AIModelId, system:string, prompt:string, pricing:RealPricing, requestedMaxOutputTokens?:number, providerInputTokens?:number) {
  if(pricing.modelId!==model) throw Error("INVALID_PRICING");
- const inputUpperBound=new TextEncoder().encode(system+prompt).length+2048;
- const rates=effectiveRealPricing(pricing,inputUpperBound);
- // Gemini thought-token limits are not an independent hard ceiling. Reserve the
- // model's entire 64K output window, then release the difference after usage arrives.
- const outputUpperBound=model==="gemini-3.8-flash"?65536:REAL_OUTPUT_LIMIT;
- const usd=(inputUpperBound*Math.max(rates.input,rates.write)+outputUpperBound*rates.output)/1_000_000;
- return Math.ceil(usd*1.2*1000/pricing.usdPerOmr*1e6)/1e6;
+ const bytes = new TextEncoder().encode(system + prompt).length;
+ // Provider-counted input is authoritative; otherwise a token is never shorter than one UTF-8 byte,
+ // so byte length is a proven conservative upper bound (never a weaker estimate).
+ const bounded = typeof requestedMaxOutputTokens === "number" && requestedMaxOutputTokens > 0;
+ const inputUpperBound = typeof providerInputTokens === "number" && Number.isSafeInteger(providerInputTokens) && providerInputTokens > 0
+  ? providerInputTokens : (bounded ? bytes : bytes + 2048);
+ const rates = effectiveRealPricing(pricing, inputUpperBound);
+ // When an explicit max output limit is configured, reserve for that exact ceiling.
+ // Otherwise reserve the model's full default ceiling (e.g. 64K for Gemini 3.8 Flash).
+ const outputUpperBound = typeof requestedMaxOutputTokens === "number" && Number.isSafeInteger(requestedMaxOutputTokens) && requestedMaxOutputTokens > 0
+  ? requestedMaxOutputTokens
+  : (model === "gemini-3.8-flash" ? 65536 : REAL_OUTPUT_LIMIT);
+ const usd = (inputUpperBound * Math.max(rates.input, rates.write) + outputUpperBound * rates.output) / 1_000_000;
+ return Math.ceil(usd * 1.2 * 1000 / pricing.usdPerOmr * 1e6) / 1e6;
 }

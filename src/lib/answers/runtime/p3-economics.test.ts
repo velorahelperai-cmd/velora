@@ -56,4 +56,22 @@ describe("verified Standard model economics", () => {
     expect(() => priceRealUsage({ promptTokens: 1, cachedTokens: 0, cacheWriteTokens: 0, reasoningTokens: 0 } as unknown as typeof usage, realModelPricing("gpt-6-luna", date)))
       .toThrow("INVALID_PROVIDER_USAGE");
   });
+
+  it("reserves bounded output ceiling when requestedMaxOutputTokens is provided", () => {
+    const defaultCost = reserveRealCost("gemini-3.8-flash", "s", "p", realModelPricing("gemini-3.8-flash", date));
+    const boundedCost = reserveRealCost("gemini-3.8-flash", "s", "p", realModelPricing("gemini-3.8-flash", date), 384);
+    expect(defaultCost).toBeGreaterThan(90);
+    expect(boundedCost).toBeLessThan(2.0);
+    expect(boundedCost).toBeGreaterThan(0);
+  });
+
+  it("never estimates input below its UTF-8 byte length unless the provider counted it", () => {
+    const pricing = realModelPricing("gemini-3.8-flash", date);
+    const text = "مرحبا".repeat(200);
+    const bytes = new TextEncoder().encode(text).length;
+    const byBytes = reserveRealCost("gemini-3.8-flash", "", text, pricing, 256);
+    expect(byBytes).toBeCloseTo(((bytes * 0.75 + 256 * 3.75) / 1e6) * 1.2 * 1000 / 2.6008, 5);
+    const counted = reserveRealCost("gemini-3.8-flash", "", text, pricing, 256, 300);
+    expect(counted).toBeLessThan(byBytes);
+  });
 });

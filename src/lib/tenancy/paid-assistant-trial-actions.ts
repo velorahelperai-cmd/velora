@@ -3,7 +3,7 @@ import {checkRateLimit} from "@/lib/security/rate-limit";
 
 import { randomUUID } from "node:crypto";
 import { readSessionIdentity } from "@/lib/auth/server-identity";
-import { withLogContext } from "@/lib/logging/logger.mjs";
+import { logEvent, withLogContext } from "@/lib/logging/logger.mjs";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getGeminiModelId } from "@/lib/answers/config/env";
@@ -23,6 +23,35 @@ import { readOwnedBranchReplyLanguageAction } from "./paid-reply-language-action
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+/** Bound assistant trial output to keep responses concise and strictly guarantee spend <= 0.002 OMR total. */
+const TRIAL_MAX_OUTPUT_TOKENS = 256;
+
+/**
+ * Isolated server configuration for restricted local customer trials.
+ * When local customer mode is active, the trial must be explicitly bound
+ * to a configured branch and budget cap; if either is missing, it fails closed.
+ * For general production customers, standard tenant authorization applies.
+ */
+function getIsolatedTrialConfig() {
+  const isRestrictedMode =
+    process.env.VELORA_LOCAL_CUSTOMER_MODE === "live" ||
+    Boolean(process.env.VELORA_TRIAL_PINNED_BRANCH_ID);
+
+  const pinnedBranchId = process.env.VELORA_TRIAL_PINNED_BRANCH_ID?.trim() || null;
+  const rawCap = process.env.VELORA_TRIAL_BUDGET_CAP_BAISA;
+  const parsedCap = rawCap !== undefined && rawCap.trim() !== "" ? Number(rawCap) : null;
+  const validCap = parsedCap !== null && Number.isFinite(parsedCap) && parsedCap > 0 && parsedCap <= 2 ? parsedCap : null;
+  const invalidCap = parsedCap !== null && validCap === null;
+
+  return {
+    restricted: isRestrictedMode,
+    pinnedBranchId,
+    capBaisa: validCap,
+    invalidCap,
+    isComplete: isRestrictedMode ? Boolean(pinnedBranchId && validCap) : true,
+  };
+}
+
 function validScope(s: unknown): s is TrialScope {
   if (!s || typeof s !== "object") return false;
   const scope = s as Record<string, unknown>;
@@ -38,7 +67,7 @@ function validScope(s: unknown): s is TrialScope {
 
 export type AssistantTrialAskResult =
   | { ok: true; snapshot: TrialSnapshot }
-  | { ok: false; code: string; message: string; httpStatus?:429|503; retryAfterSeconds?:number };
+  | { ok: false; code: string; message: string; requestId?: string; retrySafe?: boolean; httpStatus?:429|503; retryAfterSeconds?:number };
 
 export async function readOwnedBranchAssistantTrialAction(
   scope: TrialScope
@@ -46,6 +75,10 @@ export async function readOwnedBranchAssistantTrialAction(
   const requestId = randomUUID();
   return withLogContext({ request_id: requestId, user_id: scope?.expectedAccountId }, async () => {
     if (!validScope(scope)) return null;
+    const isolated = getIsolatedTrialConfig();
+    if (isolated.restricted) {
+      if (!isolated.isComplete || scope.branchId !== isolated.pinnedBranchId) return null;
+    }
     const identity = await readSessionIdentity();
     if (!identity.ok || identity.userId !== scope.expectedAccountId) return null;
 
@@ -72,7 +105,19 @@ export async function askOwnedBranchAssistantTrialAction(
 ): Promise<AssistantTrialAskResult> {
   const requestId = randomUUID();
   return withLogContext({ request_id: requestId, user_id: input?.expectedAccountId }, async () => {
-    if (!validScope(input) || typeof input.question !== "string" || !input.question.trim() || input.question.trim().length > 1000 ||
+    if (!validScope(input)) {
+      return { ok: false, code: "INVALID_INPUT", message: "Invalid trial parameters" };
+    }
+    const isolated = getIsolatedTrialConfig();
+    if (isolated.restricted) {
+      if (!isolated.isComplete) {
+        return { ok: false, code: "UNAVAILABLE", message: "Restricted trial configuration is incomplete; trial stopped" };
+      }
+      if (input.branchId !== isolated.pinnedBranchId) {
+        return { ok: false, code: "FORBIDDEN", message: "Trial is currently restricted to the configured authorized branch" };
+      }
+    }
+    if (typeof input.question !== "string" || !input.question.trim() || input.question.trim().length > 1000 ||
         !Number.isSafeInteger(input.expectedVersion) || input.expectedVersion < 1 ||
         typeof input.knowledgeRevision !== "string" || !input.knowledgeRevision.trim() ||
         (input.operationId !== undefined && !UUID.test(input.operationId))) {
@@ -105,6 +150,11 @@ export async function askOwnedBranchAssistantTrialAction(
     // 1. Authoritative Answer Provider (Gemini). Return explicit error if not configured.
     const provider = getAnswerProvider();
     if (!provider) {
+      logEvent("warn", "es02.branch_assistant_trial.missing_provider", {
+        request_id: requestId,
+        stage: "b6",
+        detail: "Gemini provider is not configured on server (AI_GEMINI_API_KEY required).",
+      });
       return {
         ok: false,
         code: "NEEDS_SETUP",
@@ -165,17 +215,54 @@ export async function askOwnedBranchAssistantTrialAction(
 
     const operationId = input.operationId || requestId;
     const pricing = realModelPricing(configuredModel);
-    const reservedBaisa = reserveRealCost(configuredModel, buildAnswerSystemPrompt(locale, persona), formatAnswerUserPrompt(input.question, chunks, locale), pricing);
-    const reservation = await writer.rpc("es02_reserve_branch_trial" as never, {
+    const systemPrompt = buildAnswerSystemPrompt(locale, persona);
+    const userPrompt = formatAnswerUserPrompt(input.question, chunks, locale);
+    // Provider-counted input for the full request; without it the reservation uses the proven
+    // UTF-8 byte upper bound. Never a weaker estimate.
+    let providerInputTokens: number | undefined;
+    if (provider.countInputTokens) {
+      let counted: number | null = null;
+      try { counted = await provider.countInputTokens({ question: input.question.trim(), locale, chunks, persona }); } catch { counted = null; }
+      if (counted === null || !Number.isSafeInteger(counted) || counted < 1) {
+        return { ok: false, code: "UNAVAILABLE", message: "Request size could not be verified before dispatch" };
+      }
+      providerInputTokens = counted;
+    }
+    const reservedBaisa = reserveRealCost(configuredModel, systemPrompt, userPrompt, pricing, TRIAL_MAX_OUTPUT_TOKENS, providerInputTokens);
+    // If restricted local customer trial mode is active, the cap is required and strictly <= 2 baisa.
+    // If general SaaS mode, an optional cap can still be passed via VELORA_TRIAL_BUDGET_CAP_BAISA.
+    if (isolated.invalidCap) {
+      return { ok: false, code: "UNAVAILABLE", message: "Trial budget configuration is invalid; request not sent" };
+    }
+    const cap = isolated.capBaisa;
+    if (isolated.restricted && (!cap || cap <= 0 || cap > 2)) {
+      return { ok: false, code: "UNAVAILABLE", message: "Approved trial budget cap (2 baisa) is required; uncapped reservation is disabled" };
+    }
+    const reserveArgs = {
       p_operation_id: operationId, p_account_id: identity.userId, p_session_id: identity.nativeSessionId,
       p_company_id: input.companyId, p_branch_id: input.branchId, p_question: input.question.trim(),
       p_knowledge_revision: knowledgeContext.knowledgeRevision, p_hours_revision: hoursRev, p_language_code: langRes.replyLanguage,
       p_persona: persona, p_model_id: configuredModel, p_reserved_baisa: reservedBaisa,
       p_pricing_version: pricing.version, p_pricing_snapshot: pricing,
       p_source_citations: chunks.map(({ sourceId, title, contentVersion }) => ({ sourceId, title, contentVersion })),
-    } as never);
+    };
+    let reservation;
+    try {
+      reservation = cap !== null && cap > 0
+        ? await writer.rpc("es02_reserve_branch_trial_capped" as never, { ...reserveArgs, p_trial_cap_baisa: cap } as never)
+        : await writer.rpc("es02_reserve_branch_trial" as never, reserveArgs as never);
+    } catch {
+      // Nothing was dispatched. Any row that did get reserved stays held until reconciled.
+      return { ok: false, code: "UNAVAILABLE", message: "Free setup allowance could not be reserved" };
+    }
     const allowance = reservation.data as unknown as { ok?: boolean; code?: string; newlyReserved?: boolean; state?: string } | null;
-    if (reservation.error || allowance?.ok !== true) return { ok: false, code: allowance?.code || "UNAVAILABLE", message: "Free setup allowance could not be reserved" };
+    if (reservation.error || allowance?.ok !== true) {
+      if (allowance?.code === "TRIAL_BUDGET_EXCEEDED") {
+        logEvent("warn", "es02.branch_assistant_trial.budget_exceeded", { request_id: requestId, stage: "b6", detail: "Trial budget cap would be exceeded; request not sent." });
+        return { ok: false, code: "UNAVAILABLE", message: "Trial budget would be exceeded; request not sent" };
+      }
+      return { ok: false, code: allowance?.code || "UNAVAILABLE", message: "Free setup allowance could not be reserved" };
+    }
     if (!allowance.newlyReserved) {
       if (allowance.state === "success") {
         const snapshot = await readOwnedBranchAssistantTrialAction(input);
@@ -189,44 +276,77 @@ export async function askOwnedBranchAssistantTrialAction(
       }
       return { ok: false, code: "TRIAL_PENDING", message: "This operation is already recorded; it will not be sent again" };
     }
-    const settle = async (status: "success" | "rejected" | "uncertain", answer?: Extract<AnswerResult, { ok: true }>) => {
-      let usage: Record<string, number> = {};
-      let cost: { costUsd: number | null; costBaisa: number | null } = { costUsd: status === "uncertain" ? null : 0, costBaisa: status === "uncertain" ? null : 0 };
-      if (answer) {
-        usage = { promptTokens: answer.usage.promptTokens!, completionTokens: answer.usage.completionTokens!, cachedTokens: answer.usage.cachedTokens!, reasoningTokens: answer.usage.reasoningTokens!, cacheWriteTokens: answer.usage.cacheWriteTokens ?? 0, totalTokens: answer.usage.totalTokens! };
-        cost = priceRealUsage(usage as Parameters<typeof priceRealUsage>[0], pricing);
-        if (!answer.usage.actualModelId || !answer.usage.requestId) throw Error("PROVIDER_IDENTITY_MISSING");
+    // Settlement never throws. A false result means accounting is unconfirmed: the ledger row stays
+    // held (reserved/running) and blocks any new dispatch for the branch, so nothing is resent.
+    const settle = async (status: "success" | "rejected" | "incomplete" | "uncertain", answer?: Pick<Extract<AnswerResult, { ok: true }>, "usage">): Promise<boolean> => {
+      try {
+        let usage: Record<string, number> = {};
+        let cost: { costUsd: number | null; costBaisa: number | null } = { costUsd: status === "uncertain" ? null : 0, costBaisa: status === "uncertain" ? null : 0 };
+        if (answer) {
+          usage = { promptTokens: answer.usage.promptTokens!, completionTokens: answer.usage.completionTokens!, cachedTokens: answer.usage.cachedTokens!, reasoningTokens: answer.usage.reasoningTokens!, cacheWriteTokens: answer.usage.cacheWriteTokens ?? 0, totalTokens: answer.usage.totalTokens! };
+          cost = priceRealUsage(usage as Parameters<typeof priceRealUsage>[0], pricing);
+          if (!answer.usage.actualModelId || !answer.usage.requestId) return false;
+        }
+        const settled = await writer.rpc("ai_settle_admin_attempt" as never, {
+          p_id: operationId, p_status: status, p_cost_usd: cost.costUsd, p_cost_baisa: cost.costBaisa, p_usage: usage,
+          p_request_id: answer?.usage.requestId ?? null, p_error_code: status === "success" ? null : "SETUP_TRIAL_PROVIDER_RESULT",
+          p_latency_ms: answer?.usage.latencyMs ?? 0, p_response_id: answer?.usage.responseId ?? null, p_actual_model_id: answer?.usage.actualModelId ?? null,
+        } as never);
+        return !settled.error && settled.data === true;
+      } catch {
+        return false;
       }
-      const settled = await writer.rpc("ai_settle_admin_attempt" as never, {
-        p_id: operationId, p_status: status, p_cost_usd: cost.costUsd, p_cost_baisa: cost.costBaisa, p_usage: usage,
-        p_request_id: answer?.usage.requestId ?? null, p_error_code: status === "success" ? null : "SETUP_TRIAL_PROVIDER_RESULT",
-        p_latency_ms: answer?.usage.latencyMs ?? 0, p_response_id: answer?.usage.responseId ?? null, p_actual_model_id: answer?.usage.actualModelId ?? null,
-      } as never);
-      return !settled.error && settled.data === true;
     };
+    // A billed but unusable (empty/truncated/unverifiable) call is priced from provider usage as
+    // `incomplete` and never counts as a reply. If that cannot be recorded, hold it as `uncertain`.
+    const settleBilled = async (usage: Extract<AnswerResult, { ok: true }>["usage"] | undefined): Promise<boolean> =>
+      (usage ? await settle("incomplete", { usage }) : false) || settle("uncertain");
+    const PENDING = { ok: false as const, code: "TRIAL_PENDING", message: "Accounting requires reconciliation; do not retry" };
     const rate=await checkRateLimit('ai_trial',`company:${input.companyId}`);
     if(!rate.allowed){
-      if(!await settle('rejected'))return {ok:false,code:'TRIAL_PENDING',message:'Accounting requires reconciliation; do not retry'};
+      if(!await settle('rejected'))return PENDING;
       return {ok:false,code:rate.code,message:'Please wait before another request',httpStatus:rate.httpStatus,retryAfterSeconds:rate.retryAfterSeconds};
     }
-    const started = await writer.rpc("es02_start_branch_trial" as never, { p_operation_id: operationId } as never);
-    if (started.error || (started.data as unknown as { ok?: boolean })?.ok !== true) {
-      await settle("rejected");
+    let startedOk = false;
+    try {
+      const started = await writer.rpc("es02_start_branch_trial" as never, { p_operation_id: operationId } as never);
+      startedOk = !started.error && (started.data as unknown as { ok?: boolean })?.ok === true;
+    } catch { startedOk = false; }
+    if (!startedOk) {
+      // No provider request has been made; releasing the hold at zero cost is safe.
+      if (!await settle("rejected")) return PENDING;
       return { ok: false, code: "UNAVAILABLE", message: "Authorization changed before the provider request" };
     }
     let completion: AnswerResult;
-    try { completion = await provider.complete({ question: input.question.trim(), locale, chunks, persona }); }
+    try {
+      completion = await provider.complete({
+        question: input.question.trim(),
+        locale,
+        chunks,
+        persona,
+        maxOutputTokens: TRIAL_MAX_OUTPUT_TOKENS,
+      });
+    }
     catch {
-      await settle("uncertain");
+      if (!await settle("uncertain")) return PENDING;
       return { ok: false, code: "TRIAL_OUTCOME_UNKNOWN", message: "Provider outcome is unknown; this operation will not be retried" };
     }
     if (!completion.ok) {
       const safeFailure = completion.providerAttempted === false || completion.retrySafe === true;
-      if (!await settle(safeFailure ? "rejected" : "uncertain")) return { ok: false, code: "TRIAL_PENDING", message: "Accounting requires reconciliation; do not retry" };
-      return { ok: false, code: safeFailure ? completion.code : "TRIAL_OUTCOME_UNKNOWN", message: completion.message || "Provider did not return a verified answer" };
+      if (!safeFailure && completion.providerAttempted === true && completion.usage) {
+        if (!await settleBilled(completion.usage as Extract<AnswerResult, { ok: true }>["usage"])) return PENDING;
+        return { ok: false, code: "UNAVAILABLE", message: "Provider returned no complete answer; usage was recorded and no reply was counted" };
+      }
+      if (!await settle(safeFailure ? "rejected" : "uncertain")) return PENDING;
+      return {
+        ok: false,
+        code: safeFailure ? completion.code : "TRIAL_OUTCOME_UNKNOWN",
+        message: completion.message || "Provider did not return a verified answer",
+        ...(safeFailure && completion.requestId ? { requestId: completion.requestId, retrySafe: true } : {}),
+      };
     }
     if (!completion.text.trim() || completion.modelId !== configuredModel) {
-      await settle("uncertain");
+      if (!await settleBilled(completion.usage)) return PENDING;
       return { ok: false, code: "TRIAL_OUTCOME_UNKNOWN", message: "Provider response identity could not be verified" };
     }
     let result;
@@ -236,7 +356,7 @@ export async function askOwnedBranchAssistantTrialAction(
       if (!completion.usage.actualModelId || !completion.usage.requestId) throw Error("PROVIDER_IDENTITY_MISSING");
       result = { question: input.question.trim(), answer: completion.text.trim(), modelId: configuredModel, usage, ...cost, requestId: completion.usage.requestId, responseId: completion.usage.responseId ?? null, actualModelId: completion.usage.actualModelId, latencyMs: completion.usage.latencyMs ?? 0 };
     } catch {
-      await settle("uncertain");
+      if (!await settleBilled(completion.usage)) return PENDING;
       return { ok: false, code: "TRIAL_OUTCOME_UNKNOWN", message: "Provider usage could not be verified" };
     }
     const binding = { p_operation_id: operationId, p_account_id: identity.userId, p_session_id: identity.nativeSessionId, p_company_id: input.companyId, p_branch_id: input.branchId };

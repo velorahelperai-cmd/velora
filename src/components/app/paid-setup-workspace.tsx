@@ -30,7 +30,7 @@ export function nextWorkspaceSelection(snapshot:PaidSetupWorkspaceRead,previous:
     if(SETUP_HIDDEN_STEPS.has(id))return false;
     const step=steps.find(item=>item.id===id);
     if(!step)return false;
-    if((id==='hours'||id==='knowledge')&&step.actionId!==null)return true;
+    if((id==='hours'||id==='knowledge'||id==='team')&&step.actionId!==null)return true;
     const dependencies=step.dependencyIds.every(dep=>SETUP_HIDDEN_STEPS.has(dep)||steps.some(item=>item.id===dep&&item.status==="verified"));
     if(id==="launch")return model!.launch.canRequest&&dependencies;
     return step.actionId!==null&&(step.status==="verified"||step.status==="skipped_optional"||(step.status==="pending"&&dependencies));
@@ -91,7 +91,7 @@ export function stepBlockedReason(
 const titles:Record<ChecklistStepId,readonly [string,string]>={
   whatsapp:["ربط واتساب","Connect WhatsApp"],instagram:["ربط إنستغرام","Connect Instagram"],
   hours:["مواعيد العمل","Business hours"],knowledge:["المعرفة واللغات","Knowledge & languages"],
-  test:["تجربة المساعد","Test assistant"],launch:["التشغيل","Launch"],
+  test:["تجربة المساعد","Test assistant"],team:["دعوة الفريق","Invite team"],launch:["التشغيل","Launch"],
 };
 export type PaidSetupWorkspaceProps={
   locale:"ar"|"en";

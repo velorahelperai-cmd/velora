@@ -4,8 +4,9 @@ import { randomUUID } from "node:crypto";
 import { readSessionIdentity } from "@/lib/auth/server-identity";
 import { withLogContext } from "@/lib/logging/logger.mjs";
 import { createClient } from "@/lib/supabase/server";
-import {readOwnedPaidBranchSetupAction} from './paid-setup-actions';
-import {normalizePaidLaunchSnapshot} from './paid-launch-projection';
+import { readOwnedPaidBranchSetupAction } from "./paid-setup-actions";
+import { readOwnedBranchReplyLanguageAction } from "./paid-reply-language-actions";
+import { normalizePaidLaunchSnapshot } from "./paid-launch-projection";
 import type {
   LaunchScope,
   LaunchSummarySnapshot,
@@ -49,7 +50,8 @@ export async function readOwnedBranchLaunchSummaryAction(
     const payload = res.data as unknown as { ok?: boolean; data?: { snapshot: LaunchSummarySnapshot } };
     if (res.error || !payload || payload.ok !== true) return null;
     const branch = await readOwnedPaidBranchSetupAction(scope);
-    return normalizePaidLaunchSnapshot(payload.data?.snapshot,scope,branch);
+    const langRes = await readOwnedBranchReplyLanguageAction(scope).catch(() => null);
+    return normalizePaidLaunchSnapshot(payload.data?.snapshot, scope, branch, langRes);
   });
 }
 
@@ -67,6 +69,28 @@ export async function confirmOwnedBranchLaunchAction(
       p_expected_account_id: input.expectedAccountId, p_company_id: input.companyId, p_branch_id: input.branchId,
     } as never);
     if (authority.error || (authority.data as unknown as { ok?: boolean })?.ok !== true) return null;
+
+    // Server-side readiness verification
+    const summaryRes = await client.rpc("es02_read_owned_branch_launch_summary" as never, {
+      p_expected_account_id: input.expectedAccountId,
+      p_company_id: input.companyId,
+      p_branch_id: input.branchId,
+    } as never);
+    const summaryPayload = summaryRes.data as unknown as { ok?: boolean; data?: { snapshot: LaunchSummarySnapshot } };
+    if (summaryRes.error || !summaryPayload || summaryPayload.ok !== true) return null;
+
+    const branch = await readOwnedPaidBranchSetupAction(input);
+    const langRes = await readOwnedBranchReplyLanguageAction(input).catch(() => null);
+    const verifiedSummary = normalizePaidLaunchSnapshot(summaryPayload.data?.snapshot, input, branch, langRes);
+
+    if (
+      !verifiedSummary ||
+      verifiedSummary.readiness.status !== "ready" ||
+      verifiedSummary.readiness.blockers.length > 0
+    ) {
+      return null;
+    }
+
     const res = await client.rpc("es02_confirm_owned_branch_launch" as never, {
       p_expected_account_id: input.expectedAccountId,
       p_company_id: input.companyId,
@@ -79,7 +103,6 @@ export async function confirmOwnedBranchLaunchAction(
 
     const payload = res.data as unknown as { ok?: boolean; data?: { snapshot: LaunchSummarySnapshot } };
     if (res.error || !payload || payload.ok !== true) return null;
-    const branch = await readOwnedPaidBranchSetupAction(input);
-    return normalizePaidLaunchSnapshot(payload.data?.snapshot,input,branch);
+    return normalizePaidLaunchSnapshot(payload.data?.snapshot, input, branch, langRes);
   });
 }

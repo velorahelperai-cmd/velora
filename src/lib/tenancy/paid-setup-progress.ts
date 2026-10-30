@@ -15,10 +15,9 @@ export function composePaidSetupProgress(read:PaidBranchSetupRead,snapshot:Launc
   knowledge:snapshot.summary.knowledge.status==='verified'&&!blockers.includes('language_unconfirmed'),
   assistant_test:!blockers.includes('trial_incomplete'),
  };
- const steps=read.steps
-  .filter(s=>(s.id as string)!=='invitations')
-  .map(s=>({...s,dependencyIds:[...s.dependencyIds].filter(id=>(id as string)!=='invitations'),reasonCodes:[...s.reasonCodes]}));
+ const steps=read.steps.map(s=>({...s,dependencyIds:[...s.dependencyIds],reasonCodes:[...s.reasonCodes]}));
  for(const item of steps){
+  if(item.id==='invitations'){item.status='pending';item.reasonCodes=['setup_incomplete'];continue;}
   if(!(item.id in completed))continue;
   const verified=completed[item.id as keyof typeof completed];
   const dependencies=item.dependencyIds.every(id=>steps.some(v=>v.id===id&&v.status==='verified'));

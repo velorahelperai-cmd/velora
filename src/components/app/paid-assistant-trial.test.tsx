@@ -30,7 +30,18 @@ it("refreshes an unknown result without resending and blocks refresh after autho
   current=false;await act(async()=>button!.click());expect(onRefresh).toHaveBeenCalledTimes(1);
  }finally{await act(async()=>root.unmount());vi.unstubAllGlobals();}
 });
-it.each(["ar","en"] as const)("renders %s chat shell with three suggestions and free text",locale=>{const html=render({locale,persona:"level_2"});expect(html).toMatch(/maxlength="1000"/i);expect(html).toContain('<textarea');expect(html).toContain('dir="auto"');expect(html).toContain(locale==="ar"?"لينا":"Lina");expect(html).toContain(locale==="ar"?"جرّب مساعدك":"Try your assistant");expect(trialSuggestions("restaurant",locale)).toHaveLength(3);expect(html).not.toContain("UI example only");});
+it.each(["ar","en"] as const)("renders %s chat shell with three suggestions, free text, and no internal test jargon",locale=>{
+ const html=render({locale,persona:"level_2"});
+ expect(html).toMatch(/maxlength="1000"/i);
+ expect(html).toContain('<textarea');
+ expect(html).toContain('dir="auto"');
+ expect(html).toContain(locale==="ar"?"لينا":"Lina");
+ expect(html).toContain(locale==="ar"?"جرّب مساعدك قبل التشغيل":"Try your assistant before launch");
+ expect(html).not.toContain("اختبار داخلي");
+ expect(html).not.toContain("Internal trial only");
+ expect(trialSuggestions("restaurant",locale)).toHaveLength(3);
+ expect(html).not.toContain("UI example only");
+});
 it.each(["restaurant","retail","school","clinic","real_estate","hotel","beauty_salon","auto_repair","other","custom"])("suggests three distinct questions for %s",type=>{expect(new Set(trialSuggestions(type,"en")).size).toBe(3);});
 it("reuses sector catalog and retail alias without guessing from names",()=>{expect(trialSuggestions("store","en")).toEqual(trialSuggestions("retail","en"));expect(trialSuggestions("restaurant","en")).not.toEqual(trialSuggestions("clinic","en"));expect(trialSuggestions("custom restaurant name","en")).toEqual(trialSuggestions("other","en"));});
 it("covers every named catalog group with distinct sector prompts",()=>{for(const group of new Set(businessTypes.map(item=>item.group))){if(group==="other")continue;const sample=businessTypes.find(item=>item.group===group)!;for(const locale of ["ar","en"] as const)expect(trialSuggestions(sample.id,locale)).not.toEqual(trialSuggestions("other",locale));}});
@@ -56,5 +67,37 @@ it("shows quota and sends a suggestion through the real ask path",async()=>{
   expect(onAsk.mock.calls[0]![0]).toMatchObject({question:"What are the working hours?",companyId:"company",branchId:"branch"});
   expect(host.querySelector('[role="log"]')!.textContent).toContain("What are the working hours?");
  }finally{await act(async()=>root.unmount());vi.unstubAllGlobals();}
+});
+it("handles Enter to send, Shift+Enter for newline, blocks empty send, and retains question on failure",async()=>{
+ vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);
+ const host=document.createElement('div'),root=createRoot(host),onAsk=vi.fn();
+ try{
+  await act(async()=>root.render(createElement(PaidAssistantTrial,{...props,onAsk})));
+  const input=host.querySelector<HTMLTextAreaElement>('textarea')!;
+  const set=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value')!.set!;
+  // Empty Enter does not send
+  await act(async()=>{input.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));});
+  expect(onAsk).not.toHaveBeenCalled();
+  // Shift+Enter does not send
+  await act(async()=>{set.call(input,'Line 1');input.dispatchEvent(new Event('input',{bubbles:true}));});
+  await act(async()=>{input.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',shiftKey:true,bubbles:true,cancelable:true}));});
+  expect(onAsk).not.toHaveBeenCalled();
+  expect(input.value).toBe('Line 1');
+  // Enter sends
+  await act(async()=>{input.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));});
+  expect(onAsk).toHaveBeenCalledTimes(1);
+  expect(onAsk.mock.calls[0]![0]).toMatchObject({question:'Line 1'});
+  // On failure, the question is retained in the input and optimistic bubble
+  await act(async()=>root.render(createElement(PaidAssistantTrial,{...props,onAsk,state:{...props.state,phase:'error',requestId:'req-1',failure:{ok:false,code:'UNAVAILABLE',requestId:'req-1',retrySafe:true},canRetry:true}})));
+  expect(input.value).toBe('Line 1');
+  expect(host.querySelector('[role="log"]')!.textContent).toContain('Line 1');
+ }finally{await act(async()=>root.unmount());vi.unstubAllGlobals();}
+});
+it("blocks sending and disables composer when 10/10 free trial replies are reached",()=>{
+ const html=render({locale:"ar",snapshot:{...props.snapshot!,canAsk:false,trialAllowance:{used:10,limit:10}}});
+ expect(html).toContain("10/10");
+ expect(html).toContain("استخدمت كامل الردود المجانية للتجربة (10/10)");
+ expect(html).toMatch(/<textarea[^>]*disabled=""/);
+ expect(html).toMatch(/type="submit"[^>]*disabled=""/);
 });
 it("resets drafts on all identity/version/knowledge/capture boundaries",()=>{const key=trialViewKey(props);for(const field of ["expectedAccountId","companyId","branchId"] as const)expect(trialViewKey({...props,scope:{...scope,[field]:"new"}})).not.toBe(key);expect(trialViewKey({...props,boundaryFingerprint:"new"})).not.toBe(key);expect(trialViewKey({...props,snapshot:{...props.snapshot!,version:2}})).not.toBe(key);expect(trialViewKey({...props,snapshot:{...props.snapshot!,knowledgeRevision:"k2"}})).not.toBe(key);expect(trialViewKey({...props,locale:"ar"})).toBe(key);});

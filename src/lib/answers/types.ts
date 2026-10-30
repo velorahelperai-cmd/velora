@@ -111,4 +111,6 @@ export type AnswerProviderRequest = {
 export type AnswerProvider = {
   id: string;
   complete(input: AnswerProviderRequest): Promise<AnswerResult>;
+  /** Provider-authoritative input token count of the complete request; null when unverifiable. */
+  countInputTokens?(input: AnswerProviderRequest): Promise<number | null>;
 };

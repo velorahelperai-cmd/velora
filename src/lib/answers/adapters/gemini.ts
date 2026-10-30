@@ -43,6 +43,22 @@ export class GeminiAnswerAdapter implements AnswerProvider {
     return this.client;
   }
 
+  /** Provider token count of the exact system + user content that complete() sends. */
+  public async countInputTokens(input: AnswerProviderRequest): Promise<number | null> {
+    if (!this.client) return null;
+    try {
+      const systemInstruction = buildAnswerSystemPrompt(input.locale, input.persona);
+      const userPrompt = formatAnswerUserPrompt(input.question, input.chunks, input.locale);
+      const res = await this.client.models.countTokens({
+        model: this.modelId,
+        contents: [systemInstruction, userPrompt],
+      });
+      return validTokenCount(res.totalTokens) ? res.totalTokens : null;
+    } catch {
+      return null;
+    }
+  }
+
   public async complete(input: AnswerProviderRequest): Promise<AnswerResult> {
     if (input.forceModelId && input.forceModelId !== this.modelId) {
       return { ok: false, code: "INVALID_INPUT", message: "Requested model is not supported by the Gemini adapter.", providerAttempted: false, retrySafe: false };

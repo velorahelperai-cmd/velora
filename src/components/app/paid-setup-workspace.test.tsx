@@ -6,17 +6,17 @@ import {PaidSetupWorkspace,workspaceStepAllowed,nextWorkspaceSelection,stepBlock
 import {unavailablePaidBranchConnectionRead} from "@/lib/tenancy/paid-branch-connection-contracts";
 const scope={expectedAccountId:"actor",companyId:"company",branchId:"branch",boundaryFingerprint:"capture"};
 const read=projectTrustedBoundSelection({companyId:"company",branchId:"branch",branchLabel:"Main branch",orderGroupId:"order",slotIndex:0,persona:"level_2",package:"basic",term:"monthly",maxChannels:1,employeesExcludingOwner:2,clockState:"waiting_readiness",asOf:"now"},{channels:["whatsapp"]});
-const props:PaidSetupWorkspaceProps={locale:"en",scope,read,activeStepId:"whatsapp",availableStepIds:["whatsapp","instagram","knowledge","test","launch"],isCurrent:()=>true,onSelectStep:()=>{throw Error("No selection during render");}};
+const props:PaidSetupWorkspaceProps={locale:"en",scope,read,activeStepId:"whatsapp",availableStepIds:["whatsapp","instagram","knowledge","test","team","launch"],isCurrent:()=>true,onSelectStep:()=>{throw Error("No selection during render");}};
 const render=(overrides:Partial<PaidSetupWorkspaceProps>={})=>renderToStaticMarkup(createElement(PaidSetupWorkspace,{...props,...overrides}));
 it('keeps the presentation frame during loading without inventing a plan, progress or usable steps',()=>{const html=render({read:null,loading:true});expect(html).toContain('data-setup-frame="pending"');expect(html).toContain('Setup journey');expect(html).toContain('Stage content');expect(html).toContain('Loading branch setup');expect(html).not.toContain('Branch setup</h2>');expect(html).not.toContain('Saved settings appear after branch access is verified');expect(html).not.toContain('<progress');expect(html).not.toContain('data-step-id');expect(html).not.toContain('Plan and activation summary');expect(html).not.toContain('type="radio"');});
 it('keeps the same frame with a retry on unavailable setup instead of hiding the UI',()=>{const html=render({read:null,onRefresh:()=>{}});expect(html).toContain('data-setup-frame="pending"');expect(html).toContain('role="alert"');expect(html).toContain('Retry');expect(html).not.toContain('<progress');expect(html).not.toContain('data-step-id');});
-it("renders four visible setup steps with hours hidden and actual progress with no guide auto-selection",()=>{
- const html=render();expect(html.match(/data-step-id=/g)).toHaveLength(4);expect(html).not.toContain('data-step-id="instagram"');expect(html).not.toContain('data-step-id="hours"');expect(html).not.toContain('data-step-id="language"');expect(html).not.toContain('data-step-id="team"');expect(html).toContain('aria-current="step"');expect(html).not.toContain("data-guide-source");
- expect(html).toContain('<bdi dir="ltr">0 / 5</bdi>');expect(html).not.toContain('href="/setup/branches/');
+it("renders five visible setup steps with hours hidden and actual progress with no guide auto-selection",()=>{
+ const html=render();expect(html.match(/data-step-id=/g)).toHaveLength(5);expect(html).not.toContain('data-step-id="instagram"');expect(html).not.toContain('data-step-id="hours"');expect(html).not.toContain('data-step-id="language"');expect(html).toContain('data-step-id="team"');expect(html).toContain('aria-current="step"');expect(html).not.toContain("data-guide-source");
+ expect(html).toContain('<bdi dir="ltr">0 / 6</bdi>');expect(html).not.toContain('href="/setup/branches/');
 });
-it("renders five visible steps for a paid two-channel read with hours hidden",()=>{
+it("renders six visible steps for a paid two-channel read with hours hidden",()=>{
  const both=projectTrustedBoundSelection({companyId:"company",branchId:"branch",branchLabel:"Main",orderGroupId:"order",slotIndex:0,persona:"level_2",package:"premium",term:"monthly",maxChannels:2,employeesExcludingOwner:4,clockState:"waiting_readiness",asOf:"now"},{channels:["whatsapp","instagram"]});
- expect(render({read:both}).match(/data-step-id=/g)).toHaveLength(5);
+ expect(render({read:both}).match(/data-step-id=/g)).toHaveLength(6);
  expect(render({read:both})).not.toContain('data-step-id="hours"');
 });
 it("IG-only never renders WA",()=>{

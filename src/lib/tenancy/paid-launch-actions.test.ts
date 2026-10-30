@@ -129,3 +129,89 @@ it("never confirms launch when the authoritative subscription/owner gate denies 
   expect(result).toBeNull();
   expect(rpcMock).not.toHaveBeenCalledWith("es02_confirm_owned_branch_launch", expect.anything());
 });
+
+it("blocks server-side launch confirmation when readiness status is blocked due to trial_incomplete", async () => {
+  currentSessionId = VALID_ACCOUNT_ID;
+  const blockedSnapshot = {
+    scope: { expectedAccountId: VALID_ACCOUNT_ID, companyId: VALID_COMPANY_ID, branchId: VALID_BRANCH_ID },
+    version: 1,
+    branchLabel: "Main",
+    setup: {
+      companyId: VALID_COMPANY_ID,
+      selectedBranchId: VALID_BRANCH_ID,
+      sourceStatus: null,
+      selectedChannels: null,
+      entitlement: null,
+      launch: { confirmationRequired: true, confirmed: false, canRequest: false, blockedReasons: ["trial_incomplete"] },
+    },
+    readiness: { status: "blocked", revision: "rev-hash-blocked", blockers: ["trial_incomplete"] },
+    summary: {
+      channels: [{ channel: "whatsapp", detail: "تم إثبات الربط", status: "verified" }],
+      hours: { detail: "مكتملة ومحفوظة", status: "verified" },
+      knowledge: { detail: "مصادر معتمدة", status: "verified" },
+      persona: { detail: "نورا", status: "verified" },
+      team: { detail: "مالك النشاط", status: "verified" },
+    },
+    operationId: VALID_OP_ID,
+    activation: { status: "not_started", receiptId: null, operationId: null },
+  };
+  rpcMock = vi.fn(async (name: string) => {
+    if (name === "es02_read_owned_branch_setup") return { data: { ok: true }, error: null };
+    if (name === "es02_read_owned_branch_launch_summary") return { data: { ok: true, data: { snapshot: blockedSnapshot } }, error: null };
+    return { data: { ok: true, data: { snapshot: blockedSnapshot } }, error: null };
+  });
+  const result = await confirmOwnedBranchLaunchAction({
+    expectedAccountId: VALID_ACCOUNT_ID,
+    companyId: VALID_COMPANY_ID,
+    branchId: VALID_BRANCH_ID,
+    expectedVersion: 1,
+    readinessRevision: "rev-hash-blocked",
+    operationId: VALID_OP_ID,
+    confirmed: true,
+  });
+  expect(result).toBeNull();
+  expect(rpcMock).not.toHaveBeenCalledWith("es02_confirm_owned_branch_launch", expect.anything());
+});
+
+it("blocks server-side launch confirmation when channel is unverified", async () => {
+  currentSessionId = VALID_ACCOUNT_ID;
+  const channelBlocked = {
+    scope: { expectedAccountId: VALID_ACCOUNT_ID, companyId: VALID_COMPANY_ID, branchId: VALID_BRANCH_ID },
+    version: 1,
+    branchLabel: "Main",
+    setup: {
+      companyId: VALID_COMPANY_ID,
+      selectedBranchId: VALID_BRANCH_ID,
+      sourceStatus: null,
+      selectedChannels: null,
+      entitlement: null,
+      launch: { confirmationRequired: true, confirmed: false, canRequest: false, blockedReasons: ["channel_unverified:whatsapp"] },
+    },
+    readiness: { status: "blocked", revision: "rev-hash-ch", blockers: ["channel_unverified:whatsapp"] },
+    summary: {
+      channels: [{ channel: "whatsapp", detail: "بانتظار الربط", status: "pending" }],
+      hours: { detail: "مكتملة ومحفوظة", status: "verified" },
+      knowledge: { detail: "مصادر معتمدة", status: "verified" },
+      persona: { detail: "نورا", status: "verified" },
+      team: { detail: "مالك النشاط", status: "verified" },
+    },
+    operationId: VALID_OP_ID,
+    activation: { status: "not_started", receiptId: null, operationId: null },
+  };
+  rpcMock = vi.fn(async (name: string) => {
+    if (name === "es02_read_owned_branch_setup") return { data: { ok: true }, error: null };
+    if (name === "es02_read_owned_branch_launch_summary") return { data: { ok: true, data: { snapshot: channelBlocked } }, error: null };
+    return { data: { ok: true, data: { snapshot: channelBlocked } }, error: null };
+  });
+  const result = await confirmOwnedBranchLaunchAction({
+    expectedAccountId: VALID_ACCOUNT_ID,
+    companyId: VALID_COMPANY_ID,
+    branchId: VALID_BRANCH_ID,
+    expectedVersion: 1,
+    readinessRevision: "rev-hash-ch",
+    operationId: VALID_OP_ID,
+    confirmed: true,
+  });
+  expect(result).toBeNull();
+  expect(rpcMock).not.toHaveBeenCalledWith("es02_confirm_owned_branch_launch", expect.anything());
+});
