@@ -35,7 +35,8 @@ it('preserves local knowledge text through initial data, revision changes and re
   expect(host.querySelector('textarea')).toBe(input);expect(input.value).toBe('Local answer');
   await act(async()=>root.render(createElement(PaidBranchKnowledge,{...props,snapshot:{...snapshot,version:2},state:{scope,version:2,phase:'unavailable'}})));
   expect(host.querySelector('textarea')).toBe(input);expect(input.value).toBe('Local answer');
-  expect(host.textContent).toContain('Saving is unconfirmed');
+  expect(host.textContent).not.toContain('Saving is unconfirmed');
+  // Soft-unavailable keeps the draft; FAQ submit stays gated until question+answer are both present.
   expect(host.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(true);
  } finally {await act(async()=>root.unmount());vi.unstubAllGlobals();}
 });

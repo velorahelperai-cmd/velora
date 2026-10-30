@@ -83,7 +83,7 @@ export function PaidSetupStepHost(props: PaidSetupStepHostProps) {
 }
 function StepHost(props: PaidSetupStepHostProps) {
   const { locale, scope, step, onRefresh,reader } = props;
-  const runMutation=<T,>(request:Promise<T>,timeoutMs:number)=>{reader?.invalidate(step==='knowledge'?['knowledge','language','workspace','launch','trial']:step==='hours'?['hours','workspace','launch']:step==='team'?['team','workspace','launch']:step==='test'?['trial','workspace','launch']:['launch','workspace']);return awaitSetupRequest(request,timeoutMs);};
+  const runMutation=<T,>(request:Promise<T>,timeoutMs:number)=>{reader?.invalidate();return awaitSetupRequest(request,timeoutMs);};
   const readFailure=useRef(props.onReadFailure);
   useLayoutEffect(()=>{readFailure.current=props.onReadFailure;},[props.onReadFailure]);
   const mounted=useRef(true);
@@ -104,7 +104,7 @@ function StepHost(props: PaidSetupStepHostProps) {
     if(step==="test"){setTrialPhase("loading");setTrialFailure(null);setTrialRequestId(null);}
     if(step==="team"){setTeamPhase("loading");setInviteUrl(null);}
     if(step==="launch")setLaunchPhase("loading");
-    reader?.invalidate(step==='knowledge'?['knowledge','language']:step==='test'?['trial']:[step]);
+    reader?.invalidate();
     setReadVersion(v=>v+1);
   };
   const targetScope = useMemo(
@@ -161,9 +161,9 @@ function StepHost(props: PaidSetupStepHostProps) {
   }, [step, expectedAccountId, companyId, branchId, readVersion, targetScope,reader]);
 
   // 2. Knowledge + reply languages (same setup step)
-  const [knowledgeSnap, setKnowledgeSnap] = useState<BranchKnowledgeViewSnapshot | null>(null);
+  const [knowledgeSnap, setKnowledgeSnap] = useState<BranchKnowledgeViewSnapshot | null>(()=>reader?.peek?.('knowledge')??null);
   const [knowledgePhase, setKnowledgePhase] = useState<"loading" | "ready" | "busy" | "saved" | "conflict" | "unavailable">("loading");
-  const [langSnap, setLangSnap] = useState<ReplyLanguageSnapshot | null>(null);
+  const [langSnap, setLangSnap] = useState<ReplyLanguageSnapshot | null>(()=>reader?.peek?.('language')??null);
   const [langPhase, setLangPhase] = useState<"loading" | "ready" | "saving" | "saved" | "error" | "conflict" | "unavailable">("loading");
 
   useEffect(() => {
@@ -176,15 +176,15 @@ function StepHost(props: PaidSetupStepHostProps) {
       if (snap) {
         setKnowledgeSnap(snap);
         setKnowledgePhase("ready");
-      } else setKnowledgePhase("unavailable");
-    }).catch(error=>{if(!canceledRead(error)&&active&&isCurrent()){readFailure.current?.(error);setKnowledgePhase("unavailable");}});
+      } else {setKnowledgeSnap(null);setKnowledgePhase("unavailable");}
+    }).catch(error=>{if(!canceledRead(error)&&active&&isCurrent()){readFailure.current?.(error);setKnowledgeSnap(null);setKnowledgePhase("unavailable");}});
     void observeSetupRead((reader?reader.read("language"):readOwnedBranchReplyLanguageAction(targetScope)),()=>{},10_000).then((snap) => {
       if (!active || !isCurrent()) return;
       if (snap) {
         setLangSnap(snap);
         setLangPhase("ready");
-      } else setLangPhase("unavailable");
-    }).catch(error=>{if(!canceledRead(error)&&active&&isCurrent()){readFailure.current?.(error);setLangPhase("unavailable");}});
+      } else {setLangSnap(null);setLangPhase("unavailable");}
+    }).catch(error=>{if(!canceledRead(error)&&active&&isCurrent()){readFailure.current?.(error);setLangSnap(null);setLangPhase("unavailable");}});
     return () => {
       active = false;
     };
