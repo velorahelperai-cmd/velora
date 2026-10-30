@@ -1,3 +1,12 @@
+# Current Session Index - SETUP-KNOWLEDGE-STUDIO-20261030
+
+- **Task (Premium Knowledge Studio inside canonical `/setup` — SINGLE-SETUP-PATH-001):**
+  - Rebuilt the branch knowledge step in `paid-branch-knowledge.tsx` and its CSS module as a tabbed studio: website, files, and questions stay mounted, while the library lists only the current branch’s saved pages, files, and answers.
+  - Preserved the existing website, upload, text, edit, removal, retry, reprocess, and version-approval actions. No new route, storage, processing service, package, RLS, or schema change. AI question suggestions were not added because no authorized service exists. Website review shows extracted text only when the current snapshot includes it, otherwise the extracted length already returned by the setup read.
+  - Drafts survive tab switches and hydration. Duplicate submits stay reserved. Errors render beside the operation that failed.
+  - Graphify index remains `0bf79fccf2c975007745f4afb1fdc35a3dfba80a` (`2026-10-29T19:53:47.944399Z`), behind current HEAD; implementation was verified against current source.
+  - **Verification:** knowledge UI 29/29 PASS (`paid-branch-knowledge.test.tsx`, `paid-branch-knowledge.edit.test.tsx`, `paid-setup-drafts.test.tsx`); setup host suite PASS in the same run; `npm run typecheck` PASS; scoped ESLint PASS; `node scripts/ci/security.mjs` PASS (2094 paths). Authenticated browser pass of `/setup` was not run. Live customer journey remains NOT_RUN.
+
 # Current Session Index - SETUP-HOURS-UX-FAST-FILL-20261030
 
 - **Task (Working Hours UX Overhaul & Fast-Fill Acceleration — SINGLE-SETUP-PATH-001):**

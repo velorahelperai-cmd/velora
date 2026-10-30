@@ -15,7 +15,7 @@ it("uses content-sensitive direction for question and answer in Arabic",()=>{
  const html=render({locale:"ar"});expect(html).toContain('<input dir="auto"');expect(html).toContain('<textarea dir="auto"');
 });
 it.each(["ar","en"] as const)("renders three scoped sections in %s without invoking effects",locale=>{
- const html=render({locale,onPageAction:()=>{throw Error("No render action");}});expect(html).toContain('dir="'+(locale==="ar"?"rtl":"ltr")+'"');expect(html).toContain("2 / 10");expect(html).toContain('accept=".pdf,.txt,.docx"');expect(html).not.toContain('<script');expect(html).not.toContain('href="https://');
+ const html=render({locale,onPageAction:()=>{throw Error("No render action");}});expect(html).toContain('dir="'+(locale==="ar"?"rtl":"ltr")+'"');expect(html).toContain("2 / 10");expect(html).toContain('role="tablist"');expect(html).toContain('data-knowledge-library="true"');expect(html).toContain('data-panel="website"');expect(html).toContain('data-panel="files"');expect(html).toContain('data-panel="faq"');expect(html).toContain('accept=".pdf,.txt,.docx"');expect(html).not.toContain('<script');expect(html).not.toContain('href="https://');
 });
 it.each([{limit:null,used:0},{limit:10,used:null},{limit:50,used:-1},{limit:20,used:0}])("fails closed for unknown or invalid quota %j",quota=>{
  expect(knownWebsiteQuota(quota as never)).toBe(false);
@@ -62,5 +62,6 @@ it('offers scoped edit and honest branch removal only with current source versio
  const source={id:'source',company_id:'company',kind:'text',title:'Q',content:'A',status:'ready',content_version:2} as KnowledgeSourceRecord;
  const html=render({snapshot:{...props.snapshot!,faq:[{branchId:'branch',source}]},onSourceMutation:()=>{throw Error('no render mutation');},onRemovePage:()=>{throw Error('no render mutation');}});
  expect(html).toContain('Edit text');expect(html).toContain('Remove from branch');expect(html).toContain('Delete page');
+ expect(html.match(/Edit text/g)).toHaveLength(1);expect(html.match(/Delete page/g)).toHaveLength(1);expect(html.match(/Remove from branch/g)).toHaveLength(1);
  expect(render({snapshot:{...props.snapshot!,faq:[{branchId:'other',source}]},onSourceMutation:()=>{}})).not.toContain('Edit text');
 });
