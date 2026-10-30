@@ -167,4 +167,71 @@ describe("PaidBranchHours radical fix & non-blocking UI journey", () => {
       vi.unstubAllGlobals();
     }
   });
+
+  it("applies Sun-Thu quick preset in a single click and allows copying across days", async () => {
+    const host = document.createElement("div");
+    const root = createRoot(host);
+
+    const stepHostProps: PaidSetupStepHostProps = {
+      read: null,
+      locale: "ar",
+      scope: { ...scope, boundaryFingerprint: "boundary" },
+      step: "hours",
+      isCurrent: () => true,
+    };
+
+    try {
+      await act(async () => {
+        root.render(createElement(PaidSetupStepHost, stepHostProps));
+      });
+
+      // Find the Sun-Thu preset button
+      const sunThuBtn = Array.from(host.querySelectorAll("button")).find((b) =>
+        b.textContent?.includes("الأحد – الخميس")
+      );
+      expect(sunThuBtn).toBeDefined();
+
+      // Click preset
+      await act(async () => {
+        sunThuBtn!.click();
+      });
+
+      // Sunday through Thursday are now OPEN with time inputs
+      expect(host.querySelector("fieldset[data-hours-day='sunday'] input[type='time']")).not.toBeNull();
+      expect(host.querySelector("fieldset[data-hours-day='monday'] input[type='time']")).not.toBeNull();
+      expect(host.querySelector("fieldset[data-hours-day='tuesday'] input[type='time']")).not.toBeNull();
+      expect(host.querySelector("fieldset[data-hours-day='wednesday'] input[type='time']")).not.toBeNull();
+      expect(host.querySelector("fieldset[data-hours-day='thursday'] input[type='time']")).not.toBeNull();
+
+      // Friday and Saturday are CLOSED (no time inputs)
+      expect(host.querySelector("fieldset[data-hours-day='friday'] input[type='time']")).toBeNull();
+      expect(host.querySelector("fieldset[data-hours-day='saturday'] input[type='time']")).toBeNull();
+      expect(host.querySelector<HTMLSelectElement>("fieldset[data-hours-day='friday'] select")?.value).toBe("closed");
+      expect(host.querySelector<HTMLSelectElement>("fieldset[data-hours-day='saturday'] select")?.value).toBe("closed");
+
+      // Verify that unsaved changes are tracked
+      expect(host.querySelector('[data-setup-unsaved="true"]')).not.toBeNull();
+
+      // Now test copying: change Sunday start time using native value setter for React
+      const sunStartInput = host.querySelector<HTMLInputElement>("fieldset[data-hours-day='sunday'] input[type='time']")!;
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(sunStartInput, "08:00");
+        sunStartInput.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+
+      // Click copy from Sunday to Sun-Thu
+      const copyBtn = host.querySelector<HTMLButtonElement>("fieldset[data-hours-day='sunday'] button[title*='الأحد والاثنين']")!;
+      expect(copyBtn).not.toBeNull();
+      await act(async () => {
+        copyBtn.click();
+      });
+
+      // Monday through Thursday now also have start time 08:00!
+      const monStartInput = host.querySelector<HTMLInputElement>("fieldset[data-hours-day='monday'] input[type='time']")!;
+      expect(monStartInput.value).toBe("08:00");
+    } finally {
+      await act(async () => root.unmount());
+      vi.unstubAllGlobals();
+    }
+  });
 });

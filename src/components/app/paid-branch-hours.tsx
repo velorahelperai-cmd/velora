@@ -30,9 +30,27 @@ export const branchHoursViewKey = (p: PaidBranchHoursProps) => JSON.stringify([
 ]);
 
 const dayLabels: Record<BranchHoursDay, [string, string]> = {
-  monday: ["الاثنين", "Monday"], tuesday: ["الثلاثاء", "Tuesday"], wednesday: ["الأربعاء", "Wednesday"],
-  thursday: ["الخميس", "Thursday"], friday: ["الجمعة", "Friday"], saturday: ["السبت", "Saturday"], sunday: ["الأحد", "Sunday"],
+  sunday: ["الأحد", "Sunday"], monday: ["الاثنين", "Monday"], tuesday: ["الثلاثاء", "Tuesday"], wednesday: ["الأربعاء", "Wednesday"],
+  thursday: ["الخميس", "Thursday"], friday: ["الجمعة", "Friday"], saturday: ["السبت", "Saturday"],
 };
+
+const DISPLAY_DAYS: readonly BranchHoursDay[] = [
+  "sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday",
+];
+
+const previousDayOf: Record<BranchHoursDay, BranchHoursDay> = {
+  sunday: "saturday",
+  monday: "sunday",
+  tuesday: "monday",
+  wednesday: "tuesday",
+  thursday: "wednesday",
+  friday: "thursday",
+  saturday: "friday",
+};
+
+const WORKDAYS_SUN_THU: readonly BranchHoursDay[] = ["sunday", "monday", "tuesday", "wednesday", "thursday"];
+const ALL_WEEK_DAYS: readonly BranchHoursDay[] = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+const WORKDAYS_SAT_THU: readonly BranchHoursDay[] = ["saturday", "sunday", "monday", "tuesday", "wednesday", "thursday"];
 
 export function PaidBranchHours(p: PaidBranchHoursProps) {
   const t = (ar: string, en: string) => p.locale === "ar" ? ar : en;
@@ -67,6 +85,7 @@ function HoursForm(p: PaidBranchHoursProps) {
 
   const [userEdited,setUserEdited]=useState(false);
   const [sourceVersion,setSourceVersion]=useState(p.snapshot?.version??null);
+
   // Adopt a new server revision during this render, before children commit.
   // Dirty local fields remain intact and the difference is explicitly shown.
   if(p.snapshot&&sourceVersion!==p.snapshot.version){
@@ -74,6 +93,22 @@ function HoursForm(p: PaidBranchHoursProps) {
     if(!userEdited){setDraft(cloneBranchHours(p.snapshot.schedule));setConflictWithServer(false);}
     else setConflictWithServer(JSON.stringify(draft)!==JSON.stringify(cloneBranchHours(p.snapshot.schedule)));
   }
+
+  // Find initial quick hours from first configured day or fallback to standard 09:00-17:00
+  const findFirstInterval = (sch: BranchHoursSchedule) => {
+    for (const d of DISPLAY_DAYS) {
+      const val = sch[d];
+      if (val.state === "open" && val.intervals.length > 0 && val.intervals[0].start && val.intervals[0].end) {
+        return val.intervals[0];
+      }
+    }
+    return null;
+  };
+
+  const initialInterval = findFirstInterval(initialSchedule);
+  const [quickStart, setQuickStart] = useState(() => initialInterval?.start || "09:00");
+  const [quickEnd, setQuickEnd] = useState(() => initialInterval?.end || "17:00");
+  const [quickNextDay, setQuickNextDay] = useState(() => initialInterval?.nextDay || false);
 
   const locked = busy || p.state.phase === "saving" || p.state.phase === "conflict";
   const validated = validateBranchHours(draft);
@@ -103,6 +138,102 @@ function HoursForm(p: PaidBranchHoursProps) {
     if (locked || !p.isCurrent()) return;
     setUserEdited(true);
     setDraft(current => ({...current, exceptions}));
+    setConfirmation(null);
+    setFailed(false);
+  }
+
+  function applyPreset(preset: "workdays_sun_thu" | "all_week" | "workdays_sat_thu" | "closed_all" | "reset_all") {
+    if (locked || !p.isCurrent()) return;
+    setUserEdited(true);
+    const start = quickStart || "09:00";
+    const end = quickEnd || "17:00";
+    const nextDay = quickNextDay;
+    const interval = { start, end, nextDay };
+
+    setDraft(current => {
+      const next = cloneBranchHours(current);
+      if (preset === "workdays_sun_thu") {
+        for (const d of WORKDAYS_SUN_THU) next[d] = { state: "open", intervals: [{ ...interval }] };
+        next.friday = { state: "closed" };
+        next.saturday = { state: "closed" };
+      } else if (preset === "all_week") {
+        for (const d of ALL_WEEK_DAYS) next[d] = { state: "open", intervals: [{ ...interval }] };
+      } else if (preset === "workdays_sat_thu") {
+        for (const d of WORKDAYS_SAT_THU) next[d] = { state: "open", intervals: [{ ...interval }] };
+        next.friday = { state: "closed" };
+      } else if (preset === "closed_all") {
+        for (const d of ALL_WEEK_DAYS) next[d] = { state: "closed" };
+      } else if (preset === "reset_all") {
+        for (const d of ALL_WEEK_DAYS) next[d] = { state: "unset" };
+      }
+      return next;
+    });
+    setConfirmation(null);
+    setFailed(false);
+  }
+
+  function applyQuickHours(targetDays: readonly BranchHoursDay[], closeOthers: boolean = false) {
+    if (locked || !p.isCurrent()) return;
+    setUserEdited(true);
+    const start = quickStart || "09:00";
+    const end = quickEnd || "17:00";
+    const nextDay = quickNextDay;
+    const interval = { start, end, nextDay };
+
+    setDraft(current => {
+      const next = cloneBranchHours(current);
+      for (const d of targetDays) {
+        next[d] = { state: "open", intervals: [{ ...interval }] };
+      }
+      if (closeOthers) {
+        for (const d of ALL_WEEK_DAYS) {
+          if (!targetDays.includes(d)) next[d] = { state: "closed" };
+        }
+      }
+      return next;
+    });
+    setConfirmation(null);
+    setFailed(false);
+  }
+
+  function applyQuickToOpenDays() {
+    if (locked || !p.isCurrent()) return;
+    setUserEdited(true);
+    const start = quickStart || "09:00";
+    const end = quickEnd || "17:00";
+    const nextDay = quickNextDay;
+    const interval = { start, end, nextDay };
+
+    setDraft(current => {
+      const next = cloneBranchHours(current);
+      for (const d of ALL_WEEK_DAYS) {
+        if (next[d].state === "open") {
+          next[d] = { state: "open", intervals: [{ ...interval }] };
+        }
+      }
+      return next;
+    });
+    setConfirmation(null);
+    setFailed(false);
+  }
+
+  function copyDayTo(sourceDay: BranchHoursDay, targetDays: readonly BranchHoursDay[]) {
+    if (locked || !p.isCurrent()) return;
+    const source = draft[sourceDay];
+    if (source.state !== "open" || !source.intervals.length) return;
+    setUserEdited(true);
+    setDraft(current => {
+      const next = cloneBranchHours(current);
+      for (const d of targetDays) {
+        if (d !== sourceDay) {
+          next[d] = {
+            state: "open",
+            intervals: source.intervals.map(inv => ({ ...inv })),
+          };
+        }
+      }
+      return next;
+    });
     setConfirmation(null);
     setFailed(false);
   }
@@ -249,6 +380,124 @@ function HoursForm(p: PaidBranchHoursProps) {
         </p>
       )}
 
+      {/* Quick Schedule Setup Bar */}
+      <div className={styles.quickSetup} aria-label={t("تجهيز سريع للمواعيد", "Quick schedule setup")}>
+        <div className={styles.quickHeader}>
+          <div className={styles.quickTitle}>
+            <span aria-hidden="true">⚡</span>
+            <strong>{t("تجهيز سريع للمواعيد", "Quick schedule setup")}</strong>
+          </div>
+          <span className={styles.quickHint}>
+            {t(
+              "اختر نموذج عمل جاهز أو حدد توقيتك وطبقه على أيام الأسبوع بضغطة زر واحدة:",
+              "Pick a preset or set custom hours to apply across days in one click:"
+            )}
+          </span>
+        </div>
+
+        <div className={styles.presets}>
+          <button
+            type="button"
+            className={styles.presetBtn}
+            disabled={locked}
+            onClick={() => applyPreset("workdays_sun_thu")}
+          >
+            🏢 {t("الأحد – الخميس (دوام أسبوعي معتاد)", "Sun – Thu (Standard workdays)")}
+          </button>
+          <button
+            type="button"
+            className={styles.presetBtn}
+            disabled={locked}
+            onClick={() => applyPreset("all_week")}
+          >
+            🛍️ {t("طوال الأسبوع (المطاعم والمحلات)", "All week (Restaurants & Retail)")}
+          </button>
+          <button
+            type="button"
+            className={styles.presetBtn}
+            disabled={locked}
+            onClick={() => applyPreset("workdays_sat_thu")}
+          >
+            🏪 {t("السبت – الخميس (عطلة الجمعة)", "Sat – Thu (Friday off)")}
+          </button>
+          <button
+            type="button"
+            className={styles.presetSecondaryBtn}
+            disabled={locked}
+            onClick={() => applyPreset("closed_all")}
+          >
+            🔒 {t("إغلاق جميع الأيام", "Close all days")}
+          </button>
+          <button
+            type="button"
+            className={styles.presetSecondaryBtn}
+            disabled={locked}
+            onClick={() => applyPreset("reset_all")}
+          >
+            🔄 {t("إعادة ضبط", "Reset")}
+          </button>
+        </div>
+
+        <div className={styles.quickInputs}>
+          <label>
+            {t("من", "From")}
+            <input
+              type="time"
+              dir="ltr"
+              value={quickStart}
+              disabled={locked}
+              aria-label={t("توقيت البدء السريع", "Quick start time")}
+              onChange={(e) => setQuickStart(e.target.value)}
+            />
+          </label>
+          <label>
+            {t("إلى", "To")}
+            <input
+              type="time"
+              dir="ltr"
+              value={quickEnd}
+              disabled={locked}
+              aria-label={t("توقيت الانتهاء السريع", "Quick end time")}
+              onChange={(e) => setQuickEnd(e.target.value)}
+            />
+          </label>
+          <label className={styles.check}>
+            <input
+              type="checkbox"
+              checked={quickNextDay}
+              disabled={locked}
+              aria-label={t("ينتهي في اليوم التالي للتطبيق السريع", "Ends next day for quick apply")}
+              onChange={(e) => setQuickNextDay(e.target.checked)}
+            />
+            {t("ينتهي في اليوم التالي", "Ends next day")}
+          </label>
+          <button
+            type="button"
+            className={styles.quickApplyBtn}
+            disabled={locked}
+            onClick={() => applyQuickHours(WORKDAYS_SUN_THU, false)}
+          >
+            {t("تطبيق على (الأحد - الخميس)", "Apply to (Sun - Thu)")}
+          </button>
+          <button
+            type="button"
+            className={styles.quickSecondaryBtn}
+            disabled={locked}
+            onClick={() => applyQuickToOpenDays()}
+          >
+            {t("تطبيق على الأيام المفتوحة", "Apply to open days")}
+          </button>
+          <button
+            type="button"
+            className={styles.quickSecondaryBtn}
+            disabled={locked}
+            onClick={() => applyQuickHours(ALL_WEEK_DAYS, false)}
+          >
+            {t("تطبيق على كل الأيام", "Apply to all days")}
+          </button>
+        </div>
+      </div>
+
       <form
         noValidate
         onSubmit={(event) => {
@@ -258,27 +507,89 @@ function HoursForm(p: PaidBranchHoursProps) {
       >
         <fieldset className={styles.days} disabled={locked}>
           <legend className={styles.srOnly}>{t("الجدول الأسبوعي", "Weekly schedule")}</legend>
-          {BRANCH_HOURS_DAYS.map((day, dayIndex) => {
-            const value = draft[day], previous = draft[BRANCH_HOURS_DAYS[(dayIndex + 6) % 7]];
+          {DISPLAY_DAYS.map((day) => {
+            const value = draft[day];
+            const previous = draft[previousDayOf[day]];
             const carry = previous.state === "open" ? previous.intervals.filter(interval => interval.nextDay && interval.end && interval.end !== "00:00") : [];
             const issues = validated.ok ? [] : validated.issues.filter(issue => issue.day === day || issue.otherDay === day);
             return (
-              <fieldset className={styles.day} key={day} data-hours-day={day} aria-describedby={issues.length ? `${id}-${day}-errors` : undefined}>
-                <legend>{label(day)}</legend>
-                <label className={styles.dayState}>
-                  <span>{t("الحالة", "Status")}</span>
-                  <select
-                    aria-label={`${label(day)} ${t("الحالة", "status")}`}
-                    value={value.state}
-                    onChange={(event) =>
-                      change(day, event.target.value === "open" ? { state: "open", intervals: [{ start: "", end: "", nextDay: false }] } : { state: event.target.value as "unset" | "closed" })
-                    }
-                  >
-                    <option value="unset">{t("غير مضبوط", "Not set")}</option>
-                    <option value="closed">{t("مغلق", "Closed")}</option>
-                    <option value="open">{t("مفتوح", "Open")}</option>
-                  </select>
-                </label>
+              <fieldset
+                className={styles.day}
+                key={day}
+                data-hours-day={day}
+                data-state={value.state}
+                aria-describedby={issues.length ? `${id}-${day}-errors` : undefined}
+              >
+                <div className={styles.dayHeader}>
+                  <div className={styles.dayHeaderLeft}>
+                    <legend className={styles.dayLegend}>{label(day)}</legend>
+                    <label className={styles.dayState}>
+                      <span className={styles.srOnly}>{label(day)} {t("الحالة", "Status")}</span>
+                      <select
+                        aria-label={`${label(day)} ${t("الحالة", "status")}`}
+                        value={value.state}
+                        onChange={(event) =>
+                          change(
+                            day,
+                            event.target.value === "open"
+                              ? { state: "open", intervals: [{ start: quickStart || "09:00", end: quickEnd || "17:00", nextDay: quickNextDay }] }
+                              : { state: event.target.value as "unset" | "closed" }
+                          )
+                        }
+                      >
+                        <option value="unset">{t("غير مضبوط", "Not set")}</option>
+                        <option value="closed">{t("مغلق", "Closed")}</option>
+                        <option value="open">{t("مفتوح", "Open")}</option>
+                      </select>
+                    </label>
+
+                    {value.state !== "open" && (
+                      <button
+                        type="button"
+                        className={styles.quickToggleBtn}
+                        onClick={() =>
+                          change(day, {
+                            state: "open",
+                            intervals: [{ start: quickStart || "09:00", end: quickEnd || "17:00", nextDay: quickNextDay }],
+                          })
+                        }
+                      >
+                        + {t("فتح اليوم", "Open day")}
+                      </button>
+                    )}
+                    {value.state === "unset" && (
+                      <button
+                        type="button"
+                        className={styles.quickToggleSecondaryBtn}
+                        onClick={() => change(day, { state: "closed" })}
+                      >
+                        {t("تحديد كمغلق", "Mark closed")}
+                      </button>
+                    )}
+                  </div>
+
+                  {value.state === "open" && value.intervals.length > 0 && (
+                    <div className={styles.dayQuickCopy}>
+                      <button
+                        type="button"
+                        className={styles.copyDayBtn}
+                        title={t("نسخ مواعيد هذا اليوم إلى الأحد والاثنين والثلاثاء والأربعاء والخميس", "Copy this day's hours to Sun, Mon, Tue, Wed, Thu")}
+                        onClick={() => copyDayTo(day, WORKDAYS_SUN_THU)}
+                      >
+                        {t("نسخ للأحد – الخميس", "Copy to Sun–Thu")}
+                      </button>
+                      <button
+                        type="button"
+                        className={styles.copyDayBtn}
+                        title={t("نسخ مواعيد هذا اليوم لجميع أيام الأسبوع", "Copy this day's hours to all week days")}
+                        onClick={() => copyDayTo(day, ALL_WEEK_DAYS)}
+                      >
+                        {t("نسخ لكل الأيام", "Copy to all days")}
+                      </button>
+                    </div>
+                  )}
+                </div>
+
                 {value.state === "open" && (
                   <div className={styles.intervals}>
                     {value.intervals.map((interval, index) => (
@@ -329,6 +640,7 @@ function HoursForm(p: PaidBranchHoursProps) {
                         </label>
                         <button
                           type="button"
+                          className={styles.removeBtn}
                           aria-label={`${t("حذف فترة", "Remove interval")} ${label(day)} ${index + 1}`}
                           onClick={() =>
                             change(day, {
@@ -351,7 +663,7 @@ function HoursForm(p: PaidBranchHoursProps) {
                         })
                       }
                     >
-                      {t("إضافة فترة", "Add interval")} — {label(day)}
+                      + {t("إضافة فترة أخرى", "Add another interval")} — {label(day)}
                     </button>
                   </div>
                 )}
@@ -463,6 +775,7 @@ function HoursForm(p: PaidBranchHoursProps) {
                           </label>
                           <button
                             type="button"
+                            className={styles.removeBtn}
                             onClick={() =>
                               update({
                                 ...entry,
@@ -480,6 +793,7 @@ function HoursForm(p: PaidBranchHoursProps) {
                     })}
                     <button
                       type="button"
+                      className={styles.add}
                       onClick={() =>
                         update({
                           ...entry,
@@ -490,11 +804,15 @@ function HoursForm(p: PaidBranchHoursProps) {
                         })
                       }
                     >
-                      {t("إضافة فترة خاصة", "Add special interval")}
+                      + {t("إضافة فترة خاصة", "Add special interval")}
                     </button>
                   </div>
                 )}
-                <button type="button" onClick={() => changeExceptions(entries.filter((_, i) => i !== index))}>
+                <button
+                  type="button"
+                  className={styles.removeBtn}
+                  onClick={() => changeExceptions(entries.filter((_, i) => i !== index))}
+                >
                   {t("حذف الاستثناء", "Remove exception")}
                 </button>
               </fieldset>
@@ -502,10 +820,11 @@ function HoursForm(p: PaidBranchHoursProps) {
           })}
           <button
             type="button"
+            className={styles.add}
             disabled={(draft.exceptions?.length ?? 0) >= 366}
             onClick={() => changeExceptions([...(draft.exceptions ?? []), { date: "", hours: { state: "closed" } }])}
           >
-            {t("إضافة عطلة أو استثناء", "Add holiday or exception")}
+            + {t("إضافة عطلة أو استثناء", "Add holiday or exception")}
           </button>
           {!validated.ok && validated.issues.some((issue) => issue.code === "invalid_exception") && (
             <p role="status" className={styles.error}>

@@ -106,4 +106,22 @@ describe("PaidBranchHours", () => {
     expect(html).toContain(locale === "ar" ? "مغلق طوال اليوم" : "Closed all day");
     expect(html).toContain(locale === "ar" ? "امتداد اليوم السابق" : "previous-day carry-over");
   });
+
+  it.each(["ar", "en"] as const)("renders quick schedule presets and compact tools in %s", locale => {
+    const html = render({locale});
+    expect(html).toContain(locale === "ar" ? "تجهيز سريع للمواعيد" : "Quick schedule setup");
+    expect(html).toContain(locale === "ar" ? "الأحد – الخميس" : "Sun – Thu");
+    expect(html).toContain(locale === "ar" ? "طوال الأسبوع" : "All week");
+    expect(html).toContain(locale === "ar" ? "تطبيق على (الأحد - الخميس)" : "Apply to (Sun - Thu)");
+    expect(html).toContain(locale === "ar" ? "تطبيق على كل الأيام" : "Apply to all days");
+  });
+
+  it("renders days starting with Sunday for natural Arab regional business week", () => {
+    const html = render({locale: "ar"});
+    const firstDayIndex = html.indexOf('data-hours-day="sunday"');
+    const mondayIndex = html.indexOf('data-hours-day="monday"');
+    expect(firstDayIndex).toBeGreaterThan(-1);
+    expect(mondayIndex).toBeGreaterThan(-1);
+    expect(firstDayIndex).toBeLessThan(mondayIndex);
+  });
 });

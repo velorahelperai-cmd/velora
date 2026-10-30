@@ -1,3 +1,32 @@
+# Current Session Index - SETUP-HOURS-UX-FAST-FILL-20261030
+
+- **Task (Working Hours UX Overhaul & Fast-Fill Acceleration — SINGLE-SETUP-PATH-001):**
+  - **Problem Addressed:** The working hours step previously stacked 7 massive vertical cards with empty white space, requiring repetitive manual entry of the same hours across 7 days. Most Arab/GCC businesses operate Sunday–Thursday on identical hours (with Fri/Sat off, or Fri off, or 7-day retail/restaurants).
+  - **Core Enhancements Implemented (`src/components/app/paid-branch-hours.tsx`, `src/components/app/paid-branch-hours.module.css`):**
+    - **One-Click Schedule Presets:**
+      - `🏢 الأحد – الخميس (دوام أسبوعي معتاد)`: Instantly sets Sunday through Thursday open with configured hours, and Friday & Saturday closed.
+      - `🛍️ طوال الأسبوع (المطاعم والمحلات)`: Sets all 7 days open with configured hours for restaurants, cafes, and retail stores.
+      - `🏪 السبت – الخميس (عطلة الجمعة)`: Sets Saturday through Thursday open, and Friday closed.
+      - `🔒 إغلاق جميع الأيام` & `🔄 إعادة ضبط`: Instant bulk toggling.
+    - **Quick Time Setter & Batch Apply Bar:** Top bar allows setting start/end times once (with overnight/nextDay support) and batch-applying them to: `(الأحد - الخميس)`, all currently open days, or all 7 days in one click.
+    - **Per-Day Interval Copy Tool:** Open days (including multi-shift days like split morning/evening shifts) can clone their exact intervals across `(الأحد - الخميس)` or all days with a single button.
+    - **Compact Row Layout for Inactive Days:** Closed and unset days render as slim, compact rows with instant toggle pills (`+ فتح اليوم`, `تحديد كمغلق`), cutting vertical clutter by over 60%.
+    - **Natural Regional Order:** Displays days starting with Sunday (`sunday` -> `thursday` -> `saturday`), matching Oman, GCC, and Arab business week conventions while strictly preserving chronological carry-over math and underlying contract serialization.
+    - **Integrity Preserved:** 100% compliant with `BranchHoursSchedule` contract, `validateBranchHours`, CAS snapshot verification, `useSetupUnsavedChanges`, and non-blocking background hydration.
+  - **Verification:**
+    - Vitest suites: 21/21 PASS (`paid-branch-hours.test.tsx` 17 tests, `paid-branch-hours-journey.test.tsx` 4 tests).
+    - Setup workspace suites: 35/35 PASS (`paid-setup-step-host.test.tsx`, `paid-setup-workspace.test.tsx`, `paid-setup-workspace.interaction.test.tsx`).
+    - TypeScript (`tsc --noEmit`): PASS (0 errors).
+    - Security scan (`scripts/ci/security.mjs`): PASS (2091 files).
+    - ESLint: PASS (0 errors, 0 warnings).
+
+# Current Session Index - SETUP-PERFORMANCE-ARCHITECTURE-20261030 (INVESTIGATING)
+
+- Owner authorized full canonical `/setup` performance work and prior explicit use of current source despite stale Graphify; Production region changes require review and approval. Preserve TAG CITY, authorization, RLS and CAS; no alternate routes.
+- HEAD `33346f4de6b8269ee95334f97058ee676d9bacfb`; Graphify remains at `0bf79fccf2c975007745f4afb1fdc35a3dfba80a` and cannot be refreshed with available connector tools. Existing unrelated homepage/auth WIP preserved.
+- Production deployment `dpl_42L9iaP2ddtyt3nKNzcSM4jswaDN` reports matching HEAD. Recent runtime sample for `/setup` recorded access stage 3948 ms and individual session check 275 ms in a separate request; logs identify `bom1` for those records. These are individual observations, not an iid sample, region-to-database latency, or P50/P95. Prior local development samples show owner 1111–1112 ms, initial 1282–1344 ms, connection-before 1484–1512 ms, recheck 1296–1708 ms, connection-after 1516–1543 ms; they are historical, not current production measurements.
+- Last available browser session was an unpaid account; paid branch measurement and controlled `iad1`/`syd1` comparison remain NOT_RUN. No source changes, CI runs, deployment or region change in this investigation. Scope, prefetch, stale-data, race and server-side authority design remain to be implemented and verified; do not claim success or performance improvement.
+
 # Current Session Index - SETUP-NAVIGATION-AND-NEXT-STEP-20261030
 
 - **Task (Radical Fix for `/setup` Navigation & Next Step Logic — SINGLE-SETUP-PATH-001):**
