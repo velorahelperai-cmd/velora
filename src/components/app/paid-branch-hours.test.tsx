@@ -107,13 +107,19 @@ describe("PaidBranchHours", () => {
     expect(html).toContain(locale === "ar" ? "امتداد اليوم السابق" : "previous-day carry-over");
   });
 
-  it.each(["ar", "en"] as const)("renders quick schedule presets and compact tools in %s", locale => {
+  it.each(["ar", "en"] as const)("renders compact presets and a single quick-apply control in %s", locale => {
     const html = render({locale});
-    expect(html).toContain(locale === "ar" ? "تجهيز سريع للمواعيد" : "Quick schedule setup");
+    expect(html).not.toMatch(/[\u{1F300}-\u{1FAFF}]/u);
+    expect(html).toContain(locale === "ar" ? "مواعيد العمل" : "Working hours");
+    expect(html).toContain(locale === "ar" ? "تطبيق سريع" : "Quick apply");
     expect(html).toContain(locale === "ar" ? "الأحد – الخميس" : "Sun – Thu");
+    expect(html).toContain(locale === "ar" ? "السبت – الخميس" : "Sat – Thu");
     expect(html).toContain(locale === "ar" ? "طوال الأسبوع" : "All week");
-    expect(html).toContain(locale === "ar" ? "تطبيق على (الأحد - الخميس)" : "Apply to (Sun - Thu)");
-    expect(html).toContain(locale === "ar" ? "تطبيق على كل الأيام" : "Apply to all days");
+    expect(html).toContain(locale === "ar" ? "على الأيام المفتوحة" : "To open days");
+    expect(html).toContain(locale === "ar" ? "على كل الأيام" : "To all days");
+    expect(html).toContain(locale === "ar" ? "على أيام العمل" : "To workdays");
+    expect(html).toContain(`>${locale === "ar" ? "تطبيق" : "Apply"}<`);
+    expect(html).not.toContain(locale === "ar" ? "تطبيق على (الأحد - الخميس)" : "Apply to (Sun - Thu)");
   });
 
   it("renders days starting with Sunday for natural Arab regional business week", () => {

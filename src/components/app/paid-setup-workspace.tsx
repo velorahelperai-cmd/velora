@@ -25,7 +25,7 @@ export function nextWorkspaceSelection(snapshot:PaidSetupWorkspaceRead,previous:
   const stepOpen=(id:ChecklistStepId)=>{
     const step=steps.find(item=>item.id===id);
     if(!step)return false;
-    const dependencies=step.dependencyIds.every(dep=>steps.some(item=>item.id===dep&&(item.status==="verified"||(item.id==="team"&&item.status==="skipped_optional"))));
+    const dependencies=step.dependencyIds.every(dep=>steps.some(item=>item.id===dep&&item.status==="verified"));
     if(id==="launch")return model!.launch.canRequest&&dependencies;
     return step.actionId!==null&&(step.status==="verified"||step.status==="skipped_optional"||(step.status==="pending"&&dependencies));
   };
@@ -66,14 +66,14 @@ export function stepBlockedReason(
     if (first.startsWith("channel_unverified:instagram")) return t("بانتظار التحقق من ربط إنستجرام", "Awaiting Instagram connection verification");
     if (first === "hours_incomplete") return t("بانتظار حفظ مواعيد العمل", "Awaiting business hours");
     if (first === "knowledge_incomplete") return t("بانتظار إضافة المعرفة", "Awaiting knowledge setup");
-    if (first === "language_unconfirmed") return t("بانتظار تأكيد لغة الرد", "Awaiting reply language");
+    if (first === "language_unconfirmed") return t("بانتظار تأكيد لغات الرد داخل المعرفة", "Awaiting reply languages in knowledge");
     if (first === "trial_incomplete") return t("بانتظار تجربة المساعد", "Awaiting assistant trial");
     return t("بانتظار متطلبات التشغيل", "Awaiting launch requirements");
   }
   const current = steps.find(item => item.id === stepId);
   const unmet = current?.dependencyIds.find(dep => {
     const s = steps.find(item => item.id === dep);
-    return !s || (s.status !== "verified" && !(s.id === "team" && s.status === "skipped_optional"));
+    return !s || s.status !== "verified";
   });
   if (unmet && titles[unmet]) {
     return t(`بانتظار: ${titles[unmet][0]}`, `Waiting for: ${titles[unmet][1]}`);
@@ -83,9 +83,8 @@ export function stepBlockedReason(
 
 const titles:Record<ChecklistStepId,readonly [string,string]>={
   whatsapp:["ربط واتساب","Connect WhatsApp"],instagram:["ربط إنستغرام","Connect Instagram"],
-  hours:["مواعيد العمل","Business hours"],knowledge:["المعرفة","Knowledge"],
-  language:["لغة الرد","Reply language"],test:["تجربة المساعد","Test assistant"],
-  team:["دعوة الفريق","Invite team"],launch:["التشغيل","Launch"],
+  hours:["مواعيد العمل","Business hours"],knowledge:["المعرفة واللغات","Knowledge & languages"],
+  test:["تجربة المساعد","Test assistant"],launch:["التشغيل","Launch"],
 };
 export type PaidSetupWorkspaceProps={
   locale:"ar"|"en";
@@ -113,7 +112,7 @@ export function workspaceStepAllowed(read:PaidBranchSetupRead|null,scope:PaidSet
   if(!model||!model.branches.some(branch=>branch.id===scope.branchId))return false;
   const steps=checklistSteps(model),step=steps.find(item=>item.id===id);
   if(!step||!available.includes(id))return false;
-  const dependencies=step.dependencyIds.every(dep=>steps.some(item=>item.id===dep&&(item.status==="verified"||(item.id==="team"&&item.status==="skipped_optional"))));
+  const dependencies=step.dependencyIds.every(dep=>steps.some(item=>item.id===dep&&item.status==="verified"));
   if(id==="launch")return model.launch.canRequest&&dependencies;
   return step.actionId!==null&&(step.status==="verified"||step.status==="skipped_optional"||(step.status==="pending"&&dependencies));
 }
@@ -193,7 +192,7 @@ function Workspace(p:PaidSetupWorkspaceProps) {
             return <li key={step.id} data-step-id={step.id} data-state={step.status}>
               <button type="button" disabled={!enabled} aria-current={active===step.id?"step":undefined} aria-controls={panelId} onClick={()=>select(step.id)}>
                 <span className={styles.number} aria-hidden="true">{verified?"✓":index+1}</span>
-                <span className={styles.stepText}><strong>{titles[step.id][ar?0:1]}</strong><small>{status}{step.id==="team"?" · "+t("اختياري","Optional"):""}</small></span>
+                <span className={styles.stepText}><strong>{titles[step.id][ar?0:1]}</strong><small>{status}</small></span>
               </button>
             </li>;
           })}</ol>

@@ -17,9 +17,7 @@ export const PAID_SETUP_STEP_IDS = [
   "connect_instagram",
   "hours",
   "knowledge",
-  "language",
   "assistant_test",
-  "invitations",
   "launch",
 ] as const;
 
@@ -227,22 +225,16 @@ export function projectTrustedBoundSelection(facts: PaidSlotFacts, binding: Trus
   const channelIds = channelSteps.map((item) => item.id);
   const hours = step("hours", { required: true, status: "pending", dependencyIds: [], reasonCodes: ["setup_incomplete"] });
   const knowledge = step("knowledge", { required: true, status: "unavailable", dependencyIds: ["hours"], reasonCodes: ["readiness_unavailable"] });
-  const language = step("language", { required: true, status: "unavailable", dependencyIds: ["knowledge"], reasonCodes: ["automatic_language", "readiness_unavailable"] });
-  const assistant = step("assistant_test", { required: true, status: "unavailable", dependencyIds: ["language"], reasonCodes: ["readiness_unavailable"] });
-  const invitations = step("invitations", {
-    required: false,
-    status: binding.invitationSkipped ? "skipped_optional" : "unavailable",
-    dependencyIds: ["assistant_test"],
-    reasonCodes: binding.invitationSkipped ? ["invitation_skipped"] : ["readiness_unavailable"],
-  });
-  const requiredBeforeLaunch: PaidSetupStepId[] = [...channelIds, "hours", "knowledge", "language", "assistant_test"];
+  const assistant = step("assistant_test", { required: true, status: "unavailable", dependencyIds: ["knowledge"], reasonCodes: ["readiness_unavailable"] });
+  // Team invitations are managed in Settings, not as a setup step. invitationSkipped remains on the binding for parse compatibility only.
+  const requiredBeforeLaunch: PaidSetupStepId[] = [...channelIds, "hours", "knowledge", "assistant_test"];
   const launch = step("launch", {
     required: true,
     status: "blocked",
     dependencyIds: requiredBeforeLaunch,
     reasonCodes: ["launch_not_confirmed", "launch_not_implemented"],
   });
-  const steps = [...channelSteps, hours, knowledge, language, assistant, invitations, launch];
+  const steps = [...channelSteps, hours, knowledge, assistant, launch];
   return {
     schemaVersion: 1,
     sourceStatus: "ready",

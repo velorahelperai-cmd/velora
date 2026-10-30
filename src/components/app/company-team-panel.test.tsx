@@ -17,7 +17,7 @@ vi.mock("react", async () => {
 vi.mock("@/lib/demo-state", () => ({ useDemo: () => ({ locale: mocked.locale }) }));
 vi.mock("./account-chrome", () => ({ useOptionalAccountSession: () => ({ identity: { userId: mocked.account }, isCurrentUser: (id: string) => id === mocked.account }) }));
 vi.mock("@/lib/tenancy/staff-invitations", () => ({ listCompanyTeam: mocked.read, createStaffInvitation: mocked.create, replaceStaffInvitation: mocked.replace, cancelStaffInvitation: mocked.cancel }));
-vi.mock("./ui", () => ({ Button: "button", Card: "section", Notice: "aside", Field: ({ children }: { children: (p: object) => ReactNode }) => children({}), useAction: () => ({ busy: false, run: (fn: () => unknown) => fn() }), useAppCopy: () => ({ loading: "Loading", app: { tabs: { team: "Team" }, owner: "Owner", staff: "Staff", active: "Active", invited: "Invited", teamEmpty: "No members", inviteName: "Staff name", inviteEmail: "Staff email", invite: "Create invitation", openInvite: "Invitation link" } }) }));
+vi.mock("./ui", () => ({ Button: "button", Card: "section", Notice: "aside", Field: ({ children }: { children: (p: object) => ReactNode }) => children({}), useAction: () => ({ busy: false, run: (fn: () => unknown) => fn() }), useAppCopy: () => ({ loading: "Loading", app: { tabs: { team: "Team and permissions" }, owner: "Owner", staff: "Staff", active: "Active", invited: "Invited", teamEmpty: "No members", inviteName: "Name", inviteEmail: "Email", invite: "Add employee", openInvite: "Invitation link" } }) }));
 import { CompanyTeamPanel } from "./company-team-panel";
 type Node = { type: unknown; props: Record<string, unknown> };
 function nodes(value: unknown): Node[] {
@@ -58,11 +58,11 @@ beforeEach(() => { vi.clearAllMocks(); mocked.locale = "en"; mocked.account = "u
 describe("company invitations", () => {
   it("blocks immediate duplicate submission before React renders and keeps one operation across uncertain retries", async () => {
     const h = await ready(); fill(h); const pending = deferred<unknown>(); mocked.create.mockReturnValueOnce(pending.promise).mockResolvedValueOnce(saved({ replayed: true, inviteUrl: null }));
-    submit(h); submit(h); h.render(); expect(mocked.create).toHaveBeenCalledTimes(1); expect(button(h, "Create invitation").props.busy).toBe(true);
-    pending.reject(new Error("LOST_RESPONSE")); await flush(); h.render(); expect(button(h, "Create invitation").props.busy).toBe(false);
+    submit(h); submit(h); h.render(); expect(mocked.create).toHaveBeenCalledTimes(1); expect(button(h, "Add employee").props.busy).toBe(true);
+    pending.reject(new Error("LOST_RESPONSE")); await flush(); h.render(); expect(button(h, "Add employee").props.busy).toBe(false);
     expect(nodes(h.tree()).filter(n => n.type === "input" && !n.props.readOnly).map(n => n.props.value)).toEqual(["Staff", "staff@example.invalid"]);
     submit(h); await flush(); h.render(); expect(mocked.create.mock.calls[0][0].operationId).toMatch(/^[a-f0-9-]{36}$/); expect(mocked.create.mock.calls[1][0].operationId).toBe(mocked.create.mock.calls[0][0].operationId);
-    expect(text(h.tree())).toContain("cannot be recovered"); expect(nodes(h.tree()).some(n => n.props.readOnly)).toBe(false);
+    expect(text(h.tree())).toContain("unavailable"); expect(nodes(h.tree()).some(n => n.props.readOnly)).toBe(false);
   });
   it("assigns a new operation when the normalized create draft changes", async () => {
     const h = await ready(); fill(h); mocked.create.mockRejectedValue(new Error("UNKNOWN")); submit(h); await flush(); h.render();
@@ -75,12 +75,12 @@ describe("company invitations", () => {
   });
   it("shows a real explicit replacement flow after reload without claiming to recover a token", async () => {
     const h = await ready([invitation]); expect(nodes(h.tree()).some(n => n.props.readOnly)).toBe(false); click(h, "Replace invitation"); h.render();
-    expect(mocked.replace).not.toHaveBeenCalled(); expect(text(h.tree())).toContain("all pending links"); expect(text(h.tree())).toContain("Accepted memberships and history");
+    expect(mocked.replace).not.toHaveBeenCalled(); expect(text(h.tree())).toContain("pending links"); expect(text(h.tree())).toContain("Memberships and history");
     mocked.replace.mockResolvedValueOnce(saved({ outcome: "replaced", invitation: { ...invitation, id: "invite-new", revision: 4 } })); mocked.read.mockResolvedValue(team([{ ...invitation, id: "invite-new", revision: 4 }])); click(h, "Confirm replacement"); click(h, "Confirm replacement"); await flush(); h.render();
     expect(mocked.replace).toHaveBeenCalledTimes(1); expect(mocked.replace.mock.calls[0][0]).toMatchObject({ companyId: "company-a", invitationId: "invite-a", expectedRevision: 3 }); expect(nodes(h.tree()).some(n => n.props.readOnly)).toBe(true);
   });
   it("cancels only after explicit confirmation and preserves an uncertain cancellation operation", async () => {
-    const h = await ready([invitation]); click(h, "Cancel invitation"); h.render(); expect(mocked.cancel).not.toHaveBeenCalled(); expect(text(h.tree())).toContain("all pending links");
+    const h = await ready([invitation]); click(h, "Cancel invitation"); h.render(); expect(mocked.cancel).not.toHaveBeenCalled(); expect(text(h.tree())).toContain("pending links");
     mocked.cancel.mockRejectedValueOnce(new Error("UNKNOWN")).mockResolvedValueOnce(saved({ outcome: "cancelled", invitation: { ...invitation, status: "cancelled", revision: 4 }, inviteUrl: null })); click(h, "Confirm cancellation"); await flush(); h.render(); click(h, "Confirm cancellation"); await flush(); h.render();
     expect(mocked.cancel.mock.calls[1][0].operationId).toBe(mocked.cancel.mock.calls[0][0].operationId); expect(text(h.tree())).toContain("Invitation cancelled"); expect(nodes(h.tree()).some(n => n.props.readOnly)).toBe(false);
   });
@@ -94,7 +94,7 @@ describe("company invitations", () => {
     const h = await ready([{ ...invitation, status: "accepted" }, { ...invitation, id: "cancelled", status: "cancelled" }]); expect(text(h.tree())).toContain("Accepted"); expect(text(h.tree())).toContain("Cancelled"); expect(button(h, "Replace invitation")).toBeUndefined(); expect(button(h, "Cancel invitation")).toBeUndefined();
   });
   it("contains legacy conflicts with explicit recipient replacement and cancellation controls", async () => {
-    const h = await ready([{ ...invitation, status: "conflicted" }]); expect(text(h.tree())).toContain("conflicting"); expect(button(h, "Replace invitation")).toBeDefined(); expect(button(h, "Cancel invitation")).toBeDefined();
+    const h = await ready([{ ...invitation, status: "conflicted" }]); expect(text(h.tree())).toContain("Conflicting"); expect(button(h, "Replace invitation")).toBeDefined(); expect(button(h, "Cancel invitation")).toBeDefined();
   });
   it("discards mutation success and failed list response after unmount", async () => {
     const h = await ready(); fill(h); const pending = deferred<unknown>(); mocked.create.mockReturnValueOnce(pending.promise); submit(h); h.unmount(); pending.resolve(saved()); await flush(); expect(h.driver.lateWrites).toBe(0); expect(mocked.read).toHaveBeenCalledTimes(1);
@@ -110,7 +110,7 @@ describe("company invitations", () => {
   });
   it("handles a lost create response followed by reload with explicit replacement and no recovered link", async () => {
     const h = await ready(); fill(h); mocked.create.mockRejectedValueOnce(new Error("RESPONSE_LOST_AFTER_COMMIT")); submit(h); await flush(); h.render(); h.unmount();
-    const reloaded = await ready([invitation]); expect(text(reloaded.tree())).toContain("cannot be recovered"); expect(nodes(reloaded.tree()).some(n => n.props.readOnly)).toBe(false);
+    const reloaded = await ready([invitation]); expect(text(reloaded.tree())).toContain("unavailable"); expect(nodes(reloaded.tree()).some(n => n.props.readOnly)).toBe(false);
     click(reloaded, "Replace invitation"); reloaded.render(); mocked.replace.mockResolvedValueOnce(saved({ outcome: "replaced", invitation: { ...invitation, id: "replacement", revision: 4 } })); mocked.read.mockResolvedValueOnce(team([{ ...invitation, id: "replacement", revision: 4 }])); click(reloaded, "Confirm replacement"); await flush(); reloaded.render();
     expect(mocked.create).toHaveBeenCalledTimes(1); expect(nodes(reloaded.tree()).find(n => n.props.readOnly)?.props.value).toBe(saved().data.inviteUrl);
   });
@@ -123,7 +123,7 @@ describe("company invitations", () => {
     fill(h); mocked.create.mockResolvedValueOnce(saved({ outcome: "existing", inviteUrl: null })); mocked.read.mockResolvedValueOnce(team([invitation])); submit(h); await flush(); h.render(); expect(mocked.create.mock.calls[1][0].operationId).not.toBe(mocked.create.mock.calls[0][0].operationId); expect(nodes(h.tree()).find(n => n.props.readOnly)?.props.value).toBe(saved().data.inviteUrl);
   });
   it("discards an old company's pending list on company change and starts with an empty draft", async () => {
-    const pending = deferred<unknown>(); mocked.read.mockReturnValueOnce(pending.promise).mockResolvedValueOnce({ ok: true, data: { companyId: "company-b", members: [], invitations: [] } }); const h = mount(); h.render({ companyId: "company-b", accountId: "user-a" }); await flush(); pending.resolve(team([{ ...invitation, name: "Old company staff" }])); await flush(); h.render(); expect(text(h.tree())).not.toContain("Old company staff"); expect(button(h, "Create invitation").props.disabled).toBe(true);
+    const pending = deferred<unknown>(); mocked.read.mockReturnValueOnce(pending.promise).mockResolvedValueOnce({ ok: true, data: { companyId: "company-b", members: [], invitations: [] } }); const h = mount(); h.render({ companyId: "company-b", accountId: "user-a" }); await flush(); pending.resolve(team([{ ...invitation, name: "Old company staff" }])); await flush(); h.render(); expect(text(h.tree())).not.toContain("Old company staff"); expect(button(h, "Add employee").props.disabled).toBe(true);
   });
   it("starts a fresh create operation for an identical recipient after confirmed create and cancellation", async () => {
     const h = await ready(); fill(h); mocked.create.mockResolvedValueOnce(saved()); mocked.read.mockResolvedValueOnce(team([invitation])); submit(h); await flush(); h.render();
@@ -168,7 +168,7 @@ for (const code of ["FORBIDDEN", "UNAUTHENTICATED", "UNVERIFIED"]) {
   expect(nodes(h.tree()).some(n => n.props.readOnly)).toBe(true);
   fill(h,"Other staff","other@example.invalid");
   mocked.create.mockResolvedValueOnce({ok:false,code}); submit(h); await flush(); h.render();
-  expect(text(h.tree())).toContain("Your account or permissions changed");
+  expect(text(h.tree())).toContain("Permissions changed. Check your account.");
   expect(nodes(h.tree()).some(n => n.props.readOnly)).toBe(false);
   expect(text(h.tree())).not.toContain("staff@example.invalid");
  });
@@ -189,9 +189,9 @@ for (const action of ["create", "replace", "cancel"] as const) {
       else { click(h, action === "replace" ? "Replace invitation" : "Cancel invitation"); h.render(); retry = button(h, action === "replace" ? "Confirm replacement" : "Confirm cancellation").props.onClick as () => void; (action === "replace" ? mocked.replace : mocked.cancel).mockResolvedValueOnce({ ok: false, code }); }
       retry(); await flush(); h.render();
       expect(text(h.tree())).not.toContain(invitation.email); expect(nodes(h.tree()).some(n => n.props.readOnly)).toBe(false);
-      expect(button(h, "Create invitation").props.disabled).toBe(true); oldCopy(); retry(); await flush();
+      expect(button(h, "Add employee").props.disabled).toBe(true); oldCopy(); retry(); await flush();
       expect(mocked.clipboard).not.toHaveBeenCalled(); expect(mocked.create.mock.calls.length + mocked.replace.mock.calls.length + mocked.cancel.mock.calls.length).toBe(2);
-      mocked.read.mockResolvedValueOnce({ ok: false, code: "UNAVAILABLE" }); click(h, "Refresh team"); await flush(); h.render(); expect(button(h, "Create invitation").props.disabled).toBe(true);
+      mocked.read.mockResolvedValueOnce({ ok: false, code: "UNAVAILABLE" }); click(h, "Refresh team"); await flush(); h.render(); expect(button(h, "Add employee").props.disabled).toBe(true);
       mocked.read.mockResolvedValueOnce(team([invitation])); click(h, "Refresh team"); await flush(); h.render(); expect(text(h.tree())).toContain(invitation.email); oldCopy();
       expect(mocked.clipboard).not.toHaveBeenCalled();
       if (action !== "create") { retry(); await flush(); expect(mocked.replace.mock.calls.length + mocked.cancel.mock.calls.length).toBe(1); }

@@ -100,7 +100,7 @@ describe("PaidBranchHours radical fix & non-blocking UI journey", () => {
       expect(mondayInputs.length).toBeGreaterThan(0);
 
       // Conflict warning is displayed because user draft differs from server snapshot
-      expect(host.textContent).toContain("وصلت المواعيد المحفوظة من الخادم وتختلف عن مسودتك الحالية");
+      expect(host.textContent).toContain("وصلت مواعيد محفوظة تختلف عن مسودتك");
       const loadServerBtn = Array.from(host.querySelectorAll("button")).find(
         (b) => b.textContent?.includes("استعادة مواعيد الخادم")
       );
@@ -112,7 +112,7 @@ describe("PaidBranchHours radical fix & non-blocking UI journey", () => {
       });
 
       // Now sunday is open from server, and conflict banner disappears
-      expect(host.textContent).not.toContain("وصلت المواعيد المحفوظة من الخادم وتختلف عن مسودتك الحالية");
+      expect(host.textContent).not.toContain("وصلت مواعيد محفوظة تختلف عن مسودتك");
       expect(host.querySelector("fieldset[data-hours-day='sunday'] input[type='time']")).not.toBeNull();
     } finally {
       await act(async () => root.unmount());
@@ -185,13 +185,11 @@ describe("PaidBranchHours radical fix & non-blocking UI journey", () => {
         root.render(createElement(PaidSetupStepHost, stepHostProps));
       });
 
-      // Find the Sun-Thu preset button
-      const sunThuBtn = Array.from(host.querySelectorAll("button")).find((b) =>
-        b.textContent?.includes("الأحد – الخميس")
-      );
-      expect(sunThuBtn).toBeDefined();
+      const sunThuBtn = host.querySelector<HTMLButtonElement>('button[data-hours-preset="workdays_sun_thu"]');
+      expect(sunThuBtn).not.toBeNull();
+      expect(sunThuBtn!.textContent).toContain("الأحد – الخميس");
+      expect(host.textContent).not.toMatch(/[\u{1F300}-\u{1FAFF}]/u);
 
-      // Click preset
       await act(async () => {
         sunThuBtn!.click();
       });

@@ -1,3 +1,43 @@
+# Current Session Index - SETUP-UNIFIED-RELEASE-INTEGRATION-20261030
+
+- **Task (Unified `/setup` 5-step release & integration — SINGLE-SETUP-PATH-001 / C11–C16):**
+  - Integrated and verified all 4 enhancements on canonical `/setup`: (A) Premium Working Hours (`hours`) with 3 emoji-free presets, batch quick-apply, multi-interval/overnight/exceptions, CAS & drafts; (B) Knowledge Studio + integrated reply languages (`ar`/`en`/`both` via `reply-language-contract.ts`, deleted standalone `paid-reply-language.*`, launch gated on `language_unconfirmed`); (C) Premium Assistant Trial chat (`assistant_test`) with Noura/Lina/Dana persona, quota `10` & timeout/`UNKNOWN` guards; (D) Team invitation step removed from `/setup` (`CompanyTeamPanel` in Settings → Team and permissions).
+  - Canonical 5-step sequence: entitled channels (`whatsapp`/`instagram`) → `hours` → `knowledge` → `test` (`assistant_test`) → `launch`. Unified `PaidSetupStepHost` `hours` read onto `observeSetupRead` (10s non-blocking deadline with late-arrival hydration and scope fencing) and `launch` loading reset in `retryRead`.
+  - Brain proven; Graphify build `b95881f9-ec25-4a38-8086-a35b919b23d5` matched HEAD `23549adc2646484cfd51a1eda80b0a0063de546c`. Other agents' files preserved untouched. **No Commit/Push/Deploy/SQL per owner boundary.**
+  - **Verification:** Unified Vitest 396/396 PASS across 25 setup/hours/knowledge/language/trial/team/launch files; `npm run typecheck` PASS; scoped ESLint PASS (0 errors, 1 existing img warning); `node scripts/ci/security.mjs` PASS (2094 paths). Live browser `/setup`, live Gemini, and live Meta provider acceptance remain `NOT_RUN`.
+
+# Current Session Index - SETUP-REMOVE-TEAM-STEP-20261030
+
+- **Task (Remove optional team invite from `/setup`; keep staff management in Settings — SINGLE-SETUP-PATH-001 / C16.1):**
+  - Removed B1 `invitations` from `PAID_SETUP_STEP_IDS` / `projectTrustedBoundSelection`; checklist/workspace/host no longer mount `PaidTeamInvitations`. Legacy `invitations`/`team` rows stripped on read/progress; sessionStorage `team` cleared. Launch gates unchanged (channels/hours/knowledge+language/trial); invites not required.
+  - Reused Settings → Team and permissions `CompanyTeamPanel`: «Add employee», name+email, expandable permissions (no fake role toggles), seats-in-use, invite status, replace/cancel. Shared `paid-team-invitations*` + staff RPCs retained; no SQL/RLS/seat/CAS changes.
+  - Order: channels → hours → knowledge & languages → assistant trial → launch. Graphify matched HEAD `23549ad`. Hours/knowledge/trial WIP preserved. **No Commit/Push/Deploy.**
+  - **Verification:** 133/133 PASS (9 files: contracts/progress/checklist/workspace×2/host/wizard/team-panel/launch-summary); `tsc --noEmit` PASS; scoped ESLint PASS; security PASS (2094). Live `/setup` + Settings browser NOT_RUN.
+
+# Current Session Index - SETUP-ASSISTANT-TRIAL-CHAT-PREMIUM-20261030
+
+- **Task (Premium AI assistant chat experience for setup trial — SINGLE-SETUP-PATH-001 / C15 UI):**
+  - Rebuilt `paid-assistant-trial.tsx` + CSS as a messaging-style chat: persona header (Noura/Lina/Dana from entitlement + approved posters), compact quota `used/limit`, user/assistant bubbles, smart auto-scroll, in-chat typing, ≤3 suggestion chips that call the real ask path, auto-growing composer (Enter send / Shift+Enter newline), char count near limit only, optional citation toggle.
+  - Preserved ask/recover/refresh/retry contracts, synthetic labeling, pending-operation gates, allowance, no Local Storage of chat, no fake Gemini text, no new route/API/worker/billing change. Host passes `persona` from setup read.
+  - Brain proven; Graphify index matched HEAD `23549ad`. Knowledge/languages and hours WIP preserved. No Commit/Push/Deploy.
+  - **Verification:** 49/49 PASS (`paid-assistant-trial.test.tsx`, `paid-setup-drafts.test.tsx`, `paid-setup-step-host.test.tsx`); TypeScript PASS; scoped ESLint 0 errors (1 existing-pattern img warning); security PASS (2094). Live Gemini/`/setup` browser NOT_RUN. C15 acceptance remains OPEN.
+
+# Current Session Index - SETUP-KNOWLEDGE-LANGUAGES-MERGE-20261030
+
+- **Task (Knowledge Studio + multilingual reply languages inside canonical `/setup` — SINGLE-SETUP-PATH-001):**
+  - Folded reply-language into the knowledge step: multi-select `ar`/`en` → contract `ar`/`en`/`both` via `reply-language-contract.ts`; UI card in `paid-branch-knowledge.tsx`; host loads/confirms languages with knowledge; no new route or SQL migration.
+  - Deleted standalone `paid-reply-language.tsx` / CSS / test. Removed `language` from B1 step IDs, checklist order, workspace titles, progress projection, and related tests. Order: WhatsApp → hours → knowledge & languages → trial → team → launch. Launch still gated by `language_unconfirmed`.
+  - Brain read proven (Cursor). Graphify indexed `5c5dc07` trails HEAD `23549ad`; changes verified against working tree. Hours simplify WIP preserved (unrelated). No Commit/Push/Deploy.
+  - **Verification:** 108/108 PASS (11 targeted files: contract/progress/actions/workspace/checklist/knowledge/host); TypeScript PASS after fixture cleanup; scoped ESLint PASS; security PASS (2094 paths). Live `/setup` browser and Gemini end-to-end NOT_RUN.
+
+# Current Session Index - SETUP-HOURS-SIMPLIFY-PREMIUM-20261030
+
+- **Task (Simplify & premium redesign for branch hours inside canonical `/setup`):**
+  - Rebuilt the hours UI in `paid-branch-hours.tsx` / `.module.css`: short title, Save + Copy in a thin toolbar, More menu for close-all/exceptions/timezone, 3 emoji-free presets, one Quick apply row with a single Apply action, compact day rows, and day copy/close tucked into a small menu.
+  - Preserved save, branch copy, multi-interval, next-day, CAS/version, host wiring, and validation. No new route or schema change. Commit/Push not requested.
+  - Graphify index at `ca6cb9b` (`2026-10-30T00:32:50Z`) trails HEAD `23549ad`; hours source verified against the working tree.
+  - **Verification:** 31/31 PASS (`paid-branch-hours.test.tsx`, `paid-branch-hours-journey.test.tsx`, `paid-setup-step-host.test.tsx`); TypeScript PASS; scoped ESLint PASS; security PASS (2094 paths). No Commit/Push.
+
 # Current Session Index - SETUP-KNOWLEDGE-STUDIO-20261030
 
 - **Task (Premium Knowledge Studio inside canonical `/setup` — SINGLE-SETUP-PATH-001):**

@@ -4,11 +4,12 @@ import { randomUUID } from "node:crypto";
 import { readSessionIdentity } from "@/lib/auth/server-identity";
 import { withLogContext } from "@/lib/logging/logger.mjs";
 import { createClient } from "@/lib/supabase/server";
-import type {
-  ReplyLanguageScope,
-  ReplyLanguageSnapshot,
-} from "@/components/app/paid-reply-language";
-import type { CompanyRecord } from "@/lib/tenancy/types";
+import {
+  isReplyLanguageContract,
+  type ReplyLanguageContract,
+  type ReplyLanguageScope,
+  type ReplyLanguageSnapshot,
+} from "@/lib/tenancy/reply-language-contract";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -48,11 +49,11 @@ export async function readOwnedBranchReplyLanguageAction(
 }
 
 export async function confirmOwnedBranchReplyLanguageAction(
-  input: ReplyLanguageScope & { expectedVersion: number; replyLanguage: CompanyRecord["reply_language"] }
+  input: ReplyLanguageScope & { expectedVersion: number; replyLanguage: ReplyLanguageContract }
 ): Promise<ReplyLanguageSnapshot | null> {
   const requestId = randomUUID();
   return withLogContext({ request_id: requestId, user_id: input?.expectedAccountId }, async () => {
-    if (!validScope(input) || !Number.isSafeInteger(input.expectedVersion) || input.expectedVersion < 1 || !["ar", "en", "both"].includes(input.replyLanguage ?? "")) return null;
+    if (!validScope(input) || !Number.isSafeInteger(input.expectedVersion) || input.expectedVersion < 1 || !isReplyLanguageContract(input.replyLanguage)) return null;
     const identity = await readSessionIdentity();
     if (!identity.ok || identity.userId !== input.expectedAccountId) return null;
 

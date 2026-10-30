@@ -29,14 +29,16 @@ it("preserves the real B1 unknowns without inventing progress or actionable step
 it.each([{companyId:"other",branchId:scope.branchId},{companyId:scope.companyId,branchId:"other"}])("rejects a mismatched server scope",expected=>{
  expect(paidChecklistFromRead(read,expected)).toBeNull();
 });
-it("maps every stable server step and dependency without changing status or action IDs",()=>{
- const ids:PaidSetupStepId[]=["connect_whatsapp","connect_instagram","hours","knowledge","language","assistant_test","invitations","launch"];
- const snapshot={...read,steps:ids.map(id=>({id,required:id!=="invitations",status:"blocked" as const,dependencyIds:ids,reasonCodes:["server_reason"],actionId:"server_action"}))};
+it("maps every stable server step and strips legacy invitations without changing status or action IDs",()=>{
+ const ids:PaidSetupStepId[]=["connect_whatsapp","connect_instagram","hours","knowledge","assistant_test","launch"];
+ const legacy=["connect_whatsapp","connect_instagram","hours","knowledge","assistant_test","invitations","launch"] as const;
+ const snapshot={...read,steps:legacy.map(id=>({id:id as PaidSetupStepId,required:id!=="invitations",status:"blocked" as const,dependencyIds:[...legacy] as PaidSetupStepId[],reasonCodes:["server_reason"],actionId:"server_action"}))};
  const mapped=paidChecklistFromRead(snapshot,scope)!;
- const expected=["whatsapp","instagram","hours","knowledge","language","test","team","launch"];
+ const expected=["whatsapp","instagram","hours","knowledge","test","launch"];
  expect(mapped.steps.map(s=>s.id)).toEqual(expected);
  for(const step of mapped.steps){expect(step.dependencyIds).toEqual(expected);expect(step.status).toBe("blocked");expect(step.actionId).toBe("server_action");}
  expect(mapped.launch).toEqual(snapshot.launch);
+ expect(ids).toEqual(["connect_whatsapp","connect_instagram","hours","knowledge","assistant_test","launch"]);
 });
 it("renders nullable unavailable readback as unavailable",()=>{
  const model=paidChecklistFromRead({...read,sourceStatus:"unavailable"},scope);

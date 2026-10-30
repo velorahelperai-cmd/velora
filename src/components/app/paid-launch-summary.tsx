@@ -47,7 +47,7 @@ function LaunchForm(p:PaidLaunchSummaryProps & {snapshot:LaunchSummarySnapshot})
  const status=(v:PaidSetupStepStatus)=>({verified:t("مؤكد","Verified"),pending:t("قيد الإعداد","Pending"),blocked:t("يتطلب إجراء","Action needed"),skipped_optional:t("تم التخطي اختياريًا","Skipped optionally"),unavailable:t("غير متاح","Unavailable")}[v]??t("غير معروف","Unknown"));
  const channels=(s.setup.selectedChannels??[]).filter((v,i,a)=>["whatsapp","instagram"].includes(v)&&a.indexOf(v)===i);
  const rows=[...channels.map(channel=>({label:channel==="whatsapp"?"WhatsApp":"Instagram",item:s.summary.channels.find(row=>row.channel===channel)??{detail:t("لم تتوفر حالة القناة.","Channel status is unavailable."),status:"unavailable" as const}})),
-  {label:t("ساعات الفرع","Branch hours"),item:s.summary.hours},{label:t("المعرفة","Knowledge"),item:s.summary.knowledge},{label:t("المساعد المختار","Selected assistant"),item:s.summary.persona},{label:t("الفريق","Team"),item:s.summary.team}];
+  {label:t("ساعات الفرع","Branch hours"),item:s.summary.hours},{label:t("المعرفة","Knowledge"),item:s.summary.knowledge},{label:t("المساعد المختار","Selected assistant"),item:s.summary.persona},{label:t("الفريق (الإعدادات)","Team (settings)"),item:s.summary.team}];
  async function launch(){
   if(!canLaunch||!ack||reserved.current||!p.isCurrent())return;
   reserved.current=true;setPending(true);

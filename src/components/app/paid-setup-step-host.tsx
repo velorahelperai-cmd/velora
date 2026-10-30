@@ -22,7 +22,7 @@ import {
   uploadOwnedBranchKnowledgeFilesAction,
   approveOwnedBranchKnowledgeSourceAction,
 } from "@/lib/tenancy/paid-branch-knowledge-actions";
-import { PaidReplyLanguage, type ReplyLanguageSnapshot } from "./paid-reply-language";
+import type { ReplyLanguageSnapshot } from "@/lib/tenancy/reply-language-contract";
 import {
   confirmOwnedBranchReplyLanguageAction,
   readOwnedBranchReplyLanguageAction,
@@ -33,8 +33,6 @@ import {
   recoverOwnedBranchAssistantTrialAction,
   readOwnedBranchAssistantTrialAction,
 } from "@/lib/tenancy/paid-assistant-trial-actions";
-import { PaidTeamInvitations, type BranchTeamSnapshot, type PaidTeamInvitationsProps } from "./paid-team-invitations";
-import { readOwnedBranchTeamAction, inviteOwnedBranchTeamAction, revokeOwnedBranchTeamAction } from "@/lib/tenancy/paid-team-actions";
 import { PaidLaunchSummary, type LaunchSummarySnapshot } from "./paid-launch-summary";
 import {
   confirmOwnedBranchLaunchAction,
@@ -69,10 +67,9 @@ function StepHost(props: PaidSetupStepHostProps) {
   const retryRead=()=>{
     if(!isCurrentRef.current())return;
     if(step==="hours")setHoursPhase("loading");
-    if(step==="knowledge")setKnowledgePhase("loading");
-    if(step==="language")setLangPhase("loading");
+    if(step==="knowledge"){setKnowledgePhase("loading");setLangPhase("loading");}
     if(step==="test")setTrialPhase("loading");
-    if(step==="team")setTeamPhase("loading");
+    if(step==="launch")setLaunchPhase("loading");
     setReadVersion(v=>v+1);
   };
   const targetScope = useMemo(
@@ -92,17 +89,15 @@ function StepHost(props: PaidSetupStepHostProps) {
     hoursInFlightKeyRef.current = scopeKey;
 
     let active = true;
-
-
-    const timer = setTimeout(() => {
-      if (!active || !isCurrentRef.current()) return;
-      if (hoursInFlightKeyRef.current === scopeKey) {
-        setHoursPhase("unavailable");
-      }
-    }, 10000);
-
-    void readOwnedBranchHoursAction(targetScope).then((res) => {
-      clearTimeout(timer);
+    void observeSetupRead(
+      readOwnedBranchHoursAction(targetScope),
+      () => {
+        if (active && isCurrentRef.current() && hoursInFlightKeyRef.current === scopeKey) {
+          setHoursPhase("unavailable");
+        }
+      },
+      10_000,
+    ).then((res) => {
       if (!active || !isCurrentRef.current()) return;
       if (hoursInFlightKeyRef.current !== scopeKey) return;
       hoursInFlightKeyRef.current = null;
@@ -114,24 +109,25 @@ function StepHost(props: PaidSetupStepHostProps) {
         setHoursPhase("unavailable");
       }
     }).catch(() => {
-      clearTimeout(timer);
-      if (active && isCurrentRef.current()) {
+      if (active && isCurrentRef.current() && hoursInFlightKeyRef.current === scopeKey) {
+        hoursInFlightKeyRef.current = null;
         setHoursPhase("unavailable");
       }
     });
 
     return () => {
       active = false;
-      clearTimeout(timer);
       if (hoursInFlightKeyRef.current === scopeKey) {
         hoursInFlightKeyRef.current = null;
       }
     };
   }, [step, expectedAccountId, companyId, branchId, readVersion, targetScope]);
 
-  // 2. Knowledge step
+  // 2. Knowledge + reply languages (same setup step)
   const [knowledgeSnap, setKnowledgeSnap] = useState<BranchKnowledgeViewSnapshot | null>(null);
   const [knowledgePhase, setKnowledgePhase] = useState<"loading" | "ready" | "busy" | "saved" | "conflict" | "unavailable">("loading");
+  const [langSnap, setLangSnap] = useState<ReplyLanguageSnapshot | null>(null);
+  const [langPhase, setLangPhase] = useState<"loading" | "ready" | "saving" | "saved" | "error" | "conflict" | "unavailable">("loading");
 
   useEffect(() => {
     if (step !== "knowledge" || !isCurrent()) return;
@@ -145,18 +141,6 @@ function StepHost(props: PaidSetupStepHostProps) {
         setKnowledgePhase("unavailable");
       }
     }).catch(()=>{if(active&&isCurrent())setKnowledgePhase('unavailable');});
-    return () => {
-      active = false;
-    };
-  }, [step, targetScope, isCurrent,readVersion]);
-
-  // 3. Language step
-  const [langSnap, setLangSnap] = useState<ReplyLanguageSnapshot | null>(null);
-  const [langPhase, setLangPhase] = useState<"loading" | "ready" | "saving" | "error" | "conflict" | "unavailable">("loading");
-
-  useEffect(() => {
-    if (step !== "language" || !isCurrent()) return;
-    let active = true;
     void observeSetupRead(readOwnedBranchReplyLanguageAction(targetScope),()=>{if(active&&isCurrent())setLangPhase("unavailable");}).then((snap) => {
       if (!active || !isCurrent()) return;
       if (snap) {
@@ -171,7 +155,7 @@ function StepHost(props: PaidSetupStepHostProps) {
     };
   }, [step, targetScope, isCurrent,readVersion]);
 
-  // 4. Test step
+  // 3. Test step
   const [trialSnap, setTrialSnap] = useState<TrialSnapshot | null>(null);
   const [trialPhase, setTrialPhase] = useState<"loading" | "ready" | "pending" | "error" | "unknown" | "unavailable">("loading");
 
@@ -192,21 +176,7 @@ function StepHost(props: PaidSetupStepHostProps) {
     };
   }, [step, targetScope, isCurrent,readVersion]);
 
-  // 5. Team step
-  const [teamSnap,setTeamSnap]=useState<BranchTeamSnapshot|null>(null);
-  const [teamPhase,setTeamPhase]=useState<PaidTeamInvitationsProps['state']['phase']>('loading');
-  const [inviteUrl,setInviteUrl]=useState<string|null>(null);
-  useEffect(()=>{
-    if(step!=='team'||!isCurrent())return;
-    let active=true;
-    void observeSetupRead(readOwnedBranchTeamAction(targetScope),()=>{if(active&&isCurrent())setTeamPhase("unavailable");}).then(snap=>{
-      if(!active||!isCurrent())return;
-      setTeamSnap(snap);setTeamPhase(snap?'ready':'unavailable');
-    }).catch(()=>{if(active&&isCurrent())setTeamPhase('unavailable');});
-    return ()=>{active=false;};
-  },[step,targetScope,isCurrent,readVersion]);
-
-  // 6. Launch step
+  // 5. Launch step
   const [launchSnap, setLaunchSnap] = useState<LaunchSummarySnapshot | null>(null);
   const [launchPhase, setLaunchPhase] = useState<"loading" | "ready" | "pending" | "error" | "unknown" | "unavailable">("loading");
 
@@ -273,6 +243,8 @@ function StepHost(props: PaidSetupStepHostProps) {
           scope={targetScope}
           boundaryFingerprint={scope.boundaryFingerprint}
           snapshot={knowledgeSnap}
+          languageSnapshot={langSnap}
+          languageState={{ version: langSnap?.version ?? null, phase: langPhase }}
           onReload={retryRead}
           state={{ scope: targetScope, version: knowledgeSnap?.version ?? null, phase: knowledgePhase }}
           isCurrent={isCurrent}
@@ -322,29 +294,16 @@ function StepHost(props: PaidSetupStepHostProps) {
             setKnowledgePhase('busy');const result=await awaitSetupRequest(approveOwnedBranchKnowledgeSourceAction(input),60_000).catch(()=>null);if(!isCurrent())return;
             if(result){setKnowledgeSnap(result);setKnowledgePhase('ready');onRefresh?.();}else setKnowledgePhase('conflict');
           }}
-        />
-      );
-
-    case "language":
-      return (
-        <PaidReplyLanguage
-          locale={locale}
-          scope={targetScope}
-          boundaryFingerprint={scope.boundaryFingerprint}
-          snapshot={langSnap}
-          onReload={retryRead}
-          state={{ scope: targetScope, version: langSnap?.version ?? null, phase: langPhase }}
-          isCurrent={isCurrent}
-          onConfirm={async (input) => {
+          onConfirmLanguages={async (input) => {
             setLangPhase("saving");
             const res = await awaitSetupRequest(confirmOwnedBranchReplyLanguageAction(input),60_000).catch(()=>null);
             if (!isCurrent()) return;
             if (res) {
               setLangSnap(res);
-              setLangPhase("ready");
+              setLangPhase("saved");
               onRefresh?.();
             } else {
-              setLangPhase("error");
+              setLangPhase("conflict");
             }
           }}
         />
@@ -365,6 +324,7 @@ function StepHost(props: PaidSetupStepHostProps) {
           locale={locale}
           scope={targetScope}
           boundaryFingerprint={scope.boundaryFingerprint}
+          persona={props.read?.entitlement?.persona ?? null}
           snapshot={trialSnap}
           state={{
             scope: targetScope,
@@ -388,46 +348,6 @@ function StepHost(props: PaidSetupStepHostProps) {
             }
           }}
         />
-      );
-
-    case "team":
-      return (
-        <section>
-        <PaidTeamInvitations
-          locale={locale}
-          scope={targetScope}
-          boundaryFingerprint={scope.boundaryFingerprint}
-          snapshot={teamSnap}
-          inviteUrl={inviteUrl}
-          onRevoke={async input=>{
-            if(!isCurrent())return;
-            setTeamPhase('pending');setInviteUrl(null);
-            const result=await awaitSetupRequest(revokeOwnedBranchTeamAction(input),60_000).catch(()=>null);
-            if(!isCurrent())return;
-            if(result?.ok){setTeamSnap(result.snapshot);setTeamPhase('ready');onRefresh?.();}
-            else setTeamPhase(result&&!result.ok&&result.code!=='UNKNOWN'?'error':'unknown');
-          }}
-          onInvite={async input=>{
-            if(!isCurrent())return;
-            setTeamPhase('pending');setInviteUrl(null);
-            const result=await awaitSetupRequest(inviteOwnedBranchTeamAction(input),60_000).catch(()=>null);
-            if(!isCurrent())return;
-            if(result?.ok){setTeamSnap(result.data.snapshot);setInviteUrl(result.data.inviteUrl);setTeamPhase('ready');onRefresh?.();}
-            else setTeamPhase('unknown');
-          }}
-          state={{
-            scope: targetScope,
-            version: teamSnap?.version??null,
-            phase: teamPhase,
-            operationId: null,
-            operation: null,
-            canRetry: false,
-            retrySafe: false,
-          }}
-          isCurrent={isCurrent}
-        />
-        {['unknown','error','unavailable'].includes(teamPhase)&&<button type="button" onClick={retryRead}>{locale==='ar'?'تحديث حالة الدعوات':'Refresh invitations'}</button>}
-        </section>
       );
 
     case "launch":

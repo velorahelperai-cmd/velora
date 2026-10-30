@@ -12,11 +12,12 @@ it('shows the submitted question immediately and prevents a duplicate while awai
  const host=document.createElement('div'),root=createRoot(host);
  try {
   await act(async()=>root.render(createElement(PaidAssistantTrial,props)));
-  await act(async()=>host.querySelector<HTMLButtonElement>('button')!.click());
-  const question=host.querySelector('textarea')!.value;
+  const set=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value')!.set!;
+  const input=host.querySelector('textarea')!;
+  await act(async()=>{set.call(input,'Hours today?');input.dispatchEvent(new Event('input',{bubbles:true}));});
   await act(async()=>{host.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));host.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));});
-  expect(ask).toHaveBeenCalledTimes(1);expect(host.querySelector('[role="log"]')!.textContent).toContain(question);
-  expect(host.querySelector('[role="log"]')!.textContent).toContain('Waiting for the request result');
+  expect(ask).toHaveBeenCalledTimes(1);expect(host.querySelector('[role="log"]')!.textContent).toContain('Hours today?');
+  expect(host.querySelector('[role="log"]')!.textContent).toMatch(/Generating a reply|Waiting/);
   await act(async()=>finish());
  } finally {await act(async()=>root.unmount());vi.unstubAllGlobals();}
 });

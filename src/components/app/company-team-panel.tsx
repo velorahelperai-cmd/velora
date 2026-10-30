@@ -16,9 +16,10 @@ type PanelState = {
   form: { name: string; email: string }; result: StaffInvitationMutation | null;
   error: string | null; readFailed: boolean; busy: boolean; refreshing: boolean;
   copied: boolean; copyBusy: boolean; confirmation: Confirmation | null; authorityDenied: boolean; authorityGeneration: number;
+  permissionsOpen: boolean;
 };
 type Request = { scope: Scope; active: boolean; authorityDenied: boolean; authorityGeneration: number; pending: boolean; readPending: boolean; readGeneration: number; copyPending: boolean; copyGeneration: number; createAttempt: { key: string; id: string } | null; link: { url: string; invitation: CompanyStaffInvitation } | null };
-const emptyState = (scope: Scope): PanelState => ({ scope, team: null, form: { name: "", email: "" }, result: null, error: null, readFailed: false, busy: false, refreshing: false, copied: false, copyBusy: false, confirmation: null, authorityDenied: false, authorityGeneration: 0 });
+const emptyState = (scope: Scope): PanelState => ({ scope, team: null, form: { name: "", email: "" }, result: null, error: null, readFailed: false, busy: false, refreshing: false, copied: false, copyBusy: false, confirmation: null, authorityDenied: false, authorityGeneration: 0, permissionsOpen: false });
 
 export function CompanyTeamPanel({ companyId, accountId = null }: { companyId: string; accountId?: string | null }) {
   const copy = useAppCopy();
@@ -31,31 +32,35 @@ export function CompanyTeamPanel({ companyId, accountId = null }: { companyId: s
   const requestRef = useRef<Request | null>(null);
   const authorityGeneration = state.authorityGeneration;
   const text = ar ? {
-    members: "عضويات النشاط", invitations: "الدعوات المحفوظة", empty: "لا توجد دعوات محفوظة.",
-    failed: "تعذّر تحديث الفريق. آخر بيانات مؤكدة ظاهرة إن توفرت. استخدم تحديث الفريق للتحقق؛ لا يلزم إعادة إجراء تم حفظه.",
-    unknown: "تعذّر تأكيد نتيجة الطلب. أعد محاولة نفس الطلب دون تغيير، أو حدّث الفريق للتحقق مما تم حفظه.",
-    invalid: "تحقق من الاسم والبريد والصلاحيات ثم أعد المحاولة.", changed: "تغيّرت الدعوة أو العضوية. حدّث الفريق وراجع الحالة قبل المحاولة مجدداً.",
-    conflict: "توجد دعوات معلّقة متعارضة. حدّث الفريق ثم اختر صراحة استبدالها أو إلغاءها.", denied: "الصلاحيات أو الحساب تغيّرا. أعد التحقق من حسابك قبل إدارة الدعوات.",
-    saved: "تم حفظ الدعوة. انسخ الرابط وشاركه مع الموظف المقصود.", cancelled: "تم إلغاء الدعوة. العضويات المقبولة والسجل محفوظان.",
-    missing: "الدعوة محفوظة، لكن رابطها الأصلي غير متاح ولا يمكن استعادته. استخدم استبدال الدعوة لإصدار رابط جديد وإبطال الروابط السابقة.",
-    expires: "تنتهي الدعوة", copy: "نسخ الرابط", copied: "تم النسخ", disabled: "معطّل", refresh: "تحديث الفريق", refreshing: "جارٍ تحديث الفريق…",
+    members: "الأعضاء", invitations: "الدعوات", empty: "لا توجد دعوات.",
+    failed: "تعذّر تحديث الفريق. حدّث للتحقق دون إعادة إجراء محفوظ.",
+    unknown: "تعذّر تأكيد النتيجة. أعد المحاولة أو حدّث الفريق.",
+    invalid: "تحقق من الاسم والبريد ثم أعد المحاولة.", changed: "تغيّرت الدعوة. حدّث وراجع قبل المحاولة.",
+    conflict: "دعوات متعارضة. حدّث ثم استبدل أو ألغِ صراحة.", denied: "تغيّرت الصلاحيات. أعد التحقق من الحساب.",
+    saved: "حُفظت الدعوة. انسخ الرابط وشاركه.", cancelled: "أُلغيت الدعوة. العضويات والسجل محفوظان.",
+    missing: "الدعوة محفوظة لكن الرابط غير متاح. استخدم الاستبدال لرابط جديد.",
+    expires: "تنتهي", copy: "نسخ الرابط", copied: "تم النسخ", disabled: "معطّل", refresh: "تحديث الفريق", refreshing: "جارٍ التحديث…",
     replace: "استبدال الدعوة", cancel: "إلغاء الدعوة", confirmReplace: "تأكيد الاستبدال", confirmCancel: "تأكيد الإلغاء", dismiss: "رجوع",
-    replaceWarning: "سيصدر رابط جديد لهذا البريد وتُبطل جميع روابطه المعلّقة في هذا النشاط. العضويات المقبولة والسجل محفوظان.",
-    cancelWarning: "ستُبطل جميع روابط هذا البريد المعلّقة في هذا النشاط. العضويات المقبولة والسجل محفوظان.",
-    statuses: { invited: copy.app.invited, expired: "منتهية", accepted: "مقبولة", cancelled: "ملغاة", conflicted: "دعوات معلّقة متعارضة" },
+    replaceWarning: "رابط جديد لهذا البريد وإبطال الروابط المعلّقة. العضويات والسجل محفوظان.",
+    cancelWarning: "إبطال الروابط المعلّقة لهذا البريد. العضويات والسجل محفوظان.",
+    permissions: "الصلاحيات", permissionsHint: "الموظف يحصل على صلاحيات الموظف القياسية لإدارة المحادثات ضمن هذا النشاط.",
+    seats: "المقاعد المستخدمة",
+    statuses: { invited: copy.app.invited, expired: "منتهية", accepted: "مقبولة", cancelled: "ملغاة", conflicted: "متعارضة" },
   } : {
-    members: "Company memberships", invitations: "Saved invitations", empty: "No saved invitations.",
-    failed: "Could not refresh the team. Last confirmed data is shown when available. Refresh team to check; a saved change does not need to be repeated.",
-    unknown: "Could not confirm the result. Retry the unchanged request, or refresh team to check what was saved.",
-    invalid: "Check the name, email and permissions, then try again.", changed: "The invitation or membership changed. Refresh team and review its state before trying again.",
-    conflict: "There are conflicting pending invitations. Refresh team, then explicitly replace or cancel them.", denied: "Your account or permissions changed. Check your account before managing invitations.",
-    saved: "Invitation saved. Copy the link and share it with the intended staff member.", cancelled: "Invitation cancelled. Accepted memberships and history are preserved.",
-    missing: "The invitation is saved, but its original link is unavailable and cannot be recovered. Replace the invitation to issue a new link and invalidate earlier links.",
-    expires: "Expires", copy: "Copy link", copied: "Copied", disabled: "Disabled", refresh: "Refresh team", refreshing: "Refreshing team…",
+    members: "Members", invitations: "Invitations", empty: "No invitations.",
+    failed: "Could not refresh the team. Refresh to verify without repeating a saved change.",
+    unknown: "Could not confirm the result. Retry or refresh the team.",
+    invalid: "Check the name and email, then try again.", changed: "The invitation changed. Refresh and review before retrying.",
+    conflict: "Conflicting invitations. Refresh, then replace or cancel explicitly.", denied: "Permissions changed. Check your account.",
+    saved: "Invitation saved. Copy and share the link.", cancelled: "Invitation cancelled. Memberships and history are kept.",
+    missing: "Invitation saved but the link is unavailable. Replace it to issue a new link.",
+    expires: "Expires", copy: "Copy link", copied: "Copied", disabled: "Disabled", refresh: "Refresh team", refreshing: "Refreshing…",
     replace: "Replace invitation", cancel: "Cancel invitation", confirmReplace: "Confirm replacement", confirmCancel: "Confirm cancellation", dismiss: "Back",
-    replaceWarning: "This issues a new link for this email and invalidates all pending links for it in this company. Accepted memberships and history are preserved.",
-    cancelWarning: "This invalidates all pending links for this email in this company. Accepted memberships and history are preserved.",
-    statuses: { invited: copy.app.invited, expired: "Expired", accepted: "Accepted", cancelled: "Cancelled", conflicted: "Multiple conflicting pending invitations" },
+    replaceWarning: "Issues a new link and invalidates pending links for this email. Memberships and history are kept.",
+    cancelWarning: "Invalidates pending links for this email. Memberships and history are kept.",
+    permissions: "Permissions", permissionsHint: "Staff receive standard staff access to manage conversations for this business.",
+    seats: "Seats in use",
+    statuses: { invited: copy.app.invited, expired: "Expired", accepted: "Accepted", cancelled: "Cancelled", conflicted: "Conflicting" },
   };
 
   function current(request: Request | null): request is Request {
@@ -207,10 +212,15 @@ export function CompanyTeamPanel({ companyId, accountId = null }: { companyId: s
   const locked = state.busy || state.refreshing || state.authorityDenied;
   const result = state.result;
   const confirmation = state.confirmation;
+  const staffCount = snapshot?.members.filter(member => member.role === "staff" && member.status === "active").length ?? 0;
+  const pendingCount = snapshot?.invitations.filter(item => item.status === "invited").length ?? 0;
   const formatDate = (date: string) => new Intl.DateTimeFormat(ar ? "ar-OM" : "en-GB", { dateStyle: "medium", timeStyle: "short" }).format(new Date(date));
   return <Card title={copy.app.tabs.team}>
-    <div className="mb-4 flex items-center justify-between gap-3">
-      <h3 className="font-semibold">{text.members}</h3>
+    <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+      <div>
+        <h3 className="font-semibold">{text.members}</h3>
+        {snapshot ? <p className="text-xs text-[color:var(--color-muted)]"><bdi dir="ltr">{staffCount + pendingCount}</bdi> · {text.seats}</p> : null}
+      </div>
       <Button variant="secondary" busy={state.refreshing} disabled={state.busy || state.refreshing} onClick={() => { const request = requestRef.current; if (current(request) && !request.pending) startTransition(() => { void reload(request); }); }}>{text.refresh}</Button>
     </div>
     {state.refreshing ? <p role="status">{text.refreshing}</p> : null}
@@ -237,7 +247,11 @@ export function CompanyTeamPanel({ companyId, accountId = null }: { companyId: s
     <form className="mt-6 grid gap-4 border-t border-[color:var(--color-line)] pt-5 sm:grid-cols-2" onSubmit={event => { event.preventDefault(); if (!confirmation) startTransition(() => { void mutate(null); }); }}>
       <Field label={copy.app.inviteName} required>{props => <input {...props} value={state.form.name} maxLength={120} disabled={locked || !!confirmation} onChange={event => { const request = requestRef.current; if (current(request)) update(request, { form: { ...state.form, name: event.target.value } }); }} />}</Field>
       <Field label={copy.app.inviteEmail} required>{props => <input {...props} type="email" dir="ltr" value={state.form.email} maxLength={254} disabled={locked || !!confirmation} onChange={event => { const request = requestRef.current; if (current(request)) update(request, { form: { ...state.form, email: event.target.value } }); }} />}</Field>
-      <div className="sm:col-span-2"><Button type="submit" busy={state.busy && !confirmation} disabled={locked || !!confirmation || state.form.name.trim().length < 2 || !state.form.email.trim()}>{copy.app.invite}</Button></div>
+      <div className="sm:col-span-2">
+        <button type="button" className="mb-3 text-sm text-[color:var(--color-brand)] underline-offset-2 hover:underline" aria-expanded={state.permissionsOpen} onClick={() => { const request = requestRef.current; if (current(request)) update(request, { permissionsOpen: !state.permissionsOpen }); }}>{text.permissions}</button>
+        {state.permissionsOpen ? <p className="mb-3 text-sm text-[color:var(--color-muted)]">{text.permissionsHint}</p> : null}
+        <Button type="submit" busy={state.busy && !confirmation} disabled={locked || !!confirmation || state.form.name.trim().length < 2 || !state.form.email.trim()}>{copy.app.invite}</Button>
+      </div>
     </form>
     {state.error ? <div role="alert" className="mt-3"><Notice tone="error">{state.error}</Notice></div> : null}
     {result ? <div role="status" className="mt-4 grid gap-3 rounded-xl border border-[#38dc89]/30 bg-[#38dc89]/10 p-4">

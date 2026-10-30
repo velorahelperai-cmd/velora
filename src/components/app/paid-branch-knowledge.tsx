@@ -2,6 +2,15 @@
 import {useId, useLayoutEffect, useRef, useState, type DragEvent, type KeyboardEvent} from "react";
 import {isPreparableKnowledgeFile, validateKnowledgeBatch} from "@/lib/knowledge/constants";
 import {isApprovedForAnswers, type KnowledgeSourceRecord, type KnowledgeStatus} from "@/lib/knowledge/types";
+import {
+  AI_REPLY_LANGUAGE_CODES,
+  languagesToReplyContract,
+  replyContractToLanguages,
+  replyLanguageLabel,
+  type AiReplyLanguageCode,
+  type ReplyLanguageContract,
+  type ReplyLanguageSnapshot,
+} from "@/lib/tenancy/reply-language-contract";
 import styles from "./paid-branch-knowledge.module.css";
 import {useSetupUnsavedChanges} from './paid-setup-unsaved';
 
@@ -26,6 +35,8 @@ export type PaidBranchKnowledgeProps = {
   locale:"ar" | "en"; scope:KnowledgeViewScope; boundaryFingerprint:string;
   snapshot:BranchKnowledgeViewSnapshot | null;
   state:{scope:KnowledgeViewScope; version:number | null; phase:"loading" | "ready" | "busy" | "saved" | "conflict" | "unavailable"};
+  languageSnapshot?:ReplyLanguageSnapshot | null;
+  languageState?:{phase:"loading" | "ready" | "saving" | "saved" | "conflict" | "unavailable" | "error"; version:number | null};
   isCurrent:()=>boolean;
   onReload?:()=>void|Promise<void>;
   onAddWebsite?:(input:CommandContext & {url:string; rightsAttested:true})=>void | Promise<void>;
@@ -35,9 +46,10 @@ export type PaidBranchKnowledgeProps = {
   onRemovePage?:(input:KnowledgeViewScope & {pageId:string;pageVersion:number})=>void|Promise<void>;
   onSourceApproval?:(input:KnowledgeViewScope & {sourceId:string;contentVersion:number;approved:boolean})=>void|Promise<void>;
   onPageAction?:(input:CommandContext & {pageId:string; pageVersion:number; action:"retry" | "retrain"})=>void | Promise<void>;
+  onConfirmLanguages?:(input:KnowledgeViewScope & {expectedVersion:number; replyLanguage:ReplyLanguageContract})=>void|Promise<void>;
 };
 type StudioTab = "website" | "files" | "faq";
-type OperationTarget = StudioTab | "library";
+type OperationTarget = StudioTab | "library" | "languages";
 const TABS: StudioTab[] = ["website", "files", "faq"];
 const sameScope = (a:KnowledgeViewScope,b:KnowledgeViewScope) => !!a.expectedAccountId && !!a.companyId && !!a.branchId &&
   a.expectedAccountId===b.expectedAccountId && a.companyId===b.companyId && a.branchId===b.branchId;
@@ -93,12 +105,24 @@ function KnowledgeForm(p:PaidBranchKnowledgeProps & {snapshot:BranchKnowledgeVie
   const [editingDraft,setEditing]=useState<{sourceId:string;contentVersion:number;title:string;content:string}|null>(null);
   const [busy,setBusy]=useState(false),[failure,setFailure]=useState<OperationTarget | null>(null),[activeOp,setActiveOp]=useState<OperationTarget | null>(null);
   const [dragging,setDragging]=useState(false);
+  const [langOpen,setLangOpen]=useState(false),[langQuery,setLangQuery]=useState("");
+  const [selectedLanguages,setSelectedLanguages]=useState<AiReplyLanguageCode[]>(()=>replyContractToLanguages(p.languageSnapshot?.replyLanguage));
+  const [languageSourceVersion,setLanguageSourceVersion]=useState(p.languageSnapshot?.version??null);
   const mounted=useRef(false),reserved=useRef(false),dragDepth=useRef(0);
   const tabRefs=useRef<Record<StudioTab, HTMLButtonElement | null>>({website:null,files:null,faq:null});
   const savedEditSource=editingDraft?p.snapshot.faq.find(item=>item.branchId===p.scope.branchId&&item.source.id===editingDraft.sourceId)?.source:null;
   const editConfirmed=!!(editingDraft&&savedEditSource&&savedEditSource.content_version!==editingDraft.contentVersion&&savedEditSource.title===editingDraft.title.trim()&&savedEditSource.content===editingDraft.content.trim());
   const editing=editConfirmed?null:editingDraft;
-  const dirty=!!(url||question||answer||files.length||editing);
+  if(p.languageSnapshot&&languageSourceVersion!==p.languageSnapshot.version){
+    setLanguageSourceVersion(p.languageSnapshot.version);
+    const next=replyContractToLanguages(p.languageSnapshot.replyLanguage);
+    const draftContract=languagesToReplyContract(selectedLanguages);
+    if(!draftContract||draftContract===p.languageSnapshot.replyLanguage)setSelectedLanguages(next);
+  }
+  const savedLanguageContract=p.languageSnapshot?.replyLanguage??null;
+  const draftLanguageContract=languagesToReplyContract(selectedLanguages);
+  const languageDirty=!!draftLanguageContract&&draftLanguageContract!==savedLanguageContract;
+  const dirty=!!(url||question||answer||files.length||editing||languageDirty);
   useSetupUnsavedChanges(dirty,p.isCurrent,p.locale);
   useLayoutEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
   const quotaKnown=knownWebsiteQuota(p.snapshot.websiteQuota);
@@ -116,8 +140,17 @@ function KnowledgeForm(p:PaidBranchKnowledgeProps & {snapshot:BranchKnowledgeVie
   const canAdd=!locked && p.snapshot.capabilities.canAddWebsite===true && !!p.onAddWebsite && p.snapshot.websiteQuota.used!<p.snapshot.websiteQuota.limit! && websiteDraftValid(urlTrim) && attested;
   const canUpload=!locked && p.snapshot.capabilities.canUploadFiles===true && !!p.onUploadFiles && files.length>0 && !fileError;
   const canSaveText=!locked && p.snapshot.capabilities.canSaveText===true && !!p.onSaveText && !!question.trim() && question.trim().length<=200 && !!answer.trim();
-  async function dispatch(target:OperationTarget, callback:(()=>void|Promise<void>)|undefined) {
-    if(!callback || locked || reserved.current || !p.isCurrent())return;
+  const languagePhase=p.languageState?.phase??"unavailable";
+  const languageLocked=busy || languagePhase==="saving" || languagePhase==="loading" || languagePhase==="unavailable" || languagePhase==="conflict";
+  const canSaveLanguages=!languageLocked && !!p.onConfirmLanguages && !!p.languageSnapshot && p.languageSnapshot.canConfirm===true && Number.isSafeInteger(p.languageSnapshot.version) && p.languageSnapshot.version>=1 && !!draftLanguageContract && languageDirty;
+  const languageOptions=AI_REPLY_LANGUAGE_CODES.filter(code=>{
+    const label=replyLanguageLabel(code,p.locale).toLowerCase();
+    const query=langQuery.trim().toLowerCase();
+    return !query || code.includes(query) || label.includes(query);
+  });
+  async function dispatch(target:OperationTarget, callback:(()=>void|Promise<void>)|undefined, options?:{ignoreKnowledgeLock?:boolean}) {
+    if(!callback || reserved.current || !p.isCurrent())return;
+    if(!options?.ignoreKnowledgeLock && locked)return;
     if([!!url,!!(question||answer),!!files.length].filter(Boolean).length>1&&!window.confirm(t('لديك مسودات في أكثر من قسم. قد يؤدي تحديث النسخة المحفوظة إلى فقد المسودات الأخرى. هل تريد المتابعة؟','You have drafts in multiple sections. Updating the saved version may discard the other drafts. Continue?')))return;
     reserved.current=true;setBusy(true);setActiveOp(target);setFailure(null);
     try{await callback();}catch{if(mounted.current && p.isCurrent())setFailure(target);}
@@ -181,7 +214,50 @@ function KnowledgeForm(p:PaidBranchKnowledgeProps & {snapshot:BranchKnowledgeVie
     {!quotaKnown && <p role="status" className={styles.error}>{t("حصة صفحات الموقع غير متاحة. الإجراءات معطّلة حتى تصل البيانات الموثوقة.","Website quota is unavailable. Actions are disabled until authoritative data is available.")}</p>}
     {p.state.phase==="conflict" && <p role="alert" className={styles.error}>{t("تغيّرت بيانات المعرفة. أعد التحميل وراجع التغييرات قبل المتابعة.","Knowledge data changed. Reload and review the changes before continuing.")}</p>}
     {p.state.phase==="saved" && !url && !question && !answer && !files.length && !editing && <p role="status">{t("أكد الخادم حفظ هذه النسخة.","The server confirmed this saved version.")}</p>}
-    {failure && failure!=="library" && tab!==failure && operationAlert(failure)}
+    {languagePhase==="saved" && !languageDirty && <p role="status">{t("أكد الخادم حفظ لغات الرد.","The server confirmed the reply languages.")}</p>}
+    {failure && failure!=="library" && failure!=="languages" && tab!==failure && operationAlert(failure)}
+    <section className={styles.languageCard} data-knowledge-languages="" aria-labelledby={`${id}-languages`}>
+      <div className={styles.languageHead}>
+        <h3 id={`${id}-languages`}>{t("المساعد يرد بأي لغات؟","Which languages should the assistant reply in?")}</h3>
+        <p className={styles.note}>{t("العربية والإنجليزية فقط حسب دعم المساعد الحالي. عند اختيارهما معًا يتبع المساعد لغة العميل.","Arabic and English only, matching current assistant support. When both are selected, the assistant follows the customer language.")}</p>
+      </div>
+      {operationAlert("languages")}
+      {languagePhase==="loading"&&<p role="status" className={styles.statusLine}>{t("جارٍ تحميل لغات الرد…","Loading reply languages…")}</p>}
+      {languagePhase==="unavailable"&&<p role="status" className={styles.error}>{t("تعذّر التحقق من لغات الرد.","Reply languages could not be verified.")}</p>}
+      {languagePhase==="conflict"&&<p role="alert" className={styles.error}>{t("تغيّرت لغات الرد. أعد التحميل قبل الحفظ.","Reply languages changed. Reload before saving.")}</p>}
+      <div className={styles.languageChips} aria-live="polite">
+        {selectedLanguages.length===0?<p className={styles.note}>{t("اختر لغة واحدة واحدة على الأقل.","Select at least one language.")}</p>:selectedLanguages.map(code=>(
+          <button key={code} type="button" className={styles.chip} disabled={languageLocked} onClick={()=>{if(!p.isCurrent())return;setSelectedLanguages(current=>current.filter(item=>item!==code));}}>
+            {replyLanguageLabel(code,p.locale)} <span aria-hidden="true">×</span>
+          </button>
+        ))}
+      </div>
+      <div className={styles.languagePicker}>
+        <button type="button" className={styles.ghost} aria-expanded={langOpen} disabled={languageLocked} onClick={()=>{if(p.isCurrent())setLangOpen(open=>!open);}}>{t("إضافة لغة","Add language")}</button>
+        {langOpen&&<div className={styles.languageMenu} role="listbox" aria-multiselectable="true">
+          <input className={styles.languageSearch} value={langQuery} disabled={languageLocked} placeholder={t("بحث","Search")} aria-label={t("بحث في اللغات","Search languages")} onChange={event=>{if(p.isCurrent())setLangQuery(event.target.value);}}/>
+          {languageOptions.map(code=>{
+            const selected=selectedLanguages.includes(code);
+            return <button key={code} type="button" role="option" aria-selected={selected} className={selected?styles.languageOptionActive:styles.languageOption} disabled={languageLocked} onClick={()=>{
+              if(!p.isCurrent())return;
+              setSelectedLanguages(current=>selected?current.filter(item=>item!==code):[...current,code]);
+            }}>{replyLanguageLabel(code,p.locale)}</button>;
+          })}
+          {languageOptions.length===0&&<p className={styles.note}>{t("لا نتائج.","No matches.")}</p>}
+        </div>}
+      </div>
+      <button
+        type="button"
+        className={styles.primary}
+        disabled={!canSaveLanguages}
+        onClick={()=>{
+          if(!canSaveLanguages||!draftLanguageContract||!p.languageSnapshot)return;
+          void dispatch("languages",()=>p.onConfirmLanguages?.({...p.scope,expectedVersion:p.languageSnapshot!.version,replyLanguage:draftLanguageContract}),{ignoreKnowledgeLock:true});
+        }}
+      >
+        {activeOp==="languages"||languagePhase==="saving"?t("جارٍ الحفظ…","Saving…"):t("حفظ اللغات","Save languages")}
+      </button>
+    </section>
     <div className={styles.tabs} role="tablist" aria-label={t("أقسام المعرفة","Knowledge sections")} aria-orientation="horizontal" onKeyDown={onTabsKey}>
       {TABS.map(item=><button key={item} ref={node=>{tabRefs.current[item]=node;}} id={`${id}-tab-${item}`} type="button" role="tab" aria-selected={tab===item} aria-controls={`${id}-panel-${item}`} tabIndex={tab===item?0:-1} className={tab===item?styles.tabActive:styles.tab} onClick={()=>{if(p.isCurrent())setTab(item);}}><span aria-hidden="true">{tabMeta[item].icon}</span> {tabMeta[item].label}</button>)}
     </div>

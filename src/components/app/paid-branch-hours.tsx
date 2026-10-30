@@ -52,6 +52,9 @@ const WORKDAYS_SUN_THU: readonly BranchHoursDay[] = ["sunday", "monday", "tuesda
 const ALL_WEEK_DAYS: readonly BranchHoursDay[] = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
 const WORKDAYS_SAT_THU: readonly BranchHoursDay[] = ["saturday", "sunday", "monday", "tuesday", "wednesday", "thursday"];
 
+type QuickApplyTarget = "open" | "all" | "workdays";
+type HoursPreset = "workdays_sun_thu" | "all_week" | "workdays_sat_thu";
+
 export function PaidBranchHours(p: PaidBranchHoursProps) {
   const t = (ar: string, en: string) => p.locale === "ar" ? ar : en;
   const scoped = !!p.boundaryFingerprint && sameBranchHoursScope(p.scope, p.state.scope);
@@ -72,10 +75,14 @@ export function PaidBranchHours(p: PaidBranchHoursProps) {
 
 function HoursForm(p: PaidBranchHoursProps) {
   const ar = p.locale === "ar", t = (a: string, e: string) => ar ? a : e, id = useId();
+  const formId = `${id}-hours-form`;
   const initialSchedule = p.snapshot?.schedule ? cloneBranchHours(p.snapshot.schedule) : emptyBranchHours();
   const [draft, setDraft] = useState<BranchHoursSchedule>(() => initialSchedule);
   const [selected, setSelected] = useState<string[]>([]);
   const [showCopy, setShowCopy] = useState(false);
+  const [showExceptions, setShowExceptions] = useState(() => (initialSchedule.exceptions?.length ?? 0) > 0);
+  const [activePreset, setActivePreset] = useState<HoursPreset | null>(null);
+  const [quickTarget, setQuickTarget] = useState<QuickApplyTarget>("workdays");
   const [confirmation, setConfirmation] = useState<string | null>(null);
   const [busy, setBusy] = useState(false), [failed, setFailed] = useState(false);
   const [conflictWithServer, setConflictWithServer] = useState(false);
@@ -125,10 +132,12 @@ function HoursForm(p: PaidBranchHoursProps) {
   useSetupUnsavedChanges(dirty, p.isCurrent, p.locale);
 
   const label = (day: BranchHoursDay) => dayLabels[day][ar ? 0 : 1];
+  const timezoneLabel = p.snapshot?.timezone || t("غير معروفة", "Unknown");
 
   function change(day: BranchHoursDay, value: BranchHoursDayValue) {
     if (locked || !p.isCurrent()) return;
     setUserEdited(true);
+    setActivePreset(null);
     setDraft(current => ({...current, [day]: value}));
     setConfirmation(null);
     setFailed(false);
@@ -142,7 +151,7 @@ function HoursForm(p: PaidBranchHoursProps) {
     setFailed(false);
   }
 
-  function applyPreset(preset: "workdays_sun_thu" | "all_week" | "workdays_sat_thu" | "closed_all" | "reset_all") {
+  function applyPreset(preset: HoursPreset | "closed_all" | "reset_all") {
     if (locked || !p.isCurrent()) return;
     setUserEdited(true);
     const start = quickStart || "09:00";
@@ -168,13 +177,15 @@ function HoursForm(p: PaidBranchHoursProps) {
       }
       return next;
     });
+    setActivePreset(preset === "closed_all" || preset === "reset_all" ? null : preset);
     setConfirmation(null);
     setFailed(false);
   }
 
-  function applyQuickHours(targetDays: readonly BranchHoursDay[], closeOthers: boolean = false) {
+  function applyQuickHours(targetDays: readonly BranchHoursDay[]) {
     if (locked || !p.isCurrent()) return;
     setUserEdited(true);
+    setActivePreset(null);
     const start = quickStart || "09:00";
     const end = quickEnd || "17:00";
     const nextDay = quickNextDay;
@@ -185,11 +196,6 @@ function HoursForm(p: PaidBranchHoursProps) {
       for (const d of targetDays) {
         next[d] = { state: "open", intervals: [{ ...interval }] };
       }
-      if (closeOthers) {
-        for (const d of ALL_WEEK_DAYS) {
-          if (!targetDays.includes(d)) next[d] = { state: "closed" };
-        }
-      }
       return next;
     });
     setConfirmation(null);
@@ -199,6 +205,7 @@ function HoursForm(p: PaidBranchHoursProps) {
   function applyQuickToOpenDays() {
     if (locked || !p.isCurrent()) return;
     setUserEdited(true);
+    setActivePreset(null);
     const start = quickStart || "09:00";
     const end = quickEnd || "17:00";
     const nextDay = quickNextDay;
@@ -217,11 +224,18 @@ function HoursForm(p: PaidBranchHoursProps) {
     setFailed(false);
   }
 
+  function runQuickApply() {
+    if (quickTarget === "open") applyQuickToOpenDays();
+    else if (quickTarget === "all") applyQuickHours(ALL_WEEK_DAYS);
+    else applyQuickHours(WORKDAYS_SUN_THU);
+  }
+
   function copyDayTo(sourceDay: BranchHoursDay, targetDays: readonly BranchHoursDay[]) {
     if (locked || !p.isCurrent()) return;
     const source = draft[sourceDay];
     if (source.state !== "open" || !source.intervals.length) return;
     setUserEdited(true);
+    setActivePreset(null);
     setDraft(current => {
       const next = cloneBranchHours(current);
       for (const d of targetDays) {
@@ -251,56 +265,74 @@ function HoursForm(p: PaidBranchHoursProps) {
     return value.state === "unset" ? t("غير مضبوط", "Not set") : t("مغلق", "Closed");
   }
 
-  const branchLabel = p.snapshot?.branchLabel || t("الفرع الحالي", "Current branch");
-  const timezoneLabel = p.snapshot?.timezone || t("غير معروفة", "Unknown");
+  const presets: {id: HoursPreset; ar: string; en: string}[] = [
+    {id: "workdays_sun_thu", ar: "الأحد – الخميس", en: "Sun – Thu"},
+    {id: "workdays_sat_thu", ar: "السبت – الخميس", en: "Sat – Thu"},
+    {id: "all_week", ar: "طوال الأسبوع", en: "All week"},
+  ];
 
   return (
     <section
       className={styles.view}
       data-setup-unsaved={dirty ? "true" : undefined}
+      data-hours-studio=""
       dir={ar ? "rtl" : "ltr"}
       aria-labelledby={id}
       aria-busy={busy || p.state.phase === "saving" || p.state.phase === "loading"}
     >
       <header className={styles.header}>
-        <h2 id={id}>{t("مواعيد عمل الفرع", "Branch working hours")}</h2>
-        <p>
-          <bdi>{branchLabel}</bdi>
-          <span>
-            {t("المنطقة الزمنية: ", "Timezone: ")}
-            <bdi>{p.snapshot ? timezoneLabel : t("جارٍ التحقق…", "Verifying…")}</bdi>
-          </span>
-        </p>
+        <div className={styles.heading}>
+          <h2 id={id}>{t("مواعيد العمل", "Working hours")}</h2>
+          <p className={styles.sub}>{t("حدد أيام وساعات العمل", "Set open days and hours")}</p>
+        </div>
+        <div className={styles.toolbar}>
+          <button
+            type="button"
+            className={styles.ghost}
+            disabled={locked || !canSaveAuthoritative}
+            aria-expanded={showCopy}
+            onClick={() => {
+              if (p.isCurrent()) {
+                setShowCopy((value) => !value);
+                setConfirmation(null);
+              }
+            }}
+          >
+            {t("نسخ أيام العمل", "Copy hours")}
+          </button>
+          <button
+            type="submit"
+            form={formId}
+            className={styles.primary}
+            disabled={locked || !save.ok || !p.onSave || !canSaveAuthoritative}
+          >
+            {busy || p.state.phase === "saving" ? t("جارٍ الحفظ…", "Saving…") : t("حفظ", "Save")}
+          </button>
+          <details className={styles.more}>
+            <summary>{t("المزيد", "More")}</summary>
+            <div className={styles.moreMenu}>
+              <p className={styles.meta}><bdi>{timezoneLabel}</bdi></p>
+              <button type="button" disabled={locked} onClick={() => applyPreset("closed_all")}>{t("إغلاق جميع الأيام", "Close all days")}</button>
+              <button type="button" disabled={locked} onClick={() => { if (p.isCurrent()) setShowExceptions((value) => !value); }}>
+                {showExceptions ? t("إخفاء الاستثناءات", "Hide exceptions") : t("الاستثناءات", "Exceptions")}
+              </button>
+            </div>
+          </details>
+        </div>
       </header>
 
-      <p className={styles.note}>
-        {t(
-          "الأوقات حسب ساعة الفرع المحلية. تُسجّل الفترة في يوم بدايتها؛ امتدادها إلى اليوم التالي يظهر أسفل ذلك اليوم. لا تغيّر هذه الصفحة سياسة الرد خارج الدوام.",
-          "Times use the branch's local clock. Each interval belongs to its starting day; carry-over appears on the following day. This page does not change after-hours reply policy."
-        )}
-      </p>
-
-      {/* Non-blocking background loading indicator */}
       {p.state.phase === "loading" && (
-        <p role="status" className={styles.note}>
-          {t("جارٍ تحميل مواعيد الفرع…", "Loading branch hours…")}
-        </p>
+        <p role="status" className={styles.status}>{t("جارٍ تحميل مواعيد الفرع…", "Loading branch hours…")}</p>
       )}
 
-      {/* Non-blocking background failure indicator */}
       {p.state.phase === "unavailable" && (
-        <div role="alert" className={styles.error}>
-          <p>
-            {t(
-              "مواعيد هذا الفرع غير متاحة. لم نؤكد الحفظ؛ تعديلاتك المحلية محفوظة في هذه الشاشة.",
-              "Hours for this branch are unavailable. Saving is not confirmed; your local edits are retained in this screen."
-            )}
-          </p>
+        <div role="alert" className={styles.errorBox}>
+          <p>{t("مواعيد هذا الفرع غير متاحة. الحفظ غير مؤكد.", "Hours for this branch are unavailable. Saving is not confirmed.")}</p>
           {p.onReload && (
             <button
               type="button"
               onClick={(event) => {
-                if (p.isCurrent() && confirmSetupLeave(event.currentTarget.parentElement?.parentElement ?? null, p.locale)) {
+                if (p.isCurrent() && confirmSetupLeave(event.currentTarget.closest("section"), p.locale)) {
                   p.onReload?.({ ...p.scope });
                 }
               }}
@@ -311,25 +343,13 @@ function HoursForm(p: PaidBranchHoursProps) {
         </div>
       )}
 
-      {/* Confirmed server timezone check */}
       {p.snapshot && !knownBranchHoursTimezone(p.snapshot.timezone) && (
-        <p role="status" className={styles.error}>
-          {t(
-            "يجب تأكيد المنطقة الزمنية المخزنة قبل الحفظ أو النسخ. لم تُستخدم منطقة افتراضية.",
-            "Confirm the stored timezone before saving or copying. No default timezone was used."
-          )}
-        </p>
+        <p role="status" className={styles.error}>{t("أكد المنطقة الزمنية قبل الحفظ.", "Confirm the timezone before saving.")}</p>
       )}
 
-      {/* Explicit server conflict alert */}
       {conflictWithServer && p.snapshot && (
         <div role="alert" className={styles.warning}>
-          <p>
-            {t(
-              "وصلت المواعيد المحفوظة من الخادم وتختلف عن مسودتك الحالية. يمكنك مراجعتها وحفظ تعديلاتك فوقها، أو استعادة نسخة الخادم.",
-              "Saved hours arrived from the server and differ from your current draft. You can keep and save your edits, or load the server version."
-            )}
-          </p>
+          <p>{t("وصلت مواعيد محفوظة تختلف عن مسودتك.", "Saved hours differ from your draft.")}</p>
           <button
             type="button"
             onClick={() => {
@@ -337,6 +357,7 @@ function HoursForm(p: PaidBranchHoursProps) {
                 setDraft(cloneBranchHours(p.snapshot.schedule));
                 setUserEdited(false);
                 setConflictWithServer(false);
+                setActivePreset(null);
               }
             }}
           >
@@ -345,20 +366,14 @@ function HoursForm(p: PaidBranchHoursProps) {
         </div>
       )}
 
-      {/* CAS conflict on save */}
       {p.state.phase === "conflict" && (
-        <div role="alert" className={styles.error}>
-          <p>
-            {t(
-              "تغيّرت المواعيد المحفوظة. أعد التحميل لمراجعتها قبل الحفظ؛ ستُستبدل تعديلاتك المحلية.",
-              "Saved hours changed. Reload to review them before saving; this replaces your local edits."
-            )}
-          </p>
+        <div role="alert" className={styles.errorBox}>
+          <p>{t("تغيّرت المواعيد المحفوظة. أعد التحميل قبل الحفظ.", "Saved hours changed. Reload before saving.")}</p>
           {p.onReload && (
             <button
               type="button"
               onClick={(event) => {
-                if (p.isCurrent() && confirmSetupLeave(event.currentTarget.closest("section")?.parentElement ?? null, p.locale)) {
+                if (p.isCurrent() && confirmSetupLeave(event.currentTarget.closest("section"), p.locale)) {
                   p.onReload?.({ ...p.scope });
                 }
               }}
@@ -369,77 +384,43 @@ function HoursForm(p: PaidBranchHoursProps) {
         </div>
       )}
 
-      {/* Confirmed saved message */}
       {p.state.phase === "saved" && !dirty && p.snapshot && (
-        <p role="status">{t("تم تأكيد حفظ هذه النسخة من الخادم.", "The server confirmed this saved version.")}</p>
+        <p role="status" className={styles.status}>{t("تم تأكيد حفظ هذه النسخة من الخادم.", "The server confirmed this saved version.")}</p>
       )}
 
       {failed && (
-        <p role="alert" className={styles.error}>
-          {t("تعذر إرسال الطلب. راجع الحالة الحالية قبل المحاولة مجددًا.", "The request could not be submitted. Review the current state before trying again.")}
-        </p>
+        <p role="alert" className={styles.error}>{t("تعذر إرسال الطلب.", "The request could not be submitted.")}</p>
       )}
 
-      {/* Quick Schedule Setup Bar */}
-      <div className={styles.quickSetup} aria-label={t("تجهيز سريع للمواعيد", "Quick schedule setup")}>
-        <div className={styles.quickHeader}>
-          <div className={styles.quickTitle}>
-            <span aria-hidden="true">⚡</span>
-            <strong>{t("تجهيز سريع للمواعيد", "Quick schedule setup")}</strong>
-          </div>
-          <span className={styles.quickHint}>
-            {t(
-              "اختر نموذج عمل جاهز أو حدد توقيتك وطبقه على أيام الأسبوع بضغطة زر واحدة:",
-              "Pick a preset or set custom hours to apply across days in one click:"
-            )}
-          </span>
-        </div>
-
-        <div className={styles.presets}>
+      <div className={styles.controls} aria-label={t("تطبيق سريع", "Quick apply")}>
+        <div className={styles.presets} role="group" aria-label={t("قوالب المواعيد", "Schedule presets")}>
+          {presets.map((preset) => (
+            <button
+              key={preset.id}
+              type="button"
+              data-hours-preset={preset.id}
+              className={activePreset === preset.id ? styles.presetActive : styles.preset}
+              disabled={locked}
+              aria-pressed={activePreset === preset.id}
+              onClick={() => applyPreset(preset.id)}
+            >
+              {t(preset.ar, preset.en)}
+            </button>
+          ))}
           <button
             type="button"
-            className={styles.presetBtn}
+            className={styles.reset}
             disabled={locked}
-            onClick={() => applyPreset("workdays_sun_thu")}
-          >
-            🏢 {t("الأحد – الخميس (دوام أسبوعي معتاد)", "Sun – Thu (Standard workdays)")}
-          </button>
-          <button
-            type="button"
-            className={styles.presetBtn}
-            disabled={locked}
-            onClick={() => applyPreset("all_week")}
-          >
-            🛍️ {t("طوال الأسبوع (المطاعم والمحلات)", "All week (Restaurants & Retail)")}
-          </button>
-          <button
-            type="button"
-            className={styles.presetBtn}
-            disabled={locked}
-            onClick={() => applyPreset("workdays_sat_thu")}
-          >
-            🏪 {t("السبت – الخميس (عطلة الجمعة)", "Sat – Thu (Friday off)")}
-          </button>
-          <button
-            type="button"
-            className={styles.presetSecondaryBtn}
-            disabled={locked}
-            onClick={() => applyPreset("closed_all")}
-          >
-            🔒 {t("إغلاق جميع الأيام", "Close all days")}
-          </button>
-          <button
-            type="button"
-            className={styles.presetSecondaryBtn}
-            disabled={locked}
+            data-hours-preset="reset_all"
             onClick={() => applyPreset("reset_all")}
           >
-            🔄 {t("إعادة ضبط", "Reset")}
+            {t("إعادة ضبط", "Reset")}
           </button>
         </div>
 
-        <div className={styles.quickInputs}>
-          <label>
+        <div className={styles.quickApply}>
+          <span className={styles.quickLabel}>{t("تطبيق سريع", "Quick apply")}</span>
+          <label className={styles.field}>
             {t("من", "From")}
             <input
               type="time"
@@ -450,7 +431,7 @@ function HoursForm(p: PaidBranchHoursProps) {
               onChange={(e) => setQuickStart(e.target.value)}
             />
           </label>
-          <label>
+          <label className={styles.field}>
             {t("إلى", "To")}
             <input
               type="time"
@@ -471,34 +452,27 @@ function HoursForm(p: PaidBranchHoursProps) {
             />
             {t("ينتهي في اليوم التالي", "Ends next day")}
           </label>
-          <button
-            type="button"
-            className={styles.quickApplyBtn}
-            disabled={locked}
-            onClick={() => applyQuickHours(WORKDAYS_SUN_THU, false)}
-          >
-            {t("تطبيق على (الأحد - الخميس)", "Apply to (Sun - Thu)")}
-          </button>
-          <button
-            type="button"
-            className={styles.quickSecondaryBtn}
-            disabled={locked}
-            onClick={() => applyQuickToOpenDays()}
-          >
-            {t("تطبيق على الأيام المفتوحة", "Apply to open days")}
-          </button>
-          <button
-            type="button"
-            className={styles.quickSecondaryBtn}
-            disabled={locked}
-            onClick={() => applyQuickHours(ALL_WEEK_DAYS, false)}
-          >
-            {t("تطبيق على كل الأيام", "Apply to all days")}
+          <label className={styles.field}>
+            <span className={styles.srOnly}>{t("نطاق التطبيق", "Apply scope")}</span>
+            <select
+              value={quickTarget}
+              disabled={locked}
+              aria-label={t("نطاق التطبيق", "Apply scope")}
+              onChange={(e) => setQuickTarget(e.target.value as QuickApplyTarget)}
+            >
+              <option value="open">{t("على الأيام المفتوحة", "To open days")}</option>
+              <option value="all">{t("على كل الأيام", "To all days")}</option>
+              <option value="workdays">{t("على أيام العمل", "To workdays")}</option>
+            </select>
+          </label>
+          <button type="button" className={styles.apply} disabled={locked} onClick={runQuickApply}>
+            {t("تطبيق", "Apply")}
           </button>
         </div>
       </div>
 
       <form
+        id={formId}
         noValidate
         onSubmit={(event) => {
           event.preventDefault();
@@ -520,153 +494,136 @@ function HoursForm(p: PaidBranchHoursProps) {
                 data-state={value.state}
                 aria-describedby={issues.length ? `${id}-${day}-errors` : undefined}
               >
-                <div className={styles.dayHeader}>
-                  <div className={styles.dayHeaderLeft}>
-                    <legend className={styles.dayLegend}>{label(day)}</legend>
-                    <label className={styles.dayState}>
-                      <span className={styles.srOnly}>{label(day)} {t("الحالة", "Status")}</span>
-                      <select
-                        aria-label={`${label(day)} ${t("الحالة", "status")}`}
-                        value={value.state}
-                        onChange={(event) =>
-                          change(
-                            day,
-                            event.target.value === "open"
-                              ? { state: "open", intervals: [{ start: quickStart || "09:00", end: quickEnd || "17:00", nextDay: quickNextDay }] }
-                              : { state: event.target.value as "unset" | "closed" }
-                          )
-                        }
-                      >
-                        <option value="unset">{t("غير مضبوط", "Not set")}</option>
-                        <option value="closed">{t("مغلق", "Closed")}</option>
-                        <option value="open">{t("مفتوح", "Open")}</option>
-                      </select>
-                    </label>
+                <div className={styles.dayRow}>
+                  <legend className={styles.dayName}>{label(day)}</legend>
+                  <label className={styles.dayState}>
+                    <span className={styles.srOnly}>{label(day)} {t("الحالة", "Status")}</span>
+                    <select
+                      aria-label={`${label(day)} ${t("الحالة", "status")}`}
+                      value={value.state}
+                      onChange={(event) =>
+                        change(
+                          day,
+                          event.target.value === "open"
+                            ? { state: "open", intervals: [{ start: quickStart || "09:00", end: quickEnd || "17:00", nextDay: quickNextDay }] }
+                            : { state: event.target.value as "unset" | "closed" }
+                        )
+                      }
+                    >
+                      <option value="unset">{t("غير مضبوط", "Not set")}</option>
+                      <option value="closed">{t("مغلق", "Closed")}</option>
+                      <option value="open">{t("مفتوح", "Open")}</option>
+                    </select>
+                  </label>
 
-                    {value.state !== "open" && (
-                      <button
-                        type="button"
-                        className={styles.quickToggleBtn}
-                        onClick={() =>
-                          change(day, {
-                            state: "open",
-                            intervals: [{ start: quickStart || "09:00", end: quickEnd || "17:00", nextDay: quickNextDay }],
-                          })
-                        }
-                      >
-                        + {t("فتح اليوم", "Open day")}
-                      </button>
-                    )}
-                    {value.state === "unset" && (
-                      <button
-                        type="button"
-                        className={styles.quickToggleSecondaryBtn}
-                        onClick={() => change(day, { state: "closed" })}
-                      >
-                        {t("تحديد كمغلق", "Mark closed")}
-                      </button>
-                    )}
-                  </div>
-
-                  {value.state === "open" && value.intervals.length > 0 && (
-                    <div className={styles.dayQuickCopy}>
-                      <button
-                        type="button"
-                        className={styles.copyDayBtn}
-                        title={t("نسخ مواعيد هذا اليوم إلى الأحد والاثنين والثلاثاء والأربعاء والخميس", "Copy this day's hours to Sun, Mon, Tue, Wed, Thu")}
-                        onClick={() => copyDayTo(day, WORKDAYS_SUN_THU)}
-                      >
-                        {t("نسخ للأحد – الخميس", "Copy to Sun–Thu")}
-                      </button>
-                      <button
-                        type="button"
-                        className={styles.copyDayBtn}
-                        title={t("نسخ مواعيد هذا اليوم لجميع أيام الأسبوع", "Copy this day's hours to all week days")}
-                        onClick={() => copyDayTo(day, ALL_WEEK_DAYS)}
-                      >
-                        {t("نسخ لكل الأيام", "Copy to all days")}
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                {value.state === "open" && (
-                  <div className={styles.intervals}>
-                    {value.intervals.map((interval, index) => (
-                      <div className={styles.interval} key={index}>
-                        <label>
-                          {t("من", "From")}
-                          <input
-                            type="time"
-                            dir="ltr"
-                            aria-label={`${label(day)} ${index + 1} ${t("من", "from")}`}
-                            value={interval.start}
-                            onChange={(event) =>
+                  {value.state === "open" && (
+                    <div className={styles.dayBody}>
+                      {value.intervals.map((interval, index) => (
+                        <div className={styles.interval} key={index}>
+                          <label>
+                            {t("من", "From")}
+                            <input
+                              type="time"
+                              dir="ltr"
+                              aria-label={`${label(day)} ${index + 1} ${t("من", "from")}`}
+                              value={interval.start}
+                              onChange={(event) =>
+                                change(day, {
+                                  state: "open",
+                                  intervals: value.intervals.map((v, i) => (i === index ? { ...v, start: event.target.value } : v)),
+                                })
+                              }
+                            />
+                          </label>
+                          <label>
+                            {t("إلى", "To")}
+                            <input
+                              type="time"
+                              dir="ltr"
+                              aria-label={`${label(day)} ${index + 1} ${t("إلى", "to")}`}
+                              value={interval.end}
+                              onChange={(event) =>
+                                change(day, {
+                                  state: "open",
+                                  intervals: value.intervals.map((v, i) => (i === index ? { ...v, end: event.target.value } : v)),
+                                })
+                              }
+                            />
+                          </label>
+                          <label className={styles.check}>
+                            <input
+                              type="checkbox"
+                              checked={interval.nextDay}
+                              aria-label={`${label(day)} ${index + 1} ${t("ينتهي في اليوم التالي", "ends next day")}`}
+                              onChange={(event) =>
+                                change(day, {
+                                  state: "open",
+                                  intervals: value.intervals.map((v, i) => (i === index ? { ...v, nextDay: event.target.checked } : v)),
+                                })
+                              }
+                            />
+                            {t("اليوم التالي", "Next day")}
+                          </label>
+                          <button
+                            type="button"
+                            className={styles.iconBtn}
+                            aria-label={`${t("حذف فترة", "Remove interval")} ${label(day)} ${index + 1}`}
+                            onClick={() =>
                               change(day, {
                                 state: "open",
-                                intervals: value.intervals.map((v, i) => (i === index ? { ...v, start: event.target.value } : v)),
+                                intervals: value.intervals.filter((_, i) => i !== index),
                               })
                             }
-                          />
-                        </label>
-                        <label>
-                          {t("إلى", "To")}
-                          <input
-                            type="time"
-                            dir="ltr"
-                            aria-label={`${label(day)} ${index + 1} ${t("إلى", "to")}`}
-                            value={interval.end}
-                            onChange={(event) =>
-                              change(day, {
-                                state: "open",
-                                intervals: value.intervals.map((v, i) => (i === index ? { ...v, end: event.target.value } : v)),
-                              })
-                            }
-                          />
-                        </label>
-                        <label className={styles.check}>
-                          <input
-                            type="checkbox"
-                            checked={interval.nextDay}
-                            aria-label={`${label(day)} ${index + 1} ${t("ينتهي في اليوم التالي", "ends next day")}`}
-                            onChange={(event) =>
-                              change(day, {
-                                state: "open",
-                                intervals: value.intervals.map((v, i) => (i === index ? { ...v, nextDay: event.target.checked } : v)),
-                              })
-                            }
-                          />
-                          {t("ينتهي في اليوم التالي", "Ends next day")}
-                        </label>
+                          >
+                            {t("حذف", "Remove")}
+                          </button>
+                        </div>
+                      ))}
+                      <div className={styles.dayTools}>
                         <button
                           type="button"
-                          className={styles.removeBtn}
-                          aria-label={`${t("حذف فترة", "Remove interval")} ${label(day)} ${index + 1}`}
+                          className={styles.linkBtn}
                           onClick={() =>
                             change(day, {
                               state: "open",
-                              intervals: value.intervals.filter((_, i) => i !== index),
+                              intervals: [...value.intervals, { start: "", end: "", nextDay: false }],
                             })
                           }
                         >
-                          {t("حذف", "Remove")}
+                          {t("+ إضافة فترة", "+ Add interval")}
                         </button>
+                        <details className={styles.dayMenu}>
+                          <summary>{t("نسخ", "Copy")}</summary>
+                          <div className={styles.dayMenuList}>
+                            <button
+                              type="button"
+                              className={styles.copyDayBtn}
+                              title={t("نسخ مواعيد هذا اليوم إلى الأحد والاثنين والثلاثاء والأربعاء والخميس", "Copy this day's hours to Sun, Mon, Tue, Wed, Thu")}
+                              onClick={() => copyDayTo(day, WORKDAYS_SUN_THU)}
+                            >
+                              {t("إلى الأحد – الخميس", "To Sun–Thu")}
+                            </button>
+                            <button
+                              type="button"
+                              className={styles.copyDayBtn}
+                              title={t("نسخ مواعيد هذا اليوم لجميع أيام الأسبوع", "Copy this day's hours to all week days")}
+                              onClick={() => copyDayTo(day, ALL_WEEK_DAYS)}
+                            >
+                              {t("إلى كل الأيام", "To all days")}
+                            </button>
+                            <button
+                              type="button"
+                              className={styles.copyDayBtn}
+                              onClick={() => change(day, { state: "closed" })}
+                            >
+                              {t("إغلاق اليوم", "Close day")}
+                            </button>
+                          </div>
+                        </details>
                       </div>
-                    ))}
-                    <button
-                      type="button"
-                      className={styles.add}
-                      onClick={() =>
-                        change(day, {
-                          state: "open",
-                          intervals: [...value.intervals, { start: "", end: "", nextDay: false }],
-                        })
-                      }
-                    >
-                      + {t("إضافة فترة أخرى", "Add another interval")} — {label(day)}
-                    </button>
-                  </div>
-                )}
+                    </div>
+                  )}
+                </div>
                 {carry.length > 0 && (
                   <p className={styles.carry}>
                     {t("امتداد من اليوم السابق حتى: ", "Carry-over from the previous day until: ")}
@@ -685,179 +642,153 @@ function HoursForm(p: PaidBranchHoursProps) {
           })}
         </fieldset>
 
-        <fieldset className={styles.days} disabled={locked}>
-          <legend>{t("العطلات والاستثناءات بتاريخ محدد", "Holidays and date exceptions")}</legend>
-          <p className={styles.note}>
-            {t(
-              "الاستثناء يستبدل اليوم المحلي كاملًا، بما فيه امتداد اليوم السابق. قسّم الدوام الليلي على تاريخين. النهاية 00:00 تعني منتصف الليل في نهاية ذلك التاريخ. حذف الاستثناء يعيد الجدول الأسبوعي لذلك التاريخ.",
-              "An exception replaces the entire local date, including previous-day carry-over. Split overnight hours across two dates. An end of 00:00 means midnight at the end of that date. Removing an exception restores the weekly schedule for that date."
-            )}
-          </p>
-          {(draft.exceptions ?? []).map((entry, index) => {
-            const entries = draft.exceptions ?? [];
-            const update = (next: BranchHoursException) => changeExceptions(entries.map((item, i) => (i === index ? next : item)));
-            return (
-              <fieldset className={styles.day} key={index}>
-                <legend>{t("استثناء", "Exception")} {index + 1}</legend>
-                <label>
-                  {t("التاريخ", "Date")}
-                  <input
-                    type="date"
-                    min="1000-01-01"
-                    max="9999-12-31"
-                    dir="ltr"
-                    aria-label={`${t("تاريخ الاستثناء", "Exception date")} ${index + 1}`}
-                    value={entry.date}
-                    onChange={(event) => update({ ...entry, date: event.target.value })}
-                  />
-                </label>
-                <label>
-                  {t("الحالة", "Status")}
-                  <select
-                    aria-label={`${t("حالة الاستثناء", "Exception status")} ${index + 1}`}
-                    value={entry.hours.state}
-                    onChange={(event) =>
-                      update({
-                        ...entry,
-                        hours: event.target.value === "open" ? { state: "open", intervals: [{ start: "", end: "", nextDay: false }] } : { state: "closed" },
-                      })
-                    }
-                  >
-                    <option value="closed">{t("مغلق طوال اليوم", "Closed all day")}</option>
-                    <option value="open">{t("ساعات خاصة", "Special hours")}</option>
-                  </select>
-                </label>
-                {entry.hours.state === "open" && (
-                  <div className={styles.intervals}>
-                    {entry.hours.intervals.map((interval, intervalIndex) => {
-                      const intervals = entry.hours.state === "open" ? entry.hours.intervals : [];
-                      return (
-                        <div className={styles.interval} key={intervalIndex}>
-                          <label>
-                            {t("من", "From")}
-                            <input
-                              type="time"
-                              dir="ltr"
-                              aria-label={`${t("استثناء من", "Exception from")} ${index + 1} ${intervalIndex + 1}`}
-                              value={interval.start}
-                              onChange={(event) =>
-                                update({
-                                  ...entry,
-                                  hours: {
-                                    state: "open",
-                                    intervals: intervals.map((v, i) => (i === intervalIndex ? { ...v, start: event.target.value } : v)),
-                                  },
-                                })
-                              }
-                            />
-                          </label>
-                          <label>
-                            {t("إلى", "To")}
-                            <input
-                              type="time"
-                              dir="ltr"
-                              aria-label={`${t("استثناء إلى", "Exception to")} ${index + 1} ${intervalIndex + 1}`}
-                              value={interval.end}
-                              onChange={(event) =>
-                                update({
-                                  ...entry,
-                                  hours: {
-                                    state: "open",
-                                    intervals: intervals.map((v, i) =>
-                                      i === intervalIndex
-                                        ? { ...v, end: event.target.value, nextDay: event.target.value === "00:00" }
-                                        : v
-                                    ),
-                                  },
-                                })
-                              }
-                            />
-                          </label>
-                          <button
-                            type="button"
-                            className={styles.removeBtn}
-                            onClick={() =>
-                              update({
-                                ...entry,
-                                hours: {
-                                  state: "open",
-                                  intervals: intervals.filter((_, i) => i !== intervalIndex),
-                                },
-                              })
-                            }
-                          >
-                            {t("حذف فترة", "Remove interval")}
-                          </button>
-                        </div>
-                      );
-                    })}
-                    <button
-                      type="button"
-                      className={styles.add}
-                      onClick={() =>
+        {showExceptions && (
+          <fieldset className={styles.exceptions} disabled={locked}>
+            <legend>{t("الاستثناءات", "Exceptions")}</legend>
+            {(draft.exceptions ?? []).map((entry, index) => {
+              const entries = draft.exceptions ?? [];
+              const update = (next: BranchHoursException) => changeExceptions(entries.map((item, i) => (i === index ? next : item)));
+              return (
+                <fieldset className={styles.exception} key={index}>
+                  <legend className={styles.srOnly}>{t("استثناء", "Exception")} {index + 1}</legend>
+                  <label className={styles.field}>
+                    {t("التاريخ", "Date")}
+                    <input
+                      type="date"
+                      min="1000-01-01"
+                      max="9999-12-31"
+                      dir="ltr"
+                      aria-label={`${t("تاريخ الاستثناء", "Exception date")} ${index + 1}`}
+                      value={entry.date}
+                      onChange={(event) => update({ ...entry, date: event.target.value })}
+                    />
+                  </label>
+                  <label className={styles.field}>
+                    {t("الحالة", "Status")}
+                    <select
+                      aria-label={`${t("حالة الاستثناء", "Exception status")} ${index + 1}`}
+                      value={entry.hours.state}
+                      onChange={(event) =>
                         update({
                           ...entry,
-                          hours: {
-                            state: "open",
-                            intervals: [...(entry.hours.state === "open" ? entry.hours.intervals : []), { start: "", end: "", nextDay: false }],
-                          },
+                          hours: event.target.value === "open" ? { state: "open", intervals: [{ start: "", end: "", nextDay: false }] } : { state: "closed" },
                         })
                       }
                     >
-                      + {t("إضافة فترة خاصة", "Add special interval")}
-                    </button>
-                  </div>
-                )}
-                <button
-                  type="button"
-                  className={styles.removeBtn}
-                  onClick={() => changeExceptions(entries.filter((_, i) => i !== index))}
-                >
-                  {t("حذف الاستثناء", "Remove exception")}
-                </button>
-              </fieldset>
-            );
-          })}
-          <button
-            type="button"
-            className={styles.add}
-            disabled={(draft.exceptions?.length ?? 0) >= 366}
-            onClick={() => changeExceptions([...(draft.exceptions ?? []), { date: "", hours: { state: "closed" } }])}
-          >
-            + {t("إضافة عطلة أو استثناء", "Add holiday or exception")}
-          </button>
-          {!validated.ok && validated.issues.some((issue) => issue.code === "invalid_exception") && (
-            <p role="status" className={styles.error}>
-              {t("اختر تاريخًا صحيحًا غير مكرر، وفترات لا تتداخل داخل اليوم نفسه.", "Choose a valid unique date and non-overlapping intervals within the same day.")}
-            </p>
-          )}
-        </fieldset>
-
-        <div className={styles.actions}>
-          <button
-            type="submit"
-            className={styles.primary}
-            disabled={locked || !save.ok || !p.onSave || !canSaveAuthoritative}
-          >
-            {busy || p.state.phase === "saving" ? t("جارٍ الإرسال…", "Submitting…") : t("حفظ المواعيد", "Save hours")}
-          </button>
-          <button
-            type="button"
-            disabled={locked || !canSaveAuthoritative}
-            aria-expanded={showCopy}
-            onClick={() => {
-              if (p.isCurrent()) {
-                setShowCopy((value) => !value);
-                setConfirmation(null);
-              }
-            }}
-          >
-            {t("نسخ إلى فروع مختارة", "Copy to selected branches")}
-          </button>
-        </div>
+                      <option value="closed">{t("مغلق طوال اليوم", "Closed all day")}</option>
+                      <option value="open">{t("ساعات خاصة", "Special hours")}</option>
+                    </select>
+                  </label>
+                  {entry.hours.state === "open" && (
+                    <div className={styles.dayBody}>
+                      {entry.hours.intervals.map((interval, intervalIndex) => {
+                        const intervals = entry.hours.state === "open" ? entry.hours.intervals : [];
+                        return (
+                          <div className={styles.interval} key={intervalIndex}>
+                            <label>
+                              {t("من", "From")}
+                              <input
+                                type="time"
+                                dir="ltr"
+                                aria-label={`${t("استثناء من", "Exception from")} ${index + 1} ${intervalIndex + 1}`}
+                                value={interval.start}
+                                onChange={(event) =>
+                                  update({
+                                    ...entry,
+                                    hours: {
+                                      state: "open",
+                                      intervals: intervals.map((v, i) => (i === intervalIndex ? { ...v, start: event.target.value } : v)),
+                                    },
+                                  })
+                                }
+                              />
+                            </label>
+                            <label>
+                              {t("إلى", "To")}
+                              <input
+                                type="time"
+                                dir="ltr"
+                                aria-label={`${t("استثناء إلى", "Exception to")} ${index + 1} ${intervalIndex + 1}`}
+                                value={interval.end}
+                                onChange={(event) =>
+                                  update({
+                                    ...entry,
+                                    hours: {
+                                      state: "open",
+                                      intervals: intervals.map((v, i) =>
+                                        i === intervalIndex
+                                          ? { ...v, end: event.target.value, nextDay: event.target.value === "00:00" }
+                                          : v
+                                      ),
+                                    },
+                                  })
+                                }
+                              />
+                            </label>
+                            <button
+                              type="button"
+                              className={styles.iconBtn}
+                              onClick={() =>
+                                update({
+                                  ...entry,
+                                  hours: {
+                                    state: "open",
+                                    intervals: intervals.filter((_, i) => i !== intervalIndex),
+                                  },
+                                })
+                              }
+                            >
+                              {t("حذف فترة", "Remove interval")}
+                            </button>
+                          </div>
+                        );
+                      })}
+                      <button
+                        type="button"
+                        className={styles.linkBtn}
+                        onClick={() =>
+                          update({
+                            ...entry,
+                            hours: {
+                              state: "open",
+                              intervals: [...(entry.hours.state === "open" ? entry.hours.intervals : []), { start: "", end: "", nextDay: false }],
+                            },
+                          })
+                        }
+                      >
+                        {t("+ إضافة فترة", "+ Add interval")}
+                      </button>
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    className={styles.iconBtn}
+                    onClick={() => changeExceptions(entries.filter((_, i) => i !== index))}
+                  >
+                    {t("حذف الاستثناء", "Remove exception")}
+                  </button>
+                </fieldset>
+              );
+            })}
+            <button
+              type="button"
+              className={styles.linkBtn}
+              disabled={(draft.exceptions?.length ?? 0) >= 366}
+              onClick={() => changeExceptions([...(draft.exceptions ?? []), { date: "", hours: { state: "closed" } }])}
+            >
+              {t("+ إضافة استثناء", "+ Add exception")}
+            </button>
+            {!validated.ok && validated.issues.some((issue) => issue.code === "invalid_exception") && (
+              <p role="status" className={styles.error}>
+                {t("اختر تاريخًا صحيحًا غير مكرر، وفترات لا تتداخل داخل اليوم نفسه.", "Choose a valid unique date and non-overlapping intervals within the same day.")}
+              </p>
+            )}
+            <p className={styles.hint}>{t("الاستثناء يستبدل اليوم كاملًا، بما فيه امتداد اليوم السابق.", "An exception replaces the entire date, including previous-day carry-over.")}</p>
+          </fieldset>
+        )}
 
         {!canSaveAuthoritative && (
-          <p className={styles.note}>
+          <p className={styles.hint}>
             {t(
               "الحفظ غير متاح قبل تأكيد الاتصال بالخادم وجلب نسخة المواعيد الحالية.",
               "Saving is disabled until server connection and version are confirmed."
@@ -868,13 +799,7 @@ function HoursForm(p: PaidBranchHoursProps) {
 
       {showCopy && p.snapshot && (
         <section className={styles.copy} aria-labelledby={`${id}-copy`}>
-          <h3 id={`${id}-copy`}>{t("اختر الفروع المستهدفة", "Choose destination branches")}</h3>
-          <p>
-            {t(
-              "تُنسخ المواعيد الأسبوعية المحفوظة واستثناءات التواريخ دون تحويل. يحتفظ كل فرع بمنطقته الزمنية. احفظ تعديلاتك قبل النسخ.",
-              "The saved weekly hours and date exceptions are copied without conversion. Each branch keeps its timezone. Save your edits before copying."
-            )}
-          </p>
+          <h3 id={`${id}-copy`}>{t("نسخ أيام العمل", "Copy hours")}</h3>
           {p.copyTargets
             .filter((target) => target.branchId !== p.scope.branchId)
             .map((target) => (
@@ -891,7 +816,6 @@ function HoursForm(p: PaidBranchHoursProps) {
                 />
                 <span>
                   <bdi>{target.label}</bdi> — <bdi>{target.timezone || t("منطقة زمنية غير معروفة", "Unknown timezone")}</bdi>
-                  {target.timezone && target.timezone !== p.snapshot?.timezone && <small>{t("منطقة زمنية مختلفة", "Different timezone")}</small>}
                 </span>
               </label>
             ))}
@@ -909,10 +833,7 @@ function HoursForm(p: PaidBranchHoursProps) {
           </button>
           {confirming && (
             <div className={styles.confirm} role="region" aria-label={t("تأكيد النسخ", "Confirm copy")}>
-              <h4>{t("مراجعة استبدال المواعيد", "Review schedule replacement")}</h4>
-              <p>
-                <bdi>{p.snapshot.branchLabel}</bdi> — <bdi>{p.snapshot.timezone}</bdi>
-              </p>
+              <h4>{t("تأكيد الاستبدال", "Confirm replacement")}</h4>
               <ul>
                 {BRANCH_HOURS_DAYS.map((day) => (
                   <li key={day}>
@@ -932,14 +853,12 @@ function HoursForm(p: PaidBranchHoursProps) {
                   ))}
                 </ul>
               )}
-              <p>{t("الفروع التي ستُستبدل مواعيدها:", "Branches whose schedules will be replaced:")}</p>
               <ul>
                 {selected.map((branchId) => {
                   const target = p.copyTargets.find((item) => item.branchId === branchId)!;
                   return (
                     <li key={branchId}>
                       <bdi>{target.label}</bdi> — <bdi>{target.timezone}</bdi>
-                      {target.timezone !== p.snapshot?.timezone ? t(" — منطقة زمنية مختلفة؛ دون تحويل", " — different timezone; no conversion") : null}
                     </li>
                   );
                 })}
@@ -952,12 +871,12 @@ function HoursForm(p: PaidBranchHoursProps) {
                   if (copy.ok && confirmation === fingerprint && p.onCopy) void dispatch(() => p.onCopy?.(copy.draft));
                 }}
               >
-                {t("تأكيد النسخ للفروع المختارة", "Confirm copy to selected branches")}
+                {t("تأكيد النسخ", "Confirm copy")}
               </button>
               <button type="button" disabled={locked} onClick={() => setConfirmation(null)}>
                 {t("إلغاء", "Cancel")}
               </button>
-              {!p.onCopy && <p>{t("تنفيذ النسخ غير متاح بعد؛ لم تتغير مواعيد أي فرع.", "Copying is not available yet; no branch schedule has changed.")}</p>}
+              {!p.onCopy && <p>{t("تنفيذ النسخ غير متاح بعد.", "Copying is not available yet.")}</p>}
             </div>
           )}
         </section>

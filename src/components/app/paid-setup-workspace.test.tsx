@@ -6,17 +6,17 @@ import {PaidSetupWorkspace,workspaceStepAllowed,nextWorkspaceSelection,stepBlock
 import {unavailablePaidBranchConnectionRead} from "@/lib/tenancy/paid-branch-connection-contracts";
 const scope={expectedAccountId:"actor",companyId:"company",branchId:"branch",boundaryFingerprint:"capture"};
 const read=projectTrustedBoundSelection({companyId:"company",branchId:"branch",branchLabel:"Main branch",orderGroupId:"order",slotIndex:0,persona:"level_2",package:"basic",term:"monthly",maxChannels:1,employeesExcludingOwner:2,clockState:"waiting_readiness",asOf:"now"},{channels:["whatsapp"]});
-const props:PaidSetupWorkspaceProps={locale:"en",scope,read,activeStepId:"whatsapp",availableStepIds:["whatsapp","instagram","hours","knowledge","language","test","team","launch"],isCurrent:()=>true,onSelectStep:()=>{throw Error("No selection during render");}};
+const props:PaidSetupWorkspaceProps={locale:"en",scope,read,activeStepId:"whatsapp",availableStepIds:["whatsapp","instagram","hours","knowledge","test","launch"],isCurrent:()=>true,onSelectStep:()=>{throw Error("No selection during render");}};
 const render=(overrides:Partial<PaidSetupWorkspaceProps>={})=>renderToStaticMarkup(createElement(PaidSetupWorkspace,{...props,...overrides}));
 it('keeps the presentation frame during loading without inventing a plan, progress or usable steps',()=>{const html=render({read:null,loading:true});expect(html).toContain('data-setup-frame="pending"');expect(html).toContain('Setup journey');expect(html).toContain('Stage content');expect(html).toContain('Loading branch setup');expect(html).not.toContain('<progress');expect(html).not.toContain('data-step-id');expect(html).not.toContain('Plan and activation summary');expect(html).not.toContain('type="radio"');});
 it('keeps the same frame with a retry on unavailable setup instead of hiding the UI',()=>{const html=render({read:null,onRefresh:()=>{}});expect(html).toContain('data-setup-frame="pending"');expect(html).toContain('role="alert"');expect(html).toContain('Retry');expect(html).not.toContain('<progress');expect(html).not.toContain('data-step-id');});
-it("renders seven entitled steps and actual progress with no guide auto-selection",()=>{
- const html=render();expect(html.match(/data-step-id=/g)).toHaveLength(7);expect(html).not.toContain('data-step-id="instagram"');expect(html).toContain('aria-current="step"');expect(html).not.toContain("data-guide-source");
- expect(html).toContain('<bdi dir="ltr">0 / 7</bdi>');expect(html).not.toContain('href="/setup/branches/');
+it("renders five entitled steps and actual progress with no guide auto-selection",()=>{
+ const html=render();expect(html.match(/data-step-id=/g)).toHaveLength(5);expect(html).not.toContain('data-step-id="instagram"');expect(html).not.toContain('data-step-id="language"');expect(html).not.toContain('data-step-id="team"');expect(html).toContain('aria-current="step"');expect(html).not.toContain("data-guide-source");
+ expect(html).toContain('<bdi dir="ltr">0 / 5</bdi>');expect(html).not.toContain('href="/setup/branches/');
 });
-it("renders eight only for a paid two-channel read",()=>{
+it("renders six only for a paid two-channel read",()=>{
  const both=projectTrustedBoundSelection({companyId:"company",branchId:"branch",branchLabel:"Main",orderGroupId:"order",slotIndex:0,persona:"level_2",package:"premium",term:"monthly",maxChannels:2,employeesExcludingOwner:4,clockState:"waiting_readiness",asOf:"now"},{channels:["whatsapp","instagram"]});
- expect(render({read:both}).match(/data-step-id=/g)).toHaveLength(8);
+ expect(render({read:both}).match(/data-step-id=/g)).toHaveLength(6);
 });
 it("IG-only never renders WA",()=>{
  const ig=projectTrustedBoundSelection({companyId:"company",branchId:"branch",branchLabel:"Main",orderGroupId:"order",slotIndex:0,persona:"level_2",package:"basic",term:"monthly",maxChannels:1,employeesExcludingOwner:2,clockState:"waiting_readiness",asOf:"now"},{channels:["instagram"]});
@@ -54,9 +54,9 @@ it("advances within the page only after server-confirmed channel and matching pr
  const hoursSaved={scope,read:{...read,steps:read.steps.map(s=>s.id==="hours"?{...s,status:"verified" as const,reasonCodes:[]}:s.id==="knowledge"?{...s,status:"pending" as const,reasonCodes:["setup_incomplete"]}:s),progress:{...read.progress,verified:1}},connectionReads:{},confirmedChannels:[]};
  expect(nextWorkspaceSelection(hoursSaved,"hours")).toBe("knowledge");
  expect(nextWorkspaceSelection(hoursSaved,null)).toBe("knowledge");
- const knowledgeSaved={scope,read:{...read,steps:read.steps.map(s=>s.id==="hours"?{...s,status:"verified" as const,reasonCodes:[]}:s.id==="knowledge"?{...s,status:"verified" as const,reasonCodes:[]}:s.id==="language"?{...s,status:"pending" as const,reasonCodes:["setup_incomplete"]}:s),progress:{...read.progress,verified:2}},connectionReads:{},confirmedChannels:[]};
- expect(nextWorkspaceSelection(knowledgeSaved,"knowledge")).toBe("language");
- expect(nextWorkspaceSelection(knowledgeSaved,"hours")).toBe("language");
+ const knowledgeSaved={scope,read:{...read,steps:read.steps.map(s=>s.id==="hours"?{...s,status:"verified" as const,reasonCodes:[]}:s.id==="knowledge"?{...s,status:"verified" as const,reasonCodes:[]}:s.id==="assistant_test"?{...s,status:"pending" as const,reasonCodes:["setup_incomplete"]}:s),progress:{...read.progress,verified:2}},connectionReads:{},confirmedChannels:[]};
+ expect(nextWorkspaceSelection(knowledgeSaved,"knowledge")).toBe("test");
+ expect(nextWorkspaceSelection(knowledgeSaved,"hours")).toBe("test");
 });
 it("stepBlockedReason reports accurate blocked dependencies and launch requirements",()=>{
  const model={schemaVersion:1 as const,sourceStatus:"ready" as const,companyId:"company",selectedBranchId:"branch",branches:[{id:"branch",label:"Main"}],entitlement:{slotIndex:0,persona:"level_1",package:"basic",maxChannels:1,employeesExcludingOwner:2},selectedChannels:["whatsapp" as const],steps:[{id:"whatsapp" as const,required:true,dependencyIds:[],status:"pending" as const,reasonCodes:[],actionId:"connect"},{id:"hours" as const,required:true,dependencyIds:[],status:"pending" as const,reasonCodes:[],actionId:"hours"},{id:"knowledge" as const,required:true,dependencyIds:["hours" as const],status:"blocked" as const,reasonCodes:[],actionId:"knowledge"},{id:"launch" as const,required:true,dependencyIds:["whatsapp" as const,"hours" as const],status:"blocked" as const,reasonCodes:[],actionId:"launch"}],progress:{denominator:4,verified:0,skippedOptional:0},launch:{confirmationRequired:true as const,confirmed:false,canRequest:false,blockedReasons:["channel_unverified:whatsapp"]},asOf:"now"};

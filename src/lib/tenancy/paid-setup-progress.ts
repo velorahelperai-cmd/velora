@@ -9,20 +9,26 @@ export function composePaidSetupProgress(read:PaidBranchSetupRead,snapshot:Launc
  const blockers=snapshot.readiness.blockers;
  const known=blockers.every(v=>['hours_incomplete','knowledge_incomplete','language_unconfirmed','trial_incomplete'].includes(v)||read.selectedChannels!.some(ch=>v===`channel_unverified:${ch}`));
  if(!known||snapshot.readiness.status==='unknown')return read;
- const completed={hours:snapshot.summary.hours.status==='verified',knowledge:snapshot.summary.knowledge.status==='verified',language:!blockers.includes('language_unconfirmed'),assistant_test:!blockers.includes('trial_incomplete')};
- const steps=read.steps.map(s=>({...s,dependencyIds:[...s.dependencyIds],reasonCodes:[...s.reasonCodes]}));
+ // Knowledge step owns reply-language confirmation in the UI; launch still requires the native language_unconfirmed blocker to clear.
+ const completed={
+  hours:snapshot.summary.hours.status==='verified',
+  knowledge:snapshot.summary.knowledge.status==='verified'&&!blockers.includes('language_unconfirmed'),
+  assistant_test:!blockers.includes('trial_incomplete'),
+ };
+ const steps=read.steps
+  .filter(s=>(s.id as string)!=='invitations')
+  .map(s=>({...s,dependencyIds:[...s.dependencyIds].filter(id=>(id as string)!=='invitations'),reasonCodes:[...s.reasonCodes]}));
  for(const item of steps){
-  if(item.id==='invitations'){item.status='skipped_optional';item.reasonCodes=['team_deferred'];continue;}
   if(!(item.id in completed))continue;
   const verified=completed[item.id as keyof typeof completed];
   const dependencies=item.dependencyIds.every(id=>steps.some(v=>v.id===id&&v.status==='verified'));
   item.status=(verified?'verified':dependencies?'pending':'blocked') as PaidSetupStepStatus;
-  item.reasonCodes=verified?[]:dependencies?['setup_incomplete']:['awaiting_required_steps'];
+  item.reasonCodes=verified?[]:dependencies?(item.id==='knowledge'&&blockers.includes('language_unconfirmed')?['language_unconfirmed']:['setup_incomplete']):['awaiting_required_steps'];
  }
  const launchStep=steps.find(s=>s.id==='launch');
  const allRequired=steps.filter(s=>s.required&&s.id!=='launch').every(s=>s.status==='verified');
  const canRequest=allRequired&&snapshot.readiness.status==='ready'&&snapshot.setup.launch.canRequest;
  const confirmed=snapshot.activation.status==='launched'&&snapshot.setup.launch.confirmed;
  if(launchStep){launchStep.status=confirmed?'verified':canRequest?'pending':'blocked';launchStep.reasonCodes=confirmed||canRequest?[]:[...blockers];}
- return {...read,steps,progress:{...read.progress,verified:steps.filter(s=>s.status==='verified').length,skippedOptional:steps.filter(s=>s.status==='skipped_optional').length},launch:{confirmationRequired:true,confirmed,canRequest,blockedReasons:canRequest||confirmed?[]:[...blockers]}};
+ return {...read,steps,progress:{denominator:steps.length,verified:steps.filter(s=>s.status==='verified').length,skippedOptional:steps.filter(s=>s.status==='skipped_optional').length},launch:{confirmationRequired:true,confirmed,canRequest,blockedReasons:canRequest||confirmed?[]:[...blockers]}};
 }
