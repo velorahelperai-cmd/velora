@@ -19,7 +19,7 @@ const finish: Step["copy"] = ["أنه الخطوات ثم ارجع إلى فيل
 export const guideSteps: Record<Route, readonly Step[]> = {
   coexistence: [
     step("8",["تسجيل الدخول","Sign in"],login),
-    step("9",["مراجعة الربط","Review connection"],review),
+    step("9",["مراجعة الربط","Review connection"],review,false),
     step("10",["رقم تطبيق واتساب للأعمال","Business App number"],["راجع رمز الدولة ورقم تطبيق WhatsApp Business الحالي. قد تختلف تسميات نافذة Meta عن المثال.","Check the country code and your existing WhatsApp Business App number. Meta's labels may differ from this reference."]),
     step("11",["أصول النشاط","Business assets"],assets),
     step("12",["بيانات النشاط","Business details"],details),
@@ -29,7 +29,7 @@ export const guideSteps: Record<Route, readonly Step[]> = {
   ],
   "new-number": [
     step("17.1",["تسجيل الدخول","Sign in"],login),
-    step("17.2",["مراجعة الربط","Review connection"],review),
+    step("17.2",["مراجعة الربط","Review connection"],review,false),
     step("17.3",["إضافة الرقم","Add the number"],["راجع رمز الدولة والرقم الذي تريد ربطه.","Check the country code and the number you want to connect."]),
     step("17.4",["اختيار الرقم","Choose the number"],["اختر إضافة رقم جديد من الخيارات المتاحة لحسابك.","Choose to add a new number from the options available to your account."]),
     step("17.5",["التحقق من الرقم","Verify the number"],["أدخل رمز التحقق داخل نافذة Meta فقط.","Enter the verification code only in the Meta window."]),
@@ -81,7 +81,6 @@ function Guide({route,locale,connectEnabled=false,connecting=false,preparing=fal
         </nav>
       </div>
     </div>
-    {route==="coexistence"&&<p className={styles.reference}>{t("التسلسل المرجعي المتاح ينتقل من تسمية الخطوة ٣ إلى ٥.","The available reference sequence jumps from displayed step 3 to 5.")}</p>}
 <div className={styles.connectArea} data-guide-connect-area="true"><button type="button" className={styles.connect} data-connect-action="true" disabled={!connectEnabled||connecting||!onConnect} onClick={onConnect}>{connecting?t("جارٍ الاتصال…","Connecting…"):preparing?t("تجهيز الاتصال الآمن","Prepare secure connection"):t("المتابعة باستخدام فيسبوك","Continue with Facebook")}</button>{feedback && <p className={styles.feedbackText} role="alert" data-connect-feedback="true">{feedback}</p>}</div>
     {onReviewRequirements&&<div className={styles.footer}><button type="button" className={styles.connect} onClick={onReviewRequirements}>{t("مراجعة متطلبات الربط","Review connection requirements")}</button></div>}
   </section>;

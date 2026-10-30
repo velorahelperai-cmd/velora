@@ -138,12 +138,31 @@ export async function runBrowserWhatsappSdkPopup(
   return launchPreparedWhatsappSdkPopup(launch, fb, trace, lifecycle);
 }
 
-function launchCoexistenceSdkPopup(launch:Extract<PaidBranchConnectionLaunch,{flow:"wa_coexistence"}>,fb:FbSdk,trace:(stage:string,facts?:Record<string,boolean>)=>void):Promise<WhatsappSdkPopupResult>{
+function launchCoexistenceSdkPopup(launch:Extract<PaidBranchConnectionLaunch,{flow:"wa_coexistence"}>,fb:FbSdk,trace:(stage:string,facts?:Record<string,boolean>)=>void,lifecycle?:PopupLifecycle):Promise<WhatsappSdkPopupResult>{
   return new Promise(resolve=>{
     let settled=false;let onMessage:(event:MessageEvent)=>void=()=>{};
-    const timeout=window.setTimeout(()=>{trace('callback_or_signal_timeout');finishOnce({kind:'error'});},5*60_000);
-    const finishOnce=(result:WhatsappSdkPopupResult)=>{if(settled)return;settled=true;window.clearTimeout(timeout);window.removeEventListener('message',onMessage);resolve(result);};
+    const expiresAt=lifecycle?.expiresAt??Date.now()+5*60_000;
     let attempt = createSignupAttempt(launch.attemptId);
+    const observe=(stage:PopupObservation)=>{trace(stage);lifecycle?.onObservation?.(stage);};
+    const finishOnce=(result:WhatsappSdkPopupResult)=>{
+      if(settled)return;settled=true;
+      window.clearTimeout(timeout);window.clearTimeout(expiry);window.clearInterval(authority);
+      window.removeEventListener('message',onMessage);lifecycle?.signal?.removeEventListener('abort',abort);
+      attempt=createSignupAttempt(launch.attemptId);resolve(result);
+    };
+    const valid=()=>{
+      if(settled)return false;
+      if(lifecycle?.signal?.aborted||!(lifecycle?.isCurrent()??true)){observe('authority_lost');finishOnce({kind:'error'});return false;}
+      if(!Number.isFinite(expiresAt)||Date.now()>=expiresAt){observe('attempt_expired');finishOnce({kind:'error'});return false;}
+      return true;
+    };
+    const abort=()=>{if(!settled){observe('authority_lost');finishOnce({kind:'error'});}};
+    // A UI wait deadline is not proof of cancellation or provider failure.
+    const timeout=window.setTimeout(()=>{if(valid())observe('waiting_timeout');},5*60_000);
+    const expiry=window.setTimeout(()=>{valid();},Math.max(0,Math.min(expiresAt-Date.now(),2_147_483_647)));
+    const authority=window.setInterval(()=>{valid();},500);
+    lifecycle?.signal?.addEventListener('abort',abort,{once:true});
+    if(!valid())return;
     const checkCoexistence = () => {
       if (attempt.status === "ready-for-server-validation" && attempt.code && attempt.session) {
         finishOnce({
@@ -159,26 +178,29 @@ function launchCoexistenceSdkPopup(launch:Extract<PaidBranchConnectionLaunch,{fl
       }
     };
     onMessage = (event: MessageEvent) => {
-      if (settled) return;
+      if (!valid()) return;
       const obs = parseEmbeddedSignupMessage({ origin: event.origin, data: event.data }, "coexistence");
       if (obs.kind === "ignored") return;
       trace("signup_signal", { finish: obs.kind === "finish", cancel: obs.kind === "cancel", error: obs.kind === "error" || obs.kind === "invalid" || obs.kind === "unknown", assets_received: obs.kind === "finish" });
+      // Partial authorization must be reconciled, never automatically cancelled.
+      if(obs.kind==='cancel'&&(attempt.code||attempt.session)){finishOnce({kind:'error'});return;}
       attempt = joinSignupSignal(attempt, launch.attemptId, obs);
       checkCoexistence();
     };
     window.addEventListener("message", onMessage);
     trace("fb_login_invoked");
-    fb.login((response) => {
-      if (settled) return;
+    try { fb.login((response) => {
+      if (!valid()) return;
       const code = response?.authResponse?.code;
       trace("oauth_callback_received", { code_received: typeof code === "string" && code.trim().length > 0 });
       if (typeof code === "string" && code.trim().length > 0) {
         attempt = joinSignupSignal(attempt, launch.attemptId, { kind: "code", code });
         checkCoexistence();
       } else if (!settled) {
-        finishOnce({ kind: "error" });
+        observe('callback_without_code');
       }
     }, coexistenceLoginOptions(launch.configId));
+    } catch { trace('fb_login_failed');finishOnce({kind:'error'}); }
   });
 }
 
@@ -187,7 +209,7 @@ function launchPreparedWhatsappSdkPopup(
  launch:Extract<PaidBranchConnectionLaunch,{flow:"wa_new_number"|"wa_coexistence"}>,fb:FbSdk,
  trace:(stage:string,facts?:Record<string,boolean>)=>void,lifecycle?:PopupLifecycle,
 ):Promise<WhatsappSdkPopupResult>{
- if(launch.flow==='wa_coexistence')return launchCoexistenceSdkPopup(launch,fb,trace);
+ if(launch.flow==='wa_coexistence')return launchCoexistenceSdkPopup(launch,fb,trace,lifecycle);
  if(lifecycle&&(!lifecycle.isCurrent()||lifecycle.signal?.aborted||!Number.isFinite(lifecycle.expiresAt)||lifecycle.expiresAt<=Date.now())){trace('attempt_not_launchable');return Promise.resolve({kind:'error'});}
  const session=createSignupPopupSession({expiresAt:lifecycle?.expiresAt??Date.now()+5*60_000,isCurrent:lifecycle?.isCurrent??(()=>true),signal:lifecycle?.signal,onCode:lifecycle?.onCode,onObservation:lifecycle?.onObservation,trace});
  const onMessage=(event:MessageEvent)=>{
@@ -237,19 +259,15 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
   useSetupUnsavedChanges(unsavedConnection,isCurrent??(()=>false),locale);
   const [localOverride, setLocalOverride] = useState<{ base: PaidBranchConnectionRead | null | undefined; read: PaidBranchConnectionRead } | null>(null);
   const [inFlight, setInFlight] = useState<"starting" | "completing" | "recovering" | "cancelling" | null>(null);
-  const [feedback, setFeedback] = useState<string | null>(null);
+  const [feedbackMessage, setFeedback] = useState<{ar:string;en:string} | null>(null);
+  const feedback = feedbackMessage?.[locale] ?? null;
   const [cancelUncertain, setCancelUncertain] = useState(false);
   const [reviewResult,setReviewReceipt]=useState<{key:string;receipt:WhatsappReviewReceipt|null}|null>(null);
-  const [metaTestProof,setMetaTestProof]=useState<WhatsappMetaTestReceiveProof|null>(null);
   const reviewBinding=useRef('');
   const popupCapture=useRef<AbortController|null>(null);
   const mounted = useRef(true);
   const currentAuthority=useRef(isCurrent);
-  const metaTestReader=useRef(actions?.readMetaTestReceiveProof);
-  const metaTestLoadedKey=useRef<string|null>(null);
-  const metaTestKey=JSON.stringify([scope.expectedAccountId,scope.companyId,scope.branchId,channel]);
   useLayoutEffect(()=>{currentAuthority.current=isCurrent;},[isCurrent]);
-  useLayoutEffect(()=>{metaTestReader.current=actions?.readMetaTestReceiveProof;},[actions?.readMetaTestReceiveProof]);
   const titleId = useId();
   const setLocalConnection = (next: PaidBranchConnectionRead) => setLocalOverride({ base: connectionRead, read: next });
 
@@ -265,35 +283,9 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
 
   const checkCurrent = () => (isCurrent ? isCurrent() : true);
 
-  // Soft enrichment only: WhatsApp controls render without waiting. Historical proof is cached per scope.
-  useEffect(() => {
-    if (channel !== "whatsapp") return;
-    if (metaTestLoadedKey.current === metaTestKey) return;
-    let active = true;
-    const captured = metaTestKey;
-    void (async () => {
-      try {
-        const reader = metaTestReader.current
-          ?? (await import("@/lib/tenancy/whatsapp-meta-test-receive-actions")).readOwnedWhatsappMetaTestReceiveProofAction;
-        const result = await reader({
-          expectedAccountId: scope.expectedAccountId,
-          companyId: scope.companyId,
-          branchId: scope.branchId,
-        });
-        if (!active || !mounted.current || !(currentAuthority.current?.() ?? true) || metaTestKey !== captured) return;
-        metaTestLoadedKey.current = captured;
-        setMetaTestProof(result.ok && result.proof ? result.proof : null);
-      } catch {
-        if (active && mounted.current && metaTestKey === captured) {
-          metaTestLoadedKey.current = captured;
-          setMetaTestProof(null);
-        }
-      }
-    })();
-    return () => { active = false; };
-  }, [metaTestKey, channel, scope.expectedAccountId, scope.companyId, scope.branchId]);
   const ar = locale === "ar";
   const t = (arabic: string, english: string) => ar ? arabic : english;
+  const tf = (arabic: string, english: string) => ({ar:arabic,en:english});
   const model = read ? paidChecklistFromRead(read, scope) : null;
   const steps = model ? checklistSteps(model) : [];
   const channelStep = steps.find(step => step.id === channel);
@@ -313,9 +305,9 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
       const action=actions?.reviewRequest??(await import('@/lib/tenancy/whatsapp-review-request-actions')).ownedWhatsappReviewRequestAction;
       const result=await awaitSetupRequest(action({...scope,channel:'whatsapp',attemptId:reviewAttempt.id,generation:reviewAttempt.generation,request}),60_000);
       if(!mounted.current||!checkCurrent()||reviewBinding.current!==captured)return;
-      if(result.ok){setReviewReceipt({key:captured,receipt:result.receipt});setFeedback(result.receipt?t('تم حفظ طلب المراجعة وهو قيد الانتظار. المحاولة والأصول محفوظة؛ الربط لم يكتمل.','Review request is saved and pending. The attempt and assets are preserved; connection is not complete.'):t('لا يوجد طلب مراجعة محفوظ لهذه المحاولة.','No review request is saved for this attempt.'));}
-      else setFeedback(t('تعذر تأكيد طلب المراجعة لهذه المحاولة. تحقق من الحالة؛ لم تتغير الأصول.','The review request could not be confirmed for this attempt. Check its status; assets were not changed.'));
-    }catch{if(mounted.current&&checkCurrent()&&reviewBinding.current===captured)setFeedback(t('تعذر التحقق من طلب المراجعة الآن.','Review request status is unavailable.'));}
+      if(result.ok){setReviewReceipt({key:captured,receipt:result.receipt});setFeedback(result.receipt?tf('تم حفظ طلب المراجعة وهو قيد الانتظار. المحاولة والأصول محفوظة؛ الربط لم يكتمل.','Review request is saved and pending. The attempt and assets are preserved; connection is not complete.'):tf('لا يوجد طلب مراجعة محفوظ لهذه المحاولة.','No review request is saved for this attempt.'));}
+      else setFeedback(tf('تعذر تأكيد طلب المراجعة لهذه المحاولة. تحقق من الحالة؛ لم تتغير الأصول.','The review request could not be confirmed for this attempt. Check its status; assets were not changed.'));
+    }catch{if(mounted.current&&checkCurrent()&&reviewBinding.current===captured)setFeedback(tf('تعذر التحقق من طلب المراجعة الآن.','Review request status is unavailable.'));}
     finally{connectReserved.current=false;if(mounted.current)setInFlight(null);}
   };
   const available = checkCurrent() && !!scope.expectedAccountId && !!scope.boundaryFingerprint && !!branch &&
@@ -336,40 +328,39 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
   const canStartInstagram = viewModel.canStartFlow("instagram_direct");
 
   const handleWhatsappConnect = async () => {
-    // Same-boundary profile refreshes replace isCurrent. Keep every new-number
-    // await fence live; scope changes still remount/abort. Coexistence is unchanged.
-    const checkCurrent = () => (selectedWhatsappFlow === 'wa_new_number' ? currentAuthority.current?.() ?? true : isCurrent?.() ?? true);
+    // Both connection routes must use the live session boundary after every await.
+    const checkCurrent = () => currentAuthority.current?.() ?? true;
     if (connectReserved.current || inFlight) return;
     if (!checkCurrent()) {
-      setFeedback(t('انتهت صلاحية الجلسة أو تغير سياق الحساب. حدّث الصفحة قبل المتابعة.', 'Session expired or account context changed. Refresh the page before continuing.'));
+      setFeedback(tf('انتهت صلاحية الجلسة أو تغير سياق الحساب. حدّث الصفحة قبل المتابعة.', 'Session expired or account context changed. Refresh the page before continuing.'));
       return;
     }
     if (!connection || !connection.revision) {
-      setFeedback(t('بيانات القناة غير مكتملة أو لم تُحمّل بعد. انتظر لحظة أو حدّث الصفحة.', 'Channel data is incomplete or still loading. Wait a moment or refresh the page.'));
+      setFeedback(tf('بيانات القناة غير مكتملة أو لم تُحمّل بعد. انتظر لحظة أو حدّث الصفحة.', 'Channel data is incomplete or still loading. Wait a moment or refresh the page.'));
       return;
     }
     if (!selectedWhatsappFlow) {
-      setFeedback(t('يرجى اختيار مسار الربط (رقم جديد أو Coexistence) أولاً.', 'Please select a connection route first (new number or Coexistence).'));
+      setFeedback(tf('يرجى اختيار مسار الربط (رقم جديد أو Coexistence) أولاً.', 'Please select a connection route first (new number or Coexistence).'));
       return;
     }
     if (!canStartSelectedWhatsapp) {
       if (selectedWhatsappFlow === "wa_coexistence") {
         if (!normalizedPhone) {
-          setFeedback(t('يرجى إدخال رقم WhatsApp Business بصيغة دولية صحيحة (مثال: +968...) قبل المتابعة.', 'Please enter the WhatsApp Business number in valid international format (e.g. +968...) before continuing.'));
+          setFeedback(tf('يرجى إدخال رقم WhatsApp Business بصيغة دولية صحيحة (مثال: +968...) قبل المتابعة.', 'Please enter the WhatsApp Business number in valid international format (e.g. +968...) before continuing.'));
         } else if (!phoneConfirmed) {
-          setFeedback(t('يرجى تأكيد أن الرقم مفعّل حاليًا على WhatsApp Business بالضغط على مربع التأكيد.', 'Please confirm that the number is active on WhatsApp Business by checking the confirmation box.'));
+          setFeedback(tf('يرجى تأكيد أن الرقم مفعّل حاليًا على WhatsApp Business بالضغط على مربع التأكيد.', 'Please confirm that the number is active on WhatsApp Business by checking the confirmation box.'));
         } else {
-          setFeedback(t('لا يمكن بدء ربط Coexistence حاليًا. تحقق من متطلبات القناة.', 'Cannot start Coexistence connection right now. Check channel requirements.'));
+          setFeedback(tf('لا يمكن بدء ربط Coexistence حاليًا. تحقق من متطلبات القناة.', 'Cannot start Coexistence connection right now. Check channel requirements.'));
         }
       } else {
-        setFeedback(t('لا يمكن بدء ربط هذا الرقم حاليًا. راجع متطلبات الربط أو حالة الفرع.', 'Cannot start connecting this number right now. Review connection requirements or branch status.'));
+        setFeedback(tf('لا يمكن بدء ربط هذا الرقم حاليًا. راجع متطلبات الربط أو حالة الفرع.', 'Cannot start connecting this number right now. Review connection requirements or branch status.'));
       }
       return;
     }
     // Meta's JavaScript SDK refuses FB.login on HTTP and may never call back.
     // Check before creating a server attempt; injected launchers are test doubles.
     if (!actions?.launchWhatsappSdk && window.location.protocol !== 'https:') {
-      setFeedback(t('يتطلب ربط Facebook صفحة HTTPS. افتح رابط التجهيز الآمن قبل بدء الربط.', 'Facebook connection requires an HTTPS page. Open the secure setup link before starting.'));
+      setFeedback(tf('يتطلب ربط Facebook صفحة HTTPS. افتح رابط التجهيز الآمن قبل بدء الربط.', 'Facebook connection requires an HTTPS page. Open the secure setup link before starting.'));
       return;
     }
     connectReserved.current=true;
@@ -397,10 +388,10 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
       if (!started.ok || started.launch.flow === "instagram_direct") {
         if (!started.ok) {
           setFeedback(started.code === 'setup_required'
-            ? t('متطلبات ربط واتساب على الخادم غير مفعّلة حاليًا (يلزم تفعيل وضع التوجيه وEmbedded Signup). لم يتم إنشاء محاولة ربط.', 'WhatsApp server connection prerequisites are not enabled yet (routing mode and Embedded Signup must be active). No connection attempt was created.')
+            ? tf('ربط واتساب غير متاح حاليًا. حاول لاحقًا أو تواصل مع الدعم. لم تبدأ محاولة ربط.', 'WhatsApp connection is currently unavailable. Try later or contact support. No connection attempt was started.')
             : started.code === 'conflict'
-              ? t('توجد محاولة ربط نشطة أو قيد المراجعة لهذا الفرع، أو يتعارض نوع الربط مع إعدادات الفرع المحفوظة (مثل تقييد المراجعة برقم Coexistence محدد). راجع الحالة أو استخدم الاسترداد.', 'An active or review-restricted connection exists for this branch, or the route conflicts with saved branch settings (e.g. review restriction to a specific Coexistence number). Review status or use recovery.')
-              : t('تعذّر بدء محاولة الربط حاليًا. راجع الحالة المحفوظة ثم أعد المحاولة.', 'Could not start the connection attempt right now. Review the saved state and try again.'));
+              ? tf('توجد محاولة ربط نشطة أو قيد المراجعة لهذا الفرع، أو يتعارض نوع الربط مع إعدادات الفرع المحفوظة (مثل تقييد المراجعة برقم Coexistence محدد). راجع الحالة أو استخدم الاسترداد.', 'An active or review-restricted connection exists for this branch, or the route conflicts with saved branch settings (e.g. review restriction to a specific Coexistence number). Review status or use recovery.')
+              : tf('تعذّر بدء محاولة الربط حاليًا. راجع الحالة المحفوظة ثم أعد المحاولة.', 'Could not start the connection attempt right now. Review the saved state and try again.'));
         }
         setInFlight(null);
         return;
@@ -408,18 +399,18 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
       const attempt = started.read.connection.attempt;
       const expiresAt = Date.parse(attempt?.expiresAt ?? "");
       if (!attempt || attempt.id !== started.launch.attemptId || attempt.status !== "pending" || !Number.isFinite(expiresAt) || expiresAt <= currentTime()) {
-        setInFlight(null); setFeedback(started.launch.flow==='wa_new_number'?t('انتهت المحاولة أو تعذّر التحقق منها. راجع المحاولة والأصول المحفوظة قبل المتابعة.','The attempt expired or could not be verified. Review the attempt and saved assets before proceeding.'):t("انتهت المحاولة أو تعذّر التحقق منها. استخدم الاسترداد أو الإلغاء.", "The attempt expired or could not be verified. Use recovery or cancellation.")); return;
+        setInFlight(null); setFeedback(started.launch.flow==='wa_new_number'?tf('انتهت المحاولة أو تعذّر التحقق منها. راجع المحاولة والأصول المحفوظة قبل المتابعة.','The attempt expired or could not be verified. Review the attempt and saved assets before proceeding.'):tf("انتهت المحاولة أو تعذّر التحقق منها. استخدم الاسترداد أو الإلغاء.", "The attempt expired or could not be verified. Use recovery or cancellation.")); return;
       }
       const generation = attempt.generation;
       const correlationId = makeClientOpId();
       const trace = (stage: string, facts: Record<string, boolean> = {}) => console.info("whatsapp_signup_stage", { correlation_id: correlationId, timestamp: new Date().toISOString(), stage, ...facts });
       const fb = actions?.launchWhatsappSdk ? null : await loadMetaFacebookSdk(started.launch.appId, started.launch.graphVersion, trace);
       if (!mounted.current || !checkCurrent()) return;
-      if (!actions?.launchWhatsappSdk && !fb) { setInFlight(null); setFeedback(t("تعذر تجهيز Facebook. راجع حالة المحاولة قبل المتابعة.", "Facebook could not be prepared. Review the attempt before continuing.")); return; }
-      if (expiresAt <= currentTime()) { setInFlight(null); setFeedback(started.launch.flow==='wa_new_number'?t('انتهت المحاولة. راجع المحاولة والأصول المحفوظة قبل المتابعة.','The attempt expired. Review the attempt and saved assets before proceeding.'):t("انتهت المحاولة. استخدم الاسترداد أو الإلغاء.", "The attempt expired. Use recovery or cancellation.")); return; }
+      if (!actions?.launchWhatsappSdk && !fb) { setInFlight(null); setFeedback(tf("تعذر تجهيز Facebook. راجع حالة المحاولة قبل المتابعة.", "Facebook could not be prepared. Review the attempt before continuing.")); return; }
+      if (expiresAt <= currentTime()) { setInFlight(null); setFeedback(started.launch.flow==='wa_new_number'?tf('انتهت المحاولة. راجع المحاولة والأصول المحفوظة قبل المتابعة.','The attempt expired. Review the attempt and saved assets before proceeding.'):tf("انتهت المحاولة. استخدم الاسترداد أو الإلغاء.", "The attempt expired. Use recovery or cancellation.")); return; }
       let abandoned = false;
       const popupResult = await new Promise<WhatsappSdkPopupResult>((resolve) => {
-        const timer = window.setTimeout(() => { abandoned = true; preparedPopup.current = null; setPopupReady(false); setFeedback(started.launch.flow==='wa_new_number'?t('انتهت المحاولة. راجع المحاولة والأصول المحفوظة قبل المتابعة.','The attempt expired. Review the attempt and saved assets before proceeding.'):t("انتهت المحاولة. استخدم الاسترداد أو الإلغاء.", "The attempt expired. Use recovery or cancellation.")); resolve({kind:"error"}); }, Math.min(expiresAt - Date.now(), 2_147_483_647));
+        const timer = window.setTimeout(() => { abandoned = true; preparedPopup.current = null; setPopupReady(false); setFeedback(started.launch.flow==='wa_new_number'?tf('انتهت المحاولة. راجع المحاولة والأصول المحفوظة قبل المتابعة.','The attempt expired. Review the attempt and saved assets before proceeding.'):tf("انتهت المحاولة. استخدم الاسترداد أو الإلغاء.", "The attempt expired. Use recovery or cancellation.")); resolve({kind:"error"}); }, Math.min(expiresAt - Date.now(), 2_147_483_647));
         const abandon = () => { abandoned = true; ownsReservation = false; window.clearTimeout(timer); resolve({kind:"error"}); };
         preparedPopup.current = { attemptId: attempt.id, generation, expiresAt, abandon, launch: () => {
           window.clearTimeout(timer); preparedPopup.current = null; setPopupReady(false); connectReserved.current = true; setInFlight("starting");
@@ -428,7 +419,7 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
             const preparedLaunch=started.launch;
             const lifecycle:PopupLifecycle={expiresAt,onCode:preparedLaunch.flow==='wa_new_number'&&resolved.captureAuthorization?async code=>{if(!mounted.current||!checkCurrent())return false;const result=await resolved.captureAuthorization!({...scope,channel:'whatsapp',attemptId:attempt.id,generation,nonce:preparedLaunch.nonce,code,correlationId});return mounted.current&&checkCurrent()&&result.ok;}:undefined,isCurrent:()=>mounted.current&&(currentAuthority.current?.()??true),signal:controller.signal,onObservation:stage=>{
               if(!mounted.current||!checkCurrent())return;
-              if(stage==='waiting_timeout'||stage==='popup_closed'||stage==='callback_without_code'){setInFlight(null);setFeedback(t('نتيجة Meta غير محسومة. ننتظر التفويض ضمن صلاحية المحاولة؛ لا تبدأ محاولة أخرى.','Meta outcome is unconfirmed. Waiting within this attempt’s validity; do not start another attempt.'));}
+              if(stage==='waiting_timeout'||stage==='popup_closed'||stage==='callback_without_code'){setInFlight(null);setFeedback(tf('نتيجة Meta غير محسومة. ننتظر التفويض ضمن صلاحية المحاولة؛ لا تبدأ محاولة أخرى.','Meta outcome is unconfirmed. Waiting within this attempt’s validity; do not start another attempt.'));}
             }};
             const popup = actions?.launchWhatsappSdk ? actions.launchWhatsappSdk(started.launch as Extract<PaidBranchConnectionLaunch, {flow:"wa_new_number"|"wa_coexistence"}>) : launchPreparedWhatsappSdkPopup(started.launch as Extract<PaidBranchConnectionLaunch, {flow:"wa_new_number"|"wa_coexistence"}>, fb!, trace, lifecycle);
             void popup.then(resolve, () => resolve({kind:"error"}));
@@ -455,7 +446,7 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
         return;
       }
       if (popupResult.kind !== "completed") {
-        setFeedback(t(
+        setFeedback(tf(
           "لم تكتمل نافذة Meta أو أُغلقت قبل التحقق. يمكنك استخدام الاسترداد أو إلغاء المحاولة.",
           "The Meta window did not finish or closed before verification. You can recover or cancel the attempt.",
         ));
@@ -463,27 +454,27 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
         onRefresh?.();
         return;
       }
-      if(started.launch.flow==='wa_new_number'&&currentTime()>=expiresAt){trace('attempt_expired_before_server');setInFlight(null);setFeedback(t('انتهت صلاحية المحاولة؛ لم يُرسل التفويض للإكمال. راجع حالة الأصول أولًا.','The attempt expired; authorization was not submitted. Review the existing assets first.'));onRefresh?.();return;}
+      if(currentTime()>=expiresAt){trace('attempt_expired_before_server');setInFlight(null);setFeedback(tf('انتهت صلاحية المحاولة؛ لم يُرسل التفويض للإكمال. راجع حالة الأصول أولًا.','The attempt expired; authorization was not submitted. Review the existing assets first.'));onRefresh?.();return;}
       setInFlight("completing");
       // Registration follows Embedded Signup; never collect or persist the PIN before authorization.
       let registrationPin='';
       let authorizationTicket:string|undefined;
       if(started.launch.flow==='wa_new_number'){
-        if(!popupResult.code||!popupResult.wabaId||!popupResult.phoneNumberId){setInFlight(null);setFeedback(t('بيانات تفويض Meta غير مكتملة. راجع حالة المحاولة قبل المتابعة.','Meta authorization data is incomplete. Review the attempt status before continuing.'));return;}
+        if(!popupResult.code||!popupResult.wabaId||!popupResult.phoneNumberId){setInFlight(null);setFeedback(tf('بيانات تفويض Meta غير مكتملة. راجع حالة المحاولة قبل المتابعة.','Meta authorization data is incomplete. Review the attempt status before continuing.'));return;}
         const prepared=await resolved.prepareRegistration?.({expectedAccountId:scope.expectedAccountId,companyId:scope.companyId,branchId:scope.branchId,channel:'whatsapp',flow:'wa_new_number',attemptId:started.launch.attemptId,generation,completion:{attemptId:started.launch.attemptId,nonce:started.launch.nonce,code:popupResult.code,wabaId:popupResult.wabaId,phoneNumberId:popupResult.phoneNumberId,pin:''}}).catch(()=>({ok:false as const}));
         if(!mounted.current||!checkCurrent())return;
         if(!prepared?.ok){
-          setInFlight(null);setFeedback(t('نتيجة التفويض غير مؤكدة. استخدم استكمال المحاولة للتحقق من الحالة المحفوظة قبل بدء ربط جديد.','Authorization outcome is unconfirmed. Recover the attempt to check its saved state before starting a new connection.'));onRefresh?.();return;
+          setInFlight(null);setFeedback(tf('نتيجة التفويض غير مؤكدة. استخدم استكمال المحاولة للتحقق من الحالة المحفوظة قبل بدء ربط جديد.','Authorization outcome is unconfirmed. Recover the attempt to check its saved state before starting a new connection.'));onRefresh?.();return;
         }
         authorizationTicket=prepared.authorizationTicket;
-        if(prepared.registrationRequired&&prepared.autoPinEligible)setFeedback(t('يُستكمل تسجيل الرقم تلقائيًا دون طلب PIN.','Completing phone registration automatically without a PIN prompt.'));
+        if(prepared.registrationRequired&&prepared.autoPinEligible)setFeedback(tf('يُستكمل تسجيل الرقم تلقائيًا دون طلب PIN.','Completing phone registration automatically without a PIN prompt.'));
         if(prepared.registrationRequired&&!prepared.autoPinEligible){
         setPin('');setAwaitingPin(true);
         const answer=await new Promise<string|null>(resolve=>{pinAnswer.current=resolve;});
         if(!mounted.current||!checkCurrent())return;
         setAwaitingPin(false);setPin('');
         if(answer===null){
-          if(currentTime()>=expiresAt){setInFlight(null);setFeedback(t('انتهت المحاولة. راجع المحاولة والأصول المحفوظة قبل المتابعة.','The attempt expired. Review the attempt and saved assets before proceeding.'));return;}
+          if(currentTime()>=expiresAt){setInFlight(null);setFeedback(tf('انتهت المحاولة. راجع المحاولة والأصول المحفوظة قبل المتابعة.','The attempt expired. Review the attempt and saved assets before proceeding.'));return;}
           setInFlight('cancelling');
           const cancelled=await resolved.cancelConnection!({expectedAccountId:scope.expectedAccountId,companyId:scope.companyId,branchId:scope.branchId,channel:'whatsapp',flow:selectedWhatsappFlow,attemptId:started.launch.attemptId,generation});
           if(!mounted.current||!checkCurrent())return;
@@ -524,17 +515,17 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
       setLocalConnection(completed.read);
       if (!completed.ok) {
         if (completed.code === 'invalid_input') {
-          setFeedback(t('إذن إكمال التسجيل غير صالح أو انتهت صلاحيته. راجع المحاولة والأصول المحفوظة قبل المتابعة.', 'The registration continuation is invalid or expired. Review the attempt and saved assets before proceeding.'));
+          setFeedback(tf('إذن إكمال التسجيل غير صالح أو انتهت صلاحيته. راجع المحاولة والأصول المحفوظة قبل المتابعة.', 'The registration continuation is invalid or expired. Review the attempt and saved assets before proceeding.'));
         } else if (completed.code === 'reconciliation_required') {
-          setFeedback(t('تحتاج بيانات الربط إلى مصالحة ومراجعة مع الخادم. استخدم الاسترداد للتحقق من الحالة المحفوظة قبل أي محاولة جديدة.', 'Connection data requires server reconciliation. Use recovery to verify the saved state before trying again.'));
+          setFeedback(tf('تحتاج بيانات الربط إلى مصالحة ومراجعة مع الخادم. استخدم الاسترداد للتحقق من الحالة المحفوظة قبل أي محاولة جديدة.', 'Connection data requires server reconciliation. Use recovery to verify the saved state before trying again.'));
         } else if (completed.code === 'forbidden') {
-          setFeedback(t('الجلسة الحالية غير مصرح لها بإتمام هذا الربط. تحقّق من حسابك وأعد المحاولة.', 'The current session is not authorized to complete this connection. Verify your account and try again.'));
+          setFeedback(tf('الجلسة الحالية غير مصرح لها بإتمام هذا الربط. تحقّق من حسابك وأعد المحاولة.', 'The current session is not authorized to complete this connection. Verify your account and try again.'));
         } else if (completed.code === 'expired') {
-          setFeedback(t('انتهت صلاحية محاولة الربط. راجع المحاولة والأصول المحفوظة قبل المتابعة.', 'The connection attempt has expired. Review the attempt and saved assets before proceeding.'));
+          setFeedback(tf('انتهت صلاحية محاولة الربط. راجع المحاولة والأصول المحفوظة قبل المتابعة.', 'The connection attempt has expired. Review the attempt and saved assets before proceeding.'));
         } else if (completed.code === 'setup_required') {
-          setFeedback(t('متطلبات الربط أو إعدادات الحساب غير مكتملة على الخادم. راجع الإعدادات ثم أعد المحاولة.', 'Connection prerequisites or server setup are incomplete. Review settings and retry.'));
+          setFeedback(tf('متطلبات الربط أو إعدادات الحساب غير مكتملة على الخادم. راجع الإعدادات ثم أعد المحاولة.', 'Connection prerequisites or server setup are incomplete. Review settings and retry.'));
         } else {
-          setFeedback(t('تعذّر إتمام التحقق من الربط وحفظه. استخدم الاسترداد للتحقق من الحالة المحفوظة.', 'Connection verification and save could not be completed. Use recovery to check the saved state.'));
+          setFeedback(tf('تعذّر إتمام التحقق من الربط وحفظه. استخدم الاسترداد للتحقق من الحالة المحفوظة.', 'Connection verification and save could not be completed. Use recovery to check the saved state.'));
         }
       }
       setInFlight(null);
@@ -542,7 +533,7 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
     } catch {
       if (!mounted.current) return;
       setInFlight(null);
-      setFeedback(t("تعذر إتمام عملية الربط حاليًا. حدّث الحالة أو استخدم الاسترداد.", "Connection could not be completed right now. Refresh status or use recovery."));
+      setFeedback(tf("تعذر إتمام عملية الربط حاليًا. حدّث الحالة أو استخدم الاسترداد.", "Connection could not be completed right now. Refresh status or use recovery."));
     }finally{if (ownsReservation) connectReserved.current=false;}
   };
 
@@ -587,7 +578,7 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
     } catch {
       if (!mounted.current) return;
       setInFlight(null);
-      setFeedback(t("تعذر بدء تفويض Instagram حاليًا. حاول مرة أخرى.", "Could not start Instagram authorization right now. Try again."));
+      setFeedback(tf("تعذر بدء تفويض Instagram حاليًا. حاول مرة أخرى.", "Could not start Instagram authorization right now. Try again."));
     }
   };
 
@@ -615,7 +606,7 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
       if(recovered.ok&&recovered.continuation&&flow==='wa_new_number'){
         const continuation=recovered.continuation;
         let registrationPin='';
-        if(continuation.registrationRequired&&continuation.autoPinEligible)setFeedback(t('يُستكمل تسجيل الرقم تلقائيًا دون طلب PIN.','Completing phone registration automatically without a PIN prompt.'));
+        if(continuation.registrationRequired&&continuation.autoPinEligible)setFeedback(tf('يُستكمل تسجيل الرقم تلقائيًا دون طلب PIN.','Completing phone registration automatically without a PIN prompt.'));
         if(continuation.registrationRequired&&!continuation.autoPinEligible){
           setPin('');setAwaitingPin(true);
           const answer=await new Promise<string|null>(resolve=>{pinAnswer.current=resolve;});
@@ -637,13 +628,13 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
         setLocalConnection(completed.read);
         if (!completed.ok) {
           if (completed.code === 'reconciliation_required') {
-            setFeedback(t('تحتاج بيانات الربط إلى مصالحة ومراجعة مع الخادم. تفاصيل المحاولة محفوظة.', 'Connection data requires server reconciliation. Attempt details are preserved.'));
+            setFeedback(tf('تحتاج بيانات الربط إلى مصالحة ومراجعة مع الخادم. تفاصيل المحاولة محفوظة.', 'Connection data requires server reconciliation. Attempt details are preserved.'));
           } else if (completed.code === 'forbidden') {
-            setFeedback(t('الجلسة الحالية غير مصرح لها بإتمام هذا الربط.', 'The current session is not authorized to complete this connection.'));
+            setFeedback(tf('الجلسة الحالية غير مصرح لها بإتمام هذا الربط.', 'The current session is not authorized to complete this connection.'));
           } else if (completed.code === 'expired') {
-            setFeedback(t('انتهت صلاحية المحاولة أثناء الاسترداد. راجع الحالة المحفوظة.', 'The attempt expired during recovery. Review the saved state.'));
+            setFeedback(tf('انتهت صلاحية المحاولة أثناء الاسترداد. راجع الحالة المحفوظة.', 'The attempt expired during recovery. Review the saved state.'));
           } else {
-            setFeedback(t('تعذّر إتمام استرداد الربط. راجع الحالة المحفوظة.', 'Connection recovery could not be completed. Review the saved state.'));
+            setFeedback(tf('تعذّر إتمام استرداد الربط. راجع الحالة المحفوظة.', 'Connection recovery could not be completed. Review the saved state.'));
           }
         }
       }
@@ -652,7 +643,7 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
     } catch {
       if (!mounted.current) return;
       setInFlight(null);
-      setFeedback(t('تعذّر التحقق الآن. المحاولة محفوظة؛ حاول استكمالها مرة أخرى.','Verification is unavailable. Your attempt is saved; try recovery again.'));
+      setFeedback(tf('تعذّر التحقق الآن. المحاولة محفوظة؛ حاول استكمالها مرة أخرى.','Verification is unavailable. Your attempt is saved; try recovery again.'));
     }finally{connectReserved.current=false;}
   };
 
@@ -681,21 +672,21 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
       if(cancelled.read.sourceStatus==='ready')setLocalConnection(cancelled.read);
       if(cancelled.ok){
         setScreen('choice');setRoute(null);setPin('');setConfirmedPhone('');setPhoneConfirmed(false);
-        setFeedback(t('تم إلغاء المحاولة. اختر طريقة الربط عندما تكون مستعدًا.','Attempt cancelled. Choose a connection method when you are ready.'));
+        setFeedback(tf('تم إلغاء المحاولة. اختر طريقة الربط عندما تكون مستعدًا.','Attempt cancelled. Choose a connection method when you are ready.'));
       }else{
         if(flow==='wa_new_number'&&cancelled.code==='reconciliation_required'){
           setCancelUncertain(true);
-          setFeedback(t('تحتاج المحاولة إلى مراجعة إدارية قبل تأكيد الإلغاء. تبقى المحاولة محفوظة؛ لا تبدأ ربطًا جديدًا.','Administrative review is required before cancellation can be confirmed. The attempt is preserved; do not start a new connection.'));
+          setFeedback(tf('تحتاج المحاولة إلى مراجعة إدارية قبل تأكيد الإلغاء. تبقى المحاولة محفوظة؛ لا تبدأ ربطًا جديدًا.','Administrative review is required before cancellation can be confirmed. The attempt is preserved; do not start a new connection.'));
           return;
         }
         setFeedback(cancelled.code==='forbidden'
-          ? t('تعذّر إلغاء المحاولة من هذه الجلسة. المحاولة محفوظة وتحتاج مراجعة قبل بدء ربط جديد.','This session cannot cancel the attempt. It is preserved and needs review before starting a new connection.')
-          : t('لم يتم تأكيد الإلغاء. المحاولة محفوظة؛ يمكنك إعادة المحاولة دون بدء ربط جديد.','Cancellation was not confirmed. Your attempt is preserved; you can retry without starting a new connection.'));
+          ? tf('تعذّر إلغاء المحاولة من هذه الجلسة. المحاولة محفوظة وتحتاج مراجعة قبل بدء ربط جديد.','This session cannot cancel the attempt. It is preserved and needs review before starting a new connection.')
+          : tf('لم يتم تأكيد الإلغاء. المحاولة محفوظة؛ يمكنك إعادة المحاولة دون بدء ربط جديد.','Cancellation was not confirmed. Your attempt is preserved; you can retry without starting a new connection.'));
       }
     } catch {
       if (!mounted.current || !checkCurrent()) return;
       setCancelUncertain(true);
-      setFeedback(t('لم تتأكد نتيجة الإلغاء. تحقق من الحالة قبل أي محاولة أخرى.','Cancellation is unconfirmed. Check the status before trying again.'));
+      setFeedback(tf('لم تتأكد نتيجة الإلغاء. تحقق من الحالة قبل أي محاولة أخرى.','Cancellation is unconfirmed. Check the status before trying again.'));
     }finally{connectReserved.current=false;if(mounted.current)setInFlight(null);}
   };
 
@@ -710,30 +701,22 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
       const old=connection.connection.attempt;
       if(latest.sourceStatus==='ready'&&latest.connection.attempt?.id===old.id&&latest.connection.attempt.generation===old.generation&&latest.connection.attempt.status==='cancelled'){
         setLocalConnection(latest);setCancelUncertain(false);setScreen('choice');setRoute(null);
-        setFeedback(t('تم إلغاء المحاولة. اختر طريقة الربط عندما تكون مستعدًا.','Attempt cancelled. Choose a connection method when you are ready.'));
+        setFeedback(tf('تم إلغاء المحاولة. اختر طريقة الربط عندما تكون مستعدًا.','Attempt cancelled. Choose a connection method when you are ready.'));
       }else{
-        setFeedback(t('لم يتأكد الإلغاء بعد. انتظر ثم تحقق مجددًا، دون بدء ربط جديد.','Cancellation is not confirmed yet. Wait and check again before starting a new connection.'));
+        setFeedback(tf('لم يتأكد الإلغاء بعد. انتظر ثم تحقق مجددًا، دون بدء ربط جديد.','Cancellation is not confirmed yet. Wait and check again before starting a new connection.'));
       }
-    }catch{if(mounted.current&&checkCurrent())setFeedback(t('تعذّر قراءة الحالة. حاول التحقق مجددًا.','Could not read the status. Try checking again.'));}
+    }catch{if(mounted.current&&checkCurrent())setFeedback(tf('تعذّر قراءة الحالة. حاول التحقق مجددًا.','Could not read the status. Try checking again.'));}
     finally{connectReserved.current=false;if(mounted.current)setInFlight(null);}
   };
 
 
   const commercialIncomplete = channel === "whatsapp" && !(connection?.connection.verified && connection.connection.state === "connected");
-  const showMetaTestSuccess = channel === "whatsapp" && !!metaTestProof && commercialIncomplete;
 
   return <section className={styles.view} data-setup-unsaved={unsavedConnection?'true':undefined} dir={ar ? "rtl" : "ltr"} aria-label={channel==='whatsapp'?t('ربط واتساب','Connect WhatsApp'):t('ربط إنستغرام','Connect Instagram')}>
     <header className={styles.header}>
       {available && !hideStatusBadge && <p>{t("الفرع: ", "Branch: ")}<bdi>{branch.label}</bdi></p>}
-      {available && showMetaTestSuccess && <aside className={styles.metaTestSuccess} data-meta-test-receive="success" role="status">
-        <h3>{t("اختبار Meta ناجح","Meta test successful")}</h3>
-        <p>{t("ثبت استقبال الرسائل وحفظها على الخادم. هذا لا يعني إرسال الردود أو التفعيل التجاري.","Inbound messages were received and saved on the server. This does not mean replies were sent or commercial activation is complete.")}</p>
-        <p className={styles.metaTestCommercial}>{t("الربط التجاري ما زال غير مكتمل — أكمل Embedded Signup والتحقق الحقيقي لرقمك.","Commercial linking is still incomplete — finish Embedded Signup and real verification for your number.")}</p>
-        {metaTestProof.savedMessageCount > 0 && <p className={styles.metaTestMeta}><bdi dir="ltr">{metaTestProof.savedMessageCount}</bdi> {t("رسالة محفوظة","saved message(s)")}{metaTestProof.receivedAt ? <> · <time dateTime={metaTestProof.receivedAt}>{new Intl.DateTimeFormat(ar ? "ar-OM" : "en-GB", { dateStyle: "medium", timeStyle: "short" }).format(new Date(metaTestProof.receivedAt))}</time></> : null}</p>}
-      </aside>}
       {available && effectiveRead !== undefined && <div className={hideStatusBadge?undefined:styles.statusBanner} data-connection-ui-state={viewModel.uiState} data-commercial-link={commercialIncomplete ? "incomplete" : "verified"}>
         {!hideStatusBadge&&<span className={styles.statusBadge} role="status" aria-label={channelConnectionLabel(connection, locale)}>{viewModel.badgeLabel}</span>}
-        {commercialIncomplete && showMetaTestSuccess && <p className={styles.commercialHint}>{t("حالة آخر محاولة ربط تجاري أعلاه منفصلة عن نجاح الاختبار التقني.","The commercial link attempt status above is separate from technical test success.")}</p>}
         {viewModel.guidance && <p>{viewModel.guidance}</p>}
         {feedback && <p role="alert">{feedback}</p>}
         {canRequestReview&&!awaitingPin&&<div className={styles.recoveryActions}>

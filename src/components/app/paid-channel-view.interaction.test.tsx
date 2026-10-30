@@ -14,18 +14,15 @@ afterEach(async()=>{await act(async()=>root.unmount());host.remove();vi.unstubAl
 async function render(extra:Partial<PaidChannelViewProps>={}){await act(async()=>root.render(createElement(PaidChannelView,{...props,...extra})));}
 async function click(selector:string){await act(async()=>host.querySelector<HTMLElement>(selector)!.click());}
 const connection:PaidBranchConnectionRead={schemaVersion:1,sourceStatus:'ready',expectedAccountId:'actor',companyId:'company',branchId:'branch',channel:'whatsapp',asOf:'now',revision:'1',connection:{state:'not_connected',flow:null,attempt:null,link:null,verified:false,reasonCodes:[]},capabilities:{canStart:true,canRecover:false,canCancel:false,allowedFlows:['wa_new_number','wa_coexistence']}};
-it('shows Meta test success separately from incomplete commercial linking without blocking routes or refetching',async()=>{
- const readMetaTestReceiveProof=vi.fn(async()=>({ok:true as const,proof:{status:'receive_only_success' as const,receivedAt:'2026-10-29T18:41:31.000Z',completedAt:'2026-10-29T19:31:04.986Z',savedMessageCount:3,phoneNumberId:'1261345677073276'}}));
+it('keeps internal Meta test proof out of customer setup and preserves incomplete commercial status',async()=>{
+ const readMetaTestReceiveProof=vi.fn(async()=>({ok:true as const,proof:null}));
  await render({connectionRead:connection,actions:{startConnection:start,readMetaTestReceiveProof}});
- expect(host.querySelector('input[value="new-number"]')).not.toBeNull();
- expect(readMetaTestReceiveProof).toHaveBeenCalledTimes(1);
- expect(host.querySelector('[data-meta-test-receive="success"]')?.textContent).toContain('Meta test successful');
- expect(host.textContent).toContain('does not mean replies were sent or commercial activation is complete');
+ expect(readMetaTestReceiveProof).not.toHaveBeenCalled();
+ expect(host.querySelector('[data-meta-test-receive]')).toBeNull();
+ expect(host.textContent).not.toContain('Meta test successful');
  expect(host.querySelector('[data-commercial-link="incomplete"]')).not.toBeNull();
  expect(host.textContent).toContain('Not connected');
- expect(host.textContent).not.toMatch(/commercial verified|Launch ready/i);
- await act(async()=>root.render(createElement(PaidChannelView,{...props,connectionRead:connection,actions:{startConnection:start,readMetaTestReceiveProof}})));
- expect(readMetaTestReceiveProof).toHaveBeenCalledTimes(1);
+ expect(host.querySelector('input[value="coexistence"]')).not.toBeNull();
 });
 it('rejects real Facebook login on HTTP before starting a server attempt',async()=>{
  const actions=ports();const {launchWhatsappSdk: _launcher,...realLauncherActions}=actions;
@@ -34,6 +31,16 @@ it('rejects real Facebook login on HTTP before starting a server attempt',async(
  await click('[data-route-continue]');
  await click('[data-connect-action]');
  expect(host.textContent).toContain('Facebook connection requires an HTTPS page');
+ expect(actions.startConnection).not.toHaveBeenCalled();
+});
+it('keeps HTTPS error and translates it when language changes',async()=>{
+ const actions=ports();const {launchWhatsappSdk: _launcher,...realLauncherActions}=actions;
+ await render({locale:'en',connectionRead:connection,actions:realLauncherActions});
+ await click('input[value="new-number"]');await click('[data-route-continue]');await click('[data-connect-action]');
+ expect(host.textContent).toContain('Facebook connection requires an HTTPS page');
+ await render({locale:'ar',connectionRead:connection,actions:realLauncherActions});
+ expect(host.textContent).toContain('يتطلب ربط Facebook صفحة HTTPS');
+ expect(host.textContent).not.toContain('Facebook connection requires an HTTPS page');
  expect(actions.startConnection).not.toHaveBeenCalled();
 });
 it('requires review without suggesting cancellation for an expired new-number attempt',async()=>{
@@ -204,19 +211,25 @@ it('sends OAuth code to durable server capture before FINISH after SDK preparati
 it('does not apply the new-number early storage hook to Coexistence',async()=>{
  let callback:(r:object)=>void=()=>{};const onCode=vi.fn(async()=>true);vi.stubGlobal('FB',{init:vi.fn(),login:vi.fn((cb:(r:object)=>void)=>{callback=cb;})});
  const controller=new AbortController();const pending=runBrowserWhatsappSdkPopup({flow:'wa_coexistence',attemptId:'attempt',nonce:'nonce',appId:'111',configId:'cfg',graphVersion:'v25.0',confirmedPhoneNumber:'+96891234567'},{expiresAt:Date.now()+600000,isCurrent:()=>true,onCode,signal:controller.signal});
- callback({authResponse:{code:'code'}});await Promise.resolve();expect(onCode).not.toHaveBeenCalled();callback({});expect(await pending).toEqual({kind:'error'});
+ await Promise.resolve();await Promise.resolve();callback({authResponse:{code:'code'}});await Promise.resolve();expect(onCode).not.toHaveBeenCalled();controller.abort();expect(await pending).toEqual({kind:'error'});
 });
 
-it.each(['none','code','finish'] as const)('preserves original Coexistence CANCEL semantics after %s evidence',async partial=>{
+it.each(['none','code','finish'] as const)('only confirms Coexistence cancellation without partial %s evidence',async partial=>{
  let callback:(r:object)=>void=()=>{};vi.stubGlobal('FB',{init:vi.fn(),login:vi.fn((cb:(r:object)=>void)=>{callback=cb;})});
  const pending=runBrowserWhatsappSdkPopup({flow:'wa_coexistence',attemptId:'attempt',nonce:'nonce',appId:'111',configId:'cfg',graphVersion:'v25.0',confirmedPhoneNumber:'+96891234567'});
  await Promise.resolve();await Promise.resolve();
  if(partial==='code')callback({authResponse:{code:'code'}});
  if(partial==='finish')window.dispatchEvent(new MessageEvent('message',{origin:'https://www.facebook.com',data:JSON.stringify({type:'WA_EMBEDDED_SIGNUP',event:'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING',data:{waba_id:'222',phone_number_id:'333'}})}));
  window.dispatchEvent(new MessageEvent('message',{origin:'https://www.facebook.com',data:JSON.stringify({type:'WA_EMBEDDED_SIGNUP',event:'CANCEL',data:{}})}));
- expect(await pending).toEqual({kind:'cancelled'});
+ expect(await pending).toEqual({kind:partial==='none'?'cancelled':'error'});
 });
-it('preserves original missing-code failure for Coexistence',async()=>{vi.stubGlobal('FB',{init:vi.fn(),login:vi.fn((cb:(r:object)=>void)=>cb({}))});expect(await runBrowserWhatsappSdkPopup({flow:'wa_coexistence',attemptId:'attempt',nonce:'nonce',appId:'111',configId:'cfg',graphVersion:'v25.0',confirmedPhoneNumber:'+96891234567'})).toEqual({kind:'error'});});
+it('settles missing-code Coexistence only when the actual attempt expires',async()=>{
+ vi.useFakeTimers();vi.stubGlobal('FB',{init:vi.fn(),login:vi.fn((cb:(r:object)=>void)=>cb({}))});
+ try{
+  const pending=runBrowserWhatsappSdkPopup({flow:'wa_coexistence',attemptId:'attempt',nonce:'nonce',appId:'111',configId:'cfg',graphVersion:'v25.0',confirmedPhoneNumber:'+96891234567'},{expiresAt:Date.now()+1000,isCurrent:()=>true});
+  await vi.advanceTimersByTimeAsync(1000);expect(await pending).toEqual({kind:'error'});expect(vi.getTimerCount()).toBe(0);
+ }finally{vi.useRealTimers();}
+});
 
 it('saves and refreshes pending administrative review without recovery or provider calls',async()=>{
  const actions=ports();const pending=(await actions.startConnection()).read;actions.startConnection.mockClear();
@@ -250,4 +263,28 @@ it.each(['reconciliation_required','forbidden','expired','setup_required'] as co
   expect(alert).not.toBeNull();
   expect(alert?.textContent?.length).toBeGreaterThan(5);
   expect(actions.completeConnection).toHaveBeenCalledTimes(1);
+});
+
+it.each(['expired','revoked','abort','partial-cancel','missing-code'] as const)('fences coexistence popup lifecycle: %s',async scenario=>{
+ vi.useFakeTimers();const log=vi.spyOn(console,'info').mockImplementation(()=>{});
+ const controller=new AbortController();let current=true;let callback:(r:object)=>void=()=>{};
+ const login=vi.fn((cb:(r:object)=>void)=>{callback=cb;});vi.stubGlobal('FB',{init:vi.fn(),login});
+ const pending=runBrowserWhatsappSdkPopup({flow:'wa_coexistence',attemptId:'attempt',nonce:'nonce',appId:'111',configId:'cfg',graphVersion:'v25.0',confirmedPhoneNumber:'+96891234567'} as never,{expiresAt:Date.now()+(scenario==='expired'?-1:600000),isCurrent:()=>current,signal:controller.signal});
+ try{
+  let result:unknown;void pending.then(value=>{result=value;});await vi.advanceTimersByTimeAsync(0);
+  if(scenario==='expired'){expect(login).not.toHaveBeenCalled();expect(result).toEqual({kind:'error'});}
+  if(scenario==='revoked'){current=false;await vi.advanceTimersByTimeAsync(500);expect(result).toEqual({kind:'error'});}
+  if(scenario==='abort'){controller.abort();await vi.advanceTimersByTimeAsync(0);expect(result).toEqual({kind:'error'});}
+  if(scenario==='partial-cancel'){
+   callback({authResponse:{code:'code'}});
+   window.dispatchEvent(new MessageEvent('message',{origin:'https://www.facebook.com',data:JSON.stringify({type:'WA_EMBEDDED_SIGNUP',event:'CANCEL',data:{current_step:'ASSET_SELECTION'}})}));
+   await vi.advanceTimersByTimeAsync(0);expect(result).toEqual({kind:'error'});
+  }
+  if(scenario==='missing-code'){
+   callback({});await vi.advanceTimersByTimeAsync(300000);expect(result).toBeUndefined();
+   callback({authResponse:{code:'late-code'}});
+   window.dispatchEvent(new MessageEvent('message',{origin:'https://www.facebook.com',data:JSON.stringify({type:'WA_EMBEDDED_SIGNUP',event:'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING',data:{waba_id:'222'}})}));
+   await vi.advanceTimersByTimeAsync(0);expect(result).toEqual({kind:'completed',code:'late-code',wabaId:'222',phoneNumberId:undefined});
+  }
+ }finally{controller.abort();await vi.runAllTimersAsync();await pending;log.mockRestore();vi.useRealTimers();}
 });

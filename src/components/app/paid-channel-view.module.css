@@ -43,3 +43,13 @@
 @container paid-channel (max-width:660px){.view .connectLayout{grid-template-columns:minmax(0,1fr)}.connectLayout[data-wa-screen="choice"]{grid-template-columns:minmax(0,1fr);gap:18px}}
 .brands span:first-child{color:#128c4a}.brands span:last-child{color:#0866ff}
 .choice input[type=radio]{accent-color:#169c52}
+
+/* WhatsApp setup: calm hierarchy and readable touch choices. */
+.view:has(>[data-wa-screen="choice"]) .intro h3{font-size:20px;line-height:1.4;letter-spacing:-.01em}
+.view:has(>[data-wa-screen="choice"]) .intro>p,.view:has(>[data-wa-screen="choice"]) .intro li{font-size:14px;line-height:1.7}
+.view:has(>[data-wa-screen="choice"]) .routeCard{padding:24px;border-radius:14px;box-shadow:0 2px 8px rgba(23,45,67,.04)}
+.view:has(>[data-wa-screen="choice"]) .routeCard>h3{font-size:16px}
+.view:has(>[data-wa-screen="choice"]) .choice{padding:14px;gap:6px 10px}
+.view:has(>[data-wa-screen="choice"]) .choice small{font-size:13px;line-height:1.65}
+.view:has(>[data-wa-screen="choice"]) .choice:focus-within{outline:2px solid var(--channel-accent);outline-offset:2px}
+@media(max-width:700px){.view:has(>[data-wa-screen="choice"]) .routeCard{padding:18px}.view:has(>[data-wa-screen="choice"]) .intro h3{font-size:19px}}
