@@ -156,13 +156,13 @@ describe("readOwnedPaidBranchSetupAction", () => {
     });
     expect(read.sourceStatus).toBe("ready");
     expect(read.selectedChannels).toEqual(["whatsapp"]);
-    expect(read.steps).toHaveLength(5);
-    expect(read.progress.denominator).toBe(5);
+    expect(read.steps).toHaveLength(6);
+    expect(read.progress.denominator).toBe(6);
     expect(read.launch.canRequest).toBe(false);
     expect(read.launch.confirmed).toBe(false);
   });
 
-  it("projects both stored channels as eight steps", async () => {
+  it("projects both stored channels as seven steps", async () => {
     state.rpc.mockImplementation(async (name: string, args: { p_channel?: string }) => {
       if (name === "es02_b3_read_owned_branch_connection") {
         return { data: readyConnection(args.p_channel === "instagram" ? "instagram" : "whatsapp"), error: null };
@@ -170,8 +170,8 @@ describe("readOwnedPaidBranchSetupAction", () => {
       return { data: { ok: true, code: "BOUND", data: facts, binding: { channels: ["whatsapp", "instagram"] } }, error: null };
     });
     const read = await readOwnedPaidBranchSetupAction(input);
-    expect(read.steps).toHaveLength(6);
-    expect(read.progress.denominator).toBe(6);
+    expect(read.steps).toHaveLength(7);
+    expect(read.progress.denominator).toBe(7);
     expect(read.selectedChannels).toEqual(["whatsapp", "instagram"]);
     expect(read.steps.every((step) => step.status !== "verified")).toBe(true);
   });
