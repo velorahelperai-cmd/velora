@@ -44,6 +44,17 @@ beforeEach(()=>{
 });
 
 describe("company detail route return context",()=>{
+  it("starts independent branch and WhatsApp enrichment while knowledge is still pending", async () => {
+    let resolve!: (result: {ok: false}) => void;
+    mocks.knowledge.mockReturnValue(new Promise(r => { resolve = r; }));
+    const pending = Page({params: Promise.resolve({id: "synthetic-company"})});
+    await vi.waitFor(() => expect(mocks.whatsapp).toHaveBeenCalledWith("synthetic-company"));
+    expect(mocks.from).toHaveBeenCalledWith("company_branches");
+    resolve({ok: false});
+    const tree = await pending;
+    expect(tree.props.knowledgeLoadFailed).toBe(true);
+    expect(tree.props.whatsappLinkLoadFailed).toBe(true);
+  });
   it.each(["/admin?companySearch=Synthetic&companyStatus=active#companies","/admin/billing?environment=test&cursor=synthetic"])("passes safe return %s to the detail view",async returnTo=>{
     const tree=await Page({params:Promise.resolve({id:"synthetic-company"}),searchParams:Promise.resolve({returnTo})});
     expect(tree.props.returnTo).toBe(returnTo);

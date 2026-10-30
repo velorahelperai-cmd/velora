@@ -74,29 +74,33 @@ export async function adminListChannels(): Promise<AdminChannelsResult> {
 
     // 3. Check Instagram connections for companies (via instagram_admin_connection RPC)
     const genericRpc = supabase.rpc as unknown as (name: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: unknown }>;
-    for (const comp of companies ?? []) {
-      try {
-        const { data: igData, error: igError } = await genericRpc("instagram_admin_connection", {
-          p_company_id: comp.id,
-        });
-        if (!igError && igData && typeof igData === "object" && (igData as Record<string, unknown>).ok === true) {
-          const link = (igData as Record<string, unknown>).link as Record<string, unknown> | null;
-          if (link && typeof link.accountId === "string") {
-            channels.push({
-              id: `ig-${link.linkId || comp.id}`,
-              companyId: comp.id,
-              companyName: comp.display_name,
-              channelType: "instagram",
-              status: "bound",
-              identifier: `@${link.accountId}`,
-              coexistence: false,
-              lastActiveAt: null,
-            });
+    for (let offset = 0; offset < (companies?.length ?? 0); offset += 4) {
+      const batch = await Promise.all((companies ?? []).slice(offset, offset + 4).map(async comp => {
+        try {
+          const { data: igData, error: igError } = await genericRpc("instagram_admin_connection", {
+            p_company_id: comp.id,
+          });
+          if (!igError && igData && typeof igData === "object" && (igData as Record<string, unknown>).ok === true) {
+            const link = (igData as Record<string, unknown>).link as Record<string, unknown> | null;
+            if (link && typeof link.accountId === "string") {
+              return {
+                id: `ig-${link.linkId || comp.id}`,
+                companyId: comp.id,
+                companyName: comp.display_name,
+                channelType: "instagram" as const,
+                status: "bound" as const,
+                identifier: `@${link.accountId}`,
+                coexistence: false,
+                lastActiveAt: null,
+              };
+            }
           }
+        } catch {
+          // Continue processing other companies if single RPC fails
         }
-      } catch {
-        // Continue processing other companies if single RPC fails
-      }
+        return null;
+      }));
+      for (const channel of batch) if (channel) channels.push(channel);
     }
 
     // 4. Compute Aggregate Stats

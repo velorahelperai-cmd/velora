@@ -1,3 +1,9 @@
+# Current Session Index - STATIC-CACHE-PERFORMANCE-20261030
+
+- Owner explicitly authorized Commit/Push/automatic deploy for this package. Static image imports, retire duplicate cache-first worker, bounded public HTTP caching; no private data cache. Includes prior local global-data/Teams improvements.
+- [Release scope and evidence](docs/STATIC-CACHE-RELEASE-20261030.md), [59-page coverage](docs/GLOBAL-DATA-COVERAGE-20261030.md), [protected measurements and Teams limits](docs/TEAMS-READS-PROTECTED-MEASUREMENTS-20261030.md). Mandatory release checks and hosted verification tracked in delivery receipt; no predeclared readiness.
+- Unrelated agent edits/deletion tools excluded and preserved.
+
 # Current Session Index - GLOBAL-DATA-PERFORMANCE-20261030 RELEASE CANDIDATE
 
 - Owner authorized performance + Meta proof integration and conditional Commit/Push/Deploy. Exact 29-file manifest and limits: [release report](docs/GLOBAL-DATA-PERFORMANCE-20261030.md#final-release-candidate--global-data-performance-20261030).

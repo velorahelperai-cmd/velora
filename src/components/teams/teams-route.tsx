@@ -1,7 +1,6 @@
 import {redirect} from "next/navigation";
 import {readSessionIdentity} from "@/lib/auth/server-identity";
 import {readAccountPlatformIdentity} from "@/lib/tenancy/account-platform-identity";
-import {readPlatformTeamDirectory} from "@/lib/platform-teams/actions";
 import {teamQuery} from "@/lib/platform-teams/ui-routing";
 import {TeamsPage,TeamsFailure} from "./teams-page";
 
@@ -19,8 +18,8 @@ export async function renderTeamsRoute(editor:boolean,searchParams:TeamSearchPar
  const query=new URLSearchParams();
  for(const [key,value]of Object.entries(await searchParams)){if(Array.isArray(value))value.forEach(v=>query.append(key,v));else if(value!==undefined)query.set(key,value);}
  const scope=teamQuery(identity.userId,query);if(!scope.ok)return <TeamsFailure embedded={editor} code={scope.code}/>;
- // This route needs a verified session and R3 team scope, never a dummy company grant.
- const directory=await readPlatformTeamDirectory(scope.data);
- if(!directory.ok)return <TeamsFailure embedded={editor} code={directory.code}/>;
- return <TeamsPage key={identity.userId} actorId={identity.userId} editor={editor}/>;
+ // Render only the shell here. The client performs the one directory read via
+ // the existing native action (identity before/after + SQL team authorization).
+ // A server preflight fetched and discarded the same rows before that read.
+ return <TeamsPage key={`${identity.userId}:${identity.boundaryFingerprint}:${editor}`} actorId={identity.userId} editor={editor}/>;
 }

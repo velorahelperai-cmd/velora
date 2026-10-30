@@ -23,13 +23,19 @@ export async function adminGetOperationsOverview(query?: AdminOperationsQuery): 
     || query?.severity && !["all", "info", "warning", "error", "critical"].includes(query.severity)) return unavailable("OPERATIONS_INVALID_FILTER");
   try {
     const supabase = await createClient();
-    const started = Date.now();
-    const { error: dbError } = await supabase.from("companies").select("id").limit(1);
-    const dbLatency = Date.now() - started;
     const rpc = supabase as unknown as { rpc(name: string, args: Record<string, unknown>): PromiseLike<{ data: unknown; error: { code?: string } | null }> };
-    const { data: raw, error } = await rpc.rpc("admin_read_operations_snapshot", {
+    const [database, result] = await Promise.all([
+      (async () => {
+        const started = Date.now();
+        const { error: dbError } = await supabase.from("companies").select("id").limit(1);
+        return { dbError, dbLatency: Date.now() - started };
+      })(),
+      rpc.rpc("admin_read_operations_snapshot", {
       p_correlation_id: query?.correlationId?.trim() || null, p_service: query?.service || null, p_severity: query?.severity || null,
-    });
+      }),
+    ]);
+    const { dbError, dbLatency } = database;
+    const { data: raw, error } = result;
     if (error) return error.code === "42501" ? { ok: false, code: "FORBIDDEN" }
       : unavailable(["PGRST202", "42883"].includes(error.code ?? "") ? "OPERATIONS_CONTRACT_NOT_INSTALLED" : "OPERATIONS_READ_UNAVAILABLE");
     const snapshot = record(raw);

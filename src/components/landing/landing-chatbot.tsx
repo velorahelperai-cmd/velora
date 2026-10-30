@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import chatAvatar from "../../../public/assets/velora/chat-girl.jpg";
 import { createPortal } from "react-dom";
 import { useEffect, useId, useRef, useState } from "react";
 import styles from "./phone-messages.module.css";
@@ -86,7 +87,7 @@ export function LandingChatbot({ copy }: { copy: LandingCopy }) {
           <PhoneStatusBar />
           <header className={`${styles.guideHeader} flex items-center gap-3 border-b border-white/10 px-3 py-3`}>
             <Image
-              src="/assets/velora/chat-girl.jpg"
+              src={chatAvatar}
               alt=""
               width={44}
               height={44}
@@ -181,7 +182,7 @@ export function LandingChatbot({ copy }: { copy: LandingCopy }) {
         ) : null}
         <span className="relative inline-flex h-14 w-14 items-center justify-center overflow-hidden rounded-full border-2 border-[#38dc89]/70 bg-[#14221b] shadow-[0_12px_28px_rgba(0,0,0,0.4)] transition group-hover:-translate-y-0.5 sm:h-[4.5rem] sm:w-[4.5rem]">
           <Image
-            src="/assets/velora/chat-girl.jpg"
+            src={chatAvatar}
             alt={copy.chat.openLabel}
             width={72}
             height={72}

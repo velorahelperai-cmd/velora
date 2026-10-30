@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import heroEnvironment from "../../../public/assets/velora/hero-environment-v2.png";
 import Link from "next/link";
 import { useEffect, useRef, type ReactNode, type SVGProps } from "react";
 import styles from "./hero-layout.module.css";
@@ -193,7 +194,7 @@ export function StoryScenes({
 
         <section id={pressure.anchor} data-scene="1" className={`${styles.hero} scene scene-dark relative min-h-[100svh] overflow-hidden px-6 py-8 lg:px-12`}>
           <Image
-            src="/assets/velora/hero-environment-v2.png"
+            src={heroEnvironment}
             alt=""
             fill
             priority

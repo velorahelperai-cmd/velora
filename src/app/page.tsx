@@ -8,11 +8,13 @@ import { DEFAULT_LOCALE, LOCALE_COOKIE, resolveLocale } from "@/lib/i18n";
 import { getCompanyAccess, pathForAccess } from "@/lib/tenancy/access";
 
 export default async function HomePage() {
-  const cookieStore = await cookies();
+  // Public offers do not depend on the selected workspace or its access read.
+  const [cookieStore, access, catalog] = await Promise.all([
+    cookies(), getCompanyAccess(), readPublicCatalogBackend(),
+  ]);
   const locale = resolveLocale(
     cookieStore.get(LOCALE_COOKIE)?.value ?? DEFAULT_LOCALE,
   );
-  const access = await getCompanyAccess();
 
   const authHref = !access.ok
     ? access.code === "UNVERIFIED"
@@ -20,6 +22,6 @@ export default async function HomePage() {
       : access.code==="UNAVAILABLE"||access.code==="FORBIDDEN"?"/account":"/signup"
     : pathForAccess(access);
 
-  const offersView = offersViewFromCatalog(await readPublicCatalogBackend());
+  const offersView = offersViewFromCatalog(catalog);
   return <LandingPage initialLocale={locale} authHref={authHref} offersView={offersView} subscriptionDestination={subscriptionDestination(access)} />;
 }

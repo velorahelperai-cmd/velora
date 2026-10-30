@@ -39,47 +39,62 @@ export async function adminGetPlatformHealthOverview(): Promise<
     const supabase = await createClient();
     const dynamicClient = supabase as unknown as DynamicHealthDbClient;
 
-    // 1. Database Connection & Latency Probe (Real PostgreSQL round-trip)
-    const t0 = Date.now();
-    const { error: dbError } = await supabase.from("companies").select("id").limit(1);
-    const dbLatencyMs = Math.max(1, Date.now() - t0);
+    const [database, authentication, budget] = await Promise.all([
+      (async () => {
+        // 1. Database Connection & Latency Probe (Real PostgreSQL round-trip)
+        const t0 = Date.now();
+        const { error: dbError } = await supabase.from("companies").select("id").limit(1);
+        const dbLatencyMs = Math.max(1, Date.now() - t0);
 
-    const dbStatus: HealthProbeStatus = dbError ? "DOWN" : "HEALTHY";
+        const dbStatus: HealthProbeStatus = dbError ? "DOWN" : "HEALTHY";
 
-    // 2. Auth Service Probe
-    let authStatus: HealthProbeStatus = "HEALTHY";
-    let authLatencyMs: number | null = null;
-    try {
-      const authT0 = Date.now();
-      const { data: authData, error: authError } = await supabase.auth.getUser();
-      authLatencyMs = Math.max(1, Date.now() - authT0);
-      if (authError || !authData.user) authStatus = "DEGRADED";
-    } catch {
-      authStatus = "DEGRADED";
-    }
+        return { dbError, dbLatencyMs, dbStatus };
+      })(),
+      (async () => {
+        // 2. Auth Service Probe
+        let authStatus: HealthProbeStatus = "HEALTHY";
+        let authLatencyMs: number | null = null;
+        try {
+          const authT0 = Date.now();
+          const { data: authData, error: authError } = await supabase.auth.getUser();
+          authLatencyMs = Math.max(1, Date.now() - authT0);
+          if (authError || !authData.user) authStatus = "DEGRADED";
+        } catch {
+          authStatus = "DEGRADED";
+        }
 
-    // 3. AI Router & Budget Table Probe (Zero paid provider calls)
-    let aiStatus: HealthProbeStatus = "UNKNOWN";
-    let aiBudgetInfo = "Provider operation not verified; budget metadata alone is not a runtime probe";
-    try {
-      const { data: budgetData, error: budgetError } = await dynamicClient
-        .from("ai_budget")
-        .select("total_budget_baisa, consumed_baisa")
-        .limit(1)
-        .maybeSingle();
+        return { authStatus, authLatencyMs };
+      })(),
+      (async () => {
+        // 3. AI Router & Budget Table Probe (Zero paid provider calls)
+        let aiStatus: HealthProbeStatus = "UNKNOWN";
+        let aiBudgetInfo = "Provider operation not verified; budget metadata alone is not a runtime probe";
+        try {
+          const { data: budgetData, error: budgetError } = await dynamicClient
+            .from("ai_budget")
+            .select("total_budget_baisa, consumed_baisa")
+            .limit(1)
+            .maybeSingle();
 
-      if (budgetError) {
-        aiStatus = "DEGRADED";
-        aiBudgetInfo = "Budget query error";
-      } else if (budgetData) {
-        const totalBaisa = typeof budgetData.total_budget_baisa === "number" ? budgetData.total_budget_baisa : 0;
-        const consumedBaisa = typeof budgetData.consumed_baisa === "number" ? budgetData.consumed_baisa : 0;
-        const remBaisa = totalBaisa - consumedBaisa;
-        aiBudgetInfo = `Budget metadata: ${(remBaisa / 1000).toFixed(3)} OMR remaining; provider operation unverified`;
-      }
-    } catch {
-      aiStatus = "DEGRADED";
-    }
+          if (budgetError) {
+            aiStatus = "DEGRADED";
+            aiBudgetInfo = "Budget query error";
+          } else if (budgetData) {
+            const totalBaisa = typeof budgetData.total_budget_baisa === "number" ? budgetData.total_budget_baisa : 0;
+            const consumedBaisa = typeof budgetData.consumed_baisa === "number" ? budgetData.consumed_baisa : 0;
+            const remBaisa = totalBaisa - consumedBaisa;
+            aiBudgetInfo = `Budget metadata: ${(remBaisa / 1000).toFixed(3)} OMR remaining; provider operation unverified`;
+          }
+        } catch {
+          aiStatus = "DEGRADED";
+        }
+
+        return { aiStatus, aiBudgetInfo };
+      })(),
+    ]);
+    const { dbError, dbLatencyMs, dbStatus } = database;
+    const { authStatus, authLatencyMs } = authentication;
+    const { aiStatus, aiBudgetInfo } = budget;
 
     const probes: SubsystemProbe[] = [
       {

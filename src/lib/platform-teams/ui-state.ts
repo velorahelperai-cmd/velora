@@ -53,6 +53,9 @@ export function createTeamUiStore(options:{actorId:string;api:TeamUiApi;storage:
  let actorGuard=options.isCurrentActor,writeGuard=options.canWrite;
  const listeners=new Set<()=>void>();
  const drafts=new Map<string,unknown>();
+ // Join only the same in-flight read in this actor/context generation. Settled
+ // directory data is never a cache: refresh and post-write reads stay fresh.
+ let inFlightRead:{key:string;generation:number;promise:Promise<boolean>}|null=null;
  const current=()=>active&&actorGuard();
  const update=(patch:Partial<TeamUiState>)=>{state={...state,...patch};listeners.forEach(fn=>fn());};
  const clearJournal=()=>{try{options.storage().removeItem(TEAM_JOURNAL_KEY);}catch{/* A known terminal outcome never becomes an uncertain write. */}};
@@ -70,19 +73,25 @@ export function createTeamUiStore(options:{actorId:string;api:TeamUiApi;storage:
    update({uncertain:pending!==null,confirmed:journal?.phase==="confirmed",review:null,preview:null,error:null});
   }catch{pending=null;update({error:"RETRY_STORAGE",uncertain:false});}
  }
- function suspend(){active=false;actorGen++;readGen++;reviewGen++;pending=null;drafts.clear();state={...empty(),contextKey:state.contextKey};listeners.forEach(fn=>fn());}
+ function suspend(){active=false;actorGen++;readGen++;reviewGen++;pending=null;inFlightRead=null;drafts.clear();state={...empty(),contextKey:state.contextKey};listeners.forEach(fn=>fn());}
  async function load(scope:TeamScope):Promise<boolean>{
   if(!current())return false;
   const request=parseTeamDirectory({expectedUserId:actorId,teamId:scope.teamId,search:scope.search,cursor:scope.cursor??null,pageSize:25})
    ??parseTeamDirectory({expectedUserId:actorId,teamId:scope.teamId,search:scope.search,cursor:null,pageSize:25});
   if(!request){update({error:"INVALID_INPUT",directory:null,loading:false});return false;}
+  const key=JSON.stringify(request);
+  if(inFlightRead?.key===key&&inFlightRead.generation===readGen)return inFlightRead.promise;
   const gen=++readGen;invalidateReview();update({scope:{teamId:request.teamId,search:request.search,cursor:request.cursor},directory:null,loading:true});
-  let result:TeamResult<TeamDirectory>;try{result=await options.api.readDirectory(request);}catch{result={ok:false,code:"UNAVAILABLE"};}
-  if(!current()||gen!==readGen)return false;
-  if(!result.ok&&["FORBIDDEN","UNAUTHENTICATED","UNVERIFIED"].includes(result.code))drafts.clear();
-  update({directory:result,loading:false,...(result.ok&&!pending?{error:null}:{})});
-  if(result.ok&&state.confirmed)clearJournal();
-  return result.ok;
+  const promise=(async()=>{
+   let result:TeamResult<TeamDirectory>;try{result=await options.api.readDirectory(request);}catch{result={ok:false,code:"UNAVAILABLE"};}
+   if(!current()||gen!==readGen)return false;
+   if(!result.ok&&["FORBIDDEN","UNAUTHENTICATED","UNVERIFIED"].includes(result.code))drafts.clear();
+   update({directory:result,loading:false,...(result.ok&&!pending?{error:null}:{})});
+   if(result.ok&&state.confirmed)clearJournal();
+   return result.ok;
+  })();
+  inFlightRead={key,generation:gen,promise};
+  try{return await promise;}finally{if(inFlightRead?.promise===promise)inFlightRead=null;}
  }
  async function review(value:unknown):Promise<void>{
   if(!current()||state.writing)return;

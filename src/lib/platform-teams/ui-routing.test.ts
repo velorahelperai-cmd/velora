@@ -13,13 +13,13 @@ const subject=await import("./ui-routing").catch(()=>null);
 const managerPage=await import("@/app/account/teams/page").catch(()=>null);
 const ownerPage=await import("@/app/admin/teams/page").catch(()=>null);
 beforeEach(()=>{vi.clearAllMocks();state.identity.mockResolvedValue({ok:true,userId:actor,email:"synthetic@example.invalid",emailConfirmed:true});state.role.mockResolvedValue({role:"owner",status:"active",unavailable:false});state.directory.mockResolvedValue({ok:true,data:{kind:"teams",rows:[],total:0,nextCursor:null,team:null}});});
-it("manager route serves an R3-authorized delegated manager with no company scope",async()=>{
+it("manager route serves only a session-gated shell without fetching discarded team rows",async()=>{
  expect(managerPage?.default).toBeTypeOf("function");state.role.mockResolvedValue({role:"delegated",status:"active",unavailable:false});
  const tree=await managerPage!.default({searchParams:Promise.resolve({team})});
- expect(tree.props.actorId).toBe(actor);expect(tree.props.editor).toBe(false);expect(state.directory).toHaveBeenCalledWith(expect.objectContaining({expectedUserId:actor,teamId:team}));expect(state.admin).not.toHaveBeenCalled();
+ expect(tree.props.actorId).toBe(actor);expect(tree.props.editor).toBe(false);expect(state.directory).not.toHaveBeenCalled();expect(tree.type).toBe("teams-page");expect(state.admin).not.toHaveBeenCalled();
 });
-it("manager route denies an employee or unknown team without expanding admin access",async()=>{
- expect(managerPage?.default).toBeTypeOf("function");state.directory.mockResolvedValue({ok:false,code:"FORBIDDEN"});const tree=await managerPage!.default({searchParams:Promise.resolve({team})});expect(tree.props.code).toBe("FORBIDDEN");expect(state.admin).not.toHaveBeenCalled();
+it("manager shell exposes no directory payload or editor grant before client native authorization",async()=>{
+ expect(managerPage?.default).toBeTypeOf("function");state.directory.mockResolvedValue({ok:false,code:"FORBIDDEN"});const tree=await managerPage!.default({searchParams:Promise.resolve({team})});expect(tree.props).toEqual({actorId:actor,editor:false});expect(state.directory).not.toHaveBeenCalled();expect(state.admin).not.toHaveBeenCalled();
 });
 it("owner editor rejects a delegated user's direct request",async()=>{
  expect(ownerPage?.default).toBeTypeOf("function");state.role.mockResolvedValue({role:"delegated",status:"active",unavailable:false});const tree=await ownerPage!.default({searchParams:Promise.resolve({})});expect(tree.props.code).toBe("FORBIDDEN");expect(state.directory).not.toHaveBeenCalled();

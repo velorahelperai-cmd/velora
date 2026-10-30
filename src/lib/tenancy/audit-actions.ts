@@ -100,15 +100,15 @@ export async function adminGetAuditLogsOverview(
       if (matchingCompanies.length) terms.push("company_id.in.(" + matchingCompanies.map(c => c.id).join(",") + ")");
       query = query.or(terms.join(","));
     }
-    const { data: rows, error: auditErr, count: filteredCount } = await query
-      .order("created_at", { ascending: false }).order("id", { ascending: false })
-      .range(offset, offset + limit - 1);
-    if (auditErr || filteredCount === null || !rows) throw Error("AUDIT_READ_UNAVAILABLE");
-    const [total, recent] = await Promise.all([
+    const [page, total, recent] = await Promise.all([
+      query.order("created_at", { ascending: false }).order("id", { ascending: false })
+        .range(offset, offset + limit - 1),
       supabase.from("admin_audit_logs").select("id", { count: "exact", head: true }),
       supabase.from("admin_audit_logs").select("id", { count: "exact", head: true })
         .gte("created_at", new Date(Date.now() - 86400000).toISOString()),
     ]);
+    const { data: rows, error: auditErr, count: filteredCount } = page;
+    if (auditErr || filteredCount === null || !rows) throw Error("AUDIT_READ_UNAVAILABLE");
     if (total.error || recent.error || total.count === null || recent.count === null) throw Error("AUDIT_COUNT_UNAVAILABLE");
 
     const rawLogs = Array.isArray(rows) ? rows : [];

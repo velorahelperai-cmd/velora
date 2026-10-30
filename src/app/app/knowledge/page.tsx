@@ -22,9 +22,16 @@ async function KnowledgeLoader() {
 
   const owner=access.context.membership.role==="owner";
   if(!owner&&await sessionHasCompanyCapability(access.context.company.id,"knowledge.read")!==true)return <AccessGate code="FORBIDDEN"/>;
-  const listed = await listKnowledgeSources({ expectedCompanyId: access.context.company.id });
-  const canWrite=owner||await sessionHasCompanyCapability(access.context.company.id,"knowledge.write")===true;
-  const canDelete=owner||await sessionHasCompanyCapability(access.context.company.id,"knowledge.delete")===true;
+  // Read permission is already established. Independent display permissions and
+  // the source list can overlap; mutation actions still recheck native authority.
+  const companyId = access.context.company.id;
+  const [listed, writeAllowed, deleteAllowed] = await Promise.all([
+    listKnowledgeSources({ expectedCompanyId: companyId }),
+    owner ? Promise.resolve(true) : sessionHasCompanyCapability(companyId, "knowledge.write"),
+    owner ? Promise.resolve(true) : sessionHasCompanyCapability(companyId, "knowledge.delete"),
+  ]);
+  const canWrite = writeAllowed === true;
+  const canDelete = deleteAllowed === true;
 
   return (
     <KnowledgePage

@@ -25,6 +25,21 @@ function setup(){
 }
 
 describe("team UI authority, revision reads and replay",()=>{
+ it("joins same-scope in-flight loads but refreshes after settlement",async()=>{
+  const s=setup(),read=deferred<TeamResult<TeamDirectory>>();let calls=0;
+  s.api.readDirectory=async()=>{calls++;return read.promise;};s.store.activate();
+  const first=s.store.load({teamId:a,search:""}),second=s.store.load({teamId:a,search:""});
+  expect(calls).toBe(1);read.resolve(page(a));expect(await first).toBe(true);expect(await second).toBe(true);
+  await s.store.load({teamId:a,search:""});expect(calls).toBe(2);
+ });
+ it("does not join a pending read after suspend or revocation",async()=>{
+  const s=setup(),old=deferred<TeamResult<TeamDirectory>>(),fresh=deferred<TeamResult<TeamDirectory>>();let calls=0;
+  s.api.readDirectory=async()=>++calls===1?old.promise:fresh.promise;s.store.activate();
+  const first=s.store.load({teamId:a,search:""});s.store.suspend();s.store.activate();
+  const second=s.store.load({teamId:a,search:""});expect(calls).toBe(2);
+  old.resolve(page(a,[member()]));expect(await first).toBe(false);expect(s.store.getSnapshot().directory).toBeNull();
+  fresh.resolve(page(a));expect(await second).toBe(true);
+ });
  it("an auxiliary roster lookup denial clears protected rows and invalidates old read responses",async()=>{
   const s=setup(),read=deferred<TeamResult<TeamDirectory>>();s.store.activate();await s.store.load({teamId:a,search:""});s.api.readDirectory=async()=>read.promise;const loading=s.store.load({teamId:a,search:""});s.store.saveDraft("reason","Entered intent");
   s.store.rejectRead("FORBIDDEN");read.resolve(page(a,[member()]));await loading;expect(s.store.getSnapshot().directory).toBeNull();expect(s.store.readDraft("reason")).toBeUndefined();expect(s.store.getSnapshot().error).toBe("FORBIDDEN");

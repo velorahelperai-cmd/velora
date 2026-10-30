@@ -74,42 +74,49 @@ export async function adminGetPlatformAccessOverview(): Promise<
     const userIds = rows.map((r) => r.user_id);
     const profileMap = new Map<string, { fullName: string; supportCode: string }>();
 
-    if (userIds.length > 0) {
-      const { data: profileRows } = await supabase
-        .from("profiles")
-        .select("user_id, full_name, support_code")
-        .in("user_id", userIds);
-
-      if (Array.isArray(profileRows)) {
-        for (const p of profileRows) {
-          profileMap.set(p.user_id, {
-            fullName: p.full_name ?? "",
-            supportCode: p.support_code ?? "",
-          });
-        }
-      }
-    }
-
-    // 3. Fetch scopes
     const scopeMap = new Map<string, string[]>();
-    if (userIds.length > 0) {
-      try {
-        const { data: scopeRows } = await dynamicClient
-          .from("platform_admin_scopes")
-          .select("admin_user_id, usable_capabilities")
-          .in("admin_user_id", userIds);
+    await Promise.all([
+      (async () => {
+        if (userIds.length > 0) {
+          const { data: profileRows } = await supabase
+            .from("profiles")
+            .select("user_id, full_name, support_code")
+            .in("user_id", userIds);
 
-        if (Array.isArray(scopeRows)) {
-          for (const s of scopeRows) {
-            const adminId = String(s.admin_user_id ?? "");
-            const caps = Array.isArray(s.usable_capabilities) ? (s.usable_capabilities as string[]) : [];
-            scopeMap.set(adminId, caps);
+          if (Array.isArray(profileRows)) {
+            for (const p of profileRows) {
+              profileMap.set(p.user_id, {
+                fullName: p.full_name ?? "",
+                supportCode: p.support_code ?? "",
+              });
+            }
           }
         }
-      } catch {
-        // Scopes table optional in some local test environments
-      }
-    }
+
+      })(),
+      (async () => {
+        // 3. Fetch scopes
+        if (userIds.length > 0) {
+          try {
+            const { data: scopeRows } = await dynamicClient
+              .from("platform_admin_scopes")
+              .select("admin_user_id, usable_capabilities")
+              .in("admin_user_id", userIds);
+
+            if (Array.isArray(scopeRows)) {
+              for (const s of scopeRows) {
+                const adminId = String(s.admin_user_id ?? "");
+                const caps = Array.isArray(s.usable_capabilities) ? (s.usable_capabilities as string[]) : [];
+                scopeMap.set(adminId, caps);
+              }
+            }
+          } catch {
+            // Scopes table optional in some local test environments
+          }
+        }
+
+      })(),
+    ]);
 
     const delegatedAdmins: PlatformAdminUser[] = [];
     let ownerInfo = {

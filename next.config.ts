@@ -3,7 +3,9 @@ import type { NextConfig } from "next";
 /** Batch uploads: up to 25MB payload + multipart overhead; per-file cap remains 10MB in app code. */
 const KNOWLEDGE_UPLOAD_BODY_LIMIT = "28mb";
 
-const LONG_CACHE = "public, max-age=31536000, immutable";
+// Unhashed public URLs may change in place. Next content-hashed assets retain
+// their one-year immutable policy; HTTP owns caching instead of a second SW cache.
+const PUBLIC_CACHE = "public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400";
 
 const nextConfig: NextConfig = {
   ...(process.env.NODE_ENV === "development" && process.env.VELORA_LOCAL_CUSTOMER_MODE === "live"
@@ -24,11 +26,11 @@ const nextConfig: NextConfig = {
     return [
       {
         source: "/assets/:path*",
-        headers: [{ key: "Cache-Control", value: LONG_CACHE }],
+        headers: [{ key: "Cache-Control", value: PUBLIC_CACHE }],
       },
       {
         source: "/fonts/:path*",
-        headers: [{ key: "Cache-Control", value: LONG_CACHE }],
+        headers: [{ key: "Cache-Control", value: PUBLIC_CACHE }],
       },
       {
         source: "/sw.js",

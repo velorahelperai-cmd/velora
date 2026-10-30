@@ -1,0 +1,143 @@
+{
+  "base": "94da31766050236aeb6b4f53891f0c0fb07a394c",
+  "deployment": "dpl_Fdo4oMxYmG9dgsoc7UjwYnxXHfNP",
+  "date": "2026-10-30",
+  "publication": "PROHIBITED; local only",
+  "method": "Production read-only; host-clock action to DOM readiness includes connector overhead. Not Navigation Timing, TTI, network counts, or population P95.",
+  "samples": {
+    "hours": [
+      {
+        "shellMs": 399,
+        "readyMs": 7413
+      },
+      {
+        "shellMs": 880,
+        "readyMs": 6632
+      },
+      {
+        "shellMs": 433,
+        "readyMs": 5048
+      }
+    ],
+    "knowledge": [
+      {
+        "shellMs": 336,
+        "readyMs": 6285
+      },
+      {
+        "shellMs": 344,
+        "readyMs": 7889
+      },
+      {
+        "shellMs": 462,
+        "readyMs": 6071
+      }
+    ],
+    "account": [
+      {
+        "navigationMs": 6086,
+        "headingMs": 14476
+      },
+      {
+        "navigationMs": 5735,
+        "headingMs": 15122
+      },
+      {
+        "navigationMs": 5046,
+        "headingMs": 13910
+      }
+    ],
+    "settings": [
+      {
+        "navigationMs": 10942,
+        "headingMs": 36684,
+        "ready": true
+      },
+      {
+        "navigationMs": 10569,
+        "elapsedMs": 48210,
+        "ready": false,
+        "censored": true
+      }
+    ]
+  },
+  "hoursRuntime": {
+    "region": "bom1",
+    "event": "es02.branch_hours.timing",
+    "scope": "Inner action only; excludes outer GET identity check",
+    "samples": [
+      {
+        "timestamp": "2026-10-30T04:01:38.008Z",
+        "operation": "read",
+        "identity_ms": 1187,
+        "client_ms": 719,
+        "claims_ms": 1,
+        "rpc_ms": 1181,
+        "total_ms": 2369,
+        "ok": true,
+        "event": "es02.branch_hours.timing"
+      },
+      {
+        "timestamp": "2026-10-30T04:01:26.771Z",
+        "operation": "read",
+        "identity_ms": 1309,
+        "client_ms": 715,
+        "claims_ms": 704,
+        "rpc_ms": 1292,
+        "total_ms": 3305,
+        "ok": true,
+        "event": "es02.branch_hours.timing"
+      },
+      {
+        "timestamp": "2026-10-30T04:00:51.652Z",
+        "operation": "read",
+        "identity_ms": 2418,
+        "client_ms": 806,
+        "claims_ms": 2,
+        "rpc_ms": 1850,
+        "total_ms": 4270,
+        "ok": true,
+        "event": "es02.branch_hours.timing"
+      },
+      {
+        "timestamp": "2026-10-30T03:59:28.374Z",
+        "operation": "read",
+        "identity_ms": 1201,
+        "client_ms": 719,
+        "claims_ms": 314,
+        "rpc_ms": 842,
+        "total_ms": 2357,
+        "ok": true,
+        "event": "es02.branch_hours.timing"
+      },
+      {
+        "timestamp": "2026-10-30T03:58:28.491Z",
+        "operation": "read",
+        "identity_ms": 2186,
+        "client_ms": 742,
+        "claims_ms": 1,
+        "rpc_ms": 1240,
+        "total_ms": 3428,
+        "ok": true,
+        "event": "es02.branch_hours.timing"
+      }
+    ]
+  },
+  "teamDirectoryCounts": {
+    "initial": {
+      "before": 2,
+      "after": 1
+    },
+    "changedUrl": {
+      "before": 3,
+      "after": 1
+    },
+    "evidence": "source and local deterministic tests; not production network capture"
+  },
+  "limits": [
+    "Current account has no internal team membership; owner explicitly accepted limitation.",
+    "No authenticated local browser measurement of new code.",
+    "Settings second sample inconclusive; later browser observation timed out, so cannot attribute all elapsed time to server.",
+    "No live RLS/mobile/concurrent browser acceptance."
+  ]
+}

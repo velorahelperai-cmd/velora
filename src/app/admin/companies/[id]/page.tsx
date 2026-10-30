@@ -56,48 +56,57 @@ export default async function Page({
   if (!data) notFound();
 
   const payload = data as DetailPayload;
-  const knowledge = await adminListCompanyKnowledge(id);
-
-  // Load multi-branch isolation records if present
-  let initialBranches: AdminCompanyBranch[] = [];
-  try {
-    const { data: branchesData, error: branchesError } = await (supabase as unknown as {
-      from: (t: string) => {
-        select: (c: string) => {
-          eq: (k: string, v: string) => {
-            order: (col: string, opt: { ascending: boolean }) => {
-              order: (col2: string, opt2: { ascending: boolean }) => Promise<{ data: AdminCompanyBranch[] | null; error: unknown }>;
+  // Company existence and owner authorization precede all secondary reads.
+  const [knowledge, initialBranches, whatsapp] = await Promise.all([
+    adminListCompanyKnowledge(id),
+    (async () => {
+      // Load multi-branch isolation records if present
+      let initialBranches: AdminCompanyBranch[] = [];
+      try {
+        const { data: branchesData, error: branchesError } = await (supabase as unknown as {
+          from: (t: string) => {
+            select: (c: string) => {
+              eq: (k: string, v: string) => {
+                order: (col: string, opt: { ascending: boolean }) => {
+                  order: (col2: string, opt2: { ascending: boolean }) => Promise<{ data: AdminCompanyBranch[] | null; error: unknown }>;
+                };
+              };
             };
           };
-        };
-      };
-    })
-      .from("company_branches")
-      .select("id, company_id, name, timezone, status, is_primary, created_at")
-      .eq("company_id", id)
-      .order("is_primary", { ascending: false })
-      .order("created_at", { ascending: true });
+        })
+          .from("company_branches")
+          .select("id, company_id, name, timezone, status, is_primary, created_at")
+          .eq("company_id", id)
+          .order("is_primary", { ascending: false })
+          .order("created_at", { ascending: true });
 
-    if (!branchesError && Array.isArray(branchesData)) {
-      initialBranches = branchesData;
-    }
-  } catch {
-    initialBranches = [];
-  }
+        if (!branchesError && Array.isArray(branchesData)) {
+          initialBranches = branchesData;
+        }
+      } catch {
+        initialBranches = [];
+      }
 
-  // Exception or explicit failure → load-failed; never treat as «not linked».
-  let initialWhatsappLink: WhatsappCompanyLink | null = null;
-  let whatsappLinkLoadFailed = false;
-  try {
-    const waLink = await adminGetWhatsappCompanyLink(id);
-    if (waLink.ok) {
-      initialWhatsappLink = waLink.data;
-    } else {
-      whatsappLinkLoadFailed = true;
-    }
-  } catch {
-    whatsappLinkLoadFailed = true;
-  }
+      return initialBranches;
+    })(),
+    (async () => {
+      // Exception or explicit failure → load-failed; never treat as «not linked».
+      let initialWhatsappLink: WhatsappCompanyLink | null = null;
+      let whatsappLinkLoadFailed = false;
+      try {
+        const waLink = await adminGetWhatsappCompanyLink(id);
+        if (waLink.ok) {
+          initialWhatsappLink = waLink.data;
+        } else {
+          whatsappLinkLoadFailed = true;
+        }
+      } catch {
+        whatsappLinkLoadFailed = true;
+      }
+      return { initialWhatsappLink, whatsappLinkLoadFailed };
+    })(),
+  ]);
+  const { initialWhatsappLink, whatsappLinkLoadFailed } = whatsapp;
 
   return (
     <AdminCompanyDetail

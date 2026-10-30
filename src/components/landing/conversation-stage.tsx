@@ -1,4 +1,5 @@
 import Image from "next/image";
+import phoneFrame from "../../../public/assets/velora/phone-frame-v1.png";
 import { IconUsers } from "@/components/admin/admin-icons";
 import { Fragment } from "react";
 import styles from "./phone-messages.module.css";
@@ -52,7 +53,7 @@ export function PhoneScreenBody({ question, answer, menuLabel, onMenu, note }: P
 export function PhoneFrame() {
   return (
     <Image
-      src="/assets/velora/phone-frame-v1.png"
+      src={phoneFrame}
       alt=""
       width={1024}
       height={1536}

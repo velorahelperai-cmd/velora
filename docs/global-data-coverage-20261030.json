@@ -1,0 +1,870 @@
+{
+  "base": "94da31766050236aeb6b4f53891f0c0fb07a394c",
+  "publication": "PROHIBITED; local changes only",
+  "reviewedPages": 59,
+  "graphIndex": "94da317; build c5ab3bd6-f0cb-4a88-ab2b-870e996a2b91; indexed 2026-10-30T03:36:49.619789Z; local delta inspected",
+  "counts": {
+    "مناسب": 29,
+    "غير مكتمل وظيفيًا": 2,
+    "محسن محليًا": 10,
+    "توازٍ قائم": 4,
+    "فرصة متبقية": 2,
+    "تحويل": 6,
+    "محسن سابقًا": 5,
+    "محذوف محليًا": 1
+  },
+  "pages": [
+    {
+      "status": "مناسب",
+      "data": "نموذج الدخول في auth-entry/layout وauth-pages؛ AccountSessionProvider مشترك",
+      "loading": "لا قراءة صفحة مستقلة؛ النموذج تفاعلي والهوية بدمج الطلب الجاري",
+      "remaining": "انتظار المصادقة لازم؛ لا Prefetch للـOTP ولا كاش للصلاحيات",
+      "route": "/login",
+      "source": "src/app/(auth-entry)/login/page.tsx",
+      "readOwners": [],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "مناسب",
+      "data": "نموذج التسجيل في نفس layout المستمر",
+      "loading": "يحافظ على shell عند الانتقال للدخول؛ لا قاعدة بيانات في ملف الصفحة",
+      "remaining": "لا حاجة لطبقة بيانات جديدة؛ تحقق جلسة/تسجيل حي غير مقاس",
+      "route": "/signup",
+      "source": "src/app/(auth-entry)/signup/page.tsx",
+      "readOwners": [],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "مناسب",
+      "data": "AcceptInvitePage وأفعال الدعوة",
+      "loading": "Suspense وقراءة/قبول حسب رمز الدعوة؛ لا كاش نتيجة قبول",
+      "remaining": "تسلسل التحقق والقبول أمني؛ لا prefetch لعملية قبول",
+      "route": "/accept-invite",
+      "source": "src/app/accept-invite/page.tsx",
+      "readOwners": [
+        "@/components/app/auth-pages"
+      ],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "مناسب",
+      "data": "CompanyAccess ثم اختيار بوابة/redirect",
+      "loading": "loadCompanyAccess مدمج خلال render",
+      "remaining": "الانتظار يحدد الوجهة ولا يصح إزالته بكاش قديم",
+      "route": "/access",
+      "source": "src/app/access/page.tsx",
+      "readOwners": [
+        "@/components/app/access-gate",
+        "@/lib/tenancy/access"
+      ],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "غير مكتمل وظيفيًا",
+      "data": "CompanyAccess ثم نص توجيهي",
+      "loading": "لا قائمة شركات إضافية ولا backend لإدارتها في الصفحة",
+      "remaining": "ليست مشكلة Cache؛ لا ننشئ ميزة إدارة ضمن تحسين الأداء",
+      "route": "/account/businesses/manage",
+      "source": "src/app/account/businesses/manage/page.tsx",
+      "readOwners": [
+        "@/lib/i18n",
+        "@/lib/tenancy/access",
+        "@/lib/master-journey/rollout",
+        "@/components/app/access-gate"
+      ],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "مناسب",
+      "data": "CompanyAccess ثم مسودة prepayment؛ استعادة checkout مشروطة",
+      "loading": "مسودة محلية معزولة بالحساب؛ loading الحساب أضيف محليًا",
+      "remaining": "قراءة عملية الدفع ثم order تعتمد عليها؛ لا توازٍ مصطنع أو prefetch للدفع",
+      "route": "/account/businesses/new",
+      "source": "src/app/account/businesses/new/page.tsx",
+      "readOwners": [
+        "@/lib/tenancy/account-prep-eligibility",
+        "@/lib/tenancy/access",
+        "@/components/app/prepayment-preparation",
+        "@/components/app/access-gate",
+        "@/lib/billing/es02/local-live-policy",
+        "@/lib/billing/es02/local-live-operation",
+        "@/lib/billing/es02/contracts",
+        "@/components/app/local-live-checkout-recovery",
+        "@/lib/supabase/server",
+        "@/lib/billing/es02/account-order"
+      ],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "مناسب",
+      "data": "AccountProfile والهوية والمنصة",
+      "loading": "profile initial للعميل؛ provider مشترك؛ loading محلي جديد",
+      "remaining": "قراءة العميل للهوية لا تُلغى باعتبارها تكرارًا؛ تحمي حدود المتصفح والجلسة",
+      "route": "/account",
+      "source": "src/app/account/page.tsx",
+      "readOwners": [
+        "@/components/app/access-gate",
+        "@/components/app/account-page",
+        "@/lib/tenancy/actions",
+        "@/lib/auth/auth-journey",
+        "@/lib/master-journey/rollout"
+      ],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "مناسب",
+      "data": "claims ثم session ثم RPC طلب الدفع",
+      "loading": "قراءة جديدة؛ loading الحساب الجديد",
+      "remaining": "الحالة المالية لا تستخدم SWR؛ عرض الدفع ينتظر إثبات الخادم",
+      "route": "/account/payment/[orderId]",
+      "source": "src/app/account/payment/[orderId]/page.tsx",
+      "readOwners": [
+        "@/lib/supabase/server",
+        "@/lib/auth/session-guard",
+        "@/lib/billing/es02/contracts",
+        "@/lib/billing/es02/account-order",
+        "@/components/app/ui",
+        "@/components/app/access-gate",
+        "@/lib/billing/es02/local-live-policy"
+      ],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "مناسب",
+      "data": "orderId صالح ثم PopupReturn",
+      "loading": "لا قراءة مالية في الصفحة؛ رسالة رجوع للنافذة الأصلية",
+      "remaining": "لا تغيير مطلوب؛ صحة الدفع ليست مستنتجة من popup",
+      "route": "/account/payment/[orderId]/popup",
+      "source": "src/app/account/payment/[orderId]/popup/page.tsx",
+      "readOwners": [
+        "@/lib/billing/es02/contracts"
+      ],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "مناسب",
+      "data": "readIdentityRecoveryReviewsAction",
+      "loading": "قراءة شخصية مصرح بها ثم initialResult؛ loading جديد",
+      "remaining": "إعادة التحقق من boundary/الحساب مقصودة لحساسية الاسترداد",
+      "route": "/account/recovery",
+      "source": "src/app/account/recovery/page.tsx",
+      "readOwners": [
+        "@/components/app/identity-recovery-page",
+        "@/lib/tenancy/identity-recovery-actions"
+      ],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "محسن محليًا",
+      "data": "renderTeamsRoute ثم TeamsPage وteam store",
+      "loading": "Shell بلا directory preflight؛ قراءة عميل واحدة لكل URL؛ in-flight dedup مع actor/session boundary",
+      "remaining": "قبول الفرق الحي غير متاح لصلاحيات الجلسة الحالية؛ لا مقارنة زمنية محمية للتعديل المحلي",
+      "route": "/account/teams",
+      "source": "src/app/account/teams/page.tsx",
+      "readOwners": [
+        "@/components/teams/teams-route"
+      ],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "محسن محليًا",
+      "data": "platform_admins ثم profiles وplatform_admin_scopes",
+      "loading": "profiles/scopes متوازيان بعد userIds؛ لا كاش صلاحيات",
+      "remaining": "قائمة المسؤولين كاملة؛ pagination عند نمو الحجم تحتاج عقد واجهة مناسب",
+      "route": "/admin/access",
+      "source": "src/app/admin/access/page.tsx",
+      "readOwners": [
+        "@/lib/tenancy/access-actions",
+        "@/components/admin/admin-platform-access",
+        "@/components/app/access-gate"
+      ],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "مناسب",
+      "data": "adminSearchAccounts RPC",
+      "loading": "20 عنصرًا؛ Suspense حول القائمة؛ render auth مدمج",
+      "remaining": "بحث/offset من الخادم؛ لا prefetch لكل حساب",
+      "route": "/admin/accounts",
+      "source": "src/app/admin/accounts/page.tsx",
+      "readOwners": [
+        "@/components/app/access-gate",
+        "@/lib/tenancy/access",
+        "@/lib/tenancy/actions",
+        "@/components/admin/admin-accounts-directory"
+      ],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "غير مكتمل وظيفيًا",
+      "data": "locale ثم نص عدم توفر التقرير",
+      "loading": "لا RPC تكاليف في المسار",
+      "remaining": "ليس بطيئًا بسبب البيانات؛ تقرير ES04 غير منفذ ولا يُختلق",
+      "route": "/admin/ai/cycle-costs",
+      "source": "src/app/admin/ai/cycle-costs/page.tsx",
+      "readOwners": [
+        "@/lib/i18n"
+      ],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "توازٍ قائم",
+      "data": "readAdminAIState وreadSyntheticGeminiFreeState",
+      "loading": "Promise.all؛ قراءة free فقط إذا enabled؛ loading الأدمن موجود",
+      "remaining": "لا تنفيذ AI/مزود مسبق؛ صلاحية كل reader محفوظة",
+      "route": "/admin/ai",
+      "source": "src/app/admin/ai/page.tsx",
+      "readOwners": [
+        "@/components/admin/admin-ai-operations",
+        "@/components/app/access-gate",
+        "@/lib/answers/runtime/admin-actions",
+        "@/lib/answers/runtime/synthetic-gemini-actions"
+      ],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "فرصة متبقية",
+      "data": "orders/subscriptions/plans/versions ثم evidence مالي",
+      "loading": "أربع قراءات متوازية؛ صفحات 250 وحد 10000؛ owner recheck",
+      "remaining": "حسابات وتجميع داخل التطبيق مكلفة عند النمو؛ RPC aggregate يحتاج قياسًا وعقدًا ماليًا/DB، لم يُنشأ ترحيل",
+      "route": "/admin/analytics",
+      "source": "src/app/admin/analytics/page.tsx",
+      "readOwners": [
+        "@/lib/tenancy/analytics-actions",
+        "@/components/admin/admin-financial-analytics",
+        "@/components/app/access-gate"
+      ],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "محسن محليًا",
+      "data": "logs page وtotal/recent ثم أسماء الشركات",
+      "loading": "صفحة العد وسجلات العد متوازية؛ الأسماء دفعة in(ids)",
+      "remaining": "بحث الشركات قبل query يعتمد عليه؛ لا SWR لسجل التدقيق",
+      "route": "/admin/audit",
+      "source": "src/app/admin/audit/page.tsx",
+      "readOwners": [
+        "@/lib/tenancy/audit-actions",
+        "@/components/admin/admin-audit-compliance",
+        "@/components/app/access-gate"
+      ],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "مناسب",
+      "data": "readAdminBillingOrder",
+      "loading": "قراءة native مالية؛ loading الأدمن",
+      "remaining": "order/company/owner binding وإثبات مالي جديد؛ تسلسل آمن",
+      "route": "/admin/billing/orders/[id]",
+      "source": "src/app/admin/billing/orders/[id]/page.tsx",
+      "readOwners": [
+        "@/lib/billing/admin/actions",
+        "@/components/admin/billing-order",
+        "@/lib/auth/safe-next"
+      ],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "مناسب",
+      "data": "readAdminBillingOrders",
+      "loading": "قائمة مفلترة بمؤشر cursor؛ loading الأدمن",
+      "remaining": "لا تحميل كل دفتر الدفع مسبقًا؛ لا كاش يمنح سلطة مالية",
+      "route": "/admin/billing",
+      "source": "src/app/admin/billing/page.tsx",
+      "readOwners": [
+        "@/lib/billing/admin/actions",
+        "@/components/admin/billing-ledger"
+      ],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "مناسب",
+      "data": "readCatalogAdminAction",
+      "loading": "initial data للخادم؛ تعديلات بعقود version/CAS",
+      "remaining": "لا كاش مشترك للكتالوج الإداري؛ invalidate بعد التحرير",
+      "route": "/admin/catalog",
+      "source": "src/app/admin/catalog/page.tsx",
+      "readOwners": [
+        "@/components/app/admin-catalog",
+        "@/lib/billing/catalog-backend/actions"
+      ],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "محسن محليًا",
+      "data": "companies ثم WA links ثم Instagram لكل شركة",
+      "loading": "Instagram دفعات متوازية حدها 4؛ Suspense موجود",
+      "remaining": "عدد RPC ما زال N؛ لم ندّع إزالة N+1. Bulk RPC وpagination فرصة توسع لاحقة تحتاج عقدًا جديدًا",
+      "route": "/admin/channels",
+      "source": "src/app/admin/channels/page.tsx",
+      "readOwners": [
+        "@/components/app/access-gate",
+        "@/lib/tenancy/access",
+        "@/lib/tenancy/channels-actions",
+        "@/components/admin/admin-channels-hub"
+      ],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "مناسب",
+      "data": "بوابة منصة ثم adminListCompanyConversations",
+      "loading": "قائمة 20 وphone scope؛ إعادة fallback فقط لفلتر قديم",
+      "remaining": "التسلسل يعتمد على اختيار الهاتف؛ لا تحميل جميع الرسائل مسبقًا",
+      "route": "/admin/companies/[id]/conversations",
+      "source": "src/app/admin/companies/[id]/conversations/page.tsx",
+      "readOwners": [
+        "@/components/app/access-gate",
+        "@/components/app/admin-conversations",
+        "@/lib/supabase/server",
+        "@/lib/tenancy/actions",
+        "@/lib/tenancy/access"
+      ],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "محسن محليًا",
+      "data": "admin_get_company ثم knowledge/branches/WA",
+      "loading": "ثلاثة enrichments متوازية بعد صلاحية ووجود الشركة؛ أخطاء منفصلة",
+      "remaining": "لا كاش معلومات عميل إداري؛ company read أولًا مقصود",
+      "route": "/admin/companies/[id]",
+      "source": "src/app/admin/companies/[id]/page.tsx",
+      "readOwners": [
+        "@/components/app/admin-company-navigation",
+        "@/components/app/access-gate",
+        "@/components/app/admin-company-detail",
+        "@/lib/knowledge/actions",
+        "@/lib/whatsapp/connection-actions",
+        "@/lib/whatsapp/connection",
+        "@/lib/supabase/server",
+        "@/lib/tenancy/access",
+        "@/lib/tenancy/types"
+      ],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "تحويل",
+      "data": "searchParams ثم redirect إلى /admin",
+      "loading": "لا قراءة بيانات خاصة في هذه الصفحة",
+      "remaining": "لا تحسين بيانات مطلوب؛ الوجهة هي التي تُراجع",
+      "route": "/admin/companies",
+      "source": "src/app/admin/companies/page.tsx",
+      "readOwners": [],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "محسن محليًا",
+      "data": "DB probe وAuth probe وAI budget metadata",
+      "loading": "ثلاثة فحوص متوازية، مؤقت مستقل لكل فحص",
+      "remaining": "لا تخزين نتائج health كحقيقة حالية؛ metadata لا تثبت عمل AI",
+      "route": "/admin/health",
+      "source": "src/app/admin/health/page.tsx",
+      "readOwners": [
+        "@/lib/tenancy/health-actions",
+        "@/components/admin/admin-platform-health",
+        "@/components/app/access-gate"
+      ],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "مناسب",
+      "data": "readIdentityRecoveryReviewsAction بوضع admin",
+      "loading": "بوابة منصة ثم RPC؛ initialResult",
+      "remaining": "قراءات fresh وحدود الهوية مقصودة؛ لا كاش استرداد",
+      "route": "/admin/identity-recovery",
+      "source": "src/app/admin/identity-recovery/page.tsx",
+      "readOwners": [
+        "@/components/admin/identity-recovery-panel",
+        "@/lib/tenancy/identity-recovery-actions"
+      ],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "محسن محليًا",
+      "data": "DB probe وoperations snapshot؛ ingress حسب flag",
+      "loading": "الـprobe والـsnapshot متوازيان؛ ingress مشروط بعد صحة snapshot",
+      "remaining": "latency خاص بالـprobe؛ لا ادعاء قياس tracing/provider، والقراءة المشروطة محفوظة",
+      "route": "/admin/operations",
+      "source": "src/app/admin/operations/page.tsx",
+      "readOwners": [
+        "@/lib/tenancy/operations-actions",
+        "@/components/admin/admin-operations-center",
+        "@/components/app/access-gate"
+      ],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "توازٍ قائم",
+      "data": "admin_overview_stats وreadAdminTruth؛ قائمة شركات client",
+      "loading": "overview/truth متوازيان؛ القائمة عند التفاعل/الفلاتر؛ loading الأدمن",
+      "remaining": "لا prefetch لكل الشركات أو العملاء؛ إمكانية تجميع إضافي تحتاج قياس الطلبات الحية",
+      "route": "/admin",
+      "source": "src/app/admin/page.tsx",
+      "readOwners": [
+        "@/components/app/admin-company-navigation",
+        "@/components/app/admin-list",
+        "@/lib/tenancy/actions",
+        "@/lib/answers/runtime/admin-truth"
+      ],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "مناسب",
+      "data": "owner ثم es02_admin_list_qa_setup",
+      "loading": "قائمة إدارية مصرح بها؛ ليست رحلة عميل موازية",
+      "remaining": "لم تُشغّل أفعال reset؛ لا تحسين بيانات مثبت لهذه القراءة المفردة",
+      "route": "/admin/qa",
+      "source": "src/app/admin/qa/page.tsx",
+      "readOwners": [
+        "@/lib/tenancy/access",
+        "@/components/admin/qa-business-reset",
+        "@/lib/supabase/server"
+      ],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "مناسب",
+      "data": "requirePlatformRole ثم policy/automations constants",
+      "loading": "لا استعلام إعدادات إضافي بعد البوابة؛ قيم تشغيل معروضة من المصدر",
+      "remaining": "Cache إضافي لن يوفر DB هنا؛ لا ندّعي أن constants إعدادات محفوظة",
+      "route": "/admin/settings",
+      "source": "src/app/admin/settings/page.tsx",
+      "readOwners": [
+        "@/lib/tenancy/settings-actions",
+        "@/components/admin/admin-platform-settings",
+        "@/components/app/access-gate"
+      ],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "محسن سابقًا",
+      "data": "tickets و3 counts ثم company names",
+      "loading": "page/counts متوازية؛ page limit ودفعة أسماء",
+      "remaining": "لم يتغير محليًا؛ authority وفلترة البحث قبل القراءة محفوظة",
+      "route": "/admin/support",
+      "source": "src/app/admin/support/page.tsx",
+      "readOwners": [
+        "@/lib/tenancy/support-actions",
+        "@/components/admin/admin-support-reviews",
+        "@/components/app/access-gate"
+      ],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "محسن محليًا",
+      "data": "نفس teams-route مع role owner ثم client store",
+      "loading": "Shell بلا directory preflight؛ قراءة عميل واحدة لكل URL؛ in-flight dedup مع actor/session boundary",
+      "remaining": "قبول الفرق الحي غير متاح لصلاحيات الجلسة الحالية؛ لا مقارنة زمنية محمية للتعديل المحلي",
+      "route": "/admin/teams",
+      "source": "src/app/admin/teams/page.tsx",
+      "readOwners": [
+        "@/components/teams/teams-route"
+      ],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "توازٍ قائم",
+      "data": "readServiceInbox ثم WA/IG native readers",
+      "loading": "permissions/contract متوازية، ثم القناتان؛ Suspense، قائمة WA 40، thread عند الاختيار، refresh مرئي 30ث مع busy guard",
+      "remaining": "لا كاش عام للرسائل؛ إعادة capability/scope بعد read مقصودة؛ يحتاج قياس polling وتأثيره مع Realtime",
+      "route": "/app/conversations",
+      "source": "src/app/app/conversations/page.tsx",
+      "readOwners": [
+        "@/components/app/unified-inbox",
+        "@/lib/customer/service-inbox-actions",
+        "@/lib/instagram/config",
+        "@/lib/whatsapp/config"
+      ],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "مناسب",
+      "data": "CompanyAccess/query ثم InstagramConnectionPage",
+      "loading": "access وparams متوازيان؛ redirect للـthread داخل Inbox؛ loading التطبيق الجديد",
+      "remaining": "read connection يبقى native/current؛ لا prefetch OAuth/ربط",
+      "route": "/app/instagram",
+      "source": "src/app/app/instagram/page.tsx",
+      "readOwners": [
+        "@/lib/tenancy/access",
+        "@/components/app/instagram-connection-page",
+        "@/lib/diagnostics/contract"
+      ],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "محسن محليًا",
+      "data": "knowledge.read ثم listSources وwrite/delete capabilities",
+      "loading": "الثلاثة متوازيون بعد read grant؛ Suspense موجود",
+      "remaining": "unknown capability=false؛ list/RPC والكتابة يعيدان التحقق؛ لا كاش قديم للمعرفة",
+      "route": "/app/knowledge",
+      "source": "src/app/app/knowledge/page.tsx",
+      "readOwners": [
+        "@/lib/access/actions",
+        "@/components/app/access-gate",
+        "@/components/app/workspace-pages",
+        "@/lib/knowledge/actions",
+        "@/lib/tenancy/access"
+      ],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "مناسب",
+      "data": "CompanyAccess ثم enterprise_workspace",
+      "loading": "RPC workspace واحد بعد feature/identity/company gate؛ loading جديد",
+      "remaining": "لا حاجة لتفكيك RPC أو طبقة جديدة؛ إدارة الفروع المؤجلة لا تصبح منفذة بتحسين الأداء",
+      "route": "/app/organization",
+      "source": "src/app/app/organization/page.tsx",
+      "readOwners": [
+        "@/lib/tenancy/access",
+        "@/lib/enterprise/actions",
+        "@/components/app/enterprise-organization",
+        "@/lib/enterprise/config"
+      ],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "محسن سابقًا",
+      "data": "CustomerReadiness وWA initial inbox",
+      "loading": "قراءة الاثنتين بالتوازي؛ readiness داخليًا allSettled؛ Suspense صحيح",
+      "remaining": "ملخص CRM من الوارد، لا صفحة CRM منفصلة؛ full latency غير مقاس",
+      "route": "/app",
+      "source": "src/app/app/page.tsx",
+      "readOwners": [
+        "@/lib/whatsapp/inbox",
+        "@/components/app/dashboard",
+        "@/lib/tenancy/actions"
+      ],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "محسن سابقًا",
+      "data": "access/WA link ثم subscription/offers/activation/credits",
+      "loading": "مجموعتان متوازيتان وSuspense؛ Team panel عند تبويبه",
+      "remaining": "بعض القراءات تحمّل حتى عند تبويب آخر؛ فصلها يتطلب قياسًا وUX قبول، لا كاش لسلطة الاشتراك",
+      "route": "/app/settings",
+      "source": "src/app/app/settings/page.tsx",
+      "readOwners": [
+        "@/components/app/settings-route"
+      ],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "مناسب",
+      "data": "owner ثم billing return ثم catalog إذا selection موجود",
+      "loading": "financial read جديد؛ loading التطبيق الجديد",
+      "remaining": "قراءة catalog مشروطة بنتيجة الطلب؛ لا إسقاطها/تخزين حالة دفع لتجميل السرعة",
+      "route": "/app/subscription/orders/[orderId]",
+      "source": "src/app/app/subscription/orders/[orderId]/page.tsx",
+      "readOwners": [
+        "@/lib/tenancy/access",
+        "@/lib/billing/wiring/return-load",
+        "@/lib/billing/wiring/return-status",
+        "@/components/app/access-gate",
+        "@/components/app/subscription-payment-status",
+        "@/lib/billing/catalog-backend/rpc",
+        "@/components/app/subscription-offers-view",
+        "@/components/app/subscription-navigation"
+      ],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "محسن سابقًا",
+      "data": "SettingsRoute subscriptionOnly",
+      "loading": "نفس التوازي وstreaming؛ ليس data layer منفصلًا",
+      "remaining": "WA link قد لا يلزم tab الاشتراك؛ تحسينه مشروط باستهلاك SettingsPage المشترك وقياس، لم يجر إسقاط بيانات محتملة",
+      "route": "/app/subscription",
+      "source": "src/app/app/subscription/page.tsx",
+      "readOwners": [
+        "@/components/app/settings-route"
+      ],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "مناسب",
+      "data": "owner ثم AssistantTester",
+      "loading": "لا طلب AI حتى تفاعل المستخدم؛ loading التطبيق الجديد",
+      "remaining": "ليس سيناريو Prefetch؛ لا تخمين إجابات أو تشغيل مزود تلقائيًا",
+      "route": "/app/test",
+      "source": "src/app/app/test/page.tsx",
+      "readOwners": [
+        "@/lib/tenancy/access",
+        "@/components/app/access-gate",
+        "@/components/app/workspace-pages"
+      ],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "فرصة متبقية",
+      "data": "identity ثم listMyBranchAccess ثم readBranchInbox",
+      "loading": "قائمة/رسائل 50؛ SSE invalidation ثم authorized reread",
+      "remaining": "تكرار identity عبر native readers؛ مقصود مبدئيًا للفصل/revocation، لا memoization جديد؛ محتوى الصفحة حاجب بعد الهوية",
+      "route": "/branch",
+      "source": "src/app/branch/page.tsx",
+      "readOwners": [
+        "@/lib/tenancy/access",
+        "@/lib/auth/server-identity",
+        "@/lib/tenancy/branch-inbox",
+        "@/lib/i18n",
+        "@/components/app/branch-inbox-realtime"
+      ],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "مناسب",
+      "data": "CompanyAccess ثم redirect أو النموذج",
+      "loading": "request-scoped dedup موجود",
+      "remaining": "الانتظار يحدد نقص الملف؛ mutation/profile freshness محفوظة",
+      "route": "/complete-profile",
+      "source": "src/app/complete-profile/page.tsx",
+      "readOwners": [
+        "@/lib/auth/safe-next",
+        "@/lib/auth/auth-journey",
+        "@/components/app/access-gate",
+        "@/components/app/auth-pages",
+        "@/lib/tenancy/access"
+      ],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "مناسب",
+      "data": "LegalPage ثابت",
+      "loading": "لا قراءة بيانات عملاء؛ assets/fonts SW عام",
+      "remaining": "لا Cache بيانات مطلوب؛ ليست أداة تنفيذ حذف الحسابات",
+      "route": "/data-deletion",
+      "source": "src/app/data-deletion/page.tsx",
+      "readOwners": [
+        "@/components/app/workspace-pages"
+      ],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "مناسب",
+      "data": "Auth form",
+      "loading": "Suspense + عملية عند الطلب",
+      "remaining": "لا prefetch إرسال بريد ولا cache إثبات نجاح",
+      "route": "/forgot-password",
+      "source": "src/app/forgot-password/page.tsx",
+      "readOwners": [
+        "@/components/app/auth-pages"
+      ],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "محسن محليًا",
+      "data": "locale وCompanyAccess وpublic catalog",
+      "loading": "الثلاثة يبدأون بالتوازي؛ assets/fonts static cache قائم",
+      "remaining": "الـhero ما زال ينتظر promises؛ streaming مستقل للباقة/identity فرصة لاحقة، يتطلب فصل LandingPage لا كاش auth",
+      "route": "/",
+      "source": "src/app/page.tsx",
+      "readOwners": [
+        "@/components/app/subscription-navigation",
+        "@/lib/billing/catalog-backend/rpc",
+        "@/components/app/subscription-offers-view",
+        "@/components/landing/landing-page",
+        "@/lib/i18n",
+        "@/lib/tenancy/access"
+      ],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "تحويل",
+      "data": "redirect /admin",
+      "loading": "لا بيانات معاينة",
+      "remaining": "لا مسار بيانات مستقل",
+      "route": "/preview/dashboards/admin",
+      "source": "src/app/preview/dashboards/admin/page.tsx",
+      "readOwners": [],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "تحويل",
+      "data": "redirect /app/settings?tab=plan",
+      "loading": "لا بيانات معاينة",
+      "remaining": "لا مسار بيانات مستقل",
+      "route": "/preview/dashboards/client",
+      "source": "src/app/preview/dashboards/client/page.tsx",
+      "readOwners": [],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "تحويل",
+      "data": "redirect /app/settings?tab=plan",
+      "loading": "لا بيانات معاينة",
+      "remaining": "لا مسار بيانات مستقل",
+      "route": "/preview/dashboards",
+      "source": "src/app/preview/dashboards/page.tsx",
+      "readOwners": [],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "محذوف محليًا",
+      "data": "راجعنا معاينة التطوير القديمة ثم حذفنا المدخل ومكوّنه الوحيد وفق AGENTS",
+      "loading": "لا بديل تجريبي؛ /app/subscription هو المسار الفعلي",
+      "remaining": "59 مدخلًا تمت مراجعته، 58 صفحة تبقى بعد حذف المعاينة؛ لا تحسين latency مزعوم من الحذف",
+      "route": "/preview/subscription",
+      "source": "src/app/preview/subscription/page.tsx",
+      "readOwners": [
+        "@/preview/subscription/subscription-preview"
+      ],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "مناسب",
+      "data": "LegalPage ثابت",
+      "loading": "لا قراءة قاعدة بيانات خاصة",
+      "remaining": "لا مكتبة Cache لازمة",
+      "route": "/privacy",
+      "source": "src/app/privacy/page.tsx",
+      "readOwners": [
+        "@/components/app/workspace-pages"
+      ],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "مناسب",
+      "data": "ResetPasswordPage",
+      "loading": "Suspense؛ mutation محمية عند التفاعل",
+      "remaining": "لا تخزين أو prefetch نتيجة reset",
+      "route": "/reset-password",
+      "source": "src/app/reset-password/page.tsx",
+      "readOwners": [
+        "@/components/app/auth-pages"
+      ],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "مناسب",
+      "data": "owner ثم connection-before/setup/connection-after",
+      "loading": "قراءات تحقق جيل وربط قبل وبعد؛ setup layout loading",
+      "remaining": "ليس تكرارًا يُزال بالـcache؛ الترتيب يحمي callback/race؛ أبقيناه",
+      "route": "/setup/branches/[branchId]/whatsapp",
+      "source": "src/app/setup/branches/[branchId]/whatsapp/page.tsx",
+      "readOwners": [
+        "@/lib/tenancy/access",
+        "@/lib/auth/auth-journey",
+        "@/lib/auth/setup-return",
+        "@/lib/tenancy/paid-setup-actions",
+        "@/lib/tenancy/paid-branch-connection-actions",
+        "@/components/app/access-gate",
+        "@/components/app/paid-whatsapp-route"
+      ],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "تحويل",
+      "data": "redirect /setup",
+      "loading": "لا بيانات إضافية",
+      "remaining": "لا رحلة تجهيز موازية",
+      "route": "/setup/branches",
+      "source": "src/app/setup/branches/page.tsx",
+      "readOwners": [],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "محسن سابقًا",
+      "data": "CompanyAccess ثم paid shell وworkspace وخطوات مستقلة",
+      "loading": "GET no-store، in-flight dedup لكل scope، hours intent prefetch وpreview 30ث، fresh Save، draft fence",
+      "remaining": "full workspace يحافظ قبل/بعد؛ لا كاش launch/payment/verified؛ قياس رحلة محمية حيًا غير منفذ",
+      "route": "/setup",
+      "source": "src/app/setup/page.tsx",
+      "readOwners": [
+        "@/lib/tenancy/account-prep-eligibility",
+        "@/lib/auth/auth-journey",
+        "@/lib/auth/setup-return",
+        "@/components/app/access-gate",
+        "@/components/app/setup-wizard",
+        "@/components/app/prepayment-preparation",
+        "@/components/app/setup-loading",
+        "@/lib/tenancy/access",
+        "@/lib/master-journey/rollout"
+      ],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "تحويل",
+      "data": "redirect /setup",
+      "loading": "لا بيانات إضافية",
+      "remaining": "ليس إثبات QA حيًا",
+      "route": "/setup/qa",
+      "source": "src/app/setup/qa/page.tsx",
+      "readOwners": [],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "مناسب",
+      "data": "LegalPage؛ draft component بتفعيل محدد",
+      "loading": "بيانات ثابتة واستيراد شرطي",
+      "remaining": "لا قاعدة بيانات تحتاج Cache؛ المحتوى القانوني خارج مراجعة الأداء",
+      "route": "/terms",
+      "source": "src/app/terms/page.tsx",
+      "readOwners": [
+        "@/components/app/workspace-pages",
+        "@/lib/service-terms-draft"
+      ],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "مناسب",
+      "data": "VerifyEmailPage وAccountSessionProvider",
+      "loading": "Suspense ودمج refresh الجاري عند focus/visibility",
+      "remaining": "لا prefetch OTP/resend؛ user/epoch guards مهمة",
+      "route": "/verify-email",
+      "source": "src/app/verify-email/page.tsx",
+      "readOwners": [
+        "@/components/app/auth-pages"
+      ],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    },
+    {
+      "status": "توازٍ قائم",
+      "data": "getPersonalPhoneStatus وsearchParams",
+      "loading": "Promise.all؛ الهوية ثم native status؛ initialResult",
+      "remaining": "توازي params لا يزيل RTT المصادقة؛ الإرسال/التحقق ليسا بيانات قابلة للـprefetch",
+      "route": "/verify-phone",
+      "source": "src/app/verify-phone/page.tsx",
+      "readOwners": [
+        "@/components/app/personal-phone-page",
+        "@/lib/tenancy/personal-phone-actions",
+        "@/lib/auth/safe-next"
+      ],
+      "evidenceLevel": "current source inspection; not live per-route timing"
+    }
+  ],
+  "remainingPageFiles": 58,
+  "verification": {
+    "scopeTests": 54,
+    "teamTests": 55,
+    "typecheck": "PASS",
+    "scopedLint": "PASS",
+    "securityBaseline": "PASS",
+    "fullUnitRerun": false,
+    "preservedFiles": 155,
+    "headUnchanged": true,
+    "indexEmpty": true,
+    "livePerformance": "NOT_MEASURED",
+    "finalProductionBuild": "PASS after all code changes"
+  },
+  "changedFiles": [
+    "PROJECT_STATE.md",
+    "docs/GLOBAL-DATA-COVERAGE-20261030.md",
+    "docs/GLOBAL-DATA-PERFORMANCE-20261030.md",
+    "docs/global-data-coverage-20261030.json",
+    "src/app/account/loading.tsx",
+    "src/app/admin/companies/[id]/page.test.tsx",
+    "src/app/admin/companies/[id]/page.tsx",
+    "src/app/app/knowledge/page.tsx",
+    "src/app/app/loading.tsx",
+    "src/app/data-loading.test.tsx",
+    "src/app/page.tsx",
+    "src/app/preview/subscription/page.tsx",
+    "src/components/app/route-loading.tsx",
+    "src/lib/platform-teams/ui-state.test.ts",
+    "src/lib/platform-teams/ui-state.ts",
+    "src/lib/tenancy/access-actions.ts",
+    "src/lib/tenancy/audit-actions.ts",
+    "src/lib/tenancy/channels-actions.ts",
+    "src/lib/tenancy/channels-parallel.test.ts",
+    "src/lib/tenancy/health-actions.ts",
+    "src/lib/tenancy/operations-actions.ts",
+    "src/preview/subscription/subscription-preview.tsx"
+  ]
+}

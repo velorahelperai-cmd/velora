@@ -35,22 +35,31 @@ export function TeamsPage({actorId,editor}:{actorId:string;editor:boolean}){
  const appliedSearch=urlScope.ok?urlScope.data.search:"";
  const [search,setSearch]=useState(appliedSearch);
  const [selection,setSelection]=useState<{member:TeamMember;transfer:boolean}|null>(null);
- const ready=session?.status==="ready"&&session.identity?.userId===actorId;
+ const boundary=session?.boundaryFingerprint??null;
+ const ready=session?.status==="ready"&&session.identity?.userId===actorId&&boundary!==null;
  const owner=editor&&session?.identity?.platformIdentity.role==="owner"&&session.identity.platformIdentity.status==="active"&&!session.identity.platformIdentity.unavailable;
- const viewKey=JSON.stringify([actorId,ready,query,session?.identity?.platformIdentity.role,session?.identity?.platformIdentity.status,session?.identity?.platformIdentity.unavailable]);
+ const viewKey=JSON.stringify([actorId,boundary,ready,query,session?.identity?.platformIdentity.role,session?.identity?.platformIdentity.status,session?.identity?.platformIdentity.unavailable]);
  useLayoutEffect(()=>{
-  store.bindAuthority(()=>session?.status==="ready"&&session.isCurrentUser(actorId)||false,()=>editor&&session?.status==="ready"&&session.isCurrentUser(actorId)&&session.identity?.platformIdentity.role==="owner"&&session.identity.platformIdentity.status==="active"&&!session.identity.platformIdentity.unavailable,viewKey);
- },[store,session,actorId,editor,viewKey]);
+  const current=()=>boundary!==null&&session?.status==="ready"&&session.isCurrentUser(actorId)&&session.liveSnapshot().boundaryFingerprint===boundary||false;
+  store.bindAuthority(current,()=>editor&&current()&&session?.identity?.platformIdentity.role==="owner"&&session.identity.platformIdentity.status==="active"&&!session.identity.platformIdentity.unavailable,viewKey);
+ },[store,session,actorId,editor,boundary,viewKey]);
  useEffect(()=>{
   if(!ready||editor&&!owner){store.suspend();return;}
   store.activate();
   const scope=teamQuery(actorId,new URLSearchParams(query));if(scope.ok)void store.load(scope.data);
   return()=>store.suspend();
- },[ready,owner,editor,actorId,query,store,session?.identity?.platformIdentity.role,session?.identity?.platformIdentity.status]);
+ },[ready,owner,editor,actorId,boundary,query,store,session?.identity?.platformIdentity.role,session?.identity?.platformIdentity.status]);
  useEffect(()=>{const recheck=()=>{if(document.visibilityState==="visible"&&store.isCurrent())void store.load({...store.getSnapshot().scope,cursor:null});};window.addEventListener("focus",recheck);document.addEventListener("visibilitychange",recheck);return()=>{window.removeEventListener("focus",recheck);document.removeEventListener("visibilitychange",recheck);};},[store]);
  const [trackedSearch,setTrackedSearch]=useState(appliedSearch);
  if(trackedSearch!==appliedSearch){setTrackedSearch(appliedSearch);setSearch(appliedSearch);}
- function navigate(scope:TeamScope){store.invalidateReview();setSelection(null);setSearch(scope.search);void store.load(scope);router.push(teamHref(path,scope));}
+ function navigate(scope:TeamScope){
+  store.invalidateReview();setSelection(null);setSearch(scope.search);
+  const href=teamHref(path,scope);
+  if(urlScope.ok&&href===teamHref(path,urlScope.data)){void store.load(scope);return;}
+  // URL activation owns the read. Do not race a discarded old-context read
+  // against router.push and the query effect; hide rows/actions during transit.
+  store.suspend();router.push(href);
+ }
  if(!ready||state.contextKey!==viewKey)return <Container className="app-shell p-6"><Notice>{c.loading}</Notice></Container>;
  if(editor&&!owner)return <TeamsFailure embedded={editor} code={session?.identity?.platformIdentity.unavailable?"UNAVAILABLE":"FORBIDDEN"}/>;
  if(!urlScope.ok)return <TeamsFailure embedded={editor} code={urlScope.code}/>;
