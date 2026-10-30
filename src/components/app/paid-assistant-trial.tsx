@@ -135,6 +135,7 @@ function TrialForm(p:PaidAssistantTrialProps & {snapshot:TrialSnapshot}){
 
   <header className={styles.chatHeader}>
    <div className={styles.avatar} aria-hidden="true">
+    {/* eslint-disable-next-line @next/next/no-img-element */}
     {persona?<img src={PERSONA_POSTERS[persona]} alt="" width={48} height={48} decoding="async"/>:<span>{personaName.slice(0,1)}</span>}
    </div>
    <div className={styles.headerCopy}>
