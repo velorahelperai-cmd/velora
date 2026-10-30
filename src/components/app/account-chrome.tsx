@@ -703,10 +703,13 @@ export function AccountMenu({
     };
   }, [open]);
 
-  // Navbar chrome is decoupled from network: only a confirmed ready identity
-  // may replace public Sign-in / Create-account. Loading, transport error,
-  // guest, expired, and locked keep the same public CTAs (no empty slot, no
-  // technical identity-error copy). Session verification continues in the provider.
+  // Reserve the guest controls' width while identity is unresolved. Neither
+  // guest links nor the previous identity are safe to assume during loading.
+  if (session?.status === "loading") {
+    return <div className="flex min-h-11 min-w-[12.5rem] items-center gap-2" data-account-chrome="loading" aria-busy="true" />;
+  }
+
+  // Only a confirmed ready identity may replace the public controls.
   if (!session || session.status !== "ready" || !session.identity) {
     return (
       <div className="flex min-h-11 min-w-[12.5rem] items-center gap-2" data-account-chrome="public">

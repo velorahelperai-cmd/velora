@@ -2,6 +2,7 @@ import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import Lenis from "lenis";
 import "lenis/dist/lenis.css";
+import { compactPhonePosition } from "./landing-phone-position";
 
 let registered = false;
 
@@ -139,12 +140,12 @@ function bindTheater(root: HTMLElement, compact: boolean) {
           if (!still) x = next;
         }
       } else {
-        // Aim the phone at ~52% of the stage so it reads as mid-screen, not bottom-heavy.
-        x = gsap.utils.clamp(minX, Math.max(minX, maxX), (rangeBox.width - w) / 2);
-        const targetMid = rangeBox.height * 0.52;
-        const idealY = targetMid - h / 2;
-        const minClear = copyBottom != null ? Math.max(8, copyBottom - Math.round(h * 0.12)) : 8;
-        y = gsap.utils.clamp(minClear, Math.max(minClear, rangeBox.height - h - 8), idealY);
+        ({ x, y } = compactPhonePosition({
+          landscape: window.matchMedia("(orientation: landscape)").matches,
+          rangeWidth: rangeBox.width, rangeHeight: rangeBox.height, width: w, height: h,
+          slotX: item.x, slotWidth: item.w, slotY: item.y, slotHeight: item.h,
+          minX, maxX, copyLeft, copyRight, copyBottom,
+        }));
       }
       return { x, y, w, h, shift: item.shift, yaw: yawFor(x) };
     });

@@ -136,10 +136,10 @@ it.each(["en", "ar"] as const)("keeps pending header quiet and exposes only the 
   f.locale = locale;
   f.status = "loading";
   let tree = render();
-  expect(tree.props["data-account-chrome"]).toBe("public");
+  expect(tree.props["data-account-chrome"]).toBe("loading");
   expect(tree.props.className).toContain("min-w-[12.5rem]");
-  expect(nodes(tree).some(n => n.props.href === "/login")).toBe(true);
-  expect(nodes(tree).some(n => n.props.href === "/signup")).toBe(true);
+  expect(nodes(tree).some(n => n.props.href === "/login")).toBe(false);
+  expect(nodes(tree).some(n => n.props.href === "/signup")).toBe(false);
   expect(texts(tree)).not.toContain(appCopy(locale).account.identityError);
   f.status = "ready";
   tree = render();
@@ -149,7 +149,7 @@ it.each(["en", "ar"] as const)("keeps pending header quiet and exposes only the 
   f.status = "loading";
   tree = render();
   expect(texts(tree).some((t) => t.includes("Synthetic"))).toBe(false);
-  expect(nodes(tree).some(n => n.props.href === "/login")).toBe(true);
+  expect(nodes(tree).some(n => n.props.href === "/login")).toBe(false);
   f.liveUser = "user-b";
   f.status = "ready";
   tree = render();

@@ -49,6 +49,7 @@ export function LandingPage({
   const [customQuestion, setCustomQuestion] = useState<string | null>(null);
   const [catalogueOpen, setCatalogueOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
   const [activeSection, setActiveSection] = useState<string | null>(null);
   useEffect(() => {
     let frame = 0;
@@ -183,6 +184,17 @@ export function LandingPage({
   }
 
   useEffect(() => {
+    if (!menuOpen) return;
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      setMenuOpen(false);
+      menuButtonRef.current?.focus();
+    }
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [menuOpen]);
+
+  useEffect(() => {
     if (!langMenuOpen) return;
     function onPointerDown(event: MouseEvent) {
       const root = langMenuRef.current;
@@ -214,9 +226,9 @@ export function LandingPage({
         className="fixed inset-x-0 top-0 z-40 bg-[#07110d]/90 px-3 py-2.5 text-[#f7fbf8] backdrop-blur sm:px-4 lg:px-10 lg:py-3"
       >
         <div className="relative flex flex-nowrap items-center justify-between gap-2">
-          <a href="#story" className="inline-flex min-h-11 min-w-0 shrink items-center gap-2 text-xl font-bold leading-none sm:text-2xl lg:text-[34px]">
+          <a href="#story" aria-label="Velora" className="inline-flex min-h-11 min-w-0 shrink items-center gap-2 text-xl font-bold leading-none sm:text-2xl lg:text-[34px]">
             <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#38dc89] text-sm text-[#072317] lg:h-9 lg:w-9 lg:text-base">V</span>
-            <span className="truncate">Velora</span>
+            <span className="hidden min-[401px]:inline">Velora</span>
           </a>
           <nav className="hidden items-center gap-4 text-sm lg:flex" aria-label="Primary">
             <a aria-current={activeSection === "how" ? "location" : undefined} className="inline-flex min-h-11 items-center aria-[current=location]:underline underline-offset-8 focus-visible:outline-2 focus-visible:outline-offset-4" href="#how">{copy.nav.how}</a>
@@ -227,6 +239,7 @@ export function LandingPage({
           <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
             <button
               type="button"
+              ref={menuButtonRef}
               className="inline-flex min-h-11 items-center rounded-full border border-white/15 px-3 text-sm lg:hidden"
               aria-expanded={menuOpen}
               onClick={() => {

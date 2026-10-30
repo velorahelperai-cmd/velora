@@ -57,15 +57,15 @@ describe("landing navbar structure", () => {
     expect(html).toContain("scroll-mt-16");
   });
 
-  it("exposes primary nav anchors and shows Sign-in / Create-account while session is loading", () => {
+  it("reserves stable space without guest links while session is loading", () => {
     const html = renderLanding("ar");
     expect(html).toContain('href="#how"');
     expect(html).toContain('href="#demo"');
     expect(html).toContain('href="#packages"');
     expect(html).toContain('href="#faq"');
-    expect(html).toContain('data-account-chrome="public"');
+    expect(html).toContain('data-account-chrome="loading"');
     expect(html).toContain("min-w-[12.5rem]");
-    expect(html).toContain('href="/login"');
+    expect(html).not.toContain('href="/login"');
     expect(html).not.toContain("تعذّر جلب هوية الحساب");
   });
 

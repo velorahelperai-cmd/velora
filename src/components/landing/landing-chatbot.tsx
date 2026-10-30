@@ -75,7 +75,7 @@ export function LandingChatbot({ copy }: { copy: LandingCopy }) {
   }
 
   const content = (
-    <div data-chat-placement={dock ? "inline" : "floating"} onKeyDown={event => { if (open && event.key === "Escape") { event.stopPropagation(); setOpen(false); launcherRef.current?.focus(); } }} className={dock ? "relative flex flex-col items-center gap-3 px-4 py-6" : "pointer-events-none fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-50 flex flex-col items-start gap-3 sm:inset-x-auto sm:bottom-4 sm:start-4"}>
+    <div data-chat-placement={dock ? "inline" : "floating"} onKeyDown={event => { if (open && event.key === "Escape") { event.stopPropagation(); setOpen(false); launcherRef.current?.focus(); } }} className={dock ? "relative flex flex-col items-center gap-3 px-4 py-6" : "pointer-events-none fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-50 flex flex-col items-end gap-3 sm:inset-x-auto sm:bottom-4 sm:end-4"}>
       {open ? (
         <section
           id={panelId}
@@ -174,8 +174,8 @@ export function LandingChatbot({ copy }: { copy: LandingCopy }) {
         onClick={() => setOpen((v) => !v)}
         className={`${dock ? "" : "landing-chat-float "}pointer-events-auto group relative inline-flex items-end gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38dc89]`}
       >
-        {!open ? (
-          <span className={`${dock ? "inline-block" : "hidden"} mb-1 max-w-[9.5rem] rounded-2xl rounded-es-md border border-white/10 bg-[#0d1a14]/95 px-3 py-2 text-xs leading-5 text-[#f7fbf8] shadow-lg sm:mb-2 sm:inline-block`}>
+        {!open && dock ? (
+          <span className="inline-block mb-1 max-w-[9.5rem] rounded-2xl rounded-es-md border border-white/10 bg-[#0d1a14]/95 px-3 py-2 text-xs leading-5 text-[#f7fbf8] shadow-lg sm:mb-2">
             {copy.chat.bubble}
           </span>
         ) : null}
