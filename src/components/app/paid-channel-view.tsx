@@ -251,6 +251,8 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
   const [awaitingPin,setAwaitingPin]=useState(false);
   const pinAnswer=useRef<((value:string|null)=>void)|null>(null);
   const connectReserved=useRef(false);
+  const selectedNewNumberIntent=useRef(false);
+  const selectedPreparationScheduled=useRef(false);
   const preparedPopup = useRef<{ attemptId: string; generation: number; expiresAt: number; launch: () => void; abandon: () => void } | null>(null);
   const [popupReady, setPopupReady] = useState(false);
   const [confirmedPhone, setConfirmedPhone] = useState("");
@@ -292,6 +294,8 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
   const branch = model?.branches.find(item => item.id === scope.branchId);
   const effectiveRead = localOverride && localOverride.base === connectionRead ? localOverride.read : connectionRead;
   const connection = scopedChannelConnection(effectiveRead, {...scope, channel});
+  const latestConnection=useRef(connection);
+  useLayoutEffect(()=>{latestConnection.current=connection;},[connection]);
   const viewModel = derivePaidChannelConnectionViewModel(connection, locale, {inFlight});
   const reviewAttempt=connection?.connection.attempt;
   const canRequestReview=channel==='whatsapp'&&connection?.sourceStatus==='ready'&&connection.connection.flow==='wa_new_number'&&!!reviewAttempt&&['pending','claimed','unknown'].includes(reviewAttempt.status)&&Date.parse(reviewAttempt.expiresAt)<=Date.parse(connection.asOf);
@@ -327,7 +331,9 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
     !!selectedWhatsappFlow && viewModel.canStartFlow(selectedWhatsappFlow) && whatsappInputsValid;
   const canStartInstagram = viewModel.canStartFlow("instagram_direct");
 
-  const handleWhatsappConnect = async () => {
+  const handleWhatsappConnect = async (requestedFlow?: "wa_new_number") => {
+    const selectedWhatsappFlow = requestedFlow ?? (route === "new-number" ? "wa_new_number" : route === "coexistence" ? "wa_coexistence" : null);
+    const canStartSelectedWhatsapp = !!selectedWhatsappFlow && viewModel.canStartFlow(selectedWhatsappFlow) && (selectedWhatsappFlow === "wa_new_number" || (!!normalizedPhone && phoneConfirmed));
     // Both connection routes must use the live session boundary after every await.
     const checkCurrent = () => currentAuthority.current?.() ?? true;
     if (connectReserved.current || inFlight) return;
@@ -536,6 +542,22 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
       setFeedback(tf("تعذر إتمام عملية الربط حاليًا. حدّث الحالة أو استخدم الاسترداد.", "Connection could not be completed right now. Refresh status or use recovery."));
     }finally{if (ownsReservation) connectReserved.current=false;}
   };
+
+  // The effect consumes only a prior user selection, never a mount or a restored attempt.
+  useEffect(()=>{
+    if (!selectedNewNumberIntent.current || selectedPreparationScheduled.current || screen!=="requirements" || route!=="new-number") return;
+    if (effectiveRead === undefined) return;
+    if (!connection?.revision || !viewModel.canStartFlow("wa_new_number") || !checkCurrent()) { selectedNewNumberIntent.current=false; return; }
+    selectedPreparationScheduled.current=true;
+    queueMicrotask(()=>{
+      selectedPreparationScheduled.current=false;
+      if (!selectedNewNumberIntent.current || !mounted.current || latestConnection.current!==connection || !(currentAuthority.current?.() ?? true)) { selectedNewNumberIntent.current=false; return; }
+      selectedNewNumberIntent.current=false;
+      void handleWhatsappConnect("wa_new_number");
+    });
+    // The reservation ref prevents duplicates; the intent is consumed exactly once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[screen,route,effectiveRead,connection?.revision,connection?.sourceStatus,viewModel.canStart]);
 
   const handlePreparedFacebook = () => {
     const prepared = preparedPopup.current;
@@ -761,12 +783,16 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
         </div><div className={styles.routeCard}><h3 hidden={!!route}>{t("تفاصيل مهمة قبل الربط", "Key details before you connect")}</h3><fieldset className={styles.routes} disabled={!!inFlight} hidden={!!route}>
           <legend>{t("كيف تستخدم هذا الرقم؟", "How do you use this number?")}</legend>
           {(["new-number", "coexistence"] as const).map(value => <label key={value} className={styles.choice}>
-            <input type="radio" name={titleId + "-route"} value={value} checked={route === value} onChange={() => {if(checkCurrent())setRoute(value);}}/>
+            <input type="radio" name={titleId + "-route"} value={value} checked={route === value} onChange={() => {
+              if(!checkCurrent())return;
+              setRoute(value);
+              // This explicit choice prepares one server-owned attempt; it never opens Meta.
+              if(value==="new-number"){selectedNewNumberIntent.current=true;setScreen("requirements");} else selectedNewNumberIntent.current=false;
+            }}/>
             <span>{value === "new-number" ? t("استخدام رقم جديد", "Use a new number") : t("ربط تطبيق WhatsApp Business الحالي", "Connect your WhatsApp Business App")}</span>
             <small>{value==="new-number"?t("رقم تملكه وغير مرتبط بحساب واتساب أو مزود آخر. سنراجع متطلبات التحقق قبل المتابعة.","A number you own that is not linked to WhatsApp or another provider. Review verification requirements before continuing."):t("Coexistence: استمر في استخدام التطبيق على هاتفك مع إدارة المحادثات من فيلورا، إذا كان حسابك مؤهلًا. لا تحذف حسابك أو تفصل الرقم.","Coexistence: keep using the app on your phone while managing conversations in Velora, if your account is eligible. Do not delete your account or disconnect your number.")}</small>
           </label>)}
         </fieldset>
-        {route && <div className={styles.routeSummary}><span>{route === "new-number" ? t("رقم جديد", "New number") : t("تطبيق WhatsApp Business الحالي", "Existing WhatsApp Business App")}</span><button type="button" className={styles.back} onClick={()=>{if(checkCurrent()&&!connectReserved.current&&!inFlight){setRoute(null);setConfirmedPhone("");setPhoneConfirmed(false);}}}>{t("تغيير", "Change")}</button></div>}
           {route==="coexistence"&&<div className={styles.inputGroup}>
             <label htmlFor={titleId+"-phone"}>{t("رقم تطبيق WhatsApp Business الحالي (بصيغة دولية مثل +968...)","Existing WhatsApp Business App number (E.164 format e.g. +968...)")}</label>
             <input id={titleId+"-phone"} className={styles.textInput} type="tel" inputMode="tel" autoComplete="tel" dir="ltr" value={confirmedPhone} onChange={e=>setConfirmedPhone(e.target.value)} placeholder="+96890000000"/>
@@ -774,16 +800,16 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
               <input type="checkbox" checked={phoneConfirmed} onChange={e=>setPhoneConfirmed(e.target.checked)}/>
               <span>{t("أؤكد أن هذا الرقم مفعل حاليًا على تطبيق WhatsApp Business ولن أقوم بحذفه أو فصله.","I confirm this number is currently active on the WhatsApp Business App and I will not delete or disconnect it.")}</span>
             </label>
+            <button className={styles.primary} type="button" data-route-continue disabled={!!inFlight || !connection?.revision || !canStartSelectedWhatsapp} onClick={()=>{if(checkCurrent()){setScreen("requirements");void handleWhatsappConnect();}}}>{t("متابعة إلى الربط مع Facebook","Continue to Facebook connection")}</button>
           </div>}
-        {route && <p>{t("المتابعة تجهّز محاولة الربط. يُفتح Facebook عند ضغط الزر أسفل الإرشادات.", "Continuing prepares a connection attempt. Facebook opens when you press the button below the guide.")}</p>}
-        <button className={styles.primary} type="button" data-route-continue disabled={!route || !!inFlight || !connection?.revision || !canStartSelectedWhatsapp} onClick={()=>{if(checkCurrent()){setScreen("requirements");void handleWhatsappConnect();}}}>{t("متابعة إلى الربط مع Facebook","Continue to Facebook connection")}</button>
-        </div></div>{route&&<WhatsappConnectionGuide route={route} locale={locale} connectionStatus={channelConnectionLabel(connection,locale)} />}</>}
+        </div></div></>}
         {showWhatsappOnboarding&&screen==="guide"&&route&&<div data-wa-screen="guide"><button type="button" className={styles.back} data-back-to-choice onClick={()=>setScreen("choice")}>{t("رجوع","Go back")}</button><WhatsappConnectionGuide route={route} locale={locale} connectionStatus={effectiveRead === undefined ? t("دليل الربط", "Connection guide") : channelConnectionLabel(connection, locale)} connectEnabled={!!selectedWhatsappFlow && viewModel.canStartFlow(selectedWhatsappFlow)} connecting={inFlight === "starting" || inFlight === "completing"} onConnect={()=>setScreen("requirements")} onReviewRequirements={()=>setScreen("requirements")} feedback={feedback}/></div>}
         {showWhatsappOnboarding&&screen==="requirements"&&route&&!awaitingPin&&<div className={styles.requirements} data-wa-screen="requirements">
           <p className={styles.stageCaption}>{t("الخطوة ٢/٢","Step 2/2")}</p>
           <WhatsappConnectionGuide route={route} locale={locale} connectionStatus={channelConnectionLabel(connection,locale)} connectEnabled={(popupReady || canStartSelectedWhatsapp)&&!inFlight} connecting={!!inFlight} preparing={!popupReady} onConnect={popupReady ? handlePreparedFacebook : ()=>void handleWhatsappConnect()} feedback={feedback}/>
+          {!feedback&&!inFlight&&!popupReady&&!canStartSelectedWhatsapp&&<div role="status">{effectiveRead === undefined ? t("يتم التحقق من حالة الاتصال.","Checking connection status.") : connection?.sourceStatus === "ready" && !!connection.revision ? t("طريقة الربط غير متاحة الآن. راجع حالة القناة.","This connection route is unavailable. Review the channel status.") : t("تعذّر التحقق من حالة القناة. حدّث الحالة قبل المحاولة.","The channel status could not be verified. Refresh the status before trying.")}{effectiveRead !== undefined&&onRefresh&&<button type="button" className={styles.back} onClick={()=>{if(checkCurrent())onRefresh();}}>{t("تحديث الحالة","Refresh status")}</button>}</div>}
           <div className={styles.requirementActions}>
-            <button type="button" className={styles.back} disabled={!!inFlight || popupReady} onClick={()=>setScreen("choice")}>{t("رجوع","Go back")}</button>
+            <button type="button" className={styles.back} disabled={!!inFlight || popupReady} onClick={()=>{selectedNewNumberIntent.current=false;setRoute(null);setConfirmedPhone("");setPhoneConfirmed(false);setScreen("choice");}}>{t("رجوع","Go back")}</button>
 
           </div>
         </div>}
