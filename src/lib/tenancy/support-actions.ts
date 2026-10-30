@@ -143,12 +143,15 @@ export async function adminGetSupportOverview(
       if (ids.length) clauses.push("company_id.in.(" + ids.join(",") + ")");
       query = query.or(clauses.join(","));
     }
-    const { data: ticketsData, error: ticketsErr, count: totalCount } = await query
-      .order("created_at", { ascending: false }).order("id", { ascending: false }).range(offset, offset + limit - 1);
+    const countStatuses = (statuses: string[]) => dynamicClient.from("support_tickets").select("id", { count: "exact", head: true }).in("status", statuses);
+    // Same authorized scope; list and aggregate reads do not depend on each other.
+    const [ticketsResult,...counts] = await Promise.all([
+      query.order("created_at", { ascending: false }).order("id", { ascending: false }).range(offset, offset + limit - 1),
+      countStatuses(["open"]),countStatuses(["in_progress", "waiting_customer"]),countStatuses(["resolved", "closed"]),
+    ]);
+    const {data:ticketsData,error:ticketsErr,count:totalCount}=ticketsResult;
     if (ticketsErr || !Array.isArray(ticketsData) || totalCount === null) throw Error("SUPPORT_TICKETS_UNAVAILABLE");
     const rawTickets = ticketsData as RawTicketRecord[];
-    const countStatuses = (statuses: string[]) => dynamicClient.from("support_tickets").select("id", { count: "exact", head: true }).in("status", statuses);
-    const counts = await Promise.all([countStatuses(["open"]), countStatuses(["in_progress", "waiting_customer"]), countStatuses(["resolved", "closed"])]);
     if (counts.some(result => result.error || result.count === null)) throw Error("SUPPORT_COUNTS_UNAVAILABLE");
 
     // 3. Map company display names if available

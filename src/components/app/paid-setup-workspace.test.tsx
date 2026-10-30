@@ -28,8 +28,9 @@ it.each(["foreign","unpaid","unavailable","stale","empty"] as const)("fails clos
 });
 it("cannot open a locked or unmounted step from controlled selection",()=>{
  expect(workspaceStepAllowed(read,scope,"hours",props.availableStepIds)).toBe(true);
- expect(workspaceStepAllowed(read,scope,"knowledge",props.availableStepIds)).toBe(false);
- expect(render({activeStepId:"knowledge",renderStep:()=>{throw Error("Locked leaf mounted");}})).toContain("Choose an available step");
+ expect(workspaceStepAllowed(read,scope,"knowledge",props.availableStepIds)).toBe(true);
+ expect(workspaceStepAllowed(read,scope,"test",props.availableStepIds)).toBe(false);
+ expect(render({activeStepId:"test",renderStep:()=>{throw Error("Locked leaf mounted");}})).toContain("Choose an available step");
  expect(render({availableStepIds:[]})).not.toContain('type="radio"');
 });
 it("keeps launch gated even after all other statuses are verified",()=>{

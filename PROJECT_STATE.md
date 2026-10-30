@@ -1,3 +1,26 @@
+# Current Session Index - GLOBAL-DATA-PERFORMANCE-20261030 RELEASE CANDIDATE
+
+- Owner authorized performance + Meta proof integration and conditional Commit/Push/Deploy. Exact 29-file manifest and limits: [release report](docs/GLOBAL-DATA-PERFORMANCE-20261030.md#final-release-candidate--global-data-performance-20261030).
+- Clean release-file full lint PASS, final typecheck PASS, Meta/draft 50/50, security contracts 69/69, dependency audit zero, tracked security 2106 paths PASS, Gitleaks tree zero. Prior full unit/contracts retained; no artificial skips/exclusions added. Final build/hosted exact-SHA evidence recorded in delivery receipt after completion.
+- All unrelated 155 file hashes preserved at preparation; untracked account-deletion tools excluded, untouched. Canonical main base 692cc72556ebf0a3deb14749880f6c98d3440c8e. No SQL/env/provider/payment changes. Authenticated latency/mobile/native-RLS acceptance remains NOT_RUN; owner declined local login.
+
+# Current Session Index - GLOBAL-DATA-PERFORMANCE-20261030
+
+- **Local implementation, not published:** canonical main `692cc72556ebf0a3deb14749880f6c98d3440c8e`; matching Graphify build `cb8e3e80-d3e8-4a39-bd1f-e9365530cdb1`. Brain: `03-CUSTOMER.md / GLOBAL-DATA-PERFORMANCE-20261030`.
+- **Changes:** native paid binding shell + independent no-store read transport; branch-owned in-flight dedup, intent-only hours prefetch/read-only 30s preview and fresh Save authority; hours/knowledge editing independent of channel delay, trial/launch prerequisites unchanged; late-read draft/selection fence. Workspace channel observations 4N→2N (excluding separate launch-summary reads), keeping before/after revision/generation checks. Parallel settings/subscription and admin support reads; effective dashboard/settings streaming boundaries. No new dependencies or SQL.
+- **Verification:** full unit 5285 PASS / 54 skipped; contracts 313 PASS / 38 skipped; final typecheck PASS; production build PASS; scoped ESLint PASS; tracked secret/security baseline PASS (2093). Later focused suites verify final refinements: core 43/43, affected channel/workspace/host 72/72, navigation/cache 31/31 (overlapping counts). A new loading-flow fixture was corrected to the existing entry contract; final compiler verifies it. Full `ci:lint` remains FAIL on 1 error + 3 warnings in pre-existing untracked `scripts/account-deletion/` tools, preserved.
+- **Boundaries:** no Commit/Push/Deploy, production env/region change, SQL migration, provider/payment action or intentional business-data write. Other-agent Meta receive UI preserved; only its timeout result generic was made explicit to resolve the shared build error. Other existing auth audit/live-customer/untracked work untouched.
+- **Acceptance limits:** production TAG CITY read-only UI observed at 2/5 and launch disabled. Browser Performance API unavailable through connector; owner declined separate local login. Authenticated local before/after timings, mobile/desktop journey acceptance and native RLS runtime NOT_RUN. No live latency percentage, P50/P95, region causation or global completion claim.
+- **Evidence:** [single source map/report](docs/GLOBAL-DATA-PERFORMANCE-20261030.md), [59-page/16-handler inventory](docs/global-data-route-inventory.json). Task-only hashes/logs in `.git/global-performance-*`; local dev stopped. Remaining work is mandatory global lint resolution by its owning task and authenticated performance/acceptance before publication.
+
+# Current Session Index - SETUP-META-TEST-RECEIVE-STATUS-UI-20261030
+
+- **Task (Show confirmed Meta test receive-only success inside canonical `/setup` WhatsApp step — C12 / I02.3 UI):**
+  - Supabase read-only proof for TAG CITY `40d2d885-…` / branch `a268f9d8-…`: `3` completed `SETUP_META_TEST_RECEIVE_ONLY` jobs; `0` commercial `whatsapp_company_links`; `0` verified B3 WhatsApp links. Cancelled commercial attempts remain incomplete.
+  - Added owner-scoped `readOwnedWhatsappMetaTestReceiveProofAction` + pure projection (`whatsapp-meta-test-receive-proof.ts`). UI in `PaidChannelView`: section «اختبار Meta ناجح» only when server proof exists; clarifies receive/save only (not replies/commercial activation); commercial banner stays incomplete/`not_connected` and is visually separate. Does not change `verified`, Launch gates, or re-run webhook/receive.
+  - Graphify matched HEAD `692cc72`. **No SQL migration / Commit / Push / Deploy.**
+  - **Verification:** Vitest 49 PASS (proof/actions + channel interaction incl. Meta banner); `tsc` PASS; ESLint scoped PASS; security PASS (2093). Live authenticated `/setup` browser NOT_RUN.
+
 # Current Session Index - SETUP-UNIFIED-RELEASE-DELIVERY-20261030
 
 - **Task (Deploy Unified 5-Step Setup Release & Production Verification — SINGLE-SETUP-PATH-001 / C11–C16):**

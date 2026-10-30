@@ -35,6 +35,7 @@ import {
   joinSignupSignal,
   parseEmbeddedSignupMessage,
 } from "@/lib/whatsapp/coexistence/browser";
+import type {WhatsappMetaTestReceiveProof} from "@/lib/tenancy/whatsapp-meta-test-receive-proof";
 
 export type WhatsappSdkPopupResult =
   | { kind: "completed"; code: string; wabaId?: string; phoneNumberId?: string }
@@ -50,6 +51,7 @@ export type PaidChannelViewActions = {
   recoverConnection?: (input: RecoverOwnedPaidBranchConnectionInput) => Promise<PaidBranchConnectionMutation>;
   cancelConnection?: (input: CancelOwnedPaidBranchConnectionInput) => Promise<PaidBranchConnectionMutation>;
   readConnection?: (input: PaidBranchConnectionScope) => Promise<PaidBranchConnectionRead>;
+  readMetaTestReceiveProof?: (input: {expectedAccountId:string;companyId:string;branchId:string}) => Promise<{ok:boolean;proof?:WhatsappMetaTestReceiveProof|null}>;
   launchWhatsappSdk?: (launch: Extract<PaidBranchConnectionLaunch, { flow: "wa_new_number" | "wa_coexistence" }>) => Promise<WhatsappSdkPopupResult>;
   navigateToUrl?: (url: string) => void;
 };
@@ -238,11 +240,16 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
   const [feedback, setFeedback] = useState<string | null>(null);
   const [cancelUncertain, setCancelUncertain] = useState(false);
   const [reviewResult,setReviewReceipt]=useState<{key:string;receipt:WhatsappReviewReceipt|null}|null>(null);
+  const [metaTestProof,setMetaTestProof]=useState<WhatsappMetaTestReceiveProof|null>(null);
   const reviewBinding=useRef('');
   const popupCapture=useRef<AbortController|null>(null);
   const mounted = useRef(true);
   const currentAuthority=useRef(isCurrent);
+  const metaTestReader=useRef(actions?.readMetaTestReceiveProof);
+  const metaTestLoadedKey=useRef<string|null>(null);
+  const metaTestKey=JSON.stringify([scope.expectedAccountId,scope.companyId,scope.branchId,channel]);
   useLayoutEffect(()=>{currentAuthority.current=isCurrent;},[isCurrent]);
+  useLayoutEffect(()=>{metaTestReader.current=actions?.readMetaTestReceiveProof;},[actions?.readMetaTestReceiveProof]);
   const titleId = useId();
   const setLocalConnection = (next: PaidBranchConnectionRead) => setLocalOverride({ base: connectionRead, read: next });
 
@@ -257,6 +264,34 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
   }, []);
 
   const checkCurrent = () => (isCurrent ? isCurrent() : true);
+
+  // Soft enrichment only: WhatsApp controls render without waiting. Historical proof is cached per scope.
+  useEffect(() => {
+    if (channel !== "whatsapp") return;
+    if (metaTestLoadedKey.current === metaTestKey) return;
+    let active = true;
+    const captured = metaTestKey;
+    void (async () => {
+      try {
+        const reader = metaTestReader.current
+          ?? (await import("@/lib/tenancy/whatsapp-meta-test-receive-actions")).readOwnedWhatsappMetaTestReceiveProofAction;
+        const result = await reader({
+          expectedAccountId: scope.expectedAccountId,
+          companyId: scope.companyId,
+          branchId: scope.branchId,
+        });
+        if (!active || !mounted.current || !(currentAuthority.current?.() ?? true) || metaTestKey !== captured) return;
+        metaTestLoadedKey.current = captured;
+        setMetaTestProof(result.ok && result.proof ? result.proof : null);
+      } catch {
+        if (active && mounted.current && metaTestKey === captured) {
+          metaTestLoadedKey.current = captured;
+          setMetaTestProof(null);
+        }
+      }
+    })();
+    return () => { active = false; };
+  }, [metaTestKey, channel, scope.expectedAccountId, scope.companyId, scope.branchId]);
   const ar = locale === "ar";
   const t = (arabic: string, english: string) => ar ? arabic : english;
   const model = read ? paidChecklistFromRead(read, scope) : null;
@@ -684,11 +719,21 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
   };
 
 
+  const commercialIncomplete = channel === "whatsapp" && !(connection?.connection.verified && connection.connection.state === "connected");
+  const showMetaTestSuccess = channel === "whatsapp" && !!metaTestProof && commercialIncomplete;
+
   return <section className={styles.view} data-setup-unsaved={unsavedConnection?'true':undefined} dir={ar ? "rtl" : "ltr"} aria-label={channel==='whatsapp'?t('ربط واتساب','Connect WhatsApp'):t('ربط إنستغرام','Connect Instagram')}>
     <header className={styles.header}>
       {available && !hideStatusBadge && <p>{t("الفرع: ", "Branch: ")}<bdi>{branch.label}</bdi></p>}
-      {available && effectiveRead !== undefined && <div className={hideStatusBadge?undefined:styles.statusBanner} data-connection-ui-state={viewModel.uiState}>
+      {available && showMetaTestSuccess && <aside className={styles.metaTestSuccess} data-meta-test-receive="success" role="status">
+        <h3>{t("اختبار Meta ناجح","Meta test successful")}</h3>
+        <p>{t("ثبت استقبال الرسائل وحفظها على الخادم. هذا لا يعني إرسال الردود أو التفعيل التجاري.","Inbound messages were received and saved on the server. This does not mean replies were sent or commercial activation is complete.")}</p>
+        <p className={styles.metaTestCommercial}>{t("الربط التجاري ما زال غير مكتمل — أكمل Embedded Signup والتحقق الحقيقي لرقمك.","Commercial linking is still incomplete — finish Embedded Signup and real verification for your number.")}</p>
+        {metaTestProof.savedMessageCount > 0 && <p className={styles.metaTestMeta}><bdi dir="ltr">{metaTestProof.savedMessageCount}</bdi> {t("رسالة محفوظة","saved message(s)")}{metaTestProof.receivedAt ? <> · <time dateTime={metaTestProof.receivedAt}>{new Intl.DateTimeFormat(ar ? "ar-OM" : "en-GB", { dateStyle: "medium", timeStyle: "short" }).format(new Date(metaTestProof.receivedAt))}</time></> : null}</p>}
+      </aside>}
+      {available && effectiveRead !== undefined && <div className={hideStatusBadge?undefined:styles.statusBanner} data-connection-ui-state={viewModel.uiState} data-commercial-link={commercialIncomplete ? "incomplete" : "verified"}>
         {!hideStatusBadge&&<span className={styles.statusBadge} role="status" aria-label={channelConnectionLabel(connection, locale)}>{viewModel.badgeLabel}</span>}
+        {commercialIncomplete && showMetaTestSuccess && <p className={styles.commercialHint}>{t("حالة آخر محاولة ربط تجاري أعلاه منفصلة عن نجاح الاختبار التقني.","The commercial link attempt status above is separate from technical test success.")}</p>}
         {viewModel.guidance && <p>{viewModel.guidance}</p>}
         {feedback && <p role="alert">{feedback}</p>}
         {canRequestReview&&!awaitingPin&&<div className={styles.recoveryActions}>

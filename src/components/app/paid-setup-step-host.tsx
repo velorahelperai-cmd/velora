@@ -1,5 +1,6 @@
 "use client";
 
+import type {SetupReader} from "@/lib/tenancy/setup-read-client";
 import {awaitSetupRequest,observeSetupRead} from "./paid-setup-request";
 import { useCallback, useLayoutEffect, useEffect, useMemo, useRef, useState } from "react";
 import type { ChecklistStepId } from "./paid-assistant-checklist";
@@ -40,6 +41,7 @@ import {
 } from "@/lib/tenancy/paid-launch-actions";
 
 export type PaidSetupStepHostProps = {
+  reader?:SetupReader;
   locale: "ar" | "en";
   scope: { expectedAccountId: string; companyId: string; branchId: string; boundaryFingerprint: string };
   step: Exclude<ChecklistStepId, "whatsapp" | "instagram">;
@@ -52,7 +54,8 @@ export function PaidSetupStepHost(props: PaidSetupStepHostProps) {
  return <StepHost key={JSON.stringify([props.scope,props.step])} {...props}/>;
 }
 function StepHost(props: PaidSetupStepHostProps) {
-  const { locale, scope, step, onRefresh } = props;
+  const { locale, scope, step, onRefresh,reader } = props;
+  const runMutation=<T,>(request:Promise<T>,timeoutMs:number)=>{reader?.invalidate();return awaitSetupRequest(request,timeoutMs);};
   const mounted=useRef(true);
   const authority=useRef(props.isCurrent);
   useLayoutEffect(()=>{authority.current=props.isCurrent;},[props.isCurrent]);
@@ -70,6 +73,7 @@ function StepHost(props: PaidSetupStepHostProps) {
     if(step==="knowledge"){setKnowledgePhase("loading");setLangPhase("loading");}
     if(step==="test")setTrialPhase("loading");
     if(step==="launch")setLaunchPhase("loading");
+    reader?.invalidate();
     setReadVersion(v=>v+1);
   };
   const targetScope = useMemo(
@@ -78,8 +82,9 @@ function StepHost(props: PaidSetupStepHostProps) {
   );
 
   // 1. Hours step
-  const [hoursSnap, setHoursSnap] = useState<BranchHoursSnapshot | null>(null);
-  const [hoursCopyTargets, setHoursCopyTargets] = useState<BranchHoursCopyTarget[]>([]);
+  // Cached hours are presentation only: phase stays loading until a fresh read.
+  const [hoursSnap, setHoursSnap] = useState<BranchHoursSnapshot | null>(()=>{const preview=reader?.peekHours();return preview?.ok?preview.snapshot:null;});
+  const [hoursCopyTargets, setHoursCopyTargets] = useState<BranchHoursCopyTarget[]>(()=>{const preview=reader?.peekHours();return preview?.ok?preview.copyTargets:[];});
   const [hoursPhase, setHoursPhase] = useState<"loading" | "ready" | "saving" | "saved" | "conflict" | "unavailable">("loading");
 
   useEffect(() => {
@@ -90,7 +95,7 @@ function StepHost(props: PaidSetupStepHostProps) {
 
     let active = true;
     void observeSetupRead(
-      readOwnedBranchHoursAction(targetScope),
+      (reader?reader.read("hours"):readOwnedBranchHoursAction(targetScope)),
       () => {
         if (active && isCurrentRef.current() && hoursInFlightKeyRef.current === scopeKey) {
           setHoursPhase("unavailable");
@@ -121,7 +126,7 @@ function StepHost(props: PaidSetupStepHostProps) {
         hoursInFlightKeyRef.current = null;
       }
     };
-  }, [step, expectedAccountId, companyId, branchId, readVersion, targetScope]);
+  }, [step, expectedAccountId, companyId, branchId, readVersion, targetScope,reader]);
 
   // 2. Knowledge + reply languages (same setup step)
   const [knowledgeSnap, setKnowledgeSnap] = useState<BranchKnowledgeViewSnapshot | null>(null);
@@ -132,7 +137,7 @@ function StepHost(props: PaidSetupStepHostProps) {
   useEffect(() => {
     if (step !== "knowledge" || !isCurrent()) return;
     let active = true;
-    void observeSetupRead(readOwnedBranchKnowledgeAction(targetScope),()=>{if(active&&isCurrent())setKnowledgePhase("unavailable");}).then((snap) => {
+    void observeSetupRead((reader?reader.read("knowledge"):readOwnedBranchKnowledgeAction(targetScope)),()=>{if(active&&isCurrent())setKnowledgePhase("unavailable");}).then((snap) => {
       if (!active || !isCurrent()) return;
       if (snap) {
         setKnowledgeSnap(snap);
@@ -141,7 +146,7 @@ function StepHost(props: PaidSetupStepHostProps) {
         setKnowledgePhase("unavailable");
       }
     }).catch(()=>{if(active&&isCurrent())setKnowledgePhase('unavailable');});
-    void observeSetupRead(readOwnedBranchReplyLanguageAction(targetScope),()=>{if(active&&isCurrent())setLangPhase("unavailable");}).then((snap) => {
+    void observeSetupRead((reader?reader.read("language"):readOwnedBranchReplyLanguageAction(targetScope)),()=>{if(active&&isCurrent())setLangPhase("unavailable");}).then((snap) => {
       if (!active || !isCurrent()) return;
       if (snap) {
         setLangSnap(snap);
@@ -153,7 +158,7 @@ function StepHost(props: PaidSetupStepHostProps) {
     return () => {
       active = false;
     };
-  }, [step, targetScope, isCurrent,readVersion]);
+  }, [step, targetScope, isCurrent,readVersion,reader]);
 
   // 3. Test step
   const [trialSnap, setTrialSnap] = useState<TrialSnapshot | null>(null);
@@ -162,7 +167,7 @@ function StepHost(props: PaidSetupStepHostProps) {
   useEffect(() => {
     if (step !== "test" || !isCurrent()) return;
     let active = true;
-    void observeSetupRead(readOwnedBranchAssistantTrialAction(targetScope),()=>{if(active&&isCurrent())setTrialPhase("unavailable");}).then((snap) => {
+    void observeSetupRead((reader?reader.read("trial"):readOwnedBranchAssistantTrialAction(targetScope)),()=>{if(active&&isCurrent())setTrialPhase("unavailable");}).then((snap) => {
       if (!active || !isCurrent()) return;
       if (snap) {
         setTrialSnap(snap);
@@ -174,7 +179,7 @@ function StepHost(props: PaidSetupStepHostProps) {
     return () => {
       active = false;
     };
-  }, [step, targetScope, isCurrent,readVersion]);
+  }, [step, targetScope, isCurrent,readVersion,reader]);
 
   // 5. Launch step
   const [launchSnap, setLaunchSnap] = useState<LaunchSummarySnapshot | null>(null);
@@ -183,7 +188,7 @@ function StepHost(props: PaidSetupStepHostProps) {
   useEffect(() => {
     if (step !== "launch" || !isCurrent()) return;
     let active = true;
-    void observeSetupRead(readOwnedBranchLaunchSummaryAction(targetScope),()=>{if(active&&isCurrent())setLaunchPhase("unavailable");}).then((snap) => {
+    void observeSetupRead((reader?reader.read("launch"):readOwnedBranchLaunchSummaryAction(targetScope)),()=>{if(active&&isCurrent())setLaunchPhase("unavailable");}).then((snap) => {
       if (!active || !isCurrent()) return;
       if (snap) {
         setLaunchSnap(snap);
@@ -195,7 +200,7 @@ function StepHost(props: PaidSetupStepHostProps) {
     return () => {
       active = false;
     };
-  }, [step, targetScope, isCurrent,readVersion]);
+  }, [step, targetScope, isCurrent,readVersion,reader]);
 
   switch (step) {
     case "hours":
@@ -210,7 +215,7 @@ function StepHost(props: PaidSetupStepHostProps) {
           isCurrent={isCurrent}
           onSave={async (draft) => {
             setHoursPhase("saving");
-            const res = await awaitSetupRequest(saveOwnedBranchHoursAction(draft),60_000).catch(()=>null);
+            const res = await runMutation(saveOwnedBranchHoursAction(draft),60_000).catch(()=>null);
             if (!isCurrentRef.current()) return;
             if (res?.ok) {
               setHoursSnap(res.snapshot);
@@ -222,7 +227,7 @@ function StepHost(props: PaidSetupStepHostProps) {
           }}
           onCopy={async (draft) => {
             setHoursPhase("saving");
-            const res = await awaitSetupRequest(copyOwnedBranchHoursAction(draft),60_000).catch(()=>null);
+            const res = await runMutation(copyOwnedBranchHoursAction(draft),60_000).catch(()=>null);
             if (!isCurrentRef.current()) return;
             if (res?.ok) {
               setHoursCopyTargets(res.targets);
@@ -250,7 +255,7 @@ function StepHost(props: PaidSetupStepHostProps) {
           isCurrent={isCurrent}
           onAddWebsite={async (input) => {
             setKnowledgePhase("busy");
-            const res = await awaitSetupRequest(addOwnedBranchWebsiteAction(input),60_000).catch(()=>null);
+            const res = await runMutation(addOwnedBranchWebsiteAction(input),60_000).catch(()=>null);
             if (!isCurrent()) return;
             if (res) {
               setKnowledgeSnap(res);
@@ -262,7 +267,7 @@ function StepHost(props: PaidSetupStepHostProps) {
           }}
           onPageAction={async (input) => {
             setKnowledgePhase("busy");
-            const res = await awaitSetupRequest(pageActionOwnedBranchKnowledgeAction(input),60_000).catch(()=>null);
+            const res = await runMutation(pageActionOwnedBranchKnowledgeAction(input),60_000).catch(()=>null);
             if (!isCurrent()) return;
             if (res) {
               setKnowledgeSnap(res);
@@ -273,30 +278,30 @@ function StepHost(props: PaidSetupStepHostProps) {
             }
           }}
           onSaveText={async input=>{
-            setKnowledgePhase('busy');const result=await awaitSetupRequest(saveOwnedBranchKnowledgeTextAction(input),60_000).catch(()=>null);if(!isCurrent())return;
+            setKnowledgePhase('busy');const result=await runMutation(saveOwnedBranchKnowledgeTextAction(input),60_000).catch(()=>null);if(!isCurrent())return;
             if(result){setKnowledgeSnap(result);setKnowledgePhase('saved');onRefresh?.();}else setKnowledgePhase('unavailable');
           }}
           onUploadFiles={async input=>{
-            setKnowledgePhase('busy');const result=await awaitSetupRequest(uploadOwnedBranchKnowledgeFilesAction(input),60_000).catch(()=>null);if(!isCurrent())return;
+            setKnowledgePhase('busy');const result=await runMutation(uploadOwnedBranchKnowledgeFilesAction(input),60_000).catch(()=>null);if(!isCurrent())return;
             if(result){setKnowledgeSnap(result);setKnowledgePhase('saved');onRefresh?.();}else setKnowledgePhase('unavailable');
           }}
           onSourceMutation={async input=>{
             if(!isCurrent())return;
-            setKnowledgePhase('busy');const result=await awaitSetupRequest(mutateOwnedBranchKnowledgeSourceAction(input),60_000).catch(()=>null);if(!isCurrent())return;
+            setKnowledgePhase('busy');const result=await runMutation(mutateOwnedBranchKnowledgeSourceAction(input),60_000).catch(()=>null);if(!isCurrent())return;
             if(result){setKnowledgeSnap(result);setKnowledgePhase('saved');onRefresh?.();}else setKnowledgePhase('conflict');
           }}
           onRemovePage={async input=>{
             if(!isCurrent())return;
-            setKnowledgePhase('busy');const result=await awaitSetupRequest(removeOwnedBranchKnowledgePageAction(input),60_000).catch(()=>null);if(!isCurrent())return;
+            setKnowledgePhase('busy');const result=await runMutation(removeOwnedBranchKnowledgePageAction(input),60_000).catch(()=>null);if(!isCurrent())return;
             if(result){setKnowledgeSnap(result);setKnowledgePhase('saved');onRefresh?.();}else setKnowledgePhase('conflict');
           }}
           onSourceApproval={async input=>{
-            setKnowledgePhase('busy');const result=await awaitSetupRequest(approveOwnedBranchKnowledgeSourceAction(input),60_000).catch(()=>null);if(!isCurrent())return;
+            setKnowledgePhase('busy');const result=await runMutation(approveOwnedBranchKnowledgeSourceAction(input),60_000).catch(()=>null);if(!isCurrent())return;
             if(result){setKnowledgeSnap(result);setKnowledgePhase('ready');onRefresh?.();}else setKnowledgePhase('conflict');
           }}
           onConfirmLanguages={async (input) => {
             setLangPhase("saving");
-            const res = await awaitSetupRequest(confirmOwnedBranchReplyLanguageAction(input),60_000).catch(()=>null);
+            const res = await runMutation(confirmOwnedBranchReplyLanguageAction(input),60_000).catch(()=>null);
             if (!isCurrent()) return;
             if (res) {
               setLangSnap(res);
@@ -316,7 +321,7 @@ function StepHost(props: PaidSetupStepHostProps) {
           onRecover={async operationId => {
             if(!isCurrent())return;
             setTrialPhase("pending");
-            const result=await awaitSetupRequest(recoverOwnedBranchAssistantTrialAction({...targetScope,operationId}),60_000).catch(()=>null);
+            const result=await runMutation(recoverOwnedBranchAssistantTrialAction({...targetScope,operationId}),60_000).catch(()=>null);
             if(!isCurrent())return;
             if(result?.ok){setTrialSnap(result.snapshot);setTrialPhase("ready");onRefresh?.();}
             else setTrialPhase("unknown");
@@ -337,7 +342,7 @@ function StepHost(props: PaidSetupStepHostProps) {
           isCurrent={isCurrent}
           onAsk={async (input) => {
             setTrialPhase("pending");
-            const res = await awaitSetupRequest(askOwnedBranchAssistantTrialAction(input),60_000).catch(()=>null);
+            const res = await runMutation(askOwnedBranchAssistantTrialAction(input),60_000).catch(()=>null);
             if (!isCurrent()) return;
             if (res?.ok && res.snapshot) {
               setTrialSnap(res.snapshot);
@@ -361,7 +366,7 @@ function StepHost(props: PaidSetupStepHostProps) {
           isCurrent={isCurrent}
           onLaunch={async (input) => {
             setLaunchPhase("pending");
-            const res = await awaitSetupRequest(confirmOwnedBranchLaunchAction(input),60_000).catch(()=>null);
+            const res = await runMutation(confirmOwnedBranchLaunchAction(input),60_000).catch(()=>null);
             if (!isCurrent()) return;
             if (res) {
               setLaunchSnap(res);
@@ -374,7 +379,7 @@ function StepHost(props: PaidSetupStepHostProps) {
           onRefresh={async()=>{
             if(!isCurrent())return;
             setLaunchPhase('loading');
-            const result=await awaitSetupRequest(readOwnedBranchLaunchSummaryAction(targetScope),60_000).catch(()=>null);
+            const result=await awaitSetupRequest((reader?reader.read("launch"):readOwnedBranchLaunchSummaryAction(targetScope)),60_000).catch(()=>null);
             if(!isCurrent())return;
             setLaunchSnap(result);setLaunchPhase(result?'ready':'unavailable');
           }}

@@ -6,15 +6,17 @@ import { getCustomerReadiness } from "@/lib/tenancy/actions";
 
 export const metadata: Metadata = { title: "Dashboard · Velora" };
 
-export default async function Page() {
+async function DashboardContent() {
   const [readiness,leads] = await Promise.all([getCustomerReadiness(),loadWhatsappInboxInitialPage()]);
   return (
-    <Suspense fallback={<main className="min-h-svh app-shell" aria-busy="true" />}>
       <DashboardPage
         initialLeads={leads} initialDiagnostic={readiness.diagnostic}
         initialReadiness={readiness.ok ? readiness.data : null}
         readinessLoadFailed={!readiness.ok}
       />
-    </Suspense>
   );
+}
+
+export default function Page() {
+  return <Suspense fallback={<main className="min-h-svh app-shell" aria-busy="true" />}><DashboardContent/></Suspense>;
 }

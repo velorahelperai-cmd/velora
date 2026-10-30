@@ -20,7 +20,7 @@ vi.mock("@/lib/logging/logger.mjs", () => ({
   withLogContext: (_fields: unknown, operation: () => unknown) => operation(),
 }));
 
-import { readOwnedPaidBranchSetupAction, readOwnedPaidBranchSetupEntryAction, selectOwnedPaidBranchChannelsAction } from "./paid-setup-actions";
+import { readOwnedPaidBranchSetupShellAction, readOwnedPaidBranchSetupAction, readOwnedPaidBranchSetupEntryAction, selectOwnedPaidBranchChannelsAction } from "./paid-setup-actions";
 
 function readyConnection(channel: "whatsapp" | "instagram") {
   return {
@@ -295,4 +295,27 @@ describe("selectOwnedPaidBranchChannelsAction", () => {
     expect(result).toMatchObject({ ok: false, code: "invalid_input" });
     expect(state.rpc).not.toHaveBeenCalled();
   });
+});
+
+// A slow or failing Meta read cannot gate independently authorized branch navigation.
+it("returns paid shell without any connection RPC or fabricated verified state", async () => {
+ state.rpc.mockResolvedValue({data:{ok:true,code:"BOUND",data:facts,binding:{channels:["whatsapp","instagram"]}},error:null});
+ const read=await readOwnedPaidBranchSetupShellAction(input);
+ expect(state.rpc).toHaveBeenCalledTimes(1);
+ expect(read.sourceStatus).toBe("ready");expect(read.progress.verified).toBe(0);
+ expect(read.launch.canRequest).toBe(false);expect(read.launch.confirmed).toBe(false);
+ expect(read.steps.find(step=>step.id==="hours")?.status).toBe("pending");
+});
+it("shell rejects account and branch mismatches before exposing navigation",async()=>{
+ state.identity={ok:true,userId:"other"};expect((await readOwnedPaidBranchSetupShellAction(input)).sourceStatus).toBe("unavailable");expect(state.rpc).not.toHaveBeenCalled();
+ state.identity={ok:true,userId:input.expectedAccountId};state.rpc.mockResolvedValue({data:{ok:true,code:"BOUND",data:{...facts,branchId:"foreign"},binding:{channels:["whatsapp"]}},error:null});
+ expect((await readOwnedPaidBranchSetupShellAction(input)).sourceStatus).toBe("unavailable");
+});
+it("starts independent channel RPCs together and still rejects an unavailable proof",async()=>{
+ const finishes:Array<(value:unknown)=>void>=[];
+ state.rpc.mockImplementation((name:string)=>name==="es02_read_owned_branch_setup_binding"?Promise.resolve({data:{ok:true,code:"BOUND",data:facts,binding:{channels:["whatsapp","instagram"]}},error:null}):new Promise(resolve=>finishes.push(resolve)));
+ const reading=readOwnedPaidBranchSetupAction(input);
+ await vi.waitFor(()=>expect(finishes).toHaveLength(2));
+ finishes[0]({error:{message:"offline"}});finishes[1]({data:readyConnection("instagram"),error:null});
+ expect((await reading).sourceStatus).toBe("unavailable");
 });

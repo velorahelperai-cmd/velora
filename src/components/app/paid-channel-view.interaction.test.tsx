@@ -14,6 +14,19 @@ afterEach(async()=>{await act(async()=>root.unmount());host.remove();vi.unstubAl
 async function render(extra:Partial<PaidChannelViewProps>={}){await act(async()=>root.render(createElement(PaidChannelView,{...props,...extra})));}
 async function click(selector:string){await act(async()=>host.querySelector<HTMLElement>(selector)!.click());}
 const connection:PaidBranchConnectionRead={schemaVersion:1,sourceStatus:'ready',expectedAccountId:'actor',companyId:'company',branchId:'branch',channel:'whatsapp',asOf:'now',revision:'1',connection:{state:'not_connected',flow:null,attempt:null,link:null,verified:false,reasonCodes:[]},capabilities:{canStart:true,canRecover:false,canCancel:false,allowedFlows:['wa_new_number','wa_coexistence']}};
+it('shows Meta test success separately from incomplete commercial linking without blocking routes or refetching',async()=>{
+ const readMetaTestReceiveProof=vi.fn(async()=>({ok:true as const,proof:{status:'receive_only_success' as const,receivedAt:'2026-10-29T18:41:31.000Z',completedAt:'2026-10-29T19:31:04.986Z',savedMessageCount:3,phoneNumberId:'1261345677073276'}}));
+ await render({connectionRead:connection,actions:{startConnection:start,readMetaTestReceiveProof}});
+ expect(host.querySelector('input[value="new-number"]')).not.toBeNull();
+ expect(readMetaTestReceiveProof).toHaveBeenCalledTimes(1);
+ expect(host.querySelector('[data-meta-test-receive="success"]')?.textContent).toContain('Meta test successful');
+ expect(host.textContent).toContain('does not mean replies were sent or commercial activation is complete');
+ expect(host.querySelector('[data-commercial-link="incomplete"]')).not.toBeNull();
+ expect(host.textContent).toContain('Not connected');
+ expect(host.textContent).not.toMatch(/commercial verified|Launch ready/i);
+ await act(async()=>root.render(createElement(PaidChannelView,{...props,connectionRead:connection,actions:{startConnection:start,readMetaTestReceiveProof}})));
+ expect(readMetaTestReceiveProof).toHaveBeenCalledTimes(1);
+});
 it('rejects real Facebook login on HTTP before starting a server attempt',async()=>{
  const actions=ports();const {launchWhatsappSdk: _launcher,...realLauncherActions}=actions;
  await render({connectionRead:connection,actions:realLauncherActions});

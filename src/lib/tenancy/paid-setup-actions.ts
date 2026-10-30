@@ -35,6 +35,15 @@ export type ReadOwnedPaidBranchSetupInput = {
  * No persisted channel binding exists in B1, so a successful authority read is selection_required.
  */
 export async function readOwnedPaidBranchSetupAction(input: ReadOwnedPaidBranchSetupInput): Promise<PaidBranchSetupRead> {
+  return readPaidBranchSetup(input, true);
+}
+
+/** Paid branch authority and navigation only. Never supplies channel/launch proof. */
+export async function readOwnedPaidBranchSetupShellAction(input: ReadOwnedPaidBranchSetupInput): Promise<PaidBranchSetupRead> {
+  return readPaidBranchSetup(input, false);
+}
+
+async function readPaidBranchSetup(input: ReadOwnedPaidBranchSetupInput, includeConnections: boolean): Promise<PaidBranchSetupRead> {
   const requestId = randomUUID();
   const asOf = new Date().toISOString();
   const companyId = uuid(input?.companyId);
@@ -94,14 +103,17 @@ export async function readOwnedPaidBranchSetupAction(input: ReadOwnedPaidBranchS
         return paidSetupUnavailable({ companyId, branchId, asOf, blockedReasons: ["tampered_row"] });
       }
       const projected = projectTrustedBoundSelection(facts, binding);
+      if (!includeConnections) return projected;
       const proofs = [];
-      for (const channel of projected.selectedChannels ?? []) {
-        const connection = await client.rpc("es02_b3_read_owned_branch_connection" as never, {
+      const channels = projected.selectedChannels ?? [];
+      const connections = await Promise.all(channels.map(channel => client.rpc("es02_b3_read_owned_branch_connection" as never, {
           p_expected_account_id: expectedAccountId,
           p_company_id: companyId,
           p_branch_id: branchId,
           p_channel: channel,
-        } as never);
+        } as never)));
+      for (const [index, channel] of channels.entries()) {
+        const connection = connections[index];
         if (connection.error) {
           logFailure("SOURCE_FAILED", requestId);
           return paidSetupUnavailable({ companyId, branchId, asOf, blockedReasons: ["source_failed"] });

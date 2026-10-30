@@ -1,0 +1,1700 @@
+{
+  "base": "692cc72556ebf0a3deb14749880f6c98d3440c8e",
+  "routes": [
+    {
+      "route": "/(auth-entry)",
+      "file": "layout.tsx",
+      "mode": "server",
+      "localAwaitCount": 0,
+      "imports": [
+        "@/components/app/auth-pages"
+      ]
+    },
+    {
+      "route": "/(auth-entry)/login",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 0,
+      "imports": []
+    },
+    {
+      "route": "/(auth-entry)/signup",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 0,
+      "imports": []
+    },
+    {
+      "route": "/accept-invite",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 0,
+      "imports": [
+        "@/components/app/auth-pages"
+      ]
+    },
+    {
+      "route": "/access",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 2,
+      "imports": [
+        "@/components/app/access-gate",
+        "@/lib/tenancy/access"
+      ]
+    },
+    {
+      "route": "/account/businesses/manage",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 2,
+      "imports": [
+        "@/lib/i18n",
+        "@/lib/tenancy/access",
+        "@/lib/master-journey/rollout",
+        "@/components/app/access-gate"
+      ]
+    },
+    {
+      "route": "/account/businesses/new",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 4,
+      "imports": [
+        "@/lib/tenancy/account-prep-eligibility",
+        "@/lib/tenancy/access",
+        "@/components/app/prepayment-preparation",
+        "@/components/app/access-gate",
+        "@/lib/billing/es02/local-live-policy",
+        "@/lib/billing/es02/local-live-operation",
+        "@/lib/billing/es02/contracts",
+        "@/components/app/local-live-checkout-recovery",
+        "@/lib/supabase/server",
+        "@/lib/billing/es02/account-order"
+      ]
+    },
+    {
+      "route": "/account",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 1,
+      "imports": [
+        "@/components/app/access-gate",
+        "@/components/app/account-page",
+        "@/lib/tenancy/actions",
+        "@/lib/auth/auth-journey",
+        "@/lib/master-journey/rollout"
+      ]
+    },
+    {
+      "route": "/account/payment/[orderId]",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 5,
+      "imports": [
+        "@/lib/supabase/server",
+        "@/lib/auth/session-guard",
+        "@/lib/billing/es02/contracts",
+        "@/lib/billing/es02/account-order",
+        "@/components/app/ui",
+        "@/components/app/access-gate",
+        "@/lib/billing/es02/local-live-policy"
+      ]
+    },
+    {
+      "route": "/account/payment/[orderId]/popup",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 1,
+      "imports": [
+        "@/lib/billing/es02/contracts"
+      ]
+    },
+    {
+      "route": "/account/recovery",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 1,
+      "imports": [
+        "@/components/app/identity-recovery-page",
+        "@/lib/tenancy/identity-recovery-actions"
+      ]
+    },
+    {
+      "route": "/account/teams",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 0,
+      "imports": [
+        "@/components/teams/teams-route"
+      ]
+    },
+    {
+      "route": "/admin/access",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 1,
+      "imports": [
+        "@/lib/tenancy/access-actions",
+        "@/components/admin/admin-platform-access",
+        "@/components/app/access-gate"
+      ]
+    },
+    {
+      "route": "/admin/accounts",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 3,
+      "imports": [
+        "@/components/app/access-gate",
+        "@/lib/tenancy/access",
+        "@/lib/tenancy/actions",
+        "@/components/admin/admin-accounts-directory"
+      ]
+    },
+    {
+      "route": "/admin/ai/cycle-costs",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 1,
+      "imports": [
+        "@/lib/i18n"
+      ]
+    },
+    {
+      "route": "/admin/ai",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 1,
+      "imports": [
+        "@/components/admin/admin-ai-operations",
+        "@/components/app/access-gate",
+        "@/lib/answers/runtime/admin-actions",
+        "@/lib/answers/runtime/synthetic-gemini-actions"
+      ]
+    },
+    {
+      "route": "/admin/analytics",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 1,
+      "imports": [
+        "@/lib/tenancy/analytics-actions",
+        "@/components/admin/admin-financial-analytics",
+        "@/components/app/access-gate"
+      ]
+    },
+    {
+      "route": "/admin/audit",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 2,
+      "imports": [
+        "@/lib/tenancy/audit-actions",
+        "@/components/admin/admin-audit-compliance",
+        "@/components/app/access-gate"
+      ]
+    },
+    {
+      "route": "/admin/billing/orders/[id]",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 3,
+      "imports": [
+        "@/lib/billing/admin/actions",
+        "@/components/admin/billing-order",
+        "@/lib/auth/safe-next"
+      ]
+    },
+    {
+      "route": "/admin/billing",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 2,
+      "imports": [
+        "@/lib/billing/admin/actions",
+        "@/components/admin/billing-ledger"
+      ]
+    },
+    {
+      "route": "/admin/catalog",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 1,
+      "imports": [
+        "@/components/app/admin-catalog",
+        "@/lib/billing/catalog-backend/actions"
+      ]
+    },
+    {
+      "route": "/admin/channels",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 2,
+      "imports": [
+        "@/components/app/access-gate",
+        "@/lib/tenancy/access",
+        "@/lib/tenancy/channels-actions",
+        "@/components/admin/admin-channels-hub"
+      ]
+    },
+    {
+      "route": "/admin/companies/[id]/conversations",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 8,
+      "imports": [
+        "@/components/app/access-gate",
+        "@/components/app/admin-conversations",
+        "@/lib/supabase/server",
+        "@/lib/tenancy/actions",
+        "@/lib/tenancy/access"
+      ]
+    },
+    {
+      "route": "/admin/companies/[id]",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 9,
+      "imports": [
+        "@/components/app/admin-company-navigation",
+        "@/components/app/access-gate",
+        "@/components/app/admin-company-detail",
+        "@/lib/knowledge/actions",
+        "@/lib/whatsapp/connection-actions",
+        "@/lib/whatsapp/connection",
+        "@/lib/supabase/server",
+        "@/lib/tenancy/access",
+        "@/lib/tenancy/types"
+      ]
+    },
+    {
+      "route": "/admin/companies",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 1,
+      "imports": []
+    },
+    {
+      "route": "/admin/health",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 1,
+      "imports": [
+        "@/lib/tenancy/health-actions",
+        "@/components/admin/admin-platform-health",
+        "@/components/app/access-gate"
+      ]
+    },
+    {
+      "route": "/admin/identity-recovery",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 1,
+      "imports": [
+        "@/components/admin/identity-recovery-panel",
+        "@/lib/tenancy/identity-recovery-actions"
+      ]
+    },
+    {
+      "route": "/admin",
+      "file": "layout.tsx",
+      "mode": "server",
+      "localAwaitCount": 2,
+      "imports": [
+        "@/components/app/access-gate",
+        "@/lib/tenancy/access",
+        "@/lib/auth/safe-next",
+        "@/components/admin/admin-shell",
+        "@/components/admin/admin-theme.module.css"
+      ]
+    },
+    {
+      "route": "/admin",
+      "file": "loading.tsx",
+      "mode": "client",
+      "localAwaitCount": 0,
+      "imports": [
+        "@/lib/demo-state"
+      ]
+    },
+    {
+      "route": "/admin/operations",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 2,
+      "imports": [
+        "@/lib/tenancy/operations-actions",
+        "@/components/admin/admin-operations-center",
+        "@/components/app/access-gate"
+      ]
+    },
+    {
+      "route": "/admin",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 2,
+      "imports": [
+        "@/components/app/admin-company-navigation",
+        "@/components/app/admin-list",
+        "@/lib/tenancy/actions",
+        "@/lib/answers/runtime/admin-truth"
+      ]
+    },
+    {
+      "route": "/admin/qa",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 3,
+      "imports": [
+        "@/lib/tenancy/access",
+        "@/components/admin/qa-business-reset",
+        "@/lib/supabase/server"
+      ]
+    },
+    {
+      "route": "/admin/settings",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 1,
+      "imports": [
+        "@/lib/tenancy/settings-actions",
+        "@/components/admin/admin-platform-settings",
+        "@/components/app/access-gate"
+      ]
+    },
+    {
+      "route": "/admin/support",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 2,
+      "imports": [
+        "@/lib/tenancy/support-actions",
+        "@/components/admin/admin-support-reviews",
+        "@/components/app/access-gate"
+      ]
+    },
+    {
+      "route": "/admin/teams",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 0,
+      "imports": [
+        "@/components/teams/teams-route"
+      ]
+    },
+    {
+      "route": "/api/admin/knowledge-file",
+      "file": "route.ts",
+      "mode": "server",
+      "localAwaitCount": 10,
+      "imports": [
+        "@/lib/supabase/server",
+        "@/lib/tenancy/access",
+        "@/lib/knowledge/constants",
+        "@/lib/tenancy/setup-file",
+        "@/lib/tenancy/setup-file-server",
+        "@/lib/logging/logger.mjs"
+      ]
+    },
+    {
+      "route": "/api/auth/sms-hook",
+      "file": "route.ts",
+      "mode": "server",
+      "localAwaitCount": 1,
+      "imports": [
+        "@/lib/supabase/admin",
+        "@/lib/tenancy/personal-phone-hook",
+        "@/lib/tenancy/personal-phone-hook-config",
+        "@/lib/tenancy/personal-phone"
+      ]
+    },
+    {
+      "route": "/api/billing/local-live-readiness",
+      "file": "route.ts",
+      "mode": "server",
+      "localAwaitCount": 2,
+      "imports": [
+        "@/lib/billing/es02/local-live-policy"
+      ]
+    },
+    {
+      "route": "/api/branch/inbox-events",
+      "file": "route.ts",
+      "mode": "server",
+      "localAwaitCount": 6,
+      "imports": [
+        "@/lib/supabase/server",
+        "@/lib/tenancy/branch-inbox-events"
+      ]
+    },
+    {
+      "route": "/api/company/service-access",
+      "file": "route.ts",
+      "mode": "server",
+      "localAwaitCount": 1,
+      "imports": [
+        "@/lib/services/access",
+        "@/lib/services/decision"
+      ]
+    },
+    {
+      "route": "/api/instagram/oauth/callback",
+      "file": "route.ts",
+      "mode": "server",
+      "localAwaitCount": 1,
+      "imports": [
+        "@/lib/instagram/owner-actions",
+        "@/lib/instagram/oauth-meta",
+        "@/lib/instagram/oauth-route",
+        "@/lib/tenancy/paid-branch-connection-actions"
+      ]
+    },
+    {
+      "route": "/api/instagram/webhook",
+      "file": "route.ts",
+      "mode": "server",
+      "localAwaitCount": 5,
+      "imports": [
+        "@/lib/supabase/admin",
+        "@/lib/logging/ingress-observation-server",
+        "@/lib/instagram/connection-store",
+        "@/lib/instagram/inbound-producer",
+        "@/lib/instagram/webhook-route",
+        "@/lib/instagram/config",
+        "@/lib/instagram/webhook-challenge",
+        "@/lib/instagram/review-bootstrap",
+        "@/lib/instagram/webhook-parse"
+      ]
+    },
+    {
+      "route": "/api/internal/billing/email",
+      "file": "route.ts",
+      "mode": "server",
+      "localAwaitCount": 2,
+      "imports": [
+        "@/lib/billing/email/internal",
+        "@/lib/billing/email/expiry-internal"
+      ]
+    },
+    {
+      "route": "/api/internal/billing/lifecycle",
+      "file": "route.ts",
+      "mode": "server",
+      "localAwaitCount": 1,
+      "imports": [
+        "@/lib/billing/lifecycle-runtime"
+      ]
+    },
+    {
+      "route": "/api/internal/knowledge/setup-file-worker",
+      "file": "route.ts",
+      "mode": "server",
+      "localAwaitCount": 1,
+      "imports": [
+        "@/lib/tenancy/setup-file-server"
+      ]
+    },
+    {
+      "route": "/api/internal/whatsapp/worker",
+      "file": "route.ts",
+      "mode": "server",
+      "localAwaitCount": 4,
+      "imports": [
+        "@/lib/supabase/admin",
+        "@/lib/whatsapp/integration-store",
+        "@/lib/whatsapp/fixed-ack",
+        "@/lib/whatsapp/worker-observation",
+        "@/lib/whatsapp/integration-worker",
+        "@/lib/whatsapp/inbound-worker"
+      ]
+    },
+    {
+      "route": "/api/knowledge/setup-file",
+      "file": "route.ts",
+      "mode": "server",
+      "localAwaitCount": 3,
+      "imports": [
+        "@/lib/supabase/server",
+        "@/lib/tenancy/access",
+        "@/lib/tenancy/setup-file-server",
+        "@/lib/tenancy/setup-file"
+      ]
+    },
+    {
+      "route": "/api/setup/read",
+      "file": "route.ts",
+      "mode": "server",
+      "localAwaitCount": 2,
+      "imports": [
+        "@/lib/auth/server-identity",
+        "@/lib/tenancy/paid-setup-workspace-actions",
+        "@/lib/tenancy/branch-hours-actions",
+        "@/lib/tenancy/paid-branch-knowledge-actions",
+        "@/lib/tenancy/paid-reply-language-actions",
+        "@/lib/tenancy/paid-assistant-trial-actions",
+        "@/lib/tenancy/paid-launch-actions"
+      ]
+    },
+    {
+      "route": "/api/whatsapp/webhook",
+      "file": "route.ts",
+      "mode": "server",
+      "localAwaitCount": 10,
+      "imports": [
+        "@/lib/supabase/admin",
+        "@/lib/logging/ingress-observation-server",
+        "@/lib/whatsapp/config",
+        "@/lib/whatsapp/store",
+        "@/lib/whatsapp/tenant-resolve",
+        "@/lib/whatsapp/coexistence/webhook-events",
+        "@/lib/whatsapp/coexistence/webhook-store",
+        "@/lib/whatsapp/coexistence/projection-store",
+        "@/lib/whatsapp/webhook"
+      ]
+    },
+    {
+      "route": "/app/conversations",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 1,
+      "imports": [
+        "@/components/app/unified-inbox",
+        "@/lib/customer/service-inbox-actions",
+        "@/lib/instagram/config",
+        "@/lib/whatsapp/config"
+      ]
+    },
+    {
+      "route": "/app/instagram",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 1,
+      "imports": [
+        "@/lib/tenancy/access",
+        "@/components/app/instagram-connection-page",
+        "@/lib/diagnostics/contract"
+      ]
+    },
+    {
+      "route": "/app/knowledge",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 5,
+      "imports": [
+        "@/lib/access/actions",
+        "@/components/app/access-gate",
+        "@/components/app/workspace-pages",
+        "@/lib/knowledge/actions",
+        "@/lib/tenancy/access"
+      ]
+    },
+    {
+      "route": "/app",
+      "file": "layout.tsx",
+      "mode": "server",
+      "localAwaitCount": 2,
+      "imports": [
+        "@/components/app/access-gate",
+        "@/lib/auth/safe-next",
+        "@/lib/tenancy/access"
+      ]
+    },
+    {
+      "route": "/app/organization",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 2,
+      "imports": [
+        "@/lib/tenancy/access",
+        "@/lib/enterprise/actions",
+        "@/components/app/enterprise-organization",
+        "@/lib/enterprise/config"
+      ]
+    },
+    {
+      "route": "/app",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 1,
+      "imports": [
+        "@/lib/whatsapp/inbox",
+        "@/components/app/dashboard",
+        "@/lib/tenancy/actions"
+      ]
+    },
+    {
+      "route": "/app/settings",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 0,
+      "imports": [
+        "@/components/app/settings-route"
+      ]
+    },
+    {
+      "route": "/app/subscription/orders/[orderId]",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 4,
+      "imports": [
+        "@/lib/tenancy/access",
+        "@/lib/billing/wiring/return-load",
+        "@/lib/billing/wiring/return-status",
+        "@/components/app/access-gate",
+        "@/components/app/subscription-payment-status",
+        "@/lib/billing/catalog-backend/rpc",
+        "@/components/app/subscription-offers-view",
+        "@/components/app/subscription-navigation"
+      ]
+    },
+    {
+      "route": "/app/subscription",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 0,
+      "imports": [
+        "@/components/app/settings-route"
+      ]
+    },
+    {
+      "route": "/app/test",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 1,
+      "imports": [
+        "@/lib/tenancy/access",
+        "@/components/app/access-gate",
+        "@/components/app/workspace-pages"
+      ]
+    },
+    {
+      "route": "/auth/broker/continuity",
+      "file": "route.ts",
+      "mode": "server",
+      "localAwaitCount": 5,
+      "imports": [
+        "@/lib/diagnostics/server-flow",
+        "@/lib/diagnostics/correlation.mjs",
+        "@/lib/auth/site-url",
+        "@/lib/auth/broker/continuity"
+      ]
+    },
+    {
+      "route": "/auth/callback",
+      "file": "route.ts",
+      "mode": "server",
+      "localAwaitCount": 3,
+      "imports": [
+        "@/lib/auth/safe-next",
+        "@/lib/supabase/env",
+        "@/lib/tenancy/access",
+        "@/lib/auth/broker"
+      ]
+    },
+    {
+      "route": "/branch",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 5,
+      "imports": [
+        "@/lib/tenancy/access",
+        "@/lib/auth/server-identity",
+        "@/lib/tenancy/branch-inbox",
+        "@/lib/i18n",
+        "@/components/app/branch-inbox-realtime"
+      ]
+    },
+    {
+      "route": "/complete-profile",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 2,
+      "imports": [
+        "@/lib/auth/safe-next",
+        "@/lib/auth/auth-journey",
+        "@/components/app/access-gate",
+        "@/components/app/auth-pages",
+        "@/lib/tenancy/access"
+      ]
+    },
+    {
+      "route": "/data-deletion",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 0,
+      "imports": [
+        "@/components/app/workspace-pages"
+      ]
+    },
+    {
+      "route": "/forgot-password",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 0,
+      "imports": [
+        "@/components/app/auth-pages"
+      ]
+    },
+    {
+      "route": "/",
+      "file": "layout.tsx",
+      "mode": "server",
+      "localAwaitCount": 1,
+      "imports": [
+        "@/lib/auth/session-activity-tracker",
+        "@/lib/i18n",
+        "@/components/app/account-chrome",
+        "@/components/cache-bootstrap",
+        "@/lib/demo-state"
+      ]
+    },
+    {
+      "route": "/",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 3,
+      "imports": [
+        "@/components/app/subscription-navigation",
+        "@/lib/billing/catalog-backend/rpc",
+        "@/components/app/subscription-offers-view",
+        "@/components/landing/landing-page",
+        "@/lib/i18n",
+        "@/lib/tenancy/access"
+      ]
+    },
+    {
+      "route": "/preview/dashboards/admin",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 0,
+      "imports": []
+    },
+    {
+      "route": "/preview/dashboards/client",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 0,
+      "imports": []
+    },
+    {
+      "route": "/preview/dashboards",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 0,
+      "imports": []
+    },
+    {
+      "route": "/preview/subscription",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 0,
+      "imports": [
+        "@/preview/subscription/subscription-preview"
+      ]
+    },
+    {
+      "route": "/privacy",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 0,
+      "imports": [
+        "@/components/app/workspace-pages"
+      ]
+    },
+    {
+      "route": "/reset-password",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 0,
+      "imports": [
+        "@/components/app/auth-pages"
+      ]
+    },
+    {
+      "route": "/setup/branches/[branchId]/whatsapp",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 5,
+      "imports": [
+        "@/lib/tenancy/access",
+        "@/lib/auth/auth-journey",
+        "@/lib/auth/setup-return",
+        "@/lib/tenancy/paid-setup-actions",
+        "@/lib/tenancy/paid-branch-connection-actions",
+        "@/components/app/access-gate",
+        "@/components/app/paid-whatsapp-route"
+      ]
+    },
+    {
+      "route": "/setup/branches",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 0,
+      "imports": []
+    },
+    {
+      "route": "/setup",
+      "file": "layout.tsx",
+      "mode": "server",
+      "localAwaitCount": 2,
+      "imports": [
+        "@/lib/auth/auth-journey",
+        "@/lib/auth/setup-return",
+        "@/components/app/access-gate",
+        "@/lib/tenancy/access"
+      ]
+    },
+    {
+      "route": "/setup",
+      "file": "loading.tsx",
+      "mode": "server",
+      "localAwaitCount": 0,
+      "imports": [
+        "@/components/app/setup-loading"
+      ]
+    },
+    {
+      "route": "/setup",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 2,
+      "imports": [
+        "@/lib/tenancy/account-prep-eligibility",
+        "@/lib/auth/auth-journey",
+        "@/lib/auth/setup-return",
+        "@/components/app/access-gate",
+        "@/components/app/setup-wizard",
+        "@/components/app/prepayment-preparation",
+        "@/components/app/setup-loading",
+        "@/lib/tenancy/access",
+        "@/lib/master-journey/rollout"
+      ]
+    },
+    {
+      "route": "/setup/qa",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 0,
+      "imports": []
+    },
+    {
+      "route": "/terms",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 1,
+      "imports": [
+        "@/components/app/workspace-pages",
+        "@/lib/service-terms-draft"
+      ]
+    },
+    {
+      "route": "/verify-email",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 0,
+      "imports": [
+        "@/components/app/auth-pages"
+      ]
+    },
+    {
+      "route": "/verify-phone",
+      "file": "page.tsx",
+      "mode": "server",
+      "localAwaitCount": 1,
+      "imports": [
+        "@/components/app/personal-phone-page",
+        "@/lib/tenancy/personal-phone-actions",
+        "@/lib/auth/safe-next"
+      ]
+    }
+  ],
+  "clientModules": [
+    "src/app/account/payment/[orderId]/continue-setup.tsx",
+    "src/app/account/payment/[orderId]/popup/popup-return.tsx",
+    "src/app/account/payment/[orderId]/thawani-verify.tsx",
+    "src/app/admin/loading.tsx",
+    "src/app/not-found.tsx",
+    "src/components/admin/account-deletion-panel.tsx",
+    "src/components/admin/admin-accounts-directory.tsx",
+    "src/components/admin/admin-ai-operations.tsx",
+    "src/components/admin/admin-audit-compliance.tsx",
+    "src/components/admin/admin-channels-hub.tsx",
+    "src/components/admin/admin-financial-analytics.tsx",
+    "src/components/admin/admin-operations-center.tsx",
+    "src/components/admin/admin-platform-access.tsx",
+    "src/components/admin/admin-platform-health.tsx",
+    "src/components/admin/admin-platform-settings.tsx",
+    "src/components/admin/admin-real-ai-summary.tsx",
+    "src/components/admin/admin-shell.tsx",
+    "src/components/admin/admin-support-reviews.tsx",
+    "src/components/admin/billing-ledger.tsx",
+    "src/components/admin/billing-order.tsx",
+    "src/components/admin/identity-recovery-panel.tsx",
+    "src/components/admin/qa-business-reset.tsx",
+    "src/components/app/accessible-dialog.tsx",
+    "src/components/app/account-chrome.tsx",
+    "src/components/app/account-page.tsx",
+    "src/components/app/admin-access.tsx",
+    "src/components/app/admin-ai-console.tsx",
+    "src/components/app/admin-catalog.tsx",
+    "src/components/app/admin-company-detail.tsx",
+    "src/components/app/admin-conversations.tsx",
+    "src/components/app/admin-list.tsx",
+    "src/components/app/approved-account-loader.tsx",
+    "src/components/app/assistant-tester.tsx",
+    "src/components/app/auth-motion-canvas.tsx",
+    "src/components/app/auth-otp-modal.tsx",
+    "src/components/app/auth-pages.tsx",
+    "src/components/app/branch-inbox-realtime.tsx",
+    "src/components/app/business-email-field.tsx",
+    "src/components/app/business-name-suggestions.tsx",
+    "src/components/app/business-phone-field.tsx",
+    "src/components/app/business-type-combobox.tsx",
+    "src/components/app/channel-ai-draft.tsx",
+    "src/components/app/channel-review.tsx",
+    "src/components/app/city-combobox.tsx",
+    "src/components/app/company-team-panel.tsx",
+    "src/components/app/conversation-details-panel.tsx",
+    "src/components/app/conversations.tsx",
+    "src/components/app/country-combobox.tsx",
+    "src/components/app/dashboard.tsx",
+    "src/components/app/enterprise-organization.tsx",
+    "src/components/app/enterprise-presence.tsx",
+    "src/components/app/identity-recovery-page.tsx",
+    "src/components/app/instagram-admin-connection.tsx",
+    "src/components/app/instagram-connection-page.tsx",
+    "src/components/app/instagram-inbox.tsx",
+    "src/components/app/instagram-owner-connection.tsx",
+    "src/components/app/knowledge-editor.tsx",
+    "src/components/app/local-live-checkout-recovery.tsx",
+    "src/components/app/operation-recovery.tsx",
+    "src/components/app/paid-assistant-checklist.tsx",
+    "src/components/app/paid-assistant-trial.tsx",
+    "src/components/app/paid-branch-hours.tsx",
+    "src/components/app/paid-branch-knowledge.tsx",
+    "src/components/app/paid-channel-selection.tsx",
+    "src/components/app/paid-channel-view.tsx",
+    "src/components/app/paid-launch-summary.tsx",
+    "src/components/app/paid-setup-step-host.tsx",
+    "src/components/app/paid-setup-unsaved.ts",
+    "src/components/app/paid-setup-workspace.tsx",
+    "src/components/app/paid-team-invitations.tsx",
+    "src/components/app/paid-whatsapp-route.tsx",
+    "src/components/app/personal-phone-change-panel.tsx",
+    "src/components/app/personal-phone-page.tsx",
+    "src/components/app/prepayment-preparation.tsx",
+    "src/components/app/service-terms-draft.tsx",
+    "src/components/app/settings.tsx",
+    "src/components/app/setup-branch-picker.tsx",
+    "src/components/app/setup-data-screens.tsx",
+    "src/components/app/setup-draft-lifecycle-controls.tsx",
+    "src/components/app/setup-file-preparation.tsx",
+    "src/components/app/setup-loading.tsx",
+    "src/components/app/setup-navigation.tsx",
+    "src/components/app/setup-order-review.tsx",
+    "src/components/app/setup-payment-dialog.tsx",
+    "src/components/app/setup-studio-lang-switch.tsx",
+    "src/components/app/setup-studio-noura.tsx",
+    "src/components/app/setup-team-plans.tsx",
+    "src/components/app/setup-wizard.tsx",
+    "src/components/app/subscription-account-summary.tsx",
+    "src/components/app/subscription-brand-guide.tsx",
+    "src/components/app/subscription-character.tsx",
+    "src/components/app/subscription-offer-cards.tsx",
+    "src/components/app/subscription-panel.tsx",
+    "src/components/app/subscription-payment-status.tsx",
+    "src/components/app/synthetic-gemini-console.tsx",
+    "src/components/app/unified-inbox.tsx",
+    "src/components/app/use-account-prep-draft.ts",
+    "src/components/app/use-verification-cooldown.ts",
+    "src/components/app/whatsapp-coexistence-signup.tsx",
+    "src/components/app/whatsapp-connection-guide.tsx",
+    "src/components/app/whatsapp-embedded-signup.tsx",
+    "src/components/app/whatsapp-fixed-ack-opt-in.tsx",
+    "src/components/app/whatsapp-request-readback.ts",
+    "src/components/app/whatsapp-settings-panel.tsx",
+    "src/components/app/workspace-pages.tsx",
+    "src/components/app/workspace-shell.tsx",
+    "src/components/cache-bootstrap.tsx",
+    "src/components/landing/about-contact.tsx",
+    "src/components/landing/cinematic-onboarding.tsx",
+    "src/components/landing/landing-chatbot.tsx",
+    "src/components/landing/landing-page.tsx",
+    "src/components/landing/packages.tsx",
+    "src/components/landing/story-scenes.tsx",
+    "src/components/teams/team-owner-editor.tsx",
+    "src/components/teams/team-self-panel.tsx",
+    "src/components/teams/teams-page.tsx",
+    "src/lib/auth/browser-continuity.ts",
+    "src/lib/auth/browser.ts",
+    "src/lib/auth/operation-recovery.ts",
+    "src/lib/auth/session-activity-tracker.tsx",
+    "src/lib/demo-state.tsx",
+    "src/lib/supabase/client.ts",
+    "src/preview/dashboards/components/admin-dashboard-preview.tsx",
+    "src/preview/dashboards/components/client-dashboard-preview.tsx",
+    "src/preview/dashboards/components/preview-shell.tsx",
+    "src/preview/subscription/subscription-preview.tsx"
+  ],
+  "otherTsxModules": [
+    "src/app/(auth-entry)/layout.tsx",
+    "src/app/(auth-entry)/login/page.tsx",
+    "src/app/(auth-entry)/signup/page.tsx",
+    "src/app/accept-invite/page.tsx",
+    "src/app/access/page.tsx",
+    "src/app/account/businesses/manage/page.tsx",
+    "src/app/account/businesses/new/page.tsx",
+    "src/app/account/page.tsx",
+    "src/app/account/payment/[orderId]/page.tsx",
+    "src/app/account/payment/[orderId]/popup/page.tsx",
+    "src/app/account/recovery/page.tsx",
+    "src/app/account/teams/page.tsx",
+    "src/app/admin/access/page.tsx",
+    "src/app/admin/accounts/page.tsx",
+    "src/app/admin/ai/cycle-costs/page.tsx",
+    "src/app/admin/ai/page.tsx",
+    "src/app/admin/analytics/page.tsx",
+    "src/app/admin/audit/page.tsx",
+    "src/app/admin/billing/orders/[id]/page.tsx",
+    "src/app/admin/billing/page.tsx",
+    "src/app/admin/catalog/page.tsx",
+    "src/app/admin/channels/page.tsx",
+    "src/app/admin/companies/[id]/conversations/page.tsx",
+    "src/app/admin/companies/[id]/page.tsx",
+    "src/app/admin/companies/page.tsx",
+    "src/app/admin/health/page.tsx",
+    "src/app/admin/identity-recovery/page.tsx",
+    "src/app/admin/layout.tsx",
+    "src/app/admin/operations/page.tsx",
+    "src/app/admin/page.tsx",
+    "src/app/admin/qa/page.tsx",
+    "src/app/admin/settings/page.tsx",
+    "src/app/admin/support/page.tsx",
+    "src/app/admin/teams/page.tsx",
+    "src/app/app/conversations/page.tsx",
+    "src/app/app/instagram/page.tsx",
+    "src/app/app/knowledge/page.tsx",
+    "src/app/app/layout.tsx",
+    "src/app/app/organization/page.tsx",
+    "src/app/app/page.tsx",
+    "src/app/app/settings/page.tsx",
+    "src/app/app/subscription/orders/[orderId]/page.tsx",
+    "src/app/app/subscription/page.tsx",
+    "src/app/app/test/page.tsx",
+    "src/app/branch/page.tsx",
+    "src/app/complete-profile/page.tsx",
+    "src/app/data-deletion/page.tsx",
+    "src/app/forgot-password/page.tsx",
+    "src/app/layout.tsx",
+    "src/app/page.tsx",
+    "src/app/preview/dashboards/admin/page.tsx",
+    "src/app/preview/dashboards/client/page.tsx",
+    "src/app/preview/dashboards/page.tsx",
+    "src/app/preview/subscription/page.tsx",
+    "src/app/privacy/page.tsx",
+    "src/app/reset-password/page.tsx",
+    "src/app/setup/branches/[branchId]/whatsapp/page.tsx",
+    "src/app/setup/branches/page.tsx",
+    "src/app/setup/layout.tsx",
+    "src/app/setup/loading.tsx",
+    "src/app/setup/page.tsx",
+    "src/app/setup/qa/page.tsx",
+    "src/app/terms/page.tsx",
+    "src/app/verify-email/page.tsx",
+    "src/app/verify-phone/page.tsx",
+    "src/components/admin/admin-icons.tsx",
+    "src/components/app/access-gate.tsx",
+    "src/components/app/business-setup-guidance.tsx",
+    "src/components/app/channel-badge.tsx",
+    "src/components/app/cycle-credit-summary.tsx",
+    "src/components/app/diagnostic-hint.tsx",
+    "src/components/app/settings-route.tsx",
+    "src/components/app/setup-journey-stepper.tsx",
+    "src/components/app/setup-loading-view.tsx",
+    "src/components/app/setup-review-prerequisites.tsx",
+    "src/components/app/subscription-activation-state.tsx",
+    "src/components/app/subscription-lifecycle-notice.tsx",
+    "src/components/app/ui.tsx",
+    "src/components/landing/conversation-stage.tsx",
+    "src/components/landing/demo.tsx",
+    "src/components/landing/faq.tsx",
+    "src/components/landing/footer.tsx",
+    "src/components/teams/teams-route.tsx"
+  ],
+  "serverActionModules": [
+    {
+      "file": "src/app/account/payment/[orderId]/actions.ts",
+      "exports": [
+        "verifyThawaniPayment",
+        "finishTestCheckout"
+      ]
+    },
+    {
+      "file": "src/lib/access/actions.ts",
+      "exports": [
+        "accessGetUserSnapshot",
+        "accessSetMemberGrants",
+        "accessAddCompanyStaff",
+        "accessSetPlatformRole",
+        "sessionHasCompanyCapability",
+        "sessionConversationScope"
+      ]
+    },
+    {
+      "file": "src/lib/account-deletion/actions.ts",
+      "exports": [
+        "accountDeletionAction",
+        "advanceAccountDeletion"
+      ]
+    },
+    {
+      "file": "src/lib/answers/ask.ts",
+      "exports": [
+        "askCompanyAnswer"
+      ]
+    },
+    {
+      "file": "src/lib/answers/channel-draft-actions.ts",
+      "exports": [
+        "readChannelAIDraft",
+        "prepareChannelAIDraft"
+      ]
+    },
+    {
+      "file": "src/lib/answers/runtime/admin-actions.ts",
+      "exports": [
+        "readAdminAIState",
+        "runAdminAITrial",
+        "runAdminAIConnectivityTest",
+        "readAdminMonthlyAIUsage"
+      ]
+    },
+    {
+      "file": "src/lib/answers/runtime/synthetic-gemini-actions.ts",
+      "exports": [
+        "readSyntheticGeminiFreeState",
+        "runSyntheticGeminiFreeTest"
+      ]
+    },
+    {
+      "file": "src/lib/auth/broker-actions.ts",
+      "exports": [
+        "startOAuthAction",
+        "readBrokerSessionStatus",
+        "quarantineCurrentBrokerSession",
+        "readBrokerResolveFingerprint",
+        "recoveryReauthForOperationAction",
+        "resumeBrokerOperationAction",
+        "acknowledgeBrokerClientCleanupAction"
+      ]
+    },
+    {
+      "file": "src/lib/auth/session-actions.ts",
+      "exports": [
+        "checkSessionActivity"
+      ]
+    },
+    {
+      "file": "src/lib/billing/activation-actions.ts",
+      "exports": [
+        "readSubscriptionActivationAction"
+      ]
+    },
+    {
+      "file": "src/lib/billing/admin/actions.ts",
+      "exports": [
+        "readAdminBillingOrders",
+        "readAdminBillingOrder"
+      ]
+    },
+    {
+      "file": "src/lib/billing/catalog-backend/actions.ts",
+      "exports": [
+        "readCatalogAdminAction",
+        "saveCatalogDraftAction",
+        "publishCatalogVersionAction",
+        "bindNouraBasicDraftAction"
+      ]
+    },
+    {
+      "file": "src/lib/billing/cycle-credit-actions.ts",
+      "exports": [
+        "readCycleCreditsAction"
+      ]
+    },
+    {
+      "file": "src/lib/billing/operations/actions.ts",
+      "exports": [
+        "readSubscriptionJourneyAction",
+        "cancelSubscriptionAtPeriodEndAction",
+        "readOfferDraftsAction",
+        "saveOfferDraftAction",
+        "prepareDiscountedSubscriptionOrderAction",
+        "previewTechnicalUpgradeAction",
+        "readSubscriptionUsageAction"
+      ]
+    },
+    {
+      "file": "src/lib/billing/wiring/checkout-terms-actions.ts",
+      "exports": [
+        "readCheckoutTermsAction"
+      ]
+    },
+    {
+      "file": "src/lib/billing/wiring/live-checkout-actions.ts",
+      "exports": [
+        "startLiveCheckoutAction",
+        "resumeLiveCheckoutAction"
+      ]
+    },
+    {
+      "file": "src/lib/billing/wiring/order-actions.ts",
+      "exports": [
+        "createBillingOrderAction"
+      ]
+    },
+    {
+      "file": "src/lib/billing/wiring/test-checkout-actions.ts",
+      "exports": [
+        "startTestCheckoutAction",
+        "resumeTestCheckoutAction"
+      ]
+    },
+    {
+      "file": "src/lib/channels/actions.ts",
+      "exports": [
+        "selectCompanyChannels"
+      ]
+    },
+    {
+      "file": "src/lib/customer/dashboard-billing-actions.ts",
+      "exports": [
+        "readDashboardBilling"
+      ]
+    },
+    {
+      "file": "src/lib/customer/service-inbox-actions.ts",
+      "exports": [
+        "readServiceInbox"
+      ]
+    },
+    {
+      "file": "src/lib/enterprise/actions.ts",
+      "exports": [
+        "readEnterpriseWorkspace",
+        "createEnterpriseBranch",
+        "renameEnterpriseBranch",
+        "inviteEnterpriseMember",
+        "setEnterpriseMemberStatus",
+        "setEnterpriseGrants",
+        "heartbeatEnterprisePresence"
+      ]
+    },
+    {
+      "file": "src/lib/instagram/inbox-actions.ts",
+      "exports": [
+        "loadInstagramInboxPage",
+        "loadInstagramThreadPage",
+        "markInstagramThreadRead",
+        "assignInstagramConversation"
+      ]
+    },
+    {
+      "file": "src/lib/instagram/manual-actions.ts",
+      "exports": [
+        "saveInstagramReply",
+        "loadInstagramReply",
+        "sendSavedInstagramReply",
+        "loadInstagramSendReadiness"
+      ]
+    },
+    {
+      "file": "src/lib/instagram/owner-actions.ts",
+      "exports": [
+        "loadInstagramOwnerConnection",
+        "startInstagramOwnerConnection",
+        "completeInstagramOwnerOAuth",
+        "disconnectInstagramOwnerConnection",
+        "disconnectInstagramAdminConnection",
+        "loadInstagramAdminConnection",
+        "recoverInstagramOwnerConnection",
+        "cancelInstagramOwnerOAuth"
+      ]
+    },
+    {
+      "file": "src/lib/knowledge/actions.ts",
+      "exports": [
+        "listKnowledgeSources",
+        "saveTextKnowledgeSource",
+        "uploadKnowledgeFiles",
+        "repairStoredKnowledgeFile",
+        "retryFailedKnowledgeFile",
+        "retryKnowledgePrepare",
+        "setKnowledgeSourceApproval",
+        "deleteKnowledgeSource",
+        "adminListCompanyKnowledge",
+        "adminGetKnowledgeFileUrl"
+      ]
+    },
+    {
+      "file": "src/lib/meta-review/actions.ts",
+      "exports": [
+        "readChannelReviewAccess",
+        "adminGrantChannelReview",
+        "adminRevokeChannelReview",
+        "adminStartInstagramReviewBootstrap",
+        "adminReadInstagramReviewBootstrap"
+      ]
+    },
+    {
+      "file": "src/lib/platform-teams/actions.ts",
+      "exports": [
+        "readPlatformTeamSelf",
+        "readPlatformTeamDirectory",
+        "mutatePlatformTeam",
+        "previewPlatformTeamTransfer"
+      ]
+    },
+    {
+      "file": "src/lib/tenancy/access-actions.ts",
+      "exports": [
+        "adminGetPlatformAccessOverview",
+        "adminGrantPlatformAdminRole",
+        "adminUpdatePlatformAdminRole",
+        "adminToggleAdminStatus",
+        "adminRevokePlatformAdmin"
+      ]
+    },
+    {
+      "file": "src/lib/tenancy/account-prep-draft-actions.ts",
+      "exports": [
+        "readAccountPrepDraft",
+        "saveAccountPrepDraft"
+      ]
+    },
+    {
+      "file": "src/lib/tenancy/actions.ts",
+      "exports": [
+        "signUpWithEmail",
+        "signInWithEmail",
+        "resolvePostAuthPath",
+        "signOut",
+        "resendVerificationEmail",
+        "verifyEmailCode",
+        "requestPasswordReset",
+        "updatePassword",
+        "completeProfileName",
+        "getAccountProfile",
+        "selectWorkspaceCompany",
+        "getWorkspaceSwitcher",
+        "getCustomerReadiness",
+        "updateAccountName",
+        "getCompanyReviewRequest",
+        "listCompanyReviewEvents",
+        "submitCompanyReviewRequest",
+        "resubmitCompanyReviewRequest",
+        "adminRequestReviewChanges",
+        "adminApproveSetupReview",
+        "saveOwnerBusiness",
+        "adminListCompaniesPage",
+        "adminListPendingReviews",
+        "adminListPendingReviewsPage",
+        "adminListCompanies",
+        "adminGetCompany",
+        "adminGetOverviewStats",
+        "adminSearchAccounts",
+        "adminListCompanyConversations",
+        "adminUpdateCompany",
+        "adminSetCompanyStatus",
+        "adminSetMemberStatus",
+        "getPublicSiteUrl"
+      ]
+    },
+    {
+      "file": "src/lib/tenancy/analytics-actions.ts",
+      "exports": [
+        "adminGetFinancialAnalytics"
+      ]
+    },
+    {
+      "file": "src/lib/tenancy/audit-actions.ts",
+      "exports": [
+        "adminGetAuditLogsOverview"
+      ]
+    },
+    {
+      "file": "src/lib/tenancy/branch-hours-actions.ts",
+      "exports": [
+        "readOwnedBranchHoursAction",
+        "saveOwnedBranchHoursAction",
+        "copyOwnedBranchHoursAction"
+      ]
+    },
+    {
+      "file": "src/lib/tenancy/branch-inbox.ts",
+      "exports": [
+        "listMyBranchAccess",
+        "readBranchInbox"
+      ]
+    },
+    {
+      "file": "src/lib/tenancy/business-authority-actions.ts",
+      "exports": [
+        "createBusinessAttempt",
+        "saveBusinessProfile"
+      ]
+    },
+    {
+      "file": "src/lib/tenancy/channels-actions.ts",
+      "exports": [
+        "adminListChannels"
+      ]
+    },
+    {
+      "file": "src/lib/tenancy/health-actions.ts",
+      "exports": [
+        "adminGetPlatformHealthOverview"
+      ]
+    },
+    {
+      "file": "src/lib/tenancy/identity-recovery-actions.ts",
+      "exports": [
+        "openIdentityRecoveryReviewAction",
+        "adminOpenIdentityRecoveryReviewAction",
+        "readIdentityRecoveryReviewsAction",
+        "adminDecideIdentityRecoveryAction"
+      ]
+    },
+    {
+      "file": "src/lib/tenancy/operations-actions.ts",
+      "exports": [
+        "adminGetOperationsOverview"
+      ]
+    },
+    {
+      "file": "src/lib/tenancy/paid-assistant-trial-actions.ts",
+      "exports": [
+        "readOwnedBranchAssistantTrialAction",
+        "askOwnedBranchAssistantTrialAction",
+        "recoverOwnedBranchAssistantTrialAction"
+      ]
+    },
+    {
+      "file": "src/lib/tenancy/paid-branch-connection-actions.ts",
+      "exports": [
+        "readOwnedPaidBranchConnectionAction",
+        "startOwnedPaidBranchConnectionAction",
+        "captureOwnedWhatsappAuthorizationAction",
+        "prepareOwnedWhatsappRegistrationAction",
+        "completeOwnedPaidBranchConnectionAction",
+        "recoverOwnedPaidBranchConnectionAction",
+        "cancelOwnedPaidBranchConnectionAction",
+        "classifyOwnedInstagramAttempt",
+        "completeOwnedInstagramCallback",
+        "cancelOwnedInstagramCallback"
+      ]
+    },
+    {
+      "file": "src/lib/tenancy/paid-branch-knowledge-actions.ts",
+      "exports": [
+        "saveOwnedBranchKnowledgeTextAction",
+        "approveOwnedBranchKnowledgeSourceAction",
+        "mutateOwnedBranchKnowledgeSourceAction",
+        "removeOwnedBranchKnowledgePageAction",
+        "uploadOwnedBranchKnowledgeFilesAction",
+        "isSafePublicUrl",
+        "readOwnedBranchKnowledgeAction",
+        "addOwnedBranchWebsiteAction",
+        "pageActionOwnedBranchKnowledgeAction",
+        "indexOwnedBranchWebsiteAction",
+        "loadApprovedBranchKnowledgeContext"
+      ]
+    },
+    {
+      "file": "src/lib/tenancy/paid-launch-actions.ts",
+      "exports": [
+        "readOwnedBranchLaunchSummaryAction",
+        "confirmOwnedBranchLaunchAction"
+      ]
+    },
+    {
+      "file": "src/lib/tenancy/paid-reply-language-actions.ts",
+      "exports": [
+        "readOwnedBranchReplyLanguageAction",
+        "confirmOwnedBranchReplyLanguageAction"
+      ]
+    },
+    {
+      "file": "src/lib/tenancy/paid-setup-actions.ts",
+      "exports": [
+        "readOwnedPaidBranchSetupAction",
+        "readOwnedPaidBranchSetupShellAction",
+        "readOwnedPaidBranchSetupEntryAction",
+        "selectOwnedPaidBranchChannelsAction"
+      ]
+    },
+    {
+      "file": "src/lib/tenancy/paid-setup-workspace-actions.ts",
+      "exports": [
+        "readOwnedPaidSetupShellAction",
+        "readOwnedPaidSetupWorkspaceAction",
+        "readOwnedPaidSetupDetailsAction"
+      ]
+    },
+    {
+      "file": "src/lib/tenancy/paid-team-actions.ts",
+      "exports": [
+        "readOwnedBranchTeamAction",
+        "inviteOwnedBranchTeamAction",
+        "revokeOwnedBranchTeamAction"
+      ]
+    },
+    {
+      "file": "src/lib/tenancy/personal-phone-actions.ts",
+      "exports": [
+        "getPersonalPhoneStatus",
+        "sendPersonalPhoneCode",
+        "verifyPersonalPhoneCode"
+      ]
+    },
+    {
+      "file": "src/lib/tenancy/personal-phone-change-actions.ts",
+      "exports": [
+        "beginPersonalPhoneChangeAction",
+        "sendReplacementPhoneAction",
+        "resendCurrentPhoneAction",
+        "verifyPhoneChangeStepAction",
+        "readPersonalPhoneChangeStatus"
+      ]
+    },
+    {
+      "file": "src/lib/tenancy/qa-business-grant-actions.ts",
+      "exports": [
+        "grantQaBusiness",
+        "resetQaBusiness"
+      ]
+    },
+    {
+      "file": "src/lib/tenancy/qa-setup-simulation-actions.ts",
+      "exports": [
+        "readQaSetupSimulationAccess"
+      ]
+    },
+    {
+      "file": "src/lib/tenancy/settings-actions.ts",
+      "exports": [
+        "adminGetPlatformSettingsOverview",
+        "adminUpdatePlatformPolicies"
+      ]
+    },
+    {
+      "file": "src/lib/tenancy/setup-draft-actions.ts",
+      "exports": [
+        "readSetupDraft",
+        "saveSetupDraft",
+        "readActiveSetupDraft",
+        "beginSetupDraft",
+        "setupDraftLifecycleAction",
+        "readSetupFileContext"
+      ]
+    },
+    {
+      "file": "src/lib/tenancy/staff-invitations.ts",
+      "exports": [
+        "createStaffInvitation",
+        "replaceStaffInvitation",
+        "cancelStaffInvitation",
+        "readStaffInvitation",
+        "listCompanyTeam",
+        "acceptStaffInvitation"
+      ]
+    },
+    {
+      "file": "src/lib/tenancy/support-actions.ts",
+      "exports": [
+        "adminGetSupportOverview",
+        "adminCreateSupportTicket",
+        "adminUpdateTicketStatus",
+        "adminAssignTicket",
+        "adminAddTicketNote",
+        "adminCloseTicket",
+        "adminReopenTicket",
+        "adminLookupCustomerByCodeOrEmail"
+      ]
+    },
+    {
+      "file": "src/lib/tenancy/whatsapp-meta-test-receive-actions.ts",
+      "exports": [
+        "readOwnedWhatsappMetaTestReceiveProofAction"
+      ]
+    },
+    {
+      "file": "src/lib/tenancy/whatsapp-review-request-actions.ts",
+      "exports": [
+        "ownedWhatsappReviewRequestAction"
+      ]
+    },
+    {
+      "file": "src/lib/tenancy/workspace-view.ts",
+      "exports": [
+        "getWorkspaceView"
+      ]
+    },
+    {
+      "file": "src/lib/whatsapp/actions.ts",
+      "exports": [
+        "replyWhatsappConversation",
+        "controlWhatsappConversation",
+        "refreshWhatsappConversation",
+        "refreshWhatsappInboxSnapshot",
+        "upsertConversationLeadState"
+      ]
+    },
+    {
+      "file": "src/lib/whatsapp/coexistence/actions.ts",
+      "exports": [
+        "getCoexistenceSetup",
+        "startCoexistenceSignup",
+        "completeCoexistenceSignup",
+        "cancelCoexistenceSignup",
+        "disconnectCoexistenceSignup",
+        "getCoexistenceSyncSetup",
+        "requestCoexistenceHistorySync"
+      ]
+    },
+    {
+      "file": "src/lib/whatsapp/connection-actions.ts",
+      "exports": [
+        "getWhatsappCompanyLink",
+        "saveWhatsappLinkRequest",
+        "adminGetWhatsappCompanyLink",
+        "adminUpdateWhatsappLinkNote",
+        "adminMarkWhatsappLinkNeedsExternal"
+      ]
+    },
+    {
+      "file": "src/lib/whatsapp/embedded-signup-actions.ts",
+      "exports": [
+        "getEmbeddedSignupSetup",
+        "startEmbeddedSignup",
+        "completeEmbeddedSignup",
+        "cancelEmbeddedSignup",
+        "disconnectEmbeddedSignup",
+        "getFixedAckSetup",
+        "configureFixedAck"
+      ]
+    },
+    {
+      "file": "src/lib/whatsapp/inbox-actions.ts",
+      "exports": [
+        "refreshWhatsappInboxInitialPage",
+        "refreshWhatsappInboxPage",
+        "refreshWhatsappThreadPage",
+        "refreshWhatsappControlAuditPage",
+        "refreshWhatsappConnectionStatus",
+        "markWhatsappThreadSeen"
+      ]
+    }
+  ]
+}

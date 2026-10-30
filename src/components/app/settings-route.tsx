@@ -12,17 +12,22 @@ import {masterJourneyEnabled} from '@/lib/master-journey/rollout';
 import {readCycleCreditsAction} from '@/lib/billing/cycle-credit-actions';
 
 
-export async function SettingsRoute({subscriptionOnly = false}: {subscriptionOnly?: boolean}) {
-  const linkResult = await getWhatsappCompanyLink();
-  const access = await getCompanyAccess();
+export function SettingsRoute({subscriptionOnly = false}: {subscriptionOnly?: boolean}) {
+  return <Suspense fallback={<main className="min-h-svh bg-[#07110d]" aria-busy="true" />}><SettingsContent subscriptionOnly={subscriptionOnly}/></Suspense>;
+}
+
+async function SettingsContent({subscriptionOnly}: {subscriptionOnly:boolean}) {
+  const [linkResult,access] = await Promise.all([getWhatsappCompanyLink(),getCompanyAccess()]);
   const company = access.ok ? access.context.company : null;
-  const initialSubscription = await loadOwnerBillingSubscription(subscriptionViewFromEntitlement(readCompanyEntitlement(company?.id ?? null), company?.status ?? null));
-  const initialOffersView = await readSubscriptionOffersView();
-  const activation = company && access.ok && access.context.membership?.role === 'owner' ? await readSubscriptionActivationAction(company.id) : null;
+  const owner=company&&access.ok&&access.context.membership?.role==='owner';
+  const [initialSubscription,initialOffersView,activation,credits]=await Promise.all([
+    loadOwnerBillingSubscription(subscriptionViewFromEntitlement(readCompanyEntitlement(company?.id ?? null), company?.status ?? null)),
+    readSubscriptionOffersView(),
+    owner?readSubscriptionActivationAction(company.id):Promise.resolve(null),
+    masterJourneyEnabled()&&owner?readCycleCreditsAction(company.id):Promise.resolve(null),
+  ]);
   const singleTenant = singleTenantReceptionStatus(company?.id);
-  const credits=masterJourneyEnabled()&&company&&access.ok&&access.context.membership?.role==='owner'?await readCycleCreditsAction(company.id):null;
   return (
-    <Suspense fallback={<main className="min-h-svh bg-[#07110d]" aria-busy="true" />}>
       <SettingsPage
         subscriptionOnly={subscriptionOnly}
         masterJourneyEnabled={masterJourneyEnabled()}
@@ -37,6 +42,5 @@ export async function SettingsRoute({subscriptionOnly = false}: {subscriptionOnl
         whatsappLiveOpsReady={whatsappLiveOpsReady()}
         singleTenantReception={singleTenant}
       />
-    </Suspense>
   );
 }

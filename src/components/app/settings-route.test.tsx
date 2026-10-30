@@ -1,0 +1,27 @@
+import {expect,it,vi} from 'vitest';
+const m=vi.hoisted(()=>({access:vi.fn(),link:vi.fn(),subscription:vi.fn(),offers:vi.fn(),activation:vi.fn(),credits:vi.fn()}));
+vi.mock('@/lib/tenancy/access',()=>({getCompanyAccess:m.access}));
+vi.mock('@/lib/whatsapp/connection-actions',()=>({getWhatsappCompanyLink:m.link}));
+vi.mock('@/lib/billing/wiring/subscription-read',()=>({loadOwnerBillingSubscription:m.subscription}));
+vi.mock('@/lib/billing/catalog-backend/offer-readiness',()=>({readSubscriptionOffersView:m.offers}));
+vi.mock('@/lib/billing/activation-actions',()=>({readSubscriptionActivationAction:m.activation}));
+vi.mock('@/lib/billing/cycle-credit-actions',()=>({readCycleCreditsAction:m.credits}));
+vi.mock('@/lib/master-journey/rollout',()=>({masterJourneyEnabled:()=>true}));
+vi.mock('@/lib/billing/entitlement',()=>({readCompanyEntitlement:()=>null}));
+vi.mock('./subscription-model',()=>({subscriptionViewFromEntitlement:()=>null}));
+vi.mock('./settings',()=>({SettingsPage:()=>null}));
+import {SettingsRoute} from './settings-route';
+it('streams before reads and runs independent owner sections concurrently after access',async()=>{
+ const finish:Array<()=>void>=[];
+ const pending=()=>new Promise(resolve=>finish.push(()=>resolve(null)));
+ m.access.mockResolvedValue({ok:true,context:{userId:'actor',company:{id:'company'},membership:{role:'owner'},workspaceChoices:[]}});
+ m.link.mockResolvedValue({ok:false,code:'UNAVAILABLE'});
+ for(const key of ['subscription','offers','activation','credits'] as const)m[key].mockImplementation(pending);
+ const outer=SettingsRoute({});expect(m.access).not.toHaveBeenCalled();
+ const child=outer.props.children;
+ const work=child.type(child.props);
+ await vi.waitFor(()=>expect(finish).toHaveLength(4));
+ expect(m.activation).toHaveBeenCalledWith('company');expect(m.credits).toHaveBeenCalledWith('company');
+ finish.forEach(resolve=>resolve());const result=await work;
+ expect(result.props.whatsappLinkLoadFailed).toBe(true);expect(result.props.initialCompany.id).toBe('company');
+});

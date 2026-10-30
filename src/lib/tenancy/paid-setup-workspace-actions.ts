@@ -2,9 +2,10 @@
 
 import {setupTiming} from "@/lib/diagnostics/setup-timing";
 import {getCompanyAccess} from "./access";
-import {readOwnedPaidBranchSetupAction,type ReadOwnedPaidBranchSetupInput} from "./paid-setup-actions";
+import {readOwnedPaidBranchSetupShellAction,type ReadOwnedPaidBranchSetupInput} from "./paid-setup-actions";
 import {readOwnedPaidBranchConnectionAction} from "./paid-branch-connection-actions";
 import type {PaidBranchSetupRead,PaidSetupChannel} from "./paid-setup-contracts";
+import {mergePaidBranchChannelProof} from './paid-setup-contracts';
 import type {PaidBranchConnectionRead} from "./paid-branch-connection-contracts";
 import {readOwnedBranchLaunchSummaryAction} from './paid-launch-actions';
 import {composePaidSetupProgress} from './paid-setup-progress';
@@ -19,6 +20,12 @@ export type PaidSetupWorkspaceRead={
   confirmedChannels:PaidSetupChannel[];
   activation?:PaidSetupActivation|null;
 };
+/** A fresh binding grants navigation, never verification or provider capabilities. */
+export async function readOwnedPaidSetupShellAction(input:ReadOwnedPaidBranchSetupInput):Promise<PaidSetupWorkspaceRead|null> {
+ const read=await readOwnedPaidBranchSetupShellAction(input);
+ if(read.companyId!==input?.companyId||read.selectedBranchId!==input?.branchId||read.sourceStatus==='unavailable')return null;
+ return {scope:{expectedAccountId:input.expectedAccountId,companyId:input.companyId,branchId:input.branchId},read,connectionReads:{},confirmedChannels:[],activation:null};
+}
 export async function readOwnedPaidSetupWorkspaceAction(input:ReadOwnedPaidBranchSetupInput&{connectionFirst?:boolean}):Promise<PaidSetupWorkspaceRead|null> {
  return readPaidWorkspace(input);
 }
@@ -32,7 +39,7 @@ async function readPaidWorkspace(input:ReadOwnedPaidBranchSetupInput&{connection
     access.context.userId!==input.expectedAccountId||access.context.company?.id!==input.companyId)return null;
   const scope={expectedAccountId:access.context.userId,companyId:access.context.company.id,branchId:input.branchId};
   const endInitial=setupTiming('initial');
-  const initial=await readOwnedPaidBranchSetupAction(scope);
+  const initial=await readOwnedPaidBranchSetupShellAction(scope);
   endInitial();
   if(initial.companyId!==scope.companyId||initial.selectedBranchId!==scope.branchId)return null;
   if(initial.sourceStatus!=="ready"||!initial.selectedChannels?.length)return {scope,read:initial,connectionReads:{},confirmedChannels:[]};
@@ -47,13 +54,21 @@ async function readPaidWorkspace(input:ReadOwnedPaidBranchSetupInput&{connection
     return {scope,read:initial,connectionReads:Object.fromEntries(channels.map((channel,index)=>[channel,before[index]])),confirmedChannels:[],activation:null};
   }
   const endRecheck=setupTiming('recheck');
-  const read=await readOwnedPaidBranchSetupAction(scope);
+  let read=await readOwnedPaidBranchSetupShellAction(scope);
   endRecheck();
   if(read.sourceStatus!=="ready"||read.companyId!==scope.companyId||read.selectedBranchId!==scope.branchId||
     JSON.stringify(read.selectedChannels)!==JSON.stringify(channels)||JSON.stringify(read.entitlement)!==JSON.stringify(initial.entitlement))return null;
   const endAfter=setupTiming('connections_after');
   const after=await Promise.all(channels.map(channel=>readOwnedPaidBranchConnectionAction({...scope,channel})));
   endAfter();
+  // The two explicit channel observations already provide the fresh proof.
+  // Binding reads must not issue two additional copies of every channel RPC.
+  read=mergePaidBranchChannelProof(read,after.map((value,index)=>({
+    channel:channels[index],companyId:value.companyId,branchId:value.branchId,
+    verified:value.sourceStatus==='ready'&&value.connection.state==='connected'&&value.connection.verified&&!!value.connection.link,
+    generation:value.connection.link?.generation??null,revoked:false,
+    stale:value.connection.reasonCodes.includes('stale_scope'),
+  })));
   const connectionReads:PaidSetupWorkspaceRead["connectionReads"]={},confirmedChannels:PaidSetupChannel[]=[];
   for(let index=0;index<channels.length;index++){
     const channel=channels[index]!,first=before[index]!,last=after[index]!;

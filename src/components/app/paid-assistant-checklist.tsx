@@ -1,7 +1,8 @@
 "use client";
+import {createSetupReader} from "@/lib/tenancy/setup-read-client";
 import {observeSetupRead} from "./paid-setup-request";
 import {setupTiming,observeSetupUsable} from "@/lib/diagnostics/setup-timing";
-import { useCallback,useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useCallback,useEffect, useMemo, useId, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import styles from "./paid-assistant-checklist.module.css";
 import {SetupBranchPicker} from "./setup-branch-picker";
 import {paidSetupActivation} from '@/lib/tenancy/paid-setup-activation';
@@ -11,8 +12,7 @@ import {setupBranchFromReturn,setupBranchPath} from "@/lib/auth/setup-return";
 import {PaidSetupWorkspace,PaidSetupLoadingFrame,nextWorkspaceSelection} from "./paid-setup-workspace";
 import {PaidSetupStepHost} from "./paid-setup-step-host";
 import {PaidChannelSelection} from "./paid-channel-selection";
-import {readOwnedPaidSetupWorkspaceAction,readOwnedPaidSetupDetailsAction,type PaidSetupWorkspaceRead} from "@/lib/tenancy/paid-setup-workspace-actions";
-import {composePaidSetupProgress} from '@/lib/tenancy/paid-setup-progress';
+import {readOwnedPaidSetupWorkspaceAction,type PaidSetupWorkspaceRead} from "@/lib/tenancy/paid-setup-workspace-actions";
 import {confirmSetupLeave} from './paid-setup-unsaved';
 
 function subscribeSetupLocation(notify:()=>void) {
@@ -97,6 +97,8 @@ function PaidSetupBranch(p:PaidSetupFlowProps&{branchId:string}) {
 }
 function PaidSetupBranchRead(p:PaidSetupFlowProps&{branchId:string;refreshVersion:number;retry:()=>void}) {
  const [snapshot,setSnapshot]=useState<PaidSetupWorkspaceRead|null|undefined>(undefined);
+ const branchRoot=useRef<HTMLDivElement>(null);
+ const manualSelection=useRef(false);
  const storageKey=`velora:setup:step:${p.scope.companyId}:${p.branchId}`;
  const [selected,setSelected]=useState<ChecklistStepId|null>(()=>{
    if(typeof window==="undefined")return null;
@@ -114,6 +116,13 @@ function PaidSetupBranchRead(p:PaidSetupFlowProps&{branchId:string;refreshVersio
  const {scope,isCurrent,branchId,refreshVersion,onWorkspaceRead}=p;
  const readWorkspace=p.readWorkspace??readOwnedPaidSetupWorkspaceAction;
  const connectionFirst=!p.readWorkspace;
+ const reader=useMemo(()=>createSetupReader({expectedAccountId:scope.expectedAccountId,companyId:scope.companyId,boundaryFingerprint:scope.boundaryFingerprint,branchId},isCurrent),[scope.expectedAccountId,scope.companyId,scope.boundaryFingerprint,branchId,isCurrent]);
+ useEffect(()=>{
+  const clear=()=>reader.invalidate();
+  window.addEventListener("pagehide",clear);
+  window.addEventListener("storage",clear);
+  return()=>{clear();window.removeEventListener("pagehide",clear);window.removeEventListener("storage",clear);};
+ },[reader]);
 
  useEffect(()=>{
    if(typeof window==="undefined")return;
@@ -126,30 +135,33 @@ function PaidSetupBranchRead(p:PaidSetupFlowProps&{branchId:string;refreshVersio
  useEffect(()=>{
   const request=++generation.current;let active=true;
   if(!isCurrent())return;
+  reader.invalidate();
   const input={expectedAccountId:scope.expectedAccountId,companyId:scope.companyId,branchId};
   const endTiming=setupTiming('workspace');
-  void observeSetupRead(connectionFirst?readOwnedPaidSetupWorkspaceAction({...input,connectionFirst:true}):readWorkspace(input),()=>{if(active&&request===generation.current&&isCurrent()){setRefreshFailed(true);setSnapshot(previous=>previous===undefined?null:previous);}}).then(result=>{
+  const shellFirst=connectionFirst&&refreshVersion===0;
+  void observeSetupRead(connectionFirst?reader.read(shellFirst?"shell":"workspace"):readWorkspace(input),()=>{if(active&&request===generation.current&&isCurrent()){setRefreshFailed(true);setSnapshot(previous=>previous===undefined?null:previous);}}).then(result=>{
    if(!active||request!==generation.current||!isCurrent())return;
    if(!result){setRefreshFailed(true);setSnapshot(previous=>previous===undefined?null:previous);return;}
    if(result.scope.expectedAccountId!==input.expectedAccountId||result.scope.companyId!==input.companyId||result.scope.branchId!==branchId||!paidChecklistFromRead(result.read,input)){setSnapshot(null);onWorkspaceRead?.(null);return;}
    setRefreshFailed(false);
    setSnapshot(result);
    onWorkspaceRead?.(result);
-   setSelected(previous=>nextWorkspaceSelection(result,previous));
-   // Paint the authorized connection UI before optional setup metadata arrives.
-   if(connectionFirst&&result.read.entitlement)void observeSetupRead(readOwnedPaidSetupDetailsAction(input,result.read.entitlement.orderGroupId),()=>{}).then(details=>{
-     if(!active||request!==generation.current||!isCurrent()||!details||details.scope.expectedAccountId!==input.expectedAccountId||details.scope.companyId!==input.companyId||details.scope.branchId!==branchId)return;
-     const enriched={...result,read:composePaidSetupProgress(result.read,details.summary),activation:details.activation};
-     setSnapshot(enriched);onWorkspaceRead?.(enriched);setSelected(previous=>nextWorkspaceSelection(enriched,previous));
-   }).catch(()=>{/* Optional metadata remains unknown; connection controls stay usable. */});
+   setSelected(previous=>branchRoot.current?.querySelector('[data-setup-unsaved="true"]')?previous:nextWorkspaceSelection(result,previous));
+   // Slow Meta proof never blocks the independently authorized hours editor.
+   if(shellFirst&&result.read.entitlement)void observeSetupRead(reader.read('workspace'),()=>{}).then(enriched=>{
+     if(!active||request!==generation.current||!isCurrent())return;
+     if(!enriched){setRefreshFailed(true);return;}
+     if(enriched.scope.expectedAccountId!==input.expectedAccountId||enriched.scope.companyId!==input.companyId||enriched.scope.branchId!==branchId||!paidChecklistFromRead(enriched.read,input)){setSnapshot(null);onWorkspaceRead?.(null);return;}
+     setSnapshot(enriched);onWorkspaceRead?.(enriched);setSelected(previous=>manualSelection.current||branchRoot.current?.querySelector('[data-setup-unsaved="true"]')?previous:nextWorkspaceSelection(enriched,previous));
+   }).catch(()=>{if(active&&request===generation.current&&isCurrent())setRefreshFailed(true);});
   }).catch(()=>{if(active&&request===generation.current&&isCurrent()){setRefreshFailed(true);setSnapshot(previous=>previous===undefined?null:previous);}}).finally(endTiming);
   return()=>{active=false;};
- },[scope.expectedAccountId,scope.companyId,branchId,isCurrent,readWorkspace,refreshVersion,onWorkspaceRead,connectionFirst]);
+ },[scope.expectedAccountId,scope.companyId,branchId,isCurrent,readWorkspace,refreshVersion,onWorkspaceRead,connectionFirst,reader]);
  const ar=p.locale==="ar",persona=snapshot?.read.entitlement?.persona;
  const knownPersona=persona==="level_1"||persona==="level_2"||persona==="level_3"?persona:null;
  const personaName=knownPersona?({level_1:ar?"نورا":"Noura",level_2:ar?"لينا":"Lina",level_3:ar?"دانا":"Dana"})[knownPersona]:undefined;
  if(snapshot?.read.sourceStatus==="selection_required"&&snapshot.read.entitlement&&isCurrent())return <PaidChannelSelection locale={p.locale} scope={{...scope,branchId}} read={snapshot.read} isCurrent={isCurrent} onRefresh={p.retry}/>;
- return <>{refreshFailed&&<p role="status">{ar?"تعذر تحديث حالة الإعداد. احتُفظ بمدخلاتك؛ أعد التحقق قبل المتابعة.":"Setup status could not be refreshed. Your inputs are preserved; verify the status before continuing."} <button type="button" onClick={p.retry}>{ar?"إعادة التحقق":"Retry verification"}</button></p>}<PaidSetupWorkspace statusInHeader={!!p.renderHeader} locale={p.locale} scope={{...scope,branchId}} read={snapshot?.read??null} activation={snapshot?.activation??null} loading={snapshot===undefined} activeStepId={selected} isCurrent={isCurrent} onSelectStep={setSelected} onRefresh={p.retry} availableStepIds={["whatsapp","instagram","hours","knowledge","test","launch"]} connectionReads={snapshot?.connectionReads} renderStep={(step)=><PaidSetupStepHost locale={p.locale} scope={{...scope,branchId}} step={step} isCurrent={isCurrent} onRefresh={p.retry} read={snapshot?.read??null}/>} persona={knownPersona?<><div className={styles.workspaceFigure}><PaidChecklistPersonaVisual persona={knownPersona} alt={personaName??""}/></div><p className={styles.workspacePersonaName}>{personaName}</p></>:undefined}/></>;
+ return <div ref={branchRoot}>{refreshFailed&&<p role="status">{ar?"تعذر تحديث حالة الإعداد. احتُفظ بمدخلاتك؛ أعد التحقق قبل المتابعة.":"Setup status could not be refreshed. Your inputs are preserved; verify the status before continuing."} <button type="button" onClick={p.retry}>{ar?"إعادة التحقق":"Retry verification"}</button></p>}<PaidSetupWorkspace statusInHeader={!!p.renderHeader} locale={p.locale} scope={{...scope,branchId}} read={snapshot?.read??null} activation={snapshot?.activation??null} loading={snapshot===undefined} activeStepId={selected} isCurrent={isCurrent} onSelectStep={step=>{manualSelection.current=true;setSelected(step);}} onPrefetchStep={step=>{if(connectionFirst&&step==="hours")reader.prefetchHours();}} onRefresh={p.retry} availableStepIds={["whatsapp","instagram","hours","knowledge","test","launch"]} connectionReads={snapshot?.connectionReads} renderStep={(step)=><PaidSetupStepHost reader={connectionFirst?reader:undefined} locale={p.locale} scope={{...scope,branchId}} step={step} isCurrent={isCurrent} onRefresh={p.retry} read={snapshot?.read??null}/>} persona={knownPersona?<><div className={styles.workspaceFigure}><PaidChecklistPersonaVisual persona={knownPersona} alt={personaName??""}/></div><p className={styles.workspacePersonaName}>{personaName}</p></>:undefined}/></div>;
 }
 
 const personaMotionBudget=createMotionBudget(1);
