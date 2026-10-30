@@ -125,7 +125,9 @@ function KnowledgeForm(p:PaidBranchKnowledgeProps & {snapshot:BranchKnowledgeVie
   useSetupUnsavedChanges(dirty,p.isCurrent,p.locale);
   useLayoutEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
   const quotaKnown=knownWebsiteQuota(p.snapshot.websiteQuota);
-  const locked=busy || p.state.phase==="busy" || p.state.phase==="conflict" || p.state.phase==="unavailable" || p.state.phase==="loading" || !quotaKnown;
+  // Soft unavailable: keep the form usable when a verified snapshot is already on screen.
+  // Hard locks remain for busy/conflict/loading/unknown quota only.
+  const locked=busy || p.state.phase==="busy" || p.state.phase==="conflict" || p.state.phase==="loading" || !quotaKnown;
   const context:CommandContext={...p.scope,expectedVersion:p.snapshot.version};
   const fileError=files.length?knowledgePreparationFileError(files):null;
   const pages=p.snapshot.pages.filter(page=>page.companyId===p.scope.companyId && page.branchId===p.scope.branchId);
@@ -140,14 +142,17 @@ function KnowledgeForm(p:PaidBranchKnowledgeProps & {snapshot:BranchKnowledgeVie
   const canUpload=!locked && p.snapshot.capabilities.canUploadFiles===true && !!p.onUploadFiles && files.length>0 && !fileError;
   const canSaveText=!locked && p.snapshot.capabilities.canSaveText===true && !!p.onSaveText && !!question.trim() && question.trim().length<=200 && !!answer.trim();
   const languagePhase=p.languageState?.phase??"unavailable";
-  const languageLocked=busy || languagePhase==="saving" || languagePhase==="loading" || languagePhase==="unavailable" || languagePhase==="conflict";
+  const languageLocked=busy || languagePhase==="saving" || languagePhase==="loading" || languagePhase==="conflict";
   const canSaveLanguages=!languageLocked && !!p.onConfirmLanguages && !!p.languageSnapshot && p.languageSnapshot.canConfirm===true && Number.isSafeInteger(p.languageSnapshot.version) && p.languageSnapshot.version>=1 && !!draftLanguageContract && languageDirty;
   async function dispatch(target:OperationTarget, callback:(()=>void|Promise<void>)|undefined, options?:{ignoreKnowledgeLock?:boolean}) {
     if(!callback || reserved.current || !p.isCurrent())return;
     if(!options?.ignoreKnowledgeLock && locked)return;
     if([!!url,!!(question||answer),!!files.length].filter(Boolean).length>1&&!window.confirm(t('لديك مسودات في أكثر من قسم. قد يؤدي تحديث النسخة المحفوظة إلى فقد المسودات الأخرى. هل تريد المتابعة؟','You have drafts in multiple sections. Updating the saved version may discard the other drafts. Continue?')))return;
     reserved.current=true;setBusy(true);setActiveOp(target);setFailure(null);
-    try{await callback();}catch{if(mounted.current && p.isCurrent())setFailure(target);}
+    try{
+      await callback();
+      if(mounted.current && p.isCurrent() && target==="files")setFiles([]);
+    }catch{if(mounted.current && p.isCurrent())setFailure(target);}
     finally{reserved.current=false;if(mounted.current && p.isCurrent()){setBusy(false);setActiveOp(null);}}
   }
   function status(value:unknown){return knownStatus(value)?statusLabels[value][ar?0:1]:t("الحالة غير معروفة","Status unknown");}
@@ -191,8 +196,6 @@ function KnowledgeForm(p:PaidBranchKnowledgeProps & {snapshot:BranchKnowledgeVie
   };
 
   return <section className={styles.view} data-knowledge-studio="" data-setup-unsaved={dirty?'true':undefined} dir={ar?"rtl":"ltr"} aria-labelledby={id} aria-busy={busy || p.state.phase==="busy" || p.state.phase==="loading"}>
-    {p.state.phase==="unavailable"&&<p role="status" className={styles.error}>{t("تعذّر التحقق من البيانات. الحفظ غير مؤكد.","Data could not be verified. Saving is unconfirmed.")}</p>}
-    {p.state.phase==="unavailable"&&p.onReload&&<button type="button" onClick={()=>{if(p.isCurrent())void p.onReload?.();}}>{t("إعادة المحاولة","Retry")}</button>}
     <div className={styles.stage}>
     <header className={styles.header}>
       <p className={styles.kicker}><bdi>{p.snapshot.branchLabel}</bdi>{quotaKnown?<> · <bdi dir="ltr">{p.snapshot.websiteQuota.used} / {p.snapshot.websiteQuota.limit}</bdi></>:null}</p>
@@ -236,7 +239,6 @@ function KnowledgeForm(p:PaidBranchKnowledgeProps & {snapshot:BranchKnowledgeVie
         </button>
       </div>
       {operationAlert("languages")}
-      {languagePhase==="unavailable"&&<p role="status" className={styles.error}>{t("تعذّر التحقق من لغات الرد.","Reply languages could not be verified.")}</p>}
       {languagePhase==="conflict"&&<p role="alert" className={styles.error}>{t("تغيّرت لغات الرد. أعد التحميل قبل الحفظ.","Reply languages changed. Reload before saving.")}</p>}
       {selectedLanguages.length===0&&<p className={styles.note}>{t("اختر لغة واحدة واحدة على الأقل.","Select at least one language.")}</p>}
     </section>
@@ -296,7 +298,7 @@ function KnowledgeForm(p:PaidBranchKnowledgeProps & {snapshot:BranchKnowledgeVie
       <details className={styles.library} data-knowledge-library="true" open>
         <summary>{t("مكتبة المعرفة","Knowledge library")}<bdi>{libraryCount}</bdi></summary>
         {operationAlert("library")}
-        {libraryCount===0?<p className={styles.empty} role="status">{p.snapshot.version===0?t("لم يتم التحقق من المصادر بعد.","Sources have not been verified yet."):p.state.phase==="unavailable"?t("تعذّر عرض مكتبة هذا الفرع. المسودات ما زالت في مساحة التحرير.","This branch library could not be shown. Drafts remain in the editor."):t("لا توجد مصادر مرتبطة بهذا الفرع بعد.","No sources are assigned to this branch yet.")}</p>:<ul className={styles.sources}>
+        {libraryCount===0?<p className={styles.empty} role="status">{p.snapshot.version===0?t("لم يتم التحقق من المصادر بعد.","Sources have not been verified yet."):t("لا توجد مصادر مرتبطة بهذا الفرع بعد.","No sources are assigned to this branch yet.")}</p>:<ul className={styles.sources}>
           {pages.map(page=>{
             const pageReady=knownStatus(page.status) && version(page.version);
             const extracted=pageExtractedText(page);

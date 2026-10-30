@@ -47,6 +47,8 @@ import {
   readOwnedBranchLaunchSummaryAction,
 } from "@/lib/tenancy/paid-launch-actions";
 
+const canceledRead=(error:unknown)=>error instanceof Error&&(error.name==='AbortError'||error.message==='SCOPE_CHANGED');
+
 const KNOWN_FAILURE_CODES = new Set<AnswerFailureCode>([
   "NEEDS_SETUP",
   "NO_KNOWLEDGE",
@@ -71,6 +73,7 @@ export type PaidSetupStepHostProps = {
   step: Exclude<ChecklistStepId, "whatsapp" | "instagram">;
   isCurrent: () => boolean;
   onRefresh?: () => void;
+  onReadFailure?: (error:unknown) => void;
   read: PaidBranchSetupRead | null;
   onSelectStep?: (stepId: ChecklistStepId) => void;
 };
@@ -80,7 +83,9 @@ export function PaidSetupStepHost(props: PaidSetupStepHostProps) {
 }
 function StepHost(props: PaidSetupStepHostProps) {
   const { locale, scope, step, onRefresh,reader } = props;
-  const runMutation=<T,>(request:Promise<T>,timeoutMs:number)=>{reader?.invalidate();return awaitSetupRequest(request,timeoutMs);};
+  const runMutation=<T,>(request:Promise<T>,timeoutMs:number)=>{reader?.invalidate(step==='knowledge'?['knowledge','language','workspace','launch','trial']:step==='hours'?['hours','workspace','launch']:step==='team'?['team','workspace','launch']:step==='test'?['trial','workspace','launch']:['launch','workspace']);return awaitSetupRequest(request,timeoutMs);};
+  const readFailure=useRef(props.onReadFailure);
+  useLayoutEffect(()=>{readFailure.current=props.onReadFailure;},[props.onReadFailure]);
   const mounted=useRef(true);
   const authority=useRef(props.isCurrent);
   useLayoutEffect(()=>{authority.current=props.isCurrent;},[props.isCurrent]);
@@ -99,7 +104,7 @@ function StepHost(props: PaidSetupStepHostProps) {
     if(step==="test"){setTrialPhase("loading");setTrialFailure(null);setTrialRequestId(null);}
     if(step==="team"){setTeamPhase("loading");setInviteUrl(null);}
     if(step==="launch")setLaunchPhase("loading");
-    reader?.invalidate();
+    reader?.invalidate(step==='knowledge'?['knowledge','language']:step==='test'?['trial']:[step]);
     setReadVersion(v=>v+1);
   };
   const targetScope = useMemo(
@@ -136,12 +141,14 @@ function StepHost(props: PaidSetupStepHostProps) {
         setHoursPhase("ready");
       } else if (active && isCurrentRef.current()) {
         // Stay loading with the form usable; save remains gated until a verified snapshot.
-        setHoursPhase("loading");
+        setHoursPhase("unavailable");
       }
-    }).catch(() => {
+    }).catch((error) => {
+      if (canceledRead(error)) return;
       if (active && isCurrentRef.current() && hoursInFlightKeyRef.current === scopeKey) {
+        readFailure.current?.(error);
         hoursInFlightKeyRef.current = null;
-        setHoursPhase("loading");
+        setHoursPhase("unavailable");
       }
     });
 
@@ -162,24 +169,22 @@ function StepHost(props: PaidSetupStepHostProps) {
   useEffect(() => {
     if (step !== "knowledge" || !isCurrent()) return;
     let active = true;
-    void observeSetupRead((reader?reader.read("knowledge"):readOwnedBranchKnowledgeAction(targetScope)),()=>{if(active&&isCurrent())setKnowledgePhase("unavailable");}).then((snap) => {
+    // Same soft-read policy as hours: slow/empty reads must not flip to "unavailable"
+    // or the upload button locks while a file is already waiting.
+    void observeSetupRead((reader?reader.read("knowledge"):readOwnedBranchKnowledgeAction(targetScope)),()=>{},10_000).then((snap) => {
       if (!active || !isCurrent()) return;
       if (snap) {
         setKnowledgeSnap(snap);
         setKnowledgePhase("ready");
-      } else {
-        setKnowledgePhase("unavailable");
-      }
-    }).catch(()=>{if(active&&isCurrent())setKnowledgePhase('unavailable');});
-    void observeSetupRead((reader?reader.read("language"):readOwnedBranchReplyLanguageAction(targetScope)),()=>{if(active&&isCurrent())setLangPhase("unavailable");}).then((snap) => {
+      } else setKnowledgePhase("unavailable");
+    }).catch(error=>{if(!canceledRead(error)&&active&&isCurrent()){readFailure.current?.(error);setKnowledgePhase("unavailable");}});
+    void observeSetupRead((reader?reader.read("language"):readOwnedBranchReplyLanguageAction(targetScope)),()=>{},10_000).then((snap) => {
       if (!active || !isCurrent()) return;
       if (snap) {
         setLangSnap(snap);
         setLangPhase("ready");
-      } else {
-        setLangPhase("unavailable");
-      }
-    }).catch(()=>{if(active&&isCurrent())setLangPhase('unavailable');});
+      } else setLangPhase("unavailable");
+    }).catch(error=>{if(!canceledRead(error)&&active&&isCurrent()){readFailure.current?.(error);setLangPhase("unavailable");}});
     return () => {
       active = false;
     };
@@ -195,7 +200,7 @@ function StepHost(props: PaidSetupStepHostProps) {
   useEffect(() => {
     if (step !== "test" || !isCurrent()) return;
     let active = true;
-    void observeSetupRead((reader?reader.read("trial"):readOwnedBranchAssistantTrialAction(targetScope)),()=>{if(active&&isCurrent())setTrialPhase("unavailable");}).then((snap) => {
+    void observeSetupRead((reader?reader.read("trial"):readOwnedBranchAssistantTrialAction(targetScope)),()=>{}).then((snap) => {
       if (!active || !isCurrent()) return;
       if (snap) {
         setTrialSnap(snap);
@@ -205,7 +210,7 @@ function StepHost(props: PaidSetupStepHostProps) {
       } else {
         setTrialPhase("unavailable");
       }
-    }).catch(()=>{if(active&&isCurrent())setTrialPhase('unavailable');});
+    }).catch(error=>{if(!canceledRead(error)&&active&&isCurrent()){readFailure.current?.(error);setTrialPhase('unavailable');}});
     return () => {
       active = false;
     };
@@ -221,7 +226,7 @@ function StepHost(props: PaidSetupStepHostProps) {
     let active = true;
     void observeSetupRead(
       (reader ? reader.read("team") : readOwnedBranchTeamAction(targetScope)),
-      () => { if (active && isCurrent()) setTeamPhase("unavailable"); }
+      () => {}
     ).then((snap) => {
       if (!active || !isCurrent()) return;
       if (snap) {
@@ -230,7 +235,7 @@ function StepHost(props: PaidSetupStepHostProps) {
       } else {
         setTeamPhase("unavailable");
       }
-    }).catch(() => { if (active && isCurrent()) setTeamPhase("unavailable"); });
+    }).catch(() => {});
     return () => {
       active = false;
     };
@@ -243,7 +248,7 @@ function StepHost(props: PaidSetupStepHostProps) {
   useEffect(() => {
     if (step !== "launch" || !isCurrent()) return;
     let active = true;
-    void observeSetupRead((reader?reader.read("launch"):readOwnedBranchLaunchSummaryAction(targetScope)),()=>{if(active&&isCurrent())setLaunchPhase("unavailable");}).then((snap) => {
+    void observeSetupRead((reader?reader.read("launch"):readOwnedBranchLaunchSummaryAction(targetScope)),()=>{}).then((snap) => {
       if (!active || !isCurrent()) return;
       if (snap) {
         setLaunchSnap(snap);
@@ -251,7 +256,7 @@ function StepHost(props: PaidSetupStepHostProps) {
       } else {
         setLaunchPhase("unavailable");
       }
-    }).catch(()=>{if(active&&isCurrent())setLaunchPhase('unavailable');});
+    }).catch(error=>{if(!canceledRead(error)&&active&&isCurrent()){readFailure.current?.(error);setLaunchPhase('unavailable');}});
     return () => {
       active = false;
     };
@@ -344,7 +349,8 @@ function StepHost(props: PaidSetupStepHostProps) {
               setKnowledgePhase("saved");
               onRefresh?.();
             } else {
-              setKnowledgePhase("unavailable");
+              setKnowledgePhase("ready");
+              throw new Error("knowledge_add_failed");
             }
           }}
           onPageAction={async (input) => {
@@ -356,16 +362,17 @@ function StepHost(props: PaidSetupStepHostProps) {
               setKnowledgePhase("ready");
               onRefresh?.();
             } else {
-              setKnowledgePhase("unavailable");
+              setKnowledgePhase("ready");
+              throw new Error("knowledge_page_action_failed");
             }
           }}
           onSaveText={async input=>{
             setKnowledgePhase('busy');const result=await runMutation(saveOwnedBranchKnowledgeTextAction(input),60_000).catch(()=>null);if(!isCurrent())return;
-            if(result){setKnowledgeSnap(result);setKnowledgePhase('saved');onRefresh?.();}else setKnowledgePhase('unavailable');
+            if(result){setKnowledgeSnap(result);setKnowledgePhase('saved');onRefresh?.();}else{setKnowledgePhase('ready');throw new Error('knowledge_save_text_failed');}
           }}
           onUploadFiles={async input=>{
             setKnowledgePhase('busy');const result=await runMutation(uploadOwnedBranchKnowledgeFilesAction(input),60_000).catch(()=>null);if(!isCurrent())return;
-            if(result){setKnowledgeSnap(result);setKnowledgePhase('saved');onRefresh?.();}else setKnowledgePhase('unavailable');
+            if(result){setKnowledgeSnap(result);setKnowledgePhase('saved');onRefresh?.();}else{setKnowledgePhase('ready');throw new Error('knowledge_upload_failed');}
           }}
           onSourceMutation={async input=>{
             if(!isCurrent())return;

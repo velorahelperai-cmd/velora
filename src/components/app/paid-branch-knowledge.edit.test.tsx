@@ -33,6 +33,30 @@ it('retains failed or mismatched edits, closes only confirmed content and permit
  }finally{await act(async()=>root.unmount());host.remove();vi.unstubAllGlobals();}
 });
 
+it('uploads a selected file while soft-unavailable instead of locking the prepare button',async()=>{
+ vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);
+ const host=document.createElement('div');document.body.append(host);const root=createRoot(host);
+ const scope={expectedAccountId:'actor',companyId:'company',branchId:'branch'};
+ const upload=vi.fn().mockResolvedValue(undefined);
+ const props:PaidBranchKnowledgeProps={locale:'en',scope,boundaryFingerprint:'stable',isCurrent:()=>true,state:{scope,version:1,phase:'unavailable'},snapshot:{scope,version:1,branchLabel:'TAG CITY',websiteQuota:{limit:10,used:1},pages:[],files:[],faq:[],capabilities:{canAddWebsite:true,canUploadFiles:true,canSaveText:true}},onUploadFiles:upload};
+ try{
+  await act(async()=>root.render(createElement(PaidBranchKnowledge,props)));
+  expect(host.textContent).not.toContain('Saving is unconfirmed');
+  await act(async()=>Array.from(host.querySelectorAll<HTMLButtonElement>('[role="tab"]')).find(item=>item.textContent?.includes('Files'))!.click());
+  const file=new File(['portfolio'],'TAJSEEM_Portfolio_2026.pdf',{type:'application/pdf'});
+  const zone=host.querySelector<HTMLElement>('[data-file-drop]')!;
+  const dropped=new Event('drop',{bubbles:true,cancelable:true});
+  Object.defineProperty(dropped,'dataTransfer',{value:{files:[file]}});
+  await act(async()=>{zone.dispatchEvent(dropped);});
+  expect(host.textContent).toContain('Waiting to upload');
+  const submit=Array.from(host.querySelectorAll<HTMLButtonElement>('button[type="submit"]')).find(item=>item.textContent==='Upload for preparation')!;
+  expect(submit.disabled).toBe(false);
+  await act(async()=>zone.closest('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
+  expect(upload).toHaveBeenCalledTimes(1);
+  expect(upload.mock.calls[0][0].files.map((item:File)=>item.name)).toEqual(['TAJSEEM_Portfolio_2026.pdf']);
+ }finally{await act(async()=>root.unmount());host.remove();vi.unstubAllGlobals();}
+});
+
 it('switches knowledge tabs immediately and keeps website, file and answer drafts',async()=>{
  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);
  const host=document.createElement('div');document.body.append(host);const root=createRoot(host);

@@ -50,6 +50,15 @@ it("reuses existing batch and MIME validation",()=>{
  expect(knowledgePreparationFileError(Array.from({length:6},()=>({name:"f.txt",size:10})))).toBe("BATCH_TOO_MANY");
  expect(knowledgePreparationFileError([{name:"f.txt",size:10,type:"image/png"}])).toBe("INVALID_TYPE");
 });
+it("does not show a customer verification-failure banner when soft-unavailable with a verified snapshot",()=>{
+ const html=render({
+  state:{...props.state,phase:"unavailable"},
+  onUploadFiles:()=>{throw Error("no render upload");},
+ });
+ expect(html).not.toContain("Saving is unconfirmed");
+ expect(html).not.toContain("Data could not be verified");
+ expect(html).toContain("Upload for preparation");
+});
 it.each([{scope:{...scope,branchId:"other"}},{state:{...props.state,scope:{...scope,expectedAccountId:"other"}}},{state:{...props.state,version:2}},{snapshot:null}])("hides stale branch data %#",extra=>{
  const html=render(extra);expect(html).toContain("Knowledge for this branch is unavailable");expect(html).not.toContain("example.com");
 });
