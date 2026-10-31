@@ -1,9 +1,9 @@
-# Current Session Index - SETUP-TRIAL-CI-HERMETIC-KILL-SWITCH-20261031
+# Current Session Index - SETUP-TRIAL-CI-HERMETIC-KILL-SWITCH-20261031 DELIVERED
 
 - Follow-up after `7136363`: CI unit failed on Vitest `NODE_ENV=development` + broad hermetic injected bypass, null provider pin, and launch-nav expectation.
 - **Adapter contract**: explicit `AI_LIVE_ANSWERING=false` kill switch blocks even injected clients; Vitest hermetic injected allowed only when flag ≠ off. `clearAnswerProviderForTesting()` restores env-key create. Loading-flow expects launch navigable for inspection (mutations stay leaf-gated).
 - **25bb9e66**: still needs provider-reconciliation review; no new financial write.
-- Affected tests **140 PASS**. C15 remains open until live successful answer. Publish SHA below after push.
+- Published main `2b4798ef374f2309ea4dec404a2ab7f2088fdaa7`. Affected tests **140 PASS**. [CI 8/8 success](https://github.com/velorahelperai-cmd/velora/actions/runs/41235469426). Vercel Production Ready `dpl_AHpBiHQydwUqC9czqRXi9w3XyPcp` / `velora-64ituvwm3` exact SHA `2b4798e` → www.velorahelper.com. Authenticated `/setup` stickiness+buttons **NOT_RUN** (login redirect; no authorized session this turn). No new AI ask / hold release. C15 remains open until live successful answer.
 - Prior indexes retained below.
 
 # Current Session Index - SETUP-TRIAL-REACH-CLASSIFY-KILL-SWITCH-20261031 PUBLISH
