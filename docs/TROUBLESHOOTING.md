@@ -57,6 +57,16 @@ This opens a fresh headless browser, captures console errors, page exceptions, f
 - Verification: targeted hours, workspace, loading, step-host and reader tests 54/54; scoped ESLint and source-only typecheck passed. Project typecheck failed in existing `scripts/setup-journey-qa/action-adapter.ts` on `companyLabel` and `persona`. Authenticated local `/setup`: knowledge and language were visible again after navigation with correct branch data; hours initially showed checking rather than falsely unset. Team and launch remained locked by prerequisites. Network timing and production acceptance NOT RUN. No commit, deployment, or live provider action. Root cause of the reported live failed request remains unknown.
 ## Confirmed records
 
+### C15-TRIAL-ASK-PRE-RESERVE-001 / countTokens shape + hard block
+
+- Date: 2026-10-31. Status: LOCAL PARTIAL (code fixed unstaged; live re-ask / Commit / Push NOT_RUN). Base HEAD `5ac7229`.
+- Symptom: `/setup` assistant trial after C15.2 unlock returns UNAVAILABLE («تعذّر الحصول على رد الآن»), safe retry disabled, allowance stays 0/10, no new `ai_usage_ledger` row.
+- Confirmed cause: `GeminiAnswerAdapter.countInputTokens` passed system+user as `contents` array; CountTokens API expects user `contents` + `config.systemInstruction` (same as `complete()`). Null count then hard-returned UNAVAILABLE before reserve despite economics UTF-8 upper bound.
+- Fix: align countTokens request; fall back to UTF-8 reserve with warn log; propagate CONTEXT_OVERFLOW/NO_KNOWLEDGE/APPROVAL_* from `loadApprovedBranchKnowledgeContext`; reject combined hours overflow before spend.
+- Files: `src/lib/answers/adapters/gemini.ts`, `src/lib/tenancy/paid-assistant-trial-actions.ts`, `src/lib/tenancy/paid-branch-knowledge-actions.ts`, matching tests.
+- Verification: 121 scoped Vitest PASS; authored-file ESLint clean. Production data still has TAG CITY bound to velorahelper.com homepage scrape (owner data cleanup separate).
+- Recurrence: never diverge countTokens request shape from complete(); never hard-block trial solely because provider token counting failed when a proven UTF-8 bound exists.
+
 ### LOCAL-DEBUG-WINDOWS-PRELOAD-001 / MODULE_NOT_FOUND
 
 - Date: 2026-10-26. Status: FIXED-VERIFIED locally. Base commit `35f7df0fbd3c40b444c9e59b0b3d526857f92935`; no commit created.

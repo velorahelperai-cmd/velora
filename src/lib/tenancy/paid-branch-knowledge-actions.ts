@@ -12,7 +12,7 @@ import {
   safeFetchWebsite,
   type SafeFetchOptions,
 } from "./safe-website-fetcher";
-import type { AnswerContextChunk } from "@/lib/answers/types";
+import type { AnswerContextChunk, AnswerFailureCode } from "@/lib/answers/types";
 import { loadApprovedAnswerContext } from "@/lib/answers/context";
 import { ANSWER_MAX_CONTEXT_CHARS, ANSWER_MAX_SOURCES } from "@/lib/answers/constants";
 
@@ -266,45 +266,84 @@ export async function indexOwnedBranchWebsiteAction(
   });
 }
 
-export interface BranchKnowledgeContextResult {
-  ok: boolean;
-  chunks: AnswerContextChunk[];
-  knowledgeRevision: string;
+export type BranchKnowledgeFailureCode = Extract<
+  AnswerFailureCode,
+  | "UNAVAILABLE"
+  | "CONTEXT_OVERFLOW"
+  | "NO_KNOWLEDGE"
+  | "APPROVAL_INCOMPLETE"
+  | "APPROVAL_FOUNDATION_UNAVAILABLE"
+>;
+
+export type BranchKnowledgeContextResult =
+  | { ok: true; chunks: AnswerContextChunk[]; knowledgeRevision: string }
+  | { ok: false; chunks: []; knowledgeRevision: "unavailable"; code: BranchKnowledgeFailureCode };
+
+function knowledgeFailure(code: BranchKnowledgeFailureCode): BranchKnowledgeContextResult {
+  return { ok: false, chunks: [], knowledgeRevision: "unavailable", code };
 }
 
 export async function loadApprovedBranchKnowledgeContext(
   companyId: string,
   branchId: string
 ): Promise<BranchKnowledgeContextResult> {
-  const unavailable: BranchKnowledgeContextResult = { ok: false, chunks: [], knowledgeRevision: "unavailable" };
   const identity = await readSessionIdentity();
-  if (!identity.ok || !UUID.test(companyId) || !UUID.test(branchId)) return unavailable;
+  if (!identity.ok || !UUID.test(companyId) || !UUID.test(branchId)) return knowledgeFailure("UNAVAILABLE");
   try {
     const client = await createClient();
     const res = await client.rpc("es02_read_owned_branch_answer_context" as never, {
       p_expected_account_id: identity.userId, p_company_id: companyId, p_branch_id: branchId,
     } as never);
-    const result = res.data as unknown as { ok?: boolean; data?: { pages?: Array<{ id: string; version: number; url: string; title: string | null; extracted_text: string }>; knowledgeRevision?: string } };
-    if (res.error || result?.ok !== true || !Array.isArray(result.data?.pages) || typeof result.data.knowledgeRevision !== "string") return unavailable;
+    const result = res.data as unknown as {
+      ok?: boolean;
+      code?: string;
+      data?: { pages?: Array<{ id: string; version: number; url: string; title: string | null; extracted_text: string }>; knowledgeRevision?: string };
+    };
+    if (res.error) return knowledgeFailure("UNAVAILABLE");
+    if (result?.ok !== true) {
+      const overflow = result?.code === "ANSWER_CONTEXT_OVERFLOW" || result?.code === "CONTEXT_OVERFLOW";
+      return knowledgeFailure(overflow ? "CONTEXT_OVERFLOW" : "UNAVAILABLE");
+    }
+    if (!Array.isArray(result.data?.pages) || typeof result.data.knowledgeRevision !== "string") {
+      return knowledgeFailure("UNAVAILABLE");
+    }
     const chunks: AnswerContextChunk[] = [];
     for (const page of result.data.pages) {
-      if (!UUID.test(page.id) || !Number.isSafeInteger(page.version) || page.version < 1 || typeof page.url !== "string" || typeof page.extracted_text !== "string" || !page.extracted_text.trim()) return unavailable;
+      if (!UUID.test(page.id) || !Number.isSafeInteger(page.version) || page.version < 1 || typeof page.url !== "string" || typeof page.extracted_text !== "string" || !page.extracted_text.trim()) {
+        return knowledgeFailure("UNAVAILABLE");
+      }
       chunks.push({ sourceId: `page-${page.id}`, title: page.title || page.url, contentVersion: page.version, text: page.extracted_text, usageRole: "knowledge" });
     }
     // Reuse canonical approval AND file-object integrity checks for public knowledge.
     const scope = { expectedAccountId: identity.userId, companyId, branchId };
     const sourceRead = await readOwnedBranchKnowledgeAction(scope);
     const bound = boundKnowledgeSnapshot({ok:true,data:{snapshot:sourceRead}},scope);
-    if (!bound) return unavailable;
+    if (!bound) return knowledgeFailure("UNAVAILABLE");
     const sources = [...bound.files, ...bound.faq];
-    if (sources.some(item => item.branchId !== branchId || item.source.company_id !== companyId || !UUID.test(item.source.id))) return unavailable;
-    const sourceIds = [...new Set(sources.map(item => item.source.id))];
-    const company = await loadApprovedAnswerContext(companyId, client, undefined, sourceIds);
-    if (!company.ok && company.code !== "NO_KNOWLEDGE") return unavailable;
-    if (company.ok) chunks.push(...company.chunks);
-    if (!chunks.length || chunks.length > ANSWER_MAX_SOURCES || chunks.reduce((n, c) => n + c.title.length + c.text.length + 6, 0) > ANSWER_MAX_CONTEXT_CHARS) return unavailable;
+    if (sources.some(item => item.branchId !== branchId || item.source.company_id !== companyId || !UUID.test(item.source.id))) {
+      return knowledgeFailure("UNAVAILABLE");
+    }
+    // Failed extracts stay listed for the owner UI but must not poison answer packing.
+    const sourceIds = [...new Set(sources.filter(item => item.source.status !== "failed").map(item => item.source.id))];
+    if (sourceIds.length > 0) {
+      const company = await loadApprovedAnswerContext(companyId, client, undefined, sourceIds);
+      if (!company.ok && company.code !== "NO_KNOWLEDGE") {
+        return knowledgeFailure(
+          company.code === "CONTEXT_OVERFLOW"
+          || company.code === "APPROVAL_INCOMPLETE"
+          || company.code === "APPROVAL_FOUNDATION_UNAVAILABLE"
+            ? company.code
+            : "UNAVAILABLE",
+        );
+      }
+      if (company.ok) chunks.push(...company.chunks);
+    }
+    if (!chunks.length) return knowledgeFailure("NO_KNOWLEDGE");
+    if (chunks.length > ANSWER_MAX_SOURCES || chunks.reduce((n, c) => n + c.title.length + c.text.length + 6, 0) > ANSWER_MAX_CONTEXT_CHARS) {
+      return knowledgeFailure("CONTEXT_OVERFLOW");
+    }
     return { ok: true, chunks, knowledgeRevision: result.data.knowledgeRevision };
   } catch {
-    return unavailable;
+    return knowledgeFailure("UNAVAILABLE");
   }
 }

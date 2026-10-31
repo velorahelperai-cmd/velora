@@ -1,3 +1,11 @@
+# Current Session Index - C15-TRIAL-ASK-PRE-RESERVE-20261031 DELIVERED
+
+- Explicit owner approval ("ارفع"). Scoped Commit/Push of pre-reserve trial ask fix only.
+- After C15.2 unlock, TAG CITY re-ask failed UNAVAILABLE with 0/10 and no new ledger row (fail before reserve).
+- Root cause: `countInputTokens` used wrong Gemini request shape vs `complete()`; null count hard-blocked ask despite UTF-8 reserve bound.
+- Code: align countTokens (`contents` + `config.systemInstruction`); UTF-8 fallback + warn; honest CONTEXT_OVERFLOW/NO_KNOWLEDGE/APPROVAL_* from knowledge loader; combined hours overflow check before spend.
+- Package: `gemini.ts`, `p3-readiness.test.ts`, `paid-assistant-trial-actions.ts/.test.ts`, `paid-branch-knowledge-actions.ts/.test.ts` (context loader only), `docs/TROUBLESHOOTING.md`, this index. Other agents' upload/reprocess/auth/WIP preserved unstaged. Live re-ask after deploy NOT_RUN. TAG CITY velorahelper.com page scrape left as owner data cleanup.
+
 # Current Session Index - C15-TRIAL-UNCERTAIN-UNLOCK-20261031 DELIVERED
 
 - Explicit owner approval in chat ("ارفع"). Scoped Commit/Push of assistant-trial unlock only.

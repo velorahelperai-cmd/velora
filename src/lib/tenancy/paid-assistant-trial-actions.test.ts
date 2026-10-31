@@ -407,7 +407,7 @@ it.each(["hours", "knowledge", "language"])("stops before provider when %s conte
   const complete = vi.fn(async (): Promise<AnswerResult> => ({ ok: false, code: "UNAVAILABLE", message: "fake only" }));
   setAnswerProviderForTesting({ id: "fake-only", complete });
   if (part === "hours") vi.mocked((await import("./branch-hours-actions")).readOwnedBranchHoursAction).mockResolvedValueOnce({ ok: false, code: "UNAVAILABLE" } as never);
-  if (part === "knowledge") vi.mocked((await import("./paid-branch-knowledge-actions")).loadApprovedBranchKnowledgeContext).mockResolvedValueOnce({ ok: false, chunks: [], knowledgeRevision: "no_pages" });
+  if (part === "knowledge") vi.mocked((await import("./paid-branch-knowledge-actions")).loadApprovedBranchKnowledgeContext).mockResolvedValueOnce({ ok: false, chunks: [], knowledgeRevision: "unavailable", code: "UNAVAILABLE" });
   if (part === "language") vi.mocked((await import("./paid-reply-language-actions")).readOwnedBranchReplyLanguageAction).mockResolvedValueOnce(null);
   const result = await askOwnedBranchAssistantTrialAction({ expectedAccountId: VALID_ACCOUNT_ID, companyId: VALID_COMPANY_ID, branchId: VALID_BRANCH_ID, expectedVersion: 1, knowledgeRevision: "rev_1", question: "Hours?" });
   expect(complete).not.toHaveBeenCalled();
@@ -488,13 +488,14 @@ describe("trial budget cap, billed-but-unusable calls and settlement failure", (
   const called = (name: string) => trustedRpc.mock.calls.filter(c => c[0] === name).map(c => c[1] as Record<string, unknown>);
   const failingProvider = (extra: Partial<Extract<AnswerResult, { ok: false }>> = {}) => vi.fn(async (): Promise<AnswerResult> => ({ ok: false, code: "UNAVAILABLE", message: "Gemini returned no complete answer.", usage, providerAttempted: true, retrySafe: false, ...extra }));
 
-  it("reserves from the provider token count and stops before any reservation when counting fails", async () => {
+  it("prefers provider token count and falls back to UTF-8 bound reservation when counting fails", async () => {
     setup();
     const complete = failingProvider();
     setAnswerProviderForTesting({ id: "p", complete, countInputTokens: vi.fn(async () => null) });
     expect(await askOwnedBranchAssistantTrialAction(input)).toMatchObject({ ok: false, code: "UNAVAILABLE" });
-    expect(trustedRpc).not.toHaveBeenCalled();
-    expect(complete).not.toHaveBeenCalled();
+    // Counting failure must not hard-block before reservation; UTF-8 bound still reserves.
+    expect(called("es02_reserve_branch_trial_capped")).toHaveLength(1);
+    expect(complete).toHaveBeenCalled();
     setup();
     setAnswerProviderForTesting({ id: "p", complete, countInputTokens: vi.fn(async () => 400) });
     await askOwnedBranchAssistantTrialAction(input);

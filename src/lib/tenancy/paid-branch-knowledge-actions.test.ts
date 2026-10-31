@@ -242,6 +242,14 @@ it("does not report successful knowledge context when private-page access fails"
   const result = await loadApprovedBranchKnowledgeContext(VALID_COMPANY_ID, VALID_BRANCH_ID);
   expect(result.ok).toBe(false);
   expect(result.chunks).toEqual([]);
+  expect(result).toMatchObject({ code: "UNAVAILABLE" });
+});
+
+it("maps answer-context overflow from the owned RPC to CONTEXT_OVERFLOW", async () => {
+  currentSessionId = VALID_ACCOUNT_ID;
+  rpcMock = vi.fn().mockResolvedValue({ data: { ok: false, code: "ANSWER_CONTEXT_OVERFLOW" }, error: null });
+  const result = await loadApprovedBranchKnowledgeContext(VALID_COMPANY_ID, VALID_BRANCH_ID);
+  expect(result).toEqual({ ok: false, chunks: [], knowledgeRevision: "unavailable", code: "CONTEXT_OVERFLOW" });
 });
 
 describe("es02 page action migration preflight baseline guard", () => {

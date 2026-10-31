@@ -50,6 +50,19 @@ describe("P3 provider request boundaries", () => {
     expect(generateContent.mock.calls[0][0].config).not.toHaveProperty("temperature");
     expect(result).toMatchObject({ usage: { requestId: "gemini_mock", completionTokens: 50, reasoningTokens: 30, totalTokens: 150 } });
   });
+  it("counts tokens with the same contents/systemInstruction shape as complete()", async () => {
+    const countTokens = vi.fn().mockResolvedValue({ totalTokens: 42 });
+    const adapter = new GeminiAnswerAdapter({
+      client: { models: { generateContent: vi.fn(), countTokens } } as unknown as GoogleGenAI,
+    });
+    await expect(adapter.countInputTokens({ ...input, persona: "noura" })).resolves.toBe(42);
+    expect(countTokens).toHaveBeenCalledTimes(1);
+    const args = countTokens.mock.calls[0][0];
+    expect(args.model).toBe("gemini-3.8-flash");
+    expect(typeof args.contents).toBe("string");
+    expect(args.config?.systemInstruction).toEqual(expect.any(String));
+    expect(Array.isArray(args.contents)).toBe(false);
+  });
   it.each([0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, 4097])("rejects invalid output caps before provider execution: %s", async (maxOutputTokens) => {
     const { adapter, create } = openai();
     const { adapter: google, generateContent } = gemini();

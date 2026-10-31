@@ -12,6 +12,7 @@ import type {
   TrialScope,
   TrialSnapshot,
 } from "@/components/app/paid-assistant-trial";
+import { ANSWER_MAX_CONTEXT_CHARS, ANSWER_MAX_SOURCES } from "@/lib/answers/constants";
 import { realModelPricing, reserveRealCost, priceRealUsage } from "@/lib/answers/runtime/economics";
 import { buildAnswerSystemPrompt, formatAnswerUserPrompt } from "@/lib/answers/adapters/prompt";
 import { getAnswerProvider } from "@/lib/answers/provider";
@@ -183,14 +184,23 @@ export async function askOwnedBranchAssistantTrialAction(
 
     // 3. Load approved branch knowledge (indexed website pages + approved sources)
     const knowledgeContext = await loadApprovedBranchKnowledgeContext(input.companyId, input.branchId);
-    if (!knowledgeContext.ok || knowledgeContext.chunks.length === 0) return { ok: false, code: "UNAVAILABLE", message: "Approved knowledge could not be verified" };
+    if (!knowledgeContext.ok || knowledgeContext.chunks.length === 0) {
+      const code = !knowledgeContext.ok ? knowledgeContext.code : "NO_KNOWLEDGE";
+      logEvent("warn", "es02.branch_assistant_trial.knowledge_unavailable", {
+        request_id: requestId,
+        stage: "b6",
+        error_code: code,
+        detail: "Approved branch knowledge could not be packed for trial ask.",
+      });
+      return { ok: false, code, message: "Approved knowledge could not be verified", requestId };
+    }
     // Validate the disclosed context before reserving allowance or spending a provider request.
     const trial = await readOwnedBranchAssistantTrialAction(input);
-    if (!trial) return { ok: false, code: "UNAVAILABLE", message: "Trial context could not be verified" };
+    if (!trial) return { ok: false, code: "UNAVAILABLE", message: "Trial context could not be verified", requestId };
     if (trial.scope?.expectedAccountId !== input.expectedAccountId || trial.scope?.companyId !== input.companyId ||
         trial.scope?.branchId !== input.branchId || trial.version !== input.expectedVersion ||
         trial.knowledgeRevision !== input.knowledgeRevision || knowledgeContext.knowledgeRevision !== input.knowledgeRevision) {
-      return { ok: false, code: "CONTEXT_CHANGED", message: "Trial context changed; reload the branch before asking" };
+      return { ok: false, code: "CONTEXT_CHANGED", message: "Trial context changed; reload the branch before asking", requestId };
     }
     const chunks = [...knowledgeContext.chunks];
 
@@ -203,6 +213,10 @@ export async function askOwnedBranchAssistantTrialAction(
         usageRole: "business_instructions",
       });
     }
+    // Hours are mandatory business instructions; reject before spend if the combined set no longer fits.
+    if (chunks.length > ANSWER_MAX_SOURCES || chunks.reduce((n, c) => n + c.title.length + c.text.length + 6, 0) > ANSWER_MAX_CONTEXT_CHARS) {
+      return { ok: false, code: "CONTEXT_OVERFLOW", message: "Knowledge plus hours exceeds the allowed context limit", requestId };
+    }
 
     // 4. Branch confirmed reply language
     const langRes = await readOwnedBranchReplyLanguageAction({
@@ -210,23 +224,28 @@ export async function askOwnedBranchAssistantTrialAction(
       companyId: input.companyId,
       branchId: input.branchId,
     });
-    if (!langRes || !["ar", "en", "both"].includes(langRes.replyLanguage || "")) return { ok: false, code: "UNAVAILABLE", message: "Confirmed reply language could not be verified" };
+    if (!langRes || !["ar", "en", "both"].includes(langRes.replyLanguage || "")) return { ok: false, code: "UNAVAILABLE", message: "Confirmed reply language could not be verified", requestId };
     const locale: "ar" | "en" = langRes.replyLanguage === "en" || (langRes.replyLanguage === "both" && !/[\u0600-\u06ff]/.test(input.question)) ? "en" : "ar";
 
     const operationId = input.operationId || requestId;
     const pricing = realModelPricing(configuredModel);
     const systemPrompt = buildAnswerSystemPrompt(locale, persona);
     const userPrompt = formatAnswerUserPrompt(input.question, chunks, locale);
-    // Provider-counted input for the full request; without it the reservation uses the proven
-    // UTF-8 byte upper bound. Never a weaker estimate.
+    // Provider-counted input is preferred. When counting fails, reserveRealCost already uses the
+    // proven UTF-8 byte upper bound — never a weaker estimate — so do not hard-block the trial.
     let providerInputTokens: number | undefined;
     if (provider.countInputTokens) {
       let counted: number | null = null;
       try { counted = await provider.countInputTokens({ question: input.question.trim(), locale, chunks, persona }); } catch { counted = null; }
-      if (counted === null || !Number.isSafeInteger(counted) || counted < 1) {
-        return { ok: false, code: "UNAVAILABLE", message: "Request size could not be verified before dispatch" };
+      if (counted !== null && Number.isSafeInteger(counted) && counted >= 1) {
+        providerInputTokens = counted;
+      } else {
+        logEvent("warn", "es02.branch_assistant_trial.token_count_fallback", {
+          request_id: requestId,
+          stage: "b6",
+          detail: "Provider token count unavailable; reserving from UTF-8 byte upper bound.",
+        });
       }
-      providerInputTokens = counted;
     }
     const reservedBaisa = reserveRealCost(configuredModel, systemPrompt, userPrompt, pricing, TRIAL_MAX_OUTPUT_TOKENS, providerInputTokens);
     // If restricted local customer trial mode is active, the cap is required and strictly <= 2 baisa.

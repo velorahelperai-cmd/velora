@@ -49,9 +49,13 @@ export class GeminiAnswerAdapter implements AnswerProvider {
     try {
       const systemInstruction = buildAnswerSystemPrompt(input.locale, input.persona);
       const userPrompt = formatAnswerUserPrompt(input.question, input.chunks, input.locale);
+      // Must match complete(): user contents + systemInstruction in config.
+      // Passing the system prompt as a contents entry is rejected by the CountTokens API
+      // and previously hard-blocked every setup trial before reservation.
       const res = await this.client.models.countTokens({
         model: this.modelId,
-        contents: [systemInstruction, userPrompt],
+        contents: userPrompt,
+        config: { systemInstruction },
       });
       return validTokenCount(res.totalTokens) ? res.totalTokens : null;
     } catch {
