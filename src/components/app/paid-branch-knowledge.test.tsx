@@ -74,3 +74,34 @@ it('offers scoped edit and honest branch removal only with current source versio
  expect(html.match(/Edit text/g)).toHaveLength(1);expect(html.match(/Delete page/g)).toHaveLength(1);expect(html.match(/Remove from branch/g)).toHaveLength(1);
  expect(render({snapshot:{...props.snapshot!,faq:[{branchId:'other',source}]},onSourceMutation:()=>{}})).not.toContain('Edit text');
 });
+
+it('distinguishes no_text from generic extract_failed and surfaces reprocess action',()=>{
+ const noTextSource={id:'src-1',company_id:'company',kind:'file',file_name:'portfolio.pdf',title:'portfolio.pdf',content:'',status:'failed',failure_code:'no_text',content_version:1} as KnowledgeSourceRecord;
+ const arHtml=render({locale:'ar',snapshot:{...props.snapshot!,files:[{branchId:'branch',source:noTextSource}]},onReprocessFile:()=>{}});
+ expect(arHtml).toContain('رُفع الملف بنجاح، لكن استخراج النص فشل لعدم وجود نصوص قابلة للقراءة داخل المستند');
+ expect(arHtml).toContain('إعادة المعالجة من الملف المخزن');
+
+ const genericSource={id:'src-3',company_id:'company',kind:'file',file_name:'doc.pdf',title:'doc.pdf',content:'',status:'failed',failure_code:'extract_failed',content_version:1} as KnowledgeSourceRecord;
+ const genericHtml=render({locale:'ar',snapshot:{...props.snapshot!,files:[{branchId:'branch',source:genericSource}]},onReprocessFile:()=>{}});
+ expect(genericHtml).toContain('رُفع الملف بنجاح، لكن تعذرت معالجة الملف.');
+
+ const enHtml=render({locale:'en',snapshot:{...props.snapshot!,files:[{branchId:'branch',source:genericSource}]},onReprocessFile:()=>{}});
+ expect(enHtml).toContain('File uploaded successfully, but file processing failed.');
+ expect(enHtml).toContain('Reprocess from stored file');
+});
+
+it('explains processing and offers safe recovery without inventing extract success',()=>{
+ const processing={id:'src-p',company_id:'company',kind:'file',file_name:'menu.pdf',title:'menu.pdf',content:'',status:'processing',failure_code:null,content_version:1} as KnowledgeSourceRecord;
+ const html=render({locale:'en',snapshot:{...props.snapshot!,files:[{branchId:'branch',source:processing}]},onReprocessFile:()=>{}});
+  expect(html).toContain('Preparing this file');
+ expect(html).toContain('Safe processing recovery');
+ expect(html).not.toContain('Prepared');
+});
+
+it('surfaces unknown provider review hold and hides blind reprocess',()=>{
+ const unknown={id:'src-u',company_id:'company',kind:'file',file_name:'menu.pdf',title:'menu.pdf',content:'',status:'failed',failure_code:'provider_outcome_unknown',content_version:1} as KnowledgeSourceRecord;
+ const html=render({locale:'en',snapshot:{...props.snapshot!,files:[{branchId:'branch',source:unknown}]},onReprocessFile:()=>{}});
+ expect(html).toContain('extract provider outcome is unknown');
+ expect(html).not.toContain('Reprocess from stored file');
+ expect(html).not.toContain('Safe processing recovery');
+});

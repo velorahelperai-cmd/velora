@@ -1,0 +1,42 @@
+{
+  "at": "2026-10-31T16:49:37.689Z",
+  "production": false,
+  "tagCity": false,
+  "gateEnabled": true,
+  "providerExtract": false,
+  "attemptId": "52ee4c35-8ae4-435d-b13f-0ef22d47e2d9",
+  "sourceId": "f9722452-ca42-4b73-b498-736962b008f5",
+  "tick": {
+    "url": "http://127.0.0.1:57886/api/internal/knowledge/file-worker",
+    "httpStatus": 200,
+    "ok": true,
+    "code": "COMPLETE",
+    "processed": 1,
+    "extracted": 1,
+    "failed": 0,
+    "backlog": 1
+  },
+  "claim": {
+    "ok": true,
+    "attemptId": "52ee4c35-8ae4-435d-b13f-0ef22d47e2d9",
+    "replayed": false,
+    "sourceStatus": "processing"
+  },
+  "afterTick": {
+    "attempt_id": "52ee4c35-8ae4-435d-b13f-0ef22d47e2d9",
+    "attempt_state": "published",
+    "source_status": "ready",
+    "content_prefix": "Isolated worker tick proof text/plain — local ex",
+    "content_version": 2
+  },
+  "publish": {
+    "ok": true,
+    "contentMatches": true
+  },
+  "error": null,
+  "container": "velora-kfw-0c45f847",
+  "status": "PASS_WORKER_TICK_JOURNEY",
+  "cleaned": true,
+  "at_end": "2026-10-31T16:52:06.497Z",
+  "secretConfiguredLength": 47
+}

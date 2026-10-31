@@ -1,0 +1,18 @@
+{
+  "at": "2026-10-31T16:18:00.000Z",
+  "production": false,
+  "tagCityMutated": false,
+  "providerExtractEnabled": false,
+  "workerGateEnabled": false,
+  "workerConfiguredLocally": true,
+  "localTickCode": "WORKER_DISABLED",
+  "note": "Secret configured; gate off so TAG CITY is not drained. Real upload→worker journey proven on disposable chain (native-acceptance), not Gemini.",
+  "nativeEvidence": "PASS_ISOLATED_REAL_CHAIN / 10_11=PASS_ON_REAL_CHAIN",
+  "geminiViaWorker": false,
+  "bounds": [
+    "External provider extract stays off for this proof",
+    "TAG CITY knowledge rows / holds not mutated by worker tick (gate off)",
+    "Disposable native PASS_ISOLATED_REAL_CHAIN covers claim/replay/recovery/review + local txt setup journey",
+    "Browser /setup against hosted TAG CITY with gate on remains NOT_RUN until prod SQL 10/11 + approvals"
+  ]
+}

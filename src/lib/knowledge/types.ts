@@ -1,6 +1,13 @@
 export type KnowledgeKind = "text" | "file";
 export type KnowledgeStatus = "draft" | "stored" | "processing" | "ready" | "failed";
-export type KnowledgeFailureCode = "no_text" | "corrupt" | "unsupported" | "extract_failed";
+export type KnowledgeFailureCode =
+  | "no_text"
+  | "corrupt"
+  | "unsupported"
+  | "extract_failed"
+  | "provider_outcome_unknown"
+  | "PROVIDER_EXTRACT_DISABLED"
+  | "attempt_lease_expired";
 
 export type KnowledgeSourceRecord = {
   /** Business instructions require the same explicit version approval as facts. */

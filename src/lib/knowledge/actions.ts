@@ -35,15 +35,21 @@ import { createClient } from "@/lib/supabase/server";
 import { isSetupFilePath, type SetupFileRpc, type SetupFileScope } from "@/lib/tenancy/setup-file";
 import { getCompanyAccess, requirePlatformAdmin } from "@/lib/tenancy/access";
 import type { AccessCode } from "@/lib/tenancy/types";
+import { knowledgeFileWorkerEnabled } from "@/lib/knowledge/file-worker/gate";
 
 export type KnowledgeActionResult<T = undefined> =
   | { ok: true; data: T }
   | {
     ok: false;
-    code: AccessCode | "AUTH_ERROR" | "STORAGE_ERROR" | "INVALID_INPUT" | "CONFLICT";
+    code: AccessCode | "AUTH_ERROR" | "STORAGE_ERROR" | "INVALID_INPUT" | "CONFLICT" | "UNAVAILABLE";
     message?: string;
     data?: T;
   };
+
+/** When the durable worker gate is on, skip in-request extract after storage. */
+function deferExtractToFileWorker(): boolean {
+  return knowledgeFileWorkerEnabled();
+}
 
 const SOURCE_SELECT_BASE =
   "id, company_id, kind, title, content, file_name, content_type, byte_size, storage_path, status, failure_code, created_by, created_at, updated_at";
@@ -171,19 +177,25 @@ async function markFileFailed(
   storagePath: string | null,
   failureCode: KnowledgeFailureCode | null = null,
   foundation: KnowledgeApprovalFoundation = "unavailable",
+  expected?: KnowledgeSourceRecord,
 ) {
-  const { data } = await supabase
+  let mutation = supabase
     .from("knowledge_sources")
     .update({
       status: "failed",
       storage_path: storagePath,
-      failure_code: failureCode,
+      // App codes may include worker outcomes before DB enum expands; store as text.
+      failure_code: failureCode as "no_text" | "corrupt" | "unsupported" | "extract_failed" | null,
       content: "",
     })
     .eq("id", sourceId)
-    .eq("company_id", companyId)
-    .select(sourceSelectFor(foundation))
-    .maybeSingle();
+    .eq("company_id", companyId);
+  if (expected) {
+    mutation = mutation.eq("status", expected.status).eq("updated_at", expected.updated_at);
+    if (expected.content_version !== null) mutation = mutation.eq("content_version", expected.content_version);
+    if (expected.storage_path) mutation = mutation.eq("storage_path", expected.storage_path);
+  }
+  const { data } = await mutation.select(sourceSelectFor(foundation)).maybeSingle();
   return data ? asSource(data, foundation) : null;
 }
 
@@ -287,6 +299,7 @@ async function prepareStoredFile(
   bytes: Uint8Array,
   capturedGeneration: StorageObjectGeneration,
   foundation: KnowledgeApprovalFoundation = "unavailable",
+  claimRetry = false,
 ) {
   const select = sourceSelectFor(foundation);
   const storagePath = source.storage_path;
@@ -311,6 +324,7 @@ async function prepareStoredFile(
       contentVersion: source.content_version,
       storagePath,
       select,
+      ...(claimRetry ? { expectedStatus: source.status, expectedUpdatedAt: source.updated_at } : {}),
     },
   );
 
@@ -318,6 +332,7 @@ async function prepareStoredFile(
     if (begun.reason === "superseded") {
       return loadSourceRow(supabase, source, companyId, select, foundation);
     }
+    // still_eligible: claim landed but prior approval survived — never extract over it.
     const failed = await markFileFailed(
       supabase,
       source.id,
@@ -325,8 +340,9 @@ async function prepareStoredFile(
       storagePath,
       "extract_failed",
       foundation,
+      source,
     );
-    return failed ?? asSource({ ...source, status: "failed", failure_code: "extract_failed", content: "" }, foundation);
+    return failed ?? loadSourceRow(supabase, source, companyId, select, foundation);
   }
 
   const started = asSource(begun.row, foundation);
@@ -334,7 +350,7 @@ async function prepareStoredFile(
     fileName: started.file_name,
     contentType: started.content_type,
     bytes,
-  });
+  }).catch(() => ({ ok: false as const, code: "extract_failed" as const }));
 
   if (!extracted.ok) {
     const failed = await markFileFailed(
@@ -344,12 +360,16 @@ async function prepareStoredFile(
       storagePath,
       extracted.code,
       foundation,
+      started,
     );
-    return failed ?? asSource({ ...started, status: "failed", failure_code: extracted.code, content: "" }, foundation);
+    return failed ?? loadSourceRow(supabase, started, companyId, select, foundation);
   }
 
   if (!(await stillCapturedObject())) {
-    return loadSourceRow(supabase, source, companyId, select, foundation);
+    // The object cannot be re-attested, so this worker must not publish. Release
+    // only its exact row; a replacement/invalidation owns any newer state.
+    const failed = await markFileFailed(supabase, started.id, companyId, storagePath, "extract_failed", foundation, started);
+    return failed ?? loadSourceRow(supabase, started, companyId, select, foundation);
   }
 
   const published = await publishPreparedFile(
@@ -387,8 +407,9 @@ async function prepareStoredFile(
     started.storage_path,
     "extract_failed",
     foundation,
+    started,
   );
-  return failed ?? asSource({ ...started, status: "failed", failure_code: "extract_failed", content: "" }, foundation);
+  return failed ?? loadSourceRow(supabase, started, companyId, select, foundation);
 }
 
 export async function listKnowledgeSources(input?: { expectedCompanyId?: string }): Promise<KnowledgeActionResult<KnowledgeListPayload>> {
@@ -537,7 +558,8 @@ export async function uploadKnowledgeFiles(
         const { data: stored } = await ctx.supabase.from("knowledge_sources").select(ctx.sourceSelect).eq("id", receipt.data.sourceId).eq("company_id", ctx.companyId).single();
         if (!stored) { results.push({ fileName, ok: false, uploaded: true, code: "CLEANUP_PENDING" }); continue; }
         let source = asSource(stored, ctx.approvalFoundation);
-        if (isPreparableKnowledgeFile(fileName)) {
+        // Worker gate: keep stored bytes; branch bind + claim owns processing.
+        if (isPreparableKnowledgeFile(fileName) && !deferExtractToFileWorker()) {
           const loaded = await loadStoredBytesBoundToObject(ctx.supabase, ctx.companyId, source.id, receipt.data.path);
           if (loaded.ok) source = await prepareStoredFile(ctx.supabase, source, ctx.companyId, loaded.bytes, loaded.generation, ctx.approvalFoundation);
         }
@@ -628,9 +650,12 @@ export async function uploadKnowledgeFiles(
       }
 
       const preparable = isPreparableKnowledgeFile(fileName);
+      const deferExtract = deferExtractToFileWorker();
       let boundBytes: Uint8Array | null = null;
       let boundGeneration: StorageObjectGeneration | null = null;
-      if (preparable) {
+      // When the durable worker is gated on, do not download or mark processing
+      // here — claim after branch bind owns the attempt fence.
+      if (preparable && !deferExtract) {
         const loaded = await loadStoredBytesBoundToObject(
           ctx.supabase,
           ctx.companyId,
@@ -677,7 +702,7 @@ export async function uploadKnowledgeFiles(
       const { data: stored, error: updateError } = await ctx.supabase
         .from("knowledge_sources")
         .update({
-          status: preparable ? "processing" : "stored",
+          status: preparable && !deferExtract ? "processing" : "stored",
           failure_code: null,
           content: "",
           content_type: contentType,
@@ -727,7 +752,7 @@ export async function uploadKnowledgeFiles(
         continue;
       }
 
-      const prepared = preparable && boundBytes && boundGeneration
+      const prepared = preparable && boundBytes && boundGeneration && !deferExtract
         ? await prepareStoredFile(
           ctx.supabase,
           asSource(reserved, ctx.approvalFoundation),
@@ -948,9 +973,10 @@ export async function retryFailedKnowledgeFile(
     }
 
     const preparable = isPreparableKnowledgeFile(fileName);
+    const deferExtract = deferExtractToFileWorker();
     let boundBytes: Uint8Array | null = null;
     let boundGeneration: StorageObjectGeneration | null = null;
-    if (preparable) {
+    if (preparable && !deferExtract) {
       const loaded = await loadStoredBytesBoundToObject(
         ctx.supabase,
         ctx.companyId,
@@ -979,7 +1005,7 @@ export async function retryFailedKnowledgeFile(
 
     const { data, error } = await ctx.supabase
       .from("knowledge_sources")
-      .update({ status: preparable ? "processing" : "stored", failure_code: null, content: "" })
+      .update({ status: preparable && !deferExtract ? "processing" : "stored", failure_code: null, content: "" })
       .eq("id", existing.id)
       .eq("company_id", ctx.companyId)
       .select(ctx.sourceSelect)
@@ -995,7 +1021,7 @@ export async function retryFailedKnowledgeFile(
       return { ok: false, code: "AUTH_ERROR", message: "knowledge_operation_unavailable" };
     }
 
-    const finished = preparable && boundBytes && boundGeneration
+    const finished = preparable && boundBytes && boundGeneration && !deferExtract
       ? await prepareStoredFile(
         ctx.supabase,
         asSource(reserved, ctx.approvalFoundation),
@@ -1036,7 +1062,10 @@ export async function retryKnowledgePrepare(
       .eq("kind", "file")
       .maybeSingle();
     if (loadError) return { ok: false, code: "AUTH_ERROR", message: "knowledge_operation_unavailable" };
-    if (!existing?.storage_path || !isPreparableKnowledgeFile(existing.file_name)) {
+    // Never reclaim processing by age: without a durable attempt fence an old
+    // worker could publish over the recovery. Interrupted claims need reconciliation.
+    if (existing?.status === "processing") return { ok: false, code: "CONFLICT", message: "busy" };
+    if (!existing || !["draft", "stored", "ready", "failed"].includes(existing.status) || !existing.storage_path || !isPreparableKnowledgeFile(existing.file_name)) {
       return { ok: false, code: "INVALID_INPUT", message: "not_preparable" };
     }
 
@@ -1061,6 +1090,7 @@ export async function retryKnowledgePrepare(
           null,
           null,
           ctx.approvalFoundation,
+          asSource(existing, ctx.approvalFoundation),
         );
         revalidateKnowledge(ctx.companyId);
         return {
@@ -1080,6 +1110,7 @@ export async function retryKnowledgePrepare(
         existing.storage_path,
         "extract_failed",
         ctx.approvalFoundation,
+        asSource(existing, ctx.approvalFoundation),
       );
       revalidateKnowledge(ctx.companyId);
       return {
@@ -1097,8 +1128,10 @@ export async function retryKnowledgePrepare(
       loaded.bytes,
       loaded.generation,
       ctx.approvalFoundation,
+      true,
     );
     revalidateKnowledge(ctx.companyId);
+    if (prepared.status === "processing") return { ok: false, code: "CONFLICT", message: "busy" };
     if (prepared.status === "failed") {
       return {
         ok: false,

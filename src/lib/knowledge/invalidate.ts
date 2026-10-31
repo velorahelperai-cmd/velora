@@ -123,7 +123,7 @@ export function bindDownloadedBytesToObject(input: {
 
 export type BeginProcessingResult =
   | { ok: true; row: Record<string, unknown> }
-  | { ok: false; reason: "superseded" | "error"; message?: string };
+  | { ok: false; reason: "superseded" | "still_eligible" | "error"; message?: string };
 
 function bindIdentity(chain: UpdateChain, identity: ProcessingIdentity): UpdateChain {
   let next = chain.eq("id", identity.sourceId).eq("company_id", identity.companyId);
@@ -137,26 +137,36 @@ function bindIdentity(chain: UpdateChain, identity: ProcessingIdentity): UpdateC
 }
 
 /**
- * Starts processing on this source/path. content_version is an extra bind when
- * known; same-path replace with empty content may leave it unchanged, so callers
- * must also require objectGenerationMatches on the captured Storage generation.
+ * Starts processing on this source/path. Empties content in the same write so the
+ * version/approval trigger drops answer eligibility before any new extract lands.
+ * content_version is an extra bind when known; same-path replace with empty
+ * content may leave it unchanged, so callers must also require
+ * objectGenerationMatches on the captured Storage generation.
+ * Approved files may be reprocessed; they must not stay answer-eligible mid-run.
  */
 export async function beginKnowledgeProcessing(
   client: KnowledgeUpdateClient,
-  input: ProcessingIdentity & { select: string },
+  input: ProcessingIdentity & { select: string; expectedStatus?: string; expectedUpdatedAt?: string },
 ): Promise<BeginProcessingResult> {
-  const { data, error } = await bindIdentity(
+  let claim = bindIdentity(
     client
       .from("knowledge_sources")
       .update({ status: "processing", failure_code: null, content: "" }),
     input,
-  )
-    .select(input.select)
-    .maybeSingle();
+  );
+  if (input.expectedStatus !== undefined) claim = claim.eq("status", input.expectedStatus);
+  if (input.expectedUpdatedAt !== undefined) claim = claim.eq("updated_at", input.expectedUpdatedAt);
+  const { data, error } = await claim.select(input.select).maybeSingle();
 
   if (error) return { ok: false, reason: "error", message: error.message };
   if (!data) return { ok: false, reason: "superseded" };
-  return { ok: true, row: data as Record<string, unknown> };
+  const row = data as Record<string, unknown>;
+  // Trigger should clear approval when status leaves ready / content changes.
+  // Refuse to extract if the claimed row is still answer-eligible.
+  if (row.approved_for_answers === true) {
+    return { ok: false, reason: "still_eligible", message: "approval_not_cleared" };
+  }
+  return { ok: true, row };
 }
 
 export type PublishExtractedResult =

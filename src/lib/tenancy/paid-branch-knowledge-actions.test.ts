@@ -1,25 +1,56 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it, vi, beforeEach } from "vitest";
-const fileMocks=vi.hoisted(()=>({upload:vi.fn(),access:vi.fn()}));
-vi.mock('@/lib/knowledge/actions',()=>({uploadKnowledgeFiles:fileMocks.upload}));
+const fileMocks=vi.hoisted(()=>({upload:vi.fn(),access:vi.fn(),retryPrepare:vi.fn(),boundEnqueue:vi.fn()}));
+const VALID_SESSION_ID = "55555555-5555-4555-8555-555555555555";
+vi.mock('@/lib/knowledge/actions',()=>({uploadKnowledgeFiles:fileMocks.upload,retryKnowledgePrepare:fileMocks.retryPrepare}));
+vi.mock('@/lib/knowledge/file-worker/bound-enqueue',()=>({enqueueBoundBranchKnowledgeFilePrepare:fileMocks.boundEnqueue}));
 vi.mock('./access',()=>({getCompanyAccess:fileMocks.access}));
 
 const VALID_ACCOUNT_ID = "11111111-1111-4111-8111-111111111111";
 const VALID_COMPANY_ID = "22222222-2222-4222-8222-222222222222";
 const VALID_BRANCH_ID = "33333333-3333-4333-8333-333333333333";
+const REVIEWED_TEXT = "Reviewed knowledge body";
+const REVIEWED_FINGERPRINT = createHash("sha256").update(REVIEWED_TEXT, "utf8").digest("hex");
 
 let currentSessionId: string | null = VALID_ACCOUNT_ID;
 let rpcMock = vi.fn();
+let approveRow: Record<string, unknown> | null = {
+  id: "44444444-4444-4444-8444-444444444444",
+  company_id: VALID_COMPANY_ID,
+  status: "ready",
+  content: REVIEWED_TEXT,
+  content_version: 3,
+  prepared_text_sha256: null,
+  approved_for_answers: false,
+};
 
 vi.mock("@/lib/auth/server-identity", () => ({
   readSessionIdentity: vi.fn(async () => {
     if (!currentSessionId) return { ok: false, code: "UNAUTHENTICATED" };
-    return { ok: true, userId: currentSessionId };
+    return { ok: true, userId: currentSessionId, nativeSessionId: "55555555-5555-4555-8555-555555555555" };
   }),
 }));
 
 vi.mock("@/lib/supabase/server", () => ({
   createClient: vi.fn(async () => ({
     rpc: rpcMock,
+    from: () => {
+      const filters: Array<[string, unknown]> = [];
+      const q: Record<string, unknown> = {
+        select: () => q,
+        eq: (k: string, v: unknown) => { filters.push([k, v]); return q; },
+        in: () => q,
+        maybeSingle: async () => {
+          if (!approveRow) return { data: null, error: null };
+          const ok = filters.every(([k, v]) => approveRow![k] === v);
+          return { data: ok ? { ...approveRow } : null, error: null };
+        },
+        // upload path awaits the filter builder for `{ data, error }`
+        then: (resolve: (value: { data: unknown[]; error: null }) => void) =>
+          resolve({ data: [], error: null }),
+      };
+      return q;
+    },
   })),
 }));
 
@@ -39,22 +70,194 @@ import {
   saveOwnedBranchKnowledgeTextAction,
   approveOwnedBranchKnowledgeSourceAction,
   uploadOwnedBranchKnowledgeFilesAction,
+  reprocessOwnedBranchKnowledgeFileAction,
 } from "./paid-branch-knowledge-actions";
 import { safeFetchWebsite } from "./safe-website-fetcher";
 
 describe('branch knowledge writes',()=>{
  const scope={expectedAccountId:VALID_ACCOUNT_ID,companyId:VALID_COMPANY_ID,branchId:VALID_BRANCH_ID};
  const snapshot={scope,version:1,branchLabel:'Main',websiteQuota:{limit:10,used:0},pages:[],files:[],faq:[],capabilities:{canAddWebsite:true,canUploadFiles:true,canSaveText:true}};
- beforeEach(()=>{currentSessionId=VALID_ACCOUNT_ID;rpcMock=vi.fn().mockResolvedValue({data:{ok:true,data:{snapshot}},error:null});fileMocks.upload.mockReset();fileMocks.access.mockResolvedValue({ok:true,context:{userId:VALID_ACCOUNT_ID,company:{id:VALID_COMPANY_ID}}});});
+ beforeEach(()=>{
+  currentSessionId=VALID_ACCOUNT_ID;
+  rpcMock=vi.fn().mockResolvedValue({data:{ok:true,data:{snapshot}},error:null});
+  approveRow={
+   id:'44444444-4444-4444-8444-444444444444',
+   company_id:VALID_COMPANY_ID,
+   status:'ready',
+   content:REVIEWED_TEXT,
+   content_version:3,
+   prepared_text_sha256:null,
+   approved_for_answers:false,
+  };
+  fileMocks.upload.mockReset();
+  fileMocks.boundEnqueue.mockReset();
+  fileMocks.access.mockResolvedValue({ok:true,context:{userId:VALID_ACCOUNT_ID,company:{id:VALID_COMPANY_ID}}});
+  vi.unstubAllEnvs();
+  vi.stubEnv('VELORA_KNOWLEDGE_FILE_WORKER_ENABLED','false');
+ });
  it('edits and removes only exact scoped source versions and deletes exact page versions',async()=>{const sourceId='44444444-4444-4444-8444-444444444444';expect(await mutateOwnedBranchKnowledgeSourceAction({...scope,sourceId,contentVersion:3,action:'edit',title:' Q ',content:' A '})).toEqual(snapshot);expect(rpcMock).toHaveBeenLastCalledWith('es02_mutate_owned_branch_knowledge_source',expect.objectContaining({p_content_version:3,p_action:'edit',p_title:'Q',p_content:'A'}));expect(await mutateOwnedBranchKnowledgeSourceAction({...scope,sourceId,contentVersion:3,action:'remove'})).toEqual(snapshot);expect(await removeOwnedBranchKnowledgePageAction({...scope,pageId:sourceId,pageVersion:4})).toEqual(snapshot);expect(rpcMock).toHaveBeenLastCalledWith('es02_remove_owned_branch_knowledge_page',expect.objectContaining({p_page_version:4,p_branch_id:scope.branchId}));});
  it('fails closed for invalid versions, switched identity and stale SQL result',async()=>{const input={...scope,sourceId:'44444444-4444-4444-8444-444444444444',contentVersion:0,action:'remove' as const};expect(await mutateOwnedBranchKnowledgeSourceAction(input)).toBeNull();currentSessionId=null;expect(await mutateOwnedBranchKnowledgeSourceAction({...input,contentVersion:2})).toBeNull();expect(rpcMock).not.toHaveBeenCalled();currentSessionId=VALID_ACCOUNT_ID;rpcMock.mockResolvedValue({data:{ok:false,code:'CONFLICT'},error:null});expect(await mutateOwnedBranchKnowledgeSourceAction({...input,contentVersion:2})).toBeNull();});
  it('does not report partial file batches as saved',async()=>{fileMocks.upload.mockResolvedValue({ok:true,data:[{ok:false,code:'FAILED'}]});expect(await uploadOwnedBranchKnowledgeFilesAction({...scope,expectedVersion:1,files:[new File(['fixture'],'fixture.txt')]})).toBeNull();expect(rpcMock).toHaveBeenCalledTimes(1);});
  it('saves trimmed text through the owned branch contract without approving it',async()=>{expect(await saveOwnedBranchKnowledgeTextAction({...scope,expectedVersion:1,title:' Q ',content:' A '})).toEqual(snapshot);expect(rpcMock).toHaveBeenCalledWith('es02_save_owned_branch_knowledge_text',expect.objectContaining({p_title:'Q',p_content:'A',p_branch_id:VALID_BRANCH_ID}));expect(rpcMock).toHaveBeenCalledTimes(1);});
- it('binds explicit approval to the exact source version',async()=>{const source='44444444-4444-4444-8444-444444444444';expect(await approveOwnedBranchKnowledgeSourceAction({...scope,sourceId:source,contentVersion:3,approved:true})).toEqual(snapshot);expect(rpcMock).toHaveBeenCalledWith('es02_approve_owned_branch_knowledge_source',expect.objectContaining({p_source_id:source,p_content_version:3,p_approved:true}));});
+ it('binds explicit approval to the exact reviewed version and text fingerprint',async()=>{
+  const source='44444444-4444-4444-8444-444444444444';
+  expect(await approveOwnedBranchKnowledgeSourceAction({...scope,sourceId:source,contentVersion:3,approved:true,reviewedContentFingerprint:REVIEWED_FINGERPRINT})).toEqual(snapshot);
+  expect(rpcMock).toHaveBeenCalledWith('es02_approve_owned_branch_knowledge_source',expect.objectContaining({p_source_id:source,p_content_version:3,p_approved:true}));
+ });
+ it('rejects approve when content changed between display and click (version or fingerprint drift)',async()=>{
+  const source='44444444-4444-4444-8444-444444444444';
+  expect(await approveOwnedBranchKnowledgeSourceAction({...scope,sourceId:source,contentVersion:3,approved:true})).toBeNull();
+  expect(rpcMock).not.toHaveBeenCalled();
+  expect(await approveOwnedBranchKnowledgeSourceAction({...scope,sourceId:source,contentVersion:3,approved:true,reviewedContentFingerprint:'b'.repeat(64)})).toBeNull();
+  expect(rpcMock).not.toHaveBeenCalled();
+  approveRow={...approveRow!,content_version:5,content:'Different extract after reprocess'};
+  expect(await approveOwnedBranchKnowledgeSourceAction({...scope,sourceId:source,contentVersion:3,approved:true,reviewedContentFingerprint:REVIEWED_FINGERPRINT})).toBeNull();
+  expect(rpcMock).not.toHaveBeenCalled();
+ });
+ it('rejects a stale prepared_text_sha256 fingerprint that does not match current content',async()=>{
+  const source='44444444-4444-4444-8444-444444444444';
+  const stalePrepared='a'.repeat(64);
+  approveRow={...approveRow!,content:REVIEWED_TEXT,content_version:3,prepared_text_sha256:stalePrepared};
+  expect(await approveOwnedBranchKnowledgeSourceAction({...scope,sourceId:source,contentVersion:3,approved:true,reviewedContentFingerprint:stalePrepared})).toBeNull();
+  expect(rpcMock).not.toHaveBeenCalled();
+  expect(await approveOwnedBranchKnowledgeSourceAction({...scope,sourceId:source,contentVersion:3,approved:true,reviewedContentFingerprint:REVIEWED_FINGERPRINT})).toEqual(snapshot);
+  expect(rpcMock).toHaveBeenCalledWith('es02_approve_owned_branch_knowledge_source',expect.objectContaining({p_content_version:3,p_approved:true}));
+ });
+ it('allows unapprove by version without a review fingerprint',async()=>{
+  const source='44444444-4444-4444-8444-444444444444';
+  expect(await approveOwnedBranchKnowledgeSourceAction({...scope,sourceId:source,contentVersion:3,approved:false})).toEqual(snapshot);
+  expect(rpcMock).toHaveBeenCalledWith('es02_approve_owned_branch_knowledge_source',expect.objectContaining({p_approved:false,p_content_version:3}));
+ });
  it('rejects a switched identity and malformed text before writes',async()=>{currentSessionId=null;expect(await saveOwnedBranchKnowledgeTextAction({...scope,expectedVersion:1,title:'Q',content:'A'})).toBeNull();currentSessionId=VALID_ACCOUNT_ID;expect(await saveOwnedBranchKnowledgeTextAction({...scope,expectedVersion:1,title:'Q',content:'x'.repeat(20001)})).toBeNull();expect(rpcMock).not.toHaveBeenCalled();});
  it('rejects a foreign snapshot returned after a write',async()=>{rpcMock.mockResolvedValue({data:{ok:true,data:{snapshot:{...snapshot,scope:{...scope,branchId:VALID_COMPANY_ID}}}},error:null});expect(await saveOwnedBranchKnowledgeTextAction({...scope,expectedVersion:1,title:'Q',content:'A'})).toBeNull();});
  it('uses the real uploader then binds the returned company source and version without approval',async()=>{const source={id:'44444444-4444-4444-8444-444444444444',company_id:VALID_COMPANY_ID,content_version:2};fileMocks.upload.mockResolvedValue({ok:true,data:[{ok:true,source}]});expect(await uploadOwnedBranchKnowledgeFilesAction({...scope,expectedVersion:1,files:[new File(['fixture'],'fixture.txt',{type:'text/plain'})]})).toEqual(snapshot);const form=fileMocks.upload.mock.calls[0]![0] as FormData;expect(form.get('expectedCompanyId')).toBe(VALID_COMPANY_ID);expect(rpcMock).toHaveBeenCalledWith('es02_bind_owned_branch_knowledge_source',expect.objectContaining({p_source_id:source.id,p_content_version:2,p_branch_id:VALID_BRANCH_ID}));expect(rpcMock.mock.calls.some(call=>String(call[0]).includes('approve'))).toBe(false);});
  it('does not upload into a changed selected company',async()=>{fileMocks.access.mockResolvedValue({ok:true,context:{userId:VALID_ACCOUNT_ID,company:{id:VALID_BRANCH_ID}}});expect(await uploadOwnedBranchKnowledgeFilesAction({...scope,expectedVersion:1,files:[new File(['fixture'],'fixture.txt')]})).toBeNull();expect(fileMocks.upload).not.toHaveBeenCalled();});
+ it('binds uploaded source to branch even if text extraction failed (no_text or extract_failed)',async()=>{const source={id:'44444444-4444-4444-8444-444444444444',company_id:VALID_COMPANY_ID,content_version:2,status:'failed',failure_code:'no_text'};fileMocks.upload.mockResolvedValue({ok:true,data:[{ok:false,uploaded:true,code:'UPLOAD_OK_EXTRACT_FAILED',source}]});expect(await uploadOwnedBranchKnowledgeFilesAction({...scope,expectedVersion:1,files:[new File(['fixture'],'fixture.pdf',{type:'application/pdf'})]})).toEqual(snapshot);expect(rpcMock).toHaveBeenCalledWith('es02_bind_owned_branch_knowledge_source',expect.objectContaining({p_source_id:source.id,p_content_version:2,p_branch_id:VALID_BRANCH_ID}));});
+ const sourceId='44444444-4444-4444-8444-444444444444';
+ const withFile={...snapshot,files:[{branchId:VALID_BRANCH_ID,source:{id:sourceId,company_id:VALID_COMPANY_ID,kind:'file',status:'failed'}}]};
+ it('delegates the only processing claim to the canonical preparer after checking branch membership',async()=>{
+  rpcMock.mockResolvedValue({data:{ok:true,data:{snapshot:withFile}},error:null});
+  const from=vi.fn(()=>{throw new Error('wrapper must not preclaim');});
+  const {createClient}=await import('@/lib/supabase/server');
+  vi.mocked(createClient).mockResolvedValueOnce({rpc:rpcMock,from} as never);
+  fileMocks.retryPrepare.mockReset().mockResolvedValue({ok:true});
+  expect(await reprocessOwnedBranchKnowledgeFileAction({...scope,sourceId,expectedVersion:1})).toEqual(withFile);
+  expect(fileMocks.retryPrepare).toHaveBeenCalledExactlyOnceWith(sourceId);
+  expect(from).not.toHaveBeenCalled();expect(fileMocks.upload).not.toHaveBeenCalled();
+ });
+ it('does not reprocess a company source absent from the selected branch',async()=>{
+  fileMocks.retryPrepare.mockReset();
+  expect(await reprocessOwnedBranchKnowledgeFileAction({...scope,sourceId,expectedVersion:1})).toBeNull();
+  expect(fileMocks.retryPrepare).not.toHaveBeenCalled();
+ });
+ it('reads current state for a busy canonical claim without claiming or retrying again',async()=>{
+  rpcMock.mockResolvedValue({data:{ok:true,data:{snapshot:withFile}},error:null});
+  fileMocks.retryPrepare.mockReset().mockResolvedValue({ok:false,code:'CONFLICT'});
+  expect(await reprocessOwnedBranchKnowledgeFileAction({...scope,sourceId,expectedVersion:1})).toEqual(withFile);
+  expect(fileMocks.retryPrepare).toHaveBeenCalledTimes(1);
+ });
+ it('does not report a failed preparation read as success',async()=>{
+  rpcMock.mockResolvedValue({data:{ok:true,data:{snapshot:withFile}},error:null});
+  fileMocks.retryPrepare.mockReset().mockResolvedValue({ok:false,code:'STORAGE_ERROR'});
+  expect(await reprocessOwnedBranchKnowledgeFileAction({...scope,sourceId,expectedVersion:1})).toBeNull();
+ });
+ it('when worker gate is on, enqueues a durable attempt and skips sync prepare',async()=>{
+  vi.stubEnv('VELORA_KNOWLEDGE_FILE_WORKER_ENABLED','true');
+  rpcMock.mockResolvedValue({data:{ok:true,data:{snapshot:withFile}},error:null});
+  fileMocks.retryPrepare.mockReset();
+  fileMocks.boundEnqueue.mockResolvedValue({mode:'queued',attemptId:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',status:'processing'});
+  expect(await reprocessOwnedBranchKnowledgeFileAction({...scope,sourceId,expectedVersion:1})).toEqual(withFile);
+  expect(fileMocks.retryPrepare).not.toHaveBeenCalled();
+  expect(fileMocks.boundEnqueue).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+    actorId:VALID_ACCOUNT_ID,
+    sessionId:VALID_SESSION_ID,
+    companyId:VALID_COMPANY_ID,
+    branchId:VALID_BRANCH_ID,
+    sourceId,
+  }));
+ });
+ it('when worker gate is on, bind then enqueue without waiting for extract',async()=>{
+  vi.stubEnv('VELORA_KNOWLEDGE_FILE_WORKER_ENABLED','true');
+  const source={id:'44444444-4444-4444-8444-444444444444',company_id:VALID_COMPANY_ID,content_version:2,status:'stored'};
+  fileMocks.upload.mockResolvedValue({ok:true,data:[{ok:true,source}]});
+  fileMocks.boundEnqueue.mockResolvedValue({mode:'queued',attemptId:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',status:'processing'});
+  expect(await uploadOwnedBranchKnowledgeFilesAction({...scope,expectedVersion:1,files:[new File(['fixture'],'fixture.pdf',{type:'application/pdf'})]})).toEqual(snapshot);
+  expect(rpcMock).toHaveBeenCalledWith('es02_bind_owned_branch_knowledge_source',expect.objectContaining({p_source_id:source.id}));
+  expect(fileMocks.boundEnqueue).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({sourceId:source.id,branchId:VALID_BRANCH_ID}));
+ });
+ it('auto-enqueues after bind on the same upload action (no separate queue button)',async()=>{
+  vi.stubEnv('VELORA_KNOWLEDGE_FILE_WORKER_ENABLED','true');
+  const source={id:'44444444-4444-4444-8444-444444444444',company_id:VALID_COMPANY_ID,content_version:2,status:'stored'};
+  fileMocks.upload.mockResolvedValue({ok:true,data:[{ok:true,source}]});
+  fileMocks.boundEnqueue.mockResolvedValue({mode:'queued',attemptId:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',status:'processing'});
+  await uploadOwnedBranchKnowledgeFilesAction({...scope,expectedVersion:1,files:[new File(['fixture'],'auto.pdf',{type:'application/pdf'})]});
+  const calls=rpcMock.mock.calls.map(c=>String(c[0]));
+  expect(calls.filter(n=>n==='es02_bind_owned_branch_knowledge_source')).toHaveLength(1);
+  expect(fileMocks.boundEnqueue).toHaveBeenCalledTimes(1);
+  expect(fileMocks.retryPrepare).not.toHaveBeenCalled();
+ });
+ it('does not enqueue when bind fails after a successful storage upload',async()=>{
+  vi.stubEnv('VELORA_KNOWLEDGE_FILE_WORKER_ENABLED','true');
+  const source={id:'44444444-4444-4444-8444-444444444444',company_id:VALID_COMPANY_ID,content_version:2,status:'stored'};
+  fileMocks.upload.mockResolvedValue({ok:true,data:[{ok:true,source}]});
+  rpcMock.mockResolvedValueOnce({data:{ok:true,data:{snapshot}},error:null}) // initial read
+   .mockResolvedValueOnce({data:null,error:{message:'bind_failed'}});
+  expect(await uploadOwnedBranchKnowledgeFilesAction({...scope,expectedVersion:1,files:[new File(['fixture'],'bindfail.pdf',{type:'application/pdf'})]})).toBeNull();
+  expect(fileMocks.upload).toHaveBeenCalledTimes(1);
+  expect(fileMocks.boundEnqueue).not.toHaveBeenCalled();
+ });
+ it('keeps the bound source visible when enqueue fails after storage+bind (no re-upload required)',async()=>{
+  vi.stubEnv('VELORA_KNOWLEDGE_FILE_WORKER_ENABLED','true');
+  const source={id:'44444444-4444-4444-8444-444444444444',company_id:VALID_COMPANY_ID,content_version:2,status:'stored'};
+  const bound={...snapshot,files:[{branchId:VALID_BRANCH_ID,source:{...source,kind:'file',status:'stored'}}]};
+  rpcMock.mockResolvedValue({data:{ok:true,data:{snapshot:bound}},error:null});
+  fileMocks.upload.mockResolvedValue({ok:true,data:[{ok:true,source}]});
+  fileMocks.boundEnqueue.mockResolvedValue({mode:'unavailable',code:'UNAVAILABLE'});
+  expect(await uploadOwnedBranchKnowledgeFilesAction({...scope,expectedVersion:1,files:[new File(['fixture'],'keep.pdf',{type:'application/pdf'})]})).toEqual(bound);
+  expect(fileMocks.upload).toHaveBeenCalledTimes(1);
+  expect(fileMocks.boundEnqueue).toHaveBeenCalledTimes(1);
+ });
+ it('reuses an already-stored company file on retry instead of uploading a duplicate',async()=>{
+  vi.stubEnv('VELORA_KNOWLEDGE_FILE_WORKER_ENABLED','true');
+  const existingId='44444444-4444-4444-8444-444444444444';
+  const bytes=Buffer.from('same-bytes');
+  const {createHash}=await import('node:crypto');
+  const sha=createHash('sha256').update(bytes).digest('hex');
+  const {createClient}=await import('@/lib/supabase/server');
+  const restore=vi.mocked(createClient).getMockImplementation();
+  const clientWithExisting={
+   rpc:rpcMock,
+   from:()=>{
+    const filters:Array<[string,unknown]>=[];
+    const q:Record<string,unknown>={
+     select:()=>q,
+     eq:(k:string,v:unknown)=>{filters.push([k,v]);return q;},
+     in:()=>q,
+     maybeSingle:async()=>{
+      if(!approveRow)return {data:null,error:null};
+      const ok=filters.every(([k,v])=>approveRow![k]===v);
+      return {data:ok?{...approveRow}:null,error:null};
+     },
+     then:(resolve:(v:{data:unknown[];error:null})=>void)=>resolve({
+      data:[{id:existingId,company_id:VALID_COMPANY_ID,file_name:'reuse.pdf',byte_size:bytes.length,storage_path:`${VALID_COMPANY_ID}/${existingId}/reuse.pdf`,content_version:2,prepared_file_sha256:sha}],
+      error:null,
+     }),
+    };
+    return q;
+   },
+  };
+  vi.mocked(createClient).mockImplementation(async()=>clientWithExisting as never);
+  try{
+   fileMocks.boundEnqueue.mockResolvedValue({mode:'queued',attemptId:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',status:'processing'});
+   expect(await uploadOwnedBranchKnowledgeFilesAction({...scope,expectedVersion:1,files:[new File([bytes],'reuse.pdf',{type:'application/pdf'})]})).toEqual(snapshot);
+   expect(fileMocks.upload).not.toHaveBeenCalled();
+   expect(rpcMock).toHaveBeenCalledWith('es02_bind_owned_branch_knowledge_source',expect.objectContaining({p_source_id:existingId,p_content_version:2}));
+   expect(fileMocks.boundEnqueue).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({sourceId:existingId}));
+  }finally{
+   if(restore)vi.mocked(createClient).mockImplementation(restore);
+   else vi.mocked(createClient).mockReset();
+  }
+ });
 });
 vi.mock("./safe-website-fetcher", async () => ({ ...(await vi.importActual<typeof import("./safe-website-fetcher")>("./safe-website-fetcher")), safeFetchWebsite: vi.fn() }));
 vi.mock("@/lib/answers/context", () => ({ loadApprovedAnswerContext: vi.fn(async () => ({ ok: false, code: "NO_KNOWLEDGE" })) }));

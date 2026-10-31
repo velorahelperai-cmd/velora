@@ -44,13 +44,33 @@ export type PaidBranchKnowledgeProps = {
   onSaveText?:(input:CommandContext & {title:string; content:string})=>void | Promise<void>;
   onSourceMutation?:(input:KnowledgeViewScope & {sourceId:string;contentVersion:number;action:"edit"|"remove";title?:string;content?:string})=>void|Promise<void>;
   onRemovePage?:(input:KnowledgeViewScope & {pageId:string;pageVersion:number})=>void|Promise<void>;
-  onSourceApproval?:(input:KnowledgeViewScope & {sourceId:string;contentVersion:number;approved:boolean})=>void|Promise<void>;
+  onSourceApproval?:(input:KnowledgeViewScope & {sourceId:string;contentVersion:number;approved:boolean;reviewedContentFingerprint?:string})=>void|Promise<void>;
   onPageAction?:(input:CommandContext & {pageId:string; pageVersion:number; action:"retry" | "retrain"})=>void | Promise<void>;
+  onReprocessFile?:(input:KnowledgeViewScope & {sourceId:string; expectedVersion:number})=>void | Promise<void>;
   onConfirmLanguages?:(input:KnowledgeViewScope & {expectedVersion:number; replyLanguage:ReplyLanguageContract})=>void|Promise<void>;
 };
 type StudioTab = "website" | "files" | "faq";
 type OperationTarget = StudioTab | "library" | "languages";
 const TABS: StudioTab[] = ["website", "files", "faq"];
+/** Browser-side twin of knowledgeReviewFingerprint — always hashes the on-screen content. */
+async function clientReviewFingerprint(source:Pick<KnowledgeSourceRecord,"content">):Promise<string|null>{
+  const text=typeof source.content==="string"?source.content.trim():"";
+  if(!text||typeof crypto==="undefined"||!crypto.subtle)return null;
+  const digest=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(digest),(b)=>b.toString(16).padStart(2,"0")).join("");
+}
+function canReprocessStoredFile(source:KnowledgeSourceRecord):boolean{
+  // Approved ready files may be reprocessed. Stuck processing uses the same
+  // control for lease recovery / same-attempt replay (server decides).
+  return source.status==="failed"||source.status==="ready"||source.status==="stored"||source.status==="processing"||Boolean(source.failure_code);
+}
+function fileFailureCopy(code:string|null|undefined,t:(a:string,e:string)=>string):string{
+  if(code==="no_text")return t("رُفع الملف بنجاح، لكن استخراج النص فشل لعدم وجود نصوص قابلة للقراءة داخل المستند (مستند مصور أو خالٍ من النصوص).","File uploaded successfully, but text extraction failed because no readable text was found in the document.");
+  if(code==="provider_outcome_unknown")return t("نتيجة مزود الاستخراج غير مؤكدة. لا تُعاد المحاولة تلقائيًا — راجع الحالة يدويًا قبل أي استخراج مدفوع.","The extract provider outcome is unknown. It will not auto-retry — review manually before any paid extract.");
+  if(code==="PROVIDER_EXTRACT_DISABLED")return t("اكتملت المحاولة دون استدعاء مزود خارجي لأن استخراج المزود معطّل.","The attempt finished without calling an external provider because provider extract is disabled.");
+  if(code==="attempt_lease_expired")return t("انتهت مهلة المعالجة قبل الاستخراج. يمكنك طلب استرداد آمن بمحاولة جديدة.","The processing lease expired before extract. You can request a safe recovery with a new attempt.");
+  return t("رُفع الملف بنجاح، لكن تعذرت معالجة الملف.","File uploaded successfully, but file processing failed.");
+}
 const sameScope = (a:KnowledgeViewScope,b:KnowledgeViewScope) => !!a.expectedAccountId && !!a.companyId && !!a.branchId &&
   a.expectedAccountId===b.expectedAccountId && a.companyId===b.companyId && a.branchId===b.branchId;
 const version = (v:unknown):v is number => Number.isSafeInteger(v) && Number(v)>=0;
@@ -91,7 +111,7 @@ function pageExtractedLength(page:KnowledgePageView):number | null {
 export function PaidBranchKnowledge(p:PaidBranchKnowledgeProps) {
   const ar=p.locale==="ar",t=(a:string,e:string)=>ar?a:e;
   const scoped=!!p.boundaryFingerprint && sameScope(p.scope,p.state.scope);
-  if(!scoped || (!p.snapshot&&p.state.phase!=="loading"&&p.state.phase!=="unavailable") || (p.snapshot && (!sameScope(p.scope,p.snapshot.scope) || !version(p.snapshot.version) || p.state.version!==p.snapshot.version)))
+  if(!scoped || (p.languageSnapshot&&!sameScope(p.scope,p.languageSnapshot.scope)) || (!p.snapshot&&p.state.phase!=="loading"&&p.state.phase!=="unavailable") || (p.snapshot && (!sameScope(p.scope,p.snapshot.scope) || !version(p.snapshot.version) || p.state.version!==p.snapshot.version)))
     return <section className={styles.view} dir={ar?"rtl":"ltr"}><p role="status">{t("معرفة هذا الفرع غير متاحة. أعد تحميل بياناته.","Knowledge for this branch is unavailable. Reload its data.")}</p></section>;
  const presentation:BranchKnowledgeViewSnapshot=p.snapshot??{scope:p.scope,version:0,branchLabel:"—",websiteQuota:{limit:null,used:null},pages:[],files:[],faq:[],capabilities:{canAddWebsite:null,canUploadFiles:null,canSaveText:null}};
   return <KnowledgeForm key={JSON.stringify([p.scope,p.boundaryFingerprint])} {...p} snapshot={presentation}/>;
@@ -125,9 +145,8 @@ function KnowledgeForm(p:PaidBranchKnowledgeProps & {snapshot:BranchKnowledgeVie
   useSetupUnsavedChanges(dirty,p.isCurrent,p.locale);
   useLayoutEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
   const quotaKnown=knownWebsiteQuota(p.snapshot.websiteQuota);
-  // Soft unavailable: keep the form usable when a verified snapshot is already on screen.
-  // Hard locks remain for busy/conflict/loading/unknown quota only.
-  const locked=busy || p.state.phase==="busy" || p.state.phase==="conflict" || p.state.phase==="loading" || !quotaKnown;
+  // Retained snapshots are presentation only until the current read is verified.
+  const locked=busy || p.state.phase==="busy" || p.state.phase==="conflict" || p.state.phase==="loading" || p.state.phase==="unavailable" || !quotaKnown;
   const context:CommandContext={...p.scope,expectedVersion:p.snapshot.version};
   const fileError=files.length?knowledgePreparationFileError(files):null;
   const pages=p.snapshot.pages.filter(page=>page.companyId===p.scope.companyId && page.branchId===p.scope.branchId);
@@ -142,7 +161,7 @@ function KnowledgeForm(p:PaidBranchKnowledgeProps & {snapshot:BranchKnowledgeVie
   const canUpload=!locked && p.snapshot.capabilities.canUploadFiles===true && !!p.onUploadFiles && files.length>0 && !fileError;
   const canSaveText=!locked && p.snapshot.capabilities.canSaveText===true && !!p.onSaveText && !!question.trim() && question.trim().length<=200 && !!answer.trim();
   const languagePhase=p.languageState?.phase??"unavailable";
-  const languageLocked=busy || languagePhase==="saving" || languagePhase==="loading" || languagePhase==="conflict";
+  const languageLocked=busy || languagePhase==="saving" || languagePhase==="loading" || languagePhase==="conflict" || languagePhase==="unavailable";
   const canSaveLanguages=!languageLocked && !!p.onConfirmLanguages && !!p.languageSnapshot && p.languageSnapshot.canConfirm===true && Number.isSafeInteger(p.languageSnapshot.version) && p.languageSnapshot.version>=1 && !!draftLanguageContract && languageDirty;
   async function dispatch(target:OperationTarget, callback:(()=>void|Promise<void>)|undefined, options?:{ignoreKnowledgeLock?:boolean}) {
     if(!callback || reserved.current || !p.isCurrent())return;
@@ -204,6 +223,7 @@ function KnowledgeForm(p:PaidBranchKnowledgeProps & {snapshot:BranchKnowledgeVie
       <p className={styles.badge} data-approval={approvalState}>{approvalLabel}</p>
     </header>
     {!quotaKnown && <p role="status" className={styles.error}>{t("حصة صفحات الموقع غير متاحة. الإجراءات معطّلة حتى تصل البيانات الموثوقة.","Website quota is unavailable. Actions are disabled until authoritative data is available.")}</p>}
+    {(p.state.phase==="unavailable"||languagePhase==="unavailable")&&p.onReload&&<p role="status">{t("البيانات المعروضة تحتاج إلى تحديث قبل الحفظ.","Refresh the displayed data before saving.")} <button type="button" onClick={()=>{if(p.isCurrent())void p.onReload?.();}}>{t("تحديث البيانات","Refresh data")}</button></p>}
     {p.state.phase==="conflict" && <p role="alert" className={styles.error}>{t("تغيّرت بيانات المعرفة. أعد التحميل وراجع التغييرات قبل المتابعة.","Knowledge data changed. Reload and review the changes before continuing.")}</p>}
     {failure && failure!=="library" && failure!=="languages" && tab!==failure && operationAlert(failure)}
     <section className={styles.languageCard} data-knowledge-languages="" aria-labelledby={`${id}-languages`}>
@@ -296,7 +316,7 @@ function KnowledgeForm(p:PaidBranchKnowledgeProps & {snapshot:BranchKnowledgeVie
         </section>
       </div>
       <details className={styles.library} data-knowledge-library="true" open>
-        <summary>{t("مكتبة المعرفة","Knowledge library")}<bdi>{libraryCount}</bdi></summary>
+        <summary>{t("مكتبة المعرفة","Knowledge library")}<bdi>{p.snapshot.version===0?"—":libraryCount}</bdi></summary>
         {operationAlert("library")}
         {libraryCount===0?<p className={styles.empty} role="status">{p.snapshot.version===0?t("لم يتم التحقق من المصادر بعد.","Sources have not been verified yet."):t("لا توجد مصادر مرتبطة بهذا الفرع بعد.","No sources are assigned to this branch yet.")}</p>:<ul className={styles.sources}>
           {pages.map(page=>{
@@ -325,13 +345,26 @@ function KnowledgeForm(p:PaidBranchKnowledgeProps & {snapshot:BranchKnowledgeVie
               {updated && <small>{t("آخر تحديث: ","Last updated: ")}<bdi>{updated}</bdi></small>}
               {kind==="text" && <p dir="auto" className={styles.text}>{source.content}</p>}
               {kind==="file" && source.content?.trim() && <div className={styles.extract}><span>{t("المحتوى المستخرج","Extracted content")}</span><p dir="auto" className={styles.text}>{source.content}</p></div>}
-              {p.onSourceMutation&&Number.isSafeInteger(source.content_version)&&source.content_version!>0&&<div className={styles.actions}>
-                {kind==='text'&&<button type="button" disabled={locked} onClick={()=>{if(!p.isCurrent())return;setTab("faq");setEditing({sourceId:source.id,contentVersion:source.content_version!,title:source.title,content:source.content??''});}}>{t('تعديل النص','Edit text')}</button>}
-                <button type="button" disabled={locked} onClick={()=>{if(p.isCurrent()&&window.confirm(t('إزالة المصدر من هذا الفرع؟ سيبقى الأصل محفوظًا.','Remove this source from this branch? The original will remain stored.')))void dispatch("library",()=>p.onSourceMutation?.({...p.scope,sourceId:source.id,contentVersion:source.content_version!,action:'remove'}));}}>{t('إزالة من الفرع','Remove from branch')}</button>
+              {kind==='file'&&source.status==='processing'&&<p className={styles.note} role="status">{t("جارٍ تجهيز الملف. إذا توقف دون نتيجة، استخدم الاسترداد الآمن — لا يُعاد الاستخراج المدفوع تلقائيًا عند نتيجة مجهولة.","Preparing this file. If it stalls without a result, use safe recovery — unknown provider outcomes never auto-retry a paid extract.")}</p>}
+              {kind==='file'&&source.failure_code==='provider_outcome_unknown'&&<p className={styles.error} role="status">{fileFailureCopy(source.failure_code,t)}</p>}
+              {(p.onSourceMutation || (kind==='file' && canReprocessStoredFile(source) && Boolean(p.onReprocessFile)))&&Number.isSafeInteger(source.content_version)&&source.content_version!>0&&<div className={styles.actions}>
+                {kind==='text'&&p.onSourceMutation&&<button type="button" disabled={locked} onClick={()=>{if(!p.isCurrent())return;setTab("faq");setEditing({sourceId:source.id,contentVersion:source.content_version!,title:source.title,content:source.content??''});}}>{t('تعديل النص','Edit text')}</button>}
+                {kind==='file'&&canReprocessStoredFile(source)&&p.onReprocessFile&&source.failure_code!=='provider_outcome_unknown'&&<button type="button" disabled={locked} onClick={()=>{if(!p.isCurrent())return;void dispatch("library",()=>p.onReprocessFile?.({...p.scope,sourceId:source.id,expectedVersion:1}));}}>{source.status==="processing"?t('استرداد آمن للمعالجة','Safe processing recovery'):t('إعادة المعالجة من الملف المخزن','Reprocess from stored file')}</button>}
+                {p.onSourceMutation&&<button type="button" disabled={locked} onClick={()=>{if(p.isCurrent()&&window.confirm(t('إزالة المصدر من هذا الفرع؟ سيبقى الأصل محفوظًا.','Remove this source from this branch? The original will remain stored.')))void dispatch("library",()=>p.onSourceMutation?.({...p.scope,sourceId:source.id,contentVersion:source.content_version!,action:'remove'}));}}>{t('إزالة من الفرع','Remove from branch')}</button>}
               </div>}
-              {source.failure_code && <p className={styles.error}>{t("تعذّر تجهيز المصدر؛ راجع الملف أو المحتوى.","The source could not be prepared; review the file or content.")}</p>}
+              {source.failure_code && source.failure_code!=='provider_outcome_unknown' && <p className={styles.error}>{kind==='file'?fileFailureCopy(source.failure_code,t):t("تعذّر تجهيز المصدر؛ راجع الملف أو المحتوى.","The source could not be prepared; review the file or content.")}</p>}
               <small>{approved?t("هذه النسخة معتمدة للإجابات","This version is approved for answers"):t("هذه النسخة غير معتمدة للإجابات","This version is not approved for answers")}</small>
-              {p.onSourceApproval&&source.status==='ready'&&Number.isSafeInteger(source.content_version)&&source.content_version!>0&&<button type="button" disabled={locked} onClick={()=>void dispatch("library",()=>p.onSourceApproval?.({...p.scope,sourceId:source.id,contentVersion:source.content_version!,approved:!approved}))}>{approved?t('إلغاء اعتماد هذه النسخة','Remove approval for this version'):t('اعتماد هذه النسخة لإجابات المساعد','Approve this version for assistant answers')}</button>}
+              {p.onSourceApproval&&source.status==='ready'&&Number.isSafeInteger(source.content_version)&&source.content_version!>0&&<button type="button" disabled={locked} onClick={()=>void dispatch("library",async()=>{
+                if(!p.isCurrent())return;
+                const contentVersion=source.content_version!;
+                if(approved){
+                  await p.onSourceApproval?.({...p.scope,sourceId:source.id,contentVersion,approved:false});
+                  return;
+                }
+                const reviewedContentFingerprint=await clientReviewFingerprint(source);
+                if(!reviewedContentFingerprint||!p.isCurrent())return;
+                await p.onSourceApproval?.({...p.scope,sourceId:source.id,contentVersion,approved:true,reviewedContentFingerprint});
+              })}>{approved?t('إلغاء اعتماد هذه النسخة','Remove approval for this version'):t('اعتماد هذه النسخة لإجابات المساعد','Approve this version for assistant answers')}</button>}
             </li>;
           })}
         </ul>}

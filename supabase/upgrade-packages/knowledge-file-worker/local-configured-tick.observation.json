@@ -1,0 +1,23 @@
+{
+  "at": "2026-10-31T16:18:40.986Z",
+  "url": "http://127.0.0.1:3330/api/internal/knowledge/file-worker",
+  "httpStatus": 503,
+  "code": "WORKER_DISABLED",
+  "configured": true,
+  "gateEnabledEnv": false,
+  "providerExtractEnv": false,
+  "note": "PASS_CONFIGURED_GATE_OFF: auth ok; enable gate only on isolated DB with 10/11",
+  "observation": {
+    "lastTickAt": "2026-10-31T16:18:40.972Z",
+    "ok": false,
+    "code": "WORKER_DISABLED",
+    "backlog": 0,
+    "processed": 0,
+    "extracted": 0,
+    "unknown": 0,
+    "failed": 0,
+    "reviewRequired": 0,
+    "automaticRetry": false,
+    "stalledDueWork": false
+  }
+}

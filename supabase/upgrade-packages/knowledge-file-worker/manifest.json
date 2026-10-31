@@ -1,0 +1,18 @@
+{
+  "status": "LOCAL_ACCEPTANCE_PASS_ISOLATED_REAL_CHAIN",
+  "base": "fe5fed5fd01124c575ab23835865c1848584f184",
+  "publisher_prosrc_md5": "5e0dccd905f383e1b4ba541cff94b0bf",
+  "validation": "PASS_ISOLATED_REAL_CHAIN: paymob predecessor 82d353e4 + 171 migrations through es02 knowledge mutations; 10/11 PASS_ON_REAL_CHAIN; local txt setup journey PASS (not Gemini)",
+  "application_integration": "GATED_LOCAL_WIRING_DEFAULT_OFF; batch wires local text/plain extract + g03_publish_file_attempt",
+  "provider_extract": "DISABLED_UNTIL_POLICY",
+  "ops_runner": "run-tick / local-configured-tick for local proof; prod option Vercel Pro Cron $20/mo (not installed)",
+  "vercel_team_plan": "velora-9513 hobby",
+  "sql_chain_doc": "docs/KNOWLEDGE-FILE-WORKER-SQL-CHAIN.md",
+  "legacy_worker_cutover": "REQUIRES_DRAIN_AND_NATIVE_TESTS",
+  "package_doc": "docs/KNOWLEDGE-FILE-WORKER-PACKAGE.md",
+  "ops_doc": "docs/KNOWLEDGE-FILE-WORKER-OPS.md",
+  "acceptance_doc": "docs/KNOWLEDGE-FILE-WORKER-ACCEPTANCE-20261031.md",
+  "acceptance_verdict": "LOCAL_PASS_PUBLISH_DECISION_PENDING",
+  "evidence": "supabase/upgrade-packages/knowledge-file-worker/native-acceptance.evidence.json",
+  "separate_blocker": "1113b1ef settlement review OPEN — does not block local file path"
+}

@@ -1,0 +1,357 @@
+{
+  "status": "PASS_ISOLATED_REAL_CHAIN",
+  "at": "2026-10-31T16:13:06.409Z",
+  "production": false,
+  "runner_diagnosis": {
+    "migration_header_requires_transaction": true,
+    "migration_opens_with_begin": false,
+    "approved_staff_cases_wrap": "begin;<body>;commit;",
+    "local_wrap_adds_begin_commit": true,
+    "defect": "local_runner_not_migration"
+  },
+  "candidate_10_installed": true,
+  "ops_11_installed": true,
+  "baseline_through": "20261028171327_es02_branch_knowledge_mutations.sql",
+  "used_synthetic_binding": false,
+  "skipped_migrations": [
+    "20261014080217_smart_review_native_scope.sql:composition_skip_duplicate_family",
+    "20261022093000_es02_trial_session_history.sql:embedded_guard_only"
+  ],
+  "tested": [
+    {
+      "name": "runner_matches_approved_transactional_apply",
+      "pass": true,
+      "detail": {
+        "migration_header_requires_transaction": true,
+        "migration_opens_with_begin": false,
+        "approved_staff_cases_wrap": "begin;<body>;commit;",
+        "local_wrap_adds_begin_commit": true,
+        "defect": "local_runner_not_migration"
+      }
+    },
+    {
+      "name": "paymob_live_owner_predecessor_installed",
+      "pass": true,
+      "detail": {
+        "sourceSha256": "82d353e4a5c17f025d504c6270e8ed4effc2c933db05ce9ab5d296e7dd6ae439",
+        "path": "supabase/upgrade-packages/paymob-live-checkout/20-production-compatibility.review.sql",
+        "paymentCalls": false
+      }
+    },
+    {
+      "name": "full_migration_chain_through_es02_mutations",
+      "pass": true,
+      "detail": {
+        "count": 171,
+        "through": "20261028171327_es02_branch_knowledge_mutations.sql"
+      }
+    },
+    {
+      "name": "real_binding_table_present",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "name": "publisher_digest_matches_review_guard",
+      "pass": true,
+      "detail": "5e0dccd905f383e1b4ba541cff94b0bf"
+    },
+    {
+      "name": "lock_actor_digest_matches_review_guard",
+      "pass": true,
+      "detail": "6a7e552989ce5f3e980d11ca320c4683"
+    },
+    {
+      "name": "package_10_file_attempts_installed",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "name": "package_11_worker_ops_installed",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "name": "fixture_on_real_binding_table",
+      "pass": true,
+      "detail": {
+        "branchA": "5bd44f51-e3cf-466a-830e-bdffe6dba4e6",
+        "singleBranchScope": true
+      }
+    },
+    {
+      "name": "claim_succeeds_and_sets_processing",
+      "pass": true,
+      "detail": {
+        "ok": true,
+        "source": {
+          "id": "027f698e-ab87-492d-8ad5-f4c871c858b2",
+          "kind": "file",
+          "title": "sample",
+          "status": "processing",
+          "content": "",
+          "byte_size": 12,
+          "file_name": "sample.pdf",
+          "company_id": "53f87141-b47d-4ad6-b43f-c8a315f479d9",
+          "created_at": "2026-10-31T16:15:29.71048+00:00",
+          "created_by": "4b135ab9-3549-4b2b-966b-ff51b051756f",
+          "updated_at": "2026-10-31T16:15:30.052021+00:00",
+          "usage_role": "knowledge",
+          "approved_at": null,
+          "approved_by": null,
+          "content_type": "application/pdf",
+          "failure_code": null,
+          "storage_path": "53f87141-b47d-4ad6-b43f-c8a315f479d9/027f698e-ab87-492d-8ad5-f4c871c858b2/sample.pdf",
+          "content_version": 1,
+          "approved_version": null,
+          "approved_for_answers": false,
+          "prepared_file_sha256": null,
+          "prepared_text_sha256": null,
+          "prepared_content_version": null
+        },
+        "replayed": false,
+        "attemptId": "d0b058f2-7af2-4f74-a25e-bf6c3ac38a84"
+      }
+    },
+    {
+      "name": "same_attemptId_replay_without_new_row",
+      "pass": true,
+      "detail": {
+        "ok": true,
+        "source": {
+          "id": "027f698e-ab87-492d-8ad5-f4c871c858b2",
+          "kind": "file",
+          "title": "sample",
+          "status": "processing",
+          "content": "",
+          "byte_size": 12,
+          "file_name": "sample.pdf",
+          "company_id": "53f87141-b47d-4ad6-b43f-c8a315f479d9",
+          "created_at": "2026-10-31T16:15:29.71048+00:00",
+          "created_by": "4b135ab9-3549-4b2b-966b-ff51b051756f",
+          "updated_at": "2026-10-31T16:15:30.052021+00:00",
+          "usage_role": "knowledge",
+          "approved_at": null,
+          "approved_by": null,
+          "content_type": "application/pdf",
+          "failure_code": null,
+          "storage_path": "53f87141-b47d-4ad6-b43f-c8a315f479d9/027f698e-ab87-492d-8ad5-f4c871c858b2/sample.pdf",
+          "content_version": 1,
+          "approved_version": null,
+          "approved_for_answers": false,
+          "prepared_file_sha256": null,
+          "prepared_text_sha256": null,
+          "prepared_content_version": null
+        },
+        "replayed": true,
+        "attemptId": "d0b058f2-7af2-4f74-a25e-bf6c3ac38a84"
+      }
+    },
+    {
+      "name": "queued_processing_only_after_saved_attempt",
+      "pass": true,
+      "detail": {
+        "status": "processing",
+        "liveUpdatedAt": "2026-10-31T16:15:30.052021Z"
+      }
+    },
+    {
+      "name": "concurrent_second_claim_busy",
+      "pass": true,
+      "detail": {
+        "ok": false,
+        "code": "BUSY"
+      }
+    },
+    {
+      "name": "foreign_branch_claim_rejected",
+      "pass": true,
+      "detail": "ERROR:  BRANCH_BINDING_REQUIRED\nCONTEXT:  PL/pgSQL function private.g03_lock_attempt_branch(uuid,uuid,uuid) line 6 at RAISE\nSQL statement \"SELECT private.g03_lock_attempt_branch(p_company_id,p_branch_id,p_source_id)\"\nPL/pgSQL function public.g03_claim_file_attempt(uuid,uuid,uuid,uuid,uuid,uuid,integer,timestamp with time zone,text,uuid,timestamp with time zone,timestamp with time zone,uuid) line 12 at PERFORM\n"
+    },
+    {
+      "name": "expired_attempt_cannot_publish",
+      "pass": true,
+      "detail": {
+        "ok": false,
+        "code": "ATTEMPT_CONFLICT"
+      }
+    },
+    {
+      "name": "explicit_expired_recovery_with_new_attempt",
+      "pass": true,
+      "detail": {
+        "ok": true,
+        "source": {
+          "id": "027f698e-ab87-492d-8ad5-f4c871c858b2",
+          "kind": "file",
+          "title": "sample",
+          "status": "processing",
+          "content": "",
+          "byte_size": 12,
+          "file_name": "sample.pdf",
+          "company_id": "53f87141-b47d-4ad6-b43f-c8a315f479d9",
+          "created_at": "2026-10-31T16:15:29.71048+00:00",
+          "created_by": "4b135ab9-3549-4b2b-966b-ff51b051756f",
+          "updated_at": "2026-10-31T16:15:33.346055+00:00",
+          "usage_role": "knowledge",
+          "approved_at": null,
+          "approved_by": null,
+          "content_type": "application/pdf",
+          "failure_code": null,
+          "storage_path": "53f87141-b47d-4ad6-b43f-c8a315f479d9/027f698e-ab87-492d-8ad5-f4c871c858b2/sample.pdf",
+          "content_version": 1,
+          "approved_version": null,
+          "approved_for_answers": false,
+          "prepared_file_sha256": null,
+          "prepared_text_sha256": null,
+          "prepared_content_version": null
+        },
+        "replayed": false,
+        "attemptId": "908920c3-b98a-42f7-93d2-5539484085b2"
+      }
+    },
+    {
+      "name": "post_provider_unknown_blocks_auto_recovery",
+      "pass": true,
+      "detail": {
+        "ok": false,
+        "code": "REVIEW_REQUIRED",
+        "attemptId": "908920c3-b98a-42f7-93d2-5539484085b2"
+      }
+    },
+    {
+      "name": "list_running_attempts_rpc",
+      "pass": true,
+      "detail": [
+        {
+          "actor_id": "4b135ab9-3549-4b2b-966b-ff51b051756f",
+          "branch_id": "5bd44f51-e3cf-466a-830e-bdffe6dba4e6",
+          "object_id": "fed2c8ee-2fb6-4644-a2f6-72e4aec96e46",
+          "source_id": "027f698e-ab87-492d-8ad5-f4c871c858b2",
+          "attempt_id": "908920c3-b98a-42f7-93d2-5539484085b2",
+          "company_id": "53f87141-b47d-4ad6-b43f-c8a315f479d9",
+          "expires_at": "2026-10-31T16:15:32.678695+00:00",
+          "session_id": "6cadd9f6-7213-475a-a68a-97f16d218c05",
+          "storage_path": "53f87141-b47d-4ad6-b43f-c8a315f479d9/027f698e-ab87-492d-8ad5-f4c871c858b2/sample.pdf",
+          "content_version": 1,
+          "object_updated_at": "2026-10-31T12:00:00+00:00",
+          "provider_dispatch": "dispatched"
+        }
+      ]
+    },
+    {
+      "name": "anon_execute_denied_or_false",
+      "pass": true,
+      "detail": "f"
+    },
+    {
+      "name": "setup_journey_upload_bind_stored",
+      "pass": true,
+      "detail": {
+        "txtSource": "99dc0016-8153-4cff-8524-65924c7a4a4d",
+        "kind": "text/plain",
+        "live": {
+          "path": "53f87141-b47d-4ad6-b43f-c8a315f479d9/99dc0016-8153-4cff-8524-65924c7a4a4d/local-proof.txt",
+          "version": 1,
+          "updated_at": "2026-10-31T13:00:00.000000Z",
+          "object_updated_at": "2026-10-31T13:00:00.000000Z"
+        }
+      }
+    },
+    {
+      "name": "setup_journey_auto_enqueue_returns_without_extract",
+      "pass": true,
+      "detail": {
+        "ok": true,
+        "source": {
+          "id": "99dc0016-8153-4cff-8524-65924c7a4a4d",
+          "kind": "file",
+          "title": "local-proof",
+          "status": "processing",
+          "content": "",
+          "byte_size": 63,
+          "file_name": "local-proof.txt",
+          "company_id": "53f87141-b47d-4ad6-b43f-c8a315f479d9",
+          "created_at": "2026-10-31T16:15:35.47869+00:00",
+          "created_by": "4b135ab9-3549-4b2b-966b-ff51b051756f",
+          "updated_at": "2026-10-31T16:15:36.145135+00:00",
+          "usage_role": "knowledge",
+          "approved_at": null,
+          "approved_by": null,
+          "content_type": "text/plain",
+          "failure_code": null,
+          "storage_path": "53f87141-b47d-4ad6-b43f-c8a315f479d9/99dc0016-8153-4cff-8524-65924c7a4a4d/local-proof.txt",
+          "content_version": 1,
+          "approved_version": null,
+          "approved_for_answers": false,
+          "prepared_file_sha256": null,
+          "prepared_text_sha256": null,
+          "prepared_content_version": null
+        },
+        "replayed": false,
+        "attemptId": "50bfc5f8-1a0d-4249-a368-11d8c2069390"
+      }
+    },
+    {
+      "name": "setup_journey_worker_local_txt_publish",
+      "pass": true,
+      "detail": {
+        "ok": true,
+        "code": null,
+        "note": "local_txt_extract_not_gemini"
+      }
+    },
+    {
+      "name": "setup_journey_content_visible",
+      "pass": true,
+      "detail": "ready:2:Velora local knowledge worker proof text"
+    },
+    {
+      "name": "setup_journey_owner_approve",
+      "pass": true,
+      "detail": {
+        "approved": "true:2",
+        "fingerprint": "8cd7ea4d293669cca5e24ac308bf7880c68a149905acd08f6ed3bbebb6500f05"
+      }
+    },
+    {
+      "name": "setup_journey_assistant_context_eligible",
+      "pass": true,
+      "detail": {
+        "contextRow": "1",
+        "loader": "approved_knowledge_select_shape",
+        "geminiViaWorker": false
+      }
+    },
+    {
+      "name": "setup_journey_approval_cleared_on_content_change",
+      "pass": true,
+      "detail": "false"
+    }
+  ],
+  "gaps": [],
+  "package_10_11": {
+    "state": "PASS_ON_REAL_CHAIN"
+  },
+  "container": "velora-kfw-eed7e593",
+  "cleaned": true,
+  "error": null,
+  "baseline_migrations": 171,
+  "paymob_predecessor": {
+    "path": "supabase/upgrade-packages/paymob-live-checkout/20-production-compatibility.review.sql",
+    "sourceSha256": "82d353e4a5c17f025d504c6270e8ed4effc2c933db05ce9ab5d296e7dd6ae439",
+    "budgetPath": "supabase/upgrade-packages/ai-runtime-compatibility/20-budget-binding.review.sql",
+    "budgetSha256": "2240fe6e6b7baedf7e67881bd588322879adfedd0e48ca43f705f00d754a71c0",
+    "installedBefore": "20261014033008_master_autorenew_wallet.sql",
+    "financialRowsSeeded": false,
+    "fullCheckoutPackageInstalled": false,
+    "paymentCalls": false
+  },
+  "setup_journey": {
+    "kind": "local_txt_offline_extract",
+    "gemini_provider_via_worker": false,
+    "tag_city_mutated": false,
+    "sourceId": "99dc0016-8153-4cff-8524-65924c7a4a4d"
+  },
+  "at_end": "2026-10-31T16:15:39.444Z"
+}

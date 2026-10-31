@@ -15,12 +15,17 @@ import {
 import type { AnswerContextChunk, AnswerFailureCode } from "@/lib/answers/types";
 import { loadApprovedAnswerContext } from "@/lib/answers/context";
 import { ANSWER_MAX_CONTEXT_CHARS, ANSWER_MAX_SOURCES } from "@/lib/answers/constants";
+import { KNOWLEDGE_BUCKET } from "@/lib/knowledge/constants";
+import {
+  isKnowledgeReviewFingerprint,
+  knowledgeReviewFingerprint,
+} from "@/lib/knowledge/review-fingerprint";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function boundKnowledgeSnapshot(data:unknown,scope:KnowledgeViewScope):BranchKnowledgeViewSnapshot|null{
  const value=data as {ok?:boolean;data?:{snapshot?:BranchKnowledgeViewSnapshot}}|null,s=value?.data?.snapshot;
- return value?.ok===true&&s?.scope?.expectedAccountId===scope.expectedAccountId&&s.scope.companyId===scope.companyId&&s.scope.branchId===scope.branchId&&s.version===1&&Array.isArray(s.files)&&Array.isArray(s.faq)&&Array.isArray(s.pages)?s:null;
+ return value?.ok===true&&s?.scope?.expectedAccountId?.toLowerCase()===scope.expectedAccountId?.toLowerCase()&&s?.scope?.companyId?.toLowerCase()===scope.companyId?.toLowerCase()&&s?.scope?.branchId?.toLowerCase()===scope.branchId?.toLowerCase()&&s.version===1&&Array.isArray(s.files)&&Array.isArray(s.faq)&&Array.isArray(s.pages)?s:null;
 }
 
 export async function saveOwnedBranchKnowledgeTextAction(input:KnowledgeViewScope&{expectedVersion:number;title:string;content:string}):Promise<BranchKnowledgeViewSnapshot|null>{
@@ -32,11 +37,35 @@ export async function saveOwnedBranchKnowledgeTextAction(input:KnowledgeViewScop
  }catch{return null;}
 }
 
-export async function approveOwnedBranchKnowledgeSourceAction(input:KnowledgeViewScope&{sourceId:string;contentVersion:number;approved:boolean}):Promise<BranchKnowledgeViewSnapshot|null>{
+/**
+ * Approve/unapprove the exact version the reviewer was shown.
+ * Approving requires reviewedContentFingerprint = SHA-256 of current content
+ * (the text on screen), never prepared_text_sha256 alone. DB approve still locks
+ * the row and matches content_version. Owner session alone is not proof.
+ */
+export async function approveOwnedBranchKnowledgeSourceAction(input:KnowledgeViewScope&{sourceId:string;contentVersion:number;approved:boolean;reviewedContentFingerprint?:string}):Promise<BranchKnowledgeViewSnapshot|null>{
  try{
  if(!validScope(input)||!UUID.test(input.sourceId)||!Number.isSafeInteger(input.contentVersion)||input.contentVersion<1||typeof input.approved!=='boolean')return null;
+ if(input.approved&&!isKnowledgeReviewFingerprint(input.reviewedContentFingerprint))return null;
  const identity=await readSessionIdentity();if(!identity.ok||identity.userId!==input.expectedAccountId)return null;
- const client=await createClient();const result=await client.rpc('es02_approve_owned_branch_knowledge_source' as never,{p_expected_account_id:input.expectedAccountId,p_company_id:input.companyId,p_branch_id:input.branchId,p_source_id:input.sourceId,p_content_version:input.contentVersion,p_approved:input.approved} as never);
+ const client=await createClient();
+ if(input.approved){
+  // Pin approve to version + hash(content). prepared_text_sha256 is ignored here.
+  if(typeof client.from!=='function')return null;
+  const observed=await client.from('knowledge_sources')
+   .select('id,company_id,status,content,content_version,approved_for_answers')
+   .eq('id',input.sourceId)
+   .eq('company_id',input.companyId)
+   .eq('content_version',input.contentVersion)
+   .eq('status','ready')
+   .maybeSingle();
+  if(observed.error||!observed.data)return null;
+  const row=observed.data as {content?:string|null;content_version?:number;status?:string};
+  if(row.content_version!==input.contentVersion||row.status!=='ready')return null;
+  const current=knowledgeReviewFingerprint({content:row.content});
+  if(!current||current!==input.reviewedContentFingerprint)return null;
+ }
+ const result=await client.rpc('es02_approve_owned_branch_knowledge_source' as never,{p_expected_account_id:input.expectedAccountId,p_company_id:input.companyId,p_branch_id:input.branchId,p_source_id:input.sourceId,p_content_version:input.contentVersion,p_approved:input.approved} as never);
  return result.error?null:boundKnowledgeSnapshot(result.data,input);
  }catch{return null;}
 }
@@ -60,22 +89,140 @@ export async function removeOwnedBranchKnowledgePageAction(input:KnowledgeViewSc
  }catch{return null;}
 }
 
+export async function reprocessOwnedBranchKnowledgeFileAction(input:KnowledgeViewScope&{sourceId:string;expectedVersion:number}):Promise<BranchKnowledgeViewSnapshot|null>{
+ try{
+  if(!validScope(input)||!UUID.test(input.sourceId)||input.expectedVersion!==1)return null;
+  const identity=await readSessionIdentity();if(!identity.ok||identity.userId!==input.expectedAccountId)return null;
+  const {getCompanyAccess}=await import('./access');const access=await getCompanyAccess('owner');
+  if(!access.ok||access.context.userId!==input.expectedAccountId||access.context.company?.id!==input.companyId)return null;
+
+  const snapshot=await readOwnedBranchKnowledgeAction(input);
+  const file=snapshot?.files.find(item=>item.branchId===input.branchId&&item.source.id===input.sourceId&&item.source.company_id===input.companyId&&item.source.kind==='file');
+  if(!snapshot||snapshot.version!==input.expectedVersion||!file)return null;
+
+  const {knowledgeFileWorkerEnabled}=await import('@/lib/knowledge/file-worker/gate');
+  if(knowledgeFileWorkerEnabled()){
+    // Durable claim returns queued/processing immediately; worker owns extract.
+    if(typeof identity.nativeSessionId!=='string'||!UUID.test(identity.nativeSessionId))return null;
+    const {enqueueBoundBranchKnowledgeFilePrepare}=await import('@/lib/knowledge/file-worker/bound-enqueue');
+    const queued=await enqueueBoundBranchKnowledgeFilePrepare({
+      actorId:identity.userId,
+      sessionId:identity.nativeSessionId,
+      companyId:input.companyId,
+      branchId:input.branchId,
+      sourceId:input.sourceId,
+    });
+    if(queued.mode==='unavailable')return null;
+    return await readOwnedBranchKnowledgeAction(input);
+  }
+
+  // Sync path (gate off): canonical preparer owns the only claim. Pre-claiming
+  // here would make its non-processing compare-and-set reject us as busy.
+  const {retryKnowledgePrepare}=await import('@/lib/knowledge/actions');
+  const retryResult=await retryKnowledgePrepare(input.sourceId);
+  if(!retryResult.ok&&retryResult.code!=="CONFLICT"&&!retryResult.data)return null;
+  return await readOwnedBranchKnowledgeAction(input);
+ }catch{return null;}
+}
+
 export async function uploadOwnedBranchKnowledgeFilesAction(input:KnowledgeViewScope&{expectedVersion:number;files:File[]}):Promise<BranchKnowledgeViewSnapshot|null>{
  try{
- if(!validScope(input)||input.expectedVersion!==1||!Array.isArray(input.files)||input.files.length<1||input.files.length>5)return null;
- const identity=await readSessionIdentity();if(!identity.ok||identity.userId!==input.expectedAccountId)return null;
- const snapshot=await readOwnedBranchKnowledgeAction(input);if(!snapshot||snapshot.version!==input.expectedVersion||snapshot.capabilities.canUploadFiles!==true)return null;
- const {getCompanyAccess}=await import('./access');const access=await getCompanyAccess('owner');
- if(!access.ok||access.context.userId!==input.expectedAccountId||access.context.company?.id!==input.companyId)return null;
- const {uploadKnowledgeFiles}=await import('@/lib/knowledge/actions');const form=new FormData();form.set('expectedCompanyId',input.companyId);for(const file of input.files)form.append('files',file);
- const uploaded=await uploadKnowledgeFiles(form);if(!uploaded.ok)return null;
- const client=await createClient();let latest:BranchKnowledgeViewSnapshot|null=null;
- for(const item of uploaded.data){
-  const source=item.source;if(!item.ok||!source||source.company_id!==input.companyId||!UUID.test(source.id)||!Number.isSafeInteger(source.content_version)||source.content_version!<1)return null;
-  const result=await client.rpc('es02_bind_owned_branch_knowledge_source' as never,{p_expected_account_id:input.expectedAccountId,p_company_id:input.companyId,p_branch_id:input.branchId,p_source_id:source.id,p_content_version:source.content_version} as never);
-  if(result.error)return null;latest=boundKnowledgeSnapshot(result.data,input);if(!latest)return null;
- }
- return latest;
+  if(!validScope(input)||input.expectedVersion!==1||!Array.isArray(input.files)||input.files.length<1||input.files.length>5)return null;
+  const identity=await readSessionIdentity();if(!identity.ok||identity.userId!==input.expectedAccountId)return null;
+  const snapshot=await readOwnedBranchKnowledgeAction(input);if(!snapshot||snapshot.version!==input.expectedVersion||snapshot.capabilities.canUploadFiles!==true)return null;
+  const {getCompanyAccess}=await import('./access');const access=await getCompanyAccess('owner');
+  if(!access.ok||access.context.userId!==input.expectedAccountId||access.context.company?.id!==input.companyId)return null;
+
+  const client=await createClient();
+  const fileNames=input.files.map(f=>f.name.trim()||"file");
+  let existingRows:Array<{id:string;company_id:string;file_name:string|null;byte_size:number|null;storage_path:string|null;content_version:number;prepared_file_sha256:string|null}>|null=null;
+  if(typeof client.from==='function'){
+   const q=await client.from("knowledge_sources").select("id,company_id,file_name,byte_size,storage_path,content_version,status,failure_code,prepared_file_sha256").eq("company_id",input.companyId).eq("kind","file").in("file_name",fileNames);
+   existingRows=q.data;
+  }
+
+  const {createHash}=await import("node:crypto");
+  const filesToUpload:File[]=[];
+  const sourcesToBind:Array<{id:string;company_id:string;content_version:number}>=[];
+
+  for(const file of input.files){
+   const fileName=file.name.trim()||"file";
+   const buffer=Buffer.from(await file.arrayBuffer());
+   const fileSha256=createHash("sha256").update(buffer).digest("hex");
+
+   let matchedExisting:{id:string;company_id:string;content_version:number}|null=null;
+   for(const candidate of (existingRows??[])){
+    if(candidate.file_name===fileName&&candidate.byte_size===file.size&&candidate.storage_path&&Number.isSafeInteger(candidate.content_version)&&candidate.content_version>0){
+     if(candidate.prepared_file_sha256){
+      if(candidate.prepared_file_sha256===fileSha256){
+       matchedExisting={id:candidate.id,company_id:candidate.company_id,content_version:candidate.content_version};
+       break;
+      }
+     }else if(typeof client.storage==='object'&&candidate.storage_path){
+      try{
+       const {data:downloaded}=await client.storage.from(KNOWLEDGE_BUCKET).download(candidate.storage_path);
+       if(downloaded){
+        const downloadedBuffer=Buffer.from(await downloaded.arrayBuffer());
+        const downloadedSha=createHash("sha256").update(downloadedBuffer).digest("hex");
+        if(downloadedSha===fileSha256){
+         matchedExisting={id:candidate.id,company_id:candidate.company_id,content_version:candidate.content_version};
+         break;
+        }
+       }
+      }catch{}
+     }
+    }
+   }
+
+   if(matchedExisting){
+    sourcesToBind.push(matchedExisting);
+   }else{
+    filesToUpload.push(file);
+   }
+  }
+
+  if(filesToUpload.length>0){
+   const {uploadKnowledgeFiles}=await import('@/lib/knowledge/actions');
+   const form=new FormData();form.set('expectedCompanyId',input.companyId);
+   for(const file of filesToUpload)form.append('files',file);
+   const uploaded=await uploadKnowledgeFiles(form);
+   if(!uploaded.ok)return null;
+
+   for(const item of uploaded.data){
+    const source=item.source;
+    if(!source||source.company_id!==input.companyId||!UUID.test(source.id)||!Number.isSafeInteger(source.content_version)||source.content_version!<1)return null;
+    sourcesToBind.push({id:source.id,company_id:source.company_id,content_version:source.content_version!});
+   }
+  }
+
+  let latest:BranchKnowledgeViewSnapshot|null=null;
+  const {knowledgeFileWorkerEnabled}=await import('@/lib/knowledge/file-worker/gate');
+  const deferExtract=knowledgeFileWorkerEnabled();
+  if(deferExtract&&(typeof identity.nativeSessionId!=='string'||!UUID.test(identity.nativeSessionId)))return null;
+  for(const source of sourcesToBind){
+   const result=await client.rpc('es02_bind_owned_branch_knowledge_source' as never,{p_expected_account_id:input.expectedAccountId,p_company_id:input.companyId,p_branch_id:input.branchId,p_source_id:source.id,p_content_version:source.content_version} as never);
+   if(result.error)return null;
+   latest=boundKnowledgeSnapshot(result.data,input);
+   if(!latest)return null;
+   if(deferExtract){
+    const {enqueueBoundBranchKnowledgeFilePrepare}=await import('@/lib/knowledge/file-worker/bound-enqueue');
+    const queued=await enqueueBoundBranchKnowledgeFilePrepare({
+      actorId:identity.userId,
+      sessionId:identity.nativeSessionId as string,
+      companyId:input.companyId,
+      branchId:input.branchId,
+      sourceId:source.id,
+    });
+    // Storage+bind already succeeded. Never invent processing without a saved
+    // attempt; never force a re-upload on enqueue/schema failure — return the
+    // bound snapshot so retry reuses the same source via content/hash match.
+    latest=await readOwnedBranchKnowledgeAction(input)??latest;
+    if(queued.mode==='queued'||queued.mode==='busy')continue;
+    // unavailable / WORKER_SCHEMA_REQUIRED: leave stored (or prior status) visible.
+    continue;
+   }
+  }
+  return latest??snapshot;
  }catch{return null;}
 }
 

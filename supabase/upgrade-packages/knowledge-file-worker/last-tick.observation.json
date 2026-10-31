@@ -1,0 +1,19 @@
+{
+  "at": "2026-10-31T16:18:37.264Z",
+  "url": "http://127.0.0.1:3330/api/internal/knowledge/file-worker",
+  "httpStatus": 503,
+  "observation": {
+    "lastTickAt": "2026-10-31T16:18:37.242Z",
+    "ok": false,
+    "code": "WORKER_DISABLED",
+    "backlog": 0,
+    "processed": 0,
+    "extracted": 0,
+    "unknown": 0,
+    "failed": 0,
+    "reviewRequired": 0,
+    "automaticRetry": false,
+    "stalledDueWork": false
+  },
+  "appearsStoppedHint": true
+}

@@ -23,6 +23,7 @@ import {
   saveOwnedBranchKnowledgeTextAction,
   uploadOwnedBranchKnowledgeFilesAction,
   approveOwnedBranchKnowledgeSourceAction,
+  reprocessOwnedBranchKnowledgeFileAction,
 } from "@/lib/tenancy/paid-branch-knowledge-actions";
 import type { ReplyLanguageSnapshot } from "@/lib/tenancy/reply-language-contract";
 import {
@@ -388,6 +389,10 @@ function StepHost(props: PaidSetupStepHostProps) {
           onSourceApproval={async input=>{
             setKnowledgePhase('busy');const result=await runMutation(approveOwnedBranchKnowledgeSourceAction(input),60_000).catch(()=>null);if(!isCurrent())return;
             if(result){setKnowledgeSnap(result);setKnowledgePhase('ready');onRefresh?.();}else setKnowledgePhase('conflict');
+          }}
+          onReprocessFile={async input=>{
+            setKnowledgePhase('busy');const result=await runMutation(reprocessOwnedBranchKnowledgeFileAction(input),60_000).catch(()=>null);if(!isCurrent())return;
+            if(result){setKnowledgeSnap(result);setKnowledgePhase('ready');onRefresh?.();}else setKnowledgePhase('ready');
           }}
           onConfirmLanguages={async (input) => {
             setLangPhase("saving");

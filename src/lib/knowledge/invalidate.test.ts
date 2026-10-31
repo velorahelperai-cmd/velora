@@ -167,7 +167,7 @@ describe("publishExtractedText", () => {
 describe("beginKnowledgeProcessing identity bind", () => {
   it("binds start-of-processing to the downloaded source/version/file", async () => {
     const { client, filters } = updateClient({
-      row: { id: "s1", status: "processing", content: "", content_version: 4, storage_path: "co-a/s1/menu.pdf" },
+      row: { id: "s1", status: "processing", content: "", content_version: 4, storage_path: "co-a/s1/menu.pdf", approved_for_answers: false },
     });
     const result = await beginKnowledgeProcessing(client, {
       sourceId: "s1",
@@ -183,6 +183,31 @@ describe("beginKnowledgeProcessing identity bind", () => {
       ["content_version", 3],
       ["storage_path", "co-a/s1/menu.pdf"],
     ]);
+  });
+
+  it("refuses extraction when the processing claim leaves prior approval intact", async () => {
+    const { client } = updateClient({
+      row: {
+        id: "s1",
+        status: "processing",
+        content: "",
+        content_version: 4,
+        approved_for_answers: true,
+        approved_version: 3,
+      },
+    });
+    const result = await beginKnowledgeProcessing(client, {
+      sourceId: "s1",
+      companyId: "co-a",
+      contentVersion: 3,
+      storagePath: "co-a/s1/menu.pdf",
+      select: SELECT,
+    });
+    expect(result).toEqual({
+      ok: false,
+      reason: "still_eligible",
+      message: "approval_not_cleared",
+    });
   });
 
   it("does not publish old bytes after empty-content same-path replace (no version bump)", async () => {
