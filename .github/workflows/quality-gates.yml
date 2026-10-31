@@ -37,6 +37,8 @@ jobs:
           node-version: 24.18.0
       - name: Locked dependencies; no lifecycle scripts or provider credentials
         run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Apply locked lint compatibility patches
+        run: node scripts/ci/apply-lint-patches.mjs
       - name: Isolated offline check
         env:
           # Redacted per-check receipts for this runner only. Not uploaded;
@@ -55,6 +57,8 @@ jobs:
           node-version: 24.18.0
       - run: node scripts/ci/security.mjs
       - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Apply locked lint compatibility patches
+        run: node scripts/ci/apply-lint-patches.mjs
       - name: Security and product contract checks
         run: node --test scripts/ci/safety.test.mjs scripts/ci/required-gate.test.mjs scripts/ci/security.test.mjs scripts/ci/source-paths.test.mjs scripts/ci/dependency-compatibility.test.mjs scripts/ci/receipt.test.mjs scripts/integration/local-auth-confirmation.test.mjs src/lib/logging/logger.test.mjs
       # Moderate and higher findings block delivery; no audit suppression or

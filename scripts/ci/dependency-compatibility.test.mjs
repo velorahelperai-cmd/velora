@@ -44,3 +44,20 @@ test('Mammoth library and legacy CLI both retain real DOCX extraction',async()=>
   assert.equal(cli.status,0,cli.stderr);assert.ok(cli.stdout.includes(text));
  }finally{assert.equal(resolve(fixture,'..'),resolve(tmpdir()));await rm(fixture,{recursive:true,force:true});}
 });
+
+test('patched lint glob consumers remain callable and reject disallowed imports',async()=>{
+ const require=createRequire(import.meta.url);
+ const {Linter}=require('eslint');
+ const linter=new Linter();
+ const rules={
+  'import/extensions':['error',{ignorePackages:true,pathGroupOverrides:[{pattern:'**/*.js',action:'enforce'}]}],
+  'import/no-internal-modules':['error',{forbid:['foo/**']}],
+  'import/no-restricted-paths':['error',{zones:[{target:'./src/**',from:'./private/**'}]}],
+  'react/jsx-pascal-case':['error',{ignore:['Other*']}],
+  'jsx-a11y/label-has-associated-control':['error',{controlComponents:['Custom*']}],
+ };
+ const config={files:['**/*.jsx'],languageOptions:{ecmaVersion:2022,sourceType:'module',parserOptions:{ecmaFeatures:{jsx:true}}},plugins:{import:require('eslint-plugin-import'),react:require('eslint-plugin-react'),'jsx-a11y':require('eslint-plugin-jsx-a11y')},rules};
+ const text="import x from 'foo/private';\nimport y from './module.js';\nconst A=()=> <><Bad_name/><label><CustomInput /></label></>;";
+ const messages=linter.verify(text,config,{filename:resolve('src/test.jsx')});
+ assert.deepEqual(messages.map(({ruleId})=>ruleId),['import/no-internal-modules','import/extensions','react/jsx-pascal-case','jsx-a11y/label-has-associated-control']);
+});
