@@ -10,7 +10,7 @@ import { readFileSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { pathToFileURL } from "node:url";
-import { isolatedPostgres, lit, wrapMigrationTransaction } from "./postgres-lf.mjs";
+import { isolatedPostgres, lit } from "./postgres-lf.mjs";
 
 const MUTATIONS_THROUGH = "20261028171327_es02_branch_knowledge_mutations.sql";
 const evidencePath = join(
@@ -185,7 +185,6 @@ try {
   const txtBody =
     "Isolated worker tick proof text/plain — local extract only, provider locked.";
   const bytes = Buffer.from(txtBody, "utf8");
-  const sha = createHash("sha256").update(bytes).digest("hex");
   const path = `${company}/${sourceId}/worker-tick-proof.txt`;
   const seedUpdated = "2026-10-31T17:00:00.000000Z";
 

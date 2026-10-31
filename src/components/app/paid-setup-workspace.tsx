@@ -184,7 +184,7 @@ function Workspace(p:PaidSetupWorkspaceProps) {
     if(!p.isCurrent()||!valid||!active||allowed)return;
     const fallback=visibleSteps.find(step=>workspaceStepAllowed(p.read,p.scope,step.id,p.availableStepIds));
     if(fallback)p.onSelectStep(fallback.id);
-  },[active,allowed,valid,p.read,p.scope,p.availableStepIds,p.isCurrent,p.onSelectStep,visibleSteps]);
+  },[active,allowed,valid,p,p.read,p.scope,p.availableStepIds,p.isCurrent,p.onSelectStep,visibleSteps]);
   const select=(step:ChecklistStepId)=>{
     if(!p.isCurrent()||!workspaceStepAllowed(p.read,p.scope,step,p.availableStepIds))return;
     if(step!==active&&!confirmSetupLeave(shell.current,p.locale))return;
