@@ -21,7 +21,6 @@ import { useOptionalAccountSession } from "./account-chrome";
 import { subscriptionCopy } from "./subscription-copy";
 import { saveOwnerBusiness, selectWorkspaceCompany } from "@/lib/tenancy/actions";
 import { CompanyTeamPanel } from "./company-team-panel";
-import { reconcileDraftFields } from "./draft-refresh";
 import {
   Button, Card, Field, Notice, Tabs,
   useAction, useAppCopy, useUnsavedWarning,
@@ -140,14 +139,22 @@ function BusinessTab({userId,company,leaveGuardRef}:{userId:string|null;company:
   const [form,setForm]=useState(()=>fromCompany(company));
   const [baseline,setBaseline]=useState(()=>fromCompany(company));
   const [trackedCompany,setTrackedCompany]=useState(company);
-  const [conflicts,setConflicts]=useState<Array<keyof typeof form>>([]);
   const [error,setError]=useState<string|null>(null);
   const [diagnostic,setDiagnostic]=useState<unknown>(null);
   const [saved, setSaved] = useState(false);
   const { busy, run } = useAction();
   if(trackedCompany!==company){
-    const refreshed=reconcileDraftFields(form,baseline,fromCompany(company),conflicts);
-    setTrackedCompany(company);setForm(refreshed.values);setBaseline(refreshed.baseline);setConflicts(refreshed.conflicts);setSaved(false);
+    const serverBusiness = fromCompany(company);
+    setTrackedCompany(company);
+    setForm(prev => {
+      const next = { ...prev };
+      for (const key of Object.keys(serverBusiness) as Array<keyof typeof prev>) {
+        if (prev[key] === baseline[key]) (next as Record<string, string>)[key] = serverBusiness[key];
+      }
+      return next;
+    });
+    setBaseline(serverBusiness);
+    setSaved(false);
   }
   const dirty = JSON.stringify(form) !== JSON.stringify(baseline);
   useUnsavedWarning(dirty && !busy);
@@ -160,7 +167,6 @@ function BusinessTab({userId,company,leaveGuardRef}:{userId:string|null;company:
       <form className="grid gap-4 lg:grid-cols-2" noValidate onSubmit={(e) => {
         e.preventDefault();
         if (!userId || (accountSession && !accountSession.isCurrentUser(userId))) return;
-        if(conflicts.length)return;
         setSaved(false);setError(null);setDiagnostic(null);
         void run(async () => {
           const result = await saveOwnerBusiness({
@@ -178,27 +184,28 @@ function BusinessTab({userId,company,leaveGuardRef}:{userId:string|null;company:
           });
           if (accountSession && !accountSession.isCurrentUser(userId)) return;
           setDiagnostic(result.diagnostic);if (!result.ok) {
-            setError(copy.errors.authFailed);
+            if (result.code === "CONFLICT") {
+              setError(locale === "ar" ? "تغيّرت البيانات المحفوظة على الخادم. أعد التحميل قبل الحفظ." : "The saved record changed on the server. Reload before saving.");
+            } else {
+              setError(copy.errors.authFailed);
+            }
             return;
           }
           const business=fromCompany(result.data);
-          setForm(business);setBaseline(business);setConflicts([]);
+          setForm(business);setBaseline(business);
           setSaved(true);
           try{router.refresh();}catch{setDiagnostic(result.diagnostic??beginDiagnostic("company_save").event("refresh","REFRESH_FAILED"));}
         });
       }}>
         {error?<div className="lg:col-span-2"><Notice tone="error">{error}</Notice></div>:null}
         <div className="lg:col-span-2"><DiagnosticHint diagnostic={diagnostic} locale={locale}/></div>
-        {conflicts.length?<div className="lg:col-span-2"><Notice tone="warn">
-          <p>{locale==="ar"?"تم تحديث بعض الحقول التي تعدّلها. راجع القيم الأحدث قبل الحفظ.":"Some fields you are editing changed in the saved record. Review the latest values before saving."}</p>
-          <Button type="button" variant="secondary" disabled={busy} onClick={()=>{setForm(previous=>conflicts.reduce((next,key)=>({...next,[key]:baseline[key]}),previous));setConflicts([]);}}>{locale==="ar"?"استخدام أحدث القيم المتعارضة":"Use latest conflicting values"}</Button>
-        </Notice></div>:null}
+        
         {saved && !dirty ? <div className="lg:col-span-2"><Notice tone="success">{copy.saved}</Notice></div> : null}
         <Field label={copy.setup.businessName} required>{(p) => <input {...p} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />}</Field>
         <Field label={copy.setup.city}>{(p) => <input {...p} value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} />}</Field>
         <Field label={copy.setup.hours}>{(p) => <input {...p} value={form.hours} onChange={(e) => setForm({ ...form, hours: e.target.value })} />}</Field>
         <Field label={copy.setup.contactPhone}>{(p) => <input {...p} dir="ltr" inputMode="tel" value={form.contactPhone} onChange={(e) => setForm({ ...form, contactPhone: e.target.value })} />}</Field>
-        <div className="lg:col-span-2"><Button type="submit" busy={busy} busyLabel={copy.saving} disabled={conflicts.length>0 || !dirty || !form.name.trim()}>{copy.save}</Button></div>
+        <div className="lg:col-span-2"><Button type="submit" busy={busy} busyLabel={copy.saving} disabled={!dirty || !form.name.trim()}>{copy.save}</Button></div>
       </form>
     </Card>
   );

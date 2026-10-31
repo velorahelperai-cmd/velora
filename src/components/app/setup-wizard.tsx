@@ -70,7 +70,7 @@ for (const [key, publishedKey] of Object.entries({
 })) {
   styles[key] = [internalStyles[key], setupStyles[publishedKey]].filter(Boolean).join(" ");
 }
-import { reconcileDraftFields, useServerDraftField } from "./draft-refresh";
+import { useServerDraftField } from "./draft-refresh";
 import {useWhatsappRequestReadback,type WhatsappRequestReadStatus} from "./whatsapp-request-readback";
 
 const MILESTONES_COPY = {
@@ -296,15 +296,17 @@ function LegacySetupWizard({
   const [draft, setDraft] = useState<CompanyDraft>(() => emptyCompanyDraft(userId));
   const [ready, setReady] = useState(false);
   const [businessBaseline, setBusinessBaseline] = useState<Business>(() => initialCompany ? companyBusiness(initialCompany) : { ...emptyBusiness });
-  const [businessConflicts, setBusinessConflicts] = useState<Array<keyof Business>>([]);
   const [reconciledCompany, setReconciledCompany] = useState(savedCompany);
   // Server facts reconcile independently of the once-per-scope navigation restore.
   if (ready && draft.userId === userId && draft.companyId === companyId && reconciledCompany !== savedCompany) {
-    const refresh = reconcileDraftFields(draft.business, businessBaseline, savedCompany ? companyBusiness(savedCompany) : { ...emptyBusiness }, businessConflicts);
+    const serverBusiness = savedCompany ? companyBusiness(savedCompany) : { ...emptyBusiness };
+    const merged = { ...draft.business };
+    for (const key of Object.keys(serverBusiness) as Array<keyof Business>) {
+      if (draft.business[key] === businessBaseline[key]) (merged as Record<string, string>)[key] = serverBusiness[key];
+    }
     setReconciledCompany(savedCompany);
-    setBusinessBaseline(refresh.baseline);
-    setBusinessConflicts(refresh.conflicts);
-    setDraft({ ...draft, business: refresh.values, businessBaseline: refresh.baseline });
+    setBusinessBaseline(serverBusiness);
+    setDraft({ ...draft, business: merged, businessBaseline: serverBusiness });
   }
   const [knowledgeSources, setKnowledgeSources] = useState(initialKnowledge);
   const [knowledgeFailed, setKnowledgeFailed] = useState(knowledgeLoadFailed);
@@ -404,7 +406,6 @@ function LegacySetupWizard({
       setKnowledgeSources(initialKnowledge);
       setDraft(next);
       setBusinessBaseline(savedCompany ? companyBusiness(savedCompany) : { ...emptyBusiness });
-      setBusinessConflicts([]);
       setReconciledCompany(savedCompany);
       setReady(true);
       }).catch(() => { if (!cancelled) { setSetupFileContextError("UNAVAILABLE"); hydratedScope.current=scope; setDraft(hydrateOnboardingDraft(null,userId,savedCompany)); setBusinessBaseline(savedCompany?companyBusiness(savedCompany):{...emptyBusiness}); setReady(true); } });
@@ -437,9 +438,7 @@ function LegacySetupWizard({
     setSavedCompany(company);
   };
 
-  const unresolvedBusinessConflicts = businessConflicts.filter(key => draft.business[key] !== businessBaseline[key]);
-  if (unresolvedBusinessConflicts.length !== businessConflicts.length) setBusinessConflicts(unresolvedBusinessConflicts);
-  const resolveBusinessConflicts = () => persist(d => ({ ...d, business: { ...d.business, ...Object.fromEntries(unresolvedBusinessConflicts.map(key => [key, businessBaseline[key]])) } }));
+
 
   const step = Math.max(0, Math.min(7, draft.setupStep));
   const go = (n: number, opts?: { skipGuard?: boolean }) => {
@@ -524,8 +523,6 @@ function LegacySetupWizard({
                 key={`${userId}:${companyId ?? "new"}`}
                 baseline={businessBaseline}
                 hoursRequired={!masterJourneyEnabled}
-                conflicts={unresolvedBusinessConflicts}
-                onResolveConflicts={resolveBusinessConflicts}
                 companyId={companyId}
                 onCompanySaved={adoptCompany} onDiagnostic={setDiagnostic}
                 draft={draft}
@@ -554,8 +551,6 @@ function LegacySetupWizard({
                 key={`${userId}:${companyId ?? "new"}`}
                 userId={userId}
                 draftBusiness={draft.business}
-                conflict={unresolvedBusinessConflicts.includes("hours")}
-                onResolveConflicts={resolveBusinessConflicts}
                 companyId={companyId}
                 onCompanySaved={adoptCompany} onDiagnostic={setDiagnostic}
                 company={savedCompany}
@@ -618,8 +613,6 @@ function LegacySetupWizard({
                 key={`${userId}:${companyId ?? "new"}`}
                 userId={userId}
                 draftBusiness={draft.business}
-                conflict={unresolvedBusinessConflicts.includes("replyLanguage")}
-                onResolveConflicts={resolveBusinessConflicts}
                 companyId={companyId}
                 onCompanySaved={adoptCompany} onDiagnostic={setDiagnostic}
                 company={savedCompany}
@@ -795,17 +788,11 @@ function StepFrame({
 /* Milestone 0: Company Profile Step                                         */
 /* ========================================================================= */
 
-function RefreshConflictNotice({ onResolve }: { onResolve: () => void }) {
-  const { locale } = useDemo();
-  return <Notice tone="warn">
-    <p>{locale === "ar" ? "تم تحديث بعض الحقول التي تعدّلها. راجع القيم الأحدث قبل الحفظ." : "Some fields you are editing changed in the saved record. Review the latest values before saving."}</p>
-    <Button type="button" variant="secondary" onClick={onResolve}>{locale === "ar" ? "استخدام أحدث القيم المتعارضة" : "Use latest conflicting values"}</Button>
-  </Notice>;
-}
+
 
 function BusinessStep({
   hoursRequired,
-  baseline, conflicts, onResolveConflicts,
+  baseline,
   draft,
   companyId,
   companyVersion,
@@ -817,8 +804,6 @@ function BusinessStep({
 }: {
   hoursRequired: boolean;
   baseline: Business;
-  conflicts: Array<keyof Business>;
-  onResolveConflicts: () => void;
   draft: CompanyDraft;
   companyId: string | null;
   companyVersion?:number;
@@ -854,7 +839,6 @@ function BusinessStep({
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (conflicts.length) return;
     const next: Partial<Record<keyof Business, FieldErrorKey>> = {};
     if (!form.name.trim()) next.name = "required";
     if (!form.type.trim()) next.type = "required";
@@ -880,7 +864,7 @@ function BusinessStep({
         contactEmail: form.contactEmail,
       });
       onDiagnostic(result.diagnostic);if (!result.ok) {
-        window.alert(copy.errors.authFailed);
+        window.alert(result.code === "CONFLICT" ? (locale === "ar" ? "تغيّرت البيانات المحفوظة على الخادم. أعد التحميل قبل الحفظ." : "The saved record changed on the server. Reload before saving.") : copy.errors.authFailed);
         return;
       }
       if (!finishCompanySave(result, companyId, (company) => {
@@ -902,7 +886,7 @@ function BusinessStep({
 
   return (
     <form className="grid min-w-0 gap-4 lg:grid-cols-2" noValidate onSubmit={submit}>
-      {conflicts.length ? <div className="lg:col-span-2"><RefreshConflictNotice onResolve={onResolveConflicts} /></div> : null}
+      
       <Field label={copy.setup.businessName} required error={nameError}>
         {(p) => (
           <input
@@ -984,7 +968,7 @@ function BusinessStep({
         )}
       </Field>
       <div className="flex flex-wrap items-center gap-3 border-t border-[color:var(--color-border-soft)] pt-4 lg:col-span-2">
-        <Button type="submit" busy={busy} disabled={conflicts.length > 0} busyLabel={copy.saving}>
+        <Button type="submit" busy={busy} busyLabel={copy.saving}>
           {copy.setup.continue}
         </Button>
         {draft.businessSaved && !dirty ? (
@@ -1064,7 +1048,7 @@ function PlanStep({ onBack, onNext, planHref }: { onBack: () => void; onNext: ()
 /* ========================================================================= */
 
 function HoursStep({
-  userId, draftBusiness, conflict, onResolveConflicts,
+  userId, draftBusiness,
   company,
   companyId,
   onCompanySaved,
@@ -1076,8 +1060,6 @@ function HoursStep({
 }: {
   userId: string;
   draftBusiness: Business;
-  conflict: boolean;
-  onResolveConflicts: () => void;
   company: CompanyRecord | null;
   companyId: string | null;
   onCompanySaved: (company: CompanyRecord) => void;
@@ -1104,7 +1086,6 @@ function HoursStep({
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (conflict) return;
     if (!form || !companyId || !hours.trim()) {
       setError(copy.required);
       return;
@@ -1125,7 +1106,7 @@ function HoursStep({
         contactEmail: form.contactEmail,
       });
       onDiagnostic(result.diagnostic);if (!result.ok) {
-        setError(copy.errors.authFailed);
+        setError(result.code === "CONFLICT" ? (locale === "ar" ? "تغيّرت المواعيد المحفوظة على الخادم. أعد التحميل قبل الحفظ." : "The saved hours changed on the server. Reload before saving.") : copy.errors.authFailed);
         return;
       }
       if (!finishCompanySave(result, companyId, (company) => {
@@ -1138,7 +1119,7 @@ function HoursStep({
 
   return (
     <form className="grid gap-5" noValidate onSubmit={submit}>
-      {conflict ? <RefreshConflictNotice onResolve={onResolveConflicts} /> : null}
+      
       <Field label={copy.setup.hours} required error={error ?? undefined}>
         {(p) => (
           <input
@@ -1156,7 +1137,7 @@ function HoursStep({
         <Button variant="secondary" type="button" onClick={onBack}>
           {copy.back}
         </Button>
-        <Button type="submit" busy={busy} disabled={conflict}>
+        <Button type="submit" busy={busy}>
           {copy.setup.continue}
         </Button>
       </div>
@@ -1169,7 +1150,7 @@ function HoursStep({
 /* ========================================================================= */
 
 function PersonaStep({
-  userId, draftBusiness, conflict, onResolveConflicts,
+  userId, draftBusiness,
   company,
   companyId,
   onCompanySaved,
@@ -1181,8 +1162,6 @@ function PersonaStep({
 }: {
   userId: string;
   draftBusiness: Business;
-  conflict: boolean;
-  onResolveConflicts: () => void;
   company: CompanyRecord | null;
   companyId: string | null;
   onCompanySaved: (company: CompanyRecord) => void;
@@ -1213,7 +1192,7 @@ function PersonaStep({
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!form || !companyId || conflict) return;
+    if (!form || !companyId) return;
     setSaveError(null);
     void run(async () => {
       const result = await saveOwnerBusiness({
@@ -1229,7 +1208,7 @@ function PersonaStep({
         contactPhone: form.contactPhone,
         contactEmail: form.contactEmail,
       });
-      onDiagnostic(result.diagnostic);if (!result.ok) { setSaveError(copy.errors.authFailed); return; }
+      onDiagnostic(result.diagnostic);if (!result.ok) { setSaveError(result.code === "CONFLICT" ? (locale === "ar" ? "تغيّرت البيانات المحفوظة على الخادم. أعد التحميل قبل الحفظ." : "The saved record changed on the server. Reload before saving.") : copy.errors.authFailed); return; }
       if (!finishCompanySave(result, companyId, (company) => {
         leaveGuardRef.current = () => true;
         onCompanySaved(company);
@@ -1242,7 +1221,7 @@ function PersonaStep({
 
   return (
     <form className="grid gap-5" noValidate onSubmit={submit}>
-      {conflict ? <RefreshConflictNotice onResolve={onResolveConflicts} /> : null}
+      
       <Notice tone="info">{locale === "ar" ? "لغة الرد تحفظ في ملف النشاط. النبرة تضبط عبر تعليمات نشاط معتمدة في المعرفة." : "Reply language is saved to the company profile. Set tone through approved business instructions in Knowledge."}</Notice>
       {saveError ? <Notice tone="error">{saveError}</Notice> : null}
 
@@ -1274,7 +1253,7 @@ function PersonaStep({
         <Button variant="secondary" type="button" onClick={onBack}>
           {copy.back}
         </Button>
-        <Button type="submit" busy={busy} disabled={conflict}>
+        <Button type="submit" busy={busy}>
           {copy.setup.continue}
         </Button>
       </div>
@@ -1399,7 +1378,7 @@ function WhatsAppStep({
 
       {linkStatus==="failed"?<div role="alert"><Notice tone="error">{ar?"تعذر قراءة طلب الربط. لم تُحفظ التعديلات؛ أعد القراءة قبل المتابعة.":"Could not read the saved link request. Changes have not been saved; reload before continuing."}</Notice></div>:null}
       <Button type="button" variant="secondary" disabled={busy||linkStatus==="loading"} onClick={refreshLink}>{ar?"تحديث الطلب المحفوظ":"Refresh saved request"}</Button>
-      {numberField.conflict||keepField.conflict?<Notice tone="warn">{ar?"تغير الطلب المحفوظ. احتُفظ بتعديلاتك غير المحفوظة.":"The saved request changed. Your unsaved edits were kept."} <Button type="button" variant="secondary" disabled={busy} onClick={()=>{numberField.resolve();keepField.resolve();}}>{ar?"استخدام القيم المحفوظة":"Use saved values"}</Button></Notice>:null}
+      
       <Field label={copy.setup.numberOwnership} required>
         {(p) => (
           <div className="grid gap-2 sm:grid-cols-2">

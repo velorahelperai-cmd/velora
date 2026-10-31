@@ -94,19 +94,14 @@ describe("PaidBranchHours radical fix & non-blocking UI journey", () => {
 
       expect(host.querySelector('[data-hours-day="monday"]')?.getAttribute("data-state")).toBe("open");
       expect(host.querySelector('[data-hours-day="friday"]')?.getAttribute("data-state")).toBe("closed");
-      expect(host.textContent).toContain("وصلت مواعيد محفوظة تختلف عن مسودتك");
+      // User draft remains undisturbed without disruptive conflict banners
+      expect(host.textContent).not.toContain("وصلت مواعيد محفوظة تختلف عن مسودتك");
       const loadServerBtn = Array.from(host.querySelectorAll("button")).find(
         (b) => b.textContent?.includes("استعادة مواعيد الخادم")
       );
-      expect(loadServerBtn).toBeDefined();
-
-      await act(async () => {
-        loadServerBtn!.click();
-      });
-
-      expect(host.textContent).not.toContain("وصلت مواعيد محفوظة تختلف عن مسودتك");
-      expect(host.querySelector('[data-hours-day="sunday"]')?.getAttribute("data-state")).toBe("open");
-      expect(host.querySelector('[data-hours-day="sunday"]')?.textContent).toContain("09:00");
+      expect(loadServerBtn).toBeUndefined();
+      expect(host.querySelector('[data-hours-day="monday"]')?.getAttribute("data-state")).toBe("open");
+      expect(host.querySelector('[data-hours-day="friday"]')?.getAttribute("data-state")).toBe("closed");
     } finally {
       await act(async () => root.unmount());
       vi.unstubAllGlobals();

@@ -89,7 +89,6 @@ function HoursForm(p: PaidBranchHoursProps) {
   const [mode, setMode] = useState<HoursMode>("rest");
   const [confirmation, setConfirmation] = useState<string | null>(null);
   const [busy, setBusy] = useState(false), [failed, setFailed] = useState(false);
-  const [conflictWithServer, setConflictWithServer] = useState(false);
 
   const mounted = useRef(false), reserved = useRef(false);
   useLayoutEffect(() => {mounted.current = true; return () => {mounted.current = false;};}, []);
@@ -101,8 +100,7 @@ function HoursForm(p: PaidBranchHoursProps) {
   // Dirty local fields remain intact and the difference is explicitly shown.
   if(p.snapshot&&sourceVersion!==p.snapshot.version){
     setSourceVersion(p.snapshot.version);
-    if(!userEdited){setDraft(cloneBranchHours(p.snapshot.schedule));setConflictWithServer(false);}
-    else setConflictWithServer(JSON.stringify(draft)!==JSON.stringify(cloneBranchHours(p.snapshot.schedule)));
+    if(!userEdited){setDraft(cloneBranchHours(p.snapshot.schedule));}
   }
 
   // Find initial quick hours from first configured day or fallback to standard 09:00-17:00
@@ -212,7 +210,6 @@ function HoursForm(p: PaidBranchHoursProps) {
     if (p.snapshot) {
       setDraft(cloneBranchHours(p.snapshot.schedule));
       setUserEdited(false);
-      setConflictWithServer(false);
       const first = findFirstInterval(p.snapshot.schedule);
       setQuickStart(first?.start || "09:00");
       setQuickEnd(first?.end || "17:00");
@@ -260,25 +257,6 @@ function HoursForm(p: PaidBranchHoursProps) {
           <p role="status" className={styles.error}>{t("أكد المنطقة الزمنية قبل الحفظ.", "Confirm the timezone before saving.")}</p>
         )}
 
-        {conflictWithServer && p.snapshot && (
-          <div role="alert" className={styles.warning}>
-            <p>{t("وصلت مواعيد محفوظة تختلف عن مسودتك.", "Saved hours differ from your draft.")}</p>
-            <button
-              type="button"
-              onClick={() => {
-                if (p.snapshot) {
-                  setDraft(cloneBranchHours(p.snapshot.schedule));
-                  setUserEdited(false);
-                  setConflictWithServer(false);
-                  setActivePreset(null);
-                  setMode("rest");
-                }
-              }}
-            >
-              {t("استعادة مواعيد الخادم", "Load server hours")}
-            </button>
-          </div>
-        )}
 
         {p.state.phase === "conflict" && (
           <div role="alert" className={styles.errorBox}>

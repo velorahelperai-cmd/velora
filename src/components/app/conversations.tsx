@@ -254,11 +254,8 @@ function LeadFollowUpPanel({
   const followUpStatusDraft=followUpField.value,setFollowUpStatusDraft=followUpField.setValue;
   const followUpAtDraft=dateField.value,setFollowUpAtDraft=dateField.setValue;
   const assignDraft=assignmentField.value,setAssignDraft=assignmentField.setValue;
-  const draftFields=[stageField,reasonField,noteField,followUpField,dateField];
-  const draftConflicted=draftFields.some(field=>field.conflict);
-
   async function saveLead(nextFollowUp?: FollowUpStatus) {
-    if (!live || leadBusy || !canReply || draftConflicted) return;
+    if (!live || leadBusy || !canReply) return;
     const status = nextFollowUp ?? followUpStatusDraft;
     let followUpAt: string | null = fromDatetimeLocalValue(followUpAtDraft);
     if (status === "none") followUpAt = null;
@@ -332,7 +329,7 @@ function LeadFollowUpPanel({
   }
 
   async function saveAssignee() {
-    if (!live || busyControl || !canAssign || assignmentField.conflict) return;
+    if (!live || busyControl || !canAssign) return;
     await runControlActionPath({
       store: getEpochStore(),
       busyId: conversation.id,
@@ -380,10 +377,7 @@ function LeadFollowUpPanel({
 
   return (
     <div className="space-y-4 text-xs font-[family-name:Tajawal,var(--font-ar),sans-serif]">
-      {(draftConflicted||assignmentField.conflict)&&<Notice tone="warn">
-        <p>{locale==='ar'?'تغيّرت التفاصيل على الخادم. احتفظنا بتعديلاتك؛ راجعها قبل الحفظ.':'Details changed on the server. Your edits are preserved; review them before saving.'}</p>
-        <Button variant="ghost" onClick={()=>{draftFields.forEach(field=>field.resolve());assignmentField.resolve();}}>{locale==='ar'?'تجاهل تعديلات الحقول واعتماد آخر بيانات':'Discard field edits and use latest values'}</Button>
-      </Notice>}
+
       <div className="flex items-center justify-between border-b border-[color:var(--color-border-soft)] pb-2">
         <h4 className="font-bold text-sm text-[var(--color-on-dark)] flex items-center gap-1.5">
           <span>📋</span>
@@ -464,7 +458,7 @@ function LeadFollowUpPanel({
           {followUpStatusDraft !== "scheduled" ? (
             <button
               type="button"
-              disabled={disabled||draftConflicted}
+              disabled={disabled}
               onClick={() => {
                 setFollowUpStatusDraft("scheduled");
                 void saveLead("scheduled");
@@ -477,7 +471,7 @@ function LeadFollowUpPanel({
             <>
               <button
                 type="button"
-                disabled={disabled||draftConflicted}
+                disabled={disabled}
                 onClick={() => {
                   setFollowUpStatusDraft("completed");
                   void saveLead("completed");
@@ -488,7 +482,7 @@ function LeadFollowUpPanel({
               </button>
               <button
                 type="button"
-                disabled={disabled||draftConflicted}
+                disabled={disabled}
                 onClick={() => {
                   setFollowUpStatusDraft("cancelled");
                   void saveLead("cancelled");
@@ -506,7 +500,7 @@ function LeadFollowUpPanel({
         <Button
           type="button"
           variant="secondary"
-          disabled={disabled||draftConflicted}
+          disabled={disabled}
           busy={leadBusy}
           onClick={() => void saveLead()}
           className="text-xs min-h-8 py-1 px-4"
@@ -536,7 +530,7 @@ function LeadFollowUpPanel({
               <Button
                 type="button"
                 variant="ghost"
-                disabled={assignmentField.conflict || !live || busyControl || pending || selectedUnresolved || assignDraft === (conversation.assignedTo ?? "")}
+                disabled={!live || busyControl || pending || selectedUnresolved || assignDraft === (conversation.assignedTo ?? "")}
                 onClick={() => void saveAssignee()}
                 className="text-xs min-h-9 px-3 shrink-0"
               >
