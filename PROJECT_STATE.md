@@ -16,10 +16,9 @@
   - Scoped ESLint PASS (0 errors).
   - No new production SQL or background runner added; WhatsApp and AI provider calls untouched.
 
-# Current Session Index - KNOWLEDGE-FILE-WORKER-HOBBY-PUBLISH-20261031
+# Current Session Index - KNOWLEDGE-FILE-WORKER-HOBBY-PUBLISH-20261031 DELIVERED
 
-- Hobby-compatible knowledge/approval/fingerprint/worker package published on current Vercel project **without** Vercel Pro, paid Cron, provider extract, or production worker SQL. Gates default **off** (`VELORA_KNOWLEDGE_FILE_WORKER_ENABLED=false`, `VELORA_KNOWLEDGE_FILE_WORKER_PROVIDER_EXTRACT=false`). `vercel.json` schema-only (no crons). Upload/reprocess keep sync prepare when worker gate off. Permanent worker deferred pre-launch. TAG CITY / TAJSEEM / FAQ / trial holds untouched; no new extract/subscription. Review SQL remains under `supabase/upgrade-packages/knowledge-file-worker/` (not applied to prod). Other agents’ WIP left unstaged. Graphify fe5fed5 matched pre-publish HEAD.
-- Fill after deploy: published URL, matching SHA, CI, Vercel status.
+- Published SHA `41ac74f2ef11262e5787101a09582ee8e1874c62` (package `d4c3365` + Hobby CI follow-ups). Site: https://www.velorahelper.com. [CI 9/9 success](https://github.com/velorahelperai-cmd/velora/actions/runs/41226711901). Vercel Production Ready `dpl_AwaPoemD71rHxWQP6bc6jFMcLEXc` Commit `41ac74f`. Gates off; no Pro/Cron/provider extract; worker SQL not applied to prod; sync upload retained. Hours restored visible on /setup (was hidden). Protected authenticated /setup verify **NOT_RUN** (login redirect; no authorized session). TAG CITY / TAJSEEM / FAQ / trial holds untouched. Other agents’ WIP preserved unstaged. Permanent worker deferred pre-launch.
 - Prior local-complete index retained below.
 
 # Current Session Index - KNOWLEDGE-FILE-WORKER-LOCAL-COMPLETE-20261031
