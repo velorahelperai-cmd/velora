@@ -231,6 +231,7 @@ function HoursForm(p: PaidBranchHoursProps) {
   }
 
   function summary(day: BranchHoursDay) {
+    if (!p.snapshot && !userEdited) return p.state.phase === "loading" ? t("جارٍ التحقق", "Checking") : t("غير متاح", "Unavailable");
     const value = draft[day];
     if (value.state === "open") return value.intervals.map(interval => `${interval.start}–${interval.end}${interval.nextDay ? t(" (اليوم التالي)", " (next day)") : ""}`).join("، ");
     return value.state === "unset" ? t("غير مضبوط", "Not set") : t("مغلق", "Closed");
@@ -316,7 +317,7 @@ function HoursForm(p: PaidBranchHoursProps) {
                 const previous = draft[previousDayOf[day]];
                 const carry = previous.state === "open" ? previous.intervals.filter(interval => interval.nextDay && interval.end && interval.end !== "00:00") : [];
                 return (
-                  <li className={styles.summaryDay} key={day} data-hours-day={day} data-state={value.state}>
+                  <li className={styles.summaryDay} key={day} data-hours-day={day} data-state={!p.snapshot && !userEdited ? "unknown" : value.state}>
                     <span className={styles.dayName}>{label(day)}</span>
                     <span className={styles.daySummary} dir="ltr">{summary(day)}</span>
                     {carry.length > 0 && (

@@ -1,5 +1,5 @@
 "use client";
-import {createSetupReader} from "@/lib/tenancy/setup-read-client";
+import {createSetupReader,SetupReadError} from "@/lib/tenancy/setup-read-client";
 import {observeSetupRead} from "./paid-setup-request";
 import {setupTiming,observeSetupUsable} from "@/lib/diagnostics/setup-timing";
 import { useCallback,useEffect, useMemo, useId, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
@@ -58,7 +58,7 @@ function PaidSetupEntry(p:PaidSetupFlowProps&{retry:()=>void}) {
   const request=++generation.current;let active=true;
   if(!isCurrent())return;
   const endTiming=setupTiming('entry');
-  void observeSetupRead(readEntry({expectedAccountId:scope.expectedAccountId,companyId:scope.companyId}),()=>{if(active&&generation.current===request&&isCurrent())setEntry(null);}).then(result=>{
+  void observeSetupRead(readEntry({expectedAccountId:scope.expectedAccountId,companyId:scope.companyId}),()=>{}).then(result=>{
    if(active&&generation.current===request&&isCurrent())setEntry(result.companyId===scope.companyId?result:null);
   }).catch(()=>{if(active&&generation.current===request&&isCurrent())setEntry(null);}).finally(endTiming);
   return()=>{active=false;};
@@ -97,6 +97,7 @@ function PaidSetupBranch(p:PaidSetupFlowProps&{branchId:string}) {
 }
 function PaidSetupBranchRead(p:PaidSetupFlowProps&{branchId:string;refreshVersion:number;retry:()=>void}) {
  const [snapshot,setSnapshot]=useState<PaidSetupWorkspaceRead|null|undefined>(undefined);
+ const [provisional,setProvisional]=useState(false);
  const branchRoot=useRef<HTMLDivElement>(null);
  const manualSelection=useRef(false);
  const storageKey=`velora:setup:step:${p.scope.companyId}:${p.branchId}`;
@@ -114,6 +115,7 @@ function PaidSetupBranchRead(p:PaidSetupFlowProps&{branchId:string;refreshVersio
    }catch{return null;}
  });
  const [refreshFailed,setRefreshFailed]=useState(false);
+ const [failureKind,setFailureKind]=useState<'auth'|'scope'|'unavailable'|'network'>('unavailable');
  const generation=useRef(0);
  const {scope,isCurrent,branchId,refreshVersion,onWorkspaceRead}=p;
  const readWorkspace=p.readWorkspace??readOwnedPaidSetupWorkspaceAction;
@@ -137,33 +139,46 @@ function PaidSetupBranchRead(p:PaidSetupFlowProps&{branchId:string;refreshVersio
  useEffect(()=>{
   const request=++generation.current;let active=true;
   if(!isCurrent())return;
-  reader.invalidate();
+  reader.invalidate(['shell','workspace']);
   const input={expectedAccountId:scope.expectedAccountId,companyId:scope.companyId,branchId};
   const endTiming=setupTiming('workspace');
+  const reportFailure=(error:unknown)=>{
+   if(!active||request!==generation.current||!isCurrent())return;
+   if(error instanceof Error&&(error.name==='AbortError'||error.message==='SCOPE_CHANGED'))return;
+   const kind=error instanceof SetupReadError?error.kind:'unavailable';
+   setFailureKind(kind);
+   if(kind==='auth'||kind==='scope'){setSnapshot(null);onWorkspaceRead?.(null);}
+   setRefreshFailed(true);
+  };
   const shellFirst=connectionFirst&&refreshVersion===0;
-  void observeSetupRead(connectionFirst?reader.read(shellFirst?"shell":"workspace"):readWorkspace(input),()=>{if(active&&request===generation.current&&isCurrent()){setRefreshFailed(true);setSnapshot(previous=>previous===undefined?null:previous);}}).then(result=>{
+  void observeSetupRead(connectionFirst?reader.read(shellFirst?"shell":"workspace"):readWorkspace(input),()=>{}).then(result=>{
    if(!active||request!==generation.current||!isCurrent())return;
    if(!result){setRefreshFailed(true);setSnapshot(previous=>previous===undefined?null:previous);return;}
    if(result.scope.expectedAccountId!==input.expectedAccountId||result.scope.companyId!==input.companyId||result.scope.branchId!==branchId||!paidChecklistFromRead(result.read,input)){setSnapshot(null);onWorkspaceRead?.(null);return;}
    setRefreshFailed(false);
+   setProvisional(Boolean(shellFirst&&result.read.entitlement));
    setSnapshot(result);
    onWorkspaceRead?.(result);
    setSelected(previous=>branchRoot.current?.querySelector('[data-setup-unsaved="true"]')?previous:nextWorkspaceSelection(result,previous));
    // Slow Meta proof never blocks the independently authorized hours editor.
+   if(shellFirst&&result.read.entitlement){
+    void reader.read('knowledge').catch(error=>{if(error instanceof SetupReadError&&(error.kind==='auth'||error.kind==='scope'))reportFailure(error);});
+    void reader.read('language').catch(error=>{if(error instanceof SetupReadError&&(error.kind==='auth'||error.kind==='scope'))reportFailure(error);});
+   }
    if(shellFirst&&result.read.entitlement)void observeSetupRead(reader.read('workspace'),()=>{}).then(enriched=>{
      if(!active||request!==generation.current||!isCurrent())return;
      if(!enriched){setRefreshFailed(true);return;}
      if(enriched.scope.expectedAccountId!==input.expectedAccountId||enriched.scope.companyId!==input.companyId||enriched.scope.branchId!==branchId||!paidChecklistFromRead(enriched.read,input)){setSnapshot(null);onWorkspaceRead?.(null);return;}
-     setSnapshot(enriched);onWorkspaceRead?.(enriched);setSelected(previous=>manualSelection.current||branchRoot.current?.querySelector('[data-setup-unsaved="true"]')?previous:nextWorkspaceSelection(enriched,previous));
-   }).catch(()=>{if(active&&request===generation.current&&isCurrent())setRefreshFailed(true);});
-  }).catch(()=>{if(active&&request===generation.current&&isCurrent()){setRefreshFailed(true);setSnapshot(previous=>previous===undefined?null:previous);}}).finally(endTiming);
+     setProvisional(false);setSnapshot(enriched);onWorkspaceRead?.(enriched);setSelected(previous=>manualSelection.current||branchRoot.current?.querySelector('[data-setup-unsaved="true"]')?previous:nextWorkspaceSelection(enriched,previous));
+   }).catch(reportFailure);
+  }).catch(error=>{reportFailure(error);if(active&&request===generation.current&&isCurrent()&&!(error instanceof Error&&(error.name==='AbortError'||error.message==='SCOPE_CHANGED')))setSnapshot(previous=>previous===undefined?null:previous);}).finally(endTiming);
   return()=>{active=false;};
  },[scope.expectedAccountId,scope.companyId,branchId,isCurrent,readWorkspace,refreshVersion,onWorkspaceRead,connectionFirst,reader]);
  const ar=p.locale==="ar",persona=snapshot?.read.entitlement?.persona;
  const knownPersona=persona==="level_1"||persona==="level_2"||persona==="level_3"?persona:null;
  const personaName=knownPersona?({level_1:ar?"نورا":"Noura",level_2:ar?"لينا":"Lina",level_3:ar?"دانا":"Dana"})[knownPersona]:undefined;
  if(snapshot?.read.sourceStatus==="selection_required"&&snapshot.read.entitlement&&isCurrent())return <PaidChannelSelection locale={p.locale} scope={{...scope,branchId}} read={snapshot.read} isCurrent={isCurrent} onRefresh={p.retry}/>;
- return <div ref={branchRoot}>{refreshFailed&&<p role="status">{ar?"تعذر تحديث حالة الإعداد. احتُفظ بمدخلاتك؛ أعد التحقق قبل المتابعة.":"Setup status could not be refreshed. Your inputs are preserved; verify the status before continuing."} <button type="button" onClick={p.retry}>{ar?"إعادة التحقق":"Retry verification"}</button></p>}<PaidSetupWorkspace statusInHeader={!!p.renderHeader} locale={p.locale} scope={{...scope,branchId}} read={snapshot?.read??null} activation={snapshot?.activation??null} loading={snapshot===undefined} activeStepId={selected} isCurrent={isCurrent} onSelectStep={step=>{manualSelection.current=true;setSelected(step);}} onPrefetchStep={step=>{if(connectionFirst&&step==="hours")reader.prefetchHours();}} onRefresh={p.retry} availableStepIds={["whatsapp","instagram","hours","knowledge","test","team","launch"]} connectionReads={snapshot?.connectionReads} renderStep={(step)=><PaidSetupStepHost reader={connectionFirst?reader:undefined} locale={p.locale} scope={{...scope,branchId}} step={step} isCurrent={isCurrent} onRefresh={p.retry} read={snapshot?.read??null} onSelectStep={nextStep=>{manualSelection.current=true;setSelected(nextStep);}}/>} persona={knownPersona?<><div className={styles.workspaceFigure}><PaidChecklistPersonaVisual persona={knownPersona} alt={personaName??""}/></div><p className={styles.workspacePersonaName}>{personaName}</p></>:undefined}/></div>;
+ return <div ref={branchRoot}>{refreshFailed&&<p role="status">{failureKind==='auth'?(ar?'انتهت الجلسة. سجّل الدخول مجدداً.':'Your session has expired. Sign in again.'):failureKind==='scope'?(ar?'تغير الحساب أو الفرع. حدّث الصفحة وتحقق من اختيارك.':'Your account or branch changed. Refresh and check your selection.'):failureKind==='network'?(ar?'تعذر الاتصال. تحقق من الإنترنت وحاول مجدداً.':'Connection failed. Check your network and retry.'):(ar?'تعذر تحديث حالة التجهيز. مدخلاتك محفوظة.':'Setup status is unavailable. Your inputs are preserved.')} <button type="button" onClick={p.retry}>{ar?"إعادة التحقق":"Retry verification"}</button></p>}<PaidSetupWorkspace statusInHeader={!!p.renderHeader} locale={p.locale} scope={{...scope,branchId}} read={snapshot?.read??null} activation={snapshot?.activation??null} loading={snapshot===undefined} provisional={provisional} activeStepId={selected} isCurrent={isCurrent} onSelectStep={step=>{manualSelection.current=true;setSelected(step);}} onPrefetchStep={step=>{if(connectionFirst&&step==="hours")reader.prefetchHours();}} onRefresh={p.retry} availableStepIds={["whatsapp","instagram","hours","knowledge","test","team","launch"]} connectionReads={snapshot?.connectionReads} renderStep={(step)=><PaidSetupStepHost reader={connectionFirst?reader:undefined} locale={p.locale} scope={{...scope,branchId}} step={step} isCurrent={isCurrent} onReadFailure={error=>{if(!isCurrent())return;setFailureKind(error instanceof SetupReadError?error.kind:'unavailable');if(error instanceof SetupReadError&&(error.kind==='auth'||error.kind==='scope')){setSnapshot(null);onWorkspaceRead?.(null);}setRefreshFailed(true);}} onRefresh={p.retry} read={snapshot?.read??null} onSelectStep={nextStep=>{manualSelection.current=true;setSelected(nextStep);}}/>} persona={knownPersona?<><div className={styles.workspaceFigure}><PaidChecklistPersonaVisual persona={knownPersona} alt={personaName??""}/></div><p className={styles.workspacePersonaName}>{personaName}</p></>:undefined}/></div>;
 }
 
 const personaMotionBudget=createMotionBudget(1);

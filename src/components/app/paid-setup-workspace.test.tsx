@@ -68,3 +68,6 @@ it("stepBlockedReason reports accurate blocked dependencies and launch requireme
  expect(stepBlockedReason("launch",model.steps,model,"ar")).toBe("بانتظار التحقق من ربط واتساب");
  expect(stepBlockedReason("launch",model.steps,model,"en")).toBe("Awaiting WhatsApp connection verification");
 });
+
+
+it('does not present provisional shell progress as verified',()=>{const html=render({provisional:true});expect(html).toContain('Checking setup progress');expect(html).not.toContain('0 / 6');});

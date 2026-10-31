@@ -31,3 +31,11 @@ it('does not serialize a slow workspace read ahead of an independent hours read'
  let finish!:(value:null)=>void;m.workspace.mockImplementation(()=>new Promise(resolve=>{finish=resolve;}));m.hours.mockResolvedValue({ok:false});
  const slow=GET(request('workspace'));const hours=await GET(request('hours'));expect(hours.status).toBe(200);expect(m.hours).toHaveBeenCalledOnce();finish(null);await slow;
 });
+
+it('reports safe failure stage and correlation without serializing exceptions',async()=>{
+ m.shell.mockRejectedValue(new Error('sensitive database detail'));
+ const response=await GET(request());
+ expect(response.status).toBe(503);expect(response.headers.get('x-setup-stage')).toBe('reader');
+ expect(response.headers.get('x-request-id')).toMatch(/^[0-9a-f-]{36}$/);
+ expect(await response.json()).toEqual({error:'UNAVAILABLE'});
+});

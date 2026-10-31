@@ -45,3 +45,43 @@ it('retains only hours preview, prefetches once, and clears it on invalidation o
  const clock=vi.spyOn(Date,'now').mockReturnValue(Date.now()+31_000);expect(reader.peekHours()).toBeNull();clock.mockRestore();
  reader.invalidate();expect(reader.peekHours()).toBeNull();
 });
+
+it('reuses successful bounded knowledge reads and selectively invalidates without exposing other branches',async()=>{
+ const fetcher=vi.fn(async()=>Response.json({data:{revision:1}}));vi.stubGlobal('fetch',fetcher);
+ const reader=createSetupReader(scope,()=>true);
+ await reader.read('knowledge');await reader.read('knowledge');
+ expect(fetcher).toHaveBeenCalledTimes(1);
+ reader.invalidate(['knowledge']);await reader.read('knowledge');expect(fetcher).toHaveBeenCalledTimes(2);
+});
+it('expires cached data, isolates branches and clears only affected resources',async()=>{
+ let now=1000;const clock=vi.spyOn(Date,'now').mockImplementation(()=>now);
+ const fetcher=vi.fn(async()=>Response.json({data:{revision:fetcher.mock.calls.length}}));vi.stubGlobal('fetch',fetcher);
+ const a=createSetupReader(scope,()=>true),b=createSetupReader({...scope,branchId:'other'},()=>true);
+ await a.read('knowledge');await a.read('language');await b.read('knowledge');
+ a.invalidate(['knowledge']);await a.read('language');await a.read('knowledge');
+ expect(fetcher).toHaveBeenCalledTimes(4);
+ now+=30_001;await a.read('language');expect(fetcher).toHaveBeenCalledTimes(5);
+ clock.mockRestore();
+});
+it('distinguishes identity, scope, unavailable and network failures without exposing response bodies',async()=>{
+ const reader=createSetupReader(scope,()=>true);
+ for(const [status,kind] of [[401,'auth'],[403,'scope'],[503,'unavailable']] as const){
+  vi.stubGlobal('fetch',vi.fn(async()=>new Response('private details',{status,headers:{'x-request-id':'c63f4722-94bc-4e68-84ba-85a729fed573','x-setup-stage':'identity'}})));
+  await expect(reader.read('knowledge')).rejects.toMatchObject({kind,resource:'knowledge',stage:'identity',requestId:'c63f4722-94bc-4e68-84ba-85a729fed573'});
+ }
+ vi.stubGlobal('fetch',vi.fn(async()=>{throw new TypeError('private network details');}));
+ await expect(reader.read('knowledge')).rejects.toMatchObject({kind:'network',resource:'knowledge'});
+});
+it('rejects a cached result invalidated before its consumer receives it',async()=>{
+ vi.stubGlobal('fetch',vi.fn(async()=>Response.json({data:{revision:1}})));
+ const reader=createSetupReader(scope,()=>true);await reader.read('knowledge');
+ const old=reader.read('knowledge');reader.invalidate(['knowledge']);
+ await expect(old).rejects.toThrow('SCOPE_CHANGED');
+});
+it('keeps a bounded read-only preview after reuse expires while fetching fresh data',async()=>{
+ let now=1000;const clock=vi.spyOn(Date,'now').mockImplementation(()=>now);
+ const fetcher=vi.fn(async()=>Response.json({data:{revision:fetcher.mock.calls.length}}));vi.stubGlobal('fetch',fetcher);
+ const reader=createSetupReader(scope,()=>true);await reader.read('knowledge');now+=31_000;
+ expect(reader.peek('knowledge')).toEqual({revision:1});await reader.read('knowledge');expect(fetcher).toHaveBeenCalledTimes(2);
+ now+=301_000;expect(reader.peek('knowledge')).toBeNull();clock.mockRestore();
+});

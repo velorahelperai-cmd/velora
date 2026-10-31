@@ -39,6 +39,7 @@ it.each(['reject','unavailable','slow'])('preserves the mounted draft after a wo
  expect(readWorkspace).toHaveBeenCalledTimes(2);
  expect(host.querySelector('input[aria-label="local draft"]')).toBe(input);
  expect(input.value).toBe('Keep local text');
- expect(host.textContent).toContain('Setup status could not be refreshed');
- if(outcome==='slow'){await act(async()=>finish(workspace));expect(host.textContent).not.toContain('Setup status could not be refreshed');expect(host.querySelector('input[aria-label="local draft"]')).toBe(input);expect(input.value).toBe('Keep local text');}
+ if(outcome==='slow')expect(host.textContent).not.toContain('Setup status is unavailable');
+ else expect(host.textContent).toContain('Setup status is unavailable');
+ if(outcome==='slow'){await act(async()=>finish(workspace));expect(host.textContent).not.toContain('Setup status is unavailable');expect(host.querySelector('input[aria-label="local draft"]')).toBe(input);expect(input.value).toBe('Keep local text');}
 });

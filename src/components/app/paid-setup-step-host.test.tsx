@@ -107,3 +107,11 @@ describe("PaidSetupStepHost", () => {
     expect(html).toContain('aria-busy="true"');
   });
 });
+
+it('shows a valid cached branch snapshot immediately when returning to knowledge',()=>{
+ const scope={expectedAccountId:baseProps.scope.expectedAccountId,companyId:baseProps.scope.companyId,branchId:baseProps.scope.branchId};
+ const snapshot={scope,version:1,branchLabel:'Branch',websiteQuota:{limit:10,used:3},pages:[],files:[],faq:[],capabilities:{canAddWebsite:true,canUploadFiles:true,canSaveText:true}};
+ const reader={peek:(kind:string)=>kind==='knowledge'?snapshot:null,peekHours:()=>null} as unknown as NonNullable<PaidSetupStepHostProps['reader']>;
+ const html=renderToStaticMarkup(createElement(PaidSetupStepHost,{...baseProps,step:'knowledge',reader}));
+ expect(html).toContain('3 / 10');
+});

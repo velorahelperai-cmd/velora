@@ -4,15 +4,15 @@ Scope: LOCAL-SMART-DEBUG-20261026. This is the owner-requested searchable reposi
 
 ## التشغيل المختصر — Cursor وCodex
 
-From the canonical checkout, read AGENTS.md, inspect Git status and acquire only the paths you will change using the existing `writer:acquire` command. `check` and `browser` enforce the workspace guard. Release your task leases after saving evidence; never adopt another writer's identity.
+From the canonical checkout, read AGENTS.md, inspect Git status and preserve other work. Coordinate affected paths without mandatory writer leases or a custom workspace guard.
 
 ```powershell
 node scripts/debug/debug.mjs lookup TS2322
 Get-Content .\sanitized-local.log | node scripts/debug/debug.mjs analyze runtime
-node scripts/debug/debug.mjs check lint src/path/file.ts
-node scripts/debug/debug.mjs check test src/path/file.test.ts
-node scripts/debug/debug.mjs check node-test scripts/debug/debug.test.mjs
-node scripts/debug/debug.mjs check types
+npx eslint src/path/file.ts
+npx vitest run --config vitest.ci.config.ts src/path/file.test.ts
+node --test scripts/debug/debug.test.mjs
+npx tsc --noEmit --incremental false
 ```
 
 `analyze` categories: `types`, `lint` (ESLint JSON or text), `runtime`, `browser`, `network`, `supabase`, `react`, `build`, `test`. Feed actual sanitized logs, not hypotheses. Structured JSON lines may supply `message`, `code`/`error_code`, `file`, `line`. TypeScript locations and stack frames are extracted where present. Each finding includes signature, code, file/line, message, UNKNOWN cause, observed impact, verification and a prior-record match. Empty/unrecognized logs are **not PASS**. Text formats are best-effort: retain the original sanitized stack if parsing lacks a location. Max input 1 MiB / 100 findings; not an exhaustive log collector.
@@ -29,10 +29,10 @@ This opens a fresh headless browser, captures console errors, page exceptions, f
 
 1. Search the error code/signature here and in Brain. Confirm the old record applies to the current version/environment.
 2. Read the exact error, stack and affected source. Record root cause as Confirmed, Suspected or Unknown and name the evidence. Use Graphify only for needed dependency/impact mapping, checking indexed SHA/date first; stale graphs are not current-source evidence.
-3. Preserve other agents' edits, acquire affected paths, make the smallest causal fix. No automatic fixes based on text matching. The agent performs the diagnosis and repair; the CLI standardizes evidence and runs checks.
-4. Run the named test first, then directly affected regression/security checks. `check test` requires explicit source test files, uses existing offline CI config, one worker, an isolated environment and the existing network guard. `check node-test` requires explicit `.test.mjs` paths and remains offline. Zero tests/failing/time-limited processes are not successful acceptance.
+3. Preserve other agents' edits, coordinate affected paths, and make the smallest causal fix. No automatic fixes based on text matching. The agent performs the diagnosis and repair; the CLI standardizes evidence and runs checks.
+4. Run the named test first, then directly affected regression/security checks. Use explicit affected test files and the existing CI configuration; apply the existing offline network guard where required. Zero tests/failing/time-limited processes are not successful acceptance.
 5. Before a repeat, compare source/config/lockfile/tool version, command and relevant environment against the previous receipt. If inputs and evidence are unchanged, cite the prior result rather than rerun. A failure requires a changed input or new evidence; record that reason. Do not automatically reuse runtime/browser/DB results: external state is an input. No new test-result cache is introduced because the dependency/environment closure is not generally provable. Existing compiler/framework caches remain untouched; isolated `check types` disables incremental writes to avoid another writer's tsbuildinfo. TypeScript is project-wide, not falsely presented as a per-file typecheck.
-6. Full build/full suite are not part of each debug cycle. Existing `ci:*`/13 pre-push gates remain mandatory when applicable to delivery, using their existing guarded candidate workflow. This task does not publish and does not claim those gates ran. Payment/identity/RLS changes need their applicable security tests and separate authority; no mock proves a real integration.
+6. Full build/full suite are not part of each debug cycle. Independent CI and applicable secrets, RLS, and security checks remain mandatory for delivery; custom pre-push gates are not mandatory. This task does not publish and does not claim those gates ran. Payment/identity/RLS changes need their applicable security tests and separate authority; no mock proves a real integration.
 7. Save the confirmed fix below with actual verification, affected files, date/commit and evidence limits. If reproduction/fix fails, save new evidence and change the hypothesis instead of blind retry. Stop after verified repair.
 
 ## Environment inventory — 2026-10-26
@@ -50,6 +50,11 @@ This opens a fresh headless browser, captures console errors, page exceptions, f
 | Codex / MCP | AGENTS is shared entrypoint; Graphify MCP actual list/stats succeeded. Supabase and browser tools exposed in this session, not proof of live DB/client health. No credentials read |
 | Graphify | Ready, build `2d641501-748a-4f0f-805e-547097a3a0c9`, indexed `edb17b018ce0a635f2dd20c2453294453f129a97` at `2026-10-26T07:00:09.012977Z`; behind local HEAD `35f7df0fbd3c40b444c9e59b0b3d526857f92935`. Do not use as a fresh dependency map |
 
+## SETUP-READ-REUSE-20261030 — local implementation, acceptance pending
+
+- Cause: the branch reader only reused in-flight requests, so knowledge and language were fetched again on step entry; a 15-second slow-read callback could report failure before the request completed.
+- Local changes: branch-scoped knowledge/language reuse for 30 seconds, five-minute read-only preview during revalidation, and bounded prefetch after the authenticated shell; resource invalidation on mutations and a fence for invalidated cached results; actual failed reads exit loading, while slow reads remain pending. Errors distinguish session, scope, network and availability; failure logs carry only safe stage, resource and request ID. Channel proof checks remain unchanged.
+- Verification: targeted hours, workspace, loading, step-host and reader tests 54/54; scoped ESLint and source-only typecheck passed. Project typecheck failed in existing `scripts/setup-journey-qa/action-adapter.ts` on `companyLabel` and `persona`. Authenticated local `/setup`: knowledge and language were visible again after navigation with correct branch data; hours initially showed checking rather than falsely unset. Team and launch remained locked by prerequisites. Network timing and production acceptance NOT RUN. No commit, deployment, or live provider action. Root cause of the reported live failed request remains unknown.
 ## Confirmed records
 
 ### LOCAL-DEBUG-WINDOWS-PRELOAD-001 / MODULE_NOT_FOUND

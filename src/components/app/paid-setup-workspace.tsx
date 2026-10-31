@@ -98,6 +98,7 @@ export type PaidSetupWorkspaceProps={
   scope:PaidSetupFlowProps["scope"]&{branchId:string};
   read:PaidBranchSetupRead|null;
   loading?:boolean;
+  provisional?:boolean;
   /** Presentation selection only. The host changes this after fresh authoritative
    * reads; completing a guide or resolving a callback never advances this shell. */
   activeStepId:ChecklistStepId|null;
@@ -194,8 +195,8 @@ function Workspace(p:PaidSetupWorkspaceProps) {
     {!valid?<PendingWorkspace locale={p.locale} loading={!!p.loading} onRetry={p.onRefresh?refresh:undefined}/>:<div className={styles.layout}>
       <aside className={styles.sidebar}>
         <div className={styles.progress}>
-          <div className={styles.progressHeading}><strong>{t('رحلة التجهيز','Setup journey')}</strong><p><bdi dir="ltr">{model.progress.verified} / {model.progress.denominator}</bdi> {t("مكتملة","complete")}</p></div>
-          <progress value={model.progress.verified} max={model.progress.denominator??undefined} aria-label={t("تقدم إعداد الفرع","Branch setup progress")}/>
+          <div className={styles.progressHeading}><strong>{t('رحلة التجهيز','Setup journey')}</strong><p>{p.provisional?t('جارٍ التحقق من التقدم','Checking setup progress'):<><bdi dir="ltr">{model.progress.verified} / {model.progress.denominator}</bdi> {t('مكتملة','complete')}</>}</p></div>
+          <progress value={p.provisional?undefined:model.progress.verified} max={model.progress.denominator??undefined} aria-label={t("تقدم إعداد الفرع","Branch setup progress")}/>
         </div>
         <button className={styles.toggle} type="button" aria-expanded={expanded} aria-controls={navId} onClick={()=>setExpanded(value=>!value)}>
           {active&&p.availableStepIds.includes(active)?titles[active][ar?0:1]:t("خطوات الإعداد","Setup steps")} <span aria-hidden="true">{expanded?"−":"+"}</span>

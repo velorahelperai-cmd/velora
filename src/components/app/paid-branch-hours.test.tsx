@@ -142,3 +142,8 @@ describe("PaidBranchHours", () => {
     expect(firstDayIndex).toBeLessThan(mondayIndex);
   });
 });
+
+it('does not claim days are unset while the saved hours are still loading',()=>{
+ const html=render({snapshot:null,state:{...props.state,version:null,phase:'loading'}});
+ expect(html).toContain('Checking');expect(html).not.toContain('Not set');
+});
