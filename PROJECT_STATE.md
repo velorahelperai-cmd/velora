@@ -1,6 +1,14 @@
+# Current Session Index - C15-TRIAL-EMPTY-STEP-SELECTION-20261031 DELIVERED
+
+- Explicit owner approval ("ارفعه"). Scoped Commit/Push of empty unavailable trial step selection fix only.
+- Symptom: `/setup` showed test selected as «غير متاح» with empty «اختر خطوة متاحة» pane; next step waiting on trial.
+- Root cause: sessionStorage/`nextWorkspaceSelection` kept `test` while shell/uncomposed readiness left `assistant_test` unavailable; pane blanks when `!workspaceStepAllowed`.
+- Code: leave closed steps; recover to first open step; hide hours from sidebar; drop hours from `availableStepIds`.
+- Package: `paid-setup-workspace.tsx/.test.tsx`, `paid-assistant-checklist.tsx`, this index. Other agents' knowledge/reprocess/auth/WIP preserved unstaged. Live `/setup` after deploy NOT_RUN.
+
 # Current Session Index - C15-TRIAL-ASK-PRE-RESERVE-20261031 DELIVERED
 
-- Explicit owner approval ("ارفع"). Scoped Commit/Push of pre-reserve trial ask fix only.
+- Explicit owner approval ("ارفع"). Pushed `d5f6c69d23d67f1772294ca43a2c932c163caa60` to `origin/main`.
 - After C15.2 unlock, TAG CITY re-ask failed UNAVAILABLE with 0/10 and no new ledger row (fail before reserve).
 - Root cause: `countInputTokens` used wrong Gemini request shape vs `complete()`; null count hard-blocked ask despite UTF-8 reserve bound.
 - Code: align countTokens (`contents` + `config.systemInstruction`); UTF-8 fallback + warn; honest CONTEXT_OVERFLOW/NO_KNOWLEDGE/APPROVAL_* from knowledge loader; combined hours overflow check before spend.

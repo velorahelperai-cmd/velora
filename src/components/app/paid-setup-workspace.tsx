@@ -57,6 +57,12 @@ export function nextWorkspaceSelection(snapshot:PaidSetupWorkspaceRead,previous:
   if(currentStep&&currentStep.status==="verified"){
     return nextIncompleteOpen(steps.findIndex(item=>item.id===selected)+1)??selected;
   }
+  // sessionStorage / prior selection can stick on test while shell or
+  // uncomposed readiness still marks assistant_test unavailable — do not
+  // keep a closed step selected (empty "choose available step" pane).
+  if(!stepOpen(selected)){
+    return nextBusinessIncomplete??nextIncompleteOpen()??null;
+  }
   return selected;
 }
 
@@ -159,7 +165,7 @@ function Workspace(p:PaidSetupWorkspaceProps) {
   const current=isCurrent();
   const model=p.read?paidChecklistFromRead(p.read,p.scope):null;
   const steps=model?checklistSteps(model):[];
-  const visibleSteps=steps.filter(step=>p.availableStepIds.includes(step.id));
+  const visibleSteps=steps.filter(step=>p.availableStepIds.includes(step.id)&&!SETUP_HIDDEN_STEPS.has(step.id));
   const valid=current&&!!model&&model.branches.some(branch=>branch.id===p.scope.branchId)&&visibleSteps.length>0;
   const active=p.activeStepId;
   const allowed=!!active&&workspaceStepAllowed(p.read,p.scope,active,p.availableStepIds);
@@ -174,6 +180,11 @@ function Workspace(p:PaidSetupWorkspaceProps) {
     if(previous.current!==active&&isCurrent())heading.current?.focus();
     previous.current=active;
   },[active,isCurrent]);
+  useEffect(()=>{
+    if(!p.isCurrent()||!valid||!active||allowed)return;
+    const fallback=visibleSteps.find(step=>workspaceStepAllowed(p.read,p.scope,step.id,p.availableStepIds));
+    if(fallback)p.onSelectStep(fallback.id);
+  },[active,allowed,valid,p.read,p.scope,p.availableStepIds,p.isCurrent,p.onSelectStep,visibleSteps]);
   const select=(step:ChecklistStepId)=>{
     if(!p.isCurrent()||!workspaceStepAllowed(p.read,p.scope,step,p.availableStepIds))return;
     if(step!==active&&!confirmSetupLeave(shell.current,p.locale))return;
