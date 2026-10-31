@@ -146,7 +146,8 @@ function KnowledgeForm(p:PaidBranchKnowledgeProps & {snapshot:BranchKnowledgeVie
   useLayoutEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
   const quotaKnown=knownWebsiteQuota(p.snapshot.websiteQuota);
   // Retained snapshots are presentation only until the current read is verified.
-  const locked=busy || p.state.phase==="busy" || p.state.phase==="conflict" || p.state.phase==="loading" || p.state.phase==="unavailable" || !quotaKnown;
+  // Soft unavailable: keep the form usable when a verified snapshot is already on screen.
+  const locked=busy || p.state.phase==="busy" || p.state.phase==="conflict" || p.state.phase==="loading" || !quotaKnown;
   const context:CommandContext={...p.scope,expectedVersion:p.snapshot.version};
   const fileError=files.length?knowledgePreparationFileError(files):null;
   const pages=p.snapshot.pages.filter(page=>page.companyId===p.scope.companyId && page.branchId===p.scope.branchId);
@@ -161,7 +162,7 @@ function KnowledgeForm(p:PaidBranchKnowledgeProps & {snapshot:BranchKnowledgeVie
   const canUpload=!locked && p.snapshot.capabilities.canUploadFiles===true && !!p.onUploadFiles && files.length>0 && !fileError;
   const canSaveText=!locked && p.snapshot.capabilities.canSaveText===true && !!p.onSaveText && !!question.trim() && question.trim().length<=200 && !!answer.trim();
   const languagePhase=p.languageState?.phase??"unavailable";
-  const languageLocked=busy || languagePhase==="saving" || languagePhase==="loading" || languagePhase==="conflict" || languagePhase==="unavailable";
+  const languageLocked=busy || languagePhase==="saving" || languagePhase==="loading" || languagePhase==="conflict";
   const canSaveLanguages=!languageLocked && !!p.onConfirmLanguages && !!p.languageSnapshot && p.languageSnapshot.canConfirm===true && Number.isSafeInteger(p.languageSnapshot.version) && p.languageSnapshot.version>=1 && !!draftLanguageContract && languageDirty;
   async function dispatch(target:OperationTarget, callback:(()=>void|Promise<void>)|undefined, options?:{ignoreKnowledgeLock?:boolean}) {
     if(!callback || reserved.current || !p.isCurrent())return;

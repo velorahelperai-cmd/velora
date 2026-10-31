@@ -11,7 +11,7 @@ import {paidSetupActivation,type PaidSetupActivation} from '@/lib/tenancy/paid-s
 import {confirmSetupLeave} from './paid-setup-unsaved';
 
 /** Hidden from /setup for now; PaidBranchHours stays mounted elsewhere later. */
-const SETUP_HIDDEN_STEPS = new Set<ChecklistStepId>(["hours"]);
+const SETUP_HIDDEN_STEPS = new Set<ChecklistStepId>([]);
 
 export function nextWorkspaceSelection(snapshot:PaidSetupWorkspaceRead,previous:ChecklistStepId|null):ChecklistStepId|null {
   const model=paidChecklistFromRead(snapshot.read,snapshot.scope);
