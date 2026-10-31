@@ -236,17 +236,23 @@ const loadAuth = cache(async (): Promise<LoadAuthOk | LoadAuthFail> => {
 async function loadWorkspaceChoices(
   supabase: Awaited<ReturnType<typeof createClient>>,
   rows: MembershipRecord[],
+  cachedNames?: Map<string, string> | null,
 ): Promise<CompanyContext["workspaceChoices"]> {
   if (!rows.length) return [];
-  const { data,error } = await supabase
-    .from("companies")
-    .select("id, display_name")
-    .in("id", rows.map((row) => row.company_id));
-  if(error)throw new Error('WORKSPACE_READ_UNAVAILABLE');
-  const names = new Map((data ?? []).map((row) => [row.id, row.display_name]));
+  let names = cachedNames;
+  const missing = rows.filter(r => !names?.has(r.company_id) || !names?.get(r.company_id));
+  if (missing.length > 0) {
+    const { data, error } = await supabase
+      .from("companies")
+      .select("id, display_name")
+      .in("id", Array.from(new Set(missing.map((row) => row.company_id))));
+    if (error) throw new Error('WORKSPACE_READ_UNAVAILABLE');
+    const fetched = new Map((data ?? []).map((row) => [row.id, row.display_name]));
+    names = new Map([...(names ?? []), ...fetched]);
+  }
   return rows.map((row) => ({
     companyId: row.company_id,
-    displayName: names.get(row.company_id) || row.company_id,
+    displayName: names?.get(row.company_id) || row.company_id,
     role: row.role,
   }));
 }
@@ -281,11 +287,14 @@ const loadCompanyAccess = cache(async (): Promise<AccessResult> => {
     const allRows = (memberships ?? []) as MembershipRecord[];
     let rows=allRows;
     const membershipHistory={ownedBusinessCount:allRows.filter(row=>row.role==='owner').length,hasBusinessMemberships:allRows.length>0};
+    let cachedNames: Map<string, string> | null = null;
     if(masterJourneyEnabled()&&allRows.length){
-      const {data:history,error:historyError}=await supabase.from('companies').select('id,archived_at').in('id',allRows.map(row=>row.company_id));
-      if(historyError||!history||history.length!==new Set(allRows.map(row=>row.company_id)).size)return {ok:false,code:'UNAVAILABLE'};
+      const companyIds = Array.from(new Set(allRows.map(row=>row.company_id)));
+      const {data:history,error:historyError}=await supabase.from('companies').select('id, display_name, archived_at').in('id',companyIds);
+      if(historyError||!history||history.length!==companyIds.length)return {ok:false,code:'UNAVAILABLE'};
       const activeIds=new Set(history.filter(row=>row.archived_at===null).map(row=>row.id));
       rows=allRows.filter(row=>activeIds.has(row.company_id));
+      cachedNames = new Map(history.map(row => [row.id, (row as { display_name?: string }).display_name || '']));
     }
     let selectedCookie: string | null = null;
     // Selection is unused for zero rows or a sole ordinary membership.
@@ -314,7 +323,7 @@ const loadCompanyAccess = cache(async (): Promise<AccessResult> => {
       requireExplicit: isPlatformAdmin,
     });
     if (!picked.ok) {
-      const choices = await loadWorkspaceChoices(supabase, rows);
+      const choices = await loadWorkspaceChoices(supabase, rows, cachedNames);
       let hasBranchMemberships=false;
       if(rows.length===0){
         const {listMyBranchAccess}=await import('./branch-inbox');
@@ -372,7 +381,7 @@ const loadCompanyAccess = cache(async (): Promise<AccessResult> => {
           companyId: member.company_id,
           displayName: company.display_name || member.company_id,
           role: member.role,
-        }] : await loadWorkspaceChoices(supabase, rows),
+        }] : await loadWorkspaceChoices(supabase, rows, cachedNames),
         ...membershipHistory,
       },
     };

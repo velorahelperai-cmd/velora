@@ -318,4 +318,54 @@ describe("persisted profile is required for company access", () => {
     expect(mocks.upsert).not.toHaveBeenCalled();
     expect(mocks.memberships).not.toHaveBeenCalled();
   });
+  it("reuses display names from archive check without executing redundant loadWorkspaceChoices query", async () => {
+    vi.stubEnv("VELORA_MASTER_JOURNEY_ENABLED", "true");
+    mocks.memberships.mockResolvedValue({
+      data: [
+        { company_id: "c-1", role: "owner", status: "active" },
+        { company_id: "c-2", role: "staff", status: "active" },
+      ],
+      error: null,
+    });
+    mocks.resolve.mockResolvedValue({ ok: false, code: "UNAUTHENTICATED" });
+    const inCalls: unknown[] = [];
+    const client = await mocks.client();
+    const originalFrom = client.from;
+    client.from = (table: string) => {
+      if (table === "companies") {
+        return {
+          select: (cols: string) => ({
+            in: async (col: string, ids: string[]) => {
+              inCalls.push({ cols, col, ids });
+              return {
+                data: [
+                  { id: "c-1", display_name: "Company One", archived_at: null },
+                  { id: "c-2", display_name: "Company Two", archived_at: null },
+                ],
+                error: null,
+              };
+            },
+          }),
+        };
+      }
+      return originalFrom(table);
+    };
+    const access = await getCompanyAccess();
+    expect(access).toMatchObject({
+      ok: true,
+      context: {
+        needsCompanyContext: true,
+        workspaceChoices: [
+          { companyId: "c-1", displayName: "Company One", role: "owner" },
+          { companyId: "c-2", displayName: "Company Two", role: "staff" },
+        ],
+      },
+    });
+    // Exactly 1 batch query was made to companies, not 2!
+    expect(inCalls).toHaveLength(1);
+    expect(inCalls[0]).toMatchObject({
+      cols: "id, display_name, archived_at",
+      ids: ["c-1", "c-2"],
+    });
+  });
 });

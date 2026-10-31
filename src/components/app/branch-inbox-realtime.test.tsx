@@ -51,3 +51,14 @@ it('recreates terminal transport failures after backoff and cancels retries when
  act(()=>{Source.all[1].readyState=Source.CLOSED;Source.all[1].onerror?.();});view.unmount();
  await vi.advanceTimersByTimeAsync(5000);expect(Source.all).toHaveLength(2);
 });
+it('calls onInboxEvent directly without calling router.refresh on change',async()=>{
+ const onInboxEvent=vi.fn();
+ render(<BranchInboxRealtime {...props} onInboxEvent={onInboxEvent}/>);
+ const source=Source.all[0];
+ act(()=>{source.dispatchEvent(new Event('ready'));});
+ expect(onInboxEvent).toHaveBeenCalledWith({type:'ready'});
+ expect(m.router.refresh).not.toHaveBeenCalled();
+ act(()=>{source.dispatchEvent(new MessageEvent('change',{data:JSON.stringify({company_id:'qa-company'})}));});
+ expect(onInboxEvent).toHaveBeenCalledWith({type:'change',data:{company_id:'qa-company'}});
+ expect(m.router.refresh).not.toHaveBeenCalled();
+});

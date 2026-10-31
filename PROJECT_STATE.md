@@ -1,3 +1,21 @@
+# Current Session Index - PERFORMANCE-OPTIMIZATION-TENANCY-REALTIME-20261031
+
+- **Root causes confirmed & verified**:
+  1. Tenancy access: `loadCompanyAccess` previously issued up to 3 separate sequential queries to `companies` (archive check, selected company, and `loadWorkspaceChoices`), causing extra round trips.
+  2. Branch realtime: `BranchInboxRealtime` triggered `router.refresh()` on every SSE `ready` and `lost`, inducing double page re-renders on periodic 45s connection rotation.
+  3. Database indexes review: The 3 proposed candidate indexes were evaluated against existing schema:
+     - `company_members`: already indexed on `(user_id, status, company_id)` via `company_members_user_status_idx`.
+     - `profiles(user_id)`: `user_id` is already PRIMARY KEY with unique index (`profiles_pkey`). Adding an index would duplicate the primary key.
+     - `companies`: Primary key on `id` is used for point lookups; filtering `archived_at` in application code is fast. A partial index is unjustified and no new production SQL is applied.
+- **Implemented changes**:
+  1. `src/lib/tenancy/access.ts`: Cached company display names during archive validation in `loadCompanyAccess`, eliminating the duplicate `loadWorkspaceChoices` query. Retained strict session checks, revocation validation, generation cookie binding, and kept `company_members` out of `loadAuth` to protect `requireVerifiedUser` and admin routes.
+  2. `src/components/app/branch-inbox-realtime.tsx`: Removed `router.refresh()` on normal SSE disconnect/rotation; added `onInboxEvent` for delta updates; preserved 250ms debouncing, reconnect/visibility catch-up, and revocation cleanup.
+- **Verification**:
+  - 8 test files / 96 tests PASS (`access-recovery.test.ts`, `access-contracts.test.ts`, `branch-inbox-realtime.test.tsx`, `branch-inbox-events.test.ts`, `inbox-events/route.test.ts`, `conversations-inbox.test.ts`, `inbox-failure-presentation.test.tsx`, `unified-inbox-safety.test.tsx`).
+  - Full TypeScript `tsc --noEmit` PASS (0 errors).
+  - Scoped ESLint PASS (0 errors).
+  - No new production SQL or background runner added; WhatsApp and AI provider calls untouched.
+
 # Current Session Index - KNOWLEDGE-FILE-WORKER-HOBBY-PUBLISH-20261031
 
 - Hobby-compatible knowledge/approval/fingerprint/worker package published on current Vercel project **without** Vercel Pro, paid Cron, provider extract, or production worker SQL. Gates default **off** (`VELORA_KNOWLEDGE_FILE_WORKER_ENABLED=false`, `VELORA_KNOWLEDGE_FILE_WORKER_PROVIDER_EXTRACT=false`). `vercel.json` schema-only (no crons). Upload/reprocess keep sync prepare when worker gate off. Permanent worker deferred pre-launch. TAG CITY / TAJSEEM / FAQ / trial holds untouched; no new extract/subscription. Review SQL remains under `supabase/upgrade-packages/knowledge-file-worker/` (not applied to prod). Other agents’ WIP left unstaged. Graphify fe5fed5 matched pre-publish HEAD.
