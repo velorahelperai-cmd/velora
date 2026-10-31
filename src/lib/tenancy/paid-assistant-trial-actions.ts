@@ -328,21 +328,27 @@ export async function askOwnedBranchAssistantTrialAction(
       });
     }
     catch {
-      if (!await settle("uncertain")) return PENDING;
-      return { ok: false, code: "TRIAL_OUTCOME_UNKNOWN", message: "Provider outcome is unknown; this operation will not be retried" };
+      // No response body or usage evidence reached the server. Release the hold at zero
+      // cost so the branch is not permanently locked; never replay this operationId.
+      if (!await settle("rejected")) return PENDING;
+      return { ok: false, code: "UNAVAILABLE", message: "Provider request failed before a verifiable result; you may ask a new question", retrySafe: true };
     }
     if (!completion.ok) {
       const safeFailure = completion.providerAttempted === false || completion.retrySafe === true;
+      const noUsageEvidence = !completion.usage;
       if (!safeFailure && completion.providerAttempted === true && completion.usage) {
         if (!await settleBilled(completion.usage as Extract<AnswerResult, { ok: true }>["usage"])) return PENDING;
         return { ok: false, code: "UNAVAILABLE", message: "Provider returned no complete answer; usage was recorded and no reply was counted" };
       }
-      if (!await settle(safeFailure ? "rejected" : "uncertain")) return PENDING;
+      // Timeout/transport failures without usage must not settle as uncertain — that
+      // permanently blocks canAsk with only a refresh button (C15.2).
+      const releaseHold = safeFailure || noUsageEvidence;
+      if (!await settle(releaseHold ? "rejected" : "uncertain")) return PENDING;
       return {
         ok: false,
-        code: safeFailure ? completion.code : "TRIAL_OUTCOME_UNKNOWN",
+        code: releaseHold ? (safeFailure ? completion.code : "UNAVAILABLE") : "TRIAL_OUTCOME_UNKNOWN",
         message: completion.message || "Provider did not return a verified answer",
-        ...(safeFailure && completion.requestId ? { requestId: completion.requestId, retrySafe: true } : {}),
+        ...(releaseHold ? { retrySafe: true, ...(completion.requestId ? { requestId: completion.requestId } : {}) } : {}),
       };
     }
     if (!completion.text.trim() || completion.modelId !== configuredModel) {
@@ -382,4 +388,37 @@ export async function recoverOwnedBranchAssistantTrialAction(input: TrialScope &
   if(result.error||(result.data as unknown as {ok?:boolean})?.ok!==true)return {ok:false,code:"TRIAL_PENDING",message:"Recovery remains unconfirmed; do not resend"};
   const fresh=await readOwnedBranchAssistantTrialAction(input);
   return fresh&&((result.data as unknown as {discarded?:boolean})?.discarded===true||fresh.messages.some(m=>m.executionId===input.operationId&&m.origin==="engine"))?{ok:true,snapshot:(result.data as unknown as {discarded?:boolean})?.discarded===true?{...fresh,recoveryNotice:"context_changed"}:fresh}:{ok:false,code:"TRIAL_PENDING",message:"Saved receipt could not be verified"};
+}
+
+/**
+ * Release a non-recoverable uncertain setup-trial hold that has no provider identity.
+ * Never dispatches AI and never invents usage; only zero-cost reconcile is allowed.
+ */
+export async function releaseOwnedBranchAssistantTrialAction(input: TrialScope & {operationId:string}):Promise<AssistantTrialAskResult>{
+  if(!validScope(input)||!UUID.test(input.operationId))return {ok:false,code:"INVALID_INPUT",message:"Invalid release scope"};
+  const identity=await readSessionIdentity();
+  if(!identity.ok||identity.userId!==input.expectedAccountId||!UUID.test(identity.nativeSessionId||""))return {ok:false,code:"UNAUTHENTICATED",message:"A current session is required"};
+  const snapshot=await readOwnedBranchAssistantTrialAction(input);
+  if(!snapshot)return {ok:false,code:"UNAVAILABLE",message:"Branch authority could not be verified"};
+  const pending=snapshot.pendingOperation;
+  if(!pending||pending.id!==input.operationId||pending.recoverable||pending.status!=="uncertain"){
+    return {ok:false,code:"TRIAL_PENDING",message:"Only a non-recoverable uncertain hold can be released"};
+  }
+  const writer=createAdminClient();
+  if(!writer)return {ok:false,code:"UNAVAILABLE",message:"Release is unavailable"};
+  let released=false;
+  try{
+    const result=await writer.rpc("ai_reconcile_attempt" as never,{
+      p_id:input.operationId,
+      p_cost_usd:0,
+      p_cost_baisa:0,
+      p_usage:{},
+      p_provider_reference:"setup_trial_timeout_no_provider_evidence",
+    } as never);
+    released=!result.error&&result.data===true;
+  }catch{released=false;}
+  if(!released)return {ok:false,code:"TRIAL_PENDING",message:"Hold could not be released; do not resend"};
+  const fresh=await readOwnedBranchAssistantTrialAction(input);
+  if(!fresh||fresh.pendingOperation)return {ok:false,code:"TRIAL_PENDING",message:"Hold release needs another status check"};
+  return {ok:true,snapshot:fresh};
 }

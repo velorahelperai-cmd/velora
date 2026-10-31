@@ -66,6 +66,7 @@ vi.mock("./paid-branch-knowledge-actions", () => ({
 import {
   askOwnedBranchAssistantTrialAction,
   recoverOwnedBranchAssistantTrialAction,
+  releaseOwnedBranchAssistantTrialAction,
   readOwnedBranchAssistantTrialAction,
 } from "./paid-assistant-trial-actions";
 import { setAnswerProviderForTesting } from "@/lib/answers/provider";
@@ -131,6 +132,94 @@ describe("paid-assistant-trial-actions", () => {
     const scope={expectedAccountId:VALID_ACCOUNT_ID,companyId:VALID_COMPANY_ID,branchId:VALID_BRANCH_ID};
     currentSessionId=OTHER_ACCOUNT_ID;
     expect(await recoverOwnedBranchAssistantTrialAction({...scope,operationId:VALID_ACCOUNT_ID})).toMatchObject({ok:false,code:"UNAUTHENTICATED"});
+    expect(trustedRpc).not.toHaveBeenCalled();
+  });
+
+  it("releases a non-recoverable uncertain hold at zero cost without calling the provider", async () => {
+    const operationId = "66666666-6666-4666-8666-666666666666";
+    const scope = { expectedAccountId: VALID_ACCOUNT_ID, companyId: VALID_COMPANY_ID, branchId: VALID_BRANCH_ID };
+    const complete = vi.fn();
+    setAnswerProviderForTesting({ id: "must-not-run", complete });
+    let released = false;
+    rpcMock.mockImplementation(async (name: string) => {
+      if (name === "es02_read_owned_branch_assistant_trial") {
+        return {
+          data: {
+            ok: true,
+            data: {
+              snapshot: {
+                scope,
+                version: 1,
+                knowledgeRevision: "rev_1",
+                canAsk: released,
+                messages: [],
+                ...(released ? {} : { pendingOperation: { id: operationId, status: "uncertain", recoverable: false } }),
+              },
+            },
+          },
+          error: null,
+        };
+      }
+      if (name === "es02_read_owned_branch_trial_recovery") {
+        return {
+          data: released
+            ? { ok: true, operation: null }
+            : { ok: true, operation: { id: operationId, status: "uncertain", recoverable: false } },
+          error: null,
+        };
+      }
+      return { data: { ok: true }, error: null };
+    });
+    trustedRpc.mockImplementation(async (name: string) => {
+      if (name === "ai_reconcile_attempt") {
+        released = true;
+        return { data: true, error: null };
+      }
+      return { data: { ok: true }, error: null };
+    });
+    const releasedResult = await releaseOwnedBranchAssistantTrialAction({ ...scope, operationId });
+    expect(releasedResult).toMatchObject({ ok: true, snapshot: expect.objectContaining({ canAsk: true }) });
+    expect(releasedResult.ok && releasedResult.snapshot.pendingOperation).toBeFalsy();
+    expect(complete).not.toHaveBeenCalled();
+    expect(trustedRpc.mock.calls.map((c) => c[0])).toEqual(["ai_reconcile_attempt"]);
+    expect(trustedRpc.mock.calls[0]![1]).toMatchObject({
+      p_id: operationId,
+      p_cost_usd: 0,
+      p_cost_baisa: 0,
+      p_provider_reference: "setup_trial_timeout_no_provider_evidence",
+    });
+  });
+
+  it("refuses release when the hold is recoverable or not uncertain", async () => {
+    const operationId = "66666666-6666-4666-8666-666666666666";
+    const scope = { expectedAccountId: VALID_ACCOUNT_ID, companyId: VALID_COMPANY_ID, branchId: VALID_BRANCH_ID };
+    rpcMock.mockResolvedValue({
+      data: {
+        ok: true,
+        data: {
+          snapshot: {
+            scope,
+            version: 1,
+            knowledgeRevision: "rev_1",
+            canAsk: false,
+            messages: [],
+          },
+        },
+      },
+      error: null,
+    });
+    // recovery overlay marks recoverable success — must not zero-cost reconcile
+    const recoveryRpc = rpcMock;
+    rpcMock = vi.fn(async (name: string, args: unknown) => {
+      if (name === "es02_read_owned_branch_trial_recovery") {
+        return { data: { ok: true, operation: { id: operationId, status: "success", recoverable: true } }, error: null };
+      }
+      return recoveryRpc(name, args);
+    });
+    expect(await releaseOwnedBranchAssistantTrialAction({ ...scope, operationId })).toMatchObject({
+      ok: false,
+      code: "TRIAL_PENDING",
+    });
     expect(trustedRpc).not.toHaveBeenCalled();
   });
 
@@ -430,6 +519,36 @@ describe("trial budget cap, billed-but-unusable calls and settlement failure", (
     expect(await askOwnedBranchAssistantTrialAction(input)).toMatchObject({ ok: false, code: "UNAVAILABLE" });
     expect(called("ai_settle_admin_attempt").map(a => a.p_status)).toEqual(["incomplete", "uncertain"]);
     expect(called("ai_settle_admin_attempt")[1].p_cost_baisa).toBeNull();
+  });
+
+  it("releases a timeout without usage evidence as rejected so the branch is not permanently locked", async () => {
+    setup();
+    setAnswerProviderForTesting({
+      id: "p",
+      complete: vi.fn(async (): Promise<AnswerResult> => ({
+        ok: false,
+        code: "UNAVAILABLE",
+        message: "Request timed out or was aborted; provider outcome is unknown.",
+        providerAttempted: true,
+        retrySafe: false,
+      })),
+    });
+    expect(await askOwnedBranchAssistantTrialAction(input)).toMatchObject({ ok: false, code: "UNAVAILABLE", retrySafe: true });
+    expect(called("ai_settle_admin_attempt")).toEqual([
+      expect.objectContaining({ p_status: "rejected", p_cost_baisa: 0, p_cost_usd: 0 }),
+    ]);
+  });
+
+  it("releases a thrown provider failure without usage as rejected", async () => {
+    setup();
+    setAnswerProviderForTesting({
+      id: "p",
+      complete: vi.fn(async () => { throw new Error("transport_timeout"); }),
+    });
+    expect(await askOwnedBranchAssistantTrialAction(input)).toMatchObject({ ok: false, code: "UNAVAILABLE", retrySafe: true });
+    expect(called("ai_settle_admin_attempt")).toEqual([
+      expect.objectContaining({ p_status: "rejected", p_cost_baisa: 0 }),
+    ]);
   });
 
   it("reports TRIAL_PENDING and never resends when settlement fails or throws", async () => {

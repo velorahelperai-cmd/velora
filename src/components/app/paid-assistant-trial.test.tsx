@@ -19,6 +19,19 @@ it('recovers saved result without asking the provider and explains discarded obs
  }finally{await act(async()=>root.unmount());vi.unstubAllGlobals();}
  expect(render({snapshot:{...props.snapshot!,recoveryNotice:'context_changed'}})).toContain('without using quota');
 });
+it('offers zero-cost release for non-recoverable uncertain holds without asking the provider',async()=>{
+ vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);
+ const host=document.createElement('div'),root=createRoot(host),onRelease=vi.fn(),onAsk=vi.fn(),onRecover=vi.fn();
+ try{
+  await act(async()=>root.render(createElement(PaidAssistantTrial,{...props,onRelease,onRecover,onAsk,snapshot:{...props.snapshot!,canAsk:false,pendingOperation:{id:'stuck-op',status:'uncertain',recoverable:false}}})));
+  expect(Array.from(host.querySelectorAll('button')).some(b=>b.textContent==='Recover reply')).toBe(false);
+  const button=Array.from(host.querySelectorAll('button')).find(b=>b.textContent==='Release request')!;
+  await act(async()=>button.click());
+  expect(onRelease).toHaveBeenCalledWith('stuck-op');
+  expect(onAsk).not.toHaveBeenCalled();
+  expect(onRecover).not.toHaveBeenCalled();
+ }finally{await act(async()=>root.unmount());vi.unstubAllGlobals();}
+});
 it("refreshes an unknown result without resending and blocks refresh after authority loss",async()=>{
  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);
  const host=document.createElement('div'),root=createRoot(host),onRefresh=vi.fn(),onAsk=vi.fn();let current=true;

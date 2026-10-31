@@ -33,6 +33,7 @@ import { PaidAssistantTrial, type TrialSnapshot } from "./paid-assistant-trial";
 import {
   askOwnedBranchAssistantTrialAction,
   recoverOwnedBranchAssistantTrialAction,
+  releaseOwnedBranchAssistantTrialAction,
   readOwnedBranchAssistantTrialAction,
 } from "@/lib/tenancy/paid-assistant-trial-actions";
 import { PaidTeamInvitations, type BranchTeamSnapshot } from "./paid-team-invitations";
@@ -411,6 +412,14 @@ function StepHost(props: PaidSetupStepHostProps) {
             if(!isCurrent())return;
             setTrialPhase("pending");
             const result=await runMutation(recoverOwnedBranchAssistantTrialAction({...targetScope,operationId}),60_000).catch(()=>null);
+            if(!isCurrent())return;
+            if(result?.ok){setTrialSnap(result.snapshot);setTrialFailure(null);setTrialRequestId(null);setTrialPhase("ready");onRefresh?.();}
+            else setTrialPhase("unknown");
+          }}
+          onRelease={async operationId => {
+            if(!isCurrent())return;
+            setTrialPhase("pending");
+            const result=await runMutation(releaseOwnedBranchAssistantTrialAction({...targetScope,operationId}),60_000).catch(()=>null);
             if(!isCurrent())return;
             if(result?.ok){setTrialSnap(result.snapshot);setTrialFailure(null);setTrialRequestId(null);setTrialPhase("ready");onRefresh?.();}
             else setTrialPhase("unknown");

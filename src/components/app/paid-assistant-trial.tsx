@@ -14,6 +14,8 @@ export type TrialMessage={id:string;executionId?:string|null;scope:TrialScope;ve
 export type TrialSnapshot={scope:TrialScope;version:number;knowledgeRevision:string;branchLabel:string;businessType:string;canAsk:boolean|null;handoffPreview?:"human_request"|"sensitive";recoveryNotice?:"context_changed";trialAllowance?:{limit:number;used:number};pendingOperation?:{id:string;status:string;recoverable:boolean}|null;messages:TrialMessage[]};
 export type PaidAssistantTrialProps={
  onRecover?:(operationId:string)=>void|Promise<void>;
+ /** Zero-cost release for non-recoverable uncertain holds with no provider evidence. */
+ onRelease?:(operationId:string)=>void|Promise<void>;
  onRefresh?:()=>void|Promise<void>;
  locale:"ar"|"en";scope:TrialScope;boundaryFingerprint:string;snapshot:TrialSnapshot|null;
  /** Purchased assistant identity from the authoritative setup read. Never invented. */
@@ -244,6 +246,7 @@ function TrialForm(p:PaidAssistantTrialProps & {snapshot:TrialSnapshot}){
     <p>{t("طلب سابق لم يُحسم بعد.","A previous request is still unresolved.")}</p>
     <div className={styles.pendingActions}>
      {p.snapshot.pendingOperation.recoverable&&p.onRecover&&<button type="button" className={styles.secondary} disabled={pending} onClick={()=>{if(!pending&&p.isCurrent())void dispatch(()=>p.onRecover?.(p.snapshot.pendingOperation!.id));}}>{t("استعادة الرد","Recover reply")}</button>}
+     {!p.snapshot.pendingOperation.recoverable&&p.snapshot.pendingOperation.status==="uncertain"&&p.onRelease&&<button type="button" className={styles.secondary} disabled={pending} onClick={()=>{if(!pending&&p.isCurrent())void dispatch(()=>p.onRelease?.(p.snapshot.pendingOperation!.id));}}>{t("تحرير الطلب","Release request")}</button>}
      {p.onRefresh&&<button type="button" className={styles.secondary} disabled={pending} onClick={()=>{if(!pending&&p.isCurrent())void dispatch(()=>p.onRefresh?.());}}>{t("تحديث الحالة","Refresh status")}</button>}
     </div>
    </div>}

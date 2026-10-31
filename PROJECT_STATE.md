@@ -1,3 +1,11 @@
+# Current Session Index - C15-TRIAL-UNCERTAIN-UNLOCK-20261031 DELIVERED
+
+- Explicit owner approval in chat ("ارفع"). Scoped Commit/Push of assistant-trial unlock only.
+- Root cause: Gemini transport timeout settled `uncertain` with null provider identity, locking `canAsk` behind «طلب سابق لم يُحسم بعد».
+- Production: operation `1113b1ef-cfe7-49ad-9356-ed659ce7a2fe` zero-cost reconciled to `rejected` (`setup_trial_timeout_no_provider_evidence`); TAG CITY blocking count 0; allowance remains 0/10.
+- Code: timeout/throw without usage settles `rejected`; `releaseOwnedBranchAssistantTrialAction` + UI «تحرير الطلب»; tests 81 PASS.
+- Package: `paid-assistant-trial-actions.ts/.test.ts`, `paid-assistant-trial.tsx/.test.tsx`, `paid-setup-step-host.tsx` (release wiring only), this index. Other agents' knowledge/reprocess/auth/WIP preserved unstaged. Live browser re-ask after refresh NOT_RUN.
+
 # Current Session Index - STATIC-CACHE-PERFORMANCE-20261030
 
 - Owner explicitly authorized Commit/Push/automatic deploy for this package. Static image imports, retire duplicate cache-first worker, bounded public HTTP caching; no private data cache. Includes prior local global-data/Teams improvements.
