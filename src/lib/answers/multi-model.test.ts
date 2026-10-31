@@ -29,6 +29,8 @@ const SAMPLE_CHUNKS: AnswerContextChunk[] = [
 ];
 
 describe("1. Multi-Model Adapters Unified Interface", () => {
+  // Injected clients are allowed under NODE_ENV=test even when live is off;
+  // do not stub AI_LIVE_ANSWERING=true here — that would leak into kill-switch tests.
   it("executes gpt-6-luna via OpenAI adapter with correct token mapping and cost", async () => {
     const mockOpenAIClient = {
       responses: {

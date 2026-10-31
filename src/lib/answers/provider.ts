@@ -24,8 +24,15 @@ export function getAnswerProvider(): AnswerProvider | null {
 /**
  * Injects a test provider for hermetic testing without making external network calls.
  * Pass null to force NEEDS_SETUP (do not recreate from a local API key).
+ * Call clearAnswerProviderForTesting() to restore env-key auto-create.
  */
 export function setAnswerProviderForTesting(provider: AnswerProvider | null): void {
   testingProvider = provider;
   providerInstance = provider;
+}
+
+/** Clears the test pin so getAnswerProvider may recreate from env again. */
+export function clearAnswerProviderForTesting(): void {
+  testingProvider = undefined;
+  providerInstance = null;
 }

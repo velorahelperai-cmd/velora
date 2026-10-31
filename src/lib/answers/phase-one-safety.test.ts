@@ -8,18 +8,19 @@ import {calculateTokensCostBaisa} from "./config/pricing";
 const input={question:"Working hours?",locale:"en" as const,chunks:[]};
 afterEach(()=>vi.unstubAllEnvs());
 describe("Phase 1 cannot make paid provider calls",()=>{
+ // Explicit kill switch must beat injected clients; Vitest alone is not a bypass.
  it("blocks both providers in development even with injected clients",async()=>{
-  vi.stubEnv("NODE_ENV","development");const create=vi.fn(),generateContent=vi.fn();
+  vi.stubEnv("AI_LIVE_ANSWERING","false");vi.stubEnv("NODE_ENV","development");const create=vi.fn(),generateContent=vi.fn();
   const openai=new OpenAIAnswerAdapter({client:{responses:{create}} as unknown as import("openai").default});
   const gemini=new GeminiAnswerAdapter({client:{models:{generateContent}} as unknown as import("@google/genai").GoogleGenAI});
   expect(await openai.complete(input)).toMatchObject({ok:false,code:"NEEDS_SETUP"});
   expect(await gemini.complete(input)).toMatchObject({ok:false,code:"NEEDS_SETUP"});
   expect(create).not.toHaveBeenCalled();expect(generateContent).not.toHaveBeenCalled();
  });
- it("blocks OpenAI network use in production even with an injected client",async()=>{vi.stubEnv("NODE_ENV","production");const create=vi.fn();const adapter=new OpenAIAnswerAdapter({client:{chat:{completions:{create}}} as unknown as import("openai").default});expect(await adapter.complete(input)).toMatchObject({ok:false,code:"NEEDS_SETUP"});expect(create).not.toHaveBeenCalled();});
- it("blocks Gemini network use in production",async()=>{vi.stubEnv("NODE_ENV","production");const generateContent=vi.fn();const adapter=new GeminiAnswerAdapter({client:{models:{generateContent}} as unknown as import("@google/genai").GoogleGenAI});expect(await adapter.complete(input)).toMatchObject({ok:false,code:"NEEDS_SETUP"});expect(generateContent).not.toHaveBeenCalled();});
+ it("blocks OpenAI network use in production even with an injected client",async()=>{vi.stubEnv("AI_LIVE_ANSWERING","false");vi.stubEnv("NODE_ENV","production");const create=vi.fn();const adapter=new OpenAIAnswerAdapter({client:{chat:{completions:{create}}} as unknown as import("openai").default});expect(await adapter.complete(input)).toMatchObject({ok:false,code:"NEEDS_SETUP"});expect(create).not.toHaveBeenCalled();});
+ it("blocks Gemini network use in production",async()=>{vi.stubEnv("AI_LIVE_ANSWERING","false");vi.stubEnv("NODE_ENV","production");const generateContent=vi.fn();const adapter=new GeminiAnswerAdapter({client:{models:{generateContent}} as unknown as import("@google/genai").GoogleGenAI});expect(await adapter.complete(input)).toMatchObject({ok:false,code:"NEEDS_SETUP"});expect(generateContent).not.toHaveBeenCalled();});
  it("rejects attempts to turn the simulator into live answering",async()=>{expect(await simulateAdminAIAnswer({question:"hello",dryRun:false})).toMatchObject({ok:false,error:"LIVE_SIMULATION_DISABLED"});});
- it("keeps explicit dry runs available with live answering off",async()=>{vi.stubEnv("NODE_ENV","production");expect(await new OpenAIAnswerAdapter().complete({...input,dryRun:true})).toMatchObject({ok:true});});
+ it("keeps explicit dry runs available with live answering off",async()=>{vi.stubEnv("AI_LIVE_ANSWERING","false");vi.stubEnv("NODE_ENV","production");expect(await new OpenAIAnswerAdapter().complete({...input,dryRun:true})).toMatchObject({ok:true});});
 });
 describe("simulation economics",()=>{
  it("charges Luna reasoning at its standard output rate",()=>{expect(calculateTokensCostBaisa("gpt-6-luna",{promptTokens:0,completionTokens:100,reasoningTokens:50})).toBe(0.019225);});

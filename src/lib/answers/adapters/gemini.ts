@@ -1,6 +1,6 @@
 import "server-only";
 import { GoogleGenAI, ThinkingLevel } from "@google/genai";
-import { isLiveAnsweringEnabled } from "@/lib/answers/guards";
+import { isLiveAnsweringEnabled, readLiveAnsweringFlag } from "@/lib/answers/guards";
 import { getGeminiModelId, getSecureProviderKey } from "@/lib/answers/config/env";
 import { calculateTokensCostDetailed } from "@/lib/answers/config/pricing";
 import { buildAnswerSystemPrompt, formatAnswerUserPrompt } from "@/lib/answers/adapters/prompt";
@@ -109,8 +109,11 @@ export class GeminiAnswerAdapter implements AnswerProvider {
       };
     }
 
-    const hermeticTest = process.env.NODE_ENV === "test" || process.env.VITEST === "true";
-    if (!isLiveAnsweringEnabled() && !(hermeticTest && this.injectedTestClient)) {
+    const hermeticInjected =
+      this.injectedTestClient &&
+      (process.env.NODE_ENV === "test" || process.env.VITEST === "true") &&
+      readLiveAnsweringFlag() !== "off";
+    if (!isLiveAnsweringEnabled() && !hermeticInjected) {
       return {
         ok: false,
         code: "NEEDS_SETUP",

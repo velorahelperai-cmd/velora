@@ -22,7 +22,10 @@ it('opens knowledge before slow Meta proof, and late progress cannot discard the
   await act(async()=>root.render(createElement(PaidSetupFlow,{locale:'en',scope,isCurrent:()=>true,readEntry:async()=>({schemaVersion:1 as const,companyId:'company',sourceStatus:'selection_required' as const,selectedBranchId:null,reasonCodes:[],branches:[{id:'branch',label:'Main',isPrimary:true}],asOf:'now'}),readBranch:async()=>read})));
   expect(host.querySelector('[data-step-id="hours"]')).not.toBeNull();
   const knowledge=host.querySelector<HTMLButtonElement>('[data-step-id="knowledge"] button')!;
-  expect(knowledge.disabled).toBe(false);expect(host.querySelector<HTMLButtonElement>('[data-step-id="launch"] button')?.disabled).toBe(true);
+  // Knowledge stays independently open; launch/team stay navigable for inspection
+  // without granting activation (workspaceStepAllowed opens them; leaf gates mutations).
+  expect(knowledge.disabled).toBe(false);
+  expect(host.querySelector<HTMLButtonElement>('[data-step-id="launch"] button')?.disabled).toBe(false);
   await act(async()=>knowledge.click());const draft=host.querySelector('textarea')!;draft.value='unsaved changes';
   await act(async()=>finish({...shell,read:{...read,steps:read.steps.map(step=>step.id==='knowledge'?{...step,status:'verified',reasonCodes:[]}:step)}}));
   expect(host.querySelector('textarea')).toBe(draft);expect(draft.value).toBe('unsaved changes');

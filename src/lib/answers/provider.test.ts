@@ -12,7 +12,7 @@ vi.mock("@/lib/answers/config/env", () => ({
   isProviderKeyConfigured: vi.fn(() => Boolean(mockKey)),
 }));
 
-import { getAnswerProvider, setAnswerProviderForTesting } from "./provider";
+import { clearAnswerProviderForTesting, getAnswerProvider, setAnswerProviderForTesting } from "./provider";
 import { GeminiAnswerAdapter } from "./adapters/gemini";
 import type { AnswerProvider } from "./types";
 
@@ -20,11 +20,12 @@ describe("getAnswerProvider", () => {
   afterEach(() => {
     mockKey = null;
     mockModelId = "gemini-3.8-flash";
-    setAnswerProviderForTesting(null);
+    clearAnswerProviderForTesting();
   });
 
   it("returns null when no API key is configured", () => {
     mockKey = null;
+    clearAnswerProviderForTesting();
     const provider = getAnswerProvider();
     expect(provider).toBeNull();
   });
@@ -32,6 +33,7 @@ describe("getAnswerProvider", () => {
   it("returns GeminiAnswerAdapter when API key is configured", () => {
     mockKey = randomUUID();
     mockModelId = "gemini-3.8-pro";
+    clearAnswerProviderForTesting();
     const provider = getAnswerProvider();
     expect(provider).not.toBeNull();
     expect(provider).toBeInstanceOf(GeminiAnswerAdapter);

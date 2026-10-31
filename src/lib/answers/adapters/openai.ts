@@ -1,6 +1,6 @@
 import "server-only";
 import OpenAI from "openai";
-import { isLiveAnsweringEnabled } from "@/lib/answers/guards";
+import { isLiveAnsweringEnabled, readLiveAnsweringFlag } from "@/lib/answers/guards";
 import { getSecureProviderKey } from "@/lib/answers/config/env";
 import { calculateTokensCostDetailed } from "@/lib/answers/config/pricing";
 import { buildAnswerSystemPrompt, formatAnswerUserPrompt } from "@/lib/answers/adapters/prompt";
@@ -96,8 +96,14 @@ export class OpenAIAnswerAdapter implements AnswerProvider {
       };
     }
 
-    const hermeticTest = process.env.NODE_ENV === "test" || process.env.VITEST === "true";
-    if (!isLiveAnsweringEnabled() && !(hermeticTest && this.injectedTestClient)) {
+    // Explicit kill switch (flag off) blocks even injected hermetic clients.
+    // Vitest hermetic injected clients may run when the flag is unset/on under VITEST
+    // (Vitest keeps NODE_ENV=development, so NODE_ENV=test alone is not enough).
+    const hermeticInjected =
+      this.injectedTestClient &&
+      (process.env.NODE_ENV === "test" || process.env.VITEST === "true") &&
+      readLiveAnsweringFlag() !== "off";
+    if (!isLiveAnsweringEnabled() && !hermeticInjected) {
       return {
         ok: false,
         code: "NEEDS_SETUP",

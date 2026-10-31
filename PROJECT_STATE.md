@@ -1,9 +1,17 @@
+# Current Session Index - SETUP-TRIAL-CI-HERMETIC-KILL-SWITCH-20261031
+
+- Follow-up after `7136363`: CI unit failed on Vitest `NODE_ENV=development` + broad hermetic injected bypass, null provider pin, and launch-nav expectation.
+- **Adapter contract**: explicit `AI_LIVE_ANSWERING=false` kill switch blocks even injected clients; Vitest hermetic injected allowed only when flag ≠ off. `clearAnswerProviderForTesting()` restores env-key create. Loading-flow expects launch navigable for inspection (mutations stay leaf-gated).
+- **25bb9e66**: still needs provider-reconciliation review; no new financial write.
+- Affected tests **140 PASS**. C15 remains open until live successful answer. Publish SHA below after push.
+- Prior indexes retained below.
+
 # Current Session Index - SETUP-TRIAL-REACH-CLASSIFY-KILL-SWITCH-20261031 PUBLISH
 
 - **Rapid rejects root cause (ledger)**: `068f8753` / `396c6d8a` / `170d2bab` — `rejected`, `latency_ms=0`, null provider ids, ~1s wall. Matches post-start adapter failure settled `rejected` under old `retrySafe||!providerAttempted` unlock (e.g. Gemini 403/404 `retrySafe:true`), not start-alone proof. Prod env has `AI_GEMINI_API_KEY` only (no `AI_LIVE_ANSWERING`).
 - **25bb9e66**: zero-cost `rejected` via `setup_trial_timeout_no_provider_evidence` — **needs provider-reconciliation review; no new financial write in this package**.
 - **Fix**: classify by `providerAttempted` evidence (reached→uncertain/billed; never unlock from adapter `retrySafe` alone); explicit live kill switch overrides key; gate before reserve; sticky trial step + Send only in `ready`.
-- **Verification**: guards+trial+workspace+multi-model adapters **141 PASS**. Publish SHA pending below. Live successful trial answer **NOT claimed** (C15 remains open). No diagnosis-time ask/release.
+- **Verification**: guards+trial+workspace+multi-model adapters **141 PASS**. Published `7136363`; CI quality/unit needed hermetic follow-up above. Live successful trial answer **NOT claimed** (C15 remains open). No diagnosis-time ask/release.
 - Prior indexes retained below.
 
 # Current Session Index - SETUP-STEP-SELECTION-STICKY-20261031 LOCAL FIXED
