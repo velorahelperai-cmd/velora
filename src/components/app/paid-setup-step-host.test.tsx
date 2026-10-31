@@ -39,6 +39,7 @@ vi.mock("@/lib/tenancy/paid-launch-actions", () => ({
 import { PaidSetupStepHost, type PaidSetupStepHostProps } from "./paid-setup-step-host";
 
 import {readOwnedBranchLaunchSummaryAction,confirmOwnedBranchLaunchAction} from '@/lib/tenancy/paid-launch-actions';
+import {readOwnedBranchAssistantTrialAction,askOwnedBranchAssistantTrialAction} from '@/lib/tenancy/paid-assistant-trial-actions';
 
 const baseProps: PaidSetupStepHostProps = {
   locale: "en",
@@ -114,4 +115,22 @@ it('shows a valid cached branch snapshot immediately when returning to knowledge
  const reader={peek:(kind:string)=>kind==='knowledge'?snapshot:null,peekHours:()=>null} as unknown as NonNullable<PaidSetupStepHostProps['reader']>;
  const html=renderToStaticMarkup(createElement(PaidSetupStepHost,{...baseProps,step:'knowledge',reader}));
  expect(html).toContain('3 / 10');
+});
+
+it('preserves the budget failure detail and retry denial from action through the real trial host',async()=>{
+ vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);
+ const scope={expectedAccountId:baseProps.scope.expectedAccountId,companyId:baseProps.scope.companyId,branchId:baseProps.scope.branchId};
+ vi.mocked(readOwnedBranchAssistantTrialAction).mockResolvedValueOnce({scope,version:1,knowledgeRevision:'k1',branchLabel:'Main',businessType:'restaurant',canAsk:true,messages:[]});
+ vi.mocked(askOwnedBranchAssistantTrialAction).mockResolvedValueOnce({ok:false,code:'TRIAL_BUDGET_EXCEEDED',message:'Budget blocked',requestId:'budget-request',retrySafe:false});
+ const host=document.createElement('div'),root=createRoot(host);
+ try{
+  await act(async()=>root.render(createElement(PaidSetupStepHost,{...baseProps,step:'test'})));
+  const suggestion=Array.from(host.querySelectorAll('button')).find(button=>button.textContent==='What are the working hours?')!;
+  expect(suggestion.disabled).toBe(false);
+  await act(async()=>suggestion.click());
+  expect(askOwnedBranchAssistantTrialAction).toHaveBeenCalledOnce();
+  expect(host.textContent).toContain('blocked by the trial budget limit');
+  expect(Array.from(host.querySelectorAll('button')).find(button=>button.textContent==='Retry safely')!.disabled).toBe(true);
+  expect(host.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(true);
+ }finally{await act(async()=>root.unmount());vi.unstubAllGlobals();}
 });

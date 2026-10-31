@@ -1,6 +1,6 @@
 "use client";
 
-import type {SetupReader} from "@/lib/tenancy/setup-read-client";
+import {SetupReadError,type SetupReader} from "@/lib/tenancy/setup-read-client";
 import {awaitSetupRequest,observeSetupRead} from "./paid-setup-request";
 import { useCallback, useLayoutEffect, useEffect, useMemo, useRef, useState } from "react";
 import type { ChecklistStepId } from "./paid-assistant-checklist";
@@ -178,15 +178,15 @@ function StepHost(props: PaidSetupStepHostProps) {
       if (snap) {
         setKnowledgeSnap(snap);
         setKnowledgePhase("ready");
-      } else {setKnowledgeSnap(null);setKnowledgePhase("unavailable");}
-    }).catch(error=>{if(!canceledRead(error)&&active&&isCurrent()){readFailure.current?.(error);setKnowledgeSnap(null);setKnowledgePhase("unavailable");}});
+      } else {setKnowledgePhase("unavailable");}
+    }).catch(error=>{if(!canceledRead(error)&&active&&isCurrent()){readFailure.current?.(error);if(error instanceof SetupReadError&&(error.kind==='auth'||error.kind==='scope'))setKnowledgeSnap(null);setKnowledgePhase("unavailable");}});
     void observeSetupRead((reader?reader.read("language"):readOwnedBranchReplyLanguageAction(targetScope)),()=>{},10_000).then((snap) => {
       if (!active || !isCurrent()) return;
       if (snap) {
         setLangSnap(snap);
         setLangPhase("ready");
-      } else {setLangSnap(null);setLangPhase("unavailable");}
-    }).catch(error=>{if(!canceledRead(error)&&active&&isCurrent()){readFailure.current?.(error);setLangSnap(null);setLangPhase("unavailable");}});
+      } else {setLangPhase("unavailable");}
+    }).catch(error=>{if(!canceledRead(error)&&active&&isCurrent()){readFailure.current?.(error);if(error instanceof SetupReadError&&(error.kind==='auth'||error.kind==='scope'))setLangSnap(null);setLangPhase("unavailable");}});
     return () => {
       active = false;
     };
@@ -206,9 +206,20 @@ function StepHost(props: PaidSetupStepHostProps) {
       if (!active || !isCurrent()) return;
       if (snap) {
         setTrialSnap(snap);
-        setTrialFailure(null);
-        setTrialRequestId(null);
-        setTrialPhase("ready");
+        // Refresh confirms server authority only. A generic reload must not clear an
+        // unresolved client failure into a free Send unless the snapshot allows ask
+        // and has no pending hold.
+        if (snap.pendingOperation) {
+          setTrialFailure(null);
+          setTrialRequestId(null);
+          setTrialPhase("ready");
+        } else if (snap.canAsk === true) {
+          setTrialFailure(null);
+          setTrialRequestId(null);
+          setTrialPhase("ready");
+        } else {
+          setTrialPhase((phase) => (phase === "error" || phase === "unknown" ? "unknown" : "ready"));
+        }
       } else {
         setTrialPhase("unavailable");
       }
@@ -277,15 +288,20 @@ function StepHost(props: PaidSetupStepHostProps) {
       onRefresh?.();
     } else if (!res || res.code === "TRIAL_PENDING" || res.code === "TRIAL_OUTCOME_UNKNOWN") {
       setTrialPhase("unknown");
+      setTrialFailure(null);
+      setTrialRequestId(null);
     } else {
-      const reqId = res.requestId ?? (res.retrySafe ? (input.operationId ?? crypto.randomUUID()) : null);
+      // Never invent a request id. Retry authority requires the server's retrySafe
+      // plus a requestId the server actually returned (or the reserved operation id).
+      const reqId = res.retrySafe === true ? (res.requestId ?? input.operationId ?? null) : (res.requestId ?? null);
+      const retrySafe = res.retrySafe === true && !!reqId;
       setTrialRequestId(reqId);
       setTrialFailure({
         ok: false,
         code: normalizeTrialFailureCode(res.code),
         message: res.code,
         requestId: reqId ?? undefined,
-        retrySafe: res.retrySafe === true,
+        retrySafe,
       });
       setTrialPhase("error");
     }

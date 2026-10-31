@@ -10,14 +10,12 @@ import type {PaidSetupWorkspaceRead} from "@/lib/tenancy/paid-setup-workspace-ac
 import {paidSetupActivation,type PaidSetupActivation} from '@/lib/tenancy/paid-setup-activation';
 import {confirmSetupLeave} from './paid-setup-unsaved';
 
-/** Hidden from /setup for now; PaidBranchHours stays mounted elsewhere later. */
-const SETUP_HIDDEN_STEPS = new Set<ChecklistStepId>([]);
-
-export function nextWorkspaceSelection(snapshot:PaidSetupWorkspaceRead,previous:ChecklistStepId|null):ChecklistStepId|null {
+export function nextWorkspaceSelection(snapshot:PaidSetupWorkspaceRead,previous:ChecklistStepId|null,provisional=false):ChecklistStepId|null {
   const model=paidChecklistFromRead(snapshot.read,snapshot.scope);
   const steps=model?checklistSteps(model):[];
   if(!steps.length)return null;
-  if(previous&&SETUP_HIDDEN_STEPS.has(previous))previous=null;
+  // Shell readiness is incomplete; retain a valid selection until enrichment settles.
+  if(provisional&&previous&&steps.some(step=>step.id===previous))return previous;
   const isConfirmedChannel=(channel:"whatsapp"|"instagram")=>{
     const proof=snapshot.connectionReads[channel],step=steps.find(item=>item.id===channel);
     return !!step&&snapshot.confirmedChannels.includes(channel)&&step.status==="verified"&&step.reasonCodes.length===0&&
@@ -27,19 +25,17 @@ export function nextWorkspaceSelection(snapshot:PaidSetupWorkspaceRead,previous:
       !!proof.connection.link&&Number.isSafeInteger(proof.connection.link.generation)&&proof.connection.link.generation>=1;
   };
   const stepOpen=(id:ChecklistStepId)=>{
-    if(SETUP_HIDDEN_STEPS.has(id))return false;
     const step=steps.find(item=>item.id===id);
     if(!step)return false;
-    if((id==='hours'||id==='knowledge'||id==='team')&&step.actionId!==null)return true;
-    const dependencies=step.dependencyIds.every(dep=>SETUP_HIDDEN_STEPS.has(dep)||steps.some(item=>item.id===dep&&item.status==="verified"));
-    if(id==="launch")return model!.launch.canRequest&&dependencies;
+    if(id==="team"||id==="launch")return true;
+    if((id==='hours'||id==='knowledge')&&step.actionId!==null)return true;
+    const dependencies=step.dependencyIds.every(dep=>steps.some(item=>item.id===dep&&item.status==="verified"));
     return step.actionId!==null&&(step.status==="verified"||step.status==="skipped_optional"||(step.status==="pending"&&dependencies));
   };
   const nonChannelSteps=steps.filter(item=>item.id!=="whatsapp"&&item.id!=="instagram");
-  // Count verified hidden steps (e.g. hours) so resume still advances past them.
   const businessSetupStarted=nonChannelSteps.some(item=>item.status==="verified");
-  const nextIncompleteOpen=(fromIndex=0)=>steps.slice(fromIndex).find(item=>!SETUP_HIDDEN_STEPS.has(item.id)&&item.status!=="verified"&&item.status!=="skipped_optional"&&stepOpen(item.id))?.id??null;
-  const nextBusinessIncomplete=nonChannelSteps.find(item=>!SETUP_HIDDEN_STEPS.has(item.id)&&item.status!=="verified"&&item.status!=="skipped_optional"&&stepOpen(item.id))?.id??null;
+  const nextIncompleteOpen=(fromIndex=0)=>steps.slice(fromIndex).find(item=>item.status!=="verified"&&item.status!=="skipped_optional"&&stepOpen(item.id))?.id??null;
+  const nextBusinessIncomplete=nonChannelSteps.find(item=>item.status!=="verified"&&item.status!=="skipped_optional"&&stepOpen(item.id))?.id??null;
   if(!previous||!steps.some(step=>step.id===previous)){
     if(businessSetupStarted&&nextBusinessIncomplete)return nextBusinessIncomplete;
     const first=steps[0]!.id;
@@ -127,11 +123,12 @@ export function workspaceStepAllowed(read:PaidBranchSetupRead|null,scope:PaidSet
   if(!model||!model.branches.some(branch=>branch.id===scope.branchId))return false;
   const steps=checklistSteps(model),step=steps.find(item=>item.id===id);
   if(!step||!available.includes(id))return false;
+  // Inspecting seats or launch blockers never grants mutation/activation authority.
+  if(id==="team"||id==="launch")return true;
   // Editing these independent sections is not a readiness assertion. Their
-  // own reads/writes verify native authority; trial and launch keep prerequisites.
+  // own reads/writes verify native authority; trial dispatch keeps prerequisites.
   if((id==='hours'||id==='knowledge')&&step.actionId!==null)return true;
   const dependencies=step.dependencyIds.every(dep=>!available.includes(dep)||steps.some(item=>item.id===dep&&item.status==="verified"));
-  if(id==="launch")return model.launch.canRequest&&dependencies;
   return step.actionId!==null&&(step.status==="verified"||step.status==="skipped_optional"||(step.status==="pending"&&dependencies));
 }
 
@@ -165,7 +162,7 @@ function Workspace(p:PaidSetupWorkspaceProps) {
   const current=isCurrent();
   const model=p.read?paidChecklistFromRead(p.read,p.scope):null;
   const steps=model?checklistSteps(model):[];
-  const visibleSteps=steps.filter(step=>p.availableStepIds.includes(step.id)&&!SETUP_HIDDEN_STEPS.has(step.id));
+  const visibleSteps=steps.filter(step=>p.availableStepIds.includes(step.id));
   const valid=current&&!!model&&model.branches.some(branch=>branch.id===p.scope.branchId)&&visibleSteps.length>0;
   const active=p.activeStepId;
   const allowed=!!active&&workspaceStepAllowed(p.read,p.scope,active,p.availableStepIds);
@@ -180,11 +177,9 @@ function Workspace(p:PaidSetupWorkspaceProps) {
     if(previous.current!==active&&isCurrent())heading.current?.focus();
     previous.current=active;
   },[active,isCurrent]);
-  useEffect(()=>{
-    if(!p.isCurrent()||!valid||!active||allowed)return;
-    const fallback=visibleSteps.find(step=>workspaceStepAllowed(p.read,p.scope,step.id,p.availableStepIds));
-    if(fallback)p.onSelectStep(fallback.id);
-  },[active,allowed,valid,p,p.read,p.scope,p.availableStepIds,p.isCurrent,p.onSelectStep,visibleSteps]);
+  // Never auto-navigate on refresh / readiness churn. Keep the user's step and
+  // explain a real block in the panel so drafts (trial question, etc.) stay mounted.
+  const activeBlockedReason=active&&!allowed&&valid?stepBlockedReason(active,steps,model,p.locale):null;
   const select=(step:ChecklistStepId)=>{
     if(!p.isCurrent()||!workspaceStepAllowed(p.read,p.scope,step,p.availableStepIds))return;
     if(step!==active&&!confirmSetupLeave(shell.current,p.locale))return;
@@ -259,9 +254,12 @@ function Workspace(p:PaidSetupWorkspaceProps) {
           </div>
         </header>
         <div className={styles.body} key={active}>
-          {!active||!allowed?<p role="status">{t("اختر خطوة متاحة. تُفتح الخطوات بعد تحقق متطلباتها.","Choose an available step. Steps open after their prerequisites are verified.")}</p>:
-            active==="whatsapp"||active==="instagram"?<PaidChannelView locale={p.locale} scope={p.scope} read={p.read} channel={active} connectionRead={p.connectionReads?.[active]} isCurrent={p.isCurrent} onRefresh={refresh} hideStatusBadge={p.statusInHeader}/>:
-              p.renderStep?.(active)??<p role="status">{t("هذه الشاشة غير متاحة بعد. لم تتغير حالة الخطوة.","This screen is not available yet. The step status has not changed.")}</p>}
+          {!active?<p role="status">{t("اختر خطوة متاحة. تُفتح الخطوات بعد تحقق متطلباتها.","Choose an available step. Steps open after their prerequisites are verified.")}</p>:
+            <>
+              {activeBlockedReason&&<p role="status" data-setup-step-blocked="true">{activeBlockedReason}</p>}
+              {active==="whatsapp"||active==="instagram"?<PaidChannelView locale={p.locale} scope={p.scope} read={p.read} channel={active} connectionRead={p.connectionReads?.[active]} isCurrent={p.isCurrent} onRefresh={refresh} hideStatusBadge={p.statusInHeader}/>:
+                p.renderStep?.(active)??<p role="status">{t("هذه الشاشة غير متاحة بعد. لم تتغير حالة الخطوة.","This screen is not available yet. The step status has not changed.")}</p>}
+            </>}
         </div>
       </section>
     </div>}

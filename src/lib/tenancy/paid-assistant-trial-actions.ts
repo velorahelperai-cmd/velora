@@ -16,6 +16,7 @@ import { ANSWER_MAX_CONTEXT_CHARS, ANSWER_MAX_SOURCES } from "@/lib/answers/cons
 import { realModelPricing, reserveRealCost, priceRealUsage } from "@/lib/answers/runtime/economics";
 import { buildAnswerSystemPrompt, formatAnswerUserPrompt } from "@/lib/answers/adapters/prompt";
 import { getAnswerProvider } from "@/lib/answers/provider";
+import { isLiveAnsweringEnabled } from "@/lib/answers/guards";
 import { classifyHandoffPolicy } from "@/lib/answers/routing/handoff-policy";
 import { loadApprovedBranchKnowledgeContext } from "./paid-branch-knowledge-actions";
 import { branchHoursAssistantContext } from "./branch-hours-contracts";
@@ -148,7 +149,8 @@ export async function askOwnedBranchAssistantTrialAction(
       // and never reserve a provider attempt or grant an engine trial receipt.
       return {ok:true,snapshot:{...snapshot,handoffPreview:preview}};
     }
-    // 1. Authoritative Answer Provider (Gemini). Return explicit error if not configured.
+    // 1. Provider + live kill switch before any reservation. Explicit AI_LIVE_ANSWERING=false
+    // wins over key presence (see isLiveAnsweringEnabled contract).
     const provider = getAnswerProvider();
     if (!provider) {
       logEvent("warn", "es02.branch_assistant_trial.missing_provider", {
@@ -160,6 +162,18 @@ export async function askOwnedBranchAssistantTrialAction(
         ok: false,
         code: "NEEDS_SETUP",
         message: "Gemini provider is not configured. API key is required.",
+      };
+    }
+    if (!isLiveAnsweringEnabled()) {
+      logEvent("warn", "es02.branch_assistant_trial.live_disabled", {
+        request_id: requestId,
+        stage: "b6",
+        detail: "Live answering kill switch blocked reservation; provider was not called.",
+      });
+      return {
+        ok: false,
+        code: "NEEDS_SETUP",
+        message: "Live answering is disabled; request was not reserved.",
       };
     }
 
@@ -277,8 +291,8 @@ export async function askOwnedBranchAssistantTrialAction(
     const allowance = reservation.data as unknown as { ok?: boolean; code?: string; newlyReserved?: boolean; state?: string } | null;
     if (reservation.error || allowance?.ok !== true) {
       if (allowance?.code === "TRIAL_BUDGET_EXCEEDED") {
-        logEvent("warn", "es02.branch_assistant_trial.budget_exceeded", { request_id: requestId, stage: "b6", detail: "Trial budget cap would be exceeded; request not sent." });
-        return { ok: false, code: "UNAVAILABLE", message: "Trial budget would be exceeded; request not sent" };
+        logEvent("warn", "es02.branch_assistant_trial.budget_exceeded", { request_id: requestId, stage: "b6", error_code: "TRIAL_BUDGET_EXCEEDED", detail: "Trial budget cap would be exceeded; request not sent." });
+        return { ok: false, code: "TRIAL_BUDGET_EXCEEDED", message: "Trial budget would be exceeded; answer generation was not started", requestId, retrySafe: false };
       }
       return { ok: false, code: allowance?.code || "UNAVAILABLE", message: "Free setup allowance could not be reserved" };
     }
@@ -332,7 +346,7 @@ export async function askOwnedBranchAssistantTrialAction(
       startedOk = !started.error && (started.data as unknown as { ok?: boolean })?.ok === true;
     } catch { startedOk = false; }
     if (!startedOk) {
-      // No provider request has been made; releasing the hold at zero cost is safe.
+      // Start RPC failed: provider.complete was never invoked. Zero-cost release is allowed.
       if (!await settle("rejected")) return PENDING;
       return { ok: false, code: "UNAVAILABLE", message: "Authorization changed before the provider request" };
     }
@@ -347,27 +361,30 @@ export async function askOwnedBranchAssistantTrialAction(
       });
     }
     catch {
-      // No response body or usage evidence reached the server. Release the hold at zero
-      // cost so the branch is not permanently locked; never replay this operationId.
-      if (!await settle("rejected")) return PENDING;
-      return { ok: false, code: "UNAVAILABLE", message: "Provider request failed before a verifiable result; you may ask a new question", retrySafe: true };
+      // Transport threw after start — reach evidence is unknown. Do not unlock.
+      if (!await settle("uncertain")) return PENDING;
+      return { ok: false, code: "TRIAL_OUTCOME_UNKNOWN", message: "Provider outcome requires reconciliation; do not resend" };
     }
     if (!completion.ok) {
-      const safeFailure = completion.providerAttempted === false || completion.retrySafe === true;
-      const noUsageEvidence = !completion.usage;
-      if (!safeFailure && completion.providerAttempted === true && completion.usage) {
+      // Classify by provider-reach evidence only — never by start alone or retrySafe alone.
+      const reachedProvider = completion.providerAttempted === true;
+      if (reachedProvider && completion.usage) {
         if (!await settleBilled(completion.usage as Extract<AnswerResult, { ok: true }>["usage"])) return PENDING;
         return { ok: false, code: "UNAVAILABLE", message: "Provider returned no complete answer; usage was recorded and no reply was counted" };
       }
-      // Timeout/transport failures without usage must not settle as uncertain — that
-      // permanently blocks canAsk with only a refresh button (C15.2).
-      const releaseHold = safeFailure || noUsageEvidence;
-      if (!await settle(releaseHold ? "rejected" : "uncertain")) return PENDING;
+      // reached without usage, OR adapter claims non-attempt after start: hold. Adapter
+      // retrySafe (e.g. HTTP 403/404) is fallback metadata, not settlement authority.
+      logEvent("warn", "es02.branch_assistant_trial.provider_unconfirmed", {
+        request_id: requestId,
+        stage: "b6",
+        error_code: completion.code,
+        detail: reachedProvider ? "provider_attempted_without_usage" : "non_attempt_after_start",
+      });
+      if (!await settle("uncertain")) return PENDING;
       return {
         ok: false,
-        code: releaseHold ? (safeFailure ? completion.code : "UNAVAILABLE") : "TRIAL_OUTCOME_UNKNOWN",
-        message: completion.message || "Provider did not return a verified answer",
-        ...(releaseHold ? { retrySafe: true, ...(completion.requestId ? { requestId: completion.requestId } : {}) } : {}),
+        code: "TRIAL_OUTCOME_UNKNOWN",
+        message: completion.message || "Provider outcome requires reconciliation; do not resend",
       };
     }
     if (!completion.text.trim() || completion.modelId !== configuredModel) {
@@ -410,8 +427,8 @@ export async function recoverOwnedBranchAssistantTrialAction(input: TrialScope &
 }
 
 /**
- * Release a non-recoverable uncertain setup-trial hold that has no provider identity.
- * Never dispatches AI and never invents usage; only zero-cost reconcile is allowed.
+ * Re-check an owned uncertain hold. Missing provider identity is not proof of
+ * non-execution; this customer action cannot manufacture a reconciliation receipt.
  */
 export async function releaseOwnedBranchAssistantTrialAction(input: TrialScope & {operationId:string}):Promise<AssistantTrialAskResult>{
   if(!validScope(input)||!UUID.test(input.operationId))return {ok:false,code:"INVALID_INPUT",message:"Invalid release scope"};
@@ -423,21 +440,5 @@ export async function releaseOwnedBranchAssistantTrialAction(input: TrialScope &
   if(!pending||pending.id!==input.operationId||pending.recoverable||pending.status!=="uncertain"){
     return {ok:false,code:"TRIAL_PENDING",message:"Only a non-recoverable uncertain hold can be released"};
   }
-  const writer=createAdminClient();
-  if(!writer)return {ok:false,code:"UNAVAILABLE",message:"Release is unavailable"};
-  let released=false;
-  try{
-    const result=await writer.rpc("ai_reconcile_attempt" as never,{
-      p_id:input.operationId,
-      p_cost_usd:0,
-      p_cost_baisa:0,
-      p_usage:{},
-      p_provider_reference:"setup_trial_timeout_no_provider_evidence",
-    } as never);
-    released=!result.error&&result.data===true;
-  }catch{released=false;}
-  if(!released)return {ok:false,code:"TRIAL_PENDING",message:"Hold could not be released; do not resend"};
-  const fresh=await readOwnedBranchAssistantTrialAction(input);
-  if(!fresh||fresh.pendingOperation)return {ok:false,code:"TRIAL_PENDING",message:"Hold release needs another status check"};
-  return {ok:true,snapshot:fresh};
+  return {ok:false,code:"TRIAL_PENDING",message:"Provider outcome requires verified reconciliation before this hold can be released; do not resend"};
 }

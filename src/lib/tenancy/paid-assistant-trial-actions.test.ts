@@ -74,7 +74,11 @@ import type { AnswerProvider, AnswerResult, AnswerUsage } from "@/lib/answers/ty
 
 describe("paid-assistant-trial-actions", () => {
   beforeEach(() => {
+    vi.unstubAllEnvs();
     process.env.VELORA_TRIAL_BUDGET_CAP_BAISA = "2";
+    delete process.env.VELORA_LOCAL_CUSTOMER_MODE;
+    delete process.env.VELORA_TRIAL_PINNED_BRANCH_ID;
+    vi.stubEnv("AI_LIVE_ANSWERING", "true");
     currentSessionId = VALID_ACCOUNT_ID;
     trustedAvailable = true;
     trustedRpc = vi.fn(async (name: string) => ({ data: name === "ai_settle_admin_attempt" ? true : { ok: true, newlyReserved: true, state: "reserved", receiptId: "receipt" }, error: null }));
@@ -135,7 +139,7 @@ describe("paid-assistant-trial-actions", () => {
     expect(trustedRpc).not.toHaveBeenCalled();
   });
 
-  it("releases a non-recoverable uncertain hold at zero cost without calling the provider", async () => {
+  it("does not manufacture zero cost when an uncertain hold lacks provider evidence", async () => {
     const operationId = "66666666-6666-4666-8666-666666666666";
     const scope = { expectedAccountId: VALID_ACCOUNT_ID, companyId: VALID_COMPANY_ID, branchId: VALID_BRANCH_ID };
     const complete = vi.fn();
@@ -178,16 +182,10 @@ describe("paid-assistant-trial-actions", () => {
       return { data: { ok: true }, error: null };
     });
     const releasedResult = await releaseOwnedBranchAssistantTrialAction({ ...scope, operationId });
-    expect(releasedResult).toMatchObject({ ok: true, snapshot: expect.objectContaining({ canAsk: true }) });
-    expect(releasedResult.ok && releasedResult.snapshot.pendingOperation).toBeFalsy();
+    expect(releasedResult).toMatchObject({ ok: false, code: "TRIAL_PENDING" });
     expect(complete).not.toHaveBeenCalled();
-    expect(trustedRpc.mock.calls.map((c) => c[0])).toEqual(["ai_reconcile_attempt"]);
-    expect(trustedRpc.mock.calls[0]![1]).toMatchObject({
-      p_id: operationId,
-      p_cost_usd: 0,
-      p_cost_baisa: 0,
-      p_provider_reference: "setup_trial_timeout_no_provider_evidence",
-    });
+    expect(trustedRpc).not.toHaveBeenCalled();
+    expect(released).toBe(false);
   });
 
   it("refuses release when the hold is recoverable or not uncertain", async () => {
@@ -272,7 +270,7 @@ describe("paid-assistant-trial-actions", () => {
     expect(rpcMock).not.toHaveBeenCalledWith("es02_record_owned_branch_assistant_trial", expect.anything());
   });
 
-  it("fails with provider error when completion fails and surfaces retrySafe metadata (no fake answer)", async () => {
+  it("holds a post-start provider failure as uncertain even when the adapter claims retrySafe", async () => {
     const mockProvider: AnswerProvider = {
       id: "mock-gemini",
       complete: vi.fn(async (): Promise<AnswerResult> => ({
@@ -280,6 +278,7 @@ describe("paid-assistant-trial-actions", () => {
         code: "UNAVAILABLE",
         message: "Quota exceeded",
         requestId: "req-err-1",
+        providerAttempted: true,
         retrySafe: true,
       })),
     };
@@ -294,15 +293,55 @@ describe("paid-assistant-trial-actions", () => {
       question: "ما مواعيد العمل؟",
     });
 
-    expect(res).toEqual({
+    expect(res).toMatchObject({
       ok: false,
-      code: "UNAVAILABLE",
+      code: "TRIAL_OUTCOME_UNKNOWN",
       message: "Quota exceeded",
-      requestId: "req-err-1",
-      retrySafe: true,
     });
-    expect(trustedRpc).toHaveBeenCalledWith("ai_settle_admin_attempt", expect.objectContaining({ p_status: "rejected", p_cost_baisa: 0 }));
+    expect(res).not.toHaveProperty("retrySafe", true);
+    expect(trustedRpc).toHaveBeenCalledWith("ai_settle_admin_attempt", expect.objectContaining({ p_status: "uncertain", p_cost_baisa: null }));
     expect(rpcMock).not.toHaveBeenCalledWith("es02_record_owned_branch_assistant_trial", expect.anything());
+  });
+
+  it("holds a post-start non-attempt claim as uncertain instead of zero-cost unlock", async () => {
+    setAnswerProviderForTesting({
+      id: "mock-gemini",
+      complete: vi.fn(async (): Promise<AnswerResult> => ({
+        ok: false,
+        code: "NEEDS_SETUP",
+        message: "Live network provider calls are disabled during Phase 1.",
+        providerAttempted: false,
+        retrySafe: false,
+      })),
+    });
+    const res = await askOwnedBranchAssistantTrialAction({
+      expectedAccountId: VALID_ACCOUNT_ID,
+      companyId: VALID_COMPANY_ID,
+      branchId: VALID_BRANCH_ID,
+      expectedVersion: 1,
+      knowledgeRevision: "rev_1",
+      question: "ما مواعيد العمل؟",
+    });
+    expect(res).toMatchObject({ ok: false, code: "TRIAL_OUTCOME_UNKNOWN" });
+    expect(res).not.toHaveProperty("retrySafe", true);
+    expect(trustedRpc).toHaveBeenCalledWith("ai_settle_admin_attempt", expect.objectContaining({ p_status: "uncertain", p_cost_baisa: null }));
+  });
+
+  it("refuses to reserve when the live answering kill switch is off", async () => {
+    vi.stubEnv("AI_LIVE_ANSWERING", "false");
+    const complete = vi.fn();
+    setAnswerProviderForTesting({ id: "mock-gemini", complete });
+    const res = await askOwnedBranchAssistantTrialAction({
+      expectedAccountId: VALID_ACCOUNT_ID,
+      companyId: VALID_COMPANY_ID,
+      branchId: VALID_BRANCH_ID,
+      expectedVersion: 1,
+      knowledgeRevision: "rev_1",
+      question: "ما مواعيد العمل؟",
+    });
+    expect(res).toMatchObject({ ok: false, code: "NEEDS_SETUP" });
+    expect(complete).not.toHaveBeenCalled();
+    expect(trustedRpc).not.toHaveBeenCalled();
   });
 
   it("grounds branch hours question, knowledge question, and out-of-knowledge question with branch-isolated context", async () => {
@@ -478,6 +517,9 @@ describe("consolidated trial replay receipt", () => {
 describe("trial budget cap, billed-but-unusable calls and settlement failure", () => {
   const input = { expectedAccountId: VALID_ACCOUNT_ID, companyId: VALID_COMPANY_ID, branchId: VALID_BRANCH_ID, expectedVersion: 1, knowledgeRevision: "rev_1", question: "ما مواعيد العمل؟" };
   const usage: AnswerUsage = { promptChars: 1, contextChars: 1, sourceCount: 1, promptTokens: 600, completionTokens: 256, cachedTokens: 0, reasoningTokens: 100, totalTokens: 856, modelId: "gemini-3.8-flash", provider: "google", requestId: "r1", responseId: "r1", actualModelId: "gemini-3.8-flash", latencyMs: 5 };
+  beforeEach(() => {
+    vi.stubEnv("AI_LIVE_ANSWERING", "true");
+  });
   type Handler = (name: string, args: Record<string, unknown>) => { data: unknown; error: unknown } | Promise<{ data: unknown; error: unknown }>;
   const setup = (handler?: Handler) => {
     currentSessionId = VALID_ACCOUNT_ID; trustedAvailable = true;
@@ -522,7 +564,7 @@ describe("trial budget cap, billed-but-unusable calls and settlement failure", (
     expect(called("ai_settle_admin_attempt")[1].p_cost_baisa).toBeNull();
   });
 
-  it("releases a timeout without usage evidence as rejected so the branch is not permanently locked", async () => {
+  it("preserves an attempted timeout as uncertain with unknown cost and no retry grant", async () => {
     setup();
     setAnswerProviderForTesting({
       id: "p",
@@ -534,21 +576,25 @@ describe("trial budget cap, billed-but-unusable calls and settlement failure", (
         retrySafe: false,
       })),
     });
-    expect(await askOwnedBranchAssistantTrialAction(input)).toMatchObject({ ok: false, code: "UNAVAILABLE", retrySafe: true });
+    const result = await askOwnedBranchAssistantTrialAction(input);
+    expect(result).toMatchObject({ ok: false, code: "TRIAL_OUTCOME_UNKNOWN" });
+    expect(result).not.toHaveProperty("retrySafe", true);
     expect(called("ai_settle_admin_attempt")).toEqual([
-      expect.objectContaining({ p_status: "rejected", p_cost_baisa: 0, p_cost_usd: 0 }),
+      expect.objectContaining({ p_status: "uncertain", p_cost_baisa: null, p_cost_usd: null }),
     ]);
   });
 
-  it("releases a thrown provider failure without usage as rejected", async () => {
+  it("preserves a thrown provider failure as uncertain rather than inventing zero cost", async () => {
     setup();
     setAnswerProviderForTesting({
       id: "p",
       complete: vi.fn(async () => { throw new Error("transport_timeout"); }),
     });
-    expect(await askOwnedBranchAssistantTrialAction(input)).toMatchObject({ ok: false, code: "UNAVAILABLE", retrySafe: true });
+    const result = await askOwnedBranchAssistantTrialAction(input);
+    expect(result).toMatchObject({ ok: false, code: "TRIAL_OUTCOME_UNKNOWN" });
+    expect(result).not.toHaveProperty("retrySafe", true);
     expect(called("ai_settle_admin_attempt")).toEqual([
-      expect.objectContaining({ p_status: "rejected", p_cost_baisa: 0 }),
+      expect.objectContaining({ p_status: "uncertain", p_cost_baisa: null }),
     ]);
   });
 
@@ -571,45 +617,42 @@ describe("trial budget cap, billed-but-unusable calls and settlement failure", (
   });
 
   it("stops before any reservation when the trial budget cap is missing in restricted mode", async () => {
+    vi.stubEnv("AI_LIVE_ANSWERING", "true");
     vi.stubEnv("VELORA_LOCAL_CUSTOMER_MODE", "live");
     vi.stubEnv("VELORA_TRIAL_PINNED_BRANCH_ID", VALID_BRANCH_ID);
     delete process.env.VELORA_TRIAL_BUDGET_CAP_BAISA;
-    try {
-      setup();
-      const complete = failingProvider();
-      setAnswerProviderForTesting({ id: "p", complete });
-      expect(await askOwnedBranchAssistantTrialAction(input)).toMatchObject({
-        ok: false,
-        code: "UNAVAILABLE",
-        message: expect.stringContaining("Restricted trial configuration is incomplete"),
-      });
-      expect(trustedRpc).not.toHaveBeenCalled();
-      expect(complete).not.toHaveBeenCalled();
-    } finally {
-      vi.unstubAllEnvs();
-    }
+    setup();
+    const complete = failingProvider();
+    setAnswerProviderForTesting({ id: "p", complete });
+    expect(await askOwnedBranchAssistantTrialAction(input)).toMatchObject({
+      ok: false,
+      code: "UNAVAILABLE",
+      message: expect.stringContaining("Restricted trial configuration is incomplete"),
+    });
+    expect(trustedRpc).not.toHaveBeenCalled();
+    expect(complete).not.toHaveBeenCalled();
   });
 
   it("stops before any reservation when branch does not match pinned branch in restricted mode", async () => {
+    vi.stubEnv("AI_LIVE_ANSWERING", "true");
     vi.stubEnv("VELORA_TRIAL_PINNED_BRANCH_ID", "a268f9d8-fe5b-41b2-a337-97046a5eaa5c");
     vi.stubEnv("VELORA_TRIAL_BUDGET_CAP_BAISA", "2");
-    try {
-      setup();
-      const complete = failingProvider();
-      setAnswerProviderForTesting({ id: "p", complete });
-      expect(await askOwnedBranchAssistantTrialAction({ ...input, branchId: "44444444-4444-4444-8444-444444444444" })).toMatchObject({
-        ok: false,
-        code: "FORBIDDEN",
-      });
-      expect(trustedRpc).not.toHaveBeenCalled();
-      expect(complete).not.toHaveBeenCalled();
-    } finally { vi.unstubAllEnvs(); }
+    setup();
+    const complete = failingProvider();
+    setAnswerProviderForTesting({ id: "p", complete });
+    expect(await askOwnedBranchAssistantTrialAction({ ...input, branchId: "44444444-4444-4444-8444-444444444444" })).toMatchObject({
+      ok: false,
+      code: "FORBIDDEN",
+    });
+    expect(trustedRpc).not.toHaveBeenCalled();
+    expect(complete).not.toHaveBeenCalled();
   });
 
   it("permits standard reservation without local restriction when local customer mode is inactive", async () => {
     delete process.env.VELORA_LOCAL_CUSTOMER_MODE;
     delete process.env.VELORA_TRIAL_PINNED_BRANCH_ID;
     delete process.env.VELORA_TRIAL_BUDGET_CAP_BAISA;
+    vi.stubEnv("AI_LIVE_ANSWERING", "true");
     setup();
     const complete = failingProvider();
     setAnswerProviderForTesting({ id: "p", complete });
@@ -619,28 +662,27 @@ describe("trial budget cap, billed-but-unusable calls and settlement failure", (
   });
 
   it("uses the atomic capped reservation and stops before the provider when the cap is exceeded", async () => {
+    vi.stubEnv("AI_LIVE_ANSWERING", "true");
     vi.stubEnv("VELORA_TRIAL_BUDGET_CAP_BAISA", "2");
-    try {
-      setup(async name => name === "es02_reserve_branch_trial_capped" ? { data: { ok: false, code: "TRIAL_BUDGET_EXCEEDED", committedBaisa: 1.9, capBaisa: 2 }, error: null } : (null as never));
-      const complete = failingProvider();
-      setAnswerProviderForTesting({ id: "p", complete, countInputTokens: vi.fn(async () => 400) });
-      expect(await askOwnedBranchAssistantTrialAction(input)).toMatchObject({ ok: false, code: "UNAVAILABLE", message: expect.stringContaining("budget") });
-      expect(called("es02_reserve_branch_trial_capped")[0].p_trial_cap_baisa).toBe(2);
-      expect(called("es02_reserve_branch_trial")).toHaveLength(0);
-      expect(complete).not.toHaveBeenCalled();
-      expect(called("ai_settle_admin_attempt")).toHaveLength(0);
-    } finally { vi.unstubAllEnvs(); }
+    setup(async name => name === "es02_reserve_branch_trial_capped" ? { data: { ok: false, code: "TRIAL_BUDGET_EXCEEDED", committedBaisa: 1.9, capBaisa: 2 }, error: null } : (null as never));
+    const complete = failingProvider();
+    setAnswerProviderForTesting({ id: "p", complete, countInputTokens: vi.fn(async () => 400) });
+    expect(await askOwnedBranchAssistantTrialAction(input)).toMatchObject({ ok: false, code: "TRIAL_BUDGET_EXCEEDED", retrySafe: false, requestId: expect.any(String) });
+    expect(called("es02_reserve_branch_trial_capped")[0].p_trial_cap_baisa).toBe(2);
+    expect(called("es02_reserve_branch_trial")).toHaveLength(0);
+    expect(complete).not.toHaveBeenCalled();
+    expect(called("ai_settle_admin_attempt")).toHaveLength(0);
   });
 
   it("fails closed on an invalid cap configuration before any reservation", async () => {
+    vi.stubEnv("AI_LIVE_ANSWERING", "true");
     vi.stubEnv("VELORA_TRIAL_BUDGET_CAP_BAISA", "abc");
-    try {
-      setup();
-      const complete = failingProvider();
-      setAnswerProviderForTesting({ id: "p", complete });
-      expect(await askOwnedBranchAssistantTrialAction(input)).toMatchObject({ ok: false, code: "UNAVAILABLE" });
-      expect(trustedRpc).not.toHaveBeenCalled();
-      expect(complete).not.toHaveBeenCalled();
-    } finally { vi.unstubAllEnvs(); }
+    setup();
+    const complete = failingProvider();
+    setAnswerProviderForTesting({ id: "p", complete });
+    expect(await askOwnedBranchAssistantTrialAction(input)).toMatchObject({ ok: false, code: "UNAVAILABLE" });
+    expect(trustedRpc).not.toHaveBeenCalled();
+    expect(complete).not.toHaveBeenCalled();
   });
 });
+

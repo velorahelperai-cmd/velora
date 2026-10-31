@@ -57,6 +57,19 @@ This opens a fresh headless browser, captures console errors, page exceptions, f
 - Verification: targeted hours, workspace, loading, step-host and reader tests 54/54; scoped ESLint and source-only typecheck passed. Project typecheck failed in existing `scripts/setup-journey-qa/action-adapter.ts` on `companyLabel` and `persona`. Authenticated local `/setup`: knowledge and language were visible again after navigation with correct branch data; hours initially showed checking rather than falsely unset. Team and launch remained locked by prerequisites. Network timing and production acceptance NOT RUN. No commit, deployment, or live provider action. Root cause of the reported live failed request remains unknown.
 ## Confirmed records
 
+### SETUP-STEP-BOUNCE-TRIAL-TO-HOURS-001 / sticky selection after refresh
+- Signature: `/setup` returns from Test assistant to Business hours while the user stays on the page (after shell enrichment or refresh).
+- Cause: checklist reapplied `nextWorkspaceSelection` on every read; workspace `useEffect` silently selected the first allowed step when active was `!allowed`.
+- Fix: `resumeApplied` once per branch mount; no silent `onSelectStep`; blocked reason banner; draft leaf stays mounted. Files: `paid-assistant-checklist.tsx`, `paid-setup-workspace.tsx` (+ interaction/unit tests).
+- Verification 2026-10-31: workspace selection tests 29/29 PASS on local HEAD `e94c7c4` + uncommitted fix. Live authenticated `/setup` NOT_RUN.
+
+### SETUP-TRIAL-SAFE-RETRY-FALSE-UNLOCK-001 / Send+آمنة after unresolved hours ask
+- Signature: Trial shows «طلب سابق لم يُحسم» then later Send + «إعادة محاولة آمنة» with 0/10 and generic UNAVAILABLE copy for «ما مواعيد العمل؟».
+- Evidence (read-only): TAG CITY branch `a268f9d8…`; hold `25bb9e66` → `rejected`/`setup_trial_timeout_no_provider_evidence` at 18:56:16Z (**review needed: zero cost without provider request/response/usage — no new financial write here**); follow-ups `068f8753`,`396c6d8a`,`170d2bab` rejected ~1s, `latency_ms=0`, null provider `request_id`, cost 0, `SETUP_TRIAL_PROVIDER_RESULT`.
+- Cause: post-start adapter failure (reach or claimed non-attempt) was settled `rejected` when `retrySafe||providerAttempted===false`; UI treated that as Send/retry authority. Key presence previously bypassed explicit `AI_LIVE_ANSWERING=false`.
+- Fix: classify by provider-reach evidence; adapter `retrySafe` alone never unlocks; kill switch off wins over key; live gate before reserve; Send only ready; sticky trial step retained.
+- Verification 2026-10-31: 141 PASS (guards/trial/workspace/adapters). C15 not closed without live successful answer.
+
 ### C15-TRIAL-ASK-PRE-RESERVE-001 / countTokens shape + hard block
 
 - Date: 2026-10-31. Status: LOCAL PARTIAL (code fixed unstaged; live re-ask / Commit / Push NOT_RUN). Base HEAD `5ac7229`.
@@ -127,3 +140,8 @@ ID/code/signature; status; first/last date; environment and commit (or uncommitt
 - Targeted evidence: 4 requested regressions initially failed; early-step-before-read race additionally failed then fixed. Final 24 hook tests +38 form tests PASS, 9 server action authorization tests PASS; scoped lint PASS and TypeScript PASS during implementation. Covers cross-account recovery, quota errors, corrupt/expired cache, online retry, late hydration, latest-edit retention, CAS/concurrency and no order creation during local step navigation.
 - Live browser limit: local session bootstrap returned TRANSPORT and 35.5s POST /setup (21s compilation); account screen failed before draft controller mounted. Native UI screenshot capture also timed out. No real-browser offline/reload PASS claimed; do not confuse mocked action regressions with live Supabase acceptance.
 - Next verification: once local session is responsive, type an incomplete form, refresh to confirm local recovery, complete first step, and verify the real draft RPC receipt. No Production/Commit/Push/Deploy performed.
+
+
+## STATUS_LOCKED — stale quarantine on a new auth journey (2026-10-31)
+
+Signature: new signup verification is blocked before OTP dispatch while an old session quarantine persists and broker returns UNAUTHENTICATED. Reproduced locally on fe5fed5 + WIP. Public auth entries may start a guest journey only after authoritative unauthenticated evidence; never erase quarantine or bypass the verification fence. Reject late restoration of the old boundary before private profile reads. Tests: account-session-response.test.tsx, verification-quarantine-journey.test.tsx, verify-email-fence.test.tsx. Hosted acceptance remains open; original browser storage was not captured. See Brain08 STATUS-LOCKED-STALE-QUARANTINE-20261031.

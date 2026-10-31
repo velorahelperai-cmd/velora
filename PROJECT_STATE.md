@@ -1,20 +1,18 @@
+# Current Session Index - SETUP-TRIAL-REACH-CLASSIFY-KILL-SWITCH-20261031 PUBLISH
+
+- **Rapid rejects root cause (ledger)**: `068f8753` / `396c6d8a` / `170d2bab` — `rejected`, `latency_ms=0`, null provider ids, ~1s wall. Matches post-start adapter failure settled `rejected` under old `retrySafe||!providerAttempted` unlock (e.g. Gemini 403/404 `retrySafe:true`), not start-alone proof. Prod env has `AI_GEMINI_API_KEY` only (no `AI_LIVE_ANSWERING`).
+- **25bb9e66**: zero-cost `rejected` via `setup_trial_timeout_no_provider_evidence` — **needs provider-reconciliation review; no new financial write in this package**.
+- **Fix**: classify by `providerAttempted` evidence (reached→uncertain/billed; never unlock from adapter `retrySafe` alone); explicit live kill switch overrides key; gate before reserve; sticky trial step + Send only in `ready`.
+- **Verification**: guards+trial+workspace+multi-model adapters **141 PASS**. Publish SHA pending below. Live successful trial answer **NOT claimed** (C15 remains open). No diagnosis-time ask/release.
+- Prior indexes retained below.
+
+# Current Session Index - SETUP-STEP-SELECTION-STICKY-20261031 LOCAL FIXED
+
+- Resume-once + no silent auto-nav + blocked reason; workspace tests 29/29. Superseded details folded into index above where overlapping.
+
 # Current Session Index - PERFORMANCE-OPTIMIZATION-TENANCY-REALTIME-20261031
 
-- **Root causes confirmed & verified**:
-  1. Tenancy access: `loadCompanyAccess` previously issued up to 3 separate sequential queries to `companies` (archive check, selected company, and `loadWorkspaceChoices`), causing extra round trips.
-  2. Branch realtime: `BranchInboxRealtime` triggered `router.refresh()` on every SSE `ready` and `lost`, inducing double page re-renders on periodic 45s connection rotation.
-  3. Database indexes review: The 3 proposed candidate indexes were evaluated against existing schema:
-     - `company_members`: already indexed on `(user_id, status, company_id)` via `company_members_user_status_idx`.
-     - `profiles(user_id)`: `user_id` is already PRIMARY KEY with unique index (`profiles_pkey`). Adding an index would duplicate the primary key.
-     - `companies`: Primary key on `id` is used for point lookups; filtering `archived_at` in application code is fast. A partial index is unjustified and no new production SQL is applied.
-- **Implemented changes**:
-  1. `src/lib/tenancy/access.ts`: Cached company display names during archive validation in `loadCompanyAccess`, eliminating the duplicate `loadWorkspaceChoices` query. Retained strict session checks, revocation validation, generation cookie binding, and kept `company_members` out of `loadAuth` to protect `requireVerifiedUser` and admin routes.
-  2. `src/components/app/branch-inbox-realtime.tsx`: Removed `router.refresh()` on normal SSE disconnect/rotation; added `onInboxEvent` for delta updates; preserved 250ms debouncing, reconnect/visibility catch-up, and revocation cleanup.
-- **Verification**:
-  - 8 test files / 96 tests PASS (`access-recovery.test.ts`, `access-contracts.test.ts`, `branch-inbox-realtime.test.tsx`, `branch-inbox-events.test.ts`, `inbox-events/route.test.ts`, `conversations-inbox.test.ts`, `inbox-failure-presentation.test.tsx`, `unified-inbox-safety.test.tsx`).
-  - Full TypeScript `tsc --noEmit` PASS (0 errors).
-  - Scoped ESLint PASS (0 errors).
-  - No new production SQL or background runner added; WhatsApp and AI provider calls untouched.
+- Tenancy access query reuse + branch realtime SSE refresh removal; 96 tests PASS. Details in prior handoff.
 
 # Current Session Index - KNOWLEDGE-FILE-WORKER-HOBBY-PUBLISH-20261031 DELIVERED
 

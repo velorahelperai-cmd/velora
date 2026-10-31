@@ -100,6 +100,8 @@ function PaidSetupBranchRead(p:PaidSetupFlowProps&{branchId:string;refreshVersio
  const [provisional,setProvisional]=useState(false);
  const branchRoot=useRef<HTMLDivElement>(null);
  const manualSelection=useRef(false);
+ /** Resume from storage/server runs once per branch mount; later refreshes keep the selection. */
+ const resumeApplied=useRef(false);
  const storageKey=`velora:setup:step:${p.scope.companyId}:${p.branchId}`;
  const [selected,setSelected]=useState<ChecklistStepId|null>(()=>{
    if(typeof window==="undefined")return null;
@@ -107,8 +109,6 @@ function PaidSetupBranchRead(p:PaidSetupFlowProps&{branchId:string;refreshVersio
      const saved=window.sessionStorage.getItem(storageKey);
      // Legacy reply-language step folded into knowledge (Knowledge Studio + languages).
      if(saved==="language")return "knowledge";
-     // Legacy team step removed from setup; recover via server progress selection.
-     if(saved==="team")return null;
      return saved&&order.includes(saved as ChecklistStepId)?(saved as ChecklistStepId):null;
    }catch{return null;}
  });
@@ -157,7 +157,12 @@ function PaidSetupBranchRead(p:PaidSetupFlowProps&{branchId:string;refreshVersio
    setProvisional(Boolean(shellFirst&&result.read.entitlement));
    setSnapshot(result);
    onWorkspaceRead?.(result);
-   setSelected(previous=>branchRoot.current?.querySelector('[data-setup-unsaved="true"]')?previous:nextWorkspaceSelection(result,previous));
+   setSelected(previous=>{
+    const unsaved=!!branchRoot.current?.querySelector('[data-setup-unsaved="true"]');
+    if(unsaved||manualSelection.current||resumeApplied.current)return previous;
+    resumeApplied.current=true;
+    return nextWorkspaceSelection(result,previous,Boolean(shellFirst&&result.read.entitlement));
+   });
    // Slow Meta proof never blocks the independently authorized hours editor.
    if(shellFirst&&result.read.entitlement){
     void reader.read('knowledge').catch(error=>{if(error instanceof SetupReadError&&(error.kind==='auth'||error.kind==='scope'))reportFailure(error);});
@@ -167,7 +172,13 @@ function PaidSetupBranchRead(p:PaidSetupFlowProps&{branchId:string;refreshVersio
      if(!active||request!==generation.current||!isCurrent())return;
      if(!enriched){setRefreshFailed(true);return;}
      if(enriched.scope.expectedAccountId!==input.expectedAccountId||enriched.scope.companyId!==input.companyId||enriched.scope.branchId!==branchId||!paidChecklistFromRead(enriched.read,input)){setSnapshot(null);onWorkspaceRead?.(null);return;}
-     setProvisional(false);setSnapshot(enriched);onWorkspaceRead?.(enriched);setSelected(previous=>manualSelection.current||branchRoot.current?.querySelector('[data-setup-unsaved="true"]')?previous:nextWorkspaceSelection(enriched,previous));
+     setProvisional(false);setSnapshot(enriched);onWorkspaceRead?.(enriched);
+     setSelected(previous=>{
+      const unsaved=!!branchRoot.current?.querySelector('[data-setup-unsaved="true"]');
+      if(unsaved||manualSelection.current||resumeApplied.current)return previous;
+      resumeApplied.current=true;
+      return nextWorkspaceSelection(enriched,previous);
+     });
    }).catch(reportFailure);
   }).catch(error=>{reportFailure(error);if(active&&request===generation.current&&isCurrent()&&!(error instanceof Error&&(error.name==='AbortError'||error.message==='SCOPE_CHANGED')))setSnapshot(previous=>previous===undefined?null:previous);}).finally(endTiming);
   return()=>{active=false;};

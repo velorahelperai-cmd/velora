@@ -14,7 +14,7 @@ export type TrialMessage={id:string;executionId?:string|null;scope:TrialScope;ve
 export type TrialSnapshot={scope:TrialScope;version:number;knowledgeRevision:string;branchLabel:string;businessType:string;canAsk:boolean|null;handoffPreview?:"human_request"|"sensitive";recoveryNotice?:"context_changed";trialAllowance?:{limit:number;used:number};pendingOperation?:{id:string;status:string;recoverable:boolean}|null;messages:TrialMessage[]};
 export type PaidAssistantTrialProps={
  onRecover?:(operationId:string)=>void|Promise<void>;
- /** Zero-cost release for non-recoverable uncertain holds with no provider evidence. */
+ /** Compatibility callback only; uncertain holds cannot be released without evidence. */
  onRelease?:(operationId:string)=>void|Promise<void>;
  onRefresh?:()=>void|Promise<void>;
  locale:"ar"|"en";scope:TrialScope;boundaryFingerprint:string;snapshot:TrialSnapshot|null;
@@ -46,6 +46,7 @@ export function trialSuggestions(type:string,locale:"ar"|"en"):string[]{
  return [["ما مواعيد العمل؟","What are the working hours?"],...specific].slice(0,3).map(pair=>pair[locale==="ar"?0:1]);
 }
 export function trialFailureText(code:AnswerFailure["code"],ar:boolean,detail?:string):string{
+ if(detail==="TRIAL_BUDGET_EXCEEDED")return ar?"توقف الطلب لأن الحد المسموح لميزانية التجربة لا يكفي. لم يبدأ توليد الإجابة. يلزم التحقق من الميزانية قبل المحاولة مجددًا.":"The request was blocked by the trial budget limit. Answer generation did not start. The budget must be reviewed before another attempt.";
  if(detail==="TRIAL_LIMIT_REACHED")return ar?"اكتملت حصة التجربة المجانية (10/10) لهذا الفرع.":"All 10 free trial replies have been used for this branch.";
  if(detail==="CONTEXT_CHANGED")return ar?"تم تحديث بيانات الفرع. حدّث الصفحة ثم أعد المحاولة.":"Branch context was updated. Refresh and try again.";
  if(detail==="RATE_LIMITED"||detail==="TOO_MANY_REQUESTS")return ar?"تم إرسال طلبات متتالية بسرعة. انتظر قليلًا ثم أعد المحاولة.":"Too many rapid requests. Wait a moment and try again.";
@@ -62,7 +63,7 @@ export function trialFailureText(code:AnswerFailure["code"],ar:boolean,detail?:s
  UNAUTHENTICATED:["انتهت الجلسة. سجّل الدخول مجددًا.","Session expired. Please sign in again."],
  UNVERIFIED:["تحقّق من الحساب أولًا.","Verify your account first."],
  FORBIDDEN:["لا توجد صلاحية لتجربة هذا الفرع.","You do not have permission to test this branch."],
- UNAVAILABLE:["تعذّر الحصول على رد الآن. يمكنك المحاولة مرة أخرى.","Could not get a reply right now. You may check status or try again."],
+ UNAVAILABLE:["تعذّر الحصول على رد الآن. تحقّق من حالة الطلب قبل إرسال سؤال جديد.","Could not get a reply right now. Check request status before sending another question."],
  };return (pair[code]??pair.UNAVAILABLE)[ar?0:1];
 }
 const CHAR_WARN_AT=Math.floor(ANSWER_MAX_QUESTION_CHARS*0.8);
@@ -98,9 +99,11 @@ function TrialForm(p:PaidAssistantTrialProps & {snapshot:TrialSnapshot}){
  },[p.snapshot.messages,submitted,pending,p.state.phase]);
 
  const limitReached=!!p.snapshot.trialAllowance&&p.snapshot.trialAllowance.limit>0&&p.snapshot.trialAllowance.used>=p.snapshot.trialAllowance.limit;
- const canDispatchPhase=p.state.phase==="ready"||(p.state.phase==="error"&&p.state.failure?.retrySafe===true);
+ // Error/unknown never reopen free Send. Retry is a separate control gated on
+ // explicit server retrySafe + matching requestId — button label is not authority.
+ const canDispatchPhase=p.state.phase==="ready";
  const blocked=pending||uncertain||!!p.snapshot.pendingOperation||!canDispatchPhase||p.snapshot.canAsk!==true||limitReached||!p.onAsk;
- const canRetry=!pending&&!uncertain&&p.state.phase==="error"&&p.state.failure?.retrySafe===true&&p.state.canRetry===true&&!!p.state.requestId?.trim()&&p.state.failure.requestId===p.state.requestId&&!!p.onRetry;
+ const canRetry=!pending&&!uncertain&&p.state.phase==="error"&&p.state.failure?.retrySafe===true&&p.state.canRetry===true&&!!p.state.requestId?.trim()&&p.state.failure.requestId===p.state.requestId&&p.snapshot.canAsk===true&&!p.snapshot.pendingOperation&&!!p.onRetry;
  const context:TrialContext={...p.scope,expectedVersion:p.snapshot.version,knowledgeRevision:p.snapshot.knowledgeRevision};
  const persona=p.persona==="level_1"||p.persona==="level_2"||p.persona==="level_3"?p.persona:null;
  const personaName=persona?PERSONA_NAMES[persona][ar?"ar":"en"]:t("المساعد","Assistant");
@@ -246,7 +249,7 @@ function TrialForm(p:PaidAssistantTrialProps & {snapshot:TrialSnapshot}){
     <p>{t("طلب سابق لم يُحسم بعد.","A previous request is still unresolved.")}</p>
     <div className={styles.pendingActions}>
      {p.snapshot.pendingOperation.recoverable&&p.onRecover&&<button type="button" className={styles.secondary} disabled={pending} onClick={()=>{if(!pending&&p.isCurrent())void dispatch(()=>p.onRecover?.(p.snapshot.pendingOperation!.id));}}>{t("استعادة الرد","Recover reply")}</button>}
-     {!p.snapshot.pendingOperation.recoverable&&p.snapshot.pendingOperation.status==="uncertain"&&p.onRelease&&<button type="button" className={styles.secondary} disabled={pending} onClick={()=>{if(!pending&&p.isCurrent())void dispatch(()=>p.onRelease?.(p.snapshot.pendingOperation!.id));}}>{t("تحرير الطلب","Release request")}</button>}
+     {!p.snapshot.pendingOperation.recoverable&&p.snapshot.pendingOperation.status==="uncertain"&&<p>{t("بانتظار مراجعة نتيجة الطلب قبل إرسال سؤال جديد.","The request outcome needs review before another question can be sent.")}</p>}
      {p.onRefresh&&<button type="button" className={styles.secondary} disabled={pending} onClick={()=>{if(!pending&&p.isCurrent())void dispatch(()=>p.onRefresh?.());}}>{t("تحديث الحالة","Refresh status")}</button>}
     </div>
    </div>}

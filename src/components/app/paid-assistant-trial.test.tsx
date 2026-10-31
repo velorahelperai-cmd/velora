@@ -19,15 +19,17 @@ it('recovers saved result without asking the provider and explains discarded obs
  }finally{await act(async()=>root.unmount());vi.unstubAllGlobals();}
  expect(render({snapshot:{...props.snapshot!,recoveryNotice:'context_changed'}})).toContain('without using quota');
 });
-it('offers zero-cost release for non-recoverable uncertain holds without asking the provider',async()=>{
+it('keeps uncertain holds pending and refreshes without offering an unproven release',async()=>{
  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);
- const host=document.createElement('div'),root=createRoot(host),onRelease=vi.fn(),onAsk=vi.fn(),onRecover=vi.fn();
+ const host=document.createElement('div'),root=createRoot(host),onRelease=vi.fn(),onAsk=vi.fn(),onRecover=vi.fn(),onRefresh=vi.fn();
  try{
-  await act(async()=>root.render(createElement(PaidAssistantTrial,{...props,onRelease,onRecover,onAsk,snapshot:{...props.snapshot!,canAsk:false,pendingOperation:{id:'stuck-op',status:'uncertain',recoverable:false}}})));
+  await act(async()=>root.render(createElement(PaidAssistantTrial,{...props,onRelease,onRecover,onAsk,onRefresh,snapshot:{...props.snapshot!,canAsk:false,pendingOperation:{id:'stuck-op',status:'uncertain',recoverable:false}}})));
   expect(Array.from(host.querySelectorAll('button')).some(b=>b.textContent==='Recover reply')).toBe(false);
-  const button=Array.from(host.querySelectorAll('button')).find(b=>b.textContent==='Release request')!;
+  expect(Array.from(host.querySelectorAll('button')).some(b=>b.textContent==='Release request')).toBe(false);
+  const button=Array.from(host.querySelectorAll('button')).find(b=>b.textContent==='Refresh status')!;
   await act(async()=>button.click());
-  expect(onRelease).toHaveBeenCalledWith('stuck-op');
+  expect(onRelease).not.toHaveBeenCalled();
+  expect(onRefresh).toHaveBeenCalledTimes(1);
   expect(onAsk).not.toHaveBeenCalled();
   expect(onRecover).not.toHaveBeenCalled();
  }finally{await act(async()=>root.unmount());vi.unstubAllGlobals();}
@@ -61,8 +63,10 @@ it("covers every named catalog group with distinct sector prompts",()=>{for(cons
 it.each(["loading","pending","unknown","unavailable"] as const)("blocks requests in %s",phase=>{const html=render({state:{...props.state,phase}});expect(html).toContain(phase==="loading"||phase==="unavailable"?'role="status"':'disabled=""');});
 it.each([false,null])("respects canAsk %s",canAsk=>expect(render({snapshot:{...props.snapshot!,canAsk}})).toMatch(/type="submit"[^>]*disabled=""/));
 it.each([false,undefined])("does not retry when retrySafe=%s even if host capability true",retrySafe=>{const html=render({state:{...props.state,phase:"error",requestId:"r",failure:{ok:false,code:"UNAVAILABLE",retrySafe},canRetry:true},onRetry:()=>{}});expect(html).toMatch(/type="button"[^>]*disabled=""[^>]*>Retry safely/);});
-it("allows retry only with matching request and explicit safe/capability proofs",()=>{expect(render({state:{...props.state,phase:"error",requestId:"r",failure:{ok:false,code:"UNAVAILABLE",retrySafe:true,requestId:"r"},canRetry:true},onRetry:()=>{}})).toMatch(/type="button"(?![^>]*disabled)[^>]*>Retry safely/);});
+it("allows retry only with matching request, canAsk, and explicit safe/capability proofs",()=>{expect(render({state:{...props.state,phase:"error",requestId:"r",failure:{ok:false,code:"UNAVAILABLE",retrySafe:true,requestId:"r"},canRetry:true},onRetry:()=>{}})).toMatch(/type="button"(?![^>]*disabled)[^>]*>Retry safely/);expect(render({state:{...props.state,phase:"error",requestId:"r",failure:{ok:false,code:"UNAVAILABLE",retrySafe:true,requestId:"r"},canRetry:true},onRetry:()=>{}})).toMatch(/type="submit"[^>]*disabled=""/);});
+it("blocks send during error even when retrySafe is true",()=>{expect(render({state:{...props.state,phase:"error",requestId:"r",failure:{ok:false,code:"UNAVAILABLE",retrySafe:true,requestId:"r"},canRetry:true},onRetry:()=>{}})).toMatch(/type="submit"[^>]*disabled=""/);});
 it.each([undefined,"","request-A"])("blocks safe failure %s from authorizing current request-B",requestId=>{expect(render({state:{...props.state,phase:"error",requestId:"request-B",failure:{ok:false,code:"UNAVAILABLE",retrySafe:true,requestId},canRetry:true},onRetry:()=>{}})).toMatch(/type="button"[^>]*disabled=""[^>]*>Retry safely/);});
+it("blocks retry when a pending hold remains even if failure claims retrySafe",()=>{expect(render({snapshot:{...props.snapshot!,canAsk:true,pendingOperation:{id:"hold",status:"uncertain",recoverable:false}},state:{...props.state,phase:"error",requestId:"r",failure:{ok:false,code:"UNAVAILABLE",retrySafe:true,requestId:"r"},canRetry:true},onRetry:()=>{}})).toMatch(/type="button"[^>]*disabled=""[^>]*>Retry safely/);});
 const message:TrialMessage={id:"m",scope,version:1,knowledgeRevision:"k1",question:"Question?",origin:"synthetic",result:{ok:true,text:"EXAMPLE_RESULT",citations:[],usage:{promptChars:1,contextChars:1,sourceCount:0}}};
 it("labels synthetic messages, renders host results without readiness control",()=>{const html=render({snapshot:{...props.snapshot!,messages:[message]}});expect(html).toContain("EXAMPLE_RESULT");expect(html).toContain("UI example only");expect(html).not.toContain("Sources (");expect(html).not.toContain("Launch");});
 it.each([{scope:{...scope,expectedAccountId:"other"}},{scope:{...scope,companyId:"other"}},{scope:{...scope,branchId:"other"}},{version:2},{knowledgeRevision:"old"}])("hides stale message %#",patch=>expect(render({snapshot:{...props.snapshot!,messages:[{...message,...patch}]}})).not.toContain("EXAMPLE_RESULT"));
@@ -114,3 +118,16 @@ it("blocks sending and disables composer when 10/10 free trial replies are reach
  expect(html).toMatch(/type="submit"[^>]*disabled=""/);
 });
 it("resets drafts on all identity/version/knowledge/capture boundaries",()=>{const key=trialViewKey(props);for(const field of ["expectedAccountId","companyId","branchId"] as const)expect(trialViewKey({...props,scope:{...scope,[field]:"new"}})).not.toBe(key);expect(trialViewKey({...props,boundaryFingerprint:"new"})).not.toBe(key);expect(trialViewKey({...props,snapshot:{...props.snapshot!,version:2}})).not.toBe(key);expect(trialViewKey({...props,snapshot:{...props.snapshot!,knowledgeRevision:"k2"}})).not.toBe(key);expect(trialViewKey({...props,locale:"ar"})).toBe(key);});
+
+it('shows a budget blocker with no answer or retry dispatch permission',async()=>{
+ vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);
+ const host=document.createElement('div'),root=createRoot(host),onAsk=vi.fn(),onRetry=vi.fn(),onRefresh=vi.fn();
+ try{
+  await act(async()=>root.render(createElement(PaidAssistantTrial,{...props,onAsk,onRetry,onRefresh,state:{...props.state,phase:'error',requestId:'budget-request',canRetry:false,failure:{ok:false,code:'UNAVAILABLE',message:'TRIAL_BUDGET_EXCEEDED',requestId:'budget-request',retrySafe:false}}})));
+  expect(host.textContent).toContain('blocked by the trial budget limit');expect(host.textContent).toContain('Answer generation did not start');
+  expect(host.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(true);
+  expect(Array.from(host.querySelectorAll('button')).find(button=>button.textContent==='Retry safely')!.disabled).toBe(true);
+  await act(async()=>Array.from(host.querySelectorAll('button')).find(button=>button.textContent==='Check request status')!.click());
+  expect(onRefresh).toHaveBeenCalledOnce();expect(onAsk).not.toHaveBeenCalled();expect(onRetry).not.toHaveBeenCalled();
+ }finally{await act(async()=>root.unmount());vi.unstubAllGlobals();}
+});

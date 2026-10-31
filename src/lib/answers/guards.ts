@@ -16,14 +16,28 @@ export function assertEligibleAnswerChunks(chunks: AnswerContextChunk[]) {
   }
 }
 
-/** Integration-ready: enabled when server key or live flag is configured. */
+type LiveFlag = "on" | "off" | "unset";
+
+/** Parse AI_LIVE_ANSWERING / AI_LIVE_ANSWERING_ENABLED. Explicit off is a kill switch. */
+export function readLiveAnsweringFlag(): LiveFlag {
+  const raw = process.env.AI_LIVE_ANSWERING ?? process.env.AI_LIVE_ANSWERING_ENABLED;
+  if (raw === undefined || raw.trim() === "") return "unset";
+  const value = raw.trim().toLowerCase();
+  if (value === "false" || value === "0" || value === "off" || value === "no") return "off";
+  if (value === "true" || value === "1" || value === "on" || value === "yes") return "on";
+  // Unknown values fail closed (treat as off) so typos cannot accidentally enable spend.
+  return "off";
+}
+
+/**
+ * Live answering gate.
+ * Contract: an explicit off/false kill switch wins over key presence.
+ * Unset + key may enable outside hermetic tests; tests stay off unless flag is on.
+ */
 export function isLiveAnsweringEnabled() {
-  if (process.env.NODE_ENV === "test" && process.env.AI_LIVE_ANSWERING !== "true") {
-    return false;
-  }
-  return (
-    process.env.AI_LIVE_ANSWERING === "true" ||
-    process.env.AI_LIVE_ANSWERING_ENABLED === "true" ||
-    Boolean(getSecureProviderKey("google"))
-  );
+  const flag = readLiveAnsweringFlag();
+  if (flag === "off") return false;
+  if (flag === "on") return true;
+  if (process.env.NODE_ENV === "test" || process.env.VITEST === "true") return false;
+  return Boolean(getSecureProviderKey("google"));
 }

@@ -27,17 +27,25 @@ it.each(["foreign","unpaid","unavailable","stale","empty"] as const)("fails clos
  const html=render(kind==="foreign"?{scope:{...scope,branchId:"foreign"}}:kind==="unpaid"?{read:{...read,entitlement:null}}:kind==="unavailable"?{read:{...read,sourceStatus:"unavailable"}}:kind==="stale"?{isCurrent:()=>false}:{read:null});
  expect(html).not.toContain("data-step-id");expect(html).not.toContain('type="radio"');
 });
-it("cannot open a locked or unmounted step from controlled selection",()=>{
+it("keeps a locked step mounted with an explicit block reason instead of silent navigation",()=>{
  expect(workspaceStepAllowed(read,scope,"hours",props.availableStepIds)).toBe(true);
  expect(workspaceStepAllowed(read,scope,"knowledge",props.availableStepIds)).toBe(true);
  expect(workspaceStepAllowed(read,scope,"test",props.availableStepIds)).toBe(false);
- expect(render({activeStepId:"test",renderStep:()=>{throw Error("Locked leaf mounted");}})).toContain("Choose an available step");
+ expect(workspaceStepAllowed(read,scope,"team",props.availableStepIds)).toBe(true);
+ expect(workspaceStepAllowed(read,scope,"launch",props.availableStepIds)).toBe(true);
+ expect(workspaceStepAllowed(read,{...scope,branchId:"foreign"},"launch",props.availableStepIds)).toBe(false);
+ expect(read.launch.canRequest).toBe(false);
+ const locked=render({activeStepId:"test",renderStep:()=>createElement("p",null,"Trial draft preserved")});
+ expect(locked).toContain('data-setup-step-blocked="true"');
+ expect(locked).toContain("Waiting for: Knowledge &amp; languages");
+ expect(locked).toContain("Trial draft preserved");
+ expect(locked).not.toContain("Choose an available step");
  expect(render({availableStepIds:[]})).not.toContain('type="radio"');
  expect(render()).toContain('data-step-id="hours"');
 });
-it("keeps launch gated even after all other statuses are verified",()=>{
+it("allows launch review without changing negative server launch authority",()=>{
  const complete={...read,steps:read.steps.map(s=>({...s,status:"verified" as const}))};
- expect(workspaceStepAllowed(complete,scope,"launch",props.availableStepIds)).toBe(false);
+ expect(workspaceStepAllowed(complete,scope,"launch",props.availableStepIds)).toBe(true);expect(complete.launch.canRequest).toBe(false);
 });
 it("only mounts a released leaf after authoritative dependencies become ready",()=>{
  const updated={...read,steps:read.steps.map(s=>s.id==="hours"?{...s,status:"verified" as const}:s.id==="knowledge"?{...s,status:"pending" as const,actionId:"save_knowledge"}:s),progress:{...read.progress,verified:1}};
@@ -54,12 +62,15 @@ it("advances within the page only after server-confirmed channel and matching pr
  expect(nextWorkspaceSelection({...snapshot,confirmedChannels:[]},"whatsapp")).toBe("whatsapp");
  expect(nextWorkspaceSelection({...snapshot,connectionReads:{whatsapp:{...proof,expectedAccountId:"old"}}},"whatsapp")).toBe("whatsapp");
  expect(nextWorkspaceSelection(snapshot,"hours")).toBe("hours");
+ expect(nextWorkspaceSelection({scope,read,connectionReads:{},confirmedChannels:[]},"team")).toBe("team");
+ expect(nextWorkspaceSelection({scope,read,connectionReads:{},confirmedChannels:[]},"launch")).toBe("launch");
  const hoursSaved={scope,read:{...read,steps:read.steps.map(s=>s.id==="hours"?{...s,status:"verified" as const,reasonCodes:[]}:s.id==="knowledge"?{...s,status:"pending" as const,reasonCodes:["setup_incomplete"]}:s),progress:{...read.progress,verified:1}},connectionReads:{},confirmedChannels:[]};
  expect(nextWorkspaceSelection(hoursSaved,"hours")).toBe("knowledge");
  expect(nextWorkspaceSelection(hoursSaved,null)).toBe("knowledge");
  const knowledgeSaved={scope,read:{...read,steps:read.steps.map(s=>s.id==="hours"?{...s,status:"verified" as const,reasonCodes:[]}:s.id==="knowledge"?{...s,status:"verified" as const,reasonCodes:[]}:s.id==="assistant_test"?{...s,status:"pending" as const,reasonCodes:["setup_incomplete"]}:s),progress:{...read.progress,verified:2}},connectionReads:{},confirmedChannels:[]};
  expect(nextWorkspaceSelection(knowledgeSaved,"knowledge")).toBe("test");
  expect(nextWorkspaceSelection(knowledgeSaved,"hours")).toBe("test");
+ expect(nextWorkspaceSelection({scope,read,connectionReads:{},confirmedChannels:[]},"test",true)).toBe("test");
  // Stuck sessionStorage "test" while assistant_test is still unavailable (shell / uncomposed readiness).
  expect(nextWorkspaceSelection({scope,read,connectionReads:{},confirmedChannels:[]},"test")).toBe("hours");
  const blockedTrial={scope,read:{...read,steps:read.steps.map(s=>s.id==="hours"?{...s,status:"verified" as const,reasonCodes:[]}:s.id==="knowledge"?{...s,status:"pending" as const,reasonCodes:["setup_incomplete"]}:s.id==="assistant_test"?{...s,status:"blocked" as const,reasonCodes:["awaiting_required_steps"]}:s),progress:{...read.progress,verified:1}},connectionReads:{},confirmedChannels:[]};

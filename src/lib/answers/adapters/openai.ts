@@ -96,7 +96,8 @@ export class OpenAIAnswerAdapter implements AnswerProvider {
       };
     }
 
-    if (!isLiveAnsweringEnabled() && !(process.env.NODE_ENV === "test" && this.injectedTestClient)) {
+    const hermeticTest = process.env.NODE_ENV === "test" || process.env.VITEST === "true";
+    if (!isLiveAnsweringEnabled() && !(hermeticTest && this.injectedTestClient)) {
       return {
         ok: false,
         code: "NEEDS_SETUP",
