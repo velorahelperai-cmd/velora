@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { dashboardBillingSnapshot } from "./dashboard-billing-model";
 
 const companyId = "company-real";
@@ -7,6 +7,8 @@ const evidence={companyId,billingPaid:true,operationalEligible:true,channelReady
 const usage = { company_id:companyId, month_start: "2026-10-01", successful_automated_outbound: 12, held_outbound_capacity: 3, cap: 20 };
 
 describe("customer dashboard billing projection", () => {
+  beforeEach(() => { vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-10-15T00:00:00Z")); });
+  afterEach(() => { vi.restoreAllMocks(); });
   it("counts reserved capacity against remaining balance", () => {
     expect(dashboardBillingSnapshot(companyId, journey, usage, evidence)).toMatchObject({ status: "ready", sent: 12, held: 3, remaining: 5, usedPercent: 75 });
   });
@@ -23,5 +25,11 @@ describe("customer dashboard billing projection", () => {
   it("preserves a missing quota and clamps an exhausted quota", () => {
     expect(dashboardBillingSnapshot(companyId, journey, { ...usage, cap: null }, evidence)).toMatchObject({ status: "ready", remaining: null, usedPercent: null });
     expect(dashboardBillingSnapshot(companyId, journey, { ...usage, cap: 10 }, evidence)).toMatchObject({ status: "ready", remaining: 0, usedPercent: 100 });
+  });
+  it.each(["2026-11-01T00:00:00Z", "2026-11-02T00:00:00Z"])("does not expose spendable capacity after entitlement expires at %s", now => {
+    vi.mocked(Date.now).mockReturnValue(Date.parse(now));
+    expect(dashboardBillingSnapshot(companyId, journey, usage, evidence)).toMatchObject({
+      status: "ready", operationalEligible: false, sent: 12, held: 3, remaining: null, usedPercent: null,
+    });
   });
 });
