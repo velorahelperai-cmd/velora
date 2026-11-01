@@ -158,7 +158,7 @@ describe("paid-assistant-trial-actions", () => {
     const operationId='66666666-6666-4666-8666-666666666666';const scope={expectedAccountId:VALID_ACCOUNT_ID,companyId:VALID_COMPANY_ID,branchId:VALID_BRANCH_ID};
     const handle={id:'int_saved',modelId:'gemini-3.8-flash' as const,startedAt:1,promptChars:10,contextChars:20,sourceCount:1};
     const complete=vi.fn(),startTrial=vi.fn();
-    const retrieveTrial=vi.fn(async()=>kind==='pending'?{pending:true as const,handle}:kind==='unknown'?{ok:false as const,code:'UNAVAILABLE' as const,providerAttempted:true,retrySafe:false,providerErrorCode:'GEMINI_USAGE_UNVERIFIED' as const}:{ok:true as const,text:'الأحد 10:00–14:00',citations:[],usage:{promptChars:10,contextChars:20,sourceCount:1,promptTokens:100,completionTokens:50,cachedTokens:0,reasoningTokens:30,totalTokens:150,requestId:'int_saved',responseId:'int_saved',actualModelId:'gemini-3.8-flash',latencyMs:100}});
+    const retrieveTrial=vi.fn(async()=>kind==='pending'?{pending:true as const,handle}:kind==='unknown'?{ok:false as const,code:'UNAVAILABLE' as const,providerAttempted:true,retrySafe:false,providerErrorCode:'GEMINI_USAGE_UNVERIFIED' as const,latencyMs:455}:{ok:true as const,text:'الأحد 10:00–14:00',citations:[],usage:{promptChars:10,contextChars:20,sourceCount:1,promptTokens:100,completionTokens:50,cachedTokens:0,reasoningTokens:30,totalTokens:150,requestId:'int_saved',responseId:'int_saved',actualModelId:'gemini-3.8-flash',latencyMs:100}});
     setAnswerProviderForTesting({id:'p',complete,startTrial,retrieveTrial});
     trustedRpc=vi.fn(async(name:string)=>({error:null,data:name==='es02_load_trial_provider'?{ok:kind!=='denied',data:{handle,question:'Q',sessionId:OTHER_ACCOUNT_ID,pricing:realModelPricing('gemini-3.8-flash'),state:'running',checkpoint:kind==='checkpoint'}}:name==='ai_settle_admin_attempt'?true:{ok:true}}));
     rpcMock.mockResolvedValue({error:null,data:{ok:true,data:{snapshot:{scope,version:1,knowledgeRevision:'rev_1',canAsk:false,messages:[{executionId:operationId,origin:'engine'}]}}}});
@@ -169,7 +169,7 @@ describe("paid-assistant-trial-actions", () => {
     if(kind==='pending'||kind==='denied'){expect(calls).toEqual(['es02_load_trial_provider']);}
     if(kind==='checkpoint'||kind==='denied')expect(retrieveTrial).not.toHaveBeenCalled();
     if(kind==='success')expect(trustedRpc).toHaveBeenCalledWith('es02_checkpoint_branch_trial_result',expect.objectContaining({p_session_id:OTHER_ACCOUNT_ID,p_result:expect.objectContaining({requestId:'int_saved',usage:expect.objectContaining({completionTokens:50,reasoningTokens:30})})}));
-    if(kind==='unknown')expect(trustedRpc).toHaveBeenCalledWith('ai_settle_admin_attempt',expect.objectContaining({p_status:'uncertain',p_cost_baisa:null,p_cost_usd:null}));
+    if(kind==='unknown')expect(trustedRpc).toHaveBeenCalledWith('ai_settle_admin_attempt',expect.objectContaining({p_status:'uncertain',p_cost_baisa:null,p_cost_usd:null,p_latency_ms:455}));
   });
 
   it("does not manufacture zero cost when an uncertain hold lacks provider evidence", async () => {

@@ -506,7 +506,7 @@ export async function recoverOwnedBranchAssistantTrialAction(input: TrialScope &
     }catch{priced=null;}
     if(!completion.ok||!priced){
       const errorCode=!completion.ok?completion.providerErrorCode??completion.code:'GEMINI_USAGE_UNVERIFIED';
-      const settlement=await Promise.resolve(writer.rpc('ai_settle_admin_attempt' as never,{p_id:input.operationId,p_status:priced?'incomplete':'uncertain',p_cost_usd:priced?.costUsd??null,p_cost_baisa:priced?.costBaisa??null,p_usage:priced?.usage??null,p_request_id:stored.handle.id,p_error_code:errorCode,p_latency_ms:usage?.latencyMs??0,p_response_id:usage?.responseId??null,p_actual_model_id:usage?.actualModelId??null} as never)).catch(()=>null);
+      const settlement=await Promise.resolve(writer.rpc('ai_settle_admin_attempt' as never,{p_id:input.operationId,p_status:priced?'incomplete':'uncertain',p_cost_usd:priced?.costUsd??null,p_cost_baisa:priced?.costBaisa??null,p_usage:priced?.usage??null,p_request_id:stored.handle.id,p_error_code:errorCode,p_latency_ms:usage?.latencyMs??(!completion.ok?completion.latencyMs:undefined)??0,p_response_id:usage?.responseId??null,p_actual_model_id:usage?.actualModelId??null} as never)).catch(()=>null);
       logEvent('warn','es02.branch_assistant_trial.background_failed',{operation_id:input.operationId,error_code:errorCode,detail:'Provider terminal result; generation was not retried.'});
       if(!settlement||settlement.error||settlement.data!==true)return {ok:false,code:'TRIAL_PENDING',message:'Terminal provider result needs accounting recovery'};
       const fresh=await readOwnedBranchAssistantTrialAction(input);
