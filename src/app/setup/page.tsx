@@ -19,6 +19,9 @@ import {masterJourneyEnabled} from '@/lib/master-journey/rollout';
 
 export const metadata: Metadata = { title: "Prepare your business · Velora" };
 
+// Server Actions inherit the route limit. Leave time to settle after generation.
+export const maxDuration = 120;
+
 export default async function Page() {
   const { returnTo, preferredNext } = setupReturnContext((await headers()).get("x-velora-return-path"));
   const access = await getCompanyAccess();

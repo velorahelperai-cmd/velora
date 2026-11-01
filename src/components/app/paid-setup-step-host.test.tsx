@@ -117,6 +117,25 @@ it('shows a valid cached branch snapshot immediately when returning to knowledge
  expect(html).toContain('3 / 10');
 });
 
+it('waits through provider generation and settlement without losing a late answer or resending',async()=>{
+ vi.useFakeTimers();vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);
+ const scope={expectedAccountId:baseProps.scope.expectedAccountId,companyId:baseProps.scope.companyId,branchId:baseProps.scope.branchId};
+ const snapshot={scope,version:1,knowledgeRevision:'k1',branchLabel:'Main',businessType:'restaurant',canAsk:true,messages:[]};
+ vi.mocked(readOwnedBranchAssistantTrialAction).mockResolvedValueOnce(snapshot);
+ const ask=vi.mocked(askOwnedBranchAssistantTrialAction);ask.mockClear();
+ let finish!:(value:Awaited<ReturnType<typeof askOwnedBranchAssistantTrialAction>>)=>void;
+ ask.mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve;}));
+ const host=document.createElement('div'),root=createRoot(host);const onRefresh=vi.fn();
+ try{
+  await act(async()=>root.render(createElement(PaidSetupStepHost,{...baseProps,step:'test',onRefresh})));
+  await act(async()=>Array.from(host.querySelectorAll('button')).find(button=>button.textContent==='What are the working hours?')!.click());
+  await act(async()=>vi.advanceTimersByTimeAsync(65_000));
+  expect(host.textContent).not.toContain('The request outcome needs review');
+  await act(async()=>finish({ok:true,snapshot}));
+  expect(onRefresh).toHaveBeenCalledOnce();expect(ask).toHaveBeenCalledOnce();
+ }finally{await act(async()=>root.unmount());ask.mockClear();vi.useRealTimers();vi.unstubAllGlobals();}
+});
+
 it('preserves the budget failure detail and retry denial from action through the real trial host',async()=>{
  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);
  const scope={expectedAccountId:baseProps.scope.expectedAccountId,companyId:baseProps.scope.companyId,branchId:baseProps.scope.branchId};

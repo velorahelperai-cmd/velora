@@ -618,7 +618,7 @@ describe("trial budget cap, billed-but-unusable calls and settlement failure", (
     expect(await askOwnedBranchAssistantTrialAction(input)).toMatchObject({ ok: false, code: "UNAVAILABLE" });
     // Counting failure must not hard-block before reservation; UTF-8 bound still reserves.
     expect(called("es02_reserve_branch_trial_capped")).toHaveLength(1);
-    expect(complete).toHaveBeenCalled();
+    expect(complete).toHaveBeenCalledWith(expect.objectContaining({ timeoutMs: 60_000, maxOutputTokens: 256 }));
     setup();
     setAnswerProviderForTesting({ id: "p", complete, countInputTokens: vi.fn(async () => 400) });
     await askOwnedBranchAssistantTrialAction(input);

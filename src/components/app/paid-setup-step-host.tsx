@@ -301,7 +301,8 @@ function StepHost(props: PaidSetupStepHostProps) {
     setTrialPhase("pending");
     setTrialFailure(null);
     setTrialRequestId(null);
-    const res = await runMutation(askOwnedBranchAssistantTrialAction(input), 60_000).catch(() => null);
+    // Covers input counting (30s), generation (60s), and receipt settlement.
+    const res = await runMutation(askOwnedBranchAssistantTrialAction(input), 150_000).catch(() => null);
     if (!isCurrent()) return;
     if (res?.ok) {
       setTrialSnap(res.snapshot);

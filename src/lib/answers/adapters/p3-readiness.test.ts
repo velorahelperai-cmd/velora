@@ -67,8 +67,10 @@ describe("P3 provider request boundaries", () => {
     const client = new GoogleGenAI({ apiKey: "unit-test-not-a-key", httpOptions: { fetch: transport, retryOptions: { attempts: 1 } } });
     const adapter = new GeminiAnswerAdapter({ client });
     await expect(adapter.countInputTokens({ ...input, persona: "noura" })).resolves.toBe(42);
-    expect(await adapter.complete({ ...input, persona: "noura" })).toMatchObject({ ok: true });
+    expect(await adapter.complete({ ...input, persona: "noura", timeoutMs: 60_000 })).toMatchObject({ ok: true });
     expect(transport).toHaveBeenCalledTimes(2);
+    // The SDK converts the client deadline into Google's server deadline too.
+    expect(new Headers(transport.mock.calls[1][1]?.headers).get("X-Server-Timeout")).toBe("60");
     expect(bodies[0]).not.toHaveProperty("contents");
     expect(bodies[0]).toEqual({ generateContentRequest: {
       model: "models/gemini-3.8-flash", contents: bodies[1].contents, systemInstruction: bodies[1].systemInstruction,

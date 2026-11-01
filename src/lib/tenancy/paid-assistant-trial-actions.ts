@@ -377,6 +377,9 @@ export async function askOwnedBranchAssistantTrialAction(
         chunks,
         persona,
         maxOutputTokens: TRIAL_MAX_OUTPUT_TOKENS,
+        // Gemini's SDK also sends this as X-Server-Timeout. Allow generation
+        // beyond the former 30s deadline without retries or a larger token cap.
+        timeoutMs: 60_000,
       });
     }
     catch {
