@@ -1,9 +1,10 @@
 import {beforeEach,afterEach,expect,it,vi} from 'vitest';
-const m=vi.hoisted(()=>({identity:vi.fn(),rpc:vi.fn(),stream:vi.fn()}));
+const m=vi.hoisted(()=>({identity:vi.fn(),rpc:vi.fn(),stream:vi.fn(),recover:vi.fn()}));
 vi.mock('@/lib/auth/server-identity',()=>({readSessionIdentity:m.identity}));
 vi.mock('@/lib/supabase/admin',()=>({createAdminClient:()=>({rpc:m.rpc})}));
 vi.mock('@/lib/answers/provider',()=>({getAnswerProvider:()=>({streamTrial:m.stream})}));
-import {GET} from './route';
+vi.mock('@/lib/tenancy/paid-assistant-trial-actions',()=>({recoverOwnedBranchAssistantTrialAction:m.recover}));
+import {GET,POST} from './route';
 const scope={expectedAccountId:'11111111-1111-4111-8111-111111111111',companyId:'22222222-2222-4222-8222-222222222222',branchId:'33333333-3333-4333-8333-333333333333',operationId:'44444444-4444-4444-8444-444444444444'};
 const handle={id:'private_provider_id',modelId:'gemini-3.5-flash-lite'};
 const request=(boundary='boundary')=>new Request(`https://velora.test/api/setup/trial-stream?${new URLSearchParams(scope)}`,{headers:{'x-velora-boundary':boundary}});
@@ -28,4 +29,19 @@ it('retains the restricted local branch fence',async()=>{
 it('closes a failed stream without exposing raw errors or retrying',async()=>{
  m.stream.mockImplementation(async function*(){yield 'جزء';throw Error('secret');});
  const response=await GET(request());expect(await response.text()).not.toContain('secret');expect(m.stream).toHaveBeenCalledOnce();
+});
+
+it('protects recovery POST against cross-origin, stale identity and invalid scope',async()=>{
+ const post=(headers:Record<string,string>={},query=scope)=>new Request(`https://velora.test/api/setup/trial-stream?${new URLSearchParams(query)}`,{method:'POST',headers:{'x-velora-boundary':'boundary',...headers}});
+ expect((await POST(post({origin:'https://evil.test'}))).status).toBe(403);
+ expect((await POST(post({'x-velora-boundary':'old'}))).status).toBe(403);
+ expect((await POST(post({}, {...scope,operationId:'bad'}))).status).toBe(400);
+ expect(m.recover).not.toHaveBeenCalled();
+ m.identity.mockResolvedValue({ok:false});expect((await POST(post())).status).toBe(401);
+});
+it('uses only guarded recovery for the existing operation and returns private uncached results',async()=>{
+ m.recover.mockResolvedValue({ok:false,code:'TRIAL_PENDING'});
+ const response=await POST(new Request(request(),{method:'POST',headers:{'x-velora-boundary':'boundary',origin:'https://velora.test'}}));
+ expect(response.status).toBe(200);expect(response.headers.get('cache-control')).toContain('no-store');
+ expect(m.recover).toHaveBeenCalledExactlyOnceWith(scope);expect(m.stream).not.toHaveBeenCalled();expect(m.rpc).not.toHaveBeenCalled();
 });

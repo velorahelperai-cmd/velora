@@ -30,7 +30,7 @@ import {
   confirmOwnedBranchReplyLanguageAction,
   readOwnedBranchReplyLanguageAction,
 } from "@/lib/tenancy/paid-reply-language-actions";
-import {readTrialStream} from "./trial-stream";
+import {readTrialStream,recoverTrialRequest} from "./trial-stream";
 import { PaidAssistantTrial, type TrialSnapshot } from "./paid-assistant-trial";
 import {
   askOwnedBranchAssistantTrialAction,
@@ -258,27 +258,29 @@ function StepHost(props: PaidSetupStepHostProps) {
     if(step!=='test'||!pollOperationId||!isCurrent())return;
     let active=true,checks=0;
     const controller=new AbortController();const started=Date.now();
-    let timer:ReturnType<typeof setTimeout>;
-    const poll=async()=>{
+    let timer:ReturnType<typeof setTimeout>,streamTimer:ReturnType<typeof setTimeout>;
+    const stream=async()=>{
       if(!active||!isCurrent())return;
-      checks++;
-      // Stream only a persisted, authorized operation. Replayed text replaces itself.
       await readTrialStream(targetScope,pollOperationId,scope.boundaryFingerprint,controller.signal,text=>{
         if(active&&isCurrent())setPartialReply(previous=>text===''?null:previous?.operationId===pollOperationId&&previous.boundary===scope.boundaryFingerprint&&previous.text.startsWith(text)?previous:{operationId:pollOperationId,text,boundary:scope.boundaryFingerprint});
       }).catch(()=>{});
+      if(active&&isCurrent()&&Date.now()-started<300_000)streamTimer=setTimeout(()=>void stream(),5000);
+    };
+    const poll=async()=>{
       if(!active||!isCurrent())return;
-      // Retrieval only: this action cannot create another provider generation.
-      const result=await awaitSetupRequest(recoverOwnedBranchAssistantTrialAction({...targetScope,operationId:pollOperationId}),40_000).catch(()=>null);
+      checks++;
+      // Never wait for a streaming connection to close before verifying a completed result.
+      const result=await recoverTrialRequest(targetScope,pollOperationId,scope.boundaryFingerprint,controller.signal).catch(()=>null);
       if(!active||!isCurrent())return;
       if(result?.ok){
         setTrialSnap(result.snapshot);setTrialPhase('ready');setTrialFailure(null);
-        if(result.snapshot.pendingOperation?.pollable!==true){setPartialReply(null);reader?.invalidate(['trial','workspace']);onRefresh?.();return;}
+        if(result.snapshot.pendingOperation?.pollable!==true){active=false;controller.abort();clearTimeout(streamTimer);setPartialReply(null);reader?.invalidate(['trial','workspace']);onRefresh?.();return;}
       }
-      // Bound background traffic; the existing Refresh status control resumes it.
-      if(checks<60&&Date.now()-started<300_000)timer=setTimeout(()=>void poll(),5_000);
+      if(checks<60&&Date.now()-started<300_000)timer=setTimeout(()=>void poll(),2000);
+      else {active=false;controller.abort();clearTimeout(streamTimer);}
     };
-    timer=setTimeout(()=>void poll(),0);
-    return()=>{active=false;controller.abort();clearTimeout(timer);};
+    void stream();timer=setTimeout(()=>void poll(),0);
+    return()=>{active=false;controller.abort();clearTimeout(timer);clearTimeout(streamTimer);};
   },[step,pollOperationId,targetScope,isCurrent,readVersion,reader,onRefresh,scope.boundaryFingerprint]);
 
   // 4. Team step

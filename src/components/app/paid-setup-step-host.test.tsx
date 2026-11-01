@@ -41,7 +41,8 @@ import { PaidSetupStepHost, type PaidSetupStepHostProps } from "./paid-setup-ste
 
 import {readOwnedBranchLaunchSummaryAction,confirmOwnedBranchLaunchAction} from '@/lib/tenancy/paid-launch-actions';
 import {readOwnedBranchAssistantTrialAction,askOwnedBranchAssistantTrialAction} from '@/lib/tenancy/paid-assistant-trial-actions';
-import {recoverOwnedBranchAssistantTrialAction} from '@/lib/tenancy/paid-assistant-trial-actions';
+vi.mock('./trial-stream',()=>({readTrialStream:vi.fn(()=>new Promise(()=>{})),recoverTrialRequest:vi.fn()}));
+import {recoverTrialRequest} from './trial-stream';
 
 const baseProps: PaidSetupStepHostProps = {
   locale: "en",
@@ -119,12 +120,12 @@ it('shows a valid cached branch snapshot immediately when returning to knowledge
  expect(html).toContain('3 / 10');
 });
 
-it('resumes a known background request after mounting without generating another answer',async()=>{
+it('settles a known request while its text stream stays open without generating another answer',async()=>{
  vi.useFakeTimers();vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);
  const scope={expectedAccountId:baseProps.scope.expectedAccountId,companyId:baseProps.scope.companyId,branchId:baseProps.scope.branchId};
  const snapshot={scope,version:1,knowledgeRevision:'k1',branchLabel:'Main',businessType:'restaurant',canAsk:false,messages:[],pendingOperation:{id:'55555555-5555-4555-8555-555555555555',status:'running',recoverable:false,pollable:true}};
  vi.mocked(readOwnedBranchAssistantTrialAction).mockResolvedValueOnce(snapshot);
- const recover=vi.mocked(recoverOwnedBranchAssistantTrialAction);recover.mockReset();recover.mockResolvedValue({ok:true,snapshot:{...snapshot,canAsk:true,pendingOperation:null,trialAllowance:{limit:10,used:1}}});
+ const recover=vi.mocked(recoverTrialRequest);recover.mockReset();recover.mockResolvedValue({ok:true,snapshot:{...snapshot,canAsk:true,pendingOperation:null,trialAllowance:{limit:10,used:1}}});
  const ask=vi.mocked(askOwnedBranchAssistantTrialAction);ask.mockClear();
  const host=document.createElement('div'),root=createRoot(host);
  try{
@@ -139,7 +140,7 @@ it('bounds pending retrievals without rebuilding snapshots or asking again',asyn
  vi.useFakeTimers();vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);
  const snapshot={scope:baseProps.scope,version:1,knowledgeRevision:'k1',branchLabel:'Main',businessType:'restaurant',canAsk:false,messages:[],pendingOperation:{id:'55555555-5555-4555-8555-555555555555',status:'running',recoverable:false,pollable:true}};
  vi.mocked(readOwnedBranchAssistantTrialAction).mockResolvedValueOnce(snapshot);
- const recover=vi.mocked(recoverOwnedBranchAssistantTrialAction);recover.mockReset();recover.mockResolvedValue({ok:false,code:'TRIAL_PENDING',message:'Still running'});
+ const recover=vi.mocked(recoverTrialRequest);recover.mockReset();recover.mockResolvedValue({ok:false,code:'TRIAL_PENDING',message:'Still running'});
  const ask=vi.mocked(askOwnedBranchAssistantTrialAction);ask.mockClear();
  const host=document.createElement('div'),root=createRoot(host);
  try{

@@ -1,3 +1,4 @@
+import type {AssistantTrialAskResult} from '@/lib/tenancy/paid-assistant-trial-actions';
 import type {TrialScope} from './paid-assistant-trial';
 /** Read one bounded stream of an existing operation; reconnects never submit a question. */
 export async function readTrialStream(scope:TrialScope,operationId:string,boundary:string,signal:AbortSignal,onText:(text:string)=>void):Promise<void>{
@@ -20,4 +21,11 @@ export async function readTrialStream(scope:TrialScope,operationId:string,bounda
    if(done)break;
   }
  }finally{await reader.cancel().catch(()=>{});reader.releaseLock();}
+}
+
+/** Separate POST transport avoids the React Server Action queue; it only recovers this operation. */
+export async function recoverTrialRequest(scope:TrialScope,operationId:string,boundary:string,signal:AbortSignal):Promise<AssistantTrialAskResult|null>{
+ const response=await fetch(`/api/setup/trial-stream?${new URLSearchParams({...scope,operationId})}`,{method:'POST',cache:'no-store',credentials:'same-origin',headers:{'x-velora-boundary':boundary},signal:AbortSignal.any([signal,AbortSignal.timeout(40_000)])});
+ if(!response.ok)return null;
+ return await response.json() as AssistantTrialAskResult;
 }

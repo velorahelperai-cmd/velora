@@ -1,3 +1,4 @@
+import {recoverOwnedBranchAssistantTrialAction} from '@/lib/tenancy/paid-assistant-trial-actions';
 import {readSessionIdentity} from '@/lib/auth/server-identity';
 import {createAdminClient} from '@/lib/supabase/admin';
 import {getAnswerProvider} from '@/lib/answers/provider';
@@ -40,5 +41,22 @@ export async function GET(request:Request){
    async cancel(){clearTimeout(timer);abort.abort();await iterator.return?.();}
   });
   return new Response(stream,{headers});
+ }catch{return fail(503);}
+}
+
+/** Recover/checkpoint/settle the existing request through the established guarded action only. */
+export async function POST(request:Request){
+ const jsonHeaders={...headers,'Content-Type':'application/json; charset=utf-8'};
+ const fail=(status:number)=>Response.json({error:'UNAVAILABLE'},{status,headers:jsonHeaders});
+ const url=new URL(request.url),q=url.searchParams;
+ const input={operationId:q.get('operationId')??'',expectedAccountId:q.get('expectedAccountId')??'',companyId:q.get('companyId')??'',branchId:q.get('branchId')??''};
+ if(Object.values(input).some(id=>!uuid.test(id))||[...q.keys()].some(key=>q.getAll(key).length!==1))return fail(400);
+ if(request.headers.get('sec-fetch-site')==='cross-site'||(request.headers.get('origin')&&request.headers.get('origin')!==url.origin))return fail(403);
+ try{
+  const identity=await readSessionIdentity();
+  if(!identity.ok)return fail(401);
+  if(identity.userId!==input.expectedAccountId||identity.boundaryFingerprint!==request.headers.get('x-velora-boundary'))return fail(403);
+  // Action independently checks native session, pinned scope, DB ownership and original pricing.
+  return Response.json(await recoverOwnedBranchAssistantTrialAction(input),{headers:jsonHeaders});
  }catch{return fail(503);}
 }

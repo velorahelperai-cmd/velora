@@ -1,5 +1,5 @@
 import {it,expect,vi,afterEach} from 'vitest';
-import {readTrialStream} from './trial-stream';
+import {readTrialStream,recoverTrialRequest} from './trial-stream';
 afterEach(()=>vi.unstubAllGlobals());
 const scope={expectedAccountId:'account',companyId:'company',branchId:'branch'};
 it('decodes fragmented Arabic UTF-8 and updates text without sending a question',async()=>{
@@ -10,4 +10,12 @@ it('decodes fragmented Arabic UTF-8 and updates text without sending a question'
 });
 it('clears stale partial content on lost authorization',async()=>{
  vi.stubGlobal('fetch',vi.fn(async()=>new Response(null,{status:403})));const text=vi.fn();await readTrialStream(scope,'op','boundary',new AbortController().signal,text);expect(text).toHaveBeenCalledWith('');
+});
+
+it('posts recovery independently with boundary and cancellation, never a new question',async()=>{
+ const fetcher=vi.fn(async()=>Response.json({ok:false,code:'TRIAL_PENDING'}));vi.stubGlobal('fetch',fetcher);
+ const result=await recoverTrialRequest(scope,'operation','boundary',new AbortController().signal);
+ expect(result).toEqual({ok:false,code:'TRIAL_PENDING'});
+ expect(fetcher).toHaveBeenCalledWith(expect.stringContaining('operationId=operation'),expect.objectContaining({method:'POST',credentials:'same-origin',cache:'no-store',headers:{'x-velora-boundary':'boundary'},signal:expect.any(AbortSignal)}));
+ expect(JSON.stringify(fetcher.mock.calls)).not.toContain('question');
 });
