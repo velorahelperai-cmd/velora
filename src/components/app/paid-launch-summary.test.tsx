@@ -3,6 +3,13 @@ import {PaidLaunchSummary,blockerExplanation,hostAllowsLaunch,launchViewKey,type
 const scope={expectedAccountId:"actor",companyId:"company",branchId:"branch"},operationId="11111111-1111-4111-8111-111111111111",item={detail:"Confirmed detail",status:"verified" as const};
 const props:PaidLaunchSummaryProps={locale:"en",scope,boundaryFingerprint:"capture",snapshot:{scope,version:1,branchLabel:"Branch",setup:{companyId:"company",selectedBranchId:"branch",sourceStatus:"ready",selectedChannels:["whatsapp"],entitlement:{orderGroupId:"order",slotIndex:0,persona:"level_2",package:"basic",maxChannels:1,employeesExcludingOwner:2},launch:{canRequest:true,confirmationRequired:true,confirmed:false,blockedReasons:[]}},readiness:{status:"ready",revision:"r1",blockers:[]},summary:{channels:[{channel:"whatsapp",...item},{channel:"instagram",detail:"HIDDEN_UNENTITLED",status:"pending"}],hours:item,knowledge:item,persona:item,team:{detail:"No invitations",status:"skipped_optional"}},operationId,activation:{status:"not_started",receiptId:null,operationId:null}},state:{scope,version:1,phase:"ready"},isCurrent:()=>true,onLaunch:()=>{throw Error("No render activation");}};
 const render=(patch:Partial<PaidLaunchSummaryProps>={})=>renderToStaticMarkup(createElement(PaidLaunchSummary,{...props,...patch}));
+it("offers dashboard navigation only after a matching confirmed receipt",()=>{
+ const snapshot={...props.snapshot!,activation:{status:"launched" as const,receiptId:"receipt",operationId},setup:{...props.snapshot!.setup,launch:{...props.snapshot!.setup.launch,confirmed:true}}};
+ expect(render({snapshot})).toContain('href="/app"');
+ expect(render()).not.toContain('href="/app"');
+ expect(render({snapshot,state:{scope,version:1,phase:"unknown"}})).not.toContain('href="/app"');
+ expect(render({snapshot:{...snapshot,operationId:"22222222-2222-4222-8222-222222222222"}})).not.toContain('href="/app"');
+});
 it.each(["ar","en"] as const)("renders %s without initial consent or action",locale=>{const h=render({locale});expect(h).not.toContain('checked=""');expect(h).toContain('type="submit" disabled=""');expect(h).not.toContain("HIDDEN_UNENTITLED");});
 it.each(["blocked","unknown"] as const)("local verified summaries cannot override %s readiness",status=>{expect(hostAllowsLaunch({...props.snapshot!,readiness:{status,revision:"r1",blockers:[]}})).toBe(false);});
 it.each([{revision:null},{revision:""},{blockers:["Pending proof"]}])("requires authoritative readiness revision without blockers %#",extra=>expect(hostAllowsLaunch({...props.snapshot!,readiness:{...props.snapshot!.readiness,...extra}})).toBe(false));

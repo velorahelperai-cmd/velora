@@ -7,7 +7,7 @@ import {readServiceInbox} from '@/lib/customer/service-inbox-actions';
 import {selectedIncludedChannels} from '@/lib/channels/contract';
 import {refreshWhatsappInboxPage} from '@/lib/whatsapp/inbox-actions';
 import {loadInstagramInboxPage} from '@/lib/instagram/inbox-actions';
-import {mergeInboxPageRows} from './conversations-inbox';
+import {mergeInboxPageRows,matchesUnifiedInboxFilter} from './conversations-inbox';
 import {WorkspaceShell} from './workspace-shell';
 import {ConversationsPage} from './conversations';
 import {InstagramInbox} from './instagram-inbox';
@@ -52,10 +52,21 @@ export function UnifiedInbox({initial,waReview=false,igReview=false}:{initial:Sn
  const rows=useMemo(()=>snapshot.ok&&retained?inboxRows(snapshot.wa.ok&&retained.wa.ok?retained.wa.page.conversations:[],snapshot.ig.ok&&retained.ig.ok?retained.ig.data.conversations:[],ar):[],[snapshot,retained,ar]);
  const activeChannels=filter==='all'?channels:[filter];
  const activeRows=rows.filter(r=>filter==='all'||r.channel===filter);
- const shown=activeRows.filter(r=>!query||`${r.name} ${r.preview}`.toLocaleLowerCase().includes(query.toLocaleLowerCase()));
+ const requestedWorklist=params.get('filter');
+ const worklist=requestedWorklist==='staff'||requestedWorklist==='noura'||requestedWorklist==='unread'||requestedWorklist==='resolved'?requestedWorklist:'all';
+ const shown=activeRows.filter(r=>{
+  if(worklist!=='all'){
+   if(r.channel==='whatsapp'){
+    const item=retained?.wa.ok?retained.wa.page.conversations.find(c=>c.id===r.id):undefined;
+    if(!item||!matchesUnifiedInboxFilter(item,worklist))return false;
+   }else if(worklist!=='unread'||r.unread===0)return false;
+  }
+  return !query||`${r.name} ${r.preview}`.toLocaleLowerCase().includes(query.toLocaleLowerCase());
+ });
  const anyActiveChannelFailed=activeChannels.some(channel=>{const result=channel==='whatsapp'?(snapshot.ok?snapshot.wa:retained?.wa):(snapshot.ok?snapshot.ig:retained?.ig);return !result||!result.ok;});
- const showEmpty=!shown.length&&(Boolean(query)?(activeRows.length>0||!anyActiveChannelFailed):(!anyActiveChannelFailed&&activeRows.length===0));
- const select=(channel:InboxChannel|null,id:string|null,intentId?:string)=>{const href=inboxHref(channel,id,filter);router.push(intentId?href+(href.includes("?")?"&":"?")+"intent="+encodeURIComponent(intentId):href);};
+ const showEmpty=!shown.length&&(Boolean(query)||worklist!=='all'?(activeRows.length>0||!anyActiveChannelFailed):(!anyActiveChannelFailed&&activeRows.length===0));
+ const filteredHref=(channel:InboxChannel|null,id:string|null,channelFilter:InboxChannel|'all'=filter)=>{const href=inboxHref(channel,id,channelFilter);return worklist==='all'?href:href+(href.includes('?')?'&':'?')+'filter='+worklist;};
+ const select=(channel:InboxChannel|null,id:string|null,intentId?:string)=>{const href=filteredHref(channel,id);router.push(intentId?href+(href.includes("?")?"&":"?")+"intent="+encodeURIComponent(intentId):href);};
  const activeRow=rows.find(r=>r.channel===source&&r.id===selected);
  async function more(channel:InboxChannel){
   if(moreLoading!==null||busy.current||!snapshot.ok||!retained)return;
@@ -83,11 +94,12 @@ export function UnifiedInbox({initial,waReview=false,igReview=false}:{initial:Sn
    {!channels.length&&<EmptyState title={ar?'لا توجد قناة متاحة للقراءة':'No channel is available to read'} body={ar?'الاشتراك والربط والصلاحيات حالات مستقلة. راجع الإعدادات أو تواصل مع صاحب النشاط.':'Subscription, connection and permissions are separate. Review settings or contact your business owner.'} action={<Link href="/app/settings">{ar?'الإعدادات':'Settings'}</Link>}/>}<div className={styles.inbox} hidden={!snapshot.ok||!channels.length} data-selected={selectionValid}>
     <section className={styles.list} aria-label={ar?'قائمة المحادثات':'Conversation list'}>
      <header className={styles.listHeader}><h2>{ar?'صندوق الوارد':'Inbox'}</h2><p>{ar?'المحادثات المتاحة لهذا النشاط':'Available conversations for this business'}</p>
-      {channels.length===2?<div className={styles.channelFilters} aria-label={ar?'القناة':'Channel'}>{(['all',...channels] as const).map(c=><button key={c} type="button" aria-pressed={filter===c} onClick={()=>router.push(inboxHref(null,null,c))}>{c==='all'?(ar?'الكل':'All'):<ChannelBadge channel={c} ar={ar}/>}</button>)}</div>:<ChannelBadge channel={channels[0]??'whatsapp'} ar={ar}/>}
+      {channels.length===2?<div className={styles.channelFilters} aria-label={ar?'القناة':'Channel'}>{(['all',...channels] as const).map(c=><button key={c} type="button" aria-pressed={filter===c} onClick={()=>router.push(filteredHref(null,null,c))}>{c==='all'?(ar?'الكل':'All'):<ChannelBadge channel={c} ar={ar}/>}</button>)}</div>:<ChannelBadge channel={channels[0]??'whatsapp'} ar={ar}/>}
+      {worklist!=='all'&&<p role="status">{worklist==='staff'?(ar?'تحتاج متابعة · واتساب':'Needs attention · WhatsApp'):worklist==='noura'?(ar?'الأتمتة مسموحة · واتساب':'Automation permitted · WhatsApp'):worklist==='unread'?(ar?'غير مقروءة':'Unread'):(ar?'محلولة · واتساب':'Resolved · WhatsApp')} <button type="button" className={styles.filterReset} onClick={()=>router.push(inboxHref(null,null,filter))}>{ar?'مسح الفلتر':'Clear filter'}</button></p>}
       <label className={styles.search}>{ar?'بحث في المحادثات المحمّلة':'Search loaded conversations'}<input type="search" value={query} onChange={e=>setQuery(e.target.value)} placeholder={ar?'الاسم أو آخر رسالة':'Name or latest message'}/></label>
      </header>
      <div className={styles.rows}>{channels.map(channel=>{const result=channel==='whatsapp'?snapshot.ok?snapshot.wa:retained.wa:snapshot.ok?snapshot.ig:retained.ig;if(result.ok)return null;const isForbidden=result.code==='FORBIDDEN';return <Notice key={channel} tone={isForbidden?'warn':'error'}><ChannelBadge channel={channel} ar={ar}/><p>{isForbidden?(ar?'القراءة غير متاحة. راجع صلاحيات القناة والاشتراك.':'Reading unavailable. Check channel permissions and subscription.'):(ar?'تعذّر تحميل القناة. أعد التحديث.':'This channel could not be loaded. Refresh to retry.')}{!isForbidden&&<button type="button" className="underline ms-2 font-medium" disabled={refreshing||moreLoading!==null} onClick={()=>void refresh()}>{ar?'إعادة المحاولة':'Retry'}</button>}</p></Notice>;})}
-      {showEmpty&&<EmptyState title={query?(ar?'لا نتائج في المحادثات المحمّلة':'No matches in loaded conversations'):(ar?'لا توجد محادثات بعد':'No conversations yet')} body={query?(ar?'لم نجد أي محادثة تطابق بحثك في المحادثات المحمّلة.':'No conversations matched your search in loaded conversations.'):(ar?'تظهر الرسائل الواردة بعد ربط القناة والتحقق من استقبالها.':'Inbound messages appear after connecting and verifying the channel.')}/>}
+      {showEmpty&&<EmptyState title={query||worklist!=='all'?(ar?'لا نتائج في المحادثات المحمّلة':'No matches in loaded conversations'):(ar?'لا توجد محادثات بعد':'No conversations yet')} body={worklist!=='all'?(ar?'لا توجد محادثات تطابق البحث والفلتر في الصفحة المحمّلة. يمكنك مسح الفلتر أو تحميل المزيد.':'No conversations match this search and filter in the loaded page. Clear the filter or load more.'):query?(ar?'لم نجد أي محادثة تطابق بحثك في المحادثات المحمّلة.':'No conversations matched your search in loaded conversations.'):(ar?'تظهر الرسائل الواردة بعد ربط القناة والتحقق من استقبالها.':'Inbound messages appear after connecting and verifying the channel.')}/>}
       {shown.map(row=><button type="button" key={row.key} className={styles.row} aria-current={source===row.channel&&selected===row.id?'page':undefined} onClick={()=>select(row.channel,row.id)}><span className={styles.avatar} aria-hidden="true">{row.name.slice(0,1)}</span><span className={styles.rowBody}><span className={styles.rowHeading}><strong dir="auto">{row.name}</strong>{row.at>0&&<time dateTime={new Date(row.at).toISOString()}>{new Date(row.at).toLocaleDateString(ar?'ar-OM':'en-GB',{day:'numeric',month:'short'})}</time>}</span><span className={styles.preview} dir="auto">{row.preview||'—'}</span><span className={styles.rowFooter}><ChannelBadge channel={row.channel} ar={ar}/>{row.unread>0&&<span className={styles.unread} aria-label={ar?`${row.unread} غير مقروءة`:`${row.unread} unread`}>{row.unread}</span>}</span></span></button>)}
      </div>
      <footer className={styles.listFooter}><p>{ar?'الترتيب حسب آخر نشاط بين الصفحات المحمّلة.':'Ordered by latest activity across loaded pages.'}</p><Link href={filter==='instagram'?'/app/instagram':'/app/settings?tab=whatsapp'}>{ar?'إعدادات الربط':'Connection settings'}</Link>

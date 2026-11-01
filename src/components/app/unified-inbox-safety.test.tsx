@@ -163,6 +163,29 @@ describe("UnifiedInbox membership and page safety", () => {
     };
   }
 
+  it("applies the dashboard attention filter and retains it while opening a thread", () => {
+    const initial=makeInitial();
+    const attention={...conversation("needs-human","Needs human","+9682","101","Please help",2000),intervention:{reasons:["send_unknown" as const]}};
+    initial.wa.page.conversations.push(attention);
+    state.searchParams=new URLSearchParams("channel=whatsapp&filter=staff");
+    const tree=render({initial}),allNodes=nodes(tree);
+    expect(allNodes.some(n=>n.props.children==="Customer 1")).toBe(false);
+    const row=allNodes.find(n=>n.props.type==="button"&&nodes(n.props.children).some(child=>child.props.children==="Needs human"))!;
+    expect(row).toBeDefined();
+    (row.props.onClick as ()=>void)();
+    expect(state.routerPush).toHaveBeenCalledWith("/app/conversations?channel=whatsapp&source=whatsapp&c=needs-human&filter=staff");
+    const clear=allNodes.find(n=>n.props.children==="Clear filter")!;
+    (clear.props.onClick as ()=>void)();
+    expect(state.routerPush).toHaveBeenLastCalledWith("/app/conversations?channel=whatsapp");
+  });
+
+  it("does not describe an unmatched worklist as an empty inbox", () => {
+    state.searchParams=new URLSearchParams("channel=whatsapp&filter=staff");
+    const tree=render({initial:makeInitial()});
+    expect(nodes(tree).some(n=>n.props.title==="No matches in loaded conversations")).toBe(true);
+    expect(nodes(tree).some(n=>n.props.title==="No conversations yet")).toBe(false);
+  });
+
   it("prevents regression of old membership results when refresh detects membership change", async () => {
     const initial = makeInitial("fp-old");
     let tree = render({ initial });

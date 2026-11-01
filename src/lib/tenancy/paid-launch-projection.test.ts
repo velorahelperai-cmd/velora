@@ -43,3 +43,10 @@ it('does not turn optional team policy into a claimed owner decision',()=>{
  expect(result?.summary.team).toEqual({status:'optional',detail:'دعوة الفريق اختيارية ولا تمنع الإطلاق.'});
  expect(result?.readiness).toEqual(raw.readiness);expect(result?.setup.launch).toEqual(raw.setup.launch);
 });
+
+it('accepts the persisted launch receipt only when its operation matches the summary',()=>{
+ const base=fixture();
+ const launched={...base,setup:{...base.setup,launch:{...base.setup.launch,confirmed:true}},activation:{status:'launched',receiptId:scope.companyId,operationId:scope.branchId}};
+ expect(normalizePaidLaunchSnapshot(launched,scope,read)?.activation).toEqual(launched.activation);
+ expect(normalizePaidLaunchSnapshot({...launched,operationId:scope.companyId},scope,read)).toBeNull();
+});

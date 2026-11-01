@@ -41,3 +41,4 @@
  .threadToolbar {position:sticky;top:0;z-index:20;padding-top:max(8px,env(safe-area-inset-top));}
 }
 @media(prefers-reduced-motion:reduce){.row {transition:none;}}
+.filterReset {display:inline-flex;align-items:center;justify-content:center;min-height:36px;padding:4px 9px;margin-inline-start:8px;color:var(--service-accent);border:1px solid var(--service-line);border-radius:6px;font-size:12px;}

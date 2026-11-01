@@ -11,6 +11,7 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: state.refresh }
 vi.mock("@/lib/tenancy/actions", () => ({ getCustomerReadiness: state.read }));
 vi.mock("@/lib/demo-state", () => ({ useDemo: () => ({ locale: "en" }) }));
 vi.mock("@/lib/customer/dashboard-billing-actions", () => ({ readDashboardBilling: vi.fn() }));
+vi.mock("./dashboard-branch", () => ({ DashboardBranch: "section" }));
 vi.mock("@/components/app/workspace-shell", () => ({ WorkspaceShell: "main" }));
 vi.mock("@/components/app/ui", () => ({ Button: "button", LinkButton: "a", Notice: "aside", useAppCopy: () => appCopy("en") }));
 import { DashboardPage } from "./dashboard";
@@ -23,6 +24,23 @@ const flush = async () => { for (let i = 0; i < 8; i++) await Promise.resolve();
 beforeEach(() => { vi.clearAllMocks(); state.slots = []; });
 
 describe("dashboard readiness reload", () => {
+  it("does not expose conversations when the readiness scope is unknown", () => {
+    const tree=DashboardPage({initialReadiness:null,readinessLoadFailed:true,initialLeads:{ok:true,conversations:[{id:"foreign",customer:"PRIVATE_CUSTOMER",phone:"PRIVATE_PHONE",messages:[]}],meta:{companyId:"company",counts:{all:1,awaiting_staff:0}}} as never});
+    const text=nodes(tree).flatMap(node=>[node.props.children].flat()).filter(value=>typeof value==="string").join(" ");
+    expect(text).not.toContain("PRIVATE_CUSTOMER");
+    expect(text).not.toContain("PRIVATE_PHONE");
+  });
+  it("links attention and automation cards to the matching visible inbox filters",()=>{
+    const tree=render();
+    expect(nodes(tree).some(node=>node.props.href==="/app/conversations?channel=whatsapp&filter=staff")).toBe(true);
+    expect(nodes(tree).some(node=>node.props.href==="/app/conversations?channel=whatsapp&filter=noura")).toBe(true);
+  });
+  it("counts only open automation-permitted chats to match the linked worklist",()=>{
+    const conversation={customer:"Customer",phone:"+96800000000",messages:[],automationAllowed:true,assistantPaused:false};
+    const tree=DashboardPage({initialReadiness:snapshot,initialLeads:{ok:true,conversations:[{...conversation,id:"open",status:"open"},{...conversation,id:"done",status:"resolved"}],meta:{companyId:"company",counts:{all:2,awaiting_staff:0}}} as never});
+    const card=nodes(tree).find(node=>node.props.href==="/app/conversations?channel=whatsapp&filter=noura")!;
+    expect(nodes(card).some(node=>node.type==="strong"&&node.props.children==="1")).toBe(true);
+  });
   it("updates readiness and diagnostic from one action without scheduling a second page read", async () => {
     const diagnostic = { reference: "VEL-0123456789ABCDEF", operation: "customer_readiness", stage: "knowledge", code: "DEPENDENCY_FAILED" };
     state.read.mockResolvedValue({ ok: true, data: { ...snapshot, companyName: "Updated business" }, diagnostic });
