@@ -124,6 +124,19 @@ describe("paid-assistant-trial-actions", () => {
     expect(complete).not.toHaveBeenCalled();expect(trustedRpc).not.toHaveBeenCalled();
   });
 
+  it.each([true,false])('preserves server new-question authority %s without settling an aged unknown',async canAsk=>{
+    const scope={expectedAccountId:VALID_ACCOUNT_ID,companyId:VALID_COMPANY_ID,branchId:VALID_BRANCH_ID};
+    const operation={id:'66666666-6666-4666-8666-666666666666',status:'uncertain',recoverable:false,blocksNewRequests:false};
+    rpcMock.mockImplementation(async(name:string)=>({error:null,data:name==='es02_read_owned_branch_trial_recovery'?{ok:true,operation}:{ok:true,data:{snapshot:{scope,version:1,knowledgeRevision:'k1',canAsk,messages:[]}}}}));
+    expect(await readOwnedBranchAssistantTrialAction(scope)).toMatchObject({canAsk,pendingOperation:operation});
+    expect(trustedRpc).not.toHaveBeenCalled();
+  });
+  it.each(['running','legacy','failed-read'])('does not grant continuation from %s recovery evidence',async kind=>{
+    const scope={expectedAccountId:VALID_ACCOUNT_ID,companyId:VALID_COMPANY_ID,branchId:VALID_BRANCH_ID};
+    const operation={id:'66666666-6666-4666-8666-666666666666',status:kind==='running'?'running':'uncertain',recoverable:false,...(kind==='legacy'?{}:{blocksNewRequests:false})};
+    rpcMock.mockImplementation(async(name:string)=>name==='es02_read_owned_branch_trial_recovery'?{error:kind==='failed-read'?{message:'unavailable'}:null,data:{ok:true,operation}}:{error:null,data:{ok:true,data:{snapshot:{scope,version:1,knowledgeRevision:'k1',canAsk:true,messages:[]}}}});
+    expect(await readOwnedBranchAssistantTrialAction(scope)).toMatchObject({canAsk:false});expect(trustedRpc).not.toHaveBeenCalled();
+  });
   it("recovers a saved receipt without reserving allowance or calling the provider",async()=>{
     const operationId="66666666-6666-4666-8666-666666666666";
     const scope={expectedAccountId:VALID_ACCOUNT_ID,companyId:VALID_COMPANY_ID,branchId:VALID_BRANCH_ID};

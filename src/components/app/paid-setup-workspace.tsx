@@ -211,7 +211,7 @@ function Workspace(p:PaidSetupWorkspaceProps) {
           <ol>{visibleSteps.map((step,index)=>{
             const enabled=workspaceStepAllowed(p.read,p.scope,step.id,p.availableStepIds);
             const verified=step.status==="verified",skipped=step.status==="skipped_optional";
-            const status=verified?t("مكتملة","Complete"):skipped?t("تم التخطي","Skipped"):step.status==="unavailable"&&!enabled?t("غير متاح","Unavailable"):!enabled?t("بانتظار المتطلبات","Waiting for prerequisites"):t("متاحة","Available");
+            const status=verified?t("مكتملة","Complete"):skipped?t("تم التخطي","Skipped"):p.provisional?t("جارٍ التحقق","Checking"):step.status==="unavailable"&&!enabled?t("غير متاح","Unavailable"):!enabled?t("بانتظار المتطلبات","Waiting for prerequisites"):t("متاحة","Available");
             return <li key={step.id} data-step-id={step.id} data-state={step.status}>
               <button type="button" disabled={!enabled} aria-current={active===step.id?"step":undefined} aria-controls={panelId} onMouseEnter={()=>enabled&&p.isCurrent()&&p.onPrefetchStep?.(step.id)} onFocus={()=>enabled&&p.isCurrent()&&p.onPrefetchStep?.(step.id)} onClick={()=>select(step.id)}>
                 <span className={styles.number} aria-hidden="true">{verified?"✓":index+1}</span>

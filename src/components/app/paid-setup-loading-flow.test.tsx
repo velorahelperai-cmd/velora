@@ -25,9 +25,12 @@ it('opens knowledge before slow Meta proof, and late progress cannot discard the
   // Knowledge stays independently open; launch/team stay navigable for inspection
   // without granting activation (workspaceStepAllowed opens them; leaf gates mutations).
   expect(knowledge.disabled).toBe(false);
+  expect(host.querySelector('[data-step-id="hours"] small')?.textContent).toBe('Checking');
+  expect(host.querySelector('[data-step-id="knowledge"] small')?.textContent).toBe('Checking');
   expect(host.querySelector<HTMLButtonElement>('[data-step-id="launch"] button')?.disabled).toBe(false);
   await act(async()=>knowledge.click());const draft=host.querySelector('textarea')!;draft.value='unsaved changes';
   await act(async()=>finish({...shell,read:{...read,steps:read.steps.map(step=>step.id==='knowledge'?{...step,status:'verified',reasonCodes:[]}:step)}}));
   expect(host.querySelector('textarea')).toBe(draft);expect(draft.value).toBe('unsaved changes');
+  expect(host.querySelector('[data-step-id="knowledge"] small')?.textContent).toBe('Complete');
  }finally{await act(async()=>root.unmount());host.remove();}
 });

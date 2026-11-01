@@ -96,9 +96,14 @@ export async function readOwnedBranchAssistantTrialAction(
     const snapshot = payload.data?.snapshot;
     if (!snapshot || snapshot.scope?.expectedAccountId !== scope.expectedAccountId || snapshot.scope?.companyId !== scope.companyId || snapshot.scope?.branchId !== scope.branchId) return null;
     const recovery = await client.rpc("es02_read_owned_branch_trial_recovery" as never, {p_expected_account_id:scope.expectedAccountId,p_company_id:scope.companyId,p_branch_id:scope.branchId} as never);
-    const value = recovery.data as unknown as {ok?:boolean;operation?:{id:string;status:string;recoverable:boolean}|null};
+    const value = recovery.data as unknown as {ok?:boolean;operation?:{id:string;status:string;recoverable:boolean;blocksNewRequests?:boolean}|null};
     const op = !recovery.error && value?.ok === true ? value.operation : null;
-    return op && UUID.test(op.id) && ["reserved","running","uncertain","success"].includes(op.status) && typeof op.recoverable === "boolean" ? {...snapshot,pendingOperation:op,canAsk:false} : snapshot;
+    if(recovery.error||value?.ok!==true)return {...snapshot,canAsk:false};
+    if(op&&UUID.test(op.id)&&["reserved","running","uncertain","success"].includes(op.status)&&typeof op.recoverable==="boolean"){
+      const blocksNewRequests=!(op.status==="uncertain"&&!op.recoverable&&op.blocksNewRequests===false);
+      return {...snapshot,pendingOperation:{...op,blocksNewRequests},canAsk:!blocksNewRequests&&snapshot.canAsk===true};
+    }
+    return op?{...snapshot,canAsk:false}:snapshot;
   });
 }
 

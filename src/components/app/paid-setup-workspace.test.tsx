@@ -86,3 +86,11 @@ it("stepBlockedReason reports accurate blocked dependencies and launch requireme
 
 
 it('does not present provisional shell progress as verified',()=>{const html=render({provisional:true});expect(html).toContain('Checking setup progress');expect(html).not.toContain('0 / 6');});
+
+it('labels unverified provisional steps as checking without turning navigation into completion authority',()=>{
+ const html=render({provisional:true});
+ expect(html).toContain('<small>Checking</small>');
+ expect(html).not.toContain('<small>Available</small>');
+ expect(html).not.toContain('<small>Complete</small>');
+ expect(workspaceStepAllowed(read,scope,'test',props.availableStepIds)).toBe(false);
+});

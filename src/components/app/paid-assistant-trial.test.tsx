@@ -131,3 +131,19 @@ it('shows a budget blocker with no answer or retry dispatch permission',async()=
   expect(onRefresh).toHaveBeenCalledOnce();expect(onAsk).not.toHaveBeenCalled();expect(onRetry).not.toHaveBeenCalled();
  }finally{await act(async()=>root.unmount());vi.unstubAllGlobals();}
 });
+
+it('permits an explicitly authorized new question while keeping an old unknown visible and never replaying it',async()=>{
+ vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);
+ const host=document.createElement('div'),root=createRoot(host),onAsk=vi.fn();
+ const old='66666666-6666-4666-8666-666666666666';
+ const snapshot={...props.snapshot!,pendingOperation:{id:old,status:'uncertain',recoverable:false,blocksNewRequests:false}};
+ try{
+  await act(async()=>root.render(createElement(PaidAssistantTrial,{...props,onAsk,snapshot})));
+  const suggestion=Array.from(host.querySelectorAll('button')).find(b=>b.textContent==='What are the working hours?')!;
+  expect(suggestion.disabled).toBe(false);expect(host.textContent).toContain('still unresolved');
+  await act(async()=>suggestion.click());expect(onAsk).toHaveBeenCalledOnce();
+  expect(onAsk.mock.calls[0][0].operationId).not.toBe(old);
+  await act(async()=>root.render(createElement(PaidAssistantTrial,{...props,onAsk,snapshot:{...snapshot,canAsk:false}})));
+  expect(Array.from(host.querySelectorAll('button')).find(b=>b.textContent==='What are the working hours?')!.disabled).toBe(true);
+ }finally{await act(async()=>root.unmount());vi.unstubAllGlobals();}
+});
