@@ -35,14 +35,14 @@ it('does not retry failures or retain rejected requests',async()=>{
  await expect(reader.read('launch')).rejects.toThrow('503');expect(fetcher).toHaveBeenCalledTimes(2);
 });
 
-it('retains only hours preview, prefetches once, and clears it on invalidation or expiry',async()=>{
+it('reuses confirmed hours on return, prefetches once, and expires the preview',async()=>{
  const value={ok:true,snapshot:{version:1},copyTargets:[]};
  const fetcher=vi.fn(async()=>Response.json({data:value}));vi.stubGlobal('fetch',fetcher);
  const reader=createSetupReader(scope,()=>true);reader.prefetchHours();await reader.read('hours');
  expect(fetcher).toHaveBeenCalledTimes(1);expect(reader.peekHours()).toEqual(value);
  reader.prefetchHours();expect(fetcher).toHaveBeenCalledTimes(1);
- await reader.read('hours');expect(fetcher).toHaveBeenCalledTimes(2); // preview never grants authority
- const clock=vi.spyOn(Date,'now').mockReturnValue(Date.now()+31_000);expect(reader.peekHours()).toBeNull();clock.mockRestore();
+ await reader.read('hours');expect(fetcher).toHaveBeenCalledTimes(1);
+ const clock=vi.spyOn(Date,'now').mockReturnValue(Date.now()+301_000);expect(reader.peekHours()).toBeNull();clock.mockRestore();
  reader.invalidate();expect(reader.peekHours()).toBeNull();
 });
 
@@ -84,4 +84,19 @@ it('keeps a bounded read-only preview after reuse expires while fetching fresh d
  const reader=createSetupReader(scope,()=>true);await reader.read('knowledge');now+=31_000;
  expect(reader.peek('knowledge')).toEqual({revision:1});await reader.read('knowledge');expect(fetcher).toHaveBeenCalledTimes(2);
  now+=301_000;expect(reader.peek('knowledge')).toBeNull();clock.mockRestore();
+});
+it.each(['trial','team','launch'] as const)('retains %s presentation but always reloads action authority',async resource=>{
+ const fetcher=vi.fn(async()=>Response.json({data:{version:1,canAsk:true}}));vi.stubGlobal('fetch',fetcher);
+ const reader=createSetupReader(scope,()=>true);await reader.read(resource);
+ expect(reader.peek(resource)).toEqual({version:1,canAsk:true});
+ await reader.read(resource);expect(fetcher).toHaveBeenCalledTimes(2);
+ reader.invalidate([resource]);expect(reader.peek(resource)).toBeNull();
+});
+it('clears every retained preview after an authentication rejection',async()=>{
+ const fetcher=vi.fn(async()=>Response.json({data:{ok:true,version:1}}));vi.stubGlobal('fetch',fetcher);
+ const reader=createSetupReader(scope,()=>true);
+ for(const resource of ['hours','knowledge','language','trial','team','launch'] as const)await reader.read(resource);
+ fetcher.mockImplementation(async()=>new Response(null,{status:401}));
+ await expect(reader.read('trial')).rejects.toMatchObject({kind:'auth'});
+ for(const resource of ['hours','knowledge','language','trial','team','launch'] as const)expect(reader.peek(resource)).toBeNull();
 });

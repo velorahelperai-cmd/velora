@@ -214,7 +214,7 @@ function StepHost(props: PaidSetupStepHostProps) {
   }, [step, targetScope, isCurrent,readVersion,reader]);
 
   // 3. Test step
-  const [trialSnap, setTrialSnap] = useState<TrialSnapshot | null>(null);
+  const [trialSnap, setTrialSnap] = useState<TrialSnapshot | null>(()=>reader?.peek?.('trial')??null);
   const [trialPhase, setTrialPhase] = useState<"loading" | "ready" | "pending" | "error" | "unknown" | "unavailable">("loading");
   const [trialFailure, setTrialFailure] = useState<AnswerFailure | null>(null);
   const [trialRequestId, setTrialRequestId] = useState<string | null>(null);
@@ -244,14 +244,14 @@ function StepHost(props: PaidSetupStepHostProps) {
       } else {
         setTrialPhase("unavailable");
       }
-    }).catch(error=>{if(!canceledRead(error)&&active&&isCurrent()){readFailure.current?.(error);setTrialPhase('unavailable');}});
+    }).catch(error=>{if(!canceledRead(error)&&active&&isCurrent()){readFailure.current?.(error);if(error instanceof SetupReadError&&(error.kind==='auth'||error.kind==='scope'))setTrialSnap(null);setTrialPhase('unavailable');}});
     return () => {
       active = false;
     };
   }, [step, targetScope, isCurrent,readVersion,reader]);
 
   // 4. Team step
-  const [teamSnap, setTeamSnap] = useState<BranchTeamSnapshot | null>(null);
+  const [teamSnap, setTeamSnap] = useState<BranchTeamSnapshot | null>(()=>reader?.peek?.('team')??null);
   const [teamPhase, setTeamPhase] = useState<"loading" | "ready" | "pending" | "error" | "unknown" | "unavailable">("loading");
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
 
@@ -269,14 +269,14 @@ function StepHost(props: PaidSetupStepHostProps) {
       } else {
         setTeamPhase("unavailable");
       }
-    }).catch(() => {});
+    }).catch(error=>{if(!canceledRead(error)&&active&&isCurrent()){readFailure.current?.(error);if(error instanceof SetupReadError&&(error.kind==='auth'||error.kind==='scope'))setTeamSnap(null);setTeamPhase('unavailable');}});
     return () => {
       active = false;
     };
   }, [step, targetScope, isCurrent, readVersion, reader]);
 
   // 5. Launch step
-  const [launchSnap, setLaunchSnap] = useState<LaunchSummarySnapshot | null>(null);
+  const [launchSnap, setLaunchSnap] = useState<LaunchSummarySnapshot | null>(()=>reader?.peek?.('launch')??null);
   const [launchPhase, setLaunchPhase] = useState<"loading" | "ready" | "pending" | "error" | "unknown" | "unavailable">("loading");
 
   useEffect(() => {
@@ -290,7 +290,7 @@ function StepHost(props: PaidSetupStepHostProps) {
       } else {
         setLaunchPhase("unavailable");
       }
-    }).catch(error=>{if(!canceledRead(error)&&active&&isCurrent()){readFailure.current?.(error);setLaunchPhase('unavailable');}});
+    }).catch(error=>{if(!canceledRead(error)&&active&&isCurrent()){readFailure.current?.(error);if(error instanceof SetupReadError&&(error.kind==='auth'||error.kind==='scope'))setLaunchSnap(null);setLaunchPhase('unavailable');}});
     return () => {
       active = false;
     };

@@ -214,3 +214,39 @@ it('refreshes a pending trial without aborting workspace enrichment or resending
   expect(host.textContent).toContain('The request outcome needs review');
  }finally{await act(async()=>root.unmount());vi.unstubAllGlobals();}
 });
+
+it('returns to hours without another request and retains the schedule during later revalidation',async()=>{
+ vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);
+ const {createSetupReader}=await import('@/lib/tenancy/setup-read-client');
+ const {emptyBranchHours}=await import('@/lib/tenancy/branch-hours-contracts');
+ let now=1000;const clock=vi.spyOn(Date,'now').mockImplementation(()=>now);
+ const snapshot={scope:baseProps.scope,version:7,branchLabel:'Branch',timezone:'Asia/Muscat',schedule:{...emptyBranchHours(),monday:{state:'open',intervals:[{start:'09:15',end:'18:30',nextDay:false}]}}};
+ const fetcher=vi.fn(async(url:string)=>Response.json({data:url.includes('resource=hours')?{ok:true,snapshot,copyTargets:[]}:null}));vi.stubGlobal('fetch',fetcher);
+ const reader=createSetupReader(baseProps.scope,()=>true),host=document.createElement('div'),root=createRoot(host);
+ const visit=async(step:PaidSetupStepHostProps['step'])=>{await act(async()=>root.render(createElement(PaidSetupStepHost,{...baseProps,step,reader})));};
+ try{
+  await visit('hours');expect(host.textContent).toContain('09:15');
+  await visit('knowledge');await visit('hours');
+  expect(host.textContent).toContain('09:15');
+  expect(fetcher.mock.calls.filter(([url])=>url.includes('resource=hours'))).toHaveLength(1);
+  await visit('knowledge');now+=31_000;
+  fetcher.mockImplementation(()=>new Promise(()=>{}));await visit('hours');
+  expect(host.textContent).toContain('09:15');expect(host.textContent).not.toContain('Checking');
+  expect(host.querySelector('[aria-busy="true"]')).not.toBeNull();
+  expect(fetcher.mock.calls.filter(([url])=>url.includes('resource=hours'))).toHaveLength(2);
+ }finally{await act(async()=>root.unmount());clock.mockRestore();vi.unstubAllGlobals();}
+});
+it('shows the previous trial counter on return but cannot send until fresh authority arrives',async()=>{
+ vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);
+ const {createSetupReader}=await import('@/lib/tenancy/setup-read-client');
+ const snapshot={scope:baseProps.scope,version:1,knowledgeRevision:'k1',branchLabel:'Main',businessType:'restaurant',canAsk:true,trialAllowance:{limit:10,used:3},messages:[]};
+ const fetcher=vi.fn(async()=>Response.json({data:snapshot}));vi.stubGlobal('fetch',fetcher);
+ const reader=createSetupReader(baseProps.scope,()=>true);await reader.read('trial');
+ fetcher.mockImplementation(()=>new Promise(()=>{}));
+ const host=document.createElement('div'),root=createRoot(host);
+ try{
+  await act(async()=>root.render(createElement(PaidSetupStepHost,{...baseProps,step:'test',reader})));
+  expect(host.textContent).toContain('3/10');
+  expect(host.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(true);
+ }finally{await act(async()=>root.unmount());vi.unstubAllGlobals();}
+});
