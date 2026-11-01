@@ -83,7 +83,8 @@ export function parseConnectionStart(value: unknown, asOf: string): PaidBranchCo
   if (!paidBranchConnectionFlowMatches(scope.channel, flow)) return deny(scope, "invalid_input", asOf);
   if (typeof input.clientOpId !== "string" || !UUID.test(input.clientOpId) || typeof input.expectedRevision !== "string" || !/^(0|[1-9][0-9]{0,18})$/.test(input.expectedRevision)) return deny(scope, "invalid_input", asOf);
   const phone = flow === "wa_coexistence" ? normalizeConfirmedPhone(input.confirmedPhoneNumber) : null;
-  if (flow === "wa_coexistence" && (!phone || input.confirmed !== true)) return deny(scope, "invalid_input", asOf);
+  // Coexistence number is optional: Meta returns it in Embedded Signup. If supplied, it must be valid and confirmed.
+  if (flow === "wa_coexistence" && input.confirmedPhoneNumber != null && (!phone || input.confirmed !== true)) return deny(scope, "invalid_input", asOf);
   if (flow !== "wa_coexistence" && (("confirmedPhoneNumber" in input && input.confirmedPhoneNumber != null) || input.confirmed != null)) return deny(scope, "invalid_input", asOf);
   if ("verified" in input || "linkId" in input || "code" in input || "accessToken" in input || "nonce" in input || "state" in input || "authorizationUrl" in input) return deny(scope, "invalid_input", asOf);
   return { ...scope, flow, clientOpId: input.clientOpId.toLowerCase(), expectedRevision: input.expectedRevision, ...(phone ? { confirmedPhoneNumber: phone, confirmed: true as const } : {}) };
@@ -124,10 +125,12 @@ export function paidBranchCompletionAccepted(flow: PaidBranchConnectionFlow, att
       && typeof row.pin === "string" && (/^\d{6}$/.test(row.pin)||(row.pin===''&&typeof row.authorizationTicket==='string'&&row.authorizationTicket.length>0&&row.authorizationTicket.length<=16384));
   }
   if (flow === "wa_coexistence") {
-    return row.confirmed === true
-      && typeof row.nonce === "string" && HEX.test(row.nonce)
+    const legacyPhone = row.confirmedPhoneNumber != null;
+    return typeof row.nonce === "string" && HEX.test(row.nonce)
       && typeof row.code === "string" && row.code.length > 0 && row.code.length <= 4096
-      && normalizeConfirmedPhone(row.confirmedPhoneNumber) != null;
+      && (row.wabaId === undefined || (typeof row.wabaId === "string" && PROVIDER_ID.test(row.wabaId)))
+      && (row.phoneNumberId === undefined || (typeof row.phoneNumberId === "string" && PROVIDER_ID.test(row.phoneNumberId)))
+      && (legacyPhone ? row.confirmed === true && normalizeConfirmedPhone(row.confirmedPhoneNumber) != null : typeof row.phoneNumberId === "string");
   }
   return typeof row.state === "string" && HEX.test(row.state)
     && typeof row.code === "string" && row.code.length > 0 && row.code.length <= 16384

@@ -232,7 +232,7 @@ export function WhatsappCoexistenceSignup({ companyId, onConnected, onDisconnect
       if (ownerRef.current !== owner || activeRef.current !== current || current.submitted) return;
       const signal = parseEmbeddedSignupMessage({ origin: event.origin, data: event.data }, "coexistence");
       if (signal.kind === "ignored") return;
-      if (signal.kind === "unknown" || signal.kind === "invalid") { void retire(current, "UNSUPPORTED_FLOW"); return; }
+      if (signal.kind === "unknown" || signal.kind === "invalid" || signal.kind === "rejected") { void retire(current, "UNSUPPORTED_FLOW"); return; }
       receiveSignal(signal);
     };
     window.addEventListener("message", receive);

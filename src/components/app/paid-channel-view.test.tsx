@@ -11,7 +11,7 @@ const render = (overrides: Partial<PaidChannelViewProps> = {}) => renderToStatic
 
 it("requires an explicit route and never starts a provider on render",()=>{
   const html=render();
-  expect(html).toContain("Main branch");
+  expect(html).toContain("WhatsApp");
   expect(html.match(/type="radio"/g)).toHaveLength(2);
   expect(html).not.toContain("checked=");
   expect(html).not.toContain("data-guide-source");

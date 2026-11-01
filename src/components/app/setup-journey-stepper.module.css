@@ -1,11 +1,11 @@
-.stepper{width:100%;min-width:0;margin:0;padding:0;color:#6d84a7;font-family:"Tajawal",Tahoma,sans-serif;font-synthesis:none}
+.stepper{width:100%;min-width:0;margin:0;padding:0;color:var(--setup-muted,#536579);font-family:"Tajawal",Tahoma,sans-serif;font-synthesis:none}
 .stepper[dir="ltr"]{font-family:"Tajawal",Arial,sans-serif}
 .list{display:flex;align-items:center;gap:0;list-style:none;margin:0;padding:0;line-height:1}
 .step{display:flex;flex-direction:row;align-items:center;flex:1;min-width:0;gap:6px;font-size:12px;line-height:1.2;white-space:nowrap}
 .step:last-child{flex:0 0 auto}
 .step:not(:last-child)::after{content:"";display:block;flex:1;min-width:12px;height:1px;margin-inline:12px;background:#e0eaf1}
 .circle{display:grid;place-items:center;flex:0 0 22px;width:22px;height:22px;border-radius:50%;background:#edf5fa;color:#153958;font-size:11px;font-weight:500}
-.step[data-active="true"] .label{color:#007f98;font-weight:700}
+.step[data-active="true"] .label{color:var(--setup-deep,#066673);font-weight:700}
 .step[data-active="true"] .circle{background:#007f98;color:#fff}
 @media(max-width:760px){
  .step{gap:5px;font-size:11px}

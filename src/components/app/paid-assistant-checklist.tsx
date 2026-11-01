@@ -1,8 +1,9 @@
 "use client";
+import {setupPlanLabel} from "./setup-plan-label";
 import {createSetupReader,SetupReadError} from "@/lib/tenancy/setup-read-client";
 import {observeSetupRead} from "./paid-setup-request";
 import {setupTiming,observeSetupUsable} from "@/lib/diagnostics/setup-timing";
-import { useCallback,useEffect, useMemo, useId, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useCallback,useEffect,useLayoutEffect, useMemo, useId, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import styles from "./paid-assistant-checklist.module.css";
 import {SetupBranchPicker} from "./setup-branch-picker";
 import {paidSetupActivation} from '@/lib/tenancy/paid-setup-activation';
@@ -83,7 +84,7 @@ function PaidSetupEntry(p:PaidSetupFlowProps&{retry:()=>void}) {
  const headerName=headerPersona?({level_1:t('نورا','Noura'),level_2:t('لينا','Lina'),level_3:t('دانا','Dana')})[headerPersona]:null;
  const plan=currentHeader?.read.entitlement;
  const clock=currentHeader?paidSetupActivation(currentHeader.activation,scope.companyId,plan?.orderGroupId):null;
- const summary=plan&&headerName?<div className={styles.headerPlan} role="group" aria-label={t('ملخص الباقة والتفعيل','Plan and activation summary')}><div className={styles.headerPlanName}><strong>{headerName} · {plan.package==='basic'?t('القياسية','Standard'):t('المميزة','Premium')}</strong>{clock&&<span>{clock.termUnit==='month'?t('شهرية','Monthly'):t('سنوية','Yearly')}</span>}<span className={styles.branchStatus}>{clock?.clockState==='waiting_readiness'?t('المدة لم تبدأ','Period not started'):clock?.clockState==='active'?t('المدة بدأت','Period started'):clock?.clockState==='ended'?t('المدة انتهت','Period ended'):t('حالة المدة غير متاحة','Period status unavailable')}</span></div><dl><div><dt>{t('القنوات','Channels')}</dt><dd>{plan.maxChannels}</dd></div><div><dt>{t('مقاعد الفريق','Team seats')}</dt><dd>{plan.employeesExcludingOwner}</dd></div><div><dt>{t('التشغيل','Launch')}</dt><dd>{currentHeader.read.launch.confirmed?t('مؤكد','Confirmed'):currentHeader.read.launch.canRequest?t('بانتظار تأكيدك','Awaiting confirmation'):t('قيد التجهيز','In preparation')}</dd></div></dl></div>:undefined;
+ const summary=plan&&headerName?<details className={styles.headerPlanDetails}><summary>{headerName} · {setupPlanLabel(p.locale,plan.package)}<span aria-hidden="true" className={styles.headerPlanChevron}>▾</span></summary><div className={styles.headerPlan} role="group" aria-label={t('ملخص الباقة والتفعيل','Plan and activation summary')}><div className={styles.headerPlanName}><strong>{headerName} · {setupPlanLabel(p.locale,plan.package)}</strong>{clock&&<span>{clock.termUnit==='month'?t('شهرية','Monthly'):t('سنوية','Yearly')}</span>}<span className={styles.branchStatus}>{clock?.clockState==='waiting_readiness'?t('المدة لم تبدأ','Period not started'):clock?.clockState==='active'?t('المدة بدأت','Period started'):clock?.clockState==='ended'?t('المدة انتهت','Period ended'):t('حالة المدة غير متاحة','Period status unavailable')}</span></div><dl><div><dt>{t('القنوات','Channels')}</dt><dd>{plan.maxChannels}</dd></div><div><dt>{t('مقاعد الفريق','Team seats')}</dt><dd>{plan.employeesExcludingOwner}</dd></div><div><dt>{t('التشغيل','Launch')}</dt><dd>{currentHeader.read.launch.confirmed?t('مؤكد','Confirmed'):currentHeader.read.launch.canRequest?t('بانتظار تأكيدك','Awaiting confirmation'):t('قيد التجهيز','In preparation')}</dd></div></dl></div></details>:undefined;
  return <div dir={ar?'rtl':'ltr'}>{p.renderHeader?.(branchSelector,headerName?t(`جهّز ${headerName} لعملائك`,`Prepare ${headerName} for your customers`):undefined,summary)}
   {(!p.renderHeader||!entry.branches.length||!branchId)&&<section className={styles.page}>{!p.renderHeader&&branchSelector}
   {!entry.branches.length&&<p role="status">{t("لا توجد فروع مدفوعة متاحة للإعداد.","No paid branches are available for setup.")}</p>}
@@ -115,10 +116,18 @@ function PaidSetupBranchRead(p:PaidSetupFlowProps&{branchId:string;refreshVersio
  const [refreshFailed,setRefreshFailed]=useState(false);
  const [failureKind,setFailureKind]=useState<'auth'|'scope'|'unavailable'|'network'>('unavailable');
  const generation=useRef(0);
+ /** After one confirmed workspace read, keep the branch reader and progress across session callback churn. */
+ const enrichedOnce=useRef(false);
  const {scope,isCurrent,branchId,refreshVersion,onWorkspaceRead}=p;
+ const isCurrentRef=useRef(isCurrent);
+ useLayoutEffect(()=>{isCurrentRef.current=isCurrent;},[isCurrent]);
+ const checkCurrent=useCallback(()=>isCurrentRef.current(),[]);
  const readWorkspace=p.readWorkspace??readOwnedPaidSetupWorkspaceAction;
  const connectionFirst=!p.readWorkspace;
- const reader=useMemo(()=>createSetupReader({expectedAccountId:scope.expectedAccountId,companyId:scope.companyId,boundaryFingerprint:scope.boundaryFingerprint,branchId},isCurrent),[scope.expectedAccountId,scope.companyId,scope.boundaryFingerprint,branchId,isCurrent]);
+ // Reader memory must outlive isCurrent identity changes; only recreate on branch/scope bounds.
+ // createSetupReader stores this callback; authority is read only by its async/event methods.
+ // eslint-disable-next-line react-hooks/refs
+ const reader=useMemo(()=>createSetupReader({expectedAccountId:scope.expectedAccountId,companyId:scope.companyId,boundaryFingerprint:scope.boundaryFingerprint,branchId},checkCurrent),[scope.expectedAccountId,scope.companyId,scope.boundaryFingerprint,branchId,checkCurrent]);
  useEffect(()=>{
   const clear=()=>reader.invalidate();
   window.addEventListener("pagehide",clear);
@@ -136,58 +145,75 @@ function PaidSetupBranchRead(p:PaidSetupFlowProps&{branchId:string;refreshVersio
 
  useEffect(()=>{
   const request=++generation.current;let active=true;
-  if(!isCurrent())return;
-  reader.invalidate(['shell','workspace']);
+  if(!checkCurrent())return;
+  const soft=enrichedOnce.current&&refreshVersion===0;
+  // Soft re-entry keeps confirmed progress and step caches; explicit retry still invalidates.
+  if(!soft)reader.invalidate(['shell','workspace']);
   const input={expectedAccountId:scope.expectedAccountId,companyId:scope.companyId,branchId};
   const endTiming=setupTiming('workspace');
   const reportFailure=(error:unknown)=>{
-   if(!active||request!==generation.current||!isCurrent())return;
+   if(!active||request!==generation.current||!checkCurrent())return;
    if(error instanceof Error&&(error.name==='AbortError'||error.message==='SCOPE_CHANGED'))return;
    const kind=error instanceof SetupReadError?error.kind:'unavailable';
    setFailureKind(kind);
-   if(kind==='auth'||kind==='scope'){setSnapshot(null);onWorkspaceRead?.(null);}
+   if(kind==='auth'||kind==='scope'){enrichedOnce.current=false;setSnapshot(null);onWorkspaceRead?.(null);}
    setRefreshFailed(true);
   };
-  const shellFirst=connectionFirst&&refreshVersion===0;
-  void observeSetupRead(connectionFirst?reader.read(shellFirst?"shell":"workspace"):readWorkspace(input),()=>{}).then(result=>{
-   if(!active||request!==generation.current||!isCurrent())return;
-   if(!result){setRefreshFailed(true);setSnapshot(previous=>previous===undefined?null:previous);return;}
-   if(result.scope.expectedAccountId!==input.expectedAccountId||result.scope.companyId!==input.companyId||result.scope.branchId!==branchId||!paidChecklistFromRead(result.read,input)){setSnapshot(null);onWorkspaceRead?.(null);return;}
+  const acceptWorkspace=(enriched:PaidSetupWorkspaceRead)=>{
+   if(!active||request!==generation.current||!checkCurrent())return false;
+   if(enriched.scope.expectedAccountId!==input.expectedAccountId||enriched.scope.companyId!==input.companyId||enriched.scope.branchId!==branchId||!paidChecklistFromRead(enriched.read,input)){
+    reportFailure(new SetupReadError("scope", "workspace"));
+    return false;
+   }
+   enrichedOnce.current=true;
    setRefreshFailed(false);
-   setProvisional(Boolean(shellFirst&&result.read.entitlement));
-   setSnapshot(result);
-   onWorkspaceRead?.(result);
+   setProvisional(false);
+   setSnapshot(enriched);
+   onWorkspaceRead?.(enriched);
    setSelected(previous=>{
     const unsaved=!!branchRoot.current?.querySelector('[data-setup-unsaved="true"]');
     if(unsaved||manualSelection.current||resumeApplied.current)return previous;
     resumeApplied.current=true;
-    return nextWorkspaceSelection(result,previous,Boolean(shellFirst&&result.read.entitlement));
+    return nextWorkspaceSelection(enriched,previous);
    });
-   // Slow Meta proof never blocks the independently authorized hours editor.
-   if(shellFirst&&result.read.entitlement){
-    void reader.read('knowledge').catch(error=>{if(error instanceof SetupReadError&&(error.kind==='auth'||error.kind==='scope'))reportFailure(error);});
-    void reader.read('language').catch(error=>{if(error instanceof SetupReadError&&(error.kind==='auth'||error.kind==='scope'))reportFailure(error);});
-   }
-   if(shellFirst&&result.read.entitlement)void observeSetupRead(reader.read('workspace'),()=>{}).then(enriched=>{
-     if(!active||request!==generation.current||!isCurrent())return;
-     // Background enrichment must not wipe the last confirmed same-branch shell/workspace
-     // or change the open step. Soft-fail keeps the prior snapshot and marks refresh failed.
-     if(!enriched){setRefreshFailed(true);return;}
-     if(enriched.scope.expectedAccountId!==input.expectedAccountId||enriched.scope.companyId!==input.companyId||enriched.scope.branchId!==branchId||!paidChecklistFromRead(enriched.read,input)){
-      reportFailure(new SetupReadError("scope", "workspace"));
-      return;
-     }
-     setProvisional(false);setSnapshot(enriched);onWorkspaceRead?.(enriched);
-     setSelected(previous=>{
-      const unsaved=!!branchRoot.current?.querySelector('[data-setup-unsaved="true"]');
-      if(unsaved||manualSelection.current||resumeApplied.current)return previous;
-      resumeApplied.current=true;
-      return nextWorkspaceSelection(enriched,previous);
-     });
-   }).catch(reportFailure);
-  }).catch(error=>{reportFailure(error);if(active&&request===generation.current&&isCurrent()&&!(error instanceof Error&&(error.name==='AbortError'||error.message==='SCOPE_CHANGED')))setSnapshot(previous=>previous===undefined?null:previous);}).finally(endTiming);
+   return true;
+  };
+  const shellFirst=!soft&&connectionFirst&&refreshVersion===0;
+  if(shellFirst){
+   void observeSetupRead(reader.read("shell"),()=>{}).then(result=>{
+    if(!active||request!==generation.current||!checkCurrent())return;
+    if(!result){setRefreshFailed(true);setSnapshot(previous=>previous===undefined?null:previous);return;}
+    if(result.scope.expectedAccountId!==input.expectedAccountId||result.scope.companyId!==input.companyId||result.scope.branchId!==branchId||!paidChecklistFromRead(result.read,input)){setSnapshot(null);onWorkspaceRead?.(null);return;}
+    setRefreshFailed(false);
+    setProvisional(Boolean(result.read.entitlement));
+    setSnapshot(result);
+    onWorkspaceRead?.(result);
+    setSelected(previous=>{
+     const unsaved=!!branchRoot.current?.querySelector('[data-setup-unsaved="true"]');
+     if(unsaved||manualSelection.current||resumeApplied.current)return previous;
+     resumeApplied.current=true;
+     return nextWorkspaceSelection(result,previous,Boolean(result.read.entitlement));
+    });
+    // Slow Meta proof never blocks the independently authorized hours editor.
+    if(result.read.entitlement){
+     void reader.read('knowledge').catch(error=>{if(error instanceof SetupReadError&&(error.kind==='auth'||error.kind==='scope'))reportFailure(error);});
+     void reader.read('language').catch(error=>{if(error instanceof SetupReadError&&(error.kind==='auth'||error.kind==='scope'))reportFailure(error);});
+     void observeSetupRead(reader.read('workspace'),()=>{}).then(enriched=>{
+      if(!enriched){if(active&&request===generation.current&&checkCurrent())setRefreshFailed(true);return;}
+      acceptWorkspace(enriched);
+     }).catch(reportFailure);
+    }
+   }).catch(error=>{reportFailure(error);if(active&&request===generation.current&&checkCurrent()&&!(error instanceof Error&&(error.name==='AbortError'||error.message==='SCOPE_CHANGED')))setSnapshot(previous=>previous===undefined?null:previous);}).finally(endTiming);
+  }else{
+   // Keep the last confirmed snapshot visible while a same-branch workspace refresh settles.
+   void observeSetupRead(connectionFirst?reader.read('workspace'):readWorkspace(input),()=>{}).then(enriched=>{
+    if(!active||request!==generation.current||!checkCurrent())return;
+    if(!enriched){setRefreshFailed(true);if(!soft)setSnapshot(previous=>previous===undefined?null:previous);return;}
+    acceptWorkspace(enriched);
+   }).catch(error=>{reportFailure(error);if(!soft&&active&&request===generation.current&&checkCurrent()&&!(error instanceof Error&&(error.name==='AbortError'||error.message==='SCOPE_CHANGED')))setSnapshot(previous=>previous===undefined?null:previous);}).finally(endTiming);
+  }
   return()=>{active=false;};
- },[scope.expectedAccountId,scope.companyId,branchId,isCurrent,readWorkspace,refreshVersion,onWorkspaceRead,connectionFirst,reader]);
+ },[scope.expectedAccountId,scope.companyId,branchId,checkCurrent,readWorkspace,refreshVersion,onWorkspaceRead,connectionFirst,reader]);
  const ar=p.locale==="ar",persona=snapshot?.read.entitlement?.persona;
  const knownPersona=persona==="level_1"||persona==="level_2"||persona==="level_3"?persona:null;
  const personaName=knownPersona?({level_1:ar?"نورا":"Noura",level_2:ar?"لينا":"Lina",level_3:ar?"دانا":"Dana"})[knownPersona]:undefined;
@@ -324,7 +350,7 @@ function Checklist({locale,model,loading=false,personaName,planName,personaVisua
     const preview=fixture&&index+1>=2&&index+1<=5&&!launch;
     return <li key={step.id} className={styles.row} data-step-id={step.id} data-state={step.status}>
      <span className={styles.number} aria-hidden="true">{verified?"✓":index+1}</span>
-     <div className={styles.rowCopy}><h2>{labels[step.id][ar?0:1]}{step.id==="team"&&<small>{t("اختياري","Optional")}</small>}</h2><p>{labels[step.id][ar?2:3]}</p></div>
+     <div className={styles.rowCopy}><h2>{labels[step.id][ar?0:1]}</h2><p>{labels[step.id][ar?2:3]}</p></div>
      <div className={styles.action}>{verified||skipped?<span>{verified?t("مكتملة","Complete"):t("تم التخطي","Skipped")}</span>:step.status==="unavailable"?<span>{t("غير متاح","Unavailable")}</span>:!canOpen&&!preview?<span>{t("بانتظار اكتمال المتطلبات","Waiting for prerequisites")}</span>:null}
       {preview?<button type="button" data-fixture-step={index+1} onClick={()=>setInspected(step.id)}>{t("استعراض","Inspect")}</button>:canOpen?<button type="button" onClick={()=>{if(launch)onReviewLaunch?.(branchId);else if(step.actionId)onOpenStep?.(branchId,step.id,step.actionId);}}>{verified||skipped?t("مراجعة","Review"):launch?t("مراجعة التشغيل","Review launch"):t("متابعة","Continue")}</button>:null}
      </div>

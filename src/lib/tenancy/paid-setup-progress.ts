@@ -12,7 +12,7 @@ export function composePaidSetupProgress(read:PaidBranchSetupRead,snapshot:Launc
  // Knowledge step owns reply-language confirmation in the UI; launch still requires the native language_unconfirmed blocker to clear.
  const completed={
   hours:snapshot.summary.hours.status==='verified',
-  knowledge:snapshot.summary.knowledge.status==='verified'&&!blockers.includes('language_unconfirmed'),
+  knowledge:snapshot.summary.knowledge.status==='verified'&&snapshot.summary.languages?.status==='verified'&&!blockers.includes('language_unconfirmed'),
   assistant_test:!blockers.includes('trial_incomplete'),
  };
  const steps=read.steps.map(s=>({...s,dependencyIds:[...s.dependencyIds],reasonCodes:[...s.reasonCodes]}));

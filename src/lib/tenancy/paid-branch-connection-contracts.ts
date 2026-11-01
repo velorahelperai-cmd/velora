@@ -77,11 +77,13 @@ export type PaidBranchConnectionRead = {
     reasonCodes: PaidBranchConnectionReason[];
   };
   capabilities: PaidBranchConnectionCapabilities;
+  /** F4: masked, server-verified Meta display number; only set for a verified WhatsApp connection. */
+  linkedNumber?: string | null;
 };
 
 export type PaidBranchConnectionLaunch =
   | { flow: "wa_new_number"; attemptId: string; nonce: string; appId: string; configId: string; graphVersion: string }
-  | { flow: "wa_coexistence"; attemptId: string; nonce: string; appId: string; configId: string; graphVersion: string; confirmedPhoneNumber: string }
+  | { flow: "wa_coexistence"; attemptId: string; nonce: string; appId: string; configId: string; graphVersion: string; confirmedPhoneNumber?: string }
   | { flow: "instagram_direct"; attemptId: string; state: string; authorizationUrl: string };
 
 export type PaidBranchConnectionDenial = {
@@ -126,8 +128,12 @@ export type CompleteWhatsappCoexistenceInput = {
   attemptId: string;
   nonce: string;
   code: string;
-  confirmedPhoneNumber: string;
-  confirmed: true;
+  /** Meta FINISH session asset ids; the number itself is read server-side from Meta. */
+  wabaId?: string;
+  phoneNumberId?: string;
+  /** Legacy optional pre-entered number; if present it must match Meta's proof. */
+  confirmedPhoneNumber?: string;
+  confirmed?: true;
 };
 
 export type CompleteInstagramDirectInput = {
@@ -301,8 +307,8 @@ export function parsePaidBranchConnectionLaunch(flow: PaidBranchConnectionFlow, 
   }
   if (typeof row.nonce !== "string" || row.nonce.length < 16 || typeof row.appId !== "string" || !PUBLIC_ID.test(row.appId) || typeof row.configId !== "string" || !PUBLIC_ID.test(row.configId) || typeof row.graphVersion !== "string" || !GRAPH.test(row.graphVersion)) return null;
   if (flow === "wa_coexistence") {
-    if (typeof row.confirmedPhoneNumber !== "string" || !PHONE.test(row.confirmedPhoneNumber)) return null;
-    return { flow, attemptId, nonce: row.nonce, appId: row.appId, configId: row.configId, graphVersion: row.graphVersion, confirmedPhoneNumber: row.confirmedPhoneNumber };
+    if (row.confirmedPhoneNumber != null && (typeof row.confirmedPhoneNumber !== "string" || !PHONE.test(row.confirmedPhoneNumber))) return null;
+    return { flow, attemptId, nonce: row.nonce, appId: row.appId, configId: row.configId, graphVersion: row.graphVersion, ...(typeof row.confirmedPhoneNumber === "string" ? { confirmedPhoneNumber: row.confirmedPhoneNumber } : {}) };
   }
   return { flow, attemptId, nonce: row.nonce, appId: row.appId, configId: row.configId, graphVersion: row.graphVersion };
 }

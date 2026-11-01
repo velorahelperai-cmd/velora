@@ -1,14 +1,16 @@
 "use client";
-import {useId, useLayoutEffect, useRef, useState} from "react";
+import {useEffect, useEffectEvent, useId, useLayoutEffect, useRef, useState} from "react";
 import {
-  BRANCH_HOURS_DAYS, cloneBranchHours, emptyBranchHours, knownBranchHoursTimezone, prepareBranchHoursCopy,
+  BRANCH_HOURS_DAYS, branchHoursMinute, cloneBranchHours, emptyBranchHours, knownBranchHoursTimezone, prepareBranchHoursCopy,
   prepareBranchHoursSave, sameBranchHoursScope, validateBranchHours,
   type BranchHoursCopyDraft, type BranchHoursCopyTarget, type BranchHoursDay,
   type BranchHoursSaveDraft, type BranchHoursScope,
   type BranchHoursSnapshot, type BranchHoursException, type BranchHoursSchedule,
 } from "@/lib/tenancy/branch-hours-contracts";
 import styles from "./paid-branch-hours.module.css";
-import {confirmSetupLeave,useSetupUnsavedChanges} from './paid-setup-unsaved';
+import {ClockTimePicker} from "./clock-time-picker";
+import {confirmSetupLeave,useSetupUnsavedChanges} from "./paid-setup-unsaved";
+type FlushHost = HTMLElement & {__veloraFlush?: () => Promise<void>};
 
 export type PaidBranchHoursProps = {
   locale: "ar" | "en";
@@ -85,16 +87,25 @@ function HoursForm(p: PaidBranchHoursProps) {
   const [selected, setSelected] = useState<string[]>([]);
   const [showCopy, setShowCopy] = useState(false);
   const [showExceptions, setShowExceptions] = useState(() => (initialSchedule.exceptions?.length ?? 0) > 0);
-  const [activePreset, setActivePreset] = useState<HoursPreset | null>(null);
+  const [pendingSave,setPendingSave] = useState<string | null>(null);
   const [mode, setMode] = useState<HoursMode>("rest");
   const [confirmation, setConfirmation] = useState<string | null>(null);
   const [busy, setBusy] = useState(false), [failed, setFailed] = useState(false);
 
-  const mounted = useRef(false), reserved = useRef(false);
+  const mounted = useRef(false), reserved = useRef(false), rootRef = useRef<HTMLElement | null>(null);
+  const queuedSave = useRef<BranchHoursSaveDraft | null>(null);
   useLayoutEffect(() => {mounted.current = true; return () => {mounted.current = false;};}, []);
 
   const [userEdited,setUserEdited]=useState(false);
   const [sourceVersion,setSourceVersion]=useState(p.snapshot?.version??null);
+  // Only the matching authoritative receipt can close the editor.
+  if (pendingSave && p.state.phase === "saved" && p.snapshot &&
+      pendingSave === JSON.stringify(cloneBranchHours(p.snapshot.schedule))) {
+    setPendingSave(null);
+    setUserEdited(false);
+    setDraft(cloneBranchHours(p.snapshot.schedule));
+    setMode("rest");
+  }
 
   // Adopt a new server revision during this render, before children commit.
   // Dirty local fields remain intact and the difference is explicitly shown.
@@ -131,7 +142,56 @@ function HoursForm(p: PaidBranchHoursProps) {
 
   const baseSchedule = p.snapshot ? cloneBranchHours(p.snapshot.schedule) : emptyBranchHours();
   const dirty = userEdited && JSON.stringify(draft) !== JSON.stringify(baseSchedule);
-  useSetupUnsavedChanges(dirty, p.isCurrent, p.locale);
+  // While a background save is in flight, don't block Next with a discard prompt.
+  useSetupUnsavedChanges(dirty && !busy && p.state.phase !== "saving", p.isCurrent, p.locale);
+
+  async function persistDraft() {
+    if (!(save.ok && p.onSave) || p.state.phase === "conflict" || !p.isCurrent()) return;
+    const onSave = p.onSave;
+    // Queue the latest draft when a write is already in flight so Next can leave immediately.
+    if (reserved.current) {
+      queuedSave.current = save.draft;
+      return;
+    }
+    reserved.current = true;
+    if (mounted.current) { setBusy(true); setFailed(false); setConfirmation(null); }
+    try {
+      let draft = save.draft;
+      for (;;) {
+        if (mounted.current) setPendingSave(JSON.stringify(cloneBranchHours(draft.schedule)));
+        await onSave(draft);
+        if (!queuedSave.current) break;
+        draft = queuedSave.current;
+        queuedSave.current = null;
+      }
+    } catch {
+      if (mounted.current && p.isCurrent()) setFailed(true);
+    } finally {
+      reserved.current = false;
+      if (mounted.current && p.isCurrent()) setBusy(false);
+    }
+  }
+
+  const autosaveLatest = useEffectEvent(() => {
+    if (dirty && save.ok && p.onSave && !locked && p.isCurrent()) void persistDraft();
+  });
+  // Autosave in the background so Next can advance without a Save button.
+  useEffect(() => {
+    if (!dirty || locked) return;
+    const timer = window.setTimeout(() => autosaveLatest(), 400);
+    return () => window.clearTimeout(timer);
+  }, [dirty, fingerprint, locked, p.onSave, p.state.phase]);
+
+  useEffect(() => {
+    const node = rootRef.current as FlushHost | null;
+    if (!node) return;
+    node.dataset.setupFlush = "";
+    node.__veloraFlush = () => persistDraft();
+    return () => {
+      delete node.__veloraFlush;
+      delete node.dataset.setupFlush;
+    };
+  });
 
   const label = (day: BranchHoursDay) => dayLabels[day][ar ? 0 : 1];
   const timezoneLabel = p.snapshot?.timezone || t("غير معروفة", "Unknown");
@@ -173,7 +233,7 @@ function HoursForm(p: PaidBranchHoursProps) {
       }
       return next;
     });
-    setActivePreset(preset === "closed_all" || preset === "reset_all" ? null : preset);
+    setMode("compose");
     setConfirmation(null);
     setFailed(false);
   }
@@ -182,11 +242,26 @@ function HoursForm(p: PaidBranchHoursProps) {
     if (locked || !p.isCurrent()) return;
     const start = next.start ?? quickStart;
     const end = next.end ?? quickEnd;
-    const nextDay = next.nextDay ?? quickNextDay;
+    let nextDay = next.nextDay ?? quickNextDay;
+    if (next.nextDay === undefined && (next.start !== undefined || next.end !== undefined)) {
+      const s0 = branchHoursMinute(start), e0 = branchHoursMinute(end);
+      // Midnight crossing: an end earlier than the start closes the next day.
+      // Equal times are ambiguous (24 hours?) so the current flag is kept and the user is asked.
+      if (s0 !== null && e0 !== null && e0 !== s0) nextDay = e0 < s0;
+    }
     if (next.start !== undefined) setQuickStart(next.start);
     if (next.end !== undefined) setQuickEnd(next.end);
-    if (next.nextDay !== undefined) setQuickNextDay(next.nextDay);
-    if (activePreset) applyPreset(activePreset, { start, end, nextDay });
+    if (nextDay !== quickNextDay) setQuickNextDay(nextDay);
+    setUserEdited(true);
+    setDraft(current => {
+      const updated = cloneBranchHours(current);
+      for (const day of DISPLAY_DAYS) {
+        if (updated[day].state === "open") updated[day] = {state:"open", intervals:[{start,end,nextDay}]};
+      }
+      return updated;
+    });
+    setConfirmation(null);
+    setFailed(false);
   }
 
   function openCompose(kind: "add" | "edit") {
@@ -195,7 +270,7 @@ function HoursForm(p: PaidBranchHoursProps) {
     setShowCopy(false);
     if (kind === "add" && !scheduleConfigured(draft)) {
       applyPreset("workdays_sun_thu", { start: quickStart || "09:00", end: quickEnd || "17:00", nextDay: quickNextDay });
-    } else if (!activePreset) {
+    } else {
       const first = findFirstInterval(draft);
       if (first) {
         setQuickStart(first.start || "09:00");
@@ -215,7 +290,7 @@ function HoursForm(p: PaidBranchHoursProps) {
       setQuickEnd(first?.end || "17:00");
       setQuickNextDay(!!first?.nextDay);
     }
-    setActivePreset(null);
+    setPendingSave(null);
     setMode("rest");
     setFailed(false);
   }
@@ -234,18 +309,39 @@ function HoursForm(p: PaidBranchHoursProps) {
     return value.state === "unset" ? t("غير مضبوط", "Not set") : t("مغلق", "Closed");
   }
 
-  const presets: {id: HoursPreset; ar: string; en: string; hintAr: string; hintEn: string}[] = [
-    {id: "workdays_sun_thu", ar: "الأحد – الخميس", en: "Sun – Thu", hintAr: "عطلة الجمعة والسبت", hintEn: "Fri & Sat closed"},
-    {id: "workdays_sat_thu", ar: "السبت – الخميس", en: "Sat – Thu", hintAr: "عطلة الجمعة فقط", hintEn: "Friday closed"},
-    {id: "all_week", ar: "طوال الأسبوع", en: "All week", hintAr: "كل الأيام بنفس التوقيت", hintEn: "Same hours every day"},
-  ];
+  function toggleDay(day: BranchHoursDay) {
+    if (locked || !p.isCurrent()) return;
+    setUserEdited(true);
+    setDraft(current => ({...current, [day]: current[day].state === "open"
+      ? {state:"closed"}
+      : {state:"open", intervals:[{start:quickStart,end:quickEnd,nextDay:quickNextDay}]}}));
+    setConfirmation(null);
+    setFailed(false);
+  }
+  const carryFor = (day: BranchHoursDay) => {
+    const previous = draft[previousDayOf[day]];
+    return previous.state === "open" ? previous.intervals.filter(interval => interval.nextDay && interval.end && interval.end !== "00:00") : [];
+  };
+  const groups: BranchHoursDay[][] = [];
+  for (const day of DISPLAY_DAYS) {
+    const last = groups[groups.length - 1];
+    const same = last && JSON.stringify(draft[last[0]]) === JSON.stringify(draft[day]) &&
+      JSON.stringify(carryFor(last[0]).map(i=>i.end)) === JSON.stringify(carryFor(day).map(i=>i.end));
+    if (same) last.push(day); else groups.push([day]);
+  }
+  const groupLabel = (days: BranchHoursDay[]) => days.length === 7 ? t("كل الأيام", "Every day")
+    : days.length === 1 ? label(days[0]) : label(days[0]) + " – " + label(days[days.length - 1]);
+  const openDays = DISPLAY_DAYS.filter(day => draft[day].state === "open");
+  const differingHours = new Set(openDays.map(day => JSON.stringify(draft[day]))).size > 1 ||
+    openDays.some(day => {const value=draft[day]; return value.state === "open" && value.intervals.length > 1;});
   const configured = scheduleConfigured(draft);
   const composing = mode === "compose";
 
   return (
     <section
+      ref={rootRef}
       className={styles.view}
-      data-setup-unsaved={dirty ? "true" : undefined}
+      data-setup-unsaved={dirty && !busy && p.state.phase !== "saving" ? "true" : undefined}
       data-hours-studio=""
       data-hours-mode={mode}
       dir={ar ? "rtl" : "ltr"}
@@ -276,38 +372,29 @@ function HoursForm(p: PaidBranchHoursProps) {
           </div>
         )}
 
+        {mode === "compose" && p.state.phase === "unavailable" && <p role="status" className={styles.error}>{t("لم يتم تأكيد الحفظ. حدّث البيانات قبل المحاولة مجددًا.", "Saving is unconfirmed. Refresh the data before trying again.")}</p>}
+
         {failed && (
           <p role="alert" className={styles.error}>{t("تعذر إرسال الطلب.", "The request could not be submitted.")}</p>
         )}
 
         {!composing && (
           <div className={styles.hero} data-hours-rest="">
-            <p className={styles.kicker}><bdi>{timezoneLabel}</bdi></p>
             <h2 id={id}>{t("مواعيد العمل", "Working hours")}</h2>
-            <p className={styles.lede}>
-              {configured
-                ? t("هذا جدول الفرع الحالي. عدّله عند الحاجة ثم احفظ.", "This is the current branch schedule. Edit when needed, then save.")
-                : t("حدد أيام وساعات دوام الفرع في خطوة واحدة.", "Set this branch’s open days and hours in one step.")}
-            </p>
-            <ul className={styles.weekSummary} aria-label={t("ملخص الجدول الأسبوعي", "Weekly schedule summary")}>
-              {DISPLAY_DAYS.map((day) => {
-                const value = draft[day];
-                const previous = draft[previousDayOf[day]];
-                const carry = previous.state === "open" ? previous.intervals.filter(interval => interval.nextDay && interval.end && interval.end !== "00:00") : [];
-                return (
-                  <li className={styles.summaryDay} key={day} data-hours-day={day} data-state={!p.snapshot && !userEdited ? "unknown" : value.state}>
-                    <span className={styles.dayName}>{label(day)}</span>
-                    <span className={styles.daySummary} dir="ltr">{summary(day)}</span>
-                    {carry.length > 0 && (
-                      <p className={styles.carry}>
-                        {t("امتداد من اليوم السابق حتى: ", "Carry-over from the previous day until: ")}
-                        <bdi>{carry.map((interval) => interval.end).join("، ")}</bdi>
-                      </p>
-                    )}
-                  </li>
-                );
+            <p className={styles.meta} data-hours-timezone="">{t("المنطقة الزمنية: ", "Timezone: ")}<bdi dir="ltr">{timezoneLabel}</bdi></p>
+            {!configured && <p className={styles.lede}>{t("حدد أيام وساعات دوام الفرع في خطوة واحدة.", "Set this branch’s open days and hours in one step.")}</p>}
+            <dl className={styles.scheduleCards} aria-label={t("ملخص الجدول الأسبوعي", "Weekly schedule summary")}>
+              {groups.map(days => {
+                const day=days[0], carry=carryFor(day);
+                return <div key={day} className={styles.scheduleCard} data-hours-group="" data-hours-days={days.join(" ")} data-state={!p.snapshot && !userEdited ? "unknown" : draft[day].state}>
+                  <dt>{groupLabel(days)}</dt>
+                  <dd><bdi>{summary(day)}</bdi></dd>
+                  {/* Per-day facts behind a grouped card, for assistive tech and tests. */}
+                  <dd className={styles.srOnly}>{days.map(d => <span key={d} data-hours-summary-day={d} data-state={!p.snapshot && !userEdited ? "unknown" : draft[d].state}>{label(d)}: {summary(d)}{carryFor(d).length > 0 ? " · " + carryFor(d).map(i=>i.end).join("، ") : ""}. </span>)}</dd>
+                  {carry.length > 0 && <dd className={styles.carry}>{t("امتداد من اليوم السابق حتى: ", "Carry-over from the previous day until: ")}<bdi>{carry.map(i=>i.end).join("، ")}</bdi></dd>}
+                </div>;
               })}
-            </ul>
+            </dl>
             <div className={styles.heroActions}>
               <button
                 type="button"
@@ -334,7 +421,7 @@ function HoursForm(p: PaidBranchHoursProps) {
                   >
                     {t("نسخ إلى فرع آخر", "Copy to another branch")}
                   </button>
-                  <button type="button" disabled={locked} onClick={() => { if (p.isCurrent()) setShowExceptions((value) => !value); }}>
+                  <button type="button" disabled={locked} onClick={() => { if (p.isCurrent()) { setMode("compose"); setShowExceptions((value) => !value); } }}>
                     {showExceptions ? t("إخفاء الاستثناءات", "Hide exceptions") : t("الاستثناءات", "Exceptions")}
                   </button>
                   <button type="button" disabled={locked} data-hours-preset="closed_all" onClick={() => applyPreset("closed_all")}>{t("إغلاق جميع الأيام", "Close all days")}</button>
@@ -350,51 +437,27 @@ function HoursForm(p: PaidBranchHoursProps) {
               <div>
                 <h2 id={id}>{configured ? t("تعديل المواعيد", "Edit hours") : t("إضافة مواعيد", "Add hours")}</h2>
                 <p className={styles.sub}>{t("اختر الأيام ثم التوقيت — ثم احفظ.", "Choose the days, set the times, then save.")}</p>
+                <p className={styles.meta} data-hours-timezone="">{t("المنطقة الزمنية: ", "Timezone: ")}<bdi dir="ltr">{timezoneLabel}</bdi></p>
               </div>
               <button type="button" className={styles.textBtn} disabled={locked} onClick={cancelCompose}>{t("إلغاء", "Cancel")}</button>
             </header>
 
-            <div className={styles.patterns} role="radiogroup" aria-label={t("أيام العمل", "Working days")}>
-              {presets.map((preset) => (
-                <button
-                  key={preset.id}
-                  type="button"
-                  role="radio"
-                  data-hours-preset={preset.id}
-                  className={activePreset === preset.id ? styles.patternActive : styles.pattern}
-                  disabled={locked}
-                  aria-checked={activePreset === preset.id}
-                  onClick={() => applyPreset(preset.id)}
-                >
-                  <strong>{t(preset.ar, preset.en)}</strong>
-                  <span>{t(preset.hintAr, preset.hintEn)}</span>
-                </button>
-              ))}
+            <div className={styles.dayPicker} role="group" aria-label={t("أيام العمل", "Working days")}>
+              {DISPLAY_DAYS.map(day => <button key={day} type="button" data-hours-toggle={day} data-hours-day={day} data-state={draft[day].state}
+                disabled={locked} aria-pressed={draft[day].state === "open"} onClick={()=>toggleDay(day)}>{label(day)}</button>)}
             </div>
+            <p className={styles.hint}>{t("اضغط على اليوم لفتحه أو إغلاقه.", "Select a day to open or close it.")}</p>
+            {differingHours && <p className={styles.hint}>{t("لديك فترات مختلفة. تغيير الوقت أدناه يوحّد مواعيد الأيام المحددة.", "Your hours vary. Changing the time below replaces the selected days’ intervals with one shared time.")}</p>}
 
             <div className={styles.times} role="group" aria-label={t("ساعات العمل", "Business hours")}>
-              <label className={styles.field}>
+              <div className={styles.field}>
                 {t("من", "From")}
-                <input
-                  type="time"
-                  dir="ltr"
-                  value={quickStart}
-                  disabled={locked}
-                  aria-label={t("توقيت البدء السريع", "Quick start time")}
-                  onChange={(e) => updateTimes({ start: e.target.value })}
-                />
-              </label>
-              <label className={styles.field}>
+                <ClockTimePicker locale={p.locale} value={quickStart} disabled={locked} label={t("وقت البدء", "Start time")} inputLabel={t("توقيت البدء السريع", "Quick start time")} onChange={(v) => updateTimes({ start: v })} />
+              </div>
+              <div className={styles.field}>
                 {t("إلى", "To")}
-                <input
-                  type="time"
-                  dir="ltr"
-                  value={quickEnd}
-                  disabled={locked}
-                  aria-label={t("توقيت الانتهاء السريع", "Quick end time")}
-                  onChange={(e) => updateTimes({ end: e.target.value })}
-                />
-              </label>
+                <ClockTimePicker locale={p.locale} value={quickEnd} disabled={locked} label={t("وقت الانتهاء", "End time")} inputLabel={t("توقيت الانتهاء السريع", "Quick end time")} onChange={(v) => updateTimes({ end: v })} />
+              </div>
               <label className={styles.check}>
                 <input
                   type="checkbox"
@@ -406,15 +469,29 @@ function HoursForm(p: PaidBranchHoursProps) {
                 {t("يمتد لليوم التالي", "Ends next day")}
               </label>
             </div>
+            {quickNextDay && quickStart !== quickEnd && (
+              <p className={styles.hint} data-hours-overnight="" role="status">
+                {t("يغلق في اليوم التالي الساعة ", "Closes the next day at ")}<bdi dir="ltr">{quickEnd}</bdi>
+              </p>
+            )}
+            {quickNextDay && quickStart === quickEnd && (
+              <p className={styles.hint} data-hours-overnight="" role="status">{t("مفتوح 24 ساعة.", "Open for 24 hours.")}</p>
+            )}
+            {!quickNextDay && quickStart === quickEnd && (
+              <p className={styles.error} data-hours-same-time="" role="status">
+                {t("وقت البدء والانتهاء متساويان. هل تقصد 24 ساعة؟ فعّل «يمتد لليوم التالي»، أو غيّر أحد الوقتين.", "Start and end are the same. Do you mean 24 hours? Tick “Ends next day”, or change one of the times.")}
+              </p>
+            )}
 
+            <details className={styles.weekDetails}><summary>{t("عرض الأسبوع بالتفصيل", "View day-by-day hours")}</summary>
             <ul className={styles.weekPreview} aria-label={t("معاينة الأسبوع", "Week preview")}>
               {DISPLAY_DAYS.map((day) => (
-                <li key={day} data-hours-day={day} data-state={draft[day].state}>
+                <li key={day} data-hours-preview-day={day} data-state={draft[day].state}>
                   <span>{label(day)}</span>
                   <bdi dir="ltr">{summary(day)}</bdi>
                 </li>
               ))}
-            </ul>
+            </ul></details>
 
             {!validated.ok && (
               <p role="status" className={styles.error}>
@@ -424,23 +501,24 @@ function HoursForm(p: PaidBranchHoursProps) {
 
             <div className={styles.panelActions}>
               <button
-                type="submit"
-                form={formId}
-                className={styles.primary}
-                disabled={locked || !save.ok || !p.onSave || !canSaveAuthoritative || !activePreset}
+                type="button"
+                className={styles.textBtn}
+                disabled={locked}
+                data-hours-action="exceptions"
+                aria-pressed={showExceptions}
+                onClick={() => { if (p.isCurrent()) setShowExceptions((value) => !value); }}
               >
-                {busy || p.state.phase === "saving" ? t("جارٍ الحفظ…", "Saving…") : t("حفظ المواعيد", "Save hours")}
+                {showExceptions ? t("إخفاء الاستثناءات", "Hide exceptions") : t("الاستثناءات", "Exceptions")}
               </button>
-              <details className={styles.more}>
-                <summary>{t("المزيد", "More")}</summary>
-                <div className={styles.moreMenu}>
-                  <p className={styles.meta}><bdi>{timezoneLabel}</bdi></p>
-                  <button type="button" disabled={locked} onClick={() => { if (p.isCurrent()) setShowExceptions((value) => !value); }}>
-                    {showExceptions ? t("إخفاء الاستثناءات", "Hide exceptions") : t("الاستثناءات", "Exceptions")}
-                  </button>
-                  <button type="button" disabled={locked} data-hours-preset="reset_all" onClick={() => applyPreset("reset_all")}>{t("مسح الجدول", "Clear schedule")}</button>
-                </div>
-              </details>
+              <button
+                type="button"
+                className={styles.textBtn}
+                disabled={locked}
+                data-hours-preset="reset_all"
+                onClick={() => applyPreset("reset_all")}
+              >
+                {t("مسح الجدول", "Clear schedule")}
+              </button>
             </div>
           </div>
         )}
@@ -450,11 +528,7 @@ function HoursForm(p: PaidBranchHoursProps) {
         noValidate
         onSubmit={(event) => {
           event.preventDefault();
-          if (!(save.ok && p.onSave)) return;
-          void dispatch(async () => {
-            await p.onSave?.(save.draft);
-            if (mounted.current && p.isCurrent()) setMode("rest");
-          });
+          persistDraft();
         }}
       >
 

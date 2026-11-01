@@ -16,6 +16,7 @@ vi.mock("@/lib/tenancy/paid-branch-connection-adapters", async () => {
 
 import {
   readOwnedPaidBranchConnectionAction,
+  readOwnedPaidBranchWhatsappBootstrapAction,
   cancelOwnedPaidBranchConnectionAction,
   completeOwnedPaidBranchConnectionAction,
   recoverOwnedPaidBranchConnectionAction,
@@ -263,4 +264,39 @@ describe('early authorization server boundary',()=>{
  it('reports the pre-reservation denial without provider requests',async()=>{vi.stubEnv('WHATSAPP_APP_SECRET','');expect(await captureOwnedWhatsappAuthorizationAction(input)).toEqual({ok:false});expect(state.log).toHaveBeenCalledWith('info','whatsapp.early_authorization.stage',expect.objectContaining({stage:'configuration',outcome:'denied'}));expect(state.early).not.toHaveBeenCalled();});
  it('verifies assets using stored token and promotes without re-exchanging code',async()=>{state.rpc.mockImplementation(async(name:string,p:Record<string,unknown>)=>({data:name==='es02_b3_early_whatsapp_authorization'?p.p_operation==='load'?{ok:true,token:'private-token'}:{ok:true,promoted:true}:current(),error:null}));state.probe.mockImplementation(async(_c,_i,_f,o)=>{o.capture('private-token',false);return {ok:false};});const r=await prepareOwnedWhatsappRegistrationAction({...scope,flow:'wa_new_number',attemptId,generation:1,completion:{attemptId,nonce:input.nonce,code:'early-authorization',wabaId:'222',phoneNumberId:'333',pin:''}});expect(r.ok).toBe(true);expect(state.early).not.toHaveBeenCalled();expect(state.probe.mock.calls[0][3]).toMatchObject({token:'private-token',probe:true});expect(state.rpc.mock.calls.some(c=>c[1].p_operation==='promote')).toBe(true);expect(JSON.stringify(r)).not.toContain('private-token');});
  it('does not promote without provider asset proof',async()=>{state.rpc.mockImplementation(async(name:string)=>({data:name==='es02_b3_early_whatsapp_authorization'?{ok:true,token:'private-token'}:current(),error:null}));state.probe.mockResolvedValue({ok:false,code:'META_ASSET_REJECTED'});const r=await prepareOwnedWhatsappRegistrationAction({...scope,flow:'wa_new_number',attemptId,generation:1,completion:{attemptId,nonce:input.nonce,code:'early-authorization',wabaId:'222',phoneNumberId:'333',pin:''}});expect(r).toEqual({ok:false});expect(state.rpc.mock.calls.some(c=>c[1].p_operation==='promote')).toBe(false);});
+});
+
+
+describe('F8 read-only WhatsApp bootstrap',()=>{
+ beforeEach(()=>{vi.clearAllMocks();vi.stubEnv('WHATSAPP_EMBEDDED_SIGNUP','true');vi.stubEnv('WHATSAPP_EMBEDDED_SIGNUP_APP_ID','111');vi.stubEnv('WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID','123');vi.stubEnv('WHATSAPP_EMBEDDED_SIGNUP_GRAPH_VERSION','v25.0');vi.stubEnv('WHATSAPP_APP_SECRET','fixture-secret');vi.stubEnv('WHATSAPP_COEXISTENCE','true');vi.stubEnv('WHATSAPP_COEXISTENCE_CONFIG_ID','456');vi.stubEnv('WHATSAPP_ROUTING_MODE','tenant_registry');});
+ afterEach(()=>vi.unstubAllEnvs());
+ it.each(['wa_new_number','wa_coexistence'] as const)('reads existing state and exposes only public %s SDK fields',async flow=>{
+  const read={...connectionRead(),connection:{state:'not_connected',flow:null,attempt:null,link:null,verified:false,reasonCodes:[]}};
+  state.rpc.mockImplementation(async(name:string)=>({data:name==='es02_b3_read_replacement_policy'?{ok:true,requiresCoexistence:false}:read,error:null}));
+  const result=await readOwnedPaidBranchWhatsappBootstrapAction({...scope,flow});
+  expect(result).toMatchObject({ok:true,config:{flow,appId:'111',configId:flow==='wa_new_number'?'123':'456',graphVersion:'v25.0'}});
+  expect(names()).toEqual(['es02_b3_read_owned_branch_connection','es02_b3_read_replacement_policy']);expect(state.exchange).not.toHaveBeenCalled();expect(state.probe).not.toHaveBeenCalled();
+  expect(JSON.stringify(result)).not.toContain('fixture-secret');expect(JSON.stringify(result)).not.toContain('nonce');
+ });
+ it('preserves pending attempts without issuing fresh launch configuration',async()=>{
+  state.rpc.mockResolvedValue({data:connectionRead(),error:null});
+  expect(await readOwnedPaidBranchWhatsappBootstrapAction({...scope,flow:'wa_new_number'})).toMatchObject({ok:true,config:null,read:{connection:{attempt:{id:attemptId}}}});
+  expect(names()).toEqual(['es02_b3_read_owned_branch_connection']);
+ });
+ it('denies a different actor before reading configuration or data',async()=>{
+  expect(await readOwnedPaidBranchWhatsappBootstrapAction({...scope,expectedAccountId:'99999999-9999-4999-8999-999999999999',flow:'wa_new_number'})).toEqual({ok:false});expect(state.rpc).not.toHaveBeenCalled();
+ });
+});
+
+describe('F13 replacement policy preflight',()=>{
+ afterEach(()=>vi.unstubAllEnvs());
+ it.each([true,false])('blocks a reviewed new-number launch or denies unavailable policy: %s',async available=>{
+  vi.clearAllMocks();
+  const read={...connectionRead(),connection:{state:'not_connected',flow:null,attempt:null,link:null,verified:false,reasonCodes:[]}};
+  state.rpc.mockImplementation(async(name:string)=>({data:name==='es02_b3_read_replacement_policy'?(available?{ok:true,requiresCoexistence:true}:null):read,error:null}));
+  const result=await readOwnedPaidBranchWhatsappBootstrapAction({...scope,flow:'wa_new_number'});
+  expect(result).toMatchObject(available?{ok:true,config:null,blockedReason:'review_replacement_required'}:{ok:false});
+  expect(names().some(n=>n.includes('start')||n.includes('claim'))).toBe(false);
+  expect(state.exchange).not.toHaveBeenCalled();
+ });
 });

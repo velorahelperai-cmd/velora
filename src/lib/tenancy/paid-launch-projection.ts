@@ -3,9 +3,14 @@ import type {PaidBranchSetupRead,PaidSetupStepStatus} from './paid-setup-contrac
 const object=(v:unknown):Record<string,unknown>|null=>v!==null&&typeof v==='object'&&!Array.isArray(v)?v as Record<string,unknown>:null;
 const uuid=(v:unknown):v is string=>typeof v==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
 const strings=(v:unknown):v is string[]=>Array.isArray(v)&&v.every(x=>typeof x==='string'&&x.length<200)&&new Set(v).size===v.length;
+type NormalizedSummaryItem={detail:string;status:PaidSetupStepStatus};
+function summaryItem(value:unknown):NormalizedSummaryItem|null;
+function summaryItem(value:unknown,team:true):NormalizedSummaryItem|{detail:string;status:"optional"}|null;
 function summaryItem(value:unknown,team=false){
  const row=object(value);if(!row||typeof row.detail!=='string'||row.detail.length>2000)return null;
- const status=row.status==='deferred'&&team?'skipped_optional':row.status;
+ // Deferred is a policy exemption, not evidence that the owner skipped invitations.
+ if(team&&row.status==='deferred')return {detail:'دعوة الفريق اختيارية ولا تمنع الإطلاق.',status:'optional' as const};
+ const status=row.status;
  if(!['verified','pending','blocked','skipped_optional','unavailable'].includes(String(status)))return null;
  return {detail:row.detail,status:status as PaidSetupStepStatus};
 }
@@ -34,22 +39,19 @@ export function normalizePaidLaunchSnapshot(
  if(!hours||!knowledge||!persona||!team||!uuid(row.operationId))return null;
  persona.detail={level_1:'نورا',level_2:'لينا',level_3:'دانا'}[read.entitlement.persona];
 
+ // Display only language evidence that was actually read. Missing fields do
+ // not imply both languages were confirmed, even when other readiness is ready.
  let languagesItem: {detail:string;status:PaidSetupStepStatus};
  if(summary.languages){
   const parsed=summaryItem(summary.languages);
-  languagesItem=parsed??{
-   detail:(ready.blockers as string[]).includes('language_unconfirmed')?'بانتظار تأكيد لغات الرد':'العربية والإنجليزية',
-   status:((ready.blockers as string[]).includes('language_unconfirmed')?'pending':'verified') as PaidSetupStepStatus,
-  };
- }else if(language?.confirmation==='confirmed'&&language.replyLanguage){
+  if(!parsed)return null;
+  languagesItem=parsed;
+ }else if(language?.confirmation==='confirmed'&&['ar','en','both'].includes(language.replyLanguage??'')){
   const detail=language.replyLanguage==='both'?'العربية والإنجليزية':language.replyLanguage==='ar'?'العربية':'الإنجليزية';
   languagesItem={detail,status:'verified'};
  }else{
   const isBlocked=(ready.blockers as string[]).includes('language_unconfirmed');
-  languagesItem={
-   detail:isBlocked?'بانتظار تأكيد لغات الرد':'العربية والإنجليزية',
-   status:(isBlocked?'pending':'verified') as PaidSetupStepStatus,
-  };
+  languagesItem={detail:isBlocked?'بانتظار تأكيد لغات الرد':'تعذّر التحقق من لغات الرد',status:isBlocked?'pending':'unavailable'};
  }
 
  if(ready.status==='ready'&&[...channelItems,hours,knowledge,persona,languagesItem].some(v=>v.status!=='verified'))return null;

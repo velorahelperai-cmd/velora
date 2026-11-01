@@ -2,7 +2,7 @@ import "server-only";
 import { selectServerCoexistenceAsset, type ServerFetchedPhoneAsset } from "./asset-selection";
 
 export type CoexistenceProviderConfig = { enabled: boolean; appId: string; appSecret: string; systemUserToken?: string; graphVersion: string };
-export type CoexistenceProviderInput = { code: string; wabaId?: string; phoneNumberId?: string; confirmedPhoneNumber: string };
+export type CoexistenceProviderInput = { code: string; wabaId?: string; phoneNumberId?: string; confirmedPhoneNumber?: string };
 export type CoexistenceProviderFailureCode = "NEEDS_SETUP" | "INVALID_INPUT" | "META_AUTHORIZATION_REJECTED" | "META_ASSET_REJECTED" | "META_UNAVAILABLE" | "RECONCILIATION_REQUIRED";
 export type CoexistenceProviderFailure = { ok: false; code: CoexistenceProviderFailureCode };
 export type CoexistenceProof = {
@@ -103,7 +103,7 @@ function proofFor(config: CoexistenceProviderConfig, token: NonNullable<ReturnTy
 /** Code exchange may create external authorization despite using GET. Checkpoint before subscribing. */
 export async function prepareCoexistenceSignup(config: CoexistenceProviderConfig, input: CoexistenceProviderInput, http: CoexistenceFetch = fetch, clock: CoexistenceClock = serverNow): Promise<CoexistencePreparedResult> {
   if (!configured(config)) return { ok: false, code: "NEEDS_SETUP" };
-  if (typeof input.code !== "string" || !input.code.trim() || input.code.length > 4096 || typeof input.confirmedPhoneNumber !== "string" || !/^\+[1-9]\d{6,14}$/.test(input.confirmedPhoneNumber) || (input.wabaId !== undefined && !id(input.wabaId)) || (input.phoneNumberId !== undefined && !id(input.phoneNumberId))) return { ok: false, code: "INVALID_INPUT" };
+  if (typeof input.code !== "string" || !input.code.trim() || input.code.length > 4096 || (input.confirmedPhoneNumber === undefined ? !input.phoneNumberId : typeof input.confirmedPhoneNumber !== "string" || !/^\+[1-9]\d{6,14}$/.test(input.confirmedPhoneNumber)) || (input.wabaId !== undefined && !id(input.wabaId)) || (input.phoneNumberId !== undefined && !id(input.phoneNumberId))) return { ok: false, code: "INVALID_INPUT" };
   const api = transport(config, http);
   let exchangeStarted = false;
   try {
@@ -125,8 +125,8 @@ export async function prepareCoexistenceSignup(config: CoexistenceProviderConfig
     const verifiedNow = clock();
     const selected = selectServerCoexistenceAsset({ serverDebugTokenData: token.data, expectedAppId: config.appId, trustedNowEpochSeconds: verifiedNow, requestedWabaId: token.wabaId,
       serverPhoneAssets: [{ wabaId: token.wabaId, paginationComplete: true, phones: enriched }],
-      requestedSelection: input.phoneNumberId ? { kind: "phone_id", phoneNumberId: input.phoneNumberId } : { kind: "phone_number", internationalPhoneNumber: input.confirmedPhoneNumber, confirmed: true } });
-    if (!selected.ok || selected.normalizedPhoneNumber !== input.confirmedPhoneNumber) return { ok: false, code: selected.ok || !["TOKEN_REJECTED", "WABA_NOT_AUTHORIZED"].includes(selected.code) ? "META_ASSET_REJECTED" : "META_AUTHORIZATION_REJECTED" };
+      requestedSelection: input.phoneNumberId ? { kind: "phone_id", phoneNumberId: input.phoneNumberId } : { kind: "phone_number", internationalPhoneNumber: input.confirmedPhoneNumber ?? "", confirmed: true } });
+    if (!selected.ok || (input.confirmedPhoneNumber !== undefined && selected.normalizedPhoneNumber !== input.confirmedPhoneNumber)) return { ok: false, code: selected.ok || !["TOKEN_REJECTED", "WABA_NOT_AUTHORIZED"].includes(selected.code) ? "META_ASSET_REJECTED" : "META_AUTHORIZATION_REJECTED" };
     return { ok: true, accessToken, proof: proofFor(config, token, selected.phoneNumberId, selected.normalizedPhoneNumber, verifiedNow) };
   } catch { return { ok: false, code: exchangeStarted ? "RECONCILIATION_REQUIRED" : "META_UNAVAILABLE" }; }
 }

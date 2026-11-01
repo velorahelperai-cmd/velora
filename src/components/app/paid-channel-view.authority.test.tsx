@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+// @vitest-environment-options {"url":"https://velora.example.test/setup"}
 // @vitest-environment-options {"url":"https://velora.test/setup"}
 import {act,createElement} from 'react';
 import {createRoot,type Root} from 'react-dom/client';
@@ -35,6 +36,8 @@ async function setup(){
  const render=async(isCurrent:()=>boolean,scopeOverride=scope)=>{await act(async()=>root.render(createElement(PaidChannelView,{locale:'en',scope:scopeOverride,read,channel:'whatsapp',connectionRead:connection,isCurrent,actions} satisfies PaidChannelViewProps)));};
  const original=validator();await render(original);
  for(const selector of ['input[value="new-number"]','[data-connect-action]'])await act(async()=>host.querySelector<HTMLButtonElement>(selector)!.click());
+ // The prepared-attempt fallback needs a fresh gesture after the server read.
+ await act(async()=>host.querySelector<HTMLButtonElement>('[data-connect-action]')!.click());
  expect(login).toHaveBeenCalledTimes(1);
  const finish=()=>window.dispatchEvent(new MessageEvent('message',{origin:'https://www.facebook.com',data:JSON.stringify({type:'WA_EMBEDDED_SIGNUP',event:'FINISH',data:{waba_id:'333',phone_number_id:'444'}})}));
  const code=()=>callback({authResponse:{code:'synthetic-code'}});

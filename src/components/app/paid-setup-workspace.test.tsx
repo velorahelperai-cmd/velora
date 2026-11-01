@@ -8,16 +8,16 @@ const scope={expectedAccountId:"actor",companyId:"company",branchId:"branch",bou
 const read=projectTrustedBoundSelection({companyId:"company",branchId:"branch",branchLabel:"Main branch",orderGroupId:"order",slotIndex:0,persona:"level_2",package:"basic",term:"monthly",maxChannels:1,employeesExcludingOwner:2,clockState:"waiting_readiness",asOf:"now"},{channels:["whatsapp"]});
 const props:PaidSetupWorkspaceProps={locale:"en",scope,read,activeStepId:"whatsapp",availableStepIds:["whatsapp","instagram","hours","knowledge","test","team","launch"],isCurrent:()=>true,onSelectStep:()=>{throw Error("No selection during render");}};
 const render=(overrides:Partial<PaidSetupWorkspaceProps>={})=>renderToStaticMarkup(createElement(PaidSetupWorkspace,{...props,...overrides}));
-it('keeps the presentation frame during loading without inventing a plan, progress or usable steps',()=>{const html=render({read:null,loading:true});expect(html).toContain('data-setup-frame="pending"');expect(html).toContain('Setup journey');expect(html).toContain('Stage content');expect(html).toContain('Loading branch setup');expect(html).not.toContain('Branch setup</h2>');expect(html).not.toContain('Saved settings appear after branch access is verified');expect(html).not.toContain('<progress');expect(html).not.toContain('data-step-id');expect(html).not.toContain('Plan and activation summary');expect(html).not.toContain('type="radio"');});
-it('keeps the same frame with a retry on unavailable setup instead of hiding the UI',()=>{const html=render({read:null,onRefresh:()=>{}});expect(html).toContain('data-setup-frame="pending"');expect(html).toContain('role="alert"');expect(html).toContain('Retry');expect(html).not.toContain('<progress');expect(html).not.toContain('data-step-id');});
+it('keeps the presentation frame during loading without inventing a plan, progress or usable steps',()=>{const html=render({read:null,loading:true});expect(html).toContain('data-setup-frame="pending"');expect(html).toContain('Setup journey');expect(html).toContain('Stage content');expect(html).toContain('Loading branch setup');expect(html).not.toContain('Branch setup</h2>');expect(html).not.toContain('Saved settings appear after branch access is verified');expect(html).not.toContain('role="progressbar"');expect(html).not.toContain('data-step-id');expect(html).not.toContain('Plan and activation summary');expect(html).not.toContain('type="radio"');});
+it('keeps the same frame with a retry on unavailable setup instead of hiding the UI',()=>{const html=render({read:null,onRefresh:()=>{}});expect(html).toContain('data-setup-frame="pending"');expect(html).toContain('role="alert"');expect(html).toContain('Retry');expect(html).not.toContain('role="progressbar"');expect(html).not.toContain('data-step-id');});
 it("renders six visible setup steps including required hours and actual progress with no guide auto-selection",()=>{
- const html=render();expect(html.match(/data-step-id=/g)).toHaveLength(6);expect(html).not.toContain('data-step-id="instagram"');expect(html).toContain('data-step-id="hours"');expect(html).not.toContain('data-step-id="language"');expect(html).toContain('data-step-id="team"');expect(html).toContain('aria-current="step"');expect(html).not.toContain("data-guide-source");
- expect(html).toContain('<bdi dir="ltr">0 / 6</bdi>');expect(html).not.toContain('href="/setup/branches/');
+ const html=render();expect(html).toContain('Step 1 of 6');expect(render({activeStepId:'hours'})).toContain('Step 2 of 6');expect(render({activeStepId:'team'})).toMatch(/Step \d of 6/);expect(html).not.toContain("data-guide-source");
+ expect(html).toContain('0 of 6 complete');expect(html).not.toContain('href="/setup/branches/');
 });
 it("renders seven visible steps for a paid two-channel read including required hours",()=>{
  const both=projectTrustedBoundSelection({companyId:"company",branchId:"branch",branchLabel:"Main",orderGroupId:"order",slotIndex:0,persona:"level_2",package:"premium",term:"monthly",maxChannels:2,employeesExcludingOwner:4,clockState:"waiting_readiness",asOf:"now"},{channels:["whatsapp","instagram"]});
- expect(render({read:both}).match(/data-step-id=/g)).toHaveLength(7);
- expect(render({read:both})).toContain('data-step-id="hours"');
+ expect(render({read:both})).toContain('of 7');
+ expect(render({read:both,activeStepId:'hours'})).toMatch(/Step \d of 7/);
 });
 it("IG-only never renders WA",()=>{
  const ig=projectTrustedBoundSelection({companyId:"company",branchId:"branch",branchLabel:"Main",orderGroupId:"order",slotIndex:0,persona:"level_2",package:"basic",term:"monthly",maxChannels:1,employeesExcludingOwner:2,clockState:"waiting_readiness",asOf:"now"},{channels:["instagram"]});
@@ -41,8 +41,7 @@ it("keeps a locked step mounted with an explicit block reason instead of silent 
  expect(locked).toContain("Trial draft preserved");
  expect(locked).not.toContain("Choose an available step");
  expect(render({availableStepIds:[]})).not.toContain('type="radio"');
- expect(render()).toContain('data-step-id="hours"');
-});
+ });
 it("allows launch review without changing negative server launch authority",()=>{
  const complete={...read,steps:read.steps.map(s=>({...s,status:"verified" as const}))};
  expect(workspaceStepAllowed(complete,scope,"launch",props.availableStepIds)).toBe(true);expect(complete.launch.canRequest).toBe(false);
@@ -52,8 +51,8 @@ it("only mounts a released leaf after authoritative dependencies become ready",(
  expect(render({read:updated,activeStepId:"knowledge",renderStep:id=>createElement("p",null,"Existing leaf: "+id)})).toContain("Existing leaf: knowledge");
  expect(read.progress.verified).toBe(0);
 });
-it("uses RTL and a collapsed accessible mobile step control",()=>{
- const html=render({locale:"ar"});expect(html).toContain('dir="rtl"');expect(html).toContain('aria-expanded="false"');expect(html).toContain('tabindex="-1"');
+it("uses RTL with a focusable step heading",()=>{
+ const html=render({locale:"ar"});expect(html).toContain('dir="rtl"');expect(html).toContain('tabindex="-1"');
 });
 it("advances within the page only after server-confirmed channel and matching proof, and resumes incomplete business steps when WhatsApp is pending",()=>{
  const proof={...unavailablePaidBranchConnectionRead({...scope,channel:"whatsapp"},"now","source_failed"),sourceStatus:"ready" as const,connection:{state:"connected" as const,verified:true,link:{id:"link",generation:2},attempt:null,flow:"wa_new_number" as const,reasonCodes:[]}};
@@ -89,8 +88,23 @@ it('does not present provisional shell progress as verified',()=>{const html=ren
 
 it('labels unverified provisional steps as checking without turning navigation into completion authority',()=>{
  const html=render({provisional:true});
- expect(html).toContain('<small>Checking</small>');
- expect(html).not.toContain('<small>Available</small>');
- expect(html).not.toContain('<small>Complete</small>');
+ expect(html).toContain('Checking setup progress');
  expect(workspaceStepAllowed(read,scope,'test',props.availableStepIds)).toBe(false);
+});
+
+
+it.each(['ar','en'] as const)('has one next-step action after the working content in %s',locale=>{
+ const html=render({locale,activeStepId:'hours',renderStep:()=>createElement('div',{'data-review-leaf':'hours'},'Saved schedule')});
+ const label=locale==='ar'?'الخطوة التالية':'Next step';
+ expect(html.split(label).length-1).toBe(1);
+ expect(html).toContain('<footer');
+ expect(html.indexOf('<footer')).toBeGreaterThan(html.indexOf('Saved schedule'));
+ expect(html).toContain(locale==='ar'?'الخطوة 2 من 6':'Step 2 of 6');
+});
+it('keeps the single next action disabled with an explained prerequisite',()=>{
+ const html=render({activeStepId:'knowledge',renderStep:()=>createElement('div',null,'Knowledge content')});
+ const footer=html.slice(html.indexOf('<footer'));
+ expect(footer).toContain('disabled=""');
+ expect(footer).toContain('Waiting for: Knowledge &amp; languages');
+ expect(read.launch.canRequest).toBe(false);
 });

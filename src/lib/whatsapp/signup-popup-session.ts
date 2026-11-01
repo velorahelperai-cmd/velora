@@ -1,5 +1,7 @@
-export type PopupResult={kind:'completed';code:string;wabaId:string;phoneNumberId:string}|{kind:'cancelled'}|{kind:'error'};
-export type PopupObservation='waiting_timeout'|'popup_closed'|'callback_without_code'|'attempt_expired'|'authority_lost'|'signal_conflict';
+/** Meta finishes this route must not accept; never auto-resolved. */
+export type SignupErrorReason='only_waba'|'wrong_route'|'grant_only'|'multiple_accounts'|'missing_number'|'meta_error';
+export type PopupResult={kind:'completed';code:string;wabaId:string;phoneNumberId:string}|{kind:'cancelled'}|{kind:'error';reason?:SignupErrorReason};
+export type PopupObservation='waiting_timeout'|'popup_closed'|'callback_without_code'|'attempt_expired'|'authority_lost'|'signal_conflict'|'finish_without_code';
 /** One in-memory capture per attempt. A UI deadline never grants or revokes server authority. */
 export function createSignupPopupSession(options:{expiresAt:number;isCurrent:()=>boolean;onObservation?:(stage:PopupObservation)=>void;trace:(stage:string,facts?:Record<string,boolean>)=>void;signal?:AbortSignal;onCode?:(code:string)=>Promise<boolean>}) {
  let code:string|undefined,assets:{wabaId:string;phoneNumberId:string}|undefined,settled=false,waited=false,saved=!options.onCode;
@@ -40,7 +42,8 @@ export function createSignupPopupSession(options:{expiresAt:number;isCurrent:()=
    assets={wabaId:value.wabaId,phoneNumberId:value.phoneNumberId};ready();
   },
   cancelled(){if(valid()){options.trace('signup_signal',{cancel:true});finish(code||assets?{kind:'error'}:{kind:'cancelled'});}},
-  error(){if(valid()){options.trace('signup_signal',{error:true});finish({kind:'error'});}},
-  closed(){if(valid())observation('popup_closed');},
+  error(reason?:SignupErrorReason){if(valid()){options.trace('signup_signal',{error:true});finish(reason?{kind:'error',reason}:{kind:'error'});}},
+  // Meta sends FINISH on close-with-X but the code only after Finish is clicked.
+  closed(){if(valid())observation(assets&&!code?'finish_without_code':'popup_closed');},
  };
 }

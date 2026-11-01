@@ -13,7 +13,7 @@ import { setupSubscriptionReturn } from "@/lib/auth/setup-return";
 import { readSetupFileContext } from "@/lib/tenancy/setup-draft-actions";
 import { type SetupDraftCode, type SetupDraftRecord } from "@/lib/tenancy/setup-draft";
 import {SetupFilePreparation} from './setup-file-preparation';
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { type Activation, type Business, emptyBusiness, nowMs, useDemo } from "@/lib/demo-state";
 import {
   type CompanyDraft,
@@ -222,11 +222,17 @@ export function SetupWizard(props:Parameters<typeof LegacySetupWizard>[0]) {
  const companyId=props.initialCompany?.id;
  const identity=session?.identity;
  const boundaryFingerprint=session?.boundaryFingerprint;
+ const sessionRef=useRef(session);
+ const identityRef=useRef(identity);
+ const boundaryRef=useRef(boundaryFingerprint);
+ useLayoutEffect(()=>{sessionRef.current=session;identityRef.current=identity;boundaryRef.current=boundaryFingerprint;},[session,identity,boundaryFingerprint]);
+ // Stable authority check: object identity churn must not remount the branch reader or wipe caches.
  const isCurrent=useCallback(()=>{
-  if(!session||!identity||!boundaryFingerprint||identity.companyId!==companyId)return false;
-  const live=session.liveSnapshot();
-  return live.ready&&live.userId===props.userId&&live.boundaryFingerprint===boundaryFingerprint&&session.isCurrentUser(props.userId,identity);
- },[session,identity,boundaryFingerprint,companyId,props.userId]);
+  const liveSession=sessionRef.current,liveIdentity=identityRef.current,liveBoundary=boundaryRef.current;
+  if(!liveSession||!liveIdentity||!liveBoundary||liveIdentity.companyId!==companyId)return false;
+  const live=liveSession.liveSnapshot();
+  return live.ready&&live.userId===props.userId&&live.boundaryFingerprint===liveBoundary&&liveSession.isCurrentUser(props.userId,liveIdentity);
+ },[companyId,props.userId]);
  if(!companyId)return <LegacySetupWizard {...props}/>;
  if(session?.status!=="ready"||!boundaryFingerprint||identity?.userId!==props.userId||identity.companyId!==companyId)return <PaidAssistantChecklist locale={locale} model={null} loading={session?.status==="loading"}/>;
  return <main className={paidStyles.paidShell} dir={locale==='ar'?'rtl':'ltr'} data-service-theme="">

@@ -55,7 +55,7 @@
 .error svg { flex: none; width: 21px; height: 21px; margin-block-start: 3px; }
 .guide { padding-block-start: 8px; }
 .guideIntro { display: flex; align-items: center; gap: 10px; font-size: 16px; font-weight: 500; color: var(--entry-muted); }
-.guideMark { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 9px; color: var(--entry-action); border: 1px solid var(--entry-action); font-family: var(--font-en); font-weight: 700; font-size: 16px; }
+.guideMark { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 9px; color: var(--setup-deep, #066673); border: 1px solid var(--entry-action); font-family: var(--font-en); font-weight: 700; font-size: 16px; }
 .employee { margin-block: 12px 24px; aspect-ratio: 4 / 5; max-height: 420px; background: transparent; }
 .guideBody { padding-inline: 4px; }
 .entry .guideBody h3 { font-size: 22px; line-height: 1.55; font-weight: 700; letter-spacing: 0; }

@@ -1,1 +1,70 @@
-.view{box-sizing:border-box;max-width:850px;margin:24px auto;padding:24px;border:1px solid #dfeaf1;border-radius:16px;background:white;color:#103047;box-shadow:0 8px 28px #10304708;font:14px/1.65 "Tajawal",sans-serif;overflow-wrap:anywhere}.view[dir=rtl]{font-family:"Tajawal",Tahoma,sans-serif}.view *{box-sizing:border-box}.view h2{font-size:24px;color:#007f98;margin:6px 0}.badge{border-radius:16px;background:#eef9fb;color:#006c81;padding:4px 10px}.note{color:#536b79}.seats{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;border:1px solid #dfeaf1;border-radius:16px;background:#f1f9fa;padding:16px;margin:20px 0}.seats p{flex-basis:100%;margin:0;color:#536b79}.view label{display:flex;flex-direction:column;gap:5px;margin:12px 0}.view :is(input,select){width:100%;min-width:0;min-height:44px;padding:10px 12px;border:1px solid #b8ced5;border-radius:10px;font:inherit;background:#fff;color:inherit}.view button{min-height:44px;padding:10px 16px;border:1px solid #b8ced5;border-radius:12px;background:white;color:#006c81;font:inherit;cursor:pointer}.view button[type=submit]{background:#007f98;color:#fff;border-color:#007f98}.view button:disabled{opacity:.55;cursor:default}.view :is(button,input,select):focus-visible{outline:3px solid #007f98;outline-offset:3px}.invitations{list-style:none;padding:0;margin:16px 0}.invitations li{padding:12px;border:1px solid #dfeaf1;border-radius:12px;display:flex;flex-direction:column;gap:4px;margin:8px 0}.error{color:#9b302a}.view footer{border-top:1px solid #dfeaf1;padding-top:16px;margin-top:20px}@media(max-width:600px){.view{margin:12px 0;padding:16px}.view h2{font-size:22px}.view button{width:100%}}
+/* paid-team-invitations: single layer (Phase 3). */
+.view{box-sizing:border-box;max-width:100%;margin:0;padding:0;background:transparent;color:var(--setup-ink,#172d43);overflow-wrap:anywhere;font-size:var(--setup-text,15px);line-height:var(--setup-leading,1.6);font-family:var(--font-en,"Tajawal"),sans-serif}
+.view[dir=rtl]{font-family:var(--font-ar,"Tajawal"),Tahoma,sans-serif}
+.view *{box-sizing:border-box}
+.view h2{font-size:var(--setup-h-step,22px);color:var(--setup-ink,#172d43);margin:0;line-height:1.3}
+.badge{border-radius:16px;background:#eef9fb;color:var(--setup-accent-hover,#066673);padding:4px 10px;font-size:12px}
+.note{color:var(--setup-muted,#536579)}
+.header{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin:0 0 10px;flex-wrap:wrap}
+.headerCopy{min-width:0;flex:1 1 auto}
+.headerCopy p{margin:2px 0 0;color:var(--setup-muted,#536579);font-size:13px}
+.seatChip{
+  display:inline-flex;align-items:center;gap:6px;margin:0;padding:3px 9px;
+  border:1px solid var(--setup-line,#dce4eb);border-radius:999px;background:#fff;
+  color:var(--setup-ink,#172d43);font-size:12px;font-weight:650;line-height:1.2;white-space:nowrap;
+}
+.seatLabel{color:var(--setup-muted,#536579);font-weight:550}
+.srOnly{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.fieldsRow{display:flex;flex-wrap:nowrap;align-items:stretch;gap:10px;margin:8px 0}
+.view .fieldsRow>label{flex:1 1 0;min-width:0;margin:0}
+.rolePermsRow{display:flex;flex-wrap:nowrap;align-items:stretch;gap:10px;margin:8px 0}
+.view .roleField,.view .capsField{margin:0;min-height:0;display:flex;flex-direction:column;justify-content:center;padding:6px 12px 8px}
+.view .roleField{flex:0 0 8.5rem;width:8.5rem;min-width:8.5rem}
+.view .capsField{flex:1 1 0;min-width:0}
+.capsRow{display:flex;flex-flow:row nowrap;align-items:center;gap:10px 16px;width:100%}
+.view .capsRow>label{flex:1 1 0;min-width:0;margin:0}
+.view label{display:flex;flex-direction:column;gap:4px;margin:8px 0}
+.view :is(input:not([type=checkbox]),select){width:100%;min-width:0;min-height:var(--setup-control-height,40px);padding:0 var(--setup-space-3,12px);border:1px solid var(--setup-line,#dce4eb);border-radius:8px;font:inherit;background:#fff;color:inherit}
+.view button{min-height:var(--setup-control-height,40px);padding:0 var(--setup-space-4,16px);border:1px solid var(--setup-line,#dce4eb);border-radius:8px;background:white;color:var(--setup-accent-hover,#066673);font:inherit;cursor:pointer;font-size:var(--setup-text-small,13px);font-weight:600}
+.view button[type=submit]{background:var(--setup-accent,#087e8b);color:#fff;border-color:var(--setup-accent,#087e8b)}
+.view button:disabled{opacity:.55;cursor:default}
+.view :is(button,input,select):focus-visible{outline:var(--setup-focus,2px solid #087e8b);outline-offset:2px}
+.invitations{list-style:none;padding:0;margin:12px 0 0;display:flex;flex-direction:column;gap:6px}
+.inviteRow{
+  display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:0;padding:8px 10px;
+  border:1px solid var(--setup-line,#dce4eb);border-radius:8px;background:#fff;
+}
+.inviteWho{flex:1 1 11rem;min-width:0;display:flex;flex-direction:column;gap:1px}
+.inviteWho strong{display:block;font-size:14px;font-weight:650;line-height:1.3;color:var(--setup-ink,#172d43)}
+.inviteWho bdi{display:block;font-size:12px;line-height:1.35;color:var(--setup-muted,#536579)}
+.inviteStatus{
+  flex:0 0 auto;margin:0;padding:2px 8px;border-radius:999px;border:1px solid #d7eef1;
+  background:#eef9fb;color:var(--setup-accent-hover,#066673);font-size:11px;font-weight:650;line-height:1.3;white-space:nowrap;
+}
+.inviteRow[data-status=accepted] .inviteStatus{border-color:#d7e8d9;background:#eef7ef;color:#2f6b3a}
+.inviteRow[data-status=expired] .inviteStatus,.inviteRow[data-status=cancelled] .inviteStatus,.inviteRow[data-status=conflicted] .inviteStatus{border-color:#eadfdf;background:#f7f1f1;color:#8a4b45}
+.inviteActions{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-inline-start:auto}
+.view .inviteActions button{min-height:32px;padding:0 10px;width:auto;font-size:12px;font-weight:600;border-radius:7px}
+.view .inviteActions .inviteDanger{color:#8a4b45;border-color:#e2d0ce}
+.error{color:#9b302a}
+.view footer{border-top:1px solid var(--setup-line,#dce4eb);padding-top:16px;margin-top:20px}
+.view label:has(input[type=checkbox]){flex-direction:row;align-items:flex-start;gap:8px;min-height:0;margin:0;font-size:13px;line-height:1.35}
+.view[dir=rtl] label:has(input[type=checkbox]){flex-direction:row}
+.view input[type=checkbox]{width:16px;height:16px;min-height:16px;flex:none;margin-block:2px;accent-color:var(--setup-accent,#087e8b)}
+.view fieldset{min-inline-size:0;border:1px solid var(--setup-line,#dce4eb);border-radius:8px;padding:8px 12px 10px;margin:8px 0}
+.view legend{font-size:12px;padding-inline:4px;color:var(--setup-muted,#536579)}
+.note{font-size:14px}
+@media (max-width:640px){
+  .view button{}
+  .view :is(input:not([type=checkbox]),select){font-size:16px}
+  .fieldsRow,.rolePermsRow{flex-wrap:wrap;align-items:stretch}
+  .view .fieldsRow>label,.view .roleField,.view .capsField{flex:1 1 100%;width:auto;min-width:0}
+  .capsRow{flex-wrap:wrap}
+}
+@media (max-width:600px){
+  .view{margin:0;padding:0}
+  .view h2{font-size:22px}
+  .view form>button,.view footer button{width:100%}
+  .inviteActions{width:100%;margin-inline-start:0}
+  .view .inviteActions button{flex:1 1 auto}
+}

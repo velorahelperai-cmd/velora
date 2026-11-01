@@ -428,6 +428,10 @@ export async function replyWhatsappConversation(input: {
   if (!claimRow) {
     return { ok: false, code: "SAVE_FAILED", message: "claim_unavailable", clientOpId };
   }
+  if (claimRow.ok === false && claimRow.code === "number_unconfirmed") {
+    // F5: the owner has not confirmed this linked number; nothing was sent to Meta.
+    return { ok: false, code: "SEND_DISABLED", message: "number_unconfirmed", clientOpId };
+  }
   const claimedIntent = intentFrom(claimRow.intent);
   if (claimRow.ok === true && (
     !claimedIntent || claimedIntent.id !== intent.id || !replyBindingMatches(claimedIntent)

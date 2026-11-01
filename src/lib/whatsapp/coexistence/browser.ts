@@ -8,12 +8,14 @@
 export const MAX_SESSION_JSON_LENGTH = 16_384;
 const TRUSTED_ORIGINS = new Set(["https://www.facebook.com", "https://web.facebook.com"]);
 export type SignupMode = "coexistence" | "cloud-api-v4";
-type AssetArrayKey = "ad_account_ids" | "page_ids" | "dataset_ids" | "catalog_ids" | "instagram_account_ids" | "waba_ids";
+type AssetArrayKey = "ad_account_ids" | "page_ids" | "dataset_ids" | "catalog_ids" | "instagram_account_ids" | "waba_ids" | "messaging_account_ids";
 export type SignupSelectors = Readonly<{
   waba_id: string;
   phone_number_id?: string;
   business_id?: string;
 } & Partial<Record<AssetArrayKey, readonly string[]>>>;
+/** Documented finish outcomes this route must not accept, with no automatic choice. */
+export type SignupRejection = "wrong_route" | "only_waba" | "grant_only" | "multiple_accounts";
 export type SignupFinish = Readonly<{
   kind: "finish";
   event: "FINISH" | "FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING";
@@ -24,12 +26,12 @@ export type SignupObservation =
   | SignupFinish
   | Readonly<{ kind: "cancel"; currentStep?: string }>
   | Readonly<{ kind: "error"; event: "ERROR" | "CANCEL" }>
+  | Readonly<{ kind: "rejected"; reason: SignupRejection }>
   | Readonly<{ kind: "unknown"; event: string }>
   | Readonly<{ kind: "ignored" }>
   | Readonly<{ kind: "invalid" }>;
 
-const ARRAY_KEYS: readonly AssetArrayKey[] = ["ad_account_ids", "page_ids", "dataset_ids", "catalog_ids", "instagram_account_ids", "waba_ids"];
-const SELECTOR_KEYS = new Set(["waba_id", "phone_number_id", "business_id", ...ARRAY_KEYS]);
+const ARRAY_KEYS: readonly AssetArrayKey[] = ["ad_account_ids", "page_ids", "dataset_ids", "catalog_ids", "instagram_account_ids", "waba_ids", "messaging_account_ids"];
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value);
 const isId = (value: unknown): value is string => typeof value === "string" && /^[1-9]\d{0,31}$/.test(value);
@@ -58,15 +60,29 @@ export function parseEmbeddedSignupMessage(message: { origin: string; data: unkn
     if ("current_step" in data && !isText(data.current_step)) return invalid();
     return { kind: "cancel", ...(isText(data.current_step) ? { currentStep: data.current_step } : {}) };
   }
+  if (event === "FINISH_ONLY_WABA") return { kind: "rejected", reason: "only_waba" };
+  if (event === "FINISH_GRANT_ONLY_API_ACCESS") return { kind: "rejected", reason: "grant_only" };
   if (event !== "FINISH" && event !== "FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING") return { kind: "unknown", event };
-  if ((event === "FINISH") !== (mode === "cloud-api-v4")) return invalid();
-  if (Object.keys(payload).some((key) => !["type", "event", "data", "version"].includes(key))) return invalid();
-  // A version:3 coexistence payload is explicitly documented. No version:4 shape is documented.
-  if ("version" in payload && !(event === "FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING" && payload.version === 3)) return invalid();
-  if (Object.keys(data).some((key) => !SELECTOR_KEYS.has(key)) || !isId(data.waba_id)) return invalid();
+  // v5: event is FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING when is_on_biz_app is true, FINISH when false.
+  if ("is_on_biz_app" in data && typeof data.is_on_biz_app !== "boolean") return invalid();
+  if (typeof data.is_on_biz_app === "boolean" && data.is_on_biz_app !== (event === "FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING")) return invalid();
+  if ((event === "FINISH") !== (mode === "cloud-api-v4")) return mode === "coexistence" ? { kind: "rejected", reason: "wrong_route" } : invalid();
+  // Unknown top-level and data keys (including other versions) are ignored; only known ID fields are trusted and strictly checked.
+  // v5 messaging_account_ids replaces waba_id. Several distinct accounts are never auto-chosen.
+  const accounts = new Set<string>();
+  if ("waba_id" in data) { if (!isId(data.waba_id)) return invalid(); accounts.add(data.waba_id); }
+  for (const key of ["messaging_account_ids", "waba_ids"] as const) {
+    if (!(key in data)) continue;
+    const ids = data[key];
+    if (!Array.isArray(ids) || ids.length > 100 || !ids.every(isId)) return invalid();
+    ids.forEach((id) => accounts.add(id));
+  }
+  if (accounts.size > 1) return { kind: "rejected", reason: "multiple_accounts" };
+  const wabaId = [...accounts][0];
+  if (!isId(wabaId)) return invalid();
   if (["phone_number_id", "business_id"].some((key) => key in data && !isId(data[key]))) return invalid();
   if (mode === "cloud-api-v4" && (!isId(data.phone_number_id) || !isId(data.business_id))) return invalid();
-  const selectors: { waba_id: string; phone_number_id?: string; business_id?: string } & Partial<Record<AssetArrayKey, readonly string[]>> = { waba_id: data.waba_id };
+  const selectors: { waba_id: string; phone_number_id?: string; business_id?: string } & Partial<Record<AssetArrayKey, readonly string[]>> = { waba_id: wabaId };
   if (isId(data.phone_number_id)) selectors.phone_number_id = data.phone_number_id;
   if (isId(data.business_id)) selectors.business_id = data.business_id;
   for (const key of ARRAY_KEYS) {
@@ -77,18 +93,19 @@ export function parseEmbeddedSignupMessage(message: { origin: string; data: unkn
   }
   return Object.freeze({
     kind: "finish", event, data: Object.freeze(selectors),
-    contract: mode === "cloud-api-v4" ? "cloud-api-v4" : payload.version === 3 ? "coexistence-v3-compat" : "coexistence",
+    contract: mode === "cloud-api-v4" ? "cloud-api-v4" : event === "FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING" && payload.version === 3 ? "coexistence-v3-compat" : "coexistence",
   });
 }
 
-/** v4 is selected by the configured products, not an inferred sessionInfoVersion. */
+/** Embedded Signup v5: Business app onboarding is on by default, so no featureType; sessionInfoVersion is not an input.
+ * https://developers.facebook.com/documentation/business-messaging/whatsapp/embedded-signup/version-5/ */
 export function coexistenceLoginOptions(configId: string) {
   if (!isText(configId)) throw new Error("A configuration ID is required");
   return {
     config_id: configId,
     response_type: "code" as const,
     override_default_response_type: true as const,
-    extras: { setup: {}, featureType: "whatsapp_business_app_onboarding" as const },
+    extras: { setup: {}, version: "v5" as const },
   };
 }
 
@@ -131,7 +148,7 @@ export function joinSignupSignal(state: SignupAttempt, attemptId: string, signal
   if (attemptId !== state.attemptId || ["conflict", "cancelled", "error"].includes(state.status)) return state;
   const terminal = (status: "conflict" | "cancelled" | "error"): SignupAttempt => Object.freeze({ attemptId, status });
   if (signal.kind === "cancel") return terminal("cancelled");
-  if (signal.kind === "error") return terminal("error");
+  if (signal.kind === "error" || signal.kind === "rejected") return terminal("error");
   if (signal.kind !== "code" && signal.kind !== "finish") return state;
   const completion = signal.kind === "finish" ? snapshotFinish(signal) : undefined;
   if (signal.kind === "finish" && completion === undefined) return terminal("error");

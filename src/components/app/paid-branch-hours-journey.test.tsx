@@ -40,7 +40,7 @@ describe("PaidBranchHours radical fix & non-blocking UI journey", () => {
     } finally {await act(async()=>root.unmount());}
   });
 
-  it("immediately renders the weekly summary without per-day editors and keeps preset drafts across hydration", async () => {
+  it("immediately renders the weekly summary without per-day editors and keeps day drafts across hydration", async () => {
     const host = document.createElement("div");
     const root = createRoot(host);
 
@@ -57,7 +57,7 @@ describe("PaidBranchHours radical fix & non-blocking UI journey", () => {
         root.render(createElement(PaidSetupStepHost, stepHostProps));
       });
 
-      expect(host.querySelectorAll("[data-hours-day]")).toHaveLength(7);
+      expect(host.querySelectorAll("[data-hours-group]")).toHaveLength(1);
       expect(host.querySelector("[data-hours-day] select")).toBeNull();
       expect(host.querySelector("[data-hours-day] input[type='time']")).toBeNull();
       expect(host.textContent).not.toContain("+ إضافة فترة");
@@ -68,12 +68,6 @@ describe("PaidBranchHours radical fix & non-blocking UI journey", () => {
       await act(async () => {
         host.querySelector<HTMLButtonElement>('[data-hours-action="add"]')!.click();
       });
-      const preset = host.querySelector<HTMLButtonElement>('button[data-hours-preset="workdays_sun_thu"]')!;
-      expect(preset).not.toBeNull();
-      await act(async () => {
-        preset.click();
-      });
-
       expect(host.querySelector('[data-hours-day="monday"]')?.getAttribute("data-state")).toBe("open");
       expect(host.querySelector('[data-hours-day="friday"]')?.getAttribute("data-state")).toBe("closed");
       expect(host.querySelector('[data-setup-unsaved="true"]')).not.toBeNull();
@@ -125,27 +119,27 @@ describe("PaidBranchHours radical fix & non-blocking UI journey", () => {
         root.render(createElement(PaidSetupStepHost, stepHostProps));
       });
 
-      expect(host.querySelectorAll("[data-hours-day]")).toHaveLength(7);
+      expect(host.querySelectorAll("[data-hours-group]")).toHaveLength(1);
 
       await act(async () => {
         hoursActionResolve?.({ ok: false, code: "unavailable", snapshot: null });
       });
 
-      expect(host.querySelectorAll("[data-hours-day]")).toHaveLength(7);
+      expect(host.querySelectorAll("[data-hours-group]")).toHaveLength(1);
       expect(host.querySelector("[data-hours-day] select")).toBeNull();
 
       expect(host.textContent).not.toContain("Hours for this branch are unavailable");
       expect(host.textContent).not.toContain("Saving is not confirmed");
       expect(host.textContent).not.toContain("Loading branch hours");
       expect(host.textContent).not.toContain("Retry");
-      expect(host.querySelectorAll("[data-hours-day]")).toHaveLength(7);
+      expect(host.querySelectorAll("[data-hours-group]")).toHaveLength(1);
     } finally {
       await act(async () => root.unmount());
       vi.unstubAllGlobals();
     }
   });
 
-  it("applies Sun-Thu quick preset and quick-apply without per-day editors", async () => {
+  it("starts with Sun-Thu and updates the selected days directly", async () => {
     const host = document.createElement("div");
     const root = createRoot(host);
 
@@ -165,19 +159,10 @@ describe("PaidBranchHours radical fix & non-blocking UI journey", () => {
       await act(async () => {
         host.querySelector<HTMLButtonElement>('[data-hours-action="add"]')!.click();
       });
-      const sunThuBtn = host.querySelector<HTMLButtonElement>('button[data-hours-preset="workdays_sun_thu"]');
-      expect(sunThuBtn).not.toBeNull();
-      expect(sunThuBtn!.textContent).toContain("الأحد – الخميس");
-      expect(host.textContent).not.toMatch(/[\u{1F300}-\u{1FAFF}]/u);
-      expect(host.querySelector('[data-hours-compose]')).not.toBeNull();
-
-      await act(async () => {
-        sunThuBtn!.click();
-      });
-
+      expect(host.querySelectorAll('[data-hours-toggle]')).toHaveLength(7);
       for (const day of ["sunday", "monday", "tuesday", "wednesday", "thursday"] as const) {
         expect(host.querySelector(`[data-hours-day='${day}']`)?.getAttribute("data-state")).toBe("open");
-        expect(host.querySelector(`[data-hours-day='${day}']`)?.textContent).toContain("09:00");
+        expect(host.querySelector(`[data-hours-preview-day='${day}']`)?.textContent).toContain("09:00");
       }
       expect(host.querySelector("[data-hours-day='friday']")?.getAttribute("data-state")).toBe("closed");
       expect(host.querySelector("[data-hours-day='saturday']")?.getAttribute("data-state")).toBe("closed");
@@ -191,7 +176,7 @@ describe("PaidBranchHours radical fix & non-blocking UI journey", () => {
         quickStart.dispatchEvent(new Event("change", { bubbles: true }));
       });
 
-      expect(host.querySelector("[data-hours-day='monday']")?.textContent).toContain("08:00");
+      expect(host.querySelector("[data-hours-preview-day='monday']")?.textContent).toContain("08:00");
       expect(host.textContent).not.toContain("تطبيق سريع");
     } finally {
       await act(async () => root.unmount());

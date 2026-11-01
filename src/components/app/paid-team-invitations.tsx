@@ -45,7 +45,8 @@ function TeamForm(p:PaidTeamInvitationsProps & {snapshot:BranchTeamSnapshot}){
  const inviteAllowed=!locked&&seatsKnown&&p.snapshot.allowedRoles.includes("staff")&&operationId(p.snapshot.createOperationId)&&!!p.onInvite&&(replacement?replaceAllowed:p.snapshot.seats.available!>0&&p.snapshot.canInvite===true);
  const revokeAllowed=!locked&&p.snapshot.canRevoke===true&&!!p.onRevoke;
  const canInvite=inviteAllowed&&capabilities.length>0&&validTeamRecipient(name,email);
- const canSkip=!locked&&p.snapshot.canSkip===true&&p.snapshot.skip==="not_skipped"&&operationId(p.snapshot.skipOperationId)&&!!p.onSkip;
+ const supportsSkip=p.snapshot.canSkip===true&&p.snapshot.skip==="not_skipped"&&operationId(p.snapshot.skipOperationId)&&!!p.onSkip;
+ const canSkip=!locked&&supportsSkip;
  const canRetry=!pending&&!unknown&&p.state.phase==="error"&&p.state.canRetry===true&&p.state.retrySafe===true&&operationId(p.state.operationId)&&(p.state.operation==="invite"||p.state.operation==="skip")&&!!p.onRetry;
  const context=(id:string):Context=>({...p.scope,expectedVersion:p.snapshot.version,operationId:id});
  async function dispatch(run:()=>void|Promise<void>){
@@ -56,30 +57,65 @@ function TeamForm(p:PaidTeamInvitationsProps & {snapshot:BranchTeamSnapshot}){
  }
  return <section className={styles.view} dir={ar?"rtl":"ltr"} aria-labelledby={id} aria-busy={pending||p.state.phase==="pending"||p.state.phase==="loading"}>
   {p.state.phase==="unavailable"&&<p role="status">{t("تعذّر التحقق من البيانات. الحفظ غير مؤكد.","Data could not be verified. Saving is unconfirmed.")}</p>}
-  <header><span className={styles.badge}>{t("اختياري","Optional")}</span><h2 id={id}>{t("ادعُ فريقك","Invite your team")}</h2><p>{t("الفرع: ","Branch: ")}<bdi>{p.snapshot.branchLabel}</bdi></p></header>
-  <p className={styles.note}>{t("يمكنك متابعة الإعداد دون دعوة موظفين الآن. التخطي لا ينشئ دعوات ولا يرسل رسائل.","You can continue setup without inviting staff now. Skipping does not create invitations or send messages.")}</p>
-  <div className={styles.seats}><strong>{t("مقاعد الموظفين المتاحة","Available staff seats")}</strong><bdi dir="ltr">{seatsKnown?`${p.snapshot.seats.available} / ${p.snapshot.seats.limit}`:"—"}</bdi><p>{t("هذه سعة الفرع التي يؤكدها الخادم. المالك غير محسوب ضمن مقاعد الموظفين.","This is the branch capacity confirmed by the server. The owner is excluded from staff seats.")}</p></div>
-  {!seatsKnown&&<p role="status">{t("تعذّر التحقق من المقاعد. إنشاء الدعوات معطّل.","Seat availability could not be verified. Invitation creation is disabled.")}</p>}
+  <header className={styles.header}>
+    <div className={styles.headerCopy}>
+      <h2 id={id}>{t("ادعُ فريقك","Invite your team")}</h2>
+    </div>
+    <p
+      className={styles.seatChip}
+      title={t("المالك غير محسوب ضمن مقاعد الموظفين.","The owner is excluded from staff seats.")}
+      aria-label={t(
+        seatsKnown?`مقاعد متاحة ${p.snapshot.seats.available} من ${p.snapshot.seats.limit}`:`مقاعد الموظفين غير متاحة`,
+        seatsKnown?`${p.snapshot.seats.available} of ${p.snapshot.seats.limit} staff seats open`:`Staff seats unavailable`,
+      )}
+    >
+      <span className={styles.seatLabel}>{t("متاح","Open")}</span>
+      <bdi dir="ltr">{seatsKnown?`${p.snapshot.seats.available} / ${p.snapshot.seats.limit}`:"—"}</bdi>
+      <span className={styles.srOnly}>{t("المالك غير محسوب ضمن مقاعد الموظفين.","The owner is excluded from staff seats.")}</span>
+    </p>
+  </header>
+  {!seatsKnown&&p.state.phase!=="loading"&&<p role="status">{t("تعذّر التحقق من المقاعد. إنشاء الدعوات معطّل.","Seat availability could not be verified. Invitation creation is disabled.")}</p>}
   {seatsKnown&&p.snapshot.seats.available===0&&<p role="status">{t("لا توجد مقاعد موظفين متاحة حاليًا لهذا الفرع.","No staff seats are currently available for this branch.")}</p>}
   {(unknown||p.state.phase==="unknown")&&<p role="alert" className={styles.error}>{t("نتيجة العملية غير معروفة. حدّث حالتها قبل المحاولة مجددًا لتجنب تكرار الدعوة.","The operation outcome is unknown. Refresh its status before trying again to avoid a duplicate invitation.")}</p>}
   {p.state.phase==="error"&&<div role="alert" className={styles.error}><p>{t("تعذّر إتمام العملية. راجع صلاحياتك والمقاعد وحالة الدعوة.","The operation could not be completed. Review permissions, seats and invitation status.")}</p><button type="button" disabled={!canRetry} onClick={()=>{if(canRetry)void dispatch(()=>p.onRetry?.({...context(p.state.operationId!),operation:p.state.operation!}));}}>{t("إعادة المحاولة نفسها","Retry the same operation")}</button></div>}
   {(pending||p.state.phase==="pending")&&<p role="status">{t("بانتظار تأكيد حالة العملية من الخادم…","Waiting for the server to confirm the operation state…")}</p>}
   {replacement&&<p role="status">{t("إعادة إنشاء رابط الدعوة لهذا الموظف فقط. اختر الصلاحيات ثم أكّد؛ سيُلغى الرابط السابق دون إرسال بريد أو حجز مقعد إضافي.","Regenerate the link for this staff member only. Select permissions, then confirm; the old link is invalidated without sending email or reserving another seat.")}<button type="button" disabled={locked} onClick={()=>{if(p.isCurrent()){setReplacementId(null);setName("");setEmail("");setCapabilities([]);}}}>{t("إلغاء إعادة الإنشاء","Cancel regeneration")}</button></p>}
   <form noValidate onSubmit={e=>{e.preventDefault();if(canInvite)void dispatch(()=>p.onInvite?.({...context(p.snapshot.createOperationId!),name:name.trim(),email:email.trim().toLowerCase(),role:"staff",capabilities}));}}>
-   <label>{t("اسم الموظف","Staff name")}<input dir="auto" autoComplete="name" maxLength={120} value={name} readOnly={!!replacement} disabled={!inviteAllowed} onChange={e=>{if(p.isCurrent())setName(e.target.value);}}/></label>
-   <label>{t("البريد الإلكتروني","Email address")}<input type="email" dir="ltr" autoComplete="email" maxLength={254} value={email} readOnly={!!replacement} disabled={!inviteAllowed} onChange={e=>{if(p.isCurrent())setEmail(e.target.value);}}/></label>
-   <label>{t("الدور","Role")}<select value="staff" disabled aria-describedby={`${id}-role`}><option value="staff">{t("موظف","Staff")}</option></select></label>
-   <p id={`${id}-role`} className={styles.note}>{t("الدور المتاح في عقد الدعوات الحالي هو موظف. يتحقق الخادم من صلاحية الدعوة والوصول إلى الفرع.","The existing invitation contract supports Staff. The server verifies invitation permission and branch access.")}</p>
-   <fieldset disabled={!inviteAllowed}><legend>{t("صلاحيات هذا الفرع فقط", "Permissions for this branch only")}</legend>{[
-    ["wa.conversations.read","قراءة محادثات واتساب","Read WhatsApp conversations"],
-    ["ig.conversations.read","قراءة محادثات إنستغرام","Read Instagram conversations"],
-   ].map(([value,arabic,english])=><label key={value}><input type="checkbox" checked={capabilities.includes(value)} onChange={e=>{if(p.isCurrent())setCapabilities(e.target.checked?[...capabilities,value]:capabilities.filter(c=>c!==value));}}/>{t(arabic,english)}</label>)}</fieldset>
-   <p className={styles.note}>{t("قبول الدعوة يمنح الصلاحيات المحددة لهذا الفرع فقط؛ الوصول للمحادثات يتطلب اتصالًا صالحًا للقناة.","Accepting the invitation grants the selected permissions for this branch only; conversation access requires a valid channel connection.")}</p>
+   <div className={styles.fieldsRow}>
+    <label>{t("اسم الموظف","Staff name")}<input dir="auto" autoComplete="name" maxLength={120} value={name} readOnly={!!replacement} disabled={!inviteAllowed} onChange={e=>{if(p.isCurrent())setName(e.target.value);}}/></label>
+    <label>{t("البريد الإلكتروني","Email address")}<input type="email" dir="ltr" autoComplete="email" maxLength={254} value={email} readOnly={!!replacement} disabled={!inviteAllowed} onChange={e=>{if(p.isCurrent())setEmail(e.target.value);}}/></label>
+   </div>
+   <div className={styles.rolePermsRow}>
+    <fieldset className={styles.roleField} disabled={!inviteAllowed||!p.snapshot.allowedRoles.includes("staff")}>
+     <legend>{t("الدور","Role")}</legend>
+     <select value="staff" onChange={()=>{}} aria-describedby={`${id}-role`} disabled={!inviteAllowed||!p.snapshot.allowedRoles.includes("staff")}>
+      {p.snapshot.allowedRoles.includes("staff")?<option value="staff">{t("موظف","Staff")}</option>:null}
+     </select>
+    </fieldset>
+    <fieldset className={styles.capsField} disabled={!inviteAllowed}>
+     <legend id={`${id}-role`}>{t("صلاحيات هذا الفرع فقط", "Permissions for this branch only")}</legend>
+     <div className={styles.capsRow}>{[
+      ["wa.conversations.read","قراءة محادثات واتساب","Read WhatsApp conversations"],
+      ["ig.conversations.read","قراءة محادثات إنستغرام","Read Instagram conversations"],
+     ].map(([value,arabic,english])=><label key={value}><input type="checkbox" checked={capabilities.includes(value)} onChange={e=>{if(p.isCurrent())setCapabilities(e.target.checked?[...capabilities,value]:capabilities.filter(c=>c!==value));}}/>{t(arabic,english)}</label>)}</div>
+    </fieldset>
+   </div>
    <button type="submit" disabled={!canInvite}>{replacement?t("تأكيد إنشاء رابط جديد","Confirm new invitation link"):t("إنشاء دعوة","Create invitation")}</button>
   </form>
-  <p className={styles.note}>{t("إنشاء دعوة محفوظة لا يعني إرسال بريد إلكتروني. طريقة مشاركة الدعوة تتبع النتيجة المؤكدة من الخادم.","Creating a saved invitation does not mean an email was sent. Sharing follows the confirmed server result.")}</p>
   {p.inviteUrl&&<label>{t("رابط الدعوة — لم يُرسل بريد", "Invitation link — no email sent")}<input readOnly dir="ltr" value={p.inviteUrl} onFocus={e=>e.target.select()}/></label>}
-  <ul className={styles.invitations}>{p.snapshot.invitations.filter(row=>same(row.scope,p.scope)).map(({invitation:i})=><li key={i.id}><strong dir="auto">{i.name}</strong><bdi>{i.email}</bdi><span>{labels[i.status]?.[ar?0:1]??t("حالة غير معروفة","Unknown status")}</span>{i.status==="invited"&&<button type="button" data-regenerate-invitation={i.id} disabled={!replaceAllowed} onClick={()=>{if(replaceAllowed&&p.isCurrent()){setReplacementId(i.id);setName(i.name);setEmail(i.email);setCapabilities([]);}}}>{t("إنشاء رابط بديل","Regenerate invitation link")}</button>}{(i.status==="invited"||i.status==="accepted")&&<button type="button" data-revoke-invitation={i.id} disabled={!revokeAllowed} onClick={()=>{if(revokeAllowed)void dispatch(()=>p.onRevoke?.({...p.scope,invitationId:i.id,expectedRevision:i.revision}));}}>{i.status==="accepted"?t("إلغاء وصول الفرع","Revoke branch access"):t("إلغاء الدعوة","Cancel invitation")}</button>}</li>)}</ul>
-  <footer><button type="button" disabled={!canSkip} onClick={()=>{if(canSkip)void dispatch(()=>p.onSkip?.(context(p.snapshot.skipOperationId!)));}}>{t("تخطي الآن","Skip for now")}</button></footer>
+  <ul className={styles.invitations}>{p.snapshot.invitations.filter(row=>same(row.scope,p.scope)).map(({invitation:i})=>(
+   <li key={i.id} className={styles.inviteRow} data-status={i.status}>
+    <div className={styles.inviteWho}>
+     <strong dir="auto">{i.name}</strong>
+     <bdi>{i.email}</bdi>
+    </div>
+    <span className={styles.inviteStatus}>{labels[i.status]?.[ar?0:1]??t("حالة غير معروفة","Unknown status")}</span>
+    <div className={styles.inviteActions}>
+     {i.status==="invited"&&<button type="button" data-regenerate-invitation={i.id} disabled={!replaceAllowed} onClick={()=>{if(replaceAllowed&&p.isCurrent()){setReplacementId(i.id);setName(i.name);setEmail(i.email);setCapabilities([]);}}}>{t("رابط بديل","New link")}</button>}
+     {(i.status==="invited"||i.status==="accepted")&&<button type="button" data-revoke-invitation={i.id} className={styles.inviteDanger} disabled={!revokeAllowed} onClick={()=>{if(revokeAllowed)void dispatch(()=>p.onRevoke?.({...p.scope,invitationId:i.id,expectedRevision:i.revision}));}}>{i.status==="accepted"?t("إلغاء الوصول","Revoke access"):t("إلغاء الدعوة","Cancel invitation")}</button>}
+    </div>
+   </li>
+  ))}</ul>
+  {supportsSkip&&<footer><button type="button" disabled={!canSkip} onClick={()=>{if(canSkip)void dispatch(()=>p.onSkip?.(context(p.snapshot.skipOperationId!)));}}>{t("تخطي الآن","Skip for now")}</button></footer>}
  </section>;
 }

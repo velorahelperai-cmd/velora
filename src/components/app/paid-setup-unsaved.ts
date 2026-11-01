@@ -1,8 +1,21 @@
 "use client";
 import {useEffect} from 'react';
 const message=(locale:'ar'|'en')=>locale==='ar'?'لديك تعديلات لم يؤكد الخادم حفظها. هل تريد المغادرة وفقدها؟':'You have changes the server has not confirmed as saved. Leave and discard them?';
+type FlushHost=HTMLElement&{__veloraFlush?:()=>Promise<void>};
+function isFlushableUnsaved(el:Element):boolean{
+ const host=el as FlushHost;
+ return typeof host.__veloraFlush==='function'||el.hasAttribute('data-setup-flush');
+}
+/** Ask mounted setup editors to persist drafts. Callers may fire-and-forget so navigation stays instant. */
+export async function flushSetupDrafts(root:Element|null):Promise<void>{
+ const nodes=Array.from(root?.querySelectorAll<FlushHost>('[data-setup-flush]')??[]);
+ await Promise.all(nodes.map(node=>node.__veloraFlush?node.__veloraFlush():Promise.resolve()));
+}
+/** Blocks only non-flushable drafts. Flushable editors save in the background on leave. */
 export function confirmSetupLeave(root:Element|null,locale:'ar'|'en'):boolean{
- return !root?.querySelector('[data-setup-unsaved="true"]')||window.confirm(message(locale));
+ const unsaved=Array.from(root?.querySelectorAll('[data-setup-unsaved="true"]')??[]);
+ const blocking=unsaved.filter(el=>!isFlushableUnsaved(el));
+ return blocking.length===0||window.confirm(message(locale));
 }
 /** Local draft protection only; never derives persistence or completion. */
 export function useSetupUnsavedChanges(dirty:boolean,isCurrent:()=>boolean,locale:'ar'|'en'='en'){

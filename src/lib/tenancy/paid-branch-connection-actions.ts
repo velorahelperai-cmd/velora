@@ -16,6 +16,8 @@ import {sealSignupPreparation,openSignupPreparation} from '@/lib/whatsapp/signup
 import {signupCheckpointBinding,signupCheckpointRpc,parseSignupCheckpoint} from '@/lib/whatsapp/signup-checkpoint';
 import { exchangeAfterCommittedClaim, exchangeOwnedBranchConnection } from "@/lib/tenancy/paid-branch-connection-adapters";
 import { coexistenceServerConfig } from "@/lib/tenancy/paid-branch-connection-coexistence-config";
+import { readMaskedLinkedNumber, type LinkedNumberClient } from "@/lib/tenancy/paid-branch-linked-number";
+import { resumeOwnedWhatsappLaunch, type ResumeLaunchResult } from "@/lib/tenancy/paid-branch-connection-resume";
 import {
   unavailablePaidBranchConnectionRead,
   parsePaidBranchConnectionRead,
@@ -112,7 +114,11 @@ export async function readOwnedPaidBranchConnectionAction(scope: PaidBranchConne
         reason_codes: result.read.connection.reasonCodes, last_error_code: 'NOT_EXPOSED_BY_READ_CONTRACT',
       });
     }
-    return result.read;
+    const read = result.read;
+    if (read.sourceStatus === "ready" && read.channel === "whatsapp" && read.connection.state === "connected" && read.connection.verified) {
+      return { ...read, linkedNumber: await readMaskedLinkedNumber(session.client as unknown as LinkedNumberClient, parsed.companyId) };
+    }
+    return read;
   });
 }
 
@@ -142,7 +148,8 @@ export async function startOwnedPaidBranchConnectionAction(input: StartOwnedPaid
       stage("validation", started, "denied", parsed.code);
       return parsed;
     }
-    if (parsed.flow === "wa_coexistence" && parsed.confirmed !== true) {
+    // F5: the number is optional (Meta returns it; migration 20261101164000). Only a supplied number must be confirmed.
+    if (parsed.flow === "wa_coexistence" && parsed.confirmedPhoneNumber != null && parsed.confirmed !== true) {
       stage("validation", started, "denied", "invalid_input");
       return { ok: false, code: "invalid_input", read: unavailablePaidBranchConnectionRead(parsed, asOf, "invalid_input") };
     }
@@ -193,6 +200,41 @@ export async function startOwnedPaidBranchConnectionAction(input: StartOwnedPaid
     }
     stage("complete", started, "ok");
     return { ok: true, read: startedResult.read, launch: startedResult.launch };
+  });
+}
+
+/** Read-only preparation. Public SDK configuration grants no attempt or provider authority. */
+export async function readOwnedPaidBranchWhatsappBootstrapAction(input: PaidBranchConnectionScope & {flow:"wa_new_number"|"wa_coexistence"}) {
+  const asOf=new Date().toISOString(),requestId=randomUUID();
+  const parsed=parseConnectionStart({...input,clientOpId:"00000000-0000-4000-8000-000000000000",expectedRevision:"0"},asOf);
+  if("ok" in parsed)return {ok:false as const};
+  const session=await sessionClient(parsed.expectedAccountId,requestId,asOf,parsed);
+  if("ok" in session)return {ok:false as const};
+  const result=await runPaidBranchConnectionRead(parsed,createPaidBranchConnectionStore(session.client,session.client,asOf),asOf);
+  const read=result.read;
+  if(read.sourceStatus!=="ready")return {ok:false as const};
+  if(!read.capabilities.canStart || !read.capabilities.allowedFlows.includes(input.flow))return {ok:true as const,read,config:null};
+  const policy=await session.client.rpc('es02_b3_read_replacement_policy',{p_expected_account_id:parsed.expectedAccountId,p_company_id:parsed.companyId,p_branch_id:parsed.branchId});
+  const policyData:unknown=policy.data;
+  if(policy.error || !policyData || typeof policyData!=='object' || !('ok' in policyData) || policyData.ok!==true || !('requiresCoexistence' in policyData) || typeof policyData.requiresCoexistence!=='boolean')return {ok:false as const};
+  if(policyData.requiresCoexistence && input.flow!=='wa_coexistence')return {ok:true as const,read,config:null,blockedReason:'review_replacement_required' as const};
+  const value=input.flow==="wa_coexistence"?coexistenceServerConfig():embeddedSignupClientConfig();
+  if(!value || ("ok" in value&&!value.ok))return {ok:false as const};
+  return {ok:true as const,read,config:{flow:input.flow,appId:value.appId,configId:value.configId,graphVersion:value.graphVersion}};
+}
+
+/** F5: read-only re-issue of the launch for an existing same-session pending attempt. Never creates an attempt. */
+export async function resumeOwnedPaidBranchLaunchAction(input: PaidBranchConnectionScope & { attemptId: string }): Promise<ResumeLaunchResult> {
+  const requestId = randomUUID();
+  const asOf = new Date().toISOString();
+  if (!input || typeof input.attemptId !== "string" || !UUID.test(input.attemptId) || ![input.expectedAccountId, input.companyId, input.branchId].every(v => typeof v === "string" && UUID.test(v))) return { ok: false, code: "not_resumable" };
+  const session = await sessionClient(input.expectedAccountId, requestId, asOf, input);
+  if ("ok" in session) return { ok: false, code: "not_resumable" };
+  const coexistence = coexistenceServerConfig();
+  const embedded = embeddedSignupClientConfig();
+  return resumeOwnedWhatsappLaunch(session.client, { expectedAccountId: input.expectedAccountId, companyId: input.companyId, branchId: input.branchId, channel: "whatsapp", attemptId: input.attemptId.toLowerCase(), sessionId: session.sessionId }, {
+    wa_coexistence: coexistence ? { appId: coexistence.appId, configId: coexistence.configId, graphVersion: coexistence.graphVersion } : null,
+    wa_new_number: embedded.ok ? { appId: embedded.appId, configId: embedded.configId, graphVersion: embedded.graphVersion } : null,
   });
 }
 

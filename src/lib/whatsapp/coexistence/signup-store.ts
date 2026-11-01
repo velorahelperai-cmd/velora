@@ -57,9 +57,9 @@ export function createCoexistenceSignupPorts(identity: CoexistenceSignupIdentity
       const r = await rpc(session, "whatsapp_coexistence_claim_signup", { p_company_id: identity.companyId.toLowerCase(), p_attempt_id: input.attemptId.toLowerCase(), p_nonce: input.nonce });
       if (r.ok !== true) return fail(r.code as CoexistenceSignupFailureCode);
       if (!bound(r, identity, input.attemptId) || r.app_id !== config.appId || r.config_id !== config.configId
-        || r.graph_version !== config.graphVersion || r.keep_on_phone !== true || !phone(r.expected_phone_number)) return fail();
+        || r.graph_version !== config.graphVersion || r.keep_on_phone !== true || (r.expected_phone_number != null && !phone(r.expected_phone_number))) return fail();
       return { ok: true, attempt_id: String(r.attempt_id), company_id: String(r.company_id), user_id: String(r.user_id), session_id: String(r.session_id),
-        app_id: config.appId, config_id: config.configId, graph_version: config.graphVersion, keep_on_phone: true, expected_phone_number: r.expected_phone_number } as CoexistenceSignupClaim;
+        app_id: config.appId, config_id: config.configId, graph_version: config.graphVersion, keep_on_phone: true, expected_phone_number: r.expected_phone_number ?? null } as CoexistenceSignupClaim;
     },
     prepare: providerInput => prepareCoexistenceSignup(config, providerInput),
     checkpoint: async (claim, token, proof) => {

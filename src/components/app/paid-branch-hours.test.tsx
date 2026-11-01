@@ -25,9 +25,9 @@ const render = (patch: Partial<PaidBranchHoursProps> = {}) =>
   renderToStaticMarkup(createElement(PaidBranchHours, {...props, ...patch}));
 
 describe("PaidBranchHours", () => {
-  it.each(["ar", "en"] as const)("renders seven read-only day summaries without per-day editors in %s", locale => {
+  it.each(["ar", "en"] as const)("renders grouped read-only summaries without per-day editors in %s", locale => {
     const html = render({locale});
-    expect(html.match(/data-hours-day=/g)).toHaveLength(7);
+    expect(html.match(/data-hours-group=/g)).toHaveLength(1);
     expect(html).not.toContain("+ Add interval");
     expect(html).not.toContain("+ إضافة فترة");
     expect(html).not.toMatch(/data-hours-day="[^"]+"[\s\S]*?<select/);
@@ -54,7 +54,7 @@ describe("PaidBranchHours", () => {
 
   it("renders schedule form immediately when snapshot is null (non-blocking local draft)", () => {
     const html = render({snapshot: null, state: {...props.state, version: null, phase: "loading"}});
-    expect(html.match(/data-hours-day=/g)).toHaveLength(7);
+    expect(html.match(/data-hours-group=/g)).toHaveLength(1);
     expect(html).not.toContain("Loading branch hours");
     expect(html).not.toContain("جارٍ تحميل مواعيد الفرع");
     expect(html).toContain('aria-busy="true"');
@@ -66,17 +66,17 @@ describe("PaidBranchHours", () => {
     const loadingHtml = render({state: {...props.state, phase: "loading"}});
     expect(loadingHtml).not.toContain("Loading branch hours");
     expect(loadingHtml).toContain('aria-busy="true"');
-    expect(loadingHtml.match(/data-hours-day=/g)).toHaveLength(7);
+    expect(loadingHtml.match(/data-hours-group=/g)).toHaveLength(1);
 
     const conflictHtml = render({state: {...props.state, phase: "conflict"}});
     expect(conflictHtml).toContain("Saved hours changed");
-    expect(conflictHtml.match(/data-hours-day=/g)).toHaveLength(7);
+    expect(conflictHtml.match(/data-hours-group=/g)).toHaveLength(1);
     expect(conflictHtml).toContain('disabled=""');
   });
 
   it("keeps the form usable while loading without the unavailable error banner", () => {
     const html = render({snapshot: null, state: {...props.state, version: null, phase: "loading"}, onReload: () => {}});
-    expect(html.match(/data-hours-day=/g)).toHaveLength(7);
+    expect(html.match(/data-hours-group=/g)).toHaveLength(1);
     expect(html).not.toContain("Loading branch hours");
     expect(html).not.toContain("Retry");
     expect(html).not.toContain("Hours for this branch are unavailable");
@@ -134,9 +134,9 @@ describe("PaidBranchHours", () => {
   });
 
   it("renders days starting with Sunday for natural Arab regional business week", () => {
-    const html = render({locale: "ar"});
-    const firstDayIndex = html.indexOf('data-hours-day="sunday"');
-    const mondayIndex = html.indexOf('data-hours-day="monday"');
+    const html = render({locale: "ar",snapshot:{...props.snapshot!,schedule:{...emptyBranchHours(),monday:{state:"closed"}}}});
+    const firstDayIndex = html.indexOf('data-hours-days="sunday"');
+    const mondayIndex = html.indexOf('data-hours-days="monday"');
     expect(firstDayIndex).toBeGreaterThan(-1);
     expect(mondayIndex).toBeGreaterThan(-1);
     expect(firstDayIndex).toBeLessThan(mondayIndex);

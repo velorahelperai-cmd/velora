@@ -27,6 +27,14 @@ declare actor uuid;cid uuid:=gen_random_uuid();sid uuid:=gen_random_uuid();begin
  return jsonb_build_object('company',cid,'actor',actor,'session',sid);end;$$;
 revoke all on function test_fixture.ai_admin(boolean) from public,anon,authenticated;
 grant execute on function test_fixture.ai_admin(boolean) to service_role;
+-- F5 test helper: mark a fixture link's number confirmation as decided (no-op before the F5 migration).
+create or replace function test_fixture.f5_confirm_number(p_link uuid,p_user uuid) returns void
+language plpgsql security definer set search_path='' as $$ begin
+ if to_regclass('private.whatsapp_link_number_confirmations') is not null then
+  execute 'update private.whatsapp_link_number_confirmations set status=''confirmed'',decided_at=clock_timestamp(),decided_by=$2 where link_id=$1 and status=''pending''' using p_link,p_user;
+ end if;end;$$;
+revoke all on function test_fixture.f5_confirm_number(uuid,uuid) from public,anon,authenticated;
+grant execute on function test_fixture.f5_confirm_number(uuid,uuid) to service_role;
 create or replace function test_fixture.company(p_paid boolean default true,p_cap integer default 2)
 returns jsonb language plpgsql as $$
 declare u uuid:=gen_random_uuid();c uuid:=gen_random_uuid();v uuid:=gen_random_uuid();p uuid:=gen_random_uuid();
@@ -44,6 +52,8 @@ begin
   execute 'update public.whatsapp_company_links set provider_waba_id=$1,access_secret_id=$2,authorization_status=''active'',authorization_verified_at=clock_timestamp(),authorization_expires_at=clock_timestamp()+interval ''60 days'',authorization_app_id=''synthetic-app'',authorization_scopes=''["whatsapp_business_management","whatsapp_business_messaging"]''::jsonb,authorization_user_id=$4,authorization_session_id=$5 where id=$3'
   using 'synthetic-waba-'||n,secret,l,u,sid;
  end if;
+ -- F5: synthetic owner already confirmed this fixture number (gate is tested separately).
+ perform test_fixture.f5_confirm_number(l,u);
  insert into whatsapp_conversations(id,company_id,phone_number_id,customer_wa_id,automation_allowed)
  values(conv,c,'synthetic-phone-'||n,'synthetic-recipient-'||n,true);
  insert into knowledge_sources(id,company_id,kind,title,content,status,created_by,content_version,approved_version,approved_for_answers,approved_at,approved_by)

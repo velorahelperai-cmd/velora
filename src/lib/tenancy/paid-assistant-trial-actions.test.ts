@@ -125,6 +125,23 @@ describe("paid-assistant-trial-actions", () => {
     expect(complete).not.toHaveBeenCalled();expect(trustedRpc).not.toHaveBeenCalled();
   });
 
+  it('starts both authorized reads before either resolves and waits for recovery authority',async()=>{
+    const scope={expectedAccountId:VALID_ACCOUNT_ID,companyId:VALID_COMPANY_ID,branchId:VALID_BRANCH_ID};
+    let finishSnapshot!:(value:unknown)=>void;
+    let finishRecovery!:(value:unknown)=>void;
+    rpcMock.mockImplementation((name:string)=>new Promise(resolve=>{
+      if(name==='es02_read_owned_branch_assistant_trial')finishSnapshot=resolve;
+      if(name==='es02_read_owned_branch_trial_recovery')finishRecovery=resolve;
+    }));
+    let done=false;
+    const pending=readOwnedBranchAssistantTrialAction(scope).then(result=>{done=true;return result;});
+    await vi.waitFor(()=>expect(rpcMock).toHaveBeenCalledTimes(2));
+    finishSnapshot({error:null,data:{ok:true,data:{snapshot:{scope,version:1,knowledgeRevision:'k1',canAsk:true,messages:[]}}}});
+    await Promise.resolve();expect(done).toBe(false);
+    finishRecovery({error:{message:'unavailable'},data:null});
+    expect(await pending).toMatchObject({canAsk:false});
+    expect(trustedRpc).not.toHaveBeenCalled();
+  });
   it.each([true,false])('preserves server new-question authority %s without settling an aged unknown',async canAsk=>{
     const scope={expectedAccountId:VALID_ACCOUNT_ID,companyId:VALID_COMPANY_ID,branchId:VALID_BRANCH_ID};
     const operation={id:'66666666-6666-4666-8666-666666666666',status:'uncertain',recoverable:false,blocksNewRequests:false};

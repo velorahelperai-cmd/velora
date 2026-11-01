@@ -27,7 +27,7 @@
 .branchTop{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
 .branchTitle{min-inline-size:0}
 .branchTitle h3{display:flex;align-items:center;gap:6px;font-size:17px;color:#0b3d44}
-.pin{flex:none;color:#087e8b}
+.pin{flex:none;color:var(--setup-deep,#066673)}
 .editLink{display:inline-flex;align-items:center;gap:6px;min-block-size:44px;min-inline-size:44px;padding-inline:10px;border:0;background:none;color:#066872;font:inherit;font-weight:600;cursor:pointer;border-radius:10px}
 .editLink:hover:not(:disabled){background:#e9f5f6}
 .arrow{display:inline-block}
@@ -101,7 +101,7 @@
 .layout{grid-template-columns:minmax(0,1.75fr) minmax(0,1fr);gap:20px;align-items:stretch}
 .card{padding:24px;border-color:#e2eaf0;border-radius:20px;box-shadow:0 6px 25px #28576d04}
 .card h2{font-size:28px;line-height:1.4;font-weight:800;color:#07506a}
-.muted{font-size:16px;line-height:1.6;color:#597895}
+.muted{font-size:16px;line-height:1.6;color:var(--setup-muted,#536579)}
 .branches{gap:16px;margin-block:20px}
 .branch{direction:ltr;grid-template-columns:minmax(128px,.42fr) minmax(0,1fr);gap:18px;padding:16px;border-color:#e0e8ee;border-radius:18px;background:#fff;min-width:0}
 .figure{width:100%;aspect-ratio:.7}
@@ -121,7 +121,7 @@
 .summaryRows li{grid-template-columns:52px minmax(0,1fr) auto;gap:12px}
 .avatar{inline-size:52px;block-size:52px;border-color:#e2eaf0}
 .summaryName{gap:5px;font-size:17px;line-height:1.4}
-.summaryName small{font-size:14px;color:#577894}
+.summaryName small{font-size:14px;color:var(--setup-muted,#536579)}
 .summaryPrice{font-size:19px;color:#064d69}
 .total{gap:10px;padding-block:22px;margin-block-end:12px;border-color:#e2eaf0;border-block-end:1px solid #e2eaf0}
 .total p{font-size:20px;line-height:1.5;color:#07516c}

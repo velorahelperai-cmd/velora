@@ -9,6 +9,8 @@ vi.mock("@/lib/auth/session-guard",()=>({checkAppSession:fake.guard}));
 vi.mock("./signup-store",()=>({readCoexistenceSignupReadiness:fake.ready,readCoexistenceSignupStatus:fake.read,startCoexistenceSignupStore:fake.start,createCoexistenceSignupPorts:fake.ports,cancelCoexistenceSignupStore:fake.cancel,disconnectCoexistenceSignupStore:fake.disconnect}));
 vi.mock("./flow",()=>({finishCoexistenceSignup:fake.finish}));
 vi.mock("./projection-store",()=>({reconcileCoexistenceEvents:fake.reconcile}));
+const numberFake=vi.hoisted(()=>({read:vi.fn()}));
+vi.mock("../number-confirmation-store",()=>({readNumberConfirmationStore:numberFake.read}));
 vi.mock("./sync",()=>({readCoexistenceSyncReadiness:fake.syncReady,readCoexistenceSyncStatus:fake.syncRead,createCoexistenceSyncPorts:fake.syncPorts,requestCoexistenceSync:fake.syncRequest}));
 import {getCoexistenceSetup,startCoexistenceSignup,completeCoexistenceSignup,disconnectCoexistenceSignup,requestCoexistenceHistorySync,getCoexistenceSyncSetup} from "./actions";
 import {validDiagnostic} from "@/lib/diagnostics/contract";
@@ -29,6 +31,7 @@ it("distinguishes readiness and durable preparation failures",async()=>{
 });
 beforeEach(()=>{
  vi.resetAllMocks();fake.access.mockResolvedValue({ok:true,context:{identityVerified:true,userId:user,company:{id:company,status:"active"},membership:{role:"owner"}}});fake.claims.mockResolvedValue({data:{claims:{sub:user,session_id:session}},error:null});fake.guard.mockResolvedValue({ok:true});fake.admin.mockReturnValue({rpc:vi.fn()});fake.ready.mockResolvedValue({ok:true});fake.read.mockResolvedValue({ok:true,companyId:company,status:"no_attempt",connectionStatus:"not_connected",displayPhoneNumber:null,liveVerified:false,historySyncStatus:"not_requested"});fake.start.mockResolvedValue({ok:true,attemptId:company,nonce:"a".repeat(64),expiresAt:"2027-01-01T00:00:00.000Z"});fake.finish.mockResolvedValue({ok:true});fake.disconnect.mockResolvedValue({ok:true});
+ numberFake.read.mockResolvedValue({ok:true,status:"confirmed",linkId:"00000000-0000-4000-8000-000000000000",linkGeneration:1});
  fake.syncPorts.mockReturnValue({});
  vi.stubEnv("WHATSAPP_COEXISTENCE","true");vi.stubEnv("WHATSAPP_ROUTING_MODE","tenant_registry");vi.stubEnv("WHATSAPP_EMBEDDED_SIGNUP_APP_ID","111");vi.stubEnv("WHATSAPP_COEXISTENCE_CONFIG_ID","222");vi.stubEnv("WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID","333");vi.stubEnv("WHATSAPP_EMBEDDED_SIGNUP_GRAPH_VERSION","v25.0");vi.stubEnv("WHATSAPP_APP_SECRET","server-secret");vi.stubEnv("WHATSAPP_EMBEDDED_SIGNUP_SYSTEM_USER_TOKEN","server-token");
 });
@@ -47,3 +50,13 @@ it("requires sync consent and blocks other-tenant requests before privileged por
 it("returns only pending after a bound owner sync request",async()=>{fake.syncReady.mockResolvedValue({ok:true});fake.syncRequest.mockResolvedValue({ok:true,status:"pending"});expect(await requestCoexistenceHistorySync({companyId:company,linkId:session,linkGeneration:3,syncType:"history",consent:true})).toEqual({ok:true,status:"pending"});expect(fake.syncRequest).toHaveBeenCalledWith({companyId:company,userId:user,sessionId:session},expect.objectContaining({linkId:session,linkGeneration:3,syncType:"history",consent:true}),expect.anything(),expect.anything());});
 it("shows persisted sync status with rollout disabled without enabling another request",async()=>{vi.stubEnv("WHATSAPP_COEXISTENCE","false");fake.syncRead.mockResolvedValue({ok:true,linkId:session,linkGeneration:3,syncs:[],aiEnabled:false});expect(await getCoexistenceSyncSetup(company)).toMatchObject({ok:true,ready:false,linkGeneration:3});expect(fake.syncReady).not.toHaveBeenCalled();});
 it("returns a safe support diagnostic when reading sync status throws",async()=>{fake.syncRead.mockRejectedValue(new Error("private database detail"));const result=await getCoexistenceSyncSetup(company);expect(result).toMatchObject({ok:false,code:"UNAVAILABLE",diagnostic:{operation:"whatsapp_connect",stage:"channel",code:"UNAVAILABLE"}});expect(JSON.stringify(result)).not.toContain("private database detail");});
+
+it("F5: never requests a Meta import for a number the owner has not confirmed",async()=>{
+ for(const state of [{ok:true,status:"pending"},{ok:true,status:"rejected"},{ok:false,code:"UNAVAILABLE"}]){
+  fake.syncReady.mockResolvedValue({ok:true});numberFake.read.mockResolvedValue(state);fake.syncRequest.mockClear();
+  expect(await requestCoexistenceHistorySync({companyId:company,linkId:session,linkGeneration:1,syncType:"history",consent:true})).toMatchObject({ok:false,code:"NUMBER_UNCONFIRMED"});
+  expect(fake.syncRequest).not.toHaveBeenCalled();
+ }
+});
+it("F7: not_required (no grandfathering) and legacy links reported pending cannot import",async()=>{fake.syncReady.mockResolvedValue({ok:true});fake.syncRequest.mockClear();for(const status of ["not_required","pending"] as const){numberFake.read.mockResolvedValue({ok:true,status} as never);expect(await requestCoexistenceHistorySync({companyId:company,linkId:session,linkGeneration:1,syncType:"history",consent:true})).toMatchObject({ok:false,code:"NUMBER_UNCONFIRMED"});}expect(fake.syncRequest).not.toHaveBeenCalled();});
+it("F7: confirmed link can import",async()=>{fake.syncReady.mockResolvedValue({ok:true});numberFake.read.mockResolvedValue({ok:true,status:"confirmed"});fake.syncRequest.mockResolvedValue({ok:true,status:"pending"});expect(await requestCoexistenceHistorySync({companyId:company,linkId:session,linkGeneration:1,syncType:"history",consent:true})).toMatchObject({ok:true});});

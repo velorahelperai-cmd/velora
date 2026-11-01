@@ -1,0 +1,23 @@
+/* Velora /setup design tokens — the single source for spacing, type, colour,
+   radii, controls and content widths. Shell roots compose `.tokens`; step
+   modules only consume these variables. Text colours intentionally keep the
+   current ink/muted values until contrast review. */
+.tokens{
+  /* spacing 4/8/12/16/24/32 */
+  --setup-space-1:4px;--setup-space-2:8px;--setup-space-3:12px;--setup-space-4:16px;--setup-space-6:24px;--setup-space-8:32px;
+  /* type */
+  --setup-text:15px;--setup-text-small:13px;--setup-caption:12px;--setup-h-step:22px;--setup-h-section:18px;--setup-leading:1.6;
+  /* colour (brand kept; ink/muted unchanged) */
+  --setup-brand:#087e8b;--setup-accent:#087e8b;--setup-deep:#066673;--setup-accent-hover:#066673;--setup-accent-soft:#e7f4f5;--setup-accent-line:#b7d9dd;
+  --setup-ink:#172d43;--setup-muted:#536579;--setup-line:#dce4eb;
+  --setup-canvas:#f4f6f8;--setup-surface:#ffffff;--setup-subtle:#f0f4f6;
+  --setup-success:#18704a;--setup-success-bg:#eef8f2;--setup-success-border:#bcdccc;
+  --setup-warning:#8b5b14;--setup-warning-bg:#fff8eb;--setup-danger:#b13742;--setup-danger-bg:#fdf4f4;
+  /* radii */
+  --setup-radius-sm:6px;--setup-radius:8px;--setup-radius-lg:12px;--setup-radius-pill:999px;
+  /* controls */
+  --setup-control-height:40px;--setup-control-compact:36px;--setup-focus:2px solid var(--setup-brand);
+  /* widths: narrow forms, wide media/knowledge, page */
+  --setup-content-narrow:520px;--setup-content-wide:800px;--setup-content-width:var(--setup-content-wide);--setup-page-width:1040px;
+}
+@media (pointer:coarse),(max-width:800px){.tokens{--setup-control-height:44px;--setup-control-compact:44px}}

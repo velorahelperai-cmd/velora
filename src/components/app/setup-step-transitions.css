@@ -1,0 +1,59 @@
+@keyframes setupStepFadeOut{
+  from{opacity:1;filter:blur(0)}
+  to{opacity:0;filter:blur(1.5px)}
+}
+@keyframes setupStepSoftScaleIn{
+  from{opacity:0;transform:scale(.985);filter:blur(2px)}
+  to{opacity:1;transform:scale(1);filter:blur(0)}
+}
+@keyframes setupStepSoftScaleBackIn{
+  from{opacity:0;transform:scale(1.015);filter:blur(2px)}
+  to{opacity:1;transform:scale(1);filter:blur(0)}
+}
+@keyframes setupStepFadeFallback{
+  from{opacity:0}
+  to{opacity:1}
+}
+
+/* 1. Prevent fun-house stretching: Lock snapshots to 100% and top-aligned without distortion */
+::view-transition-group(velora-setup-step){
+  animation-duration:.22s;
+  animation-timing-function:cubic-bezier(.16,1,.3,1);
+  overflow:clip;
+}
+::view-transition-old(velora-setup-step),
+::view-transition-new(velora-setup-step){
+  height:100%;
+  width:100%;
+  object-fit:none;
+  object-position:top center;
+  overflow:clip;
+}
+
+/* 2. Soft Scale + Micro-Blur transitions */
+::view-transition-old(velora-setup-step){
+  animation:setupStepFadeOut .18s ease-out both;
+}
+::view-transition-new(velora-setup-step){
+  animation:setupStepSoftScaleIn .22s cubic-bezier(.16,1,.3,1) both;
+}
+
+/* Directional refinement: Forward subtly zooms in (.985 -> 1); Back smoothly settles (1.015 -> 1) */
+html[data-setup-slide=forward]::view-transition-old(velora-setup-step){
+  animation:setupStepFadeOut .18s ease-out both;
+}
+html[data-setup-slide=forward]::view-transition-new(velora-setup-step){
+  animation:setupStepSoftScaleIn .22s cubic-bezier(.16,1,.3,1) both;
+}
+html[data-setup-slide=back]::view-transition-old(velora-setup-step){
+  animation:setupStepFadeOut .18s ease-out both;
+}
+html[data-setup-slide=back]::view-transition-new(velora-setup-step){
+  animation:setupStepSoftScaleBackIn .22s cubic-bezier(.16,1,.3,1) both;
+}
+
+@media (prefers-reduced-motion:reduce){
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*){animation:none!important}
+}

@@ -52,21 +52,23 @@ describe("Embedded Signup browser boundary", () => {
   it("accepts current coexistence IDs without inventing a version", () => {
     expect(parse(finish({ waba_id: "123", phone_number_id: "456", business_id: "789" })))
       .toMatchObject({ kind: "finish", contract: "coexistence", data: { phone_number_id: "456" } });
-    expect(parse(finish({ waba_id: "123" }, { version: 4 })).kind).toBe("invalid");
+    expect(parse(finish({ waba_id: "123" }, { version: 4 })).kind).toBe("finish");
   });
 
   it("requires an explicit Cloud API mode and all documented core fields for FINISH", () => {
     const input = JSON.stringify({ type: "WA_EMBEDDED_SIGNUP", event: "FINISH", data: {
       waba_id: "123", phone_number_id: "456", business_id: "789", page_ids: ["111"],
     } });
-    expect(parse(input).kind).toBe("invalid");
+    // v5: a Cloud API FINISH arriving in the Coexistence route is an explicit wrong-route rejection.
+    expect(parse(input)).toEqual({ kind: "rejected", reason: "wrong_route" });
     expect(parse(input, origin, "cloud-api-v4")).toMatchObject({ kind: "finish", contract: "cloud-api-v4" });
     expect(parse(JSON.stringify({ type: "WA_EMBEDDED_SIGNUP", event: "FINISH", data: { waba_id: "123" } }), origin, "cloud-api-v4").kind).toBe("invalid");
     expect(parse(finish(), origin, "cloud-api-v4").kind).toBe("invalid");
   });
 
   it("rejects inferred or malformed completion fields", () => {
-    expect(parse(finish({ waba_id: "123", connected: true })).kind).toBe("invalid");
+    expect(parse(finish({ waba_id: "123", connected: true })).kind).toBe("finish");
+    expect(parse(finish({ waba_id: "abc" })).kind).toBe("invalid");
     expect(parse(finish({ waba_id: "123", page_ids: ["111", 222] })).kind).toBe("invalid");
     expect(parse(finish({ waba_id: "123", phone_number_id: null })).kind).toBe("invalid");
   });
@@ -80,11 +82,12 @@ describe("Embedded Signup browser boundary", () => {
     expect(parse(payload("ERROR", {}))).toEqual({ kind: "error", event: "ERROR" });
   });
 
-  it("builds coexistence launch options without a session version", () => {
+  it("builds Embedded Signup v5 coexistence options without featureType or sessionInfoVersion", () => {
     expect(coexistenceLoginOptions("config-1")).toEqual({
       config_id: "config-1", response_type: "code", override_default_response_type: true,
-      extras: { setup: {}, featureType: "whatsapp_business_app_onboarding" },
+      extras: { setup: {}, version: "v5" },
     });
+    expect(JSON.stringify(coexistenceLoginOptions("config-1"))).not.toMatch(/featureType|sessionInfoVersion|enabled/);
     expect(() => coexistenceLoginOptions(" ")).toThrow();
   });
 });
@@ -162,5 +165,37 @@ describe("attempt-scoped code and session joining", () => {
     expect(joinSignupSignal(cancelled, "a", session)).toBe(cancelled);
     expect(joinSignupSignal(state, "a", { kind: "error", event: "ERROR" }))
       .toEqual({ attemptId: "a", status: "error" });
+  });
+  const v5 = (ev: string, data: Record<string, unknown>) => parse(JSON.stringify({ type: "WA_EMBEDDED_SIGNUP", event: ev, data, extra: true }));
+  const docV5 = { phone_number_id: "456", is_on_biz_app: true, messaging_account_ids: ["123"], primary_waac_ids: [], page_ids: [], catalog_ids: [], dataset_ids: [], business_id: "789", instagram_account_ids: [] };
+  it("parses the documented v5 session info and normalizes messaging_account_ids", () => {
+    const obs = v5(event, { ...docV5, unknown_key: "x" });
+    expect(obs).toMatchObject({ kind: "finish", event, contract: "coexistence", data: { waba_id: "123", phone_number_id: "456", business_id: "789" } });
+    let state = joinSignupSignal(createSignupAttempt("a"), "a", obs as never);
+    state = joinSignupSignal(state, "a", { kind: "code", code: "c" });
+    expect(state.status).toBe("ready-for-server-validation");
+    expect(joinSignupSignal(createSignupAttempt("b"), "a", obs as never).status).toBe("waiting");
+  });
+  it.each([
+    ["FINISH", { ...docV5, is_on_biz_app: false }, "wrong_route"],
+    ["FINISH_ONLY_WABA", { messaging_account_ids: ["123"] }, "only_waba"],
+    ["FINISH_GRANT_ONLY_API_ACCESS", {}, "grant_only"],
+    [event, { ...docV5, messaging_account_ids: ["123", "124"] }, "multiple_accounts"],
+    [event, { ...docV5, waba_id: "999" }, "multiple_accounts"],
+  ] as const)("rejects %s with reason %s and never auto-chooses", (ev, data, reason) => {
+    const obs = v5(ev, data);
+    expect(obs).toEqual({ kind: "rejected", reason });
+    expect(joinSignupSignal(createSignupAttempt("a"), "a", obs as never).status).toBe("error");
+  });
+  it.each([
+    [{ ...docV5, is_on_biz_app: false }], [{ ...docV5, is_on_biz_app: "true" }],
+    [{ ...docV5, messaging_account_ids: ["x"] }], [{ ...docV5, messaging_account_ids: [] }],
+  ])("treats inconsistent or malformed v5 data as invalid %#", (data) => {
+    const ev = data.is_on_biz_app === false ? "FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING" : event;
+    expect(v5(ev, data).kind).toBe("invalid");
+  });
+  it("keeps v5 cancel and error events unchanged from session info v3", () => {
+    expect(v5("CANCEL", { current_step: "PHONE_NUMBER_SETUP" })).toEqual({ kind: "cancel", currentStep: "PHONE_NUMBER_SETUP" });
+    expect(v5("ERROR", { error_message: "x" })).toEqual({ kind: "error", event: "ERROR" });
   });
 });

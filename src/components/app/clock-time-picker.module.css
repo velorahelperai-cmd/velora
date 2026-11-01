@@ -1,0 +1,74 @@
+.root{position:relative;display:inline-flex;flex-direction:column;align-items:stretch;gap:2px}
+.control{display:inline-flex;align-items:stretch;border:1px solid #e0e6eb;border-radius:6px;background:#fff;box-shadow:0 1px 1px rgba(0,0,0,.03);overflow:hidden}
+.control:focus-within{border-color:#087e8b;box-shadow:0 0 0 2px rgba(8,126,139,.14)}
+.typed{width:92px;height:var(--clock-control-height,30px);padding:0 8px;border:0;background:transparent;color:var(--setup-ink,#172d43);font:inherit;font-size:13px;font-variant-numeric:tabular-nums;text-align:center}
+.typed:focus{outline:none}
+.typed[aria-invalid="true"]{color:var(--setup-danger,#b13742)}
+.typed:disabled{opacity:.5;cursor:not-allowed}
+.typedError{margin:0;font-size:11px;color:var(--setup-danger,#b13742)}
+.srOnly{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+.trigger{display:inline-flex;align-items:center;justify-content:center;width:30px;height:var(--clock-control-height,30px);padding:0;border:0;border-inline-start:1px solid #e0e6eb;background:#f8fafb;color:var(--setup-muted,#536579);cursor:pointer}
+.trigger:hover:not(:disabled){background:#eef3f6;color:var(--setup-ink,#172d43)}
+.trigger[aria-expanded="true"]{background:#e8f4f5;color:var(--setup-deep,#066673)}
+.trigger:disabled{opacity:.5;cursor:not-allowed}
+.trigger svg{width:14px;height:14px}
+
+.popover{position:absolute;z-index:40;top:calc(100% + 4px);inset-inline-start:0;width:188px;padding:10px;background:#fff;border:1px solid #e0e6eb;border-radius:10px;box-shadow:0 10px 28px rgba(23,45,67,.12),0 2px 6px rgba(23,45,67,.06)}
+
+/* Reset setup .view button chrome so dial digits stay circular. */
+.popover button{min-height:0;min-width:0;padding:0;border-radius:6px;font:inherit;box-shadow:none}
+
+.head{display:flex;align-items:center;justify-content:center;gap:4px;margin-bottom:8px;color:var(--setup-ink,#172d43)}
+.head>span{font-size:16px;font-weight:700;line-height:1;color:var(--setup-muted,#536579)}
+.head>button{display:inline-flex;align-items:center;justify-content:center;min-width:36px;min-height:28px;padding:0 8px;border:0;background:#f5f8fa;border-radius:7px;font-size:16px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--setup-muted,#536579);cursor:pointer;line-height:1}
+.head>button.active{background:#e8f4f5;color:var(--setup-deep,#066673);box-shadow:inset 0 0 0 1.5px #087e8b}
+.period{display:flex;flex-direction:column;gap:3px;margin-inline-start:6px}
+.period button{display:inline-flex;align-items:center;justify-content:center;min-width:28px;min-height:22px;padding:0 6px;border:1px solid #e0e6eb;background:#fff;border-radius:6px;font-size:11px;font-weight:700;color:var(--setup-muted,#536579);cursor:pointer;line-height:1}
+.period button.active{border-color:#087e8b;background:#e8f4f5;color:var(--setup-deep,#066673)}
+
+.dial{position:relative;width:156px;height:156px;margin:0 auto;border-radius:50%;background:radial-gradient(circle at center,#fff 0 28%,#f3f7f9 29% 100%);box-shadow:inset 0 0 0 1px #e7eef2}
+.center{position:absolute;left:50%;top:50%;width:6px;height:6px;margin:-3px 0 0 -3px;border-radius:50%;background:#087e8b;z-index:2}
+.hand{position:absolute;left:50%;top:50%;width:2px;height:54px;margin-left:-1px;margin-top:-54px;background:linear-gradient(#087e8b,#087e8b);border-radius:2px;transform-origin:50% 100%;pointer-events:none;z-index:1}
+
+.dial .num{
+  position:absolute;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:26px;
+  height:26px;
+  min-width:26px;
+  min-height:26px;
+  margin:-13px 0 0 -13px;
+  padding:0;
+  border:0;
+  border-radius:50%;
+  background:transparent;
+  color:var(--setup-ink,#172d43);
+  font-size:11px;
+  font-weight:650;
+  font-variant-numeric:tabular-nums;
+  line-height:1;
+  letter-spacing:0;
+  white-space:nowrap;
+  cursor:pointer;
+  z-index:3;
+}
+.dial .num:hover{background:#e8f4f5;color:var(--setup-deep,#066673)}
+.dial .num.selected{background:#087e8b;color:#fff;font-weight:700;box-shadow:0 2px 6px rgba(8,126,139,.24)}
+.dial .num:focus-visible{outline:2px solid #087e8b;outline-offset:1px}
+
+.note{margin:8px 0 0;text-align:center;font-size:11px;font-weight:500;color:var(--setup-muted,#536579)}
+
+@media(pointer:coarse),(max-width:800px){
+  .root{--clock-control-height:40px}
+  .trigger,.typed{height:var(--clock-control-height)}
+  .typed{font-size:16px;width:108px}
+  .trigger{width:36px}
+  .period button{min-height:28px;min-width:32px;font-size:12px}
+  .head>button{min-height:36px;min-width:40px;font-size:16px}
+  .popover{width:204px;padding:12px}
+  .dial{width:172px;height:172px}
+  .dial .num{width:30px;height:30px;min-width:30px;min-height:30px;margin:-15px 0 0 -15px;font-size:12px}
+  .hand{height:60px;margin-top:-60px}
+}

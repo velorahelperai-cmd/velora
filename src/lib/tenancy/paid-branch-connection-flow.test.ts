@@ -53,7 +53,18 @@ describe("paid branch connection attempt parsing", () => {
   it("accepts a coexistence follow-up without the start-only phone and confirmation fields", () => {
     const parsed = parseConnectionAttempt({ ...scope, flow: "wa_coexistence", attemptId, generation: 1 }, asOf);
     expect("ok" in parsed).toBe(false);
-    expect(parseConnectionStart({ ...scope, flow: "wa_coexistence", clientOpId: attemptId, expectedRevision: "0" }, asOf)).toMatchObject({ ok: false, code: "invalid_input" });
+    // The number is now entered inside Meta and derived server-side, so start needs no phone.
+    const started = parseConnectionStart({ ...scope, flow: "wa_coexistence", clientOpId: attemptId, expectedRevision: "0" }, asOf);
+    expect(started).toMatchObject({ flow: "wa_coexistence" });
+    expect("confirmedPhoneNumber" in started).toBe(false);
+    // A supplied number is still validated and must be confirmed.
+    expect(parseConnectionStart({ ...scope, flow: "wa_coexistence", clientOpId: attemptId, expectedRevision: "0", confirmedPhoneNumber: "12" }, asOf)).toMatchObject({ ok: false, code: "invalid_input" });
+    expect(parseConnectionStart({ ...scope, flow: "wa_coexistence", clientOpId: attemptId, expectedRevision: "0", confirmedPhoneNumber: "+96891234567" }, asOf)).toMatchObject({ ok: false, code: "invalid_input" });
+  });
+
+  it("accepts a coexistence completion carrying Meta's phone_number_id instead of a typed number", () => {
+    expect(paidBranchCompletionAccepted("wa_coexistence", attemptId, { attemptId, nonce: "a".repeat(64), code: "unit-code", wabaId: "123456", phoneNumberId: "654321" })).toBe(true);
+    expect(paidBranchCompletionAccepted("wa_coexistence", attemptId, { attemptId, nonce: "a".repeat(64), code: "unit-code", wabaId: "123456" })).toBe(false);
   });
 
   it("rejects a completion whose nested attempt ids disagree", () => {

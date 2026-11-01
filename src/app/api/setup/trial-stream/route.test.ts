@@ -45,3 +45,22 @@ it('uses only guarded recovery for the existing operation and returns private un
  expect(response.status).toBe(200);expect(response.headers.get('cache-control')).toContain('no-store');
  expect(m.recover).toHaveBeenCalledExactlyOnceWith(scope);expect(m.stream).not.toHaveBeenCalled();expect(m.rpc).not.toHaveBeenCalled();
 });
+
+it('recovers through an HTTPS proxy with exact public Host and browser same-origin evidence',async()=>{
+ m.recover.mockResolvedValue({ok:false,code:'TRIAL_PENDING'});
+ const response=await POST(new Request(`http://localhost:3330/api/setup/trial-stream?${new URLSearchParams(scope)}`,{method:'POST',headers:{'x-velora-boundary':'boundary',host:'preview.example.test',origin:'https://preview.example.test','sec-fetch-site':'same-origin'}}));
+ expect(response.status).toBe(200);expect(m.recover).toHaveBeenCalledExactlyOnceWith(scope);
+});
+
+it('rejects proxy origin mismatches, forged forwarded host and absent same-origin evidence',async()=>{
+ for(const headers of [
+  {host:'preview.example.test',origin:'https://evil.test','sec-fetch-site':'same-origin'},
+  {host:'localhost:3330',origin:'https://evil.test','x-forwarded-host':'evil.test','sec-fetch-site':'same-origin'},
+  {host:'preview.example.test',origin:'https://preview.example.test'},
+  {host:'preview.example.test',origin:'https://preview.example.test','sec-fetch-site':'cross-site'},
+ ]){
+  const response=await POST(new Request(`http://localhost:3330/api/setup/trial-stream?${new URLSearchParams(scope)}`,{method:'POST',headers:{'x-velora-boundary':'boundary',...headers} as Record<string,string>}));
+  expect(response.status).toBe(403);
+ }
+ expect(m.recover).not.toHaveBeenCalled();
+});

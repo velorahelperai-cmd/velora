@@ -13,12 +13,12 @@ it("accepts trimmed valid recipient",()=>expect(validTeamRecipient(" Staff ","US
 it("authoritative request phase changes release the local pending latch for host recovery",()=>expect(teamViewKey({...props,state:{...props.state,phase:"error"}})).not.toBe(teamViewKey(props)));
 it.each(["loading","pending","unknown","unavailable","error"] as const)("blocks mutations during %s",phase=>{const h=render({state:{...props.state,phase}});if(phase==="loading"){expect(h).toContain('aria-busy="true"');expect(h).not.toContain("Loading the branch team");}else if(phase==="unavailable"){expect(h).toContain('role="status"');}else{expect(h).toContain('disabled=""');}});
 it("requires safe same-operation retry and never infers permission",()=>{const state={...props.state,phase:"error" as const,operationId:op,operation:"invite" as const,canRetry:true,retrySafe:false};expect(render({state,onRetry:()=>{}})).toContain('disabled="">Retry the same operation');expect(render({state:{...state,retrySafe:true},onRetry:()=>{}})).toContain('type="button">Retry the same operation');});
-it("does not show skip confirmation chatter and does not claim email sent",()=>{expect(render()).not.toContain("server confirmed that");expect(render({snapshot:{...props.snapshot!,skip:"skipped"}})).not.toContain("server confirmed that");expect(render()).toContain("does not mean an email was sent");});
+it("does not show skip confirmation chatter and does not claim email sent",()=>{expect(render()).not.toContain("server confirmed that");expect(render({snapshot:{...props.snapshot!,skip:"skipped"}})).not.toContain("server confirmed that");expect(render()).not.toContain("does not mean an email was sent");expect(render({inviteUrl:"https://example.test/accept-invite?token=local"})).toContain("no email sent");});
 it("requires authorized staff role and operation IDs",()=>{for(const extra of [{allowedRoles:[]},{createOperationId:"invalid"},{canInvite:false}])expect(render({snapshot:{...props.snapshot!,...extra}})).toContain('autoComplete="name" maxLength="120" disabled=""');});
 it("hides foreign branch invitations and stale account snapshots",()=>{expect(render({snapshot:{...props.snapshot!,invitations:[{scope:{...scope,branchId:"other"},invitation:{id:"x",name:"PRIVATE",email:"private@example.com",status:"invited",expiresAt:"2099-01-01",revision:1}}]}})).not.toContain("PRIVATE");expect(render({state:{...props.state,scope:{...scope,expectedAccountId:"other"}}})).toContain("team data is unavailable");});
 it("resets across scope/revision/capture and authoritative operation replacement",()=>{const key=teamViewKey(props);for(const field of ["expectedAccountId","companyId","branchId"] as const)expect(teamViewKey({...props,scope:{...scope,[field]:"new"}})).not.toBe(key);expect(teamViewKey({...props,snapshot:{...props.snapshot!,version:2}})).not.toBe(key);expect(teamViewKey({...props,boundaryFingerprint:"new"})).not.toBe(key);expect(teamViewKey({...props,snapshot:{...props.snapshot!,createOperationId:"new"}})).not.toBe(key);expect(teamViewKey({...props,locale:"ar"})).toBe(key);});
 
-it("requires explicit permission selection and shows activation/link-only delivery boundary",()=>{const h=render({inviteUrl:"https://example.test/accept-invite?token=local"});expect(h).toContain("Permissions for this branch only");expect(h).not.toContain('checked=""');expect(h).toContain("requires a valid channel connection");expect(h).toContain("no email sent");});
+it("requires explicit permission selection and shows activation/link-only delivery boundary",()=>{const h=render({inviteUrl:"https://example.test/accept-invite?token=local"});expect(h).toContain("Permissions for this branch only");expect(h).not.toContain('checked=""');expect(h).not.toContain("requires a valid channel connection");expect(h).toContain("no email sent");});
 
 it("explicitly regenerates a pending recipient at full seats without sending or mutating on selection",async()=>{
  const {createRoot}=await import("react-dom/client");vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT",true);
@@ -38,5 +38,22 @@ it("explicitly regenerates a pending recipient at full seats without sending or 
 });
 it("requires server replacement permission even at full seats",()=>{
  const invitation={id:op,name:"Staff",email:"staff@example.test",status:"invited" as const,expiresAt:"2099-01-01",revision:1};
- expect(render({snapshot:{...props.snapshot!,canInvite:false,canReplace:false,seats:{limit:2,available:0},invitations:[{scope,invitation}]}})).toContain('disabled="">Regenerate invitation link');
+ expect(render({snapshot:{...props.snapshot!,canInvite:false,canReplace:false,seats:{limit:2,available:0},invitations:[{scope,invitation}]}})).toContain('disabled="">New link');
+});
+
+it.each(['ar','en'] as const)('does not announce failed seats during initial %s loading',locale=>{
+ const h=render({locale,snapshot:null,state:{...props.state,phase:'loading',version:null}});
+ expect(h).toContain('aria-busy="true"');
+ expect(h).not.toContain('Seat availability could not be verified');expect(h).not.toContain('تعذّر التحقق من المقاعد');
+ expect(h).toContain('disabled=""');
+});
+it('omits skip when the authoritative route does not support it',()=>{
+ const h=render({snapshot:{...props.snapshot!,canSkip:false,skipOperationId:null},onSkip:undefined});
+ expect(h).not.toContain('Skip for now');
+ expect(h).not.toContain('You can continue setup');
+ expect(h).not.toContain('Optional');
+});
+it.each(['ar','en'] as const)('uses customer language for %s staff roles',locale=>{
+ const h=render({locale});expect(h).not.toContain('invitation contract');expect(h).not.toContain('عقد الدعوات');
+ expect(h).not.toContain('يتحقق الخادم');expect(h).toContain(locale==='ar'?'صلاحيات هذا الفرع فقط':'Permissions for this branch only');
 });

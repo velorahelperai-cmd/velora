@@ -51,7 +51,16 @@ export async function POST(request:Request){
  const url=new URL(request.url),q=url.searchParams;
  const input={operationId:q.get('operationId')??'',expectedAccountId:q.get('expectedAccountId')??'',companyId:q.get('companyId')??'',branchId:q.get('branchId')??''};
  if(Object.values(input).some(id=>!uuid.test(id))||[...q.keys()].some(key=>q.getAll(key).length!==1))return fail(400);
- if(request.headers.get('sec-fetch-site')==='cross-site'||(request.headers.get('origin')&&request.headers.get('origin')!==url.origin))return fail(403);
+ const site=request.headers.get('sec-fetch-site');
+ const origin=request.headers.get('origin');
+ // An HTTPS reverse proxy can retain the public Host while Next's URL uses
+ // the internal HTTP origin. Only accept that case with the browser's explicit
+ // same-origin metadata and an exact Host match, never arbitrary forwarded hosts.
+ let sameOrigin=!origin||origin===url.origin;
+ if(origin&&!sameOrigin&&site==='same-origin'){
+  try{const source=new URL(origin);sameOrigin=source.origin===origin&&source.protocol==='https:'&&source.host===request.headers.get('host');}catch{sameOrigin=false;}
+ }
+ if(site==='cross-site'||!sameOrigin)return fail(403);
  try{
   const identity=await readSessionIdentity();
   if(!identity.ok)return fail(401);

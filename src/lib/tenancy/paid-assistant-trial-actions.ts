@@ -86,17 +86,21 @@ export async function readOwnedBranchAssistantTrialAction(
     if (!identity.ok || identity.userId !== scope.expectedAccountId) return null;
 
     const client = await createClient();
-    const res = await client.rpc("es02_read_owned_branch_assistant_trial" as never, {
+    // Both reads independently enforce ownership. Fetch together so the initial
+    // trial context and the final saved reply avoid a second network round trip.
+    const [res,recovery] = await Promise.all([
+      client.rpc("es02_read_owned_branch_assistant_trial" as never, {
       p_expected_account_id: scope.expectedAccountId,
       p_company_id: scope.companyId,
       p_branch_id: scope.branchId,
-    } as never);
+      } as never),
+      client.rpc("es02_read_owned_branch_trial_recovery" as never, {p_expected_account_id:scope.expectedAccountId,p_company_id:scope.companyId,p_branch_id:scope.branchId} as never),
+    ]);
 
     const payload = res.data as unknown as { ok?: boolean; data?: { snapshot: TrialSnapshot } };
     if (res.error || !payload || payload.ok !== true) return null;
     const snapshot = payload.data?.snapshot;
     if (!snapshot || snapshot.scope?.expectedAccountId !== scope.expectedAccountId || snapshot.scope?.companyId !== scope.companyId || snapshot.scope?.branchId !== scope.branchId) return null;
-    const recovery = await client.rpc("es02_read_owned_branch_trial_recovery" as never, {p_expected_account_id:scope.expectedAccountId,p_company_id:scope.companyId,p_branch_id:scope.branchId} as never);
     const value = recovery.data as unknown as {ok?:boolean;operation?:{id:string;status:string;recoverable:boolean;blocksNewRequests?:boolean;pollable?:boolean;providerFailed?:boolean}|null};
     const op = !recovery.error && value?.ok === true ? value.operation : null;
     if(recovery.error||value?.ok!==true)return {...snapshot,canAsk:false};

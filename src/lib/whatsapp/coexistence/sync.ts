@@ -146,5 +146,7 @@ export async function readCoexistenceSyncStatus(client: CoexistenceSyncRpcClient
       || (item.error_code !== null && (typeof item.error_code !== "number" || !Number.isSafeInteger(item.error_code) || item.error_code < 0 || item.state !== "failed")) || (item.provider_request_id !== null && !providerId(item.provider_request_id)) || item.requested !== (item.provider_request_id !== null) || item.declined !== (item.error_code === 2593109)) return fail();
     seen.add(String(item.sync_type)); syncs.push({ syncType: item.sync_type as CoexistenceSyncType, state: item.state as CoexistenceSyncState, requested: item.requested, declined: item.declined, errorCode: item.error_code as number | null, providerRequestId: item.provider_request_id as string | null });
   }
-  return { ok: true as const, linkId: row.link_id, linkGeneration: row.link_generation, syncs, aiEnabled: false as const };
+  // F4: optional until migration 20261101180000 is applied; the server still enforces the 24h window.
+  const deadlineAt = timestamp(row.deadline_at) ? new Date(Date.parse(row.deadline_at)).toISOString() : null;
+  return { ok: true as const, linkId: row.link_id, linkGeneration: row.link_generation, syncs, aiEnabled: false as const, deadlineAt };
 }

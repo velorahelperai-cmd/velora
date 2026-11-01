@@ -58,9 +58,9 @@ const baseProps: PaidSetupStepHostProps = {
 };
 
 describe("PaidSetupStepHost", () => {
-  it('renders launch requirements while the initial read is pending',()=>{
+  it('renders an honest loading frame while the initial launch read is pending',()=>{
     const html=renderToStaticMarkup(createElement(PaidSetupStepHost,{...baseProps,step:'launch'}));
-    expect(html).toContain('Review and confirm launch');expect(html).toContain('<dl');
+    expect(html).toContain('Review and confirm launch');expect(html).toContain('Loading branch summary');expect(html).not.toContain('<dl');expect(html).not.toContain('type="submit"');
   });
   it('blocks stale launch consent throughout an unresolved status refresh',async()=>{
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);

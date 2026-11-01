@@ -112,12 +112,13 @@ export async function exchangeOwnedBranchConnection(input: {
   if (request.flow === "wa_coexistence") {
     const coexistenceConfig = coexistenceServerConfig();
     const claim = signupClaim(legacy, request, slot.sessionId);
-    const phone = typeof legacy.expected_phone_number === "string" ? legacy.expected_phone_number : "";
-    if (!coexistenceConfig || !claim || claim.keep_on_phone !== true || !/^\+[1-9]\d{6,14}$/.test(phone)) return { ok: false, code: "setup_required" };
+    // Null expected number = derive from Meta's verified phone_number_id (see 20261101164000 migration).
+    const phone = typeof legacy.expected_phone_number === "string" ? legacy.expected_phone_number : null;
+    if (!coexistenceConfig || !claim || claim.keep_on_phone !== true || (phone !== null && !/^\+[1-9]\d{6,14}$/.test(phone))) return { ok: false, code: "setup_required" };
     const coexistence: CoexistenceSignupClaim = { ...claim, keep_on_phone: true, expected_phone_number: phone, config_id: coexistenceConfig.configId };
     const guarded = branchPhaseProxy(input.admin, request);
     const ports = createCoexistenceSignupPorts(identity, completion as never, coexistenceConfig, input.session as CoexistenceSignupRpcClient, guarded as CoexistenceSignupRpcClient);
-    const finished = await finishCoexistenceSignup(identity, { ...completion, confirmedPhoneNumber: phone } as never, coexistenceConfig, {
+    const finished = await finishCoexistenceSignup(identity, { ...completion, ...(phone ? { confirmedPhoneNumber: phone } : {}) } as never, coexistenceConfig, {
       claim: async () => coexistence,
       prepare: ports.prepare,
       checkpoint: ports.checkpoint,

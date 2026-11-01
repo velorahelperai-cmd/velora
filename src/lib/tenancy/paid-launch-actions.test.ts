@@ -60,6 +60,7 @@ describe("paid-launch-actions", () => {
             readiness: { status: "ready", revision: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", blockers: [] },
             summary: {
               channels: [{ channel: "whatsapp", detail: "تم إثبات الربط", status: "verified" }],
+              languages: { detail: "العربية", status: "verified" },
               hours: { detail: "مكتملة ومحفوظة", status: "verified" },
               knowledge: { detail: "مصادر معتمدة", status: "verified" },
               persona: { detail: "نورا", status: "verified" },
@@ -91,7 +92,7 @@ describe("paid-launch-actions", () => {
       companyId: VALID_COMPANY_ID,
       branchId: VALID_BRANCH_ID,
       expectedVersion: 1,
-      readinessRevision: "rev-hash",
+      readinessRevision: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       operationId: VALID_OP_ID,
       confirmed: true,
     });
@@ -104,7 +105,7 @@ describe("paid-launch-actions", () => {
       companyId: VALID_COMPANY_ID,
       branchId: VALID_BRANCH_ID,
       expectedVersion: 1,
-      readinessRevision: "rev-hash",
+      readinessRevision: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       operationId: VALID_OP_ID,
       confirmed: true,
     });
@@ -112,12 +113,21 @@ describe("paid-launch-actions", () => {
     expect(rpcMock).toHaveBeenCalledWith(
       "es02_confirm_owned_branch_launch",
       expect.objectContaining({
-        p_readiness_revision: "rev-hash",
+        p_readiness_revision: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         p_operation_id: VALID_OP_ID,
         p_confirmed: true,
       })
     );
   });
+  it("rejects a stale displayed readiness revision before invoking confirmation",async()=>{
+    const result=await confirmOwnedBranchLaunchAction({expectedAccountId:VALID_ACCOUNT_ID,companyId:VALID_COMPANY_ID,branchId:VALID_BRANCH_ID,expectedVersion:1,readinessRevision:'b'.repeat(32),operationId:VALID_OP_ID,confirmed:true});
+    expect(result).toBeNull();expect(rpcMock.mock.calls.some(([name])=>name==='es02_confirm_owned_branch_launch')).toBe(false);
+  });
+  it("rejects malformed displayed readiness before any RPC",async()=>{
+    const result=await confirmOwnedBranchLaunchAction({expectedAccountId:VALID_ACCOUNT_ID,companyId:VALID_COMPANY_ID,branchId:VALID_BRANCH_ID,expectedVersion:0,readinessRevision:'a'.repeat(32),operationId:VALID_OP_ID,confirmed:true});
+    expect(result).toBeNull();expect(rpcMock).not.toHaveBeenCalled();
+  });
+
 });
 
 it("never confirms launch when the authoritative subscription/owner gate denies access", async () => {
@@ -125,7 +135,7 @@ it("never confirms launch when the authoritative subscription/owner gate denies 
   rpcMock = vi.fn(async (name: string) => name === "es02_read_owned_branch_setup"
     ? { data: { ok: false, code: "SUSPENDED" }, error: null }
     : { data: { ok: true, data: { snapshot: { activation: { status: "launched" } } } }, error: null });
-  const result = await confirmOwnedBranchLaunchAction({ expectedAccountId: VALID_ACCOUNT_ID, companyId: VALID_COMPANY_ID, branchId: VALID_BRANCH_ID, expectedVersion: 1, readinessRevision: "rev-hash", operationId: VALID_OP_ID, confirmed: true });
+  const result = await confirmOwnedBranchLaunchAction({ expectedAccountId: VALID_ACCOUNT_ID, companyId: VALID_COMPANY_ID, branchId: VALID_BRANCH_ID, expectedVersion: 1, readinessRevision: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", operationId: VALID_OP_ID, confirmed: true });
   expect(result).toBeNull();
   expect(rpcMock).not.toHaveBeenCalledWith("es02_confirm_owned_branch_launch", expect.anything());
 });

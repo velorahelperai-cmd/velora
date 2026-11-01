@@ -1,11 +1,12 @@
 "use client";
+import {setupPlanLabel} from "./setup-plan-label";
 import {useId,useLayoutEffect,useRef,useState} from "react";
 import type {PaidBranchSetupRead,PaidSetupChannel,PaidSetupStepStatus} from "@/lib/tenancy/paid-setup-contracts";
 import type {ChecklistStepId} from "./paid-assistant-checklist";
 import styles from "./paid-launch-summary.module.css";
 
 export type LaunchScope={expectedAccountId:string;companyId:string;branchId:string};
-type SummaryItem={detail:string;status:PaidSetupStepStatus};
+type SummaryItem={detail:string;status:PaidSetupStepStatus|"optional"};
 
 export type LaunchSummarySnapshot={
  scope:LaunchScope;version:number;branchLabel:string;
@@ -36,11 +37,13 @@ export function hostAllowsLaunch(s:LaunchSummarySnapshot):boolean{
 }
 
 export function blockerExplanation(reason:string,ar:boolean):{message:string;stepId?:ChecklistStepId}{
+ const unknown={message:ar?"تعذّر تأكيد أحد متطلبات الإطلاق. حدّث الحالة وحاول مجددًا.":"A launch requirement could not be confirmed. Refresh the status and try again."};
  if(reason==="trial_incomplete"){
-  return {message:ar?"يلزم تجربة المساعد والتأكد من صحة إجاباته قبل التفعيل.":"Assistant trial must be completed and verified before activation.",stepId:"test"};
+  return {message:ar?"التجربة السابقة لم تعد مطابقة لإعدادات الفرع الحالية (مثل المواعيد أو المعرفة أو اللغة). اسأل سؤالًا واحدًا من جديد في تجربة المساعد ثم ارجع هنا.":"A previous assistant trial no longer matches the current branch settings (such as hours, knowledge, or language). Ask one new question in the assistant trial, then return here.",stepId:"test"};
  }
  if(reason.startsWith("channel_unverified:")){
   const ch=reason.replace("channel_unverified:","");
+  if(ch!=="whatsapp"&&ch!=="instagram")return unknown;
   const chName=ch==="whatsapp"?(ar?"واتساب":"WhatsApp"):ch==="instagram"?(ar?"إنستغرام":"Instagram"):ch;
   return {message:ar?`يلزم ربط قناة ${chName} الخاصة بالفرع والتحقق من اتصالها.`:`Branch channel ${chName} must be connected and verified.`,stepId:ch==="whatsapp"||ch==="instagram"?ch:undefined};
  }
@@ -56,13 +59,14 @@ export function blockerExplanation(reason:string,ar:boolean):{message:string;ste
  if(reason==="selection_required"){
   return {message:ar?"يلزم اختيار قنوات التفعيل المعتمدة للفرع.":"Branch channels must be selected.",stepId:"whatsapp"};
  }
- return {message:reason};
+ return unknown;
 }
 
 export function PaidLaunchSummary(p:PaidLaunchSummaryProps){
  const ar=p.locale==="ar",t=(a:string,e:string)=>ar?a:e,scoped=!!p.boundaryFingerprint&&same(p.scope,p.state.scope);
  if(!scoped||(!p.snapshot&&p.state.phase!=="loading"&&p.state.phase!=="unavailable")||(p.snapshot&&(!same(p.scope,p.snapshot.scope)||p.snapshot.setup.companyId!==p.scope.companyId||p.snapshot.setup.selectedBranchId!==p.scope.branchId||!Number.isSafeInteger(p.snapshot.version)||p.snapshot.version<1||p.state.version!==p.snapshot.version)))
  return <section className={styles.view} dir={ar?"rtl":"ltr"}><p role="status">{t("ملخص الإطلاق غير متاح لهذا الحساب والفرع. أعد تحميل البيانات.","The launch summary is unavailable for this account and branch. Reload the data.")}</p></section>;
+ if(!p.snapshot&&p.state.phase==="loading")return <section className={styles.view} dir={ar?"rtl":"ltr"} aria-busy="true" aria-label={t("ملخص الإطلاق","Launch summary")}><h2>{t("راجع ثم أكّد الإطلاق","Review and confirm launch")}</h2><p role="status" className={styles.note}>{t("جارٍ تحميل ملخص الفرع…","Loading branch summary…")}</p><div className={styles.loadingRows} aria-hidden="true">{Array.from({length:5},(_,i)=><div key={i}/>)}</div></section>;
  const item={detail:"—",status:"unavailable" as const};
  const presentation:LaunchSummarySnapshot=p.snapshot??{scope:p.scope,version:0,branchLabel:"—",setup:{companyId:p.scope.companyId,selectedBranchId:p.scope.branchId,sourceStatus:"unavailable",selectedChannels:null,entitlement:null,launch:{canRequest:false,confirmationRequired:true,confirmed:false,blockedReasons:[]}},readiness:{status:"unknown",revision:null,blockers:[]},summary:{channels:[],hours:item,knowledge:item,persona:item,team:item},operationId:null,activation:{status:"unknown",receiptId:null,operationId:null}};
  return <LaunchForm key={JSON.stringify([p.scope,p.boundaryFingerprint,p.snapshot?.version,p.snapshot?.readiness.revision,p.snapshot?.operationId])} {...p} snapshot={presentation}/>;
@@ -74,17 +78,15 @@ function LaunchForm(p:PaidLaunchSummaryProps & {snapshot:LaunchSummarySnapshot})
  const mounted=useRef(false),reserved=useRef(false),readReserved=useRef(false);
  useLayoutEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
  const canLaunch=p.state.phase==="ready"&&!pending&&!unknown&&!refreshing&&hostAllowsLaunch(s)&&!!p.onLaunch;
- const canRefresh=!pending&&!refreshing&&p.state.phase!=="pending"&&!!p.onRefresh;
+ const canRefresh=!pending&&!refreshing&&p.state.phase!=="pending"&&p.state.phase!=="loading"&&!!p.onRefresh;
  const launched=s.activation.status==="launched"&&!!s.activation.receiptId?.trim()&&operationId(s.activation.operationId)&&s.activation.operationId===s.operationId&&s.setup.launch.confirmed===true;
- const status=(v:PaidSetupStepStatus)=>({verified:t("مؤكد","Verified"),pending:t("قيد الإعداد","Pending"),blocked:t("يتطلب إجراء","Action needed"),skipped_optional:t("تم التخطي اختياريًا","Skipped optionally"),unavailable:t("غير متاح","Unavailable")}[v]??t("غير معروف","Unknown"));
+ const status=(v:SummaryItem["status"])=>({optional:t("اختياري","Optional"),verified:t("مؤكد","Verified"),pending:t("قيد الإعداد","Pending"),blocked:t("يتطلب إجراء","Action needed"),skipped_optional:t("تم التخطي اختياريًا","Skipped optionally"),unavailable:t("غير متاح","Unavailable")}[v]??t("غير معروف","Unknown"));
 
  const pkg=s.setup.entitlement?.package;
  const personaKey=s.setup.entitlement?.persona;
  const personaName=s.summary.persona?.detail||(personaKey?({level_1:ar?"نورا":"Noura",level_2:ar?"لينا":"Lina",level_3:ar?"دانا":"Dana"})[personaKey]:"");
- const pkgLabel=pkg==="premium"?t("الباقة المتقدمة","Premium Plan"):t("الباقة الأساسية","Basic Plan");
- const currentPlanText=personaName?`${t("الباقة الحالية: ","Current plan: ")}${pkgLabel} (${personaName})`:`${t("الباقة الحالية: ","Current plan: ")}${pkgLabel}`;
- const renewalPolicyText=t("سياسة التغيير: يسري تعديل الباقة مع بداية دورة التجديد القادمة من إعدادات الحساب.","Change policy: Plan changes take effect at the start of the next renewal cycle via account settings.");
- const pkgDetail=`${currentPlanText}\n${renewalPolicyText}`;
+ const pkgLabel=setupPlanLabel(p.locale,pkg);
+ const pkgDetail=personaName?`${t("الباقة الحالية: ","Current plan: ")}${pkgLabel} (${personaName})`:`${t("الباقة الحالية: ","Current plan: ")}${pkgLabel}`;
 
  const channels=(s.setup.selectedChannels??[]).filter((v,i,a)=>["whatsapp","instagram"].includes(v)&&a.indexOf(v)===i);
  const rows:{key:string;label:string;item:SummaryItem;stepId?:ChecklistStepId}[]=[
@@ -96,17 +98,24 @@ function LaunchForm(p:PaidLaunchSummaryProps & {snapshot:LaunchSummarySnapshot})
    stepId:channel as ChecklistStepId,
   })),
   {key:"hours",label:t("مواعيد العمل","Business hours"),item:s.summary.hours,stepId:"hours"},
-  {key:"knowledge",label:t("المعرفة والبيانات","Knowledge base"),item:s.summary.knowledge,stepId:"knowledge"},
-  {
-   key:"languages",
-   label:t("لغات الرد","Reply languages"),
-   item:s.summary.languages??{
-    detail:s.readiness.blockers.includes("language_unconfirmed")?t("بانتظار تأكيد لغات الرد","Pending language confirmation"):t("العربية والإنجليزية","Arabic & English"),
-    status:(s.readiness.blockers.includes("language_unconfirmed")?"pending":"verified") as PaidSetupStepStatus,
-   },
-   stepId:"knowledge",
-  },
-  {key:"team",label:t("فريق العمل","Staff team"),item:s.summary.team,stepId:"team"},
+  {key:"knowledge",label:t("المعرفة واللغات","Knowledge & languages"),item:(()=>{
+   const base=s.summary.knowledge;
+   const lang=s.summary.languages;
+   if(s.readiness.blockers.includes("language_unconfirmed")||lang?.status==="pending"){
+    return {detail:lang?.detail?.trim()||t("يلزم تأكيد لغات الرد ضمن خطوة المعرفة.","Confirm reply languages inside the knowledge step."),status:"pending" as const};
+   }
+   if(lang?.status==="verified"&&lang.detail?.trim()){
+    return {detail:`${base.detail}\n${lang.detail}`,status:base.status};
+   }
+   return base;
+  })(),stepId:"knowledge"},
+  {key:"test",label:t("تجربة المساعد","Assistant trial"),item:(()=>{
+   const incomplete=s.readiness.blockers.includes("trial_incomplete");
+   if(incomplete)return {detail:t("يلزم تجربة مطابقة للإعدادات الحالية.","A matching assistant trial is required for the current settings."),status:"pending" as const};
+   if(s.readiness.status==="unknown")return {detail:t("تعذّر التحقق من تجربة المساعد.","Assistant trial could not be verified."),status:"unavailable" as const};
+   return {detail:t("تم التحقق من تجربة المساعد.","Assistant trial verified."),status:"verified" as const};
+  })(),stepId:"test"},
+  {key:"team",label:t("فريق العمل","Staff team"),item:s.summary.team.status==="optional"?{...s.summary.team,detail:t("دعوة الفريق اختيارية ولا تمنع الإطلاق.","Inviting your team is optional and does not prevent launch.")}:s.summary.team,stepId:"team"},
  ];
 
  async function launch(){
@@ -125,8 +134,7 @@ function LaunchForm(p:PaidLaunchSummaryProps & {snapshot:LaunchSummarySnapshot})
 
  return <section className={styles.view} dir={ar?"rtl":"ltr"} aria-labelledby={id} aria-busy={pending||refreshing||p.state.phase==="pending"||p.state.phase==="loading"}>
   {p.state.phase==="unavailable"&&<p role="status">{t("تعذر التحقق من ملخص الإطلاق.","Launch summary could not be verified.")}</p>}
-  <header><h2 id={id}>{t("راجع ثم أكّد الإطلاق","Review and confirm launch")}</h2><p>{t("الفرع: ","Branch: ")}<bdi>{s.branchLabel}</bdi></p></header>
-  <p className={styles.note}>{t("راجع الإعدادات المؤكدة لهذا الفرع. التأكيد الصريح يطلب الإطلاق؛ ولا يبدأ الرد على العملاء إلا بعد أن يؤكد النظام نجاح العملية.","Review this branch's confirmed settings. Explicit confirmation requests launch; customer replies begin only after the system confirms the operation succeeded.")}</p>
+  <header><h2 id={id}>{t("راجع ثم أكّد الإطلاق","Review and confirm launch")}</h2></header>
   <dl className={styles.summary}>{rows.map(({key,label,item,stepId})=><div key={key}><dt>{label}</dt><dd><div className={styles.itemBody}><p dir="auto">{item.detail}</p><span>{status(item.status)}</span></div>{stepId?(p.onSelectStep?<button type="button" className={styles.editBtn} onClick={()=>p.onSelectStep?.(stepId)}>{t("تعديل","Edit")}</button>:<a href={`/setup?step=${stepId}`} className={styles.editBtn}>{t("تعديل","Edit")}</a>):null}</dd></div>)}</dl>
   {!channels.length&&<p role="status">{t("لم تتوفر القنوات المدفوعة المختارة. الإطلاق معطّل.","Selected paid channels are unavailable. Launch is disabled.")}</p>}
   {launched&&p.state.phase==="ready"?<p role="status" className={styles.success}>{t("أكد النظام نجاح إطلاق هذا الفرع.","The system confirmed this branch was launched.")}</p>:<p role="status">{s.readiness.status==="ready"?t("وردت جاهزية الفرع من النظام. يلزم تأكيدك الصريح لإرسال طلب الإطلاق.","The system supplied branch readiness. Your explicit confirmation is required to request launch."):t("جاهزية الفرع لم تُؤكد بعد. راجع المتطلبات أدناه.","Branch readiness has not been confirmed. Review the requirements below.")}</p>}

@@ -82,6 +82,12 @@ describe("one-time coexistence sync", () => {
     const client = { rpc: async () => ({ error: null, data: { ok: true, company_id: companyId, link_id: linkId, link_generation: 2, ai_enabled: false, syncs: [{ sync_type: "history", state: "failed", requested: true, declined: true, error_code: 2593109, provider_request_id: "provider-request" }, { sync_type: "smb_app_state_sync", state: "not_requested", requested: false, declined: false, error_code: null, provider_request_id: null }] } }) };
     expect(await readCoexistenceSyncStatus(client, companyId)).toMatchObject({ ok: true, syncs: [{ syncType: "history", state: "failed", declined: true, errorCode: 2593109 }, { syncType: "smb_app_state_sync", state: "not_requested" }] });
   });
+  it("exposes the optional server deadline for the UI countdown and tolerates its absence (F4)", async () => {
+    const base = { ok: true, company_id: companyId, link_id: linkId, link_generation: 2, ai_enabled: false, syncs: [{ sync_type: "history", state: "not_requested", requested: false, declined: false, error_code: null, provider_request_id: null }, { sync_type: "smb_app_state_sync", state: "not_requested", requested: false, declined: false, error_code: null, provider_request_id: null }] };
+    expect(await readCoexistenceSyncStatus({ rpc: async () => ({ error: null, data: { ...base, deadline_at: "2026-10-13T01:00:00+00:00" } }) }, companyId)).toMatchObject({ ok: true, deadlineAt: "2026-10-13T01:00:00.000Z" });
+    expect(await readCoexistenceSyncStatus({ rpc: async () => ({ error: null, data: base }) }, companyId)).toMatchObject({ ok: true, deadlineAt: null });
+    expect(await readCoexistenceSyncStatus({ rpc: async () => ({ error: null, data: { ...base, deadline_at: "garbage" } }) }, companyId)).toMatchObject({ ok: true, deadlineAt: null });
+  });
   it.each([{ state: "completed", declined: true }, { state: "failed", declined: false }])("rejects contradictory decline or completion claims from a malformed status response", async override => {
     const client = { rpc: async () => ({ error: null, data: { ok: true, company_id: companyId, link_id: linkId, link_generation: 2, ai_enabled: false, syncs: [{ sync_type: "history", requested: true, error_code: 2593109, provider_request_id: "provider-request", ...override }, { sync_type: "smb_app_state_sync", state: "not_requested", requested: false, declined: false, error_code: null, provider_request_id: null }] } }) };
     expect(await readCoexistenceSyncStatus(client, companyId)).toEqual({ ok: false, code: "UNAVAILABLE" });

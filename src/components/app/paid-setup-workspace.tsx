@@ -1,14 +1,58 @@
 "use client";
 
 import {useEffect,useId,useRef,useState,type ReactNode} from "react";
+import {flushSync} from "react-dom";
 import type {PaidBranchSetupRead} from "@/lib/tenancy/paid-setup-contracts";
 import type {PaidBranchConnectionRead} from "@/lib/tenancy/paid-branch-connection-contracts";
 import {checklistSteps,paidChecklistFromRead,type ChecklistStepId,type PaidSetupFlowProps} from "./paid-assistant-checklist";
 import {PaidChannelView} from "./paid-channel-view";
 import styles from "./paid-setup-workspace.module.css";
+import "./setup-step-transitions.css";
 import type {PaidSetupWorkspaceRead} from "@/lib/tenancy/paid-setup-workspace-actions";
 import {paidSetupActivation,type PaidSetupActivation} from '@/lib/tenancy/paid-setup-activation';
-import {confirmSetupLeave} from './paid-setup-unsaved';
+import {confirmSetupLeave,flushSetupDrafts} from './paid-setup-unsaved';
+
+type ViewTransitionDoc = Document & {
+  startViewTransition?: (update: () => void) => { finished?: Promise<void> };
+};
+
+export function navigateSetupStep(dir: "forward" | "back", apply: () => void) {
+  const reduce = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+  const doc = typeof document !== "undefined" ? (document as ViewTransitionDoc) : null;
+  if (reduce || !doc || typeof doc.startViewTransition !== "function") {
+    apply();
+    return;
+  }
+  const root = doc.documentElement;
+  root.dataset.setupSlide = dir;
+  let applied = false;
+  const runApply = () => {
+    if (applied) return;
+    applied = true;
+    apply();
+  };
+  try {
+    const transition = doc.startViewTransition.call(doc, () => {
+      try {
+        flushSync(runApply);
+      } catch {
+        runApply();
+      }
+    });
+    if (transition && typeof transition.finished?.then === "function") {
+      void transition.finished
+        .catch(() => {})
+        .finally(() => {
+          if (root.dataset.setupSlide === dir) delete root.dataset.setupSlide;
+        });
+    } else {
+      if (root.dataset.setupSlide === dir) delete root.dataset.setupSlide;
+    }
+  } catch {
+    if (root.dataset.setupSlide === dir) delete root.dataset.setupSlide;
+    runApply();
+  }
+}
 
 export function nextWorkspaceSelection(snapshot:PaidSetupWorkspaceRead,previous:ChecklistStepId|null,provisional=false):ChecklistStepId|null {
   const model=paidChecklistFromRead(snapshot.read,snapshot.scope);
@@ -153,20 +197,30 @@ function PendingWorkspace({locale,loading,onRetry}:{locale:'ar'|'en';loading:boo
 }
 function Workspace(p:PaidSetupWorkspaceProps) {
   const ar=p.locale==="ar",t=(a:string,e:string)=>ar?a:e;
-  const titleId=useId(),navId=useId(),panelId=useId();
-  const [expanded,setExpanded]=useState(false);
+  const titleId=useId(),panelId=useId();
   const heading=useRef<HTMLHeadingElement>(null);
   const shell=useRef<HTMLElement>(null);
+  const [confirmedProgress,setConfirmedProgress]=useState<{key:string;verified:number;denominator:number;statuses:Record<string,string>}|null>(null);
   const previous=useRef(p.activeStepId);
+  const [stepMotion,setStepMotion]=useState<{index:number;enter:"forward"|"back"}>({index:-1,enter:"forward"});
   const isCurrent=p.isCurrent;
   const current=isCurrent();
   const model=p.read?paidChecklistFromRead(p.read,p.scope):null;
   const steps=model?checklistSteps(model):[];
   const visibleSteps=steps.filter(step=>p.availableStepIds.includes(step.id));
   const valid=current&&!!model&&model.branches.some(branch=>branch.id===p.scope.branchId)&&visibleSteps.length>0;
-  const active=p.activeStepId;
+  // Never a dead-end: with no selection, present the first incomplete allowed step
+  // (or the last allowed one when all are done). Presentation only; no navigation.
+  const autoStep=p.activeStepId?null:(visibleSteps.find(step=>step.status!=="verified"&&workspaceStepAllowed(p.read,p.scope,step.id,p.availableStepIds))
+    ??[...visibleSteps].reverse().find(step=>workspaceStepAllowed(p.read,p.scope,step.id,p.availableStepIds)))?.id??null;
+  const active=p.activeStepId??autoStep;
   const allowed=!!active&&workspaceStepAllowed(p.read,p.scope,active,p.availableStepIds);
   const position=visibleSteps.findIndex(step=>step.id===active);
+  if(position>=0){
+    if(stepMotion.index===-1)setStepMotion({index:position,enter:"forward"});
+    else if(stepMotion.index!==position)setStepMotion({index:position,enter:position<stepMotion.index?"back":"forward"});
+  }
+  const stepEnter=stepMotion.enter;
   const nextCandidate=position>=0&&position+1<visibleSteps.length?visibleSteps[position+1]:null;
   const nextAllowed=!!nextCandidate&&workspaceStepAllowed(p.read,p.scope,nextCandidate.id,p.availableStepIds);
   const nextBlockedReason=nextCandidate&&!nextAllowed?stepBlockedReason(nextCandidate.id,steps,model,p.locale):null;
@@ -174,19 +228,32 @@ function Workspace(p:PaidSetupWorkspaceProps) {
   const entitlement=valid?p.read?.entitlement:null;
   const personaName=entitlement?({level_1:t('نورا','Noura'),level_2:t('لينا','Lina'),level_3:t('دانا','Dana')})[entitlement.persona]:'';
   useEffect(()=>{
-    if(previous.current!==active&&isCurrent())heading.current?.focus();
-    previous.current=active;
-  },[active,isCurrent]);
+    const chosen=p.activeStepId;
+    if(previous.current!==chosen&&isCurrent())heading.current?.focus();
+    previous.current=chosen;
+  },[p.activeStepId,isCurrent]);
   // Never auto-navigate on refresh / readiness churn. Keep the user's step and
   // explain a real block in the panel so drafts (trial question, etc.) stay mounted.
   const activeBlockedReason=active&&!allowed&&valid?stepBlockedReason(active,steps,model,p.locale):null;
   const select=(step:ChecklistStepId)=>{
     if(!p.isCurrent()||!workspaceStepAllowed(p.read,p.scope,step,p.availableStepIds))return;
-    if(step!==active&&!confirmSetupLeave(shell.current,p.locale))return;
-    setExpanded(false);
-    if(step===active)heading.current?.focus();
-    else p.onSelectStep(step);
+    if(step===active){heading.current?.focus();return;}
+    // Start persistence synchronously so the write begins before unmount; never await network.
+    void flushSetupDrafts(shell.current);
+    if(!confirmSetupLeave(shell.current,p.locale))return;
+    if(!p.isCurrent())return;
+    const to=visibleSteps.findIndex(item=>item.id===step);
+    const dir=to>=0&&position>=0&&to<position?"back":"forward";
+    navigateSetupStep(dir,()=>p.onSelectStep(step));
   };
+  // Segmented progress: only server-confirmed (non-provisional) reads fill segments.
+  // While a provisional read loads, keep the last confirmed state for this same branch.
+  const progressKey=`${p.scope.companyId}:${p.scope.branchId}`;
+  const nextProgress=valid&&!p.provisional&&model?{key:progressKey,verified:model.progress.verified,denominator:model.progress.denominator??visibleSteps.length,statuses:Object.fromEntries(steps.map(step=>[step.id,step.status]))}:null;
+  if(nextProgress&&JSON.stringify(nextProgress)!==JSON.stringify(confirmedProgress))setConfirmedProgress(nextProgress);
+  const shownProgress=confirmedProgress?.key===progressKey?confirmedProgress:null;
+  const progressText=shownProgress?t(`${shownProgress.verified} من ${shownProgress.denominator} مكتملة`,`${shownProgress.verified} of ${shownProgress.denominator} complete`):t('جارٍ التحقق من التقدم','Checking setup progress');
+  const activeComplete=!!active&&steps.find(step=>step.id===active)?.status==="verified";
   const previousStep=visibleSteps.slice(0,Math.max(position,0)).reverse().find(step=>workspaceStepAllowed(p.read,p.scope,step.id,p.availableStepIds));
   const refresh=()=>{if(p.isCurrent()&&confirmSetupLeave(shell.current,p.locale))p.onRefresh?.();};
   return <section ref={shell} className={styles.workspace} dir={ar?"rtl":"ltr"} aria-labelledby={titleId} aria-busy={p.loading||undefined}>
@@ -201,59 +268,29 @@ function Workspace(p:PaidSetupWorkspaceProps) {
     {!valid?<PendingWorkspace locale={p.locale} loading={!!p.loading} onRetry={p.onRefresh?refresh:undefined}/>:<div className={styles.layout}>
       <aside className={styles.sidebar}>
         <div className={styles.progress}>
-          <div className={styles.progressHeading}><strong>{t('رحلة التجهيز','Setup journey')}</strong><p>{p.provisional?t('جارٍ التحقق من التقدم','Checking setup progress'):<><bdi dir="ltr">{model.progress.verified} / {model.progress.denominator}</bdi> {t('مكتملة','complete')}</>}</p></div>
-          <progress value={p.provisional?undefined:model.progress.verified} max={model.progress.denominator??undefined} aria-label={t("تقدم إعداد الفرع","Branch setup progress")}/>
+          <div className={styles.progressHeading}><strong>{t('رحلة التجهيز','Setup journey')}</strong><p role="status">{shownProgress?new Intl.NumberFormat(ar?'ar':'en').format(shownProgress.verified)+' '+t('من','of')+' '+new Intl.NumberFormat(ar?'ar':'en').format(shownProgress.denominator)+' '+t('مكتملة','complete'):progressText}</p></div>
+          <nav className={styles.stepMap} aria-label={t('خطوات التجهيز','Setup steps')} aria-busy={p.provisional||undefined}>
+            <ol>{visibleSteps.map((step,index)=>{
+              const complete=shownProgress?.statuses[step.id]==='verified';
+              const current=active===step.id;
+              const enabled=workspaceStepAllowed(p.read,p.scope,step.id,p.availableStepIds);
+              const label=titles[step.id][ar?0:1];
+              return <li key={step.id} data-current={current||undefined} data-complete={complete||undefined}>
+                <button type="button" disabled={!enabled} aria-current={current?'step':undefined} aria-label={`${label} — ${complete?t('مكتملة','Complete'):current?t('الحالية','Current'):enabled?t('متاحة','Available'):t('غير متاحة بعد','Not available yet')}`} onClick={()=>select(step.id)}>
+                  <span className={styles.stepCircle} aria-hidden="true">{complete?<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 4 4 10-10"/></svg>:new Intl.NumberFormat(ar?'ar':'en').format(index+1)}</span>
+                  <span className={styles.stepName}>{label}</span>
+                </button>
+              </li>;
+            })}</ol>
+          </nav>
         </div>
-        <button className={styles.toggle} type="button" aria-expanded={expanded} aria-controls={navId} onClick={()=>setExpanded(value=>!value)}>
-          {active&&p.availableStepIds.includes(active)?titles[active][ar?0:1]:t("خطوات الإعداد","Setup steps")} <span aria-hidden="true">{expanded?"−":"+"}</span>
-        </button>
-        <nav id={navId} className={styles.navigation} data-expanded={expanded} aria-label={t("خطوات إعداد المساعد","Assistant setup steps")}>
-          <ol>{visibleSteps.map((step,index)=>{
-            const enabled=workspaceStepAllowed(p.read,p.scope,step.id,p.availableStepIds);
-            const verified=step.status==="verified",skipped=step.status==="skipped_optional";
-            const status=verified?t("مكتملة","Complete"):skipped?t("تم التخطي","Skipped"):p.provisional?t("جارٍ التحقق","Checking"):step.status==="unavailable"&&!enabled?t("غير متاح","Unavailable"):!enabled?t("بانتظار المتطلبات","Waiting for prerequisites"):t("متاحة","Available");
-            return <li key={step.id} data-step-id={step.id} data-state={step.status}>
-              <button type="button" disabled={!enabled} aria-current={active===step.id?"step":undefined} aria-controls={panelId} onMouseEnter={()=>enabled&&p.isCurrent()&&p.onPrefetchStep?.(step.id)} onFocus={()=>enabled&&p.isCurrent()&&p.onPrefetchStep?.(step.id)} onClick={()=>select(step.id)}>
-                <span className={styles.number} aria-hidden="true">{verified?"✓":index+1}</span>
-                <span className={styles.stepText}><strong>{titles[step.id][ar?0:1]}</strong><small>{status}</small></span>
-              </button>
-            </li>;
-          })}</ol>
-        </nav>
-        {nextCandidate&&(
-          nextAllowed ? (
-            <button type="button" className={styles.nextAction} onClick={()=>select(nextCandidate.id)}>
-              <span>{t('الخطوة التالية','Next step')}</span>
-              <strong>{titles[nextCandidate.id][ar?0:1]}</strong>
-              <span aria-hidden="true">{ar?'←':'→'}</span>
-            </button>
-          ) : (
-            <button type="button" className={styles.nextAction} disabled aria-disabled="true" title={nextBlockedReason??undefined}>
-              <span>{t('الخطوة التالية','Next step')}</span>
-              <strong>{titles[nextCandidate.id][ar?0:1]}</strong>
-              {nextBlockedReason&&<small className={styles.nextActionBlocked}>{nextBlockedReason}</small>}
-            </button>
-          )
-        )}
       </aside>
       <section id={panelId} className={styles.content} aria-labelledby={panelId+"-heading"}>
         <header className={styles.contentHeader}>
           <h2 id={panelId+"-heading"} ref={heading} tabIndex={-1} className={styles.srOnly}>{active?titles[active][ar?0:1]:t("اختر خطوة للمتابعة","Choose a step to continue")}</h2>
-          <div className={styles.controls}>
-            {previousStep&&<button type="button" onClick={()=>select(previousStep.id)}>{t("الخطوة السابقة","Previous step")}</button>}
-            {nextCandidate&&(
-              <button
-                type="button"
-                disabled={!nextAllowed}
-                title={nextBlockedReason??undefined}
-                onClick={()=>nextAllowed&&select(nextCandidate.id)}
-              >
-                {t("الخطوة التالية: ","Next step: ")}{titles[nextCandidate.id][ar?0:1]}
-              </button>
-            )}
-          </div>
+          {position>=0&&<p className={styles.stepPosition}>{t(`الخطوة ${position+1} من ${visibleSteps.length}`,`Step ${position+1} of ${visibleSteps.length}`)}</p>}
         </header>
-        <div className={styles.body} key={active}>
+        <div className={styles.body} key={active} data-step={active??undefined} data-enter={stepEnter}>
           {!active?<p role="status">{t("اختر خطوة متاحة. تُفتح الخطوات بعد تحقق متطلباتها.","Choose an available step. Steps open after their prerequisites are verified.")}</p>:
             <>
               {activeBlockedReason&&<p role="status" data-setup-step-blocked="true">{activeBlockedReason}</p>}
@@ -261,6 +298,29 @@ function Workspace(p:PaidSetupWorkspaceProps) {
                 p.renderStep?.(active)??<p role="status">{t("هذه الشاشة غير متاحة بعد. لم تتغير حالة الخطوة.","This screen is not available yet. The step status has not changed.")}</p>}
             </>}
         </div>
+        {(previousStep||nextCandidate)&&<footer className={styles.contentFooter}>
+          <div className={styles.controls}>
+            <div className={styles.controlSlot} data-slot="previous">
+              {previousStep&&<button type="button" data-previous-step="" onClick={()=>select(previousStep.id)}>{t("الخطوة السابقة","Previous step")}</button>}
+            </div>
+            <div className={styles.controlSlot} data-slot="next">
+              {nextCandidate&&(
+                <button
+                  type="button"
+                  className={styles.nextAction}
+                  data-next-step=""
+                  data-step-complete={activeComplete||undefined}
+                  disabled={!nextAllowed}
+                  title={nextBlockedReason??undefined}
+                  onClick={()=>nextAllowed&&select(nextCandidate.id)}
+                >
+                  {t("الخطوة التالية: ","Next step: ")}{titles[nextCandidate.id][ar?0:1]}
+                </button>
+              )}
+            </div>
+          </div>
+          <p className={styles.nextActionBlocked} data-next-step="" data-step-complete={activeComplete||undefined} hidden={!nextBlockedReason}>{nextBlockedReason}</p>
+        </footer>}
       </section>
     </div>}
   </section>;

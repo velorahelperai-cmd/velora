@@ -4,12 +4,12 @@ import {awaitSetupRequest} from "./paid-setup-request";
 import {useEffect, useLayoutEffect, useId, useRef, useState} from "react";
 import type {PaidBranchSetupRead, PaidSetupChannel} from "@/lib/tenancy/paid-setup-contracts";
 import {checklistSteps, paidChecklistFromRead, type PaidSetupFlowProps} from "./paid-assistant-checklist";
-import {WhatsappConnectionGuide} from "./whatsapp-connection-guide";
+import {WhatsappConnectionGuide, GuideStatusBadge} from "./whatsapp-connection-guide";
 import styles from "./paid-channel-view.module.css";
+import { CoexistenceImportPanel } from "./coexistence-import-panel";
 import type {WhatsappReviewRequestInput,WhatsappReviewRequestResult,WhatsappReviewReceipt} from '@/lib/tenancy/whatsapp-review-request-actions';
 import {useSetupUnsavedChanges} from './paid-setup-unsaved';
 import {
-  normalizeConfirmedPhone,
   type CancelOwnedPaidBranchConnectionInput,
   type CompleteOwnedPaidBranchConnectionInput,
   type PaidBranchConnectionFlow,
@@ -28,6 +28,7 @@ import {
   scopedChannelConnection,
 } from "./paid-channel-connection-model";
 import {createSignupPopupSession,type PopupObservation} from "@/lib/whatsapp/signup-popup-session";
+import type {SignupErrorReason} from "@/lib/whatsapp/signup-popup-session";
 import {parseSignupMessage, signupLoginOptions} from "@/lib/whatsapp/embedded-signup-browser";
 import {
   coexistenceLoginOptions,
@@ -36,13 +37,18 @@ import {
   parseEmbeddedSignupMessage,
 } from "@/lib/whatsapp/coexistence/browser";
 import type {WhatsappMetaTestReceiveProof} from "@/lib/tenancy/whatsapp-meta-test-receive-proof";
+import type {NumberConfirmationRead,NumberConfirmationDecision} from "@/lib/whatsapp/number-confirmation-store";
 
 export type WhatsappSdkPopupResult =
   | { kind: "completed"; code: string; wabaId?: string; phoneNumberId?: string }
   | { kind: "cancelled" }
-  | { kind: "error" };
+  | { kind: "error"; reason?: SignupErrorReason };
 
+export type WhatsappPopupConfig = Pick<Extract<PaidBranchConnectionLaunch,{flow:"wa_new_number"|"wa_coexistence"}>,"flow"|"appId"|"configId"|"graphVersion"> & {attemptId?:string;captureId?:string};
+type WhatsappBootstrap = {ok:true;read:PaidBranchConnectionRead;config:WhatsappPopupConfig|null}|{ok:false};
 export type PaidChannelViewActions = {
+  readWhatsappBootstrap?:(input:PaidBranchConnectionScope&{flow:"wa_new_number"|"wa_coexistence"})=>Promise<WhatsappBootstrap>;
+  launchUnboundWhatsappSdk?:(config:WhatsappPopupConfig,lifecycle:PopupLifecycle)=>Promise<WhatsappSdkPopupResult>;
   reviewRequest?:(input:WhatsappReviewRequestInput)=>Promise<WhatsappReviewRequestResult>;
   captureAuthorization?:(input:PaidBranchConnectionScope&{attemptId:string;generation:number;nonce:string;code:string;correlationId?:string})=>Promise<{ok:boolean}>;
   prepareRegistration?:(input:CompleteOwnedPaidBranchConnectionInput)=>Promise<{ok:true;registrationRequired:boolean;autoPinEligible?:boolean;authorizationTicket:string}|{ok:false}>;
@@ -54,6 +60,10 @@ export type PaidChannelViewActions = {
   readMetaTestReceiveProof?: (input: {expectedAccountId:string;companyId:string;branchId:string}) => Promise<{ok:boolean;proof?:WhatsappMetaTestReceiveProof|null}>;
   launchWhatsappSdk?: (launch: Extract<PaidBranchConnectionLaunch, { flow: "wa_new_number" | "wa_coexistence" }>) => Promise<WhatsappSdkPopupResult>;
   navigateToUrl?: (url: string) => void;
+  /** F5: read-only re-issue of an existing same-session pending attempt's launch. Never creates an attempt. */
+  resumeLaunch?: (input: PaidBranchConnectionScope & { attemptId: string }) => Promise<{ok:true;read:PaidBranchConnectionRead;launch:Extract<PaidBranchConnectionLaunch,{flow:"wa_new_number"|"wa_coexistence"}>}|{ok:false;code:string}>;
+  readNumberConfirmation?: (companyId: string) => Promise<NumberConfirmationRead>;
+  decideNumberConfirmation?: (input:{companyId:string;linkId:string;linkGeneration:number;answer:"confirmed"|"rejected"}) => Promise<NumberConfirmationDecision>;
 };
 
 export type PaidChannelViewProps = {
@@ -88,6 +98,16 @@ async function resolveDefaultActions(): Promise<Required<Pick<PaidChannelViewAct
     cancelConnection: input => awaitSetupRequest(mod.cancelOwnedPaidBranchConnectionAction(input),60_000),
     readConnection: input => awaitSetupRequest(mod.readOwnedPaidBranchConnectionAction(input),60_000),
   };
+}
+
+const META_SDK_SRC = "https://connect.facebook.net/en_US/sdk.js";
+// Script preload only: no FB.init, no server call, no attempt. loadMetaFacebookSdk reuses it.
+export function preloadMetaFacebookSdkScript(): void {
+  if (typeof window === "undefined" || typeof document === "undefined") return;
+  if ((window as unknown as { FB?: unknown }).FB || document.querySelector(`script[src="${META_SDK_SRC}"]`)) return;
+  const script = document.createElement("script");
+  script.src = META_SDK_SRC; script.async = true; script.defer = true; script.crossOrigin = "anonymous";
+  document.head.appendChild(script);
 }
 
 function loadMetaFacebookSdk(appId: string, graphVersion: string, trace: (stage: string) => void): Promise<FbSdk | null> {
@@ -138,17 +158,18 @@ export async function runBrowserWhatsappSdkPopup(
   return launchPreparedWhatsappSdkPopup(launch, fb, trace, lifecycle);
 }
 
-function launchCoexistenceSdkPopup(launch:Extract<PaidBranchConnectionLaunch,{flow:"wa_coexistence"}>,fb:FbSdk,trace:(stage:string,facts?:Record<string,boolean>)=>void,lifecycle?:PopupLifecycle):Promise<WhatsappSdkPopupResult>{
+function launchCoexistenceSdkPopup(launch:WhatsappPopupConfig,fb:FbSdk,trace:(stage:string,facts?:Record<string,boolean>)=>void,lifecycle?:PopupLifecycle):Promise<WhatsappSdkPopupResult>{
   return new Promise(resolve=>{
     let settled=false;let onMessage:(event:MessageEvent)=>void=()=>{};
     const expiresAt=lifecycle?.expiresAt??Date.now()+5*60_000;
-    let attempt = createSignupAttempt(launch.attemptId);
+    let attempt = createSignupAttempt(launch.captureId ?? launch.attemptId!);
+    let callbackWithoutCode=false;
     const observe=(stage:PopupObservation)=>{trace(stage);lifecycle?.onObservation?.(stage);};
     const finishOnce=(result:WhatsappSdkPopupResult)=>{
       if(settled)return;settled=true;
       window.clearTimeout(timeout);window.clearTimeout(expiry);window.clearInterval(authority);
       window.removeEventListener('message',onMessage);lifecycle?.signal?.removeEventListener('abort',abort);
-      attempt=createSignupAttempt(launch.attemptId);resolve(result);
+      attempt=createSignupAttempt(launch.captureId ?? launch.attemptId!);resolve(result);
     };
     const valid=()=>{
       if(settled)return false;
@@ -164,6 +185,8 @@ function launchCoexistenceSdkPopup(launch:Extract<PaidBranchConnectionLaunch,{fl
     lifecycle?.signal?.addEventListener('abort',abort,{once:true});
     if(!valid())return;
     const checkCoexistence = () => {
+      // v5 sends phone_number_id. Without it and without a server-held confirmed number there is nothing exact to match, so stop (no auto-choice).
+      if (attempt.status === "ready-for-server-validation" && attempt.code && attempt.session && !attempt.session.data.phone_number_id && !(launch as { confirmedPhoneNumber?: string }).confirmedPhoneNumber) { finishOnce({ kind: "error", reason: "missing_number" }); return; }
       if (attempt.status === "ready-for-server-validation" && attempt.code && attempt.session) {
         finishOnce({
           kind: "completed",
@@ -184,29 +207,34 @@ function launchCoexistenceSdkPopup(launch:Extract<PaidBranchConnectionLaunch,{fl
       trace("signup_signal", { finish: obs.kind === "finish", cancel: obs.kind === "cancel", error: obs.kind === "error" || obs.kind === "invalid" || obs.kind === "unknown", assets_received: obs.kind === "finish" });
       // Partial authorization must be reconciled, never automatically cancelled.
       if(obs.kind==='cancel'&&(attempt.code||attempt.session)){finishOnce({kind:'error'});return;}
-      attempt = joinSignupSignal(attempt, launch.attemptId, obs);
+      if(obs.kind==='rejected'){finishOnce({kind:'error',reason:obs.reason});return;}
+      if(obs.kind==='error'&&obs.event==='ERROR'){finishOnce({kind:'error',reason:'meta_error'});return;}
+      attempt = joinSignupSignal(attempt, launch.captureId ?? launch.attemptId!, obs);
       checkCoexistence();
+      if(!settled&&callbackWithoutCode&&attempt.session&&!attempt.code)observe('finish_without_code');
     };
     window.addEventListener("message", onMessage);
     trace("fb_login_invoked");
     try { fb.login((response) => {
       if (!valid()) return;
       const code = response?.authResponse?.code;
+      if(typeof code==='string'&&code.trim())lifecycle?.onCodeReceived?.();
       trace("oauth_callback_received", { code_received: typeof code === "string" && code.trim().length > 0 });
       if (typeof code === "string" && code.trim().length > 0) {
-        attempt = joinSignupSignal(attempt, launch.attemptId, { kind: "code", code });
+        attempt = joinSignupSignal(attempt, launch.captureId ?? launch.attemptId!, { kind: "code", code });
         checkCoexistence();
       } else if (!settled) {
-        observe('callback_without_code');
+        callbackWithoutCode=true;
+        observe(attempt.session?'finish_without_code':'callback_without_code');
       }
     }, coexistenceLoginOptions(launch.configId));
     } catch { trace('fb_login_failed');finishOnce({kind:'error'}); }
   });
 }
 
-type PopupLifecycle={expiresAt:number;isCurrent:()=>boolean;signal?:AbortSignal;onCode?:(code:string)=>Promise<boolean>;onObservation?:(stage:PopupObservation)=>void};
-function launchPreparedWhatsappSdkPopup(
- launch:Extract<PaidBranchConnectionLaunch,{flow:"wa_new_number"|"wa_coexistence"}>,fb:FbSdk,
+type PopupLifecycle={expiresAt:number;isCurrent:()=>boolean;signal?:AbortSignal;onCodeReceived?:()=>void;onCode?:(code:string)=>Promise<boolean>;onObservation?:(stage:PopupObservation)=>void};
+export function launchPreparedWhatsappSdkPopup(
+ launch:WhatsappPopupConfig,fb:FbSdk,
  trace:(stage:string,facts?:Record<string,boolean>)=>void,lifecycle?:PopupLifecycle,
 ):Promise<WhatsappSdkPopupResult>{
  if(launch.flow==='wa_coexistence')return launchCoexistenceSdkPopup(launch,fb,trace,lifecycle);
@@ -214,14 +242,14 @@ function launchPreparedWhatsappSdkPopup(
  const session=createSignupPopupSession({expiresAt:lifecycle?.expiresAt??Date.now()+5*60_000,isCurrent:lifecycle?.isCurrent??(()=>true),signal:lifecycle?.signal,onCode:lifecycle?.onCode,onObservation:lifecycle?.onObservation,trace});
  const onMessage=(event:MessageEvent)=>{
   const parsed=parseSignupMessage(event.origin,event.data);if(!parsed)return;
-  if(parsed.event==='FINISH')session.assets(parsed);else if(parsed.event==='CANCEL')session.cancelled();else session.error();
+  if(parsed.event==='FINISH')session.assets(parsed);else if(parsed.event==='CANCEL')session.cancelled();else if(parsed.event==='FINISH_ONLY_WABA')session.error('only_waba');else if(parsed.event==='BUSINESS_APP_ONBOARDING')session.error('wrong_route');else if(parsed.event==='GRANT_ONLY')session.error('grant_only');else if(parsed.event==='MULTIPLE_ACCOUNTS')session.error('multiple_accounts');else if(parsed.event==='MISSING_PHONE_NUMBER')session.error('missing_number');else if(parsed.event==='ERROR')session.error('meta_error');else session.error();
  };
  window.addEventListener('message',onMessage);
  // Capture only the synchronously opened SDK popup, as in Meta's official sample.
  const originalOpen=window.open;let popup:Window|null=null,closed=false;
  const capture:typeof window.open=function(...args){const opened=originalOpen.apply(window,args);if(opened)popup=opened;return opened;};
  window.open=capture;
- try{trace('fb_login_invoked');fb.login(response=>session.code(response?.authResponse?.code),signupLoginOptions(launch.configId));}
+ try{trace('fb_login_invoked');fb.login(response=>{if(typeof response?.authResponse?.code==='string'&&response.authResponse.code.trim())lifecycle?.onCodeReceived?.();session.code(response?.authResponse?.code);},signupLoginOptions(launch.configId));}
  catch{trace('fb_login_failed');session.error();}finally{if(window.open===capture)window.open=originalOpen;}
  const poll=setInterval(()=>{try{if(popup?.closed&&!closed){closed=true;session.closed();}}catch{/* COOP is unknown, never cancellation. */}},500);
  return session.promise.finally(()=>{clearInterval(poll);window.removeEventListener('message',onMessage);popup=null;});
@@ -251,13 +279,14 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
   const [awaitingPin,setAwaitingPin]=useState(false);
   const pinAnswer=useRef<((value:string|null)=>void)|null>(null);
   const connectReserved=useRef(false);
-  const selectedNewNumberIntent=useRef(false);
-  const selectedPreparationScheduled=useRef(false);
+  const [clickMaterial,setClickReady]=useState<{config:WhatsappPopupConfig;fb:FbSdk|null;resolved:PaidChannelViewActions;revision:string}|null>(null);
   const preparedPopup = useRef<{ attemptId: string; generation: number; expiresAt: number; launch: () => void; abandon: () => void } | null>(null);
   const [popupReady, setPopupReady] = useState(false);
-  const [confirmedPhone, setConfirmedPhone] = useState("");
-  const [phoneConfirmed, setPhoneConfirmed] = useState(false);
-  const unsavedConnection=!!(awaitingPin||pin||confirmedPhone)&&!(connectionRead?.connection.state==='connected'&&connectionRead.connection.verified);
+  // F4 item 1: owner confirmation of the server-verified linked number, bound to the link generation.
+  // F5: the number answer is server-persisted; outbound replies are blocked in Postgres until confirmed.
+  const [numberCheck, setNumberCheck] = useState<{key:string;status:'loading'|'not_required'|'pending'|'confirmed'|'rejected'|'unavailable';linkId?:string;linkGeneration?:number;busy?:boolean;error?:boolean}|null>(null);
+  const resumeTried = useRef<string|null>(null);
+  const unsavedConnection=!!(awaitingPin||pin)&&!(connectionRead?.connection.state==='connected'&&connectionRead.connection.verified);
   useSetupUnsavedChanges(unsavedConnection,isCurrent??(()=>false),locale);
   const [localOverride, setLocalOverride] = useState<{ base: PaidBranchConnectionRead | null | undefined; read: PaidBranchConnectionRead } | null>(null);
   const [inFlight, setInFlight] = useState<"starting" | "completing" | "recovering" | "cancelling" | null>(null);
@@ -320,20 +349,21 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
 
   const selectedWhatsappFlow: PaidBranchConnectionFlow | null =
     route === "new-number" ? "wa_new_number" : route === "coexistence" ? "wa_coexistence" : null;
-  const normalizedPhone = normalizeConfirmedPhone(confirmedPhone);
+  const clickReady=clickMaterial && clickMaterial.revision===connection?.revision && clickMaterial.config.flow===selectedWhatsappFlow && screen==='requirements'?clickMaterial:null;
   const whatsappInputsValid =
     route === "new-number"
       ? true
       : route === "coexistence"
-        ? !!normalizedPhone && phoneConfirmed
+        ? true
         : false;
   const canStartSelectedWhatsapp =
     !!selectedWhatsappFlow && viewModel.canStartFlow(selectedWhatsappFlow) && whatsappInputsValid;
   const canStartInstagram = viewModel.canStartFlow("instagram_direct");
 
-  const handleWhatsappConnect = async (requestedFlow?: "wa_new_number") => {
+  const handleWhatsappConnect = async (requestedFlow?: "wa_new_number" | "wa_coexistence", resume?: { attemptId: string }, eager?: {popup:Promise<WhatsappSdkPopupResult>;config:WhatsappPopupConfig;resolved:PaidChannelViewActions;bind:(start:PaidBranchConnectionStartResult|null)=>void;abort:()=>void;codeValid:()=>boolean}) => {
     const selectedWhatsappFlow = requestedFlow ?? (route === "new-number" ? "wa_new_number" : route === "coexistence" ? "wa_coexistence" : null);
-    const canStartSelectedWhatsapp = !!selectedWhatsappFlow && viewModel.canStartFlow(selectedWhatsappFlow) && (selectedWhatsappFlow === "wa_new_number" || (!!normalizedPhone && phoneConfirmed));
+    // F5: a resume re-issues an existing attempt's launch, so start capability is not required.
+    const canStartSelectedWhatsapp = !!selectedWhatsappFlow && (!!resume || viewModel.canStartFlow(selectedWhatsappFlow));
     // Both connection routes must use the live session boundary after every await.
     const checkCurrent = () => currentAuthority.current?.() ?? true;
     if (connectReserved.current || inFlight) return;
@@ -346,18 +376,12 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
       return;
     }
     if (!selectedWhatsappFlow) {
-      setFeedback(tf('يرجى اختيار مسار الربط (رقم جديد أو Coexistence) أولاً.', 'Please select a connection route first (new number or Coexistence).'));
+      setFeedback(tf('يرجى اختيار طريقة الربط أولاً: رقم جديد أو تطبيق WhatsApp Business الحالي.', 'Please choose a connection method first: a new number or your current WhatsApp Business App.'));
       return;
     }
     if (!canStartSelectedWhatsapp) {
       if (selectedWhatsappFlow === "wa_coexistence") {
-        if (!normalizedPhone) {
-          setFeedback(tf('يرجى إدخال رقم WhatsApp Business بصيغة دولية صحيحة (مثال: +968...) قبل المتابعة.', 'Please enter the WhatsApp Business number in valid international format (e.g. +968...) before continuing.'));
-        } else if (!phoneConfirmed) {
-          setFeedback(tf('يرجى تأكيد أن الرقم مفعّل حاليًا على WhatsApp Business بالضغط على مربع التأكيد.', 'Please confirm that the number is active on WhatsApp Business by checking the confirmation box.'));
-        } else {
-          setFeedback(tf('لا يمكن بدء ربط Coexistence حاليًا. تحقق من متطلبات القناة.', 'Cannot start Coexistence connection right now. Check channel requirements.'));
-        }
+        setFeedback(tf('لا يمكن بدء ربط تطبيق WhatsApp Business الحالي الآن. تحقق من متطلبات القناة.', 'Cannot connect your current WhatsApp Business App right now. Check channel requirements.'));
       } else {
         setFeedback(tf('لا يمكن بدء ربط هذا الرقم حاليًا. راجع متطلبات الربط أو حالة الفرع.', 'Cannot start connecting this number right now. Review connection requirements or branch status.'));
       }
@@ -365,19 +389,28 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
     }
     // Meta's JavaScript SDK refuses FB.login on HTTP and may never call back.
     // Check before creating a server attempt; injected launchers are test doubles.
-    if (!actions?.launchWhatsappSdk && window.location.protocol !== 'https:') {
-      setFeedback(tf('يتطلب ربط Facebook صفحة HTTPS. افتح رابط التجهيز الآمن قبل بدء الربط.', 'Facebook connection requires an HTTPS page. Open the secure setup link before starting.'));
+    if (!actions?.launchWhatsappSdk && !actions?.launchUnboundWhatsappSdk && window.location.protocol !== 'https:') {
+      setFeedback(tf('يلزم اتصال آمن (HTTPS) لفتح Facebook','A secure (HTTPS) connection is required to open Facebook'));
       return;
     }
     connectReserved.current=true;
     let ownsReservation = true;
+    let startedOverride: PaidBranchConnectionStartResult | null = null;
     setFeedback(null);
     setInFlight("starting");
     try {
-      const resolved = actions?.startConnection && actions?.completeConnection && actions?.cancelConnection
+      const resolved = eager?.resolved ?? (actions?.startConnection && actions?.completeConnection && actions?.cancelConnection
         ? actions
-        : { ...(await resolveDefaultActions()), ...actions };
-      const started = await resolved.startConnection!({
+        : { ...(await resolveDefaultActions()), ...actions });
+      if (resume) {
+        const resumeFn = actions?.resumeLaunch ?? (async (input: PaidBranchConnectionScope & { attemptId: string }) => { try { return await awaitSetupRequest((await import("@/lib/tenancy/paid-branch-connection-actions")).resumeOwnedPaidBranchLaunchAction(input), 30_000); } catch { return null; } });
+        const resumed = await resumeFn({ expectedAccountId: scope.expectedAccountId, companyId: scope.companyId, branchId: scope.branchId, channel: "whatsapp", attemptId: resume.attemptId }).catch(() => null);
+        if (!mounted.current || !checkCurrent()) return;
+        // Not resumable: stay silent; the existing recover/cancel controls remain the path forward.
+        if (!resumed || !resumed.ok || resumed.launch.flow !== selectedWhatsappFlow) { setInFlight(null); return; }
+        startedOverride = { ok: true as const, read: resumed.read, launch: resumed.launch };
+      }
+      const started = startedOverride ?? await resolved.startConnection!({
         expectedAccountId: scope.expectedAccountId,
         companyId: scope.companyId,
         branchId: scope.branchId,
@@ -385,9 +418,6 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
         flow: selectedWhatsappFlow,
         clientOpId: makeClientOpId(),
         expectedRevision: connection.revision,
-        ...(selectedWhatsappFlow === "wa_coexistence" && normalizedPhone
-          ? { confirmedPhoneNumber: normalizedPhone, confirmed: true as const }
-          : {}),
       });
       if (!mounted.current || !checkCurrent()) return;
       setLocalConnection(started.read);
@@ -408,14 +438,18 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
         setInFlight(null); setFeedback(started.launch.flow==='wa_new_number'?tf('انتهت المحاولة أو تعذّر التحقق منها. راجع المحاولة والأصول المحفوظة قبل المتابعة.','The attempt expired or could not be verified. Review the attempt and saved assets before proceeding.'):tf("انتهت المحاولة أو تعذّر التحقق منها. استخدم الاسترداد أو الإلغاء.", "The attempt expired or could not be verified. Use recovery or cancellation.")); return;
       }
       const generation = attempt.generation;
+      if(eager && (started.launch.flow!==eager.config.flow || started.launch.appId!==eager.config.appId || started.launch.configId!==eager.config.configId || started.launch.graphVersion!==eager.config.graphVersion)) {
+        setInFlight(null);setFeedback(tf('إعدادات الربط اتغيرت. راجع المحاولة المحفوظة قبل المتابعة.','Connection settings changed. Review the saved attempt before continuing.'));return;
+      }
+      eager?.bind(started);
       const correlationId = makeClientOpId();
       const trace = (stage: string, facts: Record<string, boolean> = {}) => console.info("whatsapp_signup_stage", { correlation_id: correlationId, timestamp: new Date().toISOString(), stage, ...facts });
-      const fb = actions?.launchWhatsappSdk ? null : await loadMetaFacebookSdk(started.launch.appId, started.launch.graphVersion, trace);
+      const fb = eager || actions?.launchWhatsappSdk ? null : await loadMetaFacebookSdk(started.launch.appId, started.launch.graphVersion, trace);
       if (!mounted.current || !checkCurrent()) return;
-      if (!actions?.launchWhatsappSdk && !fb) { setInFlight(null); setFeedback(tf("تعذر تجهيز Facebook. راجع حالة المحاولة قبل المتابعة.", "Facebook could not be prepared. Review the attempt before continuing.")); return; }
+      if (!eager && !actions?.launchWhatsappSdk && !fb) { setInFlight(null); setFeedback(tf("تعذر تجهيز Facebook. راجع حالة المحاولة قبل المتابعة.", "Facebook could not be prepared. Review the attempt before continuing.")); return; }
       if (expiresAt <= currentTime()) { setInFlight(null); setFeedback(started.launch.flow==='wa_new_number'?tf('انتهت المحاولة. راجع المحاولة والأصول المحفوظة قبل المتابعة.','The attempt expired. Review the attempt and saved assets before proceeding.'):tf("انتهت المحاولة. استخدم الاسترداد أو الإلغاء.", "The attempt expired. Use recovery or cancellation.")); return; }
       let abandoned = false;
-      const popupResult = await new Promise<WhatsappSdkPopupResult>((resolve) => {
+      const popupResult = await (eager?.popup ?? new Promise<WhatsappSdkPopupResult>((resolve) => {
         const timer = window.setTimeout(() => { abandoned = true; preparedPopup.current = null; setPopupReady(false); setFeedback(started.launch.flow==='wa_new_number'?tf('انتهت المحاولة. راجع المحاولة والأصول المحفوظة قبل المتابعة.','The attempt expired. Review the attempt and saved assets before proceeding.'):tf("انتهت المحاولة. استخدم الاسترداد أو الإلغاء.", "The attempt expired. Use recovery or cancellation.")); resolve({kind:"error"}); }, Math.min(expiresAt - Date.now(), 2_147_483_647));
         const abandon = () => { abandoned = true; ownsReservation = false; window.clearTimeout(timer); resolve({kind:"error"}); };
         preparedPopup.current = { attemptId: attempt.id, generation, expiresAt, abandon, launch: () => {
@@ -425,6 +459,7 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
             const preparedLaunch=started.launch;
             const lifecycle:PopupLifecycle={expiresAt,onCode:preparedLaunch.flow==='wa_new_number'&&resolved.captureAuthorization?async code=>{if(!mounted.current||!checkCurrent())return false;const result=await resolved.captureAuthorization!({...scope,channel:'whatsapp',attemptId:attempt.id,generation,nonce:preparedLaunch.nonce,code,correlationId});return mounted.current&&checkCurrent()&&result.ok;}:undefined,isCurrent:()=>mounted.current&&(currentAuthority.current?.()??true),signal:controller.signal,onObservation:stage=>{
               if(!mounted.current||!checkCurrent())return;
+              if(stage==='finish_without_code'){setInFlight(null);setFeedback(tf('ننتظر تأكيد Meta لهذه المحاولة؛ إغلاق النافذة في الشاشة الأخيرة لا يلغيها. لا تبدأ محاولة أخرى، وإن طال الانتظار استخدم الاسترداد.','Waiting for Meta to confirm this attempt; closing the window on the final screen does not cancel it. Do not start another attempt; if this takes long, use recovery.'));return;}
               if(stage==='waiting_timeout'||stage==='popup_closed'||stage==='callback_without_code'){setInFlight(null);setFeedback(tf('نتيجة Meta غير محسومة. ننتظر التفويض ضمن صلاحية المحاولة؛ لا تبدأ محاولة أخرى.','Meta outcome is unconfirmed. Waiting within this attempt’s validity; do not start another attempt.'));}
             }};
             const popup = actions?.launchWhatsappSdk ? actions.launchWhatsappSdk(started.launch as Extract<PaidBranchConnectionLaunch, {flow:"wa_new_number"|"wa_coexistence"}>) : launchPreparedWhatsappSdkPopup(started.launch as Extract<PaidBranchConnectionLaunch, {flow:"wa_new_number"|"wa_coexistence"}>, fb!, trace, lifecycle);
@@ -432,8 +467,9 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
           } catch { trace("fb_login_failed"); resolve({kind:"error"}); }
         } };
         connectReserved.current = false; setInFlight(null); setPopupReady(true);
-      });
+      }));
       if (abandoned || !mounted.current || !checkCurrent()) return;
+      if(eager && selectedWhatsappFlow==='wa_coexistence' && popupResult.kind==='completed' && !eager.codeValid()){setInFlight(null);setFeedback(tf('انتهت صلاحية كود التفويض. راجع المحاولة المحفوظة قبل المتابعة.','The authorization code expired. Review the saved attempt before continuing.'));return;}
       if (popupResult.kind === "cancelled") {
         setInFlight("cancelling");
         const cancelled = await resolved.cancelConnection!({
@@ -447,6 +483,23 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
         });
         if (!mounted.current || !checkCurrent()) return;
         setLocalConnection(cancelled.read);
+        setInFlight(null);
+        onRefresh?.();
+        return;
+      }
+      if (popupResult.kind === "error" && popupResult.reason) {
+        const reasonText: Record<SignupErrorReason, [string, string]> = {
+          only_waba: ['أنهيت Meta دون إضافة رقم هاتف. ألغِ المحاولة ثم ابدأ من جديد وأضف الرقم داخل نافذة Meta.', 'Meta finished without adding a phone number. Cancel this attempt, then start again and add the number in the Meta window.'],
+          wrong_route: selectedWhatsappFlow === 'wa_coexistence'
+            ? ['اخترت في Meta رقمًا جديدًا بدل رقم تطبيق WhatsApp Business. لم يُربط شيء؛ ألغِ المحاولة واختر مسار «رقم جديد» أو أعد المحاولة واختر رقم التطبيق.', 'In Meta you chose a new number instead of your WhatsApp Business app number. Nothing was connected; cancel and use the new-number route, or retry and pick the app number.']
+            : ['اخترت في Meta رقم تطبيق WhatsApp Business، وهذا المسار للأرقام الجديدة فقط. لم يُربط شيء؛ ألغِ المحاولة واستخدم مسار تطبيق WhatsApp Business.', 'In Meta you chose a WhatsApp Business app number, but this route is for new numbers only. Nothing was connected; cancel and use the WhatsApp Business app route.'],
+          grant_only: ['أنهيت Meta بمنح صلاحية فقط دون ربط رقم. لم يُربط شيء؛ ألغِ المحاولة وأعدها مع اختيار الرقم.', 'Meta finished with access-only sharing and no number. Nothing was connected; cancel and retry, selecting the number.'],
+          multiple_accounts: ['أعادت Meta أكثر من حساب واتساب؛ لن نختار أحدها تلقائيًا. ألغِ المحاولة وأعدها مع اختيار حساب واحد فقط.', 'Meta returned more than one WhatsApp account; none will be chosen automatically. Cancel and retry, selecting a single account.'],
+          missing_number: ['لم تُرسل Meta رقم الهاتف المختار؛ لن نختار رقمًا تلقائيًا. استخدم الاسترداد أو ألغِ المحاولة.', 'Meta did not return the selected phone number; no number will be chosen automatically. Use recovery or cancel the attempt.'],
+          meta_error: ['أبلغت Meta عن خطأ داخل نافذتها. لم يُربط شيء؛ راجع الرسالة في Meta ثم استخدم الاسترداد أو ألغِ المحاولة.', 'Meta reported an error in its window. Nothing was connected; check the message in Meta, then use recovery or cancel the attempt.'],
+        };
+        const [ar, en] = reasonText[popupResult.reason];
+        setFeedback(tf(ar, en));
         setInFlight(null);
         onRefresh?.();
         return;
@@ -503,8 +556,9 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
             attemptId: started.launch.attemptId,
             nonce: started.launch.nonce,
             code: popupResult.code,
-            confirmedPhoneNumber: started.launch.confirmedPhoneNumber,
-            confirmed: true as const,
+            // Number is entered inside Meta and read server-side from Meta's phone_number_id.
+            ...(popupResult.wabaId ? { wabaId: popupResult.wabaId } : {}),
+            ...(popupResult.phoneNumberId ? { phoneNumberId: popupResult.phoneNumberId } : {}),
           };
       const completed = await resolved.completeConnection!({
         expectedAccountId: scope.expectedAccountId,
@@ -540,24 +594,122 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
       if (!mounted.current) return;
       setInFlight(null);
       setFeedback(tf("تعذر إتمام عملية الربط حاليًا. حدّث الحالة أو استخدم الاسترداد.", "Connection could not be completed right now. Refresh status or use recovery."));
-    }finally{if (ownsReservation) connectReserved.current=false;}
+    }finally{eager?.bind(null);eager?.abort();if (ownsReservation) connectReserved.current=false;}
   };
 
-  // The effect consumes only a prior user selection, never a mount or a restored attempt.
+  // SDK script preload when the requirements screen mounts: no server attempt is created here.
   useEffect(()=>{
-    if (!selectedNewNumberIntent.current || selectedPreparationScheduled.current || screen!=="requirements" || route!=="new-number") return;
-    if (effectiveRead === undefined) return;
-    if (!connection?.revision || !viewModel.canStartFlow("wa_new_number") || !checkCurrent()) { selectedNewNumberIntent.current=false; return; }
-    selectedPreparationScheduled.current=true;
-    queueMicrotask(()=>{
-      selectedPreparationScheduled.current=false;
-      if (!selectedNewNumberIntent.current || !mounted.current || latestConnection.current!==connection || !(currentAuthority.current?.() ?? true)) { selectedNewNumberIntent.current=false; return; }
-      selectedNewNumberIntent.current=false;
-      void handleWhatsappConnect("wa_new_number");
-    });
-    // The reservation ref prevents duplicates; the intent is consumed exactly once.
+    if (screen!=="requirements" || !route || actions?.launchWhatsappSdk || window.location.protocol!=='https:') return;
+    preloadMetaFacebookSdkScript();
+  },[screen,route,actions?.launchWhatsappSdk]);
+
+  // Read existing attempts first; preload SDK/actions only. Never start from an effect.
+  useEffect(()=>{
+    const flow=route==='new-number'?'wa_new_number':route==='coexistence'?'wa_coexistence':null;
+    if(screen!=='requirements'||!flow||!connection?.revision||!viewModel.canStartFlow(flow))return;
+    if(actions && !actions.readWhatsappBootstrap)return; // Explicit test ports retain the prepared-attempt path.
+    if(!actions?.launchUnboundWhatsappSdk && window.location.protocol!=='https:')return;
+    let live=true;
+    void (async()=>{
+      try {
+        const resolved=actions??await resolveDefaultActions();
+        const readBootstrap=actions?.readWhatsappBootstrap??(await import('@/lib/tenancy/paid-branch-connection-actions')).readOwnedPaidBranchWhatsappBootstrapAction;
+        const result=await readBootstrap({...scope,channel:'whatsapp',flow});
+        if(!live||!mounted.current||!checkCurrent())return;
+        if(!result.ok){setFeedback(tf('تعذر تجهيز الربط. حدّث الحالة وحاول تاني.','Could not prepare the connection. Refresh status and try again.'));return;}
+        if('blockedReason' in result && result.blockedReason==='review_replacement_required'){
+          setLocalConnection({...result.read,capabilities:{...result.read.capabilities,allowedFlows:result.read.capabilities.allowedFlows.filter(flow=>flow==='wa_coexistence')}});
+          setFeedback(tf('مراجعة سابقة تتطلب ربط تطبيق WhatsApp Business الحالي. ارجع واختر المسار ده؛ الرقم هنتحقق منه من Meta قبل تثبيت الربط.','A previous review requires your current WhatsApp Business App. Go back and choose that route; the server will verify the number from Meta before saving the connection.'));
+          return;
+        }
+        if(result.read.revision!==connection.revision || !result.read.capabilities.canStart){setLocalConnection(result.read);return;}
+        if(!result.config || result.config.flow!==flow)return;
+        const fb=actions?.launchUnboundWhatsappSdk?null:await loadMetaFacebookSdk(result.config.appId,result.config.graphVersion,()=>{});
+        if(!live||!mounted.current||!checkCurrent()||(!fb&&!actions?.launchUnboundWhatsappSdk))return;
+        setClickReady({config:result.config,fb,resolved,revision:result.read.revision!});
+      }catch{if(live)setFeedback(tf('تعذر تجهيز الربط. حدّث الحالة وحاول تاني.','Could not prepare the connection. Refresh status and try again.'));}
+    })();
+    return ()=>{live=false;};
+    // Scope changes remount ChannelView; a refreshed revision invalidates preloaded material.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[screen,route,effectiveRead,connection?.revision,connection?.sourceStatus,viewModel.canStart]);
+  },[screen,route,connection?.revision,viewModel.canStart,actions]);
+
+  const handleFreshFacebook = () => {
+    if(!clickReady){void handleWhatsappConnect();return;}
+    const ready=clickReady;
+    if(connectReserved.current||inFlight||!checkCurrent()||!connection||connection.revision!==ready.revision||!viewModel.canStartFlow(ready.config.flow))return;
+    let resolveBinding!:(start:PaidBranchConnectionStartResult|null)=>void;
+    const binding=new Promise<PaidBranchConnectionStartResult|null>(resolve=>{resolveBinding=resolve;});
+    const controller=new AbortController();popupCapture.current=controller;
+    const correlationId=makeClientOpId();
+    const capture:WhatsappPopupConfig={...ready.config,captureId:correlationId}; // Browser correlation only, never server authority.
+    let codeReceivedAt:number|null=null;
+    const codeValid=()=>codeReceivedAt===null || Date.now()-codeReceivedAt<30_000;
+    const lifecycle:PopupLifecycle={onCodeReceived:()=>{codeReceivedAt??=Date.now();},expiresAt:Date.now()+15*60_000,isCurrent:()=>mounted.current&&(currentAuthority.current?.()??true),signal:controller.signal,
+      onCode:ready.config.flow==='wa_new_number'?async code=>{
+        const started=await binding;
+        if(!started||!codeValid()||!mounted.current||!checkCurrent()||controller.signal.aborted||started.launch.flow!=='wa_new_number')return false;
+        const attempt=started.read.connection.attempt;
+        if(!attempt||Date.parse(attempt.expiresAt)<=Date.now()||!ready.resolved.captureAuthorization)return false;
+        const captured=await ready.resolved.captureAuthorization({...scope,channel:'whatsapp',attemptId:attempt.id,generation:attempt.generation,nonce:started.launch.nonce,code,correlationId});
+        return captured.ok&&mounted.current&&checkCurrent();
+      }:undefined};
+    // This call (and FB.login inside it) must remain before any await or server call.
+    let popup:Promise<WhatsappSdkPopupResult>;
+    try{popup=actions?.launchUnboundWhatsappSdk?actions.launchUnboundWhatsappSdk(capture,lifecycle):launchPreparedWhatsappSdkPopup(capture,ready.fb!,()=>{},lifecycle);}
+    catch{resolveBinding(null);controller.abort();return;}
+    popup=popup.catch(()=>({kind:"error" as const}));
+    void handleWhatsappConnect(ready.config.flow,undefined,{popup,config:ready.config,resolved:ready.resolved,bind:resolveBinding,abort:()=>controller.abort(),codeValid})
+      .finally(()=>{resolveBinding(null);controller.abort();});
+  };
+
+  // F5 one-click resume: an existing, unexpired, same-session pending WhatsApp attempt gets its launch re-issued
+  // read-only (no attempt is created, no Meta call, no popup) so the next explicit click opens Facebook directly.
+  useEffect(()=>{
+    const attempt=connection?.connection.attempt;const flow=connection?.connection.flow;
+    if (channel!=="whatsapp" || !attempt || attempt.status!=="pending" || (flow!=="wa_new_number"&&flow!=="wa_coexistence")) return;
+    if (resumeTried.current===attempt.id || preparedPopup.current || connectReserved.current || inFlight || awaitingPin) return;
+    const expiresAt=Date.parse(attempt.expiresAt);
+    if (!Number.isFinite(expiresAt) || expiresAt<=currentTime()+15_000) return;
+    if (!actions?.launchWhatsappSdk && window.location.protocol!=='https:') return;
+    if (!checkCurrent()) return;
+    resumeTried.current=attempt.id;
+    // Rehydrate presentation from an existing server attempt; never creates a new attempt.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setRoute(flow==="wa_new_number"?"new-number":"coexistence");setScreen("requirements");
+    void handleWhatsappConnect(flow,{attemptId:attempt.id});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[channel,connection?.connection.attempt?.id,connection?.connection.attempt?.status,connection?.connection.flow]);
+
+  // F5: read the server-persisted number decision once the connection is verified.
+  const numberKey=`${connection?.connection.link?.id}:${connection?.connection.link?.generation}`;
+  useEffect(()=>{
+    if (channel!=="whatsapp" || !viewModel.isReady || !connection?.linkedNumber) return;
+    if (numberCheck?.key===numberKey && numberCheck.status!=="loading") return;
+    let live=true;
+    void (async()=>{
+      try{
+        const readFn=actions?.readNumberConfirmation??(await import("@/lib/whatsapp/number-confirmation-actions")).readNumberConfirmationAction;
+        const result=await readFn(scope.companyId);
+        if(!live||!mounted.current)return;
+        setNumberCheck(result.ok?{key:numberKey,status:result.status,linkId:result.linkId,linkGeneration:result.linkGeneration}:{key:numberKey,status:"unavailable"});
+      }catch{if(live&&mounted.current)setNumberCheck({key:numberKey,status:"unavailable"});}
+    })();
+    return ()=>{live=false;};
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[channel,viewModel.isReady,numberKey,connection?.linkedNumber,scope.companyId]);
+  const decideNumber=async(answer:"confirmed"|"rejected")=>{
+    const current=numberCheck;
+    if(!current||current.busy||current.status!=="pending"||!current.linkId||current.linkGeneration===undefined||!checkCurrent())return;
+    setNumberCheck({...current,busy:true,error:false});
+    try{
+      const decideFn=actions?.decideNumberConfirmation??(await import("@/lib/whatsapp/number-confirmation-actions")).decideNumberConfirmationAction;
+      const result=await decideFn({companyId:scope.companyId,linkId:current.linkId,linkGeneration:current.linkGeneration,answer});
+      if(!mounted.current)return;
+      if(result.ok){setNumberCheck({...current,status:result.status,busy:false});if(result.status==="rejected")onRefresh?.();}
+      else setNumberCheck({...current,busy:false,error:true});
+    }catch{if(mounted.current)setNumberCheck({...current,busy:false,error:true});}
+  };
 
   const handlePreparedFacebook = () => {
     const prepared = preparedPopup.current;
@@ -693,7 +845,7 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
       if (!mounted.current || !checkCurrent()) return;
       if(cancelled.read.sourceStatus==='ready')setLocalConnection(cancelled.read);
       if(cancelled.ok){
-        setScreen('choice');setRoute(null);setPin('');setConfirmedPhone('');setPhoneConfirmed(false);
+        setScreen('choice');setRoute(null);setPin('');
         setFeedback(tf('تم إلغاء المحاولة. اختر طريقة الربط عندما تكون مستعدًا.','Attempt cancelled. Choose a connection method when you are ready.'));
       }else{
         if(flow==='wa_new_number'&&cancelled.code==='reconciliation_required'){
@@ -735,15 +887,15 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
   const commercialIncomplete = channel === "whatsapp" && !(connection?.connection.verified && connection.connection.state === "connected");
   // A server-scoped verified link or unresolved attempt must never offer a new signup.
   const showWhatsappOnboarding = !viewModel.isReady && (!connection || viewModel.canStart || popupReady || !!inFlight || awaitingPin);
+  const feedbackInGuide = showWhatsappOnboarding && !!route && !awaitingPin && (screen === "guide" || screen === "requirements");
 
 
   return <section className={styles.view} data-setup-unsaved={unsavedConnection?'true':undefined} dir={ar ? "rtl" : "ltr"} aria-label={channel==='whatsapp'?t('ربط واتساب','Connect WhatsApp'):t('ربط إنستغرام','Connect Instagram')}>
     <header className={styles.header}>
-      {available && !hideStatusBadge && <p>{t("الفرع: ", "Branch: ")}<bdi>{branch.label}</bdi></p>}
       {available && effectiveRead !== undefined && <div className={hideStatusBadge?undefined:styles.statusBanner} data-connection-ui-state={viewModel.uiState} data-commercial-link={commercialIncomplete ? "incomplete" : "verified"}>
         {!hideStatusBadge&&<span className={styles.statusBadge} role="status" aria-label={channelConnectionLabel(connection, locale)}>{viewModel.badgeLabel}</span>}
-        {viewModel.guidance && <p>{viewModel.guidance}</p>}
-        {feedback && <p role="alert">{feedback}</p>}
+        {viewModel.guidance && !(channel==='whatsapp'&&(viewModel.isReady||awaitingPin)) && <p>{viewModel.guidance}</p>}
+        {feedback && !feedbackInGuide && <p role="alert">{feedback}</p>}
         {canRequestReview&&!awaitingPin&&<div className={styles.recoveryActions}>
           {reviewReceipt&&<p role="status">{t('المراجعة قيد الانتظار','Review pending')} <bdi>{reviewReceipt.id}</bdi></p>}
           <button type="button" className={styles.primary} data-request-review disabled={!!inFlight||!!reviewReceipt} onClick={()=>void handleReviewRequest(true)}>{t('طلب مراجعة إدارية','Request administrative review')}</button>
@@ -762,64 +914,102 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
     </header>
     {!available ? <p role="status">{t("هذه القناة غير متاحة لهذا الفرع. ارجع إلى قائمة الإعداد للتحقق من اختيارك.", "This channel is unavailable for this branch. Return to setup to check your selection.")}</p> :
       channel === "whatsapp" ? <>
-        {viewModel.isReady && <section className={styles.requirements} data-whatsapp-connected role="status"><h3>{t('واتساب متصل','WhatsApp connected')}</h3><p>{t('تم التحقق من ربط القناة لهذا الفرع.','This branch’s channel connection has been verified.')}</p><a href="/app/settings?tab=whatsapp">{t('إدارة إعدادات واتساب','Manage WhatsApp settings')}</a></section>}
+        {viewModel.isReady && (()=>{
+          const state=numberCheck?.key===numberKey?numberCheck:null;
+          const linked=connection?.linkedNumber??null;
+          const answer=!linked?null:state?.status==='confirmed'||state?.status==='not_required'?'confirmed':state?.status==='rejected'?'wrong':state?.status==='pending'?null:undefined;
+          return <section className={`${styles.requirements} ${styles.connectionCard}`} data-whatsapp-connected data-number-check={!linked?'unavailable':answer===null?'pending':answer===undefined?(state?.status==='unavailable'?'unavailable':'loading'):answer} aria-labelledby={titleId+'-linked'}>
+          <span className={`${styles.connectionIcon} ${answer==='wrong'?styles.connectionIconNeutral:styles.connectionIconSuccess}`} aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/>{answer==='wrong'?<path d="m9 9 6 6m0-6-6 6"/>:<path d="m8 12 3 3 5-6"/>}</svg></span>
+          <h3 id={titleId+'-linked'}>{answer==='wrong'?t('تم فصل الرقم','Number disconnected'):linked&&answer===null?t('ده رقم واتساب الصحيح؟','Is this your WhatsApp number?'):t('واتساب متصل','WhatsApp connected')}</h3>
+          <p role="status">{answer==='wrong'?t('أعد الربط بالرقم الصحيح.','Reconnect with the correct number.'):linked&&answer===null?t('راجع الرقم قبل المتابعة.','Check your number before continuing.'):t('تم التحقق من ربط القناة لهذا الفرع.','This branch’s channel connection has been verified.')}</p>
+          {linked ? <div className={styles.linkedNumberCard}><span>{t('رقم واتساب المربوط','Connected WhatsApp number')}</span><bdi dir="ltr" data-linked-number>{linked}</bdi></div>
+            : <p role="status">{t('تعذّر عرض الرقم المربوط الآن. راجعه في إعدادات واتساب.','The linked number cannot be shown right now. Check it in WhatsApp settings.')}</p>}
+          {linked && answer===null && <p>{t('تأكد أن هذا هو رقمك. لن تُرسل أي ردود من هذا الرقم قبل تأكيدك.','Confirm this is your number. No replies are sent from this number until you confirm.')}</p>}
+          {linked && answer===null && <div className={styles.requirementActions} role="group" aria-label={t('هل هذا رقمك؟','Is this your number?')}>
+            <button type="button" className={styles.primary} disabled={!!state?.busy} onClick={()=>void decideNumber('confirmed')}>{t('نعم، هذا رقمي','Yes, this is my number')}</button>
+            <button type="button" className={styles.back} disabled={!!state?.busy} onClick={()=>void decideNumber('rejected')}>{t('هذا ليس رقمي','This is not my number')}</button>
+          </div>}
+          {state?.error && <p role="alert">{t('تعذّر حفظ إجابتك الآن. لم يتغير شيء؛ أعد المحاولة.','Your answer could not be saved right now. Nothing changed; try again.')}</p>}
+          {linked && state?.status==='unavailable' && <p role="status">{t('تعذّر التحقق من حالة تأكيد الرقم. حدّث الصفحة.','The number confirmation status could not be checked. Refresh the page.')}</p>}
+          {answer==='wrong' && <p role="alert">{t('تم فصل هذا الرقم ولن تُرسل منه أي ردود. أعد الربط واختر الرقم الصحيح داخل نافذة Meta.','This number was disconnected and no replies will be sent from it. Reconnect and pick the correct number in the Meta window.')}</p>}
+          {answer==='confirmed' && connection?.connection.flow==='wa_coexistence' && <CoexistenceImportPanel companyId={scope.companyId} locale={ar?'ar':'en'}/>}
+          <a className={styles.settingsLink} href="/app/settings?tab=whatsapp">{t('إدارة إعدادات واتساب','Manage WhatsApp settings')}</a></section>;})()}
         {connection && !viewModel.isReady && !showWhatsappOnboarding && <p role="status">{t('راجع حالة المحاولة الحالية قبل بدء ربط آخر.','Review the current connection attempt before starting another.')}</p>}
-        {awaitingPin&&!viewModel.isReady&&<form className={styles.requirements} data-registration-pin onSubmit={event=>{event.preventDefault();if(checkCurrent()&&/^\d{6}$/.test(pin)){const answer=pinAnswer.current;pinAnswer.current=null;answer?.(pin);}}}>
-          <h3>{t('خطوة أخيرة لتسجيل الرقم','Complete number registration')}</h3>
+        {awaitingPin&&!viewModel.isReady&&<form className={`${styles.requirements} ${styles.connectionCard}`} data-registration-pin onSubmit={event=>{event.preventDefault();if(checkCurrent()&&/^\d{6}$/.test(pin)){const answer=pinAnswer.current;pinAnswer.current=null;answer?.(pin);}}}>
+          <span className={styles.connectionIcon} aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3 4 6v6c0 4 5 7 8 9 3-2 8-5 8-9V6l-8-3Z"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg></span>
+          <h3>{t('احمِ رقم واتساب','Protect your WhatsApp number')}</h3>
           <p role="status">{t('تحقق الخادم من تفويض Meta، والرقم ما زال يحتاج إكمال التسجيل. الربط لم يكتمل بعد.','The server checked Meta authorization. This number still needs registration; connection is not complete.')}</p>
           <label htmlFor={titleId+'-pin'}>{t('رقم PIN لحماية واتساب (6 أرقام)','WhatsApp security PIN (6 digits)')}</label>
           <p id={titleId+'-pin-help'}>{t('اختر PIN جديدًا واحفظه بأمان. إذا كان التحقق بخطوتين مفعّلًا بالفعل لهذا الرقم، استخدم PIN الموجود. هذا ليس كود SMS أو المكالمة.','Choose a new PIN and keep it safe. If two-step verification is already enabled for this number, use its existing PIN. This is not the SMS or call verification code.')}</p>
-          <input id={titleId+'-pin'} aria-describedby={titleId+'-pin-help'} className={styles.textInput} type="password" inputMode="numeric" maxLength={6} autoComplete="off" value={pin} onChange={event=>setPin(event.target.value.replace(/\D/g,'').slice(0,6))}/>
+          <input id={titleId+'-pin'} aria-describedby={titleId+'-pin-help'} className={`${styles.textInput} ${styles.pinInput}`} type="password" inputMode="numeric" maxLength={6} autoComplete="off" dir="ltr" value={pin} onChange={event=>setPin(event.target.value.replace(/\D/g,'').slice(0,6))}/>
           <div className={styles.requirementActions}><button type="submit" className={styles.primary} disabled={!/^\d{6}$/.test(pin)}>{t('إكمال التسجيل والتحقق','Finish registration and verify')}</button><button type="button" className={styles.back} onClick={()=>{if(checkCurrent()){const answer=pinAnswer.current;pinAnswer.current=null;answer?.(null);}}}>{t('إلغاء المحاولة','Cancel attempt')}</button></div>
         </form>}
         {showWhatsappOnboarding&&screen==="choice"&&<><p className={styles.stageCaption}>{t("الخطوة ١/٢","Step 1/2")}</p><div className={styles.connectLayout} data-wa-screen="choice" data-route-selected={!!route}>
         <div className={styles.intro} hidden={!!route}>
-          <div className={styles.brands} aria-hidden="true"><span><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M20 11.5a8 8 0 0 1-11.7 7.1L4 20l1.4-4.3A8 8 0 1 1 20 11.5Z"/><path d="M9 7.5c.5 3.5 2 5 5.5 6l1-1.5-2-1-1 1a7 7 0 0 1-3-3l1-1-1-2Z"/></svg></span><span>↔</span><span>Meta</span></div>
-          <h3>{t("اربط رقم واتساب الخاص بنشاطك","Connect your business WhatsApp number")}</h3>
-          <p>{t("اختر الطريقة المناسبة لرقمك. ستُكمل التفويض مع Meta، ثم نتحقق من الاتصال هنا.","Choose the right route for your number. Authorize with Meta, then return here to verify your connection.")}</p>
-          <h4>{t("بعد ربط رقمك", "Once your number is connected")}</h4>
-          <ul><li>{t("محادثات عملائك بهوية نشاطك", "Customer conversations with your business identity")}</li><li>{t("إدارة المحادثات من فيلورا", "Manage conversations in Velora")}</li><li>{t("تحكّم في بدء ردود المساعد بعد اكتمال التجهيز", "Start assistant replies after completing setup")}</li></ul>
-          <details className={styles.helpDetails}><summary>{t("دليل المساعدة", "Help guide")}</summary><p>{t("جهّز حساب Meta الذي تدير منه نشاطك، واختر طريقة الرقم من البطاقة. ستجد خطوات الربط بعد اختيار الطريقة. لو تستخدم تطبيق WhatsApp Business، اختر Coexistence واحتفظ بالتطبيق ورقمك.","Have the Meta account that manages your business ready and choose your number's route. Connection instructions follow your route selection. If you use WhatsApp Business App, choose Coexistence and keep your app and number.")}</p></details>
-        </div><div className={styles.routeCard}><h3 hidden={!!route}>{t("تفاصيل مهمة قبل الربط", "Key details before you connect")}</h3><fieldset className={styles.routes} disabled={!!inFlight} hidden={!!route}>
+          <p>{t("اختر طريقة استخدام رقمك، ثم أكمل الربط مع Meta.","Choose how you use your number, then connect with Meta.")}</p>
+
+        </div><div className={styles.routeCard}><fieldset className={styles.routes} disabled={!!inFlight} hidden={!!route}>
           <legend>{t("كيف تستخدم هذا الرقم؟", "How do you use this number?")}</legend>
           {(["new-number", "coexistence"] as const).map(value => <label key={value} className={styles.choice}>
             <input type="radio" name={titleId + "-route"} value={value} checked={route === value} onChange={() => {
               if(!checkCurrent())return;
-              setRoute(value);
-              // This explicit choice prepares one server-owned attempt; it never opens Meta.
-              if(value==="new-number"){selectedNewNumberIntent.current=true;setScreen("requirements");} else selectedNewNumberIntent.current=false;
+              setClickReady(null);setRoute(value);
+              // Route selection only prepares read-only SDK configuration; it never creates an attempt.
+              // Both routes look and behave the same; only the Meta config and guide images differ.
+              // F5: choosing "connect current app" never creates an attempt; the explicit Facebook click does.
+              setScreen("requirements");
             }}/>
             <span>{value === "new-number" ? t("استخدام رقم جديد", "Use a new number") : t("ربط تطبيق WhatsApp Business الحالي", "Connect your WhatsApp Business App")}</span>
-            <small>{value==="new-number"?t("رقم تملكه وغير مرتبط بحساب واتساب أو مزود آخر. سنراجع متطلبات التحقق قبل المتابعة.","A number you own that is not linked to WhatsApp or another provider. Review verification requirements before continuing."):t("Coexistence: استمر في استخدام التطبيق على هاتفك مع إدارة المحادثات من فيلورا، إذا كان حسابك مؤهلًا. لا تحذف حسابك أو تفصل الرقم.","Coexistence: keep using the app on your phone while managing conversations in Velora, if your account is eligible. Do not delete your account or disconnect your number.")}</small>
+            <small>{value==="new-number"?t("رقم تملكه وغير مربوط بأي حساب واتساب.","A number you own that isn't on WhatsApp."):t("احتفظ بالتطبيق على هاتفك وأدِر المحادثات من فيلورا. لا تحذف حسابك أو رقمك.","Keep the app on your phone and manage chats in Velora. Don't delete your account or number.")}</small>
           </label>)}
         </fieldset>
-          {route==="coexistence"&&<div className={styles.inputGroup}>
-            <label htmlFor={titleId+"-phone"}>{t("رقم تطبيق WhatsApp Business الحالي (بصيغة دولية مثل +968...)","Existing WhatsApp Business App number (E.164 format e.g. +968...)")}</label>
-            <input id={titleId+"-phone"} className={styles.textInput} type="tel" inputMode="tel" autoComplete="tel" dir="ltr" value={confirmedPhone} onChange={e=>setConfirmedPhone(e.target.value)} placeholder="+96890000000"/>
-            <label className={styles.checkboxRow}>
-              <input type="checkbox" checked={phoneConfirmed} onChange={e=>setPhoneConfirmed(e.target.checked)}/>
-              <span>{t("أؤكد أن هذا الرقم مفعل حاليًا على تطبيق WhatsApp Business ولن أقوم بحذفه أو فصله.","I confirm this number is currently active on the WhatsApp Business App and I will not delete or disconnect it.")}</span>
-            </label>
-            <button className={styles.primary} type="button" data-route-continue disabled={!!inFlight || !connection?.revision || !canStartSelectedWhatsapp} onClick={()=>{if(checkCurrent()){setScreen("requirements");void handleWhatsappConnect();}}}>{t("متابعة إلى الربط مع Facebook","Continue to Facebook connection")}</button>
-          </div>}
         </div></div></>}
         {showWhatsappOnboarding&&screen==="guide"&&route&&<div data-wa-screen="guide"><button type="button" className={styles.back} data-back-to-choice onClick={()=>setScreen("choice")}>{t("رجوع","Go back")}</button><WhatsappConnectionGuide route={route} locale={locale} connectionStatus={effectiveRead === undefined ? t("دليل الربط", "Connection guide") : channelConnectionLabel(connection, locale)} connectEnabled={!!selectedWhatsappFlow && viewModel.canStartFlow(selectedWhatsappFlow)} connecting={inFlight === "starting" || inFlight === "completing"} onConnect={()=>setScreen("requirements")} onReviewRequirements={()=>setScreen("requirements")} feedback={feedback}/></div>}
         {showWhatsappOnboarding&&screen==="requirements"&&route&&!awaitingPin&&<div className={styles.requirements} data-wa-screen="requirements">
-          <p className={styles.stageCaption}>{t("الخطوة ٢/٢","Step 2/2")}</p>
-          <WhatsappConnectionGuide route={route} locale={locale} connectionStatus={channelConnectionLabel(connection,locale)} connectEnabled={(popupReady || canStartSelectedWhatsapp)&&!inFlight} connecting={!!inFlight} preparing={!popupReady} onConnect={popupReady ? handlePreparedFacebook : ()=>void handleWhatsappConnect()} feedback={feedback}/>
-          {!feedback&&!inFlight&&!popupReady&&!canStartSelectedWhatsapp&&<div role="status">{effectiveRead === undefined ? t("يتم التحقق من حالة الاتصال.","Checking connection status.") : connection?.sourceStatus === "ready" && !!connection.revision ? t("طريقة الربط غير متاحة الآن. راجع حالة القناة.","This connection route is unavailable. Review the channel status.") : t("تعذّر التحقق من حالة القناة. حدّث الحالة قبل المحاولة.","The channel status could not be verified. Refresh the status before trying.")}{effectiveRead !== undefined&&onRefresh&&<button type="button" className={styles.back} onClick={()=>{if(checkCurrent())onRefresh();}}>{t("تحديث الحالة","Refresh status")}</button>}</div>}
-          <div className={styles.requirementActions}>
-            <button type="button" className={styles.back} disabled={!!inFlight || popupReady} onClick={()=>{selectedNewNumberIntent.current=false;setRoute(null);setConfirmedPhone("");setPhoneConfirmed(false);setScreen("choice");}}>{t("رجوع","Go back")}</button>
+          <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><p className={styles.stageCaption} style={{margin:0}}>{t("الخطوة ٢/٢","Step 2/2")}</p><GuideStatusBadge label={channelConnectionLabel(connection,locale)}/></div>
+          <WhatsappConnectionGuide route={route} locale={locale} connectEnabled={(popupReady || (canStartSelectedWhatsapp && (!!clickReady || (!!actions && !actions.readWhatsappBootstrap) || window.location.protocol!=='https:')))&&!inFlight} connecting={!!inFlight} preparing={!popupReady&&!clickReady} onConnect={popupReady ? handlePreparedFacebook : handleFreshFacebook} feedback={feedback}/>
+          {!feedback&&!inFlight&&!popupReady&&!canStartSelectedWhatsapp&&<div role="status">{effectiveRead === undefined ? <span className={styles.srOnly} data-visually-hidden>{t("يتم التحقق من حالة الاتصال.","Checking connection status.")}</span> : connection?.sourceStatus === "ready" && !!connection.revision ? t("طريقة الربط غير متاحة الآن. راجع حالة القناة.","This connection route is unavailable. Review the channel status.") : t("تعذّر التحقق من حالة القناة. حدّث الحالة قبل المحاولة.","The channel status could not be verified. Refresh the status before trying.")}{effectiveRead !== undefined&&onRefresh&&<button type="button" className={styles.back} onClick={()=>{if(checkCurrent())onRefresh();}}>{t("تحديث الحالة","Refresh status")}</button>}</div>}
+          <div className={styles.requirementActions} data-channel-back>
+            <button type="button" className={styles.back} disabled={!!inFlight || popupReady} onClick={()=>{setRoute(null);setScreen("choice");}}>{t("رجوع","Back")}</button>
 
           </div>
         </div>}
-      </> : <div className={styles.instagram}>
-        <h3>{t("حساب Instagram الاحترافي", "Instagram professional account")}</h3>
-        <p>{t("استخدم حسابًا احترافيًا تملك صلاحية إدارته. تُراجع الصلاحيات خلال التفويض الفعلي؛ قراءة التعليمات لا تمنحها.", "Use a professional account you have permission to manage. Permissions are checked during authorization; reading these instructions does not grant them.")}</p>
-        <p role="status">{canStartInstagram ? t("جاهز لبدء تفويض حساب Instagram الاحترافي لهذا الفرع.", "Ready to start Instagram professional account authorization for this branch.") : t("الربط غير متاح بعد. ستبقى الخطوة دون تغيير حتى يتم التحقق من الربط لهذا الفرع.", "Connection is not available yet. This step stays unchanged until connection is verified for this branch.")}</p>
-        <button type="button" data-connect-action="true" disabled={!canStartInstagram} onClick={() => void handleInstagramConnect()}>
-          {inFlight === "starting" ? t("جارٍ التحويل إلى Instagram…", "Redirecting to Instagram…") : t("ربط Instagram", "Connect Instagram")}
-        </button>
+      </> : <div className={styles.connectLayout} data-ig-screen={viewModel.isReady?"connected":"connect"}>
+        {viewModel.isReady ? <section className={styles.requirements} data-instagram-connected aria-labelledby={titleId+"-ig-linked"}>
+          <h3 id={titleId+"-ig-linked"}>{t("إنستغرام متصل","Instagram connected")}</h3>
+          <p role="status">{t("تم التحقق من ربط حساب إنستغرام الاحترافي لهذا الفرع.","This branch’s Instagram professional account connection has been verified.")}</p>
+        </section> : <>
+          <p className={styles.stageCaption}>{t("ربط إنستغرام","Connect Instagram")}</p>
+          <div className={styles.intro}>
+            <p>{t("اربط حسابًا احترافيًا تملك صلاحية إدارته. الصلاحيات تُراجع أثناء التفويض مع Meta؛ قراءة التعليمات لا تمنحها.","Connect a professional account you have permission to manage. Permissions are checked during Meta authorization; reading these instructions does not grant them.")}</p>
+          </div>
+          <div className={styles.routeCard}>
+            <fieldset className={styles.routes} disabled={!!inFlight}>
+              <legend>{t("قبل المتابعة تأكد من","Before you continue, confirm")}</legend>
+              {([
+                [t("حساب احترافي (Business أو Creator)","A professional account (Business or Creator)")],
+                [t("صلاحية إدارة الحساب لهذا النشاط","Permission to manage the account for this business")],
+                [t("ستُحوَّل إلى Instagram لإتمام التفويض","You will be redirected to Instagram to finish authorization")],
+              ] as const).map(([label], index) => (
+                <div key={index} className={styles.igRequirement} role="listitem">
+                  <span>{label}</span>
+                </div>
+              ))}
+            </fieldset>
+          </div>
+          <section className={styles.requirements} aria-labelledby={titleId+"-ig-action"}>
+            <h3 id={titleId+"-ig-action"}>{t("حساب Instagram الاحترافي","Instagram professional account")}</h3>
+            <p role="status">{canStartInstagram
+              ? t("جاهز لبدء تفويض حساب Instagram الاحترافي لهذا الفرع.","Ready to start Instagram professional account authorization for this branch.")
+              : t("الربط غير متاح بعد. ستبقى الخطوة دون تغيير حتى يتم التحقق من الربط لهذا الفرع.","Connection is not available yet. This step stays unchanged until connection is verified for this branch.")}</p>
+            {feedback && <p role="alert">{feedback}</p>}
+            <div className={styles.requirementActions}>
+              <button type="button" className={styles.primary} data-connect-action="true" disabled={!canStartInstagram||!!inFlight} onClick={() => void handleInstagramConnect()}>
+                {inFlight === "starting" ? t("جارٍ التحويل إلى Instagram…","Redirecting to Instagram…") : t("ربط Instagram","Connect Instagram")}
+              </button>
+            </div>
+          </section>
+        </>}
       </div>}
   </section>;
 }

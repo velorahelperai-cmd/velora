@@ -10,6 +10,7 @@ import {normalizeConfirmedCompanyPhone,type CoexistenceCompletionInput,type Publ
 import {readCoexistenceSignupReadiness,readCoexistenceSignupStatus,startCoexistenceSignupStore,createCoexistenceSignupPorts,cancelCoexistenceSignupStore,disconnectCoexistenceSignupStore} from "./signup-store";
 import {finishCoexistenceSignup} from "./flow";
 import {reconcileCoexistenceEvents} from "./projection-store";
+import {readNumberConfirmationStore} from "../number-confirmation-store";
 import {readCoexistenceSyncReadiness,readCoexistenceSyncStatus,requestCoexistenceSync,createCoexistenceSyncPorts,type CoexistenceSyncType} from "./sync";
 
 const uuid=(value:unknown):value is string=>typeof value==="string"&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
@@ -99,6 +100,9 @@ export async function requestCoexistenceHistorySync(input:{companyId:string;link
  trace.stage("session");const auth=await owner(input.companyId);if(!auth.ok)return auth;
  trace.stage("preflight");const config=serverConfig(),admin=createAdminClient();if(!config||!admin)return {ok:false as const,code:"NEEDS_SETUP"};
  trace.stage("readiness");const ready=await readCoexistenceSyncReadiness(auth.client,auth.identity.companyId);if(!ready.ok)return ready;
+ // F5: never import into a number the owner has not confirmed (no grandfathering: only an explicit owner confirmation allows import).
+ const number=await readNumberConfirmationStore(auth.client as never,auth.identity.companyId).catch(()=>null);
+ if(!number||!number.ok||number.status!=="confirmed")return {ok:false as const,code:"NUMBER_UNCONFIRMED" as const};
  const request={requestId:crypto.randomUUID(),linkId:input.linkId.toLowerCase(),linkGeneration:input.linkGeneration,syncType:input.syncType,consent:true as const};
  const result=await requestCoexistenceSync(auth.identity,request,config,diagnosedWhatsAppPorts(createCoexistenceSyncPorts(auth.identity,request,config,auth.client,admin as unknown as OwnerRpcClient),trace));
  revalidatePath("/app/settings");return result;
