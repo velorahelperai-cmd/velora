@@ -4,6 +4,7 @@ import type {AnswerFailure,AnswerProviderRequest,TrialProviderHandle,TrialProvid
 import {buildAnswerSystemPrompt,formatAnswerUserPrompt} from './prompt';
 import {providerRequestLimits,validTokenCount} from './request-limits';
 import {matchesRequestedModel} from './response-identity';
+import {logEvent} from '@/lib/logging/logger.mjs';
 const model='gemini-3.8-flash' as const;
 const options={timeout:30_000,maxRetries:0};
 const validId=(id:unknown):id is string=>typeof id==='string'&&/^[A-Za-z0-9_-]{1,200}$/.test(id);
@@ -28,11 +29,14 @@ export async function retrieveGeminiTrial(client:GoogleGenAI,handle:TrialProvide
  if(!validId(handle.id)||handle.modelId!==model)return {ok:false,code:'INVALID_INPUT',providerAttempted:false,retrySafe:false};
  let response:Awaited<ReturnType<typeof client.interactions.create>>;
  try{response=await client.interactions.get(handle.id,undefined,options);}catch(error){
+  const status=error&&typeof error==='object'&&'status'in error&&typeof error.status==='number'?error.status:null;
+  logEvent('warn','es02.branch_assistant_trial.retrieve_transport',{provider_request_id:handle.id,error_code:status?`GEMINI_HTTP_${status}`:'GEMINI_TRANSPORT_ERROR',latency_ms:Math.max(0,Date.now()-handle.startedAt)});
   if(error&&typeof error==='object'&&'status'in error&&error.status===404)return failure('GEMINI_HTTP_404',handle.startedAt,handle.id);
   // GET failure says nothing about the generation; preserve its identity and hold.
   return {pending:true,handle};
  }
  if('next'in response)return {pending:true,handle};
+ logEvent('info','es02.branch_assistant_trial.retrieve_status',{provider_request_id:handle.id,provider_status:['queued','in_progress','completed','failed','cancelled','requires_action','incomplete','budget_exceeded'].includes(response.status)?response.status:'unrecognized',latency_ms:Math.max(0,Date.now()-handle.startedAt)});
  if(response.id!==handle.id)return failure('GEMINI_MODEL_MISMATCH',handle.startedAt,handle.id);
  if(!['completed','failed','cancelled','requires_action','incomplete','budget_exceeded'].includes(response.status))return {pending:true,handle};
  if(!response.model||!matchesRequestedModel(response.model,model))return failure('GEMINI_MODEL_MISMATCH',handle.startedAt,handle.id);

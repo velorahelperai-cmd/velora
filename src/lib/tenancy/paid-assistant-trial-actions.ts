@@ -489,6 +489,7 @@ export async function recoverOwnedBranchAssistantTrialAction(input: TrialScope &
   const binding={p_operation_id:input.operationId,p_account_id:identity.userId,p_session_id:identity.nativeSessionId,p_company_id:input.companyId,p_branch_id:input.branchId};
   const loaded=await Promise.resolve(writer.rpc('es02_load_trial_provider' as never,binding as never)).catch(()=>null);
   const durable=loaded?.data as unknown as {ok?:boolean;submissionUnknown?:boolean;data?:{handle:TrialProviderHandle;question:string;sessionId:string;pricing:ReturnType<typeof realModelPricing>;state:string;checkpoint:boolean}|null};
+  logEvent('info','es02.branch_assistant_trial.retrieve_binding',{operation_id:input.operationId,authorized:durable?.ok===true,has_handle:!!durable?.data,state:durable?.data?.state??null});
   if(!loaded||loaded.error||durable?.ok!==true)return {ok:false,code:'TRIAL_PENDING',message:'Provider recovery authority unavailable'};
   if(durable.submissionUnknown){const fresh=await readOwnedBranchAssistantTrialAction(input);return fresh?{ok:true,snapshot:fresh}:{ok:false,code:'TRIAL_PENDING',message:'Submission outcome remains unknown'};}
   const stored=durable.data;
