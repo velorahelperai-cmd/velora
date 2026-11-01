@@ -167,6 +167,7 @@ describe("paid-assistant-trial-actions", () => {
     const calls=trustedRpc.mock.calls.map(c=>c[0]);
     expect(calls.some(n=>n.includes('reserve'))).toBe(false);
     if(kind==='pending'||kind==='denied'){expect(calls).toEqual(['es02_load_trial_provider']);}
+    if(kind==='pending'||kind==='denied')expect(rpcMock).not.toHaveBeenCalled();
     if(kind==='checkpoint'||kind==='denied')expect(retrieveTrial).not.toHaveBeenCalled();
     if(kind==='success')expect(trustedRpc).toHaveBeenCalledWith('es02_checkpoint_branch_trial_result',expect.objectContaining({p_session_id:OTHER_ACCOUNT_ID,p_result:expect.objectContaining({requestId:'int_saved',usage:expect.objectContaining({completionTokens:50,reasoningTokens:30})})}));
     if(kind==='unknown')expect(trustedRpc).toHaveBeenCalledWith('ai_settle_admin_attempt',expect.objectContaining({p_status:'uncertain',p_cost_baisa:null,p_cost_usd:null,p_latency_ms:455}));

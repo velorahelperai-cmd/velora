@@ -129,9 +129,25 @@ it('resumes a known background request after mounting without generating another
  const host=document.createElement('div'),root=createRoot(host);
  try{
   await act(async()=>root.render(createElement(PaidSetupStepHost,{...baseProps,step:'test'})));
-  await act(async()=>vi.advanceTimersByTimeAsync(5_000));
+  await act(async()=>vi.advanceTimersByTimeAsync(0));
   expect(recover).toHaveBeenCalledOnce();expect(ask).not.toHaveBeenCalled();expect(host.textContent).toContain('1/10');
   await act(async()=>vi.advanceTimersByTimeAsync(60_000));expect(recover).toHaveBeenCalledOnce();
+ }finally{await act(async()=>root.unmount());ask.mockClear();recover.mockReset();vi.useRealTimers();vi.unstubAllGlobals();}
+});
+
+it('bounds pending retrievals without rebuilding snapshots or asking again',async()=>{
+ vi.useFakeTimers();vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);
+ const snapshot={scope:baseProps.scope,version:1,knowledgeRevision:'k1',branchLabel:'Main',businessType:'restaurant',canAsk:false,messages:[],pendingOperation:{id:'55555555-5555-4555-8555-555555555555',status:'running',recoverable:false,pollable:true}};
+ vi.mocked(readOwnedBranchAssistantTrialAction).mockResolvedValueOnce(snapshot);
+ const recover=vi.mocked(recoverOwnedBranchAssistantTrialAction);recover.mockReset();recover.mockResolvedValue({ok:false,code:'TRIAL_PENDING',message:'Still running'});
+ const ask=vi.mocked(askOwnedBranchAssistantTrialAction);ask.mockClear();
+ const host=document.createElement('div'),root=createRoot(host);
+ try{
+  await act(async()=>root.render(createElement(PaidSetupStepHost,{...baseProps,step:'test'})));
+  await act(async()=>vi.advanceTimersByTimeAsync(0));expect(recover).toHaveBeenCalledOnce();
+  await act(async()=>vi.advanceTimersByTimeAsync(600_000));
+  expect(recover).toHaveBeenCalledTimes(60);expect(ask).not.toHaveBeenCalled();
+  expect(host.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(true);
  }finally{await act(async()=>root.unmount());ask.mockClear();recover.mockReset();vi.useRealTimers();vi.unstubAllGlobals();}
 });
 

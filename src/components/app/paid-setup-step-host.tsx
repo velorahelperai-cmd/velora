@@ -250,7 +250,7 @@ function StepHost(props: PaidSetupStepHostProps) {
     };
   }, [step, targetScope, isCurrent,readVersion,reader]);
 
-  // 4. Team step
+  // Resume the existing request immediately; never create a replacement.
   const pollOperationId=trialSnap?.pendingOperation?.pollable===true?trialSnap.pendingOperation.id:null;
   useEffect(()=>{
     if(step!=='test'||!pollOperationId||!isCurrent())return;
@@ -267,9 +267,9 @@ function StepHost(props: PaidSetupStepHostProps) {
         if(result.snapshot.pendingOperation?.pollable!==true){reader?.invalidate(['trial','workspace']);onRefresh?.();return;}
       }
       // Bound background traffic; the existing Refresh status control resumes it.
-      if(checks<24)timer=setTimeout(()=>void poll(),5_000);
+      if(checks<60)timer=setTimeout(()=>void poll(),5_000);
     };
-    timer=setTimeout(()=>void poll(),5_000);
+    timer=setTimeout(()=>void poll(),0);
     return()=>{active=false;clearTimeout(timer);};
   },[step,pollOperationId,targetScope,isCurrent,readVersion,reader,onRefresh]);
 

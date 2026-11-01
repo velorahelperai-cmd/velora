@@ -480,16 +480,19 @@ export async function askOwnedBranchAssistantTrialAction(
 
 /** Recover a persisted response only. This action never dispatches an AI request. */
 export async function recoverOwnedBranchAssistantTrialAction(input: TrialScope & {operationId:string}):Promise<AssistantTrialAskResult>{
+  const recoveryStartedAt=Date.now();
   if(!validScope(input)||!UUID.test(input.operationId))return {ok:false,code:"INVALID_INPUT",message:"Invalid recovery scope"};
+  const isolated=getIsolatedTrialConfig();
+  if(isolated.restricted&&(!isolated.isComplete||input.branchId!==isolated.pinnedBranchId))return {ok:false,code:'UNAVAILABLE',message:'Recovery scope unavailable'};
   const identity=await readSessionIdentity();
   if(!identity.ok||identity.userId!==input.expectedAccountId||!UUID.test(identity.nativeSessionId||""))return {ok:false,code:"UNAUTHENTICATED",message:"A current session is required"};
-  const snapshot=await readOwnedBranchAssistantTrialAction(input);
-  if(!snapshot)return {ok:false,code:"UNAVAILABLE",message:"Branch authority could not be verified"};
+  // The owner/session/branch-checked load RPC is the retrieval authority.
+  // A full transcript/readiness projection is needed only after a terminal result.
   const writer=createAdminClient();if(!writer)return {ok:false,code:"UNAVAILABLE",message:"Recovery is unavailable"};
   const binding={p_operation_id:input.operationId,p_account_id:identity.userId,p_session_id:identity.nativeSessionId,p_company_id:input.companyId,p_branch_id:input.branchId};
   const loaded=await Promise.resolve(writer.rpc('es02_load_trial_provider' as never,binding as never)).catch(()=>null);
   const durable=loaded?.data as unknown as {ok?:boolean;submissionUnknown?:boolean;data?:{handle:TrialProviderHandle;question:string;sessionId:string;pricing:ReturnType<typeof realModelPricing>;state:string;checkpoint:boolean}|null};
-  logEvent('info','es02.branch_assistant_trial.retrieve_binding',{operation_id:input.operationId,authorized:durable?.ok===true,has_handle:!!durable?.data,state:durable?.data?.state??null});
+  logEvent('info','es02.branch_assistant_trial.retrieve_binding',{operation_id:input.operationId,authorized:durable?.ok===true,has_handle:!!durable?.data,state:durable?.data?.state??null,duration_ms:Date.now()-recoveryStartedAt});
   if(!loaded||loaded.error||durable?.ok!==true)return {ok:false,code:'TRIAL_PENDING',message:'Provider recovery authority unavailable'};
   if(durable.submissionUnknown){const fresh=await readOwnedBranchAssistantTrialAction(input);return fresh?{ok:true,snapshot:fresh}:{ok:false,code:'TRIAL_PENDING',message:'Submission outcome remains unknown'};}
   const stored=durable.data;
@@ -497,7 +500,7 @@ export async function recoverOwnedBranchAssistantTrialAction(input: TrialScope &
     const provider=getAnswerProvider();
     if(!provider?.retrieveTrial)return {ok:false,code:'TRIAL_PENDING',message:'Provider retrieval unavailable'};
     const completion=await provider.retrieveTrial(stored.handle).catch(()=>null);
-    if(!completion||'pending'in completion)return {ok:true,snapshot};
+    if(!completion||'pending'in completion)return {ok:false,code:'TRIAL_PENDING',message:'Saved provider request is still in progress'};
     const usage=completion.usage;
     let priced:{usage:{promptTokens:number;completionTokens:number;cachedTokens:number;reasoningTokens:number;cacheWriteTokens:number;totalTokens:number};costUsd:number;costBaisa:number}|null=null;
     try{
