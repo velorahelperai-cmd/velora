@@ -1,4 +1,4 @@
-// Atomic setup-trial budget cap on a disposable, network-less PostgreSQL container.
+// Bounded continuation with preserved unknown holds on isolated PostgreSQL.
 // The real migrated RPC bodies run; auth/context/settlement are labelled dependency doubles.
 // This proves cap atomicity, unknown-hold accounting and cost/reply separation; it is NOT hosted RLS
 // acceptance and does not exercise private.ai_settle_admin (reviewed statically instead).
@@ -20,7 +20,6 @@ const reserve=(op,reserved)=>`select public.es02_reserve_branch_trial(${args(op,
 const capped=(op,reserved,cap)=>`select public.es02_reserve_branch_trial_capped(${args(op,reserved)},${cap})`;
 const run=async q=>JSON.parse(await sql(`set role service_role;${q}`));
 const snapshot=()=>sql(`set role authenticated;select public.es02_read_owned_branch_assistant_trial('${a}','${c}','${b}')`).then(s=>JSON.parse(s).data.snapshot);
-const settle=(op,status,cost)=>sql(`update ai_usage_ledger set status='${status}',cost_baisa=${cost} where id='${op}'`);
 try{
  await exec('docker',['image','inspect',image],{windowsHide:true});
  id=(await exec('docker',['run','--detach','--name',name,'--label','velora.task=trial-continuation','--network','none','--log-driver','none','--tmpfs','/var/lib/postgresql/data:rw,size=128m','--memory','256m','-e','POSTGRES_HOST_AUTH_METHOD=trust',image],{windowsHide:true})).stdout.trim();
@@ -71,6 +70,8 @@ try{
  assert.equal((await snapshot()).trialAllowance.used,0);assert.equal(await sql('select held_baisa from ai_budget_accounts'),'40');
  await sql(`update ai_usage_ledger set status='rejected',cost_baisa=0;update ai_budget_accounts set held_baisa=0,limit_baisa=13;`);
  assert.equal((await run(reserve(randomUUID(),4))).code,'BUDGET_EXCEEDED','global budget protection is preserved');
+ await sql('update ai_budget_accounts set limit_baisa=1000');
+ assert.equal((await run(capped(randomUUID(),4,2))).code,'TRIAL_BUDGET_EXCEEDED','configured branch caps still apply');
  await assert.rejects(sql(`set role authenticated;${reserve(randomUUID(),4)}`),/permission denied/);
  console.log('PASS: aged uncertainty preserves hold/cost, bounded continuation, replay denial, active/recent/checkpoint guards, atomic concurrency, quota and budget/ACL. Native auth/context dependencies are fixtures; not hosted acceptance.');
 }finally{if(id)await exec('docker',['rm','-f',id],{windowsHide:true}).catch(()=>{});}
