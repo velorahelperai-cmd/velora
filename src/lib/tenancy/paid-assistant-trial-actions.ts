@@ -112,6 +112,7 @@ export async function askOwnedBranchAssistantTrialAction(
   input: TrialScope & { expectedVersion: number; knowledgeRevision: string; question: string; operationId?: string }
 ): Promise<AssistantTrialAskResult> {
   const requestId = randomUUID();
+  const requestStartedAt=Date.now();
   return withLogContext({ request_id: requestId, user_id: input?.expectedAccountId }, async () => {
     if (!validScope(input)) {
       return { ok: false, code: "INVALID_INPUT", message: "Invalid trial parameters" };
@@ -190,20 +191,24 @@ export async function askOwnedBranchAssistantTrialAction(
     const writer = createAdminClient();
     if (!persona || !writer) return { ok: false, code: "UNAVAILABLE", message: "Verified answer profile and trusted receipt writer are required" };
 
-    // 2. Load branch hours from B4
-    const hours = await readOwnedBranchHoursAction({
-      expectedAccountId: input.expectedAccountId,
-      companyId: input.companyId,
-      branchId: input.branchId,
-    });
+    // Independent, owner-authorized reads: no financial or provider mutations here.
+    const contextStartedAt=Date.now();
+    const [hoursRead,knowledgeRead,trialRead,languageRead]=await Promise.allSettled([
+      readOwnedBranchHoursAction(input),
+      loadApprovedBranchKnowledgeContext(input.companyId,input.branchId),
+      readOwnedBranchAssistantTrialAction(input),
+      readOwnedBranchReplyLanguageAction(input),
+    ]);
+    logEvent('info','es02.branch_assistant_trial.context_ready',{request_id:requestId,duration_ms:Date.now()-contextStartedAt});
+    const hours=hoursRead.status==='fulfilled'?hoursRead.value:null;
 
-    if (!hours.ok || !hours.snapshot) return { ok: false, code: "UNAVAILABLE", message: "Branch hours could not be verified" };
+    if (!hours?.ok || !hours.snapshot) return { ok: false, code: "UNAVAILABLE", message: "Branch hours could not be verified" };
     const hoursRev = hours.snapshot.version;
     const hoursChunkText = branchHoursAssistantContext(hours.snapshot);
     if (!hoursChunkText) return {ok:false,code:"UNAVAILABLE",message:"Branch hours are invalid or unavailable"};
 
     // 3. Load approved branch knowledge (indexed website pages + approved sources)
-    const knowledgeContext = await loadApprovedBranchKnowledgeContext(input.companyId, input.branchId);
+    const knowledgeContext = knowledgeRead.status==='fulfilled'?knowledgeRead.value:{ok:false as const,code:'UNAVAILABLE'};
     if (!knowledgeContext.ok || knowledgeContext.chunks.length === 0) {
       const code = !knowledgeContext.ok ? knowledgeContext.code : "NO_KNOWLEDGE";
       logEvent("warn", "es02.branch_assistant_trial.knowledge_unavailable", {
@@ -215,7 +220,7 @@ export async function askOwnedBranchAssistantTrialAction(
       return { ok: false, code, message: "Approved knowledge could not be verified", requestId };
     }
     // Validate the disclosed context before reserving allowance or spending a provider request.
-    const trial = await readOwnedBranchAssistantTrialAction(input);
+    const trial = trialRead.status==='fulfilled'?trialRead.value:null;
     if (!trial) return { ok: false, code: "UNAVAILABLE", message: "Trial context could not be verified", requestId };
     if (trial.scope?.expectedAccountId !== input.expectedAccountId || trial.scope?.companyId !== input.companyId ||
         trial.scope?.branchId !== input.branchId || trial.version !== input.expectedVersion ||
@@ -242,11 +247,7 @@ export async function askOwnedBranchAssistantTrialAction(
     }
 
     // 4. Branch confirmed reply language
-    const langRes = await readOwnedBranchReplyLanguageAction({
-      expectedAccountId: input.expectedAccountId,
-      companyId: input.companyId,
-      branchId: input.branchId,
-    });
+    const langRes = languageRead.status==='fulfilled'?languageRead.value:null;
     if (!langRes || !["ar", "en", "both"].includes(langRes.replyLanguage || "")) return { ok: false, code: "UNAVAILABLE", message: "Confirmed reply language could not be verified", requestId };
     const locale: "ar" | "en" = langRes.replyLanguage === "en" || (langRes.replyLanguage === "both" && !/[\u0600-\u06ff]/.test(input.question)) ? "en" : "ar";
 
@@ -259,7 +260,15 @@ export async function askOwnedBranchAssistantTrialAction(
     let providerInputTokens: number | undefined;
     if (provider.countInputTokens) {
       let counted: number | null = null;
-      try { counted = await provider.countInputTokens({ question: input.question.trim(), locale, chunks, persona }); } catch { counted = null; }
+      const countAbort=new AbortController();let timer:ReturnType<typeof setTimeout>|undefined;
+      const countStartedAt=Date.now();
+      try {
+        counted=await Promise.race([
+          provider.countInputTokens({question:input.question.trim(),locale,chunks,persona,timeoutMs:3000,signal:countAbort.signal}),
+          new Promise<null>(resolve=>{timer=setTimeout(()=>{countAbort.abort();resolve(null);},3000);}),
+        ]);
+      }catch{counted=null;}finally{clearTimeout(timer);countAbort.abort();}
+      logEvent('info','es02.branch_assistant_trial.token_count',{request_id:requestId,duration_ms:Date.now()-countStartedAt,counted:counted!==null});
       if (counted !== null && Number.isSafeInteger(counted) && counted >= 1) {
         providerInputTokens = counted;
       } else {
@@ -396,6 +405,7 @@ export async function askOwnedBranchAssistantTrialAction(
           if(!await settle('rejected'))return PENDING;
           return {ok:false,code:'UNAVAILABLE',message:'Provider request was not dispatched'};
         }
+        logEvent('info','es02.branch_assistant_trial.dispatch_ready',{request_id:requestId,operation_id:operationId,duration_ms:Date.now()-requestStartedAt});
         const started=await provider.startTrial(providerInput);
         if('pending'in started){
           const attach=()=>Promise.resolve(writer.rpc('es02_attach_trial_provider' as never,{
@@ -406,8 +416,10 @@ export async function askOwnedBranchAssistantTrialAction(
           if(!attached||attached.error||(attached.data as unknown as {ok?:boolean})?.ok!==true)attached=await attach();
           // An ambiguous DB acknowledgement must not erase a handle that may have saved.
           if(!attached||attached.error||(attached.data as unknown as {ok?:boolean})?.ok!==true)return {ok:false,code:'TRIAL_PENDING',message:'Provider handle persistence needs recovery; do not resend'};
-          const snapshot=await readOwnedBranchAssistantTrialAction(input).catch(()=>null);
-          return snapshot?{ok:true,snapshot}:{ok:false,code:'TRIAL_PENDING',message:'Saved provider request awaits retrieval'};
+          logEvent('info','es02.branch_assistant_trial.handle_ready',{request_id:requestId,operation_id:operationId,duration_ms:Date.now()-requestStartedAt});
+          // Reservation + immutable attachment already confirmed this running operation.
+          // Reuse the checked transcript; only terminal recovery refreshes receipts/counter.
+          return {ok:true,snapshot:{...trial,canAsk:false,pendingOperation:{id:operationId,status:'running',recoverable:false,blocksNewRequests:true,pollable:true}}};
         }
         completion=started;
       }else completion=await provider.complete(providerInput);

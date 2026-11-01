@@ -82,7 +82,7 @@ export class GeminiAnswerAdapter implements AnswerProvider {
       const res = await this.client.models.countTokens({
         model: this.modelId,
         contents: userPrompt,
-        config: { httpOptions: { extraBody: {
+        config: { abortSignal: input.signal, httpOptions: { timeout: input.timeoutMs ?? 30_000, extraBody: {
           contents: undefined,
           generateContentRequest: {
             model: `models/${this.modelId}`,

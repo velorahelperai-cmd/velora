@@ -675,13 +675,42 @@ describe("trial budget cap, billed-but-unusable calls and settlement failure", (
     expect(called('ai_settle_admin_attempt')).toHaveLength(0);
   });
 
-  it('keeps a saved provider handle running when the following snapshot read fails',async()=>{
+  it('returns the confirmed pending operation without another full snapshot read',async()=>{
     setup();
     const handle={id:'int_fixture',modelId:'gemini-3.5-flash-lite' as const,startedAt:1,promptChars:10,contextChars:20,sourceCount:1};
     const startTrial=vi.fn(async()=>{rpcMock.mockRejectedValue(new Error('read offline'));return {pending:true as const,handle};});
     setAnswerProviderForTesting({id:'p',complete:vi.fn(),startTrial});
-    expect(await askOwnedBranchAssistantTrialAction(input)).toMatchObject({ok:false,code:'TRIAL_PENDING'});
+    expect(await askOwnedBranchAssistantTrialAction(input)).toMatchObject({ok:true,snapshot:{canAsk:false,pendingOperation:{status:'running',pollable:true},messages:[]}});
     expect(called('ai_settle_admin_attempt')).toHaveLength(0);
+  });
+
+  it('starts independent context reads before a slow hours read finishes, without early dispatch',async()=>{
+    setup();
+    const hours=vi.mocked((await import('./branch-hours-actions')).readOwnedBranchHoursAction);
+    const knowledge=vi.mocked((await import('./paid-branch-knowledge-actions')).loadApprovedBranchKnowledgeContext);
+    const language=vi.mocked((await import('./paid-reply-language-actions')).readOwnedBranchReplyLanguageAction);
+    const snapshot=await hours(input);knowledge.mockClear();language.mockClear();
+    let entered!:()=>void,finish!:(value:typeof snapshot)=>void;
+    const began=new Promise<void>(resolve=>{entered=resolve;});
+    hours.mockImplementationOnce(()=>{entered();return new Promise(resolve=>{finish=resolve;});});
+    const complete=failingProvider();setAnswerProviderForTesting({id:'p',complete});
+    const result=askOwnedBranchAssistantTrialAction(input);await began;
+    expect(knowledge).toHaveBeenCalledOnce();expect(language).toHaveBeenCalledOnce();expect(complete).not.toHaveBeenCalled();expect(called('es02_reserve_branch_trial_capped')).toHaveLength(0);
+    finish(snapshot);await result;
+  });
+
+  it('bounds stalled token counting to three seconds without retrying or weakening the reservation',async()=>{
+    setup();vi.useFakeTimers();
+    let entered!:()=>void;const counting=new Promise<void>(resolve=>{entered=resolve;});let signal:AbortSignal|undefined;
+    const countInputTokens=vi.fn(async(request:Parameters<NonNullable<AnswerProvider['countInputTokens']>>[0])=>{signal=request.signal;entered();return new Promise<null>(()=>{});});
+    const complete=failingProvider();setAnswerProviderForTesting({id:'p',complete,countInputTokens});
+    try{
+      const result=askOwnedBranchAssistantTrialAction(input);await counting;
+      await vi.advanceTimersByTimeAsync(2999);expect(complete).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);await result;
+      expect(signal?.aborted).toBe(true);expect(countInputTokens).toHaveBeenCalledOnce();expect(complete).toHaveBeenCalledOnce();
+      expect(called('es02_reserve_branch_trial_capped')[0].p_reserved_baisa).toBeGreaterThan(0);
+    }finally{vi.useRealTimers();}
   });
 
   it("prices an empty/truncated provider result as incomplete and never counts it as a reply", async () => {
