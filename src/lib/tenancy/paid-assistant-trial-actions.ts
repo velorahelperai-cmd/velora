@@ -6,7 +6,7 @@ import { readSessionIdentity } from "@/lib/auth/server-identity";
 import { logEvent, withLogContext } from "@/lib/logging/logger.mjs";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getGeminiModelId } from "@/lib/answers/config/env";
+const SETUP_TRIAL_MODEL = "gemini-3.5-flash-lite" as const;
 import {matchesRequestedModel} from '@/lib/answers/adapters/response-identity';
 import type { AnswerResult, AnswerPersona, TrialProviderHandle } from "@/lib/answers/types";
 import type {
@@ -157,7 +157,7 @@ export async function askOwnedBranchAssistantTrialAction(
     }
     // 1. Provider + live kill switch before any reservation. Explicit AI_LIVE_ANSWERING=false
     // wins over key presence (see isLiveAnsweringEnabled contract).
-    const provider = getAnswerProvider();
+    const provider = getAnswerProvider(SETUP_TRIAL_MODEL);
     if (!provider) {
       logEvent("warn", "es02.branch_assistant_trial.missing_provider", {
         request_id: requestId,
@@ -185,8 +185,8 @@ export async function askOwnedBranchAssistantTrialAction(
 
     const personaByLevel: Record<string, AnswerPersona> = { level_1: "noura", level_2: "lina", level_3: "dana" };
     const persona = personaByLevel[gate.data?.persona || ""];
-    const configuredModel = getGeminiModelId();
-    if (configuredModel !== "gemini-3.8-flash" || !UUID.test(identity.nativeSessionId || "")) return { ok: false, code: "UNAVAILABLE", message: "Approved model and native session are required" };
+    const configuredModel = SETUP_TRIAL_MODEL;
+    if (!UUID.test(identity.nativeSessionId || "")) return { ok: false, code: "UNAVAILABLE", message: "Approved model and native session are required" };
     const writer = createAdminClient();
     if (!persona || !writer) return { ok: false, code: "UNAVAILABLE", message: "Verified answer profile and trusted receipt writer are required" };
 

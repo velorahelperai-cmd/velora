@@ -30,7 +30,7 @@ export const USD_TO_BAISA_RATE = 1000 / 2.6008;
 function tier(modelId: AIModelId): ModelPricingTier {
   const rates = realModelPricing(modelId, new Date(`${PRICING_EFFECTIVE_DATE}T00:00:00Z`));
   return {
-    modelId, provider: modelId === "gemini-3.8-flash" ? "google" : "openai", displayName: modelId,
+    modelId, provider: modelId.startsWith("gemini-") ? "google" : "openai", displayName: modelId,
     effectiveDate: rates.effectiveDate, version: rates.version, source: rates.source,
     promptUsdPerMillion: rates.input, completionUsdPerMillion: rates.output,
     cachedUsdPerMillion: rates.cached, cacheWriteUsdPerMillion: rates.write,
@@ -45,6 +45,7 @@ function tier(modelId: AIModelId): ModelPricingTier {
 
 export const MODEL_PRICING_CATALOG: Record<AIModelId, ModelPricingTier> = {
   "gpt-6-luna": tier("gpt-6-luna"),
+  "gemini-3.5-flash-lite": tier("gemini-3.5-flash-lite"),
   "gemini-3.8-flash": tier("gemini-3.8-flash"),
   "gpt-6.1-sol": tier("gpt-6.1-sol"),
 };

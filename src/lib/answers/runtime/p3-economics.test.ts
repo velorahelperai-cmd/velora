@@ -75,3 +75,9 @@ describe("verified Standard model economics", () => {
     expect(counted).toBeLessThan(byBytes);
   });
 });
+
+it('prices Flash-Lite separately without changing retained Flash snapshots',()=>{
+ const lite=realModelPricing('gemini-3.5-flash-lite',new Date('2026-11-01'));
+ expect(lite).toMatchObject({input:0.30,cached:0.03,output:2.50,longContextThreshold:null,version:'verified-2026-11-01'});
+ expect(realModelPricing('gemini-3.8-flash',new Date('2026-11-01')).output).toBe(3.75);
+});

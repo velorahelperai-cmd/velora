@@ -26,7 +26,7 @@ export interface ModelAvailabilityCheckResult {
 
 export interface DiagnosticsSummary {
   allConfigured: boolean;
-  results: Record<AIModelId, ModelAvailabilityCheckResult>;
+  results: Record<Exclude<AIModelId, "gemini-3.5-flash-lite">, ModelAvailabilityCheckResult>;
   checkedAt: string;
 }
 

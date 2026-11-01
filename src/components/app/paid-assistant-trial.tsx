@@ -13,6 +13,7 @@ export type TrialMessage={id:string;executionId?:string|null;scope:TrialScope;ve
 /** UI-only host projection; neither an answer nor local acknowledgement grants readiness. */
 export type TrialSnapshot={scope:TrialScope;version:number;knowledgeRevision:string;branchLabel:string;businessType:string;canAsk:boolean|null;providerFailure?:boolean;handoffPreview?:"human_request"|"sensitive";recoveryNotice?:"context_changed";trialAllowance?:{limit:number;used:number};pendingOperation?:{id:string;status:string;recoverable:boolean;blocksNewRequests?:boolean;pollable?:boolean;providerFailed?:boolean}|null;messages:TrialMessage[]};
 export type PaidAssistantTrialProps={
+ partialReply?:{operationId:string;text:string}|null;
  onRecover?:(operationId:string)=>void|Promise<void>;
  /** Compatibility callback only; uncertain holds cannot be released without evidence. */
  onRelease?:(operationId:string)=>void|Promise<void>;
@@ -96,7 +97,7 @@ function TrialForm(p:PaidAssistantTrialProps & {snapshot:TrialSnapshot}){
   if(!stickToBottom.current||!endRef.current)return;
   const reduce=typeof window!=="undefined"&&typeof window.matchMedia==="function"&&window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   try{endRef.current.scrollIntoView({block:"nearest",behavior:reduce?"auto":"smooth"});}catch{/* jsdom may lack scrollIntoView */}
- },[p.snapshot.messages,submitted,pending,p.state.phase]);
+ },[p.snapshot.messages,submitted,pending,p.state.phase,p.partialReply?.text]);
 
  const limitReached=!!p.snapshot.trialAllowance&&p.snapshot.trialAllowance.limit>0&&p.snapshot.trialAllowance.used>=p.snapshot.trialAllowance.limit;
  // Error/unknown never reopen free Send. Retry is a separate control gated on
@@ -111,6 +112,7 @@ function TrialForm(p:PaidAssistantTrialProps & {snapshot:TrialSnapshot}){
  const personaName=persona?PERSONA_NAMES[persona][ar?"ar":"en"]:t("المساعد","Assistant");
  const allowance=p.snapshot.trialAllowance;
  const messages=p.snapshot.messages.filter(m=>same(p.scope,m.scope)&&m.version===p.snapshot.version&&m.knowledgeRevision===p.snapshot.knowledgeRevision);
+ const hasPartial=!!p.partialReply?.text&&p.partialReply.operationId===p.snapshot.pendingOperation?.id;
  const waiting=pending||p.state.phase==="pending";
  const showOptimistic=!!submitted&&!messages.some(message=>message.question===submitted);
  const failedRetained=(p.state.phase==="error"||p.state.phase==="unknown"||uncertain)&&showOptimistic?submitted:null;
@@ -184,8 +186,8 @@ function TrialForm(p:PaidAssistantTrialProps & {snapshot:TrialSnapshot}){
     </div>
    )}
 
-   <div ref={logRef} className={styles.transcript} data-empty={!submitted&&!messages.length&&!waiting?"true":undefined} role="log" aria-live="polite" aria-relevant="additions text" aria-label={t("محادثة التجربة","Trial conversation")} onScroll={onLogScroll}>
-    {!submitted&&!messages.length&&!waiting&&(
+   <div ref={logRef} className={styles.transcript} data-empty={!submitted&&!messages.length&&!waiting&&!hasPartial?"true":undefined} role="log" aria-live="polite" aria-relevant="additions text" aria-label={t("محادثة التجربة","Trial conversation")} onScroll={onLogScroll}>
+    {!submitted&&!messages.length&&!waiting&&!hasPartial&&(
      <div className={styles.emptyState}>
       <p className={styles.empty}>{t("اكتب سؤالًا أو اختر اقتراحًا لتجربة رد المساعد.","Write a question or choose a suggestion to test your assistant's reply.")}</p>
      </div>
@@ -218,10 +220,16 @@ function TrialForm(p:PaidAssistantTrialProps & {snapshot:TrialSnapshot}){
       <div className={styles.bubbleUser}><p dir="auto">{submitted}</p></div>
       {waiting&&<div className={styles.typing} role="status"><span/><span/><span/><span className={styles.srOnly}>{t("جارٍ توليد الرد…","Generating a reply…")}</span></div>}
       {!waiting&&p.state.phase==="error"&&<p role="status" className={styles.statusLine}>{t("تعذّر إتمام الرد على هذا السؤال. تم الاحتفاظ بسؤالك لإعادة المحاولة.","Could not complete the reply. Your question is retained so you can retry.")}</p>}
-      {!waiting&&p.state.phase!=="error"&&<p role="status" className={styles.statusLine}>{p.snapshot.pendingOperation?.pollable?t("جارٍ متابعة الرد المحفوظ…","Retrieving the saved request…"):t("لم تتأكد نتيجة هذا السؤال بعد.","This question has no confirmed result yet.")}</p>}
+      {!waiting&&!hasPartial&&p.state.phase!=="error"&&<p role="status" className={styles.statusLine}>{p.snapshot.pendingOperation?.pollable?t("جارٍ متابعة الرد المحفوظ…","Retrieving the saved request…"):t("لم تتأكد نتيجة هذا السؤال بعد.","This question has no confirmed result yet.")}</p>}
      </div>
     )}
     {waiting&&!showOptimistic&&<div className={styles.typing} role="status"><span/><span/><span/><span className={styles.srOnly}>{t("جارٍ توليد الرد…","Generating a reply…")}</span></div>}
+    {p.partialReply?.operationId===p.snapshot.pendingOperation?.id&&p.partialReply?.text&&(
+     <div className={styles.bubbleAssistant} aria-busy="true">
+      <p dir="auto">{p.partialReply.text}</p>
+      <small>{t("جارٍ إكمال الرد والتحقق منه…","Completing and verifying the reply…")}</small>
+     </div>
+    )}
     <div ref={endRef}/>
    </div>
 

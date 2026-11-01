@@ -28,7 +28,7 @@ export type AnswerContextChunk = {
 
 export type AnswerPersona = "noura" | "lina" | "dana";
 
-export type AIModelId = "gpt-6-luna" | "gpt-6.1-sol" | "gemini-3.8-flash";
+export type AIModelId = "gpt-6-luna" | "gpt-6.1-sol" | "gemini-3.8-flash" | "gemini-3.5-flash-lite";
 export type AIProviderName = "openai" | "google";
 
 export type AnswerUsage = {
@@ -117,6 +117,7 @@ export type AnswerProvider = {
   /** Provider-authoritative input token count of the complete request; null when unverifiable. */
   countInputTokens?(input: AnswerProviderRequest): Promise<number | null>;
   startTrial?(input: AnswerProviderRequest): Promise<TrialProviderResult>;
+  streamTrial?(handle: TrialProviderHandle, signal: AbortSignal): AsyncIterable<string>;
   retrieveTrial?(handle: TrialProviderHandle): Promise<TrialProviderResult>;
 };
 

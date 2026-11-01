@@ -147,3 +147,10 @@ it('permits an explicitly authorized new question while keeping an old unknown v
   expect(Array.from(host.querySelectorAll('button')).find(b=>b.textContent==='What are the working hours?')!.disabled).toBe(true);
  }finally{await act(async()=>root.unmount());vi.unstubAllGlobals();}
 });
+
+it('renders an Arabic partial reply without counting it or enabling another question',()=>{
+ const snapshot={...props.snapshot!,canAsk:false,trialAllowance:{used:1,limit:10},pendingOperation:{id:'stream-op',status:'running',recoverable:false,pollable:true}};
+ const html=render({locale:'ar',snapshot,partialReply:{operationId:'stream-op',text:'الأحد إلى الخميس 10:00–14:00'}});
+ expect(html).toContain('الأحد إلى الخميس');expect(html).toContain('aria-busy="true"');expect(html).toContain('1/10');expect(html).not.toContain('2/10');
+ expect(render({snapshot,partialReply:{operationId:'foreign-op',text:'FOREIGN_SECRET'}})).not.toContain('FOREIGN_SECRET');
+});

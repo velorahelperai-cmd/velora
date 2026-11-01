@@ -126,7 +126,7 @@ describe("P3 routing and paid retry boundaries", () => {
   });
 
   it("cannot configure a downgrade for an advanced task", () => {
-    const router = new MultiModelAIRouter({ config: { fallbackOrder: { "gpt-6-luna": [], "gemini-3.8-flash": ["gpt-6-luna", "gpt-6.1-sol"], "gpt-6.1-sol": ["gpt-6-luna"] }, maxAttempts: 3 } });
+    const router = new MultiModelAIRouter({ config: { fallbackOrder: { "gemini-3.5-flash-lite": [], "gpt-6-luna": [], "gemini-3.8-flash": ["gpt-6-luna", "gpt-6.1-sol"], "gpt-6.1-sol": ["gpt-6-luna"] }, maxAttempts: 3 } });
     expect(router.getEligibleModels({ ...request, question: "Compare the product specifications" })).toEqual(["gemini-3.8-flash", "gpt-6.1-sol"]);
   });
 

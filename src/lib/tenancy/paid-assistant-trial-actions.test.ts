@@ -469,16 +469,16 @@ describe("paid-assistant-trial-actions", () => {
             cachedTokens: 0,
             reasoningTokens: 0,
             totalTokens: 45,
-            modelId: "gemini-3.8-flash",
+            modelId: "gemini-3.5-flash-lite",
             provider: "google",
             estimatedCostBaisa: 1,
             estimatedCostUsd: 0.001,
             requestId: "req-123",
             responseId: "req-123",
-            actualModelId: "gemini-3.8-flash",
+            actualModelId: "gemini-3.5-flash-lite",
             latencyMs: 1,
           },
-          modelId: "gemini-3.8-flash",
+          modelId: "gemini-3.5-flash-lite",
           attemptsCount: 1,
         };
       }),
@@ -588,7 +588,7 @@ describe("consolidated trial replay receipt", () => {
   it.each(["different operation", "missing operation", "different question", "different branch", "synthetic"])("does not attest a completed provider request from a %s message", async (mismatch) => {
     currentSessionId = VALID_ACCOUNT_ID;
     trustedAvailable = true;
-    const message = { id: "receipt", executionId: operationId, scope, version: 1, knowledgeRevision: "rev_1", question: input.question, origin: "engine", result: { ok: true, text: "Stored answer", modelId: "gemini-3.8-flash", citations: [] } };
+    const message = { id: "receipt", executionId: operationId, scope, version: 1, knowledgeRevision: "rev_1", question: input.question, origin: "engine", result: { ok: true, text: "Stored answer", modelId: "gemini-3.5-flash-lite", citations: [] } };
     const altered = mismatch === "different operation" ? { ...message, executionId: VALID_ACCOUNT_ID }
       : mismatch === "missing operation" ? { ...message, executionId: undefined }
       : mismatch === "different question" ? { ...message, question: "Another question" }
@@ -606,7 +606,7 @@ describe("consolidated trial replay receipt", () => {
   it("returns the matching stored operation without calling the provider again", async () => {
     currentSessionId = VALID_ACCOUNT_ID;
     trustedAvailable = true;
-    const snapshot = { scope, version: 1, knowledgeRevision: "rev_1", messages: [{ id: "receipt", executionId: operationId, scope, version: 1, knowledgeRevision: "rev_1", question: input.question, origin: "engine", result: { ok: true, text: "Stored answer", modelId: "gemini-3.8-flash", citations: [] } }] };
+    const snapshot = { scope, version: 1, knowledgeRevision: "rev_1", messages: [{ id: "receipt", executionId: operationId, scope, version: 1, knowledgeRevision: "rev_1", question: input.question, origin: "engine", result: { ok: true, text: "Stored answer", modelId: "gemini-3.5-flash-lite", citations: [] } }] };
     rpcMock = vi.fn().mockResolvedValue({ data: { ok: true, data: { persona: "level_2", snapshot } }, error: null });
     trustedRpc = vi.fn().mockResolvedValue({ data: { ok: true, newlyReserved: false, state: "success" }, error: null });
     const complete = vi.fn(async (): Promise<AnswerResult> => ({ ok: false, code: "UNAVAILABLE", message: "test provider must not run" }));
@@ -618,7 +618,7 @@ describe("consolidated trial replay receipt", () => {
 
 describe("trial budget cap, billed-but-unusable calls and settlement failure", () => {
   const input = { expectedAccountId: VALID_ACCOUNT_ID, companyId: VALID_COMPANY_ID, branchId: VALID_BRANCH_ID, expectedVersion: 1, knowledgeRevision: "rev_1", question: "ما مواعيد العمل؟" };
-  const usage: AnswerUsage = { promptChars: 1, contextChars: 1, sourceCount: 1, promptTokens: 600, completionTokens: 256, cachedTokens: 0, reasoningTokens: 100, totalTokens: 856, modelId: "gemini-3.8-flash", provider: "google", requestId: "r1", responseId: "r1", actualModelId: "gemini-3.8-flash", latencyMs: 5 };
+  const usage: AnswerUsage = { promptChars: 1, contextChars: 1, sourceCount: 1, promptTokens: 600, completionTokens: 256, cachedTokens: 0, reasoningTokens: 100, totalTokens: 856, modelId: "gemini-3.5-flash-lite", provider: "google", requestId: "r1", responseId: "r1", actualModelId: "gemini-3.5-flash-lite", latencyMs: 5 };
   beforeEach(() => {
     vi.stubEnv("AI_LIVE_ANSWERING", "true");
   });
@@ -644,11 +644,11 @@ describe("trial budget cap, billed-but-unusable calls and settlement failure", (
     setAnswerProviderForTesting({ id: "p", complete, countInputTokens: vi.fn(async () => 400) });
     await askOwnedBranchAssistantTrialAction(input);
     // Reserve the same ceiling sent to the provider, including reasoning output.
-    expect(called("es02_reserve_branch_trial_capped")[0].p_reserved_baisa).toBeCloseTo(((400 * 0.75 + 512 * 3.75) / 1e6) * 1.2 * 1000 / 2.6008, 5);
+    expect(called("es02_reserve_branch_trial_capped")[0].p_reserved_baisa).toBeCloseTo(((400 * 0.30 + 512 * 2.50) / 1e6) * 1.2 * 1000 / 2.6008, 5);
   });
 
   it('persists the provider handle before returning and never calls synchronous generation',async()=>{
-    setup();const complete=vi.fn();const handle={id:'int_fixture',modelId:'gemini-3.8-flash' as const,startedAt:1,promptChars:10,contextChars:20,sourceCount:1};
+    setup();const complete=vi.fn();const handle={id:'int_fixture',modelId:'gemini-3.5-flash-lite' as const,startedAt:1,promptChars:10,contextChars:20,sourceCount:1};
     const startTrial=vi.fn(async()=>({pending:true as const,handle}));
     setAnswerProviderForTesting({id:'p',complete,startTrial});
     await askOwnedBranchAssistantTrialAction(input);
@@ -667,7 +667,7 @@ describe("trial budget cap, billed-but-unusable calls and settlement failure", (
 
   it('retries only an ambiguous handle write, preserving the hold after both acknowledgements fail',async()=>{
     setup(async(name,args)=>name==='es02_attach_trial_provider'&&args.p_handle!==null?{data:null,error:{message:'offline'}}:(null as never));
-    const handle={id:'int_fixture',modelId:'gemini-3.8-flash' as const,startedAt:1,promptChars:10,contextChars:20,sourceCount:1};
+    const handle={id:'int_fixture',modelId:'gemini-3.5-flash-lite' as const,startedAt:1,promptChars:10,contextChars:20,sourceCount:1};
     const startTrial=vi.fn(async()=>({pending:true as const,handle}));
     setAnswerProviderForTesting({id:'p',complete:vi.fn(),startTrial});
     expect(await askOwnedBranchAssistantTrialAction(input)).toMatchObject({ok:false,code:'TRIAL_PENDING'});
@@ -677,7 +677,7 @@ describe("trial budget cap, billed-but-unusable calls and settlement failure", (
 
   it('keeps a saved provider handle running when the following snapshot read fails',async()=>{
     setup();
-    const handle={id:'int_fixture',modelId:'gemini-3.8-flash' as const,startedAt:1,promptChars:10,contextChars:20,sourceCount:1};
+    const handle={id:'int_fixture',modelId:'gemini-3.5-flash-lite' as const,startedAt:1,promptChars:10,contextChars:20,sourceCount:1};
     const startTrial=vi.fn(async()=>{rpcMock.mockRejectedValue(new Error('read offline'));return {pending:true as const,handle};});
     setAnswerProviderForTesting({id:'p',complete:vi.fn(),startTrial});
     expect(await askOwnedBranchAssistantTrialAction(input)).toMatchObject({ok:false,code:'TRIAL_PENDING'});

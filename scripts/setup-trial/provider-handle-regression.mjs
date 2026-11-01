@@ -53,5 +53,30 @@ try{
   assert.notEqual(recovered.submissionUnknown,true,`${field} committed while load waited must prevent stale expiry`);
   assert.equal(await sql('select status from ai_usage_ledger'),'running');
  }
+ // New read-only stream RPC, with current-context/session dependencies explicitly mocked.
+ await sql(`alter table private.es02_branch_trial_operations add column native_session_id uuid;
+ create function private.es02_trial_context_current(op private.es02_branch_trial_operations) returns boolean language sql as $$select op.native_session_id='${fresh}'::uuid and op.branch_id='${b}'::uuid$$;
+ update ai_usage_ledger set status='running';update private.es02_branch_trial_operations set provider_handle='${handle}',result_checkpoint=null;`);
+ const streamMigration=await readFile('supabase/migrations/20261101063228_es02_flash_lite_stream.sql','utf8');
+ await sql(streamMigration.slice(streamMigration.indexOf('create function public.es02_read_trial_stream')).replace(/commit;\s*$/, ''));
+ const readStream=(account=a,branch=b)=>`select public.es02_read_trial_stream('${op}','${account}','${fresh}','${c}','${branch}')`;
+ assert.equal((await run(readStream())).handle.modelId,'gemini-3.8-flash');
+ assert.equal((await run(readStream(randomUUID()))).ok,false);
+ assert.equal((await run(readStream(a,randomUUID()))).ok,false);
+ await assert.rejects(sql(`set role authenticated;${readStream()}`),/permission denied/);
+ await sql(`update private.es02_branch_trial_operations set provider_handle=jsonb_set(provider_handle,'{modelId}','"gemini-3.5-flash-lite"');`);
+ assert.equal((await run(readStream())).handle.modelId,'gemini-3.5-flash-lite');
+ await sql(`update ai_usage_ledger set status='uncertain';`);
+ assert.equal((await run(readStream())).handle,null);
+ assert.equal(await sql('select reserved_baisa::text||\',\'||coalesce(cost_baisa::text,\'unknown\') from ai_usage_ledger'),'4.494810,unknown');
+ await sql(`alter table ai_usage_ledger add column model_id text default 'gemini-3.8-flash',add column provider text default 'google',add column worker_job_id uuid;
+ alter table ai_usage_ledger add constraint ai_usage_ledger_model_id_check check(model_id='gemini-3.8-flash');
+ alter table ai_usage_ledger add constraint ai_attempt_provider_model_pair check(provider='google');`);
+ await sql(streamMigration.slice(streamMigration.indexOf('alter table public.ai_usage_ledger'),streamMigration.indexOf('-- Exact deployed-body guard')));
+ await sql(`update ai_usage_ledger set model_id='gemini-3.5-flash-lite';`);
+ await assert.rejects(sql(`update ai_usage_ledger set usage_mode='company_live'`),/ai_attempt_provider_model_pair/);
+ await assert.rejects(sql(`update ai_usage_ledger set worker_job_id='${randomUUID()}'`),/ai_attempt_provider_model_pair/);
+ await assert.rejects(sql(`update ai_usage_ledger set provider='openai'`),/ai_attempt_provider_model_pair/);
+ assert.equal(await sql('select reserved_baisa::text||\',\'||coalesce(cost_baisa::text,\'unknown\') from ai_usage_ledger'),'4.494810,unknown');
  console.log('PASS actual RPCs: immutable handle, current-owner recovery, session binding, browser ACL, no handle disclosure, terminal projection, original hold/cost preserved, concurrent attachment/checkpoint expiry. Auth dependencies are fixtures.');
 }finally{if(id)await exec('docker',['rm','-f',id],{windowsHide:true}).catch(()=>{});}

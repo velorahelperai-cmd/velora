@@ -21,7 +21,7 @@ export interface ClassificationResult {
 }
 
 const MODEL_COMPLEXITY: Record<AIModelId, number> = {
-  "gpt-6-luna": 1, "gemini-3.8-flash": 2, "gpt-6.1-sol": 3,
+  "gemini-3.5-flash-lite": 1, "gpt-6-luna": 1, "gemini-3.8-flash": 2, "gpt-6.1-sol": 3,
 };
 
 export interface RouterConfig {
@@ -71,6 +71,7 @@ export const DEFAULT_ROUTER_CONFIG: RouterConfig = {
   contextCharsThresholdForGemini: 1500,
   chunkCountThresholdForGemini: 3,
   fallbackOrder: {
+    "gemini-3.5-flash-lite": [],
     "gpt-6-luna": ["gemini-3.8-flash", "gpt-6.1-sol"],
     "gemini-3.8-flash": ["gpt-6.1-sol"],
     "gpt-6.1-sol": [],
@@ -185,7 +186,7 @@ export class MultiModelAIRouter implements AnswerProvider {
    * Handles dynamic routing, model dispatch, and fallback retries.
    */
   public async complete(input: AnswerProviderRequest): Promise<AnswerResult> {
-    if (!input.question?.trim() || !Array.isArray(input.chunks) || (input.forceModelId && !Object.hasOwn(MODEL_COMPLEXITY, input.forceModelId))) {
+    if (input.forceModelId === 'gemini-3.5-flash-lite' || !input.question?.trim() || !Array.isArray(input.chunks) || (input.forceModelId && !Object.hasOwn(MODEL_COMPLEXITY, input.forceModelId))) {
       return { ok: false, code: "INVALID_INPUT", providerAttempted: false, retrySafe: false };
     }
     if (input.signal?.aborted) return { ok: false, code: "UNAVAILABLE", message: "Request was cancelled before dispatch.", providerAttempted: false, retrySafe: false };

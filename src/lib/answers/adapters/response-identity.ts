@@ -4,8 +4,8 @@ import type { AIModelId } from "../types";
 export function matchesRequestedModel(actual: unknown, requested: AIModelId): boolean {
   if (actual === undefined || actual === null) return true;
   if (typeof actual !== "string" || !actual.trim()) return false;
-  const normalized = requested === "gemini-3.8-flash" ? actual.replace(/^models\//, "") : actual;
+  const normalized = requested.startsWith("gemini-") ? actual.replace(/^models\//, "") : actual;
   if (normalized === requested) return true;
   const suffix = normalized.startsWith(`${requested}-`) ? normalized.slice(requested.length + 1) : "";
-  return requested === "gemini-3.8-flash" ? /^\d{3}$/.test(suffix) : /^\d{4}-\d{2}-\d{2}$/.test(suffix);
+  return requested.startsWith("gemini-") ? /^\d{3}$/.test(suffix) : /^\d{4}-\d{2}-\d{2}$/.test(suffix);
 }

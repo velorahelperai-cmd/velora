@@ -4,12 +4,13 @@ export const REAL_OUTPUT_LIMIT = 512;
 export const REAL_TIMEOUT_MS = 30_000;
 export type RealTokenUsage = { promptTokens:number; completionTokens:number; cachedTokens:number; reasoningTokens:number; cacheWriteTokens:number; totalTokens?:number };
 export function realModelPricing(model:AIModelId, now=new Date()) {
- if(!["gpt-6-luna","gpt-6.1-sol","gemini-3.8-flash"].includes(model)) throw Error("INVALID_MODEL");
+ if(!["gpt-6-luna","gpt-6.1-sol","gemini-3.8-flash","gemini-3.5-flash-lite"].includes(model)) throw Error("INVALID_MODEL");
  const future=now.toISOString().slice(0,10)>="2027-01-01";
  const rates=model==="gpt-6-luna" ? {input:0.1,cached:0.01,write:0.125,output:0.5}
   :model==="gpt-6.1-sol" ? {input:2,cached:0.1,write:2.5,output:10}
+  :model==="gemini-3.5-flash-lite" ? {input:0.30,cached:0.03,write:0.30,output:2.50}
   :{input:future?1.5:0.75,cached:future?0.15:0.075,write:future?1.5:0.75,output:future?7.5:3.75};
- return {...rates,modelId:model,usdPerOmr:2.6008,version:future&&model==="gemini-3.8-flash"?"verified-2027-01-01":"verified-2026-10-08",effectiveDate:future&&model==="gemini-3.8-flash"?"2027-01-01":"2026-10-08",longContextThreshold:model==="gemini-3.8-flash"?null:272_000,source:model==="gemini-3.8-flash"?"https://ai.google.dev/gemini-api/docs/pricing":`https://developers.openai.com/api/docs/models/${model}`};
+ return {...rates,modelId:model,usdPerOmr:2.6008,version:model==="gemini-3.5-flash-lite"?"verified-2026-11-01":future&&model==="gemini-3.8-flash"?"verified-2027-01-01":"verified-2026-10-08",effectiveDate:model==="gemini-3.5-flash-lite"?"2026-11-01":future&&model==="gemini-3.8-flash"?"2027-01-01":"2026-10-08",longContextThreshold:model.startsWith("gemini-")?null:272_000,source:model.startsWith("gemini-")?"https://ai.google.dev/gemini-api/docs/pricing":`https://developers.openai.com/api/docs/models/${model}`};
 }
 export type RealPricing = ReturnType<typeof realModelPricing>;
 /** Public Standard text tariff only: no tools, regional endpoints, or paid cache storage. */
@@ -40,7 +41,7 @@ export function reserveRealCost(model:AIModelId, system:string, prompt:string, p
  // Otherwise reserve the model's full default ceiling (e.g. 64K for Gemini 3.8 Flash).
  const outputUpperBound = typeof requestedMaxOutputTokens === "number" && Number.isSafeInteger(requestedMaxOutputTokens) && requestedMaxOutputTokens > 0
   ? requestedMaxOutputTokens
-  : (model === "gemini-3.8-flash" ? 65536 : REAL_OUTPUT_LIMIT);
+  : (model.startsWith("gemini-") ? 65536 : REAL_OUTPUT_LIMIT);
  const usd = (inputUpperBound * Math.max(rates.input, rates.write) + outputUpperBound * rates.output) / 1_000_000;
  return Math.ceil(usd * 1.2 * 1000 / pricing.usdPerOmr * 1e6) / 1e6;
 }

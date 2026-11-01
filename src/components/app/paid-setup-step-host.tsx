@@ -30,6 +30,7 @@ import {
   confirmOwnedBranchReplyLanguageAction,
   readOwnedBranchReplyLanguageAction,
 } from "@/lib/tenancy/paid-reply-language-actions";
+import {readTrialStream} from "./trial-stream";
 import { PaidAssistantTrial, type TrialSnapshot } from "./paid-assistant-trial";
 import {
   askOwnedBranchAssistantTrialAction,
@@ -218,6 +219,7 @@ function StepHost(props: PaidSetupStepHostProps) {
   const [trialPhase, setTrialPhase] = useState<"loading" | "ready" | "pending" | "error" | "unknown" | "unavailable">("loading");
   const [trialFailure, setTrialFailure] = useState<AnswerFailure | null>(null);
   const [trialRequestId, setTrialRequestId] = useState<string | null>(null);
+  const [partialReply,setPartialReply]=useState<{operationId:string;text:string;boundary:string}|null>(null);
   const lastTrialQuestionRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -255,23 +257,29 @@ function StepHost(props: PaidSetupStepHostProps) {
   useEffect(()=>{
     if(step!=='test'||!pollOperationId||!isCurrent())return;
     let active=true,checks=0;
+    const controller=new AbortController();const started=Date.now();
     let timer:ReturnType<typeof setTimeout>;
     const poll=async()=>{
       if(!active||!isCurrent())return;
       checks++;
+      // Stream only a persisted, authorized operation. Replayed text replaces itself.
+      await readTrialStream(targetScope,pollOperationId,scope.boundaryFingerprint,controller.signal,text=>{
+        if(active&&isCurrent())setPartialReply(previous=>text===''?null:previous?.operationId===pollOperationId&&previous.boundary===scope.boundaryFingerprint&&previous.text.startsWith(text)?previous:{operationId:pollOperationId,text,boundary:scope.boundaryFingerprint});
+      }).catch(()=>{});
+      if(!active||!isCurrent())return;
       // Retrieval only: this action cannot create another provider generation.
       const result=await awaitSetupRequest(recoverOwnedBranchAssistantTrialAction({...targetScope,operationId:pollOperationId}),40_000).catch(()=>null);
       if(!active||!isCurrent())return;
       if(result?.ok){
         setTrialSnap(result.snapshot);setTrialPhase('ready');setTrialFailure(null);
-        if(result.snapshot.pendingOperation?.pollable!==true){reader?.invalidate(['trial','workspace']);onRefresh?.();return;}
+        if(result.snapshot.pendingOperation?.pollable!==true){setPartialReply(null);reader?.invalidate(['trial','workspace']);onRefresh?.();return;}
       }
       // Bound background traffic; the existing Refresh status control resumes it.
-      if(checks<60)timer=setTimeout(()=>void poll(),5_000);
+      if(checks<60&&Date.now()-started<300_000)timer=setTimeout(()=>void poll(),5_000);
     };
     timer=setTimeout(()=>void poll(),0);
-    return()=>{active=false;clearTimeout(timer);};
-  },[step,pollOperationId,targetScope,isCurrent,readVersion,reader,onRefresh]);
+    return()=>{active=false;controller.abort();clearTimeout(timer);};
+  },[step,pollOperationId,targetScope,isCurrent,readVersion,reader,onRefresh,scope.boundaryFingerprint]);
 
   // 4. Team step
   const [teamSnap, setTeamSnap] = useState<BranchTeamSnapshot | null>(()=>reader?.peek?.('team')??null);
@@ -473,6 +481,7 @@ function StepHost(props: PaidSetupStepHostProps) {
     case "test":
       return (
         <PaidAssistantTrial
+          partialReply={partialReply?.operationId===pollOperationId&&partialReply.boundary===scope.boundaryFingerprint?partialReply:null}
           onRefresh={retryRead}
           onRecover={async operationId => {
             if(!isCurrent())return;

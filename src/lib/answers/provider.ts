@@ -1,7 +1,7 @@
 import "server-only";
 import { GeminiAnswerAdapter } from "@/lib/answers/adapters/gemini";
 import { getSecureProviderKey } from "@/lib/answers/config/env";
-import type { AnswerProvider } from "@/lib/answers/types";
+import type { AnswerProvider, AIModelId } from "@/lib/answers/types";
 
 let providerInstance: AnswerProvider | null = null;
 /** When set (including null), tests pin the provider and skip env-key auto-create. */
@@ -12,8 +12,12 @@ let testingProvider: AnswerProvider | null | undefined = undefined;
  * If no API key is configured, returns null (signals NEEDS_SETUP).
  * Keys are kept strictly server-only and never reach the browser or logs.
  */
-export function getAnswerProvider(): AnswerProvider | null {
+export function getAnswerProvider(modelId?: Extract<AIModelId, "gemini-3.5-flash-lite" | "gemini-3.8-flash">): AnswerProvider | null {
   if (testingProvider !== undefined) return testingProvider;
+  if (modelId) {
+    const apiKey = getSecureProviderKey("google");
+    return apiKey ? new GeminiAnswerAdapter({apiKey,modelId}) : null;
+  }
   if (providerInstance) return providerInstance;
   const apiKey = getSecureProviderKey("google");
   if (!apiKey) return null;

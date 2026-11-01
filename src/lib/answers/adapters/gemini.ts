@@ -7,7 +7,7 @@ import { buildAnswerSystemPrompt, formatAnswerUserPrompt } from "@/lib/answers/a
 import { providerRequestLimits, validTokenCount } from "./request-limits";
 import { matchesRequestedModel } from "./response-identity";
 import { logEvent } from "@/lib/logging/logger.mjs";
-import {startGeminiTrial,retrieveGeminiTrial} from './gemini-interactions';
+import {startGeminiTrial,retrieveGeminiTrial,streamGeminiTrial} from './gemini-interactions';
 import type {TrialProviderHandle,TrialProviderResult} from '../types';
 import type {
   AnswerProvider,
@@ -59,7 +59,10 @@ export class GeminiAnswerAdapter implements AnswerProvider {
 
   public async startTrial(input:AnswerProviderRequest):Promise<TrialProviderResult>{
     if(!this.client||!isLiveAnsweringEnabled())return {ok:false,code:'NEEDS_SETUP',providerAttempted:false,retrySafe:false};
-    return startGeminiTrial(this.client,input);
+    return startGeminiTrial(this.client,input,this.modelId);
+  }
+  public async *streamTrial(handle:TrialProviderHandle,signal:AbortSignal):AsyncIterable<string>{
+    if(this.client)yield* streamGeminiTrial(this.client,handle,signal);
   }
   public async retrieveTrial(handle:TrialProviderHandle):Promise<TrialProviderResult>{
     if(!this.client)return {pending:true,handle};
