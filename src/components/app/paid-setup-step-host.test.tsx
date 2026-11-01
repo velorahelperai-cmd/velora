@@ -180,3 +180,37 @@ it('retains confirmed knowledge during refresh failure but discards it on scope 
   expect(host.textContent).not.toContain('3 / 10');
  }finally{await act(async()=>root.unmount());vi.unstubAllGlobals();}
 });
+
+
+it('refreshes a pending trial without aborting workspace enrichment or resending the question',async()=>{
+ vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);
+ const {createSetupReader}=await import('@/lib/tenancy/setup-read-client');
+ const scope={expectedAccountId:baseProps.scope.expectedAccountId,companyId:baseProps.scope.companyId,branchId:baseProps.scope.branchId};
+ const trial={scope,version:1,knowledgeRevision:'rev1',branchLabel:'Branch',businessType:'Services',canAsk:false,trialAllowance:{limit:10,used:0},pendingOperation:{id:'55555555-5555-4555-8555-555555555555',status:'uncertain',recoverable:false},messages:[]};
+ let finishWorkspace!:(response:Response)=>void;
+ let workspaceSignal:AbortSignal|undefined;
+ const fetcher=vi.fn((url:string,options:RequestInit)=>{
+  if(url.includes('resource=workspace')){workspaceSignal=options.signal as AbortSignal;return new Promise<Response>(resolve=>{finishWorkspace=resolve;});}
+  return Promise.resolve(Response.json({data:trial}));
+ });
+ vi.stubGlobal('fetch',fetcher);
+ const reader=createSetupReader({...scope,boundaryFingerprint:'boundary'},()=>true);
+ const workspace=reader.read('workspace');
+ // Observe rejection so the original invalidation bug does not produce an unhandled rejection.
+ const outcome=workspace.then(value=>({value}),error=>({error}));
+ const ask=vi.mocked(askOwnedBranchAssistantTrialAction);ask.mockClear();
+ const host=document.createElement('div'),root=createRoot(host);
+ try{
+  await act(async()=>root.render(createElement(PaidSetupStepHost,{...baseProps,step:'test',reader})));
+  const refresh=Array.from(host.querySelectorAll('button')).find(button=>button.textContent==='Refresh status')!;
+  expect(refresh).toBeDefined();
+  await act(async()=>refresh.click());
+  expect(workspaceSignal?.aborted).toBe(false);
+  finishWorkspace(Response.json({data:{confirmed:'workspace'}}));
+  expect(await outcome).toEqual({value:{confirmed:'workspace'}});
+  expect(fetcher.mock.calls.filter(([url])=>url.includes('resource=trial'))).toHaveLength(2);
+  expect(ask).not.toHaveBeenCalled();
+  expect(host.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(true);
+  expect(host.textContent).toContain('The request outcome needs review');
+ }finally{await act(async()=>root.unmount());vi.unstubAllGlobals();}
+});

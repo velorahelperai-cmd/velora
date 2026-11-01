@@ -106,7 +106,13 @@ function StepHost(props: PaidSetupStepHostProps) {
     if(step==="test"){setTrialPhase("loading");setTrialFailure(null);setTrialRequestId(null);}
     if(step==="team"){setTeamPhase("loading");setInviteUrl(null);}
     if(step==="launch")setLaunchPhase("loading");
-    reader?.invalidate();
+    // A read refresh is not a branch mutation. Cancel only this step's reads:
+    // aborting workspace enrichment here leaves the parent stuck on its shell.
+    if(step==="hours")reader?.invalidate(["hours"]);
+    if(step==="knowledge")reader?.invalidate(["knowledge","language"]);
+    if(step==="test")reader?.invalidate(["trial"]);
+    if(step==="team")reader?.invalidate(["team"]);
+    if(step==="launch")reader?.invalidate(["launch"]);
     setReadVersion(v=>v+1);
   };
   const targetScope = useMemo(
