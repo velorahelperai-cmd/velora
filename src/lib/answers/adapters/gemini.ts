@@ -7,6 +7,8 @@ import { buildAnswerSystemPrompt, formatAnswerUserPrompt } from "@/lib/answers/a
 import { providerRequestLimits, validTokenCount } from "./request-limits";
 import { matchesRequestedModel } from "./response-identity";
 import { logEvent } from "@/lib/logging/logger.mjs";
+import {startGeminiTrial,retrieveGeminiTrial} from './gemini-interactions';
+import type {TrialProviderHandle,TrialProviderResult} from '../types';
 import type {
   AnswerProvider,
   AnswerProviderRequest,
@@ -53,6 +55,15 @@ export class GeminiAnswerAdapter implements AnswerProvider {
 
   public getClient(): GoogleGenAI | null {
     return this.client;
+  }
+
+  public async startTrial(input:AnswerProviderRequest):Promise<TrialProviderResult>{
+    if(!this.client||!isLiveAnsweringEnabled())return {ok:false,code:'NEEDS_SETUP',providerAttempted:false,retrySafe:false};
+    return startGeminiTrial(this.client,input);
+  }
+  public async retrieveTrial(handle:TrialProviderHandle):Promise<TrialProviderResult>{
+    if(!this.client)return {pending:true,handle};
+    return retrieveGeminiTrial(this.client,handle);
   }
 
   /** Provider token count of the exact system + user content that complete() sends. */

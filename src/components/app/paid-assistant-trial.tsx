@@ -11,7 +11,7 @@ export type TrialScope={expectedAccountId:string;companyId:string;branchId:strin
 type TrialContext=TrialScope & {expectedVersion:number;knowledgeRevision:string;operationId?:string};
 export type TrialMessage={id:string;executionId?:string|null;scope:TrialScope;version:number;knowledgeRevision:string;question:string;result:AnswerResult|Pick<Extract<AnswerResult,{ok:true}>,"ok"|"text"|"citations"|"modelId">;origin:"engine"|"synthetic"};
 /** UI-only host projection; neither an answer nor local acknowledgement grants readiness. */
-export type TrialSnapshot={scope:TrialScope;version:number;knowledgeRevision:string;branchLabel:string;businessType:string;canAsk:boolean|null;handoffPreview?:"human_request"|"sensitive";recoveryNotice?:"context_changed";trialAllowance?:{limit:number;used:number};pendingOperation?:{id:string;status:string;recoverable:boolean;blocksNewRequests?:boolean}|null;messages:TrialMessage[]};
+export type TrialSnapshot={scope:TrialScope;version:number;knowledgeRevision:string;branchLabel:string;businessType:string;canAsk:boolean|null;providerFailure?:boolean;handoffPreview?:"human_request"|"sensitive";recoveryNotice?:"context_changed";trialAllowance?:{limit:number;used:number};pendingOperation?:{id:string;status:string;recoverable:boolean;blocksNewRequests?:boolean;pollable?:boolean;providerFailed?:boolean}|null;messages:TrialMessage[]};
 export type PaidAssistantTrialProps={
  onRecover?:(operationId:string)=>void|Promise<void>;
  /** Compatibility callback only; uncertain holds cannot be released without evidence. */
@@ -218,7 +218,7 @@ function TrialForm(p:PaidAssistantTrialProps & {snapshot:TrialSnapshot}){
       <div className={styles.bubbleUser}><p dir="auto">{submitted}</p></div>
       {waiting&&<div className={styles.typing} role="status"><span/><span/><span/><span className={styles.srOnly}>{t("جارٍ توليد الرد…","Generating a reply…")}</span></div>}
       {!waiting&&p.state.phase==="error"&&<p role="status" className={styles.statusLine}>{t("تعذّر إتمام الرد على هذا السؤال. تم الاحتفاظ بسؤالك لإعادة المحاولة.","Could not complete the reply. Your question is retained so you can retry.")}</p>}
-      {!waiting&&p.state.phase!=="error"&&<p role="status" className={styles.statusLine}>{t("لم تتأكد نتيجة هذا السؤال بعد.","This question has no confirmed result yet.")}</p>}
+      {!waiting&&p.state.phase!=="error"&&<p role="status" className={styles.statusLine}>{p.snapshot.pendingOperation?.pollable?t("جارٍ متابعة الرد المحفوظ…","Retrieving the saved request…"):t("لم تتأكد نتيجة هذا السؤال بعد.","This question has no confirmed result yet.")}</p>}
      </div>
     )}
     {waiting&&!showOptimistic&&<div className={styles.typing} role="status"><span/><span/><span/><span className={styles.srOnly}>{t("جارٍ توليد الرد…","Generating a reply…")}</span></div>}
@@ -247,8 +247,9 @@ function TrialForm(p:PaidAssistantTrialProps & {snapshot:TrialSnapshot}){
    )}
    {p.snapshot.handoffPreview&&<p role="status" className={styles.previewBanner}>{t("معاينة تصعيد فقط — بلا تحويل حقيقي أو خصم من الحصة.","Escalation preview only — no real handoff or quota use.")}</p>}
    {p.snapshot.recoveryNotice==="context_changed"&&<p role="status" className={styles.note}>{t("تغيّرت الإعدادات أثناء الطلب السابق دون خصم من الحصة.","Settings changed during the previous request without using quota.")}</p>}
+   {p.snapshot.providerFailure&&<p role="status">{t("تعذّر إكمال الرد. لم تُرسل محاولة أخرى.","The reply could not be completed. No additional attempt was sent.")}</p>}
    {p.snapshot.pendingOperation&&<div className={styles.pending} role="status">
-    <p>{t("طلب سابق لم يُحسم بعد.","A previous request is still unresolved.")}</p>
+    <p>{p.snapshot.pendingOperation.pollable?t("طلبك محفوظ وجارٍ متابعة الرد. يمكنك العودة إلى الصفحة لاحقًا.","Your request is saved and its reply is being retrieved. You can return to this page later."):p.snapshot.pendingOperation.providerFailed?t("تعذّر إكمال الرد، وتفاصيل التكلفة قيد المراجعة.","The reply failed; its accounting remains under review."):t("طلب سابق لم يُحسم بعد.","A previous request is still unresolved.")}</p>
     <div className={styles.pendingActions}>
      {p.snapshot.pendingOperation.recoverable&&p.onRecover&&<button type="button" className={styles.secondary} disabled={pending} onClick={()=>{if(!pending&&p.isCurrent())void dispatch(()=>p.onRecover?.(p.snapshot.pendingOperation!.id));}}>{t("استعادة الرد","Recover reply")}</button>}
      {!p.snapshot.pendingOperation.recoverable&&p.snapshot.pendingOperation.status==="uncertain"&&<p>{oldUnknownAllowsNew?t("الطلب السابق قيد المراجعة. يمكنك إرسال سؤال جديد عند إتاحة الإرسال.","The previous request remains under review. You can ask a new question when Send is available."):t("بانتظار مراجعة نتيجة الطلب قبل إرسال سؤال جديد.","The request outcome needs review before another question can be sent.")}</p>}

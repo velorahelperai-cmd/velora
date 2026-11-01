@@ -251,6 +251,29 @@ function StepHost(props: PaidSetupStepHostProps) {
   }, [step, targetScope, isCurrent,readVersion,reader]);
 
   // 4. Team step
+  const pollOperationId=trialSnap?.pendingOperation?.pollable===true?trialSnap.pendingOperation.id:null;
+  useEffect(()=>{
+    if(step!=='test'||!pollOperationId||!isCurrent())return;
+    let active=true,checks=0;
+    let timer:ReturnType<typeof setTimeout>;
+    const poll=async()=>{
+      if(!active||!isCurrent())return;
+      checks++;
+      // Retrieval only: this action cannot create another provider generation.
+      const result=await awaitSetupRequest(recoverOwnedBranchAssistantTrialAction({...targetScope,operationId:pollOperationId}),40_000).catch(()=>null);
+      if(!active||!isCurrent())return;
+      if(result?.ok){
+        setTrialSnap(result.snapshot);setTrialPhase('ready');setTrialFailure(null);
+        if(result.snapshot.pendingOperation?.pollable!==true){reader?.invalidate(['trial','workspace']);onRefresh?.();return;}
+      }
+      // Bound background traffic; the existing Refresh status control resumes it.
+      if(checks<24)timer=setTimeout(()=>void poll(),5_000);
+    };
+    timer=setTimeout(()=>void poll(),5_000);
+    return()=>{active=false;clearTimeout(timer);};
+  },[step,pollOperationId,targetScope,isCurrent,readVersion,reader,onRefresh]);
+
+  // 4. Team step
   const [teamSnap, setTeamSnap] = useState<BranchTeamSnapshot | null>(()=>reader?.peek?.('team')??null);
   const [teamPhase, setTeamPhase] = useState<"loading" | "ready" | "pending" | "error" | "unknown" | "unavailable">("loading");
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);

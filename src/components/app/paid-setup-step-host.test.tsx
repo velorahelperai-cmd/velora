@@ -29,6 +29,7 @@ vi.mock("@/lib/tenancy/paid-reply-language-actions", () => ({
 vi.mock("@/lib/tenancy/paid-assistant-trial-actions", () => ({
   readOwnedBranchAssistantTrialAction: vi.fn(async () => null),
   askOwnedBranchAssistantTrialAction: vi.fn(),
+  recoverOwnedBranchAssistantTrialAction: vi.fn(),
 }));
 
 vi.mock("@/lib/tenancy/paid-launch-actions", () => ({
@@ -40,6 +41,7 @@ import { PaidSetupStepHost, type PaidSetupStepHostProps } from "./paid-setup-ste
 
 import {readOwnedBranchLaunchSummaryAction,confirmOwnedBranchLaunchAction} from '@/lib/tenancy/paid-launch-actions';
 import {readOwnedBranchAssistantTrialAction,askOwnedBranchAssistantTrialAction} from '@/lib/tenancy/paid-assistant-trial-actions';
+import {recoverOwnedBranchAssistantTrialAction} from '@/lib/tenancy/paid-assistant-trial-actions';
 
 const baseProps: PaidSetupStepHostProps = {
   locale: "en",
@@ -115,6 +117,22 @@ it('shows a valid cached branch snapshot immediately when returning to knowledge
  const reader={peek:(kind:string)=>kind==='knowledge'?snapshot:null,peekHours:()=>null} as unknown as NonNullable<PaidSetupStepHostProps['reader']>;
  const html=renderToStaticMarkup(createElement(PaidSetupStepHost,{...baseProps,step:'knowledge',reader}));
  expect(html).toContain('3 / 10');
+});
+
+it('resumes a known background request after mounting without generating another answer',async()=>{
+ vi.useFakeTimers();vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);
+ const scope={expectedAccountId:baseProps.scope.expectedAccountId,companyId:baseProps.scope.companyId,branchId:baseProps.scope.branchId};
+ const snapshot={scope,version:1,knowledgeRevision:'k1',branchLabel:'Main',businessType:'restaurant',canAsk:false,messages:[],pendingOperation:{id:'55555555-5555-4555-8555-555555555555',status:'running',recoverable:false,pollable:true}};
+ vi.mocked(readOwnedBranchAssistantTrialAction).mockResolvedValueOnce(snapshot);
+ const recover=vi.mocked(recoverOwnedBranchAssistantTrialAction);recover.mockReset();recover.mockResolvedValue({ok:true,snapshot:{...snapshot,canAsk:true,pendingOperation:null,trialAllowance:{limit:10,used:1}}});
+ const ask=vi.mocked(askOwnedBranchAssistantTrialAction);ask.mockClear();
+ const host=document.createElement('div'),root=createRoot(host);
+ try{
+  await act(async()=>root.render(createElement(PaidSetupStepHost,{...baseProps,step:'test'})));
+  await act(async()=>vi.advanceTimersByTimeAsync(5_000));
+  expect(recover).toHaveBeenCalledOnce();expect(ask).not.toHaveBeenCalled();expect(host.textContent).toContain('1/10');
+  await act(async()=>vi.advanceTimersByTimeAsync(60_000));expect(recover).toHaveBeenCalledOnce();
+ }finally{await act(async()=>root.unmount());ask.mockClear();recover.mockReset();vi.useRealTimers();vi.unstubAllGlobals();}
 });
 
 it('waits through provider generation and settlement without losing a late answer or resending',async()=>{

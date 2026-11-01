@@ -7,7 +7,8 @@ import { logEvent, withLogContext } from "@/lib/logging/logger.mjs";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getGeminiModelId } from "@/lib/answers/config/env";
-import type { AnswerResult, AnswerPersona } from "@/lib/answers/types";
+import {matchesRequestedModel} from '@/lib/answers/adapters/response-identity';
+import type { AnswerResult, AnswerPersona, TrialProviderHandle } from "@/lib/answers/types";
 import type {
   TrialScope,
   TrialSnapshot,
@@ -25,8 +26,8 @@ import { readOwnedBranchReplyLanguageAction } from "./paid-reply-language-action
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-/** Bound assistant trial output to keep responses concise and strictly guarantee spend <= 0.002 OMR total. */
-const TRIAL_MAX_OUTPUT_TOKENS = 256;
+/** Output ceiling feeds reservation; it is not a guarantee of a fixed total trial cost. */
+const TRIAL_MAX_OUTPUT_TOKENS = 512;
 
 /**
  * Isolated server configuration for restricted local customer trials.
@@ -96,7 +97,7 @@ export async function readOwnedBranchAssistantTrialAction(
     const snapshot = payload.data?.snapshot;
     if (!snapshot || snapshot.scope?.expectedAccountId !== scope.expectedAccountId || snapshot.scope?.companyId !== scope.companyId || snapshot.scope?.branchId !== scope.branchId) return null;
     const recovery = await client.rpc("es02_read_owned_branch_trial_recovery" as never, {p_expected_account_id:scope.expectedAccountId,p_company_id:scope.companyId,p_branch_id:scope.branchId} as never);
-    const value = recovery.data as unknown as {ok?:boolean;operation?:{id:string;status:string;recoverable:boolean;blocksNewRequests?:boolean}|null};
+    const value = recovery.data as unknown as {ok?:boolean;operation?:{id:string;status:string;recoverable:boolean;blocksNewRequests?:boolean;pollable?:boolean;providerFailed?:boolean}|null};
     const op = !recovery.error && value?.ok === true ? value.operation : null;
     if(recovery.error||value?.ok!==true)return {...snapshot,canAsk:false};
     if(op&&UUID.test(op.id)&&["reserved","running","uncertain","success"].includes(op.status)&&typeof op.recoverable==="boolean"){
@@ -221,7 +222,10 @@ export async function askOwnedBranchAssistantTrialAction(
         trial.knowledgeRevision !== input.knowledgeRevision || knowledgeContext.knowledgeRevision !== input.knowledgeRevision) {
       return { ok: false, code: "CONTEXT_CHANGED", message: "Trial context changed; reload the branch before asking", requestId };
     }
-    const chunks = [...knowledgeContext.chunks];
+    // Exact quick-question intent only; mixed/free-form questions retain their
+    // approved knowledge. Business instructions always accompany the hours.
+    const hoursOnly=/^(?:ما مواعيد العمل[؟?]?|what are the working hours\??)$/i.test(input.question.trim());
+    const chunks = knowledgeContext.chunks.filter(chunk=>!hoursOnly||chunk.usageRole==='business_instructions');
 
     if (hoursChunkText) {
       chunks.push({
@@ -371,7 +375,7 @@ export async function askOwnedBranchAssistantTrialAction(
     }
     let completion: AnswerResult;
     try {
-      completion = await provider.complete({
+      const providerInput = {
         question: input.question.trim(),
         locale,
         chunks,
@@ -380,7 +384,33 @@ export async function askOwnedBranchAssistantTrialAction(
         // Gemini's SDK also sends this as X-Server-Timeout. Allow generation
         // beyond the former 30s deadline without retries or a larger token cap.
         timeoutMs: 60_000,
-      });
+      };
+      if(provider.startTrial){
+        // Persist intent before dispatch so an abandoned create can be classified
+        // separately from old running operations, without releasing its hold.
+        const prepared=await Promise.resolve(writer.rpc('es02_attach_trial_provider' as never,{
+          p_operation_id:operationId,p_account_id:identity.userId,p_session_id:identity.nativeSessionId,
+          p_company_id:input.companyId,p_branch_id:input.branchId,p_handle:null,p_question:input.question.trim(),
+        } as never)).catch(()=>null);
+        if(!prepared||prepared.error||(prepared.data as unknown as {ok?:boolean})?.ok!==true){
+          if(!await settle('rejected'))return PENDING;
+          return {ok:false,code:'UNAVAILABLE',message:'Provider request was not dispatched'};
+        }
+        const started=await provider.startTrial(providerInput);
+        if('pending'in started){
+          const attach=()=>Promise.resolve(writer.rpc('es02_attach_trial_provider' as never,{
+            p_operation_id:operationId,p_account_id:identity.userId,p_session_id:identity.nativeSessionId,
+            p_company_id:input.companyId,p_branch_id:input.branchId,p_handle:started.handle,p_question:input.question.trim(),
+          } as never)).catch(()=>null);
+          let attached=await attach();
+          if(!attached||attached.error||(attached.data as unknown as {ok?:boolean})?.ok!==true)attached=await attach();
+          // An ambiguous DB acknowledgement must not erase a handle that may have saved.
+          if(!attached||attached.error||(attached.data as unknown as {ok?:boolean})?.ok!==true)return {ok:false,code:'TRIAL_PENDING',message:'Provider handle persistence needs recovery; do not resend'};
+          const snapshot=await readOwnedBranchAssistantTrialAction(input).catch(()=>null);
+          return snapshot?{ok:true,snapshot}:{ok:false,code:'TRIAL_PENDING',message:'Saved provider request awaits retrieval'};
+        }
+        completion=started;
+      }else completion=await provider.complete(providerInput);
     }
     catch {
       // Transport threw after start — reach evidence is unknown. Do not unlock.
@@ -456,6 +486,35 @@ export async function recoverOwnedBranchAssistantTrialAction(input: TrialScope &
   const snapshot=await readOwnedBranchAssistantTrialAction(input);
   if(!snapshot)return {ok:false,code:"UNAVAILABLE",message:"Branch authority could not be verified"};
   const writer=createAdminClient();if(!writer)return {ok:false,code:"UNAVAILABLE",message:"Recovery is unavailable"};
+  const binding={p_operation_id:input.operationId,p_account_id:identity.userId,p_session_id:identity.nativeSessionId,p_company_id:input.companyId,p_branch_id:input.branchId};
+  const loaded=await Promise.resolve(writer.rpc('es02_load_trial_provider' as never,binding as never)).catch(()=>null);
+  const durable=loaded?.data as unknown as {ok?:boolean;submissionUnknown?:boolean;data?:{handle:TrialProviderHandle;question:string;sessionId:string;pricing:ReturnType<typeof realModelPricing>;state:string;checkpoint:boolean}|null};
+  if(!loaded||loaded.error||durable?.ok!==true)return {ok:false,code:'TRIAL_PENDING',message:'Provider recovery authority unavailable'};
+  if(durable.submissionUnknown){const fresh=await readOwnedBranchAssistantTrialAction(input);return fresh?{ok:true,snapshot:fresh}:{ok:false,code:'TRIAL_PENDING',message:'Submission outcome remains unknown'};}
+  const stored=durable.data;
+  if(stored&&stored.state==='running'&&!stored.checkpoint){
+    const provider=getAnswerProvider();
+    if(!provider?.retrieveTrial)return {ok:false,code:'TRIAL_PENDING',message:'Provider retrieval unavailable'};
+    const completion=await provider.retrieveTrial(stored.handle).catch(()=>null);
+    if(!completion||'pending'in completion)return {ok:true,snapshot};
+    const usage=completion.usage;
+    let priced:{usage:{promptTokens:number;completionTokens:number;cachedTokens:number;reasoningTokens:number;cacheWriteTokens:number;totalTokens:number};costUsd:number;costBaisa:number}|null=null;
+    try{
+      if(!usage||!usage.actualModelId||!matchesRequestedModel(usage.actualModelId,stored.handle.modelId)||stored.pricing.modelId!==stored.handle.modelId||usage.requestId!==stored.handle.id)throw Error('UNVERIFIED_USAGE');
+      const tokens={promptTokens:usage.promptTokens!,completionTokens:usage.completionTokens!,cachedTokens:usage.cachedTokens!,reasoningTokens:usage.reasoningTokens!,cacheWriteTokens:usage.cacheWriteTokens??0,totalTokens:usage.totalTokens!};
+      priced={usage:tokens,...priceRealUsage(tokens,stored.pricing)};
+    }catch{priced=null;}
+    if(!completion.ok||!priced){
+      const errorCode=!completion.ok?completion.providerErrorCode??completion.code:'GEMINI_USAGE_UNVERIFIED';
+      const settlement=await Promise.resolve(writer.rpc('ai_settle_admin_attempt' as never,{p_id:input.operationId,p_status:priced?'incomplete':'uncertain',p_cost_usd:priced?.costUsd??null,p_cost_baisa:priced?.costBaisa??null,p_usage:priced?.usage??null,p_request_id:stored.handle.id,p_error_code:errorCode,p_latency_ms:usage?.latencyMs??0,p_response_id:usage?.responseId??null,p_actual_model_id:usage?.actualModelId??null} as never)).catch(()=>null);
+      logEvent('warn','es02.branch_assistant_trial.background_failed',{operation_id:input.operationId,error_code:errorCode,detail:'Provider terminal result; generation was not retried.'});
+      if(!settlement||settlement.error||settlement.data!==true)return {ok:false,code:'TRIAL_PENDING',message:'Terminal provider result needs accounting recovery'};
+      const fresh=await readOwnedBranchAssistantTrialAction(input);
+      return fresh?{ok:true,snapshot:{...fresh,providerFailure:true}}:{ok:false,code:'TRIAL_PENDING',message:'Provider failure recorded'};
+    }
+    const checkpoint=await Promise.resolve(writer.rpc('es02_checkpoint_branch_trial_result' as never,{...binding,p_session_id:stored.sessionId,p_result:{question:stored.question,answer:completion.text.trim(),modelId:stored.handle.modelId,...priced,requestId:stored.handle.id,responseId:usage!.responseId??stored.handle.id,actualModelId:usage!.actualModelId,latencyMs:usage!.latencyMs??0}} as never)).catch(()=>null);
+    if(!checkpoint||checkpoint.error||(checkpoint.data as unknown as {ok?:boolean})?.ok!==true)return {ok:false,code:'TRIAL_PENDING',message:'Retrieved result awaits durable settlement'};
+  }
   const result=await writer.rpc("es02_recover_branch_trial_result" as never,{p_operation_id:input.operationId,p_account_id:identity.userId,p_session_id:identity.nativeSessionId,p_company_id:input.companyId,p_branch_id:input.branchId} as never);
   if(result.error||(result.data as unknown as {ok?:boolean})?.ok!==true)return {ok:false,code:"TRIAL_PENDING",message:"Recovery remains unconfirmed; do not resend"};
   const fresh=await readOwnedBranchAssistantTrialAction(input);

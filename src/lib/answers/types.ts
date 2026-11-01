@@ -116,4 +116,10 @@ export type AnswerProvider = {
   complete(input: AnswerProviderRequest): Promise<AnswerResult>;
   /** Provider-authoritative input token count of the complete request; null when unverifiable. */
   countInputTokens?(input: AnswerProviderRequest): Promise<number | null>;
+  startTrial?(input: AnswerProviderRequest): Promise<TrialProviderResult>;
+  retrieveTrial?(handle: TrialProviderHandle): Promise<TrialProviderResult>;
 };
+
+/** Server-only durable retrieval metadata; never sent to the browser. */
+export type TrialProviderHandle = {id:string;modelId:AIModelId;startedAt:number;promptChars:number;contextChars:number;sourceCount:number};
+export type TrialProviderResult = {pending:true;handle:TrialProviderHandle} | AnswerResult;

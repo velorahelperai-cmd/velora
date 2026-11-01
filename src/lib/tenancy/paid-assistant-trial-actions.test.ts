@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
+import {realModelPricing} from '@/lib/answers/runtime/economics';
 
 const VALID_ACCOUNT_ID = "11111111-1111-4111-8111-111111111111";
 const OTHER_ACCOUNT_ID = "99999999-9999-4999-8999-999999999999";
@@ -144,13 +145,31 @@ describe("paid-assistant-trial-actions", () => {
     rpcMock.mockResolvedValue({data:{ok:true,data:{snapshot:{scope,version:1,knowledgeRevision:"rev_1",messages:[{executionId:operationId,origin:"engine"}]}}},error:null});
     expect(await recoverOwnedBranchAssistantTrialAction({...scope,operationId})).toMatchObject({ok:true});
     expect(complete).not.toHaveBeenCalled();
-    expect(trustedRpc.mock.calls.map(c=>c[0])).toEqual(["es02_recover_branch_trial_result"]);
+    expect(trustedRpc.mock.calls.map(c=>c[0])).toEqual(["es02_load_trial_provider","es02_recover_branch_trial_result"]);
   });
   it("does not recover or expose another account's receipt",async()=>{
     const scope={expectedAccountId:VALID_ACCOUNT_ID,companyId:VALID_COMPANY_ID,branchId:VALID_BRANCH_ID};
     currentSessionId=OTHER_ACCOUNT_ID;
     expect(await recoverOwnedBranchAssistantTrialAction({...scope,operationId:VALID_ACCOUNT_ID})).toMatchObject({ok:false,code:"UNAUTHENTICATED"});
     expect(trustedRpc).not.toHaveBeenCalled();
+  });
+
+  it.each(['pending','success','checkpoint','unknown','denied'] as const)('retrieves durable %s without creating or releasing an attempt',async kind=>{
+    const operationId='66666666-6666-4666-8666-666666666666';const scope={expectedAccountId:VALID_ACCOUNT_ID,companyId:VALID_COMPANY_ID,branchId:VALID_BRANCH_ID};
+    const handle={id:'int_saved',modelId:'gemini-3.8-flash' as const,startedAt:1,promptChars:10,contextChars:20,sourceCount:1};
+    const complete=vi.fn(),startTrial=vi.fn();
+    const retrieveTrial=vi.fn(async()=>kind==='pending'?{pending:true as const,handle}:kind==='unknown'?{ok:false as const,code:'UNAVAILABLE' as const,providerAttempted:true,retrySafe:false,providerErrorCode:'GEMINI_USAGE_UNVERIFIED' as const}:{ok:true as const,text:'الأحد 10:00–14:00',citations:[],usage:{promptChars:10,contextChars:20,sourceCount:1,promptTokens:100,completionTokens:50,cachedTokens:0,reasoningTokens:30,totalTokens:150,requestId:'int_saved',responseId:'int_saved',actualModelId:'gemini-3.8-flash',latencyMs:100}});
+    setAnswerProviderForTesting({id:'p',complete,startTrial,retrieveTrial});
+    trustedRpc=vi.fn(async(name:string)=>({error:null,data:name==='es02_load_trial_provider'?{ok:kind!=='denied',data:{handle,question:'Q',sessionId:OTHER_ACCOUNT_ID,pricing:realModelPricing('gemini-3.8-flash'),state:'running',checkpoint:kind==='checkpoint'}}:name==='ai_settle_admin_attempt'?true:{ok:true}}));
+    rpcMock.mockResolvedValue({error:null,data:{ok:true,data:{snapshot:{scope,version:1,knowledgeRevision:'rev_1',canAsk:false,messages:[{executionId:operationId,origin:'engine'}]}}}});
+    await recoverOwnedBranchAssistantTrialAction({...scope,operationId});
+    expect(complete).not.toHaveBeenCalled();expect(startTrial).not.toHaveBeenCalled();
+    const calls=trustedRpc.mock.calls.map(c=>c[0]);
+    expect(calls.some(n=>n.includes('reserve'))).toBe(false);
+    if(kind==='pending'||kind==='denied'){expect(calls).toEqual(['es02_load_trial_provider']);}
+    if(kind==='checkpoint'||kind==='denied')expect(retrieveTrial).not.toHaveBeenCalled();
+    if(kind==='success')expect(trustedRpc).toHaveBeenCalledWith('es02_checkpoint_branch_trial_result',expect.objectContaining({p_session_id:OTHER_ACCOUNT_ID,p_result:expect.objectContaining({requestId:'int_saved',usage:expect.objectContaining({completionTokens:50,reasoningTokens:30})})}));
+    if(kind==='unknown')expect(trustedRpc).toHaveBeenCalledWith('ai_settle_admin_attempt',expect.objectContaining({p_status:'uncertain',p_cost_baisa:null,p_cost_usd:null}));
   });
 
   it("does not manufacture zero cost when an uncertain hold lacks provider evidence", async () => {
@@ -426,7 +445,7 @@ describe("paid-assistant-trial-actions", () => {
   });
 
   it("grounds branch hours question, knowledge question, and out-of-knowledge question with branch-isolated context", async () => {
-    const capturedRequests: Array<{ question: string; chunks: Array<{ sourceId: string; title: string; text: string }>; persona?: string }> = [];
+    const capturedRequests: Array<{ question: string; chunks: Array<{ sourceId: string; title: string; text: string; usageRole?: string }>; persona?: string }> = [];
     const mockProvider: AnswerProvider = {
       id: "mock-gemini",
       complete: vi.fn(async (req: Parameters<AnswerProvider["complete"]>[0]): Promise<AnswerResult> => {
@@ -476,6 +495,7 @@ describe("paid-assistant-trial-actions", () => {
     });
     expect(hoursRes.ok).toBe(true);
     expect(capturedRequests[0]?.chunks.some(c => c.sourceId === `hours-${VALID_BRANCH_ID}` && c.text.includes("09:00"))).toBe(true);
+    expect(capturedRequests[0]?.chunks.every(c=>c.usageRole==='business_instructions')).toBe(true);
 
     // 2. Branch knowledge question
     const knowRes = await askOwnedBranchAssistantTrialAction({
@@ -618,12 +638,49 @@ describe("trial budget cap, billed-but-unusable calls and settlement failure", (
     expect(await askOwnedBranchAssistantTrialAction(input)).toMatchObject({ ok: false, code: "UNAVAILABLE" });
     // Counting failure must not hard-block before reservation; UTF-8 bound still reserves.
     expect(called("es02_reserve_branch_trial_capped")).toHaveLength(1);
-    expect(complete).toHaveBeenCalledWith(expect.objectContaining({ timeoutMs: 60_000, maxOutputTokens: 256 }));
+    expect(complete).toHaveBeenCalledWith(expect.objectContaining({ timeoutMs: 60_000, maxOutputTokens: 512 }));
     setup();
     setAnswerProviderForTesting({ id: "p", complete, countInputTokens: vi.fn(async () => 400) });
     await askOwnedBranchAssistantTrialAction(input);
-    // (400*0.75 + 256*3.75)/1e6 USD * 1.2 / 2.6008 * 1000 baisa
-    expect(called("es02_reserve_branch_trial_capped")[0].p_reserved_baisa).toBeCloseTo(((400 * 0.75 + 256 * 3.75) / 1e6) * 1.2 * 1000 / 2.6008, 5);
+    // Reserve the same ceiling sent to the provider, including reasoning output.
+    expect(called("es02_reserve_branch_trial_capped")[0].p_reserved_baisa).toBeCloseTo(((400 * 0.75 + 512 * 3.75) / 1e6) * 1.2 * 1000 / 2.6008, 5);
+  });
+
+  it('persists the provider handle before returning and never calls synchronous generation',async()=>{
+    setup();const complete=vi.fn();const handle={id:'int_fixture',modelId:'gemini-3.8-flash' as const,startedAt:1,promptChars:10,contextChars:20,sourceCount:1};
+    const startTrial=vi.fn(async()=>({pending:true as const,handle}));
+    setAnswerProviderForTesting({id:'p',complete,startTrial});
+    await askOwnedBranchAssistantTrialAction(input);
+    expect(startTrial).toHaveBeenCalledOnce();expect(complete).not.toHaveBeenCalled();
+    expect(called('es02_attach_trial_provider')).toEqual([expect.objectContaining({p_handle:null,p_question:input.question}),expect.objectContaining({p_handle:handle,p_question:input.question})]);
+    expect(called('ai_settle_admin_attempt')).toHaveLength(0);
+  });
+
+  it('does not dispatch when durable intent cannot be saved',async()=>{
+    setup(async name=>name==='es02_attach_trial_provider'?{data:null,error:{message:'offline'}}:(null as never));
+    const startTrial=vi.fn(),complete=vi.fn();setAnswerProviderForTesting({id:'p',complete,startTrial});
+    await askOwnedBranchAssistantTrialAction(input);
+    expect(startTrial).not.toHaveBeenCalled();expect(complete).not.toHaveBeenCalled();
+    expect(called('ai_settle_admin_attempt')[0].p_status).toBe('rejected');
+  });
+
+  it('retries only an ambiguous handle write, preserving the hold after both acknowledgements fail',async()=>{
+    setup(async(name,args)=>name==='es02_attach_trial_provider'&&args.p_handle!==null?{data:null,error:{message:'offline'}}:(null as never));
+    const handle={id:'int_fixture',modelId:'gemini-3.8-flash' as const,startedAt:1,promptChars:10,contextChars:20,sourceCount:1};
+    const startTrial=vi.fn(async()=>({pending:true as const,handle}));
+    setAnswerProviderForTesting({id:'p',complete:vi.fn(),startTrial});
+    expect(await askOwnedBranchAssistantTrialAction(input)).toMatchObject({ok:false,code:'TRIAL_PENDING'});
+    expect(startTrial).toHaveBeenCalledOnce();expect(called('es02_attach_trial_provider')).toHaveLength(3);
+    expect(called('ai_settle_admin_attempt')).toHaveLength(0);
+  });
+
+  it('keeps a saved provider handle running when the following snapshot read fails',async()=>{
+    setup();
+    const handle={id:'int_fixture',modelId:'gemini-3.8-flash' as const,startedAt:1,promptChars:10,contextChars:20,sourceCount:1};
+    const startTrial=vi.fn(async()=>{rpcMock.mockRejectedValue(new Error('read offline'));return {pending:true as const,handle};});
+    setAnswerProviderForTesting({id:'p',complete:vi.fn(),startTrial});
+    expect(await askOwnedBranchAssistantTrialAction(input)).toMatchObject({ok:false,code:'TRIAL_PENDING'});
+    expect(called('ai_settle_admin_attempt')).toHaveLength(0);
   });
 
   it("prices an empty/truncated provider result as incomplete and never counts it as a reply", async () => {
