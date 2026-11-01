@@ -346,8 +346,8 @@ export async function askOwnedBranchAssistantTrialAction(
     };
     // A billed but unusable (empty/truncated/unverifiable) call is priced from provider usage as
     // `incomplete` and never counts as a reply. If that cannot be recorded, hold it as `uncertain`.
-    const settleBilled = async (usage: Extract<AnswerResult, { ok: true }>["usage"] | undefined): Promise<boolean> =>
-      (usage ? await settle("incomplete", { usage }) : false) || settle("uncertain");
+    const settleBilled = async (usage: Extract<AnswerResult, { ok: true }>["usage"] | undefined, evidence?: Parameters<typeof settle>[2]): Promise<boolean> =>
+      (usage ? await settle("incomplete", { usage }, evidence) : false) || settle("uncertain", undefined, evidence);
     const PENDING = { ok: false as const, code: "TRIAL_PENDING", message: "Accounting requires reconciliation; do not retry" };
     const rate=await checkRateLimit('ai_trial',`company:${input.companyId}`);
     if(!rate.allowed){
@@ -383,7 +383,7 @@ export async function askOwnedBranchAssistantTrialAction(
       // Classify by provider-reach evidence only — never by start alone or retrySafe alone.
       const reachedProvider = completion.providerAttempted === true;
       if (reachedProvider && completion.usage) {
-        if (!await settleBilled(completion.usage as Extract<AnswerResult, { ok: true }>["usage"])) return PENDING;
+        if (!await settleBilled(completion.usage, { errorCode: completion.providerErrorCode ?? completion.code, latencyMs: completion.latencyMs ?? null, requestId: completion.requestId ?? null })) return PENDING;
         return { ok: false, code: "UNAVAILABLE", message: "Provider returned no complete answer; usage was recorded and no reply was counted" };
       }
       // reached without usage, OR adapter claims non-attempt after start: hold. Adapter
@@ -395,11 +395,13 @@ export async function askOwnedBranchAssistantTrialAction(
         model_id: completion.modelId ?? configuredModel,
         latency_ms: completion.latencyMs ?? null,
         stage: "b6",
-        error_code: completion.code,
+        error_code: completion.providerErrorCode ?? completion.code,
+        adapter_code: completion.code,
+        provider_http_status: completion.providerHttpStatus ?? null,
         detail: reachedProvider ? "provider_attempted_without_usage" : "non_attempt_after_start",
       });
       if (!await settle("uncertain", undefined, {
-        errorCode: completion.code,
+        errorCode: completion.providerErrorCode ?? completion.code,
         latencyMs: completion.latencyMs ?? null,
         requestId: completion.requestId ?? null,
       })) return PENDING;

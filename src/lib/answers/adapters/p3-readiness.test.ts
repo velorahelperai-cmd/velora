@@ -1,4 +1,6 @@
 vi.mock("server-only", () => ({}));
+vi.mock("@/lib/logging/logger.mjs", () => ({ logEvent: vi.fn() }));
+import { logEvent } from "@/lib/logging/logger.mjs";
 import OpenAI from "openai";
 import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -50,18 +52,27 @@ describe("P3 provider request boundaries", () => {
     expect(generateContent.mock.calls[0][0].config).not.toHaveProperty("temperature");
     expect(result).toMatchObject({ usage: { requestId: "gemini_mock", completionTokens: 50, reasoningTokens: 30, totalTokens: 150 } });
   });
-  it("counts tokens with the same contents/systemInstruction shape as complete()", async () => {
-    const countTokens = vi.fn().mockResolvedValue({ totalTokens: 42 });
-    const adapter = new GeminiAnswerAdapter({
-      client: { models: { generateContent: vi.fn(), countTokens } } as unknown as GoogleGenAI,
+  it("uses the real SDK serializer to count the exact generation input without a network request", async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    const transport = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)));
+      if (String(url).endsWith(":countTokens")) return new Response(JSON.stringify({ totalTokens: 42 }), { status: 200 });
+      if (String(url).endsWith(":generateContent")) return new Response(JSON.stringify({
+        responseId: "gemini_fixture", modelVersion: "gemini-3.8-flash",
+        candidates: [{ content: { parts: [{ text: "At nine." }] }, finishReason: "STOP" }],
+        usageMetadata: { promptTokenCount: 42, candidatesTokenCount: 5 },
+      }), { status: 200 });
+      throw Error("UNEXPECTED_TEST_ENDPOINT");
     });
+    const client = new GoogleGenAI({ apiKey: "unit-test-not-a-key", httpOptions: { fetch: transport, retryOptions: { attempts: 1 } } });
+    const adapter = new GeminiAnswerAdapter({ client });
     await expect(adapter.countInputTokens({ ...input, persona: "noura" })).resolves.toBe(42);
-    expect(countTokens).toHaveBeenCalledTimes(1);
-    const args = countTokens.mock.calls[0][0];
-    expect(args.model).toBe("gemini-3.8-flash");
-    expect(typeof args.contents).toBe("string");
-    expect(args.config?.systemInstruction).toEqual(expect.any(String));
-    expect(Array.isArray(args.contents)).toBe(false);
+    expect(await adapter.complete({ ...input, persona: "noura" })).toMatchObject({ ok: true });
+    expect(transport).toHaveBeenCalledTimes(2);
+    expect(bodies[0]).not.toHaveProperty("contents");
+    expect(bodies[0]).toEqual({ generateContentRequest: {
+      model: "models/gemini-3.8-flash", contents: bodies[1].contents, systemInstruction: bodies[1].systemInstruction,
+    } });
   });
   it.each([0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, 4097])("rejects invalid output caps before provider execution: %s", async (maxOutputTokens) => {
     const { adapter, create } = openai();
@@ -92,6 +103,39 @@ describe("P3 provider request boundaries", () => {
 });
 
 describe("P3 paid failure evidence", () => {
+  it("preserves a real SDK HTTP503 response with exactly one transport attempt", async () => {
+    const transport = vi.fn(async () => new Response(JSON.stringify({ error: { code: 503, status: "UNAVAILABLE", message: "private-provider-body" } }), { status: 503 }));
+    const client = new GoogleGenAI({ apiKey: "unit-test-not-a-key", httpOptions: { fetch: transport, retryOptions: { attempts: 1 } } });
+    const result = await new GeminiAnswerAdapter({ client }).complete(input);
+    expect(result).toMatchObject({ ok: false, code: "UNAVAILABLE", providerErrorCode: "GEMINI_HTTP_503", providerHttpStatus: 503, providerAttempted: true, retrySafe: false });
+    expect(transport).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(result)).not.toContain("private-provider-body");
+  });
+  it.each([400, 401, 403, 404, 429, 500, 503, 504])("retains original Gemini HTTP %s without exposing raw errors or adding attempts", async (status) => {
+    const { adapter, generateContent } = gemini(vi.fn().mockRejectedValue({ status, message: "private-provider-body", cause: { secret: "private-value" } }));
+    const result = await adapter.complete(input);
+    expect(result).toMatchObject({ ok: false, providerErrorCode: `GEMINI_HTTP_${status}`, providerHttpStatus: status, providerAttempted: true });
+    expect(generateContent).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(result)).not.toContain("private-");
+    expect(result.usage).toBeUndefined();
+  });
+  it.each([null, undefined, "private-error", { status: "503" }, { status: 503.5 }, { status: 600 }])("handles malformed SDK errors without losing the uncertain result: %j", async (error) => {
+    const { adapter } = gemini(vi.fn().mockRejectedValue(error));
+    expect(await adapter.complete(input)).toMatchObject({ ok: false, providerErrorCode: "GEMINI_TRANSPORT_ERROR", providerAttempted: true, retrySafe: false });
+  });
+  it("records a token-count failure without logging its body or dispatching generation", async () => {
+    const countTokens = vi.fn().mockRejectedValue({ status: 503, message: "private-provider-body" });
+    const generateContent = vi.fn();
+    const adapter = new GeminiAnswerAdapter({ client: { models: { countTokens, generateContent } } as unknown as GoogleGenAI });
+    vi.mocked(logEvent).mockClear();
+    expect(await adapter.countInputTokens(input)).toBeNull();
+    expect(logEvent).toHaveBeenCalledWith("warn", "answers.gemini.token_count_failed", {
+      provider: "google", model_id: "gemini-3.8-flash", error_code: "GEMINI_HTTP_503", provider_http_status: 503,
+    });
+    expect(JSON.stringify(vi.mocked(logEvent).mock.calls)).not.toContain("private-provider-body");
+    expect(countTokens).toHaveBeenCalledTimes(1);
+    expect(generateContent).not.toHaveBeenCalled();
+  });
   it.each([401, 429, 500, undefined])("does not allow fallback after an uncertain or account failure: %s", async (status) => {
     const error = { status, name: status ? "APIError" : "APIConnectionTimeoutError", message: "example secret" };
     const { adapter, create } = openai(vi.fn().mockRejectedValue(error)); const { adapter: google, generateContent } = gemini(vi.fn().mockRejectedValue(error));

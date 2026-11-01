@@ -6,12 +6,24 @@ import { calculateTokensCostDetailed } from "@/lib/answers/config/pricing";
 import { buildAnswerSystemPrompt, formatAnswerUserPrompt } from "@/lib/answers/adapters/prompt";
 import { providerRequestLimits, validTokenCount } from "./request-limits";
 import { matchesRequestedModel } from "./response-identity";
+import { logEvent } from "@/lib/logging/logger.mjs";
 import type {
   AnswerProvider,
   AnswerProviderRequest,
   AnswerResult,
   AIModelId,
+  AnswerFailure,
 } from "@/lib/answers/types";
+
+// Never serialize SDK messages, causes or headers: they may contain secrets/content.
+function geminiErrorEvidence(error: unknown): Pick<AnswerFailure, "providerErrorCode" | "providerHttpStatus"> {
+  const value = error && typeof error === "object" ? error as { status?: unknown; name?: unknown } : {};
+  const status = value.status;
+  if (typeof status === "number" && Number.isInteger(status) && status >= 400 && status <= 599) {
+    return { providerErrorCode: `GEMINI_HTTP_${status}`, providerHttpStatus: status };
+  }
+  return { providerErrorCode: value.name === "AbortError" ? "GEMINI_ABORTED" : "GEMINI_TRANSPORT_ERROR" };
+}
 
 export interface GeminiAdapterOptions {
   client?: GoogleGenAI;
@@ -49,16 +61,30 @@ export class GeminiAnswerAdapter implements AnswerProvider {
     try {
       const systemInstruction = buildAnswerSystemPrompt(input.locale, input.persona);
       const userPrompt = formatAnswerUserPrompt(input.question, input.chunks, input.locale);
-      // Must match complete(): user contents + systemInstruction in config.
-      // Passing the system prompt as a contents entry is rejected by the CountTokens API
-      // and previously hard-blocked every setup trial before reservation.
+      // Developer API counts system instructions via generateContentRequest.
+      // SDK 2.28 rejects config.systemInstruction here (Vertex-only). extraBody
+      // is the SDK's supported REST escape hatch; omit the mutually exclusive
+      // top-level contents after serialization, not the system instruction.
       const res = await this.client.models.countTokens({
         model: this.modelId,
         contents: userPrompt,
-        config: { systemInstruction },
+        config: { httpOptions: { extraBody: {
+          contents: undefined,
+          generateContentRequest: {
+            model: `models/${this.modelId}`,
+            contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+            systemInstruction: { role: "user", parts: [{ text: systemInstruction }] },
+          },
+        } } },
       });
       return validTokenCount(res.totalTokens) ? res.totalTokens : null;
-    } catch {
+    } catch (error: unknown) {
+      const evidence = geminiErrorEvidence(error);
+      logEvent("warn", "answers.gemini.token_count_failed", {
+        provider: "google", model_id: this.modelId,
+        error_code: evidence.providerErrorCode,
+        provider_http_status: evidence.providerHttpStatus ?? null,
+      });
       return null;
     }
   }
@@ -156,7 +182,7 @@ export class GeminiAnswerAdapter implements AnswerProvider {
       const cachedTokens = response.usageMetadata?.cachedContentTokenCount ?? 0;
       const requestId = response.responseId;
       if (!validTokenCount(promptTokens) || !validTokenCount(candidateTokens) || !validTokenCount(reasoningTokens) || !validTokenCount(cachedTokens) || cachedTokens > promptTokens || (response.usageMetadata?.toolUsePromptTokenCount ?? 0) !== 0) {
-        return { ok: false, code: "UNAVAILABLE", message: "Gemini usage could not be verified.", modelId: this.modelId, provider: "google", requestId, latencyMs: Date.now() - startedAt, providerAttempted: true, retrySafe: false };
+        return { ok: false, code: "UNAVAILABLE", providerErrorCode: "GEMINI_USAGE_UNVERIFIED", message: "Gemini usage could not be verified.", modelId: this.modelId, provider: "google", requestId, latencyMs: Date.now() - startedAt, providerAttempted: true, retrySafe: false };
       }
       // Gemini thoughts are separate from candidates; normalize to total billed output.
       const completionTokens = candidateTokens + reasoningTokens;
@@ -179,10 +205,10 @@ export class GeminiAnswerAdapter implements AnswerProvider {
       };
       if (!matchesRequestedModel(response.modelVersion, this.modelId)) {
         const unpricedUsage = { ...usage, estimatedCostUsd: undefined, estimatedCostBaisa: undefined, pricingVersion: undefined, pricingEffectiveDate: undefined };
-        return { ok: false, code: "UNAVAILABLE", message: "Unexpected Gemini model returned; usage requires reconciliation.", modelId: this.modelId, provider: "google", usage: unpricedUsage, requestId, latencyMs: usage.latencyMs, providerAttempted: true, retrySafe: false };
+        return { ok: false, code: "UNAVAILABLE", providerErrorCode: "GEMINI_MODEL_MISMATCH", message: "Unexpected Gemini model returned; usage requires reconciliation.", modelId: this.modelId, provider: "google", usage: unpricedUsage, requestId, latencyMs: usage.latencyMs, providerAttempted: true, retrySafe: false };
       }
       if (!text || response.candidates?.some(candidate => candidate.finishReason && candidate.finishReason !== "STOP")) {
-        return { ok: false, code: "UNAVAILABLE", message: "Gemini returned no complete answer.", modelId: this.modelId, provider: "google", usage, requestId, latencyMs: usage.latencyMs, providerAttempted: true, retrySafe: false };
+        return { ok: false, code: "UNAVAILABLE", providerErrorCode: "GEMINI_INCOMPLETE_RESPONSE", message: "Gemini returned no complete answer.", modelId: this.modelId, provider: "google", usage, requestId, latencyMs: usage.latencyMs, providerAttempted: true, retrySafe: false };
       }
       return {
         ok: true,
@@ -197,8 +223,8 @@ export class GeminiAnswerAdapter implements AnswerProvider {
         attemptsCount: 1,
       };
     } catch (err: unknown) {
-      const errorObj = err as { status?: number; message?: string; name?: string };
-      const evidence = { modelId: this.modelId, provider: "google" as const, latencyMs: Date.now() - startedAt, providerAttempted: true, retrySafe: false };
+      const errorObj = (err && typeof err === "object" ? err : {}) as { status?: number; name?: string };
+      const evidence = { ...geminiErrorEvidence(err), modelId: this.modelId, provider: "google" as const, latencyMs: Date.now() - startedAt, providerAttempted: true, retrySafe: false };
 
       if (errorObj?.name === "AbortError") {
         return { ok: false, code: "UNAVAILABLE", message: "Request timed out or was aborted; provider outcome is unknown.", ...evidence };

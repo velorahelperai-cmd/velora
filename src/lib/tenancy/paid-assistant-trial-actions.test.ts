@@ -375,6 +375,26 @@ describe("paid-assistant-trial-actions", () => {
     }));
   });
 
+  it("persists original HTTP503 instead of the generic adapter code, keeping the hold and client message", async () => {
+    const scope = { expectedAccountId: VALID_ACCOUNT_ID, companyId: VALID_COMPANY_ID, branchId: VALID_BRANCH_ID };
+    const complete = vi.fn(async (): Promise<AnswerResult> => ({
+      ok: false, code: "UNAVAILABLE", providerErrorCode: "GEMINI_HTTP_503", providerHttpStatus: 503,
+      providerAttempted: true, retrySafe: false, latencyMs: 446,
+    }));
+    setAnswerProviderForTesting({ id: "mock-gemini", complete });
+    const result = await askOwnedBranchAssistantTrialAction({ ...scope, expectedVersion: 1, knowledgeRevision: "rev_1", question: "ما مواعيد العمل؟" });
+    expect(result).toMatchObject({ ok: false, code: "TRIAL_OUTCOME_UNKNOWN", retrySafe: false });
+    expect(JSON.stringify(result)).not.toContain("GEMINI_HTTP");
+    expect(JSON.stringify(result)).not.toContain("503");
+    expect(complete).toHaveBeenCalledTimes(1);
+    expect(trustedRpc).toHaveBeenCalledWith("ai_settle_admin_attempt", expect.objectContaining({
+      p_status: "uncertain", p_cost_baisa: null, p_cost_usd: null, p_error_code: "GEMINI_HTTP_503", p_latency_ms: 446,
+    }));
+    expect(logEvent).toHaveBeenCalledWith("warn", "es02.branch_assistant_trial.provider_unconfirmed", expect.objectContaining({
+      error_code: "GEMINI_HTTP_503", adapter_code: "UNAVAILABLE", provider_http_status: 503, latency_ms: 446,
+    }));
+  });
+
   it("refuses to reserve when the live answering kill switch is off", async () => {
     vi.stubEnv("AI_LIVE_ANSWERING", "false");
     const complete = vi.fn();

@@ -76,6 +76,9 @@ export type AnswerSuccess = {
 };
 
 export type AnswerFailure = {
+  /** Server-only fixed codes; never include raw provider messages or headers. */
+  providerErrorCode?: `GEMINI_HTTP_${number}` | "GEMINI_TRANSPORT_ERROR" | "GEMINI_ABORTED" | "GEMINI_USAGE_UNVERIFIED" | "GEMINI_MODEL_MISMATCH" | "GEMINI_INCOMPLETE_RESPONSE";
+  providerHttpStatus?: number;
   ok: false;
   code: AnswerFailureCode;
   message?: string;
