@@ -311,7 +311,11 @@ export async function askOwnedBranchAssistantTrialAction(
     }
     // Settlement never throws. A false result means accounting is unconfirmed: the ledger row stays
     // held (reserved/running) and blocks any new dispatch for the branch, so nothing is resent.
-    const settle = async (status: "success" | "rejected" | "incomplete" | "uncertain", answer?: Pick<Extract<AnswerResult, { ok: true }>, "usage">): Promise<boolean> => {
+    const settle = async (
+      status: "success" | "rejected" | "incomplete" | "uncertain",
+      answer?: Pick<Extract<AnswerResult, { ok: true }>, "usage">,
+      evidence?: { errorCode?: string | null; latencyMs?: number | null; requestId?: string | null; responseId?: string | null; actualModelId?: string | null },
+    ): Promise<boolean> => {
       try {
         let usage: Record<string, number> = {};
         let cost: { costUsd: number | null; costBaisa: number | null } = { costUsd: status === "uncertain" ? null : 0, costBaisa: status === "uncertain" ? null : 0 };
@@ -320,10 +324,20 @@ export async function askOwnedBranchAssistantTrialAction(
           cost = priceRealUsage(usage as Parameters<typeof priceRealUsage>[0], pricing);
           if (!answer.usage.actualModelId || !answer.usage.requestId) return false;
         }
+        const providerError =
+          typeof evidence?.errorCode === "string" && evidence.errorCode.trim()
+            ? evidence.errorCode.trim().slice(0, 80)
+            : "SETUP_TRIAL_PROVIDER_RESULT";
+        const latency =
+          answer?.usage.latencyMs ??
+          (typeof evidence?.latencyMs === "number" && Number.isFinite(evidence.latencyMs) ? Math.max(0, Math.floor(evidence.latencyMs)) : 0);
         const settled = await writer.rpc("ai_settle_admin_attempt" as never, {
           p_id: operationId, p_status: status, p_cost_usd: cost.costUsd, p_cost_baisa: cost.costBaisa, p_usage: usage,
-          p_request_id: answer?.usage.requestId ?? null, p_error_code: status === "success" ? null : "SETUP_TRIAL_PROVIDER_RESULT",
-          p_latency_ms: answer?.usage.latencyMs ?? 0, p_response_id: answer?.usage.responseId ?? null, p_actual_model_id: answer?.usage.actualModelId ?? null,
+          p_request_id: answer?.usage.requestId ?? evidence?.requestId ?? null,
+          p_error_code: status === "success" ? null : providerError,
+          p_latency_ms: latency,
+          p_response_id: answer?.usage.responseId ?? evidence?.responseId ?? null,
+          p_actual_model_id: answer?.usage.actualModelId ?? evidence?.actualModelId ?? null,
         } as never);
         return !settled.error && settled.data === true;
       } catch {
@@ -376,15 +390,27 @@ export async function askOwnedBranchAssistantTrialAction(
       // retrySafe (e.g. HTTP 403/404) is fallback metadata, not settlement authority.
       logEvent("warn", "es02.branch_assistant_trial.provider_unconfirmed", {
         request_id: requestId,
+        operation_id: operationId,
+        provider: completion.provider ?? "google",
+        model_id: completion.modelId ?? configuredModel,
+        latency_ms: completion.latencyMs ?? null,
         stage: "b6",
         error_code: completion.code,
         detail: reachedProvider ? "provider_attempted_without_usage" : "non_attempt_after_start",
       });
-      if (!await settle("uncertain")) return PENDING;
+      if (!await settle("uncertain", undefined, {
+        errorCode: completion.code,
+        latencyMs: completion.latencyMs ?? null,
+        requestId: completion.requestId ?? null,
+      })) return PENDING;
+      // Provider authentication is not customer authentication. Keep the original
+      // code in secure evidence, while the UI remains pending without retry authority.
       return {
         ok: false,
         code: "TRIAL_OUTCOME_UNKNOWN",
-        message: completion.message || "Provider outcome requires reconciliation; do not resend",
+        message: "Could not get a reply. Check request status before sending another question.",
+        requestId,
+        retrySafe: false,
       };
     }
     if (!completion.text.trim() || completion.modelId !== configuredModel) {

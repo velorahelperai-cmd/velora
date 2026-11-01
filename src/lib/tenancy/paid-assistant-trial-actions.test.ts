@@ -70,6 +70,7 @@ import {
   readOwnedBranchAssistantTrialAction,
 } from "./paid-assistant-trial-actions";
 import { setAnswerProviderForTesting } from "@/lib/answers/provider";
+import { logEvent } from "@/lib/logging/logger.mjs";
 import type { AnswerProvider, AnswerResult, AnswerUsage } from "@/lib/answers/types";
 
 describe("paid-assistant-trial-actions", () => {
@@ -296,10 +297,15 @@ describe("paid-assistant-trial-actions", () => {
     expect(res).toMatchObject({
       ok: false,
       code: "TRIAL_OUTCOME_UNKNOWN",
-      message: "Quota exceeded",
+      retrySafe: false,
     });
     expect(res).not.toHaveProperty("retrySafe", true);
-    expect(trustedRpc).toHaveBeenCalledWith("ai_settle_admin_attempt", expect.objectContaining({ p_status: "uncertain", p_cost_baisa: null }));
+    expect(trustedRpc).toHaveBeenCalledWith("ai_settle_admin_attempt", expect.objectContaining({
+      p_status: "uncertain",
+      p_cost_baisa: null,
+      p_error_code: "UNAVAILABLE",
+      p_request_id: "req-err-1",
+    }));
     expect(rpcMock).not.toHaveBeenCalledWith("es02_record_owned_branch_assistant_trial", expect.anything());
   });
 
@@ -324,7 +330,49 @@ describe("paid-assistant-trial-actions", () => {
     });
     expect(res).toMatchObject({ ok: false, code: "TRIAL_OUTCOME_UNKNOWN" });
     expect(res).not.toHaveProperty("retrySafe", true);
-    expect(trustedRpc).toHaveBeenCalledWith("ai_settle_admin_attempt", expect.objectContaining({ p_status: "uncertain", p_cost_baisa: null }));
+    expect(trustedRpc).toHaveBeenCalledWith("ai_settle_admin_attempt", expect.objectContaining({
+      p_status: "uncertain",
+      p_cost_baisa: null,
+      p_error_code: "NEEDS_SETUP",
+    }));
+  });
+
+  it("records Gemini HTTP 401 as UNAUTHENTICATED in ledger evidence without unlocking", async () => {
+    setAnswerProviderForTesting({
+      id: "mock-gemini",
+      complete: vi.fn(async (): Promise<AnswerResult> => ({
+        ok: false,
+        code: "UNAUTHENTICATED",
+        message: "Invalid Gemini API Key",
+        providerAttempted: true,
+        retrySafe: false,
+        latencyMs: 42,
+      })),
+    });
+    const res = await askOwnedBranchAssistantTrialAction({
+      expectedAccountId: VALID_ACCOUNT_ID,
+      companyId: VALID_COMPANY_ID,
+      branchId: VALID_BRANCH_ID,
+      expectedVersion: 1,
+      knowledgeRevision: "rev_1",
+      question: "ما مواعيد العمل؟",
+    });
+    expect(res).toMatchObject({ ok: false, code: "TRIAL_OUTCOME_UNKNOWN", retrySafe: false });
+    expect(JSON.stringify(res)).not.toContain("Invalid Gemini API Key");
+    const settlement = trustedRpc.mock.calls.find(call => call[0] === "ai_settle_admin_attempt")?.[1];
+    expect(logEvent).toHaveBeenCalledWith("warn", "es02.branch_assistant_trial.provider_unconfirmed", expect.objectContaining({
+      operation_id: settlement.p_id,
+      error_code: "UNAUTHENTICATED",
+      latency_ms: 42,
+      provider: "google",
+    }));
+    expect(res).not.toHaveProperty("retrySafe", true);
+    expect(trustedRpc).toHaveBeenCalledWith("ai_settle_admin_attempt", expect.objectContaining({
+      p_status: "uncertain",
+      p_error_code: "UNAUTHENTICATED",
+      p_latency_ms: 42,
+      p_cost_baisa: null,
+    }));
   });
 
   it("refuses to reserve when the live answering kill switch is off", async () => {
@@ -577,10 +625,10 @@ describe("trial budget cap, billed-but-unusable calls and settlement failure", (
       })),
     });
     const result = await askOwnedBranchAssistantTrialAction(input);
-    expect(result).toMatchObject({ ok: false, code: "TRIAL_OUTCOME_UNKNOWN" });
+    expect(result).toMatchObject({ ok: false, code: "TRIAL_OUTCOME_UNKNOWN", retrySafe: false });
     expect(result).not.toHaveProperty("retrySafe", true);
     expect(called("ai_settle_admin_attempt")).toEqual([
-      expect.objectContaining({ p_status: "uncertain", p_cost_baisa: null, p_cost_usd: null }),
+      expect.objectContaining({ p_status: "uncertain", p_cost_baisa: null, p_cost_usd: null, p_error_code: "UNAVAILABLE" }),
     ]);
   });
 

@@ -170,8 +170,13 @@ function PaidSetupBranchRead(p:PaidSetupFlowProps&{branchId:string;refreshVersio
    }
    if(shellFirst&&result.read.entitlement)void observeSetupRead(reader.read('workspace'),()=>{}).then(enriched=>{
      if(!active||request!==generation.current||!isCurrent())return;
+     // Background enrichment must not wipe the last confirmed same-branch shell/workspace
+     // or change the open step. Soft-fail keeps the prior snapshot and marks refresh failed.
      if(!enriched){setRefreshFailed(true);return;}
-     if(enriched.scope.expectedAccountId!==input.expectedAccountId||enriched.scope.companyId!==input.companyId||enriched.scope.branchId!==branchId||!paidChecklistFromRead(enriched.read,input)){setSnapshot(null);onWorkspaceRead?.(null);return;}
+     if(enriched.scope.expectedAccountId!==input.expectedAccountId||enriched.scope.companyId!==input.companyId||enriched.scope.branchId!==branchId||!paidChecklistFromRead(enriched.read,input)){
+      reportFailure(new SetupReadError("scope", "workspace"));
+      return;
+     }
      setProvisional(false);setSnapshot(enriched);onWorkspaceRead?.(enriched);
      setSelected(previous=>{
       const unsaved=!!branchRoot.current?.querySelector('[data-setup-unsaved="true"]');

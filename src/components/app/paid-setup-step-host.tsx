@@ -120,6 +120,7 @@ function StepHost(props: PaidSetupStepHostProps) {
   const [hoursCopyTargets, setHoursCopyTargets] = useState<BranchHoursCopyTarget[]>(()=>{const preview=reader?.peekHours();return preview?.ok?preview.copyTargets:[];});
   const [hoursPhase, setHoursPhase] = useState<"loading" | "ready" | "saving" | "saved" | "conflict" | "unavailable">("loading");
 
+  const hoursConfirmed = useRef(false);
   useEffect(() => {
     if (step !== "hours" || !isCurrentRef.current()) return;
     const scopeKey = `${expectedAccountId}:${companyId}:${branchId}:${readVersion}`;
@@ -138,19 +139,25 @@ function StepHost(props: PaidSetupStepHostProps) {
       if (hoursInFlightKeyRef.current !== scopeKey) return;
       hoursInFlightKeyRef.current = null;
       if (res.ok && res.snapshot) {
+        hoursConfirmed.current = true;
         setHoursSnap(res.snapshot);
         setHoursCopyTargets(res.copyTargets);
         setHoursPhase("ready");
       } else if (active && isCurrentRef.current()) {
-        // Stay loading with the form usable; save remains gated until a verified snapshot.
-        setHoursPhase("unavailable");
+        // Soft-fail: keep the last confirmed hours snapshot for this branch mount.
+        setHoursPhase(hoursConfirmed.current ? "ready" : "unavailable");
       }
     }).catch((error) => {
       if (canceledRead(error)) return;
       if (active && isCurrentRef.current() && hoursInFlightKeyRef.current === scopeKey) {
         readFailure.current?.(error);
         hoursInFlightKeyRef.current = null;
-        setHoursPhase("unavailable");
+        if (error instanceof SetupReadError && (error.kind === "auth" || error.kind === "scope")) {
+          hoursConfirmed.current = false;
+          setHoursSnap(null);
+          setHoursCopyTargets([]);
+        }
+        setHoursPhase(hoursConfirmed.current ? "ready" : "unavailable");
       }
     });
 
@@ -168,6 +175,8 @@ function StepHost(props: PaidSetupStepHostProps) {
   const [langSnap, setLangSnap] = useState<ReplyLanguageSnapshot | null>(()=>reader?.peek?.('language')??null);
   const [langPhase, setLangPhase] = useState<"loading" | "ready" | "saving" | "saved" | "error" | "conflict" | "unavailable">("loading");
 
+  const knowledgeConfirmed = useRef(false);
+  const languageConfirmed = useRef(false);
   useEffect(() => {
     if (step !== "knowledge" || !isCurrent()) return;
     let active = true;
@@ -176,17 +185,23 @@ function StepHost(props: PaidSetupStepHostProps) {
     void observeSetupRead((reader?reader.read("knowledge"):readOwnedBranchKnowledgeAction(targetScope)),()=>{},10_000).then((snap) => {
       if (!active || !isCurrent()) return;
       if (snap) {
+        knowledgeConfirmed.current = true;
         setKnowledgeSnap(snap);
         setKnowledgePhase("ready");
-      } else {setKnowledgePhase("unavailable");}
-    }).catch(error=>{if(!canceledRead(error)&&active&&isCurrent()){readFailure.current?.(error);if(error instanceof SetupReadError&&(error.kind==='auth'||error.kind==='scope'))setKnowledgeSnap(null);setKnowledgePhase("unavailable");}});
+      } else {
+        setKnowledgePhase(knowledgeConfirmed.current ? "ready" : "unavailable");
+      }
+    }).catch(error=>{if(!canceledRead(error)&&active&&isCurrent()){readFailure.current?.(error);if(error instanceof SetupReadError&&(error.kind==='auth'||error.kind==='scope')){knowledgeConfirmed.current=false;setKnowledgeSnap(null);}setKnowledgePhase(knowledgeConfirmed.current?"ready":"unavailable");}});
     void observeSetupRead((reader?reader.read("language"):readOwnedBranchReplyLanguageAction(targetScope)),()=>{},10_000).then((snap) => {
       if (!active || !isCurrent()) return;
       if (snap) {
+        languageConfirmed.current = true;
         setLangSnap(snap);
         setLangPhase("ready");
-      } else {setLangPhase("unavailable");}
-    }).catch(error=>{if(!canceledRead(error)&&active&&isCurrent()){readFailure.current?.(error);if(error instanceof SetupReadError&&(error.kind==='auth'||error.kind==='scope'))setLangSnap(null);setLangPhase("unavailable");}});
+      } else {
+        setLangPhase(languageConfirmed.current ? "ready" : "unavailable");
+      }
+    }).catch(error=>{if(!canceledRead(error)&&active&&isCurrent()){readFailure.current?.(error);if(error instanceof SetupReadError&&(error.kind==='auth'||error.kind==='scope')){languageConfirmed.current=false;setLangSnap(null);}setLangPhase(languageConfirmed.current?"ready":"unavailable");}});
     return () => {
       active = false;
     };

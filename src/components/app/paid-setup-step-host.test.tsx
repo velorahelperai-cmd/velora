@@ -134,3 +134,49 @@ it('preserves the budget failure detail and retry denial from action through the
   expect(host.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(true);
  }finally{await act(async()=>root.unmount());vi.unstubAllGlobals();}
 });
+
+
+it('retains confirmed hours during same-branch refresh and clears them on denied access or branch change', async()=>{
+ vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);
+ const {SetupReadError}=await import('@/lib/tenancy/setup-read-client');
+ const {emptyBranchHours}=await import('@/lib/tenancy/branch-hours-contracts');
+ const scope={expectedAccountId:baseProps.scope.expectedAccountId,companyId:baseProps.scope.companyId,branchId:baseProps.scope.branchId};
+ const snapshot={scope,version:7,branchLabel:'Confirmed branch',timezone:'Asia/Muscat',schedule:{...emptyBranchHours(),monday:{state:'open' as const,intervals:[{start:'09:15',end:'18:30',nextDay:false}]}}};
+ const makeReader=(read:()=>Promise<unknown>)=>({read,peekHours:()=>null,peek:()=>null,invalidate:vi.fn()}) as unknown as NonNullable<PaidSetupStepHostProps['reader']>;
+ const host=document.createElement('div'),root=createRoot(host);
+ const times=()=>host.textContent;
+ try{
+  await act(async()=>root.render(createElement(PaidSetupStepHost,{...baseProps,reader:makeReader(async()=>({ok:true,snapshot,copyTargets:[]}))})));
+  expect(times()).toContain('09:15');
+  let reject!:(reason:unknown)=>void;
+  await act(async()=>root.render(createElement(PaidSetupStepHost,{...baseProps,reader:makeReader(()=>new Promise((_,r)=>{reject=r;}))})));
+  expect(times()).toContain('09:15');
+  await act(async()=>reject(new SetupReadError('network','hours')));
+  expect(times()).toContain('09:15');
+  expect(host.textContent).not.toContain('Hours for this branch are unavailable');
+  await act(async()=>root.render(createElement(PaidSetupStepHost,{...baseProps,reader:makeReader(async()=>{throw new SetupReadError('auth','hours');})})));
+  expect(times()).not.toContain('09:15');
+  await act(async()=>root.render(createElement(PaidSetupStepHost,{...baseProps,scope:{...baseProps.scope,branchId:'44444444-4444-4444-8444-444444444444'},reader:makeReader(()=>new Promise(()=>{}))})));
+  expect(times()).not.toContain('09:15');
+ }finally{await act(async()=>root.unmount());vi.unstubAllGlobals();}
+});
+
+it('retains confirmed knowledge during refresh failure but discards it on scope denial',async()=>{
+ vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);
+ const {SetupReadError}=await import('@/lib/tenancy/setup-read-client');
+ const scope={expectedAccountId:baseProps.scope.expectedAccountId,companyId:baseProps.scope.companyId,branchId:baseProps.scope.branchId};
+ const snapshot={scope,version:1,branchLabel:'Branch',websiteQuota:{limit:10,used:3},pages:[],files:[],faq:[],capabilities:{canAddWebsite:true,canUploadFiles:true,canSaveText:true}};
+ const makeReader=(read:(kind:string)=>Promise<unknown>)=>({read,peekHours:()=>null,peek:()=>null,invalidate:vi.fn()}) as unknown as NonNullable<PaidSetupStepHostProps['reader']>;
+ const host=document.createElement('div'),root=createRoot(host);
+ try{
+  await act(async()=>root.render(createElement(PaidSetupStepHost,{...baseProps,step:'knowledge',reader:makeReader(async kind=>kind==='knowledge'?snapshot:null)})));
+  expect(host.textContent).toContain('3 / 10');
+  let reject!:(reason:unknown)=>void;
+  await act(async()=>root.render(createElement(PaidSetupStepHost,{...baseProps,step:'knowledge',reader:makeReader(kind=>kind==='knowledge'?new Promise((_,r)=>{reject=r;}):Promise.resolve(null))})));
+  expect(host.textContent).toContain('3 / 10');
+  await act(async()=>reject(new SetupReadError('network','knowledge')));
+  expect(host.textContent).toContain('3 / 10');
+  await act(async()=>root.render(createElement(PaidSetupStepHost,{...baseProps,step:'knowledge',reader:makeReader(async()=>{throw new SetupReadError('scope','knowledge');})})));
+  expect(host.textContent).not.toContain('3 / 10');
+ }finally{await act(async()=>root.unmount());vi.unstubAllGlobals();}
+});
