@@ -1,0 +1,10 @@
+import {beforeEach,expect,it,vi} from "vitest";
+const f=vi.hoisted(()=>({access:vi.fn(),read:vi.fn()}));
+vi.mock("@/lib/tenancy/access",()=>({getCompanyAccess:f.access}));
+vi.mock("@/lib/tenancy/actions",()=>({getCustomerReadiness:f.read}));
+import {readDashboardReadiness} from "./dashboard-readiness-actions";
+beforeEach(()=>{vi.clearAllMocks();f.access.mockResolvedValue({ok:true,context:{userId:"owner",company:{id:"company"}}});f.read.mockResolvedValue({ok:true,data:{companyId:"company",items:[]}});});
+it.each([{actorId:"other",companyId:"company"},{actorId:"owner",companyId:"foreign"}])("rejects stale actor/company before detailed reads",async input=>{expect(await readDashboardReadiness(input)).toEqual({ok:false,code:"FORBIDDEN"});expect(f.read).not.toHaveBeenCalled();});
+it("returns the existing authorized readiness without inventing a status",async()=>{const r=await readDashboardReadiness({actorId:"owner",companyId:"company"});expect(r).toEqual({ok:true,data:{companyId:"company",items:[]}});expect(f.read).toHaveBeenCalledOnce();});
+it("rejects a mismatched result",async()=>{f.read.mockResolvedValue({ok:true,data:{companyId:"other"}});expect(await readDashboardReadiness({actorId:"owner",companyId:"company"})).toEqual({ok:false,code:"FORBIDDEN"});});
+it("preserves denial and fails closed on transport error",async()=>{f.access.mockResolvedValue({ok:false,code:"UNAUTHENTICATED"});expect(await readDashboardReadiness({actorId:"owner",companyId:"company"})).toEqual({ok:false,code:"UNAUTHENTICATED"});expect(f.read).not.toHaveBeenCalled();f.access.mockRejectedValue(Error("offline"));expect(await readDashboardReadiness({actorId:"owner",companyId:"company"})).toEqual({ok:false,code:"UNAVAILABLE"});});

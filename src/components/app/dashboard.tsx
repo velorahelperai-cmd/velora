@@ -5,6 +5,7 @@ import {useDemo} from "@/lib/demo-state";
 import {readDashboardBilling} from "@/lib/customer/dashboard-billing-actions";
 import type {DashboardBillingLoad} from "@/lib/customer/dashboard-billing-model";
 import {getCustomerReadiness} from "@/lib/tenancy/actions";
+import {readDashboardReadiness} from "@/lib/customer/dashboard-readiness-actions";
 import type {CustomerReadinessSnapshot} from "@/lib/tenancy/customer-readiness";
 import {dashboardInboxMetrics,type DashboardInboxLoad} from "./onboarding-contracts";
 import {WorkspaceShell} from "./workspace-shell";
@@ -104,11 +105,13 @@ export function DashboardPage({
   initialReadiness = null,
   readinessLoadFailed = false,
   initialDiagnostic,
+  workspace,
 }: {
   initialLeads: DashboardInboxLoad;
   initialReadiness?: CustomerReadinessSnapshot | null;
   readinessLoadFailed?: boolean;
   initialDiagnostic?:unknown;
+  workspace?: {actorId:string;companyId:string|null;companyName:string|null;fullName:string;role:CustomerReadinessSnapshot["role"]}|null;
 }) {
   const copy = useAppCopy();
   const { locale } = useDemo();
@@ -120,6 +123,7 @@ export function DashboardPage({
   const [refreshFailed, setRefreshFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const genRef = useRef(0);
+  const attemptedRead = useRef(Boolean(initialReadiness));
 
   const [trackedProps, setTrackedProps] = useState(() => ({
     readiness: initialReadiness,
@@ -136,17 +140,22 @@ export function DashboardPage({
   }
 
   useEffect(() => {
-    genRef.current += 1;
+    const fence=genRef;
+    fence.current += 1;
+    return ()=>{fence.current += 1;};
   }, [initialReadiness, readinessLoadFailed]);
 
   async function reloadReadiness() {
+    if(workspace===null)return;
+    attemptedRead.current=true;
     const gen = ++genRef.current;
     setBusy(true);
     try {
-      const result = await getCustomerReadiness();
+      const result = workspace ? await readDashboardReadiness({actorId:workspace.actorId,companyId:workspace.companyId}) : await getCustomerReadiness();
       if (gen !== genRef.current) return;setDiagnostic(result.diagnostic);
-      if (!result.ok) {
+      if (!result.ok || workspace && result.data.companyId!==workspace.companyId) {
         setRefreshFailed(true);
+        if(!readiness)setLoadFailed(true);
         return;
       }
       setLoadFailed(false);
@@ -155,13 +164,15 @@ export function DashboardPage({
     } catch {
       if (gen !== genRef.current) return;
       setRefreshFailed(true);
+      if(!readiness)setLoadFailed(true);
     } finally {
       if (gen === genRef.current) setBusy(false);
     }
   }
 
 
-  const companyId = readiness?.companyId ?? null;
+  const companyId = workspace === undefined ? readiness?.companyId ?? null : workspace?.companyId ?? null;
+  const identity = workspace === undefined ? readiness : workspace;
   const scopedInbox = initialLeads.ok && companyId !== null && initialLeads.meta.companyId === companyId;
   const metrics = dashboardInboxMetrics(scopedInbox ? initialLeads : {ok:false,code:"FORBIDDEN"},companyId);
   const automationOpen = scopedInbox && initialLeads.ok ? initialLeads.conversations.filter(conv => conv.status !== "resolved" && conv.automationAllowed === true && !conv.assistantPaused).length : null;
@@ -176,10 +187,10 @@ export function DashboardPage({
   ];
   return <WorkspaceShell title={copy.app.dashboardTitle}>
     <div className={styles.dashboard} dir={ar ? "rtl" : "ltr"}>
-      <header className={styles.welcome}><div><h2>{t("أهلًا، ","Hello, ")}{readiness?.fullName || t("صاحب النشاط","business owner")}</h2><p>{readiness?.companyName || t("مساحة نشاطك","Your business workspace")}</p></div><nav aria-label={t("إجراءات سريعة","Quick actions")} className={styles.actions}><Link href="/app/settings" className={styles.secondary}>{t("الإعدادات","Settings")}</Link><Link href="/app/conversations" className={styles.primary}>{t("فتح المحادثات","Open inbox")}</Link></nav></header>
+      <header className={styles.welcome}><div><h2>{t("أهلًا، ","Hello, ")}{identity?.fullName || t("صاحب النشاط","business owner")}</h2><p>{identity?.companyName || t("مساحة نشاطك","Your business workspace")}</p></div><nav aria-label={t("إجراءات سريعة","Quick actions")} className={styles.actions}><Link href="/app/settings" className={styles.secondary}>{t("الإعدادات","Settings")}</Link><Link href="/app/conversations" className={styles.primary}>{t("فتح المحادثات","Open inbox")}</Link></nav></header>
       <section className={styles.metrics} aria-label={t("ملخص محادثات النشاط","Business conversation overview")}>{cards.map(card => <Link href={card.href} key={card.href} className={styles.metric}><span>{card.label}</span><strong>{count(card.value)}</strong><p>{card.detail}</p></Link>)}</section>
       <div className={styles.columns}>
-        {companyId && readiness?.role === "owner" ? <DashboardBranch key={"branch:" + companyId} companyId={companyId} locale={locale}/> : <section className={styles.panel}><h2>{t("الفرع والقنوات","Branch and channels")}</h2><p className={styles.empty}>{t("حالة الفروع متاحة لمالك النشاط بعد اختيار مساحة العمل.","Branch status is available to the owner after choosing a workspace.")}</p></section>}
+        {companyId && identity?.role === "owner" ? <DashboardBranch key={"branch:" + companyId} companyId={companyId} locale={locale}/> : <section className={styles.panel}><h2>{t("الفرع والقنوات","Branch and channels")}</h2><p className={styles.empty}>{t("حالة الفروع متاحة لمالك النشاط بعد اختيار مساحة العمل.","Branch status is available to the owner after choosing a workspace.")}</p></section>}
         <DashboardBillingCard key={"billing:" + (companyId ?? "none")} companyId={companyId}/>
       </div>
       <section className={styles.panel} aria-label={t("آخر محادثات واتساب المحمّلة","Latest loaded WhatsApp conversations")}>
@@ -191,7 +202,8 @@ export function DashboardPage({
         <Link href="/app/settings?tab=plan"><strong>{t("الباقة والفواتير","Plan and billing")}</strong><p>{t("راجع اشتراكك وسجل الدفع","Review your subscription and payment history")}</p></Link>
         <Link href="/app/settings"><strong>{t("إعدادات النشاط","Business settings")}</strong><p>{t("بيانات النشاط وإعدادات الحساب","Business details and account settings")}</p></Link>
       </section>
-      <details className={styles.readiness}><summary>{t("تفاصيل جاهزية النشاط","Business readiness details")}</summary><div className={styles.panelHeader}><p>{t("حالات النشاط العامة؛ حالة الفرع المأكدة موجودة بالأعلى.","Business-wide status; confirmed branch status is shown above.")}</p><Button type="button" variant="secondary" busy={busy} onClick={() => void reloadReadiness()}>{copy.app.readinessRetry}</Button></div><DiagnosticHint diagnostic={diagnostic} locale={locale}/>
+      <details className={styles.readiness} onToggle={event=>{if(event.currentTarget.open&&!attemptedRead.current&&!busy&&workspace!==null)void reloadReadiness();}}><summary>{t("تفاصيل جاهزية النشاط","Business readiness details")}</summary><div className={styles.panelHeader}><p>{t("حالات النشاط العامة؛ حالة الفرع المأكدة موجودة بالأعلى.","Business-wide status; confirmed branch status is shown above.")}</p><Button type="button" variant="secondary" busy={busy} disabled={workspace===null} onClick={() => void reloadReadiness()}>{copy.app.readinessRetry}</Button></div><DiagnosticHint diagnostic={diagnostic} locale={locale}/>
+        {busy && !readiness && <p role="status">{t("جارٍ تحميل تفاصيل الجاهزية…","Loading readiness details…")}</p>}
         {loadFailed && !readiness && <Notice tone="error">{copy.app.readinessLoadFailed}</Notice>}
         {refreshFailed && readiness && <Notice tone="warn">{copy.app.readinessStaleSnapshot}</Notice>}
         {readiness && <ul className={styles.readinessList}>{readiness.items.map(item => <li key={item.id}><strong>{copy.app.readinessItems[item.id]}</strong><span>{copy.app.readinessDetails[item.detail]}</span><span className={styles.badge} data-tone={item.tone}>{copy.app.readinessTones[item.tone]}</span>{item.href && item.action !== "none" && <Link href={item.href}>{copy.app.readinessActions[item.action]}</Link>}</li>)}</ul>}

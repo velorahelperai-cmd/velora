@@ -1,0 +1,12 @@
+import {beforeEach,expect,it,vi} from "vitest";
+const f=vi.hoisted(()=>({access:vi.fn(),inbox:vi.fn(),readiness:vi.fn()}));
+vi.mock("@/lib/tenancy/access",()=>({getCompanyAccess:f.access}));
+vi.mock("@/lib/whatsapp/inbox",()=>({loadWhatsappInboxInitialPage:f.inbox}));
+vi.mock("@/lib/tenancy/actions",()=>({getCustomerReadiness:f.readiness}));
+vi.mock("@/components/app/dashboard",()=>({DashboardPage:"dashboard"}));
+import Page from "./page";
+beforeEach(()=>{vi.clearAllMocks();f.access.mockResolvedValue({ok:true,context:{userId:"actor",fullName:"Owner",company:{id:"company",display_name:"Company"},membership:{role:"owner"}}});f.inbox.mockResolvedValue({ok:true,meta:{companyId:"company"},conversations:[]});f.readiness.mockImplementation(()=>new Promise(()=>{}));});
+const resolve=async()=>{const page=Page();const child=page.props.children;return await child.type(child.props);};
+it("renders authenticated workspace without starting the slow collapsed readiness dependencies",async()=>{const tree=await resolve();expect(tree.props.workspace).toMatchObject({actorId:"actor",companyId:"company",role:"owner"});expect(f.readiness).not.toHaveBeenCalled();expect(tree.key).toBe("actor:company:owner");});
+it("does not serialize an inbox belonging to a different workspace",async()=>{f.inbox.mockResolvedValue({ok:true,meta:{companyId:"foreign"},conversations:[{text:"PRIVATE"}]});expect((await resolve()).props.initialLeads).toEqual({ok:false,code:"FORBIDDEN"});});
+it("does not serialize inbox data when workspace authority is unavailable",async()=>{f.access.mockResolvedValue({ok:false,code:"UNAVAILABLE"});const tree=await resolve();expect(tree.props.workspace).toBeNull();expect(tree.props.initialLeads).toEqual({ok:false,code:"FORBIDDEN"});});
