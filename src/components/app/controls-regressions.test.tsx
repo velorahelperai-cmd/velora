@@ -5,7 +5,7 @@ import { appCopy } from "@/lib/app-copy";
 
 type Slot = { value?: unknown; deps?: unknown[]; cleanup?: () => void };
 type Driver = { slots: Slot[]; cursor: number; changed: boolean; effects: Array<() => void> };
-const state = vi.hoisted(() => ({ driver: null as Driver | null, tab: "business", save: vi.fn(), select: vi.fn(), knowledgeSave: vi.fn(), refresh: vi.fn(), confirm: vi.fn(), locale: "en" as "en" | "ar" }));
+const state = vi.hoisted(() => ({ driver: null as Driver | null, tab: "business", save: vi.fn(), select: vi.fn(), knowledgeSave: vi.fn(), refresh: vi.fn(), replace: vi.fn(), history: vi.fn(), confirm: vi.fn(), locale: "en" as "en" | "ar" }));
 vi.mock("react", async () => {
   const actual = await vi.importActual<typeof import("react")>("react");
   const slot = () => { const d = state.driver!; return { d, s: d.slots[d.cursor++] ?? (d.slots[d.cursor - 1] = {}) }; };
@@ -16,7 +16,7 @@ vi.mock("react", async () => {
     useEffect(fn: () => void | (() => void), deps: unknown[]) { const { d, s } = slot(); if (!s.deps || deps.some((v, i) => !Object.is(v, s.deps![i]))) { d.effects.push(() => { s.cleanup?.(); s.cleanup = fn() || undefined; }); s.deps = deps; } },
   };
 });
-vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: state.refresh, replace: vi.fn() }), useSearchParams: () => new URLSearchParams("tab=" + state.tab) }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: state.refresh, replace: state.replace }), useSearchParams: () => new URLSearchParams("tab=" + state.tab) }));
 vi.mock("next/link", () => ({ default: "a" }));
 vi.mock("@/lib/demo-state", () => ({ useDemo: () => ({ locale: state.locale }) }));
 vi.mock("@/lib/tenancy/actions", () => ({ saveOwnerBusiness: state.save, selectWorkspaceCompany: state.select }));
@@ -58,8 +58,26 @@ function settings() {
 }
 function input(tree: unknown, label: string) { const field = nodes(tree).find(n => n.props.label === label)!; return nodes(field).find(n => n.type === "input" || n.type === "textarea")!; }
 const change = (n: Node, value: string) => (n.props.onChange as (e: unknown) => void)({ target: { value } });
-beforeEach(() => { vi.clearAllMocks(); state.tab = "business"; state.locale = "en"; state.confirm.mockReturnValue(false); state.select.mockResolvedValue({ ok: true }); vi.stubGlobal("window", { location: { pathname: "/app/settings", search: "?tab=business", replace: vi.fn() }, addEventListener: vi.fn(), removeEventListener: vi.fn(), confirm: state.confirm }); });
+beforeEach(() => { vi.clearAllMocks(); state.tab = "business"; state.locale = "en"; state.confirm.mockReturnValue(false); state.select.mockResolvedValue({ ok: true }); state.history.mockImplementation((_data: unknown, _title: string, href: string) => {state.tab = new URL(href,"https://velora.example").searchParams.get("tab")!;}); vi.stubGlobal("window", { history: {replaceState: state.history}, location: { pathname: "/app/settings", search: "?tab=business", replace: vi.fn() }, addEventListener: vi.fn(), removeEventListener: vi.fn(), confirm: state.confirm }); });
 describe("business drafts", () => {
+  it("switches actual tab handlers locally and preserves an unsaved business draft", () => {
+    const h=settings(); change(input(h.business(),appCopy("en").setup.businessName),"Draft name"); h.render();
+    const select=(value:string)=>(nodes(h.root()).find(n=>n.props.panelId==="settings-panel")!.props.onChange as (value:string)=>void)(value);
+    select("team"); h.render(); expect(state.tab).toBe("team");
+    select("business"); h.render(); expect(input(h.business(),appCopy("en").setup.businessName).props.value).toBe("Draft name");
+    expect(state.replace).not.toHaveBeenCalled(); expect(state.refresh).not.toHaveBeenCalled(); expect(state.save).not.toHaveBeenCalled();
+  });
+  it("guards leaving an unsaved business draft for subscription",()=>{
+    const h=settings();change(input(h.business(),appCopy("en").setup.businessName),"Draft name");h.render();
+    const select=nodes(h.root()).find(n=>n.props.panelId==="settings-panel")!.props.onChange as (value:string)=>void;
+    select("plan");expect(state.replace).not.toHaveBeenCalled();expect(state.confirm).toHaveBeenCalled();
+    state.confirm.mockReturnValue(true);select("plan");expect(state.replace).toHaveBeenCalledWith("/app/subscription");
+  });
+  it("does not expose owner tabs through a staff tab callback",()=>{
+    const h=settings();const p=props();h.render({...p,initialAccess:{...p.initialAccess,role:"staff"}});
+    const select=nodes(h.root()).find(n=>n.props.panelId==="settings-panel")!.props.onChange as (value:string)=>void;
+    select("team");select("plan");expect(state.history).not.toHaveBeenCalled();expect(state.replace).not.toHaveBeenCalled();
+  });
   it("binds a settings draft to its rendered account as well as its company", async () => {
     const h = settings(); const p = props();
     h.render({ ...p, initialAccess: { ...p.initialAccess, userId: "rendered-user" } } as ComponentProps<typeof SettingsPage>);

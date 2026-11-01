@@ -75,6 +75,18 @@ export function SettingsPage({
   const tab = tabs.some((t) => t.id === requested) ? requested : "account";
   const locked = effectiveRole !== "owner" && ownerTabs.includes(requested);
 
+  function selectTab(next: Tab) {
+    if (!tabs.some(item => item.id === next)) return;
+    if (next === "plan") {
+      if (businessLeaveGuard.current()) router.replace("/app/subscription");
+      return;
+    }
+    // These panels already belong to this workspace; keep the mounted draft.
+    const query = new URLSearchParams(params.toString());
+    query.set("tab", next);
+    window.history.replaceState(null, "", `/app/settings?${query.toString()}`);
+  }
+
   async function switchCompany(id:string) {
     if(!id||id===initialAccess.companyId||switchBusy||!businessLeaveGuard.current())return;
     setSwitchBusy(true);setSwitchError(false);
@@ -93,7 +105,7 @@ export function SettingsPage({
         <Button variant="ghost" busy={switchBusy} onClick={()=>{void accountSession?.refresh();router.refresh();}}>{c.refreshAccess}</Button>
       </Card>
       <div className="mt-5" />
-      {!subscriptionOnly && <Tabs panelId="settings-panel" tabs={tabs} value={tab} onChange={(t) => router.replace(t === "plan" ? "/app/subscription" : `/app/settings?tab=${t}`)} />}
+      {!subscriptionOnly && <Tabs panelId="settings-panel" tabs={tabs} value={tab} onChange={selectTab} />}
       <div className="mt-5" id="settings-panel" role={subscriptionOnly ? undefined : "tabpanel"} aria-labelledby={subscriptionOnly ? undefined : `settings-panel-tab-${tab}`}>
         {locked ? (
           <Notice tone="warn">{accessNote} <Link className="underline" href="/#packages">{c.viewPlans}</Link></Notice>
