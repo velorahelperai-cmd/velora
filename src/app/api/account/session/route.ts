@@ -1,4 +1,5 @@
 import {readAccountSession} from '@/lib/auth/account-session-read';
+import {runAccountReadRequest} from '@/lib/supabase/account-read-request';
 import {readAuthCorrelationHeaders} from '@/lib/diagnostics/correlation.mjs';
 export const runtime='nodejs';
 export const dynamic='force-dynamic';
@@ -9,7 +10,7 @@ export async function GET(request:Request){
  if(request.headers.get('sec-fetch-site')==='cross-site'||(origin&&origin!==url.origin))return failure('FORBIDDEN',403);
  if(url.search)return failure('INVALID_INPUT',400);
  try{
-  const result=await readAccountSession(readAuthCorrelationHeaders(request.headers));
+  const result=await runAccountReadRequest(request.signal,()=>readAccountSession(readAuthCorrelationHeaders(request.headers)));
   return Response.json(result,{status:result.ok?200:result.code==='UNAUTHENTICATED'?401:result.code==='CONFLICT'?409:503,headers});
  }catch{return failure('UNAVAILABLE',503);}
 }

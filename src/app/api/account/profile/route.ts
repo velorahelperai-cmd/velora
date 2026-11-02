@@ -1,4 +1,5 @@
 import {readAttestedAccountProfile} from '@/lib/tenancy/account-profile-read';
+import {runAccountReadRequest} from '@/lib/supabase/account-read-request';
 import {readAuthCorrelationHeaders} from '@/lib/diagnostics/correlation.mjs';
 export const runtime='nodejs';
 export const dynamic='force-dynamic';
@@ -11,7 +12,7 @@ export async function GET(request:Request){
  const expected={userId:request.headers.get('x-velora-account')??'',boundaryFingerprint:request.headers.get('x-velora-boundary')??'',generation:request.headers.get('x-velora-generation')??''};
  if(new URL(request.url).search||Object.values(expected).some(value=>!token.test(value)))return failure('INVALID_INPUT',400);
  try{
-  const result=await readAttestedAccountProfile(expected,readAuthCorrelationHeaders(request.headers));
+  const result=await runAccountReadRequest(request.signal,()=>readAttestedAccountProfile(expected,readAuthCorrelationHeaders(request.headers)));
   return Response.json(result,{status:result.ok?200:result.code==='UNAUTHENTICATED'?401:result.code==='CONFLICT'?409:503,headers});
  }catch{return failure('UNAVAILABLE',503);}
 }

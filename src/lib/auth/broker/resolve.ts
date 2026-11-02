@@ -1,4 +1,5 @@
 import "server-only";
+import { accountReadFetch } from "@/lib/supabase/account-read-request";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
 import { getSupabaseEnv } from "@/lib/supabase/env";
@@ -76,7 +77,7 @@ export function createUserClientFromTokens(
     },
     global: {
       headers: { Authorization: `Bearer ${accessToken}` },
-      fetch: (input,init)=>measureDataHttp(input,()=>fetch(input,init)),
+      fetch: (input,init)=>measureDataHttp(input,()=>accountReadFetch(input,init)),
     },
   });
 }

@@ -5,6 +5,11 @@ import {GET} from './route';
 const boundary={'x-velora-account':'actor','x-velora-boundary':'fingerprint','x-velora-generation':'generation'};
 const request=(headers:Record<string,string>=boundary,suffix='')=>new Request('https://velora.test/api/account/profile'+suffix,{headers});
 beforeEach(()=>{read.mockReset();});
+it('returns unavailable without profile reads for an aborted request',async()=>{
+ const controller=new AbortController();controller.abort();
+ const response=await GET(new Request('https://velora.test/api/account/profile',{headers:boundary,signal:controller.signal}));
+ expect(response.status).toBe(503);expect(await response.json()).toEqual({ok:false,code:'UNAVAILABLE'});expect(read).not.toHaveBeenCalled();
+});
 it('passes expectations only to the authoritative reader and never caches private responses',async()=>{
  read.mockResolvedValue({ok:true,data:{userId:'actor'},attestation:{ok:true}});
  const response=await GET(request());expect(response.status).toBe(200);

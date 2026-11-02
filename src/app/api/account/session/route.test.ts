@@ -3,6 +3,11 @@ const read=vi.hoisted(()=>vi.fn());
 vi.mock('@/lib/auth/account-session-read',()=>({readAccountSession:read}));
 import {GET} from './route';
 beforeEach(()=>{read.mockReset();});
+it('returns unavailable without native reads for an aborted request',async()=>{
+ const controller=new AbortController();controller.abort();
+ const response=await GET(new Request('https://velora.test/api/account/session',{signal:controller.signal}));
+ expect(response.status).toBe(503);expect(await response.json()).toEqual({ok:false,code:'UNAVAILABLE'});expect(read).not.toHaveBeenCalled();
+});
 const request=(headers:Record<string,string>={},search='')=>new Request('https://velora.test/api/account/session'+search,{headers});
 it('ignores caller identity claims and never caches native session metadata',async()=>{
  read.mockResolvedValue({ok:true,userId:'native'});
