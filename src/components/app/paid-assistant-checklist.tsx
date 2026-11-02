@@ -196,8 +196,8 @@ function PaidSetupBranchRead(p:PaidSetupFlowProps&{branchId:string;refreshVersio
     });
     // Slow Meta proof never blocks the independently authorized hours editor.
     if(result.read.entitlement){
-     void reader.read('knowledge').catch(error=>{if(error instanceof SetupReadError&&(error.kind==='auth'||error.kind==='scope'))reportFailure(error);});
-     void reader.read('language').catch(error=>{if(error instanceof SetupReadError&&(error.kind==='auth'||error.kind==='scope'))reportFailure(error);});
+     // StepHost reads knowledge/language when selected. Avoid competing with
+     // connection readiness for data that is not currently displayed.
      void observeSetupRead(reader.read('workspace'),()=>{}).then(enriched=>{
       if(!enriched){if(active&&request===generation.current&&checkCurrent())setRefreshFailed(true);return;}
       acceptWorkspace(enriched);

@@ -21,6 +21,7 @@ it('opens knowledge before slow Meta proof, and late progress cannot discard the
  try{
   await act(async()=>root.render(createElement(PaidSetupFlow,{locale:'en',scope,isCurrent:()=>true,readEntry:async()=>({schemaVersion:1 as const,companyId:'company',sourceStatus:'selection_required' as const,selectedBranchId:null,reasonCodes:[],branches:[{id:'branch',label:'Main',isPrimary:true}],asOf:'now'}),readBranch:async()=>read})));
   expect(host.querySelector('nav[aria-label="Setup steps"] button[aria-label^="Business hours"]')).not.toBeNull();
+  expect(m.read.mock.calls.map(([resource])=>resource)).toEqual(['shell','workspace']);
   // Segments show one entry per step; nothing is filled until a confirmed read arrives.
   expect(host.querySelector('nav[aria-label="Setup steps"]')?.getAttribute('aria-busy')).toBe('true');
   expect(host.querySelector('button[aria-label^="Knowledge & languages"]')?.getAttribute('aria-label')).not.toContain('Complete');
