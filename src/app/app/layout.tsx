@@ -5,8 +5,17 @@ import { redirect } from "next/navigation";
 import { getCompanyAccess, loginPathForReturn } from "@/lib/tenancy/access";
 import {WorkspaceBootstrapProvider} from '@/components/app/workspace-bootstrap';
 import {sessionHasCompanyCapability} from '@/lib/access/actions';
+import {Suspense} from 'react';
+import {RouteLoading} from '@/components/app/route-loading';
 
-export default async function AppLayout({ children }: { children: React.ReactNode }) {
+export default function AppLayout({ children }: { children: React.ReactNode }) {
+  // loading.tsx is below this layout. An explicit boundary lets the document
+  // and account bootstrap hydrate while server workspace authority is read.
+  // Only the public skeleton can stream before that authority resolves.
+  return <Suspense fallback={<RouteLoading />}><AuthorizedWorkspace>{children}</AuthorizedWorkspace></Suspense>;
+}
+
+async function AuthorizedWorkspace({ children }: { children: React.ReactNode }) {
   const returnTo = safeInternalPath((await headers()).get("x-velora-return-path"), "/app");
   const access = await getCompanyAccess();
   if (!access.ok) {
