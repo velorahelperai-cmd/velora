@@ -16,6 +16,7 @@ export function summarizeWorkerOutcomes(results: IntegrationOutcome[], repair: {
     else if (result.code === "ACCEPTANCE_ACCOUNTING_PENDING" && result.sendAccepted) { summary.accountingPending++; code = result.code; }
     else if (result.code === "ACCEPTANCE_PERSIST_PENDING" && result.sendAccepted) { summary.persistencePending++; code = result.code; }
     else if (reconciliationCodes.has(result.code)) { summary.unknown++; code = result.code; }
+    else if ((result.code === "BUDGET_DISABLED" || result.code === "BUDGET_BINDING_CHANGED" || result.code === "BUDGET_EXCEEDED") && !result.sendAccepted) { summary.blocked++; code = result.code; }
     else if (blockedCodes.has(result.code)) { summary.blocked++; code = result.code; }
     else if (result.code === "SEND_REJECTED" || result.code === "WORKER_UNAVAILABLE") { summary.failed++; code = result.code; }
     else { summary.unknown++; code = "WORKER_OUTCOME_UNCLASSIFIED"; }
