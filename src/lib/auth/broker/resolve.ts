@@ -17,6 +17,7 @@ import { nativeSessionIdFromAccessToken } from "./session-id";
 import { brokerLog } from "./log";
 import type { BrokerResolveResult } from "./types";
 import { decryptSecret } from "./crypto";
+import { measureRead } from '@/lib/diagnostics/read-performance';
 
 type MemoryStorage = {
   getItem(key: string): string | null;
@@ -75,6 +76,7 @@ export function createUserClientFromTokens(
     },
     global: {
       headers: { Authorization: `Bearer ${accessToken}` },
+      fetch: (input,init)=>measureRead('data_http',()=>fetch(input,init)),
     },
   });
 }

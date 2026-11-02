@@ -23,6 +23,14 @@ Regression: failed first on the old router behavior, then 37 affected tests pass
 
 ## Shared architecture investigation
 
+Follow-up view-state release: `7eba4f08053788b3da53665ff63ab790474e3210`, CI41389632534 all8SUCCESS, production `dpl_JCZe3WVoCvuKrvFi5hAv4TfxDoi2` READY exactSHA. A real React/jsdom test covers immediate selection, a delayed older route snapshot and history events. Hosted acceptance remains pending: CUA lost its debugger attachment and native capture also timed out. Other agents subsequently committed c832977; do not attribute their conversation changes to this package.
+
+Read instrumentation now distinguishes aggregate wall time, client construction, actual broker resolution and authenticated HTTP calls, with no arguments/data/identity in logs. Local diagnostic samples BEFORE in-flight coalescing: service_inbox31291ms with24 broker resolutions; another27104ms with24 broker resolutions and74 authenticated HTTP calls. Rendering samples used1 broker resolution and27–29 HTTP calls. A176ms/161ms development sample may benefit from dev fetch caching and is NOT a production speed claim. React.cache only memoizes within the React component request context; Server Action callers lack that guarantee. Workspace sample5285ms with4 regular broker resolutions (explicit fresh fences were not included in that initial counter).
+
+The next implementation coalesces only simultaneous resolutions with identical cookie snapshots inside one explicitly scoped read operation. The entry is deleted on completion/failure, sequential checks resolve again, changed cookies use a different key, other operations use separate maps, and `fresh:true` bypasses coalescing. This is not a TTL or an authorization cache. Native capability/session/RLS checks and final scope checks stay in place. Tests cover same-flight reuse, later outage, cookie change, independent requests and explicit fresh fences.
+
+Local diagnostic package tests:18PASS; scoped lint PASS. Existing server-availability tests have3 failures from concurrent unpublished session-actions.ts adding `confirmed` to its return value; the direct createClient outage test passes. Those unrelated auth files/tests are not included. Exact candidate CI remains required.
+
 The active checklist and engineering decisions live in Brain `03-CUSTOMER.md`, PERF-SYSTEM-20261102. This file is evidence, not a parallel plan.
 
 - WorkspaceChrome calls getWorkspaceView on each mount and withholds children until the result. The app already has an AccountSessionProvider. Measure before changing lifetime; do not share mutable identity across accounts.

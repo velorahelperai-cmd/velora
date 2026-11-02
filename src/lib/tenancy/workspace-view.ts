@@ -3,9 +3,14 @@
 import { getAccountProfile, getWorkspaceSwitcher } from "./actions";
 import { sessionHasCompanyCapability } from "@/lib/access/actions";
 import { beginDiagnostic } from "@/lib/diagnostics/flow";
+import {traceRead} from '@/lib/diagnostics/read-performance';
+import {runWithReadScope} from '@/lib/supabase/read-scope';
 
 /** One client round trip; independent authenticated reads run on the server. */
 export async function getWorkspaceView() {
+  return runWithReadScope(()=>traceRead('workspace',getWorkspaceViewData));
+}
+async function getWorkspaceViewData() {
   const trace = beginDiagnostic("workspace_load");
   trace.stage("workspace");
   try {
