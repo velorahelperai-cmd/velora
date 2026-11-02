@@ -31,3 +31,7 @@ it('rechecks fresh boundaries and every initially granted channel before signals
 it('fails closed on upstream errors without revealing details',async()=>{
  m.rpc.mockResolvedValue({data:true,error:{message:'SECRET_DETAIL'}});const response=await GET(new Request(url));expect(response.status).toBe(503);expect(await response.text()).not.toContain('SECRET_DETAIL');expect(m.stream).not.toHaveBeenCalled();
 });
+it('logs only a fixed failure stage and status for diagnostics',async()=>{
+ const warning=vi.spyOn(console,'warn').mockImplementation(()=>{});
+ try{m.rpc.mockResolvedValue({data:null,error:{message:'SECRET_DETAIL'}});expect((await GET(new Request(url))).status).toBe(503);expect(warning).toHaveBeenCalledWith('inbox_event_refused',{status:503,stage:'capabilities'});expect(JSON.stringify(warning.mock.calls)).not.toContain('SECRET_DETAIL');expect(JSON.stringify(warning.mock.calls)).not.toContain(companyId);expect(JSON.stringify(warning.mock.calls)).not.toContain(actorId);}finally{warning.mockRestore();}
+});
