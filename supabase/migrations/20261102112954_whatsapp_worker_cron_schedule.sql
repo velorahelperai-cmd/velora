@@ -1,6 +1,7 @@
 -- Installs a dormant recurring schedule. Activation is a separate reviewed
 -- operation after the runtime, readiness, queue and provider checks pass.
 begin;
+create extension if not exists pg_net with schema extensions;
 do $migration$
 declare worker_job bigint;
 begin
