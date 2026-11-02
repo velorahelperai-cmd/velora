@@ -2,7 +2,7 @@
 import Link from "next/link";
 import {startTransition,useEffect,useRef,useState} from "react";
 import {useDemo} from "@/lib/demo-state";
-import {readDashboardBilling} from "@/lib/customer/dashboard-billing-actions";
+import {fetchDashboardBilling as readDashboardBilling} from "@/lib/customer/dashboard-read";
 import type {DashboardBillingLoad} from "@/lib/customer/dashboard-billing-model";
 import {getCustomerReadiness} from "@/lib/tenancy/actions";
 import {readDashboardReadiness} from "@/lib/customer/dashboard-readiness-actions";

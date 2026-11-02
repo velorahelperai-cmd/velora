@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { readDashboardBranch, type DashboardBranchLoad } from "@/lib/customer/dashboard-branch-actions";
+import type { DashboardBranchLoad } from "@/lib/customer/dashboard-branch-actions";
+import { fetchDashboardBranch as readDashboardBranch } from "@/lib/customer/dashboard-read";
 import { setupPlanLabel } from "./setup-plan-label";
 import styles from "./dashboard.module.css";
 

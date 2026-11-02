@@ -67,6 +67,8 @@ export function BranchInboxRealtime({
     const lost = () => {
       if (!active) return;
       setConnected(false);
+      // A consumer needs transport state to enable its fallback reads.
+      onInboxEventRef.current?.({ type: 'unavailable' });
     };
 
     const stopRevoked = () => {
@@ -91,8 +93,10 @@ export function BranchInboxRealtime({
       if (!active || revoked) return;
       const current = new EventSource(`/api/branch/inbox-events?${params}`);
       events = current;
-      current.addEventListener('ready', ready);
+      const isCurrent = () => active && !revoked && events === current;
+      current.addEventListener('ready', () => { if (isCurrent()) ready(); });
       current.addEventListener('change', (e) => {
+        if (!isCurrent()) return;
         let data: unknown;
         try {
           if (e instanceof MessageEvent && typeof e.data === 'string' && e.data.trim()) {
@@ -103,9 +107,10 @@ export function BranchInboxRealtime({
         }
         dispatchEvent({ type: 'change', data });
       });
-      current.addEventListener('revoked', stopRevoked);
-      current.addEventListener('unavailable', lost);
+      current.addEventListener('revoked', () => { if (isCurrent()) stopRevoked(); });
+      current.addEventListener('unavailable', () => { if (isCurrent()) lost(); });
       current.onerror = () => {
+        if (!isCurrent()) return;
         lost();
         if (active && !revoked && current.readyState === EventSource.CLOSED && retry === undefined) {
           retry = setTimeout(() => {

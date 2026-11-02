@@ -62,3 +62,16 @@ it('calls onInboxEvent directly without calling router.refresh on change',async(
  expect(onInboxEvent).toHaveBeenCalledWith({type:'change',data:{company_id:'qa-company'}});
  expect(m.router.refresh).not.toHaveBeenCalled();
 });
+it('reports transport loss to the inbox so fallback reads can resume',()=>{
+ const onInboxEvent=vi.fn();render(<BranchInboxRealtime {...props} onInboxEvent={onInboxEvent}/>);
+ act(()=>Source.all[0].dispatchEvent(new Event('ready')));onInboxEvent.mockClear();
+ act(()=>Source.all[0].dispatchEvent(new Event('unavailable')));
+ expect(onInboxEvent).toHaveBeenCalledWith({type:'unavailable'});
+});
+it('ignores queued events from a replaced transport',async()=>{
+ const onInboxEvent=vi.fn();render(<BranchInboxRealtime {...props} onInboxEvent={onInboxEvent}/>);
+ const old=Source.all[0];act(()=>{old.readyState=Source.CLOSED;old.onerror?.();});
+ await act(async()=>vi.advanceTimersByTimeAsync(5000));onInboxEvent.mockClear();
+ act(()=>{old.dispatchEvent(new Event('ready'));old.dispatchEvent(new Event('revoked'));old.dispatchEvent(new MessageEvent('change',{data:'{}'}));});
+ expect(onInboxEvent).not.toHaveBeenCalled();expect(Source.all[1].close).not.toHaveBeenCalled();
+});
