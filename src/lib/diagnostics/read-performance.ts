@@ -17,7 +17,7 @@ export async function measureRead<T>(stage:Stage,work:()=>Promise<T>):Promise<T>
  }
 }
 
-export async function traceRead<T>(operation:'service_inbox'|'workspace',work:()=>Promise<T>):Promise<T>{
+export async function traceRead<T>(operation:'service_inbox'|'service_inbox_http'|'workspace',work:()=>Promise<T>):Promise<T>{
  const stages:Measurements={};
  const started=performance.now();
  let outcome='returned';

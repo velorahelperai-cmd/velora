@@ -1,4 +1,5 @@
 import { cache } from "react";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { cookies } from "next/headers";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
@@ -6,6 +7,37 @@ import { createBrokerUserClient } from "@/lib/auth/broker";
 import { createProviderAuthClient } from "@/lib/auth/broker/provider";
 import { measureRead } from '@/lib/diagnostics/read-performance';
 import {coalesceBrokerRead} from './read-scope';
+
+type VerifiedReadClient = {key:string;client:SupabaseClient<Database>;open:boolean;invalid:boolean};
+const verifiedReadClient = new AsyncLocalStorage<VerifiedReadClient>();
+
+/** Opt-in read composition only. Shares transport, never permission results.
+ * Both broker resolutions bypass React.cache and the in-flight read map. No
+ * result can escape before the final live boundary and cookie checks pass.
+ * Callers must bind successful payload actors to the returned actorId. */
+export async function runWithVerifiedReadClient<T>(work:()=>Promise<T>):Promise<{value:T;actorId:string}>{
+ const store=await cookies();
+ const key=snapshotCookieKey(store);
+ const pairs=JSON.parse(key) as Array<{name:string;value:string}>;
+ const initial=await measureRead('broker',()=>createBrokerUserClient({getAll:()=>pairs.map(c=>({...c}))}));
+ if(!initial.ok)throw new Error('READ_BOUNDARY_UNAVAILABLE');
+ const boundary=initial.resolve.boundary;
+ const fields=['boundaryFingerprint','userId','nativeSessionId','cookieName','generation','authOrdinal','contextGeneration','browserLineageId'] as const;
+ const captured=fields.map(field=>boundary[field]??null);
+ const scope:VerifiedReadClient={key,client:initial.client,open:true,invalid:false};
+ return verifiedReadClient.run(scope,async()=>{
+  try{
+   const value=await work();
+   scope.open=false;
+   if(scope.invalid||snapshotCookieKey(await cookies())!==key)throw new Error('READ_BOUNDARY_CHANGED');
+   const current=await measureRead('broker_fresh',()=>createBrokerUserClient({getAll:()=>pairs.map(c=>({...c}))}));
+   if(!current.ok)throw new Error('READ_BOUNDARY_UNAVAILABLE');
+   if(current.resolve.registryId!==initial.resolve.registryId||fields.some((field,index)=>(current.resolve.boundary[field]??null)!==captured[index])
+    ||snapshotCookieKey(await cookies())!==key)throw new Error('READ_BOUNDARY_CHANGED');
+   return {value,actorId:boundary.userId};
+  }finally{scope.open=false;}
+ });
+}
 
 function snapshotCookieKey(cookieStore: Awaited<ReturnType<typeof cookies>>): string {
   const pairs = cookieStore.getAll().map((c) => ({ name: c.name, value: c.value }));
@@ -30,6 +62,11 @@ export async function createClient(): Promise<SupabaseClient<Database>> {
   return measureRead('client',async()=>{
   const cookieStore = await cookies();
   const cookieSnapshotKey = snapshotCookieKey(cookieStore);
+  const scoped=verifiedReadClient.getStore();
+  if(scoped?.open){
+    if(scoped.key!==cookieSnapshotKey){scoped.invalid=true;throw new Error('READ_BOUNDARY_CHANGED');}
+    return scoped.client;
+  }
   const resolved = await resolveBrokerForCookieSnapshot(cookieSnapshotKey);
   if (resolved.ok) return resolved.client;
 

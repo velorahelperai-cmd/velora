@@ -1,14 +1,19 @@
 import {beforeEach,expect,it,vi} from 'vitest';
 const read=vi.hoisted(()=>vi.fn());
+const broker=vi.hoisted(()=>vi.fn());
+vi.mock('next/headers',()=>({cookies:async()=>({getAll:()=>[{name:'opaque',value:'fixture'}]})}));
+vi.mock('@/lib/auth/broker',()=>({createBrokerUserClient:broker}));
 vi.mock('@/lib/customer/service-inbox-actions',()=>({readServiceInbox:read}));
 import {GET} from './route';
 const companyId='11111111-1111-4111-8111-111111111111',actorId='22222222-2222-4222-8222-222222222222';
 const request=()=>new Request(`https://velora.test/api/inbox/read?${new URLSearchParams({companyId,actorId})}`);
-beforeEach(()=>{vi.resetAllMocks();read.mockResolvedValue({ok:true,companyId,actorId});});
+const bound=()=>({ok:true,client:{},resolve:{registryId:'registry',boundary:{userId:actorId,boundaryFingerprint:'same',nativeSessionId:'sid',cookieName:'opaque',generation:'generation',authOrdinal:1,contextGeneration:1}}});
+beforeEach(()=>{vi.resetAllMocks();read.mockResolvedValue({ok:true,companyId,actorId});broker.mockImplementation(async()=>bound());});
 it('uses the native reader and disables browser and shared caching',async()=>{
  const response=await GET(request());expect(read).toHaveBeenCalledOnce();expect(response.status).toBe(200);
  expect(response.headers.get('cache-control')).toContain('no-store');expect(response.headers.get('vary')).toBe('Cookie');
  expect(await response.json()).toEqual({ok:true,companyId,actorId});
+ expect(broker).toHaveBeenCalledTimes(2);
 });
 it('never publishes a different actor or company snapshot',async()=>{
  for(const change of [{actorId:companyId},{companyId:actorId}]){
@@ -23,4 +28,14 @@ it('keeps native denial and exceptions fail closed without exception contents',a
 it('rejects ambiguous or malformed scope before loading data',async()=>{
  for(const url of ['?companyId=bad','?'+new URLSearchParams({companyId,actorId})+'&companyId='+companyId])expect((await GET(new Request('https://velora.test/api/inbox/read'+url))).status).toBe(400);
  expect(read).not.toHaveBeenCalled();
+ expect(broker).not.toHaveBeenCalled();
+});
+it('discards loaded payload when the final live session is revoked',async()=>{
+ broker.mockResolvedValueOnce(bound()).mockResolvedValueOnce({ok:false,code:'UNAUTHENTICATED'});
+ read.mockResolvedValue({ok:true,companyId,actorId,secret:'private'});
+ const response=await GET(request());expect(response.status).toBe(503);expect(await response.json()).toEqual({ok:false,code:'UNAVAILABLE'});
+});
+it('binds even a consistent reader payload to the actual broker actor',async()=>{
+ broker.mockImplementation(async()=>({...bound(),resolve:{registryId:'registry',boundary:{...bound().resolve.boundary,userId:'different-actor'}}}));
+ const response=await GET(request());expect(response.status).toBe(409);expect(await response.json()).toEqual({ok:false,code:'SCOPE_CHANGED'});
 });
