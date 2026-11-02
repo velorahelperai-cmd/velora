@@ -34,7 +34,8 @@ async function readServiceInboxData() {
    igAllowed===true?loadInstagramInboxPage({companyId:company.id}):Promise.resolve({ok:false as const,code:igAllowed===false?'FORBIDDEN' as const:'UNAVAILABLE' as const}),
   ]));
   const current=await measureRead('final_scope',()=>getCompanyAccess());
-  if(!current.ok||current.context.userId!==userId||current.context.company?.id!==company.id||current.context.membership?.role!==membership.role)
+  if(!current.ok)return {ok:false as const,code:current.code==='UNAVAILABLE'?'UNAVAILABLE' as const:'SCOPE_CHANGED' as const};
+  if(current.context.userId!==userId||current.context.company?.id!==company.id||current.context.membership?.role!==membership.role)
    return {ok:false as const,code:'SCOPE_CHANGED' as const};
   if(JSON.stringify(await readCompanyChannelContract(company.id))!==JSON.stringify(channelContract))return {ok:false as const,code:'SCOPE_CHANGED' as const};
   if(wa.ok&&wa.meta.companyId!==company.id||ig.ok&&ig.data.companyId!==company.id||ig.ok&&ig.data.actorId!==userId)
