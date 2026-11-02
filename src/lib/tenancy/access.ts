@@ -1,4 +1,5 @@
 import { cache } from "react";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { checkAppSession } from "@/lib/auth/session-guard";
 import { authFlowHref } from "@/lib/auth/auth-journey";
 import { setupPathForReturn } from "@/lib/auth/setup-return";
@@ -137,7 +138,7 @@ type LoadAuthFail = {
 
 // React cache lasts only for this server render. Actions/handlers outside a
 // render still read live authority; no identity survives into another request.
-const loadAuth = cache(async (): Promise<LoadAuthOk | LoadAuthFail> => {
+async function loadAuthUncached(): Promise<LoadAuthOk | LoadAuthFail> {
   let supabase: Awaited<ReturnType<typeof createClient>>;
   try {
     supabase = await createClient();
@@ -231,7 +232,8 @@ const loadAuth = cache(async (): Promise<LoadAuthOk | LoadAuthFail> => {
   } catch {
     return { ok: false, code: "UNAVAILABLE", supabase };
   }
-});
+}
+const loadAuth = cache(loadAuthUncached);
 
 async function loadWorkspaceChoices(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -257,9 +259,9 @@ async function loadWorkspaceChoices(
   }));
 }
 
-const loadCompanyAccess = cache(async (): Promise<AccessResult> => {
+async function loadCompanyAccessUncached(freshAuth=false): Promise<AccessResult> {
   try {
-    const auth = await loadAuth();
+    const auth = await (freshAuth ? loadAuthUncached() : loadAuth());
     if (!auth.ok) return { ok: false, code: auth.code, ...(auth.sessionExpired ? { sessionExpired: true as const } : {}) };
     const {
       supabase,
@@ -388,10 +390,43 @@ const loadCompanyAccess = cache(async (): Promise<AccessResult> => {
   } catch {
     return { ok: false, code: "UNAVAILABLE" };
   }
-});
+}
+const loadCompanyAccess = cache(()=>loadCompanyAccessUncached());
+
+type CompanyReadScope={snapshot:AccessResult;key:string;open:boolean;invalid:boolean};
+const companyReadScope=new AsyncLocalStorage<CompanyReadScope>();
+async function companyReadCookieKey(){
+ const {cookies}=await import('next/headers');
+ return JSON.stringify((await cookies()).getAll().map(c=>({name:c.name,value:c.value})));
+}
+
+/** Opt-in read composition, never a writer scope. Call inside the verified
+ * broker read boundary. Native channel RPC/RLS checks still execute. Fresh
+ * identity, session, profile and membership reads fence the COMPLETE result;
+ * neither React's render cache nor this snapshot is used for that fence. */
+export async function runWithVerifiedCompanyRead<T>(work:()=>Promise<T>):Promise<T>{
+ const key=await companyReadCookieKey();
+ const snapshot=await loadCompanyAccessUncached(true);
+ if(!snapshot.ok)throw new Error('COMPANY_READ_UNAVAILABLE');
+ const fingerprint=JSON.stringify(snapshot);
+ const scope:CompanyReadScope={snapshot:structuredClone(snapshot),key,open:true,invalid:false};
+ return companyReadScope.run(scope,async()=>{
+  try{
+   if(await companyReadCookieKey()!==key)throw new Error('COMPANY_READ_CHANGED');
+   const result=await work();
+   scope.open=false;
+   if(scope.invalid||await companyReadCookieKey()!==key)throw new Error('COMPANY_READ_CHANGED');
+   const current=await loadCompanyAccessUncached(true);
+   if(!current.ok||JSON.stringify(current)!==fingerprint||await companyReadCookieKey()!==key)throw new Error('COMPANY_READ_CHANGED');
+   return result;
+  }finally{scope.open=false;}
+ });
+}
 
 export async function getCompanyAccess(requiredRole?: CompanyRole): Promise<AccessResult> {
-  const access = await loadCompanyAccess();
+  const scope=companyReadScope.getStore();
+  if(scope?.open&&await companyReadCookieKey()!==scope.key){scope.invalid=true;throw new Error('COMPANY_READ_CHANGED');}
+  const access = scope?.open ? structuredClone(scope.snapshot) : await loadCompanyAccess();
   if (access.ok && requiredRole === "owner" && access.context.membership
     && access.context.membership.role !== "owner") return { ok: false, code: "FORBIDDEN" };
   return access;

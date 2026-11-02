@@ -1,14 +1,108 @@
 import {afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ client: vi.fn(), upsert: vi.fn(), profile: vi.fn(), memberships: vi.fn(), guard: vi.fn(), claims: vi.fn(), user: vi.fn(), cookie: vi.fn(), resolve: vi.fn(), admin: vi.fn(), company: vi.fn(), choices: vi.fn() }));
+const mocks = vi.hoisted(() => ({ client: vi.fn(), upsert: vi.fn(), profile: vi.fn(), memberships: vi.fn(), guard: vi.fn(), claims: vi.fn(), user: vi.fn(), cookie: vi.fn(), cookieRows:vi.fn(), resolve: vi.fn(), admin: vi.fn(), company: vi.fn(), choices: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: mocks.client }));
 vi.mock("@/lib/auth/session-guard", () => ({ checkAppSession: mocks.guard }));
-vi.mock("next/headers", () => ({ cookies: async () => ({ get: mocks.cookie, getAll: () => [] }) }));
+vi.mock("next/headers", () => ({ cookies: async () => ({ get: mocks.cookie, getAll: mocks.cookieRows }) }));
 vi.mock("@/lib/auth/broker", async importOriginal => ({
   ...await importOriginal<typeof import("@/lib/auth/broker")>(),
   resolveBrokerSession: mocks.resolve,
 }));
-import { getCompanyAccess } from "./access";
+import { getCompanyAccess, runWithVerifiedCompanyRead } from "./access";
 const user = { id: "synthetic-user", email: "qa@example.test", email_confirmed_at: "confirmed", user_metadata: { full_name: "Metadata Name" } };
+
+describe('verified company read composition',()=>{
+ it('requires live initial authority before running the reader',async()=>{
+  mocks.guard.mockResolvedValue({ok:false,code:'UNAUTHENTICATED'});
+  const work=vi.fn(async()=> 'private-result');
+  await expect(runWithVerifiedCompanyRead(work)).rejects.toThrow('COMPANY_READ_UNAVAILABLE');
+  expect(work).not.toHaveBeenCalled();
+ });
+ it('rejects removal or role change of the selected membership',async()=>{
+  const member={company_id:'company-a',user_id:user.id,role:'owner',status:'active'};
+  for(const rows of [[],[{...member,role:'staff'}]]){
+   mocks.memberships.mockResolvedValue({data:[member],error:null});
+   await expect(runWithVerifiedCompanyRead(async()=>{
+    expect(await getCompanyAccess('owner')).toMatchObject({ok:true,context:{membership:{role:'owner'}}});
+    mocks.memberships.mockResolvedValue({data:rows,error:null});
+    return 'private-result';
+   })).rejects.toThrow('COMPANY_READ_CHANGED');
+  }
+ });
+ it('detects cookie changes during the final native read',async()=>{
+  await expect(runWithVerifiedCompanyRead(async()=>{
+   mocks.guard.mockImplementation(async()=>{mocks.cookieRows.mockReturnValue([{name:'scope',value:'changed'}]);return {ok:true};});
+   return 'private-result';
+  })).rejects.toThrow('COMPANY_READ_CHANGED');
+ });
+ it('rejects a swallowed cookie change and cannot reuse authority from detached work',async()=>{
+  await expect(runWithVerifiedCompanyRead(async()=>{
+   mocks.cookieRows.mockReturnValue([{name:'scope',value:'changed'}]);
+   await getCompanyAccess().catch(()=>null);
+   mocks.cookieRows.mockReturnValue([]);
+   return 'private-result';
+  })).rejects.toThrow('COMPANY_READ_CHANGED');
+  let release!:()=>void;
+  const gate=new Promise<void>(resolve=>{release=resolve;});
+  let detached!:Promise<unknown>;
+  await runWithVerifiedCompanyRead(async()=>{detached=gate.then(()=>getCompanyAccess());});
+  mocks.guard.mockResolvedValue({ok:false,code:'UNAUTHENTICATED'});
+  release();
+  expect(await detached).toMatchObject({ok:false,code:'UNAUTHENTICATED'});
+ });
+ it('isolates overlapping compositions',async()=>{
+  const profile=(name:string)=>({data:{full_name:name,support_code:'SYNTHETIC'},error:null});
+  mocks.profile.mockResolvedValueOnce(profile('First')).mockResolvedValueOnce(profile('Second')).mockResolvedValueOnce(profile('Second')).mockResolvedValueOnce(profile('First'));
+  let started!:()=>void,release!:()=>void;
+  const ready=new Promise<void>(r=>{started=r;});
+  const gate=new Promise<void>(r=>{release=r;});
+  const first=runWithVerifiedCompanyRead(async()=>{started();await gate;return getCompanyAccess();});
+  await ready;
+  expect(await runWithVerifiedCompanyRead(()=>getCompanyAccess())).toMatchObject({ok:true,context:{fullName:'Second'}});
+  release();
+  expect(await first).toMatchObject({ok:true,context:{fullName:'First'}});
+ });
+ it('shares one initial context but re-reads native identity, session and membership before returning',async()=>{
+  const result=await runWithVerifiedCompanyRead(async()=>{
+   const a=await getCompanyAccess();
+   const b=await getCompanyAccess();
+   expect(a).toEqual(b);
+   expect(mocks.user).toHaveBeenCalledTimes(1);
+   expect(mocks.memberships).toHaveBeenCalledTimes(1);
+   return 'read-result';
+  });
+  expect(result).toBe('read-result');
+  expect(mocks.user).toHaveBeenCalledTimes(2);
+  expect(mocks.guard).toHaveBeenCalledTimes(2);
+  expect(mocks.memberships).toHaveBeenCalledTimes(2);
+  await getCompanyAccess();
+  expect(mocks.user).toHaveBeenCalledTimes(3);
+ });
+ it('discards the result when native session authority is revoked during work',async()=>{
+  await expect(runWithVerifiedCompanyRead(async()=>{
+   await getCompanyAccess();
+   mocks.guard.mockResolvedValue({ok:false,code:'UNAUTHENTICATED'});
+   return 'private-result';
+  })).rejects.toThrow('COMPANY_READ_CHANGED');
+ });
+ it('discards the result on membership or profile changes and database failure',async()=>{
+  for(const change of [
+   ()=>mocks.memberships.mockResolvedValue({data:[{company_id:'company-a',user_id:user.id,role:'staff',status:'active'}],error:null}),
+   ()=>mocks.profile.mockResolvedValue({data:{full_name:'Changed Name',support_code:'SYNTHETIC'},error:null}),
+   ()=>mocks.memberships.mockResolvedValue({data:null,error:{code:'503'}}),
+  ]){
+   mocks.memberships.mockResolvedValue({data:[],error:null});
+   mocks.profile.mockResolvedValue({data:{full_name:'Saved Name',support_code:'SYNTHETIC'},error:null});
+   await expect(runWithVerifiedCompanyRead(async()=>{change();return 'private-result';})).rejects.toThrow('COMPANY_READ_CHANGED');
+  }
+ });
+ it('does not let a consumer mutate the shared authority snapshot',async()=>{
+  await runWithVerifiedCompanyRead(async()=>{
+   const a=await getCompanyAccess();
+   if(a.ok)a.context.isPlatformAdmin=true;
+   expect(await getCompanyAccess()).toMatchObject({ok:true,context:{isPlatformAdmin:false}});
+  });
+ });
+});
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.guard.mockResolvedValue({ ok: true });
@@ -18,6 +112,7 @@ beforeEach(() => {
   mocks.profile.mockResolvedValue({ data: { full_name: "Saved Name", support_code: "SYNTHETIC" }, error: null });
   mocks.memberships.mockResolvedValue({ data: [], error: null });
   mocks.cookie.mockReturnValue(undefined);
+  mocks.cookieRows.mockReturnValue([]);
   mocks.resolve.mockResolvedValue({ ok: false, code: "UNAUTHENTICATED" });
   mocks.admin.mockResolvedValue({ data: false, error: null });
   mocks.company.mockResolvedValue({ data: { id: "company-a", display_name: "Saved Company" }, error: null });

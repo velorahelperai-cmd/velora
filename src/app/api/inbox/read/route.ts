@@ -1,6 +1,7 @@
 import {readServiceInbox} from '@/lib/customer/service-inbox-actions';
 import {runWithVerifiedReadClient} from '@/lib/supabase/server';
 import {traceRead} from '@/lib/diagnostics/read-performance';
+import {runWithVerifiedCompanyRead} from '@/lib/tenancy/access';
 
 export const runtime='nodejs';
 export const dynamic='force-dynamic';
@@ -16,7 +17,7 @@ export async function GET(request:Request){
  const failure=(code:string,status:number)=>Response.json({ok:false,code},{status,headers});
  if(!uuid.test(companyId)||!uuid.test(actorId)||[...query.keys()].some(key=>!['companyId','actorId'].includes(key)||query.getAll(key).length!==1))return failure('INVALID_INPUT',400);
  try{
-  const {value:result,actorId:verifiedActor}=await traceRead('service_inbox_http',()=>runWithVerifiedReadClient(readServiceInbox));
+  const {value:result,actorId:verifiedActor}=await traceRead('service_inbox_http',()=>runWithVerifiedReadClient(()=>runWithVerifiedCompanyRead(readServiceInbox)));
   if(result.ok&&(result.companyId!==companyId||result.actorId!==actorId||result.actorId!==verifiedActor))return failure('SCOPE_CHANGED',409);
   return Response.json(result,{headers:{...headers,'Server-Timing':`inbox-read;dur=${(performance.now()-started).toFixed(1)}`}});
  }catch{return failure('UNAVAILABLE',503);}
