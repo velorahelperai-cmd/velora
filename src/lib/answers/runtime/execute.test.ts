@@ -26,3 +26,14 @@ describe("sourced real text pricing",()=>{
 });
 
 it('retains accepted provider evidence after storage failure without delivery or retry',async()=>{const db=store();const usage={promptTokens:10,completionTokens:8,cachedTokens:2,cacheWriteTokens:0,reasoningTokens:7,totalTokens:18};const call=vi.fn().mockResolvedValue({status:'success',text:'DO_NOT_DELIVER',usage,actualModelId:'gpt-6-luna',requestId:'synthetic-request',responseId:'synthetic-response',latencyMs:2});vi.mocked(db.settle).mockRejectedValue(Error('synthetic storage unavailable'));const result=await executeRealAnswer({...input,model:'gpt-6-luna'},{store:db,call});expect(result).toMatchObject({ok:false,error:'SETTLEMENT_PENDING_RECONCILIATION'});expect(result).not.toHaveProperty('text');expect(call).toHaveBeenCalledTimes(1);expect(db.reserve).toHaveBeenCalledTimes(1);expect(db.settle).toHaveBeenCalledTimes(1);expect(result.attempts[0]).toMatchObject({status:'success',usage,requestId:'synthetic-request',responseId:'synthetic-response',actualModelId:'gpt-6-luna',costUsd:expect.any(Number)});});
+
+it.each([
+  ["ar", "بأسلوب طبيعي ومختصر"],
+  ["en", "natural and concise"]
+] as const)("uses natural concise %s guidance without weakening safety", async (locale, guidance) => {
+  const db=store(), call=vi.fn().mockResolvedValue({status:"rejected",text:"",errorCode:"PROVIDER_HTTP_403",latencyMs:1});
+  await executeRealAnswer({...input,locale,model:"gpt-6-luna"},{store:db,call});
+  const system=call.mock.calls[0][0].system as string;
+  expect(system).toContain(guidance);
+  expect(system).toContain(locale === "ar" ? "إثبات التنفيذ" : "trusted successful executor result");
+});

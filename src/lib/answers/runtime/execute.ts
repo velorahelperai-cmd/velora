@@ -36,7 +36,10 @@ export async function executeReservedRealAnswer(input:RealAnswerPayload,deps:{st
  if(!validPayload(input))return {ok:false as const,error:"INVALID_INPUT",attempts};
  const {store,call}=deps;
  const models=new MultiModelAIRouter().getEligibleModels({question:input.question,locale:input.locale,chunks:input.chunks,forceModelId:input.model});
- const system=buildAnswerSystemPrompt(input.locale,deps.persona),prompt=formatAnswerUserPrompt(input.question,input.chunks,input.locale);
+ const style=input.locale==="ar"
+  ? "أجيبي بأسلوب طبيعي ومختصر ومباشر، كرسالة محادثة ودودة، من دون تكرار أو مقدمات آلية. لا تحذفي معلومة ضرورية للدقة أو السلامة، ولا تدّعي أنكِ إنسانة."
+  : "Reply in a natural and concise, direct conversational style without repetitive or robotic introductions. Keep details necessary for accuracy and safety; do not pretend to be human.";
+ const system=`${buildAnswerSystemPrompt(input.locale,deps.persona)}\n${style}`,prompt=formatAnswerUserPrompt(input.question,input.chunks,input.locale);
  const sourceCitations=input.chunks.map(({sourceId,title,contentVersion})=>({sourceId,title,contentVersion}));
  for(const [index,model] of models.entries()){
   const id=crypto.randomUUID(),pricing=realModelPricing(model),reservedBaisa=reserveRealCost(model,system,prompt,pricing);
