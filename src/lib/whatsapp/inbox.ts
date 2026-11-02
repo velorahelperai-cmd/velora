@@ -158,20 +158,11 @@ export async function loadWhatsappInboxInitialPage(): Promise<
     return { ok: false as const, code };
   };
   try {
-    const access = await getCompanyAccess();
-    if (!access.ok || !access.context.company || !access.context.membership) return fail(access.ok || access.code !== "UNAVAILABLE" ? "NO_COMPANY" : "UNAVAILABLE");
-    const companyId = access.context.company.id;
-    stage = "initial_scope";
-    const scoped = await readSessionConversationScope(companyId);
-    if (!scoped.ok) return fail(scoped.code, scoped.code === "FORBIDDEN" ? "FORBIDDEN" : "UNKNOWN_SCOPE");
-    const scope = scoped.scope;
-    stage = "initial_capability";
-    if (await sessionHasCompanyCapability(companyId, "wa.conversations.read") !== true) return fail("UNAVAILABLE", "READ_NOT_CONFIRMED");
     stage = "initial_page";
-    const { loadWhatsappInboxPage } = await import("./inbox-contracts");
-    const page = await loadWhatsappInboxPage({ companyId, limit: 40 });
-    if (!page.ok) return fail(page.code === "FORBIDDEN" ? "FORBIDDEN" : "UNAVAILABLE", page.code);
-    if (page.data.companyId !== companyId || page.data.conversationScope !== scope) return fail("UNAVAILABLE", "SCOPE_CHANGED");
+    const { loadCurrentWhatsappInboxPage } = await import("./inbox-contracts");
+    const page = await loadCurrentWhatsappInboxPage();
+    if (!page.ok) return fail(page.code === "NO_COMPANY" ? "NO_COMPANY" : page.code === "FORBIDDEN" ? "FORBIDDEN" : "UNAVAILABLE", page.code);
+    const companyId=page.data.companyId,scope=page.data.conversationScope;
     stage = "initial_timezone";
     const client = await createClient();
     const [timezoneRow, permissions] = await Promise.all([

@@ -46,6 +46,17 @@ describe("legacy fail closed", () => {
 });
 
 describe("bounded inbox contracts", () => {
+  it("loads the current workspace page with one initial authority pass", async () => {
+    seam.rpc.mockResolvedValue({data:{ok:true,company_id:companyId,conversation_scope:'all_company',conversations:[],has_more:false,next_cursor:null,total:0,unread_total:0,intervention_total:0,membership_fingerprint:fingerprint},error:null});
+    const result=await contracts.loadCurrentWhatsappInboxPage();
+    expect(result.ok).toBe(true);expect(seam.access).toHaveBeenCalledOnce();expect(seam.scope).toHaveBeenCalledOnce();expect(seam.capability).toHaveBeenCalledOnce();
+    expect(seam.rpc).toHaveBeenCalledWith('whatsapp_inbox_page',{p_company_id:companyId,p_limit:40,p_before:null});
+  });
+  it("does not dispatch current-workspace data when authority is missing",async()=>{
+    seam.scope.mockResolvedValue(null);expect((await contracts.loadCurrentWhatsappInboxPage()).ok).toBe(false);expect(seam.rpc).not.toHaveBeenCalled();
+    seam.scope.mockResolvedValue('all_company');seam.capability.mockResolvedValue(false);expect((await contracts.loadCurrentWhatsappInboxPage()).ok).toBe(false);expect(seam.rpc).not.toHaveBeenCalled();
+    seam.access.mockResolvedValue({ok:false,code:'UNAUTHENTICATED'});expect((await contracts.loadCurrentWhatsappInboxPage()).ok).toBe(false);expect(seam.rpc).not.toHaveBeenCalled();
+  });
   it("rejects malformed public action inputs before authentication or data reads", async () => {
     expect(await contracts.loadWhatsappInboxPage(null as never)).toEqual({ ok: false, code: "INVALID_INPUT" });
     expect(await contracts.loadWhatsappThreadPage(undefined as never)).toEqual({ ok: false, code: "INVALID_INPUT" });

@@ -50,7 +50,7 @@ function pageValid(input: PageInput): boolean {
   return record(input) !== null && typeof input.companyId === "string" && UUID.test(input.companyId) && (input.limit === undefined || (Number.isInteger(input.limit) && input.limit >= 1 && input.limit <= 100))
     && (input.before === undefined || input.before === null || sequence(input.before));
 }
-async function scopedRpc(companyId: string, name: string, args: RecordValue): Promise<InboxResult<{ row: RecordValue; scope: Scope }>> {
+async function scopedRpc(expectedCompanyId: string|null, name: string, args: RecordValue): Promise<InboxResult<{ row: RecordValue; scope: Scope; companyId:string }>> {
   let stage: InboxReadStage = "page_access";
   const fail = (code: InboxFailure["code"], reason: Parameters<typeof reportInboxReadFailure>[1] = code, error?: unknown): InboxFailure => {
     if (name === "whatsapp_inbox_page") reportInboxReadFailure(stage, reason, error);
@@ -60,7 +60,8 @@ async function scopedRpc(companyId: string, name: string, args: RecordValue): Pr
     const access = await getCompanyAccess();
     if (!access.ok) return fail(access.code === "UNAVAILABLE" ? "UNAVAILABLE" : "NO_COMPANY");
     if (!access.context.company || !access.context.membership) return fail("NO_COMPANY");
-    if (access.context.company.id !== companyId) return fail("SCOPE_CHANGED");
+    const companyId=access.context.company.id;
+    if (expectedCompanyId!==null && companyId !== expectedCompanyId) return fail("SCOPE_CHANGED");
     stage = "page_scope";
     const scoped = await readSessionConversationScope(companyId);
     if (!scoped.ok) return fail(scoped.code, scoped.code === "FORBIDDEN" ? "FORBIDDEN" : "UNKNOWN_SCOPE");
@@ -85,7 +86,7 @@ async function scopedRpc(companyId: string, name: string, args: RecordValue): Pr
     stage = "page_binding";
     if (row.company_id !== companyId || (row.conversation_scope !== undefined && row.conversation_scope !== scope)) return fail("UNAVAILABLE", "INVALID_RESPONSE");
     if (args.p_conversation_id !== undefined && row.conversation_id !== args.p_conversation_id) return fail("UNAVAILABLE", "INVALID_RESPONSE");
-    return { ok: true, data: { row, scope } };
+    return { ok: true, data: { row, scope, companyId } };
   } catch (error) { return fail("UNAVAILABLE", "EXCEPTION", error); }
 }
 function message(raw: unknown): WhatsappThreadMessage {
@@ -118,11 +119,19 @@ function item(raw: unknown): WhatsappInboxItem {
 export async function loadWhatsappInboxPage(input: PageInput): Promise<InboxResult<WhatsappInboxPage>> {
   if (!pageValid(input)) return { ok: false, code: "INVALID_INPUT" };
   const result = await scopedRpc(input.companyId, "whatsapp_inbox_page", { p_limit: input.limit ?? 50, p_before: input.before ?? null });
+  return decodeInboxPage(result);
+}
+/** Initial composition derives its company from native authority once. No caller
+ * can supply a trusted access object or skip the scope/capability checks. */
+export async function loadCurrentWhatsappInboxPage():Promise<InboxResult<WhatsappInboxPage>>{
+  return decodeInboxPage(await scopedRpc(null,'whatsapp_inbox_page',{p_limit:40,p_before:null}));
+}
+function decodeInboxPage(result:Awaited<ReturnType<typeof scopedRpc>>):InboxResult<WhatsappInboxPage>{
   if (!result.ok) return result;
   try {
-    const { row, scope } = result.data;
+    const { row, scope, companyId } = result.data;
     if (!Array.isArray(row.conversations) || typeof row.membership_fingerprint !== "string" || !/^[a-f0-9]{32}$/.test(row.membership_fingerprint)) throw Error("invalid_rows");
-    return { ok: true, data: { ...pageMeta(row), companyId: input.companyId, conversationScope: scope, ordering: "newest_created",
+    return { ok: true, data: { ...pageMeta(row), companyId, conversationScope: scope, ordering: "newest_created",
       conversations: row.conversations.map(item), total: count(row.total), unreadTotal: count(row.unread_total), interventionTotal: count(row.intervention_total), membershipFingerprint: row.membership_fingerprint } };
   } catch {
     reportInboxReadFailure("page_decode", "INVALID_RESPONSE");
