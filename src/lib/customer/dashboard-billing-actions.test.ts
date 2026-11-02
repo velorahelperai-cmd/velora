@@ -21,7 +21,7 @@ describe("dashboard authorized evidence read",()=>{
  it("shows the authorized native balance without inventing a payment proof or accepted-message count",async()=>{
   const native={company_id:companyId,granted:1000,remaining:999,held:0,paid_through:"2030-01-01T00:00:00Z"};
   state.rpc.mockImplementation(async(name:string)=>name==="es02_read_owner_reply_balance"?{data:{ok:true,data:native},error:null}:{data:{ok:true,data:{...data,journey:{subscription:{...data.journey.subscription,plan_version_id:null}}}},error:null});
-  expect(await readDashboardBilling()).toMatchObject({status:"ready",billingPaid:false,operationalEligible:false,sent:null,held:0,cap:1000,remaining:999});
+  expect(await readDashboardBilling()).toMatchObject({status:"ready",billingPaid:false,operationalEligible:false,sent:null,held:0,cap:1000,remaining:999,monthStart:null});
  });
  it("does not show another company's native balance",async()=>{
   state.rpc.mockImplementation(async(name:string)=>name==="es02_read_owner_reply_balance"?{data:{ok:true,data:{company_id:"other",granted:1000,remaining:999,held:0,paid_through:"2030-01-01T00:00:00Z"}},error:null}:{data:{ok:true,data:{...data,journey:{subscription:{...data.journey.subscription,plan_version_id:null}}}},error:null});

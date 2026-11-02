@@ -36,7 +36,7 @@ export async function readDashboardBilling(input?:{expectedCompanyId?:string}):P
     const result=await rpc.rpc('es02_read_owner_reply_balance',{p_company_id:companyId});
     const envelope=record(result.data);
     const balance=!result.error&&envelope?.ok===true?nativeReplyBalance(companyId,envelope.data):null;
-    if(balance)return {...snapshot,sent:null,held:balance.held,cap:balance.granted,remaining:balance.remaining,usedPercent:null};
+    if(balance)return {...snapshot,sent:null,held:balance.held,cap:balance.granted,remaining:balance.remaining,usedPercent:null,monthStart:null};
    }catch{/* Keep the original evidence when native projection is unavailable. */}
   }
   return snapshot;
