@@ -18,5 +18,14 @@ describe("dashboard authorized evidence read",()=>{
  it("binds database request to session company and retains historic counts without eligibility",async()=>{expect(await readDashboardBilling()).toMatchObject({status:"ready",billingPaid:false,operationalEligible:false,channelReady:false,sent:12,held:3,remaining:null});expect(state.rpc).toHaveBeenCalledWith("billing_read_company_display_evidence",{p_company_id:companyId});});
  it("channel transport failure does not erase billing or usage",async()=>{state.channel.mockRejectedValue(Error("synthetic"));expect(await readDashboardBilling()).toMatchObject({status:"ready",channelReady:"unavailable",sent:12,remaining:null});});
  it("wrong channel company stays unavailable",async()=>{state.channel.mockResolvedValue({ok:true,data:{companyId:"other-company",status:"verified"}});expect(await readDashboardBilling()).toMatchObject({channelReady:"unavailable"});});
+ it("shows the authorized native balance without inventing a payment proof or accepted-message count",async()=>{
+  const native={company_id:companyId,granted:1000,remaining:999,held:0,paid_through:"2030-01-01T00:00:00Z"};
+  state.rpc.mockImplementation(async(name:string)=>name==="es02_read_owner_reply_balance"?{data:{ok:true,data:native},error:null}:{data:{ok:true,data:{...data,journey:{subscription:{...data.journey.subscription,plan_version_id:null}}}},error:null});
+  expect(await readDashboardBilling()).toMatchObject({status:"ready",billingPaid:false,operationalEligible:false,sent:null,held:0,cap:1000,remaining:999});
+ });
+ it("does not show another company's native balance",async()=>{
+  state.rpc.mockImplementation(async(name:string)=>name==="es02_read_owner_reply_balance"?{data:{ok:true,data:{company_id:"other",granted:1000,remaining:999,held:0,paid_through:"2030-01-01T00:00:00Z"}},error:null}:{data:{ok:true,data:{...data,journey:{subscription:{...data.journey.subscription,plan_version_id:null}}}},error:null});
+  expect(await readDashboardBilling()).toMatchObject({status:"ready",remaining:null});
+ });
  it("workspace change refuses before querying",async()=>{expect(await readDashboardBilling({expectedCompanyId:"other-company"})).toEqual({status:"forbidden"});expect(state.rpc).not.toHaveBeenCalled();});
 });
