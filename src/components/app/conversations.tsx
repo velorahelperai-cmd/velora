@@ -9,7 +9,6 @@ import {
   useMemo,
   useRef,
   useState,
-  useTransition,
 } from "react";
 import {
   type Conversation,
@@ -615,7 +614,16 @@ export function ConversationsPage({
   const draft = drafts[draftKey] ?? "";
   const setDraft = (value:string) => setDrafts(old=>({...old,[draftKey]:value}));
   const [nowMs, setNowMs] = useState(() => Date.now());
-  const [pending, startTransition] = useTransition();
+  const [pending, setPending] = useState(false);
+  const pendingActionRef = useRef(false);
+  // React transitions elsewhere in the workspace must not delay a send result.
+  async function runPendingAction(action: () => Promise<void>) {
+    if (pendingActionRef.current) return;
+    pendingActionRef.current = true;
+    setPending(true);
+    try { await action(); }
+    finally { pendingActionRef.current = false; setPending(false); }
+  }
 
   const [controlBusy, setControlBusy] = useState(false);
   const [controlBusyId, setControlBusyId] = useState<string | null>(null);
@@ -1037,10 +1045,11 @@ export function ConversationsPage({
 
   useEffect(() => {
     if (!selectedId || !inboxMeta?.companyId) return;
-    startTransition(async () => {
+    // Reads own thread/audit busy states; they must not hold the send transition.
+    void (async () => {
       const loaded = await loadThread(selectedId);
       if (loaded && selectedIdRef.current === selectedId) await loadAudit(selectedId);
-    });
+    })();
     return () => { bumpReadGeneration(selectedId); auditGenRef.current += 1; };
     // Identity changes own the request; render-only page updates must not refetch the same thread.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1056,7 +1065,7 @@ export function ConversationsPage({
     } catch { if (isInboxEpochCurrent(request, epochStoreRef.current.current)) setConnection(null); }
   }
   useEffect(() => {
-    startTransition(async () => { await refreshConnection(); });
+    void Promise.resolve().then(refreshConnection);
     // Workspace identity owns this read; status is also refreshed deliberately from the header.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inboxMeta?.companyId, inboxScope]);
@@ -1076,7 +1085,7 @@ export function ConversationsPage({
           generation, currentGeneration: readGenById.current[selectedThread.conversationId], conversationId: selectedThread.conversationId,
           selectedId: selectedIdRef.current })) return;
         seenRequestsRef.current.add(acknowledgementKey);
-        startTransition(async () => {
+        void (async () => {
           let result;
           try { result = await markWhatsappThreadSeen({ companyId: selectedThread.companyId,
             conversationId: selectedThread.conversationId, displayedInboundMessageId: boundary }); }
@@ -1091,7 +1100,7 @@ export function ConversationsPage({
           }
           patch(selectedThread.conversationId, () => ({ unreadCount: result.data.unreadCount } as Partial<WhatsappInboxItem>));
           await refreshInboxView();
-        });
+        })();
       });
     });
     return () => { window.cancelAnimationFrame(firstFrame); window.cancelAnimationFrame(secondFrame); };
@@ -1121,7 +1130,7 @@ export function ConversationsPage({
     const body = existing?.body ?? draftText;
     sendOpByConversation.current[c.id] = { clientOpId, body };
 
-    startTransition(async () => {
+    runPendingAction(async () => {
       await runSendReplyPath({
         store: epochStoreRef.current,
         conversationId: c.id,
@@ -1382,7 +1391,7 @@ export function ConversationsPage({
           </div>
           <Button
             variant="ghost"
-            onClick={() => startTransition(async () => { await refreshInboxView(); if (selectedId) { await loadThread(selectedId); await loadAudit(selectedId); } await refreshConnection(); })}
+            onClick={() => runPendingAction(async () => { await refreshInboxView(); if (selectedId) { await loadThread(selectedId); await loadAudit(selectedId); } await refreshConnection(); })}
             disabled={inboxBusy || pending || !inboxMeta?.companyId}
             className="text-xs min-h-9 px-3 gap-1.5"
             title={locale === "ar" ? "تحديث المحادثات" : "Refresh inbox"}
@@ -1396,7 +1405,7 @@ export function ConversationsPage({
       {inboxReadError ? <Notice tone="error">{inboxReadError}</Notice> : null}
       {selectedId && threadErrors[selectedId] ? <Notice tone="error">
         {threadErrors[selectedId]} <button type="button" className="underline" disabled={pending}
-          onClick={() => startTransition(async () => { await loadThread(selectedId); })}>{locale === "ar" ? "إعادة المحاولة" : "Retry"}</button>
+          onClick={() => runPendingAction(async () => { await loadThread(selectedId); })}>{locale === "ar" ? "إعادة المحاولة" : "Retry"}</button>
       </Notice> : null}
       {/* Top Banner Notice for Unconnected or Setup States */}
       {accessDenied ? (
@@ -1637,7 +1646,7 @@ export function ConversationsPage({
             <div className="px-2 py-3 space-y-2 text-[11px] text-[var(--color-muted-soft)]">
               <p>{locale === "ar" ? `تم تحميل ${conversations.length} من ${inboxPage?.total ?? "—"} محادثة` : `${conversations.length} of ${inboxPage?.total ?? "—"} conversations loaded`}</p>
               {inboxPage?.hasMore ? <Button variant="ghost" className="w-full min-h-8 text-xs" disabled={inboxBusy || pending}
-                onClick={() => startTransition(async () => { await refreshInboxView(inboxPage.nextCursor); })}>
+                onClick={() => runPendingAction(async () => { await refreshInboxView(inboxPage.nextCursor); })}>
                 {locale === "ar" ? "تحميل المزيد من المحادثات" : "Load more conversations"}
               </Button> : null}
             </div>
@@ -1793,7 +1802,7 @@ export function ConversationsPage({
               >
                 {!selectedReady ? <p className="text-xs text-[var(--color-muted-soft)]">{locale === "ar" ? "جارٍ تحديث المحادثة…" : "Refreshing thread…"}</p> : null}
                 {selectedThread?.hasMore ? <Button variant="ghost" className="w-full min-h-8 text-xs" disabled={pending || threadBusyId === selected.id}
-                  onClick={() => startTransition(async () => { await loadThread(selected.id, selectedThread.nextCursor); })}>
+                  onClick={() => runPendingAction(async () => { await loadThread(selected.id, selectedThread.nextCursor); })}>
                   {locale === "ar" ? "تحميل الرسائل الأقدم" : "Load older messages"}
                 </Button> : null}
                 {selectedThread ? <p className="text-[10px] text-[var(--color-muted-soft)]">{locale === "ar" ? `${selected.messages.length} رسالة محملة` : `${selected.messages.length} messages loaded`}</p> : null}
@@ -2157,9 +2166,9 @@ export function ConversationsPage({
               </div>)}
               {!auditBusy && audits[selected.id]?.events.length === 0 ? <p className="text-[10px] text-[var(--color-muted-soft)]">{locale === "ar" ? "لا توجد أحداث تحكم محفوظة." : "No saved control events."}</p> : null}
               {!audits[selected.id] || auditError ? <Button variant="ghost" className="min-h-8 text-xs" disabled={auditBusy || pending}
-                onClick={() => startTransition(async () => { await loadAudit(selected.id); })}>{locale === "ar" ? "تحديث السجل" : "Refresh history"}</Button> : null}
+                onClick={() => runPendingAction(async () => { await loadAudit(selected.id); })}>{locale === "ar" ? "تحديث السجل" : "Refresh history"}</Button> : null}
               {audits[selected.id]?.hasMore ? <Button variant="ghost" className="min-h-8 text-xs" disabled={auditBusy || pending}
-                onClick={() => startTransition(async () => { await loadAudit(selected.id, audits[selected.id].nextCursor); })}>{locale === "ar" ? "أحداث أقدم" : "Older events"}</Button> : null}
+                onClick={() => runPendingAction(async () => { await loadAudit(selected.id, audits[selected.id].nextCursor); })}>{locale === "ar" ? "أحداث أقدم" : "Older events"}</Button> : null}
             </div>
 
             {/* Card 3: Lead & CRM Follow-up Panel */}
