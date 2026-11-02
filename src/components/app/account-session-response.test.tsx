@@ -954,3 +954,7 @@ it('a server boundary conflict after ready hides old content without broadcastin
  expect(render().hasCurrentUser()).toBe(false);
  expect(state.logout).not.toHaveBeenCalled();
 });
+
+vi.mock("@/lib/auth/account-session-client",()=>({fetchAccountSession:async(correlation?:unknown)=>{
+ const {readBrokerSessionStatus}=await import("@/lib/auth/broker-actions");return readBrokerSessionStatus(correlation);
+}}));

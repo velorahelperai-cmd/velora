@@ -17,6 +17,7 @@ vi.mock('@/lib/tenancy/access',async()=>({
 }));
 import {getAccountProfile} from './actions';
 import {readAttestedAccountProfile} from './account-profile-read';
+import {readAccountSession} from '@/lib/auth/account-session-read';
 const boundary={boundaryFingerprint:'fingerprint',userId:'actor',nativeSessionId:'sid',cookieName:'opaque',generation:'generation',authOrdinal:1,contextGeneration:1,browserLineageId:'lineage'};
 const client=()=>({
  auth:{getUser:vi.fn(async()=>({data:{user:{id:'actor',email:'actor@synthetic.invalid',email_confirmed_at:'confirmed',user_metadata:{full_name:'Name'}}},error:null}))},
@@ -51,6 +52,26 @@ it('discards a cookie switch during the profile read',async()=>{
  expect(await getAccountProfile()).toMatchObject({ok:false});
 });
 const expected={userId:'actor',boundaryFingerprint:'fingerprint',generation:'generation'};
+it('independent session GET preserves native user, idle, and two broker checks without profile reads',async()=>{
+ const initial=bound();s.resolve.mockResolvedValueOnce(initial).mockResolvedValueOnce(bound());
+ expect(await readAccountSession()).toEqual({ok:true,...expected,nativeSessionId:'sid',contextGeneration:1});
+ expect(initial.client.auth.getUser).toHaveBeenCalledOnce();expect(initial.client.rpc).toHaveBeenCalledExactlyOnceWith('check_app_session',{p_touch:false});expect(s.resolve).toHaveBeenCalledTimes(2);expect(s.clients).toHaveLength(0);
+});
+it.each(['SESSION_EXPIRED','UNAUTHENTICATED'])('session GET rejects native %s',async code=>{
+ const initial=bound();initial.client.rpc.mockResolvedValue({data:{ok:false,code},error:null} as never);s.resolve.mockResolvedValueOnce(initial).mockResolvedValueOnce(bound());
+ expect(await readAccountSession()).toEqual({ok:false,code:'UNAUTHENTICATED'});
+});
+it.each(Object.keys(boundary))('session GET rejects final %s drift',async field=>{
+ s.resolve.mockResolvedValueOnce(bound()).mockResolvedValueOnce(bound({[field]:'changed'}));expect(await readAccountSession()).toEqual({ok:false,code:'CONFLICT'});
+});
+it('session GET rejects cookie switching during native identity validation',async()=>{
+ const initial=bound();initial.client.auth.getUser.mockImplementation(async()=>{s.cookies=[{name:'opaque',value:'B'}];return {data:{user:{id:'actor',email:'actor@synthetic.invalid',email_confirmed_at:'confirmed',user_metadata:{full_name:'Name'}}},error:null};});s.resolve.mockResolvedValueOnce(initial);
+ expect(await readAccountSession()).toEqual({ok:false,code:'CONFLICT'});
+});
+it('session GET rejects a native user differing from the broker actor',async()=>{
+ const initial=bound();initial.client.auth.getUser.mockResolvedValue({data:{user:{id:'other'}},error:null} as never);s.resolve.mockResolvedValueOnce(initial).mockResolvedValueOnce(bound());
+ expect(await readAccountSession()).toEqual({ok:false,code:'UNAUTHENTICATED'});
+});
 it('attests the GET after the final native session and broker checks',async()=>{
  const initial=bound();s.resolve.mockResolvedValueOnce(initial).mockResolvedValueOnce(bound());
  expect(await readAttestedAccountProfile(expected)).toMatchObject({ok:true,data:{userId:'actor'},attestation:{...expected,ok:true,nativeSessionId:'sid',contextGeneration:1}});

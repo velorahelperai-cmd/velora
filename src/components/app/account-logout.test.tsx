@@ -255,3 +255,7 @@ vi.mock("@/lib/auth/account-profile-client",()=>({fetchAttestedAccountProfile:as
  const attestation=await readBrokerSessionStatus(correlation);
  return attestation.ok?{...result,attestation}:{ok:false,code:attestation.code};
 }}));
+
+vi.mock("@/lib/auth/account-session-client",()=>({fetchAccountSession:async(correlation?:unknown)=>{
+ const {readBrokerSessionStatus}=await import("@/lib/auth/broker-actions");return readBrokerSessionStatus(correlation);
+}}));

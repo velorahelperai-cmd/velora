@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import {fetchAccountSession} from "@/lib/auth/account-session-client";
 import {fetchAttestedAccountProfile} from "@/lib/auth/account-profile-client";
 import {setupTiming} from "@/lib/diagnostics/setup-timing";
 import {beginDiagnostic} from "@/lib/diagnostics/flow";
@@ -220,8 +221,8 @@ export function AccountSessionProvider({
     const budget = seed?.budget ?? createSessionReadBudget();
     readBudgets.current.add(budget);
     try {
-      const { readBrokerSessionStatus } = await budget.read(() => import("@/lib/auth/broker-actions"));
-      const broker = seed ? seed.broker : await budget.read(() => readBrokerSessionStatus(trace.correlation));
+
+      const broker = seed ? seed.broker : await budget.read(() => fetchAccountSession(trace.correlation));
       if(gen!==requestGen.current){trace?.finish("CONFLICT");return;}
       if(!broker.ok){
         if(broker.code==="UNAUTHENTICATED"){
@@ -425,8 +426,8 @@ export function AccountSessionProvider({
       const bootstrapTrace=beginDiagnostic("auth_session_check");
       bootstrapTrace.stage("session");
       try{
-        const {readBrokerSessionStatus}=await budget.read(()=>import("@/lib/auth/broker-actions"));
-        const broker=await budget.read(()=>readBrokerSessionStatus(bootstrapTrace.correlation));
+
+        const broker=await budget.read(()=>fetchAccountSession(bootstrapTrace.correlation));
         if(cancelled||requestGen.current!==epoch)return;
         bootstrapTrace.event("session",broker.ok?"OK":broker.code==="UNAUTHENTICATED"?"UNAUTHENTICATED":"UNAVAILABLE");
         if(signal?.type==="quarantine"){
