@@ -2,6 +2,16 @@ import {expect,it,vi} from 'vitest';
 vi.mock('server-only',()=>({}));
 import {measureRead,measureDataHttp,traceRead} from './read-performance';
 
+it('retains the original result and error when the timing sink fails',async()=>{
+ const log=vi.spyOn(console,'info').mockImplementation(()=>{throw new Error('sink unavailable');});
+ try{
+  const result={ok:true};
+  expect(await traceRead('setup_entry',async()=>result)).toBe(result);
+  const error=new Error('original');
+  await expect(traceRead('setup_entry',async()=>{throw error;})).rejects.toBe(error);
+ }finally{log.mockRestore();}
+});
+
 it('attributes HTTP work to a bounded category without retaining URL data',async()=>{
  const logs:Record<string,unknown>[]=[];
  const log=vi.spyOn(console,'info').mockImplementation(value=>logs.push(JSON.parse(value)));

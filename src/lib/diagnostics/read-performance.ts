@@ -45,7 +45,7 @@ export async function measureRead<T>(stage:Stage,work:()=>Promise<T>):Promise<T>
  }
 }
 
-export async function traceRead<T>(operation:'service_inbox'|'service_inbox_http'|'workspace'|'account_profile'|'account_session'|'dashboard_http',work:()=>Promise<T>):Promise<T>{
+export async function traceRead<T>(operation:'service_inbox'|'service_inbox_http'|'workspace'|'account_profile'|'account_session'|'dashboard_http'|'setup_entry',work:()=>Promise<T>):Promise<T>{
  const stages:Measurements={};
  const started=performance.now();
  let outcome='returned';
@@ -58,6 +58,7 @@ export async function traceRead<T>(operation:'service_inbox'|'service_inbox_http
  finally{
   for(const stage of Object.values(stages))stage.total_ms=Math.round(stage.total_ms);
   // Stage totals include overlapping work; wall time is reported separately.
-  console.info(JSON.stringify({service:'velora.read.performance',operation,outcome,wall_ms:Math.round(performance.now()-started),stages}));
+  try{console.info(JSON.stringify({service:'velora.read.performance',operation,outcome,wall_ms:Math.round(performance.now()-started),stages}));}
+  catch{/* Measurement must not replace the original result or error. */}
  }
 }

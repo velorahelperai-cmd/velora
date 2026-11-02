@@ -1,6 +1,7 @@
 "use server";
 
 import { randomUUID } from "node:crypto";
+import {traceRead} from "@/lib/diagnostics/read-performance";
 import { readSessionIdentity } from "@/lib/auth/server-identity";
 import { logEvent, withLogContext } from "@/lib/logging/logger.mjs";
 import { createClient } from "@/lib/supabase/server";
@@ -203,6 +204,10 @@ export type { ReadOwnedPaidBranchSetupEntryInput, SelectOwnedPaidBranchChannelsI
  * branches, paid flags, and selected channels are not inputs.
  */
 export async function readOwnedPaidBranchSetupEntryAction(input: ReadOwnedPaidBranchSetupEntryInput): Promise<PaidBranchSetupEntryRead> {
+  return traceRead('setup_entry',()=>readOwnedPaidBranchSetupEntry(input));
+}
+
+async function readOwnedPaidBranchSetupEntry(input: ReadOwnedPaidBranchSetupEntryInput): Promise<PaidBranchSetupEntryRead> {
   const requestId = randomUUID();
   const asOf = new Date().toISOString();
   const companyId = uuid(input?.companyId);

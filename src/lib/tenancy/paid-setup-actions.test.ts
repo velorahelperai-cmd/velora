@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+vi.mock('server-only',()=>({}));
 
 const state = vi.hoisted(() => ({
   identity: { ok: true as const, userId: "11111111-1111-4111-8111-111111111111" } as
