@@ -14,6 +14,7 @@ import {ConversationsPage} from './conversations';
 import {InstagramInbox} from './instagram-inbox';
 import {Button,EmptyState,Notice,useAppCopy} from './ui';
 import {ChannelBadge} from './channel-badge';
+import {CompanyInboxRealtime,type InboxRealtimeEvent} from './branch-inbox-realtime';
 import {inboxHref,inboxRows,type InboxChannel} from './inbox-presentation';
 import styles from './unified-inbox.module.css';
 type Snapshot=ServiceInboxSnapshot;
@@ -28,10 +29,15 @@ export function UnifiedInbox({initial,waReview=false,igReview=false}:{initial:Sn
  const [refreshVersion,setRefreshVersion]=useState(0);
  const [moreLoading,setMoreLoading]=useState<InboxChannel|null>(null);
  const epoch=useRef(0),busy=useRef(false),mounted=useRef(true);
+ const live=useRef(false),queuedRefresh=useRef(false),eventTimer=useRef<ReturnType<typeof setTimeout>|null>(null);
+ const accessRevoked=useRef(false);
+ const refreshRef=useRef<()=>Promise<void>>(async()=>{});
  const [query,setQuery]=useState('');
  const expected=initial.ok?`${initial.companyId}:${initial.actorId}`:null;
  const refresh=useCallback(async()=>{
-  if(busy.current||expected===null)return;busy.current=true;const request=++epoch.current;setRefreshing(true);
+  if(expected===null||accessRevoked.current)return;
+  if(busy.current){queuedRefresh.current=true;return;}
+  queuedRefresh.current=false;busy.current=true;const request=++epoch.current;setRefreshing(true);
   try{const [companyId,actorId]=expected.split(':');const result=await fetchServiceInbox({companyId:companyId!,actorId:actorId!});if(!mounted.current||epoch.current!==request)return;
    if(result.ok&&`${result.companyId}:${result.actorId}`!==expected){setSnapshot({ok:false,code:'SCOPE_CHANGED'});setError(true);return;}
    if(!result.ok){setSnapshot(result);setError(true);return;}
@@ -40,11 +46,20 @@ export function UnifiedInbox({initial,waReview=false,igReview=false}:{initial:Sn
     ig:result.ig.ok?result.ig:old?.ig??result.ig,
    }));setRefreshVersion(n=>n+1);setError(false);
   }catch{if(mounted.current&&epoch.current===request)setError(true);}
-  finally{busy.current=false;if(mounted.current&&epoch.current===request)setRefreshing(false);}
+  finally{busy.current=false;if(mounted.current&&epoch.current===request){setRefreshing(false);if(queuedRefresh.current&&document.visibilityState==='visible')void refreshRef.current();}}
  },[expected]);
- useEffect(()=>{const fence=epoch;mounted.current=true;const timer=window.setInterval(()=>{if(document.visibilityState==='visible')void refresh();},30000);
+ useEffect(()=>{refreshRef.current=refresh;},[refresh]);
+ const onInboxEvent=useCallback((event:InboxRealtimeEvent)=>{
+  if(accessRevoked.current)return;
+  if(event.type==='unavailable'){live.current=false;return;}
+  if(event.type==='revoked'){accessRevoked.current=true;live.current=false;queuedRefresh.current=false;if(eventTimer.current!==null)clearTimeout(eventTimer.current);eventTimer.current=null;epoch.current++;setRetained(null);setSnapshot({ok:false,code:'SCOPE_CHANGED'});setError(true);return;}
+  if(event.type==='ready'||event.type==='reconnect')live.current=true;
+  if(document.visibilityState!=='visible'){queuedRefresh.current=true;return;}
+  if(eventTimer.current===null)eventTimer.current=setTimeout(()=>{eventTimer.current=null;if(mounted.current)void refreshRef.current();},250);
+ },[]);
+ useEffect(()=>{const fence=epoch;mounted.current=true;live.current=false;const timer=window.setInterval(()=>{if(!live.current&&document.visibilityState==='visible')void refresh();},30000);
   const onVisible=()=>{if(document.visibilityState==='visible')void refresh();};document.addEventListener('visibilitychange',onVisible);
-  return()=>{mounted.current=false;fence.current++;window.clearInterval(timer);document.removeEventListener('visibilitychange',onVisible);};
+  return()=>{mounted.current=false;fence.current++;queuedRefresh.current=false;if(eventTimer.current!==null)clearTimeout(eventTimer.current);eventTimer.current=null;window.clearInterval(timer);document.removeEventListener('visibilitychange',onVisible);};
  },[refresh]);
  const channels:InboxChannel[]=snapshot.ok&&snapshot.channelContract?(snapshot.channelContract.plan_entitlements.status==='UNCONFIGURED'
   ?([snapshot.waAllowed===true?'whatsapp':null,snapshot.igAllowed===true?'instagram':null].filter(Boolean) as InboxChannel[])
@@ -76,7 +91,7 @@ export function UnifiedInbox({initial,waReview=false,igReview=false}:{initial:Sn
  const select=(channel:InboxChannel|null,id:string|null,intentId?:string)=>{const href=filteredHref(channel,id);navigateLocally(intentId?href+(href.includes("?")?"&":"?")+"intent="+encodeURIComponent(intentId):href);};
  const activeRow=rows.find(r=>r.channel===source&&r.id===selected);
  async function more(channel:InboxChannel){
-  if(moreLoading!==null||busy.current||!snapshot.ok||!retained)return;
+  if(accessRevoked.current||moreLoading!==null||busy.current||!snapshot.ok||!retained)return;
   const wa=retained.wa,ig=retained.ig;
   const cursor=channel==='whatsapp'&&wa.ok?wa.page.nextCursor:channel==='instagram'&&ig.ok?ig.data.nextCursor:null;
   if(!cursor)return;busy.current=true;setMoreLoading(channel);const request=++epoch.current;
@@ -88,9 +103,10 @@ export function UnifiedInbox({initial,waReview=false,igReview=false}:{initial:Sn
    if(result.data.conversationScope!==ig.data.conversationScope){setSnapshot({ok:false,code:'SCOPE_CHANGED'});setError(true);return;}
    setRetained(old=>old?.ig.ok?{...old,ig:{...old.ig,data:{...result.data,conversations:[...old.ig.data.conversations,...result.data.conversations.filter(c=>old.ig.ok&&!old.ig.data.conversations.some(existing=>existing.id===c.id))]}}}:old);
   }}catch{if(mounted.current&&request===epoch.current)setError(true);}
-  finally{busy.current=false;if(mounted.current&&request===epoch.current)setMoreLoading(null);}
+  finally{busy.current=false;if(mounted.current&&request===epoch.current){setMoreLoading(null);if(queuedRefresh.current&&document.visibilityState==='visible')void refreshRef.current();}}
  }
  return <WorkspaceShell immersive={selectionValid} title={ar?'المحادثات':'Conversations'} actions={<Button variant="secondary" busy={refreshing||isNavigating} disabled={moreLoading!==null} onClick={()=>{if(!initial.ok)startTransition(()=>{router.refresh();});else void refresh();}}>{ar?'تحديث':'Refresh'}</Button>}>
+  {initial.ok&&<CompanyInboxRealtime key={`${initial.companyId}:${initial.actorId}`} companyId={initial.companyId} actorId={initial.actorId} ar={ar} onInboxEvent={onInboxEvent}/>}
   {error&&<Notice tone="error">{ar?'تعذّر التحقق من آخر تحديث. حدّث الصفحة قبل متابعة العمل.':'The latest update could not be verified. Refresh before continuing.'}</Notice>}
   {!snapshot.ok?<Notice tone={snapshot.code==='UNAVAILABLE'?'error':'warn'}>{snapshot.code==='NO_COMPANY'?(ar?'اختر نشاطًا من قائمة مساحة العمل.':'Choose a business from the workspace menu.'):snapshot.code==='FORBIDDEN'?<><strong>{copy.app.inboxAccessDeniedTitle}</strong><p>{copy.app.inboxAccessDeniedBody}</p></>:snapshot.code==='UNAVAILABLE'?copy.app.inboxLoadFailedBody:(ar?'تغيّرت الجلسة أو مساحة العمل. حدّث الصفحة للتحقق قبل المتابعة.':'The session or workspace changed. Refresh to verify before continuing.')} <Link href="/app/settings?tab=plan" className="underline">{ar?'الاشتراك والدعم':'Subscription and support'}</Link></Notice>:null}
   {retained&&<>

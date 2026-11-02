@@ -1,6 +1,7 @@
 import type {SupabaseClient} from '@supabase/supabase-js';
 
 export type BranchWatchScope={companyId:string;branchId:string;channel:string};
+export type CompanyInboxWatchScope={companyId:string;channels:readonly ('whatsapp'|'instagram')[]};
 export const validBranchWatchScope=(s:BranchWatchScope)=>{
  const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
  return uuid.test(s.companyId)&&uuid.test(s.branchId)&&['whatsapp','instagram'].includes(s.channel);
@@ -8,7 +9,7 @@ export const validBranchWatchScope=(s:BranchWatchScope)=>{
 
 /** Server-side transport only. Neither provider credentials nor row payloads leave it. */
 export function branchInboxEventStream(input:{
- client:SupabaseClient;scope:BranchWatchScope;signal:AbortSignal;authorize:()=>Promise<boolean>;
+ client:SupabaseClient;scope:BranchWatchScope|CompanyInboxWatchScope;signal:AbortSignal;authorize:()=>Promise<boolean>;
  heartbeatMs?:number;lifetimeMs?:number;
 }){
  const {client,scope,signal,authorize}=input;
@@ -42,15 +43,18 @@ export function branchInboxEventStream(input:{
    };
    const changed=(payload:{new:Record<string,unknown>})=>{
     const row=payload.new;
-    if(row.company_id===scope.companyId&&row.branch_id===scope.branchId&&row.channel===scope.channel)void check('change');
+    if(row.company_id===scope.companyId&&('branchId' in scope
+     ?row.branch_id===scope.branchId&&row.channel===scope.channel
+     :scope.channels.some(channel=>channel===row.channel)))void check('change');
    };
    const ready=()=>{
     if(closed||readySent||!joined||!replicationReady)return;
     readySent=true;clearTimeout(joinTimeout);void check('ready');
     heartbeat??=setInterval(()=>void check('ping'),input.heartbeatMs??15000);
    };
-   channel.on('postgres_changes',{event:'INSERT',schema:'public',table:'branch_inbox_invalidations',filter:`branch_id=eq.${scope.branchId}`},changed)
-    .on('postgres_changes',{event:'UPDATE',schema:'public',table:'branch_inbox_invalidations',filter:`branch_id=eq.${scope.branchId}`},changed)
+   const filter='branchId' in scope?`branch_id=eq.${scope.branchId}`:`company_id=eq.${scope.companyId}`;
+   channel.on('postgres_changes',{event:'INSERT',schema:'public',table:'branch_inbox_invalidations',filter},changed)
+    .on('postgres_changes',{event:'UPDATE',schema:'public',table:'branch_inbox_invalidations',filter},changed)
     .on('system',{},payload=>{
      if(payload.extension!=='postgres_changes')return;
      if(payload.status==='ok'){replicationReady=true;ready();}

@@ -22,10 +22,22 @@ export function BranchInboxRealtime({
   ar: boolean;
   onInboxEvent?: (event: InboxRealtimeEvent) => void;
 }) {
+  return <InboxRealtime url={`/api/branch/inbox-events?${new URLSearchParams({company:companyId,branch:branchId,channel})}`} ar={ar} onInboxEvent={onInboxEvent}/>;
+}
+
+export function CompanyInboxRealtime({companyId,actorId,ar,onInboxEvent}:{companyId:string;actorId:string;ar:boolean;onInboxEvent:(event:InboxRealtimeEvent)=>void}) {
+  return <InboxRealtime url={`/api/inbox/events?${new URLSearchParams({companyId,actorId})}`} ar={ar} onInboxEvent={onInboxEvent}/>;
+}
+
+function InboxRealtime({url,ar,onInboxEvent}:{url:string;ar:boolean;onInboxEvent?: (event:InboxRealtimeEvent)=>void}) {
   const router = useRouter();
-  const [connected, setConnected] = useState(false);
+  const [connectedUrl, setConnectedUrl] = useState<string|null>(null);
   const onInboxEventRef = useRef(onInboxEvent);
   useEffect(() => {
+    if(typeof EventSource==='undefined'){
+      onInboxEventRef.current?.({type:'unavailable'});
+      return;
+    }
     onInboxEventRef.current = onInboxEvent;
   }, [onInboxEvent]);
 
@@ -50,12 +62,11 @@ export function BranchInboxRealtime({
       }
     };
 
-    const params = new URLSearchParams({ company: companyId, branch: branchId, channel });
-    let events: EventSource;
+    let events: EventSource|undefined;
 
     const ready = () => {
       if (!active) return;
-      setConnected(true);
+      setConnectedUrl(url);
       if (hasConnectedOnce) {
         dispatchEvent({ type: 'reconnect' });
       } else {
@@ -66,7 +77,7 @@ export function BranchInboxRealtime({
 
     const lost = () => {
       if (!active) return;
-      setConnected(false);
+      setConnectedUrl(null);
       // A consumer needs transport state to enable its fallback reads.
       onInboxEventRef.current?.({ type: 'unavailable' });
     };
@@ -74,8 +85,8 @@ export function BranchInboxRealtime({
     const stopRevoked = () => {
       revoked = true;
       clearTimeout(retry);
-      events.close();
-      setConnected(false);
+      events?.close();
+      setConnectedUrl(null);
       if (active) {
         if (onInboxEventRef.current) {
           onInboxEventRef.current({ type: 'revoked' });
@@ -91,7 +102,7 @@ export function BranchInboxRealtime({
 
     const connect = () => {
       if (!active || revoked) return;
-      const current = new EventSource(`/api/branch/inbox-events?${params}`);
+      const current = new EventSource(url);
       events = current;
       const isCurrent = () => active && !revoked && events === current;
       current.addEventListener('ready', () => { if (isCurrent()) ready(); });
@@ -124,24 +135,31 @@ export function BranchInboxRealtime({
 
     const visible = () => {
       if (document.visibilityState === 'visible') {
-        dispatchEvent({ type: 'reconnect' });
+        if(!events&&!revoked){connect();return;}
+        // Returning to the tab requests reconciliation, not proof that the
+        // transport reconnected. Only the server's ready event proves that.
+        dispatchEvent({ type: 'change' });
+      } else {
+        clearTimeout(retry);retry=undefined;
+        events?.close();events=undefined;
+        lost();
       }
     };
 
-    connect();
+    if(document.visibilityState==='visible')connect();
     document.addEventListener('visibilitychange', visible);
     return () => {
       active = false;
       clearTimeout(timer);
       clearTimeout(retry);
-      events.close();
+      events?.close();
       document.removeEventListener('visibilitychange', visible);
     };
-  }, [companyId, branchId, channel, router]);
+  }, [url, router]);
 
   return (
     <p role="status" className="text-sm">
-      {connected
+      {connectedUrl===url
         ? (ar ? 'التحديثات المباشرة متصلة' : 'Live updates connected')
         : (ar ? 'جارٍ الاتصال بالتحديثات المباشرة؛ يمكنك تحديث الصفحة.' : 'Connecting to live updates; you can refresh the page.')}
     </p>

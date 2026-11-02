@@ -4,7 +4,7 @@ import {createRoot,type Root} from 'react-dom/client';
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
 const m=vi.hoisted(()=>({router:{refresh:vi.fn()}}));
 vi.mock('next/navigation',()=>({useRouter:()=>m.router}));
-import {BranchInboxRealtime} from './branch-inbox-realtime';
+import {BranchInboxRealtime,CompanyInboxRealtime} from './branch-inbox-realtime';
 class Source extends EventTarget{
  static CLOSED=2;
  static all:Source[]=[];
@@ -16,7 +16,7 @@ const props={companyId:'qa-company',branchId:'qa-main',channel:'whatsapp',ar:tru
 let root:Root,container:HTMLDivElement;
 function render(element:React.ReactNode){act(()=>root.render(element));return {rerender:(next:React.ReactNode)=>act(()=>root.render(next)),unmount:()=>act(()=>root.unmount())};}
 const statusText=()=>container.querySelector('[role="status"]')?.textContent;
-beforeEach(()=>{vi.clearAllMocks();vi.useFakeTimers();Source.all=[];vi.stubGlobal('EventSource',Source);vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);container=document.createElement('div');document.body.append(container);root=createRoot(container);});
+beforeEach(()=>{Object.defineProperty(document,'visibilityState',{configurable:true,value:'visible'});vi.clearAllMocks();vi.useFakeTimers();Source.all=[];vi.stubGlobal('EventSource',Source);vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);container=document.createElement('div');document.body.append(container);root=createRoot(container);});
 afterEach(()=>{act(()=>root.unmount());container.remove();vi.useRealTimers();vi.unstubAllGlobals();});
 it('refreshes on ready and coalesces a burst of changes without rendering event payloads',async()=>{
  render(<BranchInboxRealtime {...props}/>);const source=Source.all[0];
@@ -74,4 +74,22 @@ it('ignores queued events from a replaced transport',async()=>{
  await act(async()=>vi.advanceTimersByTimeAsync(5000));onInboxEvent.mockClear();
  act(()=>{old.dispatchEvent(new Event('ready'));old.dispatchEvent(new Event('revoked'));old.dispatchEvent(new MessageEvent('change',{data:'{}'}));});
  expect(onInboxEvent).not.toHaveBeenCalled();expect(Source.all[1].close).not.toHaveBeenCalled();
+});
+it('binds company subscriptions to the actor and never treats visibility as transport recovery',()=>{
+ const onInboxEvent=vi.fn();const view=render(<CompanyInboxRealtime companyId="company" actorId="actor" ar={false} onInboxEvent={onInboxEvent}/>);
+ const old=Source.all[0];expect(old.url).toBe('/api/inbox/events?companyId=company&actorId=actor');
+ act(()=>old.dispatchEvent(new Event('ready')));expect(statusText()).toBe('Live updates connected');
+ act(()=>old.dispatchEvent(new Event('unavailable')));onInboxEvent.mockClear();
+ Object.defineProperty(document,'visibilityState',{configurable:true,value:'visible'});act(()=>document.dispatchEvent(new Event('visibilitychange')));
+ expect(onInboxEvent).toHaveBeenCalledWith({type:'change'});expect(statusText()).not.toBe('Live updates connected');
+ view.rerender(<CompanyInboxRealtime companyId="company" actorId="new-actor" ar={false} onInboxEvent={onInboxEvent}/>);
+ expect(old.close).toHaveBeenCalledOnce();expect(Source.all[1].url).toContain('actorId=new-actor');
+});
+it('closes hidden-tab transports and reconnects once on return',()=>{
+ const onInboxEvent=vi.fn();render(<CompanyInboxRealtime companyId="company" actorId="actor" ar={false} onInboxEvent={onInboxEvent}/>);
+ const old=Source.all[0];act(()=>old.dispatchEvent(new Event('ready')));
+ Object.defineProperty(document,'visibilityState',{configurable:true,value:'hidden'});act(()=>document.dispatchEvent(new Event('visibilitychange')));expect(old.close).toHaveBeenCalledOnce();
+ onInboxEvent.mockClear();act(()=>old.dispatchEvent(new MessageEvent('change',{data:'{}'})));expect(onInboxEvent).not.toHaveBeenCalled();
+ Object.defineProperty(document,'visibilityState',{configurable:true,value:'visible'});act(()=>document.dispatchEvent(new Event('visibilitychange')));expect(Source.all).toHaveLength(2);
+ act(()=>Source.all[1].dispatchEvent(new Event('ready')));expect(onInboxEvent).toHaveBeenCalledWith({type:'reconnect'});
 });
