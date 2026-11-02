@@ -46,3 +46,16 @@ it('allows drafting after thread verification while audit and connection reads a
  send.resolve({ok:false,code:'SEND_DISABLED'});await flush();tree=render(p);expect(reply(tree).props.disabled).toBe(false);
  audit.resolve({ok:false,code:'UNAVAILABLE'});connection.resolve({ok:false,code:'UNAVAILABLE'});await flush();render(p);
 });
+it.each(['FORBIDDEN','UNAVAILABLE'])('keeps a verified reply editable during a periodic read, preserves the draft, and locks after %s',async code=>{
+ const data={kind:'partial',companyId:'company',conversationId:'thread',conversation:item,messages:[],displayedInboundMessageId:null,unreadCount:0,nextCursor:null,hasMore:false};
+ const background=deferred();state.thread.mockResolvedValueOnce({ok:true,data}).mockReturnValue(background.promise);
+ state.audit.mockResolvedValue({ok:false,code:'UNAVAILABLE'});state.connection.mockResolvedValue({ok:false,code:'UNAVAILABLE'});
+ const p=props();render(p);await flush();let tree=render(p);expect(reply(tree).props.disabled).toBe(false);
+ (reply(tree).props.onChange as(e:unknown)=>void)({target:{value:'Preserve this draft'}});tree=render(p);
+ p.refreshVersion=1;tree=render(p);expect(state.thread).toHaveBeenCalledTimes(2);
+ expect(reply(tree).props.disabled).toBe(false);expect(reply(tree).props.value).toBe('Preserve this draft');
+ background.resolve({ok:false,code});await flush();tree=render(p);
+ const composer=reply(tree);expect(!composer||composer.props.disabled).toBeTruthy();expect(state.send).not.toHaveBeenCalled();
+ state.thread.mockReturnValue(new Promise(()=>{}));p.refreshVersion=2;tree=render(p);
+ const retryComposer=reply(tree);expect(!retryComposer||retryComposer.props.disabled).toBeTruthy();
+});

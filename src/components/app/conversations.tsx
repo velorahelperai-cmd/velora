@@ -866,7 +866,7 @@ export function ConversationsPage({
   const selectedRow = conversations.find((c) => c.id === selectedId) ?? null;
   const selectedThread = selectedId ? threads[selectedId] : undefined;
   const selected = selectedRow ? { ...selectedRow, messages: selectedThread?.messages ?? [] } : null;
-  const selectedReady = Boolean(selectedThread && readyThreadId === selectedId && threadBusyId !== selectedId && selectedId && !threadErrors[selectedId]);
+  const selectedReady = Boolean(selectedThread && readyThreadId === selectedId && selectedId && !threadErrors[selectedId]);
 
   const select = (id: string | null) =>
     embedded ? onSelectConversation?.(id) : router.replace(id ? `/app/conversations?c=${id}` : "/app/conversations");
@@ -984,7 +984,7 @@ export function ConversationsPage({
     // Saved send IDs/unknown-outcome locks survive lost access; a read is never a resend authorization.
   }
 
-  async function loadThread(conversationId: string, before?: string | null, selectedOnly = true): Promise<boolean> {
+  async function loadThread(conversationId: string, before?: string | null, selectedOnly = true, background = false): Promise<boolean> {
     const companyId = inboxMeta?.companyId;
     if (!companyId || !snapshotRef.current.scopeKey) return false;
     const request = captureInboxEpoch(epochStoreRef.current);
@@ -994,12 +994,15 @@ export function ConversationsPage({
       ...(selectedOnly ? { selectedId: selectedIdRef.current } : {}) });
     threadInFlightRef.current = conversationId;
     setThreadBusyId(conversationId);
-    if (selectedIdRef.current === conversationId) setReadyThreadId(null);
+    // Keep an already verified draft usable during polling. Initial/explicit reads
+    // still block; failed reads lock via threadErrors, and every send reauthorizes server-side.
+    if (!background && selectedIdRef.current === conversationId) setReadyThreadId(null);
     setThreadErrors(current => { const next = { ...current }; delete next[conversationId]; return next; });
     try {
       const result = await refreshWhatsappThreadPage({ companyId, conversationId, before });
       if (!stillCurrent()) return false;
       if (!result.ok) {
+        if (selectedIdRef.current === conversationId) setReadyThreadId(null);
         if (result.code === "NOT_FOUND" || result.code === "FORBIDDEN" || result.code === "SCOPE_CHANGED") removeInaccessibleThread(conversationId);
         setThreadErrors(current => ({ ...current, [conversationId]: copy.app.controlRefreshFailed }));
         return false;
@@ -1015,7 +1018,10 @@ export function ConversationsPage({
       }
       return true;
     } catch {
-      if (stillCurrent()) setThreadErrors(current => ({ ...current, [conversationId]: copy.app.controlRefreshFailed }));
+      if (stillCurrent()) {
+        if (selectedIdRef.current === conversationId) setReadyThreadId(null);
+        setThreadErrors(current => ({ ...current, [conversationId]: copy.app.controlRefreshFailed }));
+      }
       return false;
     } finally {
       if (stillCurrent()) {
@@ -1064,7 +1070,7 @@ export function ConversationsPage({
     if (!refreshVersion || !selectedId || !inboxMeta?.companyId || threadInFlightRef.current === selectedId) return;
     // A periodic refresh must not invalidate a slower in-flight read forever.
     void (async () => {
-      const loaded = await loadThread(selectedId);
+      const loaded = await loadThread(selectedId, undefined, true, true);
       if (loaded && selectedIdRef.current === selectedId) await loadAudit(selectedId);
     })();
     // Identity changes are fenced by the effect above; this effect owns refresh ticks only.
