@@ -2,6 +2,7 @@ import "server-only";
 import { isLiveAnsweringEnabled } from "../guards";
 import { executeReservedRealAnswer, type RealAnswerPayload, type RealAnswerResult } from "./execute";
 import { callRealModel } from "./provider";
+import { selectWhatsappModel } from "./whatsapp-model";
 import { createClaimedWhatsappRuntimeStore, type ClaimedWhatsappRuntimeStore } from "./whatsapp-store";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { loadClaimedAnswerProfile } from "../approved-retrieval";
@@ -24,6 +25,7 @@ export function createClaimedWhatsappAnswerExecutor(): (input: ClaimedWhatsappAn
     if (!isLiveAnsweringEnabled()) return { ok: false, error: "LIVE_AI_DISABLED", attempts: [] };
     let store: ClaimedWhatsappRuntimeStore;
     let persona: AnswerPersona;
+    let nativeEs02 = false;
     let locale: "ar" | "en";
     try {
       const admin = createAdminClient();
@@ -37,6 +39,7 @@ export function createClaimedWhatsappAnswerExecutor(): (input: ClaimedWhatsappAn
       const profile = await loadClaimedAnswerProfile(frame.company_id, input, client);
       if (!profile) return { ok: false, error: "ANSWER_PROFILE_UNAVAILABLE", attempts: [] };
       persona = profile.persona;
+      nativeEs02 = profile.authority === "es02";
       const nativeStore = createClaimedWhatsappRuntimeStore(input, profile);
       store = nativeStore;
       locale = input.locale;
@@ -63,6 +66,6 @@ export function createClaimedWhatsappAnswerExecutor(): (input: ClaimedWhatsappAn
       }
     }
     catch { return { ok: false, error: "PERSISTENCE_UNAVAILABLE", attempts: [] }; }
-    return executeClaimedWhatsappAnswer({...input,locale}, { store, call: callRealModel, persona });
+    return executeClaimedWhatsappAnswer({...input,locale,model:nativeEs02 ? selectWhatsappModel(input.question) : undefined}, { store, call: callRealModel, persona });
   };
 }

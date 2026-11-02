@@ -16,6 +16,11 @@ describe("P3 actual administrative provider boundary", () => {
   it("preserves Gemini billed output including thoughts once", async () => {
     expect(await callRealModel({ model: "gemini-3.8-flash", system: "Fixture", prompt: "Fixture" })).toMatchObject({ status: "success", actualModelId: "gemini-3.8-flash", responseId: "interaction.fixture", usage: { promptTokens: 10, completionTokens: 5, reasoningTokens: 3, totalTokens: 15 } });
   });
+  it("accounts a Flash-Lite response and uses its supported thinking level", async () => {
+    sdk.google.mockResolvedValue({ ...geminiResponse, model: "gemini-3.5-flash-lite" });
+    expect(await callRealModel({ model: "gemini-3.5-flash-lite", system: "Fixture", prompt: "Fixture", maxOutputTokens: 256 })).toMatchObject({ status: "success", actualModelId: "gemini-3.5-flash-lite", usage: { totalTokens: 15 } });
+    expect(sdk.google).toHaveBeenCalledWith(expect.objectContaining({ model: "gemini-3.5-flash-lite", generation_config: expect.objectContaining({ max_output_tokens: 256, thinking_level: "minimal" }) }), expect.anything());
+  });
   it("checks Gemini output counters independently of the reported total", async () => {
     sdk.google.mockResolvedValue({ ...geminiResponse, usage: { ...geminiResponse.usage, total_output_tokens: 1000 } });
     expect(await callRealModel({ model: "gemini-3.8-flash", system: "Fixture", prompt: "Fixture" })).toMatchObject({ status: "uncertain" });

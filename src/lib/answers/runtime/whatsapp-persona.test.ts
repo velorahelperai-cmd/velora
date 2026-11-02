@@ -15,7 +15,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   ports.rpc.mockImplementation(async name => ({ data: name === "billing_load_worker_frame" ? frame : name === "es02_read_claimed_reply_language" ? language : profile, error: null }));
   ports.reserve.mockResolvedValue({ ok: true }); ports.start.mockResolvedValue(true); ports.settle.mockResolvedValue(true);
-  ports.call.mockResolvedValue({ status: "success", text: "1.200 OMR.", actualModelId: "gpt-6-luna", latencyMs: 1, usage: { promptTokens: 20, completionTokens: 10, cachedTokens: 0, cacheWriteTokens: 0, reasoningTokens: 0, totalTokens: 30 } });
+  ports.call.mockImplementation(async ({ model }: { model: string }) => ({ status: "success", text: "1.200 OMR.", actualModelId: model, latencyMs: 1, usage: { promptTokens: 20, completionTokens: 10, cachedTokens: 0, cacheWriteTokens: 0, reasoningTokens: 0, totalTokens: 30 } }));
 });
 describe("production worker plan identity", () => {
   it.each([["noor_basic", "noura", "Noura"], ["noor_premium", "noura", "Noura"], ["lina_basic", "lina", "Lina"], ["lina_premium", "lina", "Lina"], ["dana_basic", "dana", "Dana"], ["dana_premium", "dana", "Dana"]])("uses canonical paid %s", async (code, persona, display) => {
@@ -53,6 +53,12 @@ describe("production worker plan identity", () => {
 
 const es02Profile={ok:true,authority:"es02",company_id:"company",job_id:"job",persona:"lina",es02_order_id:"22222222-2222-4222-8222-222222222222",es02_branch_id:language.branch_id,es02_slot_index:0,es02_paid_fingerprint:"a".repeat(64)};
 describe("claimed branch reply language",()=>{
+ it("uses Flash-Lite for an ordinary native branch question",async()=>{
+  ports.rpc.mockImplementation(async name=>({data:name==="billing_load_worker_frame"?frame:name==="es02_read_claimed_reply_language"?language:es02Profile,error:null}));
+  expect(await createClaimedWhatsappAnswerExecutor()(input)).toMatchObject({ok:true});
+  expect(ports.call).toHaveBeenCalledWith(expect.objectContaining({model:"gemini-3.5-flash-lite"}));
+  expect(ports.reserve).toHaveBeenCalledWith(expect.objectContaining({provider:"google",model:"gemini-3.5-flash-lite"}));
+ });
  it.each([["en","سعر القهوة؟","ar","Respond in English"],["ar","Coffee price?","en","أجيبي بالعربية"],["both","سعر القهوة؟","en","أجيبي بالعربية"],["both","Coffee price?","ar","Respond in English"]] as const)("uses %s from the branch for %s",async(reply_language,question,locale,expected)=>{
   ports.rpc.mockImplementation(async name=>({data:name==="billing_load_worker_frame"?{...frame,data:{...frame.data,question}}:name==="es02_read_claimed_reply_language"?{...language,reply_language}:es02Profile,error:null}));
   expect(await createClaimedWhatsappAnswerExecutor()({...input,question,locale})).toMatchObject({ok:true});expect(ports.call.mock.calls[0][0].system).toContain(expected);

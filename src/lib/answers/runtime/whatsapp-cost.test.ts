@@ -18,6 +18,11 @@ describe("claimed WhatsApp cost execution", () => {
     expect(await createClaimedWhatsappAnswerExecutor()(input)).toMatchObject({ ok: false, error: "LIVE_AI_DISABLED", attempts: [] });
     expect(admin.create).not.toHaveBeenCalled();
   });
+  it("reserves the Flash-Lite Google model for an explicitly selected WhatsApp answer", async () => {
+    const db = store(), call = vi.fn().mockResolvedValue({ status: "success", text: "Synthetic answer", usage, actualModelId: "gemini-3.5-flash-lite", latencyMs: 1 });
+    expect(await executeClaimedWhatsappAnswer({ ...input, model: "gemini-3.5-flash-lite" }, { store: db, call })).toMatchObject({ ok: true, complete: true });
+    expect(db.reserve).toHaveBeenCalledWith(expect.objectContaining({ model: "gemini-3.5-flash-lite", provider: "google", reservedBaisa: expect.any(Number) }));
+  });
   it("does not dispatch after a reservation rejection", async () => {
     const db = store(), call = vi.fn();
     vi.mocked(db.reserve).mockResolvedValue({ ok: false, code: "CLAIM_REJECTED" });

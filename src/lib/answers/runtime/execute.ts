@@ -17,7 +17,7 @@ function validPayload(input:RealAnswerPayload) {
   ["ar","en"].includes(input.locale)&&Array.isArray(input.chunks)&&input.chunks.length<=ANSWER_MAX_SOURCES&&
   !input.chunks.some(c=>!c||typeof c.text!=="string"||typeof c.title!=="string"||!c.sourceId||!Number.isSafeInteger(c.contentVersion)||c.contentVersion<1||!c.text.trim())&&
   input.chunks.reduce((sum,c)=>sum+c.title.length+c.text.length,0)<=ANSWER_MAX_CONTEXT_CHARS&&
-  (input.model===undefined||["gpt-6-luna","gpt-6.1-sol","gemini-3.8-flash"].includes(input.model))&&
+  (input.model===undefined||["gpt-6-luna","gpt-6.1-sol","gemini-3.8-flash","gemini-3.5-flash-lite"].includes(input.model))&&
   Number.isSafeInteger(maxOutputTokens)&&maxOutputTokens>=1&&maxOutputTokens<=REAL_OUTPUT_LIMIT&&Number.isFinite(maxCostBaisa)&&maxCostBaisa>0&&maxCostBaisa<=1000;
 }
 export async function executeRealAnswer(input:RealAnswerInput,deps?:{store:RealRuntimeStore;call:typeof callRealModel}) {
@@ -47,7 +47,7 @@ export async function executeReservedRealAnswer(input:RealAnswerPayload,deps:{st
   const id=crypto.randomUUID(),pricing=realModelPricing(model),reservedBaisa=reserveRealCost(model,system+" ".repeat(2048),prompt,pricing,maxOutputTokens);
   if(reservedBaisa>maxCostBaisa)return {ok:false as const,error:"TEST_COST_LIMIT_EXCEEDED",attempts};
   let reservation;
-  try{reservation=await store.reserve({id,attempt:index+1,model,provider:model==="gemini-3.8-flash"?"google":"openai",reservedBaisa,pricingVersion:pricing.version,pricingSnapshot:pricing,sourceCitations});}
+  try{reservation=await store.reserve({id,attempt:index+1,model,provider:model.startsWith("gemini-")?"google":"openai",reservedBaisa,pricingVersion:pricing.version,pricingSnapshot:pricing,sourceCitations});}
   catch{return {ok:false as const,error:"PERSISTENCE_OR_AUTHORIZATION_FAILED",attempts};}
   if(reservation?.ok!==true)return {ok:false as const,error:reservation?.code??"RESERVATION_FAILED",attempts};
   try{if(!await store.start(id)){

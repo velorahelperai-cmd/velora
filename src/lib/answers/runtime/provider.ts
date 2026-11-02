@@ -14,8 +14,8 @@ export type RealProviderResult = {
 };
 export async function callRealModel(input:{model:AIModelId;system:string;prompt:string;maxOutputTokens?:number}):Promise<RealProviderResult> {
  const maxOutputTokens=input.maxOutputTokens??REAL_OUTPUT_LIMIT;
- if(!["gpt-6-luna","gpt-6.1-sol","gemini-3.8-flash"].includes(input.model)||!Number.isSafeInteger(maxOutputTokens)||maxOutputTokens<1||maxOutputTokens>REAL_OUTPUT_LIMIT)return {status:"rejected",text:"",errorCode:"INVALID_INPUT",latencyMs:0};
- const started=Date.now(),google=input.model==="gemini-3.8-flash";
+ if(!["gpt-6-luna","gpt-6.1-sol","gemini-3.8-flash","gemini-3.5-flash-lite"].includes(input.model)||!Number.isSafeInteger(maxOutputTokens)||maxOutputTokens<1||maxOutputTokens>REAL_OUTPUT_LIMIT)return {status:"rejected",text:"",errorCode:"INVALID_INPUT",latencyMs:0};
+ const started=Date.now(),google=input.model.startsWith("gemini-");
  const apiKey=getSecureProviderKey(google?"google":"openai");
  if(!apiKey)return {status:"rejected",text:"",errorCode:"KEY_MISSING",message:"Provider key is missing",latencyMs:0};
  let requestId:string|undefined,responseId:string|undefined,actualModelId:string|undefined;
@@ -23,7 +23,7 @@ export async function callRealModel(input:{model:AIModelId;system:string;prompt:
   let text:string,usage:RealTokenUsage,complete:boolean;
   if(google){
    const client=new GoogleGenAI({apiKey});
-   const response=await client.interactions.create({model:input.model,input:input.prompt,system_instruction:input.system,store:false,stream:false,service_tier:"standard",generation_config:{max_output_tokens:maxOutputTokens,thinking_level:"low"}}, {timeout:REAL_TIMEOUT_MS,maxRetries:0});
+   const response=await client.interactions.create({model:input.model,input:input.prompt,system_instruction:input.system,store:false,stream:false,service_tier:"standard",generation_config:{max_output_tokens:maxOutputTokens,thinking_level:input.model==="gemini-3.5-flash-lite"?"minimal":"low"}}, {timeout:REAL_TIMEOUT_MS,maxRetries:0});
    requestId=response.id;
    responseId=response.id;actualModelId=response.model;
    const u=response.usage;
