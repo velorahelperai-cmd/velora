@@ -1,4 +1,5 @@
 import { externalSendAllowed, metaGraphVersion, sendReady, whatsappConfig, whatsappConfigurationMode, whatsappRoutingMode } from "./config";
+import { consumeManualReviewPermit, type ManualReviewPermit } from './manual-review-permit';
 
 export type SendTextResult =
   | { ok: true; waMessageId: string }
@@ -76,8 +77,10 @@ export async function sendWhatsappText(input: {
   /** Server evidence from whatsapp_check_service_window; required for tenant freeform sends. */
   serviceWindowExpiresAt?: string;
   signal?: AbortSignal;
+  manualReviewPermit?: ManualReviewPermit;
 }): Promise<SendTextResult> {
-  if (!externalSendAllowed()) return { ok: false, code: "SEND_DISABLED" };
+  const boundedManual = consumeManualReviewPermit(input.manualReviewPermit, input);
+  if (!externalSendAllowed() && !boundedManual) return { ok: false, code: "SEND_DISABLED" };
 
   const boundPhone = input.phoneNumberId.trim();
   if (!boundPhone) return { ok: false, code: "PHONE_MISMATCH" };

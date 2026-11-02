@@ -14,6 +14,7 @@ import {readChannelReviewAccess} from '@/lib/meta-review/actions';
 import {reviewDispatchCurrent,type ReviewGrant} from '@/lib/meta-review/access';
 import { loadWhatsappConversation, loadWhatsappInbox, type WhatsappInboxMeta } from "@/lib/whatsapp/inbox";
 import { sendWhatsappText } from "@/lib/whatsapp/send";
+import { boundedReviewMatches, issueManualReviewPermit } from '@/lib/whatsapp/manual-review-permit';
 import { readServiceWindow } from "@/lib/whatsapp/service-window";
 import { decideClaimedTenantSend, applyClaimedPreGraphOutcome } from "@/lib/whatsapp/send-attempt";
 import { classifyPreGraphSettlement, replyFromPreGraphSettlement } from "@/lib/whatsapp/send-failure";
@@ -238,7 +239,12 @@ export async function replyWhatsappConversation(input: {
   const reviewMode=whatsappConfigurationMode()==='meta_test';
   let reviewGrant:ReviewGrant|null=null;
 
-  if (!externalSendAllowed()) {
+  const generalSendAllowed = externalSendAllowed();
+  if (!generalSendAllowed && mode === 'tenant_registry') {
+    const access = await readChannelReviewAccess(companyId, 'whatsapp');
+    reviewGrant = access.ok && access.grant.send_limit === 1 ? access.grant : null;
+  }
+  if (!generalSendAllowed && !reviewGrant) {
     return { ok: false, code: "SEND_DISABLED", message: "external_send_disabled", clientOpId };
   }
 
@@ -311,6 +317,9 @@ export async function replyWhatsappConversation(input: {
     phoneNumberId = config.phoneNumberId;
   }
 
+  const boundedReview = boundedReviewMatches(reviewGrant, {toWaId:recipientWaId,body:text,phoneNumberId,
+    conversationId:input.conversationId,linkId:intentLinkId,linkGeneration:intentLinkGeneration});
+  if (!generalSendAllowed && !boundedReview) return {ok:false,code:'SEND_DISABLED',message:'external_send_disabled',clientOpId};
   const created = await supabase.rpc("create_whatsapp_send_intent", {
     p_client_op_id: clientOpId,
     p_conversation_id: input.conversationId,
@@ -410,7 +419,7 @@ export async function replyWhatsappConversation(input: {
 
   // Claim is service_role only — membership already verified above.
   const reviewAccess=reviewMode?await readChannelReviewAccess(companyId,'whatsapp'):null;
-  reviewGrant=reviewAccess?.ok?reviewAccess.grant:null;
+  reviewGrant=reviewMode?(reviewAccess?.ok?reviewAccess.grant:null):reviewGrant;
   // Another request may have claimed this same operation since the native read.
   // Retain its key until storage is refreshed; no local snapshot proves no attempt.
   if(reviewMode&&!reviewGrant)return {ok:false,code:'SAVE_FAILED',message:'review_access_unavailable',clientOpId};
@@ -611,6 +620,9 @@ export async function replyWhatsappConversation(input: {
       phoneNumberId: intent.phone_number_id,
       accessToken: graphToken,
       serviceWindowExpiresAt,
+      manualReviewPermit: boundedReview && typeof dispatch.not_after === 'string'
+        ? issueManualReviewPermit({toWaId:intent.recipient_wa_id,body:intent.body,phoneNumberId:intent.phone_number_id},dispatch.not_after)
+        : undefined,
     });
 
     if (!sent.ok) {
