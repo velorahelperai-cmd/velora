@@ -31,6 +31,12 @@ The next implementation coalesces only simultaneous resolutions with identical c
 
 Local diagnostic package tests:18PASS; scoped lint PASS. Existing server-availability tests have3 failures from concurrent unpublished session-actions.ts adding `confirmed` to its return value; the direct createClient outage test passes. Those unrelated auth files/tests are not included. Exact candidate CI remains required.
 
+e3b1b4e exact candidate subsequently passed CI41390340053 all8 jobs; production dpl_7jCdoojfUq5NWrFSCe78LAmYYHZb READY. Actual production action samples show16 broker resolutions for24 client requests and66 authenticated HTTP calls: wall17908/5836/3906/2153/2752ms. Production server render samples865/894ms,1broker/27HTTP. These are a small uncontrolled sample, not percentiles, and must not be compared as a speed ratio to local31s samples. They prove considerable repeated work remains after safe concurrent coalescing.
+
+Browser access recovered via a fresh task-owned tab after the owner reconnected Chrome. Production e3b1b4e: WhatsApp filter click showed pressed state correctly (926ms including click+AX observation); WhatsApp→All measured89ms click-to-URL with correct All pressed; Back restored WhatsApp. Prior baseline3234ms used the same account/control but different background load, so this is directional single-sample evidence, not an INP/percentage claim.
+
+Next data-loading change: AppLayout supplies its existing authorized workspace display snapshot to WorkspaceShell, removing the second getWorkspaceView action that used to block every mounted page. Native page/data/mutation checks remain; account/company/role mismatch hides the shell. Components outside this layout retain the original guarded fallback. Local authenticated inbox visibly renders company/sidebar/content; real React tests prove no second read and account/company isolation. Embedded Instagram no longer fetches its hidden list (UnifiedInbox owns it); selected threads still authorize independently, tested with FORBIDDEN.37 affected tests pass. New package not yet published or accepted on production.
+
 The active checklist and engineering decisions live in Brain `03-CUSTOMER.md`, PERF-SYSTEM-20261102. This file is evidence, not a parallel plan.
 
 - WorkspaceChrome calls getWorkspaceView on each mount and withholds children until the result. The app already has an AccountSessionProvider. Measure before changing lifetime; do not share mutable identity across accounts.

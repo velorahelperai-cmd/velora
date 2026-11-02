@@ -12,6 +12,7 @@ import { ApprovedAccountLoader } from "@/components/app/approved-account-loader"
 import { Button, LangSwitch, Notice, useAppCopy } from "@/components/app/ui";
 import { DiagnosticHint } from "./diagnostic-hint";
 import { EnterprisePresence } from "./enterprise-presence";
+import {useWorkspaceBootstrap,type WorkspaceBootstrap} from './workspace-bootstrap';
 
 import styles from "./internal-ui.module.css";
 
@@ -30,6 +31,11 @@ type ProfileState = {
   companyName: string;
 };
 
+function profileFromWorkspace(data:WorkspaceBootstrap):ProfileState{
+  const selected=data.workspace.choices.find(row=>row.companyId===data.workspace.selectedCompanyId);
+  return {userId:data.identity.userId,name:data.identity.fullName.trim()||data.identity.email||'User',email:data.identity.email,role:selected?.role??null,companyName:selected?.displayName??''};
+}
+
 export function WorkspaceShell({ title, children, actions, embedded=false,immersive=false }: { title: string; children: ReactNode; actions?: ReactNode; embedded?:boolean;immersive?:boolean }) {
   if (embedded) return <div className="channel-pane">{children}</div>;
   return <WorkspaceChrome title={title} actions={actions} immersive={immersive}>{children}</WorkspaceChrome>;
@@ -39,22 +45,25 @@ function WorkspaceChrome({title,children,actions,immersive}:{title:string;childr
   const copy = useAppCopy();
   const { update, locale } = useDemo();
   const accountSession = useOptionalAccountSession();
+  const bootstrap=useWorkspaceBootstrap();
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const ar = locale === "ar";
-  const [profile, setProfile] = useState<ProfileState | null>(null);
+  const [profile, setProfile] = useState<ProfileState | null>(()=>bootstrap?profileFromWorkspace(bootstrap):null);
   const [profileLoadFailed, setProfileLoadFailed] = useState(false);
   const [workspaceDiagnostic, setWorkspaceDiagnostic] = useState<unknown>(null);
-  const [knowledgeAllowed,setKnowledgeAllowed]=useState(false);
-  const [workspace, setWorkspace] = useState<WorkspaceState | null>(null);
+  const [knowledgeAllowed,setKnowledgeAllowed]=useState(bootstrap?.knowledgeAllowed??false);
+  const [workspace, setWorkspace] = useState<WorkspaceState | null>(bootstrap?.workspace??null);
   const [switchBusy, setSwitchBusy] = useState(false);
   const [switchError, setSwitchError] = useState<string | null>(null);
   const workspaceRequest = useRef(0);
 
   const reloadWorkspaceState = useCallback(async () => {
     const request = ++workspaceRequest.current;
-    const result = await getWorkspaceView();
+    // AppLayout already loaded this identity and workspace under native access.
+    // Reuse its display snapshot instead of hiding every page for another action.
+    const result = bootstrap?{ok:true as const,data:bootstrap}:await getWorkspaceView();
     if (request !== workspaceRequest.current) return { ok: false as const, code: "UNAVAILABLE" as const };
     if (!result.ok) {
       setProfile(null);
@@ -93,7 +102,7 @@ function WorkspaceChrome({title,children,actions,immersive}:{title:string;childr
       ...(role ? { viewAs: role } : {}),
     });
     return { ok: true as const, data: workspace };
-  }, [update]);
+  }, [update,bootstrap]);
 
   useEffect(() => {
     let cancelled = false;
@@ -154,7 +163,8 @@ function WorkspaceChrome({title,children,actions,immersive}:{title:string;childr
   const role = profile?.role ?? null;
   const roleLabel = role === "owner" ? copy.app.owner : role === "staff" ? copy.app.staff : copy.app.workspacePick;
 
-  if (!profile || (accountSession && (accountSession.status !== "ready" || !accountSession.isCurrentUser(profile.userId)))) {
+  if (!profile || (accountSession && (accountSession.status !== "ready" || !accountSession.isCurrentUser(profile.userId)
+    || (accountSession.identity && (accountSession.identity.companyId !== workspace?.selectedCompanyId || accountSession.identity.role !== profile.role))))) {
     if (profileLoadFailed) {
       return (
         <main className={`app-shell ${styles.theme} p-6`} data-internal-ui="true" dir={ar ? "rtl" : "ltr"}>

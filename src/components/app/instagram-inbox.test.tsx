@@ -1,4 +1,4 @@
-import {Children,isValidElement,type ReactElement} from 'react';
+import {Children,isValidElement,type ReactElement,type ComponentProps} from 'react';
 import {beforeEach,expect,it,vi} from 'vitest';
 type Slot={value?:unknown;deps?:unknown[];cleanup?:()=>void};
 const f=vi.hoisted(()=>({slots:[] as Slot[],cursor:0,effects:[] as (()=>void)[],url:'',push:vi.fn(),replace:vi.fn(),inbox:vi.fn(),thread:vi.fn(),read:vi.fn(),load:vi.fn(),ready:vi.fn(),save:vi.fn(),send:vi.fn()}));
@@ -25,13 +25,25 @@ const thread={...page,conversationId:id(2),conversation,messages:[],readReceipt:
 const saved={text:' exact saved text ',state:'ready',binding:{companyId:id(1),conversationId:id(2),intentId:id(3)}};
 let setupOwner=false;
 let review=false;
-function render(company=id(1)){f.cursor=0;const tree=InstagramInbox({companyId:company,owner:setupOwner,companyInSetup:setupOwner,reviewMode:review});f.effects.splice(0).forEach(fn=>fn());return tree;}
+function render(company=id(1),extra:Partial<ComponentProps<typeof InstagramInbox>>={}){f.cursor=0;const tree=InstagramInbox({companyId:company,owner:setupOwner,companyInSetup:setupOwner,reviewMode:review,...extra});f.effects.splice(0).forEach(fn=>fn());return tree;}
 function nodes(tree:ReactElement):ReactElement<Record<string,unknown>>[]{return [tree as ReactElement<Record<string,unknown>>,...Children.toArray((tree.props as {children?:ReactElement[]}).children).filter(isValidElement).flatMap(n=>nodes(n))];}
 const button=(label:string)=>nodes(render()).find(n=>n.type===Button&&n.props.children===label)!;
 const textarea=()=>nodes(render()).find(n=>n.type==='textarea')!;
 const click=async(label:string)=>{const b=button(label);expect(b.props.disabled).not.toBe(true);await (b.props.onClick as ()=>void)();};
 async function settle(company=id(1)){for(let n=0;n<20;n++)await Promise.resolve();render(company);}
 beforeEach(()=>{setupOwner=false;for(const s of f.slots)s.cleanup?.();f.slots=[];f.cursor=0;f.effects=[];f.url='thread='+id(2);vi.clearAllMocks();f.inbox.mockResolvedValue({ok:true,data:page});f.thread.mockResolvedValue({ok:true,data:thread});f.read.mockResolvedValue({ok:true});f.ready.mockResolvedValue({ok:true,data:{blockers:['ROLLOUT_DISABLED'],ready:false}});f.load.mockResolvedValue({ok:true,data:saved});f.save.mockResolvedValue({ok:true,data:saved});});
+it('does not fetch a hidden embedded list and authorizes the selected thread independently',async()=>{
+ render(id(1),{embedded:true,selectedConversationId:null});
+ for(let n=0;n<20;n++)await Promise.resolve();
+ expect(f.inbox).not.toHaveBeenCalled();expect(f.thread).not.toHaveBeenCalled();
+ f.thread.mockResolvedValue({ok:false,code:'FORBIDDEN'});
+ render(id(1),{embedded:true,selectedConversationId:id(2)});
+ for(let n=0;n<20;n++)await Promise.resolve();
+ const tree=render(id(1),{embedded:true,selectedConversationId:id(2)});
+ expect(f.inbox).not.toHaveBeenCalled();expect(f.thread).toHaveBeenCalledWith({companyId:id(1),conversationId:id(2)});
+ expect(nodes(tree).some(n=>n.props.children==='You do not have access to this Instagram conversation.')).toBe(true);
+ expect(f.ready).not.toHaveBeenCalled();expect(f.send).not.toHaveBeenCalled();
+});
 it('explains setup for the native owner without granting inbox access or changing staff denial',async()=>{
  f.url='';f.inbox.mockResolvedValue({ok:false,code:'FORBIDDEN'});setupOwner=true;render();await settle();
  expect(nodes(render()).some(n=>String(n.props.children).includes('Company activation must be approved'))).toBe(true);

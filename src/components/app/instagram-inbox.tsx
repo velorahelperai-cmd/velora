@@ -54,8 +54,12 @@ export function InstagramInbox({companyId,owner=false,companyInSetup=false,revie
    const changed=loadedView.current!==viewKey;loadedView.current=viewKey;
    setReserved(Boolean(reservations.current[draftKey]));setDisplayKey(viewKey);if(changed){setDetailsOpen(false);setInbox(null);setThread(null);setSaved(null);}setError(null);setBlockers([]);setReadinessVerified(false);setBusy(false);setLoading(true);
    if(!companyId)return;
-   const page=await loadInstagramInboxPage({companyId});if(current!==epoch.current)return;
-   if(!page.ok){setError(page.code);return;}setInbox(page.data);
+   // UnifiedInbox owns the list and its scope checks. This mounted pane owns
+   // only the selected thread; hidden draft storage must not trigger list reads.
+   if(!embedded){
+    const page=await loadInstagramInboxPage({companyId});if(current!==epoch.current)return;
+    if(!page.ok){setError(page.code);return;}setInbox(page.data);
+   }
    if(!conversationId)return;
    const loaded=await loadInstagramThreadPage({companyId,conversationId});if(current!==epoch.current)return;
    if(!loaded.ok){setError(loaded.code);return;}setThread(old=>old?.companyId===loaded.data.companyId&&old.conversationId===loaded.data.conversationId?{...loaded.data,messages:[...loaded.data.messages,...old.messages.filter(m=>!loaded.data.messages.some(next=>next.id===m.id))],hasMore:old.hasMore,nextCursor:old.nextCursor}:loaded.data);
@@ -66,7 +70,7 @@ export function InstagramInbox({companyId,owner=false,companyInSetup=false,revie
     if(r.ok){setSaved(r.data);setDrafts(old=>({...old,[draftKey]:r.data.text}));delete reservations.current[draftKey];setReserved(false);}else setError(r.code);}
   }catch{if(current===epoch.current)setError('UNAVAILABLE');}finally{if(current===epoch.current)setLoading(false);}})();
   return()=>{fence.current++;};
- },[companyId,conversationId,intentId,viewKey,draftKey,refresh,refreshVersion]);
+ },[companyId,conversationId,intentId,viewKey,draftKey,refresh,refreshVersion,embedded]);
  // Acknowledge only after the latest returned page has actually rendered.
  useEffect(()=>{if(!thread?.readReceipt||!companyId)return;const current=epoch.current;
   void markInstagramThreadRead({companyId,conversationId:thread.conversationId,readReceipt:thread.readReceipt}).then(r=>{if(current===epoch.current&&!r.ok)setError(r.code);}).catch(()=>{if(current===epoch.current)setError('UNAVAILABLE');});
