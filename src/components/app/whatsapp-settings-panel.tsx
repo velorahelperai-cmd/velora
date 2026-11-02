@@ -50,6 +50,7 @@ export function WhatsappSettingsPanel({
 }) {
   const copy = useAppCopy();
   const { locale } = useDemo();
+  const t = (ar: string, en: string) => locale === "ar" ? ar : en;
   const { busy, run } = useAction();
   const [link, setLink] = useState<WhatsappCompanyLink | null>(initialLink);
   const [loadError, setLoadError] = useState(initialLoadFailed);
@@ -123,7 +124,7 @@ export function WhatsappSettingsPanel({
             <div>
               <div className="flex flex-wrap items-center gap-2">
                 <h3 className="font-bold text-[#f7fbf8] text-base">
-                  ربط واتساب التجاري (Meta Cloud API)
+                  {t("ربط واتساب التجاري", "WhatsApp Business connection")}
                 </h3>
                 <span
                   className={`inline-flex items-center gap-1.5 rounded-full px-3 py-0.5 text-xs font-semibold ${
@@ -151,7 +152,7 @@ export function WhatsappSettingsPanel({
                 </span>
               </div>
               <p className="text-xs text-[#b7c6b9] mt-1">
-                ربط موثوق لمعالجة الرسائل الواردة والصادرة تلقائياً عبر خوادم Meta الرسمية.
+                {t("راجع حالة الربط ودليل الرسائل قبل تفعيل الخدمة.", "Review connection status and message evidence before enabling the service.")}
               </p>
             </div>
           </div>
@@ -258,7 +259,7 @@ export function WhatsappSettingsPanel({
 
           {/* Connection Details Table */}
           <div className="rounded-2xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel-deep)] p-4">
-            <h4 className="font-bold text-[#f7fbf8] text-sm mb-3">بيانات الاتصال الفعلية</h4>
+            <h4 className="font-bold text-[#f7fbf8] text-sm mb-3">{t("بيانات الاتصال الفعلية", "Current connection details")}</h4>
             <dl className="grid gap-3 text-sm">
               <div className="flex flex-wrap justify-between gap-3 border-b border-white/5 pb-2">
                 <dt className="text-[var(--color-muted-on-dark)]">{copy.app.whatsappStatus}</dt>
@@ -298,15 +299,15 @@ export function WhatsappSettingsPanel({
 
           <dl className="grid gap-3 text-sm">
             <div className="flex flex-wrap justify-between gap-3">
-              <dt>تفويض ميتا الحالي / Current Meta authorization</dt>
-              <dd>{connection.authorizationReady ? "صالح / Valid" : "غير جاهز / Not ready"}</dd>
+              <dt>{t("تفويض ميتا الحالي", "Current Meta authorization")}</dt>
+              <dd>{connection.authorizationReady ? t("صالح", "Valid") : t("غير جاهز", "Not ready")}</dd>
             </div>
             <div className="flex flex-wrap justify-between gap-3">
               <dt>{locale==='ar'?'جاهزية الإرسال الحي':'Live sending readiness'}</dt>
-              <dd>{connection.rolloutReady ? "جاهز تقنيًا؛ كل إرسال يخضع للقيود / Eligible; per-send checks apply" : "غير مفعّل / Disabled"}</dd>
+              <dd>{connection.rolloutReady ? t("جاهز تقنيًا؛ كل إرسال يخضع للقيود", "Eligible; per-send checks apply") : t("غير مفعّل", "Disabled")}</dd>
             </div>
             {link.authorizationExpiresAt ? <div className="flex flex-wrap justify-between gap-3">
-              <dt>انتهاء تفويض ميتا / Meta authorization expiry</dt>
+              <dt>{t("انتهاء تفويض ميتا", "Meta authorization expiry")}</dt>
               <dd dir="ltr">{formatStamp(link.authorizationExpiresAt)}</dd>
             </div> : null}
           </dl>
@@ -333,7 +334,7 @@ export function WhatsappSettingsPanel({
 
           {/* Next Step Guidance Banner */}
           <div className="rounded-2xl border border-[#38dc89]/30 bg-[#38dc89]/10 p-4">
-            <h5 className="font-bold text-[#9af0c3] text-xs mb-1">الخطوة القادمة:</h5>
+            <h5 className="font-bold text-[#9af0c3] text-xs mb-1">{t("الخطوة القادمة", "Next step")}</h5>
             <p className="text-sm leading-6 text-[#f7fbf8]">{nextStep}</p>
             <p className="text-xs leading-5 text-[#8aa394] mt-1">{copy.app.waLinkHonestNote}</p>
           </div>
@@ -379,7 +380,7 @@ export function WhatsappSettingsPanel({
                 });
               }}
             >
-              <h4 className="font-bold text-[#f7fbf8] text-sm">تسجيل أو تعديل رقم واتساب</h4>
+              <h4 className="font-bold text-[#f7fbf8] text-sm">{t("تسجيل أو تعديل رقم واتساب", "Register or update a WhatsApp number")}</h4>
               <Field label={copy.app.waLinkRequestNumber} required hint="+968 …">
                 {(p) => (
                   <input
@@ -426,13 +427,13 @@ export function WhatsappSettingsPanel({
               href="/setup"
               className="inline-flex min-h-11 items-center rounded-full border border-[#38dc89]/40 bg-[#38dc89]/15 px-5 text-sm font-semibold text-[#9af0c3] transition hover:bg-[#38dc89]/25"
             >
-              🚀 متابعة رحلة التجهيز الشاملة ({copy.setup.title})
+              {t("متابعة تجهيز النشاط", "Continue business setup")} ({copy.setup.title})
             </Link>
             <Link
               href="/app/conversations"
               className="inline-flex min-h-11 items-center rounded-full border border-[color:var(--color-border-soft)] px-5 text-sm text-[#b7c6b9] hover:text-[#f7fbf8]"
             >
-              💬 فتح صندوق المحادثات
+              {t("فتح صندوق المحادثات", "Open inbox")}
             </Link>
           </div>
         </div>

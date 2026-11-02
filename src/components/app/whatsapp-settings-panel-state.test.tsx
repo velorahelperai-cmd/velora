@@ -2,7 +2,8 @@ import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {it,expect,vi} from 'vitest';
 import type {WhatsappCompanyLink} from '@/lib/whatsapp/connection';
-vi.mock('@/lib/demo-state',()=>({useDemo:()=>({locale:'en'})}));
+const localeState=vi.hoisted(()=>({locale:'en'}));
+vi.mock('@/lib/demo-state',()=>({useDemo:()=>({locale:localeState.locale})}));
 vi.mock('@/lib/whatsapp/connection-actions',()=>({getWhatsappCompanyLink:vi.fn(),saveWhatsappLinkRequest:vi.fn()}));
 vi.mock('./whatsapp-embedded-signup',()=>({WhatsappEmbeddedSignup:({connected}:{connected:boolean})=><div data-connected={connected}/>}));
 vi.mock('./whatsapp-fixed-ack-opt-in',()=>({WhatsappFixedAckOptIn:()=>null}));
@@ -20,4 +21,16 @@ it('does not use historical verified number to complete a disconnected or failed
  const html=renderToStaticMarkup(<WhatsappSettingsPanel companyId="company" {...props}/>);
  expect(html).toContain('data-connected="false"');expect(html).toContain('Awaiting number registration');expect(html).not.toContain('Actual message evidence');
  }
+});
+
+it('renders panel-owned English text without mixed Arabic labels',()=>{
+ localeState.locale='en';
+ const html=renderToStaticMarkup(<WhatsappSettingsPanel companyId="company" initialLink={link}/>);
+ expect(html).toContain('Current connection details');expect(html).toContain('Next step');expect(html).toContain('Open inbox');expect(html).not.toMatch(/[\u0600-\u06ff]/);
+});
+it('renders Arabic connection labels in Arabic mode',()=>{
+ localeState.locale='ar';
+ try { const html=renderToStaticMarkup(<WhatsappSettingsPanel companyId="company" initialLink={link}/>);
+ expect(html).toContain('بيانات الاتصال الفعلية');expect(html).toContain('الخطوة القادمة');expect(html).not.toContain('Current Meta authorization'); }
+ finally {localeState.locale='en';}
 });
