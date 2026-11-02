@@ -60,19 +60,10 @@ export function ApprovedAccountLoader({label,ready=false,onComplete}:{label:stri
   </main>;
 }
 
-/** Presentation gate only. The provider keeps sole authority over READY/error/locked states. */
-export function useApprovedLoaderGate(pending:boolean,ready:boolean,scope:string){
-  const [cycle,setCycle]=useState({scope,active:pending,wasPending:pending,complete:false,token:0});
-  // Adjust only when source props change; no effect-driven cascading presentation render.
-  let current=cycle;
-  const scopeChanged=cycle.scope!==scope;
-  const cancelled=!pending&&!ready&&cycle.active;
-  if(scopeChanged||cycle.wasPending!==pending||cancelled){
-    const restart=scopeChanged||(pending&&!cycle.wasPending)||cancelled;
-    current={scope,active:pending||(ready&&!scopeChanged&&cycle.active),wasPending:pending,complete:restart?false:cycle.complete,token:cycle.token+(restart?1:0)};
-    setCycle(current);
-  }
-  const token=current.token;
-  const finish=useCallback(()=>{if(!ready)return;setCycle(current=>current.scope===scope&&current.token===token&&current.active&&!current.complete?{...current,complete:true}:current);},[ready,scope,token]);
-  return {holding:pending||(ready&&current.scope===scope&&current.active&&!current.complete),finish};
+/** Animation never extends a native account check or grants readiness. The
+ * provider alone admits content; a completed check must not wait for a scene,
+ * font, visible tab, minimum timeline or dissolve callback. */
+export function useApprovedLoaderGate(pending:boolean){
+  const finish=useCallback(()=>{/* Presentation completion is advisory only. */},[]);
+  return {holding:pending,finish};
 }

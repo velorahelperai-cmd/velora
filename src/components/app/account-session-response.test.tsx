@@ -295,9 +295,7 @@ it.each(["en", "ar"] as const)("shows the setup shell while keeping protected ch
   await refresh;
   const finishing = renderTree();
   expect(finishing.props.value.status).toBe("ready");
-  const loader = finishing.props.children.props.children[1].props.children;
-  expect(loader.props.ready).toBe(true);
-  loader.props.onComplete();
+  expect(finishing.props.children).toBe("private-content");
   expect(renderTree().props.children).toBe("private-content");
 });
 
@@ -327,9 +325,6 @@ it("retains an already-ready setup session across later transient UNAVAILABLE re
   state.read.mockResolvedValue({ ok: true, data: profile() });
   await render().refresh();
   expect(render().status).toBe("ready");
-  const finishing = renderTree();
-  expect(finishing.props.children.props.children[1].props.children.props.ready).toBe(true);
-  finishing.props.children.props.children[1].props.children.props.onComplete();
   expect(renderTree().props.children).toBe("private-content");
 
   state.broker.mockResolvedValue({ ok: false, code: "UNAVAILABLE" });
@@ -351,7 +346,6 @@ it("retains ready across a later TRANSPORT throw during reattest", async () => {
   state.read.mockResolvedValue({ ok: true, data: profile() });
   await render().refresh();
   expect(render().status).toBe("ready");
-  renderTree().props.children.props.children[1].props.children.props.onComplete();
   expect(renderTree().props.children).toBe("private-content");
   state.broker.mockRejectedValue(new Error("network"));
   await render().refresh();
@@ -365,7 +359,6 @@ it("still fails closed on tip mismatch after ready", async () => {
   state.read.mockResolvedValue({ ok: true, data: profile() });
   await render().refresh();
   expect(render().status).toBe("ready");
-  renderTree().props.children.props.children[1].props.children.props.onComplete();
   expect(renderTree().props.children).toBe("private-content");
   state.broker
     .mockResolvedValueOnce(brokerOk("user-a", "fp-a", "gen-a-1"))
@@ -911,15 +904,15 @@ it('shares the mount deadline and trace across a slow seed broker and profile',a
   await vi.advanceTimersByTimeAsync(2000);expect(render().hasCurrentUser()).toBe(false);
  }finally{info.mockRestore();}
 });
-it('mounts authenticated setup behind the animation without waiting for its finish',async()=>{
+it('reveals authenticated setup immediately and hides it again on lock',async()=>{
  state.path='/setup';state.read.mockResolvedValue({ok:true,data:profile()});
  const first=rawRenderTree();expect(JSON.stringify(first.props.children)).not.toContain('private-content');
  await first.props.value.refresh();
  const ready=rawRenderTree();expect(ready.props.value.status).toBe('ready');
  const serialized=JSON.stringify(ready.props.children);
  expect(serialized).toContain('private-content');
- expect(serialized).toContain('"hidden":true');
- expect(serialized).toContain('"inert":true');
+ expect(serialized).toContain('"hidden":false');
+ expect(serialized).toContain('"inert":false');
  ready.props.value.lock('fp-a');
  expect(JSON.stringify(rawRenderTree().props.children)).not.toContain('private-content');
 });

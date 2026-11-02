@@ -64,36 +64,38 @@ it('never renders a standalone brand before fonts finish on cold first render',a
 });
 
 function TimedFixture({status,scope='/setup'}:{status:'loading'|'ready'|'error';scope?:string}){
- const gate=useApprovedLoaderGate(status==='loading',status==='ready',scope);
- return gate.holding&&(status==='loading'||status==='ready')?createElement(ApprovedAccountLoader,{key:scope,label:'Checking account',ready:status==='ready',onComplete:gate.finish}):createElement('section',{'data-result':status},status==='error'?'Actionable retry':'Protected destination');
+ const gate=useApprovedLoaderGate(status==='loading');
+ return gate.holding?createElement(ApprovedAccountLoader,{key:scope,label:'Checking account',onComplete:gate.finish}):createElement('section',{'data-result':status},status==='error'?'Actionable retry':'Protected destination');
 }
-it('keeps fast success through the minimum reference timeline and full dissolve',async()=>{
- let now=0;vi.spyOn(performance,'now').mockImplementation(()=>now);
- const renderStatus=async(status:'loading'|'ready'|'error',scope='/setup')=>act(async()=>root.render(createElement(TimedFixture,{status,scope})));
- const step=async(time:number)=>{now=time;const pending=[...frames.values()];frames.clear();await act(async()=>pending.forEach(fn=>fn(time)));};
- await renderStatus('loading');await renderStatus('ready');await step(8200);expect(host.querySelector('[data-account-loading]')).not.toBeNull();await step(8201);await step(9800);expect(host.querySelector('[data-result]')).toBeNull();await step(9801);expect(host.querySelector('[data-result="ready"]')).not.toBeNull();expect(frames.size).toBe(0);
+const renderStatus=async(status:'loading'|'ready'|'error',scope='/setup')=>act(async()=>root.render(createElement(TimedFixture,{status,scope})));
+it('reveals a fast authoritative success immediately without waiting for a frame or dissolve',async()=>{
+ await renderStatus('loading');expect(host.querySelector('[data-result]')).toBeNull();
+ await renderStatus('ready');expect(host.querySelector('[data-result="ready"]')).not.toBeNull();expect(frames.size).toBe(0);expect(vi.getTimerCount()).toBe(0);
 });
-it('holds for a slow authoritative check then runs the original dissolve without granting readiness',async()=>{
- let now=0;vi.spyOn(performance,'now').mockImplementation(()=>now);const step=async(time:number)=>{now=time;const pending=[...frames.values()];frames.clear();await act(async()=>pending.forEach(fn=>fn(time)));};
- await act(async()=>root.render(createElement(TimedFixture,{status:'loading'})));await step(12000);expect(host.querySelector('[data-result]')).toBeNull();expect(scene.draw.mock.calls.at(-1)?.[3]).toBeUndefined();await act(async()=>root.render(createElement(TimedFixture,{status:'ready'})));await step(13599);expect(host.querySelector('[data-result]')).toBeNull();await step(13600);expect(host.querySelector('[data-result="ready"]')).not.toBeNull();
+it('never admits a slow pending check when the animation timeline expires',async()=>{
+ await renderStatus('loading');await frame(12000);await frame(30000);expect(host.querySelector('[data-result]')).toBeNull();
+ await renderStatus('ready');expect(host.querySelector('[data-result="ready"]')).not.toBeNull();expect(frames.size).toBe(0);
 });
-it('reveals errors immediately and cancels the pending visual transition on navigation',async()=>{
- let now=0;vi.spyOn(performance,'now').mockImplementation(()=>now);await act(async()=>root.render(createElement(TimedFixture,{status:'loading'})));const stale=[...frames.values()];await act(async()=>root.render(createElement(TimedFixture,{status:'error'})));expect(host.textContent).toContain('Actionable retry');expect(frames.size).toBe(0);now=20000;await act(async()=>stale.forEach(fn=>fn(now)));expect(host.querySelector('[data-result="ready"]')).toBeNull();await act(async()=>root.render(createElement(TimedFixture,{status:'ready',scope:'/account'})));expect(host.querySelector('[data-result="ready"]')).not.toBeNull();expect(frames.size).toBe(0);
+it('shows errors immediately and stale animation callbacks cannot restore content',async()=>{
+ await renderStatus('loading');const stale=[...frames.values()];await renderStatus('error');
+ expect(host.textContent).toContain('Actionable retry');expect(frames.size).toBe(0);
+ await act(async()=>stale.forEach(fn=>fn(20000)));expect(host.querySelector('[data-result="ready"]')).toBeNull();
 });
-it('uses the reduced-motion alternative without forcing the cinematic wait',async()=>{
- reduced=true;await act(async()=>root.render(createElement(TimedFixture,{status:'loading'})));expect(host.querySelector('[data-result]')).toBeNull();await act(async()=>root.render(createElement(TimedFixture,{status:'ready'})));expect(host.querySelector('[data-result="ready"]')).not.toBeNull();expect(frames.size).toBe(0);
+it.each([false,true])('does not delay readiness with reduced motion=%s',async(value)=>{
+ reduced=value;await renderStatus('loading');await renderStatus('ready');expect(host.querySelector('[data-result="ready"]')).not.toBeNull();expect(frames.size).toBe(0);
 });
-
-it('starts the full visible timeline after fonts resolve rather than skipping phases on a cold load',async()=>{
- let now=0,finish!:(value:unknown[])=>void;vi.spyOn(performance,'now').mockImplementation(()=>now);fontLoad.mockReturnValue(new Promise(resolve=>{finish=resolve;}));await act(async()=>root.render(createElement(TimedFixture,{status:'loading'})));now=4000;await act(async()=>finish([]));expect(scene.draw.mock.calls.at(-1)?.[0]).toBe(0);await act(async()=>root.render(createElement(TimedFixture,{status:'ready'})));const step=async(time:number)=>{now=time;const pending=[...frames.values()];frames.clear();await act(async()=>pending.forEach(fn=>fn(time)));};await step(12201);await step(13800);expect(host.querySelector('[data-result]')).toBeNull();await step(13801);expect(host.querySelector('[data-result="ready"]')).not.toBeNull();
+it('does not wait for a missing font or start a late scene after readiness',async()=>{
+ let release!:(value:unknown[])=>void;fontLoad.mockReturnValue(new Promise(resolve=>{release=resolve;}));
+ await renderStatus('loading');await renderStatus('ready');expect(host.querySelector('[data-result="ready"]')).not.toBeNull();
+ await act(async()=>release([]));expect(scene.create).not.toHaveBeenCalled();expect(frames.size).toBe(0);
 });
-it('cancels old frames on a new protected navigation and never completes the new pending check',async()=>{
- let now=0;vi.spyOn(performance,'now').mockImplementation(()=>now);await act(async()=>root.render(createElement(TimedFixture,{status:'loading'})));await act(async()=>root.render(createElement(TimedFixture,{status:'ready'})));now=8500;const pending=[...frames.values()];frames.clear();await act(async()=>pending.forEach(fn=>fn(now)));const stale=[...frames.values()];await act(async()=>root.render(createElement(TimedFixture,{status:'loading',scope:'/account'})));now=20000;await act(async()=>stale.forEach(fn=>fn(now)));expect(host.querySelector('[data-result]')).toBeNull();expect(host.querySelector('[data-account-loading]')).not.toBeNull();
+it('does not defer authoritative readiness until a hidden tab becomes visible',async()=>{
+ await renderStatus('loading');hidden=true;await act(async()=>document.dispatchEvent(new Event('visibilitychange')));
+ await renderStatus('ready');expect(host.querySelector('[data-result="ready"]')).not.toBeNull();expect(frames.size).toBe(0);
 });
-it('does not trap an authoritative READY page when the font never becomes available',async()=>{
- fontLoad.mockReturnValue(new Promise(()=>{}));await act(async()=>root.render(createElement(TimedFixture,{status:'loading'})));await act(async()=>vi.advanceTimersByTime(9800));expect(host.querySelector('[data-result]')).toBeNull();await act(async()=>root.render(createElement(TimedFixture,{status:'ready'})));expect(host.querySelector('[data-result="ready"]')).not.toBeNull();expect(scene.create).not.toHaveBeenCalled();
-});
-
-it('does not reveal content if authoritative readiness is withdrawn before the final frame',async()=>{
- let now=0;vi.spyOn(performance,'now').mockImplementation(()=>now);const renderStatus=async(status:'loading'|'ready')=>act(async()=>root.render(createElement(TimedFixture,{status})));const step=async(time:number)=>{now=time;const pending=[...frames.values()];frames.clear();await act(async()=>pending.forEach(fn=>fn(time)));};await renderStatus('loading');await renderStatus('ready');await step(8201);await step(9750);await renderStatus('loading');await step(9900);expect(host.querySelector('[data-result]')).toBeNull();expect(frames.size).toBeGreaterThan(0);await renderStatus('ready');await step(11500);expect(host.querySelector('[data-result="ready"]')).not.toBeNull();
+it('hides content again on a new pending check and ignores old frames',async()=>{
+ await renderStatus('loading');const stale=[...frames.values()];await renderStatus('ready');
+ await renderStatus('loading','/account');await act(async()=>stale.forEach(fn=>fn(30000)));
+ expect(host.querySelector('[data-result]')).toBeNull();expect(host.querySelector('[data-account-loading]')).not.toBeNull();
+ await renderStatus('ready','/account');expect(host.querySelector('[data-result="ready"]')).not.toBeNull();
 });

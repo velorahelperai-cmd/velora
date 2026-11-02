@@ -587,7 +587,7 @@ export function AccountSessionProvider({
   const protectedRoute=/^\/(app|admin|account|setup|complete-profile|reset-password)(\/|$)/.test(pathname);
   const setupRoute=/^\/setup(\/|$)/.test(pathname);
   const copy=useAppCopy();
-  const loaderGate=useApprovedLoaderGate(protectedRoute&&status==="loading",protectedRoute&&status==="ready",pathname);
+  const loaderGate=useApprovedLoaderGate(protectedRoute&&status==="loading");
   const admitted=status==='ready'&&!!identity&&!!boundaryFingerprint;
   useEffect(()=>{if(protectedRoute&&status==='ready'&&identity&&boundaryFingerprint)setupTiming('session_ready')();},[protectedRoute,status,identity,boundaryFingerprint]);
   useEffect(()=>{if(protectedRoute&&status==='ready'&&!loaderGate.holding)setupTiming('content_visible')();},[protectedRoute,status,loaderGate.holding]);
