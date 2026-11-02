@@ -36,6 +36,8 @@ it('allows drafting after thread verification while audit and connection reads a
  const thread=deferred(),audit=deferred(),connection=deferred(),send=deferred();
  state.thread.mockReturnValue(thread.promise);state.audit.mockReturnValue(audit.promise);state.connection.mockReturnValue(connection.promise);state.send.mockReturnValue(send.promise);
  const p=props();let tree=render(p);expect(reply(tree).props.disabled).toBe(true);
+ p.refreshVersion=1;render(p);p.refreshVersion=2;render(p);
+ expect(state.thread).toHaveBeenCalledTimes(1);
  thread.resolve({ok:true,data:{kind:'partial',companyId:'company',conversationId:'thread',conversation:item,messages:[],displayedInboundMessageId:null,unreadCount:0,nextCursor:null,hasMore:false}});await flush();tree=render(p);
  expect(state.audit).toHaveBeenCalledTimes(1);expect(reply(tree).props.disabled).toBe(false);
  (reply(tree).props.onChange as(e:unknown)=>void)({target:{value:'Synthetic test reply'}});tree=render(p);

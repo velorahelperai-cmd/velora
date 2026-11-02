@@ -594,6 +594,7 @@ export function ConversationsPage({
   const [threads, setThreads] = useState<Record<string, ThreadView>>({});
   const threadsRef = useRef<Record<string, ThreadView>>({});
   const [threadBusyId, setThreadBusyId] = useState<string | null>(null);
+  const threadInFlightRef = useRef<string | null>(null);
   const [readyThreadId, setReadyThreadId] = useState<string | null>(null);
   const [threadErrors, setThreadErrors] = useState<Record<string, string>>({});
   const [connection, setConnection] = useState<WhatsappConnectionStatus | null>(null);
@@ -991,6 +992,7 @@ export function ConversationsPage({
     const stillCurrent = () => currentThreadRequest({ request, current: epochStoreRef.current.current,
       generation, currentGeneration: readGenById.current[conversationId], conversationId,
       ...(selectedOnly ? { selectedId: selectedIdRef.current } : {}) });
+    threadInFlightRef.current = conversationId;
     setThreadBusyId(conversationId);
     if (selectedIdRef.current === conversationId) setReadyThreadId(null);
     setThreadErrors(current => { const next = { ...current }; delete next[conversationId]; return next; });
@@ -1016,7 +1018,10 @@ export function ConversationsPage({
       if (stillCurrent()) setThreadErrors(current => ({ ...current, [conversationId]: copy.app.controlRefreshFailed }));
       return false;
     } finally {
-      if (stillCurrent()) setThreadBusyId(current => current === conversationId ? null : current);
+      if (stillCurrent()) {
+        threadInFlightRef.current = null;
+        setThreadBusyId(current => current === conversationId ? null : current);
+      }
     }
   }
 
@@ -1053,7 +1058,18 @@ export function ConversationsPage({
     return () => { bumpReadGeneration(selectedId); auditGenRef.current += 1; };
     // Identity changes own the request; render-only page updates must not refetch the same thread.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId, inboxScope, readCacheGeneration,refreshVersion]);
+  }, [selectedId, inboxScope, readCacheGeneration]);
+
+  useEffect(() => {
+    if (!refreshVersion || !selectedId || !inboxMeta?.companyId || threadInFlightRef.current === selectedId) return;
+    // A periodic refresh must not invalidate a slower in-flight read forever.
+    void (async () => {
+      const loaded = await loadThread(selectedId);
+      if (loaded && selectedIdRef.current === selectedId) await loadAudit(selectedId);
+    })();
+    // Identity changes are fenced by the effect above; this effect owns refresh ticks only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshVersion]);
 
   async function refreshConnection() {
     const companyId = inboxMeta?.companyId;
