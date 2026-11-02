@@ -1,11 +1,12 @@
 "use client";
 import {useCallback} from 'react';
+import {AccountPageFrame} from './account-page-frame';
 
-/** The owner has hidden the animated loading screen site-wide. Keep only an
- * accessible pending status; no canvas, overlay, font load or visual timer.
- * Existing admission callers remain responsible for protecting their content. */
-export function ApprovedAccountLoader({label}:{label:string;ready?:boolean;onComplete?:()=>void}){
-  return <span className="sr-only" role="status" aria-busy="true" aria-label={label}>{label}</span>;
+/** Compatibility entry for existing callers. Show the shared page UI directly;
+ * no loading announcement, animation or waiting screen owns admission. */
+export function ApprovedAccountLoader(props:{label:string;ready?:boolean;onComplete?:()=>void}){
+  void props;
+  return <AccountPageFrame/>;
 }
 
 /** Readiness is owned by the account check, never by presentation completion. */

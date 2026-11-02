@@ -283,12 +283,8 @@ it.each(["en", "ar"] as const)("shows the setup shell while keeping protected ch
   const first = rawRenderTree();
   const [protectedContent, fallback] = first.props.children.props.children;
   expect(protectedContent).toBeFalsy();
-  const [shell, hiddenLoader] = fallback.props.children;
-  expect(shell.type.name).toBe("SetupLoading");
-  expect(hiddenLoader.props.style.visibility).toBe("hidden");
-  expect(hiddenLoader.props["aria-hidden"]).toBe("true");
-  expect(hiddenLoader.props.inert).toBe(true);
-  expect(hiddenLoader.props.children.type.name).toBe("ApprovedAccountLoader");
+  expect(fallback.type.name).toBe("SetupLoading");
+  expect(JSON.stringify(fallback)).not.toContain("ApprovedAccountLoader");
   expect(JSON.stringify(first.props.children)).not.toContain("private-content");
   const refresh = first.props.value.refresh();
   pending.resolve({ ok: true, data: profile() });

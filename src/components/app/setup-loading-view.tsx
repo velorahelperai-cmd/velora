@@ -1,17 +1,17 @@
 import { useId } from 'react';
+import Link from 'next/link';
 import styles from './setup-loading-view.module.css';
 
 /** Neutral setup frame before account and branch authority are available. */
 export function SetupLoadingView({ ar }: { ar: boolean }) {
   const id = useId();
-  return <main className={`app-shell ${styles.shell}`} dir={ar ? 'rtl' : 'ltr'} aria-busy="true" aria-labelledby={`${id}-title`}>
+  return <main className={`app-shell ${styles.shell}`} dir={ar ? 'rtl' : 'ltr'} aria-labelledby={`${id}-title`}>
     <div className={styles.content}>
       <header className={styles.brand}><span aria-hidden="true">V</span>Velora<h1 id={`${id}-title`}>{ar ? 'جهّز مساعدك' : 'Set up your assistant'}</h1></header>
-      <span className={styles.srOnly} role="status">{ar ? 'جارٍ تحميل بيانات التجهيز…' : 'Loading your setup…'}</span>
-      <div className={styles.frame} aria-hidden="true">
-        <aside className={styles.rail}><div/><div/><div/><div/><div/></aside>
-        <section className={styles.stage}><div className={styles.line}/><div className={styles.description}/><div className={styles.cards}><div/><div/></div></section>
-      </div>
+      <nav className="flex gap-4 px-3 py-4 text-sm" aria-label={ar?'التنقل':'Navigation'}>
+        <Link href="/" prefetch={false}>{ar?'الرئيسية':'Home'}</Link>
+        <Link href="/account" prefetch={false}>{ar?'حسابي':'My account'}</Link>
+      </nav>
     </div>
   </main>;
 }

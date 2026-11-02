@@ -4,7 +4,9 @@ import {renderToPipeableStream} from 'react-dom/server';
 import {beforeEach,expect,it,vi} from 'vitest';
 const m=vi.hoisted(()=>({access:vi.fn(),capability:vi.fn(),redirect:vi.fn(),returnTo:'/app/conversations'}));
 vi.mock('next/headers',()=>({headers:async()=>new Headers({'x-velora-return-path':m.returnTo})}));
-vi.mock('next/navigation',()=>({redirect:(href:string)=>{m.redirect(href);throw Error(`REDIRECT:${href}`);}}));
+vi.mock('next/navigation',()=>({usePathname:()=>'/app/conversations',redirect:(href:string)=>{m.redirect(href);throw Error(`REDIRECT:${href}`);}}));
+vi.mock('next/link',()=>({default:'a'}));
+vi.mock('@/lib/demo-state',()=>({useDemo:()=>({locale:'en',setLocale:vi.fn()})}));
 vi.mock('@/lib/tenancy/access',()=>({getCompanyAccess:m.access,loginPathForReturn:(path:string)=>`/login?next=${encodeURIComponent(path)}`}));
 vi.mock('@/lib/access/actions',()=>({sessionHasCompanyCapability:m.capability}));
 vi.mock('@/components/app/access-gate',()=>({AccessGate:({code}:{code:string})=><p>Access denied: {code}</p>}));
@@ -26,7 +28,9 @@ it('streams a public fallback while authority is pending and withholds private c
  });
  try{
   await shellReady;await firstChunk;
-  expect(html).toContain('aria-busy="true"');
+  expect(html).toContain('workspace-navigation');
+  expect(html).toContain('Conversations');
+  expect(html).not.toContain('role="status"');
   expect(html).not.toContain('PRIVATE_WORKSPACE_CONTENT');
   expect(m.capability).not.toHaveBeenCalled();
   release(allowed());await complete;

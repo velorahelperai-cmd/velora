@@ -594,7 +594,7 @@ export function AccountSessionProvider({
   const content=protectedRoute&&(status!=="ready"||loaderGate.holding||(setupRoute&&!admitted))
     ? status==="expired" ? <SessionActivityTracker />
     : status === "locked" ? <main className="grid min-h-svh place-content-center gap-3 bg-[#f6fafb] px-6 text-[#102a33]"><LangSwitch /><OperationRecovery receipt={recoveryReceipt} isCaptured={() => isCapturedBoundary(recoveryReceipt?.boundaryFingerprint ?? boundaryRef.current)} /></main>
-    : status === "loading" || (status === "ready"&&loaderGate.holding) ? setupRoute ? <><SetupLoading /><div style={{visibility:"hidden"}} aria-hidden="true" inert><ApprovedAccountLoader key={pathname} label={copy.loading} ready={status==="ready"} onComplete={loaderGate.finish} /></div></> : <ApprovedAccountLoader key={pathname} label={copy.loading} ready={status==="ready"} onComplete={loaderGate.finish} />
+    : status === "loading" || (status === "ready"&&loaderGate.holding) ? setupRoute ? <SetupLoading /> : <ApprovedAccountLoader key={pathname} label={copy.loading} />
     : <main className="grid min-h-svh place-content-center gap-4 bg-[#f6fafb] px-6 text-center text-[#102a33]">
         <p className="text-base font-medium">{status==="error"?copy.account.identityError:copy.auth.login}</p>
         {status==="error"?<button type="button" className="mx-auto rounded-xl bg-[#006c81] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#00586a]" onClick={()=>void refresh()}>{copy.errors.accessRetry}</button>:null}
