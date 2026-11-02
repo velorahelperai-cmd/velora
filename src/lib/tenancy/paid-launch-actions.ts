@@ -49,8 +49,11 @@ export async function readOwnedBranchLaunchSummaryAction(
 
     const payload = res.data as unknown as { ok?: boolean; data?: { snapshot: LaunchSummarySnapshot } };
     if (res.error || !payload || payload.ok !== true) return null;
-    const branch = await readOwnedPaidBranchSetupAction(scope);
-    const langRes = await readOwnedBranchReplyLanguageAction(scope).catch(() => null);
+    // Independent native reads: both retain their own identity and RPC checks.
+    const [branch, langRes] = await Promise.all([
+      readOwnedPaidBranchSetupAction(scope),
+      readOwnedBranchReplyLanguageAction(scope).catch(() => null),
+    ]);
     return normalizePaidLaunchSnapshot(payload.data?.snapshot, scope, branch, langRes);
   });
 }
