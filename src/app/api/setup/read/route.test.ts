@@ -1,5 +1,6 @@
 import {beforeEach,expect,it,vi} from 'vitest';
-const m=vi.hoisted(()=>({identity:vi.fn(),shell:vi.fn(),workspace:vi.fn(),hours:vi.fn(),knowledge:vi.fn(),language:vi.fn(),trial:vi.fn(),launch:vi.fn()}));
+const m=vi.hoisted(()=>({entry:vi.fn(),identity:vi.fn(),shell:vi.fn(),workspace:vi.fn(),hours:vi.fn(),knowledge:vi.fn(),language:vi.fn(),trial:vi.fn(),launch:vi.fn()}));
+vi.mock('@/lib/tenancy/paid-setup-actions',()=>({readOwnedPaidBranchSetupEntryAction:m.entry}));
 vi.mock('@/lib/auth/server-identity',()=>({readSessionIdentity:m.identity}));
 vi.mock('@/lib/tenancy/paid-setup-workspace-actions',()=>({readOwnedPaidSetupShellAction:m.shell,readOwnedPaidSetupWorkspaceAction:m.workspace}));
 vi.mock('@/lib/tenancy/branch-hours-actions',()=>({readOwnedBranchHoursAction:m.hours}));
@@ -8,6 +9,25 @@ vi.mock('@/lib/tenancy/paid-reply-language-actions',()=>({readOwnedBranchReplyLa
 vi.mock('@/lib/tenancy/paid-assistant-trial-actions',()=>({readOwnedBranchAssistantTrialAction:m.trial}));
 vi.mock('@/lib/tenancy/paid-launch-actions',()=>({readOwnedBranchLaunchSummaryAction:m.launch}));
 import {GET} from './route';
+
+it('dispatches inventory only through the native entry reader after identity and boundary checks',async()=>{
+ const input={expectedAccountId:scope.expectedAccountId,companyId:scope.companyId};
+ const url=`https://velora.test/api/setup/read?${new URLSearchParams({...input,resource:'entry'})}`;
+ m.entry.mockResolvedValue({companyId:scope.companyId,branches:[]});
+ const response=await GET(new Request(url,{headers:{'x-velora-boundary':'boundary'}}));
+ expect(response.status).toBe(200);expect(m.entry).toHaveBeenCalledWith(input);
+ expect(response.headers.get('cache-control')).toContain('no-store');
+ m.entry.mockClear();
+ const rejectedHeaders:HeadersInit[]=[{'x-velora-boundary':'old'},{'x-velora-boundary':'boundary','sec-fetch-site':'cross-site'}];
+ for(const headers of rejectedHeaders){
+  expect((await GET(new Request(url,{headers}))).status).toBe(403);
+ }
+ expect((await GET(request('entry'))).status).toBe(400);
+ expect((await GET(new Request(url+'&companyId='+scope.companyId))).status).toBe(400);
+ m.identity.mockResolvedValue({ok:true,userId:'foreign',boundaryFingerprint:'boundary'});
+ expect((await GET(new Request(url,{headers:{'x-velora-boundary':'boundary'}}))).status).toBe(403);
+ expect(m.entry).not.toHaveBeenCalled();
+});
 const scope={expectedAccountId:'11111111-1111-4111-8111-111111111111',companyId:'22222222-2222-4222-8222-222222222222',branchId:'33333333-3333-4333-8333-333333333333'};
 function request(resource='shell',boundary='boundary'){return new Request(`https://velora.test/api/setup/read?${new URLSearchParams({...scope,resource})}`,{headers:{'x-velora-boundary':boundary}});}
 beforeEach(()=>{vi.resetAllMocks();m.identity.mockResolvedValue({ok:true,userId:scope.expectedAccountId,boundaryFingerprint:'boundary'});m.shell.mockResolvedValue(null);});

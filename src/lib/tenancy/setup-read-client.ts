@@ -1,4 +1,18 @@
 import type {SetupReads,SetupReadScope} from './setup-read-types';
+import type {PaidBranchSetupEntryRead} from './paid-setup-contracts';
+
+/** Native inventory read over GET: no Server Action queue, cache or retries. */
+export async function readSetupEntry(scope:{expectedAccountId:string;companyId:string;boundaryFingerprint:string},isCurrent:()=>boolean):Promise<PaidBranchSetupEntryRead>{
+ if(!isCurrent())throw new Error('SCOPE_CHANGED');
+ const query=new URLSearchParams({resource:'entry',expectedAccountId:scope.expectedAccountId,companyId:scope.companyId});
+ const response=await fetch(`/api/setup/read?${query}`,{credentials:'same-origin',cache:'no-store',headers:{'x-velora-boundary':scope.boundaryFingerprint}});
+ if(!isCurrent())throw new Error('SCOPE_CHANGED');
+ if(!response.ok)throw new Error(`SETUP_ENTRY_${response.status}`);
+ const body=await response.json();
+ if(!isCurrent())throw new Error('SCOPE_CHANGED');
+ if(body?.data?.companyId!==scope.companyId)throw new Error('SCOPE_CHANGED');
+ return body.data as PaidBranchSetupEntryRead;
+}
 
 export type SetupReadFailureKind='auth'|'scope'|'unavailable'|'network';
 export class SetupReadError extends Error {

@@ -44,7 +44,8 @@ import { canResubmitReview, reviewFailureMessage } from "@/lib/tenancy/review-ui
 import type { CompanyRecord, CompanyReviewEvent, CompanyReviewRequest } from "@/lib/tenancy/types";
 import { AccountMenu, useOptionalAccountSession } from "@/components/app/account-chrome";
 import { PaidAssistantChecklist, PaidSetupFlow } from "./paid-assistant-checklist";
-import {readOwnedPaidBranchSetupAction,readOwnedPaidBranchSetupEntryAction} from "@/lib/tenancy/paid-setup-actions";
+import {readOwnedPaidBranchSetupAction} from "@/lib/tenancy/paid-setup-actions";
+import {readSetupEntry} from "@/lib/tenancy/setup-read-client";
 import { AssistantTester } from "@/components/app/assistant-tester";
 import { KnowledgeEditor } from "@/components/app/knowledge-editor";
 import {BusinessSetupGuidance} from './business-setup-guidance';
@@ -239,9 +240,13 @@ export function PaidSetupWizard(props:{userId:string;companyId:string}) {
   const live=liveSession.liveSnapshot();
   return live.ready&&live.userId===props.userId&&live.boundaryFingerprint===liveBoundary&&liveSession.isCurrentUser(props.userId,liveIdentity);
  },[companyId,props.userId]);
+ const readEntry=useCallback((input:{expectedAccountId:string;companyId:string})=>readSetupEntry(
+  {...input,boundaryFingerprint:boundaryFingerprint??''},
+  ()=>isCurrent()&&boundaryRef.current===boundaryFingerprint,
+ ),[isCurrent,boundaryFingerprint]);
  if(session?.status!=="ready"||!boundaryFingerprint||identity?.userId!==props.userId||identity.companyId!==companyId)return <PaidAssistantChecklist locale={locale} model={null} loading={session?.status==="loading"}/>;
  return <main className={paidStyles.paidShell} dir={locale==='ar'?'rtl':'ltr'} data-service-theme="">
-  <PaidSetupFlow locale={locale} scope={{expectedAccountId:props.userId,companyId,boundaryFingerprint}} isCurrent={isCurrent} readEntry={readOwnedPaidBranchSetupEntryAction} readBranch={readOwnedPaidBranchSetupAction} renderHeader={(branchSelector,title,planSummary)=><header className={`${studioStyles.header} ${paidStyles.paidHeader} ${paidStyles.titleHeader}`}>{title&&<h1 className={paidStyles.headerTitle}>{title}</h1>}<div className={paidStyles.headerBrand}><Link href="/" className={studioStyles.brand}>Velora</Link>{branchSelector}{planSummary}</div><div className={studioStyles.headerTools}><SetupStudioLangSwitch/><div className={studioStyles.accountControl}><AccountMenu compact/></div></div></header>}/>
+  <PaidSetupFlow locale={locale} scope={{expectedAccountId:props.userId,companyId,boundaryFingerprint}} isCurrent={isCurrent} readEntry={readEntry} readBranch={readOwnedPaidBranchSetupAction} renderHeader={(branchSelector,title,planSummary)=><header className={`${studioStyles.header} ${paidStyles.paidHeader} ${paidStyles.titleHeader}`}>{title&&<h1 className={paidStyles.headerTitle}>{title}</h1>}<div className={paidStyles.headerBrand}><Link href="/" className={studioStyles.brand}>Velora</Link>{branchSelector}{planSummary}</div><div className={studioStyles.headerTools}><SetupStudioLangSwitch/><div className={studioStyles.accountControl}><AccountMenu compact/></div></div></header>}/>
  </main>;
 }
 

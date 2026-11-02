@@ -1,4 +1,5 @@
 import {readSessionIdentity} from '@/lib/auth/server-identity';
+import {readOwnedPaidBranchSetupEntryAction} from '@/lib/tenancy/paid-setup-actions';
 import {readOwnedPaidSetupShellAction,readOwnedPaidSetupWorkspaceAction} from '@/lib/tenancy/paid-setup-workspace-actions';
 import {readOwnedBranchHoursAction} from '@/lib/tenancy/branch-hours-actions';
 import {readOwnedBranchKnowledgeAction} from '@/lib/tenancy/paid-branch-knowledge-actions';
@@ -26,7 +27,12 @@ export async function GET(request:Request){
  const query=new URL(request.url).searchParams;
  const resource=query.get('resource')??'';
  const scope={expectedAccountId:query.get('expectedAccountId')??'',companyId:query.get('companyId')??'',branchId:query.get('branchId')??''};
- if(!Object.hasOwn(readers,resource)||Object.values(scope).some(id=>!uuid.test(id))||[...query.keys()].some(key=>query.getAll(key).length!==1))return failure('INVALID_INPUT',400);
+ const entry=resource==='entry';
+ const required=entry?[scope.expectedAccountId,scope.companyId]:Object.values(scope);
+ if((!entry&&!Object.hasOwn(readers,resource))||required.some(id=>!uuid.test(id))||[...query.keys()].some(key=>query.getAll(key).length!==1)||
+   (entry&&[...query.keys()].some(key=>!['resource','expectedAccountId','companyId'].includes(key))))return failure('INVALID_INPUT',400);
+ const origin=request.headers.get('origin');
+ if(request.headers.get('sec-fetch-site')==='cross-site'||(origin&&origin!==new URL(request.url).origin))return failure('FORBIDDEN',403);
  try{
   stage='identity';
   const identity=await readSessionIdentity();
@@ -34,7 +40,7 @@ export async function GET(request:Request){
   stage='scope';
   if(identity.userId!==scope.expectedAccountId||identity.boundaryFingerprint!==request.headers.get('x-velora-boundary'))return failure('SCOPE_CHANGED',403);
   stage='reader';
-  const data=await readers[resource as keyof typeof readers](scope);
+  const data=entry?await readOwnedPaidBranchSetupEntryAction({expectedAccountId:scope.expectedAccountId,companyId:scope.companyId}):await readers[resource as keyof typeof readers](scope);
   return Response.json({data},{headers:{...headers,'Server-Timing':`setup-read;dur=${(performance.now()-started).toFixed(1)}`}});
  }catch{return failure('UNAVAILABLE',503);}
 }

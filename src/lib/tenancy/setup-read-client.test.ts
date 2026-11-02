@@ -1,7 +1,24 @@
 import {afterEach,expect,it,vi} from 'vitest';
-import {createSetupReader} from './setup-read-client';
+import {createSetupReader,readSetupEntry} from './setup-read-client';
 const scope={expectedAccountId:'actor',companyId:'company',branchId:'branch',boundaryFingerprint:'boundary'};
 afterEach(()=>vi.unstubAllGlobals());
+it('reads inventory directly without cache and rejects changed authority after response parsing',async()=>{
+ let current=true;
+ const value={companyId:scope.companyId,branches:[]};
+ const fetcher=vi.fn(async()=>Response.json({data:value}));vi.stubGlobal('fetch',fetcher);
+ expect(await readSetupEntry(scope,()=>current)).toEqual(value);
+ expect(fetcher.mock.calls[0]).toEqual([expect.stringContaining('resource=entry'),expect.objectContaining({cache:'no-store',credentials:'same-origin',headers:{'x-velora-boundary':'boundary'}})]);
+ expect(fetcher).toHaveBeenCalledWith(expect.not.stringContaining('branchId'),expect.anything());
+ vi.stubGlobal('fetch',vi.fn(async()=>({ok:true,json:async()=>{current=false;return {data:value};}})));
+ await expect(readSetupEntry(scope,()=>current)).rejects.toThrow('SCOPE_CHANGED');
+});
+it('does not send unauthorized entry reads, retry failures or accept another company',async()=>{
+ const fetcher=vi.fn(async()=>new Response(null,{status:503}));vi.stubGlobal('fetch',fetcher);
+ await expect(readSetupEntry(scope,()=>false)).rejects.toThrow('SCOPE_CHANGED');expect(fetcher).not.toHaveBeenCalled();
+ await expect(readSetupEntry(scope,()=>true)).rejects.toThrow('SETUP_ENTRY_503');expect(fetcher).toHaveBeenCalledOnce();
+ vi.stubGlobal('fetch',vi.fn(async()=>Response.json({data:{companyId:'foreign'}})));
+ await expect(readSetupEntry(scope,()=>true)).rejects.toThrow('SCOPE_CHANGED');
+});
 it('shares only in-flight reads and rechecks on the next visit',async()=>{
  let finish!:(response:Response)=>void;
  const fetcher=vi.fn(()=>new Promise<Response>(resolve=>{finish=resolve;}));vi.stubGlobal('fetch',fetcher);
