@@ -20,8 +20,9 @@ export type AnswerContextChunk = {
   sourceId: string;
   title: string;
   contentVersion: number;
-  /** Full excerpt — never silently truncated mid-source. */
+  /** Complete source, or explicitly marked bounded excerpts from native retrieval. */
   text: string;
+  retrievalMode?: "passages_v1";
   /** Approved source purpose. Business instructions remain lower-trust context. */
   usageRole?: "knowledge" | "business_instructions";
 };

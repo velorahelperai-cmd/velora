@@ -1,6 +1,7 @@
 import { ANSWER_MAX_CONTEXT_CHARS, ANSWER_MAX_QUESTION_CHARS, ANSWER_MAX_SOURCES } from "./constants";
 import type { ApprovedRow, PackedContext } from "./context";
 import type { AnswerPersona } from "./types";
+import { validPassageEnvelope } from "./passage-contract";
 
 export type ClaimedKnowledgeQuery = { question: string; jobId: string; claimToken: string };
 type RpcClient = { rpc: (name: string, args: Record<string, unknown>) => PromiseLike<{ data: unknown; error: unknown }> };
@@ -54,7 +55,7 @@ export async function loadClaimedAnswerProfile(companyId: string, binding: Pick<
   } catch { return null; }
 }
 
-/** The database bounds relevant complete rows before returning bodies; never loads the entire corpus. */
+/** Native retrieval returns complete sources or explicitly versioned passage envelopes. */
 export async function retrieveApprovedRows(companyId: string, query: ClaimedKnowledgeQuery, client: RpcClient): Promise<{ ok: true; rows: ApprovedRow[] } | Extract<PackedContext, { ok: false }>> {
   if (!companyId.trim() || !query.jobId?.trim() || !query.claimToken?.trim() || typeof query.question !== "string" || !query.question.trim() || query.question.length > ANSWER_MAX_QUESTION_CHARS) return { ok: false, code: "UNAVAILABLE" };
   try {
@@ -71,6 +72,7 @@ export async function retrieveApprovedRows(companyId: string, query: ClaimedKnow
     const rows: ApprovedRow[] = [];
     const seen = new Set<string>();
     let chars = 0;
+    let passages = 0;
     for (const source of result.sources) {
       const row = object(source);
       if (!row || row.company_id !== companyId || typeof row.id !== "string" || !row.id.trim() || seen.has(row.id) ||
@@ -80,6 +82,9 @@ export async function retrieveApprovedRows(companyId: string, query: ClaimedKnow
           !["knowledge", "business_instructions"].includes(String(row.usage_role)) || typeof row.updated_at !== "string" ||
           (row.storage_path !== null && typeof row.storage_path !== "string") ||
           (row.byte_size !== null && (!Number.isSafeInteger(row.byte_size) || Number(row.byte_size) < 0))) return { ok: false, code: "APPROVAL_INCOMPLETE" };
+      if (!validPassageEnvelope(row)) return { ok: false, code: "APPROVAL_INCOMPLETE" };
+      passages += Array.isArray(row.passages) ? row.passages.length : 0;
+      if (passages > 6) return { ok: false, code: "CONTEXT_OVERFLOW" };
       seen.add(row.id);
       chars += `### ${row.title}\n${row.content.trim()}`.length + (rows.length ? 2 : 0);
       rows.push(row as ApprovedRow);

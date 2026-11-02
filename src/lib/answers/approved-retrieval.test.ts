@@ -18,6 +18,33 @@ function client(data: unknown, objectRows: unknown[] = []) {
 const retrieved = (sources: unknown[]) => ({ ok: true, company_id: "company-a", job_id: "job-a", sources });
 
 describe("claimed approved retrieval", () => {
+  it("enforces the passage budget across sources, not separately per source", async () => {
+    const rows = Array.from({ length: 7 }, (_, index) => source({
+      id: `excerpt-${index}`, content: "Coffee", retrieval_mode: "passages_v1",
+      passages: [{ start_char: 1, end_char: 7, text: "Coffee" }],
+    }));
+    expect(await loadApprovedAnswerContext("company-a", client(retrieved(rows.slice(0, 6))) as never, binding)).toMatchObject({ ok: true });
+    expect(await loadApprovedAnswerContext("company-a", client(retrieved(rows)) as never, binding)).toEqual({ ok: false, code: "CONTEXT_OVERFLOW" });
+  });
+  it("retains complete mandatory instructions beside selected knowledge", async () => {
+    const instructions = source({ id: "instructions", content: "Never promise same-day delivery.", usage_role: "business_instructions" });
+    const knowledge = source({ content: "Coffee", retrieval_mode: "passages_v1", passages: [{ start_char: 1, end_char: 7, text: "Coffee" }] });
+    expect(await loadApprovedAnswerContext("company-a", client(retrieved([instructions, knowledge])) as never, binding)).toMatchObject({ ok: true, chunks: [
+      { sourceId: "instructions", text: instructions.content, usageRole: "business_instructions" },
+      { sourceId: "espresso", text: "Coffee", retrievalMode: "passages_v1" },
+    ] });
+  });
+  it("packs explicitly marked excerpts with the approved parent version and normal file checks", async () => {
+    const text = "قهوة 😊 1 OMR";
+    const row = source({ content: text, retrieval_mode: "passages_v1", passages: [{ start_char: 1001, end_char: 1001 + Array.from(text).length, text }] });
+    expect(await loadApprovedAnswerContext("company-a", client(retrieved([row])) as never, binding)).toMatchObject({ ok: true, chunks: [{ sourceId: "espresso", contentVersion: 3, text, retrievalMode: "passages_v1" }] });
+    const changedFile = { ...row, kind: "file", storage_path: "company-a/espresso/menu.pdf", byte_size: 50 };
+    expect(await loadApprovedAnswerContext("company-a", client(retrieved([changedFile])) as never, binding)).toMatchObject({ ok: false, code: "APPROVAL_INCOMPLETE" });
+  });
+  it("rejects excerpt text that differs from its declared passages", async () => {
+    const row = source({ retrieval_mode: "passages_v1", passages: [{ start_char: 1, end_char: 6, text: "Other" }] });
+    expect(await loadApprovedAnswerContext("company-a", client(retrieved([row])) as never, binding)).toEqual({ ok: false, code: "APPROVAL_INCOMPLETE" });
+  });
   it("uses the claimed bounded query and preserves full source text, roles and original versions", async () => {
     const style = source({ id: "style", title: "Business voice", content: "Use concise replies.", content_version: 8, approved_version: 8, usage_role: "business_instructions" });
     const db = client(retrieved([style, source()]));

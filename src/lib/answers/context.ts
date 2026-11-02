@@ -15,6 +15,7 @@ import type { Database } from "@/lib/database.types";
 import { KNOWLEDGE_BUCKET } from "@/lib/knowledge/constants";
 import { createClient } from "@/lib/supabase/server";
 import { retrieveApprovedRows, type ClaimedKnowledgeQuery } from "./approved-retrieval";
+import type { ApprovedPassage } from "./passage-contract";
 
 type KnowledgeClient = SupabaseClient<Database>;
 
@@ -72,6 +73,8 @@ export type ApprovedRow = {
   byte_size: number | null;
   updated_at: string;
   usage_role?: "knowledge" | "business_instructions";
+  retrieval_mode?: "passages_v1";
+  passages?: ApprovedPassage[];
 };
 
 const APPROVED_SELECT =
@@ -224,6 +227,7 @@ function packApprovedRows(rows: ApprovedRow[]): PackedContext {
       contentVersion: row.content_version,
       text,
       ...(row.usage_role ? { usageRole: row.usage_role } : {}),
+      ...(row.retrieval_mode ? { retrievalMode: row.retrieval_mode } : {}),
     });
   }
 
