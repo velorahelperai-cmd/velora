@@ -5,7 +5,7 @@ vi.mock('react',()=>({cache:(fn:unknown)=>fn}));
 vi.mock('next/headers',()=>({cookies:async()=>({getAll:()=>s.cookies})}));
 vi.mock('@/lib/auth/broker',()=>({createBrokerUserClient:s.resolve}));
 vi.mock('@/lib/auth/broker/provider',()=>({createProviderAuthClient:()=>{throw Error('guest fallback forbidden');}}));
-import {createClient,createBrokerBoundClient,runWithVerifiedReadClient} from './server';
+import {createClient,createBrokerBoundClient,createReadOnlyBrokerClient,runWithVerifiedReadClient} from './server';
 const boundary={boundaryFingerprint:'fingerprint',userId:'actor',nativeSessionId:'sid',cookieName:'opaque',generation:'generation',authOrdinal:1,contextGeneration:1,browserLineageId:'lineage'};
 const bound=(client={label:'client'},change={})=>({ok:true,client,resolve:{registryId:'registry',boundary:{...boundary,...change}}});
 beforeEach(()=>{vi.resetAllMocks();s.cookies=[{name:'opaque',value:'A'}];s.resolve.mockImplementation(async()=>bound());});
@@ -36,6 +36,29 @@ it('checks cookies again after final authority resolves',async()=>{
 });
 it('keeps explicit fresh writer fences outside the reused client',async()=>{
  await runWithVerifiedReadClient(async()=>{await createClient();await createBrokerBoundClient({fresh:true});await createClient();});expect(s.resolve).toHaveBeenCalledTimes(3);
+});
+it('shares a read-only broker result without exposing a writer or mutable boundary',async()=>{
+ await runWithVerifiedReadClient(async()=>{
+  const first=await createReadOnlyBrokerClient();
+  expect(first).not.toHaveProperty('writer');
+  if(!first.ok)throw Error('expected native read');
+  first.resolve.boundary.userId='tampered';
+  first.resolve.registryId='tampered';
+  const second=await createReadOnlyBrokerClient();
+  expect(second).toMatchObject({ok:true,resolve:{registryId:'registry',boundary:{userId:'actor'}}});
+ });
+ expect(s.resolve).toHaveBeenCalledTimes(2);
+ await createReadOnlyBrokerClient();expect(s.resolve).toHaveBeenCalledTimes(3);
+});
+it('invalidates the scope when a read-only identity caller swallows a cookie mismatch',async()=>{
+ await expect(runWithVerifiedReadClient(async()=>{
+  s.cookies=[{name:'opaque',value:'B'}];try{await createReadOnlyBrokerClient();}catch{}
+  s.cookies=[{name:'opaque',value:'A'}];return 'private profile';
+ })).rejects.toThrow();
+});
+it('does not enroll ordinary bound-client writers in read-only identity reuse',async()=>{
+ await runWithVerifiedReadClient(async()=>{await createReadOnlyBrokerClient();await createBrokerBoundClient();});
+ expect(s.resolve).toHaveBeenCalledTimes(3);
 });
 it('isolates concurrent operations and does not retain a scope in detached work',async()=>{
  const clients:unknown[]=[];let release!:()=>void;let detached!:Promise<unknown>;

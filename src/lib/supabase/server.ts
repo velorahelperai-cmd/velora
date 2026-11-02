@@ -8,8 +8,13 @@ import { createProviderAuthClient } from "@/lib/auth/broker/provider";
 import { measureRead } from '@/lib/diagnostics/read-performance';
 import {coalesceBrokerRead} from './read-scope';
 
-type VerifiedReadClient = {key:string;client:SupabaseClient<Database>;open:boolean;invalid:boolean};
+type BrokerRead = Awaited<ReturnType<typeof createBrokerUserClient>>;
+type VerifiedReadClient = {key:string;client:SupabaseClient<Database>;bound:Extract<BrokerRead,{ok:true}>;open:boolean;invalid:boolean};
 const verifiedReadClient = new AsyncLocalStorage<VerifiedReadClient>();
+
+export class VerifiedReadBoundaryError extends Error {
+ constructor(message:string,readonly code:'UNAUTHENTICATED'|'UNAVAILABLE'='UNAVAILABLE'){super(message);}
+}
 
 /** Opt-in read composition only. Shares transport, never permission results.
  * Both broker resolutions bypass React.cache and the in-flight read map. No
@@ -20,20 +25,20 @@ export async function runWithVerifiedReadClient<T>(work:()=>Promise<T>):Promise<
  const key=snapshotCookieKey(store);
  const pairs=JSON.parse(key) as Array<{name:string;value:string}>;
  const initial=await measureRead('broker',()=>createBrokerUserClient({getAll:()=>pairs.map(c=>({...c}))}));
- if(!initial.ok)throw new Error('READ_BOUNDARY_UNAVAILABLE');
+ if(!initial.ok)throw new VerifiedReadBoundaryError('READ_BOUNDARY_UNAVAILABLE',initial.code);
  const boundary=initial.resolve.boundary;
  const fields=['boundaryFingerprint','userId','nativeSessionId','cookieName','generation','authOrdinal','contextGeneration','browserLineageId'] as const;
  const captured=fields.map(field=>boundary[field]??null);
- const scope:VerifiedReadClient={key,client:initial.client,open:true,invalid:false};
+ const scope:VerifiedReadClient={key,client:initial.client,bound:initial,open:true,invalid:false};
  return verifiedReadClient.run(scope,async()=>{
   try{
    const value=await work();
    scope.open=false;
    if(scope.invalid||snapshotCookieKey(await cookies())!==key)throw new Error('READ_BOUNDARY_CHANGED');
    const current=await measureRead('broker_fresh',()=>createBrokerUserClient({getAll:()=>pairs.map(c=>({...c}))}));
-   if(!current.ok)throw new Error('READ_BOUNDARY_UNAVAILABLE');
+   if(!current.ok)throw new VerifiedReadBoundaryError('READ_BOUNDARY_UNAVAILABLE',current.code);
    if(current.resolve.registryId!==initial.resolve.registryId||fields.some((field,index)=>(current.resolve.boundary[field]??null)!==captured[index])
-    ||snapshotCookieKey(await cookies())!==key)throw new Error('READ_BOUNDARY_CHANGED');
+    ||snapshotCookieKey(await cookies())!==key)throw new VerifiedReadBoundaryError('READ_BOUNDARY_CHANGED','UNAUTHENTICATED');
    return {value,actorId:boundary.userId};
   }finally{scope.open=false;}
  });
@@ -52,6 +57,20 @@ const resolveBrokerForCookieSnapshot = cache(async (cookieSnapshotKey: string) =
     getAll: () => pairs.map((c) => ({ name: c.name, value: c.value })),
   })));
 });
+
+/** Identity reads only; never exposes a cookie writer. The operation's fresh
+ * final broker fence must complete before its result is returned. Outside an
+ * opted-in read this uses the same request resolver as createBrokerBoundClient. */
+export async function createReadOnlyBrokerClient():Promise<BrokerRead>{
+ const key=snapshotCookieKey(await cookies());
+ const scope=verifiedReadClient.getStore();
+ if(scope?.open){
+  if(scope.key!==key){scope.invalid=true;throw new VerifiedReadBoundaryError('READ_BOUNDARY_CHANGED');}
+  // Callers may read identity fields, but cannot mutate our final comparison.
+  return {...scope.bound,resolve:{...scope.bound.resolve,boundary:{...scope.bound.resolve.boundary}}};
+ }
+ return resolveBrokerForCookieSnapshot(key);
+}
 
 /**
  * Request-scoped Supabase client backed by the WP01A session broker.

@@ -3,8 +3,8 @@ vi.mock("server-only",()=>({}));
 import type {CompanyContext} from "./types";
 const state=vi.hoisted(()=>({access:vi.fn(),identity:vi.fn(),client:vi.fn(),bound:vi.fn(),row:null as unknown,rowError:null as unknown,readReject:false,from:vi.fn(),select:vi.fn(),eq:vi.fn(),write:vi.fn()}));
 vi.mock("@/lib/tenancy/access",async()=>({...await vi.importActual<typeof import("./access")>("./access"),getCompanyAccess:state.access}));
-vi.mock("@/lib/auth/server-identity",()=>({readSessionIdentity:state.identity}));
-vi.mock("@/lib/supabase/server",()=>({createClient:state.client,createBrokerBoundClient:state.bound}));
+vi.mock("@/lib/auth/server-identity",()=>({readSessionIdentity:state.identity,readScopedSessionIdentity:state.identity}));
+vi.mock("@/lib/supabase/server",()=>({createClient:state.client,createBrokerBoundClient:state.bound,runWithVerifiedReadClient:async(work:()=>Promise<unknown>)=>({value:await work(),actorId:"synthetic-owner"}),VerifiedReadBoundaryError:class extends Error{code="UNAVAILABLE"}}));
 vi.mock("next/cache",()=>({revalidatePath:vi.fn()}));
 import {completeProfileName,getAccountProfile,updateAccountName} from "./actions";
 const context=(admin=false):CompanyContext=>({userId:"synthetic-owner",email:"owner@synthetic.invalid",phone:"",fullName:"Confirmed name",supportCode:"SYNTHETIC",needsProfileName:false,emailConfirmed:true,identityVerified:true,isPlatformAdmin:admin,company:null,membership:null,needsCompanyContext:false,workspaceChoices:[]});
@@ -16,9 +16,6 @@ describe("persisted account platform identity is display metadata",()=>{
  it("verified absence is distinct from an unavailable read",async()=>{expect(await getAccountProfile()).toMatchObject({ok:true,data:{platformIdentity:{role:null,status:null,unavailable:false}}});});
  it("does not query platform metadata for an unverified account",async()=>{state.identity.mockResolvedValue({ok:true,userId:"synthetic-owner",email:"owner@synthetic.invalid",fullName:"Confirmed name",emailConfirmed:false});state.access.mockResolvedValue({ok:false,code:"UNVERIFIED"});await getAccountProfile();expect(state.from).not.toHaveBeenCalledWith("platform_admins");});
  it("rejects stale parallel platformIdentity when getCompanyAccess detects session revocation or expiry",async()=>{state.row={role:"owner",status:"active"};state.access.mockResolvedValue({ok:false,code:"UNAUTHENTICATED",sessionExpired:true});expect(await getAccountProfile()).toEqual({ok:false,code:"UNAUTHENTICATED",sessionExpired:true});});
- it("rejects stale parallel reads when broker generation or session is revoked mid-flight",async()=>{state.row={role:"owner",status:"active"};state.bound.mockResolvedValueOnce({bound:{ok:true,resolve:{boundary:{userId:"synthetic-owner",boundaryFingerprint:"fp-owner-1",generation:"gen-owner-2"}}}});expect(await getAccountProfile()).toEqual({ok:false,code:"UNAUTHENTICATED"});state.bound.mockResolvedValueOnce({bound:{ok:false,code:"UNAUTHENTICATED"}});expect(await getAccountProfile()).toEqual({ok:false,code:"UNAUTHENTICATED"});});
- it("requires an uncached final broker fence",async()=>{await getAccountProfile();expect(state.bound).toHaveBeenCalledWith({fresh:true});});
- it("fails closed when the final broker fence throws",async()=>{state.bound.mockRejectedValueOnce(new Error("Synthetic broker read failure"));expect(await getAccountProfile()).toEqual({ok:false,code:"UNAVAILABLE"});});
 });
 describe("account name action boundaries",()=>{
  it("refuses a name draft submitted for a different account",async()=>{expect(await updateAccountName("Saved name","different-account")).toMatchObject({ok:false,code:"UNAUTHENTICATED"});expect(state.write).not.toHaveBeenCalled();});
