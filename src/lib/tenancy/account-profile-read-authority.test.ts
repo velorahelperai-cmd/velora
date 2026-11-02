@@ -16,6 +16,7 @@ vi.mock('@/lib/tenancy/access',async()=>({
  },
 }));
 import {getAccountProfile} from './actions';
+import {readAttestedAccountProfile} from './account-profile-read';
 const boundary={boundaryFingerprint:'fingerprint',userId:'actor',nativeSessionId:'sid',cookieName:'opaque',generation:'generation',authOrdinal:1,contextGeneration:1,browserLineageId:'lineage'};
 const client=()=>({
  auth:{getUser:vi.fn(async()=>({data:{user:{id:'actor',email:'actor@synthetic.invalid',email_confirmed_at:'confirmed',user_metadata:{full_name:'Name'}}},error:null}))},
@@ -48,4 +49,28 @@ it('fails closed when final broker resolution throws',async()=>{
 it('discards a cookie switch during the profile read',async()=>{
  s.duringRead=async()=>{s.cookies=[{name:'opaque',value:'B'}];};
  expect(await getAccountProfile()).toMatchObject({ok:false});
+});
+const expected={userId:'actor',boundaryFingerprint:'fingerprint',generation:'generation'};
+it('attests the GET after the final native session and broker checks',async()=>{
+ const initial=bound();s.resolve.mockResolvedValueOnce(initial).mockResolvedValueOnce(bound());
+ expect(await readAttestedAccountProfile(expected)).toMatchObject({ok:true,data:{userId:'actor'},attestation:{...expected,ok:true,nativeSessionId:'sid',contextGeneration:1}});
+ expect(initial.client.rpc.mock.calls).toHaveLength(2);
+ expect(s.resolve).toHaveBeenCalledTimes(2);
+});
+it.each(['userId','boundaryFingerprint','generation'])('rejects wrong expected %s before private profile reads',async field=>{
+ expect(await readAttestedAccountProfile({...expected,[field]:'other'})).toEqual({ok:false,code:'CONFLICT'});
+ expect(s.clients).toHaveLength(0);
+});
+it('discards the GET profile when the native session expires during profile reads',async()=>{
+ const initial=bound();s.resolve.mockResolvedValueOnce(initial).mockResolvedValueOnce(bound());
+ s.duringRead=async()=>{initial.client.rpc.mockResolvedValue({data:{ok:false,code:'SESSION_EXPIRED'},error:null} as never);};
+ expect(await readAttestedAccountProfile(expected)).toEqual({ok:false,code:'UNAUTHENTICATED',sessionExpired:true});
+});
+it('does not mistake a switched cookie for a logout of the new account',async()=>{
+ s.duringRead=async()=>{s.cookies=[{name:'opaque',value:'B'}];};
+ expect(await readAttestedAccountProfile(expected)).toEqual({ok:false,code:'CONFLICT'});
+});
+it.each(Object.keys(boundary))('withholds GET data after final %s drift',async field=>{
+ s.resolve.mockResolvedValueOnce(bound()).mockResolvedValueOnce(bound({[field]:'changed'}));
+ expect(await readAttestedAccountProfile(expected)).toEqual({ok:false,code:'CONFLICT'});
 });

@@ -41,6 +41,7 @@ async function readIdentity(resolve: typeof createReadOnlyBrokerClient) {
       sessionExpiresAt: guard.expiresAt,
       boundaryFingerprint: bound.resolve.boundary.boundaryFingerprint,
       nativeSessionId: bound.resolve.boundary.nativeSessionId,
+      contextGeneration: bound.resolve.boundary.contextGeneration,
       generation: bound.resolve.boundary.generation,
     };
   } catch {

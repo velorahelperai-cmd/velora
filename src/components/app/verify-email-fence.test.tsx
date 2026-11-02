@@ -323,3 +323,12 @@ it('keeps verify and session-only recovery under the same correlation without re
 it('sends bounded correlation on resend without exposing it in customer copy',async()=>{
  state.resend.mockResolvedValue({ok:true,data:undefined});await resend();const packet=state.resend.mock.calls[0][3];expect(packet?.trace_id).toMatch(/^[a-f0-9]{32}$/);expect(container.textContent).not.toContain(packet.request_id);
 });
+
+// Preserve existing UI race fixtures; transport/native authority have separate tests.
+vi.mock("@/lib/auth/account-profile-client",()=>({fetchAttestedAccountProfile:async(_expected:unknown,correlation?:unknown)=>{
+ const {getAccountProfile}=await import("@/lib/tenancy/actions");
+ const result=await getAccountProfile(correlation);if(!result.ok)return result;
+ const {readBrokerSessionStatus}=await import("@/lib/auth/broker-actions");
+ const attestation=await readBrokerSessionStatus(correlation);
+ return attestation.ok?{...result,attestation}:{ok:false,code:attestation.code};
+}}));

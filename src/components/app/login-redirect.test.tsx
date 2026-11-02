@@ -306,3 +306,12 @@ it("missing browser continuity nonce cannot call signIn or navigate", async () =
   expect(state.documentReplace).not.toHaveBeenCalled();
   expect(state.resolve).not.toHaveBeenCalled();
 });
+
+// Preserve existing UI race fixtures; transport/native authority have separate tests.
+vi.mock("@/lib/auth/account-profile-client",()=>({fetchAttestedAccountProfile:async(_expected:unknown,correlation?:unknown)=>{
+ const {getAccountProfile}=await import("@/lib/tenancy/actions");
+ const result=await getAccountProfile(correlation);if(!result.ok)return result;
+ const {readBrokerSessionStatus}=await import("@/lib/auth/broker-actions");
+ const attestation=await readBrokerSessionStatus(correlation);
+ return attestation.ok?{...result,attestation}:{ok:false,code:attestation.code};
+}}));

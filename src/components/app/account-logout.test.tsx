@@ -246,3 +246,12 @@ it("coalesces repeated logout clicks before a React render", async () => {
   resolve({ ok: true, data: { status: "confirmed" } });
   await settle();
 });
+
+// Preserve existing UI race fixtures; transport/native authority have separate tests.
+vi.mock("@/lib/auth/account-profile-client",()=>({fetchAttestedAccountProfile:async(_expected:unknown,correlation?:unknown)=>{
+ const {getAccountProfile}=await import("@/lib/tenancy/actions");
+ const result=await getAccountProfile(correlation);if(!result.ok)return result;
+ const {readBrokerSessionStatus}=await import("@/lib/auth/broker-actions");
+ const attestation=await readBrokerSessionStatus(correlation);
+ return attestation.ok?{...result,attestation}:{ok:false,code:attestation.code};
+}}));

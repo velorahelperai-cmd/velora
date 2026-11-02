@@ -34,7 +34,7 @@ export async function runWithVerifiedReadClient<T>(work:()=>Promise<T>):Promise<
   try{
    const value=await work();
    scope.open=false;
-   if(scope.invalid||snapshotCookieKey(await cookies())!==key)throw new Error('READ_BOUNDARY_CHANGED');
+   if(scope.invalid||snapshotCookieKey(await cookies())!==key)throw new VerifiedReadBoundaryError('READ_BOUNDARY_CHANGED');
    const current=await measureRead('broker_fresh',()=>createBrokerUserClient({getAll:()=>pairs.map(c=>({...c}))}));
    if(!current.ok)throw new VerifiedReadBoundaryError('READ_BOUNDARY_UNAVAILABLE',current.code);
    if(current.resolve.registryId!==initial.resolve.registryId||fields.some((field,index)=>(current.resolve.boundary[field]??null)!==captured[index])
@@ -83,7 +83,7 @@ export async function createClient(): Promise<SupabaseClient<Database>> {
   const cookieSnapshotKey = snapshotCookieKey(cookieStore);
   const scoped=verifiedReadClient.getStore();
   if(scoped?.open){
-    if(scoped.key!==cookieSnapshotKey){scoped.invalid=true;throw new Error('READ_BOUNDARY_CHANGED');}
+    if(scoped.key!==cookieSnapshotKey){scoped.invalid=true;throw new VerifiedReadBoundaryError('READ_BOUNDARY_CHANGED');}
     return scoped.client;
   }
   const resolved = await resolveBrokerForCookieSnapshot(cookieSnapshotKey);

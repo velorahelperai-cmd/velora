@@ -720,7 +720,7 @@ it("post-profile generation change or session revocation rejects stale profile a
     .mockResolvedValueOnce({ ok: false, code: "UNAUTHENTICATED" });
   state.read.mockResolvedValue({ ok: true, data: profile() });
   await render().refresh();
-  expect(render().status).toBe("error");
+  expect(render().status).toBe("guest");
   expect(render().identity).toBeNull();
   expect(render().hasCurrentUser()).toBe(false);
 });
@@ -934,4 +934,23 @@ it('removes hidden setup immediately when a fresh broker contradicts its identit
  state.path='/setup';state.read.mockResolvedValue({ok:true,data:profile()});await render().refresh();expect(JSON.stringify(rawRenderTree().props.children)).toContain('private-content');
  state.broker.mockResolvedValueOnce(brokerOk()).mockResolvedValueOnce(brokerOk('user-b','fp-b','gen-b'));
  await render().refresh();const tree=rawRenderTree();expect(tree.props.value.status).toBe('error');expect(JSON.stringify(tree.props.children)).not.toContain('private-content');
+});
+
+// Preserve existing UI race fixtures; transport/native authority have separate tests.
+vi.mock("@/lib/auth/account-profile-client",()=>({fetchAttestedAccountProfile:async(_expected:unknown,correlation?:unknown)=>{
+ const {getAccountProfile}=await import("@/lib/tenancy/actions");
+ const result=await getAccountProfile(correlation);if(!result.ok)return result;
+ const {readBrokerSessionStatus}=await import("@/lib/auth/broker-actions");
+ const attestation=await readBrokerSessionStatus(correlation);
+ return attestation.ok?{...result,attestation}:{ok:false,code:attestation.code};
+}}));
+
+
+it('a server boundary conflict after ready hides old content without broadcasting logout',async()=>{
+ state.read.mockResolvedValue({ok:true,data:profile()});
+ await render().refresh();expect(render().status).toBe('ready');
+ state.read.mockResolvedValue({ok:false,code:'CONFLICT'});
+ await render().refresh();expect(render().status).toBe('error');
+ expect(render().hasCurrentUser()).toBe(false);
+ expect(state.logout).not.toHaveBeenCalled();
 });

@@ -4,19 +4,19 @@ import {masterJourneyEnabled} from '@/lib/master-journey/rollout';
 import { normalizeBusinessEmail, normalizeBusinessPhone } from "@/lib/tenancy/business-contacts";
 import { withAuthDiagnostic } from "@/lib/diagnostics/server-flow";
 import { beginDiagnostic } from "@/lib/diagnostics/flow";
-import {traceRead} from "@/lib/diagnostics/read-performance";
+import {readAttestedAccountProfile} from "./account-profile-read";
 import type { DiagnosticDetail, DiagnosticStage } from "@/lib/diagnostics/contract";
 import {readCompanyBillingDisplay} from "@/lib/billing/wiring/display-read";
-import { readSessionIdentity, readScopedSessionIdentity } from "@/lib/auth/server-identity";
+import { readSessionIdentity } from "@/lib/auth/server-identity";
 import { readAccountPlatformIdentity, unavailablePlatformIdentity } from "./account-platform-identity";
-import { AUTH_RETURN_COOKIE, authFlowHref } from "@/lib/auth/auth-journey";
+import { AUTH_RETURN_COOKIE } from "@/lib/auth/auth-journey";
 import { pathAtOrUnder, safeInternalPath } from "@/lib/auth/safe-next";
 import { emailVerificationError, emailVerificationRetryAfterSeconds, normalizeEmailCode } from "@/lib/auth/email-code";
 
 import { revalidatePath } from "next/cache";
 
 import { siteUrl } from "@/lib/auth/site-url";
-import { createClient, runWithVerifiedReadClient, VerifiedReadBoundaryError } from "@/lib/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { prepareReviewProof, reviewStorageReader, KNOWLEDGE_BUCKET, type ReviewRpc } from "@/lib/tenancy/review-proof";
 import { listKnowledgeSources } from "@/lib/knowledge/actions";
@@ -855,32 +855,8 @@ export async function completeProfileName(name: string, next?:string|null, expec
 }
 
 export async function getAccountProfile(correlation?: unknown): Promise<ActionResult<AccountProfileView>> {
-  return withAuthDiagnostic<Awaited<ReturnType<typeof getAccountProfile>>>("auth_session_check", correlation, async (trace) => {
-try {
- const {value:result,actorId}=await traceRead('account_profile',()=>runWithVerifiedReadClient(async ():Promise<ActionResult<AccountProfileView>>=>{
- trace.stage("session");
- const identity=await readScopedSessionIdentity();if(!identity.ok){return {ok:false,code:identity.code,...("expired" in identity&&identity.expired?{sessionExpired:true}:{})};}
- trace.stage("access");
- const [access,platformIdentity]=await Promise.all([
-  getCompanyAccess(),
-  identity.emailConfirmed?readAccountPlatformIdentity(identity.userId):Promise.resolve(unavailablePlatformIdentity()),
- ]);
- if(access.ok&&access.context.userId!==identity.userId){return {ok:false,code:"UNAVAILABLE"};}
- if(!access.ok&&access.code==="UNAUTHENTICATED"){return {ok:false,code:"UNAUTHENTICATED",...("sessionExpired" in access&&access.sessionExpired?{sessionExpired:true}:{})};}
-
- if(access.ok)return {ok:true,data:{...buildAccountProfileView(access,platformIdentity),emailConfirmed:identity.emailConfirmed,sessionExpiresAt:identity.sessionExpiresAt}};
- // Auth identity survives company/profile outages; no role or company privilege is invented.
- return {ok:true,data:{platformIdentity,userId:identity.userId,email:identity.email,fullName:identity.fullName,supportCode:"",isPlatformAdmin:false,role:null,companyName:null,companyId:null,needsCompanyContext:false,adminHref:null,workspaceHref:null,workHref:identity.emailConfirmed?"/account":authFlowHref("/verify-email",null,identity.email),emailConfirmed:identity.emailConfirmed,sessionExpiresAt:identity.sessionExpiresAt,accessUnavailable:access.code==="UNAVAILABLE"}};
-
- }));
- if(result.ok&&result.data.userId!==actorId){trace.finish("UNAVAILABLE");return {ok:false,code:"UNAVAILABLE"};}
- trace.finish(result.ok?"OK":result.code);
- return result;
- }catch(error){
-  const code=error instanceof VerifiedReadBoundaryError?error.code:"UNAVAILABLE";
-  trace.finish(code);return {ok:false,code};
- }
-  });
+ const result=await readAttestedAccountProfile(undefined,correlation);
+ return result.ok?{ok:true,data:result.data}:result;
 }
 export async function selectWorkspaceCompany(companyId: string, input?: { expectedUserId?: string; next?: string | null }): Promise<ActionResult<{ companyId: string; next: string }>> {
   if (typeof companyId !== "string") return { ok: false, code: "INVALID_INPUT" };

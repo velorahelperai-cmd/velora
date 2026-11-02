@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import {fetchAttestedAccountProfile} from "@/lib/auth/account-profile-client";
 import {setupTiming} from "@/lib/diagnostics/setup-timing";
 import {beginDiagnostic} from "@/lib/diagnostics/flow";
 import {readAuthCorrelation} from "@/lib/diagnostics/correlation.mjs";
@@ -28,7 +29,6 @@ import { clearCompanyDrafts } from "@/lib/company-draft";
 import { discardForeignTeamJournal } from "@/lib/platform-teams/ui-state";
 import { emptyBusiness, useDemo } from "@/lib/demo-state";
 import {
-  getAccountProfile,
   signOut,
   type AccountProfileView,
 } from "@/lib/tenancy/actions";
@@ -255,7 +255,7 @@ export function AccountSessionProvider({
         return;
       }
       trace?.stage("profile");
-      const result = await budget.read(() => getAccountProfile(trace.correlation));
+      const result = await budget.read(() => fetchAttestedAccountProfile({userId:broker.userId,boundaryFingerprint:brokerBoundary,generation:brokerGeneration},trace.correlation));
       if (gen !== requestGen.current) {trace?.finish("CONFLICT");return;}
       trace.event("profile", result.ok ? "OK" : "UNAVAILABLE");
       if (!result.ok) {
@@ -276,9 +276,10 @@ export function AccountSessionProvider({
         trace?.finish("UNAVAILABLE");
         return;
       }
-      // Re-read live broker status after profile await — same tip/generation (C4-05).
+      // The GET withholds profile data until its native session and fresh broker
+      // fence finish. Compare that server attestation with the captured UI epoch.
       trace.stage("refresh");
-      const broker2 = await budget.read(() => readBrokerSessionStatus(trace.correlation));
+      const broker2 = result.attestation;
       if (gen !== requestGen.current) {trace?.finish("CONFLICT");return;}
       if (
         !broker2.ok
@@ -288,7 +289,7 @@ export function AccountSessionProvider({
         || result.data.userId !== broker2.userId
       ) {
         failureStageRef.current = "server_auth";
-        const reattestCode=!broker2.ok?broker2.code:"BOUNDARY_MISMATCH";
+        const reattestCode="BOUNDARY_MISMATCH";
         recordSessionCheckUnavailable(
           {userId:userIdRef.current??undefined,companyId:identityRef.current?.companyId??null},
           undefined,
