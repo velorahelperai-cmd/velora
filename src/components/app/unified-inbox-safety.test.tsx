@@ -164,6 +164,8 @@ describe("UnifiedInbox membership and page safety", () => {
   }
 
   it("applies the dashboard attention filter and retains it while opening a thread", () => {
+    const historyPush=vi.fn((_state:unknown,_unused:string,url:string)=>{state.searchParams=new URL(url,"http://localhost").searchParams;});
+    vi.stubGlobal("window",{history:{pushState:historyPush}});
     const initial=makeInitial();
     const attention={...conversation("needs-human","Needs human","+9682","101","Please help",2000),intervention:{reasons:["send_unknown" as const]}};
     initial.wa.page.conversations.push(attention);
@@ -173,10 +175,14 @@ describe("UnifiedInbox membership and page safety", () => {
     const row=allNodes.find(n=>n.props.type==="button"&&nodes(n.props.children).some(child=>child.props.children==="Needs human"))!;
     expect(row).toBeDefined();
     (row.props.onClick as ()=>void)();
-    expect(state.routerPush).toHaveBeenCalledWith("/app/conversations?channel=whatsapp&source=whatsapp&c=needs-human&filter=staff");
+    expect(historyPush).toHaveBeenCalledWith(null,"","/app/conversations?channel=whatsapp&source=whatsapp&c=needs-human&filter=staff");
+    expect(state.routerPush).not.toHaveBeenCalled();
+    expect(nodes(render({initial})).some(n=>n.type===ConversationsPage&&n.props.selectedConversationId==="needs-human")).toBe(true);
     const clear=allNodes.find(n=>n.props.children==="Clear filter")!;
     (clear.props.onClick as ()=>void)();
-    expect(state.routerPush).toHaveBeenLastCalledWith("/app/conversations?channel=whatsapp");
+    expect(historyPush).toHaveBeenLastCalledWith(null,"","/app/conversations?channel=whatsapp");
+    expect(state.readServiceInbox).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
   });
 
   it("does not describe an unmatched worklist as an empty inbox", () => {
