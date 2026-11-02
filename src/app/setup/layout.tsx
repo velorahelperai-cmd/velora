@@ -4,8 +4,16 @@ import { authFlowHref } from "@/lib/auth/auth-journey";
 import { setupReturnContext } from "@/lib/auth/setup-return";
 import { AccessGate } from "@/components/app/access-gate";
 import { getCompanyAccess, loginPathForReturn } from "@/lib/tenancy/access";
+import { Suspense } from "react";
+import { SetupLoading } from "@/components/app/setup-loading";
 
-export default async function SetupLayout({ children }: { children: React.ReactNode }) {
+export default function SetupLayout({ children }: { children: React.ReactNode }) {
+  // The route loading boundary is below this layout. Stream only public chrome
+  // while its native access read runs; page/read/action authorization stays intact.
+  return <Suspense fallback={<SetupLoading />}><AuthorizedSetup>{children}</AuthorizedSetup></Suspense>;
+}
+
+async function AuthorizedSetup({ children }: { children: React.ReactNode }) {
   const { returnTo } = setupReturnContext((await headers()).get("x-velora-return-path"));
   const access = await getCompanyAccess();
   if (!access.ok) {

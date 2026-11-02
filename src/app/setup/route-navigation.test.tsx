@@ -13,7 +13,11 @@ vi.mock("@/lib/tenancy/actions", () => ({ getCompanyReviewRequest: vi.fn() }));
 vi.mock('@/lib/tenancy/setup-draft-actions',()=>({readActiveSetupDraft:vi.fn().mockResolvedValue({ok:true,data:null}),readSetupFileContext:vi.fn().mockResolvedValue({ok:true,data:null})}));
 vi.mock("@/components/app/setup-wizard", () => ({ SetupWizard: () => null }));
 vi.mock("@/components/app/access-gate", () => ({ AccessGate: () => null }));
-import SetupLayout from "./layout";
+import SetupLayoutBoundary from "./layout";
+async function SetupLayout(props: Parameters<typeof SetupLayoutBoundary>[0]) {
+  const child = SetupLayoutBoundary(props).props.children;
+  return child.type(child.props);
+}
 import SetupPage from "./page";
 import { listKnowledgeSources } from "@/lib/knowledge/actions";
 import { getCompanyReviewRequest } from "@/lib/tenancy/actions";
