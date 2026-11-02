@@ -12,11 +12,11 @@ type BrowserAttempt={attemptId:string;nonce:string;expiresAt:string;config:Clien
 type FacebookSDK={init:(options:{appId:string;version:string;xfbml:boolean;autoLogAppEvents:boolean})=>void;login:(callback:(response:{authResponse?:{code?:string}})=>void,options:ReturnType<typeof signupLoginOptions>)=>void};
 declare global{interface Window{FB?:FacebookSDK}}
 
-type SignupProps={companyId:string;keepOnPhone?:boolean;onConnected?:()=>void;onDisconnected?:()=>void};
+type SignupProps={companyId:string;keepOnPhone?:boolean;connected?:boolean;onConnected?:()=>void;onDisconnected?:()=>void};
 export function WhatsappEmbeddedSignup(props:SignupProps){
  return props.keepOnPhone ? <WhatsappCoexistenceSignup companyId={props.companyId} onConnected={props.onConnected} onDisconnected={props.onDisconnected}/> : <IndependentEmbeddedSignup {...props}/>;
 }
-function IndependentEmbeddedSignup({companyId,keepOnPhone=false,onConnected,onDisconnected}:SignupProps){
+function IndependentEmbeddedSignup({companyId,keepOnPhone=false,connected=false,onConnected,onDisconnected}:SignupProps){
  const {locale}=useDemo();const ar=locale==="ar";
  const [config,setConfig]=useState<ClientConfig|null>(null),[sdkReady,setSdkReady]=useState(false),[busy,setBusy]=useState(false),[prepared,setPrepared]=useState(false),[status,setStatus]=useState<string|null>(null),[pin,setPin]=useState("");
  const [diagnosticState,setDiagnosticState]=useState<{companyId:string;detail:unknown}|null>(null);
@@ -45,11 +45,11 @@ function IndependentEmbeddedSignup({companyId,keepOnPhone=false,onConnected,onDi
  async function cancel(){const current=attempt.current;attempt.current=null;signals.current={};pinRef.current="";setPin("");setPrepared(false);setBusy(false);setStatus("CANCELLED");if(current)await cancelEmbeddedSignup({attemptId:current.attemptId,nonce:current.nonce});}
  async function disconnect(){setBusy(true);try{const r=await disconnectEmbeddedSignup(companyId);setBusy(false);setStatus(r.ok?"DISCONNECTED":r.code);setDiagnostic(r.diagnostic??null);if(r.ok)onDisconnected?.();}catch{setBusy(false);setStatus("UNAVAILABLE");}}
  return <div className="grid gap-3 rounded-xl border border-[color:var(--color-border-soft)] p-4">
-  <p className="font-medium">{text("Connect with Meta","الربط مع ميتا")}</p>
+  <p className="font-medium">{connected?text("Manage WhatsApp connection","إدارة ربط واتساب"):text("Connect with Meta","الربط مع ميتا")}</p>
   <p className="text-sm text-[var(--color-muted-soft)]">{text("A business owner authorizes their WhatsApp account in Meta. Velora verifies the account and number before storing the authorization securely.","يفوّض مالك النشاط حساب واتساب عبر ميتا. يتحقق فيلورا من الحساب والرقم قبل حفظ التفويض بأمان.")}</p>
   {status&&<Notice tone={status==="CONNECTED"||status==="DISCONNECTED"?"info":"warn"}>{message(status)}</Notice>}
   {diagnosticText(diagnostic,locale)&&<p className="text-sm break-words" dir={ar?"rtl":"ltr"}>{diagnosticText(diagnostic,locale)}</p>}
-  {config&&<><Script src="https://connect.facebook.net/en_US/sdk.js" strategy="afterInteractive" onReady={()=>{if(window.FB){window.FB.init({appId:config.appId,version:config.graphVersion,xfbml:false,autoLogAppEvents:false});setSdkReady(true);}}} onError={()=>setStatus("UNAVAILABLE")}/>
+  {!connected&&config&&<><Script src="https://connect.facebook.net/en_US/sdk.js" strategy="afterInteractive" onReady={()=>{if(window.FB){window.FB.init({appId:config.appId,version:config.graphVersion,xfbml:false,autoLogAppEvents:false});setSdkReady(true);}}} onError={()=>setStatus("UNAVAILABLE")}/>
    {!prepared&&<Field label={text("Six-digit WhatsApp registration PIN","رمز تسجيل واتساب المكوّن من ستة أرقام")} required hint={text("Choose and keep this two-step verification PIN securely. It is different from the SMS or voice verification code. Velora does not save the PIN.","اختر رمز التحقق بخطوتين واحتفظ به بأمان. يختلف عن رمز التحقق المرسل برسالة أو مكالمة. لا يحفظ فيلورا هذا الرمز.")}>{props=><input {...props} value={pin} type="password" inputMode="numeric" autoComplete="off" maxLength={6} onChange={e=>setPin(e.target.value.replace(/\D/g,""))} disabled={busy}/>}</Field>}
    <div className="flex flex-wrap gap-2"><Button disabled={busy||!sdkReady||keepOnPhone||(!prepared&&!/^\d{6}$/.test(pin))} onClick={prepared?launch:()=>void prepare()}>{prepared?text("Continue to Meta","المتابعة إلى ميتا"):text("Prepare secure connection","إعداد الربط الآمن")}</Button>{prepared&&<Button onClick={()=>void cancel()}>{text("Cancel","إلغاء")}</Button>}</div></>}
   <div><Button disabled={busy} onClick={()=>void disconnect()}>{text("Disconnect from Velora","فصل الربط عن فيلورا")}</Button></div>

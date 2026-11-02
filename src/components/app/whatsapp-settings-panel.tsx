@@ -94,7 +94,8 @@ export function WhatsappSettingsPanel({
   const currentStatus: WhatsappLinkStatus = link?.status ?? "not_connected";
 
   // Connection stages stepper calculation
-  const stage1Done = Boolean(link?.requestedDisplayNumber?.trim());
+  const registeredNumber = verified ? link?.verifiedDisplayNumber?.trim() : link?.requestedDisplayNumber?.trim();
+  const stage1Done = !loadError && Boolean(registeredNumber);
   const stage2Done = verified;
   const stage3Done = connection.tested;
 
@@ -110,7 +111,7 @@ export function WhatsappSettingsPanel({
 
   return (
     <Card title={copy.app.tabs.whatsapp}>
-      <WhatsappEmbeddedSignup key={companyId} companyId={companyId} keepOnPhone={keepOnPhone} onConnected={() => void load()} onDisconnected={() => void load()} />
+      <WhatsappEmbeddedSignup key={companyId} companyId={companyId} keepOnPhone={keepOnPhone} connected={verified} onConnected={() => void load()} onDisconnected={() => void load()} />
       <WhatsappFixedAckOptIn key={companyId+":fixed-ack"} companyId={companyId} />
       {/* Meta Cloud API Architecture Header Banner */}
       <div className="mb-5 rounded-2xl border border-[#38dc89]/30 bg-gradient-to-r from-[#12281e] via-[#0d1a14] to-[#07110d] p-5 shadow-[0_8px_24px_rgba(0,0,0,0.3)]">
@@ -172,10 +173,10 @@ export function WhatsappSettingsPanel({
         >
           <div className="flex items-center gap-2 font-bold mb-1">
             <span>{stage1Done ? "✓" : "1"}</span>
-            <span>تسجيل رقم النشاط</span>
+            <span>{locale==='ar'?'رقم النشاط':'Business number'}</span>
           </div>
           <p className="text-[11px] text-[#8aa394]">
-            {stage1Done ? (link?.requestedDisplayNumber || "تم التسجيل") : "إدخال رقم هاتف النشاط"}
+            {stage1Done ? registeredNumber : (locale==='ar'?'بانتظار تسجيل الرقم':'Awaiting number registration')}
           </p>
         </div>
 
@@ -188,10 +189,10 @@ export function WhatsappSettingsPanel({
         >
           <div className="flex items-center gap-2 font-bold mb-1">
             <span>{stage2Done ? "✓" : "2"}</span>
-            <span>الربط والتحقق من Meta</span>
+            <span>{locale==='ar'?'الربط والتحقق':'Connection verification'}</span>
           </div>
           <p className="text-[11px] text-[#8aa394]">
-            {verified ? "موثق لدى Meta Cloud" : "بانتظار إجراء التحقق الخارجي"}
+            {verified ? (locale==='ar'?'تم التحقق من الربط':'Connection verified') : (locale==='ar'?'بانتظار التحقق':'Awaiting verification')}
           </p>
         </div>
 
@@ -280,16 +281,16 @@ export function WhatsappSettingsPanel({
                     </dd>
                   </div>
                   <div className="flex flex-wrap justify-between gap-3 border-b border-white/5 pb-2">
-                    <dt className="text-[var(--color-muted-on-dark)]">{copy.app.waLinkTestedLabel}</dt>
+                    <dt className="text-[var(--color-muted-on-dark)]">{locale==='ar'?'سجل اختبار الربط':'Connection test record'}</dt>
                     <dd className="text-xs">
-                      {link.receptionSendTested ? copy.app.waLinkTestedYes : copy.app.waLinkTestedNo}
+                      {link.receptionSendTested ? (locale==='ar'?'مكتمل':'Complete') : (locale==='ar'?'غير مكتمل؛ دليل الرسائل معروض بشكل منفصل':'Incomplete; message evidence is shown separately')}
                     </dd>
                   </div>
                 </>
               ) : (
                 <div className="flex flex-wrap justify-between gap-3 border-b border-white/5 pb-2">
-                  <dt className="text-[var(--color-muted-on-dark)]">{copy.app.waLinkTestedLabel}</dt>
-                  <dd className="text-xs text-[#8aa394]">{copy.app.waLinkTestedNo}</dd>
+                  <dt className="text-[var(--color-muted-on-dark)]">{locale==='ar'?'سجل اختبار الربط':'Connection test record'}</dt>
+                  <dd className="text-xs text-[#8aa394]">{locale==='ar'?'غير مكتمل':'Incomplete'}</dd>
                 </div>
               )}
             </dl>
@@ -301,7 +302,7 @@ export function WhatsappSettingsPanel({
               <dd>{connection.authorizationReady ? "صالح / Valid" : "غير جاهز / Not ready"}</dd>
             </div>
             <div className="flex flex-wrap justify-between gap-3">
-              <dt>جاهزية الإطلاق / Rollout readiness</dt>
+              <dt>{locale==='ar'?'جاهزية الإرسال الحي':'Live sending readiness'}</dt>
               <dd>{connection.rolloutReady ? "جاهز تقنيًا؛ كل إرسال يخضع للقيود / Eligible; per-send checks apply" : "غير مفعّل / Disabled"}</dd>
             </div>
             {link.authorizationExpiresAt ? <div className="flex flex-wrap justify-between gap-3">
