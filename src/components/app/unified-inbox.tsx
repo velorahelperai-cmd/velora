@@ -1,6 +1,7 @@
 'use client';
 import {useCallback,useEffect,useMemo,useRef,useState,useTransition} from 'react';
-import {useRouter,useSearchParams} from 'next/navigation';
+import {useRouter} from 'next/navigation';
+import {useLocalSearchParams} from '@/lib/navigation/use-local-search-params';
 import Link from 'next/link';
 import {useDemo} from '@/lib/demo-state';
 import {readServiceInbox} from '@/lib/customer/service-inbox-actions';
@@ -17,7 +18,10 @@ import {inboxHref,inboxRows,type InboxChannel} from './inbox-presentation';
 import styles from './unified-inbox.module.css';
 type Snapshot=Awaited<ReturnType<typeof readServiceInbox>>;
 export function UnifiedInbox({initial,waReview=false,igReview=false}:{initial:Snapshot;waReview?:boolean;igReview?:boolean}) {
- const {locale}=useDemo(),ar=locale==='ar',router=useRouter(),params=useSearchParams(),copy=useAppCopy();
+ const {locale}=useDemo(),ar=locale==='ar',router=useRouter(),copy=useAppCopy();
+ // Next's route state can wait behind a pending Server Action. Selection is
+ // urgent local UI state; the URL remains its source for Back/Forward and links.
+ const [params,navigateLocally]=useLocalSearchParams();
  const [isNavigating,startTransition]=useTransition();
  const [snapshot,setSnapshot]=useState(initial),[refreshing,setRefreshing]=useState(false),[error,setError]=useState(false);
  const [retained,setRetained]=useState<Extract<Snapshot,{ok:true}>|null>(initial.ok?initial:null);
@@ -69,7 +73,7 @@ export function UnifiedInbox({initial,waReview=false,igReview=false}:{initial:Sn
  // Selection and filters consume the existing scoped snapshot. Native history
  // updates useSearchParams without rerunning the whole server inbox projection.
  // The selected pane still authorizes its thread read; explicit refresh stays live.
- const select=(channel:InboxChannel|null,id:string|null,intentId?:string)=>{const href=filteredHref(channel,id);window.history.pushState(null,"",intentId?href+(href.includes("?")?"&":"?")+"intent="+encodeURIComponent(intentId):href);};
+ const select=(channel:InboxChannel|null,id:string|null,intentId?:string)=>{const href=filteredHref(channel,id);navigateLocally(intentId?href+(href.includes("?")?"&":"?")+"intent="+encodeURIComponent(intentId):href);};
  const activeRow=rows.find(r=>r.channel===source&&r.id===selected);
  async function more(channel:InboxChannel){
   if(moreLoading!==null||busy.current||!snapshot.ok||!retained)return;
@@ -97,8 +101,8 @@ export function UnifiedInbox({initial,waReview=false,igReview=false}:{initial:Sn
    {!channels.length&&<EmptyState title={ar?'لا توجد قناة متاحة للقراءة':'No channel is available to read'} body={ar?'الاشتراك والربط والصلاحيات حالات مستقلة. راجع الإعدادات أو تواصل مع صاحب النشاط.':'Subscription, connection and permissions are separate. Review settings or contact your business owner.'} action={<Link href="/app/settings">{ar?'الإعدادات':'Settings'}</Link>}/>}<div className={styles.inbox} hidden={!snapshot.ok||!channels.length} data-selected={selectionValid}>
     <section className={styles.list} aria-label={ar?'قائمة المحادثات':'Conversation list'}>
      <header className={styles.listHeader}><h2>{ar?'صندوق الوارد':'Inbox'}</h2><p>{ar?'المحادثات المتاحة لهذا النشاط':'Available conversations for this business'}</p>
-      {channels.length===2?<div className={styles.channelFilters} aria-label={ar?'القناة':'Channel'}>{(['all',...channels] as const).map(c=><button key={c} type="button" aria-pressed={filter===c} onClick={()=>window.history.pushState(null,"",filteredHref(null,null,c))}>{c==='all'?(ar?'الكل':'All'):<ChannelBadge channel={c} ar={ar}/>}</button>)}</div>:<ChannelBadge channel={channels[0]??'whatsapp'} ar={ar}/>}
-      {worklist!=='all'&&<p role="status">{worklist==='staff'?(ar?'تحتاج متابعة · واتساب':'Needs attention · WhatsApp'):worklist==='noura'?(ar?'الأتمتة مسموحة · واتساب':'Automation permitted · WhatsApp'):worklist==='unread'?(ar?'غير مقروءة':'Unread'):(ar?'محلولة · واتساب':'Resolved · WhatsApp')} <button type="button" className={styles.filterReset} onClick={()=>window.history.pushState(null,"",inboxHref(null,null,filter))}>{ar?'مسح الفلتر':'Clear filter'}</button></p>}
+      {channels.length===2?<div className={styles.channelFilters} aria-label={ar?'القناة':'Channel'}>{(['all',...channels] as const).map(c=><button key={c} type="button" aria-pressed={filter===c} onClick={()=>navigateLocally(filteredHref(null,null,c))}>{c==='all'?(ar?'الكل':'All'):<ChannelBadge channel={c} ar={ar}/>}</button>)}</div>:<ChannelBadge channel={channels[0]??'whatsapp'} ar={ar}/>}
+      {worklist!=='all'&&<p role="status">{worklist==='staff'?(ar?'تحتاج متابعة · واتساب':'Needs attention · WhatsApp'):worklist==='noura'?(ar?'الأتمتة مسموحة · واتساب':'Automation permitted · WhatsApp'):worklist==='unread'?(ar?'غير مقروءة':'Unread'):(ar?'محلولة · واتساب':'Resolved · WhatsApp')} <button type="button" className={styles.filterReset} onClick={()=>navigateLocally(inboxHref(null,null,filter))}>{ar?'مسح الفلتر':'Clear filter'}</button></p>}
       <label className={styles.search}>{ar?'بحث في المحادثات المحمّلة':'Search loaded conversations'}<input type="search" value={query} onChange={e=>setQuery(e.target.value)} placeholder={ar?'الاسم أو آخر رسالة':'Name or latest message'}/></label>
      </header>
      <div className={styles.rows}>{channels.map(channel=>{const result=channel==='whatsapp'?snapshot.ok?snapshot.wa:retained.wa:snapshot.ok?snapshot.ig:retained.ig;if(result.ok)return null;const isForbidden=result.code==='FORBIDDEN';return <Notice key={channel} tone={isForbidden?'warn':'error'}><ChannelBadge channel={channel} ar={ar}/><p>{isForbidden?(ar?'القراءة غير متاحة. راجع صلاحيات القناة والاشتراك.':'Reading unavailable. Check channel permissions and subscription.'):(ar?'تعذّر تحميل القناة. أعد التحديث.':'This channel could not be loaded. Refresh to retry.')}{!isForbidden&&<button type="button" className="underline ms-2 font-medium" disabled={refreshing||moreLoading!==null} onClick={()=>void refresh()}>{ar?'إعادة المحاولة':'Retry'}</button>}</p></Notice>;})}

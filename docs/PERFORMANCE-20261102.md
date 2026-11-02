@@ -17,7 +17,20 @@ The server conversations page does not consume the selection/filter parameters. 
 
 Local same-account authenticated UI: filter selected and URL synchronized; Back restored All. Click-to-URL tool observations 677 and 1508 ms include automation overhead. No GET /app/conversations in the captured development log interval after line 2349. Production before and local after are NOT a controlled final comparison.
 
-Regression: failed first on the old router behavior, then 37 affected tests passed across unified inbox safety, inbox paging, failure presentation and failure refresh. Scoped ESLint and secret signature scan passed. Build and exact-release CI/deployment/production acceptance pending.
+Regression: failed first on the old router behavior, then 37 affected tests passed across unified inbox safety, inbox paging, failure presentation and failure refresh. Scoped ESLint and secret signature scan passed. Commit 4e9f89e247950b63210df8befd449ca9f37295d1 passed CI 41388663997 (all eight jobs), and production deployment dpl_9k4wgyE4dWX9vq1GRodXqauRfLps is READY on that SHA. Full local build and subsequent typecheck also passed, but that local tree includes other agents' unpublished work.
+
+**Hosted acceptance found a remaining defect:** after reload, a native-history WhatsApp filter click changed the URL to `?channel=whatsapp` but the DOM still showed All pressed and the previous thread while background reads were pending. The 1509ms click-return sample is therefore NOT a successful filter latency. URL completion alone was an insufficient acceptance signal. The regression now holds Next's search-parameter snapshot stale, and failed against the released code. The follow-up uses immediate local selection with URL/popstate synchronization; 37 affected tests pass locally. Browser acceptance and follow-up publication remain pending.
+
+## Shared architecture investigation
+
+The active checklist and engineering decisions live in Brain `03-CUSTOMER.md`, PERF-SYSTEM-20261102. This file is evidence, not a parallel plan.
+
+- WorkspaceChrome calls getWorkspaceView on each mount and withholds children until the result. The app already has an AccountSessionProvider. Measure before changing lifetime; do not share mutable identity across accounts.
+- readServiceInbox and thread/page readers are called as Server Actions. React explicitly recommends other data-fetching mechanisms; frameworks typically serialize client Server Functions. Existing `/api/setup/read` already implements the correct private read transport precedent. Preserve authoritative native readers and mutations; migrate incrementally with boundary and response fences.
+- Hidden Instagram pane loads its own inbox despite the parent already loading it. Keep drafts mounted but distinguish active subscriptions/reads from component lifetime.
+- Auth/client construction repeatedly invokes capability checks. Historical database means are not current per-journey measurements. No cross-request authorization cache or JIT change is justified by the current evidence.
+
+Primary research consulted 2026-11-02: [React Server Functions](https://react.dev/reference/rsc/use-server), [Next authentication DAL](https://nextjs.org/docs/app/guides/authentication), [Linear delta sync](https://linear.app/now/rebuilding-delta-sync-read-path), [Slack realtime](https://slack.engineering/real-time-messaging/), [TanStack Query defaults](https://tanstack.com/query/latest/docs/framework/react/guides/important-defaults). Applicable principles are independent reads, stable scoped UI state, explicit invalidation, permission-filtered recovery and selective subscriptions. They do not justify copying a large-scale infrastructure or moving customer data.
 
 ## Remaining acceptance
 

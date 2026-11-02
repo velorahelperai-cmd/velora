@@ -164,7 +164,9 @@ describe("UnifiedInbox membership and page safety", () => {
   }
 
   it("applies the dashboard attention filter and retains it while opening a thread", () => {
-    const historyPush=vi.fn((_state:unknown,_unused:string,url:string)=>{state.searchParams=new URL(url,"http://localhost").searchParams;});
+    // A pending Server Action can delay Next's search-parameter render.
+    // Keep that snapshot stale: local selection must still update immediately.
+    const historyPush=vi.fn();
     vi.stubGlobal("window",{history:{pushState:historyPush}});
     const initial=makeInitial();
     const attention={...conversation("needs-human","Needs human","+9682","101","Please help",2000),intervention:{reasons:["send_unknown" as const]}};
@@ -287,8 +289,10 @@ describe("UnifiedInbox membership and page safety", () => {
     expect(names).toContain("Customer 1");
     expect(names).toContain("Customer 2");
 
-    // Switch channel to instagram
-    state.searchParams = new URLSearchParams("channel=instagram&source=instagram&thread=ig-thread-1");
+    // Switch through the actual pane callback, while Next's route snapshot lags.
+    vi.stubGlobal("window",{history:{pushState:vi.fn()}});
+    const selectInstagram=allNodes.find(n=>n.type===InstagramInbox)!.props.onSelectConversation as (id:string)=>void;
+    selectInstagram("ig-thread-1");
     tree = render({ initial });
 
     // Verify both panes stay mounted (preserving drafts, not unmounting)
@@ -305,6 +309,7 @@ describe("UnifiedInbox membership and page safety", () => {
     // Instagram pane is also mounted
     const igPane = allNodes.find(n => n.type === InstagramInbox);
     expect(igPane).toBeDefined();
+    vi.unstubAllGlobals();
   });
 
   it("calculates search empty state within active channel filter and isolates channel failure", () => {
