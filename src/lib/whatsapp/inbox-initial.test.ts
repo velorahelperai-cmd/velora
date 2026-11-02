@@ -1,8 +1,9 @@
 import {afterEach,beforeEach,describe,expect,it,vi} from 'vitest';
-const s=vi.hoisted(()=>({access:vi.fn(),scope:vi.fn(),cap:vi.fn(),rpc:vi.fn(),from:vi.fn()}));
+const s=vi.hoisted(()=>({access:vi.fn(),scope:vi.fn(),cap:vi.fn(),snapshot:vi.fn(),rpc:vi.fn(),from:vi.fn()}));
 vi.mock('@/lib/tenancy/access',()=>({getCompanyAccess:s.access}));
 vi.mock('@/lib/access/conversation-scope',()=>({readSessionConversationScope:s.scope}));
 vi.mock('@/lib/access/actions',()=>({sessionHasCompanyCapability:s.cap,sessionConversationScope:s.scope}));
+vi.mock('@/lib/access/capability-snapshot',()=>({readCompanyCapabilitySnapshot:s.snapshot}));
 vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({rpc:s.rpc,from:s.from})}));
 // Keep the native page reader real: tests cover its gates and final composition.
 import {loadWhatsappInboxInitialPage} from './inbox';
@@ -11,6 +12,7 @@ const access={ok:true,context:{company:{id:company},membership:{role:'owner'}}};
 beforeEach(()=>{
  vi.resetAllMocks();s.access.mockResolvedValue(access);s.scope.mockResolvedValue({ok:true,scope:'all_company'});
  s.cap.mockImplementation(async(_:string,c:string)=>c==='wa.conversations.read');
+ s.snapshot.mockImplementation(async(_:string,caps:string[])=>({ok:true,capabilities:Object.fromEntries(caps.map(c=>[c,false]))}));
  s.rpc.mockResolvedValue({data:{ok:true,company_id:company,conversation_scope:'all_company',conversations:[],has_more:true,next_cursor:'99',total:80,unread_total:3,intervention_total:2,membership_fingerprint:'7a78f383d95b3f8842dfd95eb6efb4b5'},error:null});
  s.from.mockReturnValue({select:()=>({eq:()=>({maybeSingle:async()=>({data:{timezone:'Asia/Muscat'},error:null})})})});
 });
@@ -54,6 +56,7 @@ describe('initial inbox native composition',()=>{
  it('discards rows after read capability revocation',async()=>{
   let reads=0;s.cap.mockImplementation(async(_:string,c:string)=>c==='wa.conversations.read'&&++reads===1);expect(await loadWhatsappInboxInitialPage()).toEqual({ok:false,code:'UNAVAILABLE'});
  });
+ it('discards the read when capability snapshot is unavailable',async()=>{s.snapshot.mockResolvedValue({ok:false});expect(await loadWhatsappInboxInitialPage()).toEqual({ok:false,code:'UNAVAILABLE'});});
  it('reports sanitized timezone failure',async()=>{
   const log=vi.spyOn(console,'warn').mockImplementation(()=>{});
   s.from.mockReturnValue({select:()=>({eq:()=>({maybeSingle:async()=>({data:null,error:{code:'42703',message:'PRIVATE',details:company}})})})});
@@ -62,7 +65,7 @@ describe('initial inbox native composition',()=>{
   expect(JSON.stringify(log.mock.calls)).not.toContain('PRIVATE');expect(JSON.stringify(log.mock.calls)).not.toContain(company);
  });
  it('fails closed when assignees throw with a distinct stage',async()=>{
-  const log=vi.spyOn(console,'warn').mockImplementation(()=>{});s.cap.mockResolvedValue(true);
+  const log=vi.spyOn(console,'warn').mockImplementation(()=>{});s.cap.mockResolvedValue(true);s.snapshot.mockImplementation(async(_:string,caps:string[])=>({ok:true,capabilities:Object.fromEntries(caps.map(c=>[c,true]))}));
   s.from.mockImplementation((table:string)=>table==='companies'?{select:()=>({eq:()=>({maybeSingle:async()=>({data:{timezone:'Asia/Muscat'},error:null})})})}:{select:()=>({eq:()=>({eq:()=>({in:()=>({order:async()=>{throw new Error('PRIVATE');}})})})})});
   expect(await loadWhatsappInboxInitialPage()).toEqual({ok:false,code:'UNAVAILABLE'});
   expect(log).toHaveBeenCalledWith('whatsapp.inbox_read_failed',{stage:'initial_assignees',code:'EXCEPTION',error_code:'OTHER'});

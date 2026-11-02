@@ -1,4 +1,5 @@
 import { readSessionConversationScope } from "@/lib/access/conversation-scope";
+import { readCompanyCapabilitySnapshot } from "@/lib/access/capability-snapshot";
 import { reportInboxReadFailure, type InboxReadStage } from "./inbox-diagnostics";
 import type {
   Conversation,
@@ -167,12 +168,14 @@ export async function loadWhatsappInboxInitialPage(): Promise<
     const client = await createClient();
     const [timezoneRow, permissions] = await Promise.all([
       client.from("companies").select("timezone").eq("id", companyId).maybeSingle(),
-      Promise.all((["wa.conversations.reply", "wa.conversations.assign", "wa.conversations.take_over", "wa.conversations.resume", "wa.conversations.close"] as const).map(capability => sessionHasCompanyCapability(companyId, capability))),
+      readCompanyCapabilitySnapshot(companyId, ["wa.conversations.reply", "wa.conversations.assign", "wa.conversations.take_over", "wa.conversations.resume", "wa.conversations.close"]),
     ]);
     if (timezoneRow.error) return fail("UNAVAILABLE", "QUERY_ERROR", timezoneRow.error);
     const { zone, announcedUtc } = resolveCompanyTimezone((timezoneRow.data as { timezone?: string | null } | null)?.timezone ?? null);
     const timezone = announcedUtc ? null : zone;
-    const [canReply, canAssign, canTakeOver, canResume, canClose] = permissions.map(value => value === true);
+    stage = "initial_capability";
+    if (!permissions.ok) return fail("UNAVAILABLE", "READ_NOT_CONFIRMED");
+    const {"wa.conversations.reply":canReply,"wa.conversations.assign":canAssign,"wa.conversations.take_over":canTakeOver,"wa.conversations.resume":canResume,"wa.conversations.close":canClose}=permissions.capabilities;
     stage = "initial_assignees";
     const assignees = canAssign ? await loadAssigneeOptions(client, companyId) : [];
     stage = "final_access";
