@@ -1,4 +1,6 @@
 import {readSessionIdentity} from '@/lib/auth/server-identity';
+import {runWithVerifiedReadClient} from '@/lib/supabase/server';
+import {traceRead} from '@/lib/diagnostics/read-performance';
 import {readOwnedPaidBranchSetupEntryAction} from '@/lib/tenancy/paid-setup-actions';
 import {readOwnedPaidSetupShellAction,readOwnedPaidSetupWorkspaceAction} from '@/lib/tenancy/paid-setup-workspace-actions';
 import {readOwnedBranchHoursAction} from '@/lib/tenancy/branch-hours-actions';
@@ -34,13 +36,22 @@ export async function GET(request:Request){
  const origin=request.headers.get('origin');
  if(request.headers.get('sec-fetch-site')==='cross-site'||(origin&&origin!==new URL(request.url).origin))return failure('FORBIDDEN',403);
  try{
+  const dispatch=async()=>{
   stage='identity';
-  const identity=await readSessionIdentity();
+  const identity=await readSessionIdentity(entry?{readOnly:true}:undefined);
   if(!identity.ok)return failure(identity.code,identity.code==='UNAVAILABLE'?503:401);
   stage='scope';
   if(identity.userId!==scope.expectedAccountId||identity.boundaryFingerprint!==request.headers.get('x-velora-boundary'))return failure('SCOPE_CHANGED',403);
   stage='reader';
   const data=entry?await readOwnedPaidBranchSetupEntryAction({expectedAccountId:scope.expectedAccountId,companyId:scope.companyId}):await readers[resource as keyof typeof readers](scope);
   return Response.json({data},{headers:{...headers,'Server-Timing':`setup-read;dur=${(performance.now()-started).toFixed(1)}`}});
+  };
+  if(!entry)return await dispatch();
+  // Reuse only this read's transport. Native identity/RPC checks still run;
+  // no response escapes until the fresh broker and cookie fence completes.
+  const verified=await traceRead('setup_entry_http',()=>runWithVerifiedReadClient(dispatch));
+  if(verified.actorId!==scope.expectedAccountId){stage='scope';return failure('SCOPE_CHANGED',403);}
+  verified.value.headers.set('Server-Timing',`setup-read;dur=${(performance.now()-started).toFixed(1)}`);
+  return verified.value;
  }catch{return failure('UNAVAILABLE',503);}
 }

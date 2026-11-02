@@ -1,5 +1,7 @@
 import {beforeEach,expect,it,vi} from 'vitest';
-const m=vi.hoisted(()=>({entry:vi.fn(),identity:vi.fn(),shell:vi.fn(),workspace:vi.fn(),hours:vi.fn(),knowledge:vi.fn(),language:vi.fn(),trial:vi.fn(),launch:vi.fn()}));
+vi.mock('server-only',()=>({}));
+const m=vi.hoisted(()=>({verified:vi.fn(),entry:vi.fn(),identity:vi.fn(),shell:vi.fn(),workspace:vi.fn(),hours:vi.fn(),knowledge:vi.fn(),language:vi.fn(),trial:vi.fn(),launch:vi.fn()}));
+vi.mock('@/lib/supabase/server',()=>({runWithVerifiedReadClient:m.verified}));
 vi.mock('@/lib/tenancy/paid-setup-actions',()=>({readOwnedPaidBranchSetupEntryAction:m.entry}));
 vi.mock('@/lib/auth/server-identity',()=>({readSessionIdentity:m.identity}));
 vi.mock('@/lib/tenancy/paid-setup-workspace-actions',()=>({readOwnedPaidSetupShellAction:m.shell,readOwnedPaidSetupWorkspaceAction:m.workspace}));
@@ -30,7 +32,20 @@ it('dispatches inventory only through the native entry reader after identity and
 });
 const scope={expectedAccountId:'11111111-1111-4111-8111-111111111111',companyId:'22222222-2222-4222-8222-222222222222',branchId:'33333333-3333-4333-8333-333333333333'};
 function request(resource='shell',boundary='boundary'){return new Request(`https://velora.test/api/setup/read?${new URLSearchParams({...scope,resource})}`,{headers:{'x-velora-boundary':boundary}});}
-beforeEach(()=>{vi.resetAllMocks();m.identity.mockResolvedValue({ok:true,userId:scope.expectedAccountId,boundaryFingerprint:'boundary'});m.shell.mockResolvedValue(null);});
+beforeEach(()=>{vi.resetAllMocks();m.verified.mockImplementation(async(work:()=>Promise<Response>)=>({value:await work(),actorId:scope.expectedAccountId}));m.identity.mockResolvedValue({ok:true,userId:scope.expectedAccountId,boundaryFingerprint:'boundary'});m.shell.mockResolvedValue(null);});
+
+it('withholds entry data until the final fence and discards it on fence failure or actor change',async()=>{
+ const url=`https://velora.test/api/setup/read?${new URLSearchParams({resource:'entry',expectedAccountId:scope.expectedAccountId,companyId:scope.companyId})}`;
+ const send=()=>GET(new Request(url,{headers:{'x-velora-boundary':'boundary'}}));
+ m.entry.mockResolvedValue({companyId:scope.companyId,branches:['private']});
+ let finish!:()=>void;const gate=new Promise<void>(resolve=>{finish=resolve;});let loaded!:()=>void;const didRead=new Promise<void>(resolve=>{loaded=resolve;});
+ m.verified.mockImplementation(async(work:()=>Promise<Response>)=>{await work();loaded();await gate;throw Error('boundary changed');});
+ let settled=false;const pending=send().then(value=>{settled=true;return value;});await didRead;expect(settled).toBe(false);finish();
+ const rejected=await pending;expect(rejected.status).toBe(503);expect(await rejected.text()).not.toContain('private');
+ expect(m.identity).toHaveBeenCalledWith({readOnly:true});
+ m.verified.mockImplementation(async(work:()=>Promise<Response>)=>({value:await work(),actorId:'foreign'}));
+ const foreign=await send();expect(foreign.status).toBe(403);expect(await foreign.text()).not.toContain('private');
+});
 it('requires native identity and boundary before dispatch, with no-store even on errors',async()=>{
  for(const identity of [{ok:false,code:'UNAUTHENTICATED'},{ok:true,userId:'foreign',boundaryFingerprint:'boundary'}]){
   m.identity.mockResolvedValue(identity);const response=await GET(request());expect([401,403]).toContain(response.status);expect(response.headers.get('cache-control')).toContain('no-store');
