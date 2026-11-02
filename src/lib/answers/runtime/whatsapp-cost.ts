@@ -13,7 +13,7 @@ export type ClaimedWhatsappAnswerInput = RealAnswerPayload & { jobId: string; cl
 /** Explicit ports support offline checks; no identity/session is fabricated for a worker. */
 export async function executeClaimedWhatsappAnswer(
   input: ClaimedWhatsappAnswerInput,
-  deps: { store: ClaimedWhatsappRuntimeStore; call: typeof callRealModel; persona?: AnswerPersona },
+  deps: { store: ClaimedWhatsappRuntimeStore; call: typeof callRealModel; persona?: AnswerPersona; allowTransient503Fallback?: boolean },
 ): Promise<RealAnswerResult> {
   if (!input.jobId?.trim() || !input.claimToken?.trim()) return { ok: false, error: "INVALID_INPUT", attempts: [] };
   return executeReservedRealAnswer(input, { ...deps, requireProviderIdentity: true });
@@ -66,6 +66,6 @@ export function createClaimedWhatsappAnswerExecutor(): (input: ClaimedWhatsappAn
       }
     }
     catch { return { ok: false, error: "PERSISTENCE_UNAVAILABLE", attempts: [] }; }
-    return executeClaimedWhatsappAnswer({...input,locale,model:nativeEs02 ? selectWhatsappModel(input.question) : undefined}, { store, call: callRealModel, persona });
+    return executeClaimedWhatsappAnswer({...input,locale,model:nativeEs02 ? selectWhatsappModel(input.question) : undefined}, { store, call: callRealModel, persona, allowTransient503Fallback: nativeEs02 });
   };
 }
