@@ -39,4 +39,7 @@ it('locks the snapshot on revocation and discards an earlier successful read',as
  let complete!:(v:Snapshot)=>void;m.fetch.mockImplementationOnce(()=>new Promise<Snapshot>(resolve=>{complete=resolve;}));
  act(()=>m.event?.({type:'ready'}));await act(async()=>vi.advanceTimersByTimeAsync(250));act(()=>m.event?.({type:'revoked'}));
  await act(async()=>complete(initial));expect(container.querySelector('textarea')).toBeNull();expect(container.textContent).toContain('latest update could not be verified');
+ const recovery=Array.from(container.querySelectorAll('a')).find(a=>a.textContent==='Reload page to verify');
+ expect(recovery?.getAttribute('href')).toBe('/app/conversations?source=whatsapp&c=thread');
+ expect(m.fetch).toHaveBeenCalledTimes(1);
 });
