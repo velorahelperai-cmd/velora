@@ -2,6 +2,7 @@
 
 import {useEffect,useId,useRef,useState,type ReactNode} from "react";
 import {flushSync} from "react-dom";
+import Link from "next/link";
 import type {PaidBranchSetupRead} from "@/lib/tenancy/paid-setup-contracts";
 import type {PaidBranchConnectionRead} from "@/lib/tenancy/paid-branch-connection-contracts";
 import {checklistSteps,paidChecklistFromRead,type ChecklistStepId,type PaidSetupFlowProps} from "./paid-assistant-checklist";
@@ -181,16 +182,15 @@ export function PaidSetupWorkspace(props:PaidSetupWorkspaceProps) {
   return <Workspace key={JSON.stringify(props.scope)} {...props}/>;
 }
 /** The presentation frame does not depend on a successful setup read. Unknowns remain non-actionable. */
-export function PaidSetupLoadingFrame({locale}:{locale:'ar'|'en'}){return <section className={styles.workspace} dir={locale==='ar'?'rtl':'ltr'} aria-busy="true"><PendingWorkspace locale={locale} loading/></section>;}
+export function PaidSetupLoadingFrame({locale}:{locale:'ar'|'en'}){return <section className={styles.workspace} dir={locale==='ar'?'rtl':'ltr'}><header className={styles.header}><h1>{locale==='ar'?'جهّز مساعدك':'Set up your assistant'}</h1></header><PendingWorkspace locale={locale} loading/></section>;}
 function PendingWorkspace({locale,loading,onRetry}:{locale:'ar'|'en';loading:boolean;onRetry?:()=>void}){
  const ar=locale==='ar',t=(a:string,e:string)=>ar?a:e;
  return <div className={styles.layout} data-setup-frame="pending">
    <aside className={styles.sidebar} aria-label={t('رحلة التجهيز','Setup journey')}>
      <div className={styles.progressHeading}><strong>{t('رحلة التجهيز','Setup journey')}</strong></div>
-     <div className={styles.skeletonRail} aria-hidden="true">{Array.from({length:5},(_,index)=><div key={index}><span/><span/></div>)}</div>
    </aside>
    <section className={styles.content} aria-label={t('محتوى المرحلة','Stage content')}>
-     {loading?<><span className={styles.srOnly} role="status">{t('جارٍ تحميل إعدادات الفرع…','Loading branch setup…')}</span><div className={styles.skeletonContent} aria-hidden="true"><span/><span/><span/><div/></div></>:
+     {loading?<nav aria-label={t('التنقل','Navigation')} className="flex gap-4 text-sm"><Link href="/" prefetch={false}>{t('الرئيسية','Home')}</Link><Link href="/account" prefetch={false}>{t('حسابي','My account')}</Link></nav>:
        <div className={styles.empty} role="alert"><p>{t('تعذّر تحميل إعدادات الفرع. تحقق من الجلسة ثم أعد المحاولة.','Branch setup could not be loaded. Check your session, then retry.')}</p>{onRetry&&<button type="button" onClick={onRetry}>{t('إعادة المحاولة','Retry')}</button>}</div>}
    </section>
  </div>;
@@ -256,8 +256,8 @@ function Workspace(p:PaidSetupWorkspaceProps) {
   const activeComplete=!!active&&steps.find(step=>step.id===active)?.status==="verified";
   const previousStep=visibleSteps.slice(0,Math.max(position,0)).reverse().find(step=>workspaceStepAllowed(p.read,p.scope,step.id,p.availableStepIds));
   const refresh=()=>{if(p.isCurrent()&&confirmSetupLeave(shell.current,p.locale))p.onRefresh?.();};
-  return <section ref={shell} className={styles.workspace} dir={ar?"rtl":"ltr"} aria-labelledby={titleId} aria-busy={p.loading||undefined}>
-    <header className={p.loading||p.statusInHeader?styles.srOnly:styles.header}><div className={styles.introduction}><h1 id={titleId} className={p.statusInHeader?styles.srOnly:undefined}>{personaName?t(`جهّز ${personaName} لعملائك`,`Prepare ${personaName} for your customers`):t("جهّز مساعدك","Set up your assistant")}</h1>
+  return <section ref={shell} className={styles.workspace} dir={ar?"rtl":"ltr"} aria-labelledby={titleId} aria-busy={valid&&p.loading||undefined}>
+    <header className={valid&&p.statusInHeader?styles.srOnly:styles.header}><div className={styles.introduction}><h1 id={titleId} className={valid&&p.statusInHeader?styles.srOnly:undefined}>{personaName?t(`جهّز ${personaName} لعملائك`,`Prepare ${personaName} for your customers`):t("جهّز مساعدك","Set up your assistant")}</h1>
       </div>
       {entitlement&&!p.statusInHeader&&<aside className={styles.planSummary} aria-label={t('ملخص الباقة والتفعيل','Plan and activation summary')}><div className={styles.planTop}><span>{t('باقة فرعك','Your branch plan')}</span><span className={styles.activationBadge} data-clock={activation?.clockState??'unknown'}>{activation?.clockState==='waiting_readiness'?t('المدة لم تبدأ','Period not started'):activation?.clockState==='active'?t('المدة بدأت','Period started'):activation?.clockState==='ended'?t('المدة انتهت','Period ended'):t('حالة المدة غير متاحة','Period status unavailable')}</span></div>
         <h2>{personaName} <span>· {entitlement.package==='basic'?t('القياسية','Standard'):t('المميزة','Premium')}</span></h2>
