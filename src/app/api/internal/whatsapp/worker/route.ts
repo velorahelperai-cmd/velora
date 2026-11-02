@@ -1,4 +1,4 @@
-import {timingSafeEqual} from "node:crypto";
+import {createHmac,timingSafeEqual} from "node:crypto";
 import {createAdminClient} from "@/lib/supabase/admin";
 import {createIntegrationPorts,workerRolloutEnabled} from "@/lib/whatsapp/integration-store";
 import {fixedAckConfig,runFixedAcknowledgementBatch,type FixedAckRpc} from "@/lib/whatsapp/fixed-ack";
@@ -10,11 +10,22 @@ export const maxDuration=300;
 export async function POST(request:Request){
  const expected=process.env.WHATSAPP_WORKER_SECRET?.trim();const actual=request.headers.get("authorization")?.replace(/^Bearer /,"")??"";
  if(!expected||expected.length<32)return Response.json({code:"WORKER_NOT_CONFIGURED"},{status:503});
- const a=Buffer.from(actual),b=Buffer.from(expected);if(a.length!==b.length||!timingSafeEqual(a,b))return Response.json({code:"UNAUTHORIZED"},{status:401});
+ const a=Buffer.from(actual),b=Buffer.from(expected);
+ const direct=a.length===b.length&&timingSafeEqual(a,b);
+ const tick=/^tick\.([0-9a-f]{64})\.([0-9a-f]{64})$/.exec(actual);
+ const signature=tick?Buffer.from(tick[2],"hex"):null;
+ const expectedSignature=tick?createHmac("sha256",expected).update(tick[1]).digest():null;
+ const signed=!!signature&&!!expectedSignature&&timingSafeEqual(signature,expectedSignature);
+ if(!direct&&!signed)return Response.json({code:"UNAUTHORIZED"},{status:401});
  if(process.env.WHATSAPP_WORKER_ENABLED!=="true")return Response.json({code:"WORKER_DISABLED"},{status:503});
  try{
  const client=createAdminClient();if(!client)return Response.json({code:"STORE_NOT_CONFIGURED"},{status:503});
  const rpc=client.rpc as unknown as (name:string,args:Record<string,unknown>)=>PromiseLike<{data:unknown;error:unknown}>;
+ if(!direct&&tick){
+  const redeemed=await rpc.call(client,"whatsapp_redeem_worker_tick",{p_token:tick[1]});
+  if(redeemed.error)return Response.json({code:"TICK_AUTH_UNAVAILABLE"},{status:503});
+  if(redeemed.data!==true)return Response.json({code:"UNAUTHORIZED"},{status:401});
+ }
  if(process.env.WHATSAPP_FIXED_ACK_ENABLED==="true"){
   const scope=fixedAckConfig();if(!scope)return Response.json({code:"FIXED_ACK_NOT_CONFIGURED"},{status:503});
   const fixed=await runFixedAcknowledgementBatch(scope,client as unknown as FixedAckRpc);
