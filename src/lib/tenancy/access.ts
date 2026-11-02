@@ -131,6 +131,7 @@ type LoadAuthOk = {
   fullName: string;
   supportCode: string;
   needsProfileName: boolean;
+  membershipRead?: Awaited<ReturnType<typeof readActiveMemberships>>;
 };
 
 type LoadAuthFail = {
@@ -140,9 +141,16 @@ type LoadAuthFail = {
   supabase?: Awaited<ReturnType<typeof createClient>>;
 };
 
+function readActiveMemberships(supabase: Awaited<ReturnType<typeof createClient>>, userId: string) {
+  return supabase.from("company_members")
+    .select("company_id, user_id, role, status, member_name, created_at")
+    .eq("user_id", userId).eq("status", "active")
+    .order("created_at", { ascending: true });
+}
+
 // React cache lasts only for this server render. Actions/handlers outside a
 // render still read live authority; no identity survives into another request.
-async function loadAuthUncached(): Promise<LoadAuthOk | LoadAuthFail> {
+async function loadAuthUncached(includeMemberships=false): Promise<LoadAuthOk | LoadAuthFail> {
   let supabase: Awaited<ReturnType<typeof createClient>>;
   try {
     supabase = await createClient();
@@ -183,11 +191,14 @@ async function loadAuthUncached(): Promise<LoadAuthOk | LoadAuthFail> {
       .select("full_name, support_code")
       .eq("user_id", userId)
       .maybeSingle();
-    // Both queries stay under the same authenticated client/RLS scope.
+    // These reads stay under the same authenticated client/RLS scope.
     // Bootstrap remains conditional on a confirmed missing persisted profile.
-    const [adminResult, profileResult] = await Promise.all([
+    const [adminResult, profileResult, membershipRead] = await Promise.all([
       supabase.rpc("is_platform_admin"),
       readProfile(),
+      // Only verified read compositions opt in, after identity/session checks.
+      // Each initial/final phase independently rereads the native membership.
+      includeMemberships ? readActiveMemberships(supabase, userId) : Promise.resolve(undefined),
     ]);
     const { data: adminFlag, error: adminError } = adminResult;
     if (adminError) return { ok: false, code: "UNAVAILABLE", supabase };
@@ -232,6 +243,7 @@ async function loadAuthUncached(): Promise<LoadAuthOk | LoadAuthFail> {
       fullName,
       supportCode,
       needsProfileName,
+      membershipRead,
     };
   } catch {
     return { ok: false, code: "UNAVAILABLE", supabase };
@@ -265,7 +277,7 @@ async function loadWorkspaceChoices(
 
 async function loadCompanyAccessUncached(freshAuth=false): Promise<AccessResult> {
   try {
-    const auth = await (freshAuth ? loadAuthUncached() : loadAuth());
+    const auth = await (freshAuth ? loadAuthUncached(true) : loadAuth());
     if (!auth.ok) return { ok: false, code: auth.code, ...(auth.sessionExpired ? { sessionExpired: true as const } : {}) };
     const {
       supabase,
@@ -281,12 +293,8 @@ async function loadCompanyAccessUncached(freshAuth=false): Promise<AccessResult>
     } = auth;
     if (!identityVerified) return { ok: false, code: "UNVERIFIED" };
 
-    const { data: memberships, error: memberError } = await supabase
-      .from("company_members")
-      .select("company_id, user_id, role, status, member_name, created_at")
-      .eq("user_id", userId)
-      .eq("status", "active")
-      .order("created_at", { ascending: true });
+    const { data: memberships, error: memberError } = auth.membershipRead
+      ?? await readActiveMemberships(supabase, userId);
 
     if (memberError) return { ok: false, code: "UNAVAILABLE" };
 

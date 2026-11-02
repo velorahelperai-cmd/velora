@@ -11,6 +11,28 @@ import { getCompanyAccess, runWithVerifiedCompanyRead } from "./access";
 const user = { id: "synthetic-user", email: "qa@example.test", email_confirmed_at: "confirmed", user_metadata: { full_name: "Metadata Name" } };
 
 describe('verified company read composition',()=>{
+ it('overlaps membership with profile reads in both phases without exposing an unfinished profile',async()=>{
+  const barrier=()=>{let resolve!:()=>void;const promise=new Promise<void>(r=>{resolve=r;});return {promise,resolve};};
+  const started=[barrier(),barrier()],release=[barrier(),barrier()];
+  let phase=0;
+  mocks.profile.mockImplementation(async()=>{const index=phase++;started[index].resolve();await release[index].promise;return {data:{full_name:'Saved Name',support_code:'SYNTHETIC'},error:null};});
+  mocks.memberships.mockResolvedValue({data:[{company_id:'company-a',user_id:user.id,role:'owner',status:'active'}],error:null});
+  const work=vi.fn(async()=> 'private-result');
+  const pending=runWithVerifiedCompanyRead(work);
+  try{
+   await started[0].promise;
+   expect(mocks.memberships).toHaveBeenCalledTimes(1);
+   expect(work).not.toHaveBeenCalled();
+   release[0].resolve();
+   await started[1].promise;
+   expect(mocks.memberships).toHaveBeenCalledTimes(2);
+  }finally{release.forEach(gate=>gate.resolve());}
+  expect(await pending).toBe('private-result');
+  expect(mocks.profile).toHaveBeenCalledTimes(2);
+  expect(mocks.memberships).toHaveBeenCalledTimes(2);
+  expect(mocks.user).toHaveBeenCalledTimes(2);
+  expect(mocks.guard).toHaveBeenCalledTimes(2);
+ });
  it('requires live initial authority before running the reader',async()=>{
   mocks.guard.mockResolvedValue({ok:false,code:'UNAUTHENTICATED'});
   const work=vi.fn(async()=> 'private-result');
