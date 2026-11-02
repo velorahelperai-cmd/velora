@@ -17,7 +17,7 @@ export function workspaceNavigation(copy:ReturnType<typeof useAppCopy>,ar:boolea
   ];}
 /** Shared presentation for both initial UI and the authorized workspace.
  * No identity, records, permission checks, fetches or mutation handlers here. */
-export function WorkspaceFrame({title,children,actions,account,presence,nav,immersive=false,prefetch=true}:{title:string;children?:ReactNode;actions?:ReactNode;account?:ReactNode;presence?:ReactNode;nav:WorkspaceNavItem[];immersive?:boolean;prefetch?:boolean}){
+export function WorkspaceFrame({title,children,actions,account,presence,nav,immersive=false,prefetch=null}:{title:string;children?:ReactNode;actions?:ReactNode;account?:ReactNode;presence?:ReactNode;nav:WorkspaceNavItem[];immersive?:boolean;prefetch?:boolean|null}){
  const copy=useAppCopy();const {locale}=useDemo();const ar=locale==='ar';const pathname=usePathname();
  const [menuOpen,setMenuOpen]=useState(false);const menuButtonRef=useRef<HTMLButtonElement>(null);
   return (

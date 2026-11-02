@@ -47,11 +47,13 @@ it("renders nullable unavailable readback as unavailable",()=>{
 });
 it("mounts the read-only paid flow from the real confirmed-company wizard",()=>{
  const html=renderToStaticMarkup(createElement(SetupWizard,{userId:"account",initialCompany:{id:"company"} as CompanyRecord}));
- expect(html).toContain("Loading branch setup");
+ expect(html).toContain("Set up your assistant");
+ expect(html).toContain("My account");
+ expect(html).not.toContain('role="status"');
  expect(html).not.toContain("Working Hours");
 });
 it("does not mount company content for another session account",()=>{
  const html=renderToStaticMarkup(createElement(SetupWizard,{userId:"other-account",initialCompany:{id:"company"} as CompanyRecord}));
  expect(html).toContain("Setup could not be loaded");
- expect(html).not.toContain("Loading branch setup");
+ expect(html).not.toContain("data-setup-frame");
 });
