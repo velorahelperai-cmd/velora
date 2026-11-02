@@ -26,7 +26,7 @@ export function UnifiedInbox({initial,waReview=false,igReview=false}:{initial:Sn
  const [isNavigating,startTransition]=useTransition();
  const [snapshot,setSnapshot]=useState(initial),[refreshing,setRefreshing]=useState(false),[error,setError]=useState(false);
  const [retained,setRetained]=useState<Extract<Snapshot,{ok:true}>|null>(initial.ok?initial:null);
- const [refreshVersion,setRefreshVersion]=useState(0);
+ const [refreshVersion,setRefreshVersion]=useState(0),[revoked,setRevoked]=useState(false);
  const [moreLoading,setMoreLoading]=useState<InboxChannel|null>(null);
  const epoch=useRef(0),busy=useRef(false),mounted=useRef(true);
  const live=useRef(false),queuedRefresh=useRef(false),eventTimer=useRef<ReturnType<typeof setTimeout>|null>(null);
@@ -52,7 +52,7 @@ export function UnifiedInbox({initial,waReview=false,igReview=false}:{initial:Sn
  const onInboxEvent=useCallback((event:InboxRealtimeEvent)=>{
   if(accessRevoked.current)return;
   if(event.type==='unavailable'){live.current=false;return;}
-  if(event.type==='revoked'){accessRevoked.current=true;live.current=false;queuedRefresh.current=false;if(eventTimer.current!==null)clearTimeout(eventTimer.current);eventTimer.current=null;epoch.current++;setRetained(null);setSnapshot({ok:false,code:'SCOPE_CHANGED'});setError(true);return;}
+  if(event.type==='revoked'){accessRevoked.current=true;setRevoked(true);live.current=false;queuedRefresh.current=false;if(eventTimer.current!==null)clearTimeout(eventTimer.current);eventTimer.current=null;epoch.current++;setRetained(null);setSnapshot({ok:false,code:'SCOPE_CHANGED'});setError(true);return;}
   if(event.type==='ready'||event.type==='reconnect')live.current=true;
   if(document.visibilityState!=='visible'){queuedRefresh.current=true;return;}
   if(eventTimer.current===null)eventTimer.current=setTimeout(()=>{eventTimer.current=null;if(mounted.current)void refreshRef.current();},250);
@@ -105,7 +105,7 @@ export function UnifiedInbox({initial,waReview=false,igReview=false}:{initial:Sn
   }}catch{if(mounted.current&&request===epoch.current)setError(true);}
   finally{busy.current=false;if(mounted.current&&request===epoch.current){setMoreLoading(null);if(queuedRefresh.current&&document.visibilityState==='visible')void refreshRef.current();}}
  }
- return <WorkspaceShell immersive={selectionValid} title={ar?'المحادثات':'Conversations'} actions={accessRevoked.current?<a href={`/app/conversations${params.toString()?`?${params.toString()}`:''}`} className="underline">{ar?'إعادة تحميل الصفحة للتحقق':'Reload page to verify'}</a>:<Button variant="secondary" busy={refreshing||isNavigating} disabled={moreLoading!==null} onClick={()=>{if(!initial.ok)startTransition(()=>{router.refresh();});else void refresh();}}>{ar?'تحديث':'Refresh'}</Button>}>
+ return <WorkspaceShell immersive={selectionValid} title={ar?'المحادثات':'Conversations'} actions={revoked?<a href={`/app/conversations${params.toString()?`?${params.toString()}`:''}`} className="underline">{ar?'إعادة تحميل الصفحة للتحقق':'Reload page to verify'}</a>:<Button variant="secondary" busy={refreshing||isNavigating} disabled={moreLoading!==null} onClick={()=>{if(!initial.ok)startTransition(()=>{router.refresh();});else void refresh();}}>{ar?'تحديث':'Refresh'}</Button>}>
   {initial.ok&&<CompanyInboxRealtime key={`${initial.companyId}:${initial.actorId}`} companyId={initial.companyId} actorId={initial.actorId} ar={ar} onInboxEvent={onInboxEvent}/>}
   {error&&<Notice tone="error">{ar?'تعذّر التحقق من آخر تحديث. حدّث الصفحة قبل متابعة العمل.':'The latest update could not be verified. Refresh before continuing.'}</Notice>}
   {!snapshot.ok?<Notice tone={snapshot.code==='UNAVAILABLE'?'error':'warn'}>{snapshot.code==='NO_COMPANY'?(ar?'اختر نشاطًا من قائمة مساحة العمل.':'Choose a business from the workspace menu.'):snapshot.code==='FORBIDDEN'?<><strong>{copy.app.inboxAccessDeniedTitle}</strong><p>{copy.app.inboxAccessDeniedBody}</p></>:snapshot.code==='UNAVAILABLE'?copy.app.inboxLoadFailedBody:(ar?'تغيّرت الجلسة أو مساحة العمل. حدّث الصفحة للتحقق قبل المتابعة.':'The session or workspace changed. Refresh to verify before continuing.')} <Link href="/app/settings?tab=plan" className="underline">{ar?'الاشتراك والدعم':'Subscription and support'}</Link></Notice>:null}

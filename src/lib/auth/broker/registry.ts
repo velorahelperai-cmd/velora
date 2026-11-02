@@ -99,7 +99,11 @@ export async function probeBrokerCapability(): Promise<BrokerCapability> {
     return failCapability(codes, encryptionConfigured);
   }
   try {
-    const { data, error } = await admin.rpc("vel_broker_capability_probe" as never);
+    // A statement timeout is a definite failure of this read-only probe. Retry
+    // once without caching or relaxing the capability contract; a cancelled
+    // request still fails through the normal abort-aware transport.
+    let { data, error } = await admin.rpc("vel_broker_capability_probe" as never);
+    if (error?.code === "57014") ({ data, error } = await admin.rpc("vel_broker_capability_probe" as never));
     if (error || !data || typeof data !== "object") {
       codes.push("CAPABILITY_PROBE_UNAVAILABLE");
       brokerLog("warn", "auth.broker.capability.unavailable", {
