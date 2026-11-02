@@ -16,6 +16,7 @@ vi.mock("@/components/app/workspace-shell", () => ({ WorkspaceShell: "main" }));
 vi.mock("@/components/app/ui", () => ({ Button: "button", LinkButton: "a", Notice: "aside", useAppCopy: () => appCopy("en") }));
 vi.mock("@/lib/customer/dashboard-readiness-actions",()=>({readDashboardReadiness:state.scopedRead}));
 import { DashboardPage } from "./dashboard";
+import { DashboardInboxLive } from "./dashboard-inbox-live";
 type Node = { type: unknown; props: Record<string, unknown> };
 const nodes = (value: unknown): Node[] => Array.isArray(value) ? value.flatMap(nodes) : value && typeof value === "object" && "props" in value ? [value as Node, ...nodes((value as Node).props.children)] : [];
 const snapshot: CustomerReadinessSnapshot = { fullName: "Original owner", email: "synthetic@example.test", role: "owner", companyId: "company", companyName: "Original business", companyStatus: "setup", items: [], nextItemId: null };
@@ -25,6 +26,19 @@ const flush = async () => { for (let i = 0; i < 8; i++) await Promise.resolve();
 beforeEach(() => { vi.clearAllMocks(); state.slots = []; });
 
 describe("dashboard readiness reload", () => {
+  it("updates visible counters and recent customers from the scoped live reader",()=>{
+    const workspace={actorId:"actor",companyId:"company",companyName:"Business",fullName:"Owner",role:"owner" as const};
+    const lead={ok:true,conversations:[{id:"one",customer:"Before",phone:"",messages:[],status:"open",automationAllowed:false,assistantPaused:true}],meta:{companyId:"company",counts:{all:1,awaiting_staff:1}}};
+    const renderLive=()=>{state.cursor=0;return DashboardPage({workspace,initialLeads:lead as never});};
+    const tree=renderLive();const live=nodes(tree).find(node=>node.type===DashboardInboxLive)!;
+    (live.props.onSnapshot as (value:unknown)=>void)({...lead,conversations:[{...lead.conversations[0],customer:"After"}],meta:{...lead.meta,counts:{all:7,awaiting_staff:3}}});
+    const updated=renderLive();const total=nodes(updated).find(node=>node.props.href==="/app/conversations?channel=whatsapp")!;
+    expect(nodes(total).some(node=>node.type==="strong"&&node.props.children==="7")).toBe(true);
+    expect(nodes(updated).some(node=>node.props.children==="After")).toBe(true);
+    expect(nodes(updated).some(node=>node.props.children==="Before")).toBe(false);
+    (live.props.onSnapshot as (value:unknown)=>void)({ok:false,code:"FORBIDDEN"});
+    expect(nodes(renderLive()).some(node=>node.props.children==="After")).toBe(false);
+  });
   it("does not expose conversations when the readiness scope is unknown", () => {
     const tree=DashboardPage({initialReadiness:null,readinessLoadFailed:true,initialLeads:{ok:true,conversations:[{id:"foreign",customer:"PRIVATE_CUSTOMER",phone:"PRIVATE_PHONE",messages:[]}],meta:{companyId:"company",counts:{all:1,awaiting_staff:0}}} as never});
     const text=nodes(tree).flatMap(node=>[node.props.children].flat()).filter(value=>typeof value==="string").join(" ");
