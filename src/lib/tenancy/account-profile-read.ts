@@ -6,6 +6,7 @@ import {checkAppSession} from '@/lib/auth/session-guard';
 import {authFlowHref} from '@/lib/auth/auth-journey';
 import {createClient,runWithVerifiedReadClient,VerifiedReadBoundaryError} from '@/lib/supabase/server';
 import {getCompanyAccess,buildAccountProfileView} from './access';
+import {setupEntryDecision} from './setup-entry-decision';
 import {readAccountPlatformIdentity,unavailablePlatformIdentity} from './account-platform-identity';
 import type {AccountBoundaryExpectation,AttestedAccountProfile} from '@/lib/auth/account-profile-contract';
 
@@ -36,7 +37,7 @@ export async function readAttestedAccountProfile(expected?:AccountBoundaryExpect
     const data=access.ok
      ? {...buildAccountProfileView(access,platformIdentity),emailConfirmed:identity.emailConfirmed,sessionExpiresAt:identity.sessionExpiresAt}
      : {platformIdentity,userId:identity.userId,email:identity.email,fullName:identity.fullName,supportCode:'',isPlatformAdmin:false,role:null,companyName:null,companyId:null,needsCompanyContext:false,adminHref:null,workspaceHref:null,workHref:identity.emailConfirmed?'/account':authFlowHref('/verify-email',null,identity.email),emailConfirmed:identity.emailConfirmed,sessionExpiresAt:identity.sessionExpiresAt,accessUnavailable:access.code==='UNAVAILABLE'};
-    return {ok:true,data,attestation:{ok:true,userId:identity.userId,boundaryFingerprint:identity.boundaryFingerprint,nativeSessionId:identity.nativeSessionId,contextGeneration:identity.contextGeneration,generation:identity.generation}};
+    return {ok:true,data:{...data,setupEntry:setupEntryDecision(access)},attestation:{ok:true,userId:identity.userId,boundaryFingerprint:identity.boundaryFingerprint,nativeSessionId:identity.nativeSessionId,contextGeneration:identity.contextGeneration,generation:identity.generation}};
    }));
    if(result.ok&&result.data.userId!==actorId){trace.finish('UNAVAILABLE');return {ok:false,code:'UNAVAILABLE'};}
    trace.finish(result.ok?'OK':result.code);return result;

@@ -57,6 +57,21 @@ it('independent session GET preserves native user, idle, and two broker checks w
  expect(await readAccountSession()).toEqual({ok:true,...expected,nativeSessionId:'sid',contextGeneration:1});
  expect(initial.client.auth.getUser).toHaveBeenCalledOnce();expect(initial.client.rpc).toHaveBeenCalledExactlyOnceWith('check_app_session',{p_touch:false});expect(s.resolve).toHaveBeenCalledTimes(2);expect(s.clients).toHaveLength(0);
 });
+it('initial setup activity uses the native clock and still requires the final broker fence',async()=>{
+ const initial=bound();s.resolve.mockResolvedValueOnce(initial).mockResolvedValueOnce(bound());
+ expect(await readAccountSession(undefined,true)).toMatchObject({ok:true,userId:'actor'});
+ expect(initial.client.rpc).toHaveBeenCalledExactlyOnceWith('check_app_session',{p_touch:true});
+ expect(s.resolve).toHaveBeenCalledTimes(2);
+});
+it('setup activity cannot revive a natively expired session',async()=>{
+ const initial=bound();initial.client.rpc.mockResolvedValue({data:{ok:false,code:'SESSION_EXPIRED'},error:null} as never);
+ s.resolve.mockResolvedValueOnce(initial).mockResolvedValueOnce(bound());
+ expect(await readAccountSession(undefined,true)).toEqual({ok:false,code:'UNAUTHENTICATED'});
+});
+it('setup activity does not authorize a changed final account boundary',async()=>{
+ s.resolve.mockResolvedValueOnce(bound()).mockResolvedValueOnce(bound({userId:'other'}));
+ expect(await readAccountSession(undefined,true)).toEqual({ok:false,code:'CONFLICT'});
+});
 it.each(['SESSION_EXPIRED','UNAUTHENTICATED'])('session GET rejects native %s',async code=>{
  const initial=bound();initial.client.rpc.mockResolvedValue({data:{ok:false,code},error:null} as never);s.resolve.mockResolvedValueOnce(initial).mockResolvedValueOnce(bound());
  expect(await readAccountSession()).toEqual({ok:false,code:'UNAUTHENTICATED'});

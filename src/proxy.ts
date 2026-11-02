@@ -17,6 +17,9 @@ export async function proxy(request: NextRequest) {
   request.headers.set("x-velora-return-path", safeInternalPath(`${request.nextUrl.pathname}${request.nextUrl.search}`, ""));
   const path = request.nextUrl.pathname;
   const search = request.nextUrl.search;
+  // This exact document contains public UI only. Its account/profile and paid
+  // reads authorize independently. Actions and child routes retain this guard.
+  if (path === '/setup' && (request.method === 'GET' || request.method === 'HEAD')) return NextResponse.next({request});
   if (!isProtectedPath(path)) return NextResponse.next({ request });
   const { response, session } = await updateSession(request);
 

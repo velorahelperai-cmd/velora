@@ -217,9 +217,15 @@ const EMPTY_KNOWLEDGE: KnowledgeSourceRecord[] = [];
 /** Confirmed-company setup reads paid branch authority before showing actionable steps.
  * The prepayment route and the existing no-company recovery implementation stay separate. */
 export function SetupWizard(props:Parameters<typeof LegacySetupWizard>[0]) {
+ const companyId=props.initialCompany?.id;
+ return companyId ? <PaidSetupWizard userId={props.userId} companyId={companyId}/> : <LegacySetupWizard {...props}/>;
+}
+
+/** The paid entry needs identifiers, not a serialized company record. */
+export function PaidSetupWizard(props:{userId:string;companyId:string}) {
  const session=useOptionalAccountSession();
  const {locale}=useDemo();
- const companyId=props.initialCompany?.id;
+ const companyId=props.companyId;
  const identity=session?.identity;
  const boundaryFingerprint=session?.boundaryFingerprint;
  const sessionRef=useRef(session);
@@ -233,7 +239,6 @@ export function SetupWizard(props:Parameters<typeof LegacySetupWizard>[0]) {
   const live=liveSession.liveSnapshot();
   return live.ready&&live.userId===props.userId&&live.boundaryFingerprint===liveBoundary&&liveSession.isCurrentUser(props.userId,liveIdentity);
  },[companyId,props.userId]);
- if(!companyId)return <LegacySetupWizard {...props}/>;
  if(session?.status!=="ready"||!boundaryFingerprint||identity?.userId!==props.userId||identity.companyId!==companyId)return <PaidAssistantChecklist locale={locale} model={null} loading={session?.status==="loading"}/>;
  return <main className={paidStyles.paidShell} dir={locale==='ar'?'rtl':'ltr'} data-service-theme="">
   <PaidSetupFlow locale={locale} scope={{expectedAccountId:props.userId,companyId,boundaryFingerprint}} isCurrent={isCurrent} readEntry={readOwnedPaidBranchSetupEntryAction} readBranch={readOwnedPaidBranchSetupAction} renderHeader={(branchSelector,title,planSummary)=><header className={`${studioStyles.header} ${paidStyles.paidHeader} ${paidStyles.titleHeader}`}>{title&&<h1 className={paidStyles.headerTitle}>{title}</h1>}<div className={paidStyles.headerBrand}><Link href="/" className={studioStyles.brand}>Velora</Link>{branchSelector}{planSummary}</div><div className={studioStyles.headerTools}><SetupStudioLangSwitch/><div className={studioStyles.accountControl}><AccountMenu compact/></div></div></header>}/>

@@ -6,6 +6,7 @@ import { setupPathForReturn } from "@/lib/auth/setup-return";
 import { allowedReturnPath, pathAtOrUnder, safeInternalPath, staffInvitationReturnPath } from "@/lib/auth/safe-next";
 import { createClient } from "@/lib/supabase/server";
 import {masterJourneyEnabled} from '@/lib/master-journey/rollout';
+import {setupEntryDecision, type SetupEntryDecision} from './setup-entry-decision';
 import { readAccountPlatformIdentity, unavailablePlatformIdentity, type AccountPlatformIdentity } from "./account-platform-identity";
 import type {
   AccessCode,
@@ -45,6 +46,8 @@ export function workspaceHomeHref(ctx: CompanyContext): string | null {
 }
 
 export type AccountProfileView = {
+  /** Display routing only; native readers/actions still enforce authority. */
+  setupEntry?: SetupEntryDecision;
   /** Persisted display metadata; isPlatformAdmin and RPCs remain authoritative. */
   platformIdentity: AccountPlatformIdentity;
   emailConfirmed?: boolean;
@@ -77,6 +80,7 @@ export function buildAccountProfileView(
 ): AccountProfileView {
   const ctx = access.context;
   return {
+    setupEntry: setupEntryDecision(access),
     platformIdentity,
     ownedBusinessCount:ctx.ownedBusinessCount,
     hasBusinessMemberships:ctx.hasBusinessMemberships,

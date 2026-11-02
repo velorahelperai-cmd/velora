@@ -1,101 +1,45 @@
-import { describe, expect, it, vi, beforeEach,afterEach } from "vitest";
-afterEach(()=>vi.unstubAllEnvs());
-vi.mock('server-only',()=>({}));
-import type { AccessResult } from "@/lib/tenancy/access";
-import type { CompanyContext } from "@/lib/tenancy/types";
-const state = vi.hoisted(() => ({ path: "", access: null as AccessResult | null }));
-vi.mock("next/headers", () => ({ headers: async () => new Headers({ "x-velora-return-path": state.path }) }));
-vi.mock("next/navigation", () => ({ redirect: (path: string) => { throw new Error(`redirect:${path}`); } }));
-vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
-vi.mock("@/lib/tenancy/access", async (original) => ({ ...await original<typeof import("@/lib/tenancy/access")>(), getCompanyAccess: async () => state.access }));
-vi.mock("@/lib/knowledge/actions", () => ({ listKnowledgeSources: vi.fn() }));
-vi.mock("@/lib/tenancy/actions", () => ({ getCompanyReviewRequest: vi.fn() }));
-vi.mock('@/lib/tenancy/setup-draft-actions',()=>({readActiveSetupDraft:vi.fn().mockResolvedValue({ok:true,data:null}),readSetupFileContext:vi.fn().mockResolvedValue({ok:true,data:null})}));
-vi.mock("@/components/app/setup-wizard", () => ({ SetupWizard: () => null }));
-vi.mock("@/components/app/access-gate", () => ({ AccessGate: () => null }));
-import SetupLayoutBoundary from "./layout";
-async function SetupLayout(props: Parameters<typeof SetupLayoutBoundary>[0]) {
-  const child = SetupLayoutBoundary(props).props.children;
-  return child.type(child.props);
-}
-import SetupPage from "./page";
-import { listKnowledgeSources } from "@/lib/knowledge/actions";
-import { getCompanyReviewRequest } from "@/lib/tenancy/actions";
-import { readSetupFileContext } from '@/lib/tenancy/setup-draft-actions';
-const selected = "/app/settings?tab=plan&term=monthly&persona=level_1&package=basic&version=fixture-version&amount=45000&currency=OMR";
-const returnTo = `/setup?next=${encodeURIComponent(selected)}`;
-const context: CompanyContext = {
-  userId: "owner", email: "owner@example.test", phone: "", fullName: "Owner", supportCode: "",
-  needsProfileName: false, emailConfirmed: true, identityVerified: true, isPlatformAdmin: false,
-  company: null, membership: null, needsCompanyContext: false, workspaceChoices: [],
-};
-beforeEach(() => {vi.clearAllMocks();vi.stubEnv('VELORA_MASTER_JOURNEY_ENABLED','true'); state.path = returnTo; state.access = { ok: true, context }; });
-describe("setup server routes retain the package selection", () => {
-  it('renders the confirmed-company paid wizard without reading unused legacy data',async()=>{
-    vi.stubEnv('VELORA_MASTER_JOURNEY_ENABLED','false');
-    state.access={ok:true,context:{...context,company:{id:'company'} as CompanyContext['company']}};
-    const page=await SetupPage();
-    expect(page.props.children.props.initialCompany.id).toBe('company');
-    expect(readSetupFileContext).not.toHaveBeenCalled();expect(listKnowledgeSources).not.toHaveBeenCalled();expect(getCompanyReviewRequest).not.toHaveBeenCalled();
-    expect(page.props.children.props.initialDraftRead).toBeUndefined();
-  });
-  it('rollout-off uses local unpaid preparation without restoring drafts',async()=>{vi.stubEnv('VELORA_MASTER_JOURNEY_ENABLED','false');const page=await SetupPage();expect(page.props.userId).toBe('owner');expect(page.props.preferredNext).toBe(selected);expect(readSetupFileContext).not.toHaveBeenCalled();});
-  it("permits setup for a platform admin with an explicitly selected owner membership", async () => {
-    state.access = { ok: true, context: { ...context, isPlatformAdmin: true, company: { id: "company", status: "setup" } as CompanyContext["company"], membership: { role: "owner" } as CompanyContext["membership"] } };
-    expect(await SetupLayout({ children: "owner setup" })).toBe("owner setup");
-  });
-  it("redirects unselected memberships to the chooser before rendering setup", async () => {
-    state.access = { ok: true, context: { ...context, needsCompanyContext: true } };
-    const target = `redirect:/app?next=${encodeURIComponent(returnTo)}`;
-    await expect(SetupLayout({ children: "protected setup" })).rejects.toThrow(target);
-    await expect(SetupPage()).rejects.toThrow(target);
-  });
-  it("does not block paid connection UI on pending knowledge or administrative review",async()=>{
-    vi.mocked(listKnowledgeSources).mockImplementation(()=>new Promise(()=>{}));vi.mocked(getCompanyReviewRequest).mockImplementation(()=>new Promise(()=>{}));
-    state.access={ok:true,context:{...context,company:{id:'company'} as CompanyContext['company'],membership:{role:'owner'} as CompanyContext['membership']}};
-    const page=await SetupPage();expect(page.props.children.props.initialCompany.id).toBe('company');expect(listKnowledgeSources).not.toHaveBeenCalled();expect(getCompanyReviewRequest).not.toHaveBeenCalled();
-  });
-  it("retains the selected package through the separate new-business journey", async () => {
-    expect(await SetupLayout({ children: "setup content" })).toBe("setup content");
-    const page=await SetupPage();expect(page.props.userId).toBe('owner');expect(page.props.preferredNext).toBe(selected);expect(readSetupFileContext).not.toHaveBeenCalled();
-  });
-  it("passes the selected package into the wizard for an existing owner business", async () => {
-    state.access={ok:true,context:{...context,company:{id:'company'} as CompanyContext['company'],membership:{role:'owner'} as CompanyContext['membership']}};
-    vi.mocked(listKnowledgeSources).mockResolvedValueOnce({ok:true,data:{sources:[],approvalFoundation:'ready'}});
-    vi.mocked(getCompanyReviewRequest).mockResolvedValueOnce({ok:true,data:null});
-    const page = await SetupPage();
-    expect(page.props.children.props.preferredNext).toBe(selected);
-    expect(page.props.children.props.initialCompany?.id).toBe('company');
-  });
-  it("keeps Master journey flag independent after Phase B smart removal", async () => {
-    state.access={ok:true,context:{...context,company:{id:'company',status:'setup'} as CompanyContext['company'],membership:{role:'owner',status:'active'} as CompanyContext['membership']}};
-    vi.mocked(listKnowledgeSources).mockResolvedValue({ok:false,code:'UNAVAILABLE'});
-    vi.mocked(getCompanyReviewRequest).mockResolvedValue({ok:false,code:'UNAVAILABLE'});
-    vi.stubEnv("VELORA_MASTER_JOURNEY_ENABLED", "false");
-    const page=await SetupPage();
-    expect(page.props.children.props.masterJourneyEnabled).toBe(false);
-    expect(page.props.children.props.smartOnboardingEnabled).toBeUndefined();
-    vi.stubEnv("VELORA_MASTER_JOURNEY_ENABLED", "true");
-    expect((await SetupPage()).props.children.props.masterJourneyEnabled).toBe(true);
-    vi.unstubAllEnvs();
-  });
-  it("preserves selection through both missing-session route redirects", async () => {
-    state.access = { ok: false, code: "UNAUTHENTICATED" };
-    const target = `redirect:/login?next=${encodeURIComponent(returnTo)}`;
-    await expect(SetupLayout({ children: null })).rejects.toThrow(target);
-    await expect(SetupPage()).rejects.toThrow(target);
-  });
-  it("preserves selection through verification and profile completion", async () => {
-    state.access = { ok: false, code: "UNVERIFIED" };
-    const target = `redirect:/verify-email?next=${encodeURIComponent(returnTo)}`;
-    await expect(SetupLayout({ children: null })).rejects.toThrow(target);
-    await expect(SetupPage()).rejects.toThrow(target);
-    state.access = { ok: true, context: { ...context, needsProfileName: true } };
-    await expect(SetupLayout({ children: null })).rejects.toThrow(`redirect:/complete-profile?next=${encodeURIComponent(returnTo)}`);
-  });
-  it("does not turn a service outage into a login redirect or grant access", async () => {
-    state.access = { ok: false, code: "UNAVAILABLE" };
-    expect((await SetupLayout({ children: "protected" }) as { props: { code: string } }).props.code).toBe("UNAVAILABLE");
-    expect((await SetupPage()).props.code).toBe("UNAVAILABLE");
-  });
+import {beforeEach,describe,expect,it,vi} from 'vitest';
+import type {AccessResult} from '@/lib/tenancy/access';
+const state=vi.hoisted(()=>({path:'/setup',access:vi.fn()}));
+vi.mock('next/headers',()=>({headers:async()=>new Headers({'x-velora-return-path':state.path})}));
+vi.mock('next/navigation',()=>({redirect:(href:string)=>{throw Error(`redirect:${href}`);}}));
+vi.mock('@/lib/tenancy/access',()=>({getCompanyAccess:state.access}));
+vi.mock('@/components/app/setup-account-entry',()=>({SetupAccountEntry:()=>null}));
+vi.mock('@/components/app/access-gate',()=>({AccessGate:()=>null}));
+import SetupLayout from './layout';
+import SetupPage from './page';
+import {SetupAccountEntry} from '@/components/app/setup-account-entry';
+const selected='/app/settings?tab=plan&term=monthly&persona=level_1&package=basic&version=fixture-version&amount=45000&currency=OMR';
+const returnTo=`/setup?next=${encodeURIComponent(selected)}`;
+async function layout(){const child=SetupLayout({children:'public entry'}).props.children;return child.type(child.props);}
+beforeEach(()=>{vi.clearAllMocks();state.path=returnTo;});
+describe('public setup root keeps data in attested readers',()=>{
+ it('returns only safe navigation props without waiting on native access',async()=>{
+  state.access.mockReturnValue(new Promise(()=>{}));
+  const page=await SetupPage();
+  expect(page.type).toBe(SetupAccountEntry);
+  expect(page.props).toEqual({returnTo,preferredNext:selected});
+  expect(await layout()).toBe('public entry');
+  expect(state.access).not.toHaveBeenCalled();
+ });
+ it('preserves a branch selection without projecting private branch data',async()=>{
+  const branch='10000000-0000-4000-8000-000000000001';state.path=`/setup?branch=${branch}&next=${encodeURIComponent(selected)}`;
+  expect((await SetupPage()).props).toEqual({returnTo:state.path,preferredNext:selected});expect(state.access).not.toHaveBeenCalled();
+ });
+ it('discards external and duplicate next selections',async()=>{
+  for(const path of ['/setup?next=https://foreign.test','/setup?next=%2Fapp&next=%2Faccount']){
+   state.path=path;expect((await SetupPage()).props).toEqual({returnTo:'/setup',preferredNext:''});
+  }
+ });
+ it.each(['UNVERIFIED','UNAUTHENTICATED'] as const)('retains child-route %s enforcement',async code=>{
+  state.path='/setup/branches/10000000-0000-4000-8000-000000000001/whatsapp';state.access.mockResolvedValue({ok:false,code} satisfies AccessResult);
+  const target=code==='UNVERIFIED'?'/verify-email':'/login';
+  await expect(layout()).rejects.toThrow(`redirect:${target}?next=${encodeURIComponent(state.path)}`);
+ });
+ it.each(['UNAVAILABLE','FORBIDDEN'] as const)('keeps child-route %s closed',async code=>{
+  state.path='/setup/branches';state.access.mockResolvedValue({ok:false,code});expect((await layout()).props.code).toBe(code);
+ });
+ it('does not infer public entry when the trusted path hint is absent',async()=>{
+  state.path='';state.access.mockResolvedValue({ok:false,code:'UNAVAILABLE'});expect((await layout()).props.code).toBe('UNAVAILABLE');expect(state.access).toHaveBeenCalledOnce();
+ });
 });

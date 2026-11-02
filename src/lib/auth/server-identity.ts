@@ -13,11 +13,11 @@ export async function readSessionIdentity() {
 
 /** Only for an operation that withholds its result until the verified read
  * scope's fresh final fence. Ordinary action identity reads keep their path. */
-export async function readScopedSessionIdentity() {
-  return readIdentity(createReadOnlyBrokerClient);
+export async function readScopedSessionIdentity(touch = false) {
+  return readIdentity(createReadOnlyBrokerClient, touch);
 }
 
-async function readIdentity(resolve: typeof createReadOnlyBrokerClient) {
+async function readIdentity(resolve: typeof createReadOnlyBrokerClient, touch = false) {
   try {
     const bound = await resolve();
     if (!bound.ok) {
@@ -26,7 +26,7 @@ async function readIdentity(resolve: typeof createReadOnlyBrokerClient) {
     const client = bound.client;
     const [{ data, error }, guard] = await Promise.all([
       client.auth.getUser(),
-      checkAppSession(client),
+      checkAppSession(client, touch),
     ]);
     if (error) {
       return {

@@ -686,7 +686,7 @@ describe("login and session initialization latency and boundary verification", (
     expect(state.rpcCalls).toHaveLength(0);
 
     const protectedRes = await proxy(
-      new NextRequest("http://localhost:3000/setup", { headers: { cookie: cookieHeader } }),
+      new NextRequest("http://localhost:3000/setup", { method:'POST', headers: { cookie: cookieHeader } }),
     );
     expect(protectedRes.status).toBe(200);
     expect(state.rpcCalls).toContain("vel_broker_resolve_bound_session");
@@ -694,7 +694,7 @@ describe("login and session initialization latency and boundary verification", (
     // Expired session on protected route redirects to /login?next=/setup&reason=session_expired
     state.guardOk = false;
     const expiredRes = await proxy(
-      new NextRequest("http://localhost:3000/setup", { headers: { cookie: cookieHeader } }),
+      new NextRequest("http://localhost:3000/setup", { method:'POST', headers: { cookie: cookieHeader } }),
     );
     expect(expiredRes.status).toBe(307);
     expect(expiredRes.headers.get("location")).toContain("/login?next=%2Fsetup&reason=session_expired");

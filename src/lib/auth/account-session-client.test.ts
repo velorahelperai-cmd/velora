@@ -19,6 +19,11 @@ it.each(['userId','boundaryFingerprint','nativeSessionId','generation','contextG
 it('does not treat transport failure as logout',async()=>{
  request.mockRejectedValue(Error('synthetic outage'));expect(await fetchAccountSession()).toEqual({ok:false,code:'UNAVAILABLE'});
 });
+it('marks only explicitly requested initial document activity',async()=>{
+ request.mockResolvedValue(Response.json(success()));await fetchAccountSession(undefined,true);
+ expect(request.mock.calls[0][1].headers['x-velora-document-activity']).toBe('setup');
+ await fetchAccountSession();expect(request.mock.calls[1][1].headers['x-velora-document-activity']).toBeUndefined();
+});
 it('rejects non-JSON and never retries automatically',async()=>{
  request.mockResolvedValue(new Response('<html>error</html>'));expect(await fetchAccountSession()).toEqual({ok:false,code:'UNAVAILABLE'});expect(request).toHaveBeenCalledTimes(1);
 });

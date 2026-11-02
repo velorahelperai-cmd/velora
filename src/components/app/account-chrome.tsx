@@ -85,6 +85,7 @@ export function AccountSessionProvider({
 }) {
   const providerRouter=useRouter();
   const pathname=usePathname();
+  const setupDocumentActivity=useRef(pathname==='/setup');
   // Never start "ready" from SSR initial alone — mount quarantine may lock A before paint (C3).
   const [status, setStatus] = useState<SessionStatus>("loading");
   const [recoveryReceipt, setRecoveryReceipt] = useState<RecoveryReceipt | null>(null);
@@ -427,7 +428,11 @@ export function AccountSessionProvider({
       bootstrapTrace.stage("session");
       try{
 
-        const broker=await budget.read(()=>fetchAccountSession(bootstrapTrace.correlation));
+        // The public /setup document defers its native activity touch to this
+        // initial read. Refresh/focus reads above remain non-touching.
+        const documentActivity=setupDocumentActivity.current&&!signal;
+        setupDocumentActivity.current=false;
+        const broker=await budget.read(()=>fetchAccountSession(bootstrapTrace.correlation,documentActivity));
         if(cancelled||requestGen.current!==epoch)return;
         bootstrapTrace.event("session",broker.ok?"OK":broker.code==="UNAUTHENTICATED"?"UNAUTHENTICATED":"UNAVAILABLE");
         if(signal?.type==="quarantine"){
@@ -603,7 +608,7 @@ export function AccountSessionProvider({
     : children;
   return (
     <AccountSessionContext.Provider value={sessionValue}>
-      {setupRoute ? <>
+      {setupRoute ? pathname==='/setup'&&status==='guest' ? children : <>
         {admitted&&<div key={JSON.stringify([identity.userId,identity.companyId,boundaryFingerprint])} hidden={loaderGate.holding} inert={loaderGate.holding} aria-hidden={loaderGate.holding||undefined}>
           {children}
         </div>}

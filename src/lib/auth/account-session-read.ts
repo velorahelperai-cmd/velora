@@ -8,12 +8,12 @@ import type {AccountSessionRead} from './account-profile-contract';
 /** Independent read transport replaces the protected-page action, not its
  * authority checks. Native getUser + idle guard precede a fresh broker fence.
  * No profile/company payload, cached authorization, or cookie writer escapes. */
-export async function readAccountSession(correlation?:unknown):Promise<AccountSessionRead>{
+export async function readAccountSession(correlation?:unknown, documentActivity=false):Promise<AccountSessionRead>{
  return withAuthDiagnostic('auth_session_check',correlation,async trace=>{
   try{
    trace.stage('session');
    const {value,actorId}=await traceRead('account_session',()=>runWithVerifiedReadClient(async():Promise<AccountSessionRead>=>{
-    const identity=await readScopedSessionIdentity();
+    const identity=await (documentActivity?readScopedSessionIdentity(true):readScopedSessionIdentity());
     if(!identity.ok)return {ok:false,code:identity.code};
     return {ok:true,userId:identity.userId,boundaryFingerprint:identity.boundaryFingerprint,nativeSessionId:identity.nativeSessionId,contextGeneration:identity.contextGeneration,generation:identity.generation};
    }));
