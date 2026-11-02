@@ -10,6 +10,7 @@ import type { WhatsappCompanyLink, WhatsappLinkStatus } from "@/lib/whatsapp/con
 import type { SingleTenantReceptionStatus } from "@/lib/whatsapp/config";
 import { useDemo } from "@/lib/demo-state";
 import {WhatsappFixedAckOptIn} from "./whatsapp-fixed-ack-opt-in";
+import {WhatsappMessageEvidence} from './whatsapp-message-evidence';
 import {ChannelReviewStatus} from './channel-review';
 import { WhatsappEmbeddedSignup } from "@/components/app/whatsapp-embedded-signup";
 import { whatsappUiState } from "./onboarding-contracts";
@@ -203,14 +204,15 @@ export function WhatsappSettingsPanel({
         >
           <div className="flex items-center gap-2 font-bold mb-1">
             <span>{stage3Done ? "✓" : "3"}</span>
-            <span>دليل اختبار الاستقبال والإرسال</span>
+            <span>{locale==='ar'?'سجل اختبار الربط':'Connection test record'}</span>
           </div>
           <p className="text-[11px] text-[#8aa394]">
-            {stage3Done ? "اختبار مسجل؛ الإطلاق الحي منفصل" : "لا يوجد اختبار مؤكد للربط الحالي"}
+            {stage3Done ? (locale==='ar'?"اختبار مسجل؛ الإطلاق الحي منفصل":"Recorded test; live activation is separate") : (locale==='ar'?"سجل الاختبار غير مكتمل؛ راجع دليل الرسائل أدناه":"Test record is incomplete; see message evidence below")}
           </p>
         </div>
       </div>
 
+      {verified&&link?.id&&<WhatsappMessageEvidence key={`${companyId}:${link.id}:${link.updatedAt}`} companyId={companyId} linkId={link.id} ar={locale==='ar'}/>}
       {showSingleTenant && singleTenant ? (
         <div className="mb-5 grid gap-2 rounded-2xl border border-[color:var(--color-border-soft)] bg-[var(--color-hover-wash)] p-4 text-sm">
           <p className="font-semibold text-[var(--color-on-dark)]">{copy.app.waSingleTenantTitle}</p>

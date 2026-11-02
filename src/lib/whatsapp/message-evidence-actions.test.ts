@@ -1,0 +1,13 @@
+import {beforeEach,expect,it,vi} from 'vitest';
+const m=vi.hoisted(()=>({access:vi.fn(),rpc:vi.fn(),actor:'actor',boundaryFails:false}));
+vi.mock('@/lib/tenancy/access',()=>({getCompanyAccess:m.access}));
+vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({rpc:m.rpc}),runWithVerifiedReadClient:async(work:()=>Promise<unknown>)=>{const value=await work();if(m.boundaryFails)throw Error('expired');return {value,actorId:m.actor};}}));
+import {readWhatsappMessageEvidence} from './message-evidence-actions';
+const scope={companyId:'10000000-0000-4000-8000-000000000001',linkId:'10000000-0000-4000-8000-000000000002'};
+const access={ok:true,context:{userId:'actor',company:{id:scope.companyId},membership:{role:'owner'}}};
+beforeEach(()=>{vi.clearAllMocks();m.actor='actor';m.boundaryFails=false;m.access.mockResolvedValue(access);m.rpc.mockResolvedValue({error:null,data:{ok:true,company_id:scope.companyId,link_id:scope.linkId,generation:1,latest_company_inbound_at:null,current_link_delivered_at:null}});});
+it('returns only scoped display data after the final broker boundary',async()=>{expect(await readWhatsappMessageEvidence(scope)).toEqual({ok:true,data:{...scope,generation:1,latestCompanyInboundAt:null,currentLinkDeliveredAt:null}});expect(m.rpc).toHaveBeenCalledWith('whatsapp_read_message_evidence',{p_company_id:scope.companyId,p_link_id:scope.linkId});});
+it('does not query for staff or malformed scope',async()=>{m.access.mockResolvedValue({...access,context:{...access.context,membership:{role:'staff'}}});expect((await readWhatsappMessageEvidence(scope)).ok).toBe(false);expect((await readWhatsappMessageEvidence({...scope,companyId:'invalid'})).ok).toBe(false);expect(m.rpc).not.toHaveBeenCalled();});
+it('rejects a scope change during the read',async()=>{m.access.mockResolvedValueOnce(access).mockResolvedValueOnce({...access,context:{...access.context,userId:'other'}});expect(await readWhatsappMessageEvidence(scope)).toEqual({ok:false,code:'FORBIDDEN'});});
+it('does not expose evidence when the final broker check fails or changes actor',async()=>{m.boundaryFails=true;expect((await readWhatsappMessageEvidence(scope)).ok).toBe(false);m.boundaryFails=false;m.actor='other';expect(await readWhatsappMessageEvidence(scope)).toEqual({ok:false,code:'FORBIDDEN'});});
+it('treats missing RPC and denied database evidence as unavailable, never success',async()=>{m.rpc.mockResolvedValueOnce({error:{code:'42883'},data:null});expect(await readWhatsappMessageEvidence(scope)).toEqual({ok:false,code:'UNAVAILABLE'});m.rpc.mockResolvedValueOnce({error:null,data:{ok:false,code:'forbidden'}});expect((await readWhatsappMessageEvidence(scope)).ok).toBe(false);});
