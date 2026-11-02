@@ -2,7 +2,7 @@ import 'server-only';
 import {AsyncLocalStorage} from 'node:async_hooks';
 
 type HttpStage='http_session'|'http_identity'|'http_capability'|'http_scope'|'http_channel'|'http_inbox'|'http_other';
-type Stage='client'|'broker'|'broker_fresh'|'data_http'|'access'|'capabilities'|'channel_data'|'final_scope'|HttpStage;
+type Stage='client'|'broker'|'broker_fresh'|'data_http'|'access'|'capabilities'|'channel_data'|'final_scope'|'branch'|'billing'|HttpStage;
 type Measurements=Partial<Record<Stage,{count:number;total_ms:number}>>;
 const reads=new AsyncLocalStorage<Measurements>();
 
@@ -45,7 +45,7 @@ export async function measureRead<T>(stage:Stage,work:()=>Promise<T>):Promise<T>
  }
 }
 
-export async function traceRead<T>(operation:'service_inbox'|'service_inbox_http'|'workspace'|'account_profile',work:()=>Promise<T>):Promise<T>{
+export async function traceRead<T>(operation:'service_inbox'|'service_inbox_http'|'workspace'|'account_profile'|'dashboard_http',work:()=>Promise<T>):Promise<T>{
  const stages:Measurements={};
  const started=performance.now();
  let outcome='returned';
