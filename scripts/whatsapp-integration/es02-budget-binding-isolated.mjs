@@ -32,7 +32,7 @@ try{
  on conflict(company_id,phone_number_id,customer_wa_id) do update set customer_wa_id=excluded.customer_wa_id;
  return jsonb_build_object('ok',true);end$$;
  create function private.ai_budget_period(timestamptz) returns date language sql immutable as $$select date_trunc('month',$1 at time zone 'Asia/Muscat')::date$$;
- create table public.ai_budget_accounts(id uuid primary key default gen_random_uuid(),scope text,company_id uuid,subscription_id uuid,plan_version_id uuid,limit_baisa numeric,enabled boolean,period_start date,created_at timestamptz default now());
+ create table public.ai_budget_accounts(id uuid primary key default gen_random_uuid(),scope text,company_id uuid,subscription_id uuid,plan_version_id uuid,limit_baisa numeric,spent_baisa numeric default 0,held_baisa numeric default 0,enabled boolean,period_start date,created_at timestamptz default now());
  alter table public.ai_budget_accounts add constraint ai_budget_version_binding check((scope='admin_test' and subscription_id is null and plan_version_id is null) or (scope='company_live' and ((subscription_id is null and plan_version_id is null) or (subscription_id is not null and plan_version_id is not null))));
  -- Exact production conflict domains, including nullable plan version.
  create unique index ai_budget_company_legacy_unique on public.ai_budget_accounts(company_id,period_start) where scope='company_live' and subscription_id is null;
@@ -81,5 +81,17 @@ try{
  await assert.rejects(sql('update private.es02_activation_foundation set ai_cost_monthly_limit_baisa=2000'),/ES02_COST_POLICY_IMMUTABLE/);
  assert.equal(await sql(`select has_function_privilege('service_role','private.es02_live_cost_policy_guard()','execute')`),'f');
  assert.equal(await sql(`select has_function_privilege('anon','public.es02_reserve_whatsapp_capacity_cost_attempt(uuid,uuid,uuid,integer,text,text,numeric,text,jsonb,jsonb,text,uuid,uuid,integer,text)','execute')`),'f');
+ await sql(await readFile('supabase/migrations/20261102140208_es02_reduce_monthly_reply_budget.sql','utf8'));
+ await assert.rejects(sql(`set role service_role;update private.es02_activation_foundation set ai_cost_monthly_limit_baisa=500 where company_id='${company}'`),/ES02_COST_POLICY_REQUIRES_OWNER/);
+ await sql(`update public.ai_budget_accounts set held_baisa=20 where subscription_id='${sub}'`);
+ await sql(`update private.es02_activation_foundation set ai_cost_monthly_limit_baisa=500 where company_id='${company}'`);
+ await assert.rejects(sql(`update public.ai_budget_accounts set limit_baisa=19 where subscription_id='${sub}'`),/AI_BUDGET_BINDING_IMMUTABLE/);
+ await sql(`update public.ai_budget_accounts set limit_baisa=500 where subscription_id='${sub}'`);
+ assert.equal(await sql(`select held_baisa from public.ai_budget_accounts where subscription_id='${sub}'`),'20');
+ await assert.rejects(sql(`update private.es02_activation_foundation set ai_cost_monthly_limit_baisa=600 where company_id='${company}'`),/ES02_COST_POLICY_IMMUTABLE/);
+ await sql(`update private.es02_activation_foundation set ai_cost_enabled=true where company_id='${company}'`);
+ await sql(`update public.ai_budget_accounts set enabled=true where subscription_id='${sub}'`);
+ assert.equal(await sql(`set role service_role;${invoke()}`),'BUDGET_BINDING_CHANGED','ambiguous legacy account remains blocked');
+ console.log('PASS: disabled owner-only budget reduction preserves held funds and blocks increases');
  console.log('PASS: native budget binding, disabled default, scope rejection, immutable limit and role isolation');
 }finally{if(id)await exec('docker',['rm','-f',id],{windowsHide:true}).catch(()=>{});}
