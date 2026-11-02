@@ -42,7 +42,9 @@ export async function executeReservedRealAnswer(input:RealAnswerPayload,deps:{st
  const system=`${buildAnswerSystemPrompt(input.locale,deps.persona)}\n${style}`,prompt=formatAnswerUserPrompt(input.question,input.chunks,input.locale);
  const sourceCitations=input.chunks.map(({sourceId,title,contentVersion})=>({sourceId,title,contentVersion}));
  for(const [index,model] of models.entries()){
-  const id=crypto.randomUUID(),pricing=realModelPricing(model),reservedBaisa=reserveRealCost(model,system,prompt,pricing);
+  // Preserve the existing 2,048-token input overhead while matching the hard
+  // output ceiling actually sent to the provider (including thought tokens).
+  const id=crypto.randomUUID(),pricing=realModelPricing(model),reservedBaisa=reserveRealCost(model,system+" ".repeat(2048),prompt,pricing,maxOutputTokens);
   if(reservedBaisa>maxCostBaisa)return {ok:false as const,error:"TEST_COST_LIMIT_EXCEEDED",attempts};
   let reservation;
   try{reservation=await store.reserve({id,attempt:index+1,model,provider:model==="gemini-3.8-flash"?"google":"openai",reservedBaisa,pricingVersion:pricing.version,pricingSnapshot:pricing,sourceCitations});}
