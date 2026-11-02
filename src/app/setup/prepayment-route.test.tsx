@@ -1,12 +1,14 @@
 import {expect,it,vi} from 'vitest';
-const f=vi.hoisted(()=>({read:vi.fn(()=>{throw new Error('unpaid draft must not be read');})}));
+const f=vi.hoisted(()=>({read:vi.fn(()=>{throw new Error('unpaid draft must not be read');}),access:vi.fn(()=>{throw new Error('public document must not read private account');})}));
 vi.mock('next/headers',()=>({headers:async()=>new Headers()}));
-vi.mock('@/lib/tenancy/access',()=>({getCompanyAccess:async()=>({ok:true,context:{userId:'fixture',company:null,needsCompanyContext:false}}),loginPathForReturn:()=>'/login'}));
+vi.mock('@/lib/tenancy/access',()=>({getCompanyAccess:f.access}));
 vi.mock('@/lib/tenancy/setup-draft-actions',()=>({readSetupFileContext:f.read}));
-vi.mock('@/lib/master-journey/rollout',()=>({masterJourneyEnabled:()=>false}));
-vi.mock('@/components/app/setup-wizard',()=>({SetupWizard:()=>null}));
-vi.mock('@/lib/knowledge/actions',()=>({listKnowledgeSources:vi.fn()}));
-vi.mock('@/lib/tenancy/actions',()=>({getCompanyReviewRequest:vi.fn()}));
+vi.mock('@/components/app/setup-account-entry',()=>({SetupAccountEntry:()=>null}));
 import Page from './page';
-import {PrepaymentPreparation} from '@/components/app/prepayment-preparation';
-it('routes a verified actor without a company to blank preparation before reading drafts',async()=>{const result=await Page();expect(result.type).toBe(PrepaymentPreparation);expect(result.props).toMatchObject({userId:'fixture',variant:'studio'});expect(f.read).not.toHaveBeenCalled();});
+import {SetupAccountEntry} from '@/components/app/setup-account-entry';
+it('serves public preparation entry before any private account or draft read',async()=>{
+ const result=await Page();
+ expect(result.type).toBe(SetupAccountEntry);
+ expect(result.props).toEqual({returnTo:'/setup',preferredNext:''});
+ expect(f.read).not.toHaveBeenCalled();expect(f.access).not.toHaveBeenCalled();
+});
