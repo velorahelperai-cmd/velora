@@ -32,7 +32,7 @@ export async function readOwnedBranchReplyLanguageAction(
   const requestId = randomUUID();
   return withLogContext({ request_id: requestId, user_id: scope?.expectedAccountId }, async () => {
     if (!validScope(scope)) return null;
-    const identity = await readSessionIdentity();
+    const identity = await readSessionIdentity({ readOnly: true });
     if (!identity.ok || identity.userId !== scope.expectedAccountId) return null;
 
     const client = await createClient();

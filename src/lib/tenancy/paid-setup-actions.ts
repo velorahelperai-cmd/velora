@@ -55,7 +55,7 @@ async function readPaidBranchSetup(input: ReadOwnedPaidBranchSetupInput, include
       return paidSetupUnavailable({ companyId: companyId ?? undefined, branchId: branchId ?? undefined, asOf, blockedReasons: ["invalid_input"] });
     }
     try {
-      const identity = await readSessionIdentity();
+      const identity = await readSessionIdentity({ readOnly: true });
       if (!identity.ok || identity.userId !== expectedAccountId) {
         logFailure(identity.ok ? "ACCOUNT_MISMATCH" : identity.code, requestId);
         return paidSetupUnavailable({
@@ -213,7 +213,7 @@ export async function readOwnedPaidBranchSetupEntryAction(input: ReadOwnedPaidBr
       return paidSetupEntryUnavailable({ companyId: companyId ?? undefined, asOf, reasonCodes: ["invalid_input"] });
     }
     try {
-      const identity = await readSessionIdentity();
+      const identity = await readSessionIdentity({ readOnly: true });
       if (!identity.ok || identity.userId !== expectedAccountId) {
         logEntryFailure(identity.ok ? "ACCOUNT_MISMATCH" : identity.code, requestId);
         return paidSetupEntryUnavailable({

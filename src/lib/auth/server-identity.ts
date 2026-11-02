@@ -1,8 +1,14 @@
 import { createBrokerBoundClient, createReadOnlyBrokerClient } from "@/lib/supabase/server";
 import { checkAppSession } from "./session-guard";
 
-export async function readSessionIdentity() {
-  const result=await readIdentity(async () => (await createBrokerBoundClient()).bound);
+export async function readSessionIdentity(options?: { readOnly?: boolean }) {
+  // Only reuse transport inside a verified read operation. That operation must
+  // pass its fresh final broker fence before returning any payload. Outside it,
+  // both resolvers retain the same request-scoped broker resolution behavior.
+  // getUser and checkAppSession below still run for every identity read.
+  const result=await readIdentity(options?.readOnly
+    ? createReadOnlyBrokerClient
+    : async () => (await createBrokerBoundClient()).bound);
   if(!result.ok)return result;
   // Preserve the existing public identity contract; only the scoped reader
   // needs the additional field for the private GET attestation.
