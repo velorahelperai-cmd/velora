@@ -4,7 +4,7 @@ import {useRouter} from 'next/navigation';
 import {useLocalSearchParams} from '@/lib/navigation/use-local-search-params';
 import Link from 'next/link';
 import {useDemo} from '@/lib/demo-state';
-import {readServiceInbox} from '@/lib/customer/service-inbox-actions';
+import {fetchServiceInbox,type ServiceInboxSnapshot} from '@/lib/customer/service-inbox-read';
 import {selectedIncludedChannels} from '@/lib/channels/contract';
 import {refreshWhatsappInboxPage} from '@/lib/whatsapp/inbox-actions';
 import {loadInstagramInboxPage} from '@/lib/instagram/inbox-actions';
@@ -16,7 +16,7 @@ import {Button,EmptyState,Notice,useAppCopy} from './ui';
 import {ChannelBadge} from './channel-badge';
 import {inboxHref,inboxRows,type InboxChannel} from './inbox-presentation';
 import styles from './unified-inbox.module.css';
-type Snapshot=Awaited<ReturnType<typeof readServiceInbox>>;
+type Snapshot=ServiceInboxSnapshot;
 export function UnifiedInbox({initial,waReview=false,igReview=false}:{initial:Snapshot;waReview?:boolean;igReview?:boolean}) {
  const {locale}=useDemo(),ar=locale==='ar',router=useRouter(),copy=useAppCopy();
  // Next's route state can wait behind a pending Server Action. Selection is
@@ -32,7 +32,7 @@ export function UnifiedInbox({initial,waReview=false,igReview=false}:{initial:Sn
  const expected=initial.ok?`${initial.companyId}:${initial.actorId}`:null;
  const refresh=useCallback(async()=>{
   if(busy.current||expected===null)return;busy.current=true;const request=++epoch.current;setRefreshing(true);
-  try{const result=await readServiceInbox();if(!mounted.current||epoch.current!==request)return;
+  try{const [companyId,actorId]=expected.split(':');const result=await fetchServiceInbox({companyId:companyId!,actorId:actorId!});if(!mounted.current||epoch.current!==request)return;
    if(result.ok&&`${result.companyId}:${result.actorId}`!==expected){setSnapshot({ok:false,code:'SCOPE_CHANGED'});setError(true);return;}
    if(!result.ok){setSnapshot(result);setError(true);return;}
    setSnapshot(result);setRetained(old=>({...result,igAllowed:old?.igAllowed===true?true:result.igAllowed,

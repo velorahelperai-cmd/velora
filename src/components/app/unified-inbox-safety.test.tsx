@@ -52,7 +52,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("@/lib/demo-state", () => ({ useDemo: () => ({ locale: state.locale }) }));
-vi.mock("@/lib/customer/service-inbox-actions", () => ({ readServiceInbox: () => state.readServiceInbox() }));
+vi.mock("@/lib/customer/service-inbox-read", () => ({ fetchServiceInbox: () => state.readServiceInbox() }));
 vi.mock("@/lib/whatsapp/inbox-actions", () => ({ refreshWhatsappInboxPage: (args: unknown) => state.refreshWhatsappInboxPage(args) }));
 vi.mock("@/lib/instagram/inbox-actions", () => ({ loadInstagramInboxPage: (args: unknown) => state.loadInstagramInboxPage(args) }));
 vi.mock("@/components/app/workspace-shell", () => ({
