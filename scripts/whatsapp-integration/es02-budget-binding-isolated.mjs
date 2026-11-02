@@ -33,17 +33,19 @@ try{
  return jsonb_build_object('ok',true);end$$;
  create function private.ai_budget_period(timestamptz) returns date language sql immutable as $$select date_trunc('month',$1 at time zone 'Asia/Muscat')::date$$;
  create table public.ai_budget_accounts(id uuid primary key default gen_random_uuid(),scope text,company_id uuid,subscription_id uuid,plan_version_id uuid,limit_baisa numeric,enabled boolean,period_start date,created_at timestamptz default now());
+ alter table public.ai_budget_accounts add constraint ai_budget_version_binding check((scope='admin_test' and subscription_id is null and plan_version_id is null) or (scope='company_live' and ((subscription_id is null and plan_version_id is null) or (subscription_id is not null and plan_version_id is not null))));
  -- Exact production conflict domains, including nullable plan version.
  create unique index ai_budget_company_legacy_unique on public.ai_budget_accounts(company_id,period_start) where scope='company_live' and subscription_id is null;
  create unique index ai_budget_company_version_unique on public.ai_budget_accounts(company_id,period_start,subscription_id,plan_version_id) where scope='company_live' and subscription_id is not null;
  create function private.ai_budget_account_binding() returns trigger language plpgsql as $$begin return new;end$$;
- create trigger budget_binding before insert or update on public.ai_budget_accounts for each row execute function private.ai_budget_account_binding();
+ create trigger ai_budget_account_binding before insert or update on public.ai_budget_accounts for each row execute function private.ai_budget_account_binding();
  create function private.es02_claimed_reply_authority(uuid,uuid) returns jsonb language sql as $$select case when $1='${job}'::uuid and $2='${token}'::uuid then jsonb_build_object('ok',true,'company_id','${company}','order_id','${order}','branch_id','${branch}','slot_index',0,'paid_fingerprint','${fp}','persona','noura','subscription_id','${sub}') else jsonb_build_object('ok',false,'code','CLAIM_REJECTED') end$$;
  create function public.es02_reserve_whatsapp_capacity_cost_attempt(uuid,uuid,uuid,integer,text,text,numeric,text,jsonb,jsonb,text,uuid,uuid,integer,text) returns jsonb language sql as $$select case when exists(select 1 from public.ai_budget_accounts where company_id='${company}' and enabled and period_start=date_trunc('month',clock_timestamp())::date) then jsonb_build_object('code','ORIGINAL_RESERVATION_CALLED') else jsonb_build_object('code','BUDGET_DISABLED') end$$;
  create function private.es02_start_whatsapp_attempt(uuid,uuid) returns boolean language sql as $$select date_trunc('month',clock_timestamp())::date is not null$$;
  insert into public.companies values('${company}');insert into private.es02_account_orders values('${order}');insert into public.billing_subscriptions values('${sub}','${company}','live',null);insert into private.es02_activation_foundation values('${company}','${order}');`);
  await sql(await readFile('supabase/migrations/20261102123735_es02_reply_budget_binding.sql','utf8'));
  await sql(await readFile('supabase/migrations/20261102131427_es02_native_budget_index.sql','utf8'));
+ await sql(await readFile('supabase/migrations/20261102132251_es02_native_budget_constraint.sql','utf8'));
  await sql('grant usage on schema private to service_role;grant select,insert,update on private.es02_activation_foundation to service_role');
  await assert.rejects(sql(`set role service_role;update private.es02_activation_foundation set ai_cost_order_id='${order}',ai_cost_subscription_id='${sub}',ai_cost_monthly_limit_baisa=99999,ai_cost_enabled=true where company_id='${company}'`),/ES02_COST_POLICY_REQUIRES_OWNER/);
  assert.equal(await sql(`set role service_role;${invoke()}`),'BUDGET_DISABLED');
