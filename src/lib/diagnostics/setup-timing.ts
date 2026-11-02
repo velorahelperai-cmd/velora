@@ -1,9 +1,14 @@
 /** Local timing only: fixed labels, no identity, payloads or persistent cache. */
 type SetupStage = 'session_ready' | 'content_visible' | 'usable' | 'entry' | 'workspace' | 'details' | 'owner' | 'initial' | 'connections_before' | 'recheck' | 'connections_after';
+/** Fragment-only opt-in stays in this tab; no storage, request parameter or telemetry endpoint. */
+function timingEnabled() {
+  if (process.env.NODE_ENV === 'development') return true;
+  return typeof window !== 'undefined' && window.location.hash === '#velora-performance';
+}
 export function setupTiming(stage: SetupStage) {
   const started = performance.now();
   const emit = (phase: 'start' | 'end') => {
-    if (process.env.NODE_ENV !== 'development') return;
+    if (!timingEnabled()) return;
     try {
       console.info(JSON.stringify({service:'velora.setup.timing',stage,phase,elapsed_ms:Math.round(performance.now()),duration_ms:Math.round(performance.now()-started)}));
     } catch { /* Measurement never changes authorization or results. */ }
@@ -14,7 +19,7 @@ export function setupTiming(stage: SetupStage) {
 
 /** Observe presentation only, after admission; never reads text, input values or identifiers. */
 export function observeSetupUsable(root:HTMLElement,isCurrent:()=>boolean) {
-  if(process.env.NODE_ENV!=='development')return ()=>{};
+  if(!timingEnabled())return ()=>{};
   let done=false;
   const observer=new MutationObserver(check);
   function check(){

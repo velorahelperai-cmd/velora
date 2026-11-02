@@ -1,0 +1,9 @@
+# Measuring the authenticated setup journey
+
+Open the normal `/setup#velora-performance` route in the intended signed-in account. The exact fragment enables existing fixed-stage console measurements for that tab. Removing it disables subsequent emissions. No cookies, storage, identifiers, page text, input values or telemetry destination are added. Server-side production logging remains unchanged; the fragment is not sent in HTTP requests.
+
+Capture console rows whose `service` is `velora.setup.timing`. `elapsed_ms` uses the current document's performance clock. `duration_ms` measures an individual stage invocation. Compare cold document loads separately from client-side returns; an elapsed value on a return is not time since the navigation click. Repeated stages can represent refreshes and are not automatically duplicates.
+
+`session_ready` and `content_visible` are React lifecycle observations, not browser paint measurements. `usable` means an admitted, non-hidden connection view has an enabled control; it does not establish successful connection, complete data readiness or save success. `entry` and `workspace` completion can include failed reads, so verify rendered results and errors alongside the timing. Never infer customer acceptance from these rows alone.
+
+Record the deployed commit, route, selected account/branch privately, viewport actually reported by the browser, network conditions, first load versus return, visible data and interaction outcome. Use server read-performance logs separately to explain the duration; do not substitute them for click-to-data latency. Report sample counts and individual observations before claiming a percentile. A viewport override that does not take effect, unavailable screenshot or unsupported network throttling is missing evidence, not a passing mobile/slow-network test.
