@@ -20,7 +20,8 @@ vi.mock("./account-chrome", () => ({
   }),
 }));
 vi.mock("@/lib/demo-state", () => ({ useDemo: () => ({ locale: "en" }) }));
-vi.mock("./ui", () => ({ LangSwitch: () => null }));
+vi.mock("./ui", async importOriginal => ({...await importOriginal<typeof import('./ui')>(), LangSwitch: () => null }));
+vi.mock('next/navigation',()=>({usePathname:()=>'/setup'}));
 const slots = [{ label: { name: "Main", city: "Muscat" }, persona: "level_1" as const, package: "basic" as const }];
 const model = buildReviewModel(slots, "monthly");
 const view = (over: Partial<ViewProps> = {}) => renderToStaticMarkup(createElement(SetupOrderReviewView, {
@@ -41,7 +42,10 @@ describe("current first-business presentation boundaries after legacy removal", 
   });
   it("does not expose editable preparation while identity is unready or mismatched", () => {
     session.ready = false;
-    expect(preparation()).not.toContain('role="form"');
+    const pending=preparation();
+    expect(pending).not.toContain('role="form"');
+    expect(pending).not.toContain('role="status"');
+    expect(pending).toContain('Set up your assistant');
     session.ready = true; session.userId = "other";
     expect(preparation()).not.toContain('role="form"');
   });
