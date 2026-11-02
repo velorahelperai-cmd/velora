@@ -2,7 +2,13 @@ import { createBrokerBoundClient, createReadOnlyBrokerClient } from "@/lib/supab
 import { checkAppSession } from "./session-guard";
 
 export async function readSessionIdentity() {
-  return readIdentity(async () => (await createBrokerBoundClient()).bound);
+  const result=await readIdentity(async () => (await createBrokerBoundClient()).bound);
+  if(!result.ok)return result;
+  // Preserve the existing public identity contract; only the scoped reader
+  // needs the additional field for the private GET attestation.
+  const {contextGeneration,...identity}=result;
+  void contextGeneration;
+  return identity;
 }
 
 /** Only for an operation that withholds its result until the verified read
