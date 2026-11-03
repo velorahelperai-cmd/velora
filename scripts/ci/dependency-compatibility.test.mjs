@@ -3,7 +3,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile,mkdtemp,mkdir,writeFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
-import {join,resolve} from 'node:path';
+import {join,resolve,dirname} from 'node:path';
+import {runInNewContext} from 'node:vm';
 import {createRequire} from 'node:module';
 import {spawnSync} from 'node:child_process';
 import {isolatedEnvironment} from './safety.mjs';
@@ -11,6 +12,7 @@ import {isolatedEnvironment} from './safety.mjs';
 test('resolved dependencies remove both known vulnerable implementations',async()=>{
  const lock=JSON.parse(await readFile(new URL('../../package-lock.json',import.meta.url),'utf8'));
  assert.equal(Object.keys(lock.packages).some(path=>/(?:^|\/)node_modules\/(?:braces|sprintf-js)$/.test(path)),false);
+ for(const [path,pkg] of Object.entries(lock.packages)){if(path.endsWith('/minimatch'))assert.equal(pkg.version,'11.0.1',path);}
 });
 
 test('Next lint still discovers root directory globs and rejects internal HTML links',async()=>{
@@ -60,4 +62,21 @@ test('patched lint glob consumers remain callable and reject disallowed imports'
  const text="import x from 'foo/private';\nimport y from './module.js';\nconst A=()=> <><Bad_name/><label><CustomInput /></label></>;";
  const messages=linter.verify(text,config,{filename:resolve('src/test.jsx')});
  assert.deepEqual(messages.map(({ruleId})=>ruleId),['import/no-internal-modules','import/extensions','react/jsx-pascal-case','jsx-a11y/label-has-associated-control']);
+});
+
+// Exercise the actual patched rule against legacy callable and current
+// namespace CommonJS APIs. The rule must still report an extension violation in either case.
+test('patched import/extensions accepts callable and namespace minimatch exports',async()=>{
+ const require=createRequire(import.meta.url),file=require.resolve('eslint-plugin-import/lib/rules/extensions');
+ const nativeRequire=createRequire(file),source=await readFile(file,'utf8');
+ const namespace=require('minimatch'),callable=Object.assign((...args)=>namespace.minimatch(...args),namespace);
+ const matchers=[callable,nativeRequire('minimatch')];
+ assert.equal(typeof matchers[0],'function');assert.equal(typeof matchers[1].minimatch,'function');
+ const {Linter}=require('eslint');
+ for(const matcher of matchers){
+  const ruleModule={exports:{}};
+  runInNewContext(source,{module:ruleModule,exports:ruleModule.exports,require:name=>name==='minimatch'?matcher:nativeRequire(name),__filename:file,__dirname:dirname(file)},{filename:file});
+  const messages=new Linter().verify("import value from './module.js';",{files:['**/*.js'],plugins:{import:{rules:{extensions:ruleModule.exports}}},rules:{'import/extensions':['error',{pathGroupOverrides:[{pattern:'**/*.js',action:'enforce'}]}]}},{filename:resolve('src/compatibility.js')});
+  assert.deepEqual(messages.map(({ruleId})=>ruleId),['import/extensions']);
+ }
 });

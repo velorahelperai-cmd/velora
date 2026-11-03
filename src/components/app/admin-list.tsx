@@ -4,7 +4,7 @@ import { useDemo } from "@/lib/demo-state";
 import overviewStyles from "./admin-overview.module.css";
 import Link from "next/link";
 import {adminCompanyHref,companyListReturnHref,type CompanyListFilters} from "./admin-company-navigation";
-import { BentoGrid, BentoCard, BorderBeam, FiveRowGrid } from "@/components/app/magic-ui";
+import { BentoCard, FiveRowGrid } from "@/components/app/magic-ui";
 import { broadSectorLabel, broadSectors, preservedDetailedTypeLabel } from "@/lib/business-sectors";
 import {AdminRealAISummary} from "@/components/admin/admin-real-ai-summary";
 import {readAdminTruth,type AdminTruth} from "@/lib/answers/runtime/admin-truth";
@@ -30,15 +30,8 @@ import {
   normalizeAdminAccountQuery,
 } from "@/lib/tenancy/types";
 import {
-  IconBuilding,
-  IconCheckCircle,
-  IconCreditCard,
-  IconDashboard,
   IconRefresh,
-  IconRocket,
   IconSearch,
-  IconSparkles,
-  IconUsers,
 } from "@/components/admin/admin-icons";
 
 const ACCOUNT_PAGE_SIZE = 20;
@@ -863,7 +856,7 @@ export function AdminList({
 
   const companyMap = useMemo(() => new Map(rows.map((r) => [r.id, r])), [rows]);
 
-  function getAccountSubscriptionStatus(account: AdminAccountSearchItem): "active" | "setup" | "none" {
+  const getAccountSubscriptionStatus = useMemo(() => (account: AdminAccountSearchItem): "active" | "setup" | "none" => {
     for (const c of account.companies) {
       const comp = companyMap.get(c.company_id);
       const status = c.company_status || comp?.status;
@@ -875,7 +868,7 @@ export function AdminList({
       if (status === "setup") return "setup";
     }
     return "none";
-  }
+  }, [companyMap]);
 
   function getAccountLocation(account: AdminAccountSearchItem): string | null {
     for (const c of account.companies) {
@@ -919,7 +912,7 @@ export function AdminList({
     }
 
     return list;
-  }, [accountRows, accountFilter, accountSort, companyMap, isRtl]);
+  }, [accountRows, accountFilter, accountSort, getAccountSubscriptionStatus, isRtl]);
 
   function switchTab(tab: AdminTab) {
     setActiveTab(tab);
