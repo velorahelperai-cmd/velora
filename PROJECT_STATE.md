@@ -1,3 +1,38 @@
+# Current Session Index — INBOX FALSE SCOPE_CHANGED / DEPLOYED & PRODUCTION VERIFIED (2026-11-03)
+
+## False SCOPE_CHANGED Rejection Resolution — DEPLOYED & PRODUCTION VERIFIED (2026-11-03 17:20 Oman / 13:20 UTC)
+- **Status:** **DEPLOYED & PRODUCTION VERIFIED — AWAITING NEXT INSTRUCTIONS**.
+- **Issue:** Opening or refreshing `/app/conversations` intermittently displayed false security warning: «تغيّرت الجلسة أو مساحة العمل. حدّث الصفحة للتحقق قبل المتابعة.».
+- **Root Cause Confirmed:**
+  - `readServiceInboxData` in `src/lib/customer/service-inbox-actions.ts` called `readCompanyChannelContract` twice: once before native row loads and once after.
+  - It compared the two results using `JSON.stringify(await readCompanyChannelContract(company.id)) !== JSON.stringify(channelContract)`.
+  - When either read experienced transient network/RPC latency, it caught the error and returned `null`.
+  - Comparing `JSON.stringify(null)` against an object evaluated to true, misclassifying a transient read failure as a security breach (`code: 'SCOPE_CHANGED'`).
+- **Minimal Central Fix Landed:**
+  - `src/lib/channels/contract.ts`: Created `hasChannelScopeChanged` which stably verifies only security-impacting properties (companyId, planVersionId, selection revision, selected channels, entitlements status, channelCount, subscription state) while ignoring volatile timestamp formatting.
+  - `src/lib/customer/service-inbox-actions.ts`:
+    - Replaced `JSON.stringify` comparison.
+    - Added check `(channelContract === null) !== (finalContract === null)`: transient network/RPC failure returns retryable `UNAVAILABLE` instead of false `SCOPE_CHANGED`.
+    - Genuine commercial scope changes continue to return `SCOPE_CHANGED` immediately.
+- **Commit & Deployment Parity:**
+  - Commit: `186590c`: `fix(inbox): prevent false SCOPE_CHANGED rejection on transient channel contract reads`
+  - Vercel Deployment: `dpl_2GRG8ukpp89qVwKV6dia2QmZM9De` (● Ready, 1m 4s build duration).
+  - Hosted Aliases: `https://www.velorahelper.com`, `https://velora-orpin-xi.vercel.app`.
+- **Targeted Verification Evidence:**
+  - `contract.test.ts`: 10/10 PASS.
+  - `service-inbox-actions.test.ts`: 17/17 PASS.
+  - Full Inbox & Customer Test Suites: 16 test files / 137 tests PASS.
+  - TypeScript Check (`tsc --noEmit`): PASS (0 errors).
+  - Next.js Turbopack Production Build (`next build`): PASS (60/60 routes compiled).
+- **Independent Observability Issue Recorded:**
+  - Database latency / statement timeout `57014` on heavy capability/inbox RPCs tracked independently as performance optimization; not conflated with session/scope validity.
+- **Strict Guardrails Maintained:**
+  - Channel Entitlements migration was NOT deployed (paused as instructed).
+  - Rollback script moved to `supabase/rollbacks/20261103170000_channel_entitlements_live_resolution.rollback.sql`.
+  - Database schema unmodified on production.
+  - WhatsApp Worker remains DISABLED; NO external messages sent.
+
+
 # Current Session Index — P0 GLOBAL ACCOUNT IDENTITY FAILURE / DEPLOYED & PRODUCTION VERIFIED (2026-11-03)
 
 ## P0 Global Account Identity Failure — DEPLOYED & PRODUCTION VERIFIED (2026-11-03 16:32 Oman / 12:32 UTC)
