@@ -998,11 +998,11 @@ it('manual retry button recovers from error to ready with loading feedback and w
  await render().refresh();
  expect(render().status).toBe('error');
  const tree=renderTree();
- const kids=(tree.props.children as {props:{children:unknown[]}}).props.children;
+ const kids=(tree.props.children as {props:{children:{type:string;props:{onClick:()=>Promise<void>}}[]}}).props.children;
  const button=Array.isArray(kids)?kids[1]:null;
  expect(button?.type).toBe('button');
  state.read.mockResolvedValue({ok:true,data:profile()});
- await button.props.onClick();
+ await button?.props.onClick();
  expect(render().status).toBe('ready');
  expect(render().identity?.userId).toBe('user-a');
  expect(state.reload).not.toHaveBeenCalled();
