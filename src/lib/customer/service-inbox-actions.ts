@@ -4,7 +4,7 @@ import {sessionHasCompanyCapability} from '@/lib/access/actions';
 import {loadWhatsappInboxInitialPage} from '@/lib/whatsapp/inbox';
 import {loadInstagramInboxPage} from '@/lib/instagram/inbox-actions';
 import {readCompanyChannelContract} from '@/lib/channels/read';
-import {channelOperationAllowed} from '@/lib/channels/contract';
+import {channelOperationAllowed,hasChannelScopeChanged} from '@/lib/channels/contract';
 import {traceRead,measureRead} from '@/lib/diagnostics/read-performance';
 import {runWithReadScope} from '@/lib/supabase/read-scope';
 /** Presentation aggregation only. Native channel stores still enforce session,
@@ -37,7 +37,9 @@ async function readServiceInboxData() {
   if(!current.ok)return {ok:false as const,code:current.code==='UNAVAILABLE'?'UNAVAILABLE' as const:'SCOPE_CHANGED' as const};
   if(current.context.userId!==userId||current.context.company?.id!==company.id||current.context.membership?.role!==membership.role)
    return {ok:false as const,code:'SCOPE_CHANGED' as const};
-  if(JSON.stringify(await readCompanyChannelContract(company.id))!==JSON.stringify(channelContract))return {ok:false as const,code:'SCOPE_CHANGED' as const};
+  const finalContract=await readCompanyChannelContract(company.id);
+  if((channelContract===null)!==(finalContract===null))return {ok:false as const,code:'UNAVAILABLE' as const};
+  if(channelContract&&finalContract&&hasChannelScopeChanged(channelContract,finalContract))return {ok:false as const,code:'SCOPE_CHANGED' as const};
   if(wa.ok&&wa.meta.companyId!==company.id||ig.ok&&ig.data.companyId!==company.id||ig.ok&&ig.data.actorId!==userId)
    return {ok:false as const,code:'SCOPE_CHANGED' as const};
   return {ok:true as const,companyId:company.id,actorId:userId,owner:membership.role==='owner',

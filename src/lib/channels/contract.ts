@@ -31,3 +31,16 @@ export function channelOperationAllowed(c:ChannelContract,ch:Channel,op:'read'|'
  if(op==='automate'&&c.subscription.operationalReady!==undefined&&(!c.subscription.operationalReady||!c.subscription.operationalReadyChannels?.includes(ch)))return false;
  return c.subscription.state==='active'||op==='read'&&c.subscription.state==='grace'||c.subscription.state==='awaiting_activation'&&(op==='read'||op==='connect'||op==='send');
 }
+/** Security-impacting scope verification. Structural changes to plan, version, revision or selection invalidate loaded rows. */
+export function hasChannelScopeChanged(a:ChannelContract,b:ChannelContract):boolean {
+ if(a.companyId!==b.companyId)return true;
+ if(a.planVersionId!==b.planVersionId)return true;
+ if(a.selected_channels.revision!==b.selected_channels.revision)return true;
+ if(a.selected_channels.planVersionId!==b.selected_channels.planVersionId)return true;
+ if(a.plan_entitlements.status!==b.plan_entitlements.status)return true;
+ if(a.plan_entitlements.status==='approved'&&b.plan_entitlements.status==='approved'&&a.plan_entitlements.channelCount!==b.plan_entitlements.channelCount)return true;
+ if(a.subscription.state!==b.subscription.state)return true;
+ const ac=a.selected_channels.channels,bc=b.selected_channels.channels;
+ if(ac.length!==bc.length)return true;
+ return ac.some((c,i)=>c!==bc[i]);
+}

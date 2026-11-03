@@ -1,5 +1,5 @@
 import {expect,it} from 'vitest';
-import {channelOperationAllowed,parseChannelContract,selectedIncludedChannels,type ChannelContract} from './contract';
+import {channelOperationAllowed,hasChannelScopeChanged,parseChannelContract,selectedIncludedChannels,type ChannelContract} from './contract';
 const c=(count:1|2=1,channels:('whatsapp'|'instagram')[]=['instagram']):ChannelContract=>({companyId:'a',planVersionId:'v1',plan_entitlements:{status:'approved',channelCount:count},selected_channels:{planVersionId:'v1',revision:1,channels},subscription:{state:'active',expiresAt:'2026-11-01T00:00:00Z'}});
 it('a single included channel is the explicit customer choice, independent of its price or provider link',()=>{expect(selectedIncludedChannels(c())).toEqual(['instagram']);expect(channelOperationAllowed(c(),'whatsapp','read')).toBe(false);});
 it('two channels require both selections',()=>{expect(selectedIncludedChannels(c(2,['whatsapp','instagram']))).toEqual(['whatsapp','instagram']);expect(selectedIncludedChannels(c(2))).toEqual([]);});
@@ -10,3 +10,14 @@ it('rejects another business, duplicate channels, malformed dates and guessed ch
 it('paid waiting enables authorized human setup sends while automation remains closed',()=>{const s=c();s.subscription={state:'awaiting_activation',expiresAt:null,operationalReady:false,operationalReadyChannels:[]};expect(channelOperationAllowed(s,'instagram','send')).toBe(true);expect(channelOperationAllowed(s,'instagram','automate')).toBe(false);expect(channelOperationAllowed(s,'whatsapp','send')).toBe(false);});
 it('one physically ready selected channel cannot unlock automation on another',()=>{const s=c(2,['whatsapp','instagram']);s.subscription.operationalReady=true;s.subscription.operationalReadyChannels=['instagram'];expect(channelOperationAllowed(s,'instagram','automate')).toBe(true);expect(channelOperationAllowed(s,'whatsapp','automate')).toBe(false);expect(channelOperationAllowed(s,'whatsapp','send')).toBe(true);s.subscription.operationalReady=false;expect(channelOperationAllowed(s,'instagram','automate')).toBe(false);});
 it('rejects malformed operational readiness projections',()=>{expect(parseChannelContract({...c(),subscription:{...c().subscription,operationalReady:'true'}},'a')).toBeNull();expect(parseChannelContract({...c(),subscription:{...c().subscription,operationalReady:true,operationalReadyChannels:['email']}},'a')).toBeNull();});
+it('detects security-impacting channel scope changes while ignoring volatile timestamps',()=>{
+ const base=c(1,['whatsapp']);
+ expect(hasChannelScopeChanged(base,{...base,subscription:{...base.subscription,expiresAt:'2026-12-09T14:25:52Z'}})).toBe(false);
+ expect(hasChannelScopeChanged(base,{...base,companyId:'other'})).toBe(true);
+ expect(hasChannelScopeChanged(base,{...base,planVersionId:'v2'})).toBe(true);
+ expect(hasChannelScopeChanged(base,{...base,selected_channels:{...base.selected_channels,revision:2}})).toBe(true);
+ expect(hasChannelScopeChanged(base,{...base,selected_channels:{...base.selected_channels,channels:['instagram']}})).toBe(true);
+ expect(hasChannelScopeChanged(base,{...base,plan_entitlements:{status:'UNCONFIGURED'}})).toBe(true);
+ expect(hasChannelScopeChanged(base,{...base,plan_entitlements:{status:'approved',channelCount:2}})).toBe(true);
+ expect(hasChannelScopeChanged(base,{...base,subscription:{...base.subscription,state:'locked'}})).toBe(true);
+});
