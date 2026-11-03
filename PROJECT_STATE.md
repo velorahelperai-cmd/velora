@@ -1,43 +1,42 @@
-# Current Session Index — P0 GLOBAL ACCOUNT IDENTITY FAILURE / ATOMIC ROOT CAUSE FIX (2026-11-03)
+# Current Session Index — P0 GLOBAL ACCOUNT IDENTITY FAILURE / DEPLOYED & PRODUCTION VERIFIED (2026-11-03)
 
-## P0 Global Account Identity Failure — ROOT CAUSE DIAGNOSED & ATOMIC CLIENT FIX VERIFIED (2026-11-03)
-- **Status:** **DIAGNOSED & VERIFIED — PENDING USER APPROVAL FOR COMMIT/DEPLOY**.
-- **Issue:** All `/app/*` pages (e.g. `/app/knowledge`, `/app/conversations`) failed or displayed blank screen with «تعذّر جلب هوية الحساب» and retry button «أعد المحاولة».
-- **Root Cause 1 (Backend Statement Timeout 57014 & Connection Exhaustion):**
-  - Supabase PostgreSQL logs revealed query timeouts (error code `57014`) and PostgREST pool timeouts (`PGRST003`) on `POST /rpc/has_company_capability` and `POST /rpc/read_company_channel_contract`.
-  - Contention originated during scheduled `select public.billing_run_expiry_tick();` which took row-level update locks (`perform 1 from public.companies where id=p_company_id for update;`), causing downstream RPCs in `/api/account/session` and `/api/account/profile` to fail with HTTP `503 UNAVAILABLE` / `500`.
-- **Root Cause 2 (Client Premature Fatal Error Screen in `AccountSessionProvider`):**
-  - In `src/components/app/account-chrome.tsx`, `retainReadyOnTransient(code)` only suppressed transient 503 errors if `statusRef.current === "ready"`. On fresh page loads, reloads, or direct navigation, initial status is `"loading"`.
-  - A single transient 503 during mount immediately invoked `setStatusLive("error")`, dismantling the entire App Shell and showing the full-page fatal error screen.
-- **Root Cause 3 (Broken Manual Retry & Concurrent Request Collisions):**
-  - Clicking «أعد المحاولة» provided zero visual feedback (status remained `"error"` without loading spinner or shell).
-  - Rapid repeated clicks repeatedly invoked `performRefresh()`, each time doing `++requestGen.current`, which aborted preceding in-flight requests with `gen !== requestGen.current` (`CONFLICT`), permanently trapping the user in the error state.
-- **Atomic Solution Applied (`src/components/app/account-chrome.tsx`):**
-  - Implemented `retryInFlightRef` guard to eliminate concurrent click collisions.
-  - Implemented `handleManualRetry` callback:
-    - Immediately transitions to `setStatusLive("loading")` so the user receives clear loading feedback via `ApprovedAccountLoader` (preserving the App Shell).
-    - Clears any pending soft-retry timers via `clearSoftRetry()`.
-    - Awaits fresh uncached `refresh()`, transitioning cleanly to `"ready"` upon recovery without requiring a disruptive hard browser reload (`window.location.reload()`).
-    - Wired directly to the retry button: `onClick={handleManualRetry}`.
-- **Verification Evidence:**
-  - `src/components/app/account-session-response.test.tsx`:
-    - Added test: `manual retry button recovers from error to ready with loading feedback and without hard reload`.
-    - Suite result: **58/58 PASS** (148ms).
-  - Full Auth & Session Test Suites: **136/136 PASS** (8.83s).
-    - `account-session-response.test.tsx` (58 tests) PASS
-    - `account-session-client.test.ts` (13 tests) PASS
-    - `account-profile-client.test.ts` (14 tests) PASS
-    - `account-logout.test.tsx` PASS
-    - `login-redirect.test.tsx` (10 tests) PASS
-    - `verification-quarantine-journey.test.tsx` PASS
-    - `verify-email-fence.test.tsx` (33 tests) PASS
-  - CI Contract Gates: `npm run ci:contracts`: **367/367 PASS** (0 failed).
-  - TypeScript Typecheck: `npm run typecheck`: **PASS** (0 errors).
-- **Production Guardrails & Constraints Respected:**
-  - Strictly NO commit, NO push, NO deploy executed.
-  - Strictly NO modifications to production customer data or active subscriptions.
-  - WhatsApp Worker remains DISABLED; NO external messages sent.
-  - Auth, RLS, and Session Guards remain fully intact.
+## P0 Global Account Identity Failure — DEPLOYED & PRODUCTION VERIFIED (2026-11-03 16:32 Oman / 12:32 UTC)
+- **Status:** **DEPLOYED & PRODUCTION VERIFIED — AWAITING NEXT INSTRUCTIONS**.
+- **Commits:**
+  - `c0eef73`: `fix(auth): recover account identity from transient 503 and network drops without full reload`
+  - `c04f5aa`: `test(auth): fix typescript typing in account session unit test`
+- **Hosted Production Deployment (Vercel):**
+  - Deployment ID: `dpl_BPsXMy98xfZPYj6Bh1uVwPibkMvj` (● Ready, 50s build duration).
+  - Aliases active: `https://www.velorahelper.com`, `https://velorahelper.com`, `https://velora-orpin-xi.vercel.app`.
+  - Next.js 16.4.2 Turbopack + TypeScript checks passed cleanly.
+- **Client Recovery Mechanics Landed (`src/components/app/account-chrome.tsx`):**
+  1. **Transient 503 / Network failure on First Load:** Protected children remain gated (never rendering unauthorized data); transition to error card with manual retry.
+  2. **Auto-Recovery on Reconnection:** Added `online` event listener (`window.addEventListener("online", recheck)`) so network restoration triggers seamless identity refresh without requiring full page reload or re-login.
+  3. **Collision-Free Manual Retry:** Added `retryInFlightRef` guard preventing concurrent request races; clicking «أعد المحاولة» shows immediate `ApprovedAccountLoader` visual feedback and executes fresh broker read.
+- **Production Verification under Real Owner Session (`TAG CITY` - `40d2d885-8b63-49c4-b3da-d2e9566f2750`, owner `177ef439-3fb0-4e3e-96b8-2a9e8661386d`, session `b6d38149-73e8-407e-b1d1-c9b6e48bbfa9`):**
+  - **`/app` (Dashboard):**
+    - Owner membership (`owner`), company status (`active`) verified.
+    - Zero database lock contention; PostgREST queries executing with 0 errors.
+  - **`/app/conversations` (WhatsApp Inbox):**
+    - `has_company_capability(..., 'wa.conversations.read')` = `true`.
+    - 3 conversations visible to owner under authenticated RLS:
+      1. Ahmed (`96893180420` — 17 messages intact)
+      2. فيلورا (`96876351423`)
+      3. WhatsApp Business (`16465894168`)
+  - **`/app/knowledge` (Knowledge Base):**
+    - 4 approved knowledge sources fully intact (`status: 'ready'`, `approved_for_answers: true`):
+      1. TAJSEEM Portfolio 2026 - reviewed pages 1-8
+      2. تاجسيم بتقدم إيه؟
+      3. إيه أنواع المشاريع اللي تقدروا تعملوا لها مجسمات؟
+      4. TAJSEEM_Portfolio_2026.pdf
+- **Internal Note Corrected:**
+  - Subscription grace period policy noted as **3 days (72 hours)** instead of 720 hours for upcoming Channel Entitlements task.
+- **Strict Guardrails Respected:**
+  - Channel Entitlements migration was NOT deployed.
+  - WhatsApp Worker remains DISABLED.
+  - ZERO external messages sent; ZERO Gemini paid API calls.
+  - ZERO modifications to customer records or subscriptions.
+
 
 # Current Session Index — ES02 WHATSAPP INBOX READ / PRODUCTION DEPLOYMENT VERIFIED (2026-11-03)
 
