@@ -24,7 +24,8 @@ export function UnifiedInbox(props:{initial:Snapshot;waReview?:boolean;igReview?
  const account=useOptionalAccountSession(),workspace=useWorkspaceBootstrap();
  const {initial}=props;
  const mismatch=initial.ok&&((account&&(account.status!=='ready'||account.identity?.userId!==initial.actorId))||(workspace&&(workspace.identity.userId!==initial.actorId||workspace.workspace.selectedCompanyId!==initial.companyId)));
- const admitted=mismatch?{ok:false as const,code:'SCOPE_CHANGED' as const}:initial;
+ const unavailable=initial.ok&&((!initial.wa.ok&&initial.wa.code==='UNAVAILABLE')||(!initial.ig.ok&&initial.ig.code==='UNAVAILABLE'));
+ const admitted=mismatch?{ok:false as const,code:'SCOPE_CHANGED' as const}:unavailable?{ok:false as const,code:'UNAVAILABLE' as const}:initial;
  const key=admitted.ok?`${admitted.companyId}:${admitted.actorId}:${account?.boundaryFingerprint??''}:${admitted.waAllowed}:${admitted.igAllowed}:${admitted.wa.ok?admitted.wa.page.membershipFingerprint:''}:${admitted.ig.ok?admitted.ig.data.conversationScope:''}`:admitted.code;
  return <ScopedUnifiedInbox key={key} {...props} initial={admitted}/>;
 }
@@ -50,18 +51,17 @@ function ScopedUnifiedInbox({initial,waReview=false,igReview=false}:{initial:Sna
   queuedRefresh.current=false;busy.current=true;const request=++epoch.current;setRefreshing(true);
   try{const [companyId,actorId]=expected.split(':');const result=await fetchServiceInbox({companyId:companyId!,actorId:actorId!});if(!mounted.current||epoch.current!==request)return;
    if(result.ok&&`${result.companyId}:${result.actorId}`!==expected){setRetained(null);setSnapshot({ok:false,code:'SCOPE_CHANGED'});setError(true);return;}
-   if(!result.ok){if(result.code!=='UNAVAILABLE')setRetained(null);setSnapshot(result);setError(true);return;}
-   setSnapshot(result);setRetained(old=>({...result,
-    wa:result.wa.ok&&old?.wa.ok&&result.wa.page.membershipFingerprint===old.wa.page.membershipFingerprint?{...result.wa,page:{...result.wa.page,conversations:mergeInboxPageRows(old.wa.page.conversations,result.wa.page.conversations)},conversations:mergeInboxPageRows(old.wa.page.conversations,result.wa.page.conversations)}:result.wa,
-    ig:result.ig,
-   }));setRefreshVersion(n=>n+1);setError(false);
-  }catch{if(mounted.current&&epoch.current===request){setSnapshot({ok:false,code:'UNAVAILABLE'});setError(true);}}
+   if(!result.ok){setRetained(null);setSnapshot(result);setError(true);return;}
+   // Replace cached pages: stable identity is not proof of old assignments.
+   if((!result.wa.ok&&result.wa.code==='UNAVAILABLE')||(!result.ig.ok&&result.ig.code==='UNAVAILABLE')){setRetained(null);setSnapshot({ok:false,code:'UNAVAILABLE'});setError(true);return;}
+   setSnapshot(result);setRetained(result);setRefreshVersion(n=>n+1);setError(false);
+  }catch{if(mounted.current&&epoch.current===request){setRetained(null);setSnapshot({ok:false,code:'UNAVAILABLE'});setError(true);}}
   finally{busy.current=false;if(mounted.current&&epoch.current===request){setRefreshing(false);if(queuedRefresh.current&&document.visibilityState==='visible')void refreshRef.current();}}
  },[expected]);
  useEffect(()=>{refreshRef.current=refresh;},[refresh]);
  const onInboxEvent=useCallback((event:InboxRealtimeEvent)=>{
   if(accessRevoked.current)return;
-  if(event.type==='unavailable'){live.current=false;setSnapshot({ok:false,code:'UNAVAILABLE'});setError(true);return;}
+  if(event.type==='unavailable'){live.current=false;queuedRefresh.current=false;if(eventTimer.current!==null)clearTimeout(eventTimer.current);eventTimer.current=null;epoch.current++;setRefreshing(false);setMoreLoading(null);setRetained(null);setSnapshot({ok:false,code:'UNAVAILABLE'});setError(true);return;}
   if(event.type==='revoked'){accessRevoked.current=true;setRevoked(true);live.current=false;queuedRefresh.current=false;if(eventTimer.current!==null)clearTimeout(eventTimer.current);eventTimer.current=null;epoch.current++;setRetained(null);setSnapshot({ok:false,code:'SCOPE_CHANGED'});setError(true);return;}
   if(event.type==='ready'||event.type==='reconnect')live.current=true;
   if(document.visibilityState!=='visible'){queuedRefresh.current=true;return;}
@@ -71,7 +71,7 @@ function ScopedUnifiedInbox({initial,waReview=false,igReview=false}:{initial:Sna
   const onVisible=()=>{if(document.visibilityState==='visible')void refresh();};document.addEventListener('visibilitychange',onVisible);
   return()=>{mounted.current=false;fence.current++;queuedRefresh.current=false;if(eventTimer.current!==null)clearTimeout(eventTimer.current);eventTimer.current=null;window.clearInterval(timer);document.removeEventListener('visibilitychange',onVisible);};
  },[refresh]);
- const activeSource=snapshot.ok?snapshot:snapshot.code==='UNAVAILABLE'&&retained&&`${retained.companyId}:${retained.actorId}`===expected?retained:null;
+ const activeSource=snapshot.ok?snapshot:null;
  const readSuspended=!snapshot.ok;
  const channels:InboxChannel[]=activeSource&&activeSource.channelContract?(activeSource.channelContract.plan_entitlements.status==='UNCONFIGURED'
   ?([activeSource.waAllowed===true?'whatsapp':null,activeSource.igAllowed===true?'instagram':null].filter(Boolean) as InboxChannel[])
@@ -108,15 +108,15 @@ function ScopedUnifiedInbox({initial,waReview=false,igReview=false}:{initial:Sna
   const cursor=channel==='whatsapp'&&wa.ok?wa.page.nextCursor:channel==='instagram'&&ig.ok?ig.data.nextCursor:null;
   if(!cursor)return;busy.current=true;setMoreLoading(channel);const request=++epoch.current;
   try{if(channel==='whatsapp'&&wa.ok){const result=await refreshWhatsappInboxPage({companyId:retained.companyId,before:cursor});if(!mounted.current||request!==epoch.current)return;
-   if(!result.ok){if(result.code!=='UNAVAILABLE')setRetained(null);setSnapshot({ok:false,code:result.code==='UNAVAILABLE'?'UNAVAILABLE':'SCOPE_CHANGED'});setError(true);return;}
+   if(!result.ok){setRetained(null);setSnapshot({ok:false,code:result.code==='UNAVAILABLE'?'UNAVAILABLE':'SCOPE_CHANGED'});setError(true);return;}
    if(result.data.companyId!==retained.companyId||result.data.membershipFingerprint!==wa.page.membershipFingerprint){setRetained(null);setSnapshot({ok:false,code:'SCOPE_CHANGED'});setError(true);return;}
    setRetained(old=>old?.wa.ok?{...old,wa:{...old.wa,page:{...result.data,conversations:mergeInboxPageRows(old.wa.page.conversations,result.data.conversations)},conversations:mergeInboxPageRows(old.wa.page.conversations,result.data.conversations)}}:old);
   }else if(channel==='instagram'&&ig.ok){const result=await loadInstagramInboxPage({companyId:retained.companyId,cursor});if(!mounted.current||request!==epoch.current)return;
-   if(!result.ok){if(result.code!=='UNAVAILABLE')setRetained(null);setSnapshot({ok:false,code:result.code==='UNAVAILABLE'?'UNAVAILABLE':'SCOPE_CHANGED'});setError(true);return;}
+   if(!result.ok){setRetained(null);setSnapshot({ok:false,code:result.code==='UNAVAILABLE'?'UNAVAILABLE':'SCOPE_CHANGED'});setError(true);return;}
    if(result.data.companyId!==retained.companyId||result.data.actorId!==retained.actorId){setRetained(null);setSnapshot({ok:false,code:'SCOPE_CHANGED'});setError(true);return;}
    if(result.data.conversationScope!==ig.data.conversationScope){setRetained(null);setSnapshot({ok:false,code:'SCOPE_CHANGED'});setError(true);return;}
    setRetained(old=>old?.ig.ok?{...old,ig:{...old.ig,data:{...result.data,conversations:[...old.ig.data.conversations,...result.data.conversations.filter(c=>old.ig.ok&&!old.ig.data.conversations.some(existing=>existing.id===c.id))]}}}:old);
-  }}catch{if(mounted.current&&request===epoch.current){setSnapshot({ok:false,code:'UNAVAILABLE'});setError(true);}}
+  }}catch{if(mounted.current&&request===epoch.current){setRetained(null);setSnapshot({ok:false,code:'UNAVAILABLE'});setError(true);}}
   finally{busy.current=false;if(mounted.current&&epoch.current===request){setMoreLoading(null);if(queuedRefresh.current&&document.visibilityState==='visible')void refreshRef.current();}}
  }
  return <WorkspaceShell immersive={selectionValid} title={ar?'المحادثات':'Conversations'} actions={revoked?<a href={`/app/conversations${params.toString()?`?${params.toString()}`:''}`} className="underline">{ar?'إعادة تحميل الصفحة للتحقق':'Reload page to verify'}</a>:<Button variant="secondary" busy={refreshing||isNavigating} disabled={moreLoading!==null} onClick={()=>{if(!initial.ok)startTransition(()=>{router.refresh();});else void refresh();}}>{ar?'تحديث':'Refresh'}</Button>}>

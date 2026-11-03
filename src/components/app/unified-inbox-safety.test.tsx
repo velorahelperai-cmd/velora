@@ -147,17 +147,24 @@ describe('UnifiedInbox membership and page safety',()=>{
   expect(pane?.parentElement?.hidden).toBe(true);expect(pane?.parentElement?.hasAttribute('inert')).toBe(true);expect(container.querySelector('[data-pane="instagram"]')).not.toBeNull();
   render({initial});expect(container.querySelector('textarea')).toBe(draft);
  });
- it('calculates search empty state within active channel filter and isolates channel failure',async()=>{
-  const initial={...makeInitial('fp-1'),ig:{ok:false as const,code:'UNAVAILABLE' as const}};render({initial});expect(container.textContent).toContain('This channel could not be loaded');expect(container.textContent).toContain('Customer 1');
+ it('calculates search empty state for an allowed page and erases all channels on unavailability',async()=>{
+  const initial=makeInitial('fp-1');render({initial});expect(container.textContent).toContain('Customer 1');
   const input=container.querySelector<HTMLInputElement>('input[type="search"]')!;
   await act(async()=>{const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!;setter.call(input,'nonexistent');input.dispatchEvent(new Event('input',{bubbles:true}));});
   expect(container.textContent).toContain('No matches in loaded conversations');expect(container.textContent).toContain('No conversations matched your search in loaded conversations.');
+  render({initial:{...initial,ig:{ok:false as const,code:'UNAVAILABLE' as const}}});
+  expect(container.textContent).not.toContain('Customer 1');expect(container.querySelector('[data-pane]')).toBeNull();expect(container.querySelector('textarea')).toBeNull();expect(button('Retry').disabled).toBe(false);
  });
- it('disables retry button and conversation refresh button during moreLoading',async()=>{
-  route('channel=whatsapp&source=whatsapp&c=c1');const initial={...makeInitial('fp-1'),ig:{ok:false as const,code:'UNAVAILABLE' as const}};let resolveMore!:(value:{ok:true;data:WhatsappSnapshot['page']})=>void;
+ it('disables refresh during pagination and retry while unavailable recovery is pending',async()=>{
+  route('channel=whatsapp&source=whatsapp&c=c1');const initial=makeInitial('fp-1');let resolveMore!:(value:{ok:true;data:WhatsappSnapshot['page']})=>void;
   state.refreshWhatsappInboxPage.mockImplementation(()=>new Promise(resolve=>{resolveMore=resolve;}));render({initial});await click(button('More WhatsApp'));
-  expect(button('Retry').disabled).toBe(true);expect(container.querySelector<HTMLButtonElement>('[aria-label="Refresh conversation"]')?.disabled).toBe(true);
-  await act(async()=>resolveMore({ok:true,data:{...initial.wa.page,conversations:[],membershipFingerprint:'fp-1'}}));expect(button('Retry').disabled).toBe(false);
+  expect(button('Refresh').disabled).toBe(true);expect(container.querySelector<HTMLButtonElement>('[aria-label="Refresh conversation"]')?.disabled).toBe(true);
+  await act(async()=>resolveMore({ok:true,data:{...initial.wa.page,conversations:[],membershipFingerprint:'fp-1'}}));expect(button('Refresh').disabled).toBe(false);
+  state.readServiceInbox.mockResolvedValueOnce({ok:false,code:'UNAVAILABLE'});await click(button('Refresh'));
+  expect(container.querySelector('[data-pane]')).toBeNull();expect(button('Retry').disabled).toBe(false);
+  let recover!:(value:typeof initial)=>void;state.readServiceInbox.mockImplementationOnce(()=>new Promise(resolve=>{recover=resolve;}));
+  await click(button('Retry'));expect(button('Retry').disabled).toBe(true);expect(container.querySelector('textarea')).toBeNull();
+  await act(async()=>recover(initial));expect(container.querySelector('[data-pane]')).not.toBeNull();expect(button('Refresh').disabled).toBe(false);
  });
  it.each(['actor','company','locked'])('removes cached content and native panes when the wrapper detects %s change',async kind=>{
   const initial=makeInitial();render({initial});expect(container.textContent).toContain('Customer 1');

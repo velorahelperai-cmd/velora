@@ -46,15 +46,15 @@ it('locks the snapshot on revocation and discards an earlier successful read',as
  expect(m.fetch).toHaveBeenCalledTimes(1);
 });
 
-it('retains the previously read pane only during UNAVAILABLE, disables actions, then recovers',async()=>{
+it('erases the previously read pane during UNAVAILABLE, removes write controls, then recovers',async()=>{
  const draft=container.querySelector('textarea');
  m.fetch.mockResolvedValueOnce({ok:false,code:'UNAVAILABLE'});
  act(()=>m.event?.({type:'change'}));await act(async()=>vi.advanceTimersByTimeAsync(250));
- expect(container.querySelector('textarea')).toBe(draft);expect(container.textContent).toContain('Previously verified contact');
- expect(container.querySelector('fieldset')?.disabled).toBe(true);
- expect(container.querySelector('textarea')?.closest('[inert]')).not.toBeNull();
+ expect(container.querySelector('textarea')).toBeNull();expect(container.textContent).not.toContain('Previously verified contact');
+ expect(container.querySelector('fieldset')).toBeNull();
+ expect(container.textContent).toContain('Retry');
  act(()=>m.event?.({type:'change'}));await act(async()=>vi.advanceTimersByTimeAsync(250));
- expect(container.querySelector('textarea')).toBe(draft);expect(container.querySelector('fieldset')?.disabled).toBe(false);
+ expect(container.querySelector('textarea')).not.toBeNull();expect(container.querySelector('textarea')).not.toBe(draft);expect(container.querySelector('fieldset')?.disabled).toBe(false);
 });
 it.each(['FORBIDDEN','SCOPE_CHANGED','NO_COMPANY'])('erases cached content after %s, including a later temporary outage',async code=>{
  m.fetch.mockResolvedValueOnce({ok:false,code});
@@ -80,5 +80,38 @@ it('drops prior data immediately when the confirmed account is locked or changes
 });
 
 it('pauses actions immediately when the live permission stream becomes unavailable',()=>{
- const draft=container.querySelector('textarea');act(()=>m.event?.({type:'unavailable'}));expect(container.querySelector('textarea')).toBe(draft);expect(container.querySelector('fieldset')?.disabled).toBe(true);
+ act(()=>m.event?.({type:'unavailable'}));expect(container.querySelector('textarea')).toBeNull();expect(container.querySelector('fieldset')).toBeNull();expect(container.textContent).not.toContain('Previously verified contact');
+});
+
+it('erases data on network loss and recovers only through a new read',async()=>{
+ m.fetch.mockRejectedValueOnce(new Error('offline'));
+ act(()=>m.event?.({type:'change'}));await act(async()=>vi.advanceTimersByTimeAsync(250));
+ expect(container.querySelector('textarea')).toBeNull();expect(container.textContent).not.toContain('Previously verified contact');
+ const retry=Array.from(container.querySelectorAll('button')).find(b=>b.textContent==='Retry');
+ await act(async()=>retry?.click());expect(container.querySelector('textarea')).not.toBeNull();
+});
+it('discards an in-flight success after SSE unavailable',async()=>{
+ let complete!:(v:Snapshot)=>void;m.fetch.mockImplementationOnce(()=>new Promise<Snapshot>(resolve=>{complete=resolve;}));
+ act(()=>m.event?.({type:'change'}));await act(async()=>vi.advanceTimersByTimeAsync(250));
+ act(()=>m.event?.({type:'unavailable'}));await act(async()=>complete(initial));
+ expect(container.querySelector('textarea')).toBeNull();expect(container.textContent).not.toContain('Previously verified contact');
+ act(()=>m.event?.({type:'reconnect'}));await act(async()=>vi.advanceTimersByTimeAsync(250));expect(container.querySelector('textarea')).not.toBeNull();
+});
+it('does not merge removed staff assignments into a fresh page with unchanged identity',async()=>{
+ if(!initial.ok||!initial.wa.ok)throw new Error('fixture');
+ m.fetch.mockResolvedValueOnce({...initial,wa:{...initial.wa,conversations:[],page:{...initial.wa.page,conversations:[]}}});
+ act(()=>m.event?.({type:'change'}));await act(async()=>vi.advanceTimersByTimeAsync(250));
+ expect(container.textContent).not.toContain('Previously verified contact');
+});
+
+it('remounts the native pane after a changed staff membership fingerprint',async()=>{
+ if(!initial.ok||!initial.wa.ok)throw new Error('fixture');
+ const draft=container.querySelector('textarea');
+ m.fetch.mockResolvedValueOnce({...initial,owner:false,wa:{...initial.wa,conversations:[],page:{...initial.wa.page,conversationScope:'assigned_only',membershipFingerprint:'reassigned',conversations:[]}}});
+ act(()=>m.event?.({type:'change'}));await act(async()=>vi.advanceTimersByTimeAsync(250));
+ expect(container.querySelector('textarea')).not.toBe(draft);expect(container.textContent).not.toContain('Previously verified contact');
+});
+it('does not render another channel when the initial channel read is unavailable',async()=>{
+ await act(async()=>root.render(<UnifiedInbox initial={{...initial,ig:{ok:false,code:'UNAVAILABLE'}} as Snapshot}/>));
+ expect(container.querySelector('textarea')).toBeNull();expect(container.textContent).not.toContain('Previously verified contact');expect(container.textContent).toContain('Retry');
 });
