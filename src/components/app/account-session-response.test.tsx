@@ -992,6 +992,23 @@ it('a server boundary conflict after ready hides old content without broadcastin
  expect(state.logout).not.toHaveBeenCalled();
 });
 
+it('manual retry button recovers from error to ready with loading feedback and without hard reload',async()=>{
+ state.path='/app';
+ state.read.mockResolvedValue({ok:false,code:'UNAVAILABLE'});
+ await render().refresh();
+ expect(render().status).toBe('error');
+ const tree=renderTree();
+ const kids=(tree.props.children as {props:{children:any[]}}).props.children;
+ const button=Array.isArray(kids)?kids[1]:null;
+ expect(button?.type).toBe('button');
+ state.read.mockResolvedValue({ok:true,data:profile()});
+ await button.props.onClick();
+ expect(render().status).toBe('ready');
+ expect(render().identity?.userId).toBe('user-a');
+ expect(state.reload).not.toHaveBeenCalled();
+});
+
+
 vi.mock("@/lib/auth/account-session-client",()=>({fetchAccountSession:async(correlation?:unknown)=>{
  const {readBrokerSessionStatus}=await import("@/lib/auth/broker-actions");return readBrokerSessionStatus(correlation);
 }}));

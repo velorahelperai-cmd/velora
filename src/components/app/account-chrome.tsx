@@ -388,6 +388,19 @@ export function AccountSessionProvider({
     refreshRef.current = refresh;
   }, [refresh]);
 
+  const retryInFlightRef = useRef(false);
+  const handleManualRetry = useCallback(async () => {
+    if (retryInFlightRef.current) return;
+    retryInFlightRef.current = true;
+    try {
+      setStatusLive("loading");
+      clearSoftRetry();
+      await refresh();
+    } finally {
+      retryInFlightRef.current = false;
+    }
+  }, [clearSoftRetry, refresh, setStatusLive]);
+
   // Mount/Auth/focus notifications often arrive together. Share only reads
   // within the same authority generation; logout/account changes invalidate it.
   const refreshFromSignal=useCallback(()=>{
@@ -563,8 +576,8 @@ export function AccountSessionProvider({
       if(timer)clearTimeout(timer);
       timer=setTimeout(()=>{void refreshFromSignal();},0);
     };
-    window.addEventListener("focus",recheck);document.addEventListener("visibilitychange",recheck);
-    return ()=>{if(timer)clearTimeout(timer);window.removeEventListener("focus",recheck);document.removeEventListener("visibilitychange",recheck);};
+    window.addEventListener("focus",recheck);document.addEventListener("visibilitychange",recheck);window.addEventListener("online",recheck);
+    return ()=>{if(timer)clearTimeout(timer);window.removeEventListener("focus",recheck);document.removeEventListener("visibilitychange",recheck);window.removeEventListener("online",recheck);};
   },[refreshFromSignal]);
   // Live refs — never close over render status for post-await fences (C4-05).
   const isCurrentUser = useCallback(
@@ -621,7 +634,7 @@ export function AccountSessionProvider({
     : status === "loading" || (status === "ready"&&loaderGate.holding) ? setupRoute ? <SetupLoading /> : <ApprovedAccountLoader key={pathname} label={copy.loading} />
     : <main className="grid min-h-svh place-content-center gap-4 bg-[#f6fafb] px-6 text-center text-[#102a33]">
         <p className="text-base font-medium">{status==="error"?copy.account.identityError:copy.auth.login}</p>
-        {status==="error"?<button type="button" className="mx-auto rounded-xl bg-[#006c81] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#00586a]" onClick={()=>void refresh()}>{copy.errors.accessRetry}</button>:null}
+        {status==="error"?<button type="button" className="mx-auto rounded-xl bg-[#006c81] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#00586a]" onClick={handleManualRetry}>{copy.errors.accessRetry}</button>:null}
         {status==="guest"?<Link href="/login" className="mx-auto rounded-xl bg-[#006c81] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#00586a]">{copy.auth.login}</Link>:null}
       </main>
     : children;

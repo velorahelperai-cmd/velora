@@ -1,3 +1,44 @@
+# Current Session Index — P0 GLOBAL ACCOUNT IDENTITY FAILURE / ATOMIC ROOT CAUSE FIX (2026-11-03)
+
+## P0 Global Account Identity Failure — ROOT CAUSE DIAGNOSED & ATOMIC CLIENT FIX VERIFIED (2026-11-03)
+- **Status:** **DIAGNOSED & VERIFIED — PENDING USER APPROVAL FOR COMMIT/DEPLOY**.
+- **Issue:** All `/app/*` pages (e.g. `/app/knowledge`, `/app/conversations`) failed or displayed blank screen with «تعذّر جلب هوية الحساب» and retry button «أعد المحاولة».
+- **Root Cause 1 (Backend Statement Timeout 57014 & Connection Exhaustion):**
+  - Supabase PostgreSQL logs revealed query timeouts (error code `57014`) and PostgREST pool timeouts (`PGRST003`) on `POST /rpc/has_company_capability` and `POST /rpc/read_company_channel_contract`.
+  - Contention originated during scheduled `select public.billing_run_expiry_tick();` which took row-level update locks (`perform 1 from public.companies where id=p_company_id for update;`), causing downstream RPCs in `/api/account/session` and `/api/account/profile` to fail with HTTP `503 UNAVAILABLE` / `500`.
+- **Root Cause 2 (Client Premature Fatal Error Screen in `AccountSessionProvider`):**
+  - In `src/components/app/account-chrome.tsx`, `retainReadyOnTransient(code)` only suppressed transient 503 errors if `statusRef.current === "ready"`. On fresh page loads, reloads, or direct navigation, initial status is `"loading"`.
+  - A single transient 503 during mount immediately invoked `setStatusLive("error")`, dismantling the entire App Shell and showing the full-page fatal error screen.
+- **Root Cause 3 (Broken Manual Retry & Concurrent Request Collisions):**
+  - Clicking «أعد المحاولة» provided zero visual feedback (status remained `"error"` without loading spinner or shell).
+  - Rapid repeated clicks repeatedly invoked `performRefresh()`, each time doing `++requestGen.current`, which aborted preceding in-flight requests with `gen !== requestGen.current` (`CONFLICT`), permanently trapping the user in the error state.
+- **Atomic Solution Applied (`src/components/app/account-chrome.tsx`):**
+  - Implemented `retryInFlightRef` guard to eliminate concurrent click collisions.
+  - Implemented `handleManualRetry` callback:
+    - Immediately transitions to `setStatusLive("loading")` so the user receives clear loading feedback via `ApprovedAccountLoader` (preserving the App Shell).
+    - Clears any pending soft-retry timers via `clearSoftRetry()`.
+    - Awaits fresh uncached `refresh()`, transitioning cleanly to `"ready"` upon recovery without requiring a disruptive hard browser reload (`window.location.reload()`).
+    - Wired directly to the retry button: `onClick={handleManualRetry}`.
+- **Verification Evidence:**
+  - `src/components/app/account-session-response.test.tsx`:
+    - Added test: `manual retry button recovers from error to ready with loading feedback and without hard reload`.
+    - Suite result: **58/58 PASS** (148ms).
+  - Full Auth & Session Test Suites: **136/136 PASS** (8.83s).
+    - `account-session-response.test.tsx` (58 tests) PASS
+    - `account-session-client.test.ts` (13 tests) PASS
+    - `account-profile-client.test.ts` (14 tests) PASS
+    - `account-logout.test.tsx` PASS
+    - `login-redirect.test.tsx` (10 tests) PASS
+    - `verification-quarantine-journey.test.tsx` PASS
+    - `verify-email-fence.test.tsx` (33 tests) PASS
+  - CI Contract Gates: `npm run ci:contracts`: **367/367 PASS** (0 failed).
+  - TypeScript Typecheck: `npm run typecheck`: **PASS** (0 errors).
+- **Production Guardrails & Constraints Respected:**
+  - Strictly NO commit, NO push, NO deploy executed.
+  - Strictly NO modifications to production customer data or active subscriptions.
+  - WhatsApp Worker remains DISABLED; NO external messages sent.
+  - Auth, RLS, and Session Guards remain fully intact.
+
 # Current Session Index — ES02 WHATSAPP INBOX READ / PRODUCTION DEPLOYMENT VERIFIED (2026-11-03)
 
 ## ES02 WhatsApp Inbox Read — DEPLOYED & PRODUCTION VERIFIED (2026-11-03 12:34 Oman / 08:34 UTC)
