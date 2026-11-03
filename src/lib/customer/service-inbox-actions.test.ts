@@ -1,6 +1,6 @@
 import {beforeEach,expect,it,vi} from 'vitest';
 const f=vi.hoisted(()=>({access:vi.fn(),cap:vi.fn(),wa:vi.fn(),ig:vi.fn(),channels:vi.fn()}));
-vi.mock('@/lib/channels/read',()=>({readCompanyChannelContract:f.channels}));
+vi.mock('@/lib/channels/read',()=>({readCompanyChannelContractResult:async(...args:unknown[])=>{const value=await f.channels(...args);return value?.ok===false?value:value?{ok:true,contract:value}:{ok:false,code:'UNAVAILABLE'};}}));
 vi.mock('@/lib/tenancy/access',()=>({getCompanyAccess:f.access}));
 vi.mock('@/lib/access/actions',()=>({sessionHasCompanyCapability:f.cap}));
 vi.mock('@/lib/whatsapp/inbox',()=>({loadWhatsappInboxInitialPage:f.wa}));
@@ -16,11 +16,11 @@ it.each([access('other'),access('company','other')])('drops both snapshots after
 it('treats a temporary failure of the final access check as unavailable without returning loaded data',async()=>{f.access.mockResolvedValueOnce(access()).mockResolvedValueOnce({ok:false,code:'UNAVAILABLE'});expect(await readServiceInbox()).toEqual({ok:false,code:'UNAVAILABLE'});});
 it('drops loaded data when the final session is no longer authenticated',async()=>{f.access.mockResolvedValueOnce(access()).mockResolvedValueOnce({ok:false,code:'UNAUTHENTICATED'});expect(await readServiceInbox()).toEqual({ok:false,code:'SCOPE_CHANGED'});});
 it('rejects a provider store response with a different actor, retaining no foreign thread',async()=>{f.ig.mockResolvedValue({ok:true,data:{companyId:'company',actorId:'other'}});expect(await readServiceInbox()).toEqual({ok:false,code:'SCOPE_CHANGED'});});
-it.each([null,{...contract(),planVersionId:'upgraded'},{...contract(),subscription:{state:'locked',expiresAt:'2026-09-01T00:00:00Z'}}])('does not load data from access grants or former connections when commercial authority is missing',async c=>{f.channels.mockResolvedValue(c);expect(await readServiceInbox()).toMatchObject({ok:true,waAllowed:false,igAllowed:false});expect(f.wa).not.toHaveBeenCalled();expect(f.ig).not.toHaveBeenCalled();});
-it('null contract in both reads fails closed without assuming entitlement or calling channel stores',async()=>{
+it.each([{...contract(),planVersionId:'upgraded'},{...contract(),subscription:{state:'locked',expiresAt:'2026-09-01T00:00:00Z'}}])('does not load data from access grants or former connections when commercial authority is missing',async c=>{f.channels.mockResolvedValue(c);expect(await readServiceInbox()).toMatchObject({ok:true,waAllowed:false,igAllowed:false});expect(f.wa).not.toHaveBeenCalled();expect(f.ig).not.toHaveBeenCalled();});
+it('null contract in both reads fails closed as UNAVAILABLE without assuming entitlement or calling channel stores',async()=>{
  f.channels.mockResolvedValue(null);
  const r=await readServiceInbox();
- expect(r).toMatchObject({ok:true,waAllowed:false,igAllowed:false,channelContract:null});
+ expect(r).toEqual({ok:false,code:'UNAVAILABLE'});
  expect(f.wa).not.toHaveBeenCalled();
  expect(f.ig).not.toHaveBeenCalled();
 });
@@ -32,3 +32,5 @@ it('rejects when subscription state transitions while native rows were loading',
 it('treats a temporary failure of the final contract read as UNAVAILABLE instead of false SCOPE_CHANGED',async()=>{f.channels.mockResolvedValueOnce(contract()).mockResolvedValue(null);expect(await readServiceInbox()).toEqual({ok:false,code:'UNAVAILABLE'});});
 it('treats a temporary failure of the initial contract read as UNAVAILABLE instead of false SCOPE_CHANGED',async()=>{f.channels.mockResolvedValueOnce(null).mockResolvedValue(contract());expect(await readServiceInbox()).toEqual({ok:false,code:'UNAVAILABLE'});});
 it('UNCONFIGURED preserves existing native access without inventing commercial selection',async()=>{f.channels.mockResolvedValue({...contract(),plan_entitlements:{status:'UNCONFIGURED'},selected_channels:{planVersionId:null,revision:0,channels:[]}});f.cap.mockImplementation((_,c)=>Promise.resolve(c.startsWith('wa.')));expect(await readServiceInbox()).toMatchObject({ok:true,waAllowed:true,igAllowed:false,channelContract:{selected_channels:{channels:[]}}});expect(f.wa).toHaveBeenCalledOnce();expect(f.ig).not.toHaveBeenCalled();});
+
+it.each([0,1])('preserves explicit contract denial at read %s',async index=>{if(index)f.channels.mockResolvedValueOnce(contract());f.channels.mockResolvedValueOnce({ok:false,code:'FORBIDDEN'});expect(await readServiceInbox()).toEqual({ok:false,code:'FORBIDDEN'});});

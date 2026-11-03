@@ -13,3 +13,5 @@ it('rejects stale scope, transport failure and invalid data',async()=>{
  }
  vi.stubGlobal('fetch',vi.fn().mockRejectedValue(new Error('offline')));expect(await fetchServiceInbox(scope)).toEqual({ok:false,code:'UNAVAILABLE'});
 });
+
+it.each([401,403])('does not turn HTTP %s denial into temporary unavailability',async status=>{vi.stubGlobal('fetch',vi.fn().mockResolvedValue(new Response('',{status})));expect(await fetchServiceInbox(scope)).toEqual({ok:false,code:'FORBIDDEN'});});

@@ -1,0 +1,10 @@
+import {beforeEach,expect,it,vi} from 'vitest';
+const m=vi.hoisted(()=>({rpc:vi.fn()}));
+vi.mock('server-only',()=>({}));
+vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({rpc:m.rpc})}));
+import {readCompanyChannelContractResult,readCompanyChannelContract} from './read';
+beforeEach(()=>vi.resetAllMocks());
+it.each(['42501','PGRST301'])('preserves authoritative denial %s',async code=>{m.rpc.mockResolvedValue({error:{code}});expect(await readCompanyChannelContractResult('company')).toEqual({ok:false,code:'FORBIDDEN'});expect(await readCompanyChannelContract('company')).toBeNull();});
+it.each(['57014','08006'])('reports temporary RPC failure %s without fabricating authority',async code=>{m.rpc.mockResolvedValue({error:{code}});expect(await readCompanyChannelContractResult('company')).toEqual({ok:false,code:'UNAVAILABLE'});});
+it('reports malformed data and network exceptions as unavailable',async()=>{m.rpc.mockResolvedValue({data:null,error:null});expect(await readCompanyChannelContractResult('company')).toEqual({ok:false,code:'UNAVAILABLE'});m.rpc.mockRejectedValue(new Error('offline'));expect(await readCompanyChannelContractResult('company')).toEqual({ok:false,code:'UNAVAILABLE'});});
+it.each(['PGRST202','42883'])('keeps the existing missing-RPC UNCONFIGURED compatibility for %s',async code=>{m.rpc.mockResolvedValue({error:{code}});expect(await readCompanyChannelContractResult('company')).toMatchObject({ok:true,contract:{companyId:'company',plan_entitlements:{status:'UNCONFIGURED'}}});});

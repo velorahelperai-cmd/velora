@@ -554,6 +554,7 @@ export function ConversationsPage({
   selectedConversationId,
   onSelectConversation,
   refreshVersion = 0,
+  readSuspended = false,
 }: {
   inbox: Conversation[];
   forbidden?: boolean;
@@ -566,7 +567,9 @@ export function ConversationsPage({
   selectedConversationId?: string | null;
   onSelectConversation?: (id:string|null)=>void;
   refreshVersion?:number;
+  readSuspended?:boolean;
 }) {
+  const suspendedRef=useRef(readSuspended);suspendedRef.current=readSuspended;
   const copy = useAppCopy();
   const { locale } = useDemo();
   const router = useRouter();
@@ -678,7 +681,7 @@ export function ConversationsPage({
   const sendOpByConversation = useRef<Record<string, { clientOpId: string; body: string }>>({});
   const inboxRefreshGen = useRef(0);
 
-  const canReply = inboxMeta?.canReply === true;
+  const canReply = !readSuspended && inboxMeta?.canReply === true;
   const testReview=!!reviewCompanyId&&inboxMeta?.companyId===reviewCompanyId;
   const canAssign = inboxMeta?.canAssign === true;
   const assignees = inboxMeta?.assignees ?? [];
@@ -1094,7 +1097,7 @@ export function ConversationsPage({
 
   useEffect(() => {
     const boundary = threadReadBoundary(selectedThread, selectedId, visible);
-    if (!boundary || !selectedThread || !selectedReady) return;
+    if (readSuspended || !boundary || !selectedThread || !selectedReady) return;
     const request = captureInboxEpoch(epochStoreRef.current);
     const generation = readGenById.current[selectedThread.conversationId];
     const acknowledgementKey = `${request.opGen}:${selectedThread.conversationId}:${selectedThread.readVersion}:${boundary}`;
@@ -1128,9 +1131,10 @@ export function ConversationsPage({
     return () => { window.cancelAnimationFrame(firstFrame); window.cancelAnimationFrame(secondFrame); };
     // A new latest page owns a new acknowledgement; loading history never creates one.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId, selectedThread?.readVersion, selectedReady, visible, inboxScope]);
+  }, [selectedId, selectedThread?.readVersion, selectedReady, visible, inboxScope, readSuspended]);
 
   function send(c: Conversation) {
+    if(suspendedRef.current)return;
     const draftText = draft.trim();
     const locked = inboxSendLocked(snapshotRef.current.base.find(row => row.id === c.id), Boolean(unresolvedSends[c.id]));
     if (!draftText || !canReply || !c.assistantPaused || !selectedReady || pending || controlBusy || locked) return;
@@ -1272,7 +1276,7 @@ export function ConversationsPage({
   }
 
   function runControl(c: Conversation, action: ControlAction) {
-    if (!canUseInboxControl(inboxMeta, action) || !selectedReady || !liveIds.has(c.id) || controlBusy || pending) return;
+    if (suspendedRef.current || !canUseInboxControl(inboxMeta, action) || !selectedReady || !liveIds.has(c.id) || controlBusy || pending) return;
     if (unresolvedOutcomes[c.id]) return;
 
     const expectedRevision = c.revision ?? 1;
@@ -2205,7 +2209,7 @@ export function ConversationsPage({
                 canAssign={canAssign}
                 assignees={assignees}
                 timezoneAnnouncedUtc={inboxMeta?.timezoneAnnouncedUtc}
-                live={selectedReady && liveIds.has(selected.id)}
+                live={!readSuspended && selectedReady && liveIds.has(selected.id)}
                 busyControl={controlBusy && controlBusyId === selected.id}
                 pending={pending}
                 selectedUnresolved={selectedUnresolved}

@@ -59,3 +59,13 @@ it.each(['FORBIDDEN','UNAVAILABLE'])('keeps a verified reply editable during a p
  state.thread.mockReturnValue(new Promise(()=>{}));p.refreshVersion=2;tree=render(p);
  const retryComposer=reply(tree);expect(!retryComposer||retryComposer.props.disabled).toBeTruthy();
 });
+
+it('preserves the verified draft but blocks reply execution during parent authorization unavailability',async()=>{
+ const data={kind:'partial',companyId:'company',conversationId:'thread',conversation:item,messages:[],displayedInboundMessageId:null,unreadCount:0,nextCursor:null,hasMore:false};
+ state.thread.mockResolvedValue({ok:true,data});state.audit.mockResolvedValue({ok:false,code:'UNAVAILABLE'});state.connection.mockResolvedValue({ok:false,code:'UNAVAILABLE'});
+ const p=props();render(p);await flush();let tree=render(p);
+ (reply(tree).props.onChange as(e:unknown)=>void)({target:{value:'Retained draft'}});tree=render(p);
+ const priorComposer=reply(tree);p.readSuspended=true;tree=render(p);expect(reply(tree)).toBeUndefined();
+ (priorComposer.props.onKeyDown as(e:unknown)=>void)({key:'Enter',shiftKey:false,nativeEvent:{isComposing:false},preventDefault(){}});await flush();expect(state.send).not.toHaveBeenCalled();
+ p.readSuspended=false;tree=render(p);expect(reply(tree).props.disabled).toBe(false);expect(reply(tree).props.value).toBe('Retained draft');
+});

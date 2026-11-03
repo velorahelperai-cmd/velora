@@ -113,3 +113,13 @@ it('retains an ambiguous save reservation across navigation instead of reserving
  const first=f.save.mock.calls[0][0];f.url='thread='+id(4);render();await settle();f.url='thread='+id(2);render();await settle();
  expect(textarea().props.value).toBe('reserved body');await click('Save reply');await settle();expect(f.save.mock.calls[1][0]).toEqual(first);
 });
+
+it('does not acknowledge or save while the parent scope is temporarily unverified',async()=>{
+ f.thread.mockResolvedValue({ok:true,data:{...thread,readReceipt:'issued-receipt'}});
+ const extra={embedded:true,selectedConversationId:id(2),readSuspended:true};
+ render(id(1),extra);for(let n=0;n<20;n++)await Promise.resolve();let tree=render(id(1),extra);expect(f.read).not.toHaveBeenCalled();
+ const input=nodes(tree).find(n=>n.type==='textarea')!;(input.props.onChange as(e:unknown)=>void)({target:{value:'retained reply'}});
+ tree=render(id(1),extra);const save=nodes(tree).find(n=>n.type===Button&&n.props.children==='Save reply')!;
+ await (save.props.onClick as()=>Promise<void>)();expect(f.save).not.toHaveBeenCalled();expect(f.send).not.toHaveBeenCalled();
+ render(id(1),{...extra,readSuspended:false});expect(f.read).toHaveBeenCalledTimes(1);
+});

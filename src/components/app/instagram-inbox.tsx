@@ -31,7 +31,7 @@ const labels:Record<string,[string,string]>={
  CONFLICT:['This saved reply differs from your current text. Reload the saved reply.','هذا الرد المحفوظ يختلف عن النص الحالي. أعد تحميل الرد.'],
  INVALID_INPUT:['Enter a reply of at most 1,000 UTF-8 bytes.','أدخل ردًا لا يتجاوز ١٬٠٠٠ بايت بترميز UTF-8.'],
 };
-export function InstagramInbox({companyId,owner=false,companyInSetup=false,reviewMode=false,callbackResult,callbackDiagnostic,embedded=false,selectedConversationId,onSelectConversation,refreshVersion=0,canAssign=false}:{canAssign?:boolean;refreshVersion?:number;embedded?:boolean;selectedConversationId?:string|null;onSelectConversation?:(id:string|null,intentId?:string)=>void;companyId:string|null;owner?:boolean;companyInSetup?:boolean;reviewMode?:boolean;callbackResult?:string;callbackDiagnostic?:unknown}){
+export function InstagramInbox({companyId,owner=false,companyInSetup=false,reviewMode=false,callbackResult,callbackDiagnostic,embedded=false,selectedConversationId,onSelectConversation,refreshVersion=0,canAssign=false,readSuspended=false}:{readSuspended?:boolean;canAssign?:boolean;refreshVersion?:number;embedded?:boolean;selectedConversationId?:string|null;onSelectConversation?:(id:string|null,intentId?:string)=>void;companyId:string|null;owner?:boolean;companyInSetup?:boolean;reviewMode?:boolean;callbackResult?:string;callbackDiagnostic?:unknown}){
  const {locale}=useDemo(),ar=locale==='ar',router=useRouter(),params=useSearchParams();
  const conversationId=embedded?selectedConversationId??null:uuid(params.get('thread')),intentId=uuid(params.get('intent'));
  const draftKey=`${companyId}:${conversationId}`;
@@ -78,12 +78,12 @@ export function InstagramInbox({companyId,owner=false,companyInSetup=false,revie
   return()=>{fence.current++;};
  },[companyId,conversationId,intentId,viewKey,draftKey,refresh,refreshVersion,embedded]);
  // Acknowledge only after the latest returned page has actually rendered.
- useEffect(()=>{if(!thread?.readReceipt||!companyId)return;const current=epoch.current;
+ useEffect(()=>{if(readSuspended||!thread?.readReceipt||!companyId)return;const current=epoch.current;
   void markInstagramThreadRead({companyId,conversationId:thread.conversationId,readReceipt:thread.readReceipt}).then(r=>{if(current===epoch.current&&!r.ok)setError(r.code);}).catch(()=>{if(current===epoch.current)setError('UNAVAILABLE');});
- },[thread,companyId]);
+ },[thread,companyId,readSuspended]);
  function select(id:string){epoch.current++;setReserved(false);setThread(null);setSaved(null);setLoading(true);setError(null);if(id===conversationId&&!intentId)setRefresh(n=>n+1);if(embedded)onSelectConversation?.(id);else router.push(`/app/instagram?thread=${encodeURIComponent(id)}`);}
  async function save(){
-  if(!companyId||!conversationId||busy||loading||!thread||saved||!text)return;
+  if(readSuspended||!companyId||!conversationId||busy||loading||!thread||saved||!text)return;
   if(new TextEncoder().encode(text).byteLength>1000||text.includes('\0')){setError('INVALID_INPUT');return;}
   const current=epoch.current;const captured=reservations.current[draftKey]??{id:crypto.randomUUID(),text};reservations.current[draftKey]=captured;setReserved(true);setBusy(true);setError(null);
   localIntents.current[draftKey]=captured.id;
@@ -94,14 +94,14 @@ export function InstagramInbox({companyId,owner=false,companyInSetup=false,revie
   }catch{if(current===epoch.current)setError('UNAVAILABLE');}finally{if(current===epoch.current)setBusy(false);}
  }
  async function send(){
-  if(!companyId||!conversationId||busy||loading||!readinessVerified||!saved||saved.state!=='ready'||blockers.length)return;
+  if(readSuspended||!companyId||!conversationId||busy||loading||!readinessVerified||!saved||saved.state!=='ready'||blockers.length)return;
   const current=epoch.current;setBusy(true);setError(null);
   try{const r=await sendSavedInstagramReply({companyId,conversationId,intentId:saved.binding.intentId});if(current!==epoch.current)return;
    if(!r.ok){setError(r.code);return;}setSaved({...r.data,text:saved.text});
   }catch{if(current===epoch.current)setError('UNAVAILABLE');}finally{if(current===epoch.current)setBusy(false);}
  }
  async function assign(assignedTo:string|null){
-  if(!companyId||!thread||!canAssign||busy||loading)return;
+  if(readSuspended||!companyId||!thread||!canAssign||busy||loading)return;
   const current=epoch.current;setBusy(true);setError(null);
   try{const result=await assignInstagramConversation({companyId,conversationId:thread.conversationId,assignedTo,expectedRevision:thread.conversation.revision});
    if(current!==epoch.current)return;if(!result.ok){setError(result.code);return;}

@@ -17,8 +17,18 @@ import {ChannelBadge} from './channel-badge';
 import {CompanyInboxRealtime,type InboxRealtimeEvent} from './branch-inbox-realtime';
 import {inboxHref,inboxRows,type InboxChannel} from './inbox-presentation';
 import styles from './unified-inbox.module.css';
+import {useOptionalAccountSession} from './account-chrome';
+import {useWorkspaceBootstrap} from './workspace-bootstrap';
 type Snapshot=ServiceInboxSnapshot;
-export function UnifiedInbox({initial,waReview=false,igReview=false}:{initial:Snapshot;waReview?:boolean;igReview?:boolean}) {
+export function UnifiedInbox(props:{initial:Snapshot;waReview?:boolean;igReview?:boolean}) {
+ const account=useOptionalAccountSession(),workspace=useWorkspaceBootstrap();
+ const {initial}=props;
+ const mismatch=initial.ok&&((account&&(account.status!=='ready'||account.identity?.userId!==initial.actorId))||(workspace&&(workspace.identity.userId!==initial.actorId||workspace.workspace.selectedCompanyId!==initial.companyId)));
+ const admitted=mismatch?{ok:false as const,code:'SCOPE_CHANGED' as const}:initial;
+ const key=admitted.ok?`${admitted.companyId}:${admitted.actorId}:${account?.boundaryFingerprint??''}:${admitted.waAllowed}:${admitted.igAllowed}:${admitted.wa.ok?admitted.wa.page.membershipFingerprint:''}:${admitted.ig.ok?admitted.ig.data.conversationScope:''}`:admitted.code;
+ return <ScopedUnifiedInbox key={key} {...props} initial={admitted}/>;
+}
+function ScopedUnifiedInbox({initial,waReview=false,igReview=false}:{initial:Snapshot;waReview?:boolean;igReview?:boolean}) {
  const {locale}=useDemo(),ar=locale==='ar',router=useRouter(),copy=useAppCopy();
  // Next's route state can wait behind a pending Server Action. Selection is
  // urgent local UI state; the URL remains its source for Back/Forward and links.
@@ -39,19 +49,19 @@ export function UnifiedInbox({initial,waReview=false,igReview=false}:{initial:Sn
   if(busy.current){queuedRefresh.current=true;return;}
   queuedRefresh.current=false;busy.current=true;const request=++epoch.current;setRefreshing(true);
   try{const [companyId,actorId]=expected.split(':');const result=await fetchServiceInbox({companyId:companyId!,actorId:actorId!});if(!mounted.current||epoch.current!==request)return;
-   if(result.ok&&`${result.companyId}:${result.actorId}`!==expected){setSnapshot({ok:false,code:'SCOPE_CHANGED'});setError(true);return;}
-   if(!result.ok){setSnapshot(result);setError(true);return;}
-   setSnapshot(result);setRetained(old=>({...result,igAllowed:old?.igAllowed===true?true:result.igAllowed,
-    wa:result.wa.ok&&old?.wa.ok&&result.wa.page.membershipFingerprint===old.wa.page.membershipFingerprint?{...result.wa,page:{...result.wa.page,conversations:mergeInboxPageRows(old.wa.page.conversations,result.wa.page.conversations)},conversations:mergeInboxPageRows(old.wa.page.conversations,result.wa.page.conversations)}:result.wa.ok?result.wa:old?.wa??result.wa,
-    ig:result.ig.ok?result.ig:old?.ig??result.ig,
+   if(result.ok&&`${result.companyId}:${result.actorId}`!==expected){setRetained(null);setSnapshot({ok:false,code:'SCOPE_CHANGED'});setError(true);return;}
+   if(!result.ok){if(result.code!=='UNAVAILABLE')setRetained(null);setSnapshot(result);setError(true);return;}
+   setSnapshot(result);setRetained(old=>({...result,
+    wa:result.wa.ok&&old?.wa.ok&&result.wa.page.membershipFingerprint===old.wa.page.membershipFingerprint?{...result.wa,page:{...result.wa.page,conversations:mergeInboxPageRows(old.wa.page.conversations,result.wa.page.conversations)},conversations:mergeInboxPageRows(old.wa.page.conversations,result.wa.page.conversations)}:result.wa,
+    ig:result.ig,
    }));setRefreshVersion(n=>n+1);setError(false);
-  }catch{if(mounted.current&&epoch.current===request)setError(true);}
+  }catch{if(mounted.current&&epoch.current===request){setSnapshot({ok:false,code:'UNAVAILABLE'});setError(true);}}
   finally{busy.current=false;if(mounted.current&&epoch.current===request){setRefreshing(false);if(queuedRefresh.current&&document.visibilityState==='visible')void refreshRef.current();}}
  },[expected]);
  useEffect(()=>{refreshRef.current=refresh;},[refresh]);
  const onInboxEvent=useCallback((event:InboxRealtimeEvent)=>{
   if(accessRevoked.current)return;
-  if(event.type==='unavailable'){live.current=false;return;}
+  if(event.type==='unavailable'){live.current=false;setSnapshot({ok:false,code:'UNAVAILABLE'});setError(true);return;}
   if(event.type==='revoked'){accessRevoked.current=true;setRevoked(true);live.current=false;queuedRefresh.current=false;if(eventTimer.current!==null)clearTimeout(eventTimer.current);eventTimer.current=null;epoch.current++;setRetained(null);setSnapshot({ok:false,code:'SCOPE_CHANGED'});setError(true);return;}
   if(event.type==='ready'||event.type==='reconnect')live.current=true;
   if(document.visibilityState!=='visible'){queuedRefresh.current=true;return;}
@@ -61,14 +71,16 @@ export function UnifiedInbox({initial,waReview=false,igReview=false}:{initial:Sn
   const onVisible=()=>{if(document.visibilityState==='visible')void refresh();};document.addEventListener('visibilitychange',onVisible);
   return()=>{mounted.current=false;fence.current++;queuedRefresh.current=false;if(eventTimer.current!==null)clearTimeout(eventTimer.current);eventTimer.current=null;window.clearInterval(timer);document.removeEventListener('visibilitychange',onVisible);};
  },[refresh]);
- const channels:InboxChannel[]=snapshot.ok&&snapshot.channelContract?(snapshot.channelContract.plan_entitlements.status==='UNCONFIGURED'
-  ?([snapshot.waAllowed===true?'whatsapp':null,snapshot.igAllowed===true?'instagram':null].filter(Boolean) as InboxChannel[])
-  :selectedIncludedChannels(snapshot.channelContract)):[];
+ const activeSource=snapshot.ok?snapshot:snapshot.code==='UNAVAILABLE'&&retained&&`${retained.companyId}:${retained.actorId}`===expected?retained:null;
+ const readSuspended=!snapshot.ok;
+ const channels:InboxChannel[]=activeSource&&activeSource.channelContract?(activeSource.channelContract.plan_entitlements.status==='UNCONFIGURED'
+  ?([activeSource.waAllowed===true?'whatsapp':null,activeSource.igAllowed===true?'instagram':null].filter(Boolean) as InboxChannel[])
+  :selectedIncludedChannels(activeSource.channelContract)):[];
  const requested=params.get('channel'),filter=channels.length===1?channels[0]:channels.includes(requested as InboxChannel)?requested as InboxChannel:'all';
  const source=params.get('source')==='instagram'||params.get('thread')?'instagram':'whatsapp';
  const selected=params.get(source==='instagram'?'thread':'c');
- const selectionValid=channels.includes(source)&&!!selected&&snapshot.ok&&(source==='whatsapp'?snapshot.waAllowed===true&&snapshot.wa.ok:snapshot.igAllowed===true&&snapshot.ig.ok);
- const rows=useMemo(()=>snapshot.ok&&retained?inboxRows(snapshot.wa.ok&&retained.wa.ok?retained.wa.page.conversations:[],snapshot.ig.ok&&retained.ig.ok?retained.ig.data.conversations:[],ar):[],[snapshot,retained,ar]);
+ const selectionValid=channels.includes(source)&&!!selected&&Boolean(activeSource?.ok&&(source==='whatsapp'?activeSource.waAllowed===true&&activeSource.wa.ok:activeSource.igAllowed===true&&activeSource.ig.ok));
+ const rows=useMemo(()=>activeSource&&retained?inboxRows(activeSource.waAllowed===true&&activeSource.wa.ok&&retained.wa.ok?retained.wa.page.conversations:[],activeSource.igAllowed===true&&activeSource.ig.ok&&retained.ig.ok?retained.ig.data.conversations:[],ar):[],[activeSource,retained,ar]);
  const activeChannels=filter==='all'?channels:[filter];
  const activeRows=rows.filter(r=>filter==='all'||r.channel===filter);
  const requestedWorklist=params.get('filter');
@@ -96,26 +108,28 @@ export function UnifiedInbox({initial,waReview=false,igReview=false}:{initial:Sn
   const cursor=channel==='whatsapp'&&wa.ok?wa.page.nextCursor:channel==='instagram'&&ig.ok?ig.data.nextCursor:null;
   if(!cursor)return;busy.current=true;setMoreLoading(channel);const request=++epoch.current;
   try{if(channel==='whatsapp'&&wa.ok){const result=await refreshWhatsappInboxPage({companyId:retained.companyId,before:cursor});if(!mounted.current||request!==epoch.current)return;
-   if(!result.ok||result.data.companyId!==retained.companyId||result.data.membershipFingerprint!==wa.page.membershipFingerprint){setError(true);return;}
+   if(!result.ok){if(result.code!=='UNAVAILABLE')setRetained(null);setSnapshot({ok:false,code:result.code==='UNAVAILABLE'?'UNAVAILABLE':'SCOPE_CHANGED'});setError(true);return;}
+   if(result.data.companyId!==retained.companyId||result.data.membershipFingerprint!==wa.page.membershipFingerprint){setRetained(null);setSnapshot({ok:false,code:'SCOPE_CHANGED'});setError(true);return;}
    setRetained(old=>old?.wa.ok?{...old,wa:{...old.wa,page:{...result.data,conversations:mergeInboxPageRows(old.wa.page.conversations,result.data.conversations)},conversations:mergeInboxPageRows(old.wa.page.conversations,result.data.conversations)}}:old);
   }else if(channel==='instagram'&&ig.ok){const result=await loadInstagramInboxPage({companyId:retained.companyId,cursor});if(!mounted.current||request!==epoch.current)return;
-   if(!result.ok||result.data.companyId!==retained.companyId||result.data.actorId!==retained.actorId){setError(true);return;}
-   if(result.data.conversationScope!==ig.data.conversationScope){setSnapshot({ok:false,code:'SCOPE_CHANGED'});setError(true);return;}
+   if(!result.ok){if(result.code!=='UNAVAILABLE')setRetained(null);setSnapshot({ok:false,code:result.code==='UNAVAILABLE'?'UNAVAILABLE':'SCOPE_CHANGED'});setError(true);return;}
+   if(result.data.companyId!==retained.companyId||result.data.actorId!==retained.actorId){setRetained(null);setSnapshot({ok:false,code:'SCOPE_CHANGED'});setError(true);return;}
+   if(result.data.conversationScope!==ig.data.conversationScope){setRetained(null);setSnapshot({ok:false,code:'SCOPE_CHANGED'});setError(true);return;}
    setRetained(old=>old?.ig.ok?{...old,ig:{...old.ig,data:{...result.data,conversations:[...old.ig.data.conversations,...result.data.conversations.filter(c=>old.ig.ok&&!old.ig.data.conversations.some(existing=>existing.id===c.id))]}}}:old);
-  }}catch{if(mounted.current&&request===epoch.current)setError(true);}
-  finally{busy.current=false;if(mounted.current&&request===epoch.current){setMoreLoading(null);if(queuedRefresh.current&&document.visibilityState==='visible')void refreshRef.current();}}
+  }}catch{if(mounted.current&&request===epoch.current){setSnapshot({ok:false,code:'UNAVAILABLE'});setError(true);}}
+  finally{busy.current=false;if(mounted.current&&epoch.current===request){setMoreLoading(null);if(queuedRefresh.current&&document.visibilityState==='visible')void refreshRef.current();}}
  }
  return <WorkspaceShell immersive={selectionValid} title={ar?'المحادثات':'Conversations'} actions={revoked?<a href={`/app/conversations${params.toString()?`?${params.toString()}`:''}`} className="underline">{ar?'إعادة تحميل الصفحة للتحقق':'Reload page to verify'}</a>:<Button variant="secondary" busy={refreshing||isNavigating} disabled={moreLoading!==null} onClick={()=>{if(!initial.ok)startTransition(()=>{router.refresh();});else void refresh();}}>{ar?'تحديث':'Refresh'}</Button>}>
   {initial.ok&&<CompanyInboxRealtime key={`${initial.companyId}:${initial.actorId}`} companyId={initial.companyId} actorId={initial.actorId} ar={ar} onInboxEvent={onInboxEvent}/>}
   {error&&<Notice tone="error">{ar?'تعذّر التحقق من آخر تحديث. حدّث الصفحة قبل متابعة العمل.':'The latest update could not be verified. Refresh before continuing.'}</Notice>}
-  {!snapshot.ok?<Notice tone={snapshot.code==='UNAVAILABLE'?'error':'warn'}>{snapshot.code==='NO_COMPANY'?(ar?'اختر نشاطًا من قائمة مساحة العمل.':'Choose a business from the workspace menu.'):snapshot.code==='FORBIDDEN'?<><strong>{copy.app.inboxAccessDeniedTitle}</strong><p>{copy.app.inboxAccessDeniedBody}</p></>:snapshot.code==='UNAVAILABLE'?copy.app.inboxLoadFailedBody:(ar?'تغيّرت الجلسة أو مساحة العمل. حدّث الصفحة للتحقق قبل المتابعة.':'The session or workspace changed. Refresh to verify before continuing.')} <Link href="/app/settings?tab=plan" className="underline">{ar?'الاشتراك والدعم':'Subscription and support'}</Link></Notice>:null}
-  {retained&&<>
+  {!snapshot.ok?<Notice tone={snapshot.code==='UNAVAILABLE'?'error':'warn'}>{snapshot.code==='NO_COMPANY'?(ar?'اختر نشاطًا من قائمة مساحة العمل.':'Choose a business from the workspace menu.'):snapshot.code==='FORBIDDEN'?<><strong>{copy.app.inboxAccessDeniedTitle}</strong><p>{copy.app.inboxAccessDeniedBody}</p></>:snapshot.code==='UNAVAILABLE'?copy.app.inboxLoadFailedBody:(ar?'تغيّرت الجلسة أو مساحة العمل. حدّث الصفحة للتحقق قبل المتابعة.':'The session or workspace changed. Refresh to verify before continuing.')} {snapshot.code==='UNAVAILABLE'&&<button type="button" className="underline ms-2 font-medium" disabled={refreshing||moreLoading!==null} onClick={()=>{if(!initial.ok)startTransition(()=>{router.refresh();});else void refresh();}}>{ar?'إعادة المحاولة':'Retry'}</button>} <Link href="/app/settings?tab=plan" className="underline ms-2">{ar?'الاشتراك والدعم':'Subscription and support'}</Link></Notice>:null}
+  {activeSource&&retained&&<>
    {snapshot.ok&&snapshot.channelContract?.plan_entitlements.status==='UNCONFIGURED'&&<Notice tone="warn">{ar?'استحقاقات القنوات غير محددة (UNCONFIGURED). المعروض أدناه هو الوصول الحالي المتحقق منه؛ لا يعني أن القنوات مشمولة في الباقة.':'Channel entitlements are UNCONFIGURED. The channels below reflect verified existing access, not plan inclusion.'}</Notice>}
    {snapshot.ok&&!snapshot.channelContract&&<Notice tone="error">{ar?'تعذّر التحقق من إعداد استحقاقات القنوات. أعد التحديث.':'Channel entitlement configuration could not be verified. Refresh to retry.'}</Notice>}
    {snapshot.ok&&snapshot.channelContract&&snapshot.channelContract.plan_entitlements.status==='approved'&&!channels.length&&<Notice tone="warn">{ar?'يلزم تأكيد اختيار القنوات لهذه النسخة من الباقة. الاختيارات والسجل السابقان محفوظان.':'Channel selection needs confirmation for this plan version. Previous choices and history are retained.'}</Notice>}
    {(snapshot.ok&&(snapshot.waAllowed===null||snapshot.igAllowed===null))&&<Notice>{ar?'تعذّر التحقق من بعض صلاحيات القنوات.':'Some channel permissions could not be verified.'}</Notice>}
-   {!channels.length&&<EmptyState title={ar?'لا توجد قناة متاحة للقراءة':'No channel is available to read'} body={ar?'الاشتراك والربط والصلاحيات حالات مستقلة. راجع الإعدادات أو تواصل مع صاحب النشاط.':'Subscription, connection and permissions are separate. Review settings or contact your business owner.'} action={<Link href="/app/settings">{ar?'الإعدادات':'Settings'}</Link>}/>}<div className={styles.inbox} hidden={!snapshot.ok||!channels.length} data-selected={selectionValid}>
-    <section className={styles.list} aria-label={ar?'قائمة المحادثات':'Conversation list'}>
+   {!channels.length&&snapshot.ok&&<EmptyState title={ar?'لا توجد قناة متاحة للقراءة':'No channel is available to read'} body={ar?'الاشتراك والربط والصلاحيات حالات مستقلة. راجع الإعدادات أو تواصل مع صاحب النشاط.':'Subscription, connection and permissions are separate. Review settings or contact your business owner.'} action={<Link href="/app/settings">{ar?'الإعدادات':'Settings'}</Link>}/>}<div className={styles.inbox} hidden={!channels.length} data-selected={selectionValid}>
+    <section inert={readSuspended} className={styles.list} aria-label={ar?'قائمة المحادثات':'Conversation list'}>
      <header className={styles.listHeader}><h2>{ar?'صندوق الوارد':'Inbox'}</h2><p>{ar?'المحادثات المتاحة لهذا النشاط':'Available conversations for this business'}</p>
       {channels.length===2?<div className={styles.channelFilters} aria-label={ar?'القناة':'Channel'}>{(['all',...channels] as const).map(c=><button key={c} type="button" aria-pressed={filter===c} onClick={()=>navigateLocally(filteredHref(null,null,c))}>{c==='all'?(ar?'الكل':'All'):<ChannelBadge channel={c} ar={ar}/>}</button>)}</div>:<ChannelBadge channel={channels[0]??'whatsapp'} ar={ar}/>}
       {worklist!=='all'&&<p role="status">{worklist==='staff'?(ar?'تحتاج متابعة · واتساب':'Needs attention · WhatsApp'):worklist==='noura'?(ar?'الأتمتة مسموحة · واتساب':'Automation permitted · WhatsApp'):worklist==='unread'?(ar?'غير مقروءة':'Unread'):(ar?'محلولة · واتساب':'Resolved · WhatsApp')} <button type="button" className={styles.filterReset} onClick={()=>navigateLocally(inboxHref(null,null,filter))}>{ar?'مسح الفلتر':'Clear filter'}</button></p>}
@@ -130,12 +144,14 @@ export function UnifiedInbox({initial,waReview=false,igReview=false}:{initial:Sn
       {retained.ig.ok&&retained.ig.data.hasMore&&channels.includes('instagram')&&<Button variant="ghost" busy={moreLoading==='instagram'} disabled={refreshing||moreLoading!==null} onClick={()=>void more('instagram')}>{ar?'مزيد من إنستجرام':'More Instagram'}</Button>}
      </footer>
     </section>
-    <div className={styles.thread} data-open={selectionValid}>
+    <div className={styles.thread} data-open={selectionValid} inert={readSuspended}>
+     <fieldset disabled={readSuspended} style={{border:0,padding:0,margin:0,minWidth:0,display:'contents'}}>
      {selectionValid&&<div className={styles.threadToolbar}><button type="button" onClick={()=>select(null,null)} className={styles.back}>{ar?'الرجوع للمحادثات':'Back to conversations'}</button><Button variant="ghost" busy={refreshing} disabled={moreLoading!==null} onClick={()=>void refresh()} aria-label={ar?"تحديث المحادثة":"Refresh conversation"}>{ar?"تحديث":"Refresh"}</Button><ChannelBadge channel={source} ar={ar}/><span dir="auto">{activeRow?.name??(ar?'المحادثة':'Conversation')}</span></div>}
      {!selectionValid&&<div className={styles.welcome}><EmptyState title={ar?'اختر محادثة للبدء':'Choose a conversation'} body={ar?'كل رد يخرج عبر قناة المحادثة نفسها. بيانات الأنشطة والحسابات تبقى منفصلة.':'Each reply uses its conversation’s channel. Business and account histories remain separate.'}/></div>}
      {/* Keep native panes mounted: drafts and unresolved operation IDs survive channel navigation. */}
-     {retained.wa.ok&&<div className={styles.pane} hidden={!selectionValid||source!=='whatsapp'} inert={!selectionValid||source!=='whatsapp'}><ConversationsPage refreshVersion={refreshVersion} embedded selectedConversationId={selectionValid&&source==='whatsapp'?selected:null} onSelectConversation={id=>select('whatsapp',id)} inbox={retained.wa.conversations} page={retained.wa.page} meta={retained.wa.meta} reviewCompanyId={waReview?retained.companyId:undefined}/></div>}
-     {retained.igAllowed===true&&<div className={styles.pane} hidden={!selectionValid||source!=='instagram'} inert={!selectionValid||source!=='instagram'}><InstagramInbox canAssign={snapshot.ok&&snapshot.igAssignAllowed===true} refreshVersion={refreshVersion} embedded selectedConversationId={selectionValid&&source==='instagram'?selected:null} onSelectConversation={(id,intent)=>select('instagram',id,intent)} companyId={retained.companyId} owner={retained.owner} companyInSetup={retained.companyInSetup} reviewMode={igReview}/></div>}
+     {retained.wa.ok&&<div className={styles.pane} hidden={!selectionValid||source!=='whatsapp'} inert={!selectionValid||source!=='whatsapp'}><ConversationsPage key={retained.wa.page.membershipFingerprint} readSuspended={readSuspended} refreshVersion={refreshVersion} embedded selectedConversationId={selectionValid&&source==='whatsapp'?selected:null} onSelectConversation={id=>select('whatsapp',id)} inbox={retained.wa.conversations} page={retained.wa.page} meta={retained.wa.meta} reviewCompanyId={waReview?retained.companyId:undefined}/></div>}
+     {retained.igAllowed===true&&<div className={styles.pane} hidden={!selectionValid||source!=='instagram'} inert={!selectionValid||source!=='instagram'}><InstagramInbox key={retained.ig.ok?retained.ig.data.conversationScope:'unverified'} readSuspended={readSuspended} canAssign={snapshot.ok&&snapshot.igAssignAllowed===true} refreshVersion={refreshVersion} embedded selectedConversationId={selectionValid&&source==='instagram'?selected:null} onSelectConversation={(id,intent)=>select('instagram',id,intent)} companyId={retained.companyId} owner={retained.owner} companyInSetup={retained.companyInSetup} reviewMode={igReview}/></div>}
+     </fieldset>
     </div>
    </div>
   </>}
