@@ -32,6 +32,7 @@ export function KnowledgePage({
     <WorkspaceShell title={copy.knowledge.title}>
       <KnowledgeEditor
         key={companyId}
+        workspacePresentation
         companyId={companyId}
         focusTitle={topic}
         canWrite={canWrite}

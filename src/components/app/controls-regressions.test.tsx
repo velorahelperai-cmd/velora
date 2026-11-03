@@ -100,6 +100,13 @@ describe("synchronous action ownership", () => {
   it("an older run function still respects a new pending action", async () => { const h=mount(useAction,undefined); const old=h.render().run; await old(()=>{}); const pending=deferred(); const mutation=vi.fn(()=>pending.promise); const running=h.render().run(mutation); await old(mutation); expect(mutation).toHaveBeenCalledTimes(1); pending.resolve(); await running; });
   it("releases the lock after a synchronous throw",async()=>{const h=mount(useAction,undefined); await expect(h.render().run(()=>{throw new Error("Synthetic throw");})).rejects.toThrow("Synthetic throw"); const mutation=vi.fn(); await h.render().run(mutation); expect(mutation).toHaveBeenCalledTimes(1);});
 });
+it("does not show an approval progress value when evidence is unavailable",()=>{
+ const base={companyId:"company-a",canWrite:false,initialSources:[],workspacePresentation:true};
+ const missing=mount(KnowledgeEditor,{...base,approvalFoundation:"unavailable" as const}).render();
+ const ready=mount(KnowledgeEditor,{...base,approvalFoundation:"ready" as const}).render();
+ expect(nodes(missing).some(n=>n.props.role==="progressbar")).toBe(false);
+ expect(nodes(ready).some(n=>n.props.role==="progressbar" && n.props["aria-valuenow"]===0)).toBe(true);
+});
 it.each(["en", "ar"] as const)("rejected knowledge save shows a localized failure and permits retry (%s)", async locale => {
   state.locale = locale; const copy = appCopy(locale); const h = mount(KnowledgeEditor, { companyId: "company-a", canWrite: true, initialSources: [], focusTitle: "Synthetic title" }); let tree = h.render(); change(input(tree, copy.knowledge.sourceContent), "Synthetic content"); tree = h.render(); state.knowledgeSave.mockRejectedValueOnce(new Error("Synthetic rejection")); const submit = () => (nodes(tree).find(n => n.type === "form")!.props.onSubmit as (e: unknown) => void)({ preventDefault() {} }); submit(); await flush(); tree = h.render(); expect(text(tree)).toContain(copy.knowledge.saveFailed); expect(nodes(tree).find(n => n.props.type === "submit")!.props.busy).toBe(false); expect(input(tree, copy.knowledge.sourceContent).props.value).toBe("Synthetic content"); state.knowledgeSave.mockResolvedValue({ ok: false, code: "INVALID_INPUT" }); submit(); await flush(); expect(state.knowledgeSave).toHaveBeenCalledTimes(2);
 });

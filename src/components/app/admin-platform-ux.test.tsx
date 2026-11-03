@@ -60,6 +60,9 @@ it("paginates reviews independently and shows their server total", async () => {
   (refresh.props.onClick as () => void)();
   await flush();
   tree = render();
+  const reviewsBtn = nodes(tree).find(n => n.type === "button" && text(n.props.children).includes("طلبات المراجعة"));
+  if (reviewsBtn) (reviewsBtn.props.onClick as () => void)();
+  tree = render();
   const next = nodes(tree).find(n => n.props["data-admin-review-page"] === "next");
   expect(next).toBeDefined();
   expect(text(tree)).toContain("40");

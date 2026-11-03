@@ -57,11 +57,12 @@ export default async function Page({
 
   const payload = data as DetailPayload;
   // Company existence and owner authorization precede all secondary reads.
-  const [knowledge, initialBranches, whatsapp] = await Promise.all([
+  const [knowledge, branches, whatsapp] = await Promise.all([
     adminListCompanyKnowledge(id),
     (async () => {
       // Load multi-branch isolation records if present
       let initialBranches: AdminCompanyBranch[] = [];
+      let branchesLoadFailed = false;
       try {
         const { data: branchesData, error: branchesError } = await (supabase as unknown as {
           from: (t: string) => {
@@ -82,12 +83,14 @@ export default async function Page({
 
         if (!branchesError && Array.isArray(branchesData)) {
           initialBranches = branchesData;
+        } else {
+          branchesLoadFailed = true;
         }
       } catch {
-        initialBranches = [];
+        branchesLoadFailed = true;
       }
 
-      return initialBranches;
+      return { initialBranches, branchesLoadFailed };
     })(),
     (async () => {
       // Exception or explicit failure → load-failed; never treat as «not linked».
@@ -115,7 +118,8 @@ export default async function Page({
       initialCompany={payload.company}
       initialMembers={payload.members ?? []}
       initialAudits={payload.audits ?? []}
-      initialBranches={initialBranches}
+      initialBranches={branches.initialBranches}
+      branchesLoadFailed={branches.branchesLoadFailed}
       initialReview={payload.review_request ?? null}
       initialWhatsappLink={initialWhatsappLink}
       whatsappLinkLoadFailed={whatsappLinkLoadFailed}

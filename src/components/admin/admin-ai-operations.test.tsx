@@ -175,6 +175,18 @@ describe("Stage D — Module 05: AdminAIOperations", () => {
     expect(renderedText).toContain("Gemini 3.8 Flash");
   });
 
+  it("does not present hardcoded prices or an unverified provider readiness as fact", () => {
+    const renderedText = text(renderAIOperations({ initial: sampleState }));
+    expect(renderedText).not.toContain("جاهز ومتصل");
+    expect(renderedText).not.toContain("0.0003 ر.ع / 1k");
+    expect(renderedText).not.toContain("عزل مالي وتشغيلي 100%");
+    expect(renderedText).toContain("المبلغ المحجوز");
+  });
+  it("shows no success rate when there are no recorded attempts", () => {
+    const renderedText = text(renderAIOperations({initial: {...sampleState, models: []}}));
+    expect(renderedText).not.toContain("0.0%");
+  });
+
   it("renders all 3 model cards with real attempts and cost breakdown", () => {
     const tree = renderAIOperations({ initial: sampleState });
     const renderedText = text(tree);

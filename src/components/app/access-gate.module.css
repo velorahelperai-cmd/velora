@@ -1,0 +1,36 @@
+.gate {
+  --service-canvas: #fff;
+  --service-surface: #fafbfc;
+  --service-ink: #172126;
+  --service-muted: #5f6b76;
+  --service-line: #e2e7eb;
+  --service-accent: #0f766e;
+  --service-accent-hover: #115e59;
+  background: var(--service-canvas);
+  color: var(--service-ink);
+  min-height: min(70svh, 600px);
+  padding: clamp(32px, 7vh, 72px) 20px;
+}
+.content {
+  padding: clamp(20px, 3vw, 32px);
+  background: var(--service-surface);
+  border: 1px solid var(--service-line);
+  border-radius: 10px;
+}
+.content [data-notice] {
+  border-radius: 8px;
+  border: 1px solid;
+  padding: 16px;
+  font-size: 15px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.content [data-notice="error"] { color: #922d39; background: #fff3f3; border-color: #edc5c9; }
+.content [data-notice="warn"] { color: #785219; background: #fff8eb; border-color: #ead9b4; }
+.content [data-notice] strong { display: inline-block; margin-bottom: 4px; font-size: 17px; }
+.actions { align-items: center; }
+.actions :is(a, button) { min-height: 44px; border-radius: 8px; font-size: 14px; font-weight: 600; }
+.actions a { color: var(--service-accent); background: #fff; border-color: var(--service-line); }
+.actions a:hover { background: #f1f8f7; }
+.actions :is(a, button):focus-visible { outline: 2px solid var(--service-accent); outline-offset: 3px; }
+@media (max-width: 440px) { .actions > * { flex: 1 1 100%; justify-content: center; } }

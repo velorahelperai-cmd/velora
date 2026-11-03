@@ -23,6 +23,7 @@ import {
 import { isApprovedForAnswers, type KnowledgeApprovalFoundation, type KnowledgeSourceRecord } from "@/lib/knowledge/types";
 import { fill } from "@/lib/app-copy";
 import { useDemo } from "@/lib/demo-state";
+import { IconFileText } from "@/components/admin/admin-icons";
 import {
   Button, ConfirmDialog, EmptyState, Field, FieldErrorKey, Notice,
   useAppCopy, useErrorText, useUnsavedWarning,
@@ -30,6 +31,7 @@ import {
 
 type Props = {
   compact?: boolean;
+  workspacePresentation?: boolean;
   focusTitle?: string;
   companyId: string;
   canWrite: boolean;
@@ -79,6 +81,7 @@ const TEMPLATES = {
 /** Company knowledge editor (setup + /app/knowledge). Always persists to DB when rendered. */
 export function KnowledgeEditor({
   compact,
+  workspacePresentation = false,
   focusTitle,
   companyId,
   canWrite,
@@ -541,39 +544,38 @@ export function KnowledgeEditor({
   }, [sources, activeCategory]);
 
   return (
-    <div className="grid gap-5">
+    <div className={workspacePresentation ? "grid min-w-0 max-w-5xl gap-4" : "grid gap-5"}>
       {/* Knowledge Score & Readiness Hero Banner */}
-      <section className="relative overflow-hidden rounded-3xl border border-[#38dc89]/30 bg-[var(--color-panel-deep)] p-5 shadow-sm">
+      <section className={workspacePresentation ? "rounded-xl border border-[var(--service-line)] bg-[var(--service-surface)] p-5 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-6" : "relative overflow-hidden rounded-3xl border border-[#38dc89]/30 bg-[var(--color-panel-deep)] p-5 shadow-sm"}>
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-3.5">
-
-            <div>
+          <div className="flex min-w-0 items-start gap-3">
+            {workspacePresentation && <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] bg-[#f1faf7] text-[#11665f]"><IconFileText aria-hidden="true" className="h-[19px] w-[19px]" /></span>}
+            <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="text-lg font-bold text-[var(--color-on-dark)]">{localize("اعتماد مصادر المعرفة (Approved Sources)", "Approved sources")}</h2>
-                <span className="inline-flex rounded-full border border-[#38dc89]/40 bg-[#38dc89]/15 px-2.5 py-0.5 text-xs font-semibold text-[var(--color-success-fg)]">
+                <span className={workspacePresentation && approvalEvidenceUnavailable ? "inline-flex rounded-full border border-[#ead9b0] bg-[#fff3d6] px-2.5 py-0.5 text-xs font-semibold text-[#8a5700]" : "inline-flex rounded-full border border-[#38dc89]/40 bg-[#38dc89]/15 px-2.5 py-0.5 text-xs font-semibold text-[var(--color-success-fg)]"}>
                   {approvalEvidenceUnavailable ? localize("تعذر تأكيد حالة الاعتماد", "Approval evidence unavailable") : localize("نسبة المصادر المعتمدة", "Approved source coverage")}
                 </span>
               </div>
-              <p className="mt-1 text-xs text-[var(--color-muted-on-dark)]">{localize("المعلومات المعتمدة فقط هي التي تستخدمها نورا للرد على العملاء عبر واتساب.", "Approved information is the only source used for customer answers.")}</p>
+              <p className={workspacePresentation ? "mt-1 text-[13px] text-[var(--service-muted)]" : "mt-1 text-xs text-[var(--color-muted-on-dark)]"}>{localize("المعلومات المعتمدة فقط هي التي تستخدمها نورا للرد على العملاء عبر واتساب.", "Approved information is the only source used for customer answers.")}</p>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <span className="text-3xl font-extrabold text-[var(--color-success-fg)]">{approvalEvidenceUnavailable ? "—" : `${healthPercent}%`}</span>
             <Link
               href="/app/test"
-              className="inline-flex min-h-10 items-center gap-1.5 rounded-full border border-[#38dc89]/40 bg-[#38dc89]/15 px-4 text-xs font-semibold text-[var(--color-success-fg)] transition hover:bg-[#38dc89]/25 hover:shadow-[0_0_12px_rgba(56,220,137,0.3)]"
+              className={workspacePresentation ? "inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-[var(--service-line)] px-3 text-sm font-semibold text-[var(--service-accent)] hover:bg-[var(--service-accent-soft)]" : "inline-flex min-h-10 items-center gap-1.5 rounded-full border border-[#38dc89]/40 bg-[#38dc89]/15 px-4 text-xs font-semibold text-[var(--color-success-fg)] transition hover:bg-[#38dc89]/25 hover:shadow-[0_0_12px_rgba(56,220,137,0.3)]"}
             >{localize("اختبر الردود في المحاكاة ↗", "Try Noura with this knowledge")}</Link>
           </div>
         </div>
 
         <div className="mt-4">
-          <div className="h-2 w-full overflow-hidden rounded-full bg-white/10 p-0.5">
-            <div
-              className="h-full rounded-full bg-gradient-to-r from-[#2ebd73] to-[#38dc89]  transition-all duration-200"
-              style={{ width: `${approvalEvidenceUnavailable ? 0 : healthPercent}%` }}
-            />
-          </div>
-          <div className="mt-2 flex items-start justify-between gap-3 text-[11px] text-[var(--color-muted-soft)]">
+          {workspacePresentation ? (!approvalEvidenceUnavailable && <div className="h-2 w-full overflow-hidden rounded-full bg-[var(--service-subtle)]" role="progressbar" aria-label={localize("نسبة المصادر المعتمدة", "Approved source coverage")} aria-valuemin={0} aria-valuemax={100} aria-valuenow={healthPercent}>
+            <div className="h-full rounded-full bg-[var(--service-accent)] transition-all duration-200" style={{ width: `${healthPercent}%` }} />
+          </div>) : <div className="h-2 w-full overflow-hidden rounded-full bg-white/10 p-0.5">
+            <div className="h-full rounded-full bg-gradient-to-r from-[#2ebd73] to-[#38dc89]  transition-all duration-200" style={{ width: `${approvalEvidenceUnavailable ? 0 : healthPercent}%` }} />
+          </div>}
+          <div className={workspacePresentation ? "mt-2 flex flex-wrap items-start justify-between gap-3 text-[13px] text-[var(--service-muted)]" : "mt-2 flex items-start justify-between gap-3 text-[11px] text-[var(--color-muted-soft)]"}>
             <span className="shrink-0 whitespace-nowrap">{approvalEvidenceUnavailable ? localize("الدليل غير متاح", "Evidence unavailable") : `${readyCount} / ${sources.length}`}</span>
             <span>{localize("اعتماد المصدر لا يفعّل الردود الحية أو يضمن جودة الإجابة", "Source approval does not activate live replies or guarantee answer quality.")}</span>
           </div>

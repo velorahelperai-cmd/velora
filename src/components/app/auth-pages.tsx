@@ -719,7 +719,25 @@ export function AuthEntryForm({mode}:{mode:"login"|"signup"}) {
       {signup ? <PasswordField tone="entry" label={copy.auth.confirmPasswordSignup} value={form.confirm} onChange={value=>setForm({...form,confirm:value})} error={confirmError} autoComplete="new-password"/> : <div className="flex items-center justify-end text-xs"><Link href="/forgot-password" className="font-medium text-[#087E8B]">{copy.auth.forgot}</Link></div>}
       <Button type="submit" variant="entry" busy={busy || redirecting} busyLabel={copy.loading} className={signup ? "mt-1" : undefined}>{signup ? copy.auth.createAccount : copy.auth.login}{!busy && !redirecting ? <EntrySubmitArrow/> : null}</Button>
     </form>
-    <GoogleAuthButton entry busy={busy || redirecting || google.busy} onGoogle={google.onGoogle} notice={altNotice}/></>}
+    <GoogleAuthButton entry busy={busy || redirecting || google.busy} onGoogle={google.onGoogle} notice={altNotice}/>
+    {process.env.NODE_ENV === "development" && !signup ? (
+      <div className="mt-4 pt-3 border-t border-dashed border-gray-200 text-center">
+        <button
+          type="button"
+          onClick={() => {
+            setForm(prev => ({
+              ...prev,
+              email: "velorahelperai@gmail.com",
+              password: "VeloraDev2026#Admin",
+            }));
+          }}
+          className="w-full text-xs py-2 px-3 rounded-lg bg-[#e2f4ef] text-[#147d73] border border-[#147d73]/30 font-semibold hover:bg-[#d0ece5] transition-colors flex items-center justify-center gap-1.5"
+        >
+          <span>⚡</span>
+          <span>ملء بيانات المالك للدخول المحلي الفوري (Dev)</span>
+        </button>
+      </div>
+    ) : null}</>}
   </AuthShell>;
 }
 

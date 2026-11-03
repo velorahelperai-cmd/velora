@@ -3,6 +3,7 @@ import { AccessibleDialog } from "@/components/app/accessible-dialog";
 
 import { useState } from "react";
 import Link from "next/link";
+import styles from "./admin-audit-compliance.module.css";
 import { useDemo } from "@/lib/demo-state";
 import type {
   AdminAuditLogEntry,
@@ -15,7 +16,6 @@ import {
   IconClock,
   IconFileText,
   IconSearch,
-  IconShield,
   IconX,
 } from "./admin-icons";
 
@@ -54,34 +54,20 @@ export function AdminAuditCompliance({ data, initialFilter = {} }: AdminAuditCom
   }
 
   return (
-    <div className="space-y-6" dir={ar ? "rtl" : "ltr"}>
+    <div className={`space-y-6 ${styles.audit}`} dir={ar ? "rtl" : "ltr"}>
       {/* Header Info */}
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[var(--service-line)] pb-4">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="flex h-2.5 w-2.5 rounded-full bg-[var(--service-accent)]" />
-            <span className="text-xs font-semibold uppercase tracking-wider text-[var(--service-accent)]">
-              Module 11 · Governance & Immutable Audit Logs
-            </span>
-          </div>
           <h1 className="mt-1 text-2xl font-black text-[var(--service-ink)] tracking-tight">
-            {ar ? "سجل التدقيق والحوكمة الإدارية (Audit & Compliance)" : "Audit & Compliance Center"}
+            {ar ? "سجل التدقيق والحوكمة" : "Audit & Compliance Center"}
           </h1>
           <p className="mt-1 text-sm text-[var(--service-muted)]">
             {ar
-              ? "السجل الإداري غير القابل للتعديل (Append-Only) لتوثيق العمليات الحساسة، الصلاحيات، وحركات المنشآت."
-              : "Append-only immutable administrative audit trail recording sensitive tenant operations, role grants, and security events."}
+              ? "راجع العمليات الإدارية المسجلة والتفاصيل المتاحة لكل عملية."
+              : "Review recorded administrative events and the details available for each entry."}
           </p>
         </div>
 
-        {/* Owner Verification Badge */}
-        <div className="flex items-center gap-2 rounded-xl border border-[var(--service-line)] bg-[var(--service-surface)] px-3 py-1.5 shadow-sm">
-          <IconShield className="h-4 w-4 text-[var(--service-success)]" />
-          <span className="text-xs font-bold text-[var(--service-ink)]">velorahelperai@gmail.com</span>
-          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">
-            {ar ? "مالك المنصة" : "Platform Owner"}
-          </span>
-        </div>
       </div>
 
       {/* 4 KPI Summary Cards */}
@@ -137,7 +123,7 @@ export function AdminAuditCompliance({ data, initialFilter = {} }: AdminAuditCom
             <IconCheckCircle className="h-4 w-4 text-[var(--service-success)]" />
           </div>
           <div className="mt-3">
-            <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-bold text-emerald-800">
+            <span className="rounded-full bg-stone-100 px-2.5 py-0.5 text-xs font-bold text-stone-700">
               {data.kpis.immutabilityGate === "APPEND_ONLY" ? (ar ? "إضافة فقط (APPEND-ONLY LOCKED)" : "APPEND-ONLY (LOCKED)") : (ar ? "غير متحقق" : "UNVERIFIED")}
             </span>
           </div>
@@ -177,8 +163,8 @@ export function AdminAuditCompliance({ data, initialFilter = {} }: AdminAuditCom
             </h2>
             <p className="mt-0.5 text-xs text-[var(--service-muted)]">
               {ar
-                ? "تتبع كافة القرارات والتعديلات وتغييرات الحالات مع الفاعل والبيانات قبل وبعد الإجراء."
-                : "Complete trace of administrative decisions, state transitions, actor attribution, and before/after payloads."}
+                ? "تصفح السجلات المتاحة مع الفاعل وبيانات التغيير عند توفرها."
+                : "Browse available records, actor identifiers, and before/after data when present."}
             </p>
           </div>
 
@@ -238,12 +224,12 @@ export function AdminAuditCompliance({ data, initialFilter = {} }: AdminAuditCom
           <table className="w-full text-right text-xs">
             <thead className="border-b border-[var(--service-line)] text-[11px] font-bold text-[var(--service-muted)]">
               <tr>
-                <th className="p-3.5">{ar ? "نوع العملية" : "Action"}</th>
-                <th className="p-3.5">{ar ? "التصنيف" : "Category"}</th>
-                <th className="p-3.5">{ar ? "الفاعل (Actor)" : "Actor"}</th>
-                <th className="p-3.5">{ar ? "المنشأة المتأثرة" : "Target Company"}</th>
-                <th className="p-3.5">{ar ? "الوقت (UTC+4)" : "Timestamp"}</th>
-                <th className="p-3.5">{ar ? "التفاصيل" : "Details"}</th>
+                <th scope="col" className="p-3.5">{ar ? "نوع العملية" : "Action"}</th>
+                <th scope="col" className="p-3.5">{ar ? "التصنيف" : "Category"}</th>
+                <th scope="col" className="p-3.5">{ar ? "الفاعل (Actor)" : "Actor"}</th>
+                <th scope="col" className="p-3.5">{ar ? "المنشأة المتأثرة" : "Target Company"}</th>
+                <th scope="col" className="p-3.5">{ar ? "الوقت (UTC+4)" : "Timestamp"}</th>
+                <th scope="col" className="p-3.5">{ar ? "التفاصيل" : "Details"}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--service-line)] text-[var(--service-ink)]">
@@ -261,11 +247,7 @@ export function AdminAuditCompliance({ data, initialFilter = {} }: AdminAuditCom
                       </span>
                     </td>
                     <td className="p-3.5 font-mono text-[11px] text-[var(--service-muted)]">
-                      {log.actorEmail ? (
-                        <span className="font-bold text-[var(--service-accent)]">{log.actorEmail}</span>
-                      ) : (
-                        <span>{log.actorUserId.slice(0, 12)}...</span>
-                      )}
+                      <bdi>{log.actorUserId.slice(0, 12)}...</bdi>
                     </td>
                     <td className="p-3.5">
                       {log.companyId ? (
@@ -358,7 +340,7 @@ export function AdminAuditCompliance({ data, initialFilter = {} }: AdminAuditCom
                 <pre className="text-[11px] overflow-x-auto whitespace-pre-wrap text-[var(--service-muted)] max-h-60">
                   {inspectedEntry.beforeData
                     ? JSON.stringify(inspectedEntry.beforeData, null, 2)
-                    : ar ? "لا توجد بيانات سابقة (إنشاء جديد)" : "null (New entity creation)"}
+                    : ar ? "لا توجد بيانات سابقة متاحة" : "No previous data available"}
                 </pre>
               </div>
 
@@ -370,7 +352,7 @@ export function AdminAuditCompliance({ data, initialFilter = {} }: AdminAuditCom
                 <pre className="text-[11px] overflow-x-auto whitespace-pre-wrap text-emerald-800 max-h-60">
                   {inspectedEntry.afterData
                     ? JSON.stringify(inspectedEntry.afterData, null, 2)
-                    : ar ? "لا توجد بيانات لاحقة (حذف / تعليق)" : "null (Deletion / Suspension)"}
+                    : ar ? "لا توجد بيانات لاحقة متاحة" : "No subsequent data available"}
                 </pre>
               </div>
             </div>

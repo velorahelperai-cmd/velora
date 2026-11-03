@@ -19,6 +19,9 @@ vi.mock("@/lib/tenancy/paid-branch-knowledge-actions", () => ({
   saveOwnedBranchKnowledgeTextAction:vi.fn(),
   uploadOwnedBranchKnowledgeFilesAction:vi.fn(),
   approveOwnedBranchKnowledgeSourceAction:vi.fn(),
+  reprocessOwnedBranchKnowledgeFileAction:vi.fn(),
+  mutateOwnedBranchKnowledgeSourceAction:vi.fn(),
+  removeOwnedBranchKnowledgePageAction:vi.fn(),
 }));
 
 vi.mock("@/lib/tenancy/paid-reply-language-actions", () => ({
@@ -90,16 +93,16 @@ describe("PaidSetupStepHost", () => {
     expect(html).toContain('aria-busy="true"');
   });
 
-  it("renders knowledge step without customer loading copy in SSR", () => {
+  it("renders knowledge editor with an honest pending status in SSR", () => {
     const html = renderToStaticMarkup(createElement(PaidSetupStepHost, { ...baseProps, step: "knowledge" }));
     expect(html).toContain("Branch knowledge");
-    expect(html).not.toContain("Loading branch knowledge");
+    expect(html).toContain("Loading branch knowledge");
     expect(html).toContain('aria-busy="true"');
   });
 
   it("renders test assistant step without customer loading copy in SSR", () => {
     const html = renderToStaticMarkup(createElement(PaidSetupStepHost, { ...baseProps, step: "test" }));
-    expect(html).toContain("Try your assistant");
+    expect(html).toContain("Assistant");
     expect(html).not.toContain("Loading the assistant trial");
     expect(html).toContain('aria-busy="true"');
   });
@@ -236,16 +239,23 @@ it('retains confirmed knowledge during refresh failure but discards it on scope 
 });
 
 
-it('refreshes a pending trial without aborting workspace enrichment or resending the question',async()=>{
+it('refreshes trial authority without aborting workspace enrichment or resending the question',async()=>{
  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);
  const {createSetupReader}=await import('@/lib/tenancy/setup-read-client');
  const scope={expectedAccountId:baseProps.scope.expectedAccountId,companyId:baseProps.scope.companyId,branchId:baseProps.scope.branchId};
  const trial={scope,version:1,knowledgeRevision:'rev1',branchLabel:'Branch',businessType:'Services',canAsk:false,trialAllowance:{limit:10,used:0},pendingOperation:{id:'55555555-5555-4555-8555-555555555555',status:'uncertain',recoverable:false},messages:[]};
  let finishWorkspace!:(response:Response)=>void;
  let workspaceSignal:AbortSignal|undefined;
+ let trialReads=0;
  const fetcher=vi.fn((url:string,options:RequestInit)=>{
   if(url.includes('resource=workspace')){workspaceSignal=options.signal as AbortSignal;return new Promise<Response>(resolve=>{finishWorkspace=resolve;});}
-  return Promise.resolve(Response.json({data:trial}));
+  if(url.includes('resource=trial')){
+   trialReads+=1;
+   // First paint becomes unavailable so Retry (scoped trial invalidate) is reachable.
+   if(trialReads===1)return Promise.resolve(Response.json({data:null}));
+   return Promise.resolve(Response.json({data:trial}));
+  }
+  return Promise.resolve(Response.json({data:null}));
  });
  vi.stubGlobal('fetch',fetcher);
  const reader=createSetupReader({...scope,boundaryFingerprint:'boundary'},()=>true);
@@ -256,7 +266,7 @@ it('refreshes a pending trial without aborting workspace enrichment or resending
  const host=document.createElement('div'),root=createRoot(host);
  try{
   await act(async()=>root.render(createElement(PaidSetupStepHost,{...baseProps,step:'test',reader})));
-  const refresh=Array.from(host.querySelectorAll('button')).find(button=>button.textContent==='Refresh status')!;
+  const refresh=Array.from(host.querySelectorAll('button')).find(button=>button.textContent==='Retry')!;
   expect(refresh).toBeDefined();
   await act(async()=>refresh.click());
   expect(workspaceSignal?.aborted).toBe(false);
@@ -265,7 +275,7 @@ it('refreshes a pending trial without aborting workspace enrichment or resending
   expect(fetcher.mock.calls.filter(([url])=>url.includes('resource=trial'))).toHaveLength(2);
   expect(ask).not.toHaveBeenCalled();
   expect(host.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(true);
-  expect(host.textContent).toContain('The request outcome needs review');
+  expect(host.textContent).toContain('0/10');
  }finally{await act(async()=>root.unmount());vi.unstubAllGlobals();}
 });
 
@@ -303,4 +313,41 @@ it('shows the previous trial counter on return but cannot send until fresh autho
   expect(host.textContent).toContain('3/10');
   expect(host.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(true);
  }finally{await act(async()=>root.unmount());vi.unstubAllGlobals();}
+});
+
+
+it('shows a failed file preparation request and never repeats it automatically',async()=>{
+ vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);
+ const {reprocessOwnedBranchKnowledgeFileAction}=await import('@/lib/tenancy/paid-branch-knowledge-actions');
+ vi.mocked(reprocessOwnedBranchKnowledgeFileAction).mockResolvedValueOnce(null);
+ const scope={expectedAccountId:baseProps.scope.expectedAccountId,companyId:baseProps.scope.companyId,branchId:baseProps.scope.branchId};
+ const source={id:'55555555-5555-4555-8555-555555555555',company_id:scope.companyId,kind:'file',title:'menu.pdf',file_name:'menu.pdf',content:'',status:'failed',failure_code:'extract_failed',content_version:1};
+ const snapshot={scope,version:1,branchLabel:'Branch',websiteQuota:{limit:10,used:0},pages:[],files:[{branchId:scope.branchId,source}],faq:[],capabilities:{canAddWebsite:true,canUploadFiles:true,canSaveText:true}};
+ const reader={read:async(kind:string)=>kind==='knowledge'?snapshot:null,peek:()=>null,peekHours:()=>null,invalidate:vi.fn()} as unknown as NonNullable<PaidSetupStepHostProps['reader']>;
+ const host=document.createElement('div'),root=createRoot(host);
+ try{
+  await act(async()=>root.render(createElement(PaidSetupStepHost,{...baseProps,step:'knowledge',reader})));
+  const button=[...host.querySelectorAll('button')].find(b=>b.textContent==='Reprocess from stored file')!;
+  expect(button.disabled).toBe(false);
+  await act(async()=>button.click());
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain('The request result could not be confirmed');
+  expect(reprocessOwnedBranchKnowledgeFileAction).toHaveBeenCalledTimes(1);
+  await act(async()=>root.render(createElement(PaidSetupStepHost,{...baseProps,step:'knowledge',reader})));
+  expect(reprocessOwnedBranchKnowledgeFileAction).toHaveBeenCalledTimes(1);
+ }finally{await act(async()=>root.unmount());vi.mocked(reprocessOwnedBranchKnowledgeFileAction).mockReset();vi.unstubAllGlobals();}
+});
+
+it.each([
+ ['mutateOwnedBranchKnowledgeSourceAction','Remove from branch'],
+ ['removeOwnedBranchKnowledgePageAction','Delete page'],
+ ['approveOwnedBranchKnowledgeSourceAction','Remove approval for this version'],
+] as const)('reports unconfirmed %s without inventing a version conflict',async(actionName,label)=>{
+ vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);const confirm=vi.spyOn(window,'confirm').mockReturnValue(true);
+ const actions=await import('@/lib/tenancy/paid-branch-knowledge-actions');const action=vi.mocked(actions[actionName]);action.mockResolvedValueOnce(null);
+ const scope={expectedAccountId:baseProps.scope.expectedAccountId,companyId:baseProps.scope.companyId,branchId:baseProps.scope.branchId};
+ const source={id:'55555555-5555-4555-8555-555555555555',company_id:scope.companyId,kind:'text',title:'Saved hours',content:'10–14',status:'ready',content_version:2,approved_for_answers:true,approved_version:2};
+ const snapshot={scope,version:1,branchLabel:'Branch',websiteQuota:{limit:10,used:1},pages:[{id:'66666666-6666-4666-8666-666666666666',companyId:scope.companyId,branchId:scope.branchId,version:2,url:'https://example.com',status:'ready',error:null,capabilities:{canRetry:false,canRetrain:true}}],files:[],faq:[{branchId:scope.branchId,source}],capabilities:{canAddWebsite:true,canUploadFiles:true,canSaveText:true}};
+ const reader={read:async(kind:string)=>kind==='knowledge'?snapshot:null,peek:()=>null,peekHours:()=>null,invalidate:vi.fn()} as unknown as NonNullable<PaidSetupStepHostProps['reader']>;
+ const host=document.createElement('div'),root=createRoot(host);
+ try{await act(async()=>root.render(createElement(PaidSetupStepHost,{...baseProps,step:'knowledge',reader})));await act(async()=>Array.from(host.querySelectorAll('button')).find(b=>b.textContent===label)!.click());expect(host.querySelector('[role="alert"]')?.textContent).toContain('could not be confirmed');expect(host.textContent).not.toContain('Knowledge data changed');expect(host.textContent).toContain('Saved hours');expect(host.textContent).toContain('Refresh data');expect(action).toHaveBeenCalledTimes(1);await act(async()=>root.render(createElement(PaidSetupStepHost,{...baseProps,step:'knowledge',reader})));expect(action).toHaveBeenCalledTimes(1);}finally{await act(async()=>root.unmount());action.mockReset();confirm.mockRestore();vi.unstubAllGlobals();}
 });

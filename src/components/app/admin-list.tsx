@@ -1,11 +1,14 @@
 "use client";
 
 import { useDemo } from "@/lib/demo-state";
+import overviewStyles from "./admin-overview.module.css";
 import Link from "next/link";
 import {adminCompanyHref,companyListReturnHref,type CompanyListFilters} from "./admin-company-navigation";
+import { BentoGrid, BentoCard, BorderBeam, FiveRowGrid } from "@/components/app/magic-ui";
+import { broadSectorLabel, broadSectors, preservedDetailedTypeLabel } from "@/lib/business-sectors";
 import {AdminRealAISummary} from "@/components/admin/admin-real-ai-summary";
 import {readAdminTruth,type AdminTruth} from "@/lib/answers/runtime/admin-truth";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button, Notice, useAction, useAppCopy } from "@/components/app/ui";
 import { fill, type AppCopy } from "@/lib/app-copy";
 import {
@@ -44,7 +47,6 @@ const ADMIN_SECTION_IDS = [
   "companies",
   "accounts",
   "reviews",
-  "ai",
   "future",
 ] as const;
 
@@ -60,10 +62,395 @@ function companyStatusLabel(status: CompanyStatus | null | undefined, copy: AppC
   return status ?? "—";
 }
 
+function formatCompanyBusinessType(type: string | undefined | null, isRtl: boolean): string {
+  if (!type || !type.trim()) return isRtl ? "نشاط عام" : "General";
+  const broad = broadSectorLabel(type, isRtl);
+  if (broad) return broad;
+  const detailed = preservedDetailedTypeLabel(type, isRtl);
+  if (detailed) return detailed;
+  const clean = type.replace(/^broad:/, "");
+  const match = broadSectors.find((s) => s.id === clean);
+  if (match) return isRtl ? match.ar : match.en;
+  return clean;
+}
+
 function emailConfirmLabel(value: boolean | null, copy: AppCopy): string {
   if (value === true) return copy.admin.accountEmailConfirmed;
   if (value === false) return copy.admin.accountEmailUnconfirmed;
   return copy.admin.accountEmailUnknown;
+}
+
+function InfoTooltip({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative inline-flex items-center shrink-0">
+      <button
+        type="button"
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        aria-label={text}
+        className="p-1 -m-1 rounded-full text-[var(--service-muted)] hover:text-[var(--service-accent)] hover:bg-[var(--service-accent-soft)] transition-colors focus:outline-none"
+      >
+        <svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="opacity-70 hover:opacity-100">
+          <circle cx="12" cy="12" r="10" />
+          <path d="M12 16v-4" />
+          <path d="M12 8h.01" />
+        </svg>
+      </button>
+      {open ? (
+        <div
+          role="tooltip"
+          className="absolute z-50 top-full mt-2 start-0 w-64 max-w-xs rounded-xl bg-[#0f172a] text-white p-2.5 text-xs shadow-2xl leading-relaxed text-start pointer-events-none border border-slate-700/60"
+        >
+          {text}
+          <div className="absolute bottom-full start-2 border-4 border-transparent border-b-[#0f172a]" />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function RealisticCardIcon() {
+  return (
+    <svg width="24" height="17" viewBox="0 0 26 18" fill="none" className="shrink-0" aria-hidden="true">
+      <rect width="26" height="18" rx="3" fill="url(#cardBg)" />
+      <rect y="3" width="26" height="3" fill="#18181b" fillOpacity="0.85" />
+      <rect x="3" y="8" width="5" height="4" rx="1" fill="url(#chipGold)" />
+      <line x1="3" y1="10" x2="8" y2="10" stroke="#92400e" strokeWidth="0.5" />
+      <line x1="5.5" y1="8" x2="5.5" y2="12" stroke="#92400e" strokeWidth="0.5" />
+      <circle cx="21" cy="13" r="2" fill="#d97706" fillOpacity="0.85" />
+      <circle cx="19" cy="13" r="2" fill="#f59e0b" fillOpacity="0.85" />
+      <defs>
+        <linearGradient id="cardBg" x1="0" y1="0" x2="26" y2="18" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#292524" />
+          <stop offset="1" stopColor="#18181b" />
+        </linearGradient>
+        <linearGradient id="chipGold" x1="3" y1="8" x2="8" y2="12" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#fef08a" />
+          <stop offset="1" stopColor="#d97706" />
+        </linearGradient>
+      </defs>
+    </svg>
+  );
+}
+
+function RealisticBuildingIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="shrink-0" aria-hidden="true">
+      <rect x="4" y="3" width="16" height="18" rx="1.5" fill="url(#towerBody)" stroke="#78716c" strokeWidth="0.8" />
+      <rect x="7" y="6" width="2" height="2" rx="0.4" fill="#fbbf24" />
+      <rect x="11" y="6" width="2" height="2" rx="0.4" fill="#fef08a" />
+      <rect x="15" y="6" width="2" height="2" rx="0.4" fill="#fbbf24" />
+      <rect x="7" y="10" width="2" height="2" rx="0.4" fill="#fef08a" />
+      <rect x="11" y="10" width="2" height="2" rx="0.4" fill="#fbbf24" />
+      <rect x="15" y="10" width="2" height="2" rx="0.4" fill="#fef08a" />
+      <rect x="7" y="14" width="2" height="2" rx="0.4" fill="#fbbf24" />
+      <rect x="11" y="14" width="2" height="2" rx="0.4" fill="#fef08a" />
+      <rect x="15" y="14" width="2" height="2" rx="0.4" fill="#fbbf24" />
+      <rect x="10" y="18" width="4" height="3" rx="0.4" fill="#18181b" />
+      <line x1="12" y1="1" x2="12" y2="3" stroke="#a8a29e" strokeWidth="1" strokeLinecap="round" />
+      <defs>
+        <linearGradient id="towerBody" x1="4" y1="3" x2="20" y2="21" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#44403c" />
+          <stop offset="1" stopColor="#18181b" />
+        </linearGradient>
+      </defs>
+    </svg>
+  );
+}
+
+function RealisticUsersIcon() {
+  return (
+    <svg width="22" height="20" viewBox="0 0 26 22" fill="none" className="shrink-0" aria-hidden="true">
+      <circle cx="17" cy="7" r="4" fill="#a8a29e" />
+      <path d="M12 18 C 12 14.5, 14 13, 17 13 C 20 13, 22 14.5, 22 18" fill="#e7e5e4" />
+      <circle cx="9" cy="8" r="4.5" fill="#d97706" />
+      <path d="M3 20 C 3 16, 5.5 14, 9 14 C 12.5 14, 15 16, 15 20" fill="url(#primaryUserGrad)" />
+      <defs>
+        <linearGradient id="primaryUserGrad" x1="3" y1="14" x2="15" y2="20" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#d97706" />
+          <stop offset="1" stopColor="#92400e" />
+        </linearGradient>
+      </defs>
+    </svg>
+  );
+}
+
+function RealisticChipIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="shrink-0" aria-hidden="true">
+      <line x1="3" y1="7" x2="1" y2="7" stroke="#d97706" strokeWidth="1.2" strokeLinecap="round" />
+      <line x1="3" y1="12" x2="1" y2="12" stroke="#d97706" strokeWidth="1.2" strokeLinecap="round" />
+      <line x1="3" y1="17" x2="1" y2="17" stroke="#d97706" strokeWidth="1.2" strokeLinecap="round" />
+      <line x1="21" y1="7" x2="23" y2="7" stroke="#d97706" strokeWidth="1.2" strokeLinecap="round" />
+      <line x1="21" y1="12" x2="23" y2="12" stroke="#d97706" strokeWidth="1.2" strokeLinecap="round" />
+      <line x1="21" y1="17" x2="23" y2="17" stroke="#d97706" strokeWidth="1.2" strokeLinecap="round" />
+      <line x1="7" y1="3" x2="7" y2="1" stroke="#d97706" strokeWidth="1.2" strokeLinecap="round" />
+      <line x1="12" y1="3" x2="12" y2="1" stroke="#d97706" strokeWidth="1.2" strokeLinecap="round" />
+      <line x1="17" y1="3" x2="17" y2="1" stroke="#d97706" strokeWidth="1.2" strokeLinecap="round" />
+      <line x1="7" y1="21" x2="7" y2="23" stroke="#d97706" strokeWidth="1.2" strokeLinecap="round" />
+      <line x1="12" y1="21" x2="12" y2="23" stroke="#d97706" strokeWidth="1.2" strokeLinecap="round" />
+      <line x1="17" y1="21" x2="17" y2="23" stroke="#d97706" strokeWidth="1.2" strokeLinecap="round" />
+      <rect x="3" y="3" width="18" height="18" rx="2" fill="#1c1917" stroke="#78716c" strokeWidth="0.8" />
+      <rect x="7" y="7" width="10" height="10" rx="1" fill="url(#coreGradient)" />
+      <text x="12" y="14" fill="#ffffff" fontSize="6" fontWeight="bold" textAnchor="middle" fontFamily="sans-serif">AI</text>
+      <defs>
+        <linearGradient id="coreGradient" x1="7" y1="7" x2="17" y2="17" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#f59e0b" />
+          <stop offset="1" stopColor="#b45309" />
+        </linearGradient>
+      </defs>
+    </svg>
+  );
+}
+
+function RealisticRocketIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="shrink-0" aria-hidden="true">
+      <path d="M6 18 Q 4 21, 5 23 Q 7 21, 8 19 Z" fill="url(#flameGrad)" />
+      <path d="M5 14 L 2 17 L 6 17 Z" fill="#b45309" />
+      <path d="M12 7 L 15 10 L 15 6 Z" fill="#b45309" />
+      <path d="M19 4 C 19 4, 15 3, 11 7 C 8 10, 7 14, 7 15 L 11 19 C 12 19, 16 18, 19 15 C 23 11, 22 7, 22 7 Z" fill="url(#rocketBody)" />
+      <circle cx="15.5" cy="10.5" r="2" fill="#fef08a" stroke="#ffffff" strokeWidth="0.8" />
+      <defs>
+        <linearGradient id="rocketBody" x1="19" y1="4" x2="7" y2="17" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#d97706" />
+          <stop offset="1" stopColor="#92400e" />
+        </linearGradient>
+        <linearGradient id="flameGrad" x1="6" y1="18" x2="5" y2="23" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#fbbf24" />
+          <stop offset="1" stopColor="#ef4444" />
+        </linearGradient>
+      </defs>
+    </svg>
+  );
+}
+
+function BarVolumeChart({
+  settled = 0,
+  review = 0,
+  pending = 0,
+  failed = 0,
+  reversed = 0,
+  color = "#10b981",
+}: {
+  settled?: number;
+  review?: number;
+  pending?: number;
+  failed?: number;
+  reversed?: number;
+  color?: string;
+}) {
+  const values = [settled, review, pending, failed, reversed];
+  const max = Math.max(...values, 1);
+  const total = settled + review + pending + failed + reversed;
+
+  return (
+    <div className="flex flex-col items-end gap-0.5 shrink-0" aria-hidden="true" title={`ناجحة: ${settled}، مراجعة: ${review}، معلقة: ${pending}، فاشلة: ${failed}، مستردة: ${reversed}`}>
+      <div className="h-5 w-14 sm:w-16 flex items-end justify-between gap-1">
+        {values.map((v, i) => {
+          const heightPct = total === 0 ? 15 : Math.max(15, Math.round((v / max) * 100));
+          const isHighest = v === max && total > 0;
+          return (
+            <span
+              key={i}
+              className="w-1.5 rounded-t-xs transition-all"
+              style={{
+                height: `${heightPct}%`,
+                background: isHighest ? color : `${color}60`,
+              }}
+            />
+          );
+        })}
+      </div>
+      <span className="text-[8px] font-bold text-[var(--service-muted)]">
+        {total} {total === 1 ? "طلب" : "طلبات"}
+      </span>
+    </div>
+  );
+}
+
+function SegmentRatioBar({
+  active = 0,
+  setup = 0,
+  suspended = 0,
+  total = 0,
+}: {
+  active?: number;
+  setup?: number;
+  suspended?: number;
+  total?: number;
+}) {
+  const sum = total || (active + setup + suspended) || 1;
+  const activePct = Math.round((active / sum) * 100);
+  const setupPct = Math.round((setup / sum) * 100);
+  const suspendedPct = Math.max(0, 100 - activePct - setupPct);
+
+  return (
+    <div className="w-16 sm:w-20 shrink-0 flex flex-col gap-0.5 justify-center" aria-hidden="true">
+      <div className="h-1.5 w-full rounded-full bg-slate-200 overflow-hidden flex">
+        {activePct > 0 && (
+          <div style={{ width: `${activePct}%` }} className="bg-amber-600 transition-all" />
+        )}
+        {setupPct > 0 && (
+          <div style={{ width: `${setupPct}%` }} className="bg-slate-400 transition-all" />
+        )}
+        {suspendedPct > 0 && (
+          <div style={{ width: `${suspendedPct}%` }} className="bg-red-500 transition-all" />
+        )}
+      </div>
+      <div className="flex justify-between text-[8px] text-[var(--service-muted)] font-bold">
+        <span>{activePct}% نشطة</span>
+        <span>{setupPct}% إعداد</span>
+      </div>
+    </div>
+  );
+}
+
+function ActivityMatrixPips({
+  total = 0,
+  unassigned = 0,
+  withoutActive = 0,
+  color = "#d97706",
+}: {
+  total?: number;
+  unassigned?: number;
+  withoutActive?: number;
+  color?: string;
+}) {
+  const displayCount = Math.min(10, Math.max(1, total));
+  const activeCount = Math.max(0, total - withoutActive);
+  const activeRatio = total > 0 ? activeCount / total : 1;
+  const activeDisplayPips = Math.round(displayCount * activeRatio);
+
+  return (
+    <div className="w-16 sm:w-20 shrink-0 flex flex-col gap-0.5 justify-center" aria-hidden="true">
+      <div className="flex flex-wrap gap-1 justify-end max-w-full">
+        {Array.from({ length: displayCount }).map((_, i) => {
+          const isActive = i < activeDisplayPips;
+          return (
+            <span
+              key={i}
+              className="h-2 w-2 rounded-full transition-all"
+              style={{
+                backgroundColor: isActive ? color : "var(--service-line)",
+                opacity: isActive ? 1 : 0.5,
+              }}
+            />
+          );
+        })}
+      </div>
+      <div className="flex justify-between text-[8px] text-[var(--service-muted)] font-bold">
+        <span>{activeCount} نشط</span>
+        <span>{unassigned} متاح</span>
+      </div>
+    </div>
+  );
+}
+
+function SteppedAreaChart({
+  models = [],
+  color = "#d97706",
+  id = "aispend",
+}: {
+  models?: Array<{ model_id: string; cost_baisa: number; attempts: number }>;
+  color?: string;
+  id?: string;
+}) {
+  const costs = models.map((m) => Number(m.cost_baisa || 0));
+  const totalCost = costs.reduce((a, b) => a + b, 0);
+
+  let path = "M 0 20 L 100 20";
+  if (totalCost > 0 && costs.length > 0) {
+    let cum = 0;
+    const points: Array<[number, number]> = [[0, 20]];
+    models.forEach((m, idx) => {
+      cum += Number(m.cost_baisa || 0);
+      const x = Math.round(((idx + 1) / models.length) * 100);
+      const y = Math.max(4, Math.round(20 - (cum / totalCost) * 16));
+      points.push([x, y]);
+    });
+    path = `M 0 20 L ${points[0][0]} ${points[0][1]}`;
+    for (let i = 1; i < points.length; i++) {
+      const prev = points[i - 1];
+      const curr = points[i];
+      path += ` L ${curr[0]} ${prev[1]} L ${curr[0]} ${curr[1]}`;
+    }
+  }
+
+  const totalAttempts = models.reduce((a, b) => a + Number(b.attempts || 0), 0);
+
+  return (
+    <div className="flex flex-col items-end gap-0.5 shrink-0" aria-hidden="true">
+      <div className="h-5 w-14 sm:w-16 overflow-hidden">
+        <svg viewBox="0 0 100 22" fill="none" className="w-full h-full" preserveAspectRatio="none">
+          <defs>
+            <linearGradient id={`grad-${id}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={color} stopOpacity="0.25" />
+              <stop offset="100%" stopColor={color} stopOpacity="0.0" />
+            </linearGradient>
+          </defs>
+          <path d={`${path} L 100 22 L 0 22 Z`} fill={`url(#grad-${id})`} />
+          <path d={path} stroke={color} strokeWidth="1.8" strokeLinecap="square" strokeLinejoin="miter" />
+        </svg>
+      </div>
+      <span className="text-[8px] font-bold text-[var(--service-muted)]">
+        {totalAttempts} {totalAttempts === 1 ? "محاولة" : "محاولات"}
+      </span>
+    </div>
+  );
+}
+
+function RadialMeterRing({
+  heldBaisa = 0,
+  limitBaisa = 0,
+  spentBaisa = 0,
+  color = "#d97706",
+}: {
+  heldBaisa?: number;
+  limitBaisa?: number;
+  spentBaisa?: number;
+  color?: string;
+}) {
+  const percent = limitBaisa > 0
+    ? Math.min(100, Math.max(0, Math.round((heldBaisa / limitBaisa) * 100)))
+    : (heldBaisa + spentBaisa) > 0
+    ? Math.min(100, Math.max(0, Math.round((heldBaisa / (heldBaisa + spentBaisa)) * 100)))
+    : 0;
+
+  const radius = 9;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference - (percent / 100) * circumference;
+
+  return (
+    <div className="flex items-center gap-1.5 shrink-0" aria-hidden="true">
+      <div className="h-6 w-6 relative flex items-center justify-center">
+        <svg className="w-full h-full -rotate-90" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r={radius} stroke="#e2e8f0" strokeWidth="2.2" fill="none" />
+          <circle
+            cx="12"
+            cy="12"
+            r={radius}
+            stroke={color}
+            strokeWidth="2.2"
+            strokeDasharray={circumference}
+            strokeDashoffset={strokeDashoffset}
+            strokeLinecap="round"
+            fill="none"
+            className="transition-all duration-500"
+          />
+        </svg>
+        <span className="absolute text-[7px] font-black text-[var(--service-ink)]">
+          {percent}%
+        </span>
+      </div>
+      <div className="text-[8px] leading-tight text-[var(--service-muted)] font-semibold">
+        <span>من السقف</span>
+      </div>
+    </div>
+  );
 }
 
 const ADMIN_FLASH_CLASS = "admin-section-target";
@@ -124,7 +511,10 @@ export function AdminList({
   const copy = useAppCopy();
   const { locale } = useDemo();
   const { busy, run } = useAction();
-  const [activeTab, setActiveTab] = useState<AdminTab>("overview");
+  const [activeTab, setActiveTab] = useState<AdminTab>(() => {
+    if (overviewUnavailable) return "companies";
+    return "overview";
+  });
   const [search, setSearch] = useState(initialCompanyFilters.search);
   const [appliedCompanySearch,setAppliedCompanySearch]=useState(initialCompanyFilters.search);
   const [status, setStatus] = useState<"all" | CompanyStatus>(initialCompanyFilters.status);
@@ -145,6 +535,8 @@ export function AdminList({
   const [accountOffsetCapped, setAccountOffsetCapped] = useState(false);
   const [accountsState, setAccountsState] = useState<AccountsLoadState>("loading");
   const [activeAccountQuery, setActiveAccountQuery] = useState("");
+  const [accountFilter, setAccountFilter] = useState<"all" | "active" | "setup" | "none" | "verified" | "unconfirmed">("all");
+  const [accountSort, setAccountSort] = useState<"default" | "name_asc" | "name_desc" | "companies_desc">("default");
   const [trackedOverviewProps, setTrackedOverviewProps] = useState(() => ({
     overview: initialOverview,
     unavailable: overviewUnavailable,
@@ -188,7 +580,11 @@ export function AdminList({
         ? {...current,data:null,pending:null}:current);
     }
   }
-  const money=(value:number)=>new Intl.NumberFormat(locale==="ar"?"ar-OM":"en-OM",{maximumFractionDigits:6,minimumFractionDigits:3}).format(value/1000);
+  const money = (value: number) =>
+    new Intl.NumberFormat("en-US", {
+      minimumFractionDigits: 3,
+      maximumFractionDigits: 3,
+    }).format(value / 1000);
 
   // Adopt newer SSR props on router.refresh
   if (
@@ -350,7 +746,8 @@ export function AdminList({
   useEffect(() => {
     function handleHash(event?: Event) {
       if (typeof window === "undefined") return;
-      const hash = (event instanceof CustomEvent && typeof event.detail === "string" ? event.detail : window.location.hash.replace(/^#/, "")) as AdminTab;
+      const raw = (event instanceof CustomEvent && typeof event.detail === "string" ? event.detail : window.location.hash.replace(/^#/, ""));
+      const hash = raw === "ai" ? "overview" : (raw as AdminTab);
       if (ADMIN_SECTION_IDS.includes(hash)) {
         setActiveTab(hash);
         requestAnimationFrame(() => scrollAdminSection(hash, "none"));
@@ -464,6 +861,66 @@ export function AdminList({
   const pageNumber = Math.floor(accountOffset / ACCOUNT_PAGE_SIZE) + 1;
   const isRtl = locale === "ar";
 
+  const companyMap = useMemo(() => new Map(rows.map((r) => [r.id, r])), [rows]);
+
+  function getAccountSubscriptionStatus(account: AdminAccountSearchItem): "active" | "setup" | "none" {
+    for (const c of account.companies) {
+      const comp = companyMap.get(c.company_id);
+      const status = c.company_status || comp?.status;
+      if (status === "active") return "active";
+    }
+    for (const c of account.companies) {
+      const comp = companyMap.get(c.company_id);
+      const status = c.company_status || comp?.status;
+      if (status === "setup") return "setup";
+    }
+    return "none";
+  }
+
+  function getAccountLocation(account: AdminAccountSearchItem): string | null {
+    for (const c of account.companies) {
+      const comp = companyMap.get(c.company_id);
+      if (comp?.city && comp?.country) return `${comp.city}، ${comp.country}`;
+      if (comp?.city) return comp.city;
+      if (comp?.country) return comp.country;
+    }
+    return null;
+  }
+
+  function getAccountPhone(account: AdminAccountSearchItem): string | null {
+    if (account.account_phone && account.account_phone.trim()) return account.account_phone.trim();
+    for (const c of account.companies) {
+      if (c.business_phone && c.business_phone.trim()) return c.business_phone.trim();
+    }
+    return null;
+  }
+
+  const filteredAndSortedAccounts = useMemo(() => {
+    let list = [...accountRows];
+
+    if (accountFilter === "active") {
+      list = list.filter((a) => getAccountSubscriptionStatus(a) === "active");
+    } else if (accountFilter === "setup") {
+      list = list.filter((a) => getAccountSubscriptionStatus(a) === "setup");
+    } else if (accountFilter === "none") {
+      list = list.filter((a) => getAccountSubscriptionStatus(a) === "none");
+    } else if (accountFilter === "verified") {
+      list = list.filter((a) => a.email_confirmed === true);
+    } else if (accountFilter === "unconfirmed") {
+      list = list.filter((a) => a.email_confirmed !== true);
+    }
+
+    if (accountSort === "name_asc") {
+      list.sort((a, b) => (a.full_name || a.email || "").localeCompare(b.full_name || b.email || "", isRtl ? "ar" : "en"));
+    } else if (accountSort === "name_desc") {
+      list.sort((a, b) => (b.full_name || b.email || "").localeCompare(a.full_name || a.email || "", isRtl ? "ar" : "en"));
+    } else if (accountSort === "companies_desc") {
+      list.sort((a, b) => b.companies.length - a.companies.length);
+    }
+
+    return list;
+  }, [accountRows, accountFilter, accountSort, companyMap, isRtl]);
+
   function switchTab(tab: AdminTab) {
     setActiveTab(tab);
     try {
@@ -479,18 +936,9 @@ export function AdminList({
       {/* 📌 Header Title & Top Controls */}
       <div className="flex flex-wrap items-center justify-between gap-4 pb-2 border-b border-[var(--service-line)]/80">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="flex h-2.5 w-2.5 rounded-full bg-[var(--service-accent-soft)]" />
-            <span className="text-xs font-semibold text-[var(--service-accent)] tracking-wider uppercase">
-              {copy.brand} Enterprise Platform
-            </span>
-          </div>
-          <h1 className="mt-1 text-2xl sm:text-3xl font-extrabold text-[var(--service-ink)] tracking-tight">
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-[var(--service-ink)] tracking-tight">
             {copy.admin.title}
           </h1>
-          <p className="mt-1 text-xs sm:text-sm text-[var(--service-ink)] max-w-2xl">
-            {copy.admin.body}
-          </p>
         </div>
 
         {/* Action button: Refresh Data */}
@@ -513,146 +961,266 @@ export function AdminList({
         </div>
       </div>
 
-      {/* 📊 5 Enterprise KPI Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
-        {/* Card 1: Total Companies */}
-        <div className="relative rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] p-4 transition-all hover:border-[var(--service-accent)] hover:shadow-md">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-[var(--service-ink)]">
-              {isRtl ? "إجمالي الشركات" : "Total Companies"}
-            </span>
-            <span className="p-1.5 rounded-lg bg-[var(--service-subtle)] text-[var(--service-accent)]">
-              <IconBuilding />
+      {/* 📊 5 Enterprise Metric Cards in a Single Horizontal Row */}
+      <FiveRowGrid className="my-1.5">
+        {/* Card 1: Monthly Gross Collections */}
+        <BentoCard
+          interactive={true}
+          className="relative flex flex-col justify-between p-3 border border-[var(--service-line)] bg-[var(--service-surface)] hover:border-[var(--service-accent)]/50 transition-colors shadow-2xs"
+        >
+          <div className="flex items-center justify-between gap-1.5">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <RealisticCardIcon />
+              <span className="text-xs font-bold text-[var(--service-ink)] tracking-tight truncate">
+                {isRtl ? "إجمالي التحصيل" : "Gross Collections"}
+              </span>
+              <InfoTooltip
+                text={
+                  isRtl
+                    ? "تحصيل Live قبل الاسترداد والرسوم، وليس صافي الإيراد؛ التجريبي منفصل"
+                    : "Live gross before refunds and fees, not net revenue; test payments are separate"
+                }
+              />
+            </div>
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-[var(--service-subtle)] text-[var(--service-accent)] border border-[var(--service-line)] shrink-0">
+              <span className="w-1.5 h-1.5 rounded-full bg-[var(--service-accent)] animate-pulse" />
+              Live
             </span>
           </div>
-          <p className="mt-3 text-2xl font-black text-[var(--service-ink)] [font-family:inherit]">
-            {overviewState === "ready" && overview ? overview.companiesTotal : "—"}
-          </p>
-          <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] text-[var(--service-muted)]">
-            <span className="text-[var(--service-accent)] font-bold">
+
+          <div className="my-1.5 flex items-baseline justify-between gap-2">
+            <div className="flex items-baseline gap-1" dir="ltr">
+              <span className="text-xl sm:text-2xl font-black tracking-tight text-[var(--service-ink)]">
+                {truth ? money(Number(truth.collections.live_collected_baisa)) : "—"}
+              </span>
+              <span className="text-[11px] font-bold text-[var(--service-muted)] uppercase">OMR</span>
+            </div>
+            <BarVolumeChart
+              settled={truth?.collections.settled_orders ?? 0}
+              review={truth?.collections.review_orders ?? 0}
+              pending={truth?.collections.pending_orders ?? 0}
+              failed={truth?.collections.failed_orders ?? 0}
+              reversed={truth?.collections.reversed_orders ?? 0}
+              color="#d97706"
+            />
+          </div>
+
+          <div className="pt-1.5 border-t border-[var(--service-line)]/50 flex items-center justify-between text-[10px]">
+            <span className="text-[var(--service-muted)] truncate">
+              {isRtl ? "اشتراكات موثقة" : "Verified receipts"}
+            </span>
+            <span className="font-semibold text-[var(--service-accent)]">
+              {isRtl ? "بوابة الدفع" : "Gateway"}
+            </span>
+          </div>
+        </BentoCard>
+
+        {/* Card 2: Total Companies */}
+        <BentoCard
+          interactive={true}
+          className="relative flex flex-col justify-between p-3 border border-[var(--service-line)] bg-[var(--service-surface)] hover:border-[var(--service-accent)]/50 transition-colors shadow-2xs"
+        >
+          <div className="flex items-center justify-between gap-1.5">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <RealisticBuildingIcon />
+              <span className="text-xs font-bold text-[var(--service-ink)] truncate">
+                {isRtl ? "إجمالي الشركات" : "Total Companies"}
+              </span>
+              <InfoTooltip
+                text={
+                  isRtl
+                    ? "إجمالي الشركات المسجلة على المنصة وحالاتها التشغيلية"
+                    : "Total companies registered on platform and status"
+                }
+              />
+            </div>
+          </div>
+
+          <div className="my-1.5 flex items-baseline justify-between gap-2">
+            <p className="text-xl sm:text-2xl font-black text-[var(--service-ink)] tracking-tight">
+              {overviewState === "ready" && overview ? overview.companiesTotal : "—"}
+            </p>
+            <SegmentRatioBar
+              active={overview?.companiesActive ?? 0}
+              setup={overview?.companiesSetup ?? 0}
+              suspended={overview?.companiesSuspended ?? 0}
+              total={overview?.companiesTotal ?? 0}
+            />
+          </div>
+
+          <div className="pt-1.5 border-t border-[var(--service-line)]/50 flex flex-wrap items-center gap-1 text-[10px]">
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded-md font-semibold bg-[var(--service-accent-soft)] text-[var(--service-accent)]">
               {overviewState === "ready" && overview ? overview.companiesActive : "—"} {isRtl ? "نشطة" : "active"}
             </span>
-            <span>·</span>
-            <span className="text-[var(--service-accent)] font-bold">
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded-md font-medium bg-[var(--service-subtle)] text-[var(--service-muted)]">
               {overviewState === "ready" && overview ? overview.companiesSetup : "—"} {isRtl ? "إعداد" : "setup"}
             </span>
             {overview?.companiesSuspended ? (
-              <>
-                <span>·</span>
-                <span className="text-[#8B3D29] font-bold">
-                  {overview.companiesSuspended} {isRtl ? "معلقة" : "suspended"}
-                </span>
-              </>
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded-md font-semibold bg-[var(--service-subtle)] text-[var(--service-muted)]">
+                {overview.companiesSuspended} {isRtl ? "معلقة" : "suspended"}
+              </span>
             ) : null}
           </div>
-        </div>
+        </BentoCard>
 
-        {/* Card 2: Accounts & Admins */}
-        <div className="relative rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] p-4 transition-all hover:border-[var(--service-accent)] hover:shadow-md">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-[var(--service-ink)]">
-              {isRtl ? "الحسابات والمستخدمين" : "Accounts & Users"}
-            </span>
-            <span className="p-1.5 rounded-lg bg-[var(--service-canvas)] text-[var(--service-accent)]">
-              <IconUsers />
-            </span>
+        {/* Card 3: Accounts & Users */}
+        <BentoCard
+          interactive={true}
+          className="relative flex flex-col justify-between p-3 border border-[var(--service-line)] bg-[var(--service-surface)] hover:border-[var(--service-accent)]/50 transition-colors shadow-2xs"
+        >
+          <div className="flex items-center justify-between gap-1.5">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <RealisticUsersIcon />
+              <span className="text-xs font-bold text-[var(--service-ink)] truncate">
+                {isRtl ? "الحسابات والمستخدمين" : "Accounts & Users"}
+              </span>
+              <InfoTooltip
+                text={
+                  isRtl
+                    ? "إجمالي حسابات المستخدمين النشطين المسجلين في منصة فيلورا"
+                    : "Total active registered users on Velora platform"
+                }
+              />
+            </div>
           </div>
-          <p className="mt-3 text-2xl font-black text-[var(--service-ink)] [font-family:inherit]">
-            {overviewState === "ready" && overview ? overview.accountsTotal : "—"}
-          </p>
-          <p className="mt-2 text-[11px] text-[var(--service-muted)]">
-            {isRtl ? "مستخدمين مسجلين في النظام" : "Registered user accounts"}
-          </p>
-        </div>
 
-        {/* Card 3: Monthly Subscription Revenue */}
-        <div className="relative rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] p-4 transition-all hover:border-[var(--service-accent)] hover:shadow-md">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-[var(--service-ink)]">
-              {isRtl ? "إجمالي التحصيل الموثق هذا الشهر" : "Proven gross collections this month"}
-            </span>
-            <span className="p-1.5 rounded-lg bg-[var(--service-subtle)] text-[var(--service-accent)]">
-              <IconCreditCard />
-            </span>
+          <div className="my-1.5 flex items-baseline justify-between gap-2">
+            <p className="text-xl sm:text-2xl font-black text-[var(--service-ink)] tracking-tight">
+              {overviewState === "ready" && overview ? overview.accountsTotal : "—"}
+            </p>
+            <ActivityMatrixPips
+              total={overview?.accountsTotal ?? 0}
+              unassigned={overview?.accountsWithoutCompany ?? 0}
+              withoutActive={overview?.accountsWithoutActiveCompany ?? 0}
+              color="#d97706"
+            />
           </div>
-          <p className="mt-3 text-2xl font-black text-[var(--service-ink)] [font-family:inherit]" dir="ltr">
-            <bdi>{truth?money(Number(truth.collections.live_collected_baisa)):"—"} OMR</bdi>
-          </p>
-          <p className="mt-2 text-[11px] text-[var(--service-accent)] font-semibold">
-            {isRtl ? "تحصيل Live قبل الاسترداد والرسوم، وليس صافي الإيراد؛ التجريبي منفصل" : "Live gross before refunds and fees, not net revenue; test payments are separate"}
-          </p>
-          <p className="mt-2 text-[11px] text-[var(--service-muted)]">
-            {truth ? (isRtl
-              ? `طلبات النشاط المالي هذا الشهر: مستردة/معكوسة ${truth.collections.reversed_orders}، للمراجعة ${truth.collections.review_orders}، معلقة ${truth.collections.pending_orders}، فاشلة ${truth.collections.failed_orders}، غير محسومة ${truth.collections.unknown_orders}. قيمة الاسترداد وصافي الإيراد غير متاحين دون دليل تفصيلي.`
-              : `Orders with financial activity this month: reversed ${truth.collections.reversed_orders}, review ${truth.collections.review_orders}, pending ${truth.collections.pending_orders}, failed ${truth.collections.failed_orders}, unknown ${truth.collections.unknown_orders}. Refund amount and net revenue are unavailable without detailed evidence.`)
-              : truthLoading ? (isRtl ? "جارٍ تحديث الأدلة المالية…" : "Refreshing financial evidence…") : (isRtl ? "تعذّر التحقق من الأدلة المالية؛ لا يُعرض مبلغ تقديري." : "Financial evidence could not be verified; no estimated amount is displayed.")}
-          </p>
-        </div>
+
+          <div className="pt-1.5 border-t border-[var(--service-line)]/50 flex items-center justify-between text-[10px]">
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded-md font-medium bg-[var(--service-subtle)] text-[var(--service-muted)]">
+              {isRtl ? "مستخدمين مسجلين" : "Registered users"}
+            </span>
+            <span className="text-[var(--service-muted)]">{isRtl ? "نشط بالنظام" : "Active"}</span>
+          </div>
+        </BentoCard>
 
         {/* Card 4: AI Operating Cost */}
-        <div className="relative rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] p-4 transition-all hover:border-[#8B3D29]">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-[#8B3D29]">
-              {isRtl ? "استهلاك تجارب الذكاء المسجّل" : "Recorded administrative AI spend"}
+        <BentoCard
+          interactive={true}
+          className="relative flex flex-col justify-between p-3 border border-[var(--service-line)] bg-[var(--service-surface)] hover:border-[var(--service-accent)]/50 transition-colors shadow-2xs"
+        >
+          <div className="flex items-center justify-between gap-1.5">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <RealisticChipIcon />
+              <span className="text-xs font-bold text-[var(--service-ink)] truncate">
+                {isRtl ? "استهلاك الذكاء" : "AI spend"}
+              </span>
+              <InfoTooltip
+                text={
+                  isRtl
+                    ? "من سجل الاستهلاك الفعلي؛ لا يشمل المبالغ المحجوزة"
+                    : "From actual usage records; excludes held amounts"
+                }
+              />
+            </div>
+          </div>
+
+          <div className="my-1.5 flex items-baseline justify-between gap-2">
+            <div className="flex items-baseline gap-1" dir="ltr">
+              <span className="text-xl sm:text-2xl font-black tracking-tight text-[var(--service-ink)]">
+                {truth?.ai ? money(Number(truth.ai.budget.spent_baisa)) : "—"}
+              </span>
+              <span className="text-[11px] font-bold text-[var(--service-muted)] uppercase">OMR</span>
+            </div>
+            <SteppedAreaChart
+              models={truth?.ai?.models ?? []}
+              color="#d97706"
+              id="aispend"
+            />
+          </div>
+
+          <div className="pt-1.5 border-t border-[var(--service-line)]/50 flex items-center justify-between text-[10px]">
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded-md font-semibold bg-[var(--service-subtle)] text-[var(--service-ink)] border border-[var(--service-line)]">
+              {isRtl ? "استهلاك فعلي" : "Recorded spend"}
             </span>
-            <span className="p-1.5 rounded-lg bg-[var(--service-surface)] text-[#8B3D29]">
-              <IconSparkles />
+            <span className="text-[var(--service-muted)] font-medium">{isRtl ? "تجارب AI" : "AI trials"}</span>
+          </div>
+        </BentoCard>
+
+        {/* Card 5: AI Held Funds */}
+        <BentoCard
+          interactive={true}
+          className="relative flex flex-col justify-between p-3 border border-[var(--service-line)] bg-[var(--service-surface)] hover:border-[var(--service-accent)]/50 transition-colors shadow-2xs"
+        >
+          <div className="flex items-center justify-between gap-1.5">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <RealisticRocketIcon />
+              <span className="text-xs font-bold text-[var(--service-ink)] truncate">
+                {isRtl ? "محجوز الذكاء" : "Held trial funds"}
+              </span>
+              <InfoTooltip
+                text={
+                  isRtl
+                    ? "الحجز ليس مصروفاً مؤكداً أو ربحاً"
+                    : "Held funds are not confirmed spend or profit"
+                }
+              />
+            </div>
+          </div>
+
+          <div className="my-1.5 flex items-baseline justify-between gap-2">
+            <div className="flex items-baseline gap-1" dir="ltr">
+              <span className="text-xl sm:text-2xl font-black tracking-tight text-[var(--service-ink)]">
+                {truth?.ai ? money(Number(truth.ai.budget.held_baisa)) : "—"}
+              </span>
+              <span className="text-[11px] font-bold text-[var(--service-muted)] uppercase">OMR</span>
+            </div>
+            <RadialMeterRing
+              heldBaisa={Number(truth?.ai?.budget.held_baisa ?? 0)}
+              limitBaisa={Number(truth?.ai?.budget.limit_baisa ?? 0)}
+              spentBaisa={Number(truth?.ai?.budget.spent_baisa ?? 0)}
+              color="#d97706"
+            />
+          </div>
+
+          <div className="pt-1.5 border-t border-[var(--service-line)]/50 flex items-center justify-between text-[10px]">
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded-md font-semibold bg-[var(--service-accent-soft)] text-[var(--service-accent)] border border-[var(--service-accent)]/20">
+              {isRtl ? "حجز مالي" : "Temporary hold"}
+            </span>
+            <span className="text-[var(--service-muted)] font-medium">
+              {isRtl ? "ميزانية تجارب" : "Trial budget"}
             </span>
           </div>
-          <p className="mt-3 text-2xl font-black text-[#8B3D29] [font-family:inherit]" dir="ltr">
-            <bdi>{truth?.ai?money(Number(truth.ai.budget.spent_baisa)):"—"} OMR</bdi>
-          </p>
-          <p className="mt-2 text-[11px] text-[#8B3D29]">
-            {isRtl ? "من سجل الاستهلاك الفعلي؛ لا يشمل المبالغ المحجوزة" : "From actual usage records; excludes held amounts"}
-          </p>
-        </div>
+        </BentoCard>
+      </FiveRowGrid>
 
-        {/* Card 5: Net Operating Margin */}
-        <div className="relative rounded-2xl border border-[var(--service-line)] bg-[var(--service-subtle)] p-4 transition-all hover:border-[var(--service-accent)] shadow-[0_4px_16px_rgba(107,73,50,0.06)]">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-[var(--service-accent)]">
-              {isRtl ? "مبلغ محجوز لتجارب الذكاء" : "Held trial funds"}
-            </span>
-            <span className="p-1.5 rounded-lg bg-[var(--service-subtle)] text-[var(--service-accent)]">
-              <IconRocket />
-            </span>
-          </div>
-          <p className="mt-3 text-2xl font-black text-[var(--service-accent)] [font-family:inherit]" dir="ltr">
-            <bdi>{truth?.ai?money(Number(truth.ai.budget.held_baisa)):"—"} OMR</bdi>
-          </p>
-          <p className="mt-2 text-[11px] text-[var(--service-accent)] font-bold">
-            {isRtl ? "الحجز ليس مصروفًا مؤكدًا أو ربحًا" : "Held funds are not confirmed spend or profit"}
-          </p>
-        </div>
-      </div>
-
-      {overviewError?<Notice tone="error">{overviewError}</Notice>:null}
+      {overviewError ? <Notice tone="error">{overviewError}</Notice> : null}
 
       {/* 🧭 Tab Navigation Bar */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1 border-b border-[var(--service-line)] scrollbar-none">
         <button
           type="button"
           onClick={() => switchTab("overview")}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition shrink-0 ${
+          aria-pressed={activeTab === "overview"}
+          className={`flex items-center gap-2 min-h-11 px-4 py-2.5 rounded-xl text-sm font-semibold transition shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--service-accent)] ${
             activeTab === "overview"
               ? "bg-[var(--service-accent-soft)] text-[var(--service-ink)] shadow-md shadow-[var(--service-accent)]/20"
               : "text-[var(--service-ink)] hover:text-[var(--service-ink)] hover:bg-[var(--service-subtle)]"
           }`}
         >
-          <IconDashboard />
-          <span>{isRtl ? "الرئيسية والذكاء" : "Overview & AI"}</span>
+          <span>{isRtl ? "مركز النماذج والتكاليف" : "AI Models & Costs"}</span>
         </button>
 
         <button
           type="button"
           onClick={() => switchTab("companies")}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition shrink-0 ${
+          aria-pressed={activeTab === "companies"}
+          className={`flex items-center gap-2 min-h-11 px-4 py-2.5 rounded-xl text-sm font-semibold transition shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--service-accent)] ${
             activeTab === "companies"
               ? "bg-[var(--service-accent-soft)] text-[var(--service-ink)] shadow-md shadow-[var(--service-accent)]/20"
               : "text-[var(--service-ink)] hover:text-[var(--service-ink)] hover:bg-[var(--service-subtle)]"
           }`}
         >
-          <IconBuilding />
           <span>{isRtl ? "الشركات والعملاء" : "Companies"}</span>
           <span className="rounded-full bg-[var(--service-accent)]/10 px-1.5 py-0.2 text-[10px] font-bold">
             {companiesState === "ready" ? (companyTotalCount ?? rows.length) : "-"}
@@ -662,26 +1230,26 @@ export function AdminList({
         <button
           type="button"
           onClick={() => switchTab("accounts")}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition shrink-0 ${
+          aria-pressed={activeTab === "accounts"}
+          className={`flex items-center gap-2 min-h-11 px-4 py-2.5 rounded-xl text-sm font-semibold transition shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--service-accent)] ${
             activeTab === "accounts"
               ? "bg-[var(--service-accent-soft)] text-[var(--service-ink)] shadow-md shadow-[var(--service-accent)]/20"
               : "text-[var(--service-ink)] hover:text-[var(--service-ink)] hover:bg-[var(--service-subtle)]"
           }`}
         >
-          <IconUsers />
           <span>{isRtl ? "الحسابات والمستخدمين" : "Accounts"}</span>
         </button>
 
         <button
           type="button"
           onClick={() => switchTab("reviews")}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition shrink-0 ${
+          aria-pressed={activeTab === "reviews"}
+          className={`flex items-center gap-2 min-h-11 px-4 py-2.5 rounded-xl text-sm font-semibold transition shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--service-accent)] ${
             activeTab === "reviews"
               ? "bg-[var(--service-accent-soft)] text-[var(--service-ink)] shadow-md shadow-[var(--service-accent)]/20"
               : "text-[var(--service-ink)] hover:text-[var(--service-ink)] hover:bg-[var(--service-subtle)]"
           }`}
         >
-          <IconCheckCircle />
           <span>{isRtl ? "طلبات المراجعة" : "Reviews"}</span>
           {reviewsTotal !== null && reviewsTotal > 0 && (
             <span className="rounded-full bg-[var(--service-accent-soft)] text-[var(--service-ink)] px-1.5 py-0.2 text-[10px] font-bold">
@@ -690,29 +1258,17 @@ export function AdminList({
           )}
         </button>
 
-        <button
-          type="button"
-          onClick={() => switchTab("ai")}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition shrink-0 ${
-            activeTab === "ai"
-              ? "bg-[var(--service-accent-soft)] text-[var(--service-ink)] shadow-md shadow-[var(--service-accent)]/20"
-              : "text-[var(--service-ink)] hover:text-[var(--service-ink)] hover:bg-[var(--service-subtle)]"
-          }`}
-        >
-          <IconSparkles />
-          <span>{isRtl ? "مركز النماذج والتكاليف" : "AI Routing & Ledger"}</span>
-        </button>
 
         <button
           type="button"
           onClick={() => switchTab("future")}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition shrink-0 ${
+          aria-pressed={activeTab === "future"}
+          className={`flex items-center gap-2 min-h-11 px-4 py-2.5 rounded-xl text-sm font-semibold transition shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--service-accent)] ${
             activeTab === "future"
               ? "bg-[var(--service-accent-soft)] text-[var(--service-ink)] shadow-md shadow-[var(--service-accent)]/20"
               : "text-[var(--service-ink)] hover:text-[var(--service-ink)] hover:bg-[var(--service-subtle)]"
           }`}
         >
-          <IconRocket />
           <span>{isRtl ? "الميزات المستقبلية" : "Planned Modules"}</span>
           <span className="rounded-full bg-[var(--service-canvas)] text-[var(--service-accent)] border border-[var(--service-line)] px-1.5 py-0.2 text-[10px] font-bold">
             {isRtl ? "قريباً" : "Soon"}
@@ -724,20 +1280,19 @@ export function AdminList({
       {activeTab === "overview" && <div id="overview"><AdminRealAISummary data={truth?.ai??null} ar={isRtl} loading={truthLoading}/></div>}
 
       {/* 🏢 TAB 2: COMPANIES / TENANTS */}
-      {(activeTab === "companies" || activeTab === "overview") && (
+      {activeTab === "companies" && (
         <section
           id="companies"
           tabIndex={-1}
-          className="rounded-3xl border border-[var(--service-line)] bg-[var(--service-surface)] p-5 sm:p-6 shadow-sm space-y-4"
+          className="space-y-4 rounded-3xl border border-[var(--service-line)] bg-[var(--service-surface)] p-5 sm:p-6 shadow-xs"
         >
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--service-line)] pb-4">
-            <div>
+            <div className="flex items-center gap-2.5">
               <h2 className="text-lg font-bold text-[var(--service-ink)]">{copy.admin.companiesTitle}</h2>
-              <p className="mt-0.5 text-xs text-[var(--service-muted)]">{copy.admin.companiesBody}</p>
+              <span className="rounded-full bg-[var(--service-subtle)] border border-[var(--service-line)] px-2.5 py-0.5 text-xs text-[var(--service-accent)] font-bold">
+                {companiesState === "ready" ? `${fill(copy.admin.companiesTitle, { n: companyTotalCount ?? rows.length })} (${companyTotalCount ?? rows.length})` : "-"}
+              </span>
             </div>
-            <span className="rounded-full bg-[var(--service-canvas)] border border-[var(--service-line)] px-3 py-1 text-xs text-[var(--service-accent)] font-semibold">
-              {companiesState === "ready" ? `${fill(copy.admin.companiesTitle, { n: companyTotalCount ?? rows.length })} (${companyTotalCount ?? rows.length})` : "-"}
-            </span>
           </div>
 
           {/* Search & Filter Form */}
@@ -749,7 +1304,7 @@ export function AdminList({
             }}
           >
             <div className="relative">
-              <span className="absolute inset-y-0 start-0 flex items-center ps-3 text-[var(--service-muted)] pointer-events-none">
+              <span className="absolute inset-y-0 start-0 flex items-center ps-3.5 text-[var(--service-muted)] pointer-events-none">
                 <IconSearch />
               </span>
               <input
@@ -759,8 +1314,23 @@ export function AdminList({
                   setCompanyOffset(0);
                 }}
                 placeholder={copy.admin.search}
-                className="min-h-11 w-full rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)] ps-9 pe-3 text-sm text-[var(--service-ink)] outline-none focus:border-[var(--service-accent)] focus:ring-1 focus:ring-[var(--service-accent)] transition placeholder:text-[var(--service-muted)] font-medium"
+                aria-label={copy.admin.search}
+                className="min-h-11 w-full rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)] ps-9 pe-8 text-sm text-[var(--service-ink)] outline-none focus:border-[var(--service-accent)] focus:ring-1 focus:ring-[var(--service-accent)] transition placeholder:text-[var(--service-muted)] font-medium"
               />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearch("");
+                    setCompanyOffset(0);
+                    void run(() => load("", status, 0));
+                  }}
+                  aria-label={isRtl ? "مسح البحث" : "Clear search"}
+                  className="absolute inset-y-0 end-0 flex items-center pe-3 text-xs text-[var(--service-muted)] hover:text-[var(--service-ink)]"
+                >
+                  ✕
+                </button>
+              )}
             </div>
             <select
               value={status}
@@ -769,14 +1339,14 @@ export function AdminList({
                 setCompanyOffset(0);
               }}
               aria-label={copy.admin.statusFilter}
-              className="min-h-11 rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)] px-3 text-sm text-[var(--service-ink)] outline-none focus:border-[var(--service-accent)] font-medium"
+              className="min-h-11 rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)] px-3 text-sm text-[var(--service-ink)] focus:border-[var(--service-accent)] focus:ring-1 focus:ring-[var(--service-accent)] transition font-bold"
             >
               <option value="all">{copy.admin.statusAll}</option>
               <option value="setup">{copy.admin.statusSetup}</option>
               <option value="active">{copy.admin.statusActive}</option>
               <option value="suspended">{copy.admin.statusSuspended}</option>
             </select>
-            <Button type="submit" busy={busy} busyLabel={copy.loading}>
+            <Button type="submit" busy={busy} busyLabel={copy.loading} className="rounded-xl px-5 font-bold shadow-xs !bg-[var(--service-accent)] hover:!bg-[var(--service-accent-hover)] !text-white">
               {copy.admin.searchAction}
             </Button>
           </form>
@@ -805,54 +1375,80 @@ export function AdminList({
 
           {/* Companies Table */}
           {companiesState === "ready" && (
-            <div className="overflow-x-auto rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)]">
-              <table className="w-full text-start text-xs sm:text-sm">
-                <thead className="border-b border-[var(--service-line)] bg-[var(--service-canvas)] text-[var(--service-ink)] font-bold">
+            <div className={`${overviewStyles.companyTable} overflow-x-auto rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] shadow-xs`} role="region" aria-label={isRtl ? "جدول الشركات" : "Companies table"} tabIndex={0}>
+              <table className="w-full text-start text-sm">
+                <thead className="border-b border-[var(--service-line)] bg-[var(--service-canvas)] text-[var(--service-ink)] font-bold select-none">
                   <tr>
-                    <th className="p-3.5 text-start">{isRtl ? "اسم الشركة / النشاط" : "Company"}</th>
-                    <th className="p-3.5 text-start">{isRtl ? "الموقع" : "Location"}</th>
-                    <th className="p-3.5 text-start">{isRtl ? "المالك / البريد" : "Owner"}</th>
-                    <th className="p-3.5 text-center">{isRtl ? "الحالة" : "Status"}</th>
-                    <th className="p-3.5 text-end">{isRtl ? "الإجراء" : "Action"}</th>
+                    <th scope="col" className="p-3.5 text-start">{isRtl ? "اسم الشركة / النشاط" : "Company"}</th>
+                    <th scope="col" className="p-3.5 text-start">{isRtl ? "الموقع" : "Location"}</th>
+                    <th scope="col" className="p-3.5 text-start">{isRtl ? "المالك / البريد" : "Owner"}</th>
+                    <th scope="col" className="p-3.5 text-center">{isRtl ? "الحالة" : "Status"}</th>
+                    <th scope="col" className="p-3.5 text-end">{isRtl ? "الإجراء" : "Action"}</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[var(--service-line)]/60 text-[var(--service-ink)]">
+                <tbody className="divide-y divide-[var(--service-line)]/50 text-[var(--service-ink)]">
                   {rows.map((row) => (
-                    <tr key={row.id} className="hover:bg-[var(--service-canvas)] transition">
+                    <tr key={row.id} className="hover:bg-[var(--service-canvas)]/70 transition-colors">
                       <td className="p-3.5">
-                        <Link
-                          href={adminCompanyHref(row.id,companyListReturnHref({search:appliedCompanySearch,status}))}
-                          className="font-bold text-[var(--service-ink)] hover:text-[var(--service-accent)] transition underline-offset-2 hover:underline block"
-                        >
-                          {row.display_name}
-                        </Link>
-                        <span className="text-xs text-[var(--service-muted)]">{row.business_type}</span>
+                        <div className="flex items-center gap-3">
+                          <span className="w-8 h-8 rounded-xl bg-gradient-to-br from-[var(--service-accent-soft)] to-[var(--service-subtle)] text-[var(--service-accent)] flex items-center justify-center text-xs font-black uppercase shrink-0 border border-[var(--service-line)] shadow-2xs">
+                            {row.display_name.charAt(0)}
+                          </span>
+                          <div className="min-w-0">
+                            <Link
+                              href={adminCompanyHref(row.id,companyListReturnHref({search:appliedCompanySearch,status}))}
+                              dir="auto"
+                              className="font-bold text-sm text-[var(--service-ink)] hover:text-[var(--service-accent)] transition underline-offset-2 hover:underline block truncate"
+                            >
+                              {row.display_name}
+                            </Link>
+                            <span className="inline-block mt-0.5 text-[11px] font-semibold text-[var(--service-muted)]">
+                              {formatCompanyBusinessType(row.business_type, isRtl)}
+                            </span>
+                          </div>
+                        </div>
                       </td>
-                      <td className="p-3.5 text-xs text-[var(--service-ink)]">
-                        {row.city || row.country || "—"}
+                      <td className="p-3.5 text-xs font-medium text-[var(--service-ink)]">
+                        <div className="flex items-center gap-1.5">
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[var(--service-muted)] shrink-0">
+                            <path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0" />
+                            <circle cx="12" cy="10" r="3" />
+                          </svg>
+                          <span>{row.city || row.country || "—"}</span>
+                        </div>
                       </td>
-                      <td className="p-3.5 text-xs text-[var(--service-ink)]" dir="ltr">
-                        {row.owner_email || "—"}
+                      <td className="p-3.5 text-xs font-medium text-[var(--service-ink)]" dir="ltr">
+                        <div className="flex items-center gap-1.5">
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[var(--service-muted)] shrink-0">
+                            <rect width="20" height="16" x="2" y="4" rx="2" />
+                            <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+                          </svg>
+                          <span className="truncate max-w-[200px]">{row.owner_email || "—"}</span>
+                        </div>
                       </td>
                       <td className="p-3.5 text-center">
                         <span
-                          className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-semibold border ${
+                          className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border shadow-2xs ${
                             row.status === "active"
-                              ? "bg-[var(--service-subtle)] text-[var(--service-accent)] border-[var(--service-line)]"
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-200/80"
                               : row.status === "setup"
-                              ? "bg-[var(--service-canvas)] text-[var(--service-accent)] border-[var(--service-line)]"
-                              : "bg-[var(--service-surface)] text-[#8B3D29] border-[var(--service-line)]"
+                              ? "bg-sky-50 text-sky-700 border-sky-200/80"
+                              : "bg-rose-50 text-rose-700 border-rose-200/80"
                           }`}
                         >
-                          {companyStatusLabel(row.status, copy)}
+                          <span className={`w-1.5 h-1.5 rounded-full ${row.status === "active" ? "bg-emerald-500" : row.status === "setup" ? "bg-sky-500" : "bg-rose-500"}`} />
+                          <span>{companyStatusLabel(row.status, copy)}</span>
                         </span>
                       </td>
                       <td className="p-3.5 text-end">
                         <Link
                           href={adminCompanyHref(row.id,companyListReturnHref({search:appliedCompanySearch,status}))}
-                          className="inline-flex items-center gap-1 rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)] px-3 py-1 text-xs font-semibold text-[var(--service-ink)] hover:bg-[var(--service-accent-soft)] hover:text-[var(--service-ink)] hover:border-[var(--service-accent)] transition"
+                          className="inline-flex min-h-9 items-center gap-1.5 rounded-xl border border-[var(--service-line)] bg-[var(--service-surface)] px-3.5 py-1.5 text-xs font-bold text-[var(--service-ink)] transition hover:border-[var(--service-accent)] hover:bg-[var(--service-accent-soft)] hover:shadow-xs group"
                         >
                           <span>{isRtl ? "إدارة وتفاصيل" : "Manage"}</span>
+                          <span className="transition-transform group-hover:-translate-x-0.5 rtl:group-hover:-translate-x-0.5 ltr:group-hover:translate-x-0.5">
+                            {isRtl ? "←" : "→"}
+                          </span>
                         </Link>
                       </td>
                     </tr>
@@ -907,46 +1503,103 @@ export function AdminList({
       )}
 
       {/* 👥 TAB 3: ACCOUNTS & USERS */}
-      {(activeTab === "accounts" || activeTab === "overview") && (
+      {activeTab === "accounts" && (
         <section
           id="accounts"
           tabIndex={-1}
           className="rounded-3xl border border-[var(--service-line)] bg-[var(--service-surface)] p-5 sm:p-6 shadow-sm space-y-4"
         >
+          {/* Header */}
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--service-line)] pb-4">
-            <div>
+            <div className="flex items-center gap-2.5">
               <h2 className="text-lg font-bold text-[var(--service-ink)]">{copy.admin.accountsTitle}</h2>
-              <p className="mt-0.5 text-xs text-[var(--service-muted)]">{copy.admin.accountsBody}</p>
+              {resultsMatchInput && accountRows.length > 0 && (
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-[var(--service-accent-soft)] text-[var(--service-accent)] border border-[var(--service-accent)]/20">
+                  {accountRows.length} {isRtl ? "حساب" : "accounts"}
+                </span>
+              )}
             </div>
-            <span className="text-xs font-semibold text-[var(--service-accent)]">
-              {resultsMatchInput && accountRows.length > 0
-                ? `${accountRows.length} ${isRtl ? "حسابات محملة" : "loaded"}`
-                : ""}
-            </span>
           </div>
 
-          {/* Search Account input */}
-          <div className="relative">
-            <span className="absolute inset-y-0 start-0 flex items-center ps-3 text-[var(--service-accent)] pointer-events-none">
-              <IconSearch />
-            </span>
-            <input
-              value={accountQuery}
-              onChange={(e) => onAccountQueryChange(e.target.value)}
-              placeholder={copy.admin.accountSearch}
-              className="min-h-11 w-full rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)] ps-9 pe-3 text-sm font-medium text-[var(--service-ink)] outline-none focus:border-[var(--service-accent)] focus:bg-[var(--service-surface)] focus:ring-1 focus:ring-[var(--service-accent)] transition placeholder:text-[var(--service-muted)]"
-            />
+          {/* Search, Filter & Sort Toolbar */}
+          <div className="flex flex-wrap items-center gap-2.5">
+            <div className="relative flex-1 min-w-[220px]">
+              <span className="absolute inset-y-0 start-0 flex items-center ps-3.5 text-[var(--service-muted)] pointer-events-none">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="11" cy="11" r="8" />
+                  <path d="m21 21-4.3-4.3" />
+                </svg>
+              </span>
+              <input
+                value={accountQuery}
+                onChange={(e) => onAccountQueryChange(e.target.value)}
+                placeholder={copy.admin.accountSearch}
+                aria-label={copy.admin.accountSearch}
+                className="min-h-11 w-full rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)] ps-10 pe-9 text-sm font-medium text-[var(--service-ink)] outline-none focus:border-[var(--service-accent)] focus:bg-[var(--service-surface)] focus:ring-1 focus:ring-[var(--service-accent)] transition placeholder:text-[var(--service-muted)]"
+              />
+              {accountQuery && (
+                <button
+                  type="button"
+                  onClick={() => onAccountQueryChange("")}
+                  aria-label={isRtl ? "مسح البحث" : "Clear search"}
+                  className="absolute inset-y-0 end-0 flex items-center pe-3 text-xs text-[var(--service-muted)] hover:text-[var(--service-ink)]"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+
+            {/* Filter by Subscription / Status */}
+            <select
+              value={accountFilter}
+              onChange={(e) => setAccountFilter(e.target.value as typeof accountFilter)}
+              aria-label={isRtl ? "تصفية الحسابات" : "Filter accounts"}
+              className="min-h-11 rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)] px-3 text-xs sm:text-sm font-bold text-[var(--service-ink)] focus:border-[var(--service-accent)] focus:ring-1 focus:ring-[var(--service-accent)] transition"
+            >
+              <option value="all">{isRtl ? "كل الحالات (تصفية)" : "All Statuses"}</option>
+              <option value="active">{isRtl ? "مشترك نشط" : "Active Subscriber"}</option>
+              <option value="setup">{isRtl ? "قيد التجهيز" : "Setup in Progress"}</option>
+              <option value="none">{isRtl ? "غير مشترك" : "Unsubscribed"}</option>
+              <option value="verified">{isRtl ? "بريد مؤكّد" : "Email Verified"}</option>
+              <option value="unconfirmed">{isRtl ? "بريد غير مؤكّد" : "Email Unconfirmed"}</option>
+            </select>
+
+            {/* Sort Dropdown */}
+            <select
+              value={accountSort}
+              onChange={(e) => setAccountSort(e.target.value as typeof accountSort)}
+              aria-label={isRtl ? "ترتيب الحسابات" : "Sort accounts"}
+              className="min-h-11 rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)] px-3 text-xs sm:text-sm font-bold text-[var(--service-ink)] focus:border-[var(--service-accent)] focus:ring-1 focus:ring-[var(--service-accent)] transition"
+            >
+              <option value="default">{isRtl ? "الترتيب الافتراضي" : "Sort: Default"}</option>
+              <option value="name_asc">{isRtl ? "الاسم: أ - ي" : "Name: A to Z"}</option>
+              <option value="name_desc">{isRtl ? "الاسم: ي - أ" : "Name: Z to A"}</option>
+              <option value="companies_desc">{isRtl ? "الأكثر شركات" : "Most Companies"}</option>
+            </select>
+
+            {(accountFilter !== "all" || accountSort !== "default") && (
+              <button
+                type="button"
+                onClick={() => {
+                  setAccountFilter("all");
+                  setAccountSort("default");
+                }}
+                className="min-h-11 px-3 text-xs font-bold text-[var(--service-accent)] hover:text-[var(--service-ink)] bg-[var(--service-accent-soft)] hover:bg-[var(--service-subtle)] rounded-xl border border-[var(--service-accent)]/20 transition"
+              >
+                {isRtl ? "إعادة تعيين" : "Reset"}
+              </button>
+            )}
           </div>
 
           {/* Account Load / Search states */}
           {(accountsState === "loading" || accountBusy) && (
-            <p className="text-xs font-medium text-[var(--service-muted)] flex items-center gap-2">
+            <p className="text-xs font-medium text-[var(--service-muted)] flex items-center gap-2 py-2">
               <span className="animate-spin">⏳</span> {copy.loading}
             </p>
           )}
 
           {accountError && requestMatchesInput && (
-            <div className="grid gap-2">
+            <div className="grid gap-2 py-2">
               <Notice tone="error">{accountError}</Notice>
               <Button
                 type="button"
@@ -971,87 +1624,162 @@ export function AdminList({
             </p>
           )}
 
-          {/* Accounts List / Cards */}
-          <div className="grid gap-2.5">
-            {resultsMatchInput &&
-              accountRows.map((row) => (
-                <div
-                  key={row.user_id}
-                  className="rounded-2xl border border-[var(--service-line)] bg-[var(--service-canvas)] p-4 transition hover:border-[var(--service-accent)]/40 hover:bg-[var(--service-surface)] hover:shadow-xs"
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <strong className="block text-sm font-bold text-[var(--service-ink)] break-words">
-                        {row.full_name || copy.admin.accountFieldUnavailable}
-                      </strong>
-                      <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
-                        <span className="[font-family:inherit] font-semibold text-[var(--service-accent)] bg-[var(--service-subtle)] px-2 py-0.5 rounded-md border border-[var(--service-line)]">
-                          {row.support_code || copy.admin.accountFieldUnavailable}
-                        </span>
-                        <span className="text-[var(--service-ink)] font-medium" dir="ltr">
-                          {row.email || "—"}
-                        </span>
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                            row.email_confirmed
-                              ? "bg-[var(--service-subtle)] text-[var(--service-accent)] border border-[var(--service-line)]"
-                              : "bg-[var(--service-canvas)] text-[var(--service-accent)] border border-[var(--service-line)]"
-                          }`}
-                        >
-                          {emailConfirmLabel(row.email_confirmed, copy)}
-                        </span>
-                      </div>
-                      {row.account_phone && (
-                        <p className="mt-1 text-xs text-[var(--service-muted)]" dir="ltr">
-                          {copy.admin.accountPhone}: {row.account_phone}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Associated Companies List */}
-                  <div className="mt-3 pt-3 border-t border-[var(--service-line)]">
-                    <p className="text-[11px] font-bold text-[var(--service-accent)] mb-1.5">
-                      {isRtl ? "الشركات التابعة:" : "Memberships:"}
-                    </p>
-                    {row.companies.length ? (
-                      <div className="flex flex-wrap gap-2">
-                        {row.companies.map((c) => (
-                          <div
-                            key={`${row.user_id}-${c.company_id}`}
-                            className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--service-line)] bg-[var(--service-surface)] px-2.5 py-1 text-xs shadow-2xs"
-                          >
-                            <Link
-                              href={`/admin/companies/${c.company_id}`}
-                              className="font-bold text-[var(--service-accent)] hover:underline"
-                            >
-                              {c.display_name}
-                            </Link>
-                            <span className="text-[var(--service-muted)]">·</span>
-                            <span className="text-[var(--service-ink)] font-medium">{c.role}</span>
-                            <span className="text-[var(--service-muted)]">·</span>
-                            <span className="text-[var(--service-muted)]">
-                              {companyStatusLabel(c.company_status ?? null, copy)}
+          {/* Accounts Directory Table */}
+          <div className="overflow-x-auto rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] shadow-2xs">
+            <table className="w-full text-start text-sm">
+              <thead className="border-b border-[var(--service-line)] bg-[var(--service-canvas)] text-[var(--service-ink)] text-xs font-bold">
+                <tr>
+                  <th className="p-3.5 text-start">{isRtl ? "المستخدم / الحساب" : "User / Account"}</th>
+                  <th className="p-3.5 text-start">{isRtl ? "البريد والتواصل" : "Contact"}</th>
+                  <th className="p-3.5 text-start">{isRtl ? "الموقع" : "Location"}</th>
+                  <th className="p-3.5 text-center">{isRtl ? "الاشتراك" : "Subscription"}</th>
+                  <th className="p-3.5 text-center">{isRtl ? "التحقق" : "Verification"}</th>
+                  <th className="p-3.5 text-start">{isRtl ? "الشركات والانتساب" : "Company Memberships"}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[var(--service-line)]">
+                {resultsMatchInput &&
+                  filteredAndSortedAccounts.map((row) => {
+                    const initials = (row.full_name || row.email || "U").trim().charAt(0).toUpperCase();
+                    const phone = getAccountPhone(row);
+                    const location = getAccountLocation(row);
+                    const subStatus = getAccountSubscriptionStatus(row);
+                    return (
+                      <tr key={row.user_id} className="hover:bg-[var(--service-canvas)]/70 transition-colors">
+                        {/* User / Account */}
+                        <td className="p-3.5">
+                          <div className="flex items-center gap-3">
+                            <span className="w-9 h-9 rounded-xl bg-gradient-to-br from-[var(--service-accent-soft)] to-[var(--service-subtle)] text-[var(--service-accent)] flex items-center justify-center text-xs font-black shrink-0 border border-[var(--service-line)] shadow-2xs">
+                              {initials}
                             </span>
+                            <div className="min-w-0">
+                              <span className="font-bold text-sm text-[var(--service-ink)] block truncate">
+                                {row.full_name || copy.admin.accountFieldUnavailable}
+                              </span>
+                              <div className="mt-0.5 flex items-center gap-1">
+                                <span
+                                  className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded font-mono text-[9px] font-medium text-[var(--service-muted)] bg-[var(--service-canvas)] border border-[var(--service-line)]/80"
+                                  title={isRtl ? "رمز الدعم الفني" : "Support code"}
+                                >
+                                  <span className="text-[8px] font-sans text-[var(--service-muted)] opacity-80">{isRtl ? "رمز الدعم:" : "Ref:"}</span>
+                                  <span className="text-[var(--service-ink)]/80 font-bold">{row.support_code || copy.admin.accountFieldUnavailable}</span>
+                                </span>
+                              </div>
+                            </div>
                           </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-xs text-[var(--service-muted)]">{copy.admin.noCompaniesYet}</p>
-                    )}
-                  </div>
-                </div>
-              ))}
+                        </td>
 
-            {resultsMatchInput &&
-              !accountBusy &&
-              !accountRows.length &&
-              !accountError &&
-              !legacyBrowseLikely && (
-                <div className="py-8 text-center text-sm font-medium text-[var(--service-muted)]">
-                  {copy.admin.accountSearchEmpty}
-                </div>
-              )}
+                        {/* Email / Contact */}
+                        <td className="p-3.5 text-xs text-[var(--service-ink)]">
+                          <div className="space-y-1" dir="ltr">
+                            <div className="flex items-center gap-1.5">
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[var(--service-muted)] shrink-0">
+                                <rect width="20" height="16" x="2" y="4" rx="2" />
+                                <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+                              </svg>
+                              <span className="font-medium truncate max-w-[200px]">{row.email || "—"}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 text-[var(--service-muted)]">
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+                                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
+                              </svg>
+                              <span>{phone || (isRtl ? "غير مسجل" : "Unset")}</span>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Location */}
+                        <td className="p-3.5 text-xs font-medium text-[var(--service-ink)]">
+                          <div className="flex items-center gap-1.5">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[var(--service-muted)] shrink-0">
+                              <path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0" />
+                              <circle cx="12" cy="10" r="3" />
+                            </svg>
+                            <span>{location || (isRtl ? "سلطنة عمان" : "Oman")}</span>
+                          </div>
+                        </td>
+
+                        {/* Subscription Status */}
+                        <td className="p-3.5 text-center">
+                          {subStatus === "active" ? (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/80 shadow-2xs">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                              <span>{isRtl ? "مشترك نشط" : "Active"}</span>
+                            </span>
+                          ) : subStatus === "setup" ? (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-sky-50 text-sky-700 border border-sky-200/80 shadow-2xs">
+                              <span className="w-1.5 h-1.5 rounded-full bg-sky-500" />
+                              <span>{isRtl ? "قيد التجهيز" : "Setup"}</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-[var(--service-canvas)] text-[var(--service-muted)] border border-[var(--service-line)]">
+                              <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+                              <span>{isRtl ? "غير مشترك" : "Unsubscribed"}</span>
+                            </span>
+                          )}
+                        </td>
+
+                        {/* Verification Status */}
+                        <td className="p-3.5 text-center">
+                          <span
+                            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border shadow-2xs ${
+                              row.email_confirmed
+                                ? "bg-emerald-50 text-emerald-700 border-emerald-200/80"
+                                : "bg-amber-50 text-amber-700 border-amber-200/80"
+                            }`}
+                          >
+                            <span
+                              className={`w-1.5 h-1.5 rounded-full ${
+                                row.email_confirmed ? "bg-emerald-500" : "bg-amber-500"
+                              }`}
+                            />
+                            <span>{emailConfirmLabel(row.email_confirmed, copy)}</span>
+                          </span>
+                        </td>
+
+                        {/* Associated Companies */}
+                        <td className="p-3.5">
+                          {row.companies.length ? (
+                            <div className="flex flex-wrap gap-1.5">
+                              {row.companies.map((c) => (
+                                <Link
+                                  key={`${row.user_id}-${c.company_id}`}
+                                  href={`/admin/companies/${c.company_id}`}
+                                  className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--service-line)] bg-[var(--service-canvas)] px-2.5 py-1 text-xs transition hover:border-[var(--service-accent)] hover:bg-[var(--service-accent-soft)] group shadow-2xs"
+                                >
+                                  <span className="font-bold text-[var(--service-ink)] group-hover:text-[var(--service-accent)]">
+                                    {c.display_name}
+                                  </span>
+                                  <span className="text-[var(--service-muted)]">·</span>
+                                  <span className="text-[11px] font-semibold text-[var(--service-muted)]">
+                                    {c.role}
+                                  </span>
+                                </Link>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium text-[var(--service-muted)] bg-[var(--service-canvas)] border border-[var(--service-line)]">
+                              {copy.admin.noCompaniesYet}
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+
+                {resultsMatchInput &&
+                  !accountBusy &&
+                  !filteredAndSortedAccounts.length &&
+                  !accountError &&
+                  !legacyBrowseLikely && (
+                    <tr>
+                      <td colSpan={6} className="py-8 text-center text-sm font-medium text-[var(--service-muted)]">
+                        {copy.admin.accountSearchEmpty}
+                      </td>
+                    </tr>
+                  )}
+              </tbody>
+            </table>
           </div>
 
           {/* Pagination Controls */}
@@ -1084,7 +1812,7 @@ export function AdminList({
       )}
 
       {/* 📋 TAB 4: REVIEWS & APPROVALS */}
-      {(activeTab === "reviews" || activeTab === "overview") && (
+      {activeTab === "reviews" && (
         <section
           id="reviews"
           tabIndex={-1}
@@ -1175,171 +1903,162 @@ export function AdminList({
         </section>
       )}
 
-      {activeTab === "ai" && <section id="ai"><AdminRealAISummary data={truth?.ai??null} ar={isRtl} loading={truthLoading}/></section>}
-
-      {/* 🚀 TAB 6: FUTURE ENTERPRISE ROADMAP */}
-      {(activeTab === "future" || activeTab === "overview") && (
+      {/* 🚀 TAB 5: FUTURE ENTERPRISE ROADMAP */}
+      {activeTab === "future" && (
         <section
           id="future"
           tabIndex={-1}
-          className="rounded-3xl border border-[var(--service-line)] bg-[var(--service-surface)] p-5 sm:p-6 shadow-sm space-y-6"
+          className="rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] p-4 sm:p-5 shadow-xs space-y-4"
         >
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--service-line)] pb-4">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--service-line)] pb-3">
             <div>
               <div className="flex items-center gap-2">
-                <span className="rounded-full bg-[var(--service-canvas)] text-[var(--service-accent)] border border-[var(--service-line)] px-2.5 py-0.5 text-xs font-bold">
-                  {isRtl ? "خارطة الطريق المؤسسية" : "Enterprise Roadmap"}
+                <h2 className="text-base font-bold text-[var(--service-ink)]">
+                  {isRtl ? "الميزات والوحدات المجدولة" : "Planned Modules"}
+                </h2>
+                <span className="rounded-full bg-[var(--service-canvas)] text-[var(--service-accent)] border border-[var(--service-line)] px-2 py-0.5 text-[10px] font-bold">
+                  {isRtl ? "خارطة الطريق" : "Roadmap"}
                 </span>
-                <span className="text-xs font-medium text-[var(--service-muted)]">Planned / UI-Ready</span>
               </div>
-              <h2 className="mt-1 text-lg font-bold text-[var(--service-ink)]">
-                {isRtl ? "الميزات والوحدات المستقبلية لمنصة فيلورا" : "Planned SaaS Modules"}
-              </h2>
               <p className="mt-0.5 text-xs text-[var(--service-muted)]">
                 {isRtl
-                  ? "واجهات مجهزة ومجدولة للتطوير المستقبلي — لا تؤثر على النظام الحالي أو قاعدة البيانات"
-                  : "Pre-designed architecture for upcoming phases without impacting live databases"}
+                  ? "وحدات وميزات إضافية قادمة لمنصة فيلورا"
+                  : "Upcoming enterprise modules scheduled for future release"}
               </p>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {/* Module 1: AI Business Team */}
-            <div className="rounded-2xl border border-[var(--service-line)] bg-[var(--service-canvas)] p-5 space-y-3 relative overflow-hidden group hover:bg-[var(--service-surface)] hover:border-[var(--service-accent)]/40 hover:shadow-xs transition">
-              <div className="flex items-center justify-between">
-                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--service-subtle)] border border-[var(--service-line)] text-lg">
-                  👥
-                </span>
-                <span className="rounded-full bg-[var(--service-canvas)] text-[var(--service-accent)] border border-[var(--service-line)] px-2 py-0.5 text-[10px] font-bold">
+            <div className="flex flex-col justify-between p-3.5 rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)] hover:bg-[var(--service-surface)] hover:border-[var(--service-accent)]/40 hover:shadow-xs transition">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--service-subtle)] border border-[var(--service-line)] text-sm shrink-0">
+                    👥
+                  </span>
+                  <h3 className="text-xs font-bold text-[var(--service-ink)] truncate">
+                    {isRtl ? "فريق العمل الذكي" : "AI Business Team"}
+                  </h3>
+                </div>
+                <span className="rounded-full bg-[var(--service-surface)] text-[var(--service-accent)] border border-[var(--service-line)] px-1.5 py-0.2 text-[9px] font-bold shrink-0">
                   {isRtl ? "قريباً" : "Planned"}
                 </span>
               </div>
-              <h3 className="text-base font-bold text-[var(--service-ink)]">
-                {isRtl ? "فريق العمل الذكي (AI Business Team)" : "AI Business Team"}
-              </h3>
-              <p className="text-xs text-[var(--service-muted)] leading-relaxed">
+              <p className="text-[11px] text-[var(--service-muted)] leading-relaxed">
                 {isRtl
-                  ? "تمكين الشخصيات الثلاث (دانة، لينا، نورا) لتوزيع مهام خدمة العملاء والتسويق والدعم الفني بشكل متكامل."
-                  : "Collaborative multi-agent workflows featuring Dana, Lina, and Noura for business operations."}
+                  ? "توزيع مهام خدمة العملاء والتسويق والدعم الفني بين الشخصيات."
+                  : "Multi-agent task distribution for sales, support, and marketing."}
               </p>
-              <div className="pt-2 text-[11px] font-medium text-[var(--service-muted)]">
-                {isRtl ? "الواجهة جاهزة · التكامل البرمجي في المرحلة 2" : "UI Ready · Phase 2 Integration"}
-              </div>
             </div>
 
-            {/* Module 2: AI Accountant for SMEs */}
-            <div className="rounded-2xl border border-[var(--service-line)] bg-[var(--service-canvas)] p-5 space-y-3 relative overflow-hidden group hover:bg-[var(--service-surface)] hover:border-[var(--service-accent)]/40 hover:shadow-xs transition">
-              <div className="flex items-center justify-between">
-                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--service-subtle)] border border-[var(--service-line)] text-lg">
-                  📊
-                </span>
-                <span className="rounded-full bg-[var(--service-canvas)] text-[var(--service-accent)] border border-[var(--service-line)] px-2 py-0.5 text-[10px] font-bold">
+            {/* Module 2: AI Accountant */}
+            <div className="flex flex-col justify-between p-3.5 rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)] hover:bg-[var(--service-surface)] hover:border-[var(--service-accent)]/40 hover:shadow-xs transition">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--service-subtle)] border border-[var(--service-line)] text-sm shrink-0">
+                    📊
+                  </span>
+                  <h3 className="text-xs font-bold text-[var(--service-ink)] truncate">
+                    {isRtl ? "المحاسب الذكي" : "AI Accountant"}
+                  </h3>
+                </div>
+                <span className="rounded-full bg-[var(--service-surface)] text-[var(--service-accent)] border border-[var(--service-line)] px-1.5 py-0.2 text-[9px] font-bold shrink-0">
                   {isRtl ? "قريباً" : "Planned"}
                 </span>
               </div>
-              <h3 className="text-base font-bold text-[var(--service-ink)]">
-                {isRtl ? "المحاسب الذكي للمؤسسات (AI Accountant)" : "AI Accountant for SMEs"}
-              </h3>
-              <p className="text-xs text-[var(--service-muted)] leading-relaxed">
+              <p className="text-[11px] text-[var(--service-muted)] leading-relaxed">
                 {isRtl
-                  ? "إدارة الفواتير والقيود المحاسبية، حساب هوامش الأرباح التلقائية، وربط المصاريف التشغيلية للمتاجر."
-                  : "Automated ledger balancing, invoice parsing, and tax summaries for small enterprises."}
+                  ? "إدارة الفواتير والقيود وحساب هوامش الأرباح والمصاريف تلقائياً."
+                  : "Automated ledger balancing, invoices, and expense tracking."}
               </p>
-              <div className="pt-2 text-[11px] font-medium text-[var(--service-muted)]">
-                {isRtl ? "الواجهة جاهزة · التكامل البرمجي في المرحلة 2" : "UI Ready · Phase 2 Integration"}
-              </div>
             </div>
 
             {/* Module 3: Inventory Assistant */}
-            <div className="rounded-2xl border border-[var(--service-line)] bg-[var(--service-canvas)] p-5 space-y-3 relative overflow-hidden group hover:bg-[var(--service-surface)] hover:border-[var(--service-accent)]/40 hover:shadow-xs transition">
-              <div className="flex items-center justify-between">
-                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--service-subtle)] border border-[var(--service-line)] text-lg">
-                  📦
-                </span>
-                <span className="rounded-full bg-[var(--service-canvas)] text-[var(--service-accent)] border border-[var(--service-line)] px-2 py-0.5 text-[10px] font-bold">
+            <div className="flex flex-col justify-between p-3.5 rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)] hover:bg-[var(--service-surface)] hover:border-[var(--service-accent)]/40 hover:shadow-xs transition">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--service-subtle)] border border-[var(--service-line)] text-sm shrink-0">
+                    📦
+                  </span>
+                  <h3 className="text-xs font-bold text-[var(--service-ink)] truncate">
+                    {isRtl ? "إدارة المخزون" : "Inventory Assistant"}
+                  </h3>
+                </div>
+                <span className="rounded-full bg-[var(--service-surface)] text-[var(--service-accent)] border border-[var(--service-line)] px-1.5 py-0.2 text-[9px] font-bold shrink-0">
                   {isRtl ? "قريباً" : "Planned"}
                 </span>
               </div>
-              <h3 className="text-base font-bold text-[var(--service-ink)]">
-                {isRtl ? "مساعد إدارة المخزون (Inventory Assistant)" : "Inventory Assistant"}
-              </h3>
-              <p className="text-xs text-[var(--service-muted)] leading-relaxed">
+              <p className="text-[11px] text-[var(--service-muted)] leading-relaxed">
                 {isRtl
-                  ? "مزامنة لحظية لكميات المنتجات، تنبيهات النواقص التلقائية، وربط كتالوج المبيعات مع ردود المساعد."
-                  : "Real-time stock level synchronization, low-stock alerts, and auto-catalog answers."}
+                  ? "مزامنة لحظية لكميات المنتجات وتنبيهات النواقص التلقائية."
+                  : "Real-time stock level synchronization and low-stock alerts."}
               </p>
-              <div className="pt-2 text-[11px] font-medium text-[var(--service-muted)]">
-                {isRtl ? "الواجهة جاهزة · التكامل البرمجي في المرحلة 2" : "UI Ready · Phase 2 Integration"}
-              </div>
             </div>
 
-            {/* Module 4: AI Sales Analytics */}
-            <div className="rounded-2xl border border-[var(--service-line)] bg-[var(--service-canvas)] p-5 space-y-3 relative overflow-hidden group hover:bg-[var(--service-surface)] hover:border-[var(--service-accent)]/40 hover:shadow-xs transition">
-              <div className="flex items-center justify-between">
-                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--service-canvas)] border border-[var(--service-line)] text-lg">
-                  📈
-                </span>
-                <span className="rounded-full bg-[var(--service-canvas)] text-[var(--service-accent)] border border-[var(--service-line)] px-2 py-0.5 text-[10px] font-bold">
+            {/* Module 4: Sales Analytics */}
+            <div className="flex flex-col justify-between p-3.5 rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)] hover:bg-[var(--service-surface)] hover:border-[var(--service-accent)]/40 hover:shadow-xs transition">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--service-subtle)] border border-[var(--service-line)] text-sm shrink-0">
+                    📈
+                  </span>
+                  <h3 className="text-xs font-bold text-[var(--service-ink)] truncate">
+                    {isRtl ? "تحليلات المبيعات" : "Sales Analytics"}
+                  </h3>
+                </div>
+                <span className="rounded-full bg-[var(--service-surface)] text-[var(--service-accent)] border border-[var(--service-line)] px-1.5 py-0.2 text-[9px] font-bold shrink-0">
                   {isRtl ? "قريباً" : "Planned"}
                 </span>
               </div>
-              <h3 className="text-base font-bold text-[var(--service-ink)]">
-                {isRtl ? "تحليلات المبيعات ونسب التحويل (Sales Analytics)" : "AI Sales Analytics"}
-              </h3>
-              <p className="text-xs text-[var(--service-muted)] leading-relaxed">
+              <p className="text-[11px] text-[var(--service-muted)] leading-relaxed">
                 {isRtl
-                  ? "تحليل معدل تحويل المحادثات إلى طلبات شراء ناجحة، واكتشاف المنتجات الأكثر طلباً في كل شركة."
-                  : "Conversation-to-conversion analytics and customer sentiment heatmaps."}
+                  ? "تحليل معدلات تحويل المحادثات واكتشاف المنتجات الأكثر طلباً."
+                  : "Conversation conversion rates and trending product demand."}
               </p>
-              <div className="pt-2 text-[11px] font-medium text-[var(--service-muted)]">
-                {isRtl ? "الواجهة جاهزة · التكامل البرمجي في المرحلة 2" : "UI Ready · Phase 2 Integration"}
-              </div>
             </div>
 
             {/* Module 5: Automation Center */}
-            <div className="rounded-2xl border border-[var(--service-line)] bg-[var(--service-canvas)] p-5 space-y-3 relative overflow-hidden group hover:bg-[var(--service-surface)] hover:border-[var(--service-accent)]/40 hover:shadow-xs transition">
-              <div className="flex items-center justify-between">
-                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--service-subtle)] border border-[var(--service-line)] text-lg">
-                  ⚙️
-                </span>
-                <span className="rounded-full bg-[var(--service-canvas)] text-[var(--service-accent)] border border-[var(--service-line)] px-2 py-0.5 text-[10px] font-bold">
+            <div className="flex flex-col justify-between p-3.5 rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)] hover:bg-[var(--service-surface)] hover:border-[var(--service-accent)]/40 hover:shadow-xs transition">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--service-subtle)] border border-[var(--service-line)] text-sm shrink-0">
+                    ⚙️
+                  </span>
+                  <h3 className="text-xs font-bold text-[var(--service-ink)] truncate">
+                    {isRtl ? "مركز الأتمتة والربط" : "Automation Center"}
+                  </h3>
+                </div>
+                <span className="rounded-full bg-[var(--service-surface)] text-[var(--service-accent)] border border-[var(--service-line)] px-1.5 py-0.2 text-[9px] font-bold shrink-0">
                   {isRtl ? "قريباً" : "Planned"}
                 </span>
               </div>
-              <h3 className="text-base font-bold text-[var(--service-ink)]">
-                {isRtl ? "مركز الأتمتة والربط السحابي (Automation Center)" : "Automation Center"}
-              </h3>
-              <p className="text-xs text-[var(--service-muted)] leading-relaxed">
+              <p className="text-[11px] text-[var(--service-muted)] leading-relaxed">
                 {isRtl
-                  ? "بناء مسارات أتمتة تلقائية مع Webhooks ومنصات التجارة مثل سلة وزد وShopify."
-                  : "Webhook triggers, Zapier-like connectors, and automated multichannel dispatch."}
+                  ? "مسارات أتمتة تلقائية مع Webhooks ومنصات المتاجر الخارجية."
+                  : "Automated webhook workflows and third-party store integrations."}
               </p>
-              <div className="pt-2 text-[11px] font-medium text-[var(--service-muted)]">
-                {isRtl ? "الواجهة جاهزة · التكامل البرمجي في المرحلة 2" : "UI Ready · Phase 2 Integration"}
-              </div>
             </div>
 
             {/* Module 6: Model Evaluator */}
-            <div className="rounded-2xl border border-[var(--service-line)] bg-[var(--service-canvas)] p-5 space-y-3 relative overflow-hidden group hover:bg-[var(--service-surface)] hover:border-[var(--service-accent)]/40 hover:shadow-xs transition">
-              <div className="flex items-center justify-between">
-                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--service-subtle)] border border-[var(--service-line)] text-lg">
-                  🔬
-                </span>
-                <span className="rounded-full bg-[var(--service-canvas)] text-[var(--service-accent)] border border-[var(--service-line)] px-2 py-0.5 text-[10px] font-bold">
+            <div className="flex flex-col justify-between p-3.5 rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)] hover:bg-[var(--service-surface)] hover:border-[var(--service-accent)]/40 hover:shadow-xs transition">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--service-subtle)] border border-[var(--service-line)] text-sm shrink-0">
+                    🔬
+                  </span>
+                  <h3 className="text-xs font-bold text-[var(--service-ink)] truncate">
+                    {isRtl ? "مقارنة أداء النماذج" : "Model Performance"}
+                  </h3>
+                </div>
+                <span className="rounded-full bg-[var(--service-surface)] text-[var(--service-accent)] border border-[var(--service-line)] px-1.5 py-0.2 text-[9px] font-bold shrink-0">
                   {isRtl ? "قريباً" : "Planned"}
                 </span>
               </div>
-              <h3 className="text-base font-bold text-[var(--service-ink)]">
-                {isRtl ? "مقارنة أداء النماذج (Model Performance)" : "Model Benchmark Evaluator"}
-              </h3>
-              <p className="text-xs text-[var(--service-muted)] leading-relaxed">
+              <p className="text-[11px] text-[var(--service-muted)] leading-relaxed">
                 {isRtl
-                  ? "لوحة مقارنة تفصيلية لزمن استجابة النماذج، ودقة الفهم، والتكلفة الفعلية لكل مليون توكن."
-                  : "Real-time latency, hallucination rate, and cost efficiency across Luna, Sol, and Gemini."}
+                  ? "مقارنة زمن الاستجابة ودقة الإجابات والتكلفة الفعلية لكل نموذج."
+                  : "Latency, response accuracy, and cost benchmarks per model."}
               </p>
-              <div className="pt-2 text-[11px] font-medium text-[var(--service-muted)]">
-                {isRtl ? "الواجهة جاهزة · التكامل البرمجي في المرحلة 2" : "UI Ready · Phase 2 Integration"}
-              </div>
             </div>
           </div>
         </section>

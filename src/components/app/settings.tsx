@@ -21,6 +21,8 @@ import { useOptionalAccountSession } from "./account-chrome";
 import { subscriptionCopy } from "./subscription-copy";
 import { saveOwnerBusiness, selectWorkspaceCompany } from "@/lib/tenancy/actions";
 import { CompanyTeamPanel } from "./company-team-panel";
+import styles from "./settings-workspace.module.css";
+import { IconBuilding, IconShield, IconUserRound } from "@/components/admin/admin-icons";
 import {
   Button, Card, Field, Notice, Tabs,
   useAction, useAppCopy, useUnsavedWarning,
@@ -97,8 +99,9 @@ export function SettingsPage({
 
   return (
     <WorkspaceShell title={subscriptionOnly ? (locale === "ar" ? "اشتراكي" : "My subscription") : copy.app.settingsTitle}>
+      <div className={styles.settings}>
       <Card title={c.signedAccount}>
-        <dl className="grid gap-3 break-words text-sm sm:grid-cols-3"><div><dt>{c.signedAccount}</dt><dd dir="ltr">{initialAccess.email??c.unknown}</dd></div><div><dt>{c.companyContext}</dt><dd>{initialAccess.companyName??c.noCompany}</dd></div><div><dt>{c.membershipRole}</dt><dd>{effectiveRole==="owner"?c.ownerRole:effectiveRole==="staff"?c.staffRole:c.unknown}</dd></div></dl>
+        <dl className={styles.contextFacts}><div><span className={styles.factIcon}><IconUserRound aria-hidden="true" /></span><div><dt>{c.signedAccount}</dt><dd><bdi dir="auto">{initialAccess.email??c.unknown}</bdi></dd></div></div><div><span className={styles.factIcon}><IconBuilding aria-hidden="true" /></span><div><dt>{c.companyContext}</dt><dd><bdi dir="auto">{initialAccess.companyName??c.noCompany}</bdi></dd></div></div><div><span className={styles.factIcon}><IconShield aria-hidden="true" /></span><div><dt>{c.membershipRole}</dt><dd>{effectiveRole==="owner"?c.ownerRole:effectiveRole==="staff"?c.staffRole:c.unknown}</dd></div></div></dl>
         {initialAccess.isPlatformAdmin?<p className="mt-3 text-sm">{c.platformRole}. {c.permissionNotes.platform} <Link className="underline" href="/admin">{c.navigationLabels.platform}</Link></p>:null}
         {initialAccess.choices.length>0&&(initialAccess.needsCompanyContext||initialAccess.choices.length>1||initialAccess.isPlatformAdmin)?<label className="mt-4 grid max-w-md gap-2 text-sm">{c.chooseCompany}<select aria-label={c.chooseCompany} className="min-h-11 rounded-xl border px-3" value={initialAccess.companyId??""} disabled={switchBusy} onChange={event=>void switchCompany(event.target.value)}><option value="">{c.chooseCompany}</option>{initialAccess.choices.map(choice=><option key={choice.companyId} value={choice.companyId}>{choice.displayName} / {choice.role==="owner"?c.ownerRole:c.staffRole}</option>)}</select></label>:null}
         {switchError?<p role="alert">{c.switchFailed}</p>:null}
@@ -133,6 +136,7 @@ export function SettingsPage({
             ) : null}
           </>
         )}
+      </div>
       </div>
     </WorkspaceShell>
   );

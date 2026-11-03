@@ -201,3 +201,5 @@ Production configuration, grants or data were changed; no new release.
 - Owner authorized commit/push/Production after review. Only the two code files
   and this Auth report belong to this commit; shared PROJECT_STATE changes and
   other staged/unstaged work remain local. Hosted acceptance pending release.
+
+- AUTH focus-race release VERIFIED: 90d3f5ef9b059e13fd549c2701c8f7965de39f8d; independent security review no findings; CI 40796817569 SUCCESS 8/8 (https://github.com/velorahelperai-cmd/velora/actions/runs/40796817569). Vercel dpl_4fqwwn1r4s9FwM2NYmCSjuSggkeq READY Production, exact SHA from deployment metadata; https://velora-84s4060rj-velora-9513.vercel.app. Canonical login HTTP200 and 13 JS assets match immutable release. No local successful suites repeated. Hosted first-attempt acceptance pending owner credential entry; existing confirmed account can test password login but cannot prove fresh OTP signup. Chrome Incognito native read works; click geometry and capture fail before action. No logout dispatched yet.

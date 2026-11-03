@@ -4,6 +4,7 @@ import { AccessibleDialog } from "@/components/app/accessible-dialog";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useDemo } from "@/lib/demo-state";
+import styles from "./admin-platform-access.module.css";
 import type {
   PlatformAccessOverviewData,
   PlatformAdminStatus,
@@ -19,10 +20,7 @@ import {
 import {
   IconAlert,
   IconCheckCircle,
-  IconClock,
   IconPlus,
-  IconShield,
-  IconUsers,
   IconX,
 } from "./admin-icons";
 
@@ -114,7 +112,7 @@ export function AdminPlatformAccess({ data }: AdminPlatformAccessProps) {
       if (res.ok) {
         setActionMessage(
           nextStatus === "disabled"
-            ? ar ? "تم تعليق حساب المشرف وإبطال جلساته فوراً" : "Admin suspended and sessions invalidated immediately"
+            ? ar ? "تم تعليق حساب المشرف" : "Admin suspended"
             : ar ? "تم إعادة تفعيل حساب المشرف" : "Admin reactivated"
         );
         router.refresh();
@@ -135,35 +133,22 @@ export function AdminPlatformAccess({ data }: AdminPlatformAccessProps) {
   };
 
   return (
-    <div className="space-y-6" dir={ar ? "rtl" : "ltr"}>
+    <div className={`space-y-6 ${styles.access}`} dir={ar ? "rtl" : "ltr"}>
       {/* Header Info */}
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[var(--service-line)] pb-4">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="flex h-2.5 w-2.5 rounded-full bg-[var(--service-accent)]" />
-            <span className="text-xs font-semibold uppercase tracking-wider text-[var(--service-accent)]">
-              Module 10 · Access Control & Platform Teams
-            </span>
-          </div>
           <h1 className="mt-1 text-2xl font-black text-[var(--service-ink)] tracking-tight">
-            {ar ? "إدارة الصلاحيات والمشرفين المفوضين (Platform Access)" : "Access Control & Delegated Admins"}
+            {ar ? "صلاحيات المشرفين" : "Administrator access"}
           </h1>
           <p className="mt-1 text-sm text-[var(--service-muted)]">
             {ar
-              ? "حوكمة صلاحيات موظفي المنصة، عزل أدوار الدعم والمالية والتشغيل، ومنع تصعيد الصلاحيات وإبطال الجلسات الفوري."
-              : "Platform staff governance, isolated Support/Finance/Operations roles, anti-escalation guards, and immediate session invalidation."}
+              ? "إدارة أدوار المشرفين المفوضين ومراجعة السجلات المتاحة."
+              : "Manage delegated administrator roles and review available records."}
           </p>
         </div>
 
         {/* Platform Owner Verified Badge */}
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 rounded-xl border border-[var(--service-line)] bg-[var(--service-surface)] px-3 py-1.5 shadow-sm">
-            <IconShield className="h-4 w-4 text-[var(--service-success)]" />
-            <span className="text-xs font-bold text-[var(--service-ink)]">{data.owner.email}</span>
-            <span className="rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-semibold text-purple-800">
-              {ar ? "مالك المنصة" : "Platform Owner"}
-            </span>
-          </div>
 
           <button
             type="button"
@@ -182,124 +167,20 @@ export function AdminPlatformAccess({ data }: AdminPlatformAccessProps) {
             <IconCheckCircle className="h-4 w-4 text-emerald-600" />
             <span className="font-semibold">{actionMessage}</span>
           </div>
-          <button type="button" onClick={() => setActionMessage(null)} className="text-emerald-700 hover:opacity-75">
+          <button type="button" aria-label={ar ? "إغلاق التنبيه" : "Dismiss notification"} onClick={() => setActionMessage(null)} className="text-emerald-700 hover:opacity-75">
             <IconX className="h-3.5 w-3.5" />
           </button>
         </div>
       )}
 
-      {/* 4 KPI Summary Cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {/* KPI 1: Total Admins */}
-        <div className="rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-[var(--service-muted)]">
-              {ar ? "إجمالي كادر الإدارة" : "Total Platform Staff"}
-            </span>
-            <IconUsers className="h-4 w-4 text-[var(--service-accent)]" />
-          </div>
-          <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-[var(--service-ink)]">
-              {data.kpis.totalAdminsCount}
-            </span>
-            <span className="text-xs font-bold text-[var(--service-muted)]">
-              {ar ? "مشرفين مسجلين" : "administrators"}
-            </span>
-          </div>
-          <div className="mt-3 border-t border-[var(--service-line)] pt-3 text-xs text-[var(--service-muted)]">
-            {ar ? "المالك السيادي + المفوضين" : "Owner + delegated staff"}
-          </div>
+      <div className={styles.summary}>
+        <div className="rounded-xl border border-[var(--service-line)] bg-[var(--service-surface)] p-4">
+          <h2 className="text-sm font-semibold text-[var(--service-muted)]">{ar ? "سجلات المشرفين المفوضين المحمّلة" : "Loaded delegated administrator records"}</h2>
+          <p className="mt-2 text-2xl font-bold text-[var(--service-ink)]">{data.delegatedAdmins.length}</p>
         </div>
-
-        {/* KPI 2: Active Admins */}
-        <div className="rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-[var(--service-muted)]">
-              {ar ? "المشرفون النشطون حالياً" : "Active Delegated Admins"}
-            </span>
-            <IconCheckCircle className="h-4 w-4 text-[var(--service-success)]" />
-          </div>
-          <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-[var(--service-ink)]">
-              {data.kpis.activeAdminsCount}
-            </span>
-            <span className="text-xs font-bold text-[var(--service-muted)]">
-              {ar ? "حساب نشط" : "active roles"}
-            </span>
-          </div>
-          <div className="mt-3 border-t border-[var(--service-line)] pt-3 text-xs text-[var(--service-muted)]">
-            {ar ? "تخضع للتفويض الصريح" : "Scoped explicit privileges"}
-          </div>
-        </div>
-
-        {/* KPI 3: Anti-Escalation Gate */}
-        <div className="rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-[var(--service-muted)]">
-              {ar ? "حماية منع التصعيد" : "Privilege Escalation"}
-            </span>
-            <IconShield className="h-4 w-4 text-[var(--service-accent)]" />
-          </div>
-          <div className="mt-3">
-            <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-bold text-emerald-800">
-              {ar ? "مقفل برمجياً (LOCKED)" : "LOCKED (FAIL-CLOSED)"}
-            </span>
-          </div>
-          <div className="mt-3 border-t border-[var(--service-line)] pt-3 text-xs text-[var(--service-muted)]">
-            {ar ? "منع تفويض صفة المالك أو رفع الدور ذاتياً" : "Owner role cannot be delegated or self-granted"}
-          </div>
-        </div>
-
-        {/* KPI 4: Immediate Revocation */}
-        <div className="rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-[var(--service-muted)]">
-              {ar ? "سياسة إبطال الجلسات" : "Session Invalidation"}
-            </span>
-            <IconClock className="h-4 w-4 text-[var(--service-accent)]" />
-          </div>
-          <div className="mt-3">
-            <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-bold text-blue-800">
-              {ar ? "فوري (IMMEDIATE AT DB)" : "IMMEDIATE AT DB"}
-            </span>
-          </div>
-          <div className="mt-3 border-t border-[var(--service-line)] pt-3 text-xs text-[var(--service-muted)]">
-            {ar ? "التعليق يرفض الجلسة المفتوحة فوراً" : "Suspension terminates live API sessions"}
-          </div>
-        </div>
-      </div>
-
-      {/* Role Catalog Cards */}
-      <div className="rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] p-5 shadow-sm space-y-3">
-        <h2 className="text-sm font-bold text-[var(--service-ink)]">
-          {ar ? "كتالوج الأدوار المعتمدة للمنصة (Role Catalog & Isolation)" : "Platform Roles & Isolation Catalog"}
-        </h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          {data.roleCatalog.map((cat) => (
-            <div key={cat.role} className="rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)] p-3.5 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className={`rounded-md px-2 py-0.5 text-[11px] font-bold border ${cat.badgeStyle}`}>
-                  {ar ? cat.nameAr : cat.nameEn}
-                </span>
-              </div>
-              <p className="text-[11px] text-[var(--service-muted)]">
-                {ar ? cat.descriptionAr : cat.descriptionEn}
-              </p>
-              <div className="pt-2 border-t border-[var(--service-line)]">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--service-muted)] mb-1">
-                  {ar ? "الصلاحيات المحصورة:" : "Explicit Capabilities:"}
-                </div>
-                <div className="flex flex-wrap gap-1">
-                  {cat.capabilities.map((cap) => (
-                    <span key={cap} className="rounded bg-[var(--service-surface)] px-1.5 py-0.5 text-[9px] font-mono border border-[var(--service-line)] text-[var(--service-ink)]">
-                      {cap}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
+        <p role="status" className="rounded-xl border border-[var(--service-line)] bg-[var(--service-surface)] p-4 text-sm text-[var(--service-muted)]">
+          {ar ? "بعض تفاصيل الهوية والدور والحالة والتاريخ قد تتضمن قيمًا افتراضية. تحقق من الحساب والسجل قبل إجراء أي تغيير." : "Some identity, role, status and date details may contain defaults. Verify the account and record before making changes."}
+        </p>
       </div>
 
       {/* Delegated Admins Directory Table */}
@@ -311,22 +192,22 @@ export function AdminPlatformAccess({ data }: AdminPlatformAccessProps) {
             </h2>
             <p className="mt-0.5 text-xs text-[var(--service-muted)]">
               {ar
-                ? "قائمة موظفي المنصة الممنوحين صلاحيات إدارية محددة. صلاحيات الشركات والفروع معزولة تماماً."
-                : "Internal platform personnel with scoped privileges. Tenant company/branch roles are strictly isolated."}
+                ? "سجلات المشرفين المفوضين والأدوار المعروضة لهم."
+                : "Loaded records of delegated administrators and their displayed roles."}
             </p>
           </div>
         </div>
 
-        <div className="overflow-x-auto rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)]">
-          <table className="w-full text-right text-xs">
+        <div className="overflow-x-auto rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)]" role="region" aria-label={ar ? "جدول المشرفين" : "Administrators table"} tabIndex={0}>
+          <table className="w-full text-start text-xs">
             <thead className="border-b border-[var(--service-line)] text-[11px] font-bold text-[var(--service-muted)]">
               <tr>
-                <th className="p-3.5">{ar ? "المشرف" : "Administrator"}</th>
-                <th className="p-3.5">{ar ? "الدور الإداري" : "Role"}</th>
-                <th className="p-3.5">{ar ? "الحالة التشغيلية" : "Status"}</th>
-                <th className="p-3.5">{ar ? "تاريخ التفويض" : "Granted At"}</th>
-                <th className="p-3.5">{ar ? "ملاحظات" : "Notes"}</th>
-                <th className="p-3.5">{ar ? "الإجراءات" : "Actions"}</th>
+                <th scope="col" className="p-3.5">{ar ? "المشرف" : "Administrator"}</th>
+                <th scope="col" className="p-3.5">{ar ? "الدور الإداري" : "Role"}</th>
+                <th scope="col" className="p-3.5">{ar ? "الحالة التشغيلية" : "Status"}</th>
+                <th scope="col" className="p-3.5">{ar ? "تاريخ التفويض" : "Granted At"}</th>
+                <th scope="col" className="p-3.5">{ar ? "ملاحظات" : "Notes"}</th>
+                <th scope="col" className="p-3.5">{ar ? "الإجراءات" : "Actions"}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--service-line)] text-[var(--service-ink)]">
@@ -334,7 +215,7 @@ export function AdminPlatformAccess({ data }: AdminPlatformAccessProps) {
               <tr className="bg-purple-50/40">
                 <td className="p-3.5">
                   <div className="font-bold text-[var(--service-ink)]">{data.owner.fullName}</div>
-                  <div className="text-[11px] font-mono text-[var(--service-muted)]">{data.owner.email}</div>
+                  <div className="text-sm text-[var(--service-muted)]">{ar ? "البريد غير متحقق من مصدره" : "Email source not verified"}</div>
                 </td>
                 <td className="p-3.5">
                   <span className="rounded-md px-2 py-0.5 text-[10px] font-bold border bg-purple-100 text-purple-800 border-purple-200">
@@ -342,18 +223,18 @@ export function AdminPlatformAccess({ data }: AdminPlatformAccessProps) {
                   </span>
                 </td>
                 <td className="p-3.5">
-                  <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
-                    {ar ? "نشط دائم (Immutable)" : "Active (Immutable)"}
+                  <span className="rounded-full bg-stone-100 px-2 py-0.5 text-[10px] font-bold text-stone-700">
+                    {ar ? "الحالة غير متحققة هنا" : "Status not verified here"}
                   </span>
                 </td>
                 <td className="p-3.5 font-mono text-[11px] text-[var(--service-muted)]">
-                  {ar ? "تأسيس المنصة" : "Platform Baseline"}
+                  —
                 </td>
                 <td className="p-3.5 text-xs text-[var(--service-muted)]">
-                  {ar ? "المالك القانوني الوحيد للمنصة" : "Sole authoritative platform owner"}
+                  {ar ? "سياق وصول المالك" : "Owner access context"}
                 </td>
                 <td className="p-3.5 text-xs text-[var(--service-muted)]">
-                  <span className="text-[11px] text-stone-400 italic">{ar ? "محمي من التعديل" : "Protected"}</span>
+                  <span className="text-[11px] text-stone-400 italic">{ar ? "لا يُعدّل من هنا" : "Not editable here"}</span>
                 </td>
               </tr>
 
@@ -366,7 +247,8 @@ export function AdminPlatformAccess({ data }: AdminPlatformAccessProps) {
                   <tr key={admin.userId} className="hover:bg-[var(--service-subtle)] transition">
                     <td className="p-3.5">
                       <div className="font-bold text-[var(--service-ink)]">{admin.fullName}</div>
-                      <div className="text-[11px] font-mono text-[var(--service-muted)]">{admin.email}</div>
+                      <div className="text-sm text-[var(--service-muted)]">{ar ? "البريد غير متحقق من مصدره" : "Email source not verified"}</div>
+                      <div dir="ltr" className="text-[13px] font-mono text-[var(--service-muted)]">{admin.userId}</div>
                       {admin.supportCode && (
                         <div className="text-[10px] font-mono text-[var(--service-accent)]">{admin.supportCode}</div>
                       )}
@@ -388,12 +270,7 @@ export function AdminPlatformAccess({ data }: AdminPlatformAccessProps) {
                       </span>
                     </td>
                     <td className="p-3.5 font-mono text-[11px] text-[var(--service-muted)]">
-                      <time dateTime={admin.grantedAt}>
-                        {new Intl.DateTimeFormat(locale, {
-                          dateStyle: "short",
-                          timeZone: "Asia/Muscat",
-                        }).format(new Date(admin.grantedAt))}
-                      </time>
+                      {ar ? "غير متحقق" : "Not verified"}
                     </td>
                     <td className="p-3.5 text-xs text-[var(--service-muted)] max-w-xs truncate">
                       {admin.note || "—"}
@@ -441,13 +318,46 @@ export function AdminPlatformAccess({ data }: AdminPlatformAccessProps) {
                 <tr>
                   <td colSpan={6} className="p-8 text-center text-xs text-[var(--service-muted)] font-sans">
                     {ar
-                      ? "لا يوجد مشرفون مفوضون حالياً. جميع الصلاحيات محصورة بحساب مالك المنصة السيادي."
-                      : "No delegated administrators configured. All platform operations remain restricted to the Platform Owner."}
+                      ? "لا يوجد مشرفون مفوضون حالياً في السجلات المحمّلة."
+                      : "No delegated administrators in the loaded records."}
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      {/* Role Catalog Cards */}
+      <div className="rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] p-5 shadow-sm space-y-3">
+        <h2 className="text-sm font-bold text-[var(--service-ink)]">
+          {ar ? "تعريفات الأدوار" : "Role definitions"}
+        </h2>
+        <div className={styles.roles}>
+          {data.roleCatalog.map((cat) => (
+            <div key={cat.role} className="rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)] p-3.5 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className={`rounded-md px-2 py-0.5 text-[11px] font-bold border ${cat.badgeStyle}`}>
+                  {ar ? cat.nameAr : cat.nameEn}
+                </span>
+              </div>
+              <p className="text-[11px] text-[var(--service-muted)]">
+                {ar ? cat.descriptionAr : cat.descriptionEn}
+              </p>
+              <div className="pt-2 border-t border-[var(--service-line)]">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--service-muted)] mb-1">
+                  {ar ? "الصلاحيات المذكورة:" : "Listed capabilities:"}
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {cat.capabilities.map((cap) => (
+                    <span key={cap} className="rounded bg-[var(--service-surface)] px-1.5 py-0.5 text-[9px] font-mono border border-[var(--service-line)] text-[var(--service-ink)]">
+                      {cap}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 
@@ -640,8 +550,8 @@ export function AdminPlatformAccess({ data }: AdminPlatformAccessProps) {
 
             <p className="text-xs text-[var(--service-muted)] leading-relaxed">
               {ar
-                ? `هل أنت متأكد من إلغاء التفويض الإداري للمستخدم ${confirmRevokeAdmin.fullName} (${confirmRevokeAdmin.email})؟ سيتم سحب الصلاحيات فوراً من قاعدة البيانات وإبطال كافة الجلسات الإدارية المفتوحة.`
-                : `Are you sure you want to revoke platform administration for ${confirmRevokeAdmin.fullName} (${confirmRevokeAdmin.email})? Privileges and active sessions will be terminated immediately at the database level.`}
+                ? `هل أنت متأكد من إلغاء التفويض الإداري للمستخدم ${confirmRevokeAdmin.fullName} (${confirmRevokeAdmin.userId})؟ سيُطلب إلغاء التفويض من الخادم.`
+                : `Are you sure you want to revoke platform administration for ${confirmRevokeAdmin.fullName} (${confirmRevokeAdmin.userId})? The server will be asked to revoke the role.`}
             </p>
 
             <div className="flex items-center justify-end gap-2 pt-3 border-t border-[var(--service-line)]">

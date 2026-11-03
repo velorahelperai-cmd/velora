@@ -6,6 +6,7 @@ import { useDemo } from "@/lib/demo-state";
 import { useRouter } from "next/navigation";
 import type { AdminAccountSearchItem } from "@/lib/tenancy/types";
 import { AccountDeletionPanel } from './account-deletion-panel';
+import styles from "./admin-accounts-directory.module.css";
 
 export interface AdminAccountsDirectoryProps {
   initialQuery?: string;
@@ -15,6 +16,17 @@ export interface AdminAccountsDirectoryProps {
   hasMore: boolean;
   atBrowseWindowEnd?: boolean;
   maxOffset?: number;
+}
+
+export function AdminAccountsHeading() {
+  const { locale } = useDemo();
+  const ar = locale === "ar";
+  return (
+    <header className="border-b border-[var(--service-line)] pb-4" dir={ar ? "rtl" : "ltr"}>
+      <h1 className="text-2xl font-bold text-[var(--service-ink)]">{ar ? "الحسابات والمستخدمون" : "Accounts and users"}</h1>
+      <p className="mt-1 text-sm text-[var(--service-muted)]">{ar ? "الحسابات وحالة التوثيق والمنشآت المرتبطة واسترداد الهوية." : "Accounts, verification status, linked businesses and identity recovery."}</p>
+    </header>
+  );
 }
 
 export function AdminAccountsDirectory({
@@ -56,7 +68,7 @@ export function AdminAccountsDirectory({
   const endIndex = initialOffset + accounts.length;
 
   return (
-    <div className="space-y-6" dir={ar ? "rtl" : "ltr"}>
+    <div className={`space-y-6 ${styles.directory}`} dir={ar ? "rtl" : "ltr"}>
       {/* Search Header */}
       <div className="rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] p-5 shadow-sm">
         <form onSubmit={handleSearchSubmit} aria-busy={isSearching} className="flex flex-wrap items-end gap-3">
@@ -115,18 +127,23 @@ export function AdminAccountsDirectory({
           <p className="mt-1 text-sm text-[var(--service-muted)]">
             {ar ? "لم يتم العثور على أي حسابات بالمعايير المحددة. جرب كلمة بحث أخرى." : "No accounts matched these criteria. Try another search."}
           </p>
+          {initialOffset > 0 && (
+            <button type="button" onClick={() => handlePageChange(initialOffset - initialLimit)} disabled={isSearching} className={styles.previousEmpty}>
+              {ar ? "العودة للصفحة السابقة" : "Return to previous page"}
+            </button>
+          )}
         </div>
       ) : (
         <div className="rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto" role="region" aria-label={ar ? "جدول الحسابات" : "Accounts table"} tabIndex={0}>
             <table className="w-full text-start text-sm">
               <thead className="border-b border-[var(--service-line)] bg-[var(--service-subtle)] text-xs font-bold text-[var(--service-muted)]">
                 <tr>
-                  <th className="px-5 py-3.5">{ar ? "المستخدم وكود الدعم" : "User and support code"}</th>
-                  <th className="px-5 py-3.5">{ar ? "البريد وحالة التوثيق" : "Email and verification"}</th>
-                  <th className="px-5 py-3.5">{ar ? "الهاتف الموثق" : "Verified phone"}</th>
-                  <th className="px-5 py-3.5">{ar ? "المنشآت المرتبطة" : "Linked businesses"}</th>
-                  <th className="px-5 py-3.5 text-end">{ar ? "إجراءات" : "Actions"}</th>
+                  <th scope="col" className="px-5 py-3.5">{ar ? "المستخدم وكود الدعم" : "User and support code"}</th>
+                  <th scope="col" className="px-5 py-3.5">{ar ? "البريد وحالة التوثيق" : "Email and verification"}</th>
+                  <th scope="col" className="px-5 py-3.5">{ar ? "الهاتف الموثق" : "Verified phone"}</th>
+                  <th scope="col" className="px-5 py-3.5">{ar ? "المنشآت المرتبطة" : "Linked businesses"}</th>
+                  <th scope="col" className="px-5 py-3.5 text-end">{ar ? "إجراءات" : "Actions"}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--service-line)]">
@@ -134,10 +151,10 @@ export function AdminAccountsDirectory({
                   <tr key={acc.user_id} className="hover:bg-[var(--service-canvas)]/50 transition">
                     <td className="px-5 py-4">
                       <div className="font-bold text-[var(--service-ink)]">
-                        {acc.full_name || (ar ? "بدون اسم مسجل" : "No name recorded")}
+                        <bdi>{acc.full_name || (ar ? "بدون اسم مسجل" : "No name recorded")}</bdi>
                       </div>
                       <div className="mt-0.5 flex items-center gap-1.5 font-mono text-xs text-[var(--service-muted)]">
-                        <span>{acc.support_code || acc.user_id.slice(0, 12)}</span>
+                        <bdi dir="ltr">{acc.support_code || acc.user_id.slice(0, 12)}</bdi>
                       </div>
                     </td>
                     <td className="px-5 py-4">
@@ -183,7 +200,7 @@ export function AdminAccountsDirectory({
                               href={`/admin/companies/${c.company_id}`}
                               className="inline-flex items-center gap-1 rounded-lg border border-[var(--service-line)] bg-[var(--service-subtle)] px-2 py-1 text-xs text-[var(--service-ink)] hover:border-[var(--service-accent)] transition"
                             >
-                              <span className="font-medium truncate max-w-[120px]">{c.display_name}</span>
+                              <bdi className="font-medium truncate max-w-[120px]">{c.display_name}</bdi>
                               <span className="rounded bg-[var(--service-surface)] px-1 text-[10px] text-[var(--service-muted)]">
                                 {c.role === "owner" ? (ar ? "مالك" : "Owner") : (ar ? "عضو" : "Member")}
                               </span>
@@ -193,7 +210,7 @@ export function AdminAccountsDirectory({
                       )}
                     </td>
                     <td className="px-5 py-4 text-end">
-                      <div className="flex items-center justify-end gap-2">
+                      <div className="flex flex-wrap items-center justify-end gap-2">
                         <Link
                           href={`/admin/identity-recovery?userId=${acc.user_id}`}
                           className="rounded-lg border border-[var(--service-line)] bg-[var(--service-surface)] px-2.5 py-1 text-xs font-semibold text-[var(--service-ink)] hover:bg-[var(--service-subtle)] transition"

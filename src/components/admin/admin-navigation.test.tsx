@@ -125,6 +125,17 @@ function renderShell(pathname = "/admin", locale = "ar") {
 }
 
 describe("Admin — Navigation & Shell Structure", () => {
+  it("marks the active administration page and omits development-status badges", () => {
+    const tree = renderShell("/admin/health", "en");
+    const health = nodes(tree).find(n => n.props.href === "/admin/health");
+    expect(health?.props["aria-current"]).toBe("page");
+    expect(text(tree)).not.toContain("Verified Local");
+  });
+  it("does not present static operational claims as live status", () => {
+    const shell = text(renderShell("/admin", "en"));
+    expect(shell).not.toContain("Live WhatsApp Muted");
+    expect(shell).not.toContain("AI trials");
+  });
   it("renders all 5 primary navigation groups in the sidebar", () => {
     const tree = renderShell("/admin", "ar");
     const fullText = text(tree);

@@ -148,18 +148,15 @@ describe("Stage E — Module 10: AdminPlatformAccess Component", () => {
     ],
   };
 
-  it("renders header, owner badge, and 4 KPI cards correctly", () => {
+  it("renders access overview without asserting fabricated identity or protection evidence", () => {
     const tree = renderPlatformAccess({ data: sampleData });
     const content = text(tree);
 
-    // Module info & Owner badge
-    expect(content).toContain("Module 10 · Access Control & Platform Teams");
-    expect(content).toContain("velorahelperai@gmail.com");
-
-    // KPIs
-    expect(content).toContain("3");
-    expect(content).toContain("مقفل برمجياً (LOCKED)");
-    expect(content).toContain("فوري (IMMEDIATE AT DB)");
+    expect(content).toContain("صلاحيات المشرفين");
+    expect(content).not.toContain("velorahelperai@gmail.com");
+    expect(content).not.toContain("مقفل برمجياً (LOCKED)");
+    expect(content).not.toContain("فوري (IMMEDIATE AT DB)");
+    expect(content).toContain("قد تتضمن قيمًا افتراضية");
   });
 
   it("renders delegated admins directory with roles, statuses, and action buttons", () => {
@@ -167,10 +164,10 @@ describe("Stage E — Module 10: AdminPlatformAccess Component", () => {
     const content = text(tree);
 
     expect(content).toContain("Salim Al Mandhari");
-    expect(content).toContain("salim.support@velora.internal");
+    expect(content).not.toContain("salim.support@velora.internal");
     expect(content).toContain("مشرف دعم ومراجعات");
     expect(content).toContain("Fatima Al Habsi");
-    expect(content).toContain("fatima.finance@velora.internal");
+    expect(content).not.toContain("fatima.finance@velora.internal");
     expect(content).toContain("معلق (Suspended)");
     expect(content).toContain("تعديل");
     expect(content).toContain("إلغاء التفويض");

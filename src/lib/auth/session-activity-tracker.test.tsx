@@ -27,6 +27,17 @@ vi.mock("react", () => ({
     const s = f.slots[i] ?? (f.slots[i] = {});
     return s.value ?? (s.value = { current: initial });
   },
+  useState(initial: unknown) {
+    const i = f.cursor++;
+    const s = f.slots[i] ?? (f.slots[i] = {});
+    if (s.value === undefined) {
+      s.value = typeof initial === "function" ? (initial as () => unknown)() : initial;
+    }
+    const setState = (next: unknown) => {
+      s.value = typeof next === "function" ? (next as (prev: unknown) => unknown)(s.value) : next;
+    };
+    return [s.value, setState];
+  },
   useEffect(fn: () => void | (() => void), deps: unknown[]) {
     const i = f.cursor++;
     const s = f.slots[i] ?? (f.slots[i] = {});
@@ -68,10 +79,11 @@ function session(status = "ready", userId = "user-a") {
     expire: f.expire,
     clear: f.clear,
     lock: f.lock,
+    refresh: f.refresh,
     isCurrentUser: (id: string, expected?: unknown) =>
       f.currentUser === id && (!expected || expected === f.currentIdentity),
     hasCurrentUser: () => status === "ready" && f.currentUser !== null,
-    liveSnapshot: () => ({ ready: f.liveReady && f.currentUser !== null, userId: f.currentUser, boundaryFingerprint: f.liveBoundary }),
+    liveSnapshot: () => ({ ready: f.liveReady && f.currentUser !== null, userId: f.currentUser, boundaryFingerprint: f.liveBoundary, status }),
     cleanupCapture: () => ({ userId: f.currentUser, boundaryFingerprint: "fp-a" }),
     isCapturedBoundary: (fp: string | null | undefined) => Boolean(fp) && fp === "fp-a",
   };
@@ -99,6 +111,7 @@ beforeEach(() => {
   f.listeners.clear();
   f.currentUser = "user-a";
   f.liveBoundary = "fp-a"; f.liveReady = true;
+  f.refresh.mockRejectedValue(new Error("unauthenticated"));
   f.session = session();
   f.check.mockResolvedValue({ ok: true, expiresAt: "2026-10-14T02:00:00Z" });
   f.quarantine.mockResolvedValue({ ok: true });
@@ -153,7 +166,7 @@ it("a late expiry check cannot expire an account that switched before the next r
   f.check.mockReturnValue(pending.promise);
   render();
   f.currentUser = "user-b";
-  pending.resolve({ ok: false, code: "UNAUTHENTICATED" });
+  pending.resolve({ ok: false, code: "UNAUTHENTICATED", confirmed: true });
   await settle();
   expect(f.expire).not.toHaveBeenCalled();
 });
@@ -224,4 +237,104 @@ it("M19 delayed expiry cleanup cannot clear a newer locked capture",async()=>{
  pending.resolve({ok:false});await settle();
  expect(f.quarantine).toHaveBeenCalledWith("fp-a");
  expect(f.clear).not.toHaveBeenCalled();expect(f.replace).not.toHaveBeenCalled();expect(f.refresh).not.toHaveBeenCalled();
+});
+
+it("exhausting 3 unavailable checks enters unverified holding without expiring the session", async () => {
+  f.check.mockResolvedValue({ ok: false, code: "UNAVAILABLE", confirmed: false });
+  render();
+  await settle();
+  // Attempt 1 happened on mount. Retry timer scheduled.
+  expect(f.check).toHaveBeenCalledTimes(1);
+  expect(f.expire).not.toHaveBeenCalled();
+
+  // Trigger attempt 2
+  await vi.advanceTimersByTimeAsync(30000);
+  await settle();
+  expect(f.check).toHaveBeenCalledTimes(2);
+  expect(f.expire).not.toHaveBeenCalled();
+
+  // Trigger attempt 3
+  await vi.advanceTimersByTimeAsync(30000);
+  await settle();
+  expect(f.check).toHaveBeenCalledTimes(3);
+  expect(f.expire).not.toHaveBeenCalled();
+
+  // Advance time further - no more automatic retries, session retained
+  await vi.advanceTimersByTimeAsync(60000);
+  await settle();
+  expect(f.check).toHaveBeenCalledTimes(3);
+  expect(f.expire).not.toHaveBeenCalled();
+  expect(f.clear).not.toHaveBeenCalled();
+  expect(f.quarantine).not.toHaveBeenCalled();
+});
+
+it("re-verifying clears holding and resumes normal schedule upon success", async () => {
+  f.check.mockResolvedValueOnce({ ok: false, code: "UNAVAILABLE", confirmed: false })
+    .mockResolvedValueOnce({ ok: false, code: "UNAVAILABLE", confirmed: false })
+    .mockResolvedValueOnce({ ok: false, code: "UNAVAILABLE", confirmed: false })
+    .mockResolvedValue({ ok: true, expiresAt: "2026-10-14T02:00:00Z" });
+
+  render();
+  await settle();
+  await vi.advanceTimersByTimeAsync(30000);
+  await settle();
+  await vi.advanceTimersByTimeAsync(30000);
+  await settle();
+  expect(f.check).toHaveBeenCalledTimes(3);
+
+  // Manual recheck via visibility event
+  event("visibilitychange");
+  await settle();
+  expect(f.check).toHaveBeenCalledTimes(4);
+  expect(f.expire).not.toHaveBeenCalled();
+});
+
+it("a stale check with a changed boundary fingerprint cannot expire the session", async () => {
+  const pending = deferred();
+  f.check.mockReturnValue(pending.promise);
+  render();
+  // Live boundary changes while check was in flight
+  f.liveBoundary = "fp-different";
+  pending.resolve({ ok: false, code: "UNAUTHENTICATED", confirmed: true });
+  await settle();
+  expect(f.expire).not.toHaveBeenCalled();
+});
+
+it("when JWT expires but session renewal succeeds, the user is not kicked out", async () => {
+  f.refresh.mockResolvedValue(undefined);
+  f.check.mockResolvedValueOnce({ ok: false, code: "UNAUTHENTICATED", confirmed: true });
+  render();
+  await settle();
+  expect(f.refresh).toHaveBeenCalled();
+  expect(f.expire).not.toHaveBeenCalled();
+});
+
+it("when session renewal fails due to network error, the user is not kicked out and session enters retry/holding", async () => {
+  f.refresh.mockRejectedValue(new Error("NetworkError: Failed to fetch"));
+  f.check.mockResolvedValueOnce({ ok: false, code: "UNAUTHENTICATED", confirmed: true });
+  render();
+  await settle();
+  expect(f.refresh).toHaveBeenCalled();
+  expect(f.expire).not.toHaveBeenCalled();
+  expect(f.clear).not.toHaveBeenCalled();
+});
+
+it("same-session refresh replacing the identity object does not expire the user", async () => {
+  f.refresh.mockImplementation(async()=>{f.currentIdentity={userId:'user-a',sessionExpiresAt:'renewed'};});
+  f.check.mockResolvedValueOnce({ok:false,code:'UNAUTHENTICATED',confirmed:true});
+  render();await settle();expect(f.refresh).toHaveBeenCalled();expect(f.expire).not.toHaveBeenCalled();
+});
+it("a different session installed during refresh is never expired by the old check", async () => {
+  f.refresh.mockImplementation(async()=>{f.currentUser='user-b';f.liveBoundary='fp-b';});
+  f.check.mockResolvedValueOnce({ok:false,code:'UNAUTHENTICATED',confirmed:true});
+  render();await settle();expect(f.expire).not.toHaveBeenCalled();expect(f.quarantine).not.toHaveBeenCalled();
+});
+it("an unclassified refresh exception cannot prove session expiry", async () => {
+  f.liveReady=false;f.refresh.mockRejectedValue(new Error('unexpected'));
+  f.check.mockResolvedValueOnce({ok:false,code:'UNAUTHENTICATED',confirmed:true});
+  render();await settle();expect(f.expire).not.toHaveBeenCalled();
+});
+it("an authentication result without confirmed rejection stays unverified", async () => {
+  f.check.mockResolvedValueOnce({ok:false,code:'UNAUTHENTICATED'});
+  render();await settle();expect(f.expire).not.toHaveBeenCalled();expect(f.refresh).not.toHaveBeenCalled();
 });

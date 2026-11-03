@@ -45,6 +45,12 @@ export function InstagramInbox({companyId,owner=false,companyInSetup=false,revie
  const text=drafts[draftKey]??'',setText=(value:string)=>setDrafts(old=>({...old,[draftKey]:value}));
  const [readinessVerified,setReadinessVerified]=useState(false);
  const [detailsOpen,setDetailsOpen]=useState(false);
+ useEffect(()=>{
+  if(!embedded || typeof window==='undefined')return;
+  const resize=()=>{if(window.innerWidth>=1440)setDetailsOpen(false);};
+  window.addEventListener('resize',resize);
+  return()=>window.removeEventListener('resize',resize);
+ },[embedded]);
  const [error,setError]=useState<string|null>(null),[busy,setBusy]=useState(false),[loading,setLoading]=useState(true);
  const notice=(code:string)=>labels[code]?.[ar?1:0]??(ar?'تعذّر إكمال الطلب. حاول تحديث الصفحة.':'The request could not be completed. Refresh this page.');
  useEffect(()=>{
@@ -143,7 +149,7 @@ export function InstagramInbox({companyId,owner=false,companyInSetup=false,revie
      <Button onClick={()=>void send()} disabled={busy||loading||!readinessVerified||saved.state!=='ready'||blockers.length>0}>{ar?'إرسال الرد المحفوظ':'Send saved reply'}</Button>
      <Button onClick={()=>{delete localIntents.current[draftKey];setText('');select(conversationId!);}} disabled={busy||saved.state==='unknown'||saved.state==='claimed'}>{ar?'رد جديد':'New reply'}</Button>
     </>}
-   </section><ConversationDetailsPanel id="instagram-details" title={ar?'تفاصيل المحادثة':'Conversation details'} open={detailsOpen} onClose={()=>setDetailsOpen(false)}>
+   </section><ConversationDetailsPanel id="instagram-details" title={ar?'تفاصيل المحادثة':'Conversation details'} closeLabel={ar?'إغلاق':'Close'} open={detailsOpen} onClose={()=>setDetailsOpen(false)}>
     <ChannelBadge channel="instagram" ar={ar}/><dl><dt>{ar?'معرّف الطرف':'Participant ID'}</dt><dd dir="ltr">{thread.conversation.counterpartyId}</dd><dt>{ar?'حساب النشاط':'Business account ID'}</dt><dd dir="ltr">{thread.conversation.accountId}</dd><dt>{ar?'الإسناد':'Assignment'}</dt><dd dir="auto">{thread.conversation.assignedTo??(ar?'غير مسندة':'Unassigned')}</dd><dt>{ar?'آخر رسالة واردة':'Latest inbound message'}</dt><dd>{thread.conversation.lastReceivedAt?new Date(thread.conversation.lastReceivedAt).toLocaleString(ar?'ar-OM':'en-GB'):'—'}</dd></dl>
     {owner&&<a href="/app/instagram">{ar?'حالة ربط إنستجرام':'Instagram connection status'}</a>}
    </ConversationDetailsPanel></div>}

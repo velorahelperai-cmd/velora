@@ -1,5 +1,5 @@
 export const IDLE_TIMEOUT_MS=2*60*60*1000;
-export type SessionGuard={ok:true;expiresAt:string}|{ok:false;code:"UNAUTHENTICATED"|"UNAVAILABLE";expired?:true};
+export type SessionGuard={ok:true;expiresAt:string}|{ok:false;code:"UNAUTHENTICATED"|"UNAVAILABLE";expired?:true;confirmed?:boolean};
 export function isSessionIdleExpired(lastActivity:number,now:number):boolean{return !Number.isFinite(lastActivity)||!Number.isFinite(now)||lastActivity>now||now-lastActivity>=IDLE_TIMEOUT_MS;}
 export function sessionGuardFromRpc(data:unknown,error:{code?:string;message?:string}|null):SessionGuard{
  if(error){

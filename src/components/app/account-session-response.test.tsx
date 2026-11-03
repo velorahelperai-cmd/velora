@@ -275,6 +275,54 @@ it("mount preserves a captured quarantine when the native session has gone", asy
   expect(state.read).not.toHaveBeenCalled();
 });
 
+it.each(["/signup", "/login", "/verify-email"])("starts a guest auth journey on %s after authoritative absence without restoring quarantined A", async path => {
+  vi.useFakeTimers();
+  state.path=path;
+  state.localQuarantine={type:"quarantine",userId:"user-a",boundaryFingerprint:"fp-a"};
+  state.broker.mockResolvedValue({ok:false,code:"UNAUTHENTICATED"});
+  const frames:Array<()=>void>=[];
+  window.requestAnimationFrame=(fn:FrameRequestCallback)=>{frames.push(()=>fn(0));return 1;};
+  render();frames[0]!();await vi.advanceTimersByTimeAsync(0);
+  expect(render().status).toBe("guest");
+  expect(render().identity).toBeNull();
+  expect(state.read).not.toHaveBeenCalled();
+  expect(state.publish).not.toHaveBeenCalled();
+  expect(state.localQuarantine?.boundaryFingerprint).toBe("fp-a");
+
+  // A late cookie/response for A must still not unlock the old capture.
+  state.broker.mockResolvedValue({ok:true,userId:"user-a",boundaryFingerprint:"fp-a",nativeSessionId:"native-a",contextGeneration:1,generation:"1"});
+  await render().refresh();
+  expect(render().status).toBe("locked");
+  expect(state.read).not.toHaveBeenCalled();
+});
+
+it.each(["user-b","user-a"])("admits a fresh boundary for %s after guest bootstrap without restoring old A",async userId=>{
+  vi.useFakeTimers();state.path="/verify-email";
+  state.localQuarantine={type:"quarantine",userId:"user-a",boundaryFingerprint:"fp-a"};
+  state.broker.mockResolvedValue({ok:false,code:"UNAUTHENTICATED"});
+  const frames:Array<()=>void>=[];
+  window.requestAnimationFrame=(fn:FrameRequestCallback)=>{frames.push(()=>fn(0));return 1;};
+  render();frames[0]!();await vi.advanceTimersByTimeAsync(0);
+  expect(render().status).toBe("guest");
+  state.broker.mockResolvedValue({ok:true,userId,boundaryFingerprint:"fp-b",nativeSessionId:"native-b",contextGeneration:1,generation:"2"});
+  state.read.mockResolvedValue({ok:true,data:profile(userId)});
+  await render().refresh();
+  expect(render().status).toBe("ready");
+  expect(render().identity?.userId).toBe(userId);
+});
+
+it.each(["QUARANTINED","UNAVAILABLE","THROW"])("does not start a guest verification journey on broker %s",async code=>{
+  vi.useFakeTimers();state.path="/verify-email";
+  state.localQuarantine={type:"quarantine",userId:"user-a",boundaryFingerprint:"fp-a"};
+  if(code==="THROW")state.broker.mockRejectedValue(new Error("offline"));
+  else state.broker.mockResolvedValue({ok:false,code});
+  const frames:Array<()=>void>=[];
+  window.requestAnimationFrame=(fn:FrameRequestCallback)=>{frames.push(()=>fn(0));return 1;};
+  render();frames[0]!();await vi.advanceTimersByTimeAsync(0);
+  expect(render().status).toBe("locked");
+  expect(state.read).not.toHaveBeenCalled();
+});
+
 it.each(["en", "ar"] as const)("shows the setup shell while keeping protected children fenced (%s)", async locale => {
   state.locale = locale;
   state.path = "/setup";

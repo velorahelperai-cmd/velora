@@ -162,9 +162,8 @@ function TrialForm(p:PaidAssistantTrialProps & {snapshot:TrialSnapshot}){
      <div className={styles.headerCopy}>
       <div className={styles.titleRow}>
        <h2 id={id}>{personaName}</h2>
-       {p.snapshot.branchLabel&&p.snapshot.branchLabel!=="—"&&<span className={styles.branchBadge}>{p.snapshot.branchLabel}</span>}
       </div>
-      <p>{t("جرّب مساعدك قبل التشغيل","Try your assistant before launch")}</p>
+      <p>{t("متصل","online")}</p>
      </div>
     </div>
     {allowance&&Number.isFinite(allowance.used)&&Number.isFinite(allowance.limit)&&allowance.limit>0&&(
@@ -175,8 +174,6 @@ function TrialForm(p:PaidAssistantTrialProps & {snapshot:TrialSnapshot}){
     )}
    </header>
 
-   <p className={styles.note}>{t("تعتمد الإجابات هنا على معرفة الفرع وساعات العمل المعتمدة، وتبقى داخل حسابك دون إرسال أي رسائل لعملائك.","Replies here are grounded in your branch knowledge and working hours, and stay inside your account without messaging customers.")}</p>
-
    {!waiting&&!limitReached&&(
     <div className={styles.suggestionsBar}>
      <span className={styles.suggestionsLabel}>{t("جرّب سؤالًا سريعًا:","Try a quick question:")}</span>
@@ -186,6 +183,7 @@ function TrialForm(p:PaidAssistantTrialProps & {snapshot:TrialSnapshot}){
     </div>
    )}
 
+   <div className={styles.chatPane}>
    <div ref={logRef} className={styles.transcript} data-empty={!submitted&&!messages.length&&!waiting&&!hasPartial?"true":undefined} role="log" aria-live="polite" aria-relevant="additions text" aria-label={t("محادثة التجربة","Trial conversation")} onScroll={onLogScroll}>
     {!submitted&&!messages.length&&!waiting&&!hasPartial&&(
      <div className={styles.emptyState}>
@@ -233,6 +231,33 @@ function TrialForm(p:PaidAssistantTrialProps & {snapshot:TrialSnapshot}){
     <div ref={endRef}/>
    </div>
 
+   <form className={styles.composer} onSubmit={onSubmit}>
+    <label className={styles.srOnly} htmlFor={`${id}-question`}>{t("اكتب رسالتك","Write your message")}</label>
+    <div className={styles.composerRow}>
+     <textarea
+      ref={inputRef}
+      id={`${id}-question`}
+      dir="auto"
+      rows={1}
+      maxLength={ANSWER_MAX_QUESTION_CHARS}
+      value={effectiveDraft}
+      disabled={pending||p.state.phase==="pending"||limitReached}
+      placeholder={limitReached?t("اكتملت حصة التجربة المجانية (10/10)","Free trial limit reached (10/10)"):t("اكتب سؤالك هنا… (Enter للإرسال، Shift+Enter لسطر جديد)","Type a message… (Enter to send, Shift+Enter for a new line)")}
+      onChange={e=>{if(p.isCurrent())setDraft(e.target.value);}}
+      onKeyDown={onComposerKey}
+     />
+     <button type="submit" className={styles.send} disabled={blocked||!effectiveDraft.trim()||effectiveDraft.trim().length>ANSWER_MAX_QUESTION_CHARS}>
+      <span>{waiting?t("جارٍ الرد…","Replying…"):t("إرسال","Send")}</span>
+     </button>
+    </div>
+    {nearLimit&&(
+     <div className={styles.composerMeta}>
+      <small className={styles.counter}><bdi dir="ltr">{effectiveDraft.length}/{ANSWER_MAX_QUESTION_CHARS}</bdi></small>
+     </div>
+    )}
+   </form>
+   </div>
+
    {limitReached&&(
     <p role="status" className={styles.limitBanner}>
      {t("استخدمت كامل الردود المجانية للتجربة (10/10) لهذا الفرع دون أي خصم من باقتك المدفوعة.","You have used all 10 free trial replies for this branch without any deduction from your paid plan.")}
@@ -255,41 +280,12 @@ function TrialForm(p:PaidAssistantTrialProps & {snapshot:TrialSnapshot}){
    )}
    {p.snapshot.handoffPreview&&<p role="status" className={styles.previewBanner}>{t("معاينة تصعيد فقط — بلا تحويل حقيقي أو خصم من الحصة.","Escalation preview only — no real handoff or quota use.")}</p>}
    {p.snapshot.recoveryNotice==="context_changed"&&<p role="status" className={styles.note}>{t("تغيّرت الإعدادات أثناء الطلب السابق دون خصم من الحصة.","Settings changed during the previous request without using quota.")}</p>}
-   {p.snapshot.providerFailure&&<p role="status">{t("تعذّر إكمال الرد. لم تُرسل محاولة أخرى.","The reply could not be completed. No additional attempt was sent.")}</p>}
-   {p.snapshot.pendingOperation&&<div className={styles.pending} role="status">
-    <p>{p.snapshot.pendingOperation.pollable?t("طلبك محفوظ وجارٍ متابعة الرد. يمكنك العودة إلى الصفحة لاحقًا.","Your request is saved and its reply is being retrieved. You can return to this page later."):p.snapshot.pendingOperation.providerFailed?t("تعذّر إكمال الرد، وتفاصيل التكلفة قيد المراجعة.","The reply failed; its accounting remains under review."):t("طلب سابق لم يُحسم بعد.","A previous request is still unresolved.")}</p>
+   {p.snapshot.pendingOperation?.recoverable&&p.onRecover&&(
     <div className={styles.pendingActions}>
-     {p.snapshot.pendingOperation.recoverable&&p.onRecover&&<button type="button" className={styles.secondary} disabled={pending} onClick={()=>{if(!pending&&p.isCurrent())void dispatch(()=>p.onRecover?.(p.snapshot.pendingOperation!.id));}}>{t("استعادة الرد","Recover reply")}</button>}
-     {!p.snapshot.pendingOperation.recoverable&&p.snapshot.pendingOperation.status==="uncertain"&&<p>{oldUnknownAllowsNew?t("الطلب السابق قيد المراجعة. يمكنك إرسال سؤال جديد عند إتاحة الإرسال.","The previous request remains under review. You can ask a new question when Send is available."):t("بانتظار مراجعة نتيجة الطلب قبل إرسال سؤال جديد.","The request outcome needs review before another question can be sent.")}</p>}
-     {p.onRefresh&&<button type="button" className={styles.secondary} disabled={pending} onClick={()=>{if(!pending&&p.isCurrent())void dispatch(()=>p.onRefresh?.());}}>{t("تحديث الحالة","Refresh status")}</button>}
+     <button type="button" className={styles.secondary} disabled={pending} onClick={()=>{if(!pending&&p.isCurrent())void dispatch(()=>p.onRecover?.(p.snapshot.pendingOperation!.id));}}>{t("استعادة الرد","Recover reply")}</button>
     </div>
-   </div>}
+   )}
 
-   <form className={styles.composer} onSubmit={onSubmit}>
-    <label className={styles.srOnly} htmlFor={`${id}-question`}>{t("اكتب رسالتك","Write your message")}</label>
-    <div className={styles.composerRow}>
-     <textarea
-      ref={inputRef}
-      id={`${id}-question`}
-      dir="auto"
-      rows={1}
-      maxLength={ANSWER_MAX_QUESTION_CHARS}
-      value={effectiveDraft}
-      disabled={pending||p.state.phase==="pending"||limitReached}
-      placeholder={limitReached?t("اكتملت حصة التجربة المجانية (10/10)","Free trial limit reached (10/10)"):t("اكتب سؤالك هنا… (Enter للإرسال، Shift+Enter لسطر جديد)","Type your question… (Enter to send, Shift+Enter for new line)")}
-      onChange={e=>{if(p.isCurrent())setDraft(e.target.value);}}
-      onKeyDown={onComposerKey}
-     />
-     <button type="submit" className={styles.send} disabled={blocked||!effectiveDraft.trim()||effectiveDraft.trim().length>ANSWER_MAX_QUESTION_CHARS}>
-      <span>{waiting?t("جارٍ الرد…","Replying…"):t("إرسال","Send")}</span>
-     </button>
-    </div>
-    {nearLimit&&(
-     <div className={styles.composerMeta}>
-      <small className={styles.counter}><bdi dir="ltr">{effectiveDraft.length}/{ANSWER_MAX_QUESTION_CHARS}</bdi></small>
-     </div>
-    )}
-   </form>
    {!p.onAsk&&<p className={styles.note}>{t("الاختبار غير مربوط بمحرك الإجابات بعد.","This trial is not connected to the answer engine yet.")}</p>}
   </div>
  </section>;

@@ -26,6 +26,21 @@ const flush = async () => { for (let i = 0; i < 8; i++) await Promise.resolve();
 beforeEach(() => { vi.clearAllMocks(); state.slots = []; });
 
 describe("dashboard readiness reload", () => {
+  it("positions the decorative card highlight without changing its destination",()=>{
+    const card=nodes(render()).find(node=>node.props.href==="/app/conversations?channel=whatsapp")!;
+    const setProperty=vi.fn();
+    (card.props.onPointerMove as (event:unknown)=>void)({clientX:45,clientY:60,currentTarget:{getBoundingClientRect:()=>({left:5,top:10}),style:{setProperty}}});
+    expect(setProperty).toHaveBeenCalledWith("--spot-x","40px");
+    expect(setProperty).toHaveBeenCalledWith("--spot-y","50px");
+    expect(card.props.href).toBe("/app/conversations?channel=whatsapp");
+  });
+  it("places recent conversations before branch and billing details in reading order", () => {
+    const all = nodes(render());
+    const conversations = all.findIndex(node => node.props["aria-label"] === "Latest loaded WhatsApp conversations");
+    const branch = all.findIndex(node => node.type === "section" && node.props.companyId === "company");
+    expect(conversations).toBeGreaterThanOrEqual(0);
+    expect(branch).toBeGreaterThan(conversations);
+  });
   it("updates visible counters and recent customers from the scoped live reader",()=>{
     const workspace={actorId:"actor",companyId:"company",companyName:"Business",fullName:"Owner",role:"owner" as const};
     const lead={ok:true,conversations:[{id:"one",customer:"Before",phone:"",messages:[],status:"open",automationAllowed:false,assistantPaused:true}],meta:{companyId:"company",counts:{all:1,awaiting_staff:1}}};

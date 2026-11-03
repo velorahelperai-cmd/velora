@@ -1,0 +1,13 @@
+.settings {min-width:0;}
+.contextFacts {display:grid;gap:12px;margin:0;font-size:.875rem;overflow-wrap:anywhere;}
+.contextFacts > div {display:flex;align-items:flex-start;gap:12px;min-width:0;padding:8px 0;}
+.contextFacts > div > div {min-width:0;}
+.factIcon {display:grid;place-items:center;flex:none;width:36px;height:36px;border-radius:10px;background:#f1faf7;color:#11665f;}
+.factIcon svg {width:19px;height:19px;}
+.contextFacts dt {color:var(--service-muted);font-size:.8125rem;}
+.contextFacts dd {margin:4px 0 0;color:var(--service-ink);font-weight:600;}
+.settings :global([role="tablist"]) {gap:4px;border:1px solid var(--service-line);border-radius:10px;background:var(--service-surface);padding:4px;}
+.settings :global([role="tab"]) {border-radius:8px;color:var(--service-ink);}
+.settings :global([role="tab"][aria-selected="true"]) {background:var(--service-accent-soft);color:var(--service-accent);font-weight:600;}
+.settings :global([role="tab"]:focus-visible) {outline:2px solid var(--service-accent);outline-offset:-3px;}
+@media(min-width:640px) {.contextFacts {grid-template-columns:repeat(3,minmax(0,1fr));}}

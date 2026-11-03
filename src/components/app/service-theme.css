@@ -1,17 +1,17 @@
 /* Internal services only. Never attach this boundary to the public landing. */
 .app-shell, [data-service-theme] {
-  --service-canvas: #f4f6f8;
+  --service-canvas: #ffffff;
   --service-surface: #ffffff;
-  --service-subtle: #f0f4f6;
-  --service-ink: #172d43;
-  --service-muted: #536579;
-  --service-line: #dce4eb;
-  --service-accent: #087e8b;
-  --service-accent-hover: #066673;
-  --service-accent-soft: #e7f4f5;
-  --service-success: #18704a;
-  --service-warning: #8b5b14;
-  --service-danger: #b13742;
+  --service-subtle: #fafaf9;
+  --service-ink: #18181b;
+  --service-muted: #71717a;
+  --service-line: #e4e4e7;
+  --service-accent: #d97706;
+  --service-accent-hover: #b45309;
+  --service-accent-soft: #fef3c7;
+  --service-success: #15803d;
+  --service-warning: #b45309;
+  --service-danger: #b91c1c;
   --service-radius: .75rem;
   --service-gap: 1rem;
   --service-control-height: 2.75rem;
@@ -99,9 +99,9 @@ html[dir="rtl"] :is(.app-shell, [data-service-theme]) { font-family: var(--font-
 .ig-thread-header h2 {font-weight:500;font-size:1rem;}
 .ig-thread-header p {font-size:.8125rem;color:var(--service-muted);}
 .app-shell [data-channel-inbox="instagram"] ol {display:flex;flex-direction:column;gap:16px;padding:20px;min-height:250px;max-height:55svh;list-style:none;background:var(--service-subtle);}
-.app-shell [data-channel-inbox="instagram"] li {max-width:85%;align-self:flex-start;padding:12px 16px;background:var(--service-surface);border:1px solid var(--service-line);border-radius:12px;white-space:pre-wrap;}
+.app-shell [data-channel-inbox="instagram"] li {max-width:72%;min-width:0;align-self:flex-start;padding:12px 14px;background:var(--service-surface);border:1px solid var(--service-line);border-radius:12px;white-space:pre-wrap;overflow-wrap:anywhere;}
 .app-shell [data-channel-inbox="instagram"] li[data-direction="outbound"] {align-self:flex-end;background:var(--service-accent-soft);}
-.ig-message-source,.app-shell [data-channel-inbox="instagram"] time {display:block;font-size:.6875rem;color:var(--service-muted);}
+.ig-message-source,.app-shell [data-channel-inbox="instagram"] time {display:block;font-size:.75rem;line-height:1.5;color:var(--service-muted);}
 .app-shell [data-channel-inbox="instagram"] label {display:grid;gap:8px;padding:16px;font-size:.875rem;}
 .app-shell [data-channel-inbox="instagram"] textarea {font:inherit;min-height:88px;border:1px solid var(--service-line);border-radius:8px;padding:12px;resize:vertical;background:var(--service-subtle);}
 .app-shell [data-channel-inbox="instagram"] > :is(button,p,.channel-badge) {margin:8px 16px;}
@@ -120,22 +120,52 @@ html[dir="rtl"] :is(.app-shell, [data-service-theme]) { font-family: var(--font-
 .conversation-details-panel dt {font-size:.875rem;color:var(--service-muted);}
 .conversation-details-panel dd {margin:0 0 12px;font-size:.9375rem;overflow-wrap:anywhere;}
 .conversation-details-panel a {display:inline-flex;min-height:44px;align-items:center;color:var(--service-accent);text-decoration:underline;}
-.conversation-details-panel[data-details-open="true"] {display:block;position:fixed;inset-block:0;inset-inline-end:0;width:min(100%,400px);z-index:50;box-shadow:0 0 0 100vmax #172d4366;}
-@media(min-width:1536px){
- .ig-conversation-layout {grid-template-columns:minmax(0,1fr) 280px;}
- .conversation-details-panel {display:block;position:static;width:auto;box-shadow:none;}
- .conversation-details-panel header button,.ig-thread-header [data-details-toggle] {display:none;}
- .channel-pane [data-channel-inbox="whatsapp"] {grid-template-columns:minmax(0,1fr) 280px;}
- .channel-pane [data-channel-inbox="whatsapp"] > aside {display:flex;position:static;width:auto;box-shadow:none;}
+.conversation-details-panel[data-details-open="true"] {display:block;position:fixed;inset-block:0;inset-inline-end:0;width:min(100%,320px);z-index:50;box-shadow:0 0 0 100vmax #172d4366;}
+.channel-pane [data-details-toggle] {display:inline-flex;min-height:44px;}
+.channel-pane [data-channel-inbox="whatsapp"] > aside[data-details-open="true"] {display:flex;position:fixed;inset-block:0;inset-inline-end:0;width:min(100%,320px);max-width:none;z-index:50;background:var(--service-surface);box-shadow:0 0 0 100vmax #172d4366;}
+.channel-pane aside[data-details-open="true"] button[aria-label="Close"],.channel-pane aside[data-details-open="true"] button[aria-label="إغلاق"] {display:flex;min-width:44px;min-height:44px;}
+/* On wide desktop the customer context has a dedicated column; narrower views retain the drawer. */
+@media (min-width:1440px) {
+ .channel-pane [data-channel-inbox="whatsapp"]:has(> aside) {grid-template-columns:minmax(0,1fr) 280px;}
+ .channel-pane [data-channel-inbox="whatsapp"] > aside[data-details-open="false"] {display:flex;position:static;width:auto;max-width:none;min-width:0;max-height:none;background:var(--service-surface);box-shadow:none;}
+ .channel-pane [data-details-toggle] {display:none;}
+ .channel-pane .ig-conversation-layout {grid-template-columns:minmax(0,1fr) 280px;}
+ .channel-pane .ig-conversation-layout .conversation-details-panel[data-details-open="false"] {display:block;position:static;width:auto;min-width:0;box-shadow:none;}
+ .channel-pane .ig-conversation-layout .conversation-details-panel[data-details-open="false"] header button {display:none;}
 }
-@media(max-width:1535px){
- .channel-pane [data-details-toggle] {display:inline-flex;min-height:44px;}
- .channel-pane [data-channel-inbox="whatsapp"] > aside[data-details-open="true"] {display:flex;position:fixed;inset-block:0;inset-inline-end:0;width:min(100%,400px);max-width:none;z-index:50;background:var(--service-surface);box-shadow:0 0 0 100vmax #172d4366;}
- .channel-pane aside[data-details-open="true"] button[aria-label="Close"],.channel-pane aside[data-details-open="true"] button[aria-label="إغلاق"] {display:flex;min-width:44px;min-height:44px;}
-}
+
 @media(max-width:767px){
  .app-shell[data-immersive="true"] :is([data-workspace-navigation],[data-workspace-page-header]) {display:none;}
  .channel-pane [data-channel-inbox="whatsapp"] {height:calc(100dvh - 85px);min-height:450px;}
  .channel-pane [data-channel-inbox="instagram"] ol {max-height:45dvh;}
  .app-shell [data-channel-inbox="instagram"] li {max-width:94%;}
 }
+
+/* Velora Workspace: notices share a shape while their tone keeps its meaning.
+   The boundary excludes setup and public pages. */
+:is(.app-shell[data-internal-ui="true"], [data-admin-theme]) [data-notice] {
+  border-width:1px; border-style:solid; border-radius:8px; padding:12px 16px;
+  font-size:14px; line-height:1.6; box-shadow:none; overflow-wrap:anywhere;
+}
+:is(.app-shell[data-internal-ui="true"], [data-admin-theme]) [data-notice="info"] {
+  color:#234957; background:#f1f8fa; border-color:#cce2e7;
+}
+:is(.app-shell[data-internal-ui="true"], [data-admin-theme]) [data-notice="success"] {
+  color:#176346; background:#eff9f3; border-color:#bcdccc;
+}
+:is(.app-shell[data-internal-ui="true"], [data-admin-theme]) [data-notice="warn"] {
+  color:#785219; background:#fff8eb; border-color:#ead9b4;
+}
+:is(.app-shell[data-internal-ui="true"], [data-admin-theme]) [data-notice="error"] {
+  color:#922d39; background:#fff3f3; border-color:#edc5c9;
+}
+
+/* Shared controls inside authenticated panels and setup. */
+:is(.app-shell[data-internal-ui="true"], [data-admin-theme]) [data-button]:not([data-button="entry"]) {border-radius:8px;min-height:44px;font-size:14px;font-weight:600;}
+:is(.app-shell[data-internal-ui="true"], [data-admin-theme]) [data-button="secondary"] {background:#fff;border-color:var(--service-line);color:var(--service-ink);}
+:is(.app-shell[data-internal-ui="true"], [data-admin-theme]) [data-button="secondary"]:hover {background:var(--service-subtle);}
+:is(.app-shell[data-internal-ui="true"], [data-admin-theme]) [data-button]:focus-visible {outline:2px solid var(--service-accent);outline-offset:2px;}
+
+:is(.app-shell[data-internal-ui="true"], [data-admin-theme]) [data-empty-state] {border:1px solid var(--service-line);border-radius:12px;background:var(--service-surface);padding:24px;box-shadow:0 1px 3px rgba(15,23,42,.06);}
+:is(.app-shell[data-internal-ui="true"], [data-admin-theme]) [data-empty-state] > p:first-child {font-size:16px;line-height:24px;font-weight:600;color:var(--service-ink);}
+:is(.app-shell[data-internal-ui="true"], [data-admin-theme]) [data-empty-state] > p:nth-child(2) {font-size:14px;line-height:22px;color:var(--service-muted);}

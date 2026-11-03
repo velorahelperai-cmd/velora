@@ -50,6 +50,19 @@ This opens a fresh headless browser, captures console errors, page exceptions, f
 | Codex / MCP | AGENTS is shared entrypoint; Graphify MCP actual list/stats succeeded. Supabase and browser tools exposed in this session, not proof of live DB/client health. No credentials read |
 | Graphify | Ready, build `2d641501-748a-4f0f-805e-547097a3a0c9`, indexed `edb17b018ce0a635f2dd20c2453294453f129a97` at `2026-10-26T07:00:09.012977Z`; behind local HEAD `35f7df0fbd3c40b444c9e59b0b3d526857f92935`. Do not use as a fresh dependency map |
 
+## SETUP-STEP-NAV-FLICKER-20261101 — local fix, live acceptance pending
+
+- Signature: `/setup` shows «جارٍ التحقق من التقدم» again and step data blanks then returns when moving between stages without leaving the page.
+- Cause: `isCurrent` callback identity churn recreated the branch `SetupReader` (empty cache) and re-ran shell-first workspace loading with `provisional=true`, wiping confirmed progress presentation and step peeks.
+- Fix: stable current-check refs in `setup-wizard` and `PaidSetupBranchRead`; recreate the reader only on scope/branch bounds; after one confirmed workspace read, soft-refresh without shell provisionalization or shell/workspace invalidation; keep peeked hours/knowledge/language as confirmed on remount.
+- Verification: 78 affected Vitest PASS (`paid-setup-loading-flow`, step-host, workspace, checklist, wizard paid flow, workspace interaction). Authenticated live `/setup` navigation NOT_RUN. No commit.
+
+## SETUP-NEXT-BACKGROUND-FLUSH-20261101 — local fix, live DB acceptance pending
+
+- Signature: Next/Previous waited for draft flush (felt stuck); soft press feedback missing.
+- Fix: `select` fires `flushSetupDrafts` without await then navigates; `confirmSetupLeave` skips flushable `[data-setup-flush]` hosts; hours queues trailing saves and keeps the network write after leave; workspace buttons use `:active` scale.
+- Persistence paths (code, not live proof): WhatsApp/Instagram connection actions; hours `saveOwnedBranchHoursAction` (+autosave/flush); knowledge language autosave + complete box flush (Q&A / URL+attested / files / edit) on Next; trial ask/ledger; team invite mutations; launch confirm. Incomplete knowledge boxes still warn. Team/trial intentionally require Create/Send (no silent invite/ask on Next).
+- Graphify indexed `6779f79` stale vs HEAD `f9c829a`; scoped current-source verification used. Live authenticated 6-stage DB confirm NOT_RUN. No commit.
 ## SETUP-READ-REUSE-20261030 — local implementation, acceptance pending
 
 - Cause: the branch reader only reused in-flight requests, so knowledge and language were fetched again on step entry; a 15-second slow-read callback could report failure before the request completed.
@@ -145,3 +158,27 @@ ID/code/signature; status; first/last date; environment and commit (or uncommitt
 ## STATUS_LOCKED — stale quarantine on a new auth journey (2026-10-31)
 
 Signature: new signup verification is blocked before OTP dispatch while an old session quarantine persists and broker returns UNAUTHENTICATED. Reproduced locally on fe5fed5 + WIP. Public auth entries may start a guest journey only after authoritative unauthenticated evidence; never erase quarantine or bypass the verification fence. Reject late restoration of the old boundary before private profile reads. Tests: account-session-response.test.tsx, verification-quarantine-journey.test.tsx, verify-email-fence.test.tsx. Hosted acceptance remains open; original browser storage was not captured. See Brain08 STATUS-LOCKED-STALE-QUARANTINE-20261031.
+
+
+### GEMINI-503-20261101 / HTTP status loss and Developer API token counting
+
+- Delivered source7ce62e2; CI41274018539 SUCCESS8/8 and ProductionVercel9bwUQCM8qAxqZNyrtDbjD7PaDZs2 READY/canonical exactSHA. Current operation02a38a2e at04:29UTC correlated with Google AI Studio's sole HTTP503 at the same minute. No original provider request ID, so correlation is not a raw response receipt. Do not label this as401 or proven billing rejection.
+- Correction to C15-TRIAL-ASK-PRE-RESERVE-001 above: config.systemInstruction is rejected by installed @google/genai2.28 Developer API serializer before HTTP; the earlier mock-only test approved an invalid SDK shape. REST countTokens supports generateContentRequest; use SDK extraBody to supply the exact system/user request and omit top-level contents. New test uses actual SDK serialization and injected offline fetch, not a mocked models.countTokens method.
+- Generic UNAVAILABLE hid404/429/5xx. Validate numeric HTTP status and retain fixed GEMINI_HTTP_NNN in secure operation ledger/log; never raw SDK messages. Preserve hold/unknown cost and no-retry rules.
+- Validation118 affected tests PASS, types/lint/secret checks PASS. No live/synthetic provider calls or financial mutations. Real answer recovery remains unproven under explicit no-new-question constraint.
+
+
+### SETUP-STATUS-REFRESH-20261101 / stuck provisional workspace
+
+- Refresh status in assistant trial canceled all setup reader resources, including parent workspace enrichment; cancellation was ignored as designed, but no parent reread occurred. Result: indefinite checking, hours/knowledge incomplete-looking badges, unknown term despite stored data.
+- Fix20b2363: read refresh invalidates only selected step resources (knowledge+language together). Mutation/global scope invalidation unchanged. No financial unlock or provider retry.
+- Regression uses real createSetupReader+mounted StepHost, held workspace response and pending trial: fails before due aborted signal, passes after;66 affected tests/types/lint/secrets PASS. CI41274624992 SUCCESS8/8, Vercel2wG5bdhaL6dQt5io3JkJ14QK7AwS READY exactSHA. Live trial refresh completed without losing completed hours/knowledge, period state or active trial. Pending provider operation remains unchanged.
+
+
+## Setup step revisit clears already loaded data (2026-11-01)
+
+StepHost is keyed by branch and step, so leaf state disappears on navigation. Retain confirmed snapshots in the branch-owned setup reader instead of global/storage caches or hidden mounted panels. Hours/knowledge/language reuse within30s; every resource preview expires after5min. Trial/team/launch always fetch fresh authority before enabling actions while showing their previous snapshot. Invalidate on writes, explicit refresh, auth/scope changes and pagehide. Never reuse canAsk/launch permission from a preview. Regression: real-reader hours -> knowledge -> hours uses one hours request; expired reuse retains schedule while fetching; trial counter survives but Send stays disabled pending fresh read. Published eb5b974.
+
+## C15 Gemini HTTP504 / SDK deadline (2026-11-01)
+
+A matching provider-unconfirmed event and ledger operation recorded GEMINI_HTTP_504 after28546ms. Trial used the generic30000ms adapter default; installed GoogleGenAI serializes timeout as X-Server-Timeout too. Scoped generation60s, route120s and UI150s allow count/generate/settle without losing a late response. Keep output cap256 and one SDK attempt; do not retry unknown operations or release their reservations based on missing usage. Actual production answer remains a separate acceptance check. Actual SDK transport regression verifies server deadline60; host regression proves a result at65s is retained (failed before fix).108 affected tests, types/lint PASS; source59b4e5b. Official reference: https://ai.google.dev/gemini-api/docs/generate-content/api-errors . Never classify every UNAVAILABLE as authentication failure: preserve original provider HTTP code and latency in secure logs.

@@ -107,6 +107,7 @@ export type AdminCompanyBranch = {
 
 type Props = {
   initialBranches?: AdminCompanyBranch[];
+  branchesLoadFailed?: boolean;
   returnTo?: string;
   initialCompany: AdminCompany;
   initialMembers: AdminMember[];
@@ -140,6 +141,7 @@ export function AdminCompanyDetail({
   initialAudits,
   initialKnowledge,
   initialBranches,
+  branchesLoadFailed = false,
   initialReview = null,
   initialWhatsappLink = null,
   whatsappLinkLoadFailed = false,
@@ -311,8 +313,6 @@ export function AdminCompanyDetail({
         </div>
       </div>
       <h1 className="mt-4 text-3xl font-extrabold text-[var(--service-ink)] break-words">{company.display_name}</h1>
-      <AdminChannelReview key={company.id} companyId={company.id}/>
-      <InstagramAdminConnection key={`instagram-admin-${company.id}`} companyId={company.id}/>
       <p className="mt-2 text-sm text-[var(--service-muted)]">{copy.admin.detailBody}</p>
       <p className="mt-1 text-xs font-medium text-[var(--service-muted)]">
         {copy.admin.registeredAt}: {new Date(company.created_at).toLocaleString(locale === "ar" ? "ar-OM" : "en-GB")}
@@ -414,11 +414,15 @@ export function AdminCompanyDetail({
             </p>
           </div>
           <span className="rounded-full bg-[var(--service-subtle)] px-2.5 py-1 text-xs font-semibold text-[var(--service-accent)] border border-[var(--service-line)]">
-            {branches.length > 0 ? `${branches.length} فرع مسجل` : "الفرع الرئيسي التلقائي"}
+            {branchesLoadFailed ? (locale === "ar" ? "غير متاح" : "Unavailable") : branches.length > 0 ? (locale === "ar" ? `${branches.length} فرع مسجل` : `${branches.length} branches`) : (locale === "ar" ? "لا توجد فروع مسجلة" : "No branches recorded")}
           </span>
         </div>
 
-        {branches.length > 0 ? (
+        {branchesLoadFailed ? (
+          <p role="status" className="mt-4 rounded-2xl border border-[var(--service-line)] p-4 text-sm text-[var(--service-muted)]">
+            {locale === "ar" ? "تعذر تحميل الفروع. حاول تحديث الصفحة." : "Could not load branches. Try refreshing the page."}
+          </p>
+        ) : branches.length > 0 ? (
           <div className="mt-4 divide-y divide-[var(--service-line)] border border-[var(--service-line)] rounded-2xl overflow-hidden">
             {branches.map((b) => (
               <div key={b.id} className="flex flex-wrap items-center justify-between gap-4 p-4 bg-[var(--service-canvas)]/40 hover:bg-[var(--service-canvas)] transition">
@@ -451,73 +455,43 @@ export function AdminCompanyDetail({
             ))}
           </div>
         ) : (
-          <div className="mt-4 rounded-2xl border border-[var(--service-line)] bg-[var(--service-canvas)]/30 p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-sm text-[var(--service-ink)]">{company.display_name}</span>
-                  <span className="rounded-md bg-[var(--service-accent)]/10 px-2 py-0.5 text-[11px] font-bold text-[var(--service-accent)]">
-                    الفرع الأساسي
-                  </span>
-                </div>
-                <div className="mt-1 text-xs text-[var(--service-muted)]">
-                  ساعات العمل: {company.hours || "غير محددة"} • المدينة: {company.city || "—"}
-                </div>
-              </div>
-              <span className="rounded-full bg-[var(--service-success)]/10 px-2.5 py-0.5 text-xs font-semibold text-[var(--service-success)]">
-                نشط
-              </span>
-            </div>
-          </div>
+          <p className="mt-4 rounded-2xl border border-[var(--service-line)] p-4 text-sm text-[var(--service-muted)]">
+            {locale === "ar" ? "لا توجد فروع مسجلة." : "No branches are recorded."}
+          </p>
         )}
       </section>
 
-      {/* Module 05: Assistant Persona Card */}
-      <section className="mt-6 rounded-3xl border border-[var(--service-line)] bg-[var(--service-surface)] p-5 sm:p-6 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--service-line)] pb-3">
+      <section className="mt-6 rounded-xl border border-[var(--service-line)] bg-[var(--service-surface)] p-5 sm:p-6">
+        <div className="border-b border-[var(--service-line)] pb-3">
+          <h2 className="text-lg font-bold text-[var(--service-ink)]">
+            {locale === "ar" ? "إعدادات النشاط للمساعد" : "Business settings for the assistant"}
+          </h2>
+          <p className="mt-1 text-sm text-[var(--service-muted)]">
+            {locale === "ar" ? "القيم المسجلة في بيانات النشاط." : "Values recorded in the business profile."}
+          </p>
+        </div>
+        <dl className="mt-4 grid gap-4 sm:grid-cols-3">
           <div>
-            <h2 className="text-lg font-bold text-[var(--service-ink)]">
-              المساعد الذكي والتخصيص (Assistant Persona)
-            </h2>
-            <p className="mt-1 text-xs text-[var(--service-muted)]">
-              الشخصية المفعلة للمنشأة، لغات الرد، ونموذج الاستجابة المعتمد.
-            </p>
+            <dt className="text-sm text-[var(--service-muted)]">{locale === "ar" ? "نوع النشاط" : "Business type"}</dt>
+            <dd className="mt-1 break-words font-semibold text-[var(--service-ink)]"><bdi>{company.business_type || (locale === "ar" ? "غير محدد" : "Not specified")}</bdi></dd>
           </div>
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-800 border border-emerald-200">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" />
-            Gemini 3.8 Flash Engine
-          </span>
-        </div>
-
-        <div className="mt-4 grid gap-4 sm:grid-cols-3">
-          <div className="rounded-2xl border border-[var(--service-line)] bg-[var(--service-canvas)]/40 p-4">
-            <div className="text-xs font-medium text-[var(--service-muted)]">شخصية المساعد المعتمدة</div>
-            <div className="mt-1 flex items-center gap-2">
-              <span className="text-base font-bold text-[var(--service-ink)]">
-                {company.business_type === "restaurant" ? "نورة (Noura)" : "لينا (Lina)"}
-              </span>
-              <span className="rounded bg-[var(--service-accent-soft)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--service-accent)]">
-                {company.business_type}
-              </span>
-            </div>
+          <div>
+            <dt className="text-sm text-[var(--service-muted)]">{locale === "ar" ? "لغة الرد" : "Reply language"}</dt>
+            <dd className="mt-1 font-semibold text-[var(--service-ink)]">
+              {company.reply_language === "both" ? (locale === "ar" ? "العربية والإنجليزية" : "Arabic and English") : company.reply_language === "ar" ? (locale === "ar" ? "العربية" : "Arabic") : company.reply_language === "en" ? (locale === "ar" ? "الإنجليزية" : "English") : (locale === "ar" ? "غير محددة" : "Not specified")}
+            </dd>
           </div>
-
-          <div className="rounded-2xl border border-[var(--service-line)] bg-[var(--service-canvas)]/40 p-4">
-            <div className="text-xs font-medium text-[var(--service-muted)]">لغات الرد المعتمدة</div>
-            <div className="mt-1 text-base font-bold text-[var(--service-ink)]">
-              {company.reply_language === "both" ? "عربي وإنجليزي (Bilingual)" : company.reply_language === "ar" ? "العربية فقط" : "الإنجليزية فقط"}
-            </div>
+          <div>
+            <dt className="text-sm text-[var(--service-muted)]">{locale === "ar" ? "ساعات العمل" : "Business hours"}</dt>
+            <dd className="mt-1 break-words font-semibold text-[var(--service-ink)]"><bdi>{company.hours || (locale === "ar" ? "غير محددة" : "Not specified")}</bdi></dd>
           </div>
-
-          <div className="rounded-2xl border border-[var(--service-line)] bg-[var(--service-canvas)]/40 p-4">
-            <div className="text-xs font-medium text-[var(--service-muted)]">ساعات العمل التشغيلية</div>
-            <div className="mt-1 text-sm font-semibold text-[var(--service-ink)] truncate">
-              {company.hours || "على مدار الساعة (24/7)"}
-            </div>
-          </div>
-        </div>
+        </dl>
       </section>
 
+      <div id="channels" tabIndex={-1} className="space-y-4 scroll-mt-4">
+        <AdminChannelReview key={company.id} companyId={company.id}/>
+        <InstagramAdminConnection key={`instagram-admin-${company.id}`} companyId={company.id}/>
+      </div>
 
         <section className="mt-6 rounded-3xl border border-[var(--service-line)] bg-[var(--service-surface)] p-5 sm:p-6 shadow-sm">
           <h2 className="text-lg font-bold text-[var(--service-ink)]">{copy.admin.whatsappLink}</h2>

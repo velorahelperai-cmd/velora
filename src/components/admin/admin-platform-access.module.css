@@ -1,0 +1,11 @@
+.access { min-width: 0; }
+.summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 21rem), 1fr)); gap: .75rem; }
+.access :global(.rounded-2xl) { border-radius: .75rem; }
+.access :global(.text-xs), .access [class~="text-[11px]"], .access [class~="text-[10px]"], .access [class~="text-[9px]"] { font-size: .8125rem; }
+.access :is(button, input, select) { min-height: 2.75rem; }
+.access :is(button, a, input, select, textarea, [role="region"]):focus-visible { outline: 2px solid var(--service-accent); outline-offset: 2px; }
+.access table { min-width: 55rem; }
+.access th { text-align: start; }
+.access td { vertical-align: top; overflow-wrap: anywhere; }
+
+.roles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr)); gap: .75rem; }

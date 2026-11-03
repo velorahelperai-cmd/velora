@@ -1,0 +1,19 @@
+.audit { color:var(--service-ink); line-height:1.6; }
+.audit > div:first-child h1 { font-size:26px; font-weight:700; line-height:1.35; }
+.audit > div:first-child p { font-size:14px; max-width:72ch; }
+.audit > div:nth-child(2) { gap:12px; }
+.audit > div:nth-child(2) > div { border-radius:9px; padding:16px; box-shadow:none; min-width:0; }
+.audit > div:nth-child(2) > div > div:first-child span { font-size:13px; }
+.audit > div:nth-child(2) > div > div:last-child { line-height:1.5; }
+.audit > div:nth-child(3) { border-radius:10px; padding:20px; box-shadow:none; }
+.audit form { gap:8px; }
+.audit form :is(input,select,button) { min-height:44px; border-radius:8px; font-size:13px; }
+.audit form input { min-width:200px; }
+.audit form button { background:var(--service-accent); border-color:var(--service-accent); color:white; font-weight:600; }
+.audit form a { display:inline-flex; align-items:center; min-height:44px; color:var(--service-accent); }
+.audit table { min-width:760px; text-align:start; font-size:13px; }
+.audit table :is(th,td) { text-align:start; vertical-align:top; }
+.audit table th { background:var(--service-subtle); font-size:13px; }
+.audit table td button { min-height:40px; font-size:13px; }
+.audit :is(a,button,input,select):focus-visible { outline:2px solid var(--service-accent); outline-offset:3px; }
+@media(max-width:640px) { .audit > div:nth-child(3) { padding:16px; } .audit form > div, .audit form input, .audit form select { width:100%; max-width:none; } }

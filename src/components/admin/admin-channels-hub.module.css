@@ -1,0 +1,41 @@
+.hub { min-width: 0; }
+.hub :is(button, select, a) { min-height: 2.75rem; font-size: .875rem; }
+.hub :is(button, select, a, [role="region"]):focus-visible { outline: 2px solid var(--service-accent); outline-offset: 2px; }
+.hub table { min-width: 57rem; border-collapse: collapse; }
+.hub th { text-align: start; font-size: .8125rem; white-space: nowrap; }
+.hub th:last-child { text-align: end; }
+.hub td { vertical-align: top; }
+.hub td a { display: inline-flex; align-items: center; }
+
+.metricCard {
+  min-width: 0;
+  min-height: 120px;
+  padding: 20px;
+  border: 1px solid var(--service-line);
+  border-radius: 12px;
+  background: var(--service-surface);
+  box-shadow: 0 1px 3px rgba(15,23,42,.06);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  transition: transform 180ms ease-out, box-shadow 180ms ease-out, border-color 180ms;
+}
+.metricCard:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(15,23,42,.09);
+  border-color: rgba(20,125,115,.3);
+}
+@media (prefers-reduced-motion: reduce) {
+  .metricCard { transition: none; }
+  .metricCard:hover { transform: none; }
+}
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .metricCard:hover {
+    background-image: radial-gradient(200px circle at var(--spot-x,50%) var(--spot-y,50%), rgba(26,146,133,.08), transparent 70%);
+  }
+}
+.metricHeader { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+.metricLabel { color:var(--service-muted); font-size:14px; line-height:22px; font-weight:600; }
+.metricIcon { flex:none; display:grid; place-items:center; width:36px; height:36px; border-radius:10px; color:#11665f; background:#f1faf7; }
+.metricIcon svg { width:19px; height:19px; }
+.metricValue { color:var(--service-ink); font-size:28px; line-height:36px; font-weight:700; font-variant-numeric:tabular-nums; text-align:start; }

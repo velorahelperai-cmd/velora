@@ -306,7 +306,7 @@ export function LangSwitch() {
 
 export function EmptyState({ title, body, action }: { title: string; body?: string; action?: ReactNode }) {
   return (
-    <div className="rounded-2xl border border-dashed border-[color:var(--color-line)] bg-[var(--color-hover-wash)] p-6 text-center">
+    <div data-empty-state="true" className="rounded-2xl border border-dashed border-[color:var(--color-line)] bg-[var(--color-hover-wash)] p-6 text-center">
       <p className="font-semibold text-[var(--color-on-dark)]">{title}</p>
       {body ? <p className="mt-2 text-sm leading-6 text-[var(--color-muted-on-dark)]">{body}</p> : null}
       {action ? <div className="mt-4 flex justify-center">{action}</div> : null}

@@ -117,19 +117,27 @@ describe("Stage F — Module 14: AdminPlatformHealth Component", () => {
     evaluatedAt: "2026-10-22T08:00:00.000Z",
   };
 
-  it("renders Arabic labels, 4 KPIs, and official owner badge correctly", () => {
+  it("renders Arabic probe results without asserting a fixed owner identity", () => {
     mocked.currentLocale = "ar";
     const rendered = renderPlatformHealth({ data: sampleData });
     const output = text(rendered);
 
     expect(output).toContain("جاهزية وصحة المنصة");
-    expect(output).toContain("velorahelperai@gmail.com");
-    expect(output).toContain("جاهز ومستقر");
+    expect(output).not.toContain("velorahelperai@gmail.com");
+    expect(output).toContain("نجحت الفحوص");
     expect(output).toContain("24");
-    expect(output).toContain("بيئة فحص معزولة");
+    expect(output).toContain("لم يُختبر اتصال بوابة الدفع");
     expect(output).toContain("قاعدة بيانات Supabase (PostgreSQL)");
     expect(output).toContain("سجل تدقيق غير قابل للتعديل");
     expect(output).toContain("PASS");
+  });
+
+  it("does not render a warning as a successful security check or expose a raw database error", () => {
+    mocked.currentLocale = "ar";
+    const data = {...sampleData, probes: [{...sampleData.probes[0], status: "DOWN" as const, detailsAr: "sensitive database error"}], invariants: [{...sampleData.invariants[0], status: "WARN" as const}]};
+    const output = text(renderPlatformHealth({data}));
+    expect(output).toContain("لم يُتحقق");
+    expect(output).not.toContain("sensitive database error");
   });
 
   it("renders English localization correctly with subsystem probes", () => {
@@ -138,19 +146,20 @@ describe("Stage F — Module 14: AdminPlatformHealth Component", () => {
     const output = text(rendered);
 
     expect(output).toContain("Platform Health & Readiness");
-    expect(output).toContain("velorahelperai@gmail.com");
+    expect(output).not.toContain("velorahelperai@gmail.com");
     expect(output).toContain("HEALTHY");
-    expect(output).toContain("TEST_MODE_GUARDED");
+    expect(output).toContain("Payment connectivity was not tested");
     expect(output).toContain("Supabase PostgreSQL Database");
     expect(output).toContain("Immutable Append-Only Audit Logging");
   });
 
-  it("displays guarded sandbox status for payments and never live mode", () => {
+  it("does not claim untested payment protection or complete system health", () => {
     mocked.currentLocale = "ar";
     const rendered = renderPlatformHealth({ data: sampleData });
     const output = text(rendered);
 
-    expect(output).toContain("بيئة فحص معزولة");
-    expect(output).toContain("منع الخصومات الحقيقية مفعل بشكل قاطع");
+    expect(output).toContain("لم يُختبر اتصال بوابة الدفع");
+    expect(output).not.toContain("منع الخصومات الحقيقية مفعل بشكل قاطع");
+    expect(output).not.toContain("100%");
   });
 });

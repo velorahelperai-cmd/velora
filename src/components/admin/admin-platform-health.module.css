@@ -1,0 +1,38 @@
+.health { min-width: 0; }
+.metrics { display: grid; gap: .875rem; grid-template-columns: 1fr; }
+@media (min-width: 640px) {
+  .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (min-width: 1024px) {
+  .metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+.health :global(.rounded-2xl) { border-radius: .75rem; }
+.health :global(.text-xs), .health [class~="text-[11px]"], .health [class~="text-[10px]"] { font-size: .8125rem; }
+.health :is(button, input, select) { min-height: 2.75rem; }
+.health :is(button, a, input, select):focus-visible { outline: 2px solid var(--service-accent); outline-offset: 2px; }
+
+.metrics > div {
+  min-width: 0;
+  min-height: 120px;
+  padding: 16px;
+  border-radius: 14px;
+  box-shadow: 0 1px 3px rgba(15,23,42,.04);
+  transition: transform 180ms ease-out, box-shadow 180ms ease-out, border-color 180ms;
+}
+.metrics > div:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(15,23,42,.08);
+  border-color: rgba(217,119,6,.35);
+}
+@media (prefers-reduced-motion: reduce) {
+  .metrics > div { transition: none; }
+  .metrics > div:hover { transform: none; }
+}
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .metrics > div:hover {
+    background-image: radial-gradient(200px circle at var(--spot-x,50%) var(--spot-y,50%), rgba(217,119,6,.06), transparent 70%);
+  }
+}
+.metrics > div > div:first-child { align-items:flex-start; gap:8px; }
+.metrics > div > div:first-child > span { font-size:12px; line-height:18px; color:var(--service-muted); }
+.metrics > div > div:first-child > svg { flex:none; box-sizing:border-box; width:30px; height:30px; padding:6px; border-radius:8px; color:var(--service-accent); background:var(--service-accent-soft); border:1px solid rgba(217,119,6,.15); }

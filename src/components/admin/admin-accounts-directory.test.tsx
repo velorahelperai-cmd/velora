@@ -20,6 +20,13 @@ describe("account directory search", () => {
     expect(push).toHaveBeenLastCalledWith("/admin/accounts?q=owner&offset=0");
     expect(host.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(false);
   });
+  it("allows returning from an empty later page while retaining the search", async () => {
+    await act(async () => root.render(<AdminAccountsDirectory initialQuery="owner" initialOffset={20} initialLimit={20} accounts={[]} hasMore={false}/>));
+    const previous = Array.from(host.querySelectorAll("button")).find(button => button.textContent?.includes("السابق"));
+    expect(previous).toBeDefined();
+    await act(async () => previous!.click());
+    expect(push).toHaveBeenCalledWith("/admin/accounts?q=owner&offset=0");
+  });
   it("restores search text when navigation delivers a different query", async () => {
     await act(async () => root.render(<AdminAccountsDirectory initialQuery="old" accounts={[]} hasMore={false}/>));
     await act(async () => root.render(<AdminAccountsDirectory initialQuery="new" accounts={[]} hasMore={false}/>));

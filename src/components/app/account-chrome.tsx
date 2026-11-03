@@ -86,6 +86,7 @@ export function AccountSessionProvider({
   const providerRouter=useRouter();
   const pathname=usePathname();
   const setupDocumentActivity=useRef(pathname==='/setup');
+  const publicAuthEntry=pathname==="/login"||pathname==="/signup"||pathname==="/verify-email";
   // Never start "ready" from SSR initial alone — mount quarantine may lock A before paint (C3).
   const [status, setStatus] = useState<SessionStatus>("loading");
   const [recoveryReceipt, setRecoveryReceipt] = useState<RecoveryReceipt | null>(null);
@@ -244,6 +245,17 @@ export function AccountSessionProvider({
         trace?.finish("UNAVAILABLE");
         return;
       }
+      // A public guest journey does not revoke the quarantine on an old capture.
+      // Reject late restoration of A before reading any private profile; newly
+      // admitted B still requires the normal profile + final broker attestation.
+      const quarantine=readLocalQuarantine();
+      if(quarantine?.type==="quarantine"&&quarantine.userId===broker.userId&&
+        (!quarantine.boundaryFingerprint||quarantine.boundaryFingerprint===broker.boundaryFingerprint)){
+        userIdRef.current=broker.userId;
+        lock(quarantine.boundaryFingerprint??broker.boundaryFingerprint);
+        trace.finish("FORBIDDEN");
+        return;
+      }
       // Capture broker boundary BEFORE mutating refs — compare against prior tip (C4-05).
       const priorBoundary = boundaryRef.current;
       const brokerBoundary = broker.boundaryFingerprint;
@@ -361,7 +373,7 @@ export function AccountSessionProvider({
     } finally {
       budget.cancel();readBudgets.current.delete(budget);
     }
-  }, [clear, expire, providerRouter, setStatusLive, retainReadyOnTransient, clearSoftRetry]);
+  }, [clear, expire, lock, providerRouter, setStatusLive, retainReadyOnTransient, clearSoftRetry]);
   // Track explicit post-auth reads too: a focus/visibility hint must join them,
   // not increment requestGen and return the auth caller before READY. Explicit
   // refresh still starts fresh; clear/lock/account changes invalidate by epoch.
@@ -450,6 +462,13 @@ export function AccountSessionProvider({
               // Quarantine targets A; cookies already select B — ignore for this tab.
             }
           }else if(broker.code==="UNAUTHENTICATED"||broker.code==="QUARANTINED"){
+            // Only an authoritative unauthenticated read on a public auth entry
+            // permits a NEW guest journey. Keep the persisted quarantine intact:
+            // neither this transition nor an OTP form restores the old session.
+            if(broker.code==="UNAUTHENTICATED"&&publicAuthEntry){
+              clear();
+              return;
+            }
             // Captured A gone from cookies — keep locked; never flash SSR initial for A.
             userIdRef.current=signal.userId;
             lock(signal.boundaryFingerprint);
@@ -533,7 +552,7 @@ export function AccountSessionProvider({
       window.cancelAnimationFrame(frame);
       releaseFrame();
     };
-  },[clear,lock,refresh,setStatusLive,cancelReadBudgets,clearSoftRetry,retainReadyOnTransient]);
+  },[clear,lock,refresh,setStatusLive,cancelReadBudgets,clearSoftRetry,retainReadyOnTransient,publicAuthEntry]);
 
   useEffect(()=>{
     // WP01A: broker status replaces browser Auth observers. Focus/visibility recheck only.

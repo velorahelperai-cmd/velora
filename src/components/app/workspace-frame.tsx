@@ -1,7 +1,7 @@
 "use client";
 import Link from 'next/link';
 import {usePathname} from 'next/navigation';
-import {useRef,useState,type ReactNode} from 'react';
+import {useEffect,useRef,useState,type ReactNode} from 'react';
 import {useDemo} from '@/lib/demo-state';
 import {LangSwitch,useAppCopy} from './ui';
 import styles from './internal-ui.module.css';
@@ -20,16 +20,18 @@ export function workspaceNavigation(copy:ReturnType<typeof useAppCopy>,ar:boolea
 export function WorkspaceFrame({title,children,actions,account,presence,nav,immersive=false,prefetch=null}:{title:string;children?:ReactNode;actions?:ReactNode;account?:ReactNode;presence?:ReactNode;nav:WorkspaceNavItem[];immersive?:boolean;prefetch?:boolean|null}){
  const copy=useAppCopy();const {locale}=useDemo();const ar=locale==='ar';const pathname=usePathname();
  const [menuOpen,setMenuOpen]=useState(false);const menuButtonRef=useRef<HTMLButtonElement>(null);
+ const closeButtonRef=useRef<HTMLButtonElement>(null);const wasOpen=useRef(false);
+ useEffect(()=>{if(menuOpen)closeButtonRef.current?.focus();else if(wasOpen.current)menuButtonRef.current?.focus();wasOpen.current=menuOpen;},[menuOpen]);
+ useEffect(()=>{const media=typeof window==='undefined'?undefined:window.matchMedia?.('(min-width: 1024px)');if(!media)return;const close=(event:MediaQueryListEvent)=>{if(event.matches)setMenuOpen(false);};media.addEventListener('change',close);return()=>media.removeEventListener('change',close);},[]);
   return (
     <div className={`app-shell ${styles.theme} ${styles.workspace}`} data-internal-ui="true" data-immersive={immersive} dir={ar ? "rtl" : "ltr"}>
-      <a href="#workspace-content" className="service-skip-link">{ar?"انتقل للمحتوى":"Skip to content"}</a>
+      <a href="#workspace-content" inert={menuOpen} className="service-skip-link">{ar?"انتقل للمحتوى":"Skip to content"}</a>
       <aside data-workspace-navigation="true" className={styles.sidebar}>
-        <div className={styles.sidebarHeader}>
+        <div className={styles.sidebarHeader} inert={menuOpen}>
           <div className={styles.sidebarBrand}>
-            <Link href="/" prefetch={prefetch} className={styles.brand}><span className={styles.brandMark}>V</span>{copy.brand}</Link>
+            <Link href="/" prefetch={prefetch} className={styles.brand} title={copy.brand}><span className={styles.brandMark} aria-hidden="true">V</span><span className={styles.brandLabel}>{copy.brand}</span></Link>
           </div>
           <div className={styles.sidebarUtilities}>
-            <LangSwitch />
             <button ref={menuButtonRef} type="button" className={styles.menuButton}
               aria-label={ar ? "قائمة مساحة العمل" : "Workspace menu"} aria-expanded={menuOpen}
               aria-controls="workspace-navigation" onClick={() => setMenuOpen(v => !v)}>
@@ -37,22 +39,36 @@ export function WorkspaceFrame({title,children,actions,account,presence,nav,imme
             </button>
           </div>
         </div>
+        {menuOpen && <div className={styles.workspaceOverlay} aria-hidden="true" onClick={()=>setMenuOpen(false)} />}
         <div id="workspace-navigation" className={styles.workspaceMenu} data-open={menuOpen}
-          onKeyDown={e => { if (e.key === "Escape" && menuOpen && window.matchMedia("(max-width: 1023px)").matches) { setMenuOpen(false); menuButtonRef.current?.focus(); } }}>
+          role={menuOpen?'dialog':undefined} aria-modal={menuOpen?true:undefined} aria-label={menuOpen?(ar?'قائمة مساحة العمل':'Workspace navigation'):undefined}
+          onKeyDown={event => {
+            if (!menuOpen) return;
+            if(event.key==='Escape'){event.preventDefault();setMenuOpen(false);}
+            else if(event.key==='Tab'){
+              const focusable=Array.from(event.currentTarget.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), summary, [tabindex]:not([tabindex="-1"])')).filter(element=>element.getClientRects().length>0);
+              const first=focusable[0],last=focusable[focusable.length-1];
+              if(first && last && ((event.shiftKey && document.activeElement===first)||(!event.shiftKey && document.activeElement===last))){event.preventDefault();(event.shiftKey?last:first).focus();}
+            }
+          }}>
+          <button ref={closeButtonRef} type="button" className={styles.drawerClose} aria-label={ar?'إغلاق القائمة':'Close navigation'} onClick={()=>setMenuOpen(false)}>×</button>
           <nav aria-label={copy.app.nav.dashboard} className={styles.workspaceNav}>
             {nav.map(item => {
               const active = item.href === "/app" ? pathname === "/app" : pathname === item.href || pathname.startsWith(`${item.href}/`);
-              return <Link key={item.href} href={item.href} prefetch={prefetch} aria-current={active ? "page" : undefined}
+              return <Link key={item.href} href={item.href} prefetch={prefetch} aria-current={active ? "page" : undefined} title={item.label}
                 className={styles.navLink} onClick={() => setMenuOpen(false)}>
                 <svg className={styles.navIcon} viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d={item.icon} stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
-                <span>{item.label}</span>
+                <span className={styles.navLabel}>{item.label}</span>
               </Link>;
             })}
           </nav>
-          {account&&<div className={styles.workspaceAccount}>{account}</div>}
+          <details className={styles.accountMenu} onKeyDown={event=>{if(event.key==='Escape'&&event.currentTarget.open){event.stopPropagation();event.currentTarget.open=false;event.currentTarget.querySelector('summary')?.focus();}}}>
+            <summary aria-label={ar?'الحساب واللغة':'Account and language'} title={ar?'الحساب واللغة':'Account and language'}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="8" r="4" stroke="currentColor" strokeWidth="1.6"/><path d="M4 21a8 8 0 0 1 16 0" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/></svg><span className={styles.navLabel}>{ar?'الحساب واللغة':'Account and language'}</span></summary>
+            <div className={styles.workspaceAccount}><LangSwitch />{account}</div>
+          </details>
         </div>
       </aside>
-      <main id="workspace-content" className={styles.workspaceMain}>
+      <main id="workspace-content" inert={menuOpen} className={styles.workspaceMain}>
         {presence}
         <div data-workspace-page-header="true" className={styles.workspacePageHeader}>
           <h1 className="app-title min-w-0 break-words text-2xl lg:text-[2rem]">{title}</h1>

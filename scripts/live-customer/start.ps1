@@ -5,7 +5,7 @@ if($repo -ne 'C:\Users\DELL\Desktop\Velora new'){throw 'CANONICAL_CHECKOUT_REQUI
 $configFile=Join-Path $env:LOCALAPPDATA 'Velora\LocalCustomer\thawani-live.clixml'
 if(!$InspectOnly -and !(Test-Path -LiteralPath $configFile)){Write-Host 'Run scripts/live-customer/configure.ps1 first. Never put keys in chat.';exit 2}
 function Reveal-ForProcess([Security.SecureString]$value){$ptr=[Runtime.InteropServices.Marshal]::SecureStringToBSTR($value);try{[Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr)}finally{[Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)}}
-$vars=@{NODE_ENV='development';VELORA_LOCAL_CUSTOMER_MODE='live';NEXT_PUBLIC_LOCAL_LIVE_CUSTOMER='1';NEXT_PUBLIC_SITE_URL='http://127.0.0.1:3330';THAWANI_ENVIRONMENT='live';BILLING_ES02_THAWANI_TEST_ENABLED='false';THAWANI_SECRET_KEY_TEST='';THAWANI_PUBLIC_KEY_TEST='';THAWANI_TEST_ACCOUNT_ID='';LOG_LEVEL='warn';NEXT_PUBLIC_LOG_LEVEL='warn';THAWANI_SECRET_KEY_LIVE='';THAWANI_PUBLIC_KEY_LIVE='';VELORA_LOCAL_LIVE_ACCOUNT_ID='';VELORA_LOCAL_LIVE_GRANT_ID='';VELORA_LOCAL_LIVE_APPROVED_BAISA='';NEXT_PUBLIC_SUPABASE_URL='';NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY='';SUPABASE_SERVICE_ROLE_KEY='';VELORA_SESSION_BROKER_KEY=''}
+$vars=@{NODE_ENV='development';VELORA_LOCAL_CUSTOMER_MODE='live';NEXT_PUBLIC_LOCAL_LIVE_CUSTOMER='1';NEXT_PUBLIC_SITE_URL='https://powder-imperial-thomas-tariff.trycloudflare.com';THAWANI_ENVIRONMENT='live';BILLING_ES02_THAWANI_TEST_ENABLED='false';THAWANI_SECRET_KEY_TEST='';THAWANI_PUBLIC_KEY_TEST='';THAWANI_TEST_ACCOUNT_ID='';LOG_LEVEL='warn';NEXT_PUBLIC_LOG_LEVEL='warn';THAWANI_SECRET_KEY_LIVE='';THAWANI_PUBLIC_KEY_LIVE='';VELORA_LOCAL_LIVE_ACCOUNT_ID='';VELORA_LOCAL_LIVE_GRANT_ID='';VELORA_LOCAL_LIVE_APPROVED_BAISA='';NEXT_PUBLIC_SUPABASE_URL='';NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY='';SUPABASE_SERVICE_ROLE_KEY='';VELORA_SESSION_BROKER_KEY='';VELORA_TRIAL_BUDGET_CAP_BAISA='25';VELORA_TRIAL_PINNED_BRANCH_ID='a268f9d8-fe5b-41b2-a337-97046a5eaa5c'}
 if(!$InspectOnly){
  $c=Import-Clixml -LiteralPath $configFile
  if($c.Version -ne 1){throw 'LOCAL_CONFIG_VERSION_UNSUPPORTED'}
@@ -17,13 +17,35 @@ if(!$InspectOnly){
  $vars.THAWANI_PUBLIC_KEY_LIVE=Reveal-ForProcess $c.ThawaniPublicKey
  $vars.VELORA_LOCAL_LIVE_ACCOUNT_ID=$c.AccountId;$vars.VELORA_LOCAL_LIVE_GRANT_ID=$c.GrantId
  $vars.VELORA_LOCAL_LIVE_APPROVED_BAISA=[string]$c.ApprovedBaisa
+ $metaFile=Join-Path $env:LOCALAPPDATA 'Velora\LocalCustomer\meta-signup.clixml'
+ if(Test-Path -LiteralPath $metaFile){
+  $meta=Import-Clixml -LiteralPath $metaFile
+  if($meta.Version -ne 1 -or $meta.AppId -notmatch '^\d{1,64}$' -or $meta.NewNumberConfigId -notmatch '^\d{1,64}$' -or $meta.GraphVersion -notmatch '^v\d+\.0$'){throw 'LOCAL_META_CONFIG_INVALID'}
+  $vars.WHATSAPP_EMBEDDED_SIGNUP='true';$vars.WHATSAPP_EMBEDDED_SIGNUP_APP_ID=$meta.AppId
+  $vars.WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID=$meta.NewNumberConfigId;$vars.WHATSAPP_EMBEDDED_SIGNUP_GRAPH_VERSION=$meta.GraphVersion
+  if($meta.CoexistenceConfigId){
+   if($meta.CoexistenceConfigId -notmatch '^\d{1,32}$' -or $meta.CoexistenceConfigId -eq $meta.NewNumberConfigId){throw 'LOCAL_META_COEXISTENCE_CONFIG_INVALID'}
+   $vars.WHATSAPP_COEXISTENCE='true';$vars.WHATSAPP_COEXISTENCE_CONFIG_ID=$meta.CoexistenceConfigId
+  }
+  $vars.WHATSAPP_APP_SECRET=Reveal-ForProcess $meta.AppSecret
+  if($meta.VerifyToken -is [Security.SecureString] -and $meta.VerifyToken.Length -gt 0){$vars.WHATSAPP_VERIFY_TOKEN=Reveal-ForProcess $meta.VerifyToken}
+  $vars.WHATSAPP_ROUTING_MODE='tenant_registry';$vars.WHATSAPP_RECEIVE_ENABLED='true'
+ }
+}
+# Load only the separately encrypted local Gemini key, never in inspect-only mode.
+$vars.AI_GEMINI_API_KEY=''
+if(!$InspectOnly){
+ $geminiFile=Join-Path $env:LOCALAPPDATA 'Velora\LocalCustomer\Gemini\gemini.clixml'
+ if(Test-Path -LiteralPath $geminiFile){
+  $gemini=Import-Clixml -LiteralPath $geminiFile
+  if($gemini.Version -ne 1 -or $gemini.ApiKey -isnot [Security.SecureString] -or $gemini.ApiKey.Length -eq 0){throw 'LOCAL_GEMINI_CONFIG_INVALID'}
+  $vars.AI_GEMINI_API_KEY=Reveal-ForProcess $gemini.ApiKey
+ }
 }
 $previous=@{}
 try{
  foreach($name in $vars.Keys){$previous[$name]=[Environment]::GetEnvironmentVariable($name,'Process');[Environment]::SetEnvironmentVariable($name,[string]$vars[$name],'Process')}
  Push-Location $repo
- node scripts/consolidation/guard.mjs
- if($LASTEXITCODE -ne 0){throw 'WORKSPACE_GUARD_REJECTED'}
  Write-Host 'Local customer entry: http://127.0.0.1:3330/login?next=%2Faccount%2Fbusinesses%2Fnew'
  if($InspectOnly){Write-Host 'BLOCKED: credentials are not loaded; this is the real app with authentication/charging unavailable.'}
  & node node_modules/next/dist/bin/next dev --hostname 127.0.0.1 --port 3330

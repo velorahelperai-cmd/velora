@@ -1,18 +1,17 @@
 "use client";
-import {useId, useLayoutEffect, useRef, useState, type DragEvent, type KeyboardEvent} from "react";
+import {useEffect, useId, useLayoutEffect, useRef, useState, type DragEvent} from "react";
 import {isPreparableKnowledgeFile, validateKnowledgeBatch} from "@/lib/knowledge/constants";
 import {isApprovedForAnswers, type KnowledgeSourceRecord, type KnowledgeStatus} from "@/lib/knowledge/types";
 import {
-  AI_REPLY_LANGUAGE_CODES,
   languagesToReplyContract,
   replyContractToLanguages,
-  replyLanguageLabel,
   type AiReplyLanguageCode,
   type ReplyLanguageContract,
   type ReplyLanguageSnapshot,
 } from "@/lib/tenancy/reply-language-contract";
 import styles from "./paid-branch-knowledge.module.css";
 import {useSetupUnsavedChanges} from './paid-setup-unsaved';
+type FlushHost=HTMLElement&{__veloraFlush?:()=>Promise<void>};
 
 /** View projections supplied by the future branch-aware host, not persistence DTOs. */
 export type KnowledgeViewScope = {expectedAccountId:string; companyId:string; branchId:string};
@@ -49,9 +48,8 @@ export type PaidBranchKnowledgeProps = {
   onReprocessFile?:(input:KnowledgeViewScope & {sourceId:string; expectedVersion:number})=>void | Promise<void>;
   onConfirmLanguages?:(input:KnowledgeViewScope & {expectedVersion:number; replyLanguage:ReplyLanguageContract})=>void|Promise<void>;
 };
-type StudioTab = "website" | "files" | "faq";
-type OperationTarget = StudioTab | "library" | "languages";
-const TABS: StudioTab[] = ["website", "files", "faq"];
+type KnowledgeInput = "website" | "files" | "faq";
+type OperationTarget = KnowledgeInput | "library" | "languages";
 /** Browser-side twin of knowledgeReviewFingerprint — always hashes the on-screen content. */
 async function clientReviewFingerprint(source:Pick<KnowledgeSourceRecord,"content">):Promise<string|null>{
   const text=typeof source.content==="string"?source.content.trim():"";
@@ -66,10 +64,19 @@ function canReprocessStoredFile(source:KnowledgeSourceRecord):boolean{
 }
 function fileFailureCopy(code:string|null|undefined,t:(a:string,e:string)=>string):string{
   if(code==="no_text")return t("رُفع الملف بنجاح، لكن استخراج النص فشل لعدم وجود نصوص قابلة للقراءة داخل المستند (مستند مصور أو خالٍ من النصوص).","File uploaded successfully, but text extraction failed because no readable text was found in the document.");
-  if(code==="provider_outcome_unknown")return t("نتيجة مزود الاستخراج غير مؤكدة. لا تُعاد المحاولة تلقائيًا — راجع الحالة يدويًا قبل أي استخراج مدفوع.","The extract provider outcome is unknown. It will not auto-retry — review manually before any paid extract.");
-  if(code==="PROVIDER_EXTRACT_DISABLED")return t("اكتملت المحاولة دون استدعاء مزود خارجي لأن استخراج المزود معطّل.","The attempt finished without calling an external provider because provider extract is disabled.");
-  if(code==="attempt_lease_expired")return t("انتهت مهلة المعالجة قبل الاستخراج. يمكنك طلب استرداد آمن بمحاولة جديدة.","The processing lease expired before extract. You can request a safe recovery with a new attempt.");
+  if(code==="provider_outcome_unknown")return t("لم تتأكد نتيجة تجهيز الملف. حدّث الحالة قبل أي محاولة أخرى.","The file preparation result is unconfirmed. Refresh its status before trying again.");
+  if(code==="PROVIDER_EXTRACT_DISABLED")return t("تجهيز الملف غير متاح حاليًا. حاول لاحقًا.","File preparation is currently unavailable. Try again later.");
+  if(code==="attempt_lease_expired")return t("توقّف تجهيز الملف. يمكنك استئناف التجهيز.","File preparation stopped. You can resume preparation.");
   return t("رُفع الملف بنجاح، لكن تعذرت معالجة الملف.","File uploaded successfully, but file processing failed.");
+}
+/** Keep stored diagnostics in the record; render only localized customer guidance. */
+function websiteFailureCopy(error:string,t:(a:string,e:string)=>string):string{
+ const code=error.split(":",1)[0]?.trim();
+ if(code==="HTTP_404")return t("لم نعثر على الصفحة. تأكد من الرابط.","The page was not found. Check its address.");
+ if(code==="HTTP_401"||code==="HTTP_403")return t("هذه الصفحة تتطلب إذن دخول. استخدم صفحة متاحة للعامة.","This page requires access permission. Use a publicly accessible page.");
+ if(code==="FETCH_TIMEOUT")return t("استغرقت الصفحة وقتًا طويلًا للاستجابة. حاول لاحقًا.","The page took too long to respond. Try again later.");
+ if(code==="PAYLOAD_TOO_LARGE")return t("محتوى الصفحة أكبر من الحد المسموح. استخدم صفحة أصغر.","The page exceeds the content limit. Use a smaller page.");
+ return t("تعذّر تجهيز الصفحة. تأكد من الرابط وحاول مجددًا.","The page could not be prepared. Check its address and try again.");
 }
 const sameScope = (a:KnowledgeViewScope,b:KnowledgeViewScope) => !!a.expectedAccountId && !!a.companyId && !!a.branchId &&
   a.expectedAccountId===b.expectedAccountId && a.companyId===b.companyId && a.branchId===b.branchId;
@@ -119,7 +126,6 @@ export function PaidBranchKnowledge(p:PaidBranchKnowledgeProps) {
 
 function KnowledgeForm(p:PaidBranchKnowledgeProps & {snapshot:BranchKnowledgeViewSnapshot}) {
   const ar=p.locale==="ar",t=(a:string,e:string)=>ar?a:e,id=useId();
-  const [tab,setTab]=useState<StudioTab>("website");
   const [url,setUrl]=useState(""),[attested,setAttested]=useState(false),[files,setFiles]=useState<File[]>([]);
   const [question,setQuestion]=useState(""),[answer,setAnswer]=useState("");
   const [editingDraft,setEditing]=useState<{sourceId:string;contentVersion:number;title:string;content:string}|null>(null);
@@ -127,11 +133,12 @@ function KnowledgeForm(p:PaidBranchKnowledgeProps & {snapshot:BranchKnowledgeVie
   const [dragging,setDragging]=useState(false);
   const [selectedLanguages,setSelectedLanguages]=useState<AiReplyLanguageCode[]>(()=>replyContractToLanguages(p.languageSnapshot?.replyLanguage));
   const [languageSourceVersion,setLanguageSourceVersion]=useState(p.languageSnapshot?.version??null);
-  const mounted=useRef(false),reserved=useRef(false),dragDepth=useRef(0);
-  const tabRefs=useRef<Record<StudioTab, HTMLButtonElement | null>>({website:null,files:null,faq:null});
+  const mounted=useRef(false),reserved=useRef(false),dragDepth=useRef(0),rootRef=useRef<HTMLElement|null>(null);
+  const editTitleRef=useRef<HTMLInputElement>(null);
   const savedEditSource=editingDraft?p.snapshot.faq.find(item=>item.branchId===p.scope.branchId&&item.source.id===editingDraft.sourceId)?.source:null;
   const editConfirmed=!!(editingDraft&&savedEditSource&&savedEditSource.content_version!==editingDraft.contentVersion&&savedEditSource.title===editingDraft.title.trim()&&savedEditSource.content===editingDraft.content.trim());
   const editing=editConfirmed?null:editingDraft;
+  useLayoutEffect(()=>{if(editing?.sourceId)editTitleRef.current?.focus();},[editing?.sourceId]);
   if(p.languageSnapshot&&languageSourceVersion!==p.languageSnapshot.version){
     setLanguageSourceVersion(p.languageSnapshot.version);
     const next=replyContractToLanguages(p.languageSnapshot.replyLanguage);
@@ -140,8 +147,8 @@ function KnowledgeForm(p:PaidBranchKnowledgeProps & {snapshot:BranchKnowledgeVie
   }
   const savedLanguageContract=p.languageSnapshot?.replyLanguage??null;
   const draftLanguageContract=languagesToReplyContract(selectedLanguages);
-  const languageDirty=!!draftLanguageContract&&draftLanguageContract!==savedLanguageContract;
-  const dirty=!!(url||question||answer||files.length||editing||languageDirty);
+  // Reply language autosaves on choose so assistant trial can use it without a separate Save control.
+  const dirty=!!(url||question||answer||files.length||editing);
   useSetupUnsavedChanges(dirty,p.isCurrent,p.locale);
   useLayoutEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
   const quotaKnown=knownWebsiteQuota(p.snapshot.websiteQuota);
@@ -154,20 +161,20 @@ function KnowledgeForm(p:PaidBranchKnowledgeProps & {snapshot:BranchKnowledgeVie
   const scopedSources=(items:BoundKnowledgeSourceView[],kind:"text"|"file")=>items.filter(item=>item.branchId===p.scope.branchId && item.source.company_id===p.scope.companyId && item.source.kind===kind);
   const boundFiles=scopedSources(p.snapshot.files,"file");
   const boundFaq=scopedSources(p.snapshot.faq,"text");
-  const approvedCount=[...boundFiles,...boundFaq].filter(item=>isApprovedForAnswers(item.source)).length;
   const urlTrim=url.trim();
   const urlInvalid=urlTrim.length>0 && !websiteDraftValid(urlTrim);
   const urlDuplicate=!urlInvalid && urlTrim.length>0 && pages.some(page=>page.url===urlTrim);
   const canAdd=!locked && p.snapshot.capabilities.canAddWebsite===true && !!p.onAddWebsite && p.snapshot.websiteQuota.used!<p.snapshot.websiteQuota.limit! && websiteDraftValid(urlTrim) && attested;
   const canUpload=!locked && p.snapshot.capabilities.canUploadFiles===true && !!p.onUploadFiles && files.length>0 && !fileError;
   const canSaveText=!locked && p.snapshot.capabilities.canSaveText===true && !!p.onSaveText && !!question.trim() && question.trim().length<=200 && !!answer.trim();
+  const canFlushEdit=!!editing&&!!editing.title.trim()&&!!editing.content.trim()&&!!p.onSourceMutation&&!locked;
+  // Complete box drafts flush to the DB on Next; incomplete boxes still warn before leave.
+  const flushable=canAdd||canUpload||canSaveText||canFlushEdit;
   const languagePhase=p.languageState?.phase??"unavailable";
   const languageLocked=busy || languagePhase==="saving" || languagePhase==="loading" || languagePhase==="conflict";
-  const canSaveLanguages=!languageLocked && !!p.onConfirmLanguages && !!p.languageSnapshot && p.languageSnapshot.canConfirm===true && Number.isSafeInteger(p.languageSnapshot.version) && p.languageSnapshot.version>=1 && !!draftLanguageContract && languageDirty;
   async function dispatch(target:OperationTarget, callback:(()=>void|Promise<void>)|undefined, options?:{ignoreKnowledgeLock?:boolean}) {
     if(!callback || reserved.current || !p.isCurrent())return;
     if(!options?.ignoreKnowledgeLock && locked)return;
-    if([!!url,!!(question||answer),!!files.length].filter(Boolean).length>1&&!window.confirm(t('لديك مسودات في أكثر من قسم. قد يؤدي تحديث النسخة المحفوظة إلى فقد المسودات الأخرى. هل تريد المتابعة؟','You have drafts in multiple sections. Updating the saved version may discard the other drafts. Continue?')))return;
     reserved.current=true;setBusy(true);setActiveOp(target);setFailure(null);
     try{
       await callback();
@@ -175,6 +182,53 @@ function KnowledgeForm(p:PaidBranchKnowledgeProps & {snapshot:BranchKnowledgeVie
     }catch{if(mounted.current && p.isCurrent())setFailure(target);}
     finally{reserved.current=false;if(mounted.current && p.isCurrent()){setBusy(false);setActiveOp(null);}}
   }
+  async function persistReadyDrafts(){
+    if(!p.isCurrent()||reserved.current||p.state.phase==="conflict"||p.state.phase==="loading"||!quotaKnown)return;
+    const jobs:Array<{target:OperationTarget;run:()=>Promise<void>;after?:()=>void}>=[];
+    if(canFlushEdit&&editing&&p.onSourceMutation){
+      const draft=editing;
+      jobs.push({target:"faq",run:async()=>{await p.onSourceMutation?.({...p.scope,...draft,action:"edit"});},after:()=>setEditing(null)});
+    }
+    if(canSaveText&&p.onSaveText){
+      const title=question.trim(),content=answer.trim();
+      jobs.push({target:"faq",run:async()=>{await p.onSaveText?.({...context,title,content});},after:()=>{setQuestion("");setAnswer("");}});
+    }
+    if(canAdd&&p.onAddWebsite){
+      const addUrl=urlTrim;
+      jobs.push({target:"website",run:async()=>{await p.onAddWebsite?.({...context,url:addUrl,rightsAttested:true});},after:()=>{setUrl("");setAttested(false);}});
+    }
+    if(canUpload&&p.onUploadFiles){
+      const batch=[...files];
+      jobs.push({target:"files",run:async()=>{await p.onUploadFiles?.({...context,files:batch});},after:()=>setFiles([])});
+    }
+    if(!jobs.length)return;
+    reserved.current=true;
+    if(mounted.current){setBusy(true);setFailure(null);}
+    try{
+      for(const job of jobs){
+        if(mounted.current)setActiveOp(job.target);
+        await job.run();
+        if(mounted.current&&p.isCurrent())job.after?.();
+      }
+    }catch{
+      if(mounted.current&&p.isCurrent())setFailure(jobs[0]?.target??"faq");
+    }finally{
+      reserved.current=false;
+      if(mounted.current&&p.isCurrent()){setBusy(false);setActiveOp(null);}
+    }
+  }
+  useEffect(()=>{
+    const node=rootRef.current as FlushHost|null;
+    if(!node)return;
+    if(flushable){
+      node.dataset.setupFlush="";
+      node.__veloraFlush=()=>persistReadyDrafts();
+    }else{
+      delete node.__veloraFlush;
+      delete node.dataset.setupFlush;
+    }
+    return()=>{delete node.__veloraFlush;delete node.dataset.setupFlush;};
+  });
   function status(value:unknown){return knownStatus(value)?statusLabels[value][ar?0:1]:t("الحالة غير معروفة","Status unknown");}
   function sourceState(source:KnowledgeSourceRecord){
     if(isApprovedForAnswers(source))return t("معتمد","Approved");
@@ -183,141 +237,143 @@ function KnowledgeForm(p:PaidBranchKnowledgeProps & {snapshot:BranchKnowledgeVie
   }
   function operationAlert(target:OperationTarget){
     if(failure!==target)return null;
-    return <p role="alert" className={styles.error}>{t("تعذر إرسال الطلب. راجع الحالة الحالية قبل إعادة المحاولة.","The request could not be submitted. Review its current state before retrying.")}</p>;
-  }
-  function onTabsKey(event:KeyboardEvent<HTMLDivElement>){
-    if(!p.isCurrent())return;
-    const index=TABS.indexOf(tab);
-    let next=index;
-    if(event.key==="Home")next=0;
-    else if(event.key==="End")next=TABS.length-1;
-    else if(event.key==="ArrowRight"||event.key==="ArrowLeft"){
-      const forward=ar?event.key==="ArrowLeft":event.key==="ArrowRight";
-      next=index+(forward?1:-1);
-      if(next<0)next=TABS.length-1;
-      if(next>=TABS.length)next=0;
-    }else return;
-    event.preventDefault();
-    const nextTab=TABS[next]!;
-    setTab(nextTab);
-    tabRefs.current[nextTab]?.focus();
+    return <p role="alert" className={styles.error}>{t("تعذّر تأكيد نتيجة الطلب. حدّث الحالة قبل إعادة المحاولة.","The request result could not be confirmed. Refresh its status before retrying.")}</p>;
   }
   function chooseFiles(list:FileList | readonly File[] | null | undefined){
-    if(!p.isCurrent())return;
+    if(!p.isCurrent()||reserved.current||p.state.phase==="busy")return;
     setFiles(Array.from(list??[]));
   }
-  const approvalState=p.snapshot.version===0?"unverified":approvedCount>0?"approved":"pending";
-  const approvalLabel=approvalState==="unverified"?t("الاعتماد غير متحقق بعد","Approval has not been verified yet"):approvalState==="approved"?t(`نسخ معتمدة للإجابات: ${approvedCount}`,`Approved answer versions: ${approvedCount}`):t("لا توجد نسخة معتمدة للإجابات","No version is approved for answers");
+  function selectReplyLanguage(next:ReplyLanguageContract){
+    if(!p.isCurrent()||languageLocked)return;
+    setSelectedLanguages(replyContractToLanguages(next));
+    if(next===savedLanguageContract)return;
+    if(!p.onConfirmLanguages||!p.languageSnapshot||p.languageSnapshot.canConfirm!==true||!Number.isSafeInteger(p.languageSnapshot.version)||p.languageSnapshot.version<1)return;
+    void dispatch("languages",()=>p.onConfirmLanguages?.({...p.scope,expectedVersion:p.languageSnapshot!.version,replyLanguage:next}),{ignoreKnowledgeLock:true});
+  }
   const libraryCount=pages.length+boundFiles.length+boundFaq.length;
-  const tabMeta:Record<StudioTab,string>={
-    website:t("الموقع","Website"),
-    files:t("الملفات","Files"),
-    faq:t("أسئلة وأجوبة","Questions and answers"),
-  };
 
-  return <section className={styles.view} data-knowledge-studio="" data-setup-unsaved={dirty?'true':undefined} dir={ar?"rtl":"ltr"} aria-labelledby={id} aria-busy={busy || p.state.phase==="busy" || p.state.phase==="loading"}>
+
+  return <section ref={rootRef} className={styles.view} data-knowledge-studio="" data-setup-unsaved={dirty?'true':undefined} dir={ar?"rtl":"ltr"} aria-labelledby={id} aria-busy={busy || p.state.phase==="busy" || p.state.phase==="loading"}>
     <div className={styles.stage}>
     <header className={styles.header}>
-      <p className={styles.kicker}><bdi>{p.snapshot.branchLabel}</bdi>{quotaKnown?<> · <bdi dir="ltr">{p.snapshot.websiteQuota.used} / {p.snapshot.websiteQuota.limit}</bdi></>:null}</p>
       <h2 id={id}>{t("معرفة الفرع","Branch knowledge")}</h2>
-      <p className={styles.lede}>{t("أضف مصدرًا واحدًا في كل مرة — موقع أو ملف أو سؤال وجواب.","Add one source at a time — a page, a file, or a Q&A.")}</p>
-      <p className={styles.badge} data-approval={approvalState}>{approvalLabel}</p>
     </header>
-    {!quotaKnown && <p role="status" className={styles.error}>{t("حصة صفحات الموقع غير متاحة. الإجراءات معطّلة حتى تصل البيانات الموثوقة.","Website quota is unavailable. Actions are disabled until authoritative data is available.")}</p>}
+    {p.state.phase==="loading"&&p.snapshot.version===0&&<p role="status" className={styles.note}>{t("جارٍ تحميل معرفة الفرع…","Loading branch knowledge…")}</p>}
+    {!quotaKnown && p.state.phase!=="loading" && <p role="status" className={styles.error}>{t("حصة صفحات الموقع غير متاحة. حدّث البيانات للمتابعة.","Website quota is unavailable. Refresh data to continue.")}</p>}
     {(p.state.phase==="unavailable"||languagePhase==="unavailable")&&p.onReload&&<p role="status">{t("البيانات المعروضة تحتاج إلى تحديث قبل الحفظ.","Refresh the displayed data before saving.")} <button type="button" onClick={()=>{if(p.isCurrent())void p.onReload?.();}}>{t("تحديث البيانات","Refresh data")}</button></p>}
     {p.state.phase==="conflict" && <p role="alert" className={styles.error}>{t("تغيّرت بيانات المعرفة. أعد التحميل وراجع التغييرات قبل المتابعة.","Knowledge data changed. Reload and review the changes before continuing.")}</p>}
-    {failure && failure!=="library" && failure!=="languages" && tab!==failure && operationAlert(failure)}
-    <section className={styles.languageCard} data-knowledge-languages="" aria-labelledby={`${id}-languages`}>
-      <div className={styles.languageRow}>
-        <h3 id={`${id}-languages`}>{t("لغة الرد","Reply language")}</h3>
-        <div className={styles.langToggles} role="group" aria-label={t("لغات الرد","Reply languages")} aria-live="polite">
-          {AI_REPLY_LANGUAGE_CODES.map(code=>{
-            const selected=selectedLanguages.includes(code);
-            return <button
-              key={code}
-              type="button"
-              className={selected?styles.langOn:styles.langOff}
-              aria-pressed={selected}
-              disabled={languageLocked}
-              title={t("عند اختيار الاثنين يتبع المساعد لغة العميل.","With both selected, the assistant follows the customer.")}
-              onClick={()=>{
-                if(!p.isCurrent())return;
-                setSelectedLanguages(current=>selected?current.filter(item=>item!==code):[...current,code]);
-              }}
-            >{replyLanguageLabel(code,p.locale)}</button>;
-          })}
-        </div>
-        <button
-          type="button"
-          className={styles.langSave}
-          disabled={!canSaveLanguages}
-          onClick={()=>{
-            if(!canSaveLanguages||!draftLanguageContract||!p.languageSnapshot)return;
-            void dispatch("languages",()=>p.onConfirmLanguages?.({...p.scope,expectedVersion:p.languageSnapshot!.version,replyLanguage:draftLanguageContract}),{ignoreKnowledgeLock:true});
-          }}
-        >
-          {activeOp==="languages"||languagePhase==="saving"?t("جارٍ الحفظ…","Saving…"):t("حفظ","Save")}
-        </button>
-      </div>
-      {operationAlert("languages")}
-      {languagePhase==="conflict"&&<p role="alert" className={styles.error}>{t("تغيّرت لغات الرد. أعد التحميل قبل الحفظ.","Reply languages changed. Reload before saving.")}</p>}
-      {selectedLanguages.length===0&&<p className={styles.note}>{t("اختر لغة واحدة واحدة على الأقل.","Select at least one language.")}</p>}
-    </section>
     <div className={styles.shell}>
-    <div className={styles.tabs} role="tablist" aria-label={t("أقسام المعرفة","Knowledge sections")} aria-orientation="horizontal" onKeyDown={onTabsKey}>
-      {TABS.map(item=><button key={item} ref={node=>{tabRefs.current[item]=node;}} id={`${id}-tab-${item}`} type="button" role="tab" aria-selected={tab===item} aria-controls={`${id}-panel-${item}`} tabIndex={tab===item?0:-1} className={tab===item?styles.tabActive:styles.tab} onClick={()=>{if(p.isCurrent())setTab(item);}}>{tabMeta[item]}</button>)}
-    </div>
     <div className={styles.studio}>
       <div className={styles.workspace}>
-        <section hidden={tab!=="website"} data-panel="website" className={styles.panel} id={`${id}-panel-website`} role="tabpanel" aria-labelledby={`${id}-tab-website`}>
-          <div className={styles.sectionHeading}><h3 id={`${id}-website`} className={styles.srOnly}>{t("الموقع الإلكتروني","Website")}</h3></div>
-          {tab==="website" && operationAlert("website")}
+        <section className={styles.languageCard} data-knowledge-languages="" aria-labelledby={`${id}-languages`}>
+          <div className={styles.languageBar}>
+          <h3 id={`${id}-languages`} className={styles.languageLabel}>{t("لغة الرد","Reply language")}</h3>
+          <div
+            className={styles.languageSegment}
+            role="radiogroup"
+            aria-labelledby={`${id}-languages`}
+            aria-disabled={languageLocked || undefined}
+            aria-busy={activeOp==="languages"||languagePhase==="saving"||undefined}
+            onKeyDown={(event)=>{
+              if(languageLocked||!p.isCurrent())return;
+              const order:ReplyLanguageContract[]=["both","ar","en"];
+              const current=draftLanguageContract && order.includes(draftLanguageContract)?draftLanguageContract:null;
+              const index=current?order.indexOf(current):-1;
+              let next:ReplyLanguageContract|undefined;
+              if(event.key==="ArrowRight"||event.key==="ArrowLeft"){
+                event.preventDefault();
+                const forward=ar?event.key==="ArrowLeft":event.key==="ArrowRight";
+                const from=index<0?(forward?0:order.length-1):index;
+                next=order[(from+(forward?1:-1)+order.length)%order.length];
+              }else if(event.key==="Home"){event.preventDefault();next=order[0];}
+              else if(event.key==="End"){event.preventDefault();next=order[order.length-1];}
+              if(!next)return;
+              selectReplyLanguage(next);
+              const group=event.currentTarget;
+              queueMicrotask(()=>group.querySelector<HTMLButtonElement>(`[data-language-choice="${next}"]`)?.focus());
+            }}
+          >
+            {([
+              ["both",t("تلقائي","Automatic")],
+              ["ar",t("العربية","Arabic")],
+              ["en","English"],
+            ] as const).map(([value,label])=>{
+              const checked=draftLanguageContract===value;
+              return <button
+                key={value}
+                type="button"
+                role="radio"
+                className={styles.languageChoice}
+                aria-checked={checked}
+                data-language-choice={value}
+                data-checked={checked||undefined}
+                disabled={languageLocked}
+                tabIndex={languageLocked?-1:checked||(!draftLanguageContract&&value==="both")?0:-1}
+                onClick={()=>selectReplyLanguage(value)}
+              >
+                {checked?<span className={styles.languageCheck} aria-hidden="true">✓</span>:null}
+                <span>{label}</span>
+              </button>;
+            })}
+          </div>
+          </div>
+          {operationAlert("languages")}
+          {languagePhase==="conflict"&&<p role="alert" className={styles.error}>{t("تغيّرت لغات الرد. أعد التحميل قبل الحفظ.","Reply languages changed. Reload before saving.")}</p>}
+        </section>
+        <section data-panel="website" className={styles.panel} id={`${id}-panel-website`} aria-labelledby={`${id}-website`}>
+          <h4 id={`${id}-website`} className={styles.sectionLabel}>{t("رابط موقع","Website link")}</h4>
+          {quotaKnown && (
+            <p className={styles.quota} data-website-quota="">
+              <bdi dir="ltr">{p.snapshot.websiteQuota.used} / {p.snapshot.websiteQuota.limit}</bdi>
+            </p>
+          )}
+          {operationAlert("website")}
           <form noValidate onSubmit={event=>{event.preventDefault();if(canAdd)void dispatch("website",()=>p.onAddWebsite?.({...context,url:urlTrim,rightsAttested:true}));}}>
             <fieldset disabled={busy||p.state.phase==="busy"}><legend className={styles.srOnly}>{t("إضافة صفحة","Add page")}</legend>
-              <label className={styles.field}>{t("رابط الصفحة","Page URL")}<input type="url" dir="ltr" inputMode="url" autoComplete="url" value={url} aria-invalid={urlInvalid||undefined} aria-describedby={urlTrim?`${id}-url-help ${id}-url-live`:`${id}-url-help`} onChange={event=>{if(p.isCurrent())setUrl(event.target.value);}} placeholder="https://example.com/about"/></label>
-              <p id={`${id}-url-help`} className={styles.note}>{t('أضف رابط HTTPS مباشرًا لصفحة تملك محتواها، من دون بيانات دخول أو معاملات تتبّع.','Use a direct HTTPS page you have permission to use, without login details or tracking parameters.')}</p>
+              <div className={styles.urlRow}>
+                <label className={styles.field}><span className={styles.srOnly}>{t("رابط الصفحة","Page URL")}</span><input type="url" dir="ltr" inputMode="url" autoComplete="url" value={url} aria-invalid={urlInvalid||undefined} aria-describedby={urlTrim?`${id}-url-live`:undefined} onChange={event=>{if(p.isCurrent())setUrl(event.target.value);}} placeholder="https://example.com/about"/></label>
+                <button type="submit" className={styles.primary} disabled={!canAdd}>{activeOp==="website"?t("…","…"):t("إضافة","Add")}</button>
+              </div>
               {urlTrim?<p id={`${id}-url-live`} role="status" className={urlInvalid?styles.error:styles.note}>{urlInvalid?t("أدخل رابط HTTPS مباشرًا دون بيانات دخول أو معاملات تتبّع.","Enter a direct HTTPS address without login details or tracking parameters."):urlDuplicate?t("هذا الرابط مرتبط بهذا الفرع بالفعل. إضافته مرة أخرى تطلب من الخادم إعادة معالجة الصفحة الحالية.","This address is already linked to this branch. Adding it again asks the server to process the existing page."):t("الرابط صالح للإرسال.","The address is ready to submit.")}</p>:null}
-              <label className={styles.check}><input type="checkbox" checked={attested} onChange={event=>{if(p.isCurrent())setAttested(event.target.checked);}}/>{t("لدي إذن باستخدام محتوى هذه الصفحة.","I have permission to use this page's content.")}</label>
-              <button type="submit" className={styles.primary} disabled={!canAdd}>{activeOp==="website"?t("جارٍ الإضافة…","Adding…"):t("إضافة الصفحة","Add page")}</button>
+              <label className={styles.check}><input type="checkbox" checked={attested} onChange={event=>{if(p.isCurrent())setAttested(event.target.checked);}}/>{t("أوافق على استخدام محتوى هذه الصفحة.","I agree to use this page’s content.")}</label>
             </fieldset>
           </form>
         </section>
-        <section hidden={tab!=="files"} data-panel="files" className={styles.panel} id={`${id}-panel-files`} role="tabpanel" aria-labelledby={`${id}-tab-files`}>
-          <h3 id={`${id}-files`} className={styles.srOnly}>{t("الملفات","Files")}</h3>
-          {tab==="files" && operationAlert("files")}
-          <p className={styles.note}>{t("PDF نصي أو TXT أو DOCX — حتى 10MB للملف و5 ملفات للدفعة.","Text PDF, TXT, or DOCX — up to 10MB per file and 5 files per batch.")}</p>
+        <section data-panel="files" className={styles.panel} id={`${id}-panel-files`} aria-labelledby={`${id}-files`}>
+          <h4 id={`${id}-files`} className={styles.sectionLabel}>{t("إضافة ملف","Add file")}</h4>
+          {operationAlert("files")}
           <form noValidate onSubmit={event=>{event.preventDefault();if(canUpload)void dispatch("files",()=>p.onUploadFiles?.({...context,files:[...files]}));}}>
             <fieldset disabled={busy||p.state.phase==="busy"}><legend className={styles.srOnly}>{t("رفع الملفات","Upload files")}</legend>
-              <div className={styles.drop} data-file-drop="" data-dragging={dragging||undefined} onDragEnter={event=>{event.preventDefault();dragDepth.current+=1;setDragging(true);}} onDragOver={event=>{event.preventDefault();}} onDragLeave={event=>{event.preventDefault();dragDepth.current=Math.max(0,dragDepth.current-1);if(dragDepth.current===0)setDragging(false);}} onDrop={(event:DragEvent<HTMLDivElement>)=>{event.preventDefault();dragDepth.current=0;setDragging(false);chooseFiles(event.dataTransfer?.files);}}>
-                <p>{t("اسحب الملفات إلى هنا، أو اخترها من جهازك.","Drag files here, or choose them from your device.")}</p>
-                <label className={styles.field}>{t("اختر الملفات","Choose files")}<input type="file" multiple accept=".pdf,.txt,.docx" onChange={event=>{chooseFiles(event.target.files);event.target.value="";}}/></label>
+              <div className={styles.fileRow}>
+                <div className={styles.drop} data-file-drop="" data-dragging={dragging||undefined} onDragEnter={event=>{event.preventDefault();dragDepth.current+=1;setDragging(true);}} onDragOver={event=>{event.preventDefault();}} onDragLeave={event=>{event.preventDefault();dragDepth.current=Math.max(0,dragDepth.current-1);if(dragDepth.current===0)setDragging(false);}} onDrop={(event:DragEvent<HTMLDivElement>)=>{event.preventDefault();dragDepth.current=0;setDragging(false);chooseFiles(event.dataTransfer?.files);}}>
+                  <label className={styles.dropLabel}>{t("اسحب ملفًا أو اختر من جهازك","Drag a file or choose from your device")}<input className={styles.srOnly} type="file" multiple accept=".pdf,.txt,.docx" onChange={event=>{chooseFiles(event.target.files);event.target.value="";}}/></label>
+                </div>
+                <button type="submit" className={styles.primary} disabled={!canUpload}>{activeOp==="files"?t("قيد الرفع","Uploading"):t("رفع","Upload")}</button>
               </div>
-              {files.length>0 && <ul className={styles.picked}>{files.map((file,index)=><li key={`${file.name}:${file.size}:${index}`} data-selected-file=""><bdi>{file.name}</bdi><span>{activeOp==="files"?t("قيد الرفع","Uploading"):t("بانتظار الرفع","Waiting to upload")}</span><button type="button" onClick={()=>{if(p.isCurrent())setFiles(current=>current.filter((_,item)=>item!==index));}}>{t("إزالة من الاختيار","Remove from selection")}</button></li>)}</ul>}
+              {files.length>0 && <ul className={styles.picked}>{files.map((file,index)=><li key={`${file.name}:${file.size}:${index}`} data-selected-file=""><bdi>{file.name}</bdi><span>{activeOp==="files"?t("قيد الرفع","Uploading"):t("بانتظار الرفع","Waiting to upload")}</span><button type="button" onClick={()=>{if(p.isCurrent())setFiles(current=>current.filter((_,item)=>item!==index));}}>{t("إزالة","Remove")}</button></li>)}</ul>}
               {fileError && <p role="status" className={styles.error}>{fileError==="UNSUPPORTED_EXTRACTION"?t("صيغة الملف غير مدعومة للتجهيز. استخدم PDF نصيًا أو TXT أو DOCX.","This format cannot be prepared. Use text-based PDF, TXT or DOCX."):t("تحقق من الصيغة والحجم: حتى 10MB للملف، و5 ملفات و25MB للدفعة.","Check the format and size: up to 10MB per file, 5 files and 25MB per batch.")}</p>}
-              <button type="submit" className={styles.primary} disabled={!canUpload}>{activeOp==="files"?t("قيد الرفع","Uploading"):t("رفع للتجهيز","Upload for preparation")}</button>
             </fieldset>
           </form>
         </section>
-        <section hidden={tab!=="faq"} data-panel="faq" className={styles.panel} id={`${id}-panel-faq`} role="tabpanel" aria-labelledby={`${id}-tab-faq`}>
-          <h3 id={`${id}-faq`} className={styles.srOnly}>{t("الأسئلة والأجوبة","Questions and answers")}</h3>
-          {tab==="faq" && operationAlert("faq")}
+        <section data-panel="faq" className={styles.panel} id={`${id}-panel-faq`} aria-labelledby={`${id}-faq`}>
+          <h4 id={`${id}-faq`} className={styles.sectionLabel}>{t("سؤال وجواب","Q&A")}</h4>
+          {operationAlert("faq")}
           {editing&&<form className={styles.editor} onSubmit={event=>{event.preventDefault();if(!locked&&editing.title.trim()&&editing.content.trim())void dispatch("faq",async()=>{await p.onSourceMutation?.({...p.scope,...editing,action:'edit'});});}}><fieldset disabled={busy||p.state.phase==="busy"}>
             <legend>{t('تعديل النص المحفوظ','Edit saved text')}</legend>
-            <label className={styles.field}>{t('العنوان','Title')}<input value={editing.title} maxLength={200} onChange={e=>{if(p.isCurrent())setEditing({...editing,title:e.target.value});}}/></label>
+            <label className={styles.field}>{t('العنوان','Title')}<input ref={editTitleRef} value={editing.title} maxLength={200} onChange={e=>{if(p.isCurrent())setEditing({...editing,title:e.target.value});}}/></label>
             <label className={styles.field}>{t('المحتوى','Content')}<textarea value={editing.content} maxLength={20000} onChange={e=>{if(p.isCurrent())setEditing({...editing,content:e.target.value});}}/></label>
-            <p className={styles.note}>{t('التعديل يلغي اعتماد النسخة السابقة للإجابات.','Editing removes approval of the previous version for answers.')}</p>
-            <div className={styles.actions}><button type="submit" className={styles.primary} disabled={locked||!editing.title.trim()||!editing.content.trim()}>{t('حفظ التعديل','Save edit')}</button><button type="button" onClick={()=>{if(p.isCurrent())setEditing(null);}}>{t('إلغاء','Cancel')}</button></div>
+            <div className={styles.actions}><button type="submit" className={styles.primary} disabled={locked||!editing.title.trim()||!editing.content.trim()}>{t('حفظ','Save')}</button><button type="button" onClick={()=>{if(p.isCurrent())setEditing(null);}}>{t('إلغاء','Cancel')}</button></div>
           </fieldset></form>}
-          <form className={styles.editor} noValidate onSubmit={event=>{event.preventDefault();if(canSaveText)void dispatch("faq",()=>p.onSaveText?.({...context,title:question.trim(),content:answer.trim()}));}}><fieldset disabled={busy||p.state.phase==="busy"}><legend className={styles.srOnly}>{t("إضافة سؤال وجواب","Add a question and answer")}</legend>
-            <label className={styles.field}>{t("السؤال","Question")}<input dir="auto" value={question} maxLength={200} onChange={event=>{if(p.isCurrent())setQuestion(event.target.value);}}/></label>
-            <label className={styles.field}>{t("الإجابة","Answer")}<textarea dir="auto" rows={4} maxLength={20000} value={answer} aria-describedby={`${id}-answer-help`} onChange={event=>{if(p.isCurrent())setAnswer(event.target.value);}}/></label>
-            <p id={`${id}-answer-help`} className={styles.note}>{t('اكتب الإجابة التي تريد أن يعتمد عليها المساعد. الحفظ لا يعتمد المصدر تلقائيًا للإجابات.','Write the information your assistant should use. Saving does not automatically approve the source for answers.')}</p>
-            <button type="submit" className={styles.primary} disabled={!canSaveText}>{t("حفظ السؤال والجواب","Save question and answer")}</button>
+          <form hidden={!!editing} className={styles.editor} noValidate onSubmit={event=>{event.preventDefault();if(canSaveText)void dispatch("faq",()=>p.onSaveText?.({...context,title:question.trim(),content:answer.trim()}));}}><fieldset disabled={busy||p.state.phase==="busy"}><legend className={styles.srOnly}>{t("إضافة سؤال وجواب","Add a question and answer")}</legend>
+            <div className={styles.qaRow}>
+              <label className={styles.field}>{t("السؤال","Question")}<input dir="auto" value={question} maxLength={200} onChange={event=>{if(p.isCurrent())setQuestion(event.target.value);}}/></label>
+              <label className={`${styles.field} ${styles.qaAnswer}`}>{t("الإجابة","Answer")}<textarea dir="auto" rows={2} maxLength={20000} value={answer} onChange={event=>{if(p.isCurrent())setAnswer(event.target.value);}}/></label>
+              <button type="submit" className={styles.primary} disabled={!canSaveText}>{t("إضافة","Add")}</button>
+            </div>
           </fieldset></form>
         </section>
-      </div>
-      <details className={styles.library} data-knowledge-library="true" open>
-        <summary>{t("مكتبة المعرفة","Knowledge library")}<bdi>{p.snapshot.version===0?"—":libraryCount}</bdi></summary>
+        <details className={styles.library} data-knowledge-library="true" open>
+        <summary>{t("المصادر المضافة","Added sources")}<bdi>{p.snapshot.version===0?"—":libraryCount}</bdi></summary>
         {operationAlert("library")}
         {libraryCount===0?<p className={styles.empty} role="status">{p.snapshot.version===0?t("لم يتم التحقق من المصادر بعد.","Sources have not been verified yet."):t("لا توجد مصادر مرتبطة بهذا الفرع بعد.","No sources are assigned to this branch yet.")}</p>:<ul className={styles.sources}>
           {pages.map(page=>{
@@ -325,31 +381,35 @@ function KnowledgeForm(p:PaidBranchKnowledgeProps & {snapshot:BranchKnowledgeVie
             const extracted=pageExtractedText(page);
             const extractedLength=pageExtractedLength(page);
             return <li key={`page:${page.id}`}>
-              <div className={styles.sourceTop}><strong dir="auto">{page.title?.trim()||page.url}</strong><span className={styles.pill} data-state={knownStatus(page.status)?page.status:"unknown"}>{status(page.status)}</span></div>
-              <small className={styles.kind}>{t("موقع إلكتروني","Website")}</small>
+              <details className={styles.sourceDetails} data-knowledge-source="page">
+                <summary><strong dir="auto">{page.title?.trim()||page.url}</strong><span className={styles.pill} data-state={knownStatus(page.status)?page.status:"unknown"}>{status(page.status)}</span><small className={styles.kind}>{t("رابط","Link")}</small><span className={styles.srOnly}>{t("عرض التفاصيل","View details")}</span></summary>
+                <div className={styles.sourceBody}>
               <bdi className={styles.url}>{page.url}</bdi>
-              {page.error && <p className={styles.error}>{page.error}</p>}
-              {extracted?<div className={styles.extract}><span>{t("المحتوى المستخرج","Extracted content")}</span><p dir="auto" className={styles.text}>{extracted}</p></div>:extractedLength&&extractedLength>0?<p className={styles.note}>{t(`استُخرج ${extractedLength} حرفًا. النص الكامل غير مضمّن في قراءة الإعداد الحالية.`,`Extracted ${extractedLength} characters. The full text is not included in the current setup read.`)}</p>:null}
+              {page.error && <p className={styles.error}>{websiteFailureCopy(page.error,t)}</p>}
+              {extracted?<div className={styles.extract}><span>{t("المحتوى المستخرج","Extracted content")}</span><p dir="auto" className={styles.text}>{extracted}</p></div>:extractedLength&&extractedLength>0?<p className={styles.note}>{t(`تم تجهيز الصفحة، لكن نصها الكامل غير متاح للعرض حاليًا.`,`The page was prepared, but its full text is currently unavailable to view.`)}</p>:null}
               <div className={styles.actions}>{(["retry","retrain"] as const).map(action=>{
                 const permitted=pageReady && (action==="retry"?page.capabilities.canRetry:page.capabilities.canRetrain)===true;
                 return <button type="button" key={action} disabled={locked || !permitted || !p.onPageAction} onClick={()=>{if(permitted && version(page.version))void dispatch("library",()=>p.onPageAction?.({...context,pageId:page.id,pageVersion:page.version!,action}));}}>{action==="retry"?t("إعادة المحاولة","Retry"):t("إعادة المعالجة","Reprocess")}</button>;
               })}{p.onRemovePage&&<button type="button" disabled={locked||!version(page.version)||page.version!<1} onClick={()=>{if(p.isCurrent()&&window.confirm(t('حذف هذه الصفحة من معرفة الفرع؟','Delete this page from branch knowledge?')))void dispatch("library",()=>p.onRemovePage?.({...p.scope,pageId:page.id,pageVersion:page.version!}));}}>{t('حذف الصفحة','Delete page')}</button>}</div>
+                </div>
+              </details>
             </li>;
           })}
           {[...boundFiles.map(item=>({...item,kind:"file" as const})),...boundFaq.map(item=>({...item,kind:"text" as const}))].map(({source,kind})=>{
             const updated=formatUpdated(source.updated_at,ar);
             const approved=isApprovedForAnswers(source);
             return <li key={`${kind}:${source.id}`}>
-              <div className={styles.sourceTop}><strong dir="auto">{source.title}</strong><span className={styles.pill} data-state={approved?"approved":source.status}>{sourceState(source)}</span></div>
-              <small className={styles.kind}>{kind==="file"?t("ملف","File"):t("سؤال وجواب","Question and answer")}</small>
-              {kind==="file" && source.file_name && <bdi>{source.file_name}</bdi>}
+              <details className={styles.sourceDetails} data-knowledge-source={kind}>
+                <summary><strong dir="auto">{source.title}</strong><span className={styles.pill} data-state={approved?"approved":source.status}>{sourceState(source)}</span><small className={styles.kind}>{kind==="file"?t("ملف","File"):t("س/ج","Q&A")}</small><span className={styles.srOnly}>{!approved&&source.status==="ready"?t("مراجعة واعتماد","Review and approve"):t("عرض التفاصيل","View details")}</span></summary>
+                <div className={styles.sourceBody}>
+              {kind==="file" && source.file_name && source.file_name!==source.title && <bdi>{source.file_name}</bdi>}
               {updated && <small>{t("آخر تحديث: ","Last updated: ")}<bdi>{updated}</bdi></small>}
               {kind==="text" && <p dir="auto" className={styles.text}>{source.content}</p>}
               {kind==="file" && source.content?.trim() && <div className={styles.extract}><span>{t("المحتوى المستخرج","Extracted content")}</span><p dir="auto" className={styles.text}>{source.content}</p></div>}
-              {kind==='file'&&source.status==='processing'&&<p className={styles.note} role="status">{t("جارٍ تجهيز الملف. إذا توقف دون نتيجة، استخدم الاسترداد الآمن — لا يُعاد الاستخراج المدفوع تلقائيًا عند نتيجة مجهولة.","Preparing this file. If it stalls without a result, use safe recovery — unknown provider outcomes never auto-retry a paid extract.")}</p>}
+              {kind==='file'&&source.status==='processing'&&<p className={styles.note} role="status">{t("جارٍ تجهيز الملف. يمكنك متابعة حالته من هنا.","Preparing this file. You can check its progress here.")}</p>}
               {kind==='file'&&source.failure_code==='provider_outcome_unknown'&&<p className={styles.error} role="status">{fileFailureCopy(source.failure_code,t)}</p>}
               {(p.onSourceMutation || (kind==='file' && canReprocessStoredFile(source) && Boolean(p.onReprocessFile)))&&Number.isSafeInteger(source.content_version)&&source.content_version!>0&&<div className={styles.actions}>
-                {kind==='text'&&p.onSourceMutation&&<button type="button" disabled={locked} onClick={()=>{if(!p.isCurrent())return;setTab("faq");setEditing({sourceId:source.id,contentVersion:source.content_version!,title:source.title,content:source.content??''});}}>{t('تعديل النص','Edit text')}</button>}
+                {kind==='text'&&p.onSourceMutation&&<button type="button" disabled={locked} onClick={()=>{if(!p.isCurrent())return;setEditing({sourceId:source.id,contentVersion:source.content_version!,title:source.title,content:source.content??''});}}>{t('تعديل النص','Edit text')}</button>}
                 {kind==='file'&&canReprocessStoredFile(source)&&p.onReprocessFile&&source.failure_code!=='provider_outcome_unknown'&&<button type="button" disabled={locked} onClick={()=>{if(!p.isCurrent())return;void dispatch("library",()=>p.onReprocessFile?.({...p.scope,sourceId:source.id,expectedVersion:1}));}}>{source.status==="processing"?t('استرداد آمن للمعالجة','Safe processing recovery'):t('إعادة المعالجة من الملف المخزن','Reprocess from stored file')}</button>}
                 {p.onSourceMutation&&<button type="button" disabled={locked} onClick={()=>{if(p.isCurrent()&&window.confirm(t('إزالة المصدر من هذا الفرع؟ سيبقى الأصل محفوظًا.','Remove this source from this branch? The original will remain stored.')))void dispatch("library",()=>p.onSourceMutation?.({...p.scope,sourceId:source.id,contentVersion:source.content_version!,action:'remove'}));}}>{t('إزالة من الفرع','Remove from branch')}</button>}
               </div>}
@@ -363,13 +423,17 @@ function KnowledgeForm(p:PaidBranchKnowledgeProps & {snapshot:BranchKnowledgeVie
                   return;
                 }
                 const reviewedContentFingerprint=await clientReviewFingerprint(source);
-                if(!reviewedContentFingerprint||!p.isCurrent())return;
+                if(!p.isCurrent())return;
+                if(!reviewedContentFingerprint)throw new Error("knowledge_review_unconfirmed");
                 await p.onSourceApproval?.({...p.scope,sourceId:source.id,contentVersion,approved:true,reviewedContentFingerprint});
               })}>{approved?t('إلغاء اعتماد هذه النسخة','Remove approval for this version'):t('اعتماد هذه النسخة لإجابات المساعد','Approve this version for assistant answers')}</button>}
+                </div>
+              </details>
             </li>;
           })}
         </ul>}
       </details>
+      </div>
     </div>
     </div>
     {!p.onAddWebsite && !p.onUploadFiles && !p.onSaveText && !p.onPageAction && <p className={styles.note}>{t("الإجراءات غير مرتبطة بالحفظ بعد. التعديلات محلية فقط.","Actions are not connected to persistence yet. Edits are local only.")}</p>}

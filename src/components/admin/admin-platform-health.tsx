@@ -4,6 +4,7 @@ import { useRef, useState, useTransition } from "react";
 import { adminGetPlatformHealthOverview } from "@/lib/tenancy/health-actions";
 import { AccessGate } from "@/components/app/access-gate";
 import { useDemo } from "@/lib/demo-state";
+import styles from "./admin-platform-health.module.css";
 import type { PlatformHealthOverviewData, SubsystemProbe } from "@/lib/tenancy/health-types";
 import {
   IconCheckCircle,
@@ -75,7 +76,7 @@ export function AdminPlatformHealth({ data }: AdminPlatformHealthProps) {
         return (
           <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-bold text-emerald-800 border border-emerald-200">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" />
-            {ar ? "جاهز ومتصل" : "HEALTHY"}
+            {ar ? "نجح الفحص" : "Probe passed"}
           </span>
         );
       case "GUARDED":
@@ -110,19 +111,13 @@ export function AdminPlatformHealth({ data }: AdminPlatformHealthProps) {
   };
 
   return (
-    <div className="space-y-6" dir={ar ? "rtl" : "ltr"} aria-busy={isRefreshing}>
-      {snapshot.stale && <p role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">{ar ? "تعذّر تحديث الفحص. المعروض هو آخر نتيجة ناجحة، وقد لا يعكس الحالة الحالية. أعد المحاولة." : "The refresh failed. The last successful result is shown and may not reflect the current state. Try again."}</p>}
+    <div className={`space-y-6 ${styles.health}`} dir={ar ? "rtl" : "ltr"} aria-busy={isRefreshing}>
+      {snapshot.stale && <p role="alert" data-notice="warn" className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">{ar ? "تعذّر تحديث الفحص. المعروض هو آخر نتيجة ناجحة، وقد لا يعكس الحالة الحالية. أعد المحاولة." : "The refresh failed. The last successful result is shown and may not reflect the current state. Try again."}</p>}
       {/* Header Info */}
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[var(--service-line)] pb-4">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="flex h-2.5 w-2.5 rounded-full bg-emerald-600" />
-            <span className="text-xs font-semibold uppercase tracking-wider text-[var(--service-accent)]">
-              Module 14 · Platform Readiness & Health Checks
-            </span>
-          </div>
           <h1 className="mt-1 text-2xl font-black text-[var(--service-ink)] tracking-tight">
-            {ar ? "جاهزية وصحة المنصة (Platform Health & Readiness)" : "Platform Health & Readiness"}
+            {ar ? "جاهزية وصحة المنصة" : "Platform Health & Readiness"}
           </h1>
           <p className="mt-1 text-sm text-[var(--service-muted)]">
             {ar
@@ -142,34 +137,27 @@ export function AdminPlatformHealth({ data }: AdminPlatformHealthProps) {
             {ar ? "إعادة الفحص التشخيصي" : "Re-run Health Probe"}
           </button>
 
-          <div className="flex items-center gap-2 rounded-xl border border-[var(--service-line)] bg-[var(--service-surface)] px-3 py-1.5 shadow-sm">
-            <IconShield className="h-4 w-4 text-[var(--service-success)]" />
-            <span className="text-xs font-bold text-[var(--service-ink)]">velorahelperai@gmail.com</span>
-            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">
-              {ar ? "مالك المنصة" : "Platform Owner"}
-            </span>
-          </div>
+
         </div>
       </div>
 
       {/* 4 KPI Summary Cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className={styles.metrics}>
         {/* KPI 1: Overall System Status */}
         <div className="rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] p-5 shadow-sm">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-[var(--service-muted)]">
-              {ar ? "الحالة العامة للنظام" : "Overall System Status"}
+              {ar ? "نتيجة الفحوص المحدودة" : "Limited probe result"}
             </span>
             <IconPulse className="h-4 w-4 text-[var(--service-success)]" />
           </div>
           <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-emerald-700">
-              {kpis.overallStatus === "HEALTHY" ? (ar ? "جاهز ومستقر" : "HEALTHY") : kpis.overallStatus}
+            <span className="text-2xl font-black text-[var(--service-ink)]">
+              {kpis.overallStatus === "HEALTHY" ? (ar ? "نجحت الفحوص" : "HEALTHY") : kpis.overallStatus === "DOWN" ? (ar ? "فشل فحص" : "DOWN") : (ar ? "فحوص غير مكتملة" : "DEGRADED")}
             </span>
           </div>
           <div className="mt-3 border-t border-[var(--service-line)] pt-3 text-xs text-[var(--service-muted)] flex items-center justify-between">
-            <span>{ar ? "جميع الخدمات الأساسية متصلة" : "Core subsystems operational"}</span>
-            <span className="font-bold text-emerald-700">100%</span>
+            <span>{ar ? "لا تمثل هذه الفحوص حالة جميع الخدمات." : "These probes do not establish all service health."}</span>
           </div>
         </div>
 
@@ -205,11 +193,11 @@ export function AdminPlatformHealth({ data }: AdminPlatformHealthProps) {
           </div>
           <div className="mt-3 flex items-baseline gap-2">
             <span className="text-lg font-black text-blue-800">
-              {ar ? "بيئة فحص معزولة" : "TEST_MODE_GUARDED"}
+              {ar ? "لم يُختبر اتصال بوابة الدفع" : "Payment connectivity was not tested"}
             </span>
           </div>
           <div className="mt-3 border-t border-[var(--service-line)] pt-3 text-xs text-[var(--service-muted)]">
-            {ar ? "منع الخصومات الحقيقية مفعل بشكل قاطع" : "Zero live transactions permitted"}
+            {ar ? "لا يثبت هذا الفحص إعدادات الدفع أو منع الخصم." : "This probe does not establish payment settings or transaction blocking."}
           </div>
         </div>
 
@@ -241,8 +229,8 @@ export function AdminPlatformHealth({ data }: AdminPlatformHealthProps) {
             </h2>
             <p className="mt-0.5 text-xs text-[var(--service-muted)]">
               {ar
-                ? "فحوصات تشخيصية غير مدمرة للتأكد من توافر الخدمات وقنوات الاتصال دون إرسال رسائل أو خصم أموال."
-                : "Non-destructive diagnostic probes verifying connectivity, endpoints, and credentials without side-effects."}
+                ? "لكل فحص نطاق محدد؛ الخدمات غير المختبرة تظهر بوضوح."
+                : "Each probe has a limited scope; untested services are identified."}
             </p>
           </div>
           <div className="flex items-center gap-1.5 text-xs text-[var(--service-muted)]">
@@ -270,7 +258,7 @@ export function AdminPlatformHealth({ data }: AdminPlatformHealthProps) {
                     </span>
                   </div>
                   <p className="mt-1 text-xs text-[var(--service-muted)]">
-                    {ar ? probe.detailsAr : probe.detailsEn}
+                    {probe.id === "postgres_db" ? (probe.status === "HEALTHY" ? (ar ? "نجح فحص قراءة محدود؛ لم تُختبر الكتابة." : "A limited read probe passed; writes were not tested.") : (ar ? "تعذر فحص قراءة قاعدة البيانات." : "Database read probe failed.")) : probe.id === "gotrue_auth" ? (ar ? "التحقق من المستخدم الحالي فقط؛ لا يثبت صحة كل جلسات النظام." : "Current user check only; not a global session-health check.") : probe.id === "ai_router_fleet" && probe.status === "DEGRADED" ? (ar ? "تعذرت قراءة بيانات الميزانية؛ تشغيل المزود غير متحقق." : "Budget metadata could not be read; provider operation is unverified.") : (ar ? probe.detailsAr : probe.detailsEn)}
                   </p>
                 </div>
               </div>
@@ -282,7 +270,7 @@ export function AdminPlatformHealth({ data }: AdminPlatformHealthProps) {
                     <span className="block text-[10px] text-[var(--service-muted)]">{ar ? "زمن الاستجابة" : "latency"}</span>
                   </div>
                 )}
-                <div>{getStatusBadge(probe.status)}</div>
+                <div>{probe.id === "ai_router_fleet" && probe.status === "DEGRADED" ? <span className="rounded-full bg-amber-100 px-2.5 py-1 text-sm font-semibold text-amber-800">{ar ? "قراءة الميزانية غير متاحة" : "Budget read unavailable"}</span> : getStatusBadge(probe.status)}</div>
               </div>
             </div>
           ))}
@@ -300,8 +288,8 @@ export function AdminPlatformHealth({ data }: AdminPlatformHealthProps) {
           </div>
           <p className="mt-1 text-xs text-[var(--service-muted)]">
             {ar
-              ? "الضوابط الأمنية الصارمة المطبقة في قاعدة البيانات، التشفير، وقنوات الدفع والتفويض."
-              : "Rigid security guardrails enforced at database level, API layers, and platform boundaries."}
+              ? "نتائج الفحوص المتاحة؛ الحالة غير المتحقق منها ليست إثباتًا للنجاح."
+              : "Available check results; unverified is not a passing result."}
           </p>
         </div>
 
@@ -315,13 +303,13 @@ export function AdminPlatformHealth({ data }: AdminPlatformHealthProps) {
                 <span className="text-xs font-bold text-[var(--service-ink)]">
                   {ar ? inv.labelAr : inv.labelEn}
                 </span>
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
-                  <IconCheckCircle className="h-3 w-3" />
-                  {inv.status}
+                <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[13px] font-bold ${inv.status === "PASS" ? "bg-emerald-100 text-emerald-800" : inv.status === "FAIL" ? "bg-red-100 text-red-800" : "bg-amber-100 text-amber-800"}`}>
+                  {inv.status === "PASS" && <IconCheckCircle className="h-3 w-3" />}
+                  {inv.status === "WARN" ? (ar ? "لم يُتحقق" : "Unverified") : inv.status}
                 </span>
               </div>
               <p className="mt-2 text-xs font-mono text-[var(--service-muted)] leading-relaxed">
-                {inv.evidence}
+                {inv.status === "WARN" ? (ar ? "لم يُنفّذ فحص القبول لهذا الضابط في هذا التقرير." : "This report did not perform the acceptance check for this control.") : inv.evidence}
               </p>
             </div>
           ))}

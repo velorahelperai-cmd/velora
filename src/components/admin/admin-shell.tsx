@@ -33,8 +33,6 @@ type NavItem = {
   href: string;
   icon: (props: React.SVGProps<SVGSVGElement>) => React.ReactNode;
   active: boolean;
-  pill?: string;
-  pillColor?: string;
 };
 
 type NavGroup = {
@@ -55,14 +53,24 @@ export function AdminShell({ children }: { children: ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
-  const closeMobileMenu = () => {
-    setMobileOpen(false);
-    menuButtonRef.current?.focus();
-  };
+  const wasMobileOpen = useRef(false);
+  const closeMobileMenu = () => setMobileOpen(false);
 
   useEffect(() => {
     if (mobileOpen) closeButtonRef.current?.focus();
+    else if (wasMobileOpen.current) menuButtonRef.current?.focus();
+    wasMobileOpen.current = mobileOpen;
   }, [mobileOpen]);
+
+  useEffect(() => {
+    const media = typeof window === "undefined" ? undefined : window.matchMedia?.("(min-width: 1024px)");
+    if (!media) return;
+    const closeOnDesktop = (event: MediaQueryListEvent) => {
+      if (event.matches) setMobileOpen(false);
+    };
+    media.addEventListener("change", closeOnDesktop);
+    return () => media.removeEventListener("change", closeOnDesktop);
+  }, []);
 
   // Close mobile drawer on route change
   useEffect(() => {
@@ -102,16 +110,12 @@ export function AdminShell({ children }: { children: ReactNode }) {
           href: "/admin/operations",
           icon: IconAlert,
           active: isNavActive("/admin/operations"),
-          pill: isRtl ? "مثبت محلياً" : "Verified Local",
-          pillColor: "bg-blue-50 text-blue-800 border-blue-200",
         },
         {
           label: isRtl ? "جاهزية وصحة المنصة" : "Platform Health",
           href: "/admin/health",
           icon: IconPulse,
           active: isNavActive("/admin/health"),
-          pill: isRtl ? "مثبت محلياً" : "Verified Local",
-          pillColor: "bg-blue-50 text-blue-800 border-blue-200",
         },
       ],
     },
@@ -139,16 +143,12 @@ export function AdminShell({ children }: { children: ReactNode }) {
           href: "/admin/channels",
           icon: IconLayers,
           active: isNavActive("/admin/channels"),
-          pill: isRtl ? "مثبت محلياً" : "Verified Local",
-          pillColor: "bg-blue-50 text-blue-800 border-blue-200",
         },
         {
           label: isRtl ? "مساعدو وتشغيل الذكاء" : "AI Assistants & Operations",
           href: "/admin/ai",
           icon: IconSparkles,
           active: isNavActive("/admin/ai"),
-          pill: isRtl ? "مثبت محلياً" : "Verified Local",
-          pillColor: "bg-blue-50 text-blue-800 border-blue-200",
         },
       ],
     },
@@ -172,8 +172,6 @@ export function AdminShell({ children }: { children: ReactNode }) {
           href: "/admin/analytics",
           icon: IconTrending,
           active: isNavActive("/admin/analytics"),
-          pill: isRtl ? "مثبت محلياً" : "Verified Local",
-          pillColor: "bg-blue-50 text-blue-800 border-blue-200",
         },
       ],
     },
@@ -187,8 +185,6 @@ export function AdminShell({ children }: { children: ReactNode }) {
           active:
             isNavActive("/admin/support") ||
             (pathname === "/admin" && typeof window !== "undefined" && window.location.hash === "#reviews"),
-          pill: isRtl ? "مثبت محلياً" : "Verified Local",
-          pillColor: "bg-blue-50 text-blue-800 border-blue-200",
         },
         {
           label: isRtl ? "الصلاحيات والمشرفين" : "Access & Grants",
@@ -211,8 +207,6 @@ export function AdminShell({ children }: { children: ReactNode }) {
           href: "/admin/audit",
           icon: IconFileText,
           active: isNavActive("/admin/audit"),
-          pill: isRtl ? "مثبت محلياً" : "Verified Local",
-          pillColor: "bg-blue-50 text-blue-800 border-blue-200",
         },
       ],
     },
@@ -224,8 +218,6 @@ export function AdminShell({ children }: { children: ReactNode }) {
           href: "/admin/settings",
           icon: IconSettings,
           active: isNavActive("/admin/settings"),
-          pill: isRtl ? "مثبت محلياً" : "Verified Local",
-          pillColor: "bg-blue-50 text-blue-800 border-blue-200",
         },
         {
           label: isRtl ? "استرداد الوصول والهوية" : "Identity Recovery",
@@ -358,13 +350,24 @@ export function AdminShell({ children }: { children: ReactNode }) {
       <div className="flex flex-1 min-h-screen">
         {/* 🧭 Admin Sidebar */}
         <aside
+          role={mobileOpen ? "dialog" : undefined}
+          aria-modal={mobileOpen ? true : undefined}
+          aria-label={mobileOpen ? (isRtl ? "أقسام الإدارة" : "Administration sections") : undefined}
           onKeyDown={(event) => {
             if (event.key === "Escape" && mobileOpen) {
               event.preventDefault();
               closeMobileMenu();
+            } else if (event.key === "Tab" && mobileOpen) {
+              const focusable = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])')).filter(element => element.getClientRects().length > 0);
+              const first = focusable[0];
+              const last = focusable[focusable.length - 1];
+              if (first && last && ((event.shiftKey && document.activeElement === first) || (!event.shiftKey && document.activeElement === last))) {
+                event.preventDefault();
+                (event.shiftKey ? last : first).focus();
+              }
             }
           }}
-          className={`fixed inset-y-0 z-50 flex-col bg-[var(--service-subtle)] border-[var(--service-line)] transition-all duration-200 ease-in-out ${
+          className={`${theme.sidebar} fixed inset-y-0 z-50 flex-col border-[var(--service-line)] transition-all duration-200 ease-in-out ${
             isRtl ? "border-l right-0" : "border-r left-0"
           } ${
             mobileOpen
@@ -372,28 +375,23 @@ export function AdminShell({ children }: { children: ReactNode }) {
               : isRtl
               ? "hidden lg:flex translate-x-full lg:translate-x-0"
               : "hidden lg:flex -translate-x-full lg:translate-x-0"
-          } ${collapsed ? "lg:w-20" : "lg:w-64"}`}
+          } ${collapsed ? "lg:w-12" : "lg:w-56"}`}
         >
           {/* Sidebar Brand Header */}
-          <div className="flex items-center justify-between h-16 px-4 border-b border-[var(--service-line)]">
+          <div className={`${theme.brandHeader} flex h-11 items-center border-b px-2`}>
             <Link
               href="/admin"
-              className="flex items-center gap-3 group focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--service-accent)] rounded-xl p-1"
+              className="flex items-center gap-2 group focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--service-accent)] rounded-lg"
             >
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-[var(--service-accent-soft)] to-[var(--service-accent-soft)] font-bold text-[var(--service-ink)] shadow-md shadow-[var(--service-accent)]/20">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-gradient-to-tr from-[var(--service-accent-soft)] to-[var(--service-accent-soft)] text-xs font-black text-[var(--service-ink)] shadow-2xs">
                 V
               </span>
               {!collapsed && (
                 <div className="min-w-0 transition-opacity">
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-bold text-base tracking-tight text-[var(--service-ink)] group-hover:text-[var(--service-accent)] transition">
-                      Velora
-                    </span>
-                    <span className="rounded bg-[var(--service-accent)]/15 px-1.5 py-0.5 text-[10px] font-bold text-[var(--service-accent)] border border-[var(--service-accent)]/30">
-                      ADMIN
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-[var(--service-accent)] font-medium truncate">
+                  <span className="font-bold text-xs tracking-tight text-[var(--service-ink)] group-hover:text-[var(--service-accent)] transition">
+                    Velora
+                  </span>
+                  <p className="text-[9px] text-[var(--service-accent)] font-medium truncate">
                     {isRtl ? "منصة التحكم الشاملة" : "Enterprise Control"}
                   </p>
                 </div>
@@ -405,29 +403,35 @@ export function AdminShell({ children }: { children: ReactNode }) {
               ref={closeButtonRef}
               type="button"
               onClick={closeMobileMenu}
-              className="p-1.5 rounded-lg text-[var(--service-accent)] hover:text-[var(--service-ink)] hover:bg-[var(--service-line)] lg:hidden"
-              aria-label="Close menu"
+              className="p-1 rounded-lg text-[var(--service-accent)] hover:text-[var(--service-ink)] hover:bg-[var(--service-line)] lg:hidden ms-auto"
+              aria-label={isRtl ? "إغلاق القائمة" : "Close menu"}
             >
               <IconX />
             </button>
           </div>
 
           {/* Sidebar Navigation Items */}
-          <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-6 scrollbar-thin scrollbar-thumb-stone-300">
+          <nav aria-label={isRtl ? "أقسام الإدارة" : "Administration sections"} className={`${theme.navigation} flex-1 overflow-y-auto px-2 py-1 space-y-1 scrollbar-none`}>
             {navItems.map((group, idx) => (
-              <div key={idx} className="space-y-1">
-                {!collapsed && (
-                  <p className="px-3 text-[11px] font-bold uppercase tracking-wider text-[var(--service-accent)]">
-                    {group.group}
-                  </p>
-                )}
-                <div className="space-y-1 pt-1">
+              <div key={idx} className="space-y-0.5">
+                <div className="h-4 flex items-center">
+                  {!collapsed ? (
+                    <p className="px-1 text-[8.5px] font-bold uppercase tracking-wider text-[var(--service-accent)]/80 truncate">
+                      {group.group}
+                    </p>
+                  ) : (
+                    <div className="w-5 h-px bg-[var(--service-line)]/80 mx-auto" />
+                  )}
+                </div>
+                <div className="space-y-0.5">
                   {group.items.map((item, itemIdx) => {
                     const Icon = item.icon;
                     return (
                       <Link
                         key={itemIdx}
                         href={item.href}
+                        aria-current={item.active ? "page" : undefined}
+                        aria-label={item.label}
                         onClick={() => {
                           setMobileOpen(false);
                           const hash = item.href.split("#")[1];
@@ -436,29 +440,25 @@ export function AdminShell({ children }: { children: ReactNode }) {
                           }
                         }}
                         title={collapsed ? item.label : undefined}
-                        className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all group ${
+                        className={`flex min-h-[26px] items-center rounded-md transition-colors group ${
+                          collapsed ? "w-7 h-7 justify-center mx-auto" : "w-full gap-2 px-1 py-0.5 text-[10px]"
+                        } ${
                           item.active
-                            ? "bg-[var(--service-accent-soft)] text-[var(--service-ink)] font-bold shadow-sm shadow-[var(--service-accent)]/20"
-                            : "text-[var(--service-ink)] hover:text-[var(--service-ink)] hover:bg-[var(--service-line)] font-medium"
-                        } ${collapsed ? "justify-center px-0" : ""}`}
+                            ? "bg-[var(--service-accent-soft)] text-[var(--service-ink)] font-bold shadow-2xs"
+                            : "text-[var(--service-ink)] hover:text-[var(--service-ink)] hover:bg-[var(--service-subtle)] font-medium"
+                        }`}
                       >
-                        <Icon
-                          className={`shrink-0 transition-colors ${
-                            item.active
-                              ? "text-[var(--service-ink)]"
-                              : "text-[var(--service-accent)] group-hover:text-[var(--service-ink)]"
-                          }`}
-                        />
-                        {!collapsed && <span className="flex-1 truncate">{item.label}</span>}
-                        {!collapsed && item.pill && (
-                          <span
-                            className={`rounded-full px-2 py-0.5 text-[10px] font-bold border ${
-                              item.pillColor ||
-                              "bg-[var(--service-subtle)] text-[var(--service-accent)] border-[var(--service-line)]"
+                        <span className="w-7 h-7 shrink-0 flex items-center justify-center">
+                          <Icon
+                            className={`w-3.5 h-3.5 transition-colors ${
+                              item.active
+                                ? "text-[var(--service-ink)]"
+                                : "text-[var(--service-accent)] group-hover:text-[var(--service-ink)]"
                             }`}
-                          >
-                            {item.pill}
-                          </span>
+                          />
+                        </span>
+                        {!collapsed && (
+                          <span className="min-w-0 flex-1 truncate">{item.label}</span>
                         )}
                       </Link>
                     );
@@ -468,28 +468,16 @@ export function AdminShell({ children }: { children: ReactNode }) {
             ))}
           </nav>
 
-          {/* Sidebar Status Footer */}
-          <div className="p-3 border-t border-[var(--service-line)] space-y-2">
-            {!collapsed && (
-              <div className="rounded-xl border border-[var(--service-line)] bg-[var(--service-surface)] p-2.5 shadow-sm">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="flex items-center gap-1.5 text-[var(--service-accent)] font-bold">
-                    <span className="h-2 w-2 rounded-full bg-[var(--service-accent)] animate-pulse" />
-                    {isRtl ? "إدارة منصة فيلورا" : "Velora administration"}
-                  </span>
-                </div>
-                <p className="mt-1 text-[11px] text-[var(--service-muted)]">
-                  {isRtl ? "عرض البيانات وسجل الاستهلاك" : "Data and usage ledger"}
-                </p>
-              </div>
-            )}
-
+          {/* Sidebar Status Footer - Compact arrow hugging bottom edge without line */}
+          <div className={`${theme.sidebarFooter} mt-auto px-2 py-1 flex items-center justify-center`}>
             {/* Collapse / Expand Toggle Button (Desktop only) */}
             <button
               type="button"
               onClick={() => setCollapsed(!collapsed)}
-              className="hidden lg:flex w-full items-center justify-center p-2 rounded-xl text-[var(--service-accent)] hover:text-[var(--service-ink)] hover:bg-[var(--service-line)] transition"
+              className="hidden lg:flex w-7 h-7 items-center justify-center rounded-md text-[var(--service-muted)] hover:text-[var(--service-ink)] hover:bg-[var(--service-subtle)] transition text-xs"
               title={collapsed ? (isRtl ? "توسيع القائمة" : "Expand") : isRtl ? "طي القائمة" : "Collapse"}
+              aria-label={collapsed ? (isRtl ? "توسيع القائمة" : "Expand navigation") : (isRtl ? "طي القائمة" : "Collapse navigation")}
+              aria-expanded={!collapsed}
             >
               {isRtl ? (
                 collapsed ? <IconChevronLeft /> : <IconChevronRight />
@@ -502,12 +490,13 @@ export function AdminShell({ children }: { children: ReactNode }) {
 
         {/* 💻 Main Workspace Area */}
         <div
+          inert={mobileOpen}
           className={`flex-1 flex flex-col min-w-0 transition-all duration-200 ${
             collapsed ? (isRtl ? "lg:mr-20" : "lg:ml-20") : isRtl ? "lg:mr-64" : "lg:ml-64"
           }`}
         >
           {/* 🔝 Persistent Admin Topbar */}
-          <header className="sticky top-0 z-30 flex min-h-16 flex-wrap items-center justify-between gap-2 px-4 py-2 sm:px-6 bg-[var(--service-subtle)]/95 backdrop-blur-md border-b border-[var(--service-line)]">
+          <header className="sticky top-0 z-30 flex min-h-16 flex-wrap items-center justify-between gap-2 border-b border-[var(--service-line)] bg-[var(--service-surface)] px-4 py-2 sm:px-6">
             {/* Left/Start side: Mobile trigger & Breadcrumbs */}
             <div className="flex w-full min-w-0 items-center gap-3 sm:w-auto sm:flex-1">
               <button
@@ -515,7 +504,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
                 type="button"
                 onClick={() => setMobileOpen(true)}
                 className="shrink-0 p-2 rounded-xl text-[var(--service-accent)] hover:text-[var(--service-ink)] hover:bg-[var(--service-line)] lg:hidden"
-                aria-label="Open navigation"
+                aria-label={isRtl ? "فتح القائمة" : "Open navigation"}
                 aria-expanded={mobileOpen}
               >
                 <IconMenu />
@@ -550,17 +539,6 @@ export function AdminShell({ children }: { children: ReactNode }) {
 
             {/* Right/End side: Status pills, LangSwitch, AccountMenu */}
             <div className="flex w-full max-w-full shrink-0 flex-wrap items-center justify-end gap-2 sm:w-auto sm:gap-3">
-              {/* AI Router Status Indicator */}
-              <div className="hidden md:flex items-center gap-1.5 px-3 py-1 rounded-full bg-[var(--service-subtle)] border border-[var(--service-line)] text-xs text-[var(--service-accent)] font-bold">
-                <span className="h-2 w-2 rounded-full bg-[var(--service-accent)]" />
-                <span>{isRtl ? "تجارب الذكاء" : "AI trials"}</span>
-              </div>
-
-              {/* WhatsApp Live Safety Mode */}
-              <div className="hidden lg:flex items-center gap-1.5 px-3 py-1 rounded-full bg-[var(--service-subtle)] border border-[var(--service-line)] text-xs text-[var(--service-accent)] font-semibold">
-                <span>🛡️ {isRtl ? "واتساب المباشر معطل" : "Live WhatsApp Muted"}</span>
-              </div>
-
               {/* Language Switcher */}
               <LangSwitch />
 

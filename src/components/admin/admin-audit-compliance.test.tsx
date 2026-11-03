@@ -129,9 +129,8 @@ describe("Stage E — Module 11: AdminAuditCompliance Component", () => {
     const tree = renderAuditCompliance({ data: sampleData });
     const content = text(tree);
 
-    // Module info & Owner badge
-    expect(content).toContain("Module 11 · Governance & Immutable Audit Logs");
-    expect(content).toContain("velorahelperai@gmail.com");
+    // Header
+    expect(content).toContain("سجل التدقيق والحوكمة");
 
     // KPIs
     expect(content).toContain("42");

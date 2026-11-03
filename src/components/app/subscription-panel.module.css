@@ -807,3 +807,15 @@
 .root[data-surface="account"] .card[data-selected="true"] {border-color:var(--service-accent,#087e8b);box-shadow:0 0 0 2px var(--service-accent,#087e8b);}
 .root[data-surface="account"] a:not(.payLink),.root[data-surface="account"] .brandSignature {color:var(--service-accent,#087e8b);}
 .root[data-surface="account"] :is(button,a,summary):focus-visible {outline-color:var(--service-accent,#087e8b);}
+
+/* Workspace subscription cards: preserve catalogue and selection behavior. */
+.root[data-surface="account"] {font-family:var(--font-en, sans-serif);background:#fff;border-color:var(--service-line);border-radius:12px;box-shadow:0 1px 3px rgba(15,23,42,.06);}
+.root[data-surface="account"] .card {border-radius:12px;backdrop-filter:none;-webkit-backdrop-filter:none;box-shadow:0 1px 3px rgba(15,23,42,.06);transition:border-color 180ms ease-out,box-shadow 180ms ease-out;}
+.root[data-surface="account"] .card:hover {transform:none;box-shadow:0 1px 3px rgba(15,23,42,.06);}
+.root[data-surface="account"] .card[data-selected="true"] {box-shadow:0 0 0 2px var(--service-accent);}
+.root[data-surface="account"] .cardTop h3 {font-size:18px;line-height:28px;}
+.root[data-surface="account"] .price {font-size:28px;line-height:36px;font-weight:700;}
+.root[data-surface="account"] .packageOptions {border-radius:8px;box-shadow:none;}
+.root[data-surface="account"] .packageOptions button {border-radius:8px;}
+.root[data-surface="account"] .select {min-height:44px;border-radius:8px;}
+@media(prefers-reduced-motion:reduce){.root[data-surface="account"] .card{transition:none;}}

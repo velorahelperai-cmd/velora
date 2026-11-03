@@ -39,9 +39,11 @@ Files: paid-assistant-trial.tsx, paid-setup-step-host.tsx and tests.
 - [x] RED: remount retrieves known request, bounded polling never asks; stale branch result ignored; terminal failure distinct from accounting review.
 - [x] Implement 5s bounded polling for known provider IDs and refresh/recover continuation using existing controls. Preserve current setup step and confirmed cached data.
 - [x] GREEN: affected tests/types/lint/security. Independent review and fixes before publication.
-- [ ] Apply additive migration, scoped commit/push, CI and Vercel same SHA; verify authenticated UI without generation.
-- [ ] Report live answer/cost/counter separately; never close C15 on deployment alone.
+- [x] Apply additive migration, scoped commit/push, CI and Vercel same SHA; verify authenticated UI without generation.
+- [x] Report live answer/cost/counter separately; never close C15 on deployment alone.
 
 ## Verification and review dispositions — 2026-11-01
 179 affected tests passed; TypeScript and scoped lint passed. Actual PostgreSQL RPC regression passed, including concurrent handle/checkpoint saves against expiry. Auth/session dependencies in that regression are fixtures, not hosted acceptance. Independent reviewer findings (terminal states, optional pending model, ID bounds, ambiguous persistence and expiry race) fixed. Provider SDK offline fetch proves one POST and retrieval GET; no live call performed.
 Hosted additive migration applied; original three unknown holds remain 4.494810, 1.538527 and 1.538873 baisa, cost null. Expiry classification applies only to new prepared operations; five-minute missing-ID and 24-hour retrieval limits preserve holds. No worker changes. C15 remains open pending live answer, verified usage/settlement and counter.
+
+Final delivery61e867b: CI41279972128 SUCCESS8/8, Vercel2N7TWyworph78Q5TJ4EFgwXBaXYx READY canonical sameSHA. Live92f648b9: actualGemini answer matcheshoursv8, usage1065, cost0.624328baisa, uniqueengine receipt/counter1/10. Full C15 remainsOPEN. Detailed final evidence: C:/Users/DELL/Documents/ChatGPT/Velora/setup-durable-delivery-20261101.md.

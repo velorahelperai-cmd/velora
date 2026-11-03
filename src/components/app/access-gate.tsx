@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import Link from "next/link";
+import styles from "./access-gate.module.css";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useOptionalAccountSession } from "./account-chrome";
@@ -21,6 +22,7 @@ export function AccessGate({
   const copy = useAppCopy();
   const router = useRouter();
   const pathname = usePathname();
+  const workspaceGate = pathname === "/app" || pathname.startsWith("/app/") || pathname === "/admin" || pathname.startsWith("/admin/");
   const session = useOptionalAccountSession();
   const clearSession = session?.clear;
   const lockSession = session?.lock;
@@ -81,8 +83,8 @@ export function AccessGate({
       : copy.errors.unavailableBody;
 
   return (
-    <main className="app-shell px-4 py-10">
-      <div className="mx-auto grid max-w-lg gap-4">
+    <main className={`app-shell px-4 py-10 ${workspaceGate ? styles.gate : ""}`}>
+      <div className={`mx-auto grid max-w-lg gap-4 ${workspaceGate ? styles.content : ""}`}>
         <Notice tone={code === "FORBIDDEN" ? "warn" : "error"}>
           <strong>{title}</strong>
           <br />
@@ -95,7 +97,7 @@ export function AccessGate({
           ) : null}
         </Notice>
         {signInError ? <Notice tone="error">{copy.errors.authFailed}</Notice> : null}
-        <div className="flex flex-wrap gap-2">
+        <div className={`flex flex-wrap gap-2 ${workspaceGate ? styles.actions : ""}`}>
           <Button type="button" onClick={() => router.refresh()}>
             {copy.errors.accessRetry}
           </Button>

@@ -38,9 +38,9 @@ describe("Stage D — AI, Billing & Catalog Master Suite (Modules 05, 06, 07)", 
       })
     );
 
-    // Module 05 badge & Owner verification
-    expect(markup).toContain("Module 05");
-    expect(markup).toContain("velorahelperai@gmail.com");
+    // The heading is localized and does not assert a hardcoded owner identity.
+    expect(markup).toContain("تشغيل الذكاء والمساعدين");
+    expect(markup).not.toContain("velorahelperai@gmail.com");
     // Real DB budget: 25.000 OMR (Must NEVER be 100 OMR)
     expect(markup).toContain("25.000");
     expect(markup).not.toContain("100.000");
@@ -87,11 +87,10 @@ describe("Stage D — AI, Billing & Catalog Master Suite (Modules 05, 06, 07)", 
       })
     );
 
-    // Module 06 badge
-    expect(markup).toContain("Module 06");
-    // restricted Test gateway
-    expect(markup).toContain("Thawani UAT");
-    expect(markup).not.toContain("Paymob");
+    // Results are explicitly limited to the loaded page and environment.
+    expect(markup).toContain("الصفحة الحالية");
+    expect(markup).toContain("الاختبار");
+    expect(markup).not.toContain("Thawani UAT");
     // Order row and amount
     expect(markup).toContain("مقهى مسقط");
     expect(markup).toContain("ord-101");

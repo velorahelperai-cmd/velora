@@ -1,6 +1,14 @@
 import JSZip from "jszip";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { extractKnowledgeText } from "./extract";
+import * as gemini from "./pdf-gemini-extract";
+import * as ocr from "./pdf-ocr";
+
+afterEach(() => {
+  delete process.env.VELORA_PDF_GEMINI_EXTRACT_ENABLED;
+  delete process.env.VELORA_PDF_GEMINI_EXTRACT_SOURCE_IDS;
+  delete process.env.VERCEL_ENV;
+});
 
 function pdfWithStream(stream: string, withFont = false) {
   const objects = [
@@ -61,6 +69,82 @@ async function docxWith(text: string) {
 }
 
 describe("extractKnowledgeText", () => {
+  it("routes a scanned PDF through OCR and preserves Arabic and English", async () => {
+    const spy = vi.spyOn(ocr, "readScannedPdf").mockResolvedValueOnce("خدمات المجسمات المعمارية\nArchitectural models");
+    try {
+      const result = await extractKnowledgeText({ fileName: "scan.pdf", contentType: "application/pdf", bytes: pdfWithStream("") });
+      expect(result).toEqual({ ok: true, text: "خدمات المجسمات المعمارية\nArchitectural models" });
+      expect(spy).toHaveBeenCalledOnce();
+    } finally { spy.mockRestore(); }
+  });
+
+  it("runs OCR when a page combines native text and an embedded image", async () => {
+    const spy = vi.spyOn(ocr, "readScannedPdf").mockResolvedValueOnce("Header text\nنص داخل الصورة");
+    try {
+      const mixed = pdfWithStream("BT /F1 12 Tf 20 100 Td (Header text) Tj ET\nq 1 0 0 1 0 0 cm BI /W 1 /H 1 /BPC 8 /CS /G /F /AHx ID FF> EI Q", true);
+      const result = await extractKnowledgeText({ fileName: "mixed.pdf", contentType: "application/pdf", bytes: mixed });
+      expect(result).toEqual({ ok: true, text: "Header text\nنص داخل الصورة" });
+      expect(spy).toHaveBeenCalledOnce();
+    } finally { spy.mockRestore(); }
+  });
+
+  it("does not publish partial text when OCR is unavailable", async () => {
+    const spy = vi.spyOn(ocr, "readScannedPdf").mockResolvedValueOnce(null);
+    try {
+      expect(await extractKnowledgeText({ fileName: "scan.pdf", contentType: "application/pdf", bytes: pdfWithStream("") })).toEqual({ ok: false, code: "extract_failed" });
+    } finally { spy.mockRestore(); }
+  });
+
+  it("uses allowlisted Gemini for a scanned PDF and skips local OCR", async () => {
+    const sourceId = "efbad663-bfe9-4528-b8b3-11d817e20683";
+    process.env.VELORA_PDF_GEMINI_EXTRACT_ENABLED = "true";
+    process.env.VELORA_PDF_GEMINI_EXTRACT_SOURCE_IDS = sourceId;
+    const ocrSpy = vi.spyOn(ocr, "readScannedPdf");
+    const geminiSpy = vi.spyOn(gemini, "extractPdfWithGemini").mockResolvedValueOnce("## PAGE 1\nMuscat\n@tajseem_om");
+    try {
+      const result = await extractKnowledgeText({
+        sourceId,
+        fileName: "scan.pdf",
+        contentType: "application/pdf",
+        bytes: pdfWithStream(""),
+      });
+      expect(result).toEqual({ ok: true, text: "## PAGE 1\nMuscat\n@tajseem_om" });
+      expect(geminiSpy).toHaveBeenCalledOnce();
+      expect(ocrSpy).not.toHaveBeenCalled();
+    } finally {
+      geminiSpy.mockRestore();
+      ocrSpy.mockRestore();
+    }
+  });
+
+  it("fails closed when allowlisted Gemini returns nothing, without publishing OCR", async () => {
+    const sourceId = "efbad663-bfe9-4528-b8b3-11d817e20683";
+    process.env.VELORA_PDF_GEMINI_EXTRACT_ENABLED = "true";
+    process.env.VELORA_PDF_GEMINI_EXTRACT_SOURCE_IDS = sourceId;
+    const ocrSpy = vi.spyOn(ocr, "readScannedPdf");
+    const geminiSpy = vi.spyOn(gemini, "extractPdfWithGemini").mockResolvedValueOnce(null);
+    try {
+      expect(
+        await extractKnowledgeText({
+          sourceId,
+          fileName: "scan.pdf",
+          contentType: "application/pdf",
+          bytes: pdfWithStream(""),
+        }),
+      ).toEqual({ ok: false, code: "extract_failed" });
+      expect(ocrSpy).not.toHaveBeenCalled();
+    } finally {
+      geminiSpy.mockRestore();
+      ocrSpy.mockRestore();
+    }
+  });
+
+  it("rejects OCR output that exceeds the content limit rather than silently truncating it", async () => {
+    const spy = vi.spyOn(ocr, "readScannedPdf").mockResolvedValueOnce("x".repeat(200_001));
+    try {
+      expect(await extractKnowledgeText({ fileName: "scan.pdf", contentType: "application/pdf", bytes: pdfWithStream("") })).toEqual({ ok: false, code: "extract_failed" });
+    } finally { spy.mockRestore(); }
+  });
   it("reads a text PDF, TXT, and DOCX", async () => {
     const pdf = await extractKnowledgeText({
       fileName: "menu.pdf",
@@ -94,12 +178,15 @@ describe("extractKnowledgeText", () => {
     });
     expect(corrupt).toEqual({ ok: false, code: "corrupt" });
 
-    const scanned = await extractKnowledgeText({
-      fileName: "scan.pdf",
-      contentType: "application/pdf",
-      bytes: pdfWithStream(""),
-    });
-    expect(scanned).toEqual({ ok: false, code: "no_text" });
+    const spy = vi.spyOn(ocr, "readScannedPdf").mockResolvedValueOnce("");
+    try {
+      const scanned = await extractKnowledgeText({
+        fileName: "scan.pdf",
+        contentType: "application/pdf",
+        bytes: pdfWithStream(""),
+      });
+      expect(scanned).toEqual({ ok: false, code: "no_text" });
+    } finally { spy.mockRestore(); }
   });
 
   it("replaces text instead of appending when run twice", async () => {

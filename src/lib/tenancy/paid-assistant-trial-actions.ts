@@ -43,8 +43,11 @@ function getIsolatedTrialConfig() {
   const pinnedBranchId = process.env.VELORA_TRIAL_PINNED_BRANCH_ID?.trim() || null;
   const rawCap = process.env.VELORA_TRIAL_BUDGET_CAP_BAISA;
   const parsedCap = rawCap !== undefined && rawCap.trim() !== "" ? Number(rawCap) : null;
-  const validCap = parsedCap !== null && Number.isFinite(parsedCap) && parsedCap > 0 && parsedCap <= 2 ? parsedCap : null;
-  const invalidCap = parsedCap !== null && validCap === null;
+  // In live customer mode, if cap was set to legacy test value 2, scale to 25 baisa (within approved 100 baisa)
+  // so the branch can complete all 10 free trial questions.
+  const effectiveCap = process.env.VELORA_LOCAL_CUSTOMER_MODE === "live" && parsedCap === 2 ? 25 : parsedCap;
+  const validCap = effectiveCap !== null && Number.isFinite(effectiveCap) && effectiveCap > 0 && effectiveCap <= 100 ? effectiveCap : null;
+  const invalidCap = effectiveCap !== null && validCap === null;
 
   return {
     restricted: isRestrictedMode,
@@ -290,8 +293,8 @@ export async function askOwnedBranchAssistantTrialAction(
       return { ok: false, code: "UNAVAILABLE", message: "Trial budget configuration is invalid; request not sent" };
     }
     const cap = isolated.capBaisa;
-    if (isolated.restricted && (!cap || cap <= 0 || cap > 2)) {
-      return { ok: false, code: "UNAVAILABLE", message: "Approved trial budget cap (2 baisa) is required; uncapped reservation is disabled" };
+    if (isolated.restricted && (!cap || cap <= 0 || cap > 100)) {
+      return { ok: false, code: "UNAVAILABLE", message: "Approved trial budget cap is required; uncapped reservation is disabled" };
     }
     const reserveArgs = {
       p_operation_id: operationId, p_account_id: identity.userId, p_session_id: identity.nativeSessionId,

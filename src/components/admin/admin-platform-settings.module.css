@@ -1,0 +1,26 @@
+.page { display:grid; gap:20px; color:var(--service-ink); line-height:1.6; }
+.heading { display:flex; flex-wrap:wrap; gap:16px; align-items:end; justify-content:space-between; border-bottom:1px solid var(--service-line); padding-bottom:18px; }
+.heading h1 { font-size:26px; line-height:1.35; font-weight:700; }
+.heading p,.panelHeading p { margin-top:4px; color:var(--service-muted); font-size:14px; }
+.page [data-notice] p { margin-top:3px; }
+.columns { display:grid; grid-template-columns:minmax(0,1.4fr) minmax(260px,1fr); gap:16px; align-items:start; }
+.panel { min-width:0; background:var(--service-surface); border:1px solid var(--service-line); border-radius:12px; padding:24px; box-shadow:0 1px 3px rgba(15,23,42,.06); }
+.panelHeading { display:flex; justify-content:space-between; gap:12px; align-items:start; flex-wrap:wrap; }
+.panelHeading h2 { font-size:18px; font-weight:700; }
+.policyList { margin:16px 0 0; }
+.policyList > div { display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap; gap:8px 20px; padding:11px 0; border-top:1px solid var(--service-line); font-size:14px; }
+.policyList dt { color:var(--service-muted); }
+.policyList dd { margin:0; font-weight:600; overflow-wrap:anywhere; }
+.count,.status { display:inline-block; border:1px solid var(--service-line); border-radius:6px; background:#fff; color:var(--service-muted); padding:4px 8px; font-size:12px; }
+.tableWrap { overflow-x:auto; margin-top:16px; border:1px solid var(--service-line); border-radius:8px; background:#fff; }
+.tableWrap table { width:100%; min-width:760px; border-collapse:collapse; text-align:start; font-size:13px; }
+.tableWrap :is(th,td) { text-align:start; padding:12px; vertical-align:top; border-bottom:1px solid var(--service-line); }
+.tableWrap th { color:var(--service-muted); background:var(--service-subtle); font-weight:600; }
+.tableWrap tr:last-child td { border-bottom:0; }
+.tableWrap td:last-child { max-width:330px; color:var(--service-muted); }
+.tableWrap small { display:block; margin-top:3px; color:var(--service-muted); overflow-wrap:anywhere; }
+@media (max-width: 800px) { .columns { grid-template-columns:1fr; } .panel { padding:16px; } }
+
+.titleRow { display:flex; align-items:center; gap:12px; min-width:0; }
+.panelIcon { display:grid; place-items:center; flex:none; width:36px; height:36px; border-radius:10px; background:#f1faf7; color:#11665f; }
+.panelIcon svg { width:19px; height:19px; }

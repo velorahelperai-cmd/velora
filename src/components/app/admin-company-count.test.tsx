@@ -20,6 +20,10 @@ const flush=async()=>{for(let i=0;i<8;i++)await Promise.resolve();};
 async function search(tree:ReactNode){const form=nodes(tree).find(n=>n.type==="form")!;(form.props.onSubmit as (e:{preventDefault():void})=>void)({preventDefault(){}});await flush();}
 beforeEach(()=>{vi.clearAllMocks();mocks.slots=[];mocks.cursor=0;});
 describe("company count distinguishes unknown from verified zero",()=>{
+ it("gives company search a persistent accessible name",()=>{
+  const input=nodes(render()).find(n=>n.type==="input" && typeof n.props.placeholder==="string");
+  expect(input?.props["aria-label"]).toBe(input?.props.placeholder);
+ });
  it("initial loading badges do not fabricate zero",()=>{const tree=render();expect(count(tree)).toBe("-");expect(header(tree)).not.toContain("(0)");});
  it("a successful empty database read displays real zero",async()=>{mocks.list.mockResolvedValue({ok:true,data:{rows:[],totalCount:0,offset:0,hasMore:false}});await search(render());const tree=render();expect(count(tree)).toBe("0");expect(header(tree)).toContain("(0)");});
  it("a successful nonempty read displays the loaded count",async()=>{

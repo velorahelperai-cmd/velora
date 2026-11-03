@@ -653,7 +653,7 @@ export function ConversationsPage({
       if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}
       else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}
     };
-    const resize=()=>{if(window.innerWidth>=(embedded?1536:1280))setMobileDetailsOpen(false);};
+    const resize=()=>{if(window.innerWidth >= (embedded ? 1440 : 1280))setMobileDetailsOpen(false);};
     document.addEventListener('keydown',key);window.addEventListener('resize',resize);
     return()=>{document.body.style.overflow=oldOverflow;document.removeEventListener('keydown',key);window.removeEventListener('resize',resize);previous?.focus();};
   },[mobileDetailsOpen,embedded]);
@@ -1687,7 +1687,7 @@ export function ConversationsPage({
           {selected ? (
             <>
               {/* Top Header of Chat */}
-              <header className="flex min-h-16 flex-wrap items-center justify-between gap-3 border-b border-[color:var(--color-line)] px-4 py-3 bg-[var(--color-panel)]/95 backdrop-blur z-10">
+              <header className="z-10 flex min-h-16 flex-wrap items-center justify-between gap-3 border-b border-[color:var(--color-line)] bg-[var(--color-panel)] px-4 py-3">
                 <div className="flex items-center gap-3 min-w-0">
                   {/* Mobile Back Button */}
                   <button
@@ -1699,7 +1699,7 @@ export function ConversationsPage({
                     {locale === "ar" ? "→" : "←"}
                   </button>
 
-                  <div className="h-10 w-10 rounded-full bg-gradient-to-br from-[var(--service-accent)]/20 to-[#1d7d4c]/20 border border-[var(--service-accent)]/30 flex items-center justify-center font-bold text-sm text-[var(--service-accent)] shrink-0">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[var(--service-line)] bg-[var(--service-accent-soft)] text-sm font-bold text-[var(--service-accent)]">
                     {selected.customer.slice(0, 1).toUpperCase()}
                   </div>
 
@@ -1708,13 +1708,13 @@ export function ConversationsPage({
                       <h2 className="font-bold text-sm text-[var(--color-on-dark)] truncate font-[family-name:Tajawal,var(--font-ar),sans-serif]">
                         {selected.customer}
                       </h2>
-                      <span className="rounded-full px-2 py-0.5 text-[10px] font-medium bg-[var(--service-accent)]/10 text-[var(--service-accent)] border border-[var(--service-accent)]/20">
+                      <span className="rounded-full border border-[var(--service-line)] bg-[var(--service-accent-soft)] px-2 py-0.5 text-[13px] font-medium text-[var(--service-accent)]">
                         WhatsApp
                       </span>
                     </div>
 
                     <div className="flex items-center gap-2 text-xs mt-0.5">
-                      <span dir="ltr" className="font-mono text-[11px] text-[var(--color-muted-soft)]">
+                      <span dir="ltr" className="font-mono text-[13px] text-[var(--color-muted-soft)]">
                         {selected.phone}
                       </span>
                       <span className="text-[var(--color-muted-soft)]">·</span>
@@ -1827,8 +1827,8 @@ export function ConversationsPage({
                   onClick={() => runPendingAction(async () => { await loadThread(selected.id, selectedThread.nextCursor); })}>
                   {locale === "ar" ? "تحميل الرسائل الأقدم" : "Load older messages"}
                 </Button> : null}
-                {selectedThread ? <p className="text-[10px] text-[var(--color-muted-soft)]">{locale === "ar" ? `${selected.messages.length} رسالة محملة` : `${selected.messages.length} messages loaded`}</p> : null}
-                {selected.messages.length === 0 ? (
+                {selectedThread ? <p className="text-[13px] text-[var(--color-muted-soft)]">{locale === "ar" ? `${selected.messages.length} رسالة محملة` : `${selected.messages.length} messages loaded`}</p> : null}
+                {selectedReady && selected.messages.length === 0 ? (
                   <div className="py-16 text-center text-xs text-[var(--color-muted-soft)]">
                     {locale === "ar" ? "لا توجد رسائل سابقة في هذه المحادثة." : "No messages in this conversation yet."}
                   </div>
@@ -1847,7 +1847,7 @@ export function ConversationsPage({
                       }`}
                     >
                       {/* Sender Tag Header */}
-                      <div className="flex items-center gap-1.5 mb-1 px-1 text-[11px] font-medium font-[family-name:Tajawal,var(--font-ar),sans-serif]">
+                      <div className="mb-1 flex items-center gap-1.5 px-1 text-[13px] font-medium font-[family-name:Tajawal,var(--font-ar),sans-serif]">
                         {isCustomer ? (
                           <span className="text-[var(--color-muted-soft)]">{selected.customer}</span>
                         ) : isAssistant ? (
@@ -1861,8 +1861,8 @@ export function ConversationsPage({
                             <span>{copy.app.staff}</span>
                           </span>
                         )}
-                        <span className="text-[var(--color-muted-soft)] text-[10px]">·</span>
-                        <span dir="ltr" className="text-[10px] text-[var(--color-muted-soft)]">
+                        <span className="text-[var(--color-muted-soft)]">·</span>
+                        <span dir="ltr" className="text-[var(--color-muted-soft)]">
                           {new Date(m.at).toLocaleTimeString(locale === "ar" ? "ar-OM" : "en-GB", {
                             hour: "2-digit",
                             minute: "2-digit",
@@ -1872,19 +1872,19 @@ export function ConversationsPage({
 
                       {/* Bubble Container */}
                       <div
-                        className={`rounded-2xl px-4 py-2.5 text-sm leading-6 shadow-sm transition ${
+                        className={`rounded-xl border px-4 py-2.5 text-[15px] leading-6 ${
                           isCustomer
-                            ? "rounded-ss-sm bg-[var(--color-panel-deep)] text-[var(--color-on-dark)] border border-[color:var(--color-border-soft)]"
+                            ? "rounded-ss-sm border-[var(--service-line)] bg-[var(--service-surface)] text-[var(--service-ink)]"
                             : isAssistant
-                              ? "rounded-se-sm bg-gradient-to-br from-[#0c2e1f]/90 to-[#072317] text-[#e6fbf0] border border-[#227249]/60 shadow-[0_4px_16px_rgba(56,220,137,0.08)]"
-                              : "rounded-se-sm bg-[#1b3a2a] text-white border border-[var(--service-accent)]/40"
+                              ? "rounded-se-sm border-[var(--service-line)] bg-[var(--service-accent-soft)] text-[var(--service-ink)]"
+                              : "rounded-se-sm border-[var(--service-line)] bg-[var(--service-subtle)] text-[var(--service-ink)]"
                         }`}
                       >
-                        <p className="whitespace-pre-wrap break-words">{m.text}</p>
+                        <p dir="auto" className="whitespace-pre-wrap break-words">{m.text}</p>
                       </div>
 
                       {/* Message Delivery State & Source Tag */}
-                      <div className="mt-1 flex items-center gap-2 px-1 text-[10px] text-[var(--color-muted-soft)]">
+                      <div className="mt-1 flex items-center gap-2 px-1 text-[13px] text-[var(--color-muted-soft)]">
                         {m.source ? <span>المصدر: {m.source}</span> : null}
                         {!isCustomer && m.deliveryState ? (
                           <DeliveryStateTick state={m.deliveryState} locale={locale} />
@@ -1994,7 +1994,7 @@ export function ConversationsPage({
                         }
                         aria-label={copy.app.reply}
                         disabled={!selectedReady || !selected.assistantPaused || pending || controlBusy || selectedSendLocked}
-                        className="flex-1 rounded-xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel-deep)] p-2.5 text-xs text-[var(--color-on-dark)] placeholder:text-[var(--color-muted-soft)] focus:ring-2 focus:ring-[var(--service-accent)] outline-none disabled:opacity-60 resize-none transition"
+                        className="min-w-0 flex-1 resize-none rounded-xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel-deep)] p-2.5 text-base text-[var(--color-on-dark)] placeholder:text-[var(--color-muted-soft)] focus:ring-2 focus:ring-[var(--service-accent)] outline-none disabled:opacity-60"
                       />
                       <Button
                         type="submit"
@@ -2071,12 +2071,12 @@ export function ConversationsPage({
             {/* Card 1: Customer Profile */}
             <div className="rounded-xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel)] p-3 space-y-2">
               <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-full bg-gradient-to-br from-[var(--service-accent)]/25 to-[#1d7d4c]/30 flex items-center justify-center font-bold text-sm text-[var(--service-accent)] border border-[var(--service-accent)]/40 shrink-0">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[var(--service-line)] bg-[var(--service-accent-soft)] text-sm font-bold text-[var(--service-accent)]">
                   {selected.customer.slice(0, 1).toUpperCase()}
                 </div>
                 <div className="min-w-0">
-                  <p className="font-bold text-xs text-[var(--color-on-dark)] truncate">{selected.customer}</p>
-                  <p className="text-[11px] text-[var(--color-muted-soft)]">{selected.topic || "واتساب"}</p>
+                  <p dir="auto" className="truncate text-sm font-bold text-[var(--color-on-dark)]">{selected.customer}</p>
+                  <p className="text-[13px] text-[var(--color-muted-soft)]">{selected.topic || "واتساب"}</p>
                 </div>
               </div>
 
@@ -2084,13 +2084,14 @@ export function ConversationsPage({
                 <div className="flex items-center justify-between">
                   <span className="text-[var(--color-muted-soft)]">{locale === "ar" ? "رقم الهاتف:" : "Phone:"}</span>
                   <div className="flex items-center gap-1.5">
-                    <span dir="ltr" className="font-mono text-[11px] font-medium text-[var(--color-on-dark)]">
+                    <span dir="ltr" className="font-mono text-[13px] font-medium text-[var(--color-on-dark)]">
                       {selected.phone}
                     </span>
                     <button
                       type="button"
                       onClick={() => copyCustomerPhone(selected.phone)}
-                      className="text-[10px] text-[var(--service-accent)] hover:underline"
+                      className="inline-flex min-h-11 min-w-11 items-center justify-center text-[13px] text-[var(--service-accent)] hover:underline"
+                      aria-label={locale === "ar" ? "نسخ الرقم" : "Copy phone"}
                       title={locale === "ar" ? "نسخ الرقم" : "Copy phone"}
                     >
                       {phoneCopied ? (locale === "ar" ? "تم!" : "Copied!") : "📋"}
@@ -2098,19 +2099,19 @@ export function ConversationsPage({
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between text-[11px]">
+                <div className="flex items-center justify-between gap-2 text-[13px]">
                   <span className="text-[var(--color-muted-soft)]">{locale === "ar" ? "القناة:" : "Channel:"}</span>
                   <span className="font-medium text-[var(--service-accent)]">WhatsApp Cloud API</span>
                 </div>
 
-                <div className="flex items-center justify-between text-[11px]">
+                <div className="flex items-center justify-between gap-2 text-[13px]">
                   <span className="text-[var(--color-muted-soft)]">{locale === "ar" ? "حالة المحادثة:" : "Status:"}</span>
                   <span className="font-medium text-[var(--color-on-dark)]">{copy.app.statuses[selected.status]}</span>
                 </div>
-                {selected.intervention.reasons.length ? <div className="text-[11px] text-[#f0cf9d] space-y-1">
+                {selected.intervention.reasons.length ? <div className="space-y-1 text-[13px] text-[#f0cf9d]">
                   {selected.intervention.reasons.map(reason => <p key={reason}>{interventionLabels[reason]}</p>)}
                 </div> : null}
-                {!testReview&&connection ? <div className="pt-2 text-[10px] text-[var(--color-muted-soft)] space-y-1">
+                {!testReview&&connection ? <div className="space-y-1 pt-2 text-[13px] text-[var(--color-muted-soft)]">
                   {connection.displayNumber ? <p dir="ltr">{connection.displayNumber}</p> : null}
                   <p>{locale === "ar" ? "حالة الربط:" : "Connection:"} {connection.status.replaceAll("_", " ")}</p>
                   <p>{locale === "ar" ? "التفويض:" : "Authorization:"} {connection.authorizationStatus.replaceAll("_", " ")}</p>
@@ -2123,20 +2124,20 @@ export function ConversationsPage({
             </div>
 
             {/* Card 2: AI Persona (Velora) Card */}
-            <div className="rounded-xl border border-[var(--service-accent)]/30 bg-gradient-to-br from-[#0c2e1f]/40 to-[var(--color-panel)] p-3 space-y-2.5">
+            <div className="space-y-2.5 rounded-xl border border-[var(--service-line)] bg-[var(--service-surface)] p-3">
               <div className="flex items-center gap-2">
                 <span className="text-xl">✨</span>
                 <div>
                   <p className="font-bold text-xs text-[var(--service-accent)]">
                     {locale === "ar" ? "المساعد الذكي: فيلورا (Velora)" : "AI Persona: Velora"}
                   </p>
-                  <p className="text-[10px] text-[var(--color-muted-soft)]">
+                  <p className="text-[13px] text-[var(--color-muted-soft)]">
                     {locale === "ar" ? "مساعدة فيلورا الذكية المعتمدة لشركتك" : "Velora's Official AI Assistant"}
                   </p>
                 </div>
               </div>
 
-              <div className="rounded-lg bg-[var(--color-panel-deep)] p-2 text-[11px] space-y-1">
+              <div className="space-y-1 rounded-lg bg-[var(--color-panel-deep)] p-2 text-[13px]">
                 <div className="flex items-center justify-between">
                   <span className="text-[var(--color-muted-soft)]">{locale === "ar" ? "حالة الأتمتة:" : "Automation:"}</span>
                   {selected.assistantPaused ? (
@@ -2145,7 +2146,7 @@ export function ConversationsPage({
                     <span className="font-bold text-[var(--service-accent)]">{selected.status === "resolved" ? copy.app.statuses.resolved : (locale === "ar" ? "مسموحة" : "Enabled")}</span>
                   )}
                 </div>
-                <div className="flex items-center justify-between text-[10px] text-[var(--color-muted-soft)]">
+                <div className="flex items-center justify-between gap-2 text-[13px] text-[var(--color-muted-soft)]">
                   <span>{locale === "ar" ? "المعرفة المعتمدة:" : "Knowledge base:"}</span>
                   <Link href="/app/knowledge" className="text-[var(--service-accent)] font-medium hover:underline">{locale === "ar" ? "إدارة المعرفة" : "Manage knowledge"}</Link>
                 </div>
@@ -2181,12 +2182,12 @@ export function ConversationsPage({
             <div className="rounded-xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel)] p-3 space-y-2">
               <p className="font-bold text-xs">{locale === "ar" ? "سجل التحكم والتدخل" : "Control & handoff history"}</p>
               {auditError ? <p className="text-[11px] text-[var(--color-danger-fg)]">{auditError}</p> : null}
-              {audits[selected.id]?.events.map(event => <div key={event.id} className="text-[10px] border-t border-[color:var(--color-border-soft)] pt-1 text-[var(--color-muted-soft)]">
+              {audits[selected.id]?.events.map(event => <div key={event.id} className="border-t border-[color:var(--color-border-soft)] pt-1 text-[13px] text-[var(--color-muted-soft)]">
                 <p className="font-medium text-[var(--color-on-dark)]">{event.action}</p>
                 <p>{event.actorUserId ? (assignees.find(person => person.userId === event.actorUserId)?.name ?? event.actorUserId) : (locale === "ar" ? "الفاعل غير متاح" : "Actor unavailable")}</p>
                 <p>{new Date(event.at).toLocaleString(locale === "ar" ? "ar-OM" : "en-GB")}</p>
               </div>)}
-              {!auditBusy && audits[selected.id]?.events.length === 0 ? <p className="text-[10px] text-[var(--color-muted-soft)]">{locale === "ar" ? "لا توجد أحداث تحكم محفوظة." : "No saved control events."}</p> : null}
+              {!auditBusy && audits[selected.id]?.events.length === 0 ? <p className="text-[13px] text-[var(--color-muted-soft)]">{locale === "ar" ? "لا توجد أحداث تحكم محفوظة." : "No saved control events."}</p> : null}
               {!audits[selected.id] || auditError ? <Button variant="ghost" className="min-h-8 text-xs" disabled={auditBusy || pending}
                 onClick={() => runPendingAction(async () => { await loadAudit(selected.id); })}>{locale === "ar" ? "تحديث السجل" : "Refresh history"}</Button> : null}
               {audits[selected.id]?.hasMore ? <Button variant="ghost" className="min-h-8 text-xs" disabled={auditBusy || pending}

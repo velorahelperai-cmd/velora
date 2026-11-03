@@ -2,45 +2,22 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useDemo } from "@/lib/demo-state";
+import styles from "./admin-ai-operations.module.css";
 import { readAdminAIState, runAdminAITrial } from "@/lib/answers/runtime/admin-actions";
 import type { AdminAIActionInput, AdminAIState } from "@/lib/answers/runtime/admin-types";
 import type { SyntheticGeminiFreeState } from "@/lib/answers/runtime/synthetic-gemini-types";
 import { SyntheticGeminiConsole } from "@/components/app/synthetic-gemini-console";
+import { MotionBorder } from "@/components/app/motion-border";
 import {
   IconLayers,
   IconPulse,
-  IconShield,
   IconSparkles,
 } from "./admin-icons";
 
 const MODEL_DEFINITIONS = [
-  {
-    id: "gemini-3.8-flash",
-    name: "Gemini 3.8 Flash",
-    taglineAr: "المحرك الافتراضي للردود السريعة وكفاءة التكلفة العالية",
-    taglineEn: "Default primary engine for fast responses and high cost efficiency",
-    pricing: "0.0003 ر.ع / 1k توكن",
-    badgeAr: "الافتراضي · فائق السرعة",
-    badgeEn: "Default · Ultra Fast",
-  },
-  {
-    id: "gpt-6-luna",
-    name: "GPT-6 Luna",
-    taglineAr: "استدلال متوازن للمحادثات المعقدة ومتعددة المراحل",
-    taglineEn: "Balanced reasoning for complex multi-turn conversations",
-    pricing: "0.0012 ر.ع / 1k توكن",
-    badgeAr: "استدلال متوازن",
-    badgeEn: "Balanced Reasoning",
-  },
-  {
-    id: "gpt-6.1-sol",
-    name: "GPT-6.1 Sol",
-    taglineAr: "محرك المهام التحليلية المتقدمة والاستخراج الدقيق",
-    taglineEn: "Advanced analytical engine for deep reasoning and precision",
-    pricing: "0.0025 ر.ع / 1k توكن",
-    badgeAr: "استدلال متقدم",
-    badgeEn: "Advanced Reasoning",
-  },
+  { id: "gemini-3.8-flash", name: "Gemini 3.8 Flash" },
+  { id: "gpt-6-luna", name: "GPT-6 Luna" },
+  { id: "gpt-6.1-sol", name: "GPT-6.1 Sol" },
 ] as const;
 
 const STATUS_LABELS: Record<string, { ar: string; en: string; tone: "success" | "warn" | "error" | "neutral" }> = {
@@ -214,6 +191,10 @@ export function AdminAIOperations({ initial, freeState }: AdminAIOperationsProps
     }
   }
 
+  if (snapshot.source === initial && snapshot.data === null) {
+    return <div role="alert" data-notice="error" className="rounded-xl border border-[var(--service-line)] bg-[var(--service-surface)] p-4 text-sm text-[var(--service-ink)]">{ar ? "تعذر التحقق من صلاحية الوصول. أعد تحميل الصفحة." : "Could not verify access. Reload the page."}</div>;
+  }
+
   // Budget calculations directly from real DB state (Never hardcoded to 100 OMR!)
   const budget = state.budget;
   const limitBaisa = Number(budget.limit_baisa || 0);
@@ -228,7 +209,7 @@ export function AdminAIOperations({ initial, freeState }: AdminAIOperationsProps
   const trialLatency = trialAttempts.length > 0 && typeof trialAttempts[0]?.latencyMs === "number" ? trialAttempts[0].latencyMs : null;
   const totalAttempts = state.models.reduce((acc, m) => acc + (m.attempts || 0), 0);
   const totalSucceeded = state.models.reduce((acc, m) => acc + (m.succeeded || 0), 0);
-  const successRate = totalAttempts > 0 ? ((totalSucceeded / totalAttempts) * 100).toFixed(1) : "0.0";
+  const successRate = totalAttempts > 0 ? ((totalSucceeded / totalAttempts) * 100).toFixed(1) : null;
 
   // Real measured server latency from recent logs
   const validLatencies = state.recent
@@ -240,18 +221,12 @@ export function AdminAIOperations({ initial, freeState }: AdminAIOperationsProps
       : null;
 
   return (
-    <div className="space-y-6" dir={ar ? "rtl" : "ltr"}>
+    <div className={`space-y-6 ${styles.operations}`} dir={ar ? "rtl" : "ltr"}>
       {/* Header with Title and Platform Owner Guard */}
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[var(--service-line)] pb-4">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="flex h-2.5 w-2.5 rounded-full bg-[var(--service-accent)]" />
-            <span className="text-xs font-semibold uppercase tracking-wider text-[var(--service-accent)]">
-              Module 05 · AI Operations & Assistant Studio
-            </span>
-          </div>
           <h1 className="mt-1 text-2xl font-black text-[var(--service-ink)] tracking-tight">
-            {ar ? "عمليات الذكاء الاصطناعي واستوديو المساعدين" : "AI Operations & Assistant Studio"}
+            {ar ? "تشغيل الذكاء والمساعدين" : "AI operations and assistants"}
           </h1>
           <p className="mt-1 text-sm text-[var(--service-muted)]">
             {ar
@@ -262,13 +237,6 @@ export function AdminAIOperations({ initial, freeState }: AdminAIOperationsProps
 
         {/* Action Controls & Owner Verification Badge */}
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2 rounded-xl border border-[var(--service-line)] bg-[var(--service-surface)] px-3 py-1.5 shadow-sm">
-            <IconShield className="h-4 w-4 text-[var(--service-success)]" />
-            <span className="text-xs font-bold text-[var(--service-ink)]">velorahelperai@gmail.com</span>
-            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">
-              {ar ? "مالك المنصة" : "Platform Owner"}
-            </span>
-          </div>
 
           <button
             type="button"
@@ -286,6 +254,7 @@ export function AdminAIOperations({ initial, freeState }: AdminAIOperationsProps
       {refreshFailed && (
         <div
           role="alert"
+          data-notice="error"
           className="rounded-xl border border-red-200 bg-red-50 p-4 text-xs font-semibold text-red-800 shadow-sm"
         >
           {ar
@@ -297,6 +266,7 @@ export function AdminAIOperations({ initial, freeState }: AdminAIOperationsProps
       {error && (
         <div
           role="alert"
+          data-notice="error"
           className="rounded-xl border border-red-200 bg-red-50 p-4 text-xs font-semibold text-red-800 shadow-sm"
         >
           {error}
@@ -304,7 +274,7 @@ export function AdminAIOperations({ initial, freeState }: AdminAIOperationsProps
       )}
 
       {/* Top 4 KPI Metrics Cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className={styles.metrics}>
         {/* KPI 1: AI Operations Budget */}
         <div className="rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] p-5 shadow-sm">
           <div className="flex items-center justify-between">
@@ -349,7 +319,7 @@ export function AdminAIOperations({ initial, freeState }: AdminAIOperationsProps
           </div>
           <div className="mt-3 border-t border-[var(--service-line)] pt-3 text-xs text-[var(--service-muted)] flex justify-between items-center">
             <span>{ar ? "نسبة النجاح المؤكدة:" : "Success Rate:"}</span>
-            <span className="font-bold text-[var(--service-success)]">{`${successRate}%`}</span>
+            <span className="font-bold text-[var(--service-success)]">{successRate === null ? "—" : `${successRate}%`}</span>
           </div>
         </div>
 
@@ -357,7 +327,7 @@ export function AdminAIOperations({ initial, freeState }: AdminAIOperationsProps
         <div className="rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] p-5 shadow-sm">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-[var(--service-muted)]">
-              {ar ? "متوسط سرعة المعالجة" : "Average Latency"}
+              {ar ? "متوسط زمن المحاولات الأخيرة" : "Average recent trial latency"}
             </span>
             <IconPulse className="h-4 w-4 text-[var(--service-accent)]" />
           </div>
@@ -370,71 +340,52 @@ export function AdminAIOperations({ initial, freeState }: AdminAIOperationsProps
           <div className="mt-3 border-t border-[var(--service-line)] pt-3 text-xs text-[var(--service-muted)] flex justify-between items-center">
             <span>{ar ? "بيئة القياس:" : "Measurement:"}</span>
             <span className="font-medium text-[var(--service-ink)]">
-              {ar ? "خادم Node.js + DB" : "Node.js Server + DB"}
+              {ar ? "المحاولات المحمّلة فقط" : "Loaded attempts only"}
             </span>
           </div>
         </div>
 
-        {/* KPI 4: Default Primary Engine */}
-        <div className="rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-[var(--service-muted)]">
-              {ar ? "المحرك الأساسي" : "Primary Engine"}
-            </span>
-            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
-              {ar ? "جاهز ومتصل" : "Ready"}
-            </span>
-          </div>
-          <div className="mt-3">
-            <span className="text-xl font-black text-[var(--service-accent)]">Gemini 3.8 Flash</span>
-          </div>
-          <div className="mt-3 border-t border-[var(--service-line)] pt-3 text-xs text-[var(--service-muted)] flex justify-between items-center">
-            <span>{ar ? "التكلفة الافتراضية:" : "Baseline Cost:"}</span>
-            <span className="font-medium text-[var(--service-ink)]">0.0003 ر.ع / 1k</span>
-          </div>
+        <div className="rounded-xl border border-[var(--service-line)] bg-[var(--service-surface)] p-5">
+          <h2 className="text-sm font-semibold text-[var(--service-muted)]">{ar ? "المبلغ المحجوز" : "Held amount"}</h2>
+          <p className="mt-3 text-2xl font-bold text-[var(--service-ink)]" dir="ltr">{formatOMR(heldBaisa)} OMR</p>
+          <p className="mt-3 text-sm text-[var(--service-muted)]">{ar ? "الحجز ليس تكلفة مؤكدة." : "A hold is not confirmed spend."}</p>
         </div>
       </div>
 
       {/* AI Models Registry Cards */}
       <div className="space-y-3">
         <h2 className="text-base font-bold text-[var(--service-ink)]">
-          {ar ? "سجل نماذج الذكاء الاصطناعي المعتمدة (Model Registry)" : "Authorized AI Model Registry"}
+          {ar ? "نماذج التجارب" : "Trial models"}
         </h2>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <div className={styles.models}>
           {MODEL_DEFINITIONS.map((def) => {
             const usage = state.models.find((m) => m.model_id === def.id);
-            const attemptsCount = usage?.attempts ?? 0;
-            const successCount = usage?.succeeded ?? 0;
-            const costBaisa = usage?.cost_baisa ?? 0;
+            const attemptsCount = usage?.attempts ?? null;
+            const successCount = usage?.succeeded ?? null;
+            const costBaisa = usage?.cost_baisa ?? null;
 
             return (
               <div
                 key={def.id}
-                className="flex flex-col justify-between rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] p-5 shadow-sm transition hover:border-[var(--service-accent)]"
+                className={`flex flex-col justify-between rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] p-5 shadow-sm ${styles.modelCard}`}
               >
                 <div>
-                  <div className="flex items-center justify-between">
-                    <span className="rounded-full bg-[var(--service-accent-soft)] px-2.5 py-0.5 text-[10px] font-bold text-[var(--service-accent)]">
-                      {ar ? def.badgeAr : def.badgeEn}
-                    </span>
-                    <span className="text-[11px] font-mono text-[var(--service-muted)]">{def.pricing}</span>
-                  </div>
-                  <h3 className="mt-3 text-lg font-black text-[var(--service-ink)]">{def.name}</h3>
-                  <p className="mt-1 text-xs text-[var(--service-muted)]">{ar ? def.taglineAr : def.taglineEn}</p>
+                  <h3 className="text-lg font-bold text-[var(--service-ink)]"><bdi>{def.name}</bdi></h3>
+                  <p className="mt-1 text-sm text-[var(--service-muted)]">{ar ? "استهلاك النموذج المسجّل" : "Recorded model usage"}</p>
                 </div>
 
                 <div className="mt-4 border-t border-[var(--service-line)] pt-3 grid grid-cols-3 gap-2 text-center text-xs">
                   <div>
                     <div className="text-[10px] text-[var(--service-muted)]">{ar ? "المحاولات" : "Attempts"}</div>
-                    <div className="mt-1 font-bold text-[var(--service-ink)]">{attemptsCount}</div>
+                    <div className="mt-1 font-bold text-[var(--service-ink)]">{attemptsCount ?? "—"}</div>
                   </div>
                   <div>
                     <div className="text-[10px] text-[var(--service-muted)]">{ar ? "الناجحة" : "Succeeded"}</div>
-                    <div className="mt-1 font-bold text-[var(--service-success)]">{successCount}</div>
+                    <div className="mt-1 font-bold text-[var(--service-success)]">{successCount ?? "—"}</div>
                   </div>
                   <div>
                     <div className="text-[10px] text-[var(--service-muted)]">{ar ? "التكلفة (ر.ع)" : "Cost (OMR)"}</div>
-                    <div className="mt-1 font-bold text-[var(--service-ink)]">{formatOMR(costBaisa)}</div>
+                    <div className="mt-1 font-bold text-[var(--service-ink)]">{costBaisa === null ? "—" : formatOMR(costBaisa)}</div>
                   </div>
                 </div>
               </div>
@@ -454,6 +405,7 @@ export function AdminAIOperations({ initial, freeState }: AdminAIOperationsProps
       )}
 
       {/* Diagnostic Test Console & Live Assistant Studio (Module 05 Diagnostic) */}
+      <MotionBorder>
       <div className="rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] p-6 shadow-sm">
         <div className="border-b border-[var(--service-line)] pb-4">
           <h2 className="text-lg font-black text-[var(--service-ink)]">
@@ -465,23 +417,7 @@ export function AdminAIOperations({ initial, freeState }: AdminAIOperationsProps
               : "Direct live prompt test and knowledge retrieval for the platform owner only, without affecting customer channels or subscriptions."}
           </p>
 
-          {/* Active Assistant & Routing Pipeline Status */}
-          <div className="mt-3 flex flex-wrap items-center gap-3 rounded-xl bg-[var(--service-canvas)] p-3 border border-[var(--service-line)] text-xs">
-            <div className="flex items-center gap-1.5">
-              <span className="h-2 w-2 rounded-full bg-emerald-500" />
-              <span className="font-bold text-[var(--service-ink)]">
-                {ar ? "المساعد الافتراضي: نورا (Noura)" : "Default Assistant: Noura"}
-              </span>
-            </div>
-            <span className="text-[var(--service-muted)]">•</span>
-            <div className="text-[var(--service-muted)]">
-              {ar ? "سلسلة التوجيه والبدائل: Gemini 3.8 Flash → GPT-6 Luna → GPT-6.1 Sol" : "Routing Fallback: Gemini Flash → Luna → Sol"}
-            </div>
-            <span className="text-[var(--service-muted)]">•</span>
-            <div className="font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-              {ar ? "عزل مالي وتشغيلي 100% عن قنوات العملاء" : "100% Isolated from customer channels"}
-            </div>
-          </div>
+
         </div>
 
         <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-12">
@@ -638,6 +574,7 @@ export function AdminAIOperations({ initial, freeState }: AdminAIOperationsProps
           </div>
         </div>
       </div>
+      </MotionBorder>
 
       {/* Recent AI Usage Ledger Table */}
       <div className="space-y-3">
@@ -654,13 +591,13 @@ export function AdminAIOperations({ initial, freeState }: AdminAIOperationsProps
           <table className="w-full text-right text-xs">
             <thead className="border-b border-[var(--service-line)] bg-[var(--service-canvas)] text-[11px] font-bold text-[var(--service-muted)]">
               <tr>
-                <th className="p-3.5">{ar ? "معرف الطلب" : "Request ID"}</th>
-                <th className="p-3.5">{ar ? "النموذج" : "Model"}</th>
-                <th className="p-3.5">{ar ? "الحالة" : "Status"}</th>
-                <th className="p-3.5">{ar ? "زمن الاستجابة" : "Latency"}</th>
-                <th className="p-3.5">{ar ? "التوكنز (إدخال / إخراج)" : "Tokens (Prompt / Comp)"}</th>
-                <th className="p-3.5">{ar ? "التكلفة (ر.ع)" : "Cost (OMR)"}</th>
-                <th className="p-3.5">{ar ? "تاريخ ووقت التنفيذ" : "Execution Timestamp"}</th>
+                <th scope="col" className="p-3.5">{ar ? "معرف الطلب" : "Request ID"}</th>
+                <th scope="col" className="p-3.5">{ar ? "النموذج" : "Model"}</th>
+                <th scope="col" className="p-3.5">{ar ? "الحالة" : "Status"}</th>
+                <th scope="col" className="p-3.5">{ar ? "زمن الاستجابة" : "Latency"}</th>
+                <th scope="col" className="p-3.5">{ar ? "التوكنز (إدخال / إخراج)" : "Tokens (Prompt / Comp)"}</th>
+                <th scope="col" className="p-3.5">{ar ? "التكلفة (ر.ع)" : "Cost (OMR)"}</th>
+                <th scope="col" className="p-3.5">{ar ? "تاريخ ووقت التنفيذ" : "Execution Timestamp"}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--service-line)] text-[var(--service-ink)] font-mono">

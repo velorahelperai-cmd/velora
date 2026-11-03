@@ -20,7 +20,7 @@ it('retains failed or mismatched edits, closes only confirmed content and permit
   await type(editor()!.querySelector('input')!,'Changed');await type(editor()!.querySelector('textarea')!,'Changed answer');
   await act(async()=>editor()!.closest('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
   expect(mutation).toHaveBeenLastCalledWith(expect.objectContaining({action:'edit',contentVersion:1,title:'Changed',content:'Changed answer'}));
-  expect(editor()!.querySelector('textarea')!.value).toBe('Changed answer');expect(host.textContent).toContain('The request could not be submitted');
+  expect(editor()!.querySelector('textarea')!.value).toBe('Changed answer');expect(host.textContent).toContain('The request result could not be confirmed');
   const mismatched={...props,snapshot:{...props.snapshot!,faq:[{branchId:'branch',source:{...source,content_version:2,title:'Other',content:'Other answer'}}]}};
   await render(mismatched);expect(editor()!.querySelector('input')!.value).toBe('Changed');
   const confirmed={...props,state:{...props.state,phase:'saved' as const},snapshot:{...props.snapshot!,faq:[{branchId:'branch',source:{...source,content_version:2,title:'Changed',content:'Changed answer'}}]}};
@@ -42,14 +42,13 @@ it('uploads a selected file while soft-unavailable instead of locking the prepar
  try{
   await act(async()=>root.render(createElement(PaidBranchKnowledge,props)));
   expect(host.textContent).not.toContain('Saving is unconfirmed');
-  await act(async()=>Array.from(host.querySelectorAll<HTMLButtonElement>('[role="tab"]')).find(item=>item.textContent?.includes('Files'))!.click());
   const file=new File(['portfolio'],'TAJSEEM_Portfolio_2026.pdf',{type:'application/pdf'});
   const zone=host.querySelector<HTMLElement>('[data-file-drop]')!;
   const dropped=new Event('drop',{bubbles:true,cancelable:true});
   Object.defineProperty(dropped,'dataTransfer',{value:{files:[file]}});
   await act(async()=>{zone.dispatchEvent(dropped);});
   expect(host.textContent).toContain('Waiting to upload');
-  const submit=Array.from(host.querySelectorAll<HTMLButtonElement>('button[type="submit"]')).find(item=>item.textContent==='Upload for preparation')!;
+  const submit=Array.from(host.querySelectorAll<HTMLButtonElement>('button[type="submit"]')).find(item=>item.textContent==='Upload')!;
   expect(submit.disabled).toBe(false);
   await act(async()=>zone.closest('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
   expect(upload).toHaveBeenCalledTimes(1);
@@ -57,7 +56,7 @@ it('uploads a selected file while soft-unavailable instead of locking the prepar
  }finally{await act(async()=>root.unmount());host.remove();vi.unstubAllGlobals();}
 });
 
-it('switches knowledge tabs immediately and keeps website, file and answer drafts',async()=>{
+it('keeps website, file and answer drafts together across another source save',async()=>{
  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);
  const host=document.createElement('div');document.body.append(host);const root=createRoot(host);
  const scope={expectedAccountId:'actor',companyId:'company',branchId:'branch'};
@@ -66,11 +65,10 @@ it('switches knowledge tabs immediately and keeps website, file and answer draft
  const props:PaidBranchKnowledgeProps={locale:'en',scope,boundaryFingerprint:'stable',isCurrent:()=>true,state:{scope,version:1,phase:'ready'},snapshot:{scope,version:1,branchLabel:'Main',websiteQuota:{limit:10,used:1},pages:[{id:'page',companyId:'company',branchId:'branch',version:2,url:'https://example.com/about',status:'ready',error:null,capabilities:{canRetry:false,canRetrain:true}}],files:[],faq:[],capabilities:{canAddWebsite:true,canUploadFiles:true,canSaveText:true}},onUploadFiles:upload,onAddWebsite:add};
  const confirm=vi.spyOn(window,'confirm').mockReturnValue(true);
  const type=async(element:HTMLInputElement|HTMLTextAreaElement,value:string)=>{await act(async()=>{const prototype=element instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;Object.getOwnPropertyDescriptor(prototype,'value')!.set!.call(element,value);element.dispatchEvent(new Event('input',{bubbles:true}));});};
- const tab=(name:string)=>Array.from(host.querySelectorAll<HTMLButtonElement>('[role="tab"]')).find(item=>item.textContent?.includes(name))!;
  try{
   await act(async()=>root.render(createElement(PaidBranchKnowledge,props)));
   expect(host.querySelector('[data-panel="website"]')!.hasAttribute('hidden')).toBe(false);
-  expect(host.querySelector('[data-panel="files"]')!.hasAttribute('hidden')).toBe(true);
+  expect(host.querySelector('[data-panel="files"]')!.hasAttribute('hidden')).toBe(false);
   const answer=host.querySelector<HTMLTextAreaElement>('textarea')!;
   await type(answer,'Draft answer');
   const url=host.querySelector<HTMLInputElement>('input[type="url"]')!;
@@ -80,7 +78,6 @@ it('switches knowledge tabs immediately and keeps website, file and answer draft
   expect(add).not.toHaveBeenCalled();
   await type(url,'https://example.com/about');
   expect(host.textContent).toContain('already linked to this branch');
-  await act(async()=>tab('Files').click());
   const file=new File(['hello'],'menu.txt',{type:'text/plain'});
   const zone=host.querySelector<HTMLElement>('[data-file-drop]')!;
   const dropped=new Event('drop',{bubbles:true,cancelable:true});
@@ -88,14 +85,38 @@ it('switches knowledge tabs immediately and keeps website, file and answer draft
   await act(async()=>{zone.dispatchEvent(dropped);});
   expect(host.textContent).toContain('menu.txt');
   expect(host.textContent).toContain('Waiting to upload');
-  await act(async()=>tab('Questions and answers').click());
   expect(host.querySelector('textarea')).toBe(answer);expect(answer.value).toBe('Draft answer');
   expect(upload).not.toHaveBeenCalled();
-  await act(async()=>tab('Files').click());
   expect(host.textContent).toContain('menu.txt');
   await act(async()=>zone.closest('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
-  expect(confirm).toHaveBeenCalledTimes(1);
+  expect(confirm).not.toHaveBeenCalled();
   expect(upload).toHaveBeenCalledTimes(1);
   expect(upload.mock.calls[0][0].files.map((item:File)=>item.name)).toEqual(['menu.txt']);
+  await act(async()=>root.render(createElement(PaidBranchKnowledge,{...props,state:{...props.state,version:2,phase:'saved'},snapshot:{...props.snapshot!,version:2}})));
+  expect(host.querySelector('textarea')).toBe(answer);expect(answer.value).toBe('Draft answer');expect(url.value).toBe('https://example.com/about');
+ }finally{await act(async()=>root.unmount());host.remove();vi.unstubAllGlobals();}
+});
+
+it('flushes a complete Q&A box to the host save action without waiting on Next',async()=>{
+ vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);
+ const host=document.createElement('div');document.body.append(host);const root=createRoot(host);
+ const scope={expectedAccountId:'actor',companyId:'company',branchId:'branch'};
+ const save=vi.fn().mockResolvedValue(undefined);
+ const props:PaidBranchKnowledgeProps={locale:'en',scope,boundaryFingerprint:'stable',isCurrent:()=>true,state:{scope,version:1,phase:'ready'},snapshot:{scope,version:1,branchLabel:'Main',websiteQuota:{limit:10,used:0},pages:[],files:[],faq:[],capabilities:{canAddWebsite:true,canUploadFiles:true,canSaveText:true}},onSaveText:save};
+ const type=async(element:HTMLInputElement|HTMLTextAreaElement,value:string)=>{await act(async()=>{const prototype=element instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;Object.getOwnPropertyDescriptor(prototype,'value')!.set!.call(element,value);element.dispatchEvent(new Event('input',{bubbles:true}));});};
+ try{
+  await act(async()=>root.render(createElement(PaidBranchKnowledge,props)));
+  const question=host.querySelector<HTMLInputElement>('[data-panel="faq"] input')!;
+  const answer=host.querySelector<HTMLTextAreaElement>('[data-panel="faq"] textarea')!;
+  await type(question,'What are your hours?');
+  await type(answer,'Sat–Thu 10–14');
+  const flushHost=host.querySelector<HTMLElement&{__veloraFlush?:()=>Promise<void>}>('[data-knowledge-studio]')!;
+  expect(flushHost.hasAttribute('data-setup-flush')).toBe(true);
+  expect(typeof flushHost.__veloraFlush).toBe('function');
+  await act(async()=>{await flushHost.__veloraFlush?.();});
+  expect(save).toHaveBeenCalledTimes(1);
+  expect(save.mock.calls[0][0]).toEqual(expect.objectContaining({title:'What are your hours?',content:'Sat–Thu 10–14',expectedVersion:1,branchId:'branch'}));
+  expect(question.value).toBe('');
+  expect(answer.value).toBe('');
  }finally{await act(async()=>root.unmount());host.remove();vi.unstubAllGlobals();}
 });

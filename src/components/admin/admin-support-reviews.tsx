@@ -1,5 +1,6 @@
 "use client";
 import { AccessibleDialog } from "@/components/app/accessible-dialog";
+import styles from "./admin-support-reviews.module.css";
 
 import { useRef, useState, useTransition } from "react";
 import Link from "next/link";
@@ -26,7 +27,6 @@ import {
   IconClock,
   IconPlus,
   IconSearch,
-  IconShield,
   IconSparkles,
   IconX,
 } from "./admin-icons";
@@ -181,38 +181,25 @@ export function AdminSupportReviews({ data, filters }: AdminSupportReviewsProps)
   const filteredTickets = data.tickets; // Filtering and counts are authoritative server queries.
 
   return (
-    <div className="space-y-6" dir={ar ? "rtl" : "ltr"}>
+    <div className={`space-y-6 ${styles.support}`} dir={ar ? "rtl" : "ltr"}>
       {/* Header Info */}
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[var(--service-line)] pb-4">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="flex h-2.5 w-2.5 rounded-full bg-[var(--service-accent)]" />
-            <span className="text-xs font-semibold uppercase tracking-wider text-[var(--service-accent)]">
-              Module 09 · Customer Support & Reviews Center
-            </span>
-          </div>
           <h1 className="mt-1 text-2xl font-black text-[var(--service-ink)] tracking-tight">
-            {ar ? "تذاكر الدعم ومراجعات المنشآت (Support & Reviews)" : "Customer Support & Reviews"}
+            {ar ? "الدعم والمراجعات" : "Support and reviews"}
           </h1>
           <p className="mt-1 text-sm text-[var(--service-muted)]">
             {ar
-              ? "نظام تذاكر الدعم والشكاوى الفنية، ومراجعة طلبات تهيئة الشركات، والبحث بكود الدعم (Support Code)."
-              : "Full ticketing lifecycle, onboarding setup review requests, and support code customer authentication."}
+              ? "تابع التذاكر وطلبات مراجعة المنشآت، وابحث عن حساب العميل."
+              : "Track support tickets and business reviews, and look up customer accounts."}
           </p>
         </div>
 
-        {/* Owner Verification Badge */}
-        <div className="flex items-center gap-2 rounded-xl border border-[var(--service-line)] bg-[var(--service-surface)] px-3 py-1.5 shadow-sm">
-          <IconShield className="h-4 w-4 text-[var(--service-success)]" />
-          <span className="text-xs font-bold text-[var(--service-ink)]">{data.kpis.officialSupportEmail}</span>
-          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">
-            {ar ? "مالك المنصة" : "Platform Owner"}
-          </span>
-        </div>
+
       </div>
 
       {/* 4 KPI Summary Cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className={styles.metrics}>
         {/* KPI 1: Open Support Tickets */}
         <div className="rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] p-5 shadow-sm">
           <div className="flex items-center justify-between">
@@ -231,14 +218,14 @@ export function AdminSupportReviews({ data, filters }: AdminSupportReviewsProps)
                 data.kpis.openTicketsCount === "UNKNOWN" ? "text-[var(--service-muted)]" : data.kpis.openTicketsCount > 0 ? "text-amber-700" : "text-[var(--service-success)]"
               }`}
             >
-              {data.kpis.openTicketsCount}
+              {data.kpis.openTicketsCount === "UNKNOWN" ? (ar ? "غير متاح" : "Unavailable") : data.kpis.openTicketsCount}
             </span>
             <span className="text-xs font-bold text-[var(--service-muted)]">
               {data.kpis.openTicketsCount === "UNKNOWN" ? (ar ? "غير متحقق" : "unverified") : (ar ? "تذكرة نشطة" : "active")}
             </span>
           </div>
           <div className="mt-3 border-t border-[var(--service-line)] pt-3 text-xs text-[var(--service-muted)]">
-            {data.kpis.inProgressTicketsCount} {ar ? "قيد المتابعة والحل" : "in progress / pending"}
+            {data.kpis.inProgressTicketsCount === "UNKNOWN" ? (ar ? "غير متاح" : "Unavailable") : data.kpis.inProgressTicketsCount} {ar ? "قيد المتابعة والحل" : "in progress / pending"}
           </div>
         </div>
 
@@ -305,12 +292,12 @@ export function AdminSupportReviews({ data, filters }: AdminSupportReviewsProps)
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-base font-bold text-[var(--service-ink)]">
-              {ar ? "البحث السريع عن حسابات العملاء بكود الدعم (Support Code Lookup)" : "Customer Support Code Lookup"}
+              {ar ? "البحث عن حساب" : "Find an account"}
             </h2>
             <p className="mt-0.5 text-xs text-[var(--service-muted)]">
               {ar
-                ? "ابحث بكود الدعم الفريد (مثل VEL-XXXX-XXXX-XXXX) أو البريد الإلكتروني أو الهاتف لمطابقة الحساب وتأكيد هوية العميل."
-                : "Search by unique Support Code (e.g. VEL-XXXX-XXXX-XXXX), email, or phone to authenticate customer identity."}
+                ? "ابحث بكود الدعم أو البريد أو الهاتف. ظهور الحساب لا يؤكد هوية العميل."
+                : "Search by support code, email or phone. A matching account does not verify identity."}
             </p>
           </div>
         </div>
@@ -345,15 +332,15 @@ export function AdminSupportReviews({ data, filters }: AdminSupportReviewsProps)
         {/* Search Results Table */}
         {searchResults !== null && (
           <div className="overflow-x-auto rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)] mt-3">
-            <table className="w-full text-right text-xs">
+            <table className="w-full text-start text-xs">
               <thead className="border-b border-[var(--service-line)] text-[11px] font-bold text-[var(--service-muted)]">
                 <tr>
-                  <th className="p-3">{ar ? "كود الدعم (Support Code)" : "Support Code"}</th>
-                  <th className="p-3">{ar ? "اسم العميل" : "Customer Name"}</th>
-                  <th className="p-3">{ar ? "البريد الإلكتروني" : "Email"}</th>
-                  <th className="p-3">{ar ? "رقم الهاتف" : "Phone"}</th>
-                  <th className="p-3">{ar ? "المنشآت المرتبطة" : "Companies"}</th>
-                  <th className="p-3">{ar ? "الإجراء" : "Action"}</th>
+                  <th scope="col" className="p-3">{ar ? "كود الدعم (Support Code)" : "Support Code"}</th>
+                  <th scope="col" className="p-3">{ar ? "اسم العميل" : "Customer Name"}</th>
+                  <th scope="col" className="p-3">{ar ? "البريد الإلكتروني" : "Email"}</th>
+                  <th scope="col" className="p-3">{ar ? "رقم الهاتف" : "Phone"}</th>
+                  <th scope="col" className="p-3">{ar ? "المنشآت المرتبطة" : "Companies"}</th>
+                  <th scope="col" className="p-3">{ar ? "الإجراء" : "Action"}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--service-line)] text-[var(--service-ink)]">
@@ -410,28 +397,30 @@ export function AdminSupportReviews({ data, filters }: AdminSupportReviewsProps)
         <button
           type="button"
           onClick={() => setActiveTab("tickets")}
+          aria-pressed={activeTab === "tickets"}
           className={`pb-2 px-1 border-b-2 transition ${
             activeTab === "tickets"
               ? "border-[var(--service-accent)] text-[var(--service-accent)]"
               : "border-transparent text-[var(--service-muted)] hover:text-[var(--service-ink)]"
           }`}
         >
-          {ar ? "نظام تذاكر الدعم والشكاوى (Support Tickets)" : "Support Tickets"}
+          {ar ? "تذاكر الدعم" : "Support tickets"}
           <span className="ms-2 rounded-full bg-stone-100 px-2 py-0.5 text-xs text-stone-700">
-            {data.tickets.length}
+            {data.ticketsAvailability === "unavailable" ? "—" : data.tickets.length}
           </span>
         </button>
 
         <button
           type="button"
           onClick={() => setActiveTab("reviews")}
+          aria-pressed={activeTab === "reviews"}
           className={`pb-2 px-1 border-b-2 transition ${
             activeTab === "reviews"
               ? "border-[var(--service-accent)] text-[var(--service-accent)]"
               : "border-transparent text-[var(--service-muted)] hover:text-[var(--service-ink)]"
           }`}
         >
-          {ar ? "طابور مراجعات تهيئة المنشآت (Onboarding Reviews)" : "Onboarding Reviews"}
+          {ar ? "مراجعات المنشآت" : "Business reviews"}
           <span className="ms-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800">
             {data.pendingReviews.length}
           </span>
@@ -468,9 +457,10 @@ export function AdminSupportReviews({ data, filters }: AdminSupportReviewsProps)
 
           {/* Filters Bar */}
           <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-            <div className="flex items-center gap-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
               <input
                 type="text"
+                aria-label={ar ? "بحث التذاكر" : "Search tickets"}
                 value={ticketSearchQuery}
                 onChange={(e) => setTicketSearchQuery(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); router.push(ticketsHref(0)); } }}
@@ -478,6 +468,7 @@ export function AdminSupportReviews({ data, filters }: AdminSupportReviewsProps)
                 className="rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)] px-3 py-1.5 text-xs outline-none focus:border-[var(--service-accent)]"
               />
               <select
+                aria-label={ar ? "تصفية حالة التذاكر" : "Filter ticket status"}
                 value={ticketStatusFilter}
                 onChange={(e) => { setTicketStatusFilter(e.target.value); router.push(ticketsHref(0, e.target.value)); }}
                 className="rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)] px-3 py-1.5 text-xs outline-none focus:border-[var(--service-accent)]"
@@ -495,7 +486,8 @@ export function AdminSupportReviews({ data, filters }: AdminSupportReviewsProps)
             </div>
           </div>
 
-          {(ticketActionError || data.ticketsError) && <p role="alert" className="text-xs text-red-700">{ticketActionError || data.ticketsError}</p>}
+          {ticketActionError && <p role="alert" data-notice="error" className="text-xs text-red-700">{ticketActionError}</p>}
+          {data.ticketsError && <p role="alert" data-notice="error" className="text-xs text-red-700">{ar ? "تعذرت قراءة التذاكر. حدّث الصفحة للمحاولة مجددًا." : "Could not load tickets. Refresh the page to try again."}</p>}
           {data.pagination && (
             <nav aria-label={ar ? "صفحات التذاكر" : "Ticket pages"} className="flex gap-4 text-xs">
               {data.pagination.offset > 0 && <Link href={ticketsHref(Math.max(0, data.pagination.offset - data.pagination.limit))}>{ar ? "السابق" : "Previous"}</Link>}
@@ -504,16 +496,16 @@ export function AdminSupportReviews({ data, filters }: AdminSupportReviewsProps)
           )}
           {/* Tickets Table */}
           <div className="overflow-x-auto rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)]">
-            <table className="w-full text-right text-xs">
+            <table className="w-full text-start text-xs">
               <thead className="border-b border-[var(--service-line)] text-[11px] font-bold text-[var(--service-muted)]">
                 <tr>
-                  <th className="p-3.5">{ar ? "رقم التذكرة" : "Ticket #"}</th>
-                  <th className="p-3.5">{ar ? "العنوان والتصنيف" : "Title & Category"}</th>
-                  <th className="p-3.5">{ar ? "المنشأة" : "Company"}</th>
-                  <th className="p-3.5">{ar ? "الأولوية" : "Priority"}</th>
-                  <th className="p-3.5">{ar ? "الحالة" : "Status"}</th>
-                  <th className="p-3.5">{ar ? "تاريخ الإنشاء" : "Created At"}</th>
-                  <th className="p-3.5">{ar ? "الإجراءات" : "Actions"}</th>
+                  <th scope="col" className="p-3.5">{ar ? "رقم التذكرة" : "Ticket #"}</th>
+                  <th scope="col" className="p-3.5">{ar ? "العنوان والتصنيف" : "Title & Category"}</th>
+                  <th scope="col" className="p-3.5">{ar ? "المنشأة" : "Company"}</th>
+                  <th scope="col" className="p-3.5">{ar ? "الأولوية" : "Priority"}</th>
+                  <th scope="col" className="p-3.5">{ar ? "الحالة" : "Status"}</th>
+                  <th scope="col" className="p-3.5">{ar ? "تاريخ الإنشاء" : "Created At"}</th>
+                  <th scope="col" className="p-3.5">{ar ? "الإجراءات" : "Actions"}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--service-line)] text-[var(--service-ink)]">
@@ -653,21 +645,21 @@ export function AdminSupportReviews({ data, filters }: AdminSupportReviewsProps)
             </div>
 
             <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-bold text-amber-800 border border-amber-200">
-              {data.pendingReviews.length} {ar ? "طلبات قيد الانتظار" : "in queue"}
+              {data.pendingReviews.length} {ar ? "مراجعات محمّلة" : "loaded reviews"}
             </span>
           </div>
 
           <div className="overflow-x-auto rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)]">
-            <table className="w-full text-right text-xs">
+            <table className="w-full text-start text-xs">
               <thead className="border-b border-[var(--service-line)] text-[11px] font-bold text-[var(--service-muted)]">
                 <tr>
-                  <th className="p-3.5">{ar ? "المنشأة" : "Company"}</th>
-                  <th className="p-3.5">{ar ? "نوع النشاط" : "Business Type"}</th>
-                  <th className="p-3.5">{ar ? "بريد المالك" : "Owner Email"}</th>
-                  <th className="p-3.5">{ar ? "رقم الهاتف المعتمد" : "Contact Phone"}</th>
-                  <th className="p-3.5">{ar ? "المدينة / الدولة" : "Location"}</th>
-                  <th className="p-3.5">{ar ? "تاريخ التقديم" : "Submitted At"}</th>
-                  <th className="p-3.5">{ar ? "الإجراء" : "Action"}</th>
+                  <th scope="col" className="p-3.5">{ar ? "المنشأة" : "Company"}</th>
+                  <th scope="col" className="p-3.5">{ar ? "نوع النشاط" : "Business Type"}</th>
+                  <th scope="col" className="p-3.5">{ar ? "بريد المالك" : "Owner Email"}</th>
+                  <th scope="col" className="p-3.5">{ar ? "رقم الهاتف المعتمد" : "Contact Phone"}</th>
+                  <th scope="col" className="p-3.5">{ar ? "المدينة / الدولة" : "Location"}</th>
+                  <th scope="col" className="p-3.5">{ar ? "تاريخ التقديم" : "Submitted At"}</th>
+                  <th scope="col" className="p-3.5">{ar ? "الإجراء" : "Action"}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--service-line)] text-[var(--service-ink)]">
@@ -716,8 +708,8 @@ export function AdminSupportReviews({ data, filters }: AdminSupportReviewsProps)
                   <tr>
                     <td colSpan={7} className="p-8 text-center text-xs text-[var(--service-muted)]">
                       {ar
-                        ? "لا توجد طلبات مراجعة معلقة حاليًا. كافة المنشآت تمت مراجعتها وجاهزة للعمل."
-                        : "No pending company onboarding reviews at this time. All businesses verified."}
+                        ? "لا توجد طلبات مراجعة معلقة في القائمة المحمّلة."
+                        : "No pending company reviews in the loaded list."}
                     </td>
                   </tr>
                 )}
@@ -748,14 +740,14 @@ export function AdminSupportReviews({ data, filters }: AdminSupportReviewsProps)
                         : "bg-stone-100 text-stone-700"
                     }`}
                   >
-                    {ch.status}
+                    {ch.status === "UNCONFIGURED" ? (ar ? "غير محدد" : "Not configured") : (ar ? "التشغيل غير متحقق" : "Operation not verified")}
                   </span>
                 </div>
                 <div className="mt-2 font-mono text-xs font-bold text-[var(--service-accent)]">
-                  {ch.target}
+                  {ch.target === "UNCONFIGURED" ? (ar ? "غير محدد" : "Not configured") : <bdi dir="auto">{ch.target}</bdi>}
                 </div>
                 <p className="mt-1 text-[11px] text-[var(--service-muted)] leading-relaxed">
-                  {ch.description}
+                  {ar ? "حالة الاتصال والتسليم غير متحقق منها هنا." : "Connection and delivery are not verified here."}
                 </p>
               </div>
             </div>

@@ -1,0 +1,258 @@
+.magicCard {
+  position: relative;
+  border-radius: 12px;
+  border: 1px solid var(--service-line, #dfe7e4);
+  background: var(--service-surface, #ffffff);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+  transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 200ms cubic-bezier(0.16, 1, 0.3, 1), border-color 200ms;
+  overflow: hidden;
+}
+
+.magicCard[data-interactive="true"]:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.09);
+  border-color: rgba(20, 125, 115, 0.3);
+}
+
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .magicCard[data-interactive="true"]::before,
+  .bentoCard[data-interactive="true"]::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    border-radius: inherit;
+    opacity: 0;
+    transition: opacity 250ms ease-out;
+    background: radial-gradient(
+      240px circle at var(--spot-x, 50%) var(--spot-y, 50%),
+      rgba(26, 146, 133, 0.12),
+      transparent 70%
+    );
+  }
+  .magicCard[data-interactive="true"]:hover::before,
+  .bentoCard[data-interactive="true"]:hover::before {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .magicCard,
+  .bentoCard {
+    transition: none !important;
+  }
+  .magicCard[data-interactive="true"]:hover,
+  .bentoCard[data-interactive="true"]:hover {
+    transform: none !important;
+  }
+}
+
+/* 5 Cards Single Horizontal Row */
+.fiveRowGrid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  width: 100%;
+}
+
+@media (max-width: 1200px) {
+  .fiveRowGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .fiveRowGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .fiveRowGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Bento Grid */
+.bentoGrid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 12px;
+  width: 100%;
+}
+
+@media (max-width: 1023px) {
+  .bentoGrid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .bentoCard {
+    grid-column: span var(--bento-tab-span, 6) / span var(--bento-tab-span, 6) !important;
+    grid-row: auto !important;
+  }
+}
+
+@media (max-width: 639px) {
+  .bentoGrid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .bentoCard {
+    grid-column: 1 / -1 !important;
+    grid-row: auto !important;
+  }
+}
+
+.bentoCard {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--service-line, #dfe7e4);
+  background: var(--service-surface, #ffffff);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+  transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 200ms cubic-bezier(0.16, 1, 0.3, 1), border-color 200ms ease;
+  overflow: visible;
+  min-width: 0;
+}
+
+.bentoCard[data-interactive="true"]:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
+  border-color: rgba(20, 125, 115, 0.35);
+}
+
+/* Border Beam */
+@property --beam-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+
+.borderBeamWrapper {
+  position: relative;
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.borderBeamWrapper::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  padding: 1.5px;
+  border-radius: inherit;
+  pointer-events: none;
+  background: conic-gradient(
+    from var(--beam-angle),
+    transparent 0deg 280deg,
+    #147d73 320deg,
+    #1a9285 345deg,
+    transparent 360deg
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: beam-spin var(--beam-duration, 10s) linear infinite;
+  animation-play-state: paused;
+}
+
+.borderBeamWrapper[data-animate="true"]::after {
+  animation-play-state: running;
+}
+
+@keyframes beam-spin {
+  to {
+    --beam-angle: 360deg;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .borderBeamWrapper::after {
+    animation: none !important;
+  }
+}
+
+/* Animated Beam (Channels & AI connection flow) */
+.animatedBeamContainer {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24px;
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--service-line, #dfe7e4);
+  background: var(--service-surface, #ffffff);
+  overflow: hidden;
+}
+
+.beamSvg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.beamPathBg {
+  stroke: var(--service-line, #dfe7e4);
+  stroke-width: 2;
+  stroke-dasharray: 4 4;
+  fill: none;
+}
+
+.beamPathActive {
+  stroke: url(#beamGradient);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  fill: none;
+  stroke-dasharray: 40 160;
+  animation: beam-flow 3.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes beam-flow {
+  0% {
+    stroke-dashoffset: 200;
+  }
+  100% {
+    stroke-dashoffset: -200;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .beamPathActive {
+    animation: none !important;
+    stroke: var(--service-accent, #147d73);
+    stroke-dasharray: none;
+  }
+}
+
+.nodeCircle {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.nodeIcon {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  border: 1px solid var(--service-line, #dfe7e4);
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+  color: var(--service-accent, #147d73);
+}
+
+.nodeLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--service-ink, #172b28);
+}

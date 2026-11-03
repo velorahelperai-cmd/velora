@@ -53,6 +53,10 @@ it("actual detail return link uses the validated list query",()=>{
  const tree=AdminCompanyDetail({initialCompany:{...company,business_type:"test",reply_language:"en",country:"",city:"",hours:"",contact_phone:"",contact_email:""} as AdminCompany,initialMembers:[],initialAudits:[],initialKnowledge:[],returnTo});
  expect(nodes(tree).some(n=>n.props.href===returnTo)).toBe(true);
 });
+it("company detail provides the channel management anchor",()=>{
+ const tree=AdminCompanyDetail({initialCompany:{...company,business_type:"test",reply_language:"en",country:"",city:"",hours:"",contact_phone:"",contact_email:""} as AdminCompany,initialMembers:[],initialAudits:[],initialKnowledge:[]});
+ expect(nodes(tree).some(n=>n.props.id==="channels")).toBe(true);
+});
 it("actual billing company link carries the current filter and browse cursor",()=>{
  const query={environment:"test",companyId:company.id,cursor:"synthetic"};
  const tree=AdminBillingLedger({query,result:{status:"ready",rows:[{id:"synthetic-order",companyId:company.id,companyName:company.display_name,createdAt:company.created_at,environment:"test",amountBaisa:null,currency:null,financial:{state:"unknown"} as never,checkoutDeadline:null,checkoutExpired:null}],total:1,hasMore:false,nextCursor:null,snapshot:"synthetic"}});

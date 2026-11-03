@@ -1,0 +1,15 @@
+@font-face {
+  font-family: "Cairo";
+  src: url("/fonts/velora/Cairo-admin-v1.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {font-family:"Velora Inter";src:url("/fonts/velora/InterVariable-v4.1.woff2") format("woff2");font-style:normal;font-weight:100 900;font-display:swap;}
+@font-face {font-family:"Inter";src:url("/fonts/velora/InterVariable-v4.1.woff2") format("woff2");font-style:normal;font-weight:100 900;font-display:swap;}
+@font-face {font-family:"Velora Plex Arabic";src:url("/fonts/velora/IBMPlexSansArabic-Regular.woff2") format("woff2");font-style:normal;font-weight:400;font-display:swap;}
+@font-face {font-family:"Velora Plex Arabic";src:url("/fonts/velora/IBMPlexSansArabic-Medium.woff2") format("woff2");font-style:normal;font-weight:500;font-display:swap;}
+@font-face {font-family:"Velora Plex Arabic";src:url("/fonts/velora/IBMPlexSansArabic-Bold.woff2") format("woff2");font-style:normal;font-weight:700;font-display:swap;}
+@font-face {font-family:"IBM Plex Sans Arabic";src:url("/fonts/velora/IBMPlexSansArabic-Regular.woff2") format("woff2");font-style:normal;font-weight:400;font-display:swap;}
+@font-face {font-family:"IBM Plex Sans Arabic";src:url("/fonts/velora/IBMPlexSansArabic-Medium.woff2") format("woff2");font-style:normal;font-weight:500;font-display:swap;}
+@font-face {font-family:"IBM Plex Sans Arabic";src:url("/fonts/velora/IBMPlexSansArabic-Bold.woff2") format("woff2");font-style:normal;font-weight:700;font-display:swap;}

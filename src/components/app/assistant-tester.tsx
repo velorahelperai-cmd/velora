@@ -8,6 +8,7 @@ import { readDashboardBilling } from "@/lib/customer/dashboard-billing-actions";
 import type { DashboardBillingLoad } from "@/lib/customer/dashboard-billing-model";
 import { useOptionalAccountSession } from "@/components/app/account-chrome";
 import { runAssistantAskAttempt } from "@/components/app/assistant-tester-outcome";
+import { MotionBorder } from "@/components/app/motion-border";
 import { Button, LinkButton, Notice, useAppCopy } from "@/components/app/ui";
 
 /**
@@ -102,28 +103,30 @@ export function AssistantTester({
   return (
     <div className="grid min-w-0 gap-4 overflow-x-hidden">
       {/* 🌟 هيدر شخصية الموظفة الذكية في وضع الاختبار */}
-      <div className="relative overflow-hidden rounded-2xl border border-[#38dc89]/30 bg-gradient-to-r from-[#12281e] via-[#0d1a14] to-[#07110d] p-4 shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
+      <MotionBorder enabled={!compact}>
+      <div className={compact ? "relative overflow-hidden rounded-2xl border border-[#38dc89]/30 bg-gradient-to-r from-[#12281e] via-[#0d1a14] to-[#07110d] p-4 shadow-[0_8px_24px_rgba(0,0,0,0.35)]" : "rounded-xl border border-[var(--service-line)] bg-[var(--service-surface)] p-4"}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="relative flex h-12 w-12 items-center justify-center rounded-2xl border border-[#38dc89]/40 bg-[#38dc89]/15 shadow-inner">
+            <div className={compact ? "relative flex h-12 w-12 items-center justify-center rounded-2xl border border-[#38dc89]/40 bg-[#38dc89]/15 shadow-inner" : "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[var(--service-line)] bg-[var(--service-accent-soft)]"}>
               <span className="text-2xl">👩‍💼</span>
-              <span className="absolute -bottom-0.5 -end-0.5 h-3 w-3 rounded-full bg-[#d9a467] ring-2 ring-[#0d1a14]" />
+              {compact && <span className="absolute -bottom-0.5 -end-0.5 h-3 w-3 rounded-full bg-[#d9a467] ring-2 ring-[#0d1a14]" />}
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="font-bold text-[#f7fbf8] text-base">{copy.tester.title}</h3>
-                <span className="inline-flex rounded-full bg-[#38dc89]/15 border border-[#38dc89]/30 px-2 py-0.5 text-[10px] font-semibold text-[#9af0c3]">
+                <span className={compact ? "inline-flex rounded-full bg-[#38dc89]/15 border border-[#38dc89]/30 px-2 py-0.5 text-[10px] font-semibold text-[#9af0c3]" : "inline-flex rounded-full border border-[var(--service-line)] bg-[var(--service-accent-soft)] px-2 py-0.5 text-[13px] font-semibold text-[var(--service-accent)]"}>
                   {locale === "ar" ? "غير مفعّل للعملاء" : "Customer answering off"}
                 </span>
               </div>
-              <p className="mt-1 text-xs leading-5 text-[#b7c6b9]">{guarded}</p>
+              <p className={compact ? "mt-1 text-xs leading-5 text-[#b7c6b9]" : "mt-1 text-[13px] leading-5 text-[var(--service-muted)]"}>{guarded}</p>
             </div>
           </div>
-          <p className="text-xs text-[#b7c6b9]">
+          <p className={compact ? "text-xs text-[#b7c6b9]" : "text-[13px] text-[var(--service-muted)]"}>
             {locale === "ar" ? "الاشتراك" : "Subscription"}: {visibleBilling?.status === "ready" ? visibleBilling.subscriptionStatus : visibleBilling?.status === "empty" ? (locale === "ar" ? "لا يوجد اشتراك" : "No subscription") : visibleBilling ? (locale === "ar" ? "تعذّر التحقق" : "Could not verify") : session?.status === "ready" && !companyId ? (locale === "ar" ? "اختر نشاطًا أولًا" : "Select a business first") : session?.status === "guest" || session?.status === "expired" ? copy.auth.login : copy.loading}
           </p>
         </div>
       </div>
+      </MotionBorder>
 
       {!compact ? <Notice tone="warn">{copy.tester.body}</Notice> : <p className="text-sm leading-6 text-[var(--color-muted-on-dark)]">{copy.setup.testIntro}</p>}
       {session?.status === "ready" && session.identity?.isPlatformAdmin && session.identity.emailConfirmed ? <LinkButton href="/admin/ai" variant="secondary">{locale === "ar" ? "فتح تجارب الذكاء الاصطناعي الإدارية" : "Open administrative AI trials"}</LinkButton> : null}

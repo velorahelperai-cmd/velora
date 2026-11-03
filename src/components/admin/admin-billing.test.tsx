@@ -150,7 +150,7 @@ describe("Stage D — Module 06: AdminBillingLedger", () => {
     ],
   };
 
-  it("renders 4 KPI summary cards with total orders, revenue, and restricted Test gateway", () => {
+  it("labels confirmed amounts as current-page test and live figures", () => {
     const tree = renderBillingLedger({ result: samplePage, query: {} });
     const renderedText = text(tree);
 
@@ -158,9 +158,31 @@ describe("Stage D — Module 06: AdminBillingLedger", () => {
     expect(renderedText).toContain("3");
     // Confirmed revenue = 45.000 OMR (only proven order ord-001)
     expect(renderedText).toContain("45.000");
-    // Paymob test status
-    expect(renderedText).toContain("Thawani UAT");
-    expect(renderedText).not.toContain("Paymob");
+    expect(renderedText).toContain("الصفحة الحالية");
+    expect(renderedText).toContain("الاختبار");
+    expect(renderedText).not.toContain("Thawani UAT");
+  });
+
+  it("keeps live and test confirmed values separate", () => {
+    const live = {...samplePage.rows[2], financial: {...samplePage.rows[2].financial, state: "proven" as const, collectionProven: true}};
+    const tree = renderBillingLedger({result: {...samplePage, rows: [samplePage.rows[0], live]}, query: {}});
+    const value = text(tree);
+    expect(value).toContain("45.000");
+    expect(value).toContain("90.000");
+    expect(value).not.toContain("135.000");
+  });
+  it("does not display zero totals when billing data is unavailable", () => {
+    const tree = renderBillingLedger({result: {status: "unavailable", total: null, hasMore: null, nextCursor: null, rows: null}, query: {}});
+    const value = text(tree);
+    expect(value).toContain("تعذر تحميل السجلات");
+    expect(value).not.toContain("0.000");
+    expect(value).not.toContain("velorahelperai@gmail.com");
+  });
+  it("does not fabricate a total when a confirmed amount is missing", () => {
+    const tree = renderBillingLedger({result: {...samplePage, rows: [{...samplePage.rows[0], amountBaisa: null}]}, query: {}});
+    const value = text(tree);
+    expect(value).toContain("غير متاح");
+    expect(value).not.toContain("45.000");
   });
 
   it("renders transactions ledger table with company links and formatted amounts", () => {

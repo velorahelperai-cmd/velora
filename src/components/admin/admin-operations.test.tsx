@@ -178,12 +178,12 @@ describe("Stage E — Module 08: AdminOperationsCenter", () => {
     ],
   };
 
-  it("renders Module 08 header with platform owner badge", () => {
+  it("renders a concise localized header without asserting a fixed account", () => {
     const tree = renderOperationsCenter({ data: sampleData });
     const renderedText = text(tree);
 
-    expect(renderedText).toContain("Module 08");
-    expect(renderedText).toContain("velorahelperai@gmail.com");
+    expect(renderedText).toContain("مركز العمليات والأعطال");
+    expect(renderedText).not.toContain("velorahelperai@gmail.com");
   });
 
   it("renders 4 KPI summary cards with active incidents, webhook rate, and server latency", () => {
@@ -196,6 +196,14 @@ describe("Stage E — Module 08: AdminOperationsCenter", () => {
     expect(renderedText).toContain("99.8%");
     // Avg server latency
     expect(renderedText).toContain("38ms");
+  });
+
+  it("does not infer whole-platform health from the database read probe", () => {
+    const renderedText = text(renderOperationsCenter({data: {...sampleData, kpis: {...sampleData.kpis, activeIncidents: 0, servicesHealth: "unknown"}}}));
+    expect(renderedText).not.toContain("كافة الأنظمة تعمل بكفاءة");
+    expect(renderedText).toContain("فحص قراءة قاعدة البيانات");
+    expect(renderedText).toContain("لا يثبت حالة باقي الخدمات");
+    expect(renderedText).not.toContain("المراقبة اللحظية");
   });
 
   it("renders all core platform services with OPERATIONAL badges", () => {
@@ -241,6 +249,6 @@ describe("Stage E — Module 08: AdminOperationsCenter", () => {
     const renderedText = text(tree);
 
     expect(renderedText).toContain("غير متوفر");
-    expect(renderedText).toContain("لا توجد أحداث تشغيلية مسجلة حاليًا");
+    expect(renderedText).toContain("لا توجد أحداث مطابقة في النافذة المحمّلة");
   });
 });

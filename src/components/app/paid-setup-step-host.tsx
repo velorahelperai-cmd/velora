@@ -127,7 +127,7 @@ function StepHost(props: PaidSetupStepHostProps) {
   const [hoursCopyTargets, setHoursCopyTargets] = useState<BranchHoursCopyTarget[]>(()=>{const preview=reader?.peekHours();return preview?.ok?preview.copyTargets:[];});
   const [hoursPhase, setHoursPhase] = useState<"loading" | "ready" | "saving" | "saved" | "conflict" | "unavailable">("loading");
 
-  const hoursConfirmed = useRef(false);
+  const hoursConfirmed = useRef(!!reader?.peekHours()?.ok);
   useEffect(() => {
     if (step !== "hours" || !isCurrentRef.current()) return;
     const scopeKey = `${expectedAccountId}:${companyId}:${branchId}:${readVersion}`;
@@ -182,8 +182,8 @@ function StepHost(props: PaidSetupStepHostProps) {
   const [langSnap, setLangSnap] = useState<ReplyLanguageSnapshot | null>(()=>reader?.peek?.('language')??null);
   const [langPhase, setLangPhase] = useState<"loading" | "ready" | "saving" | "saved" | "error" | "conflict" | "unavailable">("loading");
 
-  const knowledgeConfirmed = useRef(false);
-  const languageConfirmed = useRef(false);
+  const knowledgeConfirmed = useRef(!!reader?.peek?.('knowledge'));
+  const languageConfirmed = useRef(!!reader?.peek?.('language'));
   useEffect(() => {
     if (step !== "knowledge" || !isCurrent()) return;
     let active = true;
@@ -274,7 +274,7 @@ function StepHost(props: PaidSetupStepHostProps) {
       if(!active||!isCurrent())return;
       if(result?.ok){
         setTrialSnap(result.snapshot);setTrialPhase('ready');setTrialFailure(null);
-        if(result.snapshot.pendingOperation?.pollable!==true){active=false;controller.abort();clearTimeout(streamTimer);setPartialReply(null);reader?.invalidate(['trial','workspace']);onRefresh?.();return;}
+        if(result.snapshot.pendingOperation?.pollable!==true){active=false;controller.abort();clearTimeout(streamTimer);setPartialReply(null);reader?.invalidate(['trial','workspace','launch']);onRefresh?.();return;}
       }
       if(checks<60&&Date.now()-started<300_000)timer=setTimeout(()=>void poll(),2000);
       else {active=false;controller.abort();clearTimeout(streamTimer);}
@@ -450,20 +450,20 @@ function StepHost(props: PaidSetupStepHostProps) {
           onSourceMutation={async input=>{
             if(!isCurrent())return;
             setKnowledgePhase('busy');const result=await runMutation(mutateOwnedBranchKnowledgeSourceAction(input),60_000).catch(()=>null);if(!isCurrent())return;
-            if(result){setKnowledgeSnap(result);setKnowledgePhase('saved');onRefresh?.();}else setKnowledgePhase('conflict');
+            if(result){setKnowledgeSnap(result);setKnowledgePhase('saved');onRefresh?.();}else{setKnowledgePhase('unavailable');throw new Error('knowledge_mutation_unconfirmed');}
           }}
           onRemovePage={async input=>{
             if(!isCurrent())return;
             setKnowledgePhase('busy');const result=await runMutation(removeOwnedBranchKnowledgePageAction(input),60_000).catch(()=>null);if(!isCurrent())return;
-            if(result){setKnowledgeSnap(result);setKnowledgePhase('saved');onRefresh?.();}else setKnowledgePhase('conflict');
+            if(result){setKnowledgeSnap(result);setKnowledgePhase('saved');onRefresh?.();}else{setKnowledgePhase('unavailable');throw new Error('knowledge_mutation_unconfirmed');}
           }}
           onSourceApproval={async input=>{
             setKnowledgePhase('busy');const result=await runMutation(approveOwnedBranchKnowledgeSourceAction(input),60_000).catch(()=>null);if(!isCurrent())return;
-            if(result){setKnowledgeSnap(result);setKnowledgePhase('ready');onRefresh?.();}else setKnowledgePhase('conflict');
+            if(result){setKnowledgeSnap(result);setKnowledgePhase('ready');onRefresh?.();}else{setKnowledgePhase('unavailable');throw new Error('knowledge_mutation_unconfirmed');}
           }}
           onReprocessFile={async input=>{
             setKnowledgePhase('busy');const result=await runMutation(reprocessOwnedBranchKnowledgeFileAction(input),60_000).catch(()=>null);if(!isCurrent())return;
-            if(result){setKnowledgeSnap(result);setKnowledgePhase('ready');onRefresh?.();}else setKnowledgePhase('ready');
+            if(result){setKnowledgeSnap(result);setKnowledgePhase('ready');onRefresh?.();}else{setKnowledgePhase('ready');throw new Error('knowledge_reprocess_unconfirmed');}
           }}
           onConfirmLanguages={async (input) => {
             setLangPhase("saving");
@@ -593,9 +593,11 @@ function StepHost(props: PaidSetupStepHostProps) {
           onRefresh={async()=>{
             if(!isCurrent())return;
             setLaunchPhase('loading');
+            reader?.invalidate(['launch','workspace']);
             const result=await awaitSetupRequest((reader?reader.read("launch"):readOwnedBranchLaunchSummaryAction(targetScope)),60_000).catch(()=>null);
             if(!isCurrent())return;
             setLaunchSnap(result);setLaunchPhase(result?'ready':'unavailable');
+            if(result)onRefresh?.();
           }}
         />
       );

@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { AccessGate } from "@/components/app/access-gate";
 import { requirePlatformOwner } from "@/lib/tenancy/access";
 import { adminSearchAccounts } from "@/lib/tenancy/actions";
-import { AdminAccountsDirectory } from "@/components/admin/admin-accounts-directory";
+import { AdminAccountsDirectory, AdminAccountsHeading } from "@/components/admin/admin-accounts-directory";
 
 export const metadata: Metadata = { title: "Accounts & Identity Hub · Velora Admin" };
 
@@ -74,21 +74,8 @@ export default async function AccountsPage({ searchParams }: PageProps) {
   }
 
   return (
-    <div className="space-y-6" dir="rtl">
-      <div className="border-b border-[var(--service-line)] pb-4">
-        <div className="flex items-center gap-2">
-          <span className="flex h-2.5 w-2.5 rounded-full bg-[var(--service-accent)]" />
-          <span className="text-xs font-semibold uppercase tracking-wider text-[var(--service-accent)]">
-            Module 03 · Identity & Accounts Directory
-          </span>
-        </div>
-        <h1 className="mt-1 text-2xl font-black text-[var(--service-ink)] tracking-tight">
-          الحسابات والمستخدمين (Accounts & Users)
-        </h1>
-        <p className="mt-1 text-sm text-[var(--service-muted)]">
-          دليل الحسابات الشامل، فحص توثيق البريد والهاتف، والمنشآت المرتبطة واسترداد الهوية.
-        </p>
-      </div>
+    <div className="space-y-6">
+      <AdminAccountsHeading />
 
       <Suspense fallback={<AccountsLoadingSkeleton />}>
         <AccountsContent searchParams={searchParams} />

@@ -164,17 +164,19 @@ describe("Stage E — Module 09: AdminSupportReviews", () => {
     const data: AdminSupportOverviewData = { ...sampleData, tickets: [], ticketsAvailability: "unavailable", ticketsError: "SUPPORT_READ_UNAVAILABLE", pagination: undefined,
       kpis: { ...sampleData.kpis, openTicketsCount: "UNKNOWN", inProgressTicketsCount: "UNKNOWN", resolvedTicketsCount: "UNKNOWN" } };
     const rendered = text(renderSupportReviews({ data }));
-    expect(rendered).toContain("SUPPORT_READ_UNAVAILABLE");
-    expect(rendered).toContain("UNKNOWN");
+    expect(rendered).not.toContain("SUPPORT_READ_UNAVAILABLE");
+    expect(rendered).toContain("تعذرت قراءة التذاكر");
+    expect(rendered).toContain("غير متاح");
     expect(rendered).not.toContain("No support tickets match");
     expect(data.pendingReviews).toEqual(sampleData.pendingReviews);
   });
 
-  it("renders Module 09 header and verified platform owner email", () => {
+  it("shows the support address without asserting the signed-in identity", () => {
     const tree = renderSupportReviews({ data: sampleData });
     const renderedText = text(tree);
 
-    expect(renderedText).toContain("Module 09");
+    expect(renderedText).toContain("الدعم والمراجعات");
+    expect(renderedText).not.toContain("مالك المنصة");
     expect(renderedText).toContain("velorahelperai@gmail.com");
     // Ensure support@velora.ai is NOT present
     expect(renderedText).not.toContain("support@velora.ai");
@@ -204,7 +206,8 @@ describe("Stage E — Module 09: AdminSupportReviews", () => {
     const tree = renderSupportReviews({ data: sampleData });
     const renderedText = text(tree);
 
-    expect(renderedText).toContain("Support Code Lookup");
+    expect(renderedText).toContain("البحث عن حساب");
+    expect(renderedText).toContain("لا يؤكد هوية العميل");
   });
 
   it("renders official support channels with dedicated desk marked UNCONFIGURED", () => {
@@ -213,6 +216,7 @@ describe("Stage E — Module 09: AdminSupportReviews", () => {
 
     expect(renderedText).toContain("WhatsApp Official Support");
     expect(renderedText).toContain("Dedicated Support Desk");
-    expect(renderedText).toContain("UNCONFIGURED");
+    expect(renderedText).toContain("غير محدد");
+    expect(renderedText).not.toContain("OPERATIONAL");
   });
 });

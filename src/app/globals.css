@@ -1,7 +1,16 @@
 @import "tailwindcss";
 @import "../components/app/service-theme.css";
+@import "../components/app/panel-fonts.css";
 
-/* Official Arabic and English site font: Tajawal (user decision 2026-10-20). */
+/* Official Arabic and English site font: Cairo */
+@font-face {
+  font-family: "Cairo";
+  src: url("/fonts/velora/Cairo-admin-v1.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
 @font-face {
   font-family: "Tajawal";
   src: url("/fonts/velora/Tajawal-admin-Regular-v1.woff2") format("woff2");
@@ -42,10 +51,10 @@
   --color-danger: #e07a5f;
   --color-mint: #def5e7;
   --color-line: rgba(183, 198, 185, 0.32);
-  --font-ar: "Tajawal", sans-serif;
-  --font-en: "Tajawal", sans-serif;
-  --font-sans: "Tajawal", sans-serif;
-  --font-mono: "Tajawal", sans-serif;
+  --font-ar: "Cairo", sans-serif;
+  --font-en: "Cairo", "Inter", sans-serif;
+  --font-sans: "Cairo", sans-serif;
+  --font-mono: monospace;
 }
 
 :root {

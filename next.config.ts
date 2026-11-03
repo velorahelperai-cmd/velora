@@ -8,6 +8,8 @@ const KNOWLEDGE_UPLOAD_BODY_LIMIT = "28mb";
 const PUBLIC_CACHE = "public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400";
 
 const nextConfig: NextConfig = {
+  // Exact host of the owner-authorized local HTTPS tunnel; development only.
+  allowedDevOrigins: ["powder-imperial-thomas-tariff.trycloudflare.com"],
   ...(process.env.NODE_ENV === "development" && process.env.VELORA_LOCAL_CUSTOMER_MODE === "live"
     ? {distDir:"artifacts/local-live-customer/next"} : {}),
   env: {
@@ -15,7 +17,10 @@ const nextConfig: NextConfig = {
     NEXT_PUBLIC_LOG_LEVEL: process.env.LOG_LEVEL ?? (process.env.NODE_ENV === "production" ? "info" : "debug"),
   },
   reactStrictMode: true,
-  serverExternalPackages: ["unpdf", "mammoth"],
+  serverExternalPackages: ["unpdf", "mammoth", "tesseract.js", "@napi-rs/canvas"],
+  outputFileTracingIncludes: {
+    "/*": ["./node_modules/@tesseract.js-data/ara/4.0.0_best_int/*.gz", "./node_modules/@tesseract.js-data/eng/4.0.0_best_int/*.gz", "./node_modules/tesseract.js-core/**/*", "./node_modules/tesseract.js/src/worker-script/**/*"],
+  },
   experimental: {
     serverActions: {
       bodySizeLimit: KNOWLEDGE_UPLOAD_BODY_LIMIT,

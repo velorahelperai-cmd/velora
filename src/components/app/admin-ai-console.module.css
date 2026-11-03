@@ -35,6 +35,9 @@
 .response { border-inline-start: 1px solid var(--console-border); background: var(--console-panel); }
 .console h2 { font-size: 19px; font-weight: 700; color: var(--console-ink); }
 .form label { display: grid; gap: 9px; font-size: 13px; font-weight: 600; color: var(--console-ink); }
+.form .confirmation { display:flex; align-items:center; gap:10px; min-height:44px; cursor:pointer; }
+.confirmation input[type="checkbox"] { flex:none; width:18px; height:18px; min-height:0; margin:0; accent-color:var(--service-accent); }
+.confirmation:has(input:disabled) { cursor:default; }
 .form select,.form textarea { background: var(--console-panel); color: var(--console-ink); border: 1px solid var(--console-border); border-radius: 10px; padding: 12px; min-height: 44px; width: 100%; font: inherit; font-weight: 400; }
 .form textarea { resize: vertical; line-height: 1.9; }
 .form :is(select,textarea):focus-visible { outline: 2px solid var(--console-link); outline-offset: 2px; border-color: var(--console-link); }

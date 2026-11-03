@@ -19,17 +19,18 @@ it('recovers saved result without asking the provider and explains discarded obs
  }finally{await act(async()=>root.unmount());vi.unstubAllGlobals();}
  expect(render({snapshot:{...props.snapshot!,recoveryNotice:'context_changed'}})).toContain('without using quota');
 });
-it('keeps uncertain holds pending and refreshes without offering an unproven release',async()=>{
+it('keeps uncertain holds pending without offering release, recover, or a review banner',async()=>{
  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);
  const host=document.createElement('div'),root=createRoot(host),onRelease=vi.fn(),onAsk=vi.fn(),onRecover=vi.fn(),onRefresh=vi.fn();
  try{
-  await act(async()=>root.render(createElement(PaidAssistantTrial,{...props,onRelease,onRecover,onAsk,onRefresh,snapshot:{...props.snapshot!,canAsk:false,pendingOperation:{id:'stuck-op',status:'uncertain',recoverable:false}}})));
+  await act(async()=>root.render(createElement(PaidAssistantTrial,{...props,onRelease,onRecover,onAsk,onRefresh,snapshot:{...props.snapshot!,canAsk:false,pendingOperation:{id:'stuck-op',status:'uncertain',recoverable:false,providerFailed:true}}})));
+  expect(host.textContent).not.toContain('under review');
+  expect(host.textContent).not.toContain('قيد المراجعة');
   expect(Array.from(host.querySelectorAll('button')).some(b=>b.textContent==='Recover reply')).toBe(false);
   expect(Array.from(host.querySelectorAll('button')).some(b=>b.textContent==='Release request')).toBe(false);
-  const button=Array.from(host.querySelectorAll('button')).find(b=>b.textContent==='Refresh status')!;
-  await act(async()=>button.click());
+  expect(Array.from(host.querySelectorAll('button')).some(b=>b.textContent==='Refresh status')).toBe(false);
   expect(onRelease).not.toHaveBeenCalled();
-  expect(onRefresh).toHaveBeenCalledTimes(1);
+  expect(onRefresh).not.toHaveBeenCalled();
   expect(onAsk).not.toHaveBeenCalled();
   expect(onRecover).not.toHaveBeenCalled();
  }finally{await act(async()=>root.unmount());vi.unstubAllGlobals();}
@@ -51,7 +52,7 @@ it.each(["ar","en"] as const)("renders %s chat shell with three suggestions, fre
  expect(html).toContain('<textarea');
  expect(html).toContain('dir="auto"');
  expect(html).toContain(locale==="ar"?"لينا":"Lina");
- expect(html).toContain(locale==="ar"?"جرّب مساعدك قبل التشغيل":"Try your assistant before launch");
+ expect(html).toContain(locale==="ar"?"متصل":"online");
  expect(html).not.toContain("اختبار داخلي");
  expect(html).not.toContain("Internal trial only");
  expect(trialSuggestions("restaurant",locale)).toHaveLength(3);
@@ -132,7 +133,7 @@ it('shows a budget blocker with no answer or retry dispatch permission',async()=
  }finally{await act(async()=>root.unmount());vi.unstubAllGlobals();}
 });
 
-it('permits an explicitly authorized new question while keeping an old unknown visible and never replaying it',async()=>{
+it('permits an explicitly authorized new question while an old unknown hold stays silent and is never replayed',async()=>{
  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);
  const host=document.createElement('div'),root=createRoot(host),onAsk=vi.fn();
  const old='66666666-6666-4666-8666-666666666666';
@@ -140,7 +141,9 @@ it('permits an explicitly authorized new question while keeping an old unknown v
  try{
   await act(async()=>root.render(createElement(PaidAssistantTrial,{...props,onAsk,snapshot})));
   const suggestion=Array.from(host.querySelectorAll('button')).find(b=>b.textContent==='What are the working hours?')!;
-  expect(suggestion.disabled).toBe(false);expect(host.textContent).toContain('still unresolved');
+  expect(suggestion.disabled).toBe(false);
+  expect(host.textContent).not.toContain('still unresolved');
+  expect(host.textContent).not.toContain('under review');
   await act(async()=>suggestion.click());expect(onAsk).toHaveBeenCalledOnce();
   expect(onAsk.mock.calls[0][0].operationId).not.toBe(old);
   await act(async()=>root.render(createElement(PaidAssistantTrial,{...props,onAsk,snapshot:{...snapshot,canAsk:false}})));

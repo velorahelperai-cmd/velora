@@ -15,7 +15,7 @@ it("uses content-sensitive direction for question and answer in Arabic",()=>{
  const html=render({locale:"ar"});expect(html).toContain('<input dir="auto"');expect(html).toContain('<textarea dir="auto"');
 });
 it.each(["ar","en"] as const)("renders three scoped sections in %s without invoking effects",locale=>{
- const html=render({locale,onPageAction:()=>{throw Error("No render action");}});expect(html).toContain('dir="'+(locale==="ar"?"rtl":"ltr")+'"');expect(html).toContain("2 / 10");expect(html).toContain('role="tablist"');expect(html).toContain('data-knowledge-library="true"');expect(html).toContain('data-panel="website"');expect(html).toContain('data-panel="files"');expect(html).toContain('data-panel="faq"');expect(html).toContain('accept=".pdf,.txt,.docx"');expect(html).not.toContain('<script');expect(html).not.toContain('href="https://');
+ const html=render({locale,onPageAction:()=>{throw Error("No render action");}});expect(html).toContain('dir="'+(locale==="ar"?"rtl":"ltr")+'"');expect(html).toContain('data-website-quota=""');expect(html).toContain("2 / 10");expect(html).not.toContain("Main · 2 / 10");expect(html).not.toContain('role="tablist"');expect(html).toContain('data-knowledge-library="true"');expect(html).toContain('data-panel="website"');expect(html).toContain('data-panel="files"');expect(html).toContain('data-panel="faq"');expect(html).toContain('accept=".pdf,.txt,.docx"');expect(html).not.toContain('<script');expect(html).not.toContain('href="https://');
 });
 it.each([{limit:null,used:0},{limit:10,used:null},{limit:50,used:-1},{limit:20,used:0}])("fails closed for unknown or invalid quota %j",quota=>{
  expect(knownWebsiteQuota(quota as never)).toBe(false);
@@ -23,7 +23,8 @@ it.each([{limit:null,used:0},{limit:10,used:null},{limit:50,used:-1},{limit:20,u
  expect(html).toContain("Website quota is unavailable");expect(html).toContain('disabled="">Retry');
 });
 it("uses the host premium limit and does not silently reset over-limit usage",()=>{
- expect(render({snapshot:{...props.snapshot!,websiteQuota:{limit:50,used:12}}})).toContain("12 / 50");
+ const html=render({snapshot:{...props.snapshot!,websiteQuota:{limit:50,used:12}}});
+ expect(html).toContain('data-website-quota=""');expect(html).toContain("12 / 50");
  expect(knownWebsiteQuota({limit:10,used:12})).toBe(true);
 });
 it("disables unknown page status even when a capability is true",()=>{
@@ -57,7 +58,7 @@ it("does not show a customer verification-failure banner when soft-unavailable w
  });
  expect(html).not.toContain("Saving is unconfirmed");
  expect(html).not.toContain("Data could not be verified");
- expect(html).toContain("Upload for preparation");
+ expect(html).toContain(">Upload<");
 });
 it.each([{scope:{...scope,branchId:"other"}},{state:{...props.state,scope:{...scope,expectedAccountId:"other"}}},{state:{...props.state,version:2}},{snapshot:null}])("hides stale branch data %#",extra=>{
  const html=render(extra);expect(html).toContain("Knowledge for this branch is unavailable");expect(html).not.toContain("example.com");
@@ -101,7 +102,49 @@ it('explains processing and offers safe recovery without inventing extract succe
 it('surfaces unknown provider review hold and hides blind reprocess',()=>{
  const unknown={id:'src-u',company_id:'company',kind:'file',file_name:'menu.pdf',title:'menu.pdf',content:'',status:'failed',failure_code:'provider_outcome_unknown',content_version:1} as KnowledgeSourceRecord;
  const html=render({locale:'en',snapshot:{...props.snapshot!,files:[{branchId:'branch',source:unknown}]},onReprocessFile:()=>{}});
- expect(html).toContain('extract provider outcome is unknown');
+ expect(html).toContain('file preparation result is unconfirmed');
  expect(html).not.toContain('Reprocess from stored file');
  expect(html).not.toContain('Safe processing recovery');
+});
+
+
+it.each(['ar','en'] as const)('does not report a quota failure before knowledge loads in %s',locale=>{
+ const html=render({locale,snapshot:null,state:{scope,version:null,phase:'loading'},languageState:{version:null,phase:'loading'}});
+ expect(html).toContain('aria-busy="true"');
+ expect(html).toContain(locale==='ar'?'جارٍ تحميل معرفة الفرع':'Loading branch knowledge');
+ expect(html).not.toContain('Website quota is unavailable');
+ expect(html).not.toContain('حصة صفحات الموقع غير متاحة');
+ expect(html).not.toContain('data-checked');
+ expect(html).not.toContain(locale==='ar'?'يرد بالعربية':'Always replies');
+});
+it.each(['ar','en'] as const)('shows three adjacent reply-language choices without a select in %s',locale=>{
+ const languageSnapshot={scope,version:2,companyLabel:'Co',branchLabel:'Main',replyLanguage:'both' as const,confirmation:'confirmed' as const,canConfirm:true};
+ const html=render({locale,languageSnapshot,languageState:{version:2,phase:'ready'}});
+ expect(html).not.toContain('<select');
+ expect(html).toContain('role="radiogroup"');
+ expect(html).toContain(locale==='ar'?'لغة الرد':'Reply language');
+ expect(html).toContain('data-language-choice="both"');
+ expect(html).toContain('data-language-choice="ar"');
+ expect(html).toContain('data-language-choice="en"');
+ expect(html).toContain('data-checked="true"');
+ expect(html).not.toContain('Save change');
+ expect(html).not.toContain('حفظ التغيير');
+});
+it('does not invent Automatic while reply language is still unknown',()=>{
+ const languageSnapshot={scope,version:1,companyLabel:'Co',branchLabel:'Main',replyLanguage:null,confirmation:'unconfirmed' as const,canConfirm:true};
+ const html=render({languageSnapshot,languageState:{version:1,phase:'ready'}});
+ expect(html).not.toContain('data-checked');
+ expect(html).not.toContain('Save change');
+});
+it.each(['ar','en'] as const)('does not expose stored website diagnostic details in %s',locale=>{
+ const error='INTERNAL_TRACE: provider_private_debug_detail';
+ const snapshot={...props.snapshot!,pages:[{...props.snapshot!.pages[0]!,error}]};
+ const html=render({locale,snapshot});
+ expect(html).not.toContain(error);expect(html).not.toContain('provider_private_debug_detail');
+ expect(html).toContain(locale==='ar'?'تعذّر تجهيز الصفحة':'The page could not be prepared');
+ expect(snapshot.pages[0]!.error).toBe(error);
+});
+it.each([['HTTP_404: raw response','The page was not found'],['HTTP_403: raw response','This page requires access permission'],['FETCH_TIMEOUT: raw response','The page took too long to respond']])('explains website %s without its internal message', (error,copy)=>{
+ const html=render({snapshot:{...props.snapshot!,pages:[{...props.snapshot!.pages[0]!,error}]}});
+ expect(html).toContain(copy);expect(html).not.toContain('raw response');
 });

@@ -197,7 +197,15 @@ describe("Stage C — Admin V2 Customers & Channels", () => {
       expect(renderedText).toContain("2 فرع مسجل");
     });
 
-    it("renders assistant persona card with correct business type and language", () => {
+    it.each([{failed: true, message: "تعذر تحميل الفروع"}, {failed: false, message: "لا توجد فروع مسجلة"}])("shows the actual branch read state", ({failed, message}) => {
+      const tree = renderCompanyDetail({initialCompany: baseCompany, initialMembers: [], initialAudits: [], initialKnowledge: [], initialBranches: [], branchesLoadFailed: failed});
+      const section = text(tree).split("فروع المنشأة ومواعيد العمل")[1].split("إعدادات النشاط للمساعد")[0];
+      expect(section).toContain(message);
+      expect(section).not.toContain("الفرع الأساسي");
+      expect(section).not.toContain("نشط");
+    });
+
+    it("shows recorded business settings without inventing assistant runtime details", () => {
       const tree = renderCompanyDetail({
         initialCompany: baseCompany,
         initialMembers: [],
@@ -206,10 +214,17 @@ describe("Stage C — Admin V2 Customers & Channels", () => {
       });
 
       const renderedText = text(tree);
-      expect(renderedText).toContain("المساعد الذكي والتخصيص");
-      expect(renderedText).toContain("نورة (Noura)");
-      expect(renderedText).toContain("عربي وإنجليزي (Bilingual)");
-      expect(renderedText).toContain("Gemini 3.8 Flash Engine");
+      expect(renderedText).toContain("إعدادات النشاط للمساعد");
+      expect(renderedText).toContain("restaurant");
+      expect(renderedText).toContain("العربية والإنجليزية");
+      expect(renderedText).not.toContain("Gemini 3.8 Flash Engine");
+      expect(renderedText).not.toContain("نورة (Noura)");
+    });
+    it("does not claim continuous hours when hours are not recorded", () => {
+      const tree = renderCompanyDetail({initialCompany: {...baseCompany, hours: ""}, initialMembers: [], initialAudits: [], initialKnowledge: []});
+      const section = text(tree).split("إعدادات النشاط للمساعد")[1];
+      expect(section).toContain("غير محددة");
+      expect(section).not.toContain("24/7");
     });
   });
 
@@ -347,7 +362,18 @@ describe("Stage C — Admin V2 Customers & Channels", () => {
       expect(renderedText).toContain("متجر العطور الفاخرة");
       expect(renderedText).toContain("WhatsApp");
       expect(renderedText).toContain("Instagram");
-      expect(renderedText).toContain("Coexistence");
+      expect(renderedText).toContain("طلب الاحتفاظ بالهاتف");
+    });
+
+    it("describes loaded records and recorded statuses without asserting live readiness", () => {
+      const tree = renderChannels({channels: sampleChannels, stats: {totalChannels: 3, totalWhatsapp: 2, totalInstagram: 1, activeConnected: 2, needsAction: 1, coexistenceCount: 1}});
+      const renderedText = text(tree);
+      expect(renderedText).toContain("قد تكون القائمة غير مكتملة");
+      expect(renderedText).toContain("موثّق في السجل");
+      expect(renderedText).toContain("مرتبط في السجل");
+      expect(renderedText).toContain("معرّف هاتف المزود");
+      expect(renderedText).not.toContain("متصل ونشط");
+      expect(renderedText).not.toContain("WABA:");
     });
 
     it("renders empty state when channel list is empty", () => {
@@ -364,7 +390,7 @@ describe("Stage C — Admin V2 Customers & Channels", () => {
       });
 
       const renderedText = text(tree);
-      expect(renderedText).toContain("لا توجد قنوات مربوطة حالياً");
+      expect(renderedText).toContain("لا توجد قنوات في النتائج المحمّلة");
     });
   });
 });

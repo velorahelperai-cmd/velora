@@ -1,16 +1,19 @@
 .theme {
-  --service-canvas: #f7f6f2;
+  --font-en:"Velora Inter","Velora Plex Arabic",sans-serif;
+  --font-ar:"Velora Inter","Velora Plex Arabic",sans-serif;
+  --font-sans:var(--font-en);
+  --service-canvas: #ffffff;
   --service-surface: #ffffff;
-  --service-subtle: #f0ede6;
-  --service-ink: #1d2724;
-  --service-muted: #5f6b67;
-  --service-line: #e4e7e5;
-  --service-accent: #0e4a52;
-  --service-accent-hover: #12606a;
-  --service-accent-soft: #eaf1f1;
-  --service-success: #2e8b57;
-  --service-warning: #a66b24;
-  --service-danger: #b13742;
+  --service-subtle: #fafaf9;
+  --service-ink: #18181b;
+  --service-muted: #71717a;
+  --service-line: #e4e4e7;
+  --service-accent: #d97706;
+  --service-accent-hover: #b45309;
+  --service-accent-soft: #fef3c7;
+  --service-success: #15803d;
+  --service-warning: #b45309;
+  --service-danger: #b91c1c;
   --color-night: var(--service-canvas);
   --color-panel: var(--service-surface);
   --color-panel-deep: var(--service-subtle);
@@ -35,7 +38,30 @@
   line-height: 1.6;
   color-scheme: light;
 }
-.theme[dir="rtl"] { font-family: var(--font-ar); }
+.theme[dir="rtl"] { font-family: var(--font-ar); letter-spacing:normal; }
+.theme[dir="rtl"] :is(h1,h2,h3,p,button,a,label,span,td,th) { letter-spacing:normal; }
 .theme :is(input,select,textarea,button) { font-family: inherit; }
 .theme :global(.font-mono) { font-variant-numeric: tabular-nums; }
 .theme :is(button,input,select,textarea):disabled { opacity: .6; cursor: not-allowed; }
+.sidebar {background:var(--service-surface);color:var(--service-ink);border:1px solid var(--service-line);}
+.brandHeader {border-color:var(--service-line);}
+.sidebarFooter {border:none;}
+.brandHeader a span {color:var(--service-ink);}
+.brandHeader > a > span:first-child {color:var(--service-accent);}
+.brandHeader p {color:var(--service-muted);}
+.brandHeader button {color:var(--service-ink);min-height:36px;}
+.sidebarFooter > button {color:var(--service-muted);min-height:0;}
+.brandHeader button:hover,.sidebarFooter > button:hover {background:var(--service-subtle);color:var(--service-accent);}
+.navigation p {color:var(--service-muted);font-size:.5625rem;letter-spacing:normal;text-transform:none;}
+.navigation a {color:var(--service-ink);}
+.navigation a svg {color:var(--service-muted);}
+.navigation a:hover {background:var(--service-subtle);color:var(--service-ink);}
+.navigation a[aria-current="page"] {background:var(--service-accent-soft);color:var(--service-ink);font-weight:700;box-shadow:none;}
+.navigation a[aria-current="page"] svg {color:var(--service-accent);}
+.navigation a:focus-visible,.brandHeader a:focus-visible,.sidebarFooter button:focus-visible {outline:2px solid var(--service-accent);outline-offset:2px;}
+@media (min-width:1024px) {
+ .sidebar {inset-block:12px;inset-inline-start:12px;border-radius:16px;box-shadow:0 16px 40px rgba(15,23,42,.14);}
+}
+@media (prefers-reduced-motion:reduce) {
+ .sidebar,.navigation a {transition:none;}
+}

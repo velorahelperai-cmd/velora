@@ -55,6 +55,13 @@ describe("company detail route return context",()=>{
     expect(tree.props.knowledgeLoadFailed).toBe(true);
     expect(tree.props.whatsappLinkLoadFailed).toBe(true);
   });
+  it.each([{data: [], error: null, failed: false}, {data: null, error: new Error("unavailable"), failed: true}, {data: null, error: null, failed: true}])("distinguishes branch read failures from empty results", async ({data, error, failed}) => {
+    const chain = {select: () => chain, eq: () => chain, order: () => chain, then: (resolve: (v: unknown) => void) => resolve({data, error})};
+    mocks.from.mockReturnValue(chain);
+    const tree = await Page({params: Promise.resolve({id: "synthetic-company"})});
+    expect(tree.props.branchesLoadFailed).toBe(failed);
+    expect(tree.props.initialBranches).toEqual([]);
+  });
   it.each(["/admin?companySearch=Synthetic&companyStatus=active#companies","/admin/billing?environment=test&cursor=synthetic"])("passes safe return %s to the detail view",async returnTo=>{
     const tree=await Page({params:Promise.resolve({id:"synthetic-company"}),searchParams:Promise.resolve({returnTo})});
     expect(tree.props.returnTo).toBe(returnTo);
