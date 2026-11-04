@@ -121,7 +121,8 @@ describe.each(["en", "ar"])("UnifiedInbox failure presentation in %s", locale =>
  it("separates channel failure from empty state and includes retry for temporary error", () => {
   state.locale = locale;
   const html = renderToStaticMarkup(React.createElement(UnifiedInbox, { initial: baseInitial }));
-  expect(html).toContain(locale === "ar" ? "تعذّر تحميل القناة. أعد التحديث." : "This channel could not be loaded. Refresh to retry.");
+  expect(html).toContain(appCopy(locale as "ar"|"en").app.inboxLoadFailedBody);
+  expect(html).not.toContain("data-pane");
   // Must NOT display "No conversations yet" when the channel failed
   expect(html).not.toContain(locale === "ar" ? "لا توجد محادثات بعد" : "No conversations yet");
   // Temporary error UNAVAILABLE must render Retry button
@@ -133,6 +134,7 @@ describe.each(["en", "ar"])("UnifiedInbox failure presentation in %s", locale =>
   const forbiddenInitial = {
    ...baseInitial,
    wa: { ok: false as const, code: "FORBIDDEN" as const },
+   ig: { ok: false as const, code: "FORBIDDEN" as const },
   };
   const html = renderToStaticMarkup(React.createElement(UnifiedInbox, { initial: forbiddenInitial }));
   expect(html).toContain(locale === "ar" ? "القراءة غير متاحة. راجع صلاحيات القناة والاشتراك." : "Reading unavailable. Check channel permissions and subscription.");
@@ -144,6 +146,7 @@ describe.each(["en", "ar"])("UnifiedInbox failure presentation in %s", locale =>
   state.locale = locale;
    const emptyInitial: ReadableSnapshot = {
    ...baseInitial,
+   ig: { ok: false as const, code: "FORBIDDEN" as const },
    wa: {
     ok: true as const,
     conversations: [],
