@@ -33,6 +33,8 @@ export async function GET(request:Request) {
   return instagramWebhookChallenge(request) ?? handlers.GET(request);
 }
 export async function POST(request:Request){
+ // Disabled ingress must not read review scope or write an observation receipt.
+ if(!instagramConfig().receiveEnabled)return Response.json({ok:false,code:'RECEIVE_DISABLED'},{status:503,headers:{'cache-control':'no-store','x-content-type-options':'nosniff','retry-after':'5'}});
  return observeWebhookIngress('instagram',()=>handlePost(request));
 }
 async function handlePost(request:Request){

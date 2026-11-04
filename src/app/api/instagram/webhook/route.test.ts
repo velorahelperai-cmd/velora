@@ -12,6 +12,17 @@ it("challenge enablement cannot activate the real event POST", async () => {
   const response=await POST(request);
   expect(response.status).toBe(503);expect(reader).not.toHaveBeenCalled();expect(fetch).not.toHaveBeenCalled();
 });
+it('rejects disabled receive before review bootstrap and ingress observation RPCs even when both are configured',async()=>{
+ vi.stubEnv('INSTAGRAM_GRAPH_VERSION','v26.0');vi.stubEnv('INSTAGRAM_RECEIVE_ENABLED','false');
+ vi.stubEnv('INSTAGRAM_REVIEW_ENABLED','true');vi.stubEnv('INSTAGRAM_REVIEW_COMPANY_ID','aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee');
+ vi.stubEnv('INSTAGRAM_PARENT_WEBHOOK_APP_ID','123');vi.stubEnv('INSTAGRAM_PARENT_WEBHOOK_APP_SECRET','synthetic-parent');
+ vi.stubEnv('OPS_INGRESS_OBSERVATION_ENABLED','true');vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL','https://example.supabase.co');vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY','synthetic-service');
+ const fetch=vi.spyOn(globalThis,'fetch').mockRejectedValue(new Error('network must not run'));
+ const request=new Request('https://www.velorahelper.com/api/instagram/webhook',{method:'POST',body:'unread'});
+ const reader=vi.spyOn(request.body!,'getReader');const response=await POST(request);
+ expect(response.status).toBe(503);expect(await response.json()).toEqual({ok:false,code:'RECEIVE_DISABLED'});
+ expect(fetch).not.toHaveBeenCalled();expect(reader).not.toHaveBeenCalled();
+});
 it("keeps the real GET entry disabled with no configured proof or persistence", async () => {
   expect(runtime).toBe("nodejs");
   const response = await GET(new Request("http://localhost/api/instagram/webhook?hub.mode=subscribe&hub.verify_token=synthetic&hub.challenge=x"));
