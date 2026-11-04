@@ -76,20 +76,46 @@ it('ignores queued events from a replaced transport',async()=>{
  expect(onInboxEvent).not.toHaveBeenCalled();expect(Source.all[1].close).not.toHaveBeenCalled();
 });
 it('binds company subscriptions to the actor and never treats visibility as transport recovery',()=>{
- const onInboxEvent=vi.fn();const view=render(<CompanyInboxRealtime companyId="company" actorId="actor" ar={false} onInboxEvent={onInboxEvent}/>);
+ const onInboxEvent=vi.fn();const view=render(<CompanyInboxRealtime separateTransport companyId="company" actorId="actor" ar={false} onInboxEvent={onInboxEvent}/>);
  const old=Source.all[0];expect(old.url).toBe('/api/inbox/events?companyId=company&actorId=actor');
  act(()=>old.dispatchEvent(new Event('ready')));expect(statusText()).toBe('Live updates connected');
  act(()=>old.dispatchEvent(new Event('unavailable')));onInboxEvent.mockClear();
  Object.defineProperty(document,'visibilityState',{configurable:true,value:'visible'});act(()=>document.dispatchEvent(new Event('visibilitychange')));
- expect(onInboxEvent).toHaveBeenCalledWith({type:'change'});expect(statusText()).not.toBe('Live updates connected');
- view.rerender(<CompanyInboxRealtime companyId="company" actorId="new-actor" ar={false} onInboxEvent={onInboxEvent}/>);
+ expect(onInboxEvent).not.toHaveBeenCalled();expect(statusText()).not.toBe('Live updates connected');
+ view.rerender(<CompanyInboxRealtime separateTransport companyId="company" actorId="new-actor" ar={false} onInboxEvent={onInboxEvent}/>);
  expect(old.close).toHaveBeenCalledOnce();expect(Source.all[1].url).toContain('actorId=new-actor');
 });
 it('closes hidden-tab transports and reconnects once on return',()=>{
- const onInboxEvent=vi.fn();render(<CompanyInboxRealtime companyId="company" actorId="actor" ar={false} onInboxEvent={onInboxEvent}/>);
+ const onInboxEvent=vi.fn();render(<CompanyInboxRealtime separateTransport companyId="company" actorId="actor" ar={false} onInboxEvent={onInboxEvent}/>);
  const old=Source.all[0];act(()=>old.dispatchEvent(new Event('ready')));
  Object.defineProperty(document,'visibilityState',{configurable:true,value:'hidden'});act(()=>document.dispatchEvent(new Event('visibilitychange')));expect(old.close).toHaveBeenCalledOnce();
  onInboxEvent.mockClear();act(()=>old.dispatchEvent(new MessageEvent('change',{data:'{}'})));expect(onInboxEvent).not.toHaveBeenCalled();
  Object.defineProperty(document,'visibilityState',{configurable:true,value:'visible'});act(()=>document.dispatchEvent(new Event('visibilitychange')));expect(Source.all).toHaveLength(2);
+ act(()=>Source.all[1].dispatchEvent(new Event('ready')));expect(onInboxEvent).toHaveBeenCalledWith({type:'reconnect'});
+});
+
+it('owns CONNECTING retries with bounded exponential jitter and ignores closed sources',async()=>{
+ const random=vi.spyOn(Math,'random').mockReturnValue(0.5);
+ try{
+  const event=vi.fn();render(<CompanyInboxRealtime separateTransport companyId="c" actorId="a" ar={false} onInboxEvent={event}/>);
+  for(let attempt=0;attempt<6;attempt++){
+   const source=Source.all.at(-1)!;
+   act(()=>source.onerror?.());expect(source.close).toHaveBeenCalledOnce();
+   expect(event).toHaveBeenCalledWith({type:'disconnected'});
+   const count=Source.all.length;
+   if(attempt<5){
+    const delay=1000*2**attempt;
+    await act(async()=>vi.advanceTimersByTimeAsync(delay-1));expect(Source.all).toHaveLength(count);
+    await act(async()=>vi.advanceTimersByTimeAsync(1));expect(Source.all).toHaveLength(count+1);
+   }else{await act(async()=>vi.advanceTimersByTimeAsync(120000));expect(Source.all).toHaveLength(count);}
+  }
+ }finally{random.mockRestore();}
+});
+
+it('rotates freshly authorized streams without reporting a false disconnect',async()=>{
+ const onInboxEvent=vi.fn();render(<CompanyInboxRealtime separateTransport companyId="c" actorId="a" ar={false} onInboxEvent={onInboxEvent}/>);
+ const source=Source.all[0];act(()=>source.dispatchEvent(new Event('ready')));onInboxEvent.mockClear();
+ act(()=>source.dispatchEvent(new Event('renew')));expect(source.close).toHaveBeenCalledOnce();expect(onInboxEvent).not.toHaveBeenCalled();
+ await act(async()=>vi.advanceTimersByTimeAsync(500));expect(Source.all).toHaveLength(2);
  act(()=>Source.all[1].dispatchEvent(new Event('ready')));expect(onInboxEvent).toHaveBeenCalledWith({type:'reconnect'});
 });

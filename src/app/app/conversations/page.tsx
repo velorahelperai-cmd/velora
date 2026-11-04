@@ -1,3 +1,5 @@
+import {runWithVerifiedReadClient} from '@/lib/supabase/server';
+import {runWithVerifiedCompanyRead} from '@/lib/tenancy/access';
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import { UnifiedInbox } from "@/components/app/unified-inbox";
@@ -9,7 +11,12 @@ export const metadata: Metadata = { title: "Conversations · Velora" };
 export const dynamic = "force-dynamic";
 
 async function ConversationsContent() {
-  const loaded = await readServiceInbox();
+  // Use the same existing fenced read composition as /api/inbox/read.
+  let loaded:Awaited<ReturnType<typeof readServiceInbox>>;
+  try{
+    const {value,actorId}=await runWithVerifiedReadClient(()=>runWithVerifiedCompanyRead(readServiceInbox));
+    loaded=value.ok&&value.actorId!==actorId?{ok:false,code:'SCOPE_CHANGED'}:value;
+  }catch{loaded={ok:false,code:'UNAVAILABLE'};}
   const key = loaded.ok ? `${loaded.actorId}:${loaded.companyId}` : `unavailable:${loaded.code}`;
   return (
     <UnifiedInbox

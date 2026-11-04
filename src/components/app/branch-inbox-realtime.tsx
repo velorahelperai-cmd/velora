@@ -7,6 +7,7 @@ export type InboxRealtimeEvent =
   | { type: 'change'; data?: unknown }
   | { type: 'reconnect' }
   | { type: 'revoked' }
+  | { type: 'disconnected' }
   | { type: 'unavailable' };
 
 export function BranchInboxRealtime({
@@ -25,11 +26,11 @@ export function BranchInboxRealtime({
   return <InboxRealtime url={`/api/branch/inbox-events?${new URLSearchParams({company:companyId,branch:branchId,channel})}`} ar={ar} onInboxEvent={onInboxEvent}/>;
 }
 
-export function CompanyInboxRealtime({companyId,actorId,ar,onInboxEvent}:{companyId:string;actorId:string;ar:boolean;onInboxEvent:(event:InboxRealtimeEvent)=>void}) {
-  return <InboxRealtime url={`/api/inbox/events?${new URLSearchParams({companyId,actorId})}`} ar={ar} onInboxEvent={onInboxEvent}/>;
+export function CompanyInboxRealtime({companyId,actorId,ar,onInboxEvent,separateTransport=false}:{companyId:string;actorId:string;ar:boolean;separateTransport?:boolean;onInboxEvent:(event:InboxRealtimeEvent)=>void}) {
+  return <InboxRealtime url={`/api/inbox/events?${new URLSearchParams({companyId,actorId})}`} ar={ar} onInboxEvent={onInboxEvent} separateTransport={separateTransport}/>;
 }
 
-function InboxRealtime({url,ar,onInboxEvent}:{url:string;ar:boolean;onInboxEvent?: (event:InboxRealtimeEvent)=>void}) {
+function InboxRealtime({url,ar,onInboxEvent,separateTransport=false}:{url:string;ar:boolean;separateTransport?:boolean;onInboxEvent?: (event:InboxRealtimeEvent)=>void}) {
   const router = useRouter();
   const [connectedUrl, setConnectedUrl] = useState<string|null>(null);
   const onInboxEventRef = useRef(onInboxEvent);
@@ -47,6 +48,7 @@ function InboxRealtime({url,ar,onInboxEvent}:{url:string;ar:boolean;onInboxEvent
     let timer: ReturnType<typeof setTimeout> | undefined;
     let retry: ReturnType<typeof setTimeout> | undefined;
     let hasConnectedOnce = false;
+    let attempts = 0;
 
     const dispatchEvent = (event: InboxRealtimeEvent) => {
       if (!active) return;
@@ -67,6 +69,7 @@ function InboxRealtime({url,ar,onInboxEvent}:{url:string;ar:boolean;onInboxEvent
     const ready = () => {
       if (!active) return;
       setConnectedUrl(url);
+      attempts = 0;
       if (hasConnectedOnce) {
         dispatchEvent({ type: 'reconnect' });
       } else {
@@ -79,7 +82,7 @@ function InboxRealtime({url,ar,onInboxEvent}:{url:string;ar:boolean;onInboxEvent
       if (!active) return;
       setConnectedUrl(null);
       // A consumer needs transport state to enable its fallback reads.
-      onInboxEventRef.current?.({ type: 'unavailable' });
+      onInboxEventRef.current?.({ type: separateTransport?'disconnected':'unavailable' });
     };
 
     const stopRevoked = () => {
@@ -101,7 +104,7 @@ function InboxRealtime({url,ar,onInboxEvent}:{url:string;ar:boolean;onInboxEvent
     };
 
     const connect = () => {
-      if (!active || revoked) return;
+      if (!active || revoked || typeof EventSource==='undefined') return;
       const current = new EventSource(url);
       events = current;
       const isCurrent = () => active && !revoked && events === current;
@@ -119,26 +122,38 @@ function InboxRealtime({url,ar,onInboxEvent}:{url:string;ar:boolean;onInboxEvent
         dispatchEvent({ type: 'change', data });
       });
       current.addEventListener('revoked', () => { if (isCurrent()) stopRevoked(); });
-      current.addEventListener('unavailable', () => { if (isCurrent()) lost(); });
-      current.onerror = () => {
+      const retryConnection = () => {
         if (!isCurrent()) return;
+        current.close();events=undefined; // Disable native unbounded retries.
         lost();
-        if (active && !revoked && current.readyState === EventSource.CLOSED && retry === undefined) {
+        if (active && !revoked && document.visibilityState==='visible' && attempts < 5 && retry === undefined) {
+          const delay = Math.min(30000,1000 * 2 ** attempts++) * (0.75 + Math.random() * 0.5);
           retry = setTimeout(() => {
             retry = undefined;
-            current.close();
             connect();
-          }, 5000);
+          }, delay);
         }
       };
+      current.addEventListener('unavailable', () => {
+        if (!isCurrent()) return;
+        onInboxEventRef.current?.({type:'unavailable'});
+        retryConnection();
+      });
+      current.addEventListener('renew', () => {
+        if(!isCurrent())return;
+        // Server just reverified authority. Rotate without a false failure.
+        current.close();events=undefined;
+        retry=setTimeout(()=>{retry=undefined;connect();},250+Math.random()*250);
+      });
+      current.onerror = retryConnection;
     };
 
     const visible = () => {
       if (document.visibilityState === 'visible') {
-        if(!events&&!revoked){connect();return;}
+        if(!events&&!revoked&&retry===undefined){attempts=0;connect();return;}
         // Returning to the tab requests reconciliation, not proof that the
         // transport reconnected. Only the server's ready event proves that.
-        dispatchEvent({ type: 'change' });
+        if(!separateTransport)dispatchEvent({ type: 'change' });
       } else {
         clearTimeout(retry);retry=undefined;
         events?.close();events=undefined;
@@ -155,7 +170,7 @@ function InboxRealtime({url,ar,onInboxEvent}:{url:string;ar:boolean;onInboxEvent
       events?.close();
       document.removeEventListener('visibilitychange', visible);
     };
-  }, [url, router]);
+  }, [url, router, separateTransport]);
 
   return (
     <p role="status" className="text-sm">

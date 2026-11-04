@@ -10,7 +10,7 @@ export const validBranchWatchScope=(s:BranchWatchScope)=>{
 /** Server-side transport only. Neither provider credentials nor row payloads leave it. */
 export function branchInboxEventStream(input:{
  client:SupabaseClient;scope:BranchWatchScope|CompanyInboxWatchScope;signal:AbortSignal;authorize:()=>Promise<boolean>;
- heartbeatMs?:number;lifetimeMs?:number;
+ heartbeatMs?:number;lifetimeMs?:number;renewBeforeClose?:boolean;
 }){
  const {client,scope,signal,authorize}=input;
  let cancelled=false;
@@ -23,9 +23,11 @@ export function branchInboxEventStream(input:{
    const emit=(event:string)=>{if(!closed)controller.enqueue(encoder.encode(`event: ${event}\ndata: {}\n\n`));};
    const channel=client.channel(`branch-inbox-${crypto.randomUUID()}`);
    const joinTimeout=setTimeout(()=>{emit('unavailable');stop();},8000);
-   const lifetime=setTimeout(()=>stop(),input.lifetimeMs??45000);
+   const lifetimeMs=input.lifetimeMs??45000;
+   let renewal:ReturnType<typeof setTimeout>|undefined;
+   const lifetime=setTimeout(()=>{if(input.renewBeforeClose)emit('unavailable');stop();},lifetimeMs);
    stop=()=>{
-    if(closed)return;closed=true;clearInterval(heartbeat);clearTimeout(lifetime);clearTimeout(joinTimeout);
+    if(closed)return;closed=true;clearInterval(heartbeat);clearTimeout(lifetime);clearTimeout(renewal);clearTimeout(joinTimeout);
     signal.removeEventListener('abort',stop);
     void client.removeChannel(channel).catch(()=>{});
     if(!cancelled)controller.close();
@@ -38,9 +40,13 @@ export function branchInboxEventStream(input:{
     try{
      if(!await authorize()){emit('revoked');stop();return;}
      emit(event);
+     if(event==='renew')stop();
     }catch{emit('unavailable');stop();}
     finally{busy=false;if(pending&&!closed){pending=false;void check('change');}}
    };
+   // A planned rotation must prove fresh authority before preserving the UI.
+   // A slow or failed authorization still reaches the hard fail-closed deadline.
+   if(input.renewBeforeClose)renewal=setTimeout(()=>{if(readySent&&!busy)void check('renew');},Math.max(0,lifetimeMs-5000));
    const changed=(payload:{new:Record<string,unknown>})=>{
     const row=payload.new;
     if(row.company_id===scope.companyId&&('branchId' in scope

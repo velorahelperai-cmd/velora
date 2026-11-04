@@ -40,7 +40,7 @@ it('does not lose an event arriving while a read is pending',async()=>{
 it('locks the snapshot on revocation and discards an earlier successful read',async()=>{
  let complete!:(v:Snapshot)=>void;m.fetch.mockImplementationOnce(()=>new Promise<Snapshot>(resolve=>{complete=resolve;}));
  act(()=>m.event?.({type:'ready'}));await act(async()=>vi.advanceTimersByTimeAsync(250));act(()=>m.event?.({type:'revoked'}));
- await act(async()=>complete(initial));expect(container.querySelector('textarea')).toBeNull();expect(container.textContent).toContain('latest update could not be verified');
+ await act(async()=>complete(initial));expect(container.querySelector('textarea')).toBeNull();expect(container.textContent).toContain('The session or workspace changed');
  const recovery=Array.from(container.querySelectorAll('a')).find(a=>a.textContent==='Reload page to verify');
  expect(recovery?.getAttribute('href')).toBe('/app/conversations?source=whatsapp&c=thread');
  expect(m.fetch).toHaveBeenCalledTimes(1);
@@ -114,4 +114,32 @@ it('remounts the native pane after a changed staff membership fingerprint',async
 it('does not render another channel when the initial channel read is unavailable',async()=>{
  await act(async()=>root.render(<UnifiedInbox initial={{...initial,ig:{ok:false,code:'UNAVAILABLE'}} as Snapshot}/>));
  expect(container.querySelector('textarea')).toBeNull();expect(container.textContent).not.toContain('Previously verified contact');expect(container.textContent).toContain('Retry');
+});
+
+it('lets a fenced HTTP read finish across transport loss without duplicate reconnect reads',async()=>{
+ let complete!:(v:Snapshot)=>void;m.fetch.mockImplementationOnce(()=>new Promise<Snapshot>(resolve=>{complete=resolve;}));
+ act(()=>m.event?.({type:'change'}));await act(async()=>vi.advanceTimersByTimeAsync(250));
+ act(()=>{m.event?.({type:'disconnected'});m.event?.({type:'reconnect'});});
+ expect(container.querySelector('textarea')).toBeNull();
+ await act(async()=>vi.advanceTimersByTimeAsync(250));expect(m.fetch).toHaveBeenCalledTimes(1);
+ await act(async()=>complete(initial));expect(container.querySelector('textarea')).not.toBeNull();expect(m.fetch).toHaveBeenCalledTimes(1);
+});
+it('repeated SSE transport failures do not erase a new authorized read or cause a request storm',async()=>{
+ await act(async()=>m.event?.({type:'disconnected'}));expect(m.fetch).toHaveBeenCalledTimes(1);
+ for(let i=0;i<5;i++)await act(async()=>m.event?.({type:'disconnected'}));
+ expect(m.fetch).toHaveBeenCalledTimes(1);expect(container.querySelector('textarea')).not.toBeNull();
+});
+it('shows a single read failure notice and safely retries',async()=>{
+ m.fetch.mockResolvedValueOnce({ok:false,code:'UNAVAILABLE'});
+ act(()=>m.event?.({type:'change'}));await act(async()=>vi.advanceTimersByTimeAsync(250));
+ expect(container.querySelectorAll('aside')).toHaveLength(1);
+ const retry=Array.from(container.querySelectorAll('button')).find(b=>b.textContent==='Retry');
+ await act(async()=>retry?.click());expect(container.querySelector('textarea')).not.toBeNull();
+});
+
+it('does not schedule a second read when recovery precedes a fast pending read completion',async()=>{
+ let complete!:(v:Snapshot)=>void;m.fetch.mockImplementationOnce(()=>new Promise<Snapshot>(resolve=>{complete=resolve;}));
+ act(()=>m.event?.({type:'disconnected'}));act(()=>m.event?.({type:'reconnect'}));
+ await act(async()=>complete(initial));await act(async()=>vi.advanceTimersByTimeAsync(250));
+ expect(m.fetch).toHaveBeenCalledTimes(1);expect(container.querySelector('textarea')).not.toBeNull();
 });

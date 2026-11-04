@@ -13,7 +13,8 @@ vi.mock("@/lib/tenancy/actions", () => ({ getCustomerReadiness: async () => ({ok
 vi.mock("@/lib/customer/dashboard-billing-actions", () => ({ readDashboardBilling: vi.fn() }));
 vi.mock("@/lib/customer/service-inbox-actions", () => ({ readServiceInbox: state.load }));
 import ConversationsRoute from "@/app/app/conversations/page";
-vi.mock("@/lib/tenancy/access",()=>({getCompanyAccess:async()=>({ok:true,context:{userId:"owner",fullName:"Owner",company:{id:"company",display_name:"Business"},membership:{role:"owner"}}})}));
+vi.mock("@/lib/supabase/server",()=>({runWithVerifiedReadClient:async(work:()=>Promise<unknown>)=>({value:await work(),actorId:"actor-123"})}));
+vi.mock("@/lib/tenancy/access",()=>({runWithVerifiedCompanyRead:(work:()=>Promise<unknown>)=>work(),getCompanyAccess:async()=>({ok:true,context:{userId:"owner",fullName:"Owner",company:{id:"company",display_name:"Business"},membership:{role:"owner"}}})}));
 import DashboardRoute from "@/app/app/page";
 import { UnifiedInbox } from "./unified-inbox";
 import { appCopy } from "@/lib/app-copy";

@@ -20,15 +20,14 @@ async function readServiceInboxData() {
   if(!access.ok)return {ok:false as const,code:access.code};
   const {company,membership,userId}=access.context;
   if(!company||!membership)return {ok:false as const,code:'NO_COMPANY' as const};
-  const contractResult=await measureRead('capabilities',()=>readCompanyChannelContractResult(company.id));
-  if(!contractResult.ok)return contractResult;
-  const channelContract=contractResult.contract;
-  const [waResult,igResult,igAssignAllowed]=await measureRead('capabilities',()=>Promise.all([
+  const [contractResult,scope,waResult,igResult,igAssignAllowed]=await measureRead('capabilities',()=>Promise.all([
+   readCompanyChannelContractResult(company.id),readSessionConversationScope(company.id),
    readInboxCapability(company.id,'wa.conversations.read'),
    readInboxCapability(company.id,'ig.conversations.read'),
    sessionHasCompanyCapability(company.id,'ig.conversations.assign'),
   ]));
-  const scope=await readSessionConversationScope(company.id);
+  if(!contractResult.ok)return contractResult;
+  const channelContract=contractResult.contract;
   // No error response carries retained data or a grant. Recheck all available
   // authority before classification; explicit denials outrank transient errors.
   async function finalAuthority(){

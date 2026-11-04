@@ -2,14 +2,14 @@ import {afterEach,expect,it,vi} from 'vitest';
 import type {SupabaseClient} from '@supabase/supabase-js';
 import {branchInboxEventStream} from './branch-inbox-events';
 const scope={companyId:'10000000-0000-4000-8000-000000000021',branchId:'10000000-0000-4000-8000-000000000031',channel:'whatsapp'};
-function setup(authorize=vi.fn(async()=>true),watchScope:Parameters<typeof branchInboxEventStream>[0]['scope']=scope){
+function setup(authorize=vi.fn(async()=>true),watchScope:Parameters<typeof branchInboxEventStream>[0]['scope']=scope,renewBeforeClose=false){
  vi.useFakeTimers();
  let status:(v:string)=>void=()=>{};
  const handlers:Array<(p:never)=>void>=[];
  const channel={on:vi.fn((_event,_filter,handler)=>{handlers.push(handler);return channel;}),subscribe:vi.fn(fn=>{status=fn;})};
  const client={channel:vi.fn(()=>channel),removeChannel:vi.fn(async()=> 'ok')};
  const abort=new AbortController();
- const response=branchInboxEventStream({client:client as unknown as SupabaseClient,scope:watchScope,authorize,signal:abort.signal,heartbeatMs:100,lifetimeMs:1000});
+ const response=branchInboxEventStream({client:client as unknown as SupabaseClient,scope:watchScope,authorize,signal:abort.signal,heartbeatMs:100,lifetimeMs:renewBeforeClose?6000:1000,renewBeforeClose});
  const reader=response.body!.getReader(),read=async()=>new TextDecoder().decode((await reader.read()).value);
  return {authorize,client,abort,response,reader,read,status:(s:string)=>status(s),ready:()=>{status('SUBSCRIBED');handlers[2]({extension:'postgres_changes',status:'ok'} as never);},changed:(p:{new:Record<string,unknown>})=>handlers[0](p as never)};
 }
@@ -56,4 +56,16 @@ it('retains a change received during an in-flight authorization check',async()=>
  s.changed({new:{company_id:scope.companyId,branch_id:scope.branchId,channel:scope.channel}});
  release(true);expect(await s.read()).toContain('ready');expect(await s.read()).toContain('change');
  s.abort.abort();
+});
+
+it('authorizes a planned renewal before closing, and fails closed on denial',async()=>{
+ for(const allowed of [true,false]){
+  const authorize=vi.fn(async()=>true),s=setup(authorize,scope,true);
+  await s.read();s.ready();await s.read();
+  authorize.mockResolvedValue(allowed);
+  // Suppress heartbeat consumption by checking emitted records until closure.
+  await vi.advanceTimersByTimeAsync(1000);
+  let text='';for(;;){const record=await s.reader.read();if(record.done)break;text+=new TextDecoder().decode(record.value);}
+  expect(text).toContain(allowed?'event: renew':'event: revoked');expect(s.client.removeChannel).toHaveBeenCalledOnce();
+ }
 });

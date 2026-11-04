@@ -35,3 +35,12 @@ it('logs only a fixed failure stage and status for diagnostics',async()=>{
  const warning=vi.spyOn(console,'warn').mockImplementation(()=>{});
  try{m.rpc.mockResolvedValue({data:null,error:{message:'SECRET_DETAIL'}});expect((await GET(new Request(url))).status).toBe(503);expect(warning).toHaveBeenCalledWith('inbox_event_refused',{status:503,stage:'capabilities'});expect(JSON.stringify(warning.mock.calls)).not.toContain('SECRET_DETAIL');expect(JSON.stringify(warning.mock.calls)).not.toContain(companyId);expect(JSON.stringify(warning.mock.calls)).not.toContain(actorId);}finally{warning.mockRestore();}
 });
+
+it('subtracts slow broker/access setup from the SSE lifetime',async()=>{
+ const now=vi.spyOn(performance,'now').mockReturnValueOnce(0).mockReturnValue(25000);
+ try{await GET(new Request(url));expect(m.stream.mock.calls[0][0].lifetimeMs).toBe(25000);}finally{now.mockRestore();}
+});
+it('does not start a stream after the safe request budget is exhausted',async()=>{
+ const now=vi.spyOn(performance,'now').mockReturnValueOnce(0).mockReturnValue(50000);
+ try{expect((await GET(new Request(url))).status).toBe(503);expect(m.stream).not.toHaveBeenCalled();}finally{now.mockRestore();}
+});

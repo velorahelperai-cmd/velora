@@ -136,7 +136,7 @@ describe('UnifiedInbox membership and page safety',()=>{
  });
  it('rejects more() pagination if returned membershipFingerprint does not match active membership',async()=>{
   const initial=makeInitial('fp-active');render({initial});state.refreshWhatsappInboxPage.mockResolvedValue({ok:true,data:{...initial.wa.page,conversations:[conversation('c2-stale','Stale Member Page','+9682','50','Stale',500)],membershipFingerprint:'fp-stale-different'}});
-  await click(button('More WhatsApp'));expect(container.textContent).not.toContain('Stale Member Page');expect(container.textContent).toContain('The latest update could not be verified');
+  await click(button('More WhatsApp'));expect(container.textContent).not.toContain('Stale Member Page');expect(container.textContent).toContain('The session or workspace changed');
  });
  it('preserves loaded pages and native panes across re-renders and channel navigation to prevent draft loss',async()=>{
   route('channel=whatsapp&source=whatsapp&c=c1');const initial=makeInitial('fp-1');render({initial});const pane=container.querySelector('[data-pane="conversations"]'),draft=container.querySelector<HTMLTextAreaElement>('textarea')!;

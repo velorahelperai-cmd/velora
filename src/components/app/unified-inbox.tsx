@@ -41,13 +41,13 @@ function ScopedUnifiedInbox({initial,waReview=false,igReview=false}:{initial:Sna
  const [moreLoading,setMoreLoading]=useState<InboxChannel|null>(null);
  const epoch=useRef(0),busy=useRef(false),mounted=useRef(true);
  const live=useRef(false),queuedRefresh=useRef(false),eventTimer=useRef<ReturnType<typeof setTimeout>|null>(null);
- const accessRevoked=useRef(false);
+ const accessRevoked=useRef(false),transportDown=useRef(false),pendingChange=useRef(false);
  const refreshRef=useRef<()=>Promise<void>>(async()=>{});
  const [query,setQuery]=useState('');
  const expected=initial.ok?`${initial.companyId}:${initial.actorId}`:null;
- const refresh=useCallback(async()=>{
+ const refresh=useCallback(async(queueIfBusy=false)=>{
   if(expected===null||accessRevoked.current)return;
-  if(busy.current){queuedRefresh.current=true;return;}
+  if(busy.current){if(queueIfBusy)queuedRefresh.current=true;return;}
   queuedRefresh.current=false;busy.current=true;const request=++epoch.current;setRefreshing(true);
   try{const [companyId,actorId]=expected.split(':');const result=await fetchServiceInbox({companyId:companyId!,actorId:actorId!});if(!mounted.current||epoch.current!==request)return;
    if(result.ok&&`${result.companyId}:${result.actorId}`!==expected){setRetained(null);setSnapshot({ok:false,code:'SCOPE_CHANGED'});setError(true);return;}
@@ -61,12 +61,25 @@ function ScopedUnifiedInbox({initial,waReview=false,igReview=false}:{initial:Sna
  useEffect(()=>{refreshRef.current=refresh;},[refresh]);
  const onInboxEvent=useCallback((event:InboxRealtimeEvent)=>{
   if(accessRevoked.current)return;
+  if(event.type==='disconnected'){
+   live.current=false;
+   if(transportDown.current)return;
+   transportDown.current=true;
+   // Unknown authority hides old data; independent fenced HTTP reads can finish.
+   setRetained(null);setSnapshot({ok:false,code:'UNAVAILABLE'});setError(true);
+   if(document.visibilityState==='visible')void refreshRef.current();
+   return;
+  }
   if(event.type==='unavailable'){live.current=false;queuedRefresh.current=false;if(eventTimer.current!==null)clearTimeout(eventTimer.current);eventTimer.current=null;epoch.current++;setRefreshing(false);setMoreLoading(null);setRetained(null);setSnapshot({ok:false,code:'UNAVAILABLE'});setError(true);return;}
   if(event.type==='revoked'){accessRevoked.current=true;setRevoked(true);live.current=false;queuedRefresh.current=false;if(eventTimer.current!==null)clearTimeout(eventTimer.current);eventTimer.current=null;epoch.current++;setRetained(null);setSnapshot({ok:false,code:'SCOPE_CHANGED'});setError(true);return;}
-  if(event.type==='ready'||event.type==='reconnect')live.current=true;
+  if(event.type==='ready'||event.type==='reconnect'){
+   live.current=true;transportDown.current=false;
+   if(busy.current)return; // The pending fenced read already reconciles this transport recovery.
+  }
+  if(event.type==='change')pendingChange.current=true;
   if(document.visibilityState!=='visible'){queuedRefresh.current=true;return;}
-  if(eventTimer.current===null)eventTimer.current=setTimeout(()=>{eventTimer.current=null;if(mounted.current)void refreshRef.current();},250);
- },[]);
+  if(eventTimer.current===null)eventTimer.current=setTimeout(()=>{eventTimer.current=null;const changed=pendingChange.current;pendingChange.current=false;if(mounted.current)void refresh(changed);},250);
+ },[refresh]);
  useEffect(()=>{const fence=epoch;mounted.current=true;live.current=false;const timer=window.setInterval(()=>{if(!live.current&&document.visibilityState==='visible')void refresh();},30000);
   const onVisible=()=>{if(document.visibilityState==='visible')void refresh();};document.addEventListener('visibilitychange',onVisible);
   return()=>{mounted.current=false;fence.current++;queuedRefresh.current=false;if(eventTimer.current!==null)clearTimeout(eventTimer.current);eventTimer.current=null;window.clearInterval(timer);document.removeEventListener('visibilitychange',onVisible);};
@@ -120,8 +133,8 @@ function ScopedUnifiedInbox({initial,waReview=false,igReview=false}:{initial:Sna
   finally{busy.current=false;if(mounted.current&&epoch.current===request){setMoreLoading(null);if(queuedRefresh.current&&document.visibilityState==='visible')void refreshRef.current();}}
  }
  return <WorkspaceShell immersive={selectionValid} title={ar?'المحادثات':'Conversations'} actions={revoked?<a href={`/app/conversations${params.toString()?`?${params.toString()}`:''}`} className="underline">{ar?'إعادة تحميل الصفحة للتحقق':'Reload page to verify'}</a>:<Button variant="secondary" busy={refreshing||isNavigating} disabled={moreLoading!==null} onClick={()=>{if(!initial.ok)startTransition(()=>{router.refresh();});else void refresh();}}>{ar?'تحديث':'Refresh'}</Button>}>
-  {initial.ok&&<CompanyInboxRealtime key={`${initial.companyId}:${initial.actorId}`} companyId={initial.companyId} actorId={initial.actorId} ar={ar} onInboxEvent={onInboxEvent}/>}
-  {error&&<Notice tone="error">{ar?'تعذّر التحقق من آخر تحديث. حدّث الصفحة قبل متابعة العمل.':'The latest update could not be verified. Refresh before continuing.'}</Notice>}
+  {initial.ok&&<CompanyInboxRealtime separateTransport key={`${initial.companyId}:${initial.actorId}`} companyId={initial.companyId} actorId={initial.actorId} ar={ar} onInboxEvent={onInboxEvent}/>}
+  {error&&snapshot.ok&&<Notice tone="error">{ar?'تعذّر التحقق من آخر تحديث. حدّث الصفحة قبل متابعة العمل.':'The latest update could not be verified. Refresh before continuing.'}</Notice>}
   {!snapshot.ok?<Notice tone={snapshot.code==='UNAVAILABLE'?'error':'warn'}>{snapshot.code==='NO_COMPANY'?(ar?'اختر نشاطًا من قائمة مساحة العمل.':'Choose a business from the workspace menu.'):snapshot.code==='FORBIDDEN'?<><strong>{copy.app.inboxAccessDeniedTitle}</strong><p>{copy.app.inboxAccessDeniedBody}</p></>:snapshot.code==='UNAVAILABLE'?copy.app.inboxLoadFailedBody:(ar?'تغيّرت الجلسة أو مساحة العمل. حدّث الصفحة للتحقق قبل المتابعة.':'The session or workspace changed. Refresh to verify before continuing.')} {snapshot.code==='UNAVAILABLE'&&<button type="button" className="underline ms-2 font-medium" disabled={refreshing||moreLoading!==null} onClick={()=>{if(!initial.ok)startTransition(()=>{router.refresh();});else void refresh();}}>{ar?'إعادة المحاولة':'Retry'}</button>} <Link href="/app/settings?tab=plan" className="underline ms-2">{ar?'الاشتراك والدعم':'Subscription and support'}</Link></Notice>:null}
   {activeSource&&retained&&<>
    {snapshot.ok&&snapshot.channelContract?.plan_entitlements.status==='UNCONFIGURED'&&<Notice tone="warn">{ar?'استحقاقات القنوات غير محددة (UNCONFIGURED). المعروض أدناه هو الوصول الحالي المتحقق منه؛ لا يعني أن القنوات مشمولة في الباقة.':'Channel entitlements are UNCONFIGURED. The channels below reflect verified existing access, not plan inclusion.'}</Notice>}
