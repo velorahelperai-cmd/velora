@@ -4,6 +4,7 @@ import {useRouter} from 'next/navigation';
 import {useLocalSearchParams} from '@/lib/navigation/use-local-search-params';
 import Link from 'next/link';
 import {useDemo} from '@/lib/demo-state';
+import {fetchInboxThread} from '@/lib/customer/inbox-thread-read';
 import {fetchServiceInbox,type ServiceInboxSnapshot} from '@/lib/customer/service-inbox-read';
 import {selectedIncludedChannels} from '@/lib/channels/contract';
 import {refreshWhatsappInboxPage} from '@/lib/whatsapp/inbox-actions';
@@ -42,10 +43,10 @@ function ScopedUnifiedInbox({initial,waReview=false,igReview=false}:{initial:Sna
  const epoch=useRef(0),busy=useRef(false),mounted=useRef(true);
  const live=useRef(false),queuedRefresh=useRef(false),eventTimer=useRef<ReturnType<typeof setTimeout>|null>(null);
  const accessRevoked=useRef(false),transportDown=useRef(false),pendingChange=useRef(false);
- const refreshRef=useRef<()=>Promise<void>>(async()=>{});
+ const refreshRef=useRef<(queueIfBusy?:boolean,refreshThread?:boolean)=>Promise<void>>(async()=>{});
  const [query,setQuery]=useState('');
  const expected=initial.ok?`${initial.companyId}:${initial.actorId}`:null;
- const refresh=useCallback(async(queueIfBusy=false)=>{
+ const refresh=useCallback(async(queueIfBusy=false,refreshThread=true)=>{
   if(expected===null||accessRevoked.current)return;
   if(busy.current){if(queueIfBusy)queuedRefresh.current=true;return;}
   queuedRefresh.current=false;busy.current=true;const request=++epoch.current;setRefreshing(true);
@@ -54,9 +55,9 @@ function ScopedUnifiedInbox({initial,waReview=false,igReview=false}:{initial:Sna
    if(!result.ok){setRetained(null);setSnapshot(result);setError(true);return;}
    // Replace cached pages: stable identity is not proof of old assignments.
    if((!result.wa.ok&&result.wa.code==='UNAVAILABLE')||(!result.ig.ok&&result.ig.code==='UNAVAILABLE')){setRetained(null);setSnapshot({ok:false,code:'UNAVAILABLE'});setError(true);return;}
-   setSnapshot(result);setRetained(result);setRefreshVersion(n=>n+1);setError(false);
+   setSnapshot(result);setRetained(result);if(refreshThread)setRefreshVersion(n=>n+1);setError(false);
   }catch{if(mounted.current&&epoch.current===request){setRetained(null);setSnapshot({ok:false,code:'UNAVAILABLE'});setError(true);}}
-  finally{busy.current=false;if(mounted.current&&epoch.current===request){setRefreshing(false);if(queuedRefresh.current&&document.visibilityState==='visible')void refreshRef.current();}}
+  finally{busy.current=false;if(mounted.current&&epoch.current===request){setRefreshing(false);if(queuedRefresh.current&&document.visibilityState==='visible')void refreshRef.current(false,false);}}
  },[expected]);
  useEffect(()=>{refreshRef.current=refresh;},[refresh]);
  const onInboxEvent=useCallback((event:InboxRealtimeEvent)=>{
@@ -78,7 +79,7 @@ function ScopedUnifiedInbox({initial,waReview=false,igReview=false}:{initial:Sna
   }
   if(event.type==='change')pendingChange.current=true;
   if(document.visibilityState!=='visible'){queuedRefresh.current=true;return;}
-  if(eventTimer.current===null)eventTimer.current=setTimeout(()=>{eventTimer.current=null;const changed=pendingChange.current;pendingChange.current=false;if(mounted.current)void refresh(changed);},250);
+  if(eventTimer.current===null)eventTimer.current=setTimeout(()=>{eventTimer.current=null;const changed=pendingChange.current;pendingChange.current=false;if(mounted.current){if(changed)setRefreshVersion(n=>n+1);void refresh(changed,!changed);}},250);
  },[refresh]);
  useEffect(()=>{const fence=epoch;mounted.current=true;live.current=false;const timer=window.setInterval(()=>{if(!live.current&&document.visibilityState==='visible')void refresh();},30000);
   const onVisible=()=>{if(document.visibilityState==='visible')void refresh();};document.addEventListener('visibilitychange',onVisible);
@@ -130,7 +131,7 @@ function ScopedUnifiedInbox({initial,waReview=false,igReview=false}:{initial:Sna
    if(result.data.conversationScope!==ig.data.conversationScope){setRetained(null);setSnapshot({ok:false,code:'SCOPE_CHANGED'});setError(true);return;}
    setRetained(old=>old?.ig.ok?{...old,ig:{...old.ig,data:{...result.data,conversations:[...old.ig.data.conversations,...result.data.conversations.filter(c=>old.ig.ok&&!old.ig.data.conversations.some(existing=>existing.id===c.id))]}}}:old);
   }}catch{if(mounted.current&&request===epoch.current){setRetained(null);setSnapshot({ok:false,code:'UNAVAILABLE'});setError(true);}}
-  finally{busy.current=false;if(mounted.current&&epoch.current===request){setMoreLoading(null);if(queuedRefresh.current&&document.visibilityState==='visible')void refreshRef.current();}}
+  finally{busy.current=false;if(mounted.current&&epoch.current===request){setMoreLoading(null);if(queuedRefresh.current&&document.visibilityState==='visible')void refreshRef.current(false,false);}}
  }
  return <WorkspaceShell immersive={selectionValid} title={ar?'المحادثات':'Conversations'} actions={revoked?<a href={`/app/conversations${params.toString()?`?${params.toString()}`:''}`} className="underline">{ar?'إعادة تحميل الصفحة للتحقق':'Reload page to verify'}</a>:<Button variant="secondary" busy={refreshing||isNavigating} disabled={moreLoading!==null} onClick={()=>{if(!initial.ok)startTransition(()=>{router.refresh();});else void refresh();}}>{ar?'تحديث':'Refresh'}</Button>}>
   {initial.ok&&<CompanyInboxRealtime separateTransport key={`${initial.companyId}:${initial.actorId}`} companyId={initial.companyId} actorId={initial.actorId} ar={ar} onInboxEvent={onInboxEvent}/>}
@@ -162,7 +163,7 @@ function ScopedUnifiedInbox({initial,waReview=false,igReview=false}:{initial:Sna
      {selectionValid&&<div className={styles.threadToolbar}><button type="button" onClick={()=>select(null,null)} className={styles.back}>{ar?'الرجوع للمحادثات':'Back to conversations'}</button><Button variant="ghost" busy={refreshing} disabled={moreLoading!==null} onClick={()=>void refresh()} aria-label={ar?"تحديث المحادثة":"Refresh conversation"}>{ar?"تحديث":"Refresh"}</Button><ChannelBadge channel={source} ar={ar}/><span dir="auto">{activeRow?.name??(ar?'المحادثة':'Conversation')}</span></div>}
      {!selectionValid&&<div className={styles.welcome}><EmptyState title={ar?'اختر محادثة للبدء':'Choose a conversation'} body={ar?'كل رد يخرج عبر قناة المحادثة نفسها. بيانات الأنشطة والحسابات تبقى منفصلة.':'Each reply uses its conversation’s channel. Business and account histories remain separate.'}/></div>}
      {/* Keep native panes mounted: drafts and unresolved operation IDs survive channel navigation. */}
-     {retained.wa.ok&&<div className={styles.pane} hidden={!selectionValid||source!=='whatsapp'} inert={!selectionValid||source!=='whatsapp'}><ConversationsPage key={retained.wa.page.membershipFingerprint} readSuspended={readSuspended} refreshVersion={refreshVersion} embedded selectedConversationId={selectionValid&&source==='whatsapp'?selected:null} onSelectConversation={id=>select('whatsapp',id)} inbox={retained.wa.conversations} page={retained.wa.page} meta={retained.wa.meta} reviewCompanyId={waReview?retained.companyId:undefined}/></div>}
+     {retained.wa.ok&&<div className={styles.pane} hidden={!selectionValid||source!=='whatsapp'} inert={!selectionValid||source!=='whatsapp'}><ConversationsPage threadReader={fetchInboxThread} key={retained.wa.page.membershipFingerprint} readSuspended={readSuspended} refreshVersion={refreshVersion} embedded selectedConversationId={selectionValid&&source==='whatsapp'?selected:null} onSelectConversation={id=>select('whatsapp',id)} inbox={retained.wa.conversations} page={retained.wa.page} meta={retained.wa.meta} reviewCompanyId={waReview?retained.companyId:undefined}/></div>}
      {retained.igAllowed===true&&<div className={styles.pane} hidden={!selectionValid||source!=='instagram'} inert={!selectionValid||source!=='instagram'}><InstagramInbox key={retained.ig.ok?retained.ig.data.conversationScope:'unverified'} readSuspended={readSuspended} canAssign={snapshot.ok&&snapshot.igAssignAllowed===true} refreshVersion={refreshVersion} embedded selectedConversationId={selectionValid&&source==='instagram'?selected:null} onSelectConversation={(id,intent)=>select('instagram',id,intent)} companyId={retained.companyId} owner={retained.owner} companyInSetup={retained.companyInSetup} reviewMode={igReview}/></div>}
      </fieldset>
     </div>

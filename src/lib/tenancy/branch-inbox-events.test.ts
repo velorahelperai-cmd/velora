@@ -69,3 +69,13 @@ it('authorizes a planned renewal before closing, and fails closed on denial',asy
   expect(text).toContain(allowed?'event: renew':'event: revoked');expect(s.client.removeChannel).toHaveBeenCalledOnce();
  }
 });
+
+it('does not lose planned renewal when an idle authority check is already pending',async()=>{
+ let release!:(v:boolean)=>void;
+ const authorize=vi.fn().mockResolvedValueOnce(true).mockImplementationOnce(()=>new Promise<boolean>(resolve=>{release=resolve;})).mockResolvedValue(true);
+ const s=setup(authorize,scope,true);await s.read();s.ready();await s.read();
+ await vi.advanceTimersByTimeAsync(1000);release(true);
+ await Promise.resolve();await Promise.resolve();
+ expect(await s.read()).toContain('ping');
+ const renewal=s.read();await vi.advanceTimersByTimeAsync(5000);expect(await renewal).toContain('event: renew');
+});

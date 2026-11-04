@@ -555,6 +555,7 @@ export function ConversationsPage({
   onSelectConversation,
   refreshVersion = 0,
   readSuspended = false,
+  threadReader = refreshWhatsappThreadPage,
 }: {
   inbox: Conversation[];
   forbidden?: boolean;
@@ -568,6 +569,7 @@ export function ConversationsPage({
   onSelectConversation?: (id:string|null)=>void;
   refreshVersion?:number;
   readSuspended?:boolean;
+  threadReader?:typeof refreshWhatsappThreadPage;
 }) {
   const suspendedRef=useRef(readSuspended);suspendedRef.current=readSuspended;
   const copy = useAppCopy();
@@ -598,6 +600,7 @@ export function ConversationsPage({
   const threadsRef = useRef<Record<string, ThreadView>>({});
   const [threadBusyId, setThreadBusyId] = useState<string | null>(null);
   const threadInFlightRef = useRef<string | null>(null);
+  const pendingThreadRefreshRef = useRef<string | null>(null);
   const [readyThreadId, setReadyThreadId] = useState<string | null>(null);
   const [threadErrors, setThreadErrors] = useState<Record<string, string>>({});
   const [connection, setConnection] = useState<WhatsappConnectionStatus | null>(null);
@@ -744,6 +747,7 @@ export function ConversationsPage({
     setError(null);
     setWarn(null);
     setDrafts({});
+    pendingThreadRefreshRef.current = null;
     threadsRef.current = {};
     setThreads({});
     setThreadErrors({});
@@ -999,10 +1003,10 @@ export function ConversationsPage({
     setThreadBusyId(conversationId);
     // Keep an already verified draft usable during polling. Initial/explicit reads
     // still block; failed reads lock via threadErrors, and every send reauthorizes server-side.
-    if (!background && selectedIdRef.current === conversationId) setReadyThreadId(null);
+    if (!background && selectedIdRef.current === conversationId && !(readyThreadId===conversationId && threadsRef.current[conversationId] && !threadErrors[conversationId])) setReadyThreadId(null);
     setThreadErrors(current => { const next = { ...current }; delete next[conversationId]; return next; });
     try {
-      const result = await refreshWhatsappThreadPage({ companyId, conversationId, before });
+      const result = await threadReader({ companyId, conversationId, before });
       if (!stillCurrent()) return false;
       if (!result.ok) {
         if (selectedIdRef.current === conversationId) setReadyThreadId(null);
@@ -1030,6 +1034,10 @@ export function ConversationsPage({
       if (stillCurrent()) {
         threadInFlightRef.current = null;
         setThreadBusyId(current => current === conversationId ? null : current);
+        if(pendingThreadRefreshRef.current===conversationId && selectedIdRef.current===conversationId && !suspendedRef.current){
+          pendingThreadRefreshRef.current=null;
+          void loadThread(conversationId,undefined,true,true);
+        }
       }
     }
   }
@@ -1070,7 +1078,8 @@ export function ConversationsPage({
   }, [selectedId, inboxScope, readCacheGeneration]);
 
   useEffect(() => {
-    if (!refreshVersion || !selectedId || !inboxMeta?.companyId || threadInFlightRef.current === selectedId) return;
+    if (!refreshVersion || !selectedId || !inboxMeta?.companyId) return;
+    if(threadInFlightRef.current === selectedId){pendingThreadRefreshRef.current=selectedId;return;}
     // A periodic refresh must not invalidate a slower in-flight read forever.
     void (async () => {
       const loaded = await loadThread(selectedId, undefined, true, true);
@@ -1100,7 +1109,7 @@ export function ConversationsPage({
     if (readSuspended || !boundary || !selectedThread || !selectedReady) return;
     const request = captureInboxEpoch(epochStoreRef.current);
     const generation = readGenById.current[selectedThread.conversationId];
-    const acknowledgementKey = `${request.opGen}:${selectedThread.conversationId}:${selectedThread.readVersion}:${boundary}`;
+    const acknowledgementKey = `${request.opGen}:${selectedThread.conversationId}:${boundary}`;
     if (seenRequestsRef.current.has(acknowledgementKey)) return;
     // Two animation frames ensure the committed latest page can be painted before acknowledgement.
     let secondFrame = 0;
@@ -1115,6 +1124,7 @@ export function ConversationsPage({
           try { result = await markWhatsappThreadSeen({ companyId: selectedThread.companyId,
             conversationId: selectedThread.conversationId, displayedInboundMessageId: boundary }); }
           catch { result = { ok: false as const, code: "UNAVAILABLE" as const }; }
+          if (!result.ok) seenRequestsRef.current.delete(acknowledgementKey);
           if (!currentThreadRequest({ request, current: epochStoreRef.current.current, generation,
             currentGeneration: readGenById.current[selectedThread.conversationId], conversationId: selectedThread.conversationId,
             selectedId: selectedIdRef.current })) return;
@@ -1124,7 +1134,7 @@ export function ConversationsPage({
             return;
           }
           patch(selectedThread.conversationId, () => ({ unreadCount: result.data.unreadCount } as Partial<WhatsappInboxItem>));
-          await refreshInboxView();
+          if(!embedded)await refreshInboxView();
         })();
       });
     });
@@ -1826,19 +1836,19 @@ export function ConversationsPage({
                 className="flex-1 overflow-y-auto p-4 space-y-4"
                 dir={locale === "ar" ? "rtl" : "ltr"}
               >
-                {!selectedReady ? <p className="text-xs text-[var(--color-muted-soft)]">{locale === "ar" ? "جارٍ تحديث المحادثة…" : "Refreshing thread…"}</p> : null}
-                {selectedThread?.hasMore ? <Button variant="ghost" className="w-full min-h-8 text-xs" disabled={pending || threadBusyId === selected.id}
+                {!selectedReady && !threadErrors[selected.id] ? <p className="text-xs text-[var(--color-muted-soft)]">{locale === "ar" ? "جارٍ تحديث المحادثة…" : "Refreshing thread…"}</p> : null}
+                {selectedReady && selectedThread?.hasMore ? <Button variant="ghost" className="w-full min-h-8 text-xs" disabled={pending || threadBusyId === selected.id}
                   onClick={() => runPendingAction(async () => { await loadThread(selected.id, selectedThread.nextCursor); })}>
                   {locale === "ar" ? "تحميل الرسائل الأقدم" : "Load older messages"}
                 </Button> : null}
-                {selectedThread ? <p className="text-[13px] text-[var(--color-muted-soft)]">{locale === "ar" ? `${selected.messages.length} رسالة محملة` : `${selected.messages.length} messages loaded`}</p> : null}
+                {selectedReady && selectedThread ? <p className="text-[13px] text-[var(--color-muted-soft)]">{locale === "ar" ? `${selected.messages.length} رسالة محملة` : `${selected.messages.length} messages loaded`}</p> : null}
                 {selectedReady && selected.messages.length === 0 ? (
                   <div className="py-16 text-center text-xs text-[var(--color-muted-soft)]">
                     {locale === "ar" ? "لا توجد رسائل سابقة في هذه المحادثة." : "No messages in this conversation yet."}
                   </div>
                 ) : null}
 
-                {selected.messages.map((m) => {
+                {selectedReady && selected.messages.map((m) => {
                   const isCustomer = m.from === "customer";
                   const isAssistant = m.from === "assistant";
 

@@ -18,7 +18,7 @@ export function branchInboxEventStream(input:{
  const stream=new ReadableStream<Uint8Array>({
   start(controller){
    const encoder=new TextEncoder();
-   let closed=false,busy=false,pending=false,joined=false,replicationReady=false,readySent=false;
+   let closed=false,busy=false,pending=false,renewPending=false,joined=false,replicationReady=false,readySent=false;
    let heartbeat:ReturnType<typeof setInterval>|undefined;
    const emit=(event:string)=>{if(!closed)controller.enqueue(encoder.encode(`event: ${event}\ndata: {}\n\n`));};
    const channel=client.channel(`branch-inbox-${crypto.randomUUID()}`);
@@ -35,18 +35,18 @@ export function branchInboxEventStream(input:{
    const check=async(event:string)=>{
     if(closed)return;
     // A concurrent event must survive an in-flight heartbeat check.
-    if(busy){if(event!=='ping')pending=true;return;}
+    if(busy){if(event==='renew')renewPending=true;else if(event!=='ping')pending=true;return;}
     busy=true;
     try{
      if(!await authorize()){emit('revoked');stop();return;}
      emit(event);
      if(event==='renew')stop();
     }catch{emit('unavailable');stop();}
-    finally{busy=false;if(pending&&!closed){pending=false;void check('change');}}
+    finally{busy=false;if(!closed){if(pending){pending=false;void check('change');}else if(renewPending){renewPending=false;void check('renew');}}}
    };
    // A planned rotation must prove fresh authority before preserving the UI.
    // A slow or failed authorization still reaches the hard fail-closed deadline.
-   if(input.renewBeforeClose)renewal=setTimeout(()=>{if(readySent&&!busy)void check('renew');},Math.max(0,lifetimeMs-5000));
+   if(input.renewBeforeClose)renewal=setTimeout(()=>{if(readySent)void check('renew');},Math.max(0,lifetimeMs-5000));
    const changed=(payload:{new:Record<string,unknown>})=>{
     const row=payload.new;
     if(row.company_id===scope.companyId&&('branchId' in scope

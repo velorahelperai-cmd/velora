@@ -2,7 +2,7 @@ import {beforeEach,expect,it,vi} from 'vitest';
 import type {ComponentProps} from 'react';
 import {appCopy} from '@/lib/app-copy';
 type Slot={value?:unknown;deps?:unknown[]};
-const state=vi.hoisted(()=>({slots:[] as Slot[],cursor:0,effects:[] as Array<()=>void>,thread:vi.fn(),audit:vi.fn(),connection:vi.fn(),send:vi.fn()}));
+const state=vi.hoisted(()=>({slots:[] as Slot[],cursor:0,effects:[] as Array<()=>void>,thread:vi.fn(),audit:vi.fn(),connection:vi.fn(),send:vi.fn(),seen:vi.fn(),inbox:vi.fn()}));
 vi.mock('react',async()=>{
  const actual=await vi.importActual<typeof import('react')>('react');
  const slot=()=>state.slots[state.cursor++]??(state.slots[state.cursor-1]={});
@@ -21,7 +21,7 @@ vi.mock('./workspace-shell',()=>({WorkspaceShell:'main'}));
 vi.mock('./channel-ai-draft',()=>({ChannelAIDraft:()=>null}));
 vi.mock('./channel-review',()=>({ChannelReviewStatus:()=>null}));
 vi.mock('@/lib/whatsapp/actions',()=>({controlWhatsappConversation:vi.fn(),replyWhatsappConversation:state.send,upsertConversationLeadState:vi.fn()}));
-vi.mock('@/lib/whatsapp/inbox-actions',()=>({refreshWhatsappInboxInitialPage:vi.fn(),refreshWhatsappInboxPage:vi.fn(),refreshWhatsappThreadPage:state.thread,refreshWhatsappControlAuditPage:state.audit,refreshWhatsappConnectionStatus:state.connection,markWhatsappThreadSeen:vi.fn()}));
+vi.mock('@/lib/whatsapp/inbox-actions',()=>({refreshWhatsappInboxInitialPage:state.inbox,refreshWhatsappInboxPage:vi.fn(),refreshWhatsappThreadPage:state.thread,refreshWhatsappControlAuditPage:state.audit,refreshWhatsappConnectionStatus:state.connection,markWhatsappThreadSeen:state.seen}));
 import {ConversationsPage} from './conversations';
 type Node={type:unknown;props:Record<string,unknown>};
 function nodes(v:unknown):Node[]{if(Array.isArray(v))return v.flatMap(nodes);if(!v||typeof v!=='object'||!('props'in v))return[];const n=v as Node;return[n,...nodes(n.props.children),...nodes(n.props.actions)];}
@@ -68,4 +68,48 @@ it('preserves the verified draft but blocks reply execution during parent author
  const priorComposer=reply(tree);p.readSuspended=true;tree=render(p);expect(reply(tree)).toBeUndefined();
  (priorComposer.props.onKeyDown as(e:unknown)=>void)({key:'Enter',shiftKey:false,nativeEvent:{isComposing:false},preventDefault(){}});await flush();expect(state.send).not.toHaveBeenCalled();
  p.readSuspended=false;tree=render(p);expect(reply(tree).props.disabled).toBe(false);expect(reply(tree).props.value).toBe('Retained draft');
+});
+
+it('acknowledges one displayed inbound boundary once across unchanged background rereads',async()=>{
+ const frames:Array<()=>void>=[];vi.stubGlobal('document',{visibilityState:'visible',addEventListener:vi.fn(),removeEventListener:vi.fn()});
+ vi.stubGlobal('window',{setInterval:vi.fn(),clearInterval:vi.fn(),addEventListener:vi.fn(),removeEventListener:vi.fn(),requestAnimationFrame:(fn:()=>void)=>{frames.push(fn);return frames.length;},cancelAnimationFrame:vi.fn()});
+ const message={id:'message',text:'Verified inbound',from:'customer',at:1,arrivalSequence:'1',direction:'inbound'};
+ state.thread.mockResolvedValue({ok:true,data:{kind:'partial',companyId:'company',conversationId:'thread',conversation:item,messages:[message],displayedInboundMessageId:'message',unreadCount:0,nextCursor:null,hasMore:false}});
+ state.seen.mockResolvedValue({ok:true,data:{unreadCount:0}});state.inbox.mockResolvedValue({ok:false,code:'UNAVAILABLE'});
+ state.audit.mockResolvedValue({ok:false,code:'UNAVAILABLE'});state.connection.mockResolvedValue({ok:false,code:'UNAVAILABLE'});
+ const p=props();render(p);await flush();render(p);while(frames.length)frames.shift()!();await flush();render(p);
+ expect(state.seen).toHaveBeenCalledTimes(1);
+ p.refreshVersion=1;render(p);await flush();render(p);while(frames.length)frames.shift()!();await flush();render(p);
+ expect(state.seen).toHaveBeenCalledTimes(1);expect(state.inbox).not.toHaveBeenCalled();
+});
+
+it('coalesces realtime changes during an in-flight thread read into one trailing verified read',async()=>{
+ const first=deferred(),second=deferred();state.thread.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+ state.audit.mockResolvedValue({ok:false,code:'UNAVAILABLE'});state.connection.mockResolvedValue({ok:false,code:'UNAVAILABLE'});
+ const p=props();render(p);p.refreshVersion=1;render(p);p.refreshVersion=2;render(p);expect(state.thread).toHaveBeenCalledTimes(1);
+ first.resolve({ok:true,data:{kind:'partial',companyId:'company',conversationId:'thread',conversation:item,messages:[],displayedInboundMessageId:null,unreadCount:0,nextCursor:null,hasMore:false}});await flush();render(p);
+ expect(state.thread).toHaveBeenCalledTimes(2);
+ second.resolve({ok:true,data:{kind:'partial',companyId:'company',conversationId:'thread',conversation:item,messages:[],displayedInboundMessageId:null,unreadCount:0,nextCursor:null,hasMore:false}});await flush();render(p);expect(state.thread).toHaveBeenCalledTimes(2);
+});
+
+it('does not send duplicate seen acknowledgements while the first is pending',async()=>{
+ const frames:Array<()=>void>=[];vi.stubGlobal('document',{visibilityState:'visible',addEventListener:vi.fn(),removeEventListener:vi.fn()});
+ vi.stubGlobal('window',{setInterval:vi.fn(),clearInterval:vi.fn(),addEventListener:vi.fn(),removeEventListener:vi.fn(),requestAnimationFrame:(fn:()=>void)=>{frames.push(fn);return frames.length;},cancelAnimationFrame:vi.fn()});
+ const message={id:'message',text:'Inbound',from:'customer',at:1,arrivalSequence:'1',direction:'inbound'};
+ state.thread.mockResolvedValue({ok:true,data:{kind:'partial',companyId:'company',conversationId:'thread',conversation:item,messages:[message],displayedInboundMessageId:'message',unreadCount:0,nextCursor:null,hasMore:false}});
+ const pending=deferred();state.seen.mockReturnValue(pending.promise);state.audit.mockResolvedValue({ok:false,code:'UNAVAILABLE'});state.connection.mockResolvedValue({ok:false,code:'UNAVAILABLE'});
+ const p=props();render(p);await flush();render(p);while(frames.length)frames.shift()!();await flush();expect(state.seen).toHaveBeenCalledTimes(1);
+ p.refreshVersion=1;render(p);await flush();render(p);while(frames.length)frames.shift()!();await flush();expect(state.seen).toHaveBeenCalledTimes(1);
+ pending.resolve({ok:true,data:{unreadCount:0}});await flush();
+});
+
+it('keeps confirmed messages visible during a background read and hides them if authorization cannot be confirmed',async()=>{
+ const message={id:'visible-id',text:'Previously authorized',from:'customer',at:1,arrivalSequence:'1',direction:'inbound'};
+ const data={kind:'partial',companyId:'company',conversationId:'thread',conversation:item,messages:[message],displayedInboundMessageId:'visible-id',unreadCount:0,nextCursor:null,hasMore:false};
+ const pending=deferred();state.thread.mockResolvedValueOnce({ok:true,data}).mockReturnValueOnce(pending.promise);
+ state.audit.mockResolvedValue({ok:false,code:'UNAVAILABLE'});state.connection.mockResolvedValue({ok:false,code:'UNAVAILABLE'});
+ const p=props();render(p);await flush();let tree=render(p);expect(nodes(tree).some(n=>n.props['data-message-id']==='visible-id')).toBe(true);
+ p.refreshVersion=1;tree=render(p);expect(nodes(tree).some(n=>n.props['data-message-id']==='visible-id')).toBe(true);
+ pending.resolve({ok:false,code:'UNAVAILABLE'});await flush();tree=render(p);expect(nodes(tree).some(n=>n.props['data-message-id']==='visible-id')).toBe(false);
+ expect(nodes(tree).some(n=>n.type==='p'&&n.props.children==='Refreshing thread…')).toBe(false);
 });

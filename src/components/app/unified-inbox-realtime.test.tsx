@@ -3,7 +3,7 @@ import React,{act,useState} from 'react';
 import {createRoot,type Root} from 'react-dom/client';
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
 import type {InboxRealtimeEvent} from './branch-inbox-realtime';
-const m=vi.hoisted(()=>({fetch:vi.fn(),event:null as null|((e:InboxRealtimeEvent)=>void),router:{refresh:vi.fn()},account:null as null|{status:'ready'|'locked';identity:{userId:string};boundaryFingerprint:string},params:new URLSearchParams('source=whatsapp&c=thread')}));
+const m=vi.hoisted(()=>({fetch:vi.fn(),threadVersions:[] as number[],event:null as null|((e:InboxRealtimeEvent)=>void),router:{refresh:vi.fn()},account:null as null|{status:'ready'|'locked';identity:{userId:string};boundaryFingerprint:string},params:new URLSearchParams('source=whatsapp&c=thread')}));
 vi.mock('next/navigation',()=>({useRouter:()=>m.router}));
 vi.mock('next/link',()=>({default:({children,href}:{children:React.ReactNode;href:string})=><a href={href}>{children}</a>}));
 vi.mock('@/lib/navigation/use-local-search-params',()=>({useLocalSearchParams:()=>[m.params,vi.fn()]}));
@@ -13,7 +13,7 @@ vi.mock('@/lib/whatsapp/inbox-actions',()=>({refreshWhatsappInboxPage:vi.fn()}))
 vi.mock('@/lib/instagram/inbox-actions',()=>({loadInstagramInboxPage:vi.fn()}));
 vi.mock('./workspace-shell',()=>({WorkspaceShell:({children,actions}:{children:React.ReactNode;actions:React.ReactNode})=><main>{actions}{children}</main>}));
 vi.mock('./ui',()=>({Button:({children,onClick,disabled}:{children:React.ReactNode;onClick:()=>void;disabled:boolean})=><button onClick={onClick} disabled={disabled}>{children}</button>,Notice:({children}:{children:React.ReactNode})=><aside>{children}</aside>,EmptyState:()=>null,useAppCopy:()=>({app:{inboxAccessDeniedTitle:"Denied",inboxAccessDeniedBody:"No access",inboxLoadFailedBody:"Unavailable"}})}));
-vi.mock('./conversations',()=>({ConversationsPage:()=>{const [draft]=useState('Unsaved draft');return <textarea aria-label="Preserved draft" defaultValue={draft}/>;}}));
+vi.mock('./conversations',()=>({ConversationsPage:({refreshVersion}:{refreshVersion:number})=>{m.threadVersions.push(refreshVersion);const [draft]=useState('Unsaved draft');return <textarea aria-label="Preserved draft" defaultValue={draft}/>;}}));
 vi.mock('./instagram-inbox',()=>({InstagramInbox:()=>null}));
 vi.mock('./branch-inbox-realtime',()=>({CompanyInboxRealtime:({onInboxEvent}:{onInboxEvent:(e:InboxRealtimeEvent)=>void})=>{m.event=onInboxEvent;return null;}}));
 vi.mock('./account-chrome',()=>({useOptionalAccountSession:()=>m.account}));
@@ -142,4 +142,22 @@ it('does not schedule a second read when recovery precedes a fast pending read c
  act(()=>m.event?.({type:'disconnected'}));act(()=>m.event?.({type:'reconnect'}));
  await act(async()=>complete(initial));await act(async()=>vi.advanceTimersByTimeAsync(250));
  expect(m.fetch).toHaveBeenCalledTimes(1);expect(container.querySelector('textarea')).not.toBeNull();
+});
+
+it('starts the selected thread update before a slower list read completes and keeps its pane mounted',async()=>{
+ let complete!:(v:Snapshot)=>void;m.fetch.mockImplementationOnce(()=>new Promise<Snapshot>(resolve=>{complete=resolve;}));
+ const pane=container.querySelector('textarea');const initialVersion=m.threadVersions.at(-1)!;
+ act(()=>m.event?.({type:'change'}));await act(async()=>vi.advanceTimersByTimeAsync(250));
+ expect(m.fetch).toHaveBeenCalledTimes(1);expect(m.threadVersions.at(-1)).toBe(initialVersion+1);expect(container.querySelector('textarea')).toBe(pane);
+ await act(async()=>complete(initial));expect(m.threadVersions.at(-1)).toBe(initialVersion+1);expect(container.querySelector('textarea')).toBe(pane);
+});
+
+it('a trailing list reconciliation does not reload a thread already refreshed for the event',async()=>{
+ let finish!:(v:Snapshot)=>void;m.fetch.mockImplementationOnce(()=>new Promise<Snapshot>(resolve=>{finish=resolve;}));
+ const initialVersion=m.threadVersions.at(-1)!;
+ act(()=>m.event?.({type:'change'}));await act(async()=>vi.advanceTimersByTimeAsync(250));
+ act(()=>m.event?.({type:'change'}));await act(async()=>vi.advanceTimersByTimeAsync(250));
+ expect(m.threadVersions.at(-1)).toBe(initialVersion+2);
+ await act(async()=>finish(initial));expect(m.fetch).toHaveBeenCalledTimes(2);
+ expect(m.threadVersions.at(-1)).toBe(initialVersion+2);
 });
