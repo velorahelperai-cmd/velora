@@ -17,6 +17,7 @@ export type IntegrationPorts={enabled:boolean;frame:()=>Promise<IntegrationFrame
  claimSend:()=>Promise<{ok:boolean;claimed?:boolean;attempt_token?:string|null;intent?:SendIntent}>;
  send:(i:SendIntent,secret:string)=>Promise<{ok:boolean;waMessageId?:string;code?:string;detail?:string}>;
  finalize:(id:string,token:string,result:"accepted"|"rejected"|"unknown",wamid:string|null,errorCode?:"graph_190")=>Promise<boolean>;
+ abortSend?:(id:string,token:string)=>Promise<boolean>;
  finish:(id:string)=>Promise<string>;repair:(id:string)=>Promise<boolean>;
  retry:(code:string,uncertain:boolean,permanent?:boolean)=>Promise<void>;heartbeat:()=>Promise<boolean>};
 export type IntegrationOutcome={ok:false;code:string;jobCompleted:boolean;sendAccepted:boolean;delivered:false}|{ok:true;code:"ACCEPTED";jobCompleted:true;sendAccepted:true;delivered:false};
@@ -120,6 +121,9 @@ export async function runPersistedInboundJob(input:{jobId:string;claimToken:stri
  if(!isVerified(v3)){
   const code=verifyFailureCode(v3);
   if(code==="WORKER_UNAVAILABLE"){
+   if(ports.abortSend){
+    try{await ports.abortSend(intent.id,claimed.attempt_token);}catch{}
+   }
    try{await ports.retry("WORKER_UNAVAILABLE",false,false);}catch{}
    return blocked("WORKER_UNAVAILABLE");
   }

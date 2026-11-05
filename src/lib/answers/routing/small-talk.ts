@@ -95,7 +95,7 @@ function normalizeEnglish(text: string): string {
 
 export function classifyPureSocialSmallTalk(
   question: string,
-  preferredLocale?: "ar" | "en"
+  _preferredLocale?: "ar" | "en"
 ): SmallTalkClassification {
   if (typeof question !== "string") return { isPureSocial: false };
   const raw = question.trim();
@@ -109,7 +109,6 @@ export function classifyPureSocialSmallTalk(
 
   // Detect language
   const isArabic = /[\u0600-\u06FF]/.test(raw);
-  const locale = preferredLocale ?? (isArabic ? "ar" : "en");
 
   if (isArabic) {
     const norm = normalizeArabic(raw);
