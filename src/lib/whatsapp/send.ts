@@ -1,7 +1,20 @@
 import { externalSendAllowed, metaGraphVersion, sendReady, whatsappConfig, whatsappConfigurationMode, whatsappRoutingMode } from "./config";
 import { consumeManualReviewPermit, type ManualReviewPermit } from './manual-review-permit';
 import { createHash } from 'node:crypto';
-import { validInboxAttachment } from '@/lib/customer/inbox-attachment-validation';
+
+/** Shared server-side file admission for conversation attachments.
+ * The database still performs its own independent size and signature checks.
+ */
+export function validInboxAttachment(name: unknown, mime: unknown, encoded: unknown): boolean {
+  if (typeof name !== 'string' || !/^[\p{L}\p{N}_. -]{1,100}$/u.test(name) ||
+      typeof mime !== 'string' || !['image/png', 'image/jpeg', 'application/pdf'].includes(mime) ||
+      typeof encoded !== 'string' || encoded.length < 4 || encoded.length > 699052 || encoded.length % 4 !== 0 ||
+      !/^[A-Za-z0-9+/]*={0,2}$/.test(encoded)) return false;
+  const bytes = Buffer.from(encoded, 'base64');
+  if (bytes.length < 1 || bytes.length > 524288 || bytes.toString('base64') !== encoded) return false;
+  const signature = mime === 'image/png' ? '89504e470d0a1a0a' : mime === 'image/jpeg' ? 'ffd8ff' : '255044462d';
+  return bytes.subarray(0, signature.length / 2).toString('hex') === signature;
+}
 
 export type SendTextResult =
   | { ok: true; waMessageId: string }
@@ -135,7 +148,7 @@ async function dispatchGraphMessage(admission: AdmittedTransport, message: Graph
     return { ok: false, code: 'AMBIGUOUS', detail: name === 'TimeoutError' || name === 'AbortError' ? 'timeout' : 'network' };
   }
   const providerId = Array.isArray(payload?.messages) && payload.messages.length === 1 ? payload.messages[0]?.id : null;
-  const waMessageId = typeof providerId === 'string' && providerId.trim() === providerId && providerId.length > 0 ? providerId : null;
+  const waMessageId = typeof providerId === "string" && providerId.trim() === providerId && providerId.length > 0 ? providerId : null;
   if (response.ok && payload?.error != null) return { ok: false, code: 'AMBIGUOUS', detail: 'contradictory_provider_response' };
   if (response.ok && waMessageId) return { ok: true, waMessageId };
   if (response.ok) return { ok: false, code: 'AMBIGUOUS', detail: 'missing_provider_id' };
