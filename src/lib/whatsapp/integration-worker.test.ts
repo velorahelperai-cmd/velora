@@ -1,9 +1,10 @@
-import {describe,it,expect,vi} from "vitest";
+import {afterEach,describe,it,expect,vi} from "vitest";
 vi.mock("server-only",()=>({}));
 vi.mock("@/lib/billing/entitlement",()=>({readCompanyEntitlement:()=>({paid:false}),entitlementAllowsAutomation:()=>false}));
 import {runInboundWorkerAnswer} from "./inbound-worker";
 import type {IntegrationFrame,IntegrationPorts} from "./integration-worker";
 const input={jobId:"job",claimToken:"claim",companyId:"company",locale:"en" as const};
+afterEach(()=>{vi.restoreAllMocks();vi.unstubAllEnvs();});
 function setup(){
  const frame:IntegrationFrame={job_id:"job",company_id:"company",message_id:"message",conversation_id:"conversation",phone_number_id:"phone",recipient_wa_id:"recipient",
  automation_generation:0,link_id:"link",link_generation:1,question:"Question",ai_status:null as string|null,reply_text:null as string|null,
@@ -18,6 +19,21 @@ function setup(){
  return {frame,chunks,ports,intent};
 }
 describe("persisted WhatsApp integration worker",()=>{
+ it("records execution stages only for a newly accepted provider response",async()=>{
+ const {ports,frame}=setup(),jobId="12345678-1234-4234-8234-123456789abc";frame.job_id=jobId;
+ vi.stubEnv("WHATSAPP_WORKER_TIMING_ENABLED","true");const log=vi.spyOn(console,"info").mockImplementation(()=>{});
+ expect(await runInboundWorkerAnswer({...input,jobId},ports)).toMatchObject({ok:true});
+ const stages=log.mock.calls.map(([line])=>JSON.parse(String(line)).stage);
+ expect(stages).toEqual(["provider_accepted_at"]);
+ expect(JSON.stringify(log.mock.calls)).not.toContain("Question");expect(JSON.stringify(log.mock.calls)).not.toContain("synthetic-token");
+ });
+ it("does not report provider acceptance for an unknown send",async()=>{
+ const {ports,frame}=setup(),jobId="12345678-1234-4234-8234-123456789abc";frame.job_id=jobId;
+ ports.send.mockResolvedValue({ok:false,code:"AMBIGUOUS"} as never);ports.finish.mockResolvedValue("unknown");
+ vi.stubEnv("WHATSAPP_WORKER_TIMING_ENABLED","true");const log=vi.spyOn(console,"info").mockImplementation(()=>{});
+ await runInboundWorkerAnswer({...input,jobId},ports);
+ expect(log.mock.calls.map(([line])=>JSON.parse(String(line)).stage)).not.toContain("provider_accepted_at");
+ });
  it("completes only after durable accepted evidence, without claiming delivery",async()=>{
  const {ports}=setup();const result=await runInboundWorkerAnswer(input,ports);
  expect(result).toMatchObject({ok:true,jobCompleted:true,sendAccepted:true,delivered:false});expect(ports.send).toHaveBeenCalledTimes(1);
@@ -43,6 +59,17 @@ describe("persisted WhatsApp integration worker",()=>{
  expect(await runInboundWorkerAnswer(input,ports)).toMatchObject({ok:false,code:"WORKER_DISABLED"});expect(ports.frame).not.toHaveBeenCalled();});
  it("rejects a wrong tenant before reservation/provider work",async()=>{const {frame,ports}=setup();frame.company_id="other";
  expect(await runInboundWorkerAnswer(input,ports)).toMatchObject({ok:false});expect(ports.answer).not.toHaveBeenCalled();expect(ports.send).not.toHaveBeenCalled();});
+ it.each(["I want a refund", "I need the manager", "أريد استرجاع المبلغ"])("hands off a flagged request before model cost or send: %s",async question=>{
+ const {frame,ports}=setup();frame.question=question;
+ expect(await runInboundWorkerAnswer(input,ports)).toMatchObject({ok:false,code:"HUMAN_REVIEW_REQUIRED"});
+ expect(ports.retry).toHaveBeenCalledWith("HUMAN_REVIEW_REQUIRED",false,true);
+ expect(ports.context).not.toHaveBeenCalled();expect(ports.reserve).not.toHaveBeenCalled();expect(ports.answer).not.toHaveBeenCalled();expect(ports.send).not.toHaveBeenCalled();
+ });
+ it("does not claim human review was recorded when disposition persistence fails",async()=>{
+ const {frame,ports}=setup();frame.question="I want a refund";ports.retry.mockRejectedValue(Error("synthetic claim rejection"));
+ expect(await runInboundWorkerAnswer(input,ports)).toMatchObject({ok:false,code:"WORKER_UNAVAILABLE"});
+ expect(ports.answer).not.toHaveBeenCalled();expect(ports.send).not.toHaveBeenCalled();
+ });
  it("does not regenerate a persisted uncertain execution",async()=>{const {frame,ports}=setup();frame.ai_status="uncertain";
  expect(await runInboundWorkerAnswer(input,ports)).toMatchObject({ok:false});expect(ports.answer).not.toHaveBeenCalled();expect(ports.send).not.toHaveBeenCalled();});
  it("recovers the original saved draft without another paid generation",async()=>{const {frame,ports,chunks}=setup();frame.ai_status="success";frame.reply_text="Answer";frame.ai_attempt_id="attempt";
@@ -57,11 +84,46 @@ describe("persisted WhatsApp integration worker",()=>{
  expect(ports.finalize).toHaveBeenCalledWith("intent","send-claim","rejected",null,"graph_190");
  expect(ports.send).toHaveBeenCalledTimes(1);
  });
+ it.each(["unknown","accepted"])("does not report a settled rejection if accounting returns %s",async status=>{
+ const {ports}=setup();ports.send.mockResolvedValue({ok:false,code:"GRAPH_REJECTED"} as never);ports.finish.mockResolvedValue(status);
+ expect(await runInboundWorkerAnswer(input,ports)).toMatchObject({ok:false,code:"SEND_PERSIST_REQUIRES_RECONCILIATION"});
+ expect(ports.send).toHaveBeenCalledTimes(1);expect(ports.retry).not.toHaveBeenCalled();
+ });
+ it("retains a provider rejection for reconciliation if accounting is unavailable",async()=>{
+ const {ports}=setup();ports.send.mockResolvedValue({ok:false,code:"GRAPH_REJECTED"} as never);ports.finish.mockRejectedValue(Error("synthetic"));
+ expect(await runInboundWorkerAnswer(input,ports)).toMatchObject({ok:false,code:"SEND_PERSIST_REQUIRES_RECONCILIATION"});expect(ports.retry).not.toHaveBeenCalled();
+ });
  it("stops when human takeover occurs while generating",async()=>{const {ports}=setup();ports.verify.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
  expect(await runInboundWorkerAnswer(input,ports)).toMatchObject({ok:false});expect(ports.send).not.toHaveBeenCalled();});
+ it("records a confirmed rejected send and released usage after last-moment takeover",async()=>{
+ const {ports}=setup();ports.verify.mockResolvedValueOnce(true).mockResolvedValueOnce(true).mockResolvedValueOnce(false);ports.finish.mockResolvedValue("released");
+ expect(await runInboundWorkerAnswer(input,ports)).toMatchObject({ok:false,code:"AUTOMATION_CHANGED_BEFORE_SEND"});
+ expect(ports.finalize).toHaveBeenCalledWith("intent","send-claim","rejected",null);expect(ports.finish).toHaveBeenCalledWith("intent");expect(ports.send).not.toHaveBeenCalled();
+ });
+ it.each(["finalize_false","finalize_throw","finish_throw","finish_unknown"])("requires reconciliation if takeover disposition is unconfirmed: %s",async failure=>{
+ const {ports}=setup();ports.verify.mockResolvedValueOnce(true).mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+ if(failure==="finalize_false")ports.finalize.mockResolvedValue(false);
+ if(failure==="finalize_throw")ports.finalize.mockRejectedValue(Error("synthetic failure"));
+ if(failure==="finish_throw")ports.finish.mockRejectedValue(Error("synthetic failure"));
+ if(failure==="finish_unknown")ports.finish.mockResolvedValue("unknown");
+ expect(await runInboundWorkerAnswer(input,ports)).toMatchObject({ok:false,code:"SEND_PERSIST_REQUIRES_RECONCILIATION"});
+ expect(ports.send).not.toHaveBeenCalled();expect(ports.retry).not.toHaveBeenCalled();
+ if(failure.startsWith("finalize"))expect(ports.finish).not.toHaveBeenCalled();
+ });
  it("acknowledges stored acceptance after repair without another Graph send",async()=>{const {ports,frame,intent}=setup();frame.intent_id="intent";
  ports.claimSend.mockResolvedValue({ok:true,claimed:false,attempt_token:null,intent:{...intent,outcome:"accepted"}} as never);
  expect(await runInboundWorkerAnswer(input,ports)).toMatchObject({ok:true});expect(ports.send).not.toHaveBeenCalled();expect(ports.repair).toHaveBeenCalledTimes(1);});
+ it("preserves reconciliation of a previously accepted sensitive reply",async()=>{const {ports,frame,intent}=setup();
+ frame.question="I want a refund";frame.ai_status="success";frame.reply_text="Answer";frame.ai_attempt_id="attempt";frame.intent_id="intent";
+ ports.claimSend.mockResolvedValue({ok:true,claimed:false,attempt_token:null,intent:{...intent,outcome:"accepted"}} as never);
+ expect(await runInboundWorkerAnswer(input,ports)).toMatchObject({ok:true,sendAccepted:true});expect(ports.answer).not.toHaveBeenCalled();expect(ports.send).not.toHaveBeenCalled();expect(ports.retry).not.toHaveBeenCalled();
+ });
+ it("rejects an unsent staged sensitive reply before transport and hands off",async()=>{const {ports,frame}=setup();
+ frame.question="I want a refund";frame.ai_status="success";frame.reply_text="Answer";frame.ai_attempt_id="attempt";frame.intent_id="intent";
+ expect(await runInboundWorkerAnswer(input,ports)).toMatchObject({ok:false,code:"HUMAN_REVIEW_REQUIRED"});
+ expect(ports.finalize).toHaveBeenCalledWith("intent","send-claim","rejected",null);
+ expect(ports.retry).toHaveBeenCalledWith("HUMAN_REVIEW_REQUIRED",false,true);expect(ports.send).not.toHaveBeenCalled();expect(ports.answer).not.toHaveBeenCalled();
+ });
  it("settles accepted quota before display repair and retains acceptance when repair is unavailable",async()=>{
  const {ports}=setup();const order:string[]=[];
  ports.finish.mockImplementation(async()=>{order.push("quota");return "accepted";});

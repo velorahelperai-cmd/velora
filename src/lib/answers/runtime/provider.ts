@@ -12,7 +12,7 @@ export type RealProviderResult = {
  status:"success"|"incomplete"|"rejected"|"uncertain"; text:string;
  usage?:RealTokenUsage;requestId?:string;responseId?:string;actualModelId?:string;errorCode?:string;message?:string;latencyMs:number;
 };
-export async function callRealModel(input:{model:AIModelId;system:string;prompt:string;maxOutputTokens?:number}):Promise<RealProviderResult> {
+export async function callRealModel(input:{model:AIModelId;system:string;prompt:string;maxOutputTokens?:number;onTransportStart?:()=>void}):Promise<RealProviderResult> {
  const maxOutputTokens=input.maxOutputTokens??REAL_OUTPUT_LIMIT;
  if(!["gpt-6-luna","gpt-6.1-sol","gemini-3.8-flash","gemini-3.5-flash-lite"].includes(input.model)||!Number.isSafeInteger(maxOutputTokens)||maxOutputTokens<1||maxOutputTokens>REAL_OUTPUT_LIMIT)return {status:"rejected",text:"",errorCode:"INVALID_INPUT",latencyMs:0};
  const started=Date.now(),google=input.model.startsWith("gemini-");
@@ -23,6 +23,7 @@ export async function callRealModel(input:{model:AIModelId;system:string;prompt:
   let text:string,usage:RealTokenUsage,complete:boolean;
   if(google){
    const client=new GoogleGenAI({apiKey});
+   try{input.onTransportStart?.();}catch{/* Diagnostics cannot prevent a provider request. */}
    const response=await client.interactions.create({model:input.model,input:input.prompt,system_instruction:input.system,store:false,stream:false,service_tier:"standard",generation_config:{max_output_tokens:maxOutputTokens,thinking_level:input.model==="gemini-3.5-flash-lite"?"minimal":"low"}}, {timeout:REAL_TIMEOUT_MS,maxRetries:0});
    requestId=response.id;
    responseId=response.id;actualModelId=response.model;
@@ -36,6 +37,7 @@ export async function callRealModel(input:{model:AIModelId;system:string;prompt:
    complete=response.status==="completed";
   }else{
    const client=new OpenAI({apiKey,maxRetries:0,timeout:REAL_TIMEOUT_MS});
+   try{input.onTransportStart?.();}catch{/* Diagnostics cannot prevent a provider request. */}
    const response=await client.responses.create({model:input.model,instructions:input.system,input:input.prompt,max_output_tokens:maxOutputTokens,store:false,service_tier:"default",reasoning:{effort:"low"}});
    requestId=response._request_id??response.id;
    responseId=response.id;actualModelId=response.model;

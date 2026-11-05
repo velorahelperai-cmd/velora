@@ -1,5 +1,7 @@
 import "server-only";
 import type {AnswerContextChunk,AnswerCitation} from "@/lib/answers/types";
+import {classifyHandoffPolicy} from "@/lib/answers/routing/handoff-policy";
+import {recordWorkerTiming} from "./worker-timing";
 export type IntegrationFrame={authority?:"es02";job_id:string;company_id:string;message_id:string;conversation_id:string;phone_number_id:string;recipient_wa_id:string;
  automation_generation:number;link_id:string;link_generation:number;question:string;service_window_expires_at?:string;ai_status:string|null;reply_text:string|null;
  ai_attempt_id:string|null;intent_id:string|null;staged_citations:AnswerCitation[]|null};
@@ -24,43 +26,59 @@ export async function runPersistedInboundJob(input:{jobId:string;claimToken:stri
  try{
  const frame=await ports.frame();
  if(!frame||frame.job_id!==input.jobId||frame.company_id!==input.companyId)return blocked("CLAIM_BINDING_REJECTED");
- if(["reserved","running","uncertain"].includes(frame.ai_status??""))return fail("AI_REQUIRES_RECONCILIATION",true);
- const chunks=await ports.context(frame);if(!chunks?.length)return fail("APPROVED_KNOWLEDGE_REQUIRED");
+ if(["reserved","running","uncertain"].includes(frame.ai_status??""))return await fail("AI_REQUIRES_RECONCILIATION",true);
+ // Do not generate a new paid response for a request that the existing
+ // conservative policy flags for human review. Existing send intents need
+ // their own reconciliation path so accepted outcomes are never overwritten.
+ const humanReview=!!classifyHandoffPolicy(frame.question).previewReason;
+ if(humanReview&&!frame.intent_id)return await fail("HUMAN_REVIEW_REQUIRED");
+ if(humanReview&&!(frame.ai_status==="success"&&frame.reply_text&&frame.ai_attempt_id))return blocked("SEND_REQUIRES_RECONCILIATION");
+ const chunks=await ports.context(frame);if(!chunks?.length)return await fail("APPROVED_KNOWLEDGE_REQUIRED");
  const captured=frame.staged_citations??chunks.map(({sourceId,title,contentVersion})=>({sourceId,title,contentVersion}));
- if(!await ports.verify(frame,captured))return fail("KNOWLEDGE_OR_AUTOMATION_CHANGED");
- const secret=await ports.secret(frame);if(!secret)return fail("TENANT_SECRET_NOT_CONFIGURED");
- if(!await ports.reserve())return fail("ENTITLEMENT_OR_USAGE_DENIED");
+ if(!await ports.verify(frame,captured))return await fail("KNOWLEDGE_OR_AUTOMATION_CHANGED");
+ const secret=await ports.secret(frame);if(!secret)return await fail("TENANT_SECRET_NOT_CONFIGURED");
+ if(!await ports.reserve())return await fail("ENTITLEMENT_OR_USAGE_DENIED");
  let attemptId=frame.ai_attempt_id;
  if(!(frame.ai_status==="success"&&frame.reply_text&&attemptId)){
  let heartbeatBusy=false;
  const timer=setInterval(()=>{if(heartbeatBusy)return;heartbeatBusy=true;void ports.heartbeat().catch(()=>false).finally(()=>{heartbeatBusy=false;});},30_000);
  let generated;
  try{generated=await ports.answer(frame,chunks);}finally{clearInterval(timer);}
- if(!generated.ok||generated.complete!==true)return fail(generated.error??"AI_REQUIRES_RECONCILIATION",
+ if(!generated.ok||generated.complete!==true)return await fail(generated.error??"AI_REQUIRES_RECONCILIATION",
  generated.attempts.some(a=>a.status==="uncertain")||generated.error?.includes("SETTLEMENT")===true);
  attemptId=generated.attempts.at(-1)?.id??null;
  }
- if(!attemptId||!await ports.verify(frame,captured))return fail("KNOWLEDGE_OR_AUTOMATION_CHANGED");
- const intentId=frame.intent_id??await ports.stage(attemptId,captured);if(!intentId)return fail("STAGE_REJECTED");
+ if(!attemptId||!await ports.verify(frame,captured))return await fail("KNOWLEDGE_OR_AUTOMATION_CHANGED");
+ const intentId=frame.intent_id??await ports.stage(attemptId,captured);if(!intentId)return await fail("STAGE_REJECTED");
  const claimed=await ports.claimSend();const intent=claimed.intent;
  if(!claimed.ok||!intent||intent.id!==intentId||intent.company_id!==frame.company_id||intent.conversation_id!==frame.conversation_id
- ||intent.phone_number_id!==frame.phone_number_id||intent.recipient_wa_id!==frame.recipient_wa_id)return fail("SEND_BINDING_REJECTED");
+ ||intent.phone_number_id!==frame.phone_number_id||intent.recipient_wa_id!==frame.recipient_wa_id)return await fail("SEND_BINDING_REJECTED");
  if(claimed.claimed!==true){
  if(intent.outcome==="accepted"){
  try{if(await ports.finish(intent.id)!=="accepted")return acceptedPending("ACCEPTANCE_ACCOUNTING_PENDING");}catch{return acceptedPending("ACCEPTANCE_ACCOUNTING_PENDING");}
  try{if(!await ports.repair(intent.id))return acceptedPending("ACCEPTANCE_PERSIST_PENDING",true);}catch{return acceptedPending("ACCEPTANCE_PERSIST_PENDING",true);}
  return {ok:true,code:"ACCEPTED",jobCompleted:true,sendAccepted:true,delivered:false};}
  if(intent.outcome==="attempting")return blocked("SEND_IN_PROGRESS_REQUIRES_REVIEW");
- return fail("SEND_REQUIRES_RECONCILIATION",true);
+ return await fail("SEND_REQUIRES_RECONCILIATION",true);
  }
- if(!claimed.attempt_token)return fail("SEND_CAPABILITY_MISSING",true);
+ if(!claimed.attempt_token)return await fail("SEND_CAPABILITY_MISSING",true);
+ if(humanReview){
+  if(!await ports.finalize(intent.id,claimed.attempt_token,"rejected",null))return blocked("SEND_PERSIST_REQUIRES_RECONCILIATION");
+  return await fail("HUMAN_REVIEW_REQUIRED");
+ }
  // This fresh generation/link/source check is the last local gate before Graph.
  if(!await ports.verify(frame,captured)){
- await ports.finalize(intent.id,claimed.attempt_token,"rejected",null);await ports.finish(intent.id);return blocked("AUTOMATION_CHANGED_BEFORE_SEND");}
+  try{
+   if(!await ports.finalize(intent.id,claimed.attempt_token,"rejected",null))return blocked("SEND_PERSIST_REQUIRES_RECONCILIATION");
+   if(await ports.finish(intent.id)!=="released")return blocked("SEND_PERSIST_REQUIRES_RECONCILIATION");
+  }catch{return blocked("SEND_PERSIST_REQUIRES_RECONCILIATION");}
+  return blocked("AUTOMATION_CHANGED_BEFORE_SEND");
+ }
  externalAttempt=true;
  let sent;
  try{sent=await ports.send(intent,secret);}catch{sent={ok:false,code:"AMBIGUOUS"};}
  const outcome=sent.ok&&sent.waMessageId?"accepted":sent.code==="GRAPH_REJECTED"||sent.code==="SEND_DISABLED"||sent.code==="NEEDS_SETUP"||sent.code==="SERVICE_WINDOW_CLOSED"?"rejected":"unknown";
+ if(outcome==="accepted")recordWorkerTiming(input.jobId,"provider_accepted_at");
  const finalized=!sent.ok&&sent.code==="GRAPH_REJECTED"&&sent.detail==="graph_190"
  ?await ports.finalize(intent.id,claimed.attempt_token,"rejected",null,"graph_190")
  :await ports.finalize(intent.id,claimed.attempt_token,outcome,sent.waMessageId??null);
@@ -69,8 +87,10 @@ export async function runPersistedInboundJob(input:{jobId:string;claimToken:stri
  try{if(await ports.finish(intent.id)!=="accepted")return acceptedPending("ACCEPTANCE_ACCOUNTING_PENDING");}catch{return acceptedPending("ACCEPTANCE_ACCOUNTING_PENDING");}
  try{if(!await ports.repair(intent.id))return acceptedPending("ACCEPTANCE_PERSIST_PENDING",true);}catch{return acceptedPending("ACCEPTANCE_PERSIST_PENDING",true);}
  return {ok:true,code:"ACCEPTED",jobCompleted:true,sendAccepted:true,delivered:false};}
- await ports.finish(intent.id);
- return blocked(outcome==="unknown"?"SEND_REQUIRES_RECONCILIATION":"SEND_REJECTED");
+ let settled:string;
+ try{settled=await ports.finish(intent.id);}catch{return blocked("SEND_PERSIST_REQUIRES_RECONCILIATION");}
+ if(outcome==="unknown")return blocked("SEND_REQUIRES_RECONCILIATION");
+ return blocked(settled==="released"?"SEND_REJECTED":"SEND_PERSIST_REQUIRES_RECONCILIATION");
  }catch(error){
  if(error instanceof WorkerInputError){try{return await fail(error.code,false,true);}catch{return blocked(error.code);}}
  try{await ports.retry("WORKER_UNAVAILABLE",externalAttempt,false);}catch{/* Durable reservations and intent remain for recovery. */}

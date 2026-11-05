@@ -7,16 +7,19 @@ import { createClaimedWhatsappRuntimeStore, type ClaimedWhatsappRuntimeStore } f
 import { createAdminClient } from "@/lib/supabase/admin";
 import { loadClaimedAnswerProfile } from "../approved-retrieval";
 import type { AnswerPersona } from "../types";
+import {recordWorkerTiming} from "@/lib/whatsapp/worker-timing";
 
 export type ClaimedWhatsappAnswerInput = RealAnswerPayload & { jobId: string; claimToken: string };
 
 /** Explicit ports support offline checks; no identity/session is fabricated for a worker. */
 export async function executeClaimedWhatsappAnswer(
   input: ClaimedWhatsappAnswerInput,
-  deps: { store: ClaimedWhatsappRuntimeStore; call: typeof callRealModel; persona?: AnswerPersona; allowTransient503Fallback?: boolean },
+  deps: { store: ClaimedWhatsappRuntimeStore; call: typeof callRealModel; persona?: AnswerPersona },
 ): Promise<RealAnswerResult> {
   if (!input.jobId?.trim() || !input.claimToken?.trim()) return { ok: false, error: "INVALID_INPUT", attempts: [] };
-  return executeReservedRealAnswer(input, { ...deps, requireProviderIdentity: true });
+  // A provider outcome classified as uncertain may have incurred cost. The
+  // current WhatsApp plan profile does not authorize fallback after uncertainty.
+  return executeReservedRealAnswer(input, { store: deps.store, call: deps.call, persona: deps.persona, requireProviderIdentity: true, allowDefiniteFallback: false });
 }
 
 /** Production has no caller-controlled provider or rollout flag. Live AI stays off. */
@@ -66,6 +69,11 @@ export function createClaimedWhatsappAnswerExecutor(): (input: ClaimedWhatsappAn
       }
     }
     catch { return { ok: false, error: "PERSISTENCE_UNAVAILABLE", attempts: [] }; }
-    return executeClaimedWhatsappAnswer({...input,locale,model:nativeEs02 ? selectWhatsappModel(input.question) : undefined}, { store, call: callRealModel, persona, allowTransient503Fallback: nativeEs02 });
+    const timedCall:typeof callRealModel=async modelInput=>{
+      let started=false;
+      try{return await callRealModel({...modelInput,onTransportStart:()=>{started=true;recordWorkerTiming(input.jobId,"ai_started_at");}});}
+      finally{if(started)recordWorkerTiming(input.jobId,"ai_completed_at");}
+    };
+    return executeClaimedWhatsappAnswer({...input,locale,model:nativeEs02 ? selectWhatsappModel(input.question) : undefined}, { store, call: timedCall, persona });
   };
 }

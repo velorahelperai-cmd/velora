@@ -9,6 +9,7 @@ import type {IntegrationFrame,IntegrationPorts} from "./integration-worker";
 import {WorkerInputError} from "./integration-worker";
 import {readServiceWindow} from "./service-window";
 import {bindOperationalRecipient} from "./operational-recipient";
+import {recordWorkerTiming} from "./worker-timing";
 type RpcClient={rpc:(name:string,args:Record<string,unknown>)=>PromiseLike<{data:unknown;error:unknown}>};
 const object=(x:unknown):Record<string,unknown>|null=>x!==null&&typeof x==="object"&&!Array.isArray(x)?x as Record<string,unknown>:null;
 export function workerRolloutEnabled(){return process.env.WHATSAPP_WORKER_ENABLED==="true"&&isLiveAnsweringEnabled()&&externalSendAllowed()&&whatsappRoutingMode()==="tenant_registry";}
@@ -39,7 +40,7 @@ export function createIntegrationPorts(binding:{jobId:string;claimToken:string;c
  const executor=createClaimedWhatsappAnswerExecutor();
  return {enabled,frame,
  context:async f=>{if(!admin)return null;const c=await loadApprovedAnswerContext(f.company_id,admin,{question:f.question,jobId:f.job_id,claimToken:binding.claimToken});return c.ok?c.chunks:null;},
- verify:async(f,citations)=>{const current=await frame();if(!current||!admin||f.job_id!==binding.jobId||f.company_id!==binding.companyId||current.authority!==f.authority||current.conversation_id!==f.conversation_id||current.automation_generation!==f.automation_generation||current.link_id!==f.link_id||current.link_generation!==f.link_generation)return false;
+ verify:async(f,citations)=>{if(injectedClient===undefined&&!workerRolloutEnabled())return false;try{const active=await rpc('whatsapp_worker_live_active',{});if(active===false)return false;}catch{}const current=await frame();if(!current||!admin||f.job_id!==binding.jobId||f.company_id!==binding.companyId||current.authority!==f.authority||current.conversation_id!==f.conversation_id||current.automation_generation!==f.automation_generation||current.link_id!==f.link_id||current.link_generation!==f.link_generation)return false;
  if(current.authority==="es02"){
  if(!citations.length)return false;
  try{const proof=object(await rpc("es02_verify_claimed_reply_citations",{...args,p_source_citations:citations}));
@@ -67,11 +68,12 @@ export function createIntegrationPorts(binding:{jobId:string;claimToken:string;c
  if(!admin)return {ok:false,code:"SERVICE_WINDOW_CLOSED"};
  const expires=await readServiceWindow(admin,{companyId:i.company_id,conversationId:i.conversation_id,phoneNumberId:i.phone_number_id,recipientWaId:i.recipient_wa_id});
  if(!expires)return {ok:false,code:"SERVICE_WINDOW_CLOSED"};
- const sent=await sendWhatsappText({toWaId:i.recipient_wa_id,body:i.body,phoneNumberId:i.phone_number_id,accessToken:secret,serviceWindowExpiresAt:expires});
+ const sent=await sendWhatsappText({toWaId:i.recipient_wa_id,body:i.body,phoneNumberId:i.phone_number_id,accessToken:secret,serviceWindowExpiresAt:expires,onTransportStart:()=>recordWorkerTiming(binding.jobId,"send_started_at")});
  return sent;},
  finalize:async(id,token,result,wamid,errorCode)=>object(await rpc("finalize_whatsapp_send_attempt",{p_intent_id:id,p_attempt_token:token,p_result:result,p_wa_message_id:wamid,p_error_code:errorCode??(result==="unknown"?"worker_unknown":null),p_actor_user_id:null}))?.ok===true,
  finish:async id=>{const r=object(await rpc("billing_finalize_automated_usage",{p_company_id:binding.companyId,p_intent_id:id}));if(r?.ok!==true)throw Error("USAGE_SETTLEMENT_PENDING");return String(r.status);},
  repair:async id=>object(await rpc("retry_whatsapp_send_persist",{p_intent_id:id,p_actor_user_id:null}))?.ok===true,
- retry:async(code,uncertain,permanent)=>{await rpc("whatsapp_retry_inbound_job",{...args,p_code:code,p_uncertain:uncertain,p_terminal:permanent??false});},
+ retry:async(code,uncertain,permanent)=>{const result=object(await rpc("whatsapp_retry_inbound_job",{...args,p_code:code,p_uncertain:uncertain,p_terminal:permanent??false}));
+ if(result?.ok!==true||!["retry_wait","dead_letter","review_required"].includes(String(result.status)))throw Error("JOB_DISPOSITION_UNCONFIRMED");},
  heartbeat:async()=>await rpc("whatsapp_heartbeat_inbound_job",args)===true};
 }

@@ -66,6 +66,16 @@ afterEach(() => {
 });
 
 describe("P4 WhatsApp reception route", () => {
+  it("records receipt and committed persistence without logging customer content",async()=>{
+    vi.stubEnv("WHATSAPP_WORKER_TIMING_ENABLED","true");
+    const jobId="12345678-1234-4234-8234-123456789abc";
+    mocks.saveInbound.mockResolvedValue({inserted:true,jobId,messageId:"m",conversationId:"c",jobStatus:"pending"});
+    expect((await POST(signedRequest(JSON.stringify(envelope())))).status).toBe(200);
+    const lines=vi.mocked(console.info).mock.calls.map(([line])=>String(line));
+    const records=lines.map(line=>{try{return JSON.parse(line);}catch{return null;}}).filter(x=>x?.event==="whatsapp.worker.timing");
+    expect(records.map(x=>x.stage)).toEqual(["webhook_received_at","persisted_at"]);
+    expect(records[0].job_hash).toBe(records[1].job_hash);expect(JSON.stringify(records)).not.toContain("مرحبا");expect(JSON.stringify(records)).not.toContain(jobId);
+  });
   it.each(['', 'sha1=invalid', 'sha256='+ 'z'.repeat(64)])('rejects malformed authentication before consuming the body (%s)',async signature=>{
     const request=signedRequest('{}',signature),read=vi.spyOn(request,'arrayBuffer');
     expect((await POST(request)).status).toBe(401);

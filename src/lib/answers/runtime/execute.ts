@@ -30,7 +30,7 @@ export async function executeRealAnswer(input:RealAnswerInput,deps?:{store:RealR
 }
 
 /** Shared paid loop. Its callers supply their distinct durable authorization store. */
-export async function executeReservedRealAnswer(input:RealAnswerPayload,deps:{store:ReservedRuntimeStore;call:typeof callRealModel;requireProviderIdentity?:boolean;persona?:AnswerPersona;allowTransient503Fallback?:boolean}) {
+export async function executeReservedRealAnswer(input:RealAnswerPayload,deps:{store:ReservedRuntimeStore;call:typeof callRealModel;requireProviderIdentity?:boolean;persona?:AnswerPersona;allowTransient503Fallback?:boolean;allowDefiniteFallback?:boolean}) {
  const attempts:RealAttempt[]=[];
  const maxOutputTokens=input.maxOutputTokens??REAL_OUTPUT_LIMIT,maxCostBaisa=input.maxCostBaisa??1000;
  if(!validPayload(input))return {ok:false as const,error:"INVALID_INPUT",attempts};
@@ -71,6 +71,7 @@ export async function executeReservedRealAnswer(input:RealAnswerPayload,deps:{st
   if(result.status==="success"||result.status==="incomplete")return {ok:true as const,text:result.text,complete:result.status==="success",model,attempts};
   // An explicit provider 503 can fall back only after its independent cost hold is retained.
   if(deps.allowTransient503Fallback && model==="gemini-3.5-flash-lite" && result.status==="uncertain" && result.errorCode==="PROVIDER_HTTP_503")continue;
+  if(deps.allowDefiniteFallback===false)break;
   // Other unknown outcomes are not retried.
   if(result.status==="uncertain"||input.model||!["KEY_MISSING","PROVIDER_HTTP_403","PROVIDER_HTTP_404"].includes(result.errorCode??""))break;
  }

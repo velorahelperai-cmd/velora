@@ -42,44 +42,23 @@ describe("claimed WhatsApp cost execution", () => {
     expect(db.settle).toHaveBeenCalledWith(expect.objectContaining({ responseText: "Synthetic answer", usage, requestId: "request", responseId: "response", actualModelId: "gpt-6-luna", latencyMs: 12, costBaisa: expect.any(Number) }));
     expect(db.reserve).toHaveBeenCalledWith(expect.objectContaining({ sourceCitations: [{ sourceId: "knowledge", title: "Synthetic knowledge", contentVersion: 1 }] }));
   });
-  it("reserves each definite permitted fallback separately", async () => {
-    const db = store(), call = vi.fn().mockResolvedValueOnce({ status: "rejected", text: "", errorCode: "PROVIDER_HTTP_404", latencyMs: 0 }).mockResolvedValueOnce({ status: "success", text: "Synthetic answer", usage, actualModelId: "gemini-3.8-flash", latencyMs: 1 });
-    expect(await executeClaimedWhatsappAnswer(input, { store: db, call })).toMatchObject({ ok: true });
-    expect(db.reserve).toHaveBeenCalledTimes(2);
-    expect(vi.mocked(db.reserve).mock.calls.map(([i]) => i.attempt)).toEqual([1, 2]);
-    expect(vi.mocked(db.reserve).mock.calls.every(([i]) => i.reservedBaisa > 0)).toBe(true);
-  });
-  it("keeps an HTTP 503 cost held and reserves the stronger Google fallback separately", async () => {
-    const db = store(), call = vi.fn()
-      .mockResolvedValueOnce({ status: "uncertain", text: "", errorCode: "PROVIDER_HTTP_503", latencyMs: 1 })
-      .mockResolvedValueOnce({ status: "success", text: "Synthetic answer", usage, actualModelId: "gemini-3.8-flash", latencyMs: 1 });
-    expect(await executeClaimedWhatsappAnswer({ ...input, model: "gemini-3.5-flash-lite" }, { store: db, call, allowTransient503Fallback: true })).toMatchObject({ ok: true, text: "Synthetic answer" });
-    expect(db.reserve).toHaveBeenCalledTimes(2);
-    expect(vi.mocked(db.reserve).mock.calls.map(([x]) => x.model)).toEqual(["gemini-3.5-flash-lite", "gemini-3.8-flash"]);
-    expect(db.settle).toHaveBeenNthCalledWith(1, expect.objectContaining({ status: "uncertain", costBaisa: null, errorCode: "PROVIDER_HTTP_503" }));
-  });
-  it("stops after both providers return 503 and retains both reservations", async () => {
-    const db = store(), call = vi.fn().mockResolvedValue({ status: "uncertain", text: "", errorCode: "PROVIDER_HTTP_503", latencyMs: 1 });
-    expect(await executeClaimedWhatsappAnswer({ ...input, model: "gemini-3.5-flash-lite" }, { store: db, call, allowTransient503Fallback: true })).toMatchObject({ ok: false, error: "PROVIDER_HTTP_503" });
-    expect(db.reserve).toHaveBeenCalledTimes(2);
-    expect(db.settle).toHaveBeenCalledTimes(2);
-    expect(vi.mocked(db.settle).mock.calls.every(([attempt]) => attempt.status === "uncertain" && attempt.costBaisa === null)).toBe(true);
-  });
-  it("does not enable a 503 fallback for a caller without the native rollout", async () => {
-    const db = store(), call = vi.fn().mockResolvedValue({ status: "uncertain", text: "", errorCode: "PROVIDER_HTTP_503", latencyMs: 1 });
-    expect(await executeClaimedWhatsappAnswer({ ...input, model: "gemini-3.5-flash-lite" }, { store: db, call })).toMatchObject({ ok: false });
-    expect(call).toHaveBeenCalledTimes(1);
-  });
-  it.each(["PROVIDER_HTTP_500", "PROVIDER_NETWORK_ERROR"])("does not retry ambiguous %s even when 503 fallback is enabled", async errorCode => {
-    const db = store(), call = vi.fn().mockResolvedValue({ status: "uncertain", text: "", errorCode, latencyMs: 1 });
-    expect(await executeClaimedWhatsappAnswer({ ...input, model: "gemini-3.5-flash-lite" }, { store: db, call, allowTransient503Fallback: true })).toMatchObject({ ok: false, error: errorCode });
+  it.each(["KEY_MISSING", "PROVIDER_HTTP_403", "PROVIDER_HTTP_404"])("does not switch models for %s without plan authorization", async errorCode => {
+    const db = store(), call = vi.fn().mockResolvedValue({ status: "rejected", text: "", errorCode, latencyMs: 0 });
+    expect(await executeClaimedWhatsappAnswer(input, { store: db, call })).toMatchObject({ ok: false, error: errorCode });
     expect(db.reserve).toHaveBeenCalledTimes(1);
     expect(call).toHaveBeenCalledTimes(1);
   });
-  it("does not retry a 503 when durable settlement cannot be confirmed", async () => {
+  it.each(["PROVIDER_HTTP_503", "PROVIDER_HTTP_500", "PROVIDER_NETWORK_ERROR"])("holds an uncertain %s without attempting a second model", async errorCode => {
+    const db = store(), call = vi.fn().mockResolvedValue({ status: "uncertain", text: "", errorCode, latencyMs: 1 });
+    expect(await executeClaimedWhatsappAnswer({ ...input, model: "gemini-3.5-flash-lite" }, { store: db, call })).toMatchObject({ ok: false, error: errorCode });
+    expect(db.reserve).toHaveBeenCalledTimes(1);
+    expect(call).toHaveBeenCalledTimes(1);
+    expect(db.settle).toHaveBeenCalledWith(expect.objectContaining({ status: "uncertain", costBaisa: null, errorCode }));
+  });
+  it("does not attempt another model when settlement cannot be confirmed", async () => {
     const db = store(), call = vi.fn().mockResolvedValue({ status: "uncertain", text: "", errorCode: "PROVIDER_HTTP_503", latencyMs: 1 });
     vi.mocked(db.settle).mockRejectedValue(Error("Synthetic persistence failure"));
-    expect(await executeClaimedWhatsappAnswer({ ...input, model: "gemini-3.5-flash-lite" }, { store: db, call, allowTransient503Fallback: true })).toMatchObject({ ok: false, error: "SETTLEMENT_PENDING_RECONCILIATION" });
+    expect(await executeClaimedWhatsappAnswer({ ...input, model: "gemini-3.5-flash-lite" }, { store: db, call })).toMatchObject({ ok: false, error: "SETTLEMENT_PENDING_RECONCILIATION" });
     expect(db.reserve).toHaveBeenCalledTimes(1);
     expect(call).toHaveBeenCalledTimes(1);
   });

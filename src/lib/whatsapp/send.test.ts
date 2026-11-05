@@ -12,14 +12,26 @@ describe("sendWhatsappText guards", () => {
     vi.stubEnv("WHATSAPP_ACCESS_TOKEN", "token");
     vi.stubEnv("WHATSAPP_PHONE_NUMBER_ID", "1279881708549662");
     const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const onTransportStart=vi.fn();
     const { sendWhatsappText } = await import("./send");
     const result = await sendWhatsappText({
       toWaId: "96890000000",
       body: "hi",
       phoneNumberId: "1279881708549662",
+      onTransportStart,
     });
     expect(result).toEqual({ ok: false, code: "SEND_DISABLED" });
     expect(fetchSpy).not.toHaveBeenCalled();
+    expect(onTransportStart).not.toHaveBeenCalled();
+  });
+
+  it("records transport only at the fetch boundary, without depending on diagnostics",async()=>{
+    vi.stubEnv("WHATSAPP_ALLOW_EXTERNAL_SEND","true");vi.stubEnv("WHATSAPP_ACCESS_TOKEN","token");vi.stubEnv("WHATSAPP_PHONE_NUMBER_ID","1279881708549662");
+    const order:string[]=[];
+    vi.spyOn(globalThis,"fetch").mockImplementation(async()=>{order.push("fetch");return new Response(JSON.stringify({messages:[{id:"synthetic-wamid"}]}),{status:200});});
+    const {sendWhatsappText}=await import("./send");
+    const result=await sendWhatsappText({toWaId:"96890000000",body:"synthetic",phoneNumberId:"1279881708549662",onTransportStart:()=>{order.push("timing");throw Error("synthetic diagnostics failure");}});
+    expect(result).toEqual({ok:true,waMessageId:"synthetic-wamid"});expect(order).toEqual(["timing","fetch"]);
   });
 
   it("reports missing configuration when send is allowed but token is absent", async () => {

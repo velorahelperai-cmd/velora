@@ -17,6 +17,15 @@ function client(proof: unknown = window) {
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date("2026-10-08T12:00:00Z")); vi.clearAllMocks(); });
 afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); });
 describe("production integration context and send gates", () => {
+  it.each([null, {}, { ok: false, code: "claim_rejected" }, { ok: true }, { ok: true, status: "completed" }])("does not report a recorded disposition for rejected or malformed acknowledgements: %j", async reply => {
+    const db = client(reply), ports = createIntegrationPorts(binding, db as never);
+    await expect(ports.retry("HUMAN_REVIEW_REQUIRED", false, true)).rejects.toThrow("JOB_DISPOSITION_UNCONFIRMED");
+  });
+  it("accepts a durable terminal disposition for the claimed job", async () => {
+    const db = client({ ok: true, status: "dead_letter" }), ports = createIntegrationPorts(binding, db as never);
+    await expect(ports.retry("HUMAN_REVIEW_REQUIRED", false, true)).resolves.toBeUndefined();
+    expect(db.rpc).toHaveBeenCalledWith("whatsapp_retry_inbound_job", { p_job_id: "job", p_claim_token: "claim", p_code: "HUMAN_REVIEW_REQUIRED", p_uncertain: false, p_terminal: true });
+  });
   it("leaves fresh message capacity to the atomic cost reservation before the paid call", async () => {
     const db = client(), ports = createIntegrationPorts(binding, db as never);
     await ports.frame(); expect(await ports.reserve()).toBe(true);
@@ -193,4 +202,11 @@ describe("ES02 claimed branch citation verification", () => {
     expect(db.from).not.toHaveBeenCalled();
     expect(db.rpc.mock.calls.map(([name]) => name)).not.toContain("whatsapp_retrieve_approved_knowledge");
   });
-});
+});  it('prevents send when server-side live state is disabled during generation', async () => {
+    const db = { rpc: vi.fn(async (name) => { if (name === 'whatsapp_worker_live_active') return { data: false, error: null }; if (name === 'es02_classify_claimed_reply') return { data: { ok: true, recipientClass: 'real_customer' }, error: null }; if (name === 'billing_load_worker_frame') return { data: { ok: true, data: { ...frame, authority: 'es02' } }, error: null }; return { data: window, error: null }; }), from: vi.fn() };
+    const ports = createIntegrationPorts(binding, db as never);
+    const loaded = await ports.frame();
+    expect(await ports.verify(loaded!, es02Citations)).toBe(false);
+  });
+
+

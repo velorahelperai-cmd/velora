@@ -2,6 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { observeWebhookIngress } from "@/lib/logging/ingress-observation-server";
 import { webhookReady, whatsappConfig, whatsappRoutingMode } from "@/lib/whatsapp/config";
 import { saveInbound, saveStatus } from "@/lib/whatsapp/store";
+import {recordWorkerTiming} from "@/lib/whatsapp/worker-timing";
 import { resolveWhatsappCompanyByMetaAsset } from "@/lib/whatsapp/tenant-resolve";
 import {splitCoexistenceWebhook} from "@/lib/whatsapp/coexistence/webhook-events";
 import {ingestCoexistenceWebhookEvent,type CoexistenceIngressClient} from "@/lib/whatsapp/coexistence/webhook-store";
@@ -77,6 +78,7 @@ export async function POST(request: Request) {
   return observeWebhookIngress("whatsapp", () => handlePost(request));
 }
 async function handlePost(request: Request) {
+  const webhookReceivedAt=Date.now();
   if (process.env.WHATSAPP_RECEIVE_ENABLED !== "true") {
     return new Response("receive disabled", { status: 503, headers: { "cache-control": "no-store", "retry-after": "5" } });
   }
@@ -174,7 +176,11 @@ async function handlePost(request: Request) {
       if (!resolved.ok) return { ok: false, code: resolved.code };
       return { ok: true, companyId: resolved.companyId };
     },
-    saveInbound: (companyId, message) => saveInbound(admin, companyId, message),
+    saveInbound: async (companyId, message) => {
+      const saved=await saveInbound(admin, companyId, message);
+      if(saved.inserted){recordWorkerTiming(saved.jobId,"webhook_received_at",webhookReceivedAt);recordWorkerTiming(saved.jobId,"persisted_at");}
+      return saved;
+    },
     saveStatus: async (companyId, status) => {
       const saved=await saveStatus(admin,companyId,status);
       if(mode==="tenant_registry"&&status.wabaId&&["delivered","read"].includes(status.status)){
