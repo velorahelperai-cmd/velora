@@ -102,3 +102,11 @@
   .app-shell[data-conversations-workspace="true"] [data-inbox-desktop-v2="true"] .channel-pane [data-channel-inbox="whatsapp"]:has(> aside),
   .app-shell[data-conversations-workspace="true"] [data-inbox-desktop-v2="true"] .channel-pane .ig-conversation-layout {grid-template-columns:minmax(0,1fr) 306px;}
 }
+.vdi.vdi .vdi-thread .vdi-composer{overflow:visible}
+.vdi.vdi .vdi-quick-tool{position:relative;display:flex}
+.vdi.vdi .vdi-quick-panel{position:absolute;bottom:calc(100% + 6px);left:0;z-index:8;width:min(300px,65vw);max-height:260px;overflow:auto;display:flex;flex-direction:column;gap:8px;padding:10px;background:#fff;border:1px solid var(--vdi-line);border-radius:9px;box-shadow:0 3px 12px #193b4b20;direction:inherit;white-space:normal}
+.vdi.vdi .vdi-quick-panel label{display:flex;flex-direction:column;gap:4px}
+.vdi.vdi .vdi-quick-panel textarea{height:60px;min-height:60px;border:1px solid var(--vdi-line);border-radius:6px;padding:5px;resize:vertical}
+.vdi.vdi .vdi-quick-row{display:flex;gap:6px;align-items:start}
+.vdi.vdi .vdi-quick-row>button:first-child{flex:1;min-width:0;text-align:start;overflow-wrap:anywhere}
+.vdi.vdi .vdi-custom-compose-tools{padding:0 11px 8px}

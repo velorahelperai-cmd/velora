@@ -2,6 +2,7 @@
 import * as React from 'react';
 import './inbox-desktop-reference.css';
 import type { CSSProperties, ReactNode } from 'react';
+import { InboxExtensionBridge, type PendingInboxIntents } from './inbox-extension-bridge';
 export type VdiAction = {
     id: string;
     label: string;
@@ -133,10 +134,16 @@ export type VdiComposer = {
     value: string;
     onChange: (value: string) => void;
     onSubmit: () => void;
+    onSubmitAttachment?: (attachmentId: string, onAccepted: () => void) => void;
+    attachment?: { name?: string; pending: boolean; canRemove: boolean; error?: string; onSelect: (file: File) => void; onRemove: () => void; onRetry?: () => void };
     error?: string;
     tools?: VdiAction[];
+    quickReplies?: { items: { id: string; text: string }[]; ready: boolean; canEdit: boolean; value: string; reserved: boolean; onChange: (value: string) => void; onSave: () => void; onRemove: (id: string) => void };
 };
 export type InboxDesktopView = {
+    extension?: { companyId: string; conversationId: string; channel: 'whatsapp' | 'instagram'; canEdit: boolean; paused: boolean; revision?: number };
+    extensionStatus?: 'loading' | 'unavailable' | 'ready';
+    onStarChanged?: () => void;
     emptyListLabel?:string;
     state: 'ready' | 'loading' | 'unavailable' | 'denied';
     scopeKey: string;
@@ -152,6 +159,7 @@ export type InboxDesktopView = {
     followUp?: VdiFollowUp;
     activity?: VdiActivity;
     addTag?: VdiAction;
+    tagControls?: ReactNode;
     addNote?: VdiAction;
     assign?: VdiAction;
     customerExtra?: ReactNode;
@@ -359,7 +367,7 @@ function ClientPanel({ view, ar }: {
     const starred = view.headerActions?.find(action=>action.id==='star')?.active;
     const tab = (_a = view.profileTab) !== null && _a !== void 0 ? _a : 'details';
     const setTab = (t: NonNullable<InboxDesktopView["profileTab"]>) => { let _a; return (_a = view.onProfileTabChange) === null || _a === void 0 ? void 0 : _a.call(view, t); };
-    return <aside className={"vdi-panel vdi-profile"} data-inbox-panel={"customer"}><div className={"vdi-title-row"}><h2>{ar ? 'معلومات العميل' : 'Customer information'}</h2>{view.closeDetails && <ActionButton action={view.closeDetails}/>}</div>{!c ? <div className={"vdi-empty"}>{ar ? 'اختر محادثة لعرض التفاصيل' : 'Select a conversation'}</div> : <React.Fragment><section className={"vdi-hero vdi-hero-compact"}><Avatar person={c} channel={c.channel} large={true}/><h3>{c.name}</h3>{(c.badge || starred) && <span className={"vdi-badge"} title={!c.badge?(ar?'تمييز لهذه الجلسة فقط':'Starred for this session only'):undefined}><Icon name={"crown"}/>{c.badge || (ar?'عميل مميز':'Starred customer')}</span>}<ClientQuickActions view={view} ar={ar}/></section>{(view.followUp || view.activity) && <div className={"vdi-profile-tabs"} aria-label={ar ? 'أقسام العميل' : 'Customer sections'}>{(['details', ...(view.followUp ? ['followup'] : []), ...(view.activity ? ['activity'] : [])] as NonNullable<InboxDesktopView['profileTab']>[]).map(t => <button type={"button"} key={t} data-profile-tab={t} disabled={!view.onProfileTabChange} aria-pressed={tab === t} onClick={() => setTab(t)}><Icon name={t === 'details' ? 'user' : t === 'followup' ? 'clock' : 'activity'}/>{ar ? ({ details: 'التفاصيل', followup: 'المتابعة', activity: 'النشاط' })[t] : ({ details: 'Details', followup: 'Follow-up', activity: 'Activity' })[t]}</button>)}</div>}<div className={"vdi-profile-scroll vdi-scroll"}>{view.followUp?.nativePanel && <div hidden={tab !== "followup"}>{view.followUp.nativePanel}</div>}{tab === 'followup' && view.followUp ? (view.followUp.nativePanel ? null : <FollowUpPanel model={view.followUp} ar={ar}/>) : tab === 'activity' && view.activity ? <ActivityPanel model={view.activity} ar={ar}/> : <React.Fragment><ContactInformation customer={c} ar={ar}/><section className={"vdi-section"} data-feature="customer-tags"><div className={"vdi-section-heading"}><h3>{ar ? 'وسوم' : 'Tags'}</h3><ActionButton action={view.addTag??{id:'add-tag',label:ar?'إضافة وسم':'Add tag',icon:'plus',disabled:true,reason:ar?'إضافة الوسوم غير متاحة حاليًا.':'Adding tags is currently unavailable.'}} small label/></div>{c.tags?.length?<div className={"vdi-tags"}>{c.tags.map(t=><span key={t.id} className={`vdi-tag vdi-tag-${t.tone||'mint'}`}>{t.label}</span>)}</div>:<p className="vdi-muted">{ar?'لا يوجد':'None'}</p>}</section><section className={"vdi-section"} data-feature="internal-notes"><div className={"vdi-section-heading"}><h3>{ar ? 'ملاحظات داخلية' : 'Internal notes'}</h3><ActionButton action={view.addNote?{...view.addNote,label:c.note?.text.trim()?(ar?'تحرير الملاحظة':'Edit note'):(ar?'إضافة ملاحظة':'Add note')}:{id:'add-note',label:ar?'إضافة ملاحظة':'Add note',icon:'plus',disabled:true,reason:ar?'إضافة الملاحظات غير متاحة لهذه المحادثة حاليًا.':'Adding notes is currently unavailable for this conversation.'}} small label/></div><div className={"vdi-note"}>{c.note?.text.trim()||<span className="vdi-muted">{ar?'لا يوجد':'None'}</span>}{(c.note?.attribution||c.note?.time)&&<p className={"vdi-note-meta"}>{c.note.attribution}{c.note.attribution&&c.note.time&&<br/>}{c.note.time}</p>}</div></section><CustomerTeam view={view} ar={ar}/>{view.customerExtra && <section className={"vdi-section"}>{view.customerExtra}</section>}</React.Fragment>}</div>{view.connection && <ConnectionPanel model={view.connection} ar={ar}/>}</React.Fragment>}</aside>;
+    return <aside className={"vdi-panel vdi-profile"} data-inbox-panel={"customer"}><div className={"vdi-title-row"}><h2>{ar ? 'معلومات العميل' : 'Customer information'}</h2>{view.closeDetails && <ActionButton action={view.closeDetails}/>}</div>{!c ? <div className={"vdi-empty"}>{ar ? 'اختر محادثة لعرض التفاصيل' : 'Select a conversation'}</div> : <React.Fragment><section className={"vdi-hero vdi-hero-compact"}><Avatar person={c} channel={c.channel} large={true}/><h3>{c.name}</h3>{(c.badge || starred) && <span className={"vdi-badge"} title={!c.badge?(ar?'محادثة مميزة':'Starred conversation'):undefined}><Icon name={"crown"}/>{c.badge || (ar?'محادثة مميزة':'Starred conversation')}</span>}<ClientQuickActions view={view} ar={ar}/></section>{(view.followUp || view.activity) && <div className={"vdi-profile-tabs"} aria-label={ar ? 'أقسام العميل' : 'Customer sections'}>{(['details', ...(view.followUp ? ['followup'] : []), ...(view.activity ? ['activity'] : [])] as NonNullable<InboxDesktopView['profileTab']>[]).map(t => <button type={"button"} key={t} data-profile-tab={t} disabled={!view.onProfileTabChange} aria-pressed={tab === t} onClick={() => setTab(t)}><Icon name={t === 'details' ? 'user' : t === 'followup' ? 'clock' : 'activity'}/>{ar ? ({ details: 'التفاصيل', followup: 'المتابعة', activity: 'النشاط' })[t] : ({ details: 'Details', followup: 'Follow-up', activity: 'Activity' })[t]}</button>)}</div>}<div className={"vdi-profile-scroll vdi-scroll"}>{view.followUp?.nativePanel && <div hidden={tab !== "followup"}>{view.followUp.nativePanel}</div>}{tab === 'followup' && view.followUp ? (view.followUp.nativePanel ? null : <FollowUpPanel model={view.followUp} ar={ar}/>) : tab === 'activity' && view.activity ? <ActivityPanel model={view.activity} ar={ar}/> : <React.Fragment><ContactInformation customer={c} ar={ar}/><section className={"vdi-section"} data-feature="customer-tags"><div className={"vdi-section-heading"}><h3>{ar ? 'وسوم' : 'Tags'}</h3><ActionButton action={view.addTag??{id:'add-tag',label:ar?'إضافة وسم':'Add tag',icon:'plus',disabled:true,reason:ar?'إضافة الوسوم غير متاحة حاليًا.':'Adding tags is currently unavailable.'}} small label/></div>{c.tags?.length?<div className={"vdi-tags"}>{c.tags.map(t=><span key={t.id} className={`vdi-tag vdi-tag-${t.tone||'mint'}`}>{t.label}</span>)}</div>:<p className="vdi-muted">{view.extensionStatus==='loading'?(ar?'جارٍ التحميل…':'Loading…'):view.extensionStatus==='unavailable'?(ar?'تعذّر التحقق':'Unavailable'):(ar?'لا يوجد':'None')}</p>}{view.tagControls}</section><section className={"vdi-section"} data-feature="internal-notes"><div className={"vdi-section-heading"}><h3>{ar ? 'ملاحظات داخلية' : 'Internal notes'}</h3><ActionButton action={view.addNote?{...view.addNote,label:view.extension?.channel==='instagram'?(ar?'إضافة ملاحظة':'Add note'):c.note?.text.trim()?(ar?'تحرير الملاحظة':'Edit note'):(ar?'إضافة ملاحظة':'Add note')}:{id:'add-note',label:ar?'إضافة ملاحظة':'Add note',icon:'plus',disabled:true,reason:ar?'إضافة الملاحظات غير متاحة لهذه المحادثة حاليًا.':'Adding notes is currently unavailable for this conversation.'}} small label/></div><div className={"vdi-note"}>{c.note?.text.trim()||<span className="vdi-muted">{view.extension?.channel==='instagram'&&view.extensionStatus==='loading'?(ar?'جارٍ التحميل…':'Loading…'):view.extension?.channel==='instagram'&&view.extensionStatus==='unavailable'?(ar?'تعذّر التحقق':'Unavailable'):(ar?'لا يوجد':'None')}</span>}{(c.note?.attribution||c.note?.time)&&<p className={"vdi-note-meta"}>{c.note.attribution}{c.note.attribution&&c.note.time&&<br/>}{c.note.time}</p>}</div></section><CustomerTeam view={view} ar={ar}/>{view.customerExtra && <section className={"vdi-section"}>{view.customerExtra}</section>}</React.Fragment>}</div>{view.connection && <ConnectionPanel model={view.connection} ar={ar}/>}</React.Fragment>}</aside>;
 }
 function WorkspaceBar({ model: m, ar }: {
     model: VdiWorkspace;
@@ -391,21 +399,35 @@ function Delivery({ state, ar }: {
 }
 function ComposerTools({composer:c,ar}:{composer:VdiComposer;ar:boolean}) {
  const [emojiOpen,setEmojiOpen]=React.useState(false);
+ const [quickOpen,setQuickOpen]=React.useState(false);
+ const fileInput=React.useRef<HTMLInputElement>(null);
  const blocked=!!c.pending||!c.canSend;
  if(c.tools)return <>{c.tools.map(action=><ActionButton key={action.id} action={{...action,disabled:action.disabled||blocked}}/>)}</>;
  return <>
   <ActionButton action={{id:'more',label:ar?'أدوات إضافية':'More tools',icon:'more',disabled:true,reason:ar?'لا توجد أدوات إضافية متاحة حاليًا.':'No additional tools are currently available.'}}/>
-  <ActionButton action={{id:'quick',label:ar?'الردود السريعة':'Quick replies',icon:'hash',disabled:true,reason:ar?'الردود السريعة غير متاحة حاليًا.':'Quick replies are currently unavailable.'}}/>
+  <div className="vdi-quick-tool" onKeyDown={event=>{if(event.key==='Escape'){setQuickOpen(false);event.currentTarget.querySelector('button')?.focus();}}}>
+   <ActionButton action={{id:'quick',label:ar?'الردود السريعة':'Quick replies',icon:'hash',disabled:blocked||!c.quickReplies?.ready,reason:c.disabledReason,active:quickOpen&&!blocked,onClick:()=>setQuickOpen(open=>!open)}}/>
+   {quickOpen&&!blocked&&c.quickReplies?.ready&&<div className="vdi-quick-panel" role="group" aria-label={ar?'الردود السريعة لهذه المحادثة':'Quick replies for this conversation'}>
+    {c.quickReplies.items.length===0&&<p>{ar?'لا توجد ردود محفوظة.':'No saved replies.'}</p>}
+    {c.quickReplies.items.map(reply=><div className="vdi-quick-row" key={reply.id}><button type="button" onClick={event=>{
+     const textarea=event.currentTarget.closest('.vdi-composer')?.querySelector<HTMLTextAreaElement>('textarea[data-message-input]');
+     if(!textarea||textarea.disabled||textarea.readOnly)return;
+     const start=textarea.selectionStart,end=textarea.selectionEnd;c.onChange(c.value.slice(0,start)+reply.text+c.value.slice(end));setQuickOpen(false);
+     requestAnimationFrame(()=>{if(textarea.isConnected){textarea.focus();textarea.setSelectionRange(start+reply.text.length,start+reply.text.length);}});
+    }}>{reply.text}</button>{c.quickReplies?.canEdit&&<button type="button" aria-label={ar?'حذف الرد السريع':'Delete quick reply'} onClick={()=>c.quickReplies?.onRemove(reply.id)}>×</button>}</div>)}
+    {c.quickReplies.canEdit&&<><label>{ar?'رد سريع جديد':'New quick reply'}<textarea value={c.quickReplies.value} maxLength={250} readOnly={c.quickReplies.reserved} onChange={event=>c.quickReplies?.onChange(event.target.value)}/></label>{c.quickReplies.reserved&&<p role="status">{ar?'أعد حفظ الرد نفسه للتحقق من نتيجته.':'Save the same reply again to verify its result.'}</p>}<button type="button" className="vdi-small-button" disabled={!c.quickReplies.value.trim()} onClick={c.quickReplies.onSave}>{ar?'حفظ الرد':'Save reply'}</button></>}
+   </div>}
+  </div>
   <div className="vdi-emoji-tool" onKeyDown={event=>{if(event.key==='Escape'){setEmojiOpen(false);event.currentTarget.querySelector('button')?.focus();}}}>
    <ActionButton action={{id:'smile',label:ar?'إضافة رمز تعبيري':'Add emoji',icon:'smile',disabled:blocked,reason:c.disabledReason,active:emojiOpen&&!blocked,onClick:()=>setEmojiOpen(open=>!open)}}/>
    {emojiOpen&&!blocked&&<div className="vdi-emoji-picker" role="group" aria-label={ar?'الرموز التعبيرية':'Emoji'}>{['😀','😊','👍','❤️','🙏','🎉'].map(emoji=><button key={emoji} type="button" aria-label={emoji} onClick={event=>{
-    const textarea=event.currentTarget.closest('form')?.querySelector('textarea');
+    const textarea=event.currentTarget.closest('.vdi-composer')?.querySelector<HTMLTextAreaElement>('textarea[data-message-input]');
     const start=textarea?.selectionStart??c.value.length,end=textarea?.selectionEnd??start;
     c.onChange(c.value.slice(0,start)+emoji+c.value.slice(end));setEmojiOpen(false);
     requestAnimationFrame(()=>{if(textarea?.isConnected){textarea.focus();textarea.setSelectionRange(start+emoji.length,start+emoji.length);}});
    }}>{emoji}</button>)}</div>}
   </div>
-  <ActionButton action={{id:'clip',label:ar?'إضافة مرفق':'Add attachment',icon:'clip',disabled:true,reason:ar?'إرسال المرفقات غير متاح حاليًا.':'Sending attachments is currently unavailable.'}}/>
+  {c.attachment?<><ActionButton action={{id:'clip',label:ar?'إضافة مرفق':'Add attachment',icon:'clip',disabled:blocked||c.attachment.pending||!!c.attachment.name,onClick:()=>fileInput.current?.click()}}/><input ref={fileInput} type="file" aria-label={ar?'اختيار ملف':'Choose file'} accept="image/png,image/jpeg,application/pdf" hidden disabled={blocked||c.attachment.pending||!!c.attachment.name} onChange={event=>{const file=event.currentTarget.files?.[0];event.currentTarget.value='';if(file)c.attachment?.onSelect(file);}}/></>:<ActionButton action={{id:'clip',label:ar?'إضافة مرفق':'Add attachment',icon:'clip',disabled:true,reason:ar?'إرسال المرفقات غير متاح حاليًا.':'Sending attachments is currently unavailable.'}}/>}
  </>;
 }
 function ComposerView({composer:c,ar}:{composer:VdiComposer;ar:boolean}) {
@@ -414,7 +436,8 @@ function ComposerView({composer:c,ar}:{composer:VdiComposer;ar:boolean}) {
  const selectableModes=modes.filter(mode=>!c.disabledModes?.includes(mode));
  return <section className="vdi-composer"><div className="vdi-compose-tabs" aria-label={ar?'نوع الكتابة':'Compose mode'}>{modes.map(mode=><button key={mode} type="button" className="vdi-tab" aria-pressed={c.mode===mode} disabled={c.disabledModes?.includes(mode)} title={c.disabledModes?.includes(mode)?c.disabledReason:undefined} onClick={()=>c.onModeChange(mode)} onKeyDown={event=>{const index=selectableModes.indexOf(mode);let next:number|undefined;if(event.key==='Home')next=0;if(event.key==='End')next=selectableModes.length-1;if(event.key==='ArrowRight')next=(index+(ar?-1:1)+selectableModes.length)%selectableModes.length;if(event.key==='ArrowLeft')next=(index+(ar?1:-1)+selectableModes.length)%selectableModes.length;if(next!==undefined&&selectableModes[next]){event.preventDefault();c.onModeChange(selectableModes[next]);event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')[next]?.focus();}}}><Icon name={mode==='message'?'chat':mode==='ai'?'sparkles':'note'}/>{labels[mode]}</button>)}</div>
  {c.modePanels&&Object.entries(c.modePanels).map(([mode,panel])=><div key={mode} hidden={c.mode!==mode}>{panel}</div>)}
- {!c.modePanels?.[c.mode]&&<form className="vdi-compose-body" onSubmit={event=>{event.preventDefault();if(c.canSend&&!c.pending&&c.value.trim())c.onSubmit();}}>{c.ownershipNotice&&<p className="vdi-compose-owner" role="status">{c.ownershipNotice}</p>}{c.disabledReason&&!c.canSend&&<p className="vdi-muted" role="status">{c.disabledReason}</p>}<textarea aria-label={labels[c.mode]} placeholder={c.mode==='note'?(ar?'ملاحظة داخلية — لا تُرسل للعميل':'Internal note — not sent to customer'):(ar?'اكتب رسالتك هنا...':'Write a message...')} value={c.value} disabled={!c.canSend||c.pending} onChange={event=>c.onChange(event.target.value)}/>{c.error&&<p role="alert" className="vdi-compose-error">{c.error}</p>}<div className="vdi-compose-tools"><button className="vdi-send" type="submit" disabled={!c.canSend||c.pending||!c.value.trim()}><Icon name="send"/>{c.pending?(ar?'جارٍ التنفيذ…':'Working…'):c.mode==='message'?(ar?'إرسال':'Send'):c.mode==='note'?(ar?'حفظ':'Save'):(ar?'مساعدة':'Assist')}</button><div className="vdi-tool-group"><ComposerTools composer={c} ar={ar}/></div></div></form>}
+ {!c.modePanels?.[c.mode]&&<form className="vdi-compose-body" onSubmit={event=>{event.preventDefault();if(c.canSend&&!c.pending&&!c.attachment?.pending&&(c.value.trim()||(c.mode==='message'&&c.attachment?.name))&&(!c.attachment?.name||c.value.trim().length<=1024))c.onSubmit();}}>{c.ownershipNotice&&<p className="vdi-compose-owner" role="status">{c.ownershipNotice}</p>}{c.disabledReason&&!c.canSend&&<p className="vdi-muted" role="status">{c.disabledReason}</p>}<textarea data-message-input aria-label={labels[c.mode]} placeholder={c.mode==='note'?(ar?'ملاحظة داخلية — لا تُرسل للعميل':'Internal note — not sent to customer'):(ar?'اكتب رسالتك هنا...':'Write a message...')} value={c.value} disabled={!c.canSend||c.pending} onChange={event=>c.onChange(event.target.value)}/>{c.attachment?.name&&c.value.trim().length>1024&&<p role="status">{ar?'نص المرفق لا يتجاوز 1024 حرفًا.':'Attachment captions are limited to 1,024 characters.'}</p>}{c.attachment?.name&&<p role="status">{ar?'مرفق: ':'Attachment: '}{c.attachment.name} <button type="button" disabled={!c.attachment.canRemove||c.pending} onClick={c.attachment.onRemove}>{ar?'إزالة':'Remove'}</button></p>}{c.attachment?.error&&<p role="status">{c.attachment.error} {c.attachment.onRetry?<button type="button" onClick={c.attachment.onRetry}>{ar?'إعادة المحاولة':'Retry'}</button>:!c.attachment.name&&<button type="button" disabled={!c.attachment.canRemove} onClick={c.attachment.onRemove}>{ar?'إلغاء':'Dismiss'}</button>}</p>}{c.error&&<p role="alert" className="vdi-compose-error">{c.error}</p>}<div className="vdi-compose-tools"><button className="vdi-send" type="submit" disabled={!c.canSend||c.pending||c.attachment?.pending||(!c.value.trim()&&!(c.mode==='message'&&c.attachment?.name))||!!c.attachment?.name&&c.value.trim().length>1024}><Icon name="send"/>{c.pending?(ar?'جارٍ التنفيذ…':'Working…'):c.mode==='message'?(ar?'إرسال':'Send'):c.mode==='note'?(ar?'حفظ':'Save'):(ar?'مساعدة':'Assist')}</button><div className="vdi-tool-group"><ComposerTools composer={c} ar={ar}/></div></div></form>}
+ {c.mode==='message'&&c.modePanels?.message&&<div className="vdi-tool-group vdi-custom-compose-tools"><ComposerTools composer={c} ar={ar}/></div>}
  </section>;
 }
 function ThreadPanel({ view, ar }: {
@@ -439,6 +462,21 @@ export function InboxDesktop({ view, locale = 'ar', height = 'calc(100dvh - 20px
     locale?: string;
     height?: string;
 }) {
+    const [pendingIntents, setPendingIntents] = React.useState<Record<string, PendingInboxIntents>>({});
+    if (view.extension && view.customer && view.state === 'ready') {
+        const key = `${view.scopeKey}:${view.extension.channel}:${view.extension.conversationId}`;
+        return <InboxExtensionBridge key={key} view={view} ar={locale === 'ar'} pendingIntents={pendingIntents[key]} onIntentChange={(kind,intent,expectedId) => setPendingIntents(old => {
+            const next = { ...old[key] };
+            if (expectedId && next[kind]?.id !== expectedId) return old;
+            if (intent) next[kind] = intent; else delete next[kind];
+            const updated = { ...old };
+            if (next.tag || next.note || next.quick || next.file) updated[key] = next; else delete updated[key];
+            return updated;
+        })} render={next => <InboxDesktopSurface view={next} locale={locale} height={height}/>}/>;
+    }
+    return <InboxDesktopSurface view={view} locale={locale} height={height}/>;
+}
+function InboxDesktopSurface({ view, locale, height }: { view: InboxDesktopView; locale: string; height: string }) {
     let _a;
     const ar = locale === 'ar';
     const [detailsState,setDetailsState]=React.useState({scope:view.scopeKey,hidden:false});

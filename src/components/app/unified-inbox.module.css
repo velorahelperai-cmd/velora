@@ -181,3 +181,6 @@
 .offlineMobile {min-height:24rem;border:1px solid var(--service-line);border-radius:14px;background:#fff;padding:20px;}
 .offlineMobile h2 {font-size:18px;margin-bottom:14px;}
 @media(min-width:1280px){.offlineMobile{display:none;}}
+.startDialog{border:0;border-radius:12px;padding:24px;max-width:440px;width:calc(100% - 32px);box-shadow:0 16px 48px #0003;color:#172b29;background:#fff}
+.startDialog::backdrop{background:#10282680}
+.startDialog form{display:grid;gap:14px}.startDialog h2,.startDialog p{margin:0}.startDialog p{line-height:1.6}.startDialog label{display:grid;gap:6px;font-weight:600}.startDialog input{width:100%;border:1px solid #a9bbb7;border-radius:6px;padding:9px 10px}.startDialogActions{display:flex;gap:8px;justify-content:flex-end}.startDialogActions button{border:1px solid #a9bbb7;border-radius:6px;background:white;padding:8px 16px;cursor:pointer}.startDialogActions button[type=submit]{color:white;background:#087c6d;border-color:#087c6d}.startDialogActions button:disabled{opacity:.5;cursor:not-allowed}

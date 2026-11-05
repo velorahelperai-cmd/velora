@@ -6,7 +6,7 @@ import {appCopy} from '@/lib/app-copy';
 vi.mock('server-only',()=>({}));
 const state=vi.hoisted(()=>({
  routerPush:vi.fn(),routerRefresh:vi.fn(),readServiceInbox:vi.fn(),refreshWhatsappInboxPage:vi.fn(),loadInstagramInboxPage:vi.fn(),
- searchParams:new URLSearchParams(),locale:'en',
+ searchParams:new URLSearchParams(),locale:'en',starred:[] as string[],starDenied:false,
  account:{status:'ready',identity:{userId:'22222222-2222-4222-8222-222222222222'},boundaryFingerprint:'verified-boundary'},
  workspaceCompany:'11111111-1111-4111-8111-111111111111',
 }));
@@ -14,6 +14,12 @@ vi.mock('next/navigation',()=>({useRouter:()=>({push:state.routerPush,refresh:st
 vi.mock('next/link',()=>({default:({children,href}:{children:ReactNode;href:string})=><a href={href}>{children}</a>}));
 vi.mock('@/lib/demo-state',()=>({useDemo:()=>({locale:state.locale})}));
 vi.mock('@/lib/customer/service-inbox-read',()=>({fetchServiceInbox:state.readServiceInbox}));
+vi.mock('@/lib/customer/inbox-extension-actions',()=>({
+ listInboxStars:vi.fn(async({channel,conversationIds}:{channel:string;conversationIds:string[]})=>state.starDenied?{ok:false,code:'FORBIDDEN'}:{ok:true,data:conversationIds.filter(id=>state.starred.includes(`${channel}:${id}`))}),
+ runInboxExtension:vi.fn(async({channel,conversationId,action}:{channel:string;conversationId:string;action:string})=>{
+  const key=`${channel}:${conversationId}`;state.starred=action==='star'?[...new Set([...state.starred,key])]:state.starred.filter(value=>value!==key);return {ok:true,data:null};
+ }),
+}));
 vi.mock('@/lib/whatsapp/inbox-actions',()=>({refreshWhatsappInboxPage:state.refreshWhatsappInboxPage}));
 vi.mock('@/lib/instagram/inbox-actions',()=>({loadInstagramInboxPage:state.loadInstagramInboxPage}));
 vi.mock('./account-chrome',()=>({useOptionalAccountSession:()=>state.account}));
@@ -29,6 +35,7 @@ vi.mock('./conversations',()=>({ConversationsPage:({selectedConversationId}:{sel
 }}));
 vi.mock('./instagram-inbox',()=>({InstagramInbox:({onSelectConversation}:{onSelectConversation?:(id:string)=>void})=><section data-pane="instagram"><button onClick={()=>onSelectConversation?.('ig-thread-1')}>Select Instagram thread</button></section>}));
 import {UnifiedInbox} from './unified-inbox';
+import {listInboxStars} from '@/lib/customer/inbox-extension-actions';
 import {WorkspaceBootstrapProvider,type WorkspaceBootstrap} from './workspace-bootstrap';
 type ReadableSnapshot=Extract<ComponentProps<typeof UnifiedInbox>['initial'],{ok:true}>;
 type WhatsappSnapshot=Extract<ReadableSnapshot['wa'],{ok:true}>;
@@ -51,7 +58,7 @@ async function click(target:HTMLElement){await act(async()=>{target.click();});}
 function route(search:string){state.searchParams=new URLSearchParams(search);window.history.replaceState(null,'','/app/conversations'+(search?'?'+search:''));}
 beforeEach(()=>{
  vi.clearAllMocks();vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);Object.defineProperty(document,'visibilityState',{configurable:true,value:'visible'});
- state.account={status:'ready',identity:{userId:actor},boundaryFingerprint:'verified-boundary'};state.workspaceCompany=company;state.locale='en';route('');
+ state.account={status:'ready',identity:{userId:actor},boundaryFingerprint:'verified-boundary'};state.workspaceCompany=company;state.locale='en';state.starred=[];state.starDenied=false;route('');
  container=document.createElement('div');document.body.append(container);root=createRoot(container);
 });
 afterEach(()=>{act(()=>root.unmount());container.remove();vi.restoreAllMocks();vi.unstubAllGlobals();});
@@ -117,21 +124,40 @@ afterEach(()=>{act(()=>root.unmount());container.remove();vi.restoreAllMocks();v
 
 
 describe('UnifiedInbox membership and page safety',()=>{
- it('stars only authorized loaded rows for the desktop session without fetching, and resets on membership change',async()=>{
+ it('reads and updates durable stars only for the loaded authorized rows',async()=>{
   const media={matches:true,addEventListener:vi.fn((_type:string,_callback:()=>void)=>undefined),removeEventListener:vi.fn()};vi.stubGlobal('matchMedia',vi.fn(()=>media));
   const initial=makeInitial();initial.wa.page.conversations.push(conversation('c2','Customer 2','+9682','101','Second message',2000));
-  render({initial});
+  await act(async()=>{render({initial});});
   const names=()=>[...container.querySelectorAll('[aria-label="Conversation list"] strong')].map(e=>e.textContent);
   expect(names()).toEqual(['Customer 2','Customer 1']);
-  await click(container.querySelector<HTMLButtonElement>('[aria-label="Star Customer 1 for this session"]')!);
+  await click(container.querySelector<HTMLButtonElement>('[aria-label="Star Customer 1"]')!);
   expect(names()[0]).toBe('Customer 1');
   await click(button('Starred 1'));expect(names()).toEqual(['Customer 1']);
   expect(state.readServiceInbox).not.toHaveBeenCalled();expect(state.routerPush).not.toHaveBeenCalled();
   const change=media.addEventListener.mock.calls[0]?.[1] as (()=>void)|undefined;
   media.matches=false;act(()=>change?.());expect(names()).toEqual(['Customer 2','Customer 1']);
-  media.matches=true;act(()=>change?.());expect(names()).toEqual(['Customer 1']);
-  render({initial:makeInitial('new-membership')});expect(button('Starred 0').getAttribute('aria-pressed')).toBe('false');
-  expect(container.querySelector('[aria-label="Unstar Customer 1 for this session"]')).toBeNull();
+  media.matches=true;await act(async()=>change?.());expect(names()).toEqual(['Customer 1']);
+  await act(async()=>{render({initial:makeInitial('new-membership')});});expect(button('Starred 1').getAttribute('aria-pressed')).toBe('false');
+  expect(container.querySelector('[aria-label="Unstar Customer 1"]')).not.toBeNull();
+ });
+ it('does not display or mutate stars when the database denies the list read',async()=>{
+  vi.stubGlobal('matchMedia',vi.fn(()=>({matches:true,addEventListener:vi.fn(),removeEventListener:vi.fn()})));
+  state.starred=['whatsapp:c1'];state.starDenied=true;
+  await act(async()=>{render({initial:makeInitial()});});
+  const star=container.querySelector<HTMLButtonElement>('[aria-label="Star Customer 1"]');
+  expect(star?.disabled).toBe(true);
+  expect(container.querySelector('[aria-label="Unstar Customer 1"]')).toBeNull();
+  expect(container.textContent).toContain('Starred conversations could not be loaded.');
+ });
+ it('reads a large loaded list in bounded channel-specific batches',async()=>{
+  vi.stubGlobal('matchMedia',vi.fn(()=>({matches:true,addEventListener:vi.fn(),removeEventListener:vi.fn()})));
+  const initial=makeInitial();
+  for(let i=0;i<40;i++)initial.wa.page.conversations.push(conversation(`row-${i}`,`Customer ${i}`,'+9682',`${101+i}`,'Message',2000+i));
+  await act(async()=>{render({initial});});
+  const calls=vi.mocked(listInboxStars).mock.calls;
+  expect(calls).toHaveLength(2);
+  expect(calls.map(([input])=>input.conversationIds.length)).toEqual([40,1]);
+  expect(calls.every(([input])=>input.channel==='whatsapp'&&input.companyId===company)).toBe(true);
  });
  it('follows the visible viewport for the phone keyboard and removes listeners on scope loss',()=>{
   const viewport=Object.assign(new EventTarget(),{height:500,offsetTop:0});vi.stubGlobal('visualViewport',viewport);

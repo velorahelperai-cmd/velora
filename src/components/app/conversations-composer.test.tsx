@@ -5,7 +5,7 @@ import {createRoot,type Root} from 'react-dom/client';
 import {appCopy} from '@/lib/app-copy';
 import {ConversationsPage} from './conversations';
 
-const api=vi.hoisted(()=>({thread:vi.fn(),saveNote:vi.fn(),send:vi.fn()}));
+const api=vi.hoisted(()=>({thread:vi.fn(),saveNote:vi.fn(),send:vi.fn(),extension:vi.fn()}));
 vi.mock('next/navigation',()=>({useRouter:()=>({refresh:vi.fn(),replace:vi.fn()}),useSearchParams:()=>new URLSearchParams()}));
 vi.mock('next/link',()=>({default:'a'}));
 vi.mock('@/lib/demo-state',()=>({useDemo:()=>({locale:'en'})}));
@@ -13,11 +13,12 @@ vi.mock('./workspace-shell',()=>({WorkspaceShell:({children}:{children:React.Rea
 vi.mock('./channel-ai-draft',()=>({ChannelAIDraft:()=>null}));
 vi.mock('./channel-review',()=>({ChannelReviewStatus:()=>null}));
 vi.mock('@/lib/whatsapp/actions',()=>({controlWhatsappConversation:vi.fn(),replyWhatsappConversation:api.send,upsertConversationLeadState:api.saveNote}));
+vi.mock('@/lib/customer/inbox-extension-actions',()=>({runInboxExtension:api.extension,removeUnboundWhatsappFile:vi.fn(),listWhatsappMediaMetadata:vi.fn(async()=>({ok:true,data:[]}))}));
 vi.mock('@/lib/whatsapp/inbox-actions',()=>({refreshWhatsappInboxInitialPage:vi.fn(),refreshWhatsappInboxPage:vi.fn(),refreshWhatsappThreadPage:api.thread,refreshWhatsappControlAuditPage:vi.fn(async()=>({ok:true,data:{events:[],hasMore:false,nextCursor:null}})),refreshWhatsappConnectionStatus:vi.fn(async()=>({ok:false,code:'UNAVAILABLE'})),markWhatsappThreadSeen:vi.fn()}));
 let host:HTMLDivElement,root:Root;
 const conversation={id:'thread',inboxSequence:'1',unreadCount:0,intervention:{reasons:[]},customer:'Synthetic',phone:'synthetic',topic:'WhatsApp',summary:'',status:'open' as const,owner:'staff',assistantPaused:true,automationAllowed:false,revision:1,messages:[],internalNote:'Saved internal note',leadStage:'new' as const,followUpStatus:'none' as const,followUpAt:null,leadRevision:1};
 const meta={companyId:'company',conversationScope:'all_company' as const,timezone:null,timezoneAnnouncedUtc:true,canReply:true,canAssign:false,canTakeOver:true,canResume:true,canClose:true,assignees:[],counts:{all:1,awaiting_staff:1,follow_up_today:0,overdue:0,trial_or_quote:0}};
-beforeEach(()=>{Object.assign(globalThis,{IS_REACT_ACT_ENVIRONMENT:true});vi.clearAllMocks();host=document.createElement('div');document.body.append(host);root=createRoot(host);api.thread.mockResolvedValue({ok:true,data:{kind:'partial',companyId:'company',conversationId:'thread',conversation,messages:[],displayedInboundMessageId:null,unreadCount:0,nextCursor:null,hasMore:false}});});
+beforeEach(()=>{Object.assign(globalThis,{IS_REACT_ACT_ENVIRONMENT:true});vi.clearAllMocks();api.extension.mockResolvedValue({ok:true,data:[]});host=document.createElement('div');document.body.append(host);root=createRoot(host);api.thread.mockResolvedValue({ok:true,data:{kind:'partial',companyId:'company',conversationId:'thread',conversation,messages:[],displayedInboundMessageId:null,unreadCount:0,nextCursor:null,hasMore:false}});});
 afterEach(()=>{act(()=>root.unmount());host.remove();vi.unstubAllGlobals();});
 it('offers native contact links only for a valid permitted phone without sending or saving anything',async()=>{
  const contact={...conversation,phone:'+96893180420'};
@@ -63,6 +64,23 @@ it('reports clipboard rejection accurately and confirms copying only after the b
 });
 import {InboxDesktop,type InboxDesktopView} from './inbox-desktop';
 const desktopView:InboxDesktopView={state:'ready',scopeKey:'company:actor',messages:[],query:'',onQueryChange:()=>{},tabs:[],activeTab:'all',onTabChange:()=>{},conversations:[],onSelect:()=>{}};
+it.each(['Invoice',''])('passes the stored attachment and caption %j into the native send action',async(text)=>{
+ const id='33333333-3333-4333-8333-333333333333',company='11111111-1111-4111-8111-111111111111';
+ const selected={...conversation,id};const metadata={...meta,companyId:company};
+ const page={kind:'partial' as const,companyId:company,conversationScope:'all_company' as const,ordering:'newest_created' as const,conversations:[selected],hasMore:false,nextCursor:null,total:1,unreadTotal:0,interventionTotal:1,membershipFingerprint:'same'};
+ api.thread.mockResolvedValue({ok:true,data:{kind:'partial',companyId:company,conversationId:id,conversation:selected,messages:[],displayedInboundMessageId:null,unreadCount:0,nextCursor:null,hasMore:false}});
+ let stored='';api.extension.mockImplementation(async(input:{action:string;itemId?:string})=>input.action==='list'?{ok:true,data:stored?[{id:stored,kind:'file',body:'proof.pdf'}]:[]}:(stored=input.itemId!,{ok:true,data:stored}));
+ api.send.mockResolvedValue({ok:false,code:'REJECTED'});
+ await act(async()=>root.render(<ConversationsPage desktopView={desktopView} embedded selectedConversationId={id} inbox={[selected]} meta={metadata} page={page}/>));
+ const caption=host.querySelector<HTMLTextAreaElement>('textarea[data-message-input]')!;
+ act(()=>{Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value')!.set!.call(caption,text);caption.dispatchEvent(new Event('input',{bubbles:true}));});
+ const picker=host.querySelector<HTMLInputElement>('input[aria-label="Choose file"]')!;
+ const bytes=new Uint8Array([37,80,68,70,45]);const file=new File([bytes],'proof.pdf',{type:'application/pdf'});
+ Object.defineProperty(file,'arrayBuffer',{value:async()=>bytes.buffer});Object.defineProperty(picker,'files',{configurable:true,value:[file]});
+ await act(async()=>picker.dispatchEvent(new Event('change',{bubbles:true})));
+ await act(async()=>host.querySelector<HTMLFormElement>('form.vdi-compose-body')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
+ expect(api.send).toHaveBeenCalledWith(expect.objectContaining({conversationId:id,body:text,attachmentId:stored,clientOpId:expect.any(String)}));
+});
 it('ports the real WhatsApp pane and keeps native notes mounted across profile and composer tabs',async()=>{
  await act(async()=>root.render(<ConversationsPage desktopView={desktopView} embedded selectedConversationId="thread" inbox={[conversation]} meta={meta} page={{kind:'partial',companyId:'company',conversationScope:'all_company',ordering:'newest_created',conversations:[conversation],hasMore:false,nextCursor:null,total:1,unreadTotal:0,interventionTotal:1,membershipFingerprint:'same'}}/>));
  expect(host.querySelector('.vdi-grid')).not.toBeNull();expect(host.querySelector('[data-conversation-redesign]')).toBeNull();

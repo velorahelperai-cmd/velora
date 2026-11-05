@@ -17,6 +17,7 @@ const fixture = vi.hoisted(() => ({
   vaultCompany: "company-offline-a",
   beforeVault: () => {},
   reviewGrant: null as ReviewGrant | null,
+  media: null as Record<string,unknown> | null,
 }));
 
 function intent(overrides: Record<string, unknown> = {}) {
@@ -52,6 +53,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   },
   rpc: async (name: string, args: Record<string, unknown>) => {
     fixture.calls.push({ name, args });
+    if(name==='whatsapp_media_claimed_attachment')return {error:null,data:fixture.media};
     if (name === "whatsapp_authorize_staff_dispatch" || name === 'whatsapp_authorize_review_dispatch') {
       if (fixture.dispatchOnce) { if (fixture.dispatchUsed) return { error: null, data: { ok: false, code: "dispatch_already_authorized" } }; fixture.dispatchUsed = true; }
       if (fixture.throwDispatch) throw new Error("Synthetic dispatch transport uncertainty");
@@ -69,7 +71,7 @@ vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({
     if (name === "whatsapp_check_service_window") { const at = new Date(Date.now() - 3600_000), until = new Date(at.getTime() + 86_400_000); return { error: null, data: { ok: fixture.windowOpen, company_id: "company-offline-a", conversation_id: "conversation-offline-a", phone_number_id: "100000000000001", recipient_wa_id: "10000000001", last_inbound_at: at.toISOString(), valid_until: until.toISOString() } }; }
     if (name === "whatsapp_read_link_access_secret") { fixture.beforeVault(); return { error: null, data: { ok: true, company_id: fixture.vaultCompany, link_id: "link-offline-a", link_generation: 1, phone_number_id: "100000000000001", access_token: "synthetic-company-vault-token" } }; }
     if (name === "whatsapp_revoke_failed_credential") return { error: null, data: true };
-    if (name === "claim_whatsapp_send_attempt" || name === 'claim_whatsapp_review_send') return { error: null, data: fixture.claimed };
+    if (name === "claim_whatsapp_send_attempt" || name === 'claim_whatsapp_review_send' || name === 'claim_whatsapp_media_send_attempt') return { error: null, data: fixture.claimed };
     if (name === "finalize_whatsapp_send_attempt") {
       if (fixture.throwFinalizeOnce) {
         fixture.throwFinalizeOnce = false;
@@ -86,6 +88,7 @@ describe("real staff reply action at persistence and Graph boundaries", () => {
   beforeEach(() => {
     fixture.capability = true;
     fixture.reviewGrant = null;
+    fixture.media = null;
     fixture.dispatch = null;
     fixture.throwDispatch = false; fixture.dispatchOnce = false; fixture.dispatchUsed = false; fixture.conversationVisible = true; fixture.queryFilters = [];
     fixture.throwFinalizeOnce = false;
@@ -110,6 +113,93 @@ describe("real staff reply action at persistence and Graph boundaries", () => {
     vi.unstubAllEnvs();
   });
   const input = { conversationId: "conversation-offline-a", body: "Offline reply", clientOpId: "offline-op-0001" };
+  it('sends a bound attachment without requiring a caption',async()=>{
+    const file='44444444-4444-4444-8444-444444444444';
+    fixture.created={ok:true,media_filename:'proof.pdf',intent:intent({body:'proof.pdf'})};
+    fixture.claimed={ok:true,claimed:true,attempt_token:'offline-claim-token',intent:intent({body:'proof.pdf',outcome:'attempting'}),manual_paid_entitlement:paidAttestation()};
+    fixture.media={ok:true,intentId:'intent-offline-a',attachmentId:file,filename:'proof.pdf',mime:'application/pdf',base64:'JVBERi0=',caption:''};
+    const media=await import('./send');
+    vi.spyOn(media,'uploadWhatsappMedia').mockResolvedValue({ok:true,media:{kind:'whatsapp-uploaded-media'}});
+    const send=vi.spyOn(media,'sendWhatsappMedia').mockResolvedValue({ok:true,waMessageId:'wamid.offline'});
+    const {replyWhatsappConversation}=await import('./actions');
+    expect(await replyWhatsappConversation({...input,body:'',attachmentId:file})).toMatchObject({ok:true,outcome:'accepted'});
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({caption:''}));
+  });
+  it('rejects a captionless attachment if its claimed filename differs',async()=>{
+    const file='44444444-4444-4444-8444-444444444444';
+    fixture.created={ok:true,media_filename:'proof.pdf',intent:intent({body:'proof.pdf'})};
+    fixture.claimed={ok:true,claimed:true,attempt_token:'offline-claim-token',intent:intent({body:'proof.pdf',outcome:'attempting'}),manual_paid_entitlement:paidAttestation()};
+    fixture.media={ok:true,intentId:'intent-offline-a',attachmentId:file,filename:'other.pdf',mime:'application/pdf',base64:'JVBERi0=',caption:''};
+    const media=await import('./send');const upload=vi.spyOn(media,'uploadWhatsappMedia');
+    const {replyWhatsappConversation}=await import('./actions');
+    await replyWhatsappConversation({...input,body:'',attachmentId:file});
+    expect(upload).not.toHaveBeenCalled();
+  });
+  it('uses the native claimed media path before the final staff gate and sends once',async()=>{
+    const file='44444444-4444-4444-8444-444444444444';
+    fixture.media={ok:true,intentId:'intent-offline-a',attachmentId:file,filename:'proof.pdf',mime:'application/pdf',base64:'JVBERi0=',caption:input.body};
+    const media=await import('./send');
+    const proof={kind:'whatsapp-uploaded-media' as const};
+    const upload=vi.spyOn(media,'uploadWhatsappMedia').mockImplementation(async()=>{fixture.calls.push({name:'media_upload',args:{}});return {ok:true,media:proof};});
+    const send=vi.spyOn(media,'sendWhatsappMedia').mockImplementation(async()=>{fixture.calls.push({name:'media_send',args:{}});return {ok:true,waMessageId:'wamid.offline'};});
+    const {replyWhatsappConversation}=await import('./actions');
+    expect(await replyWhatsappConversation({...input,attachmentId:file})).toMatchObject({ok:true,outcome:'accepted'});
+    const names=fixture.calls.map(call=>call.name);
+    expect(names.indexOf('create_whatsapp_media_send_intent')).toBeLessThan(names.indexOf('claim_whatsapp_media_send_attempt'));
+    expect(names.indexOf('claim_whatsapp_media_send_attempt')).toBeLessThan(names.indexOf('whatsapp_media_claimed_attachment'));
+    expect(names.indexOf('whatsapp_media_claimed_attachment')).toBeLessThan(names.indexOf('media_upload'));
+    expect(names.indexOf('media_upload')).toBeLessThan(names.indexOf('whatsapp_authorize_staff_dispatch'));
+    expect(names.indexOf('whatsapp_authorize_staff_dispatch')).toBeLessThan(names.indexOf('media_send'));
+    expect(upload).toHaveBeenCalledOnce();expect(send).toHaveBeenCalledOnce();expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+  it('does not dispatch uploaded media when final staff authority is revoked',async()=>{
+    const file='44444444-4444-4444-8444-444444444444';
+    fixture.media={ok:true,intentId:'intent-offline-a',attachmentId:file,filename:'proof.pdf',mime:'application/pdf',base64:'JVBERi0=',caption:input.body};
+    fixture.dispatch={error:null,data:{ok:false,code:'staff_authority_revoked'}};
+    const media=await import('./send');
+    vi.spyOn(media,'uploadWhatsappMedia').mockResolvedValue({ok:true,media:{kind:'whatsapp-uploaded-media'}});
+    const send=vi.spyOn(media,'sendWhatsappMedia');
+    const {replyWhatsappConversation}=await import('./actions');
+    await replyWhatsappConversation({...input,attachmentId:file});
+    expect(send).not.toHaveBeenCalled();expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+  it('does not upload or dispatch a file whose durable binding differs',async()=>{
+    const file='44444444-4444-4444-8444-444444444444';
+    fixture.media={ok:true,intentId:'intent-offline-a',attachmentId:'55555555-5555-4555-8555-555555555555',filename:'proof.pdf',mime:'application/pdf',base64:'JVBERi0=',caption:input.body};
+    fixture.finalized={error:null,data:{ok:true,intent:intent({outcome:'rejected'})}};
+    const media=await import('./send');const upload=vi.spyOn(media,'uploadWhatsappMedia');const send=vi.spyOn(media,'sendWhatsappMedia');
+    const {replyWhatsappConversation}=await import('./actions');await replyWhatsappConversation({...input,attachmentId:file});
+    expect(upload).not.toHaveBeenCalled();expect(send).not.toHaveBeenCalled();
+    expect(fixture.calls.some(c=>c.name==='whatsapp_authorize_staff_dispatch')).toBe(false);
+  });
+  it('never reaches the final gate or sends if media upload is uncertain',async()=>{
+    const file='44444444-4444-4444-8444-444444444444';
+    fixture.media={ok:true,intentId:'intent-offline-a',attachmentId:file,filename:'proof.pdf',mime:'application/pdf',base64:'JVBERi0=',caption:input.body};
+    fixture.finalized={error:null,data:{ok:true,intent:intent({outcome:'rejected'})}};
+    const media=await import('./send');vi.spyOn(media,'uploadWhatsappMedia').mockResolvedValue({ok:false,code:'AMBIGUOUS',detail:'upload_timeout'});
+    const send=vi.spyOn(media,'sendWhatsappMedia');const {replyWhatsappConversation}=await import('./actions');
+    await replyWhatsappConversation({...input,attachmentId:file});
+    expect(send).not.toHaveBeenCalled();expect(fixture.calls.some(c=>c.name==='whatsapp_authorize_staff_dispatch')).toBe(false);
+    expect(fixture.calls).toContainEqual({name:'finalize_whatsapp_send_attempt',args:{p_intent_id:'intent-offline-a',p_attempt_token:'offline-claim-token',p_result:'rejected',p_wa_message_id:null,p_error_code:'media_upload_failed',p_actor_user_id:'user-offline-a'}});
+  });
+  it('keeps the original media operation locked when dispatch authorization is uncertain',async()=>{
+    const file='44444444-4444-4444-8444-444444444444';
+    fixture.media={ok:true,intentId:'intent-offline-a',attachmentId:file,filename:'proof.pdf',mime:'application/pdf',base64:'JVBERi0=',caption:input.body};
+    fixture.throwDispatch=true;
+    const media=await import('./send');vi.spyOn(media,'uploadWhatsappMedia').mockResolvedValue({ok:true,media:{kind:'whatsapp-uploaded-media'}});
+    const send=vi.spyOn(media,'sendWhatsappMedia');const {replyWhatsappConversation}=await import('./actions');
+    expect(await replyWhatsappConversation({...input,attachmentId:file})).toMatchObject({ok:false,code:'UNKNOWN_OUTCOME',clientOpId:input.clientOpId});
+    expect(send).not.toHaveBeenCalled();expect(fixture.calls.some(c=>c.name==='finalize_whatsapp_send_attempt')).toBe(false);
+  });
+  it('records an uncertain media send as unknown without dispatching a second message',async()=>{
+    const file='44444444-4444-4444-8444-444444444444';
+    fixture.media={ok:true,intentId:'intent-offline-a',attachmentId:file,filename:'proof.pdf',mime:'application/pdf',base64:'JVBERi0=',caption:input.body};
+    const media=await import('./send');vi.spyOn(media,'uploadWhatsappMedia').mockResolvedValue({ok:true,media:{kind:'whatsapp-uploaded-media'}});
+    const send=vi.spyOn(media,'sendWhatsappMedia').mockResolvedValue({ok:false,code:'AMBIGUOUS',detail:'network'});
+    const {replyWhatsappConversation}=await import('./actions');
+    expect(await replyWhatsappConversation({...input,attachmentId:file})).toMatchObject({ok:false,code:'UNKNOWN_OUTCOME',clientOpId:input.clientOpId});
+    expect(send).toHaveBeenCalledOnce();expect(fixture.calls).toContainEqual({name:'finalize_whatsapp_send_attempt',args:{p_intent_id:'intent-offline-a',p_attempt_token:'offline-claim-token',p_result:'unknown',p_wa_message_id:null,p_error_code:'network',p_actor_user_id:'user-offline-a'}});
+  });
   it.each(['allowed','wrong_body','wrong_recipient','revoked','dispatch_denied','missing_proof'] as const)('bounded manual permission with global sending off: %s',async scenario=>{
     vi.stubEnv('WHATSAPP_ALLOW_EXTERNAL_SEND','false');vi.stubEnv('WHATSAPP_ROUTING_MODE','tenant_registry');
     vi.stubEnv('WHATSAPP_EMBEDDED_SIGNUP_GRAPH_VERSION','v26.0');

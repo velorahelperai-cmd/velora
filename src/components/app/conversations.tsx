@@ -724,7 +724,7 @@ export function ConversationsPage({
   });
 
   const readGenById = useRef<Record<string, number>>({});
-  const sendOpByConversation = useRef<Record<string, { clientOpId: string; body: string }>>({});
+  const sendOpByConversation = useRef<Record<string, { clientOpId: string; body: string; attachmentId?: string }>>({});
   const inboxRefreshGen = useRef(0);
 
   const canReply = !readSuspended && !writesPaused && inboxMeta?.canReply === true;
@@ -1190,11 +1190,11 @@ export function ConversationsPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId, selectedThread?.readVersion, selectedReady, visible, inboxScope, readSuspended, writesPaused]);
 
-  function send(c: Conversation) {
+  function send(c: Conversation, attachmentId?: string, onAccepted?: () => void) {
     if(suspendedRef.current)return;
     const draftText = draft.trim();
     const locked = inboxSendLocked(snapshotRef.current.base.find(row => row.id === c.id), Boolean(unresolvedSends[c.id]));
-    if (!draftText || !canReply || !c.assistantPaused || !selectedReady || pending || controlBusy || locked) return;
+    if ((!draftText && !attachmentId) || !canReply || !c.assistantPaused || !selectedReady || pending || controlBusy || locked) return;
     setError(null);
     setNotice(null);
     setWarn(null);
@@ -1211,13 +1211,14 @@ export function ConversationsPage({
         ? crypto.randomUUID()
         : `op-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     const body = existing?.body ?? draftText;
-    sendOpByConversation.current[c.id] = { clientOpId, body };
+    const boundAttachment=existing?.attachmentId??attachmentId;
+    sendOpByConversation.current[c.id] = { clientOpId, body, attachmentId:boundAttachment };
 
     runPendingAction(async () => {
       await runSendReplyPath({
         store: epochStoreRef.current,
         conversationId: c.id,
-        send: () => replyWhatsappConversation({ conversationId: c.id, body, clientOpId }),
+        send: () => replyWhatsappConversation({ conversationId: c.id, body, clientOpId, ...(boundAttachment?{attachmentId:boundAttachment}:{}) }),
         onThrow: () => {
           setUnresolvedSends((prev) => ({ ...prev, [c.id]: true }));
           if (isSelected(c.id)) setError(copy.app.sendUnknownOutcome);
@@ -1273,6 +1274,7 @@ export function ConversationsPage({
             return;
           }
           delete sendOpByConversation.current[c.id];
+          if(boundAttachment)onAccepted?.();
           setUnresolvedSends((prev) => {
             if (!prev[c.id]) return prev;
             const updated = { ...prev };
@@ -1526,6 +1528,7 @@ export function ConversationsPage({
     const canAI=canReply&&!testReview&&!!inboxMeta?.companyId&&liveIds.has(selected.id);
     const action=(id:'resume'|'take_over'|'close')=>({id,label:id==='resume'?(ar?'إعادة إلى فيلورا':'Resume Velora'):id==='take_over'?(ar?'استلام المحادثة':'Take over conversation'):copy.app.markResolved,icon:id==='close'?'check' as const:id==='resume'?'play' as const:'user' as const,emphasis:id==='close'?undefined:'primary',reason:ar?'الإجراء غير متاح في الحالة الحالية.':'This action is unavailable in the current state.',disabled:controlDisabled(id),onClick:()=>void runControl(selected,id)});
     return <InboxDesktop locale={locale} view={{...desktopView,
+      extension:inboxMeta?.companyId&&liveIds.has(selected.id)?{companyId:inboxMeta.companyId,conversationId:selected.id,channel:'whatsapp',canEdit:canReply,paused:writesPaused||readSuspended,revision:refreshVersion}:undefined,
       customer:{name:selected.customer,initials:selected.customer.slice(0,1).toUpperCase(),channel:'whatsapp',phone:selected.phone,status:`${copy.app.statuses[selected.status]} · WhatsApp`,
         quickActions:[{id:'copy',label:phoneCopied?(ar?'تم النسخ':'Copied'):(ar?'نسخ الرقم':'Copy phone'),icon:'copy',onClick:()=>void copyCustomerPhone(selected.phone,draftKey)},...(hasContactPhone&&canReply?[{id:'call',label:ar?'اتصال':'Call',icon:'phone' as const,onClick:()=>{window.location.href=`tel:${contactPhone}`;}},{id:'whatsapp',label:'WhatsApp',icon:'whatsapp' as const,onClick:()=>{window.open(`https://wa.me/${contactPhone.replace(/^\+/,'')}`,'_blank','noopener,noreferrer');}}]:[])],
         note:selected.internalNote?{text:selected.internalNote}:undefined,
@@ -1543,7 +1546,7 @@ export function ConversationsPage({
       onTranscriptMount:node=>{if(node)restoreTranscriptPosition(node,scrollPositions.current[draftKey]);},onTranscriptScroll:event=>{scrollPositions.current[draftKey]=captureTranscriptPosition(event.currentTarget);},
       loadEarlier:selectedThread?.hasMore?{id:'older',label:ar?'تحميل الرسائل الأقدم':'Load older messages',icon:'clock',disabled:pending||threadBusyId===selected.id,onClick:()=>runPendingAction(async()=>{await loadThread(selected.id,selectedThread.nextCursor);})}:undefined,
       messageExtras:<>{selectedSendLocked&&<Notice tone="error">{copy.app.sendUnknownOutcome}</Notice>}{notice&&!selectedUnresolved&&<Notice>{notice}</Notice>}{warn&&!selectedUnresolved&&<Notice tone="warn">{warn}<button type="button" disabled={controlBusy} onClick={()=>void retryRefresh(selected.id)}>{copy.app.controlRetryRefresh}</button></Notice>}{(selectedUnresolved||error)&&<Notice tone="error">{selectedUnresolved?copy.app.controlOutcomeLocked:error}<button type="button" disabled={controlBusy} onClick={()=>void retryRefresh(selected.id)}>{copy.app.controlRetryRefresh}</button></Notice>}</>,
-      composer:{mode:composerMode,ownershipNotice:(writesPaused?(ar?'آخر حالة مؤكدة: ':'Last verified state: '):'')+(selected.status==='resolved'?(ar?'المحادثة محلولة':'Conversation resolved'):automation==='allowed'?(ar?'الذكاء الاصطناعي يدير المحادثة':'AI is handling the conversation'):automation==='paused'?(ar?'الموظف يدير المحادثة':'Staff is handling the conversation'):(ar?'الذكاء الاصطناعي متوقف عن إدارة المحادثة':'AI is not handling the conversation')),enabledModes:['message',...(!testReview&&!!inboxMeta?.companyId&&liveIds.has(selected.id)?['ai' as const]:[]),'note'],disabledModes:canReply?[]:['ai','note'],onModeChange:setComposerMode,value:draft,onChange:setDraft,onSubmit:()=>send(selected),pending:pending||controlBusy,canSend:selectedReady&&selected.assistantPaused&&canReply&&!selectedSendLocked&&liveIds.has(selected.id),disabledReason:writesPaused?(ar?'الاتصال متوقف مؤقتًا. سيُتاح الإرسال بعد التحقق مجددًا.':'Connection interrupted. Sending resumes after access is verified again.'):!canReply?copy.app.sendForbidden:!selected.assistantPaused?(ar?'استلم المحادثة أولًا لكتابة ردك.':'Take over this conversation before replying.'):undefined,
+      composer:{mode:composerMode,ownershipNotice:(writesPaused?(ar?'آخر حالة مؤكدة: ':'Last verified state: '):'')+(selected.status==='resolved'?(ar?'المحادثة محلولة':'Conversation resolved'):automation==='allowed'?(ar?'الذكاء الاصطناعي يدير المحادثة':'AI is handling the conversation'):automation==='paused'?(ar?'الموظف يدير المحادثة':'Staff is handling the conversation'):(ar?'الذكاء الاصطناعي متوقف عن إدارة المحادثة':'AI is not handling the conversation')),enabledModes:['message',...(!testReview&&!!inboxMeta?.companyId&&liveIds.has(selected.id)?['ai' as const]:[]),'note'],disabledModes:canReply?[]:['ai','note'],onModeChange:setComposerMode,value:draft,onChange:setDraft,onSubmit:()=>send(selected),onSubmitAttachment:!testReview?(id,onAccepted)=>send(selected,id,onAccepted):undefined,pending:pending||controlBusy,canSend:selectedReady&&selected.assistantPaused&&canReply&&!selectedSendLocked&&liveIds.has(selected.id),disabledReason:writesPaused?(ar?'الاتصال متوقف مؤقتًا. سيُتاح الإرسال بعد التحقق مجددًا.':'Connection interrupted. Sending resumes after access is verified again.'):!canReply?copy.app.sendForbidden:!selected.assistantPaused?(ar?'استلم المحادثة أولًا لكتابة ردك.':'Take over this conversation before replying.'):undefined,
        modePanels:{note:<div ref={setNotesHost}/>,ai:canAI&&<ChannelAIDraft key={`${inboxScope}:${selected.id}:${selected.messages.at(-1)?.id}:${selected.revision}`} companyId={inboxMeta!.companyId} channel="whatsapp" conversationId={selected.id} ar={ar} disabled={writesPaused||!selectedReady||pending||controlBusy||selectedSendLocked} onUse={text=>{setDraft(text);setComposerMode('message');}}/>}},
     }}/>;
   }

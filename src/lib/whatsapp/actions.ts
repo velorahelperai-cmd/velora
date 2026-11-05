@@ -13,7 +13,7 @@ import { externalSendAllowed, sendReady, whatsappConfig, whatsappConfigurationMo
 import {readChannelReviewAccess} from '@/lib/meta-review/actions';
 import {reviewDispatchCurrent,type ReviewGrant} from '@/lib/meta-review/access';
 import { loadWhatsappConversation, loadWhatsappInbox, type WhatsappInboxMeta } from "@/lib/whatsapp/inbox";
-import { sendWhatsappText } from "@/lib/whatsapp/send";
+import { sendWhatsappText, sendWhatsappMedia, uploadWhatsappMedia, type WhatsappUploadedMedia } from "@/lib/whatsapp/send";
 import { boundedReviewMatches, issueManualReviewPermit } from '@/lib/whatsapp/manual-review-permit';
 import { readServiceWindow } from "@/lib/whatsapp/service-window";
 import { decideClaimedTenantSend, applyClaimedPreGraphOutcome } from "@/lib/whatsapp/send-attempt";
@@ -194,6 +194,8 @@ export async function replyWhatsappConversation(input: {
   body: string;
   /** Stable per user send operation — retries with the same id return existing state. */
   clientOpId: string;
+  /** Identifies an already authorized, immutable conversation attachment. */
+  attachmentId?: string;
 }): Promise<ReplyActionResult> {
   if (!input || typeof input.conversationId !== "string" || !input.conversationId.trim()
     || typeof input.body !== "string" || typeof input.clientOpId !== "string") {
@@ -201,7 +203,9 @@ export async function replyWhatsappConversation(input: {
   }
   const text = input.body.trim();
   const clientOpId = input.clientOpId.trim();
-  if (!text || text.length > 4096 || clientOpId.length < 8 || clientOpId.length > 128) {
+  const attachmentId=input.attachmentId;
+  if ((!text && !attachmentId) || text.length > (attachmentId ? 1024 : 4096) || clientOpId.length < 8 || clientOpId.length > 128 ||
+      (attachmentId !== undefined && (typeof attachmentId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(attachmentId)))) {
     return { ok: false, code: "INVALID_INPUT", message: "invalid_input" };
   }
 
@@ -237,9 +241,11 @@ export async function replyWhatsappConversation(input: {
   const mode = whatsappRoutingMode();
   const config = whatsappConfig();
   const reviewMode=whatsappConfigurationMode()==='meta_test';
+  if(attachmentId && reviewMode)return {ok:false,code:'SEND_DISABLED',message:'media_review_unavailable',clientOpId};
   let reviewGrant:ReviewGrant|null=null;
 
   const generalSendAllowed = externalSendAllowed();
+  if(attachmentId&&!generalSendAllowed)return {ok:false,code:'SEND_DISABLED',message:'media_send_disabled',clientOpId};
   if (!generalSendAllowed && mode === 'tenant_registry') {
     const access = await readChannelReviewAccess(companyId, 'whatsapp');
     reviewGrant = access.ok && access.grant.send_limit === 1 ? access.grant : null;
@@ -320,7 +326,10 @@ export async function replyWhatsappConversation(input: {
   const boundedReview = boundedReviewMatches(reviewGrant, {toWaId:recipientWaId,body:text,phoneNumberId,
     conversationId:input.conversationId,linkId:intentLinkId,linkGeneration:intentLinkGeneration});
   if (!generalSendAllowed && !boundedReview) return {ok:false,code:'SEND_DISABLED',message:'external_send_disabled',clientOpId};
-  const created = await supabase.rpc("create_whatsapp_send_intent", {
+  const created = attachmentId ? await (supabase as unknown as {rpc:(name:string,args:Record<string,unknown>)=>PromiseLike<{data:unknown;error:unknown}>}).rpc('create_whatsapp_media_send_intent',{
+    p_company_id:companyId,p_conversation_id:input.conversationId,p_file_id:attachmentId,p_client_op_id:clientOpId,
+    p_caption:text,p_phone_number_id:phoneNumberId,p_link_id:intentLinkId,p_link_generation:intentLinkGeneration,
+  }) : await supabase.rpc("create_whatsapp_send_intent", {
     p_client_op_id: clientOpId,
     p_conversation_id: input.conversationId,
     p_body: text,
@@ -334,7 +343,7 @@ export async function replyWhatsappConversation(input: {
   if (created.error) {
     return { ok: false, code: "SAVE_FAILED", message: "intent_unavailable", clientOpId };
   }
-  const createdRow = asRecord(created.data);
+  const createdRow = asRecord(created.data as Json);
   if (!createdRow) {
     return { ok: false, code: "SAVE_FAILED", message: "intent_unavailable", clientOpId };
   }
@@ -354,6 +363,9 @@ export async function replyWhatsappConversation(input: {
   if (!intent) {
     return { ok: false, code: "SAVE_FAILED", message: "intent_missing", clientOpId };
   }
+  const mediaFilename = attachmentId && !text && typeof createdRow.media_filename === 'string' &&
+    /^[\p{L}\p{N}_. -]{1,100}$/u.test(createdRow.media_filename) ? createdRow.media_filename : null;
+  if (attachmentId && !text && !mediaFilename) return { ok: false, code: "SAVE_FAILED", message: "media_binding_unconfirmed", clientOpId };
   const replyBindingMatches = (stored: IntentPublic) =>
     stored.company_id === companyId
     && stored.conversation_id === input.conversationId
@@ -361,7 +373,7 @@ export async function replyWhatsappConversation(input: {
     && stored.sender_kind === "staff"
     && stored.phone_number_id === phoneNumberId
     && stored.recipient_wa_id === recipientWaId
-    && stored.body === text;
+    && stored.body === (text || mediaFilename);
   if (!replyBindingMatches(intent)) {
     return { ok: false, code: "CONTENT_MISMATCH", message: "intent_binding_mismatch", clientOpId };
   }
@@ -423,7 +435,9 @@ export async function replyWhatsappConversation(input: {
   // Another request may have claimed this same operation since the native read.
   // Retain its key until storage is refreshed; no local snapshot proves no attempt.
   if(reviewMode&&!reviewGrant)return {ok:false,code:'SAVE_FAILED',message:'review_access_unavailable',clientOpId};
-  const claimed = reviewGrant ? await (admin as unknown as {rpc:(name:string,args:Record<string,unknown>)=>PromiseLike<{data:unknown;error:unknown}>}).rpc('claim_whatsapp_review_send',{
+  const claimed = attachmentId ? await (admin as unknown as {rpc:(name:string,args:Record<string,unknown>)=>PromiseLike<{data:unknown;error:unknown}>}).rpc('claim_whatsapp_media_send_attempt',{
+    p_intent_id:intent.id,p_actor_user_id:actorUserId,p_lease_seconds:90,
+  }) : reviewGrant ? await (admin as unknown as {rpc:(name:string,args:Record<string,unknown>)=>PromiseLike<{data:unknown;error:unknown}>}).rpc('claim_whatsapp_review_send',{
     p_intent_id:intent.id,p_actor_user_id:actorUserId,p_grant_id:reviewGrant.id,
   }) : await admin.rpc("claim_whatsapp_send_attempt", {
     p_intent_id: intent.id,
@@ -433,7 +447,7 @@ export async function replyWhatsappConversation(input: {
   if (claimed.error) {
     return { ok: false, code: "SAVE_FAILED", message: "claim_unavailable", clientOpId };
   }
-  const claimRow = asRecord(claimed.data);
+  const claimRow = asRecord(claimed.data as Json);
   if (!claimRow) {
     return { ok: false, code: "SAVE_FAILED", message: "claim_unavailable", clientOpId };
   }
@@ -587,6 +601,24 @@ export async function replyWhatsappConversation(input: {
       return settlePreGraphRejected("not_configured");
     }
 
+    let uploadedMedia: WhatsappUploadedMedia | undefined;
+    if(attachmentId){
+      const mediaRpc=await (supabase as unknown as {rpc:(name:string,args:Record<string,unknown>)=>PromiseLike<{data:unknown;error:unknown}>}).rpc('whatsapp_media_claimed_attachment',{
+        p_intent_id:intent.id,p_attempt_token:attemptToken,
+      });
+      const media=asRecord(mediaRpc.data as Json);
+      if(mediaRpc.error||media?.ok!==true||media.intentId!==intent.id||media.attachmentId!==attachmentId.toLowerCase()||
+         media.caption!==text||typeof media.filename!=='string'||(mediaFilename!==null&&media.filename!==mediaFilename)||typeof media.mime!=='string'||typeof media.base64!=='string'){
+        return settlePreGraphRejected('media_binding_unconfirmed');
+      }
+      const uploaded=await uploadWhatsappMedia({companyId,conversationId:intent.conversation_id,actorId:actorUserId,
+        linkId:intent.link_id,linkGeneration:intent.link_generation,intentId:intent.id,attemptToken,attachmentId,
+        toWaId:intent.recipient_wa_id,phoneNumberId:intent.phone_number_id,accessToken:graphToken,serviceWindowExpiresAt,
+        filename:media.filename,mime:media.mime,base64:media.base64,caption:text});
+      // Uploading bytes alone never sends a customer message.
+      if(!uploaded.ok)return settlePreGraphRejected('media_upload_failed');
+      uploadedMedia=uploaded.media;
+    }
     if (!paidEntitlementStillCurrent()) return settlePreGraphRejected("paid_entitlement_unconfirmed");
     // This session-bound, one-use database gate runs after all async preparation.
     // A transport error may hide a committed authorization: retain the attempt,
@@ -614,7 +646,11 @@ export async function replyWhatsappConversation(input: {
       return { ok: false, code: "UNKNOWN_OUTCOME", message: "dispatch_authority_unconfirmed", clientOpId, outcome: "unknown" };
     }
     if(reviewGrant&&(typeof dispatch.not_after!=='string'||!Number.isFinite(Date.parse(dispatch.not_after))||Date.parse(dispatch.not_after)<=Date.now()))return settlePreGraphRejected('staff_authority_expired');
-    const sent = await sendWhatsappText({
+    if(attachmentId&&!uploadedMedia)return {ok:false,code:'UNKNOWN_OUTCOME',message:'media_upload_unconfirmed',clientOpId,outcome:'unknown'};
+    const sent = attachmentId ? await sendWhatsappMedia({companyId,conversationId:intent.conversation_id,actorId:actorUserId,
+      linkId:intent.link_id,linkGeneration:intent.link_generation,intentId:intent.id,attemptToken,attachmentId,
+      toWaId:intent.recipient_wa_id,phoneNumberId:intent.phone_number_id,accessToken:graphToken,serviceWindowExpiresAt,caption:text,media:uploadedMedia!,
+    }) : await sendWhatsappText({
       toWaId: intent.recipient_wa_id,
       body: intent.body,
       phoneNumberId: intent.phone_number_id,
