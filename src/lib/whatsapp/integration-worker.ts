@@ -2,7 +2,7 @@ import "server-only";
 import type {AnswerContextChunk,AnswerCitation} from "@/lib/answers/types";
 import {classifyHandoffPolicy} from "@/lib/answers/routing/handoff-policy";
 import {recordWorkerTiming} from "./worker-timing";
-export type IntegrationFrame={authority?:"es02";job_id:string;company_id:string;message_id:string;conversation_id:string;phone_number_id:string;recipient_wa_id:string;
+export type IntegrationFrame={authority?:"es02";job_id:string;company_id:string;branch_id?:string;created_at?:string;message_id:string;conversation_id:string;phone_number_id:string;recipient_wa_id:string;
  automation_generation:number;link_id:string;link_generation:number;question:string;service_window_expires_at?:string;ai_status:string|null;reply_text:string|null;
  ai_attempt_id:string|null;intent_id:string|null;staged_citations:AnswerCitation[]|null};
 export type SendIntent={id:string;outcome:string;company_id:string;conversation_id:string;phone_number_id:string;recipient_wa_id:string;body:string};
@@ -87,9 +87,9 @@ export async function runPersistedInboundJob(input:{jobId:string;claimToken:stri
  try{if(await ports.finish(intent.id)!=="accepted")return acceptedPending("ACCEPTANCE_ACCOUNTING_PENDING");}catch{return acceptedPending("ACCEPTANCE_ACCOUNTING_PENDING");}
  try{if(!await ports.repair(intent.id))return acceptedPending("ACCEPTANCE_PERSIST_PENDING",true);}catch{return acceptedPending("ACCEPTANCE_PERSIST_PENDING",true);}
  return {ok:true,code:"ACCEPTED",jobCompleted:true,sendAccepted:true,delivered:false};}
+ if(outcome==="unknown")return blocked("SEND_REQUIRES_RECONCILIATION");
  let settled:string;
  try{settled=await ports.finish(intent.id);}catch{return blocked("SEND_PERSIST_REQUIRES_RECONCILIATION");}
- if(outcome==="unknown")return blocked("SEND_REQUIRES_RECONCILIATION");
  return blocked(settled==="released"?"SEND_REJECTED":"SEND_PERSIST_REQUIRES_RECONCILIATION");
  }catch(error){
  if(error instanceof WorkerInputError){try{return await fail(error.code,false,true);}catch{return blocked(error.code);}}

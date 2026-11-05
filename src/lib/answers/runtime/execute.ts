@@ -30,14 +30,12 @@ export async function executeRealAnswer(input:RealAnswerInput,deps?:{store:RealR
 }
 
 /** Shared paid loop. Its callers supply their distinct durable authorization store. */
-export async function executeReservedRealAnswer(input:RealAnswerPayload,deps:{store:ReservedRuntimeStore;call:typeof callRealModel;requireProviderIdentity?:boolean;persona?:AnswerPersona;allowTransient503Fallback?:boolean;allowDefiniteFallback?:boolean}) {
+export async function executeReservedRealAnswer(input:RealAnswerPayload,deps:{store:ReservedRuntimeStore;call:typeof callRealModel;requireProviderIdentity?:boolean;persona?:AnswerPersona;allowDefiniteFallback?:boolean}) {
  const attempts:RealAttempt[]=[];
  const maxOutputTokens=input.maxOutputTokens??REAL_OUTPUT_LIMIT,maxCostBaisa=input.maxCostBaisa??1000;
  if(!validPayload(input))return {ok:false as const,error:"INVALID_INPUT",attempts};
  const {store,call}=deps;
- const models:AIModelId[]=deps.allowTransient503Fallback && input.model==="gemini-3.5-flash-lite"
-  ? ["gemini-3.5-flash-lite","gemini-3.8-flash"]
-  : new MultiModelAIRouter().getEligibleModels({question:input.question,locale:input.locale,chunks:input.chunks,forceModelId:input.model});
+ const models:AIModelId[]=new MultiModelAIRouter().getEligibleModels({question:input.question,locale:input.locale,chunks:input.chunks,forceModelId:input.model});
  const style=input.locale==="ar"
   ? "أجيبي بأسلوب طبيعي ومختصر ومباشر، كرسالة محادثة ودودة، من دون تكرار أو مقدمات آلية. لا تحذفي معلومة ضرورية للدقة أو السلامة، ولا تدّعي أنكِ إنسانة."
   : "Reply in a natural and concise, direct conversational style without repetitive or robotic introductions. Keep details necessary for accuracy and safety; do not pretend to be human.";
@@ -69,8 +67,6 @@ export async function executeReservedRealAnswer(input:RealAnswerPayload,deps:{st
   try{if(!await store.settle({...attempt,usage:result.usage??{},responseText:result.status==="success"?result.text:undefined}))return {ok:false as const,error:"SETTLEMENT_ALREADY_COMPLETED",attempts};}
   catch{return {ok:false as const,error:"SETTLEMENT_PENDING_RECONCILIATION",attempts};}
   if(result.status==="success"||result.status==="incomplete")return {ok:true as const,text:result.text,complete:result.status==="success",model,attempts};
-  // An explicit provider 503 can fall back only after its independent cost hold is retained.
-  if(deps.allowTransient503Fallback && model==="gemini-3.5-flash-lite" && result.status==="uncertain" && result.errorCode==="PROVIDER_HTTP_503")continue;
   if(deps.allowDefiniteFallback===false)break;
   // Other unknown outcomes are not retried.
   if(result.status==="uncertain"||input.model||!["KEY_MISSING","PROVIDER_HTTP_403","PROVIDER_HTTP_404"].includes(result.errorCode??""))break;

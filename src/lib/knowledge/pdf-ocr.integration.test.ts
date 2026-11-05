@@ -1,14 +1,56 @@
-import { createCanvas } from "@napi-rs/canvas";
+import { existsSync } from "node:fs";
+import path from "node:path";
+import { createCanvas, GlobalFonts } from "@napi-rs/canvas";
 import { expect, it } from "vitest";
 import { formatAnswerUserPrompt } from "@/lib/answers/adapters/prompt";
 import { extractKnowledgeText } from "./extract";
 
 function mixedPdf(): Uint8Array {
-  const canvas = createCanvas(1000, 260);
+  // A synthetic image must not depend on ambient fonts installed on the CI runner.
+  const fontPath = path.resolve(process.cwd(), "public/fonts/velora-loader/Outfit-Variable.ttf");
+  expect(existsSync(fontPath)).toBe(true);
+  if (!GlobalFonts.has("VeloraOcrFixture")) {
+    expect(GlobalFonts.registerFromPath(fontPath, "VeloraOcrFixture")).toBeTruthy();
+  }
+  expect(GlobalFonts.has("VeloraOcrFixture")).toBe(true);
+
+  const canvasWidth = 1000;
+  const canvasHeight = 260;
+  const canvas = createCanvas(canvasWidth, canvasHeight);
   const ctx = canvas.getContext("2d");
-  ctx.fillStyle = "white"; ctx.fillRect(0, 0, 1000, 260);
-  ctx.fillStyle = "black"; ctx.font = "bold 66px sans-serif";
-  ctx.fillText("ARCHITECTURAL MODELS", 30, 130);
+  ctx.fillStyle = "white";
+  ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+  const fontSize = 50;
+  const startX = 50;
+  const startY = 145;
+  ctx.fillStyle = "black";
+  ctx.font = `${fontSize}px VeloraOcrFixture`;
+
+  const phrase = "ARCHITECTURAL MODELS";
+  const textWidth = ctx.measureText(phrase).width;
+  expect(textWidth).toBeGreaterThan(0);
+  expect(startX + textWidth).toBeLessThan(canvasWidth - 50);
+
+  ctx.fillText(phrase, startX, startY);
+
+  // Validate that the canvas contains the rendered phrase across its full measured span:
+  // start, middle, and end segments must contain drawn dark glyph pixels.
+  const startPixels = ctx.getImageData(startX, 0, 30, canvasHeight).data;
+  expect(startPixels.some((v, i) => i % 4 !== 3 && v < 200)).toBe(true);
+
+  const midX = Math.round(startX + textWidth / 2);
+  const midPixels = ctx.getImageData(midX, 0, 30, canvasHeight).data;
+  expect(midPixels.some((v, i) => i % 4 !== 3 && v < 200)).toBe(true);
+
+  const endX = Math.round(startX + textWidth - 30);
+  const endPixels = ctx.getImageData(endX, 0, 30, canvasHeight).data;
+  expect(endPixels.some((v, i) => i % 4 !== 3 && v < 200)).toBe(true);
+
+  // Right margin must remain clean background to ensure no clipping or overflow occurred.
+  const marginPixels = ctx.getImageData(canvasWidth - 30, 0, 30, canvasHeight).data;
+  expect(marginPixels.every((v, i) => i % 4 === 3 || v >= 250)).toBe(true);
+
   const jpeg = canvas.toBuffer("image/jpeg");
   const stream = "BT /F1 18 Tf 20 320 Td (Company services) Tj ET\nq 500 0 0 130 20 130 cm /Im0 Do Q";
   const objects = [

@@ -10,6 +10,7 @@ import {WorkerInputError} from "./integration-worker";
 import {readServiceWindow} from "./service-window";
 import {bindOperationalRecipient} from "./operational-recipient";
 import {recordWorkerTiming} from "./worker-timing";
+import {validateLiveTestScope} from "./live-test-gate";
 type RpcClient={rpc:(name:string,args:Record<string,unknown>)=>PromiseLike<{data:unknown;error:unknown}>};
 const object=(x:unknown):Record<string,unknown>|null=>x!==null&&typeof x==="object"&&!Array.isArray(x)?x as Record<string,unknown>:null;
 export function workerRolloutEnabled(){return process.env.WHATSAPP_WORKER_ENABLED==="true"&&isLiveAnsweringEnabled()&&externalSendAllowed()&&whatsappRoutingMode()==="tenant_registry";}
@@ -29,6 +30,8 @@ export function createIntegrationPorts(binding:{jobId:string;claimToken:string;c
  const ids=["job_id","company_id","message_id","conversation_id","phone_number_id","recipient_wa_id","link_id","question"];
  if(ids.some(k=>typeof d[k]!=="string"||!String(d[k]).trim())||d.job_id!==binding.jobId||d.company_id!==binding.companyId||
  !Number.isSafeInteger(d.automation_generation)||Number(d.automation_generation)<0||!Number.isSafeInteger(d.link_generation)||Number(d.link_generation)<1)return null;
+ const scope=validateLiveTestScope({companyId:String(d.company_id),recipientWaId:String(d.recipient_wa_id),branchId:typeof d.branch_id==="string"?d.branch_id:null,createdAt:typeof d.created_at==="string"?d.created_at:null});
+ if(!scope.ok)return null;
  if(d.staged_citations!==null&&(!Array.isArray(d.staged_citations)||d.staged_citations.some(c=>{const x=object(c);return !x||typeof x.sourceId!=="string"||typeof x.title!=="string"||!Number.isSafeInteger(x.contentVersion)||Number(x.contentVersion)<1;})))return null;
  for(const key of ["ai_status","reply_text","ai_attempt_id","intent_id"])if(d[key]!==null&&typeof d[key]!=="string")return null;
  if(!admin)return null;
@@ -40,7 +43,9 @@ export function createIntegrationPorts(binding:{jobId:string;claimToken:string;c
  const executor=createClaimedWhatsappAnswerExecutor();
  return {enabled,frame,
  context:async f=>{if(!admin)return null;const c=await loadApprovedAnswerContext(f.company_id,admin,{question:f.question,jobId:f.job_id,claimToken:binding.claimToken});return c.ok?c.chunks:null;},
- verify:async(f,citations)=>{if(injectedClient===undefined&&!workerRolloutEnabled())return false;try{const active=await rpc('whatsapp_worker_live_active',{});if(active===false)return false;}catch{}const current=await frame();if(!current||!admin||f.job_id!==binding.jobId||f.company_id!==binding.companyId||current.authority!==f.authority||current.conversation_id!==f.conversation_id||current.automation_generation!==f.automation_generation||current.link_id!==f.link_id||current.link_generation!==f.link_generation)return false;
+ verify:async(f,citations)=>{if(injectedClient===undefined&&!workerRolloutEnabled())return false;try{const active=await rpc('whatsapp_worker_live_active',{});if(active!==true)return false;}catch{return false;}const current=await frame();if(!current||!admin||f.job_id!==binding.jobId||f.company_id!==binding.companyId||current.authority!==f.authority||current.conversation_id!==f.conversation_id||current.automation_generation!==f.automation_generation||current.link_id!==f.link_id||current.link_generation!==f.link_generation)return false;
+ const scope=validateLiveTestScope({companyId:current.company_id,recipientWaId:current.recipient_wa_id,branchId:current.branch_id,createdAt:current.created_at});
+ if(!scope.ok)return false;
  if(current.authority==="es02"){
  if(!citations.length)return false;
  try{const proof=object(await rpc("es02_verify_claimed_reply_citations",{...args,p_source_citations:citations}));
@@ -64,6 +69,8 @@ export function createIntegrationPorts(binding:{jobId:string;claimToken:string;c
  if(!i||["id","outcome","company_id","conversation_id","phone_number_id","recipient_wa_id","body"].some(k=>typeof i[k]!=="string"))return {ok:false};
  return {ok:true,claimed:r.claimed===true,attempt_token:typeof r.attempt_token==="string"?r.attempt_token:null,intent:i as unknown as NonNullable<Awaited<ReturnType<IntegrationPorts["claimSend"]>>["intent"]>};},
  send:async(i,secret)=>{if(!cachedFrame||i.company_id!==cachedFrame.company_id)return {ok:false,code:"NEEDS_SETUP"};
+ const scope=validateLiveTestScope({companyId:i.company_id,recipientWaId:i.recipient_wa_id});
+ if(!scope.ok)return {ok:false,code:"SEND_DISABLED"};
  if(i.body!==i.body.trim()||i.body.length>4096)return {ok:false,code:"GRAPH_REJECTED"};
  if(!admin)return {ok:false,code:"SERVICE_WINDOW_CLOSED"};
  const expires=await readServiceWindow(admin,{companyId:i.company_id,conversationId:i.conversation_id,phoneNumberId:i.phone_number_id,recipientWaId:i.recipient_wa_id});

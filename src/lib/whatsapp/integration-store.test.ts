@@ -11,7 +11,7 @@ const frame: IntegrationFrame = { job_id: "job", company_id: "company", message_
 const window = { ok: true, company_id: "company", conversation_id: "conversation", phone_number_id: "phone", recipient_wa_id: "recipient", last_inbound_at: "2026-10-08T11:00:00Z", valid_until: "2026-10-09T11:00:00Z" };
 const intent = { id: "intent", outcome: "attempting", company_id: "company", conversation_id: "conversation", phone_number_id: "phone", recipient_wa_id: "recipient", body: "1.200 OMR." };
 function client(proof: unknown = window) {
-  const rpc = vi.fn().mockImplementation(async name => ({ data: name === "es02_classify_claimed_reply" ? { ok: true, recipientClass: "legacy" } : name === "billing_load_worker_frame" ? { ok: true, data: { ...frame } } : proof, error: null }));
+  const rpc = vi.fn().mockImplementation(async name => ({ data: name === "whatsapp_worker_live_active" ? true : name === "es02_classify_claimed_reply" ? { ok: true, recipientClass: "legacy" } : name === "billing_load_worker_frame" ? { ok: true, data: { ...frame } } : proof, error: null }));
   return { rpc };
 }
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date("2026-10-08T12:00:00Z")); vi.clearAllMocks(); });
@@ -159,7 +159,7 @@ const es02Citations = [
   { sourceId: "hours-3701c3a6-026c-43b5-b23c-2858d4ae0477", title: "Synthetic saved hours", contentVersion: 3 },
 ];
 function citationClient(proof: unknown = { ok: true, company_id: "company", job_id: "job" }) {
-  const rpc = vi.fn().mockImplementation(async name => ({ data: name === "es02_classify_claimed_reply" ? { ok: true, recipientClass: "real_customer" }
+  const rpc = vi.fn().mockImplementation(async name => ({ data: name === "whatsapp_worker_live_active" ? true : name === "es02_classify_claimed_reply" ? { ok: true, recipientClass: "real_customer" }
     : name === "billing_load_worker_frame" ? { ok: true, data: { ...frame, authority: "es02" } }
     : name === "es02_verify_claimed_reply_citations" ? proof : window, error: null }));
   const from = vi.fn(() => { throw Error("ES02 page/hour IDs must not fall back to native knowledge UUID reads"); });
@@ -202,11 +202,55 @@ describe("ES02 claimed branch citation verification", () => {
     expect(db.from).not.toHaveBeenCalled();
     expect(db.rpc.mock.calls.map(([name]) => name)).not.toContain("whatsapp_retrieve_approved_knowledge");
   });
-});  it('prevents send when server-side live state is disabled during generation', async () => {
-    const db = { rpc: vi.fn(async (name) => { if (name === 'whatsapp_worker_live_active') return { data: false, error: null }; if (name === 'es02_classify_claimed_reply') return { data: { ok: true, recipientClass: 'real_customer' }, error: null }; if (name === 'billing_load_worker_frame') return { data: { ok: true, data: { ...frame, authority: 'es02' } }, error: null }; return { data: window, error: null }; }), from: vi.fn() };
+});
+
+describe("server-side kill switch verification", () => {
+  it("prevents send when server-side live state is disabled during generation", async () => {
+    const db = {
+      rpc: vi.fn(async (name) => {
+        if (name === "whatsapp_worker_live_active") return { data: false, error: null };
+        if (name === "es02_classify_claimed_reply") return { data: { ok: true, recipientClass: "real_customer" }, error: null };
+        if (name === "billing_load_worker_frame") return { data: { ok: true, data: { ...frame, authority: "es02" } }, error: null };
+        return { data: window, error: null };
+      }),
+      from: vi.fn(),
+    };
     const ports = createIntegrationPorts(binding, db as never);
     const loaded = await ports.frame();
     expect(await ports.verify(loaded!, es02Citations)).toBe(false);
   });
 
+  it("rejects verify when server-side live state returns non-true", async () => {
+    const db = {
+      rpc: vi.fn(async (name) => {
+        if (name === "whatsapp_worker_live_active") return { data: null, error: null };
+        if (name === "es02_classify_claimed_reply") return { data: { ok: true, recipientClass: "real_customer" }, error: null };
+        if (name === "billing_load_worker_frame") return { data: { ok: true, data: { ...frame, authority: "es02" } }, error: null };
+        return { data: window, error: null };
+      }),
+      from: vi.fn(),
+    };
+    const ports = createIntegrationPorts(binding, db as never);
+    const loaded = await ports.frame();
+    expect(await ports.verify(loaded!, es02Citations)).toBe(false);
+  });
 
+  it("rejects verify when server-side live state RPC throws, even with env rollout enabled", async () => {
+    vi.stubEnv("WHATSAPP_WORKER_ENABLED", "true");
+    vi.stubEnv("LIVE_ANSWERING", "true");
+    vi.stubEnv("WHATSAPP_ALLOW_EXTERNAL_SEND", "true");
+    vi.stubEnv("WHATSAPP_ROUTING_MODE", "tenant_registry");
+    const db = {
+      rpc: vi.fn(async (name) => {
+        if (name === "whatsapp_worker_live_active") throw new Error("RPC timeout or connectivity failure");
+        if (name === "es02_classify_claimed_reply") return { data: { ok: true, recipientClass: "real_customer" }, error: null };
+        if (name === "billing_load_worker_frame") return { data: { ok: true, data: { ...frame, authority: "es02" } }, error: null };
+        return { data: window, error: null };
+      }),
+      from: vi.fn(),
+    };
+    const ports = createIntegrationPorts(binding, db as never);
+    const loaded = await ports.frame();
+    expect(await ports.verify(loaded!, es02Citations)).toBe(false);
+  });
+});
