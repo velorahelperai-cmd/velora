@@ -1,6 +1,7 @@
 import "server-only";
 import { buildAnswerSystemPrompt,formatAnswerUserPrompt } from "../adapters/prompt";
 import { MultiModelAIRouter } from "../routing/router";
+import { classifyPureSocialSmallTalk } from "../routing/small-talk";
 import type { AIModelId,AnswerContextChunk,AnswerPersona } from "../types";
 import { priceRealUsage,realModelPricing,reserveRealCost } from "./economics";
 import { callRealModel,type RealProviderResult } from "./provider";
@@ -35,6 +36,45 @@ export async function executeReservedRealAnswer(input:RealAnswerPayload,deps:{st
  const maxOutputTokens=input.maxOutputTokens??REAL_OUTPUT_LIMIT,maxCostBaisa=input.maxCostBaisa??1000;
  if(!validPayload(input))return {ok:false as const,error:"INVALID_INPUT",attempts};
  const {store,call}=deps;
+ const social = classifyPureSocialSmallTalk(input.question, input.locale);
+ if (social.isPureSocial && social.responseText) {
+  const model: AIModelId = "gemini-3.5-flash-lite";
+  const id = crypto.randomUUID();
+  const pricing = realModelPricing(model);
+  const reservedBaisa = 1;
+  let reservation;
+  try {
+   reservation = await store.reserve({
+    id, attempt: 1, model, provider: "google", reservedBaisa,
+    pricingVersion: pricing.version, pricingSnapshot: pricing, sourceCitations: [],
+   });
+  } catch {
+   return { ok: false as const, error: "PERSISTENCE_OR_AUTHORIZATION_FAILED", attempts };
+  }
+  if (reservation?.ok !== true) return { ok: false as const, error: reservation?.code ?? "RESERVATION_FAILED", attempts };
+  try {
+   if (!await store.start(id)) {
+    if (!await store.settle({ id, status: "rejected", costUsd: 0, costBaisa: 0, usage: {}, errorCode: "AUTHORIZATION_CHANGED_BEFORE_EXECUTION", latencyMs: 0 })) {
+     return { ok: false as const, error: "LEDGER_WRITE_FAILED", attempts };
+    }
+    return { ok: false as const, error: "AUTHORIZATION_CHANGED_BEFORE_EXECUTION", attempts };
+   }
+  } catch {
+   return { ok: false as const, error: "LEDGER_WRITE_FAILED", attempts };
+  }
+  const zeroUsage = { promptTokens: 0, completionTokens: 0, cachedTokens: 0, reasoningTokens: 0, cacheWriteTokens: 0, totalTokens: 0 };
+  const attempt: RealAttempt = {
+   id, model, status: "success", costUsd: 0, costBaisa: 0, latencyMs: 10,
+   message: social.responseText, actualModelId: model, usage: zeroUsage,
+  };
+  attempts.push(attempt);
+  const settled = await store.settle({
+   id, status: "success", costUsd: 0, costBaisa: 0, usage: zeroUsage,
+   responseText: social.responseText, actualModelId: model, latencyMs: 10,
+  });
+  if (!settled) return { ok: false as const, error: "SETTLEMENT_PERSIST_FAILED", attempts };
+  return { ok: true as const, text: social.responseText, complete: true, attempts };
+ }
  const models:AIModelId[]=new MultiModelAIRouter().getEligibleModels({question:input.question,locale:input.locale,chunks:input.chunks,forceModelId:input.model});
  const style=input.locale==="ar"
   ? "أجيبي بأسلوب طبيعي ومختصر ومباشر، كرسالة محادثة ودودة، من دون تكرار أو مقدمات آلية. لا تحذفي معلومة ضرورية للدقة أو السلامة، ولا تدّعي أنكِ إنسانة."

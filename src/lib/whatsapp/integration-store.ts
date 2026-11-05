@@ -5,7 +5,7 @@ import {isLiveAnsweringEnabled} from "@/lib/answers/guards";
 import {createClaimedWhatsappAnswerExecutor} from "@/lib/answers/runtime/whatsapp-cost";
 import {externalSendAllowed,whatsappRoutingMode} from "./config";
 import {sendWhatsappText} from "./send";
-import type {IntegrationFrame,IntegrationPorts} from "./integration-worker";
+import type {IntegrationFrame,IntegrationPorts,VerificationResult} from "./integration-worker";
 import {WorkerInputError} from "./integration-worker";
 import {readServiceWindow} from "./service-window";
 import {bindOperationalRecipient} from "./operational-recipient";
@@ -43,18 +43,30 @@ export function createIntegrationPorts(binding:{jobId:string;claimToken:string;c
  const executor=createClaimedWhatsappAnswerExecutor();
  return {enabled,frame,
  context:async f=>{if(!admin)return null;const c=await loadApprovedAnswerContext(f.company_id,admin,{question:f.question,jobId:f.job_id,claimToken:binding.claimToken});return c.ok?c.chunks:null;},
- verify:async(f,citations)=>{if(injectedClient===undefined&&!workerRolloutEnabled())return false;try{const active=await rpc('whatsapp_worker_live_active',{});if(active!==true)return false;}catch{return false;}const current=await frame();if(!current||!admin||f.job_id!==binding.jobId||f.company_id!==binding.companyId||current.authority!==f.authority||current.conversation_id!==f.conversation_id||current.automation_generation!==f.automation_generation||current.link_id!==f.link_id||current.link_generation!==f.link_generation)return false;
- const scope=validateLiveTestScope({companyId:current.company_id,recipientWaId:current.recipient_wa_id,branchId:current.branch_id,createdAt:current.created_at});
- if(!scope.ok)return false;
- if(current.authority==="es02"){
- if(!citations.length)return false;
- try{const proof=object(await rpc("es02_verify_claimed_reply_citations",{...args,p_source_citations:citations}));
- return proof?.ok===true&&proof.company_id===current.company_id&&proof.job_id===current.job_id;
- }catch{return false;}
- }
- // Revalidate the original citation snapshot directly, even during draft recovery.
- // A new query result may never substitute different versions or require loading the whole corpus.
- return await verifyAnswerCitationsStillValid(f.company_id,citations.map(c=>({...c,text:"citation snapshot"})),admin);},
+ verify:async(f,citations):Promise<VerificationResult>=>{
+  if(injectedClient===undefined&&!workerRolloutEnabled())return {ok:false,code:"WORKER_DISABLED"};
+  let active:unknown;
+  try{active=await rpc("whatsapp_worker_live_active",{});}
+  catch{return {ok:false,code:"WORKER_UNAVAILABLE"};}
+  if(active===false)return {ok:false,code:"WORKER_DISABLED"};
+  if(active!==true)return {ok:false,code:"WORKER_UNAVAILABLE"};
+  const current=await frame();
+  if(!current||!admin||f.job_id!==binding.jobId||f.company_id!==binding.companyId||current.authority!==f.authority||current.conversation_id!==f.conversation_id||current.automation_generation!==f.automation_generation||current.link_id!==f.link_id||current.link_generation!==f.link_generation)return {ok:false,code:"KNOWLEDGE_OR_AUTOMATION_CHANGED"};
+  const scope=validateLiveTestScope({companyId:current.company_id,recipientWaId:current.recipient_wa_id,branchId:current.branch_id,createdAt:current.created_at});
+  if(!scope.ok)return {ok:false,code:"KNOWLEDGE_OR_AUTOMATION_CHANGED"};
+  if(current.authority==="es02"){
+   try{const proof=object(await rpc("es02_verify_claimed_reply_citations",{...args,p_source_citations:citations}));
+   if(proof?.ok===true&&proof.company_id===current.company_id&&proof.job_id===current.job_id)return {ok:true};
+   return {ok:false,code:"KNOWLEDGE_OR_AUTOMATION_CHANGED"};
+   }catch{return {ok:false,code:"KNOWLEDGE_OR_AUTOMATION_CHANGED"};}
+  }
+  if(!citations.length)return {ok:true};
+  // Revalidate the original citation snapshot directly, even during draft recovery.
+  // A new query result may never substitute different versions or require loading the whole corpus.
+  const valid=await verifyAnswerCitationsStillValid(f.company_id,citations.map(c=>({...c,text:"citation snapshot"})),admin);
+  if(!valid)return {ok:false,code:"KNOWLEDGE_OR_AUTOMATION_CHANGED"};
+  return {ok:true};
+ },
  secret:async f=>{const r=object(await rpc("whatsapp_read_link_access_secret",{p_company_id:f.company_id,p_link_id:f.link_id,p_phone_number_id:f.phone_number_id,p_link_generation:f.link_generation}));
  return r?.ok===true&&r.company_id===f.company_id&&r.link_id===f.link_id&&r.phone_number_id===f.phone_number_id&&r.link_generation===f.link_generation&&typeof r.access_token==="string"&&r.access_token.trim()?r.access_token:null;},
  reserve:async()=>{

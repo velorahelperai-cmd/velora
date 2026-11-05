@@ -1,13 +1,17 @@
 import "server-only";
 import type {AnswerContextChunk,AnswerCitation} from "@/lib/answers/types";
 import {classifyHandoffPolicy} from "@/lib/answers/routing/handoff-policy";
+import {classifyPureSocialSmallTalk} from "@/lib/answers/routing/small-talk";
 import {recordWorkerTiming} from "./worker-timing";
 export type IntegrationFrame={authority?:"es02";job_id:string;company_id:string;branch_id?:string;created_at?:string;message_id:string;conversation_id:string;phone_number_id:string;recipient_wa_id:string;
  automation_generation:number;link_id:string;link_generation:number;question:string;service_window_expires_at?:string;ai_status:string|null;reply_text:string|null;
  ai_attempt_id:string|null;intent_id:string|null;staged_citations:AnswerCitation[]|null};
 export type SendIntent={id:string;outcome:string;company_id:string;conversation_id:string;phone_number_id:string;recipient_wa_id:string;body:string};
+export type VerificationFailureCode = "WORKER_DISABLED" | "WORKER_UNAVAILABLE" | "KNOWLEDGE_OR_AUTOMATION_CHANGED";
+export type VerificationResult = { ok: true } | { ok: false; code: VerificationFailureCode };
+export type VerifyPortResult = boolean | VerificationResult;
 export type IntegrationPorts={enabled:boolean;frame:()=>Promise<IntegrationFrame|null>;context:(f:IntegrationFrame)=>Promise<AnswerContextChunk[]|null>;
- verify:(f:IntegrationFrame,citations:AnswerCitation[])=>Promise<boolean>;secret:(f:IntegrationFrame)=>Promise<string|null>;reserve:()=>Promise<boolean>;
+ verify:(f:IntegrationFrame,citations:AnswerCitation[])=>Promise<VerifyPortResult>;secret:(f:IntegrationFrame)=>Promise<string|null>;reserve:()=>Promise<boolean>;
  answer:(f:IntegrationFrame,chunks:AnswerContextChunk[])=>Promise<{ok:boolean;complete?:boolean;text?:string;attempts:{id:string;status?:string}[];error?:string}>;
  stage:(attempt:string,citations:AnswerCitation[])=>Promise<string|null>;
  claimSend:()=>Promise<{ok:boolean;claimed?:boolean;attempt_token?:string|null;intent?:SendIntent}>;
@@ -19,6 +23,18 @@ export type IntegrationOutcome={ok:false;code:string;jobCompleted:boolean;sendAc
 const blocked=(code:string):IntegrationOutcome=>({ok:false,code,jobCompleted:false,sendAccepted:false,delivered:false});
 const acceptedPending=(code:string,settled=false):IntegrationOutcome=>({ok:false,code,jobCompleted:settled,sendAccepted:true,delivered:false});
 export class WorkerInputError extends Error{constructor(readonly code:string){super(code);}}
+
+function isVerified(result: VerifyPortResult): result is true | { ok: true } {
+  return result === true || (typeof result === "object" && result !== null && result.ok === true);
+}
+
+function verifyFailureCode(result: VerifyPortResult): VerificationFailureCode {
+  if (typeof result === "object" && result !== null && !result.ok && result.code) {
+    return result.code;
+  }
+  return "KNOWLEDGE_OR_AUTOMATION_CHANGED";
+}
+
 export async function runPersistedInboundJob(input:{jobId:string;claimToken:string;companyId:string},ports:IntegrationPorts):Promise<IntegrationOutcome>{
  if(!ports.enabled)return blocked("WORKER_DISABLED");
  let externalAttempt=false;
@@ -33,9 +49,29 @@ export async function runPersistedInboundJob(input:{jobId:string;claimToken:stri
  const humanReview=!!classifyHandoffPolicy(frame.question).previewReason;
  if(humanReview&&!frame.intent_id)return await fail("HUMAN_REVIEW_REQUIRED");
  if(humanReview&&!(frame.ai_status==="success"&&frame.reply_text&&frame.ai_attempt_id))return blocked("SEND_REQUIRES_RECONCILIATION");
- const chunks=await ports.context(frame);if(!chunks?.length)return await fail("APPROVED_KNOWLEDGE_REQUIRED");
- const captured=frame.staged_citations??chunks.map(({sourceId,title,contentVersion})=>({sourceId,title,contentVersion}));
- if(!await ports.verify(frame,captured))return await fail("KNOWLEDGE_OR_AUTOMATION_CHANGED");
+ const social=classifyPureSocialSmallTalk(frame.question);
+ let chunks:AnswerContextChunk[]|null=null;
+ let captured:AnswerCitation[];
+ if(social.isPureSocial){
+  chunks=[];
+  captured=frame.staged_citations??[];
+ }else{
+  chunks=await ports.context(frame);if(!chunks?.length)return await fail("APPROVED_KNOWLEDGE_REQUIRED");
+  captured=frame.staged_citations??chunks.map(({sourceId,title,contentVersion})=>({sourceId,title,contentVersion}));
+ }
+ const v1=await ports.verify(frame,captured);
+ if(!isVerified(v1)){
+  const code=verifyFailureCode(v1);
+  if(code==="WORKER_UNAVAILABLE"){
+   try{await ports.retry("WORKER_UNAVAILABLE",false,false);}catch{}
+   return blocked("WORKER_UNAVAILABLE");
+  }
+  if(code==="WORKER_DISABLED"){
+   try{await ports.retry("WORKER_DISABLED",false,false);}catch{}
+   return blocked("WORKER_DISABLED");
+  }
+  return await fail(code);
+ }
  const secret=await ports.secret(frame);if(!secret)return await fail("TENANT_SECRET_NOT_CONFIGURED");
  if(!await ports.reserve())return await fail("ENTITLEMENT_OR_USAGE_DENIED");
  let attemptId=frame.ai_attempt_id;
@@ -48,7 +84,20 @@ export async function runPersistedInboundJob(input:{jobId:string;claimToken:stri
  generated.attempts.some(a=>a.status==="uncertain")||generated.error?.includes("SETTLEMENT")===true);
  attemptId=generated.attempts.at(-1)?.id??null;
  }
- if(!attemptId||!await ports.verify(frame,captured))return await fail("KNOWLEDGE_OR_AUTOMATION_CHANGED");
+ if(!attemptId)return await fail("KNOWLEDGE_OR_AUTOMATION_CHANGED");
+ const v2=await ports.verify(frame,captured);
+ if(!isVerified(v2)){
+  const code=verifyFailureCode(v2);
+  if(code==="WORKER_UNAVAILABLE"){
+   try{await ports.retry("WORKER_UNAVAILABLE",false,false);}catch{}
+   return blocked("WORKER_UNAVAILABLE");
+  }
+  if(code==="WORKER_DISABLED"){
+   try{await ports.retry("WORKER_DISABLED",false,false);}catch{}
+   return blocked("WORKER_DISABLED");
+  }
+  return await fail(code);
+ }
  const intentId=frame.intent_id??await ports.stage(attemptId,captured);if(!intentId)return await fail("STAGE_REJECTED");
  const claimed=await ports.claimSend();const intent=claimed.intent;
  if(!claimed.ok||!intent||intent.id!==intentId||intent.company_id!==frame.company_id||intent.conversation_id!==frame.conversation_id
@@ -67,7 +116,21 @@ export async function runPersistedInboundJob(input:{jobId:string;claimToken:stri
   return await fail("HUMAN_REVIEW_REQUIRED");
  }
  // This fresh generation/link/source check is the last local gate before Graph.
- if(!await ports.verify(frame,captured)){
+ const v3=await ports.verify(frame,captured);
+ if(!isVerified(v3)){
+  const code=verifyFailureCode(v3);
+  if(code==="WORKER_UNAVAILABLE"){
+   try{await ports.retry("WORKER_UNAVAILABLE",false,false);}catch{}
+   return blocked("WORKER_UNAVAILABLE");
+  }
+  if(code==="WORKER_DISABLED"){
+   try{
+    if(!await ports.finalize(intent.id,claimed.attempt_token,"rejected",null))return blocked("SEND_PERSIST_REQUIRES_RECONCILIATION");
+    if(await ports.finish(intent.id)!=="released")return blocked("SEND_PERSIST_REQUIRES_RECONCILIATION");
+   }catch{return blocked("SEND_PERSIST_REQUIRES_RECONCILIATION");}
+   try{await ports.retry("WORKER_DISABLED",false,false);}catch{}
+   return blocked("WORKER_DISABLED");
+  }
   try{
    if(!await ports.finalize(intent.id,claimed.attempt_token,"rejected",null))return blocked("SEND_PERSIST_REQUIRES_RECONCILIATION");
    if(await ports.finish(intent.id)!=="released")return blocked("SEND_PERSIST_REQUIRES_RECONCILIATION");

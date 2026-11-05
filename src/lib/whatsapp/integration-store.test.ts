@@ -170,7 +170,7 @@ describe("ES02 claimed branch citation verification", () => {
     const db = citationClient(), ports = createIntegrationPorts(binding, db as never);
     const loaded = await ports.frame();
     expect(loaded).toMatchObject({ authority: "es02" });
-    expect(await ports.verify(loaded!, es02Citations)).toBe(true);
+    expect(await ports.verify(loaded!, es02Citations)).toEqual({ ok: true });
     expect(db.rpc).toHaveBeenCalledWith("es02_verify_claimed_reply_citations", { p_job_id: "job", p_claim_token: "claim", p_source_citations: es02Citations });
     expect(db.from).not.toHaveBeenCalled();
     expect(send).not.toHaveBeenCalled();
@@ -179,15 +179,15 @@ describe("ES02 claimed branch citation verification", () => {
   it.each([null, {}, { ok: false, code: "KNOWLEDGE_CHANGED" }, { ok: true, company_id: "foreign-company", job_id: "job" }, { ok: true, company_id: "company", job_id: "foreign-job" }])("denies invalid or foreign citation proof without native fallback: %j", async proof => {
     const db = citationClient(proof), ports = createIntegrationPorts(binding, db as never);
     const loaded = await ports.frame();
-    expect(await ports.verify(loaded!, es02Citations)).toBe(false);
+    expect(await ports.verify(loaded!, es02Citations)).toEqual({ ok: false, code: "KNOWLEDGE_OR_AUTOMATION_CHANGED" });
     expect(db.from).not.toHaveBeenCalled();
     expect(send).not.toHaveBeenCalled();
   });
   it("does not verify an ES02 frame as a legacy one after authority changes", async () => {
     const db = citationClient(), ports = createIntegrationPorts(binding, db as never);
     const loaded = await ports.frame();
-    db.rpc.mockImplementation(async name => ({ data: name === "es02_classify_claimed_reply" ? { ok: true, recipientClass: "legacy" } : name === "billing_load_worker_frame" ? { ok: true, data: { ...frame } } : window, error: null }));
-    expect(await ports.verify(loaded!, es02Citations)).toBe(false);
+    db.rpc.mockImplementation(async name => ({ data: name === "whatsapp_worker_live_active" ? true : name === "es02_classify_claimed_reply" ? { ok: true, recipientClass: "legacy" } : name === "billing_load_worker_frame" ? { ok: true, data: { ...frame } } : window, error: null }));
+    expect(await ports.verify(loaded!, es02Citations)).toEqual({ ok: false, code: "KNOWLEDGE_OR_AUTOMATION_CHANGED" });
     expect(db.from).not.toHaveBeenCalled();
   });
   it("rejects an unknown frame authority instead of treating it as legacy", async () => {
@@ -195,62 +195,78 @@ describe("ES02 claimed branch citation verification", () => {
     db.rpc.mockImplementation(async name => ({ data: name === "es02_classify_claimed_reply" ? { ok: true, recipientClass: "legacy" } : name === "billing_load_worker_frame" ? { ok: true, data: { ...frame, authority: "unknown" } } : window, error: null }));
     expect(await createIntegrationPorts(binding, db as never).frame()).toBeNull();
   });
-  it("does not replace empty ES02 citations with fresh knowledge", async () => {
+  it("passes empty citations through exact native ES02 verification without synthetic knowledge lookup", async () => {
     const db = citationClient(), ports = createIntegrationPorts(binding, db as never);
     const loaded = await ports.frame();
-    expect(await ports.verify(loaded!, [])).toBe(false);
+    expect(await ports.verify(loaded!, [])).toEqual({ ok: true });
+    expect(db.rpc).toHaveBeenCalledWith("es02_verify_claimed_reply_citations", { p_job_id: "job", p_claim_token: "claim", p_source_citations: [] });
     expect(db.from).not.toHaveBeenCalled();
     expect(db.rpc.mock.calls.map(([name]) => name)).not.toContain("whatsapp_retrieve_approved_knowledge");
   });
 });
 
 describe("server-side kill switch verification", () => {
-  it("prevents send when server-side live state is disabled during generation", async () => {
-    const db = {
+  function makeDb(liveResult: { data?: unknown; error?: unknown } | "throw") {
+    return {
       rpc: vi.fn(async (name) => {
-        if (name === "whatsapp_worker_live_active") return { data: false, error: null };
+        if (name === "whatsapp_worker_live_active") {
+          if (liveResult === "throw") throw new Error("RPC timeout or transport failure");
+          return { data: liveResult.data ?? null, error: liveResult.error ?? null };
+        }
         if (name === "es02_classify_claimed_reply") return { data: { ok: true, recipientClass: "real_customer" }, error: null };
         if (name === "billing_load_worker_frame") return { data: { ok: true, data: { ...frame, authority: "es02" } }, error: null };
+        if (name === "es02_verify_claimed_reply_citations") return { data: { ok: true, company_id: "company", job_id: "job" }, error: null };
         return { data: window, error: null };
       }),
       from: vi.fn(),
     };
+  }
+
+  it("proceeds with { ok: true } when confirmed true", async () => {
+    const db = makeDb({ data: true });
     const ports = createIntegrationPorts(binding, db as never);
     const loaded = await ports.frame();
-    expect(await ports.verify(loaded!, es02Citations)).toBe(false);
+    expect(await ports.verify(loaded!, es02Citations)).toEqual({ ok: true });
   });
 
-  it("rejects verify when server-side live state returns non-true", async () => {
-    const db = {
-      rpc: vi.fn(async (name) => {
-        if (name === "whatsapp_worker_live_active") return { data: null, error: null };
-        if (name === "es02_classify_claimed_reply") return { data: { ok: true, recipientClass: "real_customer" }, error: null };
-        if (name === "billing_load_worker_frame") return { data: { ok: true, data: { ...frame, authority: "es02" } }, error: null };
-        return { data: window, error: null };
-      }),
-      from: vi.fn(),
-    };
+  it("blocks with WORKER_DISABLED when confirmed false", async () => {
+    const db = makeDb({ data: false });
     const ports = createIntegrationPorts(binding, db as never);
     const loaded = await ports.frame();
-    expect(await ports.verify(loaded!, es02Citations)).toBe(false);
+    expect(await ports.verify(loaded!, es02Citations)).toEqual({ ok: false, code: "WORKER_DISABLED" });
   });
 
-  it("rejects verify when server-side live state RPC throws, even with env rollout enabled", async () => {
-    vi.stubEnv("WHATSAPP_WORKER_ENABLED", "true");
-    vi.stubEnv("LIVE_ANSWERING", "true");
-    vi.stubEnv("WHATSAPP_ALLOW_EXTERNAL_SEND", "true");
-    vi.stubEnv("WHATSAPP_ROUTING_MODE", "tenant_registry");
-    const db = {
-      rpc: vi.fn(async (name) => {
-        if (name === "whatsapp_worker_live_active") throw new Error("RPC timeout or connectivity failure");
-        if (name === "es02_classify_claimed_reply") return { data: { ok: true, recipientClass: "real_customer" }, error: null };
-        if (name === "billing_load_worker_frame") return { data: { ok: true, data: { ...frame, authority: "es02" } }, error: null };
-        return { data: window, error: null };
-      }),
-      from: vi.fn(),
-    };
+  it("blocks with WORKER_UNAVAILABLE on RPC error", async () => {
+    const db = makeDb({ error: { message: "database unavailable" } });
     const ports = createIntegrationPorts(binding, db as never);
     const loaded = await ports.frame();
-    expect(await ports.verify(loaded!, es02Citations)).toBe(false);
+    expect(await ports.verify(loaded!, es02Citations)).toEqual({ ok: false, code: "WORKER_UNAVAILABLE" });
+  });
+
+  it("blocks with WORKER_UNAVAILABLE when RPC throws", async () => {
+    const db = makeDb("throw");
+    const ports = createIntegrationPorts(binding, db as never);
+    const loaded = await ports.frame();
+    expect(await ports.verify(loaded!, es02Citations)).toEqual({ ok: false, code: "WORKER_UNAVAILABLE" });
+  });
+
+  it("blocks with WORKER_UNAVAILABLE when result is null", async () => {
+    const db = makeDb({ data: null });
+    const ports = createIntegrationPorts(binding, db as never);
+    const loaded = await ports.frame();
+    expect(await ports.verify(loaded!, es02Citations)).toEqual({ ok: false, code: "WORKER_UNAVAILABLE" });
+  });
+
+  it("blocks with WORKER_UNAVAILABLE when result is an unexpected object", async () => {
+    const db = makeDb({ data: { unexpected: true } });
+    const ports = createIntegrationPorts(binding, db as never);
+    const loaded = await ports.frame();
+    expect(await ports.verify(loaded!, es02Citations)).toEqual({ ok: false, code: "WORKER_UNAVAILABLE" });
+  });
+
+  it("blocks with WORKER_DISABLED when uninjected client has rollout disabled", async () => {
+    vi.stubEnv("WHATSAPP_WORKER_ENABLED", "false");
+    const ports = createIntegrationPorts(binding);
+    expect(await ports.verify(frame, es02Citations)).toEqual({ ok: false, code: "WORKER_DISABLED" });
   });
 });
