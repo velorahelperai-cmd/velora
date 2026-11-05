@@ -117,6 +117,46 @@ afterEach(()=>{act(()=>root.unmount());container.remove();vi.restoreAllMocks();v
 
 
 describe('UnifiedInbox membership and page safety',()=>{
+ it('stars only authorized loaded rows for the desktop session without fetching, and resets on membership change',async()=>{
+  const media={matches:true,addEventListener:vi.fn((_type:string,_callback:()=>void)=>undefined),removeEventListener:vi.fn()};vi.stubGlobal('matchMedia',vi.fn(()=>media));
+  const initial=makeInitial();initial.wa.page.conversations.push(conversation('c2','Customer 2','+9682','101','Second message',2000));
+  render({initial});
+  const names=()=>[...container.querySelectorAll('[aria-label="Conversation list"] strong')].map(e=>e.textContent);
+  expect(names()).toEqual(['Customer 2','Customer 1']);
+  await click(container.querySelector<HTMLButtonElement>('[aria-label="Star Customer 1 for this session"]')!);
+  expect(names()[0]).toBe('Customer 1');
+  await click(button('Starred 1'));expect(names()).toEqual(['Customer 1']);
+  expect(state.readServiceInbox).not.toHaveBeenCalled();expect(state.routerPush).not.toHaveBeenCalled();
+  const change=media.addEventListener.mock.calls[0]?.[1] as (()=>void)|undefined;
+  media.matches=false;act(()=>change?.());expect(names()).toEqual(['Customer 2','Customer 1']);
+  media.matches=true;act(()=>change?.());expect(names()).toEqual(['Customer 1']);
+  render({initial:makeInitial('new-membership')});expect(button('Starred 0').getAttribute('aria-pressed')).toBe('false');
+  expect(container.querySelector('[aria-label="Unstar Customer 1 for this session"]')).toBeNull();
+ });
+ it('follows the visible viewport for the phone keyboard and removes listeners on scope loss',()=>{
+  const viewport=Object.assign(new EventTarget(),{height:500,offsetTop:0});vi.stubGlobal('visualViewport',viewport);
+  const remove=vi.spyOn(viewport,'removeEventListener');route('channel=whatsapp&source=whatsapp&c=c1');render({initial:makeInitial()});
+  const pane=container.querySelector<HTMLElement>('[data-open="true"]')!;expect(pane.style.getPropertyValue('--inbox-viewport-height')).toBe('500px');
+  viewport.height=320;viewport.offsetTop=16;act(()=>viewport.dispatchEvent(new Event('resize')));
+  expect(pane.style.getPropertyValue('--inbox-viewport-height')).toBe('320px');expect(pane.style.getPropertyValue('--inbox-viewport-top')).toBe('16px');
+  render({initial:{ok:false,code:'SCOPE_CHANGED'}});expect(container.querySelector('[data-pane]')).toBeNull();
+  expect(remove).toHaveBeenCalledWith('resize',expect.any(Function));expect(remove).toHaveBeenCalledWith('scroll',expect.any(Function));
+  expect(state.readServiceInbox).not.toHaveBeenCalled();
+ });
+ it('keeps native phone search and lead worklists available without fetching another inbox',async()=>{
+  const initial=makeInitial();initial.wa.page.conversations.push({...conversation('quote','Quote customer','+9689999','102','Quotation',3000),leadStage:'trial_or_quote_requested'});
+  route('channel=whatsapp');render({initial});
+  const search=container.querySelector<HTMLInputElement>('input[type="search"]')!;
+  await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(search,'+9689999');search.dispatchEvent(new Event('input',{bubbles:true}));});
+  expect(container.textContent).toContain('Quote customer');expect(container.textContent).not.toContain('Customer 1');
+  await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(search,'');search.dispatchEvent(new Event('input',{bubbles:true}));});
+  const leads=container.querySelector<HTMLSelectElement>('select')!;
+  await act(async()=>{leads.value='trial_or_quote';leads.dispatchEvent(new Event('change',{bubbles:true}));});
+  expect(container.textContent).toContain('Quote customer');expect(container.textContent).not.toContain('Customer 1');
+  await act(async()=>{leads.value='overdue';leads.dispatchEvent(new Event('change',{bubbles:true}));});
+  expect(container.textContent).toContain('No matches in loaded conversations');expect(container.textContent).not.toContain('No conversations yet');
+  expect(state.readServiceInbox).not.toHaveBeenCalled();expect(state.refreshWhatsappInboxPage).not.toHaveBeenCalled();
+ });
  it('applies the dashboard attention filter and retains it while opening a thread',async()=>{
   const initial=makeInitial();const attention={...conversation('needs-human','Needs human','+9682','101','Please help',2000),intervention:{reasons:['send_unknown' as const]}};initial.wa.page.conversations.push(attention);
   route('channel=whatsapp&filter=staff');const historyPush=vi.spyOn(window.history,'pushState');render({initial});

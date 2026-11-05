@@ -1,10 +1,12 @@
 'use client';
 import {useEffect,useRef,useState} from 'react';
+import {InboxDesktop,type InboxDesktopView} from './inbox-desktop';
 import {useRouter,useSearchParams} from 'next/navigation';
 import {useDemo} from '@/lib/demo-state';
 import {captureTranscriptPosition,restoreTranscriptPosition,type TranscriptPosition} from './transcript-position';
 import {ChannelBadge} from './channel-badge';
 import {ConversationDetailsPanel} from './conversation-details-panel';
+import {ComposerTabs,DetailSection,DetailRow,type ComposerMode} from './conversation-presentation';
 import {WorkspaceShell} from './workspace-shell';
 import {Button,Notice} from './ui';
 import {InstagramOwnerConnection} from './instagram-owner-connection';
@@ -31,7 +33,7 @@ const labels:Record<string,[string,string]>={
  CONFLICT:['This saved reply differs from your current text. Reload the saved reply.','هذا الرد المحفوظ يختلف عن النص الحالي. أعد تحميل الرد.'],
  INVALID_INPUT:['Enter a reply of at most 1,000 UTF-8 bytes.','أدخل ردًا لا يتجاوز ١٬٠٠٠ بايت بترميز UTF-8.'],
 };
-export function InstagramInbox({companyId,owner=false,companyInSetup=false,reviewMode=false,callbackResult,callbackDiagnostic,embedded=false,selectedConversationId,onSelectConversation,refreshVersion=0,canAssign=false,readSuspended=false}:{readSuspended?:boolean;canAssign?:boolean;refreshVersion?:number;embedded?:boolean;selectedConversationId?:string|null;onSelectConversation?:(id:string|null,intentId?:string)=>void;companyId:string|null;owner?:boolean;companyInSetup?:boolean;reviewMode?:boolean;callbackResult?:string;callbackDiagnostic?:unknown}){
+export function InstagramInbox({companyId,owner=false,companyInSetup=false,reviewMode=false,callbackResult,callbackDiagnostic,embedded=false,selectedConversationId,onSelectConversation,refreshVersion=0,canAssign=false,readSuspended=false,connectionPaused=false,desktopView}:{connectionPaused?:boolean;desktopView?:InboxDesktopView;readSuspended?:boolean;canAssign?:boolean;refreshVersion?:number;embedded?:boolean;selectedConversationId?:string|null;onSelectConversation?:(id:string|null,intentId?:string)=>void;companyId:string|null;owner?:boolean;companyInSetup?:boolean;reviewMode?:boolean;callbackResult?:string;callbackDiagnostic?:unknown}){
  const {locale}=useDemo(),ar=locale==='ar',router=useRouter(),params=useSearchParams();
  const conversationId=embedded?selectedConversationId??null:uuid(params.get('thread')),intentId=uuid(params.get('intent'));
  const draftKey=`${companyId}:${conversationId}`;
@@ -45,9 +47,12 @@ export function InstagramInbox({companyId,owner=false,companyInSetup=false,revie
  const text=drafts[draftKey]??'',setText=(value:string)=>setDrafts(old=>({...old,[draftKey]:value}));
  const [readinessVerified,setReadinessVerified]=useState(false);
  const [detailsOpen,setDetailsOpen]=useState(false);
+ const [composerModes,setComposerModes]=useState<Record<string,ComposerMode>>({});
+ const composerMode=reviewMode?'message':composerModes[draftKey]??'message';
+ const setComposerMode=(mode:ComposerMode)=>setComposerModes(old=>({...old,[draftKey]:mode}));
  useEffect(()=>{
   if(!embedded || typeof window==='undefined')return;
-  const resize=()=>{if(window.innerWidth>=1440)setDetailsOpen(false);};
+  const resize=()=>{if(window.innerWidth>=1280)setDetailsOpen(false);};
   window.addEventListener('resize',resize);
   return()=>window.removeEventListener('resize',resize);
  },[embedded]);
@@ -68,7 +73,7 @@ export function InstagramInbox({companyId,owner=false,companyInSetup=false,revie
    }
    if(!conversationId)return;
    const loaded=await loadInstagramThreadPage({companyId,conversationId});if(current!==epoch.current)return;
-   if(!loaded.ok){setError(loaded.code);return;}setThread(old=>old?.companyId===loaded.data.companyId&&old.conversationId===loaded.data.conversationId?{...loaded.data,messages:[...loaded.data.messages,...old.messages.filter(m=>!loaded.data.messages.some(next=>next.id===m.id))],hasMore:old.hasMore,nextCursor:old.nextCursor}:loaded.data);
+   if(!loaded.ok){if(['FORBIDDEN','SCOPE_CHANGED','NOT_FOUND'].includes(loaded.code)){setThread(null);setSaved(null);}setError(loaded.code);return;}setThread(old=>old?.companyId===loaded.data.companyId&&old.conversationId===loaded.data.conversationId?{...loaded.data,messages:[...loaded.data.messages,...old.messages.filter(m=>!loaded.data.messages.some(next=>next.id===m.id))],hasMore:old.hasMore,nextCursor:old.nextCursor}:loaded.data);
    const readiness=await loadInstagramSendReadiness({companyId,conversationId});if(current!==epoch.current)return;
    if(readiness.ok){setBlockers(readiness.data.blockers);setReadinessVerified(true);}else setError(readiness.code);
    const savedIntent=intentId??localIntents.current[draftKey];
@@ -78,12 +83,12 @@ export function InstagramInbox({companyId,owner=false,companyInSetup=false,revie
   return()=>{fence.current++;};
  },[companyId,conversationId,intentId,viewKey,draftKey,refresh,refreshVersion,embedded]);
  // Acknowledge only after the latest returned page has actually rendered.
- useEffect(()=>{if(readSuspended||!thread?.readReceipt||!companyId)return;const current=epoch.current;
+ useEffect(()=>{if(readSuspended||connectionPaused||!thread?.readReceipt||!companyId)return;const current=epoch.current;
   void markInstagramThreadRead({companyId,conversationId:thread.conversationId,readReceipt:thread.readReceipt}).then(r=>{if(current===epoch.current&&!r.ok)setError(r.code);}).catch(()=>{if(current===epoch.current)setError('UNAVAILABLE');});
- },[thread,companyId,readSuspended]);
+ },[thread,companyId,readSuspended,connectionPaused]);
  function select(id:string){epoch.current++;setReserved(false);setThread(null);setSaved(null);setLoading(true);setError(null);if(id===conversationId&&!intentId)setRefresh(n=>n+1);if(embedded)onSelectConversation?.(id);else router.push(`/app/instagram?thread=${encodeURIComponent(id)}`);}
  async function save(){
-  if(readSuspended||!companyId||!conversationId||busy||loading||!thread||saved||!text)return;
+  if(readSuspended||connectionPaused||!companyId||!conversationId||busy||loading||!thread||saved||!text)return;
   if(new TextEncoder().encode(text).byteLength>1000||text.includes('\0')){setError('INVALID_INPUT');return;}
   const current=epoch.current;const captured=reservations.current[draftKey]??{id:crypto.randomUUID(),text};reservations.current[draftKey]=captured;setReserved(true);setBusy(true);setError(null);
   localIntents.current[draftKey]=captured.id;
@@ -94,14 +99,14 @@ export function InstagramInbox({companyId,owner=false,companyInSetup=false,revie
   }catch{if(current===epoch.current)setError('UNAVAILABLE');}finally{if(current===epoch.current)setBusy(false);}
  }
  async function send(){
-  if(readSuspended||!companyId||!conversationId||busy||loading||!readinessVerified||!saved||saved.state!=='ready'||blockers.length)return;
+  if(readSuspended||connectionPaused||!companyId||!conversationId||busy||loading||!readinessVerified||!saved||saved.state!=='ready'||blockers.length)return;
   const current=epoch.current;setBusy(true);setError(null);
   try{const r=await sendSavedInstagramReply({companyId,conversationId,intentId:saved.binding.intentId});if(current!==epoch.current)return;
    if(!r.ok){setError(r.code);return;}setSaved({...r.data,text:saved.text});
   }catch{if(current===epoch.current)setError('UNAVAILABLE');}finally{if(current===epoch.current)setBusy(false);}
  }
  async function assign(assignedTo:string|null){
-  if(readSuspended||!companyId||!thread||!canAssign||busy||loading)return;
+  if(readSuspended||connectionPaused||!companyId||!thread||!canAssign||busy||loading)return;
   const current=epoch.current;setBusy(true);setError(null);
   try{const result=await assignInstagramConversation({companyId,conversationId:thread.conversationId,assignedTo,expectedRevision:thread.conversation.revision});
    if(current!==epoch.current)return;if(!result.ok){setError(result.code);return;}
@@ -109,7 +114,7 @@ export function InstagramInbox({companyId,owner=false,companyInSetup=false,revie
   }catch{if(current===epoch.current)setError('UNAVAILABLE');}finally{if(current===epoch.current)setBusy(false);}
  }
  async function more(kind:'inbox'|'thread'){
-  if(!companyId||busy||loading)return;
+  if(readSuspended||connectionPaused||!companyId||busy||loading)return;
   const cursor=kind==='inbox'?inbox?.nextCursor:thread?.nextCursor;if(!cursor)return;
   const current=epoch.current;setBusy(true);setError(null);
   try{if(kind==='inbox'){
@@ -122,6 +127,23 @@ export function InstagramInbox({companyId,owner=false,companyInSetup=false,revie
    // Older-page loading cannot acknowledge the latest inbound boundary again.
    setThread(old=>old?{...r.data,readReceipt:null,messages:[...old.messages,...r.data.messages.filter(m=>!old.messages.some(o=>o.id===m.id))]}:{...r.data,readReceipt:null});
   }}catch{if(current===epoch.current)setError('UNAVAILABLE');}finally{if(current===epoch.current)setBusy(false);}
+ }
+ if(desktopView&&embedded){
+  const verified=displayKey===viewKey&&!readSuspended;
+  const customer=verified&&thread?{name:thread.conversation.counterpartyId,initials:thread.conversation.counterpartyId.slice(0,1).toUpperCase(),channel:'instagram' as const,assignee:thread.conversation.assignedTo?{name:thread.conversation.assignedTo,initials:thread.conversation.assignedTo.slice(0,1)}:undefined}:undefined;
+  return <InboxDesktop locale={locale} view={{...desktopView,customer,
+   notice:error?notice(error):loading?(ar?'جارٍ التحميل…':'Loading…'):undefined,
+   messages:verified&&thread?[...thread.messages].sort((a,b)=>BigInt(a.arrivalSequence)<BigInt(b.arrivalSequence)?-1:1).map(m=>({id:m.id,direction:m.direction==='inbound'?'incoming':'outgoing',text:m.content.kind==='text'?m.content.text:(ar?'رسالة غير نصية':'Non-text message'),time:new Date(m.receivedAt).toLocaleTimeString(ar?'ar-OM':'en-GB',{hour:'2-digit',minute:'2-digit'}),senderLabel:m.direction==='outbound'?(ar?'رد صادر · الهوية غير متاحة':'Outbound reply · identity unavailable'):undefined})):[],
+   onTranscriptMount:node=>{if(node)restoreTranscriptPosition(node,scrollPositions.current[draftKey]);},onTranscriptScroll:event=>{scrollPositions.current[draftKey]=captureTranscriptPosition(event.currentTarget);},
+   headerActions:[...(desktopView.headerActions??[]),...(canAssign&&thread?[{id:'assign',label:ar?'إسناد إليّ':'Assign to me',icon:'user' as const,disabled:busy||loading||readSuspended||connectionPaused,onClick:()=>void assign(thread.actorId)}]:[])],
+   customerExtra:thread&&<><dl><dt>{ar?'حساب النشاط':'Business account ID'}</dt><dd>{thread.conversation.accountId}</dd><dt>{ar?'آخر رسالة واردة':'Latest inbound message'}</dt><dd>{thread.conversation.lastReceivedAt?new Date(thread.conversation.lastReceivedAt).toLocaleString(ar?'ar-OM':'en-GB'):'—'}</dd></dl>{canAssign&&thread.conversation.assignedTo&&<button type="button" className="vdi-small-button" disabled={busy||loading||readSuspended||connectionPaused} onClick={()=>void assign(null)}>{ar?'إزالة الإسناد':'Remove assignment'}</button>}{owner&&<a href="/app/instagram">{ar?'حالة ربط إنستجرام':'Instagram connection status'}</a>}</>,
+   connection:{channel:'instagram',label:'Instagram',receiveReady:null,sendReady:readinessVerified?blockers.length===0:null},
+   loadEarlier:thread?.hasMore?{id:'older',label:ar?'رسائل أقدم':'Older messages',icon:'clock',disabled:busy||loading,onClick:()=>void more('thread')}:undefined,
+   messageExtras:<>{blockers.length>0&&<Notice>{blockers.map(b=><p key={b}>{notice(b)}</p>)}</Notice>}{reviewMode&&companyId&&owner&&<ChannelReviewStatus companyId={companyId} channel="instagram"/>}</>,
+   composer:{mode:composerMode,enabledModes:['message',...(!reviewMode?['ai' as const]:[])],onModeChange:setComposerMode,value:text,onChange:setText,onSubmit:()=>void save(),canSend:!busy&&!loading&&!readSuspended&&!connectionPaused,
+    modePanels:{ai:!reviewMode&&thread&&<ChannelAIDraft key={`${companyId}:${conversationId}:${thread.messages[0]?.id}:${thread.messages.at(-1)?.id}:${thread.conversation.revision}`} companyId={companyId!} channel="instagram" conversationId={thread.conversationId} ar={ar} disabled={connectionPaused||busy||loading||!!saved||reserved} onUse={value=>{setText(value);setComposerMode('message');}}/>,
+     message:<div className="vdi-compose-body"><textarea aria-label={ar?'نص الرد':'Reply text'} placeholder={ar?'اكتب رسالتك هنا...':'Write a message...'} value={text} readOnly={!!saved||reserved} disabled={busy||loading||readSuspended||connectionPaused} onChange={e=>setText(e.target.value)}/><div className="vdi-compose-tools">{!saved?<button type="button" className="vdi-send" onClick={()=>void save()} disabled={busy||loading||readSuspended||connectionPaused||!text||blockers.includes('REPLY_PERMISSION_REQUIRED')}>{ar?'حفظ الرد':'Save reply'}</button>:<><p role="status">{saved.state==='accepted'?(ar?'قبِل إنستغرام الرسالة؛ لم يتأكد التسليم.':'Instagram accepted the message; delivery is unconfirmed.'):saved.state==='unknown'||saved.state==='claimed'?notice('RECONCILIATION_REQUIRED'):(ar?'الرد محفوظ.':'Reply saved.')}</p><button type="button" className="vdi-send" onClick={()=>void send()} disabled={busy||loading||readSuspended||connectionPaused||!readinessVerified||saved.state!=='ready'||blockers.length>0}>{ar?'إرسال الرد المحفوظ':'Send saved reply'}</button><button type="button" className="vdi-small-button" onClick={()=>{delete localIntents.current[draftKey];setText('');select(conversationId!);}} disabled={busy||saved.state==='unknown'||saved.state==='claimed'}>{ar?'رد جديد':'New reply'}</button></>}</div></div>}},
+  }}/>;
  }
  return <WorkspaceShell embedded={embedded} title={ar?'محادثات إنستغرام':'Instagram conversations'}>
   {reviewMode&&<Notice>{ar?'مساحة مراجعة ميتا · اختبار بحساب المراجعة':'Meta review workspace · test account'}</Notice>}
@@ -136,21 +158,28 @@ export function InstagramInbox({companyId,owner=false,companyInSetup=false,revie
    {!loading&&!error&&inbox&&inbox.conversations.length===0&&<p>{ar?'لا توجد محادثات إنستغرام بعد.':'No Instagram conversations yet.'}</p>}
    <nav data-inbox-list="true" hidden={embedded} aria-label={ar?'محادثات إنستغرام':'Instagram threads'}>{inbox?.conversations.map(c=><button key={c.id} type="button" onClick={()=>select(c.id)} aria-current={conversationId===c.id?'page':undefined}>{c.counterpartyId} · {c.unreadCount}</button>)}</nav>
    {!embedded&&inbox?.hasMore&&<Button onClick={()=>void more('inbox')} disabled={busy||loading}>{ar?'محادثات إضافية':'More conversations'}</Button>}
-   {thread&&<div className="ig-conversation-layout"><section data-channel-inbox="instagram" aria-label={ar?'المحادثة':'Conversation'}>
+   {thread&&<div className="ig-conversation-layout"><section inert={detailsOpen} data-channel-inbox="instagram" aria-label={ar?'المحادثة':'Conversation'}>
     <header className="ig-thread-header"><div><h2 dir="auto">{thread.conversation.counterpartyId}</h2><ChannelBadge channel="instagram" ar={ar}/></div><p>{ar?'الإسناد: ':'Assigned: '}{thread.conversation.assignedTo?(ar?'موظف':'Staff'):(ar?'غير مسندة':'Unassigned')}</p><Button variant="ghost" data-details-toggle="true" aria-expanded={detailsOpen} aria-controls="instagram-details" onClick={()=>setDetailsOpen(true)}>{ar?'التفاصيل':'Details'}</Button></header>
     {canAssign&&<div className="flex flex-wrap gap-2 px-4 py-2"><Button variant="secondary" disabled={busy||loading} onClick={()=>void assign(thread.actorId)}>{ar?'إسناد إليّ':'Assign to me'}</Button>{thread.conversation.assignedTo&&<Button variant="ghost" disabled={busy||loading} onClick={()=>void assign(null)}>{ar?'إزالة الإسناد':'Remove assignment'}</Button>}</div>}
     <ol data-transcript="true" ref={node=>{if(node)restoreTranscriptPosition(node,scrollPositions.current[draftKey]);}} onScroll={event=>{scrollPositions.current[draftKey]=captureTranscriptPosition(event.currentTarget);}}>{[...thread.messages].sort((a,b)=>BigInt(a.arrivalSequence)<BigInt(b.arrivalSequence)?-1:1).map(m=><li key={m.id} data-message-id={m.id} data-direction={m.direction}><span className="ig-message-source">{m.direction==='inbound'?(ar?'العميل':'Customer'):(ar?'رد صادر · الهوية غير متاحة':'Outbound reply · identity unavailable')}</span><p dir="auto">{m.content.kind==='text'?m.content.text:(ar?'رسالة غير نصية':'Non-text message')}</p><time dateTime={m.receivedAt}>{new Date(m.receivedAt).toLocaleTimeString(ar?'ar-OM':'en-GB',{hour:'2-digit',minute:'2-digit'})}</time></li>)}</ol>
     {thread.hasMore&&<Button onClick={()=>void more('thread')} disabled={busy||loading}>{ar?'رسائل أقدم':'Older messages'}</Button>}
     {blockers.length>0&&<Notice>{blockers.map(b=><p key={b}>{notice(b)}</p>)}</Notice>}
-    {!reviewMode&&<ChannelAIDraft key={`${companyId}:${conversationId}:${thread.messages[0]?.id}:${thread.messages.at(-1)?.id}:${thread.conversation.revision}`} companyId={companyId} channel="instagram" conversationId={thread.conversationId} ar={ar} disabled={busy||loading||!!saved||reserved} onUse={setText}/>}
-    <ChannelBadge channel="instagram" ar={ar}/><label>{ar?'نص الرد':'Reply text'}<textarea value={text} readOnly={!!saved||reserved} disabled={busy||loading} onChange={e=>setText(e.target.value)}/></label>
+    <div className="conversation-composer">
+    <ComposerTabs id="instagram-composer" ar={ar} mode={composerMode} onChange={setComposerMode} notes={false} ai={!reviewMode}/>
+    <div role="tabpanel" id="instagram-composer-panel-ai" aria-labelledby="instagram-composer-tab-ai" hidden={composerMode!=='ai'}>
+    {!reviewMode&&<ChannelAIDraft key={`${companyId}:${conversationId}:${thread.messages[0]?.id}:${thread.messages.at(-1)?.id}:${thread.conversation.revision}`} companyId={companyId} channel="instagram" conversationId={thread.conversationId} ar={ar} disabled={connectionPaused||busy||loading||!!saved||reserved} onUse={value=>{setText(value);setComposerMode('message');}}/>}
+    </div><div role="tabpanel" id="instagram-composer-panel-message" aria-labelledby="instagram-composer-tab-message" hidden={composerMode!=='message'}>
+    <label>{ar?'نص الرد':'Reply text'}<textarea value={text} readOnly={!!saved||reserved} disabled={busy||loading} onChange={e=>setText(e.target.value)}/></label>
     {!saved?<Button onClick={()=>void save()} disabled={busy||loading||!text||blockers.includes('REPLY_PERMISSION_REQUIRED')}>{ar?'حفظ الرد':'Save reply'}</Button>:<>
      <p role="status">{saved.state==='accepted'?(ar?'قبِل إنستغرام الرسالة؛ لم يتأكد التسليم.':'Instagram accepted the message; delivery is unconfirmed.'):saved.state==='unknown'||saved.state==='claimed'?notice('RECONCILIATION_REQUIRED'):(ar?'الرد محفوظ.':'Reply saved.')}</p>
      <Button onClick={()=>void send()} disabled={busy||loading||!readinessVerified||saved.state!=='ready'||blockers.length>0}>{ar?'إرسال الرد المحفوظ':'Send saved reply'}</Button>
      <Button onClick={()=>{delete localIntents.current[draftKey];setText('');select(conversationId!);}} disabled={busy||saved.state==='unknown'||saved.state==='claimed'}>{ar?'رد جديد':'New reply'}</Button>
     </>}
-   </section><ConversationDetailsPanel id="instagram-details" title={ar?'تفاصيل المحادثة':'Conversation details'} closeLabel={ar?'إغلاق':'Close'} open={detailsOpen} onClose={()=>setDetailsOpen(false)}>
-    <ChannelBadge channel="instagram" ar={ar}/><dl><dt>{ar?'معرّف الطرف':'Participant ID'}</dt><dd dir="ltr">{thread.conversation.counterpartyId}</dd><dt>{ar?'حساب النشاط':'Business account ID'}</dt><dd dir="ltr">{thread.conversation.accountId}</dd><dt>{ar?'الإسناد':'Assignment'}</dt><dd dir="auto">{thread.conversation.assignedTo??(ar?'غير مسندة':'Unassigned')}</dd><dt>{ar?'آخر رسالة واردة':'Latest inbound message'}</dt><dd>{thread.conversation.lastReceivedAt?new Date(thread.conversation.lastReceivedAt).toLocaleString(ar?'ar-OM':'en-GB'):'—'}</dd></dl>
+    </div></div>
+   </section><ConversationDetailsPanel id="instagram-details" title={embedded?(ar?'معلومات العميل':'Customer information'):(ar?'تفاصيل المحادثة':'Conversation details')} closeLabel={ar?'إغلاق':'Close'} open={detailsOpen} onClose={()=>setDetailsOpen(false)}>
+    <div className="conversation-customer-summary"><span className="conversation-customer-avatar" aria-hidden="true">{thread.conversation.counterpartyId.slice(0,1).toUpperCase()}</span><h2 dir="auto">{thread.conversation.counterpartyId}</h2><ChannelBadge channel="instagram" ar={ar}/></div>
+    <DetailSection title={ar?'معلومات العميل':'Customer information'}><dl><DetailRow label={ar?'معرّف الطرف':'Participant ID'}>{thread.conversation.counterpartyId}</DetailRow><DetailRow label={ar?'حساب النشاط':'Business account ID'}>{thread.conversation.accountId}</DetailRow></dl></DetailSection>
+    <DetailSection title={ar?'تفاصيل المحادثة':'Conversation details'}><dl><DetailRow label={ar?'الإسناد':'Assignment'}>{thread.conversation.assignedTo??(ar?'غير مسندة':'Unassigned')}</DetailRow><DetailRow label={ar?'آخر رسالة واردة':'Latest inbound message'}>{thread.conversation.lastReceivedAt?new Date(thread.conversation.lastReceivedAt).toLocaleString(ar?'ar-OM':'en-GB'):'—'}</DetailRow></dl></DetailSection>
     {owner&&<a href="/app/instagram">{ar?'حالة ربط إنستجرام':'Instagram connection status'}</a>}
    </ConversationDetailsPanel></div>}
   </>}

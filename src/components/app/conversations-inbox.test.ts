@@ -123,7 +123,8 @@ describe("Inbox renders authoritative data", () => {
     expect(html).toContain("Connection status unavailable");
     expect(html).not.toContain("Synced");
     const takeover = html.match(/<button[^>]*title="Take over from Velora"[^>]*>/)?.[0];
-    expect(takeover).toContain("disabled");
+    // Unauthorized controls are omitted in the approved UI; reply remains locked.
+    expect(takeover).toBeUndefined();
     expect(html.match(/<button[^>]*type="submit"[^>]*>/)?.[0]).toContain("disabled");
     expect(html).toContain("Refreshing thread");
     navigation.selectedId = null;

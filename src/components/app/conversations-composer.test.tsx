@@ -1,0 +1,170 @@
+// @vitest-environment jsdom
+import {afterEach,beforeEach,expect,it,vi} from 'vitest';
+import {act} from 'react';
+import {createRoot,type Root} from 'react-dom/client';
+import {appCopy} from '@/lib/app-copy';
+import {ConversationsPage} from './conversations';
+
+const api=vi.hoisted(()=>({thread:vi.fn(),saveNote:vi.fn(),send:vi.fn()}));
+vi.mock('next/navigation',()=>({useRouter:()=>({refresh:vi.fn(),replace:vi.fn()}),useSearchParams:()=>new URLSearchParams()}));
+vi.mock('next/link',()=>({default:'a'}));
+vi.mock('@/lib/demo-state',()=>({useDemo:()=>({locale:'en'})}));
+vi.mock('./workspace-shell',()=>({WorkspaceShell:({children}:{children:React.ReactNode})=><main>{children}</main>}));
+vi.mock('./channel-ai-draft',()=>({ChannelAIDraft:()=>null}));
+vi.mock('./channel-review',()=>({ChannelReviewStatus:()=>null}));
+vi.mock('@/lib/whatsapp/actions',()=>({controlWhatsappConversation:vi.fn(),replyWhatsappConversation:api.send,upsertConversationLeadState:api.saveNote}));
+vi.mock('@/lib/whatsapp/inbox-actions',()=>({refreshWhatsappInboxInitialPage:vi.fn(),refreshWhatsappInboxPage:vi.fn(),refreshWhatsappThreadPage:api.thread,refreshWhatsappControlAuditPage:vi.fn(async()=>({ok:true,data:{events:[],hasMore:false,nextCursor:null}})),refreshWhatsappConnectionStatus:vi.fn(async()=>({ok:false,code:'UNAVAILABLE'})),markWhatsappThreadSeen:vi.fn()}));
+let host:HTMLDivElement,root:Root;
+const conversation={id:'thread',inboxSequence:'1',unreadCount:0,intervention:{reasons:[]},customer:'Synthetic',phone:'synthetic',topic:'WhatsApp',summary:'',status:'open' as const,owner:'staff',assistantPaused:true,automationAllowed:false,revision:1,messages:[],internalNote:'Saved internal note',leadStage:'new' as const,followUpStatus:'none' as const,followUpAt:null,leadRevision:1};
+const meta={companyId:'company',conversationScope:'all_company' as const,timezone:null,timezoneAnnouncedUtc:true,canReply:true,canAssign:false,canTakeOver:true,canResume:true,canClose:true,assignees:[],counts:{all:1,awaiting_staff:1,follow_up_today:0,overdue:0,trial_or_quote:0}};
+beforeEach(()=>{Object.assign(globalThis,{IS_REACT_ACT_ENVIRONMENT:true});vi.clearAllMocks();host=document.createElement('div');document.body.append(host);root=createRoot(host);api.thread.mockResolvedValue({ok:true,data:{kind:'partial',companyId:'company',conversationId:'thread',conversation,messages:[],displayedInboundMessageId:null,unreadCount:0,nextCursor:null,hasMore:false}});});
+afterEach(()=>{act(()=>root.unmount());host.remove();vi.unstubAllGlobals();});
+it('offers native contact links only for a valid permitted phone without sending or saving anything',async()=>{
+ const contact={...conversation,phone:'+96893180420'};
+ api.thread.mockResolvedValue({ok:true,data:{kind:'partial',companyId:'company',conversationId:'thread',conversation:contact,messages:[],displayedInboundMessageId:null,unreadCount:0,nextCursor:null,hasMore:false}});
+ const page={kind:'partial' as const,companyId:'company',conversationScope:'all_company' as const,ordering:'newest_created' as const,conversations:[contact],hasMore:false,nextCursor:null,total:1,unreadTotal:0,interventionTotal:1,membershipFingerprint:'same'};
+ await act(async()=>root.render(<ConversationsPage embedded selectedConversationId="thread" inbox={[contact]} meta={meta} page={page}/>));
+ expect(host.querySelector('a[href="tel:+96893180420"]')).not.toBeNull();
+ expect(host.querySelector('a[href="https://wa.me/96893180420"]')?.getAttribute('rel')).toBe('noopener noreferrer');
+ expect(api.send).not.toHaveBeenCalled();expect(api.saveNote).not.toHaveBeenCalled();
+ act(()=>root.unmount());root=createRoot(host);
+ await act(async()=>root.render(<ConversationsPage embedded selectedConversationId="thread" inbox={[contact]} meta={{...meta,canReply:false}} page={page}/>));
+ expect(host.querySelector('a[href^="tel:"],a[href^="https://wa.me/"]')).toBeNull();
+});
+it('renders the native saved note through the composer portal, preserves the reply while toggling modes, and never sends a note',async()=>{
+ await act(async()=>{root.render(<ConversationsPage embedded selectedConversationId="thread" inbox={[conversation]} meta={meta} page={{kind:'partial',companyId:'company',conversationScope:'all_company',ordering:'newest_created',conversations:[conversation],hasMore:false,nextCursor:null,total:1,unreadTotal:0,interventionTotal:1,membershipFingerprint:'same'}}/>);});
+ const reply=host.querySelector<HTMLTextAreaElement>(`textarea[aria-label="${appCopy('en').app.reply}"]`)!;
+ expect(reply).not.toBeNull();expect(reply.disabled).toBe(false);
+ const noteTab=host.querySelector<HTMLButtonElement>('#whatsapp-composer-tab-note')!;
+ act(()=>noteTab.click());
+ const note=host.querySelector<HTMLTextAreaElement>('#whatsapp-composer-panel-note textarea')!;
+ expect(note).not.toBeNull();expect(note.value).toBe('Saved internal note');
+ expect(note.closest('[role="tabpanel"]')?.getAttribute('hidden')).toBeNull();
+ act(()=>{Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value')!.set!.call(note,'Unsaved internal update');note.dispatchEvent(new Event('input',{bubbles:true}));});
+ act(()=>host.querySelector<HTMLButtonElement>('#whatsapp-composer-tab-message')!.click());
+ expect(host.querySelector('textarea[aria-label="'+appCopy('en').app.reply+'"]')).toBe(reply);
+ expect(host.querySelector('#whatsapp-composer-panel-note textarea')).toBe(note);
+ expect(api.send).not.toHaveBeenCalled();expect(api.saveNote).not.toHaveBeenCalled();
+ act(()=>noteTab.click());expect(note.value).toBe('Unsaved internal update');
+ api.saveNote.mockResolvedValue({ok:false,code:'UNAVAILABLE'});
+ await act(async()=>host.querySelector<HTMLButtonElement>('#whatsapp-composer-panel-note button')!.click());
+ expect(api.saveNote).toHaveBeenCalledWith(expect.objectContaining({conversationId:'thread',internalNote:'Unsaved internal update',expectedLeadRevision:1}));
+ expect(api.send).not.toHaveBeenCalled();
+});
+
+it('reports clipboard rejection accurately and confirms copying only after the browser succeeds',async()=>{
+ const writeText=vi.fn().mockRejectedValueOnce(new Error('Denied')).mockResolvedValueOnce(undefined);
+ vi.stubGlobal('navigator',{clipboard:{writeText}});
+ await act(async()=>{root.render(<ConversationsPage embedded selectedConversationId="thread" inbox={[conversation]} meta={meta} page={{kind:'partial',companyId:'company',conversationScope:'all_company',ordering:'newest_created',conversations:[conversation],hasMore:false,nextCursor:null,total:1,unreadTotal:0,interventionTotal:1,membershipFingerprint:'same'}}/>);});
+ const copyPhone=host.querySelector<HTMLButtonElement>('[aria-label="Copy phone"]')!;
+ await act(async()=>copyPhone.click());expect(host.textContent).toContain('Copy failed. Select and copy the phone number below.');expect(copyPhone.textContent).not.toContain('Copied');
+ await act(async()=>copyPhone.click());expect(copyPhone.textContent).toContain('Copied');expect(host.textContent).not.toContain('Copy failed.');
+ expect(writeText).toHaveBeenLastCalledWith(conversation.phone);expect(api.send).not.toHaveBeenCalled();expect(api.saveNote).not.toHaveBeenCalled();
+});
+import {InboxDesktop,type InboxDesktopView} from './inbox-desktop';
+const desktopView:InboxDesktopView={state:'ready',scopeKey:'company:actor',messages:[],query:'',onQueryChange:()=>{},tabs:[],activeTab:'all',onTabChange:()=>{},conversations:[],onSelect:()=>{}};
+it('ports the real WhatsApp pane and keeps native notes mounted across profile and composer tabs',async()=>{
+ await act(async()=>root.render(<ConversationsPage desktopView={desktopView} embedded selectedConversationId="thread" inbox={[conversation]} meta={meta} page={{kind:'partial',companyId:'company',conversationScope:'all_company',ordering:'newest_created',conversations:[conversation],hasMore:false,nextCursor:null,total:1,unreadTotal:0,interventionTotal:1,membershipFingerprint:'same'}}/>));
+ expect(host.querySelector('.vdi-grid')).not.toBeNull();expect(host.querySelector('[data-conversation-redesign]')).toBeNull();
+ const tabs=Array.from(host.querySelectorAll<HTMLButtonElement>('.vdi-compose-tabs button'));
+ act(()=>tabs.find(button=>button.textContent==='Internal note')!.click());
+ const note=host.querySelector<HTMLTextAreaElement>('.vdi-composer .conversation-note-editor textarea')!;
+ expect(note?.value).toBe('Saved internal note');
+ act(()=>host.querySelector<HTMLButtonElement>('[data-profile-tab="followup"]')!.click());
+ act(()=>host.querySelector<HTMLButtonElement>('[data-profile-tab="details"]')!.click());
+ act(()=>tabs.find(button=>button.textContent==='Message')!.click());
+ act(()=>tabs.find(button=>button.textContent==='Internal note')!.click());
+ expect(host.querySelector('.vdi-composer .conversation-note-editor textarea')).toBe(note);
+ api.saveNote.mockResolvedValue({ok:false,code:'UNAVAILABLE'});
+ await act(async()=>host.querySelector<HTMLButtonElement>('.vdi-composer .conversation-note-editor button')!.click());
+ expect(api.saveNote).toHaveBeenCalledWith(expect.objectContaining({conversationId:'thread',internalNote:'Saved internal note',expectedLeadRevision:1}));expect(api.send).not.toHaveBeenCalled();
+});
+it('removes the ported customer, messages, and write controls immediately when the native read is suspended',async()=>{
+ const page={kind:'partial' as const,companyId:'company',conversationScope:'all_company' as const,ordering:'newest_created' as const,conversations:[conversation],hasMore:false,nextCursor:null,total:1,unreadTotal:0,interventionTotal:1,membershipFingerprint:'same'};
+ await act(async()=>root.render(<ConversationsPage desktopView={desktopView} embedded selectedConversationId="thread" inbox={[conversation]} meta={meta} page={page}/>));
+ expect(host.querySelector('.vdi-hero')?.textContent).toContain('Synthetic');
+ await act(async()=>root.render(<ConversationsPage desktopView={desktopView} readSuspended embedded selectedConversationId="thread" inbox={[conversation]} meta={meta} page={page}/>));
+ expect(host.querySelector('.vdi-hero,.vdi-message,textarea')).toBeNull();
+});
+it('the reference renderer discards every retained data field on unknown authority',()=>{
+ act(()=>root.render(<InboxDesktop view={{...desktopView,state:'unavailable',customer:{name:'PRIVATE',initials:'P',channel:'whatsapp'},messages:[{id:'secret',text:'PRIVATE MESSAGE',time:'now',direction:'incoming'}],conversations:[{id:'private',name:'PRIVATE',initials:'P',channel:'whatsapp',time:'',preview:'private',unreadCount:0}],message:'Unavailable'}}/>));
+ expect(host.textContent).not.toContain('PRIVATE');expect(host.querySelector('textarea,.vdi-conversation,.vdi-message')).toBeNull();
+});
+it('shows the complete native composer without granting write access to a read-only actor',async()=>{
+ const page={kind:'partial' as const,companyId:'company',conversationScope:'all_company' as const,ordering:'newest_created' as const,conversations:[conversation],hasMore:false,nextCursor:null,total:1,unreadTotal:0,interventionTotal:1,membershipFingerprint:'same'};
+ await act(async()=>root.render(<ConversationsPage desktopView={desktopView} embedded selectedConversationId="thread" inbox={[conversation]} meta={{...meta,canReply:false}} page={page}/>));
+ const tabs=host.querySelectorAll<HTMLButtonElement>('.vdi-compose-tabs button');
+ expect([...tabs].map(tab=>tab.textContent)).toEqual(['Message','AI assistance','Internal note']);
+ expect(tabs[0].disabled).toBe(false);expect(tabs[1].disabled).toBe(true);expect(tabs[2].disabled).toBe(true);
+ const editor=host.querySelector<HTMLTextAreaElement>('.vdi-compose-body textarea')!;
+ const submit=host.querySelector<HTMLButtonElement>('.vdi-compose-body button[type="submit"]')!;
+ expect(editor).not.toBeNull();expect(editor.disabled).toBe(true);expect(submit.disabled).toBe(true);
+ expect(host.querySelector('.vdi-compose-body')?.textContent).toContain(appCopy('en').app.sendForbidden);
+ act(()=>host.querySelector('form.vdi-compose-body')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
+ act(()=>tabs[1].click());act(()=>tabs[2].click());
+ expect(tabs[0].getAttribute('aria-pressed')).toBe('true');expect(api.send).not.toHaveBeenCalled();expect(api.saveNote).not.toHaveBeenCalled();
+});
+it('uses the reference follow-up form with native lead revision and note bindings',async()=>{
+ const page={kind:'partial' as const,companyId:'company',conversationScope:'all_company' as const,ordering:'newest_created' as const,conversations:[conversation],hasMore:false,nextCursor:null,total:1,unreadTotal:0,interventionTotal:1,membershipFingerprint:'same'};
+ await act(async()=>root.render(<ConversationsPage desktopView={desktopView} embedded selectedConversationId="thread" inbox={[conversation]} meta={meta} page={page}/>));
+ act(()=>host.querySelector<HTMLButtonElement>('[data-profile-tab="followup"]')!.click());
+ const stage=host.querySelector<HTMLSelectElement>('.vdi-followup select[aria-label="Lead stage"]')!;
+ expect(stage.options).toHaveLength(6);
+ act(()=>{stage.value='trial_or_quote_requested';stage.dispatchEvent(new Event('change',{bubbles:true}));});
+ const reason=host.querySelector<HTMLTextAreaElement>('.vdi-followup textarea')!;
+ act(()=>{Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value')!.set!.call(reason,'Customer requested a quote');reason.dispatchEvent(new Event('input',{bubbles:true}));});
+ api.saveNote.mockResolvedValue({ok:false,code:'UNAVAILABLE'});
+ await act(async()=>host.querySelector<HTMLButtonElement>('.vdi-followup button[type="submit"]')!.click());
+ expect(api.saveNote).toHaveBeenCalledWith(expect.objectContaining({conversationId:'thread',expectedLeadRevision:1,leadStage:'trial_or_quote_requested',leadStageReason:'Customer requested a quote',internalNote:'Saved internal note',followUpStatus:'none'}));
+ expect(api.send).not.toHaveBeenCalled();
+});
+it('completes and cancels reference follow-up through the native save path without claiming failed saves succeeded',async()=>{
+ const scheduled={...conversation,followUpStatus:'scheduled' as const,followUpAt:'2026-11-06T10:00:00.000Z'};
+ api.thread.mockResolvedValue({ok:true,data:{kind:'partial',companyId:'company',conversationId:'thread',conversation:scheduled,messages:[],displayedInboundMessageId:null,unreadCount:0,nextCursor:null,hasMore:false}});
+ const page={kind:'partial' as const,companyId:'company',conversationScope:'all_company' as const,ordering:'newest_created' as const,conversations:[scheduled],hasMore:false,nextCursor:null,total:1,unreadTotal:0,interventionTotal:1,membershipFingerprint:'same'};
+ await act(async()=>root.render(<ConversationsPage desktopView={desktopView} embedded selectedConversationId="thread" inbox={[scheduled]} meta={meta} page={page}/>));
+ act(()=>host.querySelector<HTMLButtonElement>('[data-profile-tab="followup"]')!.click());
+ api.saveNote.mockResolvedValue({ok:false,code:'UNAVAILABLE'});
+ const button=(label:string)=>Array.from(host.querySelectorAll<HTMLButtonElement>('.vdi-followup button')).find(node=>node.getAttribute('aria-label')===label)!;
+ await act(async()=>button(appCopy('en').app.leadComplete).click());
+ expect(api.saveNote).toHaveBeenLastCalledWith(expect.objectContaining({conversationId:'thread',expectedLeadRevision:1,followUpStatus:'completed'}));
+ expect(host.querySelector<HTMLSelectElement>('[aria-label="Follow-up status"]')?.value).toBe('scheduled');
+ await act(async()=>button(appCopy('en').app.leadCancel).click());
+ expect(api.saveNote).toHaveBeenLastCalledWith(expect.objectContaining({conversationId:'thread',expectedLeadRevision:1,followUpStatus:'cancelled'}));expect(api.send).not.toHaveBeenCalled();
+});
+
+it('shows reference workflow controls disabled when the actor cannot control the conversation',async()=>{
+ const page={kind:'partial' as const,companyId:'company',conversationScope:'all_company' as const,ordering:'newest_created' as const,conversations:[conversation],hasMore:false,nextCursor:null,total:1,unreadTotal:0,interventionTotal:1,membershipFingerprint:'same'};
+ await act(async()=>root.render(<ConversationsPage desktopView={desktopView} embedded selectedConversationId="thread" inbox={[conversation]} meta={{...meta,canResume:false,canClose:false,canTakeOver:false}} page={page}/>));
+ const controls=host.querySelectorAll<HTMLButtonElement>('.vdi-control-actions button');
+ expect(controls).toHaveLength(2);expect([...controls].every(control=>control.disabled)).toBe(true);
+ expect([...controls].every(control=>Boolean(control.title))).toBe(true);
+});
+it('keeps the native verified transcript mounted on a transport failure while pausing writes and recovers after a verified read',async()=>{
+ const message={id:'message',from:'customer' as const,text:'Previously verified message',at:1,arrivalSequence:'1',direction:'inbound' as const};
+ const existing={...conversation,messages:[message]};
+ const data={kind:'partial' as const,companyId:'company',conversationId:'thread',conversation:existing,messages:[message],displayedInboundMessageId:null,unreadCount:0,nextCursor:null,hasMore:false};
+ api.thread.mockResolvedValue({ok:true,data});
+ const page={kind:'partial' as const,companyId:'company',conversationScope:'all_company' as const,ordering:'newest_created' as const,conversations:[existing],hasMore:false,nextCursor:null,total:1,unreadTotal:0,interventionTotal:1,membershipFingerprint:'same'};
+ const render=(refreshVersion:number,connectionPaused=false)=>root.render(<ConversationsPage desktopView={desktopView} embedded selectedConversationId="thread" inbox={[existing]} meta={meta} page={page} refreshVersion={refreshVersion} connectionPaused={connectionPaused}/>);
+ await act(async()=>render(0));
+ const transcript=host.querySelector('.vdi-messages')!;
+ api.thread.mockResolvedValueOnce({ok:false,code:'UNAVAILABLE',transportUnavailable:true});
+ await act(async()=>render(1));
+ expect(host.querySelector('.vdi-messages')).toBe(transcript);expect(host.textContent).toContain('Previously verified message');
+ expect(host.querySelector<HTMLTextAreaElement>('.vdi-compose-body textarea')?.disabled).toBe(true);
+ expect(host.querySelector<HTMLButtonElement>('.vdi-send[type="submit"]')?.disabled).toBe(true);
+ expect(api.send).not.toHaveBeenCalled();expect(api.saveNote).not.toHaveBeenCalled();
+ await act(async()=>render(2));
+ expect(host.querySelector('.vdi-messages')).toBe(transcript);expect(host.querySelector<HTMLTextAreaElement>('.vdi-compose-body textarea')?.disabled).toBe(false);
+ api.thread.mockResolvedValueOnce({ok:false,code:'FORBIDDEN'});
+ await act(async()=>render(3));expect(host.querySelector('.vdi-message')).toBeNull();expect(host.textContent).not.toContain('Previously verified message');
+});
+it('pauses native composer and follow-up writes while retaining the view on a parent transport interruption',async()=>{
+ const page={kind:'partial' as const,companyId:'company',conversationScope:'all_company' as const,ordering:'newest_created' as const,conversations:[conversation],hasMore:false,nextCursor:null,total:1,unreadTotal:0,interventionTotal:1,membershipFingerprint:'same'};
+ await act(async()=>root.render(<ConversationsPage connectionPaused desktopView={desktopView} embedded selectedConversationId="thread" inbox={[conversation]} meta={meta} page={page}/>));
+ expect(host.querySelector('.vdi-hero')?.textContent).toContain('Synthetic');
+ expect(host.querySelector<HTMLTextAreaElement>('.vdi-compose-body textarea')?.disabled).toBe(true);
+ expect([...host.querySelectorAll<HTMLButtonElement>('.vdi-control-actions button,.vdi-followup button')].every(button=>button.disabled)).toBe(true);
+ expect(api.send).not.toHaveBeenCalled();expect(api.saveNote).not.toHaveBeenCalled();
+});

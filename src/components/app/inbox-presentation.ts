@@ -2,6 +2,13 @@ import type { WhatsappInboxItem } from '@/lib/whatsapp/inbox-contracts';
 import type { InstagramConversation } from '@/lib/instagram/inbox-contracts';
 export type InboxChannel = 'whatsapp' | 'instagram';
 export type InboxRow = { key:string; id:string; channel:InboxChannel; name:string; preview:string; at:number; unread:number; assignedTo:string|null };
+export type InboxAssignmentFilter = 'all' | 'unassigned' | 'mine';
+/** Presentation-only filter over already authorized, loaded rows. */
+export function matchesInboxAssignment(row:Pick<InboxRow,'assignedTo'>,filter:InboxAssignmentFilter,actorId:string|null|undefined):boolean {
+ if(filter==='unassigned')return row.assignedTo===null;
+ if(filter==='mine')return Boolean(actorId)&&row.assignedTo===actorId;
+ return true;
+}
 /** Channel is part of identity. Names and provider IDs never merge people. */
 export function inboxRows(wa:readonly WhatsappInboxItem[],ig:readonly InstagramConversation[],ar:boolean):InboxRow[] {
  const rows:InboxRow[]=[...wa.map(c=>({key:`whatsapp:${c.id}`,id:c.id,channel:'whatsapp' as const,name:c.customer||c.phone,

@@ -50,7 +50,7 @@ describe.each(["en", "ar"])("inbox failure presentation in %s", locale => {
   it(`${name} keeps unavailable distinct from denial and empty success`, async () => {
    state.locale=locale;state.load.mockResolvedValue({ok:false,code:"UNAVAILABLE"});
    const html=renderToStaticMarkup((await resolveRouteTree(await route())) as React.ReactElement);
-   expect(html).toContain(name === "conversations" ? (locale === "ar" ? "فشل قراءة صندوق" : "The server inbox read failed") : (locale === "ar" ? "تعذّر تحميل بيانات المحادثات" : "Conversation data could not be loaded"));
+   expect(html).toContain(name === "conversations" ? (locale === "ar" ? "تعذّر تحديث الاتصال" : "Connection cannot be refreshed") : (locale === "ar" ? "تعذّر تحميل بيانات المحادثات" : "Conversation data could not be loaded"));
    expect(html).not.toContain(appCopy(locale as "ar"|"en").app.inboxAccessDeniedTitle);
   });
  }
@@ -122,7 +122,9 @@ describe.each(["en", "ar"])("UnifiedInbox failure presentation in %s", locale =>
  it("separates channel failure from empty state and includes retry for temporary error", () => {
   state.locale = locale;
   const html = renderToStaticMarkup(React.createElement(UnifiedInbox, { initial: baseInitial }));
-  expect(html).toContain(appCopy(locale as "ar"|"en").app.inboxLoadFailedBody);
+  expect(html).toContain('data-inbox-offline="true"');
+  expect(html).not.toContain(appCopy(locale as "ar"|"en").app.inboxLoadFailedBody);
+  expect(html).not.toContain(locale === "ar" ? "لا توجد محادثات مطابقة." : "No matching conversations.");
   expect(html).not.toContain("data-pane");
   // Must NOT display "No conversations yet" when the channel failed
   expect(html).not.toContain(locale === "ar" ? "لا توجد محادثات بعد" : "No conversations yet");

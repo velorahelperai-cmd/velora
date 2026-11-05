@@ -1,6 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import {InboxDesktop,FollowUpPanel,type InboxDesktopView} from "./inbox-desktop";
+import {desktopWhatsappMessages} from "./inbox-desktop-adapter";
+import {createPortal} from 'react-dom';
+import {ComposerTabs,DetailSection,DetailRow,type ComposerMode} from './conversation-presentation';
+import {InboxDetailsTabs,type InboxDetailsTab} from './inbox-details-tabs';
+import './conversation-workspace.css';
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   useCallback,
@@ -37,6 +43,7 @@ import {
   countLeadWorklist,
   MANUAL_LEAD_STAGES,
   matchesLeadWorklist,
+  resolveCompanyTimezone,
   type LeadWorklist,
 } from "@/lib/whatsapp/leads";
 import {
@@ -195,6 +202,9 @@ function DeliveryStateTick({ state, locale }: { state?: Message["deliveryState"]
 }
 
 function LeadFollowUpPanel({
+  notesHost,
+  reference=false,
+  timezone,
   conversation,
   copy,
   locale,
@@ -217,6 +227,9 @@ function LeadFollowUpPanel({
   getEpochStore,
   getControlBusyId,
 }: {
+  reference?:boolean;
+  timezone?:string|null;
+  notesHost?: HTMLElement | null;
   conversation: Conversation;
   copy: LeadPanelCopy;
   locale: string;
@@ -374,12 +387,66 @@ function LeadFollowUpPanel({
     leadStageDraft === "trial_or_quote_requested" || leadStageDraft === "closed_no_subscribe";
   const disabled = !live || leadBusy || pending || selectedUnresolved || !canReply;
 
+  const notesEditor=(notesHost ? createPortal(<div className="conversation-note-editor">
+        <label className="grid gap-1"><span>{copy.leadNoteLabel}</span><textarea rows={3} value={leadNoteDraft} disabled={disabled} onChange={e=>setLeadNoteDraft(e.target.value)} aria-label={copy.leadNoteLabel}/></label>
+        <div className="conversation-note-actions"><p>{locale==='ar'?'داخلية للفريق فقط · لا تُرسل للعميل':'For your team only · never sent to the customer'}</p><Button type="button" variant="secondary" busy={leadBusy} disabled={disabled} onClick={()=>void saveLead()}>{copy.leadSave}</Button></div>
+      </div>,notesHost) : <label className="grid gap-1">
+        <span className="font-medium text-[var(--color-muted-on-dark)]">{copy.leadNoteLabel}</span>
+        <textarea
+          rows={2}
+          value={leadNoteDraft}
+          disabled={disabled}
+          onChange={(e) => setLeadNoteDraft(e.target.value)}
+          placeholder={locale === "ar" ? "ملاحظات داخلية لفريق العمل..." : "Internal team notes..."}
+          className="rounded-xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel-deep)] p-2.5 text-xs text-[var(--color-on-dark)] focus:ring-2 focus:ring-[var(--service-accent)] outline-none disabled:opacity-60 resize-none"
+        />
+      </label>);
+  const assignmentEditor=(canAssign && assignees.length ? (
+        <div className="mt-3 pt-3 border-t border-[color:var(--color-border-soft)]">
+          <label className="grid gap-1">
+            <span className="font-medium text-[var(--color-muted-on-dark)]">{copy.leadAssigneeLabel}</span>
+            <div className="flex gap-1.5">
+              <select
+                value={assignDraft}
+                disabled={!live || busyControl || pending || selectedUnresolved}
+                onChange={(e) => setAssignDraft(e.target.value)}
+                className="min-h-9 flex-1 rounded-xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel-deep)] px-2 text-xs text-[var(--color-on-dark)] focus:ring-2 focus:ring-[var(--service-accent)] outline-none disabled:opacity-60"
+              >
+                <option value="">{locale === "ar" ? "غير معيّن (الجميع)" : "Unassigned"}</option>
+                {assignees.map((a) => (
+                  <option key={a.userId} value={a.userId}>
+                    {a.name}
+                  </option>
+                ))}
+              </select>
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={!live || busyControl || pending || selectedUnresolved || assignDraft === (conversation.assignedTo ?? "")}
+                onClick={() => void saveAssignee()}
+                className="text-xs min-h-9 px-3 shrink-0"
+              >
+                {copy.leadAssignSave}
+              </Button>
+            </div>
+          </label>
+        </div>
+      ) : null);
+  if(reference)return <div>
+    <FollowUpPanel ar={locale==='ar'} model={{values:{stage:leadStageDraft,reason:leadReasonDraft,status:followUpStatusDraft,at:followUpAtDraft},stages:MANUAL_LEAD_STAGES.map(id=>({id,label:copy.leadStages[id]})),timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,disabled,pending:leadBusy,
+      onChange:patch=>{if(patch.stage!==undefined)setLeadStageDraft(patch.stage as LeadStage);if(patch.reason!==undefined)setLeadReasonDraft(patch.reason);if(patch.status!==undefined)setFollowUpStatusDraft(patch.status as FollowUpStatus);if(patch.at!==undefined)setFollowUpAtDraft(patch.at);},onSave:()=>void saveLead(),
+      complete:followUpStatusDraft==='scheduled'?{id:'complete',label:copy.leadComplete,icon:'check',onClick:()=>void saveLead('completed')}:undefined,
+      cancel:followUpStatusDraft==='scheduled'?{id:'cancel',label:copy.leadCancel,icon:'close',onClick:()=>void saveLead('cancelled')}:undefined,
+    }}/>
+    {timezone&&resolveCompanyTimezone(timezone).zone!==Intl.DateTimeFormat().resolvedOptions().timeZone&&<p className="vdi-muted">{locale==='ar'?'توقيت النشاط: ':'Business timezone: '}{resolveCompanyTimezone(timezone).zone}</p>}
+    {timezoneAnnouncedUtc&&<p className="vdi-muted">{copy.timezoneUtcNotice}</p>}
+    {notesEditor}{assignmentEditor}
+  </div>;
   return (
     <div className="space-y-4 text-xs font-[family-name:Tajawal,var(--font-ar),sans-serif]">
 
       <div className="flex items-center justify-between border-b border-[color:var(--color-border-soft)] pb-2">
         <h4 className="font-bold text-sm text-[var(--color-on-dark)] flex items-center gap-1.5">
-          <span>📋</span>
           {copy.leadPanelTitle}
         </h4>
         <span className="text-[11px] text-[var(--color-muted-soft)]">
@@ -418,17 +485,7 @@ function LeadFollowUpPanel({
         </label>
       ) : null}
 
-      <label className="grid gap-1">
-        <span className="font-medium text-[var(--color-muted-on-dark)]">{copy.leadNoteLabel}</span>
-        <textarea
-          rows={2}
-          value={leadNoteDraft}
-          disabled={disabled}
-          onChange={(e) => setLeadNoteDraft(e.target.value)}
-          placeholder={locale === "ar" ? "ملاحظات داخلية لفريق العمل..." : "Internal team notes..."}
-          className="rounded-xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel-deep)] p-2.5 text-xs text-[var(--color-on-dark)] focus:ring-2 focus:ring-[var(--service-accent)] outline-none disabled:opacity-60 resize-none"
-        />
-      </label>
+      {notesEditor}
 
       <div className="grid gap-2 rounded-xl border border-[color:var(--color-border-soft)] bg-[var(--color-hover-wash)] p-3">
         <div className="flex items-center justify-between">
@@ -464,7 +521,7 @@ function LeadFollowUpPanel({
               }}
               className="inline-flex min-h-7 items-center rounded-lg border border-[var(--service-accent)]/40 bg-[var(--service-accent)]/15 px-2.5 text-[11px] font-medium text-[#9af0c3] hover:bg-[var(--service-accent)]/25 disabled:opacity-50"
             >
-              📅 {copy.leadSchedule}
+              {copy.leadSchedule}
             </button>
           ) : (
             <>
@@ -508,37 +565,7 @@ function LeadFollowUpPanel({
         </Button>
       </div>
 
-      {canAssign && assignees.length ? (
-        <div className="mt-3 pt-3 border-t border-[color:var(--color-border-soft)]">
-          <label className="grid gap-1">
-            <span className="font-medium text-[var(--color-muted-on-dark)]">{copy.leadAssigneeLabel}</span>
-            <div className="flex gap-1.5">
-              <select
-                value={assignDraft}
-                disabled={!live || busyControl || pending || selectedUnresolved}
-                onChange={(e) => setAssignDraft(e.target.value)}
-                className="min-h-9 flex-1 rounded-xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel-deep)] px-2 text-xs text-[var(--color-on-dark)] focus:ring-2 focus:ring-[var(--service-accent)] outline-none disabled:opacity-60"
-              >
-                <option value="">{locale === "ar" ? "غير معيّن (الجميع)" : "Unassigned"}</option>
-                {assignees.map((a) => (
-                  <option key={a.userId} value={a.userId}>
-                    {a.name}
-                  </option>
-                ))}
-              </select>
-              <Button
-                type="button"
-                variant="ghost"
-                disabled={!live || busyControl || pending || selectedUnresolved || assignDraft === (conversation.assignedTo ?? "")}
-                onClick={() => void saveAssignee()}
-                className="text-xs min-h-9 px-3 shrink-0"
-              >
-                {copy.leadAssignSave}
-              </Button>
-            </div>
-          </label>
-        </div>
-      ) : null}
+      {assignmentEditor}
     </div>
   );
 }
@@ -555,7 +582,10 @@ export function ConversationsPage({
   onSelectConversation,
   refreshVersion = 0,
   readSuspended = false,
+  connectionPaused=false,
+  onConnectionUnavailable,
   threadReader = refreshWhatsappThreadPage,
+  desktopView,
 }: {
   inbox: Conversation[];
   forbidden?: boolean;
@@ -569,14 +599,21 @@ export function ConversationsPage({
   onSelectConversation?: (id:string|null)=>void;
   refreshVersion?:number;
   readSuspended?:boolean;
+  connectionPaused?:boolean;
+  onConnectionUnavailable?:()=>void;
   threadReader?:typeof refreshWhatsappThreadPage;
+  desktopView?:InboxDesktopView;
 }) {
-  const suspendedRef=useRef(readSuspended);suspendedRef.current=readSuspended;
+  const [threadTransportPaused,setThreadTransportPaused]=useState(false);
+  const writesPaused=connectionPaused||threadTransportPaused;
+  const suspendedRef=useRef(readSuspended||writesPaused);suspendedRef.current=readSuspended||writesPaused;
   const copy = useAppCopy();
   const { locale } = useDemo();
   const router = useRouter();
   const searchParams = useSearchParams();
   const selectedParam = embedded ? selectedConversationId ?? null : searchParams.get("c");
+  const [detailsTab,setDetailsTab]=useState<InboxDetailsTab>('details');
+  const [connectionDetailsOpen,setConnectionDetailsOpen]=useState(false);
 
   const [serverInbox, setServerInbox] = useState<WhatsappInboxItem[]>(page?.conversations ?? []);
   const [localInbox, setLocalInbox] = useState<Record<string, WhatsappInboxItem>>({});
@@ -659,11 +696,17 @@ export function ConversationsPage({
       if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}
       else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}
     };
-    const resize=()=>{if(window.innerWidth >= (embedded ? 1440 : 1280))setMobileDetailsOpen(false);};
+    const resize=()=>{if(window.innerWidth >= 1280)setMobileDetailsOpen(false);};
     document.addEventListener('keydown',key);window.addEventListener('resize',resize);
     return()=>{document.body.style.overflow=oldOverflow;document.removeEventListener('keydown',key);window.removeEventListener('resize',resize);previous?.focus();};
   },[mobileDetailsOpen,embedded]);
-  const [phoneCopied, setPhoneCopied] = useState(false);
+  const [phoneCopyResult,setPhoneCopyResult]=useState<{key:string;copied:boolean}|null>(null);
+  const phoneCopied=phoneCopyResult?.key===draftKey&&phoneCopyResult.copied;
+  const phoneCopyFailed=phoneCopyResult?.key===draftKey&&!phoneCopyResult.copied;
+  const [composerModes,setComposerModes]=useState<Record<string,ComposerMode>>({});
+  const requestedComposerMode=composerModes[draftKey]??'message';
+  const setComposerMode=(mode:ComposerMode)=>setComposerModes(old=>({...old,[draftKey]:mode}));
+  const [notesHost,setNotesHost]=useState<HTMLDivElement|null>(null);
 
   const epochStoreRef = useRef<InboxAsyncEpochStore>({
     current: createInboxAsyncEpoch(meta?.companyId ? inboxScopeKey(meta.companyId, meta.conversationScope) : null),
@@ -684,7 +727,7 @@ export function ConversationsPage({
   const sendOpByConversation = useRef<Record<string, { clientOpId: string; body: string }>>({});
   const inboxRefreshGen = useRef(0);
 
-  const canReply = !readSuspended && inboxMeta?.canReply === true;
+  const canReply = !readSuspended && !writesPaused && inboxMeta?.canReply === true;
   const testReview=!!reviewCompanyId&&inboxMeta?.companyId===reviewCompanyId;
   const canAssign = inboxMeta?.canAssign === true;
   const assignees = inboxMeta?.assignees ?? [];
@@ -873,6 +916,8 @@ export function ConversationsPage({
   const selectedRow = conversations.find((c) => c.id === selectedId) ?? null;
   const selectedThread = selectedId ? threads[selectedId] : undefined;
   const selected = selectedRow ? { ...selectedRow, messages: selectedThread?.messages ?? [] } : null;
+  const contactPhone=selected?.phone.replace(/[ ()-]/g,'')??'';
+  const hasContactPhone=/^\+?[1-9]\d{6,14}$/.test(contactPhone);
   const selectedReady = Boolean(selectedThread && readyThreadId === selectedId && selectedId && !threadErrors[selectedId]);
 
   const select = (id: string | null) =>
@@ -1008,6 +1053,7 @@ export function ConversationsPage({
     try {
       const result = await threadReader({ companyId, conversationId, before });
       if (!stillCurrent()) return false;
+      if(!result.ok&&'transportUnavailable' in result&&result.transportUnavailable===true){setThreadTransportPaused(true);onConnectionUnavailable?.();return false;}
       if (!result.ok) {
         if (selectedIdRef.current === conversationId) setReadyThreadId(null);
         if (result.code === "NOT_FOUND" || result.code === "FORBIDDEN" || result.code === "SCOPE_CHANGED") removeInaccessibleThread(conversationId);
@@ -1016,6 +1062,7 @@ export function ConversationsPage({
       }
       const view = mergeThreadPage(threadsRef.current[conversationId], result.data, before);
       threadsRef.current = { ...threadsRef.current, [conversationId]: view };
+      setThreadTransportPaused(false);
       setThreads(threadsRef.current);
       if (selectedIdRef.current === conversationId) setReadyThreadId(conversationId);
       if (!before) {
@@ -1106,7 +1153,7 @@ export function ConversationsPage({
 
   useEffect(() => {
     const boundary = threadReadBoundary(selectedThread, selectedId, visible);
-    if (readSuspended || !boundary || !selectedThread || !selectedReady) return;
+    if (readSuspended || writesPaused || !boundary || !selectedThread || !selectedReady) return;
     const request = captureInboxEpoch(epochStoreRef.current);
     const generation = readGenById.current[selectedThread.conversationId];
     const acknowledgementKey = `${request.opGen}:${selectedThread.conversationId}:${boundary}`;
@@ -1141,7 +1188,7 @@ export function ConversationsPage({
     return () => { window.cancelAnimationFrame(firstFrame); window.cancelAnimationFrame(secondFrame); };
     // A new latest page owns a new acknowledgement; loading history never creates one.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId, selectedThread?.readVersion, selectedReady, visible, inboxScope, readSuspended]);
+  }, [selectedId, selectedThread?.readVersion, selectedReady, visible, inboxScope, readSuspended, writesPaused]);
 
   function send(c: Conversation) {
     if(suspendedRef.current)return;
@@ -1369,7 +1416,8 @@ export function ConversationsPage({
 
   const selectedUnresolved = Boolean(selected && unresolvedOutcomes[selected.id]);
   const selectedSendLocked = selected ? inboxSendLocked(selected, Boolean(unresolvedSends[selected.id])) : false;
-  const controlDisabled = (action: ControlAction) => !selectedReady || !canUseInboxControl(inboxMeta, action) || controlBusy || pending || selectedUnresolved;
+  const composerMode:ComposerMode=!canReply||(requestedComposerMode==='ai'&&(testReview||!inboxMeta?.companyId||!selected||!liveIds.has(selected.id)))?'message':requestedComposerMode;
+  const controlDisabled = (action: ControlAction) => writesPaused || !selectedReady || !canUseInboxControl(inboxMeta, action) || controlBusy || pending || selectedUnresolved;
   const interventionLabels = locale === "ar" ? {
     human_control: "تحكم بشري", worker_review: "مراجعة الأتمتة", worker_failed: "تعذر عمل الأتمتة",
     send_unknown: "نتيجة إرسال غير معروفة — تحتاج مراجعة", send_rejected: "إرسال مرفوض", delivery_failed: "فشل التسليم",
@@ -1378,13 +1426,13 @@ export function ConversationsPage({
     send_unknown: "Unknown send outcome — review required", send_rejected: "Send rejected", delivery_failed: "Delivery failed",
   };
 
-  const copyCustomerPhone = useCallback((phone: string) => {
-    if (typeof navigator !== "undefined" && navigator.clipboard) {
-      navigator.clipboard.writeText(phone).then(() => {
-        setPhoneCopied(true);
-        setTimeout(() => setPhoneCopied(false), 2000);
-      });
-    }
+  const copyCustomerPhone = useCallback(async(phone:string,key:string) => {
+    setPhoneCopyResult(null);
+    try {
+      if(typeof navigator==='undefined'||!navigator.clipboard)throw new Error('CLIPBOARD_UNAVAILABLE');
+      await navigator.clipboard.writeText(phone);
+      setPhoneCopyResult({key,copied:true});
+    }catch{setPhoneCopyResult({key,copied:false});}
   }, []);
 
   // Empty / Load Failed status checks
@@ -1410,6 +1458,95 @@ export function ConversationsPage({
             : "Conversations appear here when your linked WhatsApp Business number receives customer messages.")
         : undefined;
 
+  const leadPanel=selected?(<LeadFollowUpPanel
+                reference={Boolean(desktopView)}
+                timezone={timezone}
+                notesHost={notesHost}
+                key={selected.id}
+                conversation={selected}
+                copy={copy.app}
+                locale={locale}
+                canReply={canReply}
+                canAssign={canAssign}
+                assignees={assignees}
+                timezoneAnnouncedUtc={inboxMeta?.timezoneAnnouncedUtc}
+                live={!readSuspended && !writesPaused && selectedReady && liveIds.has(selected.id)}
+                busyControl={controlBusy && controlBusyId === selected.id}
+                pending={pending}
+                selectedUnresolved={selectedUnresolved}
+                onPatchLead={(state) => patch(selected.id, (cur) => applyLeadState(cur, state))}
+                onPatchControl={(state) => patch(selected.id, (cur) => applyControlState(cur, state))}
+                onSync={() => syncControlView(selected.id)}
+                onNotice={(message) => {
+                  if (!isSelected(selected.id)) return;
+                  setError(null);
+                  setWarn(null);
+                  setNotice(message);
+                }}
+                onError={(message) => {
+                  if (!isSelected(selected.id)) return;
+                  setNotice(null);
+                  setError(message);
+                }}
+                onWarn={(message) => { if (isSelected(selected.id)) setWarn(message); }}
+                onBusyControl={(busy, busyId) => {
+                  controlBusyIdRef.current = busy ? busyId : null;
+                  setControlBusy(busy);
+                  setControlBusyId(busyId);
+                }}
+                onAfterLeadSaved={() => refreshInboxView()}
+                getEpochStore={() => epochStoreRef.current}
+                getControlBusyId={() => controlBusyIdRef.current}
+              />):null;
+  const activityPanel=selected?(<DetailSection title={locale==='ar'?'النشاط':'Activity'}>
+              {auditError&&<p role="status" className="conversation-intervention">{auditError}</p>}
+              <ol className="conversation-activity">{audits[selected.id]?.events.map(event=><li key={event.id}><span className="conversation-activity-dot" aria-hidden="true"/><div><p>{({worker_escalation:locale==='ar'?'تحويل المحادثة للمتابعة البشرية':'Escalated for human follow-up',take_over:locale==='ar'?'استلام المحادثة':'Conversation taken over',resume:locale==='ar'?'استئناف الأتمتة':'Automation resumed',close:locale==='ar'?'إغلاق المحادثة':'Conversation closed',assign:locale==='ar'?'تحديث التعيين':'Assignment updated'} as Record<string,string>)[event.action]??event.action}</p><p className="conversation-secondary" dir="auto">{event.actorUserId?(assignees.find(person=>person.userId===event.actorUserId)?.name??event.actorUserId):(locale==='ar'?'الفاعل غير متاح':'Actor unavailable')}</p><time dateTime={event.at}>{new Date(event.at).toLocaleString(locale==='ar'?'ar-OM':'en-GB')}</time></div></li>)}</ol>
+              {!auditBusy&&audits[selected.id]?.events.length===0&&<p className="conversation-secondary">{locale==='ar'?'لا توجد أحداث تحكم محفوظة.':'No saved control events.'}</p>}
+              {auditBusy&&<p className="conversation-secondary" role="status">{locale==='ar'?'جارٍ تحميل النشاط…':'Loading activity…'}</p>}
+              {(!audits[selected.id]||auditError)&&<Button variant="ghost" disabled={auditBusy||pending} onClick={()=>runPendingAction(async()=>{await loadAudit(selected.id);})}>{locale==='ar'?'تحديث السجل':'Refresh history'}</Button>}
+              {audits[selected.id]?.hasMore&&<Button variant="ghost" disabled={auditBusy||pending} onClick={()=>runPendingAction(async()=>{await loadAudit(selected.id,audits[selected.id].nextCursor);})}>{locale==='ar'?'أحداث أقدم':'Older events'}</Button>}
+            </DetailSection>):null;
+  const connectionDetails=(!testReview&&connection&&<details className="conversation-connection" open={connectionDetailsOpen} onToggle={event=>setConnectionDetailsOpen(event.currentTarget.open)}><summary>{locale==='ar'?'تفاصيل الربط والتحقق':'Connection & verification details'}</summary><dl>
+                {connection.displayNumber&&<DetailRow label={locale==='ar'?'رقم النشاط':'Business number'}><bdi dir="ltr">{connection.displayNumber}</bdi></DetailRow>}
+                <DetailRow label={locale==='ar'?'الربط':'Connection'}>{connection.status.replaceAll('_',' ')}</DetailRow>
+                <DetailRow label={locale==='ar'?'التفويض':'Authorization'}>{connection.authorizationStatus.replaceAll('_',' ')}</DetailRow>
+                <DetailRow label={locale==='ar'?'جاهزية الاستقبال':'Receive binding'}>{connection.receiveReady?(locale==='ar'?'جاهز':'Ready'):(locale==='ar'?'غير جاهز':'Not ready')}</DetailRow>
+                <DetailRow label={locale==='ar'?'جاهزية الإرسال':'Send binding'}>{connection.sendReady?(locale==='ar'?'جاهز':'Ready'):(locale==='ar'?'غير جاهز':'Not ready')}</DetailRow>
+                <DetailRow label={locale==='ar'?'آخر اختبار استقبال':'Last inbound test'}>{connection.inboundTestedAt?new Date(connection.inboundTestedAt).toLocaleString(locale==='ar'?'ar-OM':'en-GB'):(locale==='ar'?'لم يتم التحقق':'Not verified')}</DetailRow>
+                <DetailRow label={locale==='ar'?'آخر اختبار إرسال':'Last outbound test'}>{connection.outboundTestedAt?new Date(connection.outboundTestedAt).toLocaleString(locale==='ar'?'ar-OM':'en-GB'):(locale==='ar'?'لم يتم التحقق':'Not verified')}</DetailRow>
+              </dl></details>);
+  if(desktopView&&embedded){
+    const ar=locale==='ar';
+    const denied=accessDenied||readSuspended;
+    if(denied)return <InboxDesktop locale={locale} view={{...desktopView,state:'denied',message:copy.app.inboxAccessDeniedBody,customer:undefined,messages:[]}}/>;
+    if(!selected||!selectedReady)return <InboxDesktop locale={locale} view={{...desktopView,customer:undefined,messages:[],notice:<>{desktopView.notice}<p>{threadErrors[selectedId??'']??inboxReadError??(ar?'جارٍ تحميل المحادثة…':'Loading conversation…')}</p></>,onRetry:()=>void refreshInboxView(),listFooter:<>{desktopView.listFooter}<button type="button" className="vdi-small-button" onClick={()=>void refreshInboxView()}>{ar?'إعادة المحاولة':'Retry'}</button></>}}/>;
+    const assignee=assignees.find(person=>person.userId===selected.assignedTo);
+    const automation=selected.assistantPaused?'paused':selected.automationAllowed&&selected.status!=='resolved'?'allowed':'blocked';
+    const control=selected.assistantPaused||selected.status==='resolved'?'resume':'take_over';
+    const canAI=canReply&&!testReview&&!!inboxMeta?.companyId&&liveIds.has(selected.id);
+    const action=(id:'resume'|'take_over'|'close')=>({id,label:id==='resume'?(ar?'إعادة إلى فيلورا':'Resume Velora'):id==='take_over'?(ar?'استلام المحادثة':'Take over conversation'):copy.app.markResolved,icon:id==='close'?'check' as const:id==='resume'?'play' as const:'user' as const,emphasis:id==='close'?undefined:'primary',reason:ar?'الإجراء غير متاح في الحالة الحالية.':'This action is unavailable in the current state.',disabled:controlDisabled(id),onClick:()=>void runControl(selected,id)});
+    return <InboxDesktop locale={locale} view={{...desktopView,
+      customer:{name:selected.customer,initials:selected.customer.slice(0,1).toUpperCase(),channel:'whatsapp',phone:selected.phone,status:`${copy.app.statuses[selected.status]} · WhatsApp`,
+        quickActions:[{id:'copy',label:phoneCopied?(ar?'تم النسخ':'Copied'):(ar?'نسخ الرقم':'Copy phone'),icon:'copy',onClick:()=>void copyCustomerPhone(selected.phone,draftKey)},...(hasContactPhone&&canReply?[{id:'call',label:ar?'اتصال':'Call',icon:'phone' as const,onClick:()=>{window.location.href=`tel:${contactPhone}`;}},{id:'whatsapp',label:'WhatsApp',icon:'whatsapp' as const,onClick:()=>{window.open(`https://wa.me/${contactPhone.replace(/^\+/,'')}`,'_blank','noopener,noreferrer');}}]:[])],
+        note:selected.internalNote?{text:selected.internalNote}:undefined,
+        assignee:selected.assignedTo?{name:assignee?.name??(ar?'الاسم غير متاح':'Name unavailable'),initials:assignee?.name.slice(0,1)??'؟'}:undefined},
+      profileTab:detailsTab,onProfileTabChange:setDetailsTab,
+      assign:canAssign?{id:'assign',label:ar?'تعيين':'Assign',icon:'user',onClick:()=>setDetailsTab('followup')}:undefined,
+      addNote:canReply?{id:'note',label:ar?'تحرير الملاحظة':'Edit note',icon:'plus',onClick:()=>setComposerMode('note')}:undefined,
+      followUp:{nativePanel:leadPanel,scheduledAt:selected.followUpAt??undefined,timezone:resolveCompanyTimezone(timezone).zone,values:{stage:selected.leadStage??'new',reason:selected.leadStageReason??'',status:selected.followUpStatus??'none',at:toDatetimeLocalValue(selected.followUpAt)},stages:[]},
+      activity:{events:(audits[selected.id]?.events??[]).map(event=>({id:event.id,label:({worker_escalation:ar?'تحويل المحادثة للمتابعة البشرية':'Escalated for human follow-up',take_over:ar?'استلام المحادثة':'Conversation taken over',resume:ar?'استئناف الأتمتة':'Automation resumed',close:ar?'إغلاق المحادثة':'Conversation closed',assign:ar?'تحديث التعيين':'Assignment updated'} as Record<string,string>)[event.action]??event.action,actor:event.actorUserId?(assignees.find(person=>person.userId===event.actorUserId)?.name??(ar?'الاسم غير متاح':'Name unavailable')):(ar?'لا يوجد':'Not available'),at:new Date(event.at).toLocaleString(ar?'ar-OM':'en-GB',{timeZone:resolveCompanyTimezone(timezone).zone,dateStyle:'short',timeStyle:'short'})})),notice:auditError?<p role="status">{auditError}</p>:undefined,emptyLabel:auditBusy?(ar?'جارٍ تحميل النشاط…':'Loading activity…'):(ar?'لا توجد أحداث تحكم محفوظة.':'No saved control events.'),loadMore:!audits[selected.id]||auditError||audits[selected.id]?.hasMore?{id:'audit-more',label:audits[selected.id]?.hasMore?(ar?'تحميل نشاط أقدم':'Load older activity'):(ar?'تحديث السجل':'Refresh history'),icon:'clock',disabled:auditBusy||pending,onClick:()=>runPendingAction(async()=>{await loadAudit(selected.id,auditError?undefined:audits[selected.id]?.hasMore?audits[selected.id].nextCursor:undefined);})}:undefined},
+      customerExtra:<>{selected.topic&&<p>{selected.topic}</p>}{selected.summary&&<p>{selected.summary}</p>}{selected.lastTouchAt&&<p>{new Date(selected.lastTouchAt).toLocaleString(ar?'ar-OM':'en-GB')}</p>}{phoneCopyFailed&&<p role="status">{ar?'تعذّر النسخ. يمكنك تحديد الرقم ونسخه.':'Copy failed. Select and copy the phone number.'}</p>}{connectionDetails}<Link href="/app/knowledge">{ar?'إدارة المعرفة':'Manage knowledge'}</Link>{testReview&&inboxMeta?.companyId?<ChannelReviewStatus companyId={inboxMeta.companyId} channel="whatsapp"/>:<Link href="/app/settings?tab=plan">{ar?'الاشتراك والربط':'Subscription & connection'}</Link>}</>,
+      connection:{channel:'whatsapp',label:'WhatsApp',statusLabel:writesPaused?(ar?'تعذّر التحقق':'Unverified'):connection?.status==='verified'&&connection.authorizationStatus==='active'?(ar?'متصل':'Connected'):connection?(ar?'غير جاهز':'Not ready'):(ar?'غير متحقق':'Unverified'),receiveReady:writesPaused?null:connection?.receiveReady??null,sendReady:writesPaused?null:connection?.sendReady??null,details:!testReview&&connection?{id:'connection',label:ar?'تفاصيل الربط':'Connection details',icon:'more',onClick:()=>{setDetailsTab('details');setConnectionDetailsOpen(true);}}:undefined},
+      headerActions:[...(desktopView.headerActions??[]),...(canAssign?[{id:'assign',label:ar?'تعيين':'Assign',icon:'user' as const,onClick:()=>setDetailsTab('followup')}]:[])],
+      workflow:{statusLabel:copy.app.statuses[selected.status],automation,automationLabel:automation==='paused'?(ar?'الأتمتة متوقفة':'Automation paused'):automation==='allowed'?(ar?'الأتمتة مسموحة':'Automation allowed'):(ar?'الأتمتة غير مسموحة':'Automation not allowed'),interventions:selected.intervention.reasons.map(reason=>interventionLabels[reason]),primary:liveIds.has(selected.id)?action(control):undefined,close:selected.status!=='resolved'&&liveIds.has(selected.id)?action('close'):undefined},
+      messages:desktopWhatsappMessages(selected.messages,ar),
+      onTranscriptMount:node=>{if(node)restoreTranscriptPosition(node,scrollPositions.current[draftKey]);},onTranscriptScroll:event=>{scrollPositions.current[draftKey]=captureTranscriptPosition(event.currentTarget);},
+      loadEarlier:selectedThread?.hasMore?{id:'older',label:ar?'تحميل الرسائل الأقدم':'Load older messages',icon:'clock',disabled:pending||threadBusyId===selected.id,onClick:()=>runPendingAction(async()=>{await loadThread(selected.id,selectedThread.nextCursor);})}:undefined,
+      messageExtras:<>{selectedSendLocked&&<Notice tone="error">{copy.app.sendUnknownOutcome}</Notice>}{notice&&!selectedUnresolved&&<Notice>{notice}</Notice>}{warn&&!selectedUnresolved&&<Notice tone="warn">{warn}<button type="button" disabled={controlBusy} onClick={()=>void retryRefresh(selected.id)}>{copy.app.controlRetryRefresh}</button></Notice>}{(selectedUnresolved||error)&&<Notice tone="error">{selectedUnresolved?copy.app.controlOutcomeLocked:error}<button type="button" disabled={controlBusy} onClick={()=>void retryRefresh(selected.id)}>{copy.app.controlRetryRefresh}</button></Notice>}</>,
+      composer:{mode:composerMode,ownershipNotice:(writesPaused?(ar?'آخر حالة مؤكدة: ':'Last verified state: '):'')+(selected.status==='resolved'?(ar?'المحادثة محلولة':'Conversation resolved'):automation==='allowed'?(ar?'الذكاء الاصطناعي يدير المحادثة':'AI is handling the conversation'):automation==='paused'?(ar?'الموظف يدير المحادثة':'Staff is handling the conversation'):(ar?'الذكاء الاصطناعي متوقف عن إدارة المحادثة':'AI is not handling the conversation')),enabledModes:['message',...(!testReview&&!!inboxMeta?.companyId&&liveIds.has(selected.id)?['ai' as const]:[]),'note'],disabledModes:canReply?[]:['ai','note'],onModeChange:setComposerMode,value:draft,onChange:setDraft,onSubmit:()=>send(selected),pending:pending||controlBusy,canSend:selectedReady&&selected.assistantPaused&&canReply&&!selectedSendLocked&&liveIds.has(selected.id),disabledReason:writesPaused?(ar?'الاتصال متوقف مؤقتًا. سيُتاح الإرسال بعد التحقق مجددًا.':'Connection interrupted. Sending resumes after access is verified again.'):!canReply?copy.app.sendForbidden:!selected.assistantPaused?(ar?'استلم المحادثة أولًا لكتابة ردك.':'Take over this conversation before replying.'):undefined,
+       modePanels:{note:<div ref={setNotesHost}/>,ai:canAI&&<ChannelAIDraft key={`${inboxScope}:${selected.id}:${selected.messages.at(-1)?.id}:${selected.revision}`} companyId={inboxMeta!.companyId} channel="whatsapp" conversationId={selected.id} ar={ar} disabled={writesPaused||!selectedReady||pending||controlBusy||selectedSendLocked} onUse={text=>{setDraft(text);setComposerMode('message');}}/>}},
+    }}/>;
+  }
   return (
     <WorkspaceShell
       embedded={embedded}
@@ -1475,7 +1612,7 @@ export function ConversationsPage({
       ) : null}
 
       {/* Main 3-Column Unified Inbox Container */}
-      <div data-channel-inbox="whatsapp" data-embedded={embedded} className="grid h-[calc(100svh-11rem)] min-h-[620px] max-h-[920px] w-full grid-cols-1 overflow-hidden rounded-2xl border border-[color:var(--color-line)] bg-[var(--color-panel)] shadow-[0_12px_36px_rgba(16,27,22,0.08)] lg:grid-cols-[330px_1fr] xl:grid-cols-[340px_1fr_320px]">
+      <div data-channel-inbox="whatsapp" data-conversation-redesign="true" data-embedded={embedded} className="grid h-[calc(100svh-11rem)] min-h-[620px] max-h-[920px] w-full grid-cols-1 overflow-hidden rounded-2xl border border-[color:var(--color-line)] bg-[var(--color-panel)] shadow-[0_12px_36px_rgba(16,27,22,0.08)] lg:grid-cols-[330px_1fr] xl:grid-cols-[340px_1fr_320px]">
         {/* ============================================================== */}
         {/* COLUMN 1: CONVERSATIONS LIST & FILTERS                         */}
         {/* ============================================================== */}
@@ -1693,7 +1830,7 @@ export function ConversationsPage({
         {/* COLUMN 2: ACTIVE CONVERSATION TRANSCRIPT & COMPOSER             */}
         {/* ============================================================== */}
         <section
-          className={`flex h-full flex-col bg-[var(--color-panel)] ${
+          inert={mobileDetailsOpen} data-conversation-thread="true" className={`flex h-full flex-col bg-[var(--color-panel)] ${
             selected ? "flex" : "hidden lg:flex"
           }`}
           aria-label={selected ? selected.customer : (locale === "ar" ? "المحادثة النشطة" : "Active Conversation")}
@@ -1701,12 +1838,13 @@ export function ConversationsPage({
           {selected ? (
             <>
               {/* Top Header of Chat */}
-              <header className="z-10 flex min-h-16 flex-wrap items-center justify-between gap-3 border-b border-[color:var(--color-line)] bg-[var(--color-panel)] px-4 py-3">
+              <header data-conversation-header="true" className="z-10 flex min-h-16 flex-wrap items-center justify-between gap-3 border-b border-[color:var(--color-line)] bg-[var(--color-panel)] px-4 py-3">
                 <div className="flex items-center gap-3 min-w-0">
                   {/* Mobile Back Button */}
                   <button
                     type="button"
                     onClick={() => select(null)}
+                    data-native-back={embedded||undefined}
                     className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[color:var(--color-border-soft)] text-sm lg:hidden hover:bg-[var(--color-hover-wash)]"
                     aria-label={copy.app.backToList}
                   >
@@ -1740,7 +1878,7 @@ export function ConversationsPage({
                       ) : (
                         <span className="inline-flex items-center gap-1 font-medium text-[var(--service-accent)] text-[11px]">
                           <span className="h-1.5 w-1.5 rounded-full bg-[var(--service-accent)] animate-pulse" />
-                          {selected.status === "resolved" ? copy.app.statuses.resolved : (locale === "ar" ? "الأتمتة مسموحة" : "Automation allowed")}
+                          {selected.status === "resolved" ? copy.app.statuses.resolved : selected.automationAllowed ? (locale === "ar" ? "الأتمتة مسموحة" : "Automation allowed") : (locale === "ar" ? "الأتمتة غير مسموحة" : "Automation not allowed")}
                         </span>
                       )}
                     </div>
@@ -1751,8 +1889,8 @@ export function ConversationsPage({
                 <div className="flex items-center gap-2 font-[family-name:Tajawal,var(--font-ar),sans-serif]">
                   {liveIds.has(selected.id) ? (
                     <>
-                      {selected.assistantPaused ? (
-                        <button
+                      {selected.assistantPaused || selected.status === "resolved" ? (
+                        canUseInboxControl(inboxMeta,"resume") && <button
                           type="button"
                           disabled={controlDisabled("resume")}
                           onClick={() => runControl(selected, "resume")}
@@ -1763,7 +1901,7 @@ export function ConversationsPage({
                           <span>{locale === "ar" ? "إعادة إلى فيلورا" : "Resume Velora"}</span>
                         </button>
                       ) : (
-                        <button
+                        canUseInboxControl(inboxMeta,"take_over") && <button
                           type="button"
                           disabled={controlDisabled("take_over")}
                           onClick={() => runControl(selected, "take_over")}
@@ -1775,7 +1913,7 @@ export function ConversationsPage({
                         </button>
                       )}
 
-                      {selected.status !== "resolved" ? (
+                      {selected.status !== "resolved" && canUseInboxControl(inboxMeta,"close") ? (
                         <Button
                           variant="ghost"
                           busy={controlBusy && controlBusyId === selected.id}
@@ -1809,22 +1947,15 @@ export function ConversationsPage({
               {selected.assistantPaused ? (
                 <div className="border-b border-[#d9a467]/30 bg-[#d9a467]/10 px-4 py-2 text-xs text-[#f0cf9d] flex items-center justify-between font-[family-name:Tajawal,var(--font-ar),sans-serif]">
                   <div className="flex items-center gap-2">
-                    <span>⚠️</span>
+                    <IconShield width={16} height={16} aria-hidden="true"/>
                     <span>{locale === "ar" ? "الأتمتة متوقفة لهذه المحادثة. الرد اليدوي متاح للمخولين." : "Automation is paused for this conversation. Authorized staff can reply manually."}</span>
                   </div>
-                  <button
-                    type="button"
-                    disabled={controlDisabled("resume")}
-                    onClick={() => runControl(selected, "resume")}
-                    className="text-xs font-bold underline hover:opacity-80"
-                  >
-                    {locale === "ar" ? "إعادة تفعيل فيلورا" : "Activate Velora"}
-                  </button>
+
                 </div>
               ) : (
                 <div className="border-b border-[var(--service-accent)]/20 bg-[var(--service-accent)]/5 px-4 py-2 text-xs text-[var(--service-accent)] flex items-center gap-2 font-[family-name:Tajawal,var(--font-ar),sans-serif]">
                   <IconSparkles width={16} height={16} aria-hidden="true"/>
-                  <span>{selected.status === "resolved" ? copy.app.statuses.resolved : (locale === "ar" ? "الأتمتة مسموحة. الإرسال يعتمد على جاهزية التشغيل والمعرفة المعتمدة." : "Automation is enabled. Sending depends on runtime readiness and approved knowledge.")}</span>
+                  <span>{selected.status === "resolved" ? copy.app.statuses.resolved : selected.automationAllowed ? (locale === "ar" ? "الأتمتة مسموحة. الإرسال يعتمد على جاهزية التشغيل والمعرفة المعتمدة." : "Automation is allowed. Sending depends on runtime readiness and approved knowledge.") : (locale === "ar" ? "الأتمتة غير مسموحة لهذه المحادثة." : "Automation is not allowed for this conversation.")}</span>
                 </div>
               )}
 
@@ -1856,6 +1987,8 @@ export function ConversationsPage({
                     <div
                       key={m.id}
                       data-message-id={m.id}
+                      data-direction={isCustomer?"inbound":"outbound"}
+                      data-sender={m.from}
                       className={`flex flex-col max-w-[85%] sm:max-w-[75%] ${
                         isCustomer ? "me-auto items-start" : "ms-auto items-end"
                       }`}
@@ -1965,9 +2098,13 @@ export function ConversationsPage({
               </div>
 
               {/* Bottom Composer Box */}
-              <div className="border-t border-[color:var(--color-line)] p-3 bg-[var(--color-panel)]">
-                {canReply && !testReview && inboxMeta?.companyId && liveIds.has(selected.id) && <ChannelAIDraft key={`${inboxScope}:${selected.id}:${selected.messages.at(-1)?.id}:${selected.revision}`} companyId={inboxMeta.companyId} channel="whatsapp" conversationId={selected.id} ar={locale==='ar'} disabled={!selectedReady||pending||controlBusy||selectedSendLocked} onUse={setDraft}/>}
-                <ChannelBadge channel="whatsapp" ar={locale==="ar"}/>
+              <div className="conversation-composer">
+                <ComposerTabs id="whatsapp-composer" ar={locale==='ar'} mode={composerMode} onChange={setComposerMode} notes={canReply} ai={canReply&&!testReview&&!!inboxMeta?.companyId&&liveIds.has(selected.id)}/>
+                <div role="tabpanel" id="whatsapp-composer-panel-note" aria-labelledby="whatsapp-composer-tab-note" hidden={composerMode!=='note'||!canReply} ref={setNotesHost}/>
+                <div role="tabpanel" id="whatsapp-composer-panel-ai" aria-labelledby="whatsapp-composer-tab-ai" hidden={composerMode!=='ai'}>
+                {canReply && !testReview && inboxMeta?.companyId && liveIds.has(selected.id) && <ChannelAIDraft key={`${inboxScope}:${selected.id}:${selected.messages.at(-1)?.id}:${selected.revision}`} companyId={inboxMeta.companyId} channel="whatsapp" conversationId={selected.id} ar={locale==='ar'} disabled={writesPaused||!selectedReady||pending||controlBusy||selectedSendLocked} onUse={text=>{setDraft(text);setComposerMode('message');}}/>}
+                </div>
+                <div role="tabpanel" id="whatsapp-composer-panel-message" aria-labelledby="whatsapp-composer-tab-message" hidden={composerMode!=='message'}>
                 {canReply ? (
                   <form
                     className="flex flex-col gap-2 font-[family-name:Tajawal,var(--font-ar),sans-serif]"
@@ -2015,7 +2152,7 @@ export function ConversationsPage({
                         disabled={!selectedReady || !selected.assistantPaused || !canReply || !draft.trim() || pending || controlBusy || selectedSendLocked || !liveIds.has(selected.id)}
                         className="shrink-0 min-h-10 px-4 text-xs font-bold gap-1.5"
                       >
-                        <span>📨</span>
+                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m3 10 18-7-7 18-3-8-8-3z M11 13 21 3" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/></svg>
                         <span>{copy.app.sendReply}</span>
                       </Button>
                     </div>
@@ -2025,6 +2162,7 @@ export function ConversationsPage({
                     {copy.app.sendForbidden}
                   </div>
                 )}
+                </div>
               </div>
             </>
           ) : (
@@ -2052,6 +2190,7 @@ export function ConversationsPage({
         {/* ============================================================== */}
         {/* COLUMN 3: CUSTOMER DETAILS, NOURA PERSONA & CRM CONTROLS       */}
         {/* ============================================================== */}
+        {mobileDetailsOpen&&<button type="button" className="conversation-details-backdrop" tabIndex={-1} aria-label={locale==='ar'?'إغلاق تفاصيل العميل':'Close customer details'} onClick={()=>setMobileDetailsOpen(false)}/>}
         {selected ? (
           <aside
             id="conversation-details"
@@ -2064,13 +2203,13 @@ export function ConversationsPage({
                 ? "fixed inset-y-0 end-0 z-50 w-full max-w-sm bg-[var(--color-panel)] shadow-2xl xl:static xl:w-auto xl:shadow-none"
                 : "hidden xl:flex"
             }`}
-            aria-label={locale === "ar" ? "بيانات العميل والأتمتة" : "Customer & Automation Details"}
+            aria-label={locale === "ar" ? "معلومات العميل" : "Customer & Automation Details"}
           >
             {/* Header with Close Button for Mobile Drawer */}
             <div className="flex items-center justify-between pb-2 border-b border-[color:var(--color-line)]">
               <h3 className="font-bold text-sm text-[var(--color-on-dark)] flex items-center gap-1.5">
                 <IconUsers width={16} height={16} aria-hidden="true"/>
-                {locale === "ar" ? "بيانات العميل والأتمتة" : "Customer & AI Details"}
+                {locale === "ar" ? "معلومات العميل" : "Customer information"}
               </h3>
               <button
                 type="button"
@@ -2082,188 +2221,49 @@ export function ConversationsPage({
               </button>
             </div>
 
-            {/* Card 1: Customer Profile */}
-            <div className="rounded-xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel)] p-3 space-y-2">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[var(--service-line)] bg-[var(--service-accent-soft)] text-sm font-bold text-[var(--service-accent)]">
-                  {selected.customer.slice(0, 1).toUpperCase()}
-                </div>
-                <div className="min-w-0">
-                  <p dir="auto" className="truncate text-sm font-bold text-[var(--color-on-dark)]">{selected.customer}</p>
-                  <p className="text-[13px] text-[var(--color-muted-soft)]">{selected.topic || "واتساب"}</p>
-                </div>
+            <div className="conversation-customer-summary">
+              <span className="conversation-customer-avatar" aria-hidden="true">{selected.customer.slice(0,1).toUpperCase()}</span>
+              <h2 dir="auto">{selected.customer}</h2><span className="conversation-status">{copy.app.statuses[selected.status]}</span>
+              <div className="conversation-contact-actions">
+               <button type="button" className="conversation-copy-phone" onClick={()=>void copyCustomerPhone(selected.phone,draftKey)} aria-label={locale==='ar'?'نسخ الرقم':'Copy phone'}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="8" y="8" width="12" height="13" rx="2" stroke="currentColor" strokeWidth="1.6"/><path d="M16 8V3H3v13h5" stroke="currentColor" strokeWidth="1.6"/></svg>{phoneCopied?(locale==='ar'?'تم النسخ':'Copied'):(locale==='ar'?'نسخ الرقم':'Copy phone')}</button>
+               {hasContactPhone&&canReply&&<><a className="conversation-contact-link" href={`tel:${contactPhone}`}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m7 3 3 5-2 3c2 3 3 4 6 5l3-2 4 3c-1 4-3 5-6 4C8 19 3 14 3 7c0-3 1-4 4-4Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/></svg>{locale==='ar'?'اتصال':'Call'}</a><a className="conversation-contact-link" href={`https://wa.me/${contactPhone.replace(/^\+/,'')}`} target="_blank" rel="noopener noreferrer" title={locale==='ar'?'فتح واتساب خارج Velora':'Open WhatsApp outside Velora'}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M21 11.5a9 9 0 0 1-13.5 7.8L3 21l1.7-4.5A9 9 0 1 1 21 11.5Z M8 7c0 4 2 6 6 7l2-2" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/></svg>{locale==='ar'?'واتساب':'WhatsApp'}</a></>}
               </div>
-
-              <div className="pt-2 border-t border-[color:var(--color-border-soft)] space-y-1.5 text-xs">
-                <div className="flex items-center justify-between">
-                  <span className="text-[var(--color-muted-soft)]">{locale === "ar" ? "رقم الهاتف:" : "Phone:"}</span>
-                  <div className="flex items-center gap-1.5">
-                    <span dir="ltr" className="font-mono text-[13px] font-medium text-[var(--color-on-dark)]">
-                      {selected.phone}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => copyCustomerPhone(selected.phone)}
-                      className="inline-flex min-h-11 min-w-11 items-center justify-center text-[13px] text-[var(--service-accent)] hover:underline"
-                      aria-label={locale === "ar" ? "نسخ الرقم" : "Copy phone"}
-                      title={locale === "ar" ? "نسخ الرقم" : "Copy phone"}
-                    >
-                      {phoneCopied ? (locale === "ar" ? "تم!" : "Copied!") : "📋"}
-                    </button>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between gap-2 text-[13px]">
-                  <span className="text-[var(--color-muted-soft)]">{locale === "ar" ? "القناة:" : "Channel:"}</span>
-                  <span className="font-medium text-[var(--service-accent)]">WhatsApp Cloud API</span>
-                </div>
-
-                <div className="flex items-center justify-between gap-2 text-[13px]">
-                  <span className="text-[var(--color-muted-soft)]">{locale === "ar" ? "حالة المحادثة:" : "Status:"}</span>
-                  <span className="font-medium text-[var(--color-on-dark)]">{copy.app.statuses[selected.status]}</span>
-                </div>
-                {selected.intervention.reasons.length ? <div className="space-y-1 text-[13px] text-[#f0cf9d]">
-                  {selected.intervention.reasons.map(reason => <p key={reason}>{interventionLabels[reason]}</p>)}
-                </div> : null}
-                {!testReview&&connection ? <div className="space-y-1 pt-2 text-[13px] text-[var(--color-muted-soft)]">
-                  {connection.displayNumber ? <p dir="ltr">{connection.displayNumber}</p> : null}
-                  <p>{locale === "ar" ? "حالة الربط:" : "Connection:"} {connection.status.replaceAll("_", " ")}</p>
-                  <p>{locale === "ar" ? "التفويض:" : "Authorization:"} {connection.authorizationStatus.replaceAll("_", " ")}</p>
-                  <p>{locale === "ar" ? "جاهزية الربط للاستقبال:" : "Receive binding:"} {connection.receiveReady ? (locale === "ar" ? "جاهز" : "Ready") : (locale === "ar" ? "غير جاهز" : "Not ready")}</p>
-                  <p>{locale === "ar" ? "جاهزية الربط للإرسال:" : "Send binding:"} {connection.sendReady ? (locale === "ar" ? "جاهز" : "Ready") : (locale === "ar" ? "غير جاهز" : "Not ready")}</p>
-                  <p>{locale === "ar" ? "آخر اختبار استقبال:" : "Last inbound test:"} {connection.inboundTestedAt ? new Date(connection.inboundTestedAt).toLocaleString(locale === "ar" ? "ar-OM" : "en-GB") : (locale === "ar" ? "لم يتم التحقق" : "Not verified")}</p>
-                  <p>{locale === "ar" ? "آخر اختبار إرسال:" : "Last outbound test:"} {connection.outboundTestedAt ? new Date(connection.outboundTestedAt).toLocaleString(locale === "ar" ? "ar-OM" : "en-GB") : (locale === "ar" ? "لم يتم التحقق" : "Not verified")}</p>
-                </div> : null}
-              </div>
+              <span className="sr-only" role="status">{phoneCopied?(locale==='ar'?'تم نسخ رقم العميل':'Customer phone copied'):''}</span>
+              {phoneCopyFailed&&<p role="status" className="conversation-secondary">{locale==='ar'?'تعذّر النسخ. يمكنك تحديد الرقم أدناه ونسخه.':'Copy failed. Select and copy the phone number below.'}</p>}
             </div>
-
-            {/* Card 2: AI Persona (Velora) Card */}
-            <div className="space-y-2.5 rounded-xl border border-[var(--service-line)] bg-[var(--service-surface)] p-3">
-              <div className="flex items-center gap-2">
-                <span className="text-xl">✨</span>
-                <div>
-                  <p className="font-bold text-xs text-[var(--service-accent)]">
-                    {locale === "ar" ? "المساعد الذكي: فيلورا (Velora)" : "AI Persona: Velora"}
-                  </p>
-                  <p className="text-[13px] text-[var(--color-muted-soft)]">
-                    {locale === "ar" ? "مساعدة فيلورا الذكية المعتمدة لشركتك" : "Velora's Official AI Assistant"}
-                  </p>
-                </div>
-              </div>
-
-              <div className="space-y-1 rounded-lg bg-[var(--color-panel-deep)] p-2 text-[13px]">
-                <div className="flex items-center justify-between">
-                  <span className="text-[var(--color-muted-soft)]">{locale === "ar" ? "حالة الأتمتة:" : "Automation:"}</span>
-                  {selected.assistantPaused ? (
-                    <span className="font-bold text-[#f0cf9d]">{locale === "ar" ? "متوقفة مؤقتاً" : "Paused"}</span>
-                  ) : (
-                    <span className="font-bold text-[var(--service-accent)]">{selected.status === "resolved" ? copy.app.statuses.resolved : (locale === "ar" ? "مسموحة" : "Enabled")}</span>
-                  )}
-                </div>
-                <div className="flex items-center justify-between gap-2 text-[13px] text-[var(--color-muted-soft)]">
-                  <span>{locale === "ar" ? "المعرفة المعتمدة:" : "Knowledge base:"}</span>
-                  <Link href="/app/knowledge" className="text-[var(--service-accent)] font-medium hover:underline">{locale === "ar" ? "إدارة المعرفة" : "Manage knowledge"}</Link>
-                </div>
-              </div>
-
-              {liveIds.has(selected.id) ? (
-                <div className="flex flex-col gap-1.5 pt-1">
-                  {selected.assistantPaused ? (
-                    <button
-                      type="button"
-                      disabled={controlDisabled("resume")}
-                      onClick={() => runControl(selected, "resume")}
-                      className="w-full inline-flex min-h-8 items-center justify-center gap-1.5 rounded-lg border border-[var(--service-accent)]/50 bg-[var(--service-accent)]/20 text-xs font-bold text-[var(--service-accent)] hover:bg-[var(--service-accent)]/30 transition disabled:opacity-50"
-                    >
-                      <IconRocket width={16} height={16} aria-hidden="true"/>
-                      <span>{locale === "ar" ? "إعادة تشغيل فيلورا" : "Activate Velora"}</span>
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      disabled={controlDisabled("take_over")}
-                      onClick={() => runControl(selected, "take_over")}
-                      className="w-full inline-flex min-h-8 items-center justify-center gap-1.5 rounded-lg border border-[#d9a467]/50 bg-[#d9a467]/20 text-xs font-bold text-[#f0cf9d] hover:bg-[#d9a467]/30 transition disabled:opacity-50"
-                    >
-                      <IconUsers width={16} height={16} aria-hidden="true"/>
-                      <span>{locale === "ar" ? "استلام المحادثة يدويًا" : "Take Over Manually"}</span>
-                    </button>
-                  )}
-                </div>
-              ) : null}
+            {embedded&&<InboxDetailsTabs ar={locale==='ar'} value={detailsTab} onChange={setDetailsTab}/>}
+            <div role={embedded?'tabpanel':undefined} id={embedded?'wa-details-panel-details':undefined} aria-labelledby={embedded?'wa-details-tab-details':undefined} hidden={embedded&&detailsTab!=='details'}>
+            <DetailSection title={locale==='ar'?'معلومات الاتصال':'Contact information'}><dl>
+              <DetailRow label={locale==='ar'?'الهاتف':'Phone'}><bdi dir="ltr">{selected.phone}</bdi></DetailRow>
+              <DetailRow label={locale==='ar'?'القناة':'Channel'}><ChannelBadge channel="whatsapp" ar={locale==='ar'}/></DetailRow>
+              <DetailRow label={locale==='ar'?'المسؤول':'Assigned to'}>{selected.assignedTo?(assignees.find(person=>person.userId===selected.assignedTo)?.name??selected.assignedTo):(locale==='ar'?'غير معيّن':'Unassigned')}</DetailRow>
+            </dl></DetailSection>
+            <DetailSection title={locale==='ar'?'تفاصيل المحادثة':'Conversation details'}><dl>
+              <DetailRow label={locale==='ar'?'الحالة':'Status'}>{copy.app.statuses[selected.status]}</DetailRow>
+              <DetailRow label={locale==='ar'?'الموضوع':'Topic'}>{selected.topic||'—'}</DetailRow>
+              {selected.lastTouchAt&&<DetailRow label={locale==='ar'?'آخر متابعة':'Last follow-up'}>{new Date(selected.lastTouchAt).toLocaleString(locale==='ar'?'ar-OM':'en-GB')}</DetailRow>}
+            </dl>{selected.summary&&<p className="conversation-summary" dir="auto">{selected.summary}</p>}
+            {selected.intervention.reasons.length>0&&<div className="conversation-intervention">{selected.intervention.reasons.map(reason=><p key={reason}>{interventionLabels[reason]}</p>)}</div>}</DetailSection>
+            <DetailSection title={locale==='ar'?'ملاحظات داخلية':'Internal notes'} action={canReply?<button type="button" className="conversation-text-action" onClick={()=>{setComposerMode('note');setMobileDetailsOpen(false);window.requestAnimationFrame(()=>notesHost?.querySelector('textarea')?.focus());}}>{locale==='ar'?'تحرير':'Edit'}</button>:undefined}>
+              <p className="conversation-note-preview" dir="auto">{selected.internalNote||(locale==='ar'?'لا توجد ملاحظة محفوظة.':'No saved note.')}</p><p className="conversation-secondary">{locale==='ar'?'داخلية · لا تُرسل للعميل':'Internal · never sent to the customer'}</p>
+            </DetailSection>
             </div>
-
-            <div className="rounded-xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel)] p-3 space-y-2">
-              <p className="font-bold text-xs">{locale === "ar" ? "سجل التحكم والتدخل" : "Control & handoff history"}</p>
-              {auditError ? <p className="text-[11px] text-[var(--color-danger-fg)]">{auditError}</p> : null}
-              {audits[selected.id]?.events.map(event => <div key={event.id} className="border-t border-[color:var(--color-border-soft)] pt-1 text-[13px] text-[var(--color-muted-soft)]">
-                <p className="font-medium text-[var(--color-on-dark)]">{event.action}</p>
-                <p>{event.actorUserId ? (assignees.find(person => person.userId === event.actorUserId)?.name ?? event.actorUserId) : (locale === "ar" ? "الفاعل غير متاح" : "Actor unavailable")}</p>
-                <p>{new Date(event.at).toLocaleString(locale === "ar" ? "ar-OM" : "en-GB")}</p>
-              </div>)}
-              {!auditBusy && audits[selected.id]?.events.length === 0 ? <p className="text-[13px] text-[var(--color-muted-soft)]">{locale === "ar" ? "لا توجد أحداث تحكم محفوظة." : "No saved control events."}</p> : null}
-              {!audits[selected.id] || auditError ? <Button variant="ghost" className="min-h-8 text-xs" disabled={auditBusy || pending}
-                onClick={() => runPendingAction(async () => { await loadAudit(selected.id); })}>{locale === "ar" ? "تحديث السجل" : "Refresh history"}</Button> : null}
-              {audits[selected.id]?.hasMore ? <Button variant="ghost" className="min-h-8 text-xs" disabled={auditBusy || pending}
-                onClick={() => runPendingAction(async () => { await loadAudit(selected.id, audits[selected.id].nextCursor); })}>{locale === "ar" ? "أحداث أقدم" : "Older events"}</Button> : null}
+            <div role={embedded?'tabpanel':undefined} id={embedded?'wa-details-panel-followup':undefined} aria-labelledby={embedded?'wa-details-tab-followup':undefined} hidden={embedded&&detailsTab!=='followup'}>
+            <DetailSection title={locale==='ar'?'المتابعة والتعيين':'Follow-up & assignment'}>
+              {leadPanel}
+            </DetailSection>
             </div>
-
-            {/* Card 3: Lead & CRM Follow-up Panel */}
-            <div className="rounded-xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel)] p-3">
-              <LeadFollowUpPanel
-                key={selected.id}
-                conversation={selected}
-                copy={copy.app}
-                locale={locale}
-                canReply={canReply}
-                canAssign={canAssign}
-                assignees={assignees}
-                timezoneAnnouncedUtc={inboxMeta?.timezoneAnnouncedUtc}
-                live={!readSuspended && selectedReady && liveIds.has(selected.id)}
-                busyControl={controlBusy && controlBusyId === selected.id}
-                pending={pending}
-                selectedUnresolved={selectedUnresolved}
-                onPatchLead={(state) => patch(selected.id, (cur) => applyLeadState(cur, state))}
-                onPatchControl={(state) => patch(selected.id, (cur) => applyControlState(cur, state))}
-                onSync={() => syncControlView(selected.id)}
-                onNotice={(message) => {
-                  if (!isSelected(selected.id)) return;
-                  setError(null);
-                  setWarn(null);
-                  setNotice(message);
-                }}
-                onError={(message) => {
-                  if (!isSelected(selected.id)) return;
-                  setNotice(null);
-                  setError(message);
-                }}
-                onWarn={(message) => { if (isSelected(selected.id)) setWarn(message); }}
-                onBusyControl={(busy, busyId) => {
-                  controlBusyIdRef.current = busy ? busyId : null;
-                  setControlBusy(busy);
-                  setControlBusyId(busyId);
-                }}
-                onAfterLeadSaved={() => refreshInboxView()}
-                getEpochStore={() => epochStoreRef.current}
-                getControlBusyId={() => controlBusyIdRef.current}
-              />
+            <div role={embedded?'tabpanel':undefined} id={embedded?'wa-details-panel-activity':undefined} aria-labelledby={embedded?'wa-details-tab-activity':undefined} hidden={embedded&&detailsTab!=='activity'}>
+            {activityPanel}
             </div>
-
-            {/* Card 4: Channel & Subscription Health */}
-            {testReview&&inboxMeta?.companyId?<ChannelReviewStatus companyId={inboxMeta.companyId} channel="whatsapp"/>:<div className="rounded-xl border border-[color:var(--color-border-soft)] bg-[var(--color-hover-wash)] p-3 text-[11px] space-y-1.5">
-              <p className="font-bold text-xs text-[var(--color-on-dark)] flex items-center gap-1.5">
-                <span>🛡️</span>
-                {locale === "ar" ? "حالة الاشتراك والربط" : "Subscription & Integration"}
-              </p>
-              <div className="flex items-center justify-between text-[var(--color-muted-soft)]">
-                <span>{locale === "ar" ? "باقة الشركة:" : "Plan:"}</span>
-                <span className="font-medium">{locale === "ar" ? "راجع صفحة الاشتراك" : "Check subscription settings"}</span>
-              </div>
-              <div className="flex items-center justify-between text-[var(--color-muted-soft)]">
-                <span>{locale === "ar" ? "حماية البيانات:" : "Tenant Isolation:"}</span>
-                <span className="text-[var(--color-on-dark)] font-medium">{locale === "ar" ? "معزولة مشفرة" : "RLS Enforced"}</span>
-              </div>
-            </div>}
+            <div hidden={embedded&&detailsTab!=='details'}>
+            <DetailSection title={locale==='ar'?'حالة الأتمتة والربط':'Automation & connection'}>
+              <dl><DetailRow label={locale==='ar'?'الأتمتة':'Automation'}>{selected.assistantPaused?(locale==='ar'?'متوقفة مؤقتًا':'Paused'):selected.status==='resolved'?copy.app.statuses.resolved:selected.automationAllowed?(locale==='ar'?'مسموحة':'Allowed'):(locale==='ar'?'غير مسموحة':'Not allowed')}</DetailRow></dl>
+              <Link href="/app/knowledge" className="conversation-text-action">{locale==='ar'?'إدارة المعرفة':'Manage knowledge'}</Link>
+              {connectionDetails}
+              {testReview&&inboxMeta?.companyId?<ChannelReviewStatus companyId={inboxMeta.companyId} channel="whatsapp"/>:<Link href="/app/settings?tab=plan" className="conversation-text-action">{locale==='ar'?'الاشتراك والربط':'Subscription & connection'}</Link>}
+            </DetailSection>
+            </div>
           </aside>
         ) : null}
       </div>

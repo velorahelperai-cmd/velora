@@ -9,5 +9,12 @@ it('uses independent private GET and fences the returned company and conversatio
 });
 it('fails closed on network errors, denied responses and malformed bodies',async()=>{
  const fetch=vi.fn().mockRejectedValueOnce(Error('offline')).mockResolvedValueOnce(new Response('',{status:403})).mockResolvedValueOnce(Response.json({}));vi.stubGlobal('fetch',fetch);
- for(const code of ['UNAVAILABLE','FORBIDDEN','UNAVAILABLE'])expect(await fetchInboxThread({companyId:'c',conversationId:'t'})).toEqual({ok:false,code});
+ expect(await fetchInboxThread({companyId:'c',conversationId:'t'})).toEqual({ok:false,code:'UNAVAILABLE',transportUnavailable:true});
+ for(const code of ['FORBIDDEN','UNAVAILABLE'])expect(await fetchInboxThread({companyId:'c',conversationId:'t'})).toEqual({ok:false,code});
+});
+
+it('keeps HTTP failures and malformed/forged server bodies separate from transport errors',async()=>{
+ for(const response of [new Response('',{status:503}),Response.json({ok:false,code:'UNAVAILABLE',transportUnavailable:true})]){
+  vi.stubGlobal('fetch',vi.fn().mockResolvedValue(response));expect(await fetchInboxThread({companyId:'c',conversationId:'t'})).toEqual({ok:false,code:'UNAVAILABLE'});
+ }
 });

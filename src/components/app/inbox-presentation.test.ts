@@ -1,5 +1,5 @@
 import {expect,it} from 'vitest';
-import {inboxRows,inboxHref} from './inbox-presentation';
+import {inboxRows,inboxHref,matchesInboxAssignment} from './inbox-presentation';
 import type {WhatsappInboxItem} from '@/lib/whatsapp/inbox-contracts';
 import type {InstagramConversation} from '@/lib/instagram/inbox-contracts';
 it('never merges matching names or conversation IDs between channels; orders actual activity',()=>{
@@ -10,4 +10,11 @@ it('never merges matching names or conversation IDs between channels; orders act
 it('keeps a channel filter on selection and back, never routes a reply into the other channel',()=>{
  expect(inboxHref('instagram','id','instagram')).toBe('/app/conversations?channel=instagram&source=instagram&thread=id');
  expect(inboxHref(null,null,'whatsapp')).toBe('/app/conversations?channel=whatsapp');
+});
+it('filters only the authorized loaded assignment against the verified actor',()=>{
+ expect(matchesInboxAssignment({assignedTo:null},'unassigned','actor')).toBe(true);
+ expect(matchesInboxAssignment({assignedTo:'actor'},'mine','actor')).toBe(true);
+ expect(matchesInboxAssignment({assignedTo:'other'},'mine','actor')).toBe(false);
+ expect(matchesInboxAssignment({assignedTo:null},'mine',null)).toBe(false);
+ expect(matchesInboxAssignment({assignedTo:'other'},'unassigned','actor')).toBe(false);
 });

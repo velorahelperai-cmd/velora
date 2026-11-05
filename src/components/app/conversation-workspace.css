@@ -1,0 +1,297 @@
+/* Owner refinement: the native conversations page canvas is pure white. */
+.app-shell[data-conversations-workspace="true"][data-internal-ui],
+.app-shell[data-conversations-workspace="true"][data-internal-ui] #workspace-content {background:#fff;}
+/* Approved conversations design; scoped to the original inbox, never setup or admin. */
+.app-shell[data-conversations-workspace="true"][data-internal-ui] #workspace-content {
+ --service-canvas:#fff; --service-surface:#fff; --service-subtle:#f8fafa;
+ --service-accent:#008577; --service-accent-hover:#006e63; --service-accent-soft:#e7f7f3;
+ --service-line:#e5e9eb; --service-ink:#17262e; --service-muted:#62727a;
+ --service-control-height:36px; --service-radius:8px;
+}
+.app-shell[data-conversations-workspace="true"] #workspace-content {padding:12px;display:flex;flex-direction:column;height:100dvh;min-height:0;overflow:hidden;}
+.app-shell[data-conversations-workspace="true"] #workspace-content > .min-w-0 {display:flex;flex-direction:column;flex:1;min-height:0;gap:6px;}
+.app-shell[data-conversations-workspace="true"] #workspace-content > .min-w-0 > [data-selected] {flex:1;min-height:0;height:auto;}
+.app-shell[data-conversations-workspace="true"] #workspace-content > .min-w-0 > :not([data-selected]) {flex-shrink:0;}
+.app-shell[data-conversations-workspace="true"] [data-workspace-page-header] {margin-bottom:8px;padding:0 4px 8px;border:0;min-height:40px;}
+.app-shell[data-conversations-workspace="true"] [data-workspace-page-header] h1 {font-size:18px;}
+.app-shell[data-conversations-workspace="true"] [data-workspace-page-header] button {font-size:12px;min-height:32px;}
+[data-conversation-redesign] {min-height:0!important;max-height:none!important;box-shadow:none!important;border-radius:10px!important;}
+[data-conversation-redesign] [data-conversation-thread] {min-height:0;min-width:0;overflow:hidden;background:#fff;}
+[data-conversation-redesign] [data-conversation-header] {flex-shrink:0;padding:12px 16px;gap:12px;min-height:78px;background:#fff;}
+[data-conversation-redesign] [data-conversation-header] > div:last-child {flex-wrap:wrap;}
+[data-conversation-redesign] [data-conversation-header] button {min-height:36px;border-radius:7px;font-weight:500;}
+[data-conversation-redesign] [data-conversation-header] button:has(svg) {color:var(--service-accent);border-color:var(--service-line);background:#fff;}
+[data-conversation-redesign] [data-conversation-header] button[title="Take over from Velora"],
+[data-conversation-redesign] [data-conversation-header] button[title="إيقاف فيلورا وتولي المحادثة كبشري"] {color:#fff;background:var(--service-accent);border-color:var(--service-accent);}
+[data-conversation-redesign] [data-conversation-thread] > div:not([data-transcript]):not(.conversation-composer) {flex-shrink:0;}
+[data-conversation-redesign] [data-transcript]:not(.vdi-messages) {min-height:0;padding:24px 20px;background:#fff;scrollbar-gutter:stable;}
+[data-conversation-redesign] [data-message-id]:not(.vdi-message) {margin-block:0 20px;max-width:82%;}
+[data-conversation-redesign] [data-message-id]:not(.vdi-message) > div:first-child {font-size:11px;font-weight:400;margin-bottom:5px;}
+[data-conversation-redesign] [data-message-id]:not(.vdi-message) > div:nth-child(2) {border:0;border-radius:12px;padding:12px 16px;font-size:14px;line-height:1.85;box-shadow:none;}
+[data-conversation-redesign] [data-message-id]:not(.vdi-message)[data-direction="inbound"] > div:nth-child(2) {background:#f1f4f4;border-end-start-radius:3px;}
+[data-conversation-redesign] [data-message-id]:not(.vdi-message)[data-direction="outbound"] > div:nth-child(2) {background:#e6f6f1;border-end-end-radius:3px;}
+[data-conversation-redesign] [data-message-id]:not(.vdi-message) > div:last-child {font-size:11px;}
+.conversation-composer {flex-shrink:0;margin:0 12px 12px;border:1px solid var(--service-line);border-radius:10px;background:#fff;min-width:0;}
+.conversation-details-backdrop {position:fixed;inset:0;z-index:55;border:0;background:#182c314d;cursor:default;}
+.conversation-details-panel[data-details-open="true"] {z-index:60;}
+.conversation-composer-tabs {display:flex;border-bottom:1px solid var(--service-line);gap:4px;padding-inline:8px;}
+.conversation-composer-tabs button {display:inline-flex;align-items:center;justify-content:center;gap:7px;flex:1;min-height:44px;border-bottom:2px solid transparent;padding:8px 6px;font-size:13px;color:var(--service-muted);white-space:nowrap;}
+.conversation-composer-tabs button[aria-selected="true"] {border-color:var(--service-accent);color:var(--service-accent);font-weight:600;}
+.conversation-composer > [role="tabpanel"] {padding:10px;max-height:40dvh;overflow:auto;}
+.conversation-composer textarea {border-radius:7px!important;border-color:var(--service-line)!important;background:#fff!important;font-family:inherit;min-width:0;}
+.conversation-composer > [role="tabpanel"] {overscroll-behavior:contain;scrollbar-width:thin;}
+.conversation-composer-tabs button:focus-visible {outline-offset:-4px;}
+.conversation-composer form > p {color:var(--service-muted);font-size:12px;}
+.conversation-composer [data-button] {min-height:36px;font-size:13px;}
+.conversation-composer [role="tabpanel"] > section {border:0;padding:0;margin:0;font-size:13px;}
+.conversation-composer [role="tabpanel"] > section h3 {font-size:14px;}
+.conversation-note-editor label {display:grid;gap:6px;font-size:13px;}
+.conversation-note-editor textarea {width:100%;padding:10px;border:1px solid var(--service-line);resize:vertical;font-size:16px;}
+.conversation-note-actions {display:flex;gap:10px;justify-content:space-between;align-items:center;margin-top:8px;}
+.conversation-note-actions p {font-size:12px;color:var(--service-muted);}
+[data-conversation-redesign] > #conversation-details {padding:0 16px;gap:0;background:#fff;border-inline-start:1px solid var(--service-line);overscroll-behavior:contain;scrollbar-width:thin;}
+[data-conversation-redesign] > #conversation-details {min-height:0;}
+[data-conversation-redesign] > #conversation-details > div:first-child {position:sticky;top:0;z-index:1;padding-block:16px;background:#fff;flex-shrink:0;margin:0;}
+[data-conversation-redesign] > #conversation-details > * {margin-top:0;}
+.conversation-customer-summary {display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 0 10px;}
+.conversation-customer-avatar {width:56px;height:56px;display:grid;place-items:center;border-radius:50%;background:#eef2f2;font-size:23px;font-weight:500;}
+.conversation-customer-summary h2 {font-size:16px;font-weight:600;text-align:center;}
+.conversation-status {font-size:12px;padding:2px 10px;border-radius:12px;background:var(--service-accent-soft);color:var(--service-accent);}
+.conversation-copy-phone {display:flex;flex-direction:row;align-items:center;justify-content:center;gap:7px;min-width:64px;min-height:44px;padding:4px;color:var(--service-muted);font-size:12px;}
+.conversation-copy-phone svg {box-sizing:content-box;border:1px solid var(--service-line);border-radius:50%;padding:10px;}
+.conversation-detail-section {padding:14px 0;border-top:1px solid var(--service-line);flex-shrink:0;}
+.conversation-detail-heading {display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;}
+.conversation-detail-heading h3 {font-size:14px;font-weight:600;}
+.conversation-detail-row {display:grid;grid-template-columns:minmax(70px,1fr) minmax(0,1.5fr);gap:12px;align-items:baseline;font-size:13px;line-height:1.6;padding-block:4px;}
+.conversation-detail-row dt {color:var(--service-muted);}
+.conversation-detail-row dd {margin:0;text-align:end;overflow-wrap:anywhere;}
+.conversation-secondary {font-size:12px;color:var(--service-muted);line-height:1.6;}
+.conversation-note-preview {font-size:13px;border:1px solid var(--service-line);border-radius:8px;padding:10px;margin-bottom:5px;white-space:pre-wrap;}
+.conversation-summary {font-size:13px;color:var(--service-muted);margin-top:6px;}
+.conversation-text-action {display:inline-flex;align-items:center;min-height:36px;color:var(--service-accent);font-size:12px;gap:5px;}
+.conversation-intervention {font-size:12px;color:var(--service-warning);margin-top:6px;}
+.conversation-activity {list-style:none;padding:0;margin:0;}
+.conversation-activity li {display:flex;align-items:baseline;gap:9px;padding-block:6px;font-size:13px;}
+.conversation-activity time {font-size:11px;color:var(--service-muted);}
+.conversation-activity-dot {width:6px;height:6px;border-radius:50%;background:var(--service-accent);flex-shrink:0;}
+.conversation-connection {margin-top:8px;font-size:12px;color:var(--service-muted);}
+.conversation-connection summary {cursor:pointer;min-height:36px;}
+.conversation-detail-section:has(select) > div:last-child {font-size:13px;}
+.conversation-detail-section:has(select) h4 {display:none;}
+.conversation-detail-section:has(select) > div:last-child > div:first-child {display:none;}
+.conversation-detail-section :is(select,input,textarea) {min-width:0;background:#fff;border-radius:6px;font-size:13px;}
+.conversation-detail-section select {width:100%;}
+.conversation-detail-section [data-button] {min-height:36px;font-size:12px;}
+.conversation-detail-section button {min-height:36px;}
+.conversation-detail-section label > span {font-size:12px;}
+/* The original native panes retain their own drafts, state and server actions. */
+.app-shell[data-conversations-workspace="true"] .channel-pane [data-channel-inbox="whatsapp"] {height:100%;min-height:0;}
+.app-shell[data-conversations-workspace="true"] .channel-pane [data-channel-inbox="whatsapp"] > aside[data-details-open="true"],
+.app-shell[data-conversations-workspace="true"] .conversation-details-panel[data-details-open="true"] {width:min(380px,100%);z-index:60;box-shadow:0 0 0 100vmax #182c314d;padding-bottom:env(safe-area-inset-bottom);}
+.app-shell[data-conversations-workspace="true"] .ig-thread-header {padding:12px 16px;min-height:78px;flex-wrap:wrap;}
+.app-shell[data-conversations-workspace="true"] [data-channel-inbox="instagram"] {min-height:0;}
+.app-shell[data-conversations-workspace="true"] [data-channel-inbox="instagram"] ol {background:#fff;}
+.app-shell[data-conversations-workspace="true"] [data-channel-inbox="instagram"] li {border:0;background:#f1f4f4;font-size:14px;}
+.app-shell[data-conversations-workspace="true"] [data-channel-inbox="instagram"] li[data-direction="outbound"] {background:#e6f6f1;}
+.app-shell[data-conversations-workspace="true"] [data-channel-inbox="instagram"] .conversation-composer label {padding:0;gap:6px;font-size:13px;}
+.app-shell[data-conversations-workspace="true"] [data-channel-inbox="instagram"] .conversation-composer textarea {width:100%;min-height:72px;max-height:24dvh;}
+.app-shell[data-conversations-workspace="true"] [data-channel-inbox="instagram"] .conversation-composer [role="tabpanel"] > [data-button] {margin-top:8px;margin-inline-end:8px;}
+.app-shell[data-conversations-workspace="true"] [data-channel-inbox="instagram"] .conversation-composer [role="status"] {font-size:12px;margin-block:8px;color:var(--service-muted);}
+.app-shell[data-conversations-workspace="true"] .conversation-details-panel {padding:0 16px;}
+.app-shell[data-conversations-workspace="true"] .conversation-details-panel > header {position:sticky;top:0;background:#fff;padding-block:16px;}
+/* 1360px: 168 navigation + 24 outer padding + 320 inbox + 300 details + 548 thread (before borders).
+   Below this width customer context moves to a drawer rather than squeezing replies. */
+.app-shell[data-conversations-workspace="true"] .conversation-details-panel {min-height:0;overscroll-behavior:contain;scrollbar-width:thin;}
+.app-shell[data-conversations-workspace="true"] .conversation-details-panel dl {margin:0;gap:0;}
+.app-shell[data-conversations-workspace="true"] .conversation-details-panel dd {margin:0;font-size:13px;}
+.app-shell[data-conversations-workspace="true"] .conversation-details-panel dt {font-size:13px;}
+.app-shell[data-conversations-workspace="true"] .conversation-details-panel > header {z-index:1;}
+.app-shell[data-conversations-workspace="true"] [data-conversation-header] h2 {color:var(--service-ink);}
+.app-shell[data-conversations-workspace="true"] [data-conversation-redesign] :is(span,div,p).text-\[\#f0cf9d\] {color:#855619;}
+.app-shell[data-conversations-workspace="true"] [data-conversation-header] .animate-pulse {animation:none;}
+.app-shell[data-conversations-workspace="true"] .conversation-composer [id$="-panel-note"] {background:#fffbef;border-radius:0 0 10px 10px;}
+.app-shell[data-conversations-workspace="true"] .channel-pane [data-channel-inbox="instagram"] {overflow:hidden;}
+.app-shell[data-conversations-workspace="true"] [data-transcript]:not(.vdi-messages) {overflow-x:hidden;overflow-wrap:anywhere;}
+.app-shell[data-conversations-workspace="true"] .conversation-activity li {position:relative;}
+.app-shell[data-conversations-workspace="true"] .conversation-activity li + li::before {content:"";position:absolute;inset-inline-start:2px;top:-8px;bottom:calc(100% - 16px);width:1px;background:var(--service-line);}
+@media(min-width:1360px) {
+ .app-shell[data-conversations-workspace="true"] .channel-pane [data-channel-inbox="whatsapp"]:has(> aside),
+ .app-shell[data-conversations-workspace="true"] .channel-pane .ig-conversation-layout {grid-template-columns:minmax(0,1fr) 300px;}
+ .app-shell[data-conversations-workspace="true"] .channel-pane [data-channel-inbox="whatsapp"] > aside[data-details-open="false"] {display:flex;position:static;width:auto;max-width:none;box-shadow:none;}
+ .app-shell[data-conversations-workspace="true"] .channel-pane .conversation-details-panel[data-details-open="false"] {display:block;position:static;width:auto;box-shadow:none;}
+ .app-shell[data-conversations-workspace="true"] [data-details-toggle],
+ .app-shell[data-conversations-workspace="true"] #conversation-details[data-details-open="false"] > div:first-child > button,
+ .app-shell[data-conversations-workspace="true"] .conversation-details-panel[data-details-open="false"] header button {display:none;}
+}
+@media(max-width:1359px) {
+ .app-shell[data-conversations-workspace="true"] [data-details-toggle] {display:inline-flex;min-width:44px;min-height:44px;}
+ .app-shell[data-conversations-workspace="true"] #conversation-details[data-details-open="false"],
+ .app-shell[data-conversations-workspace="true"] .conversation-details-panel[data-details-open="false"] {display:none;}
+ .app-shell[data-conversations-workspace="true"] #conversation-details[data-details-open="true"] > div:first-child > button {display:flex;min-width:44px;min-height:44px;}
+}
+@media(max-width:1023px) {
+ .app-shell[data-conversations-workspace="true"] #workspace-content {padding:8px;}
+ .app-shell[data-conversations-workspace="true"] #workspace-content {height:calc(100dvh - 80px);}
+ .app-shell[data-conversations-workspace="true"] [data-workspace-page-header] {margin-bottom:4px;}
+}
+@media(max-width:767px) {
+ .app-shell[data-conversations-workspace="true"] #workspace-content {--service-control-height:44px;}
+ .app-shell[data-conversations-workspace="true"][data-immersive="true"] #workspace-content {height:100dvh;}
+ .app-shell[data-conversations-workspace="true"] [data-button],
+ .app-shell[data-conversations-workspace="true"] [data-conversation-header] button {min-height:44px;}
+ [data-conversation-redesign] [data-conversation-header] {padding:10px 12px;gap:8px;}
+ [data-conversation-redesign] [data-transcript]:not(.vdi-messages) {padding:16px 12px;}
+ [data-conversation-redesign] [data-message-id]:not(.vdi-message) {max-width:90%;margin-bottom:16px;}
+ .conversation-composer {margin:0 8px max(8px,env(safe-area-inset-bottom));}
+ .conversation-composer-tabs {gap:0;padding-inline:2px;}
+ .conversation-composer-tabs button {font-size:12px;gap:5px;padding-inline:4px;}
+ .conversation-note-actions {align-items:flex-end;}
+ .conversation-detail-section button {min-height:44px;}
+ .conversation-detail-section :is(select,input) {min-height:44px;font-size:16px;}
+ .conversation-detail-row {grid-template-columns:minmax(76px,1fr) minmax(0,1.5fr);gap:8px;}
+}
+@media(max-width:359px) {
+ .conversation-composer-tabs button {font-size:11px;gap:3px;}
+ .conversation-composer-tabs svg {width:14px;height:14px;flex-shrink:0;}
+ [data-conversation-redesign] [data-conversation-header] {padding-inline:8px;}
+}
+
+/* Desktop-only polish, scoped to the customer conversations workspace. */
+@media(min-width:1024px) {
+ .app-shell[data-conversations-workspace="true"] #workspace-content {position:relative;}
+ .app-shell[data-conversations-workspace="true"] [data-conversation-header] {min-height:70px;padding:10px 16px;}
+ .app-shell[data-conversations-workspace="true"] [data-transcript]:not(.vdi-messages) {padding:20px 24px;overscroll-behavior:contain;scrollbar-width:thin;overflow-wrap:anywhere;}
+ .app-shell[data-conversations-workspace="true"] [data-message-id]:not(.vdi-message) {max-width:min(82%,680px);margin-bottom:16px;}
+ .app-shell[data-conversations-workspace="true"] [data-message-id]:not(.vdi-message) > div:nth-child(2) {line-height:1.75;padding:10px 14px;max-width:100%;}
+ .app-shell[data-conversations-workspace="true"] [data-message-id]:not(.vdi-message)[data-direction="outbound"] > div:nth-child(2).bg-\[var\(--service-subtle\)\] {background:var(--service-subtle);border:1px solid var(--service-line);}
+ .app-shell[data-conversations-workspace="true"] .conversation-composer {margin:0 14px 12px;}
+ .app-shell[data-conversations-workspace="true"] .conversation-composer-tabs button {flex:0 1 auto;min-width:80px;padding-inline:14px;}
+ .app-shell[data-conversations-workspace="true"] .conversation-composer-tabs button:only-child {flex:1;}
+ .app-shell[data-conversations-workspace="true"] .conversation-customer-summary {display:grid;grid-template-columns:40px minmax(0,1fr) 32px;gap:4px 8px;align-items:center;padding:14px 0;}
+ .app-shell[data-conversations-workspace="true"] .conversation-customer-avatar {grid-column:1;grid-row:1 / 3;width:40px;height:40px;font-size:18px;}
+ .app-shell[data-conversations-workspace="true"] .conversation-customer-summary h2 {grid-column:2;grid-row:1;text-align:right;overflow-wrap:anywhere;}
+ .app-shell[data-conversations-workspace="true"]:dir(ltr) .conversation-customer-summary h2 {text-align:left;}
+ .app-shell[data-conversations-workspace="true"] .conversation-status {grid-column:2;grid-row:2;justify-self:start;}
+ .app-shell[data-conversations-workspace="true"] .conversation-copy-phone {grid-column:3;grid-row:1 / 3;justify-self:end;min-width:32px;min-height:36px;width:32px;padding:0;font-size:0;}
+ .app-shell[data-conversations-workspace="true"] .conversation-customer-summary > p {grid-column:1 / -1;}
+ .app-shell[data-conversations-workspace="true"] .conversation-copy-phone svg {padding:6px;}
+ .app-shell[data-conversations-workspace="true"] .conversation-detail-section {padding:12px 0;}
+ .app-shell[data-conversations-workspace="true"] .conversation-detail-heading {margin-bottom:6px;}
+ .app-shell[data-conversations-workspace="true"] .conversation-detail-row {padding-block:3px;gap:8px;}
+ .app-shell[data-conversations-workspace="true"] .conversation-note-preview {padding:8px;font-size:12px;line-height:1.7;}
+ .app-shell[data-conversations-workspace="true"] #conversation-details,
+ .app-shell[data-conversations-workspace="true"] .conversation-details-panel {scrollbar-gutter:stable;}
+}
+@media(min-width:1280px) {
+ .app-shell[data-conversations-workspace="true"] #conversation-details[data-details-open="false"] {display:flex;position:static;width:auto;max-width:none;box-shadow:none;}
+ .app-shell[data-conversations-workspace="true"] .channel-pane [data-channel-inbox="whatsapp"]:has(> aside),
+ .app-shell[data-conversations-workspace="true"] .channel-pane .ig-conversation-layout {grid-template-columns:minmax(0,1fr) 264px;}
+ .app-shell[data-conversations-workspace="true"] .channel-pane [data-channel-inbox="whatsapp"] > aside[data-details-open="false"] {display:flex;position:static;width:auto;max-width:none;box-shadow:none;}
+ .app-shell[data-conversations-workspace="true"] .channel-pane .conversation-details-panel[data-details-open="false"] {display:block;position:static;width:auto;box-shadow:none;}
+ .app-shell[data-conversations-workspace="true"] [data-details-toggle],
+ .app-shell[data-conversations-workspace="true"] #conversation-details[data-details-open="false"] > div:first-child > button,
+ .app-shell[data-conversations-workspace="true"] .conversation-details-panel[data-details-open="false"] header button {display:none;}
+}
+@media(min-width:1800px) {
+ .app-shell[data-conversations-workspace="true"] .channel-pane [data-channel-inbox="whatsapp"]:has(> aside),
+ .app-shell[data-conversations-workspace="true"] .channel-pane .ig-conversation-layout {grid-template-columns:minmax(0,1fr) 300px;}
+}
+
+.conversation-contact-actions {display:contents;}
+.conversation-contact-link {display:none;}
+/* Reference surfaces apply only inside the Inbox; the existing Velora navigation is untouched. */
+@media(min-width:1024px) {
+ .app-shell[data-conversations-workspace="true"] #workspace-content {background:#fff;}
+ .app-shell[data-conversations-workspace="true"] .channel-pane [data-conversation-redesign] {gap:8px;border:0!important;border-radius:0!important;background:transparent;}
+ .app-shell[data-conversations-workspace="true"] .channel-pane [data-conversation-thread] {border:1px solid var(--service-line);border-radius:14px;overflow:hidden;}
+ .app-shell[data-conversations-workspace="true"] [data-conversation-header] {min-height:74px;padding:12px 16px;}
+ .app-shell[data-conversations-workspace="true"] [data-conversation-header] h2 {font-size:18px;font-weight:700;}
+ .app-shell[data-conversations-workspace="true"] [data-transcript]:not(.vdi-messages) {padding:24px 18px;}
+ .app-shell[data-conversations-workspace="true"] [data-message-id]:not(.vdi-message) {max-width:min(85%,680px);margin-bottom:20px;}
+ .app-shell[data-conversations-workspace="true"] [data-message-id]:not(.vdi-message) > div:nth-child(2) {font-size:15px;line-height:1.85;padding:13px 16px;border-radius:13px;}
+ .app-shell[data-conversations-workspace="true"] [data-message-id]:not(.vdi-message)[data-sender="staff"] > div:nth-child(2) {background:var(--service-subtle);border:1px solid var(--service-line);}
+ .app-shell[data-conversations-workspace="true"] [data-message-id]:not(.vdi-message)[data-sender="assistant"] > div:nth-child(2) {background:var(--service-accent-soft);}
+ .app-shell[data-conversations-workspace="true"] .conversation-composer {margin:0 12px 12px;border-radius:12px;}
+ .app-shell[data-conversations-workspace="true"] .conversation-composer-tabs {justify-content:space-between;padding-inline:8px;}
+ .app-shell[data-conversations-workspace="true"] .conversation-composer-tabs button {flex:1;min-width:0;font-size:13px;min-height:44px;padding-inline:6px;}
+ .app-shell[data-conversations-workspace="true"] #conversation-details,
+ .app-shell[data-conversations-workspace="true"] .conversation-details-panel[data-details-open="false"] {border:1px solid var(--service-line);border-radius:14px;padding-inline:18px;background:var(--service-surface);}
+ .app-shell[data-conversations-workspace="true"] #conversation-details > div:first-child {padding-block:16px;}
+ .app-shell[data-conversations-workspace="true"] .conversation-customer-summary {display:flex;flex-direction:column;gap:8px;padding:20px 0 16px;}
+ .app-shell[data-conversations-workspace="true"] .conversation-customer-avatar {width:72px;height:72px;font-size:28px;background:var(--service-subtle);}
+ .app-shell[data-conversations-workspace="true"] .conversation-customer-summary h2 {font-size:18px;text-align:center;}
+ .app-shell[data-conversations-workspace="true"]:dir(ltr) .conversation-customer-summary h2 {text-align:center;}
+ .app-shell[data-conversations-workspace="true"] .conversation-contact-actions {display:flex;justify-content:center;gap:18px;margin-top:8px;width:100%;}
+ .app-shell[data-conversations-workspace="true"] .conversation-contact-actions > :is(a,button) {display:flex;align-items:center;flex-direction:column;justify-content:center;gap:6px;min-width:48px;min-height:64px;width:auto;padding:0;font-size:12px;color:var(--service-muted);text-decoration:none;}
+ .app-shell[data-conversations-workspace="true"] .conversation-contact-actions svg {box-sizing:content-box;padding:10px;border:1px solid var(--service-line);border-radius:50%;width:18px;height:18px;}
+ .app-shell[data-conversations-workspace="true"] .conversation-contact-actions > :is(a,button):hover {color:var(--service-accent);}
+ .app-shell[data-conversations-workspace="true"] .conversation-detail-section {padding:16px 0;}
+ .app-shell[data-conversations-workspace="true"] .conversation-detail-heading {margin-bottom:10px;}
+ .app-shell[data-conversations-workspace="true"] .conversation-detail-heading h3 {font-size:15px;}
+ .app-shell[data-conversations-workspace="true"] .conversation-detail-row {font-size:14px;padding-block:5px;}
+ .app-shell[data-conversations-workspace="true"] .ig-conversation-layout {gap:8px;}
+ .app-shell[data-conversations-workspace="true"] [data-channel-inbox="instagram"] {border:1px solid var(--service-line);border-radius:14px;overflow:hidden;}
+}
+@media(min-width:1360px) {
+ .app-shell[data-conversations-workspace="true"] .channel-pane [data-channel-inbox="whatsapp"]:has(> aside),
+ .app-shell[data-conversations-workspace="true"] .channel-pane .ig-conversation-layout {grid-template-columns:minmax(0,1fr) 300px;}
+}
+@media(min-width:1800px) {
+ .app-shell[data-conversations-workspace="true"] .channel-pane [data-channel-inbox="whatsapp"]:has(> aside),
+ .app-shell[data-conversations-workspace="true"] .channel-pane .ig-conversation-layout {grid-template-columns:minmax(0,1fr) 320px;}
+}
+
+@media(min-width:1280px) {
+ .app-shell[data-conversations-workspace="true"] [data-workspace-page-header] {margin-bottom:3px;padding-bottom:3px;}
+ .app-shell[data-conversations-workspace="true"] .channel-pane [data-conversation-header] {min-height:68px;}
+ .app-shell[data-conversations-workspace="true"] .channel-pane [data-transcript]:not(.vdi-messages) {padding:22px 16px;}
+ .app-shell[data-conversations-workspace="true"] .channel-pane [data-message-id]:not(.vdi-message) {max-width:min(76%,550px);margin-block:0 17px;}
+ .app-shell[data-conversations-workspace="true"] .channel-pane [data-message-id]:not(.vdi-message) > div:nth-child(2) {font-size:15px;line-height:1.75;padding:11px 14px;}
+ .app-shell[data-conversations-workspace="true"] [data-message-id]:not(.vdi-message)[data-direction="inbound"] > div:nth-child(2) {border-end-start-radius:3px;}
+ .app-shell[data-conversations-workspace="true"] [data-message-id]:not(.vdi-message)[data-direction="outbound"] > div:nth-child(2) {border-end-end-radius:3px;}
+ .app-shell[data-conversations-workspace="true"] .conversation-composer {background:white;}
+ .app-shell[data-conversations-workspace="true"] .conversation-composer-tabs {padding-inline:5px;}
+ .app-shell[data-conversations-workspace="true"] .conversation-composer-tabs button {border-radius:8px 8px 0 0;}
+ .app-shell[data-conversations-workspace="true"] .conversation-composer-tabs button[aria-selected="true"] {background:white;}
+ .app-shell[data-conversations-workspace="true"] #conversation-details > div:first-child {padding-block:13px;}
+ .app-shell[data-conversations-workspace="true"] .conversation-customer-summary {gap:5px;padding:12px 0 10px;}
+ .app-shell[data-conversations-workspace="true"] .conversation-customer-avatar {width:70px;height:70px;background:#edf2f2;}
+ .app-shell[data-conversations-workspace="true"] .conversation-contact-actions {margin-top:4px;}
+ .app-shell[data-conversations-workspace="true"] .conversation-contact-actions > :is(a,button) {min-height:56px;}
+ .app-shell[data-conversations-workspace="true"] .conversation-detail-section {padding:12px 0;}
+ .app-shell[data-conversations-workspace="true"] .conversation-detail-heading {margin-bottom:5px;}
+ .app-shell[data-conversations-workspace="true"] .conversation-detail-row {padding-block:3px;}
+}
+
+/* Desktop reference correction; no navigation or smaller-viewport rules. */
+@media(min-width:1280px) {
+ .app-shell[data-conversations-workspace="true"] #workspace-content {padding:8px 10px 10px;}
+ .app-shell[data-conversations-workspace="true"] [data-workspace-page-header] {min-height:32px;margin-bottom:0;padding-bottom:0;}
+ .app-shell[data-conversations-workspace="true"] #workspace-content > .min-w-0 > [role="status"] {padding:4px 10px;font-size:12px;line-height:20px;border-radius:7px;}
+ .app-shell[data-conversations-workspace="true"] .channel-pane [data-channel-inbox="whatsapp"]:has(> aside),
+ .app-shell[data-conversations-workspace="true"] .channel-pane .ig-conversation-layout {grid-template-columns:minmax(0,1fr) clamp(256px,20vw,310px);}
+ .app-shell[data-conversations-workspace="true"] .channel-pane [data-conversation-header] {min-height:74px;padding:12px 18px;}
+ .app-shell[data-conversations-workspace="true"] .channel-pane [data-transcript]:not(.vdi-messages) {padding:24px 20px;}
+ .app-shell[data-conversations-workspace="true"] .channel-pane [data-message-id]:not(.vdi-message) {max-width:80%;margin-bottom:20px;min-width:0;}
+ .app-shell[data-conversations-workspace="true"] .channel-pane [data-message-id]:not(.vdi-message) > div:first-child {order:2;margin:5px 3px 0;font-size:12px;line-height:18px;}
+ .app-shell[data-conversations-workspace="true"] .channel-pane [data-message-id]:not(.vdi-message) > div:nth-child(2) {order:1;padding:14px 18px;font-size:16px;line-height:1.8;overflow-wrap:anywhere;border-radius:14px;}
+ .app-shell[data-conversations-workspace="true"] .channel-pane [data-message-id]:not(.vdi-message) > div:last-child {order:3;}
+ .app-shell[data-conversations-workspace="true"] .channel-pane [data-message-id]:not(.vdi-message)[data-sender="staff"] > div:first-child > span:first-child {color:var(--service-ink);}
+ .app-shell[data-conversations-workspace="true"] [data-message-id]:not(.vdi-message)[data-direction="inbound"] > div:nth-child(2) {border-end-start-radius:3px;}
+ .app-shell[data-conversations-workspace="true"] [data-message-id]:not(.vdi-message)[data-direction="outbound"] > div:nth-child(2) {border-end-end-radius:3px;}
+ .app-shell[data-conversations-workspace="true"] #conversation-details {padding:0 16px;}
+ .app-shell[data-conversations-workspace="true"] #conversation-details > * {margin-block:0;flex-shrink:0;}
+ .app-shell[data-conversations-workspace="true"] #conversation-details > div:first-child {padding:16px 0;}
+ .app-shell[data-conversations-workspace="true"] #conversation-details > div:first-child h3 {font-size:16px;}
+ .app-shell[data-conversations-workspace="true"] .conversation-customer-summary {padding:18px 0 14px;gap:4px;}
+ .app-shell[data-conversations-workspace="true"] .conversation-customer-avatar {width:76px;height:76px;font-size:28px;}
+ .app-shell[data-conversations-workspace="true"] .conversation-customer-summary h2 {font-size:20px;line-height:28px;}
+ .app-shell[data-conversations-workspace="true"] .conversation-contact-actions {margin-top:10px;}
+ .app-shell[data-conversations-workspace="true"] .conversation-detail-section {padding:15px 0;}
+ .app-shell[data-conversations-workspace="true"] .conversation-detail-heading {margin-bottom:10px;}
+ .app-shell[data-conversations-workspace="true"] .conversation-detail-row {font-size:14px;line-height:22px;padding-block:5px;}
+ .app-shell[data-conversations-workspace="true"] .conversation-note-preview {font-size:14px;line-height:1.7;padding:12px;}
+ .app-shell[data-conversations-workspace="true"] .conversation-composer {margin:0 14px 14px;border-radius:10px;}
+ .app-shell[data-conversations-workspace="true"] .conversation-composer-tabs button {min-height:44px;font-size:14px;}
+ .app-shell[data-conversations-workspace="true"] .conversation-composer-tabs button:only-child {flex:0 0 auto;min-width:105px;margin-inline-end:auto;}
+}

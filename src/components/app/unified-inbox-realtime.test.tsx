@@ -3,6 +3,8 @@ import React,{act,useState} from 'react';
 import {createRoot,type Root} from 'react-dom/client';
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
 import type {InboxRealtimeEvent} from './branch-inbox-realtime';
+import {appCopy} from '@/lib/app-copy';
+import {InboxDesktop,type InboxDesktopView} from './inbox-desktop';
 const m=vi.hoisted(()=>({fetch:vi.fn(),threadVersions:[] as number[],event:null as null|((e:InboxRealtimeEvent)=>void),router:{refresh:vi.fn()},account:null as null|{status:'ready'|'locked';identity:{userId:string};boundaryFingerprint:string},params:new URLSearchParams('source=whatsapp&c=thread')}));
 vi.mock('next/navigation',()=>({useRouter:()=>m.router}));
 vi.mock('next/link',()=>({default:({children,href}:{children:React.ReactNode;href:string})=><a href={href}>{children}</a>}));
@@ -12,8 +14,8 @@ vi.mock('@/lib/customer/service-inbox-read',()=>({fetchServiceInbox:m.fetch}));
 vi.mock('@/lib/whatsapp/inbox-actions',()=>({refreshWhatsappInboxPage:vi.fn()}));
 vi.mock('@/lib/instagram/inbox-actions',()=>({loadInstagramInboxPage:vi.fn()}));
 vi.mock('./workspace-shell',()=>({WorkspaceShell:({children,actions}:{children:React.ReactNode;actions:React.ReactNode})=><main>{actions}{children}</main>}));
-vi.mock('./ui',()=>({Button:({children,onClick,disabled}:{children:React.ReactNode;onClick:()=>void;disabled:boolean})=><button onClick={onClick} disabled={disabled}>{children}</button>,Notice:({children}:{children:React.ReactNode})=><aside>{children}</aside>,EmptyState:()=>null,useAppCopy:()=>({app:{inboxAccessDeniedTitle:"Denied",inboxAccessDeniedBody:"No access",inboxLoadFailedBody:"Unavailable"}})}));
-vi.mock('./conversations',()=>({ConversationsPage:({refreshVersion}:{refreshVersion:number})=>{m.threadVersions.push(refreshVersion);const [draft]=useState('Unsaved draft');return <textarea aria-label="Preserved draft" defaultValue={draft}/>;}}));
+vi.mock('./ui',()=>({Button:({children,onClick,disabled}:{children:React.ReactNode;onClick:()=>void;disabled:boolean})=><button onClick={onClick} disabled={disabled}>{children}</button>,Notice:({children}:{children:React.ReactNode})=><aside>{children}</aside>,EmptyState:()=>null,useAppCopy:()=>({app:{...appCopy('en').app,inboxAccessDeniedTitle:"Denied",inboxAccessDeniedBody:"No access",inboxLoadFailedBody:"Unavailable"}})}));
+vi.mock('./conversations',()=>({ConversationsPage:({refreshVersion,desktopView}:{refreshVersion:number;desktopView?:InboxDesktopView})=>{m.threadVersions.push(refreshVersion);const [draft]=useState('Unsaved draft');return <><textarea aria-label="Preserved draft" defaultValue={draft}/>{desktopView&&<InboxDesktop view={desktopView} locale="en"/>}</>;}}));
 vi.mock('./instagram-inbox',()=>({InstagramInbox:()=>null}));
 vi.mock('./branch-inbox-realtime',()=>({CompanyInboxRealtime:({onInboxEvent}:{onInboxEvent:(e:InboxRealtimeEvent)=>void})=>{m.event=onInboxEvent;return null;}}));
 vi.mock('./account-chrome',()=>({useOptionalAccountSession:()=>m.account}));
@@ -24,6 +26,16 @@ const initial={ok:true,companyId:'company',actorId:'actor',owner:true,companyInS
 let root:Root,container:HTMLDivElement;
 beforeEach(()=>{m.account=null;vi.clearAllMocks();vi.useFakeTimers();vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);Object.defineProperty(document,'visibilityState',{configurable:true,value:'visible'});m.fetch.mockResolvedValue(initial);container=document.createElement('div');document.body.append(container);root=createRoot(container);act(()=>root.render(<UnifiedInbox initial={initial}/>));});
 afterEach(()=>{act(()=>root.unmount());container.remove();vi.useRealTimers();vi.unstubAllGlobals();});
+it('filters loaded assignment locally without fetching or discarding the open draft',()=>{
+ const draft=container.querySelector('textarea');
+ const list=container.querySelector('section[aria-label="Conversation list"]');
+ const unassigned=Array.from(container.querySelectorAll('button')).find(button=>button.textContent?.startsWith('Unassigned'));
+ const mine=Array.from(container.querySelectorAll('button')).find(button=>button.textContent?.startsWith('Assigned to me'));
+ expect(unassigned).toBeTruthy();expect(mine).toBeTruthy();
+ act(()=>unassigned!.click());expect(list?.textContent).toContain('Previously verified contact');
+ act(()=>mine!.click());expect(list?.textContent).not.toContain('Previously verified contact');
+ expect(container.querySelector('textarea')).toBe(draft);expect(m.fetch).not.toHaveBeenCalled();
+});
 it('coalesces event bursts, retains the pane draft and suspends polling while connected',async()=>{
  const draft=container.querySelector('textarea');
  act(()=>{m.event?.({type:'ready'});for(let i=0;i<10;i++)m.event?.({type:'change'});});
@@ -83,7 +95,7 @@ it('pauses actions immediately when the live permission stream becomes unavailab
  act(()=>m.event?.({type:'unavailable'}));expect(container.querySelector('textarea')).toBeNull();expect(container.querySelector('fieldset')).toBeNull();expect(container.textContent).not.toContain('Previously verified contact');
 });
 
-it('erases data on network loss and recovers only through a new read',async()=>{
+it('erases data on an unclassified reader exception and recovers only through a new read',async()=>{
  m.fetch.mockRejectedValueOnce(new Error('offline'));
  act(()=>m.event?.({type:'change'}));await act(async()=>vi.advanceTimersByTimeAsync(250));
  expect(container.querySelector('textarea')).toBeNull();expect(container.textContent).not.toContain('Previously verified contact');
@@ -120,7 +132,7 @@ it('lets a fenced HTTP read finish across transport loss without duplicate recon
  let complete!:(v:Snapshot)=>void;m.fetch.mockImplementationOnce(()=>new Promise<Snapshot>(resolve=>{complete=resolve;}));
  act(()=>m.event?.({type:'change'}));await act(async()=>vi.advanceTimersByTimeAsync(250));
  act(()=>{m.event?.({type:'disconnected'});m.event?.({type:'reconnect'});});
- expect(container.querySelector('textarea')).toBeNull();
+ expect(container.querySelector('textarea')).not.toBeNull();
  await act(async()=>vi.advanceTimersByTimeAsync(250));expect(m.fetch).toHaveBeenCalledTimes(1);
  await act(async()=>complete(initial));expect(container.querySelector('textarea')).not.toBeNull();expect(m.fetch).toHaveBeenCalledTimes(1);
 });
@@ -129,10 +141,26 @@ it('repeated SSE transport failures do not erase a new authorized read or cause 
  for(let i=0;i<5;i++)await act(async()=>m.event?.({type:'disconnected'}));
  expect(m.fetch).toHaveBeenCalledTimes(1);expect(container.querySelector('textarea')).not.toBeNull();
 });
+it('bounds disconnected fallback reads and retries when the network returns',async()=>{
+ await act(async()=>vi.advanceTimersByTimeAsync(30000*8));
+ expect(m.fetch).toHaveBeenCalledTimes(5);
+ await act(async()=>window.dispatchEvent(new Event('online')));
+ expect(m.fetch).toHaveBeenCalledTimes(6);
+});
+it('keeps a verified draft during transport loss but hides it if the independent read denies access',async()=>{
+ let finish!:(v:Snapshot)=>void;m.fetch.mockImplementationOnce(()=>new Promise<Snapshot>(resolve=>{finish=resolve;}));
+ const draft=container.querySelector('textarea');
+ act(()=>m.event?.({type:'disconnected'}));
+ expect(container.querySelector('textarea')).toBe(draft);
+ expect(draft?.value).toBe('Unsaved draft');
+ await act(async()=>finish({ok:false,code:'FORBIDDEN'} as Snapshot));
+ expect(container.querySelector('textarea')).toBeNull();
+ expect(container.textContent).not.toContain('Previously verified contact');
+});
 it('shows a single read failure notice and safely retries',async()=>{
  m.fetch.mockResolvedValueOnce({ok:false,code:'UNAVAILABLE'});
  act(()=>m.event?.({type:'change'}));await act(async()=>vi.advanceTimersByTimeAsync(250));
- expect(container.querySelectorAll('aside')).toHaveLength(1);
+ expect(container.querySelector('[data-inbox-offline="true"]')).not.toBeNull();expect(container.querySelector('textarea')).toBeNull();
  const retry=Array.from(container.querySelectorAll('button')).find(b=>b.textContent==='Retry');
  await act(async()=>retry?.click());expect(container.querySelector('textarea')).not.toBeNull();
 });
@@ -160,4 +188,74 @@ it('a trailing list reconciliation does not reload a thread already refreshed fo
  expect(m.threadVersions.at(-1)).toBe(initialVersion+2);
  await act(async()=>finish(initial));expect(m.fetch).toHaveBeenCalledTimes(2);
  expect(m.threadVersions.at(-1)).toBe(initialVersion+2);
+});
+
+it('uses the reference worklist and stage controls against loaded scoped rows without fetching or losing drafts',async()=>{
+ if(!initial.ok||!initial.wa.ok)throw new Error('fixture');
+ vi.stubGlobal('matchMedia',()=>({matches:true,addEventListener:vi.fn(),removeEventListener:vi.fn()}));
+ const first={...row,status:'open',automationAllowed:false,assistantPaused:true,assignedTo:null,leadStage:'interested',unreadCount:1,followUpStatus:'scheduled',followUpAt:new Date(Date.now()-3600000).toISOString(),intervention:{reasons:[]},messages:[{from:'customer',at:Date.now(),text:'Question'}]};
+ const second={...first,id:'second',customer:'Other scoped customer',leadStage:'new',unreadCount:0,followUpStatus:'none',followUpAt:null,messages:[]};
+ const loaded={...initial,wa:{...initial.wa,conversations:[first,second],page:{...initial.wa.page,conversations:[first,second]}}} as unknown as Snapshot;
+ act(()=>root.unmount());root=createRoot(container);
+ await act(async()=>root.render(<UnifiedInbox initial={loaded}/>));
+ const draft=container.querySelector('textarea');
+ const stage=container.querySelector<HTMLSelectElement>('.vdi-filters select[aria-label="Filter lead stage"]')!;
+ expect(stage).not.toBeNull();expect(stage.options).toHaveLength(7);
+ const worklist=container.querySelector<HTMLSelectElement>('.vdi-filters select[aria-label="Worklist"]')!;
+ expect([...worklist.options].map(option=>option.value)).toEqual(expect.arrayContaining(['all','unread','awaiting_staff','follow_up_today','overdue','trial_or_quote','noura','resolved']));
+ expect(container.querySelectorAll('.vdi-conversation')).toHaveLength(2);
+ act(()=>{stage.value='interested';stage.dispatchEvent(new Event('change',{bubbles:true}));});
+ expect(container.querySelectorAll('.vdi-conversation')).toHaveLength(1);expect(container.querySelector('.vdi-conversation')?.textContent).toContain('Previously verified contact');
+ act(()=>{worklist.value='overdue';worklist.dispatchEvent(new Event('change',{bubbles:true}));});
+ expect(container.querySelectorAll('.vdi-conversation')).toHaveLength(1);
+ expect([...worklist.options].find(option=>option.value==='overdue')?.textContent).toContain('(1)');
+ expect(container.querySelector('textarea')).toBe(draft);expect(m.fetch).not.toHaveBeenCalled();
+});
+it('limits Instagram filters to supported queue fields and clears an unsupported deep-linked state',async()=>{
+ vi.stubGlobal('matchMedia',()=>({matches:true,addEventListener:vi.fn(),removeEventListener:vi.fn()}));
+ const previousParams=m.params;m.params=new URLSearchParams('channel=instagram&filter=resolved');
+ try{
+ const loaded={...initial,waAllowed:false,igAllowed:true,wa:{ok:false,code:'FORBIDDEN'},ig:{ok:true,data:{companyId:'company',actorId:'actor',conversationScope:'all_company',conversations:[{id:'instagram-thread',counterpartyId:'Scoped Instagram participant',unreadCount:1,assignedTo:null,lastReceivedAt:null}],hasMore:false,nextCursor:null}}} as unknown as Snapshot;
+ act(()=>root.unmount());root=createRoot(container);
+ await act(async()=>root.render(<UnifiedInbox initial={loaded}/>));
+ const list=container.querySelector<HTMLSelectElement>('.vdi-filters select[aria-label="Worklist"]')!;
+ expect([...list.options].map(option=>option.value)).toEqual(['all','unread']);expect(list.value).toBe('all');
+ expect(container.querySelector('.vdi-filters select[aria-label="Filter lead stage"]')).toBeNull();
+ expect(container.querySelector('.vdi-conversation')?.textContent).toContain('Scoped Instagram participant');expect(m.fetch).not.toHaveBeenCalled();
+ }finally{m.params=previousParams;}
+});
+
+it('retains verified messages and draft on a classified transport outage, pauses actions, then revalidates',async()=>{
+ const draft=container.querySelector('textarea');
+ m.fetch.mockResolvedValueOnce({ok:false,code:'UNAVAILABLE',transportUnavailable:true});
+ act(()=>m.event?.({type:'disconnected'}));await act(async()=>Promise.resolve());
+ expect(container.querySelector('textarea')).toBe(draft);expect(draft?.value).toBe('Unsaved draft');
+ expect(container.textContent).toContain('Previously verified contact');expect(container.querySelector('fieldset')?.disabled).toBe(true);
+ expect(container.textContent).not.toContain(appCopy('en').app.inboxLoadFailedBody);
+ act(()=>m.event?.({type:'reconnect'}));await act(async()=>vi.advanceTimersByTimeAsync(250));
+ expect(container.querySelector('textarea')).toBe(draft);expect(container.querySelector('fieldset')?.disabled).toBe(false);
+});
+it('keeps the inbox shell instead of the page-replacing read-failure banner on an unclassified outage',async()=>{
+ m.fetch.mockResolvedValueOnce({ok:false,code:'UNAVAILABLE'});
+ act(()=>m.event?.({type:'change'}));await act(async()=>vi.advanceTimersByTimeAsync(250));
+ expect(container.querySelector('[data-inbox-offline="true"]')).not.toBeNull();
+ expect(container.textContent).not.toContain('Previously verified contact');expect(container.querySelector('textarea')).toBeNull();
+ expect(container.textContent).not.toContain(appCopy('en').app.inboxLoadFailedBody);
+});
+it('never revives prior data after explicit denial followed by a transport failure',async()=>{
+ m.fetch.mockResolvedValueOnce({ok:false,code:'FORBIDDEN'});
+ act(()=>m.event?.({type:'change'}));await act(async()=>vi.advanceTimersByTimeAsync(250));
+ m.fetch.mockResolvedValueOnce({ok:false,code:'UNAVAILABLE',transportUnavailable:true});
+ act(()=>m.event?.({type:'disconnected'}));await act(async()=>Promise.resolve());
+ expect(container.querySelector('textarea')).toBeNull();expect(container.textContent).not.toContain('Previously verified contact');
+});
+it('pauses immediately on browser offline and waits for a verified read before resuming after online',async()=>{
+ const draft=container.querySelector('textarea');
+ act(()=>window.dispatchEvent(new Event('offline')));
+ expect(container.querySelector('textarea')).toBe(draft);expect(container.querySelector('fieldset')?.disabled).toBe(true);expect(m.fetch).not.toHaveBeenCalled();
+ let finish!:(value:Snapshot)=>void;m.fetch.mockImplementationOnce(()=>new Promise<Snapshot>(resolve=>{finish=resolve;}));
+ act(()=>window.dispatchEvent(new Event('online')));
+ expect(m.fetch).toHaveBeenCalledTimes(1);expect(container.querySelector('fieldset')?.disabled).toBe(true);
+ await act(async()=>finish(initial));
+ expect(container.querySelector('textarea')).toBe(draft);expect(container.querySelector('fieldset')?.disabled).toBe(false);
 });

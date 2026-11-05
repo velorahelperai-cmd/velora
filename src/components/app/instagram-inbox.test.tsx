@@ -123,3 +123,44 @@ it('does not acknowledge or save while the parent scope is temporarily unverifie
  await (save.props.onClick as()=>Promise<void>)();expect(f.save).not.toHaveBeenCalled();expect(f.send).not.toHaveBeenCalled();
  render(id(1),{...extra,readSuspended:false});expect(f.read).toHaveBeenCalledTimes(1);
 });
+import {InboxDesktop,type InboxDesktopView} from './inbox-desktop';
+const portView:InboxDesktopView={state:'ready',scopeKey:'scoped',messages:[],query:'',onQueryChange:()=>{},tabs:[],activeTab:'all',onTabChange:()=>{},conversations:[],onSelect:()=>{}};
+it('ports Instagram with native saved-reply state and keeps disabled rollout and unresolved-send protections',async()=>{
+ const props={embedded:true,selectedConversationId:id(2),desktopView:portView};
+ render(id(1),props);for(let n=0;n<30;n++)await Promise.resolve();
+ let tree=render(id(1),props);expect(tree.type).toBe(InboxDesktop);
+ let view=(tree.props as {view:InboxDesktopView}).view;
+ expect(view.customer?.name).toBe('200');expect(view.composer?.enabledModes).not.toContain('note');
+ const input=nodes(view.composer!.modePanels!.message as ReactElement).find(n=>n.type==='textarea')!;
+ (input.props.onChange as (event:unknown)=>void)({target:{value:'native port draft'}});
+ tree=render(id(1),props);view=(tree.props as {view:InboxDesktopView}).view;
+ const save=nodes(view.composer!.modePanels!.message as ReactElement).find(n=>n.type==='button'&&n.props.children==='Save reply')!;
+ (save.props.onClick as ()=>void)();for(let n=0;n<30;n++)await Promise.resolve();
+ tree=render(id(1),props);view=(tree.props as {view:InboxDesktopView}).view;
+ expect(f.save).toHaveBeenCalledWith(expect.objectContaining({companyId:id(1),conversationId:id(2),text:'native port draft'}));
+ const send=nodes(view.composer!.modePanels!.message as ReactElement).find(n=>n.type==='button'&&n.props.children==='Send saved reply')!;
+ expect(send.props.disabled).toBe(true);expect(f.send).not.toHaveBeenCalled();
+ tree=render(id(1),{...props,readSuspended:true});view=(tree.props as {view:InboxDesktopView}).view;
+ expect(view.customer).toBeUndefined();expect(view.messages).toEqual([]);
+});
+it('blocks Instagram save/send/read acknowledgements during a parent transport pause without hiding the verified view',async()=>{
+ const props={embedded:true,selectedConversationId:id(2),desktopView:portView,connectionPaused:true};
+ render(id(1),props);for(let n=0;n<30;n++)await Promise.resolve();
+ let tree=render(id(1),props);let view=(tree.props as {view:InboxDesktopView}).view;
+ expect(view.customer?.name).toBe('200');expect(view.composer?.canSend).toBe(false);
+ const input=nodes(view.composer!.modePanels!.message as ReactElement).find(n=>n.type==='textarea')!;
+ (input.props.onChange as (event:unknown)=>void)({target:{value:'Retained draft'}});
+ tree=render(id(1),props);view=(tree.props as {view:InboxDesktopView}).view;
+ const save=nodes(view.composer!.modePanels!.message as ReactElement).find(n=>n.type==='button'&&n.props.children==='Save reply')!;
+ expect(save.props.disabled).toBe(true);(save.props.onClick as ()=>void)();for(let n=0;n<30;n++)await Promise.resolve();
+ expect(f.save).not.toHaveBeenCalled();expect(f.send).not.toHaveBeenCalled();expect(f.read).not.toHaveBeenCalled();
+});
+it('discards an earlier Instagram thread after an explicit refresh denial',async()=>{
+ const props={embedded:true,selectedConversationId:id(2),desktopView:portView};
+ render(id(1),props);for(let n=0;n<30;n++)await Promise.resolve();
+ expect((render(id(1),props).props as {view:InboxDesktopView}).view.customer).toBeDefined();
+ f.thread.mockResolvedValueOnce({ok:false,code:'FORBIDDEN'});
+ render(id(1),{...props,refreshVersion:1});for(let n=0;n<30;n++)await Promise.resolve();
+ const view=(render(id(1),{...props,refreshVersion:1}).props as {view:InboxDesktopView}).view;
+ expect(view.customer).toBeUndefined();expect(view.messages).toEqual([]);expect(f.send).not.toHaveBeenCalled();
+});

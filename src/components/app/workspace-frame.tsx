@@ -24,7 +24,7 @@ export function WorkspaceFrame({title,children,actions,account,presence,nav,imme
  useEffect(()=>{if(menuOpen)closeButtonRef.current?.focus();else if(wasOpen.current)menuButtonRef.current?.focus();wasOpen.current=menuOpen;},[menuOpen]);
  useEffect(()=>{const media=typeof window==='undefined'?undefined:window.matchMedia?.('(min-width: 1024px)');if(!media)return;const close=(event:MediaQueryListEvent)=>{if(event.matches)setMenuOpen(false);};media.addEventListener('change',close);return()=>media.removeEventListener('change',close);},[]);
   return (
-    <div className={`app-shell ${styles.theme} ${styles.workspace}`} data-internal-ui="true" data-immersive={immersive} dir={ar ? "rtl" : "ltr"}>
+    <div className={`app-shell ${styles.theme} ${styles.workspace}`} data-internal-ui="true" data-conversations-workspace={pathname==='/app/conversations'} data-immersive={immersive} dir={ar ? "rtl" : "ltr"}>
       <a href="#workspace-content" inert={menuOpen} className="service-skip-link">{ar?"انتقل للمحتوى":"Skip to content"}</a>
       <aside data-workspace-navigation="true" className={styles.sidebar}>
         <div className={styles.sidebarHeader} inert={menuOpen}>
