@@ -53,7 +53,12 @@ export function matchesUnifiedInboxFilter(item: WhatsappInboxItem, filter: Unifi
   return true;
 }
 export function canUseInboxControl(meta: WhatsappInboxMeta | undefined, action: ControlAction) {
-  if (action === "take_over") return meta?.canTakeOver === true;
+  if (action === "take_over") {
+    if (meta?.canTakeOver === true) return true;
+    // Owners with confirmed reply already hold take_over implicitly — do not strand them
+    // behind an omitted/stale canTakeOver flag after soft UNAVAILABLE retention.
+    return meta?.memberRole === "owner" && meta?.canReply === true;
+  }
   if (action === "resume") return meta?.canResume === true;
   if (action === "close") return meta?.canClose === true;
   return meta?.canAssign === true;
@@ -95,24 +100,30 @@ export function inboxControlDisabledReason(
       : "Resume is unavailable while a send result is unconfirmed.";
   }
   if (!canUseInboxControl(input.meta, action)) {
+    const owner = input.meta?.memberRole === "owner";
     if (action === "take_over") {
+      if (owner) {
+        return ar
+          ? "الاستلام متوقف لهذا النشاط حاليًا. راجع الاشتراك والربط في الإعدادات."
+          : "Take-over is paused for this business right now. Check subscription and connection in Settings.";
+      }
       return ar
-        ? "ليست لديك صلاحية استلام المحادثة."
-        : "You do not have permission to take over conversations.";
+        ? "ليست لديك صلاحية استلام المحادثة (wa.conversations.take_over)."
+        : "You do not have permission to take over conversations (wa.conversations.take_over).";
     }
     if (action === "resume") {
       return ar
-        ? "ليست لديك صلاحية إعادة المحادثة إلى فيلورا."
-        : "You do not have permission to resume Velora.";
+        ? "ليست لديك صلاحية إعادة المحادثة إلى فيلورا (wa.conversations.resume)."
+        : "You do not have permission to resume Velora (wa.conversations.resume).";
     }
     if (action === "close") {
       return ar
-        ? "ليست لديك صلاحية إغلاق المحادثة."
-        : "You do not have permission to close conversations.";
+        ? "ليست لديك صلاحية إغلاق المحادثة (wa.conversations.close)."
+        : "You do not have permission to close conversations (wa.conversations.close).";
     }
     return ar
-      ? "ليست لديك صلاحية تعيين المحادثة."
-      : "You do not have permission to assign conversations.";
+      ? "ليست لديك صلاحية تعيين المحادثة (wa.conversations.assign)."
+      : "You do not have permission to assign conversations (wa.conversations.assign).";
   }
   return undefined;
 }

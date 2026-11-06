@@ -51,13 +51,15 @@ export type WhatsappInboxMeta = {
   companyId: string;
   /** all_company | assigned_only — paired with companyId for snapshot scope. */
   conversationScope: "all_company" | "assigned_only";
+  /** Active membership role for this company — owners hold write caps implicitly. */
+  memberRole: "owner" | "staff";
   timezone: string | null;
   timezoneAnnouncedUtc: boolean;
   canReply: boolean;
   canAssign: boolean;
-  canTakeOver?: boolean;
-  canResume?: boolean;
-  canClose?: boolean;
+  canTakeOver: boolean;
+  canResume: boolean;
+  canClose: boolean;
   assignees: InboxAssigneeOption[];
   counts: Record<LeadWorklist, number>;
 };
@@ -180,7 +182,10 @@ export async function loadWhatsappInboxInitialPage(): Promise<
     const assignees = canAssign ? await loadAssigneeOptions(client, companyId) : [];
     stage = "final_access";
     const current = await getCompanyAccess();
-    if (!current.ok || current.context.company?.id !== companyId) return fail("UNAVAILABLE", current.ok ? "SCOPE_CHANGED" : current.code);
+    if (!current.ok || current.context.company?.id !== companyId || !current.context.membership) {
+      return fail("UNAVAILABLE", current.ok ? "SCOPE_CHANGED" : current.code);
+    }
+    const memberRole = current.context.membership.role === "owner" ? "owner" as const : "staff" as const;
     stage = "final_scope";
     const finalScope = await readSessionConversationScope(companyId);
     if (!finalScope.ok) return fail(finalScope.code, finalScope.code);
@@ -191,7 +196,7 @@ export async function loadWhatsappInboxInitialPage(): Promise<
     const lists: LeadWorklist[] = ["all", "awaiting_staff", "follow_up_today", "overdue", "trial_or_quote"];
     const counts = Object.fromEntries(lists.map(list => [list, countLeadWorklist(page.data.conversations, list, Date.now(), timezone)])) as Record<LeadWorklist, number>;
     return { ok: true, conversations: page.data.conversations, page: page.data, meta: {
-      companyId, conversationScope: scope, timezone, timezoneAnnouncedUtc: announcedUtc, canReply, canAssign,
+      companyId, conversationScope: scope, memberRole, timezone, timezoneAnnouncedUtc: announcedUtc, canReply, canAssign,
       canTakeOver, canResume, canClose, assignees, counts,
     } };
   } catch (error) { return fail("UNAVAILABLE", "EXCEPTION", error); }
@@ -253,7 +258,8 @@ export async function loadWhatsappInbox(): Promise<WhatsappInboxLoad> {
     const canTakeOver = await sessionHasCompanyCapability(companyId, "wa.conversations.take_over") === true;
     const canResume = await sessionHasCompanyCapability(companyId, "wa.conversations.resume") === true;
     const canClose = await sessionHasCompanyCapability(companyId, "wa.conversations.close") === true;
-    return { ok: true, conversations, meta: { companyId, conversationScope: scope, timezone,
+    const memberRole = access.context.membership.role === "owner" ? "owner" as const : "staff" as const;
+    return { ok: true, conversations, meta: { companyId, conversationScope: scope, memberRole, timezone,
       timezoneAnnouncedUtc: announcedUtc, canReply, canAssign, canTakeOver, canResume, canClose,
       assignees: canAssign ? await loadAssigneeOptions(supabase, companyId) : [], counts } };
   } catch { return { ok: false, code: "UNAVAILABLE" }; }

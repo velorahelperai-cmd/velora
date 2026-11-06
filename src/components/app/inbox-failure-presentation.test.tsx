@@ -167,8 +167,8 @@ describe.each(["en", "ar"])("UnifiedInbox failure presentation in %s", locale =>
      membershipFingerprint: "fp-1",
     },
     meta: {
-     companyId: baseInitial.companyId, conversationScope: "all_company", timezone: null, timezoneAnnouncedUtc: true,
-     canReply: false, canAssign: false, assignees: [],
+     companyId: baseInitial.companyId, conversationScope: "all_company", memberRole: "staff", timezone: null, timezoneAnnouncedUtc: true,
+     canReply: false, canAssign: false, canTakeOver: false, canResume: false, canClose: false, assignees: [],
      counts: { all: 0, awaiting_staff: 0, follow_up_today: 0, overdue: 0, trial_or_quote: 0 },
     },
    },

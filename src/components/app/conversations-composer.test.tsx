@@ -17,7 +17,7 @@ vi.mock('@/lib/customer/inbox-extension-actions',()=>({runInboxExtension:api.ext
 vi.mock('@/lib/whatsapp/inbox-actions',()=>({refreshWhatsappInboxInitialPage:vi.fn(),refreshWhatsappInboxPage:vi.fn(),refreshWhatsappThreadPage:api.thread,refreshWhatsappControlAuditPage:vi.fn(async()=>({ok:true,data:{events:[],hasMore:false,nextCursor:null}})),refreshWhatsappConnectionStatus:vi.fn(async()=>({ok:false,code:'UNAVAILABLE'})),markWhatsappThreadSeen:vi.fn()}));
 let host:HTMLDivElement,root:Root;
 const conversation={id:'thread',inboxSequence:'1',unreadCount:0,intervention:{reasons:['human_control' as const]},customer:'Synthetic',phone:'synthetic',topic:'WhatsApp',summary:'',status:'open' as const,owner:'staff',assistantPaused:true,automationAllowed:false,revision:1,messages:[],internalNote:'Saved internal note',leadStage:'new' as const,followUpStatus:'none' as const,followUpAt:null,leadRevision:1};
-const meta={companyId:'company',conversationScope:'all_company' as const,timezone:null,timezoneAnnouncedUtc:true,canReply:true,canAssign:false,canTakeOver:true,canResume:true,canClose:true,assignees:[],counts:{all:1,awaiting_staff:1,follow_up_today:0,overdue:0,trial_or_quote:0}};
+const meta={companyId:'company',conversationScope:'all_company' as const,memberRole:'staff' as const,timezone:null,timezoneAnnouncedUtc:true,canReply:true,canAssign:false,canTakeOver:true,canResume:true,canClose:true,assignees:[],counts:{all:1,awaiting_staff:1,follow_up_today:0,overdue:0,trial_or_quote:0}};
 beforeEach(()=>{Object.assign(globalThis,{IS_REACT_ACT_ENVIRONMENT:true});vi.clearAllMocks();api.extension.mockResolvedValue({ok:true,data:[]});host=document.createElement('div');document.body.append(host);root=createRoot(host);api.thread.mockResolvedValue({ok:true,data:{kind:'partial',companyId:'company',conversationId:'thread',conversation,messages:[],displayedInboundMessageId:null,unreadCount:0,nextCursor:null,hasMore:false}});});
 afterEach(()=>{act(()=>root.unmount());host.remove();vi.unstubAllGlobals();});
 it('offers native contact links only for a valid permitted phone without sending or saving anything',async()=>{
@@ -178,10 +178,22 @@ it('surfaces a take-over permission reason instead of demanding takeover the act
  await act(async()=>root.render(<ConversationsPage desktopView={desktopView} embedded selectedConversationId="thread" inbox={[awaiting]} meta={{...meta,canTakeOver:false}} page={page}/>));
  const takeOver=host.querySelector<HTMLButtonElement>('.vdi-control-actions button[aria-label="Take over conversation"]');
  expect(takeOver?.disabled).toBe(true);
- expect(takeOver?.title).toContain('permission to take over');
- expect(host.textContent).toContain('permission to take over');
+ expect(takeOver?.title).toContain('wa.conversations.take_over');
+ expect(host.textContent).toContain('wa.conversations.take_over');
  expect(host.textContent).not.toContain('Take over the conversation before replying');
  expect(api.control).not.toHaveBeenCalled();
+});
+it('enables take-over for a company owner even when the take_over flag is stale but reply remains confirmed',async()=>{
+ const awaiting={...conversation,status:'handed_over' as const,automationAllowed:false,assistantPaused:true,owner:'staff',intervention:{reasons:['worker_review' as const]}};
+ api.thread.mockResolvedValue({ok:true,data:{kind:'partial',companyId:'company',conversationId:'thread',conversation:awaiting,messages:[],displayedInboundMessageId:null,unreadCount:0,nextCursor:null,hasMore:false}});
+ api.control.mockResolvedValue({ok:true,state:{id:'thread',status:'handed_over',automationAllowed:false,automationGeneration:1,revision:2,assistantPaused:true,owner:'staff'}});
+ const page={kind:'partial' as const,companyId:'company',conversationScope:'all_company' as const,ordering:'newest_created' as const,conversations:[awaiting],hasMore:false,nextCursor:null,total:1,unreadTotal:0,interventionTotal:1,membershipFingerprint:'same'};
+ await act(async()=>root.render(<ConversationsPage desktopView={desktopView} embedded selectedConversationId="thread" inbox={[awaiting]} meta={{...meta,memberRole:'owner',canTakeOver:false,canReply:true}} page={page}/>));
+ const takeOver=host.querySelector<HTMLButtonElement>('.vdi-control-actions button[aria-label="Take over conversation"]');
+ expect(takeOver).not.toBeNull();expect(takeOver!.disabled).toBe(false);
+ expect(host.textContent).toContain('Take over the conversation before replying');
+ await act(async()=>takeOver!.click());
+ expect(api.control).toHaveBeenCalledWith(expect.objectContaining({conversationId:'thread',action:'take_over'}));
 });
 it('keeps the native verified transcript mounted on a transport failure while pausing writes and recovers after a verified read',async()=>{
  const message={id:'message',from:'customer' as const,text:'Previously verified message',at:1,arrivalSequence:'1',direction:'inbound' as const};

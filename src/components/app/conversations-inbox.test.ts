@@ -73,16 +73,22 @@ describe("bounded Inbox UI contracts", () => {
     expect(matchesUnifiedInboxFilter({ ...read, intervention: { reasons: ["send_unknown"] } }, "staff")).toBe(true);
     expect(matchesUnifiedInboxFilter({ ...read, assistantPaused: true }, "staff")).toBe(false);
   });
-  it("requires each control capability explicitly instead of inferring it from reply access", () => {
-    const meta = { canReply: true, canAssign: true, canResume: true, canClose: false } as WhatsappInboxMeta;
+  it("requires each control capability explicitly instead of inferring it from reply access for staff", () => {
+    const meta = { memberRole: "staff", canReply: true, canAssign: true, canTakeOver: false, canResume: true, canClose: false } as WhatsappInboxMeta;
     expect(canUseInboxControl(meta, "take_over")).toBe(false);
     expect(canUseInboxControl(meta, "resume")).toBe(true);
     expect(canUseInboxControl(meta, "close")).toBe(false);
   });
+  it("lets company owners with reply take over when the take_over flag is stale or omitted", () => {
+    const meta = { memberRole: "owner", canReply: true, canAssign: false, canTakeOver: false, canResume: false, canClose: false } as WhatsappInboxMeta;
+    expect(canUseInboxControl(meta, "take_over")).toBe(true);
+    expect(canUseInboxControl({ ...meta, canReply: false }, "take_over")).toBe(false);
+  });
   it("names the concrete reason a control action is unavailable", () => {
-    const meta = { canReply: true, canAssign: false, canTakeOver: false, canResume: true, canClose: true } as WhatsappInboxMeta;
+    const meta = { memberRole: "staff", canReply: true, canAssign: false, canTakeOver: false, canResume: true, canClose: true } as WhatsappInboxMeta;
     const ready = { writesPaused: false, selectedReady: true, meta, controlBusy: false, pending: false, selectedUnresolved: false };
     expect(inboxControlDisabledReason("take_over", ready, true)).toContain("صلاحية استلام");
+    expect(inboxControlDisabledReason("take_over", { ...ready, meta: { ...meta, memberRole: "owner", canReply: false } }, false)).toContain("subscription");
     expect(inboxControlDisabledReason("take_over", { ...ready, meta: { ...meta, canTakeOver: true } }, false)).toBeUndefined();
     expect(inboxControlDisabledReason("resume", { ...ready, sendLocked: true }, false)).toContain("unconfirmed");
     expect(inboxControlDisabledReason("close", { ...ready, writesPaused: true }, false)).toContain("Connection interrupted");
@@ -119,7 +125,7 @@ describe("Inbox renders authoritative data", () => {
     const row = { ...item("thread", "2", 0), messages: [message("already-read-customer", "4")] };
     const initialPage: WhatsappInboxPage = { kind: "partial", companyId: "company", conversationScope: "all_company", ordering: "newest_created",
       conversations: [row], total: 20, unreadTotal: 7, interventionTotal: 3, membershipFingerprint: "same", nextCursor: "2", hasMore: true };
-    const meta: WhatsappInboxMeta = { companyId: "company", conversationScope: "all_company", timezone: null, timezoneAnnouncedUtc: true,
+    const meta: WhatsappInboxMeta = { companyId: "company", conversationScope: "all_company", memberRole: "staff", timezone: null, timezoneAnnouncedUtc: true,
       canReply: true, canAssign: false, canTakeOver: false, canResume: false, canClose: false, assignees: [],
       counts: { all: 1, awaiting_staff: 0, follow_up_today: 0, overdue: 0, trial_or_quote: 0 } };
     navigation.selectedId = "thread";

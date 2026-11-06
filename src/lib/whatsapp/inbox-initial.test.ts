@@ -24,7 +24,7 @@ describe('initial inbox native composition',()=>{
   expect(s.rpc).toHaveBeenCalledExactlyOnceWith('whatsapp_inbox_page',{p_company_id:company,p_limit:40,p_before:null});
   expect(s.access).toHaveBeenCalledTimes(2);expect(s.scope).toHaveBeenCalledTimes(2);
   expect(s.cap.mock.calls.filter(call=>call[1]==='wa.conversations.read')).toHaveLength(2);
-  expect(r.meta).toMatchObject({canReply:false,canAssign:false,canTakeOver:false,canResume:false,canClose:false});
+  expect(r.meta).toMatchObject({memberRole:'owner',canReply:false,canAssign:false,canTakeOver:false,canResume:false,canClose:false});
  });
  it.each([false,null])('does not fetch rows for unconfirmed capability %s',async value=>{
   s.cap.mockResolvedValue(value);expect(await loadWhatsappInboxInitialPage()).toEqual({ok:false,code:'UNAVAILABLE'});expect(s.rpc).not.toHaveBeenCalled();
