@@ -6,8 +6,11 @@ import { readAdminTruth } from "@/lib/answers/runtime/admin-truth";
 import { financialFixture } from "./financial-truth.fixtures";
 vi.mock("server-only", () => ({}));
 
-const state = vi.hoisted(() => ({ tables: {} as Record<string, Record<string, unknown>[]>, fail: "", owner: true, companyId: "company-a" }));
-vi.mock("@/lib/billing/admin/owner-gate", () => ({billingOwnerGate:async()=>state.owner?{ok:true,binding:{actorId:"synthetic-owner",sessionId:"synthetic-session"}}:{ok:false,code:"forbidden"},recheckBillingOwner:async()=>state.owner}));
+const state = vi.hoisted(() => ({ tables: {} as Record<string, Record<string, unknown>[]>, fail: "", owner: true, recheckCode: "ok" as "ok" | "forbidden" | "unavailable", companyId: "company-a" }));
+vi.mock("@/lib/billing/admin/owner-gate", () => ({
+  billingOwnerGate: async () => state.owner ? { ok: true, binding: { actorId: "synthetic-owner", sessionId: "synthetic-session" } } : { ok: false, code: "forbidden" as const },
+  recheckBillingOwner: async () => state.recheckCode === "ok" ? { ok: true as const } : { ok: false as const, code: state.recheckCode },
+}));
 vi.mock("@/lib/tenancy/access", () => ({ getCompanyAccess: async () => ({ ok: true, context: { company: { id: state.companyId } } }) }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({
   rpc: async () => ({ data: { live_collected_baisa: 9000, test_collected_baisa: 0, settled_orders: 1 }, error: null }),
@@ -46,7 +49,7 @@ async function display(f: ReturnType<typeof financialFixture>) {
   return mapBillingReturnDisplay({ requestCompanyId: f.order.company_id, row: await loadBillingReturnRow({ requestCompanyId: f.order.company_id, orderId: f.order.id }) });
 }
 describe("G07 financial truth regression", () => {
-  beforeEach(() => { state.fail = ""; state.owner = true; state.companyId = "company-a"; seed(); });
+  beforeEach(() => { state.fail = ""; state.owner = true; state.recheckCode = "ok"; state.companyId = "company-a"; seed(); });
   it("displays success for a complete proven receipt", async () => { expect((await display(financialFixture())).kind).toBe("success"); });
   it("does not mistake authorization for collected payment", async () => {
     const f = seed(); f.event.raw_summary.is_auth = true;
@@ -115,6 +118,8 @@ describe("G07 financial truth regression", () => {
     expect(summary.data.collections).toMatchObject({ live_collected_baisa: 0, test_collected_baisa: 9000, settled_orders: 0 });
   });
   it("keeps owner authorization before financial reads", async () => { state.owner = false; expect(await readAdminTruth()).toEqual({ ok: false, error: "forbidden" }); });
+  it("fails closed with forbidden if recheck fails with forbidden during collections read", async () => { state.recheckCode = "forbidden"; expect(await readAdminTruth()).toEqual({ ok: false, error: "forbidden" }); });
+  it("fails closed with unavailable if recheck fails with unavailable during collections read", async () => { state.recheckCode = "unavailable"; expect(await readAdminTruth()).toEqual({ ok: false, error: "unavailable" }); });
   it.each(["pending", "failed"])("keeps uncollected %s separate from proven payment", async status => {
     const f = seed(); state.tables.billing_entitlement_applications = []; state.tables.billing_settlement_outcomes = [];
     f.attempt.status = status === "failed" ? "failed" : "provider_submitted";

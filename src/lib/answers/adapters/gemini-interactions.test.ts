@@ -69,7 +69,7 @@ describe('Flash-Lite and Arabic streaming',()=>{
   const request=create.mock.calls[0][0];
   expect(request).toMatchObject({model:'gemini-3.5-flash-lite',generation_config:{thinking_level:'minimal',max_output_tokens:256},background:true,store:true});
   expect(request.input).toContain('ما مواعيد العمل؟');expect(request.input).toContain('Sunday 10:00-14:00');
-  expect(request.system_instruction).toContain('منع التأليف والتخمين');expect(request.tools).toBeUndefined();
+  expect(request.system_instruction).toContain('منع التأليف والهلوسة الصارم');expect(request.tools).toBeUndefined();
  });
  it.each(['gemini-3.8-flash','gemini-3.5-flash-lite'] as const)('retrieves retained %s handles with their original model',async model=>{
   const {client}=sdk(undefined,vi.fn().mockResolvedValue({...fixture(),model:`models/${model}-001`}));

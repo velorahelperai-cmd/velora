@@ -34,19 +34,7 @@ function stripReviewStop(sql) {
   );
 }
 
-// Import shared worker core and route handler implementation
-const { runKnowledgeFileAttempt } = await import(
-  pathToFileURL(resolve("src/lib/knowledge/file-worker/run.ts")).href
-);
-const { buildWorkerObservation } = await import(
-  pathToFileURL(resolve("src/lib/knowledge/file-worker/observation.ts")).href
-);
-const { classifyStuckAttempt, PROVIDER_OUTCOME_UNKNOWN_CODE } = await import(
-  pathToFileURL(resolve("src/lib/knowledge/file-worker/recovery.ts")).href
-);
-const { processKnowledgeFileWorkerBatch } = await import(
-  pathToFileURL(resolve("src/lib/knowledge/file-worker/batch-core.ts")).href
-);
+// Import shared route handler implementation
 const { handleKnowledgeFileWorkerRequest } = await import(
   pathToFileURL(resolve("src/lib/knowledge/file-worker/route-handler.ts")).href
 );
