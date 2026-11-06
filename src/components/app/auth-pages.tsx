@@ -646,7 +646,11 @@ export function AuthEntryForm({mode}:{mode:"login"|"signup"}) {
       if (!current()) { trace.finish("CONFLICT"); if (continuity.ok) clearAuthGestureNonce(continuity.requestNonce); return; }
       if (!continuity.ok) {
         trace.finish("UNAVAILABLE");
-        setFormError(continuity.code === "CONTINUITY_RECOVERY_REQUIRED" ? copy.errors.continuityRecovery : copy.auth.serviceUnavailable);
+        setFormError(
+          continuity.code === "CONTINUITY_RECOVERY_REQUIRED"
+            ? copy.errors.continuityRecovery
+            : copy.errors.continuityUnavailable,
+        );
         return;
       }
       trace.stage("provider");

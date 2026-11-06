@@ -344,6 +344,31 @@ export async function signUpWithEmail(input: {
   });
 }
 
+/** Bound wait after login.committed so Set-Cookie reaches the browser before access stalls. */
+export const POST_LOGIN_ACCESS_BUDGET_MS = 15_000;
+
+export async function resolvePostLoginDestination(
+  preferred: string,
+  readAccess: () => Promise<Awaited<ReturnType<typeof getCompanyAccess>>>,
+  budgetMs = POST_LOGIN_ACCESS_BUDGET_MS,
+): Promise<string> {
+  const soft = preferred || "/app";
+  try {
+    const access = await Promise.race([
+      readAccess(),
+      new Promise<null>((resolve) => {
+        setTimeout(() => resolve(null), budgetMs);
+      }),
+    ]);
+    if (access == null) return soft;
+    // Transient access probe failure must not strand a committed session on /access?code=UNAVAILABLE.
+    if (!access.ok && access.code === "UNAVAILABLE") return soft;
+    return pathForAccess(access, preferred || null);
+  } catch {
+    return soft;
+  }
+}
+
 export async function signInWithEmail(input: {
   email: string;
   password: string;
@@ -388,18 +413,19 @@ export async function signInWithEmail(input: {
       const code = admitted.code === "AUTH_ERROR" || admitted.code === "INVALID_INPUT" ? admitted.code : "UNAVAILABLE";
       return { ok: false, code, diagnostic: trace.finish(code === "AUTH_ERROR" ? "AUTH_ERROR" : code === "INVALID_INPUT" ? "INVALID_INPUT" : "UNAVAILABLE") };
     }
+    const preferred = input.next != null ? safeInternalPath(input.next, "") : "";
     const resolved = await resolveBrokerSession({
       getAll: () => cookieStore.getAll().map((c) => ({ name: c.name, value: c.value })),
     });
-    if (resolved.ok) {
-      const preferred = input.next != null ? safeInternalPath(input.next, "") : "";
-      if (preferred) commitAuthReturnForGeneration(writer, resolved.boundary.generation, preferred);
+    if (resolved.ok && preferred) {
+      commitAuthReturnForGeneration(writer, resolved.boundary.generation, preferred);
     }
+    // Cookies were committed above. Do not hold the server-action response on a
+    // multi-10s–60s access probe — clients abandon and Set-Cookie never sticks.
     trace.stage("access");
-    const access = await getCompanyAccess();
-    const preferred = input.next != null ? safeInternalPath(input.next, "") : "";
+    const next = await resolvePostLoginDestination(preferred, () => getCompanyAccess());
     trace.finish("OK");
-    return { ok: true, data: { next: pathForAccess(access, preferred || null) } };
+    return { ok: true, data: { next } };
   } catch {
     return { ok: false, code: "UNAVAILABLE", diagnostic: trace.finish(providerAttempted ? "OUTCOME_UNKNOWN" : "UNAVAILABLE") };
   }

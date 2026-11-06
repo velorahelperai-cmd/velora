@@ -10,6 +10,8 @@ import {
 } from "@/lib/auth/broker/continuity";
 
 export const dynamic = "force-dynamic";
+/** Bind may retry under Preview Supabase latency (bounded per-attempt). */
+export const maxDuration = 120;
 
 /** Process-local enrollment throttle (best-effort; not a substitute for edge rate limits). */
 const enrollHits = new Map<string, { n: number; resetAt: number }>();

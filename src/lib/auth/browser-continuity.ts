@@ -93,7 +93,7 @@ async function continuityStatus(correlation?: unknown): Promise<{ hasArtifacts: 
   }
 }
 
-async function enrollContinuity(anchor: string, correlation?: unknown): Promise<boolean> {
+async function enrollContinuityOnce(anchor: string, correlation?: unknown): Promise<boolean> {
   try {
     const res = await fetch("/auth/broker/continuity", {
       method: "POST",
@@ -112,6 +112,17 @@ async function enrollContinuity(anchor: string, correlation?: unknown): Promise<
   } catch {
     return false;
   }
+}
+
+/** Retry transient Preview/bind latency before surfacing CONTINUITY_UNAVAILABLE. */
+async function enrollContinuity(anchor: string, correlation?: unknown): Promise<boolean> {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    if (await enrollContinuityOnce(anchor, correlation)) return true;
+    if (attempt < 3) {
+      await new Promise((resolve) => setTimeout(resolve, 400 * attempt));
+    }
+  }
+  return false;
 }
 
 function locksAvailable(): boolean {
