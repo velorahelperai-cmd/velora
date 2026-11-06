@@ -43,7 +43,7 @@ it('rechecks idle authority and closes on revocation without another change',asy
 it('cleans up upstream errors, cancellation and the bounded connection lifetime',async()=>{
  for(const end of ['error','cancel','lifetime']){
   const s=setup();await s.read();
-  if(end==='error'){s.status('CHANNEL_ERROR');expect(await s.read()).toContain('unavailable');}
+  if(end==='error')s.status('CHANNEL_ERROR');
   else if(end==='cancel')await s.reader.cancel();
   else await vi.advanceTimersByTimeAsync(1000);
   expect((await s.reader.read()).done).toBe(true);expect(s.client.removeChannel).toHaveBeenCalledTimes(1);
@@ -56,6 +56,19 @@ it('retains a change received during an in-flight authorization check',async()=>
  s.changed({new:{company_id:scope.companyId,branch_id:scope.branchId,channel:scope.channel}});
  release(true);expect(await s.read()).toContain('ready');expect(await s.read()).toContain('change');
  s.abort.abort();
+});
+
+it('closes a planned rotation without an unavailable signal while renewal authorization is still running',async()=>{
+ let release:(v:boolean)=>void=()=>{};
+ const authorize=vi.fn().mockResolvedValueOnce(true).mockImplementation(()=>new Promise<boolean>(resolve=>{release=resolve;}));
+ const s=setup(authorize,scope,true);
+ await s.read();s.ready();await s.read();
+ await vi.advanceTimersByTimeAsync(1000);
+ await vi.advanceTimersByTimeAsync(5000);
+ let text='';for(;;){const record=await s.reader.read();if(record.done)break;text+=new TextDecoder().decode(record.value);}
+ expect(text).not.toContain('event: unavailable');
+ expect(s.client.removeChannel).toHaveBeenCalled();
+ release(true);
 });
 
 it('authorizes a planned renewal before closing, and fails closed on denial',async()=>{

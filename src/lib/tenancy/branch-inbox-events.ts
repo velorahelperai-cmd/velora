@@ -25,7 +25,13 @@ export function branchInboxEventStream(input:{
    const joinTimeout=setTimeout(()=>{emit('unavailable');stop();},8000);
    const lifetimeMs=input.lifetimeMs??45000;
    let renewal:ReturnType<typeof setTimeout>|undefined;
-   const lifetime=setTimeout(()=>{if(input.renewBeforeClose)emit('unavailable');stop();},lifetimeMs);
+   let renewStarted=false;
+   // A planned rotation that is already proving authority must not be labeled
+   // unavailable: the inbox treats that signal as a permission failure and
+   // clears the verified conversation. A denied check still emits revoked.
+   // A rotation that never started stays unavailable.
+   const renewLeadMs=Math.min(20000,Math.max(1000,lifetimeMs-1000));
+   const lifetime=setTimeout(()=>{if(input.renewBeforeClose&&!renewStarted)emit('unavailable');stop();},lifetimeMs);
    stop=()=>{
     if(closed)return;closed=true;clearInterval(heartbeat);clearTimeout(lifetime);clearTimeout(renewal);clearTimeout(joinTimeout);
     signal.removeEventListener('abort',stop);
@@ -41,12 +47,12 @@ export function branchInboxEventStream(input:{
      if(!await authorize()){emit('revoked');stop();return;}
      emit(event);
      if(event==='renew')stop();
-    }catch{emit('unavailable');stop();}
+    }catch{stop();}
     finally{busy=false;if(!closed){if(pending){pending=false;void check('change');}else if(renewPending){renewPending=false;void check('renew');}}}
    };
-   // A planned rotation must prove fresh authority before preserving the UI.
-   // A slow or failed authorization still reaches the hard fail-closed deadline.
-   if(input.renewBeforeClose)renewal=setTimeout(()=>{if(readySent)void check('renew');},Math.max(0,lifetimeMs-5000));
+   // Prove fresh authority before the client preserves the UI across rotation.
+   // Start early enough for a slow broker check to finish as renew or revoked.
+   if(input.renewBeforeClose)renewal=setTimeout(()=>{if(readySent){renewStarted=true;void check('renew');}},Math.max(0,lifetimeMs-renewLeadMs));
    const changed=(payload:{new:Record<string,unknown>})=>{
     const row=payload.new;
     if(row.company_id===scope.companyId&&('branchId' in scope
@@ -64,7 +70,7 @@ export function branchInboxEventStream(input:{
     .on('system',{},payload=>{
      if(payload.extension!=='postgres_changes')return;
      if(payload.status==='ok'){replicationReady=true;ready();}
-     else{emit('unavailable');stop();}
+     else stop();
     });
    signal.addEventListener('abort',stop,{once:true});
    if(signal.aborted){stop();return;}
@@ -73,7 +79,11 @@ export function branchInboxEventStream(input:{
     if(closed)return;
     if(status==='SUBSCRIBED'){
      joined=true;ready();
-    }else if(status==='CHANNEL_ERROR'||status==='TIMED_OUT'||status==='CLOSED'){emit('unavailable');stop();}
+    }else if(status==='CHANNEL_ERROR'||status==='TIMED_OUT'||status==='CLOSED'){
+     // Transport loss is not a permission result. The client keeps the last
+     // verified inbox and rechecks it; revoked remains the denial signal.
+     stop();
+    }
    });
   },
   cancel(){cancelled=true;stop();},
