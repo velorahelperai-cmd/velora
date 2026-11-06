@@ -611,6 +611,8 @@ export function ConversationsPage({
   const [threadTransportPaused,setThreadTransportPaused]=useState(false);
   const writesPaused=connectionPaused||threadTransportPaused;
   const suspendedRef=useRef(readSuspended||writesPaused);suspendedRef.current=readSuspended||writesPaused;
+  // Parent transport recovery must not leave a sticky thread-local write pause.
+  useEffect(()=>{if(!connectionPaused)setThreadTransportPaused(false);},[connectionPaused]);
   const copy = useAppCopy();
   const { locale } = useDemo();
   const router = useRouter();

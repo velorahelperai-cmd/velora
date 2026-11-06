@@ -61,12 +61,12 @@ it('locks the snapshot on revocation and discards an earlier successful read',as
  expect(m.fetch).toHaveBeenCalledTimes(1);
 });
 
-it('keeps the previously read pane during soft UNAVAILABLE, pauses writes, then recovers',async()=>{
+it('keeps the previously read pane during soft UNAVAILABLE without pausing verified writes',async()=>{
  const draft=container.querySelector('textarea');
  m.fetch.mockResolvedValueOnce({ok:false,code:'UNAVAILABLE'});
  act(()=>m.event?.({type:'change'}));await act(async()=>vi.advanceTimersByTimeAsync(250));
  expect(container.querySelector('textarea')).toBe(draft);expect(container.textContent).toContain('Previously verified contact');
- expect(container.querySelector('fieldset')?.disabled).toBe(true);
+ expect(container.querySelector('fieldset')?.disabled).toBe(false);
  expect(container.querySelector('[data-inbox-offline="true"]')).toBeNull();
  act(()=>m.event?.({type:'change'}));await act(async()=>vi.advanceTimersByTimeAsync(250));
  expect(container.querySelector('textarea')).toBe(draft);expect(container.querySelector('fieldset')?.disabled).toBe(false);
@@ -94,7 +94,7 @@ it('drops prior data immediately when the confirmed account is locked or changes
  }
 });
 
-it('keeps the verified list when the live stream becomes unavailable and only pauses writes',async()=>{
+it('pauses on live-stream loss, then resumes verified writes when the stream reconnects even if a soft recheck fails',async()=>{
  let finish!:(v:Snapshot)=>void;
  m.fetch.mockImplementationOnce(()=>new Promise<Snapshot>(resolve=>{finish=resolve;}));
  const draft=container.querySelector('textarea');
@@ -103,7 +103,9 @@ it('keeps the verified list when the live stream becomes unavailable and only pa
  expect(container.textContent).toContain('Previously verified contact');
  expect(container.querySelector('[data-inbox-offline="true"]')).toBeNull();
  await act(async()=>finish({ok:false,code:'UNAVAILABLE'} as Snapshot));
- expect(container.querySelector('textarea')).toBe(draft);expect(container.querySelector('fieldset')?.disabled).toBe(true);
+ // Soft recheck must not keep writes paused once the stream is back.
+ await act(async()=>m.event?.({type:'reconnect'}));
+ expect(container.querySelector('textarea')).toBe(draft);expect(container.querySelector('fieldset')?.disabled).toBe(false);
 });
 
 it('retains verified data on an unclassified reader exception after a successful list, then recovers',async()=>{
@@ -171,12 +173,12 @@ it('keeps a verified draft during transport loss but hides it if the independent
  expect(container.querySelector('textarea')).toBeNull();
  expect(container.textContent).not.toContain('Previously verified contact');
 });
-it('shows a transport pause on soft UNAVAILABLE without emptying the verified list',async()=>{
+it('keeps verified writes enabled on soft UNAVAILABLE without emptying the list',async()=>{
  const draft=container.querySelector('textarea');
  m.fetch.mockResolvedValueOnce({ok:false,code:'UNAVAILABLE'});
  act(()=>m.event?.({type:'change'}));await act(async()=>vi.advanceTimersByTimeAsync(250));
  expect(container.querySelector('[data-inbox-offline="true"]')).toBeNull();
- expect(container.querySelector('textarea')).toBe(draft);expect(container.querySelector('fieldset')?.disabled).toBe(true);
+ expect(container.querySelector('textarea')).toBe(draft);expect(container.querySelector('fieldset')?.disabled).toBe(false);
  act(()=>m.event?.({type:'change'}));await act(async()=>vi.advanceTimersByTimeAsync(250));
  expect(container.querySelector('textarea')).toBe(draft);expect(container.querySelector('fieldset')?.disabled).toBe(false);
 });
@@ -257,7 +259,7 @@ it('keeps the verified list mounted on soft UNAVAILABLE instead of the empty off
  act(()=>m.event?.({type:'change'}));await act(async()=>vi.advanceTimersByTimeAsync(250));
  expect(container.querySelector('[data-inbox-offline="true"]')).toBeNull();
  expect(container.textContent).toContain('Previously verified contact');expect(container.querySelector('textarea')).toBe(draft);
- expect(container.querySelector('fieldset')?.disabled).toBe(true);
+ expect(container.querySelector('fieldset')?.disabled).toBe(false);
  expect(container.textContent).not.toContain(appCopy('en').app.inboxLoadFailedBody);
 });
 it('never revives prior data after explicit denial followed by a transport failure',async()=>{

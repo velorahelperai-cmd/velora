@@ -30,10 +30,14 @@ export function InboxExtensionBridge({ view, ar, render, pendingIntents, onInten
   const [previousRevision, setPreviousRevision] = useState(revision);
   const [error, setError] = useState(false);
   const [busy, setBusy] = useState(false);
-  if (previousPaused !== paused || previousRevision !== revision) {
+  // Pause must clear loaded extensions. A revision bump (list refresh) must not
+  // wipe items back to «جارٍ التحميل…» — refetch in the effect while keeping the last ready view.
+  if (previousPaused !== paused) {
     setPreviousPaused(paused);
+    if (paused) { setItems(null); setBusy(false); setError(false); }
+  }
+  if (previousRevision !== revision) {
     setPreviousRevision(revision);
-    setItems(null);
     setBusy(false);
   }
   const [editing, setEditing] = useState(Boolean(pendingIntents?.tag));
@@ -67,19 +71,30 @@ export function InboxExtensionBridge({ view, ar, render, pendingIntents, onInten
     const fence = request;
     const current = ++fence.current;
     if (!paused) {
-      void readInboxContact({ companyId, conversationId, channel }).then(profile => {
+      const withTimeout = <T,>(work: Promise<T>, ms = 20000) => Promise.race([
+        work,
+        new Promise<never>((_, reject) => { const timer = window.setTimeout(() => reject(new Error('EXTENSION_TIMEOUT')), ms); work.finally(() => window.clearTimeout(timer)); }),
+      ]);
+      void withTimeout(readInboxContact({ companyId, conversationId, channel })).then(profile => {
         if (!active.current || current !== request.current) return;
         if (!profile.ok) { setContact(null); setContactError(true); return; }
         setContact(profile.data); setContactError(false);
         if (!editingContactRef.current) { setEmailDraft(profile.data.email); setLocationDraft(profile.data.location); }
       }).catch(() => { if (active.current && current === request.current) { setContact(null); setContactError(true); } });
-      void runInboxExtension({ companyId, conversationId, channel, action: 'list' }).then(result => {
+      void withTimeout(runInboxExtension({ companyId, conversationId, channel, action: 'list' })).then(result => {
         if (!active.current || current !== request.current) return;
         if (!result.ok || !Array.isArray(result.data) || !result.data.every(isItem)) {
-          setItems(null); setError(true); return;
+          // Keep a previously ready list; only hang-avoid by surfacing retry when nothing loaded.
+          setError(true);
+          setItems(current => current);
+          return;
         }
         setItems(result.data); setError(false);
-      }).catch(() => { if (active.current && current === request.current) { setItems(null); setError(true); } });
+      }).catch(() => {
+        if (!active.current || current !== request.current) return;
+        setError(true);
+        setItems(current => current);
+      });
     }
     return () => { active.current = false; fence.current++; };
   }, [companyId, conversationId, channel, paused, version, revision]);

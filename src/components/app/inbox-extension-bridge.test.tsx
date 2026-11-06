@@ -84,6 +84,41 @@ it('keeps controls disabled if the database read fails or the connection is paus
   expect(api.run).toHaveBeenCalledTimes(1);
 });
 
+it('keeps a ready tag list visible across revision bumps instead of hanging on loading', async () => {
+  api.run.mockResolvedValue({ ok: true, data: [{ id: first, kind: 'tag', body: 'Follow-up' }] });
+  const v = view(first);
+  v.extension = { ...v.extension!, revision: 0 };
+  await act(async () => root.render(<InboxExtensionBridge view={v} ar={false} render={model => <>
+    <div data-status>{model.extensionStatus}</div>
+    <div data-tags>{model.customer?.tags?.map(tag => tag.label).join(',')}</div>
+  </>}/>));
+  expect(container.querySelector('[data-status]')?.textContent).toBe('ready');
+  expect(container.querySelector('[data-tags]')?.textContent).toBe('Follow-up');
+  api.run.mockClear();
+  api.run.mockResolvedValue({ ok: true, data: [{ id: first, kind: 'tag', body: 'Follow-up' }] });
+  await act(async () => root.render(<InboxExtensionBridge view={{...v, extension:{...v.extension!, revision:1}}} ar={false} render={model => <>
+    <div data-status>{model.extensionStatus}</div>
+    <div data-tags>{model.customer?.tags?.map(tag => tag.label).join(',')}</div>
+  </>}/>));
+  expect(container.querySelector('[data-tags]')?.textContent).toBe('Follow-up');
+  expect(container.querySelector('[data-status]')?.textContent).not.toBe('loading');
+  expect(api.run).toHaveBeenCalled();
+});
+
+it('leaves loading after a timed-out extension list and exposes retry', async () => {
+  vi.useFakeTimers();
+  try {
+    api.run.mockImplementation(() => new Promise(() => {}));
+    await act(async () => { show(first); });
+    expect(api.run).toHaveBeenCalled();
+    await act(async () => { await vi.advanceTimersByTimeAsync(20000); });
+    expect(container.textContent).toContain('could not be verified');
+    expect([...container.querySelectorAll('button')].some(button => button.textContent === 'Retry')).toBe(true);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 it('clears saved details and disables further actions when a write is denied', async () => {
   api.run.mockResolvedValueOnce({ ok: true, data: [{ id: first, kind: 'tag', body: 'Private' }] })
     .mockResolvedValueOnce({ ok: false, code: 'FORBIDDEN' });

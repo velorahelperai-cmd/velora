@@ -125,20 +125,22 @@ function ScopedUnifiedInbox({initial,waReview=false,igReview=false,onUnavailable
   try{const [companyId,actorId]=expected.split(':');const result=await fetchServiceInbox({companyId:companyId!,actorId:actorId!});if(!mounted.current||epoch.current!==request)return;
    if(result.ok&&`${result.companyId}:${result.actorId}`!==expected){setRetained(null);setSnapshot({ok:false,code:'SCOPE_CHANGED'});setError(true);return;}
    if(!result.ok&&'transportUnavailable' in result&&result.transportUnavailable===true){retainThroughTransportLoss();return;}
-   // Soft UNAVAILABLE after a verified list is transport/load pressure, not a
-   // permission denial. Keep the loaded rows so selecting a thread stays mounted.
+   // Soft UNAVAILABLE after a verified list is load pressure, not a denial and
+   // not transport loss. Keep rows AND keep writes enabled — pausing here left
+   // takeover/composer stuck disabled while messages were already on screen.
    if(!result.ok&&result.code==='UNAVAILABLE'){
-    if(retainedRef.current){retainThroughTransportLoss();return;}
+    if(retainedRef.current){setError(true);return;}
     setConnectionPaused(false);setPinned([]);setPinnedOnly(false);setRetained(null);setSnapshot(result);setError(true);return;
    }
    if(!result.ok){setConnectionPaused(false);setPinned([]);setPinnedOnly(false);setRetained(null);setSnapshot(result);setError(true);return;}
    // Replace cached pages: stable identity is not proof of old assignments.
    if((!result.wa.ok&&result.wa.code==='UNAVAILABLE')||(!result.ig.ok&&result.ig.code==='UNAVAILABLE')){
-    if(retainedRef.current){retainThroughTransportLoss();return;}
+    if(retainedRef.current){setError(true);return;}
     setRetained(null);setSnapshot({ok:false,code:'UNAVAILABLE'});setError(true);return;
    }
    setSnapshot(result);setRetained(result);setConnectionPaused(false);setLastVerifiedReadAt(Date.now());if(refreshThread)setRefreshVersion(n=>n+1);setError(false);
   }catch{if(mounted.current&&epoch.current===request){
+   // Browser/network throw: pause only when we must recheck; keep the verified list.
    if(retainedRef.current)retainThroughTransportLoss();
    else{setRetained(null);setSnapshot({ok:false,code:'UNAVAILABLE'});setError(true);}
   }}
@@ -161,6 +163,9 @@ function ScopedUnifiedInbox({initial,waReview=false,igReview=false,onUnavailable
   if(event.type==='ready'||event.type==='reconnect'){
    setLiveState('connected');
    live.current=true;transportDown.current=false;fallbackReads.current=0;
+   // Transport recovered. Resume last verified writes immediately; the fenced
+   // refresh below still clears on FORBIDDEN/SCOPE_CHANGED.
+   if(retainedRef.current)setConnectionPaused(false);
    if(busy.current)return; // The pending fenced read already reconciles this transport recovery.
   }
   if(event.type==='change')pendingChange.current=true;
