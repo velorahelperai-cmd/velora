@@ -5,11 +5,11 @@ import {classifyHandoffPolicy} from "@/lib/answers/routing/handoff-policy";
 import {classifyPureSocialSmallTalk} from "@/lib/answers/routing/small-talk";
 import {recordWorkerTiming} from "./worker-timing";
 import {isTransientWorkerCode} from "./worker-codes";
-import {continuityAckGate,decideInboundContinuity,type ContinuityPlan,type HumanOwnership} from "./response-continuity";
+import {continuityAckGate,decideInboundContinuity,deriveHumanOwnership,type ContinuityPlan,type HumanOwnership} from "./response-continuity";
 export type IntegrationFrame={authority?:"es02";job_id:string;company_id:string;branch_id?:string;created_at?:string;message_id:string;conversation_id:string;phone_number_id:string;recipient_wa_id:string;
  automation_generation:number;link_id:string;link_generation:number;question:string;service_window_expires_at?:string;ai_status:string|null;reply_text:string|null;
  ai_attempt_id:string|null;intent_id:string|null;staged_citations:AnswerCitation[]|null;
- human_ownership?:HumanOwnership|null;handoff_reason?:string|null;service_window_open?:boolean;send_unknown?:boolean;inbound_elapsed_ms?:number;};
+ human_ownership?:string|null;handoff_reason?:string|null;conversation_status?:string|null;service_window_open?:boolean;send_unknown?:boolean;inbound_elapsed_ms?:number;};
 export type SendIntent={id:string;outcome:string;company_id:string;conversation_id:string;phone_number_id:string;recipient_wa_id:string;body:string};
 export type VerificationFailureCode = "WORKER_DISABLED" | "WORKER_UNAVAILABLE" | "KNOWLEDGE_OR_AUTOMATION_CHANGED";
 export type VerificationResult = { ok: true } | { ok: false; code: VerificationFailureCode };
@@ -56,9 +56,12 @@ export async function runPersistedInboundJob(input:{jobId:string;claimToken:stri
  // still never become a generated answer. The continuity note cannot send.
  const handoff=classifyHandoffPolicy(frame.question);
  const humanReview=!!handoff.previewReason;
- const continuity=frame.human_ownership||frame.handoff_reason||frame.service_window_open===false||frame.send_unknown===true||frame.inbound_elapsed_ms!==undefined
+ const ownershipSnapshot=frame.human_ownership||frame.handoff_reason||frame.conversation_status
+  ? deriveHumanOwnership({status:frame.conversation_status,humanOwnership:frame.human_ownership,handoffReason:frame.handoff_reason})
+  : null;
+ const continuity=ownershipSnapshot||frame.service_window_open===false||frame.send_unknown===true||frame.inbound_elapsed_ms!==undefined
   ? decideInboundContinuity({
-    ownership:frame.human_ownership??(frame.handoff_reason?"REQUESTED_UNCLAIMED":"NONE"),
+    ownership:ownershipSnapshot??"NONE",
     handoffReason:frame.handoff_reason,
     previewReason:handoff.previewReason,
     elapsedMs:frame.inbound_elapsed_ms,
@@ -67,7 +70,7 @@ export async function runPersistedInboundJob(input:{jobId:string;claimToken:stri
     workerEnabled:true,
     ackGateOpen:continuityAckGate().open,
     sendUnknown:frame.send_unknown===true,
-    staffReplied:frame.human_ownership==="CLAIMED_ACTIVE",
+    staffReplied:ownershipSnapshot==="CLAIMED_ACTIVE",
    })
   :null;
  const stopAi=humanReview||continuity?.ai==="stop";

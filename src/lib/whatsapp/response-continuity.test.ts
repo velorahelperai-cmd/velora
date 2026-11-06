@@ -7,6 +7,7 @@ import {
   customerVisibleDelivery,
   decideInboundContinuity,
   deriveHumanOwnership,
+  inboundBatchMayClaim,
   NEUTRAL_ACK_TEXT,
   ResponseIntentLedger,
   webhookDurableStatus,
@@ -229,6 +230,45 @@ describe("intent identity and webhook durability", () => {
       authority: "AUTHORIZED",
       serviceWindowOpen: false,
     })).toEqual({ ok: false, code: "WINDOW_CLOSED" });
+  });
+});
+
+describe("inbound batch claim", () => {
+  const open = { workerEnabled: true, serviceWindowOpen: true, status: "open", automationAllowed: true, ownership: "NONE" as const };
+
+  it("claims an unclaimed handoff for a safe answer and keeps a staff claim out", () => {
+    expect(inboundBatchMayClaim({ ...open, status: "handed_over", automationAllowed: false, ownership: "REQUESTED_UNCLAIMED" })).toMatchObject({
+      claim: true, freeform: true, ai: "answer", reason: "safe_answer",
+    });
+    expect(inboundBatchMayClaim({ ...open, status: "handed_over", automationAllowed: false, ownership: "CLAIMED_ACTIVE" })).toMatchObject({
+      claim: false, freeform: false, ai: "stop", reason: "human_claimed",
+    });
+    expect(inboundBatchMayClaim({ ...open, status: "handed_over", automationAllowed: false, ownership: "CLAIMED_IDLE" })).toMatchObject({
+      claim: false, reason: "human_claimed",
+    });
+  });
+
+  it("does not claim when the worker is disabled", () => {
+    expect(inboundBatchMayClaim({ ...open, workerEnabled: false })).toMatchObject({ claim: false, freeform: false, reason: "worker_disabled" });
+    expect(inboundBatchMayClaim({
+      ...open, workerEnabled: false, status: "handed_over", automationAllowed: false, ownership: "REQUESTED_UNCLAIMED",
+    }).claim).toBe(false);
+  });
+
+  it("does not authorize free-form text when the service window is closed", () => {
+    expect(inboundBatchMayClaim({ ...open, serviceWindowOpen: false })).toMatchObject({ claim: false, freeform: false, reason: "service_window_closed" });
+    expect(inboundBatchMayClaim({
+      ...open, serviceWindowOpen: false, status: "handed_over", automationAllowed: false, ownership: "REQUESTED_UNCLAIMED", sensitive: true, ackGateOpen: true,
+    })).toMatchObject({ claim: false, freeform: false, reason: "service_window_closed" });
+  });
+
+  it("claims a sensitive unclaimed handoff only for a neutral ack when that gate is open", () => {
+    expect(inboundBatchMayClaim({
+      ...open, status: "handed_over", automationAllowed: false, ownership: "REQUESTED_UNCLAIMED", sensitive: true, ackGateOpen: false,
+    })).toMatchObject({ claim: true, freeform: false, ai: "stop", reason: "neutral_ack_only" });
+    expect(inboundBatchMayClaim({
+      ...open, status: "handed_over", automationAllowed: false, ownership: "REQUESTED_UNCLAIMED", sensitive: true, ackGateOpen: true,
+    })).toMatchObject({ claim: true, freeform: true, ai: "stop" });
   });
 });
 

@@ -505,6 +505,42 @@ export function continuityOwnershipNotice(input: {
   return base;
 }
 
+export type InboundBatchClaim = {
+  claim: boolean;
+  freeform: boolean;
+  ai: "answer" | "stop";
+  reason: "worker_disabled" | "company_suspended" | "human_claimed" | "not_eligible" | "service_window_closed" | "neutral_ack_only" | "safe_answer";
+};
+
+/**
+ * Mirrors the live batch predicate. A closed service window never authorizes
+ * free-form text. The worker flag is checked before the batch is called.
+ */
+export function inboundBatchMayClaim(input: {
+  workerEnabled: boolean;
+  serviceWindowOpen: boolean;
+  status: string;
+  automationAllowed: boolean;
+  ownership: HumanOwnership;
+  companySuspended?: boolean;
+  sensitive?: boolean;
+  ackGateOpen?: boolean;
+}): InboundBatchClaim {
+  if (!input.workerEnabled) return { claim: false, freeform: false, ai: "stop", reason: "worker_disabled" };
+  if (input.companySuspended) return { claim: false, freeform: false, ai: "stop", reason: "company_suspended" };
+  const claimed = input.ownership === "CLAIMED_ACTIVE" || input.ownership === "CLAIMED_IDLE" || input.ownership === "RESOLVED" || input.status === "resolved";
+  if (claimed) return { claim: false, freeform: false, ai: "stop", reason: "human_claimed" };
+  const unclaimedHandoff = input.ownership === "REQUESTED_UNCLAIMED"
+    || (input.status === "handed_over" && input.ownership === "NONE");
+  const openAutomation = input.status === "open" && input.automationAllowed;
+  if (!openAutomation && !unclaimedHandoff) return { claim: false, freeform: false, ai: "stop", reason: "not_eligible" };
+  if (!input.serviceWindowOpen) return { claim: false, freeform: false, ai: "stop", reason: "service_window_closed" };
+  if (input.sensitive) {
+    return { claim: true, freeform: input.ackGateOpen === true, ai: "stop", reason: "neutral_ack_only" };
+  }
+  return { claim: true, freeform: true, ai: "answer", reason: "safe_answer" };
+}
+
 export function webhookDurableStatus(input: { signatureValid: boolean; persisted: boolean }): 200 | 401 | 500 {
   if (!input.signatureValid) return 401;
   if (!input.persisted) return 500;

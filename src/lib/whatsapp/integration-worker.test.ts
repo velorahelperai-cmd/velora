@@ -450,6 +450,17 @@ describe("persisted WhatsApp integration worker",()=>{
     expect(ports.send).not.toHaveBeenCalled();
   });
 
+  it("answers a safe question from the database ownership projection while handoff is unclaimed", async () => {
+    const { frame, ports } = setup();
+    frame.question = "ما هي الخدمات؟";
+    frame.conversation_status = "handed_over";
+    frame.human_ownership = "requested_unclaimed";
+    frame.handoff_reason = "worker_escalation";
+    expect(await runInboundWorkerAnswer(input, ports)).toMatchObject({ ok: true, delivered: false });
+    expect(ports.answer).toHaveBeenCalled();
+    expect(ports.send).toHaveBeenCalledTimes(1);
+  });
+
   it("answers a safe question while handoff is unclaimed", async () => {
     const { frame, ports } = setup();
     frame.question = "ما هي الخدمات؟";

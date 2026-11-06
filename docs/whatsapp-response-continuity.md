@@ -41,7 +41,9 @@ The watchdog function `whatsapp_claim_continuity_watchdog` only reserves an ack 
 
 The webhook returns HTTP 200 only after durable save. A failed persist stays on the existing retryable 500 path. Signature failures stay 401 and are not stored.
 
-`runPersistedInboundJob` applies this decision when the claimed frame carries `human_ownership`, `handoff_reason`, `service_window_open`, `send_unknown`, or `inbound_elapsed_ms`. `billing_load_worker_frame` is unchanged, so a frame without those fields keeps today's behavior. `whatsapp_continuity_snapshot` is the service-role read for a later opt-in. The existing inbound batch still claims only conversations that are `open` and `automation_allowed`, so unclaimed `handed_over` rows are not pulled into AI until that selector is changed in a separate reviewed change. A staff `take_over` still bumps `automation_generation`, and the existing pre-send fence rejects the stale generation.
+`runPersistedInboundJob` applies this decision when the claimed frame carries ownership, handoff reason, conversation status, a closed service window, an unknown send, or an elapsed time. `billing_load_worker_frame` now adds `human_ownership`, `handoff_reason`, and `conversation_status` after the existing authority and service-window gates. A staff claim still comes back as `claim_or_automation_rejected`.
+
+`whatsapp_claim_inbound_batch`, the worker lock, and the assistant send-intent checks use `private.whatsapp_continuity_ai_claimable`. An open automated conversation stays eligible. A `handed_over` or `requested_unclaimed` thread without `human_claimed` / staff `take_over` can be claimed for a safe answer. `claimed_active` and `claimed_idle` cannot. The generation fence and the service-window gate stay in place, so a closed 24-hour window still produces no free-form text. `WHATSAPP_WORKER_ENABLED=false` still returns before the batch is called.
 
 ## Enable later
 
