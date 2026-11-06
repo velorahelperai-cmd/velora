@@ -134,9 +134,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
           label: isRtl ? "الحسابات والمستخدمين" : "Accounts & Users",
           href: "/admin/accounts",
           icon: IconUsers,
-          active:
-            isNavActive("/admin/accounts") ||
-            (pathname === "/admin" && typeof window !== "undefined" && window.location.hash === "#accounts"),
+          active: isNavActive("/admin/accounts"),
         },
         {
           label: isRtl ? "مركز القنوات والربط" : "Channels Hub",

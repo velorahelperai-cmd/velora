@@ -241,3 +241,8 @@
 .vdi.vdi .vdi-compose-tabs .vdi-tab {font-size:9px!important
 }
 }
+.vdi.vdi .vdi-conversation-row {position:relative;display:flex;align-items:stretch;width:100%;}
+.vdi.vdi .vdi-conversation-row .vdi-conversation {flex:1;}
+.vdi.vdi .vdi-pin {position:absolute;top:14px;inset-inline-end:10px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;background:transparent;border:0;border-radius:6px;color:var(--vdi-muted);cursor:pointer;z-index:2;}
+.vdi.vdi .vdi-pin:hover,.vdi.vdi .vdi-pin.is-starred {color:#f59e0b;}
+.vdi.vdi .vdi-pin:disabled {opacity:0.4;cursor:not-allowed;}

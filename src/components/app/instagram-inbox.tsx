@@ -47,6 +47,16 @@ export function InstagramInbox({companyId,owner=false,companyInSetup=false,revie
  const text=drafts[draftKey]??'',setText=(value:string)=>setDrafts(old=>({...old,[draftKey]:value}));
  const [readinessVerified,setReadinessVerified]=useState(false);
  const [detailsOpen,setDetailsOpen]=useState(false);
+ const [activeConversationId, setActiveConversationId] = useState(conversationId);
+ if (activeConversationId !== conversationId) {
+   setActiveConversationId(conversationId);
+   if (detailsOpen) {
+     setDetailsOpen(false);
+   }
+ }
+ if (!conversationId && detailsOpen) {
+   setDetailsOpen(false);
+ }
  const [composerModes,setComposerModes]=useState<Record<string,ComposerMode>>({});
  const composerMode=reviewMode?'message':composerModes[draftKey]??'message';
  const setComposerMode=(mode:ComposerMode)=>setComposerModes(old=>({...old,[draftKey]:mode}));

@@ -317,17 +317,42 @@ export async function claimRefreshLease(
   registryId: string,
   expectedRevision: number,
   leaseMs = 15000,
-): Promise<string | null> {
+): Promise<{ ok: true; token: string } | { ok: false; reason: "CLAIM_FAILED" | "STATE_READ_FAILED" | "ROTATING" | "ROTATING_EXPIRED" | "UNCERTAIN" | "NOT_CLAIMABLE" }> {
   const admin = adminOrNull();
-  if (!admin) return null;
+  if (!admin) return { ok: false, reason: "CLAIM_FAILED" };
+  const readState = async (): Promise<"IDLE" | "STATE_READ_FAILED" | "ROTATING" | "ROTATING_EXPIRED" | "UNCERTAIN" | "NOT_CLAIMABLE"> => {
+    try {
+      const state = await admin.from("vel_broker_sessions" as never)
+        .select("refresh_state,refresh_revision,refresh_lease_until,status")
+        .eq("id", registryId as never).maybeSingle();
+      if (state.error || !state.data) return "STATE_READ_FAILED";
+      const row = state.data as { refresh_state?: string; refresh_revision?: number; refresh_lease_until?: string | null; status?: string };
+      if (row.status !== "active" || Number(row.refresh_revision) !== expectedRevision) return "NOT_CLAIMABLE";
+      if (row.refresh_state === "uncertain") return "UNCERTAIN";
+      if (row.refresh_state === "rotating") {
+        const until = row.refresh_lease_until ? Date.parse(row.refresh_lease_until) : NaN;
+        return Number.isFinite(until) && until <= Date.now() ? "ROTATING_EXPIRED" : "ROTATING";
+      }
+      return row.refresh_state === "idle" ? "IDLE" : "NOT_CLAIMABLE";
+    } catch { return "STATE_READ_FAILED"; }
+  };
+  const before = await readState();
+  if (before !== "IDLE") return { ok: false, reason: before };
+  try {
   const { data, error } = await admin.rpc("vel_broker_claim_refresh" as never, {
     p_registry_id: registryId,
     p_expected_revision: expectedRevision,
     p_lease_ms: leaseMs,
   } as never);
   const lease: unknown = data;
-  if (error || typeof lease !== "string" || lease.length < 16) return null;
-  return lease;
+  if (error) return { ok: false, reason: "CLAIM_FAILED" };
+  if (typeof lease === "string" && lease.length >= 16) return { ok: true, token: lease };
+  if (lease !== null) return { ok: false, reason: "CLAIM_FAILED" };
+  const after = await readState();
+  return { ok: false, reason: after === "IDLE" ? "NOT_CLAIMABLE" : after };
+  } catch {
+    return { ok: false, reason: "CLAIM_FAILED" };
+  }
 }
 
 export async function releaseRefreshLease(registryId: string, leaseToken: string): Promise<boolean> {

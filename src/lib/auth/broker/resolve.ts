@@ -283,19 +283,37 @@ export async function resolveAuthoritativeForMutation(
  * Lease (idle-only) → provider → SID check → CAS.
  * UNKNOWN marks uncertain and does NOT release lease for blind replay (C2-R3).
  */
-export async function refreshBrokerTokens(resolved: Extract<BrokerResolveResult, { ok: true }>): Promise<
+type RefreshResult =
   | { ok: true; accessToken: string; refreshToken: string; expiresAt: string; refreshRevision: number }
-  | { ok: false; code: "UNAUTHENTICATED" | "UNAVAILABLE" }
-> {
-  const lease = await claimRefreshLease(resolved.registryId, resolved.refreshRevision);
-  if (!lease) {
-    brokerLog("warn", "auth.broker.refresh.lease_busy", {
-      error_code: "REFRESH_LEASE_BUSY",
+  | { ok: false; code: "UNAUTHENTICATED" | "UNAVAILABLE"; reason?: "RECHECK" };
+
+// Share only an in-flight provider rotation for the exact independently resolved
+// boundary and revision. The database lease remains the cross-instance fence.
+// Settled results, including tokens, are never cached.
+const pendingRefreshes = new Map<string, Promise<RefreshResult>>();
+
+export async function refreshBrokerTokens(resolved: Extract<BrokerResolveResult, { ok: true }>): Promise<RefreshResult> {
+  const key = JSON.stringify([resolved.registryId, resolved.refreshRevision,
+    resolved.boundary.boundaryFingerprint, resolved.boundary.userId, resolved.boundary.nativeSessionId]);
+  const existing = pendingRefreshes.get(key);
+  if (existing) return existing;
+  const pending = rotateBrokerTokens(resolved);
+  pendingRefreshes.set(key, pending);
+  try { return await pending; }
+  finally { if (pendingRefreshes.get(key) === pending) pendingRefreshes.delete(key); }
+}
+
+async function rotateBrokerTokens(resolved: Extract<BrokerResolveResult, { ok: true }>): Promise<RefreshResult> {
+  const claim = await claimRefreshLease(resolved.registryId, resolved.refreshRevision);
+  if (!claim.ok) {
+    brokerLog("warn", "auth.broker.refresh.claim_failed", {
+      error_code: `REFRESH_${claim.reason}`,
       boundary_fp: resolved.boundary.boundaryFingerprint,
       user_id: resolved.boundary.userId,
     });
-    return { ok: false, code: "UNAVAILABLE" };
+    return { ok: false, code: "UNAVAILABLE", ...(claim.reason === "ROTATING" || claim.reason === "NOT_CLAIMABLE" ? { reason: "RECHECK" as const } : {}) };
   }
+  const lease = claim.token;
 
   const client = createUserClientFromTokens(resolved.accessToken, resolved.refreshToken);
   if (!client) {
@@ -373,6 +391,22 @@ export async function refreshBrokerTokens(resolved: Extract<BrokerResolveResult,
   }
 }
 
+/** A concurrent rotation is recoverable only from a fresh authoritative broker
+ * read of the same complete boundary and a strictly newer, usable revision. */
+export async function recoverConcurrentRotation(
+  previous: Extract<BrokerResolveResult, { ok: true }>,
+  readCurrent: () => Promise<BrokerResolveResult>,
+): Promise<Extract<BrokerResolveResult, { ok: true }> | null> {
+  let current: BrokerResolveResult;
+  try { current = await readCurrent(); } catch { return null; }
+  if (!current.ok || current.registryId !== previous.registryId || !Number.isSafeInteger(current.refreshRevision)
+    || !Number.isSafeInteger(previous.refreshRevision) || current.refreshRevision <= previous.refreshRevision) return null;
+  const fields = ['boundaryFingerprint', 'userId', 'nativeSessionId', 'cookieName', 'generation', 'authOrdinal', 'contextGeneration', 'browserLineageId'] as const;
+  if (fields.some(field => (current.boundary[field] ?? null) !== (previous.boundary[field] ?? null))) return null;
+  const expiry = Date.parse(current.expiresAt);
+  return Number.isFinite(expiry) && expiry > Date.now() + 60_000 ? current : null;
+}
+
 export async function createBrokerUserClient(
   store: CookieReader,
 ): Promise<
@@ -384,8 +418,12 @@ export async function createBrokerUserClient(
   const expiresMs = Date.parse(resolved.expiresAt);
   if (Number.isFinite(expiresMs) && expiresMs < Date.now() + 60_000) {
     const refreshed = await refreshBrokerTokens(resolved);
-    if (!refreshed.ok) return refreshed;
-    resolved = {
+    if (!refreshed.ok) {
+      if (refreshed.reason !== "RECHECK") return { ok: false, code: refreshed.code };
+      const recovered = await recoverConcurrentRotation(resolved, () => resolveBrokerSession(store));
+      if (!recovered) return { ok: false, code: "UNAVAILABLE" };
+      resolved = recovered;
+    } else resolved = {
       ...resolved,
       accessToken: refreshed.accessToken,
       refreshToken: refreshed.refreshToken,

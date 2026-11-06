@@ -107,7 +107,8 @@ it('owns CONNECTING retries with bounded exponential jitter and ignores closed s
     const delay=1000*2**attempt;
     await act(async()=>vi.advanceTimersByTimeAsync(delay-1));expect(Source.all).toHaveLength(count);
     await act(async()=>vi.advanceTimersByTimeAsync(1));expect(Source.all).toHaveLength(count+1);
-   }else{await act(async()=>vi.advanceTimersByTimeAsync(120000));expect(Source.all).toHaveLength(count);}
+   }else{await act(async()=>vi.advanceTimersByTimeAsync(120000));expect(Source.all).toHaveLength(count);
+    act(()=>window.dispatchEvent(new Event('online')));expect(Source.all).toHaveLength(count+1);}
   }
  }finally{random.mockRestore();}
 });

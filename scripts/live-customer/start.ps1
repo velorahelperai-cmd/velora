@@ -1,53 +1,102 @@
-param([switch]$InspectOnly)
+#requires -Version 7.5
+[CmdletBinding()]
+param(
+ [ValidateSet('Start','Status','Restart','Stop')][string]$Mode='Start',
+ [string]$OwnerId=$(if($env:CODEX_THREAD_ID){$env:CODEX_THREAD_ID}else{'interactive-windows-user'}),
+ $WebSession,
+ [ValidateRange(10,180)][int]$ReadyTimeoutSeconds=90,
+ [switch]$InspectOnly
+)
 $ErrorActionPreference='Stop'
+if($env:OS -ne 'Windows_NT'){throw 'CONFIG_INVALID: WINDOWS_DPAPI_REQUIRED'}
 $repo=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 if($repo -ne 'C:\Users\DELL\Desktop\Velora new'){throw 'CANONICAL_CHECKOUT_REQUIRED'}
-$configFile=Join-Path $env:LOCALAPPDATA 'Velora\LocalCustomer\thawani-live.clixml'
-if(!$InspectOnly -and !(Test-Path -LiteralPath $configFile)){Write-Host 'Run scripts/live-customer/configure.ps1 first. Never put keys in chat.';exit 2}
+. (Join-Path $PSScriptRoot 'runtime.ps1')
+$root=Join-Path $env:LOCALAPPDATA 'Velora\LocalCustomer'
+$configFile=Join-Path $root 'thawani-live.clixml'
+$receiptFile=Join-Path $root 'runtime-3330.json'
 function Reveal-ForProcess([Security.SecureString]$value){$ptr=[Runtime.InteropServices.Marshal]::SecureStringToBSTR($value);try{[Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr)}finally{[Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)}}
-$vars=@{NODE_ENV='development';VELORA_LOCAL_CUSTOMER_MODE='live';NEXT_PUBLIC_LOCAL_LIVE_CUSTOMER='1';NEXT_PUBLIC_SITE_URL='https://powder-imperial-thomas-tariff.trycloudflare.com';THAWANI_ENVIRONMENT='live';BILLING_ES02_THAWANI_TEST_ENABLED='false';THAWANI_SECRET_KEY_TEST='';THAWANI_PUBLIC_KEY_TEST='';THAWANI_TEST_ACCOUNT_ID='';LOG_LEVEL='warn';NEXT_PUBLIC_LOG_LEVEL='warn';THAWANI_SECRET_KEY_LIVE='';THAWANI_PUBLIC_KEY_LIVE='';VELORA_LOCAL_LIVE_ACCOUNT_ID='';VELORA_LOCAL_LIVE_GRANT_ID='';VELORA_LOCAL_LIVE_APPROVED_BAISA='';NEXT_PUBLIC_SUPABASE_URL='';NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY='';SUPABASE_SERVICE_ROLE_KEY='';VELORA_SESSION_BROKER_KEY='';VELORA_TRIAL_BUDGET_CAP_BAISA='25';VELORA_TRIAL_PINNED_BRANCH_ID='a268f9d8-fe5b-41b2-a337-97046a5eaa5c'}
-if(!$InspectOnly){
- $c=Import-Clixml -LiteralPath $configFile
- if($c.Version -ne 1){throw 'LOCAL_CONFIG_VERSION_UNSUPPORTED'}
- $vars.NEXT_PUBLIC_SUPABASE_URL=$c.SupabaseUrl
- $vars.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=Reveal-ForProcess $c.SupabasePublicKey
- $vars.SUPABASE_SERVICE_ROLE_KEY=Reveal-ForProcess $c.SupabaseServiceKey
- $vars.VELORA_SESSION_BROKER_KEY=Reveal-ForProcess $c.BrokerKey
- $vars.THAWANI_SECRET_KEY_LIVE=Reveal-ForProcess $c.ThawaniSecretKey
- $vars.THAWANI_PUBLIC_KEY_LIVE=Reveal-ForProcess $c.ThawaniPublicKey
- $vars.VELORA_LOCAL_LIVE_ACCOUNT_ID=$c.AccountId;$vars.VELORA_LOCAL_LIVE_GRANT_ID=$c.GrantId
- $vars.VELORA_LOCAL_LIVE_APPROVED_BAISA=[string]$c.ApprovedBaisa
- $metaFile=Join-Path $env:LOCALAPPDATA 'Velora\LocalCustomer\meta-signup.clixml'
- if(Test-Path -LiteralPath $metaFile){
-  $meta=Import-Clixml -LiteralPath $metaFile
-  if($meta.Version -ne 1 -or $meta.AppId -notmatch '^\d{1,64}$' -or $meta.NewNumberConfigId -notmatch '^\d{1,64}$' -or $meta.GraphVersion -notmatch '^v\d+\.0$'){throw 'LOCAL_META_CONFIG_INVALID'}
-  $vars.WHATSAPP_EMBEDDED_SIGNUP='true';$vars.WHATSAPP_EMBEDDED_SIGNUP_APP_ID=$meta.AppId
-  $vars.WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID=$meta.NewNumberConfigId;$vars.WHATSAPP_EMBEDDED_SIGNUP_GRAPH_VERSION=$meta.GraphVersion
-  if($meta.CoexistenceConfigId){
-   if($meta.CoexistenceConfigId -notmatch '^\d{1,32}$' -or $meta.CoexistenceConfigId -eq $meta.NewNumberConfigId){throw 'LOCAL_META_COEXISTENCE_CONFIG_INVALID'}
-   $vars.WHATSAPP_COEXISTENCE='true';$vars.WHATSAPP_COEXISTENCE_CONFIG_ID=$meta.CoexistenceConfigId
-  }
-  $vars.WHATSAPP_APP_SECRET=Reveal-ForProcess $meta.AppSecret
-  if($meta.VerifyToken -is [Security.SecureString] -and $meta.VerifyToken.Length -gt 0){$vars.WHATSAPP_VERIFY_TOKEN=Reveal-ForProcess $meta.VerifyToken}
-  $vars.WHATSAPP_ROUTING_MODE='tenant_registry';$vars.WHATSAPP_RECEIVE_ENABLED='true'
+# This is the only credential loader. Never print or persist the returned values.
+function Read-LocalEnvironment([string]$ConfigFile){
+ if(!(Test-Path -LiteralPath $ConfigFile -PathType Leaf)){throw 'CONFIG_MISSING: DPAPI_FILE_MISSING'}
+ try{$config=Import-Clixml -LiteralPath $ConfigFile}catch{throw 'CONFIG_INVALID: DPAPI_UNREADABLE_FOR_CURRENT_WINDOWS_USER'}
+ if($config.Version -ne 1){throw 'CONFIG_INVALID: DPAPI_VERSION_UNSUPPORTED'}
+ $values=@{NODE_ENV='development';NEXT_PUBLIC_SITE_URL='http://127.0.0.1:3330';LOG_LEVEL='warn';NEXT_PUBLIC_LOG_LEVEL='warn';NEXT_TELEMETRY_DISABLED='1'}
+ foreach($pair in @(@('SupabasePublicKey','NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY'),@('SupabaseServiceKey','SUPABASE_SERVICE_ROLE_KEY'),@('BrokerKey','VELORA_SESSION_BROKER_KEY'))){
+  $secure=$config.($pair[0])
+  if($secure -isnot [Security.SecureString] -or $secure.Length -eq 0){throw "CONFIG_MISSING: $($pair[1])"}
+  try{$values[$pair[1]]=Reveal-ForProcess $secure}catch{throw 'CONFIG_INVALID: DPAPI_DECRYPT_FAILED'}
  }
+ $values.NEXT_PUBLIC_SUPABASE_URL=[string]$config.SupabaseUrl
+ Test-LocalEnvironment $values
+ # Explicit off values override inherited variables AND Next dotenv files.
+ foreach($name in @('WHATSAPP_WORKER_ENABLED','WHATSAPP_FIXED_ACK_ENABLED','WHATSAPP_RECEIVE_ENABLED','WHATSAPP_AUTO_PIN_ENABLED','BILLING_EMAIL_WORKER_ENABLED','BILLING_ES02_THAWANI_TEST_ENABLED','AI_LIVE_ANSWERING','AI_LIVE_ANSWERING_ENABLED')){$values[$name]='false'}
+ foreach($name in @('VELORA_LOCAL_CUSTOMER_MODE','NEXT_PUBLIC_LOCAL_LIVE_CUSTOMER','THAWANI_ENVIRONMENT','THAWANI_SECRET_KEY_LIVE','THAWANI_PUBLIC_KEY_LIVE','THAWANI_SECRET_KEY_TEST','THAWANI_PUBLIC_KEY_TEST','THAWANI_TEST_ACCOUNT_ID','VELORA_LOCAL_LIVE_ACCOUNT_ID','VELORA_LOCAL_LIVE_GRANT_ID','VELORA_LOCAL_LIVE_APPROVED_BAISA','AI_GEMINI_API_KEY','GEMINI_API_KEY','AI_OPENAI_API_KEY','OPENAI_API_KEY','WHATSAPP_ACCESS_TOKEN','WHATSAPP_WORKER_SECRET')){$values[$name]=''}
+ $values.WHATSAPP_ALLOW_EXTERNAL_SEND='false';$values.WHATSAPP_TEST_ALLOW_EXTERNAL_SEND='false'
+ return $values
 }
-# Load only the separately encrypted local Gemini key, never in inspect-only mode.
-$vars.AI_GEMINI_API_KEY=''
-if(!$InspectOnly){
- $geminiFile=Join-Path $env:LOCALAPPDATA 'Velora\LocalCustomer\Gemini\gemini.clixml'
- if(Test-Path -LiteralPath $geminiFile){
-  $gemini=Import-Clixml -LiteralPath $geminiFile
-  if($gemini.Version -ne 1 -or $gemini.ApiKey -isnot [Security.SecureString] -or $gemini.ApiKey.Length -eq 0){throw 'LOCAL_GEMINI_CONFIG_INVALID'}
-  $vars.AI_GEMINI_API_KEY=Reveal-ForProcess $gemini.ApiKey
- }
-}
-$previous=@{}
+
+if($InspectOnly){$Mode='Status'}
+$mutex=[Threading.Mutex]::new($false,'Local\Velora-Canonical-Runtime-3330')
+$locked=$false
 try{
- foreach($name in $vars.Keys){$previous[$name]=[Environment]::GetEnvironmentVariable($name,'Process');[Environment]::SetEnvironmentVariable($name,[string]$vars[$name],'Process')}
- Push-Location $repo
- Write-Host 'Local customer entry: http://127.0.0.1:3330/login?next=%2Faccount%2Fbusinesses%2Fnew'
- if($InspectOnly){Write-Host 'BLOCKED: credentials are not loaded; this is the real app with authentication/charging unavailable.'}
- & node node_modules/next/dist/bin/next dev --hostname 127.0.0.1 --port 3330
- if($LASTEXITCODE -ne 0){throw 'LOCAL_APP_STOPPED_WITH_ERROR'}
-}finally{Pop-Location;foreach($name in $vars.Keys){[Environment]::SetEnvironmentVariable($name,$previous[$name],'Process')}}
+ try{$locked=$mutex.WaitOne(0)}catch [Threading.AbandonedMutexException]{$locked=$true}
+ if(!$locked){throw 'PORT_IN_USE: ANOTHER_LAUNCHER_OPERATION_IS_RUNNING'}
+ $owner=Get-LocalOwner $OwnerId
+ $listeners=@(Get-LocalListeners)
+ $receipt=Read-LocalReceipt $receiptFile
+ if($listeners.Count -eq 1 -and $receipt -and $receipt.listenerPid -eq 0 -and (Test-LocalRoot $receipt $repo $owner)){
+  # Recover an interrupted launch only through the original PID + creation time.
+  $pending=Get-LocalProcess $listeners[0].OwningProcess
+  if($pending -and $pending.executable -eq $receipt.executable -and (Test-LocalDescendant $pending.id $receipt.rootPid $receipt.rootStarted)){
+   $receipt.listenerPid=$pending.id;$receipt.listenerStarted=$pending.started
+   Save-LocalReceipt $receiptFile $receipt
+  }
+ }
+ if($listeners.Count -gt 0 -and !(Test-LocalRuntime $receipt $repo $owner $listeners)){throw 'PORT_IN_USE: UNVERIFIED_OR_OTHER_OWNER; STOP_FROM_ORIGINAL_SESSION'}
+ if($Mode -eq 'Stop'){
+  if($listeners.Count){Stop-LocalRuntime $receipt $repo $owner}
+  elseif($receipt -and (Test-LocalRoot $receipt $repo $receipt.owner)){throw 'PORT_IN_USE: RECORDED_PROCESS_ALIVE_WITHOUT_VERIFIED_LISTENER'}
+  Write-Output 'STOPPED: verified runtime stopped or port already free';exit 0
+ }
+ $values=Read-LocalEnvironment $configFile
+ $fingerprint=Get-LocalFingerprint $repo $configFile
+ if($listeners.Count -gt 0 -and $receipt.fingerprint -ne $fingerprint -and $Mode -ne 'Restart'){throw 'CONFIG_INVALID: RUNTIME_INPUTS_CHANGED; SAME_OWNER_MUST_RESTART'}
+ if($Mode -eq 'Restart'){
+  if($listeners.Count -gt 0){Stop-LocalRuntime $receipt $repo $owner; $listeners=@()}
+  elseif($receipt -and (Test-LocalRoot $receipt $repo $owner)){throw 'PORT_IN_USE: RECORDED_PROCESS_ALIVE_WITHOUT_VERIFIED_LISTENER'}
+ }
+ if($listeners.Count -eq 0){
+  if($Mode -eq 'Status'){Write-Output 'STOPPED: port 3330 is free; run -Mode Start';exit 3}
+  if($receipt -and (Test-LocalRoot $receipt $repo $receipt.owner)){throw 'PORT_IN_USE: RECORDED_PROCESS_STARTING_OR_UNHEALTHY'}
+  # The launch primitive restores this process's environment before readiness checks.
+  $childId=Start-LocalNext $repo $values
+  $process=Get-LocalProcess $childId
+  if(!$process){throw 'APPLICATION_ERROR: NEXT_PROCESS_EXITED'}
+  $receipt=[pscustomobject]@{version=1;rootPid=$childId;rootStarted=$process.started;executable=$process.executable;project=$repo;port=3330;mode='development';owner=$owner;fingerprint=$fingerprint;listenerPid=0;listenerStarted=''}
+  Save-LocalReceipt $receiptFile $receipt
+  $deadline=[DateTime]::UtcNow.AddSeconds($ReadyTimeoutSeconds)
+  do{
+   $listeners=@(Get-LocalListeners)
+   if($listeners.Count){break}
+   if(!(Get-LocalProcess $childId)){throw 'APPLICATION_ERROR: NEXT_PROCESS_EXITED'}
+   Start-Sleep -Milliseconds 300
+  }while([DateTime]::UtcNow -lt $deadline)
+  if($listeners.Count -ne 1 -or !(Test-LocalDescendant $listeners[0].OwningProcess $receipt.rootPid $receipt.rootStarted)){throw 'PORT_IN_USE: LISTENER_NOT_PROVEN'}
+  $listener=Get-LocalProcess $listeners[0].OwningProcess
+  $receipt.listenerPid=$listener.id;$receipt.listenerStarted=$listener.started
+  Save-LocalReceipt $receiptFile $receipt
+ }else{Write-Output 'REUSED: verified runtime; no second Next.js instance started'}
+ if(!(Test-LocalRuntime $receipt $repo $owner @(Get-LocalListeners))){throw 'PORT_IN_USE: RUNTIME_IDENTITY_CHANGED'}
+ $result=Invoke-LocalReadiness $values $WebSession $ReadyTimeoutSeconds
+ $result | ForEach-Object {Write-Output $_}
+ Write-Output 'Customer entry: http://127.0.0.1:3330/setup'
+ Write-Output 'AUTH_REDIRECT_ALLOWLIST_NOT_VERIFIED: callback http://127.0.0.1:3330/auth/callback; hosted provider settings need external read-only verification.'
+ if(@($result | Where-Object {$_ -match '^(CONFIG_|AUTH_UNAVAILABLE|DATABASE_TIMEOUT|NETWORK_UNAVAILABLE|APPLICATION_ERROR)'}).Count){exit 2}
+}catch{
+ # DPAPI/HTTP/process API exceptions can contain sensitive values. Do not echo them.
+ $safe=[string]$_.Exception.Message
+ if($safe -match '^(PORT_IN_USE|CONFIG_MISSING|CONFIG_INVALID|AUTH_UNAVAILABLE|SESSION_EXPIRED|DATABASE_TIMEOUT|NETWORK_UNAVAILABLE|APPLICATION_ERROR): [A-Z0-9_ ;=./-]+$'){Write-Output $safe}
+ else{Write-Output "APPLICATION_ERROR: LOCAL_LAUNCHER_FAILED line=$($_.InvocationInfo.ScriptLineNumber) type=$($_.Exception.GetType().Name)"}
+ exit 2
+}finally{if($locked){$mutex.ReleaseMutex()};$mutex.Dispose();$values=$null}

@@ -29,15 +29,15 @@ type Resolved = Extract<BrokerResolveResult, { ok: true }>;
 export async function beginAuthMutationFence(
   previous: Resolved,
 ): Promise<{ ok: true; leaseToken: string } | { ok: false; code: "UNAVAILABLE" }> {
-  const lease = await claimRefreshLease(previous.registryId, previous.refreshRevision);
-  if (!lease) {
-    brokerLog("warn", "auth.broker.sync.lease_busy", {
-      error_code: "REFRESH_LEASE_BUSY",
+  const claim = await claimRefreshLease(previous.registryId, previous.refreshRevision);
+  if (!claim.ok) {
+    brokerLog("warn", "auth.broker.sync.claim_failed", {
+      error_code: `REFRESH_${claim.reason}`,
       boundary_fp: previous.boundary.boundaryFingerprint,
     });
     return { ok: false, code: "UNAVAILABLE" };
   }
-  return { ok: true, leaseToken: lease };
+  return { ok: true, leaseToken: claim.token };
 }
 
 export async function abandonAuthMutationFence(

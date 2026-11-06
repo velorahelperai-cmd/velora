@@ -31,6 +31,14 @@ describe('account read transport lifetime',()=>{
   await vi.advanceTimersByTimeAsync(ACCOUNT_READ_TIMEOUT_MS);await rejection;
   expect(fetcher).toHaveBeenCalledTimes(1);expect(vi.getTimerCount()).toBe(0);
  });
+ it('bounds an in-flight refresh-state GET at the account deadline',async()=>{
+  vi.useFakeTimers();const fetcher=hangingFetch();vi.stubGlobal('fetch',fetcher);
+  const work=runAccountReadRequest(new AbortController().signal,()=>
+   accountReadFetch('https://example.invalid/rest/v1/vel_broker_sessions?select=refresh_state'));
+  const rejection=expect(work).rejects.toMatchObject({name:'TimeoutError'});
+  await vi.advanceTimersByTimeAsync(ACCOUNT_READ_TIMEOUT_MS);await rejection;
+  expect(fetcher).toHaveBeenCalledTimes(1);
+ });
  it('preserves a caller-provided fetch abort signal',async()=>{
   const fetcher=hangingFetch();vi.stubGlobal('fetch',fetcher);const original=new AbortController();
   const work=runAccountReadRequest(new AbortController().signal,()=>accountReadFetch(url,{method:'POST',signal:original.signal}));

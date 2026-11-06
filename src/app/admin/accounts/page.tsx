@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { AccessGate } from "@/components/app/access-gate";
 import { requirePlatformOwner } from "@/lib/tenancy/access";
 import { adminSearchAccounts } from "@/lib/tenancy/actions";
-import { AdminAccountsDirectory, AdminAccountsHeading } from "@/components/admin/admin-accounts-directory";
+import { AdminAccountsDirectory, AdminAccountsHeading, accountSortOrder, accountStatusFilter } from "@/components/admin/admin-accounts-directory";
 
 export const metadata: Metadata = { title: "Accounts & Identity Hub · Velora Admin" };
 
@@ -20,6 +20,8 @@ async function AccountsContent({
   const sp = (await searchParams) ?? {};
   const query = typeof sp.q === "string" ? sp.q : "";
   const offset = typeof sp.offset === "string" ? Math.max(0, parseInt(sp.offset, 10) || 0) : 0;
+  const statusFilter = accountStatusFilter(sp.status);
+  const sortOrder = accountSortOrder(sp.sort);
   const limit = 20;
 
   const res = await adminSearchAccounts({
@@ -51,6 +53,8 @@ async function AccountsContent({
       hasMore={hasMore}
       atBrowseWindowEnd={atBrowseWindowEnd}
       maxOffset={maxOffset}
+      statusFilter={statusFilter}
+      sortOrder={sortOrder}
     />
   );
 }

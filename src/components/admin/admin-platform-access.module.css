@@ -1,4 +1,12 @@
-.access { min-width: 0; }
+.access { min-width: 0; --service-surface: #fff; --service-canvas: #f7faf9; --service-line: #e3ebe8; --service-accent: #007d78; --service-ink: #182c31; --service-muted: #62727a; }
+.access > :global(.shadow-sm) { box-shadow: none; padding: 1rem; }
+.access > :global(.rounded-2xl) { border-radius: .625rem; }
+.access [role="region"] { background: #fff; border-radius: .5rem; }
+.access thead { background: #f7faf9; }
+.access :is(th, td) { padding: .75rem; }
+.access tbody tr:hover { background: #f2f9f7; }
+.access :is(input, select, textarea) { border-radius: .4375rem; background: #fff; font-size: .875rem; }
+.access button { box-shadow: none; border-radius: .4375rem; }
 .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 21rem), 1fr)); gap: .75rem; }
 .access :global(.rounded-2xl) { border-radius: .75rem; }
 .access :global(.text-xs), .access [class~="text-[11px]"], .access [class~="text-[10px]"], .access [class~="text-[9px]"] { font-size: .8125rem; }
@@ -9,3 +17,10 @@
 .access td { vertical-align: top; overflow-wrap: anywhere; }
 
 .roles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr)); gap: .75rem; }
+.roles > div { background: #fff; border-radius: .5rem; }
+.summary > :is(div, p) { padding: .875rem 1rem; border-radius: .5rem; }
+@media (max-width: 639px) {
+  .access > :global(.shadow-sm) { padding: .75rem; }
+  .access > :first-child { align-items: stretch; }
+  .summary, .roles { grid-template-columns: minmax(0, 1fr); }
+}

@@ -6,6 +6,7 @@ import { createEnterpriseBranch, inviteEnterpriseMember, readEnterpriseWorkspace
 import type { EnterpriseWorkspace } from "@/lib/enterprise/contracts";
 import { Button, Card, Field, Notice } from "./ui";
 import { useOptionalAccountSession } from "./account-chrome";
+import styles from './enterprise-organization.module.css';
 
 export function EnterpriseOrganization({initial}:{initial:EnterpriseWorkspace}) {
  const {locale}=useDemo(),ar=locale==="ar";
@@ -21,12 +22,12 @@ export function EnterpriseOrganization({initial}:{initial:EnterpriseWorkspace}) 
  async function refresh(){const result=await readEnterpriseWorkspace(accountId,companyId);if(!current())return;if(!result.ok){setError(result.code);setLink(null);if(["FORBIDDEN","UNAUTHENTICATED"].includes(result.code))setDenied(true);return;}setDenied(false);setView(result.data);}
  async function run(work:()=>Promise<void>){if(busy||!current())return;setBusy(true);setError(null);setNotice(null);try{await work();}catch{if(current())setError("UNAVAILABLE");}finally{if(current())setBusy(false);}}
  if((session&&(session.status!=="ready"||session.identity?.userId!==accountId))||denied)return <main className="p-8" role="alert">{text("أعد التحقق من حسابك وصلاحياتك لعرض المؤسسة.","Check your account and access to view the organization.")} <Link href="/app/settings">{text("الإعدادات","Settings")}</Link></main>;
- return <main className="mx-auto grid w-full max-w-5xl gap-6 px-4 py-8 sm:px-8" dir={ar?"rtl":"ltr"}>
+ return <main data-service-theme="true" className={styles.organization} dir={ar?"rtl":"ltr"}>
   <header className="flex flex-wrap items-start justify-between gap-4"><div><Link className="text-sm text-[var(--color-action-on-dark)]" href="/app/settings">{text("إعدادات النشاط","Business settings")}</Link><h1 className="mt-3 text-2xl font-semibold">{text("المؤسسة والفروع","Organization and branches")}</h1></div><Button variant="secondary" disabled={busy} onClick={()=>void run(refresh)}>{text("تحديث الصلاحيات","Refresh access")}</Button></header>
   {error&&<Notice tone="error">{["FORBIDDEN","UNAUTHENTICATED"].includes(error)?text("تغيّر الحساب أو الوصول. سجّل الدخول مجددًا للتحقق.","Account or access changed. Sign in again to check."):text("تعذر تأكيد النتيجة. حدّث البيانات؛ أعد محاولة الطلب نفسه إذا لم يظهر التغيير.","Could not confirm the result. Refresh; retry the same request if the change is absent.")}</Notice>}
   {notice&&<Notice tone="success">{notice}</Notice>}
   <section aria-label={text("الفروع المصرح بها","Authorized branches")} className="grid gap-3 sm:grid-cols-2">{view.branches.map(b=><Card key={b.id} title={b.name}><p className="text-sm text-[var(--color-muted-soft)]">{b.primary?text("الفرع الأساسي","Primary branch"):text("فرع إضافي","Additional branch")} · <span dir="ltr">{b.timezone}</span></p></Card>)}</section>
-  {view.role==="owner"&&<Card title={text("إضافة فرع","Add branch")}>
+  {view.role==="owner"&&<Card className={styles.branchCreator} title={text("إضافة فرع","Add branch")}>
    <Notice tone="warn">{text("الفرع الإضافي يُحفظ في مرحلة التجهيز. تشغيل قنواته ومحادثاته متاح بعد اكتمال تجهيز مسارات الفروع.","An additional branch is saved in setup. Its channels and conversations can operate after branch routing is configured.")}</Notice>
    <form className="mt-4 grid gap-4 sm:grid-cols-2" onSubmit={e=>{e.preventDefault();void run(async()=>{const key=JSON.stringify([name.trim(),timezone]);if(branchAttempt.current?.key!==key)branchAttempt.current={key,id:crypto.randomUUID()};const result=await createEnterpriseBranch({expectedUserId:accountId,companyId,operationId:branchAttempt.current.id,name,timezone});if(!current())return;if(!result.ok){setError(result.code);return;}branchAttempt.current=null;setName("");setNotice(text("تم حفظ الفرع.","Branch saved."));await refresh();});}}>
     <Field label={text("اسم الفرع","Branch name")} required>{p=><input {...p} value={name} onChange={e=>setName(e.target.value)} maxLength={120} required/>}</Field>

@@ -102,12 +102,14 @@ export function AccountSessionProvider({
   const requestGen = useRef(0);
   const readBudgets = useRef(new Set<ReturnType<typeof createSessionReadBudget>>());
   const softRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const softRetryAttemptsRef = useRef(0);
   const refreshRef = useRef<(correlation?: unknown) => Promise<void>>(async () => {});
   const cancelReadBudgets = useCallback(() => {
     for (const budget of readBudgets.current) budget.cancel();
     readBudgets.current.clear();
   }, []);
   const clearSoftRetry = useCallback(() => {
+    softRetryAttemptsRef.current = 0;
     if (softRetryTimerRef.current) {
       clearTimeout(softRetryTimerRef.current);
       softRetryTimerRef.current = null;
@@ -124,12 +126,14 @@ export function AccountSessionProvider({
     const identity = identityRef.current;
     const userId = userIdRef.current;
     if (!identity || !userId || identity.userId !== userId) return false;
-    if (!softRetryTimerRef.current) {
+    if (!softRetryTimerRef.current && softRetryAttemptsRef.current < 3) {
+      const delay = 2500 * 2 ** softRetryAttemptsRef.current;
+      softRetryAttemptsRef.current += 1;
       softRetryTimerRef.current = setTimeout(() => {
         softRetryTimerRef.current = null;
         if (lockedRef.current || statusRef.current !== "ready") return;
         void refreshRef.current();
-      }, 2500);
+      }, delay);
     }
     return true;
   }, []);

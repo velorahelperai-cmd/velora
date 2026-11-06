@@ -9,9 +9,10 @@ vi.mock("@/components/app/ui",()=>({Button:"button",Notice:"aside",useAppCopy:()
 import { AccessGate } from "./access-gate";
 type Node={props:Record<string,unknown>};
 function nodes(value:unknown):Node[]{if(Array.isArray(value))return value.flatMap(nodes);if(!value||typeof value!=="object"||!("props"in value))return[];const node=value as Node;return[node,...nodes(node.props.children)];}
-function exit(){const tree=AccessGate({code:"UNAVAILABLE"});(nodes(tree).find(node=>node.props.variant==="secondary")!.props.onClick as ()=>void)();}
+function exit(code:"UNAVAILABLE"|"SESSION_EXPIRED"="SESSION_EXPIRED"){const tree=AccessGate({code});(nodes(tree).find(node=>node.props.variant==="secondary")!.props.onClick as ()=>void)();}
 async function settle(){for(let i=0;i<15;i++)await Promise.resolve();}
 beforeEach(()=>{vi.clearAllMocks();f.live={ready:false,boundaryFingerprint:"fp-a"};f.quarantine.mockResolvedValue({ok:true});vi.stubGlobal("window",{location:{search:""}});});
 it("M18 status-only render never invokes cleanup",()=>{AccessGate({code:"UNAVAILABLE"});expect(f.quarantine).not.toHaveBeenCalled();expect(f.lock).not.toHaveBeenCalled();});
+it("unavailable allows fresh authentication without quarantining the existing session",async()=>{exit("UNAVAILABLE");await settle();expect(f.quarantine).not.toHaveBeenCalled();expect(f.lock).not.toHaveBeenCalled();expect(f.clear).toHaveBeenCalledOnce();expect(f.replace).toHaveBeenCalledWith(expect.stringContaining('/login?reason=reauthenticate'));});
 it("M18 explicit exit quarantines original capture and retains it on transport failure",async()=>{f.quarantine.mockRejectedValue(new Error("lost"));exit();await settle();expect(f.lock).toHaveBeenCalledWith("fp-a");expect(f.quarantine).toHaveBeenCalledWith("fp-a");expect(f.clear).not.toHaveBeenCalled();expect(f.replace).not.toHaveBeenCalled();});
 it.each([true,false])("M18 delayed exit cannot clear newer boundary with ready=%s",async ready=>{let resolve!:(value:unknown)=>void;f.quarantine.mockReturnValue(new Promise(ok=>resolve=ok));exit();f.live={ready,boundaryFingerprint:"fp-b"};resolve({ok:true});await settle();expect(f.quarantine).toHaveBeenCalledWith("fp-a");expect(f.clear).not.toHaveBeenCalled();expect(f.replace).not.toHaveBeenCalled();expect(f.refresh).not.toHaveBeenCalled();});

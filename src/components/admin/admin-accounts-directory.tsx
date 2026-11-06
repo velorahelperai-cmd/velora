@@ -1,12 +1,48 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useDemo } from "@/lib/demo-state";
 import { useRouter } from "next/navigation";
 import type { AdminAccountSearchItem } from "@/lib/tenancy/types";
 import { AccountDeletionPanel } from './account-deletion-panel';
 import styles from "./admin-accounts-directory.module.css";
+
+const ACCOUNT_STATUS_FILTERS = ["all", "active", "setup", "none", "verified", "unconfirmed"] as const;
+const ACCOUNT_SORTS = ["default", "name_asc", "name_desc", "companies_desc"] as const;
+
+export type AccountStatusFilter = (typeof ACCOUNT_STATUS_FILTERS)[number];
+export type AccountSort = (typeof ACCOUNT_SORTS)[number];
+
+export function accountStatusFilter(value: string | string[] | undefined): AccountStatusFilter {
+  return typeof value === "string" && (ACCOUNT_STATUS_FILTERS as readonly string[]).includes(value)
+    ? value as AccountStatusFilter
+    : "all";
+}
+
+export function accountSortOrder(value: string | string[] | undefined): AccountSort {
+  return typeof value === "string" && (ACCOUNT_SORTS as readonly string[]).includes(value)
+    ? value as AccountSort
+    : "default";
+}
+
+function subscriptionStatus(account: AdminAccountSearchItem): "active" | "setup" | "none" {
+  for (const company of account.companies) {
+    if (company.company_status === "active") return "active";
+  }
+  for (const company of account.companies) {
+    if (company.company_status === "setup") return "setup";
+  }
+  return "none";
+}
+
+function listedPhone(account: AdminAccountSearchItem): { value: string; source: "account" | "business" } | null {
+  if (account.account_phone?.trim()) return { value: account.account_phone.trim(), source: "account" };
+  for (const company of account.companies) {
+    if (company.business_phone?.trim()) return { value: company.business_phone.trim(), source: "business" };
+  }
+  return null;
+}
 
 export interface AdminAccountsDirectoryProps {
   initialQuery?: string;
@@ -16,6 +52,8 @@ export interface AdminAccountsDirectoryProps {
   hasMore: boolean;
   atBrowseWindowEnd?: boolean;
   maxOffset?: number;
+  statusFilter?: AccountStatusFilter;
+  sortOrder?: AccountSort;
 }
 
 export function AdminAccountsHeading() {
@@ -37,6 +75,8 @@ export function AdminAccountsDirectory({
   hasMore,
   atBrowseWindowEnd = false,
   maxOffset = 500,
+  statusFilter = "all",
+  sortOrder = "default",
 }: AdminAccountsDirectoryProps) {
   const router = useRouter();
   const { locale } = useDemo();
@@ -49,27 +89,56 @@ export function AdminAccountsDirectory({
     setSearch(initialQuery);
   }
 
+  const listHref = (next: { query: string; offset: number; status?: AccountStatusFilter; sort?: AccountSort; keepOffset?: boolean }) => {
+    const params = new URLSearchParams();
+    const query = next.query.trim();
+    const offset = Math.max(0, next.offset);
+    const status = next.status ?? statusFilter;
+    const sort = next.sort ?? sortOrder;
+    if (query) params.set("q", query);
+    if (next.keepOffset !== false || offset > 0) params.set("offset", String(offset));
+    if (status !== "all") params.set("status", status);
+    if (sort !== "default") params.set("sort", sort);
+    const searchText = params.toString();
+    return searchText ? `/admin/accounts?${searchText}` : "/admin/accounts";
+  };
+
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const params = new URLSearchParams();
-    if (search.trim()) params.set("q", search.trim());
-    params.set("offset", "0");
-    startTransition(() => router.push(`/admin/accounts?${params.toString()}`));
+    startTransition(() => router.push(listHref({ query: search, offset: 0 })));
   };
 
   const handlePageChange = (newOffset: number) => {
-    const params = new URLSearchParams();
-    if (initialQuery.trim()) params.set("q", initialQuery.trim());
-    params.set("offset", String(Math.max(0, newOffset)));
-    startTransition(() => router.push(`/admin/accounts?${params.toString()}`));
+    startTransition(() => router.push(listHref({ query: initialQuery, offset: newOffset })));
   };
+
+  const visibleAccounts = useMemo(() => {
+    let list = accounts.filter((account) => {
+      if (statusFilter === "active" || statusFilter === "setup" || statusFilter === "none") {
+        return subscriptionStatus(account) === statusFilter;
+      }
+      if (statusFilter === "verified") return account.email_confirmed === true;
+      if (statusFilter === "unconfirmed") return account.email_confirmed !== true;
+      return true;
+    });
+    const collation = ar ? "ar" : "en";
+    if (sortOrder === "name_asc" || sortOrder === "name_desc") {
+      list = [...list].sort((a, b) => {
+        const compared = (a.full_name || a.email || "").localeCompare(b.full_name || b.email || "", collation);
+        return sortOrder === "name_asc" ? compared : -compared;
+      });
+    } else if (sortOrder === "companies_desc") {
+      list = [...list].sort((a, b) => b.companies.length - a.companies.length);
+    }
+    return list;
+  }, [accounts, statusFilter, sortOrder, ar]);
 
   const startIndex = initialOffset + 1;
   const endIndex = initialOffset + accounts.length;
+  const filtersActive = statusFilter !== "all" || sortOrder !== "default";
 
   return (
     <div className={`space-y-6 ${styles.directory}`} dir={ar ? "rtl" : "ltr"}>
-      {/* Search Header */}
       <div className="rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] p-5 shadow-sm">
         <form onSubmit={handleSearchSubmit} aria-busy={isSearching} className="flex flex-wrap items-end gap-3">
           <div className="relative flex-1 min-w-0 basis-64">
@@ -87,7 +156,7 @@ export function AdminAccountsDirectory({
                 type="button"
                 onClick={() => {
                   setSearch("");
-                  startTransition(() => router.push("/admin/accounts"));
+                  startTransition(() => router.push(listHref({ query: "", offset: 0, keepOffset: false })));
                 }}
                 className="absolute end-3 bottom-3 text-xs text-[var(--service-muted)] hover:text-[var(--service-ink)]"
               >
@@ -111,9 +180,51 @@ export function AdminAccountsDirectory({
             </Link>
           )}
         </form>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <select
+            value={statusFilter}
+            aria-label={ar ? "تصفية الحسابات" : "Filter accounts"}
+            onChange={(event) => startTransition(() => router.push(listHref({
+              query: initialQuery,
+              offset: initialOffset,
+              status: accountStatusFilter(event.target.value),
+            })))}
+            className="min-h-11 rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)] px-3 text-xs font-bold text-[var(--service-ink)]"
+          >
+            <option value="all">{ar ? "كل الحالات" : "All statuses"}</option>
+            <option value="active">{ar ? "مشترك نشط" : "Active subscriber"}</option>
+            <option value="setup">{ar ? "قيد التجهيز" : "Setup in progress"}</option>
+            <option value="none">{ar ? "غير مشترك" : "Unsubscribed"}</option>
+            <option value="verified">{ar ? "بريد مؤكّد" : "Email verified"}</option>
+            <option value="unconfirmed">{ar ? "بريد غير مؤكّد" : "Email unconfirmed"}</option>
+          </select>
+          <select
+            value={sortOrder}
+            aria-label={ar ? "ترتيب الحسابات" : "Sort accounts"}
+            onChange={(event) => startTransition(() => router.push(listHref({
+              query: initialQuery,
+              offset: initialOffset,
+              sort: accountSortOrder(event.target.value),
+            })))}
+            className="min-h-11 rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)] px-3 text-xs font-bold text-[var(--service-ink)]"
+          >
+            <option value="default">{ar ? "الترتيب الافتراضي" : "Default order"}</option>
+            <option value="name_asc">{ar ? "الاسم: أ - ي" : "Name: A to Z"}</option>
+            <option value="name_desc">{ar ? "الاسم: ي - أ" : "Name: Z to A"}</option>
+            <option value="companies_desc">{ar ? "الأكثر شركات" : "Most companies"}</option>
+          </select>
+          {filtersActive && (
+            <button
+              type="button"
+              onClick={() => startTransition(() => router.push(listHref({ query: initialQuery, offset: initialOffset, status: "all", sort: "default" })))}
+              className="min-h-11 rounded-xl border border-[var(--service-line)] bg-[var(--service-surface)] px-3 text-xs font-bold text-[var(--service-ink)]"
+            >
+              {ar ? "إعادة تعيين التصفية" : "Reset filters"}
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Accounts Directory Table */}
       {accounts.length === 0 ? (
         <div className="rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] p-12 text-center shadow-sm">
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[var(--service-subtle)] text-[var(--service-muted)]">
@@ -141,13 +252,17 @@ export function AdminAccountsDirectory({
                 <tr>
                   <th scope="col" className="px-5 py-3.5">{ar ? "المستخدم وكود الدعم" : "User and support code"}</th>
                   <th scope="col" className="px-5 py-3.5">{ar ? "البريد وحالة التوثيق" : "Email and verification"}</th>
-                  <th scope="col" className="px-5 py-3.5">{ar ? "الهاتف الموثق" : "Verified phone"}</th>
+                  <th scope="col" className="px-5 py-3.5">{ar ? "الهاتف" : "Phone"}</th>
+                  <th scope="col" className="px-5 py-3.5">{ar ? "الاشتراك" : "Subscription"}</th>
                   <th scope="col" className="px-5 py-3.5">{ar ? "المنشآت المرتبطة" : "Linked businesses"}</th>
                   <th scope="col" className="px-5 py-3.5 text-end">{ar ? "إجراءات" : "Actions"}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--service-line)]">
-                {accounts.map((acc) => (
+                {visibleAccounts.map((acc) => {
+                  const phone = listedPhone(acc);
+                  const subscription = subscriptionStatus(acc);
+                  return (
                   <tr key={acc.user_id} className="hover:bg-[var(--service-canvas)]/50 transition">
                     <td className="px-5 py-4">
                       <div className="font-bold text-[var(--service-ink)]">
@@ -181,13 +296,25 @@ export function AdminAccountsDirectory({
                       </div>
                     </td>
                     <td className="px-5 py-4">
-                      {acc.account_phone ? (
-                        <span className="font-mono text-xs text-[var(--service-ink)]" dir="ltr">
-                          {acc.account_phone}
-                        </span>
+                      {phone ? (
+                        <div>
+                          <span className="font-mono text-xs text-[var(--service-ink)]" dir="ltr">{phone.value}</span>
+                          {phone.source === "business" && (
+                            <div className="mt-1 text-[11px] text-[var(--service-muted)]">{ar ? "هاتف المنشأة" : "Business phone"}</div>
+                          )}
+                        </div>
                       ) : (
                         <span className="text-xs text-[var(--service-muted)]">—</span>
                       )}
+                    </td>
+                    <td className="px-5 py-4">
+                      <span className="text-xs font-semibold text-[var(--service-ink)]">
+                        {subscription === "active"
+                          ? (ar ? "مشترك نشط" : "Active")
+                          : subscription === "setup"
+                            ? (ar ? "قيد التجهيز" : "Setup")
+                            : (ar ? "غير مشترك" : "Unsubscribed")}
+                      </span>
                     </td>
                     <td className="px-5 py-4">
                       {acc.companies.length === 0 ? (
@@ -221,16 +348,26 @@ export function AdminAccountsDirectory({
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
+                {visibleAccounts.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="px-5 py-8 text-center text-sm text-[var(--service-muted)]">
+                      {ar ? "لا توجد حسابات مطابقة في هذه الصفحة." : "No accounts on this page match the filter."}
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
 
-          {/* Pagination Controls */}
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--service-line)] bg-[var(--service-subtle)] px-5 py-3 text-xs text-[var(--service-muted)]">
             <div>
               {ar ? "عرض" : "Showing"} <span className="font-bold text-[var(--service-ink)]">{startIndex}</span> {ar ? "إلى" : "to"}{" "}
               <span className="font-bold text-[var(--service-ink)]">{endIndex}</span> {ar ? "حساب" : "accounts"}
+              {filtersActive && (
+                <span> · {ar ? "بعد التصفية" : "after filtering"} {visibleAccounts.length}</span>
+              )}
             </div>
             <div className="flex items-center gap-2">
               <button

@@ -36,6 +36,15 @@ export function AccessGate({
     setSigningIn(true);
     setSignInError(false);
     try {
+      if (code === "UNAVAILABLE" && !expired) {
+        // A fresh login owns the existing lineage transition after provider
+        // authentication succeeds. Never quarantine or refresh the unknown tip.
+        clearSession?.();
+        const next = safeInternalPath(pathname + window.location.search, "/");
+        router.replace(`/login?reason=reauthenticate&next=${encodeURIComponent(next)}`);
+        router.refresh();
+        return;
+      }
       // Cleanup-retained ids vs live validity (C3-6).
       const capture = session?.cleanupCapture?.() ?? {
         userId: session?.identity?.userId ?? null,
@@ -64,7 +73,7 @@ export function AccessGate({
       signInPending.current = false;
       setSigningIn(false);
     }
-  }, [clearSession, expired, lockSession, pathname, router, session]);
+  }, [clearSession, code, expired, lockSession, pathname, router, session]);
   useEffect(() => {
     if (!expired) return;
     const frame = requestAnimationFrame(() => { void signInAgain(); });

@@ -24,6 +24,7 @@ import { isApprovedForAnswers, type KnowledgeApprovalFoundation, type KnowledgeS
 import { fill } from "@/lib/app-copy";
 import { useDemo } from "@/lib/demo-state";
 import { IconFileText } from "@/components/admin/admin-icons";
+import styles from './knowledge-workspace.module.css';
 import {
   Button, ConfirmDialog, EmptyState, Field, FieldErrorKey, Notice,
   useAppCopy, useErrorText, useUnsavedWarning,
@@ -544,7 +545,7 @@ export function KnowledgeEditor({
   }, [sources, activeCategory]);
 
   return (
-    <div className={workspacePresentation ? "grid min-w-0 max-w-5xl gap-4" : "grid gap-5"}>
+    <div className={workspacePresentation ? styles.workspace : "grid gap-5"}>
       {/* Knowledge Score & Readiness Hero Banner */}
       <section className={workspacePresentation ? "rounded-xl border border-[var(--service-line)] bg-[var(--service-surface)] p-5 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-6" : "relative overflow-hidden rounded-3xl border border-[#38dc89]/30 bg-[var(--color-panel-deep)] p-5 shadow-sm"}>
         <div className="flex flex-wrap items-center justify-between gap-4">
@@ -653,7 +654,7 @@ export function KnowledgeEditor({
 
       {/* Action Bar: Quick-Add Templates and Buttons */}
       {canWrite ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[color:var(--color-border-soft)] pb-4">
+        <div data-knowledge-toolbar="true" className="flex flex-wrap items-center justify-between gap-3 border-b border-[color:var(--color-border-soft)] pb-4">
           <div className="flex flex-wrap items-center gap-2">
             <Button
               variant={mode === "text" ? "primary" : "secondary"}
@@ -711,6 +712,7 @@ export function KnowledgeEditor({
       {/* Editor Modal / Form */}
       {mode && canWrite ? (
         <form
+          data-knowledge-editor="true"
           className="grid gap-3 rounded-2xl border border-[#38dc89]/30 bg-[var(--color-panel)] p-5 shadow-sm"
           noValidate
           onSubmit={(e) => {
@@ -796,7 +798,7 @@ export function KnowledgeEditor({
 
       {/* Category Filter Tabs */}
       {sources.length > 0 ? (
-        <div className="flex flex-wrap items-center gap-1.5 border-b border-[color:var(--color-border-soft)] pb-3 text-xs">
+        <div data-knowledge-categories="true" aria-label={localize('تصنيف مصادر المعرفة','Knowledge source categories')} className="flex flex-wrap items-center gap-1.5 border-b border-[color:var(--color-border-soft)] pb-3 text-xs">
           {(
             [
               ["all", localize("جميع المصادر", "All sources")],
@@ -809,6 +811,7 @@ export function KnowledgeEditor({
             <button
               key={cat}
               type="button"
+              aria-pressed={activeCategory === cat}
               onClick={() => setActiveCategory(cat)}
               className={`rounded-full px-3 py-1 font-medium transition ${
                 activeCategory === cat
@@ -825,11 +828,11 @@ export function KnowledgeEditor({
       {/* Sources List */}
       {loadFailed && sources.length === 0 ? <Notice tone="error">{copy.knowledge.loadFailed}</Notice> : filteredSources.length === 0 ? (
         <EmptyState
-          title={sources.length === 0 ? copy.knowledge.empty : "لا توجد مصادر في هذا التصنيف"}
+          title={sources.length === 0 ? copy.knowledge.empty : localize("لا توجد مصادر في هذا التصنيف", "No sources in this category")}
           body={localize("أضف معلومات جديدة أو اختر قالباً جاهزاً من الأعلى لتبدأ نورا بفهم نشاطك.", "Add actual company information or choose a template to start a draft.")}
         />
       ) : (
-        <ul className="grid gap-3">
+        <ul data-knowledge-sources="true" className="grid gap-3">
           {filteredSources.map((src) => {
             const approved = isApprovedForAnswers(src);
             return (
