@@ -180,6 +180,11 @@ export async function bindBrowserContinuityFromAnchor(
         if (row.ok === true) {
           const lineageId = typeof row.browser_lineage_id === "string" ? row.browser_lineage_id : "";
           const fp = createHash("sha256").update(lineageId).digest("hex").slice(0, 16);
+          // Warm process-local capability cache so the following password login
+          // does not stampede a cold 57014 probe under Preview load.
+          void import("./registry")
+            .then((m) => m.probeBrokerCapability())
+            .catch(() => undefined);
           return { ok: true, lineageFingerprint: fp };
         }
         // Semantic reject from RPC — do not retry.

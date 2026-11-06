@@ -89,6 +89,25 @@ function failCapability(codes: string[], encryptionConfigured: boolean): BrokerC
   };
 }
 
+/** Positive probe reuse under Preview stampede (login + session + OPTIONS). */
+export const CAPABILITY_OK_CACHE_TTL_MS = 45_000;
+/** Statement-timeout attempts for the read-only capability probe (includes first try). */
+export const CAPABILITY_STATEMENT_TIMEOUT_ATTEMPTS = 3;
+
+type CapabilityCache = { at: number; value: BrokerCapability };
+let capabilityOkCache: CapabilityCache | null = null;
+let capabilityInFlight: Promise<BrokerCapability> | null = null;
+
+/** Test-only: clear process-local probe cache/singleflight. */
+export function resetBrokerCapabilityProbeCache(): void {
+  capabilityOkCache = null;
+  capabilityInFlight = null;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export async function probeBrokerCapability(): Promise<BrokerCapability> {
   const encryptionConfigured = brokerEncryptionConfigured();
   const codes: string[] = [];
@@ -98,12 +117,47 @@ export async function probeBrokerCapability(): Promise<BrokerCapability> {
     codes.push("SERVICE_ROLE_MISSING");
     return failCapability(codes, encryptionConfigured);
   }
+  const now = Date.now();
+  if (
+    capabilityOkCache
+    && capabilityOkCache.value.ok
+    && now - capabilityOkCache.at < CAPABILITY_OK_CACHE_TTL_MS
+  ) {
+    return capabilityOkCache.value;
+  }
+  if (capabilityInFlight) return capabilityInFlight;
+  const flight = probeBrokerCapabilityUnlocked(admin, encryptionConfigured, codes).finally(() => {
+    if (capabilityInFlight === flight) capabilityInFlight = null;
+  });
+  capabilityInFlight = flight;
+  return flight;
+}
+
+async function probeBrokerCapabilityUnlocked(
+  admin: NonNullable<ReturnType<typeof adminOrNull>>,
+  encryptionConfigured: boolean,
+  codes: string[],
+): Promise<BrokerCapability> {
   try {
-    // A statement timeout is a definite failure of this read-only probe. Retry
-    // once without caching or relaxing the capability contract; a cancelled
-    // request still fails through the normal abort-aware transport.
-    let { data, error } = await admin.rpc("vel_broker_capability_probe" as never);
-    if (error?.code === "57014") ({ data, error } = await admin.rpc("vel_broker_capability_probe" as never));
+    // Statement timeout is a definite failure of this read-only probe. Retry a
+    // few times without relaxing the capability contract; Preview load often
+    // stamps login + session + OPTIONS onto the same RPC.
+    let data: unknown = null;
+    let error: { code?: string } | null = null;
+    for (let attempt = 1; attempt <= CAPABILITY_STATEMENT_TIMEOUT_ATTEMPTS; attempt++) {
+      const result = await Promise.resolve(admin.rpc("vel_broker_capability_probe" as never));
+      data = result.data;
+      error = (result.error ?? null) as { code?: string } | null;
+      if (error?.code !== "57014") break;
+      brokerLog("warn", "auth.broker.capability.statement_timeout", {
+        error_code: "57014",
+        module: "auth.broker",
+        attempt,
+      });
+      if (attempt < CAPABILITY_STATEMENT_TIMEOUT_ATTEMPTS) {
+        await sleep(250 * attempt);
+      }
+    }
     if (error || !data || typeof data !== "object") {
       codes.push("CAPABILITY_PROBE_UNAVAILABLE");
       brokerLog("warn", "auth.broker.capability.unavailable", {
@@ -178,7 +232,9 @@ export async function probeBrokerCapability(): Promise<BrokerCapability> {
         error_code: "CAPABILITY_INCOMPLETE",
         codes: capability.codes,
       });
+      return capability;
     }
+    capabilityOkCache = { at: Date.now(), value: capability };
     return capability;
   } catch {
     codes.push("CAPABILITY_PROBE_THROW");
