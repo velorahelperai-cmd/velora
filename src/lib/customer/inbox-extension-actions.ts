@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { getCompanyAccess } from '@/lib/tenancy/access';
 import { validInboxAttachment } from './inbox-attachment-validation';
+import { validInboxContact } from './inbox-contact-validation';
 
 type Input = {
   companyId: string;
@@ -129,14 +130,6 @@ export async function removeUnboundWhatsappFile(input: {companyId:string;convers
     if(data.ok===false&&'code' in data&&data.code==='forbidden')return {ok:false as const,code:'FORBIDDEN'};
     return {ok:false as const,code:'UNAVAILABLE'};
   }catch{return {ok:false as const,code:'UNAVAILABLE'};}
-}
-
-const contactEmail = /^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,24}$/;
-export function validInboxContact(email: string, location: string) {
-  const mail = email.trim();
-  const place = location.trim();
-  if (mail.length > 254 || place.length > 120 || mail.includes('\0') || place.includes('\0')) return false;
-  return mail === '' || contactEmail.test(mail);
 }
 
 type ContactProfile = { email: string; location: string };

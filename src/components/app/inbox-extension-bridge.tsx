@@ -54,7 +54,7 @@ export function InboxExtensionBridge({ view, ar, render, pendingIntents, onInten
   const [emailDraft,setEmailDraft]=useState('');
   const [locationDraft,setLocationDraft]=useState('');
   const editingContactRef=useRef(false);
-  editingContactRef.current=editingContact;
+  useEffect(()=>{editingContactRef.current=editingContact;},[editingContact]);
   const reserveTag = (intent: PendingInboxIntent | null) => { setReservedTag(intent); onIntentChange?.('tag', intent); };
   const reserveNote = (intent: PendingInboxIntent | null) => { setReservedNote(intent); onIntentChange?.('note', intent); };
   const reserveQuick = (intent: PendingInboxIntent | null) => { setReservedQuick(intent); onIntentChange?.('quick', intent); };
@@ -251,8 +251,6 @@ export function InboxExtensionBridge({ view, ar, render, pendingIntents, onInten
     </form>}
     {contactReady && canEdit && !editingContact && !contactError && <button type="button" className="vdi-small-button" onClick={() => setEditingContact(true)}>{ar ? 'تعديل البريد والموقع' : 'Edit email and location'}</button>}
   </div>;
-  // The render callback receives event handlers; refs are read only when those handlers run.
-  // eslint-disable-next-line react-hooks/refs
   return render({ ...view,
     messages,
     extensionStatus: paused || error ? 'unavailable' : items === null ? 'loading' : 'ready',
