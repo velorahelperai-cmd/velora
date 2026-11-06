@@ -58,45 +58,60 @@ declare
   body text;
   occurrences integer;
   patched integer;
-  targets oid[];
+  already integer;
   target oid;
   item record;
 begin
+  -- pg_get_functiondef() errors on aggregates/window procs (ERROR 42809), so only
+  -- walk ordinary functions (prokind = 'f') and never collect oids via array_agg.
   for item in select * from (values
     ('c.status=''open'' and c.automation_allowed', 'private.whatsapp_continuity_ai_claimable(c)', 1),
     ('c.status<>''open'' or not c.automation_allowed', 'not private.whatsapp_continuity_ai_claimable(c)', 1),
     ('v_conv.automation_allowed is not true', 'not private.whatsapp_continuity_ai_claimable(v_conv)', 1)
   ) as replacements(old_expr, new_expr, minimum) loop
-    select coalesce(array_agg(p.oid), '{}'::oid[]) into targets
-    from pg_proc p
-    join pg_namespace n on n.oid = p.pronamespace
-    where n.nspname in ('public', 'private')
-      and position(item.old_expr in pg_get_functiondef(p.oid)) > 0;
     patched := 0;
-    foreach target in array targets loop
+    already := 0;
+    for target in
+      select p.oid
+      from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname in ('public', 'private')
+        and p.prokind = 'f'
+    loop
       select n.nspname, p.proname into fn
       from pg_proc p
       join pg_namespace n on n.oid = p.pronamespace
       where p.oid = target;
       body := pg_get_functiondef(target);
-      occurrences := (length(body) - length(replace(body, item.old_expr, ''))) / length(item.old_expr);
-      if occurrences <> 1 then
-        raise exception 'WA_CONTINUITY_CLAIM_SOURCE_DRIFT %.% count %', fn.nspname, fn.proname, occurrences;
+      if position(item.old_expr in body) > 0 then
+        occurrences := (length(body) - length(replace(body, item.old_expr, ''))) / length(item.old_expr);
+        if occurrences <> 1 then
+          raise exception 'WA_CONTINUITY_CLAIM_SOURCE_DRIFT %.% count %', fn.nspname, fn.proname, occurrences;
+        end if;
+        execute replace(body, item.old_expr, item.new_expr);
+        patched := patched + 1;
+      elsif position(item.new_expr in body) > 0 then
+        already := already + 1;
       end if;
-      execute replace(body, item.old_expr, item.new_expr);
-      patched := patched + 1;
     end loop;
-    if patched < item.minimum then
+    if patched + already < item.minimum then
       raise exception 'WA_CONTINUITY_CLAIM_SOURCE_MISSING %', item.old_expr;
     end if;
   end loop;
 end
 $patch$;
 
-alter function public.billing_load_worker_frame(uuid, uuid) set schema private;
-alter function private.billing_load_worker_frame(uuid, uuid) rename to continuity_pre_load_worker_frame;
+do $wrap$
+begin
+  if to_regprocedure('private.continuity_pre_load_worker_frame(uuid,uuid)') is null then
+    alter function public.billing_load_worker_frame(uuid, uuid) set schema private;
+    alter function private.billing_load_worker_frame(uuid, uuid) rename to continuity_pre_load_worker_frame;
+  end if;
+end
+$wrap$;
 revoke all on function private.continuity_pre_load_worker_frame(uuid, uuid) from public, anon, authenticated, service_role;
 
+drop function if exists public.billing_load_worker_frame(uuid, uuid);
 create function public.billing_load_worker_frame(p_job_id uuid, p_claim_token uuid)
 returns jsonb
 language plpgsql
