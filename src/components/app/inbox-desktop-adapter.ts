@@ -4,9 +4,14 @@ import {matchesUnifiedInboxFilter} from './conversations-inbox';
 import type {InboxRow} from './inbox-presentation';
 import type {InboxDesktopView,VdiMessage} from './inbox-desktop';
 import type {Conversation} from '@/lib/demo-state';
+
+function isSet(val: readonly string[] | ReadonlySet<string>): val is ReadonlySet<string> {
+ return typeof (val as ReadonlySet<string>).has === 'function';
+}
+
 /** Pure projection of already authorized data. No fetching, merging identities or invented metadata. */
-export function desktopRows(rows:readonly InboxRow[],ar:boolean):InboxDesktopView['conversations'] {
- return rows.map(row=>({id:row.key,name:row.name,initials:row.name.slice(0,1).toUpperCase(),channel:row.channel,preview:row.preview,time:row.at?new Date(row.at).toLocaleTimeString(ar?'ar-OM':'en-GB',{hour:'2-digit',minute:'2-digit'}):'',unreadCount:row.unread}));
+export function desktopRows(rows:readonly InboxRow[],ar:boolean,starredKeys?:readonly string[] | ReadonlySet<string>):InboxDesktopView['conversations'] {
+ return rows.map(row=>({id:row.key,name:row.name,initials:(row.name||'').slice(0,1).toUpperCase(),channel:row.channel,preview:row.preview,time:row.at?new Date(row.at).toLocaleTimeString(ar?'ar-OM':'en-GB',{hour:'2-digit',minute:'2-digit'}):'',unreadCount:row.unread,starred:starredKeys?isSet(starredKeys)?starredKeys.has(row.key):starredKeys.includes(row.key):false}));
 }
 export function desktopWhatsappMessages(messages:Conversation['messages'],ar:boolean):VdiMessage[]{
  return messages.map(message=>({id:message.id,direction:message.from==='customer'?'incoming':'outgoing',senderKind:message.from==='assistant'?'assistant':message.from==='staff'?'staff':undefined,text:message.text,time:new Date(message.at).toLocaleTimeString(ar?'ar-OM':'en-GB',{hour:'2-digit',minute:'2-digit'}),senderLabel:message.from==='assistant'?(ar?'فيلورا · رد آلي':'Velora · Automated reply'):message.from==='staff'?(ar?'الفريق':'Staff'):undefined,deliveryState:message.deliveryState??undefined,attachment:message.source?message.source:undefined}));

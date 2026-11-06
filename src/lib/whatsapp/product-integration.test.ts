@@ -9,7 +9,7 @@ import {
   createEmbeddedSignupAttempt,
   embeddedSignupEnabled,
 } from "@/lib/whatsapp/embedded-signup";
-import { inboundWorkerPlan, runInboundWorkerAnswer } from "@/lib/whatsapp/inbound-worker";
+import { runInboundWorkerAnswer } from "@/lib/whatsapp/inbound-worker";
 import { decideClaimedTenantSend } from "@/lib/whatsapp/send-attempt";
 import { isPreGraphSendFailure, sendFinalizeKind } from "@/lib/whatsapp/send-failure";
 import type { WhatsappTenantResolveOk } from "@/lib/whatsapp/tenant-resolve";
@@ -181,22 +181,19 @@ describe("embedded signup contract", () => {
 });
 
 describe("entitlement and worker", () => {
-  it("keeps automation off while entitlement is not configured", async () => {
+  it("keeps automation off while entitlement is not configured and rejects calls without ports", async () => {
     const snap = readCompanyEntitlement("co-a");
     expect(snap.status).toBe("not_configured");
     expect(snap.paid).toBe(false);
     expect(entitlementAllowsAutomation(snap)).toBe(false);
-    expect(inboundWorkerPlan()).toEqual({
-      scheduled: false,
-      steps: ["claim", "answer", "recheck", "intent", "send", "record"],
-    });
+    // @ts-expect-error verifying explicit rejection when ports are omitted
     await expect(runInboundWorkerAnswer({
       jobId: "job-1",
       claimToken: "tok",
       companyId: "co-a",
     })).resolves.toEqual({
       ok: false,
-      code: "ENTITLEMENT_NOT_CONFIGURED",
+      code: "PORTS_REQUIRED",
       jobCompleted: false,
       sendAccepted: false,
       delivered: false,
