@@ -1,7 +1,7 @@
 import { pathForAccess, type AccessResult } from "@/lib/tenancy/access";
 
 /** Bound wait after login.committed so Set-Cookie reaches the browser before access stalls. */
-export const POST_LOGIN_ACCESS_BUDGET_MS = 15_000;
+export const POST_LOGIN_ACCESS_BUDGET_MS = 2_500;
 
 /**
  * Post-admit destination helper (not a server action). Kept outside `"use server"`

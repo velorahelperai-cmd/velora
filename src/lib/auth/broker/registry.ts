@@ -986,6 +986,8 @@ export async function reserveBoundAuthIntent(input: {
   browserLineageId: string;
   parentHandleHash: string | null;
   providerState: string;
+  status: string;
+  idempotent: boolean;
 } | null> {
   const admin = adminOrNull();
   if (!admin) return null;
@@ -1006,6 +1008,8 @@ export async function reserveBoundAuthIntent(input: {
     browserLineageId: String(row.browser_lineage_id),
     parentHandleHash: typeof row.parent_handle_hash === "string" ? row.parent_handle_hash : null,
     providerState: String(row.provider_state ?? "ready"),
+    status: typeof row.status === "string" ? row.status : "reserved",
+    idempotent: row.idempotent === true,
   };
 }
 

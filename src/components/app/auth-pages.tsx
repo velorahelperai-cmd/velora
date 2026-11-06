@@ -29,6 +29,7 @@ import {
   requestPasswordReset,
   resendVerificationEmail,
   resolvePostAuthPath,
+  signInWithEmail,
   signUpWithEmail,
   updatePassword,
   verifyEmailCode,
@@ -682,7 +683,6 @@ export function AuthEntryForm({mode}:{mode:"login"|"signup"}) {
         navigate(destination.data.next);
         return;
       }
-      const {signInWithEmail} = await import("@/lib/tenancy/actions");
       const admitted = await signInWithEmail({email:form.email.trim().toLowerCase(), password:form.password, next:returnTo, requestNonce:continuity.requestNonce, correlation: trace.correlation});
       if (admitted.ok || admitted.code === "INVALID_INPUT" || admitted.code === "AUTH_ERROR") clearAuthGestureNonce(continuity.requestNonce);
       if (!current()) { trace.finish("CONFLICT"); return; }

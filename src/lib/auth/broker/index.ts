@@ -64,6 +64,7 @@ export {
   selectCandidateHandles,
   listHandleCookies,
   isBrokerHandleCookieName,
+  rotateHandleCookies,
 } from "./cookies";
 export {
   stampAuthReturnGeneration,

@@ -396,8 +396,8 @@ export async function signInWithEmail(input: {
     if (resolved.ok && preferred) {
       commitAuthReturnForGeneration(writer, resolved.boundary.generation, preferred);
     }
-    // Cookies were committed above. Do not hold the server-action response on a
-    // multi-10s–60s access probe — clients abandon and Set-Cookie never sticks.
+    // Cookies were committed above. Soft-land fast so Set-Cookie flushes before
+    // access/capability probes can stall the Server Action response (cache-clear symptom).
     trace.stage("access");
     const next = await resolvePostLoginDestination(preferred, () => getCompanyAccess());
     trace.finish("OK");

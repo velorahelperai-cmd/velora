@@ -1,5 +1,12 @@
 import "server-only";
-import { commitHandleCookie, commitIntentCookie, expireIntentCookie, type CookieReader, type CookieWriter } from "./cookies";
+import {
+  commitHandleCookie,
+  commitIntentCookie,
+  expireIntentCookie,
+  rotateHandleCookies,
+  type CookieReader,
+  type CookieWriter,
+} from "./cookies";
 import { prepareBrokerAdmissionLineage } from "./lineage-auth";
 import { brokerLog } from "./log";
 import { createProviderAuthClient, readPkceVerifier, seedPkceVerifier } from "./provider";
@@ -49,12 +56,13 @@ async function admitCapturedSession(input: {
     expires_in?: number;
   };
   writer: CookieWriter;
+  reader: CookieReader;
   intentId: string;
   browserLineageId: string;
   admissionScope: "app" | "recovery";
   recoveryOperationKey?: string | null;
 }): Promise<
-  | { ok: true; generation: string; userId: string; boundaryFingerprint: string }
+  | { ok: true; generation: string; userId: string; boundaryFingerprint: string; cookieName: string }
   | { ok: false; code: "UNAVAILABLE" | "ADMISSION_BLOCKED" }
 > {
   const userId = input.session.user?.id;
@@ -84,12 +92,46 @@ async function admitCapturedSession(input: {
     browserLineageId: input.browserLineageId,
   });
   if (!committed) return { ok: false, code: "ADMISSION_BLOCKED" };
+  // Expire every prior handle first, then set the winner so Set-Cookie order prefers the tip.
+  rotateHandleCookies(input.writer, input.reader, new Set());
   commitHandleCookie(input.writer, committed.cookieName, committed.handle);
   return {
     ok: true,
     generation: committed.generation,
     userId: committed.userId,
     boundaryFingerprint: committed.boundaryFingerprint,
+    cookieName: committed.cookieName,
+  };
+}
+
+/** Re-issue the opaque handle cookie for an already-committed password intent (retry after lost Set-Cookie). */
+async function rematerializeCommittedPasswordLogin(input: {
+  stateNonce: string;
+  bootstrapHash: string;
+  writer: CookieWriter;
+  reader: CookieReader;
+}): Promise<{ ok: true; userId: string; boundaryFingerprint: string } | { ok: false }> {
+  const saved = await loadAuthIntentByNonce(input.stateNonce);
+  if (
+    !saved
+    || saved.status !== "committed"
+    || (saved.purpose !== "password_login" && saved.purpose !== "recovery_reauth")
+  ) {
+    return { ok: false };
+  }
+  const materialized = await materializeCommittedIntentAdmission(saved, input.bootstrapHash);
+  if (!materialized) return { ok: false };
+  rotateHandleCookies(input.writer, input.reader, new Set());
+  commitHandleCookie(input.writer, materialized.cookieName, materialized.handle);
+  brokerLog("info", "auth.broker.login.rematerialized", {
+    user_id: materialized.userId,
+    boundary_fp: materialized.boundaryFingerprint,
+    error_code: "COMMITTED_INTENT_COOKIE_REPLAY",
+  });
+  return {
+    ok: true,
+    userId: materialized.userId,
+    boundaryFingerprint: materialized.boundaryFingerprint,
   };
 }
 
@@ -119,7 +161,10 @@ export async function brokerPasswordLogin(input: {
   // Authenticate then admit cookies before any capability probe so Preview 57014
   // stampede cannot burn Vercel maxDuration before soft-land. Inbox soft-UNAVAILABLE
   // covers slow post-login probes; probe budgets elsewhere stay ≪120s.
-  const lineageCtx = await prepareBrokerAdmissionLineage(input.reader, input.writer);
+  // Rotate stale vel_sh_* before reserve so a cache-clear is not required to log in.
+  const lineageCtx = await prepareBrokerAdmissionLineage(input.reader, input.writer, {
+    rotateStaleHandles: true,
+  });
   if (!lineageCtx.ok) {
     return { ok: false, code: lineageCtx.code === "CONTINUITY_REQUIRED" ? "CONTINUITY_REQUIRED" : "UNAVAILABLE" };
   }
@@ -132,8 +177,28 @@ export async function brokerPasswordLogin(input: {
   });
   if (!intent) return { ok: false, code: "UNAVAILABLE" };
 
+  // Same gesture nonce after a committed admit whose Set-Cookie never stuck: replay the handle.
+  if (intent.status === "committed" || (intent.idempotent && intent.providerState === "committed")) {
+    const replayed = await rematerializeCommittedPasswordLogin({
+      stateNonce: intent.stateNonce,
+      bootstrapHash: lineageCtx.bootstrapHash,
+      writer: input.writer,
+      reader: input.reader,
+    });
+    if (replayed.ok) return { ok: true };
+  }
+
   const claim = await claimProviderAttempt(intent.id);
   if (!claim.ok || claim.claimed !== true) {
+    if (intent.status === "committed" || intent.idempotent) {
+      const replayed = await rematerializeCommittedPasswordLogin({
+        stateNonce: intent.stateNonce,
+        bootstrapHash: lineageCtx.bootstrapHash,
+        writer: input.writer,
+        reader: input.reader,
+      });
+      if (replayed.ok) return { ok: true };
+    }
     await resumeProviderCleanup(intent.id, lineageCtx.browserLineageId);
     return { ok: false, code: "UNAVAILABLE" };
   }
@@ -198,6 +263,7 @@ export async function brokerPasswordLogin(input: {
       admitCapturedSession({
         session: data.session,
         writer: input.writer,
+        reader: input.reader,
         intentId: intent.id,
         browserLineageId: intent.browserLineageId,
         admissionScope: scope,
@@ -352,6 +418,7 @@ export async function brokerExchangeOAuthCode(input: {
     if (!materialized) {
       return { ok: false, code: "UNAVAILABLE", detail: "receipt_stale", expireIntent: false };
     }
+    rotateHandleCookies(input.writer, input.reader ?? { getAll: () => [] }, new Set());
     commitHandleCookie(input.writer, materialized.cookieName, materialized.handle);
     expireIntentCookie(input.writer, input.stateNonce);
     return { ok: true, generation: materialized.generation };
@@ -419,6 +486,7 @@ export async function brokerExchangeOAuthCode(input: {
     const admitted = await admitCapturedSession({
       session: data.session,
       writer: input.writer,
+      reader: input.reader,
       intentId: intent.id,
       browserLineageId: intent.browserLineageId ?? lineageCtx.browserLineageId,
       admissionScope: "app",
