@@ -11,8 +11,8 @@ export type InboxResult<T> = { ok: true; data: T } | InboxFailure;
 type Scope = "all_company" | "assigned_only";
 type PageInput = { companyId: string; limit?: number; before?: string | null };
 type ThreadInput = PageInput & { conversationId: string };
-export type InboxInterventionReason = "human_control" | "worker_review" | "worker_failed" | "send_unknown" | "send_rejected" | "delivery_failed";
-const REASONS: InboxInterventionReason[] = ["human_control", "worker_review", "worker_failed", "send_unknown", "send_rejected", "delivery_failed"];
+export type InboxInterventionReason = "human_control" | "worker_review" | "worker_failed" | "send_unknown" | "send_rejected" | "delivery_failed" | "ack_sent";
+const REASONS: InboxInterventionReason[] = ["human_control", "worker_review", "worker_failed", "send_unknown", "send_rejected", "delivery_failed", "ack_sent"];
 export type WhatsappInboxItem = Conversation & {
   inboxSequence: string; unreadCount: number; intervention: { reasons: InboxInterventionReason[] };
 };

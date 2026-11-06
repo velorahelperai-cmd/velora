@@ -5,9 +5,11 @@ import {classifyHandoffPolicy} from "@/lib/answers/routing/handoff-policy";
 import {classifyPureSocialSmallTalk} from "@/lib/answers/routing/small-talk";
 import {recordWorkerTiming} from "./worker-timing";
 import {isTransientWorkerCode} from "./worker-codes";
+import {continuityAckGate,decideInboundContinuity,type ContinuityPlan,type HumanOwnership} from "./response-continuity";
 export type IntegrationFrame={authority?:"es02";job_id:string;company_id:string;branch_id?:string;created_at?:string;message_id:string;conversation_id:string;phone_number_id:string;recipient_wa_id:string;
  automation_generation:number;link_id:string;link_generation:number;question:string;service_window_expires_at?:string;ai_status:string|null;reply_text:string|null;
- ai_attempt_id:string|null;intent_id:string|null;staged_citations:AnswerCitation[]|null};
+ ai_attempt_id:string|null;intent_id:string|null;staged_citations:AnswerCitation[]|null;
+ human_ownership?:HumanOwnership|null;handoff_reason?:string|null;service_window_open?:boolean;send_unknown?:boolean;inbound_elapsed_ms?:number;};
 export type SendIntent={id:string;outcome:string;company_id:string;conversation_id:string;phone_number_id:string;recipient_wa_id:string;body:string};
 export type VerificationFailureCode = "WORKER_DISABLED" | "WORKER_UNAVAILABLE" | "KNOWLEDGE_OR_AUTOMATION_CHANGED";
 export type VerificationResult = { ok: true } | { ok: false; code: VerificationFailureCode };
@@ -22,7 +24,9 @@ export type IntegrationPorts={enabled:boolean;frame:()=>Promise<IntegrationFrame
  abortSend?:(id:string,token:string)=>Promise<boolean>;
  finish:(id:string)=>Promise<string>;repair:(id:string)=>Promise<boolean>;
  retry:(code:string,uncertain:boolean,permanent?:boolean)=>Promise<void>;heartbeat:()=>Promise<boolean>;
- history?:(f:IntegrationFrame)=>Promise<{role:"customer"|"assistant";text:string}[]>};
+ history?:(f:IntegrationFrame)=>Promise<{role:"customer"|"assistant";text:string}[]>;
+ noteContinuity?:(plan:ContinuityPlan)=>Promise<void>;
+ rereadOwnership?:()=>Promise<HumanOwnership|null>;};
 export type IntegrationOutcome={ok:false;code:string;jobCompleted:boolean;sendAccepted:boolean;delivered:false}|{ok:true;code:"ACCEPTED";jobCompleted:true;sendAccepted:true;delivered:false};
 const blocked=(code:string):IntegrationOutcome=>({ok:false,code,jobCompleted:false,sendAccepted:false,delivered:false});
 const acceptedPending=(code:string,settled=false):IntegrationOutcome=>({ok:false,code,jobCompleted:settled,sendAccepted:true,delivered:false});
@@ -47,12 +51,36 @@ export async function runPersistedInboundJob(input:{jobId:string;claimToken:stri
  const frame=await ports.frame();
  if(!frame||frame.job_id!==input.jobId||frame.company_id!==input.companyId)return blocked("CLAIM_BINDING_REJECTED");
  if(["reserved","running","uncertain"].includes(frame.ai_status??""))return await fail("AI_REQUIRES_RECONCILIATION",true);
- // Do not generate a new paid response for a request that the existing
- // conservative policy flags for human review. Existing send intents need
- // their own reconciliation path so accepted outcomes are never overwritten.
- const humanReview=!!classifyHandoffPolicy(frame.question).previewReason;
- if(humanReview&&!frame.intent_id)return await fail("HUMAN_REVIEW_REQUIRED");
- if(humanReview&&!(frame.ai_status==="success"&&frame.reply_text&&frame.ai_attempt_id))return blocked("SEND_REQUIRES_RECONCILIATION");
+ // handed_over is not a staff claim. A supplied ownership snapshot decides
+ // whether a safe answer may continue. Sensitive and explicit human requests
+ // still never become a generated answer. The continuity note cannot send.
+ const handoff=classifyHandoffPolicy(frame.question);
+ const humanReview=!!handoff.previewReason;
+ const continuity=frame.human_ownership||frame.handoff_reason||frame.service_window_open===false||frame.send_unknown===true||frame.inbound_elapsed_ms!==undefined
+  ? decideInboundContinuity({
+    ownership:frame.human_ownership??(frame.handoff_reason?"REQUESTED_UNCLAIMED":"NONE"),
+    handoffReason:frame.handoff_reason,
+    previewReason:handoff.previewReason,
+    elapsedMs:frame.inbound_elapsed_ms,
+    answerReady:frame.ai_status==="success"&&!!frame.reply_text&&!!frame.ai_attempt_id,
+    serviceWindowOpen:frame.service_window_open,
+    workerEnabled:true,
+    ackGateOpen:continuityAckGate().open,
+    sendUnknown:frame.send_unknown===true,
+    staffReplied:frame.human_ownership==="CLAIMED_ACTIVE",
+   })
+  :null;
+ const stopAi=humanReview||continuity?.ai==="stop";
+ const stopCode=continuity?.stopCode==="HUMAN_CLAIMED"?"HUMAN_CLAIMED"
+  :continuity?.stopCode==="SERVICE_WINDOW_CLOSED"?"SERVICE_WINDOW_CLOSED"
+  :continuity?.stopCode==="SEND_REQUIRES_RECONCILIATION"?"SEND_REQUIRES_RECONCILIATION"
+  :continuity?.stopCode==="AUTHORITY_BLOCKED"?"AUTHORITY_BLOCKED"
+  :"HUMAN_REVIEW_REQUIRED";
+ if(ports.noteContinuity&&continuity&&(continuity.ack==="schedule"||continuity.ack==="cancel")){
+  try{await ports.noteContinuity(continuity.plan);}catch{/* Ledger notes stay inside the existing send guards. */}
+ }
+ if(stopAi&&!frame.intent_id)return await fail(stopCode);
+ if(stopAi&&!(frame.ai_status==="success"&&frame.reply_text&&frame.ai_attempt_id))return blocked("SEND_REQUIRES_RECONCILIATION");
  const social=classifyPureSocialSmallTalk(frame.question);
  let chunks:AnswerContextChunk[];
  let captured:AnswerCitation[];
@@ -132,9 +160,9 @@ export async function runPersistedInboundJob(input:{jobId:string;claimToken:stri
  return await fail("SEND_REQUIRES_RECONCILIATION",true);
  }
  if(!claimed.attempt_token)return await fail("SEND_CAPABILITY_MISSING",true);
- if(humanReview){
+ if(stopAi){
   if(!await ports.finalize(intent.id,claimed.attempt_token,"rejected",null))return blocked("SEND_PERSIST_REQUIRES_RECONCILIATION");
-  return await fail("HUMAN_REVIEW_REQUIRED");
+  return await fail(stopCode);
  }
  // This fresh generation/link/source check is the last local gate before Graph.
  const v3=await ports.verify(frame,captured);
@@ -167,6 +195,20 @@ export async function runPersistedInboundJob(input:{jobId:string;claimToken:stri
   }catch{return blocked("SEND_PERSIST_REQUIRES_RECONCILIATION");}
   return blocked("AUTOMATION_CHANGED_BEFORE_SEND");
  }
+ if(ports.rereadOwnership){
+  let live:HumanOwnership|null=null;
+  try{live=await ports.rereadOwnership();}catch{
+   try{if(!await ports.finalize(intent.id,claimed.attempt_token,"rejected",null))return blocked("SEND_PERSIST_REQUIRES_RECONCILIATION");}catch{return blocked("SEND_PERSIST_REQUIRES_RECONCILIATION");}
+   return blocked("SEND_PERSIST_REQUIRES_RECONCILIATION");
+  }
+  if(live==="CLAIMED_ACTIVE"||live==="CLAIMED_IDLE"){
+   try{
+    if(!await ports.finalize(intent.id,claimed.attempt_token,"rejected",null))return blocked("SEND_PERSIST_REQUIRES_RECONCILIATION");
+    if(await ports.finish(intent.id)!=="released")return blocked("SEND_PERSIST_REQUIRES_RECONCILIATION");
+   }catch{return blocked("SEND_PERSIST_REQUIRES_RECONCILIATION");}
+   return blocked("HUMAN_CLAIMED");
+  }
+ }
  externalAttempt=true;
  let sent;
  try{sent=await ports.send(intent,secret);}catch{sent={ok:false,code:"AMBIGUOUS"};}
@@ -177,6 +219,7 @@ export async function runPersistedInboundJob(input:{jobId:string;claimToken:stri
  :await ports.finalize(intent.id,claimed.attempt_token,outcome,sent.waMessageId??null);
  if(!finalized)return blocked("SEND_PERSIST_REQUIRES_RECONCILIATION");
  if(outcome==="accepted"){
+ if(ports.noteContinuity){try{await ports.noteContinuity({responseKind:"ack_v1",phase:"CANCELLED",authority:"AUTHORIZED",body:null,reason:"answer_accepted"});}catch{/* Acceptance stays; ack cancellation is retried by the watchdog. */}}
  try{if(await ports.finish(intent.id)!=="accepted")return acceptedPending("ACCEPTANCE_ACCOUNTING_PENDING");}catch{return acceptedPending("ACCEPTANCE_ACCOUNTING_PENDING");}
  try{if(!await ports.repair(intent.id))return acceptedPending("ACCEPTANCE_PERSIST_PENDING",true);}catch{return acceptedPending("ACCEPTANCE_PERSIST_PENDING",true);}
  return {ok:true,code:"ACCEPTED",jobCompleted:true,sendAccepted:true,delivered:false};}
