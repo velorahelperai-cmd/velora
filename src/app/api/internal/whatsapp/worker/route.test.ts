@@ -95,7 +95,7 @@ describe("scheduled worker disabled and malformed inputs", () => {
     vi.stubEnv("WHATSAPP_CONTINUITY_ACK_ENABLED", "true");
     const response = await POST(new Request("http://localhost/api/internal/whatsapp/worker", { method: "POST", headers: { authorization: "Bearer " + syntheticSecret } }));
     expect(response.status).toBe(503);
-    expect(await response.json()).toMatchObject({ code: "WORKER_DISABLED", automaticRetry: false, ack: { claimed: 0, dispatched: 0, code: "SEND_DISABLED" } });
+    expect(await response.json()).toMatchObject({ code: "WORKER_DISABLED", automaticRetry: false, ack: { scheduled: 0, claimed: 0, dispatched: 0, code: "SEND_DISABLED" } });
     expect(state.claims).toBe(0);
     expect(state.sends).toBe(0);
   });

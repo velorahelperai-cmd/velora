@@ -35,7 +35,11 @@ A missing `whatsapp_continuity_policies` row uses these defaults. Per-business o
 
 `WHATSAPP_CONTINUITY_ACK_ENABLED` is the independent fallback-ack gate. It stays closed unless the value is exactly `true`. `WHATSAPP_FIXED_ACK_ENABLED` and `WHATSAPP_WORKER_ENABLED` do not open it. The legacy fixed ack in `src/lib/whatsapp/fixed-ack.ts` still requires the worker flag, an explicit recipient, and the existing send guards.
 
-The worker calls `runContinuityAckWatchdog` only when `WHATSAPP_CONTINUITY_ACK_ENABLED=true`. The watchdog does not claim a row unless `WHATSAPP_ALLOW_EXTERNAL_SEND=true` as well. A claimed job records `ack_v1` through `whatsapp_note_continuity`, which uses the existing worker lock and cancels that ack when staff claims the thread or the answer is accepted. A closed service window is stored as `blocked` and is not converted into a template. `UNKNOWN` is finalized once and is not retried. The inbox payload includes `continuity_sla` deadlines, and the composer shows the remaining ack time.
+The worker calls `runContinuityAckWatchdog` only when `WHATSAPP_CONTINUITY_ACK_ENABLED=true`. The watchdog does not claim a row unless `WHATSAPP_ALLOW_EXTERNAL_SEND=true` as well.
+
+`whatsapp_claim_continuity_watchdog` first schedules `ack_v1` / `ack_due` from persisted inbound messages that are past the SLA, using `private.whatsapp_schedule_due_continuity_acks`. That path does **not** require an AI worker claim or `whatsapp_note_continuity`. A claimed AI job may still record or cancel an ack through `whatsapp_note_continuity`. Cutover stamp `private.whatsapp_continuity_cutover.ack_schedule_from` excludes historical pending rows at migration apply time. Burst peers within `coalesce_seconds` keep a single waiting ack. Staff reply, human claim, generation fence, answer acceptance, closed 24h window, and `UNKNOWN` (reconcile-only) still cancel or block. Ack `COMPLETE` is independent of AI `WORKER_BATCH_BLOCKED`.
+
+A closed service window is stored as `blocked` and is not converted into a template. The inbox payload includes `continuity_sla` deadlines, and the composer shows the remaining ack time.
 
 ## Webhook
 
@@ -61,9 +65,10 @@ Rollback: `supabase/rollbacks/20261106143000_whatsapp_response_continuity.rollba
 ```bash
 npx vitest run --config vitest.ci.config.ts \
   src/lib/whatsapp/response-continuity.test.ts \
+  src/lib/whatsapp/continuity-ack.test.ts \
   src/lib/whatsapp/integration-worker.test.ts \
   src/lib/whatsapp/fixed-ack.test.ts \
   src/lib/whatsapp/inbox-ownership.test.ts
 ```
 
-These tests use in-memory decisions and mocks. They do not call Meta or a paid model.
+These tests use in-memory decisions and mocks. They do not call Meta or a paid model. Hosted SQL apply and Production flag/deploy changes stay owner-gated.
