@@ -17,6 +17,29 @@ import { expiresAtFromSession, nativeSessionIdFromAccessToken } from "./session-
 import { authCallbackUrl } from "@/lib/auth/site-url";
 import { signOutProviderSessionAfterAdmitFailure, resumeProviderCleanup } from "./provider-session";
 
+/** Total password-login wall (provider + admit + soft-land headroom) — must stay ≪ Vercel 120s. */
+export const PASSWORD_LOGIN_WALL_MS = 55_000;
+/** Provider sign-in alone; never wait out a hung Auth fetch until platform kill. */
+export const PROVIDER_SIGNIN_BUDGET_MS = 25_000;
+/** Admit / capture RPCs after provider success. */
+export const PASSWORD_ADMIT_BUDGET_MS = 25_000;
+
+async function withLoginBudget<T>(work: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          reject(Object.assign(new Error("PASSWORD_LOGIN_BUDGET"), { code: "ETIMEDOUT" }));
+        }, ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 async function admitCapturedSession(input: {
   session: {
     user?: { id?: string } | null;
@@ -86,8 +109,6 @@ export async function brokerPasswordLogin(input: {
 > {
   const email = input.email.trim().toLowerCase();
   if (!email || !input.password) return { ok: false, code: "INVALID_INPUT" };
-  const capability = await probeBrokerCapability();
-  if (!capability.ok || !capability.boundAdmit) return { ok: false, code: "UNAVAILABLE" };
   if (!input.reader) return { ok: false, code: "UNAVAILABLE" };
   const requestNonce =
     typeof input.requestNonce === "string" && input.requestNonce.length >= 16
@@ -95,6 +116,9 @@ export async function brokerPasswordLogin(input: {
       : null;
   if (!requestNonce) return { ok: false, code: "UNAVAILABLE" };
 
+  // Authenticate then admit cookies before any capability probe so Preview 57014
+  // stampede cannot burn Vercel maxDuration before soft-land. Inbox soft-UNAVAILABLE
+  // covers slow post-login probes; probe budgets elsewhere stay ≪120s.
   const lineageCtx = await prepareBrokerAdmissionLineage(input.reader, input.writer);
   if (!lineageCtx.ok) {
     return { ok: false, code: lineageCtx.code === "CONTINUITY_REQUIRED" ? "CONTINUITY_REQUIRED" : "UNAVAILABLE" };
@@ -116,10 +140,31 @@ export async function brokerPasswordLogin(input: {
 
   const bundle = createProviderAuthClient();
   if (!bundle) return { ok: false, code: "UNAVAILABLE" };
-  const { data, error } = await bundle.client.auth.signInWithPassword({
-    email,
-    password: input.password,
-  });
+  const loginDeadline = Date.now() + PASSWORD_LOGIN_WALL_MS;
+  let data: Awaited<ReturnType<typeof bundle.client.auth.signInWithPassword>>["data"];
+  let error: Awaited<ReturnType<typeof bundle.client.auth.signInWithPassword>>["error"];
+  try {
+    const providerMs = Math.min(
+      PROVIDER_SIGNIN_BUDGET_MS,
+      Math.max(3_000, loginDeadline - Date.now() - PASSWORD_ADMIT_BUDGET_MS),
+    );
+    const signedIn = await withLoginBudget(
+      bundle.client.auth.signInWithPassword({
+        email,
+        password: input.password,
+      }),
+      providerMs,
+    );
+    data = signedIn.data;
+    error = signedIn.error;
+  } catch {
+    await resumeProviderCleanup(intent.id, lineageCtx.browserLineageId);
+    brokerLog("warn", "auth.broker.login.provider_budget", {
+      error_code: "PROVIDER_SIGNIN_BUDGET",
+      stage: "provider",
+    });
+    return { ok: false, code: "UNAVAILABLE" };
+  }
   if (error || !data.session) {
     const status = error?.status ?? 0;
     const unknown = !error || status === 0 || status === 408 || status === 429 || status >= 500
@@ -145,14 +190,21 @@ export async function brokerPasswordLogin(input: {
         return { ok: false, code: "AUTH_ERROR" };
       }
     }
-    const admitted = await admitCapturedSession({
-      session: data.session,
-      writer: input.writer,
-      intentId: intent.id,
-      browserLineageId: intent.browserLineageId,
-      admissionScope: scope,
-      recoveryOperationKey: input.recoveryOperationKey,
-    });
+    const admitMs = Math.min(
+      PASSWORD_ADMIT_BUDGET_MS,
+      Math.max(3_000, loginDeadline - Date.now()),
+    );
+    const admitted = await withLoginBudget(
+      admitCapturedSession({
+        session: data.session,
+        writer: input.writer,
+        intentId: intent.id,
+        browserLineageId: intent.browserLineageId,
+        admissionScope: scope,
+        recoveryOperationKey: input.recoveryOperationKey,
+      }),
+      admitMs,
+    );
     if (!admitted.ok) {
       await signOutProviderSessionAfterAdmitFailure(bundle, data.session, {
         intentId: intent.id,
@@ -170,6 +222,10 @@ export async function brokerPasswordLogin(input: {
     await signOutProviderSessionAfterAdmitFailure(bundle, data.session, {
       intentId: intent.id,
       operationKey: input.recoveryOperationKey ?? intent.id,
+    });
+    brokerLog("warn", "auth.broker.login.admit_budget", {
+      error_code: "PASSWORD_ADMIT_BUDGET",
+      stage: "admit",
     });
     return { ok: false, code: "UNAVAILABLE" };
   }

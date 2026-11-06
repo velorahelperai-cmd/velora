@@ -46,6 +46,15 @@ it("fails closed when every statement-timeout attempt times out", async () => {
   expect((await probeBrokerCapability()).ok).toBe(false);
   expect(m.rpc).toHaveBeenCalledTimes(CAPABILITY_STATEMENT_TIMEOUT_ATTEMPTS);
 });
+it("fails closed within the wall when each attempt hangs past attemptMs", async () => {
+  m.rpc.mockReturnValue(new Promise(() => undefined));
+  const started = Date.now();
+  expect(
+    (await probeBrokerCapability({ budgetMs: 2_500, attemptMs: 700, maxAttempts: 2, isolated: true })).ok,
+  ).toBe(false);
+  expect(Date.now() - started).toBeLessThan(4_000);
+  expect(m.rpc).toHaveBeenCalledTimes(2);
+});
 it("does not retry other errors or accept an incomplete contract after retry", async () => {
   m.rpc.mockResolvedValueOnce({ data: null, error: { code: "PGRST202" } });
   expect((await probeBrokerCapability()).ok).toBe(false);
