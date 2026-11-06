@@ -21,7 +21,7 @@ function session(overrides: Partial<Resolved> = {}): Resolved {
       userId: "177ef439-3fb0-4e3e-96b8-2a9e8661386d",
       nativeSessionId: "00000000-0000-4000-8000-000000000001",
       cookieName: "vb_h_test",
-      generation: 1,
+      generation: "1",
       authOrdinal: 1,
       contextGeneration: 1,
       browserLineageId: "00000000-0000-4000-8000-000000000002",
@@ -45,13 +45,13 @@ it("soft-reuses a still-valid session when the refresh lease stays busy", async 
     reason: "LEASE_BUSY" as const,
   }));
   const resolve = vi.fn(async () => initial);
-  const sleep = vi.fn(async () => undefined);
+  const recordedSleep = vi.fn(async (_ms: number) => undefined);
   let t = CLOCK;
   const settled = await settleNearExpirySession({ getAll: () => [] }, initial, {
     now: () => t,
     sleep: async (ms) => {
       t += ms;
-      await sleep(ms);
+      await recordedSleep(ms);
     },
     refresh,
     resolve,
@@ -62,7 +62,7 @@ it("soft-reuses a still-valid session when the refresh lease stays busy", async 
     resolve: { accessToken: "access-token", refreshRevision: 3 },
   });
   expect(refresh).toHaveBeenCalled();
-  expect(sleep).toHaveBeenCalled();
+  expect(recordedSleep).toHaveBeenCalled();
 });
 
 it("adopts peer-completed tokens after a busy lease wait", async () => {
