@@ -1,6 +1,7 @@
 // Readiness budget only: not session expiry, provider OTP timeout or an automatic retry.
-// The measured admitted-session refresh was8.55s; allow30s for this whole read sequence.
-export const SESSION_READ_BUDGET_MS = 30_000;
+// Preview capability/identity hops can take 10–15s each under load; keep headroom for
+// session + profile + reattest without wiping into «تعذّر جلب هوية الحساب».
+export const SESSION_READ_BUDGET_MS = 90_000;
 export class SessionReadBudgetError extends Error {
   constructor(readonly reason: 'deadline' | 'cancelled') {super(`SESSION_READ_${reason.toUpperCase()}`);}
 }

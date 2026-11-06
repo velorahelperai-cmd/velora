@@ -5,7 +5,7 @@ export type ServiceInboxSnapshot=Awaited<ReturnType<typeof readServiceInbox>>;
 export async function fetchServiceInbox(scope:{companyId:string;actorId:string}):Promise<ServiceInboxSnapshot|{ok:false;code:'UNAVAILABLE';transportUnavailable:true}>{
  try{
   let response:Response;
-  try{response=await fetch(`/api/inbox/read?${new URLSearchParams(scope)}`,{method:'GET',credentials:'same-origin',cache:'no-store',signal:AbortSignal.timeout(45000)});}catch{return {ok:false,code:'UNAVAILABLE',transportUnavailable:true};}
+  try{response=await fetch(`/api/inbox/read?${new URLSearchParams(scope)}`,{method:'GET',credentials:'same-origin',cache:'no-store',signal:AbortSignal.timeout(90000)});}catch{return {ok:false,code:'UNAVAILABLE',transportUnavailable:true};}
   if(response.status===409)return {ok:false,code:'SCOPE_CHANGED'};
   if(response.status===401||response.status===403)return {ok:false,code:'FORBIDDEN'};
   // Preview/platform request budget exhaustion is transport loss; keep the last verified list.

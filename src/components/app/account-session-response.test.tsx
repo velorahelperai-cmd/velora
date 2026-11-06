@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { AccountProfileView } from "@/lib/tenancy/access";
 import type { RecoveryReceipt } from "./operation-recovery";
+import { SESSION_READ_BUDGET_MS } from "@/lib/auth/session-read-budget";
 
 type Slot = { value?: unknown; deps?: unknown[]; cleanup?: () => void };
 const state = vi.hoisted(() => ({
@@ -916,10 +917,10 @@ it.each(['broker','profile','reattest'])('bounds a stalled %s read and ignores i
  if(stage==='broker')state.broker.mockReturnValueOnce(late.promise);
  if(stage==='profile')state.read.mockReturnValueOnce(late.promise);
  if(stage==='reattest')state.broker.mockResolvedValueOnce(brokerOk()).mockReturnValueOnce(late.promise);
- const pending=render().refresh();await vi.advanceTimersByTimeAsync(30000);await pending;
+ const pending=render().refresh();await vi.advanceTimersByTimeAsync(SESSION_READ_BUDGET_MS);await pending;
  expect(render().status).toBe('error');expect(render().hasCurrentUser()).toBe(false);
  const reads=state.read.mock.calls.length,brokers=state.broker.mock.calls.length;
- await vi.advanceTimersByTimeAsync(60000);
+ await vi.advanceTimersByTimeAsync(SESSION_READ_BUDGET_MS);
  expect(state.read).toHaveBeenCalledTimes(reads);expect(state.broker).toHaveBeenCalledTimes(brokers);
  await render().refresh();expect(render().status).toBe('ready');
  late.resolve(stage==='profile'?{ok:true,data:profile('user-b')}:brokerOk('user-b','fp-b','gen-b'));
@@ -936,15 +937,18 @@ it('bounds the initial mount broker read and removes its timer on unmount',async
 
 it('shares the mount deadline and trace across a slow seed broker and profile',async()=>{
  vi.useFakeTimers();const info=vi.spyOn(console,'info').mockImplementation(()=>{});
- state.broker.mockImplementationOnce(()=>new Promise(resolve=>setTimeout(()=>resolve(brokerOk()),20000)));
- state.read.mockImplementationOnce(()=>new Promise(resolve=>setTimeout(()=>resolve({ok:true,data:profile()}),11000)));
+ // Exceed the shared readiness budget even though each hop alone would fit.
+ const seedMs=Math.floor(SESSION_READ_BUDGET_MS*0.7);
+ const profileMs=Math.floor(SESSION_READ_BUDGET_MS*0.5);
+ state.broker.mockImplementationOnce(()=>new Promise(resolve=>setTimeout(()=>resolve(brokerOk()),seedMs)));
+ state.read.mockImplementationOnce(()=>new Promise(resolve=>setTimeout(()=>resolve({ok:true,data:profile()}),profileMs)));
  const frames:Array<()=>void>=[];window.requestAnimationFrame=(fn:FrameRequestCallback)=>{frames.push(()=>fn(0));return 1;};
  try{
-  render();frames[0]!();await vi.advanceTimersByTimeAsync(30000);
+  render();frames[0]!();await vi.advanceTimersByTimeAsync(SESSION_READ_BUDGET_MS);
   expect(render().status).toBe('error');expect(render().hasCurrentUser()).toBe(false);
   const rows=info.mock.calls.map(([row])=>JSON.parse(String(row))).filter(row=>row.operation==='auth_session_check');
   const first=rows[0];expect(first.stage).toBe('session');
-  expect(rows.some(row=>row.request_id===first.request_id&&row.duration_ms===30000&&row.code==='UNAVAILABLE')).toBe(true);
+  expect(rows.some(row=>row.request_id===first.request_id&&row.duration_ms===SESSION_READ_BUDGET_MS&&row.code==='UNAVAILABLE')).toBe(true);
   await vi.advanceTimersByTimeAsync(2000);expect(render().hasCurrentUser()).toBe(false);
  }finally{info.mockRestore();}
 });
