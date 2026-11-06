@@ -94,7 +94,7 @@ declare
   intent public.whatsapp_response_intents%rowtype;
   conv public.whatsapp_conversations%rowtype;
   link public.whatsapp_company_links%rowtype;
-  window jsonb;
+  service_gate jsonb;
 begin
   if current_setting('role', true) is distinct from 'service_role' then
     return jsonb_build_object('ok', false, 'code', 'server_role_required');
@@ -115,8 +115,8 @@ begin
     update public.whatsapp_response_intents set phase = 'cancelled', claim_token = null, updated_at = pg_catalog.clock_timestamp() where id = intent.id;
     return jsonb_build_object('ok', false, 'code', 'human_claimed', 'template', false, 'freeform', false);
   end if;
-  window := private.whatsapp_service_window(conv.company_id, conv.id, conv.phone_number_id, conv.customer_wa_id);
-  if window->>'ok' is distinct from 'true' then
+  service_gate := private.whatsapp_service_window(conv.company_id, conv.id, conv.phone_number_id, conv.customer_wa_id);
+  if service_gate->>'ok' is distinct from 'true' then
     update public.whatsapp_response_intents
     set phase = 'blocked', authority = 'window_closed', claim_token = null, updated_at = pg_catalog.clock_timestamp()
     where id = intent.id;
@@ -137,7 +137,7 @@ begin
     'company_id', conv.company_id, 'conversation_id', conv.id,
     'phone_number_id', conv.phone_number_id, 'recipient_wa_id', conv.customer_wa_id,
     'link_id', link.id, 'link_generation', link.generation,
-    'service_window_open', true, 'service_window_expires_at', window->>'valid_until'
+    'service_window_open', true, 'service_window_expires_at', service_gate->>'valid_until'
   );
 end;
 $$;
