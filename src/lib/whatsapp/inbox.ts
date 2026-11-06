@@ -250,8 +250,11 @@ export async function loadWhatsappInbox(): Promise<WhatsappInboxLoad> {
     if (!finalMembership.ok || finalMembership.data.membershipFingerprint !== membershipFingerprint
       || finalMembership.data.conversationScope !== scope || new Set(collectedIds).size !== collectedIds.length
       || collectedIds.length !== finalMembership.data.total || collectedFingerprint !== finalMembership.data.membershipFingerprint) return { ok: false, code: "UNAVAILABLE" };
+    const canTakeOver = await sessionHasCompanyCapability(companyId, "wa.conversations.take_over") === true;
+    const canResume = await sessionHasCompanyCapability(companyId, "wa.conversations.resume") === true;
+    const canClose = await sessionHasCompanyCapability(companyId, "wa.conversations.close") === true;
     return { ok: true, conversations, meta: { companyId, conversationScope: scope, timezone,
-      timezoneAnnouncedUtc: announcedUtc, canReply, canAssign,
+      timezoneAnnouncedUtc: announcedUtc, canReply, canAssign, canTakeOver, canResume, canClose,
       assignees: canAssign ? await loadAssigneeOptions(supabase, companyId) : [], counts } };
   } catch { return { ok: false, code: "UNAVAILABLE" }; }
 }

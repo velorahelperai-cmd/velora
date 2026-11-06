@@ -37,7 +37,7 @@ import {
 } from "@/lib/whatsapp/inbox-actions";
 import type { WhatsappInboxItem, WhatsappInboxPage, WhatsappControlAuditPage, WhatsappConnectionStatus } from "@/lib/whatsapp/inbox-contracts";
 import { manualReplyBlock, staffHandlesConversation } from "@/lib/whatsapp/inbox-ownership";
-import { canUseInboxControl, currentThreadRequest, mergeInboxPageRows, mergeThreadPage, inboxSendLocked, updateInboxPageCache,
+import { canUseInboxControl, currentThreadRequest, inboxControlDisabledReason, mergeInboxPageRows, mergeThreadPage, inboxSendLocked, updateInboxPageCache,
   matchesUnifiedInboxFilter, threadReadBoundary, type ThreadView, type UnifiedInboxFilter } from "./conversations-inbox";
 import type { WhatsappInboxMeta } from "@/lib/whatsapp/inbox";
 import {
@@ -1507,6 +1507,10 @@ export function ConversationsPage({
   const selectedSendLocked = selected ? inboxSendLocked(selected, Boolean(unresolvedSends[selected.id])) : false;
   const composerMode:ComposerMode=!canReply||(requestedComposerMode==='ai'&&(testReview||!inboxMeta?.companyId||!selected||!liveIds.has(selected.id)))?'message':requestedComposerMode;
   const controlDisabled = (action: ControlAction) => writesPaused || !selectedReady || !canUseInboxControl(inboxMeta, action) || controlBusy || pending || selectedUnresolved;
+  const controlReason = (action: ControlAction) => inboxControlDisabledReason(action, {
+    writesPaused, selectedReady, meta: inboxMeta, controlBusy, pending, selectedUnresolved,
+    sendLocked: selectedSendLocked,
+  }, locale === "ar");
   const interventionLabels = locale === "ar" ? {
     human_control: "تحكم بشري", worker_review: "مراجعة الأتمتة", worker_failed: "تعذر عمل الأتمتة",
     send_unknown: "نتيجة إرسال غير معروفة — تحتاج مراجعة", send_rejected: "إرسال مرفوض", delivery_failed: "فشل التسليم",
@@ -1619,7 +1623,7 @@ export function ConversationsPage({
     const automation=handledByStaff?'paused':selected.automationAllowed&&selected.status!=='resolved'?'allowed':'blocked';
     const control=selected.status==='resolved'||handledByStaff?'resume':'take_over';
     const canAI=canReply&&!testReview&&!!inboxMeta?.companyId&&liveIds.has(selected.id);
-    const action=(id:'resume'|'take_over'|'close')=>({id,label:id==='resume'?(ar?'إعادة إلى فيلورا':'Resume Velora'):id==='take_over'?(ar?'استلام المحادثة':'Take over conversation'):copy.app.markResolved,icon:id==='close'?'check' as const:id==='resume'?'play' as const:'user' as const,emphasis:id==='close'?undefined:'primary',reason:id==='resume'&&selectedSendLocked?(ar?'لا يمكن الاستئناف بينما نتيجة إرسال غير مؤكدة.':'Resume is unavailable while a send result is unconfirmed.'):(ar?'الإجراء غير متاح في الحالة الحالية.':'This action is unavailable in the current state.'),disabled:controlDisabled(id)||(id==='resume'&&selectedSendLocked),onClick:()=>void runControl(selected,id)});
+    const action=(id:'resume'|'take_over'|'close')=>({id,label:id==='resume'?(ar?'إعادة إلى فيلورا':'Resume Velora'):id==='take_over'?(ar?'استلام المحادثة':'Take over conversation'):copy.app.markResolved,icon:id==='close'?'check' as const:id==='resume'?'play' as const:'user' as const,emphasis:id==='close'?undefined:'primary',reason:controlReason(id)??(ar?'الإجراء غير متاح في الحالة الحالية.':'This action is unavailable in the current state.'),disabled:controlDisabled(id)||(id==='resume'&&selectedSendLocked),onClick:()=>void runControl(selected,id)});
     return <InboxDesktop locale={locale} view={{...desktopView,
       extension:inboxMeta?.companyId&&liveIds.has(selected.id)?{companyId:inboxMeta.companyId,conversationId:selected.id,channel:'whatsapp',canEdit:canReply,paused:writesPaused||readSuspended,revision:refreshVersion}:undefined,
       customer:{name:selected.customer,initials:selected.customer.slice(0,1).toUpperCase(),channel:'whatsapp',phone:selected.phone,status:`${copy.app.statuses[selected.status]} · WhatsApp`,
@@ -1640,7 +1644,7 @@ export function ConversationsPage({
       onTranscriptMount:node=>{if(node)restoreTranscriptPosition(node,scrollPositions.current[draftKey]);},onTranscriptScroll:event=>{scrollPositions.current[draftKey]=captureTranscriptPosition(event.currentTarget);},
       loadEarlier:selectedThread?.hasMore?{id:'older',label:ar?'تحميل الرسائل الأقدم':'Load older messages',icon:'clock',disabled:pending||threadBusyId===selected.id,onClick:()=>runPendingAction(async()=>{await loadThread(selected.id,selectedThread.nextCursor);})}:undefined,
       messageExtras:<>{selectedSendLocked&&<Notice tone="error">{copy.app.sendUnknownOutcome}</Notice>}{notice&&!selectedUnresolved&&<Notice>{notice}</Notice>}{warn&&!selectedUnresolved&&<Notice tone="warn">{warn}<button type="button" disabled={controlBusy} onClick={()=>void retryRefresh(selected.id)}>{copy.app.controlRetryRefresh}</button></Notice>}{(selectedUnresolved||error)&&<Notice tone="error">{selectedUnresolved?copy.app.controlOutcomeLocked:error}<button type="button" disabled={controlBusy} onClick={()=>void retryRefresh(selected.id)}>{copy.app.controlRetryRefresh}</button></Notice>}</>,
-      composer:{mode:composerMode,ownershipNotice:(writesPaused?(ar?'آخر حالة مؤكدة: ':'Last verified state: '):'')+(selected.status==='resolved'?(ar?'المحادثة محلولة':'Conversation resolved'):handledByStaff?(ar?'الموظف يدير المحادثة':'Staff is handling the conversation'):selected.automationAllowed?(ar?'الذكاء الاصطناعي يدير المحادثة':'AI is handling the conversation'):(ar?'توقفت الأتمتة دون استلام بشري':'Automation stopped without a human takeover')),enabledModes:['message',...(!testReview&&!!inboxMeta?.companyId&&liveIds.has(selected.id)?['ai' as const]:[]),'note'],disabledModes:canReply&&handledByStaff?[]:['ai','note'],onModeChange:setComposerMode,value:draft,onChange:setDraft,onSubmit:()=>send(selected),onSubmitAttachment:!testReview?(id,onAccepted)=>send(selected,id,onAccepted):undefined,pending:pending||controlBusy,canSend:selectedReady&&handledByStaff&&canReply&&!selectedSendLocked&&liveIds.has(selected.id),disabledReason:manualReplyBlock({status:selected.status,automationAllowed:selected.automationAllowed,canReply,sendLocked:selectedSendLocked,writesPaused,intervention:selected.intervention},ar),
+      composer:{mode:composerMode,ownershipNotice:(writesPaused?(ar?'آخر حالة مؤكدة: ':'Last verified state: '):'')+(selected.status==='resolved'?(ar?'المحادثة محلولة':'Conversation resolved'):handledByStaff?(ar?'الموظف يدير المحادثة':'Staff is handling the conversation'):selected.automationAllowed?(ar?'الذكاء الاصطناعي يدير المحادثة':'AI is handling the conversation'):(ar?'توقفت الأتمتة دون استلام بشري':'Automation stopped without a human takeover')),enabledModes:['message',...(!testReview&&!!inboxMeta?.companyId&&liveIds.has(selected.id)?['ai' as const]:[]),'note'],disabledModes:canReply&&handledByStaff?[]:['ai','note'],onModeChange:setComposerMode,value:draft,onChange:setDraft,onSubmit:()=>send(selected),onSubmitAttachment:!testReview?(id,onAccepted)=>send(selected,id,onAccepted):undefined,pending:pending||controlBusy,canSend:selectedReady&&handledByStaff&&canReply&&!selectedSendLocked&&liveIds.has(selected.id),disabledReason:manualReplyBlock({status:selected.status,automationAllowed:selected.automationAllowed,canReply,canTakeOver:inboxMeta?.canTakeOver===true,sendLocked:selectedSendLocked,writesPaused,intervention:selected.intervention},ar),
        modePanels:{note:<div ref={setNotesHost}/>,ai:canAI&&<ChannelAIDraft key={`${inboxScope}:${selected.id}:${selected.messages.at(-1)?.id}:${selected.revision}`} companyId={inboxMeta!.companyId} channel="whatsapp" conversationId={selected.id} ar={ar} disabled={writesPaused||!selectedReady||pending||controlBusy||selectedSendLocked} onUse={text=>{setDraft(text);setComposerMode('message');}}/>}},
     }}/>;
   }
@@ -1995,7 +1999,7 @@ export function ConversationsPage({
                         canUseInboxControl(inboxMeta,"resume") && <button
                           type="button"
                           disabled={controlDisabled("resume") || selectedSendLocked}
-                          title={selectedSendLocked ? (locale === "ar" ? "لا يمكن الاستئناف بينما نتيجة إرسال غير مؤكدة." : "Resume is unavailable while a send result is unconfirmed.") : (locale === "ar" ? "السماح لفيلورا بالرد التلقائي مجدداً" : "Resume Velora")}
+                          title={controlReason("resume") ?? (locale === "ar" ? "السماح لفيلورا بالرد التلقائي مجدداً" : "Resume Velora")}
                           onClick={() => runControl(selected, "resume")}
                           className="inline-flex min-h-8 items-center gap-1.5 rounded-xl border border-[var(--service-accent)]/40 bg-[var(--service-accent)]/15 px-3 text-xs font-bold text-[var(--service-accent)] transition hover:bg-[var(--service-accent)]/25 disabled:opacity-50"
                         >
@@ -2003,12 +2007,12 @@ export function ConversationsPage({
                           <span>{locale === "ar" ? "إعادة إلى فيلورا" : "Resume Velora"}</span>
                         </button>
                       ) : (
-                        canUseInboxControl(inboxMeta,"take_over") && <button
+                        <button
                           type="button"
                           disabled={controlDisabled("take_over")}
                           onClick={() => runControl(selected, "take_over")}
                           className="inline-flex min-h-8 items-center gap-1.5 rounded-xl border border-[#d9a467]/40 bg-[#d9a467]/15 px-3 text-xs font-bold text-[#f0cf9d] transition hover:bg-[#d9a467]/25 disabled:opacity-50"
-                          title={locale === "ar" ? "إيقاف فيلورا وتولي المحادثة كبشري" : "Take over from Velora"}
+                          title={controlReason("take_over") ?? (locale === "ar" ? "إيقاف فيلورا وتولي المحادثة كبشري" : "Take over from Velora")}
                         >
                           <IconUsers width={16} height={16} aria-hidden="true"/>
                           <span>{locale === "ar" ? "استلام المحادثة" : "Take over conversation"}</span>

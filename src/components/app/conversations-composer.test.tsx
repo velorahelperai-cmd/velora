@@ -158,6 +158,31 @@ it('shows reference workflow controls disabled when the actor cannot control the
  expect(controls).toHaveLength(2);expect([...controls].every(control=>control.disabled)).toBe(true);
  expect([...controls].every(control=>Boolean(control.title))).toBe(true);
 });
+it('enables take-over for a permitted agent when automation stopped without human control',async()=>{
+ const awaiting={...conversation,status:'handed_over' as const,automationAllowed:false,assistantPaused:true,owner:'staff',intervention:{reasons:['worker_review' as const]}};
+ api.thread.mockResolvedValue({ok:true,data:{kind:'partial',companyId:'company',conversationId:'thread',conversation:awaiting,messages:[{id:'m1',from:'customer' as const,text:'hello',at:1,arrivalSequence:'1',direction:'inbound' as const}],displayedInboundMessageId:null,unreadCount:0,nextCursor:null,hasMore:false}});
+ api.control.mockResolvedValue({ok:true,state:{id:'thread',status:'handed_over',automationAllowed:false,automationGeneration:1,revision:2,assistantPaused:true,owner:'staff'}});
+ const page={kind:'partial' as const,companyId:'company',conversationScope:'all_company' as const,ordering:'newest_created' as const,conversations:[awaiting],hasMore:false,nextCursor:null,total:1,unreadTotal:0,interventionTotal:1,membershipFingerprint:'same'};
+ await act(async()=>root.render(<ConversationsPage desktopView={desktopView} embedded selectedConversationId="thread" inbox={[awaiting]} meta={meta} page={page}/>));
+ const takeOver=host.querySelector<HTMLButtonElement>('.vdi-control-actions button[aria-label="Take over conversation"]');
+ expect(takeOver).not.toBeNull();expect(takeOver!.disabled).toBe(false);
+ expect(host.textContent).toContain('Take over the conversation before replying');
+ expect(api.control).not.toHaveBeenCalled();
+ await act(async()=>takeOver!.click());
+ expect(api.control).toHaveBeenCalledWith(expect.objectContaining({conversationId:'thread',action:'take_over',expectedRevision:1}));
+});
+it('surfaces a take-over permission reason instead of demanding takeover the actor cannot perform',async()=>{
+ const awaiting={...conversation,status:'handed_over' as const,automationAllowed:false,assistantPaused:true,owner:'staff',intervention:{reasons:['worker_review' as const]}};
+ api.thread.mockResolvedValue({ok:true,data:{kind:'partial',companyId:'company',conversationId:'thread',conversation:awaiting,messages:[],displayedInboundMessageId:null,unreadCount:0,nextCursor:null,hasMore:false}});
+ const page={kind:'partial' as const,companyId:'company',conversationScope:'all_company' as const,ordering:'newest_created' as const,conversations:[awaiting],hasMore:false,nextCursor:null,total:1,unreadTotal:0,interventionTotal:1,membershipFingerprint:'same'};
+ await act(async()=>root.render(<ConversationsPage desktopView={desktopView} embedded selectedConversationId="thread" inbox={[awaiting]} meta={{...meta,canTakeOver:false}} page={page}/>));
+ const takeOver=host.querySelector<HTMLButtonElement>('.vdi-control-actions button[aria-label="Take over conversation"]');
+ expect(takeOver?.disabled).toBe(true);
+ expect(takeOver?.title).toContain('permission to take over');
+ expect(host.textContent).toContain('permission to take over');
+ expect(host.textContent).not.toContain('Take over the conversation before replying');
+ expect(api.control).not.toHaveBeenCalled();
+});
 it('keeps the native verified transcript mounted on a transport failure while pausing writes and recovers after a verified read',async()=>{
  const message={id:'message',from:'customer' as const,text:'Previously verified message',at:1,arrivalSequence:'1',direction:'inbound' as const};
  const existing={...conversation,messages:[message]};

@@ -4,8 +4,8 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { InboxDesktopView } from './inbox-desktop';
 
-const api = vi.hoisted(() => ({ run: vi.fn(), remove: vi.fn() }));
-vi.mock('@/lib/customer/inbox-extension-actions', () => ({ runInboxExtension: api.run, removeUnboundWhatsappFile:api.remove, listInboxStars: vi.fn(async () => ({ ok: true, data: [] })), readInboxContact: vi.fn(async () => ({ ok: true, data: { email: '', location: '' } })), saveInboxContact: vi.fn() }));
+const api = vi.hoisted(() => ({ run: vi.fn(), remove: vi.fn(), readContact: vi.fn(async () => ({ ok: true as const, data: { email: '', location: '' } })), saveContact: vi.fn() }));
+vi.mock('@/lib/customer/inbox-extension-actions', () => ({ runInboxExtension: api.run, removeUnboundWhatsappFile:api.remove, listInboxStars: vi.fn(async () => ({ ok: true, data: [] })), readInboxContact: api.readContact, saveInboxContact: api.saveContact }));
 import { InboxExtensionBridge } from './inbox-extension-bridge';
 import { InboxDesktop } from './inbox-desktop';
 
@@ -26,7 +26,12 @@ function show(id: string, paused = false) {
     <div data-tags>{model.customer?.tags?.map(tag => tag.label).join(',')}</div>{model.tagControls}{model.customerExtra}
   </>}/>);
 }
-beforeEach(() => { vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); api.run.mockReset();api.remove.mockReset(); container = document.createElement('div'); document.body.append(container); root = createRoot(container); });
+beforeEach(() => {
+  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+  api.run.mockReset(); api.remove.mockReset(); api.readContact.mockReset(); api.saveContact.mockReset();
+  api.readContact.mockResolvedValue({ ok: true, data: { email: '', location: '' } });
+  container = document.createElement('div'); document.body.append(container); root = createRoot(container);
+});
 afterEach(() => { act(() => root.unmount()); container.remove(); vi.unstubAllGlobals(); });
 
 it('does not display a late response from the previously selected conversation', async () => {
@@ -82,6 +87,21 @@ it('keeps controls disabled if the database read fails or the connection is paus
   await act(async () => { show(second, true); });
   expect([...container.querySelectorAll('button')].slice(0, 2).every(button => button.disabled)).toBe(true);
   expect(api.run).toHaveBeenCalledTimes(1);
+});
+
+it('soft-fails a missing contact profile without showing a save error', async () => {
+  api.run.mockResolvedValue({ ok: true, data: [] });
+  api.readContact.mockResolvedValue({ ok: false, code: 'UNAVAILABLE' });
+  const v = view(first);
+  await act(async () => root.render(<InboxExtensionBridge view={v} ar={false} render={model => <>
+    <div data-contact>{model.contactControls}</div>
+    <button type="button" data-star disabled={model.headerActions?.find(a => a.id === 'star')?.disabled}>star</button>
+  </>}/>));
+  expect(container.textContent).toContain('Contact details are not available');
+  expect(container.textContent).not.toContain('could not be saved');
+  expect(container.querySelector('form')).toBeNull();
+  expect(api.saveContact).not.toHaveBeenCalled();
+  expect(container.querySelector<HTMLButtonElement>('[data-star]')?.disabled).toBe(false);
 });
 
 it('keeps a ready tag list visible across revision bumps instead of hanging on loading', async () => {

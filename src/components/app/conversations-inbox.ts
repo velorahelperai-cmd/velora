@@ -58,6 +58,65 @@ export function canUseInboxControl(meta: WhatsappInboxMeta | undefined, action: 
   if (action === "close") return meta?.canClose === true;
   return meta?.canAssign === true;
 }
+
+/** Honest disable copy for inbox control actions — never a generic “current state” when the cause is known. */
+export function inboxControlDisabledReason(
+  action: ControlAction,
+  input: {
+    writesPaused: boolean;
+    selectedReady: boolean;
+    meta: WhatsappInboxMeta | undefined;
+    controlBusy: boolean;
+    pending: boolean;
+    selectedUnresolved: boolean;
+    sendLocked?: boolean;
+  },
+  ar: boolean,
+): string | undefined {
+  if (input.writesPaused) {
+    return ar
+      ? "الاتصال متوقف مؤقتًا. سيُتاح التحكم بعد التحقق مجددًا."
+      : "Connection interrupted. Controls resume after access is verified again.";
+  }
+  if (!input.selectedReady) {
+    return ar ? "جارٍ تحميل المحادثة…" : "Loading conversation…";
+  }
+  if (input.selectedUnresolved) {
+    return ar
+      ? "نتيجة تحكم سابقة غير مؤكدة. حدّث الحالة قبل أي إجراء جديد."
+      : "An earlier control result is unconfirmed. Refresh the state before trying again.";
+  }
+  if (input.controlBusy || input.pending) {
+    return ar ? "يتم تنفيذ إجراء آخر…" : "Another action is in progress…";
+  }
+  if (action === "resume" && input.sendLocked) {
+    return ar
+      ? "لا يمكن الاستئناف بينما نتيجة إرسال غير مؤكدة."
+      : "Resume is unavailable while a send result is unconfirmed.";
+  }
+  if (!canUseInboxControl(input.meta, action)) {
+    if (action === "take_over") {
+      return ar
+        ? "ليست لديك صلاحية استلام المحادثة."
+        : "You do not have permission to take over conversations.";
+    }
+    if (action === "resume") {
+      return ar
+        ? "ليست لديك صلاحية إعادة المحادثة إلى فيلورا."
+        : "You do not have permission to resume Velora.";
+    }
+    if (action === "close") {
+      return ar
+        ? "ليست لديك صلاحية إغلاق المحادثة."
+        : "You do not have permission to close conversations.";
+    }
+    return ar
+      ? "ليست لديك صلاحية تعيين المحادثة."
+      : "You do not have permission to assign conversations.";
+  }
+  return undefined;
+}
+
 export function inboxSendLocked(item: WhatsappInboxItem | undefined, localLock: boolean) {
   return localLock || item?.intervention.reasons.includes("send_unknown") === true;
 }

@@ -53,6 +53,7 @@ export function InboxExtensionBridge({ view, ar, render, pendingIntents, onInten
   const [reservedFile, setReservedFile] = useState<PendingInboxIntent | null>(pendingIntents?.file ?? null);
   const [readingFile,setReadingFile]=useState(false),[fileError,setFileError]=useState<'invalid'|'quota'|'in_use'|'unavailable'|null>(null);
   const [contact,setContact]=useState<{email:string;location:string}|null>(null);
+  const [contactUnavailable,setContactUnavailable]=useState(false);
   const [contactError,setContactError]=useState(false);
   const [editingContact,setEditingContact]=useState(false);
   const [emailDraft,setEmailDraft]=useState('');
@@ -77,10 +78,18 @@ export function InboxExtensionBridge({ view, ar, render, pendingIntents, onInten
       ]);
       void withTimeout(readInboxContact({ companyId, conversationId, channel })).then(profile => {
         if (!active.current || current !== request.current) return;
-        if (!profile.ok) { setContact(null); setContactError(true); return; }
-        setContact(profile.data); setContactError(false);
+        // Missing migration / RPC must soft-fail: never surface a save error or block takeover/send.
+        if (!profile.ok) {
+          setContact(null); setContactUnavailable(true); setContactError(false); setEditingContact(false);
+          return;
+        }
+        setContact(profile.data); setContactUnavailable(false); setContactError(false);
         if (!editingContactRef.current) { setEmailDraft(profile.data.email); setLocationDraft(profile.data.location); }
-      }).catch(() => { if (active.current && current === request.current) { setContact(null); setContactError(true); } });
+      }).catch(() => {
+        if (active.current && current === request.current) {
+          setContact(null); setContactUnavailable(true); setContactError(false); setEditingContact(false);
+        }
+      });
       void withTimeout(runInboxExtension({ companyId, conversationId, channel, action: 'list' })).then(result => {
         if (!active.current || current !== request.current) return;
         if (!result.ok || !Array.isArray(result.data) || !result.data.every(isItem)) {
@@ -236,11 +245,11 @@ export function InboxExtensionBridge({ view, ar, render, pendingIntents, onInten
     },
     onRemove: (id: string) => { if (ready && canEdit) void mutate({ ...base, action: 'unquick', itemId: id }); },
   } } : undefined;
-  const contactReady = !paused && contact !== null;
+  const contactReady = !paused && contact !== null && !contactUnavailable;
   const storedEmail = contact?.email ?? '';
   async function saveContact(event: { preventDefault(): void }) {
     event.preventDefault();
-    if (!contactReady || !canEdit || busy) return;
+    if (!contactReady || !canEdit || busy || contactUnavailable) return;
     const current = request.current;
     setBusy(true); setContactError(false);
     try {
@@ -251,14 +260,18 @@ export function InboxExtensionBridge({ view, ar, render, pendingIntents, onInten
     } catch { if (active.current && current === request.current) setContactError(true); }
     finally { if (active.current && current === request.current) setBusy(false); }
   }
+  const contactUnavailableReason = ar
+    ? 'حفظ بيانات الاتصال غير متاح حاليًا لهذه المحادثة.'
+    : 'Contact details are not available for this conversation right now.';
   const emailAction = {
     id: 'email', label: ar ? 'إيميل' : 'Email', icon: 'mail' as const,
-    disabled: !contactReady || (!storedEmail && !canEdit) || busy,
-    reason: !contactReady ? reason : !storedEmail && !canEdit ? (ar ? 'لا يوجد بريد محفوظ، والتعديل غير متاح.' : 'No saved email, and editing is unavailable.') : undefined,
+    disabled: contactUnavailable || !contactReady || (!storedEmail && !canEdit) || busy,
+    reason: contactUnavailable ? contactUnavailableReason : !contactReady ? reason : !storedEmail && !canEdit ? (ar ? 'لا يوجد بريد محفوظ، والتعديل غير متاح.' : 'No saved email, and editing is unavailable.') : undefined,
     onClick: storedEmail ? () => { window.location.href = `mailto:${storedEmail}`; } : () => { setEditingContact(true); view.onProfileTabChange?.('details'); },
   };
   const contactControls = <div className="vdi-contact-editor">
-    {(editingContact || contactError) && <form onSubmit={event => void saveContact(event)}>
+    {contactUnavailable && <p role="status" className="vdi-muted">{contactUnavailableReason}</p>}
+    {!contactUnavailable && (editingContact || contactError) && <form onSubmit={event => void saveContact(event)}>
       <label>{ar ? 'البريد الإلكتروني' : 'Email'} <input type="email" dir="ltr" maxLength={254} value={emailDraft} disabled={!contactReady || !canEdit || busy} onChange={event => setEmailDraft(event.target.value)}/></label>
       <label>{ar ? 'الموقع' : 'Location'} <input maxLength={120} value={locationDraft} disabled={!contactReady || !canEdit || busy} onChange={event => setLocationDraft(event.target.value)}/></label>
       {contactError && <p role="status">{ar ? 'تعذّر حفظ بيانات الاتصال. تحقق من البريد ثم أعد المحاولة.' : 'Contact details could not be saved. Check the email, then try again.'}</p>}
