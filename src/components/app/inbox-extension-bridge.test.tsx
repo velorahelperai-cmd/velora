@@ -4,7 +4,13 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { InboxDesktopView } from './inbox-desktop';
 
-const api = vi.hoisted(() => ({ run: vi.fn(), remove: vi.fn(), readContact: vi.fn(async () => ({ ok: true as const, data: { email: '', location: '' } })), saveContact: vi.fn() }));
+type ContactRead = { ok: true; data: { email: string; location: string } } | { ok: false; code: 'FORBIDDEN' | 'INVALID_INPUT' | 'UNAVAILABLE' };
+const api = vi.hoisted(() => ({
+  run: vi.fn(),
+  remove: vi.fn(),
+  readContact: vi.fn(async (): Promise<ContactRead> => ({ ok: true, data: { email: '', location: '' } })),
+  saveContact: vi.fn(),
+}));
 vi.mock('@/lib/customer/inbox-extension-actions', () => ({ runInboxExtension: api.run, removeUnboundWhatsappFile:api.remove, listInboxStars: vi.fn(async () => ({ ok: true, data: [] })), readInboxContact: api.readContact, saveInboxContact: api.saveContact }));
 import { InboxExtensionBridge } from './inbox-extension-bridge';
 import { InboxDesktop } from './inbox-desktop';
