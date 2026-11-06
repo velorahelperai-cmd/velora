@@ -28,6 +28,7 @@ import {
   type AccountProfileView,
   WORKSPACE_COMPANY_COOKIE,
 } from "@/lib/tenancy/access";
+import { resolvePostLoginDestination } from "@/lib/tenancy/post-login-destination";
 import { ADMIN_ACCOUNT_JOURNEY_DEPENDENCY } from "@/lib/tenancy/admin-account-deps";
 import { ADMIN_CONVERSATIONS_RPC_DEPENDENCY } from "@/lib/tenancy/admin-deps";
 import {
@@ -342,31 +343,6 @@ export async function signUpWithEmail(input: {
   }
 
   });
-}
-
-/** Bound wait after login.committed so Set-Cookie reaches the browser before access stalls. */
-export const POST_LOGIN_ACCESS_BUDGET_MS = 15_000;
-
-export async function resolvePostLoginDestination(
-  preferred: string,
-  readAccess: () => Promise<Awaited<ReturnType<typeof getCompanyAccess>>>,
-  budgetMs = POST_LOGIN_ACCESS_BUDGET_MS,
-): Promise<string> {
-  const soft = preferred || "/app";
-  try {
-    const access = await Promise.race([
-      readAccess(),
-      new Promise<null>((resolve) => {
-        setTimeout(() => resolve(null), budgetMs);
-      }),
-    ]);
-    if (access == null) return soft;
-    // Transient access probe failure must not strand a committed session on /access?code=UNAVAILABLE.
-    if (!access.ok && access.code === "UNAVAILABLE") return soft;
-    return pathForAccess(access, preferred || null);
-  } catch {
-    return soft;
-  }
 }
 
 export async function signInWithEmail(input: {

@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vitest";
-import { resolvePostLoginDestination } from "./actions";
+import { resolvePostLoginDestination } from "./post-login-destination";
 
 it("soft-lands on preferred path when access stays UNAVAILABLE after commit", async () => {
   await expect(
