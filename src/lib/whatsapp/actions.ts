@@ -432,11 +432,11 @@ export async function replyWhatsappConversation(input: {
   }
 
   // Claim is service_role only — membership already verified above.
-  const reviewAccess=reviewMode?await readChannelReviewAccess(companyId,'whatsapp'):null;
-  reviewGrant=reviewMode?(reviewAccess?.ok?reviewAccess.grant:null):reviewGrant;
+  const reviewAccess=(!generalSendAllowed&&reviewMode)?await readChannelReviewAccess(companyId,'whatsapp'):null;
+  reviewGrant=(!generalSendAllowed&&reviewMode)?(reviewAccess?.ok?reviewAccess.grant:null):reviewGrant;
   // Another request may have claimed this same operation since the native read.
   // Retain its key until storage is refreshed; no local snapshot proves no attempt.
-  if(reviewMode&&!reviewGrant)return {ok:false,code:'SAVE_FAILED',message:'review_access_unavailable',clientOpId};
+  if(!generalSendAllowed&&reviewMode&&!reviewGrant)return {ok:false,code:'SAVE_FAILED',message:'review_access_unavailable',clientOpId};
   const claimed = attachmentId ? await (admin as unknown as {rpc:(name:string,args:Record<string,unknown>)=>PromiseLike<{data:unknown;error:unknown}>}).rpc('claim_whatsapp_media_send_attempt',{
     p_intent_id:intent.id,p_actor_user_id:actorUserId,p_lease_seconds:90,
   }) : reviewGrant ? await (admin as unknown as {rpc:(name:string,args:Record<string,unknown>)=>PromiseLike<{data:unknown;error:unknown}>}).rpc('claim_whatsapp_review_send',{
@@ -512,7 +512,7 @@ export async function replyWhatsappConversation(input: {
       return { ok: false, code: "COMPANY_SUSPENDED", message: code, clientOpId };
     }
     if (code === "subscription_inactive") {
-      if(reviewMode)return {ok:false,code:'SAVE_FAILED',message:'review_access_unavailable',clientOpId};
+      if(!generalSendAllowed&&reviewMode)return {ok:false,code:'SAVE_FAILED',message:'review_access_unavailable',clientOpId};
       return { ok: false, code: "SUBSCRIPTION_INACTIVE", message: code, clientOpId, outcome: "ready", notAttempted: true };
     }
     if (code === "forbidden") return { ok: false, code: "FORBIDDEN", message: code, clientOpId };

@@ -45,7 +45,7 @@ export async function runPersistedInboundJob(input:{jobId:string;claimToken:stri
  const fail=async(code:string,uncertain=false,permanent=true)=>{await ports.retry(code,uncertain,permanent);return blocked(code);};
  try{
  const frame=await ports.frame();
- if(!frame||frame.job_id!==input.jobId||frame.company_id!==input.companyId)return blocked("CLAIM_BINDING_REJECTED");
+ if(!frame||frame.job_id!==input.jobId||frame.company_id!==input.companyId)return await fail("CLAIM_BINDING_REJECTED");
  if(["reserved","running","uncertain"].includes(frame.ai_status??""))return await fail("AI_REQUIRES_RECONCILIATION",true);
  // Do not generate a new paid response for a request that the existing
  // conservative policy flags for human review. Existing send intents need

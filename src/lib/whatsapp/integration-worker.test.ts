@@ -448,4 +448,14 @@ describe("persisted WhatsApp integration worker",()=>{
     expect(ports.retry).toHaveBeenCalledWith("WORKER_DISABLED", false, false);
     expect(ports.send).not.toHaveBeenCalled();
   });
+
+  it("terminates job immediately with CLAIM_BINDING_REJECTED when frame cannot be loaded, preventing infinite loop", async () => {
+    const { ports } = setup();
+    ports.frame.mockResolvedValue(null as unknown as IntegrationFrame);
+    const result = await runInboundWorkerAnswer(input, ports);
+    expect(result).toMatchObject({ ok: false, code: "CLAIM_BINDING_REJECTED", jobCompleted: false, sendAccepted: false });
+    expect(ports.retry).toHaveBeenCalledWith("CLAIM_BINDING_REJECTED", false, true);
+    expect(ports.answer).not.toHaveBeenCalled();
+    expect(ports.send).not.toHaveBeenCalled();
+  });
 });
