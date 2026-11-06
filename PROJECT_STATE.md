@@ -1,3 +1,23 @@
+# Current Session Index — WHATSAPP RELEASE FINAL HARDENING & INBOX ACCEPTANCE (2026-11-06)
+
+- Delivered main commit `50e07d0f81fefee448d6c8dc887556c279e77a95` (pushed to origin/main).
+- Scope & Progress:
+  1. Claim Guard Early Acceptance Hardened:
+     - Intercepted ungrounded action confirmations ("تم الحجز", "تم الدفع") and handovers regardless of sources/citations; static knowledge never authorizes actions without execution.
+     - Intercepted ungrounded shipping/delivery claims when sources are absent, negated ("لا نوفر الشحن"), or lack delivery/freeness/timeline terms.
+     - Intercepted fabricated prices when absent from sources or when source lacks price keywords and amounts.
+     - Implemented grounded partial answering: preserves verified knowledge sentences while explicitly stating that unsupported details (price/shipping/booking) are unavailable in verified records, preventing conversation failure.
+     - Targeted tests: source "لا نوفر الشحن" denies free shipping; source without price denies fabricated prices; source with appointments denies "تم الحجز"; verified services, greetings, courtesy, and NO_MATCH remain intact. 12/12 PASS in `claim-guard.test.ts`.
+  2. Local Rule Logging & Accounting Truth:
+     - In `execute.ts`, set `actualModelId: undefined` for `source = "local_rule"`; passed `actualModelId: undefined` to settlement RPC without forging Gemini invocation.
+     - Provider cost accurately logged as 0 USD / 0 baisa; customer reply quota deduction preserved via standard reservation and settlement. Added targeted test in `execute.test.ts` (18/18 PASS).
+  3. Quality Gates & Production Deployment:
+     - GitHub Actions CI Run `42194116457` ALL 8 JOBS GREEN (contracts, build, typecheck, security, lint, pinned Gitleaks, unit, quality-gate).
+     - Vercel Production Deployment `7596641345` READY for `50e07d0`. `www.velorahelper.com` HTTP 200 OK.
+  4. Telemetry Truth & Inbox Acceptance:
+     - Clarified historical message timing under version `c5007d4` with raw start and end timestamps; uninstrumented intervals explicitly designated as «غير متاحة».
+     - Verified customer inbox capabilities: star, tags, note, takeover, manual reply without duplication.
+
 # Current Session Index — WHATSAPP RELEASE DEFECTS CLOSURE (2026-11-06)
 
 - Delivered main commit `c3987ed0ea2154236157e624535a269bcedb5036` (pushed to origin/main).
