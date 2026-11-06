@@ -7,6 +7,7 @@ type Rpc = (name: string, args: Record<string, unknown>) => PromiseLike<{ data: 
 type Sender = (input: { toWaId: string; body: string; phoneNumberId: string; accessToken: string; serviceWindowExpiresAt: string }) => Promise<SendTextResult>;
 
 export type ContinuityAckRun = {
+  scheduled: number;
   claimed: number;
   dispatched: number;
   code: "ACK_GATE_CLOSED" | "SEND_DISABLED" | "COMPLETE" | "SEND_REQUIRES_REVIEW" | "WATCHDOG_UNAVAILABLE";
@@ -16,24 +17,30 @@ const object = (value: unknown): Record<string, unknown> | null =>
   value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
 
 /**
- * Claims due ack rows and dispatches at most one neutral text per row.
+ * Schedules due ack_v1 rows from persisted inbound (no AI claim required),
+ * then claims and dispatches at most one neutral text per reserved row.
  * The ack gate and the external-send gate both have to be exactly true.
  * A closed service window is blocked here. This path does not send a template.
  * UNKNOWN is finalized once and is not retried.
+ * Ack success is independent of AI answer success (WORKER_BATCH_BLOCKED).
  */
 export async function runContinuityAckWatchdog(rpc: Rpc, send: Sender = sendWhatsappText): Promise<ContinuityAckRun> {
-  if (!continuityAckGate().open) return { claimed: 0, dispatched: 0, code: "ACK_GATE_CLOSED" };
-  if (!externalSendAllowed()) return { claimed: 0, dispatched: 0, code: "SEND_DISABLED" };
+  if (!continuityAckGate().open) return { scheduled: 0, claimed: 0, dispatched: 0, code: "ACK_GATE_CLOSED" };
+  if (!externalSendAllowed()) return { scheduled: 0, claimed: 0, dispatched: 0, code: "SEND_DISABLED" };
   let claimedRows: unknown[];
+  let scheduled = 0;
   try {
     const response = await rpc("whatsapp_claim_continuity_watchdog", { p_limit: 5 });
     const data = object(response.data);
     if (response.error || data?.ok !== true || data.dispatch !== false || !Array.isArray(data.claimed)) {
-      return { claimed: 0, dispatched: 0, code: "WATCHDOG_UNAVAILABLE" };
+      return { scheduled: 0, claimed: 0, dispatched: 0, code: "WATCHDOG_UNAVAILABLE" };
     }
+    scheduled = typeof data.scheduled === "number" && Number.isSafeInteger(data.scheduled) && data.scheduled >= 0
+      ? data.scheduled
+      : 0;
     claimedRows = data.claimed;
   } catch {
-    return { claimed: 0, dispatched: 0, code: "WATCHDOG_UNAVAILABLE" };
+    return { scheduled: 0, claimed: 0, dispatched: 0, code: "WATCHDOG_UNAVAILABLE" };
   }
   let dispatched = 0;
   let review = false;
@@ -97,5 +104,10 @@ export async function runContinuityAckWatchdog(rpc: Rpc, send: Sender = sendWhat
     if (outcome === "accepted") dispatched += 1;
     if (outcome === "unknown") review = true;
   }
-  return { claimed: claimedRows.length, dispatched, code: review ? "SEND_REQUIRES_REVIEW" : "COMPLETE" };
+  return {
+    scheduled,
+    claimed: claimedRows.length,
+    dispatched,
+    code: review ? "SEND_REQUIRES_REVIEW" : "COMPLETE",
+  };
 }

@@ -37,8 +37,8 @@ export async function POST(request:Request){
  if(process.env.WHATSAPP_WORKER_ENABLED!=="true"){
   stage="ack";
   const ack=await runContinuityAckWatchdog((name,args)=>rpc.call(client,name,args));
-  return Response.json({code:"WORKER_DISABLED",automaticRetry:false,ack:{claimed:ack.claimed,dispatched:ack.dispatched,code:ack.code}},{status:503});
- }
+  return Response.json({code:"WORKER_DISABLED",automaticRetry:false,ack:{scheduled:ack.scheduled,claimed:ack.claimed,dispatched:ack.dispatched,code:ack.code}},{status:503});
+}
  if(process.env.WHATSAPP_FIXED_ACK_ENABLED==="true"){
   stage="fixed_ack";
   const scope=fixedAckConfig();if(!scope)return Response.json({code:"FIXED_ACK_NOT_CONFIGURED"},{status:503});
@@ -53,8 +53,8 @@ export async function POST(request:Request){
  return Response.json({code:"REPAIR_UNAVAILABLE"},{status:503});
  if(!workerRolloutEnabled()){
   const ack=ackGateOpen?await runContinuityAckWatchdog((name,args)=>rpc.call(client,name,args)):null;
-  return Response.json({code:Number(repair.pending)>0?"RECONCILIATION_REQUIRED":"CUSTOMER_ANSWERING_DISABLED",repairOnly:true,repair:{repaired:Number(repair.repaired),pending:Number(repair.pending)},automaticRetry:false,...(ack?{ack:{claimed:ack.claimed,dispatched:ack.dispatched,code:ack.code}}:{})},{status:Number(repair.pending)>0?202:200});
- }
+  return Response.json({code:Number(repair.pending)>0?"RECONCILIATION_REQUIRED":"CUSTOMER_ANSWERING_DISABLED",repairOnly:true,repair:{repaired:Number(repair.repaired),pending:Number(repair.pending)},automaticRetry:false,...(ack?{ack:{scheduled:ack.scheduled,claimed:ack.claimed,dispatched:ack.dispatched,code:ack.code}}:{})},{status:Number(repair.pending)>0?202:200});
+}
  const outcomes:IntegrationOutcome[]=[];
  const claimDeadline=performance.now()+CLAIM_BUDGET_MS;
  for(let index=0;index<MAX_JOBS_PER_REQUEST;index++){
@@ -93,10 +93,10 @@ export async function POST(request:Request){
  if(ackGateOpen){
   stage="ack";
   try{ack=await runContinuityAckWatchdog((name,args)=>rpc.call(client,name,args));}
-  catch{ack={claimed:0,dispatched:0,code:"WATCHDOG_UNAVAILABLE"};}
+  catch{ack={scheduled:0,claimed:0,dispatched:0,code:"WATCHDOG_UNAVAILABLE"};}
  }
- return Response.json({...observation.body,...(ack?{ack:{claimed:ack.claimed,dispatched:ack.dispatched,code:ack.code}}:{})},{status:observation.httpStatus});
- }catch{
+ return Response.json({...observation.body,...(ack?{ack:{scheduled:ack.scheduled,claimed:ack.claimed,dispatched:ack.dispatched,code:ack.code}}:{})},{status:observation.httpStatus});
+}catch{
  // Transport errors must not expose provider/database details or masquerade as a drained queue.
  return Response.json({code:"WORKER_UNAVAILABLE",stage},{status:503});
  }
