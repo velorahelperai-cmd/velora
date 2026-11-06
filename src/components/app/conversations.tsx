@@ -681,10 +681,21 @@ export function ConversationsPage({
 
   // Column 3 Drawer toggle for mobile and tablet screens
   const [mobileDetailsOpen, setMobileDetailsOpen] = useState(false);
+  const selectedId = selectedParam ?? null;
+  const [activeSelectionId, setActiveSelectionId] = useState(selectedId);
+  if (activeSelectionId !== selectedId) {
+    setActiveSelectionId(selectedId);
+    if (mobileDetailsOpen) {
+      setMobileDetailsOpen(false);
+    }
+  }
+  if (!selectedId && mobileDetailsOpen) {
+    setMobileDetailsOpen(false);
+  }
   const detailsRef=useRef<HTMLElement>(null);
   const scrollPositions=useRef<Record<string,TranscriptPosition>>({});
   useEffect(()=>{
-    if(!mobileDetailsOpen)return;
+    if(!mobileDetailsOpen || !selectedId)return;
     const previous=document.activeElement as HTMLElement|null,oldOverflow=document.body.style.overflow;
     document.body.style.overflow='hidden';
     detailsRef.current?.querySelector<HTMLElement>('button')?.focus();
@@ -698,8 +709,22 @@ export function ConversationsPage({
     };
     const resize=()=>{if(window.innerWidth >= 1280)setMobileDetailsOpen(false);};
     document.addEventListener('keydown',key);window.addEventListener('resize',resize);
-    return()=>{document.body.style.overflow=oldOverflow;document.removeEventListener('keydown',key);window.removeEventListener('resize',resize);previous?.focus();};
-  },[mobileDetailsOpen,embedded]);
+    return()=>{
+      document.body.style.overflow=oldOverflow==='hidden'?'':oldOverflow;
+      document.removeEventListener('keydown',key);
+      window.removeEventListener('resize',resize);
+      if(previous && previous.isConnected && !previous.closest('[inert], [hidden], [aria-hidden="true"]')){
+        previous.focus();
+      } else {
+        const visibleFallback = document.querySelector<HTMLElement>(
+          'main button:not([disabled]):not([tabindex="-1"]), [data-inbox-desktop-v2] button:not([disabled]), [data-conversation-thread="true"] button:not([disabled]), input[type="search"]:not([disabled])'
+        );
+        if(visibleFallback && visibleFallback.isConnected && !visibleFallback.closest('[inert], [hidden], [aria-hidden="true"]')){
+          visibleFallback.focus();
+        }
+      }
+    };
+  },[mobileDetailsOpen,embedded,selectedId]);
   const [phoneCopyResult,setPhoneCopyResult]=useState<{key:string;copied:boolean}|null>(null);
   const phoneCopied=phoneCopyResult?.key===draftKey&&phoneCopyResult.copied;
   const phoneCopyFailed=phoneCopyResult?.key===draftKey&&!phoneCopyResult.copied;
@@ -734,7 +759,6 @@ export function ConversationsPage({
   const timezone = inboxMeta?.timezone ?? null;
 
   const liveIds = useMemo(() => new Set(serverInbox.map((c) => c.id)), [serverInbox]);
-  const selectedId = selectedParam ?? null;
   const selectedIdRef = useRef(selectedId);
   useLayoutEffect(() => { selectedIdRef.current = selectedId; }, [selectedId]);
   const selectionKey = `${inboxScope ?? ""}:${selectedId ?? ""}:${readCacheGeneration}`;
@@ -2193,7 +2217,7 @@ export function ConversationsPage({
         {/* ============================================================== */}
         {/* COLUMN 3: CUSTOMER DETAILS, NOURA PERSONA & CRM CONTROLS       */}
         {/* ============================================================== */}
-        {mobileDetailsOpen&&<button type="button" className="conversation-details-backdrop" tabIndex={-1} aria-label={locale==='ar'?'إغلاق تفاصيل العميل':'Close customer details'} onClick={()=>setMobileDetailsOpen(false)}/>}
+        {selected && mobileDetailsOpen && <button type="button" className="conversation-details-backdrop" tabIndex={-1} aria-label={locale==='ar'?'إغلاق تفاصيل العميل':'Close customer details'} onClick={()=>setMobileDetailsOpen(false)}/>}
         {selected ? (
           <aside
             id="conversation-details"

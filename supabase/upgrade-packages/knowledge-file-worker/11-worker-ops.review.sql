@@ -25,10 +25,12 @@ begin
     'actor_id',a.actor_id,'session_id',a.session_id,'expires_at',a.expires_at,
     'provider_dispatch',a.provider_dispatch,'content_version',a.content_version,'storage_path',a.storage_path,
     'object_id',a.object_id,'object_updated_at',a.object_updated_at
-  ) order by a.expires_at asc), '[]'::jsonb)
+  ) order by (case when a.expires_at > clock_timestamp() then 0 else 1 end) asc, a.expires_at asc), '[]'::jsonb)
   into rows
   from (
-    select * from private.g03_file_attempts where state='running' order by expires_at asc limit p_limit
+    select * from private.g03_file_attempts where state='running'
+    order by (case when expires_at > clock_timestamp() then 0 else 1 end) asc, expires_at asc
+    limit p_limit
   ) a;
   return rows;
 end; $$;
@@ -83,6 +85,8 @@ begin
      or a.source_updated_at is distinct from k.updated_at or coalesce(a.provider_dispatch,'none')<>'none'
    then return jsonb_build_object('ok',false,'code','BUSY');end if;
  elsif k.status not in ('draft','stored','ready','failed') then return jsonb_build_object('ok',false,'code','INVALID_STATE');
+ elsif k.status='failed' and (a.provider_dispatch is distinct from 'none' or k.failure_code='provider_outcome_unknown') then
+   return jsonb_build_object('ok',false,'code','REVIEW_REQUIRED','attemptId',a.attempt_id);
  end if;
  perform 1 from private.g03_company_inputs where company_id=p_company_id for update nowait;
  update public.knowledge_sources set content='',status='processing',failure_code=null where id=k.id returning * into k;
@@ -125,8 +129,11 @@ begin
    fail_code:=coalesce(nullif(btrim(p_failure_code),''),'extract_failed');
    if char_length(fail_code)>64 then raise exception 'invalid_input' using errcode='22023'; end if;
    if not lease_ok then
-     if coalesce(a.provider_dispatch,'none')='none' or fail_code<>'provider_outcome_unknown'
-     then return jsonb_build_object('ok',false,'code','ATTEMPT_CONFLICT'); end if;
+     if coalesce(a.provider_dispatch,'none')='none' then
+       if fail_code<>'attempt_lease_expired' then return jsonb_build_object('ok',false,'code','ATTEMPT_CONFLICT'); end if;
+     elsif fail_code<>'provider_outcome_unknown' then
+       return jsonb_build_object('ok',false,'code','ATTEMPT_CONFLICT');
+     end if;
    end if;
    perform 1 from private.g03_company_inputs where company_id=p_company_id for update nowait;
    update public.knowledge_sources set status='failed',failure_code=fail_code,content='' where id=k.id returning * into k;

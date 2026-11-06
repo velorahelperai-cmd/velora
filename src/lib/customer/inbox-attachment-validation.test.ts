@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { validInboxAttachment } from './inbox-attachment-validation';
+import { validInboxAttachment as sendValidator } from '@/lib/whatsapp/send';
 
 describe('conversation attachment admission', () => {
+  it('shares the exact same validation function reference across send and customer paths', () => {
+    expect(sendValidator).toBe(validInboxAttachment);
+  });
   it('accepts canonical, correctly signed supported files', () => {
     expect(validInboxAttachment('صورة.png', 'image/png', 'iVBORw0KGgo=')).toBe(true);
     expect(validInboxAttachment('photo.jpg', 'image/jpeg', '/9j/')).toBe(true);

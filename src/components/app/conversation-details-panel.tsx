@@ -16,7 +16,20 @@ export function ConversationDetailsPanel({id,title,open,onClose,children,closeLa
    if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}
   };
   document.addEventListener('keydown',key);
-  return()=>{document.body.style.overflow=overflow;document.removeEventListener('keydown',key);if(previous?.isConnected)previous.focus();};
+  return()=>{
+    document.body.style.overflow=overflow==='hidden'?'':overflow;
+    document.removeEventListener('keydown',key);
+    if(previous?.isConnected && !previous.closest('[inert], [hidden], [aria-hidden="true"]')){
+      previous.focus();
+    } else {
+      const fallback = document.querySelector<HTMLElement>(
+        'main button:not([disabled]):not([tabindex="-1"]), [data-inbox-desktop-v2] button:not([disabled]), [data-channel-inbox] button:not([disabled]), input[type="search"]:not([disabled])'
+      );
+      if(fallback?.isConnected && !fallback.closest('[inert], [hidden], [aria-hidden="true"]')){
+        fallback.focus();
+      }
+    }
+  };
  },[open]);
  return <>{open&&<button type="button" tabIndex={-1} className="conversation-details-backdrop" aria-label={closeLabel} onClick={onClose}/>}<aside id={id} ref={ref} className="conversation-details-panel" data-details-open={open} role={open?'dialog':undefined} aria-modal={open?true:undefined} aria-label={title}>
   <header><h2>{title}</h2><Button variant="ghost" onClick={onClose} aria-label={closeLabel}>×</Button></header>{children}

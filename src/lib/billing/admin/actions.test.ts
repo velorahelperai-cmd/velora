@@ -10,7 +10,7 @@ import {readAdminBillingOrders,readAdminBillingOrder} from "./actions";
 import {readAdminTruth} from "@/lib/answers/runtime/admin-truth";
 const cid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",oid="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",pid="cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const order={id:oid,company_id:cid,company_name:"Synthetic ledger",created_at:"2026-10-01T00:00:00.123456Z",status:"locked",amount_baisa:45000,currency:"OMR",provider_environment:"test",plan_version_id:pid};
-beforeEach(()=>{vi.clearAllMocks();vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY","SYNTHETIC_CURSOR_KEY");state.gate.mockResolvedValue({ok:true,binding:{actorId:"owner",sessionId:"session"},client:{rpc:state.rpc}});state.recheck.mockResolvedValue(true);state.rpc.mockResolvedValue({error:null,data:{ok:true,orders:[order],total:1,snapshot:"2026-10-10T00:00:00Z"}});state.admin.mockReturnValue({});state.evidence.mockResolvedValue({attempts:[],events:[],grants:[],outcomes:[],plans:[]});state.display.mockResolvedValue({ok:false});state.collections.mockResolvedValue({live_collected_baisa:0});state.ai.mockResolvedValue({ok:true,data:{}});});
+beforeEach(()=>{vi.clearAllMocks();vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY","SYNTHETIC_CURSOR_KEY");state.gate.mockResolvedValue({ok:true,binding:{actorId:"owner",sessionId:"session"},client:{rpc:state.rpc}});state.recheck.mockResolvedValue({ok:true});state.rpc.mockResolvedValue({error:null,data:{ok:true,orders:[order],total:1,snapshot:"2026-10-10T00:00:00Z"}});state.admin.mockReturnValue({});state.evidence.mockResolvedValue({attempts:[],events:[],grants:[],outcomes:[],plans:[]});state.display.mockResolvedValue({ok:false});state.collections.mockResolvedValue({live_collected_baisa:0});state.ai.mockResolvedValue({ok:true,data:{}});});
 it.each(["delegated","abstract_billing_permission","company_owner","staff","expired"])("%s denied before privileged reads",async()=>{state.gate.mockResolvedValue({ok:false,code:"forbidden"});expect(await readAdminBillingOrders({})).toMatchObject({status:"forbidden",rows:null,total:null});expect(state.admin).not.toHaveBeenCalled();expect(state.rpc).not.toHaveBeenCalled();});
 it("malformed filters refuse before database/page reads",async()=>{expect(await readAdminBillingOrders({environment:"fake"})).toMatchObject({status:"invalid_input"});expect(state.rpc).not.toHaveBeenCalled();expect(state.admin).not.toHaveBeenCalled();});
 it("real action qualifies scoped evidence and strips raw order metadata",async()=>{state.rpc.mockResolvedValue({error:null,data:{ok:true,orders:[{...order,raw_summary:{token:"SYNTHETIC_SECRET"},checkout_url:"SYNTHETIC_SECRET"}],total:1,snapshot:"2026-10-10T00:00:00Z"}});const r=await readAdminBillingOrders({companyId:cid});expect(r).toMatchObject({status:"ready",total:1,hasMore:false,rows:[{id:oid,amountBaisa:45000}]});expect(state.evidence).toHaveBeenCalledWith({},expect.any(Array),cid);expect(JSON.stringify(r)).not.toContain("SYNTHETIC_SECRET");});
@@ -18,22 +18,68 @@ it("tampered cursor refuses without database reads",async()=>{expect(await readA
 it("lookahead returns signed cursor then binds it to the next request filters",async()=>{state.rpc.mockResolvedValue({error:null,data:{ok:true,orders:[order,{...order,id:pid}],total:2,snapshot:"2026-10-10T00:00:00Z"}});const r=await readAdminBillingOrders({pageSize:1});expect(r).toMatchObject({status:"ready",hasMore:true});if(r.status!=="ready")throw Error("not ready");expect(r.rows).toHaveLength(1);state.rpc.mockClear();expect(await readAdminBillingOrders({pageSize:1,environment:"live",cursor:r.nextCursor})).toMatchObject({status:"invalid_input"});expect(state.rpc).not.toHaveBeenCalled();});
 it.each(["page","evidence","count"])("%s read failure stays unavailable, not empty/zero",async kind=>{if(kind==="page")state.rpc.mockResolvedValue({data:null,error:{}});if(kind==="evidence")state.evidence.mockRejectedValue(Error("SYNTHETIC"));if(kind==="count")state.rpc.mockResolvedValue({error:null,data:{ok:true,orders:[],total:null,snapshot:"2026-10-10T00:00:00Z"}});expect(await readAdminBillingOrders({})).toMatchObject({status:"unavailable",rows:null,total:null});});
 it("complete zero count is an authorized empty response",async()=>{state.rpc.mockResolvedValue({error:null,data:{ok:true,orders:[],total:0,snapshot:"2026-10-10T00:00:00Z"}});expect(await readAdminBillingOrders({})).toMatchObject({status:"empty",rows:[],total:0,hasMore:false});});
-it("revocation after financial reads erases page disclosure",async()=>{state.recheck.mockResolvedValue(false);expect(await readAdminBillingOrders({})).toMatchObject({status:"forbidden",rows:null,total:null});});
+it("revocation after financial reads erases page disclosure",async()=>{state.recheck.mockResolvedValue({ok:false,code:"forbidden"});expect(await readAdminBillingOrders({})).toMatchObject({status:"forbidden",rows:null,total:null});});
+it("transient recheck failure stays unavailable, not forbidden",async()=>{state.recheck.mockResolvedValue({ok:false,code:"unavailable"});expect(await readAdminBillingOrders({})).toMatchObject({status:"unavailable",rows:null,total:null});});
+it("forbidden recheck failure stays forbidden",async()=>{state.recheck.mockResolvedValue({ok:false,code:"forbidden"});expect(await readAdminBillingOrders({})).toMatchObject({status:"forbidden",rows:null,total:null});});
 it("owner finance remains readable without AI persistence",async()=>{state.ai.mockResolvedValue({ok:false,error:"AI_DATABASE_UNAVAILABLE"});expect(await readAdminTruth()).toMatchObject({ok:true,data:{ai:null,collections:{live_collected_baisa:0}}});expect(state.collections).toHaveBeenCalledOnce();});
-it("owner revocation before aggregate response denies financial disclosure",async()=>{state.recheck.mockResolvedValueOnce(true).mockResolvedValueOnce(false);expect(await readAdminTruth()).toMatchObject({ok:false});});
+it("owner revocation before aggregate response denies financial disclosure",async()=>{state.recheck.mockResolvedValueOnce({ok:true}).mockResolvedValueOnce({ok:false,code:"forbidden"});expect(await readAdminTruth()).toMatchObject({ok:false});});
 it("company-bound detail rejects bad identifiers before privileged read",async()=>{expect(await readAdminBillingOrder({companyId:cid,orderId:"bad"})).toMatchObject({status:"invalid_input",data:null});expect(state.admin).not.toHaveBeenCalled();});
 it("email detail refuses delegated or expired access before privileged order/status reads",async()=>{
  state.gate.mockResolvedValue({ok:false,code:"forbidden"});expect(await readAdminBillingOrder({companyId:cid,orderId:oid})).toEqual({status:"forbidden",data:null});expect(state.admin).not.toHaveBeenCalled();expect(state.rpc).not.toHaveBeenCalled();
 });
 it.each([true,false])("email detail uses exact company/order scope and final authority recheck=%s",async current=>{
  const query={select:vi.fn(),eq:vi.fn(),returns:vi.fn(),maybeSingle:vi.fn().mockResolvedValue({data:order,error:null})};query.select.mockReturnValue(query);query.eq.mockReturnValue(query);query.returns.mockReturnValue(query);state.admin.mockReturnValue({from:()=>query});
- state.rpc.mockImplementation(async name=>({error:null,data:name==="billing_admin_read_service_state"?{ok:true,company_id:cid,states:[]}:{ok:true,companyId:cid,orderId:oid,email:{state:"accepted",queuedAt:"2026-10-13T00:00:00Z",acceptedAt:"2026-10-13T00:01:00Z",delivered:false,recipient:"private@example.test"}}}));state.recheck.mockResolvedValue(current);
+ state.rpc.mockImplementation(async name=>({error:null,data:name==="billing_admin_read_service_state"?{ok:true,company_id:cid,states:[]}:{ok:true,companyId:cid,orderId:oid,email:{state:"accepted",queuedAt:"2026-10-13T00:00:00Z",acceptedAt:"2026-10-13T00:01:00Z",delivered:false,recipient:"private@example.test"}}}));state.recheck.mockResolvedValue(current?{ok:true}:{ok:false,code:"forbidden"});
  const result=await readAdminBillingOrder({companyId:cid,orderId:oid});
  expect(query.eq).toHaveBeenCalledWith("id",oid);expect(query.eq).toHaveBeenCalledWith("company_id",cid);expect(state.rpc).toHaveBeenCalledWith("billing_admin_read_subscription_email",{p_company_id:cid,p_order_id:oid});
  if(current)expect(result).toMatchObject({status:"ready",data:{email:{state:"accepted",delivered:false}}});else expect(result).toEqual({status:"forbidden",data:null});expect(JSON.stringify(result)).not.toContain("private@example.test");
+});
+it("transient recheck failure in order detail returns unavailable and hides data",async()=>{
+ const query={select:vi.fn(),eq:vi.fn(),returns:vi.fn(),maybeSingle:vi.fn().mockResolvedValue({data:order,error:null})};query.select.mockReturnValue(query);query.eq.mockReturnValue(query);query.returns.mockReturnValue(query);state.admin.mockReturnValue({from:()=>query});
+ state.rpc.mockResolvedValue({error:null,data:{ok:true,company_id:cid,states:[]}});
+ state.recheck.mockResolvedValue({ok:false,code:"unavailable"});
+ expect(await readAdminBillingOrder({companyId:cid,orderId:oid})).toEqual({status:"unavailable",data:null});
 });
 
 it("AI transport rejection preserves independently authorized financial evidence",async()=>{state.ai.mockRejectedValue(Error("SYNTHETIC_AI_READ_ERROR"));expect(await readAdminTruth()).toMatchObject({ok:true,data:{ai:null,collections:{live_collected_baisa:0}}});});
 
 it("starts independently authorized AI evidence while financial reads are pending",async()=>{let release!: (v:unknown)=>void;state.collections.mockReturnValue(new Promise(resolve=>{release=resolve}));const pending=readAdminTruth();await vi.waitFor(()=>expect(state.collections).toHaveBeenCalledOnce());expect(state.ai).toHaveBeenCalledOnce();release({live_collected_baisa:0});expect(await pending).toMatchObject({ok:true});});
 it("measures Overview evidence orchestration with fixed synthetic latency",async()=>{const samples:number[]=[];state.collections.mockImplementation(()=>new Promise(resolve=>setTimeout(()=>resolve({live_collected_baisa:0}),50)));state.ai.mockImplementation(()=>new Promise(resolve=>setTimeout(()=>resolve({ok:true,data:{}}),50)));for(let i=0;i<5;i++){const at=performance.now();await readAdminTruth();samples.push(Number((performance.now()-at).toFixed(1)));}console.log("SYNTHETIC_OVERVIEW_MS",JSON.stringify(samples));});
+
+it("aggregates evidence in a single bounded batch across 25 distinct companies instead of sequential per-company waves", async () => {
+  const syntheticOrders = Array.from({ length: 25 }, (_, i) => {
+    const hex = (i + 1).toString(16).padStart(2, "0");
+    const companyId = `11111111-1111-4111-8111-${hex}1111111111`;
+    const orderId = `22222222-2222-4222-8222-${hex}2222222222`;
+    return {
+      ...order,
+      id: orderId,
+      company_id: companyId,
+      company_name: `Company ${i + 1}`,
+      amount_baisa: 10000 + i * 1000,
+    };
+  });
+
+  state.rpc.mockResolvedValue({
+    error: null,
+    data: {
+      ok: true,
+      orders: syntheticOrders,
+      total: 25,
+      snapshot: "2026-10-10T00:00:00Z",
+    },
+  });
+
+  const res = await readAdminBillingOrders({ pageSize: 25 });
+  expect(res.status).toBe("ready");
+  expect(res.rows).toHaveLength(25);
+  // Proof of bounded batch: exactly 1 call to readFinancialEvidence for all 25 companies
+  expect(state.evidence).toHaveBeenCalledTimes(1);
+  expect(state.evidence).toHaveBeenCalledWith({}, expect.arrayContaining(syntheticOrders.slice(0, 25)), undefined);
+
+  // Exact ordering preserved
+  for (let i = 0; i < 25; i++) {
+    expect(res.rows![i].id).toBe(syntheticOrders[i].id);
+    expect(res.rows![i].companyId).toBe(syntheticOrders[i].company_id);
+  }
+});

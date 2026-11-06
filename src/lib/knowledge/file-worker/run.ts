@@ -1,9 +1,9 @@
-import { knowledgeFileWorkerProviderExtractEnabled } from "./gate";
+import { knowledgeFileWorkerProviderExtractEnabled } from "./gate.ts";
 import {
   canPublishWithAttempt,
   mayDispatchPaidExtract,
   type AttemptSnapshot,
-} from "./protocol";
+} from "./protocol.ts";
 
 export type FileWorkerPorts = {
   loadAttempt: (sourceId: string) => Promise<AttemptSnapshot | null>;

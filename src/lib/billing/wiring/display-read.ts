@@ -6,8 +6,7 @@ const record=(v:unknown):Record<string,unknown>|null=>v!==null&&typeof v==="obje
 export async function readCompanyBillingDisplay(companyId:string):Promise<{ok:true;data:CompanyBillingDisplay}|{ok:false;code:"forbidden"|"unavailable"}> {
  try{
   const client=await createClient();
-  const rpc=client as unknown as {rpc(name:string,args:Record<string,unknown>):PromiseLike<{data:unknown;error:{code?:string}|null}>};
-  const {data,error}=await rpc.rpc("billing_read_company_display_evidence",{p_company_id:companyId});
+  const {data,error}=await client.rpc("billing_read_company_display_evidence",{p_company_id:companyId});
   if(error)return {ok:false,code:error.code==="42501"?"forbidden":"unavailable"};
   const result=record(data),d=record(result?.data),j=record(d?.journey);
   if(result?.ok!==true)return {ok:false,code:result?.code==="forbidden"?"forbidden":"unavailable"};

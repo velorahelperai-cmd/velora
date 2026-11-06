@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "pwsh -NoProfile -File scripts/live-customer/start.ps1",
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
@@ -24,7 +24,6 @@
     "@google/genai": "2.28.0",
     "@gsap/react": "2.1.2",
     "@napi-rs/canvas": "0.1.100",
-    "@supabase/ssr": "0.12.7",
     "@supabase/supabase-js": "2.117.2",
     "@tesseract.js-data/ara": "1.0.0",
     "@tesseract.js-data/eng": "1.0.0",

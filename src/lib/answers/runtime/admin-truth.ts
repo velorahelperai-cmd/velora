@@ -13,6 +13,6 @@ export async function readAdminTruth(){
   readAdminAIState().then(result=>result.ok?result.data:null).catch(()=>null),
  ]);
  if(!financial.ok)return {ok:false as const,error:financial.code};
- if(!await recheckBillingOwner(financial.binding))return {ok:false as const,error:"OWNER_REQUIRED"};
+ const recheck=await recheckBillingOwner(financial.binding);if(!recheck.ok)return {ok:false as const,error:recheck.code==="unavailable"?"UNAVAILABLE":"OWNER_REQUIRED"};
  return {ok:true as const,data:{ai,collections:financial.data}};
 }

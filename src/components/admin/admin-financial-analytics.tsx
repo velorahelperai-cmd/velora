@@ -2,6 +2,7 @@
 
 import { useDemo } from "@/lib/demo-state";
 import type { FinancialAnalyticsData } from "@/lib/tenancy/analytics-types";
+import styles from "./admin-financial-analytics.module.css";
 import {
   IconBuilding,
   IconCheckCircle,
@@ -23,7 +24,7 @@ export function AdminFinancialAnalytics({ data }: AdminFinancialAnalyticsProps) 
   const { kpis, planDistribution, monthlyHistory, aiMarginAnalysis } = data;
 
   return (
-    <div className="space-y-6" dir={ar ? "rtl" : "ltr"}>
+    <div className={styles.analytics} dir={ar ? "rtl" : "ltr"}>
       {/* Header Info */}
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[var(--service-line)] pb-4">
         <div>
@@ -54,7 +55,7 @@ export function AdminFinancialAnalytics({ data }: AdminFinancialAnalyticsProps) 
       </div>
 
       {/* 4 KPI Summary Cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className={styles.metrics}>
         {/* KPI 1: Gross Realized Revenue */}
         <div className="rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] p-5 shadow-sm">
           <div className="flex items-center justify-between">
@@ -135,7 +136,7 @@ export function AdminFinancialAnalytics({ data }: AdminFinancialAnalyticsProps) 
       </div>
 
       {/* Direct AI Token Cost Coverage Ratio Section */}
-      <div className="rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] p-5 shadow-sm space-y-3">
+      <div className={`${styles.coverage} rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] p-5 shadow-sm space-y-3`}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <IconSparkles className="h-5 w-5 text-[var(--service-accent)]" />
@@ -180,7 +181,7 @@ export function AdminFinancialAnalytics({ data }: AdminFinancialAnalyticsProps) 
       </div>
 
       {/* Grid: Plan Distribution + Monthly History */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className={styles.reports}>
         {/* Plan Distribution */}
         <div className="rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] p-5 shadow-sm space-y-4">
           <h2 className="text-base font-bold text-[var(--service-ink)]">

@@ -3,6 +3,7 @@ import type {AnswerContextChunk,AnswerCitation} from "@/lib/answers/types";
 import {classifyHandoffPolicy} from "@/lib/answers/routing/handoff-policy";
 import {classifyPureSocialSmallTalk} from "@/lib/answers/routing/small-talk";
 import {recordWorkerTiming} from "./worker-timing";
+import {isTransientWorkerCode} from "./worker-codes";
 export type IntegrationFrame={authority?:"es02";job_id:string;company_id:string;branch_id?:string;created_at?:string;message_id:string;conversation_id:string;phone_number_id:string;recipient_wa_id:string;
  automation_generation:number;link_id:string;link_generation:number;question:string;service_window_expires_at?:string;ai_status:string|null;reply_text:string|null;
  ai_attempt_id:string|null;intent_id:string|null;staged_citations:AnswerCitation[]|null};
@@ -159,7 +160,7 @@ export async function runPersistedInboundJob(input:{jobId:string;claimToken:stri
  try{settled=await ports.finish(intent.id);}catch{return blocked("SEND_PERSIST_REQUIRES_RECONCILIATION");}
  return blocked(settled==="released"?"SEND_REJECTED":"SEND_PERSIST_REQUIRES_RECONCILIATION");
  }catch(error){
- if(error instanceof WorkerInputError){try{return await fail(error.code,false,true);}catch{return blocked(error.code);}}
+ if(error instanceof WorkerInputError){const transient=isTransientWorkerCode(error.code);try{return await fail(error.code,false,!transient);}catch{return blocked(error.code);}}
  try{await ports.retry("WORKER_UNAVAILABLE",externalAttempt,false);}catch{/* Durable reservations and intent remain for recovery. */}
  return blocked(externalAttempt?"SEND_PERSIST_REQUIRES_RECONCILIATION":"WORKER_UNAVAILABLE");
  }

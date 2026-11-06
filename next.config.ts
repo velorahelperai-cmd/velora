@@ -19,7 +19,30 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   serverExternalPackages: ["unpdf", "mammoth", "tesseract.js", "@napi-rs/canvas"],
   outputFileTracingIncludes: {
-    "/*": ["./node_modules/@tesseract.js-data/ara/4.0.0_best_int/*.gz", "./node_modules/@tesseract.js-data/eng/4.0.0_best_int/*.gz", "./node_modules/tesseract.js-core/**/*", "./node_modules/tesseract.js/src/worker-script/**/*"],
+    "**/api/internal/knowledge/file-worker/**": [
+      "./node_modules/@tesseract.js-data/ara/4.0.0_best_int/*.gz",
+      "./node_modules/@tesseract.js-data/eng/4.0.0_best_int/*.gz",
+      "./node_modules/tesseract.js-core/**/*",
+      "./node_modules/tesseract.js/src/worker-script/**/*",
+    ],
+    "**/app/knowledge/**": [
+      "./node_modules/@tesseract.js-data/ara/4.0.0_best_int/*.gz",
+      "./node_modules/@tesseract.js-data/eng/4.0.0_best_int/*.gz",
+      "./node_modules/tesseract.js-core/**/*",
+      "./node_modules/tesseract.js/src/worker-script/**/*",
+    ],
+    "**/setup/**": [
+      "./node_modules/@tesseract.js-data/ara/4.0.0_best_int/*.gz",
+      "./node_modules/@tesseract.js-data/eng/4.0.0_best_int/*.gz",
+      "./node_modules/tesseract.js-core/**/*",
+      "./node_modules/tesseract.js/src/worker-script/**/*",
+    ],
+    "**/admin/companies/**": [
+      "./node_modules/@tesseract.js-data/ara/4.0.0_best_int/*.gz",
+      "./node_modules/@tesseract.js-data/eng/4.0.0_best_int/*.gz",
+      "./node_modules/tesseract.js-core/**/*",
+      "./node_modules/tesseract.js/src/worker-script/**/*",
+    ],
   },
   experimental: {
     serverActions: {

@@ -35,3 +35,67 @@ it('closes the details drawer with Escape or backdrop, restores focus, and retai
  act(()=>opener.click());act(()=>host.querySelector<HTMLButtonElement>('.conversation-details-backdrop')!.click());
  expect(host.querySelector('[role="dialog"]')).toBe(null);expect(host.querySelector('textarea')).toBe(input);expect(input.value).toBe('Unsaved note');
 });
+
+it('unlocks overflow and starts closed when selection disappears or switches channel while retaining draft',()=>{
+ function SelectionHarness({selectedId}:{selectedId:string|null}){
+  const [open,setOpen]=useState(false);
+  const [activeId,setActiveId]=useState(selectedId);
+  if(activeId!==selectedId){
+   setActiveId(selectedId);
+   if(open)setOpen(false);
+  }
+  if(!selectedId && open)setOpen(false);
+  return (
+   <div>
+    <button id="toggle-details" onClick={()=>setOpen(v=>!v)}>Toggle Details</button>
+    <div id="thread-pane" data-selected={selectedId??''}>
+     <textarea id="thread-draft" defaultValue="Persistent draft message"/>
+    </div>
+    {selectedId && (
+     <ConversationDetailsPanel id="customer-details" title="Customer" open={open} onClose={()=>setOpen(false)}>
+      <p>Customer details for {selectedId}</p>
+     </ConversationDetailsPanel>
+    )}
+   </div>
+  );
+ }
+
+ act(()=>root.render(<SelectionHarness selectedId="conv-1"/>));
+ const toggle=host.querySelector<HTMLButtonElement>('#toggle-details')!;
+ const draftArea=host.querySelector<HTMLTextAreaElement>('#thread-draft')!;
+ expect(document.body.style.overflow).toBe('');
+
+ // Open details drawer
+ act(()=>toggle.click());
+ expect(document.body.style.overflow).toBe('hidden');
+ expect(host.querySelector('[role="dialog"]')).not.toBeNull();
+
+ // Deselect conversation (e.g. back navigation or deselection)
+ act(()=>root.render(<SelectionHarness selectedId={null}/>));
+ expect(document.body.style.overflow).toBe('');
+ expect(host.querySelector('[role="dialog"]')).toBeNull();
+ expect(host.querySelector('#thread-draft')).toBe(draftArea);
+ expect(draftArea.value).toBe('Persistent draft message');
+
+ // Select next conversation: must start closed, overflow remains unlocked
+ act(()=>root.render(<SelectionHarness selectedId="conv-2"/>));
+ expect(document.body.style.overflow).toBe('');
+ expect(host.querySelector('[role="dialog"]')).toBeNull();
+ expect(host.querySelector('#thread-draft')).toBe(draftArea);
+});
+
+it('guarantees overflow release when ConversationDetailsPanel unmounts while open',()=>{
+ function PanelHarness({mounted}:{mounted:boolean}){
+  return mounted ? (
+   <ConversationDetailsPanel id="unmount-test" title="Details" open={true} onClose={()=>{}}>
+    <p>Content</p>
+   </ConversationDetailsPanel>
+  ) : <div>Unmounted</div>;
+ }
+
+ act(()=>root.render(<PanelHarness mounted={true}/>));
+ expect(document.body.style.overflow).toBe('hidden');
+
+ act(()=>root.render(<PanelHarness mounted={false}/>));
+ expect(document.body.style.overflow).toBe('');
+});

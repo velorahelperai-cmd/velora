@@ -7,17 +7,26 @@ import { qualifyFinancialOrder, type FinancialEvidence, type FinancialRecord } f
 const PAGE = 250, MAX_ROWS = 10000, CHUNK = 100;
 type Query = PromiseLike<{ data: unknown; error: unknown }> & {
   eq(k: string, v: string): Query; in(k: string, v: string[]): Query;
-  gte(k: string, v: string): Query; lt(k: string, v: string): Query;
+  gt(k: string, v: string): Query; gte(k: string, v: string): Query;
+  lt(k: string, v: string): Query; lte(k: string, v: string): Query;
   order(k: string, options?: { ascending: boolean }): Query; range(a: number, b: number): Query;
 };
 type Db = { from(table: string): { select(columns: string): Query } };
 export function financialDb(client: SupabaseClient): Db { return client as unknown as Db; }
 async function readRows(build: () => Query): Promise<FinancialRecord[]> {
   const rows: FinancialRecord[] = [];
+  const seenIds = new Set<string>();
   for (let offset = 0; offset <= MAX_ROWS; offset += PAGE) {
     const { data, error } = await build().order("id", { ascending: true }).range(offset, offset + PAGE - 1);
     if (error || !Array.isArray(data) || data.some(v => !v || typeof v !== "object" || Array.isArray(v))) throw Error("FINANCIAL_READ_UNAVAILABLE");
-    rows.push(...data as FinancialRecord[]);
+    for (const item of data) {
+      const id = typeof (item as { id?: unknown }).id === "string" ? (item as { id: string }).id : null;
+      if (id) {
+        if (seenIds.has(id)) throw Error("FINANCIAL_READ_UNAVAILABLE");
+        seenIds.add(id);
+      }
+      rows.push(item as FinancialRecord);
+    }
     if (rows.length > MAX_ROWS) throw Error("FINANCIAL_READ_LIMIT");
     if (data.length < PAGE) return rows;
   }
@@ -30,7 +39,17 @@ async function readByIds(db: Db, table: string, field: string, ids: string[], co
     rows.push(...await readRows(() => {
       // JSON.parse loses JSONB numeric scale. Preserve exactly the signed account
       // text compared by the canonical SQL view (71610.0 must not become 71610).
-      const columns = table === "billing_provider_events" ? "*,financial_integration_ref:raw_summary->>integration_id" : "*";
+      const columns = table === "billing_provider_events"
+        ? "id,payment_attempt_id,company_id,provider,provider_account_ref,provider_environment,event_status,amount_baisa_expected,currency_expected,provider_transaction_id,raw_summary,financial_integration_ref:raw_summary->>integration_id,created_at,received_at"
+        : table === "billing_payment_attempts"
+        ? "id,order_id,company_id,provider,provider_account_ref,provider_environment,provider_order_id,status,created_at"
+        : table === "billing_entitlement_applications"
+        ? "id,order_id,company_id,provider,provider_account_ref,provider_environment,payment_attempt_id,provider_event_id,provider_transaction_id,period_unit,period_count,period_days,applied_paid_through,applied_at,status"
+        : table === "billing_settlement_outcomes"
+        ? "id,order_id,company_id,provider,provider_account_ref,provider_environment,payment_attempt_id,provider_event_id,entitlement_application_id,outcome,provider_transaction_id,applied_paid_through,authenticity_method,evidence_marker,created_at"
+        : table === "billing_plan_versions"
+        ? "id,amount_baisa,currency,period_days,period_unit,period_count"
+        : "*";
       const query = db.from(table).select(columns).in(field, part);
       return companyId ? query.eq("company_id", companyId) : query;
     }));

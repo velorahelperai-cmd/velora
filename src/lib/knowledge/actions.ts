@@ -11,7 +11,6 @@ import {
   validateKnowledgeBatch,
   validateKnowledgeFile,
 } from "@/lib/knowledge/constants";
-import { extractKnowledgeText } from "@/lib/knowledge/extract";
 import { readExactStorageGeneration } from "@/lib/knowledge/exact-generation";
 import { publishPreparedFile } from "@/lib/knowledge/prepared-publication";
 import { readBoundedKnowledgeStream } from "@/lib/knowledge/bounded-read";
@@ -346,6 +345,7 @@ async function prepareStoredFile(
   }
 
   const started = asSource(begun.row, foundation);
+  const { extractKnowledgeText } = await import("@/lib/knowledge/extract");
   const extracted = await extractKnowledgeText({
     fileName: started.file_name,
     contentType: started.content_type,

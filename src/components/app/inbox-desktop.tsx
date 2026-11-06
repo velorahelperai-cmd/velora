@@ -120,6 +120,12 @@ export type VdiFilters = {
     stages?: Option[];
     stage?: string;
     onStageChange?: (id: string) => void;
+    starred?: {
+        active: boolean;
+        ready: boolean;
+        count?: number;
+        onToggle: () => void;
+    };
 };
 export type VdiComposer = {
     mode: 'message' | 'ai' | 'note';
@@ -182,6 +188,15 @@ export type InboxDesktopView = {
     onTabChange: (value: string) => void;
     filters?: VdiFilters;
     filterExtras?: ReactNode;
+    starredFilter?: {
+        active: boolean;
+        ready: boolean;
+        count?: number;
+        onToggle: () => void;
+    };
+    onToggleStar?: (id: string) => void;
+    starsReady?: boolean;
+    starBusyKey?: string | null;
     conversations: (VdiPerson & {
         id: string;
         channel: VdiCustomer['channel'];
@@ -190,6 +205,7 @@ export type InboxDesktopView = {
         preview: string;
         meta?: ReactNode;
         unreadCount: number;
+        starred?: boolean;
     })[];
     selectedId?: string;
     onSelect: (id: string) => void;
@@ -455,7 +471,7 @@ function ListPanel({ view, ar }: {
     view: InboxDesktopView;
     ar: boolean;
 }) {
-    return <aside className={"vdi-panel vdi-list"} data-inbox-panel={"list"}><div className={"vdi-list-head"}><div className={"vdi-list-title"}><h2>{ar ? 'صندوق الوارد' : 'Inbox'}</h2>{view.newConversation && <ActionButton action={view.newConversation}/>}</div><label className={"vdi-search"}><Icon name={"search"}/><input type={"search"} value={view.query} onChange={e => view.onQueryChange(e.target.value)} placeholder={ar ? 'البحث في المحادثات والعملاء...' : 'Search conversations and customers...'} aria-label={ar ? 'البحث في المحادثات والعملاء' : 'Search conversations and customers'}/></label><div className={"vdi-tabs"} aria-label={ar ? 'تصفية المحادثات' : 'Conversation filters'}>{view.tabs.map(t => <button type={"button"} className={"vdi-tab"} key={t.id} aria-pressed={t.id === view.activeTab} onClick={() => view.onTabChange(t.id)}>{t.label}{typeof t.count === 'number' && <span className={"vdi-count"}>{t.count}</span>}</button>)}</div>{view.filters && <Filters model={view.filters} ar={ar}/>}{" "}{view.filterExtras && <div className={"vdi-extra-filters"}>{view.filterExtras}</div>}</div><div className={"vdi-list-items vdi-scroll"}>{view.conversations.map(row => <button type={"button"} key={row.id} className={"vdi-conversation"} aria-current={row.id === view.selectedId} onClick={() => view.onSelect(row.id)}><Avatar person={row} channel={row.channel}/><div className={"vdi-row-body"}><div className={"vdi-row-top"}><strong>{row.name}</strong><time>{row.time}</time></div>{row.subject && <div className={"vdi-subject"}>{row.subject}</div>}<div className={"vdi-preview"}>{row.preview}</div>{row.meta && <div className={"vdi-row-meta"}>{row.meta}</div>}</div>{!!row.unreadCount && <span className={"vdi-unread"} aria-label={`${row.unreadCount} ${ar ? 'غير مقروءة' : 'unread'}`}/>}</button>)}{!view.conversations.length && <div className={"vdi-empty"}>{view.emptyListLabel??(ar ? 'لا توجد محادثات مطابقة.' : 'No matching conversations.')}</div>}</div>{(view.listFooter || view.loadMore) && <div className={"vdi-list-footer"}>{view.loadMore && <ActionButton action={view.loadMore} small={true} label={true}/>}{view.listFooter}</div>}</aside>;
+    return <aside className={"vdi-panel vdi-list"} data-inbox-panel={"list"}><div className={"vdi-list-head"}><div className={"vdi-list-title"}><h2>{ar ? 'صندوق الوارد' : 'Inbox'}</h2>{view.newConversation && <ActionButton action={view.newConversation}/>}</div><label className={"vdi-search"}><Icon name={"search"}/><input type={"search"} value={view.query} onChange={e => view.onQueryChange(e.target.value)} placeholder={ar ? 'البحث في المحادثات والعملاء...' : 'Search conversations and customers...'} aria-label={ar ? 'البحث في المحادثات والعملاء' : 'Search conversations and customers'}/></label><div className={"vdi-tabs"} aria-label={ar ? 'تصفية المحادثات' : 'Conversation filters'}>{view.tabs.map(t => <button type={"button"} className={"vdi-tab"} key={t.id} aria-pressed={t.id === view.activeTab} onClick={() => view.onTabChange(t.id)}>{t.label}{typeof t.count === 'number' && <span className={"vdi-count"}>{t.count}</span>}</button>)}{view.starredFilter && <button type={"button"} className={"vdi-tab" + (view.starredFilter.active ? " is-active" : "")} aria-pressed={view.starredFilter.active} disabled={!view.starredFilter.ready} title={ar ? 'المحادثات المميزة المحمّلة' : 'Starred loaded conversations'} onClick={view.starredFilter.onToggle}>{ar ? 'المميزة' : 'Starred'} {view.starredFilter.ready && typeof view.starredFilter.count === 'number' && <span className={"vdi-count"}>{view.starredFilter.count}</span>}</button>}</div>{view.filters && <Filters model={view.filters} ar={ar}/>}{" "}{view.filterExtras && <div className={"vdi-extra-filters"}>{view.filterExtras}</div>}</div><div className={"vdi-list-items vdi-scroll"}>{view.conversations.map(row => <div key={row.id} className={"vdi-conversation-row"}><button type={"button"} className={"vdi-conversation"} aria-current={row.id === view.selectedId} onClick={() => view.onSelect(row.id)}><Avatar person={row} channel={row.channel}/><div className={"vdi-row-body"}><div className={"vdi-row-top"}><strong>{row.name}</strong><time>{row.time}</time></div>{row.subject && <div className={"vdi-subject"}>{row.subject}</div>}<div className={"vdi-preview"}>{row.preview}</div>{row.meta && <div className={"vdi-row-meta"}>{row.meta}</div>}</div>{!!row.unreadCount && <span className={"vdi-unread"} aria-label={`${row.unreadCount} ${ar ? 'غير مقروءة' : 'unread'}`}/>}</button>{view.onToggleStar && <button type={"button"} className={"vdi-pin" + (row.starred ? " is-starred" : "")} aria-pressed={row.starred} aria-label={ar ? `${row.starred ? 'إلغاء تمييز' : 'تمييز'} ${row.name}` : `${row.starred ? 'Unstar' : 'Star'} ${row.name}`} title={ar ? 'تمييز المحادثة' : 'Star conversation'} disabled={view.starsReady === false || (view.starBusyKey !== null && view.starBusyKey !== undefined && view.starBusyKey === row.id)} onClick={e => { e.stopPropagation(); view.onToggleStar?.(row.id); }}><Icon name={"star"}/></button>}</div>)}{!view.conversations.length && <div className={"vdi-empty"}>{view.emptyListLabel??(ar ? 'لا توجد محادثات مطابقة.' : 'No matching conversations.')}</div>}</div>{(view.listFooter || view.loadMore) && <div className={"vdi-list-footer"}>{view.loadMore && <ActionButton action={view.loadMore} small={true} label={true}/>}{view.listFooter}</div>}</aside>;
 }
 export function InboxDesktop({ view, locale = 'ar', height = 'calc(100dvh - 20px)' }: {
     view: InboxDesktopView;

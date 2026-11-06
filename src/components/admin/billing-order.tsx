@@ -5,6 +5,7 @@ import { useDemo } from "@/lib/demo-state";
 import type { readAdminBillingOrder } from "@/lib/billing/admin/actions";
 import { formatOmrBaisa } from "@/components/app/subscription-offers-view";
 import { financialLabels } from "./billing-ledger";
+import styles from "./billing-order.module.css";
 import {
   IconBuilding,
   IconChevronLeft,
@@ -48,7 +49,7 @@ export function AdminBillingOrderView({ result, back, refresh }: AdminBillingOrd
 
   if (result.status !== "ready" || !result.data) {
     return (
-      <div className="space-y-6" dir={ar ? "rtl" : "ltr"}>
+      <div className={styles.order} dir={ar ? "rtl" : "ltr"}>
         <div className="flex items-center gap-3">
           <Link
             href={back}
@@ -99,7 +100,7 @@ export function AdminBillingOrderView({ result, back, refresh }: AdminBillingOrd
   };
 
   return (
-    <div className="space-y-6" dir={ar ? "rtl" : "ltr"}>
+    <div className={styles.order} dir={ar ? "rtl" : "ltr"}>
       {/* Navigation & Header */}
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[var(--service-line)] pb-4">
         <div>
@@ -160,7 +161,7 @@ export function AdminBillingOrderView({ result, back, refresh }: AdminBillingOrd
         <h2 className="text-base font-bold text-[var(--service-ink)]">
           {ar ? "البيانات المالية الأساسية للطلب" : "Order Financial Details"}
         </h2>
-        <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6 text-xs">
+        <div className={styles.facts}>
           <div className="rounded-xl bg-[var(--service-canvas)] p-3 border border-[var(--service-line)]">
             <div className="text-[10px] font-bold text-[var(--service-muted)]">
               {ar ? "المبلغ المحفوظ" : "Locked Amount"}
@@ -218,7 +219,7 @@ export function AdminBillingOrderView({ result, back, refresh }: AdminBillingOrd
       </div>
 
       {/* Grid: Eligibility & Service Grants */}
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+      <div className={styles.eligibility}>
         {/* Company Billing Eligibility */}
         <div className="rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] p-6 shadow-sm">
           <div className="flex items-center justify-between border-b border-[var(--service-line)] pb-3">
@@ -323,7 +324,7 @@ export function AdminBillingOrderView({ result, back, refresh }: AdminBillingOrd
         <h2 className="text-base font-bold text-[var(--service-ink)]">
           {ar ? "حوكمة دورة الاشتراك والنزاهة المالية" : "Subscription Lifecycle & Financial Integrity Governance"}
         </h2>
-        <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3 text-xs">
+        <div className={styles.policies}>
           <div className="rounded-xl bg-[var(--service-canvas)] p-4 border border-[var(--service-line)] space-y-1.5">
             <div className="font-bold text-[var(--service-ink)]">
               {ar ? "دورة الاشتراك والبدء التقويمي" : "Calendar Subscription & Activation"}

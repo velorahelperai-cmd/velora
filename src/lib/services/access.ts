@@ -21,8 +21,7 @@ export async function readSessionServiceAccess(capability: unknown): Promise<Ser
     // Compat null is unknown and cannot authorize service or privileged data access.
     if (await sessionHasCompanyCapability(company.id, "knowledge.read") !== true) return denyServiceAccess("FORBIDDEN");
     const session = await createClient();
-    const service = session as unknown as { rpc(name: "billing_read_service_access", args: { p_company_id: string; p_capability: string }): PromiseLike<{ data: unknown; error: unknown }> };
-    const { data, error } = await service.rpc("billing_read_service_access", { p_company_id: company.id, p_capability: capability });
+    const { data, error } = await session.rpc("billing_read_service_access", { p_company_id: company.id, p_capability: capability });
     if (error) return denyServiceAccess("UNAVAILABLE");
     // This session-only RPC independently rechecks lease, actor and tenant/RBAC;
     // it derives service evidence solely from immutable offers and verified receipts.

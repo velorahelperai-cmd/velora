@@ -123,30 +123,84 @@ afterEach(()=>{act(()=>root.unmount());container.remove();vi.restoreAllMocks();v
 
 
 
+function requireVisible<T extends Element>(el: T | null, message = 'Element must be visible'): T {
+ expect(el, message).not.toBeNull();
+ let current: Element | null = el;
+ while (current && current !== document.body) {
+  expect(current.hasAttribute('hidden'), `element has hidden ancestor <${current.tagName.toLowerCase()}>`).toBe(false);
+  expect(current.hasAttribute('inert'), `element has inert ancestor <${current.tagName.toLowerCase()}>`).toBe(false);
+  expect(current.getAttribute('aria-hidden')).not.toBe('true');
+  current = current.parentElement;
+ }
+ return el!;
+}
+
+function visibleButton(text: string) {
+ const buttons = [...container.querySelectorAll<HTMLButtonElement>('button')].filter(b => b.textContent?.trim() === text || b.textContent === text);
+ const visible = buttons.filter(b => {
+  let curr: Element | null = b;
+  while (curr && curr !== document.body) {
+   if (curr.hasAttribute('hidden') || curr.hasAttribute('inert') || curr.getAttribute('aria-hidden') === 'true') return false;
+   curr = curr.parentElement;
+  }
+  return true;
+ });
+ expect(visible.length, `Expected visible button with text "${text}"`).toBeGreaterThanOrEqual(1);
+ return requireVisible(visible[0]);
+}
+
+function visibleStarBtn(label: string) {
+ const buttons = [...container.querySelectorAll<HTMLButtonElement>(`button[aria-label="${label}"]`)];
+ const visible = buttons.filter(b => {
+  let curr: Element | null = b;
+  while (curr && curr !== document.body) {
+   if (curr.hasAttribute('hidden') || curr.hasAttribute('inert') || curr.getAttribute('aria-hidden') === 'true') return false;
+   curr = curr.parentElement;
+  }
+  return true;
+ });
+ expect(visible.length, `Expected visible button with aria-label "${label}"`).toBe(1);
+ return requireVisible(visible[0]);
+}
+
 describe('UnifiedInbox membership and page safety',()=>{
  it('reads and updates durable stars only for the loaded authorized rows',async()=>{
   const media={matches:true,addEventListener:vi.fn((_type:string,_callback:()=>void)=>undefined),removeEventListener:vi.fn()};vi.stubGlobal('matchMedia',vi.fn(()=>media));
   const initial=makeInitial();initial.wa.page.conversations.push(conversation('c2','Customer 2','+9682','101','Second message',2000));
   await act(async()=>{render({initial});});
-  const names=()=>[...container.querySelectorAll('[aria-label="Conversation list"] strong')].map(e=>e.textContent);
+  const names=()=>{
+   const desktopItems = [...container.querySelectorAll('[data-inbox-panel="list"] .vdi-row-top strong')];
+   const mobileItems = [...container.querySelectorAll('[aria-label="Conversation list"] strong')];
+   const all = [...desktopItems, ...mobileItems].filter(el => {
+    let curr: Element | null = el;
+    while (curr && curr !== document.body) {
+     if (curr.hasAttribute('hidden') || curr.hasAttribute('inert') || curr.getAttribute('aria-hidden') === 'true') return false;
+     curr = curr.parentElement;
+    }
+    return true;
+   });
+   return all.map(e => e.textContent);
+  };
   expect(names()).toEqual(['Customer 2','Customer 1']);
-  await click(container.querySelector<HTMLButtonElement>('[aria-label="Star Customer 1"]')!);
+  await click(visibleStarBtn('Star Customer 1'));
   expect(names()[0]).toBe('Customer 1');
-  await click(button('Starred 1'));expect(names()).toEqual(['Customer 1']);
+  await click(visibleButton('Starred 1'));
+  expect(names()).toEqual(['Customer 1']);
   expect(state.readServiceInbox).not.toHaveBeenCalled();expect(state.routerPush).not.toHaveBeenCalled();
   const change=media.addEventListener.mock.calls[0]?.[1] as (()=>void)|undefined;
   media.matches=false;act(()=>change?.());expect(names()).toEqual(['Customer 2','Customer 1']);
   media.matches=true;await act(async()=>change?.());expect(names()).toEqual(['Customer 1']);
-  await act(async()=>{render({initial:makeInitial('new-membership')});});expect(button('Starred 1').getAttribute('aria-pressed')).toBe('false');
-  expect(container.querySelector('[aria-label="Unstar Customer 1"]')).not.toBeNull();
+  await act(async()=>{render({initial:makeInitial('new-membership')});});
+  expect(visibleButton('Starred 1').getAttribute('aria-pressed')).toBe('false');
+  visibleStarBtn('Unstar Customer 1');
  });
  it('does not display or mutate stars when the database denies the list read',async()=>{
   vi.stubGlobal('matchMedia',vi.fn(()=>({matches:true,addEventListener:vi.fn(),removeEventListener:vi.fn()})));
   state.starred=['whatsapp:c1'];state.starDenied=true;
   await act(async()=>{render({initial:makeInitial()});});
-  const star=container.querySelector<HTMLButtonElement>('[aria-label="Star Customer 1"]');
-  expect(star?.disabled).toBe(true);
-  expect(container.querySelector('[aria-label="Unstar Customer 1"]')).toBeNull();
+  const star=visibleStarBtn('Star Customer 1');
+  expect(star.disabled).toBe(true);
+  expect(container.querySelectorAll('button[aria-label="Unstar Customer 1"]').length).toBe(0);
   expect(container.textContent).toContain('Starred conversations could not be loaded.');
  });
  it('reads a large loaded list in bounded channel-specific batches',async()=>{

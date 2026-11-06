@@ -1,9 +1,14 @@
 import "server-only";
 export type EmailStatus = { state: "queued" | "claimed" | "accepted" | "rejected" | "reconciliation_required" | "blocked" | "not_queued" | "unavailable"; queuedAt: string | null; acceptedAt: string | null; delivered: false };
 export const unavailableEmailStatus = (): EmailStatus => ({ state: "unavailable", queuedAt: null, acceptedAt: null, delivered: false });
-type Rpc = { rpc(name: string, args: Record<string, unknown>): PromiseLike<{ data: unknown; error: unknown }> };
+type EmailRpcClient = {
+  rpc(
+    name: "billing_admin_read_subscription_email",
+    args: { p_company_id: string; p_order_id: string },
+  ): PromiseLike<{ data: unknown; error: unknown }>;
+};
 /** Only called after the existing billing owner gate and scoped order lookup; SQL independently checks that session. */
-export async function readScopedEmailStatus(client: Rpc, companyId: string, orderId: string): Promise<EmailStatus> {
+export async function readScopedEmailStatus(client: EmailRpcClient, companyId: string, orderId: string): Promise<EmailStatus> {
   try {
     const { data, error } = await client.rpc("billing_admin_read_subscription_email", { p_company_id: companyId, p_order_id: orderId });
     if (error || !data || typeof data !== "object") return unavailableEmailStatus();

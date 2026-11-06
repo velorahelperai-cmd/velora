@@ -1,80 +1,171 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-vi.mock("server-only",()=>({}));
+import { describe, expect, it, vi } from "vitest";
+vi.mock("server-only", () => ({}));
 import { runInboundWorkerAnswer } from "./inbound-worker";
+import type { IntegrationFrame, IntegrationPorts } from "./integration-worker";
 import { runOperationalAnswer, type WorkerPorts } from "@/lib/answers/operational-worker/run";
 
-const state = vi.hoisted(() => ({
-  entitled: true,
-  job: {} as Record<string, unknown>,
-  message: {} as Record<string, unknown>,
-  prepare: vi.fn(),
-}));
-vi.mock("@/lib/billing/entitlement", () => ({
-  readCompanyEntitlement: () => ({ status: "evaluated", paid: state.entitled, liveAnswerAllowed: state.entitled, liveSendAllowed: state.entitled, source: "subscription" }),
-  entitlementAllowsAutomation: (snapshot: { paid: boolean }) => snapshot.paid,
-}));
-vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({
-  from: (table: string) => {
-    const filters: Record<string, unknown> = {};
-    const query = {
-      select: () => query,
-      eq: (key: string, value: unknown) => { filters[key] = value; return query; },
-      maybeSingle: async () => {
-        const row = table === "whatsapp_inbound_jobs" ? state.job : state.message;
-        return { data: Object.entries(filters).every(([key, value]) => row[key] === value) ? row : null, error: null };
-      },
-    };
-    return query;
-  },
-}) }));
-vi.mock("@/lib/answers/channel-adapter", async importOriginal => ({
-  ...await importOriginal<typeof import("@/lib/answers/channel-adapter")>(),
-  processInboundJobAnswer: (...args: unknown[]) => state.prepare(...args),
-}));
-
 const input = { jobId: "job-fixture", claimToken: "claim-fixture", companyId: "company-fixture" };
-beforeEach(() => {
-  state.entitled = true;
-  state.job = { id: input.jobId, company_id: input.companyId, message_id: "message-fixture", wa_message_id: "wamid.fixture", status: "claimed", claim_token: input.claimToken, claim_expires_at: "2099-10-08T00:00:00.000Z" };
-  state.message = { id: "message-fixture", company_id: input.companyId, conversation_id: "conversation-fixture", wa_message_id: "wamid.fixture", direction: "inbound", sender: "customer", message_type: "text" };
-  state.prepare.mockReset().mockResolvedValue({ ok: false, code: "PROCESSING_DISABLED", jobCompleted: false });
-});
 
-describe("P4 existing worker preparation boundary", () => {
-  it("preserves disabled-provider outcome for a valid stored claim", async () => {
-    expect(await runInboundWorkerAnswer(input)).toMatchObject({ ok: false, code: "PROCESSING_DISABLED", jobCompleted: false, sendAccepted: false, delivered: false });
+function makePorts(patch: Partial<IntegrationPorts> = {}): IntegrationPorts {
+  const frame: IntegrationFrame = {
+    job_id: input.jobId,
+    company_id: input.companyId,
+    message_id: "message-fixture",
+    conversation_id: "conversation-fixture",
+    phone_number_id: "phone-fixture",
+    recipient_wa_id: "recipient-fixture",
+    automation_generation: 0,
+    link_id: "link-fixture",
+    link_generation: 1,
+    question: "Fixture question",
+    ai_status: null,
+    reply_text: null,
+    ai_attempt_id: null,
+    intent_id: null,
+    staged_citations: null,
+  };
+  const chunks = [{ sourceId: "source-fixture", title: "Approved fixture", contentVersion: 1, text: "Fixture knowledge" }];
+  const intent = { id: "intent-fixture", outcome: "attempting", company_id: input.companyId, conversation_id: "conversation-fixture", phone_number_id: "phone-fixture", recipient_wa_id: "recipient-fixture", body: "Answer" };
+  return {
+    enabled: true,
+    frame: vi.fn(async () => frame),
+    context: vi.fn(async () => chunks),
+    verify: vi.fn(async () => true),
+    secret: vi.fn(async () => "synthetic-token"),
+    reserve: vi.fn(async () => true),
+    answer: vi.fn(async () => ({ ok: false, complete: false, code: "PROCESSING_DISABLED", text: "", attempts: [] })),
+    stage: vi.fn(async () => "intent-fixture"),
+    claimSend: vi.fn(async () => ({ ok: true, claimed: true, attempt_token: "send-claim", intent })),
+    send: vi.fn(async () => ({ ok: true, waMessageId: "wamid.fixture" })),
+    finalize: vi.fn(async () => true),
+    finish: vi.fn(async () => "accepted"),
+    repair: vi.fn(async () => true),
+    retry: vi.fn(async () => {}),
+    heartbeat: vi.fn(async () => true),
+    ...patch,
+  };
+}
+
+describe("P4 worker preparation boundary on unified pipeline", () => {
+  it("rejects worker invocation when ports are omitted", async () => {
+    // @ts-expect-error verifying explicit rejection when ports are omitted
+    expect(await runInboundWorkerAnswer(input)).toMatchObject({
+      ok: false,
+      code: "PORTS_REQUIRED",
+      jobCompleted: false,
+      sendAccepted: false,
+      delivered: false,
+    });
   });
+
+  it("preserves disabled-worker outcome for a valid stored claim", async () => {
+    const ports = makePorts({ enabled: false });
+    expect(await runInboundWorkerAnswer(input, ports)).toMatchObject({
+      ok: false,
+      code: "WORKER_DISABLED",
+      jobCompleted: false,
+      sendAccepted: false,
+      delivered: false,
+    });
+    expect(ports.frame).not.toHaveBeenCalled();
+  });
+
   it("does not prepare AI for another tenant's job", async () => {
-    state.job.company_id = "foreign-company";
-    expect(await runInboundWorkerAnswer(input)).toMatchObject({ code: "CLAIM_INVALID", jobCompleted: false });
-    expect(state.prepare).not.toHaveBeenCalled();
+    const ports = makePorts({
+      frame: async () => ({
+        job_id: input.jobId,
+        company_id: "foreign-company",
+        message_id: "message-fixture",
+        conversation_id: "conversation-fixture",
+        phone_number_id: "phone-fixture",
+        recipient_wa_id: "recipient-fixture",
+        automation_generation: 0,
+        link_id: "link-fixture",
+        link_generation: 1,
+        question: "Fixture question",
+        ai_status: null,
+        reply_text: null,
+        ai_attempt_id: null,
+        intent_id: null,
+        staged_citations: null,
+      }),
+    });
+    expect(await runInboundWorkerAnswer(input, ports)).toMatchObject({
+      ok: false,
+      jobCompleted: false,
+    });
+    expect(ports.answer).not.toHaveBeenCalled();
+    expect(ports.send).not.toHaveBeenCalled();
   });
-  it("does not prepare AI with expired claim", async () => {
-    state.job.claim_expires_at = "2000-01-01T00:00:00.000Z";
-    expect(await runInboundWorkerAnswer(input)).toMatchObject({ code: "CLAIM_EXPIRED" });
-    expect(state.prepare).not.toHaveBeenCalled();
+
+  it("does not prepare AI when claim frame is missing or expired", async () => {
+    const ports = makePorts({ frame: async () => null });
+    expect(await runInboundWorkerAnswer(input, ports)).toMatchObject({
+      ok: false,
+      code: "CLAIM_BINDING_REJECTED",
+    });
+    expect(ports.answer).not.toHaveBeenCalled();
   });
-  it("does not treat media captions as supported text questions", async () => {
-    state.message.message_type = "image";
-    expect(await runInboundWorkerAnswer(input)).toMatchObject({ code: "UNSUPPORTED_MESSAGE" });
-    expect(state.prepare).not.toHaveBeenCalled();
+
+  it("does not invoke AI for inactive subscription or denied reservation", async () => {
+    const ports = makePorts({ reserve: async () => false });
+    expect(await runInboundWorkerAnswer(input, ports)).toMatchObject({
+      ok: false,
+      code: "ENTITLEMENT_OR_USAGE_DENIED",
+      sendAccepted: false,
+      jobCompleted: false,
+    });
+    expect(ports.answer).not.toHaveBeenCalled();
   });
-  it("does not invoke AI for inactive subscription", async () => {
-    state.entitled = false;
-    expect(await runInboundWorkerAnswer(input)).toMatchObject({ ok: false, sendAccepted: false, jobCompleted: false });
-    expect(state.prepare).not.toHaveBeenCalled();
-  });
+
   it("keeps employee handoff outcome and never claims send or completion", async () => {
-    state.prepare.mockResolvedValue({ ok: false, code: "AUTOMATION_PAUSED", jobCompleted: false });
-    expect(await runInboundWorkerAnswer(input)).toMatchObject({ code: "AUTOMATION_PAUSED", sendAccepted: false, delivered: false, jobCompleted: false });
+    const ports = makePorts({
+      frame: async () => ({
+        job_id: input.jobId,
+        company_id: input.companyId,
+        message_id: "message-fixture",
+        conversation_id: "conversation-fixture",
+        phone_number_id: "phone-fixture",
+        recipient_wa_id: "recipient-fixture",
+        automation_generation: 0,
+        link_id: "link-fixture",
+        link_generation: 1,
+        question: "I want a refund",
+        ai_status: null,
+        reply_text: null,
+        ai_attempt_id: null,
+        intent_id: null,
+        staged_citations: null,
+      }),
+    });
+    expect(await runInboundWorkerAnswer(input, ports)).toMatchObject({
+      code: "HUMAN_REVIEW_REQUIRED",
+      sendAccepted: false,
+      delivered: false,
+      jobCompleted: false,
+    });
+    expect(ports.retry).toHaveBeenCalledWith("HUMAN_REVIEW_REQUIRED", false, true);
+    expect(ports.send).not.toHaveBeenCalled();
   });
+
   it("contains preparation failure without marking work complete", async () => {
-    state.prepare.mockRejectedValue(new Error("fixture failure"));
-    expect(await runInboundWorkerAnswer(input)).toMatchObject({ code: "UNAVAILABLE", jobCompleted: false, sendAccepted: false });
+    const ports = makePorts({
+      answer: async () => { throw new Error("fixture failure"); },
+    });
+    expect(await runInboundWorkerAnswer(input, ports)).toMatchObject({
+      code: "WORKER_UNAVAILABLE",
+      jobCompleted: false,
+      sendAccepted: false,
+    });
   });
-  it("does not trust a staged answer for a different job/company", async () => {
-    state.prepare.mockResolvedValue({ ok: true, jobId: "foreign-job", companyId: "foreign-company", conversationId: "conversation-fixture", messageId: "message-fixture" });
-    expect(await runInboundWorkerAnswer(input)).toMatchObject({ code: "INVALID_INPUT", sendAccepted: false });
+
+  it("rejects invalid input before invoking ports", async () => {
+    const ports = makePorts();
+    expect(await runInboundWorkerAnswer({ ...input, jobId: "" }, ports)).toMatchObject({
+      code: "INVALID_INPUT",
+      sendAccepted: false,
+    });
+    expect(ports.frame).not.toHaveBeenCalled();
   });
 });
 

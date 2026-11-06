@@ -5,7 +5,7 @@ vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => { throw Error(
 const send = vi.hoisted(() => vi.fn().mockResolvedValue({ ok: true, waMessageId: "synthetic-wamid" }));
 vi.mock("./send", () => ({ sendWhatsappText: send }));
 import { createIntegrationPorts } from "./integration-store";
-import type { IntegrationFrame } from "./integration-worker";
+import { type IntegrationFrame, WorkerInputError } from "./integration-worker";
 const binding = { jobId: "job", claimToken: "claim", companyId: "company" };
 const frame: IntegrationFrame = { job_id: "job", company_id: "company", message_id: "message", conversation_id: "conversation", phone_number_id: "phone", recipient_wa_id: "recipient", automation_generation: 1, link_id: "link", link_generation: 1, question: "Espresso price?", ai_status: null, reply_text: null, ai_attempt_id: null, intent_id: null, staged_citations: null };
 const window = { ok: true, company_id: "company", conversation_id: "conversation", phone_number_id: "phone", recipient_wa_id: "recipient", last_inbound_at: "2026-10-08T11:00:00Z", valid_until: "2026-10-09T11:00:00Z" };
@@ -268,5 +268,39 @@ describe("server-side kill switch verification", () => {
     vi.stubEnv("WHATSAPP_WORKER_ENABLED", "false");
     const ports = createIntegrationPorts(binding);
     expect(await ports.verify(frame, es02Citations)).toEqual({ ok: false, code: "WORKER_DISABLED" });
+  });
+});
+
+describe("worker frame loading error canonicalization at RPC boundaries", () => {
+  it.each([
+    ["unsupported_message", "UNSUPPORTED_MESSAGE"],
+    ["service_window_closed", "SERVICE_WINDOW_CLOSED"],
+    ["link_unavailable", "LINK_UNAVAILABLE"],
+    ["service_window_authorization_unavailable", "SERVICE_WINDOW_AUTHORIZATION_UNAVAILABLE"],
+  ])("canonicalizes RPC code %s to %s as WorkerInputError", async (rpcCode, expectedCode) => {
+    const db = {
+      rpc: vi.fn(async (name) => {
+        if (name === "es02_classify_claimed_reply") return { data: { ok: true, recipientClass: "real_customer" }, error: null };
+        if (name === "billing_load_worker_frame") return { data: { ok: false, code: rpcCode }, error: null };
+        return { data: window, error: null };
+      }),
+      from: vi.fn(),
+    };
+    const ports = createIntegrationPorts(binding, db as never);
+    await expect(ports.frame()).rejects.toThrow(new WorkerInputError(expectedCode));
+  });
+
+  it("throws SERVICE_WINDOW_CLOSED when service window is expired or null", async () => {
+    const db = {
+      rpc: vi.fn(async (name) => {
+        if (name === "es02_classify_claimed_reply") return { data: { ok: true, recipientClass: "real_customer" }, error: null };
+        if (name === "billing_load_worker_frame") return { data: { ok: true, data: { ...frame, authority: "es02" } }, error: null };
+        if (name === "whatsapp_check_service_window") return { data: { ok: false, code: "service_window_closed" }, error: null };
+        return { data: null, error: null };
+      }),
+      from: vi.fn(),
+    };
+    const ports = createIntegrationPorts(binding, db as never);
+    await expect(ports.frame()).rejects.toThrow(new WorkerInputError("SERVICE_WINDOW_CLOSED"));
   });
 });

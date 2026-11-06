@@ -12,4 +12,44 @@ describe("worker monitoring without changing execution", () => {
   it("reports confirmed rejection with a failure status", () => { const observed = summarizeWorkerOutcomes([result("SEND_REJECTED")], repair); expect(observed.httpStatus).toBe(503); expect(observed.body.failed).toBe(1); expect(observed.body.unknown).toBe(0); });
   it("exposes repair backlog even when the claim batch is empty", () => { const observed = summarizeWorkerOutcomes([], { repaired: 2, pending: 3 }); expect(observed.httpStatus).toBe(202); expect(observed.body.repair).toEqual({ repaired: 2, pending: 3 }); });
   it("reports a completed accepted job without claiming delivery", () => { const observed = summarizeWorkerOutcomes([{ ok: true, code: "ACCEPTED", jobCompleted: true, sendAccepted: true, delivered: false }], repair); expect(observed.httpStatus).toBe(200); expect(observed.body).toMatchObject({ accepted: 1, completed: 1, delivered: 0, code: "COMPLETE" }); });
+
+  it("classifies unsupported_message (both cases) as blocked rather than unknown", () => {
+    const lower = summarizeWorkerOutcomes([result("unsupported_message")], repair);
+    expect(lower.httpStatus).toBe(200);
+    expect(lower.body).toMatchObject({ blocked: 1, unknown: 0, failed: 0, code: "WORKER_BATCH_BLOCKED", outcomes: { UNSUPPORTED_MESSAGE: 1 } });
+
+    const upper = summarizeWorkerOutcomes([result("UNSUPPORTED_MESSAGE")], repair);
+    expect(upper.httpStatus).toBe(200);
+    expect(upper.body).toMatchObject({ blocked: 1, unknown: 0, failed: 0, code: "WORKER_BATCH_BLOCKED", outcomes: { UNSUPPORTED_MESSAGE: 1 } });
+  });
+
+  it("classifies service_window_closed (both cases) as blocked rather than unknown", () => {
+    const lower = summarizeWorkerOutcomes([result("service_window_closed")], repair);
+    expect(lower.httpStatus).toBe(200);
+    expect(lower.body).toMatchObject({ blocked: 1, unknown: 0, failed: 0, code: "WORKER_BATCH_BLOCKED", outcomes: { SERVICE_WINDOW_CLOSED: 1 } });
+
+    const upper = summarizeWorkerOutcomes([result("SERVICE_WINDOW_CLOSED")], repair);
+    expect(upper.httpStatus).toBe(200);
+    expect(upper.body).toMatchObject({ blocked: 1, unknown: 0, failed: 0, code: "WORKER_BATCH_BLOCKED", outcomes: { SERVICE_WINDOW_CLOSED: 1 } });
+  });
+
+  it("distinguishes link_unavailable as verification unavailability (failed 503) rather than unknown", () => {
+    const lower = summarizeWorkerOutcomes([result("link_unavailable")], repair);
+    expect(lower.httpStatus).toBe(503);
+    expect(lower.body).toMatchObject({ failed: 1, unknown: 0, blocked: 0, code: "WORKER_BATCH_FAILED", outcomes: { LINK_UNAVAILABLE: 1 } });
+
+    const upper = summarizeWorkerOutcomes([result("LINK_UNAVAILABLE")], repair);
+    expect(upper.httpStatus).toBe(503);
+    expect(upper.body).toMatchObject({ failed: 1, unknown: 0, blocked: 0, code: "WORKER_BATCH_FAILED", outcomes: { LINK_UNAVAILABLE: 1 } });
+  });
+
+  it("distinguishes service_window_authorization_unavailable as verification unavailability (failed 503) rather than unknown", () => {
+    const lower = summarizeWorkerOutcomes([result("service_window_authorization_unavailable")], repair);
+    expect(lower.httpStatus).toBe(503);
+    expect(lower.body).toMatchObject({ failed: 1, unknown: 0, blocked: 0, code: "WORKER_BATCH_FAILED", outcomes: { SERVICE_WINDOW_AUTHORIZATION_UNAVAILABLE: 1 } });
+
+    const upper = summarizeWorkerOutcomes([result("SERVICE_WINDOW_AUTHORIZATION_UNAVAILABLE")], repair);
+    expect(upper.httpStatus).toBe(503);
+    expect(upper.body).toMatchObject({ failed: 1, unknown: 0, blocked: 0, code: "WORKER_BATCH_FAILED", outcomes: { SERVICE_WINDOW_AUTHORIZATION_UNAVAILABLE: 1 } });
+  });
 });

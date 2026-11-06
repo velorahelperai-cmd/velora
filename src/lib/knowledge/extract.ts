@@ -1,7 +1,7 @@
 import mammoth from "mammoth";
 import { extractText, getDocumentProxy, getResolvedPDFJS } from "unpdf";
 import { extractPdfWithGemini, isPdfGeminiExtractAuthorized } from "./pdf-gemini-extract";
-import { readScannedPdf, reportPdfPreparationFailure, type PdfDiagnosticContext } from "./pdf-ocr";
+import type { PdfDiagnosticContext } from "./pdf-ocr";
 
 export type PrepareFailureCode = "no_text" | "corrupt" | "unsupported" | "extract_failed";
 
@@ -58,11 +58,13 @@ async function pdfText(bytes: Uint8Array, context:PdfDiagnosticContext): Promise
       const gemini = await extractPdfWithGemini(bytes, pdf.numPages, context);
       if (gemini === null) throw new Error("pdf_ocr_unavailable");
       if (gemini.length > MAX_TEXT_CHARS) {
+        const { reportPdfPreparationFailure } = await import("./pdf-ocr");
         reportPdfPreparationFailure("bounds", "text_limit", context);
         throw new Error("pdf_ocr_unavailable");
       }
       return gemini;
     }
+    const { readScannedPdf, reportPdfPreparationFailure } = await import("./pdf-ocr");
     const ocr = await readScannedPdf(bytes, result.text, context);
     if (ocr === null) throw new Error("pdf_ocr_unavailable");
     if (ocr.length > MAX_TEXT_CHARS) {reportPdfPreparationFailure("bounds","text_limit",context);throw new Error("pdf_ocr_unavailable");}
@@ -98,7 +100,10 @@ export async function extractKnowledgeText(input: {
     if (text.length < MIN_TEXT_CHARS) return { ok: false, code: "no_text" };
     return { ok: true, text: text.slice(0, MAX_TEXT_CHARS) };
   } catch (error) {
-    if(kind==="pdf"&&!(error instanceof Error&&error.message==="pdf_ocr_unavailable"))reportPdfPreparationFailure("native_extraction","native_extraction_failed",{sourceId:input.sourceId});
+    if(kind==="pdf"&&!(error instanceof Error&&error.message==="pdf_ocr_unavailable")) {
+      const { reportPdfPreparationFailure } = await import("./pdf-ocr");
+      reportPdfPreparationFailure("native_extraction","native_extraction_failed",{sourceId:input.sourceId});
+    }
     return { ok: false, code: kind === "txt" || (error instanceof Error && error.message === "pdf_ocr_unavailable") ? "extract_failed" : "corrupt" };
   }
 }

@@ -3,6 +3,7 @@ vi.mock("server-only",()=>({}));
 vi.mock("@/lib/billing/entitlement",()=>({readCompanyEntitlement:()=>({paid:false}),entitlementAllowsAutomation:()=>false}));
 import {runInboundWorkerAnswer} from "./inbound-worker";
 import type {IntegrationFrame,IntegrationPorts} from "./integration-worker";
+import {WorkerInputError} from "./integration-worker";
 const input={jobId:"job",claimToken:"claim",companyId:"company",locale:"en" as const};
 afterEach(()=>{vi.restoreAllMocks();vi.unstubAllEnvs();});
 function setup(){
@@ -11,7 +12,7 @@ function setup(){
  ai_attempt_id:null, intent_id:null,staged_citations:null};
  const chunks=[{sourceId:"source",title:"Title",contentVersion:1,text:"Approved content"}];
  const intent={id:"intent",outcome:"attempting",company_id:"company",conversation_id:"conversation",phone_number_id:"phone",recipient_wa_id:"recipient",body:"Answer"};
- const ports={enabled:true,frame:vi.fn(async()=>frame),context:vi.fn(async()=>chunks),verify:vi.fn(async()=>true),secret:vi.fn(async()=>"synthetic-token"),
+ const ports={enabled:true,frame:vi.fn(async()=>frame),context:vi.fn(async()=>chunks),verify:vi.fn<IntegrationPorts["verify"]>(async()=>true),secret:vi.fn(async()=>"synthetic-token"),
  reserve:vi.fn(async()=>true),answer:vi.fn(async()=>({ok:true,complete:true,text:"Answer",attempts:[{id:"attempt"}]})),
  stage:vi.fn(async()=>"intent"),claimSend:vi.fn(async()=>({ok:true,claimed:true,attempt_token:"send-claim",intent})),
  send:vi.fn(async()=>({ok:true,waMessageId:"synthetic-wamid"})),finalize:vi.fn(async()=>true),finish:vi.fn(async()=>"accepted"),
@@ -156,5 +157,255 @@ describe("persisted WhatsApp integration worker",()=>{
   ports.claimSend.mockResolvedValue({ok:true,claimed:false,attempt_token:null,intent:{...intent,outcome:"attempting"}} as never);
   expect(await runInboundWorkerAnswer(input,ports)).toMatchObject({ok:false,code:"SEND_IN_PROGRESS_REQUIRES_REVIEW"});
   expect(ports.send).not.toHaveBeenCalled();expect(ports.finalize).not.toHaveBeenCalled();expect(ports.finish).not.toHaveBeenCalled();expect(ports.retry).not.toHaveBeenCalled();
+ });
+ it("keeps job pending without send or permanent rejection when verify is unavailable before external send", async () => {
+  const { ports, frame } = setup();
+  frame.ai_status = "success";
+  frame.reply_text = "Answer";
+  frame.ai_attempt_id = "attempt";
+  frame.intent_id = "intent";
+  ports.verify
+    .mockResolvedValueOnce({ ok: true })
+    .mockResolvedValueOnce({ ok: true })
+    .mockResolvedValueOnce({ ok: false, code: "WORKER_UNAVAILABLE" });
+  const result = await runInboundWorkerAnswer(input, ports);
+  expect(result).toMatchObject({ ok: false, code: "WORKER_UNAVAILABLE", jobCompleted: false, sendAccepted: false });
+  expect(ports.send).not.toHaveBeenCalled();
+  expect(ports.finalize).not.toHaveBeenCalled();
+  expect(ports.finish).not.toHaveBeenCalled();
+  expect(ports.retry).toHaveBeenCalledWith("WORKER_UNAVAILABLE", false, false);
+ });
+ it("finalizes as rejected but retains safe retry when verify is disabled before external send", async () => {
+  const { ports, frame } = setup();
+  frame.ai_status = "success";
+  frame.reply_text = "Answer";
+  frame.ai_attempt_id = "attempt";
+  frame.intent_id = "intent";
+  ports.finish.mockResolvedValue("released");
+  ports.verify
+    .mockResolvedValueOnce({ ok: true })
+    .mockResolvedValueOnce({ ok: true })
+    .mockResolvedValueOnce({ ok: false, code: "WORKER_DISABLED" });
+  const result = await runInboundWorkerAnswer(input, ports);
+  expect(result).toMatchObject({ ok: false, code: "WORKER_DISABLED", jobCompleted: false, sendAccepted: false });
+  expect(ports.send).not.toHaveBeenCalled();
+  expect(ports.finalize).toHaveBeenCalledWith("intent", "send-claim", "rejected", null);
+  expect(ports.finish).toHaveBeenCalledWith("intent");
+  expect(ports.retry).toHaveBeenCalledWith("WORKER_DISABLED", false, false);
+ });
+ it("suspends job safely with WORKER_UNAVAILABLE at initial gate without dead letter", async () => {
+  const { ports } = setup();
+  ports.verify.mockResolvedValue({ ok: false, code: "WORKER_UNAVAILABLE" });
+  const result = await runInboundWorkerAnswer(input, ports);
+  expect(result).toMatchObject({ ok: false, code: "WORKER_UNAVAILABLE" });
+  expect(ports.retry).toHaveBeenCalledWith("WORKER_UNAVAILABLE", false, false);
+  expect(ports.answer).not.toHaveBeenCalled();
+  expect(ports.send).not.toHaveBeenCalled();
+ });
+ it("suspends job safely with WORKER_DISABLED at initial gate without dead letter", async () => {
+  const { ports } = setup();
+  ports.verify.mockResolvedValue({ ok: false, code: "WORKER_DISABLED" });
+  const result = await runInboundWorkerAnswer(input, ports);
+  expect(result).toMatchObject({ ok: false, code: "WORKER_DISABLED" });
+  expect(ports.retry).toHaveBeenCalledWith("WORKER_DISABLED", false, false);
+  expect(ports.answer).not.toHaveBeenCalled();
+  expect(ports.send).not.toHaveBeenCalled();
+ });
+ it("proves resumption under actual DB SQL contracts: pre-send WORKER_UNAVAILABLE unclaims send intent, retries to retry_wait, and attempt 2 sends exactly once without duplicate AI generation or review_required escalation", async () => {
+  const db = {
+   job: { id: "job", status: "claimed", attempt_count: 1, send_intent_id: null as string | null },
+   aiLedger: null as { id: string; status: string; response_text: string } | null,
+   sendIntent: null as { id: string; outcome: "ready" | "attempting" | "accepted" | "rejected" | "unknown"; attempt_token: string | null } | null,
+  };
+
+  let killSwitchActive = false;
+  let totalAiGenerations = 0;
+  let totalExternalSends = 0;
+
+  const sqlClaimAssistantJobSend = () => {
+   if (!db.sendIntent || db.sendIntent.outcome !== "ready") {
+    return { ok: true, claimed: false, attempt_token: null, intent: db.sendIntent ? { ...db.sendIntent, company_id: "company", conversation_id: "conversation", phone_number_id: "phone", recipient_wa_id: "recipient", body: "Answer" } : undefined };
+   }
+   const token = "claim-token-" + Math.random().toString(36).slice(2);
+   db.sendIntent.outcome = "attempting";
+   db.sendIntent.attempt_token = token;
+   return {
+    ok: true,
+    claimed: true,
+    attempt_token: token,
+    intent: { ...db.sendIntent, company_id: "company", conversation_id: "conversation", phone_number_id: "phone", recipient_wa_id: "recipient", body: "Answer" },
+   };
+  };
+
+  const sqlRetryInboundJob = (_code: string, uncertainParam: boolean, terminalParam: boolean) => {
+   const uncertain = uncertainParam ||
+    (db.aiLedger !== null && ["reserved", "running", "uncertain"].includes(db.aiLedger.status)) ||
+    (db.sendIntent !== null && ["attempting", "unknown"].includes(db.sendIntent.outcome));
+   const terminal = terminalParam || uncertain || db.job.attempt_count >= 5;
+   const nextstatus = uncertain ? "review_required" : terminal ? "dead_letter" : "retry_wait";
+   db.job.status = nextstatus;
+   return { ok: true, status: nextstatus };
+  };
+
+  const createWorkerPorts = (): IntegrationPorts => ({
+   enabled: true,
+   frame: async (): Promise<IntegrationFrame> => ({
+    job_id: db.job.id,
+    company_id: "company",
+    message_id: "message",
+    conversation_id: "conversation",
+    phone_number_id: "phone",
+    recipient_wa_id: "recipient",
+    automation_generation: 0,
+    link_id: "link",
+    link_generation: 1,
+    question: "Question",
+    ai_status: db.aiLedger?.status ?? null,
+    reply_text: db.aiLedger?.response_text ?? null,
+    ai_attempt_id: db.aiLedger?.id ?? null,
+    intent_id: db.job.send_intent_id,
+    staged_citations: [{ sourceId: "source", title: "Title", contentVersion: 1 }],
+   }),
+   context: async () => [{ sourceId: "source", title: "Title", contentVersion: 1, text: "Content" }],
+   verify: async () => {
+    if (!killSwitchActive) return { ok: false as const, code: "WORKER_UNAVAILABLE" as const };
+    return { ok: true as const };
+   },
+   secret: async () => "synthetic-secret",
+   reserve: async () => true,
+   answer: async () => {
+    totalAiGenerations++;
+    db.aiLedger = { id: "ai-attempt-1", status: "success", response_text: "Answer" };
+    return { ok: true, complete: true, text: "Answer", attempts: [{ id: "ai-attempt-1" }] };
+   },
+   stage: async () => {
+    const intentId = "intent-1";
+    db.job.send_intent_id = intentId;
+    db.sendIntent = { id: intentId, outcome: "ready", attempt_token: null };
+    return intentId;
+   },
+   claimSend: async () => sqlClaimAssistantJobSend(),
+   abortSend: async (id, token) => {
+    if (db.sendIntent && db.sendIntent.id === id && db.sendIntent.attempt_token === token && db.sendIntent.outcome === "attempting") {
+     db.sendIntent.outcome = "ready";
+     db.sendIntent.attempt_token = null;
+     return true;
+    }
+    return false;
+   },
+   send: async () => {
+    totalExternalSends++;
+    return { ok: true, waMessageId: "wamid-test" };
+   },
+   finalize: async (id, token, result) => {
+    if (db.sendIntent && db.sendIntent.id === id && db.sendIntent.attempt_token === token) {
+     db.sendIntent.outcome = result;
+     return true;
+    }
+    return false;
+   },
+   finish: async () => {
+    db.job.status = "completed";
+    return "accepted";
+   },
+   repair: async () => true,
+   retry: async (code, uncertain, permanent) => {
+    sqlRetryInboundJob(code, uncertain, permanent ?? false);
+   },
+   heartbeat: async () => true,
+  });
+
+  let verifyCallCount = 0;
+  const ports1 = createWorkerPorts();
+  ports1.verify = vi.fn<IntegrationPorts["verify"]>(async () => {
+   verifyCallCount++;
+   if (verifyCallCount === 3) {
+    return { ok: false as const, code: "WORKER_UNAVAILABLE" as const };
+   }
+   return { ok: true as const };
+  });
+
+  const attempt1Result = await runInboundWorkerAnswer(input, ports1);
+
+  expect(attempt1Result).toMatchObject({ ok: false, code: "WORKER_UNAVAILABLE", jobCompleted: false, sendAccepted: false });
+  expect(totalAiGenerations).toBe(1);
+  expect(totalExternalSends).toBe(0);
+  expect(db.aiLedger).toMatchObject({ id: "ai-attempt-1", status: "success" });
+  expect(db.sendIntent?.outcome).toBe("ready");
+  expect(db.job.status).toBe("retry_wait");
+
+  killSwitchActive = true;
+  db.job.attempt_count = 2;
+  db.job.status = "claimed";
+  const ports2 = createWorkerPorts();
+
+  const attempt2Result = await runInboundWorkerAnswer(input, ports2);
+
+  expect(attempt2Result).toMatchObject({ ok: true, code: "ACCEPTED", jobCompleted: true, sendAccepted: true });
+  expect(totalAiGenerations).toBe(1);
+  expect(totalExternalSends).toBe(1);
+  expect(db.sendIntent?.outcome).toBe("accepted");
+  expect(db.job.status).toBe("completed");
+ });
+ it("enforces attempt limit: transitions to dead_letter when attempt_count >= 5 without getting stuck in review_required", async () => {
+  const db = {
+   job: { id: "job", status: "claimed", attempt_count: 5, send_intent_id: "intent-1" },
+   aiLedger: { id: "ai-1", status: "success", response_text: "Answer" },
+   sendIntent: { id: "intent-1", outcome: "ready" as const, attempt_token: null as string | null },
+  };
+
+  const sqlRetryInboundJob = (_code: string, uncertainParam: boolean, terminalParam: boolean) => {
+   const uncertain = uncertainParam ||
+    (db.aiLedger !== null && ["reserved", "running", "uncertain"].includes(db.aiLedger.status)) ||
+    (db.sendIntent !== null && ["attempting", "unknown"].includes(db.sendIntent.outcome));
+   const terminal = terminalParam || uncertain || db.job.attempt_count >= 5;
+   const nextstatus = uncertain ? "review_required" : terminal ? "dead_letter" : "retry_wait";
+   db.job.status = nextstatus;
+   return { ok: true, status: nextstatus };
+  };
+
+  const ports: IntegrationPorts = {
+   enabled: true,
+   frame: async () => ({
+    job_id: db.job.id, company_id: "company", message_id: "msg", conversation_id: "conv", phone_number_id: "phone",
+    recipient_wa_id: "recip", automation_generation: 0, link_id: "link", link_generation: 1, question: "Q",
+    ai_status: "success", reply_text: "Answer", ai_attempt_id: "ai-1", intent_id: "intent-1", staged_citations: [],
+   }),
+   context: async () => [{ sourceId: "source", title: "Title", contentVersion: 1, text: "Content" }],
+   verify: vi.fn(async () => ({ ok: false, code: "WORKER_UNAVAILABLE" as const })),
+   secret: async () => "token",
+   reserve: async () => true,
+   answer: vi.fn(),
+   stage: vi.fn(),
+   claimSend: vi.fn(),
+   abortSend: vi.fn(async () => true),
+   send: vi.fn(),
+   finalize: vi.fn(),
+   finish: vi.fn(async () => "accepted"),
+   repair: vi.fn(async () => true),
+   retry: vi.fn(async (code, uncertain, permanent) => {
+    sqlRetryInboundJob(code, uncertain, permanent ?? false);
+   }),
+   heartbeat: vi.fn(async () => true),
+  };
+
+  const result = await runInboundWorkerAnswer(input, ports);
+  expect(result).toMatchObject({ ok: false, code: "WORKER_UNAVAILABLE" });
+  expect(db.job.status).toBe("dead_letter");
+ });
+
+ it.each([
+  ["UNSUPPORTED_MESSAGE", true],
+  ["SERVICE_WINDOW_CLOSED", true],
+  ["LINK_UNAVAILABLE", false],
+  ["SERVICE_WINDOW_AUTHORIZATION_UNAVAILABLE", false],
+ ])("handles pre-send WorkerInputError(%s) distinguishing transient unavailability (permanent=%s)", async (code, expectedPermanent) => {
+  const { ports } = setup();
+  ports.frame.mockRejectedValue(new WorkerInputError(code));
+  const result = await runInboundWorkerAnswer(input, ports);
+  expect(result).toMatchObject({ ok: false, code, jobCompleted: false, sendAccepted: false });
+  expect(ports.retry).toHaveBeenCalledWith(code, false, expectedPermanent);
+  expect(ports.answer).not.toHaveBeenCalled();
+  expect(ports.send).not.toHaveBeenCalled();
  });
 });

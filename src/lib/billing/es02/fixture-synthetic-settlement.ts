@@ -13,12 +13,6 @@ import {
 } from "./synthetic-settlement";
 import { classifySettleWriteAck } from "./write-ack";
 
-type RpcClient = {
-  rpc(
-    name: string,
-    args: Record<string, unknown>,
-  ): PromiseLike<{ data: unknown; error: { code?: string; message?: string } | null }>;
-};
 
 /**
  * Settle an account order inside an owned local fixture only.
@@ -49,7 +43,7 @@ export async function settleAccountOrderSyntheticFixture(input: {
   if (!evidence.ok) return evidence;
 
   // Construct admin client only after transport+DB gate passed.
-  const admin = createAdminClient() as unknown as RpcClient | null;
+  const admin = createAdminClient();
   if (!admin) return { ok: false, code: "SYNTHETIC_DISABLED" };
 
   try {

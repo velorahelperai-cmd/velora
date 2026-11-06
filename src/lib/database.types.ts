@@ -1002,6 +1002,214 @@ export type Database = {
         };
         Returns: Json;
       };
+      billing_read_company_display_evidence: {
+        Args: {
+          p_company_id: string;
+        };
+        Returns: Json;
+      };
+      es02_read_owner_reply_balance: {
+        Args: {
+          p_company_id: string;
+        };
+        Returns: Json;
+      };
+      billing_admin_authorized_session: {
+        Args: Record<string, never>;
+        Returns: boolean;
+      };
+      billing_admin_read_order_page: {
+        Args: {
+          p_input: Json;
+        };
+        Returns: Json;
+      };
+      billing_admin_read_service_state: {
+        Args: {
+          p_company_id: string;
+        };
+        Returns: Json;
+      };
+      billing_admin_read_subscription_email: {
+        Args: {
+          p_company_id: string;
+          p_order_id: string;
+        };
+        Returns: Json;
+      };
+      master_read_checkout_terms: {
+        Args: {
+          p_company_id: string;
+          p_plan_version_id: string;
+          p_actor_id: string;
+          p_actor_session_id: string;
+        };
+        Returns: Json;
+      };
+      master_accept_checkout_consent: {
+        Args: {
+          p_company_id: string;
+          p_order_id: string;
+          p_actor_id: string;
+          p_actor_session_id: string;
+          p_terms_version: string;
+          p_accepted: boolean;
+        };
+        Returns: Json;
+      };
+      billing_read_service_access: {
+        Args: {
+          p_company_id: string;
+          p_capability: string;
+        };
+        Returns: Json;
+      };
+      company_capability_snapshot: {
+        Args: {
+          p_company_id: string;
+          p_capabilities: string[];
+        };
+        Returns: Json;
+      };
+      es02_create_account_order: {
+        Args: {
+          p_expected_account_id: string;
+          p_client_op_id: string;
+          p_term: string;
+          p_slots: Json;
+          p_consent_accepted: boolean;
+        };
+        Returns: Json;
+      };
+      es02_read_owned_purchase: {
+        Args: {
+          p_expected_account_id: string;
+        };
+        Returns: Json;
+      };
+      es02_provision_owned_purchase: {
+        Args: {
+          p_expected_account_id: string;
+          p_order_id: string;
+          p_idempotency_key: string;
+          p_business: Json;
+          p_branches: Json;
+        };
+        Returns: Json;
+      };
+      es02_read_activation_foundation: {
+        Args: {
+          p_expected_account_id: string;
+          p_company_id: string;
+        };
+        Returns: Json;
+      };
+      es02_reconcile_activation_readiness: {
+        Args: {
+          p_expected_account_id: string;
+          p_company_id: string;
+        };
+        Returns: Json;
+      };
+      es02_settle_account_order_synthetic: {
+        Args: {
+          p_evidence: Json;
+        };
+        Returns: Json;
+      };
+      billing_claim_subscription_email: {
+        Args: Record<string, never>;
+        Returns: Json;
+      };
+      billing_finish_subscription_email: {
+        Args: {
+          p_id: string;
+          p_claim_token: string;
+          p_status: string;
+          p_provider_id: string | null;
+          p_code: string | null;
+        };
+        Returns: Json;
+      };
+      billing_expiry_candidates: {
+        Args: {
+          p_limit?: number;
+        };
+        Returns: Json;
+      };
+      billing_run_expiry_company: {
+        Args: {
+          p_company_id: string;
+        };
+        Returns: Json;
+      };
+      billing_claim_expiry_email: {
+        Args: Record<string, never>;
+        Returns: Json;
+      };
+      billing_authorize_expiry_email: {
+        Args: {
+          p_id: string;
+          p_claim_token: string;
+        };
+        Returns: boolean;
+      };
+      billing_finish_expiry_email: {
+        Args: {
+          p_id: string;
+          p_claim_token: string;
+          p_state: string;
+          p_provider_id?: string | null;
+        };
+        Returns: boolean;
+      };
+      es02_begin_thawani_test_checkout: {
+        Args: {
+          p_expected_account_id: string;
+          p_client_op_id: string;
+          p_term: string;
+          p_slots: Json;
+          p_preparation: Json;
+          p_consent_accepted: boolean;
+        };
+        Returns: Json;
+      };
+      es02_claim_thawani_test_checkout: {
+        Args: {
+          p_account_id: string;
+          p_order_id: string;
+          p_auth_session_id: string;
+        };
+        Returns: Json;
+      };
+      es02_complete_thawani_test_checkout: {
+        Args: {
+          p_account_id: string;
+          p_order_id: string;
+          p_claim_token: string;
+          p_session_id: string;
+          p_invoice: string;
+        };
+        Returns: boolean;
+      };
+      es02_record_thawani_test_payment: {
+        Args: {
+          p_account_id: string;
+          p_order_id: string;
+          p_session_id: string;
+          p_claim_token: string;
+          p_invoice: string;
+          p_amount_baisa: number;
+        };
+        Returns: Json;
+      };
+      es02_read_thawani_test_payment: {
+        Args: {
+          p_expected_account_id: string;
+          p_order_id: string;
+        };
+        Returns: Json;
+      };
     };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;

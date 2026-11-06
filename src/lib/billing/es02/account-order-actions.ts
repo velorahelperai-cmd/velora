@@ -190,13 +190,13 @@ export async function createAccountBoundOrderAction(input: {
   try {
     const client = await createClient();
     const observation = asObservation(
-      await client.rpc("es02_create_account_order" as never, {
+      await client.rpc("es02_create_account_order", {
         p_expected_account_id: auth.accountId,
         p_client_op_id: sanitized.clientOpId,
         p_term: offer.term,
         p_slots: slotsPayload,
         p_consent_accepted: true,
-      } as never),
+      }),
     );
     if (observation.error) {
       const code = classifyEs02RpcFailure(observation, true);
@@ -275,9 +275,9 @@ export async function readOwnedPurchaseRecoveryAction(input: {
   try {
     const client = await createClient();
     const observation = asObservation(
-      await client.rpc("es02_read_owned_purchase" as never, {
+      await client.rpc("es02_read_owned_purchase", {
         p_expected_account_id: auth.accountId,
-      } as never),
+      }),
     );
     if (observation.error) {
       return { ok: false, code: classifyEs02RpcFailure(observation, false) };
@@ -338,13 +338,13 @@ export async function completeOwnedProvisioningAction(input: {
   try {
     const client = await createClient();
     const observation = asObservation(
-      await client.rpc("es02_provision_owned_purchase" as never, {
+      await client.rpc("es02_provision_owned_purchase", {
         p_expected_account_id: auth.accountId,
         p_order_id: input.orderId,
         p_idempotency_key: input.idempotencyKey,
         p_business: business,
         p_branches: branches,
-      } as never),
+      }),
     );
     if (observation.error) {
       const code = classifyEs02RpcFailure(observation, true);
@@ -407,10 +407,10 @@ export async function readEs02ActivationFoundationAction(input: {
   if (!es02Uuid(input.companyId)) return { ok: false, code: "INVALID_INPUT" };
   try {
     const client = await createClient();
-    const { data, error } = await client.rpc("es02_read_activation_foundation" as never, {
+    const { data, error } = await client.rpc("es02_read_activation_foundation", {
       p_expected_account_id: auth.accountId,
       p_company_id: input.companyId,
-    } as never);
+    });
     if (error) return { ok: false, code: "UNAVAILABLE" };
     const row = data as { ok?: boolean; code?: string; data?: Es02ActivationFoundation };
     if (row?.ok !== true || !row.data) {
@@ -435,10 +435,10 @@ export async function reconcileEs02ActivationReadinessAction(input: {
   if (!es02Uuid(input.companyId)) return { ok: false, code: "INVALID_INPUT" };
   try {
     const client = await createClient();
-    const { data, error } = await client.rpc("es02_reconcile_activation_readiness" as never, {
+    const { data, error } = await client.rpc("es02_reconcile_activation_readiness", {
       p_expected_account_id: auth.accountId,
       p_company_id: input.companyId,
-    } as never);
+    });
     if (error) return { ok: false, code: "UNAVAILABLE" };
     const row = data as { ok?: boolean; code?: string; data?: Es02ActivationFoundation };
     if (row?.ok !== true || !row.data) {

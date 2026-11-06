@@ -20,15 +20,49 @@ export async function adminGetFinancialAnalytics(): Promise<AnalyticsResult> {
     if (!client) throw Error("ANALYTICS_CLIENT_UNAVAILABLE");
     const db = financialDb(client);
     const readAll = async (table: string): Promise<FinancialRecord[]> => {
+      // Step 1: Capture the maximum ID boundary for this snapshot
+      const boundary = await db.from(table).select("id").order("id", { ascending: false }).range(0, 0);
+      if (boundary.error || !Array.isArray(boundary.data)) throw Error("ANALYTICS_READ_UNAVAILABLE");
+      if (boundary.data.length === 0) return [];
+      const firstRow = boundary.data[0];
+      if (!firstRow || typeof firstRow !== "object" || Array.isArray(firstRow)) throw Error("ANALYTICS_READ_UNAVAILABLE");
+      const capturedMaxId = String((firstRow as { id?: unknown }).id ?? "");
+      if (!capturedMaxId) throw Error("ANALYTICS_READ_UNAVAILABLE");
+
+      // Step 2: Keyset pagination bounded by capturedMaxId
       const rows: FinancialRecord[] = [];
-      for (let offset = 0; offset <= 10000; offset += 250) {
-        const { data, error } = await db.from(table).select("*").order("id", { ascending: true }).range(offset, offset + 249);
-        if (error || !Array.isArray(data) || data.some(row => !row || typeof row !== "object" || Array.isArray(row))) throw Error("ANALYTICS_READ_UNAVAILABLE");
-        rows.push(...data as FinancialRecord[]);
+      const seenIds = new Set<string>();
+      let cursor: string | null = null;
+      while (rows.length <= 10000) {
+        let query = db.from(table).select("*");
+        if (cursor !== null) {
+          query = query.gt("id", cursor);
+        }
+        query = query.lte("id", capturedMaxId).order("id", { ascending: true }).range(0, 249);
+        const { data, error } = await query;
+        if (error || !Array.isArray(data)) throw Error("ANALYTICS_READ_UNAVAILABLE");
+        if (data.length === 0) {
+          if (cursor !== capturedMaxId) throw Error("ANALYTICS_SNAPSHOT_INCOMPLETE");
+          break;
+        }
+        for (const row of data) {
+          if (!row || typeof row !== "object" || Array.isArray(row)) throw Error("ANALYTICS_READ_UNAVAILABLE");
+          const id = String((row as { id?: unknown }).id ?? "");
+          if (!id) throw Error("ANALYTICS_READ_UNAVAILABLE");
+          if (seenIds.has(id)) throw Error("ANALYTICS_DUPLICATE_ROW_DETECTED");
+          seenIds.add(id);
+          if (cursor !== null && id <= cursor) throw Error("ANALYTICS_KEYSET_REGRESSION");
+          if (id > capturedMaxId) throw Error("ANALYTICS_SNAPSHOT_BREACH");
+          cursor = id;
+          rows.push(row as FinancialRecord);
+        }
         if (rows.length > 10000) throw Error("ANALYTICS_READ_LIMIT");
-        if (data.length < 250) return rows;
+        if (cursor === capturedMaxId) break;
+        if (data.length < 250) {
+          throw Error("ANALYTICS_SNAPSHOT_INCOMPLETE");
+        }
       }
-      throw Error("ANALYTICS_READ_LIMIT");
+      return rows;
     };
     const [orders, subscriptions, plans, versions] = await Promise.all([
       readAll("billing_orders"), readAll("billing_subscriptions"), readAll("billing_plans"), readAll("billing_plan_versions"),
@@ -83,7 +117,7 @@ export async function adminGetFinancialAnalytics(): Promise<AnalyticsResult> {
     const successRate = liveOrders.length && !liveOrders.some(({ truth }) => truth.state === "unknown")
       ? Math.round(liveOrders.filter(({ truth }) => truth.collectionProven).length / liveOrders.length * 100) : null;
     const gross = (liveBaisa / 1000).toFixed(3) + " OMR";
-    if (!await recheckBillingOwner(gate.binding)) return { ok: false, code: "FORBIDDEN" };
+    const recheck = await recheckBillingOwner(gate.binding); if (!recheck.ok) return { ok: false, code: recheck.code === "unavailable" ? "UNAVAILABLE" : "FORBIDDEN" };
     return { ok: true, data: {
       kpis: { grossRealizedBaisa: liveBaisa, grossRealizedOmr: gross, testCollectedBaisa: testBaisa,
         activeSubscribedTenants: active.length, arpuOmr: active.length ? (liveBaisa / active.length / 1000).toFixed(3) + " OMR" : "—",

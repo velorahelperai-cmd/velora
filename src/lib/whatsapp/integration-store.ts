@@ -7,6 +7,7 @@ import {externalSendAllowed,whatsappRoutingMode} from "./config";
 import {sendWhatsappText} from "./send";
 import type {IntegrationFrame,IntegrationPorts,VerificationResult} from "./integration-worker";
 import {WorkerInputError} from "./integration-worker";
+import {canonicalizeRpcWorkerCode} from "./worker-codes";
 import {readServiceWindow} from "./service-window";
 import {bindOperationalRecipient} from "./operational-recipient";
 import {recordWorkerTiming} from "./worker-timing";
@@ -25,7 +26,7 @@ export function createIntegrationPorts(binding:{jobId:string;claimToken:string;c
  cachedFrame=null;
  await bindOperationalRecipient(rpc,binding);
  const r=object(await rpc("billing_load_worker_frame",args));const d=object(r?.data);
- if(r?.ok!==true){if(["unsupported_message","link_unavailable","service_window_closed","service_window_authorization_unavailable"].includes(String(r?.code)))throw new WorkerInputError(String(r?.code));return null;}if(!d)return null;
+ if(r?.ok!==true){const mapped=canonicalizeRpcWorkerCode(r?.code);if(mapped)throw new WorkerInputError(mapped);return null;}if(!d)return null;
  if(d.authority!==undefined&&d.authority!=="es02")return null;
  const ids=["job_id","company_id","message_id","conversation_id","phone_number_id","recipient_wa_id","link_id","question"];
  if(ids.some(k=>typeof d[k]!=="string"||!String(d[k]).trim())||d.job_id!==binding.jobId||d.company_id!==binding.companyId||
@@ -90,6 +91,17 @@ export function createIntegrationPorts(binding:{jobId:string;claimToken:string;c
  const sent=await sendWhatsappText({toWaId:i.recipient_wa_id,body:i.body,phoneNumberId:i.phone_number_id,accessToken:secret,serviceWindowExpiresAt:expires,onTransportStart:()=>recordWorkerTiming(binding.jobId,"send_started_at")});
  return sent;},
  finalize:async(id,token,result,wamid,errorCode)=>object(await rpc("finalize_whatsapp_send_attempt",{p_intent_id:id,p_attempt_token:token,p_result:result,p_wa_message_id:wamid,p_error_code:errorCode??(result==="unknown"?"worker_unknown":null),p_actor_user_id:null}))?.ok===true,
+  abortSend:async(id,token)=>{
+   if(!admin)return false;
+   try{
+    if("from" in admin&&typeof(admin as unknown as {from:(table:string)=>unknown}).from==="function"){
+     const query=admin as unknown as {from:(table:string)=>{update:(values:Record<string,unknown>)=>{eq:(col:string,val:unknown)=>{eq:(col2:string,val2:unknown)=>{eq:(col3:string,val3:unknown)=>PromiseLike<{error:unknown}>}}}}};
+     const {error}=await query.from("whatsapp_send_intents").update({outcome:"ready",attempt_token:null,attempt_started_at:null,attempt_expires_at:null}).eq("id",id).eq("attempt_token",token).eq("outcome","attempting");
+     return !error;
+    }
+    return true;
+   }catch{return false;}
+  },
  finish:async id=>{const r=object(await rpc("billing_finalize_automated_usage",{p_company_id:binding.companyId,p_intent_id:id}));if(r?.ok!==true)throw Error("USAGE_SETTLEMENT_PENDING");return String(r.status);},
  repair:async id=>object(await rpc("retry_whatsapp_send_persist",{p_intent_id:id,p_actor_user_id:null}))?.ok===true,
  retry:async(code,uncertain,permanent)=>{const result=object(await rpc("whatsapp_retry_inbound_job",{...args,p_code:code,p_uncertain:uncertain,p_terminal:permanent??false}));

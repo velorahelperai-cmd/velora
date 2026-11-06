@@ -34,7 +34,7 @@ function stripReviewStop(sql) {
   );
 }
 
-// Import worker core only (batch.ts pulls Next server-only admin client).
+// Import shared worker core and route handler implementation
 const { runKnowledgeFileAttempt } = await import(
   pathToFileURL(resolve("src/lib/knowledge/file-worker/run.ts")).href
 );
@@ -44,6 +44,12 @@ const { buildWorkerObservation } = await import(
 const { classifyStuckAttempt, PROVIDER_OUTCOME_UNKNOWN_CODE } = await import(
   pathToFileURL(resolve("src/lib/knowledge/file-worker/recovery.ts")).href
 );
+const { processKnowledgeFileWorkerBatch } = await import(
+  pathToFileURL(resolve("src/lib/knowledge/file-worker/batch-core.ts")).href
+);
+const { handleKnowledgeFileWorkerRequest } = await import(
+  pathToFileURL(resolve("src/lib/knowledge/file-worker/route-handler.ts")).href
+);
 function extractLocalPlainText(fileBytes) {
   const text = new TextDecoder("utf-8", { fatal: false })
     .decode(fileBytes)
@@ -52,96 +58,6 @@ function extractLocalPlainText(fileBytes) {
     .trim();
   if (text.length < 8) return { ok: false, code: "no_text" };
   return { ok: true, text: text.slice(0, 200_000) };
-}
-
-async function processKnowledgeFileWorkerBatch(ports, limit = 10) {
-  const nowMs = ports.nowMs();
-  let due = [];
-  try {
-    due = await ports.listDue(limit);
-  } catch {
-    return buildWorkerObservation({
-      nowMs,
-      ok: false,
-      code: "LIST_UNAVAILABLE",
-      backlog: 0,
-      processed: 0,
-      extracted: 0,
-      unknown: 0,
-      failed: 0,
-      reviewRequired: 0,
-      oldestDueExpiresAtMs: null,
-    });
-  }
-  let processed = 0;
-  let extracted = 0;
-  let unknown = 0;
-  let failed = 0;
-  let reviewRequired = 0;
-  let oldestDueExpiresAtMs = null;
-  for (const row of due) {
-    const exp = Date.parse(row.expiresAt);
-    if (Number.isFinite(exp)) {
-      oldestDueExpiresAtMs =
-        oldestDueExpiresAtMs == null ? exp : Math.min(oldestDueExpiresAtMs, exp);
-    }
-    const decision = classifyStuckAttempt(
-      {
-        attemptId: row.attemptId,
-        state: "running",
-        expiresAt: row.expiresAt,
-        providerDispatch: row.providerDispatch,
-        sourceStatus: "processing",
-        failureCode: null,
-      },
-      nowMs,
-    );
-    if (decision.action === "review_required") {
-      processed += 1;
-      unknown += 1;
-      reviewRequired += 1;
-      await ports.forAttempt(row).failAttempt({
-        sourceId: row.sourceId,
-        attemptId: row.attemptId,
-        code: PROVIDER_OUTCOME_UNKNOWN_CODE,
-      });
-      continue;
-    }
-    if (decision.action === "recover_expired") {
-      processed += 1;
-      failed += 1;
-      continue;
-    }
-    const result = await runKnowledgeFileAttempt(
-      { sourceId: row.sourceId, attemptId: row.attemptId },
-      ports.forAttempt(row),
-    );
-    processed += 1;
-    if (result.extracted) extracted += 1;
-    if (result.code === "PROVIDER_OUTCOME_UNKNOWN") {
-      unknown += 1;
-      reviewRequired += 1;
-      await ports.forAttempt(row).failAttempt({
-        sourceId: row.sourceId,
-        attemptId: row.attemptId,
-        code: PROVIDER_OUTCOME_UNKNOWN_CODE,
-      });
-    } else if (!result.ok) {
-      failed += 1;
-    }
-  }
-  return buildWorkerObservation({
-    nowMs,
-    ok: true,
-    code: due.length === 0 ? "IDLE" : reviewRequired > 0 ? "RECONCILIATION_REQUIRED" : "COMPLETE",
-    backlog: due.length,
-    processed,
-    extracted,
-    unknown,
-    failed,
-    reviewRequired,
-    oldestDueExpiresAtMs,
-  });
 }
 
 const evidence = {
@@ -408,26 +324,14 @@ try {
         res.end();
         return;
       }
-      const auth = req.headers.authorization?.replace(/^Bearer /, "") ?? "";
-      if (auth !== secret) {
-        res.writeHead(401, { "content-type": "application/json" });
-        res.end(JSON.stringify({ code: "UNAUTHORIZED" }));
-        return;
-      }
-      if (process.env.VELORA_KNOWLEDGE_FILE_WORKER_ENABLED !== "true") {
-        res.writeHead(503, { "content-type": "application/json" });
-        res.end(JSON.stringify({ code: "WORKER_DISABLED" }));
-        return;
-      }
-      const observation = await processKnowledgeFileWorkerBatch(ports, 10);
-      const status =
-        observation.code === "LIST_UNAVAILABLE" || observation.code === "ADMIN_UNAVAILABLE"
-          ? 503
-          : observation.reviewRequired > 0 || observation.stalledDueWork
-            ? 202
-            : 200;
-      res.writeHead(status, { "content-type": "application/json" });
-      res.end(JSON.stringify(observation));
+      const url = `http://${req.headers.host || "127.0.0.1"}${req.url}`;
+      const request = new Request(url, {
+        method: req.method,
+        headers: req.headers,
+      });
+      const response = await handleKnowledgeFileWorkerRequest(request, ports);
+      res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
+      res.end(await response.text());
     } catch (error) {
       res.writeHead(500, { "content-type": "application/json" });
       res.end(JSON.stringify({ code: "TICK_ERROR", message: String(error?.message ?? error).slice(0, 200) }));

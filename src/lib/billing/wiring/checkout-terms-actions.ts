@@ -6,7 +6,6 @@ import {billingUuid} from "./public-offer-policy";
 import {masterJourneyEnabled} from "@/lib/master-journey/rollout";
 type Charge={label:string;amountBaisa:number;currency:"OMR"};
 type TermsResult={ok:true;termsVersion:string;termsText:string;featuresVersion:string;features:string[];disclosedCharges:Charge[]}|{ok:false;code:string};
-type Rpc={rpc(name:string,args:Record<string,unknown>):PromiseLike<{data:unknown;error:unknown}>};
 export async function readCheckoutTermsAction(input:{planVersionId:string;expectedCompanyId:string}):Promise<TermsResult>{
  if(!masterJourneyEnabled())return {ok:false,code:"CHECKOUT_TERMS_UNCONFIGURED"};
  if(!input||Object.keys(input).some(k=>!["planVersionId","expectedCompanyId"].includes(k))||!billingUuid(input.planVersionId)||!billingUuid(input.expectedCompanyId))return {ok:false,code:"INVALID_INPUT"};
@@ -15,7 +14,7 @@ export async function readCheckoutTermsAction(input:{planVersionId:string;expect
  const session=await readBillingActorSession(access.context.userId);const admin=createAdminClient();
  if(!session)return {ok:false,code:"FORBIDDEN"};if(!admin)return {ok:false,code:"CHECKOUT_TERMS_UNAVAILABLE"};
  try{
-  const {data,error}=await (admin as unknown as Rpc).rpc("master_read_checkout_terms",{p_company_id:input.expectedCompanyId,p_plan_version_id:input.planVersionId,p_actor_id:access.context.userId,p_actor_session_id:session});
+  const {data,error}=await admin.rpc("master_read_checkout_terms",{p_company_id:input.expectedCompanyId,p_plan_version_id:input.planVersionId,p_actor_id:access.context.userId,p_actor_session_id:session});
   const r=data as Partial<TermsResult>|null;
   if(error||!r||typeof r!=="object")return {ok:false,code:"CHECKOUT_TERMS_UNAVAILABLE"};
   if(r.ok!==true)return {ok:false,code:"code" in r&&typeof r.code==="string"?r.code:"CHECKOUT_TERMS_UNAVAILABLE"};

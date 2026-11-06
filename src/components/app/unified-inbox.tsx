@@ -18,7 +18,8 @@ import {InstagramInbox} from './instagram-inbox';
 import {Button,EmptyState,Notice,useAppCopy} from './ui';
 import {ChannelBadge} from './channel-badge';
 import {CompanyInboxRealtime,type InboxRealtimeEvent} from './branch-inbox-realtime';
-import {inboxHref,inboxRows,matchesInboxAssignment,type InboxAssignmentFilter,type InboxChannel} from './inbox-presentation';
+import {inboxHref,inboxRows,matchesInboxAssignment,type InboxAssignmentFilter,type InboxChannel,type InboxRow} from './inbox-presentation';
+import type {WhatsappInboxItem} from '@/lib/whatsapp/inbox-contracts';
 import styles from './unified-inbox.module.css';
 import {InboxDesktop,Icon,type InboxDesktopView} from './inbox-desktop';
 import {desktopRows,desktopWorklistMatches} from './inbox-desktop-adapter';
@@ -37,6 +38,40 @@ export function UnifiedInbox(props:{initial:Snapshot;waReview?:boolean;igReview?
  const key=admitted.ok?`${admitted.companyId}:${admitted.actorId}:${account?.boundaryFingerprint??''}:${admitted.waAllowed}:${admitted.igAllowed}:${admitted.wa.ok?admitted.wa.page.membershipFingerprint:''}:${admitted.ig.ok?admitted.ig.data.conversationScope:''}`:admitted.code;
  return <ScopedUnifiedInbox key={key} {...props} initial={admitted}/>;
 }
+function computeCounts(
+ activeRows: readonly InboxRow[],
+ anyActiveChannelFailed: boolean,
+ actorId: string | undefined,
+ tz: string | null,
+ desktop: boolean,
+ filter: string,
+ nowMs: number,
+ pinnedSet: ReadonlySet<string>,
+ waConversationsById: Map<string, WhatsappInboxItem>
+) {
+ if (anyActiveChannelFailed) {
+  return {tabs: {all: activeRows.length, unassigned: 0, mine: 0}, loaded: {all: activeRows.length, unread: 0, staff: 0}, starred: 0, worklists: {} as Record<string, number>};
+ }
+ let unassigned = 0, mine = 0, unread = 0, staff = 0, starred = 0;
+ const wl: Record<string, number> = {all: activeRows.length, unread: 0, awaiting_staff: 0, follow_up_today: 0, overdue: 0, trial_or_quote: 0, noura: 0, resolved: 0, staff: 0};
+ for (const r of activeRows) {
+  if (r.assignedTo === null) unassigned++;
+  if (actorId && r.assignedTo === actorId) mine++;
+  if (r.unread > 0) { unread++; wl.unread++; }
+  if (desktop && pinnedSet.has(r.key)) starred++;
+  if (r.channel === 'whatsapp') {
+   const item = waConversationsById.get(r.id);
+   if (item && (item.intervention?.reasons.length ?? 0) > 0) staff++;
+   if (desktop && filter !== 'instagram') {
+    for (const id of ['awaiting_staff', 'follow_up_today', 'overdue', 'trial_or_quote', 'noura', 'resolved', 'staff'] as const) {
+     if (desktopWorklistMatches(r, item, id, nowMs, tz)) wl[id]++;
+    }
+   }
+  }
+ }
+ return {tabs: {all: activeRows.length, unassigned, mine}, loaded: {all: activeRows.length, unread, staff}, starred, worklists: wl};
+}
+
 function ScopedUnifiedInbox({initial,waReview=false,igReview=false}:{initial:Snapshot;waReview?:boolean;igReview?:boolean}) {
  const {locale}=useDemo(),ar=locale==='ar',router=useRouter(),copy=useAppCopy();
  // Next's route state can wait behind a pending Server Action. Selection is
@@ -134,6 +169,9 @@ function ScopedUnifiedInbox({initial,waReview=false,igReview=false}:{initial:Sna
   return()=>{viewport.removeEventListener('resize',update);viewport.removeEventListener('scroll',update);element.style.removeProperty('--inbox-viewport-height');element.style.removeProperty('--inbox-viewport-top');};
  },[selectionValid]);
  const rows=useMemo(()=>activeSource&&retained?inboxRows(activeSource.waAllowed===true&&activeSource.wa.ok&&retained.wa.ok?retained.wa.page.conversations:[],activeSource.igAllowed===true&&activeSource.ig.ok&&retained.ig.ok?retained.ig.data.conversations:[],ar):[],[activeSource,retained,ar]);
+ const rowsByKey=useMemo(()=>{const map=new Map<string,typeof rows[number]>();for(const r of rows)map.set(r.key,r);return map;},[rows]);
+ const waConversationsById=useMemo(()=>{const map=new Map<string,WhatsappInboxItem>();if(retained?.wa.ok){for(const c of retained.wa.page.conversations)map.set(c.id,c);}return map;},[retained]);
+ const pinnedSet=useMemo(()=>new Set(pinned),[pinned]);
  const starsQuery=JSON.stringify(rows.map(row=>[row.channel,row.id]));
  const starsKey=`${starsQuery}:${starRevision}:${refreshVersion}`;
  const starsReady=desktop&&!connectionPaused&&snapshot.ok&&verifiedStarsKey===starsKey;
@@ -161,7 +199,7 @@ function ScopedUnifiedInbox({initial,waReview=false,igReview=false}:{initial:Sna
  async function togglePinned(row:typeof rows[number]){
   if(!starsReady||pinBusy||!expected||accessRevoked.current)return;
   const current=epoch.current,companyId=expected.split(':')[0]!;setPinBusy(row.key);setVerifiedStarsKey('');
-  try{const result=await runInboxExtension({companyId,conversationId:row.id,channel:row.channel,action:pinned.includes(row.key)?'unstar':'star'});
+  try{const result=await runInboxExtension({companyId,conversationId:row.id,channel:row.channel,action:pinnedSet.has(row.key)?'unstar':'star'});
    if(!mounted.current||accessRevoked.current)return;
    if(current!==epoch.current){refreshStars();return;}
    if(result.ok)refreshStars();else{setPinned([]);setPinnedOnly(false);setVerifiedStarsKey('');setStarError(true);}
@@ -169,31 +207,34 @@ function ScopedUnifiedInbox({initial,waReview=false,igReview=false}:{initial:Sna
   finally{if(mounted.current)setPinBusy(null);}
  }
  const activeChannels=filter==='all'?channels:[filter];
- const activeRows=rows.filter(r=>filter==='all'||r.channel===filter);
+ const activeRows=filter==='all'?rows:rows.filter(r=>r.channel===filter);
+ const anyActiveChannelFailed=activeChannels.some(channel=>{const result=channel==='whatsapp'?(snapshot.ok?snapshot.wa:retained?.wa):(snapshot.ok?snapshot.ig:retained?.ig);return !result||!result.ok;});
  const requestedWorklist=params.get('filter');
  const worklist=filter==='instagram'&&requestedWorklist!=='unread'?'all':requestedWorklist==='staff'||requestedWorklist==='noura'||requestedWorklist==='unread'||requestedWorklist==='resolved'?requestedWorklist:'all';
- const shown=activeRows.filter(r=>{
-  if(!matchesInboxAssignment(r,assignmentFilter,activeSource?.actorId))return false;
-  if(desktop&&starsReady&&pinnedOnly&&!pinned.includes(r.key))return false;
-  const item=r.channel==='whatsapp'&&retained?.wa.ok?retained.wa.page.conversations.find(c=>c.id===r.id):undefined;
-  if(desktop&&filter!=='instagram'&&leadStageFilter!=='all'&&(!item||item.leadStage!==leadStageFilter))return false;
-  if(filter!=='instagram'&&leadWorklist!=='all'&&(!item||!matchesLeadWorklist(item,leadWorklist,nowMs,retained?.wa.ok?retained.wa.meta.timezone:null)))return false;
-  if(worklist!=='all'){
-   if(r.channel==='whatsapp'){
-    if(!item||!matchesUnifiedInboxFilter(item,worklist))return false;
-   }else if(worklist!=='unread'||r.unread===0)return false;
-  }
-  return !query.trim()||`${r.name} ${item?.phone??''} ${item?.topic??''} ${item?.summary??''} ${item?.messages.map(message=>message.text).join(' ')??r.preview}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase());
- }).sort((a,b)=>desktop&&starsReady?Number(pinned.includes(b.key))-Number(pinned.includes(a.key)):0);
- const anyActiveChannelFailed=activeChannels.some(channel=>{const result=channel==='whatsapp'?(snapshot.ok?snapshot.wa:retained?.wa):(snapshot.ok?snapshot.ig:retained?.ig);return !result||!result.ok;});
- const loadedCounts={all:activeRows.length,unread:activeRows.filter(row=>row.unread>0).length,staff:activeRows.filter(row=>row.channel==='whatsapp'&&retained?.wa.ok&&retained.wa.page.conversations.some(item=>item.id===row.id&&item.intervention?.reasons.length>0)).length};
+ const counts = computeCounts(activeRows, anyActiveChannelFailed, activeSource?.actorId, retained?.wa.ok ? retained.wa.meta.timezone : null, desktop, filter, nowMs, pinnedSet, waConversationsById);
+ const shown = (() => {
+  const q=query.trim().toLocaleLowerCase();
+  const tz=retained?.wa.ok?retained.wa.meta.timezone:null;
+  const actorId=activeSource?.actorId;
+  return activeRows.filter(r=>{
+   if(!matchesInboxAssignment(r,assignmentFilter,actorId))return false;
+   if(desktop&&starsReady&&pinnedOnly&&!pinnedSet.has(r.key))return false;
+   const item=r.channel==='whatsapp'?waConversationsById.get(r.id):undefined;
+   if(desktop&&filter!=='instagram'&&leadStageFilter!=='all'&&(!item||item.leadStage!==leadStageFilter))return false;
+   if(filter!=='instagram'&&leadWorklist!=='all'&&(!item||!matchesLeadWorklist(item,leadWorklist,nowMs,tz)))return false;
+   if(worklist!=='all'){
+    if(r.channel==='whatsapp'){
+     if(!item||!matchesUnifiedInboxFilter(item,worklist))return false;
+    }else if(worklist!=='unread'||r.unread===0)return false;
+   }
+   return !q||`${r.name} ${item?.phone??''} ${item?.topic??''} ${item?.summary??''} ${item?.messages.map(message=>message.text).join(' ')??r.preview}`.toLocaleLowerCase().includes(q);
+  }).sort((a,b)=>desktop&&starsReady?Number(pinnedSet.has(b.key))-Number(pinnedSet.has(a.key)):0);
+ })();
+ const loadedCounts=counts.loaded;
  const showEmpty=!shown.length&&(Boolean(query)||(desktop&&pinnedOnly)||assignmentFilter!=='all'||worklist!=='all'||(filter!=='instagram'&&leadWorklist!=='all')?(activeRows.length>0||!anyActiveChannelFailed):(!anyActiveChannelFailed&&activeRows.length===0));
  const filteredHref=(channel:InboxChannel|null,id:string|null,channelFilter:InboxChannel|'all'=filter)=>{const href=inboxHref(channel,id,channelFilter);return worklist==='all'?href:href+(href.includes('?')?'&':'?')+'filter='+worklist;};
- // Selection and filters consume the existing scoped snapshot. Native history
- // updates useSearchParams without rerunning the whole server inbox projection.
- // The selected pane still authorizes its thread read; explicit refresh stays live.
  const select=(channel:InboxChannel|null,id:string|null,intentId?:string)=>{const href=filteredHref(channel,id);navigateLocally(intentId?href+(href.includes("?")?"&":"?")+"intent="+encodeURIComponent(intentId):href);};
- const activeRow=rows.find(r=>r.channel===source&&r.id===selected);
+ const activeRow=selected?rowsByKey.get(`${source}:${selected}`):undefined;
  const canStartWhatsapp=Boolean(snapshot.ok&&snapshot.waAllowed===true&&snapshot.wa.ok&&snapshot.wa.page.conversationScope==='all_company'&&channels.includes('whatsapp')&&!connectionPaused&&!waReview&&!revoked);
  async function more(channel:InboxChannel){
   if(connectionPaused||accessRevoked.current||moreLoading!==null||busy.current||!snapshot.ok||!retained)return;
@@ -220,21 +261,28 @@ function ScopedUnifiedInbox({initial,waReview=false,igReview=false}:{initial:Sna
   if(isLead||value==='all')next.delete('filter');else next.set('filter',value);
   if(next.toString()!==params.toString())navigateLocally('/app/conversations'+(next.size?'?'+next.toString():''));
  };
- const desktopWorklists=['all','unread','awaiting_staff','follow_up_today','overdue','trial_or_quote','noura','resolved','staff'].filter(id=>filter!=='instagram'||id==='all'||id==='unread').map(id=>({id,
-  label:id==='all'?(ar?'كل الحالات':'All states'):id==='unread'?(ar?'غير مقروءة':'Unread'):id==='noura'?(ar?'المساعد الآلي':'Automation'):id==='resolved'?(ar?'محلولة':'Resolved'):id==='staff'?(ar?'تحتاج مراجعة بشرية':'Needs human review'):copy.app.worklists[id as Exclude<LeadWorklist,'all'>],
-  count:anyActiveChannelFailed?undefined:activeRows.filter(row=>desktopWorklistMatches(row,row.channel==='whatsapp'&&retained?.wa.ok?retained.wa.page.conversations.find(item=>item.id===row.id):undefined,id,nowMs,retained?.wa.ok?retained.wa.meta.timezone:null)).length,
- }));
+ const desktopWorklists = (() => {
+  if(!desktop)return[];
+  return(['all','unread','awaiting_staff','follow_up_today','overdue','trial_or_quote','noura','resolved','staff'] as const)
+   .filter(id=>filter!=='instagram'||id==='all'||id==='unread').map(id=>({id,
+    label:id==='all'?(ar?'كل الحالات':'All states'):id==='unread'?(ar?'غير مقروءة':'Unread'):id==='noura'?(ar?'المساعد الآلي':'Automation'):id==='resolved'?(ar?'محلولة':'Resolved'):id==='staff'?(ar?'تحتاج مراجعة بشرية':'Needs human review'):copy.app.worklists[id as Exclude<LeadWorklist,'all'>],
+    count:anyActiveChannelFailed?undefined:counts.worklists[id],
+   }));
+ })();
  const desktopView:InboxDesktopView={
   state:'ready',scopeKey:expected??'',messages:[],query,onQueryChange:setQuery,
   workspace:{label:workspace?.workspace.choices.find(choice=>choice.companyId===activeSource?.companyId)?.displayName??(ar?'المحادثات':'Conversations'),liveState:connectionPaused?'offline':liveState,updatedAt:lastVerifiedReadAt?new Date(lastVerifiedReadAt).toLocaleTimeString(ar?'ar-OM':'en-GB',{hour:'2-digit',minute:'2-digit'}):undefined,busy:refreshing,refresh:{id:'refresh',label:ar?'تحديث':'Refresh',icon:'refresh',disabled:moreLoading!==null,onClick:()=>void refresh()}},
   notice:connectionPaused?(ar?'الاتصال متوقف مؤقتًا. الرسائل المعروضة من آخر تحميل؛ الإرسال متوقف حتى التحقق مجددًا.':'Connection interrupted. Showing the last loaded messages; sending is paused until access is verified again.'):undefined,
   newConversation:{id:'new-conversation',label:ar?'إنشاء محادثة جديدة':'New conversation',icon:'edit',disabled:!canStartWhatsapp,reason:canStartWhatsapp?undefined:(ar?'يلزم اتصال واتساب وصلاحية محادثات النشاط.':'A WhatsApp connection and company-wide conversation access are required.'),onClick:()=>setStartingConversation(true)},
-  selectedId:activeRow?.key,conversations:desktopRows(shown,ar),
-  onSelect:key=>{const row=rows.find(item=>item.key===key);if(row)select(row.channel,row.id);},
-  tabs:(['all','unassigned','mine'] as const).map(id=>({id,label:id==='all'?(ar?'الكل':'All'):id==='unassigned'?(ar?'غير مسند':'Unassigned'):(ar?'مسند لي':'Assigned to me'),count:anyActiveChannelFailed?undefined:activeRows.filter(row=>matchesInboxAssignment(row,id,activeSource?.actorId)).length})),
+  selectedId:activeRow?.key,conversations:desktopRows(shown,ar,starsReady?pinnedSet:undefined),
+  starredFilter:{active:pinnedOnly,ready:starsReady,count:starsReady?counts.starred:undefined,onToggle:()=>setPinnedOnly(value=>!value)},
+  onToggleStar:key=>{const row=rowsByKey.get(key);if(row)void togglePinned(row);},
+  starsReady,starBusyKey:pinBusy,
+  onSelect:key=>{const row=rowsByKey.get(key);if(row)select(row.channel,row.id);},
+  tabs:(['all','unassigned','mine'] as const).map(id=>({id,label:id==='all'?(ar?'الكل':'All'):id==='unassigned'?(ar?'غير مسند':'Unassigned'):(ar?'مسند لي':'Assigned to me'),count:anyActiveChannelFailed?undefined:counts.tabs[id]})),
   activeTab:assignmentFilter,onTabChange:id=>setAssignmentFilter(id as InboxAssignmentFilter),
   filters:{channel:filter,channels:[{id:'all',label:ar?'كل القنوات':'All channels'},...channels.map(id=>({id,label:id==='whatsapp'?'WhatsApp':'Instagram'}))],onChannelChange:id=>{if(id==='instagram'){setLeadWorklist('all');setLeadStageFilter('all');navigateLocally(worklist==='all'||worklist==='unread'?filteredHref(null,null,'instagram'):inboxHref(null,null,'instagram'));}else navigateLocally(filteredHref(null,null,id as InboxChannel|'all'));},
-   worklist:selectedDesktopWorklist,worklists:desktopWorklists,onWorklistChange:setDesktopWorklist,stages:filter!=='instagram'&&channels.includes('whatsapp')?[{id:'all',label:ar?'كل المراحل':'All stages'},...MANUAL_LEAD_STAGES.map(id=>({id,label:copy.app.leadStages[id]}))]:undefined,stage:leadStageFilter,onStageChange:id=>setLeadStageFilter(id as ManualLeadStage|'all')},
+   worklist:selectedDesktopWorklist,worklists:desktopWorklists,onWorklistChange:setDesktopWorklist,stages:filter!=='instagram'&&channels.includes('whatsapp')?[{id:'all',label:ar?'كل المراحل':'All stages'},...MANUAL_LEAD_STAGES.map(id=>({id,label:copy.app.leadStages[id]}))]:undefined,stage:leadStageFilter,onStageChange:id=>setLeadStageFilter(id as ManualLeadStage|'all'),starred:{active:pinnedOnly,ready:starsReady,count:starsReady?counts.starred:undefined,onToggle:()=>setPinnedOnly(value=>!value)}},
   onStarChanged:refreshStars,
   listFooter:<>{channels.map(channel=>{const result=channel==='whatsapp'?snapshot.ok?snapshot.wa:retained?.wa:snapshot.ok?snapshot.ig:retained?.ig;return result&&!result.ok?<Notice key={channel} tone="error"><ChannelBadge channel={channel} ar={ar}/>{result.code}</Notice>:null;})}<Link href={filter==='instagram'?'/app/instagram':'/app/settings?tab=whatsapp'}>{ar?'إعدادات الربط':'Connection settings'}</Link>{retained?.wa.ok&&retained.wa.page.hasMore&&channels.includes('whatsapp')&&<button type="button" className="vdi-small-button" aria-busy={moreLoading==='whatsapp'} disabled={refreshing||moreLoading!==null} onClick={()=>void more('whatsapp')}><Icon name="down"/>{ar?'مزيد من واتساب':'More WhatsApp'}</button>}{retained?.ig.ok&&retained.ig.data.hasMore&&channels.includes('instagram')&&<button type="button" className="vdi-small-button" aria-busy={moreLoading==='instagram'} disabled={refreshing||moreLoading!==null} onClick={()=>void more('instagram')}><Icon name="down"/>{ar?'مزيد من إنستجرام':'More Instagram'}</button>}</>,
  };
@@ -242,7 +290,7 @@ function ScopedUnifiedInbox({initial,waReview=false,igReview=false}:{initial:Sna
   {initial.ok&&<div className={styles.realtime} data-inbox-realtime-status><CompanyInboxRealtime separateTransport key={`${initial.companyId}:${initial.actorId}`} companyId={initial.companyId} actorId={initial.actorId} ar={ar} onInboxEvent={onInboxEvent}/></div>}
   {error&&snapshot.ok&&<Notice tone="error">{ar?'تعذّر التحقق من آخر تحديث. حدّث الصفحة قبل متابعة العمل.':'The latest update could not be verified. Refresh before continuing.'}</Notice>}
   {desktop&&starError&&snapshot.ok&&!connectionPaused&&<Notice tone="error">{ar?'تعذّر تحميل المحادثات المميزة.':'Starred conversations could not be loaded.'} <button type="button" onClick={refreshStars}>{ar?'إعادة المحاولة':'Retry'}</button></Notice>}
-  {!snapshot.ok&&snapshot.code==='UNAVAILABLE'?<div data-inbox-offline="true" data-pixel-port={desktop}><InboxDesktop locale={locale} view={{state:'ready',scopeKey:expected??'unavailable',conversations:[],messages:[],tabs:[],activeTab:'all',onTabChange:id=>setAssignmentFilter(id as InboxAssignmentFilter),query,onQueryChange:setQuery,onSelect:key=>{const row=rows.find(item=>item.key===key);if(row)select(row.channel,row.id);},emptyListLabel:ar?'ستظهر المحادثات عند استعادة الاتصال.':'Conversations will appear when the connection returns.',notice:ar?'تعذّر تحديث الاتصال حاليًا. ستبقى مساحة المحادثات مفتوحة.':'Connection cannot be refreshed right now. The inbox remains open.',workspace:{label:ar?'المحادثات':'Conversations',liveState:'offline',busy:refreshing||isNavigating,refresh:{id:'retry',label:ar?'إعادة المحاولة':'Retry',icon:'refresh',disabled:refreshing||isNavigating,onClick:()=>{if(!initial.ok)startTransition(()=>router.refresh());else void refresh();}}},listFooter:undefined}}/><section className={styles.offlineMobile}><h2>{ar?'صندوق الوارد':'Inbox'}</h2><p role="status">{ar?'الاتصال غير متاح حاليًا.':'Connection is currently unavailable.'}</p><Button disabled={refreshing||isNavigating} onClick={()=>{if(!initial.ok)startTransition(()=>router.refresh());else void refresh();}}>{ar?'إعادة المحاولة':'Retry'}</Button></section></div>:!snapshot.ok?<Notice tone="warn">{snapshot.code==='NO_COMPANY'?(ar?'اختر نشاطًا من قائمة مساحة العمل.':'Choose a business from the workspace menu.'):snapshot.code==='FORBIDDEN'?<><strong>{copy.app.inboxAccessDeniedTitle}</strong><p>{copy.app.inboxAccessDeniedBody}</p></>:(ar?'تغيّرت الجلسة أو مساحة العمل. حدّث الصفحة للتحقق قبل المتابعة.':'The session or workspace changed. Refresh to verify before continuing.')} <Link href="/app/settings?tab=plan" className="underline ms-2">{ar?'الاشتراك والدعم':'Subscription and support'}</Link></Notice>:null}
+  {!snapshot.ok&&snapshot.code==='UNAVAILABLE'?<div data-inbox-offline="true" data-pixel-port={desktop}><InboxDesktop locale={locale} view={{state:'ready',scopeKey:expected??'unavailable',conversations:[],messages:[],tabs:[],activeTab:'all',onTabChange:id=>setAssignmentFilter(id as InboxAssignmentFilter),query,onQueryChange:setQuery,onSelect:key=>{const row=rowsByKey.get(key);if(row)select(row.channel,row.id);},emptyListLabel:ar?'ستظهر المحادثات عند استعادة الاتصال.':'Conversations will appear when the connection returns.',notice:ar?'تعذّر تحديث الاتصال حاليًا. ستبقى مساحة المحادثات مفتوحة.':'Connection cannot be refreshed right now. The inbox remains open.',workspace:{label:ar?'المحادثات':'Conversations',liveState:'offline',busy:refreshing||isNavigating,refresh:{id:'retry',label:ar?'إعادة المحاولة':'Retry',icon:'refresh',disabled:refreshing||isNavigating,onClick:()=>{if(!initial.ok)startTransition(()=>router.refresh());else void refresh();}}},listFooter:undefined}}/><section className={styles.offlineMobile}><h2>{ar?'صندوق الوارد':'Inbox'}</h2><p role="status">{ar?'الاتصال غير متاح حاليًا.':'Connection is currently unavailable.'}</p><Button disabled={refreshing||isNavigating} onClick={()=>{if(!initial.ok)startTransition(()=>router.refresh());else void refresh();}}>{ar?'إعادة المحاولة':'Retry'}</Button></section></div>:!snapshot.ok?<Notice tone="warn">{snapshot.code==='NO_COMPANY'?(ar?'اختر نشاطًا من قائمة مساحة العمل.':'Choose a business from the workspace menu.'):snapshot.code==='FORBIDDEN'?<><strong>{copy.app.inboxAccessDeniedTitle}</strong><p>{copy.app.inboxAccessDeniedBody}</p></>:(ar?'تغيّرت الجلسة أو مساحة العمل. حدّث الصفحة للتحقق قبل المتابعة.':'The session or workspace changed. Refresh to verify before continuing.')} <Link href="/app/settings?tab=plan" className="underline ms-2">{ar?'الاشتراك والدعم':'Subscription and support'}</Link></Notice>:null}
   {activeSource&&retained&&<>
    {startingConversation&&canStartWhatsapp&&<InboxStartConversation companyId={activeSource.companyId} ar={ar} enabled={canStartWhatsapp} onClose={()=>setStartingConversation(false)} onCreated={id=>{setStartingConversation(false);setQuery('');setAssignmentFilter('all');setLeadWorklist('all');setLeadStageFilter('all');setPinnedOnly(false);navigateLocally(inboxHref('whatsapp',id,'all'));void refresh(true);}}/>}
    {snapshot.ok&&!snapshot.channelContract&&<Notice tone="error">{ar?'تعذّر التحقق من إعداد استحقاقات القنوات. أعد التحديث.':'Channel entitlement configuration could not be verified. Refresh to retry.'}</Notice>}
@@ -253,18 +301,18 @@ function ScopedUnifiedInbox({initial,waReview=false,igReview=false}:{initial:Sna
      <header className={styles.listHeader}><h2>{ar?'صندوق الوارد':'Inbox'}</h2><p>{ar?'المحادثات المتاحة لهذا النشاط':'Available conversations for this business'}</p>
       {worklist!=='all'&&<p role="status">{worklist==='staff'?(ar?'تحتاج متابعة · واتساب':'Needs attention · WhatsApp'):worklist==='noura'?(ar?'الأتمتة مسموحة · واتساب':'Automation permitted · WhatsApp'):worklist==='unread'?(ar?'غير مقروءة':'Unread'):(ar?'محلولة · واتساب':'Resolved · WhatsApp')} <button type="button" className={styles.filterReset} onClick={()=>navigateLocally(inboxHref(null,null,filter))}>{ar?'مسح الفلتر':'Clear filter'}</button></p>}
       <label className={styles.search}><span className="sr-only">{ar?'بحث في المحادثات المحمّلة':'Search loaded conversations'}</span><svg className={styles.searchIcon} width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" stroke="currentColor" strokeWidth="1.6"/><path d="m16 16 5 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/></svg><input type="search" value={query} onChange={e=>setQuery(e.target.value)} placeholder={ar?'البحث في المحادثات أو العملاء…':'Search conversations or customers…'}/></label>
-      <div className="inbox-v2-assignment-tabs" role="group" aria-label={ar?'تصفية التعيين':'Assignment filter'}>{(['all','unassigned','mine'] as const).map(value=><button key={value} type="button" aria-pressed={assignmentFilter===value} onClick={()=>setAssignmentFilter(value)}>{value==='all'?(ar?'الكل':'All'):value==='unassigned'?(ar?'غير مسند':'Unassigned'):(ar?'مسند لي':'Assigned to me')}{!anyActiveChannelFailed&&<span title={ar?'عدد المحادثات في الصفحات المحمّلة':'Conversation count in loaded pages'}>{activeRows.filter(row=>matchesInboxAssignment(row,value,activeSource?.actorId)).length}</span>}</button>)}</div>
+      <div className="inbox-v2-assignment-tabs" role="group" aria-label={ar?'تصفية التعيين':'Assignment filter'}>{(['all','unassigned','mine'] as const).map(value=><button key={value} type="button" aria-pressed={assignmentFilter===value} onClick={()=>setAssignmentFilter(value)}>{value==='all'?(ar?'الكل':'All'):value==='unassigned'?(ar?'غير مسند':'Unassigned'):(ar?'مسند لي':'Assigned to me')}{!anyActiveChannelFailed&&<span title={ar?'عدد المحادثات في الصفحات المحمّلة':'Conversation count in loaded pages'}>{counts.tabs[value]}</span>}</button>)}</div>
       <details className="inbox-v2-extra-filters"><summary>{ar?'القنوات والمتابعة':'Channels & follow-up'}<span>{leadWorklist==='all'?(ar?'كل الحالات':'All states'):copy.app.worklists[leadWorklist]}</span></summary>
       {channels.length===2?<div className={styles.channelFilters} aria-label={ar?'القناة':'Channel'}>{(['all',...channels] as const).map(c=><button key={c} type="button" aria-pressed={filter===c} onClick={()=>navigateLocally(filteredHref(null,null,c))}>{c==='all'?(ar?'الكل':'All'):<ChannelBadge channel={c} ar={ar}/>}</button>)}</div>:<ChannelBadge channel={channels[0]??'whatsapp'} ar={ar}/>}
-      <div className={styles.worklistFilters} aria-label={ar?'تصفية المحادثات':'Conversation filters'}>{(['all','unread','staff','noura','resolved'] as const).map(value=><button type="button" key={value} aria-pressed={worklist===value} onClick={()=>{const next=new URLSearchParams(params.toString());next.delete('c');next.delete('thread');next.delete('source');next.delete('intent');if(value==='all')next.delete('filter');else next.set('filter',value);navigateLocally('/app/conversations'+(next.size?'?'+next.toString():''));}}>{value==='all'?(ar?'الكل':'All'):value==='unread'?(ar?'غير مقروءة':'Unread'):value==='staff'?(ar?'تحتاج متابعة':'Needs attention'):value==='noura'?(ar?'الأتمتة':'Automation'):(ar?'محلولة':'Resolved')}{!anyActiveChannelFailed&&(value==='all'||value==='unread'||value==='staff')&&<span className={styles.filterCount} title={ar?'عدد المحادثات في الصفحات المحمّلة':'Conversation count in loaded pages'}>{loadedCounts[value]}</span>}</button>)}{desktop&&<button className={styles.sessionStar} title={ar?'المحادثات المميزة المحمّلة':'Starred loaded conversations'} type="button" disabled={!starsReady} aria-pressed={pinnedOnly} onClick={()=>setPinnedOnly(value=>!value)}>{ar?'المميزة':'Starred'} {starsReady&&<span>{activeRows.filter(row=>pinned.includes(row.key)).length}</span>}</button>}</div>
+      <div className={styles.worklistFilters} aria-label={ar?'تصفية المحادثات':'Conversation filters'}>{(['all','unread','staff','noura','resolved'] as const).map(value=><button type="button" key={value} aria-pressed={worklist===value} onClick={()=>{const next=new URLSearchParams(params.toString());next.delete('c');next.delete('thread');next.delete('source');next.delete('intent');if(value==='all')next.delete('filter');else next.set('filter',value);navigateLocally('/app/conversations'+(next.size?'?'+next.toString():''));}}>{value==='all'?(ar?'الكل':'All'):value==='unread'?(ar?'غير مقروءة':'Unread'):value==='staff'?(ar?'تحتاج متابعة':'Needs attention'):value==='noura'?(ar?'الأتمتة':'Automation'):(ar?'محلولة':'Resolved')}{!anyActiveChannelFailed&&(value==='all'||value==='unread'||value==='staff')&&<span className={styles.filterCount} title={ar?'عدد المحادثات في الصفحات المحمّلة':'Conversation count in loaded pages'}>{loadedCounts[value]}</span>}</button>)}</div>
       {filter!=='instagram'&&channels.includes('whatsapp')&&<label className={styles.leadFilter}><span>{ar?'متابعة واتساب':'WhatsApp follow-up'}</span><select value={leadWorklist} onChange={event=>setLeadWorklist(event.target.value as LeadWorklist)}>{(['all','awaiting_staff','follow_up_today','overdue','trial_or_quote'] as const).map(value=><option key={value} value={value}>{value==='all'?(ar?'كل المراحل':'All stages'):copy.app.worklists[value]}</option>)}</select></label>}
       </details>
      </header>
      <div className={styles.rows}>{channels.map(channel=>{const result=channel==='whatsapp'?snapshot.ok?snapshot.wa:retained.wa:snapshot.ok?snapshot.ig:retained.ig;if(result.ok)return null;const isForbidden=result.code==='FORBIDDEN';return <Notice key={channel} tone={isForbidden?'warn':'error'}><ChannelBadge channel={channel} ar={ar}/><p>{isForbidden?(ar?'القراءة غير متاحة. راجع صلاحيات القناة والاشتراك.':'Reading unavailable. Check channel permissions and subscription.'):(ar?'تعذّر تحميل القناة. أعد التحديث.':'This channel could not be loaded. Refresh to retry.')}{!isForbidden&&<button type="button" className="underline ms-2 font-medium" disabled={refreshing||moreLoading!==null} onClick={()=>void refresh()}>{ar?'إعادة المحاولة':'Retry'}</button>}</p></Notice>;})}
       {showEmpty&&<EmptyState title={query||(desktop&&pinnedOnly)||assignmentFilter!=='all'||worklist!=='all'||(filter!=='instagram'&&leadWorklist!=='all')?(ar?'لا نتائج في المحادثات المحمّلة':'No matches in loaded conversations'):(ar?'لا توجد محادثات بعد':'No conversations yet')} body={(desktop&&pinnedOnly)?(ar?'لا توجد محادثات مميزة تطابق البحث. ألغِ فلتر المميزة لعرض القائمة.':'No starred conversations match. Turn off Starred to see all conversations.'):assignmentFilter!=='all'||worklist!=='all'||(filter!=='instagram'&&leadWorklist!=='all')?(ar?'لا توجد محادثات تطابق البحث والفلتر في الصفحة المحمّلة. يمكنك مسح الفلتر أو تحميل المزيد.':'No conversations match this search and filter in the loaded page. Clear the filter or load more.'):query?(ar?'لم نجد أي محادثة تطابق بحثك في المحادثات المحمّلة.':'No conversations matched your search in loaded conversations.'):(ar?'تظهر الرسائل الواردة بعد ربط القناة والتحقق من استقبالها.':'Inbound messages appear after connecting and verifying the channel.')}/>}
       {shown.map(row=>{
-       const phone=row.channel==='whatsapp'&&retained.wa.ok?retained.wa.page.conversations.find(item=>item.id===row.id)?.phone:null;
-       const starred=starsReady&&pinned.includes(row.key);
+       const phone=row.channel==='whatsapp'?waConversationsById.get(row.id)?.phone??null:null;
+       
        return <div key={row.key} className={styles.rowContainer}>
         <button type="button" className={styles.row} aria-current={source===row.channel&&selected===row.id?'page':undefined} onClick={()=>select(row.channel,row.id)}>
          <span className={styles.avatar} aria-hidden="true">{row.name.slice(0,1)}</span><span className={styles.rowBody}>
@@ -274,7 +322,7 @@ function ScopedUnifiedInbox({initial,waReview=false,igReview=false}:{initial:Sna
           <span className={styles.rowFooter}><ChannelBadge channel={row.channel} ar={ar}/>{row.assignedTo&&<span className={styles.assignment}>{ar?'مسندة':'Assigned'}</span>}{row.unread>0&&<span className={styles.unread} aria-label={ar?`${row.unread} غير مقروءة`:`${row.unread} unread`}>{row.unread}</span>}</span>
          </span>
         </button>
-        {desktop&&<button type="button" className={styles.pin} aria-pressed={starred} aria-label={ar?`${starred?'إلغاء تمييز':'تمييز'} ${row.name}`:`${starred?'Unstar':'Star'} ${row.name}`} title={ar?'تمييز المحادثة':'Star conversation'} disabled={!starsReady||pinBusy!==null} onClick={()=>void togglePinned(row)}><svg width="16" height="16" viewBox="0 0 24 24" fill={starred?'currentColor':'none'} aria-hidden="true"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2L12 17.3l-5.6 2.9 1.1-6.2L3 9.6l6.2-.9z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/></svg></button>}
+        
        </div>;
       })}
      </div>

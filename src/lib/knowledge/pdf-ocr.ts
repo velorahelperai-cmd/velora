@@ -1,7 +1,7 @@
 import { copyFile, mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { createWorker, OEM } from "tesseract.js";
+import type { createWorker } from "tesseract.js";
 import { getDocumentProxy, renderPageAsImage } from "unpdf";
 import { logEvent } from "@/lib/logging/logger.mjs";
 
@@ -51,7 +51,8 @@ export async function readScannedPdf(bytes: Uint8Array, nativePages: string[], c
     });
     running = (async () => {
       stage="local_worker";reason="worker_initialization_failed";
-      worker = await createWorker("ara+eng", OEM.LSTM_ONLY, { cacheMethod: "none", langPath: langDir });
+      const { createWorker: initWorker, OEM } = await import("tesseract.js");
+      worker = await initWorker("ara+eng", OEM.LSTM_ONLY, { cacheMethod: "none", langPath: langDir });
       if (expired) { await worker.terminate(); throw new Error("ocr_timeout"); }
       const pages: string[] = [];
       for (let i = 0; i < nativePages.length; i++) {
