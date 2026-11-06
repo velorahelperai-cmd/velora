@@ -88,6 +88,38 @@ $definition$;
 end;
 $send$;
 
+do $policy$
+declare
+  p record;
+begin
+  select prosrc, proowner, proacl, proconfig, prosecdef, provolatile
+    into strict p
+  from pg_proc
+  where oid = to_regprocedure('private.billing_chat_policy(uuid,text)');
+  if position('ES02_PAID_COMMERCIAL_POLICY' in p.prosrc) = 0 then
+    return;
+  end if;
+  execute $definition$
+create or replace function private.billing_chat_policy(cid uuid, channel text)
+returns boolean
+language plpgsql
+stable
+security definer
+set search_path to ''
+as $function$
+declare r jsonb;e timestamptz;begin
+ r:=private.billing_lifecycle_receipt(cid);if r is null then return not exists(select 1 from public.billing_subscriptions where company_id=cid and environment='live' and paid_through is not null);end if;
+ e:=(r->>'expiredAt')::timestamptz;
+ if statement_timestamp()>=e+interval '720 hours' then return false;end if;
+ if statement_timestamp()<e and exists(select 1 from private.billing_expiry_episodes where company_id=cid and disconnected_at is not null) then
+  if channel='instagram' then return exists(select 1 from private.instagram_company_links l join private.instagram_company_generations g on g.company_id=l.company_id and g.bound_account_id=l.account_id and g.generation=l.generation where l.company_id=cid and l.status='active' and l.authorization_expires_at>statement_timestamp());end if;
+  if channel='whatsapp' then return exists(select 1 from public.whatsapp_company_links where company_id=cid and status='verified' and authorization_status='active' and (authorization_expires_at>statement_timestamp() or (authorization_expires_at is null and authorization_non_expiring)));end if;
+ end if;return true;
+end;$function$;
+$definition$;
+end;
+$policy$;
+
 drop function if exists private.billing_es02_live_paid_through(uuid);
 
 commit;

@@ -17,8 +17,10 @@ describe("ES02 paid commercial read alignment migration", () => {
     expect(migration).not.toMatch(/40d2d885|7c5e429d|TAG\s*CITY|tag.?city/i);
   });
 
-  it("repairs billing_chat_send and display evidence for the null plan_version ES02 ledger", () => {
+  it("repairs billing_chat_send, billing_chat_policy and display evidence for the null plan_version ES02 ledger", () => {
     expect(migration).toContain("ES02_PAID_COMMERCIAL_SEND");
+    expect(migration).toContain("ES02_PAID_COMMERCIAL_POLICY");
+    expect(migration).toContain("private.billing_chat_policy(cid uuid, channel text)");
     expect(migration).toContain("private.billing_es02_live_paid_through(cid) is not null");
     expect(migration).toContain("elsif s.plan_version_id is null then");
     expect(migration).toContain(
