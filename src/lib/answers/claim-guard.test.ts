@@ -54,4 +54,18 @@ describe("guardResponseAgainstUngroundedClaims", () => {
     expect(result.reason).toBe("UNGROUNDED_PRICE");
     expect(result.sanitizedText).toContain("I apologize, these specific details are not available");
   });
+
+  it("مصدر يثبت خدمة المجسمات فقط لا يجيز ادعاء شحن مجاني إلى صلالة خلال يومين", () => {
+    const sources = [
+      {
+        title: "خدمة المجسمات المعمارية",
+        text: "نقدم في تاجسيم تصميم وتصنيع المجسمات المعمارية والماكيتات الهندسية بأعلى دقة وباستخدام أحدث تقنيات الطباعة ثلاثية الأبعاد والقص بالليزر.",
+      },
+    ];
+    const generatedAnswer = "نقدم خدمة المجسمات المعمارية والماكيتات الهندسية، مع شحن مجاني إلى صلالة خلال يومين.";
+    const result = guardResponseAgainstUngroundedClaims(generatedAnswer, sources, "ar");
+    expect(result.valid).toBe(false);
+    expect(result.reason).toBe("UNGROUNDED_DELIVERY");
+    expect(result.sanitizedText).toContain("عذراً، هذه التفاصيل غير متوفرة لدي بدقة حالياً");
+  });
 });

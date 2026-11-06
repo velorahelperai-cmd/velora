@@ -53,11 +53,52 @@ export function createIntegrationPorts(binding:{jobId:string;claimToken:string;c
   }catch{return null;}
  },
  history:async f=>{
-  if(!admin)return [];
+  if(!admin||!("from" in admin)||typeof (admin as {from:unknown}).from!=="function"||!f.company_id||!f.conversation_id||!f.message_id)return [];
   try{
-   const {data,error}=await admin.from("whatsapp_messages").select("id, body, direction, sender, received_at").eq("company_id",f.company_id).eq("conversation_id",f.conversation_id).order("received_at",{ascending:false}).limit(5);
-   if(error||!Array.isArray(data))return [];
-   return data.filter(m=>m.id!==f.message_id&&typeof m.body==="string"&&m.body.trim()).slice(0,4).reverse().map(m=>({role:m.direction==="inbound"||m.sender==="customer"?"customer" as const:"assistant" as const,text:m.body.trim()}));
+   const query=admin as unknown as {from:(table:string)=>{select:(cols:string)=>{eq:(c1:string,v1:unknown)=>{eq:(c2:string,v2:unknown)=>{eq?:(c3:string,v3:unknown)=>{maybeSingle:()=>PromiseLike<{data:Record<string,unknown>|null;error:unknown}>};lt?:(c3:string,v3:unknown)=>{order:(o:string,opt:{ascending:boolean})=>{limit:(n:number)=>PromiseLike<{data:Array<Record<string,unknown>>|null;error:unknown}>}};lte?:(c3:string,v3:unknown)=>{order:(o:string,opt:{ascending:boolean})=>{limit:(n:number)=>PromiseLike<{data:Array<Record<string,unknown>>|null;error:unknown}>}};order?:(o:string,opt:{ascending:boolean})=>{limit:(n:number)=>PromiseLike<{data:Array<Record<string,unknown>>|null;error:unknown}>}}}}}};
+   const {data:curr,error:currErr}=await query.from("whatsapp_messages").select("id, arrival_sequence, received_at, created_at").eq("id",f.message_id).eq("company_id",f.company_id).eq!("conversation_id",f.conversation_id).maybeSingle();
+   if(currErr)return [];
+
+   let rawList:Array<Record<string,unknown>>=[];
+   const currSeq=curr&&curr.arrival_sequence!==null&&curr.arrival_sequence!==undefined?Number(curr.arrival_sequence):null;
+   if(currSeq!==null&&Number.isFinite(currSeq)){
+    const {data,error}=await query.from("whatsapp_messages").select("id, body, direction, sender, arrival_sequence, received_at").eq("company_id",f.company_id).eq("conversation_id",f.conversation_id).lt!("arrival_sequence",currSeq).order("arrival_sequence",{ascending:false}).limit(6);
+    if(error||!Array.isArray(data))return [];
+    rawList=data;
+   }else{
+    const refReceived=typeof curr?.received_at==="string"?curr.received_at:(typeof f.created_at==="string"?f.created_at:new Date().toISOString());
+    const {data,error}=await query.from("whatsapp_messages").select("id, body, direction, sender, arrival_sequence, received_at").eq("company_id",f.company_id).eq("conversation_id",f.conversation_id).lte!("received_at",refReceived).order("received_at",{ascending:false}).limit(8);
+    if(error||!Array.isArray(data))return [];
+    rawList=data.filter(m=>{
+     if(m.id===f.message_id)return false;
+     if(!curr)return true;
+     if(typeof m.received_at==="string"&&typeof curr.received_at==="string"){
+      if(m.received_at<curr.received_at)return true;
+      if(m.received_at>curr.received_at)return false;
+      return String(m.id)<String(curr.id);
+     }
+     return true;
+    });
+   }
+
+   const past=rawList.filter(m=>m.id!==f.message_id&&typeof m.body==="string"&&String(m.body).trim()).slice(0,4).reverse();
+   let totalChars=0;
+   const maxTotal=1100,maxTurn=300;
+   const turns:Array<{role:"customer"|"assistant";text:string}>=[];
+   for(const m of past){
+    const text=String(m.body).trim().slice(0,maxTurn);
+    if(totalChars+text.length>maxTotal){
+     const rem=maxTotal-totalChars;
+     if(rem>20){
+      turns.push({role:m.direction==="inbound"||m.sender==="customer"?"customer":"assistant",text:text.slice(0,rem)});
+      totalChars+=rem;
+     }
+     break;
+    }
+    turns.push({role:m.direction==="inbound"||m.sender==="customer"?"customer":"assistant",text});
+    totalChars+=text.length;
+   }
+   return turns;
   }catch{return [];}
  },
  verify:async(f,citations):Promise<VerificationResult>=>{
@@ -111,11 +152,11 @@ export function createIntegrationPorts(binding:{jobId:string;claimToken:string;c
    if(!admin)return false;
    try{
     if("from" in admin&&typeof(admin as unknown as {from:(table:string)=>unknown}).from==="function"){
-     const query=admin as unknown as {from:(table:string)=>{update:(values:Record<string,unknown>)=>{eq:(col:string,val:unknown)=>{eq:(col2:string,val2:unknown)=>{eq:(col3:string,val3:unknown)=>PromiseLike<{error:unknown}>}}}}};
-     const {error}=await query.from("whatsapp_send_intents").update({outcome:"ready",attempt_token:null,attempt_started_at:null,attempt_expires_at:null}).eq("id",id).eq("attempt_token",token).eq("outcome","attempting");
-     return !error;
+     const query=admin as unknown as {from:(table:string)=>{update:(values:Record<string,unknown>)=>{eq:(col:string,val:unknown)=>{eq:(col2:string,val2:unknown)=>{eq:(col3:string,val3:unknown)=>{select:(cols:string)=>PromiseLike<{data:Array<{id:string}>|null;error:unknown}>}}}}}};
+     const {data,error}=await query.from("whatsapp_send_intents").update({outcome:"ready",attempt_token:null,attempt_started_at:null,attempt_expires_at:null}).eq("id",id).eq("attempt_token",token).eq("outcome","attempting").select("id");
+     return !error && Array.isArray(data) && data.length === 1;
     }
-    return true;
+    return false;
    }catch{return false;}
   },
  finish:async id=>{const r=object(await rpc("billing_finalize_automated_usage",{p_company_id:binding.companyId,p_intent_id:id}));if(r?.ok!==true)throw Error("USAGE_SETTLEMENT_PENDING");return String(r.status);},

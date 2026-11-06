@@ -304,3 +304,192 @@ describe("worker frame loading error canonicalization at RPC boundaries", () => 
     await expect(ports.frame()).rejects.toThrow(new WorkerInputError("SERVICE_WINDOW_CLOSED"));
   });
 });
+
+
+describe("abortSend store port", () => {
+  function makeQueryDb(result: { data: unknown; error: unknown } | Error) {
+    const select = vi.fn().mockImplementation(() => {
+      if (result instanceof Error) return Promise.reject(result);
+      return Promise.resolve(result);
+    });
+    const eq3 = vi.fn().mockReturnValue({ select });
+    const eq2 = vi.fn().mockReturnValue({ eq: eq3 });
+    const eq1 = vi.fn().mockReturnValue({ eq: eq2 });
+    const update = vi.fn().mockReturnValue({ eq: eq1 });
+    const from = vi.fn().mockReturnValue({ update });
+    return { from, update, eq1, eq2, eq3, select };
+  }
+
+  it("returns true when exactly 1 row is matched and updated to ready", async () => {
+    const db = makeQueryDb({ data: [{ id: "intent-1" }], error: null });
+    const ports = createIntegrationPorts(binding, db as never);
+    expect(await ports.abortSend!("intent-1", "token-1")).toBe(true);
+    expect(db.from).toHaveBeenCalledWith("whatsapp_send_intents");
+    expect(db.update).toHaveBeenCalledWith({
+      outcome: "ready",
+      attempt_token: null,
+      attempt_started_at: null,
+      attempt_expires_at: null,
+    });
+    expect(db.eq1).toHaveBeenCalledWith("id", "intent-1");
+    expect(db.eq2).toHaveBeenCalledWith("attempt_token", "token-1");
+    expect(db.eq3).toHaveBeenCalledWith("outcome", "attempting");
+  });
+
+  it("returns false when 0 rows are updated (e.g. wrong token or already transitioned)", async () => {
+    const db = makeQueryDb({ data: [], error: null });
+    const ports = createIntegrationPorts(binding, db as never);
+    expect(await ports.abortSend!("intent-1", "wrong-token")).toBe(false);
+  });
+
+  it("returns false when database returns error", async () => {
+    const db = makeQueryDb({ data: null, error: { message: "connection timeout" } });
+    const ports = createIntegrationPorts(binding, db as never);
+    expect(await ports.abortSend!("intent-1", "token-1")).toBe(false);
+  });
+
+  it("returns false when admin lacks from method", async () => {
+    const db = { rpc: vi.fn() };
+    const ports = createIntegrationPorts(binding, db as never);
+    expect(await ports.abortSend!("intent-1", "token-1")).toBe(false);
+  });
+
+  it("returns false when query throws an exception", async () => {
+    const db = makeQueryDb(new Error("socket closed"));
+    const ports = createIntegrationPorts(binding, db as never);
+    expect(await ports.abortSend!("intent-1", "token-1")).toBe(false);
+  });
+});
+
+describe("ports.history - strictly preceding messages scope", () => {
+  function makeMessagesDb(rows: Array<{ id: string; company_id: string; conversation_id: string; arrival_sequence: number; body: string; direction: string; sender: string; received_at: string; created_at: string }>) {
+    return {
+      rpc: vi.fn(),
+      from: (table: string) => {
+        if (table !== "whatsapp_messages") return { select: () => ({ eq: () => ({}) }) };
+        return {
+          select: () => ({
+            eq: (_col1: string, val1: string) => ({
+              eq: (_col2: string, val2: string) => ({
+                eq: (_col3: string, val3: string) => ({
+                  maybeSingle: async () => {
+                    const found = rows.find(r => r.id === val1 && r.company_id === val2 && r.conversation_id === val3);
+                    return { data: found ?? null, error: null };
+                  },
+                }),
+                lt: (_col3: string, val3: number) => ({
+                  order: () => ({
+                    limit: (n: number) => ({
+                      then: (resolve: (v: unknown) => unknown) => {
+                        const matched = rows
+                          .filter(r => r.company_id === val1 && r.conversation_id === val2 && r.arrival_sequence < val3)
+                          .sort((a, b) => b.arrival_sequence - a.arrival_sequence)
+                          .slice(0, n);
+                        return Promise.resolve(resolve({ data: matched, error: null }));
+                      },
+                    }),
+                  }),
+                }),
+                lte: (_col3: string, val3: string) => ({
+                  order: () => ({
+                    limit: (n: number) => ({
+                      then: (resolve: (v: unknown) => unknown) => {
+                        const matched = rows
+                          .filter(r => r.company_id === val1 && r.conversation_id === val2 && r.received_at <= val3)
+                          .sort((a, b) => b.received_at.localeCompare(a.received_at))
+                          .slice(0, n);
+                        return Promise.resolve(resolve({ data: matched, error: null }));
+                      },
+                    }),
+                  }),
+                }),
+              }),
+            }),
+          }),
+        };
+      },
+    };
+  }
+
+  it("وصول رسالتين متتاليتين؛ الرسالة الأولى لا ترى الثانية، والثانية تستفيد من الأولى", async () => {
+    const rows = [
+      {
+        id: "msg-1",
+        company_id: "company",
+        conversation_id: "conversation",
+        arrival_sequence: 1,
+        body: "ما هي خدماتكم؟",
+        direction: "inbound",
+        sender: "customer",
+        received_at: "2026-11-06T10:00:00Z",
+        created_at: "2026-11-06T10:00:00Z",
+      },
+      {
+        id: "msg-2",
+        company_id: "company",
+        conversation_id: "conversation",
+        arrival_sequence: 2,
+        body: "وكم سعر الماكيت المعماري؟",
+        direction: "inbound",
+        sender: "customer",
+        received_at: "2026-11-06T10:00:10Z",
+        created_at: "2026-11-06T10:00:10Z",
+      },
+    ];
+
+    const db = makeMessagesDb(rows);
+    const ports = createIntegrationPorts(binding, db as never);
+
+    const frame1: IntegrationFrame = {
+      ...frame,
+      message_id: "msg-1",
+      question: "ما هي خدماتكم؟",
+    };
+    const history1 = await ports.history!(frame1);
+    expect(history1).toEqual([]);
+
+    const frame2: IntegrationFrame = {
+      ...frame,
+      message_id: "msg-2",
+      question: "وكم سعر الماكيت المعماري؟",
+    };
+    const history2 = await ports.history!(frame2);
+    expect(history2).toEqual([
+      { role: "customer", text: "ما هي خدماتكم؟" },
+    ]);
+  });
+
+  it("bounds history by 4 turns, 300 chars per turn, and max 1100 chars total", async () => {
+    const rows = Array.from({ length: 8 }, (_, i) => ({
+      id: `msg-${i + 1}`,
+      company_id: "company",
+      conversation_id: "conversation",
+      arrival_sequence: i + 1,
+      body: `سؤال ${i + 1} `.repeat(50), // long text > 300 chars
+      direction: i % 2 === 0 ? "inbound" : "outbound",
+      sender: i % 2 === 0 ? "customer" : "assistant",
+      received_at: new Date(Date.parse("2026-11-06T10:00:00Z") + i * 1000).toISOString(),
+      created_at: new Date(Date.parse("2026-11-06T10:00:00Z") + i * 1000).toISOString(),
+    }));
+
+    const db = makeMessagesDb(rows);
+    const ports = createIntegrationPorts(binding, db as never);
+
+    const frameCurrent: IntegrationFrame = {
+      ...frame,
+      message_id: "msg-8",
+      question: "سؤال أخير",
+    };
+    const history = await ports.history!(frameCurrent);
+
+    // Max 4 turns
+    expect(history.length).toBeLessThanOrEqual(4);
+    // Max 300 chars per turn
+    for (const turn of history) {
+      expect(turn.text.length).toBeLessThanOrEqual(300);
+    }
+    // Max 1100 chars total
+    const totalChars = history.reduce((sum, h) => sum + h.text.length, 0);
+    expect(totalChars).toBeLessThanOrEqual(1100);
+  });
+});

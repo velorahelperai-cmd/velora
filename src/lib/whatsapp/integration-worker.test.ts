@@ -15,6 +15,7 @@ function setup(){
  const ports={enabled:true,frame:vi.fn(async()=>frame),context:vi.fn(async()=>chunks),verify:vi.fn<IntegrationPorts["verify"]>(async()=>true),secret:vi.fn(async()=>"synthetic-token"),
  reserve:vi.fn(async()=>true),answer:vi.fn(async()=>({ok:true,complete:true,text:"Answer",attempts:[{id:"attempt"}]})),
  stage:vi.fn(async()=>"intent"),claimSend:vi.fn(async()=>({ok:true,claimed:true,attempt_token:"send-claim",intent})),
+ abortSend:vi.fn(async()=>true),
  send:vi.fn(async()=>({ok:true,waMessageId:"synthetic-wamid"})),finalize:vi.fn(async()=>true),finish:vi.fn(async()=>"accepted"),
  repair:vi.fn(async()=>true),retry:vi.fn<IntegrationPorts["retry"]>(async()=>{}),heartbeat:vi.fn(async()=>true)};
  return {frame,chunks,ports,intent};
@@ -408,4 +409,43 @@ describe("persisted WhatsApp integration worker",()=>{
   expect(ports.answer).not.toHaveBeenCalled();
   expect(ports.send).not.toHaveBeenCalled();
  });
+
+  it("fails closed with SEND_PERSIST_REQUIRES_RECONCILIATION and marks retry uncertain when abortSend fails", async () => {
+    const { ports, intent } = setup();
+    ports.claimSend.mockResolvedValue({ ok: true, claimed: true, attempt_token: "token-1", intent });
+    ports.verify.mockResolvedValueOnce(true).mockResolvedValueOnce(true).mockResolvedValueOnce({ ok: false, code: "WORKER_UNAVAILABLE" });
+    ports.abortSend = vi.fn().mockResolvedValue(false);
+
+    const result = await runInboundWorkerAnswer(input, ports);
+    expect(result).toMatchObject({ ok: false, code: "SEND_PERSIST_REQUIRES_RECONCILIATION", jobCompleted: false, sendAccepted: false });
+    expect(ports.abortSend).toHaveBeenCalledWith(intent.id, "token-1");
+    expect(ports.retry).toHaveBeenCalledWith("SEND_PERSIST_REQUIRES_RECONCILIATION", true, false);
+    expect(ports.send).not.toHaveBeenCalled();
+  });
+
+  it("fails closed with SEND_PERSIST_REQUIRES_RECONCILIATION when ports lacks abortSend", async () => {
+    const { ports, intent } = setup();
+    ports.claimSend.mockResolvedValue({ ok: true, claimed: true, attempt_token: "token-1", intent });
+    ports.verify.mockResolvedValueOnce(true).mockResolvedValueOnce(true).mockResolvedValueOnce({ ok: false, code: "WORKER_UNAVAILABLE" });
+    delete (ports as unknown as { abortSend?: unknown }).abortSend;
+
+    const result = await runInboundWorkerAnswer(input, ports);
+    expect(result).toMatchObject({ ok: false, code: "SEND_PERSIST_REQUIRES_RECONCILIATION", jobCompleted: false, sendAccepted: false });
+    expect(ports.retry).toHaveBeenCalledWith("SEND_PERSIST_REQUIRES_RECONCILIATION", true, false);
+  });
+
+  it("finalizes intent as rejected and finishes job without redundant retry when WORKER_DISABLED after claim", async () => {
+    const { ports, intent } = setup();
+    ports.claimSend.mockResolvedValue({ ok: true, claimed: true, attempt_token: "token-1", intent });
+    ports.verify.mockResolvedValueOnce(true).mockResolvedValueOnce(true).mockResolvedValueOnce({ ok: false, code: "WORKER_DISABLED" });
+    ports.finalize.mockResolvedValue(true);
+    ports.finish.mockResolvedValue("released");
+
+    const result = await runInboundWorkerAnswer(input, ports);
+    expect(result).toMatchObject({ ok: false, code: "WORKER_DISABLED", jobCompleted: false, sendAccepted: false });
+    expect(ports.finalize).toHaveBeenCalledWith(intent.id, "token-1", "rejected", null);
+    expect(ports.finish).toHaveBeenCalledWith(intent.id);
+    expect(ports.retry).toHaveBeenCalledWith("WORKER_DISABLED", false, false);
+    expect(ports.send).not.toHaveBeenCalled();
+  });
 });

@@ -1,4 +1,5 @@
 import "server-only";
+import {createHash} from "node:crypto";
 import type {AnswerContextChunk,AnswerCitation} from "@/lib/answers/types";
 import {classifyHandoffPolicy} from "@/lib/answers/routing/handoff-policy";
 import {classifyPureSocialSmallTalk} from "@/lib/answers/routing/small-talk";
@@ -67,11 +68,13 @@ export async function runPersistedInboundJob(input:{jobId:string;claimToken:stri
   chunks=raw;
   captured=frame.staged_citations??(chunks.length>0?chunks.map(({sourceId,title,contentVersion})=>({sourceId,title,contentVersion})):[]);
   if(captured.length===0){
+   const question_hash=createHash("sha256").update(frame.question).digest("hex").slice(0,16);
    console.info("[UNANSWERED_QUESTION_LOG]",{
     company_id:frame.company_id,
     conversation_id:frame.conversation_id,
     job_id:frame.job_id,
-    question:frame.question,
+    question_hash,
+    question_length:frame.question.length,
     timestamp:new Date().toISOString(),
    });
   }
@@ -138,11 +141,17 @@ export async function runPersistedInboundJob(input:{jobId:string;claimToken:stri
  if(!isVerified(v3)){
   const code=verifyFailureCode(v3);
   if(code==="WORKER_UNAVAILABLE"){
+   let aborted = false;
    if(ports.abortSend){
-    try{await ports.abortSend(intent.id,claimed.attempt_token);}catch{}
+    try{aborted = await ports.abortSend(intent.id,claimed.attempt_token);}catch{aborted = false;}
    }
-   try{await ports.retry("WORKER_UNAVAILABLE",false,false);}catch{}
-   return blocked("WORKER_UNAVAILABLE");
+   if(aborted){
+    try{await ports.retry("WORKER_UNAVAILABLE",false,false);}catch{}
+    return blocked("WORKER_UNAVAILABLE");
+   }else{
+    try{await ports.retry("SEND_PERSIST_REQUIRES_RECONCILIATION",true,false);}catch{}
+    return blocked("SEND_PERSIST_REQUIRES_RECONCILIATION");
+   }
   }
   if(code==="WORKER_DISABLED"){
    try{

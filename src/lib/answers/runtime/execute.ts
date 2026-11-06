@@ -12,14 +12,14 @@ import { REAL_OUTPUT_LIMIT } from "./economics";
 import { matchesRequestedModel } from "../adapters/response-identity";
 export type RealAnswerPayload = {question:string;locale:"ar"|"en";chunks:AnswerContextChunk[];history?:ConversationHistoryTurn[];model?:AIModelId;maxOutputTokens?:number;maxCostBaisa?:number};
 export type RealAnswerInput = RealAnswerPayload & {actorId:string;sessionId:string;companyId:string;executionId:string;usageMode:"admin_test"|"company_live"};
-export type RealAttempt = {id:string;model:AIModelId;status:string;costUsd:number|null;costBaisa:number|null;latencyMs:number;errorCode?:string;message?:string;usage?:RealProviderResult["usage"];requestId?:string;responseId?:string;actualModelId?:string};
+export type RealAttempt = {id:string;model:AIModelId;status:string;costUsd:number|null;costBaisa:number|null;latencyMs:number;errorCode?:string;message?:string;usage?:RealProviderResult["usage"];requestId?:string;responseId?:string;actualModelId?:string;source?: "local_rule" | "provider"};
 function validPayload(input:RealAnswerPayload) {
  const maxOutputTokens=input.maxOutputTokens??REAL_OUTPUT_LIMIT,maxCostBaisa=input.maxCostBaisa??1000;
  return typeof input.question==="string"&&!!input.question.trim()&&input.question.length<=ANSWER_MAX_QUESTION_CHARS&&
   ["ar","en"].includes(input.locale)&&Array.isArray(input.chunks)&&input.chunks.length<=ANSWER_MAX_SOURCES&&
   !input.chunks.some(c=>!c||typeof c.text!=="string"||typeof c.title!=="string"||!c.sourceId||!Number.isSafeInteger(c.contentVersion)||c.contentVersion<1||!c.text.trim())&&
   input.chunks.reduce((sum,c)=>sum+c.title.length+c.text.length,0)<=ANSWER_MAX_CONTEXT_CHARS&&
-  (input.history===undefined||(Array.isArray(input.history)&&input.history.length<=10&&!input.history.some(h=>!h||!["customer","assistant"].includes(h.role)||typeof h.text!=="string"||h.text.length>1000)))&&
+  (input.history===undefined||(Array.isArray(input.history)&&input.history.length<=10&&!input.history.some(h=>!h||!["customer","assistant"].includes(h.role)||typeof h.text!=="string"||h.text.length>1000)&&input.history.reduce((sum,h)=>sum+h.text.length,0)<=1500))&&
   (input.model===undefined||["gpt-6-luna","gpt-6.1-sol","gemini-3.8-flash","gemini-3.5-flash-lite"].includes(input.model))&&
   Number.isSafeInteger(maxOutputTokens)&&maxOutputTokens>=1&&maxOutputTokens<=REAL_OUTPUT_LIMIT&&Number.isFinite(maxCostBaisa)&&maxCostBaisa>0&&maxCostBaisa<=1000;
 }
@@ -38,6 +38,7 @@ export async function executeReservedRealAnswer(input:RealAnswerPayload,deps:{st
  const maxOutputTokens=input.maxOutputTokens??REAL_OUTPUT_LIMIT,maxCostBaisa=input.maxCostBaisa??1000;
  if(!validPayload(input))return {ok:false as const,error:"INVALID_INPUT",attempts};
  const {store,call}=deps;
+ const startMs = Date.now();
  const social = classifyPureSocialSmallTalk(input.question, input.locale);
  if (social.isPureSocial && social.responseText) {
   const model: AIModelId = "gemini-3.5-flash-lite";
@@ -65,14 +66,15 @@ export async function executeReservedRealAnswer(input:RealAnswerPayload,deps:{st
    return { ok: false as const, error: "LEDGER_WRITE_FAILED", attempts };
   }
   const zeroUsage = { promptTokens: 0, completionTokens: 0, cachedTokens: 0, reasoningTokens: 0, cacheWriteTokens: 0, totalTokens: 0 };
+  const actualLatencyMs = Math.max(0, Date.now() - startMs);
   const attempt: RealAttempt = {
-   id, model, status: "success", costUsd: 0, costBaisa: 0, latencyMs: 10,
-   message: social.responseText, actualModelId: model, usage: zeroUsage,
+   id, model, status: "success", costUsd: 0, costBaisa: 0, latencyMs: actualLatencyMs,
+   message: social.responseText, actualModelId: model, usage: zeroUsage, source: "local_rule",
   };
   attempts.push(attempt);
   const settled = await store.settle({
    id, status: "success", costUsd: 0, costBaisa: 0, usage: zeroUsage,
-   responseText: social.responseText, actualModelId: model, latencyMs: 10,
+   responseText: social.responseText, actualModelId: model, latencyMs: actualLatencyMs,
   });
   if (!settled) return { ok: false as const, error: "SETTLEMENT_PERSIST_FAILED", attempts };
   return { ok: true as const, text: social.responseText, complete: true, attempts };
@@ -101,7 +103,7 @@ export async function executeReservedRealAnswer(input:RealAnswerPayload,deps:{st
   if(!result||!["success","incomplete","rejected","uncertain"].includes(result.status)||typeof result.text!=="string"||!Number.isSafeInteger(result.latencyMs)||result.latencyMs<0)result={status:"uncertain",text:"",errorCode:"INVALID_PROVIDER_RESULT",latencyMs:0};
   if(result.status==="success"&&!result.text.trim())result={...result,status:"incomplete"};
   if(result.status==="success"){
-   const guarded=guardResponseAgainstUngroundedClaims(result.text,sourceCitations.length>0,input.locale);
+   const guarded=guardResponseAgainstUngroundedClaims(result.text,input.chunks,input.locale);
    if(!guarded.valid)result={...result,text:guarded.sanitizedText};
   }
   let cost:{costUsd:number|null;costBaisa:number|null}={costUsd:null,costBaisa:null};
@@ -109,7 +111,7 @@ export async function executeReservedRealAnswer(input:RealAnswerPayload,deps:{st
   else if(result.usage){try{cost=priceRealUsage(result.usage,pricing);}catch{result={...result,status:"uncertain",text:"",errorCode:"INVALID_PROVIDER_USAGE"};}}
   else if(result.status==="rejected")cost={costUsd:0,costBaisa:0};
   else result={...result,status:"uncertain",text:"",errorCode:result.errorCode??"PROVIDER_USAGE_MISSING"};
-  const attempt={id,model,status:result.status,...cost,latencyMs:result.latencyMs,errorCode:result.errorCode,message:result.message,usage:result.usage,requestId:result.requestId,responseId:result.responseId,actualModelId:result.actualModelId};attempts.push(attempt);
+  const attempt={id,model,status:result.status,...cost,latencyMs:result.latencyMs,errorCode:result.errorCode,message:result.message,usage:result.usage,requestId:result.requestId,responseId:result.responseId,actualModelId:result.actualModelId,source:"provider" as const};attempts.push(attempt);
   try{if(!await store.settle({...attempt,usage:result.usage??{},responseText:result.status==="success"?result.text:undefined}))return {ok:false as const,error:"SETTLEMENT_ALREADY_COMPLETED",attempts};}
   catch{return {ok:false as const,error:"SETTLEMENT_PENDING_RECONCILIATION",attempts};}
   if(result.status==="success"||result.status==="incomplete")return {ok:true as const,text:result.text,complete:result.status==="success",model,attempts};

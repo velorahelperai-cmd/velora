@@ -5,7 +5,7 @@ import {afterEach,beforeEach,expect,it,vi} from 'vitest';
 import {useInboxMediaEvidence} from './inbox-media-evidence';
 import type {VdiMessage} from './inbox-desktop';
 const api=vi.hoisted(()=>({list:vi.fn(),run:vi.fn()}));
-vi.mock('@/lib/customer/inbox-extension-actions',()=>({listWhatsappMediaMetadata:api.list,runInboxExtension:api.run}));
+vi.mock('@/lib/customer/inbox-extension-actions',()=>({listWhatsappMediaMetadata:api.list,runInboxExtension:api.run,listInboxStars:vi.fn(async()=>({ok:true,data:[]}))}));
 const companyId='11111111-1111-4111-8111-111111111111',first='22222222-2222-4222-8222-222222222222',second='33333333-3333-4333-8333-333333333333',messageId='44444444-4444-4444-8444-444444444444',attachmentId='55555555-5555-4555-8555-555555555555';
 const row={messageId,attachmentId,filename:'invoice.pdf',mime:'application/pdf',caption:'hello'};
 const messages:VdiMessage[]=[{id:messageId,direction:'outgoing',text:'hello',time:''}];

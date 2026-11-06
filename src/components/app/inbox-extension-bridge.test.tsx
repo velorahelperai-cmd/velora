@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { InboxDesktopView } from './inbox-desktop';
 
 const api = vi.hoisted(() => ({ run: vi.fn(), remove: vi.fn() }));
-vi.mock('@/lib/customer/inbox-extension-actions', () => ({ runInboxExtension: api.run, removeUnboundWhatsappFile:api.remove }));
+vi.mock('@/lib/customer/inbox-extension-actions', () => ({ runInboxExtension: api.run, removeUnboundWhatsappFile:api.remove, listInboxStars: vi.fn(async () => ({ ok: true, data: [] })) }));
 import { InboxExtensionBridge } from './inbox-extension-bridge';
 import { InboxDesktop } from './inbox-desktop';
 

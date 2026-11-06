@@ -13,7 +13,7 @@ vi.mock('./workspace-shell',()=>({WorkspaceShell:({children}:{children:React.Rea
 vi.mock('./channel-ai-draft',()=>({ChannelAIDraft:()=>null}));
 vi.mock('./channel-review',()=>({ChannelReviewStatus:()=>null}));
 vi.mock('@/lib/whatsapp/actions',()=>({controlWhatsappConversation:vi.fn(),replyWhatsappConversation:api.send,upsertConversationLeadState:api.saveNote}));
-vi.mock('@/lib/customer/inbox-extension-actions',()=>({runInboxExtension:api.extension,removeUnboundWhatsappFile:vi.fn(),listWhatsappMediaMetadata:vi.fn(async()=>({ok:true,data:[]}))}));
+vi.mock('@/lib/customer/inbox-extension-actions',()=>({runInboxExtension:api.extension,removeUnboundWhatsappFile:vi.fn(),listWhatsappMediaMetadata:vi.fn(async()=>({ok:true,data:[]})),listInboxStars:vi.fn(async()=>({ok:true,data:[]}))}));
 vi.mock('@/lib/whatsapp/inbox-actions',()=>({refreshWhatsappInboxInitialPage:vi.fn(),refreshWhatsappInboxPage:vi.fn(),refreshWhatsappThreadPage:api.thread,refreshWhatsappControlAuditPage:vi.fn(async()=>({ok:true,data:{events:[],hasMore:false,nextCursor:null}})),refreshWhatsappConnectionStatus:vi.fn(async()=>({ok:false,code:'UNAVAILABLE'})),markWhatsappThreadSeen:vi.fn()}));
 let host:HTMLDivElement,root:Root;
 const conversation={id:'thread',inboxSequence:'1',unreadCount:0,intervention:{reasons:['human_control' as const]},customer:'Synthetic',phone:'synthetic',topic:'WhatsApp',summary:'',status:'open' as const,owner:'staff',assistantPaused:true,automationAllowed:false,revision:1,messages:[],internalNote:'Saved internal note',leadStage:'new' as const,followUpStatus:'none' as const,followUpAt:null,leadRevision:1};
