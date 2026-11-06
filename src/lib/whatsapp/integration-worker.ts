@@ -13,14 +13,15 @@ export type VerificationResult = { ok: true } | { ok: false; code: VerificationF
 export type VerifyPortResult = boolean | VerificationResult;
 export type IntegrationPorts={enabled:boolean;frame:()=>Promise<IntegrationFrame|null>;context:(f:IntegrationFrame)=>Promise<AnswerContextChunk[]|null>;
  verify:(f:IntegrationFrame,citations:AnswerCitation[])=>Promise<VerifyPortResult>;secret:(f:IntegrationFrame)=>Promise<string|null>;reserve:()=>Promise<boolean>;
- answer:(f:IntegrationFrame,chunks:AnswerContextChunk[])=>Promise<{ok:boolean;complete?:boolean;text?:string;attempts:{id:string;status?:string}[];error?:string}>;
+ answer:(f:IntegrationFrame,chunks:AnswerContextChunk[],history?:{role:"customer"|"assistant";text:string}[])=>Promise<{ok:boolean;complete?:boolean;text?:string;attempts:{id:string;status?:string}[];error?:string}>;
  stage:(attempt:string,citations:AnswerCitation[])=>Promise<string|null>;
  claimSend:()=>Promise<{ok:boolean;claimed?:boolean;attempt_token?:string|null;intent?:SendIntent}>;
  send:(i:SendIntent,secret:string)=>Promise<{ok:boolean;waMessageId?:string;code?:string;detail?:string}>;
  finalize:(id:string,token:string,result:"accepted"|"rejected"|"unknown",wamid:string|null,errorCode?:"graph_190")=>Promise<boolean>;
  abortSend?:(id:string,token:string)=>Promise<boolean>;
  finish:(id:string)=>Promise<string>;repair:(id:string)=>Promise<boolean>;
- retry:(code:string,uncertain:boolean,permanent?:boolean)=>Promise<void>;heartbeat:()=>Promise<boolean>};
+ retry:(code:string,uncertain:boolean,permanent?:boolean)=>Promise<void>;heartbeat:()=>Promise<boolean>;
+ history?:(f:IntegrationFrame)=>Promise<{role:"customer"|"assistant";text:string}[]>};
 export type IntegrationOutcome={ok:false;code:string;jobCompleted:boolean;sendAccepted:boolean;delivered:false}|{ok:true;code:"ACCEPTED";jobCompleted:true;sendAccepted:true;delivered:false};
 const blocked=(code:string):IntegrationOutcome=>({ok:false,code,jobCompleted:false,sendAccepted:false,delivered:false});
 const acceptedPending=(code:string,settled=false):IntegrationOutcome=>({ok:false,code,jobCompleted:settled,sendAccepted:true,delivered:false});
@@ -52,14 +53,28 @@ export async function runPersistedInboundJob(input:{jobId:string;claimToken:stri
  if(humanReview&&!frame.intent_id)return await fail("HUMAN_REVIEW_REQUIRED");
  if(humanReview&&!(frame.ai_status==="success"&&frame.reply_text&&frame.ai_attempt_id))return blocked("SEND_REQUIRES_RECONCILIATION");
  const social=classifyPureSocialSmallTalk(frame.question);
- let chunks:AnswerContextChunk[]|null=null;
+ let chunks:AnswerContextChunk[];
  let captured:AnswerCitation[];
  if(social.isPureSocial){
   chunks=[];
   captured=frame.staged_citations??[];
  }else{
-  chunks=await ports.context(frame);if(!chunks?.length)return await fail("APPROVED_KNOWLEDGE_REQUIRED");
-  captured=frame.staged_citations??chunks.map(({sourceId,title,contentVersion})=>({sourceId,title,contentVersion}));
+  const raw=await ports.context(frame);
+  if(raw===null){
+   try{await ports.retry("RETRIEVAL_UNAVAILABLE",false,false);}catch{}
+   return blocked("RETRIEVAL_UNAVAILABLE");
+  }
+  chunks=raw;
+  captured=frame.staged_citations??(chunks.length>0?chunks.map(({sourceId,title,contentVersion})=>({sourceId,title,contentVersion})):[]);
+  if(captured.length===0){
+   console.info("[UNANSWERED_QUESTION_LOG]",{
+    company_id:frame.company_id,
+    conversation_id:frame.conversation_id,
+    job_id:frame.job_id,
+    question:frame.question,
+    timestamp:new Date().toISOString(),
+   });
+  }
  }
  const v1=await ports.verify(frame,captured);
  if(!isVerified(v1)){
@@ -81,7 +96,8 @@ export async function runPersistedInboundJob(input:{jobId:string;claimToken:stri
  let heartbeatBusy=false;
  const timer=setInterval(()=>{if(heartbeatBusy)return;heartbeatBusy=true;void ports.heartbeat().catch(()=>false).finally(()=>{heartbeatBusy=false;});},30_000);
  let generated;
- try{generated=await ports.answer(frame,chunks);}finally{clearInterval(timer);}
+ const history=ports.history?await ports.history(frame).catch(()=>[]):undefined;
+ try{generated=await ports.answer(frame,chunks,history);}finally{clearInterval(timer);}
  if(!generated.ok||generated.complete!==true)return await fail(generated.error??"AI_REQUIRES_RECONCILIATION",
  generated.attempts.some(a=>a.status==="uncertain")||generated.error?.includes("SETTLEMENT")===true);
  attemptId=generated.attempts.at(-1)?.id??null;

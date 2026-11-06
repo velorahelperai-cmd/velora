@@ -115,19 +115,48 @@ describe("WhatsApp small-talk targeted flow & safety gates", () => {
     expect(ports3.retry).not.toHaveBeenCalled();
   });
 
-  it("compound message (thanks + commercial inquiry) strictly requires approved knowledge", async () => {
+  it("compound message (thanks + commercial inquiry) routes to knowledge and answers politely on NO_MATCH without handover", async () => {
     // "شكرًا، والأسعار كام؟" contains thanks but also a commercial inquiry.
-    // If context returns 0 chunks, it must NOT be treated as small talk, and must call fail("APPROVED_KNOWLEDGE_REQUIRED")
+    // It must NOT be reduced to pure social small-talk shortcut ("العفو").
+    // When context returns [] (NO_MATCH), it answers politely with empty citations,
+    // does NOT dead-letter, does NOT disable automation, and completes successfully.
     const ports = mockPorts(
       { ...baseFrame, job_id: "job-compound", question: "شكرًا، والأسعار كام؟" },
       {
-        context: vi.fn(async () => []), // empty knowledge
+        context: vi.fn(async () => []), // empty knowledge match (NO_MATCH)
+        answer: vi.fn(async (_f, chunks) => {
+          expect(chunks).toEqual([]);
+          return {
+            ok: true,
+            complete: true,
+            text: "عذراً، أسعار هذه الخدمات غير متوفرة لدي حالياً. هل ترغب في معرفة تفاصيل الخدمات أولاً؟",
+            attempts: [{ id: "attempt-no-match", status: "success" }],
+          };
+        }),
       }
     );
     const res = await runPersistedInboundJob({ jobId: "job-compound", claimToken: "claim-c", companyId: "company-1" }, ports);
+    expect(res.ok).toBe(true);
+    expect(res.code).toBe("ACCEPTED");
+    expect(ports.context).toHaveBeenCalled();
+    expect(ports.retry).not.toHaveBeenCalled();
+    expect(ports.send).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "intent-1" }),
+      "test_token"
+    );
+  });
+
+  it("retrieval breakdown returns RETRIEVAL_UNAVAILABLE with transient retry without handover", async () => {
+    const ports = mockPorts(
+      { ...baseFrame, job_id: "job-breakdown", question: "ما هي الخدمات؟" },
+      {
+        context: vi.fn(async () => null), // database or search breakdown
+      }
+    );
+    const res = await runPersistedInboundJob({ jobId: "job-breakdown", claimToken: "claim-b", companyId: "company-1" }, ports);
     expect(res.ok).toBe(false);
-    expect(res.code).toBe("APPROVED_KNOWLEDGE_REQUIRED");
-    expect(ports.retry).toHaveBeenCalledWith("APPROVED_KNOWLEDGE_REQUIRED", false, true);
+    expect(res.code).toBe("RETRIEVAL_UNAVAILABLE");
+    expect(ports.retry).toHaveBeenCalledWith("RETRIEVAL_UNAVAILABLE", false, false);
     expect(ports.send).not.toHaveBeenCalled();
   });
 

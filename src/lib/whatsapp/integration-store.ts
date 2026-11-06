@@ -43,7 +43,23 @@ export function createIntegrationPorts(binding:{jobId:string;claimToken:string;c
  }
  const executor=createClaimedWhatsappAnswerExecutor();
  return {enabled,frame,
- context:async f=>{if(!admin)return null;const c=await loadApprovedAnswerContext(f.company_id,admin,{question:f.question,jobId:f.job_id,claimToken:binding.claimToken});return c.ok?c.chunks:null;},
+ context:async f=>{
+  if(!admin)return null;
+  try{
+   const c=await loadApprovedAnswerContext(f.company_id,admin,{question:f.question,jobId:f.job_id,claimToken:binding.claimToken});
+   if(c.ok)return c.chunks;
+   if(c.code==="NO_KNOWLEDGE")return [];
+   return null;
+  }catch{return null;}
+ },
+ history:async f=>{
+  if(!admin)return [];
+  try{
+   const {data,error}=await admin.from("whatsapp_messages").select("id, body, direction, sender, received_at").eq("company_id",f.company_id).eq("conversation_id",f.conversation_id).order("received_at",{ascending:false}).limit(5);
+   if(error||!Array.isArray(data))return [];
+   return data.filter(m=>m.id!==f.message_id&&typeof m.body==="string"&&m.body.trim()).slice(0,4).reverse().map(m=>({role:m.direction==="inbound"||m.sender==="customer"?"customer" as const:"assistant" as const,text:m.body.trim()}));
+  }catch{return [];}
+ },
  verify:async(f,citations):Promise<VerificationResult>=>{
   if(injectedClient===undefined&&!workerRolloutEnabled())return {ok:false,code:"WORKER_DISABLED"};
   let active:unknown;
@@ -76,7 +92,7 @@ export function createIntegrationPorts(binding:{jobId:string;claimToken:string;c
  if(!cachedFrame)return false;
  return cachedFrame.ai_status!=="success"||object(await rpc("whatsapp_reserve_job_usage",args))?.ok===true;
  },
- answer:async(f,chunks)=>executor({jobId:f.job_id,claimToken:binding.claimToken,question:f.question,chunks,locale:binding.locale??"ar",maxOutputTokens:512}),
+ answer:async(f,chunks,history)=>executor({jobId:f.job_id,claimToken:binding.claimToken,question:f.question,chunks,history,locale:binding.locale??"ar",maxOutputTokens:512}),
  stage:async(attempt,citations)=>{const r=object(await rpc("whatsapp_stage_job_reply",{...args,p_ai_attempt_id:attempt,p_citations:citations}));return r?.ok===true&&typeof r.intent_id==="string"?r.intent_id:null;},
  claimSend:async()=>{const r=object(await rpc("whatsapp_claim_assistant_job_send",args));if(!r||r.ok!==true)return {ok:false};const i=object(r.intent);
  if(!i||["id","outcome","company_id","conversation_id","phone_number_id","recipient_wa_id","body"].some(k=>typeof i[k]!=="string"))return {ok:false};

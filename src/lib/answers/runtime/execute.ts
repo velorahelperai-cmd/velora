@@ -1,7 +1,8 @@
 import "server-only";
-import { buildAnswerSystemPrompt,formatAnswerUserPrompt } from "../adapters/prompt";
+import { buildAnswerSystemPrompt,formatAnswerUserPrompt,type ConversationHistoryTurn } from "../adapters/prompt";
 import { MultiModelAIRouter } from "../routing/router";
 import { classifyPureSocialSmallTalk } from "../routing/small-talk";
+import { guardResponseAgainstUngroundedClaims } from "../claim-guard";
 import type { AIModelId,AnswerContextChunk,AnswerPersona } from "../types";
 import { priceRealUsage,realModelPricing,reserveRealCost } from "./economics";
 import { callRealModel,type RealProviderResult } from "./provider";
@@ -9,7 +10,7 @@ import { createRealRuntimeStore,type RealRuntimeStore,type ReservedRuntimeStore 
 import { ANSWER_MAX_CONTEXT_CHARS,ANSWER_MAX_QUESTION_CHARS,ANSWER_MAX_SOURCES } from "../constants";
 import { REAL_OUTPUT_LIMIT } from "./economics";
 import { matchesRequestedModel } from "../adapters/response-identity";
-export type RealAnswerPayload = {question:string;locale:"ar"|"en";chunks:AnswerContextChunk[];model?:AIModelId;maxOutputTokens?:number;maxCostBaisa?:number};
+export type RealAnswerPayload = {question:string;locale:"ar"|"en";chunks:AnswerContextChunk[];history?:ConversationHistoryTurn[];model?:AIModelId;maxOutputTokens?:number;maxCostBaisa?:number};
 export type RealAnswerInput = RealAnswerPayload & {actorId:string;sessionId:string;companyId:string;executionId:string;usageMode:"admin_test"|"company_live"};
 export type RealAttempt = {id:string;model:AIModelId;status:string;costUsd:number|null;costBaisa:number|null;latencyMs:number;errorCode?:string;message?:string;usage?:RealProviderResult["usage"];requestId?:string;responseId?:string;actualModelId?:string};
 function validPayload(input:RealAnswerPayload) {
@@ -18,6 +19,7 @@ function validPayload(input:RealAnswerPayload) {
   ["ar","en"].includes(input.locale)&&Array.isArray(input.chunks)&&input.chunks.length<=ANSWER_MAX_SOURCES&&
   !input.chunks.some(c=>!c||typeof c.text!=="string"||typeof c.title!=="string"||!c.sourceId||!Number.isSafeInteger(c.contentVersion)||c.contentVersion<1||!c.text.trim())&&
   input.chunks.reduce((sum,c)=>sum+c.title.length+c.text.length,0)<=ANSWER_MAX_CONTEXT_CHARS&&
+  (input.history===undefined||(Array.isArray(input.history)&&input.history.length<=10&&!input.history.some(h=>!h||!["customer","assistant"].includes(h.role)||typeof h.text!=="string"||h.text.length>1000)))&&
   (input.model===undefined||["gpt-6-luna","gpt-6.1-sol","gemini-3.8-flash","gemini-3.5-flash-lite"].includes(input.model))&&
   Number.isSafeInteger(maxOutputTokens)&&maxOutputTokens>=1&&maxOutputTokens<=REAL_OUTPUT_LIMIT&&Number.isFinite(maxCostBaisa)&&maxCostBaisa>0&&maxCostBaisa<=1000;
 }
@@ -79,7 +81,7 @@ export async function executeReservedRealAnswer(input:RealAnswerPayload,deps:{st
  const style=input.locale==="ar"
   ? "أجيبي بأسلوب طبيعي ومختصر ومباشر، كرسالة محادثة ودودة، من دون تكرار أو مقدمات آلية. لا تحذفي معلومة ضرورية للدقة أو السلامة، ولا تدّعي أنكِ إنسانة."
   : "Reply in a natural and concise, direct conversational style without repetitive or robotic introductions. Keep details necessary for accuracy and safety; do not pretend to be human.";
- const system=`${buildAnswerSystemPrompt(input.locale,deps.persona)}\n${style}`,prompt=formatAnswerUserPrompt(input.question,input.chunks,input.locale);
+ const system=`${buildAnswerSystemPrompt(input.locale,deps.persona)}\n${style}`,prompt=formatAnswerUserPrompt(input.question,input.chunks,input.locale,input.history);
  const sourceCitations=input.chunks.map(({sourceId,title,contentVersion})=>({sourceId,title,contentVersion}));
  for(const [index,model] of models.entries()){
   // Preserve the existing 2,048-token input overhead while matching the hard
@@ -98,6 +100,10 @@ export async function executeReservedRealAnswer(input:RealAnswerPayload,deps:{st
   try{result=await call({model,system,prompt,maxOutputTokens});}catch{result={status:"uncertain",text:"",errorCode:"PROVIDER_NETWORK_ERROR",latencyMs:0};}
   if(!result||!["success","incomplete","rejected","uncertain"].includes(result.status)||typeof result.text!=="string"||!Number.isSafeInteger(result.latencyMs)||result.latencyMs<0)result={status:"uncertain",text:"",errorCode:"INVALID_PROVIDER_RESULT",latencyMs:0};
   if(result.status==="success"&&!result.text.trim())result={...result,status:"incomplete"};
+  if(result.status==="success"){
+   const guarded=guardResponseAgainstUngroundedClaims(result.text,sourceCitations.length>0,input.locale);
+   if(!guarded.valid)result={...result,text:guarded.sanitizedText};
+  }
   let cost:{costUsd:number|null;costBaisa:number|null}={costUsd:null,costBaisa:null};
   if((deps.requireProviderIdentity&&["success","incomplete"].includes(result.status)&&!result.actualModelId)||!matchesRequestedModel(result.actualModelId,model))result={...result,status:"uncertain",text:"",errorCode:result.actualModelId?"PROVIDER_MODEL_MISMATCH":"PROVIDER_MODEL_MISSING"};
   else if(result.usage){try{cost=priceRealUsage(result.usage,pricing);}catch{result={...result,status:"uncertain",text:"",errorCode:"INVALID_PROVIDER_USAGE"};}}
