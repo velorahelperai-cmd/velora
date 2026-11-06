@@ -81,6 +81,24 @@ describe("scheduled worker disabled and malformed inputs", () => {
     const response = await POST(new Request("http://localhost/api/internal/whatsapp/worker", { method: "POST", headers: { authorization: "Bearer " + signedTick() } }));
     expect(response.status).toBe(503); expect(state.scheduleValid).toBe(true); expect(state.claims).toBe(0); expect(state.sends).toBe(0);
   });
+  it("keeps the worker disabled and does not dispatch an ack while the continuity gate is closed", async () => {
+    vi.stubEnv("WHATSAPP_WORKER_ENABLED", "false");
+    vi.stubEnv("WHATSAPP_CONTINUITY_ACK_ENABLED", "false");
+    const response = await POST(new Request("http://localhost/api/internal/whatsapp/worker", { method: "POST", headers: { authorization: "Bearer " + syntheticSecret } }));
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ code: "WORKER_DISABLED" });
+    expect(state.claims).toBe(0);
+    expect(state.sends).toBe(0);
+  });
+  it("does not dispatch the continuity ack when the worker is disabled and external send is closed", async () => {
+    vi.stubEnv("WHATSAPP_WORKER_ENABLED", "false");
+    vi.stubEnv("WHATSAPP_CONTINUITY_ACK_ENABLED", "true");
+    const response = await POST(new Request("http://localhost/api/internal/whatsapp/worker", { method: "POST", headers: { authorization: "Bearer " + syntheticSecret } }));
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ code: "WORKER_DISABLED", automaticRetry: false, ack: { claimed: 0, dispatched: 0, code: "SEND_DISABLED" } });
+    expect(state.claims).toBe(0);
+    expect(state.sends).toBe(0);
+  });
   it.each(["tick.short", "tick." + "g".repeat(64), "tick." + "a".repeat(65)])("rejects malformed capability %s", async token => {
     state.scheduleValid = true;
     const response = await POST(new Request("http://localhost/api/internal/whatsapp/worker", { method: "POST", headers: { authorization: "Bearer " + token } }));

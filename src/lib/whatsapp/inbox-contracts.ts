@@ -13,8 +13,13 @@ type PageInput = { companyId: string; limit?: number; before?: string | null };
 type ThreadInput = PageInput & { conversationId: string };
 export type InboxInterventionReason = "human_control" | "worker_review" | "worker_failed" | "send_unknown" | "send_rejected" | "delivery_failed" | "ack_sent";
 const REASONS: InboxInterventionReason[] = ["human_control", "worker_review", "worker_failed", "send_unknown", "send_rejected", "delivery_failed", "ack_sent"];
+export type ContinuitySla = {
+  ackAfterSeconds: number; unclaimedEscalateSeconds: number; claimedIdleSeconds: number;
+  ackDueAt: string | null; unclaimedEscalateAt: string | null; claimedIdleAt: string | null;
+};
 export type WhatsappInboxItem = Conversation & {
   inboxSequence: string; unreadCount: number; intervention: { reasons: InboxInterventionReason[] };
+  continuitySla?: ContinuitySla;
 };
 export type WhatsappThreadMessage = Conversation["messages"][number] & { arrivalSequence: string; direction: "inbound" | "outbound" };
 type PageMeta = { kind: "partial"; nextCursor: string | null; hasMore: boolean };
@@ -114,8 +119,24 @@ function item(raw: unknown): WhatsappInboxItem {
     lead_revision: typeof r.lead_revision === "number" ? count(r.lead_revision) : 1,
   }, messages, new Map(typeof r.assigned_name === "string" && typeof r.assigned_to === "string" ? [[r.assigned_to, r.assigned_name]] : []));
   const intervention = record(r.intervention);
+  const sla = continuitySla(r.continuity_sla);
   return { ...mapped, inboxSequence: r.inbox_sequence, unreadCount: count(r.unread_count),
+    ...(sla ? { continuitySla: sla } : {}),
     intervention: { reasons: Array.isArray(intervention?.reasons) ? intervention.reasons.filter((x): x is InboxInterventionReason => REASONS.includes(x as InboxInterventionReason)) : [] } };
+}
+function continuitySla(raw: unknown): ContinuitySla | undefined {
+  const row = record(raw);
+  if (!row) return undefined;
+  const seconds = (value: unknown, max: number) => typeof value === "number" && Number.isSafeInteger(value) && value >= 5 && value <= max ? value : null;
+  const ack = seconds(row.ack_after_seconds, 120);
+  const unclaimed = seconds(row.unclaimed_escalate_seconds, 600);
+  const idle = seconds(row.claimed_idle_seconds, 900);
+  if (ack == null || unclaimed == null || idle == null) return undefined;
+  const at = (value: unknown) => typeof value === "string" && Number.isFinite(Date.parse(value)) ? value : null;
+  return {
+    ackAfterSeconds: ack, unclaimedEscalateSeconds: unclaimed, claimedIdleSeconds: idle,
+    ackDueAt: at(row.ack_due_at), unclaimedEscalateAt: at(row.unclaimed_escalate_at), claimedIdleAt: at(row.claimed_idle_at),
+  };
 }
 
 /** Creation-order keyset page. Never use this as a full membership refresh. */

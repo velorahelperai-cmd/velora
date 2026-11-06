@@ -35,7 +35,7 @@ A missing `whatsapp_continuity_policies` row uses these defaults. Per-business o
 
 `WHATSAPP_CONTINUITY_ACK_ENABLED` is the independent fallback-ack gate. It stays closed unless the value is exactly `true`. `WHATSAPP_FIXED_ACK_ENABLED` and `WHATSAPP_WORKER_ENABLED` do not open it. The legacy fixed ack in `src/lib/whatsapp/fixed-ack.ts` still requires the worker flag, an explicit recipient, and the existing send guards.
 
-The watchdog function `whatsapp_claim_continuity_watchdog` only reserves an ack row. Its result always has `dispatch: false`. A later sender still has to pass the existing send-intent claim, generation fence, service window, and this gate. `UNKNOWN` never authorizes a second send. A closed 24-hour window blocks free-form text, including the neutral ack. This change does not approve a template send.
+The worker calls `runContinuityAckWatchdog` only when `WHATSAPP_CONTINUITY_ACK_ENABLED=true`. The watchdog does not claim a row unless `WHATSAPP_ALLOW_EXTERNAL_SEND=true` as well. A claimed job records `ack_v1` through `whatsapp_note_continuity`, which uses the existing worker lock and cancels that ack when staff claims the thread or the answer is accepted. A closed service window is stored as `blocked` and is not converted into a template. `UNKNOWN` is finalized once and is not retried. The inbox payload includes `continuity_sla` deadlines, and the composer shows the remaining ack time.
 
 ## Webhook
 

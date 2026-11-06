@@ -4,6 +4,7 @@ import {
   classifyProviderResult,
   continuityAckGate,
   continuityOwnershipNotice,
+  continuitySlaNotice,
   customerVisibleDelivery,
   decideInboundContinuity,
   deriveHumanOwnership,
@@ -269,6 +270,15 @@ describe("inbound batch claim", () => {
     expect(inboundBatchMayClaim({
       ...open, status: "handed_over", automationAllowed: false, ownership: "REQUESTED_UNCLAIMED", sensitive: true, ackGateOpen: true,
     })).toMatchObject({ claim: true, freeform: true, ai: "stop" });
+  });
+});
+
+describe("inbox sla notice", () => {
+  it("shows the remaining ack deadline and the overdue state without a send promise", () => {
+    const due = new Date(Date.parse("2026-11-06T12:00:20.000Z")).toISOString();
+    expect(continuitySlaNotice({ ackDueAt: due, nowMs: Date.parse("2026-11-06T12:00:00.000Z"), ar: true })).toBe("مهلة الإقرار 20 ث");
+    expect(continuitySlaNotice({ ackDueAt: due, nowMs: Date.parse("2026-11-06T12:00:21.000Z"), ar: true })).toBe("تجاوزت مهلة الإقرار");
+    expect(continuitySlaNotice({ ackDueAt: null, nowMs: 0, ar: false })).toBeNull();
   });
 });
 

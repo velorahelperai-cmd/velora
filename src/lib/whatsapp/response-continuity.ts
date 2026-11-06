@@ -541,6 +541,18 @@ export function inboundBatchMayClaim(input: {
   return { claim: true, freeform: true, ai: "answer", reason: "safe_answer" };
 }
 
+export function continuitySlaNotice(input: { ackDueAt?: string | null; nowMs: number; ar: boolean }): string | null {
+  if (!input.ackDueAt) return null;
+  const due = Date.parse(input.ackDueAt);
+  if (!Number.isFinite(due)) return null;
+  const remainingSec = Math.ceil((due - input.nowMs) / 1000);
+  if (remainingSec > 0) {
+    const label = remainingSec >= 60 ? `${Math.ceil(remainingSec / 60)} د` : `${remainingSec} ث`;
+    return input.ar ? `مهلة الإقرار ${label}` : `Ack due in ${remainingSec >= 60 ? `${Math.ceil(remainingSec / 60)}m` : `${remainingSec}s`}`;
+  }
+  return input.ar ? "تجاوزت مهلة الإقرار" : "Ack deadline passed";
+}
+
 export function webhookDurableStatus(input: { signatureValid: boolean; persisted: boolean }): 200 | 401 | 500 {
   if (!input.signatureValid) return 401;
   if (!input.persisted) return 500;
