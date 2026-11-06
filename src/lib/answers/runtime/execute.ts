@@ -41,14 +41,14 @@ export async function executeReservedRealAnswer(input:RealAnswerPayload,deps:{st
  const startMs = Date.now();
  const social = classifyPureSocialSmallTalk(input.question, input.locale);
  if (social.isPureSocial && social.responseText) {
-  const model: AIModelId = "gemini-3.5-flash-lite";
+  const model: AIModelId = input.model ?? "gemini-3.5-flash-lite";
   const id = crypto.randomUUID();
   const pricing = realModelPricing(model);
   const reservedBaisa = 1;
   let reservation;
   try {
    reservation = await store.reserve({
-    id, attempt: 1, model, provider: "google", reservedBaisa,
+    id, attempt: 1, model, provider: model.startsWith("gemini-") ? "google" : "openai", reservedBaisa,
     pricingVersion: pricing.version, pricingSnapshot: pricing, sourceCitations: [],
    });
   } catch {
@@ -69,12 +69,12 @@ export async function executeReservedRealAnswer(input:RealAnswerPayload,deps:{st
   const actualLatencyMs = Math.max(0, Date.now() - startMs);
   const attempt: RealAttempt = {
    id, model, status: "success", costUsd: 0, costBaisa: 0, latencyMs: actualLatencyMs,
-   message: social.responseText, actualModelId: model, usage: zeroUsage, source: "local_rule",
+   message: social.responseText, actualModelId: undefined, usage: zeroUsage, source: "local_rule",
   };
   attempts.push(attempt);
   const settled = await store.settle({
    id, status: "success", costUsd: 0, costBaisa: 0, usage: zeroUsage,
-   responseText: social.responseText, actualModelId: model, latencyMs: actualLatencyMs,
+   responseText: social.responseText, actualModelId: undefined, latencyMs: actualLatencyMs,
   });
   if (!settled) return { ok: false as const, error: "SETTLEMENT_PERSIST_FAILED", attempts };
   return { ok: true as const, text: social.responseText, complete: true, attempts };

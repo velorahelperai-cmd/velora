@@ -38,3 +38,23 @@ it.each([
   expect(system).toContain(guidance);
   expect(system).toContain(locale === "ar" ? "إثبات التنفيذ" : "trusted successful executor result");
 });
+
+
+it("logs local_rule pure social answers with actualModelId undefined and 0 provider cost", async () => {
+  const db = store(), call = vi.fn();
+  const result = await executeRealAnswer({ ...input, question: "شكرا جزيلا", locale: "ar" }, { store: db, call });
+  expect(result.ok).toBe(true);
+  expect(call).not.toHaveBeenCalled();
+  expect(result.attempts).toHaveLength(1);
+  const attempt = result.attempts[0];
+  expect(attempt.source).toBe("local_rule");
+  expect(attempt.actualModelId).toBeUndefined();
+  expect(attempt.costUsd).toBe(0);
+  expect(attempt.costBaisa).toBe(0);
+  expect(db.settle).toHaveBeenCalledWith(expect.objectContaining({
+    status: "success",
+    costUsd: 0,
+    costBaisa: 0,
+    actualModelId: undefined,
+  }));
+});
