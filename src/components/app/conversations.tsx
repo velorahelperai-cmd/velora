@@ -1112,7 +1112,13 @@ export function ConversationsPage({
     try {
       const result = await threadReader({ companyId, conversationId, before });
       if (!stillCurrent()) return false;
-      if(!result.ok&&'transportUnavailable' in result&&result.transportUnavailable===true){setThreadTransportPaused(true);onConnectionUnavailable?.();return false;}
+      if(!result.ok&&'transportUnavailable' in result&&result.transportUnavailable===true){
+        setThreadTransportPaused(true);onConnectionUnavailable?.();
+        // Keep a previously verified thread usable; surface a retryable notice on first open.
+        if(threadsRef.current[conversationId]&&selectedIdRef.current===conversationId)setReadyThreadId(conversationId);
+        else if(selectedIdRef.current===conversationId)setThreadErrors(current=>({...current,[conversationId]:copy.app.controlRefreshFailed}));
+        return false;
+      }
       if (!result.ok) {
         if (selectedIdRef.current === conversationId) setReadyThreadId(null);
         if (result.code === "NOT_FOUND" || result.code === "FORBIDDEN" || result.code === "SCOPE_CHANGED") removeInaccessibleThread(conversationId);
@@ -1600,7 +1606,13 @@ export function ConversationsPage({
     const ar=locale==='ar';
     const denied=accessDenied||readSuspended;
     if(denied)return <InboxDesktop locale={locale} view={{...desktopView,state:'denied',message:copy.app.inboxAccessDeniedBody,customer:undefined,messages:[]}}/>;
-    if(!selected||!selectedReady)return <InboxDesktop locale={locale} view={{...desktopView,customer:undefined,messages:[],notice:<>{desktopView.notice}<p>{threadErrors[selectedId??'']??inboxReadError??(ar?'جارٍ تحميل المحادثة…':'Loading conversation…')}</p></>,onRetry:()=>void refreshInboxView(),listFooter:<>{desktopView.listFooter}<button type="button" className="vdi-small-button" onClick={()=>void refreshInboxView()}>{ar?'إعادة المحاولة':'Retry'}</button></>}}/>;
+    if(!selected||!selectedReady){
+      // Keep list-scoped customer identity mounted while the thread read catches up
+      // so selection never falls back to the empty «choose a conversation» placeholders.
+      const loadingCustomer=selected?{name:selected.customer,initials:selected.customer.slice(0,1).toUpperCase(),channel:'whatsapp' as const,phone:selected.phone,status:`${copy.app.statuses[selected.status]} · WhatsApp`}:undefined;
+      const retryThread=()=>{if(selectedId)void loadThread(selectedId);else void refreshInboxView();};
+      return <InboxDesktop locale={locale} view={{...desktopView,customer:loadingCustomer,messages:[],composer:loadingCustomer?{mode:'message',enabledModes:['message'],value:'',onChange:()=>{},onModeChange:()=>{},onSubmit:()=>{},pending:false,canSend:false,disabledReason:threadErrors[selectedId??'']??inboxReadError??(ar?'جارٍ تحميل المحادثة…':'Loading conversation…')}:undefined,notice:<>{desktopView.notice}<p>{threadErrors[selectedId??'']??inboxReadError??(ar?'جارٍ تحميل المحادثة…':'Loading conversation…')}</p></>,onRetry:retryThread,listFooter:<>{desktopView.listFooter}<button type="button" className="vdi-small-button" onClick={retryThread}>{ar?'إعادة المحاولة':'Retry'}</button></>}}/>;
+    }
     const assignee=assignees.find(person=>person.userId===selected.assignedTo);
     const automation=handledByStaff?'paused':selected.automationAllowed&&selected.status!=='resolved'?'allowed':'blocked';
     const control=selected.status==='resolved'||handledByStaff?'resume':'take_over';

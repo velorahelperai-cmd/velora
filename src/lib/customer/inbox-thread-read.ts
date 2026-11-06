@@ -10,6 +10,8 @@ export async function fetchInboxThread(input:Parameters<typeof loadWhatsappThrea
   try{response=await fetch(`/api/inbox/thread?${query}`,{credentials:'same-origin',cache:'no-store',signal:AbortSignal.timeout(45000)});}catch{return {ok:false,code:'UNAVAILABLE',transportUnavailable:true};}
   if(response.status===409)return {ok:false,code:'SCOPE_CHANGED'};
   if(response.status===401||response.status===403)return {ok:false,code:'FORBIDDEN'};
+  // Platform timeouts/gateway errors are transport loss, not a permission denial.
+  if(response.status===503||response.status===504||response.status===408)return {ok:false,code:'UNAVAILABLE',transportUnavailable:true};
   if(!response.ok)return {ok:false,code:'UNAVAILABLE'};
   const result=await response.json() as Awaited<ReturnType<typeof loadWhatsappThreadPage>>;
   if(!result||typeof result.ok!=='boolean')return {ok:false,code:'UNAVAILABLE'};

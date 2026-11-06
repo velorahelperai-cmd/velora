@@ -70,6 +70,21 @@ it('closes a planned rotation without an unavailable signal while renewal author
  expect(s.client.removeChannel).toHaveBeenCalled();
  release(true);
 });
+it('treats join timeout as quiet transport close, not unavailable permission failure',async()=>{
+ const s=setup();await s.read();
+ await vi.advanceTimersByTimeAsync(8000);
+ let text='';for(;;){const record=await s.reader.read();if(record.done)break;text+=new TextDecoder().decode(record.value);}
+ expect(text).not.toContain('event: unavailable');
+ expect(s.client.removeChannel).toHaveBeenCalledOnce();
+});
+it('ends a stream lifetime without emitting unavailable so the client can reconnect',async()=>{
+ const s=setup(vi.fn(async()=>true),scope,true);
+ await s.read();s.ready();await s.read();
+ await vi.advanceTimersByTimeAsync(6000);
+ let text='';for(;;){const record=await s.reader.read();if(record.done)break;text+=new TextDecoder().decode(record.value);}
+ expect(text).not.toContain('event: unavailable');
+ expect(s.client.removeChannel).toHaveBeenCalled();
+});
 
 it('authorizes a planned renewal before closing, and fails closed on denial',async()=>{
  for(const allowed of [true,false]){

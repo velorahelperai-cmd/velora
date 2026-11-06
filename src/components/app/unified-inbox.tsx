@@ -80,6 +80,8 @@ function ScopedUnifiedInbox({initial,waReview=false,igReview=false,onUnavailable
  const [isNavigating,startTransition]=useTransition();
  const [snapshot,setSnapshot]=useState(initial),[refreshing,setRefreshing]=useState(false),[error,setError]=useState(false);
  const [retained,setRetained]=useState<Extract<Snapshot,{ok:true}>|null>(initial.ok?initial:null);
+ const retainedRef=useRef(retained);
+ retainedRef.current=retained;
  const [refreshVersion,setRefreshVersion]=useState(0),[revoked,setRevoked]=useState(false);
  const [connectionPaused,setConnectionPaused]=useState(false);
  const [moreLoading,setMoreLoading]=useState<InboxChannel|null>(null);
@@ -112,35 +114,49 @@ function ScopedUnifiedInbox({initial,waReview=false,igReview=false,onUnavailable
  const [nowMs,setNowMs]=useState(()=>Date.now());
  const threadViewportRef=useRef<HTMLDivElement>(null);
  const expected=initial.ok?`${initial.companyId}:${initial.actorId}`:null;
+ const pauseConnection=useCallback(()=>{setConnectionPaused(true);setStarRevision(value=>value+1);setLiveState('offline');live.current=false;},[]);
+ const retainThroughTransportLoss=useCallback(()=>{
+  setConnectionPaused(true);setStarRevision(value=>value+1);setLiveState('offline');live.current=false;setError(false);
+ },[]);
  const refresh=useCallback(async(queueIfBusy=false,refreshThread=true)=>{
   if(expected===null||accessRevoked.current)return;
   if(busy.current){if(queueIfBusy)queuedRefresh.current=true;return;}
   queuedRefresh.current=false;busy.current=true;const request=++epoch.current;setRefreshing(true);
   try{const [companyId,actorId]=expected.split(':');const result=await fetchServiceInbox({companyId:companyId!,actorId:actorId!});if(!mounted.current||epoch.current!==request)return;
    if(result.ok&&`${result.companyId}:${result.actorId}`!==expected){setRetained(null);setSnapshot({ok:false,code:'SCOPE_CHANGED'});setError(true);return;}
-   if(!result.ok&&'transportUnavailable' in result&&result.transportUnavailable===true){setConnectionPaused(true);setStarRevision(value=>value+1);setLiveState('offline');live.current=false;setError(false);return;}
+   if(!result.ok&&'transportUnavailable' in result&&result.transportUnavailable===true){retainThroughTransportLoss();return;}
+   // Soft UNAVAILABLE after a verified list is transport/load pressure, not a
+   // permission denial. Keep the loaded rows so selecting a thread stays mounted.
+   if(!result.ok&&result.code==='UNAVAILABLE'){
+    if(retainedRef.current){retainThroughTransportLoss();return;}
+    setConnectionPaused(false);setPinned([]);setPinnedOnly(false);setRetained(null);setSnapshot(result);setError(true);return;
+   }
    if(!result.ok){setConnectionPaused(false);setPinned([]);setPinnedOnly(false);setRetained(null);setSnapshot(result);setError(true);return;}
    // Replace cached pages: stable identity is not proof of old assignments.
-   if((!result.wa.ok&&result.wa.code==='UNAVAILABLE')||(!result.ig.ok&&result.ig.code==='UNAVAILABLE')){setRetained(null);setSnapshot({ok:false,code:'UNAVAILABLE'});setError(true);return;}
+   if((!result.wa.ok&&result.wa.code==='UNAVAILABLE')||(!result.ig.ok&&result.ig.code==='UNAVAILABLE')){
+    if(retainedRef.current){retainThroughTransportLoss();return;}
+    setRetained(null);setSnapshot({ok:false,code:'UNAVAILABLE'});setError(true);return;
+   }
    setSnapshot(result);setRetained(result);setConnectionPaused(false);setLastVerifiedReadAt(Date.now());if(refreshThread)setRefreshVersion(n=>n+1);setError(false);
-  }catch{if(mounted.current&&epoch.current===request){setRetained(null);setSnapshot({ok:false,code:'UNAVAILABLE'});setError(true);}}
+  }catch{if(mounted.current&&epoch.current===request){
+   if(retainedRef.current)retainThroughTransportLoss();
+   else{setRetained(null);setSnapshot({ok:false,code:'UNAVAILABLE'});setError(true);}
+  }}
   finally{busy.current=false;if(mounted.current&&epoch.current===request){setRefreshing(false);if(queuedRefresh.current&&document.visibilityState==='visible')void refreshRef.current(false,false);}}
- },[expected]);
+ },[expected,retainThroughTransportLoss]);
  useEffect(()=>{refreshRef.current=refresh;},[refresh]);
- const pauseConnection=useCallback(()=>{setConnectionPaused(true);setStarRevision(value=>value+1);setLiveState('offline');live.current=false;},[]);
  const onInboxEvent=useCallback((event:InboxRealtimeEvent)=>{
   if(accessRevoked.current)return;
-  if(event.type==='disconnected'){
+  if(event.type==='disconnected'||event.type==='unavailable'){
+   // SSE unavailable used to wipe the verified list. Treat it like transport
+   // loss: keep rows mounted, pause writes, and recheck with a fenced read.
    setLiveState('offline');setConnectionPaused(true);setStarRevision(value=>value+1);
    live.current=false;
    if(transportDown.current)return;
    transportDown.current=true;
-   // Transport loss is not an authorization result. Keep the last verified
-   // view while a bounded, independently fenced read checks current access.
    if(document.visibilityState==='visible')void refreshRef.current(false,false);
    return;
   }
-  if(event.type==='unavailable'){setConnectionPaused(false);setLiveState('offline');setPinned([]);setPinnedOnly(false);live.current=false;queuedRefresh.current=false;if(eventTimer.current!==null)clearTimeout(eventTimer.current);eventTimer.current=null;epoch.current++;setRefreshing(false);setMoreLoading(null);setRetained(null);setSnapshot({ok:false,code:'UNAVAILABLE'});setError(true);return;}
   if(event.type==='revoked'){setConnectionPaused(false);setLiveState('offline');setPinned([]);setPinnedOnly(false);accessRevoked.current=true;setRevoked(true);live.current=false;queuedRefresh.current=false;if(eventTimer.current!==null)clearTimeout(eventTimer.current);eventTimer.current=null;epoch.current++;setRetained(null);setSnapshot({ok:false,code:'SCOPE_CHANGED'});setError(true);return;}
   if(event.type==='ready'||event.type==='reconnect'){
    setLiveState('connected');

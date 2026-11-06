@@ -9,10 +9,20 @@ it.each([true,false])('requires a successful exact boolean: %s',async allowed=>{
  expect(await readInboxCapability('company','wa.conversations.read')).toEqual({ok:true,allowed});
  expect(f.rpc).toHaveBeenCalledWith('has_company_capability',{p_company_id:'company',p_capability:'wa.conversations.read'});
 });
-it.each(['57014','PGRST202','42883','OTHER'])('never grants or calls a fallback on RPC error %s',async code=>{
+it.each(['PGRST202','42883','OTHER'])('never grants or calls a fallback on RPC error %s',async code=>{
  f.rpc.mockResolvedValue({data:true,error:{code,message:'PRIVATE_ERROR'}});
  expect(await readInboxCapability('company','wa.conversations.read')).toEqual({ok:false,code:'UNAVAILABLE'});
  expect(f.rpc).toHaveBeenCalledOnce();expect(JSON.stringify(vi.mocked(console.warn).mock.calls)).not.toContain('PRIVATE_ERROR');
+});
+it('retries one definite statement timeout and accepts only a fresh boolean grant',async()=>{
+ f.rpc.mockResolvedValueOnce({data:null,error:{code:'57014',message:'PRIVATE_ERROR'}}).mockResolvedValueOnce({data:true,error:null});
+ expect(await readInboxCapability('company','wa.conversations.read')).toEqual({ok:true,allowed:true});
+ expect(f.rpc).toHaveBeenCalledTimes(2);expect(JSON.stringify(vi.mocked(console.warn).mock.calls)).not.toContain('PRIVATE_ERROR');
+});
+it('fails closed when both capability attempts time out',async()=>{
+ f.rpc.mockResolvedValue({data:null,error:{code:'57014',message:'PRIVATE_ERROR'}});
+ expect(await readInboxCapability('company','wa.conversations.read')).toEqual({ok:false,code:'UNAVAILABLE'});
+ expect(f.rpc).toHaveBeenCalledTimes(2);
 });
 it.each(['42501','PGRST301'])('explicit authorization failure %s cannot retain access',async code=>{
  f.rpc.mockResolvedValue({data:true,error:{code}});
