@@ -1129,7 +1129,7 @@ export type Database = {
           p_provider_id: string | null;
           p_code: string | null;
         };
-        Returns: Json;
+        Returns: boolean;
       };
       billing_expiry_candidates: {
         Args: {

@@ -36,6 +36,7 @@ import {
   refreshWhatsappControlAuditPage, refreshWhatsappConnectionStatus, markWhatsappThreadSeen,
 } from "@/lib/whatsapp/inbox-actions";
 import type { WhatsappInboxItem, WhatsappInboxPage, WhatsappControlAuditPage, WhatsappConnectionStatus } from "@/lib/whatsapp/inbox-contracts";
+import { manualReplyBlock, staffHandlesConversation } from "@/lib/whatsapp/inbox-ownership";
 import { canUseInboxControl, currentThreadRequest, mergeInboxPageRows, mergeThreadPage, inboxSendLocked, updateInboxPageCache,
   matchesUnifiedInboxFilter, threadReadBoundary, type ThreadView, type UnifiedInboxFilter } from "./conversations-inbox";
 import type { WhatsappInboxMeta } from "@/lib/whatsapp/inbox";
@@ -581,6 +582,7 @@ export function ConversationsPage({
   selectedConversationId,
   onSelectConversation,
   refreshVersion = 0,
+  draftActorId,
   readSuspended = false,
   connectionPaused=false,
   onConnectionUnavailable,
@@ -598,6 +600,8 @@ export function ConversationsPage({
   selectedConversationId?: string | null;
   onSelectConversation?: (id:string|null)=>void;
   refreshVersion?:number;
+  /** Current actor, used only to keep this browser's unsent draft separate from another user. */
+  draftActorId?: string;
   readSuspended?:boolean;
   connectionPaused?:boolean;
   onConnectionUnavailable?:()=>void;
@@ -657,6 +661,33 @@ export function ConversationsPage({
   const draftKey = `${meta?.companyId}:${meta?.conversationScope}:${selectedParam}`;
   const draft = drafts[draftKey] ?? "";
   const setDraft = (value:string) => setDrafts(old=>({...old,[draftKey]:value}));
+  const draftStorageKey = draftActorId && selectedParam ? `velora-inbox-draft:${draftActorId}:${selectedParam}` : null;
+  const loadedDraftKey = useRef<string | null>(null);
+  useEffect(() => {
+    if (!draftStorageKey || loadedDraftKey.current === draftStorageKey) return;
+    loadedDraftKey.current = draftStorageKey;
+    const key = draftStorageKey;
+    const conversationKey = draftKey;
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      try {
+        const saved = window.localStorage.getItem(key);
+        if (saved) setDrafts(old => old[conversationKey] ? old : { ...old, [conversationKey]: saved.slice(0, 4096) });
+      } catch { /* A browser draft is not the record of a sent message. */ }
+    });
+    return () => { cancelled = true; };
+  }, [draftStorageKey, draftKey]);
+  useEffect(() => {
+    if (!draftStorageKey || loadedDraftKey.current !== draftStorageKey) return;
+    const handle = window.setTimeout(() => {
+      try {
+        if (draft) window.localStorage.setItem(draftStorageKey, draft);
+        else window.localStorage.removeItem(draftStorageKey);
+      } catch { /* Keep the draft in memory when storage is unavailable. */ }
+    }, 250);
+    return () => window.clearTimeout(handle);
+  }, [draftStorageKey, draft]);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [pending, setPending] = useState(false);
   const pendingActionRef = useRef(false);
@@ -710,17 +741,20 @@ export function ConversationsPage({
     const resize=()=>{if(window.innerWidth >= 1280)setMobileDetailsOpen(false);};
     document.addEventListener('keydown',key);window.addEventListener('resize',resize);
     return()=>{
-      document.body.style.overflow=oldOverflow==='hidden'?'':oldOverflow;
+      document.body.style.overflow=oldOverflow;
       document.removeEventListener('keydown',key);
       window.removeEventListener('resize',resize);
       if(previous && previous.isConnected && !previous.closest('[inert], [hidden], [aria-hidden="true"]')){
         previous.focus();
       } else {
-        const visibleFallback = document.querySelector<HTMLElement>(
-          'main button:not([disabled]):not([tabindex="-1"]), [data-inbox-desktop-v2] button:not([disabled]), [data-conversation-thread="true"] button:not([disabled]), input[type="search"]:not([disabled])'
+        const candidates = document.querySelectorAll<HTMLElement>(
+          'main button:not([disabled]):not([tabindex="-1"]), [data-inbox-desktop-v2] button:not([disabled]):not([tabindex="-1"]), [data-conversation-thread="true"] button:not([disabled]):not([tabindex="-1"]), input[type="search"]:not([disabled])'
         );
-        if(visibleFallback && visibleFallback.isConnected && !visibleFallback.closest('[inert], [hidden], [aria-hidden="true"]')){
-          visibleFallback.focus();
+        for (const candidate of candidates) {
+          if (candidate.isConnected && !candidate.closest('[inert], [hidden], [aria-hidden="true"]') && candidate.style.display !== 'none' && candidate.style.visibility !== 'hidden') {
+            candidate.focus();
+            break;
+          }
         }
       }
     };
@@ -937,17 +971,18 @@ export function ConversationsPage({
     });
   }, [conversations, activeFilter, worklist, query, nowMs, timezone]);
 
-  const selectedRow = conversations.find((c) => c.id === selectedId) ?? null;
   const selectedThread = selectedId ? threads[selectedId] : undefined;
+  const selectedRow = conversations.find((c) => c.id === selectedId) ?? (selectedId && selectedThread?.conversation.id === selectedId ? selectedThread.conversation : null);
   const selected = selectedRow ? { ...selectedRow, messages: selectedThread?.messages ?? [] } : null;
   const contactPhone=selected?.phone.replace(/[ ()-]/g,'')??'';
   const hasContactPhone=/^\+?[1-9]\d{6,14}$/.test(contactPhone);
   const selectedReady = Boolean(selectedThread && readyThreadId === selectedId && selectedId && !threadErrors[selectedId]);
+  const handledByStaff = selected ? staffHandlesConversation(selected) : false;
 
   const select = (id: string | null) =>
     embedded ? onSelectConversation?.(id) : router.replace(id ? `/app/conversations?c=${id}` : "/app/conversations");
 
-  const patch = (id: string, fn: (c: Conversation) => Partial<Conversation>) => {
+  const patch = (id: string, fn: (c: WhatsappInboxItem) => Partial<WhatsappInboxItem>) => {
     const current = snapshotRef.current;
     const base = current.overrides[id] ?? current.base.find((item) => item.id === id);
     if (base) commitSnapshot({ ...current, overrides: { ...current.overrides, [id]: { ...base, ...fn(base) } } });
@@ -1218,7 +1253,7 @@ export function ConversationsPage({
     if(suspendedRef.current)return;
     const draftText = draft.trim();
     const locked = inboxSendLocked(snapshotRef.current.base.find(row => row.id === c.id), Boolean(unresolvedSends[c.id]));
-    if ((!draftText && !attachmentId) || !canReply || !c.assistantPaused || !selectedReady || pending || controlBusy || locked) return;
+    if ((!draftText && !attachmentId) || !canReply || !staffHandlesConversation(c) || !selectedReady || pending || controlBusy || locked) return;
     setError(null);
     setNotice(null);
     setWarn(null);
@@ -1291,6 +1326,8 @@ export function ConversationsPage({
                       ? copy.app.sendCompanySuspended
                       : result.code === "REJECTED"
                         ? copy.app.sendRejected
+                        : result.code === "FORBIDDEN" && result.message === "human_control_required"
+                          ? (locale === "ar" ? "استلم المحادثة أولًا قبل إرسال رد يدوي." : "Take over the conversation before sending a manual reply.")
                         : result.code === "FORBIDDEN" || result.code === "UNAUTHENTICATED"
                           ? copy.app.sendForbidden
                           : copy.app.sendFailed;
@@ -1394,6 +1431,11 @@ export function ConversationsPage({
             if (isSelected(c.id)) setError(copy.app.controlConflict);
             return;
           }
+          if (result.code === "REVIEW_BLOCKED") {
+            clearUnresolved(c.id);
+            if (isSelected(c.id)) setError(locale === "ar" ? "لا يمكن إعادة المحادثة إلى فيلورا بينما توجد نتيجة إرسال غير مؤكدة." : "Velora cannot resume while an earlier send result is unconfirmed.");
+            return;
+          }
           if (result.code === "FORBIDDEN" || result.code === "UNAUTHENTICATED") {
             if (isSelected(c.id)) setError(copy.app.controlForbidden);
             return;
@@ -1415,7 +1457,16 @@ export function ConversationsPage({
         }
 
         clearUnresolved(c.id);
-        patch(c.id, (cur) => applyControlState(cur, result.state));
+        patch(c.id, (cur) => {
+          const next = applyControlState(cur, result.state);
+          if (action === "take_over" && result.state.status !== "resolved" && result.state.assistantPaused) {
+            return { ...next, intervention: { reasons: cur.intervention.reasons.includes("human_control") ? cur.intervention.reasons : [...cur.intervention.reasons, "human_control"] } };
+          }
+          if (action === "resume") {
+            return { ...next, intervention: { reasons: cur.intervention.reasons.filter(reason => reason !== "human_control") } };
+          }
+          return next;
+        });
         if (isSelected(c.id)) {
           if (action === "take_over") setNotice(locale === "ar" ? "تم استلام المحادثة وإيقاف فيلورا مؤقتاً." : "Taken over. Velora auto-reply paused.");
           else if (action === "resume") setNotice(locale === "ar" ? "تم السماح بالأتمتة لهذه المحادثة. يخضع الإرسال لجاهزية التشغيل." : "Automation enabled for this conversation. Sending remains subject to runtime readiness.");
@@ -1547,10 +1598,10 @@ export function ConversationsPage({
     if(denied)return <InboxDesktop locale={locale} view={{...desktopView,state:'denied',message:copy.app.inboxAccessDeniedBody,customer:undefined,messages:[]}}/>;
     if(!selected||!selectedReady)return <InboxDesktop locale={locale} view={{...desktopView,customer:undefined,messages:[],notice:<>{desktopView.notice}<p>{threadErrors[selectedId??'']??inboxReadError??(ar?'جارٍ تحميل المحادثة…':'Loading conversation…')}</p></>,onRetry:()=>void refreshInboxView(),listFooter:<>{desktopView.listFooter}<button type="button" className="vdi-small-button" onClick={()=>void refreshInboxView()}>{ar?'إعادة المحاولة':'Retry'}</button></>}}/>;
     const assignee=assignees.find(person=>person.userId===selected.assignedTo);
-    const automation=selected.assistantPaused?'paused':selected.automationAllowed&&selected.status!=='resolved'?'allowed':'blocked';
-    const control=selected.assistantPaused||selected.status==='resolved'?'resume':'take_over';
+    const automation=handledByStaff?'paused':selected.automationAllowed&&selected.status!=='resolved'?'allowed':'blocked';
+    const control=selected.status==='resolved'||handledByStaff?'resume':'take_over';
     const canAI=canReply&&!testReview&&!!inboxMeta?.companyId&&liveIds.has(selected.id);
-    const action=(id:'resume'|'take_over'|'close')=>({id,label:id==='resume'?(ar?'إعادة إلى فيلورا':'Resume Velora'):id==='take_over'?(ar?'استلام المحادثة':'Take over conversation'):copy.app.markResolved,icon:id==='close'?'check' as const:id==='resume'?'play' as const:'user' as const,emphasis:id==='close'?undefined:'primary',reason:ar?'الإجراء غير متاح في الحالة الحالية.':'This action is unavailable in the current state.',disabled:controlDisabled(id),onClick:()=>void runControl(selected,id)});
+    const action=(id:'resume'|'take_over'|'close')=>({id,label:id==='resume'?(ar?'إعادة إلى فيلورا':'Resume Velora'):id==='take_over'?(ar?'استلام المحادثة':'Take over conversation'):copy.app.markResolved,icon:id==='close'?'check' as const:id==='resume'?'play' as const:'user' as const,emphasis:id==='close'?undefined:'primary',reason:id==='resume'&&selectedSendLocked?(ar?'لا يمكن الاستئناف بينما نتيجة إرسال غير مؤكدة.':'Resume is unavailable while a send result is unconfirmed.'):(ar?'الإجراء غير متاح في الحالة الحالية.':'This action is unavailable in the current state.'),disabled:controlDisabled(id)||(id==='resume'&&selectedSendLocked),onClick:()=>void runControl(selected,id)});
     return <InboxDesktop locale={locale} view={{...desktopView,
       extension:inboxMeta?.companyId&&liveIds.has(selected.id)?{companyId:inboxMeta.companyId,conversationId:selected.id,channel:'whatsapp',canEdit:canReply,paused:writesPaused||readSuspended,revision:refreshVersion}:undefined,
       customer:{name:selected.customer,initials:selected.customer.slice(0,1).toUpperCase(),channel:'whatsapp',phone:selected.phone,status:`${copy.app.statuses[selected.status]} · WhatsApp`,
@@ -1570,7 +1621,7 @@ export function ConversationsPage({
       onTranscriptMount:node=>{if(node)restoreTranscriptPosition(node,scrollPositions.current[draftKey]);},onTranscriptScroll:event=>{scrollPositions.current[draftKey]=captureTranscriptPosition(event.currentTarget);},
       loadEarlier:selectedThread?.hasMore?{id:'older',label:ar?'تحميل الرسائل الأقدم':'Load older messages',icon:'clock',disabled:pending||threadBusyId===selected.id,onClick:()=>runPendingAction(async()=>{await loadThread(selected.id,selectedThread.nextCursor);})}:undefined,
       messageExtras:<>{selectedSendLocked&&<Notice tone="error">{copy.app.sendUnknownOutcome}</Notice>}{notice&&!selectedUnresolved&&<Notice>{notice}</Notice>}{warn&&!selectedUnresolved&&<Notice tone="warn">{warn}<button type="button" disabled={controlBusy} onClick={()=>void retryRefresh(selected.id)}>{copy.app.controlRetryRefresh}</button></Notice>}{(selectedUnresolved||error)&&<Notice tone="error">{selectedUnresolved?copy.app.controlOutcomeLocked:error}<button type="button" disabled={controlBusy} onClick={()=>void retryRefresh(selected.id)}>{copy.app.controlRetryRefresh}</button></Notice>}</>,
-      composer:{mode:composerMode,ownershipNotice:(writesPaused?(ar?'آخر حالة مؤكدة: ':'Last verified state: '):'')+(selected.status==='resolved'?(ar?'المحادثة محلولة':'Conversation resolved'):automation==='allowed'?(ar?'الذكاء الاصطناعي يدير المحادثة':'AI is handling the conversation'):automation==='paused'?(ar?'الموظف يدير المحادثة':'Staff is handling the conversation'):(ar?'الذكاء الاصطناعي متوقف عن إدارة المحادثة':'AI is not handling the conversation')),enabledModes:['message',...(!testReview&&!!inboxMeta?.companyId&&liveIds.has(selected.id)?['ai' as const]:[]),'note'],disabledModes:canReply?[]:['ai','note'],onModeChange:setComposerMode,value:draft,onChange:setDraft,onSubmit:()=>send(selected),onSubmitAttachment:!testReview?(id,onAccepted)=>send(selected,id,onAccepted):undefined,pending:pending||controlBusy,canSend:selectedReady&&selected.assistantPaused&&canReply&&!selectedSendLocked&&liveIds.has(selected.id),disabledReason:writesPaused?(ar?'الاتصال متوقف مؤقتًا. سيُتاح الإرسال بعد التحقق مجددًا.':'Connection interrupted. Sending resumes after access is verified again.'):!canReply?copy.app.sendForbidden:!selected.assistantPaused?(ar?'استلم المحادثة أولًا لكتابة ردك.':'Take over this conversation before replying.'):undefined,
+      composer:{mode:composerMode,ownershipNotice:(writesPaused?(ar?'آخر حالة مؤكدة: ':'Last verified state: '):'')+(selected.status==='resolved'?(ar?'المحادثة محلولة':'Conversation resolved'):handledByStaff?(ar?'الموظف يدير المحادثة':'Staff is handling the conversation'):selected.automationAllowed?(ar?'الذكاء الاصطناعي يدير المحادثة':'AI is handling the conversation'):(ar?'توقفت الأتمتة دون استلام بشري':'Automation stopped without a human takeover')),enabledModes:['message',...(!testReview&&!!inboxMeta?.companyId&&liveIds.has(selected.id)?['ai' as const]:[]),'note'],disabledModes:canReply&&handledByStaff?[]:['ai','note'],onModeChange:setComposerMode,value:draft,onChange:setDraft,onSubmit:()=>send(selected),onSubmitAttachment:!testReview?(id,onAccepted)=>send(selected,id,onAccepted):undefined,pending:pending||controlBusy,canSend:selectedReady&&handledByStaff&&canReply&&!selectedSendLocked&&liveIds.has(selected.id),disabledReason:manualReplyBlock({status:selected.status,automationAllowed:selected.automationAllowed,canReply,sendLocked:selectedSendLocked,writesPaused,intervention:selected.intervention},ar),
        modePanels:{note:<div ref={setNotesHost}/>,ai:canAI&&<ChannelAIDraft key={`${inboxScope}:${selected.id}:${selected.messages.at(-1)?.id}:${selected.revision}`} companyId={inboxMeta!.companyId} channel="whatsapp" conversationId={selected.id} ar={ar} disabled={writesPaused||!selectedReady||pending||controlBusy||selectedSendLocked} onUse={text=>{setDraft(text);setComposerMode('message');}}/>}},
     }}/>;
   }
@@ -1756,7 +1807,8 @@ export function ConversationsPage({
               const lastMessage = c.messages[c.messages.length - 1];
               const lastMsgTime = lastMessage?.at ? formatConversationTime(lastMessage.at, locale) : "";
               const isVeloraActive = !c.assistantPaused && Boolean(c.automationAllowed) && c.status !== "resolved";
-              const isAwaitingStaff = c.assistantPaused && c.status !== "resolved";
+              const isAwaitingStaff = staffHandlesConversation(c);
+              const automationStopped = !isVeloraActive && !isAwaitingStaff && c.status !== "resolved";
               const isCustomerWaiting = c.unreadCount > 0;
 
               return (
@@ -1822,6 +1874,10 @@ export function ConversationsPage({
                     ) : isAwaitingStaff ? (
                       <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium bg-[#d9a467]/15 text-[#f0cf9d] border border-[#d9a467]/30">
                         👤 {locale === "ar" ? "تدخل بشري" : "Staff Takeover"}
+                      </span>
+                    ) : automationStopped ? (
+                      <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium bg-[#d9a467]/15 text-[#f0cf9d] border border-[#d9a467]/30">
+                        {locale === "ar" ? "الأتمتة متوقفة" : "Automation stopped"}
                       </span>
                     ) : (
                       <span className="inline-flex items-center rounded-full px-2 py-0.5 font-medium bg-[var(--color-hover-wash)] text-[var(--color-muted-soft)] border border-[color:var(--color-border-soft)]">
@@ -1897,7 +1953,7 @@ export function ConversationsPage({
                         {selected.phone}
                       </span>
                       <span className="text-[var(--color-muted-soft)]">·</span>
-                      {selected.assistantPaused ? (
+                      {handledByStaff ? (
                         <span className="inline-flex items-center gap-1 font-medium text-[#f0cf9d] text-[11px]">
                           <span className="h-1.5 w-1.5 rounded-full bg-[#d9a467]" />
                           {locale === "ar" ? "تحكم بشري" : "Human control"}
@@ -1916,13 +1972,13 @@ export function ConversationsPage({
                 <div className="flex items-center gap-2 font-[family-name:Tajawal,var(--font-ar),sans-serif]">
                   {liveIds.has(selected.id) ? (
                     <>
-                      {selected.assistantPaused || selected.status === "resolved" ? (
+                      {handledByStaff || selected.status === "resolved" ? (
                         canUseInboxControl(inboxMeta,"resume") && <button
                           type="button"
-                          disabled={controlDisabled("resume")}
+                          disabled={controlDisabled("resume") || selectedSendLocked}
+                          title={selectedSendLocked ? (locale === "ar" ? "لا يمكن الاستئناف بينما نتيجة إرسال غير مؤكدة." : "Resume is unavailable while a send result is unconfirmed.") : (locale === "ar" ? "السماح لفيلورا بالرد التلقائي مجدداً" : "Resume Velora")}
                           onClick={() => runControl(selected, "resume")}
                           className="inline-flex min-h-8 items-center gap-1.5 rounded-xl border border-[var(--service-accent)]/40 bg-[var(--service-accent)]/15 px-3 text-xs font-bold text-[var(--service-accent)] transition hover:bg-[var(--service-accent)]/25 disabled:opacity-50"
-                          title={locale === "ar" ? "السماح لفيلورا بالرد التلقائي مجدداً" : "Resume Velora"}
                         >
                           <IconRocket width={16} height={16} aria-hidden="true"/>
                           <span>{locale === "ar" ? "إعادة إلى فيلورا" : "Resume Velora"}</span>
@@ -1971,11 +2027,11 @@ export function ConversationsPage({
               </header>
 
               {/* Status Notice Banners */}
-              {selected.assistantPaused ? (
+              {handledByStaff || (!selected.automationAllowed && selected.status !== "resolved") ? (
                 <div className="border-b border-[#d9a467]/30 bg-[#d9a467]/10 px-4 py-2 text-xs text-[#f0cf9d] flex items-center justify-between font-[family-name:Tajawal,var(--font-ar),sans-serif]">
                   <div className="flex items-center gap-2">
                     <IconShield width={16} height={16} aria-hidden="true"/>
-                    <span>{locale === "ar" ? "الأتمتة متوقفة لهذه المحادثة. الرد اليدوي متاح للمخولين." : "Automation is paused for this conversation. Authorized staff can reply manually."}</span>
+                    <span>{handledByStaff ? (locale === "ar" ? "الموظف يدير المحادثة. الرد اليدوي متاح لمن لديه صلاحية الرد." : "Staff is handling this conversation. Manual reply is available to people who can reply.") : (locale === "ar" ? "توقفت الأتمتة دون استلام بشري. استلم المحادثة قبل الرد اليدوي." : "Automation stopped without a human takeover. Take over before replying.")}</span>
                   </div>
 
                 </div>
@@ -2140,7 +2196,7 @@ export function ConversationsPage({
                       send(selected);
                     }}
                   >
-                    {!selected.assistantPaused ? (
+                    {!handledByStaff ? (
                       <p className="text-[11px] text-[#f0cf9d] flex items-center gap-1.5">
                         <IconShield width={16} height={16} aria-hidden="true"/>
                         <span>
@@ -2171,12 +2227,12 @@ export function ConversationsPage({
                             : (locale === "ar" ? "اكتب ردك للتدخل يدويًا ومراسلة العميل..." : "Type reply to take over and message customer...")
                         }
                         aria-label={copy.app.reply}
-                        disabled={!selectedReady || !selected.assistantPaused || pending || controlBusy || selectedSendLocked}
+                        disabled={!selectedReady || !handledByStaff || pending || controlBusy || selectedSendLocked}
                         className="min-w-0 flex-1 resize-none rounded-xl border border-[color:var(--color-border-soft)] bg-[var(--color-panel-deep)] p-2.5 text-base text-[var(--color-on-dark)] placeholder:text-[var(--color-muted-soft)] focus:ring-2 focus:ring-[var(--service-accent)] outline-none disabled:opacity-60"
                       />
                       <Button
                         type="submit"
-                        disabled={!selectedReady || !selected.assistantPaused || !canReply || !draft.trim() || pending || controlBusy || selectedSendLocked || !liveIds.has(selected.id)}
+                        disabled={!selectedReady || !handledByStaff || !canReply || !draft.trim() || pending || controlBusy || selectedSendLocked || !liveIds.has(selected.id)}
                         className="shrink-0 min-h-10 px-4 text-xs font-bold gap-1.5"
                       >
                         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m3 10 18-7-7 18-3-8-8-3z M11 13 21 3" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/></svg>

@@ -8,7 +8,7 @@ import {fetchInboxThread} from '@/lib/customer/inbox-thread-read';
 import {fetchServiceInbox,type ServiceInboxSnapshot} from '@/lib/customer/service-inbox-read';
 import {listInboxStars,runInboxExtension} from '@/lib/customer/inbox-extension-actions';
 import {selectedIncludedChannels} from '@/lib/channels/contract';
-import {refreshWhatsappInboxPage} from '@/lib/whatsapp/inbox-actions';
+import {refreshWhatsappInboxPage,searchWhatsappInbox} from '@/lib/whatsapp/inbox-actions';
 import {loadInstagramInboxPage} from '@/lib/instagram/inbox-actions';
 import {mergeInboxPageRows,matchesUnifiedInboxFilter} from './conversations-inbox';
 import {matchesLeadWorklist,MANUAL_LEAD_STAGES,type ManualLeadStage,type LeadWorklist} from '@/lib/whatsapp/leads';
@@ -88,7 +88,10 @@ function ScopedUnifiedInbox({initial,waReview=false,igReview=false}:{initial:Sna
  const accessRevoked=useRef(false),transportDown=useRef(false),pendingChange=useRef(false);
  const fallbackReads=useRef(0);
  const refreshRef=useRef<(queueIfBusy?:boolean,refreshThread?:boolean)=>Promise<void>>(async()=>{});
- const [query,setQuery]=useState('');
+ const [query,setQuery]=useState(''),[debouncedQuery,setDebouncedQuery]=useState('');
+ useEffect(()=>{const handle=window.setTimeout(()=>setDebouncedQuery(query.trim()),300);return()=>window.clearTimeout(handle);},[query]);
+ const searchEpoch=useRef(0);
+ const [serverList,setServerList]=useState<{token:string;status:'loading'|'ready'|'error';items:WhatsappInboxItem[];counts:{all:number;unassigned:number;mine:number;worklists:Record<string,number>};hasMore:boolean;nextCursor:string|null}|null>(null);
  const [lastVerifiedReadAt,setLastVerifiedReadAt]=useState<number|null>(null);
  const workspace=useWorkspaceBootstrap();
  const [liveState,setLiveState]=useState<'connecting'|'connected'|'offline'>('connecting');
@@ -172,7 +175,7 @@ function ScopedUnifiedInbox({initial,waReview=false,igReview=false}:{initial:Sna
  const rowsByKey=useMemo(()=>{const map=new Map<string,typeof rows[number]>();for(const r of rows)map.set(r.key,r);return map;},[rows]);
  const waConversationsById=useMemo(()=>{const map=new Map<string,WhatsappInboxItem>();if(retained?.wa.ok){for(const c of retained.wa.page.conversations)map.set(c.id,c);}return map;},[retained]);
  const pinnedSet=useMemo(()=>new Set(pinned),[pinned]);
- const starsQuery=JSON.stringify(rows.map(row=>[row.channel,row.id]));
+ const starsQuery=JSON.stringify([...rows.map(row=>[row.channel,row.id] as const),...(serverList?.status==='ready'?serverList.items.filter(item=>!rows.some(row=>row.channel==='whatsapp'&&row.id===item.id)).map(item=>['whatsapp',item.id] as const):[])]);
  const starsKey=`${starsQuery}:${starRevision}:${refreshVersion}`;
  const starsReady=desktop&&!connectionPaused&&snapshot.ok&&verifiedStarsKey===starsKey;
  useEffect(()=>{
@@ -211,14 +214,37 @@ function ScopedUnifiedInbox({initial,waReview=false,igReview=false}:{initial:Sna
  const anyActiveChannelFailed=activeChannels.some(channel=>{const result=channel==='whatsapp'?(snapshot.ok?snapshot.wa:retained?.wa):(snapshot.ok?snapshot.ig:retained?.ig);return !result||!result.ok;});
  const requestedWorklist=params.get('filter');
  const worklist=filter==='instagram'&&requestedWorklist!=='unread'?'all':requestedWorklist==='staff'||requestedWorklist==='noura'||requestedWorklist==='unread'||requestedWorklist==='resolved'?requestedWorklist:'all';
- const counts = computeCounts(activeRows, anyActiveChannelFailed, activeSource?.actorId, retained?.wa.ok ? retained.wa.meta.timezone : null, desktop, filter, nowMs, pinnedSet, waConversationsById);
+ const serverWorklist=worklist!=='all'?worklist:leadWorklist;
+ const waPage=retained?.wa.ok?retained.wa.page:null;
+ const serverMode=filter!=='instagram'&&channels.includes('whatsapp')&&Boolean(waPage)&&(debouncedQuery.length>0||Boolean(waPage?.hasMore&&(assignmentFilter!=='all'||serverWorklist!=='all'||leadStageFilter!=='all')));
+ const serverToken=serverMode&&retained?.wa.ok?`${retained.companyId}:${retained.actorId}:${debouncedQuery}:${assignmentFilter}:${serverWorklist}:${leadStageFilter}`:'';
+ useEffect(()=>{
+  if(!serverToken)return;
+  const current=++searchEpoch.current;
+  let cancelled=false;
+  const companyId=serverToken.split(':')[0]!;
+  void searchWhatsappInbox({companyId,query:debouncedQuery,assignment:assignmentFilter,worklist:serverWorklist,stage:leadStageFilter,limit:40}).then(result=>{
+   if(cancelled||current!==searchEpoch.current)return;
+   if(!result.ok||result.data.companyId!==companyId){setServerList(old=>old?.token===serverToken?{...old,status:'error',items:[]}:null);return;}
+   setServerList({token:serverToken,status:'ready',items:result.data.conversations,counts:{all:result.data.total,unassigned:result.data.unassignedTotal,mine:result.data.mineTotal,worklists:result.data.worklists},hasMore:result.data.hasMore,nextCursor:result.data.nextCursor});
+  }).catch(()=>{if(!cancelled&&current===searchEpoch.current)setServerList(old=>old?.token===serverToken?{...old,status:'error',items:[]}:null);});
+  return()=>{cancelled=true;};
+ },[serverToken,debouncedQuery,assignmentFilter,serverWorklist,leadStageFilter]);
+ const serverReady=Boolean(serverToken&&serverList?.token===serverToken&&serverList.status==='ready');
+ const serverItems=serverReady&&serverList?serverList.items:[];
+ const serverRows=serverReady?inboxRows(serverItems,[],ar):[];
+ const counts = computeCounts(serverReady?serverRows.filter(row=>filter==='all'||row.channel===filter).concat(filter==='whatsapp'?[]:activeRows.filter(row=>row.channel==='instagram')):activeRows, anyActiveChannelFailed, activeSource?.actorId, retained?.wa.ok ? retained.wa.meta.timezone : null, desktop, filter, nowMs, pinnedSet, new Map([...waConversationsById, ...serverItems.map(item=>[item.id,item] as const)]));
  const shown = (() => {
   const q=query.trim().toLocaleLowerCase();
   const tz=retained?.wa.ok?retained.wa.meta.timezone:null;
   const actorId=activeSource?.actorId;
-  return activeRows.filter(r=>{
+  const sort=(rowsToSort:typeof activeRows)=>rowsToSort.filter(r=>!(desktop&&starsReady&&pinnedOnly&&!pinnedSet.has(r.key))).sort((a,b)=>desktop&&starsReady?Number(pinnedSet.has(b.key))-Number(pinnedSet.has(a.key)):0);
+  if(serverReady){
+   const instagram=filter==='whatsapp'?[]:activeRows.filter(r=>r.channel==='instagram'&&matchesInboxAssignment(r,assignmentFilter,actorId)&&(worklist!=='unread'||r.unread>0)&&(!q||`${r.name} ${r.preview}`.toLocaleLowerCase().includes(q)));
+   return sort([...serverRows,...instagram]);
+  }
+  return sort(activeRows.filter(r=>{
    if(!matchesInboxAssignment(r,assignmentFilter,actorId))return false;
-   if(desktop&&starsReady&&pinnedOnly&&!pinnedSet.has(r.key))return false;
    const item=r.channel==='whatsapp'?waConversationsById.get(r.id):undefined;
    if(desktop&&filter!=='instagram'&&leadStageFilter!=='all'&&(!item||item.leadStage!==leadStageFilter))return false;
    if(filter!=='instagram'&&leadWorklist!=='all'&&(!item||!matchesLeadWorklist(item,leadWorklist,nowMs,tz)))return false;
@@ -228,13 +254,24 @@ function ScopedUnifiedInbox({initial,waReview=false,igReview=false}:{initial:Sna
     }else if(worklist!=='unread'||r.unread===0)return false;
    }
    return !q||`${r.name} ${item?.phone??''} ${item?.topic??''} ${item?.summary??''} ${item?.messages.map(message=>message.text).join(' ')??r.preview}`.toLocaleLowerCase().includes(q);
-  }).sort((a,b)=>desktop&&starsReady?Number(pinnedSet.has(b.key))-Number(pinnedSet.has(a.key)):0);
+  }));
  })();
+ const scopedTabCount=(id:'all'|'unassigned'|'mine')=>{
+  if(anyActiveChannelFailed)return undefined;
+  const instagram=activeRows.filter(row=>row.channel==='instagram');
+  const extra=filter==='whatsapp'?0:id==='all'?instagram.length:id==='unassigned'?instagram.filter(row=>row.assignedTo===null).length:instagram.filter(row=>row.assignedTo===activeSource?.actorId).length;
+  if(serverReady&&serverList&&filter!=='instagram')return serverList.counts[id]+extra;
+  const page=retained?.wa.ok?retained.wa.page:null;
+  if(page&&filter!=='instagram'&&typeof page.unassignedTotal==='number'&&typeof page.mineTotal==='number'&&!debouncedQuery&&assignmentFilter==='all'&&serverWorklist==='all'&&leadStageFilter==='all'){
+   return (id==='all'?page.total:id==='unassigned'?page.unassignedTotal:page.mineTotal)+extra;
+  }
+  return counts.tabs[id];
+ };
  const loadedCounts=counts.loaded;
  const showEmpty=!shown.length&&(Boolean(query)||(desktop&&pinnedOnly)||assignmentFilter!=='all'||worklist!=='all'||(filter!=='instagram'&&leadWorklist!=='all')?(activeRows.length>0||!anyActiveChannelFailed):(!anyActiveChannelFailed&&activeRows.length===0));
  const filteredHref=(channel:InboxChannel|null,id:string|null,channelFilter:InboxChannel|'all'=filter)=>{const href=inboxHref(channel,id,channelFilter);return worklist==='all'?href:href+(href.includes('?')?'&':'?')+'filter='+worklist;};
  const select=(channel:InboxChannel|null,id:string|null,intentId?:string)=>{const href=filteredHref(channel,id);navigateLocally(intentId?href+(href.includes("?")?"&":"?")+"intent="+encodeURIComponent(intentId):href);};
- const activeRow=selected?rowsByKey.get(`${source}:${selected}`):undefined;
+ const activeRow=selected?(rowsByKey.get(`${source}:${selected}`)??serverRows.find(row=>row.channel===source&&row.id===selected)):undefined;
  const canStartWhatsapp=Boolean(snapshot.ok&&snapshot.waAllowed===true&&snapshot.wa.ok&&snapshot.wa.page.conversationScope==='all_company'&&channels.includes('whatsapp')&&!connectionPaused&&!waReview&&!revoked);
  async function more(channel:InboxChannel){
   if(connectionPaused||accessRevoked.current||moreLoading!==null||busy.current||!snapshot.ok||!retained)return;
@@ -266,20 +303,20 @@ function ScopedUnifiedInbox({initial,waReview=false,igReview=false}:{initial:Sna
   return(['all','unread','awaiting_staff','follow_up_today','overdue','trial_or_quote','noura','resolved','staff'] as const)
    .filter(id=>filter!=='instagram'||id==='all'||id==='unread').map(id=>({id,
     label:id==='all'?(ar?'كل الحالات':'All states'):id==='unread'?(ar?'غير مقروءة':'Unread'):id==='noura'?(ar?'المساعد الآلي':'Automation'):id==='resolved'?(ar?'محلولة':'Resolved'):id==='staff'?(ar?'تحتاج مراجعة بشرية':'Needs human review'):copy.app.worklists[id as Exclude<LeadWorklist,'all'>],
-    count:anyActiveChannelFailed?undefined:counts.worklists[id],
+    count:anyActiveChannelFailed?undefined:serverReady&&serverList&&filter!=='instagram'?serverList.counts.worklists[id]:counts.worklists[id],
    }));
  })();
  const desktopView:InboxDesktopView={
   state:'ready',scopeKey:expected??'',messages:[],query,onQueryChange:setQuery,
   workspace:{label:workspace?.workspace.choices.find(choice=>choice.companyId===activeSource?.companyId)?.displayName??(ar?'المحادثات':'Conversations'),liveState:connectionPaused?'offline':liveState,updatedAt:lastVerifiedReadAt?new Date(lastVerifiedReadAt).toLocaleTimeString(ar?'ar-OM':'en-GB',{hour:'2-digit',minute:'2-digit'}):undefined,busy:refreshing,refresh:{id:'refresh',label:ar?'تحديث':'Refresh',icon:'refresh',disabled:moreLoading!==null,onClick:()=>void refresh()}},
-  notice:connectionPaused?(ar?'الاتصال متوقف مؤقتًا. الرسائل المعروضة من آخر تحميل؛ الإرسال متوقف حتى التحقق مجددًا.':'Connection interrupted. Showing the last loaded messages; sending is paused until access is verified again.'):undefined,
+  notice:connectionPaused?(ar?'الاتصال متوقف مؤقتًا. الرسائل المعروضة من آخر تحميل؛ الإرسال متوقف حتى التحقق مجددًا.':'Connection interrupted. Showing the last loaded messages; sending is paused until access is verified again.'):serverList?.token===serverToken&&serverList.status==='error'?(ar?'تعذّر بحث المحادثات المسموح بها. أعد المحاولة.':'Permitted conversations could not be searched. Try again.'):undefined,
   newConversation:{id:'new-conversation',label:ar?'إنشاء محادثة جديدة':'New conversation',icon:'edit',disabled:!canStartWhatsapp,reason:canStartWhatsapp?undefined:(ar?'يلزم اتصال واتساب وصلاحية محادثات النشاط.':'A WhatsApp connection and company-wide conversation access are required.'),onClick:()=>setStartingConversation(true)},
   selectedId:activeRow?.key,conversations:desktopRows(shown,ar,starsReady?pinnedSet:undefined),
   starredFilter:{active:pinnedOnly,ready:starsReady,count:starsReady?counts.starred:undefined,onToggle:()=>setPinnedOnly(value=>!value)},
   onToggleStar:key=>{const row=rowsByKey.get(key);if(row)void togglePinned(row);},
   starsReady,starBusyKey:pinBusy,
-  onSelect:key=>{const row=rowsByKey.get(key);if(row)select(row.channel,row.id);},
-  tabs:(['all','unassigned','mine'] as const).map(id=>({id,label:id==='all'?(ar?'الكل':'All'):id==='unassigned'?(ar?'غير مسند':'Unassigned'):(ar?'مسند لي':'Assigned to me'),count:anyActiveChannelFailed?undefined:counts.tabs[id]})),
+  onSelect:key=>{const row=rowsByKey.get(key)??serverRows.find(item=>item.key===key);if(row)select(row.channel,row.id);},
+  tabs:(['all','unassigned','mine'] as const).map(id=>({id,label:id==='all'?(ar?'الكل':'All'):id==='unassigned'?(ar?'غير مسند':'Unassigned'):(ar?'مسند لي':'Assigned to me'),count:scopedTabCount(id)})),
   activeTab:assignmentFilter,onTabChange:id=>setAssignmentFilter(id as InboxAssignmentFilter),
   filters:{channel:filter,channels:[{id:'all',label:ar?'كل القنوات':'All channels'},...channels.map(id=>({id,label:id==='whatsapp'?'WhatsApp':'Instagram'}))],onChannelChange:id=>{if(id==='instagram'){setLeadWorklist('all');setLeadStageFilter('all');navigateLocally(worklist==='all'||worklist==='unread'?filteredHref(null,null,'instagram'):inboxHref(null,null,'instagram'));}else navigateLocally(filteredHref(null,null,id as InboxChannel|'all'));},
    worklist:selectedDesktopWorklist,worklists:desktopWorklists,onWorklistChange:setDesktopWorklist,stages:filter!=='instagram'&&channels.includes('whatsapp')?[{id:'all',label:ar?'كل المراحل':'All stages'},...MANUAL_LEAD_STAGES.map(id=>({id,label:copy.app.leadStages[id]}))]:undefined,stage:leadStageFilter,onStageChange:id=>setLeadStageFilter(id as ManualLeadStage|'all'),starred:{active:pinnedOnly,ready:starsReady,count:starsReady?counts.starred:undefined,onToggle:()=>setPinnedOnly(value=>!value)}},
@@ -337,7 +374,7 @@ function ScopedUnifiedInbox({initial,waReview=false,igReview=false}:{initial:Sna
      {desktop&&!selectionValid&&<InboxDesktop view={desktopView} locale={locale}/>}
      {!desktop&&!selectionValid&&<div className={styles.welcome}><EmptyState title={ar?'اختر محادثة للبدء':'Choose a conversation'} body={ar?'كل رد يخرج عبر قناة المحادثة نفسها. بيانات الأنشطة والحسابات تبقى منفصلة.':'Each reply uses its conversation’s channel. Business and account histories remain separate.'}/></div>}
      {/* Keep native panes mounted: drafts and unresolved operation IDs survive channel navigation. */}
-     {retained.wa.ok&&<div className={styles.pane} hidden={!selectionValid||source!=='whatsapp'} inert={!selectionValid||source!=='whatsapp'}><ConversationsPage connectionPaused={connectionPaused} onConnectionUnavailable={pauseConnection} desktopView={desktop?desktopView:undefined} threadReader={fetchInboxThread} key={retained.wa.page.membershipFingerprint} readSuspended={readSuspended} refreshVersion={refreshVersion} embedded selectedConversationId={selectionValid&&source==='whatsapp'?selected:null} onSelectConversation={id=>select('whatsapp',id)} inbox={retained.wa.conversations} page={retained.wa.page} meta={retained.wa.meta} reviewCompanyId={waReview?retained.companyId:undefined}/></div>}
+     {retained.wa.ok&&<div className={styles.pane} hidden={!selectionValid||source!=='whatsapp'} inert={!selectionValid||source!=='whatsapp'}><ConversationsPage connectionPaused={connectionPaused} onConnectionUnavailable={pauseConnection} desktopView={desktop?desktopView:undefined} threadReader={fetchInboxThread} key={retained.wa.page.membershipFingerprint} readSuspended={readSuspended} refreshVersion={refreshVersion} draftActorId={retained.actorId} embedded selectedConversationId={selectionValid&&source==='whatsapp'?selected:null} onSelectConversation={id=>select('whatsapp',id)} inbox={retained.wa.conversations} page={retained.wa.page} meta={retained.wa.meta} reviewCompanyId={waReview?retained.companyId:undefined}/></div>}
      {retained.igAllowed===true&&<div className={styles.pane} hidden={!selectionValid||source!=='instagram'} inert={!selectionValid||source!=='instagram'}><InstagramInbox connectionPaused={connectionPaused} desktopView={desktop?desktopView:undefined} key={retained.ig.ok?retained.ig.data.conversationScope:'unverified'} readSuspended={readSuspended} canAssign={snapshot.ok&&snapshot.igAssignAllowed===true} refreshVersion={refreshVersion} embedded selectedConversationId={selectionValid&&source==='instagram'?selected:null} onSelectConversation={(id,intent)=>select('instagram',id,intent)} companyId={retained.companyId} owner={retained.owner} companyInSetup={retained.companyInSetup} reviewMode={igReview}/></div>}
      </fieldset>
     </div>

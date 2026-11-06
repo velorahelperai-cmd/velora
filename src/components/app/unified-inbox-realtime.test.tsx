@@ -11,7 +11,7 @@ vi.mock('next/link',()=>({default:({children,href}:{children:React.ReactNode;hre
 vi.mock('@/lib/navigation/use-local-search-params',()=>({useLocalSearchParams:()=>[m.params,vi.fn()]}));
 vi.mock('@/lib/demo-state',()=>({useDemo:()=>({locale:'en'})}));
 vi.mock('@/lib/customer/service-inbox-read',()=>({fetchServiceInbox:m.fetch}));
-vi.mock('@/lib/whatsapp/inbox-actions',()=>({refreshWhatsappInboxPage:vi.fn()}));
+vi.mock('@/lib/whatsapp/inbox-actions',()=>({refreshWhatsappInboxPage:vi.fn(),searchWhatsappInbox:vi.fn(async()=>({ok:false,code:'UNAVAILABLE'}))}));
 vi.mock('@/lib/instagram/inbox-actions',()=>({loadInstagramInboxPage:vi.fn()}));
 vi.mock('./workspace-shell',()=>({WorkspaceShell:({children,actions}:{children:React.ReactNode;actions:React.ReactNode})=><main>{actions}{children}</main>}));
 vi.mock('./ui',()=>({Button:({children,onClick,disabled}:{children:React.ReactNode;onClick:()=>void;disabled:boolean})=><button onClick={onClick} disabled={disabled}>{children}</button>,Notice:({children}:{children:React.ReactNode})=><aside>{children}</aside>,EmptyState:()=>null,useAppCopy:()=>({app:{...appCopy('en').app,inboxAccessDeniedTitle:"Denied",inboxAccessDeniedBody:"No access",inboxLoadFailedBody:"Unavailable"}})}));

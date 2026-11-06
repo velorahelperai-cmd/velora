@@ -3,10 +3,13 @@ import { loadWhatsappInboxInitialPage } from "./inbox";
 
 export async function refreshWhatsappInboxInitialPage() { return loadWhatsappInboxInitialPage(); }
 
-import { loadWhatsappInboxPage, loadWhatsappThreadPage, loadWhatsappControlAuditPage, loadWhatsappConnectionStatus, markWhatsappThreadRead } from "./inbox-contracts";
+import { loadWhatsappInboxPage, loadWhatsappInboxQuery, loadWhatsappThreadPage, loadWhatsappControlAuditPage, loadWhatsappConnectionStatus, markWhatsappThreadRead } from "./inbox-contracts";
 
 export async function refreshWhatsappInboxPage(input: Parameters<typeof loadWhatsappInboxPage>[0]) {
   return loadWhatsappInboxPage(input);
+}
+export async function searchWhatsappInbox(input: Parameters<typeof loadWhatsappInboxQuery>[0]) {
+  return loadWhatsappInboxQuery(input);
 }
 export async function refreshWhatsappThreadPage(input: Parameters<typeof loadWhatsappThreadPage>[0]) {
   return loadWhatsappThreadPage(input);

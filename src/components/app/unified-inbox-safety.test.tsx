@@ -20,7 +20,7 @@ vi.mock('@/lib/customer/inbox-extension-actions',()=>({
   const key=`${channel}:${conversationId}`;state.starred=action==='star'?[...new Set([...state.starred,key])]:state.starred.filter(value=>value!==key);return {ok:true,data:null};
  }),
 }));
-vi.mock('@/lib/whatsapp/inbox-actions',()=>({refreshWhatsappInboxPage:state.refreshWhatsappInboxPage}));
+vi.mock('@/lib/whatsapp/inbox-actions',()=>({refreshWhatsappInboxPage:state.refreshWhatsappInboxPage,searchWhatsappInbox:vi.fn(async()=>({ok:false,code:'UNAVAILABLE'}))}));
 vi.mock('@/lib/instagram/inbox-actions',()=>({loadInstagramInboxPage:state.loadInstagramInboxPage}));
 vi.mock('./account-chrome',()=>({useOptionalAccountSession:()=>state.account}));
 vi.mock('./branch-inbox-realtime',()=>({CompanyInboxRealtime:()=>null}));

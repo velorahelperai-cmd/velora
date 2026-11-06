@@ -39,7 +39,7 @@ export type ControlActionResult =
   | { ok: true; state: ControlState }
   | {
     ok: false;
-    code: "UNAUTHENTICATED" | "FORBIDDEN" | "NOT_FOUND" | "CONFLICT" | "INVALID_INPUT" | "UNAVAILABLE";
+    code: "UNAUTHENTICATED" | "FORBIDDEN" | "NOT_FOUND" | "CONFLICT" | "INVALID_INPUT" | "UNAVAILABLE" | "REVIEW_BLOCKED";
     state?: ControlState;
   };
 
@@ -356,6 +356,8 @@ export async function replyWhatsappConversation(input: {
     if (code === "phone_mismatch") return { ok: false, code: "PHONE_MISMATCH", message: code, clientOpId };
     if (code === "content_mismatch") return { ok: false, code: "CONTENT_MISMATCH", message: code, clientOpId };
     if (code === "invalid_input") return { ok: false, code: "INVALID_INPUT", message: code, clientOpId };
+    if (code === "human_control_required") return { ok: false, code: "FORBIDDEN", message: "human_control_required", clientOpId };
+    if (code === "send_unknown") return { ok: false, code: "UNKNOWN_OUTCOME", message: "send_unknown", outcome: "unknown", clientOpId };
     return { ok: false, code: "SAVE_FAILED", message: "intent_failed", clientOpId };
   }
 
@@ -863,6 +865,7 @@ export async function controlWhatsappConversation(input: {
     const code = String(row.code ?? "unavailable");
     const state = mapControlState(asRecord(row.conversation as Json)) ?? undefined;
     if (code === "conflict") return { ok: false, code: "CONFLICT", state };
+    if (code === "review_blocked") return { ok: false, code: "REVIEW_BLOCKED", state };
     if (code === "forbidden") return { ok: false, code: "FORBIDDEN", state };
     if (code === "not_found") return { ok: false, code: "NOT_FOUND" };
     if (code === "unauthenticated") return { ok: false, code: "UNAUTHENTICATED" };

@@ -22,6 +22,9 @@ export type WhatsappInboxPage = PageMeta & {
   companyId: string; conversationScope: Scope; ordering: "newest_created";
   conversations: WhatsappInboxItem[]; total: number; unreadTotal: number; interventionTotal: number;
   membershipFingerprint: string;
+  /** Present after the scoped assignment-count migration. Absent values are not zero. */
+  unassignedTotal?: number;
+  mineTotal?: number;
 };
 export type WhatsappThreadPage = PageMeta & {
   companyId: string; conversationId: string; messages: WhatsappThreadMessage[];
@@ -132,12 +135,52 @@ function decodeInboxPage(result:Awaited<ReturnType<typeof scopedRpc>>):InboxResu
     const { row, scope, companyId } = result.data;
     if (!Array.isArray(row.conversations) || typeof row.membership_fingerprint !== "string" || !/^[a-f0-9]{32}$/.test(row.membership_fingerprint)) throw Error("invalid_rows");
     return { ok: true, data: { ...pageMeta(row), companyId, conversationScope: scope, ordering: "newest_created",
-      conversations: row.conversations.map(item), total: count(row.total), unreadTotal: count(row.unread_total), interventionTotal: count(row.intervention_total), membershipFingerprint: row.membership_fingerprint } };
+      conversations: row.conversations.map(item), total: count(row.total), unreadTotal: count(row.unread_total), interventionTotal: count(row.intervention_total),
+      unassignedTotal: typeof row.unassigned_total === "number" ? count(row.unassigned_total) : undefined,
+      mineTotal: typeof row.mine_total === "number" ? count(row.mine_total) : undefined,
+      membershipFingerprint: row.membership_fingerprint } };
   } catch {
     reportInboxReadFailure("page_decode", "INVALID_RESPONSE");
     return { ok: false, code: "UNAVAILABLE" };
   }
 }
+export type WhatsappInboxQueryPage = PageMeta & {
+  companyId: string;
+  conversationScope: Scope;
+  conversations: WhatsappInboxItem[];
+  total: number;
+  unassignedTotal: number;
+  mineTotal: number;
+  worklists: Record<string, number>;
+};
+
+/** Authorized name, number, and latest-message search. It does not replace membership refresh. */
+export async function loadWhatsappInboxQuery(input: PageInput & {
+  query?: string;
+  assignment?: "all" | "unassigned" | "mine";
+  worklist?: string;
+  stage?: string;
+}): Promise<InboxResult<WhatsappInboxQueryPage>> {
+  if (!pageValid(input) || (input.query !== undefined && input.query.length > 80)) return { ok: false, code: "INVALID_INPUT" };
+  const result = await scopedRpc(input.companyId, "whatsapp_inbox_query", {
+    p_limit: input.limit ?? 40,
+    p_before: input.before ?? null,
+    p_query: input.query ?? "",
+    p_assignment: input.assignment ?? "all",
+    p_worklist: input.worklist ?? "all",
+    p_stage: input.stage ?? "all",
+  });
+  if (!result.ok) return result;
+  try {
+    const row = result.data.row;
+    const worklists = record(row.worklists);
+    if (!Array.isArray(row.conversations) || !worklists) throw Error("invalid_rows");
+    return { ok: true, data: { ...pageMeta(row), companyId: result.data.companyId, conversationScope: result.data.scope,
+      conversations: row.conversations.map(item), total: count(row.total), unassignedTotal: count(row.unassigned_total),
+      mineTotal: count(row.mine_total), worklists: Object.fromEntries(Object.entries(worklists).map(([key, value]) => [key, count(value)])) } };
+  } catch { return { ok: false, code: "UNAVAILABLE" }; }
+}
+
 /** Only the latest page issues a read boundary; loading historical pages never advances it. */
 export async function loadWhatsappThreadPage(input: ThreadInput): Promise<InboxResult<WhatsappThreadPage>> {
   if (!pageValid(input) || !UUID.test(input.conversationId)) return { ok: false, code: "INVALID_INPUT" };

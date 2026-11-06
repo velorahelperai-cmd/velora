@@ -16,7 +16,7 @@ vi.mock('@/lib/whatsapp/actions',()=>({controlWhatsappConversation:vi.fn(),reply
 vi.mock('@/lib/customer/inbox-extension-actions',()=>({runInboxExtension:api.extension,removeUnboundWhatsappFile:vi.fn(),listWhatsappMediaMetadata:vi.fn(async()=>({ok:true,data:[]}))}));
 vi.mock('@/lib/whatsapp/inbox-actions',()=>({refreshWhatsappInboxInitialPage:vi.fn(),refreshWhatsappInboxPage:vi.fn(),refreshWhatsappThreadPage:api.thread,refreshWhatsappControlAuditPage:vi.fn(async()=>({ok:true,data:{events:[],hasMore:false,nextCursor:null}})),refreshWhatsappConnectionStatus:vi.fn(async()=>({ok:false,code:'UNAVAILABLE'})),markWhatsappThreadSeen:vi.fn()}));
 let host:HTMLDivElement,root:Root;
-const conversation={id:'thread',inboxSequence:'1',unreadCount:0,intervention:{reasons:[]},customer:'Synthetic',phone:'synthetic',topic:'WhatsApp',summary:'',status:'open' as const,owner:'staff',assistantPaused:true,automationAllowed:false,revision:1,messages:[],internalNote:'Saved internal note',leadStage:'new' as const,followUpStatus:'none' as const,followUpAt:null,leadRevision:1};
+const conversation={id:'thread',inboxSequence:'1',unreadCount:0,intervention:{reasons:['human_control' as const]},customer:'Synthetic',phone:'synthetic',topic:'WhatsApp',summary:'',status:'open' as const,owner:'staff',assistantPaused:true,automationAllowed:false,revision:1,messages:[],internalNote:'Saved internal note',leadStage:'new' as const,followUpStatus:'none' as const,followUpAt:null,leadRevision:1};
 const meta={companyId:'company',conversationScope:'all_company' as const,timezone:null,timezoneAnnouncedUtc:true,canReply:true,canAssign:false,canTakeOver:true,canResume:true,canClose:true,assignees:[],counts:{all:1,awaiting_staff:1,follow_up_today:0,overdue:0,trial_or_quote:0}};
 beforeEach(()=>{Object.assign(globalThis,{IS_REACT_ACT_ENVIRONMENT:true});vi.clearAllMocks();api.extension.mockResolvedValue({ok:true,data:[]});host=document.createElement('div');document.body.append(host);root=createRoot(host);api.thread.mockResolvedValue({ok:true,data:{kind:'partial',companyId:'company',conversationId:'thread',conversation,messages:[],displayedInboundMessageId:null,unreadCount:0,nextCursor:null,hasMore:false}});});
 afterEach(()=>{act(()=>root.unmount());host.remove();vi.unstubAllGlobals();});
@@ -117,7 +117,7 @@ it('shows the complete native composer without granting write access to a read-o
  const editor=host.querySelector<HTMLTextAreaElement>('.vdi-compose-body textarea')!;
  const submit=host.querySelector<HTMLButtonElement>('.vdi-compose-body button[type="submit"]')!;
  expect(editor).not.toBeNull();expect(editor.disabled).toBe(true);expect(submit.disabled).toBe(true);
- expect(host.querySelector('.vdi-compose-body')?.textContent).toContain(appCopy('en').app.sendForbidden);
+  expect(host.querySelector('.vdi-compose-body')?.textContent).toContain('do not have permission to reply');
  act(()=>host.querySelector('form.vdi-compose-body')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
  act(()=>tabs[1].click());act(()=>tabs[2].click());
  expect(tabs[0].getAttribute('aria-pressed')).toBe('true');expect(api.send).not.toHaveBeenCalled();expect(api.saveNote).not.toHaveBeenCalled();
