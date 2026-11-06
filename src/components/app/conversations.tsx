@@ -1395,9 +1395,10 @@ export function ConversationsPage({
     }
   }
 
-  function runControl(c: Conversation, action: ControlAction) {
+  function runControl(c: Conversation, action: ControlAction, assigneeUserId?: string | null) {
     if (suspendedRef.current || !canUseInboxControl(inboxMeta, action) || !selectedReady || !liveIds.has(c.id) || controlBusy || pending) return;
     if (unresolvedOutcomes[c.id]) return;
+    if (action === "assign" && assigneeUserId === undefined) return;
 
     const expectedRevision = c.revision ?? 1;
     bumpReadGeneration(c.id);
@@ -1421,6 +1422,7 @@ export function ConversationsPage({
           conversationId: c.id,
           action,
           expectedRevision,
+          ...(action === "assign" ? { assigneeUserId: assigneeUserId ?? null } : {}),
         }),
       syncView: () => syncControlView(c.id),
       onResult: async (result, _request, helpers) => {
@@ -1459,6 +1461,7 @@ export function ConversationsPage({
         clearUnresolved(c.id);
         patch(c.id, (cur) => {
           const next = applyControlState(cur, result.state);
+          if (action === "assign") return { ...next, assignedTo: assigneeUserId ?? null };
           if (action === "take_over" && result.state.status !== "resolved" && result.state.assistantPaused) {
             return { ...next, intervention: { reasons: cur.intervention.reasons.includes("human_control") ? cur.intervention.reasons : [...cur.intervention.reasons, "human_control"] } };
           }
@@ -1468,7 +1471,8 @@ export function ConversationsPage({
           return next;
         });
         if (isSelected(c.id)) {
-          if (action === "take_over") setNotice(locale === "ar" ? "تم استلام المحادثة وإيقاف فيلورا مؤقتاً." : "Taken over. Velora auto-reply paused.");
+          if (action === "assign") setNotice(copy.app.leadAssignSaved);
+          else if (action === "take_over") setNotice(locale === "ar" ? "تم استلام المحادثة وإيقاف فيلورا مؤقتاً." : "Taken over. Velora auto-reply paused.");
           else if (action === "resume") setNotice(locale === "ar" ? "تم السماح بالأتمتة لهذه المحادثة. يخضع الإرسال لجاهزية التشغيل." : "Automation enabled for this conversation. Sending remains subject to runtime readiness.");
           else setNotice(copy.app.controlClosed);
         }
@@ -1609,13 +1613,14 @@ export function ConversationsPage({
         note:selected.internalNote?{text:selected.internalNote}:undefined,
         assignee:selected.assignedTo?{name:assignee?.name??(ar?'الاسم غير متاح':'Name unavailable'),initials:assignee?.name.slice(0,1)??'؟'}:undefined},
       profileTab:detailsTab,onProfileTabChange:setDetailsTab,
-      assign:canAssign?{id:'assign',label:ar?'تعيين':'Assign',icon:'user',onClick:()=>setDetailsTab('followup')}:undefined,
+      assign:canAssign?{id:'assign',label:ar?'تعيين':'Assign',icon:'user',onClick:()=>{setDetailsTab('details');window.requestAnimationFrame(()=>document.querySelector<HTMLSelectElement>('[data-feature="assigned-team"] select')?.focus());}}:undefined,
+      team:canAssign?{value:selected.assignedTo??'',options:assignees.map(person=>({id:person.userId,label:person.name})).concat(selected.assignedTo&&!assignees.some(person=>person.userId===selected.assignedTo)?[{id:selected.assignedTo,label:ar?'الاسم غير متاح':'Name unavailable'}]:[]),disabled:controlDisabled('assign'),pending:controlBusy,onAssign:userId=>{if((selected.assignedTo??null)!==userId)runControl(selected,'assign',userId);}}:undefined,
       addNote:canReply?{id:'note',label:ar?'تحرير الملاحظة':'Edit note',icon:'plus',onClick:()=>setComposerMode('note')}:undefined,
       followUp:{nativePanel:leadPanel,scheduledAt:selected.followUpAt??undefined,timezone:resolveCompanyTimezone(timezone).zone,values:{stage:selected.leadStage??'new',reason:selected.leadStageReason??'',status:selected.followUpStatus??'none',at:toDatetimeLocalValue(selected.followUpAt)},stages:[]},
       activity:{events:(audits[selected.id]?.events??[]).map(event=>({id:event.id,label:({worker_escalation:ar?'تحويل المحادثة للمتابعة البشرية':'Escalated for human follow-up',take_over:ar?'استلام المحادثة':'Conversation taken over',resume:ar?'استئناف الأتمتة':'Automation resumed',close:ar?'إغلاق المحادثة':'Conversation closed',assign:ar?'تحديث التعيين':'Assignment updated'} as Record<string,string>)[event.action]??event.action,actor:event.actorUserId?(assignees.find(person=>person.userId===event.actorUserId)?.name??(ar?'الاسم غير متاح':'Name unavailable')):(ar?'لا يوجد':'Not available'),at:new Date(event.at).toLocaleString(ar?'ar-OM':'en-GB',{timeZone:resolveCompanyTimezone(timezone).zone,dateStyle:'short',timeStyle:'short'})})),notice:auditError?<p role="status">{auditError}</p>:undefined,emptyLabel:auditBusy?(ar?'جارٍ تحميل النشاط…':'Loading activity…'):(ar?'لا توجد أحداث تحكم محفوظة.':'No saved control events.'),loadMore:!audits[selected.id]||auditError||audits[selected.id]?.hasMore?{id:'audit-more',label:audits[selected.id]?.hasMore?(ar?'تحميل نشاط أقدم':'Load older activity'):(ar?'تحديث السجل':'Refresh history'),icon:'clock',disabled:auditBusy||pending,onClick:()=>runPendingAction(async()=>{await loadAudit(selected.id,auditError?undefined:audits[selected.id]?.hasMore?audits[selected.id].nextCursor:undefined);})}:undefined},
       customerExtra:<>{selected.topic&&<p>{selected.topic}</p>}{selected.summary&&<p>{selected.summary}</p>}{selected.lastTouchAt&&<p>{new Date(selected.lastTouchAt).toLocaleString(ar?'ar-OM':'en-GB')}</p>}{phoneCopyFailed&&<p role="status">{ar?'تعذّر النسخ. يمكنك تحديد الرقم ونسخه.':'Copy failed. Select and copy the phone number.'}</p>}{connectionDetails}<Link href="/app/knowledge">{ar?'إدارة المعرفة':'Manage knowledge'}</Link>{testReview&&inboxMeta?.companyId?<ChannelReviewStatus companyId={inboxMeta.companyId} channel="whatsapp"/>:<Link href="/app/settings?tab=plan">{ar?'الاشتراك والربط':'Subscription & connection'}</Link>}</>,
       connection:{channel:'whatsapp',label:'WhatsApp',statusLabel:writesPaused?(ar?'تعذّر التحقق':'Unverified'):connection?.status==='verified'&&connection.authorizationStatus==='active'?(ar?'متصل':'Connected'):connection?(ar?'غير جاهز':'Not ready'):(ar?'غير متحقق':'Unverified'),receiveReady:writesPaused?null:connection?.receiveReady??null,sendReady:writesPaused?null:connection?.sendReady??null,details:!testReview&&connection?{id:'connection',label:ar?'تفاصيل الربط':'Connection details',icon:'more',onClick:()=>{setDetailsTab('details');setConnectionDetailsOpen(true);}}:undefined},
-      headerActions:[...(desktopView.headerActions??[]),...(canAssign?[{id:'assign',label:ar?'تعيين':'Assign',icon:'user' as const,onClick:()=>setDetailsTab('followup')}]:[])],
+      headerActions:[...(desktopView.headerActions??[]),...(canAssign?[{id:'assign',label:ar?'تعيين':'Assign',icon:'user' as const,onClick:()=>{setDetailsTab('details');window.requestAnimationFrame(()=>document.querySelector<HTMLSelectElement>('[data-feature="assigned-team"] select')?.focus());}}]:[])],
       workflow:{statusLabel:copy.app.statuses[selected.status],automation,automationLabel:automation==='paused'?(ar?'الأتمتة متوقفة':'Automation paused'):automation==='allowed'?(ar?'الأتمتة مسموحة':'Automation allowed'):(ar?'الأتمتة غير مسموحة':'Automation not allowed'),interventions:selected.intervention.reasons.map(reason=>interventionLabels[reason]),primary:liveIds.has(selected.id)?action(control):undefined,close:selected.status!=='resolved'&&liveIds.has(selected.id)?action('close'):undefined},
       messages:desktopWhatsappMessages(selected.messages,ar),
       onTranscriptMount:node=>{if(node)restoreTranscriptPosition(node,scrollPositions.current[draftKey]);},onTranscriptScroll:event=>{scrollPositions.current[draftKey]=captureTranscriptPosition(event.currentTarget);},

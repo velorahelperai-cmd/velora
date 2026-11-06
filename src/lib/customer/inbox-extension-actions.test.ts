@@ -6,7 +6,7 @@ const { rpc, access, createClient } = vi.hoisted(() => ({
 vi.mock('@/lib/supabase/server', () => ({ createClient }));
 vi.mock('@/lib/tenancy/access', () => ({ getCompanyAccess: access }));
 
-import { listInboxStars, listWhatsappMediaMetadata, removeUnboundWhatsappFile, runInboxExtension } from './inbox-extension-actions';
+import { listInboxStars, listWhatsappMediaMetadata, readInboxContact, removeUnboundWhatsappFile, runInboxExtension, saveInboxContact } from './inbox-extension-actions';
 
 const companyId = '11111111-1111-4111-8111-111111111111';
 const conversationId = '22222222-2222-4222-8222-222222222222';
@@ -86,6 +86,17 @@ it('only returns attachment metadata for requested message IDs in the authorized
   expect(await listWhatsappMediaMetadata(input)).toEqual({ok:false,code:'UNAVAILABLE'});
   expect(await listWhatsappMediaMetadata({...input,messageIds:Array(41).fill(itemId)})).toEqual({ok:false,code:'INVALID_INPUT'});
 });
+it('rejects an invalid customer email before opening a session and saves a trimmed profile', async () => {
+  const input = { ...thread, channel: 'whatsapp' as const, email: ' not-an-email ', location: 'Muscat' };
+  expect(await saveInboxContact(input)).toEqual({ ok: false, code: 'INVALID_INPUT' });
+  expect(access).not.toHaveBeenCalled();
+  rpc.mockResolvedValue({ data: { ok: true, data: { email: 'ahmed@example.test', location: 'Muscat' } }, error: null });
+  expect(await saveInboxContact({ ...input, email: ' ahmed@example.test ' })).toEqual({ ok: true, data: { email: 'ahmed@example.test', location: 'Muscat' } });
+  expect(rpc).toHaveBeenCalledWith('customer_inbox_contact', expect.objectContaining({ p_action: 'save', p_email: 'ahmed@example.test', p_location: 'Muscat' }));
+  rpc.mockResolvedValue({ data: { ok: true, data: { email: '', location: '' } }, error: null });
+  expect(await readInboxContact(thread)).toEqual({ ok: true, data: { email: '', location: '' } });
+});
+
 it('only removes an unbound file through the session-scoped conversation RPC',async()=>{
   rpc.mockResolvedValueOnce({data:{ok:false,code:'in_use'},error:null}).mockResolvedValueOnce({data:{ok:true},error:null});
   const input={companyId,conversationId,fileId:itemId};

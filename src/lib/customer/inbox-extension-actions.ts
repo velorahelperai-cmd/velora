@@ -130,3 +130,95 @@ export async function removeUnboundWhatsappFile(input: {companyId:string;convers
     return {ok:false as const,code:'UNAVAILABLE'};
   }catch{return {ok:false as const,code:'UNAVAILABLE'};}
 }
+
+const contactEmail = /^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,24}$/;
+export function validInboxContact(email: string, location: string) {
+  const mail = email.trim();
+  const place = location.trim();
+  if (mail.length > 254 || place.length > 120 || mail.includes('\0') || place.includes('\0')) return false;
+  return mail === '' || contactEmail.test(mail);
+}
+
+type ContactProfile = { email: string; location: string };
+function contactProfile(value: unknown): ContactProfile | null {
+  if (!value || typeof value !== 'object') return null;
+  const row = value as { email?: unknown; location?: unknown };
+  if (typeof row.email !== 'string' || typeof row.location !== 'string') return null;
+  if (!validInboxContact(row.email, row.location)) return null;
+  return { email: row.email.trim(), location: row.location.trim() };
+}
+
+export async function readInboxContact(input: { companyId: string; conversationId: string; channel: 'whatsapp' | 'instagram' }) {
+  if (!input || !uuid(input.companyId) || !uuid(input.conversationId) || !['whatsapp', 'instagram'].includes(input.channel)) {
+    return { ok: false as const, code: 'INVALID_INPUT' };
+  }
+  const args = {
+    p_company_id: input.companyId.toLowerCase(),
+    p_conversation_id: input.conversationId.toLowerCase(),
+    p_channel: input.channel,
+    p_action: 'read',
+    p_email: null,
+    p_location: null,
+  };
+  try {
+    const access = await getCompanyAccess();
+    if (!access.ok || access.context.company?.id !== args.p_company_id || !access.context.membership) {
+      return { ok: false as const, code: 'FORBIDDEN' };
+    }
+    const client = await createClient() as unknown as {
+      rpc(name: string, parameters: typeof args): Promise<{ data: unknown; error: unknown }>;
+    };
+    const { data, error } = await client.rpc('customer_inbox_contact', args);
+    if (error || !data || typeof data !== 'object' || !('ok' in data)) return { ok: false as const, code: 'UNAVAILABLE' };
+    if (data.ok === true && 'data' in data) {
+      const profile = contactProfile(data.data);
+      if (!profile) return { ok: false as const, code: 'UNAVAILABLE' };
+      return { ok: true as const, data: profile };
+    }
+    if (data.ok === false && 'code' in data && typeof data.code === 'string' &&
+        ['FORBIDDEN', 'INVALID_INPUT', 'UNAVAILABLE'].includes(data.code)) {
+      return { ok: false as const, code: data.code as 'FORBIDDEN' | 'INVALID_INPUT' | 'UNAVAILABLE' };
+    }
+    return { ok: false as const, code: 'UNAVAILABLE' };
+  } catch {
+    return { ok: false as const, code: 'UNAVAILABLE' };
+  }
+}
+
+export async function saveInboxContact(input: { companyId: string; conversationId: string; channel: 'whatsapp' | 'instagram'; email: string; location: string }) {
+  if (!input || !uuid(input.companyId) || !uuid(input.conversationId) || !['whatsapp', 'instagram'].includes(input.channel) ||
+      typeof input.email !== 'string' || typeof input.location !== 'string' || !validInboxContact(input.email, input.location)) {
+    return { ok: false as const, code: 'INVALID_INPUT' };
+  }
+  const args = {
+    p_company_id: input.companyId.toLowerCase(),
+    p_conversation_id: input.conversationId.toLowerCase(),
+    p_channel: input.channel,
+    p_action: 'save',
+    p_email: input.email.trim(),
+    p_location: input.location.trim(),
+  };
+  try {
+    const access = await getCompanyAccess();
+    if (!access.ok || access.context.company?.id !== args.p_company_id || !access.context.membership) {
+      return { ok: false as const, code: 'FORBIDDEN' };
+    }
+    const client = await createClient() as unknown as {
+      rpc(name: string, parameters: typeof args): Promise<{ data: unknown; error: unknown }>;
+    };
+    const { data, error } = await client.rpc('customer_inbox_contact', args);
+    if (error || !data || typeof data !== 'object' || !('ok' in data)) return { ok: false as const, code: 'UNAVAILABLE' };
+    if (data.ok === true && 'data' in data) {
+      const profile = contactProfile(data.data);
+      if (!profile || profile.email !== args.p_email || profile.location !== args.p_location) return { ok: false as const, code: 'UNAVAILABLE' };
+      return { ok: true as const, data: profile };
+    }
+    if (data.ok === false && 'code' in data && typeof data.code === 'string' &&
+        ['FORBIDDEN', 'INVALID_INPUT', 'UNAVAILABLE'].includes(data.code)) {
+      return { ok: false as const, code: data.code as 'FORBIDDEN' | 'INVALID_INPUT' | 'UNAVAILABLE' };
+    }
+    return { ok: false as const, code: 'UNAVAILABLE' };
+  } catch {
+    return { ok: false as const, code: 'UNAVAILABLE' };
+  }
+}

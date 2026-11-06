@@ -166,7 +166,15 @@ export type InboxDesktopView = {
     activity?: VdiActivity;
     addTag?: VdiAction;
     tagControls?: ReactNode;
+    contactControls?: ReactNode;
     addNote?: VdiAction;
+    team?: {
+        value: string;
+        options: { id: string; label: string }[];
+        disabled?: boolean;
+        pending?: boolean;
+        onAssign: (userId: string | null) => void;
+    };
     assign?: VdiAction;
     customerExtra?: ReactNode;
     connection?: VdiConnection;
@@ -342,7 +350,7 @@ function CustomerTeam({view,ar}:{view:InboxDesktopView;ar:boolean}) {
  return <>
   <section className="vdi-section" data-feature="assigned-team"><h3>{ar?'الفريق المسؤول':'Assigned team'}</h3><div className="vdi-team">
    {person?<><Avatar person={person} small/><div><div>{person.name}</div><small>{person.status||(ar?'حالة التواجد غير متاحة':'Presence unavailable')}</small></div></>:<><span className="vdi-avatar vdi-avatar-small" aria-hidden="true"><Icon name="user"/></span><span className="vdi-muted">{ar?'لا يوجد':'None'}</span></>}
-   <ActionButton action={view.assign?{...view.assign,icon:'down'}:{id:'assign',label:ar?'تعيين المسؤول':'Assign teammate',icon:'down',disabled:true,reason:ar?'تعيين المسؤول غير متاح بالصلاحيات الحالية.':'Assignment is unavailable with your current permissions.'}}/>
+   {view.team?<label className="vdi-team-assign">{ar?'المسؤول':'Owner'}<select aria-label={ar?'الفريق المسؤول':'Assigned team'} value={view.team.options.some(option=>option.id===view.team?.value)?view.team.value:''} disabled={view.team.disabled||view.team.pending} onChange={event=>view.team?.onAssign(event.target.value?event.target.value:null)}><option value="">{ar?'غير معيّن':'Unassigned'}</option>{view.team.options.map(option=><option value={option.id} key={option.id}>{option.label}</option>)}</select></label>:<ActionButton action={view.assign?{...view.assign,icon:'down'}:{id:'assign',label:ar?'تعيين المسؤول':'Assign teammate',icon:'down',disabled:true,reason:ar?'تعيين المسؤول غير متاح بالصلاحيات الحالية.':'Assignment is unavailable with your current permissions.'}}/>}
   </div></section>
   <button type="button" className="vdi-followup-summary" data-feature="next-followup" disabled={!followup||!view.onProfileTabChange} title={followup?.timezone} onClick={()=>view.onProfileTabChange?.('followup')}><Icon name="clock"/><span><strong>{ar?'المتابعة القادمة':'Next follow-up'}</strong><small>{appointment}</small></span><Icon name="back"/></button>
  </>;
@@ -366,12 +374,13 @@ function ClientQuickActions({view,ar}:{view:InboxDesktopView;ar:boolean}) {
   </details>}
  </div>;
 }
-function ContactInformation({customer:c,ar}:{customer:VdiCustomer;ar:boolean}) {
+function ContactInformation({customer:c,ar,controls}:{customer:VdiCustomer;ar:boolean;controls?:ReactNode}) {
  const missing=ar?'لا يوجد':'Not available';
  return <section className="vdi-section" data-feature="contact-information"><h3>{ar?'معلومات الاتصال':'Contact information'}</h3>
-  <div className="vdi-contact" title={ar?'رقم الهاتف':'Phone number'}><Icon name="phone"/>{c.phone?.trim()?<bdi dir="ltr">{c.phone}</bdi>:<span>{missing}</span>}</div>
+  <div className="vdi-contact" title={ar?'رقم واتساب الموثّق':'Verified WhatsApp number'}><Icon name="phone"/>{c.phone?.trim()?<bdi dir="ltr">{c.phone}</bdi>:<span>{missing}</span>}</div>
   <div className="vdi-contact" title={ar?'البريد الإلكتروني':'Email'}><Icon name="mail"/>{c.email?.trim()?<bdi dir="ltr">{c.email}</bdi>:<span>{missing}</span>}</div>
   <div className="vdi-contact" title={ar?'الموقع':'Location'}><Icon name="pin"/><span>{c.location?.trim()||missing}</span></div>
+  {controls}
  </section>;
 }
 function ClientPanel({ view, ar }: {
@@ -383,7 +392,7 @@ function ClientPanel({ view, ar }: {
     const starred = view.headerActions?.find(action=>action.id==='star')?.active;
     const tab = (_a = view.profileTab) !== null && _a !== void 0 ? _a : 'details';
     const setTab = (t: NonNullable<InboxDesktopView["profileTab"]>) => { let _a; return (_a = view.onProfileTabChange) === null || _a === void 0 ? void 0 : _a.call(view, t); };
-    return <aside className={"vdi-panel vdi-profile"} data-inbox-panel={"customer"}><div className={"vdi-title-row"}><h2>{ar ? 'معلومات العميل' : 'Customer information'}</h2>{view.closeDetails && <ActionButton action={view.closeDetails}/>}</div>{!c ? <div className={"vdi-empty"}>{ar ? 'اختر محادثة لعرض التفاصيل' : 'Select a conversation'}</div> : <React.Fragment><section className={"vdi-hero vdi-hero-compact"}><Avatar person={c} channel={c.channel} large={true}/><h3>{c.name}</h3>{(c.badge || starred) && <span className={"vdi-badge"} title={!c.badge?(ar?'محادثة مميزة':'Starred conversation'):undefined}><Icon name={"crown"}/>{c.badge || (ar?'محادثة مميزة':'Starred conversation')}</span>}<ClientQuickActions view={view} ar={ar}/></section>{(view.followUp || view.activity) && <div className={"vdi-profile-tabs"} aria-label={ar ? 'أقسام العميل' : 'Customer sections'}>{(['details', ...(view.followUp ? ['followup'] : []), ...(view.activity ? ['activity'] : [])] as NonNullable<InboxDesktopView['profileTab']>[]).map(t => <button type={"button"} key={t} data-profile-tab={t} disabled={!view.onProfileTabChange} aria-pressed={tab === t} onClick={() => setTab(t)}><Icon name={t === 'details' ? 'user' : t === 'followup' ? 'clock' : 'activity'}/>{ar ? ({ details: 'التفاصيل', followup: 'المتابعة', activity: 'النشاط' })[t] : ({ details: 'Details', followup: 'Follow-up', activity: 'Activity' })[t]}</button>)}</div>}<div className={"vdi-profile-scroll vdi-scroll"}>{view.followUp?.nativePanel && <div hidden={tab !== "followup"}>{view.followUp.nativePanel}</div>}{tab === 'followup' && view.followUp ? (view.followUp.nativePanel ? null : <FollowUpPanel model={view.followUp} ar={ar}/>) : tab === 'activity' && view.activity ? <ActivityPanel model={view.activity} ar={ar}/> : <React.Fragment><ContactInformation customer={c} ar={ar}/><section className={"vdi-section"} data-feature="customer-tags"><div className={"vdi-section-heading"}><h3>{ar ? 'وسوم' : 'Tags'}</h3><ActionButton action={view.addTag??{id:'add-tag',label:ar?'إضافة وسم':'Add tag',icon:'plus',disabled:true,reason:ar?'إضافة الوسوم غير متاحة حاليًا.':'Adding tags is currently unavailable.'}} small label/></div>{c.tags?.length?<div className={"vdi-tags"}>{c.tags.map(t=><span key={t.id} className={`vdi-tag vdi-tag-${t.tone||'mint'}`}>{t.label}</span>)}</div>:<p className="vdi-muted">{view.extensionStatus==='loading'?(ar?'جارٍ التحميل…':'Loading…'):view.extensionStatus==='unavailable'?(ar?'تعذّر التحقق':'Unavailable'):(ar?'لا يوجد':'None')}</p>}{view.tagControls}</section><section className={"vdi-section"} data-feature="internal-notes"><div className={"vdi-section-heading"}><h3>{ar ? 'ملاحظات داخلية' : 'Internal notes'}</h3><ActionButton action={view.addNote?{...view.addNote,label:view.extension?.channel==='instagram'?(ar?'إضافة ملاحظة':'Add note'):c.note?.text.trim()?(ar?'تحرير الملاحظة':'Edit note'):(ar?'إضافة ملاحظة':'Add note')}:{id:'add-note',label:ar?'إضافة ملاحظة':'Add note',icon:'plus',disabled:true,reason:ar?'إضافة الملاحظات غير متاحة لهذه المحادثة حاليًا.':'Adding notes is currently unavailable for this conversation.'}} small label/></div><div className={"vdi-note"}>{c.note?.text.trim()||<span className="vdi-muted">{view.extension?.channel==='instagram'&&view.extensionStatus==='loading'?(ar?'جارٍ التحميل…':'Loading…'):view.extension?.channel==='instagram'&&view.extensionStatus==='unavailable'?(ar?'تعذّر التحقق':'Unavailable'):(ar?'لا يوجد':'None')}</span>}{(c.note?.attribution||c.note?.time)&&<p className={"vdi-note-meta"}>{c.note.attribution}{c.note.attribution&&c.note.time&&<br/>}{c.note.time}</p>}</div></section><CustomerTeam view={view} ar={ar}/>{view.customerExtra && <section className={"vdi-section"}>{view.customerExtra}</section>}</React.Fragment>}</div>{view.connection && <ConnectionPanel model={view.connection} ar={ar}/>}</React.Fragment>}</aside>;
+    return <aside className={"vdi-panel vdi-profile"} data-inbox-panel={"customer"}><div className={"vdi-title-row"}><h2>{ar ? 'معلومات العميل' : 'Customer information'}</h2>{view.closeDetails && <ActionButton action={view.closeDetails}/>}</div>{!c ? <div className={"vdi-empty"}>{ar ? 'اختر محادثة لعرض التفاصيل' : 'Select a conversation'}</div> : <React.Fragment><section className={"vdi-hero vdi-hero-compact"}><Avatar person={c} channel={c.channel} large={true}/><h3>{c.name}</h3>{(c.badge || starred) && <span className={"vdi-badge"} title={!c.badge?(ar?'محادثة مميزة':'Starred conversation'):undefined}><Icon name={"crown"}/>{c.badge || (ar?'محادثة مميزة':'Starred conversation')}</span>}<ClientQuickActions view={view} ar={ar}/></section>{(view.followUp || view.activity) && <div className={"vdi-profile-tabs"} aria-label={ar ? 'أقسام العميل' : 'Customer sections'}>{(['details', ...(view.followUp ? ['followup'] : []), ...(view.activity ? ['activity'] : [])] as NonNullable<InboxDesktopView['profileTab']>[]).map(t => <button type={"button"} key={t} data-profile-tab={t} disabled={!view.onProfileTabChange} aria-pressed={tab === t} onClick={() => setTab(t)}><Icon name={t === 'details' ? 'user' : t === 'followup' ? 'clock' : 'activity'}/>{ar ? ({ details: 'التفاصيل', followup: 'المتابعة', activity: 'النشاط' })[t] : ({ details: 'Details', followup: 'Follow-up', activity: 'Activity' })[t]}</button>)}</div>}<div className={"vdi-profile-scroll vdi-scroll"}>{view.followUp?.nativePanel && <div hidden={tab !== "followup"}>{view.followUp.nativePanel}</div>}{tab === 'followup' && view.followUp ? (view.followUp.nativePanel ? null : <FollowUpPanel model={view.followUp} ar={ar}/>) : tab === 'activity' && view.activity ? <ActivityPanel model={view.activity} ar={ar}/> : <React.Fragment><ContactInformation customer={c} ar={ar} controls={view.contactControls}/><section className={"vdi-section"} data-feature="customer-tags"><div className={"vdi-section-heading"}><h3>{ar ? 'وسوم' : 'Tags'}</h3><ActionButton action={view.addTag??{id:'add-tag',label:ar?'إضافة وسم':'Add tag',icon:'plus',disabled:true,reason:ar?'إضافة الوسوم غير متاحة حاليًا.':'Adding tags is currently unavailable.'}} small label/></div>{c.tags?.length?<div className={"vdi-tags"}>{c.tags.map(t=><span key={t.id} className={`vdi-tag vdi-tag-${t.tone||'mint'}`}>{t.label}</span>)}</div>:<p className="vdi-muted">{view.extensionStatus==='loading'?(ar?'جارٍ التحميل…':'Loading…'):view.extensionStatus==='unavailable'?(ar?'تعذّر التحقق':'Unavailable'):(ar?'لا يوجد':'None')}</p>}{view.tagControls}</section><section className={"vdi-section"} data-feature="internal-notes"><div className={"vdi-section-heading"}><h3>{ar ? 'ملاحظات داخلية' : 'Internal notes'}</h3><ActionButton action={view.addNote?{...view.addNote,label:view.extension?.channel==='instagram'?(ar?'إضافة ملاحظة':'Add note'):c.note?.text.trim()?(ar?'تحرير الملاحظة':'Edit note'):(ar?'إضافة ملاحظة':'Add note')}:{id:'add-note',label:ar?'إضافة ملاحظة':'Add note',icon:'plus',disabled:true,reason:ar?'إضافة الملاحظات غير متاحة لهذه المحادثة حاليًا.':'Adding notes is currently unavailable for this conversation.'}} small label/></div><div className={"vdi-note"}>{c.note?.text.trim()||<span className="vdi-muted">{view.extension?.channel==='instagram'&&view.extensionStatus==='loading'?(ar?'جارٍ التحميل…':'Loading…'):view.extension?.channel==='instagram'&&view.extensionStatus==='unavailable'?(ar?'تعذّر التحقق':'Unavailable'):(ar?'لا يوجد':'None')}</span>}{(c.note?.attribution||c.note?.time)&&<p className={"vdi-note-meta"}>{c.note.attribution}{c.note.attribution&&c.note.time&&<br/>}{c.note.time}</p>}</div></section><CustomerTeam view={view} ar={ar}/>{view.customerExtra && <section className={"vdi-section"}>{view.customerExtra}</section>}</React.Fragment>}</div>{view.connection && <ConnectionPanel model={view.connection} ar={ar}/>}</React.Fragment>}</aside>;
 }
 function WorkspaceBar({ model: m, ar }: {
     model: VdiWorkspace;
@@ -416,11 +425,25 @@ function Delivery({ state, ar }: {
 function ComposerTools({composer:c,ar}:{composer:VdiComposer;ar:boolean}) {
  const [emojiOpen,setEmojiOpen]=React.useState(false);
  const [quickOpen,setQuickOpen]=React.useState(false);
+ const [moreOpen,setMoreOpen]=React.useState(false);
+ const [copyState,setCopyState]=React.useState<'idle'|'copied'|'failed'>('idle');
  const fileInput=React.useRef<HTMLInputElement>(null);
  const blocked=!!c.pending||!c.canSend;
  if(c.tools)return <>{c.tools.map(action=><ActionButton key={action.id} action={{...action,disabled:action.disabled||blocked}}/>)}</>;
+ const noteEnabled=c.enabledModes.includes('note')&&!c.disabledModes?.includes('note');
+ const aiEnabled=c.enabledModes.includes('ai')&&!c.disabledModes?.includes('ai');
  return <>
-  <ActionButton action={{id:'more',label:ar?'أدوات إضافية':'More tools',icon:'more',disabled:true,reason:ar?'لا توجد أدوات إضافية متاحة حاليًا.':'No additional tools are currently available.'}}/>
+  <div className="vdi-quick-tool" onKeyDown={event=>{if(event.key==='Escape'){setMoreOpen(false);event.currentTarget.querySelector('button')?.focus();}}}>
+   <ActionButton action={{id:'more',label:ar?'أدوات إضافية':'More tools',icon:'more',active:moreOpen,onClick:()=>{setMoreOpen(open=>!open);setCopyState('idle');}}}/>
+   {moreOpen&&<div className="vdi-quick-panel" role="group" aria-label={ar?'أدوات الكتابة':'Writing tools'}>
+    <button type="button" disabled={!c.value} onClick={()=>{void navigator.clipboard.writeText(c.value).then(()=>setCopyState('copied')).catch(()=>setCopyState('failed'));}}>{ar?'نسخ المسودة':'Copy draft'}</button>
+    <button type="button" disabled={blocked||!c.value} onClick={()=>{c.onChange('');setMoreOpen(false);}}>{ar?'مسح المسودة':'Clear draft'}</button>
+    {noteEnabled&&<button type="button" onClick={()=>{c.onModeChange('note');setMoreOpen(false);}}>{ar?'ملاحظة داخلية':'Internal note'}</button>}
+    {aiEnabled&&<button type="button" onClick={()=>{c.onModeChange('ai');setMoreOpen(false);}}>{ar?'مساعد الذكاء الاصطناعي':'AI assistant'}</button>}
+    {copyState==='copied'&&<p role="status">{ar?'نُسخت المسودة.':'Draft copied.'}</p>}
+    {copyState==='failed'&&<p role="status">{ar?'تعذّر النسخ. حدّد النص وانسخه.':'Copy failed. Select the text and copy it.'}</p>}
+   </div>}
+  </div>
   <div className="vdi-quick-tool" onKeyDown={event=>{if(event.key==='Escape'){setQuickOpen(false);event.currentTarget.querySelector('button')?.focus();}}}>
    <ActionButton action={{id:'quick',label:ar?'الردود السريعة':'Quick replies',icon:'hash',disabled:blocked||!c.quickReplies?.ready,reason:c.disabledReason,active:quickOpen&&!blocked,onClick:()=>setQuickOpen(open=>!open)}}/>
    {quickOpen&&!blocked&&c.quickReplies?.ready&&<div className="vdi-quick-panel" role="group" aria-label={ar?'الردود السريعة لهذه المحادثة':'Quick replies for this conversation'}>
