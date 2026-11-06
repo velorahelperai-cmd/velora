@@ -492,4 +492,15 @@ describe("ports.history - strictly preceding messages scope", () => {
     const totalChars = history.reduce((sum, h) => sum + h.text.length, 0);
     expect(totalChars).toBeLessThanOrEqual(1100);
   });
+  it("notes a continuity ack through the claimed job and does not send", async () => {
+    vi.stubEnv("WHATSAPP_CONTINUITY_ACK_ENABLED", "true");
+    const db = client(), ports = createIntegrationPorts(binding, db as never);
+    await ports.noteContinuity?.({ responseKind: "ack_v1", phase: "ACK_DUE", authority: "AUTHORIZED", body: "استلمنا رسالتك. سنراجعها ونعود إليك من هنا.", reason: "ack_due" });
+    expect(db.rpc).toHaveBeenCalledWith("whatsapp_note_continuity", { p_job_id: "job", p_claim_token: "claim", p_action: "schedule" });
+    expect(send).not.toHaveBeenCalled();
+    vi.stubEnv("WHATSAPP_CONTINUITY_ACK_ENABLED", "false");
+    db.rpc.mockClear();
+    await ports.noteContinuity?.({ responseKind: "ack_v1", phase: "ACK_DUE", authority: "AUTHORIZED", body: null, reason: "ack_due" });
+    expect(db.rpc).not.toHaveBeenCalled();
+  });
 });

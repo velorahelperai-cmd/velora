@@ -92,8 +92,18 @@ describe("bounded inbox contracts", () => {
     expect(result.data.hasMore).toBe(true);
     expect(result.data.nextCursor).toBe("3");
     expect(result.data.conversations[0].unreadCount).toBe(2);
+    expect(result.data.conversations[0].continuitySla).toBeUndefined();
     expect(JSON.stringify(result)).not.toContain("secret");
     expect(seam.rpc).toHaveBeenCalledWith("whatsapp_inbox_page", { p_company_id: companyId, p_limit: 1, p_before: null });
+  });
+  it("keeps continuity deadlines on the conversation and drops an incomplete sla", async () => {
+    seam.rpc.mockResolvedValue({ data: {
+      ok: true, company_id: companyId, conversation_scope: "all_company", kind: "partial",
+      conversations: [{ ...conversation, continuity_sla: { ack_after_seconds: 20, unclaimed_escalate_seconds: 60, claimed_idle_seconds: 120, ack_due_at: "2026-11-06T12:00:20.000Z", unclaimed_escalate_at: null, claimed_idle_at: null } }],
+      has_more: false, next_cursor: null, total: 1, unread_total: 1, intervention_total: 0, membership_fingerprint: fingerprint,
+    }, error: null });
+    const timed = await contracts.loadWhatsappInboxPage({ companyId, limit: 1 });
+    expect(timed.ok && timed.data.conversations[0].continuitySla).toMatchObject({ ackAfterSeconds: 20, ackDueAt: "2026-11-06T12:00:20.000Z" });
   });
   it("fails closed on missing RPC and does not expose raw errors", async () => {
     seam.rpc.mockResolvedValue({ data: null, error: { message: "missing RPC sensitive database text" } });

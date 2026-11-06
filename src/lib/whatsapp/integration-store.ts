@@ -12,6 +12,7 @@ import {readServiceWindow} from "./service-window";
 import {bindOperationalRecipient} from "./operational-recipient";
 import {recordWorkerTiming} from "./worker-timing";
 import {validateLiveTestScope} from "./live-test-gate";
+import {continuityAckGate} from "./response-continuity";
 type RpcClient={rpc:(name:string,args:Record<string,unknown>)=>PromiseLike<{data:unknown;error:unknown}>};
 const object=(x:unknown):Record<string,unknown>|null=>x!==null&&typeof x==="object"&&!Array.isArray(x)?x as Record<string,unknown>:null;
 export function workerRolloutEnabled(){return process.env.WHATSAPP_WORKER_ENABLED==="true"&&isLiveAnsweringEnabled()&&externalSendAllowed()&&whatsappRoutingMode()==="tenant_registry";}
@@ -163,5 +164,11 @@ export function createIntegrationPorts(binding:{jobId:string;claimToken:string;c
  repair:async id=>object(await rpc("retry_whatsapp_send_persist",{p_intent_id:id,p_actor_user_id:null}))?.ok===true,
  retry:async(code,uncertain,permanent)=>{const result=object(await rpc("whatsapp_retry_inbound_job",{...args,p_code:code,p_uncertain:uncertain,p_terminal:permanent??false}));
  if(result?.ok!==true||!["retry_wait","dead_letter","review_required"].includes(String(result.status)))throw Error("JOB_DISPOSITION_UNCONFIRMED");},
- heartbeat:async()=>await rpc("whatsapp_heartbeat_inbound_job",args)===true};
+ heartbeat:async()=>await rpc("whatsapp_heartbeat_inbound_job",args)===true,
+ noteContinuity:async plan=>{
+  if(!client)return;
+  const action=plan.phase==="ACK_DUE"?"schedule":plan.phase==="CANCELLED"?"cancel":null;
+  if(!action||(action==="schedule"&&!continuityAckGate().open))return;
+  try{await client.rpc("whatsapp_note_continuity",{p_job_id:binding.jobId,p_claim_token:binding.claimToken,p_action:action});}catch{/* A ledger note must not send or fail the answer. */}
+ }};
 }

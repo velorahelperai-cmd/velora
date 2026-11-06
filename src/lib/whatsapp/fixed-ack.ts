@@ -1,4 +1,6 @@
 import "server-only";
+// Legacy single-recipient fixed reply. It still requires WHATSAPP_WORKER_ENABLED
+// and does not open the independent continuity ack gate (WHATSAPP_CONTINUITY_ACK_ENABLED).
 import {createAdminClient} from "@/lib/supabase/admin";
 import {billingUuid} from "@/lib/billing/wiring/public-offer-policy";
 import {externalSendAllowed,metaGraphVersion,whatsappRoutingMode} from "./config";

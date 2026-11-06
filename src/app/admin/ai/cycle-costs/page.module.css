@@ -1,0 +1,25 @@
+.page {
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+.back {
+  font-size: 0.875rem;
+  text-decoration: underline;
+}
+
+.panel {
+  margin-top: 1rem;
+}
+
+.panel h1 {
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.panel p {
+  margin-top: 0.5rem;
+  font-size: 0.875rem;
+  opacity: 0.8;
+}

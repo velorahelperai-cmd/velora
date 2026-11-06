@@ -17,7 +17,8 @@ function setup(){
  stage:vi.fn(async()=>"intent"),claimSend:vi.fn(async()=>({ok:true,claimed:true,attempt_token:"send-claim",intent})),
  abortSend:vi.fn(async()=>true),
  send:vi.fn(async()=>({ok:true,waMessageId:"synthetic-wamid"})),finalize:vi.fn(async()=>true),finish:vi.fn(async()=>"accepted"),
- repair:vi.fn(async()=>true),retry:vi.fn<IntegrationPorts["retry"]>(async()=>{}),heartbeat:vi.fn(async()=>true)};
+ repair:vi.fn(async()=>true),retry:vi.fn<IntegrationPorts["retry"]>(async()=>{}),heartbeat:vi.fn(async()=>true),
+ noteContinuity:undefined as IntegrationPorts["noteContinuity"],rereadOwnership:undefined as IntegrationPorts["rereadOwnership"]};
  return {frame,chunks,ports,intent};
 }
 describe("persisted WhatsApp integration worker",()=>{
@@ -447,5 +448,79 @@ describe("persisted WhatsApp integration worker",()=>{
     expect(ports.finish).toHaveBeenCalledWith(intent.id);
     expect(ports.retry).toHaveBeenCalledWith("WORKER_DISABLED", false, false);
     expect(ports.send).not.toHaveBeenCalled();
+  });
+
+  it("answers a safe question from the database ownership projection while handoff is unclaimed", async () => {
+    const { frame, ports } = setup();
+    frame.question = "ما هي الخدمات؟";
+    frame.conversation_status = "handed_over";
+    frame.human_ownership = "requested_unclaimed";
+    frame.handoff_reason = "worker_escalation";
+    expect(await runInboundWorkerAnswer(input, ports)).toMatchObject({ ok: true, delivered: false });
+    expect(ports.answer).toHaveBeenCalled();
+    expect(ports.send).toHaveBeenCalledTimes(1);
+  });
+
+  it("answers a safe question while handoff is unclaimed", async () => {
+    const { frame, ports } = setup();
+    frame.question = "ما هي الخدمات؟";
+    frame.human_ownership = "REQUESTED_UNCLAIMED";
+    frame.handoff_reason = "worker_escalation";
+    expect(await runInboundWorkerAnswer(input, ports)).toMatchObject({ ok: true, delivered: false });
+    expect(ports.answer).toHaveBeenCalled();
+    expect(ports.send).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not answer or send over an active staff claim", async () => {
+    const { frame, ports } = setup();
+    frame.human_ownership = "CLAIMED_ACTIVE";
+    const note = vi.fn(async () => {});
+    ports.noteContinuity = note;
+    expect(await runInboundWorkerAnswer(input, ports)).toMatchObject({ ok: false, code: "HUMAN_CLAIMED" });
+    expect(ports.answer).not.toHaveBeenCalled();
+    expect(ports.send).not.toHaveBeenCalled();
+    expect(note).toHaveBeenCalledWith(expect.objectContaining({ phase: "CANCELLED", reason: "staff_claimed_active" }));
+  });
+
+  it("drops a generated answer when staff claims before transport", async () => {
+    const { ports } = setup();
+    ports.rereadOwnership = vi.fn(async () => "CLAIMED_ACTIVE" as const);
+    ports.finish.mockResolvedValue("released");
+    expect(await runInboundWorkerAnswer(input, ports)).toMatchObject({ ok: false, code: "HUMAN_CLAIMED" });
+    expect(ports.send).not.toHaveBeenCalled();
+    expect(ports.finalize).toHaveBeenCalledWith("intent", "send-claim", "rejected", null);
+  });
+
+  it("notes a neutral ack for a sensitive request only when the continuity gate is open, and never sends it", async () => {
+    const { frame, ports } = setup();
+    frame.question = "I need the manager";
+    frame.human_ownership = "REQUESTED_UNCLAIMED";
+    const note = vi.fn(async () => {});
+    ports.noteContinuity = note;
+    expect(await runInboundWorkerAnswer(input, ports)).toMatchObject({ ok: false, code: "HUMAN_REVIEW_REQUIRED" });
+    expect(note).not.toHaveBeenCalled();
+    expect(ports.answer).not.toHaveBeenCalled();
+    expect(ports.send).not.toHaveBeenCalled();
+    vi.stubEnv("WHATSAPP_CONTINUITY_ACK_ENABLED", "true");
+    note.mockClear();
+    expect(await runInboundWorkerAnswer(input, ports)).toMatchObject({ ok: false, code: "HUMAN_REVIEW_REQUIRED" });
+    expect(note).toHaveBeenCalledWith(expect.objectContaining({ responseKind: "ack_v1", phase: "ACK_DUE" }));
+    expect(ports.send).not.toHaveBeenCalled();
+  });
+
+  it("does not send free-form text when the service window is closed", async () => {
+    const { frame, ports } = setup();
+    frame.service_window_open = false;
+    expect(await runInboundWorkerAnswer(input, ports)).toMatchObject({ ok: false, code: "SERVICE_WINDOW_CLOSED" });
+    expect(ports.answer).not.toHaveBeenCalled();
+    expect(ports.send).not.toHaveBeenCalled();
+  });
+
+  it("does not send again when the frame already has an unknown provider result", async () => {
+    const { frame, ports } = setup();
+    frame.send_unknown = true;
+    expect(await runInboundWorkerAnswer(input, ports)).toMatchObject({ ok: false, code: "SEND_REQUIRES_RECONCILIATION" });
+    expect(ports.send).not.toHaveBeenCalled();
+    expect(ports.answer).not.toHaveBeenCalled();
   });
 });

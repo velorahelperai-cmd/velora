@@ -300,6 +300,12 @@ export type Database = {
           control_actor_id: string | null;
           control_acted_at: string | null;
           assigned_to: string | null;
+          human_ownership: "none" | "requested_unclaimed" | "claimed_idle" | "claimed_active" | "released" | "resolved" | null;
+          handoff_reason: string | null;
+          handoff_requested_at: string | null;
+          human_claimed_by: string | null;
+          human_claimed_at: string | null;
+          last_staff_reply_at: string | null;
           lead_stage: string;
           lead_stage_reason: string;
           internal_note: string;
@@ -323,6 +329,12 @@ export type Database = {
           control_actor_id?: string | null;
           control_acted_at?: string | null;
           assigned_to?: string | null;
+          human_ownership?: "none" | "requested_unclaimed" | "claimed_idle" | "claimed_active" | "released" | "resolved" | null;
+          handoff_reason?: string | null;
+          handoff_requested_at?: string | null;
+          human_claimed_by?: string | null;
+          human_claimed_at?: string | null;
+          last_staff_reply_at?: string | null;
           lead_stage?: string;
           lead_stage_reason?: string;
           internal_note?: string;
@@ -341,6 +353,12 @@ export type Database = {
           control_actor_id?: string | null;
           control_acted_at?: string | null;
           assigned_to?: string | null;
+          human_ownership?: "none" | "requested_unclaimed" | "claimed_idle" | "claimed_active" | "released" | "resolved" | null;
+          handoff_reason?: string | null;
+          handoff_requested_at?: string | null;
+          human_claimed_by?: string | null;
+          human_claimed_at?: string | null;
+          last_staff_reply_at?: string | null;
           lead_stage?: string;
           lead_stage_reason?: string;
           internal_note?: string;
@@ -357,7 +375,7 @@ export type Database = {
           company_id: string;
           conversation_id: string;
           actor_user_id: string | null;
-          action: "take_over" | "resume" | "close" | "reopen_inbound";
+          action: "take_over" | "resume" | "close" | "reopen_inbound" | "assign" | "worker_escalation" | "human_claimed" | "handoff_requested" | "human_released";
           revision: number;
           automation_generation: number;
           detail: Json;
@@ -368,7 +386,7 @@ export type Database = {
           company_id: string;
           conversation_id: string;
           actor_user_id?: string | null;
-          action: "take_over" | "resume" | "close" | "reopen_inbound";
+          action: "take_over" | "resume" | "close" | "reopen_inbound" | "assign" | "worker_escalation" | "human_claimed" | "handoff_requested" | "human_released";
           revision: number;
           automation_generation: number;
           detail?: Json;
