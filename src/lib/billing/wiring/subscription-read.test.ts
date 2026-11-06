@@ -205,4 +205,42 @@ describe("owner subscription uses authoritative Live entitlement", () => {
     state.es02 = es02Active({ paymentConfirmedAt: null, paidThroughAt: null });
     expect(await loadOwnerBillingSubscription(fallback)).toEqual(fallback);
   });
+  it.each([
+    "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  ])("ES02 empty-commercial fallback is scoped to the selected company %s", async (companyId) => {
+    state.access.mockResolvedValue({
+      ok: true,
+      context: {
+        company: { id: companyId, status: "active" },
+        membership: { role: "owner" },
+        userId: "fixture-user",
+      },
+    });
+    state.display = {
+      data: {
+        ok: true,
+        data: {
+          company_id: companyId,
+          environment: "live",
+          billing_paid: false,
+          operational_eligible: false,
+          qualified_paid_through: null,
+          journey: { subscription: null },
+          usage: null,
+        },
+      },
+      error: null,
+    };
+    state.es02 = es02Active({ companyId });
+    expect(await loadOwnerBillingSubscription(fallback)).toMatchObject({
+      state: "active",
+      paidThrough: "2099-01-01T00:00:00.000Z",
+    });
+    expect(state.rpc).toHaveBeenCalledWith("billing_read_company_display_evidence", { p_company_id: companyId });
+    expect(state.rpc).toHaveBeenCalledWith("es02_read_activation_foundation", {
+      p_expected_account_id: "fixture-user",
+      p_company_id: companyId,
+    });
+  });
 });

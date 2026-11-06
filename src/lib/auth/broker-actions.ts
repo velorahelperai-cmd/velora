@@ -119,7 +119,7 @@ export async function recoveryReauthForOperationAction(input: {
     if (!input.operationKey || input.operationKey.length < 16) {
       return { ok: false, code: "UNAUTHENTICATED" };
     }
-    const { brokerPasswordLogin, loadBrokerOperation, resolveBrokerSession } = await import(
+    const { brokerPasswordLogin, loadBrokerOperation } = await import(
       "@/lib/auth/broker"
     );
     const cookieStore = await cookies();
@@ -157,8 +157,8 @@ export async function recoveryReauthForOperationAction(input: {
               : "UNAVAILABLE",
       };
     }
-    const resolved = await resolveBrokerSession(reader, { admissionScope });
-    if (!resolved.ok || resolved.boundary.userId !== op.actorUserId) {
+    // Trust admit identity — same-request cookieStore.getAll often omits Set-Cookie writes.
+    if (admitted.userId !== op.actorUserId) {
       return { ok: false, code: "UNAUTHENTICATED" };
     }
     return { ok: true };

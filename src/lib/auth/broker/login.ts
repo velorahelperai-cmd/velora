@@ -110,7 +110,7 @@ async function rematerializeCommittedPasswordLogin(input: {
   bootstrapHash: string;
   writer: CookieWriter;
   reader: CookieReader;
-}): Promise<{ ok: true; userId: string; boundaryFingerprint: string } | { ok: false }> {
+}): Promise<{ ok: true; userId: string; generation: string; boundaryFingerprint: string } | { ok: false }> {
   const saved = await loadAuthIntentByNonce(input.stateNonce);
   if (
     !saved
@@ -131,6 +131,7 @@ async function rematerializeCommittedPasswordLogin(input: {
   return {
     ok: true,
     userId: materialized.userId,
+    generation: materialized.generation,
     boundaryFingerprint: materialized.boundaryFingerprint,
   };
 }
@@ -146,7 +147,7 @@ export async function brokerPasswordLogin(input: {
   /** Client gesture nonce — required for reserve idempotency (R4-F04). */
   requestNonce?: string | null;
 }): Promise<
-  | { ok: true }
+  | { ok: true; generation: string; userId: string }
   | { ok: false; code: "INVALID_INPUT" | "AUTH_ERROR" | "UNAVAILABLE" | "ADMISSION_BLOCKED" | "CONTINUITY_REQUIRED" }
 > {
   const email = input.email.trim().toLowerCase();
@@ -185,7 +186,9 @@ export async function brokerPasswordLogin(input: {
       writer: input.writer,
       reader: input.reader,
     });
-    if (replayed.ok) return { ok: true };
+    if (replayed.ok) {
+      return { ok: true, generation: replayed.generation, userId: replayed.userId };
+    }
   }
 
   const claim = await claimProviderAttempt(intent.id);
@@ -197,7 +200,9 @@ export async function brokerPasswordLogin(input: {
         writer: input.writer,
         reader: input.reader,
       });
-      if (replayed.ok) return { ok: true };
+      if (replayed.ok) {
+        return { ok: true, generation: replayed.generation, userId: replayed.userId };
+      }
     }
     await resumeProviderCleanup(intent.id, lineageCtx.browserLineageId);
     return { ok: false, code: "UNAVAILABLE" };
@@ -283,7 +288,7 @@ export async function brokerPasswordLogin(input: {
       boundary_fp: admitted.boundaryFingerprint,
       admission_scope: scope,
     });
-    return { ok: true };
+    return { ok: true, generation: admitted.generation, userId: admitted.userId };
   } catch {
     await signOutProviderSessionAfterAdmitFailure(bundle, data.session, {
       intentId: intent.id,
@@ -396,9 +401,10 @@ export async function brokerExchangeOAuthCode(input: {
     return { ok: false, code: "UNAVAILABLE", detail: "continuity_required", expireIntent: false };
   }
 
+  // Rotate stale vel_sh_* before exchange/admit — same collision class as password login.
   const [capability, lineageCtx, intent] = await Promise.all([
     probeBrokerCapability(),
-    prepareBrokerAdmissionLineage(input.reader, input.writer),
+    prepareBrokerAdmissionLineage(input.reader, input.writer, { rotateStaleHandles: true }),
     loadAuthIntentByNonce(input.stateNonce),
   ]);
   if (!capability.ok) return { ok: false, code: "UNAVAILABLE" };
@@ -418,7 +424,7 @@ export async function brokerExchangeOAuthCode(input: {
     if (!materialized) {
       return { ok: false, code: "UNAVAILABLE", detail: "receipt_stale", expireIntent: false };
     }
-    rotateHandleCookies(input.writer, input.reader ?? { getAll: () => [] }, new Set());
+    rotateHandleCookies(input.writer, input.reader, new Set());
     commitHandleCookie(input.writer, materialized.cookieName, materialized.handle);
     expireIntentCookie(input.writer, input.stateNonce);
     return { ok: true, generation: materialized.generation };

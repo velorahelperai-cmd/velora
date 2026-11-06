@@ -101,7 +101,7 @@ it("rotates stale handle cookies before admit and commits only the winner", asyn
       reader,
       writer,
     }),
-  ).toEqual({ ok: true });
+  ).toEqual({ ok: true, generation: "b".repeat(32), userId: "user" });
   expect(jar.has(stale)).toBe(false);
   expect(jar.get(winner)).toBe(handle);
   expect(m.prepare).toHaveBeenCalledWith(reader, writer, { rotateStaleHandles: true });
@@ -147,7 +147,7 @@ it("replays a committed intent cookie when the same gesture retries after a lost
       reader: { getAll: () => [...jar].map(([name, value]) => ({ name, value })) },
       writer,
     }),
-  ).toEqual({ ok: true });
+  ).toEqual({ ok: true, generation: "b".repeat(32), userId: "user" });
   expect(jar.get(winner)).toBe(handle);
   expect(m.signIn).not.toHaveBeenCalled();
   expect(m.claim).not.toHaveBeenCalled();

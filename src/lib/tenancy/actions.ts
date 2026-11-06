@@ -372,7 +372,7 @@ export async function signInWithEmail(input: {
         cookieStore.set(name, value, options as never);
       },
     };
-    const { brokerPasswordLogin, commitAuthReturnForGeneration, resolveBrokerSession } = await import("@/lib/auth/broker");
+    const { brokerPasswordLogin, commitAuthReturnForGeneration } = await import("@/lib/auth/broker");
     trace.stage("provider");
     providerAttempted = true;
     const reader = {
@@ -390,11 +390,11 @@ export async function signInWithEmail(input: {
       return { ok: false, code, diagnostic: trace.finish(code === "AUTH_ERROR" ? "AUTH_ERROR" : code === "INVALID_INPUT" ? "INVALID_INPUT" : "UNAVAILABLE") };
     }
     const preferred = input.next != null ? safeInternalPath(input.next, "") : "";
-    const resolved = await resolveBrokerSession({
-      getAll: () => cookieStore.getAll().map((c) => ({ name: c.name, value: c.value })),
-    });
-    if (resolved.ok && preferred) {
-      commitAuthReturnForGeneration(writer, resolved.boundary.generation, preferred);
+    // Use admit generation directly — Next cookieStore.getAll() often omits same-request
+    // Set-Cookie writes, and a post-admit resolveBrokerSession re-probes capability under
+    // Preview 57014 pressure (cache-clear / stale-handle collision class).
+    if (preferred) {
+      commitAuthReturnForGeneration(writer, admitted.generation, preferred);
     }
     // Cookies were committed above. Soft-land fast so Set-Cookie flushes before
     // access/capability probes can stall the Server Action response (cache-clear symptom).

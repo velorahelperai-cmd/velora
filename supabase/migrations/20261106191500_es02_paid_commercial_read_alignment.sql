@@ -1,9 +1,10 @@
--- Align commercial billing read/send with the ES02 paid ledger.
+-- Align commercial billing read/send with the ES02 paid ledger for EVERY company.
 -- ES02 stores live paid companies as billing_subscriptions.plan_version_id IS NULL
 -- with matching private.es02_activation_foundation.paid_through_at. Commercial
 -- billing_chat_send / display evidence only joined proven plan_version grants, so
--- a really paid ES02 tenant read as empty/unpaid and reply/take-over stayed false.
--- Does not insert subscription rows; only repairs the read/send proof path.
+-- any really paid ES02 tenant read as empty/unpaid and reply/take-over stayed false.
+-- Parameterized by company_id only — no single-tenant hardcoding.
+-- Does not insert subscription rows; only repairs the shared read/send proof path.
 begin;
 set local lock_timeout = '5s';
 set local statement_timeout = '30s';

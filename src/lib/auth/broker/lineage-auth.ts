@@ -12,9 +12,9 @@ import { resolveBrokerSession } from "./resolve";
 
 export type BrokerAdmissionLineageOptions = {
   /**
-   * Password login on /login: clear conflicting vel_sh_* cookies up front so a
-   * stale tip/jar cannot force capability probes or block a fresh admit. Continuity
-   * (vel_bc) is preserved. OAuth/recovery keep the resolve path.
+   * Password/OAuth admit: clear conflicting vel_sh_* cookies up front so a stale
+   * tip/jar cannot force capability probes or block a fresh admit. Continuity
+   * (vel_bc) is preserved.
    */
   rotateStaleHandles?: boolean;
 };
