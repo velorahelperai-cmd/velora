@@ -103,7 +103,8 @@ it('soft-fails a missing contact profile without showing a save error', async ()
     <div data-contact>{model.contactControls}</div>
     <button type="button" data-star disabled={model.headerActions?.find(a => a.id === 'star')?.disabled}>star</button>
   </>}/>));
-  expect(container.textContent).toContain('Contact details are not available');
+  expect(container.textContent).toContain('Contact profile is not ready');
+  expect(container.textContent).toContain('Retry');
   expect(container.textContent).not.toContain('could not be saved');
   expect(container.querySelector('form')).toBeNull();
   expect(api.saveContact).not.toHaveBeenCalled();
@@ -145,14 +146,15 @@ it('leaves loading after a timed-out extension list and exposes retry', async ()
   }
 });
 
-it('clears saved details and disables further actions when a write is denied', async () => {
+it('keeps the last ready tag list when a write is denied and surfaces retry', async () => {
   api.run.mockResolvedValueOnce({ ok: true, data: [{ id: first, kind: 'tag', body: 'Private' }] })
     .mockResolvedValueOnce({ ok: false, code: 'FORBIDDEN' });
   await act(async () => { show(first); });
   expect(container.querySelector('[data-tags]')?.textContent).toBe('Private');
   await act(async () => { container.querySelector('button')!.click(); });
-  expect(container.querySelector('[data-tags]')?.textContent).toBe('');
-  expect([...container.querySelectorAll('button')].slice(0, 2).every(button => button.disabled)).toBe(true);
+  expect(container.querySelector('[data-tags]')?.textContent).toBe('Private');
+  expect(container.textContent).toContain('could not be verified');
+  expect([...container.querySelectorAll('button')].some(button => button.textContent === 'Retry')).toBe(true);
 });
 
 it('saves an Instagram internal note to that thread without using the send action', async () => {

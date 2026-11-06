@@ -123,13 +123,20 @@ export function InboxExtensionBridge({ view, ar, render, pendingIntents, onInten
           if (input.action === 'file') reserveFile(null);
         }
         if(input.action==='file')setFileError(result.code==='LIMIT'?'quota':'unavailable');
-        setItems(null); setError(true); return false;
+        // Keep the last ready list visible — never flash «جارٍ التحميل…» on a failed write.
+        setError(true); return false;
       }
       if (input.action === 'star' || input.action === 'unstar') view.onStarChanged?.();
-      setItems(null); setVersion(value => value + 1);
+      // Optimistic local reconcile where the RPC returns the mutated row; otherwise
+      // refetch while retaining the previous list (revision/version effect).
+      if (Array.isArray(result.data) && result.data.every(isItem)) {
+        setItems(result.data); setError(false);
+      } else {
+        setVersion(value => value + 1);
+      }
       return true;
     } catch {
-      if (active.current && current === request.current) { if(input.action==='file')setFileError('unavailable');setItems(null); setError(true); }
+      if (active.current && current === request.current) { if(input.action==='file')setFileError('unavailable'); setError(true); }
       return false;
     } finally { if (active.current && current === request.current) setBusy(false); }
   }
@@ -261,8 +268,8 @@ export function InboxExtensionBridge({ view, ar, render, pendingIntents, onInten
     finally { if (active.current && current === request.current) setBusy(false); }
   }
   const contactUnavailableReason = ar
-    ? 'حفظ بيانات الاتصال غير متاح حاليًا لهذه المحادثة.'
-    : 'Contact details are not available for this conversation right now.';
+    ? 'ملف الاتصال غير جاهز لهذه المحادثة (تعذّر التحقق من الخادم). يمكنك متابعة الاستلام والرد إن كانت الصلاحيات تسمح، أو أعد المحاولة بعد التحديث.'
+    : 'Contact profile is not ready for this conversation (server could not verify). Take-over and reply can continue if permitted; retry after refresh.';
   const emailAction = {
     id: 'email', label: ar ? 'إيميل' : 'Email', icon: 'mail' as const,
     disabled: contactUnavailable || !contactReady || (!storedEmail && !canEdit) || busy,
@@ -270,7 +277,7 @@ export function InboxExtensionBridge({ view, ar, render, pendingIntents, onInten
     onClick: storedEmail ? () => { window.location.href = `mailto:${storedEmail}`; } : () => { setEditingContact(true); view.onProfileTabChange?.('details'); },
   };
   const contactControls = <div className="vdi-contact-editor">
-    {contactUnavailable && <p role="status" className="vdi-muted">{contactUnavailableReason}</p>}
+    {contactUnavailable && <p role="status" className="vdi-muted">{contactUnavailableReason}{' '}<button type="button" className="vdi-small-button" onClick={() => { setContactUnavailable(false); setContactError(false); setVersion(value => value + 1); }}>{ar ? 'إعادة المحاولة' : 'Retry'}</button></p>}
     {!contactUnavailable && (editingContact || contactError) && <form onSubmit={event => void saveContact(event)}>
       <label>{ar ? 'البريد الإلكتروني' : 'Email'} <input type="email" dir="ltr" maxLength={254} value={emailDraft} disabled={!contactReady || !canEdit || busy} onChange={event => setEmailDraft(event.target.value)}/></label>
       <label>{ar ? 'الموقع' : 'Location'} <input maxLength={120} value={locationDraft} disabled={!contactReady || !canEdit || busy} onChange={event => setLocationDraft(event.target.value)}/></label>

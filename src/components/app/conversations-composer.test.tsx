@@ -30,7 +30,10 @@ it('offers native contact links only for a valid permitted phone without sending
  expect(api.send).not.toHaveBeenCalled();expect(api.saveNote).not.toHaveBeenCalled();
  act(()=>root.unmount());root=createRoot(host);
  await act(async()=>root.render(<ConversationsPage embedded selectedConversationId="thread" inbox={[contact]} meta={{...meta,canReply:false}} page={page}/>));
- expect(host.querySelector('a[href^="tel:"],a[href^="https://wa.me/"]')).toBeNull();
+ // External call/WhatsApp links stay available without reply entitlement; send itself stays gated.
+ expect(host.querySelector('a[href="tel:+96893180420"]')).not.toBeNull();
+ expect(host.querySelector('a[href="https://wa.me/96893180420"]')).not.toBeNull();
+ expect(api.send).not.toHaveBeenCalled();
 });
 it('renders the native saved note through the composer portal, preserves the reply while toggling modes, and never sends a note',async()=>{
  await act(async()=>{root.render(<ConversationsPage embedded selectedConversationId="thread" inbox={[conversation]} meta={meta} page={{kind:'partial',companyId:'company',conversationScope:'all_company',ordering:'newest_created',conversations:[conversation],hasMore:false,nextCursor:null,total:1,unreadTotal:0,interventionTotal:1,membershipFingerprint:'same'}}/>);});
