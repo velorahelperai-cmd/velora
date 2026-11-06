@@ -284,7 +284,12 @@ vi.mock("@supabase/supabase-js", () => ({
 
 import { boundaryFingerprint, decryptSecret, encryptSecret, newOpaqueHandle } from "./broker/crypto";
 import { selectCandidateHandles, type CookieReader } from "./broker/cookies";
-import { hashHex, probeBrokerCapability, resolveBoundSession } from "./broker/registry";
+import {
+  hashHex,
+  probeBrokerCapability,
+  resetBrokerCapabilityProbeCache,
+  resolveBoundSession,
+} from "./broker/registry";
 import { readBoundBrowserContinuity } from "./broker/continuity";
 import { createUserClientFromTokens } from "./broker/resolve";
 import { brokerExchangeOAuthCode } from "./broker/login";
@@ -343,6 +348,7 @@ async function readSessionIdentityBaseline6431afd(reader: CookieReader) {
 describe("login and session initialization latency and boundary verification", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetBrokerCapabilityProbeCache();
     process.env.VELORA_SESSION_BROKER_KEY = randomBytes(32).toString("base64");
     const payload = Buffer.from(
       JSON.stringify({ sub: state.userId, session_id: state.nativeSessionId }),
@@ -388,6 +394,8 @@ describe("login and session initialization latency and boundary verification", (
     const candidateSamples: number[] = [];
 
     for (let i = 0; i < 6; i++) {
+      // Clear process-local capability cache so each paired sample still measures a cold probe hop.
+      resetBrokerCapabilityProbeCache();
       // Original 6431afd baseline: 3 sequential broker RPCs + 2 sequential auth/guard calls = 5 serial waves (4 RPCs + 1 Auth call)
       state.rpcCalls = [];
       state.authCalls = [];
@@ -403,6 +411,7 @@ describe("login and session initialization latency and boundary verification", (
       expect(state.authCalls).toEqual(["auth.getUser"]);
 
       // Candidate: same 4 RPCs + 1 Auth call executed in 2 parallel waves (wave 1: 3 broker RPCs, wave 2: getUser + check_app_session)
+      resetBrokerCapabilityProbeCache();
       state.rpcCalls = [];
       state.authCalls = [];
       const candidateStart = performance.now();
