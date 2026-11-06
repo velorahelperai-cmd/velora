@@ -28,7 +28,6 @@ export function branchInboxEventStream(input:{
    const joinTimeout=setTimeout(()=>{stop();},8000);
    const lifetimeMs=input.lifetimeMs??45000;
    let renewal:ReturnType<typeof setTimeout>|undefined;
-   let renewStarted=false;
    // A planned rotation that is already proving authority must not be labeled
    // unavailable: denied renewals still emit revoked. A rotation that never
    // started is also transport loss — close quietly so the client reconnects.
@@ -54,7 +53,7 @@ export function branchInboxEventStream(input:{
    };
    // Prove fresh authority before the client preserves the UI across rotation.
    // Start early enough for a slow broker check to finish as renew or revoked.
-   if(input.renewBeforeClose)renewal=setTimeout(()=>{if(readySent){renewStarted=true;void check('renew');}},Math.max(0,lifetimeMs-renewLeadMs));
+   if(input.renewBeforeClose)renewal=setTimeout(()=>{if(readySent)void check('renew');},Math.max(0,lifetimeMs-renewLeadMs));
    const changed=(payload:{new:Record<string,unknown>})=>{
     const row=payload.new;
     if(row.company_id===scope.companyId&&('branchId' in scope

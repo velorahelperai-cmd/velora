@@ -609,10 +609,15 @@ export function ConversationsPage({
   desktopView?:InboxDesktopView;
 }) {
   const [threadTransportPaused,setThreadTransportPaused]=useState(false);
+  // Parent transport recovery must not leave a sticky thread-local write pause.
+  // Adjust during render when the parent clears connectionPaused (no effect setState).
+  const [connectionPausedSeen,setConnectionPausedSeen]=useState(!!connectionPaused);
+  if(connectionPausedSeen!==!!connectionPaused){
+    setConnectionPausedSeen(!!connectionPaused);
+    if(!connectionPaused&&threadTransportPaused)setThreadTransportPaused(false);
+  }
   const writesPaused=connectionPaused||threadTransportPaused;
   const suspendedRef=useRef(readSuspended||writesPaused);suspendedRef.current=readSuspended||writesPaused;
-  // Parent transport recovery must not leave a sticky thread-local write pause.
-  useEffect(()=>{if(!connectionPaused)setThreadTransportPaused(false);},[connectionPaused]);
   const copy = useAppCopy();
   const { locale } = useDemo();
   const router = useRouter();

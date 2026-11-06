@@ -280,10 +280,15 @@ describe('UnifiedInbox membership and page safety',()=>{
   state.refreshWhatsappInboxPage.mockImplementation(()=>new Promise(resolve=>{resolveMore=resolve;}));render({initial});await click(button('More WhatsApp'));
   expect(button('Refresh').disabled).toBe(true);expect(container.querySelector<HTMLButtonElement>('[aria-label="Refresh conversation"]')?.disabled).toBe(true);
   await act(async()=>resolveMore({ok:true,data:{...initial.wa.page,conversations:[],membershipFingerprint:'fp-1'}}));expect(button('Refresh').disabled).toBe(false);
+  // Soft UNAVAILABLE after a verified list keeps panes mounted and writes enabled;
+  // only surface a verify-failed notice so Refresh can recheck without wiping draft state.
   state.readServiceInbox.mockResolvedValueOnce({ok:false,code:'UNAVAILABLE'});await click(button('Refresh'));
-  expect(container.querySelector('[data-pane]')).toBeNull();expect(button('Retry').disabled).toBe(false);
+  expect(container.querySelector('[data-pane]')).not.toBeNull();
+  expect(container.querySelector('textarea')).not.toBeNull();
+  expect(container.textContent).toContain('The latest update could not be verified');
+  expect(button('Refresh').disabled).toBe(false);
   let recover!:(value:typeof initial)=>void;state.readServiceInbox.mockImplementationOnce(()=>new Promise(resolve=>{recover=resolve;}));
-  await click(button('Retry'));expect(button('Retry').disabled).toBe(true);expect(container.querySelector('textarea')).toBeNull();
+  await click(button('Refresh'));expect(button('Refresh').disabled).toBe(true);expect(container.querySelector('textarea')).not.toBeNull();
   await act(async()=>recover(initial));expect(container.querySelector('[data-pane]')).not.toBeNull();expect(button('Refresh').disabled).toBe(false);
  });
  it.each(['actor','company','locked'])('removes cached content and native panes when the wrapper detects %s change',async kind=>{

@@ -81,7 +81,7 @@ function ScopedUnifiedInbox({initial,waReview=false,igReview=false,onUnavailable
  const [snapshot,setSnapshot]=useState(initial),[refreshing,setRefreshing]=useState(false),[error,setError]=useState(false);
  const [retained,setRetained]=useState<Extract<Snapshot,{ok:true}>|null>(initial.ok?initial:null);
  const retainedRef=useRef(retained);
- retainedRef.current=retained;
+ useEffect(()=>{retainedRef.current=retained;},[retained]);
  const [refreshVersion,setRefreshVersion]=useState(0),[revoked,setRevoked]=useState(false);
  const [connectionPaused,setConnectionPaused]=useState(false);
  const [moreLoading,setMoreLoading]=useState<InboxChannel|null>(null);
