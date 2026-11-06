@@ -1,3 +1,38 @@
+# Current Session Index — WHATSAPP RELEASE DEFECTS CLOSURE (2026-11-06)
+
+- Delivered main commit `c3987ed0ea2154236157e624535a269bcedb5036` (pushed to origin/main).
+- Scope & Progress:
+  1. CI Failure & Contracts: Aligned `ANSWER_MAX_QUESTION_CHARS` input boundary contract; verified `execute.ts`; added missing `listInboxStars` mock to `conversations-composer.test.tsx`, `inbox-extension-bridge.test.tsx`, and `inbox-media-evidence.test.tsx`.
+  2. History Scoping: Restricted `history` retrieval strictly to messages preceding current message via `arrival_sequence` or `(received_at, id)` tie-breaker; excluded subsequent queue arrivals; enforced company & conversation isolation; capped to 4 turns, 300 chars/turn, and 1,100 chars total. Added targeted test in `integration-store.test.ts`: Message 1 does not see Message 2, Message 2 benefits from Message 1.
+  3. Knowledge Grounding & Claim Guard: Allowed polite apology/clarification on NO_MATCH without fabricating facts; calibrated partial knowledge to state missing details; added `UNGROUNDED_DELIVERY` regex to `claim-guard.ts` intercepting ungrounded shipping/delivery; connected `input.chunks` to claim guard in `execute.ts`; added targeted test: source proving architectural models alone does not authorize free shipping to Salalah in 2 days.
+  4. Execution Telemetry & PII Minimization: Replaced hardcoded `latencyMs: 10` with measured execution duration; labeled local rules with `source: "local_rule"` and provider calls with `source: "provider"`; redacted raw customer questions in public `[UNANSWERED_QUESTION_LOG]` using SHA-256 hash and length without raw PII.
+  5. Release Verification: GitHub Actions CI Run `42186478192` ALL 8 JOBS GREEN (secrets, build, contracts, typecheck, lint, security, unit, quality-gate).
+
+# Current Session Index — VELORA CLEANUP POST-PUSH REVIEW VERIFIED FIX (2026-11-06)
+
+- Scope & Progress:
+  - Addressed all findings from `Velora_Cleanup_Post_Push_Review_42866f5_2026-11-06.md` for commit `42866f526fa85fa6244849a4bce7cc7233ccb2f0` and failed CI run `42171297480`.
+  - R1: Included 3 missing CSS modules (`admin-financial-analytics.module.css`, `billing-order.module.css`, `subscription-payment-status.module.css`).
+  - R2: Verified `inbox-desktop-adapter.ts` with 3-argument signature (`starredKeys`) and `row.starred` boolean projection; 3/3 PASS in `unified-inbox-index.test.tsx`.
+  - R3: Updated `recheckBillingOwner` mock in `g07-financial-truth.test.ts` to `{ ok: true }` vs `{ ok: false, code: ... }` with explicit tests (44/44 PASS); migrated `product-integration.test.ts` to real `runInboundWorkerAnswer` with ports (11/11 PASS); removed 5 unused imports from `isolated-worker-tick-journey.mjs` (ESLint 0 warnings); included 3 untracked test files.
+  - R4 (CLN-03): Enhanced `readAll` in `analytics-actions.ts` with inter-page consistency verification. Under concurrent insertions across pages (252 -> 254 orders test case), reader fails closed with `UNAVAILABLE` instead of returning a mixed/corrupted total. Reference stable 252 orders returns exact 2,268,000 baisa (10/10 PASS in `analytics-contracts.test.ts`).
+  - R5 (CLN-02): Hardened `abortSend` in `integration-store.ts` with `.select("id")` and `data.length === 1` check; unconfirmed abort in `integration-worker.ts` retries with `uncertain = true` (`SEND_PERSIST_REQUIRES_RECONCILIATION`), transitioning job to `review_required` in PostgreSQL (fail-closed); `WORKER_DISABLED` settles directly to `review_required` via `ports.finish` without redundant retry call. 60/60 PASS in `integration-store.test.ts`, 46/46 PASS in `integration-worker.test.ts`.
+  - R6 (CLN-04): Preserved pre-existing `overflow: hidden` lock in drawer cleanup (`conversation-details-panel.tsx` and `conversations.tsx`); iterated candidate elements with `querySelectorAll` to find first visible, non-inert element for focus restoration. 8/8 PASS in `conversations-details-overflow.test.tsx`.
+  - R7 (CLN-10, CLN-12, CLN-17): Next.js build compiled 60/60 routes in 44s, generating all static and dynamic pages; verified `.nft.json` traces for OCR/PDF dependencies; mixed PDF OCR PASS (1/1); batch-core PASS (7/7); route PASS (8/8).
+  - CLN-14: Narrowed `billing_finish_subscription_email` Return type from `Json` to `boolean` in `database.types.ts`.
+- Quality Gates & Verification:
+  - TypeScript `npx tsc --noEmit` PASS (0 errors across entire workspace).
+  - ESLint `npx eslint scripts/knowledge-file-worker/isolated-worker-tick-journey.mjs --max-warnings 0` PASS (0 errors, 0 warnings).
+  - Unit & Integration test suite: 12 test files, 205 tests ALL PASS (0 failures, 0 skipped in targeted suite).
+  - Full Next.js production build `npm run build` PASS (exit code 0, 60/60 routes).
+  - Working directory changes of other agents preserved intact. No unauthorized push/deploy/SQL executed.
+
+# Current Session Index — INBOX HUMAN CONTROL AND SCOPED SEARCH (2026-11-06)
+
+- Delivered main `fc6312e434e9ff978243667ad916271351f21232`. Human takeover is the latest `take_over` event; worker automation stops no longer display as staff ownership or authorize manual send. Resume refuses while a send outcome is `unknown`. WhatsApp search covers permitted name, number, and latest message. Assignment counts come from the scoped page.
+- CI https://github.com/velorahelperai-cmd/velora/actions/runs/42182235211 SUCCESS. Vercel Production `dpl_2vnRgYKPEgakofnqFsCXmuBR1ALB` READY, SHA matches, aliases include www.velorahelper.com. Unauthenticated `/app/conversations` returns 307 to login. Authenticated mutation journey was not executed in this session.
+- Rollback: `supabase/rollbacks/20261106120000_inbox_human_control_and_query.rollback.sql`. It restores the previous intervention meaning and removes the send/resume guards and query function. It does not delete conversations or messages.
+
 # Current Session Index — CODE CLEANUP & PRIVACY MINIMIZATION (2026-11-06)
 
 - Scope & Progress:
