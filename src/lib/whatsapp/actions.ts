@@ -228,13 +228,12 @@ export async function replyWhatsappConversation(input: {
 
   const companyId = access.context.company.id;
   const actorUserId = access.context.userId;
-  const canReply = await sessionHasCompanyCapability(companyId, "wa.conversations.reply");
+  const [canReply, canRead] = await Promise.all([
+    sessionHasCompanyCapability(companyId, "wa.conversations.reply"),
+    sessionHasCompanyCapability(companyId, "wa.conversations.read"),
+  ]);
   // Production mutations require an authoritative capability decision.
-  if (canReply !== true) {
-    return { ok: false, code: "FORBIDDEN", message: "capability_denied", clientOpId };
-  }
-  const canRead = await sessionHasCompanyCapability(companyId, "wa.conversations.read");
-  if (canRead !== true) {
+  if (canReply !== true || canRead !== true) {
     return { ok: false, code: "FORBIDDEN", message: "capability_denied", clientOpId };
   }
 

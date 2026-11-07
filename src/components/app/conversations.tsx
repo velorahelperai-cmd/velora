@@ -1286,6 +1286,25 @@ export function ConversationsPage({
     const boundAttachment=existing?.attachmentId??attachmentId;
     sendOpByConversation.current[c.id] = { clientOpId, body, attachmentId:boundAttachment };
 
+    const tempMessageId = `temp-${clientOpId}`;
+    const optimisticMessage: Message = {
+      id: tempMessageId,
+      from: "staff",
+      text: body,
+      at: Date.now(),
+      deliveryState: "accepted",
+    };
+    patch(c.id, (cur) => ({
+      messages: cur.messages.some((m) => m.id === tempMessageId)
+        ? cur.messages
+        : [...cur.messages, optimisticMessage],
+      summary: body,
+      status: "handed_over",
+      assistantPaused: true,
+    }));
+    setDraft("");
+    setDrafts((old) => (old[draftKey] === body ? { ...old, [draftKey]: "" } : old));
+
     runPendingAction(async () => {
       await runSendReplyPath({
         store: epochStoreRef.current,
@@ -1293,10 +1312,22 @@ export function ConversationsPage({
         send: () => replyWhatsappConversation({ conversationId: c.id, body, clientOpId, ...(boundAttachment?{attachmentId:boundAttachment}:{}) }),
         onThrow: () => {
           setUnresolvedSends((prev) => ({ ...prev, [c.id]: true }));
+          patch(c.id, (cur) => ({
+            messages: cur.messages.map((m) =>
+              m.id === tempMessageId ? { ...m, deliveryState: "failed" } : m
+            ),
+          }));
+          setDraft(body);
+          setDrafts((old) => (!old[draftKey] ? { ...old, [draftKey]: body } : old));
           if (isSelected(c.id)) setError(copy.app.sendUnknownOutcome);
         },
         onResult: async (result) => {
           if (!result.ok) {
+            patch(c.id, (cur) => ({
+              messages: cur.messages.filter((m) => m.id !== tempMessageId),
+            }));
+            setDraft(body);
+            setDrafts((old) => (!old[draftKey] ? { ...old, [draftKey]: body } : old));
             if (
               result.code === "UNKNOWN_OUTCOME" ||
               result.outcome === "unknown" ||
@@ -1363,7 +1394,9 @@ export function ConversationsPage({
             deliveryState: result.message.deliveryState as Message["deliveryState"],
           };
           patch(c.id, (cur) => ({
-            messages: [...cur.messages, newMessage],
+            messages: cur.messages.some((m) => m.id === tempMessageId)
+              ? cur.messages.map((m) => (m.id === tempMessageId ? newMessage : m))
+              : [...cur.messages, newMessage],
             summary: newMessage.text,
             status: "handed_over",
             assistantPaused: true,
