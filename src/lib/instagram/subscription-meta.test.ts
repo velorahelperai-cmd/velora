@@ -18,3 +18,13 @@ it.each(['{"success":"true"}','{"success":false}','{"success":true,"unexpected":
 it('timeouts remain unknown and never retry',async()=>{const http=vi.fn(async()=>{throw Error(input.accessToken);});expect(await subscribeInstagramMessages(input,{fetch:http})).toBe('unknown');expect(http).toHaveBeenCalledTimes(1);});
 it('definite graph rejection is bounded and carries no diagnostics',async()=>{const http=vi.fn(async()=>new Response(JSON.stringify({error:{code:190,message:input.accessToken}}),{status:400}));expect(await subscribeInstagramMessages(input,{fetch:http})).toBe('rejected');});
 it('closed rollout causes no HTTP',async()=>{f.config.mockReturnValue({connectEnabled:false,graphVersion:'v26.0'});const http=vi.fn();expect(await subscribeInstagramMessages(input,{fetch:http})).toBe('unknown');expect(http).not.toHaveBeenCalled();});
+it('uses graph.facebook.com for Business SUAT access tokens starting with EAA', async () => {
+  const businessInput = { accountId: '17841416239520365', accessToken: 'EAA_synthetic_suat_token' };
+  const http = vi.fn(async () => new Response('{"success":true}'));
+  expect(await subscribeInstagramMessages(businessInput, { fetch: http })).toBe('verified');
+  expect(http).toHaveBeenCalledTimes(1);
+  const [url] = http.mock.calls[0] as unknown as [string, RequestInit];
+  const u = new URL(url);
+  expect(u.origin).toBe('https://graph.facebook.com');
+  expect(u.pathname).toBe('/v26.0/' + businessInput.accountId + '/subscribed_apps');
+});

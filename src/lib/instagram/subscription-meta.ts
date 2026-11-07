@@ -12,7 +12,8 @@ export async function subscribeInstagramMessages(input:InstagramSubscriptionInpu
  if(!cfg.connectEnabled||cfg.graphVersion!=='v26.0')return 'unknown';
  const accountId=input.accountId,accessToken=input.accessToken;
  if(typeof accountId!=='string'||!/^\d{1,64}$/.test(accountId)||typeof accessToken!=='string'||!accessToken||accessToken.length>16384||/[\s\x00-\x1f\x7f]/.test(accessToken))return 'unknown';
- const url=new URL(`https://graph.instagram.com/${cfg.graphVersion}/${accountId}/subscribed_apps`);
+ const host=accessToken.startsWith('EAA')?'graph.facebook.com':'graph.instagram.com';
+ const url=new URL(`https://${host}/${cfg.graphVersion}/${accountId}/subscribed_apps`);
  url.searchParams.set('subscribed_fields','messages');
  // Match the reviewed provider request exactly. Never log this secret-bearing URL.
  url.searchParams.set('access_token',accessToken);
