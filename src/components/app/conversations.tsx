@@ -1299,7 +1299,7 @@ export function ConversationsPage({
       messages: cur.messages.some((m) => m.id === tempMessageId)
         ? cur.messages
         : [...cur.messages, optimisticMessage],
-      summary: body,
+      summary: body || cur.summary,
       status: "handed_over",
       assistantPaused: true,
     }));
@@ -1398,7 +1398,7 @@ export function ConversationsPage({
             messages: cur.messages.some((m) => m.id === tempMessageId)
               ? cur.messages.map((m) => (m.id === tempMessageId ? newMessage : m))
               : [...cur.messages, newMessage],
-            summary: newMessage.text,
+            summary: newMessage.text || cur.summary,
             status: "handed_over",
             assistantPaused: true,
           }));
@@ -2045,7 +2045,7 @@ export function ConversationsPage({
                   {liveIds.has(selected.id) ? (
                     <>
                       {handledByStaff || selected.status === "resolved" ? (
-                        canUseInboxControl(inboxMeta,"resume") && <button
+                        <button
                           type="button"
                           disabled={controlDisabled("resume") || selectedSendLocked}
                           title={controlReason("resume") ?? (locale === "ar" ? "السماح لفيلورا بالرد التلقائي مجدداً" : "Resume Velora")}

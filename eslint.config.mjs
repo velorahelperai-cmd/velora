@@ -3,7 +3,7 @@ import nextTs from "eslint-config-next/typescript";
 
 const eslintConfig = [
   {
-    ignores: [".next/**", ".tmp/**", ".playwright-cli/**", "node_modules/**", "artifacts/**", "tmp/**", "scripts/account-deletion/.vite/**"],
+    ignores: [".next/**", ".tmp/**", ".playwright-cli/**", "node_modules/**", "artifacts/**", "tmp/**", ".references/**", "scripts/account-deletion/.vite/**"],
   },
   ...nextVitals,
   ...nextTs,
