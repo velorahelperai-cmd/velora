@@ -18,14 +18,16 @@ export function SettingsRoute({subscriptionOnly = false}: {subscriptionOnly?: bo
 }
 
 async function SettingsContent({subscriptionOnly}: {subscriptionOnly:boolean}) {
-  const [linkResult,access] = await Promise.all([getWhatsappCompanyLink(),getCompanyAccess()]);
+  const linkPromise = subscriptionOnly ? Promise.resolve({ ok: false, code: "UNAVAILABLE" } as const) : getWhatsappCompanyLink();
+  const access = await getCompanyAccess();
   const company = access.ok ? access.context.company : null;
-  const owner=company&&access.ok&&access.context.membership?.role==='owner';
-  const [initialSubscription,initialOffersView,activation,credits]=await Promise.all([
+  const owner = company && access.ok && access.context.membership?.role === 'owner';
+  const [initialSubscription, initialOffersView, activation, credits, linkResult] = await Promise.all([
     loadOwnerBillingSubscription(subscriptionViewFromEntitlement(readCompanyEntitlement(company?.id ?? null), company?.status ?? null)),
     readSubscriptionOffersView(),
-    owner?readSubscriptionActivationAction(company.id):Promise.resolve(null),
-    masterJourneyEnabled()&&owner?readCycleCreditsAction(company.id):Promise.resolve(null),
+    owner ? readSubscriptionActivationAction(company.id) : Promise.resolve(null),
+    masterJourneyEnabled() && owner ? readCycleCreditsAction(company.id) : Promise.resolve(null),
+    linkPromise,
   ]);
   const singleTenant = singleTenantReceptionStatus(company?.id);
   return (
