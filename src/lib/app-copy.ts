@@ -36,6 +36,8 @@ const ar = {
     authFailed: "تعذّر إكمال العملية. تحقق من البيانات وحاول مرة أخرى.",
     continuityRecovery:
       "تعذّر استعادة جلسة هذا المتصفح بأمان. امسح بيانات الموقع لهذا النطاق ثم سجّل الدخول من جديد.",
+    continuityUnavailable:
+      "تعذّر تهيئة جلسة المتصفح مؤقتًا. أعد المحاولة بعد لحظات؛ لا تمسح بيانات الموقع إلا إذا استمر الخطأ.",
     forbiddenTitle: "غير مسموح",
     forbiddenBody: "ليست لديك صلاحية لفتح هذه الصفحة. لم نُعد توجيهك لتسجيل الدخول لأن جلستك ما زالت قائمة.",
     unavailableTitle: "الخدمة غير متاحة مؤقتًا",
@@ -871,6 +873,8 @@ const en: typeof ar = {
     authFailed: "Could not complete the request. Check your details and try again.",
     continuityRecovery:
       "This browser session could not be restored safely. Clear site data for this origin, then sign in again.",
+    continuityUnavailable:
+      "Browser session setup is temporarily unavailable. Retry in a moment; clear site data only if it keeps failing.",
     forbiddenTitle: "Not allowed",
     forbiddenBody: "You do not have permission to open this page. We did not send you to sign-in because your session is still active.",
     unavailableTitle: "Service temporarily unavailable",

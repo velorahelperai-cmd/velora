@@ -5,6 +5,7 @@ import {runWithVerifiedCompanyRead} from '@/lib/tenancy/access';
 
 export const runtime='nodejs';
 export const dynamic='force-dynamic';
+export const maxDuration=120;
 const headers={'Cache-Control':'private, no-store, max-age=0','Vary':'Cookie','X-Content-Type-Options':'nosniff'};
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 

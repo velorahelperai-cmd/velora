@@ -89,7 +89,59 @@ function failCapability(codes: string[], encryptionConfigured: boolean): BrokerC
   };
 }
 
-export async function probeBrokerCapability(): Promise<BrokerCapability> {
+/** Positive probe reuse under Preview stampede (login + session + OPTIONS). */
+export const CAPABILITY_OK_CACHE_TTL_MS = 45_000;
+/** Statement-timeout attempts for the read-only capability probe (includes first try). */
+export const CAPABILITY_STATEMENT_TIMEOUT_ATTEMPTS = 2;
+/** Per-attempt wall so a hung PostgREST call cannot wait out Postgres ~60s statement_timeout. */
+export const CAPABILITY_PROBE_ATTEMPT_MS = 12_000;
+/** Default total probe budget (must stay well under Vercel 120s maxDuration). */
+export const CAPABILITY_PROBE_DEFAULT_BUDGET_MS = 28_000;
+/** Password-login probe budget — leave headroom for provider + admit + soft-land. */
+export const LOGIN_CAPABILITY_BUDGET_MS = 18_000;
+export const LOGIN_CAPABILITY_ATTEMPT_MS = 9_000;
+
+export type ProbeBrokerCapabilityOptions = {
+  budgetMs?: number;
+  maxAttempts?: number;
+  attemptMs?: number;
+  /** Do not join a shared in-flight probe (login needs its own deadline). */
+  isolated?: boolean;
+};
+
+type CapabilityCache = { at: number; value: BrokerCapability };
+let capabilityOkCache: CapabilityCache | null = null;
+let capabilityInFlight: Promise<BrokerCapability> | null = null;
+
+/** Test-only: clear process-local probe cache/singleflight. */
+export function resetBrokerCapabilityProbeCache(): void {
+  capabilityOkCache = null;
+  capabilityInFlight = null;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function withAttemptBudget<T>(work: () => Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          reject(Object.assign(new Error("CAPABILITY_ATTEMPT_TIMEOUT"), { code: "ETIMEDOUT" }));
+        }, ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+export async function probeBrokerCapability(
+  options?: ProbeBrokerCapabilityOptions,
+): Promise<BrokerCapability> {
   const encryptionConfigured = brokerEncryptionConfigured();
   const codes: string[] = [];
   if (!encryptionConfigured) codes.push("ENCRYPTION_KEY_MISSING");
@@ -98,12 +150,76 @@ export async function probeBrokerCapability(): Promise<BrokerCapability> {
     codes.push("SERVICE_ROLE_MISSING");
     return failCapability(codes, encryptionConfigured);
   }
+  const now = Date.now();
+  if (
+    capabilityOkCache
+    && capabilityOkCache.value.ok
+    && now - capabilityOkCache.at < CAPABILITY_OK_CACHE_TTL_MS
+  ) {
+    return capabilityOkCache.value;
+  }
+  if (!options?.isolated && capabilityInFlight) return capabilityInFlight;
+  const flight = probeBrokerCapabilityUnlocked(admin, encryptionConfigured, codes, options).finally(() => {
+    if (capabilityInFlight === flight) capabilityInFlight = null;
+  });
+  if (!options?.isolated) capabilityInFlight = flight;
+  return flight;
+}
+
+async function probeBrokerCapabilityUnlocked(
+  admin: NonNullable<ReturnType<typeof adminOrNull>>,
+  encryptionConfigured: boolean,
+  codes: string[],
+  options?: ProbeBrokerCapabilityOptions,
+): Promise<BrokerCapability> {
+  const budgetMs = options?.budgetMs ?? CAPABILITY_PROBE_DEFAULT_BUDGET_MS;
+  const maxAttempts = options?.maxAttempts ?? CAPABILITY_STATEMENT_TIMEOUT_ATTEMPTS;
+  const attemptCapMs = options?.attemptMs ?? CAPABILITY_PROBE_ATTEMPT_MS;
+  const deadline = Date.now() + budgetMs;
   try {
-    // A statement timeout is a definite failure of this read-only probe. Retry
-    // once without caching or relaxing the capability contract; a cancelled
-    // request still fails through the normal abort-aware transport.
-    let { data, error } = await admin.rpc("vel_broker_capability_probe" as never);
-    if (error?.code === "57014") ({ data, error } = await admin.rpc("vel_broker_capability_probe" as never));
+    // Statement timeout / hung transport: retry a few times under a hard wall so
+    // Preview login never burns the full Vercel 120s maxDuration on this probe.
+    let data: unknown = null;
+    let error: { code?: string } | null = null;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 500) {
+        error = { code: "ETIMEDOUT" };
+        brokerLog("warn", "auth.broker.capability.budget_exhausted", {
+          error_code: "CAPABILITY_BUDGET_EXHAUSTED",
+          module: "auth.broker",
+          attempt,
+          budget_ms: budgetMs,
+        });
+        break;
+      }
+      const attemptMs = Math.min(attemptCapMs, remaining);
+      try {
+        const result = await withAttemptBudget(
+          () => Promise.resolve(admin.rpc("vel_broker_capability_probe" as never)),
+          attemptMs,
+        );
+        data = result.data;
+        error = (result.error ?? null) as { code?: string } | null;
+      } catch (caught) {
+        const code =
+          caught && typeof caught === "object" && "code" in caught
+            ? String((caught as { code?: unknown }).code ?? "ETIMEDOUT")
+            : "ETIMEDOUT";
+        error = { code };
+        data = null;
+      }
+      if (error?.code !== "57014" && error?.code !== "ETIMEDOUT") break;
+      brokerLog("warn", "auth.broker.capability.statement_timeout", {
+        error_code: error.code,
+        module: "auth.broker",
+        attempt,
+        attempt_ms: attemptMs,
+      });
+      if (attempt < maxAttempts && Date.now() + 200 < deadline) {
+        await sleep(Math.min(250 * attempt, deadline - Date.now()));
+      }
+    }
     if (error || !data || typeof data !== "object") {
       codes.push("CAPABILITY_PROBE_UNAVAILABLE");
       brokerLog("warn", "auth.broker.capability.unavailable", {
@@ -178,7 +294,9 @@ export async function probeBrokerCapability(): Promise<BrokerCapability> {
         error_code: "CAPABILITY_INCOMPLETE",
         codes: capability.codes,
       });
+      return capability;
     }
+    capabilityOkCache = { at: Date.now(), value: capability };
     return capability;
   } catch {
     codes.push("CAPABILITY_PROBE_THROW");
@@ -893,6 +1011,8 @@ export async function reserveBoundAuthIntent(input: {
   browserLineageId: string;
   parentHandleHash: string | null;
   providerState: string;
+  status: string;
+  idempotent: boolean;
 } | null> {
   const admin = adminOrNull();
   if (!admin) return null;
@@ -913,6 +1033,8 @@ export async function reserveBoundAuthIntent(input: {
     browserLineageId: String(row.browser_lineage_id),
     parentHandleHash: typeof row.parent_handle_hash === "string" ? row.parent_handle_hash : null,
     providerState: String(row.provider_state ?? "ready"),
+    status: typeof row.status === "string" ? row.status : "reserved",
+    idempotent: row.idempotent === true,
   };
 }
 

@@ -5,7 +5,7 @@ import type {AccountSessionRead} from './account-profile-contract';
  * identity and no persisted cache; the provider still owns its capture epoch. */
 export async function fetchAccountSession(correlation?:unknown, documentActivity=false):Promise<AccountSessionRead>{
  try{
-  const response=await fetch('/api/account/session',{method:'GET',credentials:'same-origin',cache:'no-store',signal:AbortSignal.timeout(45000),headers:{...authCorrelationHeaders(correlation),...(documentActivity?{'x-velora-document-activity':'setup'}:{})}});
+  const response=await fetch('/api/account/session',{method:'GET',credentials:'same-origin',cache:'no-store',signal:AbortSignal.timeout(90000),headers:{...authCorrelationHeaders(correlation),...(documentActivity?{'x-velora-document-activity':'setup'}:{})}});
   const result=await response.json() as AccountSessionRead;
   if(!result||typeof result.ok!=='boolean')return {ok:false,code:'UNAVAILABLE'};
   if(!result.ok)return {ok:false,code:['UNAUTHENTICATED','QUARANTINED','CONFLICT'].includes(result.code)?result.code:'UNAVAILABLE'};

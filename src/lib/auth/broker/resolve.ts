@@ -279,31 +279,50 @@ export async function resolveAuthoritativeForMutation(
   return current;
 }
 
+/** Proactive refresh window before access-token expiry. */
+export const REFRESH_SKEW_MS = 60_000;
+/** Bound wait for a peer holder of the idle-only refresh lease (default lease TTL 15s). */
+export const REFRESH_LEASE_WAIT_MS = 3_000;
+/** Keep an otherwise-valid session in-app when the lease stays busy past the wait budget. */
+export const REFRESH_SOFT_REUSE_MIN_MS = 2_000;
+
+type BrokerRefreshResult =
+  | { ok: true; accessToken: string; refreshToken: string; expiresAt: string; refreshRevision: number }
+  | { ok: false; code: "UNAUTHENTICATED" | "UNAVAILABLE"; reason?: "RECHECK" | "LEASE_BUSY" };
+
+type ResolvedBrokerSession = Extract<BrokerResolveResult, { ok: true }>;
+
+const refreshFlights = new Map<string, Promise<BrokerRefreshResult>>();
+
+function refreshFlightKey(resolved: ResolvedBrokerSession): string {
+  return `${resolved.registryId}:${resolved.refreshRevision}:${resolved.boundary.boundaryFingerprint}:${resolved.boundary.nativeSessionId}`;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /**
  * Lease (idle-only) → provider → SID check → CAS.
  * UNKNOWN marks uncertain and does NOT release lease for blind replay (C2-R3).
+ * Same-isolate callers share one in-flight refresh per registry revision.
  */
-type RefreshResult =
-  | { ok: true; accessToken: string; refreshToken: string; expiresAt: string; refreshRevision: number }
-  | { ok: false; code: "UNAUTHENTICATED" | "UNAVAILABLE"; reason?: "RECHECK" };
-
-// Share only an in-flight provider rotation for the exact independently resolved
-// boundary and revision. The database lease remains the cross-instance fence.
-// Settled results, including tokens, are never cached.
-const pendingRefreshes = new Map<string, Promise<RefreshResult>>();
-
-export async function refreshBrokerTokens(resolved: Extract<BrokerResolveResult, { ok: true }>): Promise<RefreshResult> {
-  const key = JSON.stringify([resolved.registryId, resolved.refreshRevision,
-    resolved.boundary.boundaryFingerprint, resolved.boundary.userId, resolved.boundary.nativeSessionId]);
-  const existing = pendingRefreshes.get(key);
+export async function refreshBrokerTokens(
+  resolved: ResolvedBrokerSession,
+): Promise<BrokerRefreshResult> {
+  const key = refreshFlightKey(resolved);
+  const existing = refreshFlights.get(key);
   if (existing) return existing;
-  const pending = rotateBrokerTokens(resolved);
-  pendingRefreshes.set(key, pending);
-  try { return await pending; }
-  finally { if (pendingRefreshes.get(key) === pending) pendingRefreshes.delete(key); }
+  const flight = refreshBrokerTokensUnlocked(resolved).finally(() => {
+    if (refreshFlights.get(key) === flight) refreshFlights.delete(key);
+  });
+  refreshFlights.set(key, flight);
+  return flight;
 }
 
-async function rotateBrokerTokens(resolved: Extract<BrokerResolveResult, { ok: true }>): Promise<RefreshResult> {
+async function refreshBrokerTokensUnlocked(
+  resolved: ResolvedBrokerSession,
+): Promise<BrokerRefreshResult> {
   const claim = await claimRefreshLease(resolved.registryId, resolved.refreshRevision);
   if (!claim.ok) {
     brokerLog("warn", "auth.broker.refresh.claim_failed", {
@@ -391,6 +410,110 @@ async function rotateBrokerTokens(resolved: Extract<BrokerResolveResult, { ok: t
   }
 }
 
+/**
+ * Near-expiry refresh with peer wait + soft reuse so LEASE_BUSY does not
+ * permanently strand a still-valid session on /access?code=UNAVAILABLE.
+ */
+export async function settleNearExpirySession(
+  store: CookieReader,
+  initial: ResolvedBrokerSession,
+  deps?: {
+    now?: () => number;
+    sleep?: (ms: number) => Promise<void>;
+    refresh?: (resolved: ResolvedBrokerSession) => Promise<BrokerRefreshResult>;
+    resolve?: (store: CookieReader) => Promise<BrokerResolveResult>;
+    waitBudgetMs?: number;
+  },
+): Promise<
+  | { ok: true; resolve: ResolvedBrokerSession }
+  | { ok: false; code: "UNAUTHENTICATED" | "UNAVAILABLE" }
+> {
+  const now = deps?.now ?? Date.now;
+  const wait = deps?.sleep ?? sleep;
+  const refresh = deps?.refresh ?? refreshBrokerTokens;
+  const resolveAgain = deps?.resolve ?? resolveBrokerSession;
+  const waitBudgetMs = deps?.waitBudgetMs ?? REFRESH_LEASE_WAIT_MS;
+
+  let current = initial;
+  const expiresMs = Date.parse(current.expiresAt);
+  if (!Number.isFinite(expiresMs) || expiresMs >= now() + REFRESH_SKEW_MS) {
+    return { ok: true, resolve: current };
+  }
+
+  const applyRefresh = (
+    base: ResolvedBrokerSession,
+    refreshed: Extract<BrokerRefreshResult, { ok: true }>,
+  ): ResolvedBrokerSession => ({
+    ...base,
+    accessToken: refreshed.accessToken,
+    refreshToken: refreshed.refreshToken,
+    expiresAt: refreshed.expiresAt,
+    refreshRevision: refreshed.refreshRevision,
+  });
+
+  const first = await refresh(current);
+  if (first.ok) return { ok: true, resolve: applyRefresh(current, first) };
+  if (first.code === "UNAUTHENTICATED") return first;
+
+  const deadline = now() + waitBudgetMs;
+  let delay = 200;
+  while (now() < deadline) {
+    const remainingWait = deadline - now();
+    if (remainingWait <= 0) break;
+    await wait(Math.min(delay, remainingWait));
+    delay = Math.min(delay * 2, 800);
+
+    const again = await resolveAgain(store);
+    if (!again.ok) {
+      if (again.code === "UNAUTHENTICATED" || again.code === "QUARANTINED") {
+        return { ok: false, code: "UNAUTHENTICATED" };
+      }
+      continue;
+    }
+    if (again.refreshRevision > current.refreshRevision) {
+      brokerLog("info", "auth.broker.refresh.peer_completed", {
+        error_code: "REFRESH_PEER_COMPLETED",
+        boundary_fp: again.boundary.boundaryFingerprint,
+        user_id: again.boundary.userId,
+      });
+      return { ok: true, resolve: again };
+    }
+    current = again;
+    const retry = await refresh(current);
+    if (retry.ok) return { ok: true, resolve: applyRefresh(current, retry) };
+    if (retry.code === "UNAUTHENTICATED") return retry;
+  }
+
+  const remainingMs = Date.parse(current.expiresAt) - now();
+  if (Number.isFinite(remainingMs) && remainingMs > REFRESH_SOFT_REUSE_MIN_MS) {
+    brokerLog("warn", "auth.broker.refresh.soft_reuse_while_busy", {
+      error_code: "REFRESH_LEASE_BUSY_SOFT_REUSE",
+      boundary_fp: current.boundary.boundaryFingerprint,
+      user_id: current.boundary.userId,
+      remaining_ms: Math.floor(remainingMs),
+      reason: first.reason ?? "UNAVAILABLE",
+    });
+    return { ok: true, resolve: current };
+  }
+
+  return { ok: false, code: "UNAVAILABLE" };
+}
+
+export async function createBrokerUserClient(
+  store: CookieReader,
+): Promise<
+  | { ok: true; client: SupabaseClient<Database>; resolve: ResolvedBrokerSession }
+  | { ok: false; code: "UNAUTHENTICATED" | "UNAVAILABLE" }
+> {
+  const resolved = await resolveBrokerSession(store);
+  if (!resolved.ok) return { ok: false, code: resolved.code === "QUARANTINED" ? "UNAUTHENTICATED" : resolved.code };
+  const settled = await settleNearExpirySession(store, resolved);
+  if (!settled.ok) return settled;
+  const client = createUserClientFromTokens(settled.resolve.accessToken, settled.resolve.refreshToken);
+  if (!client) return { ok: false, code: "UNAVAILABLE" };
+  return { ok: true, client, resolve: settled.resolve };
+}
+
 /** A concurrent rotation is recoverable only from a fresh authoritative broker
  * read of the same complete boundary and a strictly newer, usable revision. */
 export async function recoverConcurrentRotation(
@@ -405,33 +528,4 @@ export async function recoverConcurrentRotation(
   if (fields.some(field => (current.boundary[field] ?? null) !== (previous.boundary[field] ?? null))) return null;
   const expiry = Date.parse(current.expiresAt);
   return Number.isFinite(expiry) && expiry > Date.now() + 60_000 ? current : null;
-}
-
-export async function createBrokerUserClient(
-  store: CookieReader,
-): Promise<
-  | { ok: true; client: SupabaseClient<Database>; resolve: Extract<BrokerResolveResult, { ok: true }> }
-  | { ok: false; code: "UNAUTHENTICATED" | "UNAVAILABLE" }
-> {
-  let resolved = await resolveBrokerSession(store);
-  if (!resolved.ok) return { ok: false, code: resolved.code === "QUARANTINED" ? "UNAUTHENTICATED" : resolved.code };
-  const expiresMs = Date.parse(resolved.expiresAt);
-  if (Number.isFinite(expiresMs) && expiresMs < Date.now() + 60_000) {
-    const refreshed = await refreshBrokerTokens(resolved);
-    if (!refreshed.ok) {
-      if (refreshed.reason !== "RECHECK") return { ok: false, code: refreshed.code };
-      const recovered = await recoverConcurrentRotation(resolved, () => resolveBrokerSession(store));
-      if (!recovered) return { ok: false, code: "UNAVAILABLE" };
-      resolved = recovered;
-    } else resolved = {
-      ...resolved,
-      accessToken: refreshed.accessToken,
-      refreshToken: refreshed.refreshToken,
-      expiresAt: refreshed.expiresAt,
-      refreshRevision: refreshed.refreshRevision,
-    };
-  }
-  const client = createUserClientFromTokens(resolved.accessToken, resolved.refreshToken);
-  if (!client) return { ok: false, code: "UNAVAILABLE" };
-  return { ok: true, client, resolve: resolved };
 }

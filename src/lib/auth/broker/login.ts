@@ -1,5 +1,12 @@
 import "server-only";
-import { commitHandleCookie, commitIntentCookie, expireIntentCookie, type CookieReader, type CookieWriter } from "./cookies";
+import {
+  commitHandleCookie,
+  commitIntentCookie,
+  expireIntentCookie,
+  rotateHandleCookies,
+  type CookieReader,
+  type CookieWriter,
+} from "./cookies";
 import { prepareBrokerAdmissionLineage } from "./lineage-auth";
 import { brokerLog } from "./log";
 import { createProviderAuthClient, readPkceVerifier, seedPkceVerifier } from "./provider";
@@ -17,6 +24,29 @@ import { expiresAtFromSession, nativeSessionIdFromAccessToken } from "./session-
 import { authCallbackUrl } from "@/lib/auth/site-url";
 import { signOutProviderSessionAfterAdmitFailure, resumeProviderCleanup } from "./provider-session";
 
+/** Total password-login wall (provider + admit + soft-land headroom) — must stay ≪ Vercel 120s. */
+export const PASSWORD_LOGIN_WALL_MS = 55_000;
+/** Provider sign-in alone; never wait out a hung Auth fetch until platform kill. */
+export const PROVIDER_SIGNIN_BUDGET_MS = 25_000;
+/** Admit / capture RPCs after provider success. */
+export const PASSWORD_ADMIT_BUDGET_MS = 25_000;
+
+async function withLoginBudget<T>(work: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          reject(Object.assign(new Error("PASSWORD_LOGIN_BUDGET"), { code: "ETIMEDOUT" }));
+        }, ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 async function admitCapturedSession(input: {
   session: {
     user?: { id?: string } | null;
@@ -26,12 +56,13 @@ async function admitCapturedSession(input: {
     expires_in?: number;
   };
   writer: CookieWriter;
+  reader: CookieReader;
   intentId: string;
   browserLineageId: string;
   admissionScope: "app" | "recovery";
   recoveryOperationKey?: string | null;
 }): Promise<
-  | { ok: true; generation: string; userId: string; boundaryFingerprint: string }
+  | { ok: true; generation: string; userId: string; boundaryFingerprint: string; cookieName: string }
   | { ok: false; code: "UNAVAILABLE" | "ADMISSION_BLOCKED" }
 > {
   const userId = input.session.user?.id;
@@ -61,12 +92,47 @@ async function admitCapturedSession(input: {
     browserLineageId: input.browserLineageId,
   });
   if (!committed) return { ok: false, code: "ADMISSION_BLOCKED" };
+  // Expire every prior handle first, then set the winner so Set-Cookie order prefers the tip.
+  rotateHandleCookies(input.writer, input.reader, new Set());
   commitHandleCookie(input.writer, committed.cookieName, committed.handle);
   return {
     ok: true,
     generation: committed.generation,
     userId: committed.userId,
     boundaryFingerprint: committed.boundaryFingerprint,
+    cookieName: committed.cookieName,
+  };
+}
+
+/** Re-issue the opaque handle cookie for an already-committed password intent (retry after lost Set-Cookie). */
+async function rematerializeCommittedPasswordLogin(input: {
+  stateNonce: string;
+  bootstrapHash: string;
+  writer: CookieWriter;
+  reader: CookieReader;
+}): Promise<{ ok: true; userId: string; generation: string; boundaryFingerprint: string } | { ok: false }> {
+  const saved = await loadAuthIntentByNonce(input.stateNonce);
+  if (
+    !saved
+    || saved.status !== "committed"
+    || (saved.purpose !== "password_login" && saved.purpose !== "recovery_reauth")
+  ) {
+    return { ok: false };
+  }
+  const materialized = await materializeCommittedIntentAdmission(saved, input.bootstrapHash);
+  if (!materialized) return { ok: false };
+  rotateHandleCookies(input.writer, input.reader, new Set());
+  commitHandleCookie(input.writer, materialized.cookieName, materialized.handle);
+  brokerLog("info", "auth.broker.login.rematerialized", {
+    user_id: materialized.userId,
+    boundary_fp: materialized.boundaryFingerprint,
+    error_code: "COMMITTED_INTENT_COOKIE_REPLAY",
+  });
+  return {
+    ok: true,
+    userId: materialized.userId,
+    generation: materialized.generation,
+    boundaryFingerprint: materialized.boundaryFingerprint,
   };
 }
 
@@ -81,13 +147,11 @@ export async function brokerPasswordLogin(input: {
   /** Client gesture nonce — required for reserve idempotency (R4-F04). */
   requestNonce?: string | null;
 }): Promise<
-  | { ok: true }
+  | { ok: true; generation: string; userId: string }
   | { ok: false; code: "INVALID_INPUT" | "AUTH_ERROR" | "UNAVAILABLE" | "ADMISSION_BLOCKED" | "CONTINUITY_REQUIRED" }
 > {
   const email = input.email.trim().toLowerCase();
   if (!email || !input.password) return { ok: false, code: "INVALID_INPUT" };
-  const capability = await probeBrokerCapability();
-  if (!capability.ok || !capability.boundAdmit) return { ok: false, code: "UNAVAILABLE" };
   if (!input.reader) return { ok: false, code: "UNAVAILABLE" };
   const requestNonce =
     typeof input.requestNonce === "string" && input.requestNonce.length >= 16
@@ -95,7 +159,13 @@ export async function brokerPasswordLogin(input: {
       : null;
   if (!requestNonce) return { ok: false, code: "UNAVAILABLE" };
 
-  const lineageCtx = await prepareBrokerAdmissionLineage(input.reader, input.writer);
+  // Authenticate then admit cookies before any capability probe so Preview 57014
+  // stampede cannot burn Vercel maxDuration before soft-land. Inbox soft-UNAVAILABLE
+  // covers slow post-login probes; probe budgets elsewhere stay ≪120s.
+  // Rotate stale vel_sh_* before reserve so a cache-clear is not required to log in.
+  const lineageCtx = await prepareBrokerAdmissionLineage(input.reader, input.writer, {
+    rotateStaleHandles: true,
+  });
   if (!lineageCtx.ok) {
     return { ok: false, code: lineageCtx.code === "CONTINUITY_REQUIRED" ? "CONTINUITY_REQUIRED" : "UNAVAILABLE" };
   }
@@ -108,18 +178,63 @@ export async function brokerPasswordLogin(input: {
   });
   if (!intent) return { ok: false, code: "UNAVAILABLE" };
 
+  // Same gesture nonce after a committed admit whose Set-Cookie never stuck: replay the handle.
+  if (intent.status === "committed" || (intent.idempotent && intent.providerState === "committed")) {
+    const replayed = await rematerializeCommittedPasswordLogin({
+      stateNonce: intent.stateNonce,
+      bootstrapHash: lineageCtx.bootstrapHash,
+      writer: input.writer,
+      reader: input.reader,
+    });
+    if (replayed.ok) {
+      return { ok: true, generation: replayed.generation, userId: replayed.userId };
+    }
+  }
+
   const claim = await claimProviderAttempt(intent.id);
   if (!claim.ok || claim.claimed !== true) {
+    if (intent.status === "committed" || intent.idempotent) {
+      const replayed = await rematerializeCommittedPasswordLogin({
+        stateNonce: intent.stateNonce,
+        bootstrapHash: lineageCtx.bootstrapHash,
+        writer: input.writer,
+        reader: input.reader,
+      });
+      if (replayed.ok) {
+        return { ok: true, generation: replayed.generation, userId: replayed.userId };
+      }
+    }
     await resumeProviderCleanup(intent.id, lineageCtx.browserLineageId);
     return { ok: false, code: "UNAVAILABLE" };
   }
 
   const bundle = createProviderAuthClient();
   if (!bundle) return { ok: false, code: "UNAVAILABLE" };
-  const { data, error } = await bundle.client.auth.signInWithPassword({
-    email,
-    password: input.password,
-  });
+  const loginDeadline = Date.now() + PASSWORD_LOGIN_WALL_MS;
+  let data: Awaited<ReturnType<typeof bundle.client.auth.signInWithPassword>>["data"];
+  let error: Awaited<ReturnType<typeof bundle.client.auth.signInWithPassword>>["error"];
+  try {
+    const providerMs = Math.min(
+      PROVIDER_SIGNIN_BUDGET_MS,
+      Math.max(3_000, loginDeadline - Date.now() - PASSWORD_ADMIT_BUDGET_MS),
+    );
+    const signedIn = await withLoginBudget(
+      bundle.client.auth.signInWithPassword({
+        email,
+        password: input.password,
+      }),
+      providerMs,
+    );
+    data = signedIn.data;
+    error = signedIn.error;
+  } catch {
+    await resumeProviderCleanup(intent.id, lineageCtx.browserLineageId);
+    brokerLog("warn", "auth.broker.login.provider_budget", {
+      error_code: "PROVIDER_SIGNIN_BUDGET",
+      stage: "provider",
+    });
+    return { ok: false, code: "UNAVAILABLE" };
+  }
   if (error || !data.session) {
     const status = error?.status ?? 0;
     const unknown = !error || status === 0 || status === 408 || status === 429 || status >= 500
@@ -145,14 +260,22 @@ export async function brokerPasswordLogin(input: {
         return { ok: false, code: "AUTH_ERROR" };
       }
     }
-    const admitted = await admitCapturedSession({
-      session: data.session,
-      writer: input.writer,
-      intentId: intent.id,
-      browserLineageId: intent.browserLineageId,
-      admissionScope: scope,
-      recoveryOperationKey: input.recoveryOperationKey,
-    });
+    const admitMs = Math.min(
+      PASSWORD_ADMIT_BUDGET_MS,
+      Math.max(3_000, loginDeadline - Date.now()),
+    );
+    const admitted = await withLoginBudget(
+      admitCapturedSession({
+        session: data.session,
+        writer: input.writer,
+        reader: input.reader,
+        intentId: intent.id,
+        browserLineageId: intent.browserLineageId,
+        admissionScope: scope,
+        recoveryOperationKey: input.recoveryOperationKey,
+      }),
+      admitMs,
+    );
     if (!admitted.ok) {
       await signOutProviderSessionAfterAdmitFailure(bundle, data.session, {
         intentId: intent.id,
@@ -165,11 +288,15 @@ export async function brokerPasswordLogin(input: {
       boundary_fp: admitted.boundaryFingerprint,
       admission_scope: scope,
     });
-    return { ok: true };
+    return { ok: true, generation: admitted.generation, userId: admitted.userId };
   } catch {
     await signOutProviderSessionAfterAdmitFailure(bundle, data.session, {
       intentId: intent.id,
       operationKey: input.recoveryOperationKey ?? intent.id,
+    });
+    brokerLog("warn", "auth.broker.login.admit_budget", {
+      error_code: "PASSWORD_ADMIT_BUDGET",
+      stage: "admit",
     });
     return { ok: false, code: "UNAVAILABLE" };
   }
@@ -274,9 +401,10 @@ export async function brokerExchangeOAuthCode(input: {
     return { ok: false, code: "UNAVAILABLE", detail: "continuity_required", expireIntent: false };
   }
 
+  // Rotate stale vel_sh_* before exchange/admit — same collision class as password login.
   const [capability, lineageCtx, intent] = await Promise.all([
     probeBrokerCapability(),
-    prepareBrokerAdmissionLineage(input.reader, input.writer),
+    prepareBrokerAdmissionLineage(input.reader, input.writer, { rotateStaleHandles: true }),
     loadAuthIntentByNonce(input.stateNonce),
   ]);
   if (!capability.ok) return { ok: false, code: "UNAVAILABLE" };
@@ -296,6 +424,7 @@ export async function brokerExchangeOAuthCode(input: {
     if (!materialized) {
       return { ok: false, code: "UNAVAILABLE", detail: "receipt_stale", expireIntent: false };
     }
+    rotateHandleCookies(input.writer, input.reader, new Set());
     commitHandleCookie(input.writer, materialized.cookieName, materialized.handle);
     expireIntentCookie(input.writer, input.stateNonce);
     return { ok: true, generation: materialized.generation };
@@ -363,6 +492,7 @@ export async function brokerExchangeOAuthCode(input: {
     const admitted = await admitCapturedSession({
       session: data.session,
       writer: input.writer,
+      reader: input.reader,
       intentId: intent.id,
       browserLineageId: intent.browserLineageId ?? lineageCtx.browserLineageId,
       admissionScope: "app",

@@ -4,8 +4,14 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { InboxDesktopView } from './inbox-desktop';
 
-const api = vi.hoisted(() => ({ run: vi.fn(), remove: vi.fn() }));
-vi.mock('@/lib/customer/inbox-extension-actions', () => ({ runInboxExtension: api.run, removeUnboundWhatsappFile:api.remove, listInboxStars: vi.fn(async () => ({ ok: true, data: [] })) }));
+type ContactRead = { ok: true; data: { email: string; location: string } } | { ok: false; code: 'FORBIDDEN' | 'INVALID_INPUT' | 'UNAVAILABLE' };
+const api = vi.hoisted(() => ({
+  run: vi.fn(),
+  remove: vi.fn(),
+  readContact: vi.fn(async (): Promise<ContactRead> => ({ ok: true, data: { email: '', location: '' } })),
+  saveContact: vi.fn(),
+}));
+vi.mock('@/lib/customer/inbox-extension-actions', () => ({ runInboxExtension: api.run, removeUnboundWhatsappFile:api.remove, listInboxStars: vi.fn(async () => ({ ok: true, data: [] })), readInboxContact: api.readContact, saveInboxContact: api.saveContact }));
 import { InboxExtensionBridge } from './inbox-extension-bridge';
 import { InboxDesktop } from './inbox-desktop';
 
@@ -26,7 +32,12 @@ function show(id: string, paused = false) {
     <div data-tags>{model.customer?.tags?.map(tag => tag.label).join(',')}</div>{model.tagControls}{model.customerExtra}
   </>}/>);
 }
-beforeEach(() => { vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); api.run.mockReset();api.remove.mockReset(); container = document.createElement('div'); document.body.append(container); root = createRoot(container); });
+beforeEach(() => {
+  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+  api.run.mockReset(); api.remove.mockReset(); api.readContact.mockReset(); api.saveContact.mockReset();
+  api.readContact.mockResolvedValue({ ok: true, data: { email: '', location: '' } });
+  container = document.createElement('div'); document.body.append(container); root = createRoot(container);
+});
 afterEach(() => { act(() => root.unmount()); container.remove(); vi.unstubAllGlobals(); });
 
 it('does not display a late response from the previously selected conversation', async () => {
@@ -84,14 +95,66 @@ it('keeps controls disabled if the database read fails or the connection is paus
   expect(api.run).toHaveBeenCalledTimes(1);
 });
 
-it('clears saved details and disables further actions when a write is denied', async () => {
+it('soft-fails a missing contact profile without showing a save error', async () => {
+  api.run.mockResolvedValue({ ok: true, data: [] });
+  api.readContact.mockResolvedValue({ ok: false, code: 'UNAVAILABLE' });
+  const v = view(first);
+  await act(async () => root.render(<InboxExtensionBridge view={v} ar={false} render={model => <>
+    <div data-contact>{model.contactControls}</div>
+    <button type="button" data-star disabled={model.headerActions?.find(a => a.id === 'star')?.disabled}>star</button>
+  </>}/>));
+  expect(container.textContent).toContain('Contact profile is not ready');
+  expect(container.textContent).toContain('Retry');
+  expect(container.textContent).not.toContain('could not be saved');
+  expect(container.querySelector('form')).toBeNull();
+  expect(api.saveContact).not.toHaveBeenCalled();
+  expect(container.querySelector<HTMLButtonElement>('[data-star]')?.disabled).toBe(false);
+});
+
+it('keeps a ready tag list visible across revision bumps instead of hanging on loading', async () => {
+  api.run.mockResolvedValue({ ok: true, data: [{ id: first, kind: 'tag', body: 'Follow-up' }] });
+  const v = view(first);
+  v.extension = { ...v.extension!, revision: 0 };
+  await act(async () => root.render(<InboxExtensionBridge view={v} ar={false} render={model => <>
+    <div data-status>{model.extensionStatus}</div>
+    <div data-tags>{model.customer?.tags?.map(tag => tag.label).join(',')}</div>
+  </>}/>));
+  expect(container.querySelector('[data-status]')?.textContent).toBe('ready');
+  expect(container.querySelector('[data-tags]')?.textContent).toBe('Follow-up');
+  api.run.mockClear();
+  api.run.mockResolvedValue({ ok: true, data: [{ id: first, kind: 'tag', body: 'Follow-up' }] });
+  await act(async () => root.render(<InboxExtensionBridge view={{...v, extension:{...v.extension!, revision:1}}} ar={false} render={model => <>
+    <div data-status>{model.extensionStatus}</div>
+    <div data-tags>{model.customer?.tags?.map(tag => tag.label).join(',')}</div>
+  </>}/>));
+  expect(container.querySelector('[data-tags]')?.textContent).toBe('Follow-up');
+  expect(container.querySelector('[data-status]')?.textContent).not.toBe('loading');
+  expect(api.run).toHaveBeenCalled();
+});
+
+it('leaves loading after a timed-out extension list and exposes retry', async () => {
+  vi.useFakeTimers();
+  try {
+    api.run.mockImplementation(() => new Promise(() => {}));
+    await act(async () => { show(first); });
+    expect(api.run).toHaveBeenCalled();
+    await act(async () => { await vi.advanceTimersByTimeAsync(20000); });
+    expect(container.textContent).toContain('could not be verified');
+    expect([...container.querySelectorAll('button')].some(button => button.textContent === 'Retry')).toBe(true);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('keeps the last ready tag list when a write is denied and surfaces retry', async () => {
   api.run.mockResolvedValueOnce({ ok: true, data: [{ id: first, kind: 'tag', body: 'Private' }] })
     .mockResolvedValueOnce({ ok: false, code: 'FORBIDDEN' });
   await act(async () => { show(first); });
   expect(container.querySelector('[data-tags]')?.textContent).toBe('Private');
   await act(async () => { container.querySelector('button')!.click(); });
-  expect(container.querySelector('[data-tags]')?.textContent).toBe('');
-  expect([...container.querySelectorAll('button')].slice(0, 2).every(button => button.disabled)).toBe(true);
+  expect(container.querySelector('[data-tags]')?.textContent).toBe('Private');
+  expect(container.textContent).toContain('could not be verified');
+  expect([...container.querySelectorAll('button')].some(button => button.textContent === 'Retry')).toBe(true);
 });
 
 it('saves an Instagram internal note to that thread without using the send action', async () => {

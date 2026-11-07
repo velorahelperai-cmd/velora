@@ -110,3 +110,7 @@
 .vdi.vdi .vdi-quick-row{display:flex;gap:6px;align-items:start}
 .vdi.vdi .vdi-quick-row>button:first-child{flex:1;min-width:0;text-align:start;overflow-wrap:anywhere}
 .vdi.vdi .vdi-custom-compose-tools{padding:0 11px 8px}
+.vdi.vdi .vdi-team-assign{margin-inline-start:auto;display:grid;gap:2px;min-width:0;font-size:10px;color:var(--vdi-muted)}
+.vdi.vdi .vdi-team-assign select{min-height:32px;max-width:148px;border:1px solid var(--vdi-line);border-radius:8px;background:#fff;padding:0 6px;font:inherit}
+.vdi.vdi .vdi-contact-editor{display:grid;gap:6px;margin-top:8px}
+.vdi.vdi .vdi-contact-editor input{min-height:32px;border:1px solid var(--vdi-line);border-radius:8px;padding:4px 8px;font:inherit}

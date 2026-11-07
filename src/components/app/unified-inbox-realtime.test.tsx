@@ -41,7 +41,10 @@ it('coalesces event bursts, retains the pane draft and suspends polling while co
  act(()=>{m.event?.({type:'ready'});for(let i=0;i<10;i++)m.event?.({type:'change'});});
  await act(async()=>vi.advanceTimersByTimeAsync(250));expect(m.fetch).toHaveBeenCalledTimes(1);
  await act(async()=>vi.advanceTimersByTimeAsync(30000));expect(m.fetch).toHaveBeenCalledTimes(1);expect(container.querySelector('textarea')).toBe(draft);expect(draft?.value).toBe('Unsaved draft');
- act(()=>m.event?.({type:'unavailable'}));await act(async()=>vi.advanceTimersByTimeAsync(30000));expect(m.fetch).toHaveBeenCalledTimes(2);
+ act(()=>m.event?.({type:'unavailable'}));expect(m.fetch).toHaveBeenCalledTimes(2);
+ expect(container.querySelector('textarea')).toBe(draft);expect(container.textContent).toContain('Previously verified contact');
+ await act(async()=>vi.advanceTimersByTimeAsync(30000));expect(m.fetch).toHaveBeenCalledTimes(3);
+ expect(container.querySelector('textarea')).toBe(draft);
 });
 it('does not lose an event arriving while a read is pending',async()=>{
  let complete!:(v:Snapshot)=>void;m.fetch.mockImplementationOnce(()=>new Promise<Snapshot>(resolve=>{complete=resolve;}));
@@ -58,15 +61,15 @@ it('locks the snapshot on revocation and discards an earlier successful read',as
  expect(m.fetch).toHaveBeenCalledTimes(1);
 });
 
-it('erases the previously read pane during UNAVAILABLE, removes write controls, then recovers',async()=>{
+it('keeps the previously read pane during soft UNAVAILABLE without pausing verified writes',async()=>{
  const draft=container.querySelector('textarea');
  m.fetch.mockResolvedValueOnce({ok:false,code:'UNAVAILABLE'});
  act(()=>m.event?.({type:'change'}));await act(async()=>vi.advanceTimersByTimeAsync(250));
- expect(container.querySelector('textarea')).toBeNull();expect(container.textContent).not.toContain('Previously verified contact');
- expect(container.querySelector('fieldset')).toBeNull();
- expect(container.textContent).toContain('Retry');
+ expect(container.querySelector('textarea')).toBe(draft);expect(container.textContent).toContain('Previously verified contact');
+ expect(container.querySelector('fieldset')?.disabled).toBe(false);
+ expect(container.querySelector('[data-inbox-offline="true"]')).toBeNull();
  act(()=>m.event?.({type:'change'}));await act(async()=>vi.advanceTimersByTimeAsync(250));
- expect(container.querySelector('textarea')).not.toBeNull();expect(container.querySelector('textarea')).not.toBe(draft);expect(container.querySelector('fieldset')?.disabled).toBe(false);
+ expect(container.querySelector('textarea')).toBe(draft);expect(container.querySelector('fieldset')?.disabled).toBe(false);
 });
 it.each(['FORBIDDEN','SCOPE_CHANGED','NO_COMPANY'])('erases cached content after %s, including a later temporary outage',async code=>{
  m.fetch.mockResolvedValueOnce({ok:false,code});
@@ -91,23 +94,36 @@ it('drops prior data immediately when the confirmed account is locked or changes
  }
 });
 
-it('pauses actions immediately when the live permission stream becomes unavailable',()=>{
- act(()=>m.event?.({type:'unavailable'}));expect(container.querySelector('textarea')).toBeNull();expect(container.querySelector('fieldset')).toBeNull();expect(container.textContent).not.toContain('Previously verified contact');
+it('pauses on live-stream loss, then resumes verified writes when the stream reconnects even if a soft recheck fails',async()=>{
+ let finish!:(v:Snapshot)=>void;
+ m.fetch.mockImplementationOnce(()=>new Promise<Snapshot>(resolve=>{finish=resolve;}));
+ const draft=container.querySelector('textarea');
+ await act(async()=>m.event?.({type:'unavailable'}));
+ expect(container.querySelector('textarea')).toBe(draft);expect(container.querySelector('fieldset')?.disabled).toBe(true);
+ expect(container.textContent).toContain('Previously verified contact');
+ expect(container.querySelector('[data-inbox-offline="true"]')).toBeNull();
+ await act(async()=>finish({ok:false,code:'UNAVAILABLE'} as Snapshot));
+ // Soft recheck must not keep writes paused once the stream is back.
+ await act(async()=>m.event?.({type:'reconnect'}));
+ expect(container.querySelector('textarea')).toBe(draft);expect(container.querySelector('fieldset')?.disabled).toBe(false);
 });
 
-it('erases data on an unclassified reader exception and recovers only through a new read',async()=>{
+it('retains verified data on an unclassified reader exception after a successful list, then recovers',async()=>{
+ const draft=container.querySelector('textarea');
  m.fetch.mockRejectedValueOnce(new Error('offline'));
  act(()=>m.event?.({type:'change'}));await act(async()=>vi.advanceTimersByTimeAsync(250));
- expect(container.querySelector('textarea')).toBeNull();expect(container.textContent).not.toContain('Previously verified contact');
- const retry=Array.from(container.querySelectorAll('button')).find(b=>b.textContent==='Retry');
- await act(async()=>retry?.click());expect(container.querySelector('textarea')).not.toBeNull();
+ expect(container.querySelector('textarea')).toBe(draft);expect(container.textContent).toContain('Previously verified contact');
+ expect(container.querySelector('fieldset')?.disabled).toBe(true);
+ act(()=>m.event?.({type:'change'}));await act(async()=>vi.advanceTimersByTimeAsync(250));
+ expect(container.querySelector('textarea')).toBe(draft);expect(container.querySelector('fieldset')?.disabled).toBe(false);
 });
-it('discards an in-flight success after SSE unavailable',async()=>{
+it('keeps the verified pane when SSE unavailable races an in-flight read',async()=>{
  let complete!:(v:Snapshot)=>void;m.fetch.mockImplementationOnce(()=>new Promise<Snapshot>(resolve=>{complete=resolve;}));
+ const draft=container.querySelector('textarea');
  act(()=>m.event?.({type:'change'}));await act(async()=>vi.advanceTimersByTimeAsync(250));
  act(()=>m.event?.({type:'unavailable'}));await act(async()=>complete(initial));
- expect(container.querySelector('textarea')).toBeNull();expect(container.textContent).not.toContain('Previously verified contact');
- act(()=>m.event?.({type:'reconnect'}));await act(async()=>vi.advanceTimersByTimeAsync(250));expect(container.querySelector('textarea')).not.toBeNull();
+ expect(container.querySelector('textarea')).toBe(draft);expect(container.textContent).toContain('Previously verified contact');
+ act(()=>m.event?.({type:'reconnect'}));await act(async()=>vi.advanceTimersByTimeAsync(250));expect(container.querySelector('textarea')).toBe(draft);
 });
 it('does not merge removed staff assignments into a fresh page with unchanged identity',async()=>{
  if(!initial.ok||!initial.wa.ok)throw new Error('fixture');
@@ -157,12 +173,14 @@ it('keeps a verified draft during transport loss but hides it if the independent
  expect(container.querySelector('textarea')).toBeNull();
  expect(container.textContent).not.toContain('Previously verified contact');
 });
-it('shows a single read failure notice and safely retries',async()=>{
+it('keeps verified writes enabled on soft UNAVAILABLE without emptying the list',async()=>{
+ const draft=container.querySelector('textarea');
  m.fetch.mockResolvedValueOnce({ok:false,code:'UNAVAILABLE'});
  act(()=>m.event?.({type:'change'}));await act(async()=>vi.advanceTimersByTimeAsync(250));
- expect(container.querySelector('[data-inbox-offline="true"]')).not.toBeNull();expect(container.querySelector('textarea')).toBeNull();
- const retry=Array.from(container.querySelectorAll('button')).find(b=>b.textContent==='Retry');
- await act(async()=>retry?.click());expect(container.querySelector('textarea')).not.toBeNull();
+ expect(container.querySelector('[data-inbox-offline="true"]')).toBeNull();
+ expect(container.querySelector('textarea')).toBe(draft);expect(container.querySelector('fieldset')?.disabled).toBe(false);
+ act(()=>m.event?.({type:'change'}));await act(async()=>vi.advanceTimersByTimeAsync(250));
+ expect(container.querySelector('textarea')).toBe(draft);expect(container.querySelector('fieldset')?.disabled).toBe(false);
 });
 
 it('does not schedule a second read when recovery precedes a fast pending read completion',async()=>{
@@ -235,11 +253,13 @@ it('retains verified messages and draft on a classified transport outage, pauses
  act(()=>m.event?.({type:'reconnect'}));await act(async()=>vi.advanceTimersByTimeAsync(250));
  expect(container.querySelector('textarea')).toBe(draft);expect(container.querySelector('fieldset')?.disabled).toBe(false);
 });
-it('keeps the inbox shell instead of the page-replacing read-failure banner on an unclassified outage',async()=>{
+it('keeps the verified list mounted on soft UNAVAILABLE instead of the empty offline shell',async()=>{
+ const draft=container.querySelector('textarea');
  m.fetch.mockResolvedValueOnce({ok:false,code:'UNAVAILABLE'});
  act(()=>m.event?.({type:'change'}));await act(async()=>vi.advanceTimersByTimeAsync(250));
- expect(container.querySelector('[data-inbox-offline="true"]')).not.toBeNull();
- expect(container.textContent).not.toContain('Previously verified contact');expect(container.querySelector('textarea')).toBeNull();
+ expect(container.querySelector('[data-inbox-offline="true"]')).toBeNull();
+ expect(container.textContent).toContain('Previously verified contact');expect(container.querySelector('textarea')).toBe(draft);
+ expect(container.querySelector('fieldset')?.disabled).toBe(false);
  expect(container.textContent).not.toContain(appCopy('en').app.inboxLoadFailedBody);
 });
 it('never revives prior data after explicit denial followed by a transport failure',async()=>{

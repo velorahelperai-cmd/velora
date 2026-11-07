@@ -1,7 +1,23 @@
 import "server-only";
-import { selectCandidateHandles, type CookieReader, type CookieWriter } from "./cookies";
+import {
+  listHandleCookies,
+  rotateHandleCookies,
+  selectCandidateHandles,
+  type CookieReader,
+  type CookieWriter,
+} from "./cookies";
 import { readBoundBrowserContinuity } from "./continuity";
+import { brokerLog } from "./log";
 import { resolveBrokerSession } from "./resolve";
+
+export type BrokerAdmissionLineageOptions = {
+  /**
+   * Password/OAuth admit: clear conflicting vel_sh_* cookies up front so a stale
+   * tip/jar cannot force capability probes or block a fresh admit. Continuity
+   * (vel_bc) is preserved.
+   */
+  rotateStaleHandles?: boolean;
+};
 
 /**
  * C5-R4: require already-enrolled continuity mirror + server bind.
@@ -9,7 +25,8 @@ import { resolveBrokerSession } from "./resolve";
  */
 export async function prepareBrokerAdmissionLineage(
   reader: CookieReader,
-  _writer: CookieWriter,
+  writer: CookieWriter,
+  options?: BrokerAdmissionLineageOptions,
 ): Promise<
   | {
       ok: true;
@@ -20,10 +37,26 @@ export async function prepareBrokerAdmissionLineage(
     }
   | { ok: false; code: "UNAVAILABLE" | "CONTINUITY_REQUIRED" }
 > {
-  void _writer;
   const bound = await readBoundBrowserContinuity(reader);
   if (!bound || bound.state !== "active") {
     return { ok: false, code: "CONTINUITY_REQUIRED" };
+  }
+
+  if (options?.rotateStaleHandles) {
+    const rotated = rotateHandleCookies(writer, reader);
+    if (rotated.length > 0) {
+      brokerLog("info", "auth.broker.lineage.stale_handles_rotated", {
+        error_code: "STALE_HANDLE_ROTATE",
+        count: rotated.length,
+      });
+    }
+    return {
+      ok: true,
+      browserLineageId: bound.browserLineageId,
+      parentHandleHash: null,
+      bootstrapHash: bound.bootstrapHash,
+      attemptId: bound.browserLineageId,
+    };
   }
 
   const candidates = selectCandidateHandles(reader);
@@ -52,6 +85,24 @@ export async function prepareBrokerAdmissionLineage(
     };
   }
   if (resolved.code === "UNAVAILABLE") {
+    // Stale multi-handle jars hit capability fail-closed here. Prefer rotating
+    // over hammering Supabase when the writer can clear the conflict.
+    if ("failClosed" in candidates || listHandleCookies(reader).length > 0) {
+      const rotated = rotateHandleCookies(writer, reader);
+      if (rotated.length > 0) {
+        brokerLog("warn", "auth.broker.lineage.unavailable_rotated", {
+          error_code: "STALE_HANDLE_ROTATE_AFTER_UNAVAILABLE",
+          count: rotated.length,
+        });
+        return {
+          ok: true,
+          browserLineageId: bound.browserLineageId,
+          parentHandleHash: null,
+          bootstrapHash: bound.bootstrapHash,
+          attemptId: bound.browserLineageId,
+        };
+      }
+    }
     return { ok: false, code: "UNAVAILABLE" };
   }
   return {

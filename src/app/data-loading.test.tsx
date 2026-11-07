@@ -10,6 +10,7 @@ vi.mock('@/components/app/workspace-pages', () => ({KnowledgePage: () => null}))
 vi.mock('@/components/app/access-gate', () => ({AccessGate: () => null}));
 import HomePage from './page';
 import KnowledgePage from './app/knowledge/page';
+import {RouteLoading} from '@/components/app/route-loading';
 
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(r => {resolve = r;}); return {promise, resolve}; }
 beforeEach(() => vi.resetAllMocks());
@@ -29,7 +30,9 @@ it('overlaps knowledge data and independent permissions after read authorization
   const list = deferred<{ok: false}>();
   mocks.list.mockReturnValue(list.promise);
   mocks.capability.mockImplementation(async (_id: string, permission: string) => permission !== 'knowledge.delete' ? true : null);
-  const page = KnowledgePage().props.children.type();
+  const outer = KnowledgePage();
+  expect(outer.props.fallback?.type).toBe(RouteLoading);
+  const page = outer.props.children.type();
   await vi.waitFor(() => expect(mocks.capability).toHaveBeenCalledWith('company-a', 'knowledge.delete'));
   expect(mocks.list).toHaveBeenCalledWith({expectedCompanyId: 'company-a'});
   list.resolve({ok: false});

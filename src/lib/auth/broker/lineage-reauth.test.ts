@@ -2,7 +2,7 @@ import { expect, it, vi } from 'vitest';
 
 const m = vi.hoisted(() => ({ resolve: vi.fn(), refresh: vi.fn() }));
 vi.mock('./continuity', () => ({ readBoundBrowserContinuity: async () => ({ state: 'active', browserLineageId: 'lineage', bootstrapHash: 'hash' }) }));
-vi.mock('./cookies', () => ({ selectCandidateHandles: () => [{ name: 'fixture', value: 'handle' }] }));
+vi.mock('./cookies', () => ({ selectCandidateHandles: () => [{ name: 'fixture', value: 'handle' }], listHandleCookies: () => [], rotateHandleCookies: () => [] }));
 vi.mock('./resolve', () => ({ resolveBrokerSession: m.resolve, refreshBrokerTokens: m.refresh }));
 import { prepareBrokerAdmissionLineage } from './lineage-auth';
 

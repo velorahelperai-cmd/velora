@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { removeUnboundWhatsappFile, runInboxExtension } from '@/lib/customer/inbox-extension-actions';
+import { readInboxContact, removeUnboundWhatsappFile, runInboxExtension, saveInboxContact } from '@/lib/customer/inbox-extension-actions';
 import type { InboxDesktopView } from './inbox-desktop';
 import { useInboxMediaEvidence } from './inbox-media-evidence';
 
@@ -30,10 +30,14 @@ export function InboxExtensionBridge({ view, ar, render, pendingIntents, onInten
   const [previousRevision, setPreviousRevision] = useState(revision);
   const [error, setError] = useState(false);
   const [busy, setBusy] = useState(false);
-  if (previousPaused !== paused || previousRevision !== revision) {
+  // Pause must clear loaded extensions. A revision bump (list refresh) must not
+  // wipe items back to «جارٍ التحميل…» — refetch in the effect while keeping the last ready view.
+  if (previousPaused !== paused) {
     setPreviousPaused(paused);
+    if (paused) { setItems(null); setBusy(false); setError(false); }
+  }
+  if (previousRevision !== revision) {
     setPreviousRevision(revision);
-    setItems(null);
     setBusy(false);
   }
   const [editing, setEditing] = useState(Boolean(pendingIntents?.tag));
@@ -48,6 +52,14 @@ export function InboxExtensionBridge({ view, ar, render, pendingIntents, onInten
   const [reservedQuick, setReservedQuick] = useState<PendingInboxIntent | null>(pendingIntents?.quick ?? null);
   const [reservedFile, setReservedFile] = useState<PendingInboxIntent | null>(pendingIntents?.file ?? null);
   const [readingFile,setReadingFile]=useState(false),[fileError,setFileError]=useState<'invalid'|'quota'|'in_use'|'unavailable'|null>(null);
+  const [contact,setContact]=useState<{email:string;location:string}|null>(null);
+  const [contactUnavailable,setContactUnavailable]=useState(false);
+  const [contactError,setContactError]=useState(false);
+  const [editingContact,setEditingContact]=useState(false);
+  const [emailDraft,setEmailDraft]=useState('');
+  const [locationDraft,setLocationDraft]=useState('');
+  const editingContactRef=useRef(false);
+  useEffect(()=>{editingContactRef.current=editingContact;},[editingContact]);
   const reserveTag = (intent: PendingInboxIntent | null) => { setReservedTag(intent); onIntentChange?.('tag', intent); };
   const reserveNote = (intent: PendingInboxIntent | null) => { setReservedNote(intent); onIntentChange?.('note', intent); };
   const reserveQuick = (intent: PendingInboxIntent | null) => { setReservedQuick(intent); onIntentChange?.('quick', intent); };
@@ -60,13 +72,38 @@ export function InboxExtensionBridge({ view, ar, render, pendingIntents, onInten
     const fence = request;
     const current = ++fence.current;
     if (!paused) {
-      void runInboxExtension({ companyId, conversationId, channel, action: 'list' }).then(result => {
+      const withTimeout = <T,>(work: Promise<T>, ms = 20000) => Promise.race([
+        work,
+        new Promise<never>((_, reject) => { const timer = window.setTimeout(() => reject(new Error('EXTENSION_TIMEOUT')), ms); work.finally(() => window.clearTimeout(timer)); }),
+      ]);
+      void withTimeout(readInboxContact({ companyId, conversationId, channel })).then(profile => {
+        if (!active.current || current !== request.current) return;
+        // Missing migration / RPC must soft-fail: never surface a save error or block takeover/send.
+        if (!profile.ok) {
+          setContact(null); setContactUnavailable(true); setContactError(false); setEditingContact(false);
+          return;
+        }
+        setContact(profile.data); setContactUnavailable(false); setContactError(false);
+        if (!editingContactRef.current) { setEmailDraft(profile.data.email); setLocationDraft(profile.data.location); }
+      }).catch(() => {
+        if (active.current && current === request.current) {
+          setContact(null); setContactUnavailable(true); setContactError(false); setEditingContact(false);
+        }
+      });
+      void withTimeout(runInboxExtension({ companyId, conversationId, channel, action: 'list' })).then(result => {
         if (!active.current || current !== request.current) return;
         if (!result.ok || !Array.isArray(result.data) || !result.data.every(isItem)) {
-          setItems(null); setError(true); return;
+          // Keep a previously ready list; only hang-avoid by surfacing retry when nothing loaded.
+          setError(true);
+          setItems(current => current);
+          return;
         }
         setItems(result.data); setError(false);
-      }).catch(() => { if (active.current && current === request.current) { setItems(null); setError(true); } });
+      }).catch(() => {
+        if (!active.current || current !== request.current) return;
+        setError(true);
+        setItems(current => current);
+      });
     }
     return () => { active.current = false; fence.current++; };
   }, [companyId, conversationId, channel, paused, version, revision]);
@@ -86,13 +123,20 @@ export function InboxExtensionBridge({ view, ar, render, pendingIntents, onInten
           if (input.action === 'file') reserveFile(null);
         }
         if(input.action==='file')setFileError(result.code==='LIMIT'?'quota':'unavailable');
-        setItems(null); setError(true); return false;
+        // Keep the last ready list visible — never flash «جارٍ التحميل…» on a failed write.
+        setError(true); return false;
       }
       if (input.action === 'star' || input.action === 'unstar') view.onStarChanged?.();
-      setItems(null); setVersion(value => value + 1);
+      // Optimistic local reconcile where the RPC returns the mutated row; otherwise
+      // refetch while retaining the previous list (revision/version effect).
+      if (Array.isArray(result.data) && result.data.every(isItem)) {
+        setItems(result.data); setError(false);
+      } else {
+        setVersion(value => value + 1);
+      }
       return true;
     } catch {
-      if (active.current && current === request.current) { if(input.action==='file')setFileError('unavailable');setItems(null); setError(true); }
+      if (active.current && current === request.current) { if(input.action==='file')setFileError('unavailable'); setError(true); }
       return false;
     } finally { if (active.current && current === request.current) setBusy(false); }
   }
@@ -208,12 +252,46 @@ export function InboxExtensionBridge({ view, ar, render, pendingIntents, onInten
     },
     onRemove: (id: string) => { if (ready && canEdit) void mutate({ ...base, action: 'unquick', itemId: id }); },
   } } : undefined;
-  // The render callback receives event handlers; refs are read only when those handlers run.
-  // eslint-disable-next-line react-hooks/refs
+  const contactReady = !paused && contact !== null && !contactUnavailable;
+  const storedEmail = contact?.email ?? '';
+  async function saveContact(event: { preventDefault(): void }) {
+    event.preventDefault();
+    if (!contactReady || !canEdit || busy || contactUnavailable) return;
+    const current = request.current;
+    setBusy(true); setContactError(false);
+    try {
+      const result = await saveInboxContact({ ...base, email: emailDraft, location: locationDraft });
+      if (!active.current || current !== request.current) return;
+      if (!result.ok) { setContactError(true); return; }
+      setContact(result.data); setEmailDraft(result.data.email); setLocationDraft(result.data.location); setEditingContact(false);
+    } catch { if (active.current && current === request.current) setContactError(true); }
+    finally { if (active.current && current === request.current) setBusy(false); }
+  }
+  const contactUnavailableReason = ar
+    ? 'ملف الاتصال غير جاهز لهذه المحادثة (تعذّر التحقق من الخادم). يمكنك متابعة الاستلام والرد إن كانت الصلاحيات تسمح، أو أعد المحاولة بعد التحديث.'
+    : 'Contact profile is not ready for this conversation (server could not verify). Take-over and reply can continue if permitted; retry after refresh.';
+  const emailAction = {
+    id: 'email', label: ar ? 'إيميل' : 'Email', icon: 'mail' as const,
+    disabled: contactUnavailable || !contactReady || (!storedEmail && !canEdit) || busy,
+    reason: contactUnavailable ? contactUnavailableReason : !contactReady ? reason : !storedEmail && !canEdit ? (ar ? 'لا يوجد بريد محفوظ، والتعديل غير متاح.' : 'No saved email, and editing is unavailable.') : undefined,
+    onClick: storedEmail ? () => { window.location.href = `mailto:${storedEmail}`; } : () => { setEditingContact(true); view.onProfileTabChange?.('details'); },
+  };
+  const contactControls = <div className="vdi-contact-editor">
+    {contactUnavailable && <p role="status" className="vdi-muted">{contactUnavailableReason}{' '}<button type="button" className="vdi-small-button" onClick={() => { setContactUnavailable(false); setContactError(false); setVersion(value => value + 1); }}>{ar ? 'إعادة المحاولة' : 'Retry'}</button></p>}
+    {!contactUnavailable && (editingContact || contactError) && <form onSubmit={event => void saveContact(event)}>
+      <label>{ar ? 'البريد الإلكتروني' : 'Email'} <input type="email" dir="ltr" maxLength={254} value={emailDraft} disabled={!contactReady || !canEdit || busy} onChange={event => setEmailDraft(event.target.value)}/></label>
+      <label>{ar ? 'الموقع' : 'Location'} <input maxLength={120} value={locationDraft} disabled={!contactReady || !canEdit || busy} onChange={event => setLocationDraft(event.target.value)}/></label>
+      {contactError && <p role="status">{ar ? 'تعذّر حفظ بيانات الاتصال. تحقق من البريد ثم أعد المحاولة.' : 'Contact details could not be saved. Check the email, then try again.'}</p>}
+      <button type="submit" className="vdi-small-button" disabled={!contactReady || !canEdit || busy}>{ar ? 'حفظ بيانات الاتصال' : 'Save contact details'}</button>
+    </form>}
+    {contactReady && canEdit && !editingContact && !contactError && <button type="button" className="vdi-small-button" onClick={() => setEditingContact(true)}>{ar ? 'تعديل البريد والموقع' : 'Edit email and location'}</button>}
+  </div>;
   return render({ ...view,
     messages,
     extensionStatus: paused || error ? 'unavailable' : items === null ? 'loading' : 'ready',
-    customer: view.customer ? { ...view.customer, tags: tags.map(tag => ({ id: tag.id, label: tag.body! })),
+    contactControls,
+    customer: view.customer ? { ...view.customer, email: storedEmail || view.customer.email, location: contact?.location || view.customer.location, tags: tags.map(tag => ({ id: tag.id, label: tag.body! })),
+      quickActions: [emailAction, ...(view.customer.quickActions ?? []).filter(action => action.id !== 'email')],
       note: channel === 'instagram' ? (instagramNotes[0]?.body ? { text: instagramNotes[0].body } : undefined) : view.customer.note } : undefined,
     tagControls,
     customerExtra: <>{view.customerExtra}{channel === 'instagram' && instagramNotes.length > 1 && <div aria-label={ar ? 'الملاحظات السابقة' : 'Previous notes'}>{instagramNotes.slice(1).map(note => <p key={note.id}>{note.body}</p>)}</div>}{canEdit&&orphanFiles.length>0&&<div aria-label={ar?'مرفقات غير مستخدمة':'Unused attachments'}><p>{ar?'مرفقات غير مستخدمة':'Unused attachments'}</p>{orphanFiles.map(file=><button type="button" className="vdi-small-button" key={file.id} disabled={!ready} onClick={()=>void removeStoredFile(file.id)}>{ar?'حذف: ':'Delete: '}{file.body}</button>)}</div>}</>,

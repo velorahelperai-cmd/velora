@@ -78,24 +78,80 @@ export async function readBoundBrowserContinuity(
   return mapContinuityRow(hash, data as Record<string, unknown>);
 }
 
-/** Allowlisted diagnostics only; never emit raw SDK errors, identifiers or payloads. */
-function logBindFailure(error: unknown, started: number) {
+/** Per-attempt wait under Preview/Supabase multi-10s latency; total budget stays bounded via retries. */
+export const CONTINUITY_BIND_ATTEMPT_MS = 25_000;
+export const CONTINUITY_BIND_MAX_ATTEMPTS = 3;
+
+const TRANSPORT_CODES = [
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "ETIMEDOUT",
+  "ENOTFOUND",
+  "EAI_AGAIN",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "UND_ERR_HEADERS_TIMEOUT",
+  "UND_ERR_SOCKET",
+  "BIND_ATTEMPT_TIMEOUT",
+] as const;
+const RETRYABLE_BACKEND_CODES = new Set(["57014", "PGRST301", "57P01", "53300"]);
+
+function classifyBindError(error: unknown): {
+  category: "transport" | "backend" | "unknown";
+  code: string;
+  retryable: boolean;
+} {
   const row = error && typeof error === "object" ? error as Record<string, unknown> : {};
   const cause = row.cause && typeof row.cause === "object" ? row.cause as Record<string, unknown> : {};
-  const transportCodes = ["ECONNREFUSED", "ECONNRESET", "ETIMEDOUT", "ENOTFOUND", "EAI_AGAIN", "UND_ERR_CONNECT_TIMEOUT", "UND_ERR_HEADERS_TIMEOUT", "UND_ERR_SOCKET"];
-  const backendCodes = ["PGRST202", "PGRST301", "42P01", "42883", "42501", "23505", "57P01", "53300"];
+  const backendCodes = ["PGRST202", "PGRST301", "42P01", "42883", "42501", "23505", "57P01", "53300", "57014"];
   // SDK transport errors can flatten the cause into details. Inspect, never copy, text.
-  const text = [row.code, cause.code, row.message, row.details].filter(v => typeof v === "string").join(" ");
-  const transport = transportCodes.find(code => new RegExp(`\\b${code}\\b`).test(text));
+  const text = [row.code, cause.code, row.message, row.details].filter((v) => typeof v === "string").join(" ");
+  const transport = TRANSPORT_CODES.find((code) => new RegExp(`\\b${code}\\b`).test(text));
   const backend = typeof row.code === "string" && backendCodes.includes(row.code) ? row.code : undefined;
-  const category = transport || /fetch failed|network error/i.test(text) ? "transport" : backend ? "backend" : "unknown";
+  const category = transport || /fetch failed|network error|timed out|TimeoutError/i.test(text)
+    ? "transport"
+    : backend
+      ? "backend"
+      : "unknown";
+  const code = transport ?? backend ?? (category === "transport" ? "TRANSPORT" : "BIND_FAILED");
+  const retryable =
+    category === "transport"
+    || (typeof backend === "string" && RETRYABLE_BACKEND_CODES.has(backend))
+    || category === "unknown";
+  return { category, code, retryable };
+}
+
+/** Allowlisted diagnostics only; never emit raw SDK errors, identifiers or payloads. */
+function logBindFailure(error: unknown, started: number, attempt?: number) {
+  const classified = classifyBindError(error);
   brokerLog("warn", "auth.broker.continuity.bind_failed", {
     stage: "continuity_bind",
-    error_category: category,
-    error_code: transport ?? backend ?? (category === "transport" ? "TRANSPORT" : "BIND_FAILED"),
+    error_category: classified.category,
+    error_code: classified.code,
     duration_ms: Math.max(0, Math.round(performance.now() - started)),
+    ...(typeof attempt === "number" ? { attempt } : {}),
   });
 }
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function withAttemptBudget<T>(work: () => Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          reject(Object.assign(new Error("BIND_ATTEMPT_TIMEOUT"), { code: "BIND_ATTEMPT_TIMEOUT" }));
+        }, ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 /** Explicit POST enrollment only — INSERT-capable bind. */
 export async function bindBrowserContinuityFromAnchor(
   anchor: string,
@@ -109,28 +165,47 @@ export async function bindBrowserContinuityFromAnchor(
   if (!admin) return { ok: false, code: "UNAVAILABLE" };
   const hash = hashBootstrapAnchor(anchor);
   const started = performance.now();
-  const result = await (async () => {
+
+  for (let attempt = 1; attempt <= CONTINUITY_BIND_MAX_ATTEMPTS; attempt++) {
     try {
-      return await admin.rpc("vel_broker_bind_browser_continuity" as never, {
-        p_bootstrap_hash: hash,
-      } as never);
+      const result = await withAttemptBudget(
+        () => Promise.resolve(admin.rpc("vel_broker_bind_browser_continuity" as never, {
+          p_bootstrap_hash: hash,
+        } as never)),
+        CONTINUITY_BIND_ATTEMPT_MS,
+      );
+      const { data, error } = result as { data: unknown; error: unknown };
+      if (!error && data && typeof data === "object") {
+        const row = data as Record<string, unknown>;
+        if (row.ok === true) {
+          const lineageId = typeof row.browser_lineage_id === "string" ? row.browser_lineage_id : "";
+          const fp = createHash("sha256").update(lineageId).digest("hex").slice(0, 16);
+          // Warm process-local capability cache so the following password login
+          // does not stampede a cold 57014 probe under Preview load.
+          void import("./registry")
+            .then((m) => m.probeBrokerCapability())
+            .catch(() => undefined);
+          return { ok: true, lineageFingerprint: fp };
+        }
+        // Semantic reject from RPC — do not retry.
+        return { ok: false, code: typeof row.code === "string" ? row.code : "BIND_REJECTED" };
+      }
+      logBindFailure(error ?? { message: "BIND_FAILED" }, started, attempt);
+      const classified = classifyBindError(error ?? { message: "BIND_FAILED" });
+      if (!classified.retryable || attempt === CONTINUITY_BIND_MAX_ATTEMPTS) {
+        return { ok: false, code: "BIND_FAILED" };
+      }
     } catch (error) {
-      logBindFailure(error, started);
-      throw error;
+      logBindFailure(error, started, attempt);
+      const classified = classifyBindError(error);
+      if (!classified.retryable || attempt === CONTINUITY_BIND_MAX_ATTEMPTS) {
+        // Fail closed as BIND_FAILED so the client can retry enrollment without a 500 throw.
+        return { ok: false, code: "BIND_FAILED" };
+      }
     }
-  })();
-  const { data, error } = result;
-  if (error || !data || typeof data !== "object") {
-    logBindFailure(error, started);
-    return { ok: false, code: "BIND_FAILED" };
+    await sleep(250 * attempt);
   }
-  const row = data as Record<string, unknown>;
-  if (row.ok !== true) {
-    return { ok: false, code: typeof row.code === "string" ? row.code : "BIND_REJECTED" };
-  }
-  const lineageId = typeof row.browser_lineage_id === "string" ? row.browser_lineage_id : "";
-  const fp = createHash("sha256").update(lineageId).digest("hex").slice(0, 16);
-  return { ok: true, lineageFingerprint: fp };
+  return { ok: false, code: "BIND_FAILED" };
 }
 
 export async function closeBrowserContinuity(input: {

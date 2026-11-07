@@ -71,6 +71,29 @@ export function expireEnumeratedHandles(
   }
 }
 
+/**
+ * Drop every opaque handle cookie except an optional winner.
+ * Used on password login so a fresh admit is not blocked by a stale jar
+ * (Preview UNAVAILABLE loop that clears only after a full browser cache wipe).
+ * Name-matched cookies are expired even when the value is truncated/corrupt.
+ */
+export function rotateHandleCookies(
+  writer: CookieWriter,
+  reader: CookieReader,
+  preserve: Set<string> = new Set(),
+): string[] {
+  const names = [
+    ...new Set(
+      reader
+        .getAll()
+        .filter((cookie) => isBrokerHandleCookieName(cookie.name))
+        .map((cookie) => cookie.name),
+    ),
+  ];
+  expireEnumeratedHandles(writer, names, preserve);
+  return names.filter((name) => !preserve.has(name));
+}
+
 export function intentCookieName(stateNonce: string): string {
   const fp = sha256Buffer(stateNonce).subarray(0, 8).toString("hex");
   return `${BROKER_INTENT_COOKIE_PREFIX}${fp}`;

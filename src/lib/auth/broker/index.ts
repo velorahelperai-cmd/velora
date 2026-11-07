@@ -30,7 +30,11 @@ export {
   resolveAuthoritativeForMutation,
   createBrokerUserClient,
   refreshBrokerTokens,
+  settleNearExpirySession,
   createUserClientFromTokens,
+  REFRESH_SKEW_MS,
+  REFRESH_LEASE_WAIT_MS,
+  REFRESH_SOFT_REUSE_MIN_MS,
 } from "./resolve";
 export { admitNativeSession } from "./admit";
 export { prepareBrokerAdmissionLineage } from "./lineage-auth";
@@ -60,6 +64,7 @@ export {
   selectCandidateHandles,
   listHandleCookies,
   isBrokerHandleCookieName,
+  rotateHandleCookies,
 } from "./cookies";
 export {
   stampAuthReturnGeneration,

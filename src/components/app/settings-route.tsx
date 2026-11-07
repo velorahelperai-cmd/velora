@@ -5,6 +5,7 @@ import { readSubscriptionOffersView } from "@/lib/billing/catalog-backend/offer-
 import { readCompanyEntitlement } from "@/lib/billing/entitlement";
 import { subscriptionViewFromEntitlement } from "@/components/app/subscription-model";
 import { SettingsPage } from "@/components/app/settings";
+import { RouteLoading } from "@/components/app/route-loading";
 import { getWhatsappCompanyLink } from "@/lib/whatsapp/connection-actions";
 import { singleTenantReceptionStatus, whatsappLiveOpsReady } from "@/lib/whatsapp/config";
 import {readSubscriptionActivationAction} from '@/lib/billing/activation-actions';
@@ -13,7 +14,7 @@ import {readCycleCreditsAction} from '@/lib/billing/cycle-credit-actions';
 
 
 export function SettingsRoute({subscriptionOnly = false}: {subscriptionOnly?: boolean}) {
-  return <Suspense fallback={<main className="min-h-svh bg-[#07110d]" aria-busy="true" />}><SettingsContent subscriptionOnly={subscriptionOnly}/></Suspense>;
+  return <Suspense fallback={<RouteLoading />}><SettingsContent subscriptionOnly={subscriptionOnly}/></Suspense>;
 }
 
 async function SettingsContent({subscriptionOnly}: {subscriptionOnly:boolean}) {

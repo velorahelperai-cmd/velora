@@ -53,11 +53,81 @@ export function matchesUnifiedInboxFilter(item: WhatsappInboxItem, filter: Unifi
   return true;
 }
 export function canUseInboxControl(meta: WhatsappInboxMeta | undefined, action: ControlAction) {
-  if (action === "take_over") return meta?.canTakeOver === true;
+  if (action === "take_over") {
+    if (meta?.canTakeOver === true) return true;
+    // Owners with confirmed reply already hold take_over implicitly — do not strand them
+    // behind an omitted/stale canTakeOver flag after soft UNAVAILABLE retention.
+    return meta?.memberRole === "owner" && meta?.canReply === true;
+  }
   if (action === "resume") return meta?.canResume === true;
   if (action === "close") return meta?.canClose === true;
   return meta?.canAssign === true;
 }
+
+/** Honest disable copy for inbox control actions — never a generic “current state” when the cause is known. */
+export function inboxControlDisabledReason(
+  action: ControlAction,
+  input: {
+    writesPaused: boolean;
+    selectedReady: boolean;
+    meta: WhatsappInboxMeta | undefined;
+    controlBusy: boolean;
+    pending: boolean;
+    selectedUnresolved: boolean;
+    sendLocked?: boolean;
+  },
+  ar: boolean,
+): string | undefined {
+  if (input.writesPaused) {
+    return ar
+      ? "الاتصال متوقف مؤقتًا. سيُتاح التحكم بعد التحقق مجددًا."
+      : "Connection interrupted. Controls resume after access is verified again.";
+  }
+  if (!input.selectedReady) {
+    return ar ? "جارٍ تحميل المحادثة…" : "Loading conversation…";
+  }
+  if (input.selectedUnresolved) {
+    return ar
+      ? "نتيجة تحكم سابقة غير مؤكدة. حدّث الحالة قبل أي إجراء جديد."
+      : "An earlier control result is unconfirmed. Refresh the state before trying again.";
+  }
+  if (input.controlBusy || input.pending) {
+    return ar ? "يتم تنفيذ إجراء آخر…" : "Another action is in progress…";
+  }
+  if (action === "resume" && input.sendLocked) {
+    return ar
+      ? "لا يمكن الاستئناف بينما نتيجة إرسال غير مؤكدة."
+      : "Resume is unavailable while a send result is unconfirmed.";
+  }
+  if (!canUseInboxControl(input.meta, action)) {
+    const owner = input.meta?.memberRole === "owner";
+    if (action === "take_over") {
+      if (owner) {
+        return ar
+          ? "الاستلام متوقف لهذا النشاط حاليًا. راجع الاشتراك والربط في الإعدادات."
+          : "Take-over is paused for this business right now. Check subscription and connection in Settings.";
+      }
+      return ar
+        ? "ليست لديك صلاحية استلام المحادثة (wa.conversations.take_over)."
+        : "You do not have permission to take over conversations (wa.conversations.take_over).";
+    }
+    if (action === "resume") {
+      return ar
+        ? "ليست لديك صلاحية إعادة المحادثة إلى فيلورا (wa.conversations.resume)."
+        : "You do not have permission to resume Velora (wa.conversations.resume).";
+    }
+    if (action === "close") {
+      return ar
+        ? "ليست لديك صلاحية إغلاق المحادثة (wa.conversations.close)."
+        : "You do not have permission to close conversations (wa.conversations.close).";
+    }
+    return ar
+      ? "ليست لديك صلاحية تعيين المحادثة (wa.conversations.assign)."
+      : "You do not have permission to assign conversations (wa.conversations.assign).";
+  }
+  return undefined;
+}
+
 export function inboxSendLocked(item: WhatsappInboxItem | undefined, localLock: boolean) {
   return localLock || item?.intervention.reasons.includes("send_unknown") === true;
 }

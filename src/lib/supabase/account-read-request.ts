@@ -1,7 +1,8 @@
 import 'server-only';
 import {AsyncLocalStorage} from 'node:async_hooks';
 
-export const ACCOUNT_READ_TIMEOUT_MS=30_000;
+// Individual account GET/RPC lifetime. Must fit inside SESSION_READ_BUDGET_MS for one hop.
+export const ACCOUNT_READ_TIMEOUT_MS=60_000;
 const activeRead=new AsyncLocalStorage<AbortSignal>();
 const readRpcs=new Set([
  'vel_broker_capability_probe',

@@ -27,7 +27,12 @@ export function ChannelAIDraft({companyId,channel,conversationId,ar,disabled=fal
   return()=>{fence.current++;};
  },[companyId,channel,conversationId,refresh]);
  const notice=(code:string)=>messages[code]?.[ar?1:0]??(ar?'تعذّر تجهيز المسودة. راجع لوحة تجارب المالك لمعرفة النتيجة قبل طلب تجربة جديدة.':'Draft preparation failed. Check the owner trial console before requesting another trial.');
- if(state&&!state.ok&&['DRAFTS_DISABLED','OWNER_REQUIRED','FORBIDDEN'].includes(state.code))return null;
+ if(state&&!state.ok&&['DRAFTS_DISABLED','OWNER_REQUIRED','FORBIDDEN'].includes(state.code)){
+  return <section aria-label={ar?'مسودة رد AI':'AI reply draft'} className="mb-3 grid gap-2 rounded-xl border border-[color:var(--color-border-soft)] p-3 text-sm">
+   <h3 className="font-bold">{ar?'تجهيز رد AI للمراجعة':'Prepare an AI reply for review'}</h3>
+   <Notice>{notice(state.code)}</Notice>
+  </section>;
+ }
  function generate(){
   if(!state?.ok||!confirmed||busy||disabled||state.requested)return;
   const current=epoch.current,executionId=operation.current?.messageId===state.messageId?operation.current.id:crypto.randomUUID();operation.current={messageId:state.messageId,id:executionId};

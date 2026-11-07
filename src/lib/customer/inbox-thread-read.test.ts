@@ -13,8 +13,11 @@ it('fails closed on network errors, denied responses and malformed bodies',async
  for(const code of ['FORBIDDEN','UNAVAILABLE'])expect(await fetchInboxThread({companyId:'c',conversationId:'t'})).toEqual({ok:false,code});
 });
 
-it('keeps HTTP failures and malformed/forged server bodies separate from transport errors',async()=>{
- for(const response of [new Response('',{status:503}),Response.json({ok:false,code:'UNAVAILABLE',transportUnavailable:true})]){
-  vi.stubGlobal('fetch',vi.fn().mockResolvedValue(response));expect(await fetchInboxThread({companyId:'c',conversationId:'t'})).toEqual({ok:false,code:'UNAVAILABLE'});
+it('classifies platform timeouts as transport loss while forged body flags stay unclassified',async()=>{
+ for(const status of [503,504,408]){
+  vi.stubGlobal('fetch',vi.fn().mockResolvedValue(new Response('',{status})));
+  expect(await fetchInboxThread({companyId:'c',conversationId:'t'})).toEqual({ok:false,code:'UNAVAILABLE',transportUnavailable:true});
  }
+ vi.stubGlobal('fetch',vi.fn().mockResolvedValue(Response.json({ok:false,code:'UNAVAILABLE',transportUnavailable:true})));
+ expect(await fetchInboxThread({companyId:'c',conversationId:'t'})).toEqual({ok:false,code:'UNAVAILABLE'});
 });

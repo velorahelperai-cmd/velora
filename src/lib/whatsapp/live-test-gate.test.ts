@@ -19,13 +19,29 @@ describe("live-test-gate allowlist enforcement", () => {
 
   it("allows exact live test parameters when gate is enforced", () => {
     vi.stubEnv("WHATSAPP_LIVE_TEST_SCOPE_ENFORCED", "true");
-    const result = validateLiveTestScope({
+    const result1 = validateLiveTestScope({
       companyId: LIVE_TEST_ALLOWED_SCOPE.companyId,
       branchId: LIVE_TEST_ALLOWED_SCOPE.branchId,
       recipientWaId: "+96893180420",
       createdAt: "2026-11-05T21:15:00Z",
     });
-    expect(result.ok).toBe(true);
+    expect(result1.ok).toBe(true);
+
+    const result2 = validateLiveTestScope({
+      companyId: LIVE_TEST_ALLOWED_SCOPE.companyId,
+      branchId: LIVE_TEST_ALLOWED_SCOPE.branchId,
+      recipientWaId: "+96879989464",
+      createdAt: "2026-11-05T21:15:00Z",
+    });
+    expect(result2.ok).toBe(true);
+
+    const resultAny = validateLiveTestScope({
+      companyId: LIVE_TEST_ALLOWED_SCOPE.companyId,
+      branchId: LIVE_TEST_ALLOWED_SCOPE.branchId,
+      recipientWaId: "+966501234567",
+      createdAt: "2026-11-05T21:15:00Z",
+    });
+    expect(resultAny.ok).toBe(true);
   });
 
   it("rejects unauthorized company", () => {
@@ -39,8 +55,9 @@ describe("live-test-gate allowlist enforcement", () => {
     expect(result.reason).toBe("COMPANY_NOT_IN_LIVE_TEST_SCOPE");
   });
 
-  it("rejects unauthorized recipient", () => {
+  it("rejects unauthorized recipient when specific test recipient is configured in env", () => {
     vi.stubEnv("WHATSAPP_LIVE_TEST_SCOPE_ENFORCED", "true");
+    vi.stubEnv("WHATSAPP_TEST_RECIPIENT", "96893180420");
     const result = validateLiveTestScope({
       companyId: LIVE_TEST_ALLOWED_SCOPE.companyId,
       recipientWaId: "+96891234567",

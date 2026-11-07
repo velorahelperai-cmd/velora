@@ -1,5 +1,6 @@
 import {sessionHasCompanyCapability} from "@/lib/access/actions";
 import {AccessGate} from "@/components/app/access-gate";
+import {RouteLoading} from "@/components/app/route-loading";
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
@@ -47,7 +48,7 @@ async function KnowledgeLoader() {
 
 export default function Page() {
   return (
-    <Suspense fallback={<main className="min-h-svh bg-[#07110d]" aria-busy="true" />}>
+    <Suspense fallback={<RouteLoading />}>
       <KnowledgeLoader />
     </Suspense>
   );

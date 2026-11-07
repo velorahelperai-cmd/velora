@@ -1,4 +1,5 @@
 import { loadWhatsappInboxInitialPage } from "@/lib/whatsapp/inbox";
+import { RouteLoading } from "@/components/app/route-loading";
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import { DashboardPage } from "@/components/app/dashboard";
@@ -19,5 +20,5 @@ async function DashboardContent() {
 }
 
 export default function Page() {
-  return <Suspense fallback={<main className="min-h-svh app-shell" aria-busy="true"><p role="status">جارٍ تحميل لوحة العمل… / Loading dashboard…</p></main>}><DashboardContent/></Suspense>;
+  return <Suspense fallback={<RouteLoading />}><DashboardContent/></Suspense>;
 }
