@@ -35,7 +35,7 @@ import {
   refreshWhatsappInboxInitialPage, refreshWhatsappInboxPage, refreshWhatsappThreadPage,
   refreshWhatsappControlAuditPage, refreshWhatsappConnectionStatus, markWhatsappThreadSeen,
 } from "@/lib/whatsapp/inbox-actions";
-import type { WhatsappInboxItem, WhatsappInboxPage, WhatsappControlAuditPage, WhatsappConnectionStatus } from "@/lib/whatsapp/inbox-contracts";
+import type { WhatsappInboxItem, WhatsappInboxPage, WhatsappControlAuditPage, WhatsappConnectionStatus, WhatsappThreadMessage } from "@/lib/whatsapp/inbox-contracts";
 import { manualReplyBlock, staffHandlesConversation } from "@/lib/whatsapp/inbox-ownership";
 import { continuityOwnershipNotice, continuitySlaNotice } from "@/lib/whatsapp/response-continuity";
 import { canUseInboxControl, currentThreadRequest, inboxControlDisabledReason, mergeInboxPageRows, mergeThreadPage, inboxSendLocked, updateInboxPageCache,
@@ -81,7 +81,7 @@ const WORKLISTS: LeadWorklist[] = [
   "trial_or_quote",
 ];
 
-function applyControlState(base: Conversation, state: ControlState): Conversation {
+function applyControlState<T extends Conversation>(base: T, state: ControlState): T {
   return {
     ...base,
     status: state.status,
@@ -93,7 +93,7 @@ function applyControlState(base: Conversation, state: ControlState): Conversatio
   };
 }
 
-function applyLeadState(base: Conversation, state: LeadState): Conversation {
+function applyLeadState<T extends Conversation>(base: T, state: LeadState): T {
   return {
     ...base,
     leadStage: state.leadStage as LeadStage,
@@ -1295,6 +1295,21 @@ export function ConversationsPage({
       at: Date.now(),
       deliveryState: "accepted",
     };
+    const patchThreadMessages = (updateFn: (messages: WhatsappThreadMessage[]) => WhatsappThreadMessage[]) => {
+      const thread = threadsRef.current[c.id];
+      if (thread) {
+        const nextThread: ThreadView = {
+          ...thread,
+          messages: updateFn(thread.messages),
+          latestPage: {
+            ...thread.latestPage,
+            messages: updateFn(thread.latestPage.messages),
+          },
+        };
+        threadsRef.current[c.id] = nextThread;
+        setThreads((prev) => ({ ...prev, [c.id]: nextThread }));
+      }
+    };
     patch(c.id, (cur) => ({
       messages: cur.messages.some((m) => m.id === tempMessageId)
         ? cur.messages
@@ -1303,6 +1318,12 @@ export function ConversationsPage({
       status: "handed_over",
       assistantPaused: true,
     }));
+    const optimisticThreadMessage: WhatsappThreadMessage = {
+      ...optimisticMessage,
+      arrivalSequence: String(Date.now()),
+      direction: "outbound",
+    };
+    patchThreadMessages((msgs) => (msgs.some((m) => m.id === tempMessageId) ? msgs : [...msgs, optimisticThreadMessage]));
     setDraft("");
     setDrafts((old) => (old[draftKey] === body ? { ...old, [draftKey]: "" } : old));
 
@@ -1318,6 +1339,9 @@ export function ConversationsPage({
               m.id === tempMessageId ? { ...m, deliveryState: "failed" } : m
             ),
           }));
+          patchThreadMessages((msgs) =>
+            msgs.map((m) => (m.id === tempMessageId ? { ...m, deliveryState: "failed" } : m))
+          );
           setDraft(body);
           setDrafts((old) => (!old[draftKey] ? { ...old, [draftKey]: body } : old));
           if (isSelected(c.id)) setError(copy.app.sendUnknownOutcome);
@@ -1327,6 +1351,7 @@ export function ConversationsPage({
             patch(c.id, (cur) => ({
               messages: cur.messages.filter((m) => m.id !== tempMessageId),
             }));
+            patchThreadMessages((msgs) => msgs.filter((m) => m.id !== tempMessageId));
             setDraft(body);
             setDrafts((old) => (!old[draftKey] ? { ...old, [draftKey]: body } : old));
             if (
@@ -1402,6 +1427,16 @@ export function ConversationsPage({
             status: "handed_over",
             assistantPaused: true,
           }));
+          const newThreadMessage: WhatsappThreadMessage = {
+            ...newMessage,
+            arrivalSequence: String(result.message.at ?? Date.now()),
+            direction: "outbound",
+          };
+          patchThreadMessages((msgs) =>
+            msgs.some((m) => m.id === tempMessageId)
+              ? msgs.map((m) => (m.id === tempMessageId ? newThreadMessage : m))
+              : [...msgs, newThreadMessage]
+          );
           setDrafts(old=>old[draftKey]===body?{...old,[draftKey]:''}:old);
           if (isSelected(c.id)) setNotice(copy.app.sentNote);
           await syncControlView(c.id);
@@ -1411,8 +1446,11 @@ export function ConversationsPage({
   }
 
   async function syncControlView(conversationId: string): Promise<boolean> {
-    const loaded = await loadThread(conversationId, null, false);
-    if (loaded && selectedIdRef.current === conversationId) await loadAudit(conversationId);
+    const isSelected = selectedIdRef.current === conversationId;
+    const [loaded] = await Promise.all([
+      loadThread(conversationId, null, false),
+      isSelected ? loadAudit(conversationId) : Promise.resolve(null),
+    ]);
     return loaded;
   }
 
@@ -1517,12 +1555,26 @@ export function ConversationsPage({
           }
           return next;
         });
+        const currentThread = threadsRef.current[c.id];
+        if (currentThread) {
+          const updatedConv = applyControlState(currentThread.conversation, result.state);
+          const nextThread: ThreadView = {
+            ...currentThread,
+            conversation: updatedConv,
+            latestPage: { ...currentThread.latestPage, conversation: updatedConv },
+          };
+          threadsRef.current[c.id] = nextThread;
+          setThreads((prev) => ({ ...prev, [c.id]: nextThread }));
+        }
         if (isSelected(c.id)) {
           if (action === "assign") setNotice(copy.app.leadAssignSaved);
           else if (action === "take_over") setNotice(locale === "ar" ? "تم استلام المحادثة وإيقاف فيلورا مؤقتاً." : "Taken over. Velora auto-reply paused.");
           else if (action === "resume") setNotice(locale === "ar" ? "تم السماح بالأتمتة لهذه المحادثة. يخضع الإرسال لجاهزية التشغيل." : "Automation enabled for this conversation. Sending remains subject to runtime readiness.");
           else setNotice(copy.app.controlClosed);
         }
+        setControlBusy(false);
+        setControlBusyId(null);
+        controlBusyIdRef.current = null;
 
         const synced = await helpers.syncView();
         if (!helpers.stillCurrent()) return;

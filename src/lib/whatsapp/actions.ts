@@ -824,10 +824,11 @@ export async function controlWhatsappConversation(input: {
 
   const companyId = access.context.company.id;
   const needed = controlActionCapability(input.action);
-  const canRead = await sessionHasCompanyCapability(companyId, "wa.conversations.read");
-  if (canRead !== true) return { ok: false, code: "FORBIDDEN" };
-  const canAct = await sessionHasCompanyCapability(companyId, needed);
-  if (canAct !== true) return { ok: false, code: "FORBIDDEN" };
+  const [canRead, canAct] = await Promise.all([
+    sessionHasCompanyCapability(companyId, "wa.conversations.read"),
+    sessionHasCompanyCapability(companyId, needed),
+  ]);
+  if (canRead !== true || canAct !== true) return { ok: false, code: "FORBIDDEN" };
 
   if (!input.conversationId || !Number.isFinite(input.expectedRevision)) {
     return { ok: false, code: "INVALID_INPUT" };

@@ -142,8 +142,9 @@ function InboxRealtime({url,ar,onInboxEvent,separateTransport=false}:{url:string
       current.addEventListener('renew', () => {
         if(!isCurrent())return;
         // Server just reverified authority. Rotate without a false failure.
+        current.onerror = null;
         current.close();events=undefined;
-        retry=setTimeout(()=>{retry=undefined;connect();},250+Math.random()*250);
+        retry=setTimeout(()=>{retry=undefined;connect();},50);
       });
       current.onerror = retryConnection;
     };
