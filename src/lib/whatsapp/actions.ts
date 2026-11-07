@@ -431,8 +431,8 @@ export async function replyWhatsappConversation(input: {
   }
 
   // Claim is service_role only — membership already verified above.
-  const reviewAccess=(!generalSendAllowed&&reviewMode)?await readChannelReviewAccess(companyId,'whatsapp'):null;
-  reviewGrant=(!generalSendAllowed&&reviewMode)?(reviewAccess?.ok?reviewAccess.grant:null):reviewGrant;
+  const reviewAccess=reviewMode?await readChannelReviewAccess(companyId,'whatsapp'):null;
+  reviewGrant=reviewMode?(reviewAccess?.ok?reviewAccess.grant:null):reviewGrant;
   // Another request may have claimed this same operation since the native read.
   // Retain its key until storage is refreshed; no local snapshot proves no attempt.
   if(!generalSendAllowed&&reviewMode&&!reviewGrant)return {ok:false,code:'SAVE_FAILED',message:'review_access_unavailable',clientOpId};
