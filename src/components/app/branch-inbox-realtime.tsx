@@ -163,12 +163,14 @@ function InboxRealtime({url,ar,onInboxEvent,separateTransport=false}:{url:string
 
     if(document.visibilityState==='visible')connect();
     document.addEventListener('visibilitychange', visible);
+    window.addEventListener('online', visible);
     return () => {
       active = false;
       clearTimeout(timer);
       clearTimeout(retry);
       events?.close();
       document.removeEventListener('visibilitychange', visible);
+      window.removeEventListener('online', visible);
     };
   }, [url, router, separateTransport]);
 

@@ -330,5 +330,79 @@ describe("Stage F — Module 12: Financial Analytics Contracts & Actions", () =>
         expect(res.code).toBe("UNAVAILABLE");
       }
     });
+
+    it("returns consistent exact total for stable 252 orders across multiple pages", async () => {
+      // 252 orders: ord-0001 to ord-0252 (252 * 9000 = 2,268,000 baisa)
+      state.ordersMock = Array.from({ length: 252 }, (_, i) => ({
+        id: `ord-${String(i + 1).padStart(4, "0")}`,
+        company_id: `comp-${i + 1}`,
+        plan_version_id: "pv-1",
+        amount_baisa: 9000,
+        environment: "live",
+        status: "paid",
+        collected_at: "2026-10-01T10:00:00Z",
+      }));
+
+      const res = await adminGetFinancialAnalytics();
+      expect(res.ok).toBe(true);
+      if (res.ok) {
+        expect(res.data.kpis.grossRealizedBaisa).toBe(2268000);
+        expect(res.data.kpis.grossRealizedOmr).toBe("2268.000 OMR");
+      }
+    });
+
+    it("R4 acceptance: fails closed with UNAVAILABLE when two orders are inserted concurrently across cursor boundary (252 -> 254 orders)", async () => {
+      // 252 initial orders: ord-0001 to ord-0252
+      state.ordersMock = Array.from({ length: 252 }, (_, i) => ({
+        id: `ord-${String(i + 1).padStart(4, "0")}`,
+        company_id: `comp-${i + 1}`,
+        plan_version_id: "pv-1",
+        amount_baisa: 9000,
+        environment: "live",
+        status: "paid",
+        collected_at: "2026-10-01T10:00:00Z",
+      }));
+
+      // Call 1 = boundary query (captures capturedMaxId = "ord-0252")
+      // Call 2 = page 1 data query (reads ord-0001 to ord-0250)
+      // Call 3 = page 1 consistency check
+      // Between call 2 and call 4 (between the two data pages), insert 2 new orders:
+      // - One before cursor: id = "ord-0100-concurrent" (< ord-0250)
+      // - One after cursor and under capturedMaxId: id = "ord-0251-concurrent" (> ord-0250 && <= ord-0252)
+      let injected = false;
+      state.onQueryPage = (tableCallCount, table) => {
+        if (table === "billing_orders" && tableCallCount === 3 && !injected) {
+          injected = true;
+          state.ordersMock.push(
+            {
+              id: "ord-0100-concurrent",
+              company_id: "comp-conc-1",
+              plan_version_id: "pv-1",
+              amount_baisa: 9000,
+              environment: "live",
+              status: "paid",
+              collected_at: "2026-10-01T10:00:00Z",
+            },
+            {
+              id: "ord-0251-concurrent",
+              company_id: "comp-conc-2",
+              plan_version_id: "pv-1",
+              amount_baisa: 9000,
+              environment: "live",
+              status: "paid",
+              collected_at: "2026-10-01T10:00:00Z",
+            }
+          );
+        }
+      };
+
+      const res = await adminGetFinancialAnalytics();
+      // Must NOT return { ok: true } with partial/mixed 253 orders (2,277,000 baisa).
+      // It MUST fail closed with UNAVAILABLE because consistency cannot be proven across pages.
+      expect(res.ok).toBe(false);
+      if (!res.ok) {
+        expect(res.code).toBe("UNAVAILABLE");
+      }
+    });
   });
 });

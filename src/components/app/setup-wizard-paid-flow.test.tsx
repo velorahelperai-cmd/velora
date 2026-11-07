@@ -1,8 +1,7 @@
 import {createElement} from "react";
 import {renderToStaticMarkup} from "react-dom/server";
 import {expect,it,vi} from "vitest";
-import {SetupWizard} from "./setup-wizard";
-import type {CompanyRecord} from "@/lib/tenancy/types";
+import {PaidSetupWizard} from "./setup-wizard";
 import type {PaidBranchSetupRead,PaidSetupStepId} from "@/lib/tenancy/paid-setup-contracts";
 import {PaidAssistantChecklist,paidChecklistFromRead} from "./paid-assistant-checklist";
 
@@ -46,14 +45,14 @@ it("renders nullable unavailable readback as unavailable",()=>{
  expect(html).toContain("Setup could not be loaded");expect(html).not.toContain("data-step-id");
 });
 it("mounts the read-only paid flow from the real confirmed-company wizard",()=>{
- const html=renderToStaticMarkup(createElement(SetupWizard,{userId:"account",initialCompany:{id:"company"} as CompanyRecord}));
+ const html=renderToStaticMarkup(createElement(PaidSetupWizard,{userId:"account",companyId:"company"}));
  expect(html).toContain("Set up your assistant");
  expect(html).toContain("My account");
  expect(html).not.toContain('role="status"');
  expect(html).not.toContain("Working Hours");
 });
 it("does not mount company content for another session account",()=>{
- const html=renderToStaticMarkup(createElement(SetupWizard,{userId:"other-account",initialCompany:{id:"company"} as CompanyRecord}));
+ const html=renderToStaticMarkup(createElement(PaidSetupWizard,{userId:"other-account",companyId:"company"}));
  expect(html).toContain("Setup could not be loaded");
  expect(html).not.toContain("data-setup-frame");
 });

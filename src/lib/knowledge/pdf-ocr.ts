@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { copyFile, mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -23,6 +24,39 @@ const MAX_PIXELS = 4_000_000;
 const MAX_SECONDS = 120_000;
 let active = false;
 
+function locateTrainedDataFile(code: "ara" | "eng"): string {
+  const fileName = `${code}.traineddata.gz`;
+  const candidates: string[] = [];
+
+  // 1. Resolve relative to process.cwd() (works in dev, test, and standalone runtime)
+  candidates.push(path.resolve(process.cwd(), "node_modules", "@tesseract.js-data", code, "4.0.0_best_int", fileName));
+
+  // 2. Resolve via indirect runtime require without bundler static analysis
+  try {
+    const nodeReq = (0, eval)("require");
+    if (typeof nodeReq?.resolve === "function") {
+      const resolved = nodeReq.resolve(`@tesseract.js-data/${code}/package.json`);
+      if (typeof resolved === "string") {
+        candidates.push(path.join(path.dirname(resolved), "4.0.0_best_int", fileName));
+      }
+    }
+  } catch {}
+
+  // 3. Fallback: resolve relative to __dirname in bundled production chunks
+  try {
+    if (typeof __dirname === "string") {
+      candidates.push(path.resolve(__dirname, "../../node_modules/@tesseract.js-data", code, "4.0.0_best_int", fileName));
+      candidates.push(path.resolve(__dirname, "../../../../node_modules/@tesseract.js-data", code, "4.0.0_best_int", fileName));
+    }
+  } catch {}
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate;
+  }
+
+  throw new Error(`traineddata_not_found:${code}`);
+}
+
 export async function readScannedPdf(bytes: Uint8Array, nativePages: string[], context:PdfDiagnosticContext={}): Promise<string | null> {
   if (active) {reportPdfPreparationFailure("busy","worker_busy",context);return null;}
   if (nativePages.length < 1 || nativePages.length > MAX_PAGES) {reportPdfPreparationFailure("bounds","page_limit",context);return null;}
@@ -38,11 +72,11 @@ export async function readScannedPdf(bytes: Uint8Array, nativePages: string[], c
   try {
     langDir = await mkdtemp(path.join(os.tmpdir(), "velora-ocr-"));
     const languages = [
-      { code: "ara", root: path.dirname(require.resolve("@tesseract.js-data/ara")) },
-      { code: "eng", root: path.dirname(require.resolve("@tesseract.js-data/eng")) },
+      { code: "ara" as const, src: locateTrainedDataFile("ara") },
+      { code: "eng" as const, src: locateTrainedDataFile("eng") },
     ];
-    await Promise.all(languages.map(({code, root}) =>
-      copyFile(path.join(root, "4.0.0_best_int", `${code}.traineddata.gz`), path.join(langDir!, `${code}.traineddata.gz`))));
+    await Promise.all(languages.map(({code, src}) =>
+      copyFile(src, path.join(langDir!, `${code}.traineddata.gz`))));
     stage="native_extraction";reason="pdf_open_failed";
     const pdf = await getDocumentProxy(bytes.slice());
     if (pdf.numPages !== nativePages.length) {reportPdfPreparationFailure("native_extraction","page_count_mismatch",context);return null;}

@@ -29,10 +29,11 @@ export async function adminGetFinancialAnalytics(): Promise<AnalyticsResult> {
       const capturedMaxId = String((firstRow as { id?: unknown }).id ?? "");
       if (!capturedMaxId) throw Error("ANALYTICS_READ_UNAVAILABLE");
 
-      // Step 2: Keyset pagination bounded by capturedMaxId
+      // Step 2: Keyset pagination bounded by capturedMaxId with inter-page consistency verification
       const rows: FinancialRecord[] = [];
       const seenIds = new Set<string>();
       let cursor: string | null = null;
+      let pageIndex = 0;
       while (rows.length <= 10000) {
         let query = db.from(table).select("*");
         if (cursor !== null) {
@@ -57,9 +58,25 @@ export async function adminGetFinancialAnalytics(): Promise<AnalyticsResult> {
           rows.push(row as FinancialRecord);
         }
         if (rows.length > 10000) throw Error("ANALYTICS_READ_LIMIT");
+        pageIndex++;
         if (cursor === capturedMaxId) break;
         if (data.length < 250) {
           throw Error("ANALYTICS_SNAPSHOT_INCOMPLETE");
+        }
+        // Inter-page consistency check: ensure no rows with id <= cursor were inserted concurrently
+        if (cursor === null) throw Error("ANALYTICS_KEYSET_REGRESSION");
+        const currentCursor: string = cursor;
+        const pageCheck: { data: unknown; error: unknown } = await db.from(table).select("id").lte("id", currentCursor).order("id", { ascending: true }).range(rows.length - 1, rows.length);
+        if (pageCheck.error || !Array.isArray(pageCheck.data) || pageCheck.data.length !== 1 || String((pageCheck.data[0] as { id?: unknown })?.id) !== cursor) {
+          throw Error("ANALYTICS_SNAPSHOT_MUTATED");
+        }
+      }
+
+      // Final snapshot consistency verification if multiple pages were read
+      if (pageIndex > 1) {
+        const finalCheck: { data: unknown; error: unknown } = await db.from(table).select("id").lte("id", capturedMaxId).order("id", { ascending: true }).range(rows.length - 1, rows.length);
+        if (finalCheck.error || !Array.isArray(finalCheck.data) || finalCheck.data.length !== 1 || String((finalCheck.data[0] as { id?: unknown })?.id) !== capturedMaxId) {
+          throw Error("ANALYTICS_SNAPSHOT_MUTATED");
         }
       }
       return rows;

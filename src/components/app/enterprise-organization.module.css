@@ -1,0 +1,32 @@
+.organization {display:grid;width:100%;max-width:1120px;margin-inline:auto;gap:16px;padding:24px;min-width:0;--service-accent:#007d78;--service-accent-hover:#006863;--service-accent-soft:#e8f7f3;--service-line:#e5ebea;--service-subtle:#f3f6f5;}
+.organization > header {align-items:center;padding-block:0 16px;border-bottom:1px solid var(--service-line);}
+.organization > header h1 {font-size:22px;margin-top:6px;line-height:1.5;}
+.organization > section:not([aria-label]) {padding:20px;border-radius:10px;background:#fff;border-color:var(--service-line);box-shadow:none;}
+.organization > section h2 {font-size:16px;font-weight:600;}
+.organization > section[aria-label] {gap:12px;}
+.organization > section[aria-label] > section {border-radius:10px;box-shadow:none;padding:16px;background:#fff;}
+.organization > section[aria-label] > section > div {margin-bottom:6px;}
+.organization :is(input,select,textarea) {border-radius:7px;background:#fff;min-width:0;color:var(--service-ink);font-size:16px;}
+.organization :is(input[type="checkbox"],input[type="radio"]) {accent-color:var(--service-accent);width:16px;height:16px;flex-shrink:0;}
+.organization :global([data-button]) {font-size:13px;border-radius:7px;min-height:40px;}
+.organization form {gap:14px;}
+.organization article {padding-block:12px;align-items:center;}
+.organization article > div:first-child > p:first-child {font-size:14px;font-weight:600;}
+.organization article:last-child {border-bottom:0;}
+.organization article > div:last-child {gap:6px;}
+.branchCreator {align-self:start;}
+@media(min-width:1100px) {
+ .organization {grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start;}
+ .organization > header,.organization > section[aria-label],.organization > :global([data-notice]),.organization > section:last-child {grid-column:1/-1;}
+ .organization form {grid-template-columns:1fr;}
+ .organization form > * {grid-column:auto;}
+}
+@media(max-width:767px) {
+ .organization {padding:16px;gap:12px;}
+ .organization > header {align-items:flex-start;gap:12px;}
+ .organization > header h1 {font-size:20px;}
+ .organization > section:not([aria-label]) {padding:16px;}
+ .organization article {align-items:flex-start;}
+ .organization article > div:last-child {width:100%;}
+ .organization :global([data-button]) {min-height:44px;}
+}

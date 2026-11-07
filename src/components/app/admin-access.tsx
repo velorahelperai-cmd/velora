@@ -221,7 +221,7 @@ export function AdminAccessPage() {
           <p className="mt-1 text-xs sm:text-sm text-[var(--service-muted)]">{copy.admin.accessBody}</p>
         </div>
         <nav className="flex flex-wrap gap-2 text-xs sm:text-sm">
-          <Link href="/admin#accounts" className="inline-flex min-h-10 items-center rounded-xl border border-[var(--service-line)] bg-[var(--service-surface)] px-3 text-xs font-semibold text-[var(--service-accent)] hover:text-[var(--service-ink)] hover:border-[var(--service-accent)] hover:shadow-2xs transition">
+          <Link href="/admin/accounts" className="inline-flex min-h-10 items-center rounded-xl border border-[var(--service-line)] bg-[var(--service-surface)] px-3 text-xs font-semibold text-[var(--service-accent)] hover:text-[var(--service-ink)] hover:border-[var(--service-accent)] hover:shadow-2xs transition">
             {copy.admin.navAccounts}
           </Link>
           <span className="inline-flex min-h-10 items-center rounded-xl bg-[var(--service-subtle)] border border-[var(--service-line)] px-3 text-xs font-bold text-[var(--service-accent)]">

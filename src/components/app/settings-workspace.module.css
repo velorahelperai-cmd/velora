@@ -1,4 +1,11 @@
-.settings {min-width:0;}
+.settings {min-width:0;max-width:1120px;--service-accent:#007d78;--service-accent-hover:#006863;--service-accent-soft:#e8f7f3;--service-line:#e5ebea;}
+.settings > section {padding:18px 20px;border-radius:10px;box-shadow:none;background:#fff;}
+.settings > section > div:first-child h2 {font-size:16px;font-weight:600;}
+.settings > section > button {margin-top:10px;min-height:36px;font-size:13px;}
+.settings > div:empty {margin-top:14px;}
+.settings :global(#settings-panel) {margin-top:16px;min-width:0;}
+.settings :global(#settings-panel) section {border-radius:10px;box-shadow:none;}
+.settings :global(#settings-panel) :is(input,textarea,select) {border-radius:7px;background:#fff;}
 .contextFacts {display:grid;gap:12px;margin:0;font-size:.875rem;overflow-wrap:anywhere;}
 .contextFacts > div {display:flex;align-items:flex-start;gap:12px;min-width:0;padding:8px 0;}
 .contextFacts > div > div {min-width:0;}
@@ -6,8 +13,14 @@
 .factIcon svg {width:19px;height:19px;}
 .contextFacts dt {color:var(--service-muted);font-size:.8125rem;}
 .contextFacts dd {margin:4px 0 0;color:var(--service-ink);font-weight:600;}
-.settings :global([role="tablist"]) {gap:4px;border:1px solid var(--service-line);border-radius:10px;background:var(--service-surface);padding:4px;}
-.settings :global([role="tab"]) {border-radius:8px;color:var(--service-ink);}
-.settings :global([role="tab"][aria-selected="true"]) {background:var(--service-accent-soft);color:var(--service-accent);font-weight:600;}
+.settings :global([role="tablist"]) {gap:20px;border:0;border-bottom:1px solid var(--service-line);border-radius:0;background:var(--service-surface);padding:0;}
+.settings :global([role="tab"]) {min-height:44px;padding:10px 2px;border:0;border-bottom:2px solid transparent;border-radius:0;background:transparent;color:var(--service-muted);font-size:14px;}
+.settings :global([role="tab"][aria-selected="true"]) {background:transparent;border-bottom-color:var(--service-accent);color:var(--service-accent);font-weight:600;}
 .settings :global([role="tab"]:focus-visible) {outline:2px solid var(--service-accent);outline-offset:-3px;}
 @media(min-width:640px) {.contextFacts {grid-template-columns:repeat(3,minmax(0,1fr));}}
+@media(max-width:767px) {
+ .settings > section {padding:16px;}
+ .settings :global([role="tablist"]) {gap:16px;scrollbar-width:thin;}
+ .settings :global([role="tab"]) {white-space:nowrap;flex-shrink:0;}
+ .settings :global(#settings-panel) :is(input,textarea,select) {font-size:16px;}
+}

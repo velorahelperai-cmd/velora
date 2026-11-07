@@ -6,6 +6,8 @@ import {summarizeWorkerOutcomes} from "@/lib/whatsapp/worker-observation";
 import type {IntegrationOutcome} from "@/lib/whatsapp/integration-worker";
 import {runInboundWorkerAnswer} from "@/lib/whatsapp/inbound-worker";
 import {recordWorkerTiming} from "@/lib/whatsapp/worker-timing";
+import {runContinuityAckWatchdog,type ContinuityAckRun} from "@/lib/whatsapp/continuity-ack";
+import {continuityAckGate} from "@/lib/whatsapp/response-continuity";
 export const runtime="nodejs";
 export const maxDuration=300;
 const MAX_JOBS_PER_REQUEST=5;
@@ -20,8 +22,9 @@ export async function POST(request:Request){
  const expectedSignature=tick?createHmac("sha256",expected).update(tick[1]).digest():null;
  const signed=!!signature&&!!expectedSignature&&timingSafeEqual(signature,expectedSignature);
  if(!direct&&!signed)return Response.json({code:"UNAUTHORIZED"},{status:401});
- if(process.env.WHATSAPP_WORKER_ENABLED!=="true")return Response.json({code:"WORKER_DISABLED"},{status:503});
- let stage:"client"|"tick"|"repair"|"claim"|"execute"|"fixed_ack"="client";
+ const ackGateOpen=continuityAckGate().open;
+ if(process.env.WHATSAPP_WORKER_ENABLED!=="true"&&!ackGateOpen)return Response.json({code:"WORKER_DISABLED"},{status:503});
+ let stage:"client"|"tick"|"repair"|"claim"|"execute"|"fixed_ack"|"ack"="client";
  try{
  const client=createAdminClient();if(!client)return Response.json({code:"STORE_NOT_CONFIGURED"},{status:503});
  const rpc=client.rpc as unknown as (name:string,args:Record<string,unknown>)=>PromiseLike<{data:unknown;error:unknown}>;
@@ -31,6 +34,11 @@ export async function POST(request:Request){
   if(redeemed.error)return Response.json({code:"TICK_AUTH_UNAVAILABLE"},{status:503});
   if(redeemed.data!==true)return Response.json({code:"UNAUTHORIZED"},{status:401});
  }
+ if(process.env.WHATSAPP_WORKER_ENABLED!=="true"){
+  stage="ack";
+  const ack=await runContinuityAckWatchdog((name,args)=>rpc.call(client,name,args));
+  return Response.json({code:"WORKER_DISABLED",automaticRetry:false,ack:{scheduled:ack.scheduled,claimed:ack.claimed,dispatched:ack.dispatched,code:ack.code}},{status:503});
+}
  if(process.env.WHATSAPP_FIXED_ACK_ENABLED==="true"){
   stage="fixed_ack";
   const scope=fixedAckConfig();if(!scope)return Response.json({code:"FIXED_ACK_NOT_CONFIGURED"},{status:503});
@@ -43,7 +51,10 @@ export async function POST(request:Request){
  if(repaired.error||repair?.ok!==true||!Number.isSafeInteger(repair.repaired)||!Number.isSafeInteger(repair.pending)
  ||Number(repair.repaired)<0||Number(repair.pending)<0||Number(repair.repaired)+Number(repair.pending)>10)
  return Response.json({code:"REPAIR_UNAVAILABLE"},{status:503});
- if(!workerRolloutEnabled())return Response.json({code:Number(repair.pending)>0?"RECONCILIATION_REQUIRED":"CUSTOMER_ANSWERING_DISABLED",repairOnly:true,repair:{repaired:Number(repair.repaired),pending:Number(repair.pending)},automaticRetry:false},{status:Number(repair.pending)>0?202:200});
+ if(!workerRolloutEnabled()){
+  const ack=ackGateOpen?await runContinuityAckWatchdog((name,args)=>rpc.call(client,name,args)):null;
+  return Response.json({code:Number(repair.pending)>0?"RECONCILIATION_REQUIRED":"CUSTOMER_ANSWERING_DISABLED",repairOnly:true,repair:{repaired:Number(repair.repaired),pending:Number(repair.pending)},automaticRetry:false,...(ack?{ack:{scheduled:ack.scheduled,claimed:ack.claimed,dispatched:ack.dispatched,code:ack.code}}:{})},{status:Number(repair.pending)>0?202:200});
+}
  const outcomes:IntegrationOutcome[]=[];
  const claimDeadline=performance.now()+CLAIM_BUDGET_MS;
  for(let index=0;index<MAX_JOBS_PER_REQUEST;index++){
@@ -78,8 +89,14 @@ export async function POST(request:Request){
  }
  // No capabilities, secrets, customer bodies or provider text are returned.
  const observation=summarizeWorkerOutcomes(outcomes,{repaired:Number(repair.repaired),pending:Number(repair.pending)});
- return Response.json(observation.body,{status:observation.httpStatus});
- }catch{
+ let ack:ContinuityAckRun|null=null;
+ if(ackGateOpen){
+  stage="ack";
+  try{ack=await runContinuityAckWatchdog((name,args)=>rpc.call(client,name,args));}
+  catch{ack={scheduled:0,claimed:0,dispatched:0,code:"WATCHDOG_UNAVAILABLE"};}
+ }
+ return Response.json({...observation.body,...(ack?{ack:{scheduled:ack.scheduled,claimed:ack.claimed,dispatched:ack.dispatched,code:ack.code}}:{})},{status:observation.httpStatus});
+}catch{
  // Transport errors must not expose provider/database details or masquerade as a drained queue.
  return Response.json({code:"WORKER_UNAVAILABLE",stage},{status:503});
  }

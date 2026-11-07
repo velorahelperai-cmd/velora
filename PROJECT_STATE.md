@@ -1,3 +1,32 @@
+# Current Session Index — VELORA CODE CLEANUP AUDIT & MAINTAINABILITY CLOSURE (2026-11-06)
+
+- Delivered main commit `8dcd9bb` (pushed to origin/main).
+- Scope & Progress:
+  1. CLN-10 (Server OCR Bundling Runtime Fix):
+     - Resolved `@tesseract.js-data` runtime asset resolution without touching `public` or changing external providers.
+     - Kept `outputFileTracingIncludes` in `next.config.ts`.
+     - Verified extraction of mixed scanned PDF directly from Next.js `.next` Turbopack production build output (1238ms, 0 mocks).
+  2. CLN-02 (WhatsApp Resumption with Native PostgreSQL):
+     - Verified 6/6 tests against isolated native PostgreSQL 18.0 cluster (port 55439) in `src/lib/whatsapp/native-runtime-postgres.test.ts`.
+     - Proven: pre-transport failure resumption via `abortSend` without duplicate Gemini calls (1 total) or double ledger deductions (1 total), old attempt token invalidation under concurrency, fail-closed to `review_required` on abort failure, and immutability of `accepted`/`unknown` states.
+  3. CLN-17 (Knowledge File Worker Starvation Prevention):
+     - Verified on native PostgreSQL via `scripts/knowledge-file-worker/native-batch-starvation-test.mjs`:
+     - SQL selection orders unexpired attempts first (`ORDER BY (CASE WHEN expires_at > clock_timestamp() THEN 0 ELSE 1 END) ASC`).
+     - Reaped 10 expired running attempts and processed 1 valid runnable attempt within 2 bounded batch cycles.
+     - Dispatched attempts with unconfirmed external provider outcomes fail closed to `RECONCILIATION_REQUIRED` and review hold without blind re-extraction.
+  4. Maintainability & Code Quality Batches (A, B, C, D):
+     - Batch A: Extracted presentation helpers `getInboxAssignmentLabel` and `getInboxWorklistLabel` into `inbox-presentation.ts`; simplified `inbox-desktop.tsx` and `unified-inbox.tsx` while preserving all Realtime subscriptions and counts (53/53 tests PASS).
+     - Batch B: Documented 12 approved RPCs in `Database["public"]["Functions"]` in `database.types.ts`; strictly typed `operationRpc` callers in `db.ts`.
+     - Batch C: Removed dead legacy setup wizard files, enforcing canonical `PaidSetupWizard` on `/setup`.
+     - Batch D: Unified admin accounts lookup with dedicated link card in `admin-list.tsx` pointing to `/admin/accounts`.
+  5. Quality Gates & Release Verification:
+     - Tracked secret baseline PASS (`node scripts/ci/security.mjs`).
+     - CI contracts PASS (`node scripts/ci/run.mjs contracts`, 401 passed).
+     - CI lint PASS (`node scripts/ci/run.mjs lint`, 0 problems across workspace).
+     - CI typecheck PASS (`node scripts/ci/run.mjs typecheck`, 0 errors).
+     - CI unit tests PASS (`node scripts/ci/run.mjs unit`, 6539 passed).
+     - Production build PASS (`node scripts/ci/run.mjs build`, 60/60 routes compiled).
+
 # Current Session Index — WHATSAPP RELEASE FINAL HARDENING & INBOX ACCEPTANCE (2026-11-06)
 
 - Delivered main commit `50e07d0f81fefee448d6c8dc887556c279e77a95` (pushed to origin/main).

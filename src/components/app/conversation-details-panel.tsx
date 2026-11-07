@@ -17,16 +17,19 @@ export function ConversationDetailsPanel({id,title,open,onClose,children,closeLa
   };
   document.addEventListener('keydown',key);
   return()=>{
-    document.body.style.overflow=overflow==='hidden'?'':overflow;
+    document.body.style.overflow=overflow;
     document.removeEventListener('keydown',key);
     if(previous?.isConnected && !previous.closest('[inert], [hidden], [aria-hidden="true"]')){
       previous.focus();
     } else {
-      const fallback = document.querySelector<HTMLElement>(
-        'main button:not([disabled]):not([tabindex="-1"]), [data-inbox-desktop-v2] button:not([disabled]), [data-channel-inbox] button:not([disabled]), input[type="search"]:not([disabled])'
+      const candidates = document.querySelectorAll<HTMLElement>(
+        'main button:not([disabled]):not([tabindex="-1"]), [data-inbox-desktop-v2] button:not([disabled]):not([tabindex="-1"]), [data-channel-inbox] button:not([disabled]):not([tabindex="-1"]), input[type="search"]:not([disabled])'
       );
-      if(fallback?.isConnected && !fallback.closest('[inert], [hidden], [aria-hidden="true"]')){
-        fallback.focus();
+      for (const candidate of candidates) {
+        if (candidate.isConnected && !candidate.closest('[inert], [hidden], [aria-hidden="true"]') && candidate.style.display !== 'none' && candidate.style.visibility !== 'hidden') {
+          candidate.focus();
+          break;
+        }
       }
     }
   };

@@ -52,14 +52,14 @@ export type WhatsappInboxMeta = {
   /** all_company | assigned_only — paired with companyId for snapshot scope. */
   conversationScope: "all_company" | "assigned_only";
   /** Active membership role for this company — owners hold write caps implicitly. */
-  memberRole: "owner" | "staff";
+  memberRole?: "owner" | "staff";
   timezone: string | null;
   timezoneAnnouncedUtc: boolean;
   canReply: boolean;
   canAssign: boolean;
-  canTakeOver: boolean;
-  canResume: boolean;
-  canClose: boolean;
+  canTakeOver?: boolean;
+  canResume?: boolean;
+  canClose?: boolean;
   assignees: InboxAssigneeOption[];
   counts: Record<LeadWorklist, number>;
 };

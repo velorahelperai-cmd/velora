@@ -300,6 +300,12 @@ export type Database = {
           control_actor_id: string | null;
           control_acted_at: string | null;
           assigned_to: string | null;
+          human_ownership: "none" | "requested_unclaimed" | "claimed_idle" | "claimed_active" | "released" | "resolved" | null;
+          handoff_reason: string | null;
+          handoff_requested_at: string | null;
+          human_claimed_by: string | null;
+          human_claimed_at: string | null;
+          last_staff_reply_at: string | null;
           lead_stage: string;
           lead_stage_reason: string;
           internal_note: string;
@@ -323,6 +329,12 @@ export type Database = {
           control_actor_id?: string | null;
           control_acted_at?: string | null;
           assigned_to?: string | null;
+          human_ownership?: "none" | "requested_unclaimed" | "claimed_idle" | "claimed_active" | "released" | "resolved" | null;
+          handoff_reason?: string | null;
+          handoff_requested_at?: string | null;
+          human_claimed_by?: string | null;
+          human_claimed_at?: string | null;
+          last_staff_reply_at?: string | null;
           lead_stage?: string;
           lead_stage_reason?: string;
           internal_note?: string;
@@ -341,6 +353,12 @@ export type Database = {
           control_actor_id?: string | null;
           control_acted_at?: string | null;
           assigned_to?: string | null;
+          human_ownership?: "none" | "requested_unclaimed" | "claimed_idle" | "claimed_active" | "released" | "resolved" | null;
+          handoff_reason?: string | null;
+          handoff_requested_at?: string | null;
+          human_claimed_by?: string | null;
+          human_claimed_at?: string | null;
+          last_staff_reply_at?: string | null;
           lead_stage?: string;
           lead_stage_reason?: string;
           internal_note?: string;
@@ -357,7 +375,7 @@ export type Database = {
           company_id: string;
           conversation_id: string;
           actor_user_id: string | null;
-          action: "take_over" | "resume" | "close" | "reopen_inbound";
+          action: "take_over" | "resume" | "close" | "reopen_inbound" | "assign" | "worker_escalation" | "human_claimed" | "handoff_requested" | "human_released";
           revision: number;
           automation_generation: number;
           detail: Json;
@@ -368,7 +386,7 @@ export type Database = {
           company_id: string;
           conversation_id: string;
           actor_user_id?: string | null;
-          action: "take_over" | "resume" | "close" | "reopen_inbound";
+          action: "take_over" | "resume" | "close" | "reopen_inbound" | "assign" | "worker_escalation" | "human_claimed" | "handoff_requested" | "human_released";
           revision: number;
           automation_generation: number;
           detail?: Json;
@@ -622,6 +640,18 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      billing_read_company_journey: { Args: { p_company_id: string }; Returns: Json };
+      billing_cancel_at_period_end: { Args: { p_company_id: string }; Returns: Json };
+      billing_read_company_usage: { Args: { p_company_id: string }; Returns: Json };
+      billing_finalize_automated_usage: { Args: { p_company_id: string; p_intent_id: string }; Returns: Json };
+      billing_load_worker_frame: { Args: { p_job_id: string; p_claim_token: string }; Returns: Json };
+      master_read_subscription_activation: { Args: { p_company_id: string }; Returns: Json };
+      master_read_ai_cycle: { Args: { p_company_id: string }; Returns: Json };
+      billing_reserve_automated_outbound: { Args: { p_company_id: string; p_intent_id: string }; Returns: Json };
+      billing_reserve_ai_cost: { Args: { p_company_id: string; p_operation_key: string; p_max_atoms: number }; Returns: Json };
+      billing_record_ai_cost: { Args: { p_company_id: string; p_operation_key: string; p_input_tokens: number | null; p_output_tokens: number | null; p_actual_atoms: number | null; p_outcome: string }; Returns: Json };
+      billing_offer_admin_read: { Args: Record<string, never>; Returns: Json };
+      billing_offer_admin_save: { Args: { p_offer_id?: string | null; p_expected_revision: number; p_draft: Json }; Returns: Json };
       create_owner_company_attempt: { Args: { p_expected_user_id: string; p_idempotency_key: string; p_payload: Json }; Returns: Json };
       update_owner_company_profile: { Args: { p_expected_user_id: string; p_company_id: string; p_expected_version: number; p_patch: Json }; Returns: Json };
       save_company_setup_draft: { Args: { p_expected_user_id: string; p_company_id: string | null; p_expected_revision: number; p_payload: Json }; Returns: Json };

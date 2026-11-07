@@ -323,8 +323,8 @@ export async function refreshBrokerTokens(
 async function refreshBrokerTokensUnlocked(
   resolved: ResolvedBrokerSession,
 ): Promise<BrokerRefreshResult> {
-  const lease = await claimRefreshLease(resolved.registryId, resolved.refreshRevision);
-  if (!lease) {
+  const claim = await claimRefreshLease(resolved.registryId, resolved.refreshRevision);
+  if (!claim.ok) {
     brokerLog("warn", "auth.broker.refresh.lease_busy", {
       error_code: "REFRESH_LEASE_BUSY",
       boundary_fp: resolved.boundary.boundaryFingerprint,
@@ -332,6 +332,7 @@ async function refreshBrokerTokensUnlocked(
     });
     return { ok: false, code: "UNAVAILABLE", reason: "LEASE_BUSY" };
   }
+  const lease = claim.token;
 
   const client = createUserClientFromTokens(resolved.accessToken, resolved.refreshToken);
   if (!client) {
@@ -511,4 +512,20 @@ export async function createBrokerUserClient(
   const client = createUserClientFromTokens(settled.resolve.accessToken, settled.resolve.refreshToken);
   if (!client) return { ok: false, code: "UNAVAILABLE" };
   return { ok: true, client, resolve: settled.resolve };
+}
+
+/** A concurrent rotation is recoverable only from a fresh authoritative broker
+ * read of the same complete boundary and a strictly newer, usable revision. */
+export async function recoverConcurrentRotation(
+  previous: Extract<BrokerResolveResult, { ok: true }>,
+  readCurrent: () => Promise<BrokerResolveResult>,
+): Promise<Extract<BrokerResolveResult, { ok: true }> | null> {
+  let current: BrokerResolveResult;
+  try { current = await readCurrent(); } catch { return null; }
+  if (!current.ok || current.registryId !== previous.registryId || !Number.isSafeInteger(current.refreshRevision)
+    || !Number.isSafeInteger(previous.refreshRevision) || current.refreshRevision <= previous.refreshRevision) return null;
+  const fields = ['boundaryFingerprint', 'userId', 'nativeSessionId', 'cookieName', 'generation', 'authOrdinal', 'contextGeneration', 'browserLineageId'] as const;
+  if (fields.some(field => (current.boundary[field] ?? null) !== (previous.boundary[field] ?? null))) return null;
+  const expiry = Date.parse(current.expiresAt);
+  return Number.isFinite(expiry) && expiry > Date.now() + 60_000 ? current : null;
 }

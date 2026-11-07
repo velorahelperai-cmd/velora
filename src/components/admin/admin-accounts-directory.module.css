@@ -3,7 +3,7 @@
 .directory :is(button, a) { min-height: 2.75rem; }
 .directory button:focus-visible, .directory a:focus-visible, .directory input:focus-visible,
 .directory [role="region"]:focus-visible { outline: 2px solid var(--service-accent); outline-offset: 2px; }
-.directory table { min-width: 58rem; border-collapse: collapse; table-layout: fixed; }
+.directory table { min-width: 68rem; border-collapse: collapse; table-layout: fixed; }
 .directory th { text-align: start; font-size: .8125rem; white-space: nowrap; }
 .directory th:last-child { text-align: end; }
 .directory td { vertical-align: top; }
@@ -13,9 +13,32 @@
 .previousEmpty:hover { background: var(--service-accent-soft); }
 .directory form button[type="button"] { bottom: 0; }
 
-.directory th:nth-child(1) { width: 18%; }
-.directory th:nth-child(2) { width: 27%; }
+.directory th:nth-child(1) { width: 16%; }
+.directory th:nth-child(2) { width: 22%; }
 .directory th:nth-child(3) { width: 12%; }
-.directory th:nth-child(4) { width: 18%; }
-.directory th:nth-child(5) { width: 25%; }
+.directory th:nth-child(4) { width: 12%; }
+.directory th:nth-child(5) { width: 18%; }
+.directory th:nth-child(6) { width: 20%; }
 .directory td { overflow-wrap: anywhere; }
+
+/* Keep the directory readable as account names and company lists grow. */
+.directory > div:has(> form),
+.directory > div:has(table),
+.directory > div:has(> h3) {
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, .06);
+}
+.directory input {
+  min-height: 44px;
+  border-radius: 8px;
+  background: var(--service-surface);
+}
+.directory form button[type="submit"],
+.directory form > a { border-radius: 8px; }
+.directory thead { background: var(--service-subtle); }
+.directory th { letter-spacing: .01em; }
+.directory tbody tr { transition: background-color .15s ease; }
+.directory tbody tr:hover { background: var(--service-subtle); }
+@media (prefers-reduced-motion: reduce) {
+  .directory tbody tr { transition: none; }
+}

@@ -8,44 +8,34 @@ import { BentoCard, FiveRowGrid } from "@/components/app/magic-ui";
 import { broadSectorLabel, broadSectors, preservedDetailedTypeLabel } from "@/lib/business-sectors";
 import {AdminRealAISummary} from "@/components/admin/admin-real-ai-summary";
 import {readAdminTruth,type AdminTruth} from "@/lib/answers/runtime/admin-truth";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button, Notice, useAction, useAppCopy } from "@/components/app/ui";
 import { fill, type AppCopy } from "@/lib/app-copy";
 import {
   adminGetOverviewStats,
   adminListCompaniesPage,
   adminListPendingReviewsPage,
-  adminSearchAccounts,
 } from "@/lib/tenancy/actions";
 import type {
   AccessCode,
-  AdminAccountSearchItem,
   AdminCompanyListItem,
   AdminOverviewStats,
   CompanyStatus,
-} from "@/lib/tenancy/types";
-import {
-  ADMIN_ACCOUNT_QUERY_MAX_LEN,
-  ADMIN_ACCOUNT_SEARCH_MAX_OFFSET,
-  normalizeAdminAccountQuery,
 } from "@/lib/tenancy/types";
 import {
   IconRefresh,
   IconSearch,
 } from "@/components/admin/admin-icons";
 
-const ACCOUNT_PAGE_SIZE = 20;
 const ADMIN_SECTION_IDS = [
   "overview",
   "companies",
-  "accounts",
   "reviews",
   "future",
 ] as const;
 
 type AdminTab = (typeof ADMIN_SECTION_IDS)[number];
 type CompaniesLoadState = "loading" | "ready" | "error";
-type AccountsLoadState = "loading" | "ready" | "error";
 type OverviewState = "loading" | "ready" | "error" | "dependency";
 
 function companyStatusLabel(status: CompanyStatus | null | undefined, copy: AppCopy): string {
@@ -65,12 +55,6 @@ function formatCompanyBusinessType(type: string | undefined | null, isRtl: boole
   const match = broadSectors.find((s) => s.id === clean);
   if (match) return isRtl ? match.ar : match.en;
   return clean;
-}
-
-function emailConfirmLabel(value: boolean | null, copy: AppCopy): string {
-  if (value === true) return copy.admin.accountEmailConfirmed;
-  if (value === false) return copy.admin.accountEmailUnconfirmed;
-  return copy.admin.accountEmailUnknown;
 }
 
 function InfoTooltip({ text }: { text: string }) {
@@ -519,17 +503,6 @@ export function AdminList({
   const [companiesState, setCompaniesState] = useState<CompaniesLoadState>("loading");
   const [error, setError] = useState<string | null>(null);
 
-  const [accountQuery, setAccountQuery] = useState("");
-  const [accountRows, setAccountRows] = useState<AdminAccountSearchItem[]>([]);
-  const [accountError, setAccountError] = useState<string | null>(null);
-  const [accountBusy, setAccountBusy] = useState(false);
-  const [accountOffset, setAccountOffset] = useState(0);
-  const [accountHasMore, setAccountHasMore] = useState(false);
-  const [accountOffsetCapped, setAccountOffsetCapped] = useState(false);
-  const [accountsState, setAccountsState] = useState<AccountsLoadState>("loading");
-  const [activeAccountQuery, setActiveAccountQuery] = useState("");
-  const [accountFilter, setAccountFilter] = useState<"all" | "active" | "setup" | "none" | "verified" | "unconfirmed">("all");
-  const [accountSort, setAccountSort] = useState<"default" | "name_asc" | "name_desc" | "companies_desc">("default");
   const [trackedOverviewProps, setTrackedOverviewProps] = useState(() => ({
     overview: initialOverview,
     unavailable: overviewUnavailable,
@@ -540,7 +513,6 @@ export function AdminList({
     error: string | null;
   } | null>(null);
 
-  const accountsGen = useRef(0);
   const companiesGen = useRef(0);
   const overviewGen = useRef(0);
   const reviewsGen = useRef(0);
@@ -740,6 +712,11 @@ export function AdminList({
     function handleHash(event?: Event) {
       if (typeof window === "undefined") return;
       const raw = (event instanceof CustomEvent && typeof event.detail === "string" ? event.detail : window.location.hash.replace(/^#/, ""));
+      if (raw === "accounts") {
+        const assign = window.location?.assign?.bind(window.location);
+        if (typeof assign === "function") assign("/admin/accounts");
+        return;
+      }
       const hash = raw === "ai" ? "overview" : (raw as AdminTab);
       if (ADMIN_SECTION_IDS.includes(hash)) {
         setActiveTab(hash);
@@ -758,161 +735,7 @@ export function AdminList({
     };
   }, []);
 
-  async function loadAccounts(q: string, offset: number, gen: number) {
-    const normalized = normalizeAdminAccountQuery(q);
-    setAccountBusy(true);
-    if (offset === 0) setAccountsState("loading");
-    try {
-      const result = await adminSearchAccounts({
-        query: normalized,
-        limit: ACCOUNT_PAGE_SIZE,
-        offset,
-      });
-      if (gen !== accountsGen.current) return;
-      if (!result.ok) {
-        setAccountError(
-          result.message === "rate_limited"
-            ? copy.admin.accountSearchRateLimited
-            : result.message?.startsWith("DEPENDENCY_MISSING:")
-            ? copy.admin.accountJourneyDependencyBody
-            : (result.message ?? copy.errors.authFailed),
-        );
-        setAccountRows([]);
-        setAccountHasMore(false);
-        setAccountOffsetCapped(false);
-        setActiveAccountQuery(normalized);
-        setAccountsState("error");
-        return;
-      }
-      if (result.data.query !== normalized) return;
-      setAccountError(null);
-      setAccountRows(result.data.rows);
-      setAccountOffset(result.data.offset);
-      setActiveAccountQuery(result.data.query);
-      setAccountHasMore(result.data.hasMore);
-      setAccountOffsetCapped(result.data.atBrowseWindowEnd);
-      setAccountsState("ready");
-    } catch {
-      if (gen !== accountsGen.current) return;
-      setAccountError(copy.errors.authFailed);
-      setActiveAccountQuery(normalized);
-      setAccountsState("error");
-    } finally {
-      if (gen === accountsGen.current) setAccountBusy(false);
-    }
-  }
-
-  useEffect(() => {
-    const gen = ++accountsGen.current;
-    const q = normalizeAdminAccountQuery(accountQuery);
-    const delay = q ? 350 : 0;
-    const timer = window.setTimeout(() => {
-      void loadAccounts(q, 0, gen);
-    }, delay);
-    return () => {
-      window.clearTimeout(timer);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accountQuery]);
-
-  function onAccountQueryChange(value: string) {
-    accountsGen.current += 1;
-    setAccountQuery(value.slice(0, ADMIN_ACCOUNT_QUERY_MAX_LEN));
-    setAccountError(null);
-    setAccountOffset(0);
-    setAccountHasMore(false);
-    setAccountOffsetCapped(false);
-    setAccountRows([]);
-    setActiveAccountQuery("");
-    setAccountsState("loading");
-  }
-
-  function loadAccountPage(nextOffset: number) {
-    const q = activeAccountQuery;
-    const inputQ = normalizeAdminAccountQuery(accountQuery);
-    if (q !== inputQ) return;
-    if (nextOffset > ADMIN_ACCOUNT_SEARCH_MAX_OFFSET) return;
-    const gen = ++accountsGen.current;
-    void loadAccounts(q, nextOffset, gen);
-  }
-
-  const inputAccountQuery = normalizeAdminAccountQuery(accountQuery);
-  const requestMatchesInput =
-    (accountsState === "ready" || accountsState === "error") &&
-    activeAccountQuery === inputAccountQuery;
-  const resultsMatchInput =
-    accountsState === "ready" && activeAccountQuery === inputAccountQuery;
-
-  const legacyBrowseLikely =
-    !inputAccountQuery &&
-    resultsMatchInput &&
-    !accountRows.length &&
-    overviewState === "ready" &&
-    overview &&
-    overview.accountsTotal > 0;
-
-  const pageNumber = Math.floor(accountOffset / ACCOUNT_PAGE_SIZE) + 1;
   const isRtl = locale === "ar";
-
-  const companyMap = useMemo(() => new Map(rows.map((r) => [r.id, r])), [rows]);
-
-  const getAccountSubscriptionStatus = useMemo(() => (account: AdminAccountSearchItem): "active" | "setup" | "none" => {
-    for (const c of account.companies) {
-      const comp = companyMap.get(c.company_id);
-      const status = c.company_status || comp?.status;
-      if (status === "active") return "active";
-    }
-    for (const c of account.companies) {
-      const comp = companyMap.get(c.company_id);
-      const status = c.company_status || comp?.status;
-      if (status === "setup") return "setup";
-    }
-    return "none";
-  }, [companyMap]);
-
-  function getAccountLocation(account: AdminAccountSearchItem): string | null {
-    for (const c of account.companies) {
-      const comp = companyMap.get(c.company_id);
-      if (comp?.city && comp?.country) return `${comp.city}، ${comp.country}`;
-      if (comp?.city) return comp.city;
-      if (comp?.country) return comp.country;
-    }
-    return null;
-  }
-
-  function getAccountPhone(account: AdminAccountSearchItem): string | null {
-    if (account.account_phone && account.account_phone.trim()) return account.account_phone.trim();
-    for (const c of account.companies) {
-      if (c.business_phone && c.business_phone.trim()) return c.business_phone.trim();
-    }
-    return null;
-  }
-
-  const filteredAndSortedAccounts = useMemo(() => {
-    let list = [...accountRows];
-
-    if (accountFilter === "active") {
-      list = list.filter((a) => getAccountSubscriptionStatus(a) === "active");
-    } else if (accountFilter === "setup") {
-      list = list.filter((a) => getAccountSubscriptionStatus(a) === "setup");
-    } else if (accountFilter === "none") {
-      list = list.filter((a) => getAccountSubscriptionStatus(a) === "none");
-    } else if (accountFilter === "verified") {
-      list = list.filter((a) => a.email_confirmed === true);
-    } else if (accountFilter === "unconfirmed") {
-      list = list.filter((a) => a.email_confirmed !== true);
-    }
-
-    if (accountSort === "name_asc") {
-      list.sort((a, b) => (a.full_name || a.email || "").localeCompare(b.full_name || b.email || "", isRtl ? "ar" : "en"));
-    } else if (accountSort === "name_desc") {
-      list.sort((a, b) => (b.full_name || b.email || "").localeCompare(a.full_name || a.email || "", isRtl ? "ar" : "en"));
-    } else if (accountSort === "companies_desc") {
-      list.sort((a, b) => b.companies.length - a.companies.length);
-    }
-
-    return list;
-  }, [accountRows, accountFilter, accountSort, getAccountSubscriptionStatus, isRtl]);
 
   function switchTab(tab: AdminTab) {
     setActiveTab(tab);
@@ -1220,18 +1043,12 @@ export function AdminList({
           </span>
         </button>
 
-        <button
-          type="button"
-          onClick={() => switchTab("accounts")}
-          aria-pressed={activeTab === "accounts"}
-          className={`flex items-center gap-2 min-h-11 px-4 py-2.5 rounded-xl text-sm font-semibold transition shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--service-accent)] ${
-            activeTab === "accounts"
-              ? "bg-[var(--service-accent-soft)] text-[var(--service-ink)] shadow-md shadow-[var(--service-accent)]/20"
-              : "text-[var(--service-ink)] hover:text-[var(--service-ink)] hover:bg-[var(--service-subtle)]"
-          }`}
+        <Link
+          href="/admin/accounts"
+          className="flex items-center gap-2 min-h-11 px-4 py-2.5 rounded-xl text-sm font-semibold transition shrink-0 text-[var(--service-ink)] hover:bg-[var(--service-subtle)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--service-accent)]"
         >
           <span>{isRtl ? "الحسابات والمستخدمين" : "Accounts"}</span>
-        </button>
+        </Link>
 
         <button
           type="button"
@@ -1495,314 +1312,6 @@ export function AdminList({
         </section>
       )}
 
-      {/* 👥 TAB 3: ACCOUNTS & USERS */}
-      {activeTab === "accounts" && (
-        <section
-          id="accounts"
-          tabIndex={-1}
-          className="rounded-3xl border border-[var(--service-line)] bg-[var(--service-surface)] p-5 sm:p-6 shadow-sm space-y-4"
-        >
-          {/* Header */}
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--service-line)] pb-4">
-            <div className="flex items-center gap-2.5">
-              <h2 className="text-lg font-bold text-[var(--service-ink)]">{copy.admin.accountsTitle}</h2>
-              {resultsMatchInput && accountRows.length > 0 && (
-                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-[var(--service-accent-soft)] text-[var(--service-accent)] border border-[var(--service-accent)]/20">
-                  {accountRows.length} {isRtl ? "حساب" : "accounts"}
-                </span>
-              )}
-            </div>
-          </div>
-
-          {/* Search, Filter & Sort Toolbar */}
-          <div className="flex flex-wrap items-center gap-2.5">
-            <div className="relative flex-1 min-w-[220px]">
-              <span className="absolute inset-y-0 start-0 flex items-center ps-3.5 text-[var(--service-muted)] pointer-events-none">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="11" cy="11" r="8" />
-                  <path d="m21 21-4.3-4.3" />
-                </svg>
-              </span>
-              <input
-                value={accountQuery}
-                onChange={(e) => onAccountQueryChange(e.target.value)}
-                placeholder={copy.admin.accountSearch}
-                aria-label={copy.admin.accountSearch}
-                className="min-h-11 w-full rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)] ps-10 pe-9 text-sm font-medium text-[var(--service-ink)] outline-none focus:border-[var(--service-accent)] focus:bg-[var(--service-surface)] focus:ring-1 focus:ring-[var(--service-accent)] transition placeholder:text-[var(--service-muted)]"
-              />
-              {accountQuery && (
-                <button
-                  type="button"
-                  onClick={() => onAccountQueryChange("")}
-                  aria-label={isRtl ? "مسح البحث" : "Clear search"}
-                  className="absolute inset-y-0 end-0 flex items-center pe-3 text-xs text-[var(--service-muted)] hover:text-[var(--service-ink)]"
-                >
-                  ✕
-                </button>
-              )}
-            </div>
-
-            {/* Filter by Subscription / Status */}
-            <select
-              value={accountFilter}
-              onChange={(e) => setAccountFilter(e.target.value as typeof accountFilter)}
-              aria-label={isRtl ? "تصفية الحسابات" : "Filter accounts"}
-              className="min-h-11 rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)] px-3 text-xs sm:text-sm font-bold text-[var(--service-ink)] focus:border-[var(--service-accent)] focus:ring-1 focus:ring-[var(--service-accent)] transition"
-            >
-              <option value="all">{isRtl ? "كل الحالات (تصفية)" : "All Statuses"}</option>
-              <option value="active">{isRtl ? "مشترك نشط" : "Active Subscriber"}</option>
-              <option value="setup">{isRtl ? "قيد التجهيز" : "Setup in Progress"}</option>
-              <option value="none">{isRtl ? "غير مشترك" : "Unsubscribed"}</option>
-              <option value="verified">{isRtl ? "بريد مؤكّد" : "Email Verified"}</option>
-              <option value="unconfirmed">{isRtl ? "بريد غير مؤكّد" : "Email Unconfirmed"}</option>
-            </select>
-
-            {/* Sort Dropdown */}
-            <select
-              value={accountSort}
-              onChange={(e) => setAccountSort(e.target.value as typeof accountSort)}
-              aria-label={isRtl ? "ترتيب الحسابات" : "Sort accounts"}
-              className="min-h-11 rounded-xl border border-[var(--service-line)] bg-[var(--service-canvas)] px-3 text-xs sm:text-sm font-bold text-[var(--service-ink)] focus:border-[var(--service-accent)] focus:ring-1 focus:ring-[var(--service-accent)] transition"
-            >
-              <option value="default">{isRtl ? "الترتيب الافتراضي" : "Sort: Default"}</option>
-              <option value="name_asc">{isRtl ? "الاسم: أ - ي" : "Name: A to Z"}</option>
-              <option value="name_desc">{isRtl ? "الاسم: ي - أ" : "Name: Z to A"}</option>
-              <option value="companies_desc">{isRtl ? "الأكثر شركات" : "Most Companies"}</option>
-            </select>
-
-            {(accountFilter !== "all" || accountSort !== "default") && (
-              <button
-                type="button"
-                onClick={() => {
-                  setAccountFilter("all");
-                  setAccountSort("default");
-                }}
-                className="min-h-11 px-3 text-xs font-bold text-[var(--service-accent)] hover:text-[var(--service-ink)] bg-[var(--service-accent-soft)] hover:bg-[var(--service-subtle)] rounded-xl border border-[var(--service-accent)]/20 transition"
-              >
-                {isRtl ? "إعادة تعيين" : "Reset"}
-              </button>
-            )}
-          </div>
-
-          {/* Account Load / Search states */}
-          {(accountsState === "loading" || accountBusy) && (
-            <p className="text-xs font-medium text-[var(--service-muted)] flex items-center gap-2 py-2">
-              <span className="animate-spin">⏳</span> {copy.loading}
-            </p>
-          )}
-
-          {accountError && requestMatchesInput && (
-            <div className="grid gap-2 py-2">
-              <Notice tone="error">{accountError}</Notice>
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => {
-                  const gen = ++accountsGen.current;
-                  void loadAccounts(inputAccountQuery, 0, gen);
-                }}
-              >
-                {copy.admin.companiesRetry}
-              </Button>
-            </div>
-          )}
-
-          {legacyBrowseLikely && (
-            <p className="text-xs text-[var(--service-muted)]">{copy.admin.accountsBrowseHint}</p>
-          )}
-
-          {resultsMatchInput && accountOffsetCapped && (
-            <p className="text-xs text-[var(--service-muted)]">
-              {fill(copy.admin.accountsOffsetCap, { n: ADMIN_ACCOUNT_SEARCH_MAX_OFFSET })}
-            </p>
-          )}
-
-          {/* Accounts Directory Table */}
-          <div className="overflow-x-auto rounded-2xl border border-[var(--service-line)] bg-[var(--service-surface)] shadow-2xs">
-            <table className="w-full text-start text-sm">
-              <thead className="border-b border-[var(--service-line)] bg-[var(--service-canvas)] text-[var(--service-ink)] text-xs font-bold">
-                <tr>
-                  <th className="p-3.5 text-start">{isRtl ? "المستخدم / الحساب" : "User / Account"}</th>
-                  <th className="p-3.5 text-start">{isRtl ? "البريد والتواصل" : "Contact"}</th>
-                  <th className="p-3.5 text-start">{isRtl ? "الموقع" : "Location"}</th>
-                  <th className="p-3.5 text-center">{isRtl ? "الاشتراك" : "Subscription"}</th>
-                  <th className="p-3.5 text-center">{isRtl ? "التحقق" : "Verification"}</th>
-                  <th className="p-3.5 text-start">{isRtl ? "الشركات والانتساب" : "Company Memberships"}</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[var(--service-line)]">
-                {resultsMatchInput &&
-                  filteredAndSortedAccounts.map((row) => {
-                    const initials = (row.full_name || row.email || "U").trim().charAt(0).toUpperCase();
-                    const phone = getAccountPhone(row);
-                    const location = getAccountLocation(row);
-                    const subStatus = getAccountSubscriptionStatus(row);
-                    return (
-                      <tr key={row.user_id} className="hover:bg-[var(--service-canvas)]/70 transition-colors">
-                        {/* User / Account */}
-                        <td className="p-3.5">
-                          <div className="flex items-center gap-3">
-                            <span className="w-9 h-9 rounded-xl bg-gradient-to-br from-[var(--service-accent-soft)] to-[var(--service-subtle)] text-[var(--service-accent)] flex items-center justify-center text-xs font-black shrink-0 border border-[var(--service-line)] shadow-2xs">
-                              {initials}
-                            </span>
-                            <div className="min-w-0">
-                              <span className="font-bold text-sm text-[var(--service-ink)] block truncate">
-                                {row.full_name || copy.admin.accountFieldUnavailable}
-                              </span>
-                              <div className="mt-0.5 flex items-center gap-1">
-                                <span
-                                  className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded font-mono text-[9px] font-medium text-[var(--service-muted)] bg-[var(--service-canvas)] border border-[var(--service-line)]/80"
-                                  title={isRtl ? "رمز الدعم الفني" : "Support code"}
-                                >
-                                  <span className="text-[8px] font-sans text-[var(--service-muted)] opacity-80">{isRtl ? "رمز الدعم:" : "Ref:"}</span>
-                                  <span className="text-[var(--service-ink)]/80 font-bold">{row.support_code || copy.admin.accountFieldUnavailable}</span>
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-
-                        {/* Email / Contact */}
-                        <td className="p-3.5 text-xs text-[var(--service-ink)]">
-                          <div className="space-y-1" dir="ltr">
-                            <div className="flex items-center gap-1.5">
-                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[var(--service-muted)] shrink-0">
-                                <rect width="20" height="16" x="2" y="4" rx="2" />
-                                <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
-                              </svg>
-                              <span className="font-medium truncate max-w-[200px]">{row.email || "—"}</span>
-                            </div>
-                            <div className="flex items-center gap-1.5 text-[var(--service-muted)]">
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
-                                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
-                              </svg>
-                              <span>{phone || (isRtl ? "غير مسجل" : "Unset")}</span>
-                            </div>
-                          </div>
-                        </td>
-
-                        {/* Location */}
-                        <td className="p-3.5 text-xs font-medium text-[var(--service-ink)]">
-                          <div className="flex items-center gap-1.5">
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[var(--service-muted)] shrink-0">
-                              <path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0" />
-                              <circle cx="12" cy="10" r="3" />
-                            </svg>
-                            <span>{location || (isRtl ? "سلطنة عمان" : "Oman")}</span>
-                          </div>
-                        </td>
-
-                        {/* Subscription Status */}
-                        <td className="p-3.5 text-center">
-                          {subStatus === "active" ? (
-                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/80 shadow-2xs">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                              <span>{isRtl ? "مشترك نشط" : "Active"}</span>
-                            </span>
-                          ) : subStatus === "setup" ? (
-                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-sky-50 text-sky-700 border border-sky-200/80 shadow-2xs">
-                              <span className="w-1.5 h-1.5 rounded-full bg-sky-500" />
-                              <span>{isRtl ? "قيد التجهيز" : "Setup"}</span>
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-[var(--service-canvas)] text-[var(--service-muted)] border border-[var(--service-line)]">
-                              <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
-                              <span>{isRtl ? "غير مشترك" : "Unsubscribed"}</span>
-                            </span>
-                          )}
-                        </td>
-
-                        {/* Verification Status */}
-                        <td className="p-3.5 text-center">
-                          <span
-                            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border shadow-2xs ${
-                              row.email_confirmed
-                                ? "bg-emerald-50 text-emerald-700 border-emerald-200/80"
-                                : "bg-amber-50 text-amber-700 border-amber-200/80"
-                            }`}
-                          >
-                            <span
-                              className={`w-1.5 h-1.5 rounded-full ${
-                                row.email_confirmed ? "bg-emerald-500" : "bg-amber-500"
-                              }`}
-                            />
-                            <span>{emailConfirmLabel(row.email_confirmed, copy)}</span>
-                          </span>
-                        </td>
-
-                        {/* Associated Companies */}
-                        <td className="p-3.5">
-                          {row.companies.length ? (
-                            <div className="flex flex-wrap gap-1.5">
-                              {row.companies.map((c) => (
-                                <Link
-                                  key={`${row.user_id}-${c.company_id}`}
-                                  href={`/admin/companies/${c.company_id}`}
-                                  className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--service-line)] bg-[var(--service-canvas)] px-2.5 py-1 text-xs transition hover:border-[var(--service-accent)] hover:bg-[var(--service-accent-soft)] group shadow-2xs"
-                                >
-                                  <span className="font-bold text-[var(--service-ink)] group-hover:text-[var(--service-accent)]">
-                                    {c.display_name}
-                                  </span>
-                                  <span className="text-[var(--service-muted)]">·</span>
-                                  <span className="text-[11px] font-semibold text-[var(--service-muted)]">
-                                    {c.role}
-                                  </span>
-                                </Link>
-                              ))}
-                            </div>
-                          ) : (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium text-[var(--service-muted)] bg-[var(--service-canvas)] border border-[var(--service-line)]">
-                              {copy.admin.noCompaniesYet}
-                            </span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-
-                {resultsMatchInput &&
-                  !accountBusy &&
-                  !filteredAndSortedAccounts.length &&
-                  !accountError &&
-                  !legacyBrowseLikely && (
-                    <tr>
-                      <td colSpan={6} className="py-8 text-center text-sm font-medium text-[var(--service-muted)]">
-                        {copy.admin.accountSearchEmpty}
-                      </td>
-                    </tr>
-                  )}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Pagination Controls */}
-          {resultsMatchInput && (accountOffset > 0 || accountHasMore) && (
-            <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-[var(--service-line)]">
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="secondary"
-                  disabled={accountBusy || accountOffset <= 0}
-                  onClick={() =>
-                    loadAccountPage(Math.max(0, accountOffset - ACCOUNT_PAGE_SIZE))
-                  }
-                >
-                  {copy.admin.accountPrev}
-                </Button>
-                <Button
-                  variant="secondary"
-                  disabled={accountBusy || !accountHasMore}
-                  onClick={() => loadAccountPage(accountOffset + ACCOUNT_PAGE_SIZE)}
-                >
-                  {copy.admin.accountNext}
-                </Button>
-              </div>
-              <span className="text-xs font-semibold text-[var(--service-muted)]">
-                {fill(copy.admin.accountPage, { n: pageNumber })}
-              </span>
-            </div>
-          )}
-        </section>
-      )}
 
       {/* 📋 TAB 4: REVIEWS & APPROVALS */}
       {activeTab === "reviews" && (

@@ -399,6 +399,20 @@ it("retains ready across a later TRANSPORT throw during reattest", async () => {
   expect(renderTree().props.children).toBe("private-content");
 });
 
+it("bounds repeated transient rechecks and stops scheduling after three retries", async () => {
+  vi.useFakeTimers();
+  state.path = "/setup";
+  state.read.mockResolvedValue({ ok: true, data: profile() });
+  await render().refresh();
+  expect(render().status).toBe("ready");
+  state.broker.mockClear().mockResolvedValue({ ok: false, code: "UNAVAILABLE" });
+  await render().refresh();
+  await vi.advanceTimersByTimeAsync(60000);
+  expect(state.broker).toHaveBeenCalledTimes(4);
+  await vi.advanceTimersByTimeAsync(60000);
+  expect(state.broker).toHaveBeenCalledTimes(4);
+});
+
 it("still fails closed on tip mismatch after ready", async () => {
   state.path = "/setup";
   state.read.mockResolvedValue({ ok: true, data: profile() });
