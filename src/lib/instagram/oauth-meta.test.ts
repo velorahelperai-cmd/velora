@@ -1,4 +1,4 @@
-import {beforeEach,expect,it,vi} from 'vitest';
+import {beforeEach,describe,expect,it,vi} from 'vitest';
 vi.mock('server-only',()=>({}));
 const f=vi.hoisted(()=>({config:vi.fn(),scope:vi.fn(),profile:vi.fn()}));vi.mock('./config',()=>({instagramConfig:f.config}));vi.mock('./connect-scope',()=>({instagramOwnerConnectScope:f.scope,instagramOwnerConnectProfile:f.profile}));
 import {instagramAuthorizationUrl,exchangeInstagramCode} from './oauth-meta';
@@ -130,4 +130,91 @@ it('recognizes a nested OAuth error without logging provider metadata or text',a
   expect(await exchangeInstagramCode('code',binding,cfg,{fetch:http})).toEqual({ok:false,code:'REJECTED'});
   const event=log.mock.calls.map(([value])=>JSON.parse(String(value))).find(row=>row.code==='OAUTH_HTTP_400');expect(event).toMatchObject({reference:expect.stringMatching(/^VEL-[A-F0-9]{16}$/),operation:'instagram_connect',stage:'code_exchange',code:'OAUTH_HTTP_400',reason:'APP_CREDENTIALS_REJECTED',providerCode:190,providerSubcode:999});
  }finally{vi.unstubAllEnvs();log.mockRestore();}
+});
+describe('Facebook Login for Business (Unified Login) flow', () => {
+  const businessCfg = {
+    ...cfg,
+    appId: '3391832644330595',
+    contractId: '1935947410704479'
+  };
+  const businessBinding = {
+    ...binding,
+    appId: businessCfg.appId,
+    contractId: businessCfg.contractId
+  };
+
+  it('constructs Facebook dialog URL with config_id for numeric contractId', () => {
+    const url = new URL(instagramAuthorizationUrl(businessCfg, 'a'.repeat(64))!);
+    expect(url.origin).toBe('https://www.facebook.com');
+    expect(url.pathname).toBe('/dialog/oauth');
+    expect(url.searchParams.get('client_id')).toBe('3391832644330595');
+    expect(url.searchParams.get('config_id')).toBe('1935947410704479');
+    expect(url.searchParams.get('redirect_uri')).toBe(businessCfg.redirectUri);
+    expect(url.searchParams.get('response_type')).toBe('code');
+    expect(url.searchParams.get('display')).toBe('popup');
+  });
+
+  it('exchanges code via graph.facebook.com and resolves assigned Instagram account', async () => {
+    const http = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        access_token: 'synthetic-business-suat-token',
+        token_type: 'bearer',
+        expires_in: 5184000
+      })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        data: [{
+          id: '17841416239520365',
+          username: 'velorahelperai',
+          name: 'Velora Helper AI'
+        }]
+      })));
+
+    f.profile.mockReturnValue(true);
+    const result = await exchangeInstagramCode('test-code', businessBinding, businessCfg, { fetch: http });
+    expect(result).toMatchObject({
+      ok: true,
+      accessToken: 'synthetic-business-suat-token',
+      evidence: {
+        appId: '3391832644330595',
+        accountId: '17841416239520365',
+        username: 'velorahelperai',
+        contractId: '1935947410704479'
+      }
+    });
+    expect(http).toHaveBeenCalledTimes(2);
+    expect(http.mock.calls[0][0]).toContain('https://graph.facebook.com/v26.0/oauth/access_token');
+    expect(http.mock.calls[1][0]).toContain('https://graph.facebook.com/v26.0/me/assigned_instagram_accounts');
+  });
+
+  it('falls back to /me/accounts if /me/assigned_instagram_accounts returns empty', async () => {
+    const http = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        access_token: 'synthetic-business-suat-token',
+        expires_in: 5184000
+      })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: [] })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        data: [{
+          id: '123456',
+          name: 'My Page',
+          instagram_business_account: {
+            id: '17841416239520365',
+            username: 'velorahelperai'
+          }
+        }]
+      })));
+
+    f.profile.mockReturnValue(true);
+    const result = await exchangeInstagramCode('test-code', businessBinding, businessCfg, { fetch: http });
+    expect(result).toMatchObject({
+      ok: true,
+      accessToken: 'synthetic-business-suat-token',
+      evidence: {
+        accountId: '17841416239520365',
+        username: 'velorahelperai'
+      }
+    });
+    expect(http).toHaveBeenCalledTimes(3);
+    expect(http.mock.calls[2][0]).toContain('https://graph.facebook.com/v26.0/me/accounts');
+  });
 });

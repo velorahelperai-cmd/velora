@@ -743,7 +743,9 @@ function ChannelView({locale, scope, read, channel, connectionRead, isCurrent, o
         return;
       }
       const target = new URL(started.launch.authorizationUrl);
-      if (target.origin !== "https://www.instagram.com" || target.pathname !== "/oauth/authorize") {
+      const validTarget = (target.origin === "https://www.instagram.com" && target.pathname === "/oauth/authorize")
+        || (target.origin === "https://www.facebook.com" && target.pathname === "/dialog/oauth");
+      if (!validTarget || target.username || target.password) {
         setInFlight(null);
         return;
       }

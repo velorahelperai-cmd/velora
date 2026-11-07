@@ -34,7 +34,8 @@ export function InstagramOwnerConnection({companyId,ar,callbackDiagnostic}:{comp
   if(!connectReady||reserved.current||busy)return;reserved.current=true;const current=epoch.current;setBusy(true);setError(null);
   try{const r=await startInstagramOwnerConnection({companyId});if(current!==epoch.current)return;
    if(!r.ok){setError({companyId,code:r.code});return;}
-   const url=new URL(r.authorizationUrl);if(url.origin!=='https://www.instagram.com'||url.pathname!=='/oauth/authorize'||url.username||url.password){setError({companyId,code:'UNAVAILABLE'});return;}
+   const url=new URL(r.authorizationUrl);const validOrigin=(url.origin==='https://www.instagram.com'&&url.pathname==='/oauth/authorize')||(url.origin==='https://www.facebook.com'&&url.pathname==='/dialog/oauth');
+    if(!validOrigin||url.username||url.password){setError({companyId,code:'UNAVAILABLE'});return;}
    window.location.assign(url.href);
   }catch{if(current===epoch.current)setError({companyId,code:'RECONCILIATION_REQUIRED'});}finally{if(current===epoch.current){reserved.current=false;setBusy(false);}}
  }

@@ -6,9 +6,11 @@ const utc=(v:unknown):v is string=>typeof v==='string'&&/^\d{4}-\d{2}-\d{2}T\d{2
  * Config is deliberately re-read at each irreversible provider boundary. */
 function readInstagramOwnerConnectScope(companyId:string,userId:string,appId:string,
  environment:Readonly<Record<string,string|undefined>>=process.env,now=Date.now()):Readonly<{expectedUsername:string|null}>|null{
+ if(!uuid(companyId)||!uuid(userId)||!/^\d{1,64}$/.test(appId)||!Number.isFinite(now))return null;
+ if(environment.INSTAGRAM_ALLOW_ALL_CUSTOMERS==='true')return {expectedUsername:null};
  const review=environment.INSTAGRAM_REVIEW_ENABLED==='true'&&environment.INSTAGRAM_REVIEW_COMPANY_ID===companyId&&environment.INSTAGRAM_REVIEW_CONNECT_SCOPES!==undefined;
  const raw=review?environment.INSTAGRAM_REVIEW_CONNECT_SCOPES:environment.INSTAGRAM_CONNECT_SCOPES;
- if(!raw||raw.length>16384||!uuid(companyId)||!uuid(userId)||!/^\d{1,64}$/.test(appId)||!Number.isFinite(now))return null;
+ if(!raw||raw.length>16384)return null;
  try{
   const scopes:unknown=JSON.parse(raw);if(!Array.isArray(scopes)||scopes.length<1||scopes.length>100)return null;
   let match:Readonly<{expectedUsername:string|null}>|null=null;let matches=0;

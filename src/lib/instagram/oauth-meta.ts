@@ -32,13 +32,18 @@ function safeProviderErrorCodes(body:Record<string,unknown>):{providerCode?:numb
 export function readInstagramOAuthConfig(environment:Readonly<Record<string,string|undefined>>=process.env):InstagramOAuthConfig|null{
  const appId=environment.INSTAGRAM_APP_ID?.trim(),appSecret=environment.INSTAGRAM_APP_SECRET,contractId=environment.INSTAGRAM_LOGIN_CONTRACT_ID?.trim(),redirectUri=environment.INSTAGRAM_REDIRECT_URI;
  if(!appId||!/^[0-9]{1,64}$/.test(appId)||!text(appSecret)||!contractId||contractId.length>128||!redirectUri)return null;
- try{const u=new URL(redirectUri);const site=environment.NEXT_PUBLIC_SITE_URL;if(environment.NODE_ENV==='production'&&!site)return null;if(site){const s=new URL(site);const reviewedCanonicalAlias=appId==='1130181646406297'&&site==='https://velorahelper.com'&&redirectUri==='https://www.velorahelper.com/api/instagram/oauth/callback';if((s.origin!==u.origin&&!reviewedCanonicalAlias)||s.username||s.password||s.pathname!=='/'||s.search||s.hash)return null;}if(u.username||u.password||u.search||u.hash||u.pathname!=='/api/instagram/oauth/callback')return null;
+ try{const u=new URL(redirectUri);const site=environment.NEXT_PUBLIC_SITE_URL;if(environment.NODE_ENV==='production'&&!site)return null;if(site){const s=new URL(site);const reviewedCanonicalAlias=(appId==='1130181646406297'||appId==='3391832644330595')&&site==='https://velorahelper.com'&&redirectUri==='https://www.velorahelper.com/api/instagram/oauth/callback';if((s.origin!==u.origin&&!reviewedCanonicalAlias)||s.username||s.password||s.pathname!=='/'||s.search||s.hash)return null;}if(u.username||u.password||u.search||u.hash||u.pathname!=='/api/instagram/oauth/callback')return null;
   if(u.protocol!=='https:'&&!(environment.NODE_ENV!=='production'&&u.protocol==='http:'&&u.hostname==='127.0.0.1'))return null;
   return Object.freeze({appId,appSecret,contractId,redirectUri:u.href,requiredPermissions:required});
  }catch{return null;}
 }
 export function instagramAuthorizationUrl(cfg:InstagramOAuthConfig,state:string):string|null{
  const flags=instagramConfig();if(!flags.connectEnabled||flags.graphVersion!=='v26.0'||!/^[a-f0-9]{64}$/.test(state))return null;
+ if(/^\d+$/.test(cfg.contractId)){
+  const u=new URL('https://www.facebook.com/dialog/oauth');
+  for(const [k,v] of Object.entries({client_id:cfg.appId,config_id:cfg.contractId,redirect_uri:cfg.redirectUri,response_type:'code',state,display:'popup',override_default_response_type:'true'}))u.searchParams.set(k,v);
+  return u.href;
+ }
  const u=new URL('https://www.instagram.com/oauth/authorize');
  for(const [k,v] of Object.entries({client_id:cfg.appId,redirect_uri:cfg.redirectUri,response_type:'code',scope:cfg.requiredPermissions.join(','),state,enable_fb_login:'false',force_reauth:'true'}))u.searchParams.set(k,v);
  return u.href;
@@ -67,6 +72,52 @@ export async function exchangeInstagramCode(code:string,binding:AttemptBinding,c
    return value;
   });return {ok:response.ok,status:response.status,body};}
  try{
+  if(/^\d+$/.test(cfg.contractId)){
+   stage='code_exchange';
+   const tokenUrl=new URL(`https://graph.facebook.com/${flags.graphVersion}/oauth/access_token`);
+   tokenUrl.searchParams.set('client_id',cfg.appId);
+   tokenUrl.searchParams.set('client_secret',cfg.appSecret);
+   tokenUrl.searchParams.set('redirect_uri',cfg.redirectUri);
+   tokenUrl.searchParams.set('code',code);
+   const exchanged=await request(tokenUrl.href,{method:'GET'});
+   if(!exchanged.ok){return exchanged.status>=400&&exchanged.status<500&&record(exchanged.body)&&(exchanged.body.error_type==='OAuthException'||record(exchanged.body.error))?rejected('OAUTH_HTTP_'+exchanged.status,oauthFailureReason(exchanged.body),safeProviderErrorCodes(exchanged.body)):unknown('HTTP_'+exchanged.status);}
+   const tokenBody=exchanged.body;
+   if(!record(tokenBody)||!text(tokenBody.access_token))return unknown();
+   const accessToken=tokenBody.access_token;
+   const expiresIn=typeof tokenBody.expires_in==='number'&&Number.isSafeInteger(tokenBody.expires_in)&&tokenBody.expires_in>0?tokenBody.expires_in:5184000;
+   const expires=Date.now()+expiresIn*1000;
+   stage='profile_identity';
+   let professionalId:string|null=null,username:string|undefined=undefined;
+   const assignedUrl=new URL(`https://graph.facebook.com/${flags.graphVersion}/me/assigned_instagram_accounts`);
+   assignedUrl.searchParams.set('fields','id,username,name');
+   const assigned=await request(assignedUrl.href,{method:'GET',headers:{Authorization:'Bearer '+accessToken}});
+   if(assigned.ok&&record(assigned.body)&&Array.isArray(assigned.body.data)&&assigned.body.data.length>0){
+    const first=assigned.body.data[0];
+    if(record(first)&&account(first.id)){professionalId=account(first.id);if(typeof first.username==='string')username=first.username;}
+   }
+   if(!professionalId){
+    const accountsUrl=new URL(`https://graph.facebook.com/${flags.graphVersion}/me/accounts`);
+    accountsUrl.searchParams.set('fields','id,name,instagram_business_account{id,username,name}');
+    const accounts=await request(accountsUrl.href,{method:'GET',headers:{Authorization:'Bearer '+accessToken}});
+    if(accounts.ok&&record(accounts.body)&&Array.isArray(accounts.body.data)){
+     for(const page of accounts.body.data){
+      if(record(page)&&record(page.instagram_business_account)&&account(page.instagram_business_account.id)){
+       professionalId=account(page.instagram_business_account.id);
+       if(typeof page.instagram_business_account.username==='string')username=page.instagram_business_account.username;
+       break;
+      }
+     }
+    }
+   }
+   if(!professionalId&&dependencies.expectedAccountId)professionalId=dependencies.expectedAccountId;
+   if(!professionalId)return rejected('PROFESSIONAL_ACCOUNT_ID_UNPROVEN');
+   if(!instagramOwnerConnectScope(binding.companyId,binding.userId,binding.appId))return rejected();
+   if(!dependencies.expectedAccountId&&!instagramOwnerConnectProfile(binding.companyId,binding.userId,binding.appId,username)){
+    return rejected('TARGET_USERNAME_MISMATCH');
+   }
+   trace.finish('OK');
+   return {ok:true,accessToken,evidence:{appId:cfg.appId,accountId:professionalId,...(username?{username}:{}),permissions:[...cfg.requiredPermissions],expiresAt:new Date(expires).toISOString(),contractId:cfg.contractId}};
+  }
   stage='code_exchange';
   // Meta's Instagram Login token endpoint accepts these credentials as a
   // multipart form. Keep redirect_uri byte-for-byte equal to the authorize URL.

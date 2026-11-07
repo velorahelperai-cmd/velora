@@ -26,3 +26,10 @@ it('reviewer owner can authorize their own verified professional profile within 
  expect(profile(scope.companyId,scope.ownerId,scope.appId,'reviewer_business',{...reviewEnv,INSTAGRAM_REVIEW_ENABLED:'false'},now)).toBe(false);
  expect(profile(scope.companyId,scope.ownerId,scope.appId,'bad username',reviewEnv,now)).toBe(false);
 });
+it('INSTAGRAM_ALLOW_ALL_CUSTOMERS allows any valid authenticated owner and professional username', () => {
+  const allowAllEnv = { INSTAGRAM_ALLOW_ALL_CUSTOMERS: 'true' };
+  expect(permit(scope.companyId, scope.ownerId, scope.appId, allowAllEnv, now)).toBe(true);
+  expect(profile(scope.companyId, scope.ownerId, scope.appId, 'any_valid_user', allowAllEnv, now)).toBe(true);
+  expect(profile(scope.companyId, scope.ownerId, scope.appId, 'invalid username!', allowAllEnv, now)).toBe(false);
+  expect(permit('invalid-uuid', scope.ownerId, scope.appId, allowAllEnv, now)).toBe(false);
+});
