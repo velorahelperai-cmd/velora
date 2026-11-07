@@ -14,6 +14,60 @@ type Es02FoundationRow = {
   operationalReady?: unknown;
 };
 
+type Es02OwnedPurchaseOfferRow = {
+  persona?: unknown;
+  package?: unknown;
+  term?: unknown;
+};
+
+type Es02OwnedPurchaseRow = {
+  companyId?: unknown;
+  offer?: Es02OwnedPurchaseOfferRow | null;
+};
+
+type Es02PlanMeta = {
+  tier: SubscriptionView["currentTier"];
+  currentPackage: SubscriptionView["currentPackage"];
+  cycle: SubscriptionView["cycle"];
+};
+
+function parseEs02Tier(value: unknown): SubscriptionView["currentTier"] {
+  return value === "level_1" || value === "level_2" || value === "level_3" ? value : null;
+}
+
+function parseEs02Package(value: unknown): SubscriptionView["currentPackage"] {
+  return value === "basic" || value === "premium" ? value : null;
+}
+
+function parseEs02Cycle(value: unknown): SubscriptionView["cycle"] {
+  return value === "yearly" || value === "year" ? "yearly" : value === "monthly" || value === "month" ? "monthly" : null;
+}
+
+async function readEs02OwnedCompanyPlanMeta(
+  client: Awaited<ReturnType<typeof createClient>>,
+  companyId: string,
+  userId: string,
+): Promise<Es02PlanMeta> {
+  const empty: Es02PlanMeta = { tier: null, currentPackage: null, cycle: null };
+  try {
+    const { data, error } = await client.rpc("es02_read_owned_purchase", {
+      p_expected_account_id: userId,
+    });
+    if (error) return empty;
+    const envelope = data as { ok?: boolean; data?: Es02OwnedPurchaseRow | null } | null;
+    if (envelope?.ok !== true || !envelope.data || envelope.data.companyId !== companyId) return empty;
+    const offer = envelope.data.offer;
+    if (!offer || typeof offer !== "object") return empty;
+    return {
+      tier: parseEs02Tier(offer.persona),
+      currentPackage: parseEs02Package(offer.package),
+      cycle: parseEs02Cycle(offer.term),
+    };
+  } catch {
+    return empty;
+  }
+}
+
 /** ES02 paid ledger uses plan_version_id NULL; commercial display may still report empty. */
 async function readEs02PaidSubscriptionView(
   companyId: string,
@@ -22,10 +76,13 @@ async function readEs02PaidSubscriptionView(
 ): Promise<SubscriptionView | null> {
   try {
     const client = await createClient();
-    const { data, error } = await client.rpc("es02_read_activation_foundation", {
-      p_expected_account_id: userId,
-      p_company_id: companyId,
-    });
+    const [{ data, error }, planMeta] = await Promise.all([
+      client.rpc("es02_read_activation_foundation", {
+        p_expected_account_id: userId,
+        p_company_id: companyId,
+      }),
+      readEs02OwnedCompanyPlanMeta(client, companyId, userId),
+    ]);
     if (error) return null;
     const envelope = data as { ok?: boolean; data?: Es02FoundationRow } | null;
     if (envelope?.ok !== true || !envelope.data) return null;
@@ -33,25 +90,33 @@ async function readEs02PaidSubscriptionView(
     const paidThrough = typeof row.paidThroughAt === "string" ? row.paidThroughAt : null;
     const paymentConfirmed = typeof row.paymentConfirmedAt === "string" ? row.paymentConfirmedAt : null;
     if (!paymentConfirmed) return null;
-    const cycle: SubscriptionView["cycle"] =
-      row.termUnit === "year" ? "yearly" : row.termUnit === "month" ? "monthly" : null;
+    const cycle: SubscriptionView["cycle"] = parseEs02Cycle(row.termUnit) ?? planMeta.cycle;
+    const currentTier = planMeta.tier;
+    const currentPackage = planMeta.currentPackage;
     const paidTimestamp = paidThrough === null ? null : new Date(paidThrough).getTime();
     if (paidTimestamp !== null && !Number.isFinite(paidTimestamp)) return null;
     const future = paidTimestamp !== null && paidTimestamp > Date.now();
     const clock = typeof row.clockState === "string" ? row.clockState : null;
     if (paidTimestamp !== null && !future) {
-      return { state: "expired", currentTier: null, cycle, paidThrough };
+      return {
+        state: "expired",
+        currentTier,
+        cycle,
+        paidThrough,
+        ...(currentPackage ? { currentPackage } : {}),
+      };
     }
     if (clock === "active" && future) {
       return {
         state: "active",
-        currentTier: null,
+        currentTier,
         cycle,
         paidThrough,
+        ...(currentPackage ? { currentPackage } : {}),
         ...(master
           ? {
               operationalReady: row.operationalReady === true,
-              currentPackage: null,
+              currentPackage,
               planVersionId: null,
             }
           : {}),
@@ -60,13 +125,14 @@ async function readEs02PaidSubscriptionView(
     if (clock === "waiting_readiness" && paymentConfirmed) {
       return {
         state: future ? "active" : "pending",
-        currentTier: null,
+        currentTier,
         cycle,
         paidThrough,
+        ...(currentPackage ? { currentPackage } : {}),
         ...(master
           ? {
               operationalReady: false,
-              currentPackage: null,
+              currentPackage,
               planVersionId: null,
             }
           : {}),
@@ -131,6 +197,13 @@ export async function loadOwnerBillingSubscription(fallback: SubscriptionView): 
         currentPackage = /_basic$/.test(code) ? 'basic' : /_premium$/.test(code) ? 'premium' : null;
         tier = code.startsWith("noor_") ? "level_1" : code.startsWith("lina_") ? "level_2" : code.startsWith("dana_") ? "level_3" : null;
       }
+    } else if (active || (paidTimestamp !== null && !future) || data.status === "suspended") {
+      const es02 = await readEs02PaidSubscriptionView(company.id, userId, master);
+      if (es02) {
+        tier = es02.currentTier;
+        cycle = es02.cycle;
+        currentPackage = es02.currentPackage ?? null;
+      }
     }
     const { data: openOrder, error: orderError } = await admin.from("billing_orders").select("id")
       .eq("company_id", company.id).eq("provider_environment", "live").in("status", ["locked", "submitted"])
@@ -141,6 +214,7 @@ export async function loadOwnerBillingSubscription(fallback: SubscriptionView): 
       state: data.status === "suspended" ? "suspended" : active ? "active"
         : paidTimestamp !== null && !future ? "expired" : openOrder ? "pending" : "empty",
       currentTier: tier, cycle, paidThrough,
+      ...(currentPackage ? { currentPackage } : {}),
       ...(master ? {currentPackage,planVersionId:data.plan_version_id,operationalReady:evidence.operational_eligible===true} : {}),
       ...(openOrder ? { pendingOrderId: String(openOrder.id) } : {}),
     };

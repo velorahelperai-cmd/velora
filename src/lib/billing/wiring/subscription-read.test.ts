@@ -9,6 +9,7 @@ const state = vi.hoisted(() => ({
   order: null as null | { id: string; provider_environment: string },
   display: null as null | { data: unknown; error: unknown },
   es02: { data: null as unknown, error: null as unknown },
+  es02Purchase: { data: null as unknown, error: null as unknown },
 }));
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/tenancy/access", () => ({ getCompanyAccess: state.access }));
@@ -17,6 +18,7 @@ vi.mock("@/lib/supabase/server", () => ({
     rpc: async (name: string, args: unknown) => {
       state.rpc(name, args);
       if (name === "es02_read_activation_foundation") return state.es02;
+      if (name === "es02_read_owned_purchase") return state.es02Purchase;
       return state.display ?? { data: null, error: { code: "08006" } };
     },
   }),
@@ -101,6 +103,7 @@ beforeEach(() => {
   state.subscription = { status: "active", paid_through: "2099-01-01T00:00:00.000Z", plan_version_id: null };
   state.display = { data: entitlement(), error: null };
   state.es02 = { data: { ok: false, code: "UNAVAILABLE" }, error: null };
+  state.es02Purchase = { data: { ok: true, data: null }, error: null };
 });
 describe("owner subscription uses authoritative Live entitlement", () => {
   it("does not show Test or unknown future paid-through as active when operational RPC denies entitlement", async () => {
@@ -111,6 +114,34 @@ describe("owner subscription uses authoritative Live entitlement", () => {
   });
   it("shows a verified active Live entitlement", async () => {
     expect((await loadOwnerBillingSubscription(fallback)).state).toBe("active");
+  });
+  it("enriches an active ES02 entitlement (plan_version_id null) with tier, package, and cycle from ES02 RPCs", async () => {
+    state.display = { data: entitlement({ plan_version_id: null }), error: null };
+    state.es02 = es02Active({ termUnit: "month" });
+    state.es02Purchase = {
+      data: {
+        ok: true,
+        data: {
+          accountId: "fixture-user",
+          orderId: "fixture-order",
+          status: "provisioned",
+          companyId: "fixture-company",
+          offer: {
+            persona: "level_2",
+            package: "premium",
+            term: "monthly",
+          },
+        },
+      },
+      error: null,
+    };
+    expect(await loadOwnerBillingSubscription(fallback)).toEqual({
+      state: "active",
+      currentTier: "level_2",
+      currentPackage: "premium",
+      cycle: "monthly",
+      paidThrough: "2099-01-01T00:00:00.000Z",
+    });
   });
   it("shows proven paid waiting service without claiming operational readiness when master is enabled", async () => {
     vi.stubEnv("VELORA_MASTER_JOURNEY_ENABLED", "true");
