@@ -288,14 +288,14 @@ export const REFRESH_SOFT_REUSE_MIN_MS = 2_000;
 
 type BrokerRefreshResult =
   | { ok: true; accessToken: string; refreshToken: string; expiresAt: string; refreshRevision: number }
-  | { ok: false; code: "UNAUTHENTICATED" | "UNAVAILABLE"; reason?: "LEASE_BUSY" };
+  | { ok: false; code: "UNAUTHENTICATED" | "UNAVAILABLE"; reason?: "RECHECK" | "LEASE_BUSY" };
 
 type ResolvedBrokerSession = Extract<BrokerResolveResult, { ok: true }>;
 
 const refreshFlights = new Map<string, Promise<BrokerRefreshResult>>();
 
 function refreshFlightKey(resolved: ResolvedBrokerSession): string {
-  return `${resolved.registryId}:${resolved.refreshRevision}`;
+  return `${resolved.registryId}:${resolved.refreshRevision}:${resolved.boundary.boundaryFingerprint}:${resolved.boundary.nativeSessionId}`;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -325,12 +325,12 @@ async function refreshBrokerTokensUnlocked(
 ): Promise<BrokerRefreshResult> {
   const claim = await claimRefreshLease(resolved.registryId, resolved.refreshRevision);
   if (!claim.ok) {
-    brokerLog("warn", "auth.broker.refresh.lease_busy", {
-      error_code: "REFRESH_LEASE_BUSY",
+    brokerLog("warn", "auth.broker.refresh.claim_failed", {
+      error_code: `REFRESH_${claim.reason}`,
       boundary_fp: resolved.boundary.boundaryFingerprint,
       user_id: resolved.boundary.userId,
     });
-    return { ok: false, code: "UNAVAILABLE", reason: "LEASE_BUSY" };
+    return { ok: false, code: "UNAVAILABLE", ...(claim.reason === "ROTATING" || claim.reason === "NOT_CLAIMABLE" ? { reason: "RECHECK" as const } : {}) };
   }
   const lease = claim.token;
 

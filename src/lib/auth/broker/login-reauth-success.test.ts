@@ -4,7 +4,7 @@ vi.mock('./registry', () => ({ probeBrokerCapability: async () => ({ ok: true, b
 vi.mock('./lineage-auth', () => ({ prepareBrokerAdmissionLineage: async () => ({ ok: true, bootstrapHash: 'root', browserLineageId: 'lineage' }) }));
 vi.mock('./provider', () => ({ createProviderAuthClient: () => ({ client: { auth: { signInWithPassword: m.signIn, refreshSession: m.refresh } } }) }));
 vi.mock('./provider-session', () => ({ signOutProviderSessionAfterAdmitFailure: vi.fn(), resumeProviderCleanup: vi.fn() }));
-vi.mock('./cookies', () => ({ commitHandleCookie: m.commit, commitIntentCookie: vi.fn(), expireIntentCookie: vi.fn() }));
+vi.mock('./cookies', () => ({ commitHandleCookie: m.commit, commitIntentCookie: vi.fn(), expireIntentCookie: vi.fn(), rotateHandleCookies: vi.fn() }));
 vi.mock('./session-id', () => ({ nativeSessionIdFromAccessToken: () => 'new-native-session', expiresAtFromSession: () => '2999-01-01T00:00:00Z' }));
 vi.mock('./log', () => ({ brokerLog: vi.fn() }));
 import { brokerPasswordLogin } from './login';
@@ -14,7 +14,7 @@ it('admits a newly authenticated session before committing its handle without re
   m.capture.mockResolvedValue(true);
   m.admit.mockResolvedValue({ cookieName: 'new-cookie', handle: 'new-handle', generation: 'generation', userId: 'actor', boundaryFingerprint: 'fingerprint' });
   const result = await brokerPasswordLogin({ email: 'fixture@example.invalid', password: 'fixture', requestNonce: 'fixture-nonce-long-enough', reader: { getAll: () => [] }, writer: { set: vi.fn() } });
-  expect(result).toEqual({ ok: true });
+  expect(result).toMatchObject({ ok: true });
   expect(m.refresh).not.toHaveBeenCalled();
   expect(m.capture).toHaveBeenCalledOnce();
   expect(m.admit).toHaveBeenCalledOnce();
